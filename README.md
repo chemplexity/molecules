@@ -1,4 +1,9 @@
-Create interactive molecules for HTML websites. 
+#Dynamic Molecules
+
+|Create dynamic molecules for HTML websites.|![Imgur](http://i.imgur.com/sVPFz7l.png)|
+|:--|--:|
+
+* See an example [here](http://bl.ocks.org/chemplexity/raw/4839327d6bfa25ba458d/)
 * Uses [D3.js](https://github.com/mbostock/d3/wiki/Gallery)
 * Hosted on [bl.ocks.org](http://bl.ocks.org)
 
