@@ -3,7 +3,7 @@
 |Create dynamic molecules for HTML websites.|![Imgur](http://i.imgur.com/sVPFz7l.png)|
 |:--|--:|
 
-* See an example [here](http://bl.ocks.org/chemplexity/raw/4839327d6bfa25ba458d/)
+* Examples: [alanine](http://bl.ocks.org/chemplexity/raw/4839327d6bfa25ba458d/), [cytosine](http://bl.ocks.org/chemplexity/20ba7498015358682480)
 * Uses [D3.js](https://github.com/mbostock/d3/wiki/Gallery)
 * Hosted on [bl.ocks.org](http://bl.ocks.org)
 
