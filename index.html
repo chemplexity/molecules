@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+* { box-sizing:border-box; }
+
+.link line {
+    stroke: #000000;
+    stroke-opacity: 0.7;
+    stroke-width: 1;
+}
+
+.link line.separator {
+  stroke: #fff;
+  stroke-width: 3px;
+}
+
+.node circle {
+  stroke: #000;
+  stroke-width: 3px;
+}
+
+.container {
+    font-family:'Lucida Sans Unicode';
+    width:500px;
+    margin:15px auto auto 30px;
+    display:block;
+    background:#FFF;
+    padding:20px 5px 5px;
+}
+
+.footer { text-align:right; }
+.footer a { color:#53B2C8; }
+
+.group {
+    position:relative;
+    margin-bottom:5px;
+}
+
+input {
+    font-size:16px;
+    padding:10px 10px 10px 5px;
+    display:block;
+    width:300px;
+    border:none;
+    border-bottom:1px solid #757575;
+}
+
+input:focus { outline:none; }
+
+label {
+    color:#999;
+    font-size:18px;
+    font-weight:normal;
+    position:absolute;
+    pointer-events:none;
+    left:5px;
+    top:10px;
+    transition:0.2s ease all;
+    -moz-transition:0.2s ease all;
+    -webkit-transition:0.2s ease all;
+}
+
+input:focus ~ label, input:valid ~ label {
+    top:-15px;
+    font-size:14px;
+    color:#5264AE;
+}
+
+.bar { position:relative; display:block; width:350px; }
+.bar:before, .bar:after {
+    content:'';
+    height:2px;
+    width:0;
+    bottom:1px;
+    position:absolute;
+    background:#5264AE;
+    transition:0.2s ease all;
+    -moz-transition:0.2s ease all;
+    -webkit-transition:0.2s ease all;
+}
+
+.bar:before { left:50%; }
+.bar:after { right:50%; }
+
+input:focus ~ .bar:before, input:focus ~ .bar:after {
+    width:50%;
+}
+
+.highlight {
+    position:absolute;
+    height:60%;
+    width:100px;
+    top:25%;
+    left:0;
+    pointer-events:none;
+    opacity:0.5;
+}
+
+input:focus ~ .highlight {
+    -webkit-animation:inputHighlighter 0.3s ease;
+    -moz-animation:inputHighlighter 0.3s ease;
+    animation:inputHighlighter 0.3s ease;
+}
+
+@-webkit-keyframes inputHighlighter {
+    from { background:#5264AE; }
+    to { width:0; background:transparent; }
+}
+
+@-moz-keyframes inputHighlighter {
+    from { background:#5264AE; }
+    to { width:0; background:transparent; }
+}
+
+@keyframes inputHighlighter {
+	from { background:#5264AE; }
+    to { width:0; background:transparent; }
+}
+
+</style>
+
+<script src="smiles.js"></script>
+<script src="http://d3js.org/d3.v3.min.js"></script>
+
+<body>
+
+<div class="container">
+
+    <form onsubmit="return onclick_handler()">
+    <div id="user" class="group" method="post">
+        <input type="text" required onchange="onclick_handler()">
+        <span class="highlight"></span>
+        <span class="bar"></span>
+        <label id="textbox">Input SMILES...</label>
+    </div>
+    </form>
+
+    <div id="chart"></div>
+
+    <p class="footer">
+    <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>
+    </p>
+</div>
+
+<script>
+
+// Input callback
+var onclick_handler = function () {
+
+    // User input
+    var input = document.getElementsByTagName("input")[0].value
+
+    // Update textbox
+    document.getElementById('textbox').innerHTML = input;
+
+    // Convert to JSON
+    data(input);
+};
+
+// SMILES to JSON
+var data = function(input) {
+
+    // Use custom SMILES converter
+    var molecule = smiles(input);
+
+    // Add size property to atoms
+    for (i=0; i < molecule.atoms.length; i++) {
+        if(molecule.atoms[i].element == 1) {molecule.atoms[i].size = 5}
+        else {molecule.atoms[i].size = 8}
+
+        // Assign unique id to each atoms
+        //molecule.atoms[i].element
+    }
+
+    // Update graph
+    update(molecule);
+};
+
+        var myInput = document.getElementsByTagName('input')[0].value;
+    attachTextListener(myInput, function() {data(myInput)})
+
+// General properties
+var margin = {top: 5, right: -5, bottom: 5, left: -5};
+
+var width = 500 - margin.left - margin.right,
+    height = 350- margin.top - margin.bottom,
+    padding = 1;
+    r = 15;
+
+var radius = d3.scale.sqrt()
+    .range([0, 6]);
+
+var svg = d3.select("body").append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+var vis = d3.select("#chart")
+    .append("svg:svg")
+    .attr("width", width)
+    .attr("height", height)
+    .attr("pointer-events", "all")
+
+vis.append('svg:rect')
+    .attr('width', width)
+    .attr('height', height)
+    .attr('fill', 'white');
+
+// Start d3.js
+var force = d3.layout.force()
+    .size([width + margin.left + margin.right, height + margin.top + margin.bottom])
+    .charge(-300)
+    .gravity(0.6)
+    .linkDistance(-50)
+
+// Update graph with new molecule
+function update(molecule) {
+
+    // Prevent bonds from overlapping
+    var bonding = [];
+
+    // Create invisible nodes between atoms
+    molecule.bonds.forEach(function(link) {
+        bonding.push({
+            source: molecule.atoms[link.source],
+            target: molecule.atoms[link.target]
+        });
+    });
+
+    // Concatenate invisible nodes with atoms
+    force.nodes(molecule.atoms.concat(bonding))
+    force.links(molecule.bonds)
+
+    // Initialize bonds
+    var link = vis.selectAll(".link")
+        .data(force.links(), function(d) { return d.source +"-"+ d.target; })
+
+    // Update bonds
+    link.enter().append("g")
+        .attr("class", "link")
+
+    link.append("line")
+        .style("stroke-width", function(d) { return (d.order * 3 - 1) * 2 + "px"; })
+
+    link.filter(function(d) { return d.order > 1; }).append("line")
+        .attr("class", "separator");
+
+    link.exit()
+        .attr('x', 0)
+        .transition()
+        .duration(50)
+        .attr('x', 60)
+        .style('fill-opacity', 0)
+        .remove()
+
+    // Initialize atoms
+    var node = vis.selectAll(".node")
+        .data(molecule.atoms, function(d) {return d.atom_id})
+
+    // Update atoms
+    node.enter().append("circle")
+        .attr("class", "node")
+        .call(force.drag)
+        .style("fill", function(d) { return d.color; })
+        .attr("r", function(d) { return d.size+2 })
+        .style("stroke", "black")
+        .style("stroke-width", 3)
+        .style("stroke-opacity", 0.9);
+
+    node.exit()
+        .attr('x', 0)
+        .transition()
+        .duration(250)
+        .attr('x', 60)
+        .style('fill-opacity', 0)
+        .remove()
+
+    var bonding = svg.selectAll(".link-node")
+        .data(bonding)
+
+    bonding.exit().remove()
+
+    bonding.enter().append("circle")
+        .attr("class", "link-node")
+        .attr("visibility", "hidden");
+
+    // Dynamic movement
+    force.on("tick", function () {
+
+        //node.attr("transform", function (d) {return "translate(" + d.x + "," + d.y + ")";});
+        //bonding.attr("transform", function (d) {return "translate(" + d.x + "," + d.y + ")"; });
+
+        link.selectAll("line")
+            .attr("x1", function(d) { return d.source.x; })
+            .attr("y1", function(d) { return d.source.y; })
+            .attr("x2", function(d) { return d.target.x; })
+            .attr("y2", function(d) { return d.target.y; })
+
+        node.attr("cx", function(d) { return d.x = Math.max(r, Math.min(width - r, d.x)); })
+            .attr("cy", function(d) { return d.y = Math.max(r, Math.min(height - r, d.y)); })
+
+        bonding.attr("cx", function(d) { return d.x = (d.source.x + d.target.x) * 0.5; })
+               .attr("cy", function(d) { return d.y = (d.source.y + d.target.y) * 0.5; });
+    });
+
+    force.start()
+}
+
+// Default molecule
+data("C((CO)NC)C(C=O)C=C(O)C(N)C");
+
+</script>
