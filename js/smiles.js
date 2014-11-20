@@ -10,6 +10,12 @@ function smiles(input) {
     // Parse input using SMILES grammar
     var grammar = definitions();
 
+    // Filter input
+    var input = input.split("")
+    if (input.length == 0 || input.length > 100) return false;
+    if (findObjects(grammar.atoms, 'symbol', input[0]) == null) return false;
+    if (findObjects(grammar.atoms, 'symbol', input[input.length-1]) == null) return false;
+
     // Create a new molecule
     var molecule = {
         molecule_id: input,
@@ -19,11 +25,11 @@ function smiles(input) {
     };
 
     // Molecules are composed of atoms
-    function atom(id, symbol, element, weight, valence, color) {
+    function atom(id, weight, symbol, element, valence, color) {
         this.atom_id = id;
+        this.atom_weight = weight;
         this.symbol = symbol;
         this.element = element;
-        this.weight = weight;
         this.valence = valence;
         this.color = color;
     }
@@ -38,10 +44,12 @@ function smiles(input) {
     }
 
     // Begin parsing input string
-    var input = input.split(""),
-        index = {atoms: [], non_atoms: [], branches: [], bonds: [], rings: []},
-        counter = {branches: -1, empty: -1, last: "start"};
+    var index = {atoms: [], non_atoms: [], branches: [], bonds: [], rings: []};
+    var counter = {branches: -1, empty: -1, last: "start"};
 
+//
+// Atoms
+//
     // Find atoms
     for (i = 0; i < input.length; i++) {
 
@@ -54,7 +62,7 @@ function smiles(input) {
             // Check for two letter elements
             var exceptions = ["H", "B", "C", "S", "A"];
 
-            if (exceptions.indexOf(match.symbol) && i < input.length) {
+            if (exceptions.indexOf(match.symbol) && i < input.length-1) {
 
                 // Compare concatenated string with SMILES grammar
                 var matchSpecial = findObjects(grammar.atoms, 'symbol', match.symbol + input[i+1]);
@@ -74,9 +82,9 @@ function smiles(input) {
             // Set atom properties
             var properties = {
                 atom_id:  match.symbol + i,
+                atom_weight: match.weight,
                 symbol:   match.symbol,
                 element:  match.element,
-                weight:   match.weight,
                 valence:  match.valence,
                 color:    match.color
             };
@@ -91,6 +99,10 @@ function smiles(input) {
         // Update index of non-atoms
         else {updateIndex(index.non_atoms, i)}
     }
+
+//
+// Branches
+//
 
     // Find branches
     for (i = 0; i < index.non_atoms.length; i++) {
@@ -158,21 +170,29 @@ function smiles(input) {
             if (right != null && index.branches[i].right == -1) {index.branches[i].right = right.output;}
         }
 
+        // Special Case: double bond at branch start
+        if (i > 0 && input[index.branches[i].start] == "=") {
+          var bondType = "double";
+          var bondValue = 2; }
+        else {
+          var bondType = "single";
+          var bondValue = 1; }
+
         // Set bond properties for left to node atom
         var bondProperties = {
             bond_id: molecule.bonds.length,
             source:  index.branches[i].left,
             target:  index.branches[i].node,
-            type:    "single",
-            value:   1
+            type:    bondType,
+            value:   bondValue
         };
 
         // Update molecule with new bond
         addBond(bondProperties);
 
         // Update bond count for atom
-        index.atoms[index.branches[i].left].bonds += 1;
-        index.atoms[index.branches[i].node].bonds += 1;
+        index.atoms[index.branches[i].left].bonds += bondValue;
+        index.atoms[index.branches[i].node].bonds += bondValue;
 
         // Set bond properties for left to right atom
         var bondProperties = {
@@ -190,6 +210,10 @@ function smiles(input) {
         index.atoms[index.branches[i].left].bonds += 1;
         index.atoms[index.branches[i].right].bonds += 1;
     }
+
+//
+// Single Bonds
+//
 
     // Find implicit bonds
     for (i = 1; i < index.atoms.length; i++) {
@@ -214,6 +238,10 @@ function smiles(input) {
             index.atoms[i-1].bonds += 1;
         }
     }
+
+//
+// Double/Triple Bonds
+//
 
     // Find explicit bonds
     for (i = 0; i < index.non_atoms.length; i++) {
@@ -267,6 +295,10 @@ function smiles(input) {
         index.atoms[index.bonds[i].right].bonds += index.bonds[i].value;
     }
 
+//
+// Rings
+//
+
     // Find explicit rings
     for (i = 0; i < index.non_atoms.length; i++) {
 
@@ -279,8 +311,6 @@ function smiles(input) {
 
         // Check match
         if (match != null) {
-
-            // Update ring index
             index.rings.push({output: findObjects(index.atoms, "input", position-1), value: value});
         }
     }
@@ -303,7 +333,6 @@ function smiles(input) {
                 // Set ring end position
                 right = index[i + j].output;
 
-
                 // Set bond properties for ring atoms
                 var bondProperties = {
                     bond_id: molecule.bonds.length,
@@ -311,10 +340,14 @@ function smiles(input) {
                     target: right,
                     type: "single",
                     value: 1
-                };
+                }
             }
         }
     }
+
+//
+// Hydrogens
+//
 
     // Add hydrogen to available atoms
     for (i = 0; i < index.atoms.length; i++) {
@@ -328,9 +361,9 @@ function smiles(input) {
                 // Set atom properties
                 var properties = {
                     atom_id:  "H" + molecule.atoms.length,
+                    atom_weight: 1.008,
                     symbol:   "H",
                     element:  1,
-                    weight:   1.008,
                     valence:  1,
                     color:    "#E9E9E9"
                 };
@@ -352,37 +385,45 @@ function smiles(input) {
             }
     }
 
-        //Add atom to molecule
+//
+// Update Molecule
+//
+
+    //Add atom to molecule
     function addAtom(a) {
-
-        // Create atom
-        var newAtom = new atom(a.atom_id, a.symbol, a.element, a.weight, a.valence, a.color);
-
-        // Update molecule
+        var newAtom = new atom(a.atom_id, a.atom_weight, a.symbol, a.element, a.valence, a.color);
         molecule.atoms.push(newAtom);
     }
 
     // Add bond to molecule
     function addBond(b) {
-
-        // Create atom
         var newBond = new bond(b.bond_id, b.source, b.target, b.type, b.value);
-
-        // Update molecule
         molecule.bonds.push(newBond);
     }
 
+//
+// Molecular Weight
+//
+
     // Determine molecular weight
     for (i = 0; i < molecule.atoms.length; i++) {
-        molecule.molecule_weight += molecule.atoms[i].weight;
+      molecule.molecule_weight += molecule.atoms[i].atom_weight;
     }
 
     // Round value to two decimal places
     molecule.molecule_weight = Math.round(molecule.molecule_weight*100)/100
 
+//
+// Output
+//
+
     // Output molecule in JSON format
     return molecule;
 }
+
+//
+// Definitions
+//
 
 // SMILES grammar definitions
 function definitions() {
@@ -390,27 +431,27 @@ function definitions() {
     // TODO: Add more atom types
     var atomDefinitions = [
         {symbol: "H",   element: 1,   weight: 1.008,   valence: [1],     color: "#E9E9E9"},
-        {symbol: "He",  element: 2,   weight: 4.002,   valence: [1],     color: "#272727"},
-        {symbol: "B",   element: 5,   weight: 10.81,   valence: [3],     color: "#272727"},
+        {symbol: "He",  element: 2,   weight: 4.002,   valence: [1],     color: "#2A79AF"},
+        {symbol: "B",   element: 5,   weight: 10.81,   valence: [3],     color: "#B37831"},
         {symbol: "C",   element: 6,   weight: 12.01,   valence: [4],     color: "#272727"},
         {symbol: "N",   element: 7,   weight: 14.01,   valence: [3,5],   color: "#0033CC"},
         {symbol: "O",   element: 8,   weight: 16.00,   valence: [2],     color: "#FF1919"},
-        {symbol: "F",   element: 9,   weight: 19.00,   valence: [1],     color: "#272727"},
-        {symbol: "Si",  element: 14,  weight: 28.09,   valence: [4],     color: "#272727"},
-        {symbol: "P",   element: 15,  weight: 30.97,   valence: [3,5],   color: "#272727"},
-        {symbol: "S",   element: 16,  weight: 32.06,   valence: [2,4,6], color: "#272727"},
-        {symbol: "Cl",  element: 17,  weight: 35.45,   valence: [1],     color: "#272727"},
+        {symbol: "F",   element: 9,   weight: 19.00,   valence: [1],     color: "#8536AF"},
+        {symbol: "Si",  element: 14,  weight: 28.09,   valence: [4],     color: "#797979"},
+        {symbol: "P",   element: 15,  weight: 30.97,   valence: [3,5],   color: "#00AE78"},
+        {symbol: "S",   element: 16,  weight: 32.06,   valence: [2,4,6], color: "#FFD700"},
+        {symbol: "Cl",  element: 17,  weight: 35.45,   valence: [1],     color: "#00FF6C"},
         {symbol: "As",  element: 33,  weight: 74.92,   valence: [1],     color: "#272727"},
-        {symbol: "Se",  element: 34,  weight: 78.96,   valence: [1],     color: "#272727"},
-        {symbol: "Br",  element: 35,  weight: 79.90,   valence: [1],     color: "#272727"},
-        {symbol: "I",   element: 53,  weight: 126.90,  valence: [1],     color: "#272727"},
+        {symbol: "Se",  element: 34,  weight: 78.96,   valence: [1],     color: "#BC0000"},
+        {symbol: "Br",  element: 35,  weight: 79.90,   valence: [1],     color: "#FFA669"},
+        {symbol: "I",   element: 53,  weight: 126.90,  valence: [1],     color: "#1A306D"},
         {symbol: "c",   element: 6,   weight: 12.01,   valence: [1],     color: "#272727"},
-        {symbol: "n",   element: 7,   weight: 14.01,   valence: [1],     color: "#272727"},
-        {symbol: "o",   element: 8,   weight: 16.00,   valence: [1],     color: "#272727"},
-        {symbol: "p",   element: 15,  weight: 30.97,   valence: [1],     color: "#272727"},
-        {symbol: "s",   element: 16,  weight: 32.06,   valence: [1],     color: "#272727"},
+        {symbol: "n",   element: 7,   weight: 14.01,   valence: [1],     color: "#0033CC"},
+        {symbol: "o",   element: 8,   weight: 16.00,   valence: [1],     color: "#FF1919"},
+        {symbol: "p",   element: 15,  weight: 30.97,   valence: [1],     color: "#00AE78"},
+        {symbol: "s",   element: 16,  weight: 32.06,   valence: [1],     color: "#FFD700"},
         {symbol: "as",  element: 33,  weight: 74.92,   valence: [1],     color: "#272727"},
-        {symbol: "se",  element: 34,  weight: 78.96,   valence: [1],     color: "#272727"}
+        {symbol: "se",  element: 34,  weight: 78.96,   valence: [1],     color: "#BC0000"}
     ];
 
     var bondDefinitions = [
@@ -466,19 +507,17 @@ function definitions() {
     }
 }
 
-// Utility functions
-function findObjects(array, key, value) {
+//
+// Utility
+//
 
-    // Find matching key/value
-    for (var i = 0; i < array.length; i++) {
-        if (array[i][key] == value) {return array[i]}
-    }
+// Find object key/value
+function findObjects(array, key, value) {
+    for (var i = 0; i < array.length; i++) { if (array[i][key] == value) { return array[i]; }}
     return null
 }
 
-// Index values for two arrays
+// Index values for atoms
 function updateIndex(array, input, output, bonds, valence) {
-
-    // Update array with new entry
     array.push({input: input, output: output, bonds: bonds, valence: valence})
 }

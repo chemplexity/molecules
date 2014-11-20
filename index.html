@@ -37,6 +37,18 @@
     margin-bottom:5px;
 }
 
+.examples {
+    color:#999;
+    font-size:13px;
+    font-weight:normal;
+    font-family:'Lucida Sans Unicode';
+}
+
+.examples a:link {
+    color: #53B2C8;
+    font-weight:bold;
+}
+
 input {
     font-size:16px;
     padding:10px 10px 10px 5px;
@@ -120,71 +132,97 @@ input:focus ~ .highlight {
 
 </style>
 
-<script src="smiles.js"></script>
-<script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="js/smiles.js"></script>
+<script src="js/d3.v3.min.js"> // http://d3js.org/d3.v3.min.js</script>
 
 <body>
 
 <div class="container">
 
-    <form onsubmit="return onclick_handler()">
-    <div id="user" class="group" method="post">
-        <input type="text" required onchange="onclick_handler()">
+    <form onsubmit="return false">
+    <div id="user" class="group">
+        <input type="text" required value="" onpaste="onclick_handler(this.value)" onkeyup="onkey_handler(event)">
         <span class="highlight"></span>
         <span class="bar"></span>
         <label id="textbox">Input SMILES...</label>
     </div>
     </form>
+    <label>
+    <div id="molecularWeight" style="position: absolute; top:40px; left:410px; width:200px; height:25px">""</div>
+    </label>
+
+    <div id="examples" style="position: absolute; top:68px; left:50px; width:400px; height:30px">
+        <p class="examples"><i>examples:&nbsp</i>
+            <a href="#" onclick="onclick_handler('C=O C=O C=O C=O C=O C=O C=O C=O C=O')">acetone</a>,
+            <a href="#" onclick="onclick_handler('FH ClH BrH IH FH ClH BrH IH FH ClH BrH IH')">halides</a>,
+            <a href="#" onclick="onclick_handler('C=C(C)C=C')">isoprene,</a>
+            <a href="#" onclick="onclick_handler('CCCCCCCC')">octane,</a>
+            <a href="#" onclick="onclick_handler('C((CO)NC)C(C=O)C=C(O)C(N)C')">default</a>
+        </p>
+    </div>
+
 
     <div id="chart"></div>
 
     <p class="footer">
-    <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>
+    <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>,
+    <a href="http://www.opensmiles.org/spec/open-smiles-2-grammar.html" target="_blank">help</a>
     </p>
 </div>
 
 <script>
 
-// Input callback
-var onclick_handler = function () {
+/**
+ * Generate dynamic molecules with HTML/CSS/Javascript
+ * (C) 2014 by James Dillon
+ * http://wwww.github.com/chemplexity
+ */
 
-    // User input
-    var input = document.getElementsByTagName("input")[0].value
+// Filter input
+var onkey_handler = function(event) {
 
-    // Update textbox
-    document.getElementById('textbox').innerHTML = input;
+    // Input: 'enter', 'backspace', '=', '0', '9'
+    if (event.keyCode == 13 || event.keyCode == 8 || event.keyCode == 187 ||
+        event.keyCode == 48 || event.keycode == 57)
+       {onclick_handler(document.getElementsByTagName("input")[0].value)}
 
-    // Convert to JSON
-    data(input);
-};
+    // Input: non-alphabet
+    else if (event.keyCode < 65 || event.keyCode > 90) {return false}
+
+    // Input: alphabet
+    else {onclick_handler(document.getElementsByTagName("input")[0].value)}
+}
+
+// Submit input
+var onclick_handler = function(input) { data(input) };
 
 // SMILES to JSON
 var data = function(input) {
+
+    // Check for empty input
+    if (input.length == 0) {return false}
 
     // Use custom SMILES converter
     var molecule = smiles(input);
 
     // Add size property to atoms
     for (i=0; i < molecule.atoms.length; i++) {
-        if(molecule.atoms[i].element == 1) {molecule.atoms[i].size = 5}
-        else {molecule.atoms[i].size = 8}
-
-        // Assign unique id to each atoms
-        //molecule.atoms[i].element
+        if(molecule.atoms[i].element == 1) { molecule.atoms[i].size = 5 }
+        else if(molecule.atoms[i].element == 9) { molecule.atoms[i].size = 6 }
+        else if(molecule.atoms[i].element == 35) { molecule.atoms[i].size = 11 }
+        else if(molecule.atoms[i].element == 53) { molecule.atoms[i].size = 13 }
+        else { molecule.atoms[i].size = 8 }
     }
 
     // Update graph
     update(molecule);
 };
 
-        var myInput = document.getElementsByTagName('input')[0].value;
-    attachTextListener(myInput, function() {data(myInput)})
-
 // General properties
 var margin = {top: 5, right: -5, bottom: 5, left: -5};
 
 var width = 500 - margin.left - margin.right,
-    height = 350- margin.top - margin.bottom,
+    height = 375 - margin.top - margin.bottom,
     padding = 1;
     r = 15;
 
@@ -199,19 +237,15 @@ var vis = d3.select("#chart")
     .append("svg:svg")
     .attr("width", width)
     .attr("height", height)
-    .attr("pointer-events", "all")
-
-vis.append('svg:rect')
-    .attr('width', width)
-    .attr('height', height)
-    .attr('fill', 'white');
+    .append("g")
 
 // Start d3.js
 var force = d3.layout.force()
     .size([width + margin.left + margin.right, height + margin.top + margin.bottom])
-    .charge(-300)
+    .charge(-350)
     .gravity(0.6)
     .linkDistance(-50)
+    .theta(0.1)
 
 // Update graph with new molecule
 function update(molecule) {
@@ -231,6 +265,8 @@ function update(molecule) {
     force.nodes(molecule.atoms.concat(bonding))
     force.links(molecule.bonds)
 
+    vis.selectAll(".node").remove()
+
     // Initialize bonds
     var link = vis.selectAll(".link")
         .data(force.links(), function(d) { return d.source +"-"+ d.target; })
@@ -238,6 +274,8 @@ function update(molecule) {
     // Update bonds
     link.enter().append("g")
         .attr("class", "link")
+        //.on('mouseover', bondType)
+        //.on('mouseout', bondType)
 
     link.append("line")
         .style("stroke-width", function(d) { return (d.order * 3 - 1) * 2 + "px"; })
@@ -245,13 +283,18 @@ function update(molecule) {
     link.filter(function(d) { return d.order > 1; }).append("line")
         .attr("class", "separator");
 
-    link.exit()
-        .attr('x', 0)
-        .transition()
-        .duration(50)
-        .attr('x', 60)
-        .style('fill-opacity', 0)
-        .remove()
+    // Remove bonds from last molecule
+    link.exit().remove()
+
+    // Set rigid bonds
+    var bonding = vis.selectAll(".link-node")
+        .data(bonding)
+
+    bonding.enter().append("circle")
+        .attr("class", "link-node")
+        .attr("visibility", "hidden");
+
+    bonding.exit().remove()
 
     // Initialize atoms
     var node = vis.selectAll(".node")
@@ -267,28 +310,17 @@ function update(molecule) {
         .style("stroke-width", 3)
         .style("stroke-opacity", 0.9);
 
+    // Remove atoms from last molecule
     node.exit()
         .attr('x', 0)
         .transition()
-        .duration(250)
+        .duration(100)
         .attr('x', 60)
         .style('fill-opacity', 0)
         .remove()
 
-    var bonding = svg.selectAll(".link-node")
-        .data(bonding)
-
-    bonding.exit().remove()
-
-    bonding.enter().append("circle")
-        .attr("class", "link-node")
-        .attr("visibility", "hidden");
-
     // Dynamic movement
     force.on("tick", function () {
-
-        //node.attr("transform", function (d) {return "translate(" + d.x + "," + d.y + ")";});
-        //bonding.attr("transform", function (d) {return "translate(" + d.x + "," + d.y + ")"; });
 
         link.selectAll("line")
             .attr("x1", function(d) { return d.source.x; })
@@ -304,9 +336,56 @@ function update(molecule) {
     });
 
     force.start()
+
+    // Update molecular weight values
+    update_text(molecule)
+}
+
+// Display molecular weight
+function update_text(molecule) {
+    document.getElementById("molecularWeight").innerHTML = molecule.molecule_weight + " g/mol";
 }
 
 // Default molecule
 data("C((CO)NC)C(C=O)C=C(O)C(N)C");
+
+//
+// Utility
+//
+
+// Find object key/value
+function findObjects(array, key, value) {
+    for (var i = 0; i < array.length; i++) { if (array[i][key] == value) { return array[i]; }}
+    return null
+}
+
+/**
+function bondType() {
+
+        // Selected bond data
+        var bondSelected = d3.select(this).node().__data__
+
+        // Calculate molecular weight of fragments
+        var sourceFragment = 0;
+        var targetFragment = 0;
+        var totalFragment = [];
+
+        // Traverse nodes
+        for (i = 0; i < molecule.atoms.length; i++) {
+
+            // Current target
+            var targetAtom = bondSelected.target;
+
+            if (findObjects(totalFragment, "id", targetAtom) == null) {
+
+                totalFragment.push({id: bondSelected.target})
+            }
+//        for (i = 0; i < molecule.nodes.length; i++) { linkIndex[i + "," + i] = 1; }
+//        molecule.links.forEach(function(d) { linkIndex[d.source.index + "," + d.target.index] = 1; });
+
+//        function neighboring(a, b) { return linkIndex[a.index + "," + b.index]; }
+        console.log(d3.select(this).node().__data__)
+    }
+*/
 
 </script>
