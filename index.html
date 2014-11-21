@@ -39,12 +39,27 @@
 
 .examples {
     color:#999;
-    font-size:13px;
+    font-size:12px;
     font-weight:normal;
     font-family:'Lucida Sans Unicode';
 }
 
 .examples a:link {
+    color: #53B2C8;
+    font-weight:bold;
+}
+
+.examples a:visited {
+    color: #53B2C8;
+    font-weight:bold;
+}
+
+.examples a:hover {
+    color: #53B2C8;
+    font-weight:bold;
+}
+
+.examples a:active {
     color: #53B2C8;
     font-weight:bold;
 }
@@ -62,7 +77,7 @@ input:focus { outline:none; }
 
 label {
     color:#999;
-    font-size:18px;
+    font-size:16px;
     font-weight:normal;
     position:absolute;
     pointer-events:none;
@@ -75,7 +90,7 @@ label {
 
 input:focus ~ label, input:valid ~ label {
     top:-15px;
-    font-size:14px;
+    font-size:13px;
     color:#5264AE;
 }
 
@@ -133,7 +148,7 @@ input:focus ~ .highlight {
 </style>
 
 <script src="js/smiles.js"></script>
-<script src="js/d3.v3.min.js"> // http://d3js.org/d3.v3.min.js</script>
+<script src="http://d3js.org/d3.v3.min.js"></script>
 
 <body>
 
@@ -148,27 +163,26 @@ input:focus ~ .highlight {
     </div>
     </form>
     <label>
-    <div id="molecularWeight" style="position: absolute; top:40px; left:410px; width:200px; height:25px">""</div>
+    <div id="molecularWeight" style="position: absolute; top:35px; left:400px; width:200px; height:25px">""</div>
     </label>
 
-    <div id="examples" style="position: absolute; top:68px; left:50px; width:400px; height:30px">
+    <div id="examples" style="position: absolute; top:68px; left:46px; width:400px; height:30px">
         <p class="examples"><i>examples:&nbsp</i>
-            <a href="#" onclick="onclick_handler('C=O C=O C=O C=O C=O C=O C=O C=O C=O')">acetone</a>,
-            <a href="#" onclick="onclick_handler('FH ClH BrH IH FH ClH BrH IH FH ClH BrH IH')">halides</a>,
-            <a href="#" onclick="onclick_handler('C=C(C)C=C')">isoprene,</a>
-            <a href="#" onclick="onclick_handler('CCCCCCCC')">octane,</a>
-            <a href="#" onclick="onclick_handler('C((CO)NC)C(C=O)C=C(O)C(N)C')">default</a>
+            <a href="#" onclick="example_handler('C=O C=O C=O C=O C=O C=O C=O C=O C=O')">formaldehyde</a>,
+            <a href="#" onclick="example_handler('FH ClH BrH IH FH ClH BrH IH FH ClH BrH IH')">halides</a>,
+            <a href="#" onclick="example_handler('C=C(C)C=C')">isoprene,</a>
+            <a href="#" onclick="example_handler('NC(C=O)C=C(O)C(N)C')">default</a>
         </p>
     </div>
-
-
     <div id="chart"></div>
 
-    <p class="footer">
+    <div><p class="footer">
     <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>,
     <a href="http://www.opensmiles.org/spec/open-smiles-2-grammar.html" target="_blank">help</a>
-    </p>
+    </p></div>
 </div>
+</body>
+</html>
 
 <script>
 
@@ -191,6 +205,13 @@ var onkey_handler = function(event) {
 
     // Input: alphabet
     else {onclick_handler(document.getElementsByTagName("input")[0].value)}
+}
+
+var example_handler = function (input) {
+
+    document.getElementsByTagName("input")[0].value = input;
+
+    onclick_handler(input);
 }
 
 // Submit input
@@ -242,9 +263,9 @@ var vis = d3.select("#chart")
 // Start d3.js
 var force = d3.layout.force()
     .size([width + margin.left + margin.right, height + margin.top + margin.bottom])
-    .charge(-350)
-    .gravity(0.6)
-    .linkDistance(-50)
+    .charge(-300)
+    .gravity(0.8)
+    .linkDistance(-40)
     .theta(0.1)
 
 // Update graph with new molecule
@@ -347,7 +368,7 @@ function update_text(molecule) {
 }
 
 // Default molecule
-data("C((CO)NC)C(C=O)C=C(O)C(N)C");
+data("NC(C=O)C=C(O)C(N)C");
 
 //
 // Utility
