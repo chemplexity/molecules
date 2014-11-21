@@ -57,4 +57,10 @@ Molecules with this JSON schema are rendered in a force directed layout graph us
 
 #### Converting from SMILES
 
-The fastest way to obtain a formatted JSON molecule is to convert a [SMILES](http://www.daylight.com/dayhtml/doc/theory/theory.smiles.html) identification code. The SMILES parsing engine included in this release is the current focus of development and has limited functionality at this time. To convert SMILES to JSON use the `smiles.js` file 
+The fastest way to obtain a formatted JSON molecule is to convert a [SMILES](http://www.daylight.com/dayhtml/doc/theory/theory.smiles.html) identification code. The SMILES parsing engine included in this release is the current focus of development and has limited functionality at this time. To convert SMILES to JSON use the `smiles.js` package. 
+
+
+````javascript
+var molecule = smiles("CC=CC(O)C")
+````
+
