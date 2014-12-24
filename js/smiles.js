@@ -62,7 +62,7 @@ function smiles(input) {
             // Check for two letter elements
             var exceptions = ["H", "B", "C", "S", "A"];
 
-            if (exceptions.indexOf(match.symbol) && i < input.length-1) {
+            if (exceptions.indexOf(match.symbol)) {
 
                 // Compare concatenated string with SMILES grammar
                 var matchSpecial = findObjects(grammar.atoms, 'symbol', match.symbol + input[i+1]);
@@ -178,13 +178,13 @@ function smiles(input) {
           var bondType = "single";
           var bondValue = 1; }
 
-        // Set bond properties for left to node atom
+        // Set bond properties for left to center atom
         var bondProperties = {
             bond_id: molecule.bonds.length,
-            source:  index.branches[i].left,
-            target:  index.branches[i].node,
-            type:    bondType,
-            value:   bondValue
+            source: index.branches[i].left,
+            target: index.branches[i].node,
+            type: bondType,
+            value: bondValue
         };
 
         // Update molecule with new bond
@@ -197,10 +197,10 @@ function smiles(input) {
         // Set bond properties for left to right atom
         var bondProperties = {
             bond_id: molecule.bonds.length,
-            source:  index.branches[i].left,
-            target:  index.branches[i].right,
-            type:    "single",
-            value:   1
+            source: index.branches[i].left,
+            target: index.branches[i].right,
+            type: "single",
+            value: 1
         };
 
         // Update molecule with new bond
@@ -224,10 +224,10 @@ function smiles(input) {
             // Set bond properties for right to node atom
             var bondProperties = {
                 bond_id: molecule.bonds.length,
-                source:  index.atoms[i-1].output,
-                target:  index.atoms[i].output,
-                type:    "single",
-                value:   1
+                source: index.atoms[i-1].output,
+                target: index.atoms[i].output,
+                type: "single",
+                value: 1
             };
 
             // Update molecule with new bond
@@ -281,10 +281,10 @@ function smiles(input) {
         // Set bond properties for left to node atom
         var bondProperties = {
             bond_id: molecule.bonds.length,
-            source:  index.bonds[i].left,
-            target:  index.bonds[i].right,
-            type:    index.bonds[i].type,
-            value:   index.bonds[i].value
+            source: index.bonds[i].left,
+            target: index.bonds[i].right,
+            type: index.bonds[i].type,
+            value: index.bonds[i].value
         };
 
         // Update molecule with new bond
@@ -321,27 +321,21 @@ function smiles(input) {
     for (i = 0; i < x; i++) {
 
         // Ring starting position
-        var left = index.rings[i].output,
-            right = -1;
+        var left = index.rings[i];
 
-        // Locate ring end position
-        for (j = 1; j < index.rings.length-1; j++) {
+        // Remove item from array
+        index.rings.splice(i, 1);
 
-            // Check match
-            if (index.rings[i].value == index.rings[i+j].value) {
+        // Ring ending position
+        var right = findObjects(index.rings, 'value', index.rings[i].value);
 
-                // Set ring end position
-                right = index[i + j].output;
-
-                // Set bond properties for ring atoms
-                var bondProperties = {
-                    bond_id: molecule.bonds.length,
-                    source: left,
-                    target: right,
-                    type: "single",
-                    value: 1
-                }
-            }
+        // Set bond properties for ring atoms
+        var bondProperties = {
+            bond_id: molecule.bonds.length,
+            source: left.output.output,
+            target: right.output.output,
+            type: "single",
+            value: 1
         }
     }
 
@@ -374,10 +368,10 @@ function smiles(input) {
                 // Set bond properties for left to node atom
                 var bondProperties = {
                     bond_id: molecule.bonds.length,
-                    source:  index.atoms[i].output,
-                    target:  molecule.atoms.length-1,
-                    type:    "hydrogen",
-                    value:   1
+                    source: index.atoms[i].output,
+                    target: molecule.atoms.length-1,
+                    type: "single",
+                    value: 1
                 };
 
                 // Update molecule with new bond
@@ -407,7 +401,7 @@ function smiles(input) {
 
     // Determine molecular weight
     for (i = 0; i < molecule.atoms.length; i++) {
-      molecule.molecule_weight += molecule.atoms[i].atom_weight;
+        molecule.molecule_weight += molecule.atoms[i].atom_weight;
     }
 
     // Round value to two decimal places

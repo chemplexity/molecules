@@ -147,8 +147,8 @@ input:focus ~ .highlight {
 
 </style>
 
-<script src="js/smiles.js"></script>
-<script src="http://d3js.org/d3.v3.min.js"></script>
+<script src="smiles.js"></script>
+<script src="d3.v3.min.js"></script>
 
 <body>
 
@@ -159,7 +159,7 @@ input:focus ~ .highlight {
         <input type="text" required value="" onpaste="onclick_handler(this.value)" onkeyup="onkey_handler(event)">
         <span class="highlight"></span>
         <span class="bar"></span>
-        <label id="textbox">Input SMILES...</label>
+        <label id="textbox">Input...</label>
     </div>
     </form>
     <label>
@@ -182,7 +182,6 @@ input:focus ~ .highlight {
     </p></div>
 </div>
 </body>
-</html>
 
 <script>
 
@@ -235,6 +234,12 @@ var data = function(input) {
         else { molecule.atoms[i].size = 8 }
     }
 
+    // Add source/target fields
+    for (i=0; i < molecule.bonds.length; i++) {
+        molecule.bonds[i].source_id = molecule.bonds[i].source;
+        molecule.bonds[i].target_id = molecule.bonds[i].target;
+    }
+
     // Update graph
     update(molecule);
 };
@@ -247,13 +252,16 @@ var width = 500 - margin.left - margin.right,
     padding = 1;
     r = 15;
 
+// Size of atoms
 var radius = d3.scale.sqrt()
     .range([0, 6]);
 
+// Graphics container
 var svg = d3.select("body").append("svg")
     .attr("width", width)
     .attr("height", height);
 
+// Molecules container
 var vis = d3.select("#chart")
     .append("svg:svg")
     .attr("width", width)
@@ -295,7 +303,7 @@ function update(molecule) {
     // Update bonds
     link.enter().append("g")
         .attr("class", "link")
-        //.on('mouseover', bondType)
+        .on('mouseover', function (d) {return update_fragment(molecule, d.source, d.target)})
         //.on('mouseout', bondType)
 
     link.append("line")
@@ -367,6 +375,23 @@ function update_text(molecule) {
     document.getElementById("molecularWeight").innerHTML = molecule.molecule_weight + " g/mol";
 }
 
+// Display fragmentation molecular weight
+function update_fragment(molecule, source, target) {
+
+    // Selected bond data
+    var bondSelected = d3.select(this).node()
+
+    // Calculate molecular weight of fragments
+    var sourceFragment = 0;
+    var targetFragment = 0;
+    var totalFragment = [];
+
+    //console.log(findObjects(molecule.bonds, "source_id", source.index));
+
+    //var x = findObjects(molecule.bonds, "source_id";
+    //console.log(source.index)
+}
+
 // Default molecule
 data("NC(C=O)C=C(O)C(N)C");
 
@@ -379,6 +404,7 @@ function findObjects(array, key, value) {
     for (var i = 0; i < array.length; i++) { if (array[i][key] == value) { return array[i]; }}
     return null
 }
+
 
 /**
 function bondType() {
