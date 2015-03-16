@@ -1,8 +1,6 @@
 /**
+ * DEPRECIATED
  * Convert SMILES to JSON
- * (C) 2014 by James Dillon
- * http://wwww.chemplexity.com
- *
  */
 
 function smiles(input) {
@@ -10,11 +8,11 @@ function smiles(input) {
     // Parse input using SMILES grammar
     var grammar = definitions();
 
-    // Filter input
-    var input = input.split("")
-    if (input.length == 0 || input.length > 100) return false;
-    if (findObjects(grammar.atoms, 'symbol', input[0]) == null) return false;
-    if (findObjects(grammar.atoms, 'symbol', input[input.length-1]) == null) return false;
+    // Filter in=put
+    input = input.split('');
+    if (input.length === 0 || input.length > 100) { return false; }
+    if (findObjects(grammar.atoms, 'symbol', input[0]) === null) { return false; }
+    if (findObjects(grammar.atoms, 'symbol', input[input.length-1]) === null) { return false; }
 
     // Create a new molecule
     var molecule = {
@@ -45,7 +43,7 @@ function smiles(input) {
 
     // Begin parsing input string
     var index = {atoms: [], non_atoms: [], branches: [], bonds: [], rings: []};
-    var counter = {branches: -1, empty: -1, last: "start"};
+    var counter = {branches: -1, empty: -1, last: 'start'};
 
 //
 // Atoms
@@ -54,21 +52,21 @@ function smiles(input) {
     for (i = 0; i < input.length; i++) {
 
         // Compare input with SMILES grammar
-        var match = findObjects(grammar.atoms, 'symbol', input[i]);
+        match = findObjects(grammar.atoms, 'symbol', input[i]);
 
         // Check match
-        if (match != null) {
+        if (match !== null) {
 
             // Check for two letter elements
-            var exceptions = ["H", "B", "C", "S", "A"];
+            var exceptions = ['H', 'B', 'C', 'S', 'A'];
 
-            if (exceptions.indexOf(match.symbol)) {
+            if (exceptions.indexOf(match.symbol) && i < input.length-1) {
 
                 // Compare concatenated string with SMILES grammar
                 var matchSpecial = findObjects(grammar.atoms, 'symbol', match.symbol + input[i+1]);
 
                 // Check special match
-                if (matchSpecial != null) {
+                if (matchSpecial !== null) {
 
                     // Replace current element in array with two letter element
                     input[i] = matchSpecial.symbol;
@@ -80,7 +78,7 @@ function smiles(input) {
             }
 
             // Set atom properties
-            var properties = {
+            properties = {
                 atom_id:  match.symbol + i,
                 atom_weight: match.weight,
                 symbol:   match.symbol,
@@ -93,11 +91,11 @@ function smiles(input) {
             addAtom(properties);
 
             // Update index of atom locations
-            updateIndex(index.atoms, i, molecule.atoms.length-1, 0, properties.valence[0])
+            updateIndex(index.atoms, i, molecule.atoms.length-1, 0, properties.valence[0]);
         }
 
         // Update index of non-atoms
-        else {updateIndex(index.non_atoms, i)}
+        else {updateIndex(index.non_atoms, i);}
     }
 
 //
@@ -105,36 +103,36 @@ function smiles(input) {
 //
 
     // Find branches
-    for (i = 0; i < index.non_atoms.length; i++) {
+    for (var i = 0; i < index.non_atoms.length; i++) {
 
         // Retrieve input value
-        var value = input[index.non_atoms[i].input],
-            position = index.non_atoms[i].input;
+        value = input[index.non_atoms[i].input];
+        position = index.non_atoms[i].input;
 
         // Compare input with SMILES grammar
-        var match = findObjects(grammar.branches, 'symbol', value);
+        match = findObjects(grammar.branches, 'symbol', value);
 
         // Check match
-        if (match != null) {
+        if (match !== null) {
 
             switch (match.type) {
 
                 // Branch starts
-                case "start":
+                case 'start':
                     counter.branches += 1;
                     index.branches[counter.branches] = {start: position, end: -1};
 
                     // Update counters
-                    if (counter.last == "start") {counter.empty = counter.branches-1}
-                    counter.last = "start";
+                    if (counter.last === 'start') {counter.empty = counter.branches-1;}
+                    counter.last = 'start';
                     break;
 
                 // Branch ends
-                case "end":
+                case 'end':
 
                     // Last occurring start branch
-                    if (counter.last == "start") {
-                        index.branches[counter.branches].end = position
+                    if (counter.last === 'start') {
+                        index.branches[counter.branches].end = position;
                     }
 
                     // Last empty start branch
@@ -144,7 +142,7 @@ function smiles(input) {
                     }
 
                     // Update counter
-                    counter.last = "end";
+                    counter.last = 'end';
                     break;
             }
         }
@@ -160,31 +158,33 @@ function smiles(input) {
         // Increment distance from branch index to nearest atom
         for (j = 1; j <= index.atoms.length; j++) {
 
-            var left = findObjects(index.atoms, "input", index.branches[i].start - j);
-            var node = findObjects(index.atoms, "input", index.branches[i].start + j);
-            var right = findObjects(index.atoms, "input", index.branches[i].end + j);
+            left = findObjects(index.atoms, 'input', index.branches[i].start - j);
+            var node = findObjects(index.atoms, 'input', index.branches[i].start + j);
+            right = findObjects(index.atoms, 'input', index.branches[i].end + j);
 
             // Check match
-            if (left != null && index.branches[i].left == -1) {index.branches[i].left = left.output;}
-            if (node != null && index.branches[i].node == -1) {index.branches[i].node = node.output;}
-            if (right != null && index.branches[i].right == -1) {index.branches[i].right = right.output;}
+            if (left !== null && index.branches[i].left === -1) {index.branches[i].left = left.output;}
+            if (node !== null && index.branches[i].node === -1) {index.branches[i].node = node.output;}
+            if (right !== null && index.branches[i].right === -1) {index.branches[i].right = right.output;}
         }
 
-        // Special Case: double bond at branch start
-        if (i > 0 && input[index.branches[i].start] == "=") {
-          var bondType = "double";
-          var bondValue = 2; }
-        else {
-          var bondType = "single";
-          var bondValue = 1; }
+        var bondType, bondValue;
 
-        // Set bond properties for left to center atom
-        var bondProperties = {
+        // Special Case: double bond at branch start
+        if (i > 0 && input[index.branches[i].start] === '=') {
+            bondType = 'double';
+            bondValue = 2; }
+        else {
+            bondType = 'single';
+            bondValue = 1; }
+
+        // Set bond properties for left to node atom
+        bondProperties = {
             bond_id: molecule.bonds.length,
-            source: index.branches[i].left,
-            target: index.branches[i].node,
-            type: bondType,
-            value: bondValue
+            source:  index.branches[i].left,
+            target:  index.branches[i].node,
+            type:    bondType,
+            value:   bondValue
         };
 
         // Update molecule with new bond
@@ -195,12 +195,12 @@ function smiles(input) {
         index.atoms[index.branches[i].node].bonds += bondValue;
 
         // Set bond properties for left to right atom
-        var bondProperties = {
+        bondProperties = {
             bond_id: molecule.bonds.length,
-            source: index.branches[i].left,
-            target: index.branches[i].right,
-            type: "single",
-            value: 1
+            source:  index.branches[i].left,
+            target:  index.branches[i].right,
+            type:    'single',
+            value:   1
         };
 
         // Update molecule with new bond
@@ -222,12 +222,12 @@ function smiles(input) {
         if (index.atoms[i].input - index.atoms[i - 1].input == 1) {
 
             // Set bond properties for right to node atom
-            var bondProperties = {
+            bondProperties = {
                 bond_id: molecule.bonds.length,
-                source: index.atoms[i-1].output,
-                target: index.atoms[i].output,
-                type: "single",
-                value: 1
+                source:  index.atoms[i-1].output,
+                target:  index.atoms[i].output,
+                type:    'single',
+                value:   1
             };
 
             // Update molecule with new bond
@@ -247,14 +247,14 @@ function smiles(input) {
     for (i = 0; i < index.non_atoms.length; i++) {
 
         // Retrieve input value
-        var value = input[index.non_atoms[i].input],
-            position = index.non_atoms[i].input;
+        value = input[index.non_atoms[i].input];
+        position = index.non_atoms[i].input;
 
         // Compare input with SMILES grammar
-        var match = findObjects(grammar.bonds, 'symbol', value);
+        match = findObjects(grammar.bonds, 'symbol', value);
 
         // Check match
-        if (match != null) {
+        if (match !== null) {
 
             // Update index
             index.bonds.push({input: position, type: match.type, value: match.value});
@@ -268,23 +268,23 @@ function smiles(input) {
         index.bonds[i].right = -1;
 
         // Increment distance from bond index to nearest atom
-        for (j = 1; j <= index.atoms.length; j++) {
+        for (var j = 1; j <= index.atoms.length; j++) {
 
-            var left = findObjects(index.atoms, "input", index.bonds[i].input - j);
-            var right = findObjects(index.atoms, "input", index.bonds[i].input + j);
+            left = findObjects(index.atoms, 'input', index.bonds[i].input - j);
+            right = findObjects(index.atoms, 'input', index.bonds[i].input + j);
 
             // Check match
-            if (left != null && index.bonds[i].left == -1) {index.bonds[i].left = left.output}
-            if (right != null && index.bonds[i].right == -1) {index.bonds[i].right = right.output}
+            if (left !== null && index.bonds[i].left === -1) {index.bonds[i].left = left.output;}
+            if (right !== null && index.bonds[i].right === -1) {index.bonds[i].right = right.output;}
         }
 
         // Set bond properties for left to node atom
-        var bondProperties = {
+        bondProperties = {
             bond_id: molecule.bonds.length,
-            source: index.bonds[i].left,
-            target: index.bonds[i].right,
-            type: index.bonds[i].type,
-            value: index.bonds[i].value
+            source:  index.bonds[i].left,
+            target:  index.bonds[i].right,
+            type:    index.bonds[i].type,
+            value:   index.bonds[i].value
         };
 
         // Update molecule with new bond
@@ -310,32 +310,38 @@ function smiles(input) {
         var match = findObjects(grammar.rings, 'symbol', value);
 
         // Check match
-        if (match != null) {
-            index.rings.push({output: findObjects(index.atoms, "input", position-1), value: value});
+        if (match !== null) {
+            index.rings.push({output: findObjects(index.atoms, 'input', position-1), value: value});
         }
     }
 
     // Find nearest atoms to rings
-    var x = index.rings.length / 2
+    var x = index.rings.length / 2;
 
     for (i = 0; i < x; i++) {
 
         // Ring starting position
-        var left = index.rings[i];
+        var left = index.rings[i].output,
+            right = -1;
 
-        // Remove item from array
-        index.rings.splice(i, 1);
+        // Locate ring end position
+        for (j = 1; j < index.rings.length-1; j++) {
 
-        // Ring ending position
-        var right = findObjects(index.rings, 'value', index.rings[i].value);
+            // Check match
+            if (index.rings[i].value === index.rings[i+j].value) {
 
-        // Set bond properties for ring atoms
-        var bondProperties = {
-            bond_id: molecule.bonds.length,
-            source: left.output.output,
-            target: right.output.output,
-            type: "single",
-            value: 1
+                // Set ring end position
+                right = index[i + j].output;
+
+                // Set bond properties for ring atoms
+                bondProperties = {
+                    bond_id: molecule.bonds.length,
+                    source: left,
+                    target: right,
+                    type: 'single',
+                    value: 1
+                };
+            }
         }
     }
 
@@ -349,34 +355,34 @@ function smiles(input) {
         // Determine number of hydrogen to add
         var hydrogen = index.atoms[i].valence - index.atoms[i].bonds;
 
-            // Create new atom
-            for (j = 1; j <= hydrogen; j++) {
+        // Create new atom
+        for (j = 1; j <= hydrogen; j++) {
 
-                // Set atom properties
-                var properties = {
-                    atom_id:  "H" + molecule.atoms.length,
-                    atom_weight: 1.008,
-                    symbol:   "H",
-                    element:  1,
-                    valence:  1,
-                    color:    "#E9E9E9"
-                };
+            // Set atom properties
+            var properties = {
+                atom_id:  'H' + molecule.atoms.length,
+                atom_weight: 1.008,
+                symbol:   'H',
+                element:  1,
+                valence:  1,
+                color:    '#E9E9E9'
+            };
 
-                // Update molecule with new atom
-                addAtom(properties);
+            // Update molecule with new atom
+            addAtom(properties);
 
-                // Set bond properties for left to node atom
-                var bondProperties = {
-                    bond_id: molecule.bonds.length,
-                    source: index.atoms[i].output,
-                    target: molecule.atoms.length-1,
-                    type: "single",
-                    value: 1
-                };
+            // Set bond properties for left to node atom
+            var bondProperties = {
+                bond_id: molecule.bonds.length,
+                source:  index.atoms[i].output,
+                target:  molecule.atoms.length-1,
+                type:    'hydrogen',
+                value:   1
+            };
 
-                // Update molecule with new bond
-                addBond(bondProperties);
-            }
+            // Update molecule with new bond
+            addBond(bondProperties);
+        }
     }
 
 //
@@ -422,7 +428,6 @@ function smiles(input) {
 // SMILES grammar definitions
 function definitions() {
 
-    // TODO: Add more atom types
     var atomDefinitions = [
         {symbol: "H",   element: 1,   weight: 1.008,   valence: [1],     color: "#E9E9E9"},
         {symbol: "He",  element: 2,   weight: 4.002,   valence: [1],     color: "#2A79AF"},
@@ -485,7 +490,6 @@ function definitions() {
         {symbol: "--",  value: -2}
     ];
 
-    // TODO: Add more chirality types
     var chiralityDefinitions = [
         {symbol: "@",   value: "R"},
         {symbol: "@@",  value: "S"}

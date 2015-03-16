@@ -1,0 +1,12 @@
+{
+  "name": "molecules",
+  "description": "dynamic 2D molecules",
+  "version": "0.1.0",
+  "author": "James Dillon <james_dillon@brown.edu>",
+  "repository": {
+    "type": "git",
+    "url": "http://github.com/chemplexity/molecules.git"
+  },
+  "keywords": ["science", "chemistry", "molecules"],
+  "license": "MIT"
+}
