@@ -1,4 +1,4 @@
-/**
+/*
  * DEPRECIATED
  * Convert SMILES to JSON
  */
