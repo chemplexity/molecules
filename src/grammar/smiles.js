@@ -1,22 +1,19 @@
 //
 // smiles.js
-//  -tokenize SMILES chemical line notation
+// -tokenize SMILES chemical line notation
 //
 
 (function (root, factory) {
 
     if (typeof define === 'function' && define.amd) {
-
         // AMD
         define([], factory);
 
     } else if (typeof exports === 'object') {
-
         // Node
         module.exports = factory();
 
     } else {
-
         // Global
         root.exports = factory();
     }
@@ -64,17 +61,67 @@
             {category: 'other',   type: 'disconnect',    symbol: '.',  expression: '[A-Z][+-]?[\\[]?[.]'}
         ];
 
+        // Atom
+        function Atom (id, name, bonds, properties) {
+            this.id = id;
+            this.name = name;
+            this.bonds = bonds;
+            this.properties = properties;
+        }
+
+        // Bond
+        function Bond (id, name, atoms, properties) {
+            this.id = id;
+            this.name = name;
+            this.atoms = atoms;
+            this.properties = properties;
+        }
+
+        // Utility
+        function nearestAtom (id, atoms, direction) {
+
+            var distance = [], index = [];
+
+            for (var i = 0; i < atoms.length; i++) {
+
+                // Direction to search
+                switch (direction) {
+                    case -1:
+                        if (id < atoms[i].id) { continue; }
+                        distance.push(id - atoms[i].id);
+                        index.push(i);
+                        break;
+                    case 1:
+                        if (id > atoms[i].id) { continue; }
+                        distance.push(atoms[i].id - id);
+                        index.push(i);
+                        break;
+                }
+            }
+
+            // Determine nearest atom
+            var nearest = distance.reduce(function (a, b) { return ( a < b ? a : b ); });
+
+            return index[distance.indexOf(nearest)];
+        }
+
+        function getIndexByID (id, array) {
+            for (var i = 0; i < array.length; i++) { if (id === array[i].id) { return i; }}
+        }
+
+        function getIndexByType (array) {
+            for (var i = 0; i < array.length; i++) { if (type === array[i].type) { return i; }}
+        }
+
         return {
 
             tokenize: function (input) {
 
-                // Variables
                 var tokens = [];
 
                 // Parse input
                 for (var i = 0; i < definitions.length; i++) {
 
-                    // Variables
                     var match = new RegExp(definitions[i].expression, 'g'),
                         entry = [];
 
@@ -102,6 +149,78 @@
                 });
 
                 return tokens;
+            },
+
+            assemble: function (tokens) {
+
+                var atoms = [], bonds = [], index = [];
+
+                // Parse tokens (atoms)
+                for (var i = 0; i < tokens.length; i++) {
+
+                    // Check for atom
+                    if (tokens[i].category !== 'atom') {
+                        index.push(i);
+                        continue;
+                    }
+
+                    // Check aromatic
+                    if (tokens[i].type === 'aromatic') {
+                        tokens[i].symbol = tokens[i].symbol.toUpperCase();
+                    }
+
+                    // Add atom
+                    atoms.push(new Atom( tokens[i].id, tokens[i].symbol, [], { type: tokens[i].type } ));
+                }
+
+                // Parse tokens (non-atoms)
+                for (i = 0; i < index.length; i++) {
+
+                    var j = index[i],
+                        source = [],
+                        target = [];
+                        edge = [];
+
+                    // Check category
+                    switch (tokens[j].category) {
+
+                        case 'bond':
+
+                            // Find nearest atoms
+                            source = nearestAtom(tokens[j].id, atoms, -1);
+                            target = nearestAtom(tokens[j].id, atoms, 1);
+                            edge = [atoms[source].id, atoms[target].id];
+
+                            // Add bond
+                            bonds.push(new Bond(tokens[j].id, tokens[j].symbol, edge, {type: tokens[j].type}));
+                            break;
+
+                        case 'branch':
+
+                            // Check branch type
+                            switch (tokens[i].type) {
+
+                                case 'start':
+
+                                    // Find nearest atoms
+                                    source = nearestAtom(tokens[j].id, atoms, -1);
+                                    target = nearestAtom(tokens[j].id, atoms, 1);
+                                    edge = [atoms[source].id, atoms[target].id];
+                                    break;
+
+                                case 'end':
+
+                                    // Find starting location2
+
+
+                            }
+
+                            // Add bond
+                            bonds.push(new Bond(tokens[j].id, tokens[j].symbol, edge, {type: tokens[j].type}));
+                    }
+                }
+
+
             }
         };
     }
