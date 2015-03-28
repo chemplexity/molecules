@@ -31,68 +31,34 @@
 
         'use strict';
 
-        // Molecule
-        function Molecule (id, name, atoms, bonds, properties) {
-            this.id = id;
-            this.name = name;
-            this.atoms = atoms;
-            this.bonds = bonds;
-            this.properties = properties;
-        }
-
-        // Atom
-        function Atom (id, name, bonds, properties) {
-            this.id = id;
-            this.name = name;
-            this.bonds = bonds;
-            this.properties = properties;
-        }
-
-        // Bond
-        function Bond (id, name, atoms, properties) {
-            this.id = id;
-            this.name = name;
-            this.atoms = atoms;
-            this.properties = properties;
-        }
-
         return {
 
             tokenize: function (input, encoding) {
 
                 // Check input length
-                if (input.length === 0 || input.length > 1000) {
-                    return false;
-                }
-
-                var grammar, tokens;
+                if (input.length === 0 || input.length > 10000) { return false; }
 
                 // Check input encoding
                 switch (encoding) {
 
                     case 'SMILES':
-                        grammar = smiles.getInstance();
+                        this.grammar = smiles.getInstance();
                         break;
 
                     default:
-                        grammar = smiles.getInstance();
+                        this.grammar = smiles.getInstance();
                 }
 
                 // Parse input
-                tokens = grammar.tokenize(input);
-
-                return tokens;
+                return this.grammar.tokenize(input);
             },
 
             assemble: function (tokens) {
 
                 // Check for tokens
-                if (tokens === undefined) {
-                    return false;
-                }
+                if (tokens === undefined) { return false; }
 
-
-                return new Molecule(0, 0, atoms, bonds, []);
+               return this.grammar.assemble(tokens);
             }
         };
 }));
