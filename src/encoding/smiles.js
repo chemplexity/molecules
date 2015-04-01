@@ -3,6 +3,10 @@
 // -parse SMILES chemical line notation
 //
 
+/* TODO
+ *  -Fix carbonyl parsing
+ */
+
 (function (root, factory) {
 
     if (typeof define === 'function' && define.amd) {
@@ -17,7 +21,6 @@
         // Global
         root.exports = factory();
     }
-
 }(this, function () {
 
     'use strict';
@@ -100,8 +103,53 @@
             this.properties = properties;
         }
 
+        // Determine molecular formula
+        function getFormula(atoms) {
+
+            var formula = {};
+
+            // Count each element
+            for (var i = 0; i < atoms.length; i++) {
+
+                if (atoms[i].name in formula) { formula[atoms[i].name] += 1; }
+                else { formula[atoms[i].name] = 1; }
+            }
+
+            return formula;
+        }
+
+        // Convert molecular formula to string
+        function getName(formula) {
+
+            var name = [],
+                keys = Object.keys(formula).sort();
+
+            for (var i = 0; i < keys.length; i++) {
+
+                switch (keys[i]) {
+
+                    case 'C':
+                        name.splice(0, 0, 'C' + formula[keys[i]]);
+                        break;
+                    case 'H':
+                        name.splice(1, 0, 'H' + formula[keys[i]]);
+                        break;
+                    case 'O':
+                        name.splice(2, 0, 'O' + formula[keys[i]]);
+                        break;
+                    case 'N':
+                        name.splice(2, 0, 'N' + formula[keys[i]]);
+                        break;
+
+                    default:
+                        name.push(keys[i] + formula[keys[i]]);
+                }
+            }
+            return name.join('');
+        }
+
         // Find nearest atoms
-        function nearestAtom (id, atoms, direction) {
+        function nearestAtom(id, atoms, direction) {
 
             var distance = [], index = [];
 
@@ -122,11 +170,42 @@
                 }
             }
 
-            // Determine atom location
-            var nearest = distance.reduce(function (a, b) { return ( a < b ? a : b ); });
+            // Remove zeros
+            for (i = 0; i < distance.length; i++) {
+                if (distance[i] === 0) { distance[i] = 999; }
+            }
 
-            // Return index
+            // Determine nearest atom
+            var nearest = distance.reduce(function (a, b) { return ( a < b ? a : b ); });
             return index[distance.indexOf(nearest)];
+        }
+
+        // Create new bond
+        function getBond(source, target, value, atoms, bonds) {
+
+            // Check bonds
+            if (source !== undefined && target !== undefined) {
+
+                var properties = [];
+
+                // Bond name
+                var name = atoms[source].name + atoms[target].name;
+
+                // Bond atoms
+                var edge = [atoms[source].id, atoms[target].id];
+
+                // Bond properties
+                switch (value) {
+                    case 1: properties = { type: 'single', value: 1 }; break;
+                    case 2: properties = { type: 'double', value: 2 }; break;
+                    case 3: properties = { type: 'triple', value: 3 }; break;
+                    case 4: properties = { type: 'quadruple', value: 4 }; break;
+                }
+
+                // Add bond
+                bonds.push(new Bond(bonds.length, name, edge, properties));
+            }
+            return bonds;
         }
 
         function compareArrays(a, b) {
@@ -138,6 +217,10 @@
 
         function getValenceBySymbol(symbol) {
             for (var i = 0; i < valence.length; i++) { if (symbol === valence[i].symbol) { return valence[i].value; }}
+        }
+
+        function getIndexBySymbol (symbol, array) {
+            for (var i = 0; i < array.length; i++) { if (symbol === array[i].symbol) { return i; }}
         }
 
         function getIndexByID (id, array) {
@@ -164,7 +247,7 @@
                     if (input.search(match) === -1) { continue; }
 
                     // Find all matches
-                    while (entry = match.exec(input)) {
+                    while ((entry = match.exec(input)) !== null) {
 
                         // Add token
                         tokens.push({
@@ -189,7 +272,8 @@
             assemble: function (tokens) {
 
                 var atoms = [], bonds = [], properties = [];
-                var source = [], target = [], edge = [];
+                var source = [], target = [], adjacent = [], value = [];
+                var j = 0;
 
                 // Parse tokens (atoms)
                 for (var i = 0; i < tokens.length; i++) {
@@ -208,7 +292,8 @@
                     properties = {
                         type: tokens[i].type,
                         charge: 0,
-                        valence: getValenceBySymbol(tokens[i].symbol)
+                        valence: getValenceBySymbol(tokens[i].symbol),
+                        bonding: 0
                     };
 
                     // Add atom
@@ -226,18 +311,17 @@
                             // Find nearest atoms
                             source = nearestAtom(tokens[i].id, atoms, -1);
                             target = nearestAtom(tokens[i].id, atoms, 1);
-                            edge = [atoms[source].id, atoms[target].id];
 
-                            // Bond properties
+                            // Bond value
                             switch (tokens[i].symbol) {
-                                case '-': properties = { type: tokens[i].type, value: 1 }; break;
-                                case '=': properties = { type: tokens[i].type, value: 2 }; break;
-                                case '#': properties = { type: tokens[i].type, value: 3 }; break;
-                                case '$': properties = { type: tokens[i].type, value: 4 }; break;
+                                case '-': value = 1; break;
+                                case '=': value = 2; break;
+                                case '#': value = 3; break;
+                                case '$': value = 4; break;
                             }
 
                             // Add bond
-                            bonds.push(new Bond(bonds.length, tokens[i].symbol, edge, properties));
+                            bonds = getBond(source, target, value, atoms, bonds);
                             break;
 
                         case 'branch':
@@ -250,68 +334,79 @@
                                     // Find nearest atoms
                                     source = nearestAtom(tokens[i].id, atoms, -1);
                                     target = nearestAtom(tokens[i].id, atoms, 1);
-                                    edge = [atoms[source].id, atoms[target].id];
                                     break;
 
                                 case 'end':
 
                                     // Find nearest atoms
-                                    for (var k = i; i > 0; k+=-1) {
+                                    for (j = i; j > 0; j+=-1) {
 
                                         var skip = 0;
 
                                         // Find branch start
-                                        if (tokens[k].type === 'start' && skip === 0) {
-                                            source = nearestAtom(tokens[k].id, atoms, -1);
+                                        if (tokens[j].type === 'start' && skip === 0) {
+                                            source = nearestAtom(tokens[j].id, atoms, -1);
                                             break;
                                         }
-                                        else if (tokens[k].type === 'start' && skip > 0) {
+                                        else if (tokens[j].type === 'start' && skip > 0) {
                                             skip += -1;
                                         }
-                                        else if (tokens[k].type === 'end') {
+                                        else if (tokens[j].type === 'end') {
                                             skip += 1;
                                         }
                                     }
 
                                     target = nearestAtom(tokens[i].id, atoms, 1);
-                                    edge = [atoms[source].id, atoms[target].id];
                                     break;
                             }
 
-                            // Bond properties
-                            properties = { type: 'single', value: 1 };
-
                             // Add bond
-                            bonds.push(new Bond(bonds.length, tokens[i].symbol, edge, properties));
+                            bonds = getBond(source, target, 1, atoms, bonds);
                             break;
 
                         case 'ring':
 
-                            if (i+1 > tokens.length) { continue; }
-
-                            // Find ring start
+                            // Ring junction
                             source = getIndexByID(tokens[i].id, atoms);
-
-                            // Find ring end
                             target = getIndexByID(getIDByRingIndex(tokens[i].symbol, tokens.slice(i+1)), atoms);
 
                             if (target === undefined) { continue; }
 
-                            edge = [atoms[source].id, atoms[target].id];
-
-                            // Bond properties
-                            properties = { type: 'single', value: 1 };
-
                             // Add bond
-                            bonds.push(new Bond(bonds.length, tokens[i].symbol, edge, properties));
+                            bonds = getBond(source, target, 1, atoms, bonds);
+
+                            // Adjacent bonds (ring start - 1)
+                            if (tokens[getIndexByID(tokens[i-1].id, tokens)].symbol !== ')') {
+                                adjacent = nearestAtom(atoms[source].id, atoms, -1);
+                                bonds = getBond(adjacent, source, 1, atoms, bonds);
+                            }
+
+                            // Adjacent bonds (ring start + 1)
+                            if (tokens[getIndexByID(tokens[i+1].id, tokens)].symbol !== '(') {
+                                adjacent = nearestAtom(atoms[source].id, atoms, 1);
+                                bonds = getBond(source, adjacent, 1, atoms, bonds);
+                            }
+
+                            index = getIndexBySymbol(tokens[i].symbol, tokens.slice(i+1)) + i;
+
+                            // Adjacent bonds (ring end - 1)
+                            if (tokens[getIndexByID(tokens[index-1].id, tokens)].symbol !== ')') {
+                                adjacent = nearestAtom(atoms[target].id, atoms, -1);
+                                bonds = getBond(adjacent, target, 1, atoms, bonds);
+                            }
+
+                            // Adjacent bonds (ring end + 1)
+                            if (tokens[getIndexByID(tokens[index+1].id, tokens)].symbol !== '(') {
+                                adjacent = nearestAtom(atoms[target].id, atoms, 1);
+                                bonds = getBond(target, adjacent, 1, atoms, bonds);
+                            }
+
                             break;
 
                         case 'charge':
 
-                            var symbol = tokens[i].symbol;
-
                             // Charge
-                            var charge = symbol.slice(symbol.match(/[+-]|[0-9]/).index);
+                            var charge = tokens[i].symbol.slice(tokens[i].symbol.match(/[+-]|[0-9]/).index);
 
                             // Magnitude
                             var magnitude = charge.match(/[0-9]+/);
@@ -322,9 +417,10 @@
                             // Sign
                             if (tokens[i].type === 'negative') { charge = -charge; }
 
-                            // Update charge
+                            // Update properties
                             source = getIndexByID(tokens[i].id, atoms);
                             atoms[source].properties.charge = charge;
+                            atoms[source].properties.valence += -charge;
                             break;
                     }
                 }
@@ -332,14 +428,27 @@
                 // Add implicit bonds
                 for (i = 1; i < atoms.length; i++) {
 
+                    // Find adjacent atoms
                     if (atoms[i].id - atoms[i-1].id === 1) {
 
-                        // Bond properties
-                        properties = { type: 'single', value: 1 };
-
                         // Add bond
-                        edge = [atoms[i-1].id, atoms[i].id];
-                        bonds.push(new Bond(bonds.length, '-', edge, properties));
+                        bonds = getBond(i-1, i, 1, atoms, bonds);
+                    }
+                }
+
+                // Remove duplicate bonds
+                for (i = 0; i < bonds.length; i++) {
+
+                    // Find duplicate bonds
+                    for (j = 0; j < bonds.length; j++) {
+
+                        if (i === j) { continue; }
+
+                        if (compareArrays(bonds[i].atoms, bonds[j].atoms)) {
+
+                            if (bonds[j].properties.value > bonds[i].properties.value) { bonds.splice(i,1); }
+                            else { bonds.splice(j,1); }
+                        }
                     }
                 }
 
@@ -355,8 +464,85 @@
                     atoms[index].bonds.push(bonds[i]);
                 }
 
+                // Determine available bonds
+                for (i = 0; i < atoms.length; i++) {
+
+                    // Determine total bonds
+                    for (j = 0; j < atoms[i].bonds.length; j++) {
+
+                        if (atoms[i].bonds[j].length === 0) { continue; }
+
+                        // Update total bonds
+                        atoms[i].properties.bonding += atoms[i].bonds[j].properties.value;
+                    }
+                }
+
+                // Add implicit hydrogen
+                var n = atoms.length;
+
+                for (i = 0; i < n; i++) {
+
+                    // Determine available bonds
+                    var total = 8 - atoms[i].properties.valence;
+
+                    // Account for charge
+                    if (atoms[i].properties.charge > 0) {
+                        total += -atoms[i].properties.charge;
+                    }
+
+                    // Add hydrogen
+                    if (atoms[i].properties.bonding < total) {
+
+                        // Total hydrogen
+                        var hydrogen = total - atoms[i].properties.bonding;
+
+                        for (j = 0; j < hydrogen; j++) {
+
+                            // Atom properties
+                            properties = {
+                                type: 'hydrogen',
+                                charge: 0,
+                                valence: 1,
+                                bonding: 1
+                            };
+
+                            // Add hydrogen
+                            atoms.push(new Atom(-atoms.length, 'H', [], properties));
+
+                            // Add bond
+                            source = i;
+                            target = atoms.length-1;
+                            bonds = getBond(source, target, 1, atoms, bonds);
+
+                            // Add bonds to atoms
+                            atoms[atoms.length-1].bonds.push(bonds[bonds.length -1]);
+                            atoms[i].bonds.push(bonds[bonds.length - 1]);
+
+                            // Update total bonds
+                            atoms[i].properties.bonding += 1;
+                        }
+                    }
+                }
+
+                // Remove empty bonds
+                for (i = 0; i < atoms.length; i++) {
+
+                    if (atoms[i].bonds.length > 1) {
+
+                        // Check each atom
+                        for (j=0; j < atoms[i].bonds.length; j++) {
+
+                            // Check empty bond
+                            if (atoms[i].bonds[j].length === 0) { atoms[i].bonds.splice(j, 1); }
+                        }
+                    }
+                }
+
+                // Determine molecular formula
+                var formula = getFormula(atoms);
+
                 // Add molecule
-                return new Molecule(1, '1', atoms, bonds, []);
+                return new Molecule(1, getName(formula), atoms, bonds, [formula]);
             }
         };
     }
