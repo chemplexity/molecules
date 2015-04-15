@@ -1,6 +1,8 @@
 //
 // smiles.js
-// -parse SMILES chemical line notation
+//
+// description : parse SMILES chemical line notation
+// functions   : tokenize, decode
 //
 
 //
@@ -77,6 +79,107 @@ function tokenize(input, tokens = []) {
 }
 
 //
+// Decode
+//
+function decode(tokens) {
+
+    var atoms = {};
+    var bonds = {};
+    var properties = {};
+
+    // Parse tokens by type
+    for (let i = 0; i < tokens.length; i++) {
+
+        // Extract token values
+        let {type, term, tag, index} = tokens[i];
+
+        // Assign unique key
+        let key = index.toString();
+
+        switch (type) {
+
+            case 'atom':
+                atoms[key] = {id: key, name: tag};
+                break;
+
+            case 'bond':
+                bonds[key] = {id: key, name: tag};
+                break;
+
+            case 'property':
+                properties[key] = {id: key, name: tag, value: term};
+                break;
+        }
+    }
+
+    // Extract keys
+    var keys = {
+        atoms: Object.keys(atoms),
+        bonds: Object.keys(bonds),
+        properties: Object.keys(properties)
+    };
+
+    // Assign atom properties
+    for (let key of keys.atoms) {
+
+        // Add default properties
+        atoms[key].protons = 0;
+        atoms[key].neutrons = 0;
+        atoms[key].electrons = 0;
+
+        atoms[key].bonds = {
+            chiral: 0,
+            atoms: []
+        };
+
+        atoms[key].properties = {
+            charge: 0
+        };
+    }
+
+    for (let key of keys.properties) {
+
+        // Extract property values
+        let {name, value} = properties[key];
+
+        // Add custom properties
+        switch (name) {
+
+            case 'chiral':
+                atoms[key].bonds.chiral = value.slice(value.indexOf('@'));
+                break;
+
+            case 'isotope':
+                break;
+
+            case 'charge':
+
+                // Charge sign
+                let sign = value.indexOf('+');
+                if (sign !== -1) { sign = 1; }
+
+                // Numeric charge
+                let charge = value.match(/[0-9]+/g);
+
+                if (charge !== null) {
+                    atoms[key].properties.charge = charge[0] * sign;
+                    break;
+                }
+
+                // Symbolic charge
+                charge = value.match(/([+]+|[-]+)/g);
+
+                if (charge !== null) {
+                    atoms[key].properties.charge = charge[0].length * sign;
+                    break;
+                }
+        }
+    }
+
+    return {atoms,bonds,properties,keys};
+}
+
+//
 // Exports
 //
-export { tokenize };
+export { tokenize, decode };

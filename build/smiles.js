@@ -5,7 +5,9 @@ Object.defineProperty(exports, '__esModule', {
 });
 //
 // smiles.js
-// -parse SMILES chemical line notation
+//
+// description : parse SMILES chemical line notation
+// functions   : tokenize, decode
 //
 
 //
@@ -53,6 +55,156 @@ function tokenize(input) {
 }
 
 //
+// Decode
+//
+function decode(tokens) {
+
+    var atoms = {};
+    var bonds = {};
+    var properties = {};
+
+    // Parse tokens by type
+    for (var i = 0; i < tokens.length; i++) {
+
+        // Extract token values
+        var _tokens$i = tokens[i];
+        var type = _tokens$i.type;
+        var term = _tokens$i.term;
+        var tag = _tokens$i.tag;
+        var index = _tokens$i.index;
+
+        // Assign unique key
+        var key = index.toString();
+
+        switch (type) {
+
+            case 'atom':
+                atoms[key] = { id: key, name: tag };
+                break;
+
+            case 'bond':
+                bonds[key] = { id: key, name: tag };
+                break;
+
+            case 'property':
+                properties[key] = { id: key, name: tag, value: term };
+                break;
+        }
+    }
+
+    // Extract keys
+    var keys = {
+        atoms: Object.keys(atoms),
+        bonds: Object.keys(bonds),
+        properties: Object.keys(properties)
+    };
+
+    // Assign atom properties
+    var _iteratorNormalCompletion = true;
+    var _didIteratorError = false;
+    var _iteratorError = undefined;
+
+    try {
+        for (var _iterator = keys.atoms[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
+            var key = _step.value;
+
+            // Add default properties
+            atoms[key].protons = 0;
+            atoms[key].neutrons = 0;
+            atoms[key].electrons = 0;
+
+            atoms[key].bonds = {
+                chiral: 0,
+                atoms: []
+            };
+
+            atoms[key].properties = {
+                charge: 0
+            };
+        }
+    } catch (err) {
+        _didIteratorError = true;
+        _iteratorError = err;
+    } finally {
+        try {
+            if (!_iteratorNormalCompletion && _iterator['return']) {
+                _iterator['return']();
+            }
+        } finally {
+            if (_didIteratorError) {
+                throw _iteratorError;
+            }
+        }
+    }
+
+    var _iteratorNormalCompletion2 = true;
+    var _didIteratorError2 = false;
+    var _iteratorError2 = undefined;
+
+    try {
+        for (var _iterator2 = keys.properties[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
+            var key = _step2.value;
+
+            // Extract property values
+            var _properties$key = properties[key];
+            var _name = _properties$key.name;
+            var value = _properties$key.value;
+
+            // Add custom properties
+            switch (_name) {
+
+                case 'chiral':
+                    atoms[key].bonds.chiral = value.slice(value.indexOf('@'));
+                    break;
+
+                case 'isotope':
+                    break;
+
+                case 'charge':
+
+                    // Charge sign
+                    var sign = value.indexOf('+');
+                    if (sign !== -1) {
+                        sign = 1;
+                    }
+
+                    // Numeric charge
+                    var charge = value.match(/[0-9]+/g);
+
+                    if (charge !== null) {
+                        atoms[key].properties.charge = charge[0] * sign;
+                        break;
+                    }
+
+                    // Symbolic charge
+                    charge = value.match(/([+]+|[-]+)/g);
+
+                    if (charge !== null) {
+                        atoms[key].properties.charge = charge[0].length * sign;
+                        break;
+                    }
+            }
+        }
+    } catch (err) {
+        _didIteratorError2 = true;
+        _iteratorError2 = err;
+    } finally {
+        try {
+            if (!_iteratorNormalCompletion2 && _iterator2['return']) {
+                _iterator2['return']();
+            }
+        } finally {
+            if (_didIteratorError2) {
+                throw _iteratorError2;
+            }
+        }
+    }
+
+    return { atoms: atoms, bonds: bonds, properties: properties, keys: keys };
+}
+
+//
 // Exports
 //
 exports.tokenize = tokenize;
+exports.decode = decode;
