@@ -1,13 +1,22 @@
-//
-// smiles.js
-//
-// description : parse SMILES chemical line notation
-// functions   : tokenize, decode
-//
+/*
+  smiles.js
 
-//
-// SMILES Grammar
-//
+    description : parse SMILES chemical line notation
+    imports     : elements
+    exports     : tokenize, decode
+*/
+
+/*
+  Imports
+*/
+let {periodic_table} = require('./elements');
+
+
+/*
+  Variable: definitions
+   -regular expressions for SMILES grammar
+*/
+
 var definitions = [
     {type: 'atom',     term: 'H',  tag: 'H',       expression: /[A-Z]?H(?=[^efgos]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'B',  tag: 'B',       expression: /B(?=[^aehikr]|$)/g},
@@ -44,9 +53,25 @@ var definitions = [
     {type: 'property', term: '@@', tag: 'chiral',  expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g}
 ];
 
-//
-// Tokenize
-//
+
+/*
+  Method: Tokenize
+   -parse string for valid SMILES definitions
+
+  Syntax
+    tokens = tokenize(input)
+
+  Arguments
+    input : any SMILES encoded string
+
+  Output
+    tokens : array of token objects matching input
+
+  Examples
+    tokens123 = tokenize('CC(=O)CC')
+    tokensABC = tokenize('c1cccc1')
+*/
+
 function tokenize(input, tokens = []) {
 
     // Parse input with definitions
@@ -78,108 +103,421 @@ function tokenize(input, tokens = []) {
     return tokens;
 }
 
-//
-// Decode
-//
+
+/*
+  Method: Decode
+   -convert SMILES tokens into atoms (nodes) and bonds (edges)
+
+  Syntax
+    [atoms, bonds] = decode(tokens)
+
+  Arguments
+    tokens : array of SMILES tokens obtained from the output of 'tokenize'
+
+  Output
+    [atoms, bonds] : array of atom/bond objects describing connectivity and properties
+
+  Examples
+    [atoms, bonds] = decode(tokensABC)
+    [atoms, bonds] = decode(tokens123)
+*/
+
 function decode(tokens) {
 
-    var atoms = {};
-    var bonds = {};
-    var properties = {};
+    // Validate tokens
+    function validateTokens(tokens) {
 
-    // Parse tokens by type
-    for (let i = 0; i < tokens.length; i++) {
+        // Check supplied tokens type
+        if (typeof(tokens) !== 'object') { throw 'Error: Tokens must be of type "object"'; }
 
-        // Extract token values
-        let {type, term, tag, index} = tokens[i];
+        // Required token fields
+        let fields = ['index', 'type', 'term', 'tag'];
 
-        // Assign unique key
-        let key = index.toString();
+        // Check tokens for valid fields
+        for (let i = 0; i < tokens.length; i++) {
 
-        switch (type) {
+            // Return binary comparison array
+            let match = compare(fields, Object.keys(tokens[i]));
 
-            case 'atom':
-                atoms[key] = {id: key, name: tag};
-                break;
-
-            case 'bond':
-                bonds[key] = {id: key, name: tag};
-                break;
-
-            case 'property':
-                properties[key] = {id: key, name: tag, value: term};
-                break;
+            // Clear invalid token
+            if (match.reduce((a, b) => a + b) < 4) { throw 'Error: Invalid token at index #' + i; }
         }
+
+        return true;
     }
 
-    // Extract keys
-    var keys = {
-        atoms: Object.keys(atoms),
-        bonds: Object.keys(bonds),
-        properties: Object.keys(properties)
-    };
+    // Read tokens
+    function readTokens(tokens, atoms = {}, bonds = {}, properties = {}, keys = {}) {
 
-    // Assign atom properties
-    for (let key of keys.atoms) {
+        // Generate unique key
+        let newKey = (x) => x.toString();
 
-        // Add default properties
-        atoms[key].protons = 0;
-        atoms[key].neutrons = 0;
-        atoms[key].electrons = 0;
+        // Parse tokens by category
+        for (let i = 0; i < tokens.length; i++) {
 
-        atoms[key].bonds = {
-            chiral: 0,
-            atoms: []
-        };
+            // Extract token values
+            let {type, term, tag, index} = tokens[i];
 
-        atoms[key].properties = {
-            charge: 0
-        };
+            // Assign unique key
+            let key = newKey(index);
+
+            // Categorize tokens
+            switch (type) {
+
+                case 'atom':
+                    atoms[key] = {id: key, name: tag};
+                    break;
+
+                case 'bond':
+                    bonds[key] = {id: key, name: tag, value: term};
+                    break;
+
+                case 'property':
+                    properties[key] = {id: key, name: tag, value: term};
+                    break;
+            }
+        }
+
+        // Check for atoms
+        if (atoms.length < 1) { return false; }
+
+        keys.all = [];
+
+        // Extract all token keys
+        for (let i = 0; i < tokens.length; i++) {
+            keys.all[i] = newKey(tokens[i].index);
+        }
+
+        // Extract token keys by category
+        keys.atoms = Object.keys(atoms);
+        keys.bonds = Object.keys(bonds);
+        keys.properties = Object.keys(properties);
+
+        return [atoms, bonds, properties, keys];
     }
 
-    for (let key of keys.properties) {
+    // Default atom properties
+    function defaultAtoms(atoms, keys){
 
-        // Extract property values
-        let {name, value} = properties[key];
+        // Add default properties to atoms
+        for (let key of keys.atoms) {
 
-        // Add custom properties
-        switch (name) {
+            // Element
+            let element = periodic_table[atoms[key].name];
 
-            case 'chiral':
-                atoms[key].bonds.chiral = value.slice(value.indexOf('@'));
-                break;
+            // Element properties
+            atoms[key].protons = element.protons;
+            atoms[key].neutrons = element.neutrons;
+            atoms[key].electrons = element.electrons;
 
-            case 'isotope':
-                break;
+            // Bond properties
+            atoms[key].bonds = {
+                chiral: 0,
+                atoms: []
+            };
 
-            case 'charge':
+            // Other properties
+            atoms[key].properties = {
+                charge: 0
+            };
+        }
 
-                // Charge sign
-                let sign = value.indexOf('+');
-                if (sign !== -1) { sign = 1; }
+        return atoms;
+    }
 
-                // Numeric charge
-                let charge = value.match(/[0-9]+/g);
+    // Custom atom properties
+    function customAtoms(atoms, properties, keys) {
 
-                if (charge !== null) {
-                    atoms[key].properties.charge = charge[0] * sign;
+        // Add custom properties to atoms
+        for (let key of keys.properties) {
+
+            // Retrieve properties
+            let {name, value} = properties[key];
+
+            // Property name
+            switch (name) {
+
+                // Set chiral property
+                case 'chiral':
+                    atoms[key].bonds.chiral = value.slice(value.indexOf('@'));
+                    break;
+
+                // Set neutrons
+                case 'isotope':
+                    break;
+
+                // Set charge property
+                case 'charge':
+
+                    // Determine charge sign
+                    let sign = value.indexOf('+') !== -1 ? 1 : -1;
+
+                    // Check numeric charge (e.g. '3+')
+                    let charge = value.match(/[0-9]+/g);
+
+                    if (charge !== null) {
+                        atoms[key].properties.charge = charge[0] * sign;
+                        break;
+                    }
+
+                    // Check symbolic charge (e.g. '+++')
+                    charge = value.match(/([+]+|[-]+)/g);
+
+                    if (charge !== null) {
+                        atoms[key].properties.charge = charge[0].length * sign;
+                        break;
+                    }
+
+                    break;
+            }
+        }
+
+        return atoms;
+    }
+
+    // Explicit bonds
+    function explicitBonds(atoms, bonds, keys) {
+
+        // Check for any explicit bonds
+        if (keys.bonds.length === 0) { return bonds; }
+
+        // Find bonding atoms
+        let source = (key) => previousAtom(key, keys.all, atoms);
+        let target = (key) => nextAtom(key, keys.all, atoms);
+
+        // Add explicit bonds
+        for (let i = 0; i < keys.bonds.length; i++) {
+
+            // Retrieve key
+            let key = keys.bonds[i];
+
+            // Bond type
+            switch (bonds[key].name) {
+
+                // Single bond
+                case 'single':
+                    bonds[key].order = 1;
+                    bonds[key].atoms = [source(key), target(key)];
+                    break;
+
+                // Double bond
+                case 'double':
+                    bonds[key].order = 2;
+                    bonds[key].atoms = [source(key), target(key)];
+                    break;
+
+                // Triple bond
+                case 'triple':
+                    bonds[key].order = 3;
+                    bonds[key].atoms = [source(key), target(key)];
+                    break;
+
+                // Disconnect bond
+                case 'dot':
+                    bonds[key].order = 0;
+                    bonds[key].atoms = [source(key), target(key)];
+                    break;
+
+                // Branch
+                case 'branch':
+
+                    switch (bonds[key].value) {
+
+                        // Start branch
+                        case '(':
+                            bonds[key].order = 1;
+                            bonds[key].atoms = [source(key), target(key)];
+                            break;
+
+                        // End branch
+                        case ')':
+
+                            // Extract bonds before key
+                            let bondsBefore = keys.bonds.slice(0, keys.bonds.indexOf(key)).reverse();
+
+                            // Find start of branch
+                            for (let j = 0, skip = 0; j < bondsBefore.length; j++) {
+
+                                // Add branch
+                                if (bonds[bondsBefore[j]].value === '(' && skip === 0) {
+                                    bonds[key].order = 1;
+                                    bonds[key].atoms = [source(bondsBefore[j]), target(key)];
+                                    break;
+                                }
+
+                                // Nested branch
+                                switch (bonds[bondsBefore[j]].value) {
+                                    case ')': skip++; break;
+                                    case '(': skip--; break;
+                                }
+                            }
+                            break;
+                    }
+                    break;
+
+                // Ring
+                case 'ring':
+
+                    // Extract bonds after key
+                    let bondsAfter = keys.bonds.slice(keys.bonds.indexOf(key), keys.bonds.length);
+
+                    // Find matching ring atom
+                    for (let j = 0; j < bondsAfter.length; j++) {
+
+                        // Add ring junction
+                        if (bonds[bondsAfter[j]].value === bonds[key].value && j > 0) {
+
+                            bonds[key].order = 1;
+                            bonds[key].atoms = [key, bondsAfter[j]];
+
+                            bonds[bondsAfter[j]].order = 1;
+                            bonds[bondsAfter[j]].atoms = [key, bondsAfter[j]];
+                        }
+                    }
+                    break;
+            }
+        }
+
+        // Remove duplicate bonds
+        for (let i = 0; i < keys.bonds.length; i++) {
+
+            // Extract bonds after index
+            let bondsAfter = keys.bonds.slice(i, keys.bonds.length);
+
+            // Check for duplicate bonds
+            for (let j = 0; j < bondsAfter.length; j++) {
+
+                // Bond keys
+                let a = bonds[keys.bonds[i]];
+                let b = bonds[bondsAfter[j]];
+
+                // Check bond for atoms
+                if (a === undefined || b === undefined || j === 0) { continue; }
+
+                // Compare atom keys
+                if (a.atoms[0] === b.atoms[0] && a.atoms[1] === b.atoms[1]) {
+
+                    // Duplicate ring bond
+                    if (a.name === 'ring' && b.name === 'ring') { delete bonds[bondsAfter[j]]; }
+
+                    // Duplicate single bonds
+                    else if (a.name === 'branch' && b.name === 'single') { delete bonds[keys.bonds[i]]; }
+                    else if (a.name === 'single' && b.name === 'branch') { delete bonds[bondsAfter[j]]; }
+
+                    else if (a.name === 'branch' && b.name === 'double') { delete bonds[keys.bonds[i]]; }
+                    else if (a.name === 'double' && b.name === 'branch') { delete bonds[bondsAfter[j]]; }
+
+                    else if (a.name === 'branch' && b.name === 'triple') { delete bonds[keys.bonds[i]]; }
+                    else if (a.name === 'triple' && b.name === 'branch') { delete bonds[bondsAfter[j]]; }
+
+                    // Other duplicate bonds
+                    else { delete bonds[bondsAfter[j]]; }
+
+                    i--;
                     break;
                 }
-
-                // Symbolic charge
-                charge = value.match(/([+]+|[-]+)/g);
-
-                if (charge !== null) {
-                    atoms[key].properties.charge = charge[0].length * sign;
-                    break;
-                }
+            }
         }
+        return bonds;
     }
 
-    return {atoms,bonds,properties,keys};
+    // Implicit bonds
+    function implicitBonds (atoms, bonds, keys) {
+
+    }
+
+    // Variables
+    let atoms, bonds, properties, keys;
+
+    // 1. Validate
+    if (!validateTokens(tokens)) { return false; }
+
+    // 2. Categorize
+    [atoms, bonds, properties, keys] = readTokens(tokens);
+
+    // 3. Atoms
+    atoms = defaultAtoms(atoms, keys);
+    atoms = customAtoms(atoms, properties, keys);
+
+    // 4. Bonds
+    bonds = explicitBonds(atoms, bonds, keys);
+
+    return [atoms, bonds];
 }
 
-//
-// Exports
-//
+
+/*
+  Utility: compare
+   -compare values of two arrays
+*/
+
+function compare(a, b) {
+
+    let ab = [];
+
+    // Return binary array
+    for (let i = 0; i < a.length; i++) {
+        ab[i] = b.indexOf(a[i]) > -1 ? 1 : 0;
+    }
+
+    return ab;
+}
+
+
+/*
+  Utility: nextAtom
+   -find key of next atom in array
+*/
+
+function nextAtom(start, keys, atoms) {
+
+    // Determine index of key in array
+    let index = keys.indexOf(start);
+
+    // Return if key not in array
+    if (index === -1) { return []; }
+
+    // Filter keys before index
+    keys = keys.slice(index, keys.length);
+
+    // Determine nearest atom to key
+    for (let i = 0; i < keys.length; i++) {
+
+        if (atoms[keys[i]] !== undefined) {
+            return keys[i];
+        }
+    }
+}
+
+
+/*
+ Utility: previousAtom
+ -find key of previous atom in array
+ */
+
+function previousAtom(start, keys, atoms) {
+
+    // Determine index of key in array
+    let index = keys.indexOf(start);
+
+    // Return if key not in array
+    if (index === -1) { return []; }
+
+    // Filter keys after index
+    keys = keys.slice(0, index).reverse();
+
+    // Determine nearest atom to key
+    for (let i = 0; i < keys.length; i++) {
+
+        if (atoms[keys[i]] !== undefined) {
+            return keys[i];
+        }
+    }
+}
+
+
+/*
+  Exports
+*/
+
 export { tokenize, decode };
