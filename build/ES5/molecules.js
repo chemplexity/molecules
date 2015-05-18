@@ -1,3 +1,8 @@
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+});
 /*
   molecules.js
 
@@ -22,14 +27,13 @@
         molecule['abc'] = readTokens(tokens['A']);
 */
 
-
 /*
   Imports
 */
 
-import {periodic_table} from './elements';
-import {tokenize, decode} from './smiles';
+var _periodic_table = require('./elements');
 
+var _tokenize$decode = require('./smiles');
 
 /*
   Method: getTokens
@@ -51,9 +55,8 @@ import {tokenize, decode} from './smiles';
 
 function getTokens(input) {
 
-    return tokenize(input);
+  return _tokenize$decode.tokenize(input);
 }
-
 
 /*
   Method: readTokens
@@ -75,24 +78,27 @@ function getTokens(input) {
 
 function readTokens(tokens) {
 
-    return decode(tokens);
+  return _tokenize$decode.decode(tokens);
 }
-
 
 /*
   Utility: getMolecule
   --return new molecule object
 */
 
-function getMolecule(atoms = {}, bonds = {}, id = 0, name = '') {
+function getMolecule() {
+  var atoms = arguments[0] === undefined ? {} : arguments[0];
+  var bonds = arguments[1] === undefined ? {} : arguments[1];
+  var id = arguments[2] === undefined ? 0 : arguments[2];
+  var name = arguments[3] === undefined ? '' : arguments[3];
 
-    return {
-        id: id,
-        name: name,
-        atoms: atoms,
-        bonds: bonds,
-        properties: {}
-    };
+  return {
+    id: id,
+    name: name,
+    atoms: atoms,
+    bonds: bonds,
+    properties: {}
+  };
 }
 
 /*
@@ -102,23 +108,20 @@ function getMolecule(atoms = {}, bonds = {}, id = 0, name = '') {
 
 function molecular_formula(atoms) {
 
-    let formula = {},
-        keys = Object.keys(atoms);
+  var formula = {},
+      keys = Object.keys(atoms);
 
-    for (let i = 0; i < keys.length; i++) {
+  for (var i = 0; i < keys.length; i++) {
 
-        if (formula[atoms[keys[i]].name] === undefined) {
-            formula[atoms[keys[i]].name] = 1;
-        }
-
-        else {
-            formula[atoms[keys[i]].name] += 1;
-        }
+    if (formula[atoms[keys[i]].name] === undefined) {
+      formula[atoms[keys[i]].name] = 1;
+    } else {
+      formula[atoms[keys[i]].name] += 1;
     }
+  }
 
-    return formula;
+  return formula;
 }
-
 
 /*
   Utility: molecular_weight
@@ -127,19 +130,21 @@ function molecular_formula(atoms) {
 
 function molecular_weight(atoms) {
 
-    let weight = 0,
-        keys = Object.keys(atoms);
+  var weight = 0,
+      keys = Object.keys(atoms);
 
-    for (let i = 0; i < keys.length; i++) {
-        weight += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
-    }
+  for (var i = 0; i < keys.length; i++) {
+    weight += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
+  }
 
-    return Math.round(weight * 1000) / 1000;
+  return Math.round(weight * 1000) / 1000;
 }
-
 
 /*
   Exports
 */
 
-export { getTokens, readTokens, molecular_formula, molecular_weight };
+exports.getTokens = getTokens;
+exports.readTokens = readTokens;
+exports.molecular_formula = molecular_formula;
+exports.molecular_weight = molecular_weight;

@@ -11,28 +11,25 @@ Object.defineProperty(exports, '__esModule', {
     description : parse SMILES chemical line notation
     imports     : elements
     exports     : tokenize, decode
+
 */
 
 /*
   Imports
 */
 
-// import {periodic_table} from './elements'
-
-var _require = require('./elements');
-
-var periodic_table = _require.periodic_table;
+var _periodic_table = require('./elements');
 
 /*
   Variable: definitions
-   -regular expressions for SMILES grammar
+  --regular expressions for SMILES grammar
 */
 
-var definitions = [{ type: 'atom', term: 'H', tag: 'H', expression: /[A-Z]?H(?=[^efgos]|$)([0-9]?)+/g }, { type: 'atom', term: 'B', tag: 'B', expression: /B(?=[^aehikr]|$)/g }, { type: 'atom', term: 'C', tag: 'C', expression: /C(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'N', tag: 'N', expression: /N(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'O', tag: 'O', expression: /O(?=[^s]|$)/g }, { type: 'atom', term: 'F', tag: 'F', expression: /F(?=[^elmr]|$)/g }, { type: 'atom', term: 'Si', tag: 'Si', expression: /Si/g }, { type: 'atom', term: 'P', tag: 'P', expression: /P(?=[^abdmortu]|$)/g }, { type: 'atom', term: 'S', tag: 'S', expression: /S(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'Cl', tag: 'Cl', expression: /Cl/g }, { type: 'atom', term: 'Se', tag: 'Se', expression: /Se/g }, { type: 'atom', term: 'Br', tag: 'Br', expression: /Br/g }, { type: 'atom', term: 'I', tag: 'I', expression: /I(?=[^nr]|$)/g }, { type: 'atom', term: '*', tag: '*', expression: /[*]/g }, { type: 'atom', term: 'b', tag: 'B', expression: /b(?=[^aehikr]|$)/g }, { type: 'atom', term: 'c', tag: 'C', expression: /c(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'n', tag: 'N', expression: /n(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'o', tag: 'O', expression: /o(?=[^s]|$)/g }, { type: 'atom', term: 'p', tag: 'P', expression: /p(?=[^abdmortu]|$)/g }, { type: 'atom', term: 's', tag: 'S', expression: /s(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'se', tag: 'Se', expression: /se/g }, { type: 'bond', term: '-', tag: 'single', expression: /(?=[^d])[-](?=[^d])/g }, { type: 'bond', term: '=', tag: 'double', expression: /[=]/g }, { type: 'bond', term: '#', tag: 'triple', expression: /[#]/g }, { type: 'bond', term: '(', tag: 'branch', expression: /[(]/g }, { type: 'bond', term: ')', tag: 'branch', expression: /[)]/g }, { type: 'bond', term: '%', tag: 'ring', expression: /(?=[^+-])(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[%]?\d(?=([^+-]|$))/g }, { type: 'bond', term: '.', tag: 'dot', expression: /[A-Z][+-]?[\[]?[.]/g }, { type: 'property', term: '+', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g }, { type: 'property', term: '-', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g }, { type: 'property', term: 'n', tag: 'isotope', expression: /[0-9]+[A-Z]{1,2}(?=.?[^\[]*[\]])/g }, { type: 'property', term: '@', tag: 'chiral', expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g }, { type: 'property', term: '@@', tag: 'chiral', expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g }];
+var definitions = [{ type: 'atom', term: 'H', tag: 'H', expression: /[A-Z]?H(?=[^efgos]|$)([0-9]?)+/g }, { type: 'atom', term: 'B', tag: 'B', expression: /B(?=[^aehikr]|$)/g }, { type: 'atom', term: 'C', tag: 'C', expression: /C(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'N', tag: 'N', expression: /N(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'O', tag: 'O', expression: /O(?=[^s]|$)/g }, { type: 'atom', term: 'F', tag: 'F', expression: /F(?=[^elmr]|$)/g }, { type: 'atom', term: 'Si', tag: 'Si', expression: /Si/g }, { type: 'atom', term: 'P', tag: 'P', expression: /P(?=[^abdmortu]|$)/g }, { type: 'atom', term: 'S', tag: 'S', expression: /S(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'Cl', tag: 'Cl', expression: /Cl/g }, { type: 'atom', term: 'Se', tag: 'Se', expression: /Se/g }, { type: 'atom', term: 'Br', tag: 'Br', expression: /Br/g }, { type: 'atom', term: 'I', tag: 'I', expression: /I(?=[^nr]|$)/g }, { type: 'atom', term: '*', tag: '*', expression: /[*]/g }, { type: 'atom', term: 'b', tag: 'B', expression: /b(?=[^aehikr]|$)/g }, { type: 'atom', term: 'c', tag: 'C', expression: /c(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'n', tag: 'N', expression: /n(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'o', tag: 'O', expression: /o(?=[^s]|$)/g }, { type: 'atom', term: 'p', tag: 'P', expression: /p(?=[^abdmortu]|$)/g }, { type: 'atom', term: 's', tag: 'S', expression: /s(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'se', tag: 'Se', expression: /se/g }, { type: 'bond', term: '-', tag: 'single', expression: /(?=[^d])[-](?=[^d])/g }, { type: 'bond', term: '=', tag: 'double', expression: /[=]/g }, { type: 'bond', term: '#', tag: 'triple', expression: /[#]/g }, { type: 'bond', term: '(', tag: 'branch', expression: /[(]/g }, { type: 'bond', term: ')', tag: 'branch', expression: /[)]/g }, { type: 'bond', term: '%', tag: 'ring', expression: /(?=[^+-])(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[%]?\d(?=([^+-]|$))/g }, { type: 'bond', term: '.', tag: 'dot', expression: /[A-Z][+-]?[\[]?[.]/g }, { type: 'property', term: '+', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g }, { type: 'property', term: '-', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g }, { type: 'property', term: 'n', tag: 'isotope', expression: /(?:[\[])[0-9]+[A-Z]{1,2}(?=.?[^\[]*[\]])/g }, { type: 'property', term: '@', tag: 'chiral', expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g }, { type: 'property', term: '@@', tag: 'chiral', expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g }];
 
 /*
-  Method: Tokenize
-   -parse string for valid SMILES definitions
+  Method: tokenize
+  --parse input string for valid SMILES definitions
 
   Syntax
     tokens = tokenize(input)
@@ -41,7 +38,7 @@ var definitions = [{ type: 'atom', term: 'H', tag: 'H', expression: /[A-Z]?H(?=[
     input : any SMILES encoded string
 
   Output
-    tokens : array of token objects matching input
+    tokens : array of token objects
 
   Examples
     tokens123 = tokenize('CC(=O)CC')
@@ -50,6 +47,7 @@ var definitions = [{ type: 'atom', term: 'H', tag: 'H', expression: /[A-Z]?H(?=[
 
 function tokenize(input) {
     var tokens = arguments[1] === undefined ? [] : arguments[1];
+    var header = arguments[2] === undefined ? [] : arguments[2];
 
     // Parse input with definitions
     for (var i = 0; i < definitions.length; i++) {
@@ -85,21 +83,21 @@ function tokenize(input) {
 }
 
 /*
-  Method: Decode
-   -convert SMILES tokens into atoms (nodes) and bonds (edges)
+  Method: decode
+  --convert SMILES tokens into atoms (nodes) and bonds (edges)
 
   Syntax
-    [atoms, bonds] = decode(tokens)
+    {atoms, bonds} = decode(tokens)
 
   Arguments
-    tokens : array of SMILES tokens obtained from the output of 'tokenize'
+    tokens : array of tokens obtained from the output of 'tokenize'
 
   Output
-    [atoms, bonds] : array of atom/bond objects describing connectivity and properties
+    {atoms, bonds} : array of atom/bond objects describing connectivity and properties
 
   Examples
-    [atoms, bonds] = decode(tokensABC)
-    [atoms, bonds] = decode(tokens123)
+    {atoms, bonds} = decode(mytokensABC)
+    {atoms, bonds} = decode(tokens123)
 */
 
 function decode(tokens) {
@@ -146,6 +144,11 @@ function decode(tokens) {
 
         // Parse tokens by category
         for (var i = 0; i < tokens.length; i++) {
+
+            // Check for token header
+            if (tokens[i].index === 'header') {
+                continue;
+            }
 
             // Extract token values
             var _tokens$i = tokens[i];
@@ -207,7 +210,7 @@ function decode(tokens) {
                 var key = _step.value;
 
                 // Element
-                var element = periodic_table[atoms[key].name];
+                var element = _periodic_table.periodic_table[atoms[key].name];
 
                 // Element properties
                 atoms[key].group = element.group;
@@ -218,12 +221,12 @@ function decode(tokens) {
                 // Bond properties
                 atoms[key].bonds = {
                     electrons: 0,
-                    chiral: 0,
                     atoms: []
                 };
 
                 // Other properties
                 atoms[key].properties = {
+                    chiral: 0,
                     charge: 0
                 };
             }
@@ -267,11 +270,31 @@ function decode(tokens) {
 
                     // Set chiral property
                     case 'chiral':
-                        atoms[key].bonds.chiral = value.slice(value.indexOf('@'));
+
+                        atoms[key].properties.chiral = value.slice(value.indexOf('@'));
                         break;
 
                     // Set neutrons
                     case 'isotope':
+
+                        // Check neutrons
+                        var neutrons = value.match(/[0-9]+/g);
+
+                        // Determine atom key
+                        var atomKey = 1 + neutrons.toString().length;
+
+                        // Check value
+                        if (neutrons > 0 && neutrons < 250) {
+
+                            // Subtract number of protons
+                            neutrons = neutrons - atoms[atomKey].protons;
+
+                            if (neutrons > 0) {
+                                atoms[atomKey].neutrons = neutrons;
+                                break;
+                            }
+                        }
+
                         break;
 
                     // Set charge property
@@ -322,78 +345,106 @@ function decode(tokens) {
 
         // Check for any explicit bonds
         if (keys.bonds.length === 0) {
-            return bonds;
+            return [atoms, bonds, keys];
         }
-
-        // Find bonding atoms
-        var source = function source(key) {
-            return previousAtom(key, keys.all, atoms);
-        };
-        var target = function target(key) {
-            return nextAtom(key, keys.all, atoms);
-        };
 
         // Add explicit bonds
         for (var i = 0; i < keys.bonds.length; i++) {
 
-            // Retrieve key
-            var key = keys.bonds[i];
+            // Retrieve bond key
+            var bondID = keys.bonds[i];
+
+            // Retrieve source/target atoms
+            var sourceAtom = atoms[previousAtom(bondID, keys.all, atoms)],
+                targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
+
+            // Determine index values
+            var sourceIndex = keys.all.indexOf(sourceAtom.id),
+                targetIndex = keys.all.indexOf(targetAtom.id),
+                bondIndex = keys.all.indexOf(bondID);
+
+            // Check for exceptions
+            var exceptions = 0;
+
+            if (targetIndex > bondIndex && bondIndex > sourceIndex) {
+
+                // Check previous bond
+                if (bonds[keys.all[bondIndex - 1]] !== undefined) {
+
+                    // Determine bond values
+                    var bond1 = bonds[keys.all[bondIndex - 1]].value,
+                        bond2 = bonds[bondID].value;
+
+                    // Exception #1: bond symbol follows branch end
+                    if (bond1 === ')' && (bond2 === '-' || bond2 === '=' || bond2 === '#' || bond2 === '.')) {
+                        exceptions = 1;
+                    }
+                }
+            }
 
             // Bond type
-            switch (bonds[key].name) {
+            switch (bonds[bondID].name) {
 
                 case 'single':
-                    bonds[key].order = 1;
-                    bonds[key].atoms = [source(key), target(key)];
+                    if (exceptions === 1) {
+                        continue;
+                    }
+                    bonds[bondID].order = 1;
+                    bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                     break;
 
                 case 'double':
-                    bonds[key].order = 2;
-                    bonds[key].atoms = [source(key), target(key)];
+                    if (exceptions === 1) {
+                        continue;
+                    }
+                    bonds[bondID].order = 2;
+                    bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                     break;
 
                 case 'triple':
-                    bonds[key].order = 3;
-                    bonds[key].atoms = [source(key), target(key)];
+                    if (exceptions === 1) {
+                        continue;
+                    }
+                    bonds[bondID].order = 3;
+                    bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                     break;
 
                 case 'dot':
-                    bonds[key].order = 0;
-                    bonds[key].atoms = [source(key), target(key)];
+                    if (exceptions === 1) {
+                        continue;
+                    }
+                    bonds[bondID].order = 0;
+                    bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                     break;
 
                 case 'branch':
 
-                    // Key index
-                    var keyIndex = keys.all.indexOf(key);
+                    // Keys before and after branch
+                    var keysBefore = keys.all.slice(0, bondIndex).reverse(),
+                        keysAfter = keys.all.slice(bondIndex + 1, keys.all.length);
 
-                    // Tokens before/after branch
-                    var tokensBefore = keys.all.slice(0, keyIndex).reverse();
-                    var tokensAfter = keys.all.slice(keyIndex + 1, keys.all.length);
-
-                    switch (bonds[key].value) {
+                    // Branch type
+                    switch (bonds[bondID].value) {
 
                         // Start branch
                         case '(':
 
                             // Find start of branch
-                            for (var j = 0, skip = 0; j < tokensBefore.length; j++) {
+                            for (var j = 0, skip = 0; j < keysBefore.length; j++) {
 
-                                // Token ID
-                                var tokenID = tokensBefore[j];
+                                // Retrieve source atom
+                                sourceAtom = atoms[keysBefore[j]];
 
                                 // Update bond
-                                if (keys.atoms.indexOf(tokenID) !== -1 && skip === 0) {
-                                    bonds[key].order = 1;
-                                    bonds[key].atoms = [tokenID, target(key)];
+                                if (sourceAtom !== undefined && skip === 0) {
+                                    bonds[bondID].order = 1;
+                                    bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                                     break;
                                 }
 
-                                // Check for bond
-                                else if (keys.bonds.indexOf(tokenID) !== -1) {
-
-                                    // Nested branch
-                                    switch (bonds[tokenID].value) {
+                                // Check for nested branch
+                                else if (bonds[keysBefore[j]] !== undefined) {
+                                    switch (bonds[keysBefore[j]].value) {
                                         case ')':
                                             skip++;break;
                                         case '(':
@@ -408,23 +459,21 @@ function decode(tokens) {
                         case ')':
 
                             // Find start of branch
-                            for (var j = 0, skip = 1; j < tokensBefore.length; j++) {
+                            for (var j = 0, skip = 1; j < keysBefore.length; j++) {
 
-                                // Token ID
-                                var tokenID = tokensBefore[j];
+                                // Retrieve source atom
+                                sourceAtom = atoms[keysBefore[j]];
 
                                 // Update bond
-                                if (keys.atoms.indexOf(tokenID) !== -1 && skip === 0) {
-                                    bonds[key].order = 1;
-                                    bonds[key].atoms[0] = tokenID;
+                                if (sourceAtom !== undefined && skip === 0) {
+                                    bonds[bondID].order = 1;
+                                    bonds[bondID].atoms[0] = sourceAtom.id;
                                     break;
                                 }
 
-                                // Check for bond
-                                else if (keys.bonds.indexOf(tokenID) !== -1) {
-
-                                    // Nested branch
-                                    switch (bonds[tokenID].value) {
+                                // Check for nested branch
+                                else if (bonds[keysBefore[j]] !== undefined) {
+                                    switch (bonds[keysBefore[j]].value) {
                                         case ')':
                                             skip++;break;
                                         case '(':
@@ -434,22 +483,33 @@ function decode(tokens) {
                             }
 
                             // Find end of branch
-                            for (var j = 0, skip = 0; j < tokensAfter.length; j++) {
+                            for (var j = 0, bondOrder = 1, skip = 0; j < keysAfter.length; j++) {
 
-                                // Token ID
-                                var tokenID = tokensAfter[j];
+                                // Update bond order
+                                if (bonds[keysAfter[j]] !== undefined && skip === 0) {
+
+                                    switch (bonds[keysAfter[j]].value) {
+                                        case '-':
+                                            bondOrder = 1;break;
+                                        case '=':
+                                            bondOrder = 2;break;
+                                        case '#':
+                                            bondOrder = 3;break;
+                                        case '.':
+                                            bondOrder = 0;break;
+                                    }
+                                }
 
                                 // Update bond
-                                if (keys.atoms.indexOf(tokenID) !== -1 && skip === 0) {
-                                    bonds[key].atoms[1] = tokenID;
+                                if (atoms[keysAfter[j]] !== undefined && skip === 0) {
+                                    bonds[bondID].order = bondOrder;
+                                    bonds[bondID].atoms[1] = atoms[keysAfter[j]].id;
                                     break;
                                 }
 
-                                // Check for bond
-                                else if (keys.bonds.indexOf(tokenID) !== -1) {
-
-                                    // Nested branch
-                                    switch (bonds[tokenID].value) {
+                                // Check for nested branch
+                                else if (bonds[keysAfter[j]] !== undefined) {
+                                    switch (bonds[keysAfter[j]].value) {
                                         case ')':
                                             skip--;break;
                                         case '(':
@@ -466,35 +526,28 @@ function decode(tokens) {
                 // Ring
                 case 'ring':
 
-                    // Extract bonds after key
-                    var bondsAfter = keys.bonds.slice(keys.bonds.indexOf(key), keys.bonds.length);
+                    // Keys after ring
+                    var bondsAfter = keys.bonds.slice(keys.bonds.indexOf(bondID), keys.bonds.length);
 
                     // Find matching ring atom
                     for (var j = 0; j < bondsAfter.length; j++) {
 
                         // Check for existing bond
-                        if (bonds[key].atoms.length > 0 || j === 0) {
+                        if (bonds[bondID].atoms.length > 0 || j === 0) {
                             continue;
                         }
 
-                        // Bond ID
-                        var bondID = bondsAfter[j];
-
-                        // Ring ID
+                        // Determine ring number
                         var ringID = /[0-9]+/g;
 
-                        var a = bonds[key].value.match(ringID);
-                        var b = bonds[bondID].value.match(ringID);
+                        var sourceBond = bonds[bondID].value.match(ringID);
+                        var targetBond = bonds[bondsAfter[j]].value.match(ringID);
 
-                        // Add ring bond
-                        if (a !== null && b !== null && a[0] === b[0]) {
-
-                            bonds[key].order = 1;
-                            bonds[key].atoms = [key, bondID];
+                        // Add bond
+                        if (sourceBond !== null && targetBond !== null && sourceBond[0] === targetBond[0]) {
 
                             bonds[bondID].order = 1;
-                            bonds[bondID].atoms = [key, bondID];
-
+                            bonds[bondID].atoms = [bondID, bondsAfter[j]];
                             break;
                         }
                     }
@@ -512,7 +565,7 @@ function decode(tokens) {
             // Check for duplicate bonds
             for (var j = 0; j < bondsAfter.length; j++) {
 
-                // Bond ID
+                // Bond key
                 var bondID = bondsAfter[j];
 
                 // Bond keys
@@ -556,28 +609,35 @@ function decode(tokens) {
 
         // Remove empty references from keys
         for (var i = 0; i < keys.bonds.length; i++) {
+
             if (keys.bonds[i] === undefined) {
-                keys.bonds.splice(i, 1);i--;
+                keys.bonds.splice(i, 1);
+                i--;
             }
         }
 
-        // Add bond references to atom properties
+        // Add bond references to all atoms
         for (var i = 0; i < keys.bonds.length; i++) {
 
-            // Bond ID
+            // Bond key
             var bondID = keys.bonds[i];
 
             // Atom keys
-            var a = bonds[bondID].atoms[0];
-            var b = bonds[bondID].atoms[1];
+            var sourceID = bonds[bondID].atoms[0],
+                targetID = bonds[bondID].atoms[1];
+
+            // Check keys
+            if (sourceID === undefined || targetID === undefined) {
+                continue;
+            }
 
             // Add bond reference to atom
-            atoms[a].bonds.atoms.push(bondID);
-            atoms[b].bonds.atoms.push(bondID);
+            atoms[sourceID].bonds.atoms.push(targetID);
+            atoms[targetID].bonds.atoms.push(sourceID);
 
             // Update total bonding electrons
-            atoms[a].bonds.electrons += bonds[bondID].order;
-            atoms[b].bonds.electrons += bonds[bondID].order;
+            atoms[sourceID].bonds.electrons += bonds[bondID].order;
+            atoms[targetID].bonds.electrons += bonds[bondID].order;
         }
 
         return [atoms, bonds, keys];
@@ -586,164 +646,140 @@ function decode(tokens) {
     // Implicit bonds
     function implicitBonds(atoms, bonds, keys) {
 
-        // Generate unique key
-        var newKey = function newKey(a, b) {
-            return a + b;
-        };
-
-        // Add bonds to nearest neighbor
+        // Add bonds between adjacent atoms
         for (var i = 0; i < keys.atoms.length; i++) {
 
-            // Check if last element in array
+            // Check conditions to proceed
             if (keys.atoms.length === i + 1) {
                 continue;
             }
 
-            // Atom key
-            var atomID = keys.atoms[i];
+            // Retrieve atoms
+            var sourceAtom = atoms[keys.atoms[i]],
+                targetAtom = atoms[keys.atoms[i + 1]];
 
-            // Check availability
-            if (18 - atoms[atomID].group - atoms[atomID].bonds.electrons > 0) {
+            // Determine electrons available
+            var sourceElectrons = 18,
+                targetElectrons = 18;
 
-                // Locate next atom
-                var source = keys.all[keys.all.indexOf(atomID) + 1];
-                var target = nextAtom(source, keys.all, atoms);
+            // Check for hydrogen
+            if (sourceAtom.group === 1) {
+                sourceElectrons = 2;
+            }
+            if (targetAtom.group === 1) {
+                targetElectrons = 2;
+            }
 
-                // Recalculate if source is equal to target
-                var counter = 2;
+            var sourceTotal = sourceElectrons - sourceAtom.group - sourceAtom.bonds.electrons,
+                targetTotal = targetElectrons - targetAtom.group - targetAtom.bonds.electrons;
 
-                while (source === target) {
-                    source = keys.all[keys.all.indexOf(atomID) + counter];
-                    target = nextAtom(source, keys.all, atoms);
-                    counter += 1;
-                }
+            // Account for atom charge
+            if (sourceAtom.properties.charge > 0) {
+                sourceTotal -= sourceAtom.properties.charge;
+            }
+            if (targetAtom.properties.charge > 0) {
+                targetTotal -= targetAtom.properties.charge;
+            }
 
-                // Check if bond exists
-                if (atoms[atomID].bonds.atoms.indexOf(target) !== -1) {
-                    continue;
-                }
+            // Check electrons available
+            if (sourceTotal <= 0 || targetTotal <= 0) {
+                continue;
+            }
 
-                // Determine tokens between atoms
-                var d = keys.all.indexOf(target) - keys.all.indexOf(atomID);
+            // Check if bond exists
+            if (sourceAtom.bonds.atoms.indexOf(targetAtom.id) !== -1) {
+                continue;
+            }
 
-                // Check for any branches
-                if (d > 1) {
+            // Determine number of tokens between source/target atoms
+            var n = keys.all.indexOf(targetAtom.id) - keys.all.indexOf(sourceAtom.id),
+                exceptions = 0;
 
-                    // Extract keys between atoms
-                    var betweenAtoms = keys.all.slice(keys.all.indexOf(atomID) + 1, keys.all.indexOf(target));
+            // Check tokens preventing implicit bond
+            if (n > 1) {
 
-                    for (var j = 0; j < betweenAtoms.length; j++) {
+                // Extract all keys between source/target atoms
+                var keysBetween = keys.all.slice(keys.all.indexOf(sourceAtom.id) + 1, keys.all.indexOf(targetAtom.id));
 
-                        // Key ID
-                        var keyID = betweenAtoms[j];
+                for (var j = 0; j < keysBetween.length; j++) {
 
-                        // Check if key exists
-                        var bondKey = keys.bonds.indexOf(keyID);
-                        var atomKey = keys.atoms.indexOf(keyID);
-
-                        // Check bond type
-                        if (bondKey !== -1 && atomKey === -1) {
-                            break;
+                    // Check for bond symbol
+                    if (bonds[keysBetween[j]] !== undefined) {
+                        if (bonds[keysBetween[j]].name !== 'ring') {
+                            exceptions = 1;
                         }
-
-                        // Assign key
-                        var a = atomID + atoms[atomID].name;
-                        var b = target + atoms[target].name;
-
-                        var key = newKey(a, b);
-
-                        // Update keys
-                        keys.bonds.push(key);
-
-                        // Update bonds
-                        var bondName = atoms[atomID].name + atoms[target].name;
-
-                        bonds[key] = addBond(key, 'single', bondName, 1, [atomID, target]);
-
-                        // Update atoms
-                        atoms[atomID].bonds.atoms.push(key);
-                        atoms[target].bonds.atoms.push(key);
-
-                        // Update total bonding electrons
-                        atoms[atomID].bonds.electrons += 1;
-                        atoms[target].bonds.electrons += 1;
                     }
-                } else if (d === 1) {
-
-                    // Assign key
-                    var a = atomID + atoms[atomID].name;
-                    var b = target + atoms[target].name;
-
-                    var key = newKey(a, b);
-
-                    // Update keys
-                    keys.bonds.push(key);
-
-                    // Add bond
-                    var bondName = atoms[atomID].name + atoms[target].name;
-
-                    bonds[key] = addBond(key, 'single', bondName, 1, [atomID, target]);
-
-                    // Update atoms
-                    atoms[atomID].bonds.atoms.push(key);
-                    atoms[target].bonds.atoms.push(key);
-
-                    // Update total bonding electrons
-                    atoms[atomID].bonds.electrons += 1;
-                    atoms[target].bonds.electrons += 1;
                 }
+            }
+
+            // Check for exceptions
+            if (exceptions === 0) {
+
+                // Assign new bond key
+                var bondID = sourceAtom.name + sourceAtom.id + (targetAtom.name + targetAtom.id),
+                    bondName = sourceAtom.name + targetAtom.name;
+
+                // Update bonds
+                keys.bonds.push(bondID);
+                bonds[bondID] = addBond(bondID, 'single', bondName, 1, [sourceAtom.id, targetAtom.id]);
+
+                // Update atoms
+                atoms[sourceAtom.id].bonds.atoms.push(targetAtom.id);
+                atoms[targetAtom.id].bonds.atoms.push(sourceAtom.id);
+
+                // Update electron count
+                atoms[sourceAtom.id].bonds.electrons += 1;
+                atoms[targetAtom.id].bonds.electrons += 1;
             }
         }
 
         // Add implicit hydrogen
-        var H = periodic_table.H;
+        var H = _periodic_table.periodic_table.H;
 
         for (var i = 0; i < keys.atoms.length; i++) {
 
-            // Atom details
-            var atomID = keys.atoms[i];
-            var atom = atoms[atomID];
+            // Retrieve atoms
+            var sourceAtom = atoms[keys.atoms[i]];
 
             // Check atom group
-            if (atom.group < 13) {
+            if (sourceAtom.group < 13) {
                 continue;
             }
 
             // Determine number of hydrogen to add
-            var total = 18 - atom.group - atom.bonds.electrons;
+            var sourceTotal = 18 - sourceAtom.group - sourceAtom.bonds.electrons;
 
-            // Adjust total hydrogen for charge
-            var charge = atom.properties.charge;
-
-            if (charge > 0) {
-                total += -charge;
-            } else if (charge < 0) {
-                total += charge;
+            // Account for atom charge
+            if (sourceAtom.properties.charge > 0) {
+                sourceTotal -= sourceAtom.properties.charge;
             }
 
-            // Add hydrogens
-            if (total <= 0) {
+            // Check electrons available
+            if (sourceTotal <= 0) {
                 continue;
             }
 
-            for (var j = 0; j < total; j++) {
+            // Add hydrogen
+            for (var j = 0; j < sourceTotal; j++) {
 
-                // Assign key
-                var key = atomID + atom.name + (j + 1) + 'H';
+                // Assign new bond key
+                var bondID = 'H' + (j + 1) + sourceAtom.name + sourceAtom.id,
+                    bondName = sourceAtom.name + 'H';
 
-                // Add hydrogen bond
-                bonds[key] = addBond(key, 'hydrogen', atom.name + 'H', 1, [atomID, key]);
+                // Assign new atom name
+                var atomName = sourceAtom.name + 'H';
 
-                // Add hydrogen atom
-                atoms[key] = addAtom(key, 'H', 'H', H.group, H.protons, H.neutrons, H.electrons);
+                // Add hydrogen atom/bond
+                atoms[bondID] = addAtom(bondID, 'H', 'H', H.group, H.protons, H.neutrons, H.electrons);
+                bonds[bondID] = addBond(bondID, 'hydrogen', bondName, 1, [sourceAtom.id, bondID]);
 
-                // Update hydrogen properties
-                atoms[key].bonds.electrons = 1;
-                atoms[key].bonds.atoms.push(key);
+                // Update atoms
+                atoms[sourceAtom.id].bonds.atoms.push(bondID);
+                atoms[bondID].bonds.atoms.push(sourceAtom.id);
 
-                // Update atom properties
-                atoms[atomID].bonds.electrons += 1;
-                atoms[atomID].bonds.atoms.push(key);
+                // Update electron count
+                atoms[sourceAtom.id].bonds.electrons += 1;
+                atoms[bondID].bonds.electrons += 1;
             }
         }
 
@@ -756,12 +792,12 @@ function decode(tokens) {
         properties = undefined,
         keys = undefined;
 
-    // 1. Validate
+    // 1. Validate tokens
     if (!validateTokens(tokens)) {
         return false;
     }
 
-    // 2. Categorize
+    // 2. Categorize tokens
 
     var _readTokens = readTokens(tokens);
 
@@ -772,11 +808,11 @@ function decode(tokens) {
     properties = _readTokens2[2];
     keys = _readTokens2[3];
 
-    // 3. Atoms
+    // 3. Add atoms
     atoms = defaultAtoms(atoms, keys);
     atoms = customAtoms(atoms, properties, keys);
 
-    // 4. Bonds
+    // 4. Add bonds
 
     var _explicitBonds = explicitBonds(atoms, bonds, keys);
 
@@ -794,12 +830,12 @@ function decode(tokens) {
     bonds = _implicitBonds2[1];
     keys = _implicitBonds2[2];
 
-    return [atoms, bonds];
+    return { atoms: atoms, bonds: bonds };
 }
 
 /*
   Utility: compare
-   -compare values of two arrays
+  --compare values across two arrays
 */
 
 function compare(a, b) {
@@ -816,7 +852,7 @@ function compare(a, b) {
 
 /*
   Utility: addAtom
-   -return new atom
+  --return new atom
 */
 
 function addAtom(id, name, value) {
@@ -841,12 +877,12 @@ function addAtom(id, name, value) {
         // Bond properties
         bonds: {
             electrons: 0,
-            chiral: 0,
             atoms: []
         },
 
         // Other properties
         properties: {
+            chiral: 0,
             charge: 0
         }
     };
@@ -854,7 +890,7 @@ function addAtom(id, name, value) {
 
 /*
   Utility: addBond
-   -return new bond
+  --return new bond
 */
 
 function addBond(id, name, value) {
@@ -876,44 +912,49 @@ function addBond(id, name, value) {
 
 /*
   Utility: nextAtom
-   -find key of next atom in array
+  --find key of next atom in array
 */
 
 function nextAtom(start, keys, atoms) {
 
+    if (start === '0') {
+        return '0';
+    }
+
     // Determine index of key in array
     var index = keys.indexOf(start);
-
-    // Return if key not in array
     if (index === -1) {
-        return [];
+        return null;
     }
 
     // Remove keys before index
     keys = keys.slice(index, keys.length);
 
     // Determine nearest atom to key
-    for (var i = 0; i < keys.length; i++) {
-
+    for (var i = 1; i < keys.length; i++) {
         if (atoms[keys[i]] !== undefined) {
             return keys[i];
         }
     }
+
+    return null;
 }
 
 /*
   Utility: previousAtom
-   -find key of previous atom in array
+  --find key of previous atom in array
 */
 
 function previousAtom(start, keys, atoms) {
 
+    if (start === '0') {
+        return '0';
+    }
+
     // Determine index of key in array
     var index = keys.indexOf(start);
-
-    // Return if key not in array
     if (index === -1) {
-        return [];
+        return null;
     }
 
     // Remove keys after index
@@ -921,11 +962,12 @@ function previousAtom(start, keys, atoms) {
 
     // Determine nearest atom to key
     for (var i = 0; i < keys.length; i++) {
-
         if (atoms[keys[i]] !== undefined) {
             return keys[i];
         }
     }
+
+    return null;
 }
 
 /*
