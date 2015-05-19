@@ -3,7 +3,7 @@
 
     description : parse SMILES chemical line notation
     imports     : elements
-    exports     : tokenize, decode
+    exports     : grammar, tokenize, decode
 
 */
 
@@ -12,15 +12,20 @@
   Imports
 */
 
-import {periodic_table} from './elements';
+import periodic_table from './../reference/elements';
 
 
 /*
-  Variable: definitions
+  Variable: grammar
   --regular expressions for SMILES grammar
+
+    type       : token category
+    term       : SMILES symbol
+    tag        : SMILES definition
+    expression : regular expression
 */
 
-var definitions = [
+var grammar = [
     {type: 'atom',     term: 'H',  tag: 'H',       expression: /[A-Z]?H(?=[^efgos]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'B',  tag: 'B',       expression: /B(?=[^aehikr]|$)/g},
     {type: 'atom',     term: 'C',  tag: 'C',       expression: /C(?=[^adeflmnorsu]|$)/g},
@@ -59,7 +64,7 @@ var definitions = [
 
 /*
   Method: tokenize
-  --parse input string for valid SMILES definitions
+  --parse input string with SMILES grammar
 
   Syntax
     tokens = tokenize(input)
@@ -75,12 +80,12 @@ var definitions = [
     tokensABC = tokenize('c1cccc1')
 */
 
-function tokenize(input, tokens = [], header = []) {
+function tokenize(input, tokens = []) {
 
-    // Parse input with definitions
-    for (let i = 0; i < definitions.length; i++) {
+    // Parse input with SMILES grammar
+    for (let i = 0; i < grammar.length; i++) {
 
-        let token = definitions[i];
+        let token = grammar[i];
         let text = [];
 
         // Check input for match
@@ -112,60 +117,50 @@ function tokenize(input, tokens = [], header = []) {
   --convert SMILES tokens into atoms (nodes) and bonds (edges)
 
   Syntax
-    {atoms, bonds} = decode(tokens)
+    [atoms, bonds] = decode(tokens)
 
   Arguments
     tokens : array of tokens obtained from the output of 'tokenize'
 
   Output
-    {atoms, bonds} : array of atom/bond objects describing connectivity and properties
+    [atoms, bonds] : array of atom/bond objects describing connectivity and properties
 
   Examples
-    {atoms, bonds} = decode(mytokensABC)
-    {atoms, bonds} = decode(tokens123)
+    [atomsABC, bondsABC] = decode(mytokensABC)
+    [atoms123, bonds123] = decode(tokens123)
 */
 
 function decode(tokens) {
 
-    // Validate tokens
     function validateTokens(tokens) {
 
-        // Check supplied tokens type
         if (typeof(tokens) !== 'object') { throw 'Error: Tokens must be of type "object"'; }
 
-        // Required token fields
+        // Check tokens for required fields
         let fields = ['index', 'type', 'term', 'tag'];
 
-        // Check tokens for required fields
         for (let i = 0; i < tokens.length; i++) {
 
             // Return binary comparison array
             let match = compare(fields, Object.keys(tokens[i]));
 
             // Check for invalid token
-            if (match.reduce((a, b) => a + b) < 4) { throw 'Error: Invalid token at index #' + i; }
+            if (match.reduce((a, b) => a + b) < 4) { throw 'Error: Invalid token at index "' + i + '"'; }
         }
 
         return true;
     }
 
-    // Read tokens
     function readTokens(tokens, atoms = {}, bonds = {}, properties = {}, keys = {}) {
 
-        // Generate unique key
         let newKey = (x) => x.toString();
 
         // Parse tokens by category
         for (let i = 0; i < tokens.length; i++) {
 
-            // Check for token header
-            if (tokens[i].index === 'header') { continue; }
-
             // Extract token values
-            let {type, term, tag, index} = tokens[i];
-
-            // Assign unique key
-            let key = newKey(index);
+            let {type, term, tag, index} = tokens[i],
+                key = newKey(index);
 
             // Categorize tokens
             switch (type) {
@@ -184,12 +179,11 @@ function decode(tokens) {
             }
         }
 
-        // Check for atoms
         if (atoms.length < 1) { return false; }
 
+        // Extract all token keys
         keys.all = [];
 
-        // Extract all token keys
         for (let i = 0; i < tokens.length; i++) {
             keys.all[i] = newKey(tokens[i].index);
         }
@@ -202,29 +196,32 @@ function decode(tokens) {
         return [atoms, bonds, properties, keys];
     }
 
-    // Default atom properties
-    function defaultAtoms(atoms, keys){
+    function defaultAtoms(atoms, keys) {
 
-        // Add default properties to atoms
-        for (let key of keys.atoms) {
+        for (let i = 0; i < keys.atoms.length; i++) {
 
-            // Element
-            let element = periodic_table[atoms[key].name];
+            let atomID = keys.atoms[i];
+
+            // Check element
+            if (periodic_table[atoms[atomID].name] === undefined) { continue; }
+
+            // Element information
+            let element = periodic_table[atoms[atomID].name];
 
             // Element properties
-            atoms[key].group = element.group;
-            atoms[key].protons = element.protons;
-            atoms[key].neutrons = element.neutrons;
-            atoms[key].electrons = element.electrons;
+            atoms[atomID].group = element.group;
+            atoms[atomID].protons = element.protons;
+            atoms[atomID].neutrons = element.neutrons;
+            atoms[atomID].electrons = element.electrons;
 
             // Bond properties
-            atoms[key].bonds = {
+            atoms[atomID].bonds = {
                 electrons: 0,
                 atoms: []
             };
 
             // Other properties
-            atoms[key].properties = {
+            atoms[atomID].properties = {
                 chiral: 0,
                 charge: 0
             };
@@ -233,48 +230,46 @@ function decode(tokens) {
         return atoms;
     }
 
-    // Custom atom properties
     function customAtoms(atoms, properties, keys) {
 
-        // Add custom properties to atoms
-        for (let key of keys.properties) {
+        for (let i = 0; i < keys.properties.length; i++) {
+
+            let propID = keys.properties[i];
 
             // Retrieve properties
-            let {name, value} = properties[key];
+            let {name, value} = properties[propID];
 
-            // Property name
             switch (name) {
 
-                // Set chiral property
                 case 'chiral':
 
-                    atoms[key].properties.chiral = value.slice(value.indexOf('@'));
+                    if (atoms[propID] !== undefined) {
+                        atoms[propID].properties.chiral = value.slice(value.indexOf('@'));
+                        break;
+                    }
+
                     break;
 
-                // Set neutrons
                 case 'isotope':
 
-                    // Check neutrons
-                    let neutrons = value.match(/[0-9]+/g);
-
-                    // Determine atom key
-                    let atomKey = 1 + neutrons.toString().length;
+                    // Determine neutrons, atomID
+                    let neutrons = value.match(/[0-9]+/g),
+                        atomID = 1 + neutrons.toString().length;
 
                     // Check value
-                    if (neutrons > 0 && neutrons < 250) {
+                    if (neutrons > 0 && neutrons < 250 && atoms[atomID] !== undefined) {
 
                         // Subtract number of protons
-                        neutrons = neutrons - atoms[atomKey].protons;
+                        neutrons = neutrons - atoms[atomID].protons;
 
                         if (neutrons > 0) {
-                            atoms[atomKey].neutrons = neutrons;
+                            atoms[atomID].neutrons = neutrons;
                             break;
                         }
                     }
 
                     break;
 
-                // Set charge property
                 case 'charge':
 
                     // Determine charge sign
@@ -283,16 +278,16 @@ function decode(tokens) {
                     // Check numeric charge (e.g. '3+')
                     let charge = value.match(/[0-9]+/g);
 
-                    if (charge !== null) {
-                        atoms[key].properties.charge = charge[0] * sign;
+                    if (charge !== null && atoms[propID] !== undefined) {
+                        atoms[propID].properties.charge = charge[0] * sign;
                         break;
                     }
 
                     // Check symbolic charge (e.g. '+++')
                     charge = value.match(/([+]+|[-]+)/g);
 
-                    if (charge !== null) {
-                        atoms[key].properties.charge = charge[0].length * sign;
+                    if (charge !== null && atoms[propID] !== undefined) {
+                        atoms[propID].properties.charge = charge[0].length * sign;
                         break;
                     }
 
@@ -303,13 +298,11 @@ function decode(tokens) {
         return atoms;
     }
 
-    // Explicit bonds
     function explicitBonds(atoms, bonds, keys) {
 
-        // Check for any explicit bonds
         if (keys.bonds.length === 0) { return [atoms, bonds, keys]; }
 
-        // Add explicit bonds
+        // Add bonds
         for (let i = 0; i < keys.bonds.length; i++) {
 
             // Retrieve bond key
@@ -320,9 +313,16 @@ function decode(tokens) {
                 targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
 
             // Determine index values
-            let sourceIndex = keys.all.indexOf(sourceAtom.id),
-                targetIndex = keys.all.indexOf(targetAtom.id),
-                bondIndex = keys.all.indexOf(bondID);
+            let bondIndex = keys.all.indexOf(bondID),
+                sourceIndex = 0,
+                targetIndex = 0;
+
+            if (sourceAtom !== undefined && sourceAtom !== null) {
+                sourceIndex = keys.all.indexOf(sourceAtom.id);
+            }
+            if (targetAtom !== undefined && targetAtom !== null) {
+                targetIndex = keys.all.indexOf(targetAtom.id);
+            }
 
             // Check for exceptions
             let exceptions = 0;
@@ -332,7 +332,6 @@ function decode(tokens) {
                 // Check previous bond
                 if (bonds[keys.all[bondIndex - 1]] !== undefined) {
 
-                    // Determine bond values
                     let bond1 = bonds[keys.all[bondIndex - 1]].value,
                         bond2 = bonds[bondID].value;
 
@@ -372,7 +371,7 @@ function decode(tokens) {
 
                 case 'branch':
 
-                    // Keys before and after branch
+                    // Keys before/after branch
                     let keysBefore = keys.all.slice(0, bondIndex).reverse(),
                         keysAfter = keys.all.slice(bondIndex+1, keys.all.length);
 
@@ -385,7 +384,7 @@ function decode(tokens) {
                             // Find start of branch
                             for (let j = 0, skip = 0; j < keysBefore.length; j++) {
 
-                                // Retrieve source atom
+                                // Determine source atom
                                 sourceAtom = atoms[keysBefore[j]];
 
                                 // Update bond
@@ -475,7 +474,6 @@ function decode(tokens) {
                     // Find matching ring atom
                     for (let j = 0; j < bondsAfter.length; j++) {
 
-                        // Check for existing bond
                         if (bonds[bondID].atoms.length > 0 || j === 0) { continue; }
 
                         // Determine ring number
@@ -506,14 +504,11 @@ function decode(tokens) {
             // Check for duplicate bonds
             for (let j = 0; j < bondsAfter.length; j++) {
 
-                // Bond key
-                let bondID = bondsAfter[j];
-
                 // Bond keys
-                let a = bonds[keys.bonds[i]];
-                let b = bonds[bondID];
+                let bondID = bondsAfter[j],
+                    a = bonds[keys.bonds[i]],
+                    b = bonds[bondID];
 
-                // Check bond for atoms
                 if (a === undefined || b === undefined || j === 0) { continue; }
 
                 // Compare atom keys
@@ -567,14 +562,12 @@ function decode(tokens) {
             let sourceID = bonds[bondID].atoms[0],
                 targetID = bonds[bondID].atoms[1];
 
-            // Check keys
             if (sourceID === undefined || targetID === undefined) { continue; }
 
             // Add bond reference to atom
             atoms[sourceID].bonds.atoms.push(targetID);
             atoms[targetID].bonds.atoms.push(sourceID);
 
-            // Update total bonding electrons
             atoms[sourceID].bonds.electrons += bonds[bondID].order;
             atoms[targetID].bonds.electrons += bonds[bondID].order;
         }
@@ -582,7 +575,6 @@ function decode(tokens) {
         return [atoms, bonds, keys];
     }
 
-    // Implicit bonds
     function implicitBonds (atoms, bonds, keys) {
 
         // Add bonds between adjacent atoms
@@ -617,8 +609,6 @@ function decode(tokens) {
             if (targetAtom.properties.charge > 0) {
                 targetTotal -= targetAtom.properties.charge;
             }
-
-            // Check electrons available
             if (sourceTotal <= 0 || targetTotal <= 0) { continue; }
 
             // Check if bond exists
@@ -645,7 +635,6 @@ function decode(tokens) {
                 }
             }
 
-            // Check for exceptions
             if (exceptions === 0) {
 
                 // Assign new bond key
@@ -660,7 +649,6 @@ function decode(tokens) {
                 atoms[sourceAtom.id].bonds.atoms.push(targetAtom.id);
                 atoms[targetAtom.id].bonds.atoms.push(sourceAtom.id);
 
-                // Update electron count
                 atoms[sourceAtom.id].bonds.electrons += 1;
                 atoms[targetAtom.id].bonds.electrons += 1;
             }
@@ -684,19 +672,15 @@ function decode(tokens) {
             if (sourceAtom.properties.charge > 0) {
                 sourceTotal -= sourceAtom.properties.charge;
             }
-
-            // Check electrons available
             if (sourceTotal <= 0) { continue; }
 
             // Add hydrogen
             for (let j = 0; j < sourceTotal; j++) {
 
-                // Assign new bond key
+                // Assign bond key
                 let bondID = 'H' + (j + 1) + sourceAtom.name + sourceAtom.id,
-                    bondName = sourceAtom.name + 'H';
-
-                // Assign new atom name
-                let atomName = sourceAtom.name + 'H';
+                    bondName = sourceAtom.name + 'H',
+                    atomName = sourceAtom.name + 'H';
 
                 // Add hydrogen atom/bond
                 atoms[bondID] = addAtom(bondID, 'H', 'H', H.group, H.protons, H.neutrons, H.electrons);
@@ -706,7 +690,6 @@ function decode(tokens) {
                 atoms[sourceAtom.id].bonds.atoms.push(bondID);
                 atoms[bondID].bonds.atoms.push(sourceAtom.id);
 
-                // Update electron count
                 atoms[sourceAtom.id].bonds.electrons += 1;
                 atoms[bondID].bonds.electrons += 1;
             }
@@ -715,7 +698,6 @@ function decode(tokens) {
         return [atoms, bonds, keys];
     }
 
-    // Variables
     let atoms, bonds, properties, keys;
 
     // 1. Validate tokens
@@ -732,7 +714,7 @@ function decode(tokens) {
     [atoms, bonds, keys] = explicitBonds(atoms, bonds, keys);
     [atoms, bonds, keys] = implicitBonds(atoms, bonds, keys);
 
-    return {atoms: atoms, bonds: bonds};
+    return [atoms, bonds];
 }
 
 
@@ -817,8 +799,6 @@ function addBond(id, name, value, order = 0, atoms = []) {
 
 function nextAtom(start, keys, atoms) {
 
-    if (start === '0') { return '0'; }
-
     // Determine index of key in array
     let index = keys.indexOf(start);
     if (index === -1) { return null; }
@@ -828,6 +808,7 @@ function nextAtom(start, keys, atoms) {
 
     // Determine nearest atom to key
     for (let i = 1; i < keys.length; i++) {
+
         if (atoms[keys[i]] !== undefined) {
             return keys[i];
         }
@@ -844,7 +825,7 @@ function nextAtom(start, keys, atoms) {
 
 function previousAtom(start, keys, atoms) {
 
-    if (start === '0') { return '0'; }
+    if (start === '0' && atoms['0'] !== undefined) { return '0'; }
 
     // Determine index of key in array
     let index = keys.indexOf(start);
@@ -855,6 +836,7 @@ function previousAtom(start, keys, atoms) {
 
     // Determine nearest atom to key
     for (let i = 0; i < keys.length; i++) {
+
         if (atoms[keys[i]] !== undefined) {
             return keys[i];
         }
@@ -868,4 +850,4 @@ function previousAtom(start, keys, atoms) {
   Exports
 */
 
-export { tokenize, decode };
+export { tokenize, decode, grammar };

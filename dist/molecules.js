@@ -1,16 +1,10 @@
-'use strict';
-
-var _slicedToArray = function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i['return']) _i['return'](); } finally { if (_d) throw _e; } } return _arr; } else { throw new TypeError('Invalid attempt to destructure non-iterable instance'); } };
-
-Object.defineProperty(exports, '__esModule', {
-    value: true
-});
+(function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.molecules = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 /*
   smiles.js
 
     description : parse SMILES chemical line notation
     imports     : elements
-    exports     : tokenize, decode
+    exports     : grammar, tokenize, decode
 
 */
 
@@ -18,18 +12,35 @@ Object.defineProperty(exports, '__esModule', {
   Imports
 */
 
-var _periodic_table = require('./elements');
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+    value: true
+});
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+function _slicedToArray(arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i['return']) _i['return'](); } finally { if (_d) throw _e; } } return _arr; } else { throw new TypeError('Invalid attempt to destructure non-iterable instance'); } }
+
+var _referenceElements = require('./../reference/elements');
+
+var _referenceElements2 = _interopRequireDefault(_referenceElements);
 
 /*
-  Variable: definitions
+  Variable: grammar
   --regular expressions for SMILES grammar
+
+    type       : token category
+    term       : SMILES symbol
+    tag        : SMILES definition
+    expression : regular expression
 */
 
-var definitions = [{ type: 'atom', term: 'H', tag: 'H', expression: /[A-Z]?H(?=[^efgos]|$)([0-9]?)+/g }, { type: 'atom', term: 'B', tag: 'B', expression: /B(?=[^aehikr]|$)/g }, { type: 'atom', term: 'C', tag: 'C', expression: /C(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'N', tag: 'N', expression: /N(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'O', tag: 'O', expression: /O(?=[^s]|$)/g }, { type: 'atom', term: 'F', tag: 'F', expression: /F(?=[^elmr]|$)/g }, { type: 'atom', term: 'Si', tag: 'Si', expression: /Si/g }, { type: 'atom', term: 'P', tag: 'P', expression: /P(?=[^abdmortu]|$)/g }, { type: 'atom', term: 'S', tag: 'S', expression: /S(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'Cl', tag: 'Cl', expression: /Cl/g }, { type: 'atom', term: 'Se', tag: 'Se', expression: /Se/g }, { type: 'atom', term: 'Br', tag: 'Br', expression: /Br/g }, { type: 'atom', term: 'I', tag: 'I', expression: /I(?=[^nr]|$)/g }, { type: 'atom', term: '*', tag: '*', expression: /[*]/g }, { type: 'atom', term: 'b', tag: 'B', expression: /b(?=[^aehikr]|$)/g }, { type: 'atom', term: 'c', tag: 'C', expression: /c(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'n', tag: 'N', expression: /n(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'o', tag: 'O', expression: /o(?=[^s]|$)/g }, { type: 'atom', term: 'p', tag: 'P', expression: /p(?=[^abdmortu]|$)/g }, { type: 'atom', term: 's', tag: 'S', expression: /s(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'se', tag: 'Se', expression: /se/g }, { type: 'bond', term: '-', tag: 'single', expression: /(?=[^d])[-](?=[^d])/g }, { type: 'bond', term: '=', tag: 'double', expression: /[=]/g }, { type: 'bond', term: '#', tag: 'triple', expression: /[#]/g }, { type: 'bond', term: '(', tag: 'branch', expression: /[(]/g }, { type: 'bond', term: ')', tag: 'branch', expression: /[)]/g }, { type: 'bond', term: '%', tag: 'ring', expression: /(?=[^+-])(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[%]?\d(?=([^+-]|$))/g }, { type: 'bond', term: '.', tag: 'dot', expression: /[A-Z][+-]?[\[]?[.]/g }, { type: 'property', term: '+', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g }, { type: 'property', term: '-', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g }, { type: 'property', term: 'n', tag: 'isotope', expression: /(?:[\[])[0-9]+[A-Z]{1,2}(?=.?[^\[]*[\]])/g }, { type: 'property', term: '@', tag: 'chiral', expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g }, { type: 'property', term: '@@', tag: 'chiral', expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g }];
+var grammar = [{ type: 'atom', term: 'H', tag: 'H', expression: /[A-Z]?H(?=[^efgos]|$)([0-9]?)+/g }, { type: 'atom', term: 'B', tag: 'B', expression: /B(?=[^aehikr]|$)/g }, { type: 'atom', term: 'C', tag: 'C', expression: /C(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'N', tag: 'N', expression: /N(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'O', tag: 'O', expression: /O(?=[^s]|$)/g }, { type: 'atom', term: 'F', tag: 'F', expression: /F(?=[^elmr]|$)/g }, { type: 'atom', term: 'Si', tag: 'Si', expression: /Si/g }, { type: 'atom', term: 'P', tag: 'P', expression: /P(?=[^abdmortu]|$)/g }, { type: 'atom', term: 'S', tag: 'S', expression: /S(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'Cl', tag: 'Cl', expression: /Cl/g }, { type: 'atom', term: 'Se', tag: 'Se', expression: /Se/g }, { type: 'atom', term: 'Br', tag: 'Br', expression: /Br/g }, { type: 'atom', term: 'I', tag: 'I', expression: /I(?=[^nr]|$)/g }, { type: 'atom', term: '*', tag: '*', expression: /[*]/g }, { type: 'atom', term: 'b', tag: 'B', expression: /b(?=[^aehikr]|$)/g }, { type: 'atom', term: 'c', tag: 'C', expression: /c(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'n', tag: 'N', expression: /n(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'o', tag: 'O', expression: /o(?=[^s]|$)/g }, { type: 'atom', term: 'p', tag: 'P', expression: /p(?=[^abdmortu]|$)/g }, { type: 'atom', term: 's', tag: 'S', expression: /s(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'se', tag: 'Se', expression: /se/g }, { type: 'bond', term: '-', tag: 'single', expression: /(?=[^d])[-](?=[^d])/g }, { type: 'bond', term: '=', tag: 'double', expression: /[=]/g }, { type: 'bond', term: '#', tag: 'triple', expression: /[#]/g }, { type: 'bond', term: '(', tag: 'branch', expression: /[(]/g }, { type: 'bond', term: ')', tag: 'branch', expression: /[)]/g }, { type: 'bond', term: '%', tag: 'ring', expression: /(?=[^+-])(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[%]?\d(?=([^+-]|$))/g }, { type: 'bond', term: '.', tag: 'dot', expression: /[A-Z][+-]?[\[]?[.]/g }, { type: 'property', term: '+', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g }, { type: 'property', term: '-', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g }, { type: 'property', term: 'n', tag: 'isotope', expression: /(?:[\[])[0-9]+[A-Z]{1,2}(?=.?[^\[]*[\]])/g }, { type: 'property', term: '@', tag: 'chiral', expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g }, { type: 'property', term: '@@', tag: 'chiral', expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g }];
 
 /*
   Method: tokenize
-  --parse input string for valid SMILES definitions
+  --parse input string with SMILES grammar
 
   Syntax
     tokens = tokenize(input)
@@ -47,12 +58,11 @@ var definitions = [{ type: 'atom', term: 'H', tag: 'H', expression: /[A-Z]?H(?=[
 
 function tokenize(input) {
     var tokens = arguments[1] === undefined ? [] : arguments[1];
-    var header = arguments[2] === undefined ? [] : arguments[2];
 
-    // Parse input with definitions
-    for (var i = 0; i < definitions.length; i++) {
+    // Parse input with SMILES grammar
+    for (var i = 0; i < grammar.length; i++) {
 
-        var token = definitions[i];
+        var token = grammar[i];
         var text = [];
 
         // Check input for match
@@ -87,33 +97,30 @@ function tokenize(input) {
   --convert SMILES tokens into atoms (nodes) and bonds (edges)
 
   Syntax
-    {atoms, bonds} = decode(tokens)
+    [atoms, bonds] = decode(tokens)
 
   Arguments
     tokens : array of tokens obtained from the output of 'tokenize'
 
   Output
-    {atoms, bonds} : array of atom/bond objects describing connectivity and properties
+    [atoms, bonds] : array of atom/bond objects describing connectivity and properties
 
   Examples
-    {atoms, bonds} = decode(mytokensABC)
-    {atoms, bonds} = decode(tokens123)
+    [atomsABC, bondsABC] = decode(mytokensABC)
+    [atoms123, bonds123] = decode(tokens123)
 */
 
 function decode(tokens) {
 
-    // Validate tokens
     function validateTokens(tokens) {
 
-        // Check supplied tokens type
         if (typeof tokens !== 'object') {
             throw 'Error: Tokens must be of type "object"';
         }
 
-        // Required token fields
+        // Check tokens for required fields
         var fields = ['index', 'type', 'term', 'tag'];
 
-        // Check tokens for required fields
         for (var i = 0; i < tokens.length; i++) {
 
             // Return binary comparison array
@@ -123,21 +130,19 @@ function decode(tokens) {
             if (match.reduce(function (a, b) {
                 return a + b;
             }) < 4) {
-                throw 'Error: Invalid token at index #' + i;
+                throw 'Error: Invalid token at index "' + i + '"';
             }
         }
 
         return true;
     }
 
-    // Read tokens
     function readTokens(tokens) {
         var atoms = arguments[1] === undefined ? {} : arguments[1];
         var bonds = arguments[2] === undefined ? {} : arguments[2];
         var properties = arguments[3] === undefined ? {} : arguments[3];
         var keys = arguments[4] === undefined ? {} : arguments[4];
 
-        // Generate unique key
         var newKey = function newKey(x) {
             return x.toString();
         };
@@ -145,19 +150,12 @@ function decode(tokens) {
         // Parse tokens by category
         for (var i = 0; i < tokens.length; i++) {
 
-            // Check for token header
-            if (tokens[i].index === 'header') {
-                continue;
-            }
-
             // Extract token values
             var _tokens$i = tokens[i];
             var type = _tokens$i.type;
             var term = _tokens$i.term;
             var tag = _tokens$i.tag;
             var index = _tokens$i.index;
-
-            // Assign unique key
             var key = newKey(index);
 
             // Categorize tokens
@@ -177,14 +175,13 @@ function decode(tokens) {
             }
         }
 
-        // Check for atoms
         if (atoms.length < 1) {
             return false;
         }
 
+        // Extract all token keys
         keys.all = [];
 
-        // Extract all token keys
         for (var i = 0; i < tokens.length; i++) {
             keys.all[i] = newKey(tokens[i].index);
         }
@@ -197,158 +194,119 @@ function decode(tokens) {
         return [atoms, bonds, properties, keys];
     }
 
-    // Default atom properties
     function defaultAtoms(atoms, keys) {
 
-        // Add default properties to atoms
-        var _iteratorNormalCompletion = true;
-        var _didIteratorError = false;
-        var _iteratorError = undefined;
+        for (var i = 0; i < keys.atoms.length; i++) {
 
-        try {
-            for (var _iterator = keys.atoms[Symbol.iterator](), _step; !(_iteratorNormalCompletion = (_step = _iterator.next()).done); _iteratorNormalCompletion = true) {
-                var key = _step.value;
+            var _atomID = keys.atoms[i];
 
-                // Element
-                var element = _periodic_table.periodic_table[atoms[key].name];
-
-                // Element properties
-                atoms[key].group = element.group;
-                atoms[key].protons = element.protons;
-                atoms[key].neutrons = element.neutrons;
-                atoms[key].electrons = element.electrons;
-
-                // Bond properties
-                atoms[key].bonds = {
-                    electrons: 0,
-                    atoms: []
-                };
-
-                // Other properties
-                atoms[key].properties = {
-                    chiral: 0,
-                    charge: 0
-                };
+            // Check element
+            if (_referenceElements2['default'][atoms[_atomID].name] === undefined) {
+                continue;
             }
-        } catch (err) {
-            _didIteratorError = true;
-            _iteratorError = err;
-        } finally {
-            try {
-                if (!_iteratorNormalCompletion && _iterator['return']) {
-                    _iterator['return']();
-                }
-            } finally {
-                if (_didIteratorError) {
-                    throw _iteratorError;
-                }
-            }
+
+            // Element information
+            var element = _referenceElements2['default'][atoms[_atomID].name];
+
+            // Element properties
+            atoms[_atomID].group = element.group;
+            atoms[_atomID].protons = element.protons;
+            atoms[_atomID].neutrons = element.neutrons;
+            atoms[_atomID].electrons = element.electrons;
+
+            // Bond properties
+            atoms[_atomID].bonds = {
+                electrons: 0,
+                atoms: []
+            };
+
+            // Other properties
+            atoms[_atomID].properties = {
+                chiral: 0,
+                charge: 0
+            };
         }
 
         return atoms;
     }
 
-    // Custom atom properties
     function customAtoms(atoms, properties, keys) {
 
-        // Add custom properties to atoms
-        var _iteratorNormalCompletion2 = true;
-        var _didIteratorError2 = false;
-        var _iteratorError2 = undefined;
+        for (var i = 0; i < keys.properties.length; i++) {
 
-        try {
-            for (var _iterator2 = keys.properties[Symbol.iterator](), _step2; !(_iteratorNormalCompletion2 = (_step2 = _iterator2.next()).done); _iteratorNormalCompletion2 = true) {
-                var key = _step2.value;
+            var propID = keys.properties[i];
 
-                // Retrieve properties
-                var _properties$key = properties[key];
-                var _name = _properties$key.name;
-                var value = _properties$key.value;
+            // Retrieve properties
+            var _properties$propID = properties[propID];
+            var _name = _properties$propID.name;
+            var value = _properties$propID.value;
 
-                // Property name
-                switch (_name) {
+            switch (_name) {
 
-                    // Set chiral property
-                    case 'chiral':
+                case 'chiral':
 
-                        atoms[key].properties.chiral = value.slice(value.indexOf('@'));
+                    if (atoms[propID] !== undefined) {
+                        atoms[propID].properties.chiral = value.slice(value.indexOf('@'));
                         break;
+                    }
 
-                    // Set neutrons
-                    case 'isotope':
+                    break;
 
-                        // Check neutrons
-                        var neutrons = value.match(/[0-9]+/g);
+                case 'isotope':
 
-                        // Determine atom key
-                        var atomKey = 1 + neutrons.toString().length;
+                    // Determine neutrons, atomID
+                    var neutrons = value.match(/[0-9]+/g),
+                        atomID = 1 + neutrons.toString().length;
 
-                        // Check value
-                        if (neutrons > 0 && neutrons < 250) {
+                    // Check value
+                    if (neutrons > 0 && neutrons < 250 && atoms[atomID] !== undefined) {
 
-                            // Subtract number of protons
-                            neutrons = neutrons - atoms[atomKey].protons;
+                        // Subtract number of protons
+                        neutrons = neutrons - atoms[atomID].protons;
 
-                            if (neutrons > 0) {
-                                atoms[atomKey].neutrons = neutrons;
-                                break;
-                            }
-                        }
-
-                        break;
-
-                    // Set charge property
-                    case 'charge':
-
-                        // Determine charge sign
-                        var sign = value.indexOf('+') !== -1 ? 1 : -1;
-
-                        // Check numeric charge (e.g. '3+')
-                        var charge = value.match(/[0-9]+/g);
-
-                        if (charge !== null) {
-                            atoms[key].properties.charge = charge[0] * sign;
+                        if (neutrons > 0) {
+                            atoms[atomID].neutrons = neutrons;
                             break;
                         }
+                    }
 
-                        // Check symbolic charge (e.g. '+++')
-                        charge = value.match(/([+]+|[-]+)/g);
+                    break;
 
-                        if (charge !== null) {
-                            atoms[key].properties.charge = charge[0].length * sign;
-                            break;
-                        }
+                case 'charge':
 
+                    // Determine charge sign
+                    var sign = value.indexOf('+') !== -1 ? 1 : -1;
+
+                    // Check numeric charge (e.g. '3+')
+                    var charge = value.match(/[0-9]+/g);
+
+                    if (charge !== null && atoms[propID] !== undefined) {
+                        atoms[propID].properties.charge = charge[0] * sign;
                         break;
-                }
-            }
-        } catch (err) {
-            _didIteratorError2 = true;
-            _iteratorError2 = err;
-        } finally {
-            try {
-                if (!_iteratorNormalCompletion2 && _iterator2['return']) {
-                    _iterator2['return']();
-                }
-            } finally {
-                if (_didIteratorError2) {
-                    throw _iteratorError2;
-                }
+                    }
+
+                    // Check symbolic charge (e.g. '+++')
+                    charge = value.match(/([+]+|[-]+)/g);
+
+                    if (charge !== null && atoms[propID] !== undefined) {
+                        atoms[propID].properties.charge = charge[0].length * sign;
+                        break;
+                    }
+
+                    break;
             }
         }
 
         return atoms;
     }
 
-    // Explicit bonds
     function explicitBonds(atoms, bonds, keys) {
 
-        // Check for any explicit bonds
         if (keys.bonds.length === 0) {
             return [atoms, bonds, keys];
         }
 
-        // Add explicit bonds
+        // Add bonds
         for (var i = 0; i < keys.bonds.length; i++) {
 
             // Retrieve bond key
@@ -359,9 +317,16 @@ function decode(tokens) {
                 targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
 
             // Determine index values
-            var sourceIndex = keys.all.indexOf(sourceAtom.id),
-                targetIndex = keys.all.indexOf(targetAtom.id),
-                bondIndex = keys.all.indexOf(bondID);
+            var bondIndex = keys.all.indexOf(bondID),
+                sourceIndex = 0,
+                targetIndex = 0;
+
+            if (sourceAtom !== undefined && sourceAtom !== null) {
+                sourceIndex = keys.all.indexOf(sourceAtom.id);
+            }
+            if (targetAtom !== undefined && targetAtom !== null) {
+                targetIndex = keys.all.indexOf(targetAtom.id);
+            }
 
             // Check for exceptions
             var exceptions = 0;
@@ -371,7 +336,6 @@ function decode(tokens) {
                 // Check previous bond
                 if (bonds[keys.all[bondIndex - 1]] !== undefined) {
 
-                    // Determine bond values
                     var bond1 = bonds[keys.all[bondIndex - 1]].value,
                         bond2 = bonds[bondID].value;
 
@@ -419,7 +383,7 @@ function decode(tokens) {
 
                 case 'branch':
 
-                    // Keys before and after branch
+                    // Keys before/after branch
                     var keysBefore = keys.all.slice(0, bondIndex).reverse(),
                         keysAfter = keys.all.slice(bondIndex + 1, keys.all.length);
 
@@ -432,7 +396,7 @@ function decode(tokens) {
                             // Find start of branch
                             for (var j = 0, skip = 0; j < keysBefore.length; j++) {
 
-                                // Retrieve source atom
+                                // Determine source atom
                                 sourceAtom = atoms[keysBefore[j]];
 
                                 // Update bond
@@ -532,7 +496,6 @@ function decode(tokens) {
                     // Find matching ring atom
                     for (var j = 0; j < bondsAfter.length; j++) {
 
-                        // Check for existing bond
                         if (bonds[bondID].atoms.length > 0 || j === 0) {
                             continue;
                         }
@@ -560,19 +523,16 @@ function decode(tokens) {
         for (var i = 0; i < keys.bonds.length; i++) {
 
             // Extract bonds after index
-            var bondsAfter = keys.bonds.slice(i, keys.bonds.length);
+            var _bondsAfter = keys.bonds.slice(i, keys.bonds.length);
 
             // Check for duplicate bonds
-            for (var j = 0; j < bondsAfter.length; j++) {
-
-                // Bond key
-                var bondID = bondsAfter[j];
+            for (var j = 0; j < _bondsAfter.length; j++) {
 
                 // Bond keys
-                var a = bonds[keys.bonds[i]];
-                var b = bonds[bondID];
+                var bondID = _bondsAfter[j],
+                    a = bonds[keys.bonds[i]],
+                    b = bonds[bondID];
 
-                // Check bond for atoms
                 if (a === undefined || b === undefined || j === 0) {
                     continue;
                 }
@@ -626,7 +586,6 @@ function decode(tokens) {
             var sourceID = bonds[bondID].atoms[0],
                 targetID = bonds[bondID].atoms[1];
 
-            // Check keys
             if (sourceID === undefined || targetID === undefined) {
                 continue;
             }
@@ -635,7 +594,6 @@ function decode(tokens) {
             atoms[sourceID].bonds.atoms.push(targetID);
             atoms[targetID].bonds.atoms.push(sourceID);
 
-            // Update total bonding electrons
             atoms[sourceID].bonds.electrons += bonds[bondID].order;
             atoms[targetID].bonds.electrons += bonds[bondID].order;
         }
@@ -643,7 +601,6 @@ function decode(tokens) {
         return [atoms, bonds, keys];
     }
 
-    // Implicit bonds
     function implicitBonds(atoms, bonds, keys) {
 
         // Add bonds between adjacent atoms
@@ -680,8 +637,6 @@ function decode(tokens) {
             if (targetAtom.properties.charge > 0) {
                 targetTotal -= targetAtom.properties.charge;
             }
-
-            // Check electrons available
             if (sourceTotal <= 0 || targetTotal <= 0) {
                 continue;
             }
@@ -712,7 +667,6 @@ function decode(tokens) {
                 }
             }
 
-            // Check for exceptions
             if (exceptions === 0) {
 
                 // Assign new bond key
@@ -727,14 +681,13 @@ function decode(tokens) {
                 atoms[sourceAtom.id].bonds.atoms.push(targetAtom.id);
                 atoms[targetAtom.id].bonds.atoms.push(sourceAtom.id);
 
-                // Update electron count
                 atoms[sourceAtom.id].bonds.electrons += 1;
                 atoms[targetAtom.id].bonds.electrons += 1;
             }
         }
 
         // Add implicit hydrogen
-        var H = _periodic_table.periodic_table.H;
+        var H = _referenceElements2['default'].H;
 
         for (var i = 0; i < keys.atoms.length; i++) {
 
@@ -753,8 +706,6 @@ function decode(tokens) {
             if (sourceAtom.properties.charge > 0) {
                 sourceTotal -= sourceAtom.properties.charge;
             }
-
-            // Check electrons available
             if (sourceTotal <= 0) {
                 continue;
             }
@@ -762,12 +713,10 @@ function decode(tokens) {
             // Add hydrogen
             for (var j = 0; j < sourceTotal; j++) {
 
-                // Assign new bond key
+                // Assign bond key
                 var bondID = 'H' + (j + 1) + sourceAtom.name + sourceAtom.id,
-                    bondName = sourceAtom.name + 'H';
-
-                // Assign new atom name
-                var atomName = sourceAtom.name + 'H';
+                    bondName = sourceAtom.name + 'H',
+                    atomName = sourceAtom.name + 'H';
 
                 // Add hydrogen atom/bond
                 atoms[bondID] = addAtom(bondID, 'H', 'H', H.group, H.protons, H.neutrons, H.electrons);
@@ -777,7 +726,6 @@ function decode(tokens) {
                 atoms[sourceAtom.id].bonds.atoms.push(bondID);
                 atoms[bondID].bonds.atoms.push(sourceAtom.id);
 
-                // Update electron count
                 atoms[sourceAtom.id].bonds.electrons += 1;
                 atoms[bondID].bonds.electrons += 1;
             }
@@ -786,7 +734,6 @@ function decode(tokens) {
         return [atoms, bonds, keys];
     }
 
-    // Variables
     var atoms = undefined,
         bonds = undefined,
         properties = undefined,
@@ -830,7 +777,7 @@ function decode(tokens) {
     bonds = _implicitBonds2[1];
     keys = _implicitBonds2[2];
 
-    return { atoms: atoms, bonds: bonds };
+    return [atoms, bonds];
 }
 
 /*
@@ -917,10 +864,6 @@ function addBond(id, name, value) {
 
 function nextAtom(start, keys, atoms) {
 
-    if (start === '0') {
-        return '0';
-    }
-
     // Determine index of key in array
     var index = keys.indexOf(start);
     if (index === -1) {
@@ -932,6 +875,7 @@ function nextAtom(start, keys, atoms) {
 
     // Determine nearest atom to key
     for (var i = 1; i < keys.length; i++) {
+
         if (atoms[keys[i]] !== undefined) {
             return keys[i];
         }
@@ -947,7 +891,7 @@ function nextAtom(start, keys, atoms) {
 
 function previousAtom(start, keys, atoms) {
 
-    if (start === '0') {
+    if (start === '0' && atoms['0'] !== undefined) {
         return '0';
     }
 
@@ -962,6 +906,7 @@ function previousAtom(start, keys, atoms) {
 
     // Determine nearest atom to key
     for (var i = 0; i < keys.length; i++) {
+
         if (atoms[keys[i]] !== undefined) {
             return keys[i];
         }
@@ -976,3 +921,266 @@ function previousAtom(start, keys, atoms) {
 
 exports.tokenize = tokenize;
 exports.decode = decode;
+exports.grammar = grammar;
+},{"./../reference/elements":3}],2:[function(require,module,exports){
+/*
+  molecules.js
+
+    description : dynamic 2D molecules
+    imports     : elements, smiles
+    exports     : getTokens, readTokens, molecularFormula, molecularWeight
+
+
+    Examples
+
+      getTokens - tokenize SMILES input string
+
+        tokensABC = getTokens('CC(=O)C(Cl)CC(C(C)C)C=C');
+        tokens123 = getTokens('CC1C(CC(CC1C)CCO)=O');
+        tokens['A'] = getTokens('C2C(=O)C1COCCC1CC2');
+
+
+      readTokens - determine structure/connectivity from tokens
+
+        molecule1 = readTokens(tokensABC);
+        moleculeA = readTokens(tokens123);
+        molecule['abc'] = readTokens(tokens['A']);
+
+*/
+
+/*
+  Imports
+*/
+
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+  value: true
+});
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+function _slicedToArray(arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i['return']) _i['return'](); } finally { if (_d) throw _e; } } return _arr; } else { throw new TypeError('Invalid attempt to destructure non-iterable instance'); } }
+
+var _referenceElements = require('./reference/elements');
+
+var _referenceElements2 = _interopRequireDefault(_referenceElements);
+
+var _encodingSmiles = require('./encoding/smiles');
+
+/*
+  Method: getTokens
+  --parse input string for valid SMILES definitions
+
+  Syntax
+    tokens = getTokens(input)
+
+  Arguments
+    input : any SMILES encoded string
+
+  Output
+    tokens : array of token objects
+
+  Examples
+    tokens123 = getTokens('CC(=O)CC')
+    tokensABC = getTokens('c1cccc1')
+
+*/
+
+function getTokens(input) {
+  var encoding = arguments[1] === undefined ? 'SMILES' : arguments[1];
+
+  if (typeof input === 'string') {
+
+    // Tokenize input (smiles.js)
+    return (0, _encodingSmiles.tokenize)(input);
+  }
+
+  return null;
+}
+
+/*
+  Method: readTokens
+  --convert SMILES tokens into atoms (nodes) and bonds (edges)
+
+  Syntax
+    [atoms, bonds] = readTokens(tokens)
+
+  Arguments
+    tokens : array of tokens obtained from 'getTokens'
+
+  Output
+    [atoms, bonds] : array of atom/bond objects
+
+  Examples
+    [atoms, bonds] = readTokens(mytokensABC)
+    [atoms, bonds] = readTokens(tokens123)
+
+*/
+
+function readTokens(tokens) {
+
+  if (tokens.length > 1) {
+
+    // Decode tokens (smiles.js)
+
+    var _decode = (0, _encodingSmiles.decode)(tokens);
+
+    var _decode2 = _slicedToArray(_decode, 2);
+
+    var atoms = _decode2[0];
+    var bonds = _decode2[1];
+
+    var molecule = getMolecule(atoms, bonds, 0, '0');
+
+    molecule.properties.mass = molecularWeight(molecule.atoms);
+    molecule.properties.formula = molecularFormula(molecule.atoms);
+
+    return molecule;
+  }
+
+  return null;
+}
+
+/*
+  Utility: getMolecule
+  --return new molecule object
+*/
+
+function getMolecule() {
+  var atoms = arguments[0] === undefined ? {} : arguments[0];
+  var bonds = arguments[1] === undefined ? {} : arguments[1];
+  var id = arguments[2] === undefined ? 0 : arguments[2];
+  var name = arguments[3] === undefined ? '' : arguments[3];
+
+  return {
+    id: id,
+    name: name,
+    atoms: atoms,
+    bonds: bonds,
+    properties: {}
+  };
+}
+
+/*
+  Utility: molecularFormula
+  --determine molecular formula
+*/
+
+function molecularFormula(atoms) {
+
+  var formula = {},
+      keys = Object.keys(atoms);
+
+  for (var i = 0; i < keys.length; i++) {
+
+    if (formula[atoms[keys[i]].name] === undefined) {
+      formula[atoms[keys[i]].name] = 1;
+    } else {
+      formula[atoms[keys[i]].name] += 1;
+    }
+  }
+
+  return formula;
+}
+
+/*
+  Utility: molecularWeight
+  --calculate molecular weight
+*/
+
+function molecularWeight(atoms) {
+
+  var weight = 0,
+      keys = Object.keys(atoms);
+
+  for (var i = 0; i < keys.length; i++) {
+
+    weight += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
+  }
+
+  return Math.round(weight * 1000) / 1000;
+}
+
+/*
+  Exports
+*/
+
+exports.getTokens = getTokens;
+exports.readTokens = readTokens;
+exports.molecularFormula = molecularFormula;
+exports.molecularWeight = molecularWeight;
+},{"./encoding/smiles":1,"./reference/elements":3}],3:[function(require,module,exports){
+/*
+  elements.js
+
+    description : basic properties of the elements
+    imports     : N/A
+    exports     : periodic_table
+
+*/
+
+/*
+  Variable: periodic_table
+
+    protons:   atomic number
+    neutrons:  weighted average number of neutrons
+    electrons: number of protons
+    group:     periodic table column number
+    period:    periodic table row number
+
+*/
+
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+    value: true
+});
+var periodic_table = {
+
+    'H': { protons: 1, neutrons: 0.0079, electrons: 1, group: 1, period: 1 },
+    'He': { protons: 2, neutrons: 2.0026, electrons: 2, group: 18, period: 1 },
+    'Li': { protons: 3, neutrons: 3.941, electrons: 3, group: 1, period: 2 },
+    'Be': { protons: 4, neutrons: 5.0122, electrons: 4, group: 2, period: 2 },
+    'B': { protons: 5, neutrons: 5.811, electrons: 5, group: 13, period: 2 },
+    'C': { protons: 6, neutrons: 6.0107, electrons: 6, group: 14, period: 2 },
+    'N': { protons: 7, neutrons: 7.0067, electrons: 7, group: 15, period: 2 },
+    'O': { protons: 8, neutrons: 7.9994, electrons: 8, group: 16, period: 2 },
+    'F': { protons: 9, neutrons: 9.9984, electrons: 9, group: 17, period: 2 },
+    'Ne': { protons: 10, neutrons: 10.1797, electrons: 10, group: 18, period: 2 },
+    'Na': { protons: 11, neutrons: 11.9897, electrons: 11, group: 1, period: 3 },
+    'Mg': { protons: 12, neutrons: 12.305, electrons: 12, group: 2, period: 3 },
+    'Al': { protons: 13, neutrons: 13.9815, electrons: 13, group: 13, period: 3 },
+    'Si': { protons: 14, neutrons: 14.0855, electrons: 14, group: 14, period: 3 },
+    'P': { protons: 15, neutrons: 15.9738, electrons: 15, group: 15, period: 3 },
+    'S': { protons: 16, neutrons: 16.065, electrons: 16, group: 16, period: 3 },
+    'Cl': { protons: 17, neutrons: 18.453, electrons: 17, group: 17, period: 3 },
+    'Ar': { protons: 18, neutrons: 21.948, electrons: 18, group: 18, period: 3 },
+    'Se': { protons: 34, neutrons: 44.96, electrons: 34, group: 16, period: 4 },
+    'Br': { protons: 35, neutrons: 44.904, electrons: 35, group: 17, period: 4 },
+    'I': { protons: 53, neutrons: 73.9045, electrons: 53, group: 17, period: 5 }
+
+};
+
+/*
+  Utility: getElement
+  --return info on element
+*/
+
+function getElement(element) {
+
+    if (periodic_table[element] !== undefined) {
+        return periodic_table[element];
+    } else {
+        return null;
+    }
+}
+
+/*
+  Exports
+*/
+
+exports['default'] = periodic_table;
+module.exports = exports['default'];
+},{}]},{},[2])(2)
+});

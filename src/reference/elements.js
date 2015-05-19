@@ -16,9 +16,11 @@
     electrons: number of protons
     group:     periodic table column number
     period:    periodic table row number
- */
+
+*/
 
 var periodic_table = {
+
     'H':  {protons: 1,  neutrons: 0.0079,  electrons: 1,  group: 1,  period: 1},
     'He': {protons: 2,  neutrons: 2.0026,  electrons: 2,  group: 18, period: 1},
     'Li': {protons: 3,  neutrons: 3.9410,  electrons: 3,  group: 1,  period: 2},
@@ -40,6 +42,7 @@ var periodic_table = {
     'Se': {protons: 34, neutrons: 44.9600, electrons: 34, group: 16, period: 4},
     'Br': {protons: 35, neutrons: 44.9040, electrons: 35, group: 17, period: 4},
     'I':  {protons: 53, neutrons: 73.9045, electrons: 53, group: 17, period: 5}
+
 };
 
 
@@ -63,4 +66,4 @@ function getElement(element) {
   Exports
 */
 
-export { periodic_table };
+export default periodic_table;

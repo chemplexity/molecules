@@ -3,23 +3,24 @@
 
     description : dynamic 2D molecules
     imports     : elements, smiles
-    exports     : getTokens, readTokens
+    exports     : getTokens, readTokens, molecularFormula, molecularWeight
 
 
     Examples
 
-      getTokens ('tokenize SMILES input string')
+      getTokens - tokenize SMILES input string
 
         tokensABC = getTokens('CC(=O)C(Cl)CC(C(C)C)C=C');
         tokens123 = getTokens('CC1C(CC(CC1C)CCO)=O');
         tokens['A'] = getTokens('C2C(=O)C1COCCC1CC2');
 
 
-      readTokens ('determine structure/connectivity from tokens')
+      readTokens - determine structure/connectivity from tokens
 
         molecule1 = readTokens(tokensABC);
         moleculeA = readTokens(tokens123);
         molecule['abc'] = readTokens(tokens['A']);
+
 */
 
 
@@ -27,8 +28,8 @@
   Imports
 */
 
-import {periodic_table} from './elements';
-import {tokenize, decode} from './smiles';
+import periodic_table from './reference/elements';
+import { tokenize, decode } from './encoding/smiles';
 
 
 /*
@@ -47,11 +48,18 @@ import {tokenize, decode} from './smiles';
   Examples
     tokens123 = getTokens('CC(=O)CC')
     tokensABC = getTokens('c1cccc1')
+
 */
 
-function getTokens(input) {
+function getTokens(input, encoding = 'SMILES') {
 
-    return tokenize(input);
+    if (typeof input === 'string') {
+
+        // Tokenize input (smiles.js)
+        return tokenize(input);
+    }
+
+    return null;
 }
 
 
@@ -60,22 +68,36 @@ function getTokens(input) {
   --convert SMILES tokens into atoms (nodes) and bonds (edges)
 
   Syntax
-    {id, atoms, bonds} = readTokens(tokens)
+    [atoms, bonds] = readTokens(tokens)
 
   Arguments
     tokens : array of tokens obtained from 'getTokens'
 
   Output
-    {id, atoms, bonds} : array of atom/bond objects
+    [atoms, bonds] : array of atom/bond objects
 
   Examples
-    {id, atoms, bonds} = readTokens(mytokensABC)
-    {id, atoms, bonds} = readTokens(tokens123)
+    [atoms, bonds] = readTokens(mytokensABC)
+    [atoms, bonds] = readTokens(tokens123)
+
 */
 
 function readTokens(tokens) {
 
-    return decode(tokens);
+    if (tokens.length > 1) {
+
+        // Decode tokens (smiles.js)
+        let [atoms, bonds] = decode(tokens);
+
+        let molecule = getMolecule(atoms, bonds, 0, '0');
+
+        molecule.properties.mass = molecularWeight(molecule.atoms);
+        molecule.properties.formula = molecularFormula(molecule.atoms);
+
+        return molecule;
+    }
+
+    return null;
 }
 
 
@@ -95,12 +117,13 @@ function getMolecule(atoms = {}, bonds = {}, id = 0, name = '') {
     };
 }
 
+
 /*
-  Utility: molecular_formula
+  Utility: molecularFormula
   --determine molecular formula
 */
 
-function molecular_formula(atoms) {
+function molecularFormula(atoms) {
 
     let formula = {},
         keys = Object.keys(atoms);
@@ -121,16 +144,17 @@ function molecular_formula(atoms) {
 
 
 /*
-  Utility: molecular_weight
+  Utility: molecularWeight
   --calculate molecular weight
 */
 
-function molecular_weight(atoms) {
+function molecularWeight(atoms) {
 
     let weight = 0,
         keys = Object.keys(atoms);
 
     for (let i = 0; i < keys.length; i++) {
+
         weight += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
     }
 
@@ -142,4 +166,4 @@ function molecular_weight(atoms) {
   Exports
 */
 
-export { getTokens, readTokens, molecular_formula, molecular_weight };
+export { getTokens, readTokens, molecularFormula, molecularWeight };

@@ -1,0 +1,184 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+
+* { box-sizing:border-box; }
+
+.link line {
+    stroke: #000000;
+    stroke-opacity: 0.7;
+    stroke-width: 1;
+}
+
+.link line.separator {
+  stroke: #fff;
+  stroke-width: 3px;
+}
+
+.node circle {
+  stroke: #000;
+  stroke-width: 3px;
+}
+
+.container {
+    font-family:'Lucida Sans Unicode';
+    width:500px;
+    margin:15px auto auto 30px;
+    display:block;
+    background:#FFF;
+    padding:20px 5px 5px;
+}
+
+.footer { text-align:right; }
+.footer a { color:#53B2C8; }
+
+.group {
+    position:relative;
+    margin-bottom:5px;
+}
+
+.examples {
+    color:#999;
+    font-size:12px;
+    font-weight:normal;
+    font-family:'Lucida Sans Unicode';
+}
+
+.examples a:link {
+    color: #53B2C8;
+    font-weight:bold;
+}
+
+.examples a:visited {
+    color: #53B2C8;
+    font-weight:bold;
+}
+
+.examples a:hover {
+    color: #53B2C8;
+    font-weight:bold;
+}
+
+.examples a:active {
+    color: #53B2C8;
+    font-weight:bold;
+}
+
+input {
+    font-size:16px;
+    padding:10px 10px 10px 5px;
+    display:block;
+    width:300px;
+    border:none;
+    border-bottom:1px solid #757575;
+}
+
+input:focus { outline:none; }
+
+label {
+    color:#999;
+    font-size:16px;
+    font-weight:normal;
+    position:absolute;
+    pointer-events:none;
+    left:5px;
+    top:10px;
+    transition:0.2s ease all;
+    -moz-transition:0.2s ease all;
+    -webkit-transition:0.2s ease all;
+}
+
+input:focus ~ label, input:valid ~ label {
+    top:-15px;
+    font-size:13px;
+    color:#5264AE;
+}
+
+.bar { position:relative; display:block; width:350px; }
+.bar:before, .bar:after {
+    content:'';
+    height:2px;
+    width:0;
+    bottom:1px;
+    position:absolute;
+    background:#5264AE;
+    transition:0.2s ease all;
+    -moz-transition:0.2s ease all;
+    -webkit-transition:0.2s ease all;
+}
+
+.bar:before { left:50%; }
+.bar:after { right:50%; }
+
+input:focus ~ .bar:before, input:focus ~ .bar:after {
+    width:50%;
+}
+
+.highlight {
+    position:absolute;
+    height:60%;
+    width:100px;
+    top:25%;
+    left:0;
+    pointer-events:none;
+    opacity:0.5;
+}
+
+input:focus ~ .highlight {
+    -webkit-animation:inputHighlighter 0.3s ease;
+    -moz-animation:inputHighlighter 0.3s ease;
+    animation:inputHighlighter 0.3s ease;
+}
+
+@-webkit-keyframes inputHighlighter {
+    from { background:#5264AE; }
+    to { width:0; background:transparent; }
+}
+
+@-moz-keyframes inputHighlighter {
+    from { background:#5264AE; }
+    to { width:0; background:transparent; }
+}
+
+@keyframes inputHighlighter {
+	from { background:#5264AE; }
+    to { width:0; background:transparent; }
+}
+
+</style>
+
+<script src="./../dist/molecules.js"></script>
+<script src="./../lib/d3.v3.min.js"></script>
+
+<body>
+    <div id="chart"></div>
+</body>
+
+<script>
+
+// SMILES Test
+var test = [
+    {weight: 84.16, formula: {C:6, H:12}, name: 'C1CCCCC1'},
+    {weight: 188.70, formula: {C:10, H:17, Cl:1, O:1}, name: 'CC(=O)C(Cl)CC(C(C)C)C=C'},
+    {weight: 154.21, formula: {C:9, H:14, O:2}, name: 'C2C(=O)C1COCCC1CC2'},
+    {weight: 150.65, formula: {C:7, H:15, Cl:1, O:1}, name: 'CC(CC(Cl)CCO)C'},
+    {weight: 170.25, formula: {C:10, H:18, O:2}, name: 'CC1C(CC(CC1C)CCO)=O'},
+    {weight: 131.18, formula: {C:6, H:13, N:1, O:2}, name: 'NC(C(CC)C)C(O)=O'},
+    {weight: 180.16, formula: {C:6, H:12, O:6}, name: 'O[C@@]([H])(O1)[C@@](O)([H])[C@@]([H])(O)[C@]1([C@@](CO)(O)[H])[H]'},
+    {weight: 390.62, formula: {C:13, H:24, Cl:1, I:1, N:1, O:2}, name: 'CCOC(Cl)C1C[14C](I)C1N-OCC(C)CCC'},
+    {weight: 372.45, formula: {C:23, H:22, N:3, O:2}, name: 'c1ccccc1[C@]2(C(=O)N(C)C(N)=[NH+]2)c3cc(ccc3)-c4ccc(cc4)OC'}
+];
+
+for (var i = 0; i < test.length; i++) {
+    var tokens = molecules.getTokens(test[i].name);
+    var mol = molecules.readTokens(tokens);
+
+    var diff = Math.round((mol.properties.mass-test[i].weight) * 100)/100;
+
+    if (Math.abs(diff) < 0.5) { console.log(i + ') PASS'); }
+    else {
+        console.log(i + ') FAIL (Error: ' + diff + ', Actual: ' + test[i].weight + ')');
+    }
+}
+
+</script>
