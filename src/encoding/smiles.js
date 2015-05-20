@@ -2,7 +2,7 @@
   smiles.js
 
     description : parse SMILES chemical line notation
-    imports     : elements
+    imports     : periodic_table
     exports     : grammar, tokenize, decode
 
 */
@@ -26,13 +26,17 @@ import periodic_table from './../reference/elements';
 */
 
 var grammar = [
-    {type: 'atom',     term: 'H',  tag: 'H',       expression: /[A-Z]?H(?=[^efgos]|$)([0-9]?)+/g},
+    {type: 'atom',     term: 'H',  tag: 'H',       expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'B',  tag: 'B',       expression: /B(?=[^aehikr]|$)/g},
     {type: 'atom',     term: 'C',  tag: 'C',       expression: /C(?=[^adeflmnorsu]|$)/g},
     {type: 'atom',     term: 'N',  tag: 'N',       expression: /N(?=[^abdeiop]|$)/g},
     {type: 'atom',     term: 'O',  tag: 'O',       expression: /O(?=[^s]|$)/g},
     {type: 'atom',     term: 'F',  tag: 'F',       expression: /F(?=[^elmr]|$)/g},
+    {type: 'atom',     term: 'Ne', tag: 'Ne',      expression: /Ne/g},
+    {type: 'atom',     term: 'Na', tag: 'Na',      expression: /Na/g},
+    {type: 'atom',     term: 'Mg', tag: 'Mg',      expression: /Mg/g},
     {type: 'atom',     term: 'Si', tag: 'Si',      expression: /Si/g},
+    {type: 'atom',     term: 'Al', tag: 'Al',      expression: /Al/g},
     {type: 'atom',     term: 'P',  tag: 'P',       expression: /P(?=[^abdmortu]|$)/g},
     {type: 'atom',     term: 'S',  tag: 'S',       expression: /S(?=[^bcegimnr]|$)/g},
     {type: 'atom',     term: 'Cl', tag: 'Cl',      expression: /Cl/g},
@@ -47,7 +51,7 @@ var grammar = [
     {type: 'atom',     term: 'p',  tag: 'P',       expression: /p(?=[^abdmortu]|$)/g},
     {type: 'atom',     term: 's',  tag: 'S',       expression: /s(?=[^bcegimnr]|$)/g},
     {type: 'atom',     term: 'se', tag: 'Se',      expression: /se/g},
-    {type: 'bond',     term: '-',  tag: 'single',  expression: /(?=[^d])[-](?=[^d])/g},
+    {type: 'bond',     term: '-',  tag: 'single',  expression: /(?=([^0-9]))[-](?=[^0-9-\]])/g},
     {type: 'bond',     term: '=',  tag: 'double',  expression: /[=]/g},
     {type: 'bond',     term: '#',  tag: 'triple',  expression: /[#]/g},
     {type: 'bond',     term: '(',  tag: 'branch',  expression: /[(]/g},
@@ -67,17 +71,17 @@ var grammar = [
   --parse input string with SMILES grammar
 
   Syntax
-    tokens = tokenize(input)
+    {tokens} = tokenize(input)
 
   Arguments
     input : any SMILES encoded string
 
   Output
-    tokens : array of token objects
+    {tokens} : array of token objects
 
   Examples
-    tokens123 = tokenize('CC(=O)CC')
-    tokensABC = tokenize('c1cccc1')
+    {tokens: tokens123} = tokenize('CC(=O)CC')
+    {tokens: tokensABC} = tokenize('c1cccc1')
 */
 
 function tokenize(input, tokens = []) {
@@ -108,7 +112,7 @@ function tokenize(input, tokens = []) {
         return 0;
     });
 
-    return tokens;
+    return {tokens: tokens};
 }
 
 
@@ -117,35 +121,39 @@ function tokenize(input, tokens = []) {
   --convert SMILES tokens into atoms (nodes) and bonds (edges)
 
   Syntax
-    [atoms, bonds] = decode(tokens)
+    {atoms, bonds} = decode(tokens)
 
   Arguments
     tokens : array of tokens obtained from the output of 'tokenize'
 
   Output
-    [atoms, bonds] : array of atom/bond objects describing connectivity and properties
+    {atoms, bonds} : array of atom/bond objects describing connectivity and properties
 
   Examples
-    [atomsABC, bondsABC] = decode(mytokensABC)
-    [atoms123, bonds123] = decode(tokens123)
+    {atoms: atomsABC, bonds: bondsABC} = decode(mytokensABC)
+    {atoms: atoms123, bonds: bonds123} = decode(tokens123)
 */
 
 function decode(tokens) {
 
     function validateTokens(tokens) {
 
-        if (typeof(tokens) !== 'object') { throw 'Error: Tokens must be of type "object"'; }
+        if (typeof(tokens) !== 'object') {
+            return console.log('Error: Tokens must be of type "object"');
+        }
 
         // Check tokens for required fields
         let fields = ['index', 'type', 'term', 'tag'];
 
         for (let i = 0; i < tokens.length; i++) {
 
-            // Return binary comparison array
+            // Compare fields
             let match = compare(fields, Object.keys(tokens[i]));
 
             // Check for invalid token
-            if (match.reduce((a, b) => a + b) < 4) { throw 'Error: Invalid token at index "' + i + '"'; }
+            if (match.reduce((a, b) => a + b) < 4) {
+                return console.log('Error: Invalid token at index "' + i + '"');
+            }
         }
 
         return true;
@@ -179,7 +187,9 @@ function decode(tokens) {
             }
         }
 
-        if (atoms.length < 1) { return false; }
+        if (atoms.length < 1) {
+            return console.log('Error: Could not find atoms');
+        }
 
         // Extract all token keys
         keys.all = [];
@@ -254,12 +264,12 @@ function decode(tokens) {
 
                     // Determine neutrons, atomID
                     let neutrons = value.match(/[0-9]+/g),
-                        atomID = 1 + neutrons.toString().length;
+                        atomID = 1 + neutrons.toString().length + parseInt(propID);
 
                     // Check value
                     if (neutrons > 0 && neutrons < 250 && atoms[atomID] !== undefined) {
 
-                        // Subtract number of protons
+                        // Subtract protons
                         neutrons = neutrons - atoms[atomID].protons;
 
                         if (neutrons > 0) {
@@ -300,7 +310,9 @@ function decode(tokens) {
 
     function explicitBonds(atoms, bonds, keys) {
 
-        if (keys.bonds.length === 0) { return [atoms, bonds, keys]; }
+        if (keys.bonds.length === 0 || keys.bonds.length === undefined) {
+            return [atoms, bonds, keys];
+        }
 
         // Add bonds
         for (let i = 0; i < keys.bonds.length; i++) {
@@ -335,7 +347,7 @@ function decode(tokens) {
                     let bond1 = bonds[keys.all[bondIndex - 1]].value,
                         bond2 = bonds[bondID].value;
 
-                    // Exception #1: bond symbol follows branch end
+                    // Exception: bond symbol follows branch end
                     if (bond1 === ')' && (bond2 === '-' || bond2 === '=' || bond2 === '#' || bond2 === '.')) {
                         exceptions = 1;
                     }
@@ -388,7 +400,7 @@ function decode(tokens) {
                                 sourceAtom = atoms[keysBefore[j]];
 
                                 // Update bond
-                                if (sourceAtom !== undefined && skip === 0) {
+                                if (sourceAtom !== undefined && sourceAtom.name !== 'H' && skip === 0) {
                                     bonds[bondID].order = 1;
                                     bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                                     break;
@@ -396,6 +408,7 @@ function decode(tokens) {
 
                                 // Check for nested branch
                                 else if (bonds[keysBefore[j]] !== undefined) {
+
                                     switch (bonds[keysBefore[j]].value) {
                                         case ')': skip++; break;
                                         case '(': skip--; break;
@@ -415,7 +428,7 @@ function decode(tokens) {
                                 sourceAtom = atoms[keysBefore[j]];
 
                                 // Update bond
-                                if (sourceAtom !== undefined && skip === 0) {
+                                if (sourceAtom !== undefined && sourceAtom.name !== 'H' && skip === 0) {
                                     bonds[bondID].order = 1;
                                     bonds[bondID].atoms[0] = sourceAtom.id;
                                     break;
@@ -423,6 +436,7 @@ function decode(tokens) {
 
                                 // Check for nested branch
                                 else if (bonds[keysBefore[j]] !== undefined) {
+
                                     switch (bonds[keysBefore[j]].value) {
                                         case ')': skip++; break;
                                         case '(': skip--; break;
@@ -453,6 +467,7 @@ function decode(tokens) {
 
                                 // Check for nested branch
                                 else if (bonds[keysAfter[j]] !== undefined) {
+
                                     switch (bonds[keysAfter[j]].value) {
                                         case ')': skip--; break;
                                         case '(': skip++; break;
@@ -672,6 +687,10 @@ function decode(tokens) {
             if (sourceAtom.properties.charge > 0) {
                 sourceTotal -= sourceAtom.properties.charge;
             }
+            else if (sourceAtom.properties.charge < 0) {
+                sourceTotal += sourceAtom.properties.charge;
+            }
+
             if (sourceTotal <= 0) { continue; }
 
             // Add hydrogen
@@ -714,7 +733,7 @@ function decode(tokens) {
     [atoms, bonds, keys] = explicitBonds(atoms, bonds, keys);
     [atoms, bonds, keys] = implicitBonds(atoms, bonds, keys);
 
-    return [atoms, bonds];
+    return {atoms: atoms, bonds: bonds};
 }
 
 

@@ -2,7 +2,7 @@
   molecules.js
 
     description : dynamic 2D molecules
-    imports     : elements, smiles
+    imports     : periodic_table, tokenize, decode
     exports     : getTokens, readTokens, molecularFormula, molecularWeight
 
 
@@ -32,22 +32,45 @@ import periodic_table from './reference/elements';
 import { tokenize, decode } from './encoding/smiles';
 
 
+// Experimental
+function parse(input, encoding = 'SMILES') {
+
+    switch (encoding) {
+
+        case 'SMILES':
+        case 'smiles':
+
+            // Parse string
+            if (typeof input === 'string') {
+                return tokenize(input);
+            }
+
+            // Parse tokens
+            else if (typeof input === 'object') {
+                return decode(input);
+            }
+
+            return null;
+    }
+}
+
+
 /*
   Method: getTokens
   --parse input string for valid SMILES definitions
 
   Syntax
-    tokens = getTokens(input)
+    {tokens} = getTokens(input)
 
   Arguments
     input : any SMILES encoded string
 
   Output
-    tokens : array of token objects
+    {tokens} : array of token objects
 
   Examples
-    tokens123 = getTokens('CC(=O)CC')
-    tokensABC = getTokens('c1cccc1')
+    {tokens123} = getTokens('CC(=O)CC')
+    {tokensABC} = getTokens('c1cccc1')
 
 */
 
@@ -68,17 +91,17 @@ function getTokens(input, encoding = 'SMILES') {
   --convert SMILES tokens into atoms (nodes) and bonds (edges)
 
   Syntax
-    [atoms, bonds] = readTokens(tokens)
+    molecule = readTokens(tokens)
 
   Arguments
     tokens : array of tokens obtained from 'getTokens'
 
   Output
-    [atoms, bonds] : array of atom/bond objects
+    molecule : collection of atoms and bonds
 
   Examples
-    [atoms, bonds] = readTokens(mytokensABC)
-    [atoms, bonds] = readTokens(tokens123)
+    moleculeABC = readTokens(mytokensABC)
+    molecule['C'] = readTokens(tokens123)
 
 */
 
@@ -87,7 +110,7 @@ function readTokens(tokens) {
     if (tokens.length > 1) {
 
         // Decode tokens (smiles.js)
-        let [atoms, bonds] = decode(tokens);
+        let {atoms, bonds} = decode(tokens);
 
         let molecule = getMolecule(atoms, bonds, 0, '0');
 
@@ -113,7 +136,10 @@ function getMolecule(atoms = {}, bonds = {}, id = 0, name = '') {
         name: name,
         atoms: atoms,
         bonds: bonds,
-        properties: {}
+        properties: {
+            mass: null,
+            formula: null
+        }
     };
 }
 
@@ -150,15 +176,15 @@ function molecularFormula(atoms) {
 
 function molecularWeight(atoms) {
 
-    let weight = 0,
+    let mass = 0,
         keys = Object.keys(atoms);
 
     for (let i = 0; i < keys.length; i++) {
 
-        weight += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
+        mass += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
     }
 
-    return Math.round(weight * 1000) / 1000;
+    return Math.round(mass * 1000) / 1000;
 }
 
 
