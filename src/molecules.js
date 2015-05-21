@@ -32,7 +32,42 @@ import periodic_table from './reference/elements';
 import { tokenize, decode } from './encoding/smiles';
 
 
-// Experimental
+/*
+  Method: parse
+  --parse input string or set of tokens
+
+  Syntax
+    output = parse(input)
+    output = parse(input, encoding)
+
+  Arguments
+    input  : a) chemical notation string (e.g. 'C2C(=O)C1COCCC1CC2')
+             b) tokens returned from output of 'a)' (e.g. '{tokens: tokens}')
+
+    encoding (Optional) : encoding type of input (default = 'SMILES')
+
+  Output
+    output : a) 'tokens' from a parsed chemical notation string
+             b) 'molecule' object with atoms and bonds from a set of tokens
+
+  Examples
+    a) String -> Tokens
+        tokens123 = parse('CC(=O)CC')
+        tokensABC = parse('c1cccc1', 'SMILES')
+        myTokens['42'] = parse('CC(O)CC')
+        tokens.butane = parse('CCCC')
+        butane.tokens = parse('CCCC')
+        tokensA[3] = parse('CC1C(CC(CC1C)CCO)=O')
+
+    b) Tokens -> Molecule
+        mol123 = parse(tokens123)
+        molABC = parse(tokensABC.tokens)
+        molABC = parse(tokensABC)
+        mol['42'] = parse(myTokens['42'].tokens)
+        m.butane = parse(tokens.butane)
+        butane.molecule = parse(butane.tokens)
+*/
+
 function parse(input, encoding = 'SMILES') {
 
     switch (encoding) {
@@ -192,4 +227,4 @@ function molecularWeight(atoms) {
   Exports
 */
 
-export { getTokens, readTokens, molecularFormula, molecularWeight };
+export { parse, getTokens, readTokens, molecularFormula, molecularWeight };

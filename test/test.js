@@ -93,9 +93,9 @@ var tokens = [],
 
 function testAll() {
 
-    for (var i = 0; i < test.length; i++) {
+    var t0 = new Date();
 
-        //console.log(i + ') ' + test[i].name);
+    for (var i = 0; i < test.length; i++) {
 
         // Parse SMILES
         var t = molecules.getTokens(test[i].name);
@@ -109,12 +109,18 @@ function testAll() {
         formula[i] = mol[i].properties.formula;
     }
 
+    var t1 = new Date();
+
     // Compare molecular weights
     var difference = [],
         category = test[0].category,
         result = [category];
 
+    var pass = 0,
+        fail = 0;
+
     for (var i = 0, sign = ''; i < mass.length; i++) {
+
 
         // Calculated vs. Actual
         var m1 = Math.round(mass[i] * 100) / 100,
@@ -133,10 +139,12 @@ function testAll() {
         }
 
         if (Math.abs(difference[i]) < 0.5) {
-            result.push('  ' + i + ') PASS (' + test[i].type + ')');
+            result.push('  ' + (i+1) + ') PASS (' + test[i].type + ')');
+            pass += 1;
         }
         else {
-            result.push('  ' + i + ') FAIL (' + test[i].type + ')');
+            result.push('  ' + (i+1) + ') FAIL (' + test[i].type + ')');
+            fail += 1;
 
             var e1 = Object.keys(formula[i]),
                 e2 = Object.keys(test[i].formula);
@@ -156,11 +164,17 @@ function testAll() {
                 }
             }
 
-            result.push('      ' + test[i].name);
+            result.push('      ' + 'input  | ' + test[i].name);
             result.push('      ' + 'output | ' + f1 + '| ' + m1);
             result.push('      ' + 'actual | ' + f2 + '| ' + m2);
         }
     }
+
+    result.push('');
+    result.push('PASS  | ' + pass + ' | ' + (Math.round((pass / (pass+fail)) * 100)) + '%');
+    result.push('FAIL  | ' + fail + ' | ' + (Math.round((fail / (pass+fail)) * 100)) + '%');
+    result.push('TOTAL | ' + (pass + fail) + ' | 100%');
+    result.push('TIME  | ' + (t1-t0) + ' ms');
 
     console.log(result);
 }
@@ -192,9 +206,14 @@ function testCustom(input) {
 
     console.log('input  | ' + input);
     console.log('output | ' + f + '| ' + mass);
+
+    return [tokens, mol];
 }
 
-var input = 'C1CCCCC1';
+// 5-20-2015 - pass: 42, fail: 12, total: 52
+var latest_results = {pass: 42, fail: 10, total: 52};
 
 testAll();
+
+var input = '[NH4+].[NH4+].[O-]S(=O)(=O)[S-]';
 //testCustom(input);
