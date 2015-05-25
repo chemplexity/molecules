@@ -56,7 +56,7 @@ var grammar = [
     {type: 'bond',     term: '#',  tag: 'triple',  expression: /[#]/g},
     {type: 'bond',     term: '(',  tag: 'branch',  expression: /[(]/g},
     {type: 'bond',     term: ')',  tag: 'branch',  expression: /[)]/g},
-    {type: 'bond',     term: '%',  tag: 'ring',    expression: /(?=[^+-])(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[%]?\d(?=([^+-]|$))/g},
+    {type: 'bond',     term: '%',  tag: 'ring',    expression: /(?=[^+-])(?:[a-zA-Z]{1,2}[@]{1,2})?(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[%]?\d+(?=([^+-]|$))/g},
     {type: 'bond',     term: '.',  tag: 'dot',     expression: /(?:[A-Z][+-]?[\[])?[.]/g},
     {type: 'property', term: '+',  tag: 'charge',  expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g},
     {type: 'property', term: '-',  tag: 'charge',  expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g},
@@ -136,7 +136,6 @@ function tokenize(input, tokens = []) {
 
 function decode(tokens) {
 
-    // Check input for valid token format
     function validateTokens(tokens) {
 
         // Check input type
@@ -144,6 +143,7 @@ function decode(tokens) {
             console.log('Error: Tokens must be of type "object"');
             return false;
         }
+
         else if (tokens.tokens !== undefined) {
             tokens = tokens.tokens;
         }
@@ -160,6 +160,74 @@ function decode(tokens) {
             if (match.reduce((a, b) => a + b) < 4) {
                 console.log('Error: Invalid token at index "' + i + '"');
                 return false;
+            }
+        }
+
+        return tokens;
+    }
+
+    function preprocessTokens(tokens) {
+
+        for (let i = 0; i < tokens.length; i++) {
+
+            // Extract token values
+            let {term, tag} = tokens[i];
+
+            // Check for multi-digit ring number
+            if (tag === 'ring') {
+
+                // Extract ring number
+                let id = tokens[i].term.match(/[0-9]+/g);
+
+                if (id !== null) { id = id[0]; }
+                else { continue; }
+
+                if (id.length > 1) {
+
+                    let exception = 0;
+
+                    // Check for matching ring number
+                    for (let j = 0; j < tokens.length; j++) {
+
+                        if (i === j || tokens[j].tag !== 'ring') { continue; }
+
+                        // Extract ring number
+                        let id2 = tokens[j].term.match(/[0-9]+/g);
+
+                        if (id2 !== null) { id2 = id2[0]; }
+                        else { continue; }
+
+                        // Compare ring numbers
+                        if (id === id2) {
+                            exception = 1;
+                            break;
+                        }
+                    }
+
+                    // Match found
+                    if (exception === 1) { continue; }
+
+                    // Token information
+                    let prefix = tokens[i].term.match(/[a-zA-Z]/g)[0],
+                        index = tokens[i].index,
+                        type = tokens[i].type,
+                        tag = tokens[i].tag;
+
+                    // Parse ring number
+                    for (let j = 0; j < id.length; j++) {
+
+                        // Create new token
+                        tokens.splice(i+1, 0, {
+                            index: index + j,
+                            type:  type,
+                            term:  prefix + id.substr(j, j+1),
+                            tag:   tag
+                        });
+                    }
+
+                    // Remove original token
+                    tokens.splice(i, 1);
+                }
             }
         }
 
@@ -241,8 +309,14 @@ function decode(tokens) {
             // Other properties
             atoms[atomID].properties = {
                 chiral: 0,
-                charge: 0
+                charge: 0,
+                aromatic: 0
             };
+
+            // Check aromatic
+            if (atoms[atomID].value === atoms[atomID].value.toLowerCase()) {
+                atoms[atomID].properties.aromatic = 1;
+            }
         }
 
         return atoms;
@@ -386,7 +460,7 @@ function decode(tokens) {
 
                 case 'dot':
                     if (exceptions === 1) { continue; }
-                    //bonds[bondID].order = 0;
+                    bonds[bondID].order = 0;
                     //bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                     break;
 
@@ -519,31 +593,57 @@ function decode(tokens) {
 
                     break;
 
-                // Ring
                 case 'ring':
 
-                    // Ring number
-                    let sourceID = bonds[bondID].value.match(/[0-9]+/g),
-                        count = 0;
+                    let sourceID = bonds[bondID].value.match(/[0-9]+/g);
 
-                    // Keys after ring token
-                    let bondsAfter = keys.bonds.slice(keys.bonds.indexOf(bondID), keys.bonds.length);
+                    // Keys before/after ring token
+                    let bondsBefore = keys.bonds.slice(0, keys.bonds.indexOf(bondID)),
+                        bondsAfter = keys.bonds.slice(keys.bonds.indexOf(bondID), keys.bonds.length);
 
-                    // Find matching ring atom
-                    for (let j = 0; j < bondsAfter.length; j++) {
+                    // Check keys after ring token
+                    for (let j = 1; j < bondsAfter.length; j++) {
 
-                        if (bonds[bondID].atoms.length > 0 || j === 0) { continue; }
+                        if (bonds[bondsAfter[j]].name !== 'ring') { continue; }
 
-                        // Determine ring number
-                        let targetID = bonds[bondsAfter[j]].value.match(/[0-9]+/g);
+                        let targetID = bonds[bondsAfter[j]].value.match(/[0-9]+/g),
+                            targetIndex = bondsAfter[j],
+                            sourceIndex = bondID;
 
-                        // Add bond
                         if (sourceID !== null && targetID !== null && sourceID[0] === targetID[0]) {
 
-                            count += 1;
+                            while (atoms[sourceIndex] === undefined && sourceIndex >= -1) { sourceIndex -= 1; }
+                            while (atoms[targetIndex] === undefined && targetIndex >= -1) { targetIndex -= 1; }
+
+                            if (sourceIndex === -1 || targetIndex === -1) { break; }
                             bonds[bondID].order = 1;
-                            bonds[bondID].atoms = [bondID, bondsAfter[j]];
+                            bonds[bondID].atoms = [sourceIndex.toString(), targetIndex.toString()];
                             break;
+                        }
+
+                        // Check keys before ring token
+                        if (j === bondsAfter.length - 1) {
+
+                            // Find matching ring atom
+                            for (let k = 0; k < bondsBefore.length; k++) {
+
+                                if (bonds[bondsAfter[j]].name !== 'ring') { continue; }
+
+                                let targetID = bonds[bondsBefore[k]].value.match(/[0-9]+/g),
+                                    targetIndex = bondID,
+                                    sourceIndex = bondsBefore[k];
+
+                                if (sourceID !== null && targetID !== null && sourceID[0] === targetID[0]) {
+
+                                    while (atoms[sourceIndex] === undefined && sourceIndex >= -1) { sourceIndex -= 1; }
+                                    while (atoms[targetIndex] === undefined && targetIndex >= -1) { targetIndex -= 1; }
+
+                                    if (sourceIndex === -1 || targetIndex === -1) { break; }
+                                    bonds[bondID].order = 1;
+                                    bonds[bondID].atoms = [sourceIndex.toString(), targetIndex.toString()];
+                                    break;
+                                }
+                            }
                         }
                     }
 
@@ -571,10 +671,12 @@ function decode(tokens) {
                 if (a.atoms.length === 0) {
                     delete bonds[keys.bonds[i]];
                     delete keys.bonds[i];
+                    continue;
                 }
                 if (b.atoms.length === 0) {
                     delete bonds[bondID];
                     delete keys.bonds[keys.bonds.indexOf(bondID)];
+                    continue;
                 }
 
                 // Compare atom keys
@@ -839,14 +941,17 @@ function decode(tokens) {
 
     if (!tokens) { return false; }
 
-    // 2. Categorize tokens
+    // 2. Preprocess tokens
+    tokens = preprocessTokens(tokens);
+
+    // 3. Categorize tokens
     [atoms, bonds, properties, keys] = readTokens(tokens);
 
-    // 3. Add atoms
+    // 4. Add atoms
     atoms = defaultAtoms(atoms, keys);
     atoms = customAtoms(atoms, properties, keys);
 
-    // 4. Add bonds
+    // 5. Add bonds
     [atoms, bonds, keys] = explicitBonds(atoms, bonds, keys);
     [atoms, bonds, keys] = implicitBonds(atoms, bonds, keys);
 
@@ -901,7 +1006,8 @@ function addAtom(id, name, value, group = 0, protons = 0, neutrons = 0, electron
         // Other properties
         properties: {
             chiral: 0,
-            charge: 0
+            charge: 0,
+            aromatic: 0
         }
     };
 }

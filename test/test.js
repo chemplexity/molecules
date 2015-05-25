@@ -36,10 +36,10 @@ var test = [
     // Rings (Non-Aromatic)
     {mass: 84.162, formula: {C:6, H:12}, name: 'C1CCCCC1', category: 'Cycloalkane', type: 'Basic'},
     {mass: 166.308, formula: {C:12, H:22}, name: 'C1CCCCC1C2CCCCC2', category: 'Cycloalkane', type: 'Advanced'},
-    {mass: 84.162, formula: {C:11, H:20}, name: 'C12(CCCCC1)CCCCC2', category: 'Cycloalkane', type: 'Spiro'},
+    {mass: 152.281, formula: {C:11, H:20}, name: 'C12(CCCCC1)CCCCC2', category: 'Cycloalkane', type: 'Spiro'},
 
     {mass: 80.130, formula: {C:6, H:8}, name: 'C1C=CCC=C1', category: 'Cycloalkene', type: 'Basic'},
-    {mass: 150.221, formula: {C:10, H:14}, name: '[C@H]1=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H]1', category: 'Cycloalkene', type: 'Advanced'},
+    {mass: 104.152, formula: {C:8, H:8}, name: '[C@H]1=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H]1', category: 'Cycloalkene', type: 'Advanced'},
 
     // Rings (Aromatic)
     {mass: 78.114, formula: {C:6, H:6}, name: 'c1ccccc1', category: 'Aromatic', type: 'Basic'},
@@ -77,13 +77,13 @@ var test = [
     {mass: 150.646, formula: {C:7, H:15, Cl:1, O:1}, name: 'CC(CC(Cl)CCO)C', category: 'Other', type: 'Advanced'},
     {mass: 170.252, formula: {C:10, H:18, O:2}, name: 'CC1C(CC(CC1C)CCO)=O', category: 'Other', type: 'Advanced'},
     {mass: 131.175, formula: {C:6, H:13, N:1, O:2}, name: 'NC(C(CC)C)C(O)=O', category: 'Other', type: 'Advanced'},
-    {mass: 390.687, formula: {C:13, H:24, Cl:1, I:1, N:1, O:2}, name: 'CCOC(Cl)C1C[14C](I)C1N-OCC(C)CCC', category: 'Other', type: 'Advanced'},
+    {mass: 390.687, formula: {C:13, H:24, Cl:1, I:1, N:1, O:2}, name: 'CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC', category: 'Other', type: 'Advanced'},
     {mass: 372.447, formula: {C:23, H:22, N:3, O:2}, name: 'c1ccccc1[C@]2(C(=O)N(C)C(N)=[NH+]2)c3cc(ccc3)-c4ccc(cc4)OC', category: 'Other', type: 'Advanced'}
 ];
 
 // Load molecules.js
-var molecules = require('./../dist/molecules.min.js');
-//var molecules = require('./../dist/molecules.js');
+//var molecules = require('./../dist/molecules.min.js');
+var molecules = require('./../dist/molecules.js');
 
 // Initialize variables
 var tokens = [],
@@ -186,7 +186,7 @@ function testCustom(input) {
 
     mol = molecules.readTokens(tokens);
 
-    console.log(tokens);
+    console.log(mol.atoms);
     if (mol === null) {
         console.log('readTokens(tokens) === null');
         console.log(tokens);
@@ -195,6 +195,8 @@ function testCustom(input) {
 
     formula = mol.properties.formula;
     mass = Math.round(mol.properties.mass * 100) / 100;
+
+    console.log(mol.bonds);
 
     var elements = Object.keys(formula),
         f = '';
@@ -210,10 +212,12 @@ function testCustom(input) {
     return [tokens, mol];
 }
 
-// 5-20-2015 - pass: 42, fail: 12, total: 52
-var latest_results = {pass: 42, fail: 10, total: 52};
+// 5-20-2015 - pass: 40, fail: 12, total: 52
+// 5-25-2015 - pass: 44, fail: 8, total: 52
+var latest_results = {pass: 44, fail: 8, total: 52};
 
 testAll();
 
-var input = '[NH4+].[NH4+].[O-]S(=O)(=O)[S-]';
+//var input = 'c1ccccc1[C@]2(C(=O)N(C)C(N)=[NH+]2)c3cc(ccc3)-c4ccc(cc4)OC';
 //testCustom(input);
+

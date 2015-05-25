@@ -1,25 +1,9 @@
 /*
   molecules.js
 
-    description : dynamic 2D molecules
+    description : chemical graph theory library
     imports     : periodic_table, tokenize, decode
-    exports     : getTokens, readTokens, molecularFormula, molecularWeight
-
-
-    Examples
-
-      getTokens - tokenize SMILES input string
-
-        tokensABC = getTokens('CC(=O)C(Cl)CC(C(C)C)C=C');
-        tokens123 = getTokens('CC1C(CC(CC1C)CCO)=O');
-        tokens['A'] = getTokens('C2C(=O)C1COCCC1CC2');
-
-
-      readTokens - determine structure/connectivity from tokens
-
-        molecule1 = readTokens(tokensABC);
-        moleculeA = readTokens(tokens123);
-        molecule['abc'] = readTokens(tokens['A']);
+    exports     : parse
 
 */
 
@@ -28,7 +12,7 @@
   Imports
 */
 
-import periodic_table from './reference/elements';
+import { periodic_table } from './reference/elements';
 import { tokenize, decode } from './encoding/smiles';
 
 
@@ -56,7 +40,7 @@ import { tokenize, decode } from './encoding/smiles';
         tokensABC = parse('c1cccc1', 'SMILES')
         myTokens['42'] = parse('CC(O)CC')
         tokens.butane = parse('CCCC')
-        butane.tokens = parse('CCCC')
+        butane.tokens = parse('CCCC', 'smiles')
         tokensA[3] = parse('CC1C(CC(CC1C)CCO)=O')
 
     b) Tokens -> Molecule
@@ -75,14 +59,18 @@ function parse(input, encoding = 'SMILES') {
         case 'SMILES':
         case 'smiles':
 
-            // Parse string
+            // String -> Tokens
             if (typeof input === 'string') {
-                return tokenize(input);
+                let {tokens} = tokenize(input);
+
+                return tokens;
             }
 
-            // Parse tokens
+            // Tokens -> Molecule
             else if (typeof input === 'object') {
-                return decode(input);
+                let {atoms, bonds} = decode(input);
+
+                return [atoms, bonds];
             }
 
             return null;
