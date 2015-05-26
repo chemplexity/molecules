@@ -39,16 +39,13 @@ import { tokenize, decode } from './encoding/smiles';
         tokens123 = parse('CC(=O)CC')
         tokensABC = parse('c1cccc1', 'SMILES')
         myTokens['42'] = parse('CC(O)CC')
-        tokens.butane = parse('CCCC')
         butane.tokens = parse('CCCC', 'smiles')
-        tokensA[3] = parse('CC1C(CC(CC1C)CCO)=O')
 
     b) Tokens -> Molecule
         mol123 = parse(tokens123)
         molABC = parse(tokensABC.tokens)
         molABC = parse(tokensABC)
         mol['42'] = parse(myTokens['42'].tokens)
-        m.butane = parse(tokens.butane)
         butane.molecule = parse(butane.tokens)
 */
 
@@ -70,80 +67,11 @@ function parse(input, encoding = 'SMILES') {
             else if (typeof input === 'object') {
                 let {atoms, bonds} = decode(input);
 
-                return [atoms, bonds];
+                return getMolecule(atoms, bonds);
             }
 
             return null;
     }
-}
-
-
-/*
-  Method: getTokens
-  --parse input string for valid SMILES definitions
-
-  Syntax
-    {tokens} = getTokens(input)
-
-  Arguments
-    input : any SMILES encoded string
-
-  Output
-    {tokens} : array of token objects
-
-  Examples
-    {tokens123} = getTokens('CC(=O)CC')
-    {tokensABC} = getTokens('c1cccc1')
-
-*/
-
-function getTokens(input, encoding = 'SMILES') {
-
-    if (typeof input === 'string') {
-
-        // Tokenize input (smiles.js)
-        return tokenize(input);
-    }
-
-    return null;
-}
-
-
-/*
-  Method: readTokens
-  --convert SMILES tokens into atoms (nodes) and bonds (edges)
-
-  Syntax
-    molecule = readTokens(tokens)
-
-  Arguments
-    tokens : array of tokens obtained from 'getTokens'
-
-  Output
-    molecule : collection of atoms and bonds
-
-  Examples
-    moleculeABC = readTokens(mytokensABC)
-    molecule['C'] = readTokens(tokens123)
-
-*/
-
-function readTokens(tokens) {
-
-    if (tokens.length > 1) {
-
-        // Decode tokens (smiles.js)
-        let {atoms, bonds} = decode(tokens);
-
-        let molecule = getMolecule(atoms, bonds, 0, '0');
-
-        molecule.properties.mass = molecularWeight(molecule.atoms);
-        molecule.properties.formula = molecularFormula(molecule.atoms);
-
-        return molecule;
-    }
-
-    return null;
 }
 
 
@@ -160,8 +88,8 @@ function getMolecule(atoms = {}, bonds = {}, id = 0, name = '') {
         atoms: atoms,
         bonds: bonds,
         properties: {
-            mass: null,
-            formula: null
+            mass: molecularWeight(atoms),
+            formula: molecularFormula(atoms)
         }
     };
 }
@@ -178,11 +106,9 @@ function molecularFormula(atoms) {
         keys = Object.keys(atoms);
 
     for (let i = 0; i < keys.length; i++) {
-
         if (formula[atoms[keys[i]].name] === undefined) {
             formula[atoms[keys[i]].name] = 1;
         }
-
         else {
             formula[atoms[keys[i]].name] += 1;
         }
@@ -203,7 +129,6 @@ function molecularWeight(atoms) {
         keys = Object.keys(atoms);
 
     for (let i = 0; i < keys.length; i++) {
-
         mass += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
     }
 
@@ -215,4 +140,4 @@ function molecularWeight(atoms) {
   Exports
 */
 
-export { parse, getTokens, readTokens, molecularFormula, molecularWeight };
+export { parse };

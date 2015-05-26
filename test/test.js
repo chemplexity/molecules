@@ -82,8 +82,8 @@ var test = [
 ];
 
 // Load molecules.js
-//var molecules = require('./../dist/molecules.min.js');
-var molecules = require('./../dist/molecules.js');
+var molecules = require('./../dist/molecules.min.js');
+//var molecules = require('./../dist/molecules.js');
 
 // Initialize variables
 var tokens = [],
@@ -97,12 +97,11 @@ function testAll() {
 
     for (var i = 0; i < test.length; i++) {
 
-        // Parse SMILES
-        var t = molecules.getTokens(test[i].name);
-        tokens[i] = t.tokens;
+        // String --> Tokens
+        tokens[i] = molecules.parse(test[i].name);
 
-        // Read tokens
-        mol[i] = molecules.readTokens(tokens[i]);
+        // Tokens --> Molecule
+        mol[i] = molecules.parse(tokens[i]);
 
         // Extract properties
         mass[i] = mol[i].properties.mass;
@@ -181,12 +180,12 @@ function testAll() {
 
 function testCustom(input) {
 
-    var t = molecules.getTokens(input),
-        tokens = t.tokens;
-
-    mol = molecules.readTokens(tokens);
+    tokens = molecules.parse(input);
+    mol = molecules.parse(tokens);
 
     console.log(mol.atoms);
+    console.log(mol.bonds);
+
     if (mol === null) {
         console.log('readTokens(tokens) === null');
         console.log(tokens);
@@ -214,10 +213,12 @@ function testCustom(input) {
 
 // 5-20-2015 - pass: 40, fail: 12, total: 52
 // 5-25-2015 - pass: 44, fail: 8, total: 52
-var latest_results = {pass: 44, fail: 8, total: 52};
+// 5-26-2015 - pass: 50, fail: 2, total: 52
+var latest_results = {pass: 50, fail: 2, total: 52};
 
 testAll();
 
-//var input = 'c1ccccc1[C@]2(C(=O)N(C)C(N)=[NH+]2)c3cc(ccc3)-c4ccc(cc4)OC';
+var input = 'c1ccccc1-c2ccccc2';
+
 //testCustom(input);
 

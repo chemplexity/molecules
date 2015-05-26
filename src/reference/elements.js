@@ -56,6 +56,7 @@ function getElement(element) {
     if (periodic_table[element] !== undefined) {
         return periodic_table[element];
     }
+
     else {
         return null;
     }
