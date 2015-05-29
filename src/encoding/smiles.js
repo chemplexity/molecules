@@ -44,6 +44,7 @@ var grammar = [
     {type: 'atom',     term: 'S',  tag: 'S',       expression: /S(?=[^bcegimnr]|$)/g},
     {type: 'atom',     term: 'Cl', tag: 'Cl',      expression: /Cl/g},
     {type: 'atom',     term: 'Ar', tag: 'Ar',      expression: /Ar/g},
+    {type: 'atom',     term: 'As', tag: 'As',      expression: /As/g},
     {type: 'atom',     term: 'Se', tag: 'Se',      expression: /Se/g},
     {type: 'atom',     term: 'Br', tag: 'Br',      expression: /Br/g},
     {type: 'atom',     term: 'I',  tag: 'I',       expression: /I(?=[^nr]|$)/g},

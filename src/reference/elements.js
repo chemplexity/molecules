@@ -39,6 +39,7 @@ var periodic_table = {
     'S':  {protons: 16, neutrons: 16.0650, electrons: 16, group: 16, period: 3},
     'Cl': {protons: 17, neutrons: 18.4530, electrons: 17, group: 17, period: 3},
     'Ar': {protons: 18, neutrons: 21.9480, electrons: 18, group: 18, period: 3},
+    'As': {protons: 33, neutrons: 41.9216, electrons: 33, group: 15, period: 4},
     'Se': {protons: 34, neutrons: 44.9600, electrons: 34, group: 16, period: 4},
     'Br': {protons: 35, neutrons: 44.9040, electrons: 35, group: 17, period: 4},
     'I':  {protons: 53, neutrons: 73.9045, electrons: 53, group: 17, period: 5}

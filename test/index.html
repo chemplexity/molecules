@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+
+<style>
+
+* { box-sizing: border-box; }
+
+.container {
+    font-family: 'Lucida Sans Unicode';
+    width: 400px;
+    margin: 15px auto auto 30px;
+    display: block;
+    background: #FFF;
+    padding: 20px 5px 5px;
+}
+
+.footer { text-align: right; }
+.footer a { color: #53B2C8; }
+
+.group {
+    position: relative;
+    margin-bottom: 5px;
+}
+
+.examples {
+    color: #999;
+    font-size: 12px;
+    font-weight: normal;
+    font-family: 'Lucida Sans Unicode';
+}
+
+.examples a:link {
+    color: #53B2C8;
+    font-weight: bold;
+}
+
+.examples a:visited {
+    color: #53B2C8;
+    font-weight: bold;
+}
+
+.examples a:hover {
+    color: #53B2C8;
+    font-weight: bold;
+}
+
+.examples a:active {
+    color: #53B2C8;
+    font-weight: bold;
+}
+
+input {
+    font-size: 16px;
+    padding: 10px 10px 10px 5px;
+    display: block;
+    width: 300px;
+    border: none;
+    border-bottom: 1px solid #757575;
+}
+
+input:focus { outline: none; }
+
+label {
+    color: #999;
+    font-size: 16px;
+    font-weight: normal;
+    position: absolute;
+    pointer-events: none;
+    left: 5px;
+    top: 10px;
+    transition: 0.2s ease all;
+    -moz-transition: 0.2s ease all;
+    -webkit-transition: 0.2s ease all;
+}
+
+input:focus ~ label, input:valid ~ label {
+    top: -15px;
+    font-size: 13px;
+    color: #5264AE;
+}
+
+.bar {
+    position: relative;
+    display: block;
+    width: 350px;
+}
+
+.bar:before, .bar:after {
+    content: '';
+    height: 2px;
+    width: 0px;
+    bottom: 0px;
+    position: absolute;
+    background: #5264AE;
+    transition: 0.2s ease all;
+    -moz-transition: 0.2s ease all;
+    -webkit-transition: 0.2s ease all;
+}
+
+.bar:before { left: 50%; }
+.bar:after { right: 50%; }
+
+input:focus ~ .bar:before, input:focus ~ .bar:after {
+    width: 50%;
+}
+
+.highlight {
+    position: absolute;
+    height: 60%;
+    width: 100px;
+    top: 25%;
+    left: 0%;
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+input:focus ~ .highlight {
+    -webkit-animation:inputHighlighter 0.3s ease;
+    -moz-animation:inputHighlighter 0.3s ease;
+    animation:inputHighlighter 0.3s ease;
+}
+
+@-webkit-keyframes inputHighlighter {
+    from { background: #5264AE; }
+    to { width: 0; background: transparent; }
+}
+
+@-moz-keyframes inputHighlighter {
+    from { background: #5264AE; }
+    to { width: 0; background: transparent; }
+}
+
+@keyframes inputHighlighter {
+    from { background: #5264AE; }
+    to { width: 0; background: transparent; }
+}
+
+.atom-H {
+    fill: #E9E9E9;
+    stroke: #B4B4B4;
+    stroke-width: 2px;
+}
+
+.atom-He {
+    fill: #37A1E7;
+    stroke: #3295D5;
+    stroke-width: 1.5px;
+}
+
+.atom-B {
+    fill: #CDB966;
+    stroke: #BCAB5E;
+    stroke-width: 1.5px;
+}
+
+.atom-C {
+    fill: #242729;
+    stroke: #24282A;
+    stroke-width: 1.5px;
+}
+
+.atom-N {
+    fill: #4255E9;
+    stroke: #3444C5;
+    stroke-width: 1.5px;
+}
+
+.atom-O {
+    fill: #EB3941;
+    stroke: #C12D36;
+    stroke-width: 1.5px;
+}
+
+.atom-F {
+    fill: #AC49E3;
+    stroke: #9D42D0;
+    stroke-width: 1.5px;
+}
+
+.atom-Si {
+    fill: #959595;
+    stroke: #7C7C7C;
+    stroke-width: 1.5px;
+}
+
+.atom-P {
+    fill: #00AE78;
+    stroke: #009D6D;
+    stroke-width: 1.5px;
+}
+
+.atom-S {
+    fill: #FFE382;
+    stroke: #F3D379;
+    stroke-width: 1.5px;
+}
+
+.atom-Cl {
+    fill: #00FF6C;
+    stroke: #00E561;
+    stroke-width: 1.5px;
+}
+
+.atom-As {
+    fill: #827340;
+    stroke: #726437;
+    stroke-width: 1.5px;
+}
+
+.atom-Se {
+    fill: #B40409;
+    stroke: #A2030C;
+    stroke-width: 1.5px;
+}
+
+.atom-Br {
+    fill: #F08F27;
+    stroke: #DB8226;
+    stroke-width: 1.5px;
+}
+
+.atom-I {
+    fill: #2C4DA7;
+    stroke: #274496;
+    stroke-width: 1.5px;
+}
+
+.link line {
+    stroke: #999;
+    stroke-opacity: 0.85;
+}
+
+</style>
+
+
+<script src="./../dist/molecules.min.js"></script>
+<script src="../lib/d3.v3.min.js"></script>
+
+
+<body>
+
+<div class="container">
+    <form onsubmit="return false">
+        <div id="user" class="group">
+            <input type="text" required value="" onpaste="onclick_handler(this.value)" onkeyup="onkey_handler(event)">
+
+            <span class="highlight"></span>
+            <span class="bar"></span>
+            <label id="textbox">Input...</label>
+        </div>
+    </form>
+
+    <label>
+        <div id="molecularWeight" style="position: absolute; top:35px; left:400px; width:200px; height:25px">""</div>
+    </label>
+
+    <div id="chart"></div>
+
+    <div>
+        <p class="footer">
+        <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>
+        </p>
+    </div>
+
+</div>
+
+</body>
+
+
+<script>
+
+var onkey_handler = function(event) {
+
+    // Input: 'enter', 'backspace', '=', '0', '9'
+    if (event.keyCode == 13 || event.keyCode == 8 || event.keyCode == 187 ||
+        event.keyCode == 48 || event.keycode == 57)
+       { onclick_handler(document.getElementsByTagName("input")[0].value); }
+
+    // Input: non-alphabet
+    else if (event.keyCode < 65 || event.keyCode > 90) { return false; }
+
+    // Input: alphabet
+    else { onclick_handler(document.getElementsByTagName("input")[0].value); }
+  };
+
+  var example_handler = function (input) {
+
+    document.getElementsByTagName("input")[0].value = input;
+
+    onclick_handler(input);
+  };
+
+
+  // SMILES --> Molecule
+  function parse(input) {
+
+    if (typeof input !== 'string') { return; }
+
+    var tokens = molecules.parse(input),
+        molecule = molecules.parse(tokens);
+
+    return molecule;
+  }
+
+  // Molecule --> Nodes
+  function getNodes(molecule) {
+
+    var atoms = Object.keys(molecule.atoms),
+        nodes = [];
+
+    for (var i = 0; i < atoms.length; i++) {
+
+      nodes.push({
+        id: atoms[i],
+        name: molecule.atoms[atoms[i]].name,
+        protons: molecule.atoms[atoms[i]].protons,
+        neutrons: molecule.atoms[atoms[i]].neutrons,
+        electrons: molecule.atoms[atoms[i]].electrons,
+        bonds: molecule.atoms[atoms[i]].bonds,
+        properties: molecule.atoms[atoms[i]].properties
+      })
+    }
+
+    return nodes;
+  }
+
+  // Molecule --> Links
+  function getLinks(molecule) {
+
+    var atoms = Object.keys(molecule.atoms),
+        bonds = Object.keys(molecule.bonds),
+        links = [];
+
+    for (var i = 0; i < bonds.length; i++) {
+
+      links.push({
+        id: bonds[i],
+        name: molecule.bonds[bonds[i]].name,
+        value: molecule.bonds[bonds[i]].value,
+        source: atoms.indexOf(molecule.bonds[bonds[i]].atoms[0]),
+        target: atoms.indexOf(molecule.bonds[bonds[i]].atoms[1]),
+        order: molecule.bonds[bonds[i]].order
+      })
+    }
+
+    return links;
+  }
+
+  var molecule = parse('C2C(=O)C1COCCC1CC2'),
+      nodes = getNodes(molecule),
+      links = getLinks(molecule);
+
+  var graph = {nodes: nodes, links: links}
+
+  var width = window.innerWidth * 0.9,
+      height = window.innerHeight * 0.9;
+
+  var svg = d3.select("#chart")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  var force = d3.layout.force()
+    .nodes(graph.nodes)
+    .links(graph.links)
+    .size([width, height])
+    .charge(-600)
+    .gravity(0.5)
+    .linkDistance(-20)
+    .alpha(0.5)
+    .on("tick", tick)
+    .start();
+
+  var link = svg.selectAll(".link")
+    .data(graph.links)
+    .enter()
+    .append("g")
+    .attr("class", "link")
+    .append("line")
+    .style("stroke-width", function(d) { return (d.order * 3 - 1) * 1.5 + "px"; });
+
+  link.filter(function(d) { return d.order > 1; })
+    .append("line")
+    .attr("class", "separator")
+    .style("stroke","#FFFFFF")
+    .style("stroke-width", "1px")
+    .style("stroke-opacity", 1.0);
+
+  //link.exit().remove();
+
+  var node = svg.selectAll(".node")
+    .data(graph.nodes)
+    .enter()
+    .append("circle")
+    .attr("class", function(d) { return 'atom-' + d.name; })
+    .attr("r", function(d) { return Math.sqrt(d.protons + 4) * 3 })
+    .call(force.drag);
+
+  function tick() {
+    link
+      .attr("x1", function(d) { return d.source.x; })
+      .attr("y1", function(d) { return d.source.y; })
+      .attr("x2", function(d) { return d.target.x; })
+      .attr("y2", function(d) { return d.target.y; });
+
+    node
+      .attr("cx", function(d) { return d.x; })
+      .attr("cy", function(d) { return d.y; });
+  }
+
+  document.getElementById("molecularWeight").innerHTML = molecule.properties.mass + " g/mol";
+</script>
