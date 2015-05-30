@@ -26,7 +26,7 @@ import { tokenize, decode } from './encoding/smiles';
 
   Input (Required)
     1) chemical notation string (e.g. 'C2C(=O)C1COCCC1CC2')
-    2) 'tokens' returned from output of 'a)' (e.g. '{tokens: tokens}')
+    2) 'tokens' returned from output of 'a)'
 
   Input (Optional)
     encoding : encoding type of input (default = 'SMILES')
