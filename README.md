@@ -1,8 +1,9 @@
-#Dynamic Molecules
+# molecules.js
 
-|Create dynamic 2D molecules with HTML/JavaScript.|![Imgur](http://i.imgur.com/sVPFz7l.png)|
+|chemical graph theory library|![Imgur](http://i.imgur.com/sVPFz7l.png)|
 |:--|--:|
 
+<<<<<<< HEAD
 Dynamic molecules are responsive 2D representations of molecular structures based on chemical graph theory. Check out the latest examples [here](http://bl.ocks.org/chemplexity/raw/bcd198a9604d8943b5dc/).
 
 ### Features
@@ -64,3 +65,6 @@ The fastest way to obtain a formatted JSON molecule is to convert a [SMILES](htt
 var molecule = smiles("CC=CC(O)C")
 ````
 
+=======
+Check out the latest examples [here](http://bl.ocks.org/chemplexity/raw/bcd198a9604d8943b5dc/).
+>>>>>>> develop

@@ -1,0 +1,31 @@
+{
+  "name":        "molecules.js",
+  "version":     "0.1.0",
+  "description": "chemical graph theory library",
+  "main":        "dist/molecules.js",
+
+  "author": "James Dillon <james_dillon@brown.edu>",
+  "license": "MIT",
+
+  "repository": {
+    "type": "git",
+    "url": "http://github.com/chemplexity/molecules.git"
+  },
+  "bugs": {
+    "url": "https://github.com/chemplexity/molecules/issues"
+  },
+
+  "keywords": [
+    "chemistry",
+    "molecules",
+    "graph theory"
+  ],
+
+  "devDependencies": {
+    "grunt": "^0.4.5",
+    "grunt-babel": "^5.0.0",
+    "grunt-browserify": "^3.8.0",
+    "grunt-contrib-uglify": "^0.8.0",
+    "grunt-contrib-watch": "^0.6.1"
+  }
+}
