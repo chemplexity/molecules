@@ -226,8 +226,8 @@ input:focus ~ .highlight {
 }
 
 .link line {
-    stroke: #999;
-    stroke-opacity: 0.85;
+    stroke: #242729;
+    stroke-opacity: 0.6;
 }
 
 </style>
@@ -346,7 +346,7 @@ var onkey_handler = function(event) {
     return links;
   }
 
-  var molecule = parse('C2C(=O)C1COCCC1CC2'),
+  var molecule = parse('CC(N)CCO'),
       nodes = getNodes(molecule),
       links = getLinks(molecule);
 
@@ -364,10 +364,9 @@ var onkey_handler = function(event) {
     .nodes(graph.nodes)
     .links(graph.links)
     .size([width, height])
-    .charge(-600)
-    .gravity(0.5)
-    .linkDistance(-20)
-    .alpha(0.5)
+    .charge(-350)
+    .gravity(0.35)
+    .linkDistance(10)
     .on("tick", tick)
     .start();
 

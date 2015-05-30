@@ -15,8 +15,8 @@ var test = [
     {mass: 54.092, formula: {C:4, H:6}, name: 'C=C=CC', category: 'Alkene', type: 'Allene'},
 
     // Alkynes
-    {mass: 54.092, formula: {C:4, H:6}, name: 'C#CCC', category: 'Alkyne', type: 'Terminal'},
     {mass: 54.092, formula: {C:4, H:6}, name: 'CC#CC', category: 'Alkyne', type: 'Internal'},
+    {mass: 54.092, formula: {C:4, H:6}, name: 'C#CCC', category: 'Alkyne', type: 'Terminal'},
 
     // Alcohols
     {mass: 74.123, formula: {C:4, H:10, O:1}, name: 'OCCCC', category: 'Alcohol', type: 'Primary'},
@@ -35,8 +35,8 @@ var test = [
 
     // Rings (Non-Aromatic)
     {mass: 84.162, formula: {C:6, H:12}, name: 'C1CCCCC1', category: 'Cycloalkane', type: 'Basic'},
-    {mass: 166.308, formula: {C:12, H:22}, name: 'C1CCCCC1C2CCCCC2', category: 'Cycloalkane', type: 'Advanced'},
-    {mass: 152.281, formula: {C:11, H:20}, name: 'C12(CCCCC1)CCCCC2', category: 'Cycloalkane', type: 'Spiro'},
+    {mass: 166.308, formula: {C:12, H:22}, name: 'C1CCCCC1C2CCCCC2', category: 'Cycloalkane', type: 'Intermediate'},
+    {mass: 152.281, formula: {C:11, H:20}, name: 'C12(CCCCC1)CCCCC2', category: 'Cycloalkane', type: 'Advanced'},
 
     {mass: 80.130, formula: {C:6, H:8}, name: 'C1C=CCC=C1', category: 'Cycloalkene', type: 'Basic'},
     {mass: 104.152, formula: {C:8, H:8}, name: '[C@H]1=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H]1', category: 'Cycloalkene', type: 'Advanced'},
@@ -47,8 +47,8 @@ var test = [
     {mass: 154.212, formula: {C:12, H:10}, name: 'c1ccccc1-c2ccccc2', category: 'Aromatic', type: 'Advanced'},
     {mass: 178.223, formula: {C:14, H:10}, name: 'C12=CC=CC=C1C3=C(C=CC=C3)C=C2', category: 'Aromatic', type: 'Polycyclic'},
 
-    {mass: 68.075, formula: {C:4, H:4, O:1}, name: 'c1occc1', category: 'Heteroaromatic', type: 'O'},
     {mass: 67.091, formula: {C:4, H:5, N:1}, name: 'C1=CC=CN1', category: 'Heteroaromatic', type: 'N'},
+    {mass: 68.075, formula: {C:4, H:4, O:1}, name: 'c1occc1', category: 'Heteroaromatic', type: 'O'},
     {mass: 84.136, formula: {C:4, H:4, S:1}, name: 'c1sccc1', category: 'Heteroaromatic', type: 'S'},
 
     // Charge
@@ -59,14 +59,28 @@ var test = [
     {mass: 148.195, formula: {N:2, O:3, H:8, S:2}, name: '[NH4+].[NH4+].[O-]S(=O)(=O)[S-]', category: 'Salt', type: 'Advanced'},
 
     // Isotope
-    {mass: 59.116, formula: {C:4, H:10}, name: 'C[13CH](C)C', category: 'Isotope', type: 'Basic'},
-    {mass: 60.116, formula: {C:4, H:10}, name: 'C[14CH](C)C', category: 'Isotope', type: 'Basic'},
+    {mass: 59.116, formula: {C:4, H:10}, name: 'C[13CH](C)C', category: 'Isotope', type: '13C'},
+    {mass: 60.116, formula: {C:4, H:10}, name: 'C[14CH](C)C', category: 'Isotope', type: '14C'},
+    {mass: 390.687, formula: {C:13, H:24, Cl:1, I:1, N:1, O:2}, name: 'CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC', category: 'Isotope', type: '14C'},
 
     // Chiral
-    {mass: 143.408, formula: {C:2, H:4, Br:1, Cl:1}, name: 'C[C@H](Br)Cl', category: 'Chiral', type: 'Basic'},
-    {mass: 180.156, formula: {C:6, H:12, O:6}, name: 'O[C@@]([H])(O1)[C@@](O)([H])[C@@]([H])(O)[C@]1([C@@](CO)(O)[H])[H]', category: 'Chiral', type: 'Advanced'},
+    {mass: 143.408, formula: {C:2, H:4, Br:1, Cl:1}, name: 'C[C@@H](Br)Cl', category: 'Chiral', type: 'Clockwise'},
+    {mass: 143.408, formula: {C:2, H:4, Br:1, Cl:1}, name: 'C[C@H](Br)Cl', category: 'Chiral', type: 'Anti-Clockwise'},
+    {mass: 180.156, formula: {C:6, H:12, O:6}, name: 'O[C@@]([H])(O1)[C@@](O)([H])[C@@]([H])(O)[C@]1([C@@](CO)(O)[H])[H]', category: 'Chiral', type: 'Mixed'},
 
-    // Relaxed
+    // Amino Acids
+    {mass: 89.094, formula: {C:3, H:7, N:1, O:2}, name: 'NC(C)C(O)=O', category: 'Amino Acids', type: 'ALA'},
+    {mass: 174.204, formula: {C:6, H:14, N:4, O:2}, name: 'NC(CCCNC(N)=N)C(O)=O', category: 'Amino Acids', type: 'ARG'},
+    {mass: 132.119, formula: {C:4, H:8, N:2, O:3}, name: 'NC(CC(N)=O)C(O)=O', category: 'Amino Acids', type: 'ASN'},
+    {mass: 133.103, formula: {C:4, H:7, N:1, O:4}, name: 'NC(CC(O)=O)C(O)=O', category: 'Amino Acids', type: 'ASP'},
+    {mass: 121.154, formula: {C:3, H:7, N:1, O:2, S:1}, name: 'NC(CS)C(O)=O', category: 'Amino Acids', type: 'CYS'},
+    {mass: 147.130, formula: {C:5, H:9, N:1, O:4}, name: 'NC(CCC(O)=O)C(O)=O', category: 'Amino Acids', type: 'GLU'},
+    {mass: 146.146, formula: {C:5, H:10, N:2, O:3}, name: 'NC(CCC(N)=O)C(O)=O', category: 'Amino Acids', type: 'GLA'},
+    {mass: 75.067, formula: {C:2, H:5, N:1, O:2}, name: 'NC([H])C(O)=O', category: 'Amino Acids', type: 'GLY'},
+    {mass: 155.157, formula: {C:6, H:9, N:3, O:2}, name: 'NC(CC1=CNC=N1)C(O)=O', category: 'Amino Acids', type: 'HIS'},
+    {mass: 131.175, formula: {C:6, H:13, N:1, O:2}, name: 'NC(C(CC)C)C(O)=O', category: 'Amino Acids', type: 'ILE'},
+
+    // Relaxed Rules
     {mass: 46.069, formula: {C:2, H:6, O:1}, name: 'C((C))O', category: 'Relaxed', type: 'Extra Parentheses'},
     {mass: 85.150, formula: {C:5, H:11, N:1}, name: '(N1CCCCC1)', category: 'Relaxed', type: 'Extra Parentheses'},
     {mass: 310.610, formula: {C:22, H:46}, name: 'C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C))))))))))))))))))))C', category: 'Relaxed', type: 'Extra Parentheses'},
@@ -77,13 +91,13 @@ var test = [
     {mass: 150.646, formula: {C:7, H:15, Cl:1, O:1}, name: 'CC(CC(Cl)CCO)C', category: 'Other', type: 'Advanced'},
     {mass: 170.252, formula: {C:10, H:18, O:2}, name: 'CC1C(CC(CC1C)CCO)=O', category: 'Other', type: 'Advanced'},
     {mass: 131.175, formula: {C:6, H:13, N:1, O:2}, name: 'NC(C(CC)C)C(O)=O', category: 'Other', type: 'Advanced'},
-    {mass: 390.687, formula: {C:13, H:24, Cl:1, I:1, N:1, O:2}, name: 'CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC', category: 'Other', type: 'Advanced'},
     {mass: 372.447, formula: {C:23, H:22, N:3, O:2}, name: 'c1ccccc1[C@]2(C(=O)N(C)C(N)=[NH+]2)c3cc(ccc3)-c4ccc(cc4)OC', category: 'Other', type: 'Advanced'}
 ];
 
 // Load molecules.js
 var molecules = require('./../dist/molecules.min.js');
 //var molecules = require('./../dist/molecules.js');
+
 
 // Initialize variables
 var tokens = [],
@@ -211,14 +225,46 @@ function testCustom(input) {
     return [tokens, mol];
 }
 
+function run(option, input) {
+
+    if (typeof option !== 'string') { return; }
+
+    option.toLowerCase();
+
+    switch (option) {
+
+        case 'all':
+        case '1':
+            testAll();
+            break;
+
+        case 'custom':
+        case '2':
+            testCustom(input);
+            break;
+
+        case 'other':
+        case '3':
+            var input = 'CC1C(CC(CC1C)CCO)=O',
+                tokens = molecules.parse(input),
+                molecule = molecules.parse(tokens);
+
+            console.log(molecules.adjacency(molecule));
+
+            break;
+    }
+}
+
 // 5-20-2015 - pass: 40, fail: 12, total: 52
 // 5-25-2015 - pass: 44, fail: 8, total: 52
 // 5-26-2015 - pass: 50, fail: 2, total: 52
-var latest_results = {pass: 50, fail: 2, total: 52};
+// 5-30-2015 - pass: 61, fail: 2, total: 63
+var latest_results = {pass: 61, fail: 2, total: 63};
 
-testAll();
 
-var input = 'c1ccccc1-c2ccccc2';
+// run(option, input)
+//   option 1) 'all' (Full Test)
+//   option 2) 'custom', string (Custom Test)
+//   option 3) 'other' (Custom Function)
 
-//testCustom(input);
-
+run('all');

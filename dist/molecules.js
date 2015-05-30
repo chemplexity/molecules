@@ -1252,7 +1252,7 @@ exports.grammar = grammar;
 
     description : chemical graph theory library
     imports     : periodic_table, tokenize, decode
-    exports     : parse
+    exports     : parse, adjacency
 
 */
 
@@ -1271,33 +1271,33 @@ var _referenceElements = require('./reference/elements');
 var _encodingSmiles = require('./encoding/smiles');
 
 /*
-  Method: parse
-  --parse input string or set of tokens
+  Method : parse
+  Description : convert string to tokens OR tokens to molecule
 
   Syntax
     output = parse(input)
     output = parse(input, encoding)
 
-  Arguments
-    input  : a) chemical notation string (e.g. 'C2C(=O)C1COCCC1CC2')
-             b) tokens returned from output of 'a)' (e.g. '{tokens: tokens}')
+  Input (Required)
+    1) chemical notation string (e.g. 'C2C(=O)C1COCCC1CC2')
+    2) 'tokens' returned from output of 'a)' (e.g. '{tokens: tokens}')
 
-    encoding (Optional) : encoding type of input (default = 'SMILES')
+  Input (Optional)
+    encoding : encoding type of input (default = 'SMILES')
 
   Output
-    output : a) 'tokens' from a parsed chemical notation string
-             b) 'molecule' object with atoms and bonds from a set of tokens
+    1) 'tokens' from a parsed chemical notation string
+    2) 'molecule' object with atoms and bonds from a set of tokens
 
   Examples
-    a) String -> Tokens
+    1) String -> Tokens
         tokens123 = parse('CC(=O)CC')
         tokensABC = parse('c1cccc1', 'SMILES')
         myTokens['42'] = parse('CC(O)CC')
         butane.tokens = parse('CCCC', 'smiles')
 
-    b) Tokens -> Molecule
+    2) Tokens -> Molecule
         mol123 = parse(tokens123)
-        molABC = parse(tokensABC.tokens)
         molABC = parse(tokensABC)
         mol['42'] = parse(myTokens['42'].tokens)
         butane.molecule = parse(butane.tokens)
@@ -1311,7 +1311,7 @@ function parse(input) {
         case 'SMILES':
         case 'smiles':
 
-            // String -> Tokens
+            // 1) String -> Tokens
             if (typeof input === 'string') {
                 var _tokenize = (0, _encodingSmiles.tokenize)(input);
 
@@ -1320,7 +1320,7 @@ function parse(input) {
                 return tokens;
             }
 
-            // Tokens -> Molecule
+            // 2) Tokens -> Molecule
             else if (typeof input === 'object') {
                 var _decode = (0, _encodingSmiles.decode)(input);
 
@@ -1332,6 +1332,75 @@ function parse(input) {
 
             return null;
     }
+}
+
+/*
+  Method : adjacency
+  Description : return adjacency matrix for non-hydrogen atoms in molecule
+
+  Syntax
+    {header, matrix} = adjacency(molecule)
+
+  Input
+    molecule : object containing atoms and bonds
+
+  Output
+    header   : atom identifier
+    matrix   : adjacency matrix
+
+  Examples
+    {id, adj} = adjacency(mol123)
+    {names, matrix} = adjacency(molABC)
+*/
+function adjacency(molecule) {
+
+    if (typeof molecule !== 'object') {
+        return null;
+    }
+
+    var atoms = Object.keys(molecule.atoms),
+        header = [],
+        matrix = [];
+
+    // Extract non-hydrogen atoms
+    for (var i = 0; i < atoms.length; i++) {
+
+        var atom = molecule.atoms[atoms[i]];
+
+        if (atom.name !== 'H') {
+            header.push(atom.id);
+        }
+    }
+
+    // Initialize adjacency matrix
+    for (var i = 0; i < header.length; i++) {
+        matrix[i] = [];
+
+        for (var j = 0; j < header.length; j++) {
+            matrix[i][j] = 0;
+        }
+    }
+
+    // Fill adjacency matrix
+    for (var i = 0; i < header.length; i++) {
+        var source = molecule.atoms[header[i]];
+
+        for (var j = 0; j < source.bonds.atoms.length; j++) {
+            var target = molecule.atoms[source.bonds.atoms[j]];
+
+            if (target.name !== 'H') {
+
+                var index = header.indexOf(target.id);
+
+                if (index >= 0) {
+                    matrix[i][index] = 1;
+                    matrix[index][i] = 1;
+                }
+            }
+        }
+    }
+
+    return { header: header, matrix: matrix };
 }
 
 /*
@@ -1364,6 +1433,10 @@ function getMolecule() {
 
 function molecularFormula(atoms) {
 
+    if (typeof atoms !== 'object') {
+        return null;
+    }
+
     var formula = {},
         keys = Object.keys(atoms);
 
@@ -1385,6 +1458,10 @@ function molecularFormula(atoms) {
 
 function molecularWeight(atoms) {
 
+    if (typeof atoms !== 'object') {
+        return null;
+    }
+
     var mass = 0,
         keys = Object.keys(atoms);
 
@@ -1400,6 +1477,7 @@ function molecularWeight(atoms) {
 */
 
 exports.parse = parse;
+exports.adjacency = adjacency;
 },{"./encoding/smiles":1,"./reference/elements":3}],3:[function(require,module,exports){
 /*
   elements.js
