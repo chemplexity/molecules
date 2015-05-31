@@ -1,22 +1,23 @@
 /*
   elements.js
 
-    description : basic properties of the elements
-    imports     : N/A
-    exports     : periodic_table
+  Description : basic properties of the elements
+  Imports     : N/A
+  Exports     : periodic_table
 
 */
 
 
 /*
-  Variable: periodic_table
+  Variable    : periodic_table
+  Description : dictionary of atomic properties
 
-    protons:   atomic number
-    neutrons:  weighted average number of neutrons
-    electrons: number of protons
-    group:     periodic table column number
-    period:    periodic table row number
-
+  Fields
+    protons   : atomic number
+    neutrons  : weighted average number of neutrons
+    electrons : total electrons
+    group     : periodic table column number
+    period    : periodic table row number
 */
 
 var periodic_table = {
@@ -43,24 +44,21 @@ var periodic_table = {
     'Se': {protons: 34, neutrons: 44.9600, electrons: 34, group: 16, period: 4},
     'Br': {protons: 35, neutrons: 44.9040, electrons: 35, group: 17, period: 4},
     'I':  {protons: 53, neutrons: 73.9045, electrons: 53, group: 17, period: 5}
-
 };
 
 
 /*
-  Utility: getElement
-  --return info on element
+  Function    : Element
+  Description : return info on element
 */
 
-function getElement(element) {
+function Element(element) {
     
     if (periodic_table[element] !== undefined) {
         return periodic_table[element];
     }
 
-    else {
-        return null;
-    }
+    return null;
 }
 
 

@@ -1,9 +1,9 @@
 /*
   smiles.js
 
-    description : parse SMILES chemical line notation
-    imports     : periodic_table
-    exports     : grammar, tokenize, decode
+  Description : parse SMILES chemical line notation
+  Imports     : periodic_table
+  Exports     : grammar, tokenize, decode
 
 */
 
@@ -16,12 +16,13 @@ import periodic_table from './../reference/elements';
 
 
 /*
-  Variable: grammar
-  --regular expressions for SMILES grammar
+  Variable    : grammar
+  Description : regular expressions for SMILES grammar
 
-    type       : token category
-    term       : SMILES symbol
-    tag        : SMILES definition
+  Fields
+    type : token category
+    term : SMILES symbol
+    tag  : SMILES definition
     expression : regular expression
 */
 
@@ -72,21 +73,21 @@ var grammar = [
 
 
 /*
-  Method: tokenize
-  --parse input string with SMILES grammar
+  Function    : tokenize
+  Description : parse input string with SMILES grammar
 
   Syntax
-    {tokens: tokens} = tokenize(input)
+    { tokens } = tokenize(input)
 
   Arguments
-    input : any SMILES encoded string
+    input : SMILES encoded string
 
   Output
-    {tokens: tokens} : array of token objects
+    { tokens } : array of token objects
 
   Examples
-    {tokens: tokens123} = tokenize('CC(=O)CC')
-    {tokens: tokensABC} = tokenize('c1cccc1')
+    { tokens123 } = tokenize('CC(=O)CC')
+    { tokensABC } = tokenize('c1cccc1')
 */
 
 function tokenize(input, tokens = []) {
@@ -117,6 +118,7 @@ function tokenize(input, tokens = []) {
         return 0;
     });
 
+    // Clean tokens
     for (let i = 0; i < tokens.length; i++) {
 
         // Extract token values
@@ -180,26 +182,26 @@ function tokenize(input, tokens = []) {
         }
     }
 
-    return {tokens: tokens};
+    return { tokens };
 }
 
 
 /*
-  Method: decode
-  --convert SMILES tokens into atoms (nodes) and bonds (edges)
+  Function    : decode
+  Description : convert SMILES tokens into atoms (nodes) and bonds (edges)
 
   Syntax
-    {atoms: atoms, bonds: bonds} = decode(tokens)
+    { atoms, bonds } = decode(tokens)
 
   Arguments
     tokens : array of tokens obtained from the output of 'tokenize'
 
   Output
-    {atoms: atoms, bonds: bonds} : array of atom/bond objects describing connectivity and properties
+    { atoms, bonds} : array of atom/bonds describing connectivity and properties
 
   Examples
-    {atoms: atomsABC, bonds: bondsABC} = decode(mytokensABC)
-    {atoms: atoms123, bonds: bonds123} = decode(tokens123)
+    { atomsABC, bondsABC } = decode(mytokensABC)
+    { atoms123, bonds123 } = decode(tokens123)
 */
 
 function decode(tokens) {
@@ -1022,20 +1024,17 @@ function decode(tokens) {
     [atoms, bonds, keys] = explicitBonds(atoms, bonds, keys);
     [atoms, bonds, keys] = implicitBonds(atoms, bonds, keys);
 
-    return {atoms: atoms, bonds: bonds};
+    return { atoms, bonds};
 }
 
 
 /*
-  Utility: compare
-  --compare values across two arrays
+  Function    : compare
+  Description : compare values across two arrays
 */
 
-function compare(a, b) {
+function compare(a, b, ab = []) {
 
-    let ab = [];
-
-    // Return binary array
     for (let i = 0; i < a.length; i++) {
         ab[i] = b.indexOf(a[i]) > -1 ? 1 : 0;
     }
@@ -1045,8 +1044,8 @@ function compare(a, b) {
 
 
 /*
-  Utility: addAtom
-  --return new atom
+  Function    : addAtom
+  Description : return new atom
 */
 
 function addAtom(id, name, value, group = 0, protons = 0, neutrons = 0, electrons = 0) {
@@ -1081,8 +1080,8 @@ function addAtom(id, name, value, group = 0, protons = 0, neutrons = 0, electron
 
 
 /*
-  Utility: addBond
-  --return new bond
+  Function    : addBond
+  Description : return new bond
 */
 
 function addBond(id, name, value, order = 0, atoms = []) {
@@ -1102,24 +1101,19 @@ function addBond(id, name, value, order = 0, atoms = []) {
 
 
 /*
-  Utility: nextAtom
-  --find key of next atom in array
+  Function    : nextAtom
+  Description : find key of next atom in array
 */
 
 function nextAtom(start, keys, atoms) {
 
-    // Determine index of key in array
     let index = keys.indexOf(start);
-    if (index === -1) { return null; }
 
-    // Remove keys before index
-    keys = keys.slice(index, keys.length);
+    if (index !== -1) {
+        keys = keys.slice(index, keys.length);
 
-    // Determine nearest atom to key
-    for (let i = 1; i < keys.length; i++) {
-
-        if (atoms[keys[i]] !== undefined) {
-            return keys[i];
+        for (let i = 1; i < keys.length; i++) {
+            if (atoms[keys[i]] !== undefined) { return keys[i]; }
         }
     }
 
@@ -1128,26 +1122,21 @@ function nextAtom(start, keys, atoms) {
 
 
 /*
-  Utility: previousAtom
-  --find key of previous atom in array
+  Function    : previousAtom
+  Description : find key of previous atom in array
 */
 
 function previousAtom(start, keys, atoms) {
 
     if (start === '0' && atoms['0'] !== undefined) { return '0'; }
 
-    // Determine index of key in array
     let index = keys.indexOf(start);
-    if (index === -1) { return null; }
 
-    // Remove keys after index
-    keys = keys.slice(0, index).reverse();
+    if (index !== -1) {
+        keys = keys.slice(0, index).reverse();
 
-    // Determine nearest atom to key
-    for (let i = 0; i < keys.length; i++) {
-
-        if (atoms[keys[i]] !== undefined) {
-            return keys[i];
+        for (let i = 0; i < keys.length; i++) {
+            if (atoms[keys[i]] !== undefined) { return keys[i]; }
         }
     }
 

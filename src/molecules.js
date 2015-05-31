@@ -1,9 +1,9 @@
 /*
   molecules.js
 
-    description : chemical graph theory library
-    imports     : periodic_table, tokenize, decode
-    exports     : parse, adjacency
+  Description : chemical graph theory library
+  Imports     : periodic_table, tokenize, decode
+  Exports     : parse, adjacency, distance
 
 */
 
@@ -17,44 +17,35 @@ import { tokenize, decode } from './encoding/smiles';
 
 
 /*
-  Method : parse
-  Description : convert string to tokens OR tokens to molecule
+  Function    : parse
+  Description : convert SMILES --> tokens OR tokens --> molecule
 
   Syntax
     output = parse(input)
-    output = parse(input, encoding)
 
-  Input (Required)
-    1) chemical notation string (e.g. 'C2C(=O)C1COCCC1CC2')
+  Input
+    1) 'string' (e.g. 'C2C(=O)C1COCCC1CC2')
     2) 'tokens' returned from output of 'a)'
 
-  Input (Optional)
-    encoding : encoding type of input (default = 'SMILES')
-
   Output
-    1) 'tokens' from a parsed chemical notation string
-    2) 'molecule' object with atoms and bonds from a set of tokens
+    1) 'tokens' from a parsed SMILES string
+    2) 'molecule' object from a set of tokens
 
   Examples
-    1) String -> Tokens
-        tokens123 = parse('CC(=O)CC')
-        tokensABC = parse('c1cccc1', 'SMILES')
-        myTokens['42'] = parse('CC(O)CC')
-        butane.tokens = parse('CCCC', 'smiles')
+    1) tokens123 = parse('CC(=O)CC')
+       tokensABC = parse('c1cccc1')
+       butane.tokens = parse('CCCC')
 
-    2) Tokens -> Molecule
-        mol123 = parse(tokens123)
-        molABC = parse(tokensABC)
-        mol['42'] = parse(myTokens['42'].tokens)
-        butane.molecule = parse(butane.tokens)
+    2) mol123 = parse(tokens123)
+       molABC = parse(tokensABC)
+       butane.molecule = parse(butane.tokens)
 */
 
 function parse(input, encoding = 'SMILES') {
 
-    switch (encoding) {
+    switch (encoding.toUpperCase()) {
 
         case 'SMILES':
-        case 'smiles':
 
             // 1) String -> Tokens
             if (typeof input === 'string') {
@@ -67,7 +58,7 @@ function parse(input, encoding = 'SMILES') {
             else if (typeof input === 'object') {
                 let {atoms, bonds} = decode(input);
 
-                return getMolecule(atoms, bonds);
+                return Molecule(atoms, bonds);
             }
 
             return null;
@@ -76,79 +67,178 @@ function parse(input, encoding = 'SMILES') {
 
 
 /*
-  Method : adjacency
-  Description : return adjacency matrix for non-hydrogen atoms in molecule
+  Function    : adjacency
+  Description : return adjacency matrix of non-hydrogen atoms
 
   Syntax
-    {header, matrix} = adjacency(molecule)
+    { header, matrix } = adjacency(molecule)
 
   Input
     molecule : object containing atoms and bonds
 
   Output
-    header   : atom identifier
-    matrix   : adjacency matrix
+    header : atom identifier
+    matrix : adjacency matrix
 
   Examples
-    {id, adj} = adjacency(mol123)
-    {names, matrix} = adjacency(molABC)
+    { header: id, matrix: adj } = adjacency(mol123)
+    { header: names, matrix: matrix } = adjacency(molABC)
+    { header: header123, matrix: data123 } = adjacency(myMolecule)
 */
-function adjacency(molecule){
+
+function adjacency(molecule, header = [], matrix = []) {
 
     if (typeof molecule !== 'object') { return null; }
 
-    let atoms = Object.keys(molecule.atoms),
-        header = [],
-        matrix = [];
+    let keys = Object.keys(molecule.atoms);
 
     // Extract non-hydrogen atoms
-    for (let i = 0; i < atoms.length; i++) {
+    for (let i = 0; i < keys.length; i++) {
 
-        let atom = molecule.atoms[atoms[i]];
-
-        if (atom.name !== 'H') {
-            header.push(atom.id);
-        }
-    }
-
-    // Initialize adjacency matrix
-    for (let i = 0; i < header.length; i++) {
-        matrix[i] = [];
-
-        for (let j = 0; j < header.length; j++) {
-            matrix[i][j] = 0;
+        if (molecule.atoms[keys[i]].name !== 'H') {
+            header.push(molecule.atoms[keys[i]].id);
         }
     }
 
     // Fill adjacency matrix
+    matrix = Matrix(header.length);
+
     for (let i = 0; i < header.length; i++) {
         let source = molecule.atoms[header[i]];
 
         for (let j = 0; j < source.bonds.atoms.length; j++) {
-            let target = molecule.atoms[source.bonds.atoms[j]];
+            let target = molecule.atoms[source.bonds.atoms[j]],
+                index = header.indexOf(target.id);
 
-            if (target.name !== 'H') {
-
-                let index = header.indexOf(target.id);
-
-                if (index >= 0) {
-                    matrix[i][index] = 1;
-                    matrix[index][i] = 1;
-                }
+            if (target.name !== 'H' && index > 0) {
+                matrix[i][index] = 1;
+                matrix[index][i] = 1;
             }
         }
     }
 
-    return {header, matrix};
+    return { header: header, matrix: matrix };
 }
 
 
 /*
-  Utility: getMolecule
-  --return new molecule object
+  Function    : distance
+  Description : return matrix of shortest paths between non-hydrogen atoms
+
+  Syntax
+    { header, matrix } = distance(input)
+
+  Input
+    1) 'molecule' object
+    2) 'adjacency' matrix
+
+  Output
+    header : atom identifier
+    matrix : distance matrix
+
+  Examples
+    { header: id, matrix: d } = distance(adjacent123)
+    { header: names, matrix: matrix } = distance(myMoleculeABC)
+    { header: header123, matrix: dist123 } = distance(adj123)
+    { header: atomID, matrix: shortestPaths } = distance(mol.butane)
+
+  References
+    R. Seidel, 'On the All-Pairs Shortest-Path Problem', ACM, (1992) 745-749.
 */
 
-function getMolecule(atoms = {}, bonds = {}, id = 0, name = '') {
+function distance(input, adjacent = input, header = [], matrix = []) {
+
+    if (typeof input !== 'object') { return null; }
+
+    // Molecule --> Adjacency matrix
+    if (input.atoms !== undefined) {
+        input = adjacency(input);
+    }
+
+    if (input.matrix !== undefined) {
+        adjacent = input.matrix;
+    }
+    if (input.header !== undefined) {
+        header = input.header;
+    }
+
+    // Validate adjacency matrix
+    for (var i = 0; i < adjacent.length; i++) {
+        if (adjacent[i].length !== adjacent.length) { return null; }
+    }
+
+    // Seidel's Algorithm (all-pairs shortest-paths)
+    function Seidel(A, B = [], D = []) {
+
+        let Z = Multiply(A, A);
+
+        for (let i = 0; i < A.length; i++) {
+            B[i] = [];
+
+            for (let j = 0; j < A[0].length; j++) {
+
+                if (i !== j && (A[i][j] === 1 || Z[i][j] > 0)) {
+                    B[i][j] = 1;
+                }
+                else {
+                    B[i][j] = 0;
+                }
+            }
+        }
+
+        let count = 0;
+
+        for (let i = 0; i < B.length; i++) {
+            for (let j = 0; j < B[0].length; j++) {
+
+                if (i !== j && B[i][j] === 1) {
+                    count += 1;
+                }
+            }
+        }
+
+        if (count === (B.length * B.length) - B.length) {
+            return Subtract(Multiply(B, 2), A);
+        }
+
+        let T = Seidel(B),
+            X = Multiply(T, A);
+
+        let degree = [];
+
+        for (let i = 0; i < A.length; i++) {
+            degree[i] = A[i].reduce(function(a, b) { return a + b; });
+        }
+
+        for (var i = 0; i < X.length; i++) {
+            D[i] = [];
+
+            for (var j = 0; j < X[0].length; j++) {
+
+                if (X[i][j] >= T[i][j] * degree[j]) {
+                    D[i][j] = 2 * T[i][j];
+                }
+                else if (X[i][j] < T[i][j] * degree[j]) {
+                    D[i][j] = 2 * T[i][j] - 1;
+                }
+            }
+        }
+
+        return D;
+    }
+
+    matrix = Seidel(adjacent);
+
+    return { header, matrix };
+}
+
+
+/*
+  Function    : Molecule
+  Description : return new molecule
+*/
+
+function Molecule(atoms = {}, bonds = {}, id = 0, name = 0) {
 
     return {
         id: id,
@@ -156,26 +246,26 @@ function getMolecule(atoms = {}, bonds = {}, id = 0, name = '') {
         atoms: atoms,
         bonds: bonds,
         properties: {
-            mass: molecularWeight(atoms),
-            formula: molecularFormula(atoms)
+            mass: Mass(atoms),
+            formula: Formula(atoms)
         }
     };
 }
 
 
 /*
-  Utility: molecularFormula
-  --determine molecular formula
+  Function    : Formula
+  Description : return molecular formula
 */
 
-function molecularFormula(atoms) {
+function Formula(atoms, formula = {}) {
 
     if (typeof atoms !== 'object') { return null; }
 
-    let formula = {},
-        keys = Object.keys(atoms);
+    let keys = Object.keys(atoms);
 
     for (let i = 0; i < keys.length; i++) {
+
         if (formula[atoms[keys[i]].name] === undefined) {
             formula[atoms[keys[i]].name] = 1;
         }
@@ -189,16 +279,15 @@ function molecularFormula(atoms) {
 
 
 /*
-  Utility: molecularWeight
-  --calculate molecular weight
+  Function    : Mass
+  Description : determine molecular weight
 */
 
-function molecularWeight(atoms) {
+function Mass(atoms, mass = 0) {
 
     if (typeof atoms !== 'object') { return null; }
 
-    let mass = 0,
-        keys = Object.keys(atoms);
+    let keys = Object.keys(atoms);
 
     for (let i = 0; i < keys.length; i++) {
         mass += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
@@ -209,7 +298,106 @@ function molecularWeight(atoms) {
 
 
 /*
+  Function    : Matrix
+  Description : various matrix functions
+*/
+
+function Matrix(rows, columns = rows, matrix = []) {
+
+    if (typeof rows !== 'number' || typeof columns !== 'number') { return null; }
+
+    // Rows
+    for (let i = 0; i < rows ; i++) {
+        matrix[i] = [];
+
+        // Columns
+        for (let j = 0; j < columns; j++) {
+            matrix[i][j] = 0;
+        }
+    }
+
+    return matrix;
+}
+
+
+/*
+  Function    : Multiply
+  Description : matrix multiplication
+*/
+
+function Multiply(a, b, output = []) {
+
+    switch (typeof b) {
+
+        case 'object':
+
+            for (let i = 0; i < a.length; i++) {
+                output[i] = [];
+
+                for (let j = 0; j < b[0].length; j++) {
+                    output[i][j] = 0;
+
+                    for (let k = 0; k < a[0].length; k++) {
+                        output[i][j] += a[i][k] * b[k][j];
+                    }
+                }
+            }
+
+            return output;
+
+        case 'number':
+
+            for (let i = 0; i < a.length; i++) {
+                output[i] = [];
+
+                for (let j = 0; j < a[0].length; j++) {
+                    output[i][j] = a[i][j] * b;
+                }
+            }
+
+            return output;
+    }
+}
+
+
+/*
+  Function    : Subtract
+  Description : matrix subtraction
+*/
+
+function Subtract(a, b, output = []) {
+
+    switch (typeof b) {
+
+        case 'object':
+
+            for (let i = 0; i < a.length; i++) {
+                output[i] = [];
+
+                for (let j = 0; j < a[0].length; j++) {
+                    output[i][j] = a[i][j] - b[i][j];
+                }
+            }
+
+            return output;
+
+        case 'value':
+
+            for (let i = 0; i < a.length; i++) {
+                output[i] = [];
+
+                for (let j = 0; j < a[0].length; j++) {
+                    output[i][j] = a[i][j] - b;
+                }
+            }
+
+            return output;
+    }
+}
+
+
+/*
   Exports
 */
 
-export { parse, adjacency };
+export { parse, adjacency, distance };

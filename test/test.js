@@ -1,4 +1,8 @@
-// SMILES Test
+// Load molecules.js
+var molecules = require('./../dist/molecules.min.js');
+//var molecules = require('./../dist/molecules.js');
+
+// SMILES Examples
 var test = [
 
     // Alkanes
@@ -93,11 +97,6 @@ var test = [
     {mass: 131.175, formula: {C:6, H:13, N:1, O:2}, name: 'NC(C(CC)C)C(O)=O', category: 'Other', type: 'Advanced'},
     {mass: 372.447, formula: {C:23, H:22, N:3, O:2}, name: 'c1ccccc1[C@]2(C(=O)N(C)C(N)=[NH+]2)c3cc(ccc3)-c4ccc(cc4)OC', category: 'Other', type: 'Advanced'}
 ];
-
-// Load molecules.js
-var molecules = require('./../dist/molecules.min.js');
-//var molecules = require('./../dist/molecules.js');
-
 
 // Initialize variables
 var tokens = [],
@@ -245,11 +244,18 @@ function run(option, input) {
 
         case 'other':
         case '3':
-            var input = 'CC1C(CC(CC1C)CCO)=O',
-                tokens = molecules.parse(input),
-                molecule = molecules.parse(tokens);
+            //var input = 'CC1C(CC(CC1C)CCO)=O';
+            var input = 'CC(C)CC';
 
-            console.log(molecules.adjacency(molecule));
+            var tokens = molecules.parse(input),
+                molecule = molecules.parse(tokens),
+                adjacent = molecules.adjacency(molecule),
+                adjacent = adjacent.matrix,
+                distance = molecules.distance(molecule),
+                distance = distance.matrix;
+
+            console.log(adjacent);
+            console.log(distance);
 
             break;
     }
