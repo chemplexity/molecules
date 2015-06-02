@@ -28,6 +28,7 @@ import periodic_table from './../reference/elements';
 
 var grammar = [
     {type: 'atom',     term: 'H',  tag: 'H',       expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g},
+    {type: 'atom',     term: 'D',  tag: 'H',       expression: /(?=[A-Z])D(?=[^bsy]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'He', tag: 'He',      expression: /He/g},
     {type: 'atom',     term: 'Li', tag: 'Li',      expression: /Li/g},
     {type: 'atom',     term: 'Be', tag: 'Be',      expression: /Be/g},
@@ -182,7 +183,7 @@ function tokenize(input, tokens = []) {
         }
     }
 
-    return { tokens };
+    return { tokens: tokens };
 }
 
 
@@ -200,8 +201,8 @@ function tokenize(input, tokens = []) {
     { atoms, bonds} : array of atom/bonds describing connectivity and properties
 
   Examples
-    { atomsABC, bondsABC } = decode(mytokensABC)
-    { atoms123, bonds123 } = decode(tokens123)
+    { atoms: atomsABC, bonds: bondsABC } = decode(mytokensABC)
+    { atoms: atoms123, bonds: bonds123 } = decode(tokens123)
 */
 
 function decode(tokens) {
@@ -297,6 +298,11 @@ function decode(tokens) {
             // Element information
             let element = periodic_table[atoms[atomID].name];
 
+            // Exception: deuterium
+            if (atoms[atomID].value === 'D') {
+                element = periodic_table[atoms[atomID].value];
+            }
+
             // Element properties
             atoms[atomID].group = element.group;
             atoms[atomID].protons = element.protons;
@@ -305,8 +311,9 @@ function decode(tokens) {
 
             // Bond properties
             atoms[atomID].bonds = {
-                electrons: 0,
-                atoms: []
+                id: [],
+                atoms: [],
+                electrons: 0
             };
 
             // Other properties
@@ -704,30 +711,39 @@ function decode(tokens) {
         // Remove duplicate bonds
         for (let i = 0; i < keys.bonds.length; i++) {
 
+            // Check for empty key
+            if (keys.bonds[i] === undefined) {
+                keys.bonds.splice(i, 1);
+                i--;
+                continue;
+            }
+
+            // Check for empty bond
+            if (bonds[keys.bonds[i]].atoms.length !== 2) {
+                delete bonds[keys.bonds[i]];
+                keys.bonds.splice(i, 1);
+                i--;
+                continue;
+            }
+
+            if (i === keys.bonds.length - 1) {
+                continue;
+            }
+
             // Extract bonds after index
             let bondsAfter = keys.bonds.slice(i, keys.bonds.length);
 
             // Check for duplicate/empty bonds
             for (let j = 0; j < bondsAfter.length; j++) {
 
+                if (j === 0) { continue; }
+
                 // Bond keys
                 let bondID = bondsAfter[j],
                     a = bonds[keys.bonds[i]],
                     b = bonds[bondID];
 
-                if (a === undefined || b === undefined || j === 0) { continue; }
-
-                // Check for empty bond reference
-                if (a.atoms.length === 0) {
-                    delete bonds[keys.bonds[i]];
-                    delete keys.bonds[i];
-                    continue;
-                }
-                if (b.atoms.length === 0) {
-                    delete bonds[bondID];
-                    delete keys.bonds[keys.bonds.indexOf(bondID)];
-                    continue;
-                }
+                if (a === undefined || b === undefined) { continue; }
 
                 // Compare atom keys
                 if ((a.atoms[0] === b.atoms[0] && a.atoms[1] === b.atoms[1]) ||
@@ -736,38 +752,29 @@ function decode(tokens) {
                     // Duplicate ring bond
                     if (a.name === 'ring' && b.name === 'ring') {
                         delete bonds[bondID];
-                        delete keys.bonds[keys.bonds.indexOf(bondID)];
+                        keys.bonds.splice(keys.bonds.indexOf(bondID), 1);
                     }
 
                     // Duplicate branching bonds
                     else if (a.name === 'branch' && (b.name === 'single' || b.name === 'double' || b.name === 'triple')) {
                         delete bonds[keys.bonds[i]];
-                        delete keys.bonds[i];
+                        keys.bonds.splice(i, 1);
                     }
 
                     else if ((a.name === 'single' || a.name === 'double' || a.name === 'triple') && b.name === 'branch') {
                         delete bonds[bondID];
-                        delete keys.bonds[keys.bonds.indexOf(bondID)];
+                        keys.bonds.splice(keys.bonds.indexOf(bondID), 1);
                     }
 
                     // Other duplicate bonds
                     else {
                         delete bonds[keys.bonds[i]];
-                        delete keys.bonds[i];
+                        keys.bonds.splice(i, 1);
                     }
 
                     i--;
                     break;
                 }
-            }
-        }
-
-        // Remove empty references from keys
-        for (let i = 0; i < keys.bonds.length; i++) {
-
-            if (keys.bonds[i] === undefined) {
-                keys.bonds.splice(i, 1);
-                i--;
             }
         }
 
@@ -784,6 +791,9 @@ function decode(tokens) {
             if (sourceID === undefined || targetID === undefined) { continue; }
 
             // Add bond reference to atom
+            atoms[sourceID].bonds.id.push(bondID);
+            atoms[targetID].bonds.id.push(bondID);
+
             atoms[sourceID].bonds.atoms.push(targetID);
             atoms[targetID].bonds.atoms.push(sourceID);
 
@@ -902,6 +912,9 @@ function decode(tokens) {
                 bonds[bondID] = addBond(bondID, bondName, bondValue, bondOrder, [sourceAtom.id, targetAtom.id]);
 
                 // Update atoms
+                atoms[sourceAtom.id].bonds.id.push(bondID);
+                atoms[targetAtom.id].bonds.id.push(bondID);
+
                 atoms[sourceAtom.id].bonds.atoms.push(targetAtom.id);
                 atoms[targetAtom.id].bonds.atoms.push(sourceAtom.id);
 
@@ -949,6 +962,9 @@ function decode(tokens) {
                             bonds[bondID] = addBond(bondID, 'hydrogen', bondName, 1, [sourceAtom.id, bondID]);
 
                             // Update atoms
+                            atoms[sourceAtom.id].bonds.id.push(bondID);
+                            atoms[bondID].bonds.id.push(bondID);
+
                             atoms[sourceAtom.id].bonds.atoms.push(bondID);
                             atoms[bondID].bonds.atoms.push(sourceAtom.id);
 
@@ -995,6 +1011,9 @@ function decode(tokens) {
                 bonds[bondID] = addBond(bondID, 'hydrogen', bondName, 1, [sourceAtom.id, bondID]);
 
                 // Update atoms
+                atoms[sourceAtom.id].bonds.id.push(bondID);
+                atoms[bondID].bonds.id.push(bondID);
+
                 atoms[sourceAtom.id].bonds.atoms.push(bondID);
                 atoms[bondID].bonds.atoms.push(sourceAtom.id);
 
@@ -1004,6 +1023,25 @@ function decode(tokens) {
         }
 
         return [atoms, bonds, keys];
+    }
+
+    function cleanBonds(atoms, bonds) {
+
+        let atomID = Object.keys(atoms),
+            bondID = Object.keys(bonds);
+
+        for (let i = 0; i < bondID.length; i++) {
+
+            // Re-label bond value
+            let source = atoms[bonds[bondID[i]].atoms[0]],
+                target = atoms[bonds[bondID[i]].atoms[1]],
+                order = bonds[bondID[i]].order;
+
+            // Format: source atom + bond order + target atom (e.g. C1C, C2O, O1H)
+            bonds[bondID[i]].value = source.name + order + target.name;
+        }
+
+        return [atoms, bonds];
     }
 
     let atoms, bonds, properties, keys;
@@ -1024,7 +1062,10 @@ function decode(tokens) {
     [atoms, bonds, keys] = explicitBonds(atoms, bonds, keys);
     [atoms, bonds, keys] = implicitBonds(atoms, bonds, keys);
 
-    return { atoms, bonds};
+    // 5. Cleanup
+    [atoms, bonds] = cleanBonds(atoms, bonds);
+
+    return { atoms: atoms, bonds: bonds};
 }
 
 
@@ -1065,8 +1106,9 @@ function addAtom(id, name, value, group = 0, protons = 0, neutrons = 0, electron
 
         // Bond properties
         bonds: {
-            electrons: 0,
-            atoms: []
+            id: [],
+            atoms: [],
+            electrons: 0
         },
 
         // Other properties

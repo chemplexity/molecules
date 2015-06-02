@@ -26,7 +26,7 @@ module.exports = function(grunt) {
                 dest: 'dist/molecules.js',
                 options: {
                     browserifyOptions: {
-                        standalone: 'molecules'
+                        standalone: 'Molecules'
                     }
                 }
             }

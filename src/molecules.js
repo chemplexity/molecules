@@ -3,7 +3,7 @@
 
   Description : chemical graph theory library
   Imports     : periodic_table, tokenize, decode
-  Exports     : parse, adjacency, distance
+  Exports     : parse, connectivity, topology
 
 */
 
@@ -14,6 +14,7 @@
 
 import { periodic_table } from './reference/elements';
 import { tokenize, decode } from './encoding/smiles';
+import { adjacencyMatrix, distanceMatrix, reciprocalMatrix, wienerIndex, hyperwienerIndex, hararyIndex } from './extensions/topology';
 
 
 /*
@@ -67,169 +68,69 @@ function parse(input, encoding = 'SMILES') {
 
 
 /*
-  Function    : adjacency
-  Description : return adjacency matrix of non-hydrogen atoms
+  Function    : connectivity
+  Description : return adjacency matrix and distance matrix of non-hydrogen atoms
 
   Syntax
-    { header, matrix } = adjacency(molecule)
+    { header, adjacency, distance } = connectivity(molecule)
 
   Input
     molecule : object containing atoms and bonds
 
   Output
-    header : atom identifier
-    matrix : adjacency matrix
+    header     : atom identifier
+    adjacency  : adjacency matrix
+    distance   : distance matrix
+    reciprocal : reciprocal of distance matrix
 
   Examples
-    { header: id, matrix: adj } = adjacency(mol123)
-    { header: names, matrix: matrix } = adjacency(molABC)
-    { header: header123, matrix: data123 } = adjacency(myMolecule)
+    { header: id, adjacency: adj, distance: dist, reciprocal: recip } = connectivity(mol123)
+    { header: header123, adjacency: adj123, distance: dist123, recip123 } = connectivity(myMolecule)
+    matricesABC = connectivity(molABC)
 */
 
-function adjacency(molecule, header = [], matrix = []) {
+function connectivity(molecule) {
 
     if (typeof molecule !== 'object') { return null; }
 
-    let keys = Object.keys(molecule.atoms);
+    let { header: header, adjacency: adjacency } =  adjacencyMatrix(molecule);
+    let { distance: distance } = distanceMatrix(adjacency);
+    let { reciprocal: reciprocal } = reciprocalMatrix(distance);
 
-    // Extract non-hydrogen atoms
-    for (let i = 0; i < keys.length; i++) {
-
-        if (molecule.atoms[keys[i]].name !== 'H') {
-            header.push(molecule.atoms[keys[i]].id);
-        }
-    }
-
-    // Fill adjacency matrix
-    matrix = Matrix(header.length);
-
-    for (let i = 0; i < header.length; i++) {
-        let source = molecule.atoms[header[i]];
-
-        for (let j = 0; j < source.bonds.atoms.length; j++) {
-            let target = molecule.atoms[source.bonds.atoms[j]],
-                index = header.indexOf(target.id);
-
-            if (target.name !== 'H' && index > 0) {
-                matrix[i][index] = 1;
-                matrix[index][i] = 1;
-            }
-        }
-    }
-
-    return { header: header, matrix: matrix };
+    return { header: header, adjacency: adjacency, distance: distance, reciprocal: reciprocal };
 }
 
 
 /*
-  Function    : distance
-  Description : return matrix of shortest paths between non-hydrogen atoms
+  Function    : topology
+  Description : return various molecular topological indexes
 
   Syntax
-    { header, matrix } = distance(input)
+    { harary, hyper_wiener, wiener } = topology(molecule)
 
   Input
-    1) 'molecule' object
-    2) 'adjacency' matrix
+    molecule : object containing atoms and bonds
 
   Output
-    header : atom identifier
-    matrix : distance matrix
+    harary       : Harary index
+    hyper_wiener : Hyper-Wiener index
+    wiener       : Wiener index
 
   Examples
-    { header: id, matrix: d } = distance(adjacent123)
-    { header: names, matrix: matrix } = distance(myMoleculeABC)
-    { header: header123, matrix: dist123 } = distance(adj123)
-    { header: atomID, matrix: shortestPaths } = distance(mol.butane)
-
-  References
-    R. Seidel, 'On the All-Pairs Shortest-Path Problem', ACM, (1992) 745-749.
+    { harary: har1, hyper_wiener: hw1, wiener: w1 } = topology(mol123)
+    { harary: harABC, hyper_wiener: hwABC, wiener: wABC } = topology(myMolecule)
+    topologyABC = topology(molABC)
 */
 
-function distance(input, adjacent = input, header = [], matrix = []) {
+function topology(molecule) {
 
-    if (typeof input !== 'object') { return null; }
+    if (typeof molecule !== 'object') { return null; }
 
-    // Molecule --> Adjacency matrix
-    if (input.atoms !== undefined) {
-        input = adjacency(input);
-    }
-
-    if (input.matrix !== undefined) {
-        adjacent = input.matrix;
-    }
-    if (input.header !== undefined) {
-        header = input.header;
-    }
-
-    // Validate adjacency matrix
-    for (var i = 0; i < adjacent.length; i++) {
-        if (adjacent[i].length !== adjacent.length) { return null; }
-    }
-
-    // Seidel's Algorithm (all-pairs shortest-paths)
-    function Seidel(A, B = [], D = []) {
-
-        let Z = Multiply(A, A);
-
-        for (let i = 0; i < A.length; i++) {
-            B[i] = [];
-
-            for (let j = 0; j < A[0].length; j++) {
-
-                if (i !== j && (A[i][j] === 1 || Z[i][j] > 0)) {
-                    B[i][j] = 1;
-                }
-                else {
-                    B[i][j] = 0;
-                }
-            }
-        }
-
-        let count = 0;
-
-        for (let i = 0; i < B.length; i++) {
-            for (let j = 0; j < B[0].length; j++) {
-
-                if (i !== j && B[i][j] === 1) {
-                    count += 1;
-                }
-            }
-        }
-
-        if (count === (B.length * B.length) - B.length) {
-            return Subtract(Multiply(B, 2), A);
-        }
-
-        let T = Seidel(B),
-            X = Multiply(T, A);
-
-        let degree = [];
-
-        for (let i = 0; i < A.length; i++) {
-            degree[i] = A[i].reduce(function(a, b) { return a + b; });
-        }
-
-        for (var i = 0; i < X.length; i++) {
-            D[i] = [];
-
-            for (var j = 0; j < X[0].length; j++) {
-
-                if (X[i][j] >= T[i][j] * degree[j]) {
-                    D[i][j] = 2 * T[i][j];
-                }
-                else if (X[i][j] < T[i][j] * degree[j]) {
-                    D[i][j] = 2 * T[i][j] - 1;
-                }
-            }
-        }
-
-        return D;
-    }
-
-    matrix = Seidel(adjacent);
-
-    return { header, matrix };
+    return {
+        harary: hararyIndex(molecule),
+        hyper_wiener: hyperwienerIndex(molecule),
+        wiener: wienerIndex(molecule)
+    };
 }
 
 
@@ -293,106 +194,7 @@ function Mass(atoms, mass = 0) {
         mass += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
     }
 
-    return Math.round(mass * 1000) / 1000;
-}
-
-
-/*
-  Function    : Matrix
-  Description : various matrix functions
-*/
-
-function Matrix(rows, columns = rows, matrix = []) {
-
-    if (typeof rows !== 'number' || typeof columns !== 'number') { return null; }
-
-    // Rows
-    for (let i = 0; i < rows ; i++) {
-        matrix[i] = [];
-
-        // Columns
-        for (let j = 0; j < columns; j++) {
-            matrix[i][j] = 0;
-        }
-    }
-
-    return matrix;
-}
-
-
-/*
-  Function    : Multiply
-  Description : matrix multiplication
-*/
-
-function Multiply(a, b, output = []) {
-
-    switch (typeof b) {
-
-        case 'object':
-
-            for (let i = 0; i < a.length; i++) {
-                output[i] = [];
-
-                for (let j = 0; j < b[0].length; j++) {
-                    output[i][j] = 0;
-
-                    for (let k = 0; k < a[0].length; k++) {
-                        output[i][j] += a[i][k] * b[k][j];
-                    }
-                }
-            }
-
-            return output;
-
-        case 'number':
-
-            for (let i = 0; i < a.length; i++) {
-                output[i] = [];
-
-                for (let j = 0; j < a[0].length; j++) {
-                    output[i][j] = a[i][j] * b;
-                }
-            }
-
-            return output;
-    }
-}
-
-
-/*
-  Function    : Subtract
-  Description : matrix subtraction
-*/
-
-function Subtract(a, b, output = []) {
-
-    switch (typeof b) {
-
-        case 'object':
-
-            for (let i = 0; i < a.length; i++) {
-                output[i] = [];
-
-                for (let j = 0; j < a[0].length; j++) {
-                    output[i][j] = a[i][j] - b[i][j];
-                }
-            }
-
-            return output;
-
-        case 'value':
-
-            for (let i = 0; i < a.length; i++) {
-                output[i] = [];
-
-                for (let j = 0; j < a[0].length; j++) {
-                    output[i][j] = a[i][j] - b;
-                }
-            }
-
-            return output;
-    }
+    return Math.round(mass * 10000) / 10000;
 }
 
 
@@ -400,4 +202,4 @@ function Subtract(a, b, output = []) {
   Exports
 */
 
-export { parse, adjacency, distance };
+export { parse, connectivity, topology };

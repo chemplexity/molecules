@@ -23,6 +23,7 @@
 var periodic_table = {
 
     'H':  {protons: 1,  neutrons: 0.0079,  electrons: 1,  group: 1,  period: 1},
+    'D':  {protons: 1,  neutrons: 1.0000,  electrons: 1,  group: 1,  period: 1},
     'He': {protons: 2,  neutrons: 2.0026,  electrons: 2,  group: 18, period: 1},
     'Li': {protons: 3,  neutrons: 3.9410,  electrons: 3,  group: 1,  period: 2},
     'Be': {protons: 4,  neutrons: 5.0122,  electrons: 4,  group: 2,  period: 2},

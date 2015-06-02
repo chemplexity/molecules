@@ -1,0 +1,89 @@
+.atom-H {
+    fill: #E9E9E9;
+    stroke: #B4B4B4;
+    stroke-width: 2px;
+}
+
+.atom-He {
+    fill: #37A1E7;
+    stroke: #3295D5;
+    stroke-width: 1px;
+}
+
+.atom-B {
+    fill: #CDB966;
+    stroke: #BCAB5E;
+    stroke-width: 1px;
+}
+
+.atom-C {
+    fill: #242729;
+    stroke: #24282A;
+    stroke-width: 1px;
+}
+
+.atom-N {
+    fill: #4255E9;
+    stroke: #3444C5;
+    stroke-width: 1px;
+}
+
+.atom-O {
+    fill: #EB3941;
+    stroke: #C12D36;
+    stroke-width: 1px;
+}
+
+.atom-F {
+    fill: #AC49E3;
+    stroke: #9D42D0;
+    stroke-width: 1px;
+}
+
+.atom-Si {
+    fill: #959595;
+    stroke: #7C7C7C;
+    stroke-width: 1px;
+}
+
+.atom-P {
+    fill: #00AE78;
+    stroke: #009D6D;
+    stroke-width: 1px;
+}
+
+.atom-S {
+    fill: #FFE382;
+    stroke: #F3D379;
+    stroke-width: 1px;
+}
+
+.atom-Cl {
+    fill: #00FF6C;
+    stroke: #00E561;
+    stroke-width: 1px;
+}
+
+.atom-As {
+    fill: #827340;
+    stroke: #726437;
+    stroke-width: 1px;
+}
+
+.atom-Se {
+    fill: #B40409;
+    stroke: #A2030C;
+    stroke-width: 1px;
+}
+
+.atom-Br {
+    fill: #F08F27;
+    stroke: #DB8226;
+    stroke-width: 1px;
+}
+
+.atom-I {
+    fill: #2C4DA7;
+    stroke: #274496;
+    stroke-width: 1px;
+}

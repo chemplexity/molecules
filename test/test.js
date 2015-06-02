@@ -1,6 +1,6 @@
 // Load molecules.js
-var molecules = require('./../dist/molecules.min.js');
-//var molecules = require('./../dist/molecules.js');
+var Molecules = require('./../dist/molecules.min.js');
+//var Molecules = require('./../dist/molecules.js');
 
 // SMILES Examples
 var test = [
@@ -111,17 +111,20 @@ function testAll() {
     for (var i = 0; i < test.length; i++) {
 
         // String --> Tokens
-        tokens[i] = molecules.parse(test[i].name);
+        tokens[i] = Molecules.parse(test[i].name);
 
         // Tokens --> Molecule
-        mol[i] = molecules.parse(tokens[i]);
+        mol[i] = Molecules.parse(tokens[i]);
+    }
+
+    var t1 = new Date();
+
+    for (var i = 0; i < test.length; i++) {
 
         // Extract properties
         mass[i] = mol[i].properties.mass;
         formula[i] = mol[i].properties.formula;
     }
-
-    var t1 = new Date();
 
     // Compare molecular weights
     var difference = [],
@@ -193,8 +196,8 @@ function testAll() {
 
 function testCustom(input) {
 
-    tokens = molecules.parse(input);
-    mol = molecules.parse(tokens);
+    tokens = Molecules.parse(input);
+    mol = Molecules.parse(tokens);
 
     console.log(mol.atoms);
     console.log(mol.bonds);
@@ -245,26 +248,50 @@ function run(option, input) {
         case 'other':
         case '3':
             //var input = 'CC1C(CC(CC1C)CCO)=O';
-            var input = 'CC(C)CC';
+            var input = 'NC([D])C(O)=O';
 
-            var tokens = molecules.parse(input),
-                molecule = molecules.parse(tokens),
-                adjacent = molecules.adjacency(molecule),
-                adjacent = adjacent.matrix,
-                distance = molecules.distance(molecule),
-                distance = distance.matrix;
+            var tokens = Molecules.parse(input),
+                molecule = Molecules.parse(tokens);
 
-            console.log(adjacent);
-            console.log(distance);
+            var connections = Molecules.connectivity(molecule);
+
+            var adjacent = connections.adjacency,
+                distance = connections.distance,
+                reciprocal = connections.reciprocal;
+
+            console.log(molecule.atoms);
+            console.log(input);
+            console.log(molecule.properties.mass);
+            console.log('');
+            for (var i = 0; i < adjacent.length; i++) {
+                console.log(adjacent[i]);
+            }
+            console.log('');
+            for (var i = 0; i < distance.length; i++) {
+                console.log(distance[i]);
+            }
+            console.log('');
+
+            for (var i = 0; i < reciprocal.length; i++) {
+                console.log(reciprocal[i]);
+            }
+            console.log('');
+
+            console.log(Molecules.topology(molecule));
+            console.log('');
 
             break;
     }
 }
 
+// SMILES accuracy test
+//   --FAIL if molecular weight > +/-0.01 g/mol from actual value
+
 // 5-20-2015 - pass: 40, fail: 12, total: 52
 // 5-25-2015 - pass: 44, fail: 8, total: 52
 // 5-26-2015 - pass: 50, fail: 2, total: 52
 // 5-30-2015 - pass: 61, fail: 2, total: 63
+// 6-1-2015 - pass: 61, fail: 2, total: 63, avg_time: 55 ms
 var latest_results = {pass: 61, fail: 2, total: 63};
 
 
