@@ -1,3 +1,25 @@
+.link line {
+    stroke: #242729;
+    stroke-width: 3px;
+    stroke-opacity: 0.6;
+}
+
+.link {
+    fill: none;
+    stroke: #666;
+    stroke-width: 2.8px;
+}
+
+.link .separator {
+  stroke: #fff;
+  stroke-width: 1px;
+}
+
+.node circle {
+  stroke: #000;
+  stroke-width: 3px;
+}
+
 .atom-H {
     fill: #E9E9E9;
     stroke: #B4B4B4;

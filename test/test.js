@@ -1,6 +1,6 @@
 // Load molecules.js
-var Molecules = require('./../dist/molecules.min.js');
-//var Molecules = require('./../dist/molecules.js');
+//var Molecules = require('./../dist/molecules.min.js');
+var Molecules = require('./../dist/molecules.js');
 
 // SMILES Examples
 var test = [
@@ -65,7 +65,7 @@ var test = [
     // Isotope
     {mass: 59.116, formula: {C:4, H:10}, name: 'C[13CH](C)C', category: 'Isotope', type: '13C'},
     {mass: 60.116, formula: {C:4, H:10}, name: 'C[14CH](C)C', category: 'Isotope', type: '14C'},
-    {mass: 390.687, formula: {C:13, H:24, Cl:1, I:1, N:1, O:2}, name: 'CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC', category: 'Isotope', type: '14C'},
+    {mass: 391.694, formula: {C:13, H:25, Cl:1, I:1, N:1, O:2}, name: 'CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC', category: 'Isotope', type: '14C'},
 
     // Chiral
     {mass: 143.408, formula: {C:2, H:4, Br:1, Cl:1}, name: 'C[C@@H](Br)Cl', category: 'Chiral', type: 'Clockwise'},
@@ -281,6 +281,19 @@ function run(option, input) {
             console.log('');
 
             break;
+
+        case '4':
+            //var input = 'fdgk;3#GVED@FX';
+            var input = 'C@H]1=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H]1';
+
+            var tokens = Molecules.parse(input);
+            var molecule = Molecules.parse(tokens);
+            console.log(tokens);
+            console.log(molecule.bonds,
+            molecule.properties.mass,
+            molecule.properties.formula);
+
+
     }
 }
 
@@ -291,8 +304,9 @@ function run(option, input) {
 // 5-25-2015 - pass: 44, fail: 8, total: 52
 // 5-26-2015 - pass: 50, fail: 2, total: 52
 // 5-30-2015 - pass: 61, fail: 2, total: 63
-// 6-1-2015 - pass: 61, fail: 2, total: 63, avg_time: 55 ms
-var latest_results = {pass: 61, fail: 2, total: 63};
+// 6-1-2015 - pass: 61, fail: 2, total: 63
+// 6-4-2015 - pass: 63, fail: 0, total: 63
+var latest_results = {pass: 63, fail: 0, total: 63};
 
 
 // run(option, input)

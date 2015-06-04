@@ -423,11 +423,25 @@ function decode(tokens) {
                 targetIndex = 0;
 
             if (sourceAtom !== undefined && sourceAtom !== null) {
+                sourceIndex = keys.atoms.indexOf(sourceAtom.id);
+
+                // Check for hydrogen
+                if ((bonds[bondID].name === 'double' || bonds[bondID].name === 'triple') && sourceAtom.name === 'H') {
+
+                    while ((sourceAtom.name === 'H' || atoms[keys.atoms[sourceIndex]] === undefined) && sourceIndex > -1) {
+                        sourceAtom = atoms[keys.atoms[sourceIndex]];
+                        sourceIndex -= 1;
+                    }
+                }
+
                 sourceIndex = keys.all.indexOf(sourceAtom.id);
             }
+
             if (targetAtom !== undefined && targetAtom !== null) {
                 targetIndex = keys.all.indexOf(targetAtom.id);
             }
+
+            if (sourceIndex < 0) { continue; }
 
             // Check for exceptions
             let exceptions = 0;
@@ -451,25 +465,29 @@ function decode(tokens) {
             switch (bonds[bondID].name) {
 
                 case 'single':
-                    if (exceptions === 1) { continue; }
+                    if (exceptions === 1 || sourceAtom === undefined || targetAtom === undefined) { continue; }
                     bonds[bondID].order = 1;
                     bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                     break;
 
                 case 'double':
-                    if (exceptions === 1) { continue; }
+                    if (exceptions === 1 || sourceAtom === undefined || targetAtom === undefined) { continue; }
+                    else if (targetAtom.name === 'H') { continue; }
+
                     bonds[bondID].order = 2;
                     bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                     break;
 
                 case 'triple':
-                    if (exceptions === 1) { continue; }
+                    if (exceptions === 1 || sourceAtom === undefined || targetAtom === undefined) { continue; }
+                    else if (targetAtom.name === 'H') { continue; }
+
                     bonds[bondID].order = 3;
                     bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                     break;
 
                 case 'dot':
-                    if (exceptions === 1) { continue; }
+                    if (exceptions === 1 || sourceAtom === undefined || targetAtom === undefined) { continue; }
                     bonds[bondID].order = 0;
                     //bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                     break;
@@ -806,11 +824,39 @@ function decode(tokens) {
 
     function implicitBonds (atoms, bonds, keys) {
 
-        // Add bonds between adjacent atoms
-        for (let i = 0; i < keys.atoms.length; i++) {
+        // Calculate valence electrons
+        let valence = (group, electrons = 18) => {
+            if (group <= 2) { return 2; }
+            else if (group > 2 && group <= 12) { return 12; }
+            else if (group > 12 && group <= 18) { return 18; }
+        };
 
-            // Check conditions to proceed
-            if (i + 1 === keys.atoms.length) { continue; }
+        // Adjust for charge
+        let charge = (electrons, charge) => {
+            if (charge > 0) { return electrons -= charge; }
+        };
+
+        // Adjust for row
+        let checkRow = (group, protons, electrons) => {
+            if (group > 12 && protons > 10 && electrons <= 0) { return electrons += 4; }
+            else { return electrons; }
+        };
+
+        // Update atoms/bonds
+        let updateAtoms = (sourceID, targetID, bondID, bondOrder) => {
+
+            atoms[sourceID].bonds.id.push(bondID);
+            atoms[targetID].bonds.id.push(bondID);
+
+            atoms[sourceID].bonds.atoms.push(targetID);
+            atoms[targetID].bonds.atoms.push(sourceID);
+
+            atoms[sourceID].bonds.electrons += bondOrder;
+            atoms[targetID].bonds.electrons += bondOrder;
+        };
+
+        // Add bonds between adjacent atoms
+        for (let i = 0; i < keys.atoms.length - 1; i++) {
 
             // Retrieve atoms
             let sourceAtom = atoms[keys.atoms[i]],
@@ -826,46 +872,12 @@ function decode(tokens) {
 
             if (sourceIndex === -1) { continue; }
 
-            // Default valence shell
-            let sourceElectrons = 18,
-                targetElectrons = 18;
-
-            // Check for other group elements
-            if (sourceAtom.group <= 2) {
-                sourceElectrons = 2;
-            }
-            else if (sourceAtom.group < 13 && sourceAtom.group > 3) {
-                sourceElectrons = 12;
-            }
-            if (targetAtom.group <= 2) {
-                targetElectrons = 2;
-            }
-            else if (targetAtom.group < 13 && targetAtom.group > 3) {
-                targetElectrons = 12;
-            }
-
-            let sourceTotal = sourceElectrons - sourceAtom.group - sourceAtom.bonds.electrons,
-                targetTotal = targetElectrons - targetAtom.group - targetAtom.bonds.electrons;
+            let sourceTotal = charge(valence(sourceAtom.group) - sourceAtom.bonds.electrons, sourceAtom.properties.charge),
+                targetTotal = charge(valence(targetAtom.group) - targetAtom.bonds.electrons, targetAtom.properties.charge);
 
             // Check atoms for exceptions
-            if (sourceElectrons === 18 && sourceAtom.protons > 10) {
-                if (sourceAtom.bonds.electrons > 4 && sourceTotal <= 0) {
-                    sourceTotal += 4;
-                }
-            }
-            if (targetElectrons === 18 && targetAtom.protons > 10) {
-                if (targetAtom.bonds.electrons > 4 && targetTotal <= 0) {
-                    targetTotal += 4;
-                }
-            }
-
-            // Account for atom charge
-            if (sourceAtom.properties.charge > 0) {
-                sourceTotal -= sourceAtom.properties.charge;
-            }
-            if (targetAtom.properties.charge > 0) {
-                targetTotal -= targetAtom.properties.charge;
-            }
+            sourceTotal = checkRow(sourceTotal);
+            targetTotal = checkRow(targetTotal);
 
             if (sourceTotal <= 0 || targetTotal <= 0) { continue; }
 
@@ -876,20 +888,16 @@ function decode(tokens) {
             let n = keys.all.indexOf(targetAtom.id) - keys.all.indexOf(sourceAtom.id),
                 exceptions = 0;
 
-            // Check tokens preventing implicit bond
+            // Check for tokens preventing implicit bond
             if (n > 1) {
 
                 // Extract all keys between source/target atoms
                 let keysBetween = keys.all.slice(keys.all.indexOf(sourceAtom.id) + 1, keys.all.indexOf(targetAtom.id));
 
+                // Check for bond symbol
                 for (let j = 0; j < keysBetween.length; j++) {
-
-                    // Check for bond symbol
-                    if (bonds[keysBetween[j]] !== undefined) {
-                        if (bonds[keysBetween[j]].name !== 'ring') {
-                            exceptions = 1;
-                        }
-                    }
+                    if (bonds[keysBetween[j]] === undefined) { exceptions += 0; }
+                    else if (bonds[keysBetween[j]].name !== 'ring') { exceptions += 1; }
                 }
             }
 
@@ -912,19 +920,29 @@ function decode(tokens) {
                 bonds[bondID] = addBond(bondID, bondName, bondValue, bondOrder, [sourceAtom.id, targetAtom.id]);
 
                 // Update atoms
-                atoms[sourceAtom.id].bonds.id.push(bondID);
-                atoms[targetAtom.id].bonds.id.push(bondID);
-
-                atoms[sourceAtom.id].bonds.atoms.push(targetAtom.id);
-                atoms[targetAtom.id].bonds.atoms.push(sourceAtom.id);
-
-                atoms[sourceAtom.id].bonds.electrons += bondOrder;
-                atoms[targetAtom.id].bonds.electrons += bondOrder;
+                updateAtoms(sourceAtom.id, targetAtom.id, bondID, bondOrder);
             }
         }
 
         // Add implicit hydrogen
         let H = periodic_table.H;
+
+        let update = (x, sourceID, sourceName) => {
+
+            let bondID = 'H' + (x + 1) + sourceName + sourceID;
+            let targetID = bondID;
+
+            atoms[targetID] = addAtom(targetID, 'H', 'H', H.group, H.protons, H.neutrons, H.electrons);
+            bonds[bondID] = addBond(bondID, 'H', 'H', 1, [sourceID, targetID]);
+
+            atoms[sourceID].bonds.id.push(bondID);
+            atoms[sourceID].bonds.atoms.push(targetID);
+            atoms[sourceID].bonds.electrons += 1;
+
+            atoms[targetID].bonds.id.push(bondID);
+            atoms[targetID].bonds.atoms.push(sourceID);
+            atoms[targetID].bonds.electrons += 1;
+        };
 
         for (let i = 0; i < keys.atoms.length; i++) {
 
@@ -932,93 +950,72 @@ function decode(tokens) {
             let sourceAtom = atoms[keys.atoms[i]];
 
             // Check atom group
-            if (sourceAtom.group < 13) { continue; }
+            if (sourceAtom.group < 13 && sourceAtom.group > 1) { continue; }
 
-            // Check for explicit hydrogen
             let bondCount = sourceAtom.bonds.atoms.length;
 
-            for (let j = 0; j < bondCount; j++) {
+            // Exception: explicit number of hydrogen
+            if (sourceAtom.name !== 'H' && bondCount > 0) {
 
-                // Retrieve trget atom
-                let targetID = sourceAtom.bonds.atoms[j],
-                    targetAtom = atoms[targetID];
+                for (let j = 0; j < bondCount; j++) {
 
-                // Check for hydrogen
-                if (targetAtom.name === 'H') {
+                    // Retrieve target atom
+                    let targetID = sourceAtom.bonds.atoms[j],
+                        targetAtom = atoms[targetID];
 
-                    // Check for value
-                    let count = parseInt(targetAtom.value.match(/[0-9]+/g));
+                    // Check for hydrogen
+                    if (targetAtom.name === 'H') {
 
-                    if (count > 1 && count < sourceAtom.electrons) {
+                        // Check for value
+                        let count = parseInt(targetAtom.value.match(/[0-9]+/g));
 
-                        // Add hydrogen
-                        for (let k = 0; k < count - 1; k++) {
+                        // Add hydrogen if electrons are available
+                        if (count > 1 && count < sourceAtom.electrons) {
 
-                            let bondID = 'H' + (k + 1) + sourceAtom.name + sourceAtom.id,
-                                bondName = sourceAtom.name + 'H';
-
-                            // Add hydrogen atom/bond
-                            atoms[bondID] = addAtom(bondID, 'H', 'H', H.group, H.protons, H.neutrons, H.electrons);
-                            bonds[bondID] = addBond(bondID, 'hydrogen', bondName, 1, [sourceAtom.id, bondID]);
-
-                            // Update atoms
-                            atoms[sourceAtom.id].bonds.id.push(bondID);
-                            atoms[bondID].bonds.id.push(bondID);
-
-                            atoms[sourceAtom.id].bonds.atoms.push(bondID);
-                            atoms[bondID].bonds.atoms.push(sourceAtom.id);
-
-                            atoms[sourceAtom.id].bonds.electrons += 1;
-                            atoms[bondID].bonds.electrons += 1;
+                            // Add hydrogen
+                            for (let k = 0; k < count - 1; k++) {
+                                update(k, sourceAtom.id, sourceAtom.name);
+                            }
                         }
                     }
                 }
             }
 
-            // Determine number of hydrogen to add
-            let sourceTotal = 18 - sourceAtom.group - sourceAtom.bonds.electrons;
-
-            if (sourceTotal <= 0) { continue; }
-
-            // Account for atom charge
-            if (sourceAtom.properties.charge > 0) {
-                sourceTotal -= sourceAtom.properties.charge;
+            // Exception: single uncharged hydrogen atom
+            else if (sourceAtom.name === 'H' && sourceAtom.properties.charge === 0 && bondCount === 0) {
+                update(i, sourceAtom.id, sourceAtom.name);
             }
-            else if (sourceAtom.properties.charge < 0) {
-                sourceTotal += sourceAtom.properties.charge;
 
-                // Lone pair (negative charge w/ 1 electron remaining)
-                if (sourceTotal === 1) {
-                    sourceTotal -= 1;
+            let total = 18 - sourceAtom.group - sourceAtom.bonds.electrons,
+                charge = sourceAtom.properties.charge;
+
+            if (total <= 0 || sourceAtom.group === 1) { continue; }
+
+            // Positive charge
+            if (charge > 0) {
+                total -= charge;
+            }
+
+            // Negitive charge
+            else if (charge < 0) {
+                total += charge;
+
+                // Exception: lone pair
+                if (total === 1) {
+                    total -= 1;
                     atoms[sourceAtom.id].bonds.electrons += 1;
                 }
             }
 
-            if (sourceTotal <= 0) { continue; }
+            if (total <= 0) { continue; }
 
             // Add hydrogen
-            for (let j = 0; j < sourceTotal; j++) {
+            for (let j = 0; j < total; j++) {
 
                 // Check aromatic
                 if (sourceAtom.properties.aromatic === 1 && j > 1) { continue; }
 
-                // Assign bond key
-                let bondID = 'H' + (j + 1) + sourceAtom.name + sourceAtom.id,
-                    bondName = sourceAtom.name + 'H';
-
-                // Add hydrogen atom/bond
-                atoms[bondID] = addAtom(bondID, 'H', 'H', H.group, H.protons, H.neutrons, H.electrons);
-                bonds[bondID] = addBond(bondID, 'hydrogen', bondName, 1, [sourceAtom.id, bondID]);
-
-                // Update atoms
-                atoms[sourceAtom.id].bonds.id.push(bondID);
-                atoms[bondID].bonds.id.push(bondID);
-
-                atoms[sourceAtom.id].bonds.atoms.push(bondID);
-                atoms[bondID].bonds.atoms.push(sourceAtom.id);
-
-                atoms[sourceAtom.id].bonds.electrons += 1;
-                atoms[bondID].bonds.electrons += 1;
+                update(j, sourceAtom.id, sourceAtom.name);
             }
         }
 

@@ -1,21 +1,125 @@
 <!DOCTYPE html>
 <meta charset="utf-8">
 
+<head>
+    <link rel="stylesheet" type="text/css" href="./../dist/molecules.css">
+    <script src="./../dist/molecules.min.js"></script>
+    <script src="../lib/d3.v3.min.js"></script>
+</head>
+
 <style>
 
-* { box-sizing: border-box; }
-
-.container {
-    font-family: 'Lucida Sans Unicode';
-    width: 400px;
-    margin: 15px auto auto 30px;
-    display: block;
-    background: #FFF;
-    padding: 20px 5px 5px;
+* {
+    box-sizing: border-box;
 }
 
-.footer { text-align: right; }
-.footer a { color: #53B2C8; }
+html {
+    height: 100%;
+}
+
+body {
+    height: 100%;
+	font-family: arial, helvetica, sans-serif;
+    font-size: 12px;
+}
+
+#wrapper {
+    min-width: 200px;
+    min-height: 300px;
+	width: 100%;
+    height: 98%;
+	margin: auto;
+	padding: 0px;
+    border: 0px solid #999;
+    box-shadow: 0 0 5px rgba(159,159,159,0.8);
+    -o-box-shadow: 0 0 25px rgba(159,159,159,0.8);
+    -webkit-box-shadow: 0 0 25px rgba(159,159,159,0.8);
+    -moz-box-shadow: 0 0 25px rgba(159,159,159,0.8);
+}
+
+#header {
+    position: relative;
+    width: auto;
+    min-height: 85px;
+    margin: auto;
+    padding: 0px;
+    border: 0px solid #bbb;
+}
+
+#user-input {
+    width: auto;
+    height: auto;
+    margin: auto;
+    padding: 5px;
+    padding-top: 20px;
+    float: none;
+    overflow: hidden;
+    border: 0px solid #bbb;
+}
+
+#content-main {
+    width: 100%;
+    height: auto;
+    margin: 0px;
+    padding: 0px;
+    border: 0px solid #bbb;
+}
+
+#content-box {
+    width: 100%;
+    height: auto;
+    min-height: 275px;
+    margin: 0px;
+    padding: 0px;
+    overflow: hidden;
+    border: 0px solid #bbb;
+}
+
+#plot {
+    height: auto;
+    width: 100%;
+}
+
+#footer {
+    width: auto;
+    height: auto;
+    min-height: 40px;
+	margin: 0px;
+	padding: 0px;
+    border: 0px solid #bbb;
+}
+
+#content-source {
+    width: auto;
+    height: auto;
+    min-height: 40px;
+    margin: 0px;
+    padding: 10px;
+    overflow: hidden;
+    float: right;
+    border: 0px solid #bbb;
+}
+
+#content-source a {
+    text-align: center;
+    font-size: 14px;
+    font-weight: normal;
+    color: #53B2C8;
+}
+
+#content-info {
+    width: auto;
+    min-height: 40px;
+    margin: 0px;
+    padding: 10px;
+    float: left;
+    overflow: hidden;
+    border: 0px solid #bbb;
+}
+
+.background {
+    fill: #eee;
+}
 
 .group {
     position: relative;
@@ -26,7 +130,7 @@
     color: #999;
     font-size: 12px;
     font-weight: normal;
-    font-family: 'Lucida Sans Unicode';
+    font-family: 'Lucida Sans';
 }
 
 .examples a:link {
@@ -50,15 +154,23 @@
 }
 
 input {
+    width: 100%;
     font-size: 16px;
     padding: 10px 10px 10px 5px;
     display: block;
-    width: 300px;
     border: none;
     border-bottom: 1px solid #757575;
 }
 
-input:focus { outline: none; }
+input:focus {
+    outline: none;
+}
+
+input:focus ~ label, input:valid ~ label {
+    top: -15px;
+    font-size: 13px;
+    color: #5264AE;
+}
 
 label {
     color: #999;
@@ -73,16 +185,21 @@ label {
     -webkit-transition: 0.2s ease all;
 }
 
-input:focus ~ label, input:valid ~ label {
-    top: -15px;
-    font-size: 13px;
-    color: #5264AE;
+other {
+    color: #999;
+    font-size: 14px;
+    font-weight: normal;
+    vertical-align: middle;
+    pointer-events: none;
+    transition: 0.2s ease all;
+    -moz-transition: 0.2s ease all;
+    -webkit-transition: 0.2s ease all;
 }
 
 .bar {
     position: relative;
     display: block;
-    width: 350px;
+    width: 100%;
 }
 
 .bar:before, .bar:after {
@@ -100,9 +217,7 @@ input:focus ~ label, input:valid ~ label {
 .bar:before { left: 50%; }
 .bar:after { right: 50%; }
 
-input:focus ~ .bar:before, input:focus ~ .bar:after {
-    width: 50%;
-}
+input:focus ~ .bar:before, input:focus ~ .bar:after { width: 50%; }
 
 .highlight {
     position: absolute;
@@ -135,277 +250,325 @@ input:focus ~ .highlight {
     to { width: 0; background: transparent; }
 }
 
-.atom-H {
-    fill: #E9E9E9;
-    stroke: #B4B4B4;
-    stroke-width: 2px;
-}
-
-.atom-He {
-    fill: #37A1E7;
-    stroke: #3295D5;
-    stroke-width: 1.5px;
-}
-
-.atom-B {
-    fill: #CDB966;
-    stroke: #BCAB5E;
-    stroke-width: 1.5px;
-}
-
-.atom-C {
-    fill: #242729;
-    stroke: #24282A;
-    stroke-width: 1.5px;
-}
-
-.atom-N {
-    fill: #4255E9;
-    stroke: #3444C5;
-    stroke-width: 1.5px;
-}
-
-.atom-O {
-    fill: #EB3941;
-    stroke: #C12D36;
-    stroke-width: 1.5px;
-}
-
-.atom-F {
-    fill: #AC49E3;
-    stroke: #9D42D0;
-    stroke-width: 1.5px;
-}
-
-.atom-Si {
-    fill: #959595;
-    stroke: #7C7C7C;
-    stroke-width: 1.5px;
-}
-
-.atom-P {
-    fill: #00AE78;
-    stroke: #009D6D;
-    stroke-width: 1.5px;
-}
-
-.atom-S {
-    fill: #FFE382;
-    stroke: #F3D379;
-    stroke-width: 1.5px;
-}
-
-.atom-Cl {
-    fill: #00FF6C;
-    stroke: #00E561;
-    stroke-width: 1.5px;
-}
-
-.atom-As {
-    fill: #827340;
-    stroke: #726437;
-    stroke-width: 1.5px;
-}
-
-.atom-Se {
-    fill: #B40409;
-    stroke: #A2030C;
-    stroke-width: 1.5px;
-}
-
-.atom-Br {
-    fill: #F08F27;
-    stroke: #DB8226;
-    stroke-width: 1.5px;
-}
-
-.atom-I {
-    fill: #2C4DA7;
-    stroke: #274496;
-    stroke-width: 1.5px;
-}
-
-.link line {
-    stroke: #242729;
-    stroke-opacity: 0.6;
+html > body #content-main {
+   height: auto;
 }
 
 </style>
 
-
-<script src="./../dist/molecules.min.js"></script>
-<script src="../lib/d3.v3.min.js"></script>
-
-
 <body>
 
-<div class="container">
-    <form onsubmit="return false">
-        <div id="user" class="group">
-            <input type="text" required value="" onpaste="onclick_handler(this.value)" onkeyup="onkey_handler(event)">
+<div id="wrapper">
+  <div id="header">
 
+    <div id="user-input"><form onsubmit="return false"><div id="user" class="group">
+
+            <input type="text" required value="CC(N)CC=O" onpaste="onclick_handler(this.value)" onkeyup="onkey_handler(event)">
             <span class="highlight"></span>
             <span class="bar"></span>
             <label id="textbox">Input...</label>
-        </div>
-    </form>
 
-    <label>
-        <div id="molecularWeight" style="position: absolute; top:35px; left:400px; width:200px; height:25px">""</div>
-    </label>
+    </div></form></div>
 
-    <div id="chart"></div>
+  </div>
 
-    <div>
-        <p class="footer">
-        <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>
-        </p>
+  <div id="content-main">
+
+    <div id="content-box">
+      <div id="plot"></div>
     </div>
 
+  </div>
+
+
+  <div id="footer">
+
+    <div id="content-info">
+      <other><div id="molecularWeight"></div></other>
+    </div>
+
+    <div id="content-source">
+      <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>
+    </div>
+
+  </div>
+
 </div>
-
 </body>
-
 
 <script>
 
+// Input : Keyboard
 var onkey_handler = function(event) {
 
-    // Input: 'enter', 'backspace', '=', '0', '9'
-    if (event.keyCode == 13 || event.keyCode == 8 || event.keyCode == 187 ||
-        event.keyCode == 48 || event.keycode == 57)
-       { onclick_handler(document.getElementsByTagName("input")[0].value); }
+    // Input : 0-9
+    if (event.keyCode >= 48 && event.keyCode <= 57) {
+        onclick_handler(document.getElementsByTagName("input")[0].value);
+    }
 
-    // Input: non-alphabet
-    else if (event.keyCode < 65 || event.keyCode > 90) { return false; }
+    // Input : 'backspace', 'enter'
+    else if (event.keyCode === 8 || event.keyCode === 13) {
+        onclick_handler(document.getElementsByTagName("input")[0].value);
+    }
 
-    // Input: alphabet
-    else { onclick_handler(document.getElementsByTagName("input")[0].value); }
-  };
+    // Input : '-', '=', '.'
+    else if (event.keyCode === 189 || event.keyCode === 187 || event.keyCode === 190) {
+        onclick_handler(document.getElementsByTagName("input")[0].value);
+    }
 
-  var example_handler = function (input) {
+    // Input: Non-Alphabet
+    else if (event.keyCode < 65 || event.keyCode > 90) {
+        return null;
+    }
 
-    document.getElementsByTagName("input")[0].value = input;
+    // Input: Alphabet
+    else {
+        onclick_handler(document.getElementsByTagName("input")[0].value);
+    }
+};
 
-    onclick_handler(input);
-  };
+
+// Input : Examples
+var example_handler = function (input) {
+    onclick_handler(document.getElementsByTagName("input")[0].value);
+};
 
 
-  // SMILES --> Molecule
-  function parse(input) {
+// Process input
+var onclick_handler = function(input) {
+
+    if (input.length === 0 || input.length > 1000) {
+        return null;
+    }
+
+    var molecule = parse(input);
+
+    if (typeof molecule === 'object') {
+        update(molecule);
+    }
+};
+
+// SMILES --> Molecule
+function parse(input) {
 
     if (typeof input !== 'string') { return; }
 
-    var tokens = molecules.parse(input),
-        molecule = molecules.parse(tokens);
+    var tokens = Molecules.parse(input),
+        molecule = Molecules.parse(tokens);
 
     return molecule;
-  }
+}
 
-  // Molecule --> Nodes
-  function getNodes(molecule) {
 
-    var atoms = Object.keys(molecule.atoms),
-        nodes = [];
-
-    for (var i = 0; i < atoms.length; i++) {
-
-      nodes.push({
-        id: atoms[i],
-        name: molecule.atoms[atoms[i]].name,
-        protons: molecule.atoms[atoms[i]].protons,
-        neutrons: molecule.atoms[atoms[i]].neutrons,
-        electrons: molecule.atoms[atoms[i]].electrons,
-        bonds: molecule.atoms[atoms[i]].bonds,
-        properties: molecule.atoms[atoms[i]].properties
-      })
-    }
-
-    return nodes;
-  }
-
-  // Molecule --> Links
-  function getLinks(molecule) {
+// Molecule --> Nodes, Links
+function reformat(molecule) {
 
     var atoms = Object.keys(molecule.atoms),
         bonds = Object.keys(molecule.bonds),
+        nodes = [],
         links = [];
 
-    for (var i = 0; i < bonds.length; i++) {
-
-      links.push({
-        id: bonds[i],
-        name: molecule.bonds[bonds[i]].name,
-        value: molecule.bonds[bonds[i]].value,
-        source: atoms.indexOf(molecule.bonds[bonds[i]].atoms[0]),
-        target: atoms.indexOf(molecule.bonds[bonds[i]].atoms[1]),
-        order: molecule.bonds[bonds[i]].order
-      })
+    for (var i = 0; i < atoms.length; i++) {
+        nodes.push({
+            id: molecule.atoms[atoms[i]].id,
+            name: molecule.atoms[atoms[i]].name,
+            protons: molecule.atoms[atoms[i]].protons,
+            neutrons: molecule.atoms[atoms[i]].neutrons,
+            electrons: molecule.atoms[atoms[i]].electrons,
+            bonds: molecule.atoms[atoms[i]].bonds,
+            properties: molecule.atoms[atoms[i]].properties
+        })
     }
 
-    return links;
-  }
+    for (var i = 0; i < bonds.length; i++) {
+        links.push({
+            id: molecule.bonds[bonds[i]].id,
+            name: molecule.bonds[bonds[i]].name,
+            value: molecule.bonds[bonds[i]].value,
+            source: atoms.indexOf(molecule.bonds[bonds[i]].atoms[0]),
+            target: atoms.indexOf(molecule.bonds[bonds[i]].atoms[1]),
+            order: molecule.bonds[bonds[i]].order
+        })
+    }
 
-  var molecule = parse('CC(N)CCO'),
-      nodes = getNodes(molecule),
-      links = getLinks(molecule);
+    return {nodes: nodes, links: links};
+}
 
-  var graph = {nodes: nodes, links: links}
+function getConnections(molecule) {
+    return Molecules.connectivity(molecule);
+}
 
-  var width = window.innerWidth * 0.9,
-      height = window.innerHeight * 0.9;
+var width = document.getElementById("plot").parentElement.offsetWidth,
+    height = document.getElementById("plot").parentElement.offsetHeight;
 
-  var svg = d3.select("#chart")
-    .append("svg")
+//var svg = d3.select("#wrapper").append("svg")
+
+var main = d3.select("#plot")
+    .append("svg:svg")
     .attr("width", width)
-    .attr("height", height);
+    .attr("height", height)
+    .append("svg:g")
 
-  var force = d3.layout.force()
-    .nodes(graph.nodes)
-    .links(graph.links)
+var force = d3.layout.force()
     .size([width, height])
-    .charge(-350)
-    .gravity(0.35)
-    .linkDistance(10)
-    .on("tick", tick)
-    .start();
+    .charge(-400)
+    .chargeDistance(300)
+    .linkDistance(30);
 
-  var link = svg.selectAll(".link")
-    .data(graph.links)
-    .enter()
-    .append("g")
-    .attr("class", "link")
-    .append("line")
-    .style("stroke-width", function(d) { return (d.order * 3 - 1) * 1.5 + "px"; });
+function update(molecule) {
 
-  link.filter(function(d) { return d.order > 1; })
-    .append("line")
-    .attr("class", "separator")
-    .style("stroke","#FFFFFF")
-    .style("stroke-width", "1px")
-    .style("stroke-opacity", 1.0);
+    var graph = reformat(molecule);
 
-  //link.exit().remove();
+    var nodes = force.nodes(graph.nodes),
+        links = force.links(graph.links),
+        n = nodes.length;
 
-  var node = svg.selectAll(".node")
-    .data(graph.nodes)
-    .enter()
-    .append("circle")
-    .attr("class", function(d) { return 'atom-' + d.name; })
-    .attr("r", function(d) { return Math.sqrt(d.protons + 4) * 3 })
-    .call(force.drag);
+    force.linkDistance(10)
+        .alpha(5)
+        .gravity(1);
 
-  function tick() {
-    link
-      .attr("x1", function(d) { return d.source.x; })
-      .attr("y1", function(d) { return d.source.y; })
-      .attr("x2", function(d) { return d.target.x; })
-      .attr("y2", function(d) { return d.target.y; });
+    main.selectAll(".node").remove()
 
-    node
-      .attr("cx", function(d) { return d.x; })
-      .attr("cy", function(d) { return d.y; });
+    var link = main.selectAll(".link")
+        .data(graph.links)
+
+    link.enter().append("line")
+        .attr("class", "link")
+        .style("stroke-width", function(d) { return (d.order * 3 - 1) * 1.5 + "px"; })
+        //.filter(function(d) { return d.order > 1; })
+        //.attr("class", "separator")
+        //.append("line");
+
+    link.exit().remove();
+
+    var node = main.selectAll("circle")
+        .data(graph.nodes, function(d) {return d.id + d.name + Math.random()});
+
+    node.enter().append("circle")
+        .attr("class", "node")
+        .call(force.drag)
+        .attr("class", function(d) { return 'atom-' + d.name; })
+        .attr("r", function(d) { return Math.sqrt(d.protons + 3) * 3 });
+
+    node.exit()
+        .attr('x', function(d) { return d.x; })
+        .transition()
+        .duration(50)
+        .attr('x', function(d) { return d.x; })
+        .style('fill-opacity', 0)
+        .remove();
+
+    updateText(molecule);
+
+    force.start();
+
+    force.on("tick", function () {
+        link
+            .attr("x1", function(d) { return d.source.x; })
+            .attr("y1", function(d) { return d.source.y; })
+            .attr("x2", function(d) { return d.target.x; })
+            .attr("y2", function(d) { return d.target.y; });
+
+        node
+            .attr("cx", function(d) { return d.x; })
+            .attr("cy", function(d) { return d.y; });
+    });
+
+}
+
+function updateText(molecule) {
+
+    var mass = 'N/A';
+
+    if (typeof molecule === 'object') {
+        mass = (Math.round(molecule.properties.mass * 100) / 100) + ' g/mol';
+    }
+
+    document.getElementById("molecularWeight").innerHTML = mass;
+}
+
+onclick_handler('CC(N)CC=O');
+/*
+  function formatMatrix(input) {
+
+    var output = [];
+
+    for (var i = 0; i < input.length; i++) {
+      output[i] = [];
+      for (var j = 0; j < input[0].length; j++) {
+        output[i][j] = {x: j, y: i, z: input[i][j]};
+      }
+    }
+
+    return output;
+
   }
 
-  document.getElementById("molecularWeight").innerHTML = molecule.properties.mass + " g/mol";
+  console.log(distance);
+  var matrix = formatMatrix(distance.matrix);
+  var header = distance.header;
+
+  console.log(header)
+
+
+  var w = width * 0.33;
+
+  var x = d3.scale.ordinal().rangeBands([0, w]),
+      z = d3.scale.linear().domain([0, 1]).clamp(true),
+      c = d3.scale.category10().domain(d3.range(10));
+
+  x.domain(header);
+
+  svg.append("rect")
+      .attr("class", "background")
+      .attr("width", w)
+      .attr("height", w)
+      .attr("x", width - w);
+
+  var row = svg.selectAll(".row")
+      .data(matrix)
+      .enter().append("g")
+      .attr("class", "row")
+      .attr("transform", function(d, i) { return "translate(0," + x(i) + ")"; })
+      .each(row);
+
+  row.append("line")
+      .attr("x2", w);
+
+  row.append("text")
+      .attr("x", 10)
+      .attr("y", x.rangeBand() / 2)
+      .attr("dy", ".32em")
+      .attr("text-anchor", "end")
+      .text(function(d, i) { return header[i]; });
+
+  var column = svg.selectAll(".column")
+      .data(matrix)
+      .enter().append("g")
+      .attr("class", "column")
+      .attr("transform", function(d, i) { return "translate(" + x(i) + ")rotate(-90)"; });
+
+  column.append("line")
+      .attr("x1", -width);
+
+  column.append("text")
+      .attr("x", 10)
+      .attr("y", x.rangeBand() / 2)
+      .attr("dy", ".32em")
+      .attr("text-anchor", "start")
+      .text(function(d, i) { return header[i]; });
+
+  function row(row) {
+    var cell = d3.select(this).selectAll(".cell")
+        .data(row.filter(function(d) { return d.z; }))
+        .enter().append("rect")
+        .attr("class", "cell")
+        .attr("x", function(d) { return x(d.x); })
+        .attr("width", x.rangeBand())
+        .attr("height", x.rangeBand())
+        .style("fill-opacity", function(d) { return z(d.z); })
+        .style("fill", function(d) { return c(d.z); })
+  }
+
+*/
 </script>

@@ -200,6 +200,7 @@ function distanceMatrix(adjacency, header = [], distance = []) {
     { header: atomsABC, reciprocal: recipABC } = distanceMatrix(distABC)
 
 */
+
 function reciprocalMatrix(distance, header = [], reciprocal = []) {
 
     if (typeof distance !== 'object') {
@@ -236,8 +237,7 @@ function reciprocalMatrix(distance, header = [], reciprocal = []) {
                 reciprocal[i][j] = 0;
             }
             else {
-                let r = 1 / distance[i][j];
-                reciprocal[i][j] = Math.round(r * 1000000) / 1000000;
+                reciprocal[i][j] = Math.round((1 / distance[i][j]) * 1000000) / 1000000;
             }
         }
     }
