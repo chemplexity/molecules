@@ -1,18 +1,16 @@
-.link line {
-    stroke: #242729;
-    stroke-width: 3px;
-    stroke-opacity: 0.6;
-}
-
 .link {
     fill: none;
     stroke: #666;
     stroke-width: 2.8px;
 }
 
-.link .separator {
+.link line {
+  stroke: #696969;
+}
+
+.link line.separator {
   stroke: #fff;
-  stroke-width: 1px;
+  stroke-width: 2px;
 }
 
 .node circle {

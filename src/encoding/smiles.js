@@ -68,8 +68,8 @@ var grammar = [
     {type: 'property', term: '+',  tag: 'charge',  expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g},
     {type: 'property', term: '-',  tag: 'charge',  expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g},
     {type: 'property', term: 'n',  tag: 'isotope', expression: /(?:[\[])[0-9]+[A-Z]{1,2}(?=.?[^\[]*[\]])/g},
-    {type: 'property', term: '@',  tag: 'chiral',  expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g},
-    {type: 'property', term: '@@', tag: 'chiral',  expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g}
+    {type: 'property', term: 'S',  tag: 'chiral',  expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g},
+    {type: 'property', term: 'R',  tag: 'chiral',  expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g}
 ];
 
 
@@ -1022,7 +1022,7 @@ function decode(tokens) {
         return [atoms, bonds, keys];
     }
 
-    function cleanBonds(atoms, bonds) {
+    function clean(atoms, bonds) {
 
         let atomID = Object.keys(atoms),
             bondID = Object.keys(bonds);
@@ -1034,8 +1034,43 @@ function decode(tokens) {
                 target = atoms[bonds[bondID[i]].atoms[1]],
                 order = bonds[bondID[i]].order;
 
-            // Format: source atom + bond order + target atom (e.g. C1C, C2O, O1H)
+            // Format: source element + bond order + target element (e.g. C1C, C2O, O1H)
             bonds[bondID[i]].value = source.name + order + target.name;
+        }
+
+        let getID = (name, i) => name + (i + 1);
+
+        let setID = (obj, a, b) => {
+            if (obj.hasOwnProperty(a)) {
+                obj[b] = obj[a];
+                delete obj[a];
+            }
+        };
+
+        // Re-label atom id
+        for (let i = 0; i < atomID.length; i++) {
+
+            let oldID = atomID[i],
+                newID = getID(atoms[oldID].name, i);
+
+            // Set ID
+            atoms[oldID].id = newID;
+
+            // Update bond pointers
+            for (let j = 0; j < atoms[oldID].bonds.id.length; j++) {
+
+                let key = atoms[oldID].bonds.id[j],
+                    index = bonds[key].atoms.indexOf(oldID);
+
+                if (index !== -1) { bonds[key].atoms[index] = newID; }
+
+                key = atoms[oldID].bonds.atoms[j];
+                index = atoms[key].bonds.atoms.indexOf(oldID);
+
+                if (index !== -1) { atoms[key].bonds.atoms[index] = newID; }
+            }
+
+            setID(atoms, oldID, newID);
         }
 
         return [atoms, bonds];
@@ -1059,8 +1094,8 @@ function decode(tokens) {
     [atoms, bonds, keys] = explicitBonds(atoms, bonds, keys);
     [atoms, bonds, keys] = implicitBonds(atoms, bonds, keys);
 
-    // 5. Cleanup
-    [atoms, bonds] = cleanBonds(atoms, bonds);
+    // 5. Clean atoms/bonds
+    [atoms, bonds] = clean(atoms, bonds);
 
     return { atoms: atoms, bonds: bonds};
 }
@@ -1187,4 +1222,4 @@ function previousAtom(start, keys, atoms) {
   Exports
 */
 
-export { tokenize, decode, grammar };
+export { grammar, tokenize, decode };

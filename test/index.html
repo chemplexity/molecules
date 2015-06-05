@@ -11,6 +11,8 @@
 
 * {
     box-sizing: border-box;
+    -webkit-box-sizing: border-box;
+    -moz-box-sizing: border-box;
 }
 
 html {
@@ -24,9 +26,10 @@ body {
 }
 
 #wrapper {
+    position: relative;
     min-width: 200px;
     min-height: 300px;
-	width: 100%;
+	width: 98%;
     height: 98%;
 	margin: auto;
 	padding: 0px;
@@ -38,8 +41,9 @@ body {
 }
 
 #header {
-    position: relative;
-    width: auto;
+    position: absolute;
+    top: 0;
+    width: 100%;
     min-height: 85px;
     margin: auto;
     padding: 0px;
@@ -52,12 +56,12 @@ body {
     margin: auto;
     padding: 5px;
     padding-top: 20px;
-    float: none;
-    overflow: hidden;
     border: 0px solid #bbb;
 }
 
 #content-main {
+    position: relative;
+    top: 85px;
     width: 100%;
     height: auto;
     margin: 0px;
@@ -68,20 +72,30 @@ body {
 #content-box {
     width: 100%;
     height: auto;
-    min-height: 275px;
     margin: 0px;
     padding: 0px;
-    overflow: hidden;
     border: 0px solid #bbb;
 }
 
 #plot {
     height: auto;
-    width: 100%;
+    width: 70%;
+    margin: 0px;
+    float: left;
+    border: 0px solid #bbb;
+}
+
+#matrix {
+    height: auto;
+    width: 30%;
+    margin: 0px;
+    float: right;
 }
 
 #footer {
-    width: auto;
+    position: absolute;
+    bottom: 0;
+    width: 100%;
     height: auto;
     min-height: 40px;
 	margin: 0px;
@@ -190,10 +204,6 @@ other {
     font-size: 14px;
     font-weight: normal;
     vertical-align: middle;
-    pointer-events: none;
-    transition: 0.2s ease all;
-    -moz-transition: 0.2s ease all;
-    -webkit-transition: 0.2s ease all;
 }
 
 .bar {
@@ -250,48 +260,41 @@ input:focus ~ .highlight {
     to { width: 0; background: transparent; }
 }
 
-html > body #content-main {
-   height: auto;
-}
-
 </style>
 
 <body>
 
 <div id="wrapper">
-  <div id="header">
 
-    <div id="user-input"><form onsubmit="return false"><div id="user" class="group">
+    <div id="header">
 
+        <div id="user-input"><form onsubmit="return false"><div id="user" class="group">
             <input type="text" required value="CC(N)CC=O" onpaste="onclick_handler(this.value)" onkeyup="onkey_handler(event)">
             <span class="highlight"></span>
             <span class="bar"></span>
             <label id="textbox">Input...</label>
+        </div></form></div>
 
-    </div></form></div>
-
-  </div>
-
-  <div id="content-main">
-
-    <div id="content-box">
-      <div id="plot"></div>
     </div>
 
-  </div>
-
-
-  <div id="footer">
-
-    <div id="content-info">
-      <other><div id="molecularWeight"></div></other>
+    <div id="content-main">
+            <div id="plot"></div>
+            <div id="matrix"></div>
     </div>
 
-    <div id="content-source">
-      <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>
-    </div>
+    <div id="footer">
 
-  </div>
+        <div id="content-info">
+            <other><div id="molecularFormula"></div></other>
+            <other><div id="molecularWeight"></div></other>
+        </div>
+
+        <div id="content-source">
+            <br>
+            <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>
+        </div>
+
+    </div>
 
 </div>
 </body>
@@ -301,30 +304,22 @@ html > body #content-main {
 // Input : Keyboard
 var onkey_handler = function(event) {
 
+    var input = document.getElementsByTagName("input")[0].value;
+
     // Input : 0-9
-    if (event.keyCode >= 48 && event.keyCode <= 57) {
-        onclick_handler(document.getElementsByTagName("input")[0].value);
-    }
+    if (event.keyCode >= 48 && event.keyCode <= 57) { onclick_handler(input); }
 
     // Input : 'backspace', 'enter'
-    else if (event.keyCode === 8 || event.keyCode === 13) {
-        onclick_handler(document.getElementsByTagName("input")[0].value);
-    }
+    else if (event.keyCode === 8 || event.keyCode === 13) { onclick_handler(input); }
 
     // Input : '-', '=', '.'
-    else if (event.keyCode === 189 || event.keyCode === 187 || event.keyCode === 190) {
-        onclick_handler(document.getElementsByTagName("input")[0].value);
-    }
+    else if (event.keyCode === 189 || event.keyCode === 187 || event.keyCode === 190) { onclick_handler(input); }
 
     // Input: Non-Alphabet
-    else if (event.keyCode < 65 || event.keyCode > 90) {
-        return null;
-    }
+    else if (event.keyCode < 65 || event.keyCode > 90) { return null; }
 
     // Input: Alphabet
-    else {
-        onclick_handler(document.getElementsByTagName("input")[0].value);
-    }
+    else { onclick_handler(input); }
 };
 
 
@@ -337,26 +332,21 @@ var example_handler = function (input) {
 // Process input
 var onclick_handler = function(input) {
 
-    if (input.length === 0 || input.length > 1000) {
-        return null;
-    }
+    if (input.length === 0 || input.length > 1000) { return null; }
+    else if (input[input.length-1] === '(' || input[input.length-1] === ')') { return null; }
 
     var molecule = parse(input);
 
-    if (typeof molecule === 'object') {
-        update(molecule);
-    }
+    if (typeof molecule === 'object') { update(molecule); }
 };
+
 
 // SMILES --> Molecule
 function parse(input) {
 
-    if (typeof input !== 'string') { return; }
+    if (typeof input !== 'string') { return null; }
 
-    var tokens = Molecules.parse(input),
-        molecule = Molecules.parse(tokens);
-
-    return molecule;
+    return Molecules.parse(Molecules.parse(input));
 }
 
 
@@ -394,61 +384,57 @@ function reformat(molecule) {
     return {nodes: nodes, links: links};
 }
 
-function getConnections(molecule) {
-    return Molecules.connectivity(molecule);
-}
+var header = document.getElementById("header");
+var footer = document.getElementById("footer");
 
-var width = document.getElementById("plot").parentElement.offsetWidth,
-    height = document.getElementById("plot").parentElement.offsetHeight;
-
-//var svg = d3.select("#wrapper").append("svg")
+var height = footer.offsetTop - 10 - header.offsetHeight;
+var width = document.getElementById("plot").offsetWidth;
+//document.getElementById("plot").parentElement.offsetHeight;
 
 var main = d3.select("#plot")
-    .append("svg:svg")
+    .append("svg")
     .attr("width", width)
     .attr("height", height)
-    .append("svg:g")
+    .append("g")
 
 var force = d3.layout.force()
     .size([width, height])
-    .charge(-400)
-    .chargeDistance(300)
-    .linkDistance(30);
+    .charge(-500)
+    .chargeDistance(250)
+    .gravity(0.75)
+    .linkDistance(10);
 
 function update(molecule) {
 
     var graph = reformat(molecule);
 
     var nodes = force.nodes(graph.nodes),
-        links = force.links(graph.links),
-        n = nodes.length;
-
-    force.linkDistance(10)
-        .alpha(5)
-        .gravity(1);
+        links = force.links(graph.links);
 
     main.selectAll(".node").remove()
 
-    var link = main.selectAll(".link")
-        .data(graph.links)
+    var link = main.selectAll("line")
+        .data(graph.links, function(d) { return d.source + "-" + d.target; } )
 
     link.enter().append("line")
         .attr("class", "link")
         .style("stroke-width", function(d) { return (d.order * 3 - 1) * 1.5 + "px"; })
-        //.filter(function(d) { return d.order > 1; })
-        //.attr("class", "separator")
-        //.append("line");
+
+    link.filter(function(d) { return d.order > 1; })
+        .append("svg:line")
+        .style("stroke", "#FFFFFF")
+        .style("stroke-width", "6px");
 
     link.exit().remove();
 
     var node = main.selectAll("circle")
-        .data(graph.nodes, function(d) {return d.id + d.name + Math.random()});
+        .data(graph.nodes, function(d) { return Math.random(); });
 
     node.enter().append("circle")
         .attr("class", "node")
-        .call(force.drag)
         .attr("class", function(d) { return 'atom-' + d.name; })
-        .attr("r", function(d) { return Math.sqrt(d.protons + 3) * 3 });
+        .attr("r", function(d) { return Math.sqrt(d.protons + 3) * 3 })
+        .call(force.drag);
 
     node.exit()
         .attr('x', function(d) { return d.x; })
@@ -462,6 +448,8 @@ function update(molecule) {
 
     force.start();
 
+    var radius = Math.sqrt(9) * 3;
+
     force.on("tick", function () {
         link
             .attr("x1", function(d) { return d.source.x; })
@@ -470,39 +458,62 @@ function update(molecule) {
             .attr("y2", function(d) { return d.target.y; });
 
         node
-            .attr("cx", function(d) { return d.x; })
-            .attr("cy", function(d) { return d.y; });
+            .attr("cx", function(d) { return d.x = Math.max(radius, Math.min(width - radius, d.x)); })
+            .attr("cy", function(d) { return d.y = Math.max(radius, Math.min(height - radius, d.y)); });
     });
-
 }
 
 function updateText(molecule) {
 
-    var mass = 'N/A';
-
     if (typeof molecule === 'object') {
-        mass = (Math.round(molecule.properties.mass * 100) / 100) + ' g/mol';
-    }
+        var mass = (Math.round(molecule.properties.mass * 100) / 100) + ' g/mol';
+        var name = [];
 
-    document.getElementById("molecularWeight").innerHTML = mass;
+        var formula = molecule.properties.formula;
+        var keys = Object.keys(molecule.properties.formula).sort();
+
+        function updateFormula(element) {
+            if (formula[element] === 1) { name.push(element); }
+            else { name.push(element + formula[element]); }
+        }
+
+        if (keys.indexOf('C') !== -1) {
+            updateFormula('C');
+            keys.splice(keys.indexOf('C'), 1);
+        }
+
+        if (keys.indexOf('H') !== -1) {
+            updateFormula('H');
+            keys.splice(keys.indexOf('H'), 1);
+        }
+
+        if (keys.length > 0) {
+            for (var i = 0; i < keys.length; i++) { updateFormula(keys[i]); }
+        }
+
+        document.getElementById("molecularFormula").innerHTML = name.join('').replace(/(\d+)/g, '<sub>$1</sub>');
+        document.getElementById("molecularWeight").innerHTML = mass;
+    }
 }
 
 onclick_handler('CC(N)CC=O');
-/*
-  function formatMatrix(input) {
+
+function formatMatrix(input) {
 
     var output = [];
 
     for (var i = 0; i < input.length; i++) {
-      output[i] = [];
-      for (var j = 0; j < input[0].length; j++) {
-        output[i][j] = {x: j, y: i, z: input[i][j]};
-      }
+        output[i] = [];
+
+        for (var j = 0; j < input[0].length; j++) {
+            output[i][j] = { x: j, y: i, z: input[i][j] };
+        }
     }
-
     return output;
+ }
 
-  }
+/*
+
 
   console.log(distance);
   var matrix = formatMatrix(distance.matrix);

@@ -136,7 +136,6 @@ function testAll() {
 
     for (var i = 0, sign = ''; i < mass.length; i++) {
 
-
         // Calculated vs. Actual
         var m1 = Math.round(mass[i] * 100) / 100,
             m2 = Math.round(test[i].mass * 100) / 100;
@@ -259,7 +258,6 @@ function run(option, input) {
                 distance = connections.distance,
                 reciprocal = connections.reciprocal;
 
-            console.log(molecule.atoms);
             console.log(input);
             console.log(molecule.properties.mass);
             console.log('');
@@ -288,11 +286,9 @@ function run(option, input) {
 
             var tokens = Molecules.parse(input);
             var molecule = Molecules.parse(tokens);
-            console.log(tokens);
-            console.log(molecule.bonds,
-            molecule.properties.mass,
-            molecule.properties.formula);
 
+            console.log(molecule.id, molecule.name, molecule.properties.mass, molecule.properties.formula);
+            console.log(molecule.atoms,molecule.bonds);
 
     }
 }

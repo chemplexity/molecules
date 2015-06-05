@@ -37,7 +37,7 @@ var _referenceElements2 = _interopRequireDefault(_referenceElements);
     expression : regular expression
 */
 
-var grammar = [{ type: 'atom', term: 'H', tag: 'H', expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g }, { type: 'atom', term: 'D', tag: 'H', expression: /(?=[A-Z])D(?=[^bsy]|$)([0-9]?)+/g }, { type: 'atom', term: 'He', tag: 'He', expression: /He/g }, { type: 'atom', term: 'Li', tag: 'Li', expression: /Li/g }, { type: 'atom', term: 'Be', tag: 'Be', expression: /Be/g }, { type: 'atom', term: 'B', tag: 'B', expression: /B(?=[^aehikr]|$)/g }, { type: 'atom', term: 'C', tag: 'C', expression: /C(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'N', tag: 'N', expression: /N(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'O', tag: 'O', expression: /O(?=[^s]|$)/g }, { type: 'atom', term: 'F', tag: 'F', expression: /F(?=[^elmr]|$)/g }, { type: 'atom', term: 'Ne', tag: 'Ne', expression: /Ne/g }, { type: 'atom', term: 'Na', tag: 'Na', expression: /Na/g }, { type: 'atom', term: 'Mg', tag: 'Mg', expression: /Mg/g }, { type: 'atom', term: 'Al', tag: 'Al', expression: /Al/g }, { type: 'atom', term: 'Si', tag: 'Si', expression: /Si/g }, { type: 'atom', term: 'P', tag: 'P', expression: /P(?=[^abdmortu]|$)/g }, { type: 'atom', term: 'S', tag: 'S', expression: /S(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'Cl', tag: 'Cl', expression: /Cl/g }, { type: 'atom', term: 'Ar', tag: 'Ar', expression: /Ar/g }, { type: 'atom', term: 'As', tag: 'As', expression: /As/g }, { type: 'atom', term: 'Se', tag: 'Se', expression: /Se/g }, { type: 'atom', term: 'Br', tag: 'Br', expression: /Br/g }, { type: 'atom', term: 'I', tag: 'I', expression: /I(?=[^nr]|$)/g }, { type: 'atom', term: '*', tag: '*', expression: /[*]/g }, { type: 'atom', term: 'b', tag: 'B', expression: /b(?=[^e]|$)/g }, { type: 'atom', term: 'c', tag: 'C', expression: /c(?=[^l]|$)/g }, { type: 'atom', term: 'n', tag: 'N', expression: /n(?=[^ae]|$)/g }, { type: 'atom', term: 'o', tag: 'O', expression: /o(?=[^s]|$)/g }, { type: 'atom', term: 'p', tag: 'P', expression: /p/g }, { type: 'atom', term: 's', tag: 'S', expression: /s(?=[^ei]|$)/g }, { type: 'atom', term: 'se', tag: 'Se', expression: /se/g }, { type: 'bond', term: '-', tag: 'single', expression: /(?=([^0-9]))[-](?=[^0-9-\]])/g }, { type: 'bond', term: '=', tag: 'double', expression: /[=]/g }, { type: 'bond', term: '#', tag: 'triple', expression: /[#]/g }, { type: 'bond', term: '(', tag: 'branch', expression: /[(]/g }, { type: 'bond', term: ')', tag: 'branch', expression: /[)]/g }, { type: 'bond', term: '%', tag: 'ring', expression: /(?=[^+-])(?:[a-zA-Z]{1,2}[@]{1,2})?(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[%]?\d+(?=([^+]|$))/g }, { type: 'bond', term: '.', tag: 'dot', expression: /(?:[A-Z][+-]?[\[])?[.]/g }, { type: 'property', term: '+', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g }, { type: 'property', term: '-', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g }, { type: 'property', term: 'n', tag: 'isotope', expression: /(?:[\[])[0-9]+[A-Z]{1,2}(?=.?[^\[]*[\]])/g }, { type: 'property', term: '@', tag: 'chiral', expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g }, { type: 'property', term: '@@', tag: 'chiral', expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g }];
+var grammar = [{ type: 'atom', term: 'H', tag: 'H', expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g }, { type: 'atom', term: 'D', tag: 'H', expression: /(?=[A-Z])D(?=[^bsy]|$)([0-9]?)+/g }, { type: 'atom', term: 'He', tag: 'He', expression: /He/g }, { type: 'atom', term: 'Li', tag: 'Li', expression: /Li/g }, { type: 'atom', term: 'Be', tag: 'Be', expression: /Be/g }, { type: 'atom', term: 'B', tag: 'B', expression: /B(?=[^aehikr]|$)/g }, { type: 'atom', term: 'C', tag: 'C', expression: /C(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'N', tag: 'N', expression: /N(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'O', tag: 'O', expression: /O(?=[^s]|$)/g }, { type: 'atom', term: 'F', tag: 'F', expression: /F(?=[^elmr]|$)/g }, { type: 'atom', term: 'Ne', tag: 'Ne', expression: /Ne/g }, { type: 'atom', term: 'Na', tag: 'Na', expression: /Na/g }, { type: 'atom', term: 'Mg', tag: 'Mg', expression: /Mg/g }, { type: 'atom', term: 'Al', tag: 'Al', expression: /Al/g }, { type: 'atom', term: 'Si', tag: 'Si', expression: /Si/g }, { type: 'atom', term: 'P', tag: 'P', expression: /P(?=[^abdmortu]|$)/g }, { type: 'atom', term: 'S', tag: 'S', expression: /S(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'Cl', tag: 'Cl', expression: /Cl/g }, { type: 'atom', term: 'Ar', tag: 'Ar', expression: /Ar/g }, { type: 'atom', term: 'As', tag: 'As', expression: /As/g }, { type: 'atom', term: 'Se', tag: 'Se', expression: /Se/g }, { type: 'atom', term: 'Br', tag: 'Br', expression: /Br/g }, { type: 'atom', term: 'I', tag: 'I', expression: /I(?=[^nr]|$)/g }, { type: 'atom', term: '*', tag: '*', expression: /[*]/g }, { type: 'atom', term: 'b', tag: 'B', expression: /b(?=[^e]|$)/g }, { type: 'atom', term: 'c', tag: 'C', expression: /c(?=[^l]|$)/g }, { type: 'atom', term: 'n', tag: 'N', expression: /n(?=[^ae]|$)/g }, { type: 'atom', term: 'o', tag: 'O', expression: /o(?=[^s]|$)/g }, { type: 'atom', term: 'p', tag: 'P', expression: /p/g }, { type: 'atom', term: 's', tag: 'S', expression: /s(?=[^ei]|$)/g }, { type: 'atom', term: 'se', tag: 'Se', expression: /se/g }, { type: 'bond', term: '-', tag: 'single', expression: /(?=([^0-9]))[-](?=[^0-9-\]])/g }, { type: 'bond', term: '=', tag: 'double', expression: /[=]/g }, { type: 'bond', term: '#', tag: 'triple', expression: /[#]/g }, { type: 'bond', term: '(', tag: 'branch', expression: /[(]/g }, { type: 'bond', term: ')', tag: 'branch', expression: /[)]/g }, { type: 'bond', term: '%', tag: 'ring', expression: /(?=[^+-])(?:[a-zA-Z]{1,2}[@]{1,2})?(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[%]?\d+(?=([^+]|$))/g }, { type: 'bond', term: '.', tag: 'dot', expression: /(?:[A-Z][+-]?[\[])?[.]/g }, { type: 'property', term: '+', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g }, { type: 'property', term: '-', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g }, { type: 'property', term: 'n', tag: 'isotope', expression: /(?:[\[])[0-9]+[A-Z]{1,2}(?=.?[^\[]*[\]])/g }, { type: 'property', term: 'S', tag: 'chiral', expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g }, { type: 'property', term: 'R', tag: 'chiral', expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g }];
 
 /*
   Function    : tokenize
@@ -1093,7 +1093,7 @@ function decode(tokens) {
         return [atoms, bonds, keys];
     }
 
-    function cleanBonds(atoms, bonds) {
+    function clean(atoms, bonds) {
 
         var atomID = Object.keys(atoms),
             bondID = Object.keys(bonds);
@@ -1105,8 +1105,49 @@ function decode(tokens) {
                 target = atoms[bonds[bondID[i]].atoms[1]],
                 order = bonds[bondID[i]].order;
 
-            // Format: source atom + bond order + target atom (e.g. C1C, C2O, O1H)
+            // Format: source element + bond order + target element (e.g. C1C, C2O, O1H)
             bonds[bondID[i]].value = source.name + order + target.name;
+        }
+
+        var getID = function getID(name, i) {
+            return name + (i + 1);
+        };
+
+        var setID = function setID(obj, a, b) {
+            if (obj.hasOwnProperty(a)) {
+                obj[b] = obj[a];
+                delete obj[a];
+            }
+        };
+
+        // Re-label atom id
+        for (var i = 0; i < atomID.length; i++) {
+
+            var oldID = atomID[i],
+                newID = getID(atoms[oldID].name, i);
+
+            // Set ID
+            atoms[oldID].id = newID;
+
+            // Update bond pointers
+            for (var j = 0; j < atoms[oldID].bonds.id.length; j++) {
+
+                var key = atoms[oldID].bonds.id[j],
+                    index = bonds[key].atoms.indexOf(oldID);
+
+                if (index !== -1) {
+                    bonds[key].atoms[index] = newID;
+                }
+
+                key = atoms[oldID].bonds.atoms[j];
+                index = atoms[key].bonds.atoms.indexOf(oldID);
+
+                if (index !== -1) {
+                    atoms[key].bonds.atoms[index] = newID;
+                }
+            }
+
+            setID(atoms, oldID, newID);
         }
 
         return [atoms, bonds];
@@ -1157,14 +1198,14 @@ function decode(tokens) {
     bonds = _implicitBonds2[1];
     keys = _implicitBonds2[2];
 
-    // 5. Cleanup
+    // 5. Clean atoms/bonds
 
-    var _cleanBonds = cleanBonds(atoms, bonds);
+    var _clean = clean(atoms, bonds);
 
-    var _cleanBonds2 = _slicedToArray(_cleanBonds, 2);
+    var _clean2 = _slicedToArray(_clean, 2);
 
-    atoms = _cleanBonds2[0];
-    bonds = _cleanBonds2[1];
+    atoms = _clean2[0];
+    bonds = _clean2[1];
 
     return { atoms: atoms, bonds: bonds };
 }
@@ -1298,9 +1339,9 @@ function previousAtom(start, keys, atoms) {
   Exports
 */
 
+exports.grammar = grammar;
 exports.tokenize = tokenize;
 exports.decode = decode;
-exports.grammar = grammar;
 },{"./../reference/elements":4}],2:[function(require,module,exports){
 /*
   topology.js
@@ -1935,7 +1976,7 @@ exports.hararyIndex = hararyIndex;
 
   Description : chemical graph theory library
   Imports     : periodic_table, tokenize, decode
-  Exports     : parse, connectivity, topology
+  Exports     : parse, encode, connectivity, topology
 
 */
 
@@ -1946,7 +1987,7 @@ exports.hararyIndex = hararyIndex;
 'use strict';
 
 Object.defineProperty(exports, '__esModule', {
-  value: true
+    value: true
 });
 
 var _referenceElements = require('./reference/elements');
@@ -1957,7 +1998,7 @@ var _extensionsTopology = require('./extensions/topology');
 
 /*
   Function    : parse
-  Description : convert SMILES --> tokens OR tokens --> molecule
+  Description : convert input to tokens or molecule
 
   Syntax
     output = parse(input)
@@ -1981,33 +2022,66 @@ var _extensionsTopology = require('./extensions/topology');
 */
 
 function parse(input) {
-  var encoding = arguments[1] === undefined ? 'SMILES' : arguments[1];
+    var encoding = arguments[1] === undefined ? 'SMILES' : arguments[1];
 
-  switch (encoding.toUpperCase()) {
+    switch (encoding.toUpperCase()) {
 
-    case 'SMILES':
+        case 'SMILES':
 
-      // 1) String -> Tokens
-      if (typeof input === 'string') {
-        var _tokenize = (0, _encodingSmiles.tokenize)(input);
+            // 1) String -> Tokens
+            if (typeof input === 'string') {
+                var _tokenize = (0, _encodingSmiles.tokenize)(input);
 
-        var tokens = _tokenize.tokens;
+                var tokens = _tokenize.tokens;
 
-        return tokens;
-      }
+                return tokens;
+            }
 
-      // 2) Tokens -> Molecule
-      else if (typeof input === 'object') {
-        var _decode = (0, _encodingSmiles.decode)(input);
+            // 2) Tokens -> Molecule
+            else if (typeof input === 'object') {
+                var _decode = (0, _encodingSmiles.decode)(input);
 
-        var atoms = _decode.atoms;
-        var bonds = _decode.bonds;
+                var atoms = _decode.atoms;
+                var bonds = _decode.bonds;
 
-        return Molecule(atoms, bonds);
-      }
+                return Molecule(atoms, bonds);
+            }
 
-      return null;
-  }
+            return null;
+
+        case 'JSON':
+
+            // 1) JSON --> Molecule
+            return JSON.parse(input);
+    }
+}
+
+/*
+  Function    : encode
+  Description : convert input to desired output
+
+  Syntax
+    output = encode(input)
+
+  Input
+    1) 'tokens'
+    2) 'molecule'
+
+  Output
+    1) 'JSON'
+*/
+
+function encode(input) {
+    var encoding = arguments[1] === undefined ? 'JSON' : arguments[1];
+
+    switch (encoding.toUpperCase()) {
+
+        case 'JSON':
+
+            if (typeof input === 'object') {
+                return JSON.stringify(input);
+            }
+    }
 }
 
 /*
@@ -2034,24 +2108,24 @@ function parse(input) {
 
 function connectivity(molecule) {
 
-  if (typeof molecule !== 'object') {
-    return null;
-  }
+    if (typeof molecule !== 'object') {
+        return null;
+    }
 
-  var _adjacencyMatrix = (0, _extensionsTopology.adjacencyMatrix)(molecule);
+    var _adjacencyMatrix = (0, _extensionsTopology.adjacencyMatrix)(molecule);
 
-  var header = _adjacencyMatrix.header;
-  var adjacency = _adjacencyMatrix.adjacency;
+    var header = _adjacencyMatrix.header;
+    var adjacency = _adjacencyMatrix.adjacency;
 
-  var _distanceMatrix = (0, _extensionsTopology.distanceMatrix)(adjacency);
+    var _distanceMatrix = (0, _extensionsTopology.distanceMatrix)(adjacency);
 
-  var distance = _distanceMatrix.distance;
+    var distance = _distanceMatrix.distance;
 
-  var _reciprocalMatrix = (0, _extensionsTopology.reciprocalMatrix)(distance);
+    var _reciprocalMatrix = (0, _extensionsTopology.reciprocalMatrix)(distance);
 
-  var reciprocal = _reciprocalMatrix.reciprocal;
+    var reciprocal = _reciprocalMatrix.reciprocal;
 
-  return { header: header, adjacency: adjacency, distance: distance, reciprocal: reciprocal };
+    return { header: header, adjacency: adjacency, distance: distance, reciprocal: reciprocal };
 }
 
 /*
@@ -2077,15 +2151,15 @@ function connectivity(molecule) {
 
 function topology(molecule) {
 
-  if (typeof molecule !== 'object') {
-    return null;
-  }
+    if (typeof molecule !== 'object') {
+        return null;
+    }
 
-  return {
-    harary: (0, _extensionsTopology.hararyIndex)(molecule),
-    hyper_wiener: (0, _extensionsTopology.hyperwienerIndex)(molecule),
-    wiener: (0, _extensionsTopology.wienerIndex)(molecule)
-  };
+    return {
+        harary: (0, _extensionsTopology.hararyIndex)(molecule),
+        hyper_wiener: (0, _extensionsTopology.hyperwienerIndex)(molecule),
+        wiener: (0, _extensionsTopology.wienerIndex)(molecule)
+    };
 }
 
 /*
@@ -2094,21 +2168,24 @@ function topology(molecule) {
 */
 
 function Molecule() {
-  var atoms = arguments[0] === undefined ? {} : arguments[0];
-  var bonds = arguments[1] === undefined ? {} : arguments[1];
-  var id = arguments[2] === undefined ? 0 : arguments[2];
-  var name = arguments[3] === undefined ? 0 : arguments[3];
+    var atoms = arguments[0] === undefined ? {} : arguments[0];
+    var bonds = arguments[1] === undefined ? {} : arguments[1];
+    var id = arguments[2] === undefined ? 0 : arguments[2];
 
-  return {
-    id: id,
-    name: name,
-    atoms: atoms,
-    bonds: bonds,
-    properties: {
-      mass: Mass(atoms),
-      formula: Formula(atoms)
-    }
-  };
+    var mass = Mass(atoms),
+        formula = Formula(atoms),
+        name = Name(formula);
+
+    return {
+        id: id,
+        name: name,
+        atoms: atoms,
+        bonds: bonds,
+        properties: {
+            mass: mass,
+            formula: formula
+        }
+    };
 }
 
 /*
@@ -2117,24 +2194,69 @@ function Molecule() {
 */
 
 function Formula(atoms) {
-  var formula = arguments[1] === undefined ? {} : arguments[1];
+    var formula = arguments[1] === undefined ? {} : arguments[1];
 
-  if (typeof atoms !== 'object') {
-    return null;
-  }
-
-  var keys = Object.keys(atoms);
-
-  for (var i = 0; i < keys.length; i++) {
-
-    if (formula[atoms[keys[i]].name] === undefined) {
-      formula[atoms[keys[i]].name] = 1;
-    } else {
-      formula[atoms[keys[i]].name] += 1;
+    if (typeof atoms !== 'object') {
+        return null;
     }
-  }
 
-  return formula;
+    var keys = Object.keys(atoms);
+
+    for (var i = 0; i < keys.length; i++) {
+
+        if (formula[atoms[keys[i]].name] === undefined) {
+            formula[atoms[keys[i]].name] = 1;
+        } else {
+            formula[atoms[keys[i]].name] += 1;
+        }
+    }
+
+    return formula;
+}
+
+/*
+  Function    : Name
+  Description : return molecular formula as string
+*/
+
+function Name(formula) {
+    var name = arguments[1] === undefined ? [] : arguments[1];
+
+    if (typeof formula !== 'object') {
+        return null;
+    }
+
+    var keys = Object.keys(formula).sort();
+
+    var remove = function remove(element) {
+        return keys.splice(keys.indexOf(element), 1);
+    },
+        update = function update(element) {
+        if (formula[element] === 1) {
+            name.push(element);
+        } else {
+            name.push(element + formula[element]);
+        }
+    };
+
+    if (keys.indexOf('C') !== -1) {
+        update('C');
+        remove('C');
+    }
+
+    if (keys.indexOf('H') !== -1) {
+        update('H');
+        remove('H');
+    }
+
+    if (keys.length > 0) {
+
+        for (var i = 0; i < keys.length; i++) {
+            update(keys[i]);
+        }
+    }
+
+    return name.join('');
 }
 
 /*
@@ -2143,19 +2265,19 @@ function Formula(atoms) {
 */
 
 function Mass(atoms) {
-  var mass = arguments[1] === undefined ? 0 : arguments[1];
+    var mass = arguments[1] === undefined ? 0 : arguments[1];
 
-  if (typeof atoms !== 'object') {
-    return null;
-  }
+    if (typeof atoms !== 'object') {
+        return null;
+    }
 
-  var keys = Object.keys(atoms);
+    var keys = Object.keys(atoms);
 
-  for (var i = 0; i < keys.length; i++) {
-    mass += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
-  }
+    for (var i = 0; i < keys.length; i++) {
+        mass += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
+    }
 
-  return Math.round(mass * 10000) / 10000;
+    return Math.round(mass * 10000) / 10000;
 }
 
 /*
@@ -2163,6 +2285,7 @@ function Mass(atoms) {
 */
 
 exports.parse = parse;
+exports.encode = encode;
 exports.connectivity = connectivity;
 exports.topology = topology;
 },{"./encoding/smiles":1,"./extensions/topology":2,"./reference/elements":4}],4:[function(require,module,exports){

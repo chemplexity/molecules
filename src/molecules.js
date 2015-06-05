@@ -3,7 +3,7 @@
 
   Description : chemical graph theory library
   Imports     : periodic_table, tokenize, decode
-  Exports     : parse, connectivity, topology
+  Exports     : parse, encode, connectivity, topology
 
 */
 
@@ -19,7 +19,7 @@ import { adjacencyMatrix, distanceMatrix, reciprocalMatrix, wienerIndex, hyperwi
 
 /*
   Function    : parse
-  Description : convert SMILES --> tokens OR tokens --> molecule
+  Description : convert input to tokens or molecule
 
   Syntax
     output = parse(input)
@@ -63,6 +63,39 @@ function parse(input, encoding = 'SMILES') {
             }
 
             return null;
+
+        case 'JSON':
+
+            // 1) JSON --> Molecule
+            return JSON.parse(input);
+    }
+}
+
+
+/*
+  Function    : encode
+  Description : convert input to desired output
+
+  Syntax
+    output = encode(input)
+
+  Input
+    1) 'tokens'
+    2) 'molecule'
+
+  Output
+    1) 'JSON'
+*/
+
+function encode(input, encoding = 'JSON') {
+
+    switch (encoding.toUpperCase()) {
+
+        case 'JSON':
+
+            if (typeof input === 'object') {
+                return JSON.stringify(input);
+            }
     }
 }
 
@@ -139,7 +172,11 @@ function topology(molecule) {
   Description : return new molecule
 */
 
-function Molecule(atoms = {}, bonds = {}, id = 0, name = 0) {
+function Molecule(atoms = {}, bonds = {}, id = 0) {
+
+    let mass = Mass(atoms),
+        formula = Formula(atoms),
+        name = Name(formula);
 
     return {
         id: id,
@@ -147,8 +184,8 @@ function Molecule(atoms = {}, bonds = {}, id = 0, name = 0) {
         atoms: atoms,
         bonds: bonds,
         properties: {
-            mass: Mass(atoms),
-            formula: Formula(atoms)
+            mass: mass,
+            formula: formula
         }
     };
 }
@@ -180,6 +217,44 @@ function Formula(atoms, formula = {}) {
 
 
 /*
+  Function    : Name
+  Description : return molecular formula as string
+*/
+
+function Name(formula, name = []) {
+
+    if (typeof formula !== 'object') { return null; }
+
+    let keys = Object.keys(formula).sort();
+
+    let remove = (element) => keys.splice(keys.indexOf(element), 1),
+        update = (element) => {
+            if (formula[element] === 1) { name.push(element); }
+            else { name.push(element + formula[element]); }
+        };
+
+    if (keys.indexOf('C') !== -1) {
+        update('C');
+        remove('C');
+    }
+
+    if (keys.indexOf('H') !== -1) {
+        update('H');
+        remove('H');
+    }
+
+    if (keys.length > 0) {
+
+        for (let i = 0; i < keys.length; i++) {
+            update(keys[i]);
+        }
+    }
+
+    return name.join('');
+}
+
+
+/*
   Function    : Mass
   Description : determine molecular weight
 */
@@ -202,4 +277,4 @@ function Mass(atoms, mass = 0) {
   Exports
 */
 
-export { parse, connectivity, topology };
+export { parse, encode, connectivity, topology };
