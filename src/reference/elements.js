@@ -2,7 +2,6 @@
   elements.js
 
   Description : basic properties of the elements
-  Imports     : N/A
   Exports     : periodic_table
 
 */
@@ -49,13 +48,14 @@ var periodic_table = {
 
 
 /*
-  Function    : Element
+  Method    : getElement
   Description : return info on element
 */
 
-function Element(element) {
+function getElement(element) {
     
     if (periodic_table[element] !== undefined) {
+
         return periodic_table[element];
     }
 

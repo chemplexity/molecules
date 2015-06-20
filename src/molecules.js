@@ -18,165 +18,116 @@ import { adjacencyMatrix, distanceMatrix, reciprocalMatrix, wienerIndex, hyperwi
 
 
 /*
-  Function    : parse
-  Description : convert input to tokens or molecule
+  Method      : parse
+  Description : convert input to molecule
 
-  Syntax
-    output = parse(input)
-
-  Input
-    1) 'string' (e.g. 'C2C(=O)C1COCCC1CC2')
-    2) 'tokens' returned from output of 'a)'
-
-  Output
-    1) 'tokens' from a parsed SMILES string
-    2) 'molecule' object from a set of tokens
+  Options     : .smiles, .json
 
   Examples
-    1) tokens123 = parse('CC(=O)CC')
-       tokensABC = parse('c1cccc1')
-       butane.tokens = parse('CCCC')
-
-    2) mol123 = parse(tokens123)
-       molABC = parse(tokensABC)
-       butane.molecule = parse(butane.tokens)
+    molecule123 = Molecules.parse.smiles('CC(=O)CN')
 */
 
-function parse(input, encoding = 'SMILES') {
+var parse = {
 
-    switch (encoding.toUpperCase()) {
+    smiles : function (input) {
 
-        case 'SMILES':
+        if (typeof input === 'string') {
 
-            // 1) String -> Tokens
-            if (typeof input === 'string') {
-                let {tokens} = tokenize(input);
+            let { atoms, bonds } = decode(tokenize(input));
 
-                return tokens;
-            }
+            return getMolecule(atoms, bonds);
+        }
 
-            // 2) Tokens -> Molecule
-            else if (typeof input === 'object') {
-                let {atoms, bonds} = decode(input);
+    },
 
-                return Molecule(atoms, bonds);
-            }
+    json : function (input) {
 
-            return null;
-
-        case 'JSON':
-
-            // 1) JSON --> Molecule
-            return JSON.parse(input);
+        return JSON.parse(input);
     }
-}
+};
 
 
 /*
-  Function    : encode
+  Method      : encode
   Description : convert input to desired output
 
-  Syntax
-    output = encode(input)
+  Options     : .json
 
-  Input
-    1) 'tokens'
-    2) 'molecule'
-
-  Output
-    1) 'JSON'
+  Examples
+    json123 = Molecules.encode.json(molecule123)
 */
 
-function encode(input, encoding = 'JSON') {
+var encode = {
 
-    switch (encoding.toUpperCase()) {
+    json : function (input) {
 
-        case 'JSON':
-
-            if (typeof input === 'object') {
-                return JSON.stringify(input);
-            }
+        return JSON.stringify(input, null, '\t');
     }
-}
+};
 
 
 /*
-  Function    : connectivity
-  Description : return adjacency matrix and distance matrix of non-hydrogen atoms
+  Method      : connectivity
+  Description : return chemical graph matrices
 
-  Syntax
-    { header, adjacency, distance } = connectivity(molecule)
-
-  Input
-    molecule : object containing atoms and bonds
-
-  Output
-    header     : atom identifier
-    adjacency  : adjacency matrix
-    distance   : distance matrix
-    reciprocal : reciprocal of distance matrix
-
-  Examples
-    { header: id, adjacency: adj, distance: dist, reciprocal: recip } = connectivity(mol123)
-    { header: header123, adjacency: adj123, distance: dist123, recip123 } = connectivity(myMolecule)
-    matricesABC = connectivity(molABC)
+  Options     : .adjacency, .distance, .reciprocal
 */
 
-function connectivity(molecule) {
+var connectivity = {
 
-    if (typeof molecule !== 'object') { return null; }
+    adjacency : function (molecule) {
 
-    let { header: header, adjacency: adjacency } =  adjacencyMatrix(molecule);
-    let { distance: distance } = distanceMatrix(adjacency);
-    let { reciprocal: reciprocal } = reciprocalMatrix(distance);
+        return adjacencyMatrix(molecule);
+    },
 
-    return { header: header, adjacency: adjacency, distance: distance, reciprocal: reciprocal };
-}
+    distance : function (adjacency) {
+
+        return distanceMatrix(adjacency);
+    },
+
+    reciprocal : function (distance) {
+
+        return reciprocalMatrix(distance);
+    }
+};
 
 
 /*
-  Function    : topology
-  Description : return various molecular topological indexes
+  Method      : topology
+  Description : return molecular topological indexes
 
-  Syntax
-    { harary, hyper_wiener, wiener } = topology(molecule)
-
-  Input
-    molecule : object containing atoms and bonds
-
-  Output
-    harary       : Harary index
-    hyper_wiener : Hyper-Wiener index
-    wiener       : Wiener index
-
-  Examples
-    { harary: har1, hyper_wiener: hw1, wiener: w1 } = topology(mol123)
-    { harary: harABC, hyper_wiener: hwABC, wiener: wABC } = topology(myMolecule)
-    topologyABC = topology(molABC)
+  Options     : .harary, .hyperwiener, .wiener
 */
 
-function topology(molecule) {
+var topology = {
 
-    if (typeof molecule !== 'object') { return null; }
+    harary : function (molecule) {
 
-    return {
-        harary: hararyIndex(molecule),
-        hyper_wiener: hyperwienerIndex(molecule),
-        wiener: wienerIndex(molecule)
-    };
-}
+        return hararyIndex(molecule);
+    },
+
+    hyperwiener : function (molecule) {
+
+        return hyperwienerIndex(molecule);
+    },
+
+    wiener : function (molecule) {
+
+        return wienerIndex(molecule);
+    }
+};
 
 
 /*
-  Function    : Molecule
+  Method      : getMolecule
   Description : return new molecule
 */
 
-function Molecule(atoms = {}, bonds = {}, id = 0) {
+function getMolecule(atoms = {}, bonds = {}, id = 0) {
 
-    let mass = Mass(atoms),
-        formula = Formula(atoms),
-        name = Name(formula);
+    let mass = getMass(atoms),
+        formula = getFormula(atoms),
+        name = getName(formula);
 
     return {
         id: id,
@@ -192,17 +143,17 @@ function Molecule(atoms = {}, bonds = {}, id = 0) {
 
 
 /*
-  Function    : Formula
+  Method      : getFormula
   Description : return molecular formula
 */
 
-function Formula(atoms, formula = {}) {
+function getFormula(atoms, formula = {}) {
 
     if (typeof atoms !== 'object') { return null; }
 
     let keys = Object.keys(atoms);
 
-    for (let i = 0; i < keys.length; i++) {
+    for (let i = 0, ii = keys.length; i < ii; i++) {
 
         if (formula[atoms[keys[i]].name] === undefined) {
             formula[atoms[keys[i]].name] = 1;
@@ -217,21 +168,22 @@ function Formula(atoms, formula = {}) {
 
 
 /*
-  Function    : Name
+  Method      : getName
   Description : return molecular formula as string
 */
 
-function Name(formula, name = []) {
+function getName(formula, name = []) {
 
     if (typeof formula !== 'object') { return null; }
 
     let keys = Object.keys(formula).sort();
 
-    let remove = (element) => keys.splice(keys.indexOf(element), 1),
-        update = (element) => {
-            if (formula[element] === 1) { name.push(element); }
-            else { name.push(element + formula[element]); }
-        };
+    let remove = (element) => keys.splice(keys.indexOf(element), 1);
+
+    let update = (element) => {
+        if (formula[element] === 1) { name.push(element); }
+        else { name.push(element + formula[element]); }
+    };
 
     if (keys.indexOf('C') !== -1) {
         update('C');
@@ -245,7 +197,7 @@ function Name(formula, name = []) {
 
     if (keys.length > 0) {
 
-        for (let i = 0; i < keys.length; i++) {
+        for (let i = 0, ii = keys.length; i < ii; i++) {
             update(keys[i]);
         }
     }
@@ -255,17 +207,17 @@ function Name(formula, name = []) {
 
 
 /*
-  Function    : Mass
-  Description : determine molecular weight
+  Method      : getMass
+  Description : return molecular weight
 */
 
-function Mass(atoms, mass = 0) {
+function getMass(atoms, mass = 0) {
 
     if (typeof atoms !== 'object') { return null; }
 
     let keys = Object.keys(atoms);
 
-    for (let i = 0; i < keys.length; i++) {
+    for (let i = 0, ii = keys.length; i < ii; i++) {
         mass += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
     }
 

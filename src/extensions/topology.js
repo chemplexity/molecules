@@ -1,15 +1,14 @@
 /*
   topology.js
 
-  Description : graph matrices and molecular topological indexes
-  Imports     : N/A
+  Description : chemical graph matrices and molecular topological indexes
   Exports     : adjacencyMatrix, distanceMatrix, wienerIndex, hyperwienerIndex
 
 */
 
 
 /*
-  Function    : adjacencyMatrix
+  Method      : adjacencyMatrix
   Description : return adjacency matrix of non-hydrogen atoms
 
   Syntax
@@ -19,7 +18,7 @@
     molecule : object containing atoms and bonds
 
   Output
-    header : atom identifier
+    header    : atom identifier
     adjacency : adjacency matrix
 
   Examples
@@ -35,7 +34,7 @@ function adjacencyMatrix(molecule, header = [], adjacency = []) {
     let keys = Object.keys(molecule.atoms);
 
     // Extract non-hydrogen atoms
-    for (let i = 0; i < keys.length; i++) {
+    for (let i = 0, ii = keys.length; i < ii; i++) {
 
         if (molecule.atoms[keys[i]].name !== 'H') {
             header.push(molecule.atoms[keys[i]].id);
@@ -45,10 +44,10 @@ function adjacencyMatrix(molecule, header = [], adjacency = []) {
     // Fill adjacency matrix
     adjacency = Matrix(header.length);
 
-    for (let i = 0; i < header.length; i++) {
+    for (let i = 0, ii = header.length; i < ii; i++) {
         let source = molecule.atoms[header[i]];
 
-        for (let j = 0; j < source.bonds.atoms.length; j++) {
+        for (let j = 0, jj = source.bonds.atoms.length; j < jj; j++) {
             let target = molecule.atoms[source.bonds.atoms[j]],
                 index = header.indexOf(target.id);
 
@@ -64,7 +63,7 @@ function adjacencyMatrix(molecule, header = [], adjacency = []) {
 
 
 /*
-  Function    : distanceMatrix
+  Method      : distanceMatrix
   Description : return matrix of shortest paths between non-hydrogen atoms
 
   Syntax
@@ -105,7 +104,7 @@ function distanceMatrix(adjacency, header = [], distance = []) {
     }
 
     // Check symmetry of adjacency matrix
-    for (let i = 0; i < adjacency.length; i++) {
+    for (let i = 0, ii = adjacency.length; i < ii; i++) {
         if (adjacency[i].length !== adjacency.length) {
             console.log('Error: Adjacency matrix must be symmetric');
             return null;
@@ -117,10 +116,10 @@ function distanceMatrix(adjacency, header = [], distance = []) {
 
         let Z = Multiply(A, A);
 
-        for (let i = 0; i < A.length; i++) {
+        for (let i = 0, ii = A.length; i < ii; i++) {
             B[i] = [];
 
-            for (let j = 0; j < A[0].length; j++) {
+            for (let j = 0, jj = A[0].length; j < jj; j++) {
 
                 if (i !== j && (A[i][j] === 1 || Z[i][j] > 0)) {
                     B[i][j] = 1;
@@ -133,8 +132,8 @@ function distanceMatrix(adjacency, header = [], distance = []) {
 
         let count = 0;
 
-        for (let i = 0; i < B.length; i++) {
-            for (let j = 0; j < B[0].length; j++) {
+        for (let i = 0, ii = B.length; i < ii; i++) {
+            for (let j = 0, jj = B[0].length; j < jj; j++) {
 
                 if (i !== j && B[i][j] === 1) {
                     count += 1;
@@ -151,14 +150,14 @@ function distanceMatrix(adjacency, header = [], distance = []) {
 
         let degree = [];
 
-        for (let i = 0; i < A.length; i++) {
+        for (let i = 0, ii = A.length; i < ii; i++) {
             degree[i] = A[i].reduce(function(a, b) { return a + b; });
         }
 
-        for (let i = 0; i < X.length; i++) {
+        for (let i = 0, ii = X.length; i < ii; i++) {
             D[i] = [];
 
-            for (let j = 0; j < X[0].length; j++) {
+            for (let j = 0, jj = X[0].length; j < jj; j++) {
 
                 if (X[i][j] >= T[i][j] * degree[j]) {
                     D[i][j] = 2 * T[i][j];
@@ -181,17 +180,17 @@ function distanceMatrix(adjacency, header = [], distance = []) {
 
 
 /*
-  Function    : reciprocalMatrix
+  Method      : reciprocalMatrix
   Description : return reciprocal of distance matrix
 
   Syntax
-    { header, reciprocal } = reciprocalMatrix(adjacency)
+    { header, reciprocal } = reciprocalMatrix(distance)
 
   Input
     distance : distance matrix
 
   Output
-    header    : atom identifier
+    header     : atom identifier
     reciprocal : reciprocal matrix
 
   Examples
@@ -222,17 +221,17 @@ function reciprocalMatrix(distance, header = [], reciprocal = []) {
     }
 
     // Check symmetry of distance matrix
-    for (let i = 0; i < distance.length; i++) {
+    for (let i = 0, ii = distance.length; i < ii; i++) {
         if (distance[i].length !== distance.length) {
             console.log('Error: Distance matrix must be symmetric');
             return null;
         }
     }
 
-    for (let i = 0; i < distance.length; i++) {
+    for (let i = 0, ii = distance.length; i < ii; i++) {
         reciprocal[i] = [];
 
-        for (let j = 0; j < distance[i].length; j++) {
+        for (let j = 0, jj = distance[i].length; j < jj; j++) {
             if (i === j) {
                 reciprocal[i][j] = 0;
             }
@@ -249,7 +248,7 @@ function reciprocalMatrix(distance, header = [], reciprocal = []) {
 
 
 /*
-  Function    : wienerIndex
+  Method      : wienerIndex
   Description : return Wiener topology index
 
   Syntax
@@ -284,7 +283,7 @@ function wienerIndex(distance, index = 0) {
     }
 
     // Check symmetry of distance matrix
-    for (let i = 0; i < distance.length; i++) {
+    for (let i = 0, ii = distance.length; i < ii; i++) {
         if (distance[i].length !== distance.length) {
             console.log('Error: Distance matrix must be symmetric');
             return null;
@@ -292,8 +291,8 @@ function wienerIndex(distance, index = 0) {
     }
 
     // Calculate Wiener index
-    for (let i = 0; i < distance.length; i++) {
-        for (let j = 0; j < distance[i].length; j++) {
+    for (let i = 0, ii = distance.length; i < ii; i++) {
+        for (let j = 0, jj = distance[i].length; j < jj; j++) {
             index += distance[i][j];
         }
     }
@@ -303,7 +302,7 @@ function wienerIndex(distance, index = 0) {
 
 
 /*
-  Function    : hyperwienerIndex
+  Method      : hyperwienerIndex
   Description : return Hyper-Wiener topology index
 
   Syntax
@@ -338,7 +337,7 @@ function hyperwienerIndex(distance, index = 0) {
     }
 
     // Check symmetry of distance matrix
-    for (let i = 0; i < distance.length; i++) {
+    for (let i = 0, ii = distance.length; i < ii; i++) {
         if (distance[i].length !== distance.length) {
             console.log('Error: Distance matrix must be symmetric');
             return null;
@@ -346,8 +345,8 @@ function hyperwienerIndex(distance, index = 0) {
     }
 
     // Calculate Hyper-Wiener index
-    for (let i = 0; i < distance.length; i++) {
-        for (let j = 0; j < distance[i].length; j++) {
+    for (let i = 0, ii = distance.length; i < ii; i++) {
+        for (let j = 0, jj = distance[i].length; j < jj; j++) {
             if (i !== j && i < j) {
                 index += distance[i][j] + Math.pow(distance[i][j], 2);
             }
@@ -359,7 +358,7 @@ function hyperwienerIndex(distance, index = 0) {
 
 
 /*
-  Function    : hararyIndex
+  Method      : hararyIndex
   Description : return Harary topology index
 
   Syntax
@@ -394,7 +393,7 @@ function hararyIndex(reciprocal, index = 0) {
     }
 
     // Check symmetry of reciprocal matrix
-    for (let i = 0; i < reciprocal.length; i++) {
+    for (let i = 0, ii = reciprocal.length; i < ii; i++) {
         if (reciprocal[i].length !== reciprocal.length) {
             console.log('Error: Distance matrix must be symmetric');
             return null;
@@ -402,8 +401,8 @@ function hararyIndex(reciprocal, index = 0) {
     }
 
     // Calculate Harary index
-    for (let i = 0; i < reciprocal.length; i++) {
-        for (let j = 0; j < reciprocal[i].length; j++) {
+    for (let i = 0, ii = reciprocal.length; i < ii; i++) {
+        for (let j = 0, jj = reciprocal[i].length; j < jj; j++) {
             if (i !== j) {
                 index += reciprocal[i][j];
             }
@@ -415,7 +414,7 @@ function hararyIndex(reciprocal, index = 0) {
 
 
 /*
-  Function    : Matrix
+  Method      : Matrix
   Description : return zeros matrix
 */
 
@@ -424,11 +423,11 @@ function Matrix(rows, columns = rows, matrix = []) {
     if (typeof rows !== 'number' || typeof columns !== 'number') { return null; }
 
     // Rows
-    for (let i = 0; i < rows ; i++) {
+    for (let i = 0, ii = rows; i < ii ; i++) {
         matrix[i] = [];
 
         // Columns
-        for (let j = 0; j < columns; j++) {
+        for (let j = 0, jj = columns; j < jj; j++) {
             matrix[i][j] = 0;
         }
     }
@@ -438,7 +437,7 @@ function Matrix(rows, columns = rows, matrix = []) {
 
 
 /*
-  Function    : Multiply
+  Method      : Multiply
   Description : matrix multiplication
 */
 
@@ -448,13 +447,13 @@ function Multiply(a, b, output = []) {
 
         case 'object':
 
-            for (let i = 0; i < a.length; i++) {
+            for (let i = 0, ii = a.length; i < ii; i++) {
                 output[i] = [];
 
-                for (let j = 0; j < b[0].length; j++) {
+                for (let j = 0, jj = b[0].length; j < jj; j++) {
                     output[i][j] = 0;
 
-                    for (let k = 0; k < a[0].length; k++) {
+                    for (let k = 0, kk = a[0].length; k < kk; k++) {
                         output[i][j] += a[i][k] * b[k][j];
                     }
                 }
@@ -464,10 +463,10 @@ function Multiply(a, b, output = []) {
 
         case 'number':
 
-            for (let i = 0; i < a.length; i++) {
+            for (let i = 0, ii = a.length; i < ii; i++) {
                 output[i] = [];
 
-                for (let j = 0; j < a[0].length; j++) {
+                for (let j = 0, jj = a[0].length; j < jj; j++) {
                     output[i][j] = a[i][j] * b;
                 }
             }
@@ -478,7 +477,7 @@ function Multiply(a, b, output = []) {
 
 
 /*
-  Function    : Subtract
+  Method      : Subtract
   Description : matrix subtraction
 */
 
@@ -488,10 +487,10 @@ function Subtract(a, b, output = []) {
 
         case 'object':
 
-            for (let i = 0; i < a.length; i++) {
+            for (let i = 0, ii = a.length; i < ii; i++) {
                 output[i] = [];
 
-                for (let j = 0; j < a[0].length; j++) {
+                for (let j = 0, jj = a[0].length; j < jj; j++) {
                     output[i][j] = a[i][j] - b[i][j];
                 }
             }
@@ -500,10 +499,10 @@ function Subtract(a, b, output = []) {
 
         case 'value':
 
-            for (let i = 0; i < a.length; i++) {
+            for (let i = 0, ii = a.length; i < ii; i++) {
                 output[i] = [];
 
-                for (let j = 0; j < a[0].length; j++) {
+                for (let j = 0, jj = a[0].length; j < jj; j++) {
                     output[i][j] = a[i][j] - b;
                 }
             }
@@ -514,17 +513,17 @@ function Subtract(a, b, output = []) {
 
 
 /*
-  Function    : Inverse
+  Method      : Inverse
   Description : matrix inversion
 */
 
 function Inverse(a, identity = [], inverse = []) {
 
-    for (let i = 0; i < a.length; i++) {
+    for (let i = 0, ii = a.length; i < ii; i++) {
         identity[i] = [];
         inverse[i] = [];
 
-        for (let j = 0; j < a.length; j++) {
+        for (let j = 0, jj = a.length; j < jj; j++) {
 
             if (i === j) {
                 inverse[i][j] = 1;
@@ -537,15 +536,15 @@ function Inverse(a, identity = [], inverse = []) {
         }
     }
 
-    for (let i = 0; i < identity.length; i++) {
+    for (let i = 0, ii = identity.length; i < ii; i++) {
         let x = identity[i][i];
 
         if (x === 0) {
 
-            for (let j = i+1; j < identity.length; j++) {
+            for (let j = i+1, jj = identity.length; j < jj; j++) {
                 if (identity[j][i] !== 0) {
 
-                    for (let k = 0; k < identity.length; k++) {
+                    for (let k = 0, kk = identity.length; k < kk; k++) {
 
                         x = identity[i][k];
                         identity[i][k] = identity[j][k];
@@ -565,18 +564,18 @@ function Inverse(a, identity = [], inverse = []) {
             if (x === 0) { return; }
         }
 
-        for (let j = 0; j < identity.length; j++) {
+        for (let j = 0, jj = identity.length; j < jj; j++) {
 
             identity[i][j] = identity[i][j] / x;
             inverse[i][j] = inverse[i][j] / x;
         }
 
-        for (let j = 0; j < identity.length; j++) {
+        for (let j = 0, jj = identity.length; j < jj; j++) {
             if (i === j) { continue; }
 
             x = identity[j][i];
 
-            for (let k = 0; k < identity.length; k++) {
+            for (let k = 0, kk = identity.length; k < kk; k++) {
 
                 identity[j][k] -= x * identity[i][k];
                 inverse[j][k] -= x * inverse[i][k];
@@ -584,8 +583,8 @@ function Inverse(a, identity = [], inverse = []) {
         }
     }
 
-    for (let i = 0; i < inverse.length; i++) {
-        for (let j = 0; j < inverse.length; j++) {
+    for (let i = 0, ii = inverse.length; i < ii; i++) {
+        for (let j = 0, jj = inverse.length; j < jj; j++) {
             inverse[i][j] = Math.round(inverse[i][j] * 100000) / 100000;
         }
     }

@@ -108,18 +108,15 @@ function testAll() {
 
     var t0 = new Date();
 
-    for (var i = 0; i < test.length; i++) {
+    for (var i = 0, ii = test.length; i < ii; i+=1) {
 
-        // String --> Tokens
-        tokens[i] = Molecules.parse(test[i].name);
-
-        // Tokens --> Molecule
-        mol[i] = Molecules.parse(tokens[i]);
+        // String --> Molecule
+        mol[i] = Molecules.parse.smiles(test[i].name);
     }
 
     var t1 = new Date();
 
-    for (var i = 0; i < test.length; i++) {
+    for (var i = 0, ii = test.length; i < ii; i++) {
 
         // Extract properties
         mass[i] = mol[i].properties.mass;
@@ -134,7 +131,7 @@ function testAll() {
     var pass = 0,
         fail = 0;
 
-    for (var i = 0, sign = ''; i < mass.length; i++) {
+    for (var i = 0, sign = '', ii = mass.length; i < ii; i++) {
 
         // Calculated vs. Actual
         var m1 = Math.round(mass[i] * 100) / 100,
@@ -195,17 +192,10 @@ function testAll() {
 
 function testCustom(input) {
 
-    tokens = Molecules.parse(input);
-    mol = Molecules.parse(tokens);
+    mol = Molecules.parse.smiles(input);
 
     console.log(mol.atoms);
     console.log(mol.bonds);
-
-    if (mol === null) {
-        console.log('readTokens(tokens) === null');
-        console.log(tokens);
-        return;
-    }
 
     formula = mol.properties.formula;
     mass = Math.round(mol.properties.mass * 100) / 100;
@@ -241,41 +231,44 @@ function run(option, input) {
 
         case 'custom':
         case '2':
+            var input = 'CC1C(CC(CC1C)CCO)=O';
             testCustom(input);
             break;
 
         case 'other':
         case '3':
+
             //var input = 'CC1C(CC(CC1C)CCO)=O';
             var input = 'NC([D])C(O)=O';
 
-            var tokens = Molecules.parse(input),
-                molecule = Molecules.parse(tokens);
+            var molecule = Molecules.parse.smiles(input);
 
-            var connections = Molecules.connectivity(molecule);
-
-            var adjacent = connections.adjacency,
-                distance = connections.distance,
-                reciprocal = connections.reciprocal;
+            var adjacent = Molecules.connectivity.adjacency(molecule),
+                distance = Molecules.connectivity.distance(adjacent),
+                reciprocal = Molecules.connectivity.reciprocal(distance);
 
             console.log(input);
             console.log(molecule.properties.mass);
             console.log('');
-            for (var i = 0; i < adjacent.length; i++) {
-                console.log(adjacent[i]);
+
+            for (var i = 0; i < adjacent.adjacency.length; i++) {
+                console.log(adjacent.adjacency[i]);
             }
             console.log('');
-            for (var i = 0; i < distance.length; i++) {
-                console.log(distance[i]);
+            for (var i = 0; i < distance.distance.length; i++) {
+                console.log(distance.distance[i]);
             }
+
+            console.log('');
+            for (var i = 0; i < reciprocal.reciprocal.length; i++) {
+                console.log(reciprocal.reciprocal[i]);
+            }
+
             console.log('');
 
-            for (var i = 0; i < reciprocal.length; i++) {
-                console.log(reciprocal[i]);
-            }
-            console.log('');
-
-            console.log(Molecules.topology(molecule));
+            console.log('Wiener:', Molecules.topology.wiener(molecule));
+            console.log('Hyper-Wiener:', Molecules.topology.hyperwiener(molecule));
+            console.log('Harary:', Molecules.topology.harary(molecule));
             console.log('');
 
             break;
@@ -284,12 +277,9 @@ function run(option, input) {
             //var input = 'fdgk;3#GVED@FX';
             var input = 'C@H]1=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H]1';
 
-            var tokens = Molecules.parse(input);
-            var molecule = Molecules.parse(tokens);
+            var molecule = Molecules.parse.smiles(input);
 
-            console.log(molecule.id, molecule.name, molecule.properties.mass, molecule.properties.formula);
-            console.log(molecule.atoms,molecule.bonds);
-
+            console.log(Molecules.encode.json(molecule));
     }
 }
 
@@ -310,4 +300,4 @@ var latest_results = {pass: 63, fail: 0, total: 63};
 //   option 2) 'custom', string (Custom Test)
 //   option 3) 'other' (Custom Function)
 
-run('all');
+run('3');
