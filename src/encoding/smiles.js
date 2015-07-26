@@ -1,10 +1,9 @@
 /*
-  smiles.js
-
+  File        : smiles.js
   Description : parse SMILES chemical line notation
-  Imports     : periodic_table
-  Exports     : grammar, tokenize, decode
 
+  Imports     : elements
+  Exports     : grammar, tokenize, decode
 */
 
 
@@ -12,21 +11,24 @@
   Imports
 */
 
-import periodic_table from './../reference/elements';
+import elements from './../utilities/reference';
 
 
 /*
   Variable    : grammar
   Description : regular expressions for SMILES grammar
 
-  Fields
-    type : token category
-    term : SMILES symbol
-    tag  : SMILES definition
-    expression : regular expression
+  Properties
+    {
+      type : token category
+      term : SMILES symbol
+      tag  : SMILES definition
+      expression : regular expression
+    }
 */
 
 var grammar = [
+
     {type: 'atom',     term: 'H',  tag: 'H',       expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'D',  tag: 'H',       expression: /(?=[A-Z])D(?=[^bsy]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'He', tag: 'He',      expression: /He/g},
@@ -74,27 +76,27 @@ var grammar = [
 
 
 /*
-  Method    : tokenize
-  Description : parse input string with SMILES grammar
+  Method      : tokenize
+  Description : parse string with SMILES grammar
 
   Syntax
-    { tokens } = tokenize(input)
+    { tokens: tokens } = tokenize(input)
 
-  Arguments
+  Input
     input : SMILES encoded string
 
   Output
-    { tokens } : array of token objects
+    tokens : array of token objects
 
   Examples
-    { tokens123 } = tokenize('CC(=O)CC')
-    { tokensABC } = tokenize('c1cccc1')
+    { tokens: tokens123 } = tokenize('CC(=O)CC')
+    { tokens: tokensABC } = tokenize('c1cccc1')
 */
 
 function tokenize(input, tokens = []) {
 
     // Parse input with SMILES grammar
-    for (let i = 0, ii = grammar.length; i < ii; i++) {
+    for (let i = 0; i < grammar.length; i++) {
 
         let token = grammar[i];
         let text = [];
@@ -119,62 +121,57 @@ function tokenize(input, tokens = []) {
         return 0;
     });
 
-    // Clean tokens
-    for (let i = 0, ii = tokens.length; i < ii; i++) {
-
-        // Extract token values
-        let {term, tag} = tokens[i];
+    // Check tokens for exceptions
+    for (let i = 0; i < tokens.length; i++) {
 
         // Check for multi-digit ring number
-        if (tag === 'ring') {
+        if (tokens[i].tag === 'ring') {
 
-            // Extract ring number
-            let id = tokens[i].term.match(/[0-9]+/g);
+            // Get ring number
+            let ringID = tokens[i].term.match(/[0-9]+/g);
 
-            if (id !== null) { id = id[0]; }
-
+            // Limit to first match
+            if (ringID !== null) { ringID = ringID[0]; }
             else { continue; }
 
-            if (id.length > 1) {
+            // Confirm ring number is valid
+            if (ringID.length > 1) {
 
                 let exception = 0;
 
-                // Check for matching ring number
-                for (let j = 0, jj = tokens.length; j < jj; j++) {
+                // Check tokens for matching ring number
+                for (let j = 0; j < tokens.length; j++) {
 
                     if (i === j || tokens[j].tag !== 'ring') { continue; }
 
-                    // Extract ring number
-                    let id2 = tokens[j].term.match(/[0-9]+/g);
+                    // Get ring number
+                    let checkID = tokens[j].term.match(/[0-9]+/g);
 
-                    if (id2 !== null) { id2 = id2[0]; }
+                    if (checkID !== null) { checkID = checkID[0]; }
                     else { continue; }
 
                     // Compare ring numbers
-                    if (id === id2) {
+                    if (ringID === checkID) {
                         exception = 1;
                         break;
                     }
                 }
 
-                // Match found
+                // Matching ring number found
                 if (exception === 1) { continue; }
 
-                // Token information
-                let prefix = tokens[i].term.match(/[a-zA-Z]/g)[0],
-                    index = tokens[i].index,
-                    type = tokens[i].type,
-                    tag = tokens[i].tag;
+                // Get ring prefix
+                let prefix = tokens[i].term.match(/[a-zA-Z]/g)[0];
 
-                // Parse ring number
-                for (let j = 0, jj = id.length; j < jj; j++) {
+                // Parse multi-digit ring number
+                for (let j = 0; j < ringID.length; j++) {
 
-                    // Create new token
+                    // Create new tokens
                     tokens.splice(i+1, 0, {
-                        index: index + j,
-                        type:  type,
-                        term:  prefix + id.substr(j, j+1),
-                        tag:   tag
+                        index: tokens[i].index + j,
+                        type:  tokens[i].type,
+                        term:  prefix + ringID.substr(j, j+1),
+                        tag:   tokens[i].tag
                     });
                 }
 
@@ -189,14 +186,14 @@ function tokenize(input, tokens = []) {
 
 
 /*
-  Method    : decode
+  Method      : decode
   Description : convert SMILES tokens into atoms (nodes) and bonds (edges)
 
   Syntax
     { atoms, bonds } = decode(tokens)
 
-  Arguments
-    tokens : array of tokens obtained from the output of 'tokenize'
+  Input
+    tokens : array of tokens obtained from the output of @tokenize
 
   Output
     { atoms, bonds} : array of atom/bonds describing connectivity and properties
@@ -223,12 +220,12 @@ function decode(tokens) {
         // Check tokens for required fields
         let fields = ['index', 'type', 'term', 'tag'];
 
-        for (let i = 0, ii = tokens.length; i < ii; i++) {
+        for (let i = 0; i < tokens.length; i++) {
 
             // Compare fields
-            let match = compare(fields, Object.keys(tokens[i]));
+            let match = compareArrays(fields, Object.keys(tokens[i]));
 
-            // Check for invalid token
+            // Check for invalid tokens
             if (match.reduce((a, b) => a + b) < 4) {
                 console.log('Error: Invalid token at index "' + i + '"');
                 return false;
@@ -240,14 +237,14 @@ function decode(tokens) {
 
     function readTokens(tokens, atoms = {}, bonds = {}, properties = {}, keys = {}) {
 
-        let newKey = (x) => x.toString();
-
         // Parse tokens by category
-        for (let i = 0, ii = tokens.length; i < ii; i++) {
+        for (let i = 0; i < tokens.length; i++) {
 
-            // Extract token values
-            let {type, term, tag, index} = tokens[i],
-                key = newKey(index);
+            // Get token info
+            let {type, term, tag, index} = tokens[i];
+
+            // Use token index as key
+            let key = index.toString();
 
             // Categorize tokens
             switch (type) {
@@ -266,20 +263,20 @@ function decode(tokens) {
             }
         }
 
+        // Extract token keys
+        keys.all = [];
+
+        for (let i = 0; i < tokens.length; i++) {
+            keys.all[i] = tokens[i].index.toString();
+        }
+
         // Check number of atoms
         if (atoms.length < 1) {
             console.log('Error: Could not find atoms');
             return false;
         }
 
-        // Extract token keys
-        keys.all = [];
-
-        for (let i = 0, ii = tokens.length; i < ii; i++) {
-            keys.all[i] = newKey(tokens[i].index);
-        }
-
-        // Extract token keys by category
+        // Get token keys by category
         keys.atoms = Object.keys(atoms);
         keys.bonds = Object.keys(bonds);
         keys.properties = Object.keys(properties);
@@ -289,19 +286,19 @@ function decode(tokens) {
 
     function defaultAtoms(atoms, keys) {
 
-        for (let i = 0, ii = keys.atoms.length; i < ii; i++) {
+        for (let i = 0; i < keys.atoms.length; i++) {
 
             let atomID = keys.atoms[i];
 
             // Check element
-            if (periodic_table[atoms[atomID].name] === undefined) { continue; }
+            if (elements[atoms[atomID].name] === undefined) { continue; }
 
             // Element information
-            let element = periodic_table[atoms[atomID].name];
+            let element = elements[atoms[atomID].name];
 
-            // Exception: deuterium
+            // Exception: 'deuterium'
             if (atoms[atomID].value === 'D') {
-                element = periodic_table[atoms[atomID].value];
+                element = elements[atoms[atomID].value];
             }
 
             // Element properties
@@ -333,21 +330,24 @@ function decode(tokens) {
         return atoms;
     }
 
-    function customAtoms(atoms, properties, keys) {
+    function updateAtoms(atoms, properties, keys) {
 
-        for (let i = 0, ii = keys.properties.length; i < ii; i++) {
+        for (let i = 0; i < keys.properties.length; i++) {
 
-            let propID = keys.properties[i];
+            let propertyID = keys.properties[i];
 
-            // Retrieve properties
-            let {name, value} = properties[propID];
+            // Get properties
+            let {name, value} = properties[propertyID];
 
+            // Update atom properties
             switch (name) {
 
                 case 'chiral':
 
-                    if (atoms[propID] !== undefined) {
-                        atoms[propID].properties.chiral = value.slice(value.indexOf('@'));
+                    if (atoms[propertyID] !== undefined) {
+
+                        // Update chiral property
+                        atoms[propertyID].properties.chiral = value.slice(value.indexOf('@'));
                         break;
                     }
 
@@ -355,17 +355,17 @@ function decode(tokens) {
 
                 case 'isotope':
 
-                    // Determine neutrons, atomID
-                    let neutrons = value.match(/[0-9]+/g),
-                        atomID = 1 + neutrons.toString().length + parseInt(propID);
+                    // Get isotope number and id
+                    let isotope = value.match(/[0-9]+/g);
+                    let atomID = 1 + isotope.toString().length + parseInt(propertyID);
 
                     // Check value
-                    if (neutrons > 0 && neutrons < 250 && atoms[atomID] !== undefined) {
+                    if (isotope >= 0 && isotope < 250 && atoms[atomID] !== undefined) {
 
-                        // Subtract protons
-                        neutrons = neutrons - atoms[atomID].protons;
+                        // Subtract protons from isotope number
+                        let neutrons = isotope - atoms[atomID].protons;
 
-                        if (neutrons > 0) {
+                        if (neutrons >= 0) {
                             atoms[atomID].neutrons = neutrons;
                             break;
                         }
@@ -375,23 +375,27 @@ function decode(tokens) {
 
                 case 'charge':
 
-                    // Determine charge sign (positive/negative)
+                    // Charge type (positive/negative)
                     let sign = value.indexOf('+') !== -1 ? 1 : -1;
 
-                    // Check numeric charge (e.g. '3+')
+                    // Check for numeric charge (e.g. '3+')
                     let charge = value.match(/(?:[^H])[0-9]+/g);
 
-                    if (charge !== null && atoms[propID] !== undefined) {
+                    if (charge !== null && atoms[propertyID] !== undefined) {
+
+                        // Update charge
                         charge  = charge[0].substr(1);
-                        atoms[propID].properties.charge = charge * sign;
+                        atoms[propertyID].properties.charge = charge * sign;
                         break;
                     }
 
-                    // Check symbolic charge (e.g. '+++')
+                    // Check for symbolic charge (e.g. '+++')
                     charge = value.match(/([+]+|[-]+)/g);
 
-                    if (charge !== null && atoms[propID] !== undefined) {
-                        atoms[propID].properties.charge = charge[0].length * sign;
+                    if (charge !== null && atoms[propertyID] !== undefined) {
+
+                        // Update charge
+                        atoms[propertyID].properties.charge = charge[0].length * sign;
                         break;
                     }
 
@@ -409,40 +413,46 @@ function decode(tokens) {
         }
 
         // Add bonds
-        for (let i = 0, ii = keys.bonds.length; i < ii; i++) {
+        for (let i = 0; i < keys.bonds.length; i++) {
 
-            // Retrieve bond key
+            // Get bond key
             let bondID = keys.bonds[i];
 
-            // Retrieve source/target atoms
+            // Get source/target atoms
             let sourceAtom = atoms[previousAtom(bondID, keys.all, atoms)],
                 targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
 
-            // Determine index values
+            // Get bond index
             let bondIndex = keys.all.indexOf(bondID),
                 sourceIndex = 0,
                 targetIndex = 0;
 
+            // Validate source atom
             if (sourceAtom !== undefined && sourceAtom !== null) {
+
+                // Get source index
                 sourceIndex = keys.atoms.indexOf(sourceAtom.id);
 
-                // Check for hydrogen
+                // Check source atom for hydrogen
                 if ((bonds[bondID].name === 'double' || bonds[bondID].name === 'triple') && sourceAtom.name === 'H') {
 
+                    // Change source atom to nearest non-hydrogen atom
                     while ((sourceAtom.name === 'H' || atoms[keys.atoms[sourceIndex]] === undefined) && sourceIndex > -1) {
                         sourceAtom = atoms[keys.atoms[sourceIndex]];
                         sourceIndex -= 1;
                     }
                 }
 
+                // Update source index
                 sourceIndex = keys.all.indexOf(sourceAtom.id);
             }
 
+            if (sourceIndex < 0) { continue; }
+
+            // Get target index
             if (targetAtom !== undefined && targetAtom !== null) {
                 targetIndex = keys.all.indexOf(targetAtom.id);
             }
-
-            if (sourceIndex < 0) { continue; }
 
             // Check for exceptions
             let exceptions = 0;
@@ -506,7 +516,7 @@ function decode(tokens) {
                         case '(':
 
                             // Find start of branch
-                            for (let j = 0, jj = keysBefore.length, skip = 0; j < jj; j++) {
+                            for (let j = 0, skip = 0; j < keysBefore.length; j++) {
 
                                 // Determine source atom
                                 sourceAtom = atoms[keysBefore[j]];
@@ -538,7 +548,7 @@ function decode(tokens) {
                             }
 
                             // Find target atom
-                            for (let j = 0, jj = keysAfter.length, bondOrder = bonds[bondID].order, skip = 0; j < jj; j++) {
+                            for (let j = 0, bondOrder = bonds[bondID].order, skip = 0; j < keysAfter.length; j++) {
 
                                 // Update bond order
                                 if (bonds[keysAfter[j]] !== undefined && skip === 0) {
@@ -573,7 +583,7 @@ function decode(tokens) {
                         case ')':
 
                             // Find start of branch
-                            for (let j = 0, jj = keysBefore.length, skip = 1; j < jj; j++) {
+                            for (let j = 0, skip = 1; j < keysBefore.length; j++) {
 
                                 // Retrieve source atom
                                 sourceAtom = atoms[keysBefore[j]];
@@ -605,7 +615,7 @@ function decode(tokens) {
                             }
 
                             // Find end of branch
-                            for (let j = 0, jj = keysAfter.length, bondOrder = bonds[bondID].order, skip = 0; j < jj; j++) {
+                            for (let j = 0, bondOrder = bonds[bondID].order, skip = 0; j < keysAfter.length; j++) {
 
                                 // Retrieve target atom
                                 targetAtom = atoms[keysAfter[j]];
@@ -658,7 +668,7 @@ function decode(tokens) {
                         bondsAfter = keys.bonds.slice(keys.bonds.indexOf(bondID), keys.bonds.length);
 
                     // Check keys after ring token
-                    for (let j = 1, jj = bondsAfter.length; j < jj; j++) {
+                    for (let j = 1; j < bondsAfter.length; j++) {
 
                         if (bonds[bondsAfter[j]].name !== 'ring') { continue; }
 
@@ -680,6 +690,7 @@ function decode(tokens) {
                             if (atoms[sourceIndex].properties.aromatic === 1 && atoms[targetIndex].properties.aromatic === 1) {
                                 bondOrder = 1.5;
                             }
+
                             bonds[bondID].order = bondOrder;
                             bonds[bondID].atoms = [sourceIndex.toString(), targetIndex.toString()];
 
@@ -690,7 +701,7 @@ function decode(tokens) {
                         if (j === bondsAfter.length - 1) {
 
                             // Find matching ring atom
-                            for (let k = 0, kk = bondsBefore.length; k < kk; k++) {
+                            for (let k = 0; k < bondsBefore.length; k++) {
 
                                 if (bonds[bondsAfter[j]].name !== 'ring') { continue; }
 
@@ -753,7 +764,7 @@ function decode(tokens) {
             let bondsAfter = keys.bonds.slice(i, keys.bonds.length);
 
             // Check for duplicate/empty bonds
-            for (let j = 0, jj = bondsAfter.length; j < jj; j++) {
+            for (let j = 0; j < bondsAfter.length; j++) {
 
                 if (j === 0) { continue; }
 
@@ -798,7 +809,7 @@ function decode(tokens) {
         }
 
         // Add bond references to all atoms
-        for (let i = 0, ii = keys.bonds.length; i < ii; i++) {
+        for (let i = 0; i < keys.bonds.length; i++) {
 
             // Bond key
             let bondID = keys.bonds[i];
@@ -857,7 +868,7 @@ function decode(tokens) {
         };
 
         // Add bonds between adjacent atoms
-        for (let i = 0, ii = keys.atoms.length - 1; i < ii; i++) {
+        for (let i = 0; i < keys.atoms.length - 1; i++) {
 
             // Retrieve atoms
             let sourceAtom = atoms[keys.atoms[i]],
@@ -896,7 +907,7 @@ function decode(tokens) {
                 let keysBetween = keys.all.slice(keys.all.indexOf(sourceAtom.id) + 1, keys.all.indexOf(targetAtom.id));
 
                 // Check for bond symbol
-                for (let j = 0, jj = keysBetween.length; j < jj; j++) {
+                for (let j = 0; j < keysBetween.length; j++) {
                     if (bonds[keysBetween[j]] === undefined) { exceptions += 0; }
                     else if (bonds[keysBetween[j]].name !== 'ring') { exceptions += 1; }
                 }
@@ -926,7 +937,7 @@ function decode(tokens) {
         }
 
         // Add implicit hydrogen
-        let H = periodic_table.H;
+        let H = elements.H;
 
         let update = (x, sourceID, sourceName) => {
 
@@ -945,7 +956,7 @@ function decode(tokens) {
             atoms[targetID].bonds.electrons += 1;
         };
 
-        for (let i = 0, ii = keys.atoms.length; i < ii; i++) {
+        for (let i = 0; i < keys.atoms.length; i++) {
 
             // Retrieve atoms
             let sourceAtom = atoms[keys.atoms[i]];
@@ -958,7 +969,7 @@ function decode(tokens) {
             // Exception: explicit number of hydrogen
             if (sourceAtom.name !== 'H' && bondCount > 0) {
 
-                for (let j = 0, jj = bondCount; j < jj; j++) {
+                for (let j = 0; j < bondCount; j++) {
 
                     // Retrieve target atom
                     let targetID = sourceAtom.bonds.atoms[j],
@@ -974,7 +985,7 @@ function decode(tokens) {
                         if (count > 1 && count < sourceAtom.electrons) {
 
                             // Add hydrogen
-                            for (let k = 0, kk = count - 1; k < kk; k++) {
+                            for (let k = 0; k < count - 1; k++) {
                                 update(k, sourceAtom.id, sourceAtom.name);
                             }
                         }
@@ -1011,7 +1022,7 @@ function decode(tokens) {
             if (total <= 0) { continue; }
 
             // Add hydrogen
-            for (let j = 0, jj = total; j < jj; j++) {
+            for (let j = 0; j < total; j++) {
 
                 // Check aromatic
                 if (sourceAtom.properties.aromatic === 1 && j > 1) { continue; }
@@ -1028,7 +1039,7 @@ function decode(tokens) {
         let atomID = Object.keys(atoms),
             bondID = Object.keys(bonds);
 
-        for (let i = 0, ii = bondID.length; i < ii; i++) {
+        for (let i = 0; i < bondID.length; i++) {
 
             // Re-label bond value
             let source = atoms[bonds[bondID[i]].atoms[0]],
@@ -1049,7 +1060,7 @@ function decode(tokens) {
         };
 
         // Re-label atom id
-        for (let i = 0, ii = atomID.length; i < ii; i++) {
+        for (let i = 0; i < atomID.length; i++) {
 
             let oldID = atomID[i],
                 newID = getID(atoms[oldID].name, i);
@@ -1058,17 +1069,21 @@ function decode(tokens) {
             atoms[oldID].id = newID;
 
             // Update bond pointers
-            for (let j = 0, jj = atoms[oldID].bonds.id.length; j < jj; j++) {
+            for (let j = 0; j < atoms[oldID].bonds.id.length; j++) {
 
                 let key = atoms[oldID].bonds.id[j],
                     index = bonds[key].atoms.indexOf(oldID);
 
-                if (index !== -1) { bonds[key].atoms[index] = newID; }
+                if (index !== -1) {
+                    bonds[key].atoms[index] = newID;
+                }
 
                 key = atoms[oldID].bonds.atoms[j];
                 index = atoms[key].bonds.atoms.indexOf(oldID);
 
-                if (index !== -1) { atoms[key].bonds.atoms[index] = newID; }
+                if (index !== -1) {
+                    atoms[key].bonds.atoms[index] = newID;
+                }
             }
 
             setID(atoms, oldID, newID);
@@ -1089,7 +1104,7 @@ function decode(tokens) {
 
     // 3. Add atoms
     atoms = defaultAtoms(atoms, keys);
-    atoms = customAtoms(atoms, properties, keys);
+    atoms = updateAtoms(atoms, properties, keys);
 
     // 4. Add bonds
     [atoms, bonds, keys] = explicitBonds(atoms, bonds, keys);
@@ -1103,13 +1118,13 @@ function decode(tokens) {
 
 
 /*
-  Method      : compare
+  Method      : compareArrays
   Description : compare values across two arrays
 */
 
-function compare(a, b, ab = []) {
+function compareArrays(a, b, ab = []) {
 
-    for (let i = 0, ii = a.length; i < ii; i++) {
+    for (let i = 0; i < a.length; i++) {
         ab[i] = b.indexOf(a[i]) > -1 ? 1 : 0;
     }
 

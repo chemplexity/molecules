@@ -1,6 +1,6 @@
 // Load molecules.js
-//var Molecules = require('./../dist/molecules.min.js');
-var Molecules = require('./../dist/molecules.js');
+var Molecules = require('./../dist/molecules.min.js');
+//var Molecules = require('./../dist/molecules.js');
 
 // SMILES Examples
 var test = [
@@ -296,8 +296,8 @@ var latest_results = {pass: 63, fail: 0, total: 63};
 
 
 // run(option, input)
-//   option 1) 'all' (Full Test)
-//   option 2) 'custom', string (Custom Test)
-//   option 3) 'other' (Custom Function)
+//   Option 1) 'all' (Full Test)
+//   Option 2) 'custom', string (Custom Test)
+//   Option 3) 'other' (Custom Function)
 
-run('3');
+run('1');

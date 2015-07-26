@@ -1,10 +1,9 @@
 /*
-  molecules.js
-
+  File        : molecules.js
   Description : chemical graph theory library
-  Imports     : periodic_table, tokenize, decode
-  Exports     : parse, encode, connectivity, topology
 
+  Imports     : elements, tokenize, decode
+  Exports     : parse, encode, connectivity, topology
 */
 
 
@@ -12,19 +11,19 @@
   Imports
 */
 
-import { periodic_table } from './reference/elements';
 import { tokenize, decode } from './encoding/smiles';
-import { adjacencyMatrix, distanceMatrix, reciprocalMatrix, wienerIndex, hyperwienerIndex, hararyIndex } from './extensions/topology';
-
+import { adjacencyMatrix, distanceMatrix, reciprocalMatrix } from './extensions/connectivity';
+import { wienerIndex, hyperwienerIndex, hararyIndex } from './extensions/topology';
 
 /*
   Method      : parse
-  Description : convert input to molecule
+  Description : convert string to object
 
   Options     : .smiles, .json
 
   Examples
-    molecule123 = Molecules.parse.smiles('CC(=O)CN')
+    myMolecule = Molecules.parse.smiles('CC(=O)CN')
+    myMolecule = Molecules.parse.json(myJSON)
 */
 
 var parse = {
@@ -42,33 +41,39 @@ var parse = {
 
     json : function (input) {
 
-        return JSON.parse(input);
+        if (typeof input === 'string') {
+
+            return JSON.parse(input);
+        }
     }
 };
 
 
 /*
   Method      : encode
-  Description : convert input to desired output
+  Description : convert object to string
 
   Options     : .json
 
   Examples
-    json123 = Molecules.encode.json(molecule123)
+    myJSON = Molecules.encode.json(myMolecule)
 */
 
 var encode = {
 
     json : function (input) {
 
-        return JSON.stringify(input, null, '\t');
+        if (typeof input === 'object') {
+
+            return JSON.stringify(input, null, '\t');
+        }
     }
 };
 
 
 /*
   Method      : connectivity
-  Description : return chemical graph matrices
+  Description : chemical graph matrices
 
   Options     : .adjacency, .distance, .reciprocal
 */
@@ -76,25 +81,22 @@ var encode = {
 var connectivity = {
 
     adjacency : function (molecule) {
-
         return adjacencyMatrix(molecule);
     },
 
-    distance : function (adjacency) {
-
-        return distanceMatrix(adjacency);
+    distance : function (molecule) {
+        return distanceMatrix(molecule);
     },
 
-    reciprocal : function (distance) {
-
-        return reciprocalMatrix(distance);
+    reciprocal : function (molecule) {
+        return reciprocalMatrix(molecule);
     }
 };
 
 
 /*
   Method      : topology
-  Description : return molecular topological indexes
+  Description : molecular topological indices
 
   Options     : .harary, .hyperwiener, .wiener
 */
@@ -102,17 +104,14 @@ var connectivity = {
 var topology = {
 
     harary : function (molecule) {
-
         return hararyIndex(molecule);
     },
 
     hyperwiener : function (molecule) {
-
         return hyperwienerIndex(molecule);
     },
 
     wiener : function (molecule) {
-
         return wienerIndex(molecule);
     }
 };
@@ -153,7 +152,7 @@ function getFormula(atoms, formula = {}) {
 
     let keys = Object.keys(atoms);
 
-    for (let i = 0, ii = keys.length; i < ii; i++) {
+    for (let i = 0; i < keys.length; i++) {
 
         if (formula[atoms[keys[i]].name] === undefined) {
             formula[atoms[keys[i]].name] = 1;
@@ -197,7 +196,7 @@ function getName(formula, name = []) {
 
     if (keys.length > 0) {
 
-        for (let i = 0, ii = keys.length; i < ii; i++) {
+        for (let i = 0; i < keys.length; i++) {
             update(keys[i]);
         }
     }
@@ -217,7 +216,7 @@ function getMass(atoms, mass = 0) {
 
     let keys = Object.keys(atoms);
 
-    for (let i = 0, ii = keys.length; i < ii; i++) {
+    for (let i = 0; i < keys.length; i++) {
         mass += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
     }
 

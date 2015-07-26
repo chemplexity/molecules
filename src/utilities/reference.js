@@ -1,25 +1,28 @@
 /*
-  elements.js
+  File        : reference.js
+  Description : assorted chemical terms and constants
 
-  Description : basic properties of the elements
-  Exports     : periodic_table
-
+  Imports     : N/A
+  Exports     : elements
 */
 
 
 /*
-  Variable    : periodic_table
-  Description : dictionary of atomic properties
+  Variable    : elements
+  Description : dictionary of basic atomic properties
 
-  Fields
-    protons   : atomic number
-    neutrons  : weighted average number of neutrons
-    electrons : total electrons
-    group     : periodic table column number
-    period    : periodic table row number
+  Properties
+
+    id : {
+      protons   : total protons
+      neutrons  : weighted average number of neutrons
+      electrons : total electrons
+      group     : periodic table column
+      period    : periodic table row
+    }
 */
 
-var periodic_table = {
+var elements = {
 
     'H':  {protons: 1,  neutrons: 0.0079,  electrons: 1,  group: 1,  period: 1},
     'D':  {protons: 1,  neutrons: 1.0000,  electrons: 1,  group: 1,  period: 1},
@@ -48,23 +51,7 @@ var periodic_table = {
 
 
 /*
-  Method    : getElement
-  Description : return info on element
-*/
-
-function getElement(element) {
-    
-    if (periodic_table[element] !== undefined) {
-
-        return periodic_table[element];
-    }
-
-    return null;
-}
-
-
-/*
   Exports
 */
 
-export default periodic_table;
+export default elements;
