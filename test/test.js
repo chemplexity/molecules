@@ -239,7 +239,7 @@ function run(option, input) {
         case '3':
 
             //var input = 'CC1C(CC(CC1C)CCO)=O';
-            var input = 'NC([D])C(O)=O';
+            var input = test[0].name;
 
             var molecule = Molecules.parse.smiles(input);
 

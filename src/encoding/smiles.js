@@ -16,15 +16,13 @@ import elements from './../utilities/reference';
 
 /*
   Variable    : grammar
-  Description : regular expressions for SMILES grammar
+  Description : regular expressions for parsing SMILES string
 
   Properties
-    {
-      type : token category
-      term : SMILES symbol
-      tag  : SMILES definition
-      expression : regular expression
-    }
+      type       : token category
+      term       : SMILES symbol
+      tag        : token definition
+      expression : SMILES regular expression
 */
 
 var grammar = [

@@ -1,6 +1,6 @@
 /*
   File        : math.js
-  Description : assorted math functions
+  Description : assorted math utilities
 
   Imports     : N/A
   Exports     : matrix
@@ -11,13 +11,22 @@
   Method      : matrix
   Description : assorted functions for matrices
 
-  Options     : .initialize, .subtract, .multiply, .inverse
+  Options     : initialize, add, subtract, multiply, inverse
 */
 
 var matrix = {
 
-    // Return new matrix
-    initialize : function (rows = 1, columns = rows, output = []) {
+    /*
+      Method      : initialize
+      Description : Returns a new matrix (zero-filled)
+
+      Syntax      : output = matrix.initialize(rows, columns)
+
+      Examples    : myMatrix = matrix.initialize(4, 10)
+                    matrix123 = matrix.initialize(6)
+    */
+
+    initialize : function (rows = 1, columns = 1, output = []) {
 
         // Rows
         for (let i = 0; i < rows ; i++) {
@@ -32,11 +41,65 @@ var matrix = {
         return output;
     },
 
-    // Matrix subtraction
-    subtract : function (a, b, output = []) {
+
+    /*
+      Method      : add
+      Description : Returns the sum of: a) matrix + matrix; or b) matrix + value
+
+      Syntax      : output = matrix.add(a, b)
+
+      Examples    : myMatrix = matrix.add(matrixA, matrixB)
+                    matrix123 = matrix.add(matrixA, 230)
+    */
+
+    add : function (a, b = 0, output = []) {
 
         switch (typeof b) {
 
+            // Case: matrix + matrix
+            case 'object':
+
+                for (let i = 0; i < a.length; i++) {
+                    output[i] = [];
+
+                    for (let j = 0; j < a[0].length; j++) {
+                        output[i][j] = a[i][j] + b[i][j];
+                    }
+                }
+
+                return output;
+
+            // Case: matrix + value
+            case 'number':
+
+                for (let i = 0; i < a.length; i++) {
+                    output[i] = [];
+
+                    for (let j = 0; j < a[0].length; j++) {
+                        output[i][j] = a[i][j] + b;
+                    }
+                }
+
+                return output;
+        }
+    },
+
+
+    /*
+      Method      : subtract
+      Description : Returns the difference between: a) matrix - matrix; or b) matrix - value
+
+      Syntax      : output = matrix.subtract(a, b)
+
+      Examples    : myMatrix = matrix.subtract(matrixA, matrixB)
+                    matrix123 = matrix.subtract(matrixA, 42)
+    */
+
+    subtract : function (a, b = 0, output = []) {
+
+        switch (typeof b) {
+
+            // Case: matrix - matrix
             case 'object':
 
                 for (let i = 0; i < a.length; i++) {
@@ -49,7 +112,8 @@ var matrix = {
 
                 return output;
 
-            case 'value':
+            // Case: matrix - value
+            case 'number':
 
                 for (let i = 0; i < a.length; i++) {
                     output[i] = [];
@@ -61,14 +125,24 @@ var matrix = {
 
                 return output;
         }
-
     },
 
-    // Matrix multiplication
-    multiply : function (a, b, output = []) {
+
+    /*
+      Method      : multiply
+      Description : Returns the product of: a) matrix * matrix; or b) matrix * value
+
+      Syntax      : output = matrix.multiply(a, b)
+
+      Examples    : myMatrix = matrix.multiply(matrixA, matrixB)
+                    matrix123 = matrix.multiply(matrixA, 110)
+    */
+
+    multiply : function (a, b = 0, output = []) {
 
         switch (typeof b) {
 
+            // Case: matrix * matrix
             case 'object':
 
                 for (let i = 0; i < a.length; i++) {
@@ -85,6 +159,7 @@ var matrix = {
 
                 return output;
 
+            // Case: matrix * value
             case 'number':
 
                 for (let i = 0; i < a.length; i++) {
@@ -99,7 +174,16 @@ var matrix = {
         }
     },
 
-    // Matrix inverse
+
+    /*
+      Method      : inverse
+      Description : Returns the inverse of a matrix
+
+      Syntax      : output = matrix.inverse(a)
+
+      Examples    : myMatrix = matrix.inverse(matrixA)
+    */
+
     inverse : function (a, identity = [], inverse = []) {
 
         for (let i = 0; i < a.length; i++) {
@@ -179,7 +263,6 @@ var matrix = {
         }
 
         return inverse;
-
     }
 };
 

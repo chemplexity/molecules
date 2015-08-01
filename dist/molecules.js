@@ -1,5 +1,177 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.Molecules = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 /*
+  File        : topology.js
+  Description : molecular topological indices
+
+  Imports     : adjacencyMatrix, distanceMatrix, reciprocalMatrix
+  Exports     : wienerIndex, hyperwienerIndex, hararyIndex
+*/
+
+/*
+  Imports
+*/
+
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+    value: true
+});
+
+var _geometryConnectivity = require('./../geometry/connectivity');
+
+/*
+  Method      : wienerIndex
+  Description : return Wiener topology index
+
+  Syntax
+    index = wienerIndex(distance)
+
+  Input
+    distance : distance matrix
+
+  Output
+    index : Wiener index
+
+  Examples
+    wiener = wienerIndex(dist123)
+    w123 = wienerIndex(distanceABC)
+*/
+
+function wienerIndex(distance) {
+    var index = arguments[1] === undefined ? 0 : arguments[1];
+
+    if (typeof distance !== 'object') {
+        console.log('Error: Tokens must be of type "object"');
+        return null;
+    }
+
+    // Check input for molecule
+    if (distance.atoms !== undefined && distance.bonds !== undefined) {
+        distance = (0, _geometryConnectivity.distanceMatrix)((0, _geometryConnectivity.adjacencyMatrix)(distance));
+    }
+
+    // Check for header
+    if (distance.distance !== undefined) {
+        distance = distance.distance;
+    }
+
+    // Calculate Wiener index
+    for (var i = 0; i < distance.length; i++) {
+        for (var j = 0; j < distance[0].length; j++) {
+            index += distance[i][j];
+        }
+    }
+
+    return index / 2;
+}
+
+/*
+  Method      : hyperwienerIndex
+  Description : return Hyper-Wiener topology index
+
+  Syntax
+    index = hyperwienerIndex(distance)
+
+  Input
+    distance : distance matrix
+
+  Output
+    index : Hyper-Wiener index
+
+  Examples
+    hyperwiener = hyperwienerIndex(dist123)
+    hw123 = hyperwienerIndex(distanceABC)
+*/
+
+function hyperwienerIndex(distance) {
+    var index = arguments[1] === undefined ? 0 : arguments[1];
+
+    if (typeof distance !== 'object') {
+        console.log('Error: Tokens must be of type "object"');
+        return null;
+    }
+
+    // Check input for molecule
+    if (distance.atoms !== undefined && distance.bonds !== undefined) {
+        distance = (0, _geometryConnectivity.distanceMatrix)((0, _geometryConnectivity.adjacencyMatrix)(distance));
+    }
+
+    // Check for header
+    if (distance.distance !== undefined) {
+        distance = distance.distance;
+    }
+
+    // Calculate Hyper-Wiener index
+    for (var i = 0; i < distance.length; i++) {
+        for (var j = 0; j < distance[i].length; j++) {
+
+            if (i !== j && i < j) {
+                index += distance[i][j] + Math.pow(distance[i][j], 2);
+            }
+        }
+    }
+
+    return index / 2;
+}
+
+/*
+  Method      : hararyIndex
+  Description : return Harary topology index
+
+  Syntax
+    index = hararyIndex(reciprocal)
+
+  Input
+    reciprocal : reciprocal of distance matrix
+
+  Output
+    index : Harary index
+
+  Examples
+    harary = hararyIndex(recip123)
+    h123 = hararyIndex(reciprocalABC)
+*/
+
+function hararyIndex(reciprocal) {
+    var index = arguments[1] === undefined ? 0 : arguments[1];
+
+    if (typeof reciprocal !== 'object') {
+        console.log('Error: Tokens must be of type "object"');
+        return null;
+    }
+
+    // Check input for molecule
+    if (reciprocal.atoms !== undefined && reciprocal.bonds !== undefined) {
+        reciprocal = (0, _geometryConnectivity.reciprocalMatrix)((0, _geometryConnectivity.distanceMatrix)((0, _geometryConnectivity.adjacencyMatrix)(reciprocal)));
+    }
+
+    // Check for header
+    if (reciprocal.reciprocal !== undefined) {
+        reciprocal = reciprocal.reciprocal;
+    }
+
+    // Calculate Harary index
+    for (var i = 0; i < reciprocal.length; i++) {
+        for (var j = 0; j < reciprocal[i].length; j++) {
+
+            if (i !== j) {
+                index += reciprocal[i][j];
+            }
+        }
+    }
+
+    return Math.round(index / 2 * 1000) / 1000;
+}
+
+/*
+  Exports
+*/
+
+exports.wienerIndex = wienerIndex;
+exports.hyperwienerIndex = hyperwienerIndex;
+exports.hararyIndex = hararyIndex;
+},{"./../geometry/connectivity":3}],2:[function(require,module,exports){
+/*
   File        : smiles.js
   Description : parse SMILES chemical line notation
 
@@ -27,15 +199,13 @@ var _utilitiesReference2 = _interopRequireDefault(_utilitiesReference);
 
 /*
   Variable    : grammar
-  Description : regular expressions for SMILES grammar
+  Description : regular expressions for parsing SMILES string
 
   Properties
-    {
-      type : token category
-      term : SMILES symbol
-      tag  : SMILES definition
-      expression : regular expression
-    }
+      type       : token category
+      term       : SMILES symbol
+      tag        : token definition
+      expression : SMILES regular expression
 */
 
 var grammar = [{ type: 'atom', term: 'H', tag: 'H', expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g }, { type: 'atom', term: 'D', tag: 'H', expression: /(?=[A-Z])D(?=[^bsy]|$)([0-9]?)+/g }, { type: 'atom', term: 'He', tag: 'He', expression: /He/g }, { type: 'atom', term: 'Li', tag: 'Li', expression: /Li/g }, { type: 'atom', term: 'Be', tag: 'Be', expression: /Be/g }, { type: 'atom', term: 'B', tag: 'B', expression: /B(?=[^aehikr]|$)/g }, { type: 'atom', term: 'C', tag: 'C', expression: /C(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'N', tag: 'N', expression: /N(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'O', tag: 'O', expression: /O(?=[^s]|$)/g }, { type: 'atom', term: 'F', tag: 'F', expression: /F(?=[^elmr]|$)/g }, { type: 'atom', term: 'Ne', tag: 'Ne', expression: /Ne/g }, { type: 'atom', term: 'Na', tag: 'Na', expression: /Na/g }, { type: 'atom', term: 'Mg', tag: 'Mg', expression: /Mg/g }, { type: 'atom', term: 'Al', tag: 'Al', expression: /Al/g }, { type: 'atom', term: 'Si', tag: 'Si', expression: /Si/g }, { type: 'atom', term: 'P', tag: 'P', expression: /P(?=[^abdmortu]|$)/g }, { type: 'atom', term: 'S', tag: 'S', expression: /S(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'Cl', tag: 'Cl', expression: /Cl/g }, { type: 'atom', term: 'Ar', tag: 'Ar', expression: /Ar/g }, { type: 'atom', term: 'As', tag: 'As', expression: /As/g }, { type: 'atom', term: 'Se', tag: 'Se', expression: /Se/g }, { type: 'atom', term: 'Br', tag: 'Br', expression: /Br/g }, { type: 'atom', term: 'I', tag: 'I', expression: /I(?=[^nr]|$)/g }, { type: 'atom', term: '*', tag: '*', expression: /[*]/g }, { type: 'atom', term: 'b', tag: 'B', expression: /b(?=[^e]|$)/g }, { type: 'atom', term: 'c', tag: 'C', expression: /c(?=[^l]|$)/g }, { type: 'atom', term: 'n', tag: 'N', expression: /n(?=[^ae]|$)/g }, { type: 'atom', term: 'o', tag: 'O', expression: /o(?=[^s]|$)/g }, { type: 'atom', term: 'p', tag: 'P', expression: /p/g }, { type: 'atom', term: 's', tag: 'S', expression: /s(?=[^ei]|$)/g }, { type: 'atom', term: 'se', tag: 'Se', expression: /se/g }, { type: 'bond', term: '-', tag: 'single', expression: /(?=([^0-9]))[-](?=[^0-9-\]])/g }, { type: 'bond', term: '=', tag: 'double', expression: /[=]/g }, { type: 'bond', term: '#', tag: 'triple', expression: /[#]/g }, { type: 'bond', term: '(', tag: 'branch', expression: /[(]/g }, { type: 'bond', term: ')', tag: 'branch', expression: /[)]/g }, { type: 'bond', term: '%', tag: 'ring', expression: /(?=[^+-])(?:[a-zA-Z]{1,2}[@]{1,2})?(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[%]?\d+(?=([^+]|$))/g }, { type: 'bond', term: '.', tag: 'dot', expression: /(?:[A-Z][+-]?[\[])?[.]/g }, { type: 'property', term: '+', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g }, { type: 'property', term: '-', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g }, { type: 'property', term: 'n', tag: 'isotope', expression: /(?:[\[])[0-9]+[A-Z]{1,2}(?=.?[^\[]*[\]])/g }, { type: 'property', term: 'S', tag: 'chiral', expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g }, { type: 'property', term: 'R', tag: 'chiral', expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g }];
@@ -1349,13 +1519,14 @@ function previousAtom(start, keys, atoms) {
 exports.grammar = grammar;
 exports.tokenize = tokenize;
 exports.decode = decode;
-},{"./../utilities/reference":6}],2:[function(require,module,exports){
+},{"./../utilities/reference":6}],3:[function(require,module,exports){
 /*
   File        : connectivity.js
   Description : chemical graph matrices
 
   Imports     : matrix
   Exports     : adjacencyMatrix, distanceMatrix, reciprocalMatrix
+
 */
 
 /*
@@ -1379,7 +1550,7 @@ var _utilitiesMath2 = _interopRequireDefault(_utilitiesMath);
   Description : return adjacency matrix of non-hydrogen atoms
 
   Syntax
-    { header, adjacency } = adjacencyMatrix(molecule)
+    output = adjacencyMatrix(molecule)
 
   Input
     molecule : object containing atoms and bonds
@@ -1413,7 +1584,7 @@ function adjacencyMatrix(molecule) {
     }
 
     // Fill adjacency matrix
-    adjacency = _utilitiesMath2['default'].initialize(header.length);
+    adjacency = _utilitiesMath2['default'].initialize(header.length, header.length);
 
     for (var i = 0; i < header.length; i++) {
 
@@ -1439,7 +1610,7 @@ function adjacencyMatrix(molecule) {
   Description : return matrix of shortest paths between non-hydrogen atoms
 
   Syntax
-    { header, distance } = distanceMatrix(adjacency)
+    output = distanceMatrix(adjacency)
 
   Input
     adjacency : adjacency matrix
@@ -1561,7 +1732,7 @@ function distanceMatrix(adjacency) {
   Description : return reciprocal of distance matrix
 
   Syntax
-    { header, reciprocal } = reciprocalMatrix(distance)
+    output = reciprocalMatrix(distance)
 
   Input
     distance : distance matrix
@@ -1637,180 +1808,7 @@ function reciprocalMatrix(distance) {
 exports.adjacencyMatrix = adjacencyMatrix;
 exports.distanceMatrix = distanceMatrix;
 exports.reciprocalMatrix = reciprocalMatrix;
-},{"./../utilities/math":5}],3:[function(require,module,exports){
-/*
-  File        : topology.js
-  Description : molecular topological indices
-
-  Imports     : adjacencyMatrix, distanceMatrix, reciprocalMatrix
-  Exports     : wienerIndex, hyperwienerIndex, hararyIndex
-
-*/
-
-/*
-  Imports
-*/
-
-'use strict';
-
-Object.defineProperty(exports, '__esModule', {
-    value: true
-});
-
-var _connectivity = require('./connectivity');
-
-/*
-  Method      : wienerIndex
-  Description : return Wiener topology index
-
-  Syntax
-    index = wienerIndex(distance)
-
-  Input
-    distance : distance matrix
-
-  Output
-    index : Wiener index
-
-  Examples
-    wiener = wienerIndex(dist123)
-    w123 = wienerIndex(distanceABC)
-*/
-
-function wienerIndex(distance) {
-    var index = arguments[1] === undefined ? 0 : arguments[1];
-
-    if (typeof distance !== 'object') {
-        console.log('Error: Tokens must be of type "object"');
-        return null;
-    }
-
-    // Check input for molecule
-    if (distance.atoms !== undefined && distance.bonds !== undefined) {
-        distance = (0, _connectivity.distanceMatrix)((0, _connectivity.adjacencyMatrix)(distance));
-    }
-
-    // Check for header
-    if (distance.distance !== undefined) {
-        distance = distance.distance;
-    }
-
-    // Calculate Wiener index
-    for (var i = 0; i < distance.length; i++) {
-        for (var j = 0; j < distance[0].length; j++) {
-            index += distance[i][j];
-        }
-    }
-
-    return index / 2;
-}
-
-/*
-  Method      : hyperwienerIndex
-  Description : return Hyper-Wiener topology index
-
-  Syntax
-    index = hyperwienerIndex(distance)
-
-  Input
-    distance : distance matrix
-
-  Output
-    index : Hyper-Wiener index
-
-  Examples
-    hyperwiener = hyperwienerIndex(dist123)
-    hw123 = hyperwienerIndex(distanceABC)
-*/
-
-function hyperwienerIndex(distance) {
-    var index = arguments[1] === undefined ? 0 : arguments[1];
-
-    if (typeof distance !== 'object') {
-        console.log('Error: Tokens must be of type "object"');
-        return null;
-    }
-
-    // Check input for molecule
-    if (distance.atoms !== undefined && distance.bonds !== undefined) {
-        distance = (0, _connectivity.distanceMatrix)((0, _connectivity.adjacencyMatrix)(distance));
-    }
-
-    // Check for header
-    if (distance.distance !== undefined) {
-        distance = distance.distance;
-    }
-
-    // Calculate Hyper-Wiener index
-    for (var i = 0; i < distance.length; i++) {
-        for (var j = 0; j < distance[i].length; j++) {
-
-            if (i !== j && i < j) {
-                index += distance[i][j] + Math.pow(distance[i][j], 2);
-            }
-        }
-    }
-
-    return index / 2;
-}
-
-/*
-  Method      : hararyIndex
-  Description : return Harary topology index
-
-  Syntax
-    index = hararyIndex(reciprocal)
-
-  Input
-    reciprocal : reciprocal of distance matrix
-
-  Output
-    index : Harary index
-
-  Examples
-    harary = hararyIndex(recip123)
-    h123 = hararyIndex(reciprocalABC)
-*/
-
-function hararyIndex(reciprocal) {
-    var index = arguments[1] === undefined ? 0 : arguments[1];
-
-    if (typeof reciprocal !== 'object') {
-        console.log('Error: Tokens must be of type "object"');
-        return null;
-    }
-
-    // Check input for molecule
-    if (reciprocal.atoms !== undefined && reciprocal.bonds !== undefined) {
-        reciprocal = (0, _connectivity.reciprocalMatrix)((0, _connectivity.distanceMatrix)((0, _connectivity.adjacencyMatrix)(reciprocal)));
-    }
-
-    // Check for header
-    if (reciprocal.reciprocal !== undefined) {
-        reciprocal = reciprocal.reciprocal;
-    }
-
-    // Calculate Harary index
-    for (var i = 0; i < reciprocal.length; i++) {
-        for (var j = 0; j < reciprocal[i].length; j++) {
-
-            if (i !== j) {
-                index += reciprocal[i][j];
-            }
-        }
-    }
-
-    return Math.round(index / 2 * 1000) / 1000;
-}
-
-/*
-  Exports
-*/
-
-exports.wienerIndex = wienerIndex;
-exports.hyperwienerIndex = hyperwienerIndex;
-exports.hararyIndex = hararyIndex;
-},{"./connectivity":2}],4:[function(require,module,exports){
+},{"./../utilities/math":5}],4:[function(require,module,exports){
 /*
   File        : molecules.js
   Description : chemical graph theory library
@@ -1831,9 +1829,9 @@ Object.defineProperty(exports, '__esModule', {
 
 var _encodingSmiles = require('./encoding/smiles');
 
-var _extensionsConnectivity = require('./extensions/connectivity');
+var _geometryConnectivity = require('./geometry/connectivity');
 
-var _extensionsTopology = require('./extensions/topology');
+var _descriptorsTopology = require('./descriptors/topology');
 
 /*
   Method      : parse
@@ -1900,15 +1898,15 @@ var encode = {
 var connectivity = {
 
     adjacency: function adjacency(molecule) {
-        return (0, _extensionsConnectivity.adjacencyMatrix)(molecule);
+        return (0, _geometryConnectivity.adjacencyMatrix)(molecule);
     },
 
     distance: function distance(molecule) {
-        return (0, _extensionsConnectivity.distanceMatrix)(molecule);
+        return (0, _geometryConnectivity.distanceMatrix)(molecule);
     },
 
     reciprocal: function reciprocal(molecule) {
-        return (0, _extensionsConnectivity.reciprocalMatrix)(molecule);
+        return (0, _geometryConnectivity.reciprocalMatrix)(molecule);
     }
 };
 
@@ -1922,15 +1920,15 @@ var connectivity = {
 var topology = {
 
     harary: function harary(molecule) {
-        return (0, _extensionsTopology.hararyIndex)(molecule);
+        return (0, _descriptorsTopology.hararyIndex)(molecule);
     },
 
     hyperwiener: function hyperwiener(molecule) {
-        return (0, _extensionsTopology.hyperwienerIndex)(molecule);
+        return (0, _descriptorsTopology.hyperwienerIndex)(molecule);
     },
 
     wiener: function wiener(molecule) {
-        return (0, _extensionsTopology.wienerIndex)(molecule);
+        return (0, _descriptorsTopology.wienerIndex)(molecule);
     }
 };
 
@@ -2061,10 +2059,10 @@ exports.parse = parse;
 exports.encode = encode;
 exports.connectivity = connectivity;
 exports.topology = topology;
-},{"./encoding/smiles":1,"./extensions/connectivity":2,"./extensions/topology":3}],5:[function(require,module,exports){
+},{"./descriptors/topology":1,"./encoding/smiles":2,"./geometry/connectivity":3}],5:[function(require,module,exports){
 /*
   File        : math.js
-  Description : assorted math functions
+  Description : assorted math utilities
 
   Imports     : N/A
   Exports     : matrix
@@ -2074,7 +2072,7 @@ exports.topology = topology;
   Method      : matrix
   Description : assorted functions for matrices
 
-  Options     : .initialize, .subtract, .multiply, .inverse
+  Options     : initialize, add, subtract, multiply, inverse
 */
 
 'use strict';
@@ -2084,33 +2082,89 @@ Object.defineProperty(exports, '__esModule', {
 });
 var matrix = {
 
-    // Return new matrix
+    /*
+      Method      : initialize
+      Description : Returns a new matrix (zero-filled)
+       Syntax      : output = matrix.initialize(rows, columns)
+       Examples    : myMatrix = matrix.initialize(4, 10)
+                    matrix123 = matrix.initialize(6)
+    */
+
     initialize: function initialize() {
         var rows = arguments[0] === undefined ? 1 : arguments[0];
-        var columns = arguments[1] === undefined ? rows : arguments[1];
+        var columns = arguments[1] === undefined ? 1 : arguments[1];
         var output = arguments[2] === undefined ? [] : arguments[2];
-        return (function () {
 
-            // Rows
-            for (var i = 0; i < rows; i++) {
-                output[i] = [];
+        // Rows
+        for (var i = 0; i < rows; i++) {
+            output[i] = [];
 
-                // Columns
-                for (var j = 0; j < columns; j++) {
-                    output[i][j] = 0;
-                }
+            // Columns
+            for (var j = 0; j < columns; j++) {
+                output[i][j] = 0;
             }
+        }
 
-            return output;
-        })();
+        return output;
     },
 
-    // Matrix subtraction
-    subtract: function subtract(a, b) {
+    /*
+      Method      : add
+      Description : Returns the sum of: a) matrix + matrix; or b) matrix + value
+       Syntax      : output = matrix.add(a, b)
+       Examples    : myMatrix = matrix.add(matrixA, matrixB)
+                    matrix123 = matrix.add(matrixA, 230)
+    */
+
+    add: function add(a) {
+        var b = arguments[1] === undefined ? 0 : arguments[1];
         var output = arguments[2] === undefined ? [] : arguments[2];
 
         switch (typeof b) {
 
+            // Case: matrix + matrix
+            case 'object':
+
+                for (var i = 0; i < a.length; i++) {
+                    output[i] = [];
+
+                    for (var j = 0; j < a[0].length; j++) {
+                        output[i][j] = a[i][j] + b[i][j];
+                    }
+                }
+
+                return output;
+
+            // Case: matrix + value
+            case 'number':
+
+                for (var i = 0; i < a.length; i++) {
+                    output[i] = [];
+
+                    for (var j = 0; j < a[0].length; j++) {
+                        output[i][j] = a[i][j] + b;
+                    }
+                }
+
+                return output;
+        }
+    },
+
+    /*
+      Method      : subtract
+      Description : Returns the difference between: a) matrix - matrix; or b) matrix - value
+       Syntax      : output = matrix.subtract(a, b)
+       Examples    : myMatrix = matrix.subtract(matrixA, matrixB)
+                    matrix123 = matrix.subtract(matrixA, 42)
+    */
+
+    subtract: function subtract(a) {
+        var b = arguments[1] === undefined ? 0 : arguments[1];
+        var output = arguments[2] === undefined ? [] : arguments[2];
+
+        switch (typeof b) {
+
+            // Case: matrix - matrix
             case 'object':
 
                 for (var i = 0; i < a.length; i++) {
@@ -2123,7 +2177,8 @@ var matrix = {
 
                 return output;
 
-            case 'value':
+            // Case: matrix - value
+            case 'number':
 
                 for (var i = 0; i < a.length; i++) {
                     output[i] = [];
@@ -2137,12 +2192,21 @@ var matrix = {
         }
     },
 
-    // Matrix multiplication
-    multiply: function multiply(a, b) {
+    /*
+      Method      : multiply
+      Description : Returns the product of: a) matrix * matrix; or b) matrix * value
+       Syntax      : output = matrix.multiply(a, b)
+       Examples    : myMatrix = matrix.multiply(matrixA, matrixB)
+                    matrix123 = matrix.multiply(matrixA, 110)
+    */
+
+    multiply: function multiply(a) {
+        var b = arguments[1] === undefined ? 0 : arguments[1];
         var output = arguments[2] === undefined ? [] : arguments[2];
 
         switch (typeof b) {
 
+            // Case: matrix * matrix
             case 'object':
 
                 for (var i = 0; i < a.length; i++) {
@@ -2159,6 +2223,7 @@ var matrix = {
 
                 return output;
 
+            // Case: matrix * value
             case 'number':
 
                 for (var i = 0; i < a.length; i++) {
@@ -2173,7 +2238,13 @@ var matrix = {
         }
     },
 
-    // Matrix inverse
+    /*
+      Method      : inverse
+      Description : Returns the inverse of a matrix
+       Syntax      : output = matrix.inverse(a)
+       Examples    : myMatrix = matrix.inverse(matrixA)
+    */
+
     inverse: function inverse(a) {
         var identity = arguments[1] === undefined ? [] : arguments[1];
 

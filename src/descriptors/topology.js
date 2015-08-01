@@ -4,7 +4,6 @@
 
   Imports     : adjacencyMatrix, distanceMatrix, reciprocalMatrix
   Exports     : wienerIndex, hyperwienerIndex, hararyIndex
-
 */
 
 
@@ -12,7 +11,7 @@
   Imports
 */
 
-import { adjacencyMatrix, distanceMatrix, reciprocalMatrix } from './connectivity';
+import { adjacencyMatrix, distanceMatrix, reciprocalMatrix } from './../geometry/connectivity';
 
 
 /*

@@ -12,8 +12,9 @@
 */
 
 import { tokenize, decode } from './encoding/smiles';
-import { adjacencyMatrix, distanceMatrix, reciprocalMatrix } from './extensions/connectivity';
-import { wienerIndex, hyperwienerIndex, hararyIndex } from './extensions/topology';
+import { adjacencyMatrix, distanceMatrix, reciprocalMatrix } from './geometry/connectivity';
+import { wienerIndex, hyperwienerIndex, hararyIndex } from './descriptors/topology';
+
 
 /*
   Method      : parse

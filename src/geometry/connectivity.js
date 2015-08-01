@@ -4,6 +4,7 @@
 
   Imports     : matrix
   Exports     : adjacencyMatrix, distanceMatrix, reciprocalMatrix
+
 */
 
 
@@ -19,7 +20,7 @@ import matrix from './../utilities/math';
   Description : return adjacency matrix of non-hydrogen atoms
 
   Syntax
-    { header, adjacency } = adjacencyMatrix(molecule)
+    output = adjacencyMatrix(molecule)
 
   Input
     molecule : object containing atoms and bonds
@@ -49,7 +50,7 @@ function adjacencyMatrix(molecule, header = [], adjacency = []) {
     }
 
     // Fill adjacency matrix
-    adjacency = matrix.initialize(header.length);
+    adjacency = matrix.initialize(header.length, header.length);
 
     for (let i = 0; i < header.length; i++) {
 
@@ -76,7 +77,7 @@ function adjacencyMatrix(molecule, header = [], adjacency = []) {
   Description : return matrix of shortest paths between non-hydrogen atoms
 
   Syntax
-    { header, distance } = distanceMatrix(adjacency)
+    output = distanceMatrix(adjacency)
 
   Input
     adjacency : adjacency matrix
@@ -195,7 +196,7 @@ function distanceMatrix(adjacency, header = [], distance = []) {
   Description : return reciprocal of distance matrix
 
   Syntax
-    { header, reciprocal } = reciprocalMatrix(distance)
+    output = reciprocalMatrix(distance)
 
   Input
     distance : distance matrix
