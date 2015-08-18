@@ -239,36 +239,36 @@ function run(option, input) {
         case '3':
 
             //var input = 'CC1C(CC(CC1C)CCO)=O';
-            var input = test[0].name;
+            var input = test[14].name;
 
             var molecule = Molecules.parse.smiles(input);
 
-            var adjacent = Molecules.connectivity.adjacency(molecule),
-                distance = Molecules.connectivity.distance(adjacent),
-                reciprocal = Molecules.connectivity.reciprocal(distance);
+            var adjacent = Molecules.topology.adjacency(molecule),
+                distance = Molecules.topology.distance(molecule),
+                reciprocal = Molecules.topology.reciprocal(molecule);
 
             console.log(input);
             console.log(molecule.properties.mass);
             console.log('');
 
-            for (var i = 0; i < adjacent.adjacency.length; i++) {
-                console.log(adjacent.adjacency[i]);
+            for (var i = 0; i < adjacent.matrix.length; i++) {
+                console.log(adjacent.matrix[i]);
             }
             console.log('');
-            for (var i = 0; i < distance.distance.length; i++) {
-                console.log(distance.distance[i]);
-            }
-
-            console.log('');
-            for (var i = 0; i < reciprocal.reciprocal.length; i++) {
-                console.log(reciprocal.reciprocal[i]);
+            for (var i = 0; i < distance.matrix.length; i++) {
+                console.log(distance.matrix[i]);
             }
 
             console.log('');
+            for (var i = 0; i < reciprocal.matrix.length; i++) {
+                console.log(reciprocal.matrix[i]);
+            }
 
-            console.log('Wiener:', Molecules.topology.wiener(molecule));
-            console.log('Hyper-Wiener:', Molecules.topology.hyperwiener(molecule));
-            console.log('Harary:', Molecules.topology.harary(molecule));
+            console.log('');
+
+            console.log('Wiener:', Molecules.topology.wiener(distance));
+            console.log('Hyper-Wiener:', Molecules.topology.hyperwiener(distance));
+            console.log('Harary:', Molecules.topology.harary(reciprocal));
             console.log('');
 
             break;

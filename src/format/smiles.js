@@ -26,7 +26,6 @@ import elements from './../utilities/reference';
 */
 
 var grammar = [
-
     {type: 'atom',     term: 'H',  tag: 'H',       expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'D',  tag: 'H',       expression: /(?=[A-Z])D(?=[^bsy]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'He', tag: 'He',      expression: /He/g},
@@ -417,13 +416,13 @@ function decode(tokens) {
             let bondID = keys.bonds[i];
 
             // Get source/target atoms
-            let sourceAtom = atoms[previousAtom(bondID, keys.all, atoms)],
-                targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
+            let sourceAtom = atoms[previousAtom(bondID, keys.all, atoms)];
+            let targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
 
             // Get bond index
-            let bondIndex = keys.all.indexOf(bondID),
-                sourceIndex = 0,
-                targetIndex = 0;
+            let bondIndex = keys.all.indexOf(bondID);
+            let sourceIndex = 0;
+            let targetIndex = 0;
 
             // Validate source atom
             if (sourceAtom !== undefined && sourceAtom !== null) {
@@ -460,13 +459,27 @@ function decode(tokens) {
                 // Check previous bond
                 if (bonds[keys.all[bondIndex - 1]] !== undefined) {
 
-                    let bond1 = bonds[keys.all[bondIndex - 1]].value,
-                        bond2 = bonds[bondID].value;
+                    let bond1 = bonds[keys.all[bondIndex - 1]].value;
+                    let bond2 = bonds[bondID].value;
 
-                    // Exception: bond symbol follows branch end
-                    if ((bond1 === ')' || bond1 === '(') && (bond2 === '-' || bond2 === '=' || bond2 === '#' || bond2 === '.')) {
-                        exceptions = 1;
+                    // Case: bond declared next to branch (e.g. 'CC(CC)=CC' or 'CC(=CC)CC')
+                    switch (bond1) {
+                        case ')':
+                        case '(':
+
+                            switch (bond2) {
+                                case '-':
+                                case '=':
+                                case '#':
+                                case '.':
+
+                                    exceptions = 1;
+                            }
                     }
+
+                    //if ((bond1 === ')' || bond1 === '(') && (bond2 === '-' || bond2 === '=' || bond2 === '#' || bond2 === '.')) {
+                    //    exceptions = 1;
+                    //}
                 }
             }
 

@@ -9,7 +9,7 @@
 
 /*
   Method      : matrix
-  Description : assorted functions for matrices
+  Description : assorted matrix functions
 
   Options     : initialize, add, subtract, multiply, inverse
 */
@@ -18,7 +18,7 @@ var matrix = {
 
     /*
       Method      : initialize
-      Description : Returns a new matrix (zero-filled)
+      Description : returns a new matrix (zero-filled)
 
       Syntax      : output = matrix.initialize(rows, columns)
 
@@ -44,7 +44,7 @@ var matrix = {
 
     /*
       Method      : add
-      Description : Returns the sum of: a) matrix + matrix; or b) matrix + value
+      Description : returns the sum: a) matrix + matrix; or b) matrix + value
 
       Syntax      : output = matrix.add(a, b)
 
@@ -87,7 +87,7 @@ var matrix = {
 
     /*
       Method      : subtract
-      Description : Returns the difference between: a) matrix - matrix; or b) matrix - value
+      Description : returns the difference between: a) matrix - matrix; or b) matrix - value
 
       Syntax      : output = matrix.subtract(a, b)
 
@@ -130,7 +130,7 @@ var matrix = {
 
     /*
       Method      : multiply
-      Description : Returns the product of: a) matrix * matrix; or b) matrix * value
+      Description : returns the product of: a) matrix * matrix; or b) matrix * value
 
       Syntax      : output = matrix.multiply(a, b)
 
@@ -177,7 +177,7 @@ var matrix = {
 
     /*
       Method      : inverse
-      Description : Returns the inverse of a matrix
+      Description : returns the inverse of a matrix
 
       Syntax      : output = matrix.inverse(a)
 

@@ -1,177 +1,5 @@
 (function(f){if(typeof exports==="object"&&typeof module!=="undefined"){module.exports=f()}else if(typeof define==="function"&&define.amd){define([],f)}else{var g;if(typeof window!=="undefined"){g=window}else if(typeof global!=="undefined"){g=global}else if(typeof self!=="undefined"){g=self}else{g=this}g.Molecules = f()}})(function(){var define,module,exports;return (function e(t,n,r){function s(o,u){if(!n[o]){if(!t[o]){var a=typeof require=="function"&&require;if(!u&&a)return a(o,!0);if(i)return i(o,!0);var f=new Error("Cannot find module '"+o+"'");throw f.code="MODULE_NOT_FOUND",f}var l=n[o]={exports:{}};t[o][0].call(l.exports,function(e){var n=t[o][1][e];return s(n?n:e)},l,l.exports,e,t,n,r)}return n[o].exports}var i=typeof require=="function"&&require;for(var o=0;o<r.length;o++)s(r[o]);return s})({1:[function(require,module,exports){
 /*
-  File        : topology.js
-  Description : molecular topological indices
-
-  Imports     : adjacencyMatrix, distanceMatrix, reciprocalMatrix
-  Exports     : wienerIndex, hyperwienerIndex, hararyIndex
-*/
-
-/*
-  Imports
-*/
-
-'use strict';
-
-Object.defineProperty(exports, '__esModule', {
-    value: true
-});
-
-var _geometryConnectivity = require('./../geometry/connectivity');
-
-/*
-  Method      : wienerIndex
-  Description : return Wiener topology index
-
-  Syntax
-    index = wienerIndex(distance)
-
-  Input
-    distance : distance matrix
-
-  Output
-    index : Wiener index
-
-  Examples
-    wiener = wienerIndex(dist123)
-    w123 = wienerIndex(distanceABC)
-*/
-
-function wienerIndex(distance) {
-    var index = arguments[1] === undefined ? 0 : arguments[1];
-
-    if (typeof distance !== 'object') {
-        console.log('Error: Tokens must be of type "object"');
-        return null;
-    }
-
-    // Check input for molecule
-    if (distance.atoms !== undefined && distance.bonds !== undefined) {
-        distance = (0, _geometryConnectivity.distanceMatrix)((0, _geometryConnectivity.adjacencyMatrix)(distance));
-    }
-
-    // Check for header
-    if (distance.distance !== undefined) {
-        distance = distance.distance;
-    }
-
-    // Calculate Wiener index
-    for (var i = 0; i < distance.length; i++) {
-        for (var j = 0; j < distance[0].length; j++) {
-            index += distance[i][j];
-        }
-    }
-
-    return index / 2;
-}
-
-/*
-  Method      : hyperwienerIndex
-  Description : return Hyper-Wiener topology index
-
-  Syntax
-    index = hyperwienerIndex(distance)
-
-  Input
-    distance : distance matrix
-
-  Output
-    index : Hyper-Wiener index
-
-  Examples
-    hyperwiener = hyperwienerIndex(dist123)
-    hw123 = hyperwienerIndex(distanceABC)
-*/
-
-function hyperwienerIndex(distance) {
-    var index = arguments[1] === undefined ? 0 : arguments[1];
-
-    if (typeof distance !== 'object') {
-        console.log('Error: Tokens must be of type "object"');
-        return null;
-    }
-
-    // Check input for molecule
-    if (distance.atoms !== undefined && distance.bonds !== undefined) {
-        distance = (0, _geometryConnectivity.distanceMatrix)((0, _geometryConnectivity.adjacencyMatrix)(distance));
-    }
-
-    // Check for header
-    if (distance.distance !== undefined) {
-        distance = distance.distance;
-    }
-
-    // Calculate Hyper-Wiener index
-    for (var i = 0; i < distance.length; i++) {
-        for (var j = 0; j < distance[i].length; j++) {
-
-            if (i !== j && i < j) {
-                index += distance[i][j] + Math.pow(distance[i][j], 2);
-            }
-        }
-    }
-
-    return index / 2;
-}
-
-/*
-  Method      : hararyIndex
-  Description : return Harary topology index
-
-  Syntax
-    index = hararyIndex(reciprocal)
-
-  Input
-    reciprocal : reciprocal of distance matrix
-
-  Output
-    index : Harary index
-
-  Examples
-    harary = hararyIndex(recip123)
-    h123 = hararyIndex(reciprocalABC)
-*/
-
-function hararyIndex(reciprocal) {
-    var index = arguments[1] === undefined ? 0 : arguments[1];
-
-    if (typeof reciprocal !== 'object') {
-        console.log('Error: Tokens must be of type "object"');
-        return null;
-    }
-
-    // Check input for molecule
-    if (reciprocal.atoms !== undefined && reciprocal.bonds !== undefined) {
-        reciprocal = (0, _geometryConnectivity.reciprocalMatrix)((0, _geometryConnectivity.distanceMatrix)((0, _geometryConnectivity.adjacencyMatrix)(reciprocal)));
-    }
-
-    // Check for header
-    if (reciprocal.reciprocal !== undefined) {
-        reciprocal = reciprocal.reciprocal;
-    }
-
-    // Calculate Harary index
-    for (var i = 0; i < reciprocal.length; i++) {
-        for (var j = 0; j < reciprocal[i].length; j++) {
-
-            if (i !== j) {
-                index += reciprocal[i][j];
-            }
-        }
-    }
-
-    return Math.round(index / 2 * 1000) / 1000;
-}
-
-/*
-  Exports
-*/
-
-exports.wienerIndex = wienerIndex;
-exports.hyperwienerIndex = hyperwienerIndex;
-exports.hararyIndex = hararyIndex;
-},{"./../geometry/connectivity":3}],2:[function(require,module,exports){
-/*
   File        : smiles.js
   Description : parse SMILES chemical line notation
 
@@ -189,13 +17,11 @@ Object.defineProperty(exports, '__esModule', {
     value: true
 });
 
+var _slicedToArray = (function () { function sliceIterator(arr, i) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i['return']) _i['return'](); } finally { if (_d) throw _e; } } return _arr; } return function (arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { return sliceIterator(arr, i); } else { throw new TypeError('Invalid attempt to destructure non-iterable instance'); } }; })();
+
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
 
-function _slicedToArray(arr, i) { if (Array.isArray(arr)) { return arr; } else if (Symbol.iterator in Object(arr)) { var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i['return']) _i['return'](); } finally { if (_d) throw _e; } } return _arr; } else { throw new TypeError('Invalid attempt to destructure non-iterable instance'); } }
-
 var _utilitiesReference = require('./../utilities/reference');
-
-var _utilitiesReference2 = _interopRequireDefault(_utilitiesReference);
 
 /*
   Variable    : grammar
@@ -207,6 +33,8 @@ var _utilitiesReference2 = _interopRequireDefault(_utilitiesReference);
       tag        : token definition
       expression : SMILES regular expression
 */
+
+var _utilitiesReference2 = _interopRequireDefault(_utilitiesReference);
 
 var grammar = [{ type: 'atom', term: 'H', tag: 'H', expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g }, { type: 'atom', term: 'D', tag: 'H', expression: /(?=[A-Z])D(?=[^bsy]|$)([0-9]?)+/g }, { type: 'atom', term: 'He', tag: 'He', expression: /He/g }, { type: 'atom', term: 'Li', tag: 'Li', expression: /Li/g }, { type: 'atom', term: 'Be', tag: 'Be', expression: /Be/g }, { type: 'atom', term: 'B', tag: 'B', expression: /B(?=[^aehikr]|$)/g }, { type: 'atom', term: 'C', tag: 'C', expression: /C(?=[^adeflmnorsu]|$)/g }, { type: 'atom', term: 'N', tag: 'N', expression: /N(?=[^abdeiop]|$)/g }, { type: 'atom', term: 'O', tag: 'O', expression: /O(?=[^s]|$)/g }, { type: 'atom', term: 'F', tag: 'F', expression: /F(?=[^elmr]|$)/g }, { type: 'atom', term: 'Ne', tag: 'Ne', expression: /Ne/g }, { type: 'atom', term: 'Na', tag: 'Na', expression: /Na/g }, { type: 'atom', term: 'Mg', tag: 'Mg', expression: /Mg/g }, { type: 'atom', term: 'Al', tag: 'Al', expression: /Al/g }, { type: 'atom', term: 'Si', tag: 'Si', expression: /Si/g }, { type: 'atom', term: 'P', tag: 'P', expression: /P(?=[^abdmortu]|$)/g }, { type: 'atom', term: 'S', tag: 'S', expression: /S(?=[^bcegimnr]|$)/g }, { type: 'atom', term: 'Cl', tag: 'Cl', expression: /Cl/g }, { type: 'atom', term: 'Ar', tag: 'Ar', expression: /Ar/g }, { type: 'atom', term: 'As', tag: 'As', expression: /As/g }, { type: 'atom', term: 'Se', tag: 'Se', expression: /Se/g }, { type: 'atom', term: 'Br', tag: 'Br', expression: /Br/g }, { type: 'atom', term: 'I', tag: 'I', expression: /I(?=[^nr]|$)/g }, { type: 'atom', term: '*', tag: '*', expression: /[*]/g }, { type: 'atom', term: 'b', tag: 'B', expression: /b(?=[^e]|$)/g }, { type: 'atom', term: 'c', tag: 'C', expression: /c(?=[^l]|$)/g }, { type: 'atom', term: 'n', tag: 'N', expression: /n(?=[^ae]|$)/g }, { type: 'atom', term: 'o', tag: 'O', expression: /o(?=[^s]|$)/g }, { type: 'atom', term: 'p', tag: 'P', expression: /p/g }, { type: 'atom', term: 's', tag: 'S', expression: /s(?=[^ei]|$)/g }, { type: 'atom', term: 'se', tag: 'Se', expression: /se/g }, { type: 'bond', term: '-', tag: 'single', expression: /(?=([^0-9]))[-](?=[^0-9-\]])/g }, { type: 'bond', term: '=', tag: 'double', expression: /[=]/g }, { type: 'bond', term: '#', tag: 'triple', expression: /[#]/g }, { type: 'bond', term: '(', tag: 'branch', expression: /[(]/g }, { type: 'bond', term: ')', tag: 'branch', expression: /[)]/g }, { type: 'bond', term: '%', tag: 'ring', expression: /(?=[^+-])(?:[a-zA-Z]{1,2}[@]{1,2})?(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[%]?\d+(?=([^+]|$))/g }, { type: 'bond', term: '.', tag: 'dot', expression: /(?:[A-Z][+-]?[\[])?[.]/g }, { type: 'property', term: '+', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g }, { type: 'property', term: '-', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g }, { type: 'property', term: 'n', tag: 'isotope', expression: /(?:[\[])[0-9]+[A-Z]{1,2}(?=.?[^\[]*[\]])/g }, { type: 'property', term: 'S', tag: 'chiral', expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g }, { type: 'property', term: 'R', tag: 'chiral', expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g }];
 
@@ -229,7 +57,7 @@ var grammar = [{ type: 'atom', term: 'H', tag: 'H', expression: /(?=[A-Z])H(?=[^
 */
 
 function tokenize(input) {
-    var tokens = arguments[1] === undefined ? [] : arguments[1];
+    var tokens = arguments.length <= 1 || arguments[1] === undefined ? [] : arguments[1];
 
     // Parse input with SMILES grammar
     for (var i = 0; i < grammar.length; i++) {
@@ -385,22 +213,22 @@ function decode(tokens) {
     }
 
     function readTokens(tokens) {
-        var atoms = arguments[1] === undefined ? {} : arguments[1];
-        var bonds = arguments[2] === undefined ? {} : arguments[2];
-        var properties = arguments[3] === undefined ? {} : arguments[3];
-        var keys = arguments[4] === undefined ? {} : arguments[4];
+        var atoms = arguments.length <= 1 || arguments[1] === undefined ? {} : arguments[1];
+        var bonds = arguments.length <= 2 || arguments[2] === undefined ? {} : arguments[2];
+        var properties = arguments.length <= 3 || arguments[3] === undefined ? {} : arguments[3];
+        var keys = arguments.length <= 4 || arguments[4] === undefined ? {} : arguments[4];
 
         // Parse tokens by category
         for (var i = 0; i < tokens.length; i++) {
 
             // Get token info
             var _tokens$i = tokens[i];
+
+            // Use token index as key
             var type = _tokens$i.type;
             var term = _tokens$i.term;
             var tag = _tokens$i.tag;
             var index = _tokens$i.index;
-
-            // Use token index as key
             var key = index.toString();
 
             // Categorize tokens
@@ -445,44 +273,44 @@ function decode(tokens) {
 
         for (var i = 0; i < keys.atoms.length; i++) {
 
-            var _atomID = keys.atoms[i];
+            var atomID = keys.atoms[i];
 
             // Check element
-            if (_utilitiesReference2['default'][atoms[_atomID].name] === undefined) {
+            if (_utilitiesReference2['default'][atoms[atomID].name] === undefined) {
                 continue;
             }
 
             // Element information
-            var element = _utilitiesReference2['default'][atoms[_atomID].name];
+            var element = _utilitiesReference2['default'][atoms[atomID].name];
 
             // Exception: 'deuterium'
-            if (atoms[_atomID].value === 'D') {
-                element = _utilitiesReference2['default'][atoms[_atomID].value];
+            if (atoms[atomID].value === 'D') {
+                element = _utilitiesReference2['default'][atoms[atomID].value];
             }
 
             // Element properties
-            atoms[_atomID].group = element.group;
-            atoms[_atomID].protons = element.protons;
-            atoms[_atomID].neutrons = element.neutrons;
-            atoms[_atomID].electrons = element.electrons;
+            atoms[atomID].group = element.group;
+            atoms[atomID].protons = element.protons;
+            atoms[atomID].neutrons = element.neutrons;
+            atoms[atomID].electrons = element.electrons;
 
             // Bond properties
-            atoms[_atomID].bonds = {
+            atoms[atomID].bonds = {
                 id: [],
                 atoms: [],
                 electrons: 0
             };
 
             // Other properties
-            atoms[_atomID].properties = {
+            atoms[atomID].properties = {
                 chiral: 0,
                 charge: 0,
                 aromatic: 0
             };
 
             // Check aromatic
-            if (atoms[_atomID].value === atoms[_atomID].value.toLowerCase()) {
-                atoms[_atomID].properties.aromatic = 1;
+            if (atoms[atomID].value === atoms[atomID].value.toLowerCase()) {
+                atoms[atomID].properties.aromatic = 1;
             }
         }
 
@@ -497,10 +325,10 @@ function decode(tokens) {
 
             // Get properties
             var _properties$propertyID = properties[propertyID];
-            var _name = _properties$propertyID.name;
-            var value = _properties$propertyID.value;
 
             // Update atom properties
+            var _name = _properties$propertyID.name;
+            var value = _properties$propertyID.value;
             switch (_name) {
 
                 case 'chiral':
@@ -580,13 +408,13 @@ function decode(tokens) {
             var bondID = keys.bonds[i];
 
             // Get source/target atoms
-            var sourceAtom = atoms[previousAtom(bondID, keys.all, atoms)],
-                targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
+            var sourceAtom = atoms[previousAtom(bondID, keys.all, atoms)];
+            var targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
 
             // Get bond index
-            var bondIndex = keys.all.indexOf(bondID),
-                sourceIndex = 0,
-                targetIndex = 0;
+            var bondIndex = keys.all.indexOf(bondID);
+            var sourceIndex = 0;
+            var targetIndex = 0;
 
             // Validate source atom
             if (sourceAtom !== undefined && sourceAtom !== null) {
@@ -625,13 +453,27 @@ function decode(tokens) {
                 // Check previous bond
                 if (bonds[keys.all[bondIndex - 1]] !== undefined) {
 
-                    var bond1 = bonds[keys.all[bondIndex - 1]].value,
-                        bond2 = bonds[bondID].value;
+                    var bond1 = bonds[keys.all[bondIndex - 1]].value;
+                    var bond2 = bonds[bondID].value;
 
-                    // Exception: bond symbol follows branch end
-                    if ((bond1 === ')' || bond1 === '(') && (bond2 === '-' || bond2 === '=' || bond2 === '#' || bond2 === '.')) {
-                        exceptions = 1;
+                    // Case: bond declared next to branch (e.g. 'CC(CC)=CC' or 'CC(=CC)CC')
+                    switch (bond1) {
+                        case ')':
+                        case '(':
+
+                            switch (bond2) {
+                                case '-':
+                                case '=':
+                                case '#':
+                                case '.':
+
+                                    exceptions = 1;
+                            }
                     }
+
+                    //if ((bond1 === ')' || bond1 === '(') && (bond2 === '-' || bond2 === '=' || bond2 === '#' || bond2 === '.')) {
+                    //    exceptions = 1;
+                    //}
                 }
             }
 
@@ -713,13 +555,13 @@ function decode(tokens) {
                                 // Check for nested branch
                                 else if (bonds[keysBefore[j]] !== undefined) {
 
-                                    switch (bonds[keysBefore[j]].value) {
-                                        case ')':
-                                            skip++;break;
-                                        case '(':
-                                            skip--;break;
+                                        switch (bonds[keysBefore[j]].value) {
+                                            case ')':
+                                                skip++;break;
+                                            case '(':
+                                                skip--;break;
+                                        }
                                     }
-                                }
                             }
 
                             // Find target atom
@@ -749,13 +591,13 @@ function decode(tokens) {
                                 // Check for nested branch
                                 else if (bonds[keysAfter[j]] !== undefined) {
 
-                                    switch (bonds[keysAfter[j]].value) {
-                                        case ')':
-                                            skip--;break;
-                                        case '(':
-                                            skip++;break;
+                                        switch (bonds[keysAfter[j]].value) {
+                                            case ')':
+                                                skip--;break;
+                                            case '(':
+                                                skip++;break;
+                                        }
                                     }
-                                }
                             }
 
                             break;
@@ -788,13 +630,13 @@ function decode(tokens) {
                                 // Check for nested branch
                                 else if (bonds[keysBefore[j]] !== undefined) {
 
-                                    switch (bonds[keysBefore[j]].value) {
-                                        case ')':
-                                            skip++;break;
-                                        case '(':
-                                            skip--;break;
+                                        switch (bonds[keysBefore[j]].value) {
+                                            case ')':
+                                                skip++;break;
+                                            case '(':
+                                                skip--;break;
+                                        }
                                     }
-                                }
                             }
 
                             // Find end of branch
@@ -834,13 +676,13 @@ function decode(tokens) {
                                 // Check for nested branch
                                 else if (bonds[keysAfter[j]] !== undefined) {
 
-                                    switch (bonds[keysAfter[j]].value) {
-                                        case ')':
-                                            skip--;break;
-                                        case '(':
-                                            skip++;break;
+                                        switch (bonds[keysAfter[j]].value) {
+                                            case ')':
+                                                skip--;break;
+                                            case '(':
+                                                skip++;break;
+                                        }
                                     }
-                                }
                             }
 
                             break;
@@ -966,17 +808,17 @@ function decode(tokens) {
             }
 
             // Extract bonds after index
-            var _bondsAfter = keys.bonds.slice(i, keys.bonds.length);
+            var bondsAfter = keys.bonds.slice(i, keys.bonds.length);
 
             // Check for duplicate/empty bonds
-            for (var j = 0; j < _bondsAfter.length; j++) {
+            for (var j = 0; j < bondsAfter.length; j++) {
 
                 if (j === 0) {
                     continue;
                 }
 
                 // Bond keys
-                var bondID = _bondsAfter[j],
+                var bondID = bondsAfter[j],
                     a = bonds[keys.bonds[i]],
                     b = bonds[bondID];
 
@@ -995,18 +837,18 @@ function decode(tokens) {
 
                     // Duplicate branching bonds
                     else if (a.name === 'branch' && (b.name === 'single' || b.name === 'double' || b.name === 'triple')) {
-                        delete bonds[keys.bonds[i]];
-                        keys.bonds.splice(i, 1);
-                    } else if ((a.name === 'single' || a.name === 'double' || a.name === 'triple') && b.name === 'branch') {
-                        delete bonds[bondID];
-                        keys.bonds.splice(keys.bonds.indexOf(bondID), 1);
-                    }
+                            delete bonds[keys.bonds[i]];
+                            keys.bonds.splice(i, 1);
+                        } else if ((a.name === 'single' || a.name === 'double' || a.name === 'triple') && b.name === 'branch') {
+                            delete bonds[bondID];
+                            keys.bonds.splice(keys.bonds.indexOf(bondID), 1);
+                        }
 
-                    // Other duplicate bonds
-                    else {
-                        delete bonds[keys.bonds[i]];
-                        keys.bonds.splice(i, 1);
-                    }
+                        // Other duplicate bonds
+                        else {
+                                delete bonds[keys.bonds[i]];
+                                keys.bonds.splice(i, 1);
+                            }
 
                     i--;
                     break;
@@ -1021,21 +863,21 @@ function decode(tokens) {
             var bondID = keys.bonds[i];
 
             // Atom keys
-            var _sourceID = bonds[bondID].atoms[0],
+            var sourceID = bonds[bondID].atoms[0],
                 targetID = bonds[bondID].atoms[1];
 
-            if (_sourceID === undefined || targetID === undefined) {
+            if (sourceID === undefined || targetID === undefined) {
                 continue;
             }
 
             // Add bond reference to atom
-            atoms[_sourceID].bonds.id.push(bondID);
+            atoms[sourceID].bonds.id.push(bondID);
             atoms[targetID].bonds.id.push(bondID);
 
-            atoms[_sourceID].bonds.atoms.push(targetID);
-            atoms[targetID].bonds.atoms.push(_sourceID);
+            atoms[sourceID].bonds.atoms.push(targetID);
+            atoms[targetID].bonds.atoms.push(sourceID);
 
-            atoms[_sourceID].bonds.electrons += bonds[bondID].order;
+            atoms[sourceID].bonds.electrons += bonds[bondID].order;
             atoms[targetID].bonds.electrons += bonds[bondID].order;
         }
 
@@ -1046,7 +888,7 @@ function decode(tokens) {
 
         // Calculate valence electrons
         var valence = function valence(group) {
-            var electrons = arguments[1] === undefined ? 18 : arguments[1];
+            var electrons = arguments.length <= 1 || arguments[1] === undefined ? 18 : arguments[1];
 
             if (group <= 2) {
                 return 2;
@@ -1225,8 +1067,8 @@ function decode(tokens) {
 
             // Exception: single uncharged hydrogen atom
             else if (sourceAtom.name === 'H' && sourceAtom.properties.charge === 0 && bondCount === 0) {
-                update(i, sourceAtom.id, sourceAtom.name);
-            }
+                    update(i, sourceAtom.id, sourceAtom.name);
+                }
 
             var total = 18 - sourceAtom.group - sourceAtom.bonds.electrons,
                 _charge2 = sourceAtom.properties.charge;
@@ -1242,14 +1084,14 @@ function decode(tokens) {
 
             // Negitive charge
             else if (_charge2 < 0) {
-                total += _charge2;
+                    total += _charge2;
 
-                // Exception: lone pair
-                if (total === 1) {
-                    total -= 1;
-                    atoms[sourceAtom.id].bonds.electrons += 1;
+                    // Exception: lone pair
+                    if (total === 1) {
+                        total -= 1;
+                        atoms[sourceAtom.id].bonds.electrons += 1;
+                    }
                 }
-            }
 
             if (total <= 0) {
                 continue;
@@ -1344,6 +1186,8 @@ function decode(tokens) {
 
     // 2. Categorize tokens
 
+    // 3. Add atoms
+
     var _readTokens = readTokens(tokens);
 
     var _readTokens2 = _slicedToArray(_readTokens, 4);
@@ -1352,8 +1196,6 @@ function decode(tokens) {
     bonds = _readTokens2[1];
     properties = _readTokens2[2];
     keys = _readTokens2[3];
-
-    // 3. Add atoms
     atoms = defaultAtoms(atoms, keys);
     atoms = updateAtoms(atoms, properties, keys);
 
@@ -1367,6 +1209,8 @@ function decode(tokens) {
     bonds = _explicitBonds2[1];
     keys = _explicitBonds2[2];
 
+    // 5. Clean atoms/bonds
+
     var _implicitBonds = implicitBonds(atoms, bonds, keys);
 
     var _implicitBonds2 = _slicedToArray(_implicitBonds, 3);
@@ -1374,8 +1218,6 @@ function decode(tokens) {
     atoms = _implicitBonds2[0];
     bonds = _implicitBonds2[1];
     keys = _implicitBonds2[2];
-
-    // 5. Clean atoms/bonds
 
     var _clean = clean(atoms, bonds);
 
@@ -1393,7 +1235,7 @@ function decode(tokens) {
 */
 
 function compareArrays(a, b) {
-    var ab = arguments[2] === undefined ? [] : arguments[2];
+    var ab = arguments.length <= 2 || arguments[2] === undefined ? [] : arguments[2];
 
     for (var i = 0; i < a.length; i++) {
         ab[i] = b.indexOf(a[i]) > -1 ? 1 : 0;
@@ -1408,10 +1250,10 @@ function compareArrays(a, b) {
 */
 
 function addAtom(id, name, value) {
-    var group = arguments[3] === undefined ? 0 : arguments[3];
-    var protons = arguments[4] === undefined ? 0 : arguments[4];
-    var neutrons = arguments[5] === undefined ? 0 : arguments[5];
-    var electrons = arguments[6] === undefined ? 0 : arguments[6];
+    var group = arguments.length <= 3 || arguments[3] === undefined ? 0 : arguments[3];
+    var protons = arguments.length <= 4 || arguments[4] === undefined ? 0 : arguments[4];
+    var neutrons = arguments.length <= 5 || arguments[5] === undefined ? 0 : arguments[5];
+    var electrons = arguments.length <= 6 || arguments[6] === undefined ? 0 : arguments[6];
 
     return {
 
@@ -1448,8 +1290,8 @@ function addAtom(id, name, value) {
 */
 
 function addBond(id, name, value) {
-    var order = arguments[3] === undefined ? 0 : arguments[3];
-    var atoms = arguments[4] === undefined ? [] : arguments[4];
+    var order = arguments.length <= 3 || arguments[3] === undefined ? 0 : arguments[3];
+    var atoms = arguments.length <= 4 || arguments[4] === undefined ? [] : arguments[4];
 
     return {
 
@@ -1519,302 +1361,14 @@ function previousAtom(start, keys, atoms) {
 exports.grammar = grammar;
 exports.tokenize = tokenize;
 exports.decode = decode;
-},{"./../utilities/reference":6}],3:[function(require,module,exports){
-/*
-  File        : connectivity.js
-  Description : chemical graph matrices
 
-  Imports     : matrix
-  Exports     : adjacencyMatrix, distanceMatrix, reciprocalMatrix
-
-*/
-
-/*
-  Imports
-*/
-
-'use strict';
-
-Object.defineProperty(exports, '__esModule', {
-    value: true
-});
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
-
-var _utilitiesMath = require('./../utilities/math');
-
-var _utilitiesMath2 = _interopRequireDefault(_utilitiesMath);
-
-/*
-  Method      : adjacencyMatrix
-  Description : return adjacency matrix of non-hydrogen atoms
-
-  Syntax
-    output = adjacencyMatrix(molecule)
-
-  Input
-    molecule : object containing atoms and bonds
-
-  Output
-    header    : atom identifier
-    adjacency : adjacency matrix
-
-  Examples
-    { header: id, adjacency: adj } = adjacencyMatrix(mol123)
-    { header: names, adjacency: matrix } = adjacencyMatrix(molABC)
-    { header: header123, adjacency: data123 } = adjacencyMatrix(myMolecule)
-*/
-
-function adjacencyMatrix(molecule) {
-    var header = arguments[1] === undefined ? [] : arguments[1];
-    var adjacency = arguments[2] === undefined ? [] : arguments[2];
-
-    if (typeof molecule !== 'object' || molecule.atoms === undefined) {
-        return null;
-    }
-
-    var keys = Object.keys(molecule.atoms);
-
-    // Extract non-hydrogen atoms
-    for (var i = 0; i < keys.length; i++) {
-
-        if (molecule.atoms[keys[i]].name !== 'H') {
-            header.push(molecule.atoms[keys[i]].id);
-        }
-    }
-
-    // Fill adjacency matrix
-    adjacency = _utilitiesMath2['default'].initialize(header.length, header.length);
-
-    for (var i = 0; i < header.length; i++) {
-
-        var source = molecule.atoms[header[i]];
-
-        for (var j = 0; j < source.bonds.atoms.length; j++) {
-
-            var target = molecule.atoms[source.bonds.atoms[j]],
-                index = header.indexOf(target.id);
-
-            if (target.name !== 'H' && index > 0) {
-                adjacency[i][index] = 1;
-                adjacency[index][i] = 1;
-            }
-        }
-    }
-
-    return { id: 'adjacency', header: header, adjacency: adjacency };
-}
-
-/*
-  Method      : distanceMatrix
-  Description : return matrix of shortest paths between non-hydrogen atoms
-
-  Syntax
-    output = distanceMatrix(adjacency)
-
-  Input
-    adjacency : adjacency matrix
-
-  Output
-    header   : atom id
-    distance : distance matrix
-
-  Examples
-    { header: id123, distance: d123 } = distanceMatrix(adjacent123)
-    { header: atomID, distance: myMatrix } = distanceMatrix(A1)
-    { header: atomsABC, distance: distABC } = distanceMatrix(adj123)
-
-  References
-    R. Seidel, 'On the All-Pairs Shortest-Path Problem', ACM, (1992) 745-749.
-*/
-
-function distanceMatrix(adjacency) {
-    var header = arguments[1] === undefined ? [] : arguments[1];
-    var distance = arguments[2] === undefined ? [] : arguments[2];
-
-    if (typeof adjacency !== 'object') {
-        console.log('Error: Tokens must be of type "object"');
-        return null;
-    }
-
-    // Check input for molecule
-    if (adjacency.atoms !== undefined && adjacency.bonds !== undefined) {
-        adjacency = adjacencyMatrix(adjacency);
-    }
-
-    // Check for header
-    if (adjacency.header !== undefined) {
-        header = adjacency.header;
-        adjacency = adjacency.adjacency;
-    }
-
-    // Check symmetry of adjacency matrix
-    for (var i = 0; i < adjacency.length; i++) {
-
-        if (adjacency[i].length !== adjacency.length) {
-            console.log('Error: Adjacency matrix must be symmetric');
-            return null;
-        }
-    }
-
-    // Seidel's Algorithm (all-pairs shortest-paths)
-    function Seidel(A) {
-        var B = arguments[1] === undefined ? [] : arguments[1];
-        var D = arguments[2] === undefined ? [] : arguments[2];
-
-        var Z = _utilitiesMath2['default'].multiply(A, A);
-
-        for (var i = 0; i < A.length; i++) {
-            B[i] = [];
-
-            for (var j = 0; j < A[0].length; j++) {
-
-                if (i !== j && (A[i][j] === 1 || Z[i][j] > 0)) {
-                    B[i][j] = 1;
-                } else {
-                    B[i][j] = 0;
-                }
-            }
-        }
-
-        var count = 0;
-
-        for (var i = 0; i < B.length; i++) {
-            for (var j = 0; j < B[0].length; j++) {
-
-                if (i !== j && B[i][j] === 1) {
-                    count += 1;
-                }
-            }
-        }
-
-        if (count === B.length * B.length - B.length) {
-            return _utilitiesMath2['default'].subtract(_utilitiesMath2['default'].multiply(B, 2), A);
-        }
-
-        var T = Seidel(B),
-            X = _utilitiesMath2['default'].multiply(T, A);
-
-        var degree = [];
-
-        for (var i = 0; i < A.length; i++) {
-
-            degree[i] = A[i].reduce(function (a, b) {
-                return a + b;
-            });
-        }
-
-        for (var i = 0; i < X.length; i++) {
-            D[i] = [];
-
-            for (var j = 0; j < X[0].length; j++) {
-
-                if (X[i][j] >= T[i][j] * degree[j]) {
-                    D[i][j] = 2 * T[i][j];
-                } else if (X[i][j] < T[i][j] * degree[j]) {
-                    D[i][j] = 2 * T[i][j] - 1;
-                }
-            }
-        }
-
-        return D;
-    }
-
-    if (adjacency.length !== 0) {
-        distance = Seidel(adjacency);
-    }
-
-    return { id: 'distance', header: header, distance: distance };
-}
-
-/*
-  Method      : reciprocalMatrix
-  Description : return reciprocal of distance matrix
-
-  Syntax
-    output = reciprocalMatrix(distance)
-
-  Input
-    distance : distance matrix
-
-  Output
-    header     : atom id
-    reciprocal : reciprocal matrix
-
-  Examples
-    { header: id123, reciprocal: r123 } = distanceMatrix(dist123)
-    { header: atomID, reciprocal: R1 } = distanceMatrix(D1)
-    { header: atomsABC, reciprocal: recipABC } = distanceMatrix(distABC)
-
-*/
-
-function reciprocalMatrix(distance) {
-    var header = arguments[1] === undefined ? [] : arguments[1];
-    var reciprocal = arguments[2] === undefined ? [] : arguments[2];
-
-    if (typeof distance !== 'object') {
-        console.log('Error: Tokens must be of type "object"');
-        return null;
-    }
-
-    // Check input for molecule
-    if (distance.atoms !== undefined && distance.bonds !== undefined) {
-        distance = distanceMatrix(adjacencyMatrix(distance));
-    }
-
-    // Check for header
-    if (distance.header !== undefined) {
-        header = distance.header;
-    }
-
-    if (distance.distance !== undefined) {
-        distance = distance.distance;
-    }
-
-    // Check symmetry of distance matrix
-    for (var i = 0; i < distance.length; i++) {
-
-        if (distance[i].length !== distance.length) {
-            console.log('Error: Distance matrix must be symmetric');
-            return null;
-        }
-    }
-
-    for (var i = 0; i < distance.length; i++) {
-
-        reciprocal[i] = [];
-
-        for (var j = 0; j < distance[i].length; j++) {
-
-            if (i === j) {
-                reciprocal[i][j] = 0;
-            } else {
-                reciprocal[i][j] = Math.round(1 / distance[i][j] * 1000000) / 1000000;
-            }
-        }
-    }
-
-    if (reciprocal === undefined) {
-        reciprocal = [];
-    }
-
-    return { id: 'reciprocal', header: header, reciprocal: reciprocal };
-}
-
-/*
-  Exports
-*/
-
-exports.adjacencyMatrix = adjacencyMatrix;
-exports.distanceMatrix = distanceMatrix;
-exports.reciprocalMatrix = reciprocalMatrix;
-},{"./../utilities/math":5}],4:[function(require,module,exports){
+},{"./../utilities/reference":6}],2:[function(require,module,exports){
 /*
   File        : molecules.js
   Description : chemical graph theory library
 
   Imports     : elements, tokenize, decode
-  Exports     : parse, encode, connectivity, topology
+  Exports     : parse, encode, topology
 */
 
 /*
@@ -1827,21 +1381,20 @@ Object.defineProperty(exports, '__esModule', {
     value: true
 });
 
-var _encodingSmiles = require('./encoding/smiles');
+var _formatSmiles = require('./format/smiles');
 
-var _geometryConnectivity = require('./geometry/connectivity');
+var _topologyMatrix = require('./topology/matrix');
 
-var _descriptorsTopology = require('./descriptors/topology');
+var _topologyIndex = require('./topology/index');
 
 /*
   Method      : parse
-  Description : convert string to object
+  Description : convert string of encoding type
 
-  Options     : .smiles, .json
+  Options     : smiles, json
 
-  Examples
-    myMolecule = Molecules.parse.smiles('CC(=O)CN')
-    myMolecule = Molecules.parse.json(myJSON)
+  Examples    : myMolecule = parse.smiles('CC(=O)CN')
+                myMolecule = parse.json(myJSON)
 */
 
 var parse = {
@@ -1849,7 +1402,7 @@ var parse = {
     smiles: function smiles(input) {
 
         if (typeof input === 'string') {
-            var _decode = (0, _encodingSmiles.decode)((0, _encodingSmiles.tokenize)(input));
+            var _decode = (0, _formatSmiles.decode)((0, _formatSmiles.tokenize)(input));
 
             var atoms = _decode.atoms;
             var bonds = _decode.bonds;
@@ -1869,12 +1422,11 @@ var parse = {
 
 /*
   Method      : encode
-  Description : convert object to string
+  Description : convert object to encoding type
 
-  Options     : .json
+  Options     : json
 
-  Examples
-    myJSON = Molecules.encode.json(myMolecule)
+  Examples    : myJSON = encode.json(myMolecule)
 */
 
 var encode = {
@@ -1889,46 +1441,36 @@ var encode = {
 };
 
 /*
-  Method      : connectivity
-  Description : chemical graph matrices
-
-  Options     : .adjacency, .distance, .reciprocal
-*/
-
-var connectivity = {
-
-    adjacency: function adjacency(molecule) {
-        return (0, _geometryConnectivity.adjacencyMatrix)(molecule);
-    },
-
-    distance: function distance(molecule) {
-        return (0, _geometryConnectivity.distanceMatrix)(molecule);
-    },
-
-    reciprocal: function reciprocal(molecule) {
-        return (0, _geometryConnectivity.reciprocalMatrix)(molecule);
-    }
-};
-
-/*
   Method      : topology
-  Description : molecular topological indices
+  Description : chemical graph matrices and topological indices
 
-  Options     : .harary, .hyperwiener, .wiener
+  Options     : adjacency, distance, reciprocal
 */
 
 var topology = {
 
-    harary: function harary(molecule) {
-        return (0, _descriptorsTopology.hararyIndex)(molecule);
+    adjacency: function adjacency(molecule) {
+        return (0, _topologyMatrix.adjacency)(molecule);
     },
 
-    hyperwiener: function hyperwiener(molecule) {
-        return (0, _descriptorsTopology.hyperwienerIndex)(molecule);
+    distance: function distance(molecule) {
+        return (0, _topologyMatrix.distance)(molecule);
     },
 
-    wiener: function wiener(molecule) {
-        return (0, _descriptorsTopology.wienerIndex)(molecule);
+    reciprocal: function reciprocal(molecule) {
+        return (0, _topologyMatrix.reciprocal)(molecule);
+    },
+
+    harary: function harary(reciprocal) {
+        return (0, _topologyIndex.harary)(reciprocal);
+    },
+
+    hyperwiener: function hyperwiener(distance) {
+        return (0, _topologyIndex.hyperwiener)(distance);
+    },
+
+    wiener: function wiener(distance) {
+        return (0, _topologyIndex.wiener)(distance);
     }
 };
 
@@ -1938,9 +1480,9 @@ var topology = {
 */
 
 function getMolecule() {
-    var atoms = arguments[0] === undefined ? {} : arguments[0];
-    var bonds = arguments[1] === undefined ? {} : arguments[1];
-    var id = arguments[2] === undefined ? 0 : arguments[2];
+    var atoms = arguments.length <= 0 || arguments[0] === undefined ? {} : arguments[0];
+    var bonds = arguments.length <= 1 || arguments[1] === undefined ? {} : arguments[1];
+    var id = arguments.length <= 2 || arguments[2] === undefined ? 0 : arguments[2];
 
     var mass = getMass(atoms),
         formula = getFormula(atoms),
@@ -1964,7 +1506,7 @@ function getMolecule() {
 */
 
 function getFormula(atoms) {
-    var formula = arguments[1] === undefined ? {} : arguments[1];
+    var formula = arguments.length <= 1 || arguments[1] === undefined ? {} : arguments[1];
 
     if (typeof atoms !== 'object') {
         return null;
@@ -1990,7 +1532,7 @@ function getFormula(atoms) {
 */
 
 function getName(formula) {
-    var name = arguments[1] === undefined ? [] : arguments[1];
+    var name = arguments.length <= 1 || arguments[1] === undefined ? [] : arguments[1];
 
     if (typeof formula !== 'object') {
         return null;
@@ -2036,7 +1578,7 @@ function getName(formula) {
 */
 
 function getMass(atoms) {
-    var mass = arguments[1] === undefined ? 0 : arguments[1];
+    var mass = arguments.length <= 1 || arguments[1] === undefined ? 0 : arguments[1];
 
     if (typeof atoms !== 'object') {
         return null;
@@ -2057,9 +1599,322 @@ function getMass(atoms) {
 
 exports.parse = parse;
 exports.encode = encode;
-exports.connectivity = connectivity;
 exports.topology = topology;
-},{"./descriptors/topology":1,"./encoding/smiles":2,"./geometry/connectivity":3}],5:[function(require,module,exports){
+
+},{"./format/smiles":1,"./topology/index":3,"./topology/matrix":4}],3:[function(require,module,exports){
+/*
+  File        : index.js
+  Description : molecular topological indices
+
+  Imports     : N/A
+  Exports     : wiener, hyperwiener, harary
+*/
+
+/*
+  Method      : wiener
+  Description : returns the wiener index
+
+  Syntax      : output = wiener(input)
+
+  Examples    : w1 = wiener(distance123)
+*/
+
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+    value: true
+});
+var wiener = function wiener(input) {
+    var output = arguments.length <= 1 || arguments[1] === undefined ? 0 : arguments[1];
+
+    if (input.id !== 'distance') {
+        return null;
+    }
+
+    var matrix = input.matrix;
+
+    for (var i = 0; i < matrix.length; i++) {
+        for (var j = 0; j < matrix[0].length; j++) {
+
+            output += matrix[i][j];
+        }
+    }
+
+    return output / 2;
+};
+
+/*
+  Method      : hyperwiener
+  Description : returns the hyper-wiener index
+
+  Syntax      : output = hyperwiener(input)
+
+  Examples    : hw1 = hyperwiener(dist123)
+*/
+
+var hyperwiener = function hyperwiener(input) {
+    var output = arguments.length <= 1 || arguments[1] === undefined ? 0 : arguments[1];
+
+    if (input.id !== 'distance') {
+        return null;
+    }
+
+    var matrix = input.matrix;
+
+    for (var i = 0; i < matrix.length; i++) {
+        for (var j = 0; j < matrix[i].length; j++) {
+
+            if (i !== j && i < j) {
+                output += matrix[i][j] + Math.pow(matrix[i][j], 2);
+            }
+        }
+    }
+
+    return output / 2;
+};
+
+/*
+  Method      : harary
+  Description : returns the harary index
+
+  Syntax      : output = harary(input)
+
+  Examples    : h1 = harary(recip123)
+*/
+
+var harary = function harary(input) {
+    var output = arguments.length <= 1 || arguments[1] === undefined ? 0 : arguments[1];
+
+    if (input.id !== 'reciprocal') {
+        return null;
+    }
+
+    var matrix = input.matrix;
+
+    for (var i = 0; i < matrix.length; i++) {
+        for (var j = 0; j < matrix[i].length; j++) {
+
+            if (i !== j) {
+                output += matrix[i][j];
+            }
+        }
+    }
+
+    return Math.round(output / 2 * 1000) / 1000;
+};
+
+/*
+  Exports
+*/
+
+exports.wiener = wiener;
+exports.hyperwiener = hyperwiener;
+exports.harary = harary;
+
+},{}],4:[function(require,module,exports){
+/*
+  File        : matrix.js
+  Description : chemical graph matrices
+
+  Imports     : math
+  Exports     : adjacency, distance, reciprocal
+*/
+
+/*
+  Imports
+*/
+
+'use strict';
+
+Object.defineProperty(exports, '__esModule', {
+    value: true
+});
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { 'default': obj }; }
+
+var _utilitiesMath = require('./../utilities/math');
+
+/*
+  Method      : adjacency
+  Description : returns the adjacency matrix of a molecule for non-hydrogen atoms
+
+  Syntax      : output = adjacency(input)
+
+  Examples    : adjMatrix123 = adjacency(myMolecule123)
+*/
+
+var _utilitiesMath2 = _interopRequireDefault(_utilitiesMath);
+
+var adjacency = function adjacency(input) {
+    var header = arguments.length <= 1 || arguments[1] === undefined ? [] : arguments[1];
+    var output = arguments.length <= 2 || arguments[2] === undefined ? [] : arguments[2];
+
+    if (input.atoms === undefined) {
+        return null;
+    }
+
+    var atoms = input.atoms,
+        keys = Object.keys(atoms);
+
+    // Get non-hydrogen atoms
+    for (var i = 0; i < keys.length; i++) {
+
+        if (atoms[keys[i]].name !== 'H') {
+            header.push(atoms[keys[i]].id);
+        }
+    }
+
+    // Calculate adjacency matrix
+    output = _utilitiesMath2['default'].initialize(header.length, header.length);
+
+    for (var i = 0; i < header.length; i++) {
+
+        var source = atoms[header[i]];
+
+        for (var j = 0; j < source.bonds.atoms.length; j++) {
+
+            var target = atoms[source.bonds.atoms[j]],
+                index = header.indexOf(target.id);
+
+            // Update matrix
+            if (target.name !== 'H' && index > 0) {
+                output[i][index] = 1;
+                output[index][i] = 1;
+            }
+        }
+    }
+
+    return { id: 'adjacency', header: header, matrix: output };
+};
+
+/*
+  Method      : distance
+  Description : returns the distance matrix of shortest paths between non-hydrogen atoms
+
+  Syntax      : output = distance(input)
+
+  Examples    : distanceMatrix123 = distance(myMolecule123)
+
+  Reference   : R. Seidel, 'On the All-Pairs Shortest-Path Problem', ACM, (1992) 745-749.
+*/
+
+var distance = function distance(input) {
+    var header = arguments.length <= 1 || arguments[1] === undefined ? [] : arguments[1];
+    var output = arguments.length <= 2 || arguments[2] === undefined ? [] : arguments[2];
+
+    var _adjacency = adjacency(input);
+
+    var a = _adjacency.matrix;
+
+    output = Seidel(a);
+
+    // R. Seidel, ACM, (1992) 745-749.
+    function Seidel(A) {
+        var B = arguments.length <= 1 || arguments[1] === undefined ? [] : arguments[1];
+        var D = arguments.length <= 2 || arguments[2] === undefined ? [] : arguments[2];
+
+        var Z = _utilitiesMath2['default'].multiply(A, A);
+
+        for (var i = 0; i < A.length; i++) {
+            B[i] = [];
+
+            for (var j = 0; j < A[0].length; j++) {
+
+                if (i !== j && (A[i][j] === 1 || Z[i][j] > 0)) {
+                    B[i][j] = 1;
+                } else {
+                    B[i][j] = 0;
+                }
+            }
+        }
+
+        var count = 0;
+
+        for (var i = 0; i < B.length; i++) {
+            for (var j = 0; j < B[0].length; j++) {
+
+                if (i !== j && B[i][j] === 1) {
+                    count += 1;
+                }
+            }
+        }
+
+        if (count === B.length * B.length - B.length) {
+            return _utilitiesMath2['default'].subtract(_utilitiesMath2['default'].multiply(B, 2), A);
+        }
+
+        var T = Seidel(B),
+            X = _utilitiesMath2['default'].multiply(T, A);
+
+        var degree = [];
+
+        for (var i = 0; i < A.length; i++) {
+            degree[i] = A[i].reduce(function (a, b) {
+                return a + b;
+            });
+        }
+
+        for (var i = 0; i < X.length; i++) {
+            D[i] = [];
+
+            for (var j = 0; j < X[0].length; j++) {
+
+                if (X[i][j] >= T[i][j] * degree[j]) {
+                    D[i][j] = 2 * T[i][j];
+                } else if (X[i][j] < T[i][j] * degree[j]) {
+                    D[i][j] = 2 * T[i][j] - 1;
+                }
+            }
+        }
+
+        return D;
+    }
+
+    return { id: 'distance', header: header, matrix: output };
+};
+
+/*
+  Method      : reciprocal
+  Description : returns the reciprocal of the distance matrix
+
+  Syntax      : output = reciprocal(input)
+
+  Examples    : reciprocalMatrix123 = reciprocal(myMolecule123)
+*/
+
+var reciprocal = function reciprocal(input) {
+    var header = arguments.length <= 1 || arguments[1] === undefined ? [] : arguments[1];
+    var output = arguments.length <= 2 || arguments[2] === undefined ? [] : arguments[2];
+
+    var _distance = distance(input);
+
+    var d = _distance.matrix;
+
+    for (var i = 0; i < d.length; i++) {
+        output[i] = [];
+
+        for (var j = 0; j < d[i].length; j++) {
+
+            if (i === j) {
+                output[i][j] = 0;
+            } else {
+                output[i][j] = Math.round(1 / d[i][j] * 100000) / 100000;
+            }
+        }
+    }
+
+    return { id: 'reciprocal', header: header, matrix: output };
+};
+
+/*
+  Exports
+*/
+
+exports.adjacency = adjacency;
+exports.distance = distance;
+exports.reciprocal = reciprocal;
+
+},{"./../utilities/math":5}],5:[function(require,module,exports){
 /*
   File        : math.js
   Description : assorted math utilities
@@ -2070,7 +1925,7 @@ exports.topology = topology;
 
 /*
   Method      : matrix
-  Description : assorted functions for matrices
+  Description : assorted matrix functions
 
   Options     : initialize, add, subtract, multiply, inverse
 */
@@ -2084,16 +1939,16 @@ var matrix = {
 
     /*
       Method      : initialize
-      Description : Returns a new matrix (zero-filled)
+      Description : returns a new matrix (zero-filled)
        Syntax      : output = matrix.initialize(rows, columns)
        Examples    : myMatrix = matrix.initialize(4, 10)
                     matrix123 = matrix.initialize(6)
     */
 
     initialize: function initialize() {
-        var rows = arguments[0] === undefined ? 1 : arguments[0];
-        var columns = arguments[1] === undefined ? 1 : arguments[1];
-        var output = arguments[2] === undefined ? [] : arguments[2];
+        var rows = arguments.length <= 0 || arguments[0] === undefined ? 1 : arguments[0];
+        var columns = arguments.length <= 1 || arguments[1] === undefined ? 1 : arguments[1];
+        var output = arguments.length <= 2 || arguments[2] === undefined ? [] : arguments[2];
 
         // Rows
         for (var i = 0; i < rows; i++) {
@@ -2110,15 +1965,15 @@ var matrix = {
 
     /*
       Method      : add
-      Description : Returns the sum of: a) matrix + matrix; or b) matrix + value
+      Description : returns the sum: a) matrix + matrix; or b) matrix + value
        Syntax      : output = matrix.add(a, b)
        Examples    : myMatrix = matrix.add(matrixA, matrixB)
                     matrix123 = matrix.add(matrixA, 230)
     */
 
     add: function add(a) {
-        var b = arguments[1] === undefined ? 0 : arguments[1];
-        var output = arguments[2] === undefined ? [] : arguments[2];
+        var b = arguments.length <= 1 || arguments[1] === undefined ? 0 : arguments[1];
+        var output = arguments.length <= 2 || arguments[2] === undefined ? [] : arguments[2];
 
         switch (typeof b) {
 
@@ -2152,15 +2007,15 @@ var matrix = {
 
     /*
       Method      : subtract
-      Description : Returns the difference between: a) matrix - matrix; or b) matrix - value
+      Description : returns the difference between: a) matrix - matrix; or b) matrix - value
        Syntax      : output = matrix.subtract(a, b)
        Examples    : myMatrix = matrix.subtract(matrixA, matrixB)
                     matrix123 = matrix.subtract(matrixA, 42)
     */
 
     subtract: function subtract(a) {
-        var b = arguments[1] === undefined ? 0 : arguments[1];
-        var output = arguments[2] === undefined ? [] : arguments[2];
+        var b = arguments.length <= 1 || arguments[1] === undefined ? 0 : arguments[1];
+        var output = arguments.length <= 2 || arguments[2] === undefined ? [] : arguments[2];
 
         switch (typeof b) {
 
@@ -2194,15 +2049,15 @@ var matrix = {
 
     /*
       Method      : multiply
-      Description : Returns the product of: a) matrix * matrix; or b) matrix * value
+      Description : returns the product of: a) matrix * matrix; or b) matrix * value
        Syntax      : output = matrix.multiply(a, b)
        Examples    : myMatrix = matrix.multiply(matrixA, matrixB)
                     matrix123 = matrix.multiply(matrixA, 110)
     */
 
     multiply: function multiply(a) {
-        var b = arguments[1] === undefined ? 0 : arguments[1];
-        var output = arguments[2] === undefined ? [] : arguments[2];
+        var b = arguments.length <= 1 || arguments[1] === undefined ? 0 : arguments[1];
+        var output = arguments.length <= 2 || arguments[2] === undefined ? [] : arguments[2];
 
         switch (typeof b) {
 
@@ -2240,15 +2095,15 @@ var matrix = {
 
     /*
       Method      : inverse
-      Description : Returns the inverse of a matrix
+      Description : returns the inverse of a matrix
        Syntax      : output = matrix.inverse(a)
        Examples    : myMatrix = matrix.inverse(matrixA)
     */
 
     inverse: function inverse(a) {
-        var identity = arguments[1] === undefined ? [] : arguments[1];
+        var identity = arguments.length <= 1 || arguments[1] === undefined ? [] : arguments[1];
 
-        var _inverse = arguments[2] === undefined ? [] : arguments[2];
+        var _inverse = arguments.length <= 2 || arguments[2] === undefined ? [] : arguments[2];
 
         for (var i = 0; i < a.length; i++) {
 
@@ -2339,6 +2194,7 @@ var matrix = {
 
 exports['default'] = matrix;
 module.exports = exports['default'];
+
 },{}],6:[function(require,module,exports){
 /*
   File        : reference.js
@@ -2350,56 +2206,70 @@ module.exports = exports['default'];
 
 /*
   Variable    : elements
-  Description : dictionary of basic atomic properties
+  Description : dictionary of atomic properties
 
   Properties
-
     id : {
       protons   : total protons
-      neutrons  : weighted average number of neutrons
+      neutrons  : average neutrons
       electrons : total electrons
       group     : periodic table column
       period    : periodic table row
     }
 */
 
-'use strict';
+"use strict";
 
-Object.defineProperty(exports, '__esModule', {
+Object.defineProperty(exports, "__esModule", {
   value: true
 });
 var elements = {
-
-  'H': { protons: 1, neutrons: 0.0079, electrons: 1, group: 1, period: 1 },
-  'D': { protons: 1, neutrons: 1, electrons: 1, group: 1, period: 1 },
-  'He': { protons: 2, neutrons: 2.0026, electrons: 2, group: 18, period: 1 },
-  'Li': { protons: 3, neutrons: 3.941, electrons: 3, group: 1, period: 2 },
-  'Be': { protons: 4, neutrons: 5.0122, electrons: 4, group: 2, period: 2 },
-  'B': { protons: 5, neutrons: 5.811, electrons: 5, group: 13, period: 2 },
-  'C': { protons: 6, neutrons: 6.0107, electrons: 6, group: 14, period: 2 },
-  'N': { protons: 7, neutrons: 7.0067, electrons: 7, group: 15, period: 2 },
-  'O': { protons: 8, neutrons: 7.9994, electrons: 8, group: 16, period: 2 },
-  'F': { protons: 9, neutrons: 9.9984, electrons: 9, group: 17, period: 2 },
-  'Ne': { protons: 10, neutrons: 10.1797, electrons: 10, group: 18, period: 2 },
-  'Na': { protons: 11, neutrons: 11.9897, electrons: 11, group: 1, period: 3 },
-  'Mg': { protons: 12, neutrons: 12.305, electrons: 12, group: 2, period: 3 },
-  'Al': { protons: 13, neutrons: 13.9815, electrons: 13, group: 13, period: 3 },
-  'Si': { protons: 14, neutrons: 14.0855, electrons: 14, group: 14, period: 3 },
-  'P': { protons: 15, neutrons: 15.9738, electrons: 15, group: 15, period: 3 },
-  'S': { protons: 16, neutrons: 16.065, electrons: 16, group: 16, period: 3 },
-  'Cl': { protons: 17, neutrons: 18.45, electrons: 17, group: 17, period: 3 },
-  'Ar': { protons: 18, neutrons: 21.948, electrons: 18, group: 18, period: 3 },
-  'As': { protons: 33, neutrons: 41.9216, electrons: 33, group: 15, period: 4 },
-  'Se': { protons: 34, neutrons: 44.96, electrons: 34, group: 16, period: 4 },
-  'Br': { protons: 35, neutrons: 44.904, electrons: 35, group: 17, period: 4 },
-  'I': { protons: 53, neutrons: 73.90447, electrons: 53, group: 17, period: 5 }
+  H: { protons: 1, neutrons: 0.0079, electrons: 1, group: 1, period: 1 },
+  D: { protons: 1, neutrons: 1.0000, electrons: 1, group: 1, period: 1 },
+  He: { protons: 2, neutrons: 2.0026, electrons: 2, group: 18, period: 1 },
+  Li: { protons: 3, neutrons: 3.9410, electrons: 3, group: 1, period: 2 },
+  Be: { protons: 4, neutrons: 5.0122, electrons: 4, group: 2, period: 2 },
+  B: { protons: 5, neutrons: 5.8110, electrons: 5, group: 13, period: 2 },
+  C: { protons: 6, neutrons: 6.0107, electrons: 6, group: 14, period: 2 },
+  N: { protons: 7, neutrons: 7.0067, electrons: 7, group: 15, period: 2 },
+  O: { protons: 8, neutrons: 7.9994, electrons: 8, group: 16, period: 2 },
+  F: { protons: 9, neutrons: 9.9984, electrons: 9, group: 17, period: 2 },
+  Ne: { protons: 10, neutrons: 10.1797, electrons: 10, group: 18, period: 2 },
+  Na: { protons: 11, neutrons: 11.9897, electrons: 11, group: 1, period: 3 },
+  Mg: { protons: 12, neutrons: 12.3050, electrons: 12, group: 2, period: 3 },
+  Al: { protons: 13, neutrons: 13.9815, electrons: 13, group: 13, period: 3 },
+  Si: { protons: 14, neutrons: 14.0855, electrons: 14, group: 14, period: 3 },
+  P: { protons: 15, neutrons: 15.9738, electrons: 15, group: 15, period: 3 },
+  S: { protons: 16, neutrons: 16.0650, electrons: 16, group: 16, period: 3 },
+  Cl: { protons: 17, neutrons: 18.4500, electrons: 17, group: 17, period: 3 },
+  Ar: { protons: 18, neutrons: 21.9480, electrons: 18, group: 18, period: 3 },
+  K: { protons: 19, neutrons: 20.0983, electrons: 19, group: 1, period: 4 },
+  Ca: { protons: 20, neutrons: 20.0780, electrons: 20, group: 2, period: 4 },
+  Sc: { protons: 21, neutrons: 23.9559, electrons: 21, group: 3, period: 4 },
+  Ti: { protons: 22, neutrons: 25.8670, electrons: 22, group: 4, period: 4 },
+  V: { protons: 23, neutrons: 27.9415, electrons: 23, group: 5, period: 4 },
+  Cr: { protons: 24, neutrons: 27.9961, electrons: 24, group: 6, period: 4 },
+  Mn: { protons: 25, neutrons: 29.9380, electrons: 25, group: 7, period: 4 },
+  Fe: { protons: 26, neutrons: 29.8450, electrons: 26, group: 8, period: 4 },
+  Co: { protons: 27, neutrons: 31.9332, electrons: 27, group: 9, period: 4 },
+  Ni: { protons: 28, neutrons: 30.6934, electrons: 28, group: 10, period: 4 },
+  Cu: { protons: 29, neutrons: 34.5460, electrons: 29, group: 11, period: 4 },
+  Zn: { protons: 30, neutrons: 35.3900, electrons: 30, group: 12, period: 4 },
+  Ga: { protons: 31, neutrons: 38.7230, electrons: 31, group: 13, period: 4 },
+  Ge: { protons: 32, neutrons: 40.6100, electrons: 32, group: 14, period: 4 },
+  As: { protons: 33, neutrons: 41.9216, electrons: 33, group: 15, period: 4 },
+  Se: { protons: 34, neutrons: 44.9600, electrons: 34, group: 16, period: 4 },
+  Br: { protons: 35, neutrons: 44.9040, electrons: 35, group: 17, period: 4 },
+  Kr: { protons: 36, neutrons: 47.8000, electrons: 36, group: 18, period: 4 },
+  I: { protons: 53, neutrons: 73.9045, electrons: 53, group: 17, period: 5 }
 };
 
 /*
   Exports
 */
 
-exports['default'] = elements;
-module.exports = exports['default'];
-},{}]},{},[4])(4)
+exports["default"] = elements;
+module.exports = exports["default"];
+
+},{}]},{},[2])(2)
 });

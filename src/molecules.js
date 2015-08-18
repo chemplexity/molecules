@@ -3,7 +3,7 @@
   Description : chemical graph theory library
 
   Imports     : elements, tokenize, decode
-  Exports     : parse, encode, connectivity, topology
+  Exports     : parse, encode, topology
 */
 
 
@@ -11,20 +11,19 @@
   Imports
 */
 
-import { tokenize, decode } from './encoding/smiles';
-import { adjacencyMatrix, distanceMatrix, reciprocalMatrix } from './geometry/connectivity';
-import { wienerIndex, hyperwienerIndex, hararyIndex } from './descriptors/topology';
+import { tokenize, decode } from './format/smiles';
+import { adjacency, distance, reciprocal } from './topology/matrix';
+import { wiener, hyperwiener, harary } from './topology/index';
 
 
 /*
   Method      : parse
-  Description : convert string to object
+  Description : convert string of encoding type
 
-  Options     : .smiles, .json
+  Options     : smiles, json
 
-  Examples
-    myMolecule = Molecules.parse.smiles('CC(=O)CN')
-    myMolecule = Molecules.parse.json(myJSON)
+  Examples    : myMolecule = parse.smiles('CC(=O)CN')
+                myMolecule = parse.json(myJSON)
 */
 
 var parse = {
@@ -37,7 +36,6 @@ var parse = {
 
             return getMolecule(atoms, bonds);
         }
-
     },
 
     json : function (input) {
@@ -52,12 +50,11 @@ var parse = {
 
 /*
   Method      : encode
-  Description : convert object to string
+  Description : convert object to encoding type
 
-  Options     : .json
+  Options     : json
 
-  Examples
-    myJSON = Molecules.encode.json(myMolecule)
+  Examples    : myJSON = encode.json(myMolecule)
 */
 
 var encode = {
@@ -73,47 +70,36 @@ var encode = {
 
 
 /*
-  Method      : connectivity
-  Description : chemical graph matrices
-
-  Options     : .adjacency, .distance, .reciprocal
-*/
-
-var connectivity = {
-
-    adjacency : function (molecule) {
-        return adjacencyMatrix(molecule);
-    },
-
-    distance : function (molecule) {
-        return distanceMatrix(molecule);
-    },
-
-    reciprocal : function (molecule) {
-        return reciprocalMatrix(molecule);
-    }
-};
-
-
-/*
   Method      : topology
-  Description : molecular topological indices
+  Description : chemical graph matrices and topological indices
 
-  Options     : .harary, .hyperwiener, .wiener
+  Options     : adjacency, distance, reciprocal
 */
 
 var topology = {
 
-    harary : function (molecule) {
-        return hararyIndex(molecule);
+    adjacency : function (molecule) {
+        return adjacency(molecule);
     },
 
-    hyperwiener : function (molecule) {
-        return hyperwienerIndex(molecule);
+    distance : function (molecule) {
+        return distance(molecule);
     },
 
-    wiener : function (molecule) {
-        return wienerIndex(molecule);
+    reciprocal : function (molecule) {
+        return reciprocal(molecule);
+    },
+
+    harary : function (reciprocal) {
+        return harary(reciprocal);
+    },
+
+    hyperwiener : function (distance) {
+        return hyperwiener(distance);
+    },
+
+    wiener : function (distance) {
+        return wiener(distance);
     }
 };
 
@@ -229,4 +215,4 @@ function getMass(atoms, mass = 0) {
   Exports
 */
 
-export { parse, encode, connectivity, topology };
+export { parse, encode, topology };

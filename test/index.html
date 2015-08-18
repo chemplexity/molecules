@@ -4,7 +4,7 @@
 <head>
     <link rel="stylesheet" type="text/css" href="./../dist/molecules.css">
     <script src="./../dist/molecules.min.js"></script>
-    <script src="../lib/d3.min.js"></script>
+    <script src="./../lib/d3.min.js"></script>
 </head>
 
 <style>
@@ -311,17 +311,14 @@ input:focus ~ .highlight {
     </div>
 
     <div id="footer">
-
         <div id="content-info">
             <other><div id="molecularFormula"></div></other>
             <other><div id="molecularWeight"></div></other>
         </div>
-
         <div id="content-source">
             <br>
             <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>
         </div>
-
     </div>
 
 </div>
@@ -358,10 +355,12 @@ var example_handler = function (input) {
 
 // Process input
 var onclick_handler = function(input) {
+
     if (input.length === 0 || input.length > 1000) { return null; }
+
     else if (input[input.length-1] === '(' || input[input.length-1] === ')') { return null; }
 
-    var molecule = parse(input);
+    var molecule = Molecules.parse.smiles(input);
 
     if (typeof molecule === 'object') { update(molecule); }
 };
@@ -369,6 +368,7 @@ var onclick_handler = function(input) {
 
 // SMILES --> Molecule
 function parse(input) {
+
     if (typeof input !== 'string') { return null; }
 
     return Molecules.parse.smiles(input);
