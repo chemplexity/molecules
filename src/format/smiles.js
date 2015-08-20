@@ -1,31 +1,24 @@
-/*
-  File        : smiles.js
-  Description : parse SMILES chemical line notation
-
-  Imports     : elements
-  Exports     : grammar, tokenize, decode
-*/
-
-
-/*
-  Imports
-*/
+/**
+ * File        : smiles.js
+ * Description : parse SMILES chemical line notation
+ *
+ * Options     : grammar, tokenize, decode
+ */
 
 import elements from './../utilities/reference';
 
+/**
+ * Name        : grammar
+ * Description : regular expressions for parsing SMILES string
+ *
+ * Properties
+ *   type       : token category
+ *   term       : SMILES symbol
+ *   tag        : token definition
+ *   expression : SMILES regular expression
+ */
 
-/*
-  Variable    : grammar
-  Description : regular expressions for parsing SMILES string
-
-  Properties
-      type       : token category
-      term       : SMILES symbol
-      tag        : token definition
-      expression : SMILES regular expression
-*/
-
-var grammar = [
+const grammar = [
     {type: 'atom',     term: 'H',  tag: 'H',       expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'D',  tag: 'H',       expression: /(?=[A-Z])D(?=[^bsy]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'He', tag: 'He',      expression: /He/g},
@@ -71,24 +64,10 @@ var grammar = [
     {type: 'property', term: 'R',  tag: 'chiral',  expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g}
 ];
 
-
-/*
-  Method      : tokenize
-  Description : parse string with SMILES grammar
-
-  Syntax
-    { tokens: tokens } = tokenize(input)
-
-  Input
-    input : SMILES encoded string
-
-  Output
-    tokens : array of token objects
-
-  Examples
-    { tokens: tokens123 } = tokenize('CC(=O)CC')
-    { tokens: tokensABC } = tokenize('c1cccc1')
-*/
+/**
+ * Method      : tokenize(input)
+ * Description : parse string with SMILES grammar
+ */
 
 function tokenize(input, tokens = []) {
 
@@ -181,24 +160,10 @@ function tokenize(input, tokens = []) {
     return { tokens: tokens };
 }
 
-
-/*
-  Method      : decode
-  Description : convert SMILES tokens into atoms (nodes) and bonds (edges)
-
-  Syntax
-    { atoms, bonds } = decode(tokens)
-
-  Input
-    tokens : array of tokens obtained from the output of @tokenize
-
-  Output
-    { atoms, bonds} : array of atom/bonds describing connectivity and properties
-
-  Examples
-    { atoms: atomsABC, bonds: bondsABC } = decode(mytokensABC)
-    { atoms: atoms123, bonds: bonds123 } = decode(tokens123)
-*/
+/**
+ * Method      : decode(tokens)
+ * Description : convert SMILES tokens into atoms (nodes) and bonds (edges)
+ */
 
 function decode(tokens) {
 
@@ -1127,11 +1092,10 @@ function decode(tokens) {
     return { atoms: atoms, bonds: bonds};
 }
 
-
-/*
-  Method      : compareArrays
-  Description : compare values across two arrays
-*/
+/**
+ * Method      : compareArrays
+ * Description : compare values across two arrays
+ */
 
 function compareArrays(a, b, ab = []) {
 
@@ -1142,11 +1106,10 @@ function compareArrays(a, b, ab = []) {
     return ab;
 }
 
-
-/*
-  Method      : addAtom
-  Description : return new atom
-*/
+/**
+ * Method      : addAtom
+ * Description : return new atom
+ */
 
 function addAtom(id, name, value, group = 0, protons = 0, neutrons = 0, electrons = 0) {
 
@@ -1179,11 +1142,10 @@ function addAtom(id, name, value, group = 0, protons = 0, neutrons = 0, electron
     };
 }
 
-
-/*
-  Method      : addBond
-  Description : return new bond
-*/
+/**
+ * Method      : addBond
+ * Description : return new bond
+ */
 
 function addBond(id, name, value, order = 0, atoms = []) {
 
@@ -1200,11 +1162,10 @@ function addBond(id, name, value, order = 0, atoms = []) {
     };
 }
 
-
-/*
-  Method      : nextAtom
-  Description : find key of next atom in array
-*/
+/**
+ * Method      : nextAtom
+ * Description : find key of next atom in array
+ */
 
 function nextAtom(start, keys, atoms) {
 
@@ -1221,11 +1182,10 @@ function nextAtom(start, keys, atoms) {
     return null;
 }
 
-
-/*
-  Method      : previousAtom
-  Description : find key of previous atom in array
-*/
+/**
+ * Method      : previousAtom
+ * Description : find key of previous atom in array
+ */
 
 function previousAtom(start, keys, atoms) {
 
@@ -1244,9 +1204,8 @@ function previousAtom(start, keys, atoms) {
     return null;
 }
 
-
-/*
-  Exports
-*/
+/**
+ * Exports
+ */
 
 export { grammar, tokenize, decode };

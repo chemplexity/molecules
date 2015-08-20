@@ -238,8 +238,8 @@ function run(option, input) {
         case 'other':
         case '3':
 
-            //var input = 'CC1C(CC(CC1C)CCO)=O';
-            var input = test[14].name;
+            var input = 'CC(O)CCC';
+            //var input = test[14].name;
 
             var molecule = Molecules.parse.smiles(input);
 
@@ -271,6 +271,8 @@ function run(option, input) {
             console.log('Harary:', Molecules.topology.harary(reciprocal));
             console.log('');
 
+            console.log(molecule);
+
             break;
 
         case '4':
@@ -300,4 +302,4 @@ var latest_results = {pass: 63, fail: 0, total: 63};
 //   Option 2) 'custom', string (Custom Test)
 //   Option 3) 'other' (Custom Function)
 
-run('1');
+run('3');
