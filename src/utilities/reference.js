@@ -2,7 +2,7 @@
  * File        : reference.js
  * Description : assorted chemical terms and constants
  *
- * Options     : elements
+ * Options     : reference.elements
  */
 
 const reference = {

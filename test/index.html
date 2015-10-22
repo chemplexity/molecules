@@ -540,10 +540,10 @@ onclick_handler('CC(N)CC=O');
 
 function getTopology(molecule) {
 
-    var adjacent = Molecules.connectivity.adjacency(molecule),
-        distance = Molecules.connectivity.distance(adjacent);
+    var adjacent = Molecules.topology.adjacency(molecule),
+        distance = Molecules.topology.distance(molecule);
 
-    return { header: adjacent.header, adjacent: adjacent.adjacency, distance: distance.distance };
+    return { header: adjacent.header, adjacent: adjacent.matrix, distance: distance.matrix };
 }
 
 function formatMatrix(input) {
@@ -570,7 +570,7 @@ function updateMatrix(input) {
 
     support.append("rect")
         .attr("class", "background")
-        .attr("width", width*2)
+        .attr("width", width * 2)
         .attr("height", height)
         .attr("x", width*2);
 
@@ -585,7 +585,7 @@ function updateMatrix(input) {
         .data(distance)
         .enter().append("g")
         .attr("class", "row")
-        .attr("transform", function(d, i) { return "translate(" + (width * 0.1) + "," + (x(i)+height*0.1) + ")"; })
+        .attr("transform", function(d, i) { return "translate(" + (width * 0.1) + "," + (x(i) + height * 0.1) + ")"; })
         .each(row);
 
     row.append("line")
@@ -626,7 +626,6 @@ function updateMatrix(input) {
             .style("fill-opacity", function(d) { return z(d.z)+0.4; })
             .style("fill", function(d) { return c(d.z-1); })
     }
-
 }
 
 </script>
