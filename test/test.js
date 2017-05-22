@@ -111,7 +111,7 @@ function testAll() {
     for (var i = 0, ii = test.length; i < ii; i+=1) {
 
         // String --> Molecule
-        mol[i] = Molecules.parse.smiles(test[i].name);
+        mol[i] = Molecules.load.smiles(test[i].name);
     }
 
     var t1 = new Date();
@@ -192,7 +192,7 @@ function testAll() {
 
 function testCustom(input) {
 
-    mol = Molecules.parse.smiles(input);
+    mol = Molecules.load.smiles(input);
 
     console.log(mol.atoms);
     console.log(mol.bonds);
@@ -238,40 +238,71 @@ function run(option, input) {
         case 'other':
         case '3':
 
-            var input = 'CC(O)CCC';
-            //var input = test[14].name;
+            //var input = 'CC(O)CCC';
+            var input = test[3].name;
 
-            var molecule = Molecules.parse.smiles(input);
-
-            var adjacent = Molecules.topology.adjacency(molecule),
-                distance = Molecules.topology.distance(molecule),
-                reciprocal = Molecules.topology.reciprocal(molecule);
+            var molecule = Molecules.load.smiles(input);
 
             console.log(input);
             console.log(molecule.properties.mass);
             console.log('');
 
-            for (var i = 0; i < adjacent.matrix.length; i++) {
-                console.log(adjacent.matrix[i]);
+            var adjacent = Molecules.topology.matrix.adjacency(molecule);
+
+            console.log('adjacent');
+            for (var i = 0; i < adjacent.length; i++) {
+                console.log(adjacent[i]);
             }
             console.log('');
-            for (var i = 0; i < distance.matrix.length; i++) {
-                console.log(distance.matrix[i]);
+
+            var distance = Molecules.topology.matrix.distance(adjacent);
+
+            console.log('distance');
+            for (var i = 0; i < distance.length; i++) {
+                console.log(distance[i]);
             }
-
             console.log('');
-            for (var i = 0; i < reciprocal.matrix.length; i++) {
-                console.log(reciprocal.matrix[i]);
+
+            var reciprocal = Molecules.topology.matrix.reciprocal(distance);
+
+            console.log('reciprocal');
+            for (var i = 0; i < reciprocal.length; i++) {
+                console.log(reciprocal[i]);
             }
-
             console.log('');
 
-            console.log('Wiener:', Molecules.topology.wiener(distance));
-            console.log('Hyper-Wiener:', Molecules.topology.hyperwiener(distance));
-            console.log('Harary:', Molecules.topology.harary(reciprocal));
+            var degree = Molecules.topology.matrix.degree(adjacent);
+
+            console.log('degree');
+            for (var i = 0; i < degree.length; i++) {
+                console.log(degree[i]);
+            }
             console.log('');
 
-            console.log(molecule);
+            var lapacian = Molecules.topology.matrix.lapacian(adjacent,degree);
+
+            console.log('lapacian');
+            for (var i = 0; i < lapacian.length; i++) {
+                console.log(lapacian[i]);
+            }
+            console.log('');
+
+            var randic = Molecules.topology.matrix.randic(adjacent,degree);
+
+            console.log('randic');
+            for (var i = 0; i < randic.length; i++) {
+                console.log(randic[i]);
+            }
+            console.log('');
+
+            console.log('Wiener:', Molecules.topology.index.wiener(distance));
+            console.log('Hyper-Wiener:', Molecules.topology.index.hyperwiener(distance));
+            console.log('Harary:', Molecules.topology.index.harary(reciprocal));
+            console.log('Balaban:', Molecules.topology.index.balaban(distance));
+            console.log('Randic:', Molecules.topology.index.randic(adjacent, degree));
+            console.log('');
+
+            //console.log(molecule);
 
             break;
 
@@ -279,9 +310,9 @@ function run(option, input) {
             //var input = 'fdgk;3#GVED@FX';
             var input = 'C@H]1=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H]1';
 
-            var molecule = Molecules.parse.smiles(input);
+            var molecule = Molecules.load.smiles(input);
 
-            console.log(Molecules.encode.json(molecule));
+            console.log(Molecules.save.json(molecule));
     }
 }
 
@@ -299,7 +330,7 @@ var latest_results = {pass: 63, fail: 0, total: 63};
 
 // run(option, input)
 //   Option 1) 'all' (Full Test)
-//   Option 2) 'custom', string (Custom Test)
-//   Option 3) 'other' (Custom Function)
+//   Option 2) 'custom', (SMILES Test)
+//   Option 3) 'other' (Matrix/Index Test)
 
-run('3');
+run('1');

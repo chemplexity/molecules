@@ -2,7 +2,7 @@
  * File        : math.js
  * Description : assorted math functions
  *
- * Options     : matrix
+ * Options     : math.matrix
  */
 
 var math = {
@@ -11,7 +11,7 @@ var math = {
      * Method      : math.matrix
      * Description : assorted matrix functions
      *
-     * Options     : zeros, ones, add, subtract, multiply, inverse
+     * Options     : zeros, ones, add, subtract, multiply, identity, inverse
      */
 
     matrix: {
@@ -95,19 +95,39 @@ var math = {
 
         multiply: function (A, B, AB = []) {
 
-            for (let i = 0; i < A.length; i++) {
-                AB[i] = [];
+            switch (typeof B) {
 
-                for (let j = 0; j < A[i].length; j++) {
-                    AB[i][j] = 0;
+                case 'object':
 
-                    for (let k = 0; k < A[i].length; k++) {
-                        AB[i][j] += A[i][k] * B[k][j];
+                    for (let i = 0; i < A.length; i++) {
+                        AB[i] = [];
+
+                        for (let j = 0; j < A[0].length; j++) {
+                            AB[i][j] = 0;
+
+                            for (let k = 0; k < A[0].length; k++) {
+                                AB[i][j] += A[i][k] * B[k][j];
+                            }
+
+                        }
                     }
-                }
+
+                    return AB;
+
+                case 'number':
+
+                    for (let i = 0; i < A.length; i++) {
+                        AB[i] = [];
+
+                        for (let j = 0; j < A[0].length; j++) {
+                            AB[i][j] = A[i][j] * B;
+                        }
+                    }
+
+                    return AB;
+
             }
 
-            return AB;
         },
 
         /**
@@ -124,7 +144,7 @@ var math = {
                     I[i][j] = 0;
 
                     if (i === j) {
-                        I[i][j] += 1;
+                        I[i][j] = 1;
                     }
                 }
             }
@@ -139,7 +159,7 @@ var math = {
          * Reference   : http://blog.acipo.com/matrix-inversion-in-javascript/
          */
 
-        inverse: function (A, AA = [], I = []) {
+        inverse: function(A, AA = [], I = []) {
 
             if (A.length !== A[i].length) { return null; }
 
@@ -152,19 +172,20 @@ var math = {
                     I[i][j] = 0;
 
                     if (i === j) {
-                        I[i][j] += 1;
+                        I[i][j] = 1;
                     }
                 }
             }
 
             for (let i = 0, x = A[i][i]; i < A.length; i++) {
+
                 if (x === 0) {
 
                     for (let j = i+1; j < A.length; j++) {
+
                         if (A[j][i] !== 0) {
 
                             for (let k = 0; k < A.length; k++) {
-
                                 x = AA[i][k];
                                 AA[i][k] = AA[j][k];
                                 AA[j][k] = x;
@@ -200,6 +221,65 @@ var math = {
             }
 
             return I;
+        },
+
+
+        /**
+         * Method      : math.matrix.check(A, B)
+         * Description : check matrix input for errors
+         */
+
+        check: function(A, B = []) {
+
+            if (!Array.isArray(A)) {
+                throw 'Error: input \'A\' must be an array';
+            }
+
+            if (!Array.isArray(B)) {
+                throw 'Error: input \'B\' must be an array';
+            }
+
+            if (A.length === 0) {
+                throw 'Error: input cannot be empty';
+            }
+
+            if (B.length !== 0 && A.length !== B.length) {
+                throw 'Error: matrix dimensions must agree';
+            }
+
+            if (A.filter(x => Array.isArray(x)).length === A.length) {
+
+                if (A.map(x => x.length).reduce((a, b) => a + b) !== A.length * A.length) {
+                    throw 'Error: matrix dimensions must agree';
+                }
+
+                if (B.length !== 0) {
+
+                    if (B.filter(x => Array.isArray(x)).length !== A.length) {
+                        throw 'Error: matrix dimensions must agree';
+                    }
+
+                    if (B.map(x => x.length).reduce((a, b) => a + b) !== A.length * A.length) {
+                        throw 'Error: matrix dimensions must agree';
+                    }
+                }
+            }
+
+            else if (A.filter(x => typeof(x) === 'number').length === A.length) {
+
+                if (B.length !== 0) {
+
+                    if (B.filter(x => typeof(x) === 'number').length !== A.length) {
+                        throw 'Error: matrix dimensions must agree';
+                    }
+                }
+            }
+
+            else {
+                throw 'Error: input must be uniform';
+            }
+
+            return 1;
         }
     }
 };

@@ -7,6 +7,7 @@
 
 import elements from './../utilities/reference';
 
+
 /**
  * Name        : grammar
  * Description : regular expressions for parsing SMILES string
@@ -370,7 +371,7 @@ function decode(tokens) {
 
     function explicitBonds(atoms, bonds, keys) {
 
-        if (keys.bonds.length === 0 || keys.bonds.length === undefined) {
+        if (keys.bonds.length === 0 || keys.bonds === undefined) {
             return [atoms, bonds, keys];
         }
 
@@ -913,7 +914,7 @@ function decode(tokens) {
         }
 
         // Add implicit hydrogen
-        let H = elements.H;
+        var H = elements.H;
 
         let update = (x, sourceID, sourceName) => {
 

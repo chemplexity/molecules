@@ -1,76 +1,71 @@
 /**
  * File        : molecules.js
+ * Version     : 0.0.1-20170522
  * Description : chemical graph theory library
  *
- * Options     : format, topology
+ * Options     : load, save, topology
  */
 
-import { tokenize, decode } from './format/smiles';
-import { topology } from './core/topology';
+import { tokenize, decode } from './main/smiles';
+import { default as Topology } from './main/topology';
+
 
 /**
- * Method      : format
- * Description : convert to/from supported chemical file formats
+ * Method      : load
+ * Description : load molecule from supported chemical file format
  *
- * Options     : load, save
+ * Options     : load.smiles, load.json
  */
 
-var format = {
+var load = {
 
     /**
-     * Method      : format.load
-     * Description : load molecule from supported chemical file format
-     *
-     * Options     : smiles, json
+     * Method      : load.smiles(input)
+     * Description : load molecule from SMILES string
      */
 
-    load: {
-
-        /**
-         * Method      : format.load.smiles(input)
-         * Description : load molecule from SMILES string
-         */
-
-        smiles: function (input) {
-            let { atoms, bonds } = decode(tokenize(input));
-            return getMolecule(atoms, bonds);
-        },
-
-        /**
-         * Method      : format.load.json(input)
-         * Description : load molecule from JSON object
-         */
-
-        json: function (input) {
-            return JSON.parse(input);
-        }
+    smiles: function (input) {
+        let { tokens } = tokenize(input);
+        let { atoms, bonds } = decode(tokens);
+        return getMolecule(atoms, bonds);
     },
 
     /**
-     * Method      : format.save
-     * Description : save molecule as supported chemical file formats
-     *
-     * Options     : json
+     * Method      : load.json(input)
+     * Description : load molecule from JSON object
      */
 
-    save: {
-
-        /**
-         * Method      : format.save.json(input)
-         * Description : save molecule as JSON object
-         */
-
-        json: function (input) {
-            return JSON.stringify(input, null, '\t');
-        }
+    json: function (input) {
+        return JSON.parse(input);
     }
+
+};
+
+/**
+ * Method      : save
+ * Description : save molecule as supported chemical file formats
+ *
+ * Options     : json
+ */
+
+var save = {
+
+    /**
+     * Method      : save.json(input)
+     * Description : save molecule as JSON object
+     */
+
+    json: function (input) {
+        return JSON.stringify(input, null, '\t');
+    }
+
 };
 
 /**
  * Method      : topology
  * Description : chemical graph matrices and topological indices
  *
- * Options     : matrix, index
+ * Options     : topology.matrix, topology.index
  */
 
 var topology = {
@@ -90,7 +85,7 @@ var topology = {
          */
 
         adjacency: function (G) {
-            return topology.matrix.adjacency(G);
+            return Topology.matrix.adjacency(G);
         },
 
         /**
@@ -99,7 +94,7 @@ var topology = {
          */
 
         degree: function (A) {
-            return topology.matrix.degree(A);
+            return Topology.matrix.degree(A);
         },
 
         /**
@@ -110,7 +105,7 @@ var topology = {
          */
 
         distance: function (A) {
-            return topology.matrix.distance(A);
+            return Topology.matrix.distance(A);
         },
 
         /**
@@ -119,7 +114,7 @@ var topology = {
          */
 
         lapacian: function (A, DEG) {
-            return topology.matrix.lapacian(A, DEG);
+            return Topology.matrix.lapacian(A, DEG);
         },
 
         /**
@@ -128,7 +123,7 @@ var topology = {
          */
 
         randic: function (A, DEG) {
-            return topology.matrix.randic(A, DEG);
+            return Topology.matrix.randic(A, DEG);
         },
 
         /**
@@ -137,7 +132,7 @@ var topology = {
          */
 
         reciprocal: function (D) {
-            return topology.matrix.reciprocal(D);
+            return Topology.matrix.reciprocal(D);
         }
     },
 
@@ -155,8 +150,8 @@ var topology = {
          * Description : returns the Balaban index (J)
          */
 
-        balaban: function (RD) {
-            return topology.index.balaban(D);
+        balaban: function (D) {
+            return Topology.index.balaban(D);
         },
 
         /**
@@ -165,7 +160,7 @@ var topology = {
          */
 
         harary: function (RD) {
-            return topology.index.harary(RD);
+            return Topology.index.harary(RD);
         },
 
         /**
@@ -174,7 +169,7 @@ var topology = {
          */
 
         hyperwiener: function (D) {
-            return topology.index.hyperwiener(D);
+            return Topology.index.hyperwiener(D);
         },
 
         /**
@@ -183,7 +178,7 @@ var topology = {
          */
 
         randic: function (A, DEG) {
-            return topology.index.randic(A, DEG);
+            return Topology.index.randic(A, DEG);
         },
 
         /**
@@ -192,7 +187,7 @@ var topology = {
          */
 
         wiener: function (D) {
-            return topology.index.wiener(D);
+            return Topology.index.wiener(D);
         }
     }
 };
@@ -201,6 +196,47 @@ var topology = {
  * Method      : getMolecule
  * Description : return molecule
  */
+
+class Molecule {
+
+    constructor() {
+
+        this.id = [];
+        this.name = [];
+        this.tags = [];
+
+        this.atoms = [];
+        this.bonds = [];
+        this.properties = {};
+    }
+}
+
+class Atom {
+
+    constructor() {
+
+        this.id = [];
+        this.name = [];
+        this.tags = [];
+
+        this.bonds = [];
+        this.properties = {};
+    }
+}
+
+class Bond {
+
+    constructor () {
+
+        this.id = [];
+        this.name = [];
+        this.tags = [];
+
+        this.atoms = [];
+        this.properties = {};
+    }
+}
+
 
 function getMolecule(atoms = {}, bonds = {}, id = 0) {
 
@@ -304,4 +340,4 @@ function getMass(atoms, mass = 0) {
  * Exports
  */
 
-export { format, topology };
+export { load, save, topology };
