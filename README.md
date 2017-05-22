@@ -9,7 +9,7 @@ A chemical graph theory library for JavaScript. Latest demo of `molecules.js` + 
 * Compute several topological indices of a molecule (e.g. Balaban, Harary, hyper-Wiener, Randic, Wiener).
 * Visualize molecules with `d3.js` force directed graphs.
 
-![Imgur](http://i.imgur.com/zGQWMAp.jpg)
+![Imgur](http://i.imgur.com/idP2r6Q.jpg)
 
 ## Getting Started
 
