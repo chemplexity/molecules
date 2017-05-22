@@ -65,7 +65,7 @@ var ethanol = Molecules.load.smiles('CCO');
 ### Adjacency Matrix
 
 ````javascript
-// Compute the adjacency matrix of a ethanol
+// Compute the adjacency matrix of ethanol
 var adjacencyMatrix = Molecules.topology.matrix.adjacency(ethanol);
 
 //     C  C  O 
@@ -113,7 +113,7 @@ var reciprocalMatrix = Molecules.topology.matrix.reciprocal(distanceMatrix);
 
 ````javascript
 // Use the adjacency and degree matrix to compute the Lapacian matrix
-var lapacianMatrix = Molecules.topology.matrix.distance(adjacencyMatrix, degreeMatrix);
+var lapacianMatrix = Molecules.topology.matrix.lapacian(adjacencyMatrix, degreeMatrix);
 
 //      C   C   O
 // C [  1, -1,  0 ]
@@ -189,7 +189,7 @@ var balabanIndex = Molecules.topology.index.balaban(distanceMatrix);
 ### Randic Index
 
 ````javascript
-// Use the the adjacency and degree matrix to compute the Randic index
+// Use the adjacency and degree matrix to compute the Randic index
 var randicIndex = Molecules.topology.index.randic(adjacencyMatrix, degreeMatrix);
 
 // 3.664213
