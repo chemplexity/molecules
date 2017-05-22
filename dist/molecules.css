@@ -1,7 +1,7 @@
 .link {
     fill: none;
-    stroke: #666;
-    stroke-width: 2.8px;
+    stroke: #696969;
+    stroke-width: 2px;
 }
 
 .link line {
@@ -9,7 +9,7 @@
 }
 
 .link line.separator {
-  stroke: #fff;
+  stroke: #FFF;
   stroke-width: 2px;
 }
 
@@ -60,6 +60,12 @@
     stroke-width: 1px;
 }
 
+.atom-Na {
+    fill: #AB5CF2;
+    stroke: #A66CE0;
+    stroke-width: 1px;
+}
+
 .atom-Si {
     fill: #959595;
     stroke: #7C7C7C;
@@ -79,8 +85,8 @@
 }
 
 .atom-Cl {
-    fill: #00FF6C;
-    stroke: #00E561;
+    fill: #00BB00;
+    stroke: #00A200;
     stroke-width: 1px;
 }
 

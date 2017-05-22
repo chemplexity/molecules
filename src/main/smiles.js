@@ -1,34 +1,25 @@
-/*
-  File        : smiles.js
-  Description : parse SMILES chemical line notation
-
-  Imports     : elements
-  Exports     : grammar, tokenize, decode
-*/
-
-
-/*
-  Imports
-*/
+/**
+ * File        : smiles.js
+ * Description : parse SMILES chemical line notation
+ *
+ * Options     : grammar, tokenize, decode
+ */
 
 import elements from './../utilities/reference';
 
 
-/*
-  Variable    : grammar
-  Description : regular expressions for SMILES grammar
+/**
+ * Name        : grammar
+ * Description : regular expressions for parsing SMILES string
+ *
+ * Properties
+ *   type       : token category
+ *   term       : SMILES symbol
+ *   tag        : token definition
+ *   expression : SMILES regular expression
+ */
 
-  Properties
-    {
-      type : token category
-      term : SMILES symbol
-      tag  : SMILES definition
-      expression : regular expression
-    }
-*/
-
-var grammar = [
-
+const grammar = [
     {type: 'atom',     term: 'H',  tag: 'H',       expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'D',  tag: 'H',       expression: /(?=[A-Z])D(?=[^bsy]|$)([0-9]?)+/g},
     {type: 'atom',     term: 'He', tag: 'He',      expression: /He/g},
@@ -74,24 +65,10 @@ var grammar = [
     {type: 'property', term: 'R',  tag: 'chiral',  expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g}
 ];
 
-
-/*
-  Method      : tokenize
-  Description : parse string with SMILES grammar
-
-  Syntax
-    { tokens: tokens } = tokenize(input)
-
-  Input
-    input : SMILES encoded string
-
-  Output
-    tokens : array of token objects
-
-  Examples
-    { tokens: tokens123 } = tokenize('CC(=O)CC')
-    { tokens: tokensABC } = tokenize('c1cccc1')
-*/
+/**
+ * Method      : tokenize(input)
+ * Description : parse string with SMILES grammar
+ */
 
 function tokenize(input, tokens = []) {
 
@@ -184,24 +161,10 @@ function tokenize(input, tokens = []) {
     return { tokens: tokens };
 }
 
-
-/*
-  Method      : decode
-  Description : convert SMILES tokens into atoms (nodes) and bonds (edges)
-
-  Syntax
-    { atoms, bonds } = decode(tokens)
-
-  Input
-    tokens : array of tokens obtained from the output of @tokenize
-
-  Output
-    { atoms, bonds} : array of atom/bonds describing connectivity and properties
-
-  Examples
-    { atoms: atomsABC, bonds: bondsABC } = decode(mytokensABC)
-    { atoms: atoms123, bonds: bonds123 } = decode(tokens123)
-*/
+/**
+ * Method      : decode(tokens)
+ * Description : convert SMILES tokens into atoms (nodes) and bonds (edges)
+ */
 
 function decode(tokens) {
 
@@ -408,7 +371,7 @@ function decode(tokens) {
 
     function explicitBonds(atoms, bonds, keys) {
 
-        if (keys.bonds.length === 0 || keys.bonds.length === undefined) {
+        if (keys.bonds.length === 0 || keys.bonds === undefined) {
             return [atoms, bonds, keys];
         }
 
@@ -419,13 +382,13 @@ function decode(tokens) {
             let bondID = keys.bonds[i];
 
             // Get source/target atoms
-            let sourceAtom = atoms[previousAtom(bondID, keys.all, atoms)],
-                targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
+            let sourceAtom = atoms[previousAtom(bondID, keys.all, atoms)];
+            let targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
 
             // Get bond index
-            let bondIndex = keys.all.indexOf(bondID),
-                sourceIndex = 0,
-                targetIndex = 0;
+            let bondIndex = keys.all.indexOf(bondID);
+            let sourceIndex = 0;
+            let targetIndex = 0;
 
             // Validate source atom
             if (sourceAtom !== undefined && sourceAtom !== null) {
@@ -462,13 +425,27 @@ function decode(tokens) {
                 // Check previous bond
                 if (bonds[keys.all[bondIndex - 1]] !== undefined) {
 
-                    let bond1 = bonds[keys.all[bondIndex - 1]].value,
-                        bond2 = bonds[bondID].value;
+                    let bond1 = bonds[keys.all[bondIndex - 1]].value;
+                    let bond2 = bonds[bondID].value;
 
-                    // Exception: bond symbol follows branch end
-                    if ((bond1 === ')' || bond1 === '(') && (bond2 === '-' || bond2 === '=' || bond2 === '#' || bond2 === '.')) {
-                        exceptions = 1;
+                    // Case: bond declared next to branch (e.g. 'CC(CC)=CC' or 'CC(=CC)CC')
+                    switch (bond1) {
+                        case ')':
+                        case '(':
+
+                            switch (bond2) {
+                                case '-':
+                                case '=':
+                                case '#':
+                                case '.':
+
+                                    exceptions = 1;
+                            }
                     }
+
+                    //if ((bond1 === ')' || bond1 === '(') && (bond2 === '-' || bond2 === '=' || bond2 === '#' || bond2 === '.')) {
+                    //    exceptions = 1;
+                    //}
                 }
             }
 
@@ -937,7 +914,7 @@ function decode(tokens) {
         }
 
         // Add implicit hydrogen
-        let H = elements.H;
+        var H = elements.H;
 
         let update = (x, sourceID, sourceName) => {
 
@@ -1116,11 +1093,10 @@ function decode(tokens) {
     return { atoms: atoms, bonds: bonds};
 }
 
-
-/*
-  Method      : compareArrays
-  Description : compare values across two arrays
-*/
+/**
+ * Method      : compareArrays
+ * Description : compare values across two arrays
+ */
 
 function compareArrays(a, b, ab = []) {
 
@@ -1131,11 +1107,10 @@ function compareArrays(a, b, ab = []) {
     return ab;
 }
 
-
-/*
-  Method      : addAtom
-  Description : return new atom
-*/
+/**
+ * Method      : addAtom
+ * Description : return new atom
+ */
 
 function addAtom(id, name, value, group = 0, protons = 0, neutrons = 0, electrons = 0) {
 
@@ -1168,11 +1143,10 @@ function addAtom(id, name, value, group = 0, protons = 0, neutrons = 0, electron
     };
 }
 
-
-/*
-  Method      : addBond
-  Description : return new bond
-*/
+/**
+ * Method      : addBond
+ * Description : return new bond
+ */
 
 function addBond(id, name, value, order = 0, atoms = []) {
 
@@ -1189,11 +1163,10 @@ function addBond(id, name, value, order = 0, atoms = []) {
     };
 }
 
-
-/*
-  Method      : nextAtom
-  Description : find key of next atom in array
-*/
+/**
+ * Method      : nextAtom
+ * Description : find key of next atom in array
+ */
 
 function nextAtom(start, keys, atoms) {
 
@@ -1210,11 +1183,10 @@ function nextAtom(start, keys, atoms) {
     return null;
 }
 
-
-/*
-  Method      : previousAtom
-  Description : find key of previous atom in array
-*/
+/**
+ * Method      : previousAtom
+ * Description : find key of previous atom in array
+ */
 
 function previousAtom(start, keys, atoms) {
 
@@ -1233,9 +1205,8 @@ function previousAtom(start, keys, atoms) {
     return null;
 }
 
-
-/*
-  Exports
-*/
+/**
+ * Exports
+ */
 
 export { grammar, tokenize, decode };

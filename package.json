@@ -1,8 +1,8 @@
 {
-  "name":        "molecules.js",
-  "version":     "0.1.0",
+  "name": "molecules.js",
+  "version": "0.1.0",
   "description": "chemical graph theory library",
-  "main":        "dist/molecules.js",
+  "main": "dist/molecules.js",
 
   "author": "James Dillon <james_dillon@brown.edu>",
   "license": "MIT",

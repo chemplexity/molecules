@@ -4,7 +4,7 @@
 <head>
     <link rel="stylesheet" type="text/css" href="./../dist/molecules.css">
     <script src="./../dist/molecules.min.js"></script>
-    <script src="../lib/d3.min.js"></script>
+    <script src="./../lib/d3.min.js"></script>
 </head>
 
 <style>
@@ -20,7 +20,7 @@ html {
 }
 
 body {
-    height: 100%;
+    height: 96%;
 	font-family: arial, helvetica, sans-serif;
     font-size: 12px;
 }
@@ -55,7 +55,7 @@ body {
     height: auto;
     margin: auto;
     padding: 5px;
-    padding-top: 20px;
+    padding-top: 25px;
     border: 0px solid #bbb;
 }
 
@@ -63,7 +63,7 @@ body {
     position: relative;
     top: 85px;
     width: 100%;
-    height: 65%;
+    height: 70%;
     margin: 0px;
     padding: 0px;
     border: 0px solid #bbb;
@@ -78,21 +78,22 @@ body {
 }
 
 #plot {
-    height: auto;
-    width: 65%;
+    height: 100%;
+    width: 70%;
     margin: 0px;
     float: left;
     overflow: hidden;
     border: 0px solid #bbb;
 }
 
-#matrix {
-    height: auto;
-    width: 35%;
+#sidebar {
+    height: 100%;
+    width: 30%;
     margin: 0px;
     float: right;
     padding-right: 1%;
     overflow: hidden;
+    border: 0px solid #000;
 }
 
 #footer {
@@ -126,7 +127,7 @@ body {
 
 #content-info {
     width: auto;
-    min-height: 40px;
+    min-height: 10px;
     margin: 0px;
     padding: 10px;
     float: left;
@@ -145,9 +146,11 @@ body {
 
 .examples {
     color: #999;
+    margin-top: 0px;
+    padding-left: 15px;
     font-size: 12px;
     font-weight: normal;
-    font-family: 'Lucida Sans';
+    font-family: 'Lucida Sans Unicode';
 }
 
 .examples a:link {
@@ -205,6 +208,13 @@ label {
 other {
     color: #999;
     font-size: 14px;
+    font-weight: normal;
+    vertical-align: middle;
+}
+
+section {
+    color: #555;
+    font-size: 16px;
     font-weight: normal;
     vertical-align: middle;
 }
@@ -294,11 +304,23 @@ input:focus ~ .highlight {
     <div id="header">
 
         <div id="user-input"><form onsubmit="return false"><div id="user" class="group">
-            <input type="text" required value="CC(N)CC=O" onpaste="onclick_handler(this.value)" onkeyup="onkey_handler(event)">
+            <input type="text" required value="CC(N)CC=O" onpaste="parseInput(this.value)" onkeyup="keyboardCallback(event)">
             <span class="highlight"></span>
             <span class="bar"></span>
-            <label id="textbox">Input...</label>
+            <label id="textbox">Input SMILES notation...</label>
         </div></form></div>
+
+        <div id="examples">
+            <p class="examples"><i>examples:&nbsp</i>
+                <a href="#" onclick="parseInput('NC(CCC(N)=O)C(O)=O')">glutamine</a>,
+                <a href="#" onclick="parseInput('c1ccccc1')">benzene</a>,
+                <a href="#" onclick="parseInput('O[C@H]1[C@H](O)[C@H](O[C@]1(O)CO)CO')">fructose</a>,
+                <a href="#" onclick="parseInput('C=C(C)C=C')">isoprene</a>,
+                <a href="#" onclick="parseInput('CCO')">ethanol</a>,
+                <a href="#" onclick="parseInput('C#N')">cyanide</a>,
+                <a href="#" onclick="parseInput(randomMolecule[Math.floor(Math.random()*randomMolecule.length)].name)">random</a>
+            </p>
+        </div>
 
     </div>
 
@@ -306,7 +328,9 @@ input:focus ~ .highlight {
 
         <div id="plot"></div>
 
-        <div id="matrix"></div>
+        <div id="sidebar">
+            <section><div id="formatOptions"></div></section>
+        </div>
 
     </div>
 
@@ -325,64 +349,79 @@ input:focus ~ .highlight {
     </div>
 
 </div>
+
 </body>
 
 <script>
 
-// Input : Keyboard
-var onkey_handler = function(event) {
-    var input = document.getElementsByTagName("input")[0].value;
+//
+// Global
+//
+var userInput = document.getElementsByTagName("input")[0].value;
+var userExample = 'CC(N)CC=O';
 
-    // Input : 0-9
-    if (event.keyCode >= 48 && event.keyCode <= 57) { onclick_handler(input); }
+//
+// Keyboard Callback
+//
+var keyboardCallback = function(event) {
 
-    // Input : 'backspace', 'enter'
-    else if (event.keyCode === 8 || event.keyCode === 13) { onclick_handler(input); }
+    //var input = document.getElementsByTagName("input")[0].value;
 
-    // Input : '-', '=', '.'
-    else if (event.keyCode === 189 || event.keyCode === 187 || event.keyCode === 190) { onclick_handler(input); }
+    // 0-9
+    //if (event.keyCode >= 48 && event.keyCode <= 57) { return null; }
 
-    // Input: Non-Alphabet
-    else if (event.keyCode < 65 || event.keyCode > 90) { return null; }
+    // 'backspace'
+    //else if (event.keyCode === 8) { return null; }
 
-    // Input: Alphabet
-    else { onclick_handler(input); }
+    // 'enter'
+    if (event.keyCode === 13) {
+        var input = document.getElementsByTagName("input")[0].value;
+        parseInput(input);
+    }
+
+    // '-', '=', '.'
+    //else if (event.keyCode === 189 || event.keyCode === 187 || event.keyCode === 190) { return null; }
+
+    // non-alphabet
+    //else if (event.keyCode < 65 || event.keyCode > 90) { return null; }
+
+    // alphabet
+    else { return null; }
+
 };
 
+//
+// Input Callback
+//
+var parseInput = function(input) {
 
-// Input : Examples
-var example_handler = function (input) {
-    onclick_handler(document.getElementsByTagName("input")[0].value);
-};
+    if (userInput === input && userInput !== userExample) { return null; }
 
+    document.getElementsByTagName("input")[0].value = input;
 
-// Process input
-var onclick_handler = function(input) {
-    if (input.length === 0 || input.length > 1000) { return null; }
-    else if (input[input.length-1] === '(' || input[input.length-1] === ')') { return null; }
+    if (typeof input !== 'string' || input.length === 0 || input.length > 1000 ) { return null; }
 
-    var molecule = parse(input);
+    var molecule = Molecules.load.smiles(input)
 
     if (typeof molecule === 'object') { update(molecule); }
+
+    userInput = input;
+
 };
 
+//
+// molecules.js --> d3.js
+//
+function convertMolecule(molecule) {
 
-// SMILES --> Molecule
-function parse(input) {
-    if (typeof input !== 'string') { return null; }
+    var atoms = Object.keys(molecule.atoms);
+    var bonds = Object.keys(molecule.bonds);
 
-    return Molecules.parse.smiles(input);
-}
-
-
-// Molecule --> Nodes, Links
-function reformat(molecule) {
-    var atoms = Object.keys(molecule.atoms),
-        bonds = Object.keys(molecule.bonds),
-        nodes = [],
-        links = [];
+    var nodes = [];
+    var links = [];
 
     for (var i = 0; i < atoms.length; i++) {
+
         nodes.push({
             id: molecule.atoms[atoms[i]].id,
             name: molecule.atoms[atoms[i]].name,
@@ -395,6 +434,7 @@ function reformat(molecule) {
     }
 
     for (var i = 0; i < bonds.length; i++) {
+
         links.push({
             id: molecule.bonds[bonds[i]].id,
             name: molecule.bonds[bonds[i]].name,
@@ -408,142 +448,295 @@ function reformat(molecule) {
     return {nodes: nodes, links: links};
 }
 
-var header = document.getElementById("header"),
-    plot = document.getElementById("plot"),
-    matrix = document.getElementById("matrix"),
-    footer = document.getElementById("footer");
+//
+// HTML Elements
+//
+var topPanel    = document.getElementById("header");
+var centerPanel = document.getElementById("plot");
+var sidePanel   = document.getElementById("sidebar");
+var bottomPanel = document.getElementById("footer");
 
-var height = footer.offsetTop - 10 - header.offsetHeight,
-    width = plot.offsetWidth;
+//
+// Display Properties
+//
+var mainPanelPadding = 10;
+var mainPanelHeight  = bottomPanel.offsetTop - topPanel.offsetHeight - mainPanelPadding;
+var mainPanelWidth   = centerPanel.offsetWidth;
 
-var main = d3.select("#plot")
+var mainPanel = d3.select("#plot")
     .append("div")
     .classed("svg-container-responsive", true)
     .append("svg")
     .attr("preserveAspectRatio", "xMinYMin meet")
-    .attr("viewBox", "0 0 " + width + " " +  height + "")
+    .attr("viewBox", "0 0 " + mainPanelWidth + " " +  mainPanelHeight + "")
     .classed("svg-content-responsive", true)
 
-var support = d3.select("#matrix")
+var supportPanel = d3.select("#sidebar")
     .append("div")
     .classed("svg-container-responsive", true)
     .append("svg")
     .attr("preserveAspectRatio", "xMinYMin meet")
-    .attr("viewBox", "0 0 " + matrix.offsetWidth + " " +  height + "")
+    .attr("viewBox", "0 0 " + sidebar.offsetWidth + " " +  mainPanelHeight + "")
     .classed("svg-content-responsive", true)
+
+//
+// Initialize d3.js
+//
+var forceProperties = {
+    size           : [mainPanelWidth, mainPanelHeight],
+    charge         : -1200,
+    chargeDistance : 700,
+    linkStrength   : 1.2,
+    linkDistance   : -50,
+    gravity        : 1.5,
+    friction       : 0.85
+}
 
 var force = d3.layout.force()
-    .size([width, height])
-    .charge(-500)
-    .chargeDistance(250)
-    .gravity(0.75)
-    .linkDistance(10);
+    .size(forceProperties.size)
+    .charge(forceProperties.charge)
+    .chargeDistance(forceProperties.chargeDistance)
+    .linkStrength(forceProperties.linkStrength)
+    .linkDistance(forceProperties.linkDistance)
+    .gravity(forceProperties.gravity)
+    .friction(forceProperties.friction);
 
+//
+// Update d3.js
+//
 function update(molecule) {
 
-    var graph = reformat(molecule);
+    //
+    // Molecule Properties
+    //
+    var graph = convertMolecule(molecule);
+    var nodes = force.nodes(graph.nodes);
+    var links = force.links(graph.links);
 
-    var nodes = force.nodes(graph.nodes),
-        links = force.links(graph.links);
+    d3.selectAll(".node").remove()
+    d3.selectAll(".separator").remove()
 
-    main.selectAll(".node").remove()
+    //
+    // Bond Properties
+    //
+    var bondMuliplier = 3;
 
-    var link = main.selectAll("line")
+    var piBond = {
+        stroke: '#FFFFFF',
+        strokeWidth: '2px'
+    };
+
+    var aromaticBond = {
+        stroke: '#696969',
+        strokeWidth: '3px',
+        strokeDashArray: ("3,3")
+    };
+
+    var bond = mainPanel.selectAll("line.link")
         .data(graph.links, function(d) { return d.source + "-" + d.target; } )
+        .enter();
 
-    link.enter().append("line")
+    var singleBond = bond.append("svg:line")
+        .filter(function (d) { return d.order == 1 | d.order == 2 | d.order == 3 })
         .attr("class", "link")
-        .style("stroke-width", function(d) { return (d.order * 3 - 1) * 1.5 + "px"; })
+        .style("stroke-width", function(d) { return (d.order * bondMuliplier - 1) * (bondMuliplier/2) + "px"; })
 
-    link.filter(function(d) { return d.order > 1; })
-        .append("line")
-        .style("stroke", "#FFFFFF")
-        .style("stroke-width", "6px");
+    var doubleBond = bond.append("svg:line")
+        .filter(function (d) { return d.order == 2 })
+        .attr("class", "separator")
+        .style("stroke-width", piBond.strokeWidth)
+        .style("stroke", piBond.stroke)
 
-    link.exit().remove();
+    var aromaticBond_1 = bond.append("svg:line")
+        .filter(function (d) { return d.order == 1.5 })
+        .attr("class", "separator")
+        .style("stroke-width", aromaticBond.strokeWidth)
+        .style("stroke", aromaticBond.stroke)
 
-    var node = main.selectAll("circle")
+    var aromaticBond_2 = bond.append("svg:line")
+        .filter(function (d) { return d.order == 1.5 })
+        .attr("class", "link")
+        .style("stroke-width", aromaticBond.strokeWidth)
+        .style("stroke", aromaticBond.stroke)
+        .style("stroke-dasharray", aromaticBond.strokeDashArray)
+
+    var tripleBond_1 = bond.append("svg:line")
+        .filter(function (d) { return d.order == 3 })
+        .attr("class", "separator")
+        .style("stroke-width", piBond.strokeWidth)
+        .style("stroke", piBond.stroke)
+
+    var tripleBond_2 = bond.append("svg:line")
+        .filter(function (d) { return d.order == 3 })
+        .attr("class", "separator")
+        .style("stroke-width", piBond.strokeWidth)
+        .style("stroke", piBond.stroke)
+
+    mainPanel.selectAll("line.link")
+        .data(graph.links, function(d) { return d.source + "-" + d.target; } )
+        .exit().remove();
+
+    //
+    // Atom Properties
+    //
+    var maxProtons = 11;
+    var maxRadius = 11;
+    var minRadius = 3;
+    var atomMultiplier = 3;
+
+    var atom = mainPanel.selectAll("circle")
         .data(graph.nodes, function(d) { return Math.random(); });
 
-    node.enter().append("circle")
+    atom.enter()
+        .append("circle")
         .attr("class", "node")
         .attr("class", function(d) { return 'atom-' + d.name; })
-        .attr("r", function(d) { return Math.sqrt(d.protons + 3) * 3 })
+        .attr("r", function(d) { return (d.protons < maxProtons) ? (Math.sqrt(d.protons + minRadius) * atomMultiplier) : maxRadius; })
         .call(force.drag);
 
-    node.exit()
-        .attr('x', function(d) { return d.x; })
-        .transition()
-        .duration(0)
-        .attr('x', function(d) { return d.x; })
-        .style('fill-opacity', 0)
+    atom.exit()
         .remove();
+
+    //
+    // XY Coordinates
+    //
+    var atomRadius = 9;
+    var bondOffset = 2;
 
     force.start();
 
-    var radius = Math.sqrt(9) * 3;
-
     force.on("tick", function () {
-        link
+
+        singleBond
             .attr("x1", function(d) { return d.source.x; })
             .attr("y1", function(d) { return d.source.y; })
             .attr("x2", function(d) { return d.target.x; })
             .attr("y2", function(d) { return d.target.y; });
 
-        node
-            .attr("cx", function(d) { return d.x = Math.max(radius, Math.min(width - radius, d.x)); })
-            .attr("cy", function(d) { return d.y = Math.max(radius, Math.min(height - radius, d.y)); });
+        doubleBond
+            .attr("x1", function(d) { return d.source.x; })
+            .attr("y1", function(d) { return d.source.y; })
+            .attr("x2", function(d) { return d.target.x; })
+            .attr("y2", function(d) { return d.target.y; });
+
+        aromaticBond_1
+            .attr("x1", function(d) { return d.source.x - xOffset(bondOffset, d.source, d.target) })
+            .attr("y1", function(d) { return d.source.y - yOffset(bondOffset, d.source, d.target) })
+            .attr("x2", function(d) { return d.target.x - xOffset(bondOffset, d.source, d.target) })
+            .attr("y2", function(d) { return d.target.y - yOffset(bondOffset, d.source, d.target) });
+
+        aromaticBond_2
+            .attr("x1", function(d) { return d.source.x - xOffset(-bondOffset, d.source, d.target) })
+            .attr("y1", function(d) { return d.source.y - yOffset(-bondOffset, d.source, d.target) })
+            .attr("x2", function(d) { return d.target.x - xOffset(-bondOffset, d.source, d.target) })
+            .attr("y2", function(d) { return d.target.y - yOffset(-bondOffset, d.source, d.target) });
+
+        tripleBond_1
+            .attr("x1", function(d) { return d.source.x - xOffset(bondOffset, d.source, d.target) })
+            .attr("y1", function(d) { return d.source.y - yOffset(bondOffset, d.source, d.target) })
+            .attr("x2", function(d) { return d.target.x - xOffset(bondOffset, d.source, d.target) })
+            .attr("y2", function(d) { return d.target.y - yOffset(bondOffset, d.source, d.target) });
+
+        tripleBond_2
+            .attr("x1", function(d) { return d.source.x - xOffset(-bondOffset, d.source, d.target) })
+            .attr("y1", function(d) { return d.source.y - yOffset(-bondOffset, d.source, d.target) })
+            .attr("x2", function(d) { return d.target.x - xOffset(-bondOffset, d.source, d.target) })
+            .attr("y2", function(d) { return d.target.y - yOffset(-bondOffset, d.source, d.target) });
+
+        atom
+            .attr("cx", function(d) { return d.x = Math.max(atomRadius, Math.min(mainPanelWidth - atomRadius, d.x)); })
+            .attr("cy", function(d) { return d.y = Math.max(atomRadius, Math.min(mainPanelHeight - atomRadius, d.y)); });
+
     });
 
-    var topology = getTopology(molecule);
-
-    updateText(molecule);
-    updateMatrix(topology);
-}
-
-// Display molecular formula and weight (bottom-left corner)
-function updateText(molecule) {
-
+    // Update text
     if (typeof molecule === 'object') {
-        var mass = (Math.round(molecule.properties.mass * 100) / 100) + ' g/mol';
-        var name = [];
-
-        var formula = molecule.properties.formula;
-        var keys = Object.keys(molecule.properties.formula).sort();
-
-        function updateFormula(element) {
-            if (formula[element] === 1) { name.push(element); }
-            else { name.push(element + formula[element]); }
-        }
-
-        if (keys.indexOf('C') !== -1) {
-            updateFormula('C');
-            keys.splice(keys.indexOf('C'), 1);
-        }
-
-        if (keys.indexOf('H') !== -1) {
-            updateFormula('H');
-            keys.splice(keys.indexOf('H'), 1);
-        }
-
-        if (keys.length > 0) {
-            for (var i = 0; i < keys.length; i++) { updateFormula(keys[i]); }
-        }
-
-        document.getElementById("molecularFormula").innerHTML = name.join('').replace(/(\d+)/g, '<sub>$1</sub>');
-        document.getElementById("molecularWeight").innerHTML = mass;
+        updateMolecularWeight(molecule);
+        updateMolecularFormula(molecule);
     }
+
 }
 
-// Initialize example
-onclick_handler('CC(N)CC=O');
+//
+// Helper Functions
+//
+function xOffset(offset, source, target) {
+    var dx = target.x - source.x;
+    var dy = target.y - source.y;
+    if (dy === 0 || Math.abs(dx/dy) > 1) { return offset * (dy/dx); }
+    else { return offset; }
+}
+
+function yOffset(offset, source, target) {
+    var dx = target.x - source.x;
+    var dy = target.y - source.y;
+    if (dy === 0 || Math.abs(dx/dy) > 1) { return -offset; }
+    else { return offset * -(dx/dy); }
+}
+
+//
+// Text Functions
+//
+
+function updateMolecularWeight(molecule) {
+
+    var decimalPoints = Math.pow(10, 2);
+    var molecularWeight = (Math.round(molecule.properties.mass * decimalPoints) / decimalPoints) + ' g/mol';
+
+    document.getElementById("molecularWeight").innerHTML = molecularWeight;
+}
+
+function updateMolecularFormula(molecule) {
+
+    var molecularFormula = [];
+    var atoms = Object.keys(molecule.properties.formula).sort();
+
+    function updateFormula(atomName) {
+        var atomCount = molecule.properties.formula[atomName];
+
+        if (atomCount === 1) { molecularFormula.push(atomName); }
+        else { molecularFormula.push(atomName + atomCount); }
+
+        atoms.splice(atoms.indexOf(atomName), 1);
+    }
+
+    if (atoms.indexOf('Li') !== -1) { updateFormula('Li'); }
+    if (atoms.indexOf('Na') !== -1) { updateFormula('Na'); }
+    if (atoms.indexOf('Mg') !== -1) { updateFormula('Mg'); }
+    if (atoms.indexOf('K') !== -1)  { updateFormula('K'); }
+    if (atoms.indexOf('Ca') !== -1) { updateFormula('Ca'); }
+
+    if (atoms.indexOf('C') !== -1) { updateFormula('C'); }
+    if (atoms.indexOf('H') !== -1) { updateFormula('H'); }
+
+    while (atoms.length > 0) { updateFormula(atoms[0]); }
+
+    document.getElementById("molecularFormula").innerHTML = molecularFormula.join('').replace(/(\d+)/g, '<sub>$1</sub>');
+}
+
+function updateZoom(graph) {
+
+    //var zoom = d3.behavior.zoom();
+    //console.log(zoom);
+    ///main.attr("transform", "translate(" + d3.event.translate + ")scale(" + d3.event.scale + ")");
+    //console.log(main);
+    //zoom.scale(4);
+    //main.call(zoom);
+}
+
+//
+// Topology Functions
+//
 
 function getTopology(molecule) {
 
-    var adjacent = Molecules.connectivity.adjacency(molecule),
-        distance = Molecules.connectivity.distance(adjacent);
+    var adjacent = Molecules.topology.matrix.adjacency(molecule);
+    var distance = Molecules.topology.matrix.distance(molecule);
 
-    return { header: adjacent.header, adjacent: adjacent.adjacency, distance: distance.distance };
+    return {
+        adjacent: adjacent,
+        distance: distance
+    };
 }
 
 function formatMatrix(input) {
@@ -557,26 +750,26 @@ function formatMatrix(input) {
             output[i][j] = { x: j, y: i, z: input[i][j] };
         }
     }
+
     return output;
  }
 
 function updateMatrix(input) {
 
-    var matrix = document.getElementById("matrix"),
-        height = footer.offsetTop - 10 - header.offsetHeight,
-        width = matrix.offsetWidth;
-
+    var matrix = document.getElementById("matrix");
+    var height = footer.offsetTop - 10 - header.offsetHeight;
+    var width = matrix.offsetWidth;
     var distance = formatMatrix(input.distance);
 
     support.append("rect")
         .attr("class", "background")
-        .attr("width", width*2)
+        .attr("width", width * 2)
         .attr("height", height)
         .attr("x", width*2);
 
-    var x = d3.scale.ordinal().rangeBands([0, width*0.85]),
-        z = d3.scale.linear().domain([0, distance.length]).clamp(true),
-        c = d3.scale.linear().range(["red", "steelblue"]).interpolate(d3.interpolateHcl);
+    var x = d3.scale.ordinal().rangeBands([0, width*0.85]);
+    var z = d3.scale.linear().domain([0, distance.length]).clamp(true);
+    var c = d3.scale.linear().range(["red", "steelblue"]).interpolate(d3.interpolateHcl);
 
     c.domain(d3.range(distance.length));
     x.domain(d3.range(input.header.length));
@@ -585,7 +778,7 @@ function updateMatrix(input) {
         .data(distance)
         .enter().append("g")
         .attr("class", "row")
-        .attr("transform", function(d, i) { return "translate(" + (width * 0.1) + "," + (x(i)+height*0.1) + ")"; })
+        .attr("transform", function(d, i) { return "translate(" + (width * 0.1) + "," + (x(i) + height * 0.1) + ")"; })
         .each(row);
 
     row.append("line")
@@ -624,9 +817,82 @@ function updateMatrix(input) {
             .attr("width", x.rangeBand()*0.97)
             .attr("height", x.rangeBand()*0.97)
             .style("fill-opacity", function(d) { return z(d.z)+0.4; })
-            .style("fill", function(d) { return c(d.z-1); })
+            .style("fill", function(d) { return c(d.z-1); });
     }
-
 }
+
+//
+// Initialization
+//
+parseInput(userExample);
+
+//
+// SMILES Examples
+//
+var randomMolecule = [
+    {mass: 72.151, formula: {C:5, H:12}, name: 'CCCCC', category: 'Alkane', type: 'Primary'},
+    {mass: 72.151, formula: {C:5, H:12}, name: 'CC(C)CC', category: 'Alkane', type: 'Secondary'},
+    {mass: 72.151, formula: {C:5, H:12}, name: 'CC(C)(C)C', category: 'Alkane', type: 'Tertiary'},
+    {mass: 56.108, formula: {C:4, H:8}, name: 'CC=CC', category: 'Alkene', type: 'Internal'},
+    {mass: 56.108, formula: {C:4, H:8}, name: 'C=CCC', category: 'Alkene', type: 'Terminal'},
+    {mass: 56.108, formula: {C:4, H:8}, name: 'C/C=C\C', category: 'Alkene', type: 'Cis'},
+    {mass: 56.108, formula: {C:4, H:8}, name: 'C/C=C/C', category: 'Alkene', type: 'Trans'},
+    {mass: 54.092, formula: {C:4, H:6}, name: 'C=CC=C', category: 'Alkene', type: 'Conjugated'},
+    {mass: 54.092, formula: {C:4, H:6}, name: 'C=C=CC', category: 'Alkene', type: 'Allene'},
+    {mass: 54.092, formula: {C:4, H:6}, name: 'CC#CC', category: 'Alkyne', type: 'Internal'},
+    {mass: 54.092, formula: {C:4, H:6}, name: 'C#CCC', category: 'Alkyne', type: 'Terminal'},
+    {mass: 74.123, formula: {C:4, H:10, O:1}, name: 'OCCCC', category: 'Alcohol', type: 'Primary'},
+    {mass: 74.123, formula: {C:4, H:10, O:1}, name: 'CC(O)CC', category: 'Alcohol', type: 'Secondary'},
+    {mass: 74.123, formula: {C:4, H:10, O:1}, name: 'CC(O)(C)C', category: 'Alcohol', type: 'Tertiary'},
+    {mass: 72.107, formula: {C:4, H:8, O:1}, name: 'C(=O)CCC', category: 'Carbonyl', type:'Aldehyde'},
+    {mass: 72.107, formula: {C:4, H:8, O:1}, name: 'CC(=O)CC', category: 'Carbonyl', type:'Ketone'},
+    {mass: 88.106, formula: {C:4, H:8, O:2}, name: 'OC(CCC)=O', category: 'Carbonyl', type:'Carboxylic Acid'},
+    {mass: 88.106, formula: {C:4, H:8, O:2}, name: 'O=C(CC)OC', category: 'Carbonyl', type:'Ester'},
+    {mass: 87.122, formula: {C:4, H:9, O:1, N:1}, name: 'NC(CCC)=O', category: 'Carbonyl', type:'Amide'},
+    {mass: 104.105, formula: {C:4, H:8, O:3}, name: 'O=C(CCC)OO', category: 'Carbonyl', type:'Peroxy Acid'},
+    {mass: 106.549, formula: {C:4, H:7, O:1, Cl:1}, name: 'ClC(CCC)=O', category: 'Carbonyl', type:'Acid Halide'},
+    {mass: 116.116, formula: {C:5, H:8, O:3}, name: 'O=C(CC)OC(C)=O', category: 'Carbonyl', type:'Acid Anhydride'},
+    {mass: 84.162, formula: {C:6, H:12}, name: 'C1CCCCC1', category: 'Cycloalkane', type: 'Basic'},
+    {mass: 166.308, formula: {C:12, H:22}, name: 'C1CCCCC1C2CCCCC2', category: 'Cycloalkane', type: 'Intermediate'},
+    {mass: 152.281, formula: {C:11, H:20}, name: 'C12(CCCCC1)CCCCC2', category: 'Cycloalkane', type: 'Advanced'},
+    {mass: 80.130, formula: {C:6, H:8}, name: 'C1C=CCC=C1', category: 'Cycloalkene', type: 'Basic'},
+    {mass: 104.152, formula: {C:8, H:8}, name: '[C@H]1=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H]1', category: 'Cycloalkene', type: 'Advanced'},
+    {mass: 78.114, formula: {C:6, H:6}, name: 'c1ccccc1', category: 'Aromatic', type: 'Basic'},
+    {mass: 108.140, formula: {C:7, H:8, O:1}, name: 'OCc1ccccc1', category: 'Aromatic', type: 'Substituted'},
+    {mass: 154.212, formula: {C:12, H:10}, name: 'c1ccccc1-c2ccccc2', category: 'Aromatic', type: 'Advanced'},
+    {mass: 178.223, formula: {C:14, H:10}, name: 'C12=CC=CC=C1C3=C(C=CC=C3)C=C2', category: 'Aromatic', type: 'Polycyclic'},
+    {mass: 67.091, formula: {C:4, H:5, N:1}, name: 'C1=CC=CN1', category: 'Heteroaromatic', type: 'N'},
+    {mass: 68.075, formula: {C:4, H:4, O:1}, name: 'c1occc1', category: 'Heteroaromatic', type: 'O'},
+    {mass: 84.136, formula: {C:4, H:4, S:1}, name: 'c1sccc1', category: 'Heteroaromatic', type: 'S'},
+    {mass: 15.036, formula: {C:1, H:3}, name: '[CH3+]', category: 'Charge', type: 'Cation'},
+    {mass: 15.036, formula: {C:1, H:3}, name: '[CH3-]', category: 'Charge', type: 'Anion'},
+    {mass: 58.440, formula: {Na:1, Cl:1}, name: '[Na+].[Cl-]', category: 'Salt', type: 'Basic'},
+    {mass: 148.195, formula: {N:2, O:3, H:8, S:2}, name: '[NH4+].[NH4+].[O-]S(=O)(=O)[S-]', category: 'Salt', type: 'Advanced'},
+    {mass: 59.116, formula: {C:4, H:10}, name: 'C[13CH](C)C', category: 'Isotope', type: '13C'},
+    {mass: 60.116, formula: {C:4, H:10}, name: 'C[14CH](C)C', category: 'Isotope', type: '14C'},
+    {mass: 391.694, formula: {C:13, H:25, Cl:1, I:1, N:1, O:2}, name: 'CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC', category: 'Isotope', type: '14C'},
+    {mass: 143.408, formula: {C:2, H:4, Br:1, Cl:1}, name: 'C[C@@H](Br)Cl', category: 'Chiral', type: 'Clockwise'},
+    {mass: 143.408, formula: {C:2, H:4, Br:1, Cl:1}, name: 'C[C@H](Br)Cl', category: 'Chiral', type: 'Anti-Clockwise'},
+    {mass: 180.156, formula: {C:6, H:12, O:6}, name: 'O[C@@]([H])(O1)[C@@](O)([H])[C@@]([H])(O)[C@]1([C@@](CO)(O)[H])[H]', category: 'Chiral', type: 'Mixed'},
+    {mass: 89.094, formula: {C:3, H:7, N:1, O:2}, name: 'NC(C)C(O)=O', category: 'Amino Acids', type: 'ALA'},
+    {mass: 174.204, formula: {C:6, H:14, N:4, O:2}, name: 'NC(CCCNC(N)=N)C(O)=O', category: 'Amino Acids', type: 'ARG'},
+    {mass: 132.119, formula: {C:4, H:8, N:2, O:3}, name: 'NC(CC(N)=O)C(O)=O', category: 'Amino Acids', type: 'ASN'},
+    {mass: 133.103, formula: {C:4, H:7, N:1, O:4}, name: 'NC(CC(O)=O)C(O)=O', category: 'Amino Acids', type: 'ASP'},
+    {mass: 121.154, formula: {C:3, H:7, N:1, O:2, S:1}, name: 'NC(CS)C(O)=O', category: 'Amino Acids', type: 'CYS'},
+    {mass: 147.130, formula: {C:5, H:9, N:1, O:4}, name: 'NC(CCC(O)=O)C(O)=O', category: 'Amino Acids', type: 'GLU'},
+    {mass: 146.146, formula: {C:5, H:10, N:2, O:3}, name: 'NC(CCC(N)=O)C(O)=O', category: 'Amino Acids', type: 'GLA'},
+    {mass: 75.067, formula: {C:2, H:5, N:1, O:2}, name: 'NC([H])C(O)=O', category: 'Amino Acids', type: 'GLY'},
+    {mass: 155.157, formula: {C:6, H:9, N:3, O:2}, name: 'NC(CC1=CNC=N1)C(O)=O', category: 'Amino Acids', type: 'HIS'},
+    {mass: 131.175, formula: {C:6, H:13, N:1, O:2}, name: 'NC(C(CC)C)C(O)=O', category: 'Amino Acids', type: 'ILE'},
+    {mass: 46.069, formula: {C:2, H:6, O:1}, name: 'C((C))O', category: 'Relaxed', type: 'Extra Parentheses'},
+    {mass: 85.150, formula: {C:5, H:11, N:1}, name: '(N1CCCCC1)', category: 'Relaxed', type: 'Extra Parentheses'},
+    {mass: 310.610, formula: {C:22, H:46}, name: 'C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C))))))))))))))))))))C', category: 'Relaxed', type: 'Extra Parentheses'},
+    {mass: 188.695, formula: {C:10, H:17, Cl:1, O:1}, name: 'CC(=O)C(Cl)CC(C(C)C)C=C', category: 'Other', type: 'Advanced'},
+    {mass: 154.209, formula: {C:9, H:14, O:2}, name: 'C2C(=O)C1COCCC1CC2', category: 'Other', type: 'Advanced'},
+    {mass: 150.646, formula: {C:7, H:15, Cl:1, O:1}, name: 'CC(CC(Cl)CCO)C', category: 'Other', type: 'Advanced'},
+    {mass: 170.252, formula: {C:10, H:18, O:2}, name: 'CC1C(CC(CC1C)CCO)=O', category: 'Other', type: 'Advanced'},
+    {mass: 131.175, formula: {C:6, H:13, N:1, O:2}, name: 'NC(C(CC)C)C(O)=O', category: 'Other', type: 'Advanced'},
+    {mass: 372.447, formula: {C:23, H:22, N:3, O:2}, name: 'c1ccccc1[C@]2(C(=O)N(C)C(N)=[NH+]2)c3cc(ccc3)-c4ccc(cc4)OC', category: 'Other', type: 'Advanced'}
+];
 
 </script>

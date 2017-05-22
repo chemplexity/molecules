@@ -1,191 +1,291 @@
-/*
-  File        : math.js
-  Description : assorted math functions
+/**
+ * File        : math.js
+ * Description : assorted math functions
+ *
+ * Options     : math.matrix
+ */
 
-  Imports     : N/A
-  Exports     : matrix
-*/
+var math = {
 
+    /**
+     * Method      : math.matrix
+     * Description : assorted matrix functions
+     *
+     * Options     : zeros, ones, add, subtract, multiply, identity, inverse
+     */
 
-/*
-  Method      : matrix
-  Description : assorted functions for matrices
+    matrix: {
 
-  Options     : .initialize, .subtract, .multiply, .inverse
-*/
+        /**
+         * Method      : math.matrix.zeros(rows, columns)
+         * Description : returns a matrix of zeros
+         */
 
-var matrix = {
+        zeros: function(rows = 1, columns = rows, A = []) {
 
-    // Return new matrix
-    initialize : function (rows = 1, columns = rows, output = []) {
+            for (let i = 0; i < rows ; i++) {
+                A[i] = [];
 
-        // Rows
-        for (let i = 0; i < rows ; i++) {
-            output[i] = [];
-
-            // Columns
-            for (let j = 0; j < columns; j++) {
-                output[i][j] = 0;
+                for (let j = 0; j < columns; j++) {
+                    A[i][j] = 0;
+                }
             }
-        }
 
-        return output;
-    },
+            return A;
+        },
 
-    // Matrix subtraction
-    subtract : function (a, b, output = []) {
+        /**
+         * Method      : math.matrix.ones(rows, columns)
+         * Description : returns a matrix of ones
+         */
 
-        switch (typeof b) {
+        ones: function(rows = 1, columns = rows, A = []) {
 
-            case 'object':
+            for (let i = 0; i < rows ; i++) {
+                A[i] = [];
 
-                for (let i = 0; i < a.length; i++) {
-                    output[i] = [];
+                for (let j = 0; j < columns; j++) {
+                    A[i][j] = 1;
+                }
+            }
 
-                    for (let j = 0; j < a[0].length; j++) {
-                        output[i][j] = a[i][j] - b[i][j];
+            return A;
+        },
+
+        /**
+         * Method      : math.matrix.add(A, B)
+         * Description : returns [A] + [B]
+         */
+
+        add: function(A, B, AB = []) {
+
+            for (let i = 0; i < A.length; i++) {
+                AB[i] = [];
+
+                for (let j = 0; j < A[i].length; j++) {
+                    AB[i][j] = A[i][j] + B[i][j];
+                }
+            }
+            
+            return AB;
+        },
+
+        /**
+         * Method      : math.matrix.subtract(A, B)
+         * Description : returns [A] - [B]
+         */
+
+        subtract: function (A, B, AB = []) {
+
+            for (let i = 0; i < A.length; i++) {
+                AB[i] = [];
+
+                for (let j = 0; j < A[i].length; j++) {
+                    AB[i][j] = A[i][j] - B[i][j];
+                }
+            }
+
+            return AB;
+        },
+
+        /**
+         * Method      : math.matrix.multiply(A, B)
+         * Description : returns [A] * [B]
+         */
+
+        multiply: function (A, B, AB = []) {
+
+            switch (typeof B) {
+
+                case 'object':
+
+                    for (let i = 0; i < A.length; i++) {
+                        AB[i] = [];
+
+                        for (let j = 0; j < A[0].length; j++) {
+                            AB[i][j] = 0;
+
+                            for (let k = 0; k < A[0].length; k++) {
+                                AB[i][j] += A[i][k] * B[k][j];
+                            }
+
+                        }
+                    }
+
+                    return AB;
+
+                case 'number':
+
+                    for (let i = 0; i < A.length; i++) {
+                        AB[i] = [];
+
+                        for (let j = 0; j < A[0].length; j++) {
+                            AB[i][j] = A[i][j] * B;
+                        }
+                    }
+
+                    return AB;
+
+            }
+
+        },
+
+        /**
+         * Method      : math.matrix.identity(A)
+         * Description : returns [A] * [I] = [A]
+         */
+
+        identity: function (A, I = []) {
+
+            for (let i = 0; i < A.length; i++) {
+                I[i] = [];
+
+                for (let j = 0; j < A[i].length; j++) {
+                    I[i][j] = 0;
+
+                    if (i === j) {
+                        I[i][j] = 1;
                     }
                 }
+            }
 
-                return output;
+            return I;
+        },
 
-            case 'value':
+        /**
+         * Method      : math.matrix.inverse(A)
+         * Description : returns [A]^-1
+         *
+         * Reference   : http://blog.acipo.com/matrix-inversion-in-javascript/
+         */
 
-                for (let i = 0; i < a.length; i++) {
-                    output[i] = [];
+        inverse: function(A, AA = [], I = []) {
 
-                    for (let j = 0; j < a[0].length; j++) {
-                        output[i][j] = a[i][j] - b;
+            if (A.length !== A[i].length) { return null; }
+
+            for (let i = 0; i < A.length; i++) {
+                AA[i] = [];
+                I[i] = [];
+
+                for (let j = 0; j < A[i].length; j++) {
+                    AA[i][j] = A[i][j];
+                    I[i][j] = 0;
+
+                    if (i === j) {
+                        I[i][j] = 1;
                     }
                 }
+            }
 
-                return output;
-        }
+            for (let i = 0, x = A[i][i]; i < A.length; i++) {
 
-    },
+                if (x === 0) {
 
-    // Matrix multiplication
-    multiply : function (a, b, output = []) {
+                    for (let j = i+1; j < A.length; j++) {
 
-        switch (typeof b) {
+                        if (A[j][i] !== 0) {
 
-            case 'object':
+                            for (let k = 0; k < A.length; k++) {
+                                x = AA[i][k];
+                                AA[i][k] = AA[j][k];
+                                AA[j][k] = x;
 
-                for (let i = 0; i < a.length; i++) {
-                    output[i] = [];
+                                x = I[i][j];
+                                I[i][k] = I[j][k];
+                                I[j][k] = x;
+                            }
 
-                    for (let j = 0; j < b[0].length; j++) {
-                        output[i][j] = 0;
+                            break;
+                        }
+                    }
 
-                        for (let k = 0; k < a[0].length; k++) {
-                            output[i][j] += a[i][k] * b[k][j];
+                    x = AA[i][i];
+
+                    if (AA[i][i] === 0) { return null; }
+                }
+
+                for (let j = 0, x = AA[i][i]; j < A.length; j++) {
+                    AA[i][j] = AA[i][j] / x;
+                    I[i][j] = I[i][j] / x;
+                }
+
+                for (let j = 0; j < A.length; j++) {
+                    if (i !== j) {
+
+                        for (let k = 0, x = AA[j][i]; k < A.length; k++) {
+                            AA[j][k] -= AA[i][k] * x;
+                            I[j][k] -= I[i][k] * x;
                         }
                     }
                 }
+            }
 
-                return output;
+            return I;
+        },
 
-            case 'number':
 
-                for (let i = 0; i < a.length; i++) {
-                    output[i] = [];
+        /**
+         * Method      : math.matrix.check(A, B)
+         * Description : check matrix input for errors
+         */
 
-                    for (let j = 0; j < a[0].length; j++) {
-                        output[i][j] = a[i][j] * b;
+        check: function(A, B = []) {
+
+            if (!Array.isArray(A)) {
+                throw 'Error: input \'A\' must be an array';
+            }
+
+            if (!Array.isArray(B)) {
+                throw 'Error: input \'B\' must be an array';
+            }
+
+            if (A.length === 0) {
+                throw 'Error: input cannot be empty';
+            }
+
+            if (B.length !== 0 && A.length !== B.length) {
+                throw 'Error: matrix dimensions must agree';
+            }
+
+            if (A.filter(x => Array.isArray(x)).length === A.length) {
+
+                if (A.map(x => x.length).reduce((a, b) => a + b) !== A.length * A.length) {
+                    throw 'Error: matrix dimensions must agree';
+                }
+
+                if (B.length !== 0) {
+
+                    if (B.filter(x => Array.isArray(x)).length !== A.length) {
+                        throw 'Error: matrix dimensions must agree';
+                    }
+
+                    if (B.map(x => x.length).reduce((a, b) => a + b) !== A.length * A.length) {
+                        throw 'Error: matrix dimensions must agree';
                     }
                 }
-
-                return output;
-        }
-    },
-
-    // Matrix inverse
-    inverse : function (a, identity = [], inverse = []) {
-
-        for (let i = 0; i < a.length; i++) {
-
-            identity[i] = [];
-            inverse[i] = [];
-
-            for (let j = 0; j < a.length; j++) {
-
-                if (i === j) {
-                    inverse[i][j] = 1;
-                }
-                else {
-                    inverse[i][j] = 0;
-                }
-
-                identity[i][j] = a[i][j];
             }
-        }
 
-        for (let i = 0; i < identity.length; i++) {
+            else if (A.filter(x => typeof(x) === 'number').length === A.length) {
 
-            let x = identity[i][i];
+                if (B.length !== 0) {
 
-            if (x === 0) {
-
-                for (let j = i+1; j < identity.length; j++) {
-
-                    if (identity[j][i] !== 0) {
-
-                        for (let k = 0; k < identity.length; k++) {
-
-                            x = identity[i][k];
-                            identity[i][k] = identity[j][k];
-                            identity[j][k] = x;
-
-                            x = inverse[i][k];
-                            inverse[i][k] = inverse[j][k];
-                            inverse[j][k] = x;
-                        }
-
-                        break;
+                    if (B.filter(x => typeof(x) === 'number').length !== A.length) {
+                        throw 'Error: matrix dimensions must agree';
                     }
                 }
-
-                x = identity[i][i];
-
-                if (x === 0) { return; }
             }
 
-            for (let j = 0; j < identity.length; j++) {
-
-                identity[i][j] = identity[i][j] / x;
-                inverse[i][j] = inverse[i][j] / x;
+            else {
+                throw 'Error: input must be uniform';
             }
 
-            for (let j = 0; j < identity.length; j++) {
-
-                if (i === j) { continue; }
-
-                x = identity[j][i];
-
-                for (let k = 0; k < identity.length; k++) {
-
-                    identity[j][k] -= x * identity[i][k];
-                    inverse[j][k] -= x * inverse[i][k];
-                }
-            }
+            return 1;
         }
-
-        for (let i = 0; i < inverse.length; i++) {
-
-            for (let j = 0; j < inverse.length; j++) {
-
-                inverse[i][j] = Math.round(inverse[i][j] * 100000) / 100000;
-            }
-        }
-
-        return inverse;
-
     }
 };
 
+/**
+ * Exports
+ */
 
-/*
-  Exports
-*/
-
-export default matrix;
+export default math;

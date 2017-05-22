@@ -1,126 +1,242 @@
-/*
-  File        : molecules.js
-  Description : chemical graph theory library
+/**
+ * File        : molecules.js
+ * Version     : 0.0.1-20170522
+ * Description : chemical graph theory library
+ *
+ * Options     : load, save, topology
+ */
 
-  Imports     : elements, tokenize, decode
-  Exports     : parse, encode, connectivity, topology
-*/
+import { tokenize, decode } from './main/smiles';
+import { default as Topology } from './main/topology';
 
 
-/*
-  Imports
-*/
+/**
+ * Method      : load
+ * Description : load molecule from supported chemical file format
+ *
+ * Options     : load.smiles, load.json
+ */
 
-import { tokenize, decode } from './encoding/smiles';
-import { adjacencyMatrix, distanceMatrix, reciprocalMatrix } from './extensions/connectivity';
-import { wienerIndex, hyperwienerIndex, hararyIndex } from './extensions/topology';
+var load = {
 
-/*
-  Method      : parse
-  Description : convert string to object
+    /**
+     * Method      : load.smiles(input)
+     * Description : load molecule from SMILES string
+     */
 
-  Options     : .smiles, .json
-
-  Examples
-    myMolecule = Molecules.parse.smiles('CC(=O)CN')
-    myMolecule = Molecules.parse.json(myJSON)
-*/
-
-var parse = {
-
-    smiles : function (input) {
-
-        if (typeof input === 'string') {
-
-            let { atoms, bonds } = decode(tokenize(input));
-
-            return getMolecule(atoms, bonds);
-        }
-
+    smiles: function (input) {
+        let { tokens } = tokenize(input);
+        let { atoms, bonds } = decode(tokens);
+        return getMolecule(atoms, bonds);
     },
 
-    json : function (input) {
+    /**
+     * Method      : load.json(input)
+     * Description : load molecule from JSON object
+     */
 
-        if (typeof input === 'string') {
-
-            return JSON.parse(input);
-        }
+    json: function (input) {
+        return JSON.parse(input);
     }
+
 };
 
+/**
+ * Method      : save
+ * Description : save molecule as supported chemical file formats
+ *
+ * Options     : json
+ */
 
-/*
-  Method      : encode
-  Description : convert object to string
+var save = {
 
-  Options     : .json
+    /**
+     * Method      : save.json(input)
+     * Description : save molecule as JSON object
+     */
 
-  Examples
-    myJSON = Molecules.encode.json(myMolecule)
-*/
-
-var encode = {
-
-    json : function (input) {
-
-        if (typeof input === 'object') {
-
-            return JSON.stringify(input, null, '\t');
-        }
+    json: function (input) {
+        return JSON.stringify(input, null, '\t');
     }
+
 };
 
-
-/*
-  Method      : connectivity
-  Description : chemical graph matrices
-
-  Options     : .adjacency, .distance, .reciprocal
-*/
-
-var connectivity = {
-
-    adjacency : function (molecule) {
-        return adjacencyMatrix(molecule);
-    },
-
-    distance : function (molecule) {
-        return distanceMatrix(molecule);
-    },
-
-    reciprocal : function (molecule) {
-        return reciprocalMatrix(molecule);
-    }
-};
-
-
-/*
-  Method      : topology
-  Description : molecular topological indices
-
-  Options     : .harary, .hyperwiener, .wiener
-*/
+/**
+ * Method      : topology
+ * Description : chemical graph matrices and topological indices
+ *
+ * Options     : topology.matrix, topology.index
+ */
 
 var topology = {
 
-    harary : function (molecule) {
-        return hararyIndex(molecule);
+    /**
+     * Method      : topology.matrix
+     * Description : chemical graph matrices
+     *
+     * Options     : adjacency, degree, distance, lapacian, randic, reciprocal
+     */
+
+    matrix: {
+
+        /**
+         * Method      : topology.matrix.adjacency(G)
+         * Description : returns adjacency matrix (A)
+         */
+
+        adjacency: function (G) {
+            return Topology.matrix.adjacency(G);
+        },
+
+        /**
+         * Method      : topology.matrix.degree(A)
+         * Description : returns degree matrix (DEG)
+         */
+
+        degree: function (A) {
+            return Topology.matrix.degree(A);
+        },
+
+        /**
+         * Method      : topology.matrix.distance(A)
+         * Description : returns distance matrix (D)
+         *
+         * Reference   : R. Seidel, ACM, (1992) 745-749.
+         */
+
+        distance: function (A) {
+            return Topology.matrix.distance(A);
+        },
+
+        /**
+         * Method      : topology.matrix.lapacian(A, DEG)
+         * Description : returns lapacian matrix (L)
+         */
+
+        lapacian: function (A, DEG) {
+            return Topology.matrix.lapacian(A, DEG);
+        },
+
+        /**
+         * Method      : topology.matrix.randic(A, DEG)
+         * Description : returns randic matrix (R)
+         */
+
+        randic: function (A, DEG) {
+            return Topology.matrix.randic(A, DEG);
+        },
+
+        /**
+         * Method      : topology.matrix.reciprocal(D)
+         * Description : returns reciprocal matrix (RD)
+         */
+
+        reciprocal: function (D) {
+            return Topology.matrix.reciprocal(D);
+        }
     },
 
-    hyperwiener : function (molecule) {
-        return hyperwienerIndex(molecule);
-    },
+    /**
+     * Method      : topology.index
+     * Description : molecular topological indices
+     *
+     * Options     : balaban, harary, hyperwiener, randic, wiener
+     */
 
-    wiener : function (molecule) {
-        return wienerIndex(molecule);
+    index: {
+
+        /**
+         * Method      : topology.index.balaban(D)
+         * Description : returns the Balaban index (J)
+         */
+
+        balaban: function (D) {
+            return Topology.index.balaban(D);
+        },
+
+        /**
+         * Method      : topology.index.harary(RD)
+         * Description : returns the Harary index (H)
+         */
+
+        harary: function (RD) {
+            return Topology.index.harary(RD);
+        },
+
+        /**
+         * Method      : topology.index.hyperwiener(D)
+         * Description : returns the Hyper-Wiener index (WW)
+         */
+
+        hyperwiener: function (D) {
+            return Topology.index.hyperwiener(D);
+        },
+
+        /**
+         * Method      : topology.index.randic(A, DEG)
+         * Description : returns the Randic index (R)
+         */
+
+        randic: function (A, DEG) {
+            return Topology.index.randic(A, DEG);
+        },
+
+        /**
+         * Method      : topology.index.wiener(D)
+         * Description : returns the Wiener index (W)
+         */
+
+        wiener: function (D) {
+            return Topology.index.wiener(D);
+        }
     }
 };
 
+/**
+ * Method      : getMolecule
+ * Description : return molecule
+ */
 
-/*
-  Method      : getMolecule
-  Description : return new molecule
-*/
+class Molecule {
+
+    constructor() {
+
+        this.id = [];
+        this.name = [];
+        this.tags = [];
+
+        this.atoms = [];
+        this.bonds = [];
+        this.properties = {};
+    }
+}
+
+class Atom {
+
+    constructor() {
+
+        this.id = [];
+        this.name = [];
+        this.tags = [];
+
+        this.bonds = [];
+        this.properties = {};
+    }
+}
+
+class Bond {
+
+    constructor () {
+
+        this.id = [];
+        this.name = [];
+        this.tags = [];
+
+        this.atoms = [];
+        this.properties = {};
+    }
+}
+
 
 function getMolecule(atoms = {}, bonds = {}, id = 0) {
 
@@ -140,11 +256,10 @@ function getMolecule(atoms = {}, bonds = {}, id = 0) {
     };
 }
 
-
-/*
-  Method      : getFormula
-  Description : return molecular formula
-*/
+/**
+ * Method      : getFormula
+ * Description : return molecular formula
+ */
 
 function getFormula(atoms, formula = {}) {
 
@@ -165,11 +280,10 @@ function getFormula(atoms, formula = {}) {
     return formula;
 }
 
-
-/*
-  Method      : getName
-  Description : return molecular formula as string
-*/
+/**
+ * Method      : getName
+ * Description : return molecular formula as string
+ */
 
 function getName(formula, name = []) {
 
@@ -204,11 +318,10 @@ function getName(formula, name = []) {
     return name.join('');
 }
 
-
-/*
-  Method      : getMass
-  Description : return molecular weight
-*/
+/**
+ * Method      : getMass
+ * Description : return molecular weight
+ */
 
 function getMass(atoms, mass = 0) {
 
@@ -223,9 +336,8 @@ function getMass(atoms, mass = 0) {
     return Math.round(mass * 10000) / 10000;
 }
 
+/**
+ * Exports
+ */
 
-/*
-  Exports
-*/
-
-export { parse, encode, connectivity, topology };
+export { load, save, topology };
