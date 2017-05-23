@@ -238,8 +238,8 @@ function run(option, input) {
         case 'other':
         case '3':
 
-            //var input = 'CC(O)CCC';
-            var input = test[3].name;
+            var input = 'CCO';
+            //var input = test[3].name;
 
             var molecule = Molecules.load.smiles(input);
 
@@ -279,11 +279,11 @@ function run(option, input) {
             }
             console.log('');
 
-            var lapacian = Molecules.topology.matrix.lapacian(adjacent,degree);
+            var laplacian = Molecules.topology.matrix.laplacian(adjacent,degree);
 
-            console.log('lapacian');
-            for (var i = 0; i < lapacian.length; i++) {
-                console.log(lapacian[i]);
+            console.log('laplacian');
+            for (var i = 0; i < laplacian.length; i++) {
+                console.log(laplacian[i]);
             }
             console.log('');
 
@@ -299,7 +299,7 @@ function run(option, input) {
             console.log('Hyper-Wiener:', Molecules.topology.index.hyperwiener(distance));
             console.log('Harary:', Molecules.topology.index.harary(reciprocal));
             console.log('Balaban:', Molecules.topology.index.balaban(distance));
-            console.log('Randic:', Molecules.topology.index.randic(adjacent, degree));
+            console.log('Randic:', Molecules.topology.index.randic(degree));
             console.log('');
 
             //console.log(molecule);
@@ -334,3 +334,5 @@ var latest_results = {pass: 63, fail: 0, total: 63};
 //   Option 3) 'other' (Matrix/Index Test)
 
 run('1');
+run('2');
+run('3');

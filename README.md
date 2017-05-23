@@ -5,7 +5,7 @@ A chemical graph theory library for JavaScript. Latest demo of `molecules.js` + 
 ### Features 
 
 * Import molecules encoded with [SMILES](http://www.daylight.com/dayhtml/doc/theory/theory.smiles.html) chemical line notation.
-* Compute various graph matrices of a molecule (e.g. adjacency, degree, distance, Lapacian, Randic, reciprocal).
+* Compute various graph matrices of a molecule (e.g. adjacency, degree, distance, Laplacian, Randic, reciprocal).
 * Compute several topological indices of a molecule (e.g. Balaban, Harary, hyper-Wiener, Randic, Wiener).
 * Visualize molecules with `d3.js` force directed graphs.
 
@@ -53,6 +53,10 @@ var molecule = Molecules.load.json(url);
 ````javascript
 // Convert a molecule to JSON format
 var data = Molecules.save.json(molecule);
+````
+````javascript
+// Convert a molecule to a d3 graph object
+var graph = Molecules.save.d3(molecule);
 ````
 
 ## Graph Matrices
@@ -109,11 +113,11 @@ var reciprocalMatrix = Molecules.topology.matrix.reciprocal(distanceMatrix);
 // C [ 0.5, 1.0, 0.0 ]
 ````
 
-### Lapacian Matrix
+### Laplacian Matrix
 
 ````javascript
-// Use the adjacency and degree matrix to compute the Lapacian matrix
-var lapacianMatrix = Molecules.topology.matrix.lapacian(adjacencyMatrix, degreeMatrix);
+// Use the adjacency and degree matrix to compute the Laplacian matrix
+var laplacianMatrix = Molecules.topology.matrix.laplacian(adjacencyMatrix, degreeMatrix);
 
 //      C   C   O
 // C [  1, -1,  0 ]
@@ -189,9 +193,11 @@ var balabanIndex = Molecules.topology.index.balaban(distanceMatrix);
 ### Randic Index
 
 ````javascript
-// Use the adjacency and degree matrix to compute the Randic index
-var randicIndex = Molecules.topology.index.randic(adjacencyMatrix, degreeMatrix);
+// Use the degree matrix to compute the Randic index
+var randicIndex = Molecules.topology.index.randic(degreeMatrix);
 
 // 3.664213
 
 ````
+
+    

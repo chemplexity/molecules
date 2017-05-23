@@ -1359,7 +1359,7 @@ var topology = {
      * Method      : topology.matrix
      * Description : compute chemical graph matrices
      *
-     * Options     : adjacency, degree, distance, lapacian, randic, reciprocal
+     * Options     : adjacency, degree, distance, laplacian, randic, reciprocal
      */
 
     matrix: {
@@ -1509,13 +1509,13 @@ var topology = {
         },
 
         /**
-         * Returns lapacian matrix
+         * Returns Laplacian matrix
          * @param {Array} A - adjacency matrix
          * @param {Array} DEG - degree matrix
-         * @return {Array} L - lapacian matrix
+         * @return {Array} L - Laplacian matrix
          */
 
-        lapacian: function lapacian(A, DEG) {
+        laplacian: function laplacian(A, DEG) {
 
             var L = [];
 
@@ -1531,10 +1531,10 @@ var topology = {
         },
 
         /**
-         * Returns randic matrix
+         * Returns Randic matrix
          * @param {Array} A - adjacency matrix
          * @param {Array} DEG - degree matrix
-         * @return {Array} R - randic matrix
+         * @return {Array} R - Randic matrix
          */
 
         randic: function randic(A, DEG) {
@@ -1559,7 +1559,7 @@ var topology = {
         /**
          * Returns reciprocal matrix
          * @param {Array} D - distance matrix
-         * @return {Array} RD - randic matrix
+         * @return {Array} RD - reciprocal matrix
          */
 
         reciprocal: function reciprocal(D) {
@@ -1636,9 +1636,9 @@ var topology = {
         },
 
         /**
-         * Returns hyper-Wiener index
+         * Returns Hyper-Wiener index
          * @param {Array} D - distance matrix
-         * @return {Number} WW - hyper-Wiener index
+         * @return {Number} WW - Hyper-Wiener index
          */
 
         hyperwiener: function hyperwiener(D) {
@@ -1656,17 +1656,16 @@ var topology = {
 
         /**
          * Returns Randic index
-         * @param {Array} A - adjacency matrix
          * @param {Array} DEG - degree matrix
          * @return {Number} R - Randic index
          */
 
-        randic: function randic(A, DEG) {
+        randic: function randic(DEG) {
 
             var R = 0;
 
-            for (var i = 0; i < A.length; i++) {
-                for (var j = 0; j < A[i].length; j++) {
+            for (var i = 0; i < DEG.length; i++) {
+                for (var j = 0; j < DEG[i].length; j++) {
                     R += 1 / Math.sqrt(Math.max.apply(Math, _toConsumableArray(DEG[i])) * Math.max.apply(Math, _toConsumableArray(DEG[j])));
                 }
             }
@@ -1705,7 +1704,7 @@ module.exports = exports['default'];
 },{"./../utilities/math":4}],3:[function(require,module,exports){
 /**
  * File        : molecules.js
- * Version     : 0.0.1-20170522
+ * Version     : 0.1.0-20170523
  * Description : chemical graph theory library
  *
  * Options     : load, save, topology
@@ -1781,6 +1780,15 @@ var save = {
 
     json: function json(input) {
         return JSON.stringify(input, null, '\t');
+    },
+
+    /**
+     * Method      : save.d3(input)
+     * Description : save molecule as d3 graph object {nodes: atoms, links: bonds}
+     */
+
+    d3: function d3(input) {
+        return molecule2graph(input);
     }
 
 };
@@ -1798,7 +1806,7 @@ var topology = {
      * Method      : topology.matrix
      * Description : chemical graph matrices
      *
-     * Options     : adjacency, degree, distance, lapacian, randic, reciprocal
+     * Options     : adjacency, degree, distance, laplacian, randic, reciprocal
      */
 
     matrix: {
@@ -1833,17 +1841,17 @@ var topology = {
         },
 
         /**
-         * Method      : topology.matrix.lapacian(A, DEG)
-         * Description : returns lapacian matrix (L)
+         * Method      : topology.matrix.laplacian(A, DEG)
+         * Description : returns Laplacian matrix (L)
          */
 
-        lapacian: function lapacian(A, DEG) {
-            return _mainTopology2['default'].matrix.lapacian(A, DEG);
+        laplacian: function laplacian(A, DEG) {
+            return _mainTopology2['default'].matrix.laplacian(A, DEG);
         },
 
         /**
          * Method      : topology.matrix.randic(A, DEG)
-         * Description : returns randic matrix (R)
+         * Description : returns Randic matrix (R)
          */
 
         randic: function randic(A, DEG) {
@@ -1897,12 +1905,12 @@ var topology = {
         },
 
         /**
-         * Method      : topology.index.randic(A, DEG)
+         * Method      : topology.index.randic(DEG)
          * Description : returns the Randic index (R)
          */
 
-        randic: function randic(A, DEG) {
-            return _mainTopology2['default'].index.randic(A, DEG);
+        randic: function randic(DEG) {
+            return _mainTopology2['default'].index.randic(DEG);
         },
 
         /**
@@ -2067,6 +2075,55 @@ function getMass(atoms) {
     }
 
     return Math.round(mass * 10000) / 10000;
+}
+
+/**
+ * molecule2graph
+ * @param {Object} molecule object
+ * @return {Object} d3 graph object {nodes: atoms, links: bonds}
+ */
+
+function molecule2graph(molecule) {
+
+    if (typeof molecule !== 'object') {
+        return null;
+    }
+
+    var atoms = Object.keys(molecule.atoms);
+    var bonds = Object.keys(molecule.bonds);
+
+    var nodes = [];
+    var links = [];
+
+    for (var i = 0; i < atoms.length; i++) {
+
+        nodes.push({
+            id: molecule.atoms[atoms[i]].id,
+            name: molecule.atoms[atoms[i]].name,
+            group: molecule.atoms[atoms[i]].group,
+            protons: molecule.atoms[atoms[i]].protons,
+            neutrons: molecule.atoms[atoms[i]].neutrons,
+            electrons: molecule.atoms[atoms[i]].electrons,
+            bonds: molecule.atoms[atoms[i]].bonds,
+            properties: molecule.atoms[atoms[i]].properties
+        });
+    }
+
+    for (var i = 0; i < bonds.length; i++) {
+
+        links.push({
+            id: molecule.bonds[bonds[i]].id,
+            name: molecule.bonds[bonds[i]].name,
+            value: molecule.bonds[bonds[i]].value,
+            source: molecule.bonds[bonds[i]].atoms[0],
+            target: molecule.bonds[bonds[i]].atoms[1],
+            //source: atoms.indexOf(molecule.bonds[bonds[i]].atoms[0]),
+            //target: atoms.indexOf(molecule.bonds[bonds[i]].atoms[1]),
+            order: molecule.bonds[bonds[i]].order
+        });
+    }
+
+    return { nodes: nodes, links: links };
 }
 
 /**
