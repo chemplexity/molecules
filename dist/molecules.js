@@ -1333,10 +1333,8 @@ exports.decode = decode;
 
 },{"./../utilities/reference":5}],2:[function(require,module,exports){
 /**
- * File        : topology.js
- * Description : chemical graph matrices and topological indices
- *
- * Options     : topology.matrix, topology.index
+ * topology.js
+ * chemical graph matrices and topological indices
  */
 
 'use strict';
@@ -1356,16 +1354,14 @@ var _utilitiesMath2 = _interopRequireDefault(_utilitiesMath);
 var topology = {
 
     /**
-     * Method      : topology.matrix
-     * Description : compute chemical graph matrices
-     *
-     * Options     : adjacency, degree, distance, lapacian, randic, reciprocal
+     * topology.matrix
+     * adjacency, degree, distance, lapacian, randic, reciprocal
      */
 
     matrix: {
 
         /**
-         * Returns adjacency matrix
+         * topology.matrix.adjacency
          * @param {Object} G - molecule object
          * @return {Array} A - adjacency matrix
          */
@@ -1402,7 +1398,7 @@ var topology = {
         },
 
         /**
-         * Returns degree matrix
+         * topology.matrix.degree
          * @param {Array} A - adjacency matrix
          * @return {Array} DEG - degree matrix
          */
@@ -1430,7 +1426,8 @@ var topology = {
         },
 
         /**
-         * Returns distance matrix (R. Seidel, ACM, (1992) 745-749)
+         * topology.matrix.distance
+         * R. Seidel, ACM, (1992) 745-749
          * @param {Array} A - adjacency matrix
          * @return {Array} D - distance matrix
          */
@@ -1509,10 +1506,10 @@ var topology = {
         },
 
         /**
-         * Returns lapacian matrix
+         * topology.matrix.lapacian
          * @param {Array} A - adjacency matrix
          * @param {Array} DEG - degree matrix
-         * @return {Array} L - lapacian matrix
+         * @return {Array} L - Lapacian matrix
          */
 
         lapacian: function lapacian(A, DEG) {
@@ -1531,10 +1528,10 @@ var topology = {
         },
 
         /**
-         * Returns randic matrix
+         * topology.matrix.randic
          * @param {Array} A - adjacency matrix
          * @param {Array} DEG - degree matrix
-         * @return {Array} R - randic matrix
+         * @return {Array} R - Randic matrix
          */
 
         randic: function randic(A, DEG) {
@@ -1557,9 +1554,9 @@ var topology = {
         },
 
         /**
-         * Returns reciprocal matrix
+         * topology.matrix.reciprocal
          * @param {Array} D - distance matrix
-         * @return {Array} RD - randic matrix
+         * @return {Array} RD - reciprocal matrix
          */
 
         reciprocal: function reciprocal(D) {
@@ -1583,16 +1580,14 @@ var topology = {
     },
 
     /**
-     * Method      : topology.index
-     * Description : molecular topological indices
-     *
-     * Options     : balaban, harary, hyperwiener, randic, wiener
+     * topology.index
+     * balaban, harary, hyperwiener, randic, wiener
      */
 
     index: {
 
         /**
-         * Returns Balaban index
+         * topology.index.balaban
          * @param {Array} D - distance matrix
          * @return {Number} J - Balaban index
          */
@@ -1617,7 +1612,7 @@ var topology = {
         },
 
         /**
-         * Returns Harary index
+         * topology.index.harary
          * @param {Array} RD - reciprocal matrix
          * @return {Number} H - Harary index
          */
@@ -1636,7 +1631,7 @@ var topology = {
         },
 
         /**
-         * Returns hyper-Wiener index
+         * topology.index.hyperwiener
          * @param {Array} D - distance matrix
          * @return {Number} WW - hyper-Wiener index
          */
@@ -1655,18 +1650,17 @@ var topology = {
         },
 
         /**
-         * Returns Randic index
-         * @param {Array} A - adjacency matrix
+         * topology.index.randic
          * @param {Array} DEG - degree matrix
          * @return {Number} R - Randic index
          */
 
-        randic: function randic(A, DEG) {
+        randic: function randic(DEG) {
 
             var R = 0;
 
-            for (var i = 0; i < A.length; i++) {
-                for (var j = 0; j < A[i].length; j++) {
+            for (var i = 0; i < DEG.length; i++) {
+                for (var j = 0; j < DEG[i].length; j++) {
                     R += 1 / Math.sqrt(Math.max.apply(Math, _toConsumableArray(DEG[i])) * Math.max.apply(Math, _toConsumableArray(DEG[j])));
                 }
             }
@@ -1675,7 +1669,7 @@ var topology = {
         },
 
         /**
-         * Returns Wiener index
+         * topology.index.wiener
          * @param {Array} D - distance matrix
          * @return {Number} W - Wiener index
          */
@@ -1705,11 +1699,9 @@ module.exports = exports['default'];
 },{"./../utilities/math":4}],3:[function(require,module,exports){
 /**
  * File        : molecules.js
- * Version     : 0.0.1-20170522
+ * Version     : 0.0.1-20170523
  * Description : chemical graph theory library
- *
- * Options     : load, save, topology
- */
+ **/
 
 'use strict';
 
@@ -1728,17 +1720,16 @@ var _mainTopology = require('./main/topology');
 var _mainTopology2 = _interopRequireDefault(_mainTopology);
 
 /**
- * Method      : load
- * Description : load molecule from supported chemical file format
- *
- * Options     : load.smiles, load.json
+ * load
+ * load molecules from supported chemical file format
  */
 
 var load = {
 
     /**
-     * Method      : load.smiles(input)
-     * Description : load molecule from SMILES string
+     * load.smiles
+     * @param {String} input - SMILES encoded string
+     * @return {Object} molecule object
      */
 
     smiles: function smiles(input) {
@@ -1755,8 +1746,9 @@ var load = {
     },
 
     /**
-     * Method      : load.json(input)
-     * Description : load molecule from JSON object
+     * load.json
+     * @param {String} input - JSON encoded string
+     * @return {Object} molecule object
      */
 
     json: function json(input) {
@@ -1766,46 +1758,52 @@ var load = {
 };
 
 /**
- * Method      : save
- * Description : save molecule as supported chemical file formats
- *
- * Options     : json
+ * save
+ * save molecule as supported chemical file formats
  */
 
 var save = {
 
     /**
-     * Method      : save.json(input)
-     * Description : save molecule as JSON object
+     * save.json
+     * @param {Object} input - molecule object
+     * @return {String} JSON encoded string
      */
 
     json: function json(input) {
         return JSON.stringify(input, null, '\t');
+    },
+
+    /**
+     * save.d3
+     * @param {Object} input - molecule object
+     * @return {Object} d3 graph object {nodes: atoms, links: bonds}
+     */
+
+    d3: function d3(input) {
+        return molecule2graph(input);
     }
 
 };
 
 /**
- * Method      : topology
- * Description : chemical graph matrices and topological indices
- *
- * Options     : topology.matrix, topology.index
+ * topology
+ * chemical graph matrices and topological indices
  */
 
 var topology = {
 
     /**
-     * Method      : topology.matrix
-     * Description : chemical graph matrices
-     *
-     * Options     : adjacency, degree, distance, lapacian, randic, reciprocal
+     * topology.matrix
+     * adjacency, degree, distance, lapacian, randic, reciprocal
      */
 
     matrix: {
 
         /**
-         * Method      : topology.matrix.adjacency(G)
-         * Description : returns adjacency matrix (A)
+         * topology.matrix.adjacency
+         * @param {Object} G - molecule object
+         * @return {Array} A - adjacency matrix
          */
 
         adjacency: function adjacency(G) {
@@ -1813,8 +1811,9 @@ var topology = {
         },
 
         /**
-         * Method      : topology.matrix.degree(A)
-         * Description : returns degree matrix (DEG)
+         * topology.matrix.degree
+         * @param {Array} A - adjacency matrix
+         * @return {Array} DEG - degree matrix
          */
 
         degree: function degree(A) {
@@ -1822,10 +1821,9 @@ var topology = {
         },
 
         /**
-         * Method      : topology.matrix.distance(A)
-         * Description : returns distance matrix (D)
-         *
-         * Reference   : R. Seidel, ACM, (1992) 745-749.
+         * topology.matrix.distance
+         * @param {Array} A - adjacency matrix
+         * @return {Array} D - distance matrix
          */
 
         distance: function distance(A) {
@@ -1833,8 +1831,10 @@ var topology = {
         },
 
         /**
-         * Method      : topology.matrix.lapacian(A, DEG)
-         * Description : returns lapacian matrix (L)
+         * topology.matrix.lapacian
+         * @param {Array} A - adjacency matrix
+         * @param {Array} DEG - degree matrix
+         * @return {Array} L - Lapacian matrix
          */
 
         lapacian: function lapacian(A, DEG) {
@@ -1842,8 +1842,10 @@ var topology = {
         },
 
         /**
-         * Method      : topology.matrix.randic(A, DEG)
-         * Description : returns randic matrix (R)
+         * topology.matrix.randic
+         * @param {Array} A - adjacency matrix
+         * @param {Array} DEG - degree matrix
+         * @return {Array} R - Randic matrix
          */
 
         randic: function randic(A, DEG) {
@@ -1851,8 +1853,9 @@ var topology = {
         },
 
         /**
-         * Method      : topology.matrix.reciprocal(D)
-         * Description : returns reciprocal matrix (RD)
+         * topology.matrix.reciprocal
+         * @param {Array} D - distance matrix
+         * @return {Array} RD - reciprocal matrix
          */
 
         reciprocal: function reciprocal(D) {
@@ -1861,17 +1864,16 @@ var topology = {
     },
 
     /**
-     * Method      : topology.index
-     * Description : molecular topological indices
-     *
-     * Options     : balaban, harary, hyperwiener, randic, wiener
+     * topology.index
+     * balaban, harary, hyperwiener, randic, wiener
      */
 
     index: {
 
         /**
-         * Method      : topology.index.balaban(D)
-         * Description : returns the Balaban index (J)
+         * topology.index.balaban
+         * @param {Array} D - distance matrix
+         * @return {Number} J - Balaban index
          */
 
         balaban: function balaban(D) {
@@ -1879,8 +1881,9 @@ var topology = {
         },
 
         /**
-         * Method      : topology.index.harary(RD)
-         * Description : returns the Harary index (H)
+         * topology.index.harary
+         * @param {Array} RD - reciprocal matrix
+         * @return {Number} H - Harary index
          */
 
         harary: function harary(RD) {
@@ -1888,8 +1891,9 @@ var topology = {
         },
 
         /**
-         * Method      : topology.index.hyperwiener(D)
-         * Description : returns the Hyper-Wiener index (WW)
+         * topology.index.hyperwiener
+         * @param {Array} D - distance matrix
+         * @return {Number} WW - Hyper-Wiener index
          */
 
         hyperwiener: function hyperwiener(D) {
@@ -1897,17 +1901,19 @@ var topology = {
         },
 
         /**
-         * Method      : topology.index.randic(A, DEG)
-         * Description : returns the Randic index (R)
+         * topology.index.randic
+         * @param {Array} DEG - degree matrix
+         * @return {Number} R - Randic index
          */
 
-        randic: function randic(A, DEG) {
-            return _mainTopology2['default'].index.randic(A, DEG);
+        randic: function randic(DEG) {
+            return _mainTopology2['default'].index.randic(DEG);
         },
 
         /**
-         * Method      : topology.index.wiener(D)
-         * Description : returns the Wiener index (W)
+         * topology.index.wiener
+         * @param {Array} D - distance matrix
+         * @return {Number} W - Wiener index
          */
 
         wiener: function wiener(D) {
@@ -1915,11 +1921,6 @@ var topology = {
         }
     }
 };
-
-/**
- * Method      : getMolecule
- * Description : return molecule
- */
 
 var Molecule = function Molecule() {
     _classCallCheck(this, Molecule);
@@ -1953,16 +1954,30 @@ var Bond = function Bond() {
 
     this.atoms = [];
     this.properties = {};
-};
+}
+
+/**
+ * getMolecule
+ * @param {Object} atoms - SMILES decoded atoms
+ * @param {Object} bonds - SMILES decoded bonds
+ * @param {Number} id - user specified identifier
+ * @return {Object} molecule object
+ */
+
+;
 
 function getMolecule() {
     var atoms = arguments.length <= 0 || arguments[0] === undefined ? {} : arguments[0];
     var bonds = arguments.length <= 1 || arguments[1] === undefined ? {} : arguments[1];
     var id = arguments.length <= 2 || arguments[2] === undefined ? 0 : arguments[2];
 
-    var mass = getMass(atoms),
-        formula = getFormula(atoms),
-        name = getName(formula);
+    if (typeof atoms !== 'object') {
+        return null;
+    }
+
+    var mass = getMass(atoms);
+    var formula = getFormula(atoms);
+    var name = getName(formula);
 
     return {
         id: id,
@@ -1977,18 +1992,19 @@ function getMolecule() {
 }
 
 /**
- * Method      : getFormula
- * Description : return molecular formula
+ * getFormula
+ * @param {Object} atoms
+ * @return {Object} formula object {elementName: elementCount}
  */
 
 function getFormula(atoms) {
-    var formula = arguments.length <= 1 || arguments[1] === undefined ? {} : arguments[1];
 
     if (typeof atoms !== 'object') {
         return null;
     }
 
     var keys = Object.keys(atoms);
+    var formula = {};
 
     for (var i = 0; i < keys.length; i++) {
 
@@ -2003,18 +2019,19 @@ function getFormula(atoms) {
 }
 
 /**
- * Method      : getName
- * Description : return molecular formula as string
+ * getName
+ * @param {Object} formula object
+ * @return {String} formula string
  */
 
 function getName(formula) {
-    var name = arguments.length <= 1 || arguments[1] === undefined ? [] : arguments[1];
 
     if (typeof formula !== 'object') {
         return null;
     }
 
     var keys = Object.keys(formula).sort();
+    var name = [];
 
     var remove = function remove(element) {
         return keys.splice(keys.indexOf(element), 1);
@@ -2049,24 +2066,76 @@ function getName(formula) {
 }
 
 /**
- * Method      : getMass
- * Description : return molecular weight
+ * getMass
+ * @param {Object} atoms
+ * @return {Number} molecular weight
  */
 
 function getMass(atoms) {
-    var mass = arguments.length <= 1 || arguments[1] === undefined ? 0 : arguments[1];
 
     if (typeof atoms !== 'object') {
         return null;
     }
 
     var keys = Object.keys(atoms);
+    var mass = 0;
 
     for (var i = 0; i < keys.length; i++) {
         mass += atoms[keys[i]].protons + atoms[keys[i]].neutrons;
     }
 
-    return Math.round(mass * 10000) / 10000;
+    var x = 5;
+
+    return Math.round(mass * Math.pow(10, x)) / Math.pow(10, x);
+}
+
+/**
+ * molecule2graph
+ * @param {Object} molecule object
+ * @return {Object} d3 graph object {nodes: atoms, links: bonds}
+ */
+
+function molecule2graph(molecule) {
+
+    if (typeof molecule !== 'object') {
+        return null;
+    }
+
+    var atoms = Object.keys(molecule.atoms);
+    var bonds = Object.keys(molecule.bonds);
+
+    var nodes = [];
+    var links = [];
+
+    for (var i = 0; i < atoms.length; i++) {
+
+        nodes.push({
+            id: molecule.atoms[atoms[i]].id,
+            name: molecule.atoms[atoms[i]].name,
+            group: molecule.atoms[atoms[i]].group,
+            protons: molecule.atoms[atoms[i]].protons,
+            neutrons: molecule.atoms[atoms[i]].neutrons,
+            electrons: molecule.atoms[atoms[i]].electrons,
+            bonds: molecule.atoms[atoms[i]].bonds,
+            properties: molecule.atoms[atoms[i]].properties
+        });
+    }
+
+    for (var i = 0; i < bonds.length; i++) {
+
+        links.push({
+            id: molecule.bonds[bonds[i]].id,
+            name: molecule.bonds[bonds[i]].name,
+            value: molecule.bonds[bonds[i]].value,
+            source: molecule.bonds[bonds[i]].atoms[0],
+            target: molecule.bonds[bonds[i]].atoms[1],
+            //source: atoms.indexOf(molecule.bonds[bonds[i]].atoms[0]),
+            //target: atoms.indexOf(molecule.bonds[bonds[i]].atoms[1]),
+            order: molecule.bonds[bonds[i]].order
+        });
+    }
+
+    return { nodes: nodes, links: links };
 }
 
 /**

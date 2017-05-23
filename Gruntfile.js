@@ -40,12 +40,16 @@ module.exports = function(grunt) {
             options: {
                 mangle: true
             }
-        }
+        },
+
+        clean: ['dist/main', 'dist/utilities']
+
     });
 
     grunt.loadNpmTasks('grunt-babel');
     grunt.loadNpmTasks('grunt-browserify');
     grunt.loadNpmTasks('grunt-contrib-uglify');
+    grunt.loadNpmTasks('grunt-contrib-clean');
 
-    grunt.registerTask('default', ['babel', 'browserify', 'uglify']);
+    grunt.registerTask('default', ['babel', 'browserify', 'uglify', 'clean']);
 };

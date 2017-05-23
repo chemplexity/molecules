@@ -60,10 +60,10 @@ body {
 }
 
 #content-main {
-    position: relative;
-    top: 85px;
+    position: absolute;
+    top: 95px;
     width: 100%;
-    height: 70%;
+    height: auto;
     margin: 0px;
     padding: 0px;
     border: 0px solid #bbb;
@@ -78,8 +78,8 @@ body {
 }
 
 #plot {
-    height: 100%;
-    width: 70%;
+    width: 75%;
+    height: auto;
     margin: 0px;
     float: left;
     overflow: hidden;
@@ -87,8 +87,8 @@ body {
 }
 
 #sidebar {
-    height: 100%;
-    width: 30%;
+    width: 25%;
+    height: auto;
     margin: 0px;
     float: right;
     padding-right: 1%;
@@ -237,10 +237,17 @@ section {
     -webkit-transition: 0.2s ease all;
 }
 
-.bar:before { left: 50%; }
-.bar:after { right: 50%; }
+.bar:before {
+    left: 50%;
+}
 
-input:focus ~ .bar:before, input:focus ~ .bar:after { width: 50%; }
+.bar:after {
+    right: 50%;
+}
+
+input:focus ~ .bar:before, input:focus ~ .bar:after {
+    width: 50%;
+}
 
 .highlight {
     position: absolute;
@@ -401,7 +408,7 @@ var parseInput = function(input) {
 
     if (typeof input !== 'string' || input.length === 0 || input.length > 1000 ) { return null; }
 
-    var molecule = Molecules.load.smiles(input)
+    var molecule = Molecules.load.smiles(input);
 
     if (typeof molecule === 'object') { update(molecule); }
 
@@ -459,7 +466,7 @@ var bottomPanel = document.getElementById("footer");
 //
 // Display Properties
 //
-var mainPanelPadding = 10;
+var mainPanelPadding = 0;
 var mainPanelHeight  = bottomPanel.offsetTop - topPanel.offsetHeight - mainPanelPadding;
 var mainPanelWidth   = centerPanel.offsetWidth;
 
@@ -469,7 +476,7 @@ var mainPanel = d3.select("#plot")
     .append("svg")
     .attr("preserveAspectRatio", "xMinYMin meet")
     .attr("viewBox", "0 0 " + mainPanelWidth + " " +  mainPanelHeight + "")
-    .classed("svg-content-responsive", true)
+    .classed("svg-content-responsive", true);
 
 var supportPanel = d3.select("#sidebar")
     .append("div")
@@ -477,7 +484,7 @@ var supportPanel = d3.select("#sidebar")
     .append("svg")
     .attr("preserveAspectRatio", "xMinYMin meet")
     .attr("viewBox", "0 0 " + sidebar.offsetWidth + " " +  mainPanelHeight + "")
-    .classed("svg-content-responsive", true)
+    .classed("svg-content-responsive", true);
 
 //
 // Initialize d3.js
@@ -485,12 +492,12 @@ var supportPanel = d3.select("#sidebar")
 var forceProperties = {
     size           : [mainPanelWidth, mainPanelHeight],
     charge         : -1200,
-    chargeDistance : 700,
-    linkStrength   : 1.2,
-    linkDistance   : -50,
-    gravity        : 1.5,
+    chargeDistance : 800,
+    linkStrength   : 1.9,
+    linkDistance   : -40,
+    gravity        : 1.6,
     friction       : 0.85
-}
+};
 
 var force = d3.layout.force()
     .size(forceProperties.size)
@@ -513,8 +520,8 @@ function update(molecule) {
     var nodes = force.nodes(graph.nodes);
     var links = force.links(graph.links);
 
-    d3.selectAll(".node").remove()
-    d3.selectAll(".separator").remove()
+    d3.selectAll(".node").remove();
+    d3.selectAll(".separator").remove();
 
     //
     // Bond Properties
@@ -539,38 +546,38 @@ function update(molecule) {
     var singleBond = bond.append("svg:line")
         .filter(function (d) { return d.order == 1 | d.order == 2 | d.order == 3 })
         .attr("class", "link")
-        .style("stroke-width", function(d) { return (d.order * bondMuliplier - 1) * (bondMuliplier/2) + "px"; })
+        .style("stroke-width", function(d) { return (d.order * bondMuliplier - 1) * (bondMuliplier/2) + "px"; });
 
     var doubleBond = bond.append("svg:line")
         .filter(function (d) { return d.order == 2 })
         .attr("class", "separator")
         .style("stroke-width", piBond.strokeWidth)
-        .style("stroke", piBond.stroke)
+        .style("stroke", piBond.stroke);
 
     var aromaticBond_1 = bond.append("svg:line")
         .filter(function (d) { return d.order == 1.5 })
         .attr("class", "separator")
         .style("stroke-width", aromaticBond.strokeWidth)
-        .style("stroke", aromaticBond.stroke)
+        .style("stroke", aromaticBond.stroke);
 
     var aromaticBond_2 = bond.append("svg:line")
         .filter(function (d) { return d.order == 1.5 })
         .attr("class", "link")
         .style("stroke-width", aromaticBond.strokeWidth)
         .style("stroke", aromaticBond.stroke)
-        .style("stroke-dasharray", aromaticBond.strokeDashArray)
+        .style("stroke-dasharray", aromaticBond.strokeDashArray);
 
     var tripleBond_1 = bond.append("svg:line")
         .filter(function (d) { return d.order == 3 })
         .attr("class", "separator")
         .style("stroke-width", piBond.strokeWidth)
-        .style("stroke", piBond.stroke)
+        .style("stroke", piBond.stroke);
 
     var tripleBond_2 = bond.append("svg:line")
         .filter(function (d) { return d.order == 3 })
         .attr("class", "separator")
         .style("stroke-width", piBond.strokeWidth)
-        .style("stroke", piBond.stroke)
+        .style("stroke", piBond.stroke);
 
     mainPanel.selectAll("line.link")
         .data(graph.links, function(d) { return d.source + "-" + d.target; } )
@@ -660,6 +667,7 @@ function update(molecule) {
 //
 // Helper Functions
 //
+
 function xOffset(offset, source, target) {
     var dx = target.x - source.x;
     var dy = target.y - source.y;
@@ -714,6 +722,7 @@ function updateMolecularFormula(molecule) {
     document.getElementById("molecularFormula").innerHTML = molecularFormula.join('').replace(/(\d+)/g, '<sub>$1</sub>');
 }
 
+// Fix display of large molecules w/ zoom out
 function updateZoom(graph) {
 
     //var zoom = d3.behavior.zoom();
@@ -824,11 +833,13 @@ function updateMatrix(input) {
 //
 // Initialization
 //
+
 parseInput(userExample);
 
 //
 // SMILES Examples
 //
+
 var randomMolecule = [
     {mass: 72.151, formula: {C:5, H:12}, name: 'CCCCC', category: 'Alkane', type: 'Primary'},
     {mass: 72.151, formula: {C:5, H:12}, name: 'CC(C)CC', category: 'Alkane', type: 'Secondary'},

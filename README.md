@@ -9,7 +9,7 @@ A chemical graph theory library for JavaScript. Latest demo of `molecules.js` + 
 * Compute several topological indices of a molecule (e.g. Balaban, Harary, hyper-Wiener, Randic, Wiener).
 * Visualize molecules with `d3.js` force directed graphs.
 
-![Imgur](http://i.imgur.com/zGQWMAp.jpg)
+![Imgur](http://i.imgur.com/idP2r6Q.jpg)
 
 ## Getting Started
 
@@ -65,7 +65,7 @@ var ethanol = Molecules.load.smiles('CCO');
 ### Adjacency Matrix
 
 ````javascript
-// Compute the adjacency matrix of a ethanol
+// Compute the adjacency matrix of ethanol
 var adjacencyMatrix = Molecules.topology.matrix.adjacency(ethanol);
 
 //     C  C  O 
@@ -189,8 +189,8 @@ var balabanIndex = Molecules.topology.index.balaban(distanceMatrix);
 ### Randic Index
 
 ````javascript
-// Use the the adjacency and degree matrix to compute the Randic index
-var randicIndex = Molecules.topology.index.randic(adjacencyMatrix, degreeMatrix);
+// Use the degree matrix to compute the Randic index
+var randicIndex = Molecules.topology.index.randic(degreeMatrix);
 
 // 3.664213
 

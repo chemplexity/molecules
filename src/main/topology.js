@@ -1,8 +1,6 @@
 /**
- * File        : topology.js
- * Description : chemical graph matrices and topological indices
- *
- * Options     : topology.matrix, topology.index
+ * topology.js
+ * chemical graph matrices and topological indices
  */
 
 import math from './../utilities/math';
@@ -10,16 +8,14 @@ import math from './../utilities/math';
 var topology = {
 
     /**
-     * Method      : topology.matrix
-     * Description : compute chemical graph matrices
-     *
-     * Options     : adjacency, degree, distance, lapacian, randic, reciprocal
+     * topology.matrix
+     * adjacency, degree, distance, lapacian, randic, reciprocal
      */
 
     matrix: {
 
         /**
-         * Returns adjacency matrix
+         * topology.matrix.adjacency
          * @param {Object} G - molecule object
          * @return {Array} A - adjacency matrix
          */
@@ -52,7 +48,7 @@ var topology = {
         },
 
         /**
-         * Returns degree matrix
+         * topology.matrix.degree
          * @param {Array} A - adjacency matrix
          * @return {Array} DEG - degree matrix
          */
@@ -80,7 +76,8 @@ var topology = {
         },
 
         /**
-         * Returns distance matrix (R. Seidel, ACM, (1992) 745-749)
+         * topology.matrix.distance
+         * R. Seidel, ACM, (1992) 745-749
          * @param {Array} A - adjacency matrix
          * @return {Array} D - distance matrix
          */
@@ -161,10 +158,10 @@ var topology = {
         },
 
         /**
-         * Returns lapacian matrix
+         * topology.matrix.lapacian
          * @param {Array} A - adjacency matrix
          * @param {Array} DEG - degree matrix
-         * @return {Array} L - lapacian matrix
+         * @return {Array} L - Lapacian matrix
          */
 
         lapacian: function(A, DEG) {
@@ -183,10 +180,10 @@ var topology = {
         },
 
         /**
-         * Returns randic matrix
+         * topology.matrix.randic
          * @param {Array} A - adjacency matrix
          * @param {Array} DEG - degree matrix
-         * @return {Array} R - randic matrix
+         * @return {Array} R - Randic matrix
          */
 
         randic: function (A, DEG) {
@@ -209,9 +206,9 @@ var topology = {
         },
 
         /**
-         * Returns reciprocal matrix
+         * topology.matrix.reciprocal
          * @param {Array} D - distance matrix
-         * @return {Array} RD - randic matrix
+         * @return {Array} RD - reciprocal matrix
          */
 
         reciprocal: function (D) {
@@ -235,16 +232,14 @@ var topology = {
     },
 
     /**
-     * Method      : topology.index
-     * Description : molecular topological indices
-     *
-     * Options     : balaban, harary, hyperwiener, randic, wiener
+     * topology.index
+     * balaban, harary, hyperwiener, randic, wiener
      */
 
     index: {
 
         /**
-         * Returns Balaban index
+         * topology.index.balaban
          * @param {Array} D - distance matrix
          * @return {Number} J - Balaban index
          */
@@ -269,7 +264,7 @@ var topology = {
         },
 
         /**
-         * Returns Harary index
+         * topology.index.harary
          * @param {Array} RD - reciprocal matrix
          * @return {Number} H - Harary index
          */
@@ -288,7 +283,7 @@ var topology = {
         },
 
         /**
-         * Returns hyper-Wiener index
+         * topology.index.hyperwiener
          * @param {Array} D - distance matrix
          * @return {Number} WW - hyper-Wiener index
          */
@@ -307,18 +302,17 @@ var topology = {
         },
 
         /**
-         * Returns Randic index
-         * @param {Array} A - adjacency matrix
+         * topology.index.randic
          * @param {Array} DEG - degree matrix
          * @return {Number} R - Randic index
          */
 
-        randic: function (A, DEG) {
+        randic: function (DEG) {
 
             let R = 0;
 
-            for (let i = 0; i < A.length; i++) {
-                for (let j = 0; j < A[i].length; j++) {
+            for (let i = 0; i < DEG.length; i++) {
+                for (let j = 0; j < DEG[i].length; j++) {
                     R += 1 / Math.sqrt(Math.max(...DEG[i]) * Math.max(...DEG[j]));
                 }
             }
@@ -327,7 +321,7 @@ var topology = {
         },
 
         /**
-         * Returns Wiener index
+         * topology.index.wiener
          * @param {Array} D - distance matrix
          * @return {Number} W - Wiener index
          */
