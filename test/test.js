@@ -249,7 +249,7 @@ function run(option, input) {
 
             var adjacent = Molecules.topology.matrix.adjacency(molecule);
 
-            console.log('adjacent');
+            console.log('adjacency');
             for (var i = 0; i < adjacent.length; i++) {
                 console.log(adjacent[i]);
             }
@@ -299,7 +299,7 @@ function run(option, input) {
             console.log('Hyper-Wiener:', Molecules.topology.index.hyperwiener(distance));
             console.log('Harary:', Molecules.topology.index.harary(reciprocal));
             console.log('Balaban:', Molecules.topology.index.balaban(distance));
-            console.log('Randic:', Molecules.topology.index.randic(degree));
+            console.log('Randic:', Molecules.topology.index.randic(randic));
             console.log('');
 
             //console.log(molecule);

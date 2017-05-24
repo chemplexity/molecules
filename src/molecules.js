@@ -182,12 +182,12 @@ var topology = {
         },
 
         /**
-         * Method      : topology.index.randic(DEG)
-         * Description : returns the Randic index (R)
+         * Method      : topology.index.randic(R)
+         * Description : returns the Randic index (RI)
          */
 
-        randic: function (DEG) {
-            return Topology.index.randic(DEG);
+        randic: function (R) {
+            return Topology.index.randic(R);
         },
 
         /**

@@ -1656,21 +1656,21 @@ var topology = {
 
         /**
          * Returns Randic index
-         * @param {Array} DEG - degree matrix
-         * @return {Number} R - Randic index
+         * @param {Array} R - Randic matrix
+         * @return {Number} RI - Randic index
          */
 
-        randic: function randic(DEG) {
+        randic: function randic(R) {
 
-            var R = 0;
+            var RI = 0;
 
-            for (var i = 0; i < DEG.length; i++) {
-                for (var j = 0; j < DEG[i].length; j++) {
-                    R += 1 / Math.sqrt(Math.max.apply(Math, _toConsumableArray(DEG[i])) * Math.max.apply(Math, _toConsumableArray(DEG[j])));
-                }
+            for (var i = 0; i < R.length; i++) {
+                RI += R[i].reduce(function (a, b) {
+                    return a + b;
+                }, 0);
             }
 
-            return R / 2;
+            return RI / 2;
         },
 
         /**
@@ -1905,12 +1905,12 @@ var topology = {
         },
 
         /**
-         * Method      : topology.index.randic(DEG)
-         * Description : returns the Randic index (R)
+         * Method      : topology.index.randic(R)
+         * Description : returns the Randic index (RI)
          */
 
-        randic: function randic(DEG) {
-            return _mainTopology2['default'].index.randic(DEG);
+        randic: function randic(R) {
+            return _mainTopology2['default'].index.randic(R);
         },
 
         /**

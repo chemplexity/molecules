@@ -6,7 +6,7 @@ A chemical graph theory library for JavaScript. Latest demo of `molecules.js` + 
 
 * Import molecules encoded with [SMILES](http://www.daylight.com/dayhtml/doc/theory/theory.smiles.html) chemical line notation.
 * Compute various graph matrices of a molecule (e.g. adjacency, degree, distance, Laplacian, Randic, reciprocal).
-* Compute several topological indices of a molecule (e.g. Balaban, Harary, hyper-Wiener, Randic, Wiener).
+* Compute several topological indices of a molecule (e.g. Balaban, Harary, Hyper-Wiener, Randic, Wiener).
 * Visualize molecules with `d3.js` force directed graphs.
 
 ![Imgur](http://i.imgur.com/idP2r6Q.jpg)
@@ -148,6 +148,7 @@ var adjacencyMatrix  = Molecules.topology.matrix.adjacency(ethanol);
 var distanceMatrix   = Molecules.topology.matrix.distance(adjacencyMatrix);
 var degreeMatrix     = Molecules.topology.matrix.degree(adjacencyMatrix);
 var reciprocalMatrix = Molecules.topology.matrix.reciprocal(distanceMatrix);
+var randicMatrix     = Molecules.topology.matrix.randic(adjacencyMatrix, degreeMatrix);
 ````
 
 ### Wiener Index
@@ -163,7 +164,7 @@ var wienerIndex = Molecules.topology.index.wiener(distanceMatrix);
 ### Hyper-Wiener Index
 
 ````javascript
-// Use the distance matrix to compute the hyper-Wiener index
+// Use the distance matrix to compute the Hyper-Wiener index
 var hyperwienerIndex = Molecules.topology.index.hyperwiener(distanceMatrix);
 
 // 5.0
@@ -193,10 +194,10 @@ var balabanIndex = Molecules.topology.index.balaban(distanceMatrix);
 ### Randic Index
 
 ````javascript
-// Use the degree matrix to compute the Randic index
-var randicIndex = Molecules.topology.index.randic(degreeMatrix);
+// Use the Randic matrix to compute the Randic index
+var randicIndex = Molecules.topology.index.randic(randicMatrix);
 
-// 3.664213
+// 1.414213
 
 ````
 
