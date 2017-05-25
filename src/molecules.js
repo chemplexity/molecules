@@ -1,6 +1,6 @@
 /**
  * File        : molecules.js
- * Version     : 0.1.0-20170523
+ * Version     : 0.1.0-20170525
  * Description : chemical graph theory library
  *
  * Options     : load, save, topology

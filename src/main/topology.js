@@ -252,20 +252,25 @@ var topology = {
         balaban: function (D) {
 
             let J = 0;
+            let B = 0;
+            let S = [];
 
-            for (let i = 1; i < D.length; i++) {
-                let S0 = 0,
-                    S1 = 0;
-
-                for (let j = 0; j < D[i].length; j++) {
-                    S0 += D[i-1][j];
-                    S1 += D[i][j];
-                }
-
-                J += 1 / Math.sqrt(S0 * S1);
+            for (let i = 0; i < D.length; i++) {
+                S[i] = D[i].reduce((a,b) => a+b, 0);
             }
 
-            return J;
+            for (let i = 0; i < D.length-1; i++) {
+
+                for (let j = i+1; j < D[i].length; j++) {
+
+                    if (D[i][j] === 1) {
+                        J += 1 / Math.sqrt(S[i] * S[j]);
+                        B += 1;
+                    }
+                }
+            }
+
+            return (B / (B - D.length + 2)) * J;
         },
 
         /**

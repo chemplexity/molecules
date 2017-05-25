@@ -187,7 +187,7 @@ var hararyIndex = Molecules.topology.index.harary(reciprocalMatrix);
 // Use the distance matrix to compute the Balaban index
 var balabanIndex = Molecules.topology.index.balaban(distanceMatrix);
 
-// 0.816496
+// 1.632993
 
 ````
 

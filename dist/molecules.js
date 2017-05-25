@@ -1600,20 +1600,27 @@ var topology = {
         balaban: function balaban(D) {
 
             var J = 0;
+            var B = 0;
+            var S = [];
 
-            for (var i = 1; i < D.length; i++) {
-                var S0 = 0,
-                    S1 = 0;
-
-                for (var j = 0; j < D[i].length; j++) {
-                    S0 += D[i - 1][j];
-                    S1 += D[i][j];
-                }
-
-                J += 1 / Math.sqrt(S0 * S1);
+            for (var i = 0; i < D.length; i++) {
+                S[i] = D[i].reduce(function (a, b) {
+                    return a + b;
+                }, 0);
             }
 
-            return J;
+            for (var i = 0; i < D.length - 1; i++) {
+
+                for (var j = i + 1; j < D[i].length; j++) {
+
+                    if (D[i][j] === 1) {
+                        J += 1 / Math.sqrt(S[i] * S[j]);
+                        B += 1;
+                    }
+                }
+            }
+
+            return B / (B - D.length + 2) * J;
         },
 
         /**
@@ -1704,7 +1711,7 @@ module.exports = exports['default'];
 },{"./../utilities/math":4}],3:[function(require,module,exports){
 /**
  * File        : molecules.js
- * Version     : 0.1.0-20170523
+ * Version     : 0.1.0-20170525
  * Description : chemical graph theory library
  *
  * Options     : load, save, topology
