@@ -43,7 +43,7 @@ const grammar = [
     {type: 'atom',     term: 'Se', tag: 'Se',      expression: /Se/g},
     {type: 'atom',     term: 'Br', tag: 'Br',      expression: /Br/g},
     {type: 'atom',     term: 'I',  tag: 'I',       expression: /I(?=[^nr]|$)/g},
-    {type: 'atom',     term: '*',  tag: '*',       expression: /[*]/g},
+    //{type: 'atom',     term: '*',  tag: '*',       expression: /[*]/g},
     {type: 'atom',     term: 'b',  tag: 'B',       expression: /b(?=[^e]|$)/g},
     {type: 'atom',     term: 'c',  tag: 'C',       expression: /c(?=[^l]|$)/g},
     {type: 'atom',     term: 'n',  tag: 'N',       expression: /n(?=[^ae]|$)/g},
@@ -894,9 +894,13 @@ function decode(tokens) {
 
                 // Assign new bond key
                 let bondID = (sourceAtom.name + sourceAtom.id) + (targetAtom.name + targetAtom.id),
-                    bondName = 'single',
                     bondValue = sourceAtom.name + targetAtom.name,
+                    bondName = 'single',
                     bondOrder = 1;
+
+                if (sourceAtom.name === 'H' || targetAtom.name === 'H') {
+                    bondName = 'H';
+                }
 
                 // Check aromatic atoms
                 if (sourceAtom.properties.aromatic === 1 && targetAtom.properties.aromatic === 1) {
