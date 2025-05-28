@@ -1,6 +1,6 @@
 # molecules.js
 
-A chemical graph theory library for JavaScript. Latest demo of `molecules.js` + `d3.js` [here](http://bl.ocks.org/chemplexity/raw/180e960a6d9e68adf28429dd16f05fa0/). 
+A chemical graph theory library for JavaScript. Latest demo of `molecules.js` + `d3.js` [here](https://chemplexity.github.io/molecules/examples/index.html). 
 
 ### Features 
 
