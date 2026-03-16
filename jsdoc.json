@@ -1,0 +1,15 @@
+{
+  "source": {
+    "include": ["src"],
+    "includePattern": ".+\\.js$"
+  },
+  "opts": {
+    "destination": "docs/api",
+    "recurse": true,
+    "readme": "README.md"
+  },
+  "plugins": ["plugins/markdown"],
+  "tags": {
+    "allowUnknownTags": true
+  }
+}

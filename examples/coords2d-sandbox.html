@@ -1,0 +1,1187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>molecules-v2 — 2D Layout</title>
+
+<script type="importmap">
+{
+  "imports": {
+    "node:crypto": "data:text/javascript,export const randomUUID = () => globalThis.crypto.randomUUID();"
+  }
+}
+</script>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    height: 100%;
+}
+
+body {
+    height: 96%;
+    font-family: arial, helvetica, sans-serif;
+    font-size: 12px;
+    margin: 0;
+    background: #fff;
+}
+
+#wrapper {
+    position: relative;
+    min-width: 200px;
+    min-height: 300px;
+    width: 98%;
+    height: 98%;
+    margin: auto;
+    padding: 0;
+    box-shadow: 0 0 25px rgba(159,159,159,0.8);
+}
+
+#header {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    min-height: 85px;
+    margin: auto;
+    padding: 0;
+}
+
+#user-input {
+    width: auto;
+    height: auto;
+    margin: auto;
+    padding: 5px;
+    padding-top: 25px;
+}
+
+#content-main {
+    position: absolute;
+    top: 90px;
+    bottom: 50px;
+    width: 100%;
+    padding: 1px;
+}
+
+#plot {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 70%;
+    overflow: hidden;
+    background: #fff;
+}
+
+#sidebar {
+    position: absolute;
+    top: 0; bottom: 0; right: 0;
+    width: 29%;
+    overflow-y: auto;
+    padding: 8px 12px;
+    border-left: 1px solid #eee;
+}
+
+#footer {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 50px;
+    border-top: 1px solid #eee;
+    background: #fff;
+}
+
+#content-info {
+    width: auto;
+    padding: 10px;
+    float: left;
+    overflow: hidden;
+}
+
+#content-source {
+    width: auto;
+    padding: 10px;
+    float: right;
+    overflow: hidden;
+}
+
+#content-source a {
+    font-size: 14px;
+    font-weight: normal;
+    color: #53B2C8;
+    text-decoration: none;
+}
+
+.group {
+    position: relative;
+    margin-bottom: 5px;
+}
+
+.examples {
+    color: #999;
+    margin: 0;
+    padding-left: 15px;
+    font-size: 12px;
+    font-weight: normal;
+    font-family: 'Lucida Sans Unicode', sans-serif;
+}
+
+.examples a {
+    color: #53B2C8;
+    font-weight: bold;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.examples a:hover {
+    text-decoration: underline;
+}
+
+input {
+    width: 100%;
+    font-size: 16px;
+    padding: 10px 10px 10px 5px;
+    display: block;
+    border: none;
+    border-bottom: 1px solid #757575;
+    background: transparent;
+}
+
+input:focus {
+    outline: none;
+}
+
+input:focus ~ label, input:valid ~ label {
+    top: -15px;
+    font-size: 13px;
+    color: #5264AE;
+}
+
+label {
+    color: #999;
+    font-size: 16px;
+    font-weight: normal;
+    position: absolute;
+    pointer-events: none;
+    left: 5px;
+    top: 10px;
+    transition: 0.2s ease all;
+}
+
+.bar {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+.bar::before, .bar::after {
+    content: '';
+    height: 2px;
+    width: 0;
+    bottom: 0;
+    position: absolute;
+    background: #5264AE;
+    transition: 0.2s ease all;
+}
+
+.bar::before { left: 50%; }
+.bar::after  { right: 50%; }
+
+input:focus ~ .bar::before,
+input:focus ~ .bar::after { width: 50%; }
+
+.highlight {
+    position: absolute;
+    height: 60%;
+    width: 100px;
+    top: 25%;
+    left: 0;
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+input:focus ~ .highlight {
+    animation: inputHighlighter 0.3s ease;
+}
+
+@keyframes inputHighlighter {
+    from { background: #5264AE; }
+    to   { width: 0; background: transparent; }
+}
+
+.svg-plot {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+/* Chemical drawing styles */
+.bond {
+    stroke: #111;
+    stroke-linecap: round;
+    fill: none;
+}
+
+.bond-dashed {
+    stroke-dasharray: 5, 3;
+}
+
+.atom-bg {
+    fill: white;
+    stroke: none;
+}
+
+.atom-label {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    text-anchor: middle;
+    dominant-baseline: central;
+    pointer-events: none;
+    user-select: none;
+}
+
+.atom-charge {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9px;
+    font-weight: bold;
+    pointer-events: none;
+    user-select: none;
+    dominant-baseline: auto;
+}
+
+.atom-hit {
+    fill: transparent;
+    stroke: none;
+    cursor: default;
+}
+
+div.tooltip {
+    position: fixed;
+    text-align: center;
+    width: auto;
+    height: auto;
+    padding: 2px 6px;
+    font-size: 14px;
+    font-family: 'Lucida Sans Unicode', sans-serif;
+    background: white;
+    border: 1px solid #111;
+    border-radius: 6px;
+    pointer-events: none;
+    z-index: 100;
+}
+
+#descriptor-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+#descriptor-table th {
+    text-align: left;
+    color: #555;
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid #ddd;
+    padding: 4px 2px;
+}
+
+#descriptor-table td {
+    padding: 3px 2px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+}
+
+#descriptor-table td:last-child {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #555;
+}
+
+#descriptor-section-title {
+    font-size: 13px;
+    color: #777;
+    font-weight: 600;
+    margin-top: 6px;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+#molecularFormula {
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+    display: inline-block;
+}
+
+#molecularWeight {
+    font-size: 13px;
+    color: #777;
+    display: inline-block;
+    margin-left: 10px;
+}
+
+#rotate-controls {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    display: flex;
+    gap: 4px;
+    z-index: 10;
+}
+
+#rotate-controls button {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    font-size: 17px;
+    line-height: 1;
+    color: #555;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: background 0.15s;
+    padding: 0;
+}
+
+#rotate-controls button:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="wrapper">
+
+    <div id="header">
+        <div id="user-input">
+            <form onsubmit="return false">
+                <div class="group">
+                    <input type="text" id="smiles-input" required autocomplete="off" spellcheck="false">
+                    <span class="highlight"></span>
+                    <span class="bar"></span>
+                    <label for="smiles-input">Input SMILES notation...</label>
+                </div>
+            </form>
+        </div>
+        <div id="examples">
+            <p class="examples"><i>examples:&nbsp;</i>
+                <a href="#" onclick="parseInput('CCO'); return false">ethanol</a>,
+                <a href="#" onclick="parseInput('c1ccccc1'); return false">benzene</a>,
+                <a href="#" onclick="parseInput('c1ccc2ccccc2c1'); return false">naphthalene</a>,
+                <a href="#" onclick="parseInput('CC(=O)Oc1ccccc1C(=O)O'); return false">aspirin</a>,
+                <a href="#" onclick="parseInput('O=C1CCCCC1'); return false">cyclohexanone</a>,
+                <a href="#" onclick="parseInput('NC(CCC(N)=O)C(O)=O'); return false">glutamine</a>,
+                <a href="#" onclick="parseInput('C12=CC=CC=C1C3=C(C=CC=C3)C=C2'); return false">anthracene</a>,
+                <a href="#" onclick="parseInput('C#N'); return false">HCN</a>,
+                <a href="#" onclick="parseInput(randomMolecule[Math.floor(Math.random()*randomMolecule.length)]); return false">random</a>,
+                <a href="#" onclick="parseInput(testMolecule[Math.floor(Math.random()*testMolecule.length)]); return false">test</a>,
+                <a href="#" onclick="parseInput(edgeCaseMolecules[Math.floor(Math.random()*edgeCaseMolecules.length)]); return false">edge case</a>,
+                <a href="#" onclick="parseInput(extremeParserTortureCases[Math.floor(Math.random()*extremeParserTortureCases.length)]); return false">extreme case</a>
+            </p>
+        </div>
+    </div>
+
+    <div id="content-main">
+        <div id="plot">
+            <div id="rotate-controls">
+                <button onclick="rotateMolecule(-15)" title="Rotate counter-clockwise 15°">&#x21BA;</button>
+                <button onclick="rotateMolecule(15)" title="Rotate clockwise 15°">&#x21BB;</button>
+            </div>
+        </div>
+        <div id="sidebar">
+            <div id="descriptor-section-title">Descriptors</div>
+            <table id="descriptor-table">
+                <thead><tr><th>Property</th><th>Value</th></tr></thead>
+                <tbody id="descriptor-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="footer">
+        <div id="content-info">
+            <span id="molecularFormula"></span>
+            <span id="molecularWeight"></span>
+        </div>
+        <div id="content-source">
+            <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>
+        </div>
+    </div>
+
+</div>
+
+<div class="tooltip" id="atom-tooltip" style="opacity:0"></div>
+
+<script>
+var randomMolecule = [
+    'CCCCC', 'CC(C)CC', 'CC(C)(C)C', 'CC=CC', 'C=CCC', 'C=CC=C', 'CC#CC', 'C#CCC',
+    'OCCCC', 'CC(O)CC', 'C(=O)CCC', 'CC(=O)CC', 'OC(CCC)=O', 'O=C(CC)OC',
+    'NC(CCC)=O', 'C1CCCCC1', 'C1=CC=CC=C1', 'c1ccccc1', 'OCc1ccccc1',
+    'c1ccccc1-c2ccccc2', 'C12=CC=CC=C1C3=C(C=CC=C3)C=C2',
+    'C1=CC=CN1', 'c1occc1', 'c1sccc1',
+    'NC(C)C(O)=O', 'NC(CCCNC(N)=N)C(O)=O', 'NC(CC(O)=O)C(O)=O',
+    'NC(CS)C(O)=O', 'NC(CCC(O)=O)C(O)=O', 'NC(CCC(N)=O)C(O)=O',
+    'NC(CC1=CNC=N1)C(O)=O', 'CCO', 'CC(N)CC=O', 'C#N',
+    'O=C1CCCCC1', 'c1ccc2ccccc2c1', 'CC(=O)Oc1ccccc1C(=O)O'
+];
+
+var testMolecule = [
+    'CC(=O)Oc1ccccc1C(=O)O',
+    'CC[C@H](C)[C@@H]1NC(=O)[C@H](CCCNC(N)=N)NC(=O)[C@H](CC(O)=O)NC(=O)[C@H](CCSC)NC(=O)[C@H](CCCCN)NC(=O)[C@H](CCCNC(N)=N)NC(=O)CNC(=O)[C@H](CC2=CC=CC=C2)NC(=O)[C@H](CSSC[C@H](NC(=O)CNC(=O)[C@H](CC(C)C)NC(=O)CNC(=O)[C@H](CO)NC(=O)[C@H](CO)NC(=O)[C@H](CO)NC(=O)[C@H](CO)NC1=O)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CCCNC(N)=N)C(=O)N[C@@H](CCCNC(N)=N)C(=O)N[C@@H](CC1=CNC=N1)C(O)=O)NC(=O)CNC(=O)[C@H](CO)NC(=O)CNC(=O)[C@H](CCC(N)=O)NC(=O)[C@@H](NC(=O)[C@H](CCSC)NC(=O)[C@H](CCCCN)NC(=O)[C@@H]1CCCN1C(=O)[C@@H](N)CO)C(C)C',
+    'C[NH+](C)C',
+    'CC=CNCC#CS',
+    'CC1=C(C(=O)N(C2=CC=CC=C2)C3CCN(CC3)C(=O)OC(C)(C)C)N(C)N=C1C4=CC=CC=C4',
+    "COC1=CC(=CC(=C1OC)OC)C[C@H](NC(=O)C2=CN=CC=C2)C(=O)N3CCOCC3",
+    "CC(C)(C)OC(=O)N1CC[C@@H](C1)N(C)C(=O)C2=CC(=CS2)S(=O)(=O)N3CCCCC3",
+    "C1=CC=C2C(=C1)C(=O)N(C(=O)N2CC3=CC=CC=C3)C4CCN(CC4)C5=NC=CC=N5",
+    "CCN1C(=O)C(=C(N=C1N[C@@H](C)C6=CC=CC=C6)C#N)C7=CC=CC=C7Cl",
+    "COC(=O)C1=C(N(C2CCN(CC2)S(=O)(=O)C3=CC=CS3)N=C1C)C4=CC(Cl)=CC=C4",
+    "CC(C)[C@H]1NC(=O)[C@@H](NC(=O)OC(C)(C)C)N(C)C(=O)[C@H]1OC2=CC=CC=C2",
+    "O=C(NCC1=CN(C2CCOCC2)N=N1)C3=CC(=CC=C3)S(=O)(=O)N4CCN(CC4)C(F)(F)F",
+    "CC1=NN(C(=O)N[C@H](CO)C2=CC=CC=C2)C(=C1)C3=CC=C(C=C3)OC(F)F",
+    "C[N+](C)(C)CCOC1=CC=C(C=C1)C(=O)N[C@@H]2CC[C@H](N3CCOCC3)CC2.[Cl-]",
+    "[13CH3]OC1=CC(=CC(=C1O[2H])C(=O)N[C@H](C)C2=CC=CC=C2)S(=O)(=O)N(C)C",
+    "CC(C)(C)C1=CC(=O)N(C(=N1)NCC2=CN=CC=C2)C3CC[C@H](O)[C@@H](C3)N4CCCCC4",
+    "O=P(O)(OCC1=CC=CC=C1)N[C@@H](CC2=CC=CC=C2)C(=O)N3CCN(CC3)C4=NC=CC=N4",
+    "FC1=CC=C(C=C1)C2=NC(N[C@H](CO)C3CC3)=C(N2)C(=O)N4CC[C@@H](C4)O",
+    "CCOC(=O)C1=C(C2=CC=CC=C2N(C)C)NC(=O)N(C1=O)CC3=CN=C(S3)N4CCOCC4",
+    "COC1=CC2=C(C=C1)N(C(=O)C3=CC=C(C=C3)C(F)(F)F)C[C@@H](O)[C@H]2N5CCN(CC5)C",
+    "CC1=NC2=C(N1CC3=CC=CC=C3)C(=O)N([C@@H](C)C4=CC=CS4)C(=O)N2CC(F)(F)F",
+    "ClC1=CC=C(C=C1)S(=O)(=O)N[C@H]2CN(C(=O)OC(C)(C)C)C[C@@H](O)C2",
+    "CN1C2=C(C=CC(=C2)OC)C(=N1)N[C@H](C)C3=CC(Br)=CC=C3S(=O)(=O)N4CCOCC4",
+    "CC(C)N[C@@H]1CC[C@H](NC(=O)C2=CC(=NN2C)C3=CC=CC=C3)CC1OC"
+];
+
+var edgeCaseMolecules = [
+    "C%10CCCCC%10",
+    "C%10CC%11CCC%10C%11",
+    "C1(C(C(C(C(C1F)Cl)Br)I)N)P",
+    "C(C(C(C(C(C(C(C(C))))))))O",
+    "CC(C)(C(C)(C(C)(C)C)C)C",
+    "N[C@@H](C(=O)O)C1=CC=CC=C1",
+    "N[C@H](C(=O)O)C1=CC=CC=C1",
+    "[NH4+].[Cl-]",
+    "[Na+].[O-]C(=O)C1=CC=CC=C1",
+    "[13CH3][C@H]1CC[C@@H](O)[C@H](C1)N",
+    "[2H]OC([2H])([2H])C",
+    "C1=CC=[N+](C)=CC=C1",
+    "[O-][N+](=O)C1=CC=CC=C1",
+    "C1=CC2=C(C=C1)C=CC=C2",
+    "c1ccc2ccccc2c1",
+    "c1ncccc1",
+    "c1cc([N+](=O)[O-])ccc1",
+    "C1(CC(CC(C1)C(C)(C)C)O)N",
+    "C(C)(C)(C)(C)C",
+    "P(=O)(O)(O)O",
+    "S(=O)(=O)(N)N",
+    "C1CN2CCC1CC2",
+    "C1C2C3C1C23",
+    "C12C3C4C1C5C2C3C45",
+    "C1(C2(C3(C4(C1C5(C2C3C45)))))",
+    "C%10N(CC%10)C(=O)C",
+    "O=C1N(C)C(=O)N(C)C(=O)N1C",
+    "C1=CC=C(C=C1)C(C(=O)O)(N)P(=O)(O)O",
+    "CC1(C)S[C@@H]2[C@H](NC(=O)C(N)=O)C(=O)N2[C@H]1C(=O)O",
+    "C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O",
+    "N#CC(C#N)=C(C#N)C#N",
+    "C(=C(/F)\\F)\\C(/Cl)=C\\Br",
+    "F/C=C/F",
+    "F/C=C\\F",
+    "C1(=CC=CC=C1)C(=O)[O-].[K+]",
+    "[Cu+2].[O-]S(=O)(=O)[O-]",
+    "Cl[C@H]1[C@@H](Br)[C@H](I)[C@@H](F)[C@H]1N",
+    "C1(CC2(CC3(CC1CC(C2)C3)))",
+    "c1ccc(cc1)C2=NC(=O)N(C(=O)N2)C",
+    "N1C=NC2=C1N=CN2[C@H]3C[C@H](O)[C@@H](CO)O3",
+    "OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1O",
+    "CC(C)(C1=CC(=CC(=C1O)C(C)(C)C)O)C(C)(C)C",
+    "C1=CC=C2C(=C1)C3=CC=CC=C3C=C2",
+    "C1=CC2=C3C=CC=CC3=CC=C2C=C1",
+    "c1cc2ccc3cccc4cccc(c1)c2c34",
+    "[C@@H]1([C@@H]([C@H]([C@@H](O1)O)O)O)O",
+    "N(CC)(CC)(CC)",
+    "C[N+](C)(C)CCO",
+    "[O-]C1=CC=CC=C1",
+    "C1=CC=[O+]C=C1",
+    "[Si](C)(C)(C)C",
+    "[Ge](C)(C)(C)C",
+    "[Se](=O)(C)C",
+    "[nH]1cccc1",
+    "c1ccc2[nH]ccc2c1",
+    "B(O)O",
+    "[BH4-].[Na+]",
+    "C1=CC=C(C=C1)[N+](=O)[O-]",
+    "O=[N+]([O-])O",
+    "[O-][S+](C)C",
+    "C1CCC2(CC1)CCCCC2",
+    "C1CC2CCC3CCC(C1)C23",
+    "C1C[C@H]2[C@@H](C1)C=C[C@H]2O",
+    "C1=CN=C[N-]1",
+    "[Zn+2].[Cl-].[Cl-]",
+    "C(C(C(C(C(C)))))(C(C)(C)C)C",
+    "CC(C)(C)C1=CC(=O)C(=O)C=C1",
+    "O=C([O-])C([N+](C)(C)C)C",
+    "C1(N2CCCCC2)=CC=CC=C1",
+    "C1=CC=C(C=C1)S(=O)(=O)N(C)C",
+    "FC(F)(F)C1=CC=C(C=C1)C(=O)N2CCN(CC2)C",
+    "C1CC1C2CC2C3CC3",
+    "C1OC2(CCCCC2)O1",
+    "C1C2C3C4C1C5C4C3C25",
+    "N#C[C@@](Br)(Cl)I",
+    "[C@](F)(Cl)(Br)I",
+    "C1=CC(=CC=C1/C=C/C(=O)O)O",
+    "COC1=CC(/C=C/C(=O)O)=CC(OC)=C1O",
+    "C1=CC=C(C=C1)C2(C3CC3)C(=O)NC(=O)N2",
+    "C%10OC%11CC(C%10)C%11",
+    "C1(C2(C3(C4(C5(C1C2C3C45)))))",
+    "N1([C@H](C)C)C(=O)N(C)C(=O)C(C)(C)C1=O",
+    "C1=CC2=C(C=C1)N(C3CCCCC3)C(=O)C=C2",
+    "CC1=C(C(=O)NC(=O)N1)N",
+    "O=C1NC(=O)NC(=O)N1",
+    "[Fe+2].[O-]C(=O)C1=CC=CC=C1.[O-]C(=O)C2=CC=CC=C2",
+    "C1=CC=[C-]C=C1.[Li+]",
+    "c1ccc(cc1)[C@H](F)[C@@H](Cl)Br",
+    "C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O"
+];
+
+var extremeParserTortureCases = [
+  // 1. Multi-digit ring closures with fused reuse
+  "C%10CC%11CCC%12CCC(C%10)C%11C%12",
+
+  // 2. Deeply nested branching
+  "C(C(C(C(C(C(C(C(C(C(C))))))))))(N)(O)",
+
+  // 3. Heavy stereochemistry + halogenated center
+  "F[C@](Cl)(Br)[C@@](I)(N)C(=O)O",
+
+  // 4. Alternating cis/trans geometry
+  "F/C=C(\\Cl)/C(Br)=C(/I)\\C=C/F",
+
+  // 5. Aromatic fused polycycle
+  "c1cc2ccc3cccc4ccc(c1)c2c34",
+
+  // 6. Aromatic + charged aromatic heterocycle
+  "c1cc[n+](cc1)[O-]",
+
+  // 7. Disconnected ionic mixture
+  "[NH4+].[Cl-].[Na+].[O-]S(=O)(=O)[O-]",
+
+  // 8. Isotopes + stereochemistry + explicit hydrogens
+  "[2H][C@]([13CH3])([14CH2][15NH2])C([18OH])=O",
+
+  // 9. Bridge/cage style ring topology
+  "C1C2C3C4C1C5C2C3C45",
+
+  // 10. Another pathological bridged polycycle with branch nesting
+  "C1(C2(C3(C4(C5(C1C2C3C45)))))",
+
+  // 11. Ring closure on heteroatoms using multi-digit ring ids
+  "N%10CCOCC%11NCCOCC%10CC%11",
+
+  // 12. Quaternary ammonium + zwitterion
+  "C[N+](C)(C)CC([O-])=O",
+
+  // 13. Multiple nitriles and cumulative unsaturation
+  "N#CC(=C(C#N)C#N)C#N",
+
+  // 14. Aromatic / aliphatic mixing with sulfonamide and charge
+  "c1ccc(S(=O)(=O)[N-]C2CCCCC2)cc1.[K+]",
+
+  // 15. Chiral ring system with several stereocenters
+  "C1[C@H](O)[C@@H](N)[C@H](F)[C@@H](Cl)[C@H]1Br",
+
+  // 16. Explicit valence-stressing silicon/phosphorus/sulfur combo
+  "C[Si](C)(C)OP(=S)(OC)SC",
+
+  // 17. Aromatic [nH] fused bicyclic heterocycle
+  "c1ccc2[nH]cc(c2c1)C#N",
+
+  // 18. Long branch stack + fused amide/imide-like motif
+  "CC(C)(C)N1C(=O)N(C(=O)C2=CC=CC=C2)C(C)(C)C1=O",
+
+  // 19. Mixed ring closure, stereochemistry, and sidechain branching
+  "CC[C@H]1C[C@@H](C(C1)C(=O)O)N(CC)C",
+
+  // 20. Intentionally gnarly but still parseable organometallic-like salt form
+  "[Fe+2].[O-]C(=O)c1ccccc1.[O-]C(=O)c2ccccc2"
+];
+
+function parseInput(smiles) {
+    document.getElementById('smiles-input').value = smiles;
+    window._parseSmiles && window._parseSmiles(smiles);
+}
+</script>
+
+<script type="module">
+
+import * as d3     from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
+import { parseSMILES }    from '../src/io/smiles.js';
+import { generateCoords } from '../src/layout/coords2d.js';
+import { molecularFormula, molecularMass } from '../src/descriptors/molecular.js';
+import { allMatrices }    from '../src/matrices/index.js';
+import {
+    wienerIndex, hyperWienerIndex, balabanIndex,
+    randicIndex, zagreb1, zagreb2, hararyIndex,
+    plattIndex, szegedIndex
+} from '../src/descriptors/topological.js';
+
+// ---------------------------------------------------------------------------
+// CPK atom colors
+// ---------------------------------------------------------------------------
+const CPK = {
+    H:  '#FFFFFF', He: '#D9FFFF', Li: '#CC80FF', Be: '#C2FF00',
+    B:  '#FFB5B5', C:  '#222222', N:  '#3050F8', O:  '#FF0D0D',
+    F:  '#90E050', Ne: '#B3E3F5', Na: '#AB5CF2', Mg: '#8AFF00',
+    Al: '#BFA6A6', Si: '#F0C8A0', P:  '#FF8000', S:  '#FFFF30',
+    Cl: '#1FF01F', Ar: '#80D1E3', K:  '#8F40D4', Ca: '#3DFF00',
+    Fe: '#E06633', Cu: '#C88033', Zn: '#7D80B0', Br: '#A62929',
+    I:  '#940094',
+};
+const DEFAULT_COLOR = '#FF69B4';
+
+function atomColor(symbol) { return CPK[symbol] ?? DEFAULT_COLOR; }
+
+// ---------------------------------------------------------------------------
+// Layout constants
+// ---------------------------------------------------------------------------
+const SCALE        = 60;   // SVG pixels per Angstrom  (1.5 Å → 90 px bonds)
+const BOND_OFFSET  = 7;    // px gap between main and secondary bond lines
+const STROKE_W     = 1.6;  // px stroke width for bonds
+const FONT_SIZE    = 14;   // px — atom label font size
+
+// ---------------------------------------------------------------------------
+// D3 SVG setup
+// ---------------------------------------------------------------------------
+const plotEl  = document.getElementById('plot');
+const tooltip = d3.select('#atom-tooltip');
+
+const svg = d3.select('#plot')
+    .append('svg')
+    .attr('class', 'svg-plot');
+
+const g = svg.append('g'); // main drawing group — transformed by zoom
+
+const zoom = d3.zoom()
+    .scaleExtent([0.05, 30])
+    .on('zoom', event => g.attr('transform', event.transform));
+
+svg.call(zoom);
+
+// ---------------------------------------------------------------------------
+// Geometry helpers
+// ---------------------------------------------------------------------------
+
+/** Convert a molecule-space x to SVG pixels around a centred origin. */
+function svgX(molX, cx, W) { return W / 2 + (molX - cx) * SCALE; }
+
+/** Convert a molecule-space y to SVG pixels around a centred origin. */
+function svgY(molY, cy, H) { return H / 2 + (molY - cy) * SCALE; }
+
+/**
+ * Returns the left-perpendicular unit vector of (dx, dy).
+ * @returns {{ nx: number, ny: number }}
+ */
+function perpUnit(dx, dy) {
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    return { nx: -dy / len, ny: dx / len };
+}
+
+/**
+ * Shortens a line segment from each endpoint.
+ * d1 = pixels to remove from the (x1, y1) end toward (x2, y2).
+ * d2 = pixels to remove from the (x2, y2) end toward (x1, y1).
+ */
+function shortenLine(x1, y1, x2, y2, d1, d2) {
+    const dx = x2 - x1, dy = y2 - y1;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const ux = dx / len, uy = dy / len;
+    return { x1: x1 + ux * d1, y1: y1 + uy * d1,
+             x2: x2 - ux * d2, y2: y2 - uy * d2 };
+}
+
+/**
+ * Determines which side (±1) the secondary bond line should appear on,
+ * by computing the direction from the bond midpoint toward the centroid of
+ * all context neighbours (i.e. every heavy neighbour except the bond partner).
+ * Returns +1 toward the centroid, −1 away.
+ */
+function secondaryDir(a1, a2, mol, toSVGPt) {
+    // getNeighbors returns Atom objects directly
+    const resolveNbs = (atom, excludeId) =>
+        atom.getNeighbors(mol)
+            .filter(n => n && n.id !== excludeId && n.name !== 'H' && n.x != null);
+
+    const allNb = [...resolveNbs(a1, a2.id), ...resolveNbs(a2, a1.id)];
+
+    if (allNb.length === 0) return 1; // no context — arbitrary
+
+    const s1 = toSVGPt(a1), s2 = toSVGPt(a2);
+    const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
+    const mid = { x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2 };
+
+    let dot = 0;
+    for (const n of allNb) {
+        const sn = toSVGPt(n);
+        dot += (sn.x - mid.x) * nx + (sn.y - mid.y) * ny;
+    }
+    return dot >= 0 ? 1 : -1;
+}
+
+// ---------------------------------------------------------------------------
+// Atom label helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the display label for an atom, or null for carbon.
+ * For heteroatoms with H neighbours, produces "OH", "NH2", "H2N", etc.
+ * The H is shown on the side OPPOSITE the average direction of heavy bonds.
+ *
+ * @param {object} atom
+ * @param {Map<string,number>} hCounts  - pre-computed H-neighbour counts
+ * @param {function} toSVGPt           - mol-space atom → SVG {x,y}
+ * @param {object} mol                 - Molecule (H already stripped)
+ * @returns {string|null}
+ */
+function getAtomLabel(atom, hCounts, toSVGPt, mol) {
+    const symbol = atom.name;
+    if (symbol === 'C') return null;
+
+    const hCount = hCounts.get(atom.id) ?? 0;
+    if (hCount === 0) return symbol;
+
+    const hStr = hCount === 1 ? 'H' : `H${hCount}`;
+
+    // Determine which side is free based on heavy-neighbour direction
+    const aSVG = toSVGPt(atom);
+    let avgDx = 0, nbCount = 0;
+    for (const n of atom.getNeighbors(mol)) {
+        // getNeighbors returns Atom objects
+        if (n && n.x != null) { avgDx += toSVGPt(n).x - aSVG.x; nbCount++; }
+    }
+    // Bonds mostly go right → H on left: "HO", "H2N"
+    // Bonds mostly go left (or isolated) → H on right: "OH", "NH2"
+    return (nbCount > 0 && avgDx > 0) ? hStr + symbol : symbol + hStr;
+}
+
+/**
+ * Appends an atom-label <text> element to `group`, rendering any trailing
+ * digit in the label (e.g. the "2" in "NH2") as a baseline-shifted subscript.
+ */
+function renderAtomLabel(group, label, color) {
+    const textEl = group.append('text')
+        .attr('class', 'atom-label')
+        .attr('fill', color);
+
+    // Split label into letter-runs and digit-runs
+    let i = 0;
+    while (i < label.length) {
+        const ch = label[i];
+        if (ch >= '0' && ch <= '9') {
+            let num = '';
+            while (i < label.length && label[i] >= '0' && label[i] <= '9') num += label[i++];
+            textEl.append('tspan')
+                .attr('baseline-shift', 'sub')
+                .attr('font-size', '0.72em')
+                .text(num);
+        } else {
+            let word = '';
+            while (i < label.length && !(label[i] >= '0' && label[i] <= '9')) word += label[i++];
+            textEl.append('tspan').text(word);
+        }
+    }
+}
+
+/**
+ * Half-width of the white clearance rectangle for a label.
+ * Returns 0 for null/empty (carbon — no label).
+ */
+function labelHalfW(label) {
+    if (!label) return 0;
+    return FONT_SIZE * 0.38 * label.length + 4;
+}
+
+function labelHalfH(label) {
+    if (!label) return 0;
+    return FONT_SIZE * 0.58 + 2;
+}
+
+// ---------------------------------------------------------------------------
+// Bond line helper — appends a <line> into the group
+// ---------------------------------------------------------------------------
+function addLine(group, x1, y1, x2, y2, extraClass) {
+    const el = group.append('line')
+        .attr('class', extraClass ? `bond ${extraClass}` : 'bond')
+        .attr('x1', x1).attr('y1', y1)
+        .attr('x2', x2).attr('y2', y2)
+        .style('stroke-width', `${STROKE_W}px`);
+    return el;
+}
+
+// ---------------------------------------------------------------------------
+// Main render
+// ---------------------------------------------------------------------------
+let lastInput    = null;
+let currentMol   = null;
+let rotationDeg  = 0;
+
+function rotateMolecule(delta) {
+    rotationDeg = (rotationDeg + delta % 360 + 360) % 360;
+    if (currentMol) render(currentMol);
+}
+
+function render(mol) {
+    // --- record H neighbours before stripping them from the graph ----------
+    // parseSMILES creates explicit H atoms; if we leave them in, layoutChain
+    // includes them in computeChildAngles and corrupts heavy-atom angles.
+    const hCounts = new Map();
+    for (const [, atom] of mol.atoms) {
+        if (atom.name === 'H') continue;
+        // getNeighbors returns Atom objects, not IDs
+        const count = atom.getNeighbors(mol).filter(n => n.name === 'H').length;
+        if (count > 0) hCounts.set(atom.id, count);
+    }
+    mol = mol.stripHydrogens(); // remove explicit H so layout only sees heavy atoms
+    currentMol = mol;            // store for rotation re-renders
+
+    // --- compute 2D coordinates -------------------------------------------
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    // Apply rotation around centroid (if non-zero)
+    if (rotationDeg !== 0) {
+        const allAtoms = [...mol.atoms.values()].filter(a => a.x != null);
+        let mx = 0, my = 0;
+        for (const a of allAtoms) { mx += a.x; my += a.y; }
+        mx /= allAtoms.length; my /= allAtoms.length;
+        const rad = rotationDeg * Math.PI / 180;
+        const cosR = Math.cos(rad), sinR = Math.sin(rad);
+        for (const a of allAtoms) {
+            const dx = a.x - mx, dy = a.y - my;
+            a.x = mx + dx * cosR - dy * sinR;
+            a.y = my + dx * sinR + dy * cosR;
+        }
+    }
+
+    // Collect placed atoms (all are heavy after stripping)
+    const atoms = [...mol.atoms.values()].filter(a => a.x != null);
+    if (atoms.length === 0) return;
+
+    // Bounding-box centroid (mol-space)
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const a of atoms) {
+        if (a.x < minX) minX = a.x; if (a.x > maxX) maxX = a.x;
+        if (a.y < minY) minY = a.y; if (a.y > maxY) maxY = a.y;
+    }
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    const W  = plotEl.clientWidth  || 600;
+    const H  = plotEl.clientHeight || 400;
+
+    // Conversion function: mol-space atom → SVG { x, y }
+    const toSVGPt = a => ({ x: svgX(a.x, cx, W), y: svgY(a.y, cy, H) });
+
+    // Bonds eligible for drawing (both endpoints are placed heavy atoms)
+    const bonds = [];
+    for (const bond of mol.bonds.values()) {
+        const [a1, a2] = bond.getAtomObjects(mol);
+        if (a1 && a2 && a1.x != null && a2.x != null) {
+            bonds.push({ bond, a1, a2 });
+        }
+    }
+
+    // Clear previous drawing; auto-zoom-out if molecule exceeds the viewport
+    g.selectAll('*').remove();
+    const PAD = 40; // minimum clearance (px) on each side
+    const molSVGW = (maxX - minX) * SCALE || 1;
+    const molSVGH = (maxY - minY) * SCALE || 1;
+    const fitScale = Math.min((W - PAD * 2) / molSVGW, (H - PAD * 2) / molSVGH, 1);
+    const fitTx = W / 2 * (1 - fitScale);
+    const fitTy = H / 2 * (1 - fitScale);
+    svg.call(zoom.transform, d3.zoomIdentity.translate(fitTx, fitTy).scale(fitScale));
+
+    // -----------------------------------------------------------------------
+    // Layer 1 — bonds
+    // -----------------------------------------------------------------------
+    const bondLayer = g.append('g').attr('class', 'bonds');
+
+    for (const { bond, a1, a2 } of bonds) {
+        const order = bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
+        const s1 = toSVGPt(a1), s2 = toSVGPt(a2);
+        const dx = s2.x - s1.x, dy = s2.y - s1.y;
+        const { nx, ny } = perpUnit(dx, dy);
+
+        if (order === 1) {
+            // ── single bond ─────────────────────────────────────────────────
+            addLine(bondLayer, s1.x, s1.y, s2.x, s2.y);
+
+        } else if (order === 2) {
+            // ── double bond ─────────────────────────────────────────────────
+            // Main bond on the axis; secondary bond on the "ring-inside" side,
+            // slightly shorter for the classic ChemDraw appearance.
+            const dir = secondaryDir(a1, a2, mol, toSVGPt);
+
+            // Main line (centred on bond axis)
+            addLine(bondLayer, s1.x, s1.y, s2.x, s2.y);
+
+            // Secondary line — offset toward context neighbours, 4 px shorter
+            const ox = nx * BOND_OFFSET * dir, oy = ny * BOND_OFFSET * dir;
+            const lsec = shortenLine(
+                s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 4, 4
+            );
+            addLine(bondLayer, lsec.x1, lsec.y1, lsec.x2, lsec.y2);
+
+        } else if (order === 3) {
+            // ── triple bond ──────────────────────────────────────────────────
+            // Three parallel lines: centre ± BOND_OFFSET.
+            for (const d of [-BOND_OFFSET, 0, BOND_OFFSET]) {
+                const ox = nx * d, oy = ny * d;
+                const lt = shortenLine(
+                    s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy,
+                    d !== 0 ? 4 : 0, d !== 0 ? 4 : 0
+                );
+                addLine(bondLayer, lt.x1, lt.y1, lt.x2, lt.y2);
+            }
+
+        } else if (order === 1.5) {
+            // ── aromatic bond ────────────────────────────────────────────────
+            // Solid main line (full length) + shorter dashed inner line toward
+            // the ring interior (same neighbour-centroid heuristic).
+            const dir = secondaryDir(a1, a2, mol, toSVGPt);
+
+            addLine(bondLayer, s1.x, s1.y, s2.x, s2.y);
+
+            const ox = nx * BOND_OFFSET * dir, oy = ny * BOND_OFFSET * dir;
+            const ldash = shortenLine(
+                s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 5, 5
+            );
+            addLine(bondLayer, ldash.x1, ldash.y1, ldash.x2, ldash.y2, 'bond-dashed');
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Layer 2 — white clearance rectangles for heteroatom labels
+    //           (drawn on top of bonds to "erase" the line under each label)
+    // -----------------------------------------------------------------------
+    const bgLayer = g.append('g').attr('class', 'atom-bgs');
+
+    for (const atom of atoms) {
+        const label = getAtomLabel(atom, hCounts, toSVGPt, mol);
+        const hw = labelHalfW(label);
+        if (hw === 0) continue; // carbon — no label, no clearance needed
+        const hh = labelHalfH(label);
+        const { x, y } = toSVGPt(atom);
+        bgLayer.append('rect')
+            .attr('class', 'atom-bg')
+            .attr('x', x - hw).attr('y', y - hh)
+            .attr('width', hw * 2).attr('height', hh * 2)
+            .attr('rx', 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // Layer 3 — atom labels + invisible hit targets for tooltips
+    // -----------------------------------------------------------------------
+    const labelLayer = g.append('g').attr('class', 'atom-labels');
+
+    for (const atom of atoms) {
+        const { x, y } = toSVGPt(atom);
+        const symbol = atom.name;
+        const charge = atom.properties.charge ?? 0;
+        const label  = getAtomLabel(atom, hCounts, toSVGPt, mol);
+
+        // Invisible hit circle for tooltip hover (covers all atoms incl. C)
+        const hitGroup = labelLayer.append('g')
+            .attr('transform', `translate(${x},${y})`);
+
+        hitGroup.append('circle')
+            .attr('class', 'atom-hit')
+            .attr('r', Math.max(labelHalfW(label || symbol), 10))
+            .on('mouseover', event => {
+                let html = label || symbol;
+                if (charge !== 0) {
+                    const c = charge === 1 ? '+' : charge > 1 ? `${charge}+`
+                            : charge === -1 ? '−' : `${Math.abs(charge)}−`;
+                    html += `<sup>${c}</sup>`;
+                }
+                tooltip.transition().delay(150).style('opacity', 0.9);
+                tooltip.html(html)
+                    .style('left', (event.clientX + 13) + 'px')
+                    .style('top',  (event.clientY - 20) + 'px');
+            })
+            .on('mousemove', event => {
+                tooltip.style('left', (event.clientX + 13) + 'px')
+                       .style('top',  (event.clientY - 20) + 'px');
+            })
+            .on('mouseout', () => {
+                tooltip.transition().duration(50).style('opacity', 0);
+            });
+
+        // Skip text for carbon (just the invisible hit circle remains)
+        if (!label) continue;
+
+        // Element label with inline H and subscript numbers if needed
+        renderAtomLabel(hitGroup, label, atomColor(symbol));
+
+        // Charge superscript (if any)
+        if (charge !== 0) {
+            const sign = charge === 1 ? '+' : charge > 1 ? `${charge}+`
+                       : charge === -1 ? '−' : `${Math.abs(charge)}−`;
+            const hw = labelHalfW(label);
+            hitGroup.append('text')
+                .attr('class', 'atom-charge')
+                .attr('x', hw)
+                .attr('y', -(FONT_SIZE * 0.42))
+                .attr('fill', atomColor(symbol))
+                .text(sign);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Update sidebar
+    // -----------------------------------------------------------------------
+    // Pass total implicit H count so updateFormula can add them back in.
+    const totalImplicitH = [...hCounts.values()].reduce((s, n) => s + n, 0);
+    updateFormula(mol, totalImplicitH);
+    updateDescriptors(mol);
+}
+
+// ---------------------------------------------------------------------------
+// Molecular formula & weight
+// ---------------------------------------------------------------------------
+function updateFormula(molecule, extraH = 0) {
+    const formula = molecularFormula(molecule);
+    if (extraH > 0) formula['H'] = (formula['H'] ?? 0) + extraH;
+    // Re-apply CHNOPS ordering after potentially inserting H.
+    const CHNOPS = ['C','H','N','O','P','S'];
+    const ordered = {};
+    for (const el of CHNOPS) if (el in formula) ordered[el] = formula[el];
+    for (const el of Object.keys(formula).sort()) if (!(el in ordered)) ordered[el] = formula[el];
+    let html = Object.entries(ordered)
+        .map(([el, n]) => n === 1 ? el : `${el}${n}`)
+        .join('')
+        .replace(/(\d+)/g, '<sub>$1</sub>');
+
+    const charge = molecule.properties.charge ?? 0;
+    if (charge !== 0) {
+        const n = charge === 1 ? '+' : charge > 1 ? `${charge}+`
+                : charge === -1 ? '−' : `${Math.abs(charge)}−`;
+        html += `<sup>${n}</sup>`;
+    }
+
+    document.getElementById('molecularFormula').innerHTML = html;
+
+    const mass = molecularMass(molecule) + extraH * 1.008;
+    document.getElementById('molecularWeight').textContent =
+        `${(Math.round(mass * 100) / 100).toFixed(2)} g/mol`;
+}
+
+// ---------------------------------------------------------------------------
+// Descriptor sidebar
+// ---------------------------------------------------------------------------
+function fmtVal(v) {
+    if (v == null || !isFinite(v)) return '—';
+    return Number.isInteger(v) ? v : v.toFixed(2);
+}
+
+function updateDescriptors(molecule) {
+    const tbody = document.getElementById('descriptor-body');
+
+    let heavyCount = 0;
+    for (const atom of molecule.atoms.values()) {
+        if (atom.name !== 'H') heavyCount++;
+    }
+
+    let rows = [
+        ['Atoms (total)',  molecule.atoms.size],
+        ['Heavy atoms',    heavyCount],
+        ['Bonds',          molecule.bonds.size],
+    ];
+
+    try {
+        if (heavyCount >= 2) {
+            const { adjacency, degree, distance, reciprocal } = allMatrices(molecule);
+            const W   = wienerIndex(distance);
+            const WW  = hyperWienerIndex(distance);
+            const H   = hararyIndex(reciprocal);
+            const chi = randicIndex(adjacency, degree);
+            const M1  = zagreb1(degree);
+            const M2  = zagreb2(adjacency, degree);
+            const F   = plattIndex(adjacency, degree);
+            const Sz  = szegedIndex(distance, adjacency);
+            let J = null;
+            try { J = balabanIndex(distance, adjacency); } catch {}
+
+            rows = rows.concat([
+                ['Wiener Index (W)',    W],
+                ['Hyper-Wiener (WW)',   WW],
+                ['Harary Index (H)',    H],
+                ['Balaban Index (J)',   J],
+                ['Randić Index (χ)',    chi],
+                ['Zagreb M1',          M1],
+                ['Zagreb M2',          M2],
+                ['Platt Index (F)',     F],
+                ['Szeged Index (Sz)',   Sz],
+            ]);
+        }
+    } catch (e) {
+        // silently skip if any computation fails
+    }
+
+    tbody.innerHTML = rows
+        .map(([label, val]) => `<tr><td>${label}</td><td>${fmtVal(val)}</td></tr>`)
+        .join('');
+}
+
+// ---------------------------------------------------------------------------
+// Input / routing
+// ---------------------------------------------------------------------------
+function parseAndRender(smiles) {
+    if (typeof smiles !== 'string' || smiles.length === 0 || smiles.length > 1000) return;
+    if (smiles === lastInput) return;
+
+    let mol;
+    try {
+        mol = parseSMILES(smiles);
+    } catch (e) {
+        console.warn('SMILES parse error:', e.message);
+        return;
+    }
+
+    if (mol && mol.atoms.size > 0) {
+        lastInput   = smiles;
+        rotationDeg = 0;   // reset rotation for a new molecule
+        render(mol);
+    }
+}
+
+window._parseSmiles = parseAndRender;
+
+document.getElementById('smiles-input').addEventListener('keyup', event => {
+    if (event.key === 'Enter') parseAndRender(event.target.value);
+});
+
+document.getElementById('smiles-input').addEventListener('paste', event => {
+    setTimeout(() => parseAndRender(event.target.value), 0);
+});
+
+window.addEventListener('resize', () => {
+    if (lastInput) parseAndRender(lastInput);
+});
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+const initialSmiles = 'CC(=O)Oc1ccccc1C(=O)O'; // aspirin
+document.getElementById('smiles-input').value = initialSmiles;
+parseAndRender(initialSmiles);
+
+</script>
+
+</body>
+</html>

@@ -1,30 +1,56 @@
 {
-  "name": "molecules.js",
+  "name": "molecules",
   "version": "0.1.0",
-  "description": "chemical graph theory library",
-  "main": "dist/molecules.js",
-
-  "author": "James Dillon <james_dillon@brown.edu>",
-  "license": "MIT",
-
-  "repository": {
-    "type": "git",
-    "url": "http://github.com/chemplexity/molecules.git"
+  "description": "Chemical graph theory library — molecular graphs, topological indices, spectral descriptors",
+  "type": "module",
+  "sideEffects": false,
+  "main": "./lib/index.js",
+  "module": "./es/index.js",
+  "exports": {
+    ".":              { "import": "./es/index.js",              "require": "./lib/index.js" },
+    "./core":         { "import": "./es/core/index.js",         "require": "./lib/core/index.js" },
+    "./algorithms":   { "import": "./es/algorithms/index.js",   "require": "./lib/algorithms/index.js" },
+    "./matrices":     { "import": "./es/matrices/index.js",     "require": "./lib/matrices/index.js" },
+    "./descriptors":  { "import": "./es/descriptors/index.js",  "require": "./lib/descriptors/index.js" },
+    "./io":           { "import": "./es/io/index.js",           "require": "./lib/io/index.js" },
+    "./utils":        { "import": "./es/utils/index.js",        "require": "./lib/utils/index.js" },
+    "./package.json": "./package.json"
   },
-  "bugs": {
-    "url": "https://github.com/chemplexity/molecules/issues"
+  "files": ["lib", "es", "dist", "src"],
+  "scripts": {
+    "build":          "rollup -c",
+    "build:watch":    "rollup -c --watch",
+    "clean":          "rimraf lib es dist",
+    "prebuild":       "npm run clean",
+    "test":           "node --test 'tests/**/*.test.js'",
+    "test:watch":     "node --test --watch 'tests/**/*.test.js'",
+    "test:coverage":  "node --test --experimental-test-coverage 'tests/**/*.test.js'",
+    "lint":           "eslint \"src/**/*.js\" \"tests/**/*.js\"",
+    "lint:fix":       "eslint \"src/**/*.js\" \"tests/**/*.js\" --fix",
+    "docs":           "jsdoc -c jsdoc.json",
+    "prepublishOnly": "npm run lint && npm run build && npm run test"
   },
-
   "keywords": [
     "chemistry",
-    "molecules",
-    "graph theory"
+    "cheminformatics",
+    "molecular-graph",
+    "graph-theory",
+    "topological-index",
+    "wiener-index",
+    "spectral-graph-theory",
+    "smiles",
+    "qsar"
   ],
-
+  "author": "",
+  "license": "MIT",
+  "engines": { "node": ">=18.0.0" },
   "devDependencies": {
-    "grunt": "^0.4.5",
-    "grunt-babel": "^5.0.0",
-    "grunt-browserify": "^3.8.0",
-    "grunt-contrib-uglify": "^0.8.0"
+    "@rollup/plugin-commonjs":    "^25.0.7",
+    "@rollup/plugin-node-resolve":"^15.2.3",
+    "@rollup/plugin-terser":      "^0.4.4",
+    "eslint":                     "^8.57.0",
+    "jsdoc":                      "^4.0.3",
+    "rimraf":                     "^5.0.5",
+    "rollup":                     "^4.13.0"
   }
 }

@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>molecules-v2</title>
+
+<script type="importmap">
+{
+  "imports": {
+    "node:crypto": "data:text/javascript,export const randomUUID = () => globalThis.crypto.randomUUID();"
+  }
+}
+</script>
+
+<style>
+
+* {
+    box-sizing: border-box;
+}
+
+html {
+    height: 100%;
+}
+
+body {
+    height: 96%;
+    font-family: arial, helvetica, sans-serif;
+    font-size: 12px;
+    margin: 0;
+    background: #fff;
+}
+
+#wrapper {
+    position: relative;
+    min-width: 200px;
+    min-height: 300px;
+    width: 98%;
+    height: 98%;
+    margin: auto;
+    padding: 0;
+    box-shadow: 0 0 25px rgba(159,159,159,0.8);
+}
+
+#header {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    min-height: 85px;
+    margin: auto;
+    padding: 0;
+}
+
+#user-input {
+    width: auto;
+    height: auto;
+    margin: auto;
+    padding: 5px;
+    padding-top: 25px;
+}
+
+#content-main {
+    position: absolute;
+    top: 90px;
+    bottom: 50px;
+    width: 100%;
+    padding: 1px;
+}
+
+#plot {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 70%;
+    overflow: hidden;
+}
+
+#sidebar {
+    position: absolute;
+    top: 0; bottom: 0; right: 0;
+    width: 29%;
+    overflow-y: auto;
+    padding: 8px 12px;
+    border-left: 1px solid #eee;
+}
+
+#footer {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 50px;
+    border-top: 1px solid #eee;
+    background: #fff;
+}
+
+#content-info {
+    width: auto;
+    padding: 10px;
+    float: left;
+    overflow: hidden;
+}
+
+#content-source {
+    width: auto;
+    padding: 10px;
+    float: right;
+    overflow: hidden;
+}
+
+#content-source a {
+    font-size: 14px;
+    font-weight: normal;
+    color: #53B2C8;
+    text-decoration: none;
+}
+
+.group {
+    position: relative;
+    margin-bottom: 5px;
+}
+
+.examples {
+    color: #999;
+    margin: 0;
+    padding-left: 15px;
+    font-size: 12px;
+    font-weight: normal;
+    font-family: 'Lucida Sans Unicode', sans-serif;
+}
+
+.examples a {
+    color: #53B2C8;
+    font-weight: bold;
+    text-decoration: none;
+}
+
+.examples a:hover {
+    text-decoration: underline;
+}
+
+input {
+    width: 100%;
+    font-size: 16px;
+    padding: 10px 10px 10px 5px;
+    display: block;
+    border: none;
+    border-bottom: 1px solid #757575;
+    background: transparent;
+}
+
+input:focus {
+    outline: none;
+}
+
+input:focus ~ label, input:valid ~ label {
+    top: -15px;
+    font-size: 13px;
+    color: #5264AE;
+}
+
+label {
+    color: #999;
+    font-size: 16px;
+    font-weight: normal;
+    position: absolute;
+    pointer-events: none;
+    left: 5px;
+    top: 10px;
+    transition: 0.2s ease all;
+}
+
+.bar {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+.bar::before, .bar::after {
+    content: '';
+    height: 2px;
+    width: 0;
+    bottom: 0;
+    position: absolute;
+    background: #5264AE;
+    transition: 0.2s ease all;
+}
+
+.bar::before { left: 50%; }
+.bar::after  { right: 50%; }
+
+input:focus ~ .bar::before,
+input:focus ~ .bar::after { width: 50%; }
+
+.highlight {
+    position: absolute;
+    height: 60%;
+    width: 100px;
+    top: 25%;
+    left: 0;
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+input:focus ~ .highlight {
+    animation: inputHighlighter 0.3s ease;
+}
+
+@keyframes inputHighlighter {
+    from { background: #5264AE; }
+    to   { width: 0; background: transparent; }
+}
+
+.svg-plot {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+div.tooltip {
+    position: fixed;
+    text-align: center;
+    width: auto;
+    height: auto;
+    padding: 2px 6px;
+    font-size: 14px;
+    font-family: 'Lucida Sans Unicode', sans-serif;
+    background: white;
+    border: 1px solid #111;
+    border-radius: 6px;
+    pointer-events: none;
+    z-index: 100;
+}
+
+.link {
+    stroke: #696969;
+    stroke-linecap: round;
+}
+
+#descriptor-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+#descriptor-table th {
+    text-align: left;
+    color: #555;
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid #ddd;
+    padding: 4px 2px;
+}
+
+#descriptor-table td {
+    padding: 3px 2px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+}
+
+#descriptor-table td:last-child {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #555;
+}
+
+#descriptor-section-title {
+    font-size: 13px;
+    color: #777;
+    font-weight: 600;
+    margin-top: 6px;
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+#molecularFormula {
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+    display: inline-block;
+}
+
+#molecularWeight {
+    font-size: 13px;
+    color: #777;
+    display: inline-block;
+    margin-left: 10px;
+}
+
+</style>
+</head>
+
+<body>
+
+<div id="wrapper">
+
+    <div id="header">
+        <div id="user-input">
+            <form onsubmit="return false">
+                <div class="group">
+                    <input type="text" id="smiles-input" required autocomplete="off" spellcheck="false">
+                    <span class="highlight"></span>
+                    <span class="bar"></span>
+                    <label for="smiles-input">Input SMILES notation...</label>
+                </div>
+            </form>
+        </div>
+        <div id="examples">
+            <p class="examples"><i>examples:&nbsp;</i>
+                <a href="#" onclick="parseInput('NC(CCC(N)=O)C(O)=O'); return false">glutamine</a>,
+                <a href="#" onclick="parseInput('c1ccccc1'); return false">benzene</a>,
+                <a href="#" onclick="parseInput('O[C@H]1[C@H](O)[C@H](O[C@]1(O)CO)CO'); return false">fructose</a>,
+                <a href="#" onclick="parseInput('C=C(C)C=C'); return false">isoprene</a>,
+                <a href="#" onclick="parseInput('CCO'); return false">ethanol</a>,
+                <a href="#" onclick="parseInput('C#N'); return false">cyanide</a>,
+                <a href="#" onclick="parseInput(randomMolecule[Math.floor(Math.random()*randomMolecule.length)]); return false">random</a>
+            </p>
+        </div>
+    </div>
+
+    <div id="content-main">
+        <div id="plot"></div>
+        <div id="sidebar">
+            <div id="descriptor-section-title">Descriptors</div>
+            <table id="descriptor-table">
+                <thead><tr><th>Property</th><th>Value</th></tr></thead>
+                <tbody id="descriptor-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <div id="footer">
+        <div id="content-info">
+            <span id="molecularFormula"></span>
+            <span id="molecularWeight"></span>
+        </div>
+        <div id="content-source">
+            <a href="https://github.com/chemplexity/molecules" target="_blank">source</a>
+        </div>
+    </div>
+
+</div>
+
+<div class="tooltip" id="atom-tooltip" style="opacity:0"></div>
+
+<script>
+var randomMolecule = [
+    'CCCCC', 'CC(C)CC', 'CC(C)(C)C', 'CC=CC', 'C=CCC', 'C/C=C\\C', 'C/C=C/C',
+    'C=CC=C', 'C=C=CC', 'CC#CC', 'C#CCC', 'OCCCC', 'CC(O)CC', 'CC(O)(C)C',
+    'C(=O)CCC', 'CC(=O)CC', 'OC(CCC)=O', 'O=C(CC)OC', 'NC(CCC)=O',
+    'O=C(CCC)OO', 'ClC(CCC)=O', 'O=C(CC)OC(C)=O', 'C1CCCCC1',
+    'C1CCCCC1C2CCCCC2', 'C12(CCCCC1)CCCCC2', 'C1C=CCC=C1',
+    'c1ccccc1', 'OCc1ccccc1', 'c1ccccc1-c2ccccc2',
+    'C12=CC=CC=C1C3=C(C=CC=C3)C=C2', 'C1=CC=CN1', 'c1occc1', 'c1sccc1',
+    'NC(C)C(O)=O', 'NC(CCCNC(N)=N)C(O)=O', 'NC(CC(N)=O)C(O)=O',
+    'NC(CC(O)=O)C(O)=O', 'NC(CS)C(O)=O', 'NC(CCC(O)=O)C(O)=O',
+    'NC(CCC(N)=O)C(O)=O', 'NC(CC1=CNC=N1)C(O)=O', 'NC(C(CC)C)C(O)=O',
+    'CC(=O)C(Cl)CC(C(C)C)C=C', 'C2C(=O)C1COCCC1CC2', 'CC(CC(Cl)CCO)C',
+    'CC1C(CC(CC1C)CCO)=O', 'CCO', 'CC(N)CC=O', 'C#N',
+    'NC(CCC(N)=O)C(O)=O'
+];
+
+function parseInput(smiles) {
+    document.getElementById('smiles-input').value = smiles;
+    window._parseInputModule && window._parseInputModule(smiles);
+}
+</script>
+
+<script type="module">
+
+import * as d3 from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
+import { parseSMILES } from '../src/io/smiles.js';
+import { molecularFormula, molecularMass } from '../src/descriptors/molecular.js';
+import { allMatrices } from '../src/matrices/index.js';
+import {
+    wienerIndex, hyperWienerIndex, balabanIndex,
+    randicIndex, zagreb1, zagreb2, hararyIndex,
+    plattIndex, szegedIndex
+} from '../src/descriptors/topological.js';
+
+// ---------------------------------------------------------------------------
+// CPK atom colors
+// ---------------------------------------------------------------------------
+const CPK = {
+    H:  '#FFFFFF', He: '#D9FFFF', Li: '#CC80FF', Be: '#C2FF00',
+    B:  '#FFB5B5', C:  '#404040', N:  '#3050F8', O:  '#FF0D0D',
+    F:  '#90E050', Ne: '#B3E3F5', Na: '#AB5CF2', Mg: '#8AFF00',
+    Al: '#BFA6A6', Si: '#F0C8A0', P:  '#FF8000', S:  '#FFFF30',
+    Cl: '#1FF01F', Ar: '#80D1E3', K:  '#8F40D4', Ca: '#3DFF00',
+    Sc: '#E6E6E6', Ti: '#BFC2C7', V:  '#A6A6AB', Cr: '#8A99C7',
+    Mn: '#9C7AC7', Fe: '#E06633', Co: '#F090A0', Ni: '#50D050',
+    Cu: '#C88033', Zn: '#7D80B0', Br: '#A62929', I:  '#940094',
+};
+const DEFAULT_COLOR = '#FF69B4';
+
+function atomColor(symbol) {
+    return CPK[symbol] ?? DEFAULT_COLOR;
+}
+
+function strokeColor(symbol) {
+    const light = new Set(['H', 'F', 'S', 'Cl', 'Mg', 'Ca', 'He', 'Ne', 'Ar',
+                           'B', 'Si', 'Be', 'Li']);
+    return light.has(symbol) ? '#888' : 'rgba(0,0,0,0.25)';
+}
+
+// ---------------------------------------------------------------------------
+// Atom radius
+// ---------------------------------------------------------------------------
+function atomRadius(protons) {
+    if (protons == null || protons >= 11) return 10;
+    return Math.sqrt(protons + 2.7) * 2.8;
+}
+
+// ---------------------------------------------------------------------------
+// Convert v2 Molecule → D3 { nodes, links }
+// ---------------------------------------------------------------------------
+function convertMolecule(molecule) {
+    const atomEntries = [...molecule.atoms.entries()];
+    const idToIndex   = new Map(atomEntries.map(([id], i) => [id, i]));
+
+    const nodes = atomEntries.map(([id, atom]) => ({
+        id,
+        name:      atom.name,
+        protons:   atom.properties.protons,
+        neutrons:  atom.properties.neutrons,
+        electrons: atom.properties.electrons,
+        charge:    atom.properties.charge ?? 0,
+        aromatic:  atom.properties.aromatic ?? false,
+    }));
+
+    const links = [...molecule.bonds.values()].map(bond => ({
+        id:     bond.id,
+        source: idToIndex.get(bond.atoms[0]),
+        target: idToIndex.get(bond.atoms[1]),
+        order:  bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1),
+        aromatic: bond.properties.aromatic ?? false,
+    }));
+
+    return { nodes, links };
+}
+
+// ---------------------------------------------------------------------------
+// Perpendicular offset helpers
+// ---------------------------------------------------------------------------
+function xOffset(offset, src, tgt) {
+    const dx = tgt.x - src.x;
+    const dy = tgt.y - src.y;
+    if (dy === 0 || Math.abs(dx / dy) > 1) return offset * (dy / dx);
+    return offset;
+}
+
+function yOffset(offset, src, tgt) {
+    const dx = tgt.x - src.x;
+    const dy = tgt.y - src.y;
+    if (dy === 0 || Math.abs(dx / dy) > 1) return -offset;
+    return offset * -(dx / dy);
+}
+
+// ---------------------------------------------------------------------------
+// D3 setup
+// ---------------------------------------------------------------------------
+const plotEl = document.getElementById('plot');
+const tooltip = d3.select('#atom-tooltip');
+
+const svg = d3.select('#plot')
+    .append('svg')
+    .attr('class', 'svg-plot');
+
+svg.append('rect')
+    .attr('fill', '#f8f8f8')
+    .attr('width', '100%')
+    .attr('height', '100%');
+
+const g = svg.append('g');
+
+const zoom = d3.zoom()
+    .scaleExtent([0.1, 10])
+    .on('zoom', event => g.attr('transform', event.transform));
+
+svg.call(zoom);
+
+const simulation = d3.forceSimulation()
+    .force('charge', d3.forceManyBody().strength(-1200).distanceMax(500))
+    .force('link',   d3.forceLink().strength(1.5).distance(80))
+    .force('center', d3.forceCenter(plotEl.clientWidth / 2, plotEl.clientHeight / 2))
+    .velocityDecay(0.35)
+    .alphaDecay(0.02);
+
+function createDrag(sim) {
+    return d3.drag()
+        .on('start', (event, d) => {
+            if (!event.active) sim.alphaTarget(0.3).restart();
+            d.fx = d.x; d.fy = d.y;
+        })
+        .on('drag', (event, d) => { d.fx = event.x; d.fy = event.y; })
+        .on('end',  (event, d) => {
+            if (!event.active) sim.alphaTarget(0);
+            d.fx = null; d.fy = null;
+        });
+}
+
+// ---------------------------------------------------------------------------
+// Bond constants
+// ---------------------------------------------------------------------------
+const BOND_MULT   = 3;
+const BOND_OFFSET = 2;
+const PI_STROKE   = { stroke: '#FFFFFF', width: '2px' };
+const ARO_STROKE  = { stroke: '#696969', width: '3px', dashArray: '3,3' };
+
+function singleBondWidth(order) {
+    return `${(order * BOND_MULT - 1) * (BOND_MULT / 2)}px`;
+}
+
+// ---------------------------------------------------------------------------
+// Update
+// ---------------------------------------------------------------------------
+let currentMolecule = null;
+
+function update(molecule) {
+    currentMolecule = molecule;
+    const graph = convertMolecule(molecule);
+
+    g.selectAll('.node, .link, .separator').remove();
+
+    const bondEnter = g.selectAll('line.link-base')
+        .data(graph.links, d => d.id)
+        .enter();
+
+    const singleBond = bondEnter.append('line')
+        .filter(d => d.order === 1 || d.order === 2 || d.order === 3)
+        .attr('class', 'link')
+        .style('stroke-width', d => singleBondWidth(d.order));
+
+    const doubleSep = bondEnter.append('line')
+        .filter(d => d.order === 2)
+        .attr('class', 'separator')
+        .style('stroke', PI_STROKE.stroke)
+        .style('stroke-width', PI_STROKE.width);
+
+    const aroBond1 = bondEnter.append('line')
+        .filter(d => d.order === 1.5)
+        .attr('class', 'link separator')
+        .style('stroke', ARO_STROKE.stroke)
+        .style('stroke-width', ARO_STROKE.width);
+
+    const aroBond2 = bondEnter.append('line')
+        .filter(d => d.order === 1.5)
+        .attr('class', 'link separator')
+        .style('stroke', ARO_STROKE.stroke)
+        .style('stroke-width', ARO_STROKE.width)
+        .style('stroke-dasharray', ARO_STROKE.dashArray);
+
+    const tripleSep1 = bondEnter.append('line')
+        .filter(d => d.order === 3)
+        .attr('class', 'separator')
+        .style('stroke', PI_STROKE.stroke)
+        .style('stroke-width', PI_STROKE.width);
+
+    const tripleSep2 = bondEnter.append('line')
+        .filter(d => d.order === 3)
+        .attr('class', 'separator')
+        .style('stroke', PI_STROKE.stroke)
+        .style('stroke-width', PI_STROKE.width);
+
+    const atom = g.selectAll('circle.node')
+        .data(graph.nodes, d => d.id)
+        .enter()
+        .append('circle')
+        .attr('class', 'node')
+        .attr('r', d => atomRadius(d.protons))
+        .attr('fill', d => atomColor(d.name))
+        .attr('stroke', d => strokeColor(d.name))
+        .attr('stroke-width', 1)
+        .call(createDrag(simulation))
+        .on('mouseover', (event, d) => {
+            tooltip.transition().delay(200).style('opacity', 0.9);
+            let str = d.name;
+            if (d.charge !== 0) {
+                const n = d.charge === 1 ? '+' : d.charge > 1 ? `${d.charge}+` : d.charge === -1 ? '−' : `${d.charge}−`;
+                str += `<sup>${n}</sup>`;
+            }
+            tooltip.html(str)
+                .style('left', (event.clientX + 13) + 'px')
+                .style('top',  (event.clientY - 20) + 'px');
+        })
+        .on('mousemove', event => {
+            tooltip
+                .style('left', (event.clientX + 13) + 'px')
+                .style('top',  (event.clientY - 20) + 'px');
+        })
+        .on('mouseout', () => {
+            tooltip.transition().duration(50).style('opacity', 0);
+        });
+
+    simulation.nodes(graph.nodes);
+    simulation.force('link').links(graph.links);
+    simulation.force('center',
+        d3.forceCenter(plotEl.clientWidth / 2, plotEl.clientHeight / 2));
+    simulation.alpha(1).restart();
+
+    simulation.on('tick', () => {
+        singleBond
+            .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+
+        doubleSep
+            .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+
+        aroBond1
+            .attr('x1', d => d.source.x - xOffset( BOND_OFFSET, d.source, d.target))
+            .attr('y1', d => d.source.y - yOffset( BOND_OFFSET, d.source, d.target))
+            .attr('x2', d => d.target.x - xOffset( BOND_OFFSET, d.source, d.target))
+            .attr('y2', d => d.target.y - yOffset( BOND_OFFSET, d.source, d.target));
+
+        aroBond2
+            .attr('x1', d => d.source.x - xOffset(-BOND_OFFSET, d.source, d.target))
+            .attr('y1', d => d.source.y - yOffset(-BOND_OFFSET, d.source, d.target))
+            .attr('x2', d => d.target.x - xOffset(-BOND_OFFSET, d.source, d.target))
+            .attr('y2', d => d.target.y - yOffset(-BOND_OFFSET, d.source, d.target));
+
+        tripleSep1
+            .attr('x1', d => d.source.x - xOffset( BOND_OFFSET, d.source, d.target))
+            .attr('y1', d => d.source.y - yOffset( BOND_OFFSET, d.source, d.target))
+            .attr('x2', d => d.target.x - xOffset( BOND_OFFSET, d.source, d.target))
+            .attr('y2', d => d.target.y - yOffset( BOND_OFFSET, d.source, d.target));
+
+        tripleSep2
+            .attr('x1', d => d.source.x - xOffset(-BOND_OFFSET, d.source, d.target))
+            .attr('y1', d => d.source.y - yOffset(-BOND_OFFSET, d.source, d.target))
+            .attr('x2', d => d.target.x - xOffset(-BOND_OFFSET, d.source, d.target))
+            .attr('y2', d => d.target.y - yOffset(-BOND_OFFSET, d.source, d.target));
+
+        atom.attr('cx', d => d.x).attr('cy', d => d.y);
+    });
+
+    updateFormula(molecule);
+    updateDescriptors(molecule);
+}
+
+// ---------------------------------------------------------------------------
+// Formula & weight
+// ---------------------------------------------------------------------------
+function updateFormula(molecule) {
+    const formula = molecularFormula(molecule);
+    let html = Object.entries(formula)
+        .map(([el, n]) => n === 1 ? el : `${el}${n}`)
+        .join('')
+        .replace(/(\d+)/g, '<sub>$1</sub>');
+
+    const charge = molecule.properties.charge ?? 0;
+    if (charge !== 0) {
+        const n = charge === 1 ? '+' : charge > 1 ? `${charge}+` : charge === -1 ? '−' : `${charge}−`;
+        html += `<sup>${n}</sup>`;
+    }
+
+    document.getElementById('molecularFormula').innerHTML = html;
+
+    const mass = molecularMass(molecule);
+    document.getElementById('molecularWeight').textContent =
+        `${(Math.round(mass * 100) / 100).toFixed(2)} g/mol`;
+}
+
+// ---------------------------------------------------------------------------
+// Descriptor sidebar
+// ---------------------------------------------------------------------------
+function fmtVal(v) {
+    if (v == null || !isFinite(v)) return '—';
+    return Number.isInteger(v) ? v : v.toFixed(2);
+}
+
+function updateDescriptors(molecule) {
+    const tbody = document.getElementById('descriptor-body');
+
+    let heavyCount = 0;
+    for (const atom of molecule.atoms.values()) {
+        if (atom.name !== 'H') heavyCount++;
+    }
+
+    let rows = [
+        ['Atoms (total)',  molecule.atoms.size],
+        ['Heavy atoms',    heavyCount],
+        ['Bonds',          molecule.bonds.size],
+    ];
+
+    try {
+        if (heavyCount >= 2) {
+            const { adjacency, degree, distance, reciprocal } = allMatrices(molecule);
+            const W   = wienerIndex(distance);
+            const WW  = hyperWienerIndex(distance);
+            const H   = hararyIndex(reciprocal);
+            const chi = randicIndex(adjacency, degree);
+            const M1  = zagreb1(degree);
+            const M2  = zagreb2(adjacency, degree);
+            const F   = plattIndex(adjacency, degree);
+            const Sz  = szegedIndex(distance, adjacency);
+
+            let J = null;
+            try { J = balabanIndex(distance, adjacency); } catch {}
+
+            rows = rows.concat([
+                ['Wiener Index (W)',      W],
+                ['Hyper-Wiener (WW)',     WW],
+                ['Harary Index (H)',      H],
+                ['Balaban Index (J)',     J],
+                ['Randić Index (χ)',      chi],
+                ['Zagreb M1',            M1],
+                ['Zagreb M2',            M2],
+                ['Platt Index (F)',       F],
+                ['Szeged Index (Sz)',     Sz],
+            ]);
+        }
+    } catch (e) {
+        // silently skip if any computation fails
+    }
+
+    tbody.innerHTML = rows
+        .map(([label, val]) =>
+            `<tr><td>${label}</td><td>${fmtVal(val)}</td></tr>`)
+        .join('');
+}
+
+// ---------------------------------------------------------------------------
+// Input handling
+// ---------------------------------------------------------------------------
+let lastInput = null;
+const initialSmiles = 'C12=CC=CC=C1C3=C(C=CC=C3)C=C2'; // anthracene
+
+function parseInputModule(smiles) {
+    if (smiles === lastInput) return;
+    if (typeof smiles !== 'string' || smiles.length === 0 || smiles.length > 1000) return;
+
+    let molecule;
+    try {
+        molecule = parseSMILES(smiles);
+    } catch (e) {
+        console.warn('SMILES parse error:', e.message);
+        return;
+    }
+
+    if (molecule && molecule.atoms.size > 0) {
+        lastInput = smiles;
+        update(molecule);
+    }
+}
+
+window._parseInputModule = parseInputModule;
+
+document.getElementById('smiles-input').addEventListener('keyup', event => {
+    if (event.key === 'Enter') parseInputModule(event.target.value);
+});
+
+document.getElementById('smiles-input').addEventListener('paste', event => {
+    setTimeout(() => parseInputModule(event.target.value), 0);
+});
+
+window.addEventListener('resize', () => {
+    if (currentMolecule) {
+        simulation.force('center',
+            d3.forceCenter(plotEl.clientWidth / 2, plotEl.clientHeight / 2));
+        simulation.alpha(0.3).restart();
+    }
+});
+
+// ---------------------------------------------------------------------------
+// Init
+// ---------------------------------------------------------------------------
+document.getElementById('smiles-input').value = initialSmiles;
+parseInputModule(initialSmiles);
+
+</script>
+
+</body>
+</html>

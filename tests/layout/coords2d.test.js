@@ -1,0 +1,1255 @@
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
+import { Molecule } from '../../src/core/index.js';
+import { generateCoords } from '../../src/layout/index.js';
+import { parseSMILES } from '../../src/io/smiles.js';
+
+// ---------------------------------------------------------------------------
+// Molecule factories (all built without implicit hydrogens)
+// ---------------------------------------------------------------------------
+
+function singleAtom() {
+  const mol = new Molecule();
+  mol.addAtom('a0', 'C');
+  return mol;
+}
+
+function ethane() {
+  const mol = new Molecule();
+  mol.addAtom('a0', 'C');
+  mol.addAtom('a1', 'C');
+  mol.addBond('b0', 'a0', 'a1', {}, false);
+  return mol;
+}
+
+function propane() {
+  const mol = new Molecule();
+  mol.addAtom('a0', 'C');
+  mol.addAtom('a1', 'C');
+  mol.addAtom('a2', 'C');
+  mol.addBond('b0', 'a0', 'a1', {}, false);
+  mol.addBond('b1', 'a1', 'a2', {}, false);
+  return mol;
+}
+
+function isobutane() {
+  const mol = new Molecule();
+  mol.addAtom('a0', 'C');  // centre
+  mol.addAtom('a1', 'C');
+  mol.addAtom('a2', 'C');
+  mol.addAtom('a3', 'C');
+  mol.addBond('b0', 'a0', 'a1', {}, false);
+  mol.addBond('b1', 'a0', 'a2', {}, false);
+  mol.addBond('b2', 'a0', 'a3', {}, false);
+  return mol;
+}
+
+function linearChain(n) {
+  const mol = new Molecule();
+  for (let i = 0; i < n; i++) {
+    mol.addAtom(`a${i}`, 'C');
+  }
+  for (let i = 0; i < n - 1; i++) {
+    mol.addBond(`b${i}`, `a${i}`, `a${i + 1}`, {}, false);
+  }
+  return mol;
+}
+
+function benzene() {
+  const mol = new Molecule();
+  for (let i = 0; i < 6; i++) {
+    mol.addAtom(`a${i}`, 'C');
+  }
+  for (let i = 0; i < 6; i++) {
+    mol.addBond(`b${i}`, `a${i}`, `a${(i + 1) % 6}`, { aromatic: true }, false);
+  }
+  return mol;
+}
+
+function cyclohexane() {
+  const mol = new Molecule();
+  for (let i = 0; i < 6; i++) {
+    mol.addAtom(`a${i}`, 'C');
+  }
+  for (let i = 0; i < 6; i++) {
+    mol.addBond(`b${i}`, `a${i}`, `a${(i + 1) % 6}`, {}, false);
+  }
+  return mol;
+}
+
+/**
+ * Naphthalene skeleton: 10 C atoms, 11 bonds (two fused 6-rings sharing a bond).
+ * Connectivity: 0-1-2-3-4-5-0 (ring A) and 5-6-7-8-9-4 + 4-5 (ring B shares bond 4-5).
+ */
+function naphthalene() {
+  const mol = new Molecule();
+  for (let i = 0; i < 10; i++) {
+    mol.addAtom(`a${i}`, 'C');
+  }
+  // Ring A: 0-1-2-3-4-5-0
+  mol.addBond('b0',  'a0', 'a1', {}, false);
+  mol.addBond('b1',  'a1', 'a2', {}, false);
+  mol.addBond('b2',  'a2', 'a3', {}, false);
+  mol.addBond('b3',  'a3', 'a4', {}, false);
+  mol.addBond('b4',  'a4', 'a5', {}, false);
+  mol.addBond('b5',  'a5', 'a0', {}, false);
+  // Ring B: 4-6-7-8-9-5-4
+  mol.addBond('b6',  'a4', 'a6', {}, false);
+  mol.addBond('b7',  'a6', 'a7', {}, false);
+  mol.addBond('b8',  'a7', 'a8', {}, false);
+  mol.addBond('b9',  'a8', 'a9', {}, false);
+  mol.addBond('b10', 'a9', 'a5', {}, false);
+  return mol;
+}
+
+/** Two 5-membered rings sharing exactly one atom (spiro carbon). */
+function spiro() {
+  const mol = new Molecule();
+  for (let i = 0; i < 9; i++) {
+    mol.addAtom(`a${i}`, 'C');
+  }
+  // Ring A: 0-1-2-3-4-0
+  mol.addBond('b0', 'a0', 'a1', {}, false);
+  mol.addBond('b1', 'a1', 'a2', {}, false);
+  mol.addBond('b2', 'a2', 'a3', {}, false);
+  mol.addBond('b3', 'a3', 'a4', {}, false);
+  mol.addBond('b4', 'a4', 'a0', {}, false);
+  // Ring B: 4-5-6-7-8-4  (a4 = spiro atom)
+  mol.addBond('b5', 'a4', 'a5', {}, false);
+  mol.addBond('b6', 'a5', 'a6', {}, false);
+  mol.addBond('b7', 'a6', 'a7', {}, false);
+  mol.addBond('b8', 'a7', 'a8', {}, false);
+  mol.addBond('b9', 'a8', 'a4', {}, false);
+  return mol;
+}
+
+/** Benzene with one methyl substituent (toluene skeleton, heavy atoms only). */
+function methylbenzene() {
+  const mol = benzene();
+  mol.addAtom('a6', 'C');  // methyl carbon
+  mol.addBond('b6', 'a0', 'a6', {}, false);
+  return mol;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function bondLengthOf(mol, bond) {
+  const a = mol.atoms.get(bond.atoms[0]);
+  const b = mol.atoms.get(bond.atoms[1]);
+  return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+// ---------------------------------------------------------------------------
+// Coordinate assignment
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — coordinate assignment', () => {
+  it('single atom gets coordinates', () => {
+    const mol = singleAtom();
+    generateCoords(mol);
+    const atom = mol.atoms.get('a0');
+    assert.equal(typeof atom.x, 'number');
+    assert.equal(typeof atom.y, 'number');
+    assert.ok(!isNaN(atom.x));
+    assert.ok(!isNaN(atom.y));
+  });
+
+  it('single atom is placed at origin', () => {
+    const mol = singleAtom();
+    generateCoords(mol);
+    const atom = mol.atoms.get('a0');
+    assert.equal(atom.x, 0);
+    assert.equal(atom.y, 0);
+  });
+
+  it('all atoms in propane receive x and y', () => {
+    const mol = propane();
+    generateCoords(mol);
+    for (const atom of mol.atoms.values()) {
+      assert.equal(typeof atom.x, 'number');
+      assert.equal(typeof atom.y, 'number');
+      assert.ok(!isNaN(atom.x));
+    }
+  });
+
+  it('returns a Map with size === atomCount', () => {
+    const mol = benzene();
+    const result = generateCoords(mol);
+    assert.ok(result instanceof Map);
+    assert.equal(result.size, mol.atomCount);
+  });
+
+  it('coordinates in returned map match atom.properties', () => {
+    const mol = propane();
+    const result = generateCoords(mol);
+    for (const [atomId, coord] of result) {
+      const atom = mol.atoms.get(atomId);
+      assert.equal(atom.x, coord.x);
+      assert.equal(atom.y, coord.y);
+    }
+  });
+
+  it('empty molecule returns empty Map', () => {
+    const mol = new Molecule();
+    const result = generateCoords(mol);
+    assert.equal(result.size, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bond length invariant
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — bond length', () => {
+  it('ethane: bond length equals default 1.5', () => {
+    const mol = ethane();
+    generateCoords(mol);
+    const [bond] = mol.bonds.values();
+    assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.5) < 1e-9);
+  });
+
+  it('propane: all bonds have length 1.5', () => {
+    const mol = propane();
+    generateCoords(mol);
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.5) < 1e-9);
+    }
+  });
+
+  it('linear chain of 6: all bonds have length 1.5', () => {
+    const mol = linearChain(6);
+    generateCoords(mol);
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.5) < 1e-9);
+    }
+  });
+
+  it('custom bondLength=2.0 is respected for ethane', () => {
+    const mol = ethane();
+    generateCoords(mol, { bondLength: 2.0 });
+    const [bond] = mol.bonds.values();
+    assert.ok(Math.abs(bondLengthOf(mol, bond) - 2.0) < 1e-9);
+  });
+
+  it('custom bondLength=1.0 is respected for benzene', () => {
+    const mol = benzene();
+    generateCoords(mol, { bondLength: 1.0 });
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.0) < 1e-9);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ring geometry
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — benzene ring geometry', () => {
+  it('all 6 C atoms are equidistant from the centroid', () => {
+    const mol = benzene();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    const cx = atoms.reduce((s, a) => s + a.x, 0) / 6;
+    const cy = atoms.reduce((s, a) => s + a.y, 0) / 6;
+    const radii = atoms.map(a => Math.hypot(a.x - cx, a.y - cy));
+    const r0 = radii[0];
+    for (const r of radii) {
+      assert.ok(Math.abs(r - r0) < 1e-9, `radius ${r} !== ${r0}`);
+    }
+  });
+
+  it('all 6 bonds have length 1.5', () => {
+    const mol = benzene();
+    generateCoords(mol);
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.5) < 1e-9);
+    }
+  });
+
+  it('no two atoms occupy the same position', () => {
+    const mol = benzene();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    for (let i = 0; i < atoms.length; i++) {
+      for (let j = i + 1; j < atoms.length; j++) {
+        const d = Math.hypot(
+          atoms[i].x - atoms[j].x,
+          atoms[i].y - atoms[j].y
+        );
+        assert.ok(d > 0.1, `atoms ${i} and ${j} overlap (d=${d})`);
+      }
+    }
+  });
+});
+
+describe('generateCoords — cyclohexane ring geometry', () => {
+  it('6 bonds have length 1.5', () => {
+    const mol = cyclohexane();
+    generateCoords(mol);
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.5) < 1e-9);
+    }
+  });
+
+  it('all atoms equidistant from centroid', () => {
+    const mol = cyclohexane();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    const cx = atoms.reduce((s, a) => s + a.x, 0) / 6;
+    const cy = atoms.reduce((s, a) => s + a.y, 0) / 6;
+    const radii = atoms.map(a => Math.hypot(a.x - cx, a.y - cy));
+    const r0 = radii[0];
+    for (const r of radii) {
+      assert.ok(Math.abs(r - r0) < 1e-9);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Chain bond angles
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — chain angles', () => {
+  it('propane: bond angle at middle carbon is ~120°', () => {
+    const mol = propane();
+    generateCoords(mol);
+    const a0 = mol.atoms.get('a0');
+    const a1 = mol.atoms.get('a1');
+    const a2 = mol.atoms.get('a2');
+    const v1 = { x: a0.x - a1.x, y: a0.y - a1.y };
+    const v2 = { x: a2.x - a1.x, y: a2.y - a1.y };
+    const cos = (v1.x * v2.x + v1.y * v2.y) /
+                (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y));
+    const angleDeg = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+    assert.ok(Math.abs(angleDeg - 120) < 1, `bond angle ${angleDeg.toFixed(2)}° != 120°`);
+  });
+
+  it('isobutane: central carbon has 3 neighbors at 120° each', () => {
+    const mol = isobutane();
+    generateCoords(mol);
+    const centre = mol.atoms.get('a0');
+    const children = ['a1', 'a2', 'a3'].map(id => mol.atoms.get(id));
+    for (let i = 0; i < children.length; i++) {
+      for (let j = i + 1; j < children.length; j++) {
+        const ci = children[i], cj = children[j];
+        const v1 = { x: ci.x - centre.x, y: ci.y - centre.y };
+        const v2 = { x: cj.x - centre.x, y: cj.y - centre.y };
+        const cos = (v1.x * v2.x + v1.y * v2.y) /
+                    (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y));
+        const angleDeg = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+        assert.ok(Math.abs(angleDeg - 120) < 1, `angle ${i}-${j}: ${angleDeg.toFixed(2)}° != 120°`);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fused ring systems
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — naphthalene (fused bicyclic)', () => {
+  it('all 11 bonds have length 1.5', () => {
+    const mol = naphthalene();
+    generateCoords(mol);
+    for (const bond of mol.bonds.values()) {
+      const d = bondLengthOf(mol, bond);
+      assert.ok(Math.abs(d - 1.5) < 1e-9, `bond ${bond.id} length ${d}`);
+    }
+  });
+
+  it('no two atoms overlap', () => {
+    const mol = naphthalene();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    for (let i = 0; i < atoms.length; i++) {
+      for (let j = i + 1; j < atoms.length; j++) {
+        const d = Math.hypot(
+          atoms[i].x - atoms[j].x,
+          atoms[i].y - atoms[j].y
+        );
+        assert.ok(d > 0.5, `atoms ${i} and ${j} overlap (d=${d.toFixed(4)})`);
+      }
+    }
+  });
+
+  it('all 10 atoms have finite coordinates', () => {
+    const mol = naphthalene();
+    generateCoords(mol);
+    for (const atom of mol.atoms.values()) {
+      assert.ok(isFinite(atom.x));
+      assert.ok(isFinite(atom.y));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Spiro rings
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — spiro bicyclic', () => {
+  it('all 9 atoms receive finite coordinates', () => {
+    const mol = spiro();
+    generateCoords(mol);
+    for (const atom of mol.atoms.values()) {
+      assert.ok(isFinite(atom.x), `${atom.id} x is not finite`);
+      assert.ok(isFinite(atom.y), `${atom.id} y is not finite`);
+    }
+  });
+
+  it('all bonds have length 1.5', () => {
+    const mol = spiro();
+    generateCoords(mol);
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.5) < 1e-9);
+    }
+  });
+
+  it('no two atoms overlap', () => {
+    const mol = spiro();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    for (let i = 0; i < atoms.length; i++) {
+      for (let j = i + 1; j < atoms.length; j++) {
+        const d = Math.hypot(
+          atoms[i].x - atoms[j].x,
+          atoms[i].y - atoms[j].y
+        );
+        assert.ok(d > 0.1, `atoms ${i} and ${j} overlap (d=${d.toFixed(4)})`);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ring substituents
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — ring substituents', () => {
+  it('methylbenzene: methyl carbon has correct bond length', () => {
+    const mol = methylbenzene();
+    generateCoords(mol);
+    const bond = mol.getBond('a0', 'a6');
+    assert.ok(bond, 'bond between ring and methyl should exist');
+    assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.5) < 1e-9);
+  });
+
+  it('methylbenzene: all 7 atoms have coordinates', () => {
+    const mol = methylbenzene();
+    const result = generateCoords(mol);
+    assert.equal(result.size, 7);
+    for (const [, coord] of result) {
+      assert.ok(isFinite(coord.x));
+      assert.ok(isFinite(coord.y));
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// suppressH option
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — suppressH option', () => {
+  it('suppressH: false places explicit H atoms', () => {
+    const mol = new Molecule();
+    mol.addAtom('c', 'C');
+    mol.addAtom('h', 'H');
+    mol.addBond('b', 'c', 'h', {}, false);
+    generateCoords(mol, { suppressH: false });
+    const h = mol.atoms.get('h');
+    assert.equal(typeof h.x, 'number');
+    assert.ok(!isNaN(h.x));
+  });
+
+  it('suppressH: true still gives H a coordinate (same as parent)', () => {
+    const mol = new Molecule();
+    mol.addAtom('c', 'C');
+    mol.addAtom('h', 'H');
+    mol.addBond('b', 'c', 'h', {}, false);
+    generateCoords(mol, { suppressH: true });
+    const h = mol.atoms.get('h');
+    assert.equal(typeof h.x, 'number');
+    assert.ok(!isNaN(h.x));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Additional factories
+// ---------------------------------------------------------------------------
+
+function cyclopentane() {
+  const mol = new Molecule();
+  for (let i = 0; i < 5; i++) {
+    mol.addAtom(`a${i}`, 'C');
+  }
+  for (let i = 0; i < 5; i++) {
+    mol.addBond(`b${i}`, `a${i}`, `a${(i + 1) % 5}`, {}, false);
+  }
+  return mol;
+}
+
+function cycloheptane() {
+  const mol = new Molecule();
+  for (let i = 0; i < 7; i++) {
+    mol.addAtom(`a${i}`, 'C');
+  }
+  for (let i = 0; i < 7; i++) {
+    mol.addBond(`b${i}`, `a${i}`, `a${(i + 1) % 7}`, {}, false);
+  }
+  return mol;
+}
+
+/** C(CH3)4 heavy-atom skeleton: central carbon bonded to 4 methyl carbons. */
+function neopentane() {
+  const mol = new Molecule();
+  mol.addAtom('a0', 'C');
+  for (let i = 1; i <= 4; i++) {
+    mol.addAtom(`a${i}`, 'C');
+  }
+  for (let i = 1; i <= 4; i++) {
+    mol.addBond(`b${i}`, 'a0', `a${i}`, {}, false);
+  }
+  return mol;
+}
+
+/**
+ * Indane skeleton: 6-ring fused to 5-ring sharing one bond.
+ * 6-ring: a0-a1-a2-a3-a4-a5-a0; 5-ring shares bond a4-a5: a4-a6-a7-a8-a5-a4.
+ */
+function indane() {
+  const mol = new Molecule();
+  for (let i = 0; i < 9; i++) {
+    mol.addAtom(`a${i}`, 'C');
+  }
+  for (let i = 0; i < 6; i++) {
+    mol.addBond(`b6r${i}`, `a${i}`, `a${(i + 1) % 6}`, {}, false);
+  }
+  mol.addBond('b5r0', 'a4', 'a6', {}, false);
+  mol.addBond('b5r1', 'a6', 'a7', {}, false);
+  mol.addBond('b5r2', 'a7', 'a8', {}, false);
+  mol.addBond('b5r3', 'a8', 'a5', {}, false);
+  return mol;
+}
+
+/** Naphthalene skeleton (from existing tests) with one extra methyl substituent on a0. */
+function naphthaleneMethyl() {
+  const mol = new Molecule();
+  for (let i = 0; i < 11; i++) {
+    mol.addAtom(`a${i}`, 'C');
+  }
+  mol.addBond('b0',  'a0', 'a1', {}, false); mol.addBond('b1',  'a1', 'a2', {}, false);
+  mol.addBond('b2',  'a2', 'a3', {}, false); mol.addBond('b3',  'a3', 'a4', {}, false);
+  mol.addBond('b4',  'a4', 'a5', {}, false); mol.addBond('b5',  'a5', 'a0', {}, false);
+  mol.addBond('b6',  'a4', 'a6', {}, false); mol.addBond('b7',  'a6', 'a7', {}, false);
+  mol.addBond('b8',  'a7', 'a8', {}, false); mol.addBond('b9',  'a8', 'a9', {}, false);
+  mol.addBond('b10', 'a9', 'a5', {}, false);
+  mol.addBond('b11', 'a0', 'a10', {}, false);  // methyl substituent
+  return mol;
+}
+
+/** Two disconnected fragments: benzene + isolated N atom. */
+function benzeneAndN() {
+  const mol = new Molecule();
+  for (let i = 0; i < 6; i++) {
+    mol.addAtom(`a${i}`, 'C');
+  }
+  for (let i = 0; i < 6; i++) {
+    mol.addBond(`b${i}`, `a${i}`, `a${(i + 1) % 6}`, { aromatic: true }, false);
+  }
+  mol.addAtom('n0', 'N');
+  return mol;
+}
+
+// ---------------------------------------------------------------------------
+// Cyclopentane ring geometry
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — cyclopentane ring geometry', () => {
+  it('all 5 atoms equidistant from centroid', () => {
+    const mol = cyclopentane();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    const cx = atoms.reduce((s, a) => s + a.x, 0) / 5;
+    const cy = atoms.reduce((s, a) => s + a.y, 0) / 5;
+    const radii = atoms.map(a => Math.hypot(a.x - cx, a.y - cy));
+    for (const r of radii) {
+      assert.ok(Math.abs(r - radii[0]) < 1e-9);
+    }
+  });
+
+  it('all 5 bonds have length 1.5', () => {
+    const mol = cyclopentane();
+    generateCoords(mol);
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.5) < 1e-9);
+    }
+  });
+
+  it('no two atoms occupy the same position', () => {
+    const mol = cyclopentane();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    for (let i = 0; i < atoms.length; i++) {
+      for (let j = i + 1; j < atoms.length; j++) {
+        const d = Math.hypot(
+          atoms[i].x - atoms[j].x,
+          atoms[i].y - atoms[j].y
+        );
+        assert.ok(d > 0.1, `atoms ${i} and ${j} overlap (d=${d})`);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Cycloheptane ring geometry
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — cycloheptane ring geometry', () => {
+  it('all 7 atoms equidistant from centroid', () => {
+    const mol = cycloheptane();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    const cx = atoms.reduce((s, a) => s + a.x, 0) / 7;
+    const cy = atoms.reduce((s, a) => s + a.y, 0) / 7;
+    const radii = atoms.map(a => Math.hypot(a.x - cx, a.y - cy));
+    for (const r of radii) {
+      assert.ok(Math.abs(r - radii[0]) < 1e-9);
+    }
+  });
+
+  it('all 7 bonds have length 1.5', () => {
+    const mol = cycloheptane();
+    generateCoords(mol);
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.5) < 1e-9);
+    }
+  });
+
+  it('no two atoms overlap', () => {
+    const mol = cycloheptane();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    for (let i = 0; i < atoms.length; i++) {
+      for (let j = i + 1; j < atoms.length; j++) {
+        const d = Math.hypot(
+          atoms[i].x - atoms[j].x,
+          atoms[i].y - atoms[j].y
+        );
+        assert.ok(d > 0.1, `atoms ${i} and ${j} overlap (d=${d})`);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Degree-4 centre (neopentane skeleton)
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — neopentane (degree-4 centre)', () => {
+  it('all 4 C-C bonds have length 1.5', () => {
+    const mol = neopentane();
+    generateCoords(mol);
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.5) < 1e-9);
+    }
+  });
+
+  it('all 4 terminal atoms are at distinct positions', () => {
+    const mol = neopentane();
+    generateCoords(mol);
+    const terminals = ['a1', 'a2', 'a3', 'a4'].map(id => mol.atoms.get(id));
+    for (let i = 0; i < terminals.length; i++) {
+      for (let j = i + 1; j < terminals.length; j++) {
+        const d = Math.hypot(
+          terminals[i].x - terminals[j].x,
+          terminals[i].y - terminals[j].y
+        );
+        assert.ok(d > 0.5, `terminals ${i} and ${j} overlap (d=${d.toFixed(4)})`);
+      }
+    }
+  });
+
+  it('custom bondLength=2.0 applies to all 4 bonds', () => {
+    const mol = neopentane();
+    generateCoords(mol, { bondLength: 2.0 });
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 2.0) < 1e-9);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Long-chain internal angles
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — long-chain bond angles', () => {
+  it('10-atom chain: all interior bond angles are 120°', () => {
+    const mol = linearChain(10);
+    generateCoords(mol);
+    for (let i = 1; i <= 8; i++) {
+      const prev = mol.atoms.get(`a${i - 1}`);
+      const cur  = mol.atoms.get(`a${i}`);
+      const next = mol.atoms.get(`a${i + 1}`);
+      const v1 = { x: prev.x - cur.x, y: prev.y - cur.y };
+      const v2 = { x: next.x - cur.x, y: next.y - cur.y };
+      const cos = (v1.x * v2.x + v1.y * v2.y) /
+                  (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y));
+      const angleDeg = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+      assert.ok(Math.abs(angleDeg - 120) < 1, `atom ${i}: angle=${angleDeg.toFixed(2)}°`);
+    }
+  });
+
+  it('10-atom chain: no two atoms lie at the same position', () => {
+    const mol = linearChain(10);
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    for (let i = 0; i < atoms.length; i++) {
+      for (let j = i + 1; j < atoms.length; j++) {
+        const d = Math.hypot(
+          atoms[i].x - atoms[j].x,
+          atoms[i].y - atoms[j].y
+        );
+        assert.ok(d > 0.1, `atoms a${i} and a${j} overlap (d=${d.toFixed(4)})`);
+      }
+    }
+  });
+
+  it('all bonds in a 10-atom chain have length 1.5', () => {
+    const mol = linearChain(10);
+    generateCoords(mol);
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.5) < 1e-9);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bondLength option scales ring geometry
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — bondLength option scales ring circumradius', () => {
+  it('cyclohexane bondLength=2.0: all bonds length 2.0', () => {
+    const mol = cyclohexane();
+    generateCoords(mol, { bondLength: 2.0 });
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 2.0) < 1e-9);
+    }
+  });
+
+  it('cyclohexane bondLength=2.0: all atoms at circumradius 2.0 from centroid', () => {
+    const mol = cyclohexane();
+    generateCoords(mol, { bondLength: 2.0 });
+    const atoms = [...mol.atoms.values()];
+    const cx = atoms.reduce((s, a) => s + a.x, 0) / 6;
+    const cy = atoms.reduce((s, a) => s + a.y, 0) / 6;
+    // For a regular hexagon, circumradius == side length
+    const radii = atoms.map(a => Math.hypot(a.x - cx, a.y - cy));
+    for (const r of radii) {
+      assert.ok(Math.abs(r - 2.0) < 1e-9, `radius ${r.toFixed(6)} != 2.0`);
+    }
+  });
+
+  it('cyclopentane bondLength=1.0: all bonds length 1.0', () => {
+    const mol = cyclopentane();
+    generateCoords(mol, { bondLength: 1.0 });
+    for (const bond of mol.bonds.values()) {
+      assert.ok(Math.abs(bondLengthOf(mol, bond) - 1.0) < 1e-9);
+    }
+  });
+
+  it('cyclopentane bondLength=1.0: all atoms equidistant from centroid', () => {
+    const mol = cyclopentane();
+    generateCoords(mol, { bondLength: 1.0 });
+    const atoms = [...mol.atoms.values()];
+    const cx = atoms.reduce((s, a) => s + a.x, 0) / 5;
+    const cy = atoms.reduce((s, a) => s + a.y, 0) / 5;
+    const radii = atoms.map(a => Math.hypot(a.x - cx, a.y - cy));
+    for (const r of radii) {
+      assert.ok(Math.abs(r - radii[0]) < 1e-9);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Disconnected molecule: component tiling
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — disconnected molecule tiling', () => {
+  it('all atoms receive finite coordinates', () => {
+    const mol = benzeneAndN();
+    generateCoords(mol);
+    for (const atom of mol.atoms.values()) {
+      assert.ok(isFinite(atom.x), `${atom.id} x not finite`);
+      assert.ok(isFinite(atom.y), `${atom.id} y not finite`);
+    }
+  });
+
+  it('isolated atom is placed to the right of the ring component', () => {
+    const mol = benzeneAndN();
+    generateCoords(mol);
+    const ringMaxX = Math.max(...[...Array(6).keys()].map(i => mol.atoms.get(`a${i}`).x));
+    const nX = mol.atoms.get('n0').x;
+    assert.ok(nX > ringMaxX, `isolated atom x (${nX.toFixed(3)}) should exceed ring maxX (${ringMaxX.toFixed(3)})`);
+  });
+
+  it('returned map size equals total atom count', () => {
+    const mol = benzeneAndN();
+    const result = generateCoords(mol);
+    assert.equal(result.size, mol.atomCount);
+  });
+
+  it('two disconnected linear chains are horizontally separated', () => {
+    const mol = new Molecule();
+    // Chain A: a0-a1-a2
+    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C'); mol.addAtom('a2', 'C');
+    mol.addBond('bA0', 'a0', 'a1', {}, false); mol.addBond('bA1', 'a1', 'a2', {}, false);
+    // Chain B: b0-b1-b2
+    mol.addAtom('b0', 'C'); mol.addAtom('b1', 'C'); mol.addAtom('b2', 'C');
+    mol.addBond('bB0', 'b0', 'b1', {}, false); mol.addBond('bB1', 'b1', 'b2', {}, false);
+    generateCoords(mol);
+    const aMaxX = Math.max(mol.atoms.get('a0').x, mol.atoms.get('a1').x, mol.atoms.get('a2').x);
+    const bMinX = Math.min(mol.atoms.get('b0').x, mol.atoms.get('b1').x, mol.atoms.get('b2').x);
+    assert.ok(bMinX > aMaxX, `chain B (minX=${bMinX.toFixed(3)}) should start right of chain A (maxX=${aMaxX.toFixed(3)})`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Fused 5+6 ring (indane)
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — indane (5+6 fused ring system)', () => {
+  it('all 9 atoms receive finite coordinates', () => {
+    const mol = indane();
+    generateCoords(mol);
+    for (const atom of mol.atoms.values()) {
+      assert.ok(isFinite(atom.x), `${atom.id} x not finite`);
+      assert.ok(isFinite(atom.y), `${atom.id} y not finite`);
+    }
+  });
+
+  it('returned map has 9 entries', () => {
+    const mol = indane();
+    const result = generateCoords(mol);
+    assert.equal(result.size, 9);
+  });
+
+  it('no two atoms occupy the same position', () => {
+    const mol = indane();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    for (let i = 0; i < atoms.length; i++) {
+      for (let j = i + 1; j < atoms.length; j++) {
+        const d = Math.hypot(
+          atoms[i].x - atoms[j].x,
+          atoms[i].y - atoms[j].y
+        );
+        assert.ok(d > 0.1, `atoms ${atoms[i].id} and ${atoms[j].id} overlap (d=${d.toFixed(4)})`);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Naphthalene with methyl substituent
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — naphthalene + methyl substituent', () => {
+  it('all 11 atoms have finite coordinates', () => {
+    const mol = naphthaleneMethyl();
+    generateCoords(mol);
+    for (const atom of mol.atoms.values()) {
+      assert.ok(isFinite(atom.x));
+      assert.ok(isFinite(atom.y));
+    }
+  });
+
+  it('all 12 bonds have length 1.5', () => {
+    const mol = naphthaleneMethyl();
+    generateCoords(mol);
+    for (const bond of mol.bonds.values()) {
+      const d = bondLengthOf(mol, bond);
+      assert.ok(Math.abs(d - 1.5) < 1e-9, `bond ${bond.id} length ${d.toFixed(6)}`);
+    }
+  });
+
+  it('no two atoms overlap', () => {
+    const mol = naphthaleneMethyl();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    for (let i = 0; i < atoms.length; i++) {
+      for (let j = i + 1; j < atoms.length; j++) {
+        const d = Math.hypot(
+          atoms[i].x - atoms[j].x,
+          atoms[i].y - atoms[j].y
+        );
+        assert.ok(d > 0.5, `atoms ${atoms[i].id} and ${atoms[j].id} overlap (d=${d.toFixed(4)})`);
+      }
+    }
+  });
+
+  it('methyl carbon (a10) is not at the same position as any ring atom', () => {
+    const mol = naphthaleneMethyl();
+    generateCoords(mol);
+    const methyl = mol.atoms.get('a10');
+    for (let i = 0; i < 10; i++) {
+      const ring = mol.atoms.get(`a${i}`);
+      const d = Math.hypot(methyl.x - ring.x, methyl.y - ring.y);
+      assert.ok(d > 0.5, `methyl overlaps ring atom a${i} (d=${d.toFixed(4)})`);
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Ring orientation: flat-top hexagon and principal-axis normalization
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — flat-top hexagon orientation', () => {
+  it('benzene: no atom is at the very top or bottom (flat-top convention)', () => {
+    const mol = benzene();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    const cx = atoms.reduce((s, a) => s + a.x, 0) / 6;
+    const cy = atoms.reduce((s, a) => s + a.y, 0) / 6;
+    // Flat-top: no atom should be directly above or below the center (within 2°).
+    for (const a of atoms) {
+      const angle = Math.atan2(a.y - cy, a.x - cx);
+      const distFromVertical = Math.min(
+        Math.abs(angle - Math.PI / 2),
+        Math.abs(angle + Math.PI / 2),
+        Math.abs(angle - Math.PI / 2 + 2 * Math.PI),
+        Math.abs(angle + Math.PI / 2 - 2 * Math.PI)
+      );
+      assert.ok(distFromVertical > 0.03,
+        `atom ${a.id} is too close to vertical (angle=${(angle * 180 / Math.PI).toFixed(1)}°) — expected flat-top`);
+    }
+  });
+
+  it('cyclohexane: no atom is at the very top or bottom (flat-top convention)', () => {
+    const mol = cyclohexane();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    const cx = atoms.reduce((s, a) => s + a.x, 0) / 6;
+    const cy = atoms.reduce((s, a) => s + a.y, 0) / 6;
+    for (const a of atoms) {
+      const angle = Math.atan2(a.y - cy, a.x - cx);
+      const distFromVertical = Math.min(
+        Math.abs(angle - Math.PI / 2),
+        Math.abs(angle + Math.PI / 2),
+        Math.abs(angle - Math.PI / 2 + 2 * Math.PI),
+        Math.abs(angle + Math.PI / 2 - 2 * Math.PI)
+      );
+      assert.ok(distFromVertical > 0.03,
+        `atom ${a.id} angle ${(angle * 180 / Math.PI).toFixed(1)}° is too close to vertical — expected flat-top`);
+    }
+  });
+});
+
+describe('generateCoords — principal-axis orientation (naphthalene)', () => {
+  it('naphthalene bounding box is wider than tall (long axis horizontal)', () => {
+    const mol = naphthalene();
+    generateCoords(mol);
+    const atoms = [...mol.atoms.values()];
+    const xs = atoms.map(a => a.x), ys = atoms.map(a => a.y);
+    const width  = Math.max(...xs) - Math.min(...xs);
+    const height = Math.max(...ys) - Math.min(...ys);
+    assert.ok(width > height,
+      `naphthalene should be wider than tall after orientation: width=${width.toFixed(3)}, height=${height.toFixed(3)}`);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Barbiturate regression — ring-atom substituents must point outward
+// Regression for: "methyl group going inside ring" reported for
+// N1([C@H](C)C)C(=O)N(C)C(=O)C(C)(C)C1=O
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — barbiturate substituent direction', () => {
+  function barbiturate() {
+    const mol = parseSMILES('N1([C@H](C)C)C(=O)N(C)C(=O)C(C)(C)C1=O');
+    mol.stripHydrogens();
+    return mol;
+  }
+
+  it('all ring-atom heavy substituents point outward (diff < 90° from ring-outward direction)', () => {
+    const mol = barbiturate();
+    generateCoords(mol, { bondLength: 1.5 });
+
+    const ring6 = mol.getRings().find(r => r.length === 6);
+    assert.ok(ring6, 'Expected a 6-membered ring');
+    const ringSet = new Set(ring6);
+
+    // Ring centroid
+    const cx = ring6.reduce((s, id) => s + mol.atoms.get(id).x, 0) / ring6.length;
+    const cy = ring6.reduce((s, id) => s + mol.atoms.get(id).y, 0) / ring6.length;
+
+    for (const rid of ringSet) {
+      const rpos = mol.atoms.get(rid);
+      const outward = Math.atan2(rpos.y - cy, rpos.x - cx) * 180 / Math.PI;
+
+      for (const nbId of mol.getNeighbors(rid)) {
+        if (ringSet.has(nbId)) {
+          continue;
+        }
+        const nb = mol.atoms.get(nbId);
+        if (!nb || nb.name === 'H') {
+          continue;
+        }
+
+        const angle = Math.atan2(nb.y - rpos.y, nb.x - rpos.x) * 180 / Math.PI;
+        const diff  = ((angle - outward + 540) % 360) - 180; // signed, in (-180, 180]
+        assert.ok(
+          Math.abs(diff) < 90,
+          `Substituent ${rid}→${nbId} points inward: angle=${angle.toFixed(1)}°, outward=${outward.toFixed(1)}°, diff=${diff.toFixed(1)}°`
+        );
+      }
+    }
+  });
+
+  it('no two heavy atoms overlap', () => {
+    const mol = barbiturate();
+    generateCoords(mol, { bondLength: 1.5 });
+    const atoms = [...mol.atoms.values()].filter(a => a.name !== 'H' && a.x != null);
+    for (let i = 0; i < atoms.length; i++) {
+      for (let j = i + 1; j < atoms.length; j++) {
+        const d = Math.hypot(atoms[i].x - atoms[j].x, atoms[i].y - atoms[j].y);
+        assert.ok(d > 0.5, `atoms ${atoms[i].id}(${atoms[i].name}) and ${atoms[j].id}(${atoms[j].name}) overlap (d=${d.toFixed(4)})`);
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Tetracyanoethylene (TCNE) — sp and sp2 geometry regression
+// Regression for: "geometry coming off of the alkynes is incorrect"
+// N#CC(C#N)=C(C#N)C#N: sp2 centres should be 120°, sp (C≡N) should be 180°
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — TCNE sp/sp2 geometry', () => {
+  it('all C≡N carbons are linear (bond angle 180°)', () => {
+    const mol = parseSMILES('N#CC(C#N)=C(C#N)C#N');
+    mol.stripHydrogens();
+    generateCoords(mol, { bondLength: 1.5 });
+
+    for (const [id, atom] of mol.atoms) {
+      if (atom.name === 'H' || atom.x == null) {
+        continue;
+      }
+      // sp carbon: has a triple-bond neighbour
+      const hasTriple = atom.bonds.some(bId => {
+        const b = mol.bonds.get(bId);
+        return b && (b.properties.order ?? 1) === 3;
+      });
+      if (!hasTriple) {
+        continue;
+      }
+
+      const nbs = mol.getNeighbors(id).filter(n => mol.atoms.get(n)?.x != null);
+      if (nbs.length < 2) {
+        continue;
+      } // terminal N — skip
+
+      for (let i = 0; i < nbs.length; i++) {
+        for (let j = i + 1; j < nbs.length; j++) {
+          const a = mol.atoms.get(nbs[i]), b = mol.atoms.get(nbs[j]);
+          const ux = a.x - atom.x, uy = a.y - atom.y;
+          const vx = b.x - atom.x, vy = b.y - atom.y;
+          const cos = (ux * vx + uy * vy) / ((Math.hypot(ux, uy) || 1e-9) * (Math.hypot(vx, vy) || 1e-9));
+          const ang = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+          assert.ok(
+            Math.abs(ang - 180) < 1,
+            `sp carbon ${id}: angle ${nbs[i]}-${id}-${nbs[j]} = ${ang.toFixed(1)}° (expected 180°)`
+          );
+        }
+      }
+    }
+  });
+
+  it('sp2 carbons at central C=C bond have 120° angles', () => {
+    const mol = parseSMILES('N#CC(C#N)=C(C#N)C#N');
+    mol.stripHydrogens();
+    generateCoords(mol, { bondLength: 1.5 });
+
+    for (const [id, atom] of mol.atoms) {
+      if (atom.name !== 'C' || atom.x == null) {
+        continue;
+      }
+      // sp2 carbon: has a double-bond, no triple bond
+      const hasDouble = atom.bonds.some(bId => (mol.bonds.get(bId)?.properties.order ?? 1) === 2);
+      const hasTriple = atom.bonds.some(bId => (mol.bonds.get(bId)?.properties.order ?? 1) === 3);
+      if (!hasDouble || hasTriple) {
+        continue;
+      }
+
+      const nbs = mol.getNeighbors(id).filter(n => mol.atoms.get(n)?.x != null);
+      for (let i = 0; i < nbs.length; i++) {
+        for (let j = i + 1; j < nbs.length; j++) {
+          const a = mol.atoms.get(nbs[i]), b = mol.atoms.get(nbs[j]);
+          const ux = a.x - atom.x, uy = a.y - atom.y;
+          const vx = b.x - atom.x, vy = b.y - atom.y;
+          const cos = (ux * vx + uy * vy) / ((Math.hypot(ux, uy) || 1e-9) * (Math.hypot(vx, vy) || 1e-9));
+          const ang = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+          assert.ok(
+            Math.abs(ang - 120) < 1,
+            `sp2 carbon ${id}: angle ${nbs[i]}-${id}-${nbs[j]} = ${ang.toFixed(1)}° (expected 120°)`
+          );
+        }
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Three-ring linker molecule — inter-ring chain spanning > 4 hops
+// Regression for: pyridine+morpholine connected to trimethoxybenzene via a
+// 5-atom linker chain (benzene-C5→C13→C14→N16→C17→pyridine-C19) used to
+// exceed MAX_HOPS=4 causing pyridine to be placed via the disconnected
+// fallback (far right), while the morpholine chain placed C14 on the left —
+// producing an 8 Å C14-N16 bond and multiple bond crossings.
+// ---------------------------------------------------------------------------
+describe('generateCoords — three-ring linker (pyridine+morpholine off trimethoxybenzene)', () => {
+  const SMILES = 'COC1=CC(=CC(=C1OC)OC)C[C@H](NC(=O)C2=CN=CC=C2)C(=O)N3CCOCC3';
+
+  it('all heavy-atom bond lengths are in [1.0, 2.5] Å', () => {
+    const mol = parseSMILES(SMILES);
+    mol.stripHydrogens();
+    generateCoords(mol, { bondLength: 1.5 });
+
+    for (const [, bond] of mol.bonds) {
+      const a1 = mol.atoms.get(bond.atoms[0]);
+      const a2 = mol.atoms.get(bond.atoms[1]);
+      if (!a1 || !a2 || a1.x == null || a2.x == null) {
+        continue;
+      }
+      if (a1.name === 'H' || a2.name === 'H') {
+        continue;
+      }
+      const d = Math.hypot(a1.x - a2.x, a1.y - a2.y);
+      assert.ok(
+        d >= 1.0 && d <= 2.5,
+        `bond ${bond.atoms[0]}(${a1.name})-${bond.atoms[1]}(${a2.name}): length ${d.toFixed(3)} Å out of [1.0, 2.5]`
+      );
+    }
+  });
+
+  it('no heavy-atom overlaps (< 0.5 Å)', () => {
+    const mol = parseSMILES(SMILES);
+    mol.stripHydrogens();
+    generateCoords(mol, { bondLength: 1.5 });
+
+    const atoms = [...mol.atoms.entries()].filter(([, a]) => a.name !== 'H' && a.x != null);
+    for (let i = 0; i < atoms.length; i++) {
+      for (let j = i + 1; j < atoms.length; j++) {
+        const [id1, a1] = atoms[i], [id2, a2] = atoms[j];
+        const d = Math.hypot(a1.x - a2.x, a1.y - a2.y);
+        assert.ok(
+          d >= 0.5,
+          `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`
+        );
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Highly-branched tert-butyl chain — H-atom ghost blocking regression
+// Regression for: "one of the tert butyl groups in this molecule are not
+// rendering correctly: CC(C)(C(C)(C(C)(C)C)C)C"
+// SMILES has 3 consecutive quaternary carbons (trimethyl-substituted), and
+// each carries 3 methyl branches.  Before the fix, the explicit H atoms added
+// by parseSMILES were placed into the spatial grid during Phase-C layout.
+// One H atom of the root methyl (C1) happened to land at the ideal position
+// for the next quaternary carbon (C4), forcing a 30° rotation that left C4
+// only ~30° away from C1, causing C9-C10 and C10-C11 to overlap at 0.78 Å.
+// ---------------------------------------------------------------------------
+describe('generateCoords — three-adjacent-tBu groups (H ghost blocking fix)', () => {
+  const SMILES = 'CC(C)(C(C)(C(C)(C)C)C)C';
+
+  it('all heavy-atom bond lengths are exactly 1.5 Å', () => {
+    const mol = parseSMILES(SMILES);
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    for (const [, bond] of mol.bonds) {
+      const a1 = mol.atoms.get(bond.atoms[0]);
+      const a2 = mol.atoms.get(bond.atoms[1]);
+      if (!a1 || !a2 || a1.name === 'H' || a2.name === 'H') {
+        continue;
+      }
+      const d = Math.hypot(a1.x - a2.x, a1.y - a2.y);
+      assert.ok(
+        Math.abs(d - 1.5) < 1e-6,
+        `bond ${bond.atoms[0]}(${a1.name})-${bond.atoms[1]}(${a2.name}): length ${d.toFixed(4)} Å`
+      );
+    }
+  });
+
+  it('no heavy-atom overlaps (< 0.5 Å)', () => {
+    const mol = parseSMILES(SMILES);
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const atoms = [...mol.atoms.entries()].filter(([, a]) => a.name !== 'H' && a.x != null);
+    for (let i = 0; i < atoms.length; i++) {
+      for (let j = i + 1; j < atoms.length; j++) {
+        const [id1, a1] = atoms[i], [id2, a2] = atoms[j];
+        const d = Math.hypot(a1.x - a2.x, a1.y - a2.y);
+        assert.ok(
+          d >= 0.5,
+          `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`
+        );
+      }
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Bridged bicyclic with two 9-membered rings sharing a 4-atom bridge.
+// The arc-side direction was previously determined from the pre-placed-atom
+// centroid, which landed on the wrong side of the bridgehead chord and
+// collapsed ring-2 on top of ring-1, causing the force-field to stretch the
+// C11-C12 bond to ~9 Å.  The fix uses curCenter as the primary signal.
+// ---------------------------------------------------------------------------
+describe('generateCoords — bridged bicyclic (two fused 9-rings, 4-atom bridge)', () => {
+  const SMILES = 'N%10CCOCC%11NCCOCC%10CC%11';
+
+  it('all bonds are within 1.5× the standard bond length (no blown-up bonds)', () => {
+    const mol = parseSMILES(SMILES);
+    const coords = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    for (const [, bond] of mol.bonds) {
+      const [id1, id2] = bond.atoms;
+      const p1 = coords.get(id1) ?? mol.atoms.get(id1);
+      const p2 = coords.get(id2) ?? mol.atoms.get(id2);
+      if (!p1 || !p2) {
+        continue;
+      }
+      const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      assert.ok(
+        d <= 1.5 * 1.5,
+        `bond ${id1}-${id2}: ${d.toFixed(3)} Å exceeds 1.5×BL`
+      );
+    }
+  });
+
+  it('no heavy-atom overlaps (< 0.5 Å)', () => {
+    const mol = parseSMILES(SMILES);
+    const coords = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const entries = [...mol.atoms.entries()].filter(([, a]) => a.name !== 'H');
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const [id1, a1] = entries[i], [id2, a2] = entries[j];
+        const p1 = coords.get(id1) ?? a1;
+        const p2 = coords.get(id2) ?? a2;
+        if (!p1 || !p2) {
+          continue;
+        }
+        const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        assert.ok(
+          d >= 0.5,
+          `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`
+        );
+      }
+    }
+  });
+});
