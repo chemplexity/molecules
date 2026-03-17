@@ -454,9 +454,9 @@ div.tooltip {
                 <a href="#" onclick="parseInput('c1ccccc1'); return false">benzene</a>,
                 <a href="#" onclick="parseInput('c1ccc2ccccc2c1'); return false">naphthalene</a>,
                 <a href="#" onclick="parseInput('CC(=O)Oc1ccccc1C(=O)O'); return false">aspirin</a>,
-                <a href="#" onclick="parseInput('NC(CCC(N)=O)C(O)=O'); return false">glutamine</a>,
+                <a href="#" onclick="parseInput('C1=CC2=C(C=C1O)C(=CN2)CCN'); return false">serotonin</a>,
                 <a href="#" onclick="parseInput('C12=CC=CC=C1C3=C(C=CC=C3)C=C2'); return false">anthracene</a>,
-                <a href="#" onclick="parseInput('C#N'); return false">HCN</a>,
+                <a href="#" onclick="parseInput('CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C'); return false">LSD</a>,
                 <a href="#" onclick="parseInput(randomMolecule[Math.floor(Math.random()*randomMolecule.length)]); return false">random</a>
             </p>
         </div>
@@ -503,19 +503,58 @@ div.tooltip {
 
 <script>
 var randomMolecule = [
-    'CCCCC', 'CC(C)CC', 'CC(C)(C)C', 'CC=CC', 'C=CCC', 'C/C=C\\C', 'C/C=C/C',
-    'C=CC=C', 'C=C=CC', 'CC#CC', 'C#CCC', 'OCCCC', 'CC(O)CC', 'CC(O)(C)C',
-    'C(=O)CCC', 'CC(=O)CC', 'OC(CCC)=O', 'O=C(CC)OC', 'NC(CCC)=O',
-    'O=C(CCC)OO', 'ClC(CCC)=O', 'O=C(CC)OC(C)=O', 'C1CCCCC1',
-    'C1CCCCC1C2CCCCC2', 'C12(CCCCC1)CCCCC2', 'C1C=CCC=C1',
-    'c1ccccc1', 'OCc1ccccc1', 'c1ccccc1-c2ccccc2',
-    'C12=CC=CC=C1C3=C(C=CC=C3)C=C2', 'C1=CC=CN1', 'c1occc1', 'c1sccc1',
-    'NC(C)C(O)=O', 'NC(CCCNC(N)=N)C(O)=O', 'NC(CC(N)=O)C(O)=O',
-    'NC(CC(O)=O)C(O)=O', 'NC(CS)C(O)=O', 'NC(CCC(O)=O)C(O)=O',
-    'NC(CCC(N)=O)C(O)=O', 'NC(CC1=CNC=N1)C(O)=O', 'NC(C(CC)C)C(O)=O',
-    'CC(=O)C(Cl)CC(C(C)C)C=C', 'C2C(=O)C1COCCC1CC2', 'CC(CC(Cl)CCO)C',
-    'CC1C(CC(CC1C)CCO)=O', 'CCO', 'CC(N)CC=O', 'C#N',
-    'O=C1CCCCC1', 'c1ccc2ccccc2c1', 'CC(=O)Oc1ccccc1C(=O)O',
+    "CCCCC",
+    "CC(C)CC",
+    "CC(C)(C)C",
+    "CC=CC",
+    "C=CCC",
+    "C/C=C\\C",
+    "C/C=C/C",
+    "C=CC=C",
+    "C=C=CC",
+    "CC#CC",
+    "C#CCC",
+    "OCCCC",
+    "CC(O)CC",
+    "CC(O)(C)C",
+    "C(=O)CCC",
+    "CC(=O)CC",
+    "OC(CCC)=O",
+    "O=C(CC)OC",
+    "NC(CCC)=O",
+    "O=C(CCC)OO",
+    "ClC(CCC)=O",
+    "O=C(CC)OC(C)=O",
+    "C1CCCCC1",
+    "C1CCCCC1C2CCCCC2",
+    "C12(CCCCC1)CCCCC2",
+    "C1C=CCC=C1",
+    "c1ccccc1",
+    "OCc1ccccc1",
+    "c1ccccc1-c2ccccc2",
+    "C12=CC=CC=C1C3=C(C=CC=C3)C=C2",
+    "C1=CC=CN1",
+    "c1occc1",
+    "c1sccc1",
+    "NC(C)C(O)=O",
+    "NC(CCCNC(N)=N)C(O)=O",
+    "NC(CC(N)=O)C(O)=O",
+    "NC(CC(O)=O)C(O)=O",
+    "NC(CS)C(O)=O",
+    "NC(CCC(O)=O)C(O)=O",
+    "NC(CCC(N)=O)C(O)=O",
+    "NC(CC1=CNC=N1)C(O)=O",
+    "NC(C(CC)C)C(O)=O",
+    "CC(=O)C(Cl)CC(C(C)C)C=C",
+    "C2C(=O)C1COCCC1CC2",
+    "CC(CC(Cl)CCO)C",
+    "CC1C(CC(CC1C)CCO)=O",
+    "CCO",
+    "CC(N)CC=O",
+    "C#N",
+    "O=C1CCCCC1",
+    "c1ccc2ccccc2c1",
+    "CC(=O)Oc1ccccc1C(=O)O",
     "C%10CCCCC%10",
     "C%10CC%11CCC%10C%11",
     "C1(C(C(C(C(C1F)Cl)Br)I)N)P",
@@ -530,7 +569,6 @@ var randomMolecule = [
     "C1=CC=[N+](C)=CC=C1",
     "[O-][N+](=O)C1=CC=CC=C1",
     "C1=CC2=C(C=C1)C=CC=C2",
-    "c1ccc2ccccc2c1",
     "c1ncccc1",
     "c1cc([N+](=O)[O-])ccc1",
     "C1(CC(CC(C1)C(C)(C)C)O)N",
@@ -604,7 +642,12 @@ var randomMolecule = [
     "[Fe+2].[O-]C(=O)C1=CC=CC=C1.[O-]C(=O)C2=CC=CC=C2",
     "C1=CC=[C-]C=C1.[Li+]",
     "c1ccc(cc1)[C@H](F)[C@@H](Cl)Br",
-    "C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O"
+    "C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O",
+    "C1CCC2C3CCC4=CC(=O)CCC4(C3CCC12C)C",
+    "CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1",
+    "CC(C)(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1",
+    "CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C",
+    "C1=CC2=C(C=C1O)C(=CN2)CCN"
 ];
 
 function parseInput(smiles) {
@@ -745,7 +788,7 @@ function createDrag(sim) {
 }
 
 const simulation = d3.forceSimulation()
-    .force('charge', d3.forceManyBody().strength(-200).distanceMax(250))
+    .force('charge', d3.forceManyBody().strength(-150).distanceMax(200))
     .force('link',   d3.forceLink().strength(1.0).distance(25))
     .force('center', d3.forceCenter(plotEl.clientWidth / 2, plotEl.clientHeight / 2))
     .velocityDecay(0.35)
@@ -867,7 +910,7 @@ function updateForce(molecule) {
         });
 
     // Apply 2D seed positions to nodes so the simulation starts from a valid layout.
-    // Scale factor matches force link distance (30px) / coord bond length (1.5 Å) = 20 px/Å.
+    // Scale factor matches force link distance / coord bond length (1.5 Å) = 20 px/Å.
     const FORCE_SCALE = 25;
     const W0 = plotEl.clientWidth || 600, H0 = plotEl.clientHeight || 400;
     const atoms2d = [...molecule.atoms.values()].filter(a => a.x != null);
@@ -1484,6 +1527,31 @@ function startRotate(delta) {
             a.x = mx + dx * cosR - dy * sinR;
             a.y = my + dx * sinR + dy * cosR;
         }
+
+        // Recompute bounding box centre and update persistent state so the
+        // molecule stays visually centred as it rotates.
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const a of allAtoms) {
+            if (a.x < minX) minX = a.x; if (a.x > maxX) maxX = a.x;
+            if (a.y < minY) minY = a.y; if (a.y > maxY) maxY = a.y;
+        }
+        _cx2d = (minX + maxX) / 2;
+        _cy2d = (minY + maxY) / 2;
+
+        // Zoom out if the rotated molecule no longer fits in the viewport.
+        const W = plotEl.clientWidth  || 600;
+        const H = plotEl.clientHeight || 400;
+        const PAD = 40;
+        const molSVGW = (maxX - minX) * SCALE || 1;
+        const molSVGH = (maxY - minY) * SCALE || 1;
+        const neededScale = Math.min((W - PAD * 2) / molSVGW, (H - PAD * 2) / molSVGH, 1);
+        const currentScale = d3.zoomTransform(svg.node()).k;
+        if (neededScale < currentScale) {
+            svg.call(zoom.transform, d3.zoomIdentity
+                .translate(W / 2 * (1 - neededScale), H / 2 * (1 - neededScale))
+                .scale(neededScale));
+        }
+
         draw2d();
     };
     step();

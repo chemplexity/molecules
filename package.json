@@ -7,27 +7,53 @@
   "main": "./lib/index.js",
   "module": "./es/index.js",
   "exports": {
-    ".":              { "import": "./es/index.js",              "require": "./lib/index.js" },
-    "./core":         { "import": "./es/core/index.js",         "require": "./lib/core/index.js" },
-    "./algorithms":   { "import": "./es/algorithms/index.js",   "require": "./lib/algorithms/index.js" },
-    "./matrices":     { "import": "./es/matrices/index.js",     "require": "./lib/matrices/index.js" },
-    "./descriptors":  { "import": "./es/descriptors/index.js",  "require": "./lib/descriptors/index.js" },
-    "./io":           { "import": "./es/io/index.js",           "require": "./lib/io/index.js" },
-    "./utils":        { "import": "./es/utils/index.js",        "require": "./lib/utils/index.js" },
+    ".": {
+      "import": "./es/index.js",
+      "require": "./lib/index.js"
+    },
+    "./core": {
+      "import": "./es/core/index.js",
+      "require": "./lib/core/index.js"
+    },
+    "./algorithms": {
+      "import": "./es/algorithms/index.js",
+      "require": "./lib/algorithms/index.js"
+    },
+    "./matrices": {
+      "import": "./es/matrices/index.js",
+      "require": "./lib/matrices/index.js"
+    },
+    "./descriptors": {
+      "import": "./es/descriptors/index.js",
+      "require": "./lib/descriptors/index.js"
+    },
+    "./io": {
+      "import": "./es/io/index.js",
+      "require": "./lib/io/index.js"
+    },
+    "./utils": {
+      "import": "./es/utils/index.js",
+      "require": "./lib/utils/index.js"
+    },
     "./package.json": "./package.json"
   },
-  "files": ["lib", "es", "dist", "src"],
+  "files": [
+    "lib",
+    "es",
+    "dist",
+    "src"
+  ],
   "scripts": {
-    "build":          "rollup -c",
-    "build:watch":    "rollup -c --watch",
-    "clean":          "rimraf lib es dist",
-    "prebuild":       "npm run clean",
-    "test":           "node --test 'tests/**/*.test.js'",
-    "test:watch":     "node --test --watch 'tests/**/*.test.js'",
-    "test:coverage":  "node --test --experimental-test-coverage 'tests/**/*.test.js'",
-    "lint":           "eslint \"src/**/*.js\" \"tests/**/*.js\"",
-    "lint:fix":       "eslint \"src/**/*.js\" \"tests/**/*.js\" --fix",
-    "docs":           "jsdoc -c jsdoc.json",
+    "build": "rollup -c",
+    "build:watch": "rollup -c --watch",
+    "clean": "rimraf lib es dist",
+    "prebuild": "npm run clean",
+    "test": "node --test 'tests/**/*.test.js'",
+    "test:watch": "node --test --watch 'tests/**/*.test.js'",
+    "test:coverage": "node --test --experimental-test-coverage 'tests/**/*.test.js'",
+    "lint": "eslint \"src/**/*.js\" \"tests/**/*.js\"",
+    "lint:fix": "eslint \"src/**/*.js\" \"tests/**/*.js\" --fix",
+    "docs": "jsdoc -c jsdoc.json",
     "prepublishOnly": "npm run lint && npm run build && npm run test"
   },
   "keywords": [
@@ -43,14 +69,17 @@
   ],
   "author": "",
   "license": "MIT",
-  "engines": { "node": ">=18.0.0" },
+  "engines": {
+    "node": ">=18.0.0"
+  },
   "devDependencies": {
-    "@rollup/plugin-commonjs":    "^25.0.7",
-    "@rollup/plugin-node-resolve":"^15.2.3",
-    "@rollup/plugin-terser":      "^0.4.4",
-    "eslint":                     "^8.57.0",
-    "jsdoc":                      "^4.0.3",
-    "rimraf":                     "^5.0.5",
-    "rollup":                     "^4.13.0"
+    "@resvg/resvg-js": "^2.6.2",
+    "@rollup/plugin-commonjs": "^25.0.7",
+    "@rollup/plugin-node-resolve": "^15.2.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "eslint": "^8.57.0",
+    "jsdoc": "^4.0.3",
+    "rimraf": "^5.0.5",
+    "rollup": "^4.13.0"
   }
 }

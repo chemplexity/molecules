@@ -761,14 +761,28 @@ function layoutChain(molecule, startAtomId, incomingAngle, placed, bondLength, c
     // directly during the initial chain traversal.  It prevents a successive chain of
     // quaternary carbons from folding children back toward earlier atoms.
     //
+    // Exception: atoms that carry a double (or higher) bond AND have only one placed
+    // neighbor use computeChildAngles instead.  For such atoms (e.g. phosphorus with
+    // four bonds where one is P=O) the gap strategy distributes three children at 90°
+    // intervals (360°/4) which produces an ugly cross layout.  computeChildAngles
+    // gives the correct 120° "Y" arrangement because these atoms have no fold-back
+    // risk — the double bond prevents linear chain stacking.
+    //
     // The n=1 case is excluded deliberately — single children use the zig-zag logic in
     // computeChildAngles to produce 120° chain angles.
     const isH = id => molecule.atoms.get(id)?.name === 'H';
     const placedNbs = molecule.getNeighbors(atomId)
       .filter(id => placed.has(id) && !isH(id));
 
+    // Detect a multiple bond on this atom (order ≥ 2, excluding aromatic 1.5).
+    const hasMultipleBond = molecule.atoms.get(atomId)?.bonds.some(bId => {
+      const b = molecule.bonds.get(bId);
+      return b && (b.properties.order ?? 1) >= 2 && !b.properties.aromatic;
+    }) ?? false;
+
     let angles;
-    if (!fRing && !isLinear && neighbors.length >= 2 && placedNbs.length > 0) {
+    if (!fRing && !isLinear && neighbors.length >= 2 && placedNbs.length > 0
+        && (placedNbs.length >= 2 || !hasMultipleBond || neighbors.length <= 2)) {
       // Compute existing angular constraints from placed neighbours.
       const fixedAngles = placedNbs
         .map(id => angleTo(origin, coords.get(id)))
@@ -2268,24 +2282,81 @@ export function generateCoords(molecule, options = {}) {
       }
     }
 
+    // Second force-field pass: reconcile cross-chain bonds.
+    // The BFS snap above corrects each atom to exactly bondLength from its
+    // spanning-tree parent, but bonds that bridge two independent chain
+    // subtrees (e.g. a P–N bond where P was placed from ring1's chain and N
+    // was placed from ring2's chain) remain stretched because the snap cannot
+    // satisfy both chains simultaneously.  Re-running the force field after
+    // the snap pulls those stretched bonds back toward bondLength.
+    // Only triggered when at least one heavy-atom bond is significantly
+    // stretched (> 1.15 × bondLength) so simple ring+substituent molecules
+    // are not affected (their bonds are already at exact bondLength after the
+    // snap and the angle springs would introduce a tiny perturbation).
+    {
+      const crossChainThreshold = bondLength * 1.15;
+      const isHAtom3 = id => molecule.atoms.get(id)?.name === 'H';
+      let hasCrossChain = false;
+      for (const [, bond] of molecule.bonds) {
+        const [aId, bId] = bond.atoms;
+        if (isHAtom3(aId) || isHAtom3(bId)) {
+          continue;
+        }
+        const ca = coords.get(aId), cb = coords.get(bId);
+        if (!ca || !cb) {
+          continue;
+        }
+        if (Math.hypot(cb.x - ca.x, cb.y - ca.y) > crossChainThreshold) {
+          hasCrossChain = true; break;
+        }
+      }
+      if (hasCrossChain) {
+        forceFieldRefine(molecule, coords, ringAtomSet, bondLength);
+      }
+    }
+
     // Post-G ring-interior correction: the force field can push direct
     // ring substituents inside the ring polygon via angle springs.  For each
     // individual ring, check if any directly bonded non-ring atom ended up
-    // inside the ring polygon; if so, mirror it to the exterior side.
+    // inside the ring polygon; if so, relocate it to the exterior.
+    //
+    // Simple mirroring (origin - delta) fails for fused polycyclic systems:
+    // a substituent on a ring-junction atom (in rings A and B) that is inside
+    // ring A gets mirrored into ring B, then the ring-B pass mirrors it back —
+    // an infinite oscillation leaving it inside a ring.  Instead we place the
+    // atom in the direction AWAY FROM the average centroid of all rings that
+    // contain the parent ring atom.  This is robust for ring-junction atoms
+    // in fused polycyclics where angular-gap heuristics fail.  ringPolys is
+    // hoisted so the proximity correction below can also use it.
     {
-      for (const ring of rings) {
+      const isHSub = id => molecule.atoms.get(id)?.name === 'H';
+
+      // Precompute polygon data for every ring so the inner loop doesn't redo
+      // per-ring sorting.  ringPolys is declared with var so the proximity
+      // correction block below can access it.
+      // eslint-disable-next-line no-var
+      var ringPolys = rings.map(ring => {
         if (ring.length < 3) {
+          return null;
+        }
+        const pts = ring.map(id => coords.get(id)).filter(Boolean);
+        if (pts.length < 3) {
+          return null;
+        }
+        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+        const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+        pts.sort((a, b) =>
+          Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+        return { ring, ringSet: new Set(ring), pts, cx, cy };
+      });
+
+      const corrected = new Set();
+
+      for (const rpd of ringPolys) {
+        if (!rpd) {
           continue;
         }
-        const ringSet = new Set(ring);
-        const ringPolyPts = ring.map(id => coords.get(id)).filter(Boolean);
-        if (ringPolyPts.length < 3) {
-          continue;
-        }
-        const rCx = ringPolyPts.reduce((s, p) => s + p.x, 0) / ringPolyPts.length;
-        const rCy = ringPolyPts.reduce((s, p) => s + p.y, 0) / ringPolyPts.length;
-        ringPolyPts.sort((a, b) =>
-          Math.atan2(a.y - rCy, a.x - rCx) - Math.atan2(b.y - rCy, b.x - rCx));
+        const { ring, ringSet, pts } = rpd;
 
         for (const ringId of ring) {
           const origin = coords.get(ringId);
@@ -2293,23 +2364,107 @@ export function generateCoords(molecule, options = {}) {
             continue;
           }
           for (const subId of molecule.getNeighbors(ringId)) {
-            if (ringSet.has(subId)) {
-              continue;
-            }         // skip other ring atoms
-            if (molecule.atoms.get(subId)?.name === 'H') {
+            if (ringSet.has(subId) || isHSub(subId) || corrected.has(subId)) {
               continue;
             }
             const subPos = coords.get(subId);
-            if (!subPos) {
+            if (!subPos || !pointInPolygon(subPos, pts)) {
               continue;
             }
-            if (pointInPolygon(subPos, ringPolyPts)) {
-              // Mirror the substituent through the ring atom to the exterior.
-              const dx = subPos.x - origin.x, dy = subPos.y - origin.y;
-              coords.set(subId, { x: origin.x - dx, y: origin.y - dy });
+
+            // subId is inside this ring.  Compute the outward direction from
+            // ringId as the direction AWAY from the average centroid of all
+            // rings that contain ringId.  This is robust for ring-junction
+            // atoms (in 2+ rings) where the angular-gap heuristic fails when
+            // all gaps are equal (~120° each in tricyclics).
+            const containingRings = ringPolys.filter(r => r && r.ringSet.has(ringId));
+            let outAngle;
+            if (containingRings.length > 0) {
+              const avgCx = containingRings.reduce((s, r) => s + r.cx, 0) / containingRings.length;
+              const avgCy = containingRings.reduce((s, r) => s + r.cy, 0) / containingRings.length;
+              outAngle = Math.atan2(origin.y - avgCy, origin.x - avgCx);
+            } else {
+              // Fallback: keep current direction, just ensure exact bondLength.
+              outAngle = Math.atan2(subPos.y - origin.y, subPos.x - origin.x);
             }
+
+            coords.set(subId, {
+              x: origin.x + Math.cos(outAngle) * bondLength,
+              y: origin.y + Math.sin(outAngle) * bondLength
+            });
+            corrected.add(subId);
           }
         }
+      }
+    }
+
+    // Post-G proximity correction: the ring-interior check above only catches
+    // atoms that are geometrically inside a ring polygon.  A second failure
+    // mode exists in fused polycyclic systems: the force field can push a
+    // direct ring substituent toward an adjacent ring atom (its 1-3 neighbour
+    // through the ring junction) to the point where the two atoms nearly
+    // overlap.  Because 1-3 pairs are excluded from non-bonded repulsion, the
+    // force field cannot self-correct this.  We detect it here: any non-ring
+    // atom within 0.75 × bondLength of a non-bonded ring atom is in a
+    // clearly wrong position and gets relocated to the largest angular gap
+    // around its bonded ring-atom parent (the same strategy used above).
+    {
+      const isHProx = id => molecule.atoms.get(id)?.name === 'H';
+      const PROX_THRESH = bondLength * 0.75;
+
+      for (const [subId] of molecule.atoms) {
+        if (ringAtomSet.has(subId) || isHProx(subId)) {
+          continue;
+        }
+        const subPos = coords.get(subId);
+        if (!subPos) {
+          continue;
+        }
+
+        // Find the bonded ring-atom parent (first bonded ring atom found).
+        const parentRingId = molecule.getNeighbors(subId)
+          .find(id => ringAtomSet.has(id));
+        if (parentRingId === undefined) {
+          continue;
+        }
+
+        // Check proximity to non-bonded ring atoms.
+        const bondedNbs = new Set(molecule.getNeighbors(subId));
+        let tooClose = false;
+        for (const ringId of ringAtomSet) {
+          if (bondedNbs.has(ringId)) {
+            continue;
+          }
+          const rPos = coords.get(ringId);
+          if (rPos && Math.hypot(subPos.x - rPos.x, subPos.y - rPos.y) < PROX_THRESH) {
+            tooClose = true;
+            break;
+          }
+        }
+        if (!tooClose) {
+          continue;
+        }
+
+        // Reposition using average-centroid outward direction around the
+        // parent ring atom (same approach as ring-interior correction above).
+        const origin = coords.get(parentRingId);
+        if (!origin) {
+          continue;
+        }
+        const containingRings2 = ringPolys.filter(r => r && r.ringSet.has(parentRingId));
+        let outAngle2;
+        if (containingRings2.length > 0) {
+          const avgCx2 = containingRings2.reduce((s, r) => s + r.cx, 0) / containingRings2.length;
+          const avgCy2 = containingRings2.reduce((s, r) => s + r.cy, 0) / containingRings2.length;
+          outAngle2 = Math.atan2(origin.y - avgCy2, origin.x - avgCx2);
+        } else {
+          outAngle2 = Math.atan2(subPos.y - origin.y, subPos.x - origin.x);
+        }
+
+        coords.set(subId, {
+          x: origin.x + Math.cos(outAngle2) * bondLength,
+          y: origin.y + Math.sin(outAngle2) * bondLength
+        });
       }
     }
   } else if (acyclicRoot !== null) {
