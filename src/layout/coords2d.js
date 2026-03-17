@@ -2274,10 +2274,14 @@ export function generateCoords(molecule, options = {}) {
     // inside the ring polygon; if so, mirror it to the exterior side.
     {
       for (const ring of rings) {
-        if (ring.length < 3) continue;
+        if (ring.length < 3) {
+          continue;
+        }
         const ringSet = new Set(ring);
         const ringPolyPts = ring.map(id => coords.get(id)).filter(Boolean);
-        if (ringPolyPts.length < 3) continue;
+        if (ringPolyPts.length < 3) {
+          continue;
+        }
         const rCx = ringPolyPts.reduce((s, p) => s + p.x, 0) / ringPolyPts.length;
         const rCy = ringPolyPts.reduce((s, p) => s + p.y, 0) / ringPolyPts.length;
         ringPolyPts.sort((a, b) =>
@@ -2285,12 +2289,20 @@ export function generateCoords(molecule, options = {}) {
 
         for (const ringId of ring) {
           const origin = coords.get(ringId);
-          if (!origin) continue;
+          if (!origin) {
+            continue;
+          }
           for (const subId of molecule.getNeighbors(ringId)) {
-            if (ringSet.has(subId)) continue;         // skip other ring atoms
-            if (molecule.atoms.get(subId)?.name === 'H') continue;
+            if (ringSet.has(subId)) {
+              continue;
+            }         // skip other ring atoms
+            if (molecule.atoms.get(subId)?.name === 'H') {
+              continue;
+            }
             const subPos = coords.get(subId);
-            if (!subPos) continue;
+            if (!subPos) {
+              continue;
+            }
             if (pointInPolygon(subPos, ringPolyPts)) {
               // Mirror the substituent through the ring atom to the exterior.
               const dx = subPos.x - origin.x, dy = subPos.y - origin.y;

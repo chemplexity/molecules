@@ -254,6 +254,27 @@ describe('SMILES corpus — Isotopes', () => {
     );
     assertMass('CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC', 391.694);
   });
+
+  it('[13CH3] at chain start bonds to ring: [13CH3][C@H]1CC[C@@H](O)[C@H](C1)N: C7H15NO', () => {
+    assert.deepEqual(
+      formula(parseSMILES('[13CH3][C@H]1CC[C@@H](O)[C@H](C1)N')),
+      { C: 7, H: 15, N: 1, O: 1 }
+    );
+  });
+
+  it('[2H] at chain start bonds to next atom: [2H]OC([2H])([2H])C: C2H6O', () => {
+    assert.deepEqual(
+      formula(parseSMILES('[2H]OC([2H])([2H])C')),
+      { C: 2, H: 6, O: 1 }
+    );
+  });
+
+  it('[2H] as sole substituent: [2H]C: C1H4', () => {
+    assert.deepEqual(
+      formula(parseSMILES('[2H]C')),
+      { C: 1, H: 4 }
+    );
+  });
 });
 
 describe('SMILES corpus — Chiral', () => {
