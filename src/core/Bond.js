@@ -147,6 +147,8 @@ export class Bond {
 
   /**
    * Sets the bond order and returns `this` for chaining.
+   * Automatically clears the `aromatic` flag when an integer order is set,
+   * because an explicit integer order unambiguously describes a localised bond.
    *
    * @param {number} order - New bond order (must be a positive integer).
    * @returns {this}
@@ -157,6 +159,27 @@ export class Bond {
       throw new RangeError(`Bond order must be a positive integer, got ${order}.`);
     }
     this.properties.order = order;
+    this.properties.aromatic = false;
+    return this;
+  }
+
+  /**
+   * Sets whether this bond is aromatic and returns `this` for chaining.
+   *
+   * The two fields are kept in sync automatically:
+   * - `setAromatic(true)`  sets `order` to `1.5` (resonance-averaged).
+   * - `setAromatic(false)` sets `order` to `1`   (single bond).
+   *
+   * @param {boolean} value
+   * @returns {this}
+   * @throws {TypeError} If `value` is not a boolean.
+   */
+  setAromatic(value) {
+    if (typeof value !== 'boolean') {
+      throw new TypeError(`aromatic must be a boolean, got ${JSON.stringify(value)}`);
+    }
+    this.properties.aromatic = value;
+    this.properties.order = value ? 1.5 : 1;
     return this;
   }
 

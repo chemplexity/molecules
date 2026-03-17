@@ -35,6 +35,10 @@
       "import": "./es/utils/index.js",
       "require": "./lib/utils/index.js"
     },
+    "./validation": {
+      "import": "./es/validation/index.js",
+      "require": "./lib/validation/index.js"
+    },
     "./package.json": "./package.json"
   },
   "files": [

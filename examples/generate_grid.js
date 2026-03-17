@@ -6,7 +6,7 @@
  * Output: examples/yyyymmdd_molecules_test_grid.png
  */
 
-import { writeFileSync } from 'fs';
+import { writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join }  from 'path';
 import { renderMolSVG, buildCompositeSVG, svgToPng } from '../src/layout/render2d.js';
@@ -161,7 +161,10 @@ const randomMolecule = [
   'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1',
   'CC(C)(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1',
   'CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C',
-  'C1=CC2=C(C=C1O)C(=CN2)CCN'
+  'C1=CC2=C(C=C1O)C(=CN2)CCN',
+  'OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1OC(=O)CCCCCC',
+  'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)N',
+  'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC'
 ];
 
 // ---------------------------------------------------------------------------
@@ -188,8 +191,13 @@ const now = new Date();
 const yyyy = now.getFullYear();
 const mm   = String(now.getMonth() + 1).padStart(2, '0');
 const dd   = String(now.getDate()).padStart(2, '0');
-const outName = `${yyyy}${mm}${dd}_molecules_test_grid.png`;
-const outPath = join(__dirname, outName);
+const baseName = `${yyyy}${mm}${dd}_molecules_test_grid`;
+let outPath = join(__dirname, `${baseName}.png`);
+if (existsSync(outPath)) {
+  let n = 1;
+  while (existsSync(join(__dirname, `${baseName}-${n}.png`))) { n++; }
+  outPath = join(__dirname, `${baseName}-${n}.png`);
+}
 
 writeFileSync(outPath, pngBuffer);
 console.log(`Saved ${outPath}  (${(pngBuffer.length / 1024).toFixed(0)} KB)`);

@@ -211,17 +211,39 @@ input:focus ~ .highlight {
 
 div.tooltip {
     position: fixed;
-    text-align: center;
+    text-align: left;
     width: auto;
+    min-width: 120px;
     height: auto;
-    padding: 2px 6px;
-    font-size: 14px;
+    padding: 6px 10px 8px;
+    font-size: 12px;
     font-family: 'Lucida Sans Unicode', sans-serif;
     background: white;
-    border: 1px solid #111;
+    border: 1px solid #bbb;
     border-radius: 6px;
+    box-shadow: 2px 3px 8px rgba(0,0,0,0.15);
     pointer-events: none;
     z-index: 100;
+}
+div.tooltip .tt-head {
+    font-size: 17px;
+    font-weight: bold;
+    margin-bottom: 5px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 3px;
+}
+div.tooltip table {
+    border-collapse: collapse;
+    width: 100%;
+}
+div.tooltip td {
+    padding: 1px 0;
+    vertical-align: top;
+}
+div.tooltip td:first-child {
+    color: #888;
+    padding-right: 10px;
+    white-space: nowrap;
 }
 
 /* ── Force-layout bond lines ─────────────────────────────────────────── */
@@ -647,7 +669,10 @@ var randomMolecule = [
     "CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1",
     "CC(C)(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1",
     "CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C",
-    "C1=CC2=C(C=C1O)C(=CN2)CCN"
+    "C1=CC2=C(C=C1O)C(=CN2)CCN",
+    "OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1OC(=O)CCCCCC",
+    "CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)N",
+    "CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC"
 ];
 
 function parseInput(smiles) {
@@ -662,6 +687,7 @@ import * as d3              from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
 import { parseSMILES }      from './src/io/smiles.js';
 import { generateCoords }   from './src/layout/coords2d.js';
 import { molecularFormula, molecularMass } from './src/descriptors/molecular.js';
+import { assignCIPRanks }   from './src/core/Molecule.js';
 import { allMatrices }      from './src/matrices/index.js';
 import {
     wienerIndex, hyperWienerIndex, balabanIndex,
@@ -749,6 +775,66 @@ function yOffset(offset, src, tgt) {
     const dx = tgt.x - src.x, dy = tgt.y - src.y;
     if (dy === 0 || Math.abs(dx / dy) > 1) return -offset;
     return offset * -(dx / dy);
+}
+
+// ---------------------------------------------------------------------------
+// ══ ATOM TOOLTIP ══════════════════════════════════════════════════════════
+// ---------------------------------------------------------------------------
+
+function atomTooltipHtml(atom, mol) {
+    const p = atom.properties;
+    const charge = p.charge ?? 0;
+
+    // Formatted charge string for the header  (e.g.  +  2+  −  2−)
+    let chargeSup = '';
+    if (charge !== 0) {
+        const abs = Math.abs(charge);
+        const sign = charge > 0 ? '+' : '−';
+        chargeSup = `<sup style="font-size:11px">${abs > 1 ? abs : ''}${sign}</sup>`;
+    }
+
+    // Isotope: standard mass = protons + round(neutrons from elements table).
+    // If the stored neutrons differ noticeably, it's a non-standard isotope.
+    let isotopePrefix = '';
+    if (p.protons != null && p.neutrons != null) {
+        const massNo = p.protons + Math.round(p.neutrons);
+        // Detect non-standard by comparing to neutral-atom rounding
+        const stdNeutrons = { H:0, C:6, N:7, O:8, S:16, P:16, F:10, Cl:18, Br:45, I:74 };
+        const std = stdNeutrons[atom.name];
+        if (std !== undefined && Math.round(p.neutrons) !== std) {
+            isotopePrefix = `<sup style="font-size:11px">${massNo}</sup>`;
+        }
+    }
+
+    // Valence = sum of bond orders
+    let valence = 0;
+    for (const bId of atom.bonds) {
+        const b = mol.bonds.get(bId);
+        if (b) { valence += b.properties.order ?? 1; }
+    }
+    const degree = atom.bonds.length;
+
+    const row = (label, val) =>
+        `<tr><td>${label}</td><td><b>${val}</b></td></tr>`;
+
+    let rows = '';
+    if (p.protons  != null) { rows += row('Atomic #',  p.protons); }
+    if (p.electrons != null) { rows += row('Electrons', p.electrons); }
+    if (p.group    != null && p.group  > 0) { rows += row('Group',  p.group); }
+    if (p.period   != null && p.period > 0) { rows += row('Period', p.period); }
+    rows += row('Bonds', degree);
+    rows += row('Valence', Number.isInteger(valence) ? valence : valence.toFixed(1));
+    if (charge !== 0) {
+        const sign = charge > 0 ? `+${charge}` : `${charge}`;
+        rows += row('Charge', sign);
+    }
+    if (p.aromatic) { rows += row('Aromatic', 'yes'); }
+    rows += row('Chirality', p.chirality ?? 'N/A');
+
+    const color = atomColor(atom.name);
+    return `<div class="tt-head" style="color:${color}">${isotopePrefix}${atom.name}${chargeSup}
+        <span style="font-size:11px;font-weight:normal;color:#aaa;margin-left:4px">${atom.id}</span>
+    </div><table>${rows}</table>`;
 }
 
 function convertMolecule(molecule) {
@@ -856,14 +942,10 @@ function updateForce(molecule) {
         .attr('stroke-width', 1)
         .call(createDrag(simulation))
         .on('mouseover', (event, d) => {
+            const atom = molecule.atoms.get(d.id);
+            if (!atom) { return; }
             tooltip.transition().delay(200).style('opacity', 0.9);
-            let str = d.name;
-            if (d.charge !== 0) {
-                const n = d.charge === 1 ? '+' : d.charge > 1 ? `${d.charge}+`
-                        : d.charge === -1 ? '−' : `${Math.abs(d.charge)}−`;
-                str += `<sup>${n}</sup>`;
-            }
-            tooltip.html(str)
+            tooltip.html(atomTooltipHtml(atom, molecule))
                 .style('left', (event.clientX + 13) + 'px')
                 .style('top',  (event.clientY - 20) + 'px');
         })
@@ -1002,6 +1084,8 @@ const SCALE       = 60;   // SVG pixels per Angstrom
 const BOND_OFF_2D = 7;    // px gap between parallel bond lines
 const STROKE_W    = 1.6;  // px
 const FONT_SIZE   = 14;   // px
+const WEDGE_HALF_W = 6;   // px — half-width of wedge at the wide end
+const WEDGE_DASHES = 6;   // number of hash lines in a dashed stereo bond
 
 function perpUnit(dx, dy) {
     const len = Math.sqrt(dx * dx + dy * dy) || 1;
@@ -1091,10 +1175,11 @@ function addLine(group, x1, y1, x2, y2, extraClass) {
 }
 
 // ── 2D persistent state (shared between render2d and draw2d) ──────────────
-let _mol2d     = null;
-let _hCounts2d = null;
-let _cx2d      = 0;
-let _cy2d      = 0;
+let _mol2d      = null;
+let _hCounts2d  = null;
+let _cx2d       = 0;
+let _cy2d       = 0;
+let _stereoMap2d = null;  // Map<bondId, 'wedge'|'dash'>
 
 function _toSVGPt2d(a) {
     const W = plotEl.clientWidth  || 600;
@@ -1102,7 +1187,93 @@ function _toSVGPt2d(a) {
     return { x: W / 2 + (a.x - _cx2d) * SCALE, y: H / 2 + (a.y - _cy2d) * SCALE };
 }
 
-function _drawBond(container, bond, a1, a2, mol, toSVGPt) {
+// ── Stereochemistry: determine which bonds get wedge / dash rendering ─────
+function pickStereoWedges(mol) {
+    const result = new Map();
+    for (const centerId of mol.getChiralCenters()) {
+        const center = mol.atoms.get(centerId);
+        if (!center || center.x == null) continue;
+        const chirality = center.properties.chirality;
+        if (!chirality) continue;
+
+        const neighbors = center.getNeighbors(mol).filter(n => n && n.x != null);
+        if (neighbors.length !== 4) continue;
+
+        const ranks = assignCIPRanks(centerId, neighbors.map(n => n.id), mol);
+
+        // Pair each neighbor with its CIP rank and its connecting bond.
+        const entries = neighbors.map((n, i) => {
+            const bond = [...mol.bonds.values()].find(b =>
+                (b.atoms[0] === centerId && b.atoms[1] === n.id) ||
+                (b.atoms[1] === centerId && b.atoms[0] === n.id)
+            );
+            return { atom: n, rank: ranks[i], bond };
+        }).filter(e => e.bond);
+
+        if (entries.length !== 4) continue;
+        entries.sort((a, b) => a.rank - b.rank); // [rank1 … rank4]
+        const [e1, , e3, e4] = entries;
+
+        // Determine the 2D winding of ranks 4→3→2 when rank-1 is tentatively
+        // placed behind the plane (dash bond).
+        const v = (e) => ({ x: e.atom.x - center.x, y: e.atom.y - center.y });
+        const cross2D = (u, w) => u.x * w.y - u.y * w.x;
+        const vA = v(e4), vB = v(e3), vD = v(entries[1]);
+        const signedArea = cross2D(vA, vB) + cross2D(vB, vD) + cross2D(vD, vA);
+        const computedWithE1Behind = signedArea > 0 ? 'S' : 'R';
+
+        // If the computed chirality matches the stored one, rank-1 really is
+        // behind (dash); otherwise it must be in front (wedge).
+        const e1Type = computedWithE1Behind === chirality ? 'dash' : 'wedge';
+        result.set(e1.bond.id, e1Type);
+
+        // Pick the partner bond: the neighbor most angularly separated from e1.
+        const v1 = v(e1);
+        let bestAngle = -Infinity, bestEntry = entries[1];
+        for (const cand of [entries[1], e3, e4]) {
+            const vc = v(cand);
+            const cosA = (v1.x * vc.x + v1.y * vc.y) /
+                         (Math.hypot(v1.x, v1.y) * Math.hypot(vc.x, vc.y) || 1);
+            const angle = Math.acos(Math.max(-1, Math.min(1, cosA)));
+            if (angle > bestAngle) { bestAngle = angle; bestEntry = cand; }
+        }
+        result.set(bestEntry.bond.id, e1Type === 'dash' ? 'wedge' : 'dash');
+    }
+    return result;
+}
+
+function _drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType = null) {
+    // a1 is the chiral center (wedge/dash tip) when stereoType is set.
+    if (stereoType === 'wedge' || stereoType === 'dash') {
+        const s1 = toSVGPt(a1), s2 = toSVGPt(a2);
+        const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
+        if (stereoType === 'wedge') {
+            container.append('polygon')
+                .attr('class', 'bond bond-wedge')
+                .attr('points',
+                    `${s1.x},${s1.y} ` +
+                    `${s2.x - nx * WEDGE_HALF_W},${s2.y - ny * WEDGE_HALF_W} ` +
+                    `${s2.x + nx * WEDGE_HALF_W},${s2.y + ny * WEDGE_HALF_W}`)
+                .style('fill', '#111')
+                .style('stroke', 'none');
+        } else {
+            for (let i = 1; i <= WEDGE_DASHES; i++) {
+                const t = i / (WEDGE_DASHES + 1);
+                const px = s1.x + t * (s2.x - s1.x);
+                const py = s1.y + t * (s2.y - s1.y);
+                const hw = WEDGE_HALF_W * t;
+                container.append('line')
+                    .attr('class', 'bond bond-hash')
+                    .attr('x1', px - nx * hw).attr('y1', py - ny * hw)
+                    .attr('x2', px + nx * hw).attr('y2', py + ny * hw)
+                    .style('stroke', '#111')
+                    .style('stroke-width', '1.2px')
+                    .style('stroke-linecap', 'round');
+            }
+        }
+        return;
+    }
+
     const order = bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
     const s1 = toSVGPt(a1), s2 = toSVGPt(a2);
     const dx = s2.x - s1.x, dy = s2.y - s1.y;
@@ -1146,10 +1317,16 @@ function draw2d() {
     g.selectAll('*').remove();
 
     // Layer 1 — bonds (each wrapped in a <g data-bond-id> for incremental drag updates)
+    const stereoMap = _stereoMap2d;
+    const chiralCenterIds = new Set(mol.getChiralCenters());
     const bondLayer = g.append('g').attr('class', 'bonds');
     for (const bi of bondInfos) {
         const bg = bondLayer.append('g').attr('data-bond-id', bi.bond.id);
-        _drawBond(bg, bi.bond, bi.a1, bi.a2, mol, toSVGPt);
+        const stereoType = stereoMap ? stereoMap.get(bi.bond.id) : null;
+        // Orient so the chiral center is a1 (tip of wedge/dash).
+        let sa1 = bi.a1, sa2 = bi.a2;
+        if (stereoType && chiralCenterIds.has(sa2.id)) [sa1, sa2] = [sa2, sa1];
+        _drawBond(bg, bi.bond, sa1, sa2, mol, toSVGPt, stereoType ?? null);
     }
 
     // Layer 2 — white clearance rects
@@ -1185,14 +1362,8 @@ function draw2d() {
             .attr('r', Math.max(labelHalfW(label || symbol), 10))
             .style('cursor', 'grab')
             .on('mouseover', event => {
-                let html = label || symbol;
-                if (charge !== 0) {
-                    const c = charge === 1 ? '+' : charge > 1 ? `${charge}+`
-                            : charge === -1 ? '−' : `${Math.abs(charge)}−`;
-                    html += `<sup>${c}</sup>`;
-                }
                 tooltip.transition().delay(150).style('opacity', 0.9);
-                tooltip.html(html)
+                tooltip.html(atomTooltipHtml(atom, mol))
                     .style('left', (event.clientX + 13) + 'px')
                     .style('top',  (event.clientY - 20) + 'px');
             })
@@ -1245,7 +1416,10 @@ function draw2d() {
                     if (bi.a1.id !== atom.id && bi.a2.id !== atom.id) continue;
                     const bg = bondLayer.select(`[data-bond-id="${bi.bond.id}"]`);
                     bg.selectAll('*').remove();
-                    _drawBond(bg, bi.bond, bi.a1, bi.a2, mol, toSVGPt);
+                    const stereoType = stereoMap ? stereoMap.get(bi.bond.id) : null;
+                    let sa1 = bi.a1, sa2 = bi.a2;
+                    if (stereoType && chiralCenterIds.has(sa2.id)) [sa1, sa2] = [sa2, sa1];
+                    _drawBond(bg, bi.bond, sa1, sa2, mol, toSVGPt, stereoType ?? null);
                 }
             })
             .on('end', function() {
@@ -1306,10 +1480,11 @@ function render2d(mol) {
     const fitTy    = H / 2 * (1 - fitScale);
     svg.call(zoom.transform, d3.zoomIdentity.translate(fitTx, fitTy).scale(fitScale));
 
-    _mol2d     = mol;
-    _hCounts2d = hCounts;
-    _cx2d      = cx;
-    _cy2d      = cy;
+    _mol2d      = mol;
+    _hCounts2d  = hCounts;
+    _cx2d       = cx;
+    _cy2d       = cy;
+    _stereoMap2d = pickStereoWedges(mol);
 
     draw2d();
 }

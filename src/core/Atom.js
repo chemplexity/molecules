@@ -18,17 +18,17 @@ export class Atom {
   static _nextId = 0;
 
   /**
-   * @param {string|null} [id]  - Unique identifier. Auto-generated as a numeric string when omitted or null.
-   * @param {string} name - Element symbol (e.g. 'C', 'N', 'O').
+   * @param {string|null} [id]                              - Unique identifier. Auto-generated as a numeric string when omitted or null.
+   * @param {string} name                                   - Element symbol (e.g. 'C', 'N', 'O').
    * @param {object} [properties={}]
-   * @param {number}       [properties.charge=0]           - Formal charge.
+   * @param {number}       [properties.charge=0]            - Formal charge.
    * @param {boolean}      [properties.aromatic=false]      - Whether the atom is aromatic.
    * @param {number}       [properties.protons=undefined]   - Atomic number (set by parseSMILES).
    * @param {number}       [properties.neutrons=undefined]  - Neutron count; isotope-adjusted by parseSMILES.
    * @param {number}       [properties.electrons=undefined] - Electron count (set by parseSMILES).
    * @param {number}       [properties.group=0]             - Periodic table group (1–18).
    * @param {number}       [properties.period=0]            - Periodic table period (1–7).
-   * @param {'R'|'S'|null} [properties.chirality=null]     - CIP chirality designation: `'R'` (rectus) or `'S'` (sinister); `null` if no chirality annotation or not determinable.
+   * @param {'R'|'S'|null} [properties.chirality=null]      - CIP chirality designation: `'R'` (rectus) or `'S'` (sinister); `null` if no chirality annotation or not determinable.
    */
   constructor(id, name, {
     charge    = 0,

@@ -1205,6 +1205,41 @@ describe('Bond – setOrder', () => {
     assert.throws(() => b.setOrder(1.5), /RangeError|positive integer/);
     assert.throws(() => b.setOrder('2'), /RangeError|positive integer/);
   });
+
+  it('clears aromatic flag when an integer order is set', () => {
+    const b = new Bond('b0', ['a0', 'a1'], { order: 1.5, aromatic: true });
+    b.setOrder(1);
+    assert.equal(b.properties.aromatic, false);
+    assert.equal(b.properties.order, 1);
+  });
+});
+
+describe('Bond – setAromatic', () => {
+  it('setAromatic(true) sets order to 1.5 and aromatic to true', () => {
+    const b = new Bond('b0', ['a0', 'a1']);
+    b.setAromatic(true);
+    assert.equal(b.properties.aromatic, true);
+    assert.equal(b.properties.order, 1.5);
+  });
+
+  it('setAromatic(false) sets order to 1 and aromatic to false', () => {
+    const b = new Bond('b0', ['a0', 'a1'], { order: 1.5, aromatic: true });
+    b.setAromatic(false);
+    assert.equal(b.properties.aromatic, false);
+    assert.equal(b.properties.order, 1);
+  });
+
+  it('returns the bond for chaining', () => {
+    const b = new Bond('b0', ['a0', 'a1']);
+    assert.strictEqual(b.setAromatic(true), b);
+  });
+
+  it('throws TypeError for non-boolean value', () => {
+    const b = new Bond('b0', ['a0', 'a1']);
+    assert.throws(() => b.setAromatic(1),    /TypeError|boolean/);
+    assert.throws(() => b.setAromatic('yes'), /TypeError|boolean/);
+    assert.throws(() => b.setAromatic(null),  /TypeError|boolean/);
+  });
 });
 
 describe('Molecule – findAtom', () => {

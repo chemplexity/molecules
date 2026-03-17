@@ -743,7 +743,12 @@ function layoutChain(molecule, startAtomId, incomingAngle, placed, bondLength, c
     if (!origin) {
       continue;
     }
-    const neighbors = molecule.getNeighbors(atomId).filter(id => !placed.has(id));
+    // Exclude H atoms from chain traversal — their positions are set by
+    // placeHydrogens after heavy-atom layout so they never inflate the child
+    // count in computeChildAngles or the gap strategy (which would produce
+    // wrong bond angles, e.g. 90° instead of 120°, for ring-attachment CHs).
+    const neighbors = molecule.getNeighbors(atomId)
+      .filter(id => !placed.has(id) && molecule.atoms.get(id)?.name !== 'H');
     if (neighbors.length === 0) {
       continue;
     }
@@ -824,6 +829,12 @@ function layoutChain(molecule, startAtomId, incomingAngle, placed, bondLength, c
         return 0;
       }
       if (placedNbs.length === 0) {
+        return 0;
+      }
+      // Only penalise single-child atoms. For multi-child atoms, computeChildAngles
+      // legitimately places cand[0] = outAngle (straight through), which would
+      // always trigger the penalty and cause incorrect rotation (e.g. P=O groups).
+      if (neighbors.length !== 1) {
         return 0;
       }
       // Angle between the direction FROM this atom TO its placed parent and
@@ -1098,12 +1109,27 @@ function refineCoords(molecule, coords, frozen, bondLength) {
       }
     }
 
-    // Divide the gap evenly among substituents.
+    // Place substituents within the gap.
+    // For exactly 2 substituents, centre them symmetrically around the gap
+    // midpoint at ±60°, giving a 120° separation.  This matches the expected
+    // tetrahedral projection for a quaternary ring atom and prevents the two
+    // groups from appearing uncomfortably close (the naive even-division formula
+    // gives only 80° separation on a 6-membered ring's 240° exterior gap).
+    // For all other counts, divide the gap evenly.
     const nSub = subNeighbors.length;
-    const step = bestGapSize / (nSub + 1);
-    const proposedAngles = Array.from({ length: nSub }, (_, i) =>
-      normalizeAngle(bestGapStart + step * (i + 1))
-    );
+    let proposedAngles;
+    if (nSub === 2) {
+      const midAngle = bestGapStart + bestGapSize / 2;
+      proposedAngles = [
+        normalizeAngle(midAngle - DEG60),
+        normalizeAngle(midAngle + DEG60)
+      ];
+    } else {
+      const step = bestGapSize / (nSub + 1);
+      proposedAngles = Array.from({ length: nSub }, (_, i) =>
+        normalizeAngle(bestGapStart + step * (i + 1))
+      );
+    }
 
     // Build ring polygon so the rotation loop can penalise ring-interior positions.
     // Without this, the loop can rotate substituents 180° into the ring interior
@@ -2229,6 +2255,12 @@ export function generateCoords(molecule, options = {}) {
   // Only needed (and beneficial) when rings are present.
   if (systems.length > 0) {
     refineCoords(molecule, coords, ringAtomSet, bondLength);
+    // Re-place H atoms after refineCoords repositioned heavy-atom substituents.
+    // refineCoords deletes subtree coords (including H) then re-runs layoutChain,
+    // which no longer places H atoms, so they need to be re-placed here.
+    if (!suppressH) {
+      placeHydrogens(molecule, coords, bondLength);
+    }
   }
 
   // Phase G — force-field relaxation.
@@ -2282,36 +2314,69 @@ export function generateCoords(molecule, options = {}) {
       }
     }
 
-    // Second force-field pass: reconcile cross-chain bonds.
-    // The BFS snap above corrects each atom to exactly bondLength from its
-    // spanning-tree parent, but bonds that bridge two independent chain
-    // subtrees (e.g. a P–N bond where P was placed from ring1's chain and N
-    // was placed from ring2's chain) remain stretched because the snap cannot
-    // satisfy both chains simultaneously.  Re-running the force field after
-    // the snap pulls those stretched bonds back toward bondLength.
-    // Only triggered when at least one heavy-atom bond is significantly
-    // stretched (> 1.15 × bondLength) so simple ring+substituent molecules
-    // are not affected (their bonds are already at exact bondLength after the
-    // snap and the angle springs would introduce a tiny perturbation).
+    // Cross-chain reconciliation: the BFS snap corrects each atom to exactly
+    // bondLength from its spanning-tree parent, but bonds that bridge two
+    // independent chain subtrees (e.g. a linker chain between two ring
+    // systems) remain stretched because the snap satisfies each side
+    // independently.  We iterate: force-field pass (pulls stretched bonds
+    // toward bondLength) followed by BFS snap (restores per-chain bond
+    // lengths), up to 3 times or until no bond exceeds 1.15 × bondLength.
     {
       const crossChainThreshold = bondLength * 1.15;
-      const isHAtom3 = id => molecule.atoms.get(id)?.name === 'H';
-      let hasCrossChain = false;
-      for (const [, bond] of molecule.bonds) {
-        const [aId, bId] = bond.atoms;
-        if (isHAtom3(aId) || isHAtom3(bId)) {
-          continue;
+      const isHAtomCC = id => molecule.atoms.get(id)?.name === 'H';
+
+      // Helper: BFS snap from ring atoms outward.
+      const bfsSnapFromRings = () => {
+        const snapQ    = [...ringAtomSet].filter(id => !isHAtomCC(id));
+        const snapSeen = new Set(snapQ);
+        while (snapQ.length > 0) {
+          const pId = snapQ.shift();
+          const cp = coords.get(pId);
+          if (!cp) {
+            continue;
+          }
+          for (const cId of molecule.getNeighbors(pId)) {
+            if (snapSeen.has(cId) || isHAtomCC(cId)) {
+              continue;
+            }
+            snapSeen.add(cId);
+            const cc = coords.get(cId);
+            if (!cc) {
+              snapQ.push(cId); continue;
+            }
+            const dx = cc.x - cp.x, dy = cc.y - cp.y;
+            const d  = Math.hypot(dx, dy) || 1e-9;
+            coords.set(cId, { x: cp.x + dx * bondLength / d,
+              y: cp.y + dy * bondLength / d });
+            snapQ.push(cId);
+          }
         }
-        const ca = coords.get(aId), cb = coords.get(bId);
-        if (!ca || !cb) {
-          continue;
+      };
+
+      // Helper: check whether any heavy-atom bond exceeds the threshold.
+      const hasCrossChainBond = () => {
+        for (const [, bond] of molecule.bonds) {
+          const [aId, bId] = bond.atoms;
+          if (isHAtomCC(aId) || isHAtomCC(bId)) {
+            continue;
+          }
+          const ca = coords.get(aId), cb = coords.get(bId);
+          if (!ca || !cb) {
+            continue;
+          }
+          if (Math.hypot(cb.x - ca.x, cb.y - ca.y) > crossChainThreshold) {
+            return true;
+          }
         }
-        if (Math.hypot(cb.x - ca.x, cb.y - ca.y) > crossChainThreshold) {
-          hasCrossChain = true; break;
+        return false;
+      };
+
+      for (let ccIter = 0; ccIter < 3; ccIter++) {
+        if (!hasCrossChainBond()) {
+          break;
         }
-      }
-      if (hasCrossChain) {
         forceFieldRefine(molecule, coords, ringAtomSet, bondLength);
+        bfsSnapFromRings();
       }
     }
 
@@ -2370,6 +2435,34 @@ export function generateCoords(molecule, options = {}) {
             const subPos = coords.get(subId);
             if (!subPos || !pointInPolygon(subPos, pts)) {
               continue;
+            }
+
+            // Skip atoms that bridge two ring systems (inter-ring linkers).
+            // Moving such an atom "outward from one ring" severs its bond to
+            // the atom on the other ring's side.  We detect this by BFS: if
+            // any non-ring atom reachable from subId (excluding ringId) is a
+            // neighbour of a different ring atom, the subtree is anchored and
+            // must not be relocated.
+            {
+              let anchored = false;
+              const ancBfsQ = [subId];
+              const ancSeen = new Set([subId, ringId]);
+              outer2: while (ancBfsQ.length > 0) {
+                const cur = ancBfsQ.shift();
+                for (const nb of molecule.getNeighbors(cur)) {
+                  if (ancSeen.has(nb) || isHSub(nb)) {
+                    continue;
+                  }
+                  if (ringAtomSet.has(nb)) {
+                    anchored = true; break outer2;
+                  }
+                  ancSeen.add(nb);
+                  ancBfsQ.push(nb);
+                }
+              }
+              if (anchored) {
+                continue;
+              }
             }
 
             // subId is inside this ring.  Compute the outward direction from
@@ -2445,6 +2538,29 @@ export function generateCoords(molecule, options = {}) {
           continue;
         }
 
+        // Skip inter-ring linkers — same anchored check as ring-interior correction.
+        {
+          let anchored = false;
+          const ancBfsQ2 = [subId];
+          const ancSeen2 = new Set([subId, parentRingId]);
+          outer3: while (ancBfsQ2.length > 0) {
+            const cur = ancBfsQ2.shift();
+            for (const nb of molecule.getNeighbors(cur)) {
+              if (ancSeen2.has(nb) || isHProx(nb)) {
+                continue;
+              }
+              if (ringAtomSet.has(nb)) {
+                anchored = true; break outer3;
+              }
+              ancSeen2.add(nb);
+              ancBfsQ2.push(nb);
+            }
+          }
+          if (anchored) {
+            continue;
+          }
+        }
+
         // Reposition using average-centroid outward direction around the
         // parent ring atom (same approach as ring-interior correction above).
         const origin = coords.get(parentRingId);
@@ -2467,6 +2583,67 @@ export function generateCoords(molecule, options = {}) {
         });
       }
     }
+    // Phase F2 — restore analytical 120° chain geometry after force-field distortion.
+    // Phase G's 1-4 non-bonded repulsion can distort the analytically-correct angles
+    // from Phase F.  For each ring substituent whose subtree does NOT bridge to another
+    // ring, re-run layoutChain from the CURRENT ring→substituent direction (preserved
+    // by the BFS snap above) so the chain is rebuilt with correct 120° geometry.
+    // Substituents whose subtree spans a bond to a second ring atom (inter-ring chains)
+    // are left unchanged — re-laying them from one ring's geometry would sever their
+    // connection to the other ring.
+    {
+      const isHF2 = id => molecule.atoms.get(id)?.name === 'H';
+      for (const ringId of ringAtomSet) {
+        const ringPos = coords.get(ringId);
+        if (!ringPos) {
+          continue;
+        }
+        const subs = molecule.getNeighbors(ringId)
+          .filter(id => !ringAtomSet.has(id) && !isHF2(id));
+        for (const subId of subs) {
+          const subPos = coords.get(subId);
+          if (!subPos) {
+            continue;
+          }
+          // BFS to collect the non-ring subtree and check if it bridges another ring.
+          const subtree = new Set([subId]);
+          const bfsQ = [subId];
+          let anchored = false;
+          outer: while (bfsQ.length > 0) {
+            const cur = bfsQ.shift();
+            for (const nb of molecule.getNeighbors(cur)) {
+              if (nb === ringId || subtree.has(nb) || isHF2(nb)) {
+                continue;
+              }
+              if (ringAtomSet.has(nb)) {
+                anchored = true; break outer;
+              }
+              subtree.add(nb);
+              bfsQ.push(nb);
+            }
+          }
+          if (anchored) {
+            continue; // inter-ring chain — leave untouched
+          }
+          // Re-layout using the current attachment direction (BFS snap preserved it).
+          const subAngle = Math.atan2(subPos.y - ringPos.y, subPos.x - ringPos.x);
+          const chainPlaced = new Set([...coords.keys()].filter(id => molecule.atoms.has(id)));
+          for (const id of subtree) {
+            chainPlaced.delete(id);
+          }
+          chainPlaced.add(ringId);
+          for (const id of subtree) {
+            coords.delete(id);
+          }
+          layoutChain(molecule, ringId, normalizeAngle(subAngle + Math.PI),
+            chainPlaced, bondLength, coords, true);
+        }
+      }
+      if (!suppressH) {
+        placeHydrogens(molecule, coords, bondLength);
+      }
+    }
+
   } else if (acyclicRoot !== null) {
     // Acyclic near-collision fallback: if the DFS layout folded a branch so
     // that two non-bonded heavy atoms ended up too close (< 0.6 × bondLength),

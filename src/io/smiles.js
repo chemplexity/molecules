@@ -595,11 +595,7 @@ export function decode(tokens) {
               for (let j = 0, skip = 1; j < keysBefore.length; j++) {
                 sourceAtom = atoms[keysBefore[j]];
                 if (sourceAtom !== undefined && sourceAtom.name !== 'H' && skip === 0) {
-                  let bondOrder = 1;
-                  if (sourceAtom.properties.aromatic === 1) {
-                    bondOrder = 1.5;
-                  }
-                  bonds[bondID].order = bondOrder;
+                  bonds[bondID].order = 1;
                   bonds[bondID].atoms[0] = sourceAtom.id;
                   break;
                 } else if (bonds[keysBefore[j]] !== undefined) {
@@ -620,7 +616,9 @@ export function decode(tokens) {
                   }
                 }
                 if (targetAtom !== undefined && skip === 0) {
-                  if (targetAtom.properties.aromatic === 1) {
+                  if (sourceAtom !== undefined &&
+                      sourceAtom.properties.aromatic === 1 &&
+                      targetAtom.properties.aromatic === 1) {
                     bondOrder = 1.5;
                   }
                   bonds[bondID].order = bondOrder;
