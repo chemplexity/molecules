@@ -841,7 +841,7 @@ export function decode(tokens) {
         sourceAtom = atoms[keys.atoms[sourceIndex]];
         sourceIndex -= 1;
       }
-      if (sourceIndex === -1) {
+      if (!sourceAtom || sourceAtom.name === 'H') {
         continue;
       }
 

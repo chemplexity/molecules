@@ -1091,6 +1091,20 @@ function refineCoords(molecule, coords, frozen, bondLength) {
       normalizeAngle(bestGapStart + step * (i + 1))
     );
 
+    // Build ring polygon so the rotation loop can penalise ring-interior positions.
+    // Without this, the loop can rotate substituents 180° into the ring interior
+    // when there are few atom-atom clash constraints (e.g. after stripHydrogens).
+    let ringPolyForLoop = null;
+    if (frozen.size >= 3) {
+      const pts = [...frozen].map(id => coords.get(id)).filter(Boolean);
+      if (pts.length >= 3) {
+        const cx = pts.reduce((s, p) => s + p.x, 0) / pts.length;
+        const cy = pts.reduce((s, p) => s + p.y, 0) / pts.length;
+        pts.sort((a, b) => Math.atan2(a.y - cy, a.x - cx) - Math.atan2(b.y - cy, b.x - cx));
+        ringPolyForLoop = pts;
+      }
+    }
+
     // Apply clash avoidance: rotate all proposed positions in 30° increments
     // until the least-clashing rotation is chosen.
     const INC = Math.PI / 6;
@@ -1102,6 +1116,10 @@ function refineCoords(molecule, coords, frozen, bondLength) {
       let clashes = 0;
       for (const ang of candidate) {
         const p = project(origin, ang, bondLength);
+        // Heavy penalty if the proposed position falls inside the ring polygon.
+        if (ringPolyForLoop && pointInPolygon(p, ringPolyForLoop)) {
+          clashes += 100;
+        }
         for (const id of allAtomIds) {
           if (subNeighbors.includes(id)) {
             continue;
@@ -2246,6 +2264,39 @@ export function generateCoords(molecule, options = {}) {
           coords.set(childId, { x: cp.x + dx * bondLength / d,
             y: cp.y + dy * bondLength / d });
           snapQueue.push(childId);
+        }
+      }
+    }
+
+    // Post-G ring-interior correction: the force field can push direct
+    // ring substituents inside the ring polygon via angle springs.  For each
+    // individual ring, check if any directly bonded non-ring atom ended up
+    // inside the ring polygon; if so, mirror it to the exterior side.
+    {
+      for (const ring of rings) {
+        if (ring.length < 3) continue;
+        const ringSet = new Set(ring);
+        const ringPolyPts = ring.map(id => coords.get(id)).filter(Boolean);
+        if (ringPolyPts.length < 3) continue;
+        const rCx = ringPolyPts.reduce((s, p) => s + p.x, 0) / ringPolyPts.length;
+        const rCy = ringPolyPts.reduce((s, p) => s + p.y, 0) / ringPolyPts.length;
+        ringPolyPts.sort((a, b) =>
+          Math.atan2(a.y - rCy, a.x - rCx) - Math.atan2(b.y - rCy, b.x - rCx));
+
+        for (const ringId of ring) {
+          const origin = coords.get(ringId);
+          if (!origin) continue;
+          for (const subId of molecule.getNeighbors(ringId)) {
+            if (ringSet.has(subId)) continue;         // skip other ring atoms
+            if (molecule.atoms.get(subId)?.name === 'H') continue;
+            const subPos = coords.get(subId);
+            if (!subPos) continue;
+            if (pointInPolygon(subPos, ringPolyPts)) {
+              // Mirror the substituent through the ring atom to the exterior.
+              const dx = subPos.x - origin.x, dy = subPos.y - origin.y;
+              coords.set(subId, { x: origin.x - dx, y: origin.y - dy });
+            }
+          }
         }
       }
     }

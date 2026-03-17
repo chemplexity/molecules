@@ -237,7 +237,6 @@ input:focus ~ .highlight {
     font-size: 14px;
     font-weight: bold;
     text-anchor: middle;
-    dominant-baseline: central;
     pointer-events: none;
     user-select: none;
 }
@@ -779,10 +778,12 @@ function getAtomLabel(atom, hCounts, toSVGPt, mol) {
 function renderAtomLabel(group, label, color) {
     const textEl = group.append('text')
         .attr('class', 'atom-label')
-        .attr('fill', color);
+        .attr('fill', color)
+        .attr('text-anchor', 'middle');
 
     // Split label into letter-runs and digit-runs
     let i = 0;
+    let first = true;
     while (i < label.length) {
         const ch = label[i];
         if (ch >= '0' && ch <= '9') {
@@ -795,7 +796,8 @@ function renderAtomLabel(group, label, color) {
         } else {
             let word = '';
             while (i < label.length && !(label[i] >= '0' && label[i] <= '9')) word += label[i++];
-            textEl.append('tspan').text(word);
+            const ts = textEl.append('tspan').text(word);
+            if (first) { ts.attr('dy', '0.35em'); first = false; }
         }
     }
 }
