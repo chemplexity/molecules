@@ -856,6 +856,22 @@ export class Molecule {
   }
 
   /**
+   * Marks all explicit hydrogen atoms as invisible (`atom.visible = false`) without
+   * removing them from the graph. The molecule structure is preserved so that
+   * stereo bonds to H (wedge/dash) can still be rendered. Returns `this`.
+   *
+   * @returns {Molecule}
+   */
+  hideHydrogens() {
+    for (const atom of this.atoms.values()) {
+      if (atom.name === 'H') {
+        atom.visible = false;
+      }
+    }
+    return this;
+  }
+
+  /**
    * Sets the formal charge of every atom to 0 and recomputes all molecular
    * properties. Returns `this` for chaining.
    *

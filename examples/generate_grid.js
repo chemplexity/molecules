@@ -172,7 +172,7 @@ const randomMolecule = [
 // ---------------------------------------------------------------------------
 const COLS = 10;
 
-console.log(`Rendering ${randomMolecule.length} molecules…`);
+console.log(`Rendering ${randomMolecule.length} molecules…`); // eslint-disable-line no-console
 const cells = randomMolecule.map((smi, i) => {
   const result = renderMolSVG(smi);
   if (!result) {
@@ -195,9 +195,11 @@ const baseName = `${yyyy}${mm}${dd}_molecules_test_grid`;
 let outPath = join(__dirname, `${baseName}.png`);
 if (existsSync(outPath)) {
   let n = 1;
-  while (existsSync(join(__dirname, `${baseName}-${n}.png`))) { n++; }
+  while (existsSync(join(__dirname, `${baseName}-${n}.png`))) {
+    n++;
+  }
   outPath = join(__dirname, `${baseName}-${n}.png`);
 }
 
 writeFileSync(outPath, pngBuffer);
-console.log(`Saved ${outPath}  (${(pngBuffer.length / 1024).toFixed(0)} KB)`);
+console.log(`Saved ${outPath}  (${(pngBuffer.length / 1024).toFixed(0)} KB)`); // eslint-disable-line no-console

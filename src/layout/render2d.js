@@ -2,34 +2,24 @@
  * render2d.js — reusable 2D skeletal-structure renderer
  *
  * Exports:
- *   renderMolSVG(smiles)          → { svgContent, cellW, cellH } | null
+ *   renderMolSVG(smiles)           → { svgContent, cellW, cellH } | null
  *   buildCompositeSVG(cells, cols) → SVG string
- *   svgToPng(svgString)           → Buffer (PNG)
+ *   svgToPng(svgString)            → Buffer (PNG)
  */
 
 import { parseSMILES }    from '../io/smiles.js';
 import { generateCoords } from './index.js';
-import { Resvg }          from '@resvg/resvg-js';
+import {
+  atomColor,
+  WEDGE_HALF_W, WEDGE_DASHES,
+  perpUnit, shortenLine, secondaryDir,
+  labelHalfW, labelHalfH,
+  getAtomLabel, pickStereoWedges
+} from './mol2d-helpers.js';
+import { Resvg } from '@resvg/resvg-js';
 
 // ---------------------------------------------------------------------------
-// CPK colours (mirrors index.html)
-// ---------------------------------------------------------------------------
-const CPK = {
-  H: '#FFFFFF', He: '#D9FFFF', Li: '#CC80FF', Be: '#C2FF00',
-  B: '#FFB5B5', C: '#333333', N: '#3050F8', O: '#FF0D0D',
-  F: '#90E050', Ne: '#B3E3F5', Na: '#AB5CF2', Mg: '#8AFF00',
-  Al: '#BFA6A6', Si: '#F0C8A0', P: '#FF8000', S: '#C8A000',
-  Cl: '#1FF01F', Ar: '#80D1E3', K: '#8F40D4', Ca: '#3DFF00',
-  Fe: '#E06633', Co: '#F090A0', Ni: '#50D050', Cu: '#C88033',
-  Zn: '#7D80B0', Br: '#A62929', I: '#940094'
-};
-const DEFAULT_COLOR = '#FF69B4';
-function atomColor(sym) {
-  return CPK[sym] ?? DEFAULT_COLOR;
-}
-
-// ---------------------------------------------------------------------------
-// Rendering constants (match index.html values)
+// Rendering constants
 // ---------------------------------------------------------------------------
 export const SCALE    = 46;   // px per Ångström
 export const BOND_OFF = 5.5;  // px between parallel bond lines
@@ -38,67 +28,77 @@ export const FONT_SIZE = 11;  // px
 export const CELL_PAD  = 22;  // px padding inside each cell
 
 // ---------------------------------------------------------------------------
-// Geometry helpers
+// XML helper
 // ---------------------------------------------------------------------------
-function perpUnit(dx, dy) {
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  return { nx: -dy / len, ny: dx / len };
-}
-
-function shortenLine(x1, y1, x2, y2, d1, d2) {
-  const dx = x2 - x1, dy = y2 - y1;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
-  const ux = dx / len, uy = dy / len;
-  return { x1: x1 + ux * d1, y1: y1 + uy * d1, x2: x2 - ux * d2, y2: y2 - uy * d2 };
-}
-
-function secondaryDir(a1, a2, mol, toSVG) {
-  const resolveNbs = (atom, excludeId) =>
-    atom.getNeighbors(mol).filter(n => n && n.id !== excludeId && n.name !== 'H' && n.x != null);
-  const allNb = [...resolveNbs(a1, a2.id), ...resolveNbs(a2, a1.id)];
-  if (allNb.length === 0) {
-    return 1;
-  }
-  const s1 = toSVG(a1), s2 = toSVG(a2);
-  const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
-  const mid = { x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2 };
-  let dot = 0;
-  for (const n of allNb) {
-    const sn = toSVG(n);
-    dot += (sn.x - mid.x) * nx + (sn.y - mid.y) * ny;
-  }
-  return dot >= 0 ? 1 : -1;
-}
-
-function labelHalfW(label) {
-  if (!label) {
-    return 0;
-  }
-  return FONT_SIZE * 0.38 * label.length + 3;
-}
-
-function getAtomLabel(atom, hCounts, toSVG, mol) {
-  const symbol = atom.name;
-  const hCount = hCounts.get(atom.id) ?? 0;
-  if (symbol === 'C' && atom.bonds.length > 0) {
-    return null;
-  }
-  if (hCount === 0) {
-    return symbol;
-  }
-  const hStr = hCount === 1 ? 'H' : `H${hCount}`;
-  const aSVG = toSVG(atom);
-  let avgDx = 0, nbCount = 0;
-  for (const n of atom.getNeighbors(mol)) {
-    if (n && n.x != null) {
-      avgDx += toSVG(n).x - aSVG.x; nbCount++;
-    }
-  }
-  return (nbCount > 0 && avgDx > 0) ? hStr + symbol : symbol + hStr;
-}
-
 function escapeXml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ---------------------------------------------------------------------------
+// Bond SVG rendering — returns an array of SVG element strings.
+// For stereo bonds a1 is the chiral centre (pointed tip).
+// ---------------------------------------------------------------------------
+function bondToSVG(bond, a1, a2, mol, toSVG, stereoType) {
+  const out = [];
+
+  if (stereoType === 'wedge' || stereoType === 'dash') {
+    const s1 = toSVG(a1), s2 = toSVG(a2);
+    const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
+    if (stereoType === 'wedge') {
+      const pts =
+        `${s1.x.toFixed(2)},${s1.y.toFixed(2)} ` +
+        `${(s2.x - nx * WEDGE_HALF_W).toFixed(2)},${(s2.y - ny * WEDGE_HALF_W).toFixed(2)} ` +
+        `${(s2.x + nx * WEDGE_HALF_W).toFixed(2)},${(s2.y + ny * WEDGE_HALF_W).toFixed(2)}`;
+      out.push(`<polygon points="${pts}" fill="#111" stroke="none"/>`);
+    } else {
+      for (let i = 1; i <= WEDGE_DASHES; i++) {
+        const t = i / (WEDGE_DASHES + 1);
+        const px = s1.x + t * (s2.x - s1.x);
+        const py = s1.y + t * (s2.y - s1.y);
+        const hw = WEDGE_HALF_W * t;
+        out.push(
+          `<line x1="${(px - nx * hw).toFixed(2)}" y1="${(py - ny * hw).toFixed(2)}"` +
+          ` x2="${(px + nx * hw).toFixed(2)}" y2="${(py + ny * hw).toFixed(2)}"` +
+          ' stroke="#111" stroke-width="1.2" stroke-linecap="round"/>'
+        );
+      }
+    }
+    return out;
+  }
+
+  const order = bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
+  const s1 = toSVG(a1), s2 = toSVG(a2);
+  const dx = s2.x - s1.x, dy = s2.y - s1.y;
+  const { nx, ny } = perpUnit(dx, dy);
+
+  const lineEl = (x1, y1, x2, y2, dash) =>
+    `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}"` +
+    ` stroke="#222" stroke-width="${STROKE_W}"${dash ? ' stroke-dasharray="3,3"' : ''}/>`;
+
+  if (order === 1) {
+    out.push(lineEl(s1.x, s1.y, s2.x, s2.y, false));
+  } else if (order === 2) {
+    const dir = secondaryDir(a1, a2, mol, toSVG);
+    out.push(lineEl(s1.x, s1.y, s2.x, s2.y, false));
+    const ox = nx * BOND_OFF * dir, oy = ny * BOND_OFF * dir;
+    const l2 = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 4, 4);
+    out.push(lineEl(l2.x1, l2.y1, l2.x2, l2.y2, false));
+  } else if (order === 3) {
+    for (const d of [-BOND_OFF, 0, BOND_OFF]) {
+      const ox = nx * d, oy = ny * d;
+      const lt = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy,
+        d !== 0 ? 4 : 0, d !== 0 ? 4 : 0);
+      out.push(lineEl(lt.x1, lt.y1, lt.x2, lt.y2, false));
+    }
+  } else if (order === 1.5) {
+    const dir = secondaryDir(a1, a2, mol, toSVG);
+    out.push(lineEl(s1.x, s1.y, s2.x, s2.y, false));
+    const ox = nx * BOND_OFF * dir, oy = ny * BOND_OFF * dir;
+    const ld = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 5, 5);
+    out.push(lineEl(ld.x1, ld.y1, ld.x2, ld.y2, true));
+  }
+
+  return out;
 }
 
 // ---------------------------------------------------------------------------
@@ -115,7 +115,7 @@ export function renderMolSVG(smiles) {
     return null;
   }
 
-  // Collect H counts before stripping
+  // Collect implicit-H counts before hiding hydrogens.
   const hCounts = new Map();
   for (const [, atom] of mol.atoms) {
     if (atom.name === 'H') {
@@ -126,7 +126,9 @@ export function renderMolSVG(smiles) {
       hCounts.set(atom.id, count);
     }
   }
-  mol = mol.stripHydrogens();
+
+  // Hide (not strip) so chiral centers retain their H neighbours.
+  mol.hideHydrogens();
 
   try {
     generateCoords(mol, { suppressH: true, bondLength: 1.5 });
@@ -134,22 +136,51 @@ export function renderMolSVG(smiles) {
     return null;
   }
 
-  const atoms = [...mol.atoms.values()].filter(a => a.x != null);
+  // Give chiral H atoms a real position so their stereo bond can be drawn.
+  for (const [, atom] of mol.atoms) {
+    if (atom.name !== 'H' || atom.visible !== false) {
+      continue;
+    }
+    const nbrs = atom.getNeighbors(mol);
+    if (nbrs.length !== 1) {
+      continue;
+    }
+    const parent = nbrs[0];
+    if (!parent.properties.chirality) {
+      continue;
+    }
+    const others = parent.getNeighbors(mol).filter(n => n.id !== atom.id);
+    let sumX = 0, sumY = 0, cnt = 0;
+    for (const nb of others) {
+      if (nb.x != null) {
+        sumX += nb.x - parent.x; sumY += nb.y - parent.y; cnt++;
+      }
+    }
+    const angle = cnt > 0 ? Math.atan2(-sumY, -sumX) : 0;
+    atom.x = parent.x + Math.cos(angle) * 1.5 * 0.75;
+    atom.y = parent.y + Math.sin(angle) * 1.5 * 0.75;
+  }
+
+  const stereoMap = pickStereoWedges(mol);
+
+  const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
   if (atoms.length === 0) {
     return null;
   }
 
-  // Bounding box in layout coords
+  // Bounding box
   let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
   for (const a of atoms) {
     if (a.x < minX) {
       minX = a.x;
-    } if (a.x > maxX) {
+    }
+    if (a.x > maxX) {
       maxX = a.x;
     }
     if (a.y < minY) {
       minY = a.y;
-    } if (a.y > maxY) {
+    }
+    if (a.y > maxY) {
       maxY = a.y;
     }
   }
@@ -168,41 +199,42 @@ export function renderMolSVG(smiles) {
 
   const lines = [];
 
-  // Bonds
+  // Bonds — skip hidden-H bonds unless they carry a stereo bond.
   for (const bond of mol.bonds.values()) {
     const [a1, a2] = bond.getAtomObjects(mol);
     if (!a1 || !a2 || a1.x == null || a2.x == null) {
       continue;
     }
-    const order = bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
-    const s1 = toSVG(a1), s2 = toSVG(a2);
-    const dx = s2.x - s1.x, dy = s2.y - s1.y;
-    const { nx, ny } = perpUnit(dx, dy);
+    const isHBond = a1.visible === false || a2.visible === false;
+    if (isHBond && !stereoMap.has(bond.id)) {
+      continue;
+    }
 
-    const lineEl = (x1, y1, x2, y2, dash) =>
-      `<line x1="${x1.toFixed(2)}" y1="${y1.toFixed(2)}" x2="${x2.toFixed(2)}" y2="${y2.toFixed(2)}" stroke="#222" stroke-width="${STROKE_W}"${dash ? ' stroke-dasharray="3,3"' : ''}/>`;
+    const stereoType = stereoMap.get(bond.id) ?? null;
+    let sa1 = a1, sa2 = a2;
+    if (stereoType && a2.properties.chirality) {
+      sa1 = a2; sa2 = a1;
+    }
+    lines.push(...bondToSVG(bond, sa1, sa2, mol, toSVG, stereoType));
+  }
 
-    if (order === 1) {
-      lines.push(lineEl(s1.x, s1.y, s2.x, s2.y, false));
-    } else if (order === 2) {
-      const dir = secondaryDir(a1, a2, mol, toSVG);
-      lines.push(lineEl(s1.x, s1.y, s2.x, s2.y, false));
-      const ox = nx * BOND_OFF * dir, oy = ny * BOND_OFF * dir;
-      const l2 = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 4, 4);
-      lines.push(lineEl(l2.x1, l2.y1, l2.x2, l2.y2, false));
-    } else if (order === 3) {
-      for (const d of [-BOND_OFF, 0, BOND_OFF]) {
-        const ox = nx * d, oy = ny * d;
-        const lt = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy,
-          d !== 0 ? 4 : 0, d !== 0 ? 4 : 0);
-        lines.push(lineEl(lt.x1, lt.y1, lt.x2, lt.y2, false));
-      }
-    } else if (order === 1.5) {
-      const dir = secondaryDir(a1, a2, mol, toSVG);
-      lines.push(lineEl(s1.x, s1.y, s2.x, s2.y, false));
-      const ox = nx * BOND_OFF * dir, oy = ny * BOND_OFF * dir;
-      const ld = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 5, 5);
-      lines.push(lineEl(ld.x1, ld.y1, ld.x2, ld.y2, true));
+  // Decrement hCount for any H shown via a stereo bond.
+  for (const [bondId] of stereoMap) {
+    const bond = mol.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    const [ba1, ba2] = bond.getAtomObjects(mol);
+    const hAtom   = ba1?.visible === false ? ba1 : (ba2?.visible === false ? ba2 : null);
+    const heavyAt = hAtom ? (hAtom === ba1 ? ba2 : ba1) : null;
+    if (!heavyAt) {
+      continue;
+    }
+    const n = (hCounts.get(heavyAt.id) ?? 0) - 1;
+    if (n <= 0) {
+      hCounts.delete(heavyAt.id);
+    } else {
+      hCounts.set(heavyAt.id, n);
     }
   }
 
@@ -215,8 +247,8 @@ export function renderMolSVG(smiles) {
     }
     const { x, y } = toSVG(atom);
     const color = atomColor(atom.name);
-    const hw = labelHalfW(label);
-    const hh = FONT_SIZE * 0.58 + 2;
+    const hw = labelHalfW(label, FONT_SIZE);
+    const hh = labelHalfH(label, FONT_SIZE);
 
     labelEls.push(
       `<rect x="${(x - hw).toFixed(2)}" y="${(y - hh).toFixed(2)}" width="${(hw * 2).toFixed(2)}" height="${(hh * 2).toFixed(2)}" fill="white" rx="2"/>`
@@ -253,10 +285,25 @@ export function renderMolSVG(smiles) {
     );
   }
 
+  // R/S chirality labels — small italic text above each chiral centre.
+  const chiralEls = [];
+  for (const atom of atoms) {
+    const rs = atom.properties.chirality;
+    if (rs !== 'R' && rs !== 'S') {
+      continue;
+    }
+    const { x, y } = toSVG(atom);
+    // Offset upward by ~8 px so the label sits just above the atom symbol (or bond junction).
+    chiralEls.push(
+      `<text x="${x.toFixed(2)}" y="${(y - 10).toFixed(2)}" font-family="sans-serif" font-size="10" font-style="italic" fill="#555" text-anchor="middle" dominant-baseline="auto">${rs}</text>`
+    );
+  }
+
   const svgContent = [
     `<rect width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" fill="white"/>`,
     ...lines,
-    ...labelEls
+    ...labelEls,
+    ...chiralEls
   ].join('\n');
 
   return { svgContent, cellW, cellH };
@@ -264,9 +311,6 @@ export function renderMolSVG(smiles) {
 
 // ---------------------------------------------------------------------------
 // buildCompositeSVG — assemble rendered cells into a grid SVG string
-//
-// cells: array of { svgContent, cellW, cellH } | null  (one per molecule)
-// cols:  number of columns
 // ---------------------------------------------------------------------------
 export function buildCompositeSVG(cells, cols) {
   const rows = Math.ceil(cells.length / cols);
@@ -302,7 +346,6 @@ export function buildCompositeSVG(cells, cols) {
     `<rect width="${totalW}" height="${totalH}" fill="white"/>`
   ];
 
-  // Grid lines
   for (let c = 1; c < cols; c++) {
     parts.push(`<line x1="${colX[c]}" y1="0" x2="${colX[c]}" y2="${totalH}" stroke="#e0e0e0" stroke-width="1"/>`);
   }
@@ -310,7 +353,6 @@ export function buildCompositeSVG(cells, cols) {
     parts.push(`<line x1="0" y1="${rowY[r]}" x2="${totalW}" y2="${rowY[r]}" stroke="#e0e0e0" stroke-width="1"/>`);
   }
 
-  // Cells — centred within their column/row slot
   for (let idx = 0; idx < cells.length; idx++) {
     const cell = cells[idx];
     const col = idx % cols;

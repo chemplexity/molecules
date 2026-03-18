@@ -1,0 +1,256 @@
+/**
+ * mol2d-helpers.js — shared 2D rendering utilities
+ *
+ * Pure functions and constants used by both the browser renderer (index.html)
+ * and the server-side SVG/PNG exporter (render2d.js).  No DOM, no D3, no
+ * Node-only dependencies — safe to import in any environment.
+ */
+
+import { assignCIPRanks } from '../core/Molecule.js';
+
+// ---------------------------------------------------------------------------
+// CPK atom colours
+// ---------------------------------------------------------------------------
+export const CPK = {
+  H: '#FFFFFF', He: '#D9FFFF', Li: '#CC80FF', Be: '#C2FF00',
+  B: '#FFB5B5', C: '#333333', N: '#3050F8', O: '#FF0D0D',
+  F: '#90E050', Ne: '#B3E3F5', Na: '#AB5CF2', Mg: '#8AFF00',
+  Al: '#BFA6A6', Si: '#F0C8A0', P: '#FF8000', S: '#C8A000',
+  Cl: '#1FF01F', Ar: '#80D1E3', K: '#8F40D4', Ca: '#3DFF00',
+  Sc: '#E6E6E6', Ti: '#BFC2C7', V: '#A6A6AB', Cr: '#8A99C7',
+  Mn: '#9C7AC7', Fe: '#E06633', Co: '#F090A0', Ni: '#50D050',
+  Cu: '#C88033', Zn: '#7D80B0', Br: '#A62929', I: '#940094'
+};
+const DEFAULT_COLOR = '#FF69B4';
+
+/** Returns the CPK fill colour for an element symbol. */
+export function atomColor(sym) {
+  return CPK[sym] ?? DEFAULT_COLOR;
+}
+
+// ---------------------------------------------------------------------------
+// Stereo bond constants (same in both renderers)
+// ---------------------------------------------------------------------------
+export const WEDGE_HALF_W = 6;  // px — half-width at the wide end
+export const WEDGE_DASHES = 6;  // number of hash lines in a dashed bond
+
+// ---------------------------------------------------------------------------
+// Geometry helpers
+// ---------------------------------------------------------------------------
+
+/** Unit perpendicular vector (rotated 90° CCW) for a direction (dx, dy). */
+export function perpUnit(dx, dy) {
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  return { nx: -dy / len, ny: dx / len };
+}
+
+/** Shorten a line segment by d1 at the start and d2 at the end. */
+export function shortenLine(x1, y1, x2, y2, d1, d2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const ux = dx / len, uy = dy / len;
+  return {
+    x1: x1 + ux * d1, y1: y1 + uy * d1,
+    x2: x2 - ux * d2, y2: y2 - uy * d2
+  };
+}
+
+/**
+ * Returns +1 or -1 indicating which side of the bond axis the secondary
+ * parallel line of a double bond should be placed on, based on the
+ * positions of neighbouring heavy atoms.
+ *
+ * @param {import('../core/Atom.js').Atom} a1
+ * @param {import('../core/Atom.js').Atom} a2
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {function} toSVG - converts an atom to { x, y } in SVG space
+ * @returns {1|-1}
+ */
+export function secondaryDir(a1, a2, mol, toSVG) {
+  const resolveNbs = (atom, excludeId) =>
+    atom.getNeighbors(mol).filter(n => n && n.id !== excludeId && n.name !== 'H' && n.x != null);
+  const allNb = [...resolveNbs(a1, a2.id), ...resolveNbs(a2, a1.id)];
+  if (allNb.length === 0) {
+    return 1;
+  }
+  const s1 = toSVG(a1), s2 = toSVG(a2);
+  const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
+  const mid = { x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2 };
+  let dot = 0;
+  for (const n of allNb) {
+    const sn = toSVG(n);
+    dot += (sn.x - mid.x) * nx + (sn.y - mid.y) * ny;
+  }
+  return dot >= 0 ? 1 : -1;
+}
+
+// ---------------------------------------------------------------------------
+// Atom label helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Half-width of an atom label bounding box in SVG pixels.
+ *
+ * @param {string|null} label
+ * @param {number} fontSize - font size in px
+ * @returns {number}
+ */
+export function labelHalfW(label, fontSize) {
+  if (!label) {
+    return 0;
+  }
+  return fontSize * 0.38 * label.length + 4;
+}
+
+/**
+ * Half-height of an atom label bounding box in SVG pixels.
+ *
+ * @param {string|null} label
+ * @param {number} fontSize - font size in px
+ * @returns {number}
+ */
+export function labelHalfH(label, fontSize) {
+  if (!label) {
+    return 0;
+  }
+  return fontSize * 0.58 + 2;
+}
+
+/**
+ * Returns the display label for an atom in 2D skeletal notation, or null
+ * for unlabelled carbons.  The H-count subscript is placed left or right
+ * of the element symbol based on the average neighbour direction.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {Map<string,number>} hCounts - atom id → implicit-H count
+ * @param {function} toSVG - converts an atom to { x, y } in SVG space
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {string|null}
+ */
+export function getAtomLabel(atom, hCounts, toSVG, mol) {
+  const symbol = atom.name;
+  const hCount = hCounts.get(atom.id) ?? 0;
+  if (symbol === 'C' && atom.bonds.length > 0) {
+    return null;
+  }
+  if (hCount === 0) {
+    return symbol;
+  }
+  const hStr = hCount === 1 ? 'H' : `H${hCount}`;
+  const aSVG = toSVG(atom);
+  let avgDx = 0, nbCount = 0;
+  for (const n of atom.getNeighbors(mol)) {
+    if (n && n.x != null) {
+      avgDx += toSVG(n).x - aSVG.x; nbCount++;
+    }
+  }
+  return (nbCount > 0 && avgDx > 0) ? hStr + symbol : symbol + hStr;
+}
+
+// ---------------------------------------------------------------------------
+// Stereochemistry
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns a Map from bond ID → `'wedge'` | `'dash'` for all chiral centers
+ * in the molecule that have 2D coordinates assigned.
+ *
+ * Picks exactly one bond per chiral center, preferring visible exocyclic
+ * substituents, then visible ring atoms, then H.  Within each tier the bond
+ * with the largest vertical offset from the center is chosen (most
+ * perpendicular to the main chain).  The wedge/dash type is determined via
+ * parity-aware CIP winding so the correct absolute configuration is conveyed
+ * regardless of which substituent is chosen.
+ *
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {Map<string, 'wedge'|'dash'>}
+ */
+export function pickStereoWedges(mol) {
+  const result = new Map();
+  for (const centerId of mol.getChiralCenters()) {
+    const center = mol.atoms.get(centerId);
+    if (!center || center.x == null) {
+      continue;
+    }
+    const chirality = center.properties.chirality;
+    if (!chirality) {
+      continue;
+    }
+
+    const neighbors = center.getNeighbors(mol).filter(n => n && n.x != null);
+    if (neighbors.length !== 4) {
+      continue;
+    }
+
+    const ranks = assignCIPRanks(centerId, neighbors.map(n => n.id), mol);
+    const entries = neighbors.map((n, i) => {
+      const bond = [...mol.bonds.values()].find(b =>
+        (b.atoms[0] === centerId && b.atoms[1] === n.id) ||
+        (b.atoms[1] === centerId && b.atoms[0] === n.id)
+      );
+      return { atom: n, rank: ranks[i], bond };
+    }).filter(e => e.bond);
+
+    if (entries.length !== 4) {
+      continue;
+    }
+    entries.sort((a, b) => a.rank - b.rank);
+
+    const v = (e) => ({ x: e.atom.x - center.x, y: e.atom.y - center.y });
+    const cross2D = (u, w) => u.x * w.y - u.y * w.x;
+    const visible = entries.filter(e => e.atom.visible !== false);
+    const exocyclic = visible.filter(e => !e.bond.isInRing(mol));
+    const candidates = exocyclic.length > 0 ? exocyclic
+      : visible.length > 0 ? visible
+        : entries;
+
+    let chosen = candidates[0];
+    let bestScore = -Infinity;
+    for (const cand of candidates) {
+      const score = Math.abs(v(cand).y);
+      if (score > bestScore) {
+        bestScore = score; chosen = cand;
+      }
+    }
+
+    const others = entries.filter(e => e !== chosen).sort((a, b) => b.rank - a.rank);
+
+    // Compute vectors for the signed-area winding check.  If the H atom (lowest
+    // CIP rank, always visible=false) is one of the three remaining substituents,
+    // its placed 2D position was computed from ALL non-H neighbours — including the
+    // chosen exocyclic atom whose coordinates can differ slightly between JavaScript
+    // engines (V8 vs JavaScriptCore) due to force-field refinement.  Using that
+    // engine-dependent position in the cross-product can flip the winding sign and
+    // produce the wrong wedge/dash type in the browser vs Node.js.
+    //
+    // Fix: when H is in `others`, replace its vector with the analytic "opposite of
+    // the centroid of the two heavy atoms in `others`" — a value that depends only
+    // on ring-atom (frozen, deterministic) coordinates, not on variable exocyclic ones.
+    const heavyOtherVecs = others
+      .filter(e => !(e.atom.name === 'H' && e.atom.visible === false))
+      .map(v);
+
+    const safeV = (e) => {
+      if (e.atom.name === 'H' && e.atom.visible === false && heavyOtherVecs.length === 2) {
+        const sx = -(heavyOtherVecs[0].x + heavyOtherVecs[1].x);
+        const sy = -(heavyOtherVecs[0].y + heavyOtherVecs[1].y);
+        const len = Math.sqrt(sx * sx + sy * sy) || 1;
+        // Scale to the same magnitude as the first heavy vector so cross products
+        // are numerically comparable (sign is all that matters, but stability helps).
+        const bl = Math.sqrt(heavyOtherVecs[0].x ** 2 + heavyOtherVecs[0].y ** 2) || 1;
+        return { x: sx / len * bl, y: sy / len * bl };
+      }
+      return v(e);
+    };
+
+    const [vA, vB, vD] = others.map(safeV);
+    const signedArea = cross2D(vA, vB) + cross2D(vB, vD) + cross2D(vD, vA);
+    const lowerCount = entries.filter(e => e.rank < chosen.rank).length;
+    let computed = signedArea > 0 ? 'S' : 'R';
+    if (lowerCount % 2 === 1) {
+      computed = computed === 'S' ? 'R' : 'S';
+    }
+    result.set(chosen.bond.id, computed === chirality ? 'dash' : 'wedge');
+  }
+  return result;
+}

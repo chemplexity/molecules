@@ -1177,6 +1177,46 @@ function extractChiralNeighborOrders(smiles, tokens) {
       neighbors.push(posToClean.get(ba.index));
     }
 
+    // ── 2c-pre. Ring closures embedded in the bracket ────────────────────
+    // For atoms like `[C@H]3`, the ring token `H]3` starts inside the
+    // bracket (index between atomPos and bracketEnd).  The ring digit `3`
+    // appears right after `]` in the SMILES, so the ring partner comes
+    // before the chain continuation in SMILES neighbour order.
+    const handledRingNums = new Set();
+    for (const rt of tokens) {
+      if (rt.tag !== 'ring') {
+        continue;
+      }
+      if (rt.index < atomPos || rt.index > bracketEnd) {
+        continue;
+      }
+      const m = rt.term.match(/\d+/);
+      if (!m) {
+        continue;
+      }
+      const ringNum = m[0];
+      // Find the partner ring token (same ring number, outside our bracket)
+      const partner = tokens.find(
+        pt => pt.tag === 'ring' && pt !== rt &&
+              pt.term.match(/\d+/)?.[0] === ringNum
+      );
+      if (!partner) {
+        continue;
+      }
+      // Locate the atom within the partner token's matched text
+      const partnerAtomTok = atomTokens.find(
+        at => at.index >= partner.index && at.index < partner.index + partner.term.length
+      );
+      if (!partnerAtomTok) {
+        continue;
+      }
+      const partnerCleanId = posToClean.get(partnerAtomTok.index);
+      if (partnerCleanId) {
+        neighbors.push(partnerCleanId);
+        handledRingNums.add(ringNum);
+      }
+    }
+
     // ── 2c. Post-bracket neighbours: branches + chain continuation ───────
     // Sort all post-bracket tokens by position and scan depth.
     const postTokens = tokens
@@ -1207,9 +1247,27 @@ function extractChiralNeighborOrders(smiles, tokens) {
           capturedInBranch = true;
         }
       } else if (pt.tag === 'ring' && depth === 0) {
-        // Ring closure immediately at depth 0 — too complex, skip centre
-        neighbors.length = 0;
-        break;
+        const ringNum = pt.term.match(/\d+/)?.[0];
+        if (ringNum && !handledRingNums.has(ringNum)) {
+          // Unhandled depth-0 ring closure — find the partner and add it
+          const partner = tokens.find(
+            pr => pr.tag === 'ring' && pr !== pt &&
+                  pr.term.match(/\d+/)?.[0] === ringNum
+          );
+          if (partner) {
+            const partnerAtomTok = atomTokens.find(
+              at => at.index >= partner.index && at.index < partner.index + partner.term.length
+            );
+            if (partnerAtomTok) {
+              const partnerCleanId = posToClean.get(partnerAtomTok.index);
+              if (partnerCleanId) {
+                neighbors.push(partnerCleanId);
+                handledRingNums.add(ringNum);
+              }
+            }
+          }
+        }
+        // Do not break — chain continuation may follow
       }
     }
 

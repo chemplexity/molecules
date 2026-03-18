@@ -343,9 +343,23 @@ function placeRingSystem(molecule, system, rings, bondLength, origin, coords) {
 
   if (ringIds.length === 1) {
     // Isolated ring — simple regular polygon.
-    // startAngle = 0 (rightmost atom first) → flat-top hexagon (ChemDraw convention).
+    // Orient so the most-substituted ring atom is at 0° (rightmost, flat-top hexagon,
+    // ChemDraw convention) so substituent bonds leave the ring horizontally.
     const ring = rings[ringIds[0]];
-    placeRing(ring, origin.x, origin.y, bondLength, 0, coords);
+    const n = ring.length;
+    const ringSet = new Set(ring);
+    // Find ring atom with the most external (non-ring) neighbors.
+    let bestIdx = 0, bestCount = -1;
+    for (let i = 0; i < n; i++) {
+      const count = molecule.getNeighbors(ring[i]).filter(id => !ringSet.has(id)).length;
+      if (count > bestCount) {
+        bestCount = count;
+        bestIdx = i;
+      }
+    }
+    // Place ring[bestIdx] at 0°: startAngle - bestIdx*step = 0  =>  startAngle = bestIdx*step
+    const startAngle = bestIdx * (TWO_PI / n);
+    placeRing(ring, origin.x, origin.y, bondLength, startAngle, coords);
     return;
   }
 
@@ -2583,14 +2597,13 @@ export function generateCoords(molecule, options = {}) {
         });
       }
     }
-    // Phase F2 — restore analytical 120° chain geometry after force-field distortion.
-    // Phase G's 1-4 non-bonded repulsion can distort the analytically-correct angles
-    // from Phase F.  For each ring substituent whose subtree does NOT bridge to another
-    // ring, re-run layoutChain from the CURRENT ring→substituent direction (preserved
-    // by the BFS snap above) so the chain is rebuilt with correct 120° geometry.
-    // Substituents whose subtree spans a bond to a second ring atom (inter-ring chains)
-    // are left unchanged — re-laying them from one ring's geometry would sever their
-    // connection to the other ring.
+    // Phase F2 — restore analytical ring-substituent angles after force-field
+    // distortion.  Phase G's soft 1-4 non-bonded repulsion can displace direct
+    // ring substituents from their analytically correct gap-bisector angles.
+    // For each simple (non-inter-ring) chain: recompute the gap bisector from
+    // the ring's current bond directions and re-layout the subtree from that
+    // angle rather than the BFS-snapped (still-distorted) direction.
+    // Inter-ring chains (subtree bridges to a second ring atom) are skipped.
     {
       const isHF2 = id => molecule.atoms.get(id)?.name === 'H';
       for (const ringId of ringAtomSet) {
@@ -2600,23 +2613,61 @@ export function generateCoords(molecule, options = {}) {
         }
         const subs = molecule.getNeighbors(ringId)
           .filter(id => !ringAtomSet.has(id) && !isHF2(id));
-        for (const subId of subs) {
+        if (subs.length === 0) {
+          continue;
+        }
+
+        // Analytical gap bisector: find the largest arc between ring bonds.
+        const ringNbAngles = molecule.getNeighbors(ringId)
+          .filter(id => ringAtomSet.has(id))
+          .map(id => {
+            const c = coords.get(id);
+            return Math.atan2(c.y - ringPos.y, c.x - ringPos.x);
+          })
+          .sort((a, b) => a - b);
+
+        let bestGapStart = ringNbAngles[ringNbAngles.length - 1];
+        let bestGapSize  = ringNbAngles[0] - ringNbAngles[ringNbAngles.length - 1] + TWO_PI;
+        for (let k = 0; k < ringNbAngles.length - 1; k++) {
+          const gap = ringNbAngles[k + 1] - ringNbAngles[k];
+          if (gap > bestGapSize) {
+            bestGapSize = gap; bestGapStart = ringNbAngles[k];
+          }
+        }
+
+        // Distribute substituents symmetrically within the gap (same logic as
+        // refineCoords): 1 sub → bisector; 2 subs → ±60° from bisector.
+        const n = subs.length;
+        let subAngles;
+        if (n === 1) {
+          subAngles = [normalizeAngle(bestGapStart + bestGapSize / 2)];
+        } else if (n === 2) {
+          const mid = normalizeAngle(bestGapStart + bestGapSize / 2);
+          subAngles = [normalizeAngle(mid - DEG60), normalizeAngle(mid + DEG60)];
+        } else {
+          const step = bestGapSize / (n + 1);
+          subAngles = subs.map((_, i) => normalizeAngle(bestGapStart + step * (i + 1)));
+        }
+
+        for (let si = 0; si < subs.length; si++) {
+          const subId  = subs[si];
           const subPos = coords.get(subId);
           if (!subPos) {
             continue;
           }
-          // BFS to collect the non-ring subtree and check if it bridges another ring.
+
+          // BFS to collect the subtree and check if it bridges another ring.
           const subtree = new Set([subId]);
           const bfsQ = [subId];
           let anchored = false;
-          outer: while (bfsQ.length > 0) {
+          outerF2: while (bfsQ.length > 0) {
             const cur = bfsQ.shift();
             for (const nb of molecule.getNeighbors(cur)) {
               if (nb === ringId || subtree.has(nb) || isHF2(nb)) {
                 continue;
               }
               if (ringAtomSet.has(nb)) {
-                anchored = true; break outer;
+                anchored = true; break outerF2;
               }
               subtree.add(nb);
               bfsQ.push(nb);
@@ -2625,8 +2676,9 @@ export function generateCoords(molecule, options = {}) {
           if (anchored) {
             continue; // inter-ring chain — leave untouched
           }
-          // Re-layout using the current attachment direction (BFS snap preserved it).
-          const subAngle = Math.atan2(subPos.y - ringPos.y, subPos.x - ringPos.x);
+
+          // Re-layout the subtree from the analytical gap-bisector direction.
+          const subAngle = subAngles[si];
           const chainPlaced = new Set([...coords.keys()].filter(id => molecule.atoms.has(id)));
           for (const id of subtree) {
             chainPlaced.delete(id);

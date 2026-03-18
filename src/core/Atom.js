@@ -56,6 +56,8 @@ export class Atom {
     this.y = null;
     /** @type {number|null} Z coordinate in Å; `null` until `generateCoords` is called. */
     this.z = null;
+    /** @type {boolean} Whether the atom should be shown in 2D rendering. Defaults to true. */
+    this.visible = true;
     /** @type {{charge: number, aromatic: boolean, protons: number|undefined, neutrons: number|undefined, electrons: number|undefined, group: number, period: number}} Chemistry-specific element data. */
     this.properties = { charge, aromatic, protons, neutrons, electrons, group, period, chirality };
   }
