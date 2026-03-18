@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { Molecule, Atom, Bond } from '../src/core/index.js';
-import { parseSMILES } from '../src/io/index.js';
+import { Molecule, Atom, Bond } from '../../src/core/index.js';
+import { parseSMILES } from '../../src/io/index.js';
 
 describe('Atom', () => {
   it('constructs with defaults', () => {
@@ -1345,8 +1345,8 @@ describe('Molecule – findBond', () => {
   });
 });
 
-describe('Molecule – stripHydrogens', () => {
-  it('removes all explicit hydrogen atoms', () => {
+describe('Molecule – hideHydrogens', () => {
+  it('marks all H atoms as not visible', () => {
     // Build CH4 manually (1 C + 4 H)
     const mol = new Molecule();
     mol.addAtom('C1', 'C');
@@ -1356,41 +1356,36 @@ describe('Molecule – stripHydrogens', () => {
     mol.addBond('b2', 'C1', 'H2', {}, false);
     mol.addBond('b3', 'C1', 'H3', {}, false);
     mol.addBond('b4', 'C1', 'H4', {}, false);
-    const stripped = mol.stripHydrogens();
-    assert.equal(stripped.atomCount, 1);
-    assert.equal(stripped.bondCount, 0);
-    assert.equal([...stripped.atoms.values()][0].name, 'C');
+    mol.hideHydrogens();
+    for (const atom of mol.atoms.values()) {
+      if (atom.name === 'H') {
+        assert.equal(atom.visible, false);
+      }
+    }
   });
 
-  it('keeps all bonds between heavy atoms', () => {
-    // Ethanol: C-C-O with explicit H
-    const mol = new Molecule();
-    mol.addAtom('C1', 'C'); mol.addAtom('C2', 'C'); mol.addAtom('O1', 'O');
-    mol.addAtom('H1', 'H');
-    mol.addBond('b1', 'C1', 'C2', {}, false);
-    mol.addBond('b2', 'C2', 'O1', {}, false);
-    mol.addBond('b3', 'O1', 'H1', {}, false);
-    const stripped = mol.stripHydrogens();
-    assert.equal(stripped.atomCount, 3);
-    assert.equal(stripped.bondCount, 2);
-  });
-
-  it('does not mutate the original molecule', () => {
+  it('does not remove atoms from the graph', () => {
     const mol = new Molecule();
     mol.addAtom('C1', 'C'); mol.addAtom('H1', 'H');
     mol.addBond('b1', 'C1', 'H1', {}, false);
-    mol.stripHydrogens();
+    mol.hideHydrogens();
     assert.equal(mol.atomCount, 2);
     assert.equal(mol.bondCount, 1);
   });
 
-  it('returns the same heavy atoms when there are no hydrogens', () => {
+  it('returns this for chaining', () => {
+    const mol = new Molecule();
+    mol.addAtom('C1', 'C');
+    assert.equal(mol.hideHydrogens(), mol);
+  });
+
+  it('leaves heavy atoms visible', () => {
     const mol = new Molecule();
     mol.addAtom('C1', 'C'); mol.addAtom('N1', 'N');
     mol.addBond('b1', 'C1', 'N1', {}, false);
-    const stripped = mol.stripHydrogens();
-    assert.equal(stripped.atomCount, 2);
-    assert.equal(stripped.bondCount, 1);
+    mol.hideHydrogens();
+    assert.equal(mol.atoms.get('C1').visible, true);
+    assert.equal(mol.atoms.get('N1').visible, true);
   });
 });
 

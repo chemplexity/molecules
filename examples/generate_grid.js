@@ -165,7 +165,8 @@ const randomMolecule = [
   'OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1OC(=O)CCCCCC',
   'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)N',
   'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC',
-  'CCCCCC1=CC(=C2[CH]3C=C(CC[CH]3C(OC2=C1)(C)C)C)O'
+  'CCCCCC1=CC(=C2[CH]3C=C(CC[CH]3C(OC2=C1)(C)C)C)O',
+  'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O'
 ];
 
 // ---------------------------------------------------------------------------

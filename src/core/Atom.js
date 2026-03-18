@@ -333,7 +333,7 @@ export class Atom {
    *   3. All 4 CIP priority subtrees must be pairwise distinct.
    *
    * For best results pass a molecule where hydrogens are explicit (as returned
-   * directly by `parseSMILES` before any `stripHydrogens` call).
+   * directly by `parseSMILES`).
    *
    * @param {import('./Molecule.js').Molecule} [molecule]
    * @returns {boolean}

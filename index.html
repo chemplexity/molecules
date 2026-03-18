@@ -473,7 +473,7 @@ div.tooltip td:first-child {
         <div id="examples">
             <p class="examples"><i>examples:&nbsp;</i>
                 <a href="#" onclick="parseInput('CCO'); return false">ethanol</a>,
-                <a href="#" onclick="parseInput('CCCCCC1=CC(=C2[CH]3C=C(CC[CH]3C(OC2=C1)(C)C)C)O'); return false">THC</a>,
+                <a href="#" onclick="parseInput('C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O'); return false">glucose</a>,
                 <a href="#" onclick="parseInput('c1ccc2ccccc2c1'); return false">naphthalene</a>,
                 <a href="#" onclick="parseInput('CC(=O)Oc1ccccc1C(=O)O'); return false">aspirin</a>,
                 <a href="#" onclick="parseInput('C1=CC2=C(C=C1O)C(=CN2)CCN'); return false">serotonin</a>,
@@ -496,6 +496,8 @@ div.tooltip td:first-child {
             <div id="rotate-controls">
                 <button id="rotate-ccw"  title="Rotate counter-clockwise">&#x21BA;</button>
                 <button id="rotate-cw"   title="Rotate clockwise">&#x21BB;</button>
+                <button id="flip-h"      title="Flip horizontal">&#x2194;</button>
+                <button id="flip-v"      title="Flip vertical">&#x2195;</button>
                 <button id="copy-svg-btn" title="Copy 2D structure as SVG to clipboard" onclick="copySvg2d()">SVG</button>
                 <button id="save-png-btn" title="Copy 2D structure as PNG to clipboard" onclick="savePng2d()">PNG</button>
             </div>
@@ -673,7 +675,8 @@ var randomMolecule = [
     "OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1OC(=O)CCCCCC",
     "CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)N",
     "CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC",
-    "CCCCCC1=CC(=C2[CH]3C=C(CC[CH]3C(OC2=C1)(C)C)C)O"
+    "CCCCCC1=CC(=C2[CH]3C=C(CC[CH]3C(OC2=C1)(C)C)C)O",
+    "C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O"
 ];
 
 function parseInput(smiles) {
@@ -712,6 +715,8 @@ function strokeColor(symbol) {
 let mode          = 'force'; // 'force' | '2d'
 let currentSmiles = null;
 let rotationDeg   = 0;
+let flipH         = false;  // mirror about vertical axis (x → -x)
+let flipV         = false;  // mirror about horizontal axis (y → -y)
 
 // ---------------------------------------------------------------------------
 // D3 SVG setup (shared by both modes)
@@ -1102,7 +1107,9 @@ let _stereoMap2d = null;  // Map<bondId, 'wedge'|'dash'>
 function _toSVGPt2d(a) {
     const W = plotEl.clientWidth  || 600;
     const H = plotEl.clientHeight || 400;
-    return { x: W / 2 + (a.x - _cx2d) * SCALE, y: H / 2 + (a.y - _cy2d) * SCALE };
+    // Negate y so that molecule coords (y-up math convention) map correctly
+    // to SVG/canvas coords (y-down). Without this the display is a mirror image.
+    return { x: W / 2 + (a.x - _cx2d) * SCALE, y: H / 2 - (a.y - _cy2d) * SCALE };
 }
 
 
@@ -1268,7 +1275,7 @@ function draw2d() {
                 const H = plotEl.clientHeight || 400;
                 const [svgX, svgY] = d3.pointer(event.sourceEvent, g.node());
                 atom.x = _cx2d + (svgX - W / 2) / SCALE;
-                atom.y = _cy2d + (svgY - H / 2) / SCALE;
+                atom.y = _cy2d - (svgY - H / 2) / SCALE; // inverse of y-flip in _toSVGPt2d
 
                 const np = toSVGPt(atom);
                 hitGroup.attr('transform', `translate(${np.x},${np.y})`);
@@ -1333,19 +1340,23 @@ function render2d(mol) {
         atom.y = parent.y + Math.sin(angle) * hLen;
     }
 
-    // Apply rotation
-    if (rotationDeg !== 0) {
+    // Apply rotation and/or flips (around centroid)
+    if (rotationDeg !== 0 || flipH || flipV) {
         const allAtoms = [...mol.atoms.values()].filter(a => a.x != null);
         let mx = 0, my = 0;
         for (const a of allAtoms) { mx += a.x; my += a.y; }
         mx /= allAtoms.length; my /= allAtoms.length;
-        const rad  = rotationDeg * Math.PI / 180;
-        const cosR = Math.cos(rad), sinR = Math.sin(rad);
-        for (const a of allAtoms) {
-            const dx = a.x - mx, dy = a.y - my;
-            a.x = mx + dx * cosR - dy * sinR;
-            a.y = my + dx * sinR + dy * cosR;
+        if (rotationDeg !== 0) {
+            const rad  = rotationDeg * Math.PI / 180;
+            const cosR = Math.cos(rad), sinR = Math.sin(rad);
+            for (const a of allAtoms) {
+                const dx = a.x - mx, dy = a.y - my;
+                a.x = mx + dx * cosR - dy * sinR;
+                a.y = my + dx * sinR + dy * cosR;
+            }
         }
+        if (flipH) for (const a of allAtoms) a.x = 2 * mx - a.x;
+        if (flipV) for (const a of allAtoms) a.y = 2 * my - a.y;
     }
 
     const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
@@ -1573,7 +1584,7 @@ window.toggleMode = function() {
 
     if (currentSmiles) {
         simulation.stop();
-        rotationDeg = 0;
+        rotationDeg = 0; flipH = false; flipV = false;
         const mol = parseSMILES(currentSmiles);
         if (mode === 'force') {
             updateForce(mol);
@@ -1605,6 +1616,7 @@ function startRotate(delta) {
             a.x = mx + dx * cosR - dy * sinR;
             a.y = my + dx * sinR + dy * cosR;
         }
+        rotationDeg = (rotationDeg + delta) % 360;
 
         // Recompute bounding box centre and update persistent state so the
         // molecule stays visually centred as it rotates.
@@ -1642,6 +1654,14 @@ document.addEventListener('mousedown', e => {
     startRotate(btn.id === 'rotate-cw' ? 5 : -5);
 });
 document.addEventListener('mouseup',    stopRotate);
+
+document.addEventListener('click', e => {
+    const btn = e.target.closest('#flip-h, #flip-v');
+    if (!btn) return;
+    if (btn.id === 'flip-h') flipH = !flipH;
+    else                     flipV = !flipV;
+    if (currentSmiles) render2d(parseSMILES(currentSmiles));
+});
 document.addEventListener('mouseleave', stopRotate);
 
 // ---------------------------------------------------------------------------
@@ -1745,7 +1765,7 @@ function parseAndRender(smiles) {
     if (!mol || mol.atoms.size === 0) return;
 
     currentSmiles = smiles;
-    rotationDeg   = 0;
+    rotationDeg   = 0; flipH = false; flipV = false;
 
     if (mode === 'force') {
         updateForce(mol);
@@ -1774,7 +1794,7 @@ window.addEventListener('resize', () => {
             d3.forceCenter(plotEl.clientWidth / 2, plotEl.clientHeight / 2));
         simulation.alpha(0.3).restart();
     } else {
-        rotationDeg = 0;
+        rotationDeg = 0; flipH = false; flipV = false;
         render2d(parseSMILES(currentSmiles));
     }
 });

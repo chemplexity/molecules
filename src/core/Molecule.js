@@ -361,9 +361,11 @@ export class Molecule {
       this.atoms.delete(hId);
     }
 
-    // Add the required number of new H atoms.
+    // Add the required number of new H atoms (invisible — kept in graph for
+    // correct SMARTS X/H-count semantics but hidden from 2D layout/rendering).
     for (let i = 0; i < neededH; i++) {
       const hAtom = new Atom(null, 'H');
+      hAtom.visible = false;
       this.atoms.set(hAtom.id, hAtom);
       const hBond = new Bond(null, [atomId, hAtom.id], { order: 1 });
       this.bonds.set(hBond.id, hBond);

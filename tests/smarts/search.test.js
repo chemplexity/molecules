@@ -8,7 +8,7 @@ import { findSMARTS, matchesSMARTS, firstSMARTS, parseSMARTS } from '../../src/s
 // ---------------------------------------------------------------------------
 
 function mol(smiles) {
-  return parseSMILES(smiles).stripHydrogens();
+  return parseSMILES(smiles);
 }
 
 function collectAll(gen) {
@@ -301,8 +301,8 @@ describe('matchesSMARTS — complex expressions', () => {
     assert.equal(matchesSMARTS(mol('c1ccncc1'), '[!#6]'), true);
   });
 
-  it('[!#6] NOT found in benzene (all C)', () => {
-    assert.equal(matchesSMARTS(mol('c1ccccc1'), '[!#6]'), false);
+  it('[!#6;!#1] NOT found in benzene (no non-carbon heavy atoms)', () => {
+    assert.equal(matchesSMARTS(mol('c1ccccc1'), '[!#6;!#1]'), false);
   });
 
   it('[#6;a] aromatic carbon found in toluene ring', () => {
@@ -327,8 +327,8 @@ describe('matchesSMARTS — R<n> ring count', () => {
     assert.equal(matchesSMARTS(mol('CCC'), '[R0]'), true);
   });
 
-  it('[R0] NOT found in benzene (all atoms in ring)', () => {
-    assert.equal(matchesSMARTS(mol('c1ccccc1'), '[R0]'), false);
+  it('[R0;!#1] NOT found in benzene (all heavy atoms in ring)', () => {
+    assert.equal(matchesSMARTS(mol('c1ccccc1'), '[R0;!#1]'), false);
   });
 
   it('[R1] found in benzene (each atom in exactly one ring)', () => {

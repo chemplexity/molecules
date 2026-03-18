@@ -851,8 +851,7 @@ function render(mol) {
         const count = atom.getNeighbors(mol).filter(n => n.name === 'H').length;
         if (count > 0) hCounts.set(atom.id, count);
     }
-    mol = mol.stripHydrogens(); // remove explicit H so layout only sees heavy atoms
-    currentMol = mol;            // store for rotation re-renders
+    currentMol = mol;  // H atoms are already invisible (visible=false) from parseSMILES
 
     // --- compute 2D coordinates -------------------------------------------
     generateCoords(mol, { suppressH: true, bondLength: 1.5 });

@@ -13,7 +13,7 @@ import {
   binomial,
   combinations,
   computeEigenvalues
-} from '../src/utils/index.js';
+} from '../../src/utils/index.js';
 
 describe('zeros / ones / identity', () => {
   it('zeros creates all-zero matrix', () => {

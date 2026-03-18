@@ -142,14 +142,14 @@ describe('findSubgraphMappings — ring vs chain', () => {
   });
 
   it('triangle query matches cyclopropane (heavy-atom subgraph)', () => {
-    const target = parseSMILES('C1CC1').stripHydrogens();
+    const target = parseSMILES('C1CC1');
     const results = collectAll(findSubgraphMappings(target, triangle()));
     assert.ok(results.length > 0, 'triangle should appear in cyclopropane');
   });
 
   it('6-membered ring query (benzene heavy graph) is found in naphthalene', () => {
-    const benzeneQuery = parseSMILES('c1ccccc1').stripHydrogens();
-    const naphthalene  = parseSMILES('c1ccc2ccccc2c1').stripHydrogens();
+    const benzeneQuery = parseSMILES('c1ccccc1').stripHydrogens(); // strip so query has no H atoms
+    const naphthalene  = parseSMILES('c1ccc2ccccc2c1');
     assert.ok(matchesSubgraph(naphthalene, benzeneQuery));
   });
 });
@@ -172,7 +172,7 @@ describe('matchesSubgraph', () => {
     aroCCQuery.addAtom('q0', 'C', { aromatic: true });
     aroCCQuery.addAtom('q1', 'C', { aromatic: true });
     aroCCQuery.addBond('bq0', 'q0', 'q1', { aromatic: true, order: 1.5 }, false);
-    const benzene = parseSMILES('c1ccccc1').stripHydrogens();
+    const benzene = parseSMILES('c1ccccc1');
     assert.equal(matchesSubgraph(benzene, aroCCQuery), true);
   });
 
@@ -181,7 +181,7 @@ describe('matchesSubgraph', () => {
     aroCCQuery.addAtom('q0', 'C', { aromatic: true });
     aroCCQuery.addAtom('q1', 'C', { aromatic: true });
     aroCCQuery.addBond('bq0', 'q0', 'q1', { aromatic: true, order: 1.5 }, false);
-    const cyclohexane = parseSMILES('C1CCCCC1').stripHydrogens();
+    const cyclohexane = parseSMILES('C1CCCCC1');
     assert.equal(matchesSubgraph(cyclohexane, aroCCQuery), false);
   });
 });
@@ -203,7 +203,7 @@ describe('findFirstSubgraphMapping', () => {
   });
 
   it('does not enumerate all matches — terminates after first', () => {
-    const target = parseSMILES('CCCCCC').stripHydrogens(); // hexane, 6 carbons
+    const target = parseSMILES('CCCCCC'); // hexane, 6 carbons
     const result = findFirstSubgraphMapping(target, singleCarbon());
     assert.ok(result !== null);
     assert.equal(result.size, 1);
@@ -239,7 +239,7 @@ describe('findSubgraphMappings — wildcard predicates', () => {
   });
 
   it('makeAtomMatcher({ element: "C" }) matches only C in methanol', () => {
-    const target = parseSMILES('CO').stripHydrogens();
+    const target = parseSMILES('CO');
     const results = collectAll(findSubgraphMappings(target, singleCarbon(), {
       atomMatch: makeAtomMatcher({ element: 'C' }),
       skipElementFilter: true
@@ -247,13 +247,13 @@ describe('findSubgraphMappings — wildcard predicates', () => {
     assert.equal(results.length, 1, 'only the C atom should match');
   });
 
-  it('makeAtomMatcher({}) (no constraints) matches all atoms', () => {
-    const target = parseSMILES('CO').stripHydrogens(); // 2 heavy atoms: C, O
+  it('makeAtomMatcher({}) (no constraints) matches all atoms including H', () => {
+    const target = parseSMILES('CO'); // C, O, 3×H(C), 1×H(O) = 6 atoms
     const results = collectAll(findSubgraphMappings(target, singleCarbon(), {
       atomMatch: makeAtomMatcher({}),
       skipElementFilter: true
     }));
-    assert.equal(results.length, 2, 'both C and O should match wildcard');
+    assert.equal(results.length, 6, 'all 6 atoms (C, O, 4 H) should match wildcard');
   });
 });
 
@@ -263,7 +263,7 @@ describe('findSubgraphMappings — wildcard predicates', () => {
 
 describe('findSubgraphMappings — subgraph degree filter', () => {
   it('C-C query matches in neopentane (central C has degree 4 ≥ query degree 1)', () => {
-    const target = parseSMILES('CC(C)(C)C').stripHydrogens();
+    const target = parseSMILES('CC(C)(C)C');
     const results = collectAll(findSubgraphMappings(target, ethane()));
     assert.ok(results.length > 0, 'C-C query must appear in neopentane');
   });
@@ -301,7 +301,7 @@ describe('findSubgraphMappings — options.limit', () => {
 
 describe('elementOnlyAtomMatch', () => {
   it('charged N+ in target matches uncharged N query', () => {
-    const target = parseSMILES('[NH4+]').stripHydrogens();
+    const target = parseSMILES('[NH4+]');
     const query  = singleNitrogen();
     const results = collectAll(findSubgraphMappings(target, query, {
       atomMatch: elementOnlyAtomMatch,
@@ -314,14 +314,14 @@ describe('elementOnlyAtomMatch', () => {
     // Default match: aromatic flag on query must match target
     const aroCQuery = new Molecule();
     aroCQuery.addAtom('q0', 'C', { aromatic: true });
-    const target = parseSMILES('CC').stripHydrogens();
+    const target = parseSMILES('CC');
     assert.equal(matchesSubgraph(target, aroCQuery), false);
   });
 
   it('aromatic C query matches non-aromatic C with elementOnlyAtomMatch', () => {
     const aroCQuery = new Molecule();
     aroCQuery.addAtom('q0', 'C', { aromatic: true });
-    const target = parseSMILES('CC').stripHydrogens();
+    const target = parseSMILES('CC');
     assert.equal(matchesSubgraph(target, aroCQuery, {
       atomMatch: elementOnlyAtomMatch,
       skipElementFilter: true

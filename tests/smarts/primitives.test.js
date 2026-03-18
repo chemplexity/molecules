@@ -8,10 +8,11 @@ import { parseSMARTS } from '../../src/smarts/index.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Returns the first atom from a SMILES string (stripped of H). */
+/** Returns the first non-H atom from a SMILES string. */
 function firstAtom(smiles) {
-  const mol = parseSMILES(smiles).stripHydrogens();
-  return { atom: mol.atoms.values().next().value, mol };
+  const mol = parseSMILES(smiles);
+  const atom = [...mol.atoms.values()].find(a => a.name !== 'H');
+  return { atom, mol };
 }
 
 /** Compiles an expression and tests it against the first atom of `smiles`. */
@@ -40,12 +41,12 @@ describe('compileAtomExpr — element symbol', () => {
   it('C does not match nitrogen', () => assert.equal(test('C', 'N'), false));
   it('O matches oxygen', () => assert.equal(test('O', 'O'), true));
   it('Cl matches chlorine', () => {
-    const mol = parseSMILES('CCl').stripHydrogens();
+    const mol = parseSMILES('CCl');
     const cl = [...mol.atoms.values()].find(a => a.name === 'Cl');
     assert.equal(compileAtomExpr('Cl')(cl, mol), true);
   });
   it('Br matches bromine', () => {
-    const mol = parseSMILES('CBr').stripHydrogens();
+    const mol = parseSMILES('CBr');
     const br = [...mol.atoms.values()].find(a => a.name === 'Br');
     assert.equal(compileAtomExpr('Br')(br, mol), true);
   });
@@ -57,7 +58,7 @@ describe('compileAtomExpr — element symbol', () => {
 
 describe('compileAtomExpr — aromaticity primitives', () => {
   it('a matches aromatic carbon in benzene', () => {
-    const mol = parseSMILES('c1ccccc1').stripHydrogens();
+    const mol = parseSMILES('c1ccccc1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('a')(atom, mol), true);
   });
@@ -67,7 +68,7 @@ describe('compileAtomExpr — aromaticity primitives', () => {
   it('A matches aliphatic carbon', () => assert.equal(test('A', 'CC'), true));
 
   it('A does not match aromatic carbon', () => {
-    const mol = parseSMILES('c1ccccc1').stripHydrogens();
+    const mol = parseSMILES('c1ccccc1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('A')(atom, mol), false);
   });
@@ -90,13 +91,13 @@ describe('compileAtomExpr — atomic number #n', () => {
 
 describe('compileAtomExpr — formal charge', () => {
   it('+1 matches [NH4+]', () => {
-    const mol = parseSMILES('[NH4+]').stripHydrogens();
+    const mol = parseSMILES('[NH4+]');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('+1')(atom, mol), true);
   });
 
   it('+ (any positive) matches [NH4+]', () => {
-    const mol = parseSMILES('[NH4+]').stripHydrogens();
+    const mol = parseSMILES('[NH4+]');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('+')(atom, mol), true);
   });
@@ -104,13 +105,13 @@ describe('compileAtomExpr — formal charge', () => {
   it('+1 does not match neutral N', () => assert.equal(test('+1', 'N'), false));
 
   it('-1 matches [OH-]', () => {
-    const mol = parseSMILES('[OH-]').stripHydrogens();
+    const mol = parseSMILES('[OH-]');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('-1')(atom, mol), true);
   });
 
   it('- (any negative) matches [OH-]', () => {
-    const mol = parseSMILES('[OH-]').stripHydrogens();
+    const mol = parseSMILES('[OH-]');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('-')(atom, mol), true);
   });
@@ -124,14 +125,14 @@ describe('compileAtomExpr — formal charge', () => {
 
 describe('compileAtomExpr — degree D', () => {
   it('D1 matches terminal carbon of ethane', () => {
-    const mol = parseSMILES('CC').stripHydrogens();
+    const mol = parseSMILES('CC');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('D1')(atom, mol), true);
   });
 
   it('D3 matches the branch carbon of propane (center)', () => {
     // propane: C-C-C, center has D2 not D3
-    const mol = parseSMILES('CC(C)C').stripHydrogens(); // isobutane center = D3
+    const mol = parseSMILES('CC(C)C'); // isobutane center = D3
     const center = [...mol.atoms.values()].find(a => {
       let cnt = 0;
       for (const bId of a.bonds) {
@@ -152,7 +153,7 @@ describe('compileAtomExpr — degree D', () => {
   });
 
   it('D matches as D1 by default', () => {
-    const mol = parseSMILES('CC').stripHydrogens();
+    const mol = parseSMILES('CC');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('D')(atom, mol), true);
   });
@@ -164,13 +165,13 @@ describe('compileAtomExpr — degree D', () => {
 
 describe('compileAtomExpr — ring R', () => {
   it('R matches atom in benzene ring', () => {
-    const mol = parseSMILES('c1ccccc1').stripHydrogens();
+    const mol = parseSMILES('c1ccccc1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('R')(atom, mol), true);
   });
 
   it('R does not match terminal carbon of propane', () => {
-    const mol = parseSMILES('CCC').stripHydrogens();
+    const mol = parseSMILES('CCC');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('R')(atom, mol), false);
   });
@@ -195,7 +196,7 @@ describe('compileAtomExpr — OR', () => {
 describe('compileAtomExpr — AND (low precedence ;)', () => {
   it('C;A matches aliphatic carbon', () => assert.equal(test('C;A', 'CC'), true));
   it('C;A does not match aromatic carbon', () => {
-    const mol = parseSMILES('c1ccccc1').stripHydrogens();
+    const mol = parseSMILES('c1ccccc1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('C;A')(atom, mol), false);
   });
@@ -204,7 +205,7 @@ describe('compileAtomExpr — AND (low precedence ;)', () => {
 describe('compileAtomExpr — precedence', () => {
   it('C,N;!R — C OR (N AND not-ring)', () => {
     // An aromatic carbon in benzene: C=true, N;!R=false → OR=true
-    const mol = parseSMILES('c1ccccc1').stripHydrogens();
+    const mol = parseSMILES('c1ccccc1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('C,N;!R')(atom, mol), true);
   });
@@ -232,10 +233,10 @@ describe('compileAtomExpr — valence v and connectivity X', () => {
     assert.equal(compileAtomExpr('X4')(atom, mol), true);
   });
 
-  it('X1 matches terminal carbon of stripped ethane', () => {
-    const mol = parseSMILES('CC').stripHydrogens();
-    const atom = mol.atoms.values().next().value;
-    assert.equal(compileAtomExpr('X1')(atom, mol), true);
+  it('X2 matches carbonyl carbon in CO2 (2 bonds, no H)', () => {
+    const mol = parseSMILES('O=C=O');
+    const atom = [...mol.atoms.values()].find(a => a.name === 'C');
+    assert.equal(compileAtomExpr('X2')(atom, mol), true);
   });
 });
 
@@ -245,30 +246,36 @@ describe('compileAtomExpr — valence v and connectivity X', () => {
 
 describe('compileAtomExpr — R0 / R1 / R2', () => {
   it('R0 matches non-ring atom in propane', () => {
-    const mol = parseSMILES('CCC').stripHydrogens();
+    const mol = parseSMILES('CCC');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('R0')(atom, mol), true);
   });
 
   it('R0 does not match ring atom in benzene', () => {
-    const mol = parseSMILES('c1ccccc1').stripHydrogens();
+    const mol = parseSMILES('c1ccccc1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('R0')(atom, mol), false);
   });
 
   it('R1 matches atom in benzene (in exactly one ring)', () => {
-    const mol = parseSMILES('c1ccccc1').stripHydrogens();
+    const mol = parseSMILES('c1ccccc1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('R1')(atom, mol), true);
   });
 
   it('R2 matches bridgehead atom in naphthalene', () => {
-    const mol = parseSMILES('c1ccc2ccccc2c1').stripHydrogens();
-    // bridgehead atoms have degree 3 (two ring bonds + one bridge bond)
+    const mol = parseSMILES('c1ccc2ccccc2c1');
+    // bridgehead atoms have exactly 3 heavy-atom neighbors
     const bridgehead = [...mol.atoms.values()].find(a => {
       let cnt = 0;
       for (const bId of a.bonds) {
-        if (mol.bonds.get(bId)) {
+        const b = mol.bonds.get(bId);
+        if (!b) {
+          continue;
+        }
+        const [x, y] = b.atoms;
+        const nb = mol.atoms.get(x === a.id ? y : x);
+        if (nb && nb.name !== 'H') {
           cnt++;
         }
       }
@@ -285,37 +292,37 @@ describe('compileAtomExpr — R0 / R1 / R2', () => {
 
 describe('compileAtomExpr — r<n> ring size', () => {
   it('r6 matches benzene atom (6-membered ring)', () => {
-    const mol = parseSMILES('c1ccccc1').stripHydrogens();
+    const mol = parseSMILES('c1ccccc1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('r6')(atom, mol), true);
   });
 
   it('r6 does not match cyclopentane atom', () => {
-    const mol = parseSMILES('C1CCCC1').stripHydrogens();
+    const mol = parseSMILES('C1CCCC1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('r6')(atom, mol), false);
   });
 
   it('r5 matches cyclopentane atom', () => {
-    const mol = parseSMILES('C1CCCC1').stripHydrogens();
+    const mol = parseSMILES('C1CCCC1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('r5')(atom, mol), true);
   });
 
   it('r3 matches cyclopropane atom', () => {
-    const mol = parseSMILES('C1CC1').stripHydrogens();
+    const mol = parseSMILES('C1CC1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('r3')(atom, mol), true);
   });
 
   it('r (bare) matches any ring atom', () => {
-    const mol = parseSMILES('C1CCCCC1').stripHydrogens();
+    const mol = parseSMILES('C1CCCCC1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('r')(atom, mol), true);
   });
 
   it('r (bare) does not match non-ring atom', () => {
-    const mol = parseSMILES('CCC').stripHydrogens();
+    const mol = parseSMILES('CCC');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('r')(atom, mol), false);
   });
@@ -327,25 +334,25 @@ describe('compileAtomExpr — r<n> ring size', () => {
 
 describe('compileAtomExpr — $() recursive SMARTS', () => {
   it('$([R]) matches ring atom in benzene', () => {
-    const mol = parseSMILES('c1ccccc1').stripHydrogens();
+    const mol = parseSMILES('c1ccccc1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('$([R])', { parseFn: parseSMARTS })(atom, mol), true);
   });
 
   it('$([R]) does not match non-ring atom in propane', () => {
-    const mol = parseSMILES('CCC').stripHydrogens();
+    const mol = parseSMILES('CCC');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('$([R])', { parseFn: parseSMARTS })(atom, mol), false);
   });
 
   it('$([C]) matches carbon via recursive SMARTS', () => {
-    const mol = parseSMILES('CC').stripHydrogens();
+    const mol = parseSMILES('CC');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('$([C])', { parseFn: parseSMARTS })(atom, mol), true);
   });
 
   it('without parseFn, $() always returns false', () => {
-    const mol = parseSMILES('c1ccccc1').stripHydrogens();
+    const mol = parseSMILES('c1ccccc1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('$([R])')(atom, mol), false);
   });

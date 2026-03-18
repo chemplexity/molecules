@@ -6,7 +6,7 @@ import { matchesSMARTS, functionalGroups } from '../../src/smarts/index.js';
 const fg = functionalGroups;
 
 function mol(smiles) {
-  return parseSMILES(smiles).stripHydrogens();
+  return parseSMILES(smiles);
 }
 
 // ---------------------------------------------------------------------------

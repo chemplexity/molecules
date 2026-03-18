@@ -194,7 +194,7 @@ export function renderMolSVG(smiles) {
 
   const toSVG = (a) => ({
     x: cellW / 2 + (a.x - cx) * SCALE,
-    y: cellH / 2 + (a.y - cy) * SCALE
+    y: cellH / 2 - (a.y - cy) * SCALE  // negate y: mol coords are y-up, SVG is y-down
   });
 
   const lines = [];

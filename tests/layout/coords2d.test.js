@@ -967,9 +967,7 @@ describe('generateCoords — principal-axis orientation (naphthalene)', () => {
 
 describe('generateCoords — barbiturate substituent direction', () => {
   function barbiturate() {
-    const mol = parseSMILES('N1([C@H](C)C)C(=O)N(C)C(=O)C(C)(C)C1=O');
-    mol.stripHydrogens();
-    return mol;
+    return parseSMILES('N1([C@H](C)C)C(=O)N(C)C(=O)C(C)(C)C1=O');
   }
 
   it('all ring-atom heavy substituents point outward (diff < 90° from ring-outward direction)', () => {
@@ -1029,7 +1027,6 @@ describe('generateCoords — barbiturate substituent direction', () => {
 describe('generateCoords — TCNE sp/sp2 geometry', () => {
   it('all C≡N carbons are linear (bond angle 180°)', () => {
     const mol = parseSMILES('N#CC(C#N)=C(C#N)C#N');
-    mol.stripHydrogens();
     generateCoords(mol, { bondLength: 1.5 });
 
     for (const [id, atom] of mol.atoms) {
@@ -1068,7 +1065,6 @@ describe('generateCoords — TCNE sp/sp2 geometry', () => {
 
   it('sp2 carbons at central C=C bond have 120° angles', () => {
     const mol = parseSMILES('N#CC(C#N)=C(C#N)C#N');
-    mol.stripHydrogens();
     generateCoords(mol, { bondLength: 1.5 });
 
     for (const [id, atom] of mol.atoms) {
@@ -1113,7 +1109,6 @@ describe('generateCoords — three-ring linker (pyridine+morpholine off trimetho
 
   it('all heavy-atom bond lengths are in [1.0, 2.5] Å', () => {
     const mol = parseSMILES(SMILES);
-    mol.stripHydrogens();
     generateCoords(mol, { bondLength: 1.5 });
 
     for (const [, bond] of mol.bonds) {
@@ -1135,7 +1130,6 @@ describe('generateCoords — three-ring linker (pyridine+morpholine off trimetho
 
   it('no heavy-atom overlaps (< 0.5 Å)', () => {
     const mol = parseSMILES(SMILES);
-    mol.stripHydrogens();
     generateCoords(mol, { bondLength: 1.5 });
 
     const atoms = [...mol.atoms.entries()].filter(([, a]) => a.name !== 'H' && a.x != null);

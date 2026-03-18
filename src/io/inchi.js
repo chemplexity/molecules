@@ -475,6 +475,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       }
       for (let i = 0; i < count; i++) {
         const hAtom = mol.addAtom(null, 'H');
+        hAtom.visible = false;
         mol.addBond(null, parentId, hAtom.id, { order: 1 }, false);
       }
     }
