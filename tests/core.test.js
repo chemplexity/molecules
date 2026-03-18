@@ -302,6 +302,56 @@ describe('Atom – chirality helpers', () => {
     a.setChirality(null);
     assert.equal(a.isChiralCenter(), false);
   });
+
+  it('setChirality with eligible atom succeeds', () => {
+    // C[CH](F)Cl — the central C has 4 distinct substituents
+    const mol = parseSMILES('C[CH](F)Cl');
+    const center = [...mol.atoms.values()].find(a => {
+      if (a.name !== 'C') {
+        return false;
+      }
+      const nbs = a.bonds.map(bId => mol.atoms.get(mol.bonds.get(bId)?.getOtherAtom(a.id))?.name);
+      return nbs.includes('F') && nbs.includes('Cl');
+    });
+    assert.ok(center, 'central atom found');
+    assert.doesNotThrow(() => center.setChirality('R', mol));
+    assert.equal(center.getChirality(), 'R');
+  });
+
+  it('setChirality with ineligible atom (alkene carbon) throws', () => {
+    const mol = parseSMILES('C=C');
+    const atom = mol.atoms.values().next().value;
+    assert.throws(() => atom.setChirality('R', mol), Error);
+  });
+
+  it('setChirality with ineligible atom (symmetric substituents) throws', () => {
+    // CC(C)F — central C has two identical CH3 groups
+    const mol = parseSMILES('CC(C)F');
+    const center = [...mol.atoms.values()].find(a => {
+      if (a.name !== 'C') {
+        return false;
+      }
+      const nbs = a.bonds.map(bId => mol.atoms.get(mol.bonds.get(bId)?.getOtherAtom(a.id))?.name);
+      return nbs.includes('F') && nbs.filter(n => n === 'C').length >= 2;
+    });
+    assert.ok(center, 'center atom found');
+    assert.throws(() => center.setChirality('S', mol), Error);
+  });
+
+  it('setChirality(null, mol) clears designation even for ineligible atoms', () => {
+    const mol = parseSMILES('C=C');
+    const atom = mol.atoms.values().next().value;
+    atom.properties.chirality = 'R'; // force-set bypassing the guard
+    assert.doesNotThrow(() => atom.setChirality(null, mol));
+    assert.equal(atom.getChirality(), null);
+  });
+
+  it('setChirality without mol skips eligibility check (backward compat)', () => {
+    const mol = parseSMILES('C=C');
+    const atom = mol.atoms.values().next().value;
+    assert.doesNotThrow(() => atom.setChirality('R')); // no mol → no check
+    assert.equal(atom.getChirality(), 'R');
+  });
 });
 
 describe('Bond – stereo helpers', () => {
@@ -1390,5 +1440,105 @@ describe('Molecule – neutralizeCharge', () => {
     mol.addAtom('a', 'C'); mol.addAtom('b', 'N');
     mol.neutralizeCharge();
     assert.equal(mol.properties.charge, 0);
+  });
+});
+
+describe('CIP R/S — isotope mass tiebreaking (Task 3)', () => {
+  it('[C@@]([13C])([12C])([2H])O — 4 distinct priorities, chirality assigned', () => {
+    const mol = parseSMILES('[C@@]([13C])([12C])([2H])O');
+    assert.equal(mol.getChiralCenters().length, 1,
+      '[13C] vs [12C] and [2H] vs H should yield 4 distinct CIP priorities');
+  });
+
+  it('[C@@]([13C])([12C])([2H])O and [C@]([13C])([12C])([2H])O give opposite R/S', () => {
+    const c1 = [...parseSMILES('[C@@]([13C])([12C])([2H])O').atoms.values()]
+      .find(a => a.isChiralCenter())?.getChirality();
+    const c2 = [...parseSMILES('[C@]([13C])([12C])([2H])O').atoms.values()]
+      .find(a => a.isChiralCenter())?.getChirality();
+    assert.ok(c1 && c2 && c1 !== c2, 'expected opposite chirality');
+  });
+
+  it('non-isotope chirality is unaffected — N[C@@H](C)C(=O)O still S', () => {
+    const mol = parseSMILES('N[C@@H](C)C(=O)O');
+    const c = [...mol.atoms.values()].find(a => a.isChiralCenter());
+    assert.equal(c?.getChirality(), 'S');
+  });
+
+  it('non-isotope chirality is unaffected — F[C@@H](Cl)Br gives defined chirality', () => {
+    const mol = parseSMILES('F[C@@H](Cl)Br');
+    assert.equal(mol.getChiralCenters().length, 1);
+  });
+});
+
+describe('Molecule.assignHybridizations', () => {
+  const hyb = (smiles) => {
+    const mol = parseSMILES(smiles);
+    mol.assignHybridizations();
+    return [...mol.atoms.values()]
+      .filter(a => a.name !== 'H')
+      .map(a => a.properties.hybridization);
+  };
+
+  it('sp3 for all carbons in ethane', () => {
+    assert.deepEqual(hyb('CC'), ['sp3', 'sp3']);
+  });
+
+  it('sp2 for alkene carbons', () => {
+    assert.deepEqual(hyb('C=C'), ['sp2', 'sp2']);
+  });
+
+  it('sp for alkyne carbons', () => {
+    assert.deepEqual(hyb('C#C'), ['sp', 'sp']);
+  });
+
+  it('sp for allene center, sp2 for terminal carbons', () => {
+    assert.deepEqual(hyb('C=C=C'), ['sp2', 'sp', 'sp2']);
+  });
+
+  it('sp2 for aromatic ring carbons', () => {
+    const mol = parseSMILES('c1ccccc1');
+    mol.assignHybridizations();
+    const hybs = [...mol.atoms.values()].filter(a => a.name !== 'H').map(a => a.properties.hybridization);
+    assert.ok(hybs.every(h => h === 'sp2'));
+  });
+
+  it('mixed: propan-2-one (acetone)', () => {
+    // CC(=O)C → sp3, sp2, sp3 (ignoring O)
+    const mol = parseSMILES('CC(=O)C');
+    mol.assignHybridizations();
+    const map = Object.fromEntries([...mol.atoms.values()].map(a => [a.name, a.properties.hybridization]));
+    assert.equal(map['O'], 'sp2');
+  });
+
+  it('nitrile: sp nitrogen and sp carbon', () => {
+    assert.deepEqual(hyb('C#N'), ['sp', 'sp']);
+  });
+
+  it('sp3 for H atoms', () => {
+    const mol = parseSMILES('[H][H]');
+    mol.assignHybridizations();
+    assert.ok([...mol.atoms.values()].every(a => a.properties.hybridization === 'sp3'));
+  });
+
+  it('null for transition metals', () => {
+    const mol = parseSMILES('[Fe]');
+    mol.assignHybridizations();
+    assert.equal([...mol.atoms.values()][0].properties.hybridization, null);
+  });
+
+  it('null for noble gases', () => {
+    const mol = parseSMILES('[Ar]');
+    mol.assignHybridizations();
+    assert.equal([...mol.atoms.values()][0].properties.hybridization, null);
+  });
+
+  it('hybridization defaults to null before assignment', () => {
+    const mol = parseSMILES('CC');
+    assert.ok([...mol.atoms.values()].every(a => a.properties.hybridization === null));
+  });
+
+  it('returns the molecule for chaining', () => {
+    const mol = parseSMILES('CC');
+    assert.strictEqual(mol.assignHybridizations(), mol);
   });
 });

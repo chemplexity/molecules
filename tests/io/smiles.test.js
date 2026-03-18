@@ -373,6 +373,54 @@ describe('Molecule#getEZStereo()', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Ring-closure chiral centres (Task 1 fix)
+// ---------------------------------------------------------------------------
+
+describe('parseSMILES – CIP R/S ring-closure chirality', () => {
+  it('C[C@H]1CCCCN1 (2-methylpiperidine) — 1 center, S', () => {
+    const mol = parseSMILES('C[C@H]1CCCCN1');
+    const c = [...mol.atoms.values()].find(a => a.isChiralCenter());
+    assert.ok(c, 'chiral center not found');
+    assert.equal(c.getChirality(), 'S');
+  });
+
+  it('C[C@@H]1CCCCN1 (2-methylpiperidine) — 1 center, R', () => {
+    const mol = parseSMILES('C[C@@H]1CCCCN1');
+    const c = [...mol.atoms.values()].find(a => a.isChiralCenter());
+    assert.ok(c, 'chiral center not found');
+    assert.equal(c.getChirality(), 'R');
+  });
+
+  it('ring @/@@ give opposite designations', () => {
+    const c1 = [...parseSMILES('C[C@H]1CCCCN1').atoms.values()].find(a => a.isChiralCenter())?.getChirality();
+    const c2 = [...parseSMILES('C[C@@H]1CCCCN1').atoms.values()].find(a => a.isChiralCenter())?.getChirality();
+    assert.ok(c1 && c2 && c1 !== c2, 'expected opposite R/S');
+  });
+
+  it('[C@H]1(F)CCCN1 — chain-start chiral center with asymmetric ring arms', () => {
+    const mol = parseSMILES('[C@H]1(F)CCCN1');
+    assert.equal(mol.getChiralCenters().length, 1);
+  });
+
+  it('[C@H]1(F)CCCN1 and [C@@H]1(F)CCCN1 give opposite R/S', () => {
+    const c1 = [...parseSMILES('[C@H]1(F)CCCN1').atoms.values()].find(a => a.isChiralCenter())?.getChirality();
+    const c2 = [...parseSMILES('[C@@H]1(F)CCCN1').atoms.values()].find(a => a.isChiralCenter())?.getChirality();
+    assert.ok(c1 && c2 && c1 !== c2, 'expected opposite R/S');
+  });
+
+  it('O=C1N[C@@H](CC)C1 — ring-internal chiral center, S', () => {
+    const mol = parseSMILES('O=C1N[C@@H](CC)C1');
+    const c = [...mol.atoms.values()].find(a => a.isChiralCenter());
+    assert.ok(c, 'chiral center not found');
+    assert.equal(c.getChirality(), 'S');
+  });
+
+  it('C[C@H]1CCCCC1 — symmetric ring arms give 0 centers (correct)', () => {
+    assert.equal(parseSMILES('C[C@H]1CCCCC1').getChiralCenters().length, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // toSMILES
 // ---------------------------------------------------------------------------
 
@@ -593,4 +641,79 @@ describe('toSMILES — corpus spot checks (round-trip mass)', () => {
       );
     });
   }
+});
+
+// ---------------------------------------------------------------------------
+// toSMILES stereo output (Task 2)
+// ---------------------------------------------------------------------------
+
+describe('toSMILES — @/@@ chirality output', () => {
+  const rtChirality = (smiles) => {
+    const out = toSMILES(parseSMILES(smiles));
+    return [...parseSMILES(out).atoms.values()].find(a => a.isChiralCenter())?.getChirality() ?? null;
+  };
+
+  it('N[C@@H](C)C(=O)O (S-alanine) — round-trip preserves S', () => {
+    assert.equal(rtChirality('N[C@@H](C)C(=O)O'), 'S');
+  });
+
+  it('N[C@H](C)C(=O)O (R-alanine) — round-trip preserves R', () => {
+    assert.equal(rtChirality('N[C@H](C)C(=O)O'), 'R');
+  });
+
+  it('F[C@@H](Cl)Br — round-trip preserves chirality', () => {
+    const orig = [...parseSMILES('F[C@@H](Cl)Br').atoms.values()].find(a => a.isChiralCenter())?.getChirality();
+    assert.equal(rtChirality('F[C@@H](Cl)Br'), orig);
+  });
+
+  it('@@ and @ round-trips give opposite designations', () => {
+    assert.notEqual(rtChirality('C[C@@H](N)O'), rtChirality('C[C@H](N)O'));
+  });
+
+  it('toSMILES output for chiral atom contains @ or @@', () => {
+    const out = toSMILES(parseSMILES('N[C@@H](C)C(=O)O'));
+    assert.ok(out.includes('@'), `expected @ in output, got: ${out}`);
+  });
+
+  it('ring chiral center round-trip: C[C@H]1CCCCN1 preserves S', () => {
+    assert.equal(rtChirality('C[C@H]1CCCCN1'), 'S');
+  });
+
+  it('ring chiral center round-trip: C[C@@H]1CCCCN1 preserves R', () => {
+    assert.equal(rtChirality('C[C@@H]1CCCCN1'), 'R');
+  });
+
+  it('achiral molecule CC — no @ in output', () => {
+    assert.ok(!toSMILES(parseSMILES('CC')).includes('@'));
+  });
+});
+
+describe('toSMILES — E/Z stereo output', () => {
+  const rtEZ = (smiles) => {
+    const mol2 = parseSMILES(toSMILES(parseSMILES(smiles)));
+    const dbl  = [...mol2.bonds.values()].find(b => b.properties.order === 2);
+    return dbl ? mol2.getEZStereo(dbl.id) : null;
+  };
+
+  it('F/C=C/F — round-trip preserves E', () => {
+    assert.equal(rtEZ('F/C=C/F'), 'E');
+  });
+
+  it('F/C=C\\F — round-trip preserves Z', () => {
+    assert.equal(rtEZ('F/C=C\\F'), 'Z');
+  });
+
+  it('toSMILES output for E alkene contains / or \\', () => {
+    const out = toSMILES(parseSMILES('F/C=C/F'));
+    assert.ok(out.includes('/') || out.includes('\\'), `expected stereo bond in: ${out}`);
+  });
+
+  it('FC=CF (no directional bonds) — no / or \\ in output', () => {
+    const out = toSMILES(parseSMILES('FC=CF'));
+    assert.ok(!out.includes('/') && !out.includes('\\'));
+  });
+
+  it('E and Z give opposite round-trip results', () => {
+    assert.notEqual(rtEZ('F/C=C/F'), rtEZ('F/C=C\\F'));
+  });
 });

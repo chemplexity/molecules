@@ -769,9 +769,17 @@ function layoutChain(molecule, startAtomId, incomingAngle, placed, bondLength, c
 
     const outAngle = normalizeAngle(incoming + Math.PI);
 
-    const isLinear = molecule.atoms.get(atomId)?.bonds.some(bId =>
-      (molecule.bonds.get(bId)?.properties.order ?? 1) === 3
-    ) ?? false;
+    const isLinear = (() => {
+      const _a = molecule.atoms.get(atomId);
+      if (!_a) {
+        return false;
+      }
+      if (_a.bonds.some(bId => (molecule.bonds.get(bId)?.properties.order ?? 1) === 3)) {
+        return true;
+      }
+      // Allene center: two cumulated double bonds → sp, linear geometry
+      return _a.bonds.filter(bId => (molecule.bonds.get(bId)?.properties.order ?? 1) === 2).length >= 2;
+    })();
 
     // For non-ring atoms with ≥2 unplaced children and at least one already-placed
     // heavy neighbor (i.e. the parent in the BFS tree), use the "largest angular gap"
@@ -1018,11 +1026,17 @@ function _idealAngle(molecule, atomId) {
     return DEG120;
   }
   const degree = atom.bonds.length;
-  // sp: triple bond present → 180°
+  // sp: triple bond or two cumulated double bonds → 180°
   const hasTriple = atom.bonds.some(bId =>
     (molecule.bonds.get(bId)?.properties.order ?? 1) === 3
   );
   if (hasTriple) {
+    return Math.PI;
+  }
+  const twoDoubles = atom.bonds.filter(bId =>
+    (molecule.bonds.get(bId)?.properties.order ?? 1) === 2
+  ).length >= 2;
+  if (twoDoubles) {
     return Math.PI;
   }
   // sp2: degree ≤ 3, any double bond or aromatic
@@ -1534,13 +1548,17 @@ function forceFieldRefine(molecule, coords, frozen, bondLength, allRingAtoms = n
   }
 
   // Ideal interior bond angle for a given central atom.
-  // 180° for sp (any triple bond), 120° for everything else in 2D.
+  // 180° for sp (triple bond or two cumulated double bonds), 120° otherwise.
   function idealBondAngle(atomId) {
     const atom = molecule.atoms.get(atomId);
     if (!atom) {
       return DEG120;
     }
     if (atom.bonds.some(bId => (molecule.bonds.get(bId)?.properties.order ?? 1) === 3)) {
+      return Math.PI;
+    }
+    // Allene center: two cumulated double bonds → sp, 180°
+    if (atom.bonds.filter(bId => (molecule.bonds.get(bId)?.properties.order ?? 1) === 2).length >= 2) {
       return Math.PI;
     }
     return DEG120;
@@ -2613,7 +2631,10 @@ export function generateCoords(molecule, options = {}) {
         }
         const subs = molecule.getNeighbors(ringId)
           .filter(id => !ringAtomSet.has(id) && !isHF2(id));
-        if (subs.length === 0) {
+        // Only correct single-substituent ring atoms.  For 2+ substituents,
+        // Phase F (refineCoords) already used clash-aware placement; re-laying
+        // from the raw gap bisector would spread gem groups onto adjacent atoms.
+        if (subs.length !== 1) {
           continue;
         }
 
@@ -2677,8 +2698,23 @@ export function generateCoords(molecule, options = {}) {
             continue; // inter-ring chain — leave untouched
           }
 
-          // Re-layout the subtree from the analytical gap-bisector direction.
+          // Skip if the gap-bisector position falls inside a ring polygon that
+          // contains ringId.  This guards ring-junction atoms in fused polycyclics
+          // where the largest angular gap can point inward (into a ring), which
+          // would undo the post-G ring-interior correction.
           const subAngle = subAngles[si];
+          {
+            const proposedPos = {
+              x: ringPos.x + Math.cos(subAngle) * bondLength,
+              y: ringPos.y + Math.sin(subAngle) * bondLength
+            };
+            const insideRing = typeof ringPolys !== 'undefined' && ringPolys.some(
+              r => r && r.ringSet.has(ringId) && pointInPolygon(proposedPos, r.pts)
+            );
+            if (insideRing) {
+              continue;
+            }
+          }
           const chainPlaced = new Set([...coords.keys()].filter(id => molecule.atoms.has(id)));
           for (const id of subtree) {
             chainPlaced.delete(id);

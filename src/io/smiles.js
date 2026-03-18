@@ -1096,8 +1096,10 @@ function findFromAtomPos(bracketOpenPos, smiles, posToClean) {
  *   2+ remaining neighbours in left-to-right SMILES string order
  *        (first atom of each `(…)` branch, then the chain continuation)
  *
- * Ring-closure bonds at the chiral centre are not yet handled; centres with
- * ring tokens in their immediate neighbourhood are skipped (return no entry).
+ * Ring-closure bonds at the chiral centre are handled: both ring tokens
+ * embedded inside the bracket and depth-0 ring closures after `]` are
+ * inserted into the neighbour list in SMILES reading order.  Chain-start
+ * atoms (no preceding atom) are also supported.
  *
  * @param {string}   smiles  - original SMILES string
  * @param {object[]} tokens  - token list from {@link tokenize}
@@ -1148,26 +1150,19 @@ function extractChiralNeighborOrders(smiles, tokens) {
       continue;
     }
 
-    // Skip centres with a ring token immediately after the ']' — complex ordering
-    const ringTokenAfter = tokens.some(
-      t => t.tag === 'ring' && t.index > bracketEnd && t.index <= bracketEnd + 3 &&
-                 t.index < (tokens.find(t2 => t2.type === 'bond' && t2.tag === 'branch' && t2.term === '(' && t2.index > bracketEnd)?.index ?? Infinity)
-    );
-    if (ringTokenAfter) {
-      continue;
-    }
-
     const neighbors = [];
 
     // ── 2a. From atom: backward scan from '[' properly skipping branches ──
     // Scan backwards from bracketOpenPos-1, skipping (…) branches and
     // treating […] bracket atoms as a single unit.
+    // Chain-start atoms (fromPos < 0) have no from-atom; their first neighbour
+    // in SMILES order will be the first ring closure or branch/chain atom
+    // collected below.
     const bracketOpenPos = atomPos - 1; // we already verified smiles[atomPos-1]==='['
     const fromPos = findFromAtomPos(bracketOpenPos, smiles, posToClean);
-    if (fromPos < 0) {
-      continue;
-    } // atom is at chain start — skip
-    neighbors.push(posToClean.get(fromPos));
+    if (fromPos >= 0) {
+      neighbors.push(posToClean.get(fromPos));
+    }
 
     // ── 2b. Bracket H: atom token inside (atomPos, bracketEnd) ──────────
     const bracketAtoms = atomTokens.filter(
@@ -1400,7 +1395,7 @@ function _isStrippable(atom, nonHIds, mol) {
  * @param {number} heavyBondOrder - Sum of bond orders to heavy-atom neighbours.
  * @returns {string}
  */
-function _atomToken(atom, pendantHCount, heavyBondOrder) {
+function _atomToken(atom, pendantHCount, heavyBondOrder, chiralToken = '') {
   const name    = atom.name;
   const charge  = atom.properties.charge ?? 0;
   const aromatic = atom.properties.aromatic ?? false;
@@ -1417,19 +1412,23 @@ function _atomToken(atom, pendantHCount, heavyBondOrder) {
   }
 
   // Bare organic-subset symbol when all conditions are satisfied.
-  if (name in ORGANIC_VALENCE && charge === 0 && massNum === null) {
+  // Chirality always requires bracket notation.
+  if (name in ORGANIC_VALENCE && charge === 0 && massNum === null && chiralToken === '') {
     const impliedH = Math.max(0, ORGANIC_VALENCE[name] - heavyBondOrder);
     if (Math.round(impliedH) === pendantHCount) {
       return aromatic ? name.toLowerCase() : name;
     }
   }
 
-  // Bracket notation: [massSymbolHcountcharge]
+  // Bracket notation: [massSymbolchiralHcountcharge]
   let s = '[';
   if (massNum !== null)       {
     s += massNum;
   }
   s += aromatic ? name.toLowerCase() : name;
+  if (chiralToken)            {
+    s += chiralToken;
+  }
   if (pendantHCount === 1)    {
     s += 'H';
   } else if (pendantHCount > 1) {
@@ -1448,12 +1447,21 @@ function _atomToken(atom, pendantHCount, heavyBondOrder) {
  * Returns the SMILES bond character for `bond`.
  * Single bonds (order 1) and aromatic bonds both return `''` (implicit).
  *
+ * When `fromId` is supplied and the bond has a directional stereo property
+ * (`'/'` or `'\\'`), returns the direction relative to `fromId` as the
+ * source atom (flipping when `fromId` is `bond.atoms[1]`).
+ *
  * @param {import('../core/Bond.js').Bond} bond
+ * @param {string|null} [fromId]
  * @returns {string}
  */
-function _bondToken(bond) {
+function _bondToken(bond, fromId = null) {
   if (!bond || bond.properties.aromatic) {
     return '';
+  }
+  if (bond.properties.stereo && fromId !== null) {
+    const s = bond.properties.stereo;
+    return bond.atoms[0] === fromId ? s : (s === '/' ? '\\' : '/');
   }
   switch (bond.properties.order ?? 1) {
     case 2:  return '=';
@@ -1556,6 +1564,77 @@ function _serializeComponent(mol) {
   // ---- Pass 2: DFS emission ----
   const emitted = new Set();
 
+  // ---- Helper: compute @/@@  chirality token for a chiral atom ----
+  // Reconstructs the SMILES neighbour order that emit() will produce for this
+  // atom and tries both tokens against the stored CIP designation.
+  // Returns '' when no unique chirality can be resolved (e.g. fewer than 4
+  // distinct CIP ranks).
+  const _chiralTokenFor = (id) => {
+    const atom = mol.atoms.get(id);
+    if (!atom || !atom.isChiralCenter()) {
+      return '';
+    }
+
+    // 1. DFS parent — the atom we arrived from.
+    const entryBondId = entryBond.get(id);
+    const parentId    = entryBondId
+      ? heavy.bonds.get(entryBondId)?.getOtherAtom(id) ?? null
+      : null;
+
+    // 2. Strippable (implicit) H atom in original mol, if any.
+    let hAtomId = null;
+    for (const bId of atom.bonds) {
+      const b     = mol.bonds.get(bId);
+      const other = b && mol.atoms.get(b.getOtherAtom(id));
+      if (other && _isStrippable(other, nonHIds, mol)) {
+        hAtomId = other.id;
+        break;
+      }
+    }
+
+    // 3. Ring-closure partners in atomRings order.
+    const ringPartners = (atomRings.get(id) ?? []).map(({ bond }) => bond.getOtherAtom(id));
+
+    // 4. DFS children (heavy bonds, not ring-bonds, not parent) in bond
+    //    iteration order — matches the order emit() uses for branches/chain.
+    const childIds = [];
+    for (const bId of heavy.atoms.get(id).bonds) {
+      if (ringBondSet.has(bId)) {
+        continue;
+      }
+      const b      = heavy.bonds.get(bId);
+      const nextId = b?.getOtherAtom(id);
+      if (nextId && nextId !== parentId) {
+        childIds.push(nextId);
+      }
+    }
+
+    // Assemble SMILES neighbour list in chirality-convention order:
+    // from-atom, bracket-H, ring-partners, branch/chain children.
+    const neighbors = [];
+    if (parentId)           {
+      neighbors.push(parentId);
+    }
+    if (hAtomId)            {
+      neighbors.push(hAtomId);
+    }
+    neighbors.push(...ringPartners);
+    neighbors.push(...childIds);
+
+    if (neighbors.length !== 4) {
+      return '';
+    }
+
+    const stored = atom.getChirality();
+    if (computeRS('@',  neighbors, id, mol) === stored) {
+      return '@';
+    }
+    if (computeRS('@@', neighbors, id, mol) === stored) {
+      return '@@';
+    }
+    return '';
+  };
+
   const emit = (id) => {
     emitted.add(id);
     const atom = heavy.atoms.get(id);
@@ -1566,12 +1645,13 @@ function _serializeComponent(mol) {
       (acc, bId) => acc + (heavy.bonds.get(bId)?.properties.order ?? 1), 0
     );
 
-    let s = _atomToken(atom, pendantH.get(id) ?? 0, heavyBO);
+    const chiralTok = _chiralTokenFor(id);
+    let s = _atomToken(atom, pendantH.get(id) ?? 0, heavyBO, chiralTok);
 
     // Ring-closure annotations appended right after the atom symbol.
     // Bond character is placed at the opener only.
     for (const { num, bond, isOpener } of (atomRings.get(id) ?? [])) {
-      s += (isOpener ? _bondToken(bond) : '') + _ringToken(num);
+      s += (isOpener ? _bondToken(bond, id) : '') + _ringToken(num);
     }
 
     // Spanning-tree children (non-ring bonds to unvisited atoms).
@@ -1590,7 +1670,7 @@ function _serializeComponent(mol) {
     // All children except the last are written as branches in parentheses.
     for (let i = 0; i < children.length; i++) {
       const { nextId, bond } = children[i];
-      const bs = _bondToken(bond);
+      const bs = _bondToken(bond, id);
       s += i < children.length - 1
         ? `(${bs}${emit(nextId)})`
         : `${bs}${emit(nextId)}`;
@@ -1618,8 +1698,9 @@ function _serializeComponent(mol) {
  * - Aromatic atoms and bonds (lowercase symbols, implicit `:`)
  * - Disconnected molecules as dot-separated components
  *
- * **Not supported**: stereo descriptors (`/`, `\`, `@`, `@@`) are silently
- * dropped; the connectivity and constitution are preserved.
+ * - Tetrahedral chirality (`@` / `@@`) for atoms with a stored CIP
+ *   designation (`properties.chirality === 'R'` or `'S'`)
+ * - E/Z geometry (`/` / `\\`) on bonds that carry a stored stereo direction
  *
  * @param {import('../core/Molecule.js').Molecule} molecule
  * @returns {string}

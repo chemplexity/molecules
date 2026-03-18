@@ -4,17 +4,32 @@ import { randomUUID } from 'node:crypto';
 import { Atom } from './Atom.js';
 import { Bond } from './Bond.js';
 import elements from '../data/elements.js';
+import { findSubgraphMappings as _vf2Mappings, findFirstSubgraphMapping as _vf2First, matchesSubgraph as _vf2Matches } from '../algorithms/vf2.js';
+import { findSMARTS as _smartsFind, firstSMARTS as _smartsFirst, matchesSMARTS as _smartsMatches } from '../smarts/index.js';
 
 // ---------------------------------------------------------------------------
 // CIP priority helpers (module-private)
 // ---------------------------------------------------------------------------
 
+/**
+ * CIP priority key for an atom, encoding both atomic number (Rule 1) and
+ * mass number (Rule 2: same-Z atoms ranked by descending mass).
+ *
+ * Encoding: key = Z * 1000 + massNumber
+ * Z ≤ 118, massNumber ≤ ~300, so keys stay well within safe-integer range.
+ * For atoms without an explicit isotope the standard mass is used, which
+ * keeps all non-labelled atoms of the same element at equal priority.
+ */
 function _cipZ(atomId, mol) {
   const atom = mol.atoms.get(atomId);
   if (!atom) {
     return 0;
   }
-  return elements[atom.name]?.protons ?? 0;
+  const p   = atom.properties;
+  const el  = elements[atom.name];
+  const Z   = p.protons   ?? el?.protons   ?? 0;
+  const N   = p.neutrons  ?? el?.neutrons  ?? Z;   // fallback: N ≈ Z
+  return Z * 1000 + Math.round(Z + N);
 }
 
 function _buildCIPHierarchy(startId, excludeId, mol, maxDepth = 10) {
@@ -1021,4 +1036,175 @@ export class Molecule {
     const dB = correctDir(idB, infoB);
     return dA === dB ? 'Z' : 'E';
   }
+
+  // ---------------------------------------------------------------------------
+  // Subgraph isomorphism (VF2)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Returns `true` if `query` is isomorphic to some subgraph of this molecule.
+   *
+   * A thin wrapper around {@link findSubgraphMappings} that stops after the
+   * first match.
+   *
+   * @param {Molecule} query
+   * @param {object}   [options]  See {@link findSubgraphMappings} for supported keys.
+   * @returns {boolean}
+   */
+  matchesSubgraph(query, options = {}) {
+    return _vf2Matches(this, query, options);
+  }
+
+  /**
+   * Returns the first injective mapping from `query` atom IDs to atom IDs in
+   * this molecule, or `null` if no such mapping exists.
+   *
+   * @param {Molecule} query
+   * @param {object}   [options]  See {@link findSubgraphMappings} for supported keys.
+   * @returns {Map<string, string>|null}
+   */
+  findFirstSubgraphMapping(query, options = {}) {
+    return _vf2First(this, query, options);
+  }
+
+  /**
+   * Generator that lazily yields every injective mapping from `query` atom IDs
+   * to atom IDs in this molecule.  Each value is a
+   * `Map<queryAtomId, targetAtomId>`.
+   *
+   * Pull values with `for…of` or `.next()` to control how many mappings are
+   * enumerated.
+   *
+   * @param {Molecule} query
+   * @param {object}   [options]  See {@link findSubgraphMappings} for supported keys.
+   * @yields {Map<string, string>}
+   */
+  * findSubgraphMappings(query, options = {}) {
+    yield* _vf2Mappings(this, query, options);
+  }
+
+  /**
+   * Assigns a hybridization state to every atom in the molecule and returns
+   * `this` for chaining.
+   *
+   * Rules (applied to the **heavy atoms** of organic/main-group chemistry):
+   * - **`'sp'`**  — atom has a triple bond, or two cumulated double bonds (allene center).
+   * - **`'sp2'`** — atom has one double bond, or is aromatic.
+   * - **`'sp3'`** — atom has only single bonds (including isolated atoms).
+   * - **`null`**  — transition metals (groups 3–12), noble gases (group 18),
+   *                 s-block metals (groups 1–2, excluding H), and any atom whose
+   *                 element group is unknown (0 / not yet resolved).
+   *
+   * H atoms are always assigned `'sp3'`.
+   *
+   * @returns {this}
+   */
+  assignHybridizations() {
+    for (const atom of this.atoms.values()) {
+      atom.properties.hybridization = _hybridizationOf(atom, this);
+    }
+    return this;
+  }
+
+  /**
+   * Returns `true` if the SMARTS pattern matches some subgraph of this molecule.
+   *
+   * @param {string} smarts
+   * @param {object} [options]
+   * @returns {boolean}
+   */
+  matchesSMARTS(smarts, options = {}) {
+    return _smartsMatches(this, smarts, options);
+  }
+
+  /**
+   * Returns the first mapping from the SMARTS pattern into this molecule,
+   * or `null` if no match exists.  The mapping is a `Map<queryAtomId, targetAtomId>`.
+   *
+   * @param {string} smarts
+   * @param {object} [options]
+   * @returns {Map<string, string>|null}
+   */
+  firstSMARTS(smarts, options = {}) {
+    return _smartsFirst(this, smarts, options);
+  }
+
+  /**
+   * Generator that yields all mappings from the SMARTS pattern into this
+   * molecule.  Each yielded value is a `Map<queryAtomId, targetAtomId>`.
+   *
+   * @param {string} smarts
+   * @param {object} [options]
+   * @yields {Map<string, string>}
+   */
+  * findSMARTS(smarts, options = {}) {
+    yield* _smartsFind(this, smarts, options);
+  }
+
+  /**
+   * Returns all mappings from the SMARTS pattern into this molecule as an
+   * array.  Convenience wrapper around `findSMARTS`.
+   *
+   * @param {string} smarts
+   * @param {object} [options]
+   * @returns {Map<string, string>[]}
+   */
+  querySMARTS(smarts, options = {}) {
+    return [..._smartsFind(this, smarts, options)];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Private hybridization helper
+// ---------------------------------------------------------------------------
+
+/**
+ * Computes the hybridization state of a single atom based on its bonds.
+ *
+ * @param {Atom} atom
+ * @param {Molecule} mol
+ * @returns {'sp'|'sp2'|'sp3'|null}
+ */
+function _hybridizationOf(atom, mol) {
+  // H is always sp3
+  if (atom.name === 'H') {
+    return 'sp3';
+  }
+
+  const { group } = atom.properties;
+  // Exclude: unknown (group 0), alkali/alkaline-earth metals (groups 1–2),
+  // transition metals (groups 3–12), noble gases (group 18).
+  if (!group || group <= 2 || (group >= 3 && group <= 12) || group === 18) {
+    return null;
+  }
+
+  // p-block (groups 13–17): count multiple bonds and aromaticity.
+  let nTriple = 0;
+  let nDouble = 0;
+  let aromatic = atom.properties.aromatic;
+
+  for (const bId of atom.bonds) {
+    const b = mol.bonds.get(bId);
+    if (!b) {
+      continue;
+    }
+    if (b.properties.aromatic) {
+      aromatic = true;
+      continue;
+    }
+    const order = b.properties.order ?? 1;
+    if (order === 3) {
+      nTriple++;
+    } else if (order === 2) {
+      nDouble++;
+    }
+  }
+
+  if (nTriple > 0 || nDouble >= 2) {
+    return 'sp';
+  }
+  if (nDouble === 1 || aromatic) {
+    return 'sp2';
+  }
+  return 'sp3';
 }
