@@ -203,9 +203,10 @@ describe('compileAtomExpr — AND (low precedence ;)', () => {
 });
 
 describe('compileAtomExpr — precedence', () => {
-  it('C,N;!R — C OR (N AND not-ring)', () => {
-    // An aromatic carbon in benzene: C=true, N;!R=false → OR=true
-    const mol = parseSMILES('c1ccccc1');
+  it('C,N;!R — C OR (N AND not-ring), not (C OR N) AND not-ring', () => {
+    // Aliphatic ring carbon: C=true, !R=false → C OR (N;!R)=true, but (C,N);!R=false
+    // This distinguishes the two possible precedence parsings.
+    const mol = parseSMILES('C1CCCCC1');
     const atom = mol.atoms.values().next().value;
     assert.equal(compileAtomExpr('C,N;!R')(atom, mol), true);
   });

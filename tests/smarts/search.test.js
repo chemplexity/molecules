@@ -189,10 +189,11 @@ describe('findSMARTS — match counts', () => {
     assert.equal(collectAll(findSMARTS(mol('CCC'), 'C')).length, 3);
   });
 
-  it('C=C in butadiene yields 4 directed matches (2 bonds × 2 dirs)', () => {
-    // butadiene: C=CC=C — 2 double bonds, each yields 2 directed matches
+  it('C=C in butadiene yields 2 matches (one per unique bond)', () => {
+    // butadiene: C=CC=C — 2 double bonds; deduplication collapses directed VF2
+    // traversals to one result per unique atom set
     const results = collectAll(findSMARTS(mol('C=CC=C'), 'C=C'));
-    assert.equal(results.length, 4);
+    assert.equal(results.length, 2);
   });
 
   it('c in benzene yields 6 matches', () => {

@@ -263,7 +263,7 @@ div.tooltip td:first-child {
 
 .bond-dashed { stroke-dasharray: 5, 3; }
 
-.atom-bg   { fill: white; stroke: none; }
+.atom-bg   { fill: none; stroke: none; }
 
 .atom-label {
     font-family: Arial, Helvetica, sans-serif;
@@ -326,6 +326,51 @@ div.tooltip td:first-child {
     margin-bottom: 2px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+}
+
+#smarts-panel {
+    margin-top: 16px;
+    padding-top: 12px;
+    border-top: 1px solid #eee;
+}
+
+#smarts-section-title {
+    font-size: 13px;
+    color: #777;
+    font-weight: 600;
+    margin-bottom: 6px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+#fg-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+#fg-table td {
+    padding: 2px 4px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+}
+
+#fg-table td:last-child {
+    text-align: right;
+    color: #777;
+    white-space: nowrap;
+}
+
+#fg-table tr {
+    cursor: pointer;
+}
+
+#fg-table tr:hover td {
+    background: #f0f0f0;
+}
+
+#fg-table tr.fg-active td {
+    background: rgba(80, 160, 40, 0.15);
 }
 
 #molecularFormula {
@@ -508,6 +553,12 @@ div.tooltip td:first-child {
                 <thead><tr><th>Property</th><th>Value</th></tr></thead>
                 <tbody id="descriptor-body"></tbody>
             </table>
+            <div id="smarts-panel">
+                <div id="smarts-section-title">Functional Groups</div>
+                <table id="fg-table">
+                    <tbody id="fg-body"></tbody>
+                </table>
+            </div>
         </div>
     </div>
 
@@ -703,6 +754,71 @@ import {
     randicIndex, zagreb1, zagreb2, hararyIndex,
     plattIndex, szegedIndex
 } from './src/descriptors/topological.js';
+import { findSMARTS, functionalGroups } from './src/smarts/index.js';
+
+// ---------------------------------------------------------------------------
+// Functional-group SMARTS panel
+// ---------------------------------------------------------------------------
+/** Apply (or clear) a highlight from a list of SMARTS mappings and redraw. */
+function _setHighlight(mappings) {
+    _highlightedAtomIds.clear();
+    _highlightedAtomSets = [];
+    if (mappings) {
+        for (const mapping of mappings) {
+            const atomSet = new Set(mapping.values());
+            for (const atomId of atomSet) _highlightedAtomIds.add(atomId);
+            _highlightedAtomSets.push(atomSet);
+        }
+    }
+    if (mode === '2d' && _mol2d) draw2d();
+    else applyForceHighlights();
+}
+
+/** Returns true if id1 and id2 belong to the same SMARTS match instance. */
+function _isBondHighlighted(id1, id2) {
+    for (const set of _highlightedAtomSets) {
+        if (set.has(id1) && set.has(id2)) return true;
+    }
+    return false;
+}
+
+function updateFunctionalGroups(mol) {
+    _highlightedAtomIds.clear();
+    _highlightedAtomSets = [];
+    const tbody = document.getElementById('fg-body');
+    tbody.innerHTML = '';
+    for (const [, fg] of Object.entries(functionalGroups)) {
+        const mappings = [...findSMARTS(mol, fg.smarts)];
+        if (mappings.length === 0) continue;
+        const tr = document.createElement('tr');
+        tr.innerHTML = `<td>${fg.name}</td><td>${mappings.length}</td>`;
+        tr._fgMappings = mappings;
+
+        tr.addEventListener('mouseenter', () => {
+            if (tbody.querySelector('tr.fg-active')) return;
+            _setHighlight(mappings);
+        });
+        tr.addEventListener('mouseleave', () => {
+            if (tbody.querySelector('tr.fg-active')) return;
+            _setHighlight(null);
+        });
+        tr.addEventListener('click', () => {
+            tbody.querySelectorAll('tr').forEach(r => r.classList.remove('fg-active'));
+            tr.classList.add('fg-active');
+            _setHighlight(mappings);
+        });
+        tbody.appendChild(tr);
+    }
+}
+
+// Clear active functional-group row when clicking outside the table.
+document.addEventListener('click', e => {
+    if (e.target.closest('#fg-table')) return;
+    const tbody = document.getElementById('fg-body');
+    if (!tbody.querySelector('tr.fg-active')) return;
+    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('fg-active'));
+    _setHighlight(null);
+}, true);
 
 function strokeColor(symbol) {
     const light = new Set(['H','F','Cl','Mg','Ca','He','Ne','Ar','B','Si','Be','Li']);
@@ -1040,6 +1156,14 @@ function updateForce(molecule) {
             .attr('x', d => d.x + atomRadius(d.protons) * OFF + 4)
             .attr('y', d => d.y - atomRadius(d.protons) * OFF);
 
+        // Functional-group highlight layer
+        const _hl = g.select('g.fg-highlight-layer');
+        _hl.selectAll('line')
+            .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+        _hl.selectAll('circle')
+            .attr('cx', d => d.x).attr('cy', d => d.y);
+
         // Auto zoom-out to keep molecule in view
         let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
         for (const n of graph.nodes) {
@@ -1057,6 +1181,48 @@ function updateForce(molecule) {
         const ty = H / 2 - ((minY + maxY) / 2) * scale;
         svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
     });
+
+    if (_highlightedAtomIds.size > 0) applyForceHighlights();
+}
+
+function applyForceHighlights() {
+    g.selectAll('g.fg-highlight-layer').remove();
+    if (_highlightedAtomIds.size === 0) return;
+
+    const HL_COLOR = 'rgb(130, 210, 80)';
+    const OL_COLOR = 'rgb(70, 140, 40)';
+    const HL_R = 8;
+    const OL = 2;
+    const hlLayer = g.insert('g', ':first-child').attr('class', 'fg-highlight-layer').attr('opacity', 0.45);
+
+    const nodeMap = new Map(simulation.nodes().map(n => [n.id, n]));
+    const allLinks = simulation.force('link').links();
+
+    // Draw each match instance as its own unit so fills cover their own outlines.
+    for (const atomSet of _highlightedAtomSets) {
+        const mLinks = allLinks.filter(l => atomSet.has(l.source.id) && atomSet.has(l.target.id));
+        const mNodes = [...atomSet].map(id => nodeMap.get(id)).filter(Boolean);
+
+        const addLines = (stroke, extra) => {
+            hlLayer.selectAll(null).data(mLinks).enter().append('line')
+                .datum(d => d)
+                .attr('stroke', stroke)
+                .attr('stroke-width', d => Math.min(atomRadius(d.source.protons), atomRadius(d.target.protons)) * 2 + HL_R * 2 + extra * 2)
+                .attr('stroke-linecap', 'round')
+                .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+        };
+        const addCircles = (fill, extra) => {
+            hlLayer.selectAll(null).data(mNodes).enter().append('circle')
+                .datum(d => d)
+                .attr('r', d => atomRadius(d.protons) + HL_R + extra)
+                .attr('fill', fill).attr('stroke', 'none')
+                .attr('cx', d => d.x).attr('cy', d => d.y);
+        };
+
+        addLines(OL_COLOR, OL); addCircles(OL_COLOR, OL); // outline
+        addLines(HL_COLOR,  0); addCircles(HL_COLOR,  0); // fill
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1103,6 +1269,8 @@ let _hCounts2d  = null;
 let _cx2d       = 0;
 let _cy2d       = 0;
 let _stereoMap2d = null;  // Map<bondId, 'wedge'|'dash'>
+let _highlightedAtomIds  = new Set();
+let _highlightedAtomSets = []; // one Set<atomId> per SMARTS match instance
 
 function _toSVGPt2d(a) {
     const W = plotEl.clientWidth  || 600;
@@ -1113,11 +1281,37 @@ function _toSVGPt2d(a) {
 }
 
 
+/**
+ * Distance (px) to shorten the bond from `atom`'s end so it stops at the
+ * edge of the atom's label bounding box.  Returns 0 for unlabelled atoms.
+ */
+function _labelClearance(atom, otherSVGPt, toSVGPt) {
+    const label = getAtomLabel(atom, _hCounts2d, toSVGPt, _mol2d);
+    if (!label) return 0;
+    const { x, y } = toSVGPt(atom);
+    const dx = otherSVGPt.x - x, dy = otherSVGPt.y - y;
+    const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const hw = labelHalfW(label, FONT_SIZE) + 1;
+    const hh = labelHalfH(label, FONT_SIZE) + 1;
+    const ux = Math.abs(dx) / len, uy = Math.abs(dy) / len;
+    if (ux < 1e-9) return hh;
+    if (uy < 1e-9) return hw;
+    return Math.min(hw / ux, hh / uy);
+}
+
 function _drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType = null) {
     // a1 is the chiral center (wedge/dash tip) when stereoType is set.
     if (stereoType === 'wedge' || stereoType === 'dash') {
-        const s1 = toSVGPt(a1), s2 = toSVGPt(a2);
-        const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
+        const s1 = toSVGPt(a1);
+        const s2orig = toSVGPt(a2);
+        const { nx, ny } = perpUnit(s2orig.x - s1.x, s2orig.y - s1.y);
+        // Shorten the far end (a2) if it carries a label (e.g. F, Cl, N…)
+        const c2 = _labelClearance(a2, s1, toSVGPt);
+        const blen = Math.sqrt((s2orig.x - s1.x) ** 2 + (s2orig.y - s1.y) ** 2) || 1;
+        const s2 = {
+            x: s2orig.x - (s2orig.x - s1.x) / blen * c2,
+            y: s2orig.y - (s2orig.y - s1.y) / blen * c2,
+        };
         if (stereoType === 'wedge') {
             container.append('polygon')
                 .attr('class', 'bond bond-wedge')
@@ -1147,29 +1341,83 @@ function _drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType = null) {
 
     const order = bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
     const s1 = toSVGPt(a1), s2 = toSVGPt(a2);
+    const c1 = _labelClearance(a1, s2, toSVGPt);
+    const c2 = _labelClearance(a2, s1, toSVGPt);
     const dx = s2.x - s1.x, dy = s2.y - s1.y;
     const { nx, ny } = perpUnit(dx, dy);
     if (order === 1) {
-        addLine(container, s1.x, s1.y, s2.x, s2.y);
+        const l = shortenLine(s1.x, s1.y, s2.x, s2.y, c1, c2);
+        addLine(container, l.x1, l.y1, l.x2, l.y2);
     } else if (order === 2) {
         const dir = secondaryDir(a1, a2, mol, toSVGPt);
-        addLine(container, s1.x, s1.y, s2.x, s2.y);
+        const lp = shortenLine(s1.x, s1.y, s2.x, s2.y, c1, c2);
+        addLine(container, lp.x1, lp.y1, lp.x2, lp.y2);
         const ox = nx * BOND_OFF_2D * dir, oy = ny * BOND_OFF_2D * dir;
-        const lsec = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 4, 4);
+        const lsec = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy,
+            Math.max(c1, 4), Math.max(c2, 4));
         addLine(container, lsec.x1, lsec.y1, lsec.x2, lsec.y2);
     } else if (order === 3) {
         for (const d of [-BOND_OFF_2D, 0, BOND_OFF_2D]) {
             const ox = nx * d, oy = ny * d;
             const lt = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy,
-                d !== 0 ? 4 : 0, d !== 0 ? 4 : 0);
+                d !== 0 ? Math.max(c1, 4) : c1, d !== 0 ? Math.max(c2, 4) : c2);
             addLine(container, lt.x1, lt.y1, lt.x2, lt.y2);
         }
     } else if (order === 1.5) {
         const dir = secondaryDir(a1, a2, mol, toSVGPt);
-        addLine(container, s1.x, s1.y, s2.x, s2.y);
+        const lp = shortenLine(s1.x, s1.y, s2.x, s2.y, c1, c2);
+        addLine(container, lp.x1, lp.y1, lp.x2, lp.y2);
         const ox = nx * BOND_OFF_2D * dir, oy = ny * BOND_OFF_2D * dir;
-        const ldash = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 5, 5);
+        const ldash = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy,
+            Math.max(c1, 5), Math.max(c2, 5));
         addLine(container, ldash.x1, ldash.y1, ldash.x2, ldash.y2, 'bond-dashed');
+    }
+}
+
+function _redraw2dHighlights() {
+    g.select('g.atom-highlights').remove();
+    if (_highlightedAtomIds.size === 0 || !_mol2d) return;
+    const mol     = _mol2d;
+    const hCounts = _hCounts2d;
+    const toSVGPt = _toSVGPt2d;
+    const atoms   = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
+    const HL_COLOR = 'rgb(130, 210, 80)';
+    const OL_COLOR = 'rgb(70, 140, 40)';
+    const OL = 2;
+    const hlLayer = g.insert('g', ':first-child').attr('class', 'atom-highlights').attr('opacity', 0.45);
+    for (const atomSet of _highlightedAtomSets) {
+        const mBonds = [];
+        for (const bond of mol.bonds.values()) {
+            const [ba1, ba2] = bond.getAtomObjects(mol);
+            if (!ba1 || !ba2 || ba1.x == null || ba2.x == null) continue;
+            if (!atomSet.has(ba1.id) || !atomSet.has(ba2.id)) continue;
+            const p1 = toSVGPt(ba1), p2 = toSVGPt(ba2);
+            const r1 = Math.max(labelHalfW(getAtomLabel(ba1, hCounts, toSVGPt, mol) || ba1.name, FONT_SIZE), 10) + 5;
+            const r2 = Math.max(labelHalfW(getAtomLabel(ba2, hCounts, toSVGPt, mol) || ba2.name, FONT_SIZE), 10) + 5;
+            mBonds.push({ p1, p2, w: Math.min(r1, r2) * 2 });
+        }
+        const mAtoms = [];
+        for (const atom of atoms) {
+            if (!atomSet.has(atom.id)) continue;
+            const { x, y } = toSVGPt(atom);
+            const r = Math.max(labelHalfW(getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name, FONT_SIZE), 10) + 5;
+            mAtoms.push({ x, y, r });
+        }
+        const addL = (stroke, extra) => {
+            for (const { p1, p2, w } of mBonds)
+                hlLayer.append('line')
+                    .attr('x1', p1.x).attr('y1', p1.y).attr('x2', p2.x).attr('y2', p2.y)
+                    .attr('stroke', stroke).attr('stroke-width', w + extra * 2)
+                    .attr('stroke-linecap', 'round');
+        };
+        const addC = (fill, extra) => {
+            for (const { x, y, r } of mAtoms)
+                hlLayer.append('circle')
+                    .attr('cx', x).attr('cy', y).attr('r', r + extra)
+                    .attr('fill', fill).attr('stroke', 'none');
+        };
+        addL(OL_COLOR, OL); addC(OL_COLOR, OL);
+        addL(HL_COLOR,  0); addC(HL_COLOR,  0);
     }
 }
 
@@ -1190,6 +1438,9 @@ function draw2d() {
     }
 
     g.selectAll('*').remove();
+
+    // Layer 0 — functional-group highlights (behind bonds)
+    _redraw2dHighlights();
 
     // Layer 1 — bonds (each wrapped in a <g data-bond-id> for incremental drag updates)
     const chiralCenterIds = new Set(mol.getChiralCenters());
@@ -1295,6 +1546,7 @@ function draw2d() {
                     if (stereoType && chiralCenterIds.has(sa2.id)) [sa1, sa2] = [sa2, sa1];
                     _drawBond(bg, bi.bond, sa1, sa2, mol, toSVGPt, stereoType ?? null);
                 }
+                _redraw2dHighlights();
             })
             .on('end', function() {
                 hitGroup.select('circle').style('cursor', 'grab');
@@ -1302,10 +1554,6 @@ function draw2d() {
         );
     }
 
-    // With hideHydrogens(), all H atoms remain in mol.atoms so getFormula()
-    // already counts them — do not add extraH or they get double-counted.
-    updateFormula(mol);
-    updateDescriptors(mol);
 }
 
 function render2d(mol) {
@@ -1401,6 +1649,11 @@ function render2d(mol) {
     _stereoMap2d = stereoMap;
 
     draw2d();
+
+    // Sidebar updates — only on new molecule, not on every highlight redraw
+    updateFormula(mol);
+    updateDescriptors(mol);
+    updateFunctionalGroups(mol);
 }
 
 // ---------------------------------------------------------------------------
@@ -1590,6 +1843,7 @@ window.toggleMode = function() {
             updateForce(mol);
             updateFormula(mol);
             updateDescriptors(mol);
+            updateFunctionalGroups(mol);
         } else {
             render2d(mol);
         }
@@ -1771,6 +2025,7 @@ function parseAndRender(smiles) {
         updateForce(mol);
         updateFormula(mol);
         updateDescriptors(mol);
+        updateFunctionalGroups(mol);
     } else {
         simulation.stop();
         render2d(mol);

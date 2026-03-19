@@ -23,10 +23,12 @@ function _vf2Options(queryMol, target) {
 }
 
 /**
- * Generator that yields every injective mapping from `smarts` query atoms
- * into `target` atoms that satisfies the SMARTS predicates.
+ * Generator that yields every unique match of `smarts` into `target`.
  *
- * Each yielded value is a `Map<queryAtomId, targetAtomId>`.
+ * Two mappings are considered duplicates if they cover the same set of target
+ * atom IDs (VF2 can return the same atom set multiple times via different
+ * traversal orderings, e.g. 12× per ring). Each yielded value is a
+ * `Map<queryAtomId, targetAtomId>`.
  *
  * @param {import('../core/Molecule.js').Molecule} target
  * @param {string} smarts
@@ -37,7 +39,15 @@ function _vf2Options(queryMol, target) {
 export function* findSMARTS(target, smarts, options = {}) {
   const queryMol = parseSMARTS(smarts);
   const vf2Opts = { ..._vf2Options(queryMol, target), ...options };
-  yield* findSubgraphMappings(target, queryMol, vf2Opts);
+  const seen = new Set();
+  for (const mapping of findSubgraphMappings(target, queryMol, vf2Opts)) {
+    const key = [...mapping.values()].sort().join(',');
+    if (seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    yield mapping;
+  }
 }
 
 /**

@@ -29,20 +29,21 @@ export const functionalGroups = {
   // Oxygen functional groups
   // ---------------------------------------------------------------------------
 
-  alcohol: { name: 'Alcohol',             smarts: '[OX2H][CX4]' },
+  alcohol: { name: 'Alcohol',             smarts: '[OX2H][CX4;!$([CX4][OX2H0])]' },
   phenol: { name: 'Phenol',              smarts: '[OX2H]c' },
-  enol: { name: 'Enol',                smarts: '[OX2H][CX3]' },
-  ether: { name: 'Ether',               smarts: '[#6][OX2][#6]' },
+  enol: { name: 'Enol',                smarts: '[OX2H][CX3;!$([CX3]=O)]' },
+  ether: { name: 'Ether',               smarts: '[#6][OX2;!$([OX2][CX3]=O);!r3][#6]' },
   epoxide: { name: 'Epoxide',             smarts: '[OX2r3]1[#6r3][#6r3]1' },
   carbonyl: { name: 'Carbonyl',            smarts: '[CX3]=O' },
   aldehyde: { name: 'Aldehyde',            smarts: '[CX3H1]=O' },
   ketone: { name: 'Ketone',              smarts: '[#6][CX3](=O)[#6]' },
-  carboxylicAcid: { name: 'Carboxylic acid',     smarts: '[CX3](=O)[OX2H1]' },
-  ester: { name: 'Ester',               smarts: '[CX3](=O)[OX2H0][#6]' },
+  carboxylicAcid: { name: 'Carboxylic Acid',     smarts: '[CX3](=O)[OX2H1]' },
+  ester: { name: 'Ester',               smarts: '[CX3](=O)[OX2H0][#6;!$([CX3]=O)]' },
   lactone: { name: 'Lactone',             smarts: '[CX3;r](=O)[OX2;r]' },
   anhydride: { name: 'Anhydride',           smarts: '[CX3](=O)[OX2][CX3]=O' },
-  acylHalide: { name: 'Acyl halide',         smarts: '[CX3](=O)[F,Cl,Br,I]' },
-  carbonate: { name: 'Carbonate ester',     smarts: '[#6][OX2][CX3](=O)[OX2][#6]' },
+  aceticAnhydride: { name: 'Acetic Anhydride',    smarts: '[CH3][CX3](=O)[OX2][CX3](=O)[CH3]' },
+  acylHalide: { name: 'Acyl Halide',         smarts: '[CX3](=O)[F,Cl,Br,I]' },
+  carbonate: { name: 'Carbonate Ester',     smarts: '[#6][OX2][CX3](=O)[OX2][#6]' },
   carbamate: { name: 'Carbamate',           smarts: '[NX3][CX3](=O)[OX2]' },
   hemiacetal: { name: 'Hemiacetal',          smarts: '[OX2H][CX4][OX2][#6]' },
   acetal: { name: 'Acetal',              smarts: '[CX4]([OX2][#6])([OX2][#6])[#6]' },
@@ -53,14 +54,14 @@ export const functionalGroups = {
   // Nitrogen functional groups
   // ---------------------------------------------------------------------------
 
-  primaryAmine: { name: 'Primary amine',       smarts: '[NX3H2][#6]' },
-  secondaryAmine: { name: 'Secondary amine',     smarts: '[NX3H1]([#6])[#6]' },
-  tertiaryAmine: { name: 'Tertiary amine',      smarts: '[NX3H0]([#6])([#6])[#6]' },
-  aromaticAmine: { name: 'Aromatic amine',      smarts: '[NX3H2]c' },
-  quaternaryAmmonium: { name: 'Quaternary ammonium', smarts: '[NX4+]([#6])([#6])([#6])[#6]' },
+  primaryAmine: { name: 'Primary Amine',       smarts: '[NX3H2;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])][#6]' },
+  secondaryAmine: { name: 'Secondary Amine',     smarts: '[NX3H1;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])]([#6])[#6]' },
+  tertiaryAmine: { name: 'Tertiary Amine',      smarts: '[NX3H0;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])]([#6])([#6])[#6]' },
+  aromaticAmine: { name: 'Aromatic Amine',      smarts: '[NX3H2;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])]c' },
+  quaternaryAmmonium: { name: 'Quaternary Ammonium', smarts: '[NX4+]([#6])([#6])([#6])[#6]' },
   amide: { name: 'Amide',               smarts: '[NX3][CX3](=O)' },
-  primaryAmide: { name: 'Primary amide',       smarts: '[NX3H2][CX3](=O)' },
-  secondaryAmide: { name: 'Secondary amide',     smarts: '[NX3H1][CX3](=O)' },
+  primaryAmide: { name: 'Primary Amide',       smarts: '[NX3H2][CX3](=O)' },
+  secondaryAmide: { name: 'Secondary Amide',     smarts: '[NX3H1][CX3](=O)' },
   lactam: { name: 'Lactam',              smarts: '[NX3;r][CX3;r](=O)' },
   urea: { name: 'Urea',                smarts: '[NX3][CX3](=O)[NX3]' },
   thiourea: { name: 'Thiourea',            smarts: '[NX3][CX3](=S)[NX3]' },
@@ -92,9 +93,9 @@ export const functionalGroups = {
   sulfoxide: { name: 'Sulfoxide',           smarts: '[SX3](=O)([#6])[#6]' },
   sulfone: { name: 'Sulfone',             smarts: '[SX4](=O)(=O)([#6])[#6]' },
   sulfonamide: { name: 'Sulfonamide',         smarts: '[SX4](=O)(=O)[NX3]' },
-  sulfonylChloride: { name: 'Sulfonyl chloride',   smarts: '[SX4](=O)(=O)[Cl]' },
-  sulfonicAcid: { name: 'Sulfonic acid',       smarts: '[SX4](=O)(=O)[OX2H]' },
-  sulfonateEster: { name: 'Sulfonate ester',     smarts: '[SX4](=O)(=O)[OX2][#6]' },
+  sulfonylChloride: { name: 'Sulfonyl Chloride',   smarts: '[SX4](=O)(=O)[Cl]' },
+  sulfonicAcid: { name: 'Sulfonic Acid',       smarts: '[SX4](=O)(=O)[OX2H]' },
+  sulfonateEster: { name: 'Sulfonate Ester',     smarts: '[SX4](=O)(=O)[OX2][#6]' },
   thiocarbonyl: { name: 'Thiocarbonyl',        smarts: '[CX3]=S' },
   thioester: { name: 'Thioester',           smarts: '[CX3](=O)[SX2][#6]' },
   thioamide: { name: 'Thioamide',           smarts: '[NX3][CX3]=S' },
@@ -104,19 +105,19 @@ export const functionalGroups = {
   // ---------------------------------------------------------------------------
 
   phosphine: { name: 'Phosphine',           smarts: '[PX3]([#6])([#6])[#6]' },
-  phosphineOxide: { name: 'Phosphine oxide',     smarts: '[PX4](=O)([#6])([#6])[#6]' },
-  phosphate: { name: 'Phosphate ester',     smarts: '[PX4](=O)([OX2])[OX2][OX2]' },
+  phosphineOxide: { name: 'Phosphine Oxide',     smarts: '[PX4](=O)([#6])([#6])[#6]' },
+  phosphate: { name: 'Phosphate Ester',     smarts: '[PX4](=O)([OX2])[OX2][OX2]' },
   phosphonate: { name: 'Phosphonate',         smarts: '[PX4](=O)([OX2][#6])[OX2]' },
   phosphonamide: { name: 'Phosphonamide',       smarts: '[PX4](=O)([NX3])[#6]' },
-  phosphoricAcid: { name: 'Phosphoric acid',     smarts: '[PX4](=O)([OX2H])[OX2H][OX2H]' },
+  phosphoricAcid: { name: 'Phosphoric Acid',     smarts: '[PX4](=O)([OX2H])[OX2H][OX2H]' },
 
   // ---------------------------------------------------------------------------
   // Boron functional groups
   // ---------------------------------------------------------------------------
 
-  boronicAcid: { name: 'Boronic acid',        smarts: '[BX3](O)O' },
-  boronicEster: { name: 'Boronic ester',       smarts: '[BX3]([OX2])[OX2]' },
-  borinicAcid: { name: 'Borinic acid',        smarts: '[BX3](O)[#6]' },
+  boronicAcid: { name: 'Boronic Acid',        smarts: '[BX3](O)O' },
+  boronicEster: { name: 'Boronic Ester',       smarts: '[BX3]([OX2])[OX2]' },
+  borinicAcid: { name: 'Borinic Acid',        smarts: '[BX3](O)[#6]' },
 
   // ---------------------------------------------------------------------------
   // Halogens
@@ -127,10 +128,26 @@ export const functionalGroups = {
   organobromide: { name: 'Organobromide',       smarts: '[#6][Br]' },
   organoiodide: { name: 'Organoiodide',        smarts: '[#6][I]' },
   organohalide: { name: 'Organohalide',        smarts: '[#6][F,Cl,Br,I]' },
-  gemDihalide: { name: 'gem-Dihalide',        smarts: '[CX4]([F,Cl,Br,I])[F,Cl,Br,I]' },
+  gemDihalide: { name: 'Gem-Dihalide',        smarts: '[CX4]([F,Cl,Br,I])[F,Cl,Br,I]' },
   trihalide: { name: 'Trihalide',           smarts: '[CX4]([F,Cl,Br,I])([F,Cl,Br,I])[F,Cl,Br,I]' },
-  vinylHalide: { name: 'Vinyl halide',        smarts: '[CX3]=[CX3][F,Cl,Br,I]' },
-  arylHalide: { name: 'Aryl halide',         smarts: 'c[F,Cl,Br,I]' },
+  vinylHalide: { name: 'Vinyl Halide',        smarts: '[CX3]=[CX3][F,Cl,Br,I]' },
+  arylHalide: { name: 'Aryl Halide',         smarts: 'c[F,Cl,Br,I]' },
+
+  // ---------------------------------------------------------------------------
+  // Carbocyclic rings (3–13 membered)
+  // ---------------------------------------------------------------------------
+
+  cyclopropane:   { name: 'Cyclopropane',   smarts: '[C;r3]1[C;r3][C;r3]1' },
+  cyclobutane:    { name: 'Cyclobutane',    smarts: '[C;r4]1[C;r4][C;r4][C;r4]1' },
+  cyclopentane:   { name: 'Cyclopentane',   smarts: '[C;r5]1[C;r5][C;r5][C;r5][C;r5]1' },
+  cyclohexane:    { name: 'Cyclohexane',    smarts: '[C;r6]1[C;r6][C;r6][C;r6][C;r6][C;r6]1' },
+  cycloheptane:   { name: 'Cycloheptane',   smarts: '[C;r7]1[C;r7][C;r7][C;r7][C;r7][C;r7][C;r7]1' },
+  cyclooctane:    { name: 'Cyclooctane',    smarts: '[C;r8]1[C;r8][C;r8][C;r8][C;r8][C;r8][C;r8][C;r8]1' },
+  cyclononane:    { name: 'Cyclononane',    smarts: '[C;r9]1[C;r9][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9]1' },
+  cyclodecane:    { name: 'Cyclodecane',    smarts: '[C;r10]1[C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10]1' },
+  cycloundecane:  { name: 'Cycloundecane',  smarts: '[C;r11]1[C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11]1' },
+  cyclododecane:  { name: 'Cyclododecane',  smarts: '[C;r12]1[C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1' },
+  cyclotridecane: { name: 'Cyclotridecane', smarts: '[C;r13]1[C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1' },
 
   // ---------------------------------------------------------------------------
   // 6-membered aromatic heterocycles

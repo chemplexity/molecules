@@ -545,7 +545,7 @@ export function compileAtomExpr(expr, options = {}) {
       return (a, m) => _valence(a, m) === n;
     }
 
-    // Uppercase → element symbol (single or two-letter), no aromaticity check
+    // Uppercase → aliphatic element (single or two-letter); lowercase → aromatic element
     if (ch >= 'A' && ch <= 'Z') {
       pos++;
       const next = peek();
@@ -553,10 +553,10 @@ export function compileAtomExpr(expr, options = {}) {
         const sym2 = ch + next;
         if (elements[sym2] !== undefined) {
           pos++;
-          return (a) => a.name === sym2;
+          return (a) => a.name === sym2 && !(a.properties.aromatic ?? false);
         }
       }
-      return (a) => a.name === ch;
+      return (a) => a.name === ch && !(a.properties.aromatic ?? false);
     }
 
     // Lowercase (not 'a' or 'v', already handled above) → aromatic element
