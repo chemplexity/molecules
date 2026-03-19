@@ -1,3 +1,5 @@
+/** @module descriptors */
+
 export { molecularFormula, molecularMass } from './molecular.js';
 
 export {
@@ -24,5 +26,15 @@ export {
 } from './topological.js';
 
 export { graphEntropy, topologicalEntropy } from './information.js';
+
+export {
+  logP,
+  tpsa,
+  hBondDonors,
+  hBondAcceptors,
+  rotatableBondCount,
+  fsp3,
+  lipinskiRuleOfFive
+} from './physicochemical.js';
 
 export { adjacencySpectrum, laplacianSpectrum, spectralRadius, estradaIndex } from './spectral.js';

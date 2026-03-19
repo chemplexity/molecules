@@ -2,6 +2,7 @@
 
 import elements from '../data/elements.js';
 import { Molecule, computeRS } from '../core/Molecule.js';
+import { morganRanks } from '../algorithms/morgan.js';
 
 // ---------------------------------------------------------------------------
 // Grammar — ported from molecules v1 src/main/smiles.js
@@ -327,8 +328,7 @@ export function decode(tokens) {
 
   function validateTokens(tokens) {
     if (typeof (tokens) !== 'object') {
-      console.log('Error: Tokens must be of type "object"');
-      return false;
+      throw new Error('Tokens must be of type "object"');
     } else if (tokens.tokens !== undefined) {
       tokens = tokens.tokens;
     }
@@ -336,8 +336,7 @@ export function decode(tokens) {
     for (let i = 0; i < tokens.length; i++) {
       const match = compareArrays(fields, Object.keys(tokens[i]));
       if (match.reduce((a, b) => a + b) < 4) {
-        console.log(`Error: Invalid token at index "${i}"`);
-        return false;
+        throw new Error(`Invalid token at index "${i}"`);
       }
     }
     return tokens;
@@ -358,7 +357,7 @@ export function decode(tokens) {
       keys.all[i] = tokens[i].index.toString();
     }
     if (atoms.length < 1) {
-      console.log('Error: Could not find atoms'); return false;
+      throw new Error('Could not find atoms');
     }
     keys.atoms      = Object.keys(atoms);
     keys.bonds      = Object.keys(bonds);
@@ -809,13 +808,14 @@ export function decode(tokens) {
 
     const charge = (electrons, ch) => {
       if (ch > 0) {
-        return electrons -= ch;
+        return electrons - ch;
       }
+      return electrons;
     };
 
     const checkRow = (group, protons, electrons) => {
       if (group > 12 && protons > 10 && electrons <= 0) {
-        return electrons += 4;
+        return electrons + 4;
       } else {
         return electrons;
       }
@@ -845,8 +845,8 @@ export function decode(tokens) {
 
       let sourceTotal = charge(valence(sourceAtom.group) - sourceAtom.bonds.electrons, sourceAtom.properties.charge);
       let targetTotal = charge(valence(targetAtom.group) - targetAtom.bonds.electrons, targetAtom.properties.charge);
-      sourceTotal = checkRow(sourceTotal);
-      targetTotal = checkRow(targetTotal);
+      sourceTotal = checkRow(sourceAtom.group, sourceAtom.properties.protons, sourceTotal);
+      targetTotal = checkRow(targetAtom.group, targetAtom.properties.protons, targetTotal);
 
       if (sourceTotal <= 0 || targetTotal <= 0) {
         continue;
@@ -1318,9 +1318,6 @@ export function parseSMILES(smiles) {
     if (mol.bonds.has(bond.id)) {
       continue;
     }
-    if ([...mol.bonds.values()].some(bd => bd.connects(a, b))) {
-      continue;
-    }
     mol.addBond(bond.id, a, b, { order: bond.order, aromatic: bond.name === 'aromatic', stereo: bond.stereo || null }, false);
   }
 
@@ -1488,7 +1485,7 @@ function _ringToken(n) {
  * @param {import('../core/Molecule.js').Molecule} mol
  * @returns {string}
  */
-function _serializeComponent(mol) {
+function _serializeComponent(mol, sortFn = null) {
   // ---- Identify strippable (implicit) H atoms ----
   const nonHIds = new Set([...mol.atoms.keys()].filter(id => mol.atoms.get(id).name !== 'H'));
 
@@ -1514,7 +1511,23 @@ function _serializeComponent(mol) {
     return '';
   }
 
-  const startId = heavy.atoms.keys().next().value;
+  // When a canonical sort function is supplied, reorder each atom's bond list
+  // by the canonical rank of the other end.  This makes dfs1, _chiralTokenFor,
+  // and emit all traverse neighbours in canonical rank order automatically.
+  if (sortFn) {
+    for (const [atomId, atom] of heavy.atoms) {
+      atom.bonds.sort((b1, b2) => {
+        const o1 = heavy.bonds.get(b1)?.getOtherAtom(atomId) ?? '';
+        const o2 = heavy.bonds.get(b2)?.getOtherAtom(atomId) ?? '';
+        return (sortFn(o1) ?? 0) - (sortFn(o2) ?? 0);
+      });
+    }
+  }
+
+  const startId = sortFn
+    ? [...heavy.atoms.keys()].reduce((best, id) =>
+      (sortFn(id) ?? Infinity) < (sortFn(best) ?? Infinity) ? id : best)
+    : heavy.atoms.keys().next().value;
 
   // ---- Pass 1: DFS to identify ring-closure bonds ----
   // Back edges in the DFS spanning tree become ring-closure bonds.
@@ -1710,4 +1723,34 @@ export function toSMILES(molecule) {
     return '';
   }
   return molecule.getComponents().map(_serializeComponent).join('.');
+}
+
+/**
+ * Serializes a {@link Molecule} to a **canonical** SMILES string.
+ *
+ * Atom traversal order is determined by the Morgan extended-connectivity
+ * algorithm (Weininger 1989), so the same molecular graph always produces
+ * the same string regardless of how the molecule was constructed or which
+ * input SMILES was parsed.  The output is therefore suitable as a
+ * deduplication key or database identifier.
+ *
+ * Disconnected components are each canonicalized independently and then
+ * sorted lexicographically before being joined with `'.'`.
+ *
+ * All features of {@link toSMILES} are preserved: chirality (`@`/`@@`),
+ * E/Z geometry (`/`/`\\`), isotopes, charges, aromatic atoms, ring closures.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {string}
+ */
+export function toCanonicalSMILES(molecule) {
+  if (molecule.atomCount === 0) {
+    return '';
+  }
+  const parts = molecule.getComponents().map(comp => {
+    const ranks = morganRanks(comp);
+    return _serializeComponent(comp, id => ranks.get(id) ?? 0);
+  });
+  parts.sort();
+  return parts.join('.');
 }

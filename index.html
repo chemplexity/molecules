@@ -766,6 +766,14 @@ function _setHighlight(mappings) {
     if (mappings) {
         for (const mapping of mappings) {
             const atomSet = new Set(mapping.values());
+            // Include explicit H atoms bonded to any matched atom
+            if (_highlightMol) {
+                for (const atomId of [...atomSet]) {
+                    for (const nb of (_highlightMol.atoms.get(atomId)?.getNeighbors(_highlightMol) ?? [])) {
+                        if (nb.name === 'H') atomSet.add(nb.id);
+                    }
+                }
+            }
             for (const atomId of atomSet) _highlightedAtomIds.add(atomId);
             _highlightedAtomSets.push(atomSet);
         }
@@ -783,6 +791,7 @@ function _isBondHighlighted(id1, id2) {
 }
 
 function updateFunctionalGroups(mol) {
+    _highlightMol = mol;
     _highlightedAtomIds.clear();
     _highlightedAtomSets = [];
     const tbody = document.getElementById('fg-body');
@@ -1271,6 +1280,7 @@ let _cy2d       = 0;
 let _stereoMap2d = null;  // Map<bondId, 'wedge'|'dash'>
 let _highlightedAtomIds  = new Set();
 let _highlightedAtomSets = []; // one Set<atomId> per SMARTS match instance
+let _highlightMol        = null; // molecule used for last updateFunctionalGroups call
 
 function _toSVGPt2d(a) {
     const W = plotEl.clientWidth  || 600;
@@ -1390,6 +1400,7 @@ function _redraw2dHighlights() {
         for (const bond of mol.bonds.values()) {
             const [ba1, ba2] = bond.getAtomObjects(mol);
             if (!ba1 || !ba2 || ba1.x == null || ba2.x == null) continue;
+            if (ba1.visible === false || ba2.visible === false) continue;
             if (!atomSet.has(ba1.id) || !atomSet.has(ba2.id)) continue;
             const p1 = toSVGPt(ba1), p2 = toSVGPt(ba2);
             const r1 = Math.max(labelHalfW(getAtomLabel(ba1, hCounts, toSVGPt, mol) || ba1.name, FONT_SIZE), 10) + 5;

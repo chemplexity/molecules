@@ -1,3 +1,5 @@
+/** @module algorithms */
+
 export { bfs, dfs } from './traversal.js';
 export { allPairsShortestPaths } from './paths.js';
 export { findSubgraphMappings, findFirstSubgraphMapping, matchesSubgraph } from './vf2.js';
@@ -7,3 +9,5 @@ export {
   elementOnlyAtomMatch,
   makeAtomMatcher, makeBondMatcher
 } from './subgraph.js';
+export { perceiveAromaticity } from './aromaticity.js';
+export { morganRanks } from './morgan.js';

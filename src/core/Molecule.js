@@ -206,6 +206,10 @@ export class Molecule {
     this.bonds = new Map();
     /** @type {{mass?: number, formula?: object}} Computed molecular properties. */
     this.properties = {};
+    /** @private Canonical-pair → bond ID index for O(1) duplicate detection. */
+    this._bondIndex = new Map();
+    /** @private Cached SSSR rings; null when stale. */
+    this._ringsCache = null;
   }
 
   /** @returns {number} Number of atoms in the molecule. */
@@ -231,6 +235,7 @@ export class Molecule {
       throw new Error(`Atom '${atom.id}' already exists.`);
     }
     this.atoms.set(atom.id, atom);
+    this._ringsCache = null;
     this._recomputeProperties();
     return atom;
   }
@@ -252,10 +257,13 @@ export class Molecule {
         if (otherAtom) {
           otherAtom.bonds = otherAtom.bonds.filter((b) => b !== bondId);
         }
+        const [a, b] = bond.atoms;
+        this._bondIndex.delete(a < b ? `${a},${b}` : `${b},${a}`);
         this.bonds.delete(bondId);
       }
     }
     this.atoms.delete(id);
+    this._ringsCache = null;
     this._recomputeProperties();
   }
 
@@ -278,16 +286,17 @@ export class Molecule {
     if (atomA === atomB) {
       throw new Error(`Self-loop on atom '${atomA}' is not allowed.`);
     }
-    for (const bond of this.bonds.values()) {
-      if (bond.connects(atomA, atomB)) {
-        throw new Error(`A bond between '${atomA}' and '${atomB}' already exists.`);
-      }
+    const pairKey = atomA < atomB ? `${atomA},${atomB}` : `${atomB},${atomA}`;
+    if (this._bondIndex.has(pairKey)) {
+      throw new Error(`A bond between '${atomA}' and '${atomB}' already exists.`);
     }
     const bond = new Bond(id, [atomA, atomB], properties);
     if (this.bonds.has(bond.id)) {
       throw new Error(`Bond '${bond.id}' already exists.`);
     }
     this.bonds.set(bond.id, bond);
+    this._bondIndex.set(pairKey, bond.id);
+    this._ringsCache = null;
     this.atoms.get(atomA).bonds.push(bond.id);
     this.atoms.get(atomB).bonds.push(bond.id);
     if (implicitHydrogen) {
@@ -393,6 +402,9 @@ export class Molecule {
         atom.bonds = atom.bonds.filter((b) => b !== id);
       }
     }
+    const [a, b] = bond.atoms;
+    this._bondIndex.delete(a < b ? `${a},${b}` : `${b},${a}`);
+    this._ringsCache = null;
     this.bonds.delete(id);
 
     // Prune atoms that are now completely disconnected.
@@ -673,10 +685,14 @@ export class Molecule {
    * @returns {string[][]}
    */
   getRings() {
+    if (this._ringsCache !== null) {
+      return this._ringsCache;
+    }
     const n = this.atoms.size;
     const m = this.bonds.size;
     if (n === 0 || m < 3) {
-      return [];
+      this._ringsCache = [];
+      return this._ringsCache;
     }
 
     // Cyclomatic number = m - n + c  (c = connected components).
@@ -744,7 +760,8 @@ export class Molecule {
 
     // Return up to ringCount rings, smallest first.
     allRings.sort((a, b) => a.length - b.length);
-    return allRings.slice(0, ringCount);
+    this._ringsCache = allRings.slice(0, ringCount);
+    return this._ringsCache;
   }
 
   /**
@@ -770,6 +787,7 @@ export class Molecule {
       const copy = new Atom(atom.id, atom.name, { ...atom.properties });
       copy.uuid = atom.uuid;
       copy.tags = [...atom.tags];
+      copy.visible = atom.visible;
       sub.atoms.set(copy.id, copy);
     }
 

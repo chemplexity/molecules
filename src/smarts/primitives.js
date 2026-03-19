@@ -94,58 +94,19 @@ function _isAroBond(bond) {
 // ---------------------------------------------------------------------------
 
 /**
- * BFS shortest distance from `startId` to `targetId` in `mol`, never
- * visiting `excludeId`.  Returns `Infinity` if unreachable.
+ * Returns a Set of ring sizes (from the SSSR) that contain `atom`.
+ *
+ * Uses `mol.getRings()` for an exact result.  The pair-BFS heuristic it
+ * replaces was incorrect for fused ring systems: the BFS between neighbours
+ * in different rings returned the combined path length, adding spurious large
+ * ring sizes to the set (e.g. reporting r9 for an indane bridgehead that is
+ * only in a 5- and a 6-membered ring).
  */
-function _bfsDistExcluding(startId, targetId, excludeId, mol) {
-  if (startId === targetId) {
-    return 0;
-  }
-  const visited = new Set([excludeId, startId]);
-  const queue = [{ id: startId, dist: 0 }];
-  while (queue.length > 0) {
-    const { id, dist } = queue.shift();
-    const atom = mol.atoms.get(id);
-    if (!atom) {
-      continue;
-    }
-    for (const bId of atom.bonds) {
-      const bond = mol.bonds.get(bId);
-      if (!bond) {
-        continue;
-      }
-      const [a, b] = bond.atoms;
-      const nbId = a === id ? b : a;
-      if (nbId === targetId) {
-        return dist + 1;
-      }
-      if (!visited.has(nbId)) {
-        visited.add(nbId);
-        queue.push({ id: nbId, dist: dist + 1 });
-      }
-    }
-  }
-  return Infinity;
-}
-
-/** Returns a Set of ring sizes that contain `atom` (pair-BFS heuristic). */
 function _ringSizesContaining(atom, mol) {
   const sizes = new Set();
-  const neighbors = [];
-  for (const bId of atom.bonds) {
-    const bond = mol.bonds.get(bId);
-    if (!bond) {
-      continue;
-    }
-    const [a, b] = bond.atoms;
-    neighbors.push(a === atom.id ? b : a);
-  }
-  for (let i = 0; i < neighbors.length; i++) {
-    for (let j = i + 1; j < neighbors.length; j++) {
-      const dist = _bfsDistExcluding(neighbors[i], neighbors[j], atom.id, mol);
-      if (dist !== Infinity) {
-        sizes.add(dist + 2);
-      }
+  for (const ring of mol.getRings()) {
+    if (ring.includes(atom.id)) {
+      sizes.add(ring.length);
     }
   }
   return sizes;

@@ -22,8 +22,11 @@ export const functionalGroups = {
 
   alkene: { name: 'Alkene',              smarts: '[CX3]=[CX3]' },
   alkyne: { name: 'Alkyne',              smarts: '[CX2]#[CX2]' },
-  allene: { name: 'Allene',              smarts: '[CX2]=[CX2]=[CX2]' },
-  arene: { name: 'Arene',               smarts: '[a]' },
+  allene: { name: 'Allene',             smarts: '[#6]=[CX2]=[#6]' },
+  arene: { name: 'Arene',              smarts: '[a]' },
+  benzene: { name: 'Benzene',               smarts: 'c1ccccc1' },
+  aromaticRing5: { name: 'Aromatic Ring (5-membered)', smarts: '[a]1[a][a][a][a]1' },
+  aromaticRing6: { name: 'Aromatic Ring (6-membered)', smarts: '[a]1[a][a][a][a][a]1' },
 
   // ---------------------------------------------------------------------------
   // Oxygen functional groups
@@ -31,7 +34,7 @@ export const functionalGroups = {
 
   alcohol: { name: 'Alcohol',             smarts: '[OX2H][CX4;!$([CX4][OX2H0])]' },
   phenol: { name: 'Phenol',              smarts: '[OX2H]c' },
-  enol: { name: 'Enol',                smarts: '[OX2H][CX3;!$([CX3]=O)]' },
+  enol: { name: 'Enol',                smarts: '[OX2H][CX3;!$([CX3]=O)]=[CX3]' },
   ether: { name: 'Ether',               smarts: '[#6][OX2;!$([OX2][CX3]=O);!r3][#6]' },
   epoxide: { name: 'Epoxide',             smarts: '[OX2r3]1[#6r3][#6r3]1' },
   carbonyl: { name: 'Carbonyl',            smarts: '[CX3]=O' },
@@ -62,6 +65,7 @@ export const functionalGroups = {
   amide: { name: 'Amide',               smarts: '[NX3][CX3](=O)' },
   primaryAmide: { name: 'Primary Amide',       smarts: '[NX3H2][CX3](=O)' },
   secondaryAmide: { name: 'Secondary Amide',     smarts: '[NX3H1][CX3](=O)' },
+  tertiaryAmide: { name: 'Tertiary Amide',      smarts: '[NX3H0][CX3](=O)' },
   lactam: { name: 'Lactam',              smarts: '[NX3;r][CX3;r](=O)' },
   urea: { name: 'Urea',                smarts: '[NX3][CX3](=O)[NX3]' },
   thiourea: { name: 'Thiourea',            smarts: '[NX3][CX3](=S)[NX3]' },
@@ -75,7 +79,7 @@ export const functionalGroups = {
   isocyanate: { name: 'Isocyanate',          smarts: '[NX2]=C=O' },
   isothiocyanate: { name: 'Isothiocyanate',      smarts: '[NX2]=C=S' },
   isonitrile: { name: 'Isonitrile',          smarts: '[CX1-]#[NX2+]' },
-  nitro: { name: 'Nitro',               smarts: '[$([NX3](=O)=O),$([NX3+](=O)[O-])]' },
+  nitro: { name: 'Nitro',               smarts: '[NX3,NX3+](=[OX1])~[OX1,OX1-]' },
   nitroso: { name: 'Nitroso',             smarts: '[NX2](=O)[#6]' },
   hydroxylamine: { name: 'Hydroxylamine',       smarts: '[NX3][OX2H]' },
   hydrazine: { name: 'Hydrazine',           smarts: '[NX3][NX3]' },
@@ -137,16 +141,16 @@ export const functionalGroups = {
   // Carbocyclic rings (3–13 membered)
   // ---------------------------------------------------------------------------
 
-  cyclopropane:   { name: 'Cyclopropane',   smarts: '[C;r3]1[C;r3][C;r3]1' },
-  cyclobutane:    { name: 'Cyclobutane',    smarts: '[C;r4]1[C;r4][C;r4][C;r4]1' },
-  cyclopentane:   { name: 'Cyclopentane',   smarts: '[C;r5]1[C;r5][C;r5][C;r5][C;r5]1' },
-  cyclohexane:    { name: 'Cyclohexane',    smarts: '[C;r6]1[C;r6][C;r6][C;r6][C;r6][C;r6]1' },
-  cycloheptane:   { name: 'Cycloheptane',   smarts: '[C;r7]1[C;r7][C;r7][C;r7][C;r7][C;r7][C;r7]1' },
-  cyclooctane:    { name: 'Cyclooctane',    smarts: '[C;r8]1[C;r8][C;r8][C;r8][C;r8][C;r8][C;r8][C;r8]1' },
-  cyclononane:    { name: 'Cyclononane',    smarts: '[C;r9]1[C;r9][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9]1' },
-  cyclodecane:    { name: 'Cyclodecane',    smarts: '[C;r10]1[C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10]1' },
-  cycloundecane:  { name: 'Cycloundecane',  smarts: '[C;r11]1[C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11]1' },
-  cyclododecane:  { name: 'Cyclododecane',  smarts: '[C;r12]1[C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1' },
+  cyclopropane: { name: 'Cyclopropane',   smarts: '[C;r3]1[C;r3][C;r3]1' },
+  cyclobutane: { name: 'Cyclobutane',    smarts: '[C;r4]1[C;r4][C;r4][C;r4]1' },
+  cyclopentane: { name: 'Cyclopentane',   smarts: '[C;r5]1[C;r5][C;r5][C;r5][C;r5]1' },
+  cyclohexane: { name: 'Cyclohexane',    smarts: '[C;r6]1[C;r6][C;r6][C;r6][C;r6][C;r6]1' },
+  cycloheptane: { name: 'Cycloheptane',   smarts: '[C;r7]1[C;r7][C;r7][C;r7][C;r7][C;r7][C;r7]1' },
+  cyclooctane: { name: 'Cyclooctane',    smarts: '[C;r8]1[C;r8][C;r8][C;r8][C;r8][C;r8][C;r8][C;r8]1' },
+  cyclononane: { name: 'Cyclononane',    smarts: '[C;r9]1[C;r9][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9]1' },
+  cyclodecane: { name: 'Cyclodecane',    smarts: '[C;r10]1[C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10]1' },
+  cycloundecane: { name: 'Cycloundecane',  smarts: '[C;r11]1[C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11]1' },
+  cyclododecane: { name: 'Cyclododecane',  smarts: '[C;r12]1[C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1' },
   cyclotridecane: { name: 'Cyclotridecane', smarts: '[C;r13]1[C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1' },
 
   // ---------------------------------------------------------------------------
