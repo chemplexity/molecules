@@ -106,6 +106,30 @@ describe('parseINCHI — fixed-H ammonium chloride InChI=1/ClH.H3N/h1H;1H3/fCl.H
   });
 });
 
+describe('parseINCHI — sulfamide mobile hydrogens InChI=1S/H4N2O2S/c1-5(2,3)4/h(H4,1,2,3,4)', () => {
+  const mol = parseINCHI('InChI=1S/H4N2O2S/c1-5(2,3)4/h(H4,1,2,3,4)');
+
+  it('prefers two S=O bonds over O-H placement', () => {
+    const nitrogens = [...mol.atoms.values()].filter(a => a.name === 'N');
+    const oxygens = [...mol.atoms.values()].filter(a => a.name === 'O');
+    const sulfur = [...mol.atoms.values()].find(a => a.name === 'S');
+    const soDoubles = heavyBonds(mol).filter(bond => {
+      const [aId, bId] = bond.atoms;
+      const a = mol.atoms.get(aId);
+      const b = mol.atoms.get(bId);
+      return bond.properties.order === 2 &&
+        ((a?.name === 'S' && b?.name === 'O') || (a?.name === 'O' && b?.name === 'S'));
+    });
+
+    assert.equal(nitrogens.length, 2);
+    assert.equal(oxygens.length, 2);
+    assert.ok(sulfur);
+    assert.deepEqual(nitrogens.map(a => a.getHydrogenNeighbors(mol).length).sort((a, b) => a - b), [2, 2]);
+    assert.deepEqual(oxygens.map(a => a.getHydrogenNeighbors(mol).length).sort((a, b) => a - b), [0, 0]);
+    assert.equal(soDoubles.length, 2);
+  });
+});
+
 describe('parseINCHI — iron bis(benzoate) InChI=1S/2C7H6O2.Fe/c2*8-7(9)6-4-2-1-3-5-6;/h2*1-5H,(H,8,9);/q;;+2/p-2', () => {
   const mol = parseINCHI('InChI=1S/2C7H6O2.Fe/c2*8-7(9)6-4-2-1-3-5-6;/h2*1-5H,(H,8,9);/q;;+2/p-2');
 
@@ -954,6 +978,34 @@ describe('parseINCHI — phenol InChI=1S/C6H6O/c7-6-4-2-1-3-5-6/h1-5,7H', () => 
     const ipso    = carbons.find(c => c.getHeavyNeighbors(mol).some(nb => nb.name === 'O'));
     assert.ok(ipso);
     assert.equal(ipso.getHydrogenNeighbors(mol).length, 0);
+  });
+});
+
+describe('parseINCHI — phenyllithium InChI=1S/C6H5.Li/c1-2-4-6-5-3-1;/h1-5H;/q-1;+1', () => {
+  const mol = parseINCHI('InChI=1S/C6H5.Li/c1-2-4-6-5-3-1;/h1-5H;/q-1;+1');
+
+  it('formula { C:6, H:5, Li:1 }', () => {
+    assert.deepEqual(mol.getFormula(), { C: 6, H: 5, Li: 1 });
+  });
+  it('has a lithium cation and one carbanionic ring carbon with no hydrogens', () => {
+    const lithium = [...mol.atoms.values()].find(a => a.name === 'Li');
+    const ringAnion = [...mol.atoms.values()].find(a =>
+      a.name === 'C' &&
+      a.properties.charge === -1 &&
+      a.getHydrogenNeighbors(mol).length === 0
+    );
+    assert.ok(lithium);
+    assert.equal(lithium.properties.charge, 1);
+    assert.ok(ringAnion);
+  });
+  it('keeps the phenyl ring as alternating single and double bonds', () => {
+    const ringBonds = heavyBonds(mol).filter(b => {
+      const names = b.atoms.map(id => mol.atoms.get(id)?.name);
+      return names[0] === 'C' && names[1] === 'C';
+    });
+    const orders = ringBonds.map(b => b.properties.order).sort((a, b) => a - b);
+    assert.deepEqual(orders, [1, 1, 1, 2, 2, 2]);
+    assert.equal(ringBonds.filter(b => b.properties.aromatic).length, 0);
   });
 });
 

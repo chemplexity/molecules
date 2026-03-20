@@ -20,7 +20,7 @@ export const functionalGroups = {
   // Hydrocarbons
   // ---------------------------------------------------------------------------
 
-  alkene: { name: 'Alkene', smarts: '[CX3]=[CX3]' },
+  alkene: { name: 'Alkene', smarts: '[CX3;!a]=[CX3;!a]' },
   alkyne: { name: 'Alkyne', smarts: '[CX2]#[CX2]' },
   allene: { name: 'Allene', smarts: '[#6]=[CX2]=[#6]' },
   aromaticRing5: { name: 'Aromatic Ring (5-membered)', smarts: '[a]1[a][a][a][a]1' },
@@ -35,8 +35,8 @@ export const functionalGroups = {
   enol: { name: 'Enol', smarts: '[OX2H][CX3;!$([CX3]=O)]=[CX3]' },
   ether: { name: 'Ether', smarts: '[#6][OX2;!$([OX2][CX3]=O);!r3][#6]' },
   epoxide: { name: 'Epoxide', smarts: '[OX2r3]1[#6r3][#6r3]1' },
-  carbonyl: { name: 'Carbonyl', smarts: '[CX3]=O' },
-  aldehyde: { name: 'Aldehyde', smarts: '[CX3H1]=O' },
+  carbonyl: { name: 'Carbonyl', smarts: '[CX3]=[OX1]' },
+  aldehyde: { name: 'Aldehyde', smarts: '[CX3H1]=[OX1]' },
   ketone: { name: 'Ketone', smarts: '[#6][CX3](=O)[#6]' },
   carboxylicAcid: { name: 'Carboxylic Acid', smarts: '[CX3](=O)[OX2H1]' },
   ester: { name: 'Ester', smarts: '[CX3](=O)[OX2H0][#6;!$([CX3]=O)]' },
@@ -150,6 +150,22 @@ export const functionalGroups = {
   cycloundecane: { name: 'Cycloundecane', smarts: '[C;r11]1[C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11]1' },
   cyclododecane: { name: 'Cyclododecane', smarts: '[C;r12]1[C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1' },
   cyclotridecane: { name: 'Cyclotridecane', smarts: '[C;r13]1[C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1' },
+
+  // ---------------------------------------------------------------------------
+  // Cycloalkenes (3–13 membered, exactly the ring with ≥1 non-aromatic C=C)
+  // ---------------------------------------------------------------------------
+
+  cyclopropene: { name: 'Cyclopropene', smarts: '[CX3;r3;!a]1=[CX3;r3;!a][C;r3]1' },
+  cyclobutene: { name: 'Cyclobutene', smarts: '[CX3;r4;!a]1=[CX3;r4;!a][C;r4][C;r4]1' },
+  cyclopentene: { name: 'Cyclopentene', smarts: '[CX3;r5;!a]1=[CX3;r5;!a][C;r5][C;r5][C;r5]1' },
+  cyclohexene: { name: 'Cyclohexene', smarts: '[CX3;r6;!a]1=[CX3;r6;!a][C;r6][C;r6][C;r6][C;r6]1' },
+  cycloheptene: { name: 'Cycloheptene', smarts: '[CX3;r7;!a]1=[CX3;r7;!a][C;r7][C;r7][C;r7][C;r7][C;r7]1' },
+  cyclooctene: { name: 'Cyclooctene', smarts: '[CX3;r8;!a]1=[CX3;r8;!a][C;r8][C;r8][C;r8][C;r8][C;r8][C;r8]1' },
+  cyclononene: { name: 'Cyclononene', smarts: '[CX3;r9;!a]1=[CX3;r9;!a][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9]1' },
+  cyclodecene: { name: 'Cyclodecene', smarts: '[CX3;r10;!a]1=[CX3;r10;!a][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10]1' },
+  cycloundecene: { name: 'Cycloundecene', smarts: '[CX3;r11;!a]1=[CX3;r11;!a][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11]1' },
+  cyclododecene: { name: 'Cyclododecene', smarts: '[CX3;r12;!a]1=[CX3;r12;!a][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1' },
+  cyclotridecene: { name: 'Cyclotridecene', smarts: '[CX3;r13;!a]1=[CX3;r13;!a][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1' },
 
   // ---------------------------------------------------------------------------
   // 6-membered aromatic heterocycles

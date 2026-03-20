@@ -69,8 +69,11 @@ function _piElectrons(atom, ringAtomSet, mol) {
   }
 
   if (el === 'O' || el === 'S') {
-    // Heteroatom lone pair always donates 2 π electrons into the ring.
-    return 2;
+    // Furan/thiophene-like (no ring double bond): lone pair donated → 2 π electrons.
+    // Pyrylium/thiopyrylium-like (explicit Kekulé double bond in the ring, e.g. C=[O+]):
+    //   O/S acts as a pyridine-N equivalent → 1 π electron from the π bond.
+    const hasKekulePiBond = ringBonds.some(b => b.properties.order === 2);
+    return hasKekulePiBond ? 1 : 2;
   }
 
   if (el === 'B') {
@@ -120,54 +123,69 @@ function _isHuckel(piCount) {
 export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
   const rings = mol.getRings();
   const aromaticRings = [];
+  const done = new Array(rings.length).fill(false);
 
-  for (const ring of rings) {
-    const ringAtomSet = new Set(ring);
+  // Iterate until no new aromatic rings are found.  Fused ring systems (e.g.
+  // phenanthrene) can require multiple passes: the middle ring only becomes
+  // recognisable as aromatic after the two outer rings are processed.
+  let anyNew = true;
+  while (anyNew) {
+    anyNew = false;
+    for (let ri = 0; ri < rings.length; ri++) {
+      if (done[ri]) {
+        continue;
+      }
+      const ring = rings[ri];
+      const ringAtomSet = new Set(ring);
 
-    // Skip rings containing hydrogen.
-    if (ring.some(id => mol.atoms.get(id)?.name === 'H')) {
-      continue;
-    }
-
-    let piTotal = 0;
-    let valid   = true;
-
-    for (const atomId of ring) {
-      const atom = mol.atoms.get(atomId);
-      if (!atom) {
-        valid = false; break;
+      // Skip rings containing hydrogen.
+      if (ring.some(id => mol.atoms.get(id)?.name === 'H')) {
+        done[ri] = true; continue;
       }
 
-      const pi = _piElectrons(atom, ringAtomSet, mol);
-      if (pi === null) {
-        valid = false; break;
-      }
-      piTotal += pi;
-    }
+      let piTotal = 0;
+      let valid   = true;
 
-    if (!valid || !_isHuckel(piTotal)) {
-      continue;
-    }
-
-    // Mark atoms.
-    for (const atomId of ring) {
-      mol.atoms.get(atomId).properties.aromatic = true;
-    }
-
-    // Mark bonds between consecutive ring atoms.
-    for (let i = 0; i < ring.length; i++) {
-      const a = ring[i];
-      const b = ring[(i + 1) % ring.length];
-      const bond = mol.getBond(a, b);
-      if (bond) {
-        if (preserveKekule && Number.isInteger(bond.properties.order)) {
-          bond.properties.localizedOrder = bond.properties.order;
+      for (const atomId of ring) {
+        const atom = mol.atoms.get(atomId);
+        if (!atom) {
+          valid = false; break;
         }
-        bond.setAromatic(true);
-      }
-    }
 
-    aromaticRings.push(ring);
+        const pi = _piElectrons(atom, ringAtomSet, mol);
+        if (pi === null) {
+          valid = false; break;
+        }
+        piTotal += pi;
+      }
+
+      if (!valid || !_isHuckel(piTotal)) {
+        continue;
+      }
+
+      done[ri] = true;
+      anyNew   = true;
+
+      // Mark atoms.
+      for (const atomId of ring) {
+        mol.atoms.get(atomId).properties.aromatic = true;
+      }
+
+      // Mark bonds between consecutive ring atoms.
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % ring.length];
+        const bond = mol.getBond(a, b);
+        if (bond) {
+          if (preserveKekule && Number.isInteger(bond.properties.order)) {
+            bond.properties.localizedOrder = bond.properties.order;
+          }
+          bond.setAromatic(true);
+        }
+      }
+
+      aromaticRings.push(ring);
+    }
   }
 
   return aromaticRings;

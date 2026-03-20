@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
 import { generateCoords } from '../../src/layout/index.js';
+import { getAtomLabel } from '../../src/layout/mol2d-helpers.js';
 import { parseINCHI } from '../../src/io/inchi.js';
 import { parseSMILES } from '../../src/io/smiles.js';
 
@@ -1467,6 +1468,37 @@ describe('generateCoords — alkene substituent geometry', () => {
     assert.ok(
       approx(angleDeg(carbon1, carbon2, fluorine2), 120, 1e-6),
       `right alkene substituent angle drifted: ${angleDeg(carbon1, carbon2, fluorine2).toFixed(3)}°`
+    );
+  });
+});
+
+describe('getAtomLabel — charged carbons', () => {
+  it('shows a label for substituted carbons with formal charge', () => {
+    const mol = parseSMILES('C1=CC=[C-]C=C1.[Li+]');
+    const chargedCarbon = [...mol.atoms.values()].find(
+      atom => atom.name === 'C' && (atom.properties.charge ?? 0) === -1
+    );
+
+    assert.ok(chargedCarbon, 'expected a negatively charged carbon');
+    assert.equal(
+      getAtomLabel(chargedCarbon, new Map(), () => ({ x: 0, y: 0 }), mol),
+      'C'
+    );
+  });
+
+  it('keeps neutral substituted carbons unlabeled', () => {
+    const mol = parseSMILES('CC');
+    const neutralCarbon = [...mol.atoms.values()].find(
+      atom =>
+        atom.name === 'C' &&
+        (atom.properties.charge ?? 0) === 0 &&
+        atom.getNeighbors(mol).some(nb => nb.name !== 'H')
+    );
+
+    assert.ok(neutralCarbon, 'expected a neutral substituted carbon');
+    assert.equal(
+      getAtomLabel(neutralCarbon, new Map(), () => ({ x: 0, y: 0 }), mol),
+      null
     );
   });
 });

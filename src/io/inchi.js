@@ -490,7 +490,13 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
         const current = atom.getValence(mol);
         const cap = base + 4;
         let v = base;
-        while (v <= current && v < cap) {
+        // Use strict less-than so that an atom whose current bond-order equals
+        // its base valence (e.g. thiophene S with BO=2, base=2) stays at v=base
+        // (remaining=0), enabling it to be detected as a lone-pair π-donor.
+        // Using ≤ would push S to v=4 (remaining=2), breaking 5-membered
+        // aromatic ring detection.  assignComponentFormalCharges already uses
+        // the same strict-less-than convention.
+        while (v < current && v < cap) {
           v += 2;
         }
         return v;
@@ -506,6 +512,28 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
       return 0;
     }
     return neutralVal(atomId) - atom.getValence(mol);
+  }
+
+  function expandedTerminalOxygenCapacity(centerId, terminalId) {
+    const center = mol.atoms.get(centerId);
+    const terminal = mol.atoms.get(terminalId);
+    if (!center || !terminal || terminal.name !== 'O') {
+      return 0;
+    }
+    const centerEl = elements[center.name];
+    if (!centerEl || centerEl.period <= 2 || centerEl.group < 13 || centerEl.group > 17) {
+      return 0;
+    }
+    const terminalHeavyDegree = terminal.bonds.filter(bondId => {
+      const bond = mol.bonds.get(bondId);
+      return bond && heavySet.has(bond.getOtherAtom(terminalId));
+    }).length;
+    if (terminalHeavyDegree !== 1) {
+      return 0;
+    }
+    const base = 18 - centerEl.group;
+    const cap = base + 4;
+    return Math.max(0, cap - center.getValence(mol));
   }
 
   // requireNeighborCapacity=true: exclude neighbours with remaining=0 from the
@@ -544,7 +572,11 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
         }
         const bond = eligibleBonds[0];
         const otherId = bond.getOtherAtom(atomId);
-        while (bond.properties.order < 3 && remaining(atomId) > 0 && remaining(otherId) > 0) {
+        while (
+          bond.properties.order < 3 &&
+          remaining(atomId) > 0 &&
+          (remaining(otherId) > 0 || expandedTerminalOxygenCapacity(otherId, atomId) > 0)
+        ) {
           bond.properties.order += 1;
           terminalChanged = true;
         }
@@ -1221,6 +1253,20 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
     }
   }
 
+  function inferredFormalCharge(atom, totalBO) {
+    const el = elements[atom.name];
+    if (el && el.period > 2 && el.group >= 13 && el.group <= 17) {
+      const base = 18 - el.group;
+      const cap  = base + 4;      // e.g. S: 6, Se: 6, P: 7, As: 7
+      let v = base;
+      while (v < totalBO && v < cap) {
+        v += 2;
+      }
+      return totalBO - v;
+    }
+    return atom.computeCharge(totalBO);
+  }
+
   function assignComponentFormalCharges(mol) {
     for (let i = 0; i < componentHeavyAtomIds.length; i++) {
       const charge = componentChargeTargets[i] ?? 0;
@@ -1237,26 +1283,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         const totalBO = atom.bonds.reduce((sum, bondId) => {
           return sum + (mol.bonds.get(bondId)?.properties.order ?? 1);
         }, 0);
-        // For period>2 p-block atoms, use the expanded valence corresponding
-        // to the atom's actual bond order so that, e.g., S in SO4²⁻ (BO=6)
-        // reports formal charge 0 rather than +4 (which is what the base-2
-        // valence formula would give). The rule is: walk up from the base
-        // valence in steps of 2 (same parity) until we reach or exceed BO,
-        // then charge = BO − v. This is the complement of neutralVal().
-        const el = elements[atom.name];
-        let atomCharge;
-        if (el && el.period > 2 && el.group >= 13 && el.group <= 17) {
-          const base = 18 - el.group;
-          const cap  = base + 4;      // e.g. S: 6, Se: 6, P: 7, As: 7
-          let v = base;
-          while (v < totalBO && v < cap) {
-            v += 2;
-          }
-          atomCharge = totalBO - v;
-        } else {
-          atomCharge = atom.computeCharge(totalBO);
-        }
-        return { atom, charge: atomCharge };
+        return { atom, charge: inferredFormalCharge(atom, totalBO) };
       }).filter(Boolean);
 
       const totalComputedCharge = computedCharges.reduce((sum, entry) => sum + entry.charge, 0);
@@ -1266,6 +1293,92 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
 
       for (const entry of computedCharges) {
         entry.atom.setCharge(entry.charge);
+      }
+    }
+  }
+
+  function fixMonoanionicArylComponents(mol) {
+    const rings = mol.getRings();
+
+    for (let i = 0; i < componentHeavyAtomIds.length; i++) {
+      const targetCharge = componentChargeTargets[i] ?? 0;
+      const atomIds = componentHeavyAtomIds[i];
+      if (targetCharge !== -1 || atomIds.length !== 6) {
+        continue;
+      }
+      if (!atomIds.every(id => mol.atoms.get(id)?.name === 'C')) {
+        continue;
+      }
+
+      const ring = rings.find(ringAtomIds =>
+        ringAtomIds.length === 6 &&
+        ringAtomIds.every(id => atomIds.includes(id)) &&
+        atomIds.every(id => ringAtomIds.includes(id))
+      );
+      if (!ring) {
+        continue;
+      }
+
+      const ringHeavyDegrees = atomIds.map(id =>
+        mol.atoms.get(id)?.getHeavyNeighbors(mol).length ?? 0
+      );
+      if (!ringHeavyDegrees.every(deg => deg === 2)) {
+        continue;
+      }
+
+      const chargeCandidates = atomIds.filter(id => {
+        const atom = mol.atoms.get(id);
+        return atom && atom.getHydrogenNeighbors(mol).length === 0;
+      });
+      if (chargeCandidates.length !== 1) {
+        continue;
+      }
+      const chargeAtomId = chargeCandidates[0];
+      if (!atomIds.every(id =>
+        id === chargeAtomId ||
+        (mol.atoms.get(id)?.getHydrogenNeighbors(mol).length ?? 0) === 1
+      )) {
+        continue;
+      }
+
+      const startIdx = ring.indexOf(chargeAtomId);
+      if (startIdx < 0) {
+        continue;
+      }
+      const orderedRing = ring.slice(startIdx).concat(ring.slice(0, startIdx));
+      const ringBonds = orderedRing.map((atomId, idx) =>
+        mol.getBond(atomId, orderedRing[(idx + 1) % orderedRing.length])
+      );
+      if (ringBonds.some(bond => !bond)) {
+        continue;
+      }
+
+      const patterns = [
+        [2, 1, 2, 1, 2, 1],
+        [1, 2, 1, 2, 1, 2]
+      ];
+      let bestPattern = patterns[0];
+      let bestScore = Infinity;
+      for (const pattern of patterns) {
+        const score = pattern.reduce((sum, order, idx) => {
+          return sum + Math.abs((ringBonds[idx].properties.order ?? 1) - order);
+        }, 0);
+        if (score < bestScore) {
+          bestScore = score;
+          bestPattern = pattern;
+        }
+      }
+
+      for (let j = 0; j < ringBonds.length; j++) {
+        ringBonds[j].properties.order = bestPattern[j];
+        ringBonds[j].properties.aromatic = false;
+        delete ringBonds[j].properties.localizedOrder;
+      }
+      for (const atomId of atomIds) {
+        const atom = mol.atoms.get(atomId);
+        if (atom) {
+          atom.properties.aromatic = false;
+        }
       }
     }
   }
@@ -1484,6 +1597,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       // removes the surplus H after bonds are settled.
       inferBondOrders(mol, heavyAtomIds, componentChargeTargets.reduce((s, c) => s + c, 0));
       correctHydrogenDeficit(mol);
+      fixMonoanionicArylComponents(mol);
       assignComponentFormalCharges(mol);
     } else {
       correctHydrogenDeficit(mol);
@@ -1504,7 +1618,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       const totalBO = atom.bonds.reduce((sum, bondId) => {
         return sum + (mol.bonds.get(bondId)?.properties.order ?? 1);
       }, 0);
-      chargePenalty += Math.abs(atom.computeCharge(totalBO) - (atom.properties.charge ?? 0));
+      chargePenalty += Math.abs(inferredFormalCharge(atom, totalBO) - (atom.properties.charge ?? 0));
     }
     return { warnings, chargePenalty };
   }

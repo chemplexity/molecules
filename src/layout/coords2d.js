@@ -3264,9 +3264,9 @@ export function generateCoords(molecule, options = {}) {
         }
       }
     }
-
-    optimizeAcyclicMultipleBondSubtrees(molecule, coords, bondLength);
   }
+
+  optimizeAcyclicMultipleBondSubtrees(molecule, coords, bondLength);
 
   // Phase H — canonical orientation.
   // Rotate ring-containing molecules so the principal axis (maximum spatial
