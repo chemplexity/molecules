@@ -200,19 +200,19 @@ export function pickStereoWedges(mol) {
     const v = (e) => ({ x: e.atom.x - center.x, y: e.atom.y - center.y });
     const cross2D = (u, w) => u.x * w.y - u.y * w.x;
     const visible = entries.filter(e => e.atom.visible !== false);
-    const exocyclic = visible.filter(e => !e.bond.isInRing(mol));
-    const candidates = exocyclic.length > 0 ? exocyclic
-      : visible.length > 0 ? visible
-        : entries;
+    const exocyclic = visible.filter(e => !e.atom.isInRing(mol));
+    const exocyclicHeavy = exocyclic.filter(e => e.atom.name !== 'H');
+    const candidates = exocyclicHeavy.length > 0 ? exocyclicHeavy
+      : exocyclic.length > 0 ? exocyclic
+        : visible.length > 0 ? visible
+          : entries;
 
-    let chosen = candidates[0];
-    let bestScore = -Infinity;
-    for (const cand of candidates) {
-      const score = Math.abs(v(cand).y);
-      if (score > bestScore) {
-        bestScore = score; chosen = cand;
-      }
-    }
+    // Pick the highest CIP rank among candidates — this is a topological,
+    // rotation-invariant criterion that prefers the most substituted group.
+    const chosen = candidates.reduce((best, cand) =>
+      cand.rank > best.rank || (cand.rank === best.rank && cand.bond.id < best.bond.id)
+        ? cand : best
+    );
 
     const others = entries.filter(e => e !== chosen).sort((a, b) => b.rank - a.rank);
 
@@ -254,4 +254,125 @@ export function pickStereoWedges(mol) {
     result.set(chosen.bond.id, computed === chirality ? 'dash' : 'wedge');
   }
   return result;
+}
+
+// ---------------------------------------------------------------------------
+// kekulize — assign localizedOrder (1 or 2) to aromatic bonds that lack it.
+//
+// Uses DFS augmenting-path maximum matching on the aromatic π-subgraph.
+// Bonds that already have localizedOrder (e.g. from InChI parsing) are
+// left untouched.  The function mutates bond.properties in-place and is
+// idempotent — calling it twice has no additional effect.
+// ---------------------------------------------------------------------------
+export function kekulize(mol) {
+  const aroBonds = [];
+  for (const bond of mol.bonds.values()) {
+    if (bond.properties.aromatic && bond.properties.localizedOrder == null) {
+      aroBonds.push(bond);
+    }
+  }
+  if (aroBonds.length === 0) {
+    return;
+  }
+
+  const aroAtomIds = new Set();
+  for (const b of aroBonds) {
+    aroAtomIds.add(b.atoms[0]); aroAtomIds.add(b.atoms[1]);
+  }
+
+  // Neutral σ-frame valence for common aromatic elements.
+  // Used to determine whether an atom has capacity for a π (double) bond.
+  const SIGMA_VAL = {
+    B: 3, C: 4, N: 3, O: 2, F: 1,
+    Si: 4, P: 3, S: 2, Cl: 1, As: 3, Se: 2, Br: 1, Te: 2, I: 1
+  };
+
+  // For each aromatic atom, sum the σ-frame contribution of every bond it has
+  // (treating all aromatic bonds as order 1, non-aromatic bonds at face value).
+  // This tells us how much of the atom's valence is already committed to the σ
+  // skeleton, leaving the remainder for a possible π bond.
+  const sigmaBO = new Map();
+  for (const id of aroAtomIds) {
+    sigmaBO.set(id, 0);
+  }
+  for (const bond of mol.bonds.values()) {
+    const [a, c] = bond.atoms;
+    const contrib = bond.properties.aromatic ? 1 : (bond.properties.order ?? 1);
+    if (aroAtomIds.has(a)) {
+      sigmaBO.set(a, sigmaBO.get(a) + contrib);
+    }
+    if (aroAtomIds.has(c)) {
+      sigmaBO.set(c, sigmaBO.get(c) + contrib);
+    }
+  }
+
+  // An atom can hold a π bond only when baseValence − sigmaBO ≥ 1.
+  // Examples that are correctly excluded:
+  //   Indolizine N (3 aro bonds, val 3): 3 − 3 = 0 → lone-pair donor, no C=N
+  //   Furan O     (2 aro bonds, val 2): 2 − 2 = 0 → lone-pair donor, no C=O
+  //   Pyrrole N–H (2 aro bonds + 1 H):  3 − 3 = 0 → lone-pair donor
+  //   Pyridine N  (2 aro bonds, val 3): 3 − 2 = 1 → included ✓
+  const canHaveDouble = new Set();
+  for (const id of aroAtomIds) {
+    const atom = mol.atoms.get(id);
+    const base = SIGMA_VAL[atom.name] ?? 4;
+    if (base - sigmaBO.get(id) >= 1) {
+      canHaveDouble.add(id);
+    }
+  }
+
+  // Build matching adjacency — only bonds between two π-capable atoms.
+  const adj = new Map();
+  for (const id of canHaveDouble) {
+    adj.set(id, []);
+  }
+  for (const b of aroBonds) {
+    const [a, c] = b.atoms;
+    if (canHaveDouble.has(a) && canHaveDouble.has(c)) {
+      adj.get(a).push({ bondId: b.id, otherId: c });
+      adj.get(c).push({ bondId: b.id, otherId: a });
+    }
+  }
+
+  const mate = new Map();
+  for (const id of canHaveDouble) {
+    mate.set(id, null);
+  }
+  const matchedBond = new Map();
+
+  function tryAugment(startId) {
+    const visited = new Set([startId]);
+    function dfs(v) {
+      for (const { bondId, otherId: u } of adj.get(v)) {
+        if (visited.has(u)) {
+          continue;
+        }
+        visited.add(u);
+        const mateOfU = mate.get(u);
+        if (mateOfU === null || dfs(mateOfU)) {
+          mate.set(v, u); mate.set(u, v);
+          matchedBond.set(v, bondId); matchedBond.set(u, bondId);
+          return true;
+        }
+      }
+      return false;
+    }
+    return dfs(startId);
+  }
+
+  for (const id of canHaveDouble) {
+    if (mate.get(id) === null) {
+      tryAugment(id);
+    }
+  }
+
+  const doubleBondIds = new Set();
+  for (const [atomId, bondId] of matchedBond) {
+    if (mate.get(atomId) !== null) {
+      doubleBondIds.add(bondId);
+    }
+  }
+  for (const b of aroBonds) {
+    b.properties.localizedOrder = doubleBondIds.has(b.id) ? 2 : 1;
+  }
 }

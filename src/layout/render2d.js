@@ -2,11 +2,14 @@
  * render2d.js — reusable 2D skeletal-structure renderer
  *
  * Exports:
- *   renderMolSVG(mol)                  → { svgContent, cellW, cellH } | null
- *   renderMolSVGFromSMILES(smiles)      → { svgContent, cellW, cellH } | null
- *   renderMolSVGFromINCHI(inchi)        → { svgContent, cellW, cellH } | null
- *   buildCompositeSVG(cells, cols)      → SVG string
- *   svgToPng(svgString)                → Buffer (PNG)
+ *   renderMolSVG(mol, opts)              → { svgContent, cellW, cellH } | null
+ *   renderMolSVGFromSMILES(smiles, opts) → { svgContent, cellW, cellH } | null
+ *   renderMolSVGFromINCHI(inchi, opts)   → { svgContent, cellW, cellH } | null
+ *   buildCompositeSVG(cells, cols)       → SVG string
+ *   svgToPng(svgString)                  → Buffer (PNG)
+ *
+ * opts.aromaticMode  'localized' (default) — Kekulé alternating single/double
+ *                    'delocalized'         — uniform 1.5-order dashed bond
  */
 
 import { parseSMILES }    from '../io/smiles.js';
@@ -17,7 +20,8 @@ import {
   WEDGE_HALF_W, WEDGE_DASHES,
   perpUnit, shortenLine, secondaryDir,
   labelHalfW, labelHalfH,
-  getAtomLabel, pickStereoWedges
+  getAtomLabel, pickStereoWedges,
+  kekulize
 } from './mol2d-helpers.js';
 import { Resvg } from '@resvg/resvg-js';
 
@@ -31,8 +35,8 @@ export const FONT_SIZE = 11;  // px
 export const CELL_PAD  = 22;  // px padding inside each cell
 export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
 
-function renderBondOrder(bond) {
-  if (AROMATIC_RENDER_MODE === 'localized' && (bond.properties.aromatic ?? false)) {
+function renderBondOrder(bond, mode = AROMATIC_RENDER_MODE) {
+  if (mode === 'localized' && (bond.properties.aromatic ?? false)) {
     return bond.properties.localizedOrder ?? (bond.properties.order ?? 1.5);
   }
   return bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
@@ -49,7 +53,7 @@ function escapeXml(s) {
 // Bond SVG rendering — returns an array of SVG element strings.
 // For stereo bonds a1 is the chiral centre (pointed tip).
 // ---------------------------------------------------------------------------
-function bondToSVG(bond, a1, a2, mol, toSVG, stereoType) {
+function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, aromaticMode = AROMATIC_RENDER_MODE) {
   const out = [];
 
   if (stereoType === 'wedge' || stereoType === 'dash') {
@@ -77,7 +81,7 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType) {
     return out;
   }
 
-  const order = renderBondOrder(bond);
+  const order = renderBondOrder(bond, aromaticMode);
   const s1 = toSVG(a1), s2 = toSVG(a2);
   const dx = s2.x - s1.x, dy = s2.y - s1.y;
   const { nx, ny } = perpUnit(dx, dy);
@@ -118,7 +122,7 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType) {
 // Accepts a pre-parsed Molecule object.
 // Returns { svgContent: string, cellW: number, cellH: number } or null.
 // ---------------------------------------------------------------------------
-export function renderMolSVG(mol) {
+export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = AROMATIC_RENDER_MODE } = {}) {
   if (!mol || mol.atoms.size === 0) {
     return null;
   }
@@ -137,6 +141,11 @@ export function renderMolSVG(mol) {
 
   // Hide (not strip) so chiral centers retain their H neighbours.
   mol.hideHydrogens();
+
+  // Assign Kekulé bond orders to any aromatic bonds that lack them.
+  if (aromaticMode === 'localized') {
+    kekulize(mol);
+  }
 
   try {
     generateCoords(mol, { suppressH: true, bondLength: 1.5 });
@@ -223,7 +232,7 @@ export function renderMolSVG(mol) {
     if (stereoType && a2.properties.chirality) {
       sa1 = a2; sa2 = a1;
     }
-    lines.push(...bondToSVG(bond, sa1, sa2, mol, toSVG, stereoType));
+    lines.push(...bondToSVG(bond, sa1, sa2, mol, toSVG, stereoType, aromaticMode));
   }
 
   // Decrement hCount for any H shown via a stereo bond.
@@ -293,18 +302,18 @@ export function renderMolSVG(mol) {
     );
   }
 
-  // R/S chirality labels — small italic text above each chiral centre.
   const chiralEls = [];
-  for (const atom of atoms) {
-    const rs = atom.properties.chirality;
-    if (rs !== 'R' && rs !== 'S') {
-      continue;
+  if (showChiralLabels) {
+    for (const atom of atoms) {
+      const rs = atom.properties.chirality;
+      if (rs !== 'R' && rs !== 'S') {
+        continue;
+      }
+      const { x, y } = toSVG(atom);
+      chiralEls.push(
+        `<text x="${x.toFixed(2)}" y="${(y - 10).toFixed(2)}" font-family="sans-serif" font-size="10" font-style="italic" fill="#555" text-anchor="middle" dominant-baseline="auto">${rs}</text>`
+      );
     }
-    const { x, y } = toSVG(atom);
-    // Offset upward by ~8 px so the label sits just above the atom symbol (or bond junction).
-    chiralEls.push(
-      `<text x="${x.toFixed(2)}" y="${(y - 10).toFixed(2)}" font-family="sans-serif" font-size="10" font-style="italic" fill="#555" text-anchor="middle" dominant-baseline="auto">${rs}</text>`
-    );
   }
 
   const svgContent = [
@@ -381,24 +390,24 @@ export function buildCompositeSVG(cells, cols) {
 // ---------------------------------------------------------------------------
 // renderMolSVGFromSMILES / renderMolSVGFromINCHI — convenience wrappers
 // ---------------------------------------------------------------------------
-export function renderMolSVGFromSMILES(smiles) {
+export function renderMolSVGFromSMILES(smiles, options) {
   let mol;
   try {
     mol = parseSMILES(smiles);
   } catch {
     return null;
   }
-  return renderMolSVG(mol);
+  return renderMolSVG(mol, options);
 }
 
-export function renderMolSVGFromINCHI(inchi) {
+export function renderMolSVGFromINCHI(inchi, options) {
   let mol;
   try {
     mol = parseINCHI(inchi);
   } catch {
     return null;
   }
-  return renderMolSVG(mol);
+  return renderMolSVG(mol, options);
 }
 
 // ---------------------------------------------------------------------------

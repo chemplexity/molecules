@@ -35,7 +35,7 @@ export const functionalGroups = {
   enol: { name: 'Enol', smarts: '[OX2H][CX3;!$([CX3]=O)]=[CX3]' },
   ether: { name: 'Ether', smarts: '[#6][OX2;!$([OX2][CX3]=O);!r3][#6]' },
   epoxide: { name: 'Epoxide', smarts: '[OX2r3]1[#6r3][#6r3]1' },
-  carbonyl: { name: 'Carbonyl', smarts: '[CX3]=[OX1]' },
+  carbonyl: { name: 'Carbonyl', smarts: '[CX3;!$([CX3](=[OX1])[#7,#8,F,Cl,Br,I,S])](=[OX1])' },
   aldehyde: { name: 'Aldehyde', smarts: '[CX3H1]=[OX1]' },
   ketone: { name: 'Ketone', smarts: '[#6][CX3](=O)[#6]' },
   carboxylicAcid: { name: 'Carboxylic Acid', smarts: '[CX3](=O)[OX2H1]' },

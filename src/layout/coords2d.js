@@ -2310,6 +2310,1443 @@ function optimizeAcyclicMultipleBondSubtrees(molecule, coords, bondLength) {
   }
 }
 
+function readExistingCoords(molecule) {
+  const coords = new Map();
+  for (const [atomId, atom] of molecule.atoms) {
+    if (Number.isFinite(atom.x) && Number.isFinite(atom.y)) {
+      coords.set(atomId, vec2(atom.x, atom.y));
+    }
+  }
+  return coords;
+}
+
+function collectRefinementSubtree(molecule, startId, blockedId, frozenAtoms) {
+  if (frozenAtoms.has(startId)) {
+    return null;
+  }
+
+  const subtree = new Set();
+  const queue = [startId];
+  const seen = new Set([blockedId]);
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    if (seen.has(cur)) {
+      continue;
+    }
+    if (frozenAtoms.has(cur)) {
+      return null;
+    }
+    seen.add(cur);
+    subtree.add(cur);
+    for (const nb of _layoutNeighbors(molecule, cur)) {
+      if (!seen.has(nb)) {
+        queue.push(nb);
+      }
+    }
+  }
+  return subtree;
+}
+
+function countHeavyAtoms(molecule, atomIds) {
+  let count = 0;
+  for (const atomId of atomIds) {
+    if (molecule.atoms.get(atomId)?.name !== 'H') {
+      count++;
+    }
+  }
+  return count;
+}
+
+function collectCycleData(molecule) {
+  const ringBondIds = new Set();
+  const ringAtomIds = new Set();
+
+  const hasAlternatePath = (startId, endId, excludedBondId) => {
+    const queue = [startId];
+    const seen = new Set();
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      if (cur === endId) {
+        return true;
+      }
+      if (seen.has(cur)) {
+        continue;
+      }
+      seen.add(cur);
+      const atom = molecule.atoms.get(cur);
+      if (!atom) {
+        continue;
+      }
+      for (const bondId of atom.bonds) {
+        if (bondId === excludedBondId) {
+          continue;
+        }
+        const bond = molecule.bonds.get(bondId);
+        if (!bond) {
+          continue;
+        }
+        const nextId = bond.getOtherAtom(cur);
+        if (!seen.has(nextId)) {
+          queue.push(nextId);
+        }
+      }
+    }
+    return false;
+  };
+
+  for (const [, bond] of molecule.bonds) {
+    const [aId, bId] = bond.atoms;
+    const atomA = molecule.atoms.get(aId);
+    const atomB = molecule.atoms.get(bId);
+    if (!atomA || !atomB || atomA.name === 'H' || atomB.name === 'H') {
+      continue;
+    }
+    if (hasAlternatePath(aId, bId, bond.id)) {
+      ringBondIds.add(bond.id);
+      ringAtomIds.add(aId);
+      ringAtomIds.add(bId);
+    }
+  }
+
+  return { ringBondIds, ringAtomIds };
+}
+
+function collectRingSystemCandidates(molecule, bondLength, cycleData) {
+  const ringAtomSet = cycleData.ringAtomIds;
+  const systems = [];
+  const seen = new Set();
+
+  for (const atomId of ringAtomSet) {
+    if (seen.has(atomId)) {
+      continue;
+    }
+    const atomIds = new Set();
+    const queue = [atomId];
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      if (seen.has(cur) || !ringAtomSet.has(cur)) {
+        continue;
+      }
+      seen.add(cur);
+      atomIds.add(cur);
+      for (const nb of _layoutNeighbors(molecule, cur)) {
+        if (!seen.has(nb) && ringAtomSet.has(nb)) {
+          queue.push(nb);
+        }
+      }
+    }
+    if (atomIds.size < 3) {
+      continue;
+    }
+
+    const ringSubgraph = molecule.getSubgraph([...atomIds]);
+    generateCoords(ringSubgraph, { suppressH: true, bondLength });
+    const templateCoords = new Map();
+    for (const [ringAtomId, atom] of ringSubgraph.atoms) {
+      if (Number.isFinite(atom.x) && Number.isFinite(atom.y)) {
+        templateCoords.set(ringAtomId, vec2(atom.x, atom.y));
+      }
+    }
+    if (templateCoords.size >= 3) {
+      systems.push({ atomIds, templateCoords });
+    }
+  }
+
+  return systems;
+}
+
+function alignTemplateCoords(templateCoords, targetCoords, atomIds) {
+  const ids = [...atomIds].filter(atomId => templateCoords.has(atomId) && targetCoords.has(atomId));
+  if (ids.length < 2) {
+    return null;
+  }
+
+  let srcCx = 0, srcCy = 0, dstCx = 0, dstCy = 0;
+  for (const atomId of ids) {
+    const src = templateCoords.get(atomId);
+    const dst = targetCoords.get(atomId);
+    srcCx += src.x;
+    srcCy += src.y;
+    dstCx += dst.x;
+    dstCy += dst.y;
+  }
+  srcCx /= ids.length;
+  srcCy /= ids.length;
+  dstCx /= ids.length;
+  dstCy /= ids.length;
+
+  const buildAligned = (reflectY) => {
+    let cross = 0;
+    let dot = 0;
+    for (const atomId of ids) {
+      const src = templateCoords.get(atomId);
+      const dst = targetCoords.get(atomId);
+      const sx = src.x - srcCx;
+      const sy = reflectY ? -(src.y - srcCy) : (src.y - srcCy);
+      const dx = dst.x - dstCx;
+      const dy = dst.y - dstCy;
+      cross += sx * dy - sy * dx;
+      dot += sx * dx + sy * dy;
+    }
+
+    const angle = Math.atan2(cross, dot);
+    const cosA = Math.cos(angle);
+    const sinA = Math.sin(angle);
+    const aligned = new Map();
+    let error = 0;
+
+    for (const atomId of ids) {
+      const src = templateCoords.get(atomId);
+      const sx = src.x - srcCx;
+      const sy = reflectY ? -(src.y - srcCy) : (src.y - srcCy);
+      const x = dstCx + sx * cosA - sy * sinA;
+      const y = dstCy + sx * sinA + sy * cosA;
+      aligned.set(atomId, vec2(x, y));
+
+      const dst = targetCoords.get(atomId);
+      error += (x - dst.x) ** 2 + (y - dst.y) ** 2;
+    }
+
+    return { aligned, error };
+  };
+
+  const direct = buildAligned(false);
+  const mirrored = buildAligned(true);
+  return mirrored.error + 1e-9 < direct.error ? mirrored.aligned : direct.aligned;
+}
+
+function measureRingSystemDeviation(baseCoords, ringSystem) {
+  const aligned = alignTemplateCoords(ringSystem.templateCoords, baseCoords, ringSystem.atomIds);
+  if (!aligned) {
+    return null;
+  }
+
+  let maxDisp = 0;
+  let sumDispSq = 0;
+  let count = 0;
+  for (const atomId of ringSystem.atomIds) {
+    const cur = baseCoords.get(atomId);
+    const ideal = aligned.get(atomId);
+    if (!cur || !ideal) {
+      continue;
+    }
+    const disp = Math.hypot(cur.x - ideal.x, cur.y - ideal.y);
+    if (disp > maxDisp) {
+      maxDisp = disp;
+    }
+    sumDispSq += disp * disp;
+    count++;
+  }
+  if (count === 0) {
+    return null;
+  }
+
+  return {
+    aligned,
+    maxDisp,
+    rmsDisp: Math.sqrt(sumDispSq / count)
+  };
+}
+
+function buildRefinementContext(molecule, coords, {
+  bondLength = DEFAULT_BOND_LENGTH,
+  freezeRings = true,
+  freezeChiralCenters = false
+} = {}) {
+  _buildLayoutNeighborCache(molecule);
+
+  const heavyIds = [...coords.keys()].filter(id => molecule.atoms.get(id)?.name !== 'H');
+  const cycleData = collectCycleData(molecule);
+  const frozenAtoms = new Set();
+  if (freezeRings) {
+    for (const atomId of cycleData.ringAtomIds) {
+      frozenAtoms.add(atomId);
+    }
+  }
+  if (freezeChiralCenters) {
+    for (const atomId of molecule.getChiralCenters()) {
+      frozenAtoms.add(atomId);
+    }
+  }
+
+  const bondedPairs = new Set();
+  const heavyBonds = [];
+  for (const [, bond] of molecule.bonds) {
+    const [aId, bId] = bond.atoms;
+    bondedPairs.add(`${aId}\0${bId}`);
+    bondedPairs.add(`${bId}\0${aId}`);
+    if (coords.has(aId) && coords.has(bId) &&
+        molecule.atoms.get(aId)?.name !== 'H' &&
+        molecule.atoms.get(bId)?.name !== 'H') {
+      heavyBonds.push(bond);
+    }
+  }
+
+  const rotatableCandidates = [];
+  const multipleBondCandidates = [];
+  for (const [, bond] of molecule.bonds) {
+    const [aId, bId] = bond.atoms;
+    const atomA = molecule.atoms.get(aId);
+    const atomB = molecule.atoms.get(bId);
+    if (!atomA || !atomB) {
+      continue;
+    }
+    if (atomA.name === 'H' || atomB.name === 'H' || cycleData.ringBondIds.has(bond.id)) {
+      continue;
+    }
+    if (!coords.has(aId) || !coords.has(bId)) {
+      continue;
+    }
+
+    const order = bond.properties.order ?? 1;
+    const sideA = collectRefinementSubtree(molecule, aId, bId, frozenAtoms);
+    const sideB = collectRefinementSubtree(molecule, bId, aId, frozenAtoms);
+
+    if (order === 1 && !bond.properties.aromatic) {
+      const choices = [];
+      if (sideA && sideA.size > 0) {
+        choices.push({
+          kind: 'rotatable',
+          bondId: bond.id,
+          pivotId: bId,
+          movingId: aId,
+          atomIds: sideA,
+          heavyCount: countHeavyAtoms(molecule, sideA)
+        });
+      }
+      if (sideB && sideB.size > 0) {
+        choices.push({
+          kind: 'rotatable',
+          bondId: bond.id,
+          pivotId: aId,
+          movingId: bId,
+          atomIds: sideB,
+          heavyCount: countHeavyAtoms(molecule, sideB)
+        });
+      }
+      if (choices.length === 0) {
+        continue;
+      }
+
+      choices.sort((a, b) => {
+        if (a.heavyCount !== b.heavyCount) {
+          return a.heavyCount - b.heavyCount;
+        }
+        if (a.atomIds.size !== b.atomIds.size) {
+          return a.atomIds.size - b.atomIds.size;
+        }
+        if (a.pivotId !== b.pivotId) {
+          return _layoutCompareAtomIds(molecule, a.pivotId, b.pivotId);
+        }
+        return _layoutCompareAtomIds(molecule, a.movingId, b.movingId);
+      });
+
+      rotatableCandidates.push(choices[0]);
+      continue;
+    }
+
+    if (order < 2 || bond.properties.aromatic) {
+      continue;
+    }
+
+    const heavyDegreeA = _layoutNeighbors(molecule, aId).filter(nb => molecule.atoms.get(nb)?.name !== 'H').length;
+    const heavyDegreeB = _layoutNeighbors(molecule, bId).filter(nb => molecule.atoms.get(nb)?.name !== 'H').length;
+    const heavySideA = sideA ? countHeavyAtoms(molecule, sideA) : 0;
+    const heavySideB = sideB ? countHeavyAtoms(molecule, sideB) : 0;
+    if (sideA && heavySideA === 1 && heavyDegreeA === 1 && !frozenAtoms.has(aId)) {
+      multipleBondCandidates.push({
+        kind: 'multiple_terminal',
+        bondId: bond.id,
+        pivotId: bId,
+        movingId: aId,
+        atomIds: sideA,
+        heavyCount: heavySideA
+      });
+    }
+    if (sideB && heavySideB === 1 && heavyDegreeB === 1 && !frozenAtoms.has(bId)) {
+      multipleBondCandidates.push({
+        kind: 'multiple_terminal',
+        bondId: bond.id,
+        pivotId: aId,
+        movingId: bId,
+        atomIds: sideB,
+        heavyCount: heavySideB
+      });
+    }
+  }
+
+  const ringSystemCandidates = freezeRings ? collectRingSystemCandidates(molecule, bondLength, cycleData) : [];
+
+  return {
+    bondLength,
+    heavyIds,
+    heavyBonds,
+    bondedPairs,
+    cycleData,
+    frozenAtoms,
+    rotatableCandidates,
+    multipleBondCandidates,
+    ringSystemCandidates
+  };
+}
+
+function segmentsProperlyIntersect(a1, a2, b1, b2) {
+  const orient = (p, q, r) => (q.x - p.x) * (r.y - p.y) - (q.y - p.y) * (r.x - p.x);
+  const o1 = orient(a1, a2, b1);
+  const o2 = orient(a1, a2, b2);
+  const o3 = orient(b1, b2, a1);
+  const o4 = orient(b1, b2, a2);
+  const eps = 1e-8;
+  if (Math.abs(o1) < eps || Math.abs(o2) < eps || Math.abs(o3) < eps || Math.abs(o4) < eps) {
+    return false;
+  }
+  return (o1 > 0) !== (o2 > 0) && (o3 > 0) !== (o4 > 0);
+}
+
+function angleBetweenPoints(a, b, c) {
+  const ux = a.x - b.x;
+  const uy = a.y - b.y;
+  const vx = c.x - b.x;
+  const vy = c.y - b.y;
+  const uLen = Math.hypot(ux, uy);
+  const vLen = Math.hypot(vx, vy);
+  if (uLen < 1e-8 || vLen < 1e-8) {
+    return null;
+  }
+  const cos = Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (uLen * vLen)));
+  return Math.acos(cos);
+}
+
+function idealRefinementAngle(molecule, atomId) {
+  const atom = molecule.atoms.get(atomId);
+  if (!atom) {
+    return DEG120;
+  }
+  const heavyBondOrders = atom.bonds
+    .map(bondId => molecule.bonds.get(bondId))
+    .filter(Boolean)
+    .filter(bond => {
+      const otherId = bond.getOtherAtom(atomId);
+      return molecule.atoms.get(otherId)?.name !== 'H';
+    })
+    .map(bond => bond.properties.order ?? 1);
+  const hasTriple = heavyBondOrders.some(order => order >= 3);
+  const doubleCount = heavyBondOrders.filter(order => order >= 2 && order < 3).length;
+  if (hasTriple || doubleCount >= 2) {
+    return Math.PI;
+  }
+  return DEG120;
+}
+
+function averageDirectionAwayFromRefs(pivot, refPositions) {
+  let sumX = 0;
+  let sumY = 0;
+  for (const refPos of refPositions) {
+    const dx = refPos.x - pivot.x;
+    const dy = refPos.y - pivot.y;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-8) {
+      continue;
+    }
+    sumX += dx / len;
+    sumY += dy / len;
+  }
+  if (Math.hypot(sumX, sumY) < 1e-8) {
+    return null;
+  }
+  return Math.atan2(-sumY, -sumX);
+}
+
+function ringSubstituentTargetAngle(molecule, coords, pivotId, ringAtomIds) {
+  const pivot = coords.get(pivotId);
+  if (!pivot) {
+    return null;
+  }
+  const ringRefPositions = _layoutNeighbors(molecule, pivotId)
+    .filter(atomId => ringAtomIds.has(atomId))
+    .map(atomId => coords.get(atomId))
+    .filter(Boolean);
+  if (ringRefPositions.length < 2) {
+    return null;
+  }
+  return averageDirectionAwayFromRefs(pivot, ringRefPositions);
+}
+
+function isRefinementChainBond(molecule, aId, bId, allowedAtomIds = null) {
+  if (allowedAtomIds && (!allowedAtomIds.has(aId) || !allowedAtomIds.has(bId))) {
+    return false;
+  }
+  const bond = molecule.getBond(aId, bId);
+  return Boolean(bond && !bond.properties.aromatic && (bond.properties.order ?? 1) === 1);
+}
+
+function isRefinementChainAtom(molecule, atomId, ringAtomIds, allowedAtomIds = null) {
+  if (allowedAtomIds && !allowedAtomIds.has(atomId)) {
+    return false;
+  }
+  const atom = molecule.atoms.get(atomId);
+  if (!atom || atom.name === 'H' || ringAtomIds.has(atomId)) {
+    return false;
+  }
+  const heavyNeighbors = _layoutNeighbors(molecule, atomId)
+    .filter(nb => molecule.atoms.get(nb)?.name !== 'H')
+    .filter(nb => !allowedAtomIds || allowedAtomIds.has(nb));
+  if (heavyNeighbors.length === 0) {
+    return false;
+  }
+  return heavyNeighbors.every(nb => isRefinementChainBond(molecule, atomId, nb, allowedAtomIds));
+}
+
+function collectRefinementChainPath(molecule, startId, ringAtomIds, allowedAtomIds = null) {
+  if (!isRefinementChainAtom(molecule, startId, ringAtomIds, allowedAtomIds)) {
+    return [];
+  }
+  const path = [startId];
+  let prevId = null;
+  let curId = startId;
+
+  while (true) {
+    const nextIds = _layoutNeighbors(molecule, curId)
+      .filter(nb => nb !== prevId)
+      .filter(nb => molecule.atoms.get(nb)?.name !== 'H')
+      .filter(nb => isRefinementChainAtom(molecule, nb, ringAtomIds, allowedAtomIds))
+      .filter(nb => isRefinementChainBond(molecule, curId, nb, allowedAtomIds));
+    if (nextIds.length !== 1) {
+      break;
+    }
+    prevId = curId;
+    curId = nextIds[0];
+    path.push(curId);
+  }
+
+  return path;
+}
+
+function collectAllRefinementChainPaths(molecule, ctx) {
+  const eligible = new Set(
+    ctx.heavyIds.filter(atomId => isRefinementChainAtom(molecule, atomId, ctx.cycleData.ringAtomIds))
+  );
+  const neighborMap = new Map();
+  for (const atomId of eligible) {
+    neighborMap.set(
+      atomId,
+      _layoutNeighbors(molecule, atomId)
+        .filter(nb => eligible.has(nb))
+        .filter(nb => isRefinementChainBond(molecule, atomId, nb))
+    );
+  }
+
+  const visited = new Set();
+  const paths = [];
+  const edgeKey = (a, b) => a < b ? `${a}\0${b}` : `${b}\0${a}`;
+
+  const starts = [...eligible].sort((a, b) => {
+    const da = neighborMap.get(a)?.length ?? 0;
+    const db = neighborMap.get(b)?.length ?? 0;
+    if (da !== db) {
+      return da - db;
+    }
+    return _layoutCompareAtomIds(molecule, a, b);
+  });
+
+  for (const startId of starts) {
+    const degree = neighborMap.get(startId)?.length ?? 0;
+    if (degree > 1) {
+      continue;
+    }
+    const path = [startId];
+    let prevId = null;
+    let curId = startId;
+    while (true) {
+      const nextIds = (neighborMap.get(curId) ?? []).filter(nb => nb !== prevId);
+      if (nextIds.length !== 1) {
+        break;
+      }
+      const nextId = nextIds[0];
+      const eKey = edgeKey(curId, nextId);
+      if (visited.has(eKey)) {
+        break;
+      }
+      visited.add(eKey);
+      path.push(nextId);
+      prevId = curId;
+      curId = nextId;
+    }
+    if (path.length >= 2) {
+      paths.push(path);
+    }
+  }
+
+  return paths;
+}
+
+function collectLayoutIssues(molecule, coords, ctx) {
+  const issues = [];
+  const atomThresh = ctx.bondLength * 0.72;
+  const nearAtomThresh = ctx.bondLength * 0.95;
+  const bondAtomThreshC = ctx.bondLength * 0.30;
+  const bondAtomThreshHetero = ctx.bondLength * 0.50;
+  const stretchedBondThresh = ctx.bondLength * 1.20;
+  const compressedBondThresh = ctx.bondLength * 0.80;
+
+  for (let i = 0; i < ctx.heavyIds.length; i++) {
+    const aId = ctx.heavyIds[i];
+    const aPos = coords.get(aId);
+    if (!aPos) {
+      continue;
+    }
+    for (let j = i + 1; j < ctx.heavyIds.length; j++) {
+      const bId = ctx.heavyIds[j];
+      if (ctx.bondedPairs.has(`${aId}\0${bId}`)) {
+        continue;
+      }
+      const bPos = coords.get(bId);
+      if (!bPos) {
+        continue;
+      }
+      const dist = Math.hypot(aPos.x - bPos.x, aPos.y - bPos.y);
+      if (dist < atomThresh) {
+        issues.push({
+          type: 'atom_overlap',
+          severity: 20 + (atomThresh - dist) * 40,
+          atoms: [aId, bId]
+        });
+      } else if (dist < nearAtomThresh) {
+        issues.push({
+          type: 'atom_near',
+          severity: (nearAtomThresh - dist) * 6,
+          atoms: [aId, bId]
+        });
+      }
+    }
+  }
+
+  for (let i = 0; i < ctx.heavyBonds.length; i++) {
+    const bond = ctx.heavyBonds[i];
+    const [aId, bId] = bond.atoms;
+    const aPos = coords.get(aId);
+    const bPos = coords.get(bId);
+    if (!aPos || !bPos) {
+      continue;
+    }
+    const bondDist = Math.hypot(aPos.x - bPos.x, aPos.y - bPos.y);
+
+    if (bondDist > stretchedBondThresh) {
+      issues.push({
+        type: 'bond_stretch',
+        severity: 10 + (bondDist - stretchedBondThresh) * 18,
+        atoms: [aId, bId],
+        bonds: [bond.id]
+      });
+    } else if (bondDist < compressedBondThresh) {
+      issues.push({
+        type: 'bond_compression',
+        severity: 10 + (compressedBondThresh - bondDist) * 24,
+        atoms: [aId, bId],
+        bonds: [bond.id]
+      });
+    }
+
+    for (const atomId of ctx.heavyIds) {
+      if (atomId === aId || atomId === bId) {
+        continue;
+      }
+      if (ctx.bondedPairs.has(`${atomId}\0${aId}`) || ctx.bondedPairs.has(`${atomId}\0${bId}`)) {
+        continue;
+      }
+      const atomPos = coords.get(atomId);
+      if (!atomPos) {
+        continue;
+      }
+      const atom = molecule.atoms.get(atomId);
+      const thresh = atom?.name === 'C' ? bondAtomThreshC : bondAtomThreshHetero;
+      const dist = pointToSegmentDistance(atomPos, aPos, bPos);
+      if (dist < thresh) {
+        issues.push({
+          type: 'bond_atom_crowding',
+          severity: (atom?.name === 'C' ? 4 : 12) + (thresh - dist) * (atom?.name === 'C' ? 10 : 35),
+          atoms: [atomId, aId, bId],
+          bonds: [bond.id]
+        });
+      }
+    }
+
+    for (let j = i + 1; j < ctx.heavyBonds.length; j++) {
+      const otherBond = ctx.heavyBonds[j];
+      const shared = bond.atoms.some(atomId => otherBond.atoms.includes(atomId));
+      if (shared) {
+        continue;
+      }
+      const cPos = coords.get(otherBond.atoms[0]);
+      const dPos = coords.get(otherBond.atoms[1]);
+      if (!cPos || !dPos) {
+        continue;
+      }
+      if (segmentsProperlyIntersect(aPos, bPos, cPos, dPos)) {
+        issues.push({
+          type: 'bond_crossing',
+          severity: 30,
+          atoms: [...bond.atoms, ...otherBond.atoms],
+          bonds: [bond.id, otherBond.id]
+        });
+      }
+    }
+  }
+
+  for (const pivotId of ctx.heavyIds) {
+    if (ctx.cycleData.ringAtomIds.has(pivotId)) {
+      const ringNeighbors = _layoutNeighbors(molecule, pivotId)
+        .filter(atomId => ctx.cycleData.ringAtomIds.has(atomId))
+        .filter(atomId => molecule.atoms.get(atomId)?.name !== 'H')
+        .filter(atomId => coords.has(atomId));
+      const substituents = _layoutNeighbors(molecule, pivotId)
+        .filter(atomId => !ctx.cycleData.ringAtomIds.has(atomId))
+        .filter(atomId => molecule.atoms.get(atomId)?.name !== 'H')
+        .filter(atomId => coords.has(atomId));
+      if (ringNeighbors.length >= 2 && substituents.length === 1) {
+        const pivotPos = coords.get(pivotId);
+        const subPos = coords.get(substituents[0]);
+        const targetAngle = ringSubstituentTargetAngle(molecule, coords, pivotId, ctx.cycleData.ringAtomIds);
+        if (pivotPos && subPos && targetAngle != null) {
+          const actualAngle = angleTo(pivotPos, subPos);
+          const err = Math.abs(normalizeAngle(actualAngle - targetAngle));
+          if (err > (18 * Math.PI / 180)) {
+            issues.push({
+              type: 'ring_substituent_angle',
+              severity: 10 + err * 18,
+              atoms: [pivotId, substituents[0], ...ringNeighbors]
+            });
+          }
+        }
+      }
+      continue;
+    }
+    const neighbors = _layoutNeighbors(molecule, pivotId)
+      .filter(atomId => molecule.atoms.get(atomId)?.name !== 'H')
+      .filter(atomId => coords.has(atomId));
+    if (neighbors.length < 2 || neighbors.length > 3) {
+      continue;
+    }
+
+    const pivotPos = coords.get(pivotId);
+    if (!pivotPos) {
+      continue;
+    }
+    const ideal = idealRefinementAngle(molecule, pivotId);
+    let worstErr = 0;
+    let errSum = 0;
+    let pairCount = 0;
+    for (let i = 0; i < neighbors.length; i++) {
+      for (let j = i + 1; j < neighbors.length; j++) {
+        const aPos = coords.get(neighbors[i]);
+        const bPos = coords.get(neighbors[j]);
+        if (!aPos || !bPos) {
+          continue;
+        }
+        const angle = angleBetweenPoints(aPos, pivotPos, bPos);
+        if (angle == null) {
+          continue;
+        }
+        const err = Math.abs(angle - ideal);
+        if (err > worstErr) {
+          worstErr = err;
+        }
+        errSum += err;
+        pairCount++;
+      }
+    }
+    if (pairCount === 0) {
+      continue;
+    }
+    if (worstErr > (12 * Math.PI / 180)) {
+      issues.push({
+        type: neighbors.length === 3 ? 'planar_angle' : 'chain_angle',
+        severity: 8 + worstErr * 22 + (errSum / pairCount) * 8,
+        atoms: [pivotId, ...neighbors]
+      });
+    }
+  }
+
+  for (let i = 0; i < ctx.ringSystemCandidates.length; i++) {
+    const ringSystem = ctx.ringSystemCandidates[i];
+    const deviation = measureRingSystemDeviation(coords, ringSystem);
+    if (!deviation) {
+      continue;
+    }
+    if (deviation.maxDisp > ctx.bondLength * 0.16 || deviation.rmsDisp > ctx.bondLength * 0.10) {
+      issues.push({
+        type: 'ring_geometry',
+        severity: 12 + deviation.maxDisp * 18 + deviation.rmsDisp * 18,
+        atoms: [...ringSystem.atomIds]
+      });
+    }
+  }
+
+  for (const path of collectAllRefinementChainPaths(molecule, ctx)) {
+    if (path.length < 4) {
+      continue;
+    }
+
+    const startPos = coords.get(path[0]);
+    const endPos = coords.get(path[path.length - 1]);
+    if (startPos && endPos) {
+      const endToEnd = Math.hypot(startPos.x - endPos.x, startPos.y - endPos.y);
+      const idealEndToEnd = ctx.bondLength * (path.length - 1) * 0.82;
+      if (endToEnd < idealEndToEnd) {
+        issues.push({
+          type: 'chain_compaction',
+          severity: 6 + (idealEndToEnd - endToEnd) * 5,
+          atoms: [...path]
+        });
+      }
+    }
+
+    for (let i = 0; i <= path.length - 4; i++) {
+      const sign1 = backboneTurnSign(coords, path[i], path[i + 1], path[i + 2]);
+      const sign2 = backboneTurnSign(coords, path[i + 1], path[i + 2], path[i + 3]);
+      if (sign1 !== 0 && sign2 !== 0 && sign1 === sign2) {
+        issues.push({
+          type: 'chain_curl',
+          severity: 8,
+          atoms: [path[i], path[i + 1], path[i + 2], path[i + 3]]
+        });
+      }
+    }
+  }
+
+  issues.sort((a, b) => b.severity - a.severity);
+  return issues;
+}
+
+function scoreLayoutIssues(issues) {
+  return issues.reduce((sum, issue) => sum + issue.severity, 0);
+}
+
+function rotateSubtreeCoords(baseCoords, atomIds, originId, angle) {
+  const origin = baseCoords.get(originId);
+  if (!origin || Math.abs(angle) < 1e-9) {
+    return new Map([...atomIds].map(id => [id, baseCoords.get(id)]).filter(([, pos]) => Boolean(pos)));
+  }
+  const rotated = new Map();
+  for (const atomId of atomIds) {
+    const pos = baseCoords.get(atomId);
+    if (pos) {
+      rotated.set(atomId, rotateAround(pos, origin, angle));
+    }
+  }
+  return rotated;
+}
+
+function reflectSubtreeCoords(baseCoords, atomIds, axisAId, axisBId) {
+  const a = baseCoords.get(axisAId);
+  const b = baseCoords.get(axisBId);
+  if (!a || !b) {
+    return new Map([...atomIds].map(id => [id, baseCoords.get(id)]).filter(([, pos]) => Boolean(pos)));
+  }
+  const reflected = new Map();
+  for (const atomId of atomIds) {
+    const pos = baseCoords.get(atomId);
+    if (pos) {
+      reflected.set(atomId, _reflectPoint(pos, a, b));
+    }
+  }
+  return reflected;
+}
+
+function reanchorSubtreeCoords(baseCoords, atomIds, pivotId, movingId, targetLength) {
+  const pivot = baseCoords.get(pivotId);
+  const moving = baseCoords.get(movingId);
+  if (!pivot || !moving) {
+    return new Map([...atomIds].map(id => [id, baseCoords.get(id)]).filter(([, pos]) => Boolean(pos)));
+  }
+
+  let dx = moving.x - pivot.x;
+  let dy = moving.y - pivot.y;
+  let dist = Math.hypot(dx, dy);
+  if (dist < 1e-6) {
+    dx = 1;
+    dy = 0;
+    dist = 1;
+  }
+
+  const targetX = pivot.x + (dx / dist) * targetLength;
+  const targetY = pivot.y + (dy / dist) * targetLength;
+  const shiftX = targetX - moving.x;
+  const shiftY = targetY - moving.y;
+
+  const translated = new Map();
+  for (const atomId of atomIds) {
+    const pos = baseCoords.get(atomId);
+    if (pos) {
+      translated.set(atomId, vec2(pos.x + shiftX, pos.y + shiftY));
+    }
+  }
+  return translated;
+}
+
+function reprojectSubtreeCoords(baseCoords, atomIds, pivotId, movingId, targetAngle, targetLength) {
+  const pivot = baseCoords.get(pivotId);
+  const moving = baseCoords.get(movingId);
+  if (!pivot || !moving) {
+    return new Map([...atomIds].map(id => [id, baseCoords.get(id)]).filter(([, pos]) => Boolean(pos)));
+  }
+
+  const currentAngle = angleTo(pivot, moving);
+  const deltaAngle = normalizeAngle(targetAngle - currentAngle);
+  const targetPos = project(pivot, targetAngle, targetLength);
+  const rotated = new Map();
+  for (const atomId of atomIds) {
+    const pos = baseCoords.get(atomId);
+    if (pos) {
+      rotated.set(atomId, rotateAround(pos, moving, deltaAngle));
+    }
+  }
+
+  const movedAnchor = rotated.get(movingId) ?? moving;
+  const shiftX = targetPos.x - movedAnchor.x;
+  const shiftY = targetPos.y - movedAnchor.y;
+  for (const [atomId, pos] of rotated) {
+    rotated.set(atomId, vec2(pos.x + shiftX, pos.y + shiftY));
+  }
+  return rotated;
+}
+
+function applyRefinementCoords(baseCoords, updates) {
+  const next = new Map(baseCoords);
+  for (const [atomId, pos] of updates) {
+    next.set(atomId, pos);
+  }
+  return next;
+}
+
+function applyRingSystemTemplate(baseCoords, ringSystem) {
+  const deviation = measureRingSystemDeviation(baseCoords, ringSystem);
+  return deviation?.aligned ? applyRefinementCoords(baseCoords, deviation.aligned) : baseCoords;
+}
+
+function buildChainProjectionTransforms(molecule, baseCoords, candidate, ctx) {
+  const pivot = baseCoords.get(candidate.pivotId);
+  const moving = baseCoords.get(candidate.movingId);
+  if (!pivot || !moving) {
+    return [];
+  }
+
+  const refIds = _layoutNeighbors(molecule, candidate.pivotId)
+    .filter(atomId => atomId !== candidate.movingId)
+    .filter(atomId => !candidate.atomIds.has(atomId))
+    .filter(atomId => molecule.atoms.get(atomId)?.name !== 'H')
+    .filter(atomId => baseCoords.has(atomId));
+  if (refIds.length === 0) {
+    return [];
+  }
+
+  const targetLength = ctx.bondLength;
+  const idealAngle = idealRefinementAngle(molecule, candidate.pivotId);
+  const transforms = [];
+  const seenAngles = new Set();
+
+  for (const refId of refIds) {
+    const refPos = baseCoords.get(refId);
+    if (!refPos) {
+      continue;
+    }
+    const refAngle = angleTo(pivot, refPos);
+    const candidateAngles = idealAngle >= Math.PI - 1e-6
+      ? [normalizeAngle(refAngle + Math.PI)]
+      : [normalizeAngle(refAngle + idealAngle), normalizeAngle(refAngle - idealAngle)];
+
+    for (const angle of candidateAngles) {
+      const key = angle.toFixed(6);
+      if (seenAngles.has(key)) {
+        continue;
+      }
+      seenAngles.add(key);
+      transforms.push(reprojectSubtreeCoords(baseCoords, candidate.atomIds, candidate.pivotId, candidate.movingId, angle, targetLength));
+    }
+  }
+
+  return transforms;
+}
+
+function buildPlanarProjectionTransforms(molecule, baseCoords, candidate, ctx) {
+  const pivot = baseCoords.get(candidate.pivotId);
+  const moving = baseCoords.get(candidate.movingId);
+  if (!pivot || !moving) {
+    return [];
+  }
+
+  const refIds = _layoutNeighbors(molecule, candidate.pivotId)
+    .filter(atomId => atomId !== candidate.movingId)
+    .filter(atomId => !candidate.atomIds.has(atomId))
+    .filter(atomId => molecule.atoms.get(atomId)?.name !== 'H')
+    .filter(atomId => baseCoords.has(atomId));
+  if (refIds.length < 2) {
+    return [];
+  }
+
+  const idealAngle = idealRefinementAngle(molecule, candidate.pivotId);
+  if (Math.abs(idealAngle - DEG120) > 1e-6) {
+    return [];
+  }
+
+  const refPositions = refIds.map(atomId => baseCoords.get(atomId)).filter(Boolean);
+  const targetAngle = averageDirectionAwayFromRefs(pivot, refPositions);
+  if (targetAngle == null) {
+    return [];
+  }
+
+  return [
+    reprojectSubtreeCoords(
+      baseCoords,
+      candidate.atomIds,
+      candidate.pivotId,
+      candidate.movingId,
+      targetAngle,
+      ctx.bondLength
+    )
+  ];
+}
+
+function buildRingSubstituentProjectionTransforms(molecule, baseCoords, candidate, ctx) {
+  if (!ctx.cycleData.ringAtomIds.has(candidate.pivotId)) {
+    return [];
+  }
+  const targetAngle = ringSubstituentTargetAngle(molecule, baseCoords, candidate.pivotId, ctx.cycleData.ringAtomIds);
+  if (targetAngle == null) {
+    return [];
+  }
+  return [
+    reprojectSubtreeCoords(
+      baseCoords,
+      candidate.atomIds,
+      candidate.pivotId,
+      candidate.movingId,
+      targetAngle,
+      ctx.bondLength
+    )
+  ];
+}
+
+function buildExtendedZigZagChainTransforms(molecule, baseCoords, candidate, ctx) {
+  if (candidate.kind !== 'rotatable') {
+    return [];
+  }
+
+  const path = collectRefinementChainPath(molecule, candidate.movingId, ctx.cycleData.ringAtomIds, candidate.atomIds);
+  if (path.length < 3) {
+    return [];
+  }
+
+  const pivot = baseCoords.get(candidate.pivotId);
+  const moving = baseCoords.get(candidate.movingId);
+  if (!pivot || !moving) {
+    return [];
+  }
+
+  const refIds = _layoutNeighbors(molecule, candidate.pivotId)
+    .filter(atomId => atomId !== candidate.movingId)
+    .filter(atomId => !candidate.atomIds.has(atomId))
+    .filter(atomId => molecule.atoms.get(atomId)?.name !== 'H')
+    .filter(atomId => baseCoords.has(atomId));
+  if (refIds.length === 0) {
+    return [];
+  }
+
+  const targetLength = ctx.bondLength;
+  const idealAngle = idealRefinementAngle(molecule, candidate.pivotId);
+  const startAngles = new Set();
+  for (const refId of refIds) {
+    const refPos = baseCoords.get(refId);
+    if (!refPos) {
+      continue;
+    }
+    const refAngle = angleTo(pivot, refPos);
+    if (idealAngle >= Math.PI - 1e-6) {
+      startAngles.add(normalizeAngle(refAngle + Math.PI).toFixed(6));
+    } else {
+      startAngles.add(normalizeAngle(refAngle + idealAngle).toFixed(6));
+      startAngles.add(normalizeAngle(refAngle - idealAngle).toFixed(6));
+    }
+  }
+
+  const pathSet = new Set(path);
+  const sideSubtrees = [];
+  const seenSide = new Set();
+  for (const anchorId of path) {
+    for (const nbId of _layoutNeighbors(molecule, anchorId)) {
+      if (!candidate.atomIds.has(nbId) || pathSet.has(nbId) || seenSide.has(nbId)) {
+        continue;
+      }
+      const subtree = new Set();
+      const queue = [nbId];
+      while (queue.length > 0) {
+        const curId = queue.shift();
+        if (subtree.has(curId) || pathSet.has(curId) || !candidate.atomIds.has(curId)) {
+          continue;
+        }
+        subtree.add(curId);
+        seenSide.add(curId);
+        for (const nextId of _layoutNeighbors(molecule, curId)) {
+          if (!subtree.has(nextId) && !pathSet.has(nextId) && candidate.atomIds.has(nextId)) {
+            queue.push(nextId);
+          }
+        }
+      }
+      if (subtree.size > 0) {
+        sideSubtrees.push({ anchorId, atomIds: subtree });
+      }
+    }
+  }
+
+  const transforms = [];
+  for (const startAngleKey of startAngles) {
+    const startAngle = Number(startAngleKey);
+    for (const parity of [1, -1]) {
+      const updates = new Map();
+      let currentPos = project(pivot, startAngle, targetLength);
+      let currentDir = startAngle;
+      let currentSign = parity;
+
+      updates.set(path[0], currentPos);
+      for (let i = 1; i < path.length; i++) {
+        const nextDir = normalizeAngle(currentDir + currentSign * DEG60);
+        const nextPos = project(currentPos, nextDir, targetLength);
+        updates.set(path[i], nextPos);
+        currentPos = nextPos;
+        currentDir = nextDir;
+        currentSign *= -1;
+      }
+
+      for (const { anchorId, atomIds } of sideSubtrees) {
+        const oldAnchor = baseCoords.get(anchorId);
+        const newAnchor = updates.get(anchorId);
+        if (!oldAnchor || !newAnchor) {
+          continue;
+        }
+        const dx = newAnchor.x - oldAnchor.x;
+        const dy = newAnchor.y - oldAnchor.y;
+        for (const atomId of atomIds) {
+          const pos = baseCoords.get(atomId);
+          if (pos) {
+            updates.set(atomId, vec2(pos.x + dx, pos.y + dy));
+          }
+        }
+      }
+
+      transforms.push(updates);
+    }
+  }
+
+  return transforms;
+}
+
+function buildAttachedMultipleBondProjectionTransforms(molecule, baseCoords, candidate, ctx) {
+  const moving = baseCoords.get(candidate.movingId);
+  if (!moving) {
+    return [];
+  }
+
+  const transforms = [];
+  for (const bondId of molecule.atoms.get(candidate.movingId)?.bonds ?? []) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond || bond.properties.aromatic || (bond.properties.order ?? 1) < 2) {
+      continue;
+    }
+    const childId = bond.getOtherAtom(candidate.movingId);
+    if (!candidate.atomIds.has(childId) || molecule.atoms.get(childId)?.name === 'H') {
+      continue;
+    }
+
+    const childAtoms = collectRefinementSubtree(molecule, childId, candidate.movingId, ctx.frozenAtoms);
+    if (!childAtoms || countHeavyAtoms(molecule, childAtoms) !== 1) {
+      continue;
+    }
+
+    const refIds = _layoutNeighbors(molecule, candidate.movingId)
+      .filter(atomId => atomId !== childId)
+      .filter(atomId => !childAtoms.has(atomId))
+      .filter(atomId => molecule.atoms.get(atomId)?.name !== 'H')
+      .filter(atomId => baseCoords.has(atomId));
+    if (refIds.length === 0) {
+      continue;
+    }
+
+    const idealAngle = idealRefinementAngle(molecule, candidate.movingId);
+    const seenAngles = new Set();
+    const addAngle = angle => {
+      const key = normalizeAngle(angle).toFixed(6);
+      if (seenAngles.has(key)) {
+        return;
+      }
+      seenAngles.add(key);
+      transforms.push(
+        reprojectSubtreeCoords(
+          baseCoords,
+          childAtoms,
+          candidate.movingId,
+          childId,
+          normalizeAngle(angle),
+          ctx.bondLength
+        )
+      );
+    };
+
+    if (Math.abs(idealAngle - DEG120) < 1e-6 && refIds.length >= 2) {
+      const targetAngle = averageDirectionAwayFromRefs(
+        moving,
+        refIds.map(atomId => baseCoords.get(atomId)).filter(Boolean)
+      );
+      if (targetAngle != null) {
+        addAngle(targetAngle);
+      }
+    }
+
+    for (const refId of refIds) {
+      const refPos = baseCoords.get(refId);
+      if (!refPos) {
+        continue;
+      }
+      const refAngle = angleTo(moving, refPos);
+      if (idealAngle >= Math.PI - 1e-6) {
+        addAngle(refAngle + Math.PI);
+      } else {
+        addAngle(refAngle + idealAngle);
+        addAngle(refAngle - idealAngle);
+      }
+    }
+  }
+
+  return transforms;
+}
+
+/**
+ * If `molecule` has multiple disconnected components whose bounding boxes
+ * overlap (or nearly touch), re-arranges them in a horizontal row with
+ * `bondLength * 2` gaps between them, vertically centred at y = 0.
+ * Returns the (possibly updated) coords map; the input map is never mutated.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Map<string, Vec2>} coords
+ * @param {number} bondLength
+ * @returns {Map<string, Vec2>}
+ */
+function _separateOverlappingComponents(molecule, coords, bondLength) {
+  const components = molecule.getComponents();
+  if (components.length <= 1) return coords;
+
+  // Build bounding box for each component.
+  const compData = components.map(comp => {
+    const ids = [...comp.atoms.keys()];
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const id of ids) {
+      const p = coords.get(id);
+      if (!p) continue;
+      if (p.x < minX) minX = p.x;
+      if (p.x > maxX) maxX = p.x;
+      if (p.y < minY) minY = p.y;
+      if (p.y > maxY) maxY = p.y;
+    }
+    return {
+      ids,
+      minX: isFinite(minX) ? minX : 0,
+      maxX: isFinite(maxX) ? maxX : 0,
+      minY: isFinite(minY) ? minY : 0,
+      maxY: isFinite(maxY) ? maxY : 0,
+    };
+  });
+
+  // Check whether any pair of components has overlapping (or nearly touching)
+  // bounding boxes.  pad prevents "just kissing" layouts from triggering.
+  const pad = bondLength * 0.5;
+  let needSeparate = false;
+  outer: for (let i = 0; i < compData.length; i++) {
+    for (let j = i + 1; j < compData.length; j++) {
+      const a = compData[i];
+      const b = compData[j];
+      if (
+        a.maxX + pad > b.minX && b.maxX + pad > a.minX &&
+        a.maxY + pad > b.minY && b.maxY + pad > a.minY
+      ) {
+        needSeparate = true;
+        break outer;
+      }
+    }
+  }
+  if (!needSeparate) return coords;
+
+  // Re-arrange: lay components out in a horizontal row, each centred at y = 0.
+  const gap = bondLength * 2;
+  const newCoords = new Map(coords);
+  let curX = 0;
+  for (const comp of compData) {
+    const w  = comp.maxX - comp.minX;
+    const cy = (comp.minY + comp.maxY) / 2;
+    const shiftX = curX - comp.minX;
+    const shiftY = -cy;
+    for (const id of comp.ids) {
+      const p = coords.get(id);
+      if (p) newCoords.set(id, vec2(p.x + shiftX, p.y + shiftY));
+    }
+    curX += w + gap;
+  }
+  return newCoords;
+}
+
+/**
+ * Refines already assigned 2D coordinates by trying discrete subtree moves
+ * around rotatable single bonds. This is intended as a conservative cleanup
+ * pass after an initial layout, not as a replacement for `generateCoords()`.
+ *
+ * Reads `atom.x` / `atom.y`, mutates them in place when an improving move is
+ * found, and returns the final coordinate map.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {object} [options]
+ * @param {number} [options.bondLength=1.5]
+ * @param {number} [options.maxPasses=6]
+ * @param {boolean} [options.freezeRings=true]
+ * @param {boolean} [options.freezeChiralCenters=false]
+ * @param {boolean} [options.allowBranchReflect=true]
+ * @param {number[]} [options.rotateAngles] Rotation candidates in radians.
+ * @returns {Map<string, { x: number, y: number }>}
+ */
+export function refineExistingCoords(molecule, options = {}) {
+  const coords = readExistingCoords(molecule);
+  if (coords.size === 0) {
+    return coords;
+  }
+
+  const {
+    bondLength = DEFAULT_BOND_LENGTH,
+    maxPasses = 6,
+    freezeRings = true,
+    freezeChiralCenters = false,
+    allowBranchReflect = true,
+    rotateAngles = [-Math.PI / 2, -Math.PI / 3, -Math.PI / 6, Math.PI / 6, Math.PI / 3, Math.PI / 2, Math.PI]
+  } = options;
+
+  const ctx = buildRefinementContext(molecule, coords, {
+    bondLength,
+    freezeRings,
+    freezeChiralCenters
+  });
+  if (ctx.rotatableCandidates.length === 0 &&
+      ctx.multipleBondCandidates.length === 0 &&
+      ctx.ringSystemCandidates.length === 0) {
+    const separated = _separateOverlappingComponents(molecule, coords, bondLength);
+    if (separated !== coords) {
+      for (const [atomId, pos] of separated) {
+        const atom = molecule.atoms.get(atomId);
+        if (atom) { atom.x = pos.x; atom.y = pos.y; }
+      }
+    }
+    return separated;
+  }
+
+  let currentCoords = coords;
+  for (const ringSystem of ctx.ringSystemCandidates) {
+    const deviation = measureRingSystemDeviation(currentCoords, ringSystem);
+    if (!deviation) {
+      continue;
+    }
+    if (deviation.maxDisp > ctx.bondLength * 0.16 || deviation.rmsDisp > ctx.bondLength * 0.10) {
+      currentCoords = applyRefinementCoords(currentCoords, deviation.aligned);
+    }
+  }
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    const currentIssues = collectLayoutIssues(molecule, currentCoords, ctx);
+    const currentScore = scoreLayoutIssues(currentIssues);
+    if (currentScore <= 1e-9) {
+      break;
+    }
+
+    const issueAtoms = new Set(
+      currentIssues
+        .slice(0, 12)
+        .flatMap(issue => issue.atoms ?? [])
+    );
+    const allCandidates = [...ctx.rotatableCandidates, ...ctx.multipleBondCandidates];
+    const candidatePool = allCandidates.filter(candidate =>
+      issueAtoms.size === 0 ||
+      issueAtoms.has(candidate.pivotId) ||
+      issueAtoms.has(candidate.movingId) ||
+      [...candidate.atomIds].some(atomId => issueAtoms.has(atomId))
+    );
+    const candidates = candidatePool.length > 0 ? candidatePool : allCandidates;
+    const ringCandidates = ctx.ringSystemCandidates.filter(ringSystem =>
+      issueAtoms.size === 0 || [...ringSystem.atomIds].some(atomId => issueAtoms.has(atomId))
+    );
+    const activeRingCandidates = ringCandidates.length > 0 ? ringCandidates : ctx.ringSystemCandidates;
+
+    let bestScore = currentScore;
+    let bestCoords = null;
+
+    for (const ringSystem of activeRingCandidates) {
+      const trialCoords = applyRingSystemTemplate(currentCoords, ringSystem);
+      if (trialCoords === currentCoords) {
+        continue;
+      }
+      const trialScore = scoreLayoutIssues(collectLayoutIssues(molecule, trialCoords, ctx));
+      if (trialScore + 1e-6 < bestScore) {
+        bestScore = trialScore;
+        bestCoords = trialCoords;
+      }
+    }
+
+    for (const candidate of candidates) {
+      const transforms = [];
+      if (candidate.kind === 'rotatable') {
+        for (const angle of rotateAngles) {
+          transforms.push(rotateSubtreeCoords(currentCoords, candidate.atomIds, candidate.pivotId, angle));
+        }
+      }
+      transforms.push(...buildExtendedZigZagChainTransforms(molecule, currentCoords, candidate, ctx));
+      transforms.push(...buildRingSubstituentProjectionTransforms(molecule, currentCoords, candidate, ctx));
+      transforms.push(...buildChainProjectionTransforms(molecule, currentCoords, candidate, ctx));
+      transforms.push(...buildPlanarProjectionTransforms(molecule, currentCoords, candidate, ctx));
+      transforms.push(reanchorSubtreeCoords(currentCoords, candidate.atomIds, candidate.pivotId, candidate.movingId, ctx.bondLength));
+      if (allowBranchReflect && candidate.kind === 'rotatable') {
+        transforms.push(reflectSubtreeCoords(currentCoords, candidate.atomIds, candidate.pivotId, candidate.movingId));
+      }
+
+      for (const updates of transforms) {
+        const trialCoords = applyRefinementCoords(currentCoords, updates);
+        const trialScore = scoreLayoutIssues(collectLayoutIssues(molecule, trialCoords, ctx));
+        if (trialScore + 1e-6 < bestScore) {
+          bestScore = trialScore;
+          bestCoords = trialCoords;
+        }
+
+        for (const childUpdates of buildAttachedMultipleBondProjectionTransforms(molecule, trialCoords, candidate, ctx)) {
+          const childTrialCoords = applyRefinementCoords(trialCoords, childUpdates);
+          const childTrialScore = scoreLayoutIssues(collectLayoutIssues(molecule, childTrialCoords, ctx));
+          if (childTrialScore + 1e-6 < bestScore) {
+            bestScore = childTrialScore;
+            bestCoords = childTrialCoords;
+          }
+        }
+      }
+    }
+
+    if (!bestCoords) {
+      break;
+    }
+    currentCoords = bestCoords;
+  }
+
+  currentCoords = _separateOverlappingComponents(molecule, currentCoords, bondLength);
+
+  for (const [atomId, pos] of currentCoords) {
+    const atom = molecule.atoms.get(atomId);
+    if (atom) {
+      atom.x = pos.x;
+      atom.y = pos.y;
+    }
+  }
+  return currentCoords;
+}
+
 // ---------------------------------------------------------------------------
 // Public API
 // ---------------------------------------------------------------------------

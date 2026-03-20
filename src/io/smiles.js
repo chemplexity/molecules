@@ -838,6 +838,7 @@ export function decode(tokens) {
                 bondOrder = tgtBO;
               }
               bonds[bondID].order = bondOrder;
+              bonds[bondID].isAromatic = (bondOrder === 1.5);
               bonds[bondID].atoms = [srcIdx.toString(), targetIndex.toString()];
               matchedRingTargets.add(bondsAfter[j]);
               break;
@@ -866,6 +867,7 @@ export function decode(tokens) {
                     bondOrder = 1.5;
                   }
                   bonds[bondID].order = bondOrder;
+                  bonds[bondID].isAromatic = (bondOrder === 1.5);
                   bonds[bondID].atoms = [srcIdx.toString(), targetIndex.toString()];
                   break;
                 }
@@ -1442,7 +1444,7 @@ function extractChiralNeighborOrders(smiles, tokens) {
  * Parses a SMILES string and returns a {@link Molecule}.
  *
  * Internally uses the v1 {@link tokenize} and {@link decode} pipeline,
- * then converts the result into a v2 Molecule. Each Atom gains extra
+ * then converts the result into a Molecule. Each Atom gains extra
  * periodic-table properties: `protons`, `neutrons`, `electrons`, `group`, `period`.
  *
  * @param {string} smiles - SMILES notation string.
@@ -1483,7 +1485,24 @@ export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) 
     if (mol.bonds.has(bond.id)) {
       continue;
     }
-    mol.addBond(bond.id, a, b, { order: bond.order, aromatic: bond.name === 'aromatic', stereo: bond.stereo || null }, false);
+    mol.addBond(bond.id, a, b, { order: bond.order, aromatic: bond.name === 'aromatic' || bond.isAromatic === true, stereo: bond.stereo || null }, false);
+  }
+
+  // ── Mark bracket H atoms bonded to non-H atoms as invisible ────────────
+  // e.g. the H in [C@H] is a stereo H — it needs 2D coords for the wedge
+  // bond but should not appear as a visible atom in skeletal rendering.
+  for (const v1atom of Object.values(v1Atoms)) {
+    if (v1atom.name !== 'H' || !v1atom.bracketAtom) {
+      continue;
+    }
+    const molAtom = mol.atoms.get(v1atom.id);
+    if (!molAtom) {
+      continue;
+    }
+    const hasNonHNeighbor = molAtom.getNeighbors(mol).some(n => n && n.name !== 'H');
+    if (hasNonHNeighbor) {
+      molAtom.visible = false;
+    }
   }
 
   // ── Compute CIP R/S for each chiral centre ──────────────────────────────

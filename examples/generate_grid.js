@@ -56,5 +56,6 @@ function saveGrid(molecules, key, renderFn, suffix) {
 // ---------------------------------------------------------------------------
 // Generate both grids
 // ---------------------------------------------------------------------------
-saveGrid(randomMolecule, 'smiles', renderMolSVGFromSMILES, 'smiles');
-saveGrid(randomMolecule.filter(m => m.inchi), 'inchi', renderMolSVGFromINCHI, 'inchi');
+const opts = { showChiralLabels: true };
+saveGrid(randomMolecule, 'smiles', smi  => renderMolSVGFromSMILES(smi,   opts), 'smiles');
+saveGrid(randomMolecule.filter(m => m.inchi), 'inchi', inchi => renderMolSVGFromINCHI(inchi, opts), 'inchi');

@@ -421,7 +421,7 @@ div.tooltip td:first-child {
     position: absolute;
     bottom: 10px;
     right: 10px;
-    display: none;
+    display: flex;
     gap: 4px;
     z-index: 10;
 }
@@ -430,8 +430,8 @@ div.tooltip td:first-child {
     position: absolute;
     bottom: 10px;
     right: 10px;
+    display: none;
     z-index: 10;
-    display: flex;
     gap: 4px;
 }
 
@@ -478,6 +478,36 @@ div.tooltip td:first-child {
 #rotate-controls #save-png-btn {
     font-size: 9px;
     font-weight: bold;
+}
+
+#clean-controls {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    display: block;
+    z-index: 10;
+}
+
+#clean-controls button {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    font-size: 16px;
+    color: #555;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: background 0.15s;
+    padding: 0;
+}
+
+#clean-controls button:hover {
+    background: #f0f0f0;
+    color: #333;
 }
 
 #force-controls #copy-force-png-btn {
@@ -562,7 +592,7 @@ div.tooltip td:first-child {
     <div id="content-main">
         <div id="plot">
             <div id="toggle-controls">
-                <button id="toggle-btn" onclick="toggleMode()">⬡ 2D Structure</button>
+                <button id="toggle-btn" onclick="toggleMode()">⚡ Force Layout</button>
             </div>
             <div id="force-controls">
                 <button id="label-toggle" title="Toggle atom labels" onclick="toggleLabels()">Atom Labels</button>
@@ -575,6 +605,9 @@ div.tooltip td:first-child {
                 <button id="flip-v"      title="Flip vertical">&#x2195;</button>
                 <button id="copy-svg-btn" title="Copy 2D structure as SVG to clipboard" onclick="copySvg2d()">SVG</button>
                 <button id="save-png-btn" title="Copy 2D structure as PNG to clipboard" onclick="savePng2d()">PNG</button>
+            </div>
+            <div id="clean-controls">
+                <button id="clean-2d-btn" title="Clean 2D layout" onclick="cleanLayout2d()">🧹</button>
             </div>
         </div>
         <div id="sidebar">
@@ -830,14 +863,15 @@ function parseInput(val) {
 import * as d3              from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
 import { parseSMILES, toSMILES } from './src/io/smiles.js';
 import { parseINCHI, toInChI } from './src/io/inchi.js';
-import { generateCoords }   from './src/layout/coords2d.js';
+import { generateCoords, refineExistingCoords }   from './src/layout/coords2d.js';
 import { molecularFormula, molecularMass } from './src/descriptors/molecular.js';
 import { allMatrices }      from './src/matrices/index.js';
 import {
     atomColor, WEDGE_HALF_W, WEDGE_DASHES,
     perpUnit, shortenLine, secondaryDir,
     labelHalfW, labelHalfH,
-    getAtomLabel, pickStereoWedges
+    getAtomLabel, pickStereoWedges,
+    kekulize
 } from './src/layout/mol2d-helpers.js';
 import {
     wienerIndex, hyperWienerIndex, balabanIndex,
@@ -927,7 +961,7 @@ function strokeColor(symbol) {
 // ---------------------------------------------------------------------------
 // Shared state
 // ---------------------------------------------------------------------------
-let mode          = 'force'; // 'force' | '2d'
+let mode          = '2d'; // 'force' | '2d'
 let currentMol    = null;
 let currentSmiles = null;
 let currentInchi  = null;
@@ -1769,6 +1803,33 @@ function render2d(mol) {
     updateFunctionalGroups(mol);
 }
 
+function fitCurrent2dView() {
+    if (!_mol2d) return;
+    const atoms = [..._mol2d.atoms.values()].filter(a => a.x != null && a.visible !== false);
+    if (atoms.length === 0) return;
+
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const a of atoms) {
+        if (a.x < minX) minX = a.x;
+        if (a.x > maxX) maxX = a.x;
+        if (a.y < minY) minY = a.y;
+        if (a.y > maxY) maxY = a.y;
+    }
+
+    _cx2d = (minX + maxX) / 2;
+    _cy2d = (minY + maxY) / 2;
+
+    const W = plotEl.clientWidth || 600;
+    const H = plotEl.clientHeight || 400;
+    const PAD = 40;
+    const molSVGW = (maxX - minX) * SCALE || 1;
+    const molSVGH = (maxY - minY) * SCALE || 1;
+    const fitScale = Math.min((W - PAD * 2) / molSVGW, (H - PAD * 2) / molSVGH, 1);
+    const fitTx = W / 2 * (1 - fitScale);
+    const fitTy = H / 2 * (1 - fitScale);
+    svg.call(zoom.transform, d3.zoomIdentity.translate(fitTx, fitTy).scale(fitScale));
+}
+
 // ---------------------------------------------------------------------------
 // Shared helper: build molecule SVG element from current 2D state
 // ---------------------------------------------------------------------------
@@ -1930,21 +1991,37 @@ window.toggleLabels = function() {
     svgEl.classList.toggle('labels-hidden');
 };
 
+window.cleanLayout2d = function() {
+    if (mode !== '2d' || !_mol2d) return;
+    refineExistingCoords(_mol2d, {
+        bondLength: 1.5,
+        maxPasses: 6,
+        freezeRings: true,
+        freezeChiralCenters: false,
+        allowBranchReflect: true
+    });
+    fitCurrent2dView();
+    draw2d();
+};
+
 // ---------------------------------------------------------------------------
 window.toggleMode = function() {
     mode = mode === 'force' ? '2d' : 'force';
 
     const btn          = document.getElementById('toggle-btn');
     const rotateCtrls  = document.getElementById('rotate-controls');
+    const cleanCtrls   = document.getElementById('clean-controls');
 
     const forceCtrls = document.getElementById('force-controls');
     if (mode === 'force') {
         btn.textContent           = '⬡ 2D Structure';
         rotateCtrls.style.display = 'none';
+        cleanCtrls.style.display  = 'none';
         forceCtrls.style.display  = 'flex';
     } else {
         btn.textContent           = '⚡ Force Layout';
         rotateCtrls.style.display = 'flex';
+        cleanCtrls.style.display  = 'block';
         forceCtrls.style.display  = 'none';
     }
 
@@ -1988,7 +2065,8 @@ function startRotate(delta) {
         _cx2d = (minX + maxX) / 2;
         _cy2d = (minY + maxY) / 2;
 
-        // Zoom out if the rotated molecule no longer fits in the viewport.
+        // Keep the molecule fitting the viewport — zoom out when it grows wider
+        // during rotation, zoom back in when it returns to a narrower orientation.
         const W = plotEl.clientWidth  || 600;
         const H = plotEl.clientHeight || 400;
         const PAD = 40;
@@ -1996,7 +2074,7 @@ function startRotate(delta) {
         const molSVGH = (maxY - minY) * SCALE || 1;
         const neededScale = Math.min((W - PAD * 2) / molSVGW, (H - PAD * 2) / molSVGH, 1);
         const currentScale = d3.zoomTransform(svg.node()).k;
-        if (neededScale < currentScale) {
+        if (Math.abs(neededScale - currentScale) > 0.001) {
             svg.call(zoom.transform, d3.zoomIdentity
                 .translate(W / 2 * (1 - neededScale), H / 2 * (1 - neededScale))
                 .scale(neededScale));
@@ -2020,10 +2098,29 @@ document.addEventListener('click', e => {
     if (!btn) return;
     if (btn.id === 'flip-h') flipH = !flipH;
     else                     flipV = !flipV;
-    if (currentSmiles || currentInchi) {
-        const _mol = currentInchi ? parseINCHI(currentInchi) : parseSMILES(currentSmiles);
-        render2d(_mol);
+    if (!_mol2d) return;
+
+    // Apply the flip directly to the existing (already-rotated) atom coordinates,
+    // mirroring around the current centroid — same pattern as startRotate().
+    const allAtoms = [..._mol2d.atoms.values()].filter(a => a.x != null);
+    let mx = 0, my = 0;
+    for (const a of allAtoms) { mx += a.x; my += a.y; }
+    mx /= allAtoms.length; my /= allAtoms.length;
+
+    if (btn.id === 'flip-h') for (const a of allAtoms) a.x = 2 * mx - a.x;
+    else                      for (const a of allAtoms) a.y = 2 * my - a.y;
+
+    // Recompute centroid and stereo wedge assignments (orientation has changed).
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const a of allAtoms) {
+        if (a.x < minX) minX = a.x; if (a.x > maxX) maxX = a.x;
+        if (a.y < minY) minY = a.y; if (a.y > maxY) maxY = a.y;
     }
+    _cx2d = (minX + maxX) / 2;
+    _cy2d = (minY + maxY) / 2;
+    _stereoMap2d = pickStereoWedges(_mol2d);
+
+    draw2d();
 });
 document.addEventListener('mouseleave', stopRotate);
 
@@ -2116,6 +2213,7 @@ function updateDescriptors(molecule, extraH = 0) {
 function _renderMol(mol) {
     currentMol = mol;
     rotationDeg = 0; flipH = false; flipV = false;
+    kekulize(mol);
     if (mode === 'force') {
         updateForce(mol);
         updateFormula(mol);

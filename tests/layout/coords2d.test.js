@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
 import { generateCoords } from '../../src/layout/index.js';
 import { getAtomLabel } from '../../src/layout/mol2d-helpers.js';
+import { refineExistingCoords } from '../../src/layout/coords2d.js';
 import { parseINCHI } from '../../src/io/inchi.js';
 import { parseSMILES } from '../../src/io/smiles.js';
 
@@ -1500,5 +1501,347 @@ describe('getAtomLabel — charged carbons', () => {
       getAtomLabel(neutralCarbon, new Map(), () => ({ x: 0, y: 0 }), mol),
       null
     );
+  });
+});
+
+describe('refineExistingCoords — standalone cleanup', () => {
+  it('rotates a rotatable subtree away from an atom overlap', () => {
+    const mol = parseSMILES('CCOC');
+    const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
+    const [c1, c2, o3, c4] = heavyAtoms;
+
+    c1.x = 0;   c1.y = 0;
+    c2.x = 1.5; c2.y = 0;
+    o3.x = 3.0; o3.y = 0;
+    c4.x = 1.5; c4.y = 0;
+
+    const beforeOverlap = Math.hypot(c2.x - c4.x, c2.y - c4.y);
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 4 });
+    const afterOverlap = Math.hypot(c2.x - c4.x, c2.y - c4.y);
+    const terminalBond = Math.hypot(o3.x - c4.x, o3.y - c4.y);
+
+    assert.ok(beforeOverlap < 1e-9, 'expected the terminal carbon to start overlapped');
+    assert.ok(afterOverlap > 1.0, `expected overlap to be resolved, got ${afterOverlap.toFixed(3)} Å`);
+    assert.ok(approx(terminalBond, 1.5, 1e-6), `rotated bond length drifted: ${terminalBond.toFixed(3)} Å`);
+  });
+
+  it('leaves a clean rotatable chain unchanged', () => {
+    const mol = parseSMILES('CCOC');
+    const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
+    generateCoords(mol);
+
+    const before = heavyAtoms.map(atom => ({ x: atom.x, y: atom.y }));
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 4 });
+    const after = heavyAtoms.map(atom => ({ x: atom.x, y: atom.y }));
+
+    for (let i = 0; i < before.length; i++) {
+      assert.ok(approx(after[i].x, before[i].x, 1e-9), `atom ${i} x changed unexpectedly`);
+      assert.ok(approx(after[i].y, before[i].y, 1e-9), `atom ${i} y changed unexpectedly`);
+    }
+  });
+
+  it('pulls a displaced terminal atom back toward the expected bond length', () => {
+    const mol = parseSMILES('CCOC');
+    const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
+    const [, , o3, c4] = heavyAtoms;
+
+    generateCoords(mol);
+    c4.x = 7.5;
+    c4.y = 0;
+
+    const beforeBond = Math.hypot(o3.x - c4.x, o3.y - c4.y);
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 4 });
+    const afterBond = Math.hypot(o3.x - c4.x, o3.y - c4.y);
+
+    assert.ok(beforeBond > 3.0, `expected a badly stretched bond, got ${beforeBond.toFixed(3)} Å`);
+    assert.ok(approx(afterBond, 1.5, 1e-6), `expected stretched bond to be restored, got ${afterBond.toFixed(3)} Å`);
+  });
+
+  it('restores a dragged sp3 chain segment to zigzag geometry', () => {
+    const mol = parseSMILES('CCCC');
+    const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
+    const [c1, c2, c3] = heavyAtoms;
+
+    generateCoords(mol);
+    const dx = c2.x - c1.x;
+    const dy = c2.y - c1.y;
+    const len = Math.hypot(dx, dy);
+    c3.x = c2.x + (dx / len) * 1.5;
+    c3.y = c2.y + (dy / len) * 1.5;
+
+    const beforeAngle = (() => {
+      const v1x = c1.x - c2.x;
+      const v1y = c1.y - c2.y;
+      const v2x = c3.x - c2.x;
+      const v2y = c3.y - c2.y;
+      const cos = (v1x * v2x + v1y * v2y) / (Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y));
+      return Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+    })();
+
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
+
+    const afterAngle = (() => {
+      const v1x = c1.x - c2.x;
+      const v1y = c1.y - c2.y;
+      const v2x = c3.x - c2.x;
+      const v2y = c3.y - c2.y;
+      const cos = (v1x * v2x + v1y * v2y) / (Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y));
+      return Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+    })();
+    const restoredBond = Math.hypot(c3.x - c2.x, c3.y - c2.y);
+
+    assert.ok(beforeAngle > 170, `expected a badly straightened chain, got ${beforeAngle.toFixed(2)}°`);
+    assert.ok(Math.abs(afterAngle - 120) < 3, `expected restored zigzag angle near 120°, got ${afterAngle.toFixed(2)}°`);
+    assert.ok(approx(restoredBond, 1.5, 1e-6), `expected restored bond length 1.5 Å, got ${restoredBond.toFixed(3)} Å`);
+  });
+
+  it('prefers an extended zigzag over a curled alkyl chain', () => {
+    const mol = parseSMILES('CCCCCC');
+    const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
+    const [c1, c2, c3, c4, c5, c6] = heavyAtoms;
+
+    c1.x = 0.0;  c1.y = 0.0;
+    c2.x = 1.5;  c2.y = 0.0;
+    c3.x = 2.25; c3.y = 1.2990381057;
+    c4.x = 1.5;  c4.y = 2.5980762114;
+    c5.x = 0.0;  c5.y = 2.5980762114;
+    c6.x = -0.75; c6.y = 1.2990381057;
+
+    const beforeEndToEnd = Math.hypot(c6.x - c1.x, c6.y - c1.y);
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
+    const afterEndToEnd = Math.hypot(c6.x - c1.x, c6.y - c1.y);
+
+    const internalAngles = [
+      angleDeg(c1, c2, c3),
+      angleDeg(c2, c3, c4),
+      angleDeg(c3, c4, c5),
+      angleDeg(c4, c5, c6)
+    ];
+
+    assert.ok(beforeEndToEnd < 2.0, `expected a compact curled chain before refine, got ${beforeEndToEnd.toFixed(3)} Å`);
+    assert.ok(afterEndToEnd > 3.0, `expected a more extended chain after refine, got ${afterEndToEnd.toFixed(3)} Å`);
+    for (const angle of internalAngles) {
+      assert.ok(Math.abs(angle - 120) < 3, `expected preserved zigzag bond angles near 120°, got ${angle.toFixed(2)}°`);
+    }
+    for (let i = 0; i < heavyAtoms.length - 1; i++) {
+      const len = Math.hypot(heavyAtoms[i + 1].x - heavyAtoms[i].x, heavyAtoms[i + 1].y - heavyAtoms[i].y);
+      assert.ok(approx(len, 1.5, 1e-6), `expected chain bond length 1.5 Å, got ${len.toFixed(3)} Å`);
+    }
+  });
+
+  it('restores trigonal geometry around a distorted sp2 center', () => {
+    const mol = parseSMILES('CC(=O)N');
+    generateCoords(mol);
+
+    const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
+    const carbonylCarbon = heavyAtoms.find(atom =>
+      atom.name === 'C' &&
+      atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
+      atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
+    );
+    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb =>
+      nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2
+    );
+    const nitrogen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'N');
+    const carbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
+
+    {
+      const dx = oxygen.x - carbonylCarbon.x;
+      const dy = oxygen.y - carbonylCarbon.y;
+      const len = Math.hypot(dx, dy);
+      nitrogen.x = carbonylCarbon.x + (dx / len) * 1.5;
+      nitrogen.y = carbonylCarbon.y + (dy / len) * 1.5;
+    }
+
+    const beforeAngles = [
+      angleDeg(oxygen, carbonylCarbon, nitrogen),
+      angleDeg(carbon, carbonylCarbon, nitrogen)
+    ];
+
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
+
+    const afterAngles = [
+      angleDeg(oxygen, carbonylCarbon, nitrogen),
+      angleDeg(carbon, carbonylCarbon, nitrogen),
+      angleDeg(oxygen, carbonylCarbon, carbon)
+    ];
+    const cnBond = Math.hypot(nitrogen.x - carbonylCarbon.x, nitrogen.y - carbonylCarbon.y);
+
+    assert.ok(beforeAngles.some(angle => Math.abs(angle - 120) > 20), `expected badly distorted sp2 angles, got ${beforeAngles.map(a => a.toFixed(2)).join(', ')}`);
+    for (const angle of afterAngles) {
+      assert.ok(Math.abs(angle - 120) < 4, `expected restored trigonal angle near 120°, got ${angle.toFixed(2)}°`);
+    }
+    assert.ok(approx(cnBond, 1.5, 1e-6), `expected restored C-N bond length 1.5 Å, got ${cnBond.toFixed(3)} Å`);
+  });
+
+  it('snaps a displaced carbonyl oxygen back onto the trigonal geometry', () => {
+    const mol = parseSMILES('CC(=O)N');
+    generateCoords(mol);
+
+    const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
+    const carbonylCarbon = heavyAtoms.find(atom =>
+      atom.name === 'C' &&
+      atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
+      atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
+    );
+    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb =>
+      nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2
+    );
+    const nitrogen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'N');
+    const carbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
+
+    oxygen.x = carbonylCarbon.x + 3.5;
+    oxygen.y = carbonylCarbon.y + 1.8;
+
+    const beforeBond = Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y);
+    const beforeAngles = [
+      angleDeg(oxygen, carbonylCarbon, nitrogen),
+      angleDeg(oxygen, carbonylCarbon, carbon)
+    ];
+
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
+
+    const afterBond = Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y);
+    const afterAngles = [
+      angleDeg(oxygen, carbonylCarbon, nitrogen),
+      angleDeg(oxygen, carbonylCarbon, carbon),
+      angleDeg(nitrogen, carbonylCarbon, carbon)
+    ];
+
+    assert.ok(beforeBond > 3.0, `expected a badly displaced carbonyl oxygen, got ${beforeBond.toFixed(3)} Å`);
+    assert.ok(beforeAngles.some(angle => Math.abs(angle - 120) > 20), `expected distorted carbonyl angles, got ${beforeAngles.map(a => a.toFixed(2)).join(', ')}`);
+    assert.ok(approx(afterBond, 1.5, 1e-6), `expected restored C=O bond length 1.5 Å, got ${afterBond.toFixed(3)} Å`);
+    for (const angle of afterAngles) {
+      assert.ok(Math.abs(angle - 120) < 4, `expected restored trigonal angle near 120°, got ${angle.toFixed(2)}°`);
+    }
+  });
+
+  it('snaps a displaced ring atom back to the ring geometry', () => {
+    const mol = benzene();
+    generateCoords(mol);
+
+    const ringAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
+    const displaced = ringAtoms[0];
+    const original = ringAtoms.map(atom => ({ id: atom.id, x: atom.x, y: atom.y }));
+
+    displaced.x += 2.0;
+    displaced.y += 1.25;
+
+    const beforeDrift = Math.hypot(displaced.x - original[0].x, displaced.y - original[0].y);
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
+    const afterDrift = Math.hypot(displaced.x - original[0].x, displaced.y - original[0].y);
+
+    const cx = ringAtoms.reduce((sum, atom) => sum + atom.x, 0) / ringAtoms.length;
+    const cy = ringAtoms.reduce((sum, atom) => sum + atom.y, 0) / ringAtoms.length;
+    const radii = ringAtoms.map(atom => Math.hypot(atom.x - cx, atom.y - cy));
+    const r0 = radii[0];
+
+    assert.ok(afterDrift < beforeDrift * 0.35, `expected ring atom to move back toward ring geometry, got ${afterDrift.toFixed(3)} Å drift`);
+    for (const bond of mol.bonds.values()) {
+      const [a1, a2] = bond.getAtomObjects(mol);
+      if (a1?.name === 'H' || a2?.name === 'H') {
+        continue;
+      }
+      const len = Math.hypot(a1.x - a2.x, a1.y - a2.y);
+      assert.ok(approx(len, 1.5, 1e-6), `expected ring bond length 1.5 Å, got ${len.toFixed(3)} Å`);
+    }
+    for (const radius of radii) {
+      assert.ok(Math.abs(radius - r0) < 1e-6, `expected regular ring radius, got ${radius} vs ${r0}`);
+    }
+  });
+
+  it('reprojects a ring substituent so it points outward from the ring vertex', () => {
+    const mol = parseSMILES('Cc1ccccc1');
+    generateCoords(mol, { bondLength: 1.5 });
+
+    const ring = mol.getRings().find(r => r.length === 6);
+    assert.ok(ring, 'expected a six-membered ring');
+    const ringSet = new Set(ring);
+    const ringAtom = ring
+      .map(id => mol.atoms.get(id))
+      .find(atom => atom.getNeighbors(mol).some(nb => !ringSet.has(nb.id) && nb.name !== 'H'));
+    const substituent = ringAtom.getNeighbors(mol).find(nb => !ringSet.has(nb.id) && nb.name !== 'H');
+
+    const cx = ring.reduce((sum, id) => sum + mol.atoms.get(id).x, 0) / ring.length;
+    const cy = ring.reduce((sum, id) => sum + mol.atoms.get(id).y, 0) / ring.length;
+    const inwardAngle = Math.atan2(cy - ringAtom.y, cx - ringAtom.x);
+    substituent.x = ringAtom.x + Math.cos(inwardAngle) * 1.5;
+    substituent.y = ringAtom.y + Math.sin(inwardAngle) * 1.5;
+
+    const beforeAngle = Math.atan2(substituent.y - ringAtom.y, substituent.x - ringAtom.x);
+    const beforeOutward = Math.atan2(ringAtom.y - cy, ringAtom.x - cx);
+    const beforeDiff = Math.abs(((beforeAngle - beforeOutward + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
+
+    const afterCx = ring.reduce((sum, id) => sum + mol.atoms.get(id).x, 0) / ring.length;
+    const afterCy = ring.reduce((sum, id) => sum + mol.atoms.get(id).y, 0) / ring.length;
+    const afterAngle = Math.atan2(substituent.y - ringAtom.y, substituent.x - ringAtom.x);
+    const afterOutward = Math.atan2(ringAtom.y - afterCy, ringAtom.x - afterCx);
+    const afterDiff = Math.abs(((afterAngle - afterOutward + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    const bondLen = Math.hypot(substituent.x - ringAtom.x, substituent.y - ringAtom.y);
+
+    assert.ok(beforeDiff > Math.PI / 2, `expected inward-pointing substituent before refine, got ${beforeDiff * 180 / Math.PI}°`);
+    assert.ok(afterDiff < 25 * Math.PI / 180, `expected outward ring substituent after refine, got ${afterDiff * 180 / Math.PI}°`);
+    assert.ok(approx(bondLen, 1.5, 1e-6), `expected restored aryl-substituent bond length 1.5 Å, got ${bondLen.toFixed(3)} Å`);
+  });
+
+  it('restores a displaced terminal alkene carbon in an alkene side chain', () => {
+    const mol = parseSMILES('CC(=O)C(Cl)CC(C(C)C)C=C');
+    generateCoords(mol, { bondLength: 1.5 });
+
+    const dblBond = [...mol.bonds.values()].find(bond =>
+      (bond.properties.order ?? 1) === 2 && bond.getAtomObjects(mol).every(atom => atom.name === 'C')
+    );
+    const [a, b] = dblBond.getAtomObjects(mol);
+    const terminal = [a, b].find(atom => atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 1);
+    const internal = a.id === terminal.id ? b : a;
+    const prev = internal.getNeighbors(mol).find(nb => nb.name !== 'H' && nb.id !== terminal.id);
+
+    terminal.x += 3.0;
+    terminal.y += 2.0;
+
+    const beforeLen = Math.hypot(internal.x - terminal.x, internal.y - terminal.y);
+    const beforeAngle = angleDeg(prev, internal, terminal);
+
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
+
+    const afterLen = Math.hypot(internal.x - terminal.x, internal.y - terminal.y);
+    const afterAngle = angleDeg(prev, internal, terminal);
+
+    assert.ok(beforeLen > 3.0, `expected badly stretched alkene bond before refine, got ${beforeLen.toFixed(3)} Å`);
+    assert.ok(Math.abs(afterLen - 1.5) < 1e-6, `expected restored alkene bond length 1.5 Å, got ${afterLen.toFixed(3)} Å`);
+    assert.ok(Math.abs(afterAngle - 120) < 4, `expected restored alkene angle near 120°, got ${afterAngle.toFixed(2)}°`);
+  });
+
+  it('restores a displaced internal alkene carbon together with its terminal alkene partner', () => {
+    const mol = parseSMILES('CC(=O)C(Cl)CC(C(C)C)C=C');
+    generateCoords(mol, { bondLength: 1.5 });
+
+    const dblBond = [...mol.bonds.values()].find(bond =>
+      (bond.properties.order ?? 1) === 2 && bond.getAtomObjects(mol).every(atom => atom.name === 'C')
+    );
+    const [a, b] = dblBond.getAtomObjects(mol);
+    const terminal = [a, b].find(atom => atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 1);
+    const internal = a.id === terminal.id ? b : a;
+    const prev = internal.getNeighbors(mol).find(nb => nb.name !== 'H' && nb.id !== terminal.id);
+
+    internal.x += 3.0;
+    internal.y += 2.0;
+
+    const beforeSingle = Math.hypot(prev.x - internal.x, prev.y - internal.y);
+    const beforeDouble = Math.hypot(internal.x - terminal.x, internal.y - terminal.y);
+    const beforeAngle = angleDeg(prev, internal, terminal);
+
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
+
+    const afterSingle = Math.hypot(prev.x - internal.x, prev.y - internal.y);
+    const afterDouble = Math.hypot(internal.x - terminal.x, internal.y - terminal.y);
+    const afterAngle = angleDeg(prev, internal, terminal);
+
+    assert.ok(beforeSingle > 2.0 || beforeDouble > 2.0, `expected distorted alkene geometry before refine, got single=${beforeSingle.toFixed(3)} Å double=${beforeDouble.toFixed(3)} Å`);
+    assert.ok(Math.abs(afterSingle - 1.5) < 1e-6, `expected restored allylic bond length 1.5 Å, got ${afterSingle.toFixed(3)} Å`);
+    assert.ok(Math.abs(afterDouble - 1.5) < 1e-6, `expected restored alkene bond length 1.5 Å, got ${afterDouble.toFixed(3)} Å`);
+    assert.ok(Math.abs(afterAngle - 120) < 4, `expected restored alkene angle near 120°, got ${afterAngle.toFixed(2)}°`);
   });
 });
