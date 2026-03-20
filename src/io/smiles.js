@@ -2,6 +2,7 @@
 
 import elements from '../data/elements.js';
 import { Molecule, computeRS } from '../core/Molecule.js';
+import { perceiveAromaticity } from '../algorithms/aromaticity.js';
 import { morganRanks } from '../algorithms/morgan.js';
 
 // ---------------------------------------------------------------------------
@@ -15,23 +16,23 @@ export const grammar = [
   { type: 'atom',     term: 'Li', tag: 'Li',      expression: /Li/g },
   { type: 'atom',     term: 'Be', tag: 'Be',      expression: /Be/g },
   { type: 'atom',     term: 'B',  tag: 'B',       expression: /B(?=[^aehikr]|$)/g },
-  { type: 'atom',     term: 'C',  tag: 'C',       expression: /C(?=[^adeflmnorsu]|$)/g },
-  { type: 'atom',     term: 'N',  tag: 'N',       expression: /N(?=[^abdeiop]|$)/g },
-  { type: 'atom',     term: 'O',  tag: 'O',       expression: /O(?=[^s]|$)/g },
+  { type: 'atom',     term: 'C',  tag: 'C',       expression: /C(?=[^adeflmru]|$)/g },
+  { type: 'atom',     term: 'N',  tag: 'N',       expression: /N(?=[^adei]|$)/g },
+  { type: 'atom',     term: 'O',  tag: 'O',       expression: /O/g },
   { type: 'atom',     term: 'F',  tag: 'F',       expression: /F(?=[^elmr]|$)/g },
   { type: 'atom',     term: 'Ne', tag: 'Ne',      expression: /Ne/g },
   { type: 'atom',     term: 'Na', tag: 'Na',      expression: /Na/g },
   { type: 'atom',     term: 'Mg', tag: 'Mg',      expression: /Mg/g },
   { type: 'atom',     term: 'Al', tag: 'Al',      expression: /Al/g },
   { type: 'atom',     term: 'Si', tag: 'Si',      expression: /Si/g },
-  { type: 'atom',     term: 'P',  tag: 'P',       expression: /P(?=[^abdmortu]|$)/g },
-  { type: 'atom',     term: 'S',  tag: 'S',       expression: /S(?=[^bcegimnr]|$)/g },
+  { type: 'atom',     term: 'P',  tag: 'P',       expression: /P(?=[^admrtu]|$)/g },
+  { type: 'atom',     term: 'S',  tag: 'S',       expression: /S(?=[^egimr]|$)/g },
   { type: 'atom',     term: 'Cl', tag: 'Cl',      expression: /Cl/g },
   { type: 'atom',     term: 'Ar', tag: 'Ar',      expression: /Ar/g },
   { type: 'atom',     term: 'As', tag: 'As',      expression: /As/g },
   { type: 'atom',     term: 'Se', tag: 'Se',      expression: /Se/g },
   { type: 'atom',     term: 'Br', tag: 'Br',      expression: /Br/g },
-  { type: 'atom',     term: 'I',  tag: 'I',       expression: /I(?=[^nr]|$)/g },
+  { type: 'atom',     term: 'I',  tag: 'I',       expression: /I(?=[^r]|$)/g },
   { type: 'atom',     term: 'K',  tag: 'K',       expression: /K(?=[^r]|$)/g },
   { type: 'atom',     term: 'Ca', tag: 'Ca',      expression: /Ca/g },
   { type: 'atom',     term: 'Sc', tag: 'Sc',      expression: /Sc/g },
@@ -64,10 +65,74 @@ export const grammar = [
   { type: 'atom',     term: 'Sb', tag: 'Sb',      expression: /Sb/g },
   { type: 'atom',     term: 'Te', tag: 'Te',      expression: /Te/g },
   { type: 'atom',     term: 'Xe', tag: 'Xe',      expression: /Xe/g },
-  { type: 'atom',     term: 'b',  tag: 'B',       expression: /(?<![RS])b(?=[^e]|$)/g },
-  { type: 'atom',     term: 'c',  tag: 'C',       expression: /(?<![TS])c(?=[^l]|$)/g },
-  { type: 'atom',     term: 'n',  tag: 'N',       expression: /(?<![MZIS])n(?=[^ae]|$)/g },
-  { type: 'atom',     term: 'o',  tag: 'O',       expression: /(?<![CM])o(?=[^s]|$)/g },
+  { type: 'atom',     term: 'Cs', tag: 'Cs',      expression: /Cs/g },
+  { type: 'atom',     term: 'Ba', tag: 'Ba',      expression: /Ba/g },
+  { type: 'atom',     term: 'La', tag: 'La',      expression: /La/g },
+  { type: 'atom',     term: 'Ce', tag: 'Ce',      expression: /Ce/g },
+  { type: 'atom',     term: 'Pr', tag: 'Pr',      expression: /Pr/g },
+  { type: 'atom',     term: 'Nd', tag: 'Nd',      expression: /Nd/g },
+  { type: 'atom',     term: 'Pm', tag: 'Pm',      expression: /Pm/g },
+  { type: 'atom',     term: 'Sm', tag: 'Sm',      expression: /Sm/g },
+  { type: 'atom',     term: 'Eu', tag: 'Eu',      expression: /Eu/g },
+  { type: 'atom',     term: 'Gd', tag: 'Gd',      expression: /Gd/g },
+  { type: 'atom',     term: 'Tb', tag: 'Tb',      expression: /Tb/g },
+  { type: 'atom',     term: 'Dy', tag: 'Dy',      expression: /Dy/g },
+  { type: 'atom',     term: 'Ho', tag: 'Ho',      expression: /Ho/g },
+  { type: 'atom',     term: 'Er', tag: 'Er',      expression: /Er/g },
+  { type: 'atom',     term: 'Tm', tag: 'Tm',      expression: /Tm/g },
+  { type: 'atom',     term: 'Yb', tag: 'Yb',      expression: /Yb/g },
+  { type: 'atom',     term: 'Lu', tag: 'Lu',      expression: /Lu/g },
+  { type: 'atom',     term: 'Hf', tag: 'Hf',      expression: /Hf/g },
+  { type: 'atom',     term: 'Ta', tag: 'Ta',      expression: /Ta/g },
+  { type: 'atom',     term: 'W',  tag: 'W',       expression: /W/g },
+  { type: 'atom',     term: 'Re', tag: 'Re',      expression: /Re/g },
+  { type: 'atom',     term: 'Os', tag: 'Os',      expression: /Os/g },
+  { type: 'atom',     term: 'Ir', tag: 'Ir',      expression: /Ir/g },
+  { type: 'atom',     term: 'Pt', tag: 'Pt',      expression: /Pt/g },
+  { type: 'atom',     term: 'Au', tag: 'Au',      expression: /Au/g },
+  { type: 'atom',     term: 'Hg', tag: 'Hg',      expression: /Hg/g },
+  { type: 'atom',     term: 'Tl', tag: 'Tl',      expression: /Tl/g },
+  { type: 'atom',     term: 'Pb', tag: 'Pb',      expression: /Pb/g },
+  { type: 'atom',     term: 'Bi', tag: 'Bi',      expression: /Bi/g },
+  { type: 'atom',     term: 'Po', tag: 'Po',      expression: /Po/g },
+  { type: 'atom',     term: 'At', tag: 'At',      expression: /At/g },
+  { type: 'atom',     term: 'Rn', tag: 'Rn',      expression: /Rn/g },
+  { type: 'atom',     term: 'Fr', tag: 'Fr',      expression: /Fr/g },
+  { type: 'atom',     term: 'Ra', tag: 'Ra',      expression: /Ra/g },
+  { type: 'atom',     term: 'Ac', tag: 'Ac',      expression: /Ac/g },
+  { type: 'atom',     term: 'Th', tag: 'Th',      expression: /Th/g },
+  { type: 'atom',     term: 'Pa', tag: 'Pa',      expression: /Pa/g },
+  { type: 'atom',     term: 'U',  tag: 'U',       expression: /U/g },
+  { type: 'atom',     term: 'Np', tag: 'Np',      expression: /Np/g },
+  { type: 'atom',     term: 'Pu', tag: 'Pu',      expression: /Pu/g },
+  { type: 'atom',     term: 'Am', tag: 'Am',      expression: /Am/g },
+  { type: 'atom',     term: 'Cm', tag: 'Cm',      expression: /Cm/g },
+  { type: 'atom',     term: 'Bk', tag: 'Bk',      expression: /Bk/g },
+  { type: 'atom',     term: 'Cf', tag: 'Cf',      expression: /Cf/g },
+  { type: 'atom',     term: 'Es', tag: 'Es',      expression: /Es/g },
+  { type: 'atom',     term: 'Fm', tag: 'Fm',      expression: /Fm/g },
+  { type: 'atom',     term: 'Md', tag: 'Md',      expression: /Md/g },
+  { type: 'atom',     term: 'No', tag: 'No',      expression: /No/g },
+  { type: 'atom',     term: 'Lr', tag: 'Lr',      expression: /Lr/g },
+  { type: 'atom',     term: 'Rf', tag: 'Rf',      expression: /Rf/g },
+  { type: 'atom',     term: 'Db', tag: 'Db',      expression: /Db/g },
+  { type: 'atom',     term: 'Sg', tag: 'Sg',      expression: /Sg/g },
+  { type: 'atom',     term: 'Bh', tag: 'Bh',      expression: /Bh/g },
+  { type: 'atom',     term: 'Hs', tag: 'Hs',      expression: /Hs/g },
+  { type: 'atom',     term: 'Mt', tag: 'Mt',      expression: /Mt/g },
+  { type: 'atom',     term: 'Ds', tag: 'Ds',      expression: /Ds/g },
+  { type: 'atom',     term: 'Rg', tag: 'Rg',      expression: /Rg/g },
+  { type: 'atom',     term: 'Cn', tag: 'Cn',      expression: /Cn/g },
+  { type: 'atom',     term: 'Nh', tag: 'Nh',      expression: /Nh/g },
+  { type: 'atom',     term: 'Fl', tag: 'Fl',      expression: /Fl/g },
+  { type: 'atom',     term: 'Mc', tag: 'Mc',      expression: /Mc/g },
+  { type: 'atom',     term: 'Lv', tag: 'Lv',      expression: /Lv/g },
+  { type: 'atom',     term: 'Ts', tag: 'Ts',      expression: /Ts/g },
+  { type: 'atom',     term: 'Og', tag: 'Og',      expression: /Og/g },
+  { type: 'atom',     term: 'b',  tag: 'B',       expression: /(?<![R])b(?=[^e]|$)/g },
+  { type: 'atom',     term: 'c',  tag: 'C',       expression: /(?<![T])c(?=[^l]|$)/g },
+  { type: 'atom',     term: 'n',  tag: 'N',       expression: /(?<![MZ])n(?=[^ae]|$)/g },
+  { type: 'atom',     term: 'o',  tag: 'O',       expression: /(?<![M])o(?=[^s]|$)/g },
   { type: 'atom',     term: 'p',  tag: 'P',       expression: /p/g },
   { type: 'atom',     term: 's',  tag: 'S',       expression: /s(?=[^ei]|$)/g },
   { type: 'atom',     term: 'se', tag: 'Se',      expression: /se/g },
@@ -228,15 +293,7 @@ export function tokenize(input, tokens = []) {
     }
   }
 
-  tokens.sort((a, b) => {
-    if (a.index < b.index) {
-      return -1;
-    }
-    if (a.index > b.index) {
-      return +1;
-    }
-    return 0;
-  });
+  tokens.sort((a, b) => a.index - b.index);
 
   // Remove bond tokens that fall inside the character span of a ring token.
   // Happens when a bond prefix is embedded in the ring token (e.g. 'C=1' captures '=').
@@ -254,6 +311,102 @@ export function tokenize(input, tokens = []) {
         if (tokens[i].type !== 'atom' && tokens[i].tag !== 'ring' && covered.has(tokens[i].index)) {
           tokens.splice(i, 1);
         }
+      }
+    }
+  }
+
+  // Bracket-aware atom priority resolution.
+  //
+  // The grammar runs all regexes independently, so the same character position
+  // can collect multiple atom tokens — e.g. 'C' (len 1) and 'Co' (len 2) both
+  // matching at the same index.  The correct winner depends on context:
+  //   • inside  [...] → prefer the longer token (two-letter element wins)
+  //   • outside [...] → prefer the shorter token (single-letter organic atom wins)
+  //
+  // Additionally, when a two-letter element inside brackets is kept, the
+  // aromatic-atom token that matches its second character (e.g. 'o' at index+1
+  // for 'Co') must be removed so it isn't mistakenly decoded as an extra atom.
+  {
+    // Build the set of string positions that lie inside bracket atoms [...].
+    const inBracket = new Set();
+    let depth = 0;
+    for (let i = 0; i < input.length; i++) {
+      if (input[i] === '[') {
+        depth++;
+      }
+      if (depth > 0) {
+        inBracket.add(i);
+      }
+      if (input[i] === ']' && depth > 0) {
+        depth--;
+      }
+    }
+
+    // Collect all atom tokens grouped by their index position.
+    const atomsByIndex = new Map();
+    for (const t of tokens) {
+      if (t.type !== 'atom') {
+        continue;
+      }
+      if (!atomsByIndex.has(t.index)) {
+        atomsByIndex.set(t.index, []);
+      }
+      atomsByIndex.get(t.index).push(t);
+    }
+
+    const toRemove = new Set();
+
+    // For positions with more than one atom token, keep only the winner.
+    for (const [idx, group] of atomsByIndex) {
+      if (group.length <= 1) {
+        continue;
+      }
+      const inside = inBracket.has(idx);
+      // Sort ascending by term length so group[0] is shortest.
+      group.sort((a, b) => a.term.length - b.term.length);
+      const winner = inside ? group[group.length - 1] : group[0];
+      for (const t of group) {
+        if (t !== winner) {
+          toRemove.add(t);
+        }
+      }
+    }
+
+    // Remove stray aromatic-atom tokens that are the second character of a
+    // two-letter element token kept above (e.g. 'o' at pos 2 when 'Co' is at
+    // pos 1 inside brackets).
+    for (const t of tokens) {
+      if (t.type !== 'atom' || t.term.length !== 1) {
+        continue;
+      }
+      if (!inBracket.has(t.index)) {
+        continue;
+      }
+      // Check whether a two-letter element starts at index-1 and spans this position.
+      const prevGroup = atomsByIndex.get(t.index - 1);
+      if (!prevGroup) {
+        continue;
+      }
+      const hasTwoLetterParent = prevGroup.some(
+        pt => pt.term.length === 2 && !toRemove.has(pt)
+      );
+      if (hasTwoLetterParent) {
+        toRemove.add(t);
+      }
+    }
+
+    // Apply removals in reverse order to preserve splice indices.
+    for (let i = tokens.length - 1; i >= 0; i--) {
+      if (toRemove.has(tokens[i])) {
+        tokens.splice(i, 1);
+      }
+    }
+
+    // Tag atom tokens that sit inside bracket atoms so the implicit-H logic
+    // can skip them (bracket atoms carry explicit H only, per the SMILES spec).
+    for (const t of tokens) {
+      if (t.type === 'atom' && inBracket.has(t.index)) {
+        t.bracket = true;
       }
     }
   }
@@ -288,12 +441,13 @@ export function tokenize(input, tokens = []) {
           continue;
         }
 
-        const prefix = tokens[i].term.match(/[a-zA-Z]/g)[0];
+        const prefix   = tokens[i].term.match(/[a-zA-Z]/g)[0];
+        const bondChar = tokens[i].term.match(/[=\-#$/\\:]/)?.[0] ?? '';
         for (let j = 0; j < ringID.length; j++) {
           tokens.splice(i + 1, 0, {
             index: tokens[i].index + j,
             type: tokens[i].type,
-            term: prefix + ringID.substr(j, j + 1),
+            term: prefix + (j === 0 ? bondChar : '') + ringID.substr(j, j + 1),
             tag: tokens[i].tag
           });
         }
@@ -347,7 +501,12 @@ export function decode(tokens) {
       const { type, term, tag, index } = tokens[i];
       const key = index.toString();
       switch (type) {
-        case 'atom':     atoms[key]      = addAtomV1(key, tag, term); break;
+        case 'atom':
+          atoms[key] = addAtomV1(key, tag, term);
+          if (tokens[i].bracket) {
+            atoms[key].bracketAtom = true;
+          }
+          break;
         case 'bond':     bonds[key]      = addBondV1(key, tag, term); break;
         case 'property': properties[key] = { id: key, name: tag, value: term }; break;
       }
@@ -784,7 +943,7 @@ export function decode(tokens) {
     // Standard valences for atoms with multiple allowed valences (OpenSMILES organic subset).
     // Aromatic atoms are excluded: their 1.5-order bonds give fractional electron sums that
     // must not be fed into the integer valence table — use 18−group for them as before.
-    const MULTI_VALENCE = { N: [3, 5], P: [3, 5], S: [2, 4, 6] };
+    const MULTI_VALENCE = { B: [3], N: [3, 5], P: [3, 5], S: [2, 4, 6] };
     const stdValence = (atom) => {
       if (!atom.properties.aromatic) {
         const mv = MULTI_VALENCE[atom.name];
@@ -797,10 +956,10 @@ export function decode(tokens) {
     };
 
     const valence = (group) => {
-      if (group <= 2) {
-        return 2;
-      } else if (group > 2 && group <= 12) {
+      if (group === 0 || (group > 2 && group <= 12)) {
         return 12;
+      } else if (group <= 2) {
+        return 2;
       } else if (group > 12 && group <= 18) {
         return 18;
       }
@@ -904,7 +1063,7 @@ export function decode(tokens) {
 
     for (let i = 0; i < keys.atoms.length; i++) {
       const sourceAtom = atoms[keys.atoms[i]];
-      if (sourceAtom.group < 13 && sourceAtom.group > 1) {
+      if (sourceAtom.group === 0 || (sourceAtom.group < 13 && sourceAtom.group > 1)) {
         continue;
       }
 
@@ -925,6 +1084,11 @@ export function decode(tokens) {
         }
       } else if (sourceAtom.name === 'H' && sourceAtom.properties.charge === 0 && bondCount === 0) {
         update(i, sourceAtom.id, sourceAtom.name);
+      }
+
+      // Bracket atoms carry explicit H only — skip the valence-fill logic.
+      if (sourceAtom.bracketAtom) {
+        continue;
       }
 
       let total = stdValence(sourceAtom) - sourceAtom.bonds.electrons;
@@ -1282,10 +1446,11 @@ function extractChiralNeighborOrders(smiles, tokens) {
  * periodic-table properties: `protons`, `neutrons`, `electrons`, `group`, `period`.
  *
  * @param {string} smiles - SMILES notation string.
+ * @param {{ preserveAromaticBondOrders?: boolean }} [options]
  * @returns {Molecule}
  * @throws {Error} If the SMILES string cannot be parsed.
  */
-export function parseSMILES(smiles) {
+export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) {
   if (typeof smiles !== 'string' || smiles.trim() === '') {
     throw new Error('Invalid SMILES input: must be a non-empty string');
   }
@@ -1330,6 +1495,8 @@ export function parseSMILES(smiles) {
     }
     atom.properties.chirality = computeRS(chiral, neighbors, cleanId, mol);
   }
+
+  perceiveAromaticity(mol, { preserveKekule: preserveAromaticBondOrders });
 
   mol.properties.formula = mol.getFormula();
   mol.properties.mass    = mol.getMass();
@@ -1722,7 +1889,7 @@ export function toSMILES(molecule) {
   if (molecule.atomCount === 0) {
     return '';
   }
-  return molecule.getComponents().map(_serializeComponent).join('.');
+  return molecule.getComponents().map(comp => _serializeComponent(comp)).join('.');
 }
 
 /**

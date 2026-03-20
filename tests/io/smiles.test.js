@@ -177,6 +177,34 @@ describe('parseSMILES — input validation', () => {
   });
 });
 
+describe('parseSMILES — aromaticity perception', () => {
+  it('Kekule benzene C1=CC=CC=C1 marks all ring carbons aromatic', () => {
+    const mol = parseSMILES('C1=CC=CC=C1');
+    const ringCarbons = [...mol.atoms.values()].filter(a => a.name === 'C');
+    assert.equal(ringCarbons.length, 6);
+    for (const atom of ringCarbons) {
+      assert.equal(atom.properties.aromatic, true, `${atom.id} not aromatic`);
+    }
+  });
+
+  it('Kekule benzene C1=CC=CC=C1 serializes as aromatic SMILES', () => {
+    assert.equal(toSMILES(parseSMILES('C1=CC=CC=C1')), 'c1ccccc1');
+  });
+
+  it('Kekule benzene preserves localized bond orders for rendering', () => {
+    const mol = parseSMILES('C1=CC=CC=C1');
+    const ringBonds = [...mol.bonds.values()].filter(b => {
+      const [a1, a2] = b.atoms.map(id => mol.atoms.get(id));
+      return a1?.name !== 'H' && a2?.name !== 'H';
+    });
+    assert.equal(ringBonds.length, 6);
+    assert.equal(ringBonds.filter(b => b.properties.localizedOrder === 2).length, 3);
+    assert.equal(ringBonds.filter(b => b.properties.localizedOrder === 1).length, 3);
+    assert.ok(ringBonds.every(b => b.properties.aromatic === true));
+    assert.ok(ringBonds.every(b => b.properties.order === 1.5));
+  });
+});
+
 describe('parseSMILES — performance', () => {
   it('decane CCCCCCCCCC: C count = 10', () => {
     const start = Date.now();
@@ -575,9 +603,9 @@ describe('toSMILES — charged and bracket atoms (round-trip)', () => {
 });
 
 describe('toSMILES — isotopes (round-trip)', () => {
-  it('[13C] methane — round-trip mass ≈ 17.03 (13+4×1)', () => {
-    // parseSMILES('[13C]') → 13C with 4 implicit H (mass ≈ 17.03)
-    const mol = roundTrip('[13C]');
+  it('[13CH4] methane — round-trip mass ≈ 17.03 (13+4×1)', () => {
+    // [13C] has no explicit H → use [13CH4] for isotope methane
+    const mol = roundTrip('[13CH4]');
     assert.ok(Math.abs(molecularMass(mol) - 17.032) < 0.1);
   });
 
@@ -715,5 +743,191 @@ describe('toSMILES — E/Z stereo output', () => {
 
   it('E and Z give opposite round-trip results', () => {
     assert.notEqual(rtEZ('F/C=C/F'), rtEZ('F/C=C\\F'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// parseSMILES — grammar edge cases (two-letter elements vs organic atoms)
+// ---------------------------------------------------------------------------
+
+function heavy(mol) {
+  return [...mol.atoms.values()].filter(a => a.name !== 'H').length;
+}
+
+describe('parseSMILES — two-letter element / aromatic atom grammar', () => {
+  it('anisole Coc1ccccc1 — 8 heavy atoms (C before aromatic o)', () => {
+    assert.equal(heavy(parseSMILES('Coc1ccccc1')), 8);
+  });
+
+  it('N-methylpyrrole Cn1cccc1 — 6 heavy atoms (C before aromatic n)', () => {
+    assert.equal(heavy(parseSMILES('Cn1cccc1')), 6);
+  });
+
+  it('caffeine Cn1cnc2c1c(=O)n(C)c(=O)n2C — 14 heavy atoms', () => {
+    assert.equal(heavy(parseSMILES('Cn1cnc2c1c(=O)n(C)c(=O)n2C')), 14);
+  });
+
+  it('[Co+2] bracket — element is Co with charge 2', () => {
+    const mol = parseSMILES('[Co+2]');
+    const atom = [...mol.atoms.values()][0];
+    assert.equal(atom.name, 'Co');
+    assert.equal(atom.properties.charge, 2);
+  });
+
+  it('[Cs+] bracket — element is Cs with charge 1', () => {
+    const mol = parseSMILES('[Cs+]');
+    const atom = [...mol.atoms.values()][0];
+    assert.equal(atom.name, 'Cs');
+    assert.equal(atom.properties.charge, 1);
+  });
+
+  it('[Cu+2] bracket — element is Cu with charge 2', () => {
+    const mol = parseSMILES('[Cu+2]');
+    const atom = [...mol.atoms.values()][0];
+    assert.equal(atom.name, 'Cu');
+    assert.equal(atom.properties.charge, 2);
+  });
+
+  it('thioanisole CSc1ccccc1 — 8 heavy atoms (S before aromatic c, Sc=Scandium conflict)', () => {
+    assert.equal(heavy(parseSMILES('CSc1ccccc1')), 8);
+  });
+
+  it('methyl-S-pyrrole CSn1cccc1 — 7 heavy atoms (S before aromatic n, Sn=Tin conflict)', () => {
+    assert.equal(heavy(parseSMILES('CSn1cccc1')), 7);
+  });
+
+  it('[Sc+3] bracket — element is Sc (Scandium) not S + c', () => {
+    const mol = parseSMILES('[Sc+3]');
+    const atom = [...mol.atoms.values()][0];
+    assert.equal(atom.name, 'Sc');
+  });
+
+  it('[Sn+4] bracket — element is Sn (Tin) not S + n', () => {
+    const mol = parseSMILES('[Sn+4]');
+    const atom = [...mol.atoms.values()][0];
+    assert.equal(atom.name, 'Sn');
+  });
+
+  it('[In+3] bracket — element is In (Indium) not I + n', () => {
+    const mol = parseSMILES('[In+3]');
+    const atom = [...mol.atoms.values()][0];
+    assert.equal(atom.name, 'In');
+  });
+
+  it('[Pb+2] bracket — element is Pb (Lead) not P + b', () => {
+    const mol = parseSMILES('[Pb+2]');
+    const atom = [...mol.atoms.values()][0];
+    assert.equal(atom.name, 'Pb');
+  });
+
+  it('dimethyl ether COC — 3 heavy atoms', () => {
+    assert.equal(heavy(parseSMILES('COC')), 3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Implicit hydrogen rules — bracket atoms vs organic subset
+// ---------------------------------------------------------------------------
+
+describe('parseSMILES — bracket atom H counts (SMILES spec: bracket = explicit H)', () => {
+  function hCount(smi) {
+    return [...parseSMILES(smi).atoms.values()].filter(a => a.name === 'H').length;
+  }
+
+  // Bracket atoms with no H specification → 0 H
+  it('[C] has 0 H (radical carbon, not methane)', () => {
+    assert.equal(hCount('[C]'), 0);
+  });
+  it('[N] has 0 H (nitrene, not ammonia)', () => {
+    assert.equal(hCount('[N]'), 0);
+  });
+  it('[O] has 0 H (oxygen biradical, not water)', () => {
+    assert.equal(hCount('[O]'), 0);
+  });
+  it('[18O] has 0 H (isotope oxygen, not water)', () => {
+    assert.equal(hCount('[18O]'), 0);
+  });
+  it('[13C] has 0 H (isotope carbon, not methane)', () => {
+    assert.equal(hCount('[13C]'), 0);
+  });
+
+  // Bracket atoms with explicit H → that many H
+  it('[CH4] has 4 H', () => {
+    assert.equal(hCount('[CH4]'), 4);
+  });
+  it('[NH3] has 3 H', () => {
+    assert.equal(hCount('[NH3]'), 3);
+  });
+  it('[OH2] has 2 H', () => {
+    assert.equal(hCount('[OH2]'), 2);
+  });
+  it('[CH2] has 2 H (carbene)', () => {
+    assert.equal(hCount('[CH2]'), 2);
+  });
+  it('[13CH4] has 4 H (isotope methane)', () => {
+    assert.equal(hCount('[13CH4]'), 4);
+  });
+  it('[C@@H](F)(Cl)Br has 1 H (chiral center)', () => {
+    assert.equal(hCount('[C@@H](F)(Cl)Br'), 1);
+  });
+
+  // Organic subset atoms (no brackets) → valence-fill implicit H
+  it('C has 4 H (methane)', () => {
+    assert.equal(hCount('C'), 4);
+  });
+  it('N has 3 H (ammonia)', () => {
+    assert.equal(hCount('N'), 3);
+  });
+  it('O has 2 H (water)', () => {
+    assert.equal(hCount('O'), 2);
+  });
+  it('B has 3 H (borane)', () => {
+    assert.equal(hCount('B'), 3);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Boron valence
+// ---------------------------------------------------------------------------
+
+describe('parseSMILES — boron implicit H', () => {
+  function hCount(smi) {
+    return [...parseSMILES(smi).atoms.values()].filter(a => a.name === 'H').length;
+  }
+
+  it('B gets 3 implicit H (standard valence 3)', () => {
+    assert.equal(hCount('B'), 3);
+  });
+  it('B(F)(F)F gets 0 H (fully substituted)', () => {
+    assert.equal(hCount('B(F)(F)F'), 0);
+  });
+  it('[BH4-] has 4 explicit H (borohydride)', () => {
+    assert.equal(hCount('[BH4-]'), 4);
+  });
+  it('[B] has 0 H (bracket B, no implicit H)', () => {
+    assert.equal(hCount('[B]'), 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Period 6/7 elements — no spurious implicit H
+// ---------------------------------------------------------------------------
+
+describe('parseSMILES — period 6/7 atoms no spurious H', () => {
+  function hCount(smi) {
+    return [...parseSMILES(smi).atoms.values()].filter(a => a.name === 'H').length;
+  }
+
+  it('[Pt] has 0 H', () => {
+    assert.equal(hCount('[Pt]'), 0);
+  });
+  it('[Pt](Cl)(Cl)(N)N has 4 H (from two NH2)', () => {
+    assert.equal(hCount('[Pt](Cl)(Cl)(N)N'), 4);
+  });
+  it('[Au]Cl has 0 H', () => {
+    assert.equal(hCount('[Au]Cl'), 0);
+  });
+  it('[Hg](Cl)Cl has 0 H', () => {
+    assert.equal(hCount('[Hg](Cl)Cl'), 0);
   });
 });

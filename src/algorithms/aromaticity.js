@@ -106,12 +106,18 @@ function _isHuckel(piCount) {
  * aromatic: `atom.properties.aromatic = true` for every atom in the ring, and
  * every ring bond gets `bond.setAromatic(true)`.
  *
+ * When `options.preserveKekule` is true, any existing integer ring-bond order
+ * is copied to `bond.properties.localizedOrder` before the bond is converted
+ * to aromatic order 1.5. Renderers can prefer that preserved localized order
+ * when they want a Kekule-style depiction of an aromatic system.
+ *
  * Rings containing hydrogen atoms are skipped (H is never sp2 in a ring).
  *
  * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {{ preserveKekule?: boolean }} [options]
  * @returns {string[][]}  Array of aromatic rings, each as an array of atom IDs.
  */
-export function perceiveAromaticity(mol) {
+export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
   const rings = mol.getRings();
   const aromaticRings = [];
 
@@ -154,6 +160,9 @@ export function perceiveAromaticity(mol) {
       const b = ring[(i + 1) % ring.length];
       const bond = mol.getBond(a, b);
       if (bond) {
+        if (preserveKekule && Number.isInteger(bond.properties.order)) {
+          bond.properties.localizedOrder = bond.properties.order;
+        }
         bond.setAromatic(true);
       }
     }

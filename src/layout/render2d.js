@@ -2,12 +2,15 @@
  * render2d.js — reusable 2D skeletal-structure renderer
  *
  * Exports:
- *   renderMolSVG(smiles)           → { svgContent, cellW, cellH } | null
- *   buildCompositeSVG(cells, cols) → SVG string
- *   svgToPng(svgString)            → Buffer (PNG)
+ *   renderMolSVG(mol)                  → { svgContent, cellW, cellH } | null
+ *   renderMolSVGFromSMILES(smiles)      → { svgContent, cellW, cellH } | null
+ *   renderMolSVGFromINCHI(inchi)        → { svgContent, cellW, cellH } | null
+ *   buildCompositeSVG(cells, cols)      → SVG string
+ *   svgToPng(svgString)                → Buffer (PNG)
  */
 
 import { parseSMILES }    from '../io/smiles.js';
+import { parseINCHI }     from '../io/inchi.js';
 import { generateCoords } from './index.js';
 import {
   atomColor,
@@ -26,6 +29,14 @@ export const BOND_OFF = 5.5;  // px between parallel bond lines
 export const STROKE_W = 1.5;  // px
 export const FONT_SIZE = 11;  // px
 export const CELL_PAD  = 22;  // px padding inside each cell
+export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
+
+function renderBondOrder(bond) {
+  if (AROMATIC_RENDER_MODE === 'localized' && (bond.properties.aromatic ?? false)) {
+    return bond.properties.localizedOrder ?? (bond.properties.order ?? 1.5);
+  }
+  return bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
+}
 
 // ---------------------------------------------------------------------------
 // XML helper
@@ -66,7 +77,7 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType) {
     return out;
   }
 
-  const order = bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
+  const order = renderBondOrder(bond);
   const s1 = toSVG(a1), s2 = toSVG(a2);
   const dx = s2.x - s1.x, dy = s2.y - s1.y;
   const { nx, ny } = perpUnit(dx, dy);
@@ -104,14 +115,11 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType) {
 // ---------------------------------------------------------------------------
 // renderMolSVG — render one molecule as an SVG fragment
 //
-// Returns { svgContent: string, cellW: number, cellH: number }
-// or null if parsing / layout fails.
+// Accepts a pre-parsed Molecule object.
+// Returns { svgContent: string, cellW: number, cellH: number } or null.
 // ---------------------------------------------------------------------------
-export function renderMolSVG(smiles) {
-  let mol;
-  try {
-    mol = parseSMILES(smiles);
-  } catch {
+export function renderMolSVG(mol) {
+  if (!mol || mol.atoms.size === 0) {
     return null;
   }
 
@@ -368,6 +376,29 @@ export function buildCompositeSVG(cells, cols) {
 
   parts.push('</svg>');
   return parts.join('\n');
+}
+
+// ---------------------------------------------------------------------------
+// renderMolSVGFromSMILES / renderMolSVGFromINCHI — convenience wrappers
+// ---------------------------------------------------------------------------
+export function renderMolSVGFromSMILES(smiles) {
+  let mol;
+  try {
+    mol = parseSMILES(smiles);
+  } catch {
+    return null;
+  }
+  return renderMolSVG(mol);
+}
+
+export function renderMolSVGFromINCHI(inchi) {
+  let mol;
+  try {
+    mol = parseINCHI(inchi);
+  } catch {
+    return null;
+  }
+  return renderMolSVG(mol);
 }
 
 // ---------------------------------------------------------------------------

@@ -130,7 +130,7 @@ export function labelHalfH(label, fontSize) {
 export function getAtomLabel(atom, hCounts, toSVG, mol) {
   const symbol = atom.name;
   const hCount = hCounts.get(atom.id) ?? 0;
-  if (symbol === 'C' && atom.bonds.length > 0) {
+  if (symbol === 'C' && atom.getNeighbors(mol).some(n => n.name !== 'H')) {
     return null;
   }
   if (hCount === 0) {

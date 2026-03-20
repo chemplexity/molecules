@@ -247,12 +247,13 @@ describe('SMILES corpus — Isotopes', () => {
     assertMass('C[14CH](C)C', 60.116);
   });
 
-  it('[14C] complex CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC: C13H25ClINO2', () => {
+  it('[14C] complex CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC: C13H24ClINO2', () => {
+    // [14C] has no explicit H in the bracket → 0 H per SMILES spec
     assert.deepEqual(
       formula(parseSMILES('CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC')),
-      { C: 13, H: 25, Cl: 1, I: 1, N: 1, O: 2 }
+      { C: 13, H: 24, Cl: 1, I: 1, N: 1, O: 2 }
     );
-    assertMass('CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC', 391.694);
+    assertMass('CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC', 390.686);
   });
 
   it('[13CH3] at chain start bonds to ring: [13CH3][C@H]1CC[C@@H](O)[C@H](C1)N: C7H15NO', () => {

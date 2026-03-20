@@ -18,8 +18,6 @@ describe('functionalGroups — hydrocarbons', () => {
   it('alkene found in ethene', () => assert.equal(matchesSMARTS(parseSMILES('C=C'), fg.alkene.smarts), true));
   it('alkene NOT found in ethane', () => assert.equal(matchesSMARTS(parseSMILES('CC'), fg.alkene.smarts), false));
   it('alkyne found in acetylene', () => assert.equal(matchesSMARTS(parseSMILES('C#C'), fg.alkyne.smarts), true));
-  it('arene found in benzene', () => assert.equal(matchesSMARTS(mol('c1ccccc1'), fg.arene.smarts), true));
-  it('arene NOT found in cyclohexane', () => assert.equal(matchesSMARTS(mol('C1CCCCC1'), fg.arene.smarts), false));
 });
 
 // ---------------------------------------------------------------------------

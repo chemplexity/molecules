@@ -35,6 +35,12 @@ describe('parseINCHI — input validation', () => {
   it('throws on non-string',     () => assert.throws(() => parseINCHI(null),      /non-empty/));
   it('throws without InChI= prefix', () => assert.throws(() => parseINCHI('1S/C6H6'), /InChI=/));
   it('throws on missing formula',    () => assert.throws(() => parseINCHI('InChI=1S'), /formula/));
+  it('throws when the /c layer leaves a heavy atom disconnected', () => {
+    assert.throws(
+      () => parseINCHI('InChI=1S/C4H4O/c1-2-4-3-1/h1-4H'),
+      /leaves heavy atom\(s\) unconnected: 5 \(O\)/
+    );
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -58,6 +64,99 @@ describe('parseINCHI — methane InChI=1S/CH4/h1H4', () => {
 
   it('formula is { C: 1, H: 4 }', () => {
     assert.deepEqual(mol.getFormula(), { C: 1, H: 4 });
+  });
+});
+
+describe('parseINCHI — hydrogen chloride plus ammonia InChI=1S/ClH.H3N/h1H;1H3', () => {
+  const mol = parseINCHI('InChI=1S/ClH.H3N/h1H;1H3');
+
+  it('parses as two disconnected heavy-atom components', () => {
+    assert.equal(heavyBonds(mol).length, 0);
+    assert.deepEqual(mol.getFormula(), { Cl: 1, H: 4, N: 1 });
+  });
+
+  it('assigns one H to Cl and three H to N', () => {
+    const chlorine = [...mol.atoms.values()].find(a => a.name === 'Cl');
+    const nitrogen = [...mol.atoms.values()].find(a => a.name === 'N');
+    assert.ok(chlorine);
+    assert.ok(nitrogen);
+    assert.equal(chlorine.getHydrogenNeighbors(mol).length, 1);
+    assert.equal(nitrogen.getHydrogenNeighbors(mol).length, 3);
+  });
+});
+
+describe('parseINCHI — fixed-H ammonium chloride InChI=1/ClH.H3N/h1H;1H3/fCl.H4N/h1h;1H/q-1;+1', () => {
+  const mol = parseINCHI('InChI=1/ClH.H3N/h1H;1H3/fCl.H4N/h1h;1H/q-1;+1');
+
+  it('parses as chloride and ammonium', () => {
+    assert.equal(heavyBonds(mol).length, 0);
+    assert.deepEqual(mol.getFormula(), { Cl: 1, H: 4, N: 1 });
+  });
+
+  it('assigns formal charges and hydrogens correctly', () => {
+    const chlorine = [...mol.atoms.values()].find(a => a.name === 'Cl');
+    const nitrogen = [...mol.atoms.values()].find(a => a.name === 'N');
+    assert.ok(chlorine);
+    assert.ok(nitrogen);
+    assert.equal(chlorine.getHydrogenNeighbors(mol).length, 0);
+    assert.equal(nitrogen.getHydrogenNeighbors(mol).length, 4);
+    assert.equal(chlorine.properties.charge, -1);
+    assert.equal(nitrogen.properties.charge, 1);
+    assert.equal(mol.properties.charge, 0);
+  });
+});
+
+describe('parseINCHI — iron bis(benzoate) InChI=1S/2C7H6O2.Fe/c2*8-7(9)6-4-2-1-3-5-6;/h2*1-5H,(H,8,9);/q;;+2/p-2', () => {
+  const mol = parseINCHI('InChI=1S/2C7H6O2.Fe/c2*8-7(9)6-4-2-1-3-5-6;/h2*1-5H,(H,8,9);/q;;+2/p-2');
+
+  it('parses repeated components and proton removal correctly', () => {
+    assert.deepEqual(mol.getFormula(), { C: 14, H: 10, O: 4, Fe: 1 });
+    assert.equal(mol.properties.charge, 0);
+    assert.equal(countElement(mol, 'Fe'), 1);
+  });
+
+  it('assigns Fe2+ and two benzoate oxygens as O-', () => {
+    const iron = [...mol.atoms.values()].find(a => a.name === 'Fe');
+    const oxygens = [...mol.atoms.values()].filter(a => a.name === 'O');
+    assert.ok(iron);
+    assert.equal(iron.properties.charge, 2);
+    assert.equal(oxygens.filter(o => o.properties.charge === -1).length, 2);
+  });
+});
+
+describe('parseINCHI — tetrahedral stereochemistry', () => {
+  it('uses /t and /m to distinguish enantiomers', () => {
+    const rMol = parseINCHI('InChI=1S/C8H9NO2/c9-7(8(10)11)6-4-2-1-3-5-6/h1-5,7H,9H2,(H,10,11)/t7-/m1/s1');
+    const sMol = parseINCHI('InChI=1S/C8H9NO2/c9-7(8(10)11)6-4-2-1-3-5-6/h1-5,7H,9H2,(H,10,11)/t7-/m0/s1');
+    const rCenter = [...rMol.atoms.values()].find(a => a.properties.chirality);
+    const sCenter = [...sMol.atoms.values()].find(a => a.properties.chirality);
+    assert.ok(rCenter);
+    assert.ok(sCenter);
+    assert.equal(rCenter.properties.chirality, 'R');
+    assert.equal(sCenter.properties.chirality, 'S');
+  });
+
+  it('handles acyclic quaternary centers with no hydrogens', () => {
+    const mol = parseINCHI('InChI=1S/CBrClFI/c2-1(3,4)5/t1-/m1/s1');
+    const center = [...mol.atoms.values()].find(a => a.properties.chirality);
+    assert.ok(center);
+    assert.equal(center.properties.chirality, 'S');
+  });
+});
+
+describe('parseINCHI — double-bond stereochemistry', () => {
+  it('/b plus gives E', () => {
+    const mol = parseINCHI('InChI=1S/C2H2F2/c3-1-2-4/h1-2H/b2-1+');
+    const dbl = [...mol.bonds.values()].find(b => b.properties.order === 2);
+    assert.ok(dbl);
+    assert.equal(mol.getEZStereo(dbl.id), 'E');
+  });
+
+  it('/b minus gives Z', () => {
+    const mol = parseINCHI('InChI=1S/C2H2F2/c3-1-2-4/h1-2H/b2-1-');
+    const dbl = [...mol.bonds.values()].find(b => b.properties.order === 2);
+    assert.ok(dbl);
+    assert.equal(mol.getEZStereo(dbl.id), 'Z');
   });
 });
 
@@ -228,7 +327,7 @@ describe('parseINCHI — benzene InChI=1S/C6H6/c1-2-3-4-5-6-1/h1-6H', () => {
     assert.equal(hb.length, 6);
     for (const b of hb) {
       assert.equal(b.properties.aromatic, true);
-      assert.equal(b.properties.order, 1);
+      assert.equal(b.properties.order, 1.5);
     }
   });
   it('every C is in a ring', () => {
@@ -406,6 +505,34 @@ describe('parseINCHI — acetone InChI=1S/C3H6O/c1-3(2)4/h1-2H3', () => {
   });
 });
 
+describe('parseINCHI — urea InChI=1S/CH4N2O/c2-1(3)4/h(H4,2,3,4)', () => {
+  const mol = parseINCHI('InChI=1S/CH4N2O/c2-1(3)4/h(H4,2,3,4)');
+
+  it('formula { C:1, H:4, N:2, O:1 }', () => {
+    assert.deepEqual(mol.getFormula(), { C: 1, H: 4, N: 2, O: 1 });
+  });
+  it('oxygen has 0 H and 1 heavy neighbor', () => {
+    const oxygen = [...mol.atoms.values()].find(a => a.name === 'O');
+    assert.ok(oxygen);
+    assert.equal(oxygen.getHydrogenNeighbors(mol).length, 0);
+    assert.equal(oxygen.getHeavyNeighbors(mol).length, 1);
+  });
+  it('each nitrogen has 2 H and 1 heavy neighbor', () => {
+    const nitrogens = [...mol.atoms.values()].filter(a => a.name === 'N');
+    assert.equal(nitrogens.length, 2);
+    for (const n of nitrogens) {
+      assert.equal(n.getHydrogenNeighbors(mol).length, 2);
+      assert.equal(n.getHeavyNeighbors(mol).length, 1);
+    }
+  });
+  it('has one C=O bond and two C-N single bonds', () => {
+    const hb = heavyBonds(mol);
+    assert.equal(hb.length, 3);
+    assert.equal(hb.filter(b => b.properties.order === 2).length, 1);
+    assert.equal(hb.filter(b => b.properties.order === 1).length, 2);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Halogen
 // ---------------------------------------------------------------------------
@@ -521,6 +648,26 @@ describe('parseINCHI — pyridine InChI=1S/C5H5N/c1-2-4-6-5-3-1/h1-5H', () => {
   it('nitrogen has 0 H neighbors', () => {
     const n = [...mol.atoms.values()].find(a => a.name === 'N');
     assert.equal(n.getHydrogenNeighbors(mol).length, 0);
+  });
+});
+
+describe('parseINCHI — furan InChI=1S/C4H4O/c1-2-4-5-3-1/h1-4H', () => {
+  const mol = parseINCHI('InChI=1S/C4H4O/c1-2-4-5-3-1/h1-4H');
+
+  it('formula { C:4, H:4, O:1 }', () => assert.deepEqual(mol.getFormula(), { C: 4, H: 4, O: 1 }));
+  it('5 heavy-atom bonds, all aromatic', () => {
+    const hb = heavyBonds(mol);
+    assert.equal(hb.length, 5);
+    for (const b of hb) {
+      assert.equal(b.properties.aromatic, true);
+      assert.equal(b.properties.order, 1.5);
+    }
+  });
+  it('oxygen is in the ring and has two heavy neighbors', () => {
+    const oxygen = [...mol.atoms.values()].find(a => a.name === 'O');
+    assert.ok(oxygen);
+    assert.equal(oxygen.getHeavyNeighbors(mol).length, 2);
+    assert.equal(mol.isAtomInRing(oxygen.id), true);
   });
 });
 
@@ -663,6 +810,22 @@ describe('parseINCHI — cyclohexanone InChI=1S/C6H10O/c7-6-4-2-1-3-5-6/h1-5H2',
   });
 });
 
+describe('parseINCHI — quinone-like dione InChI=1S/C10H12O2/c1-10(2,3)7-4-5-8(11)9(12)6-7/h4-6H,1-3H3', () => {
+  const mol = parseINCHI('InChI=1S/C10H12O2/c1-10(2,3)7-4-5-8(11)9(12)6-7/h4-6H,1-3H3');
+
+  it('has two C=O double bonds', () => {
+    const carbonyls = heavyBonds(mol).filter(b => {
+      const names = b.atoms.map(id => mol.atoms.get(id)?.name).sort();
+      return b.properties.order === 2 && names[0] === 'C' && names[1] === 'O';
+    });
+    assert.equal(carbonyls.length, 2);
+  });
+  it('is not marked as a fully aromatic ring', () => {
+    const aromaticRingBonds = heavyBonds(mol).filter(b => b.properties.aromatic);
+    assert.ok(aromaticRingBonds.length < 6);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Internal alkyne
 // ---------------------------------------------------------------------------
@@ -693,6 +856,28 @@ describe('parseINCHI — 2-butyne InChI=1S/C4H6/c1-3-4-2/h1-2H3', () => {
     const carbons  = [...mol.atoms.values()].filter(a => a.name === 'C');
     const methyls  = carbons.filter(c => c.getHydrogenNeighbors(mol).length === 3);
     assert.equal(methyls.length, 2);
+  });
+});
+
+describe('parseINCHI — tetracyanoethylene InChI=1S/C6N4/c7-1-5(2-8)6(3-9)4-10', () => {
+  const mol = parseINCHI('InChI=1S/C6N4/c7-1-5(2-8)6(3-9)4-10');
+
+  it('formula { C:6, N:4 }', () => {
+    assert.deepEqual(mol.getFormula(), { C: 6, N: 4 });
+  });
+  it('has four nitrile triple bonds', () => {
+    const triples = heavyBonds(mol).filter(b => {
+      const names = b.atoms.map(id => mol.atoms.get(id)?.name).sort();
+      return b.properties.order === 3 && names[0] === 'C' && names[1] === 'N';
+    });
+    assert.equal(triples.length, 4);
+  });
+  it('has one central C=C double bond', () => {
+    const ccDoubles = heavyBonds(mol).filter(b => {
+      const names = b.atoms.map(id => mol.atoms.get(id)?.name);
+      return b.properties.order === 2 && names.every(name => name === 'C');
+    });
+    assert.equal(ccDoubles.length, 1);
   });
 });
 
@@ -728,6 +913,12 @@ describe('parseINCHI — aniline InChI=1S/C6H7N/c7-6-4-2-1-3-5-6/h1-5H,7H2', () 
     const ipso    = carbons.find(c => c.getHeavyNeighbors(mol).some(nb => nb.name === 'N'));
     assert.ok(ipso);
     assert.equal(ipso.getHydrogenNeighbors(mol).length, 0);
+  });
+  it('aromatic ring preserves localized bond orders for rendering', () => {
+    const ringBonds = heavyBonds(mol).filter(b => b.properties.aromatic);
+    assert.equal(ringBonds.length, 6);
+    assert.equal(ringBonds.filter(b => b.properties.localizedOrder === 2).length, 3);
+    assert.equal(ringBonds.filter(b => b.properties.localizedOrder === 1).length, 3);
   });
 });
 

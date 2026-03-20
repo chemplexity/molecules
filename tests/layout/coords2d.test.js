@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
 import { generateCoords } from '../../src/layout/index.js';
+import { parseINCHI } from '../../src/io/inchi.js';
 import { parseSMILES } from '../../src/io/smiles.js';
 
 // ---------------------------------------------------------------------------
@@ -139,6 +140,100 @@ function bondLengthOf(mol, bond) {
   const a = mol.atoms.get(bond.atoms[0]);
   const b = mol.atoms.get(bond.atoms[1]);
   return Math.hypot(b.x - a.x, b.y - a.y);
+}
+
+function heavyDistanceSignature(mol) {
+  const heavyIds = [...mol.atoms.keys()].filter(id => mol.atoms.get(id)?.name !== 'H');
+  const distances = [];
+  for (let i = 0; i < heavyIds.length; i++) {
+    for (let j = i + 1; j < heavyIds.length; j++) {
+      const a = mol.atoms.get(heavyIds[i]);
+      const b = mol.atoms.get(heavyIds[j]);
+      distances.push(Math.hypot(a.x - b.x, a.y - b.y).toFixed(3));
+    }
+  }
+  distances.sort();
+  return distances.join(',');
+}
+
+function pointToSegmentDistance(p, a, b) {
+  const abx = b.x - a.x;
+  const aby = b.y - a.y;
+  const len2 = abx * abx + aby * aby;
+  if (len2 <= 1e-12) {
+    return Math.hypot(p.x - a.x, p.y - a.y);
+  }
+  const t = Math.max(0, Math.min(1, ((p.x - a.x) * abx + (p.y - a.y) * aby) / len2));
+  const px = a.x + t * abx;
+  const py = a.y + t * aby;
+  return Math.hypot(p.x - px, p.y - py);
+}
+
+function angleDeg(a, b, c) {
+  const ux = a.x - b.x;
+  const uy = a.y - b.y;
+  const vx = c.x - b.x;
+  const vy = c.y - b.y;
+  const dot = ux * vx + uy * vy;
+  const mu = Math.hypot(ux, uy);
+  const mv = Math.hypot(vx, vy);
+  const cos = dot / (mu * mv);
+  return Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+}
+
+function approx(actual, expected, tol = 1e-6) {
+  return Math.abs(actual - expected) <= tol;
+}
+
+function preferredBackbonePath(mol) {
+  const heavyIds = [...mol.atoms.keys()].filter(id => mol.atoms.get(id)?.name !== 'H');
+  const ringAtoms = new Set(mol.getRings().flat());
+  let best = null;
+
+  function shortestPath(startId, endId) {
+    const prev = new Map([[startId, null]]);
+    const queue = [startId];
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      if (cur === endId) {
+        break;
+      }
+      for (const nb of mol.getNeighbors(cur)) {
+        if (mol.atoms.get(nb)?.name === 'H' || prev.has(nb)) {
+          continue;
+        }
+        prev.set(nb, cur);
+        queue.push(nb);
+      }
+    }
+    if (!prev.has(endId)) {
+      return null;
+    }
+    const path = [];
+    for (let cur = endId; cur != null; cur = prev.get(cur)) {
+      path.push(cur);
+    }
+    return path.reverse();
+  }
+
+  for (let i = 0; i < heavyIds.length; i++) {
+    for (let j = i + 1; j < heavyIds.length; j++) {
+      const path = shortestPath(heavyIds[i], heavyIds[j]);
+      if (!path) {
+        continue;
+      }
+      const ringCount = path.filter(id => ringAtoms.has(id)).length;
+      const score = path.length - ringCount * 0.6;
+      if (!best ||
+          score > best.score ||
+          (score === best.score && ringCount < best.ringCount) ||
+          (score === best.score && ringCount === best.ringCount && path.length > best.path.length)) {
+        best = { path, ringCount, score };
+      }
+    }
+  }
+
+  return best?.path ?? [];
 }
 
 // ---------------------------------------------------------------------------
@@ -1245,5 +1340,133 @@ describe('generateCoords — bridged bicyclic (two fused 9-rings, 4-atom bridge)
         );
       }
     }
+  });
+});
+
+describe('generateCoords — parser-independent branch ordering', () => {
+  const SMILES = 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN';
+  const INCHI = 'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1';
+
+  it('SMILES and InChI layouts match for the same peptide graph', () => {
+    const smilesMol = parseSMILES(SMILES);
+    const inchiMol = parseINCHI(INCHI);
+
+    generateCoords(smilesMol, { suppressH: true, bondLength: 1.5 });
+    generateCoords(inchiMol, { suppressH: true, bondLength: 1.5 });
+
+    assert.equal(heavyDistanceSignature(smilesMol), heavyDistanceSignature(inchiMol));
+  });
+
+  it('keeps the peptide-like non-ring backbone extended', () => {
+    const mol = parseINCHI(INCHI);
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const path = preferredBackbonePath(mol);
+    assert.ok(path.length >= 12, `expected a long preferred backbone, got ${path.length} atoms`);
+    const xValues = path.map(id => mol.atoms.get(id)?.x ?? NaN);
+
+    for (let i = 1; i < xValues.length; i++) {
+      assert.ok(
+        xValues[i] > xValues[i - 1],
+        `backbone x-order regressed at ${path[i - 1]} -> ${path[i]}: ${xValues[i - 1]} !< ${xValues[i]}`
+      );
+    }
+
+    const start = mol.atoms.get(path[0]);
+    const end = mol.atoms.get(path[path.length - 1]);
+    assert.ok(start && end, 'expected backbone endpoints');
+    const endToEnd = Math.hypot(end.x - start.x, end.y - start.y);
+    assert.ok(endToEnd >= 14.5, `backbone not sufficiently extended: ${endToEnd.toFixed(3)} Å`);
+  });
+});
+
+describe('generateCoords — bond-to-label crowding', () => {
+  const SMILES = 'C(CC(N)C(O)=O)CN=C(N)N';
+
+  it('separates the imine branch from the carbonyl group', () => {
+    const mol = parseSMILES(SMILES);
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const imineN = mol.atoms.get('N9');
+    const imineC = mol.atoms.get('C10');
+    const carbonylO = mol.atoms.get('O7');
+    const carbonylC = mol.atoms.get('C5');
+
+    assert.ok(imineN && imineC && carbonylO && carbonylC, 'expected named atoms from parser');
+
+    const dist = pointToSegmentDistance(carbonylO, imineN, imineC);
+    const branchSep = Math.hypot(carbonylC.x - imineC.x, carbonylC.y - imineC.y);
+    assert.ok(
+      dist >= 0.7,
+      `imine bond crowds carbonyl oxygen: segment distance ${dist.toFixed(3)} Å`
+    );
+    assert.ok(
+      branchSep >= 1.2,
+      `imine carbon folds into carbonyl carbon: distance ${branchSep.toFixed(3)} Å`
+    );
+  });
+});
+
+describe('generateCoords — extended chain spread', () => {
+  const SMILES = 'OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1OC(=O)CCCCCC';
+
+  it('keeps the ester alkyl tail from curling back into the carbonyl region', () => {
+    const mol = parseSMILES(SMILES);
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const carbonylO = mol.atoms.get('O33');
+    const tailCarbon = mol.atoms.get('C40');
+    const tailStart = mol.atoms.get('C34');
+    const tailEnd = mol.atoms.get('C41');
+
+    assert.ok(carbonylO && tailCarbon && tailStart && tailEnd, 'expected stable ester-tail atom ids');
+
+    const oxygenClearance = Math.hypot(carbonylO.x - tailCarbon.x, carbonylO.y - tailCarbon.y);
+    const tailExtent = Math.hypot(tailEnd.x - tailStart.x, tailEnd.y - tailStart.y);
+
+    assert.ok(
+      oxygenClearance >= 2.0,
+      `alkyl tail curls back toward carbonyl oxygen: clearance ${oxygenClearance.toFixed(3)} Å`
+    );
+    assert.ok(
+      tailExtent >= 5.5,
+      `alkyl tail not sufficiently extended: end-to-end ${tailExtent.toFixed(3)} Å`
+    );
+
+    const tailAngles = [
+      angleDeg(mol.atoms.get('C34'), mol.atoms.get('C36'), mol.atoms.get('C37')),
+      angleDeg(mol.atoms.get('C36'), mol.atoms.get('C37'), mol.atoms.get('C38')),
+      angleDeg(mol.atoms.get('C37'), mol.atoms.get('C38'), mol.atoms.get('C39')),
+      angleDeg(mol.atoms.get('C38'), mol.atoms.get('C39'), mol.atoms.get('C40')),
+      angleDeg(mol.atoms.get('C39'), mol.atoms.get('C40'), mol.atoms.get('C41')),
+    ];
+    for (const ang of tailAngles) {
+      assert.ok(
+        approx(ang, 120, 1e-6),
+        `alkyl tail bond angle drifted from zigzag geometry: ${ang.toFixed(3)}°`
+      );
+    }
+  });
+});
+
+describe('generateCoords — alkene substituent geometry', () => {
+  it('keeps single-bond substituents on an alkene carbon at trigonal angles', () => {
+    const mol = parseSMILES('F/C=C/F');
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const carbon1 = mol.atoms.get('C2');
+    const carbon2 = mol.atoms.get('C3');
+    const fluorine1 = mol.atoms.get('F1');
+    const fluorine2 = mol.atoms.get('F4');
+
+    assert.ok(carbon1 && carbon2 && fluorine1 && fluorine2, 'expected stable difluoroethene atom ids');
+    assert.ok(
+      approx(angleDeg(fluorine1, carbon1, carbon2), 120, 1e-6),
+      `left alkene substituent angle drifted: ${angleDeg(fluorine1, carbon1, carbon2).toFixed(3)}°`
+    );
+    assert.ok(
+      approx(angleDeg(carbon1, carbon2, fluorine2), 120, 1e-6),
+      `right alkene substituent angle drifted: ${angleDeg(carbon1, carbon2, fluorine2).toFixed(3)}°`
+    );
   });
 });
