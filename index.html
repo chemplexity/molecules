@@ -631,6 +631,9 @@ function setInputFormat(fmt) {
     if (fmt === 'smiles' && prev === 'inchi' && window._getMolSmiles) {
         inputVal = window._getMolSmiles() || '';
     }
+    if (fmt === 'inchi' && prev === 'smiles' && window._getMolInchi) {
+        inputVal = window._getMolInchi() || '';
+    }
     document.getElementById('smiles-input').value = inputVal;
     renderExamples();
 }
@@ -826,7 +829,7 @@ function parseInput(val) {
 
 import * as d3              from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
 import { parseSMILES, toSMILES } from './src/io/smiles.js';
-import { parseINCHI }       from './src/io/inchi.js';
+import { parseINCHI, toInChI } from './src/io/inchi.js';
 import { generateCoords }   from './src/layout/coords2d.js';
 import { molecularFormula, molecularMass } from './src/descriptors/molecular.js';
 import { allMatrices }      from './src/matrices/index.js';
@@ -2164,6 +2167,10 @@ window._parseInchi   = parseAndRenderInchi;
 window._getMolSmiles = () => {
     if (!currentMol) return null;
     try { return toSMILES(currentMol); } catch (e) { return null; }
+};
+window._getMolInchi = () => {
+    if (!currentMol) return null;
+    try { return toInChI(currentMol); } catch (e) { return null; }
 };
 
 document.getElementById('smiles-input').addEventListener('keyup', event => {

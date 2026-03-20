@@ -3,6 +3,7 @@
 import elements from '../data/elements.js';
 import { Molecule, computeRS } from '../core/Molecule.js';
 import { validateValence } from '../validation/valence.js';
+import { morganRanks } from '../algorithms/morgan.js';
 
 // ---------------------------------------------------------------------------
 // Internal helpers — layer parsers
@@ -1741,4 +1742,378 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
   mol.name               = mol.getName();
 
   return mol;
+}
+
+// ---------------------------------------------------------------------------
+// toInChI — internal helpers
+// ---------------------------------------------------------------------------
+
+function _hillElemCmp(a, b) {
+  if (a === b) {
+    return 0;
+  }
+  if (a === 'C') {
+    return -1;
+  }
+  if (b === 'C') {
+    return 1;
+  }
+  return a < b ? -1 : 1;
+}
+
+function _hillFormula(counts) {
+  let s = '';
+  if ((counts.C ?? 0) > 0) {
+    s += 'C';
+    if (counts.C > 1) {
+      s += counts.C;
+    }
+  }
+  if ((counts.H ?? 0) > 0) {
+    s += 'H';
+    if (counts.H > 1) {
+      s += counts.H;
+    }
+  }
+  for (const el of Object.keys(counts).filter(e => e !== 'C' && e !== 'H' && counts[e] > 0).sort()) {
+    s += el;
+    if (counts[el] > 1) {
+      s += counts[el];
+    }
+  }
+  return s;
+}
+
+function _elementCounts(comp) {
+  const counts = {};
+  for (const atom of comp.atoms.values()) {
+    counts[atom.name] = (counts[atom.name] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function _buildInChINumbering(heavy) {
+  if (heavy.atoms.size === 0) {
+    return new Map();
+  }
+  const morgan = morganRanks(heavy);
+  const atoms = [...heavy.atoms.values()].filter(a => a.name !== 'H');
+  atoms.sort((a, b) => {
+    const elCmp = _hillElemCmp(a.name, b.name);
+    if (elCmp !== 0) {
+      return elCmp;
+    }
+    return (morgan.get(a.id) ?? 0) - (morgan.get(b.id) ?? 0);
+  });
+  return new Map(atoms.map((a, i) => [a.id, i + 1]));
+}
+
+function _hCounts(comp, inchiIndexOf) {
+  const result = new Map();
+  for (const [atomId, idx] of inchiIndexOf) {
+    const atom = comp.atoms.get(atomId);
+    if (!atom || atom.name === 'H') {
+      continue;
+    }
+    const h = atom.getHydrogenNeighbors(comp).length;
+    if (h > 0) {
+      result.set(idx, h);
+    }
+  }
+  return result;
+}
+
+function _compressRanges(sorted) {
+  if (!sorted.length) {
+    return '';
+  }
+  const ranges = [];
+  let s = sorted[0];
+  let e = sorted[0];
+  for (let i = 1; i < sorted.length; i++) {
+    if (sorted[i] === e + 1) {
+      e = sorted[i];
+    } else {
+      ranges.push(s === e ? `${s}` : `${s}-${e}`);
+      s = sorted[i];
+      e = sorted[i];
+    }
+  }
+  ranges.push(s === e ? `${s}` : `${s}-${e}`);
+  return ranges.join(',');
+}
+
+function _hLayerSection(hCounts) {
+  if (!hCounts.size) {
+    return '';
+  }
+  const byCount = new Map();
+  for (const [idx, h] of hCounts) {
+    if (!byCount.has(h)) {
+      byCount.set(h, []);
+    }
+    byCount.get(h).push(idx);
+  }
+  return [...byCount.keys()].sort((a, b) => a - b).map(h => {
+    const rangeStr = _compressRanges(byCount.get(h).sort((a, b) => a - b));
+    return h === 1 ? `${rangeStr}H` : `${rangeStr}H${h}`;
+  }).join(',');
+}
+
+function _connectionSection(heavy, inchiIndexOf) {
+  if (heavy.atoms.size <= 1) {
+    return '';
+  }
+
+  const children = new Map();
+  const backEdges = new Map();
+  const visited = new Set();
+  const startId = [...heavy.atoms.keys()].sort((a, b) => inchiIndexOf.get(a) - inchiIndexOf.get(b))[0];
+
+  function dfs(id, parentId) {
+    visited.add(id);
+    const myIdx = inchiIndexOf.get(id);
+    const neighbors = heavy.getNeighbors(id).sort((a, b) => inchiIndexOf.get(a) - inchiIndexOf.get(b));
+    for (const n of neighbors) {
+      if (n === parentId) {
+        continue;
+      }
+      if (!visited.has(n)) {
+        if (!children.has(id)) {
+          children.set(id, []);
+        }
+        children.get(id).push(n);
+        dfs(n, id);
+      } else if (inchiIndexOf.get(n) < myIdx) {
+        if (!backEdges.has(id)) {
+          backEdges.set(id, []);
+        }
+        backEdges.get(id).push(n);
+      }
+    }
+  }
+
+  dfs(startId, null);
+
+  function emit(id) {
+    const idx = inchiIndexOf.get(id);
+    const kids = children.get(id) ?? [];
+    const backs = backEdges.get(id) ?? [];
+    const kidStrings = kids.map(emit);
+    const branchItems = [
+      ...backs.map(n => String(inchiIndexOf.get(n))),
+      ...kidStrings.slice(0, -1)
+    ];
+    const continuation = kidStrings.length > 0 ? kidStrings[kidStrings.length - 1] : null;
+    let result = String(idx);
+    if (branchItems.length > 0) {
+      result += `(${branchItems.join(',')})`;
+    }
+    if (continuation !== null) {
+      result += `-${continuation}`;
+    }
+    return result;
+  }
+
+  return emit(startId);
+}
+
+function _bLayerSection(comp, inchiIndexOf) {
+  const entries = [];
+  for (const bond of comp.bonds.values()) {
+    if (bond.properties.order !== 2) {
+      continue;
+    }
+    const [aId, bId] = bond.atoms;
+    const aIdx = inchiIndexOf.get(aId);
+    const bIdx = inchiIndexOf.get(bId);
+    if (aIdx === undefined || bIdx === undefined) {
+      continue;
+    }
+    const ez = comp.getEZStereo(bond.id);
+    if (!ez) {
+      continue;
+    }
+    const sign = ez === 'E' ? '+' : '-';
+    const lo = Math.min(aIdx, bIdx);
+    const hi = Math.max(aIdx, bIdx);
+    entries.push({ lo, hi, sign });
+  }
+  entries.sort((a, b) => a.lo - b.lo || a.hi - b.hi);
+  return entries.map(e => `${e.lo}-${e.hi}${e.sign}`).join(',');
+}
+
+function _tRawEntries(comp, inchiIndexOf) {
+  const entries = [];
+  for (const atomId of comp.getChiralCenters()) {
+    const atom = comp.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    const idx = inchiIndexOf.get(atomId);
+    if (idx === undefined) {
+      continue;
+    }
+    const storedChirality = atom.properties.chirality;
+    if (!storedChirality) {
+      continue;
+    }
+    const hNeighborIds = atom.getHydrogenNeighbors(comp).map(h => h.id);
+    const heavyNeighborIds = comp.getNeighbors(atomId)
+      .filter(nId => comp.atoms.get(nId)?.name !== 'H')
+      .sort((a, b) => (inchiIndexOf.get(a) ?? 0) - (inchiIndexOf.get(b) ?? 0));
+    const neighborOrder = [...heavyNeighborIds, ...hNeighborIds];
+    if (neighborOrder.length !== 4) {
+      continue;
+    }
+    let token = null;
+    for (const t of ['@', '@@']) {
+      if (computeRS(t, neighborOrder, atomId, comp) === storedChirality) {
+        token = t;
+        break;
+      }
+    }
+    if (!token) {
+      continue;
+    }
+    if (hNeighborIds.length === 0 && !atom.isInRing(comp)) {
+      token = token === '@' ? '@@' : '@';
+    }
+    entries.push({ idx, parity: token === '@@' ? '-' : '+' });
+  }
+  entries.sort((a, b) => a.idx - b.idx);
+  return entries;
+}
+
+function _chooseMFlag(allEntries) {
+  let pos = 0;
+  let neg = 0;
+  for (const e of allEntries) {
+    if (e.parity === '+') {
+      pos++;
+    } else {
+      neg++;
+    }
+  }
+  return pos > neg ? 1 : 0;
+}
+
+function _iLayerSection(heavy, inchiIndexOf) {
+  const entries = [];
+  for (const [atomId, idx] of inchiIndexOf) {
+    const atom = heavy.atoms.get(atomId);
+    if (!atom || !Number.isInteger(atom.properties.neutrons)) {
+      continue;
+    }
+    const el = elements[atom.name];
+    if (!el) {
+      continue;
+    }
+    const isotopeMass = Math.round(el.protons + atom.properties.neutrons);
+    const stdMass = Math.round(el.protons + el.neutrons);
+    if (isotopeMass === stdMass) {
+      continue;
+    }
+    const delta = isotopeMass - stdMass;
+    entries.push({ idx, delta });
+  }
+  entries.sort((a, b) => a.idx - b.idx);
+  return entries.map(e => `${e.idx}${e.delta > 0 ? '+' : ''}${e.delta}`).join(',');
+}
+
+// ---------------------------------------------------------------------------
+// toInChI — public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Serialises a `Molecule` to a standard InChI string (formula, connection,
+ * hydrogen, and charge layers).
+ *
+ * The returned string always starts with `InChI=1S/`. Layers are omitted
+ * when they carry no information (e.g. no `/c` for single-atom components,
+ * no `/h` when there are no hydrogens, no `/q` for neutral molecules).
+ *
+ * For disconnected molecules (salts, mixtures) each layer is
+ * semicolon-separated by component; components are ordered largest-first
+ * (most heavy atoms), then alphabetically by Hill formula.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {string}
+ */
+export function toInChI(molecule) {
+  if (molecule.atomCount === 0) {
+    return 'InChI=1S/';
+  }
+
+  const compData = molecule.getComponents().map(comp => {
+    const heavy = comp.stripHydrogens();
+    const inchiIndexOf = _buildInChINumbering(heavy);
+    const elemCounts = _elementCounts(comp);
+    const hCounts = _hCounts(comp, inchiIndexOf);
+    const charge = comp.getCharge();
+    return { comp, heavy, inchiIndexOf, elemCounts, hCounts, charge };
+  });
+
+  compData.sort((a, b) => {
+    const heavyA = [...a.comp.atoms.values()].filter(x => x.name !== 'H').length;
+    const heavyB = [...b.comp.atoms.values()].filter(x => x.name !== 'H').length;
+    if (heavyA !== heavyB) {
+      return heavyB - heavyA;
+    }
+    return _hillFormula(a.elemCounts).localeCompare(_hillFormula(b.elemCounts));
+  });
+
+  const formulaStr = compData.map(d => _hillFormula(d.elemCounts)).join('.');
+
+  const cSections = compData.map(d => _connectionSection(d.heavy, d.inchiIndexOf));
+  const cLayer = cSections.some(s => s !== '') ? cSections.join(';') : null;
+
+  const hSections = compData.map(d => _hLayerSection(d.hCounts));
+  const hLayer = hSections.some(s => s !== '') ? hSections.join(';') : null;
+
+  const charges = compData.map(d => d.charge);
+  const qLayer = charges.some(c => c !== 0)
+    ? charges.map(c => (c === 0 ? '' : c > 0 ? `+${c}` : `${c}`)).join(';')
+    : null;
+
+  const bSections = compData.map(d => _bLayerSection(d.comp, d.inchiIndexOf));
+  const bLayer = bSections.some(s => s !== '') ? bSections.join(';') : null;
+
+  const tEntriesPerComp = compData.map(d => _tRawEntries(d.comp, d.inchiIndexOf));
+  const mFlag = _chooseMFlag(tEntriesPerComp.flat());
+  const tEntriesCanon = mFlag === 1
+    ? tEntriesPerComp.map(entries => entries.map(e => ({ ...e, parity: e.parity === '+' ? '-' : '+' })))
+    : tEntriesPerComp;
+  const tSections = tEntriesCanon.map(entries => entries.map(e => `${e.idx}${e.parity}`).join(','));
+  const tLayer = tSections.some(s => s !== '') ? tSections.join(';') : null;
+
+  const iSections = compData.map(d => _iLayerSection(d.heavy, d.inchiIndexOf));
+  const iLayer = iSections.some(s => s !== '') ? iSections.join(';') : null;
+
+  let inchi = `InChI=1S/${formulaStr}`;
+  if (cLayer !== null) {
+    inchi += `/c${cLayer}`;
+  }
+  if (hLayer !== null) {
+    inchi += `/h${hLayer}`;
+  }
+  if (qLayer !== null) {
+    inchi += `/q${qLayer}`;
+  }
+  if (bLayer !== null) {
+    inchi += `/b${bLayer}`;
+  }
+  if (tLayer !== null) {
+    inchi += `/t${tLayer}`;
+  }
+  if (tLayer !== null || bLayer !== null) {
+    inchi += `/m${mFlag}`;
+  }
+  if (tLayer !== null || bLayer !== null) {
+    inchi += '/s1';
+  }
+  if (iLayer !== null) {
+    inchi += `/i${iLayer}`;
+  }
+  return inchi;
 }

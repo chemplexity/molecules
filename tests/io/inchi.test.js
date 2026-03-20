@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseINCHI } from '../../src/io/index.js';
+import { parseINCHI, toInChI, parseSMILES } from '../../src/io/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -1137,4 +1137,126 @@ describe('parseINCHI — acrylonitrile InChI=1S/C3H3N/c1-2-3-4/h1H2,2H', () => {
     assert.ok(nitrileC);
     assert.equal(nitrileC.getHydrogenNeighbors(mol).length, 0);
   });
+});
+
+// ---------------------------------------------------------------------------
+// toInChI
+// ---------------------------------------------------------------------------
+
+function roundTrip(smiles) {
+  const mol = parseSMILES(smiles);
+  const inchi = toInChI(mol);
+  const mol2 = parseINCHI(inchi);
+  assert.deepEqual(mol.getFormula(), mol2.getFormula(), `formula mismatch for ${smiles}: ${inchi}`);
+  const hb1 = [...mol.bonds.values()].filter(b =>
+    mol.atoms.get(b.atoms[0])?.name !== 'H' && mol.atoms.get(b.atoms[1])?.name !== 'H'
+  ).length;
+  const hb2 = [...mol2.bonds.values()].filter(b =>
+    mol2.atoms.get(b.atoms[0])?.name !== 'H' && mol2.atoms.get(b.atoms[1])?.name !== 'H'
+  ).length;
+  assert.equal(hb1, hb2, `heavy bond count mismatch for ${smiles}: ${inchi}`);
+  return inchi;
+}
+
+describe('toInChI — format', () => {
+  it('starts with InChI=1S/', () => {
+    assert.match(toInChI(parseSMILES('C')), /^InChI=1S\//);
+  });
+
+  it('methane — no /c layer', () => {
+    const inchi = toInChI(parseSMILES('C'));
+    assert.equal(inchi, 'InChI=1S/CH4/h1H4');
+    assert.ok(!inchi.includes('/c'));
+  });
+
+  it('water — no /c layer', () => {
+    assert.equal(toInChI(parseSMILES('O')), 'InChI=1S/H2O/h1H2');
+  });
+
+  it('CO2 — no /h layer', () => {
+    const inchi = toInChI(parseSMILES('O=C=O'));
+    assert.ok(inchi.startsWith('InChI=1S/CO2'));
+    assert.ok(!inchi.includes('/h'));
+  });
+
+  it('argon — formula only', () => {
+    assert.equal(toInChI(parseSMILES('[Ar]')), 'InChI=1S/Ar');
+  });
+
+  it('oxide dianion — charge layer q-2, no /h', () => {
+    const inchi = toInChI(parseSMILES('[O-2]'));
+    assert.ok(inchi.includes('/q-2'));
+    assert.ok(!inchi.includes('/h'));
+  });
+
+  it('ammonium — charge layer q+1', () => {
+    const inchi = toInChI(parseSMILES('[NH4+]'));
+    assert.ok(inchi.includes('/q+1'));
+  });
+
+  it('neutral molecule — no /q layer', () => {
+    assert.ok(!toInChI(parseSMILES('c1ccccc1')).includes('/q'));
+  });
+
+  it('disconnected components — dot-separated formula', () => {
+    const inchi = toInChI(parseSMILES('C.N'));
+    const formula = inchi.match(/InChI=1S\/([^/]+)/)?.[1];
+    assert.ok(formula?.includes('.'), `expected dot in formula: ${formula}`);
+  });
+
+  it('disconnected components — semicolon-separated /h layer', () => {
+    const inchi = toInChI(parseSMILES('C.N'));
+    const hLayer = inchi.match(/\/h([^/]+)/)?.[1];
+    assert.ok(hLayer?.includes(';'), `expected semicolon in /h: ${hLayer}`);
+  });
+});
+
+describe('toInChI — H layer grouping', () => {
+  it('benzene: all 6 atoms in one range', () => {
+    const hLayer = toInChI(parseSMILES('c1ccccc1')).match(/\/h([^/]+)/)?.[1];
+    assert.match(hLayer, /\d-\dH/);
+  });
+
+  it('cyclohexane: H2 per carbon', () => {
+    const hLayer = toInChI(parseSMILES('C1CCCCC1')).match(/\/h([^/]+)/)?.[1];
+    assert.ok(hLayer?.includes('H2'));
+  });
+
+  it('acetic acid: OH and CH3 separated', () => {
+    const inchi = toInChI(parseSMILES('CC(=O)O'));
+    const hLayer = inchi.match(/\/h([^/]+)/)?.[1];
+    assert.ok(hLayer?.includes('H,') || hLayer?.includes(','), `h layer: ${hLayer}`);
+  });
+});
+
+describe('toInChI — round-trip (formula + heavy bond count)', () => {
+  it('methane',      () => roundTrip('C'));
+  it('ethane',       () => roundTrip('CC'));
+  it('propane',      () => roundTrip('CCC'));
+  it('isobutane',    () => roundTrip('CC(C)C'));
+  it('neopentane',   () => roundTrip('CC(C)(C)C'));
+  it('benzene',      () => roundTrip('c1ccccc1'));
+  it('cyclohexane',  () => roundTrip('C1CCCCC1'));
+  it('cyclopentane', () => roundTrip('C1CCCC1'));
+  it('naphthalene',  () => roundTrip('c1ccc2ccccc2c1'));
+  it('acetic acid',  () => roundTrip('CC(=O)O'));
+  it('ethanol',      () => roundTrip('CCO'));
+  it('pyridine',     () => roundTrip('c1ccncc1'));
+  it('water',        () => roundTrip('O'));
+  it('ammonia',      () => roundTrip('N'));
+  it('HCN',          () => roundTrip('C#N'));
+  it('CO2',          () => roundTrip('O=C=O'));
+  it('methane+ammonia (disconnected)', () => roundTrip('C.N'));
+});
+
+describe('toInChI — idempotence', () => {
+  const molecules = ['C', 'CC', 'c1ccccc1', 'CC(=O)O', 'C1CCCCC1', 'c1ccncc1'];
+  for (const smi of molecules) {
+    it(`${smi}`, () => {
+      const mol = parseSMILES(smi);
+      const i1 = toInChI(mol);
+      const i2 = toInChI(parseINCHI(i1));
+      assert.equal(i1, i2, `not idempotent: first=${i1}, second=${i2}`);
+    });
+  }
 });

@@ -1439,7 +1439,7 @@ describe('generateCoords — extended chain spread', () => {
       angleDeg(mol.atoms.get('C36'), mol.atoms.get('C37'), mol.atoms.get('C38')),
       angleDeg(mol.atoms.get('C37'), mol.atoms.get('C38'), mol.atoms.get('C39')),
       angleDeg(mol.atoms.get('C38'), mol.atoms.get('C39'), mol.atoms.get('C40')),
-      angleDeg(mol.atoms.get('C39'), mol.atoms.get('C40'), mol.atoms.get('C41')),
+      angleDeg(mol.atoms.get('C39'), mol.atoms.get('C40'), mol.atoms.get('C41'))
     ];
     for (const ang of tailAngles) {
       assert.ok(
