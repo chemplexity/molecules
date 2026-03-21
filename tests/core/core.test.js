@@ -424,6 +424,15 @@ describe('Molecule', () => {
     assert.equal(mol.atomCount, 2);
   });
 
+  it('auto-generated atom ids restart per molecule', () => {
+    const mol1 = new Molecule();
+    const mol2 = new Molecule();
+    assert.equal(mol1.addAtom(null, 'C').id, '0');
+    assert.equal(mol1.addAtom(null, 'O').id, '1');
+    assert.equal(mol2.addAtom(null, 'N').id, '0');
+    assert.equal(mol2.addAtom(null, 'S').id, '1');
+  });
+
   it('throws when adding duplicate atom id', () => {
     const mol = new Molecule();
     mol.addAtom('a0', 'C');
@@ -438,6 +447,22 @@ describe('Molecule', () => {
     assert.equal(mol.bondCount, 1);
     assert.deepEqual(mol.atoms.get('a0').bonds, ['b0']);
     assert.deepEqual(mol.atoms.get('a1').bonds, ['b0']);
+  });
+
+  it('auto-generated bond ids restart per molecule', () => {
+    const mol1 = new Molecule();
+    const mol2 = new Molecule();
+    mol1.addAtom('a0', 'C');
+    mol1.addAtom('a1', 'C');
+    mol1.addAtom('a2', 'O');
+    mol2.addAtom('b0', 'N');
+    mol2.addAtom('b1', 'N');
+    mol2.addAtom('b2', 'O');
+
+    assert.equal(mol1.addBond(null, 'a0', 'a1', {}, false).id, '0');
+    assert.equal(mol1.addBond(null, 'a1', 'a2', {}, false).id, '1');
+    assert.equal(mol2.addBond(null, 'b0', 'b1', {}, false).id, '0');
+    assert.equal(mol2.addBond(null, 'b1', 'b2', {}, false).id, '1');
   });
 
   it('throws when adding duplicate bond id', () => {

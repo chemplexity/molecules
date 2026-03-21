@@ -2805,7 +2805,7 @@ function collectRefinementChainPath(molecule, startId, ringAtomIds, allowedAtomI
   let prevId = null;
   let curId = startId;
 
-  while (true) {
+  for (let step = 0, maxSteps = molecule.atoms.size; step < maxSteps; step++) {
     const nextIds = _layoutNeighbors(molecule, curId)
       .filter(nb => nb !== prevId)
       .filter(nb => molecule.atoms.get(nb)?.name !== 'H')
@@ -2857,7 +2857,7 @@ function collectAllRefinementChainPaths(molecule, ctx) {
     const path = [startId];
     let prevId = null;
     let curId = startId;
-    while (true) {
+    for (let step = 0, maxSteps = eligible.size; step < maxSteps; step++) {
       const nextIds = (neighborMap.get(curId) ?? []).filter(nb => nb !== prevId);
       if (nextIds.length !== 1) {
         break;
@@ -2889,13 +2889,59 @@ function collectLayoutIssues(molecule, coords, ctx) {
   const stretchedBondThresh = ctx.bondLength * 1.20;
   const compressedBondThresh = ctx.bondLength * 0.80;
 
+  // Spatial grid: bucket heavy atoms into cells of size nearAtomThresh so that
+  // only the 3×3 cell neighbourhood needs to be examined for proximity tests.
+  // This reduces the atom-pair and bond-atom loops from O(n²) to O(n) for
+  // spread-out molecules.
+  const cellSize = nearAtomThresh;
+  const gridCells  = new Map(); // "cx,cy" → number[] (indices into heavyIds)
+  const atomCellCx = new Int32Array(ctx.heavyIds.length);
+  const atomCellCy = new Int32Array(ctx.heavyIds.length);
+  for (let i = 0; i < ctx.heavyIds.length; i++) {
+    const p = coords.get(ctx.heavyIds[i]);
+    if (!p) {
+      continue;
+    }
+    const cx = Math.floor(p.x / cellSize);
+    const cy = Math.floor(p.y / cellSize);
+    atomCellCx[i] = cx;
+    atomCellCy[i] = cy;
+    const key = `${cx},${cy}`;
+    let cell = gridCells.get(key);
+    if (!cell) {
+      cell = [];
+      gridCells.set(key, cell);
+    }
+    cell.push(i);
+  }
+
+  // Collect indices of atoms in the 3×3 neighbourhood of cell (cx, cy).
+  function indicesNear(cx, cy) {
+    const result = [];
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const cell = gridCells.get(`${cx + dx},${cy + dy}`);
+        if (cell) {
+          for (const idx of cell) {
+            result.push(idx);
+          }
+        }
+      }
+    }
+    return result;
+  }
+
+  // Atom-atom proximity — O(n) thanks to grid.
   for (let i = 0; i < ctx.heavyIds.length; i++) {
     const aId = ctx.heavyIds[i];
     const aPos = coords.get(aId);
     if (!aPos) {
       continue;
     }
-    for (let j = i + 1; j < ctx.heavyIds.length; j++) {
+    for (const j of indicesNear(atomCellCx[i], atomCellCy[i])) {
+      if (j <= i) {
+        continue; // deduplicate; only check each pair once
+      }
       const bId = ctx.heavyIds[j];
       if (ctx.bondedPairs.has(`${aId}\0${bId}`)) {
         continue;
@@ -2947,27 +2993,38 @@ function collectLayoutIssues(molecule, coords, ctx) {
       });
     }
 
-    for (const atomId of ctx.heavyIds) {
-      if (atomId === aId || atomId === bId) {
-        continue;
-      }
-      if (ctx.bondedPairs.has(`${atomId}\0${aId}`) || ctx.bondedPairs.has(`${atomId}\0${bId}`)) {
-        continue;
-      }
-      const atomPos = coords.get(atomId);
-      if (!atomPos) {
-        continue;
-      }
-      const atom = molecule.atoms.get(atomId);
-      const thresh = atom?.name === 'C' ? bondAtomThreshC : bondAtomThreshHetero;
-      const dist = pointToSegmentDistance(atomPos, aPos, bPos);
-      if (dist < thresh) {
-        issues.push({
-          type: 'bond_atom_crowding',
-          severity: (atom?.name === 'C' ? 4 : 12) + (thresh - dist) * (atom?.name === 'C' ? 10 : 35),
-          atoms: [atomId, aId, bId],
-          bonds: [bond.id]
-        });
+    // Bond-atom crowding — O(1) per bond thanks to grid.
+    // An atom within bondAtomThreshHetero of the segment must be within
+    // bondAtomThreshHetero + bondLength/2 ≤ nearAtomThresh of at least one
+    // endpoint, so checking the 3×3 neighbourhood of both endpoints suffices.
+    const checkedForBond = new Set([aId, bId]);
+    for (const pos of [aPos, bPos]) {
+      const cx = Math.floor(pos.x / cellSize);
+      const cy = Math.floor(pos.y / cellSize);
+      for (const idx of indicesNear(cx, cy)) {
+        const atomId = ctx.heavyIds[idx];
+        if (checkedForBond.has(atomId)) {
+          continue;
+        }
+        checkedForBond.add(atomId);
+        if (ctx.bondedPairs.has(`${atomId}\0${aId}`) || ctx.bondedPairs.has(`${atomId}\0${bId}`)) {
+          continue;
+        }
+        const atomPos = coords.get(atomId);
+        if (!atomPos) {
+          continue;
+        }
+        const atom = molecule.atoms.get(atomId);
+        const thresh = atom?.name === 'C' ? bondAtomThreshC : bondAtomThreshHetero;
+        const dist = pointToSegmentDistance(atomPos, aPos, bPos);
+        if (dist < thresh) {
+          issues.push({
+            type: 'bond_atom_crowding',
+            severity: (atom?.name === 'C' ? 4 : 12) + (thresh - dist) * (atom?.name === 'C' ? 10 : 35),
+            atoms: [atomId, aId, bId],
+            bonds: [bond.id]
+          });
+        }
       }
     }
 
@@ -2977,9 +3034,18 @@ function collectLayoutIssues(molecule, coords, ctx) {
       if (shared) {
         continue;
       }
+      // Cheap bounding-box pre-reject before calling segmentsProperlyIntersect.
       const cPos = coords.get(otherBond.atoms[0]);
       const dPos = coords.get(otherBond.atoms[1]);
       if (!cPos || !dPos) {
+        continue;
+      }
+      if (
+        Math.max(aPos.x, bPos.x) < Math.min(cPos.x, dPos.x) - 1e-6 ||
+        Math.min(aPos.x, bPos.x) > Math.max(cPos.x, dPos.x) + 1e-6 ||
+        Math.max(aPos.y, bPos.y) < Math.min(cPos.y, dPos.y) - 1e-6 ||
+        Math.min(aPos.y, bPos.y) > Math.max(cPos.y, dPos.y) + 1e-6
+      ) {
         continue;
       }
       if (segmentsProperlyIntersect(aPos, bPos, cPos, dPos)) {
@@ -3082,7 +3148,7 @@ function collectLayoutIssues(molecule, coords, ctx) {
     }
   }
 
-  for (const path of collectAllRefinementChainPaths(molecule, ctx)) {
+  for (const path of (ctx.chainPaths ??= collectAllRefinementChainPaths(molecule, ctx))) {
     if (path.length < 4) {
       continue;
     }
@@ -3532,7 +3598,9 @@ function buildAttachedMultipleBondProjectionTransforms(molecule, baseCoords, can
  */
 function _separateOverlappingComponents(molecule, coords, bondLength) {
   const components = molecule.getComponents();
-  if (components.length <= 1) return coords;
+  if (components.length <= 1) {
+    return coords;
+  }
 
   // Build bounding box for each component.
   const compData = components.map(comp => {
@@ -3540,18 +3608,28 @@ function _separateOverlappingComponents(molecule, coords, bondLength) {
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     for (const id of ids) {
       const p = coords.get(id);
-      if (!p) continue;
-      if (p.x < minX) minX = p.x;
-      if (p.x > maxX) maxX = p.x;
-      if (p.y < minY) minY = p.y;
-      if (p.y > maxY) maxY = p.y;
+      if (!p) {
+        continue;
+      }
+      if (p.x < minX) {
+        minX = p.x;
+      }
+      if (p.x > maxX) {
+        maxX = p.x;
+      }
+      if (p.y < minY) {
+        minY = p.y;
+      }
+      if (p.y > maxY) {
+        maxY = p.y;
+      }
     }
     return {
       ids,
       minX: isFinite(minX) ? minX : 0,
       maxX: isFinite(maxX) ? maxX : 0,
       minY: isFinite(minY) ? minY : 0,
-      maxY: isFinite(maxY) ? maxY : 0,
+      maxY: isFinite(maxY) ? maxY : 0
     };
   });
 
@@ -3572,7 +3650,9 @@ function _separateOverlappingComponents(molecule, coords, bondLength) {
       }
     }
   }
-  if (!needSeparate) return coords;
+  if (!needSeparate) {
+    return coords;
+  }
 
   // Re-arrange: lay components out in a horizontal row, each centred at y = 0.
   const gap = bondLength * 2;
@@ -3585,7 +3665,9 @@ function _separateOverlappingComponents(molecule, coords, bondLength) {
     const shiftY = -cy;
     for (const id of comp.ids) {
       const p = coords.get(id);
-      if (p) newCoords.set(id, vec2(p.x + shiftX, p.y + shiftY));
+      if (p) {
+        newCoords.set(id, vec2(p.x + shiftX, p.y + shiftY));
+      }
     }
     curX += w + gap;
   }
@@ -3622,7 +3704,10 @@ export function refineExistingCoords(molecule, options = {}) {
     freezeRings = true,
     freezeChiralCenters = false,
     allowBranchReflect = true,
-    rotateAngles = [-Math.PI / 2, -Math.PI / 3, -Math.PI / 6, Math.PI / 6, Math.PI / 3, Math.PI / 2, Math.PI]
+    rotateAngles = [-Math.PI / 2, -Math.PI / 3, -Math.PI / 6, Math.PI / 6, Math.PI / 3, Math.PI / 2, Math.PI],
+    // Cap the number of bond-rotation candidates tried per pass so that
+    // large molecules (many rotatable bonds) remain interactive.
+    maxCandidatesPerPass = 24
   } = options;
 
   const ctx = buildRefinementContext(molecule, coords, {
@@ -3637,7 +3722,10 @@ export function refineExistingCoords(molecule, options = {}) {
     if (separated !== coords) {
       for (const [atomId, pos] of separated) {
         const atom = molecule.atoms.get(atomId);
-        if (atom) { atom.x = pos.x; atom.y = pos.y; }
+        if (atom) {
+          atom.x = pos.x;
+          atom.y = pos.y;
+        }
       }
     }
     return separated;
@@ -3667,13 +3755,18 @@ export function refineExistingCoords(molecule, options = {}) {
         .flatMap(issue => issue.atoms ?? [])
     );
     const allCandidates = [...ctx.rotatableCandidates, ...ctx.multipleBondCandidates];
-    const candidatePool = allCandidates.filter(candidate =>
+    let candidatePool = allCandidates.filter(candidate =>
       issueAtoms.size === 0 ||
       issueAtoms.has(candidate.pivotId) ||
       issueAtoms.has(candidate.movingId) ||
       [...candidate.atomIds].some(atomId => issueAtoms.has(atomId))
     );
-    const candidates = candidatePool.length > 0 ? candidatePool : allCandidates;
+    if (candidatePool.length > maxCandidatesPerPass) {
+      // Candidates are already sorted by heavyCount (smallest subtree first),
+      // so capping keeps the most local (cheapest) moves.
+      candidatePool = candidatePool.slice(0, maxCandidatesPerPass);
+    }
+    const candidates = candidatePool.length > 0 ? candidatePool : allCandidates.slice(0, maxCandidatesPerPass);
     const ringCandidates = ctx.ringSystemCandidates.filter(ringSystem =>
       issueAtoms.size === 0 || [...ringSystem.atomIds].some(atomId => issueAtoms.has(atomId))
     );
@@ -3713,17 +3806,21 @@ export function refineExistingCoords(molecule, options = {}) {
       for (const updates of transforms) {
         const trialCoords = applyRefinementCoords(currentCoords, updates);
         const trialScore = scoreLayoutIssues(collectLayoutIssues(molecule, trialCoords, ctx));
-        if (trialScore + 1e-6 < bestScore) {
+        const improved = trialScore + 1e-6 < bestScore;
+        if (improved) {
           bestScore = trialScore;
           bestCoords = trialCoords;
         }
 
-        for (const childUpdates of buildAttachedMultipleBondProjectionTransforms(molecule, trialCoords, candidate, ctx)) {
-          const childTrialCoords = applyRefinementCoords(trialCoords, childUpdates);
-          const childTrialScore = scoreLayoutIssues(collectLayoutIssues(molecule, childTrialCoords, ctx));
-          if (childTrialScore + 1e-6 < bestScore) {
-            bestScore = childTrialScore;
-            bestCoords = childTrialCoords;
+        // Child transforms only make sense when the base trial has promise.
+        if (improved || trialScore < currentScore + 1e-6) {
+          for (const childUpdates of buildAttachedMultipleBondProjectionTransforms(molecule, trialCoords, candidate, ctx)) {
+            const childTrialCoords = applyRefinementCoords(trialCoords, childUpdates);
+            const childTrialScore = scoreLayoutIssues(collectLayoutIssues(molecule, childTrialCoords, ctx));
+            if (childTrialScore + 1e-6 < bestScore) {
+              bestScore = childTrialScore;
+              bestCoords = childTrialCoords;
+            }
           }
         }
       }

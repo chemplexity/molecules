@@ -38,16 +38,46 @@ export const WEDGE_DASHES = 6;  // number of hash lines in a dashed bond
 // Geometry helpers
 // ---------------------------------------------------------------------------
 
+/** Length of 2D vector (x, y). Returns at least 1 to avoid division by zero. */
+export function vecLen(x, y) {
+  return Math.sqrt(x * x + y * y) || 1;
+}
+
+/**
+ * Axis-aligned bounding box of a set of atoms with 2D coordinates.
+ *
+ * @param {Array<{x:number, y:number}>} atoms - Array of objects with x and y properties.
+ * @returns {{ minX: number, maxX: number, minY: number, maxY: number, cx: number, cy: number }}
+ */
+export function atomBBox(atoms) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const a of atoms) {
+    if (a.x < minX) {
+      minX = a.x;
+    }
+    if (a.x > maxX) {
+      maxX = a.x;
+    }
+    if (a.y < minY) {
+      minY = a.y;
+    }
+    if (a.y > maxY) {
+      maxY = a.y;
+    }
+  }
+  return { minX, maxX, minY, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+}
+
 /** Unit perpendicular vector (rotated 90° CCW) for a direction (dx, dy). */
 export function perpUnit(dx, dy) {
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const len = vecLen(dx, dy);
   return { nx: -dy / len, ny: dx / len };
 }
 
 /** Shorten a line segment by d1 at the start and d2 at the end. */
 export function shortenLine(x1, y1, x2, y2, d1, d2) {
   const dx = x2 - x1, dy = y2 - y1;
-  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const len = vecLen(dx, dy);
   const ux = dx / len, uy = dy / len;
   return {
     x1: x1 + ux * d1, y1: y1 + uy * d1,
@@ -235,10 +265,10 @@ export function pickStereoWedges(mol) {
       if (e.atom.name === 'H' && e.atom.visible === false && heavyOtherVecs.length === 2) {
         const sx = -(heavyOtherVecs[0].x + heavyOtherVecs[1].x);
         const sy = -(heavyOtherVecs[0].y + heavyOtherVecs[1].y);
-        const len = Math.sqrt(sx * sx + sy * sy) || 1;
+        const len = vecLen(sx, sy);
         // Scale to the same magnitude as the first heavy vector so cross products
         // are numerically comparable (sign is all that matters, but stability helps).
-        const bl = Math.sqrt(heavyOtherVecs[0].x ** 2 + heavyOtherVecs[0].y ** 2) || 1;
+        const bl = vecLen(heavyOtherVecs[0].x, heavyOtherVecs[0].y);
         return { x: sx / len * bl, y: sy / len * bl };
       }
       return v(e);

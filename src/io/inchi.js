@@ -462,6 +462,25 @@ function smallestRingForBond(mol, bond, allowedAtoms) {
 function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
   const heavySet = new Set(heavyAtomIds);
 
+  /** Returns true when atomId has at least one bond in aroBondIds. */
+  const isAromaticRingAtom = (atomId, aroBondIds) => {
+    const atom = mol.atoms.get(atomId);
+    return atom !== undefined && atom.bonds.some(bId => aroBondIds.has(bId));
+  };
+
+  /**
+   * Iterates over all bonds whose both endpoints are heavy atoms (in heavySet).
+   * Calls cb(bond, idA, idB) for each such bond.
+   */
+  const forHeavyBonds = (cb) => {
+    for (const bond of mol.bonds.values()) {
+      const [idA, idB] = bond.atoms;
+      if (heavySet.has(idA) && heavySet.has(idB)) {
+        cb(bond, idA, idB);
+      }
+    }
+  };
+
   function neutralVal(atomId) {
     const atom = mol.atoms.get(atomId);
     if (!atom) {
@@ -546,17 +565,12 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
   // that heteroaromatic rings (furan, thiophene …) are not pre-promoted before
   // their aromatic nature can be detected.
   function promoteTerminalUnsaturation(aromaticBondIds = new Set(), requireNeighborCapacity = false) {
-    const isAromaticRingAtom = (atomId) => {
-      const atom = mol.atoms.get(atomId);
-      return atom !== undefined && atom.bonds.some(bId => aromaticBondIds.has(bId));
-    };
-
     let terminalChanged = true;
     while (terminalChanged) {
       terminalChanged = false;
       for (const atomId of heavyAtomIds) {
         const atom = mol.atoms.get(atomId);
-        if (!atom || isAromaticRingAtom(atomId)) {
+        if (!atom || isAromaticRingAtom(atomId, aromaticBondIds)) {
           continue;
         }
         const eligibleBonds = atom.bonds
@@ -565,7 +579,7 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
           .filter(bond => !aromaticBondIds.has(bond.id))
           .filter(bond => {
             const otherId = bond.getOtherAtom(atomId);
-            return heavySet.has(otherId) && !isAromaticRingAtom(otherId)
+            return heavySet.has(otherId) && !isAromaticRingAtom(otherId, aromaticBondIds)
               && (!requireNeighborCapacity || remaining(otherId) > 0);
           });
         if (eligibleBonds.length !== 1) {
@@ -610,53 +624,49 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
     }
 
     // Collect for Phase A2 regardless of aromatic check outcome.
-    if (ring.length >= 4 && ring.length <= 8) {
+    if (ring.length >= 4 && ring.length <= 10) {
       const ringKey = [...ring].sort().join('|');
       if (!uniqueRings.has(ringKey)) {
         uniqueRings.set(ringKey, ring);
       }
     }
 
-    if (ring.length === 6) {
-      // Standard 6-membered aromatic ring (benzene, pyridine, pyrimidine …).
-      // Every atom must have exactly 1 remaining pi electron.
-      const piCount6 = ring.filter(id => remaining(id) === 1).length;
-      if (piCount6 === ring.length) {
-        // all atoms contribute 1 pi electron — standard case
-      } else if (totalCharge > 0 && piCount6 === ring.length - 1) {
-        // Cationic aromatic (pyrylium, thiopyrylium …): n−1 pi atoms plus
-        // exactly 1 heteroatom (non-C) with remaining = 0 that acts like a
-        // pyridine-N (contributes 1 pi electron from its formal double bond).
-        const cationHetero = ring.filter(id => {
-          if (remaining(id) !== 0) {
-            return false;
-          }
-          const a = mol.atoms.get(id);
-          return a && a.name !== 'C';
-        });
-        if (cationHetero.length !== 1) {
-          continue;
-        }
-      } else {
-        continue;
-      }
-    } else if (ring.length === 5) {
-      // Heteroaromatic 5-membered ring (pyrrole, furan, thiophene …).
-      // 4 pi-contributor atoms (remaining = 1) + 1 lone-pair-donor
-      // heteroatom (non-C, remaining = 0) satisfies the 6-pi-electron rule.
-      const piCount   = ring.filter(id => remaining(id) === 1).length;
-      const donorCount = ring.filter(id => {
-        if (remaining(id) !== 0) {
-          return false;
-        }
+    // General Hückel aromatic check (4n+2 π electrons) for any ring size.
+    //   remaining = 1         → 1 π-electron (sp2 C/N/O, imine-like)
+    //   remaining = 0, non-C  → 2 π-electrons (lone-pair donor: furan O, pyrrole N, …)
+    //   remaining = 0, C      → sp3 carbon: disqualifies the ring
+    //   remaining ≥ 2         → sp3 or hypervalent: disqualifies the ring
+    {
+      const isHuckel = (n) => n >= 2 && (n - 2) % 4 === 0;
+      let pi = 0;
+      let validRing = true;
+      for (const id of ring) {
+        const rem = remaining(id);
         const a = mol.atoms.get(id);
-        return a && a.name !== 'C';
-      }).length;
-      if (piCount !== 4 || donorCount !== 1) {
+        if (rem === 1) {
+          pi += 1; // sp2 atom — contributes 1 π electron
+        } else if (rem === 0 && a && a.name !== 'C') {
+          pi += 2; // heteroatom lone-pair donor (furan O, pyrrole N, thiophene S, …)
+        } else {
+          validRing = false; break; // sp3 C or hypervalent atom — not conjugated
+        }
+      }
+      if (!validRing) {
         continue;
       }
-    } else {
-      continue;
+      let aromatic = isHuckel(pi);
+      // Charged rings: adjust π count by component charge.
+      // e.g. Cp−  (5 C, pi=5, charge=−1): adjustedPi = 5−(−1) = 6 ✓
+      //      tropylium+ (7 C, pi=7, charge=+1): adjustedPi = 7−1 = 6 ✓
+      //      pyrylium+  (5 C+O, pi=7, charge=+1): adjustedPi = 7−1 = 6 ✓
+      if (!aromatic && totalCharge !== 0) {
+        if (isHuckel(pi - totalCharge)) {
+          aromatic = true;
+        }
+      }
+      if (!aromatic) {
+        continue;
+      }
     }
 
     // Mark every bond in the ring as aromatic.
@@ -758,10 +768,6 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
   // Promote bonds that are not aromatic AND whose endpoints are not part of
   // an aromatic ring. Skipping aromatic-ring atoms prevents exocyclic bonds
   // (e.g. C=O on phenol, COOH on aspirin) from being incorrectly promoted.
-  const isAromaticRingAtom = (atomId) => {
-    const atom = mol.atoms.get(atomId);
-    return atom !== undefined && atom.bonds.some(bId => aromaticBondIds.has(bId));
-  };
 
   // Re-run prioritization after aromatic bonds are known, this time excluding
   // saturated-dead-end neighbours (remaining=0) from the terminal count so that
@@ -772,22 +778,18 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
   let changed = true;
   while (changed) {
     changed = false;
-    for (const bond of mol.bonds.values()) {
+    forHeavyBonds((bond, idA, idB) => {
       if (aromaticBondIds.has(bond.id)) {
-        continue;
+        return;
       }
-      const [idA, idB] = bond.atoms;
-      if (!heavySet.has(idA) || !heavySet.has(idB)) {
-        continue;
-      }
-      if (isAromaticRingAtom(idA) || isAromaticRingAtom(idB)) {
-        continue;
+      if (isAromaticRingAtom(idA, aromaticBondIds) || isAromaticRingAtom(idB, aromaticBondIds)) {
+        return;
       }
       if (remaining(idA) > 0 && remaining(idB) > 0) {
         bond.properties.order += 1;
         changed = true;
       }
-    }
+    });
   }
 
   // ---- Nitro / N-oxide fixup ----------------------------------------------
@@ -801,7 +803,9 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
       continue;
     }
     const el = elements[atom.name];
-    if (!el || el.period !== 2 || el.group !== 15 || remaining(atomId) !== 0) {
+    // Nitro/N-oxide (group 15) and ozone/O-oxide (group 16) fixup:
+    // period-2 atoms with remaining=0 bonded to a terminal atom with remaining>0.
+    if (!el || el.period !== 2 || (el.group !== 15 && el.group !== 16) || remaining(atomId) !== 0) {
       continue;
     }
     for (const bondId of atom.bonds) {
@@ -1004,8 +1008,9 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
   const parts = body.split('/');
 
   // parts[0] = version (e.g. "1S" or "1")
-  if (!parts[0].startsWith('1')) {
-    throw new Error(`parseINCHI: unsupported InChI version "${parts[0]}"`);
+  const version = parts[0];
+  if (version !== '1S' && version !== '1') {
+    throw new Error(`parseINCHI: unsupported InChI version "${version}"`);
   }
 
   // parts[1] = formula layer
@@ -1082,6 +1087,9 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
 
     if (connectionInfo) {
       for (const [a, b] of connectionInfo.bonds) {
+        if (a === b) {
+          throw new Error(`parseINCHI: self-loop on atom ${a} (${atomList[a] ?? '?'}) in /c layer`);
+        }
         const idA = idByIndex.get(a);
         const idB = idByIndex.get(b);
         if (!idA || !idB) {
@@ -1148,6 +1156,28 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
     componentHeavyAtomIds,
     connectionInfo
   } = buildHeavySkeleton();
+
+  // Apply isotope layer /i  (format: "1+2,3-1" — 1-based atom index ± mass delta from standard)
+  if (layers['i']) {
+    for (const token of layers['i'].split(',')) {
+      const m = token.match(/^(\d+)([+-]\d+)$/);
+      if (!m) {
+        continue;
+      }
+      const atomIdx  = parseInt(m[1], 10);
+      const massDelta = parseInt(m[2], 10);
+      const atomId   = idByIndex.get(atomIdx);
+      const atom     = atomId != null ? baseMol.atoms.get(atomId) : null;
+      if (atom && atom.properties.protons != null) {
+        // The /i delta is relative to the integer (nominal) mass, i.e. standard
+        // proton count + standard (rounded) neutron count. Replace the fractional
+        // standard neutrons with the explicit isotope value.
+        const stdNeutrons = Math.round(atom.properties.neutrons ?? 0);
+        atom.properties.neutrons = stdNeutrons + massDelta;
+      }
+    }
+  }
+
   const componentChargeTargets = new Array(formulaComponents.length).fill(0);
   const rawComponentCharges = layers['q'] ? parseChargeComponents(layers['q']) : [];
   for (let i = 0; i < Math.min(componentChargeTargets.length, rawComponentCharges.length); i++) {
@@ -1255,16 +1285,6 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
   }
 
   function inferredFormalCharge(atom, totalBO) {
-    const el = elements[atom.name];
-    if (el && el.period > 2 && el.group >= 13 && el.group <= 17) {
-      const base = 18 - el.group;
-      const cap  = base + 4;      // e.g. S: 6, Se: 6, P: 7, As: 7
-      let v = base;
-      while (v < totalBO && v < cap) {
-        v += 2;
-      }
-      return totalBO - v;
-    }
     return atom.computeCharge(totalBO);
   }
 
@@ -1287,14 +1307,81 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         return { atom, charge: inferredFormalCharge(atom, totalBO) };
       }).filter(Boolean);
 
+      let computedToAssign = computedCharges;
       const totalComputedCharge = computedCharges.reduce((sum, entry) => sum + entry.charge, 0);
-      if (totalComputedCharge !== charge) {
+      if (totalComputedCharge === charge) {
+        // Normal case: computed charges sum to the target.
+      } else if (charge !== 0 && totalComputedCharge === -charge) {
+        // Negation fallback: e.g. tropylium C7H7+ — greedy bond promotion
+        // saturates every C to 3 bonds giving computeCharge = -1 each (total -7),
+        // but the correct interpretation is all neutral except one carbocation (+1).
+        // Negate all computed charges so the total becomes +charge.
+        computedToAssign = computedCharges.map(e => ({ atom: e.atom, charge: -e.charge }));
+      } else {
         continue;
       }
 
-      for (const entry of computedCharges) {
+      for (const entry of computedToAssign) {
         entry.atom.setCharge(entry.charge);
       }
+    }
+  }
+
+  /**
+   * For all-carbon aromatic rings with a non-zero net charge (e.g. tropylium C7H7+,
+   * cyclopentadienyl C5H5-), the 1.5-order aromatic bonds give each C a totalBO of 4,
+   * so assignComponentFormalCharges computes 0 for every atom and skips the component.
+   * This function assigns the net charge to a single atom — the one with the fewest
+   * H neighbours (or the first atom in tie cases) — after the standard pass has run.
+   */
+  function fixDelocalisedChargedRings(mol) {
+    for (let i = 0; i < componentHeavyAtomIds.length; i++) {
+      const targetCharge = componentChargeTargets[i] ?? 0;
+      if (targetCharge === 0) {
+        continue;
+      }
+      const atomIds = componentHeavyAtomIds[i];
+      if (!atomIds.every(id => mol.atoms.get(id)?.name === 'C')) {
+        continue;
+      }
+      // Skip if charges were already assigned by the standard pass.
+      const totalAssigned = atomIds.reduce((s, id) => {
+        return s + (mol.atoms.get(id)?.properties.charge ?? 0);
+      }, 0);
+      if (totalAssigned !== 0) {
+        continue;
+      }
+      // All bonds between component atoms must be aromatic (order 1.5).
+      const compSet = new Set(atomIds);
+      const allAro = atomIds.every(id => {
+        const atom = mol.atoms.get(id);
+        if (!atom) {
+          return false;
+        }
+        return atom.bonds.every(bId => {
+          const bond = mol.bonds.get(bId);
+          if (!bond) {
+            return true;
+          }
+          const otherId = bond.getOtherAtom(id);
+          return !compSet.has(otherId) || bond.properties.aromatic === true;
+        });
+      });
+      if (!allAro) {
+        continue;
+      }
+      // Pick the atom with the fewest H neighbours (most substituted / least H)
+      // to carry the formal charge; fall back to the first atom on ties.
+      let chargeAtomId = atomIds[0];
+      let minH = mol.atoms.get(atomIds[0])?.getHydrogenNeighbors(mol).length ?? 0;
+      for (const id of atomIds) {
+        const h = mol.atoms.get(id)?.getHydrogenNeighbors(mol).length ?? 0;
+        if (h < minH) {
+          minH = h;
+          chargeAtomId = id;
+        }
+      }
+      mol.atoms.get(chargeAtomId)?.setCharge(targetCharge);
     }
   }
 
@@ -1600,6 +1687,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       correctHydrogenDeficit(mol);
       fixMonoanionicArylComponents(mol);
       assignComponentFormalCharges(mol);
+      fixDelocalisedChargedRings(mol);
     } else {
       correctHydrogenDeficit(mol);
     }
@@ -1698,7 +1786,67 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       return enumerateGroupAssignments(group.count, new Array(group.atoms.length).fill(group.count));
     });
 
+    // If there are too many combinations to enumerate, use a greedy approach:
+    // run inferBondOrders on the heavy skeleton once, then place each mobile H on
+    // the atom in the group with the most remaining (unsatisfied) valence.
+    const MAX_WALK_COMBOS = 256;
+    const totalCombos = perGroupAssignments.reduce((p, a) => p * a.length, 1);
+    if (totalCombos > MAX_WALK_COMBOS) {
+      const heavyMol = baseMol.clone();
+      inferBondOrders(heavyMol, heavyAtomIds, componentChargeTargets.reduce((s, c) => s + c, 0));
+
+      const inferredRemaining = (atomIdx) => {
+        const atomId = idByIndex.get(atomIdx);
+        const atom = atomId ? heavyMol.atoms.get(atomId) : null;
+        if (!atom) {
+          return 0;
+        }
+        const el = elements[atom.name];
+        if (!el) {
+          return 0;
+        }
+        const { group } = el;
+        let nv = 0;
+        if (group >= 1 && group <= 2) {
+          nv = group;
+        } else if (group >= 13 && group <= 17) {
+          nv = 18 - group;
+        }
+        return Math.max(0, nv - atom.getValence(heavyMol));
+      };
+
+      const hMap = new Map(hInfo.fixed);
+      for (let gi = 0; gi < hInfo.mobile.length; gi++) {
+        const group = hInfo.mobile[gi];
+        const assignments = perGroupAssignments[gi];
+        // Pick the assignment that directs H toward the atom(s) with most
+        // remaining valence in the inferred heavy skeleton.
+        let bestAssignment = assignments[0];
+        let bestCapMatch = -Infinity;
+        for (const assignment of assignments) {
+          const capMatch = assignment.reduce(
+            (s, n, i) => s + n * inferredRemaining(group.atoms[i]), 0
+          );
+          if (capMatch > bestCapMatch) {
+            bestCapMatch = capMatch;
+            bestAssignment = assignment;
+          }
+        }
+        for (let j = 0; j < group.atoms.length; j++) {
+          if (bestAssignment[j] > 0) {
+            hMap.set(group.atoms[j], (hMap.get(group.atoms[j]) ?? 0) + bestAssignment[j]);
+          }
+        }
+      }
+      return hMap;
+    }
+
+    let done = false;
+
     function walk(groupIdx, acc) {
+      if (done) {
+        return;
+      }
       if (groupIdx === perGroupAssignments.length) {
         const hMap = buildHydrogenMap(acc);
         const mol = withHydrogenMap(hMap);
@@ -1706,10 +1854,16 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         if (!bestScore || compareScores(score, bestScore) < 0) {
           bestScore = score;
           bestAssignments = acc.map(x => [...x]);
+          if (score.warnings === 0 && score.chargePenalty === 0) {
+            done = true;
+          }
         }
         return;
       }
       for (const assignment of perGroupAssignments[groupIdx]) {
+        if (done) {
+          break;
+        }
         acc.push(assignment);
         walk(groupIdx + 1, acc);
         acc.pop();
@@ -1900,17 +2054,37 @@ function _connectionSection(heavy, inchiIndexOf) {
     const kids = children.get(id) ?? [];
     const backs = backEdges.get(id) ?? [];
     const kidStrings = kids.map(emit);
-    const branchItems = [
-      ...backs.map(n => String(inchiIndexOf.get(n))),
-      ...kidStrings.slice(0, -1)
-    ];
-    const continuation = kidStrings.length > 0 ? kidStrings[kidStrings.length - 1] : null;
+
+    let branchItems;
+    let continuation;
+
+    if (kidStrings.length > 0) {
+      // Has tree children: back edges + all-but-last kids go to branches,
+      // last kid is the chain continuation.
+      branchItems = [
+        ...backs.map(n => String(inchiIndexOf.get(n))),
+        ...kidStrings.slice(0, -1)
+      ];
+      continuation = kidStrings[kidStrings.length - 1];
+    } else if (backs.length > 0) {
+      // Leaf in spanning tree but has back edges (ring closures).
+      // The last back edge is written as the chain continuation ("-idx"),
+      // not as a branch ("(idx)").  Any earlier back edges are branches.
+      branchItems = backs.slice(0, -1).map(n => String(inchiIndexOf.get(n)));
+      continuation = String(inchiIndexOf.get(backs[backs.length - 1]));
+    } else {
+      branchItems = [];
+      continuation = null;
+    }
+
     let result = String(idx);
     if (branchItems.length > 0) {
       result += `(${branchItems.join(',')})`;
     }
     if (continuation !== null) {
-      result += `-${continuation}`;
+      // After a branch close the InChI spec omits the '-' separator before the
+      // continuation (e.g. "4(2)3" not "4(2)-3").
+      result += branchItems.length > 0 ? continuation : `-${continuation}`;
     }
     return result;
   }

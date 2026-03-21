@@ -210,6 +210,10 @@ export class Molecule {
     this._bondIndex = new Map();
     /** @private Cached SSSR rings; null when stale. */
     this._ringsCache = null;
+    /** @private Monotonically increasing auto atom ID counter scoped to this molecule. */
+    this._nextAtomId = 0;
+    /** @private Monotonically increasing auto bond ID counter scoped to this molecule. */
+    this._nextBondId = 0;
   }
 
   /** @returns {number} Number of atoms in the molecule. */
@@ -230,7 +234,7 @@ export class Molecule {
    * @returns {Atom} The newly created atom.
    */
   addAtom(id, name, properties = {}) {
-    const atom = new Atom(id, name, properties);
+    const atom = new Atom(id ?? this._generateAutoAtomId(), name, properties);
     if (this.atoms.has(atom.id)) {
       throw new Error(`Atom '${atom.id}' already exists.`);
     }
@@ -290,7 +294,7 @@ export class Molecule {
     if (this._bondIndex.has(pairKey)) {
       throw new Error(`A bond between '${atomA}' and '${atomB}' already exists.`);
     }
-    const bond = new Bond(id, [atomA, atomB], properties);
+    const bond = new Bond(id ?? this._generateAutoBondId(), [atomA, atomB], properties);
     if (this.bonds.has(bond.id)) {
       throw new Error(`Bond '${bond.id}' already exists.`);
     }
@@ -373,14 +377,42 @@ export class Molecule {
     // Add the required number of new H atoms (invisible — kept in graph for
     // correct SMARTS X/H-count semantics but hidden from 2D layout/rendering).
     for (let i = 0; i < neededH; i++) {
-      const hAtom = new Atom(null, 'H');
+      const hAtom = new Atom(this._generateAutoAtomId(), 'H');
       hAtom.visible = false;
       this.atoms.set(hAtom.id, hAtom);
-      const hBond = new Bond(null, [atomId, hAtom.id], { order: 1 });
+      const hBond = new Bond(this._generateAutoBondId(), [atomId, hAtom.id], { order: 1 });
       this.bonds.set(hBond.id, hBond);
       this.atoms.get(atomId).bonds.push(hBond.id);
       hAtom.bonds.push(hBond.id);
     }
+  }
+
+  /**
+   * Generates the next unused auto atom ID for this molecule.
+   *
+   * @private
+   * @returns {string}
+   */
+  _generateAutoAtomId() {
+    let id;
+    do {
+      id = `${this._nextAtomId++}`;
+    } while (this.atoms.has(id));
+    return id;
+  }
+
+  /**
+   * Generates the next unused auto bond ID for this molecule.
+   *
+   * @private
+   * @returns {string}
+   */
+  _generateAutoBondId() {
+    let id;
+    do {
+      id = `${this._nextBondId++}`;
+    } while (this.bonds.has(id));
+    return id;
   }
 
   /**

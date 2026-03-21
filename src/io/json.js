@@ -40,7 +40,7 @@ export function fromJSON(json) {
 
   for (const b of data.bonds) {
     if (mol.atoms.has(b.atoms[0]) && mol.atoms.has(b.atoms[1])) {
-      mol.addBond(b.id, b.atoms[0], b.atoms[1], b.properties ?? {});
+      mol.addBond(null, b.atoms[0], b.atoms[1], b.properties ?? {});
     }
   }
 

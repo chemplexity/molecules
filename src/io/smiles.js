@@ -1482,10 +1482,7 @@ export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) 
     if (!mol.atoms.has(a) || !mol.atoms.has(b)) {
       continue;
     }
-    if (mol.bonds.has(bond.id)) {
-      continue;
-    }
-    mol.addBond(bond.id, a, b, { order: bond.order, aromatic: bond.name === 'aromatic' || bond.isAromatic === true, stereo: bond.stereo || null }, false);
+    mol.addBond(null, a, b, { order: bond.order, aromatic: bond.name === 'aromatic' || bond.isAromatic === true, stereo: bond.stereo || null }, false);
   }
 
   // ── Mark bracket H atoms bonded to non-H atoms as invisible ────────────

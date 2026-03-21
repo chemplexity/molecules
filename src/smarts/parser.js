@@ -42,7 +42,6 @@ export function parseSMARTS(smarts) {
 
   const mol = new Molecule();
   let atomCount = 0;
-  let bondCount = 0;
 
   // ringOpens: ringNum → { atomId: string, bondPred: function|null }
   const ringOpens = new Map();
@@ -69,9 +68,8 @@ export function parseSMARTS(smarts) {
     mol.atoms.get(id)._predicate = pred;
 
     if (prevId !== null) {
-      const bId = `qb${bondCount++}`;
-      mol.addBond(bId, prevId, id, {}, false);
-      mol.bonds.get(bId)._predicate = pendingBondPred ?? defaultSmartsBondPred;
+      const bond = mol.addBond(null, prevId, id, {}, false);
+      bond._predicate = pendingBondPred ?? defaultSmartsBondPred;
       pendingBondPred = null;
     }
 
@@ -126,9 +124,8 @@ export function parseSMARTS(smarts) {
       if (ringOpens.has(ringNum)) {
         const { atomId: openId, bondPred: openBond } = ringOpens.get(ringNum);
         ringOpens.delete(ringNum);
-        const bId = `qb${bondCount++}`;
-        mol.addBond(bId, openId, prevId, {}, false);
-        mol.bonds.get(bId)._predicate = pendingBondPred ?? openBond ?? defaultSmartsBondPred;
+        const bond = mol.addBond(null, openId, prevId, {}, false);
+        bond._predicate = pendingBondPred ?? openBond ?? defaultSmartsBondPred;
         pendingBondPred = null;
       } else {
         ringOpens.set(ringNum, { atomId: prevId, bondPred: pendingBondPred });

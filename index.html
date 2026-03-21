@@ -871,7 +871,7 @@ import {
     perpUnit, shortenLine, secondaryDir,
     labelHalfW, labelHalfH,
     getAtomLabel, pickStereoWedges,
-    kekulize
+    kekulize, atomBBox
 } from './src/layout/mol2d-helpers.js';
 import {
     wienerIndex, hyperWienerIndex, balabanIndex,
@@ -1034,6 +1034,27 @@ function yOffset(offset, src, tgt) {
 // ══ ATOM TOOLTIP ══════════════════════════════════════════════════════════
 // ---------------------------------------------------------------------------
 
+function bondTooltipHtml(bond, a1, a2) {
+    const order = bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
+    const typeLabel = order === 1.5 ? 'Aromatic'
+                    : order === 1   ? 'Single'
+                    : order === 2   ? 'Double'
+                    : order === 3   ? 'Triple'
+                    : `Order ${order}`;
+    const bondSymbol = order === 2 ? '=' : order === 3 ? '≡' : '–';
+
+    const row = (label, val) => `<tr><td>${label}</td><td><b>${val}</b></td></tr>`;
+    let rows = row('Type', typeLabel);
+    rows += row('Order', order);
+    if (bond.properties.stereo) {
+        rows += row('Stereo', bond.properties.stereo);
+    }
+
+    return `<div class="tt-head" style="color:#555">${a1.name}${bondSymbol}${a2.name}
+        <span style="font-size:11px;font-weight:normal;color:#aaa;margin-left:4px">${bond.id}</span>
+    </div><table>${rows}</table>`;
+}
+
 function atomTooltipHtml(atom, mol) {
     const p = atom.properties;
     const charge = p.charge ?? 0;
@@ -1075,7 +1096,7 @@ function atomTooltipHtml(atom, mol) {
     if (p.aromatic) { rows += row('Aromatic', 'yes'); }
     if (p.chirality) { rows += row('Chirality', p.chirality); }
 
-    const color = atomColor(atom.name);
+    const color = atom.name === 'H' ? '#111' : atomColor(atom.name);
     return `<div class="tt-head" style="color:${color}">${isotopePrefix}${atom.name}${chargeSup}
         <span style="font-size:11px;font-weight:normal;color:#aaa;margin-left:4px">${atom.id}</span>
     </div><table>${rows}</table>`;
@@ -1175,6 +1196,30 @@ function updateForce(molecule) {
         .style('stroke', PI_STROKE.stroke)
         .style('stroke-width', PI_STROKE.width);
 
+    const bondHoverTarget = bondEnter.append('line')
+        .attr('class', 'bond-hover-target')
+        .style('stroke', 'transparent')
+        .style('stroke-width', '14px')
+        .style('pointer-events', 'stroke')
+        .on('mouseover', (event, d) => {
+            const bond = molecule.bonds.get(d.id);
+            if (!bond) { return; }
+            const atom1 = molecule.atoms.get(bond.atoms[0]);
+            const atom2 = molecule.atoms.get(bond.atoms[1]);
+            if (!atom1 || !atom2) { return; }
+            tooltip.transition().delay(150).style('opacity', 0.9);
+            tooltip.html(bondTooltipHtml(bond, atom1, atom2))
+                .style('left', (event.clientX + 13) + 'px')
+                .style('top',  (event.clientY - 20) + 'px');
+        })
+        .on('mousemove', event => {
+            tooltip.style('left', (event.clientX + 13) + 'px')
+                   .style('top',  (event.clientY - 20) + 'px');
+        })
+        .on('mouseout', () => {
+            tooltip.transition().duration(50).style('opacity', 0);
+        });
+
     const atom = g.selectAll('circle.node')
         .data(graph.nodes, d => d.id)
         .enter()
@@ -1213,6 +1258,9 @@ function updateForce(molecule) {
         .attr('font-weight', 'bold')
         .attr('font-size', d => d.name.length > 1 ? '7px' : '9px')
         .attr('fill', d => {
+            if (d.name === 'H') {
+                return '#111';
+            }
             const hex = atomColor(d.name);
             // Use white text on dark atoms, dark text on light atoms
             const cr = parseInt(hex.slice(1,3),16), cg = parseInt(hex.slice(3,5),16), cb = parseInt(hex.slice(5,7),16);
@@ -1292,6 +1340,10 @@ function updateForce(molecule) {
             .attr('y1', d => d.source.y - yOffset(-BOND_OFFSET, d.source, d.target))
             .attr('x2', d => d.target.x - xOffset(-BOND_OFFSET, d.source, d.target))
             .attr('y2', d => d.target.y - yOffset(-BOND_OFFSET, d.source, d.target));
+
+        bondHoverTarget
+            .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
 
         atom.attr('cx', d => d.x).attr('cy', d => d.y);
         atomSymbol.attr('x', d => d.x).attr('y', d => d.y);
@@ -1599,6 +1651,28 @@ function draw2d() {
         let sa1 = bi.a1, sa2 = bi.a2;
         if (stereoType && chiralCenterIds.has(sa2.id)) [sa1, sa2] = [sa2, sa1];
         _drawBond(bg, bi.bond, sa1, sa2, mol, toSVGPt, stereoType ?? null);
+
+        // Invisible wide line for easy hover targeting
+        const p1 = toSVGPt(sa1), p2 = toSVGPt(sa2);
+        bg.append('line')
+            .attr('class', 'bond-hit')
+            .attr('x1', p1.x).attr('y1', p1.y)
+            .attr('x2', p2.x).attr('y2', p2.y)
+            .attr('stroke', 'rgba(0,0,0,0)')
+            .attr('stroke-width', 12)
+            .on('mouseover', event => {
+                tooltip.transition().delay(150).style('opacity', 0.9);
+                tooltip.html(bondTooltipHtml(bi.bond, sa1, sa2))
+                    .style('left', (event.clientX + 13) + 'px')
+                    .style('top',  (event.clientY - 20) + 'px');
+            })
+            .on('mousemove', event => {
+                tooltip.style('left', (event.clientX + 13) + 'px')
+                       .style('top',  (event.clientY - 20) + 'px');
+            })
+            .on('mouseout', () => {
+                tooltip.transition().duration(50).style('opacity', 0);
+            });
     }
 
     // Layer 2 — white clearance rects
@@ -1757,12 +1831,7 @@ function render2d(mol) {
     const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
     if (atoms.length === 0) return;
 
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const a of atoms) {
-        if (a.x < minX) minX = a.x; if (a.x > maxX) maxX = a.x;
-        if (a.y < minY) minY = a.y; if (a.y > maxY) maxY = a.y;
-    }
-    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    const { minX, maxX, minY, maxY, cx, cy } = atomBBox(atoms);
     const W  = plotEl.clientWidth  || 600;
     const H  = plotEl.clientHeight || 400;
 
@@ -1808,16 +1877,9 @@ function fitCurrent2dView() {
     const atoms = [..._mol2d.atoms.values()].filter(a => a.x != null && a.visible !== false);
     if (atoms.length === 0) return;
 
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const a of atoms) {
-        if (a.x < minX) minX = a.x;
-        if (a.x > maxX) maxX = a.x;
-        if (a.y < minY) minY = a.y;
-        if (a.y > maxY) maxY = a.y;
-    }
-
-    _cx2d = (minX + maxX) / 2;
-    _cy2d = (minY + maxY) / 2;
+    const { minX, maxX, minY, maxY, cx: _cx, cy: _cy } = atomBBox(atoms);
+    _cx2d = _cx;
+    _cy2d = _cy;
 
     const W = plotEl.clientWidth || 600;
     const H = plotEl.clientHeight || 400;
@@ -2057,13 +2119,9 @@ function startRotate(delta) {
 
         // Recompute bounding box centre and update persistent state so the
         // molecule stays visually centred as it rotates.
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        for (const a of allAtoms) {
-            if (a.x < minX) minX = a.x; if (a.x > maxX) maxX = a.x;
-            if (a.y < minY) minY = a.y; if (a.y > maxY) maxY = a.y;
-        }
-        _cx2d = (minX + maxX) / 2;
-        _cy2d = (minY + maxY) / 2;
+        const { minX, maxX, minY, maxY, cx: _cx, cy: _cy } = atomBBox(allAtoms);
+        _cx2d = _cx;
+        _cy2d = _cy;
 
         // Keep the molecule fitting the viewport — zoom out when it grows wider
         // during rotation, zoom back in when it returns to a narrower orientation.
@@ -2089,7 +2147,7 @@ function startRotate(delta) {
 document.addEventListener('mousedown', e => {
     const btn = e.target.closest('#rotate-ccw, #rotate-cw');
     if (!btn) return;
-    startRotate(btn.id === 'rotate-cw' ? 5 : -5);
+    startRotate(btn.id === 'rotate-cw' ? -5 : 5);
 });
 document.addEventListener('mouseup',    stopRotate);
 
@@ -2111,13 +2169,7 @@ document.addEventListener('click', e => {
     else                      for (const a of allAtoms) a.y = 2 * my - a.y;
 
     // Recompute centroid and stereo wedge assignments (orientation has changed).
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const a of allAtoms) {
-        if (a.x < minX) minX = a.x; if (a.x > maxX) maxX = a.x;
-        if (a.y < minY) minY = a.y; if (a.y > maxY) maxY = a.y;
-    }
-    _cx2d = (minX + maxX) / 2;
-    _cy2d = (minY + maxY) / 2;
+    ({ cx: _cx2d, cy: _cy2d } = atomBBox(allAtoms));
     _stereoMap2d = pickStereoWedges(_mol2d);
 
     draw2d();

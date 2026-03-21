@@ -1802,7 +1802,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
     terminal.y += 2.0;
 
     const beforeLen = Math.hypot(internal.x - terminal.x, internal.y - terminal.y);
-    const beforeAngle = angleDeg(prev, internal, terminal);
+    const _beforeAngle = angleDeg(prev, internal, terminal);
 
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
 
@@ -1831,7 +1831,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
 
     const beforeSingle = Math.hypot(prev.x - internal.x, prev.y - internal.y);
     const beforeDouble = Math.hypot(internal.x - terminal.x, internal.y - terminal.y);
-    const beforeAngle = angleDeg(prev, internal, terminal);
+    const _beforeAngle = angleDeg(prev, internal, terminal);
 
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
 

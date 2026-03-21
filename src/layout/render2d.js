@@ -21,7 +21,7 @@ import {
   perpUnit, shortenLine, secondaryDir,
   labelHalfW, labelHalfH,
   getAtomLabel, pickStereoWedges,
-  kekulize
+  kekulize, atomBBox
 } from './mol2d-helpers.js';
 import { Resvg } from '@resvg/resvg-js';
 
@@ -186,23 +186,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
   }
 
   // Bounding box
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-  for (const a of atoms) {
-    if (a.x < minX) {
-      minX = a.x;
-    }
-    if (a.x > maxX) {
-      maxX = a.x;
-    }
-    if (a.y < minY) {
-      minY = a.y;
-    }
-    if (a.y > maxY) {
-      maxY = a.y;
-    }
-  }
-  const cx = (minX + maxX) / 2;
-  const cy = (minY + maxY) / 2;
+  const { minX, maxX, minY, maxY, cx, cy } = atomBBox(atoms);
 
   const molW = Math.max((maxX - minX) * SCALE, 1);
   const molH = Math.max((maxY - minY) * SCALE, 1);

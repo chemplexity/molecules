@@ -95,14 +95,16 @@ export class Atom {
   }
 
   /**
-   * Computes the formal charge from element identity and total bond order,
-   * using the same valence logic as the v1 SMILES implicit-hydrogen algorithm.
+   * Computes the formal charge from element identity and total bond order.
    *
-   * - Groups 1–2  (s-block): neutral valence = group (H forms 1 bond, Be forms 2, …)
+   * - Groups 1–2  (s-block): neutral valence = group (H=1, Be=2, …)
    * - Groups 3–12 (transition metals): returns 0 (valence is too variable)
-   * - Groups 13–18 (p-block): neutral valence = 18 − group (B=3, C=4, N=3, O=2, F=1, …)
+   * - Groups 13–17, period 2 (p-block, row 2): neutral valence = 18 − group
+   * - Groups 13–17, period 3+ (p-block, row 3+): expanded valence — finds the
+   *   smallest same-parity valence ≥ totalBondOrder, capped at base+4.
+   *   e.g. S (base=2, cap=6): accepts 2, 4, or 6 bonds; P (base=3, cap=7): 3, 5, or 7.
    *
-   * `formal charge = totalBondOrder − neutral valence`
+   * `formal charge = totalBondOrder − effective neutral valence`
    *
    * Returns 0 when `group` is not set.
    *
@@ -114,13 +116,26 @@ export class Atom {
     if (!group) {
       return 0;
     }
-    if (group <= 2)  {
-      return totalBondOrder - group;
-    }   // s-block (H=1, Be=2 …)
+    if (group <= 2) {
+      return totalBondOrder - group;  // s-block (H=1, Be=2 …)
+    }
     if (group <= 12) {
-      return 0;
-    }                        // transition metals
-    return totalBondOrder - (18 - group);             // p-block
+      return 0;                       // transition metals
+    }
+    // p-block
+    const base = 18 - group;
+    const period = this.properties.period;
+    if (period && period > 2 && group <= 17) {
+      // Period 3+ atoms (S, P, Se, As, …) can use d-orbitals for expanded valence.
+      // Walk up by steps of 2 (same parity) until the valence meets or exceeds totalBondOrder.
+      const cap = base + 4;   // S: 6, Se: 6, P: 7, As: 7, Te: 6, …
+      let v = base;
+      while (v < totalBondOrder && v < cap) {
+        v += 2;
+      }
+      return totalBondOrder - v;
+    }
+    return totalBondOrder - base;
   }
 
   /**
