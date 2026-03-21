@@ -866,19 +866,32 @@ import { parseINCHI, toInChI } from './src/io/inchi.js';
 import { generateCoords, refineExistingCoords }   from './src/layout/coords2d.js';
 import { molecularFormula, molecularMass } from './src/descriptors/molecular.js';
 import { allMatrices }      from './src/matrices/index.js';
-import {
-    atomColor, WEDGE_HALF_W, WEDGE_DASHES,
-    perpUnit, shortenLine, secondaryDir,
-    labelHalfW, labelHalfH,
-    getAtomLabel, pickStereoWedges,
-    kekulize, atomBBox
-} from './src/layout/mol2d-helpers.js';
+import * as mol2dHelpers from './src/layout/mol2d-helpers.js';
 import {
     wienerIndex, hyperWienerIndex, balabanIndex,
     randicIndex, zagreb1, zagreb2, hararyIndex,
     plattIndex, szegedIndex
 } from './src/descriptors/topological.js';
 import { findSMARTS, functionalGroups } from './src/smarts/index.js';
+
+const {
+    atomColor, WEDGE_HALF_W, WEDGE_DASHES,
+    perpUnit, shortenLine, secondaryDir,
+    labelHalfW, labelHalfH,
+    getAtomLabel, pickStereoWedges,
+    kekulize
+} = mol2dHelpers;
+
+const atomBBox = mol2dHelpers.atomBBox ?? function atomBBoxFallback(atoms) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const a of atoms) {
+        if (a.x < minX) minX = a.x;
+        if (a.x > maxX) maxX = a.x;
+        if (a.y < minY) minY = a.y;
+        if (a.y > maxY) maxY = a.y;
+    }
+    return { minX, maxX, minY, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
+};
 
 // ---------------------------------------------------------------------------
 // Functional-group SMARTS panel
