@@ -32,6 +32,16 @@ function assertDiagonalMatrix(M, name) {
   }
 }
 
+function assertFiniteDistanceMatrix(D, name) {
+  for (let i = 0; i < D.length; i++) {
+    for (let j = 0; j < D.length; j++) {
+      if (!Number.isFinite(D[i][j])) {
+        throw new TypeError(`${name} must represent a connected graph with finite distances — found ${D[i][j]} at [${i}][${j}].`);
+      }
+    }
+  }
+}
+
 function assertMolecule(mol, name) {
   if (!mol || !(mol.atoms instanceof Map) || !(mol.bonds instanceof Map)) {
     throw new TypeError(`${name} must be a Molecule instance with .atoms and .bonds Maps.`);
@@ -48,6 +58,7 @@ function assertMolecule(mol, name) {
  */
 export function wienerIndex(D) {
   assertSquareMatrix(D, 'D');
+  assertFiniteDistanceMatrix(D, 'D');
   let sum = 0;
   for (let i = 0; i < D.length; i++) {
     for (let j = i + 1; j < D.length; j++) {
@@ -65,6 +76,7 @@ export function wienerIndex(D) {
  */
 export function hyperWienerIndex(D) {
   assertSquareMatrix(D, 'D');
+  assertFiniteDistanceMatrix(D, 'D');
   let sum = 0;
   for (let i = 0; i < D.length; i++) {
     for (let j = i + 1; j < D.length; j++) {
@@ -88,6 +100,7 @@ export function balabanIndex(D, A) {
   assertSquareMatrix(D, 'D');
   assertSquareMatrix(A, 'A');
   assertSameSize(D, 'D', A, 'A');
+  assertFiniteDistanceMatrix(D, 'D');
   const n = D.length;
   const rowSums = D.map((row) => row.reduce((a, b) => a + b, 0));
 
@@ -230,6 +243,7 @@ export function szegedIndex(D, A) {
   assertSquareMatrix(D, 'D');
   assertSquareMatrix(A, 'A');
   assertSameSize(D, 'D', A, 'A');
+  assertFiniteDistanceMatrix(D, 'D');
   const n = D.length;
   let sz = 0;
   for (let u = 0; u < n; u++) {
@@ -389,6 +403,7 @@ export function eccentricConnectivityIndex(A, DEG, D) {
   assertSameSize(A, 'A', DEG, 'DEG');
   assertSameSize(A, 'A', D, 'D');
   assertDiagonalMatrix(DEG, 'DEG');
+  assertFiniteDistanceMatrix(D, 'D');
   const n = A.length;
   let sum = 0;
   for (let i = 0; i < n; i++) {
@@ -408,6 +423,7 @@ export function eccentricConnectivityIndex(A, DEG, D) {
  */
 export function wienerPolarityIndex(D) {
   assertSquareMatrix(D, 'D');
+  assertFiniteDistanceMatrix(D, 'D');
   let count = 0;
   for (let i = 0; i < D.length; i++) {
     for (let j = i + 1; j < D.length; j++) {
@@ -433,13 +449,12 @@ export function schultzIndex(DEG, D) {
   assertSquareMatrix(D, 'D');
   assertSameSize(DEG, 'DEG', D, 'D');
   assertDiagonalMatrix(DEG, 'DEG');
+  assertFiniteDistanceMatrix(D, 'D');
   const n = D.length;
   let sum = 0;
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      if (isFinite(D[i][j])) {
-        sum += (DEG[i][i] + DEG[j][j]) * D[i][j];
-      }
+      sum += (DEG[i][i] + DEG[j][j]) * D[i][j];
     }
   }
   return sum;
@@ -459,13 +474,12 @@ export function gutmanIndex(DEG, D) {
   assertSquareMatrix(D, 'D');
   assertSameSize(DEG, 'DEG', D, 'D');
   assertDiagonalMatrix(DEG, 'DEG');
+  assertFiniteDistanceMatrix(D, 'D');
   const n = D.length;
   let sum = 0;
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      if (isFinite(D[i][j])) {
-        sum += DEG[i][i] * DEG[j][j] * D[i][j];
-      }
+      sum += DEG[i][i] * DEG[j][j] * D[i][j];
     }
   }
   return sum;
@@ -512,7 +526,7 @@ export function narumiKatayamaIndex(DEG) {
 export function hosoyaIndex(molecule) {
   assertMolecule(molecule, 'molecule');
 
-  const atomIds = [...molecule.atoms.keys()];
+  const atomIds = [...molecule.atoms.keys()].filter(id => molecule.atoms.get(id)?.name !== 'H');
 
   /**
    * @param {string[]} remaining - Atom IDs not yet assigned.
@@ -528,7 +542,9 @@ export function hosoyaIndex(molecule) {
     let total = count(rest);
 
     // Branch 2: v is matched with each available neighbour still in `remaining`
-    const available = molecule.getNeighbors(v).filter((u) => rest.includes(u));
+    const available = molecule.getNeighbors(v).filter((u) =>
+      molecule.atoms.get(u)?.name !== 'H' && rest.includes(u)
+    );
     for (const u of available) {
       total += count(rest.filter((x) => x !== u));
     }

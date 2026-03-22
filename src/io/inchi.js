@@ -2,6 +2,7 @@
 
 import elements from '../data/elements.js';
 import { Molecule, computeRS } from '../core/Molecule.js';
+import { perceiveAromaticity } from '../algorithms/aromaticity.js';
 import { validateValence } from '../validation/valence.js';
 import { morganRanks } from '../algorithms/morgan.js';
 
@@ -332,6 +333,39 @@ function parseChargeComponents(qStr) {
       const n = parseInt(part, 10);
       return isNaN(n) ? 0 : n;
     });
+}
+
+function parseIsotopeLayer(iStr, componentOffsets = []) {
+  const atomMassDeltas = new Map();
+  const hydrogenIsotopes = new Map();
+  const sections = expandRepeatedSections(iStr);
+
+  for (let sectionIdx = 0; sectionIdx < sections.length; sectionIdx++) {
+    const section = sections[sectionIdx];
+    const offset = componentOffsets[sectionIdx] ?? 0;
+    for (const token of section.split(',').map(s => s.trim()).filter(Boolean)) {
+      let match = token.match(/^(\d+)([+-]\d+)$/);
+      if (match) {
+        atomMassDeltas.set(offset + parseInt(match[1], 10), parseInt(match[2], 10));
+        continue;
+      }
+
+      match = token.match(/^(\d+)(D|T)(\d*)$/);
+      if (!match) {
+        continue;
+      }
+      const atomIndex = offset + parseInt(match[1], 10);
+      const isotopeMass = match[2] === 'T' ? 3 : 2;
+      const count = match[3] === '' ? 1 : parseInt(match[3], 10);
+      const queue = hydrogenIsotopes.get(atomIndex) ?? [];
+      for (let i = 0; i < count; i++) {
+        queue.push(isotopeMass);
+      }
+      hydrogenIsotopes.set(atomIndex, queue);
+    }
+  }
+
+  return { atomMassDeltas, hydrogenIsotopes };
 }
 
 function parseTetrahedralLayer(tStr, componentOffsets = []) {
@@ -961,6 +995,38 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
       }
     }
   }
+
+  // Align aromatic flags with the shared SMILES aromaticity perception when
+  // this aromatic component already has a full Kekule assignment. The InChI-
+  // specific fused-ring heuristic is useful for recovering bond orders, but it
+  // can over-aromatize aza-fused systems relative to the SMILES parser. By
+  // restoring the localized bond orders and re-running the shared aromaticity
+  // pass, both parsers settle on the same final aromatic bond pattern.
+  const restorableComponents = aromaticComponents.filter(component => {
+    return component.bondIds.length > 0 && component.bondIds.every(bondId => {
+      const bond = mol.bonds.get(bondId);
+      return bond && Number.isInteger(bond.properties.localizedOrder);
+    });
+  });
+  if (restorableComponents.length > 0) {
+    for (const component of restorableComponents) {
+      for (const atomId of component.atomIds) {
+        const atom = mol.atoms.get(atomId);
+        if (atom) {
+          atom.properties.aromatic = false;
+        }
+      }
+      for (const bondId of component.bondIds) {
+        const bond = mol.bonds.get(bondId);
+        if (!bond) {
+          continue;
+        }
+        bond.properties.order = bond.properties.localizedOrder;
+        bond.properties.aromatic = false;
+      }
+    }
+    perceiveAromaticity(mol, { preserveKekule: true });
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -1061,6 +1127,9 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
   const hInfo = layers['h']
     ? parseHydrogenLayer(layers['h'], componentOffsets)
     : { fixed: new Map(), mobile: [] };
+  const isotopeInfo = layers['i']
+    ? parseIsotopeLayer(layers['i'], componentOffsets)
+    : { atomMassDeltas: new Map(), hydrogenIsotopes: new Map() };
   const tetraStereoEntries = layers['t'] ? parseTetrahedralLayer(layers['t'], componentOffsets) : [];
   const doubleBondStereoEntries = layers['b'] ? parseDoubleBondStereoLayer(layers['b'], componentOffsets) : [];
   const inversionFlag = layers['m'] ? parseInversionLayer(layers['m']) : 0;
@@ -1157,25 +1226,46 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
     connectionInfo
   } = buildHeavySkeleton();
 
-  // Apply isotope layer /i  (format: "1+2,3-1" — 1-based atom index ± mass delta from standard)
-  if (layers['i']) {
-    for (const token of layers['i'].split(',')) {
-      const m = token.match(/^(\d+)([+-]\d+)$/);
-      if (!m) {
-        continue;
-      }
-      const atomIdx  = parseInt(m[1], 10);
-      const massDelta = parseInt(m[2], 10);
-      const atomId   = idByIndex.get(atomIdx);
-      const atom     = atomId != null ? baseMol.atoms.get(atomId) : null;
-      if (atom && atom.properties.protons != null) {
-        // The /i delta is relative to the integer (nominal) mass, i.e. standard
-        // proton count + standard (rounded) neutron count. Replace the fractional
-        // standard neutrons with the explicit isotope value.
-        const stdNeutrons = Math.round(atom.properties.neutrons ?? 0);
-        atom.properties.neutrons = stdNeutrons + massDelta;
+  // Apply heavy-atom isotope deltas from /i and queue hydrogen isotopes (D/T)
+  // for attachment later when explicit H atoms are built.
+  for (const [atomIdx, massDelta] of isotopeInfo.atomMassDeltas) {
+    const atomId = idByIndex.get(atomIdx);
+    const atom = atomId != null ? baseMol.atoms.get(atomId) : null;
+    if (atom && atom.properties.protons != null) {
+      // The /i delta is relative to the integer (nominal) mass, i.e. standard
+      // proton count + standard (rounded) neutron count. Replace the fractional
+      // standard neutrons with the explicit isotope value.
+      const stdNeutrons = Math.round(atom.properties.neutrons ?? 0);
+      atom.properties.neutrons = stdNeutrons + massDelta;
+    }
+  }
+
+  function cloneHydrogenIsotopeQueues() {
+    return new Map(
+      [...isotopeInfo.hydrogenIsotopes.entries()].map(([idx, queue]) => [idx, [...queue]])
+    );
+  }
+
+  function applyHydrogenIsotope(parentIndex, hAtom, queues) {
+    const queue = queues.get(parentIndex);
+    if (!queue || queue.length === 0) {
+      return;
+    }
+    const isotopeMass = queue.shift();
+    if (queue.length === 0) {
+      queues.delete(parentIndex);
+    }
+    hAtom.properties.neutrons = isotopeMass - 1;
+    hAtom.properties.electrons = 1;
+  }
+
+  function atomIndexForId(atomId) {
+    for (const [idx, id] of idByIndex.entries()) {
+      if (id === atomId) {
+        return idx;
       }
     }
+    return null;
   }
 
   const componentChargeTargets = new Array(formulaComponents.length).fill(0);
@@ -1341,9 +1431,6 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         continue;
       }
       const atomIds = componentHeavyAtomIds[i];
-      if (!atomIds.every(id => mol.atoms.get(id)?.name === 'C')) {
-        continue;
-      }
       // Skip if charges were already assigned by the standard pass.
       const totalAssigned = atomIds.reduce((s, id) => {
         return s + (mol.atoms.get(id)?.properties.charge ?? 0);
@@ -1351,32 +1438,57 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       if (totalAssigned !== 0) {
         continue;
       }
-      // All bonds between component atoms must be aromatic (order 1.5).
+
       const compSet = new Set(atomIds);
-      const allAro = atomIds.every(id => {
-        const atom = mol.atoms.get(id);
-        if (!atom) {
-          return false;
-        }
-        return atom.bonds.every(bId => {
-          const bond = mol.bonds.get(bId);
-          if (!bond) {
-            return true;
-          }
-          const otherId = bond.getOtherAtom(id);
-          return !compSet.has(otherId) || bond.properties.aromatic === true;
-        });
-      });
+      const componentBonds = [...mol.bonds.values()].filter(bond =>
+        compSet.has(bond.atoms[0]) && compSet.has(bond.atoms[1])
+      );
+      const allAro = componentBonds.length > 0 && componentBonds.every(bond => bond.properties.aromatic === true);
       if (!allAro) {
         continue;
       }
+
+      const localizedCharges = atomIds.map(atomId => {
+        const atom = mol.atoms.get(atomId);
+        if (!atom) {
+          return null;
+        }
+        const totalLocalizedBO = atom.bonds.reduce((sum, bondId) => {
+          const bond = mol.bonds.get(bondId);
+          if (!bond) {
+            return sum;
+          }
+          if (bond.properties.aromatic && bond.properties.localizedOrder != null) {
+            return sum + bond.properties.localizedOrder;
+          }
+          return sum + (bond.properties.order ?? 1);
+        }, 0);
+        return { atom, charge: inferredFormalCharge(atom, totalLocalizedBO) };
+      });
+      const totalLocalizedCharge = localizedCharges
+        .filter(Boolean)
+        .reduce((sum, entry) => sum + entry.charge, 0);
+      if (totalLocalizedCharge === targetCharge) {
+        for (const entry of localizedCharges) {
+          if (entry) {
+            entry.atom.setCharge(entry.charge);
+          }
+        }
+        continue;
+      }
+
       // Pick the atom with the fewest H neighbours (most substituted / least H)
-      // to carry the formal charge; fall back to the first atom on ties.
+      // to carry the formal charge; prefer heteroatoms over carbon for charged
+      // heteroaromatic systems, then fall back to the first atom on ties.
       let chargeAtomId = atomIds[0];
+      let bestHetero = mol.atoms.get(chargeAtomId)?.name !== 'C' ? 1 : 0;
       let minH = mol.atoms.get(atomIds[0])?.getHydrogenNeighbors(mol).length ?? 0;
       for (const id of atomIds) {
+        const atom = mol.atoms.get(id);
         const h = mol.atoms.get(id)?.getHydrogenNeighbors(mol).length ?? 0;
-        if (h < minH) {
+        const hetero = atom?.name !== 'C' ? 1 : 0;
+        if (hetero > bestHetero || (hetero === bestHetero && h < minH)) {
+          bestHetero = hetero;
           minH = h;
           chargeAtomId = id;
         }
@@ -1594,7 +1706,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
 
   applyComponentCharges(baseMol);
 
-  function attachHydrogens(mol, hMap) {
+  function attachHydrogens(mol, hMap, hydrogenIsotopeQueues) {
     for (const [idx, count] of hMap) {
       const parentId = idByIndex.get(idx);
       if (!parentId) {
@@ -1603,13 +1715,14 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       for (let i = 0; i < count; i++) {
         const hAtom = mol.addAtom(null, 'H');
         hAtom.resolveElement();
+        applyHydrogenIsotope(idx, hAtom, hydrogenIsotopeQueues);
         hAtom.visible = false;
         mol.addBond(null, parentId, hAtom.id, { order: 1 }, false);
       }
     }
   }
 
-  function correctHydrogenDeficit(mol) {
+  function correctHydrogenDeficit(mol, hydrogenIsotopeQueues) {
     const getRem = (atom) => {
       const el = elements[atom.name];
       if (!el) {
@@ -1649,6 +1762,10 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         const atom = candidates[0];
         const hAtom = mol.addAtom(null, 'H');
         hAtom.resolveElement();
+        const atomIdx = atomIndexForId(atom.id);
+        if (atomIdx != null) {
+          applyHydrogenIsotope(atomIdx, hAtom, hydrogenIsotopeQueues);
+        }
         hAtom.visible = false;
         mol.addBond(null, atom.id, hAtom.id, { order: 1 }, false);
         deficit--;
@@ -1675,21 +1792,81 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
     }
   }
 
+  function preferTerminalImineNitrogens(mol) {
+    for (const atom of mol.atoms.values()) {
+      if (atom.name !== 'C') {
+        continue;
+      }
+      const nBonds = atom.bonds
+        .map(bondId => mol.bonds.get(bondId))
+        .filter(Boolean)
+        .filter(bond => mol.atoms.get(bond.getOtherAtom(atom.id))?.name === 'N');
+      if (nBonds.length < 2) {
+        continue;
+      }
+
+      const internalImineBond = nBonds.find(bond => {
+        if ((bond.properties.order ?? 1) !== 2) {
+          return false;
+        }
+        const nitrogen = mol.atoms.get(bond.getOtherAtom(atom.id));
+        return nitrogen && nitrogen.getHeavyNeighbors(mol).length > 1;
+      });
+      if (!internalImineBond) {
+        continue;
+      }
+
+      const terminalAmineBond = nBonds.find(bond => {
+        if ((bond.properties.order ?? 1) !== 1) {
+          return false;
+        }
+        const nitrogen = mol.atoms.get(bond.getOtherAtom(atom.id));
+        return nitrogen &&
+          nitrogen.getHeavyNeighbors(mol).length === 1 &&
+          nitrogen.getHydrogenNeighbors(mol).length > 0;
+      });
+      if (!terminalAmineBond) {
+        continue;
+      }
+
+      const internalNitrogen = mol.atoms.get(internalImineBond.getOtherAtom(atom.id));
+      const terminalNitrogen = mol.atoms.get(terminalAmineBond.getOtherAtom(atom.id));
+      if (!internalNitrogen || !terminalNitrogen) {
+        continue;
+      }
+
+      const terminalHydrogen = terminalNitrogen.getHydrogenNeighbors(mol)[0];
+      if (!terminalHydrogen) {
+        continue;
+      }
+
+      mol.removeAtom(terminalHydrogen.id);
+      const newHydrogen = mol.addAtom(null, 'H');
+      newHydrogen.resolveElement();
+      newHydrogen.visible = false;
+      mol.addBond(null, internalNitrogen.id, newHydrogen.id, { order: 1 }, false);
+      internalImineBond.properties.order = 1;
+      terminalAmineBond.properties.order = 2;
+    }
+  }
+
   function withHydrogenMap(hMap) {
     const mol = baseMol.clone();
-    attachHydrogens(mol, hMap);
+    const hydrogenIsotopeQueues = cloneHydrogenIsotopeQueues();
+    attachHydrogens(mol, hMap, hydrogenIsotopeQueues);
     if (doInfer) {
       // Run bond-order inference BEFORE removing /p-adjusted excess H so that
       // heteroatom H atoms (e.g. phenol O-H that becomes phenolate O⁻ via /p-1)
       // are present during aromaticity detection.  correctHydrogenDeficit then
       // removes the surplus H after bonds are settled.
       inferBondOrders(mol, heavyAtomIds, componentChargeTargets.reduce((s, c) => s + c, 0));
-      correctHydrogenDeficit(mol);
+      correctHydrogenDeficit(mol, hydrogenIsotopeQueues);
+      preferTerminalImineNitrogens(mol);
       fixMonoanionicArylComponents(mol);
       assignComponentFormalCharges(mol);
       fixDelocalisedChargedRings(mol);
     } else {
-      correctHydrogenDeficit(mol);
+      correctHydrogenDeficit(mol, hydrogenIsotopeQueues);
     }
     applyTetrahedralStereo(mol);
     applyDoubleBondStereo(mol);
@@ -1699,6 +1876,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
   function scoreMol(mol) {
     const warnings = validateValence(mol).length;
     let chargePenalty = 0;
+    let internalMultipleBondPenalty = 0;
     for (const atomId of heavyAtomIds) {
       const atom = mol.atoms.get(atomId);
       if (!atom) {
@@ -1708,15 +1886,26 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         return sum + (mol.bonds.get(bondId)?.properties.order ?? 1);
       }, 0);
       chargePenalty += Math.abs(inferredFormalCharge(atom, totalBO) - (atom.properties.charge ?? 0));
+
+      if (atom.name !== 'C') {
+        const heavyNeighbors = atom.getHeavyNeighbors(mol);
+        const hasMultipleBond = atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) > 1);
+        if (hasMultipleBond && heavyNeighbors.length > 1) {
+          internalMultipleBondPenalty++;
+        }
+      }
     }
-    return { warnings, chargePenalty };
+    return { warnings, chargePenalty, internalMultipleBondPenalty };
   }
 
   function compareScores(a, b) {
     if (a.warnings !== b.warnings) {
       return a.warnings - b.warnings;
     }
-    return a.chargePenalty - b.chargePenalty;
+    if (a.chargePenalty !== b.chargePenalty) {
+      return a.chargePenalty - b.chargePenalty;
+    }
+    return a.internalMultipleBondPenalty - b.internalMultipleBondPenalty;
   }
 
   function buildHydrogenMap(assignments) {

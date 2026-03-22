@@ -1249,6 +1249,37 @@ function findFromAtomPos(bracketOpenPos, smiles, posToClean) {
 }
 
 /**
+ * Returns the character position of the atom that owns a ring token.
+ *
+ * Ring tokens sometimes include the atom text inside the token span
+ * (`[C@H]1`, `C=1`) and sometimes start at the digit immediately after the
+ * atom (`C1`, `[C@@H]4`). Prefer an atom token that falls inside the ring
+ * token span, then fall back to the nearest atom token immediately before the
+ * ring token.
+ *
+ * @param {{ index: number, term: string }} ringToken
+ * @param {Array<{ index: number }>} atomTokens
+ * @returns {number|null}
+ */
+function findRingTokenAtomPos(ringToken, atomTokens) {
+  const direct = atomTokens.find(
+    atom => atom.index >= ringToken.index && atom.index < ringToken.index + ringToken.term.length
+  );
+  if (direct) {
+    return direct.index;
+  }
+
+  let previous = null;
+  for (const atom of atomTokens) {
+    if (atom.index > ringToken.index) {
+      break;
+    }
+    previous = atom;
+  }
+  return previous?.index ?? null;
+}
+
+/**
  * Builds a map from clean atom ID → SMILES chirality neighbour order for every
  * `@`/`@@` atom in the SMILES string.
  *
@@ -1364,14 +1395,11 @@ function extractChiralNeighborOrders(smiles, tokens) {
       if (!partner) {
         continue;
       }
-      // Locate the atom within the partner token's matched text
-      const partnerAtomTok = atomTokens.find(
-        at => at.index >= partner.index && at.index < partner.index + partner.term.length
-      );
-      if (!partnerAtomTok) {
+      const partnerAtomPos = findRingTokenAtomPos(partner, atomTokens);
+      if (partnerAtomPos === null) {
         continue;
       }
-      const partnerCleanId = posToClean.get(partnerAtomTok.index);
+      const partnerCleanId = posToClean.get(partnerAtomPos);
       if (partnerCleanId) {
         neighbors.push(partnerCleanId);
         handledRingNums.add(ringNum);
@@ -1416,11 +1444,9 @@ function extractChiralNeighborOrders(smiles, tokens) {
                   pr.term.match(/\d+/)?.[0] === ringNum
           );
           if (partner) {
-            const partnerAtomTok = atomTokens.find(
-              at => at.index >= partner.index && at.index < partner.index + partner.term.length
-            );
-            if (partnerAtomTok) {
-              const partnerCleanId = posToClean.get(partnerAtomTok.index);
+            const partnerAtomPos = findRingTokenAtomPos(partner, atomTokens);
+            if (partnerAtomPos !== null) {
+              const partnerCleanId = posToClean.get(partnerAtomPos);
               if (partnerCleanId) {
                 neighbors.push(partnerCleanId);
                 handledRingNums.add(ringNum);

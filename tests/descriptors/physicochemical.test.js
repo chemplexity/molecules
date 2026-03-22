@@ -73,6 +73,10 @@ describe('tpsa', () => {
     assert.ok(v > 20, `expected methylamine TPSA > 20, got ${v}`);
   });
 
+  it('choline-like quaternary ammonium does not add extra TPSA beyond the alcohol oxygen', () => {
+    assert.equal(tpsa(parseSMILES('C[N+](C)(C)CCO')), 20.23);
+  });
+
   it('returns a number', () => {
     assert.equal(typeof tpsa(parseSMILES('C')), 'number');
   });
@@ -103,6 +107,14 @@ describe('hBondDonors', () => {
     assert.equal(hBondDonors(parseSMILES('CN')), 1);
   });
 
+  it('pyridine has 0 donors', () => {
+    assert.equal(hBondDonors(parseSMILES('c1ccncc1')), 0);
+  });
+
+  it('nitrobenzene has 0 donors', () => {
+    assert.equal(hBondDonors(parseSMILES('[O-][N+](=O)c1ccccc1')), 0);
+  });
+
   it('methane has 0 donors', () => {
     assert.equal(hBondDonors(parseSMILES('C')), 0);
   });
@@ -125,8 +137,8 @@ describe('hBondAcceptors', () => {
     assert.equal(hBondAcceptors(parseSMILES('CCO')), 1);
   });
 
-  it('acetic acid has 2 acceptors (2 × O)', () => {
-    assert.equal(hBondAcceptors(parseSMILES('CC(=O)O')), 2);
+  it('acetic acid has 1 acceptor (carbonyl O only)', () => {
+    assert.equal(hBondAcceptors(parseSMILES('CC(=O)O')), 1);
   });
 
   it('pyridine has 1 acceptor (N)', () => {
@@ -135,6 +147,26 @@ describe('hBondAcceptors', () => {
 
   it('aniline has 1 acceptor (N)', () => {
     assert.equal(hBondAcceptors(parseSMILES('Nc1ccccc1')), 1);
+  });
+
+  it('pyrrole has 0 acceptors', () => {
+    assert.equal(hBondAcceptors(parseSMILES('[nH]1cccc1')), 0);
+  });
+
+  it('ammonium has 0 acceptors', () => {
+    assert.equal(hBondAcceptors(parseSMILES('[NH4+]')), 0);
+  });
+
+  it('quaternary ammonium alcohol has 1 acceptor (the alcohol oxygen)', () => {
+    assert.equal(hBondAcceptors(parseSMILES('C[N+](C)(C)CCO')), 1);
+  });
+
+  it('acetamide has 1 acceptor (carbonyl O only)', () => {
+    assert.equal(hBondAcceptors(parseSMILES('CC(=O)NC')), 1);
+  });
+
+  it('nitrobenzene has 2 acceptors (the two oxygens)', () => {
+    assert.equal(hBondAcceptors(parseSMILES('[O-][N+](=O)c1ccccc1')), 2);
   });
 
   it('throws on non-molecule', () => {
@@ -165,6 +197,14 @@ describe('rotatableBondCount', () => {
 
   it('benzene has 0 rotatable bonds (aromatic)', () => {
     assert.equal(rotatableBondCount(parseSMILES('c1ccccc1')), 0);
+  });
+
+  it('cyclohexane ring bonds are not rotatable', () => {
+    assert.equal(rotatableBondCount(parseSMILES('C1CCCCC1')), 0);
+  });
+
+  it('amide C-N bonds are not counted as rotatable', () => {
+    assert.equal(rotatableBondCount(parseSMILES('CC(=O)NC')), 0);
   });
 
   it('throws on non-molecule', () => {

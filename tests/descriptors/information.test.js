@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
 import { adjacencyMatrix, distanceMatrix } from '../../src/matrices/index.js';
+import { parseSMILES } from '../../src/io/smiles.js';
 import { graphEntropy, topologicalEntropy } from '../../src/descriptors/information.js';
 
 describe('graphEntropy', () => {
@@ -21,6 +22,10 @@ describe('graphEntropy', () => {
     const h = graphEntropy(mol);
     assert.ok(h > 0);
   });
+
+  it('parsed benzene has entropy 0 on the heavy-atom graph', () => {
+    assert.equal(graphEntropy(parseSMILES('c1ccccc1')), 0);
+  });
 });
 
 describe('topologicalEntropy', () => {
@@ -34,5 +39,11 @@ describe('topologicalEntropy', () => {
     const D = distanceMatrix(adjacencyMatrix(mol));
     const h = topologicalEntropy(D);
     assert.ok(h >= 0);
+  });
+
+  it('rejects disconnected distance matrices', () => {
+    const mol = parseSMILES('[NH4+].[Cl-]');
+    const D = distanceMatrix(adjacencyMatrix(mol));
+    assert.throws(() => topologicalEntropy(D), /connected graph/);
   });
 });

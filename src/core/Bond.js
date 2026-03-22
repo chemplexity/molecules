@@ -233,6 +233,9 @@ export class Bond {
     if (this.properties.aromatic) {
       return false;
     }
+    if (this.isInRing(molecule)) {
+      return false;
+    }
     const [idA, idB] = this.atoms;
     const atomA = molecule.atoms.get(idA);
     const atomB = molecule.atoms.get(idB);
@@ -259,6 +262,36 @@ export class Bond {
       });
     };
 
-    return hasOtherHeavy(idA) && hasOtherHeavy(idB);
+    const isConjugatedAmideLike = () => {
+      const endpoints = [[atomA, atomB, idA], [atomB, atomA, idB]];
+      for (const [hetero, center, heteroId] of endpoints) {
+        if (!hetero || !center) {
+          continue;
+        }
+        if (hetero.name !== 'N') {
+          continue;
+        }
+        if (!['C', 'S', 'P'].includes(center.name)) {
+          continue;
+        }
+        for (const bId of center.bonds) {
+          if (bId === this.id) {
+            continue;
+          }
+          const b = molecule.bonds.get(bId);
+          if (!b || (b.properties.order ?? 1) < 2) {
+            continue;
+          }
+          const otherId = b.getOtherAtom(center.id);
+          const other = molecule.atoms.get(otherId);
+          if (other && ['O', 'N', 'S', 'P'].includes(other.name)) {
+            return true;
+          }
+        }
+      }
+      return false;
+    };
+
+    return hasOtherHeavy(idA) && hasOtherHeavy(idB) && !isConjugatedAmideLike();
   }
 }

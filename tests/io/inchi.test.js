@@ -130,6 +130,33 @@ describe('parseINCHI — sulfamide mobile hydrogens InChI=1S/H4N2O2S/c1-5(2,3)4/
   });
 });
 
+describe('parseINCHI — hydrogen isotopes from /i layer', () => {
+  const mol = parseINCHI('InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3/i2D2,3D');
+
+  it('preserves deuterium atoms on the correct parents', () => {
+    const deuteriums = [...mol.atoms.values()].filter(atom =>
+      atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 1
+    );
+    const protiums = [...mol.atoms.values()].filter(atom =>
+      atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 0
+    );
+    const oxygen = [...mol.atoms.values()].find(atom => atom.name === 'O');
+    const carbonWithTwoD = [...mol.atoms.values()].find(atom =>
+      atom.name === 'C' &&
+      atom.getHydrogenNeighbors(mol).filter(h => Math.round(h.properties.neutrons ?? 0) === 1).length === 2
+    );
+
+    assert.equal(deuteriums.length, 3);
+    assert.equal(protiums.length, 3);
+    assert.ok(oxygen);
+    assert.ok(carbonWithTwoD);
+    assert.equal(
+      oxygen.getHydrogenNeighbors(mol).filter(h => Math.round(h.properties.neutrons ?? 0) === 1).length,
+      1
+    );
+  });
+});
+
 describe('parseINCHI — iron bis(benzoate) InChI=1S/2C7H6O2.Fe/c2*8-7(9)6-4-2-1-3-5-6;/h2*1-5H,(H,8,9);/q;;+2/p-2', () => {
   const mol = parseINCHI('InChI=1S/2C7H6O2.Fe/c2*8-7(9)6-4-2-1-3-5-6;/h2*1-5H,(H,8,9);/q;;+2/p-2');
 
@@ -181,6 +208,58 @@ describe('parseINCHI — double-bond stereochemistry', () => {
     const dbl = [...mol.bonds.values()].find(b => b.properties.order === 2);
     assert.ok(dbl);
     assert.equal(mol.getEZStereo(dbl.id), 'Z');
+  });
+});
+
+describe('parseINCHI — charged heteroaromatic ring', () => {
+  const mol = parseINCHI('InChI=1S/C3H3N2/c1-2-5-3-4-1/h1-3H/q-1');
+
+  it('retains the net -1 charge on the aromatic ring', () => {
+    assert.equal(mol.properties.charge, -1);
+    assert.equal(
+      [...mol.atoms.values()].filter(atom => (atom.properties.charge ?? 0) === -1 && atom.name === 'N').length,
+      1
+    );
+  });
+});
+
+describe('parseINCHI — guanidine mobile hydrogens prefer terminal imine', () => {
+  const mol = parseINCHI('InChI=1S/C6H14N4O2/c7-4(5(11)12)2-1-3-10-6(8)9/h4H,1-3,7H2,(H,11,12)(H4,8,9,10)');
+
+  it('keeps the side-chain nitrogen single-bonded to the guanidino carbon', () => {
+    const nitrogens = [...mol.atoms.values()].filter(atom => atom.name === 'N');
+    const internalNitrogen = nitrogens.find(atom =>
+      atom.getHeavyNeighbors(mol).some(nb => nb.name === 'C') &&
+      atom.getHeavyNeighbors(mol).filter(nb => nb.name === 'C').length === 2
+    );
+    assert.ok(internalNitrogen);
+    const doubleBonds = internalNitrogen.bonds
+      .map(bondId => mol.bonds.get(bondId))
+      .filter(Boolean)
+      .filter(bond => (bond.properties.order ?? 1) === 2);
+    assert.equal(doubleBonds.length, 0);
+  });
+});
+
+describe('parseINCHI — fused aza aromaticity matches SMILES perception', () => {
+  const smiles = parseSMILES('N1C=NC2=C1N=CN2[C@H]3C[C@H](O)[C@@H](CO)O3');
+  const inchi = parseINCHI('InChI=1S/C9H12N4O3/c14-2-6-5(15)1-7(16-6)13-4-12-8-9(13)11-3-10-8/h3-7,14-15H,1-2H2,(H,10,11)/t5-,6+,7+/m0/s1');
+
+  function bondSignature(mol) {
+    return heavyBonds(mol)
+      .map(bond => {
+        const names = bond.atoms.map(id => mol.atoms.get(id)?.name).sort();
+        return JSON.stringify({
+          atoms: names,
+          order: bond.properties.order,
+          aromatic: !!bond.properties.aromatic
+        });
+      })
+      .sort();
+  }
+
+  it('keeps the same aromatic/non-aromatic heavy-bond pattern as SMILES', () => {
+    assert.deepEqual(bondSignature(inchi), bondSignature(smiles));
   });
 });
 

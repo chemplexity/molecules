@@ -350,6 +350,10 @@ describe('hosoyaIndex — known values', () => {
   it('benzene Z = 18', () => {
     assert.equal(hosoyaIndex(benzene()), 18);
   });
+
+  it('parseSMILES benzene still uses the hydrogen-suppressed graph', () => {
+    assert.equal(hosoyaIndex(parseSMILES('c1ccccc1')), 18);
+  });
 });
 
 describe('plattIndex — known values', () => {
@@ -883,5 +887,19 @@ describe('new descriptors — additional molecules', () => {
       forgotten: 40,
       nk: 32
     });
+  });
+});
+
+describe('distance-based indices reject disconnected graphs', () => {
+  it('Wiener/hyper-Wiener/Balaban/Schultz/Gutman reject salts', () => {
+    const mol = parseSMILES('[NH4+].[Cl-]');
+    const A = adjacencyMatrix(mol);
+    const D = distanceMatrix(A);
+    const DEG = degreeMatrix(A);
+    assert.throws(() => wienerIndex(D), /connected graph/);
+    assert.throws(() => hyperWienerIndex(D), /connected graph/);
+    assert.throws(() => balabanIndex(D, A), /connected graph/);
+    assert.throws(() => schultzIndex(DEG, D), /connected graph/);
+    assert.throws(() => gutmanIndex(DEG, D), /connected graph/);
   });
 });

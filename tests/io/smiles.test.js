@@ -446,6 +446,11 @@ describe('parseSMILES – CIP R/S ring-closure chirality', () => {
   it('C[C@H]1CCCCC1 — symmetric ring arms give 0 centers (correct)', () => {
     assert.equal(parseSMILES('C[C@H]1CCCCC1').getChiralCenters().length, 0);
   });
+
+  it('fused polycycle ring-closure stereochemistry keeps all seven annotated centers', () => {
+    const mol = parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O');
+    assert.equal(mol.getChiralCenters().length, 7);
+  });
 });
 
 // ---------------------------------------------------------------------------
