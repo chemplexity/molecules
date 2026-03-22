@@ -194,33 +194,35 @@ export function defaultSmartsBondPred(tBond) {
 
 /**
  * Parses a single bond primitive character at `smarts[pos]` and returns
- * `{ pred, len }`, where `pred` is a `(tBond) => boolean` predicate and
+ * `{ pred, len, props }`, where `pred` is a `(tBond) => boolean` predicate and
  * `len` is the number of characters consumed.
  *
  * Returns `null` if the character is not a bond token.
  *
  * @param {string} smarts
  * @param {number} pos
- * @returns {{ pred: function, len: number }|null}
+ * @returns {{ pred: function, len: number, props?: object }|null}
  */
 export function compileBondToken(smarts, pos) {
   const ch = smarts[pos];
   switch (ch) {
     case '-':
-      return { pred: (tB) => !(tB.properties.aromatic ?? false) && (tB.properties.order ?? 1) === 1, len: 1 };
+      return { pred: (tB) => !(tB.properties.aromatic ?? false) && (tB.properties.order ?? 1) === 1, len: 1, props: { order: 1, aromatic: false, stereo: null } };
     case '=':
-      return { pred: (tB) => !(tB.properties.aromatic ?? false) && (tB.properties.order ?? 1) === 2, len: 1 };
+      return { pred: (tB) => !(tB.properties.aromatic ?? false) && (tB.properties.order ?? 1) === 2, len: 1, props: { order: 2, aromatic: false, stereo: null } };
     case '#':
-      return { pred: (tB) => (tB.properties.order ?? 1) === 3, len: 1 };
+      return { pred: (tB) => (tB.properties.order ?? 1) === 3, len: 1, props: { order: 3, aromatic: false, stereo: null } };
     case ':':
-      return { pred: (tB) => _isAroBond(tB), len: 1 };
+      return { pred: (tB) => _isAroBond(tB), len: 1, props: { order: 1.5, aromatic: true, stereo: null } };
     case '@':
-      return { pred: (tB, tMol) => _isBondInRing(tB, tMol), len: 1 };
+      return { pred: (tB, tMol) => _isBondInRing(tB, tMol), len: 1, props: { order: 1, aromatic: false, stereo: null } };
     case '~':
-      return { pred: () => true, len: 1 };
+      return { pred: () => true, len: 1, props: {} };
     case '/':
     case '\\':
-      return { pred: () => true, len: 1 }; // stereo — wildcard (not yet interpreted)
+      // Directional bonds are still single bonds structurally; the full
+      // / vs \ relation is checked after VF2 using the final atom mapping.
+      return { pred: (tB) => !(tB.properties.aromatic ?? false) && (tB.properties.order ?? 1) === 1, len: 1, props: { order: 1, aromatic: false, stereo: ch } };
     default:
       return null;
   }
@@ -308,6 +310,10 @@ export function compileBareAtomToken(smarts, pos) {
  */
 export function compileAtomExpr(expr, options = {}) {
   let pos = 0;
+
+  function prevChar() {
+    return pos > 0 ? expr[pos - 1] : null;
+  }
 
   function peek() {
     return pos < expr.length ? expr[pos] : null;
@@ -424,6 +430,20 @@ export function compileAtomExpr(expr, options = {}) {
     }
 
     if (ch === 'H') {
+      // Daylight-style special case: bare [H], [H+], [H-], etc. denote an
+      // elemental hydrogen atom, while H followed by a digit (or attached to
+      // another atom primitive as in [CH]) denotes hydrogen-count.
+      const next = pos + 1 < expr.length ? expr[pos + 1] : null;
+      const prev = prevChar();
+      const startsNewPrimitive =
+        prev === null || prev === '!' || prev === '(' || prev === ',' || prev === ';' || prev === '&';
+      const nextStartsModifier =
+        next === null || next === '+' || next === '-' || next === ',' || next === ';' || next === '&' || next === ')';
+      if (startsNewPrimitive && nextStartsModifier) {
+        pos++;
+        return (a) => a.name === 'H' && !(a.properties.aromatic ?? false);
+      }
+
       pos++;
       const n = readDigits() ?? 1;
       return (a, m) => _totalHCount(a, m) === n;
@@ -527,9 +547,12 @@ export function compileAtomExpr(expr, options = {}) {
     }
 
     // Unknown primitive — skip character, always false
-    pos++;
-    return () => false;
+    throw new Error(`compileAtomExpr: invalid SMARTS primitive '${ch}' at pos ${pos} in [${expr}]`);
   }
 
-  return parseOr();
+  const compiled = parseOr();
+  if (pos !== expr.length) {
+    throw new Error(`compileAtomExpr: invalid trailing SMARTS syntax at pos ${pos} in [${expr}]`);
+  }
+  return compiled;
 }

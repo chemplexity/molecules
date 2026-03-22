@@ -16,10 +16,6 @@ function _heavyAtoms(mol) {
   return [...mol.atoms.values()].filter(a => a.name !== 'H');
 }
 
-function _hasExplicitHydrogens(mol) {
-  return [...mol.atoms.values()].some(a => a.name === 'H');
-}
-
 /**
  * Infer hybridisation from bond orders.  Returns 'sp', 'sp2', or 'sp3'.
  * Falls back to the stored `properties.hybridization` if set.
@@ -101,7 +97,7 @@ function _implicitH(atom, mol) {
   return Math.max(0, targetValence - bondOrderSum);
 }
 
-function _attachedHydrogenCount(atom, mol, hasExplicitHydrogens = _hasExplicitHydrogens(mol)) {
+function _attachedHydrogenCount(atom, mol) {
   const explicit = atom.getHydrogenNeighbors
     ? atom.getHydrogenNeighbors(mol).length
     : atom.bonds.reduce((count, bId) => {
@@ -114,9 +110,6 @@ function _attachedHydrogenCount(atom, mol, hasExplicitHydrogens = _hasExplicitHy
     }, 0);
   if (explicit > 0) {
     return explicit;
-  }
-  if (hasExplicitHydrogens) {
-    return 0;
   }
   return _implicitH(atom, mol);
 }
@@ -199,6 +192,15 @@ function _isHBondAcceptor(atom, mol) {
       return false;
     }
     if (_isAmideLikeNitrogen(atom, mol)) {
+      return false;
+    }
+    return true;
+  }
+  if (atom.name === 'S' || atom.name === 'P') {
+    if (charge > 0) {
+      return false;
+    }
+    if (_hasMultipleBondToHetero(atom, mol)) {
       return false;
     }
     return true;
@@ -296,11 +298,10 @@ export function logP(molecule) {
  */
 export function tpsa(molecule) {
   assertMolecule(molecule, 'molecule');
-  const hasExplicitHydrogens = _hasExplicitHydrogens(molecule);
   let sum = 0;
   for (const atom of _heavyAtoms(molecule)) {
     const el  = atom.name;
-    const h   = _attachedHydrogenCount(atom, molecule, hasExplicitHydrogens);
+    const h   = _attachedHydrogenCount(atom, molecule);
     const hyb = _hybSp(atom, molecule);
     const charge = atom.properties.charge ?? 0;
     if (el === 'O') {
@@ -350,10 +351,9 @@ export function tpsa(molecule) {
  */
 export function hBondDonors(molecule) {
   assertMolecule(molecule, 'molecule');
-  const hasExplicitHydrogens = _hasExplicitHydrogens(molecule);
   return _heavyAtoms(molecule).filter(a =>
     (a.name === 'O' || a.name === 'N' || a.name === 'S') &&
-    _attachedHydrogenCount(a, molecule, hasExplicitHydrogens) > 0
+    _attachedHydrogenCount(a, molecule) > 0
   ).length;
 }
 

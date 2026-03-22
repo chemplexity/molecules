@@ -114,6 +114,13 @@ describe('matchesSMARTS — explicit bond primitives', () => {
   it('aromatic bond c:c found in benzene', () => {
     assert.equal(matchesSMARTS(mol('c1ccccc1'), 'c:c'), true);
   });
+
+  it('directional alkene SMARTS discriminate E/Z', () => {
+    assert.equal(matchesSMARTS(mol('F/C=C/F'), 'F/C=C/F'), true);
+    assert.equal(matchesSMARTS(mol('F/C=C\\F'), 'F/C=C/F'), false);
+    assert.equal(matchesSMARTS(mol('F/C=C\\F'), 'F/C=C\\F'), true);
+    assert.equal(matchesSMARTS(mol('F/C=C/F'), 'F/C=C\\F'), false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -161,6 +168,16 @@ describe('matchesSMARTS — charge primitives', () => {
 
   it('[+1] NOT found in neutral methane', () => {
     assert.equal(matchesSMARTS(mol('C'), '[+1]'), false);
+  });
+
+  it('[H] matches elemental hydrogen atoms', () => {
+    assert.equal(matchesSMARTS(mol('[H][H]'), '[H]'), true);
+    assert.equal(matchesSMARTS(mol('[Na+]'), '[H]'), false);
+  });
+
+  it('[H+] and [H-] match charged elemental hydrogen', () => {
+    assert.equal(matchesSMARTS(mol('[H+]'), '[H+]'), true);
+    assert.equal(matchesSMARTS(mol('[H-]'), '[H-]'), true);
   });
 });
 
@@ -250,6 +267,12 @@ describe('parseSMARTS — query molecule structure', () => {
     const q = parseSMARTS('[NH2]');
     const atom = q.atoms.values().next().value;
     assert.equal(typeof atom._predicate, 'function');
+  });
+
+  it('rejects invalid characters and unclosed ring closures', () => {
+    assert.throws(() => parseSMARTS('C?C'), /invalid character/);
+    assert.throws(() => parseSMARTS('C]C'), /invalid character/);
+    assert.throws(() => parseSMARTS('C1CC'), /unclosed ring closure/);
   });
 });
 

@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { Molecule } from '../../src/core/index.js';
 import { parseSMILES } from '../../src/io/smiles.js';
 import {
   logP,
@@ -119,6 +120,17 @@ describe('hBondDonors', () => {
     assert.equal(hBondDonors(parseSMILES('C')), 0);
   });
 
+  it('local hydrogen inference still works when another atom has an explicit H', () => {
+    const mol = new Molecule();
+    mol.addAtom('c', 'C');
+    mol.addAtom('n', 'N');
+    mol.addAtom('h', 'H');
+    mol.addBond('b1', 'c', 'n', {}, false);
+    mol.addBond('b2', 'c', 'h', {}, false);
+    assert.equal(hBondDonors(mol), 1);
+    assert.ok(tpsa(mol) > 20);
+  });
+
   it('throws on non-molecule', () => {
     assert.throws(() => hBondDonors(null), TypeError);
   });
@@ -167,6 +179,14 @@ describe('hBondAcceptors', () => {
 
   it('nitrobenzene has 2 acceptors (the two oxygens)', () => {
     assert.equal(hBondAcceptors(parseSMILES('[O-][N+](=O)c1ccccc1')), 2);
+  });
+
+  it('thioethers count as sulfur acceptors', () => {
+    assert.equal(hBondAcceptors(parseSMILES('CSC')), 1);
+  });
+
+  it('trialkyl phosphines count as phosphorus acceptors', () => {
+    assert.equal(hBondAcceptors(parseSMILES('P(C)(C)C')), 1);
   });
 
   it('throws on non-molecule', () => {

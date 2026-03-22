@@ -43,10 +43,10 @@ export function parseSMARTS(smarts) {
   const mol = new Molecule();
   let atomCount = 0;
 
-  // ringOpens: ringNum → { atomId: string, bondPred: function|null }
+  // ringOpens: ringNum → { atomId: string, bondPred: function|null, bondProps: object|null }
   const ringOpens = new Map();
 
-  // Branch stack: [ { prevId: string|null, bondPred: function|null } ]
+  // Branch stack: [ { prevId: string|null, bondPred: function|null, bondProps: object|null } ]
   const branchStack = [];
 
   /** ID of the most recently added atom. */
@@ -57,6 +57,7 @@ export function parseSMARTS(smarts) {
    * is added.  `null` means "use the default SMARTS bond predicate".
    */
   let pendingBondPred = null;
+  let pendingBondProps = null;
 
   /**
    * Creates a new query atom node with the given predicate, connects it to
@@ -68,9 +69,10 @@ export function parseSMARTS(smarts) {
     mol.atoms.get(id)._predicate = pred;
 
     if (prevId !== null) {
-      const bond = mol.addBond(null, prevId, id, {}, false);
+      const bond = mol.addBond(null, prevId, id, pendingBondProps ?? {}, false);
       bond._predicate = pendingBondPred ?? defaultSmartsBondPred;
       pendingBondPred = null;
+      pendingBondProps = null;
     }
 
     prevId = id;
@@ -85,6 +87,7 @@ export function parseSMARTS(smarts) {
     // ── Branch open ───────────────────────────────────────────────────────
     if (ch === '(') {
       branchStack.push({ prevId, pendingBondPred });
+      branchStack[branchStack.length - 1].bondProps = pendingBondProps;
       pos++;
       continue;
     }
@@ -94,7 +97,7 @@ export function parseSMARTS(smarts) {
       if (branchStack.length === 0) {
         throw new Error(`parseSMARTS: unmatched ')' at pos ${pos}`);
       }
-      ({ prevId, pendingBondPred } = branchStack.pop());
+      ({ prevId, pendingBondPred, bondProps: pendingBondProps } = branchStack.pop());
       pos++;
       continue;
     }
@@ -103,6 +106,7 @@ export function parseSMARTS(smarts) {
     if (ch === '.') {
       prevId = null;
       pendingBondPred = null;
+      pendingBondProps = null;
       pos++;
       continue;
     }
@@ -122,14 +126,16 @@ export function parseSMARTS(smarts) {
       }
 
       if (ringOpens.has(ringNum)) {
-        const { atomId: openId, bondPred: openBond } = ringOpens.get(ringNum);
+        const { atomId: openId, bondPred: openBond, bondProps: openProps } = ringOpens.get(ringNum);
         ringOpens.delete(ringNum);
-        const bond = mol.addBond(null, openId, prevId, {}, false);
+        const bond = mol.addBond(null, openId, prevId, { ...(openProps ?? {}), ...(pendingBondProps ?? {}) }, false);
         bond._predicate = pendingBondPred ?? openBond ?? defaultSmartsBondPred;
         pendingBondPred = null;
+        pendingBondProps = null;
       } else {
-        ringOpens.set(ringNum, { atomId: prevId, bondPred: pendingBondPred });
+        ringOpens.set(ringNum, { atomId: prevId, bondPred: pendingBondPred, bondProps: pendingBondProps });
         pendingBondPred = null;
+        pendingBondProps = null;
       }
       continue;
     }
@@ -138,6 +144,7 @@ export function parseSMARTS(smarts) {
     const bondResult = compileBondToken(smarts, pos);
     if (bondResult !== null) {
       pendingBondPred = bondResult.pred;
+      pendingBondProps = bondResult.props ?? null;
       pos += bondResult.len;
       continue;
     }
@@ -176,12 +183,14 @@ export function parseSMARTS(smarts) {
       continue;
     }
 
-    // Unknown character — skip silently
-    pos++;
+    throw new Error(`parseSMARTS: invalid character '${ch}' at pos ${pos}`);
   }
 
   if (branchStack.length > 0) {
     throw new Error('parseSMARTS: unclosed \'(\'');
+  }
+  if (ringOpens.size > 0) {
+    throw new Error('parseSMARTS: unclosed ring closure');
   }
 
   return mol;

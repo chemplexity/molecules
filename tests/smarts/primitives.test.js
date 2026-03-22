@@ -119,6 +119,24 @@ describe('compileAtomExpr — formal charge', () => {
   it('-1 does not match neutral O', () => assert.equal(test('-1', 'O'), false));
 });
 
+describe('compileAtomExpr — bracket hydrogen semantics', () => {
+  it('[H] matches elemental hydrogen, not hetero atoms with one H', () => {
+    const h2 = parseSMILES('[H][H]');
+    const h = [...h2.atoms.values()].find(a => a.name === 'H');
+    assert.equal(compileAtomExpr('H')(h, h2), true);
+
+    const hydroxide = parseSMILES('[OH-]');
+    const o = [...hydroxide.atoms.values()].find(a => a.name === 'O');
+    assert.equal(compileAtomExpr('H')(o, hydroxide), false);
+  });
+
+  it('[H+] matches proton via element + charge semantics', () => {
+    const proton = parseSMILES('[H+]');
+    const h = proton.atoms.values().next().value;
+    assert.equal(compileAtomExpr('H+')(h, proton), true);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Degree (D)
 // ---------------------------------------------------------------------------

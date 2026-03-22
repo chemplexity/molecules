@@ -484,7 +484,9 @@ div.tooltip td:first-child {
     position: absolute;
     bottom: 10px;
     left: 10px;
-    display: block;
+    display: flex;
+    gap: 8px;
+    align-items: center;
     z-index: 10;
 }
 
@@ -501,13 +503,25 @@ div.tooltip td:first-child {
     align-items: center;
     justify-content: center;
     box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-    transition: background 0.15s;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
     padding: 0;
 }
 
 #clean-controls button:hover {
     background: #f0f0f0;
     color: #333;
+}
+
+#pan-mode-btn.active,
+#select-mode-btn.active {
+    background: #5090f0;
+    color: #fff;
+    border-color: #3060c0;
+}
+
+#pan-mode-btn.active:hover,
+#select-mode-btn.active:hover {
+    background: #4080e0;
 }
 
 #force-controls #copy-force-png-btn {
@@ -607,6 +621,8 @@ div.tooltip td:first-child {
                 <button id="save-png-btn" title="Copy 2D structure as PNG to clipboard" onclick="savePng2d()">PNG</button>
             </div>
             <div id="clean-controls">
+                <button id="pan-mode-btn" class="active" title="Pan / zoom mode" onclick="togglePanMode()">🤚</button>
+                <button id="select-mode-btn" title="Selection mode — drag to select atoms and bonds" onclick="toggleSelectMode()">⬚</button>
                 <button id="clean-2d-btn" title="Clean 2D layout" onclick="cleanLayout2d()">🧹</button>
             </div>
         </div>
@@ -1001,9 +1017,111 @@ const g = svg.append('g');
 
 const zoom = d3.zoom()
     .scaleExtent([0.05, 30])
+    .filter(event => {
+        // In 2D mode with selection active: block drag-to-pan on background
+        // so mousedown starts rubber-band selection instead.
+        // Scroll-to-zoom and pinch-zoom are unaffected.
+        if (_selectMode && mode === '2d' && _mol2d &&
+                event.type === 'mousedown' && event.button === 0) {
+            return false;
+        }
+        return !event.ctrlKey && !event.button;
+    })
     .on('zoom', event => g.attr('transform', event.transform));
 
 svg.call(zoom);
+
+// ---------------------------------------------------------------------------
+// ══ RUBBER-BAND SELECTION (2D mode) ═══════════════════════════════════════
+// ---------------------------------------------------------------------------
+
+// Overlay rect drawn directly on the SVG (outside the zoomed <g>) so it
+// stays in screen-space and doesn't scale with zoom.
+const selectionRect = svg.append('rect')
+    .attr('class', 'selection-rect')
+    .attr('fill', 'rgba(100, 160, 255, 0.12)')
+    .attr('stroke', 'rgb(80, 140, 255)')
+    .attr('stroke-width', 1.5)
+    .attr('stroke-dasharray', '5,3')
+    .attr('pointer-events', 'none')
+    .style('display', 'none');
+
+let _selDragging = false;
+let _selStart    = null; // {x,y} in SVG element coords
+
+svg.on('mousedown.selection', function(event) {
+    if (!_selectMode || mode !== '2d' || !_mol2d) return;
+    if (event.button !== 0) return;
+    // Don't start selection when clicking directly on an atom or bond.
+    if (event.target.closest('.atom-hit, .bond-hit')) return;
+
+    const [x, y] = d3.pointer(event, svg.node());
+    _selDragging = true;
+    _selStart    = { x, y };
+
+    selectionRect
+        .attr('x', x).attr('y', y)
+        .attr('width', 0).attr('height', 0)
+        .style('display', null);
+
+    event.preventDefault();
+});
+
+svg.on('mousemove.selection', function(event) {
+    if (!_selDragging) return;
+    const [x, y] = d3.pointer(event, svg.node());
+    const rx = Math.min(_selStart.x, x), ry = Math.min(_selStart.y, y);
+    selectionRect
+        .attr('x', rx).attr('y', ry)
+        .attr('width', Math.abs(x - _selStart.x))
+        .attr('height', Math.abs(y - _selStart.y));
+});
+
+svg.on('mouseup.selection', function(event) {
+    if (!_selDragging) return;
+    _selDragging = false;
+    selectionRect.style('display', 'none');
+    if (!_mol2d) return;
+
+    const [x, y] = d3.pointer(event, svg.node());
+    const rw = Math.abs(x - _selStart.x);
+    const rh = Math.abs(y - _selStart.y);
+
+    // A tiny drag (click) clears the selection.
+    if (rw < 5 && rh < 5) {
+        _selectedAtomIds.clear();
+        _selectedBondIds.clear();
+        draw2d();
+        return;
+    }
+
+    const rx = Math.min(_selStart.x, x);
+    const ry = Math.min(_selStart.y, y);
+    const transform = d3.zoomTransform(svg.node());
+
+    _selectedAtomIds.clear();
+    _selectedBondIds.clear();
+
+    const atoms = [..._mol2d.atoms.values()].filter(a => a.x != null && a.visible !== false);
+    for (const atom of atoms) {
+        const { x: gX, y: gY } = _toSVGPt2d(atom);
+        const sx = transform.applyX(gX);
+        const sy = transform.applyY(gY);
+        if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {
+            _selectedAtomIds.add(atom.id);
+        }
+    }
+
+    for (const bond of _mol2d.bonds.values()) {
+        const [ba1, ba2] = bond.getAtomObjects(_mol2d);
+        if (!ba1 || !ba2 || ba1.visible === false || ba2.visible === false) continue;
+        if (_selectedAtomIds.has(ba1.id) && _selectedAtomIds.has(ba2.id)) {
+            _selectedBondIds.add(bond.id);
+        }
+    }
+
+    draw2d();
+});
 
 // ---------------------------------------------------------------------------
 // ══ FORCE LAYOUT ══════════════════════════════════════════════════════════
@@ -1435,6 +1553,58 @@ function applyForceHighlights() {
     }
 }
 
+function _redraw2dSelection() {
+    g.select('g.atom-selection').remove();
+    if (_selectedAtomIds.size === 0 || !_mol2d) return;
+
+    const mol      = _mol2d;
+    const hCounts  = _hCounts2d;
+    const toSVGPt  = _toSVGPt2d;
+    const atoms    = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
+
+    const SEL_COLOR = 'rgb(100, 160, 255)';
+    const SEL_OL   = 'rgb(40,  100, 210)';
+    const OL = 2;
+
+    // Insert behind the bond layer (same stacking as fg highlights).
+    const selLayer = g.insert('g', 'g.bonds').attr('class', 'atom-selection').attr('opacity', 0.45);
+
+    const mBonds = [];
+    for (const bond of mol.bonds.values()) {
+        if (!_selectedBondIds.has(bond.id)) continue;
+        const [ba1, ba2] = bond.getAtomObjects(mol);
+        if (!ba1 || !ba2 || ba1.x == null || ba2.x == null) continue;
+        if (ba1.visible === false || ba2.visible === false) continue;
+        const p1 = toSVGPt(ba1), p2 = toSVGPt(ba2);
+        const r1 = Math.max(labelHalfW(getAtomLabel(ba1, hCounts, toSVGPt, mol) || ba1.name, FONT_SIZE), 10) + 5;
+        const r2 = Math.max(labelHalfW(getAtomLabel(ba2, hCounts, toSVGPt, mol) || ba2.name, FONT_SIZE), 10) + 5;
+        mBonds.push({ p1, p2, w: Math.min(r1, r2) * 2 });
+    }
+    const mAtoms = [];
+    for (const atom of atoms) {
+        if (!_selectedAtomIds.has(atom.id)) continue;
+        const { x, y } = toSVGPt(atom);
+        const r = Math.max(labelHalfW(getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name, FONT_SIZE), 10) + 5;
+        mAtoms.push({ x, y, r });
+    }
+
+    const addL = (stroke, extra) => {
+        for (const { p1, p2, w } of mBonds)
+            selLayer.append('line')
+                .attr('x1', p1.x).attr('y1', p1.y).attr('x2', p2.x).attr('y2', p2.y)
+                .attr('stroke', stroke).attr('stroke-width', w + extra * 2)
+                .attr('stroke-linecap', 'round');
+    };
+    const addC = (fill, extra) => {
+        for (const { x, y, r } of mAtoms)
+            selLayer.append('circle')
+                .attr('cx', x).attr('cy', y).attr('r', r + extra)
+                .attr('fill', fill).attr('stroke', 'none');
+    };
+    addL(SEL_OL, OL); addC(SEL_OL, OL);
+    addL(SEL_COLOR, 0); addC(SEL_COLOR, 0);
+}
+
 // ---------------------------------------------------------------------------
 // ══ 2D STRUCTURE ══════════════════════════════════════════════════════════
 // ---------------------------------------------------------------------------
@@ -1482,6 +1652,10 @@ let _stereoMap2d = null;  // Map<bondId, 'wedge'|'dash'>
 let _highlightedAtomIds  = new Set();
 let _highlightedAtomSets = []; // one Set<atomId> per SMARTS match instance
 let _highlightMol        = null; // molecule used for last updateFunctionalGroups call
+
+let _selectedAtomIds = new Set();
+let _selectedBondIds = new Set();
+let _selectMode      = false;
 
 function _toSVGPt2d(a) {
     const W = plotEl.clientWidth  || 600;
@@ -1653,6 +1827,8 @@ function draw2d() {
 
     // Layer 0 — functional-group highlights (behind bonds)
     _redraw2dHighlights();
+    // Layer 0b — selection highlights (behind bonds, in front of fg highlights)
+    _redraw2dSelection();
 
     // Layer 1 — bonds (each wrapped in a <g data-bond-id> for incremental drag updates)
     const chiralCenterIds = new Set(mol.getChiralCenters());
@@ -1781,6 +1957,7 @@ function draw2d() {
                     _drawBond(bg, bi.bond, sa1, sa2, mol, toSVGPt, stereoType ?? null);
                 }
                 _redraw2dHighlights();
+                _redraw2dSelection();
             })
             .on('end', function() {
                 hitGroup.select('circle').style('cursor', 'grab');
@@ -1876,6 +2053,8 @@ function render2d(mol) {
     _cx2d        = cx;
     _cy2d        = cy;
     _stereoMap2d = stereoMap;
+    _selectedAtomIds.clear();
+    _selectedBondIds.clear();
 
     draw2d();
 
@@ -2077,6 +2256,23 @@ window.cleanLayout2d = function() {
     });
     fitCurrent2dView();
     draw2d();
+};
+
+window.togglePanMode = function() {
+    if (!_selectMode) return; // already in pan mode
+    _selectMode = false;
+    document.getElementById('pan-mode-btn').classList.add('active');
+    document.getElementById('select-mode-btn').classList.remove('active');
+    _selectedAtomIds.clear();
+    _selectedBondIds.clear();
+    if (_mol2d) draw2d();
+};
+
+window.toggleSelectMode = function() {
+    if (_selectMode) return; // already in selection mode
+    _selectMode = true;
+    document.getElementById('select-mode-btn').classList.add('active');
+    document.getElementById('pan-mode-btn').classList.remove('active');
 };
 
 // ---------------------------------------------------------------------------

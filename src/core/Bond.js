@@ -264,7 +264,7 @@ export class Bond {
 
     const isConjugatedAmideLike = () => {
       const endpoints = [[atomA, atomB, idA], [atomB, atomA, idB]];
-      for (const [hetero, center, heteroId] of endpoints) {
+      for (const [hetero, center, _heteroId] of endpoints) {
         if (!hetero || !center) {
           continue;
         }
