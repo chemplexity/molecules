@@ -336,7 +336,10 @@ export function kekulize(mol) {
     }
   }
 
-  // An atom can hold a π bond only when baseValence − sigmaBO ≥ 1.
+  // An atom can hold a π bond only when its available sigma-frame valence
+  // leaves room for one more bond order. Positive charges can expand that
+  // capacity for common aromatic heteroatoms (for example pyrylium O+ and
+  // pyridinium [nH+]), while negative charges can reduce it.
   // Examples that are correctly excluded:
   //   Indolizine N (3 aro bonds, val 3): 3 − 3 = 0 → lone-pair donor, no C=N
   //   Furan O     (2 aro bonds, val 2): 2 − 2 = 0 → lone-pair donor, no C=O
@@ -345,8 +348,9 @@ export function kekulize(mol) {
   const canHaveDouble = new Set();
   for (const id of aroAtomIds) {
     const atom = mol.atoms.get(id);
-    const base = SIGMA_VAL[atom.name] ?? 4;
-    if (base - sigmaBO.get(id) >= 1) {
+    const neutralBase = SIGMA_VAL[atom.name] ?? 4;
+    const adjustedBase = Math.max(0, neutralBase + (atom?.properties.charge ?? 0));
+    if (adjustedBase - sigmaBO.get(id) >= 1) {
       canHaveDouble.add(id);
     }
   }

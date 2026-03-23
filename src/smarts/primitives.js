@@ -295,7 +295,7 @@ export function compileBareAtomToken(smarts, pos) {
  *   `-n`       formal charge -n  (`-` alone = any negative charge)
  *   `Hn`       total H count = n  (`H` alone = 1)
  *   `Dn`       heavy-atom degree = n  (`D` alone = 1)
- *   `Rn`       in any ring when n=0 means not in ring; n>0 = in exactly n rings (pair-BFS)
+ *   `Rn`       in any ring when n=0 means not in ring; n>0 = in exactly n rings (SSSR)
  *   `rn`       in a ring of exactly size n  (`r` alone = any ring)
  *   `Xn`       total connectivity (heavy + H bonds) = n
  *   `vn`       valence (sum of bond orders) = n

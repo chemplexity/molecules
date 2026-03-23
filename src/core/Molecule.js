@@ -7,180 +7,6 @@ import elements from '../data/elements.js';
 import { findSubgraphMappings as _vf2Mappings, findFirstSubgraphMapping as _vf2First, matchesSubgraph as _vf2Matches } from '../algorithms/vf2.js';
 import { findSMARTS as _smartsFind, firstSMARTS as _smartsFirst, matchesSMARTS as _smartsMatches } from '../smarts/index.js';
 
-// ---------------------------------------------------------------------------
-// CIP priority helpers (module-private)
-// ---------------------------------------------------------------------------
-
-/**
- * CIP priority key for an atom, encoding both atomic number (Rule 1) and
- * mass number (Rule 2: same-Z atoms ranked by descending mass).
- *
- * Encoding: key = Z * 1000 + massNumber
- * Z ≤ 118, massNumber ≤ ~300, so keys stay well within safe-integer range.
- * For atoms without an explicit isotope the standard mass is used, which
- * keeps all non-labelled atoms of the same element at equal priority.
- */
-function _cipZ(atomId, mol) {
-  const atom = mol.atoms.get(atomId);
-  if (!atom) {
-    return 0;
-  }
-  const p   = atom.properties;
-  const el  = elements[atom.name];
-  const Z   = p.protons   ?? el?.protons   ?? 0;
-  const N   = p.neutrons  ?? el?.neutrons  ?? Z;   // fallback: N ≈ Z
-  return Z * 1000 + Math.round(Z + N);
-}
-
-function _buildCIPHierarchy(startId, excludeId, mol, maxDepth = 10) {
-  const result = [[_cipZ(startId, mol)]];
-  let frontier = [{ id: startId, parentId: excludeId }];
-  const visited = new Set([excludeId, startId]);
-
-  for (let depth = 0; depth < maxDepth; depth++) {
-    const levelZ = [];
-    const nextFrontier = [];
-
-    for (const { id, parentId } of frontier) {
-      const atom = mol.atoms.get(id);
-      if (!atom) {
-        continue;
-      }
-
-      for (const bId of atom.bonds) {
-        const b = mol.bonds.get(bId);
-        if (!b) {
-          continue;
-        }
-        if (b.getOtherAtom(id) !== parentId) {
-          continue;
-        }
-        const order = Math.round(b.properties.order ?? 1);
-        const pZ = _cipZ(parentId, mol);
-        for (let p = 1; p < order; p++) {
-          levelZ.push(pZ);
-        }
-        break;
-      }
-
-      for (const bId of atom.bonds) {
-        const b = mol.bonds.get(bId);
-        if (!b) {
-          continue;
-        }
-        const otherId = b.getOtherAtom(id);
-        if (otherId === parentId) {
-          continue;
-        }
-        const order = Math.round(b.properties.order ?? 1);
-        const oZ = _cipZ(otherId, mol);
-        levelZ.push(oZ);
-        for (let p = 1; p < order; p++) {
-          levelZ.push(oZ);
-        }
-        if (!visited.has(otherId)) {
-          visited.add(otherId);
-          nextFrontier.push({ id: otherId, parentId: id });
-        }
-      }
-    }
-
-    if (levelZ.length === 0) {
-      break;
-    }
-    levelZ.sort((a, b) => b - a);
-    result.push(levelZ);
-    frontier = nextFrontier;
-  }
-
-  return result;
-}
-
-function _compareCIPHierarchies(listA, listB) {
-  const maxLen = Math.max(listA.length, listB.length);
-  for (let i = 0; i < maxLen; i++) {
-    const a = listA[i] ?? [];
-    const b = listB[i] ?? [];
-    const maxItems = Math.max(a.length, b.length);
-    for (let j = 0; j < maxItems; j++) {
-      const az = a[j] ?? 0;
-      const bz = b[j] ?? 0;
-      if (az !== bz) {
-        return az > bz ? 1 : -1;
-      }
-    }
-  }
-  return 0;
-}
-
-/**
- * Assigns CIP priority ranks to the neighbours of `centerId`.
- * Returns a parallel array of ranks (1 = lowest). Ties receive the same rank.
- *
- * @param {string}   centerId
- * @param {string[]} neighborIds
- * @param {Molecule} mol
- * @returns {number[]}
- */
-export function assignCIPRanks(centerId, neighborIds, mol) {
-  const entries = neighborIds.map(nId => ({
-    id: nId,
-    hier: _buildCIPHierarchy(nId, centerId, mol)
-  }));
-  entries.sort((a, b) => _compareCIPHierarchies(a.hier, b.hier));
-
-  const rankOf = new Map();
-  let rank = 1;
-  for (let i = 0; i < entries.length; i++) {
-    if (i > 0 && _compareCIPHierarchies(entries[i].hier, entries[i - 1].hier) !== 0) {
-      rank = i + 1;
-    }
-    rankOf.set(entries[i].id, rank);
-  }
-
-  return neighborIds.map(id => rankOf.get(id) ?? 0);
-}
-
-function _permSign(fromList, toList) {
-  const sigma = toList.map(x => fromList.indexOf(x));
-  let inversions = 0;
-  for (let i = 0; i < sigma.length; i++) {
-    for (let j = i + 1; j < sigma.length; j++) {
-      if (sigma[i] > sigma[j]) {
-        inversions++;
-      }
-    }
-  }
-  return inversions % 2 === 0 ? 1 : -1;
-}
-
-/**
- * Computes the CIP R/S designation for a tetrahedral chiral center.
- *
- * @param {'@'|'@@'} chiralToken
- * @param {string[]} smilesNeighborIds - 4 neighbour IDs in SMILES chirality order.
- * @param {string}   centerId
- * @param {Molecule} mol
- * @returns {'R'|'S'|null}
- */
-export function computeRS(chiralToken, smilesNeighborIds, centerId, mol) {
-  if (smilesNeighborIds.length !== 4) {
-    return null;
-  }
-  const ranks = assignCIPRanks(centerId, smilesNeighborIds, mol);
-  if (new Set(ranks).size < 4) {
-    return null;
-  }
-
-  const indexed = smilesNeighborIds.map((id, i) => ({ id, rank: ranks[i] }));
-  indexed.sort((a, b) => a.rank - b.rank);
-  const sortedIds = indexed.map(x => x.id);
-
-  const pSign     = _permSign(smilesNeighborIds, sortedIds);
-  const smilesSign = chiralToken === '@@' ? 1 : -1;
-  return smilesSign * pSign > 0 ? 'R' : 'S';
-}
-
 /**
  * Represents a molecular graph where atoms are vertices and bonds are edges.
  */
@@ -277,6 +103,7 @@ export class Molecule {
    * @param {string} atomA - ID of the first atom.
    * @param {string} atomB - ID of the second atom.
    * @param {object} [properties={}] - Initial bond properties (order, aromatic, …).
+   * @param {boolean} [implicitHydrogen=true] - When true, implicit hydrogen counts on both atoms are recomputed after the bond is added.
    * @returns {Bond} The newly created bond.
    * @throws {Error} If either atom does not exist in the molecule.
    */
@@ -489,6 +316,53 @@ export class Molecule {
       id = `${this._nextBondId++}`;
     } while (this.bonds.has(id));
     return id;
+  }
+
+  /**
+   * Creates a structural copy of an atom for molecule-level copy operations.
+   *
+   * Preserves chemistry state, coordinates, and supported display metadata.
+   *
+   * @private
+   * @param {Atom} atom
+   * @returns {Atom}
+   */
+  _copyAtom(atom) {
+    const copy = new Atom(atom.id, atom.name, { ...atom.properties });
+    copy.uuid = atom.uuid;
+    copy.tags = [...atom.tags];
+    copy.x = atom.x;
+    copy.y = atom.y;
+    copy.z = atom.z;
+    copy.visible = atom.visible;
+    return copy;
+  }
+
+  /**
+   * Creates a structural copy of a bond for molecule-level copy operations.
+   *
+   * @private
+   * @param {Bond} bond
+   * @returns {Bond}
+   */
+  _copyBond(bond) {
+    const copy = new Bond(bond.id, [...bond.atoms], { ...bond.properties });
+    copy.uuid = bond.uuid;
+    copy.tags = [...bond.tags];
+    return copy;
+  }
+
+  /**
+   * Rebuilds the canonical atom-pair → bond-ID index from the current bond set.
+   *
+   * @private
+   */
+  _rebuildBondIndex() {
+    this._bondIndex = new Map();
+    for (const bond of this.bonds.values()) {
+      const [a, b] = bond.atoms;
+      this._bondIndex.set(a < b ? `${a},${b}` : `${b},${a}`, bond.id);
+    }
   }
 
   /**
@@ -785,7 +659,7 @@ export class Molecule {
   /**
    * Returns the fundamental cycle basis of the molecular graph as an array of
    * atom-ID arrays. Each array lists the atom IDs that form one ring, in the
-   * order they were discovered by DFS.
+   * order they were discovered by BFS.
    *
    * The number of rings equals the cyclomatic number E − V + C, where C is the
    * number of connected components.
@@ -892,10 +766,7 @@ export class Molecule {
       if (!atom) {
         continue;
       }
-      const copy = new Atom(atom.id, atom.name, { ...atom.properties });
-      copy.uuid = atom.uuid;
-      copy.tags = [...atom.tags];
-      copy.visible = atom.visible;
+      const copy = this._copyAtom(atom);
       sub.atoms.set(copy.id, copy);
     }
 
@@ -904,14 +775,13 @@ export class Molecule {
       if (!idSet.has(a) || !idSet.has(b)) {
         continue;
       }
-      const copy = new Bond(bond.id, [...bond.atoms], { ...bond.properties });
-      copy.uuid = bond.uuid;
-      copy.tags = [...bond.tags];
+      const copy = this._copyBond(bond);
       sub.bonds.set(copy.id, copy);
       sub.atoms.get(a).bonds.push(copy.id);
       sub.atoms.get(b).bonds.push(copy.id);
     }
 
+    sub._rebuildBondIndex();
     sub._recomputeProperties();
     return sub;
   }
@@ -1045,42 +915,56 @@ export class Molecule {
   /**
    * Returns a new `Molecule` that contains all atoms and bonds from both this
    * molecule and `other`. The two molecules remain disconnected in the result
-   * unless they already share atom IDs (which throws).
+   * unless the caller later adds bonds between them.
    *
    * @param {Molecule} other
    * @returns {Molecule}
-   * @throws {Error} If any atom or bond ID exists in both molecules.
    */
   merge(other) {
-    for (const id of other.atoms.keys()) {
-      if (this.atoms.has(id)) {
-        throw new Error(`Atom ID collision '${id}' when merging molecules.`);
-      }
-    }
-    for (const id of other.bonds.keys()) {
-      if (this.bonds.has(id)) {
-        throw new Error(`Bond ID collision '${id}' when merging molecules.`);
-      }
-    }
     const combined = new Molecule();
 
-    for (const mol of [this, other]) {
-      for (const atom of mol.atoms.values()) {
-        const copy = new Atom(atom.id, atom.name, { ...atom.properties });
-        copy.uuid = atom.uuid;
-        copy.tags = [...atom.tags];
-        combined.atoms.set(copy.id, copy);
+    for (const atom of this.atoms.values()) {
+      const copy = this._copyAtom(atom);
+      combined.atoms.set(copy.id, copy);
+    }
+    for (const bond of this.bonds.values()) {
+      const copy = this._copyBond(bond);
+      combined.bonds.set(copy.id, copy);
+      combined.atoms.get(copy.atoms[0]).bonds.push(copy.id);
+      combined.atoms.get(copy.atoms[1]).bonds.push(copy.id);
+    }
+
+    const atomIdMap = new Map();
+    for (const atom of other.atoms.values()) {
+      let nextId = atom.id;
+      if (combined.atoms.has(nextId)) {
+        nextId = combined._generateAutoAtomId();
       }
-      for (const bond of mol.bonds.values()) {
-        const copy = new Bond(bond.id, [...bond.atoms], { ...bond.properties });
-        copy.uuid = bond.uuid;
-        copy.tags = [...bond.tags];
-        combined.bonds.set(copy.id, copy);
-        combined.atoms.get(bond.atoms[0]).bonds.push(copy.id);
-        combined.atoms.get(bond.atoms[1]).bonds.push(copy.id);
+      atomIdMap.set(atom.id, nextId);
+      const copy = other._copyAtom(atom);
+      copy.id = nextId;
+      combined.atoms.set(copy.id, copy);
+    }
+
+    for (const bond of other.bonds.values()) {
+      let nextId = bond.id;
+      if (combined.bonds.has(nextId)) {
+        nextId = combined._generateAutoBondId();
+      }
+      const copy = other._copyBond(bond);
+      copy.id = nextId;
+      copy.atoms = bond.atoms.map(atomId => atomIdMap.get(atomId) ?? atomId);
+      combined.bonds.set(copy.id, copy);
+      for (const atomId of copy.atoms) {
+        combined.atoms.get(atomId).bonds.push(copy.id);
       }
     }
 
+    for (const atom of combined.atoms.values()) {
+      atom.bonds = [...new Set(atom.bonds)];
+    }
+
+    combined._rebuildBondIndex();
     combined._recomputeProperties();
     return combined;
   }
@@ -1335,4 +1219,178 @@ function _hybridizationOf(atom, mol) {
     return 'sp2';
   }
   return 'sp3';
+}
+
+// ---------------------------------------------------------------------------
+// CIP priority helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * CIP priority key for an atom, encoding both atomic number (Rule 1) and
+ * mass number (Rule 2: same-Z atoms ranked by descending mass).
+ *
+ * Encoding: key = Z * 1000 + massNumber
+ * Z ≤ 118, massNumber ≤ ~300, so keys stay well within safe-integer range.
+ * For atoms without an explicit isotope the standard mass is used, which
+ * keeps all non-labelled atoms of the same element at equal priority.
+ */
+function _cipZ(atomId, mol) {
+  const atom = mol.atoms.get(atomId);
+  if (!atom) {
+    return 0;
+  }
+  const p   = atom.properties;
+  const el  = elements[atom.name];
+  const Z   = p.protons   ?? el?.protons   ?? 0;
+  const N   = p.neutrons  ?? el?.neutrons  ?? Z;   // fallback: N ≈ Z
+  return Z * 1000 + Math.round(Z + N);
+}
+
+function _buildCIPHierarchy(startId, excludeId, mol, maxDepth = 10) {
+  const result = [[_cipZ(startId, mol)]];
+  let frontier = [{ id: startId, parentId: excludeId }];
+  const visited = new Set([excludeId, startId]);
+
+  for (let depth = 0; depth < maxDepth; depth++) {
+    const levelZ = [];
+    const nextFrontier = [];
+
+    for (const { id, parentId } of frontier) {
+      const atom = mol.atoms.get(id);
+      if (!atom) {
+        continue;
+      }
+
+      for (const bId of atom.bonds) {
+        const b = mol.bonds.get(bId);
+        if (!b) {
+          continue;
+        }
+        if (b.getOtherAtom(id) !== parentId) {
+          continue;
+        }
+        const order = Math.round(b.properties.order ?? 1);
+        const pZ = _cipZ(parentId, mol);
+        for (let p = 1; p < order; p++) {
+          levelZ.push(pZ);
+        }
+        break;
+      }
+
+      for (const bId of atom.bonds) {
+        const b = mol.bonds.get(bId);
+        if (!b) {
+          continue;
+        }
+        const otherId = b.getOtherAtom(id);
+        if (otherId === parentId) {
+          continue;
+        }
+        const order = Math.round(b.properties.order ?? 1);
+        const oZ = _cipZ(otherId, mol);
+        levelZ.push(oZ);
+        for (let p = 1; p < order; p++) {
+          levelZ.push(oZ);
+        }
+        if (!visited.has(otherId)) {
+          visited.add(otherId);
+          nextFrontier.push({ id: otherId, parentId: id });
+        }
+      }
+    }
+
+    if (levelZ.length === 0) {
+      break;
+    }
+    levelZ.sort((a, b) => b - a);
+    result.push(levelZ);
+    frontier = nextFrontier;
+  }
+
+  return result;
+}
+
+function _compareCIPHierarchies(listA, listB) {
+  const maxLen = Math.max(listA.length, listB.length);
+  for (let i = 0; i < maxLen; i++) {
+    const a = listA[i] ?? [];
+    const b = listB[i] ?? [];
+    const maxItems = Math.max(a.length, b.length);
+    for (let j = 0; j < maxItems; j++) {
+      const az = a[j] ?? 0;
+      const bz = b[j] ?? 0;
+      if (az !== bz) {
+        return az > bz ? 1 : -1;
+      }
+    }
+  }
+  return 0;
+}
+
+/**
+ * Assigns CIP priority ranks to the neighbours of `centerId`.
+ * Returns a parallel array of ranks (1 = lowest). Ties receive the same rank.
+ *
+ * @param {string}   centerId
+ * @param {string[]} neighborIds
+ * @param {Molecule} mol
+ * @returns {number[]}
+ */
+export function assignCIPRanks(centerId, neighborIds, mol) {
+  const entries = neighborIds.map(nId => ({
+    id: nId,
+    hier: _buildCIPHierarchy(nId, centerId, mol)
+  }));
+  entries.sort((a, b) => _compareCIPHierarchies(a.hier, b.hier));
+
+  const rankOf = new Map();
+  let rank = 1;
+  for (let i = 0; i < entries.length; i++) {
+    if (i > 0 && _compareCIPHierarchies(entries[i].hier, entries[i - 1].hier) !== 0) {
+      rank = i + 1;
+    }
+    rankOf.set(entries[i].id, rank);
+  }
+
+  return neighborIds.map(id => rankOf.get(id) ?? 0);
+}
+
+function _permSign(fromList, toList) {
+  const sigma = toList.map(x => fromList.indexOf(x));
+  let inversions = 0;
+  for (let i = 0; i < sigma.length; i++) {
+    for (let j = i + 1; j < sigma.length; j++) {
+      if (sigma[i] > sigma[j]) {
+        inversions++;
+      }
+    }
+  }
+  return inversions % 2 === 0 ? 1 : -1;
+}
+
+/**
+ * Computes the CIP R/S designation for a tetrahedral chiral center.
+ *
+ * @param {'@'|'@@'} chiralToken
+ * @param {string[]} smilesNeighborIds - 4 neighbour IDs in SMILES chirality order.
+ * @param {string}   centerId
+ * @param {Molecule} mol
+ * @returns {'R'|'S'|null}
+ */
+export function computeRS(chiralToken, smilesNeighborIds, centerId, mol) {
+  if (smilesNeighborIds.length !== 4) {
+    return null;
+  }
+  const ranks = assignCIPRanks(centerId, smilesNeighborIds, mol);
+  if (new Set(ranks).size < 4) {
+    return null;
+  }
+
+  const indexed = smilesNeighborIds.map((id, i) => ({ id, rank: ranks[i] }));
+  indexed.sort((a, b) => a.rank - b.rank);
+  const sortedIds = indexed.map(x => x.id);
+
+  const pSign     = _permSign(smilesNeighborIds, sortedIds);
+  const smilesSign = chiralToken === '@@' ? 1 : -1;
+  return smilesSign * pSign > 0 ? 'R' : 'S';
 }

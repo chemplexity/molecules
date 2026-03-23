@@ -492,6 +492,7 @@ function smallestRingForBond(mol, bond, allowedAtoms) {
  *
  * @param {Molecule} mol
  * @param {string[]} heavyAtomIds - IDs of heavy atoms in the molecule.
+ * @param {number} [totalCharge=0] - Net formal charge of the molecule component; used to adjust valence targets when charge-bearing atoms are present.
  */
 function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
   const heavySet = new Set(heavyAtomIds);

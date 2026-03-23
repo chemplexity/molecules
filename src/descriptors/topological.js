@@ -51,7 +51,7 @@ function assertMolecule(mol, name) {
 // ---------------------------------------------------------------------------
 
 /**
- * Computes the Wiener index W = (1/2) * Σ D[i][j].
+ * Computes the Wiener index W = Σ D[i][j] for i < j.
  *
  * @param {number[][]} D - All-pairs shortest-path distance matrix.
  * @returns {number}

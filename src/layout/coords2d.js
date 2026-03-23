@@ -1,6 +1,7 @@
 /** @module layout/coords2d */
 
 import { morganRanks } from '../algorithms/morgan.js';
+import { assignCIPRanks } from '../core/Molecule.js';
 
 const DEFAULT_BOND_LENGTH = 1.5;
 const TWO_PI = 2 * Math.PI;
@@ -2185,6 +2186,102 @@ function collectSideAtoms(molecule, startId, blockedId) {
   return side;
 }
 
+function highestPriorityAlkeneSubstituentId(molecule, sp2Id, otherSp2Id) {
+  const neighborIds = _layoutNeighbors(molecule, sp2Id).filter(id => id !== otherSp2Id);
+  if (neighborIds.length === 0) {
+    return null;
+  }
+
+  const ranks = assignCIPRanks(sp2Id, neighborIds, molecule);
+  let bestId = null;
+  let bestRank = -Infinity;
+  let bestCount = 0;
+
+  for (let i = 0; i < neighborIds.length; i++) {
+    const rank = ranks[i] ?? 0;
+    if (rank > bestRank) {
+      bestRank = rank;
+      bestId = neighborIds[i];
+      bestCount = 1;
+    } else if (rank === bestRank) {
+      bestCount++;
+    }
+  }
+
+  return bestCount === 1 ? bestId : null;
+}
+
+function actualAlkeneStereoFromCoords(molecule, coords, bond) {
+  const [aId, bId] = bond.atoms;
+  const aPos = coords.get(aId);
+  const bPos = coords.get(bId);
+  if (!aPos || !bPos) {
+    return null;
+  }
+
+  const aSubId = highestPriorityAlkeneSubstituentId(molecule, aId, bId);
+  const bSubId = highestPriorityAlkeneSubstituentId(molecule, bId, aId);
+  if (!aSubId || !bSubId) {
+    return null;
+  }
+
+  const aSubPos = coords.get(aSubId);
+  const bSubPos = coords.get(bSubId);
+  if (!aSubPos || !bSubPos) {
+    return null;
+  }
+
+  const dx = bPos.x - aPos.x;
+  const dy = bPos.y - aPos.y;
+  const crossA = dx * (aSubPos.y - aPos.y) - dy * (aSubPos.x - aPos.x);
+  const crossB = dx * (bSubPos.y - bPos.y) - dy * (bSubPos.x - bPos.x);
+  if (Math.abs(crossA) < 1e-6 || Math.abs(crossB) < 1e-6) {
+    return null;
+  }
+
+  return Math.sign(crossA) === Math.sign(crossB) ? 'Z' : 'E';
+}
+
+function enforceAcyclicEZStereo(molecule, coords) {
+  const ringAtomIds = new Set(molecule.getRings().flat());
+
+  for (const bond of molecule.bonds.values()) {
+    if (bond.properties.aromatic || (bond.properties.order ?? 1) !== 2) {
+      continue;
+    }
+
+    const targetStereo = molecule.getEZStereo(bond.id);
+    if (targetStereo == null) {
+      continue;
+    }
+
+    const [aId, bId] = bond.atoms;
+    if (ringAtomIds.has(aId) || ringAtomIds.has(bId)) {
+      continue;
+    }
+
+    const actualStereo = actualAlkeneStereoFromCoords(molecule, coords, bond);
+    if (actualStereo == null || actualStereo === targetStereo) {
+      continue;
+    }
+
+    const sideA = collectSideAtoms(molecule, aId, bId);
+    const sideB = collectSideAtoms(molecule, bId, aId);
+    const primarySide = countHeavyAtoms(molecule, sideA) <= countHeavyAtoms(molecule, sideB) ? sideA : sideB;
+    const fallbackSide = primarySide === sideA ? sideB : sideA;
+
+    for (const side of [primarySide, fallbackSide]) {
+      const reflected = reflectSubtreeCoords(coords, side, aId, bId);
+      for (const [atomId, pos] of reflected) {
+        coords.set(atomId, pos);
+      }
+      if (actualAlkeneStereoFromCoords(molecule, coords, bond) === targetStereo) {
+        break;
+      }
+    }
+  }
+}
+
 function optimizeAcyclicMultipleBondSubtrees(molecule, coords, bondLength) {
   const isH = id => molecule.atoms.get(id)?.name === 'H';
   const heavyDegree = id => _layoutNeighbors(molecule, id).filter(nb => !isH(nb)).length;
@@ -3690,6 +3787,7 @@ function _separateOverlappingComponents(molecule, coords, bondLength) {
  * @param {boolean} [options.freezeChiralCenters=false]
  * @param {boolean} [options.allowBranchReflect=true]
  * @param {number[]} [options.rotateAngles] Rotation candidates in radians.
+ * @param {number} [options.maxCandidatesPerPass=24] - Maximum number of rotatable-bond candidates evaluated per pass. Capping this keeps refinement interactive for large molecules.
  * @returns {Map<string, { x: number, y: number }>}
  */
 export function refineExistingCoords(molecule, options = {}) {
@@ -4828,7 +4926,13 @@ export function generateCoords(molecule, options = {}) {
     }
   }
 
-  // Phase E — write back coordinates to atom.properties.
+  // Phase I.5 — enforce simple acyclic alkene E/Z geometry.
+  // This pass is intentionally conservative: it only corrects non-ring
+  // double bonds whose intended E/Z assignment is explicitly derivable from
+  // the stored directional bond markers.
+  enforceAcyclicEZStereo(molecule, coords);
+
+  // Phase J — write back coordinates to atom.properties.
   for (const [atomId, { x, y }] of coords) {
     const atom = molecule.atoms.get(atomId);
     if (atom) {

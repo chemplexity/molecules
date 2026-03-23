@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
 import { generateCoords } from '../../src/layout/index.js';
-import { getAtomLabel } from '../../src/layout/mol2d-helpers.js';
+import { getAtomLabel, kekulize } from '../../src/layout/mol2d-helpers.js';
 import { refineExistingCoords } from '../../src/layout/coords2d.js';
 import { parseINCHI } from '../../src/io/inchi.js';
 import { parseSMILES } from '../../src/io/smiles.js';
@@ -144,6 +144,14 @@ function bondLengthOf(mol, bond) {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
 
+function heavyBonds(mol) {
+  return [...mol.bonds.values()].filter(bond => {
+    const a = mol.atoms.get(bond.atoms[0]);
+    const b = mol.atoms.get(bond.atoms[1]);
+    return a?.name !== 'H' && b?.name !== 'H';
+  });
+}
+
 function heavyDistanceSignature(mol) {
   const heavyIds = [...mol.atoms.keys()].filter(id => mol.atoms.get(id)?.name !== 'H');
   const distances = [];
@@ -185,6 +193,23 @@ function angleDeg(a, b, c) {
 
 function approx(actual, expected, tol = 1e-6) {
   return Math.abs(actual - expected) <= tol;
+}
+
+function drawnAlkeneStereo(mol, leftSubId, leftSp2Id, rightSp2Id, rightSubId) {
+  const leftSub = mol.atoms.get(leftSubId);
+  const leftSp2 = mol.atoms.get(leftSp2Id);
+  const rightSp2 = mol.atoms.get(rightSp2Id);
+  const rightSub = mol.atoms.get(rightSubId);
+  assert.ok(leftSub && leftSp2 && rightSp2 && rightSub, 'expected alkene atoms to exist');
+
+  const dx = rightSp2.x - leftSp2.x;
+  const dy = rightSp2.y - leftSp2.y;
+  const crossLeft = dx * (leftSub.y - leftSp2.y) - dy * (leftSub.x - leftSp2.x);
+  const crossRight = dx * (rightSub.y - rightSp2.y) - dy * (rightSub.x - rightSp2.x);
+  assert.ok(Math.abs(crossLeft) > 1e-6, 'left substituent became collinear with the alkene axis');
+  assert.ok(Math.abs(crossRight) > 1e-6, 'right substituent became collinear with the alkene axis');
+
+  return Math.sign(crossLeft) === Math.sign(crossRight) ? 'Z' : 'E';
 }
 
 function preferredBackbonePath(mol) {
@@ -1470,6 +1495,44 @@ describe('generateCoords — alkene substituent geometry', () => {
       approx(angleDeg(carbon1, carbon2, fluorine2), 120, 1e-6),
       `right alkene substituent angle drifted: ${angleDeg(carbon1, carbon2, fluorine2).toFixed(3)}°`
     );
+  });
+
+  it('lays out trans difluoroethene with E geometry', () => {
+    const mol = parseSMILES('F/C=C/F');
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    assert.equal(drawnAlkeneStereo(mol, 'F1', 'C2', 'C3', 'F4'), 'E');
+  });
+
+  it('lays out cis difluoroethene with Z geometry', () => {
+    const mol = parseSMILES('F/C=C\\F');
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    assert.equal(drawnAlkeneStereo(mol, 'F1', 'C2', 'C3', 'F4'), 'Z');
+  });
+});
+
+describe('kekulize — charged aromatic InChI imports used by browser rendering', () => {
+  it('localizes the imidazolide-like anion before 2D drawing', () => {
+    const mol = parseINCHI('InChI=1S/C3H3N2/c1-2-5-3-4-1/h1-3H/q-1');
+
+    kekulize(mol);
+
+    const ringBonds = heavyBonds(mol).filter(bond => bond.properties.aromatic);
+    assert.equal(ringBonds.length, 5);
+    assert.equal(ringBonds.filter(bond => bond.properties.localizedOrder === 2).length, 2);
+    assert.equal(ringBonds.filter(bond => bond.properties.localizedOrder === 1).length, 3);
+  });
+
+  it('localizes the pyrylium-like cation before 2D drawing', () => {
+    const mol = parseINCHI('InChI=1S/C5H5O/c1-2-4-6-5-3-1/h1-5H/q+1');
+
+    kekulize(mol);
+
+    const ringBonds = heavyBonds(mol).filter(bond => bond.properties.aromatic);
+    assert.equal(ringBonds.length, 6);
+    assert.equal(ringBonds.filter(bond => bond.properties.localizedOrder === 2).length, 3);
+    assert.equal(ringBonds.filter(bond => bond.properties.localizedOrder === 1).length, 3);
   });
 });
 

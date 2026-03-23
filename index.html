@@ -1133,13 +1133,27 @@ function _finishSelectionDrag(event) {
             const sx = transform.applyX(node.x);
             const sy = transform.applyY(node.y);
             if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {
-                _selectedAtomIds.add(node.id);
+                if (additive) {
+                    if (_selectedAtomIds.has(node.id)) _selectedAtomIds.delete(node.id);
+                    else _selectedAtomIds.add(node.id);
+                } else {
+                    _selectedAtomIds.add(node.id);
+                }
             }
         }
 
         for (const link of simulation.force('link').links()) {
-            if (_selectedAtomIds.has(link.source.id) && _selectedAtomIds.has(link.target.id)) {
-                _selectedBondIds.add(link.id);
+            if (additive) {
+                if (_selectedBondIds.has(link.id) &&
+                    (!_selectedAtomIds.has(link.source.id) || !_selectedAtomIds.has(link.target.id))) {
+                    _selectedBondIds.delete(link.id);
+                } else if (_selectedAtomIds.has(link.source.id) && _selectedAtomIds.has(link.target.id)) {
+                    _selectedBondIds.add(link.id);
+                }
+            } else {
+                if (_selectedAtomIds.has(link.source.id) && _selectedAtomIds.has(link.target.id)) {
+                    _selectedBondIds.add(link.id);
+                }
             }
         }
 
@@ -1154,15 +1168,29 @@ function _finishSelectionDrag(event) {
         const sx = transform.applyX(gX);
         const sy = transform.applyY(gY);
         if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {
-            _selectedAtomIds.add(atom.id);
+            if (additive) {
+                if (_selectedAtomIds.has(atom.id)) _selectedAtomIds.delete(atom.id);
+                else _selectedAtomIds.add(atom.id);
+            } else {
+                _selectedAtomIds.add(atom.id);
+            }
         }
     }
 
     for (const bond of _mol2d.bonds.values()) {
         const [ba1, ba2] = bond.getAtomObjects(_mol2d);
         if (!ba1 || !ba2 || ba1.visible === false || ba2.visible === false) continue;
-        if (_selectedAtomIds.has(ba1.id) && _selectedAtomIds.has(ba2.id)) {
-            _selectedBondIds.add(bond.id);
+        if (additive) {
+            if (_selectedBondIds.has(bond.id) &&
+                (!_selectedAtomIds.has(ba1.id) || !_selectedAtomIds.has(ba2.id))) {
+                _selectedBondIds.delete(bond.id);
+            } else if (_selectedAtomIds.has(ba1.id) && _selectedAtomIds.has(ba2.id)) {
+                _selectedBondIds.add(bond.id);
+            }
+        } else {
+            if (_selectedAtomIds.has(ba1.id) && _selectedAtomIds.has(ba2.id)) {
+                _selectedBondIds.add(bond.id);
+            }
         }
     }
 
@@ -1243,6 +1271,12 @@ function renderBondOrder(bond) {
         return bond.properties.localizedOrder ?? (bond.properties.order ?? 1.5);
     }
     return bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
+}
+
+function prepareAromaticBondRendering(molecule) {
+    if (AROMATIC_RENDER_MODE === 'localized') {
+        kekulize(molecule);
+    }
 }
 
 function atomRadius(protons) {
@@ -1382,6 +1416,8 @@ function updateForce(molecule, {
     preservePositions = false,
     preserveView = preservePositions,
 } = {}) {
+    prepareAromaticBondRendering(molecule);
+
     const previousNodePositions = preservePositions
         ? new Map(simulation.nodes().map(node => [node.id, {
             x: node.x,
@@ -1466,6 +1502,7 @@ function updateForce(molecule, {
         })
         .on('mouseover', (event, d) => {
             _showPrimitiveHover([], [d.id]);
+            if (_selectMode) { return; }
             const bond = molecule.bonds.get(d.id);
             if (!bond) { return; }
             const atom1 = molecule.atoms.get(bond.atoms[0]);
@@ -1504,6 +1541,7 @@ function updateForce(molecule, {
         })
         .on('mouseover', (event, d) => {
             _showPrimitiveHover([d.id], []);
+            if (_selectMode) { return; }
             const atom = molecule.atoms.get(d.id);
             if (!atom) { return; }
             tooltip.transition().delay(200).style('opacity', 0.9);
@@ -1745,9 +1783,10 @@ function applyForceSelection() {
     const { atomIds: activeAtomIds, bondIds: activeBondIds } = _getRenderableSelectionIds();
     if (activeAtomIds.size === 0 && activeBondIds.size === 0) return;
 
-    const SEL_COLOR = 'rgb(100, 160, 255)';
-    const SEL_OL = 'rgb(40, 100, 210)';
-    const SEL_R = 6;
+    const SEL_COLOR  = 'rgb(150, 200, 255)';
+    const SEL_OL     = 'rgb(40, 100, 210)';
+    const BOND_SEL_R = 6;  // extra radius for bond highlight caps
+    const ATOM_SEL_R = 13; // larger extra radius so atom circles exceed bond caps
     const OL = 2;
     const selLayer = g.insert('g', ':first-child').attr('class', 'force-selection-layer').attr('opacity', 0.45);
 
@@ -1758,7 +1797,7 @@ function applyForceSelection() {
         selLayer.selectAll(null).data(selectedLinks).enter().append('line')
             .datum(d => d)
             .attr('stroke', stroke)
-            .attr('stroke-width', d => Math.min(atomRadius(d.source.protons), atomRadius(d.target.protons)) * 2 + SEL_R * 2 + extra * 2)
+            .attr('stroke-width', d => Math.min(atomRadius(d.source.protons), atomRadius(d.target.protons)) * 2 + BOND_SEL_R * 2 + extra * 2)
             .attr('stroke-linecap', 'round')
             .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
             .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
@@ -1766,7 +1805,7 @@ function applyForceSelection() {
     const addCircles = (fill, extra) => {
         selLayer.selectAll(null).data(selectedNodes).enter().append('circle')
             .datum(d => d)
-            .attr('r', d => atomRadius(d.protons) + SEL_R + extra)
+            .attr('r', d => atomRadius(d.protons) + ATOM_SEL_R + extra)
             .attr('fill', fill).attr('stroke', 'none')
             .attr('cx', d => d.x).attr('cy', d => d.y);
     };
@@ -1790,12 +1829,15 @@ function _redraw2dSelection() {
     const toSVGPt  = _toSVGPt2d;
     const atoms    = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
 
-    const SEL_COLOR = 'rgb(100, 160, 255)';
-    const SEL_OL   = 'rgb(40,  100, 210)';
+    const SEL_COLOR = 'rgb(150, 200, 255)';
+    const SEL_OL    = 'rgb(40,  100, 210)';
     const OL = 2;
 
     // Insert behind the bond layer (same stacking as fg highlights).
     const selLayer = g.insert('g', 'g.bonds').attr('class', 'atom-selection').attr('opacity', 0.45);
+
+    const BOND_SEL_PAD = 5;  // extra px beyond label half-width for bond highlight
+    const ATOM_SEL_PAD = 12; // larger pad so atom circles clearly exceed bond caps
 
     const mBonds = [];
     for (const bond of mol.bonds.values()) {
@@ -1804,15 +1846,15 @@ function _redraw2dSelection() {
         if (!ba1 || !ba2 || ba1.x == null || ba2.x == null) continue;
         if (ba1.visible === false || ba2.visible === false) continue;
         const p1 = toSVGPt(ba1), p2 = toSVGPt(ba2);
-        const r1 = Math.max(labelHalfW(getAtomLabel(ba1, hCounts, toSVGPt, mol) || ba1.name, FONT_SIZE), 10) + 5;
-        const r2 = Math.max(labelHalfW(getAtomLabel(ba2, hCounts, toSVGPt, mol) || ba2.name, FONT_SIZE), 10) + 5;
+        const r1 = Math.max(labelHalfW(getAtomLabel(ba1, hCounts, toSVGPt, mol) || ba1.name, FONT_SIZE), 10) + BOND_SEL_PAD;
+        const r2 = Math.max(labelHalfW(getAtomLabel(ba2, hCounts, toSVGPt, mol) || ba2.name, FONT_SIZE), 10) + BOND_SEL_PAD;
         mBonds.push({ p1, p2, w: Math.min(r1, r2) * 2 });
     }
     const mAtoms = [];
     for (const atom of atoms) {
         if (!activeAtomIds.has(atom.id)) continue;
         const { x, y } = toSVGPt(atom);
-        const r = Math.max(labelHalfW(getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name, FONT_SIZE), 10) + 5;
+        const r = Math.max(labelHalfW(getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name, FONT_SIZE), 10) + ATOM_SEL_PAD;
         mAtoms.push({ x, y, r });
     }
 
@@ -2023,7 +2065,11 @@ function _select2dPrimitive(atomIds = [], bondIds = [], additive = false) {
     for (const atomId of atomIds) {
         const atom = _mol2d.atoms.get(atomId);
         if (!atom || atom.x == null || atom.visible === false) continue;
-        _selectedAtomIds.add(atomId);
+        if (additive && _selectedAtomIds.has(atomId)) {
+            _selectedAtomIds.delete(atomId);
+        } else {
+            _selectedAtomIds.add(atomId);
+        }
     }
 
     for (const bondId of bondIds) {
@@ -2033,7 +2079,11 @@ function _select2dPrimitive(atomIds = [], bondIds = [], additive = false) {
         if (!a1 || !a2 || a1.x == null || a2.x == null) continue;
         const isHiddenBond = a1.visible === false || a2.visible === false;
         if (isHiddenBond && !(_stereoMap2d && _stereoMap2d.has(bond.id))) continue;
-        _selectedBondIds.add(bondId);
+        if (additive && _selectedBondIds.has(bondId)) {
+            _selectedBondIds.delete(bondId);
+        } else {
+            _selectedBondIds.add(bondId);
+        }
     }
 
     draw2d();
@@ -2086,11 +2136,21 @@ function _selectForcePrimitive(atomIds = [], bondIds = [], additive = false) {
     }
 
     for (const atomId of atomIds) {
-        if (currentMol.atoms.has(atomId)) _selectedAtomIds.add(atomId);
+        if (!currentMol.atoms.has(atomId)) continue;
+        if (additive && _selectedAtomIds.has(atomId)) {
+            _selectedAtomIds.delete(atomId);
+        } else {
+            _selectedAtomIds.add(atomId);
+        }
     }
 
     for (const bondId of bondIds) {
-        if (currentMol.bonds.has(bondId)) _selectedBondIds.add(bondId);
+        if (!currentMol.bonds.has(bondId)) continue;
+        if (additive && _selectedBondIds.has(bondId)) {
+            _selectedBondIds.delete(bondId);
+        } else {
+            _selectedBondIds.add(bondId);
+        }
     }
 
     applyForceSelection();
@@ -2302,6 +2362,7 @@ function draw2d() {
             })
             .on('mouseover', event => {
                 _showPrimitiveHover([], [bi.bond.id]);
+                if (_selectMode) { return; }
                 tooltip.transition().delay(150).style('opacity', 0.9);
                 tooltip.html(bondTooltipHtml(bi.bond, sa1, sa2))
                     .style('left', (event.clientX + 13) + 'px')
@@ -2358,6 +2419,7 @@ function draw2d() {
             })
             .on('mouseover', event => {
                 _showPrimitiveHover([atom.id], []);
+                if (_selectMode) { return; }
                 tooltip.transition().delay(150).style('opacity', 0.9);
                 tooltip.html(atomTooltipHtml(atom, mol))
                     .style('left', (event.clientX + 13) + 'px')
@@ -2441,6 +2503,7 @@ function render2d(mol) {
         if (count > 0) hCounts.set(atom.id, count);
     }
     mol.hideHydrogens();
+    prepareAromaticBondRendering(mol);
 
     generateCoords(mol, { suppressH: true, bondLength: 1.5 });
 
@@ -2725,6 +2788,10 @@ window.cleanLayout2d = function() {
     });
     fitCurrent2dView();
     draw2d();
+    const btn = document.getElementById('clean-2d-btn');
+    const orig = btn.textContent;
+    btn.textContent = '✓';
+    setTimeout(() => { btn.textContent = orig; }, 1500);
 };
 
 window.togglePanMode = function() {
@@ -2733,8 +2800,6 @@ window.togglePanMode = function() {
     _clearPrimitiveHover();
     document.getElementById('pan-mode-btn').classList.add('active');
     document.getElementById('select-mode-btn').classList.remove('active');
-    _selectedAtomIds.clear();
-    _selectedBondIds.clear();
     if (mode === 'force') applyForceSelection();
     else if (_mol2d) draw2d();
 };
@@ -2771,11 +2836,13 @@ window.toggleMode = function() {
         forceCtrls.style.display  = 'none';
     }
 
-    if (currentSmiles || currentInchi) {
+    if (currentMol || currentSmiles || currentInchi) {
         simulation.stop();
         rotationDeg = 0; flipH = false; flipV = false;
         _preserveSelectionOnNextRender = true;
-        const _mol = currentInchi ? parseINCHI(currentInchi) : parseSMILES(currentSmiles);
+        const _mol = currentMol
+            ? currentMol.clone()
+            : (currentInchi ? parseINCHI(currentInchi) : parseSMILES(currentSmiles));
         _renderMol(_mol);
     }
 };
@@ -3093,6 +3160,13 @@ window.deleteSelection = function deleteSelection() {
     } else {
         draw2d();
     }
+
+    const btn = document.getElementById('erase-btn');
+    if (btn) {
+        const orig = btn.textContent;
+        btn.textContent = '✓';
+        setTimeout(() => { btn.textContent = orig; }, 1500);
+    }
 }
 
 document.addEventListener('keydown', event => {
@@ -3103,9 +3177,23 @@ document.addEventListener('keydown', event => {
             _refreshSelectionOverlay();
         }
     }
-    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+
     const tag = document.activeElement?.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+    // Arrow-key panning
+    const PAN_STEP = 40;
+    if (event.key === 'ArrowUp' || event.key === 'ArrowDown' ||
+        event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        const dx = event.key === 'ArrowLeft' ? PAN_STEP : event.key === 'ArrowRight' ? -PAN_STEP : 0;
+        const dy = event.key === 'ArrowUp'   ? PAN_STEP : event.key === 'ArrowDown'  ? -PAN_STEP : 0;
+        const t = d3.zoomTransform(svg.node());
+        svg.call(zoom.transform, d3.zoomIdentity.translate(t.x + dx, t.y + dy).scale(t.k));
+        event.preventDefault();
+        return;
+    }
+
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
     deleteSelection();
     event.preventDefault();
 });

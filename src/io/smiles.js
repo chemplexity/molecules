@@ -1599,6 +1599,7 @@ function _isStrippable(atom, nonHIds, mol) {
  * @param {import('../core/Atom.js').Atom} atom
  * @param {number} pendantHCount  - Number of implicit H atoms to encode.
  * @param {number} heavyBondOrder - Sum of bond orders to heavy-atom neighbours.
+ * @param {string} [chiralToken=''] - Chirality token (`@` or `@@`) to embed in the bracket atom, or empty string when absent.
  * @returns {string}
  */
 function _atomToken(atom, pendantHCount, heavyBondOrder, chiralToken = '') {
@@ -1692,6 +1693,7 @@ function _ringToken(n) {
  * Serialises a single *connected* `Molecule` component into a SMILES string.
  *
  * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {Function|null} [sortFn=null] - Optional atom-ranking function `(atomId) => number` used by canonical serialisation to enforce a deterministic DFS traversal order.
  * @returns {string}
  */
 function _serializeComponent(mol, sortFn = null) {

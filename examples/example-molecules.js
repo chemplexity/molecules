@@ -35,7 +35,7 @@ export const randomMolecule = [
   { smiles: 'c1ccccc1', inchi: 'InChI=1S/C6H6/c1-2-4-6-5-3-1/h1-6H' },
   { smiles: 'OCc1ccccc1', inchi: 'InChI=1S/C7H8O/c8-6-7-4-2-1-3-5-7/h1-5,8H,6H2' },
   { smiles: 'c1ccccc1-c2ccccc2', inchi: 'InChI=1S/C12H10/c1-3-7-11(8-4-1)12-9-5-2-6-10-12/h1-10H' },
-  { smiles: 'C12=CC=CC=C1C3=C(C=CC=C3)C=C2', inchi: 'InChI=1S/C14H10/c1-2-6-12-10-14-8-4-3-7-13(14)9-11(12)5-1/h1-10H' },
+  { smiles: 'C12=CC=CC=C1C3=C(C=CC=C3)C=C2', inchi: 'InChI=1S/C14H10/c1-3-7-13-11(5-1)9-10-12-6-2-4-8-14(12)13/h1-10H' },
   { smiles: 'C1=CC=CN1', inchi: 'InChI=1S/C4H5N/c1-2-4-5-3-1/h1-5H' },
   { smiles: 'c1occc1', inchi: 'InChI=1S/C4H4O/c1-2-4-5-3-1/h1-4H' },
   { smiles: 'c1sccc1', inchi: 'InChI=1S/C4H4S/c1-2-4-5-3-1/h1-4H' },

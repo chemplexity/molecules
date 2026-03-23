@@ -1070,6 +1070,40 @@ describe('Molecule#getSubgraph', () => {
     assert.equal(sub.bonds.has('b1'), false);
     assert.equal(sub.atoms.get('a1').bonds.length, 1); // only b0
   });
+
+  it('preserves atom coordinates and visibility', () => {
+    const mol = new Molecule();
+    const a0 = mol.addAtom('a0', 'C');
+    const a1 = mol.addAtom('a1', 'O');
+    mol.addBond('b0', 'a0', 'a1', {}, false);
+
+    a0.x = 1.25;
+    a0.y = -0.5;
+    a0.z = 3;
+    a0.visible = false;
+    a1.x = -2;
+    a1.y = 4.5;
+    a1.z = 0;
+
+    const sub = mol.getSubgraph(['a0', 'a1']);
+    assert.equal(sub.atoms.get('a0').x, 1.25);
+    assert.equal(sub.atoms.get('a0').y, -0.5);
+    assert.equal(sub.atoms.get('a0').z, 3);
+    assert.equal(sub.atoms.get('a0').visible, false);
+    assert.equal(sub.atoms.get('a1').x, -2);
+    assert.equal(sub.atoms.get('a1').y, 4.5);
+    assert.equal(sub.atoms.get('a1').z, 0);
+    assert.equal(sub.atoms.get('a1').visible, true);
+  });
+
+  it('retains duplicate-bond protection in the extracted molecule', () => {
+    const mol = new Molecule();
+    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addBond('b0', 'a0', 'a1', {}, false);
+
+    const sub = mol.getSubgraph(['a0', 'a1']);
+    assert.throws(() => sub.addBond('b1', 'a1', 'a0', {}, false), /already exists/);
+  });
 });
 
 describe('Molecule#getComponents', () => {
@@ -1122,6 +1156,40 @@ describe('Molecule#clone', () => {
     assert.ok(copy.atoms.has('x'));
     assert.ok(copy.bonds.has('bxy'));
   });
+
+  it('preserves atom coordinates and visibility', () => {
+    const mol = new Molecule();
+    const x = mol.addAtom('x', 'N');
+    const y = mol.addAtom('y', 'O');
+    mol.addBond('bxy', 'x', 'y', {}, false);
+
+    x.x = 10;
+    x.y = 11;
+    x.z = 12;
+    x.visible = false;
+    y.x = -1;
+    y.y = -2;
+    y.z = -3;
+
+    const copy = mol.clone();
+    assert.equal(copy.atoms.get('x').x, 10);
+    assert.equal(copy.atoms.get('x').y, 11);
+    assert.equal(copy.atoms.get('x').z, 12);
+    assert.equal(copy.atoms.get('x').visible, false);
+    assert.equal(copy.atoms.get('y').x, -1);
+    assert.equal(copy.atoms.get('y').y, -2);
+    assert.equal(copy.atoms.get('y').z, -3);
+    assert.equal(copy.atoms.get('y').visible, true);
+  });
+
+  it('retains duplicate-bond protection in the clone', () => {
+    const mol = new Molecule();
+    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addBond('b0', 'a0', 'a1', {}, false);
+
+    const copy = mol.clone();
+    assert.throws(() => copy.addBond('b1', 'a0', 'a1', {}, false), /already exists/);
+  });
 });
 
 describe('Molecule#merge', () => {
@@ -1136,20 +1204,48 @@ describe('Molecule#merge', () => {
     assert.ok(merged.atoms.has('cl'));
   });
 
-  it('throws on atom ID collision', () => {
-    const mol1 = new Molecule(); mol1.addAtom('a0', 'C');
-    const mol2 = new Molecule(); mol2.addAtom('a0', 'N');
-    assert.throws(() => mol1.merge(mol2), /collision/);
+  it('remaps colliding atom IDs from the second molecule', () => {
+    const mol1 = new Molecule();
+    const atom1 = mol1.addAtom('a0', 'C');
+    const mol2 = new Molecule();
+    const atom2 = mol2.addAtom('a0', 'N');
+
+    const merged = mol1.merge(mol2);
+    assert.equal(merged.atomCount, 2);
+    assert.ok(merged.atoms.has('a0'));
+    assert.equal(merged.atoms.get('a0').uuid, atom1.uuid);
+
+    const nitrogen = [...merged.atoms.values()].find(atom => atom.uuid === atom2.uuid);
+    assert.ok(nitrogen);
+    assert.equal(nitrogen.name, 'N');
+    assert.notEqual(nitrogen.id, 'a0');
   });
 
-  it('throws on bond ID collision', () => {
+  it('remaps colliding bond IDs from the second molecule and rewrites endpoints', () => {
     const mol1 = new Molecule();
     mol1.addAtom('a0', 'C'); mol1.addAtom('a1', 'C');
-    mol1.addBond('b0', 'a0', 'a1', {}, false);
+    const bond1 = mol1.addBond('b0', 'a0', 'a1', {}, false);
     const mol2 = new Molecule();
-    mol2.addAtom('a2', 'C'); mol2.addAtom('a3', 'C');
-    mol2.addBond('b0', 'a2', 'a3', {}, false);
-    assert.throws(() => mol1.merge(mol2), /collision/);
+    const atom2a = mol2.addAtom('a0', 'N');
+    const atom2b = mol2.addAtom('a1', 'O');
+    const bond2 = mol2.addBond('b0', 'a0', 'a1', {}, false);
+
+    const merged = mol1.merge(mol2);
+    assert.equal(merged.bondCount, 2);
+    assert.ok(merged.bonds.has('b0'));
+    assert.equal(merged.bonds.get('b0').uuid, bond1.uuid);
+
+    const remappedBond = [...merged.bonds.values()].find(bond => bond.uuid === bond2.uuid);
+    assert.ok(remappedBond);
+    assert.notEqual(remappedBond.id, 'b0');
+
+    const remappedA = [...merged.atoms.values()].find(atom => atom.uuid === atom2a.uuid);
+    const remappedB = [...merged.atoms.values()].find(atom => atom.uuid === atom2b.uuid);
+    assert.ok(remappedA);
+    assert.ok(remappedB);
+    assert.deepEqual(new Set(remappedBond.atoms), new Set([remappedA.id, remappedB.id]));
+    assert.ok(merged.atoms.get(remappedA.id).bonds.includes(remappedBond.id));
+    assert.ok(merged.atoms.get(remappedB.id).bonds.includes(remappedBond.id));
   });
 
   it('recomputes properties on the merged result', () => {
@@ -1157,6 +1253,58 @@ describe('Molecule#merge', () => {
     const mol2 = new Molecule(); mol2.addAtom('n1', 'N');
     const merged = mol1.merge(mol2);
     assert.deepEqual(merged.properties.formula, { C: 1, N: 1 });
+  });
+
+  it('preserves coordinates and visibility from both inputs', () => {
+    const mol1 = new Molecule();
+    const a0 = mol1.addAtom('a0', 'C');
+    a0.x = 2;
+    a0.y = 3;
+    a0.visible = false;
+
+    const mol2 = new Molecule();
+    const b0 = mol2.addAtom('b0', 'N');
+    b0.x = -4;
+    b0.y = -5;
+    b0.z = 6;
+
+    const merged = mol1.merge(mol2);
+    assert.equal(merged.atoms.get('a0').x, 2);
+    assert.equal(merged.atoms.get('a0').y, 3);
+    assert.equal(merged.atoms.get('a0').visible, false);
+    assert.equal(merged.atoms.get('b0').x, -4);
+    assert.equal(merged.atoms.get('b0').y, -5);
+    assert.equal(merged.atoms.get('b0').z, 6);
+    assert.equal(merged.atoms.get('b0').visible, true);
+  });
+
+  it('retains duplicate-bond protection for pre-existing merged bonds', () => {
+    const mol1 = new Molecule();
+    mol1.addAtom('a0', 'C'); mol1.addAtom('a1', 'C');
+    mol1.addBond('b0', 'a0', 'a1', {}, false);
+
+    const mol2 = new Molecule();
+    mol2.addAtom('b0', 'N');
+
+    const merged = mol1.merge(mol2);
+    assert.throws(() => merged.addBond('b1', 'a1', 'a0', {}, false), /already exists/);
+  });
+
+  it('retains duplicate-bond protection for remapped merged bonds', () => {
+    const mol1 = new Molecule();
+    mol1.addAtom('a0', 'C'); mol1.addAtom('a1', 'C');
+
+    const mol2 = new Molecule();
+    const atomA = mol2.addAtom('a0', 'N');
+    const atomB = mol2.addAtom('a1', 'O');
+    mol2.addBond('b0', 'a0', 'a1', {}, false);
+
+    const merged = mol1.merge(mol2);
+    const remappedA = [...merged.atoms.values()].find(atom => atom.uuid === atomA.uuid);
+    const remappedB = [...merged.atoms.values()].find(atom => atom.uuid === atomB.uuid);
+    assert.ok(remappedA);
+    assert.ok(remappedB);
+    assert.throws(() => merged.addBond('b1', remappedA.id, remappedB.id, {}, false), /already exists/);
   });
 });
 
