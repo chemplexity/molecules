@@ -679,6 +679,62 @@ describe('Molecule', () => {
     assert.equal(mol.name,              '');
   });
 
+  it('repairImplicitHydrogens restores local valence without moving surviving heavy atoms', () => {
+    const mol = parseSMILES('CCO');
+    const oxygen = [...mol.atoms.values()].find(atom => atom.name === 'O');
+    assert.ok(oxygen);
+
+    const alcoholCarbon = oxygen.getNeighbors(mol).find(atom => atom.name === 'C');
+    assert.ok(alcoholCarbon);
+    const oxygenHydrogens = oxygen.getNeighbors(mol)
+      .filter(atom => atom.name === 'H')
+      .map(atom => atom.id);
+
+    alcoholCarbon.x = 12;
+    alcoholCarbon.y = -3;
+
+    mol.removeAtom(oxygen.id);
+    for (const hId of oxygenHydrogens) {
+      mol.removeAtom(hId);
+    }
+    mol.repairImplicitHydrogens([alcoholCarbon.id]);
+
+    assert.deepEqual(mol.getFormula(), { C: 2, H: 6 });
+    assert.equal(alcoholCarbon.getNeighbors(mol).filter(atom => atom.name === 'H').length, 3);
+    assert.equal(alcoholCarbon.x, 12);
+    assert.equal(alcoholCarbon.y, -3);
+
+    for (const hAtom of alcoholCarbon.getNeighbors(mol).filter(atom => atom.name === 'H' && atom.visible === false)) {
+      assert.equal(hAtom.x, alcoholCarbon.x);
+      assert.equal(hAtom.y, alcoholCarbon.y);
+      assert.equal(hAtom.properties.protons, 1);
+      assert.equal(hAtom.properties.electrons, 1);
+    }
+  });
+
+  it('clearStereoAnnotations removes local atom and bond stereo metadata', () => {
+    const chiralMol = parseSMILES('C[C@@H](F)Cl');
+    const center = [...chiralMol.atoms.values()].find(atom => atom.properties.chirality);
+    assert.ok(center);
+
+    chiralMol.clearStereoAnnotations([center.id]);
+    assert.equal(center.properties.chirality, null);
+    assert.deepEqual(chiralMol.getChiralCenters(), []);
+
+    const alkeneMol = parseSMILES('F/C=C/F');
+    const stereoBondsBefore = [...alkeneMol.bonds.values()].filter(bond => bond.properties.stereo !== null);
+    assert.ok(stereoBondsBefore.length > 0);
+
+    const affectedAtomIds = new Set();
+    for (const bond of stereoBondsBefore) {
+      affectedAtomIds.add(bond.atoms[0]);
+      affectedAtomIds.add(bond.atoms[1]);
+    }
+
+    alkeneMol.clearStereoAnnotations(affectedAtomIds);
+    assert.equal([...alkeneMol.bonds.values()].filter(bond => bond.properties.stereo !== null).length, 0);
+  });
+
   it('isAtomInRing — delegates to Atom#isInRing', () => {
     const mol = new Molecule();
     mol.addAtom('A', 'C'); mol.addAtom('B', 'C'); mol.addAtom('C', 'C');

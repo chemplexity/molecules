@@ -368,6 +368,11 @@ export class Molecule {
         continue;
       }
       for (const bondId of [...hAtom.bonds]) {
+        const bond = this.bonds.get(bondId);
+        if (bond) {
+          const [a, b] = bond.atoms;
+          this._bondIndex.delete(a < b ? `${a},${b}` : `${b},${a}`);
+        }
         atom.bonds = atom.bonds.filter(b => b !== bondId);
         this.bonds.delete(bondId);
       }
@@ -378,13 +383,84 @@ export class Molecule {
     // correct SMARTS X/H-count semantics but hidden from 2D layout/rendering).
     for (let i = 0; i < neededH; i++) {
       const hAtom = new Atom(this._generateAutoAtomId(), 'H');
+      hAtom.resolveElement();
       hAtom.visible = false;
       this.atoms.set(hAtom.id, hAtom);
       const hBond = new Bond(this._generateAutoBondId(), [atomId, hAtom.id], { order: 1 });
       this.bonds.set(hBond.id, hBond);
+      this._bondIndex.set(atomId < hAtom.id ? `${atomId},${hAtom.id}` : `${hAtom.id},${atomId}`, hBond.id);
       this.atoms.get(atomId).bonds.push(hBond.id);
       hAtom.bonds.push(hBond.id);
     }
+  }
+
+  /**
+   * Rebuilds implicit hydrogens on the specified heavy atoms without changing
+   * their existing coordinates. Hidden H atoms created during repair inherit
+   * their parent atom's current position so local edits do not force relayout.
+   *
+   * @param {Iterable<string>|null} [atomIds=null] - Atom IDs to repair. When
+   *   omitted, all heavy atoms in the molecule are repaired.
+   * @returns {Molecule} The current molecule.
+   */
+  repairImplicitHydrogens(atomIds = null) {
+    const targetIds = atomIds == null
+      ? [...this.atoms.keys()]
+      : [...new Set(atomIds)];
+
+    for (const atomId of targetIds) {
+      const atom = this.atoms.get(atomId);
+      if (!atom || atom.name === 'H') {
+        continue;
+      }
+
+      this._adjustImplicitHydrogens(atomId);
+
+      if (atom.x == null || atom.y == null) {
+        continue;
+      }
+      for (const neighbor of atom.getNeighbors(this)) {
+        if (neighbor.name !== 'H' || neighbor.visible !== false) {
+          continue;
+        }
+        neighbor.x = atom.x;
+        neighbor.y = atom.y;
+      }
+    }
+
+    this._recomputeProperties();
+    return this;
+  }
+
+  /**
+   * Clears stored stereo annotations on the specified atoms and any bonds
+   * attached to them. This is useful after interactive graph edits where the
+   * original stereochemistry annotation may no longer be trustworthy.
+   *
+   * @param {Iterable<string>|null} [atomIds=null] - Atom IDs whose local stereo
+   *   metadata should be cleared. When omitted, clears all stereo annotations.
+   * @returns {Molecule} The current molecule.
+   */
+  clearStereoAnnotations(atomIds = null) {
+    const targetIds = atomIds == null
+      ? [...this.atoms.keys()]
+      : [...new Set(atomIds)];
+
+    for (const atomId of targetIds) {
+      const atom = this.atoms.get(atomId);
+      if (!atom) {
+        continue;
+      }
+      atom.properties.chirality = null;
+      for (const bondId of atom.bonds) {
+        const bond = this.bonds.get(bondId);
+        if (bond) {
+          bond.properties.stereo = null;
+        }
+      }
+    }
+
+    return this;
   }
 
   /**

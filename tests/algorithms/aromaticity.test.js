@@ -1,7 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSMILES } from '../../src/io/index.js';
-import { perceiveAromaticity } from '../../src/algorithms/aromaticity.js';
+import { parseSMILES, toSMILES } from '../../src/io/index.js';
+import { perceiveAromaticity, refreshAromaticity } from '../../src/algorithms/aromaticity.js';
+import { kekulize } from '../../src/layout/mol2d-helpers.js';
 import { matchesSMARTS } from '../../src/smarts/index.js';
 
 // ---------------------------------------------------------------------------
@@ -174,5 +175,37 @@ describe('perceiveAromaticity — SMARTS matching after perception', () => {
   it('furan matches [a]1[a][a][a][a]1 (5-membered aromatic)', () => {
     const mol = parse('c1ccoc1');
     assert.equal(matchesSMARTS(mol, '[a]1[a][a][a][a]1'), true);
+  });
+});
+
+describe('refreshAromaticity — graph edits', () => {
+  it('dearomatizes a broken benzene fragment before hydrogen repair', () => {
+    const mol = parseSMILES('c1ccccc1');
+    kekulize(mol);
+
+    const deletedCarbon = [...mol.atoms.values()].find(atom => atom.name === 'C');
+    assert.ok(deletedCarbon);
+
+    const deletedHydrogenIds = deletedCarbon.getNeighbors(mol)
+      .filter(atom => atom.name === 'H')
+      .map(atom => atom.id);
+    const affectedHeavyIds = new Set(
+      deletedCarbon.getNeighbors(mol)
+        .filter(atom => atom.name !== 'H')
+        .map(atom => atom.id)
+    );
+
+    mol.removeAtom(deletedCarbon.id);
+    for (const hId of deletedHydrogenIds) {
+      mol.removeAtom(hId);
+    }
+
+    refreshAromaticity(mol, { preserveKekule: true });
+    mol.repairImplicitHydrogens(affectedHeavyIds);
+
+    assert.equal(toSMILES(mol), 'C=CC=CC');
+    assert.deepEqual(mol.getFormula(), { C: 5, H: 8 });
+    assert.equal([...mol.atoms.values()].filter(atom => atom.properties.aromatic).length, 0);
+    assert.equal([...mol.bonds.values()].filter(bond => bond.properties.aromatic).length, 0);
   });
 });

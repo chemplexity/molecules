@@ -208,6 +208,12 @@ input:focus ~ .highlight {
     display: block;
 }
 
+#plot,
+#plot * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
 /* ── Tooltip ─────────────────────────────────────────────────────────── */
 
 div.tooltip {
@@ -623,6 +629,7 @@ div.tooltip td:first-child {
             <div id="clean-controls">
                 <button id="pan-mode-btn" class="active" title="Pan / zoom mode" onclick="togglePanMode()">🤚</button>
                 <button id="select-mode-btn" title="Selection mode — drag to select atoms and bonds" onclick="toggleSelectMode()">⬚</button>
+                <button id="erase-btn" title="Delete selected atoms and bonds" onclick="deleteSelection()">🗑️</button>
                 <button id="clean-2d-btn" title="Clean 2D layout" onclick="cleanLayout2d()">🧹</button>
             </div>
         </div>
@@ -879,6 +886,7 @@ function parseInput(val) {
 import * as d3              from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
 import { parseSMILES, toSMILES } from './src/io/smiles.js';
 import { parseINCHI, toInChI } from './src/io/inchi.js';
+import { refreshAromaticity } from './src/algorithms/aromaticity.js';
 import { generateCoords, refineExistingCoords }   from './src/layout/coords2d.js';
 import { molecularFormula, molecularMass } from './src/descriptors/molecular.js';
 import { allMatrices }      from './src/matrices/index.js';
@@ -1004,6 +1012,10 @@ let flipV         = false;  // mirror about horizontal axis (y → -y)
 const plotEl  = document.getElementById('plot');
 const tooltip = d3.select('#atom-tooltip');
 
+plotEl.addEventListener('selectstart', event => {
+    event.preventDefault();
+});
+
 const svg = d3.select('#plot')
     .append('svg')
     .attr('class', 'svg-plot labels-hidden');
@@ -1018,11 +1030,12 @@ const g = svg.append('g');
 const zoom = d3.zoom()
     .scaleExtent([0.05, 30])
     .filter(event => {
-        // In 2D mode with selection active: block drag-to-pan on background
+        // In selection mode: block drag-to-pan on background
         // so mousedown starts rubber-band selection instead.
         // Scroll-to-zoom and pinch-zoom are unaffected.
-        if (_selectMode && mode === '2d' && _mol2d &&
-                event.type === 'mousedown' && event.button === 0) {
+        if (_selectMode &&
+                ((mode === '2d' && _mol2d) || (mode === 'force' && currentMol)) &&
+                (event.type === 'mousedown' || event.type === 'dblclick') && event.button === 0) {
             return false;
         }
         return !event.ctrlKey && !event.button;
@@ -1048,50 +1061,59 @@ const selectionRect = svg.append('rect')
 
 let _selDragging = false;
 let _selStart    = null; // {x,y} in SVG element coords
+let _selAdditive = false;
+let _suppressForceSelectionClearClick = false;
 
-svg.on('mousedown.selection', function(event) {
-    if (!_selectMode || mode !== '2d' || !_mol2d) return;
-    if (event.button !== 0) return;
-    // Don't start selection when clicking directly on an atom or bond.
-    if (event.target.closest('.atom-hit, .bond-hit')) return;
+function _selectionEventPoint(event, clampToPlot = false) {
+    const rect = svg.node().getBoundingClientRect();
+    let x = event.clientX - rect.left;
+    let y = event.clientY - rect.top;
+    if (clampToPlot) {
+        x = Math.max(0, Math.min(rect.width, x));
+        y = Math.max(0, Math.min(rect.height, y));
+    }
+    return [x, y];
+}
 
-    const [x, y] = d3.pointer(event, svg.node());
-    _selDragging = true;
-    _selStart    = { x, y };
+function _isAdditiveSelectionEvent(event) {
+    return !!(event.metaKey || event.ctrlKey);
+}
 
-    selectionRect
-        .attr('x', x).attr('y', y)
-        .attr('width', 0).attr('height', 0)
-        .style('display', null);
-
-    event.preventDefault();
-});
-
-svg.on('mousemove.selection', function(event) {
-    if (!_selDragging) return;
-    const [x, y] = d3.pointer(event, svg.node());
-    const rx = Math.min(_selStart.x, x), ry = Math.min(_selStart.y, y);
+function _updateSelectionRect(x, y) {
+    const rx = Math.min(_selStart.x, x);
+    const ry = Math.min(_selStart.y, y);
     selectionRect
         .attr('x', rx).attr('y', ry)
         .attr('width', Math.abs(x - _selStart.x))
         .attr('height', Math.abs(y - _selStart.y));
-});
+}
 
-svg.on('mouseup.selection', function(event) {
+function _finishSelectionDrag(event) {
     if (!_selDragging) return;
     _selDragging = false;
     selectionRect.style('display', 'none');
-    if (!_mol2d) return;
+    if (mode !== '2d' && mode !== 'force') return;
+    if (mode === '2d' && !_mol2d) return;
+    if (mode === 'force' && !currentMol) return;
 
-    const [x, y] = d3.pointer(event, svg.node());
+    const [x, y] = _selectionEventPoint(event, true);
     const rw = Math.abs(x - _selStart.x);
     const rh = Math.abs(y - _selStart.y);
+    const additive = _selAdditive;
+    _selAdditive = false;
 
     // A tiny drag (click) clears the selection.
     if (rw < 5 && rh < 5) {
+        if (additive) {
+            if (mode === 'force') applyForceSelection();
+            else draw2d();
+            return;
+        }
+        _clearPrimitiveHover();
         _selectedAtomIds.clear();
         _selectedBondIds.clear();
-        draw2d();
+        if (mode === 'force') applyForceSelection();
+        else draw2d();
         return;
     }
 
@@ -1099,8 +1121,32 @@ svg.on('mouseup.selection', function(event) {
     const ry = Math.min(_selStart.y, y);
     const transform = d3.zoomTransform(svg.node());
 
-    _selectedAtomIds.clear();
-    _selectedBondIds.clear();
+    if (!additive) {
+        _selectedAtomIds.clear();
+        _selectedBondIds.clear();
+    }
+    _clearPrimitiveHover();
+
+    if (mode === 'force') {
+        const nodes = simulation.nodes();
+        for (const node of nodes) {
+            const sx = transform.applyX(node.x);
+            const sy = transform.applyY(node.y);
+            if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {
+                _selectedAtomIds.add(node.id);
+            }
+        }
+
+        for (const link of simulation.force('link').links()) {
+            if (_selectedAtomIds.has(link.source.id) && _selectedAtomIds.has(link.target.id)) {
+                _selectedBondIds.add(link.id);
+            }
+        }
+
+        _suppressForceSelectionClearClick = true;
+        applyForceSelection();
+        return;
+    }
 
     const atoms = [..._mol2d.atoms.values()].filter(a => a.x != null && a.visible !== false);
     for (const atom of atoms) {
@@ -1121,6 +1167,61 @@ svg.on('mouseup.selection', function(event) {
     }
 
     draw2d();
+}
+
+svg.on('mousedown.selection', function(event) {
+    if (!_selectMode) return;
+    if (mode === '2d' && !_mol2d) return;
+    if (mode === 'force' && !currentMol) return;
+    if (mode !== '2d' && mode !== 'force') return;
+    if (event.button !== 0) return;
+    // Don't start selection when clicking directly on an atom or bond.
+    if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target')) return;
+
+    const [x, y] = _selectionEventPoint(event, true);
+    _selDragging = true;
+    _selStart    = { x, y };
+    _selAdditive = _isAdditiveSelectionEvent(event);
+
+    selectionRect
+        .attr('x', x).attr('y', y)
+        .attr('width', 0).attr('height', 0)
+        .style('display', null);
+
+    event.preventDefault();
+});
+
+svg.on('mousemove.selection', function(event) {
+    if (!_selDragging) return;
+    const [x, y] = _selectionEventPoint(event, true);
+    _updateSelectionRect(x, y);
+});
+
+svg.on('mouseup.selection', function(event) {
+    _finishSelectionDrag(event);
+});
+
+svg.on('click.force-selection-clear', function(event) {
+    if (!_selectMode || mode !== 'force') return;
+    if (_suppressForceSelectionClearClick) {
+        _suppressForceSelectionClearClick = false;
+        return;
+    }
+    if (event.target.closest('.node, .bond-hover-target')) return;
+    if (_isAdditiveSelectionEvent(event)) return;
+    _selectedAtomIds.clear();
+    _selectedBondIds.clear();
+    applyForceSelection();
+});
+
+document.addEventListener('mousemove', event => {
+    if (!_selDragging) return;
+    const [x, y] = _selectionEventPoint(event, true);
+    _updateSelectionRect(x, y);
+});
+
+document.addEventListener('mouseup', event => {
+    _finishSelectionDrag(event);
 });
 
 // ---------------------------------------------------------------------------
@@ -1277,15 +1378,38 @@ const simulation = d3.forceSimulation()
     .alphaDecay(0.02)
     .stop();
 
-function updateForce(molecule) {
+function updateForce(molecule, {
+    preservePositions = false,
+    preserveView = preservePositions,
+} = {}) {
+    const previousNodePositions = preservePositions
+        ? new Map(simulation.nodes().map(node => [node.id, {
+            x: node.x,
+            y: node.y,
+            vx: node.vx,
+            vy: node.vy,
+            fx: node.fx,
+            fy: node.fy,
+        }]))
+        : null;
+    const previousZoomTransform = preserveView ? d3.zoomTransform(svg.node()) : null;
+
     // Seed initial positions from 2D layout so all atoms start at valid positions.
     generateCoords(molecule, { suppressH: false, bondLength: 1.5 });
+    if (_preserveSelectionOnNextRender) _syncSelectionToMolecule(molecule);
+    else {
+        _selectedAtomIds.clear();
+        _selectedBondIds.clear();
+    }
+    _preserveSelectionOnNextRender = false;
 
     const graph = convertMolecule(molecule);
     g.selectAll('*').remove();
 
     // Reset zoom to identity for force layout
-    svg.call(zoom.transform, d3.zoomIdentity);
+    if (!preserveView) {
+        svg.call(zoom.transform, d3.zoomIdentity);
+    }
 
     const bondEnter = g.selectAll('line.link-base')
         .data(graph.links, d => d.id)
@@ -1332,7 +1456,16 @@ function updateForce(molecule) {
         .style('stroke', 'transparent')
         .style('stroke-width', '14px')
         .style('pointer-events', 'stroke')
+        .on('click', (event, d) => {
+            _handleForcePrimitiveClick(event, [], [d.id]);
+        })
+        .on('dblclick', (event, d) => {
+            const bond = molecule.bonds.get(d.id);
+            if (!bond) return;
+            _handleForceComponentDblClick(event, bond.atoms);
+        })
         .on('mouseover', (event, d) => {
+            _showPrimitiveHover([], [d.id]);
             const bond = molecule.bonds.get(d.id);
             if (!bond) { return; }
             const atom1 = molecule.atoms.get(bond.atoms[0]);
@@ -1348,6 +1481,8 @@ function updateForce(molecule) {
                    .style('top',  (event.clientY - 20) + 'px');
         })
         .on('mouseout', () => {
+            _clearPrimitiveHover();
+            applyForceSelection();
             tooltip.transition().duration(50).style('opacity', 0);
         });
 
@@ -1361,7 +1496,14 @@ function updateForce(molecule) {
         .attr('stroke',      d => strokeColor(d.name))
         .attr('stroke-width', 1)
         .call(createDrag(simulation))
+        .on('click', (event, d) => {
+            _handleForcePrimitiveClick(event, [d.id], []);
+        })
+        .on('dblclick', (event, d) => {
+            _handleForceComponentDblClick(event, [d.id]);
+        })
         .on('mouseover', (event, d) => {
+            _showPrimitiveHover([d.id], []);
             const atom = molecule.atoms.get(d.id);
             if (!atom) { return; }
             tooltip.transition().delay(200).style('opacity', 0.9);
@@ -1374,6 +1516,8 @@ function updateForce(molecule) {
                    .style('top',  (event.clientY - 20) + 'px');
         })
         .on('mouseout', () => {
+            _clearPrimitiveHover();
+            applyForceSelection();
             tooltip.transition().duration(50).style('opacity', 0);
         });
 
@@ -1433,11 +1577,40 @@ function updateForce(molecule) {
         }
     }
 
+    if (previousNodePositions) {
+        for (const node of graph.nodes) {
+            const previous = previousNodePositions.get(node.id);
+            if (!previous) continue;
+            node.x = previous.x;
+            node.y = previous.y;
+            node.vx = previous.vx;
+            node.vy = previous.vy;
+            node.fx = previous.fx;
+            node.fy = previous.fy;
+        }
+
+        // Seed genuinely new nodes from any preserved neighbor so edits do not
+        // re-layout the surviving fragment.
+        for (const link of graph.links) {
+            const source = graph.nodes[link.source];
+            const target = graph.nodes[link.target];
+            const sourcePlaced = Number.isFinite(source?.x) && Number.isFinite(source?.y);
+            const targetPlaced = Number.isFinite(target?.x) && Number.isFinite(target?.y);
+            if (sourcePlaced && !targetPlaced) {
+                target.x = source.x;
+                target.y = source.y;
+            } else if (targetPlaced && !sourcePlaced) {
+                source.x = target.x;
+                source.y = target.y;
+            }
+        }
+    }
+
     simulation.nodes(graph.nodes);
     simulation.force('link').links(graph.links);
     simulation.force('center',
         d3.forceCenter(plotEl.clientWidth / 2, plotEl.clientHeight / 2));
-    simulation.alpha(1).restart();
+    simulation.alpha(preservePositions ? 0.2 : 1).restart();
 
     simulation.on('tick', () => {
         singleBond
@@ -1492,25 +1665,39 @@ function updateForce(molecule) {
         _hl.selectAll('circle')
             .attr('cx', d => d.x).attr('cy', d => d.y);
 
-        // Auto zoom-out to keep molecule in view
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        for (const n of graph.nodes) {
-            const r = atomRadius(n.protons);
-            if (n.x - r < minX) minX = n.x - r;
-            if (n.x + r > maxX) maxX = n.x + r;
-            if (n.y - r < minY) minY = n.y - r;
-            if (n.y + r > maxY) maxY = n.y + r;
+        const _sel = g.select('g.force-selection-layer');
+        _sel.selectAll('line')
+            .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+        _sel.selectAll('circle')
+            .attr('cx', d => d.x).attr('cy', d => d.y);
+
+        if (!preserveView) {
+            // Auto zoom-out to keep molecule in view
+            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+            for (const n of graph.nodes) {
+                const r = atomRadius(n.protons);
+                if (n.x - r < minX) minX = n.x - r;
+                if (n.x + r > maxX) maxX = n.x + r;
+                if (n.y - r < minY) minY = n.y - r;
+                if (n.y + r > maxY) maxY = n.y + r;
+            }
+            const W = plotEl.clientWidth, H = plotEl.clientHeight;
+            const PAD   = 40;
+            const scale = Math.min((W - PAD * 2) / (maxX - minX || 1),
+                                   (H - PAD * 2) / (maxY - minY || 1), 1);
+            const tx = W / 2 - ((minX + maxX) / 2) * scale;
+            const ty = H / 2 - ((minY + maxY) / 2) * scale;
+            svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
         }
-        const W = plotEl.clientWidth, H = plotEl.clientHeight;
-        const PAD   = 40;
-        const scale = Math.min((W - PAD * 2) / (maxX - minX || 1),
-                               (H - PAD * 2) / (maxY - minY || 1), 1);
-        const tx = W / 2 - ((minX + maxX) / 2) * scale;
-        const ty = H / 2 - ((minY + maxY) / 2) * scale;
-        svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
     });
 
+    if (preserveView && previousZoomTransform) {
+        svg.call(zoom.transform, previousZoomTransform);
+    }
+
     if (_highlightedAtomIds.size > 0) applyForceHighlights();
+    if (_selectedAtomIds.size > 0 || _selectedBondIds.size > 0) applyForceSelection();
 }
 
 function applyForceHighlights() {
@@ -1553,9 +1740,50 @@ function applyForceHighlights() {
     }
 }
 
+function applyForceSelection() {
+    g.selectAll('g.force-selection-layer').remove();
+    const { atomIds: activeAtomIds, bondIds: activeBondIds } = _getRenderableSelectionIds();
+    if (activeAtomIds.size === 0 && activeBondIds.size === 0) return;
+
+    const SEL_COLOR = 'rgb(100, 160, 255)';
+    const SEL_OL = 'rgb(40, 100, 210)';
+    const SEL_R = 6;
+    const OL = 2;
+    const selLayer = g.insert('g', ':first-child').attr('class', 'force-selection-layer').attr('opacity', 0.45);
+
+    const selectedNodes = simulation.nodes().filter(node => activeAtomIds.has(node.id));
+    const selectedLinks = simulation.force('link').links().filter(link => activeBondIds.has(link.id));
+
+    const addLines = (stroke, extra) => {
+        selLayer.selectAll(null).data(selectedLinks).enter().append('line')
+            .datum(d => d)
+            .attr('stroke', stroke)
+            .attr('stroke-width', d => Math.min(atomRadius(d.source.protons), atomRadius(d.target.protons)) * 2 + SEL_R * 2 + extra * 2)
+            .attr('stroke-linecap', 'round')
+            .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    };
+    const addCircles = (fill, extra) => {
+        selLayer.selectAll(null).data(selectedNodes).enter().append('circle')
+            .datum(d => d)
+            .attr('r', d => atomRadius(d.protons) + SEL_R + extra)
+            .attr('fill', fill).attr('stroke', 'none')
+            .attr('cx', d => d.x).attr('cy', d => d.y);
+    };
+
+    addLines(SEL_OL, OL); addCircles(SEL_OL, OL);
+    addLines(SEL_COLOR, 0); addCircles(SEL_COLOR, 0);
+}
+
+function _syncSelectionToMolecule(mol) {
+    _selectedAtomIds = new Set([..._selectedAtomIds].filter(id => mol.atoms.has(id)));
+    _selectedBondIds = new Set([..._selectedBondIds].filter(id => mol.bonds.has(id)));
+}
+
 function _redraw2dSelection() {
     g.select('g.atom-selection').remove();
-    if (_selectedAtomIds.size === 0 || !_mol2d) return;
+    const { atomIds: activeAtomIds, bondIds: activeBondIds } = _getRenderableSelectionIds();
+    if ((activeAtomIds.size === 0 && activeBondIds.size === 0) || !_mol2d) return;
 
     const mol      = _mol2d;
     const hCounts  = _hCounts2d;
@@ -1571,7 +1799,7 @@ function _redraw2dSelection() {
 
     const mBonds = [];
     for (const bond of mol.bonds.values()) {
-        if (!_selectedBondIds.has(bond.id)) continue;
+        if (!activeBondIds.has(bond.id)) continue;
         const [ba1, ba2] = bond.getAtomObjects(mol);
         if (!ba1 || !ba2 || ba1.x == null || ba2.x == null) continue;
         if (ba1.visible === false || ba2.visible === false) continue;
@@ -1582,7 +1810,7 @@ function _redraw2dSelection() {
     }
     const mAtoms = [];
     for (const atom of atoms) {
-        if (!_selectedAtomIds.has(atom.id)) continue;
+        if (!activeAtomIds.has(atom.id)) continue;
         const { x, y } = toSVGPt(atom);
         const r = Math.max(labelHalfW(getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name, FONT_SIZE), 10) + 5;
         mAtoms.push({ x, y, r });
@@ -1655,7 +1883,79 @@ let _highlightMol        = null; // molecule used for last updateFunctionalGroup
 
 let _selectedAtomIds = new Set();
 let _selectedBondIds = new Set();
+let _hoveredAtomIds = new Set();
+let _hoveredBondIds = new Set();
+let _selectionModifierActive = false;
 let _selectMode      = false;
+let _preserveSelectionOnNextRender = false;
+
+function _clearPrimitiveHover() {
+    _hoveredAtomIds.clear();
+    _hoveredBondIds.clear();
+}
+
+function _refreshSelectionOverlay() {
+    if (mode === 'force') {
+        applyForceSelection();
+    } else if (_mol2d) {
+        _redraw2dSelection();
+    }
+}
+
+function _getRenderableSelectionIds() {
+    if (_selectedAtomIds.size === 0 && _selectedBondIds.size === 0) {
+        return {
+            atomIds: _selectMode ? _hoveredAtomIds : new Set(),
+            bondIds: _selectMode ? _hoveredBondIds : new Set(),
+        };
+    }
+    if (!_selectionModifierActive) {
+        return {
+            atomIds: _selectedAtomIds,
+            bondIds: _selectedBondIds,
+        };
+    }
+    return {
+        atomIds: new Set([..._selectedAtomIds, ..._hoveredAtomIds]),
+        bondIds: new Set([..._selectedBondIds, ..._hoveredBondIds]),
+    };
+}
+
+function _showPrimitiveHover(atomIds = [], bondIds = []) {
+    if (!_selectMode) return;
+
+    _hoveredAtomIds.clear();
+    _hoveredBondIds.clear();
+
+    if (mode === '2d' && _mol2d) {
+        for (const atomId of atomIds) {
+            const atom = _mol2d.atoms.get(atomId);
+            if (!atom || atom.x == null || atom.visible === false) continue;
+            _hoveredAtomIds.add(atomId);
+        }
+        for (const bondId of bondIds) {
+            const bond = _mol2d.bonds.get(bondId);
+            if (!bond) continue;
+            const [a1, a2] = bond.getAtomObjects(_mol2d);
+            if (!a1 || !a2 || a1.x == null || a2.x == null) continue;
+            const isHiddenBond = a1.visible === false || a2.visible === false;
+            if (isHiddenBond && !(_stereoMap2d && _stereoMap2d.has(bond.id))) continue;
+            _hoveredBondIds.add(bondId);
+        }
+        _refreshSelectionOverlay();
+        return;
+    }
+
+    if (mode === 'force' && currentMol) {
+        for (const atomId of atomIds) {
+            if (currentMol.atoms.has(atomId)) _hoveredAtomIds.add(atomId);
+        }
+        for (const bondId of bondIds) {
+            if (currentMol.bonds.has(bondId)) _hoveredBondIds.add(bondId);
+        }
+        _refreshSelectionOverlay();
+    }
+}
 
 function _toSVGPt2d(a) {
     const W = plotEl.clientWidth  || 600;
@@ -1663,6 +1963,151 @@ function _toSVGPt2d(a) {
     // Negate y so that molecule coords (y-up math convention) map correctly
     // to SVG/canvas coords (y-down). Without this the display is a mirror image.
     return { x: W / 2 + (a.x - _cx2d) * SCALE, y: H / 2 - (a.y - _cy2d) * SCALE };
+}
+
+function _getConnectedComponentAtomIds(mol, seedAtomIds) {
+    const componentAtomIds = new Set();
+    const queue = [...seedAtomIds];
+
+    while (queue.length > 0) {
+        const atomId = queue.shift();
+        if (componentAtomIds.has(atomId)) continue;
+        const atom = mol.atoms.get(atomId);
+        if (!atom) continue;
+        componentAtomIds.add(atomId);
+        for (const bondId of atom.bonds) {
+            const bond = mol.bonds.get(bondId);
+            if (!bond) continue;
+            const nextAtomId = bond.getOtherAtom(atomId);
+            if (!componentAtomIds.has(nextAtomId)) queue.push(nextAtomId);
+        }
+    }
+
+    return componentAtomIds;
+}
+
+function _select2dComponent(seedAtomIds, additive = false) {
+    if (!_mol2d) return;
+    const componentAtomIds = _getConnectedComponentAtomIds(_mol2d, seedAtomIds);
+
+    _clearPrimitiveHover();
+    if (!additive) {
+        _selectedAtomIds.clear();
+        _selectedBondIds.clear();
+    }
+
+    for (const atomId of componentAtomIds) {
+        const atom = _mol2d.atoms.get(atomId);
+        if (!atom || atom.x == null || atom.visible === false) continue;
+        _selectedAtomIds.add(atomId);
+    }
+
+    for (const bond of _mol2d.bonds.values()) {
+        const [a1, a2] = bond.atoms;
+        if (!componentAtomIds.has(a1) || !componentAtomIds.has(a2)) continue;
+        _selectedBondIds.add(bond.id);
+    }
+
+    draw2d();
+}
+
+function _select2dPrimitive(atomIds = [], bondIds = [], additive = false) {
+    if (!_mol2d) return;
+
+    _clearPrimitiveHover();
+    if (!additive) {
+        _selectedAtomIds.clear();
+        _selectedBondIds.clear();
+    }
+
+    for (const atomId of atomIds) {
+        const atom = _mol2d.atoms.get(atomId);
+        if (!atom || atom.x == null || atom.visible === false) continue;
+        _selectedAtomIds.add(atomId);
+    }
+
+    for (const bondId of bondIds) {
+        const bond = _mol2d.bonds.get(bondId);
+        if (!bond) continue;
+        const [a1, a2] = bond.getAtomObjects(_mol2d);
+        if (!a1 || !a2 || a1.x == null || a2.x == null) continue;
+        const isHiddenBond = a1.visible === false || a2.visible === false;
+        if (isHiddenBond && !(_stereoMap2d && _stereoMap2d.has(bond.id))) continue;
+        _selectedBondIds.add(bondId);
+    }
+
+    draw2d();
+}
+
+function _handle2dPrimitiveClick(event, atomIds = [], bondIds = []) {
+    if (!_selectMode || mode !== '2d' || !_mol2d) return;
+    event.preventDefault();
+    event.stopPropagation();
+    _select2dPrimitive(atomIds, bondIds, _isAdditiveSelectionEvent(event));
+}
+
+function _handle2dComponentDblClick(event, seedAtomIds) {
+    if (!_selectMode || mode !== '2d' || !_mol2d) return;
+    event.preventDefault();
+    event.stopPropagation();
+    _select2dComponent(seedAtomIds, _isAdditiveSelectionEvent(event));
+}
+
+function _selectForceComponent(seedAtomIds, additive = false) {
+    if (!currentMol) return;
+    const componentAtomIds = _getConnectedComponentAtomIds(currentMol, seedAtomIds);
+
+    _clearPrimitiveHover();
+    if (!additive) {
+        _selectedAtomIds.clear();
+        _selectedBondIds.clear();
+    }
+
+    for (const atomId of componentAtomIds) {
+        if (currentMol.atoms.has(atomId)) _selectedAtomIds.add(atomId);
+    }
+
+    for (const bond of currentMol.bonds.values()) {
+        const [a1, a2] = bond.atoms;
+        if (!componentAtomIds.has(a1) || !componentAtomIds.has(a2)) continue;
+        _selectedBondIds.add(bond.id);
+    }
+
+    applyForceSelection();
+}
+
+function _selectForcePrimitive(atomIds = [], bondIds = [], additive = false) {
+    if (!currentMol) return;
+
+    _clearPrimitiveHover();
+    if (!additive) {
+        _selectedAtomIds.clear();
+        _selectedBondIds.clear();
+    }
+
+    for (const atomId of atomIds) {
+        if (currentMol.atoms.has(atomId)) _selectedAtomIds.add(atomId);
+    }
+
+    for (const bondId of bondIds) {
+        if (currentMol.bonds.has(bondId)) _selectedBondIds.add(bondId);
+    }
+
+    applyForceSelection();
+}
+
+function _handleForcePrimitiveClick(event, atomIds = [], bondIds = []) {
+    if (!_selectMode || mode !== 'force' || !currentMol || event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    _selectForcePrimitive(atomIds, bondIds, _isAdditiveSelectionEvent(event));
+}
+
+function _handleForceComponentDblClick(event, seedAtomIds) {
+    if (!_selectMode || mode !== 'force' || !currentMol || event.defaultPrevented) return;
+    event.preventDefault();
+    event.stopPropagation();
+    _selectForceComponent(seedAtomIds, _isAdditiveSelectionEvent(event));
 }
 
 
@@ -1849,7 +2294,14 @@ function draw2d() {
             .attr('x2', p2.x).attr('y2', p2.y)
             .attr('stroke', 'rgba(0,0,0,0)')
             .attr('stroke-width', 12)
+            .on('click', event => {
+                _handle2dPrimitiveClick(event, [], [bi.bond.id]);
+            })
+            .on('dblclick', event => {
+                _handle2dComponentDblClick(event, bi.bond.atoms);
+            })
             .on('mouseover', event => {
+                _showPrimitiveHover([], [bi.bond.id]);
                 tooltip.transition().delay(150).style('opacity', 0.9);
                 tooltip.html(bondTooltipHtml(bi.bond, sa1, sa2))
                     .style('left', (event.clientX + 13) + 'px')
@@ -1860,6 +2312,8 @@ function draw2d() {
                        .style('top',  (event.clientY - 20) + 'px');
             })
             .on('mouseout', () => {
+                _clearPrimitiveHover();
+                _redraw2dSelection();
                 tooltip.transition().duration(50).style('opacity', 0);
             });
     }
@@ -1896,7 +2350,14 @@ function draw2d() {
             .attr('class', 'atom-hit')
             .attr('r', Math.max(labelHalfW(label || symbol, FONT_SIZE), 10))
             .style('cursor', 'grab')
+            .on('click', event => {
+                _handle2dPrimitiveClick(event, [atom.id], []);
+            })
+            .on('dblclick', event => {
+                _handle2dComponentDblClick(event, [atom.id]);
+            })
             .on('mouseover', event => {
+                _showPrimitiveHover([atom.id], []);
                 tooltip.transition().delay(150).style('opacity', 0.9);
                 tooltip.html(atomTooltipHtml(atom, mol))
                     .style('left', (event.clientX + 13) + 'px')
@@ -1907,6 +2368,8 @@ function draw2d() {
                        .style('top',  (event.clientY - 20) + 'px');
             })
             .on('mouseout', () => {
+                _clearPrimitiveHover();
+                _redraw2dSelection();
                 tooltip.transition().duration(50).style('opacity', 0);
             });
 
@@ -1928,6 +2391,8 @@ function draw2d() {
         hitGroup.call(d3.drag()
             .on('start', function(event) {
                 event.sourceEvent.stopPropagation();
+                _clearPrimitiveHover();
+                _redraw2dSelection();
                 tooltip.style('opacity', 0);
                 hitGroup.select('circle').style('cursor', 'grabbing');
             })
@@ -2053,8 +2518,12 @@ function render2d(mol) {
     _cx2d        = cx;
     _cy2d        = cy;
     _stereoMap2d = stereoMap;
-    _selectedAtomIds.clear();
-    _selectedBondIds.clear();
+    if (_preserveSelectionOnNextRender) _syncSelectionToMolecule(mol);
+    else {
+        _selectedAtomIds.clear();
+        _selectedBondIds.clear();
+    }
+    _preserveSelectionOnNextRender = false;
 
     draw2d();
 
@@ -2261,44 +2730,51 @@ window.cleanLayout2d = function() {
 window.togglePanMode = function() {
     if (!_selectMode) return; // already in pan mode
     _selectMode = false;
+    _clearPrimitiveHover();
     document.getElementById('pan-mode-btn').classList.add('active');
     document.getElementById('select-mode-btn').classList.remove('active');
     _selectedAtomIds.clear();
     _selectedBondIds.clear();
-    if (_mol2d) draw2d();
+    if (mode === 'force') applyForceSelection();
+    else if (_mol2d) draw2d();
 };
 
 window.toggleSelectMode = function() {
     if (_selectMode) return; // already in selection mode
     _selectMode = true;
+    _clearPrimitiveHover();
     document.getElementById('select-mode-btn').classList.add('active');
     document.getElementById('pan-mode-btn').classList.remove('active');
 };
 
 // ---------------------------------------------------------------------------
 window.toggleMode = function() {
+    _clearPrimitiveHover();
     mode = mode === 'force' ? '2d' : 'force';
 
     const btn          = document.getElementById('toggle-btn');
     const rotateCtrls  = document.getElementById('rotate-controls');
     const cleanCtrls   = document.getElementById('clean-controls');
-
+    const clean2dBtn   = document.getElementById('clean-2d-btn');
     const forceCtrls = document.getElementById('force-controls');
     if (mode === 'force') {
         btn.textContent           = '⬡ 2D Structure';
         rotateCtrls.style.display = 'none';
-        cleanCtrls.style.display  = 'none';
+        cleanCtrls.style.display  = 'flex';
+        clean2dBtn.style.display  = 'none';
         forceCtrls.style.display  = 'flex';
     } else {
         btn.textContent           = '⚡ Force Layout';
         rotateCtrls.style.display = 'flex';
-        cleanCtrls.style.display  = 'block';
+        cleanCtrls.style.display  = 'flex';
+        clean2dBtn.style.display  = 'flex';
         forceCtrls.style.display  = 'none';
     }
 
     if (currentSmiles || currentInchi) {
         simulation.stop();
         rotationDeg = 0; flipH = false; flipV = false;
+        _preserveSelectionOnNextRender = true;
         const _mol = currentInchi ? parseINCHI(currentInchi) : parseSMILES(currentSmiles);
         _renderMol(_mol);
     }
@@ -2531,6 +3007,123 @@ window._getMolInchi = () => {
     if (!currentMol) return null;
     try { return toInChI(currentMol); } catch (e) { return null; }
 };
+
+window.deleteSelection = function deleteSelection() {
+    const mol = mode === 'force' ? currentMol : _mol2d;
+    if (!mol) return;
+    if (_selectedAtomIds.size === 0 && _selectedBondIds.size === 0) return;
+
+    const is2d = mode === '2d';
+    const deletedAtomIds = new Set(_selectedAtomIds);
+    const affectedHeavyIds = new Set();
+
+    for (const id of _selectedAtomIds) {
+        const atom = mol.atoms.get(id);
+        if (!atom) continue;
+        for (const neighbor of atom.getNeighbors(mol)) {
+            if (neighbor.name === 'H' || deletedAtomIds.has(neighbor.id)) continue;
+            affectedHeavyIds.add(neighbor.id);
+        }
+    }
+
+    for (const id of _selectedBondIds) {
+        const bond = mol.bonds.get(id);
+        if (!bond) continue;
+        for (const atomId of bond.atoms) {
+            const atom = mol.atoms.get(atomId);
+            if (!atom || atom.name === 'H' || deletedAtomIds.has(atomId)) continue;
+            affectedHeavyIds.add(atomId);
+        }
+    }
+
+    // Remove selected atoms (also removes their connected bonds).
+    // Also remove attached hydrogens on each deleted atom so functional-group
+    // deletions do not leave orphaned H atoms behind.
+    for (const id of _selectedAtomIds) {
+        const atom = mol.atoms.get(id);
+        if (!atom) continue;
+        const attachedHydrogenIds = atom.getNeighbors(mol)
+            .filter(n => n.name === 'H')
+            .map(n => n.id);
+        mol.removeAtom(id);
+        for (const hId of attachedHydrogenIds) {
+            mol.removeAtom(hId);
+        }
+    }
+
+    // Remove any explicitly selected bonds not already removed
+    for (const id of _selectedBondIds) {
+        if (mol.bonds.has(id)) mol.removeBond(id);
+    }
+
+    mol.clearStereoAnnotations(affectedHeavyIds);
+    kekulize(mol);
+    refreshAromaticity(mol, { preserveKekule: true });
+    mol.repairImplicitHydrogens(affectedHeavyIds);
+
+    _selectedAtomIds.clear();
+    _selectedBondIds.clear();
+
+    if (is2d) {
+        // Recompute hCounts for remaining atoms
+        _hCounts2d = new Map();
+        for (const [, atom] of mol.atoms) {
+            if (atom.name === 'H') continue;
+            const count = atom.getNeighbors(mol).filter(n => n.name === 'H').length;
+            if (count > 0) _hCounts2d.set(atom.id, count);
+        }
+        _stereoMap2d = pickStereoWedges(mol);
+    }
+
+    // Update SMILES input field
+    try {
+        const newSmiles = toSMILES(mol);
+        currentSmiles = newSmiles;
+        currentInchi  = null;
+        document.getElementById('smiles-input').value = newSmiles;
+    } catch (e) { /* invalid fragment — leave input as-is */ }
+
+    updateFormula(mol);
+    updateDescriptors(mol);
+    updateFunctionalGroups(mol);
+
+    if (mode === 'force') {
+        currentMol = mol;
+        updateForce(mol, { preservePositions: true, preserveView: true });
+    } else {
+        draw2d();
+    }
+}
+
+document.addEventListener('keydown', event => {
+    if (event.key === 'Meta' || event.key === 'Control') {
+        const nextActive = !!(event.metaKey || event.ctrlKey);
+        if (_selectionModifierActive !== nextActive) {
+            _selectionModifierActive = nextActive;
+            _refreshSelectionOverlay();
+        }
+    }
+    if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+    const tag = document.activeElement?.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+    deleteSelection();
+    event.preventDefault();
+});
+
+document.addEventListener('keyup', event => {
+    if (event.key !== 'Meta' && event.key !== 'Control') return;
+    const nextActive = !!(event.metaKey || event.ctrlKey);
+    if (_selectionModifierActive !== nextActive) {
+        _selectionModifierActive = nextActive;
+        _refreshSelectionOverlay();
+    }
+});
+
+window.addEventListener('blur', () => {
+    if (!_selectionModifierActive) return;
+    _selectionModifierActive = false;
+    _refreshSelectionOverlay();
+});
 
 document.getElementById('smiles-input').addEventListener('keyup', event => {
     if (event.key === 'Enter') {

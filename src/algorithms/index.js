@@ -9,5 +9,5 @@ export {
   elementOnlyAtomMatch,
   makeAtomMatcher, makeBondMatcher
 } from './subgraph.js';
-export { perceiveAromaticity } from './aromaticity.js';
+export { perceiveAromaticity, refreshAromaticity } from './aromaticity.js';
 export { morganRanks } from './morgan.js';

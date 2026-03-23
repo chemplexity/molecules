@@ -190,3 +190,34 @@ export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
 
   return aromaticRings;
 }
+
+/**
+ * Clears stale aromatic flags/bond orders and re-perceives aromaticity.
+ *
+ * This is intended for graph edits where an originally aromatic system may
+ * have been broken. Callers should ensure any aromatic bonds that need a
+ * recoverable Kekule assignment already carry `localizedOrder` (for example
+ * by calling `kekulize(mol)` beforehand).
+ *
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {{ preserveKekule?: boolean }} [options]
+ * @returns {string[][]} Array of aromatic rings after refresh.
+ */
+export function refreshAromaticity(mol, { preserveKekule = true } = {}) {
+  for (const atom of mol.atoms.values()) {
+    atom.properties.aromatic = false;
+  }
+
+  for (const bond of mol.bonds.values()) {
+    if (!bond.properties.aromatic) {
+      continue;
+    }
+    bond.properties.order = Number.isInteger(bond.properties.localizedOrder)
+      ? bond.properties.localizedOrder
+      : 1;
+    bond.properties.aromatic = false;
+    delete bond.properties.localizedOrder;
+  }
+
+  return perceiveAromaticity(mol, { preserveKekule });
+}
