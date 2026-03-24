@@ -163,7 +163,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
       continue;
     }
     const parent = nbrs[0];
-    if (!parent.properties.chirality) {
+    if (!parent.getChirality()) {
       continue;
     }
     const others = parent.getNeighbors(mol).filter(n => n.id !== atom.id);
@@ -213,7 +213,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
 
     const stereoType = stereoMap.get(bond.id) ?? null;
     let sa1 = a1, sa2 = a2;
-    if (stereoType && a2.properties.chirality) {
+    if (stereoType && a2.getChirality()) {
       sa1 = a2; sa2 = a1;
     }
     lines.push(...bondToSVG(bond, sa1, sa2, mol, toSVG, stereoType, aromaticMode));
@@ -274,7 +274,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
       }
     }
 
-    const charge = atom.properties.charge ?? 0;
+    const charge = atom.getCharge();
     let chargeSup = '';
     if (charge !== 0) {
       const sign = charge === 1 ? '+' : charge > 1 ? `${charge}+`
@@ -290,7 +290,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
   const chiralEls = [];
   if (showChiralLabels) {
     for (const atom of atoms) {
-      const rs = atom.properties.chirality;
+      const rs = atom.getChirality();
       if (rs !== 'R' && rs !== 'S') {
         continue;
       }

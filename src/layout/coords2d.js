@@ -38,8 +38,8 @@ function _layoutCompareAtomIds(molecule, aId, bId) {
     return aAtomic - bAtomic;
   }
 
-  const aCharge = a?.properties.charge ?? 0;
-  const bCharge = b?.properties.charge ?? 0;
+  const aCharge = a?.getCharge() ?? 0;
+  const bCharge = b?.getCharge() ?? 0;
   if (aCharge !== bCharge) {
     return aCharge - bCharge;
   }
@@ -2068,6 +2068,151 @@ function normalizeOrientation(coords, molecule) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Bond-angle leveling — snap to each bond's natural angular grid
+// ---------------------------------------------------------------------------
+
+/**
+ * Applies a corrective rotation so that bond directions align as closely as
+ * possible to the natural angular grid of each bond's ring system.
+ *
+ * Each bond carries its own grid increment:
+ *   - Ring bond in a ring of size n  →  π / n  (e.g. 30° for 6-ring, 36° for 5-ring)
+ *   - Bond shared by multiple rings  →  minimum of the containing rings' grids
+ *     (the most restrictive constraint wins)
+ *   - Chain bond (no ring)           →  π / 6 (30°, standard zigzag)
+ *
+ * The optimal rotation is found by evaluating every candidate that would snap
+ * at least one bond exactly onto its grid, then selecting the one that minimises
+ * the total squared deviation across all bonds.  This is exact and works for
+ * any ring size or mixture of ring sizes without special-casing.
+ *
+ * @param {Map<string,{x:number,y:number}>} coords
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ */
+function levelCoords(coords, molecule) {
+  const heavyIds = [...coords.keys()].filter(
+    id => molecule.atoms.has(id) && molecule.atoms.get(id)?.name !== 'H'
+  );
+  if (heavyIds.length < 2) {
+    return;
+  }
+
+  // Assign each ring bond its natural grid increment (π / ring_size).
+  // For bonds shared by multiple rings use the smallest increment (tightest fit).
+  const bondGrid = new Map(); // bondId → grid increment (radians)
+  for (const ring of molecule.getRings()) {
+    const inc = Math.PI / ring.length;
+    for (let i = 0; i < ring.length; i++) {
+      const bond = molecule.getBond(ring[i], ring[(i + 1) % ring.length]);
+      if (!bond) {
+        continue;
+      }
+      const existing = bondGrid.get(bond.id);
+      if (existing === undefined || inc < existing) {
+        bondGrid.set(bond.id, inc);
+      }
+    }
+  }
+
+  // Collect each heavy-atom bond's direction and natural grid.
+  const bondData = []; // { angle, inc }
+  const seenBonds = new Set();
+  for (const id of heavyIds) {
+    const a = coords.get(id);
+    if (!a) {
+      continue;
+    }
+    const atom = molecule.atoms.get(id);
+    if (!atom) {
+      continue;
+    }
+    for (const bondId of atom.bonds) {
+      if (seenBonds.has(bondId)) {
+        continue;
+      }
+      seenBonds.add(bondId);
+      const bond = molecule.bonds.get(bondId);
+      if (!bond) {
+        continue;
+      }
+      const otherId = bond.getOtherAtom(id);
+      if (!otherId || molecule.atoms.get(otherId)?.name === 'H') {
+        continue;
+      }
+      const b = coords.get(otherId);
+      if (!b) {
+        continue;
+      }
+      // Direction in [0, π) — bonds are undirected.
+      let angle = Math.atan2(b.y - a.y, b.x - a.x);
+      if (angle < 0) {
+        angle += Math.PI;
+      }
+      if (angle >= Math.PI) {
+        angle -= Math.PI;
+      }
+      bondData.push({ angle, inc: bondGrid.get(bondId) ?? (Math.PI / 6) });
+    }
+  }
+
+  if (bondData.length === 0) {
+    return;
+  }
+
+  // Score a candidate rotation: sum of squared deviations of (angle + rotation)
+  // from the nearest multiple of each bond's grid increment.
+  // Rotating the molecule by r shifts all bond directions by +r in world space.
+  function score(r) {
+    let total = 0;
+    for (const { angle, inc } of bondData) {
+      let a = ((angle + r) % inc + inc) % inc; // map into [0, inc)
+      if (a > inc / 2) {
+        a -= inc; // signed offset in (−inc/2, inc/2]
+      }
+      total += a * a;
+    }
+    return total;
+  }
+
+  // Candidate rotations: for each bond, the rotation(s) that would snap it
+  // exactly to a grid multiple (nearest neighbour ± 1 to avoid edge-case misses).
+  const candidates = new Set([0]);
+  for (const { angle, inc } of bondData) {
+    const k = Math.round(angle / inc);
+    for (let dk = -1; dk <= 1; dk++) {
+      // Normalise to (−π/2, π/2]: rotating by r is identical to r+π for
+      // undirected bonds, so always prefer the smaller-magnitude rotation.
+      let r = (k + dk) * inc - angle;
+      r = r - Math.PI * Math.round(r / Math.PI);
+      candidates.add(r);
+    }
+  }
+
+  let bestRotation = 0;
+  let bestScore = score(0);
+  for (const r of candidates) {
+    const s = score(r);
+    if (s < bestScore - 1e-10) {
+      bestScore = s;
+      bestRotation = r;
+    }
+  }
+
+  if (Math.abs(bestRotation) < 0.5 * Math.PI / 180) {
+    return; // < 0.5° — not worth touching
+  }
+
+  // Rotate all atoms about the heavy-atom centroid.
+  let sx = 0, sy = 0;
+  for (const id of heavyIds) {
+    const p = coords.get(id);
+    sx += p.x;
+    sy += p.y;
+  }
+  rotateCoords(coords, vec2(sx / heavyIds.length, sy / heavyIds.length), bestRotation);
+}
+
 function findPreferredBackbonePath(molecule) {
   const heavyIds = [...molecule.atoms.keys()].filter(id => molecule.atoms.get(id)?.name !== 'H');
   if (heavyIds.length < 2) {
@@ -2786,7 +2931,8 @@ function buildRefinementContext(molecule, coords, {
     frozenAtoms,
     rotatableCandidates,
     multipleBondCandidates,
-    ringSystemCandidates
+    ringSystemCandidates,
+    rings: molecule.getRings().filter(ring => ring.length >= 3)
   };
 }
 
@@ -3230,7 +3376,7 @@ function collectLayoutIssues(molecule, coords, ctx) {
     const neighbors = _layoutNeighbors(molecule, pivotId)
       .filter(atomId => molecule.atoms.get(atomId)?.name !== 'H')
       .filter(atomId => coords.has(atomId));
-    if (neighbors.length < 2 || neighbors.length > 3) {
+    if (neighbors.length < 2 || neighbors.length > 4) {
       continue;
     }
 
@@ -3238,6 +3384,44 @@ function collectLayoutIssues(molecule, coords, ctx) {
     if (!pivotPos) {
       continue;
     }
+
+    // Quaternary centres (4 heavy neighbors) cannot all be at a single ideal
+    // pairwise angle (adjacent pairs ≈ 90°, opposite pairs ≈ 180°).  Instead
+    // check the minimum consecutive angular gap: the ideal gap is 360°/4 = 90°,
+    // and we flag if any adjacent pair of bonds is closer than 60° (2/3 of
+    // ideal), indicating two bonds have collapsed toward each other.
+    if (neighbors.length === 4) {
+      const bondAngles = neighbors
+        .map(nbId => {
+          const nbPos = coords.get(nbId);
+          return nbPos ? Math.atan2(nbPos.y - pivotPos.y, nbPos.x - pivotPos.x) : null;
+        })
+        .filter(a => a !== null)
+        .sort((a, b) => a - b);
+      if (bondAngles.length < 4) {
+        continue;
+      }
+      let minGap = Infinity;
+      for (let i = 0; i < 4; i++) {
+        const gap = (i < 3)
+          ? bondAngles[i + 1] - bondAngles[i]
+          : bondAngles[0] + TWO_PI - bondAngles[3]; // wraparound gap
+        if (gap < minGap) {
+          minGap = gap;
+        }
+      }
+      const minGapThreshold = 60 * Math.PI / 180;
+      if (minGap < minGapThreshold) {
+        const err = minGapThreshold - minGap;
+        issues.push({
+          type: 'quaternary_angle',
+          severity: 8 + err * 22,
+          atoms: [pivotId, ...neighbors]
+        });
+      }
+      continue;
+    }
+
     const ideal = idealRefinementAngle(molecule, pivotId);
     const strictTrigonal = ideal === DEG120 && neighbors.length === 3 && isStrictTrigonalRefinementCenter(molecule, pivotId);
     const worstErrThreshold = strictTrigonal ? (4 * Math.PI / 180) : (12 * Math.PI / 180);
@@ -3320,6 +3504,42 @@ function collectLayoutIssues(molecule, coords, ctx) {
           severity: 8,
           atoms: [path[i], path[i + 1], path[i + 2], path[i + 3]]
         });
+      }
+    }
+  }
+
+  // Atom-inside-ring: penalise any non-ring heavy atom whose coordinate falls
+  // inside a ring polygon.  The existing atom-overlap / bond-atom-crowding /
+  // bond-crossing checks are insufficient for this case: for a regular hexagon
+  // a substituent placed at the ring-inward direction lands ≈ 1 BL from every
+  // ring atom (above the 0.72 BL overlap threshold), ≈ 0.866 BL from every
+  // ring bond (above the 0.30 BL carbon crowding threshold), and its bond to
+  // the ring atom shares an endpoint with adjacent ring bonds so
+  // segmentsProperlyIntersect correctly returns false.  Without this check the
+  // scoring function accepts the ring-interior position.
+  if (ctx.rings?.length > 0) {
+    for (let i = 0; i < ctx.heavyIds.length; i++) {
+      const atomId = ctx.heavyIds[i];
+      if (ctx.cycleData.ringAtomIds.has(atomId)) {
+        continue;
+      }
+      const p = coords.get(atomId);
+      if (!p) {
+        continue;
+      }
+      for (const ring of ctx.rings) {
+        const poly = ring.map(id => coords.get(id)).filter(Boolean);
+        if (poly.length < 3) {
+          continue;
+        }
+        if (pointInPolygon(p, poly)) {
+          issues.push({
+            type: 'atom_inside_ring',
+            severity: 500,
+            atoms: [atomId]
+          });
+          break; // one issue per atom is enough
+        }
       }
     }
   }
@@ -4167,6 +4387,7 @@ export function refineExistingCoords(molecule, options = {}) {
 
   currentCoords = idealizeStrictTrigonalCenters(molecule, currentCoords, ctx);
   currentCoords = _separateOverlappingComponents(molecule, currentCoords, bondLength);
+  levelCoords(currentCoords, molecule);
 
   for (const [atomId, pos] of currentCoords) {
     const atom = molecule.atoms.get(atomId);
@@ -5189,7 +5410,8 @@ export function generateCoords(molecule, options = {}) {
     }
   }
 
-  // Phase J — write back coordinates to atom.properties.
+  // Phase J — level to the nearest 30° bond-angle grid, then write back.
+  levelCoords(coords, molecule);
   for (const [atomId, { x, y }] of coords) {
     const atom = molecule.atoms.get(atomId);
     if (atom) {

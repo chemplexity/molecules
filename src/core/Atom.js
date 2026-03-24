@@ -28,6 +28,7 @@ export class Atom {
    * @param {number}       [properties.electrons=undefined] - Electron count (set by parseSMILES).
    * @param {number}       [properties.group=0]             - Periodic table group (1–18).
    * @param {number}       [properties.period=0]            - Periodic table period (1–7).
+   * @param {number}       [properties.radical=0]           - Count of unpaired electrons stored explicitly on the atom.
    * @param {'R'|'S'|null} [properties.chirality=null]      - CIP chirality designation: `'R'` (rectus) or `'S'` (sinister); `null` if no chirality annotation or not determinable.
    */
   constructor(id, name, {
@@ -38,6 +39,7 @@ export class Atom {
     electrons = undefined,
     group     = 0,
     period    = 0,
+    radical   = 0,
     chirality = null
   } = {}) {
     /** @type {string} Unique identifier for this atom. */
@@ -58,8 +60,24 @@ export class Atom {
     this.z = null;
     /** @type {boolean} Whether the atom should be shown in 2D rendering. Defaults to true. */
     this.visible = true;
-    /** @type {{charge: number, aromatic: boolean, protons: number|undefined, neutrons: number|undefined, electrons: number|undefined, group: number, period: number, chirality: 'R'|'S'|null, hybridization: 'sp'|'sp2'|'sp3'|null}} Chemistry-specific element data. */
-    this.properties = { charge, aromatic, protons, neutrons, electrons, group, period, chirality, hybridization: null };
+    /** @type {{charge: number, aromatic: boolean, protons: number|undefined, neutrons: number|undefined, electrons: number|undefined, group: number, period: number, radical: number, chirality: 'R'|'S'|null, hybridization: 'sp'|'sp2'|'sp3'|null}} Chemistry-specific element data. */
+    this.properties = { charge, aromatic, protons, neutrons, electrons, group, period, radical: Atom._normalizeRadical(radical), chirality, hybridization: null };
+  }
+
+  /**
+   * Normalizes and validates an explicit radical count.
+   *
+   * Phase-1 radical support is limited to 0, 1, or 2 unpaired electrons.
+   *
+   * @private
+   * @param {number} radical
+   * @returns {number}
+   */
+  static _normalizeRadical(radical) {
+    if (!Number.isInteger(radical) || radical < 0 || radical > 2) {
+      throw new RangeError(`Radical count must be an integer in [0, 2], got ${radical}.`);
+    }
+    return radical;
   }
 
   /**
@@ -70,6 +88,33 @@ export class Atom {
    */
   getCharge() {
     return this.properties.charge;
+  }
+
+  /**
+   * Returns `true` when this atom is marked aromatic.
+   *
+   * @returns {boolean}
+   */
+  isAromatic() {
+    return this.properties.aromatic ?? false;
+  }
+
+  /**
+   * Returns the explicit radical count stored on this atom.
+   *
+   * @returns {number}
+   */
+  getRadical() {
+    return this.properties.radical ?? 0;
+  }
+
+  /**
+   * Returns the stored hybridization assignment, or `null` when unset.
+   *
+   * @returns {'sp'|'sp2'|'sp3'|null}
+   */
+  getHybridization() {
+    return this.properties.hybridization ?? null;
   }
 
   /**
@@ -92,6 +137,54 @@ export class Atom {
       this.properties.electrons = this.properties.protons - charge;
     }
     return this;
+  }
+
+  /**
+   * Sets the aromatic flag on this atom.
+   *
+   * @param {boolean} aromatic
+   * @returns {this} The atom instance, for chaining.
+   */
+  setAromatic(aromatic) {
+    if (typeof aromatic !== 'boolean') {
+      throw new TypeError(`aromatic must be a boolean, got ${JSON.stringify(aromatic)}`);
+    }
+    this.properties.aromatic = aromatic;
+    return this;
+  }
+
+  /**
+   * Sets the explicit radical count on this atom.
+   *
+   * @param {number} radical - Number of unpaired electrons to store.
+   * @returns {this} The atom instance, for chaining.
+   */
+  setRadical(radical) {
+    this.properties.radical = Atom._normalizeRadical(radical);
+    return this;
+  }
+
+  /**
+   * Sets the stored hybridization assignment on this atom.
+   *
+   * @param {'sp'|'sp2'|'sp3'|null} hybridization
+   * @returns {this} The atom instance, for chaining.
+   */
+  setHybridization(hybridization) {
+    if (hybridization !== 'sp' && hybridization !== 'sp2' && hybridization !== 'sp3' && hybridization !== null) {
+      throw new RangeError(`hybridization must be 'sp', 'sp2', 'sp3', or null, got ${JSON.stringify(hybridization)}`);
+    }
+    this.properties.hybridization = hybridization;
+    return this;
+  }
+
+  /**
+   * Returns `true` when the atom has one or more explicitly stored radicals.
+   *
+   * @returns {boolean}
+   */
+  isRadical() {
+    return this.getRadical() > 0;
   }
 
   /**
@@ -222,7 +315,7 @@ export class Atom {
     } else {
       return 0;
     }
-    return Math.max(0, valence - this.getValence(molecule));
+    return Math.max(0, valence - this.getValence(molecule) - this.getRadical());
   }
 
   /**
@@ -304,7 +397,7 @@ export class Atom {
    * @returns {'R'|'S'|null}
    */
   getChirality() {
-    return this.properties.chirality;
+    return this.properties.chirality ?? null;
   }
 
   /**
@@ -355,7 +448,7 @@ export class Atom {
    */
   isChiralCenter(molecule) {
     if (!molecule) {
-      return this.properties.chirality === 'R' || this.properties.chirality === 'S';
+      return this.getChirality() === 'R' || this.getChirality() === 'S';
     }
     return _isTetrahedralCenter(this, molecule);
   }
@@ -537,7 +630,7 @@ function _cipEqual(a, b) {
  */
 function _isTetrahedralCenter(atom, mol) {
   // Must be sp3: no aromatic flag and all bonds must be single-order.
-  if (atom.properties.aromatic) {
+  if (atom.isAromatic()) {
     return false;
   }
   for (const bId of atom.bonds) {

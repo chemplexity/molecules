@@ -7,7 +7,7 @@ import elements from '../data/elements.js';
  *
  * Uses the electron-count parity rule derived from formal-charge theory:
  *
- *   ec = valenceElectrons(element) − formalCharge
+ *   ec = valenceElectrons(element) − formalCharge − radicalCount
  *
  *   allowed bond orders = non-negative integers ≤ allowedMax
  *                         that share the same parity as ec
@@ -32,6 +32,7 @@ import elements from '../data/elements.js';
  *   atomId:    string,
  *   element:   string,
  *   charge:    number,
+ *   radical:   number,
  *   bondOrder: number,
  *   allowed:   number[],
  *   message:   string
@@ -55,7 +56,7 @@ export function validateValence(molecule) {
 
     // Skip aromatic atoms: their bond orders are fractional (resonance-averaged)
     // and only well-defined after Kekulé assignment.
-    if (atom.properties.aromatic) {
+    if (atom.isAromatic()) {
       continue;
     }
 
@@ -67,13 +68,14 @@ export function validateValence(molecule) {
       : group >= 13 ? group - 10
         : group;
 
-    const charge = atom.properties.charge ?? 0;
-    const ec     = V - charge; // effective electrons available for bonding
+    const charge = atom.getCharge();
+    const radical = atom.getRadical();
+    const ec     = V - charge - radical; // effective electrons available for bonding
 
     // Compute allowedMax from orbital-count constraints
     const shellSize  = period === 1 ? 2 : 8;
-    const octectMax  = ec >= 0 ? Math.max(0, Math.min(ec, shellSize - ec)) : 0;
-    const allowedMax = period <= 2 ? octectMax : Math.min(Math.max(0, ec), 8);
+    const octetMax   = ec >= 0 ? Math.max(0, Math.min(ec, shellSize - ec)) : 0;
+    const allowedMax = period <= 2 ? octetMax : Math.min(Math.max(0, ec), 8);
 
     // Build the set of allowed bond orders (same parity as ec, up to allowedMax)
     const allowed = [];
@@ -98,14 +100,16 @@ export function validateValence(molecule) {
 
     if (!allowed.includes(totalBO)) {
       const chargeStr = charge > 0 ? `+${charge}` : `${charge}`;
+      const radicalStr = radical > 0 ? `, radical ${radical}` : '';
       warnings.push({
         atomId,
         element: atom.name,
         charge,
+        radical,
         bondOrder: totalBO,
         allowed,
         message: `${atom.name}(${atomId}): bond order ${totalBO} is not valid ` +
-          `for ${atom.name} with charge ${chargeStr} ` +
+          `for ${atom.name} with charge ${chargeStr}${radicalStr} ` +
           `(allowed: ${allowed.length ? allowed.join(', ') : 'none'})`
       });
     }

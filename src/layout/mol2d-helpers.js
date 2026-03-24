@@ -217,7 +217,7 @@ export function labelTextOffset(label, fontSize) {
 export function getAtomLabel(atom, hCounts, toSVG, mol) {
   const symbol = atom.name;
   const hCount = hCounts.get(atom.id) ?? 0;
-  const charge = atom.properties.charge ?? 0;
+  const charge = atom.getCharge();
   if (symbol === 'C' && charge === 0 && atom.getNeighbors(mol).some(n => n.name !== 'H')) {
     return null;
   }
@@ -260,7 +260,7 @@ export function pickStereoWedges(mol) {
     if (!center || center.x == null) {
       continue;
     }
-    const chirality = center.properties.chirality;
+    const chirality = center.getChirality();
     if (!chirality) {
       continue;
     }
@@ -406,7 +406,7 @@ export function kekulize(mol) {
   for (const id of aroAtomIds) {
     const atom = mol.atoms.get(id);
     const neutralBase = SIGMA_VAL[atom.name] ?? 4;
-    const adjustedBase = Math.max(0, neutralBase + (atom?.properties.charge ?? 0));
+    const adjustedBase = Math.max(0, neutralBase + (atom?.getCharge() ?? 0));
     if (adjustedBase - sigmaBO.get(id) >= 1) {
       canHaveDouble.add(id);
     }

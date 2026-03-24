@@ -1403,8 +1403,8 @@ function convertMolecule(molecule) {
         id,
         name:      atom.name,
         protons:   atom.properties.protons,
-        charge:    atom.properties.charge ?? 0,
-        aromatic:  atom.properties.aromatic ?? false,
+        charge:    atom.getCharge(),
+        aromatic:  atom.isAromatic(),
     }));
 
     const links = [...molecule.bonds.values()].map(bond => ({
@@ -2672,7 +2672,7 @@ function draw2d() {
     for (const atom of atoms) {
         const { x, y } = toSVGPt(atom);
         const symbol = atom.name;
-        const charge = atom.properties.charge ?? 0;
+        const charge = atom.getCharge();
         const label  = getAtomLabel(atom, hCounts, toSVGPt, mol);
         const labelDx = labelTextOffset(label, FONT_SIZE);
 
@@ -2776,7 +2776,7 @@ function render2d(mol) {
         const nbrs = atom.getNeighbors(mol);
         if (nbrs.length !== 1) continue;
         const parent = nbrs[0];
-        if (!parent.properties.chirality) continue;
+        if (!parent.getChirality()) continue;
         const others = parent.getNeighbors(mol).filter(n => n.id !== atom.id);
         let sumX = 0, sumY = 0, cnt = 0;
         for (const nb of others) {

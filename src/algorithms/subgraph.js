@@ -16,10 +16,10 @@ export function defaultAtomMatch(qAtom, tAtom) {
   if (qAtom.name !== tAtom.name) {
     return false;
   }
-  if ((qAtom.properties.charge ?? 0) !== (tAtom.properties.charge ?? 0)) {
+  if (qAtom.getCharge() !== tAtom.getCharge()) {
     return false;
   }
-  if ((qAtom.properties.aromatic ?? false) !== (tAtom.properties.aromatic ?? false)) {
+  if (qAtom.isAromatic() !== tAtom.isAromatic()) {
     return false;
   }
   return true;
@@ -99,11 +99,11 @@ export function makeAtomMatcher(constraints) {
       return false;
     }
     if (constraints.charge !== undefined &&
-        (tAtom.properties.charge ?? 0) !== constraints.charge) {
+        tAtom.getCharge() !== constraints.charge) {
       return false;
     }
     if (constraints.aromatic !== undefined &&
-        (tAtom.properties.aromatic ?? false) !== constraints.aromatic) {
+        tAtom.isAromatic() !== constraints.aromatic) {
       return false;
     }
     return true;

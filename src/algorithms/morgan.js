@@ -117,7 +117,7 @@ export function morganRanks(mol) {
   const initInvariants = atoms.map((atom, i) => {
     const atomicNum = atom.properties.protons ?? 0;
     const degree    = neighbors[i].length;
-    const charge    = atom.properties.charge ?? 0;
+    const charge    = atom.getCharge();
     let   isotope   = 0;
     if (atom.properties.protons != null && atom.properties.neutrons != null) {
       const mass = Math.round(atom.properties.protons + atom.properties.neutrons);
@@ -127,7 +127,7 @@ export function morganRanks(mol) {
         isotope = mass;
       }
     }
-    const aromatic = atom.properties.aromatic ? 1 : 0;
+    const aromatic = atom.isAromatic() ? 1 : 0;
     return [atomicNum, degree, charge, isotope, hCount[i], aromatic];
   });
 

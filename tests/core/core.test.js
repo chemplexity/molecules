@@ -18,6 +18,11 @@ describe('Atom', () => {
     assert.equal(new Atom('a2', 'O', { charge: -1 }).getCharge(), -1);
   });
 
+  it('isAromatic() reflects the stored aromatic flag', () => {
+    assert.equal(new Atom('a0', 'C').isAromatic(), false);
+    assert.equal(new Atom('a1', 'C', { aromatic: true }).isAromatic(), true);
+  });
+
   it('properties default to safe values when not provided', () => {
     const a = new Atom('a0', 'C');
     assert.equal(a.properties.charge,    0);
@@ -27,10 +32,11 @@ describe('Atom', () => {
     assert.equal(a.properties.electrons, undefined);
     assert.equal(a.properties.group,  0);
     assert.equal(a.properties.period, 0);
+    assert.equal(a.properties.radical, 0);
   });
 
   it('accepts properties via constructor', () => {
-    const a = new Atom('a0', 'C', { protons: 6, neutrons: 6.0107, electrons: 6, group: 14, period: 2, charge: -1, aromatic: true });
+    const a = new Atom('a0', 'C', { protons: 6, neutrons: 6.0107, electrons: 6, group: 14, period: 2, charge: -1, aromatic: true, radical: 1 });
     assert.equal(a.properties.protons,   6);
     assert.equal(a.properties.neutrons,  6.0107);
     assert.equal(a.properties.electrons, 6);
@@ -38,6 +44,7 @@ describe('Atom', () => {
     assert.equal(a.properties.period,  2);
     assert.equal(a.properties.charge,  -1);
     assert.equal(a.properties.aromatic, true);
+    assert.equal(a.properties.radical, 1);
   });
 
   it('uuid is a unique string per instance', () => {
@@ -75,6 +82,65 @@ describe('Atom', () => {
   it('setCharge returns the atom for chaining', () => {
     const a = new Atom('a0', 'O', { protons: 8, electrons: 8 }).setCharge(-1);
     assert.equal(a.properties.charge, -1);
+  });
+
+  it('setAromatic stores the aromatic flag and returns the atom', () => {
+    const a = new Atom('a0', 'C');
+    const ret = a.setAromatic(true);
+    assert.equal(a.isAromatic(), true);
+    assert.equal(ret, a);
+  });
+
+  it('setAromatic rejects non-boolean values', () => {
+    const a = new Atom('a0', 'C');
+    assert.throws(() => a.setAromatic(1), TypeError);
+    assert.throws(() => a.setAromatic('true'), TypeError);
+  });
+
+  it('getRadical returns the explicit radical count', () => {
+    assert.equal(new Atom('a0', 'C').getRadical(), 0);
+    assert.equal(new Atom('a1', 'C', { radical: 1 }).getRadical(), 1);
+  });
+
+  it('getHybridization returns the stored hybridization or null', () => {
+    assert.equal(new Atom('a0', 'C').getHybridization(), null);
+    assert.equal(new Atom('a1', 'C', { }).setHybridization('sp2').getHybridization(), 'sp2');
+  });
+
+  it('setRadical stores the radical count and returns the atom', () => {
+    const a = new Atom('a0', 'C');
+    const ret = a.setRadical(1);
+    assert.equal(a.properties.radical, 1);
+    assert.equal(ret, a);
+  });
+
+  it('setRadical rejects unsupported values', () => {
+    const a = new Atom('a0', 'C');
+    assert.throws(() => a.setRadical(-1), RangeError);
+    assert.throws(() => a.setRadical(1.5), RangeError);
+    assert.throws(() => a.setRadical(3), RangeError);
+  });
+
+  it('isRadical() reflects whether the atom carries explicit radicals', () => {
+    const a = new Atom('a0', 'C');
+    assert.equal(a.isRadical(), false);
+    a.setRadical(1);
+    assert.equal(a.isRadical(), true);
+  });
+
+  it('setHybridization stores the hybridization and returns the atom', () => {
+    const a = new Atom('a0', 'C');
+    const ret = a.setHybridization('sp3');
+    assert.equal(a.getHybridization(), 'sp3');
+    assert.equal(ret, a);
+    a.setHybridization(null);
+    assert.equal(a.getHybridization(), null);
+  });
+
+  it('setHybridization rejects unsupported values', () => {
+    const a = new Atom('a0', 'C');
+    assert.throws(() => a.setHybridization('sp4'), RangeError);
+    assert.throws(() => a.setHybridization(1), RangeError);
   });
 
   it('resolveElement sets group, period, protons, neutrons, electrons from symbol', () => {
@@ -550,6 +616,18 @@ describe('Molecule', () => {
     assert.equal(new Molecule().setAtomCharge('x', 1), null);
   });
 
+  it('setAtomRadical updates atom radicals and returns the atom', () => {
+    const mol = new Molecule();
+    mol.addAtom('a0', 'C');
+    const atom = mol.setAtomRadical('a0', 1);
+    assert.equal(atom, mol.atoms.get('a0'));
+    assert.equal(mol.atoms.get('a0').properties.radical, 1);
+  });
+
+  it('setAtomRadical returns null for unknown atom', () => {
+    assert.equal(new Molecule().setAtomRadical('x', 1), null);
+  });
+
   it('getCharge returns 0 for neutral molecule', () => {
     const mol = parseSMILES('CC'); // ethane — no charges
     assert.equal(mol.getCharge(), 0);
@@ -710,6 +788,19 @@ describe('Molecule', () => {
       assert.equal(hAtom.properties.protons, 1);
       assert.equal(hAtom.properties.electrons, 1);
     }
+  });
+
+  it('repairImplicitHydrogens respects explicit radical counts', () => {
+    const mol = new Molecule();
+    const carbon = mol.addAtom('c0', 'C');
+    carbon.resolveElement();
+    mol.setAtomRadical('c0', 1);
+
+    mol.repairImplicitHydrogens(['c0']);
+
+    const hydrogenNeighbors = carbon.getHydrogenNeighbors(mol);
+    assert.equal(hydrogenNeighbors.length, 3);
+    assert.equal(carbon.properties.radical, 1);
   });
 
   it('clearStereoAnnotations removes local atom and bond stereo metadata', () => {
@@ -909,6 +1000,14 @@ describe('Atom#implicitHydrogenCount', () => {
     const mol = parseSMILES('CC');
     const c = [...mol.atoms.values()].find(a => a.name === 'C');
     assert.equal(c.implicitHydrogenCount(mol), 0);
+  });
+
+  it('explicit radical count reduces the implicit hydrogen count', () => {
+    const mol = new Molecule();
+    const c = mol.addAtom('a0', 'C');
+    c.resolveElement();
+    c.setRadical(1);
+    assert.equal(c.implicitHydrogenCount(mol), 3);
   });
 });
 
@@ -1180,6 +1279,13 @@ describe('Molecule#clone', () => {
     assert.equal(copy.atoms.get('y').y, -2);
     assert.equal(copy.atoms.get('y').z, -3);
     assert.equal(copy.atoms.get('y').visible, true);
+  });
+
+  it('preserves explicit radical counts', () => {
+    const mol = new Molecule();
+    mol.addAtom('x', 'C', { radical: 1 });
+    const copy = mol.clone();
+    assert.equal(copy.atoms.get('x').properties.radical, 1);
   });
 
   it('retains duplicate-bond protection in the clone', () => {

@@ -21,10 +21,10 @@ function _heavyAtoms(mol) {
  * Falls back to the stored `properties.hybridization` if set.
  */
 function _hybSp(atom, mol) {
-  if (atom.properties.hybridization) {
-    return atom.properties.hybridization;
+  if (atom.getHybridization()) {
+    return atom.getHybridization();
   }
-  if (atom.properties.aromatic) {
+  if (atom.isAromatic()) {
     return 'sp2';
   }
   for (const bId of atom.bonds) {
@@ -50,12 +50,12 @@ const VALENCE = {
 };
 
 function _targetValence(atom) {
-  const charge = atom.properties.charge ?? 0;
+  const charge = atom.getCharge();
   switch (atom.name) {
     case 'C':
       return 4;
     case 'N':
-      if (atom.properties.aromatic) {
+      if (atom.isAromatic()) {
         return charge > 0 ? 3 : 2;
       }
       return charge > 0 ? 4 : charge < 0 ? 2 : 3;
@@ -173,7 +173,7 @@ function _isAmideLikeNitrogen(atom, mol) {
 }
 
 function _isHBondAcceptor(atom, mol) {
-  const charge = atom.properties.charge ?? 0;
+  const charge = atom.getCharge();
   const hydrogens = _attachedHydrogenCount(atom, mol);
   if (atom.name === 'O') {
     if (charge > 0) {
@@ -188,7 +188,7 @@ function _isHBondAcceptor(atom, mol) {
     if (charge > 0) {
       return false;
     }
-    if (atom.properties.aromatic && hydrogens > 0) {
+    if (atom.isAromatic() && hydrogens > 0) {
       return false;
     }
     if (_isAmideLikeNitrogen(atom, mol)) {
@@ -237,7 +237,7 @@ const CRIPPEN = {
 
 function _crippinKey(atom, mol) {
   const el = atom.name;
-  const charge = atom.properties.charge ?? 0;
+  const charge = atom.getCharge();
   if (el === 'N' && charge > 0) {
     return 'N:+';
   }
@@ -248,14 +248,14 @@ function _crippinKey(atom, mol) {
     return el;
   }
   if (el === 'C' || el === 'N') {
-    if (atom.properties.aromatic) {
+    if (atom.isAromatic()) {
       return `${el}:aro`;
     }
     const hyb = _hybSp(atom, mol);
     return `${el}:${hyb}`;
   }
   if (el === 'O') {
-    if (atom.properties.aromatic) {
+    if (atom.isAromatic()) {
       return 'O:aro';
     }
     const hyb = _hybSp(atom, mol);
@@ -303,13 +303,13 @@ export function tpsa(molecule) {
     const el  = atom.name;
     const h   = _attachedHydrogenCount(atom, molecule);
     const hyb = _hybSp(atom, molecule);
-    const charge = atom.properties.charge ?? 0;
+    const charge = atom.getCharge();
     if (el === 'O') {
       if (charge > 0) {
         sum += 0;
       } else if (_isAcidicOH(atom, molecule) || h >= 1) {
         sum += 20.23; // OH
-      } else if (hyb === 'sp2' || hyb === 'aro' || atom.properties.aromatic) {
+      } else if (hyb === 'sp2' || hyb === 'aro' || atom.isAromatic()) {
         sum += 17.07; // C=O / aromatic O
       } else {
         sum += 9.23;  // ether
@@ -317,7 +317,7 @@ export function tpsa(molecule) {
     } else if (el === 'N') {
       if (charge > 0 && h === 0) {
         sum += 0; // quaternary / fully substituted ammonium-like N
-      } else if (atom.properties.aromatic) {
+      } else if (atom.isAromatic()) {
         sum += h >= 1 ? 15.79 : 12.89; // pyrrolic vs pyridine-like aromatic N
       } else if (hyb === 'sp2') {
         sum += h >= 1 ? 24.68 : 12.89;

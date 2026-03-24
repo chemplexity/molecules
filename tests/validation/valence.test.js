@@ -117,6 +117,16 @@ describe('validateValence — valid molecules', () => {
   it('carbanion [CH3-] produces no warnings', () => {
     assert.deepEqual(validateValence(parseSMILES('[CH3-]')), []);
   });
+
+  it('methyl radical is valid when the radical count is explicit', () => {
+    const mol = buildWithNBonds('C', 3, { radical: 1 });
+    assert.equal(centerWarnings(mol).length, 0);
+  });
+
+  it('hydroxyl radical is valid when the radical count is explicit', () => {
+    const mol = buildWithNBonds('O', 1, { radical: 1 });
+    assert.equal(centerWarnings(mol).length, 0);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -179,6 +189,12 @@ describe('validateValence — oxygen', () => {
     const ws = centerWarnings(buildWithNBonds('O', 4));
     assert.equal(ws.length, 1);
   });
+
+  it('O with 2 bonds and radical 1 produces a warning', () => {
+    const ws = centerWarnings(buildWithNBonds('O', 2, { radical: 1 }));
+    assert.equal(ws.length, 1);
+    assert.deepEqual(ws[0].allowed, [1, 3]);
+  });
 });
 
 describe('validateValence — hydrogen', () => {
@@ -234,12 +250,13 @@ describe('validateValence — transition metals are skipped', () => {
 });
 
 describe('validateValence — warning object shape', () => {
-  it('warning has atomId, element, charge, bondOrder, allowed, message', () => {
+  it('warning has atomId, element, charge, radical, bondOrder, allowed, message', () => {
     const mol = buildWithNBonds('C', 5);
     const [w]  = validateValence(mol);
     assert.equal(typeof w.atomId,    'string');
     assert.equal(typeof w.element,   'string');
     assert.equal(typeof w.charge,    'number');
+    assert.equal(typeof w.radical,   'number');
     assert.equal(typeof w.bondOrder, 'number');
     assert.ok(Array.isArray(w.allowed));
     assert.equal(typeof w.message,   'string');

@@ -186,7 +186,8 @@ export class Molecule {
       }
     }
 
-    const neededH = Math.max(0, valence - nonHBondOrder);
+    const radical = atom.getRadical();
+    const neededH = Math.max(0, valence - nonHBondOrder - radical);
 
     // Remove existing pendant H atoms.
     for (const hId of pendantHIds) {
@@ -278,7 +279,7 @@ export class Molecule {
       if (!atom) {
         continue;
       }
-      atom.properties.chirality = null;
+      atom.setChirality(null);
       for (const bondId of atom.bonds) {
         const bond = this.bonds.get(bondId);
         if (bond) {
@@ -432,6 +433,23 @@ export class Molecule {
   }
 
   /**
+   * Sets the explicit radical count on an atom and recomputes all molecular properties.
+   *
+   * @param {string} id           - Atom ID.
+   * @param {number} radicalCount - Number of unpaired electrons to store.
+   * @returns {Atom|null} The updated atom, or `null` if the atom was not found.
+   */
+  setAtomRadical(id, radicalCount) {
+    const atom = this.atoms.get(id);
+    if (!atom) {
+      return null;
+    }
+    atom.setRadical(radicalCount);
+    this._recomputeProperties();
+    return atom;
+  }
+
+  /**
    * Returns the neighbour atom IDs of a given atom.
    * @param {string} id - Atom ID.
    * @returns {string[]} Array of neighbouring atom IDs.
@@ -495,7 +513,7 @@ export class Molecule {
   getCharge() {
     let charge = 0;
     for (const atom of this.atoms.values()) {
-      charge += atom.properties.charge ?? 0;
+      charge += atom.getCharge();
     }
     return charge;
   }
@@ -892,7 +910,7 @@ export class Molecule {
    */
   neutralizeCharge() {
     for (const atom of this.atoms.values()) {
-      atom.properties.charge = 0;
+      atom.setCharge(0);
       if (atom.properties.protons !== undefined) {
         atom.properties.electrons = atom.properties.protons;
       }
@@ -1113,7 +1131,7 @@ export class Molecule {
    */
   assignHybridizations() {
     for (const atom of this.atoms.values()) {
-      atom.properties.hybridization = _hybridizationOf(atom, this);
+      atom.setHybridization(_hybridizationOf(atom, this));
     }
     return this;
   }
@@ -1193,7 +1211,7 @@ function _hybridizationOf(atom, mol) {
   // p-block (groups 13–17): count multiple bonds and aromaticity.
   let nTriple = 0;
   let nDouble = 0;
-  let aromatic = atom.properties.aromatic;
+  let aromatic = atom.isAromatic();
 
   for (const bId of atom.bonds) {
     const b = mol.bonds.get(bId);
