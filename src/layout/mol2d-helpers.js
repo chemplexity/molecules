@@ -97,15 +97,45 @@ export function shortenLine(x1, y1, x2, y2, d1, d2) {
  * @returns {1|-1}
  */
 export function secondaryDir(a1, a2, mol, toSVG) {
+  const s1 = toSVG(a1), s2 = toSVG(a2);
+  const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
+  const mid = { x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2 };
+
+  const ringDots = mol.getRings()
+    .filter(ring => ring.includes(a1.id) && ring.includes(a2.id))
+    .map(ring => {
+      const ringAtoms = ring
+        .map(id => mol.atoms.get(id))
+        .filter(atom => atom && atom.x != null);
+      if (ringAtoms.length < 3) {
+        return null;
+      }
+      let cx = 0;
+      let cy = 0;
+      for (const atom of ringAtoms) {
+        const svg = toSVG(atom);
+        cx += svg.x;
+        cy += svg.y;
+      }
+      cx /= ringAtoms.length;
+      cy /= ringAtoms.length;
+      return (cx - mid.x) * nx + (cy - mid.y) * ny;
+    })
+    .filter(dot => dot != null && Math.abs(dot) > 1e-6);
+
+  if (ringDots.length > 0) {
+    const firstSign = Math.sign(ringDots[0]);
+    if (ringDots.every(dot => Math.sign(dot) === firstSign)) {
+      return firstSign >= 0 ? 1 : -1;
+    }
+  }
+
   const resolveNbs = (atom, excludeId) =>
     atom.getNeighbors(mol).filter(n => n && n.id !== excludeId && n.name !== 'H' && n.x != null);
   const allNb = [...resolveNbs(a1, a2.id), ...resolveNbs(a2, a1.id)];
   if (allNb.length === 0) {
     return 1;
   }
-  const s1 = toSVG(a1), s2 = toSVG(a2);
-  const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
-  const mid = { x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2 };
   let dot = 0;
   for (const n of allNb) {
     const sn = toSVG(n);
@@ -144,6 +174,33 @@ export function labelHalfH(label, fontSize) {
     return 0;
   }
   return fontSize * 0.58 + 2;
+}
+
+/**
+ * Returns the horizontal shift applied to the rendered text box so the element
+ * symbol stays centered on the atom while any attached H fragment extends to
+ * the chosen side.
+ *
+ * @param {string|null} label
+ * @param {number} fontSize - font size in px
+ * @returns {number}
+ */
+export function labelTextOffset(label, fontSize) {
+  if (!label) {
+    return 0;
+  }
+
+  const prefixMatch = label.match(/^(H\d*)([A-Z][a-z]?)$/);
+  if (prefixMatch) {
+    return -(fontSize * 0.38 * prefixMatch[1].length) / 2;
+  }
+
+  const suffixMatch = label.match(/^([A-Z][a-z]?)(H\d*)$/);
+  if (suffixMatch) {
+    return (fontSize * 0.38 * suffixMatch[2].length) / 2;
+  }
+
+  return 0;
 }
 
 /**

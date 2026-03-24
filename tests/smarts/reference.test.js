@@ -106,6 +106,27 @@ describe('functionalGroups — aromatic heterocycles', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Phosphorus functional groups
+// ---------------------------------------------------------------------------
+
+describe('functionalGroups — phosphorus groups', () => {
+  it('phosphoricAcid found in phosphoric acid', () => assert.equal(matchesSMARTS(mol('P(=O)(O)(O)O'), fg.phosphoricAcid.smarts), true));
+  it('phosphoricAcid NOT found in trimethyl phosphate', () => assert.equal(matchesSMARTS(mol('COP(=O)(OC)OC'), fg.phosphoricAcid.smarts), false));
+  it('phosphate (triester) found in trimethyl phosphate', () => assert.equal(matchesSMARTS(mol('COP(=O)(OC)OC'), fg.phosphate.smarts), true));
+  it('phosphate (triester) NOT found in methyl dihydrogen phosphate', () => assert.equal(matchesSMARTS(mol('COP(=O)(O)O'), fg.phosphate.smarts), false));
+  it('phosphate (triester) NOT found in phosphoric acid', () => assert.equal(matchesSMARTS(mol('P(=O)(O)(O)O'), fg.phosphate.smarts), false));
+  it('phosphateDiester found in [PH](=O)(OC)(O)OC', () => assert.equal(matchesSMARTS(mol('[PH](=O)(OC)(O)OC'), fg.phosphateDiester.smarts), true));
+  it('phosphateDiester NOT found in trimethyl phosphate', () => assert.equal(matchesSMARTS(mol('COP(=O)(OC)OC'), fg.phosphateDiester.smarts), false));
+  it('phosphateMonoester found in methyl dihydrogen phosphate', () => assert.equal(matchesSMARTS(mol('COP(=O)(O)O'), fg.phosphateMonoester.smarts), true));
+  it('phosphateMonoester NOT found in trimethyl phosphate', () => assert.equal(matchesSMARTS(mol('COP(=O)(OC)OC'), fg.phosphateMonoester.smarts), false));
+  it('phosphonate found in dimethyl methylphosphonate', () => assert.equal(matchesSMARTS(mol('CP(=O)(OC)OC'), fg.phosphonate.smarts), true));
+  it('phosphonate NOT found in trimethyl phosphate (no P-C bond)', () => assert.equal(matchesSMARTS(mol('COP(=O)(OC)OC'), fg.phosphonate.smarts), false));
+  it('phosphonate NOT found in [PH] ester (no P-C bond)', () => assert.equal(matchesSMARTS(mol('[PH](=O)(OC)(OC)OC'), fg.phosphonate.smarts), false));
+  it('phosphine found in trimethylphosphine', () => assert.equal(matchesSMARTS(mol('CP(C)C'), fg.phosphine.smarts), true));
+  it('phosphineOxide found in trimethylphosphine oxide', () => assert.equal(matchesSMARTS(mol('CP(=O)(C)C'), fg.phosphineOxide.smarts), true));
+});
+
+// ---------------------------------------------------------------------------
 // Sanity: every entry has name and smarts string
 // ---------------------------------------------------------------------------
 

@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 /**
  * Represents a bond (edge) in a molecular graph.
  *
- * Bond attributes (`order`, `aromatic`) live under `properties` for a
+ * Bond attributes (`order`, `aromatic`, `stereo`) live under `properties` for a
  * consistent shape across Atom, Bond and Molecule.
  */
 export class Bond {
@@ -16,8 +16,9 @@ export class Bond {
    * @param {string|null} [id]  - Unique identifier. Auto-generated as a numeric string when omitted or null.
    * @param {[string, string]} atoms - IDs of the two connected atoms.
    * @param {object} [properties={}]
-   * @param {number}      [properties.order=1]        - Bond order: 1 (single), 2 (double), 3 (triple), 4 (quadruple).
-   * @param {boolean}     [properties.aromatic=false] - Whether the bond is aromatic.
+   * @param {number} [properties.order=1]        - Bond order. Integer localized bonds use 1/2/3/4;
+   *   aromatic bonds may also use 1.5 as a resonance-averaged order.
+   * @param {boolean} [properties.aromatic=false] - Whether the bond is aromatic.
    * @param {string|null} [properties.stereo=null]    - SMILES directional-bond marker: `'/'`
    *   or `'\\'`. `atoms[0]` is the source and `atoms[1]` the target as written in SMILES.
    *   `'/'` means traversal src→tgt goes upward; `'\\'` means downward. E/Z designation is
@@ -86,8 +87,9 @@ export class Bond {
   }
 
   /**
-   * Returns the π-bond contribution of this bond: `order − 1`.
-   * Single bonds return 0, double bonds 1, triple bonds 2.
+   * Returns the nominal pi-bond contribution of this bond: `order - 1`.
+   * Examples: single bonds return 0, double bonds 1, triple bonds 2,
+   * and aromatic 1.5-order bonds return 0.5.
    *
    * @returns {number}
    */
@@ -218,7 +220,8 @@ export class Bond {
 
   /**
    * Returns `true` when this bond is rotatable by the standard cheminformatics
-   * definition: a single, non-aromatic bond between two non-terminal heavy atoms.
+   * definition used by this codebase: a single, non-aromatic, non-ring bond
+   * between two non-terminal heavy atoms, excluding conjugated amide-like bonds.
    *
    * "Non-terminal" means the atom has at least one other heavy-atom neighbor
    * besides the atom it shares this bond with.

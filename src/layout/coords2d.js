@@ -2648,7 +2648,8 @@ function measureRingSystemDeviation(baseCoords, ringSystem) {
 function buildRefinementContext(molecule, coords, {
   bondLength = DEFAULT_BOND_LENGTH,
   freezeRings = true,
-  freezeChiralCenters = false
+  freezeChiralCenters = false,
+  includeRingSystemCandidates = true
 } = {}) {
   _buildLayoutNeighborCache(molecule);
 
@@ -2772,7 +2773,9 @@ function buildRefinementContext(molecule, coords, {
     }
   }
 
-  const ringSystemCandidates = freezeRings ? collectRingSystemCandidates(molecule, bondLength, cycleData) : [];
+  const ringSystemCandidates = freezeRings && includeRingSystemCandidates
+    ? collectRingSystemCandidates(molecule, bondLength, cycleData)
+    : [];
 
   return {
     bondLength,
@@ -2833,6 +2836,46 @@ function idealRefinementAngle(molecule, atomId) {
     return Math.PI;
   }
   return DEG120;
+}
+
+function isStrictTrigonalRefinementCenter(molecule, atomId) {
+  const atom = molecule.atoms.get(atomId);
+  if (!atom) {
+    return false;
+  }
+  const heavyBondOrders = atom.bonds
+    .map(bondId => molecule.bonds.get(bondId))
+    .filter(Boolean)
+    .filter(bond => {
+      const otherId = bond.getOtherAtom(atomId);
+      return molecule.atoms.get(otherId)?.name !== 'H';
+    })
+    .map(bond => bond.properties.order ?? 1);
+  const doubleCount = heavyBondOrders.filter(order => order >= 2 && order < 3).length;
+  const tripleCount = heavyBondOrders.filter(order => order >= 3).length;
+  return tripleCount === 0 && doubleCount === 1 && heavyBondOrders.length === 3;
+}
+
+function getTerminalMultipleBondNeighborId(molecule, atomId) {
+  const atom = molecule.atoms.get(atomId);
+  if (!atom) {
+    return null;
+  }
+  for (const bondId of atom.bonds) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond || bond.properties.aromatic || (bond.properties.order ?? 1) < 2) {
+      continue;
+    }
+    const otherId = bond.getOtherAtom(atomId);
+    if (!otherId || molecule.atoms.get(otherId)?.name === 'H') {
+      continue;
+    }
+    const heavyDegree = _layoutNeighbors(molecule, otherId).filter(nb => molecule.atoms.get(nb)?.name !== 'H').length;
+    if (heavyDegree === 1) {
+      return otherId;
+    }
+  }
+  return null;
 }
 
 function averageDirectionAwayFromRefs(pivot, refPositions) {
@@ -3196,6 +3239,9 @@ function collectLayoutIssues(molecule, coords, ctx) {
       continue;
     }
     const ideal = idealRefinementAngle(molecule, pivotId);
+    const strictTrigonal = ideal === DEG120 && neighbors.length === 3 && isStrictTrigonalRefinementCenter(molecule, pivotId);
+    const worstErrThreshold = strictTrigonal ? (4 * Math.PI / 180) : (12 * Math.PI / 180);
+    const avgErrThreshold = strictTrigonal ? (3 * Math.PI / 180) : 0;
     let worstErr = 0;
     let errSum = 0;
     let pairCount = 0;
@@ -3221,10 +3267,11 @@ function collectLayoutIssues(molecule, coords, ctx) {
     if (pairCount === 0) {
       continue;
     }
-    if (worstErr > (12 * Math.PI / 180)) {
+    const avgErr = errSum / pairCount;
+    if (worstErr > worstErrThreshold || (strictTrigonal && avgErr > avgErrThreshold)) {
       issues.push({
         type: neighbors.length === 3 ? 'planar_angle' : 'chain_angle',
-        severity: 8 + worstErr * 22 + (errSum / pairCount) * 8,
+        severity: (strictTrigonal ? 10 : 8) + worstErr * (strictTrigonal ? 34 : 22) + avgErr * (strictTrigonal ? 16 : 8),
         atoms: [pivotId, ...neighbors]
       });
     }
@@ -3380,6 +3427,191 @@ function applyRefinementCoords(baseCoords, updates) {
     next.set(atomId, pos);
   }
   return next;
+}
+
+function strictTrigonalCenterError(molecule, coords, centerId) {
+  const center = coords.get(centerId);
+  if (!center) {
+    return Infinity;
+  }
+  const neighbors = _layoutNeighbors(molecule, centerId)
+    .filter(atomId => molecule.atoms.get(atomId)?.name !== 'H')
+    .filter(atomId => coords.has(atomId));
+  if (neighbors.length !== 3) {
+    return Infinity;
+  }
+  let err = 0;
+  let pairCount = 0;
+  for (let i = 0; i < neighbors.length; i++) {
+    for (let j = i + 1; j < neighbors.length; j++) {
+      const aPos = coords.get(neighbors[i]);
+      const bPos = coords.get(neighbors[j]);
+      const angle = angleBetweenPoints(aPos, center, bPos);
+      if (angle == null) {
+        return Infinity;
+      }
+      err += Math.abs(angle - DEG120);
+      pairCount++;
+    }
+  }
+  return pairCount > 0 ? err / pairCount : Infinity;
+}
+
+function buildStrictTrigonalCenterTransforms(molecule, baseCoords, centerId, ctx) {
+  if (!isStrictTrigonalRefinementCenter(molecule, centerId) ||
+      !getTerminalMultipleBondNeighborId(molecule, centerId)) {
+    return [];
+  }
+
+  const center = baseCoords.get(centerId);
+  if (!center) {
+    return [];
+  }
+
+  const neighbors = _layoutNeighbors(molecule, centerId)
+    .filter(atomId => molecule.atoms.get(atomId)?.name !== 'H')
+    .filter(atomId => baseCoords.has(atomId));
+  if (neighbors.length !== 3) {
+    return [];
+  }
+
+  const infos = neighbors.map(neighborId => {
+    const subtree = collectRefinementSubtree(molecule, neighborId, centerId, ctx.frozenAtoms);
+    const movable = Boolean(
+      subtree &&
+      subtree.size > 0 &&
+      countHeavyAtoms(molecule, subtree) > 0 &&
+      countHeavyAtoms(molecule, subtree) <= ctx.heavyIds.length - countHeavyAtoms(molecule, subtree)
+    );
+    return {
+      neighborId,
+      pos: baseCoords.get(neighborId),
+      subtree,
+      movable
+    };
+  });
+
+  const movableInfos = infos.filter(info => info.movable);
+  const fixedInfos = infos.filter(info => !info.movable);
+  if (movableInfos.length === 0 || fixedInfos.length === 0) {
+    return [];
+  }
+
+  const transforms = [];
+  const mergeUpdates = parts => {
+    const merged = new Map();
+    for (const part of parts) {
+      for (const [atomId, pos] of part) {
+        merged.set(atomId, pos);
+      }
+    }
+    return merged;
+  };
+
+  if (fixedInfos.length === 2 && movableInfos.length === 1) {
+    const targetAngle = averageDirectionAwayFromRefs(center, fixedInfos.map(info => info.pos));
+    if (targetAngle != null) {
+      transforms.push(
+        reprojectSubtreeCoords(
+          baseCoords,
+          movableInfos[0].subtree,
+          centerId,
+          movableInfos[0].neighborId,
+          targetAngle,
+          ctx.bondLength
+        )
+      );
+    }
+    return transforms;
+  }
+
+  if (fixedInfos.length === 1 && movableInfos.length === 2) {
+    const refAngle = angleTo(center, fixedInfos[0].pos);
+    const targetAngles = [
+      normalizeAngle(refAngle + DEG120),
+      normalizeAngle(refAngle - DEG120)
+    ];
+    const assignments = [
+      [targetAngles[0], targetAngles[1]],
+      [targetAngles[1], targetAngles[0]]
+    ];
+    for (const [firstAngle, secondAngle] of assignments) {
+      transforms.push(
+        mergeUpdates([
+          reprojectSubtreeCoords(
+            baseCoords,
+            movableInfos[0].subtree,
+            centerId,
+            movableInfos[0].neighborId,
+            firstAngle,
+            ctx.bondLength
+          ),
+          reprojectSubtreeCoords(
+            baseCoords,
+            movableInfos[1].subtree,
+            centerId,
+            movableInfos[1].neighborId,
+            secondAngle,
+            ctx.bondLength
+          )
+        ])
+      );
+    }
+  }
+
+  return transforms;
+}
+
+function idealizeStrictTrigonalCenters(molecule, baseCoords, ctx, {
+  maxPasses = 2,
+  requireNonWorseScore = true
+} = {}) {
+  let currentCoords = baseCoords;
+  let currentScore = scoreLayoutIssues(collectLayoutIssues(molecule, currentCoords, ctx));
+
+  for (let pass = 0; pass < maxPasses; pass++) {
+    let changed = false;
+    const centerIds = ctx.heavyIds
+      .filter(atomId => getTerminalMultipleBondNeighborId(molecule, atomId))
+      .sort((a, b) => strictTrigonalCenterError(molecule, currentCoords, b) - strictTrigonalCenterError(molecule, currentCoords, a));
+
+    for (const centerId of centerIds) {
+      const baseLocalError = strictTrigonalCenterError(molecule, currentCoords, centerId);
+      if (!Number.isFinite(baseLocalError) || baseLocalError < (2 * Math.PI / 180)) {
+        continue;
+      }
+
+      let bestCoords = null;
+      let bestScore = currentScore;
+      let bestLocalError = baseLocalError;
+      for (const updates of buildStrictTrigonalCenterTransforms(molecule, currentCoords, centerId, ctx)) {
+        const trialCoords = applyRefinementCoords(currentCoords, updates);
+        const trialLocalError = strictTrigonalCenterError(molecule, trialCoords, centerId);
+        if (!(trialLocalError + 1e-6 < bestLocalError)) {
+          continue;
+        }
+        const trialScore = scoreLayoutIssues(collectLayoutIssues(molecule, trialCoords, ctx));
+        if ((!requireNonWorseScore || trialScore <= currentScore + 1e-6) &&
+            (trialScore + 1e-6 < bestScore || trialLocalError + 1e-6 < bestLocalError)) {
+          bestCoords = trialCoords;
+          bestScore = trialScore;
+          bestLocalError = trialLocalError;
+        }
+      }
+
+      if (bestCoords) {
+        currentCoords = bestCoords;
+        currentScore = bestScore;
+        changed = true;
+      }
+    }
+
+    if (!changed) {
+      break;
+    }
+  }
+
+  return currentCoords;
 }
 
 function applyRingSystemTemplate(baseCoords, ringSystem) {
@@ -3816,7 +4048,8 @@ export function refineExistingCoords(molecule, options = {}) {
   if (ctx.rotatableCandidates.length === 0 &&
       ctx.multipleBondCandidates.length === 0 &&
       ctx.ringSystemCandidates.length === 0) {
-    const separated = _separateOverlappingComponents(molecule, coords, bondLength);
+    const idealized = idealizeStrictTrigonalCenters(molecule, coords, ctx);
+    const separated = _separateOverlappingComponents(molecule, idealized, bondLength);
     if (separated !== coords) {
       for (const [atomId, pos] of separated) {
         const atom = molecule.atoms.get(atomId);
@@ -3910,15 +4143,17 @@ export function refineExistingCoords(molecule, options = {}) {
           bestCoords = trialCoords;
         }
 
-        // Child transforms only make sense when the base trial has promise.
-        if (improved || trialScore < currentScore + 1e-6) {
-          for (const childUpdates of buildAttachedMultipleBondProjectionTransforms(molecule, trialCoords, candidate, ctx)) {
-            const childTrialCoords = applyRefinementCoords(trialCoords, childUpdates);
-            const childTrialScore = scoreLayoutIssues(collectLayoutIssues(molecule, childTrialCoords, ctx));
-            if (childTrialScore + 1e-6 < bestScore) {
-              bestScore = childTrialScore;
-              bestCoords = childTrialCoords;
-            }
+        // Attached multiple-bond corrections often need a coordinated move:
+        // the base trial can look neutral or slightly worse until the bonded
+        // carbonyl/imine partner is reprojected as well. Always evaluate the
+        // child transforms so ring-bound esters/acids and similar systems can
+        // recover their full trigonal geometry in one refinement step.
+        for (const childUpdates of buildAttachedMultipleBondProjectionTransforms(molecule, trialCoords, candidate, ctx)) {
+          const childTrialCoords = applyRefinementCoords(trialCoords, childUpdates);
+          const childTrialScore = scoreLayoutIssues(collectLayoutIssues(molecule, childTrialCoords, ctx));
+          if (childTrialScore + 1e-6 < bestScore) {
+            bestScore = childTrialScore;
+            bestCoords = childTrialCoords;
           }
         }
       }
@@ -3930,6 +4165,7 @@ export function refineExistingCoords(molecule, options = {}) {
     currentCoords = bestCoords;
   }
 
+  currentCoords = idealizeStrictTrigonalCenters(molecule, currentCoords, ctx);
   currentCoords = _separateOverlappingComponents(molecule, currentCoords, bondLength);
 
   for (const [atomId, pos] of currentCoords) {
@@ -4931,6 +5167,27 @@ export function generateCoords(molecule, options = {}) {
   // double bonds whose intended E/Z assignment is explicitly derivable from
   // the stored directional bond markers.
   enforceAcyclicEZStereo(molecule, coords);
+
+  // Phase I.6 — restore local trigonal geometry for carbonyl / imino centers.
+  // This catches side-chain carbonyls that can be skewed by the earlier ring
+  // and force-field passes without broadly perturbing alkene geometry.
+  {
+    const trigonalCtx = buildRefinementContext(molecule, coords, {
+      bondLength,
+      freezeRings: systems.length > 0,
+      freezeChiralCenters: false,
+      includeRingSystemCandidates: false
+    });
+    const idealized = idealizeStrictTrigonalCenters(molecule, coords, trigonalCtx, {
+      requireNonWorseScore: false
+    });
+    if (idealized !== coords) {
+      coords.clear();
+      for (const [atomId, pos] of idealized) {
+        coords.set(atomId, pos);
+      }
+    }
+  }
 
   // Phase J — write back coordinates to atom.properties.
   for (const [atomId, { x, y }] of coords) {

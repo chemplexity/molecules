@@ -19,7 +19,7 @@ import {
   atomColor,
   WEDGE_HALF_W, WEDGE_DASHES,
   perpUnit, shortenLine, secondaryDir,
-  labelHalfW, labelHalfH,
+  labelHalfW, labelHalfH, labelTextOffset,
   getAtomLabel, pickStereoWedges,
   kekulize, atomBBox
 } from './mol2d-helpers.js';
@@ -250,9 +250,10 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
     const color = atomColor(atom.name);
     const hw = labelHalfW(label, FONT_SIZE);
     const hh = labelHalfH(label, FONT_SIZE);
+    const dx = labelTextOffset(label, FONT_SIZE);
 
     labelEls.push(
-      `<rect x="${(x - hw).toFixed(2)}" y="${(y - hh).toFixed(2)}" width="${(hw * 2).toFixed(2)}" height="${(hh * 2).toFixed(2)}" fill="white" rx="2"/>`
+      `<rect x="${(x + dx - hw).toFixed(2)}" y="${(y - hh).toFixed(2)}" width="${(hw * 2).toFixed(2)}" height="${(hh * 2).toFixed(2)}" fill="white" rx="2"/>`
     );
 
     let textContent = '';
@@ -278,11 +279,11 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
     if (charge !== 0) {
       const sign = charge === 1 ? '+' : charge > 1 ? `${charge}+`
         : charge === -1 ? '−' : `${Math.abs(charge)}−`;
-      chargeSup = `<text x="${(x + hw).toFixed(2)}" y="${(y - FONT_SIZE * 0.42).toFixed(2)}" font-family="sans-serif" font-size="${(FONT_SIZE * 0.8).toFixed(1)}" fill="${color}" text-anchor="start">${escapeXml(sign)}</text>`;
+      chargeSup = `<text x="${(x + dx + hw).toFixed(2)}" y="${(y - FONT_SIZE * 0.42).toFixed(2)}" font-family="sans-serif" font-size="${(FONT_SIZE * 0.8).toFixed(1)}" fill="${color}" text-anchor="start">${escapeXml(sign)}</text>`;
     }
 
     labelEls.push(
-      `<text x="${x.toFixed(2)}" y="${y.toFixed(2)}" font-family="sans-serif" font-size="${FONT_SIZE}" fill="${color}" text-anchor="middle" dominant-baseline="central">${textContent}</text>${chargeSup}`
+      `<text x="${(x + dx).toFixed(2)}" y="${y.toFixed(2)}" font-family="sans-serif" font-size="${FONT_SIZE}" fill="${color}" text-anchor="middle" dominant-baseline="central">${textContent}</text>${chargeSup}`
     );
   }
 

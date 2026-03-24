@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
 import { generateCoords } from '../../src/layout/index.js';
-import { getAtomLabel, kekulize } from '../../src/layout/mol2d-helpers.js';
+import { getAtomLabel, kekulize, labelTextOffset, perpUnit, secondaryDir } from '../../src/layout/mol2d-helpers.js';
 import { refineExistingCoords } from '../../src/layout/coords2d.js';
 import { parseINCHI } from '../../src/io/inchi.js';
 import { parseSMILES } from '../../src/io/smiles.js';
@@ -1536,6 +1536,52 @@ describe('kekulize — charged aromatic InChI imports used by browser rendering'
   });
 });
 
+describe('secondaryDir — ring double bonds', () => {
+  it('keeps dopamine ring double bonds on the interior side of the ring', () => {
+    const mol = parseSMILES('C1=CC(=C(C=C1CCN)O)O');
+    kekulize(mol);
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const ring = mol.getRings().find(candidate => candidate.length === 6);
+    assert.ok(ring, 'expected a six-membered ring');
+
+    const ringAtoms = ring.map(id => mol.atoms.get(id));
+    const centroid = ringAtoms.reduce((acc, atom) => ({
+      x: acc.x + atom.x,
+      y: acc.y + atom.y,
+    }), { x: 0, y: 0 });
+    centroid.x /= ringAtoms.length;
+    centroid.y /= ringAtoms.length;
+
+    const ringDoubleBonds = [...mol.bonds.values()].filter(bond => {
+      const drawOrder = bond.properties.localizedOrder ?? (bond.properties.order ?? 1);
+      if (drawOrder !== 2) return false;
+      return ring.includes(bond.atoms[0]) && ring.includes(bond.atoms[1]);
+    });
+
+    assert.equal(ringDoubleBonds.length, 3, 'expected three ring double bonds');
+
+    for (const bond of ringDoubleBonds) {
+      const a1 = mol.atoms.get(bond.atoms[0]);
+      const a2 = mol.atoms.get(bond.atoms[1]);
+      const dir = secondaryDir(a1, a2, mol, atom => ({ x: atom.x, y: atom.y }));
+      const mid = { x: (a1.x + a2.x) / 2, y: (a1.y + a2.y) / 2 };
+      const { nx, ny } = perpUnit(a2.x - a1.x, a2.y - a1.y);
+      const centroidDot = (centroid.x - mid.x) * nx + (centroid.y - mid.y) * ny;
+      assert.ok(Math.abs(centroidDot) > 1e-6, `ring centroid became collinear with bond ${bond.id}`);
+      assert.equal(Math.sign(dir), Math.sign(centroidDot), `bond ${bond.id} offset toward the outside of the ring`);
+    }
+  });
+});
+
+describe('labelTextOffset — hydrogen-bearing labels', () => {
+  it('shifts prefixed hydrogens left and suffixed hydrogens right', () => {
+    assert.ok(labelTextOffset('HO', 14) < 0);
+    assert.ok(labelTextOffset('OH', 14) > 0);
+    assert.equal(labelTextOffset('O', 14), 0);
+  });
+});
+
 describe('getAtomLabel — charged carbons', () => {
   it('shows a label for substituted carbons with formal charge', () => {
     const mol = parseSMILES('C1=CC=[C-]C=C1.[Li+]');
@@ -1777,6 +1823,74 @@ describe('refineExistingCoords — standalone cleanup', () => {
     for (const angle of afterAngles) {
       assert.ok(Math.abs(angle - 120) < 4, `expected restored trigonal angle near 120°, got ${angle.toFixed(2)}°`);
     }
+  });
+
+  it('restores trigonal geometry for a ring-bound carboxylic acid carbonyl', () => {
+    const mol = parseSMILES('O=C(O)c1ccccc1');
+    generateCoords(mol, { bondLength: 1.5 });
+
+    const carbonylCarbon = [...mol.atoms.values()].find(atom =>
+      atom.name === 'C' &&
+      atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
+      atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2) &&
+      atom.getNeighbors(mol).some(nb => nb.name === 'O') &&
+      atom.getNeighbors(mol).some(nb => nb.name === 'C')
+    );
+    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb =>
+      nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2
+    );
+    const hydroxylOxygen = carbonylCarbon.getNeighbors(mol).find(nb =>
+      nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 1
+    );
+    const arylCarbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
+
+    oxygen.x += 2.8;
+    oxygen.y += 1.4;
+    hydroxylOxygen.x = carbonylCarbon.x + (oxygen.x - carbonylCarbon.x) / Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y) * 1.5;
+    hydroxylOxygen.y = carbonylCarbon.y + (oxygen.y - carbonylCarbon.y) / Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y) * 1.5;
+
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
+
+    const afterAngles = [
+      angleDeg(oxygen, carbonylCarbon, hydroxylOxygen),
+      angleDeg(oxygen, carbonylCarbon, arylCarbon),
+      angleDeg(hydroxylOxygen, carbonylCarbon, arylCarbon)
+    ];
+    for (const angle of afterAngles) {
+      assert.ok(Math.abs(angle - 120) < 4, `expected restored benzoic-acid trigonal angle near 120°, got ${angle.toFixed(2)}°`);
+    }
+  });
+
+  it('keeps aspirin carbonyl centers trigonal during generation and refine', () => {
+    const mol = parseINCHI('InChI=1S/C9H8O4/c1-6(10)13-8-5-3-2-4-7(8)9(11)12/h2-5H,1H3,(H,11,12)');
+
+    const assertCarbonylAngles = stage => {
+      const carbonylCenters = [...mol.atoms.values()].filter(atom =>
+        atom.name === 'C' &&
+        atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
+        atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
+      );
+
+      assert.equal(carbonylCenters.length, 2, `expected 2 carbonyl centers in aspirin during ${stage}`);
+      for (const carbonylCarbon of carbonylCenters) {
+        const neighbors = carbonylCarbon.getNeighbors(mol).filter(nb => nb.name !== 'H');
+        const angles = [];
+        for (let i = 0; i < neighbors.length; i++) {
+          for (let j = i + 1; j < neighbors.length; j++) {
+            angles.push(angleDeg(neighbors[i], carbonylCarbon, neighbors[j]));
+          }
+        }
+        for (const angle of angles) {
+          assert.ok(Math.abs(angle - 120) < 4, `expected aspirin carbonyl angle near 120° during ${stage}, got ${angle.toFixed(2)}° at ${carbonylCarbon.id}`);
+        }
+      }
+    };
+
+    generateCoords(mol, { bondLength: 1.5 });
+    assertCarbonylAngles('generateCoords');
+
+    refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
+    assertCarbonylAngles('refineExistingCoords');
   });
 
   it('snaps a displaced ring atom back to the ring geometry', () => {

@@ -107,19 +107,21 @@ export const functionalGroups = {
   // ---------------------------------------------------------------------------
 
   phosphine: { name: 'Phosphine', smarts: '[PX3]([#6])([#6])[#6]' },
-  phosphineOxide: { name: 'Phosphine Oxide', smarts: '[PX4](=O)([#6])([#6])[#6]' },
-  phosphate: { name: 'Phosphate Ester', smarts: '[PX4](=O)([OX2])[OX2][OX2]' },
-  phosphonate: { name: 'Phosphonate', smarts: '[PX4](=O)([OX2][#6])[OX2]' },
-  phosphonamide: { name: 'Phosphonamide', smarts: '[PX4](=O)([NX3])[#6]' },
-  phosphoricAcid: { name: 'Phosphoric Acid', smarts: '[PX4](=O)([OX2H])[OX2H][OX2H]' },
+  phosphineOxide: { name: 'Phosphine Oxide', smarts: '[(PX4,PX5)](=O)([#6])([#6])[#6]' },
+  phosphate: { name: 'Phosphate Triester', smarts: '[(PX4,PX5)](=O)([OX2][#6])([OX2][#6])[OX2][#6]' },
+  phosphateDiester: { name: 'Phosphate Diester', smarts: '[(PX4,PX5);$([PX4,PX5][OX2H])](=O)([OX2][#6])[OX2][#6]' },
+  phosphateMonoester: { name: 'Phosphate Monoester', smarts: '[(PX4,PX5);$([PX4,PX5]([OX2H])[OX2H])](=O)[OX2][#6]' },
+  phosphonate: { name: 'Phosphonate', smarts: '[#6][(PX4,PX5)](=O)[OX2]' },
+  phosphonamide: { name: 'Phosphonamide', smarts: '[PX4,PX5](=O)([NX3])[#6]' },
+  phosphoricAcid: { name: 'Phosphoric Acid', smarts: '[(PX4,PX5)](=O)([OX2H])([OX2H])[OX2H]' },
 
   // ---------------------------------------------------------------------------
   // Boron functional groups
   // ---------------------------------------------------------------------------
 
-  boronicAcid: { name: 'Boronic Acid', smarts: '[BX3](O)O' },
-  boronicEster: { name: 'Boronic Ester', smarts: '[BX3]([OX2])[OX2]' },
-  borinicAcid: { name: 'Borinic Acid', smarts: '[BX3](O)[#6]' },
+  boronicAcid: { name: 'Boronic Acid', smarts: '[BX3]([OX2H])[OX2H]' },
+  boronicEster: { name: 'Boronic Ester', smarts: '[BX3]([OX2][#6])[OX2][#6]' },
+  borinicAcid: { name: 'Borinic Acid', smarts: '[BX3]([OX2H])[#6]' },
 
   // ---------------------------------------------------------------------------
   // Halogens

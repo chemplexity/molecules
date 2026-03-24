@@ -455,6 +455,15 @@ div.tooltip td:first-child {
 
 #force-controls button:hover { background: #f0f0f0; }
 
+#label-toggle.active {
+    background: #5090f0;
+    color: #fff;
+    border-color: #3060c0;
+}
+
+#label-toggle.active:hover {
+    background: #4080e0;
+}
 
 .svg-plot.labels-hidden .atom-symbol { display: none; }
 
@@ -536,6 +545,7 @@ div.tooltip td:first-child {
     padding: 0;
     border-radius: 50%;
     font-size: 9px;
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
     font-weight: bold;
     color: #555;
     display: flex;
@@ -671,6 +681,7 @@ var exampleMolecules = [
     { name: 'GHK-Cu',      smiles: 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN',  inchi: 'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1' },
     { name: 'aspirin',     smiles: 'CC(=O)Oc1ccccc1C(=O)O',                             inchi: 'InChI=1S/C9H8O4/c1-6(10)13-8-5-3-2-4-7(8)9(11)12/h2-5H,1H3,(H,11,12)' },
     { name: 'serotonin',   smiles: 'C1=CC2=C(C=C1O)C(=CN2)CCN',                         inchi: 'InChI=1S/C10H12N2O/c11-4-3-7-6-12-10-2-1-8(13)5-9(7)10/h1-2,5-6,12-13H,3-4,11H2' },
+    { name: 'dopamine',    smiles: 'C1=CC(=C(C=C1CCN)O)O',                              inchi: 'InChI=1S/C8H11NO2/c9-4-3-6-1-2-7(10)8(11)5-6/h1-2,5,9-10H,3-4,7H2' },
     { name: 'anthracene',  smiles: 'C1=CC2=CC3=CC=CC=C3C=C2C=C1',                       inchi: 'InChI=1S/C14H10/c1-2-6-12-10-14-8-4-3-7-13(14)9-11(12)5-1/h1-10H' },
     { name: 'LSD',         smiles: 'CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C',    inchi: 'InChI=1S/C20H25N3O/c1-4-23(5-2)20(24)14-9-16-15-7-6-8-17-19(15)13(11-21-17)10-18(16)22(3)12-14/h6-9,11,14,18H,4-5,10,12H2,1-3H3' },
 ];
@@ -857,6 +868,8 @@ var randomMolecule = [
   { smiles: "CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC", inchi: "InChI=1S/C32H52O3/c1-19(2)7-6-8-20(3)24-12-13-26-27(29(24)31(34)35-5)18-22-9-14-28-25-11-10-23(33)17-21(25)15-16-32(28,4)30(22)26/h14,19-27,29-30,33H,6-13,15-18H2,1-5H3" },
   { smiles: "CCCCCC1=CC(=C2[CH]3C=C(CC[CH]3C(OC2=C1)(C)C)C)O", inchi: "InChI=1S/C21H30O2/c1-5-6-7-8-15-12-18(22)20-16-11-14(2)9-10-17(16)21(3,4)23-19(20)13-15/h11-13,16-17,22H,5-10H2,1-4H3" },
   { smiles: "C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O", inchi: "InChI=1S/C6H12O6/c7-1-2-3(8)4(9)5(10)6(11)12-2/h2-11H,1H2/t2-,3-,4+,5-,6?/m1/s1" },
+  { smiles: 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN', inchi: 'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1' },
+  { smiles: 'C1=CC(=C(C=C1CCN)O)O', inchi: 'InChI=1S/C8H11NO2/c9-4-3-6-1-2-7(10)8(11)5-6/h1-2,5,10-11H,3-4,9H2' }
 ];
 
 function pickRandomMolecule() {
@@ -887,7 +900,7 @@ import * as d3              from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
 import { parseSMILES, toSMILES } from './src/io/smiles.js';
 import { parseINCHI, toInChI } from './src/io/inchi.js';
 import { refreshAromaticity } from './src/algorithms/aromaticity.js';
-import { generateCoords, refineExistingCoords }   from './src/layout/coords2d.js';
+import { generateCoords, refineExistingCoords, generateAndRefine2dCoords } from './src/layout/index.js';
 import { molecularFormula, molecularMass } from './src/descriptors/molecular.js';
 import { allMatrices }      from './src/matrices/index.js';
 import * as mol2dHelpers from './src/layout/mol2d-helpers.js';
@@ -901,7 +914,7 @@ import { findSMARTS, functionalGroups } from './src/smarts/index.js';
 const {
     atomColor, WEDGE_HALF_W, WEDGE_DASHES,
     perpUnit, shortenLine, secondaryDir,
-    labelHalfW, labelHalfH,
+    labelHalfW, labelHalfH, labelTextOffset,
     getAtomLabel, pickStereoWedges,
     kekulize
 } = mol2dHelpers;
@@ -960,13 +973,27 @@ function updateFunctionalGroups(mol) {
     for (const [, fg] of Object.entries(functionalGroups)) {
         const mappings = [...findSMARTS(mol, fg.smarts)];
         if (mappings.length === 0) continue;
+        // Group mappings by anchor atom (first target atom), then merge each
+        // group's atom sets. This deduplicates by functional-group centre while
+        // also collecting all atoms from permutation-equivalent matches (e.g. all
+        // three O–C carbons in a phosphate ester end up highlighted, not just one).
+        const mergedByAnchor = new Map();
+        for (const m of mappings) {
+            const anchor = m.values().next().value;
+            if (!mergedByAnchor.has(anchor)) mergedByAnchor.set(anchor, new Set());
+            for (const id of m.values()) mergedByAnchor.get(anchor).add(id);
+        }
+        // Convert each merged Set into a Map so _setHighlight can call .values()
+        const uniqueMappings = [...mergedByAnchor.values()].map(
+            atomSet => new Map([...atomSet].map(id => [id, id]))
+        );
         const tr = document.createElement('tr');
-        tr.innerHTML = `<td>${fg.name}</td><td>${mappings.length}</td>`;
-        tr._fgMappings = mappings;
+        tr.innerHTML = `<td>${fg.name}</td><td>${uniqueMappings.length}</td>`;
+        tr._fgMappings = uniqueMappings;
 
         tr.addEventListener('mouseenter', () => {
             if (tbody.querySelector('tr.fg-active')) return;
-            _setHighlight(mappings);
+            _setHighlight(uniqueMappings);
         });
         tr.addEventListener('mouseleave', () => {
             if (tbody.querySelector('tr.fg-active')) return;
@@ -975,7 +1002,7 @@ function updateFunctionalGroups(mol) {
         tr.addEventListener('click', () => {
             tbody.querySelectorAll('tr').forEach(r => r.classList.remove('fg-active'));
             tr.classList.add('fg-active');
-            _setHighlight(mappings);
+            _setHighlight(uniqueMappings);
         });
         tbody.appendChild(tr);
     }
@@ -998,7 +1025,7 @@ function strokeColor(symbol) {
 // ---------------------------------------------------------------------------
 // Shared state
 // ---------------------------------------------------------------------------
-let mode          = '2d'; // 'force' | '2d'
+let mode          = '2d';   // 'force' | '2d'
 let currentMol    = null;
 let currentSmiles = null;
 let currentInchi  = null;
@@ -1395,12 +1422,50 @@ function createDrag(sim) {
     return d3.drag()
         .on('start', (event, d) => {
             if (!event.active) sim.alphaTarget(0.3).restart();
-            d.fx = d.x; d.fy = d.y;
+            _forceAutoFitEnabled = false;
+            const selectedDragAtomIds = _getSelectedDragAtomIds(currentMol, [d.id], []);
+            const dragNodes = selectedDragAtomIds
+                ? sim.nodes().filter(node => selectedDragAtomIds.has(node.id))
+                : [d];
+            const positions = new Map();
+            for (const node of dragNodes) {
+                positions.set(node.id, { x: node.x, y: node.y });
+                node.fx = node.x;
+                node.fy = node.y;
+            }
+            d._dragState = {
+                startX: event.x,
+                startY: event.y,
+                nodeIds: new Set(dragNodes.map(node => node.id)),
+                positions,
+            };
         })
-        .on('drag',  (event, d) => { d.fx = event.x; d.fy = event.y; })
+        .on('drag',  (event, d) => {
+            const state = d._dragState;
+            if (!state) return;
+            const dx = event.x - state.startX;
+            const dy = event.y - state.startY;
+            for (const node of sim.nodes()) {
+                if (!state.nodeIds.has(node.id)) continue;
+                const pos = state.positions.get(node.id);
+                if (!pos) continue;
+                node.fx = pos.x + dx;
+                node.fy = pos.y + dy;
+                node.x = node.fx;
+                node.y = node.fy;
+            }
+        })
         .on('end',   (event, d) => {
             if (!event.active) sim.alphaTarget(0);
-            d.fx = null; d.fy = null;
+            const state = d._dragState;
+            if (state) {
+                for (const node of sim.nodes()) {
+                    if (!state.nodeIds.has(node.id)) continue;
+                    node.fx = null;
+                    node.fy = null;
+                }
+            }
+            d._dragState = null;
         });
 }
 
@@ -1417,6 +1482,7 @@ function updateForce(molecule, {
     preserveView = preservePositions,
 } = {}) {
     prepareAromaticBondRendering(molecule);
+    _forceAutoFitEnabled = !preserveView;
 
     const previousNodePositions = preservePositions
         ? new Map(simulation.nodes().map(node => [node.id, {
@@ -1492,6 +1558,7 @@ function updateForce(molecule, {
         .style('stroke', 'transparent')
         .style('stroke-width', '14px')
         .style('pointer-events', 'stroke')
+        .style('cursor', 'grab')
         .on('click', (event, d) => {
             _handleForcePrimitiveClick(event, [], [d.id]);
         })
@@ -1521,7 +1588,64 @@ function updateForce(molecule, {
             _clearPrimitiveHover();
             applyForceSelection();
             tooltip.transition().duration(50).style('opacity', 0);
-        });
+        })
+        .call(d3.drag()
+            .on('start', function(event, d) {
+                const selectedDragAtomIds = _getSelectedDragAtomIds(molecule, [], [d.id]);
+                if (!selectedDragAtomIds) {
+                    this._dragState = null;
+                    return;
+                }
+                _forceAutoFitEnabled = false;
+                event.sourceEvent.stopPropagation();
+                tooltip.style('opacity', 0);
+                d3.select(this).style('cursor', 'grabbing');
+                if (!event.active) simulation.alphaTarget(0.3).restart();
+                const positions = new Map();
+                const nodeIds = new Set();
+                for (const node of simulation.nodes()) {
+                    if (!selectedDragAtomIds.has(node.id)) continue;
+                    positions.set(node.id, { x: node.x, y: node.y });
+                    nodeIds.add(node.id);
+                    node.fx = node.x;
+                    node.fy = node.y;
+                }
+                this._dragState = {
+                    startX: event.x,
+                    startY: event.y,
+                    nodeIds,
+                    positions,
+                };
+            })
+            .on('drag', function(event) {
+                const state = this._dragState;
+                if (!state) return;
+                const dx = event.x - state.startX;
+                const dy = event.y - state.startY;
+                for (const node of simulation.nodes()) {
+                    if (!state.nodeIds.has(node.id)) continue;
+                    const pos = state.positions.get(node.id);
+                    if (!pos) continue;
+                    node.fx = pos.x + dx;
+                    node.fy = pos.y + dy;
+                    node.x = node.fx;
+                    node.y = node.fy;
+                }
+            })
+            .on('end', function(event) {
+                const state = this._dragState;
+                if (state) {
+                    for (const node of simulation.nodes()) {
+                        if (!state.nodeIds.has(node.id)) continue;
+                        node.fx = null;
+                        node.fy = null;
+                    }
+                }
+                if (!event.active) simulation.alphaTarget(0);
+                this._dragState = null;
+                d3.select(this).style('cursor', 'grab');
+            })
+        );
 
     const atom = g.selectAll('circle.node')
         .data(graph.nodes, d => d.id)
@@ -1710,7 +1834,7 @@ function updateForce(molecule, {
         _sel.selectAll('circle')
             .attr('cx', d => d.x).attr('cy', d => d.y);
 
-        if (!preserveView) {
+        if (_forceAutoFitEnabled) {
             // Auto zoom-out to keep molecule in view
             let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
             for (const n of graph.nodes) {
@@ -1883,10 +2007,11 @@ const SCALE       = 60;   // SVG pixels per Angstrom
 const BOND_OFF_2D = 7;    // px gap between parallel bond lines
 const STROKE_W    = 1.6;  // px
 const FONT_SIZE   = 14;   // px
-function renderAtomLabel(group, label, color) {
+function renderAtomLabel(group, label, color, xOffset = 0) {
     const textEl = group.append('text')
         .attr('class', 'atom-label')
         .attr('fill', color)
+        .attr('x', xOffset)
         .attr('text-anchor', 'middle');
     let i = 0;
     let first = true;
@@ -1930,6 +2055,7 @@ let _hoveredBondIds = new Set();
 let _selectionModifierActive = false;
 let _selectMode      = false;
 let _preserveSelectionOnNextRender = false;
+let _forceAutoFitEnabled = true;
 
 function _clearPrimitiveHover() {
     _hoveredAtomIds.clear();
@@ -1997,6 +2123,41 @@ function _showPrimitiveHover(atomIds = [], bondIds = []) {
         }
         _refreshSelectionOverlay();
     }
+}
+
+function _getSelectedDragAtomIds(mol, atomIds = [], bondIds = []) {
+    if (!mol) return null;
+    if (_selectedAtomIds.size === 0 && _selectedBondIds.size === 0) return null;
+
+    let dragStartsOnSelection = false;
+    for (const atomId of atomIds) {
+        if (_selectedAtomIds.has(atomId)) {
+            dragStartsOnSelection = true;
+            break;
+        }
+    }
+    if (!dragStartsOnSelection) {
+        for (const bondId of bondIds) {
+            if (_selectedBondIds.has(bondId)) {
+                dragStartsOnSelection = true;
+                break;
+            }
+        }
+    }
+    if (!dragStartsOnSelection) return null;
+
+    const selectedDragAtomIds = new Set();
+    for (const atomId of _selectedAtomIds) {
+        if (mol.atoms.has(atomId)) selectedDragAtomIds.add(atomId);
+    }
+    for (const bondId of _selectedBondIds) {
+        const bond = mol.bonds.get(bondId);
+        if (!bond) continue;
+        for (const atomId of bond.atoms) {
+            if (mol.atoms.has(atomId)) selectedDragAtomIds.add(atomId);
+        }
+    }
+    return selectedDragAtomIds.size > 0 ? selectedDragAtomIds : null;
 }
 
 function _toSVGPt2d(a) {
@@ -2181,12 +2342,33 @@ function _labelClearance(atom, otherSVGPt, toSVGPt) {
     const { x, y } = toSVGPt(atom);
     const dx = otherSVGPt.x - x, dy = otherSVGPt.y - y;
     const len = Math.sqrt(dx * dx + dy * dy) || 1;
+    const cx = labelTextOffset(label, FONT_SIZE);
     const hw = labelHalfW(label, FONT_SIZE) + 1;
     const hh = labelHalfH(label, FONT_SIZE) + 1;
-    const ux = Math.abs(dx) / len, uy = Math.abs(dy) / len;
-    if (ux < 1e-9) return hh;
-    if (uy < 1e-9) return hw;
-    return Math.min(hw / ux, hh / uy);
+    const dirX = dx / len;
+    const dirY = dy / len;
+
+    const txCandidates = [];
+    if (Math.abs(dirX) > 1e-9) {
+        txCandidates.push((cx + hw) / dirX);
+        txCandidates.push((cx - hw) / dirX);
+    }
+    const tyCandidates = [];
+    if (Math.abs(dirY) > 1e-9) {
+        tyCandidates.push(hh / dirY);
+        tyCandidates.push(-hh / dirY);
+    }
+
+    let best = Infinity;
+    for (const t of [...txCandidates, ...tyCandidates]) {
+        if (!(t > 0)) continue;
+        const px = dirX * t;
+        const py = dirY * t;
+        if (px < cx - hw - 1e-6 || px > cx + hw + 1e-6) continue;
+        if (py < -hh - 1e-6 || py > hh + 1e-6) continue;
+        best = Math.min(best, t);
+    }
+    return Number.isFinite(best) ? best : Math.max(hw, hh);
 }
 
 function _drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType = null) {
@@ -2330,6 +2512,66 @@ function draw2d() {
 
     g.selectAll('*').remove();
 
+    let bgLayer;
+    let labelLayer;
+
+    function _capture2dDragState(event, atomIds = [], bondIds = []) {
+        const [pX, pY] = d3.pointer(event.sourceEvent, g.node());
+        const selectedDragAtomIds = _getSelectedDragAtomIds(mol, atomIds, bondIds);
+        const movedAtomIds = selectedDragAtomIds ? new Set(selectedDragAtomIds) : new Set(atomIds);
+        if (!selectedDragAtomIds) {
+            for (const bondId of bondIds) {
+                const bond = mol.bonds.get(bondId);
+                if (!bond) continue;
+                movedAtomIds.add(bond.atoms[0]);
+                movedAtomIds.add(bond.atoms[1]);
+            }
+        }
+
+        const atomPositions = new Map();
+        for (const atomId of movedAtomIds) {
+            const movedAtom = mol.atoms.get(atomId);
+            if (!movedAtom || movedAtom.x == null) continue;
+            atomPositions.set(atomId, { x: movedAtom.x, y: movedAtom.y });
+        }
+        return { pX, pY, atomPositions, movedAtomIds: new Set(atomPositions.keys()) };
+    }
+
+    function _redraw2dDragTargets(movedAtomIds) {
+        for (const atomId of movedAtomIds) {
+            const movedAtom = mol.atoms.get(atomId);
+            if (!movedAtom || movedAtom.x == null) continue;
+            const np = toSVGPt(movedAtom);
+            labelLayer.select(`[data-atom-id="${atomId}"]`)
+                .attr('transform', `translate(${np.x},${np.y})`);
+            const lbl = getAtomLabel(movedAtom, hCounts, toSVGPt, mol);
+            const hw = labelHalfW(lbl, FONT_SIZE);
+            const hh = labelHalfH(lbl, FONT_SIZE);
+            const dxLabel = labelTextOffset(lbl, FONT_SIZE);
+            bgLayer.select(`[data-atom-id="${atomId}"]`)
+                .attr('x', np.x + dxLabel - hw)
+                .attr('y', np.y - hh);
+        }
+
+        for (const bInfo of bondInfos) {
+            if (!movedAtomIds.has(bInfo.a1.id) && !movedAtomIds.has(bInfo.a2.id)) continue;
+            const bGroup = bondLayer.select(`[data-bond-id="${bInfo.bond.id}"]`);
+            const hitLine = bGroup.select('.bond-hit');
+            bGroup.selectAll(':not(.bond-hit)').remove();
+            const st = stereoMap ? stereoMap.get(bInfo.bond.id) : null;
+            let ssa1 = bInfo.a1, ssa2 = bInfo.a2;
+            if (st && chiralCenterIds.has(ssa2.id)) [ssa1, ssa2] = [ssa2, ssa1];
+            _drawBond(bGroup, bInfo.bond, ssa1, ssa2, mol, toSVGPt, st ?? null);
+            const hp1 = toSVGPt(ssa1), hp2 = toSVGPt(ssa2);
+            hitLine.attr('x1', hp1.x).attr('y1', hp1.y)
+                   .attr('x2', hp2.x).attr('y2', hp2.y)
+                   .raise();
+        }
+
+        _redraw2dHighlights();
+        _redraw2dSelection();
+    }
+
     // Layer 0 — functional-group highlights (behind bonds)
     _redraw2dHighlights();
     // Layer 0b — selection highlights (behind bonds, in front of fg highlights)
@@ -2376,32 +2618,63 @@ function draw2d() {
                 _clearPrimitiveHover();
                 _redraw2dSelection();
                 tooltip.transition().duration(50).style('opacity', 0);
-            });
+            })
+            .style('cursor', 'grab')
+            .call(d3.drag()
+                .on('start', function(event) {
+                    event.sourceEvent.stopPropagation();
+                    _clearPrimitiveHover();
+                    _redraw2dSelection();
+                    tooltip.style('opacity', 0);
+                    d3.select(this).style('cursor', 'grabbing');
+                    this._dragState = _capture2dDragState(event, [], [bi.bond.id]);
+                })
+                .on('drag', function(event) {
+                    const state = this._dragState;
+                    if (!state) return;
+                    const [svgX, svgY] = d3.pointer(event.sourceEvent, g.node());
+                    const dx = (svgX - state.pX) / SCALE;
+                    const dy = -(svgY - state.pY) / SCALE;
+                    for (const [atomId, pos] of state.atomPositions) {
+                        const movedAtom = mol.atoms.get(atomId);
+                        if (!movedAtom) continue;
+                        movedAtom.x = pos.x + dx;
+                        movedAtom.y = pos.y + dy;
+                    }
+                    _redraw2dDragTargets(state.movedAtomIds);
+                })
+                .on('end', function() {
+                    this._dragState = null;
+                    d3.select(this).style('cursor', 'grab');
+                })
+            );
     }
 
     // Layer 2 — white clearance rects
-    const bgLayer = g.append('g').attr('class', 'atom-bgs');
+    bgLayer = g.append('g').attr('class', 'atom-bgs');
     for (const atom of atoms) {
         const label = getAtomLabel(atom, hCounts, toSVGPt, mol);
         const hw = labelHalfW(label, FONT_SIZE);
         if (hw === 0) continue;
         const hh = labelHalfH(label, FONT_SIZE);
+        const dx = labelTextOffset(label, FONT_SIZE);
         const { x, y } = toSVGPt(atom);
         bgLayer.append('rect')
             .attr('class', 'atom-bg')
             .attr('data-atom-id', atom.id)
-            .attr('x', x - hw).attr('y', y - hh)
+            .attr('x', x + dx - hw).attr('y', y - hh)
             .attr('width', hw * 2).attr('height', hh * 2)
             .attr('rx', 2);
     }
 
     // Layer 3 — labels + hit targets + drag
-    const labelLayer = g.append('g').attr('class', 'atom-labels');
+    labelLayer = g.append('g').attr('class', 'atom-labels');
     for (const atom of atoms) {
         const { x, y } = toSVGPt(atom);
         const symbol = atom.name;
         const charge = atom.properties.charge ?? 0;
         const label  = getAtomLabel(atom, hCounts, toSVGPt, mol);
+        const labelDx = labelTextOffset(label, FONT_SIZE);
 
         const hitGroup = labelLayer.append('g')
             .attr('data-atom-id', atom.id)
@@ -2436,20 +2709,20 @@ function draw2d() {
             });
 
         if (label) {
-            renderAtomLabel(hitGroup, label, atomColor(symbol));
+            renderAtomLabel(hitGroup, label, atomColor(symbol), labelDx);
             if (charge !== 0) {
                 const sign = charge === 1 ? '+' : charge > 1 ? `${charge}+`
                            : charge === -1 ? '−' : `${Math.abs(charge)}−`;
                 hitGroup.append('text')
                     .attr('class', 'atom-charge')
-                    .attr('x', labelHalfW(label, FONT_SIZE))
+                    .attr('x', labelDx + labelHalfW(label, FONT_SIZE))
                     .attr('y', -(FONT_SIZE * 0.42))
                     .attr('fill', atomColor(symbol))
                     .text(sign);
             }
         }
 
-        // Drag: move this atom, update only its bonds in-place
+        // Drag: move this atom, or the whole selection when dragging a selected primitive.
         hitGroup.call(d3.drag()
             .on('start', function(event) {
                 event.sourceEvent.stopPropagation();
@@ -2457,36 +2730,24 @@ function draw2d() {
                 _redraw2dSelection();
                 tooltip.style('opacity', 0);
                 hitGroup.select('circle').style('cursor', 'grabbing');
+                this._dragState = _capture2dDragState(event, [atom.id], []);
             })
             .on('drag', function(event) {
-                const W = plotEl.clientWidth  || 600;
-                const H = plotEl.clientHeight || 400;
+                const state = this._dragState;
+                if (!state) return;
                 const [svgX, svgY] = d3.pointer(event.sourceEvent, g.node());
-                atom.x = _cx2d + (svgX - W / 2) / SCALE;
-                atom.y = _cy2d - (svgY - H / 2) / SCALE; // inverse of y-flip in _toSVGPt2d
-
-                const np = toSVGPt(atom);
-                hitGroup.attr('transform', `translate(${np.x},${np.y})`);
-
-                const lbl = getAtomLabel(atom, hCounts, toSVGPt, mol);
-                const hw  = labelHalfW(lbl, FONT_SIZE);
-                const hh  = labelHalfH(lbl, FONT_SIZE);
-                bgLayer.select(`[data-atom-id="${atom.id}"]`)
-                    .attr('x', np.x - hw).attr('y', np.y - hh);
-
-                for (const bi of bondInfos) {
-                    if (bi.a1.id !== atom.id && bi.a2.id !== atom.id) continue;
-                    const bg = bondLayer.select(`[data-bond-id="${bi.bond.id}"]`);
-                    bg.selectAll('*').remove();
-                    const stereoType = stereoMap ? stereoMap.get(bi.bond.id) : null;
-                    let sa1 = bi.a1, sa2 = bi.a2;
-                    if (stereoType && chiralCenterIds.has(sa2.id)) [sa1, sa2] = [sa2, sa1];
-                    _drawBond(bg, bi.bond, sa1, sa2, mol, toSVGPt, stereoType ?? null);
+                const dx = (svgX - state.pX) / SCALE;
+                const dy = -(svgY - state.pY) / SCALE;
+                for (const [atomId, pos] of state.atomPositions) {
+                    const movedAtom = mol.atoms.get(atomId);
+                    if (!movedAtom) continue;
+                    movedAtom.x = pos.x + dx;
+                    movedAtom.y = pos.y + dy;
                 }
-                _redraw2dHighlights();
-                _redraw2dSelection();
+                _redraw2dDragTargets(state.movedAtomIds);
             })
             .on('end', function() {
+                this._dragState = null;
                 hitGroup.select('circle').style('cursor', 'grab');
             })
         );
@@ -2505,7 +2766,7 @@ function render2d(mol) {
     mol.hideHydrogens();
     prepareAromaticBondRendering(mol);
 
-    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
 
     // Place chiral H atoms at real positions so stereo bonds can be drawn.
     // All other hidden H stay at their parent's position (assigned by generateCoords)
@@ -2735,10 +2996,10 @@ window.copyForcePng = function() {
     svgEl.appendChild(gClone);
 
     const btn   = document.getElementById('copy-force-png-btn');
-    const reset = () => { btn.textContent = 'PNG'; };
+    const reset = () => { btn.textContent = 'PNG'; btn.style.fontSize = ''; btn.style.fontWeight = ''; };
     navigator.clipboard.write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
-        .then(() => { btn.textContent = '✓'; setTimeout(reset, 1500); })
-        .catch(() => { btn.textContent = '✗'; setTimeout(reset, 1500); });
+        .then(() => { btn.textContent = '✓'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); })
+        .catch(() => { btn.textContent = '✗'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); });
 };
 
 // ---------------------------------------------------------------------------
@@ -2750,10 +3011,10 @@ window.copySvg2d = function() {
     if (!svgEl) return;
 
     const btn   = document.getElementById('copy-svg-btn');
-    const reset = () => { btn.textContent = 'SVG'; };
+    const reset = () => { btn.textContent = 'SVG'; btn.style.fontSize = ''; btn.style.fontWeight = ''; };
     navigator.clipboard.write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
-        .then(() => { btn.textContent = '✓'; setTimeout(reset, 1500); })
-        .catch(() => { btn.textContent = '✗'; setTimeout(reset, 1500); });
+        .then(() => { btn.textContent = '✓'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); })
+        .catch(() => { btn.textContent = '✗'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); });
 };
 
 // Copy 2D layout as PNG (transparent background, 2× resolution)
@@ -2764,10 +3025,10 @@ window.savePng2d = function() {
     if (!svgEl) return;
 
     const btn   = document.getElementById('save-png-btn');
-    const reset = () => { btn.textContent = 'PNG'; };
+    const reset = () => { btn.textContent = 'PNG'; btn.style.fontSize = ''; btn.style.fontWeight = ''; };
     navigator.clipboard.write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
-        .then(() => { btn.textContent = '✓'; setTimeout(reset, 1500); })
-        .catch(() => { btn.textContent = '✗'; setTimeout(reset, 1500); });
+        .then(() => { btn.textContent = '✓'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); })
+        .catch(() => { btn.textContent = '✗'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); });
 };
 
 // Mode toggle
@@ -2775,8 +3036,11 @@ window.savePng2d = function() {
 window.toggleLabels = function() {
     const svgEl = document.querySelector('.svg-plot');
     svgEl.classList.toggle('labels-hidden');
+    const btn = document.getElementById('label-toggle');
+    btn.classList.toggle('active', !svgEl.classList.contains('labels-hidden'));
 };
 
+let _clean2dBtnTimer = null;
 window.cleanLayout2d = function() {
     if (mode !== '2d' || !_mol2d) return;
     refineExistingCoords(_mol2d, {
@@ -2789,9 +3053,9 @@ window.cleanLayout2d = function() {
     fitCurrent2dView();
     draw2d();
     const btn = document.getElementById('clean-2d-btn');
-    const orig = btn.textContent;
     btn.textContent = '✓';
-    setTimeout(() => { btn.textContent = orig; }, 1500);
+    clearTimeout(_clean2dBtnTimer);
+    _clean2dBtnTimer = setTimeout(() => { btn.textContent = '🧹'; }, 1500);
 };
 
 window.togglePanMode = function() {
