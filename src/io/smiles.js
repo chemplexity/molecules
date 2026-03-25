@@ -1491,7 +1491,6 @@ export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) 
       charge: atom.properties.charge,
       aromatic: atom.properties.aromatic === 1
     });
-    a.resolveElement();
     // Restore isotope-adjusted neutrons — the v1 parser may have overridden
     // the table default (e.g. [13C] sets neutrons = 13 − 6 = 7).
     a.properties.neutrons = atom.neutrons;

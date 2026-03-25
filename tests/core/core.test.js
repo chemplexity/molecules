@@ -32,11 +32,15 @@ describe('Atom', () => {
     assert.equal(a.properties.electrons, undefined);
     assert.equal(a.properties.group,  0);
     assert.equal(a.properties.period, 0);
+    assert.deepEqual(a.properties.reaction, { atomMap: null });
     assert.equal(a.properties.radical, 0);
   });
 
   it('accepts properties via constructor', () => {
-    const a = new Atom('a0', 'C', { protons: 6, neutrons: 6.0107, electrons: 6, group: 14, period: 2, charge: -1, aromatic: true, radical: 1 });
+    const a = new Atom('a0', 'C', {
+      protons: 6, neutrons: 6.0107, electrons: 6, group: 14, period: 2,
+      charge: -1, aromatic: true, radical: 1, reaction: { atomMap: 7 }
+    });
     assert.equal(a.properties.protons,   6);
     assert.equal(a.properties.neutrons,  6.0107);
     assert.equal(a.properties.electrons, 6);
@@ -44,6 +48,7 @@ describe('Atom', () => {
     assert.equal(a.properties.period,  2);
     assert.equal(a.properties.charge,  -1);
     assert.equal(a.properties.aromatic, true);
+    assert.deepEqual(a.properties.reaction, { atomMap: 7 });
     assert.equal(a.properties.radical, 1);
   });
 
@@ -107,6 +112,11 @@ describe('Atom', () => {
     assert.equal(new Atom('a1', 'C', { }).setHybridization('sp2').getHybridization(), 'sp2');
   });
 
+  it('getAtomMap returns the stored reaction atom map or null', () => {
+    assert.equal(new Atom('a0', 'C').getAtomMap(), null);
+    assert.equal(new Atom('a1', 'C', { reaction: { atomMap: 3 } }).getAtomMap(), 3);
+  });
+
   it('setRadical stores the radical count and returns the atom', () => {
     const a = new Atom('a0', 'C');
     const ret = a.setRadical(1);
@@ -141,6 +151,19 @@ describe('Atom', () => {
     const a = new Atom('a0', 'C');
     assert.throws(() => a.setHybridization('sp4'), RangeError);
     assert.throws(() => a.setHybridization(1), RangeError);
+  });
+
+  it('setAtomMap stores the reaction atom map and returns the atom', () => {
+    const a = new Atom('a0', 'C');
+    const ret = a.setAtomMap(9);
+    assert.deepEqual(a.properties.reaction, { atomMap: 9 });
+    assert.equal(ret, a);
+  });
+
+  it('setAtomMap rejects unsupported values', () => {
+    const a = new Atom('a0', 'C');
+    assert.throws(() => a.setAtomMap(-1), RangeError);
+    assert.throws(() => a.setAtomMap(1.5), RangeError);
   });
 
   it('resolveElement sets group, period, protons, neutrons, electrons from symbol', () => {
@@ -488,6 +511,25 @@ describe('Molecule', () => {
     mol.addAtom('a0', 'C');
     mol.addAtom('a1', 'O');
     assert.equal(mol.atomCount, 2);
+  });
+
+  it('addAtom resolves periodic-table fields from the element name', () => {
+    const mol = new Molecule();
+    const atom = mol.addAtom('a0', 'N', { charge: 1 });
+    assert.equal(atom.properties.group, 15);
+    assert.equal(atom.properties.period, 2);
+    assert.equal(atom.properties.protons, 7);
+    assert.equal(atom.properties.neutrons, 7.0067);
+    assert.equal(atom.properties.electrons, 6);
+  });
+
+  it('addAtom preserves explicitly provided element-property overrides', () => {
+    const mol = new Molecule();
+    const atom = mol.addAtom('a0', 'C', { neutrons: 7, electrons: 99, charge: -1 });
+    assert.equal(atom.properties.protons, 6);
+    assert.equal(atom.properties.neutrons, 7);
+    assert.equal(atom.properties.electrons, 99);
+    assert.equal(atom.properties.charge, -1);
   });
 
   it('auto-generated atom ids restart per molecule', () => {
@@ -1742,12 +1784,13 @@ describe('Molecule – neutralizeCharge', () => {
     assert.equal(mol.atoms.get('a').properties.electrons, 7);
   });
 
-  it('leaves electrons unchanged when protons are not set', () => {
+  it('neutralizeCharge restores electrons for auto-resolved atoms created by addAtom', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C', { charge: 1 }); // protons = undefined
+    mol.addAtom('a', 'C', { charge: 1 });
     mol.neutralizeCharge();
     assert.equal(mol.atoms.get('a').properties.charge, 0);
-    assert.equal(mol.atoms.get('a').properties.electrons, undefined);
+    assert.equal(mol.atoms.get('a').properties.protons, 6);
+    assert.equal(mol.atoms.get('a').properties.electrons, 6);
   });
 
   it('updates molecule-level charge property to 0', () => {

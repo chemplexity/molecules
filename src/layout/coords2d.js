@@ -2052,19 +2052,46 @@ function normalizeOrientation(coords, molecule) {
     elon += Math.PI;
   }
 
-  if (Math.abs(elon) < 1e-6) {
-    return;
-  } // already aligned
+  if (Math.abs(elon) > 1e-6) {
+    // Rotate ALL atoms (including H) about the heavy-atom centroid so the
+    // elongation axis becomes horizontal.
+    const cosA = Math.cos(-elon), sinA = Math.sin(-elon);
+    // Collect all entries first so Map mutation doesn't affect the traversal.
+    const entries = [...coords.entries()];
+    for (const [id, pos] of entries) {
+      const dx = pos.x - cx, dy = pos.y - cy;
+      coords.set(id, vec2(cx + dx * cosA - dy * sinA,
+        cy + dx * sinA + dy * cosA));
+    }
+  }
 
-  // Rotate ALL atoms (including H) about the heavy-atom centroid so the
-  // elongation axis becomes horizontal.
-  const cosA = Math.cos(-elon), sinA = Math.sin(-elon);
-  // Collect all entries first so Map mutation doesn't affect the traversal.
-  const entries = [...coords.entries()];
-  for (const [id, pos] of entries) {
-    const dx = pos.x - cx, dy = pos.y - cy;
-    coords.set(id, vec2(cx + dx * cosA - dy * sinA,
-      cy + dx * sinA + dy * cosA));
+  // Portrait-to-landscape guard: the inertia tensor guarantees the principal
+  // axis is aligned with X, but for nearly isotropic ring systems (I0 ≈ I1)
+  // it can pick the wrong candidate and leave the molecule taller than wide.
+  // Explicitly rotate 90° whenever the heavy-atom bounding box is portrait.
+  {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const id of heavyIds) {
+      const p = coords.get(id);
+      if (!p) {
+        continue;
+      }
+      if (p.x < minX) {
+        minX = p.x;
+      }
+      if (p.x > maxX) {
+        maxX = p.x;
+      }
+      if (p.y < minY) {
+        minY = p.y;
+      }
+      if (p.y > maxY) {
+        maxY = p.y;
+      }
+    }
+    if (maxY - minY > maxX - minX) {
+      rotateCoords(coords, vec2(cx, cy), Math.PI / 2);
+    }
   }
 }
 
@@ -2161,8 +2188,13 @@ function levelCoords(coords, molecule) {
   }
 
   // Score a candidate rotation: sum of squared deviations of (angle + rotation)
-  // from the nearest multiple of each bond's grid increment.
-  // Rotating the molecule by r shifts all bond directions by +r in world space.
+  // from the nearest multiple of each bond's grid increment, plus a small
+  // regularization term proportional to r².  The regularization breaks ties
+  // in favour of smaller corrections — without it, a 90° rotation of a steroid
+  // scores identically to 0° (bonds at 0°/60°/120° and 90°/150°/30° are both
+  // on the 30° grid) and can be chosen over no rotation, undoing the horizontal
+  // alignment that normalizeOrientation established.
+  const TILT_PENALTY = 1e-4;
   function score(r) {
     let total = 0;
     for (const { angle, inc } of bondData) {
@@ -2172,7 +2204,7 @@ function levelCoords(coords, molecule) {
       }
       total += a * a;
     }
-    return total;
+    return total + TILT_PENALTY * r * r;
   }
 
   // Candidate rotations: for each bond, the rotation(s) that would snap it
@@ -4387,6 +4419,9 @@ export function refineExistingCoords(molecule, options = {}) {
 
   currentCoords = idealizeStrictTrigonalCenters(molecule, currentCoords, ctx);
   currentCoords = _separateOverlappingComponents(molecule, currentCoords, bondLength);
+  if (ctx.cycleData.ringAtomIds.size > 0) {
+    normalizeOrientation(currentCoords, molecule);
+  }
   levelCoords(currentCoords, molecule);
 
   for (const [atomId, pos] of currentCoords) {
@@ -5353,18 +5388,20 @@ export function generateCoords(molecule, options = {}) {
         }
       }
     }
+
+    // Straighten the preferred backbone for pure acyclic molecules: the DFS
+    // zigzag can produce a hexagonal spiral (always turning the same direction)
+    // when all atoms have degree ≤ 2.  This corrects turn direction alternation.
+    straightenPreferredBackbone(molecule, coords, findPreferredBackbonePath(molecule));
   }
 
   optimizeAcyclicMultipleBondSubtrees(molecule, coords, bondLength);
 
   // Phase H — canonical orientation.
-  // Rotate ring-containing molecules so the principal axis (maximum spatial
-  // spread, from 2D inertia tensor) is horizontal.  Acyclic molecules are
-  // exempt: their DFS zigzag already produces a natural horizontal layout
-  // and bond-length exactness tests depend on the unchanged geometry.
-  if (systems.length > 0) {
-    normalizeOrientation(coords, molecule);
-  }
+  // Rotate molecules so the principal axis (maximum spatial spread, from 2D
+  // inertia tensor) is horizontal.  For long acyclic backbones (≥ 8 atoms)
+  // normalizeOrientation aligns the start-to-end backbone direction instead.
+  normalizeOrientation(coords, molecule);
 
   // Phase I — re-sync suppressed hydrogen positions.
   // Suppressed H atoms were placed at their parent's position in phase D,

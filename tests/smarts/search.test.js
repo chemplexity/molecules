@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../src/io/smiles.js';
-import { findSMARTS, matchesSMARTS, firstSMARTS, parseSMARTS } from '../../src/smarts/index.js';
+import { findSMARTS, findSMARTSRaw, matchesSMARTS, firstSMARTS, parseSMARTS } from '../../src/smarts/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -216,6 +216,12 @@ describe('findSMARTS — match counts', () => {
   it('c in benzene yields 6 matches', () => {
     assert.equal(collectAll(findSMARTS(mol('c1ccccc1'), 'c')).length, 6);
   });
+
+  it('disconnected SMARTS matches disconnected target components', () => {
+    const results = collectAll(findSMARTSRaw(mol('C.O'), '[C:1].[O:2]'));
+    assert.equal(results.length, 1);
+    assert.deepEqual([...results[0].entries()], [['q0', 'C1'], ['q1', 'O2']]);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -267,6 +273,15 @@ describe('parseSMARTS — query molecule structure', () => {
     const q = parseSMARTS('[NH2]');
     const atom = q.atoms.values().next().value;
     assert.equal(typeof atom._predicate, 'function');
+  });
+
+  it('preserves mapped bracket atoms under properties.reaction.atomMap', () => {
+    const q = parseSMARTS('[C:1][O:2]');
+    const atoms = [...q.atoms.values()];
+    assert.equal(atoms[0].getAtomMap(), 1);
+    assert.equal(atoms[1].getAtomMap(), 2);
+    assert.deepEqual(atoms[0].properties.reaction, { atomMap: 1 });
+    assert.deepEqual(atoms[1].properties.reaction, { atomMap: 2 });
   });
 
   it('rejects invalid characters and unclosed ring closures', () => {

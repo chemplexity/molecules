@@ -57,10 +57,33 @@ export class Molecule {
    * @param {string|null} [id]  - Unique atom identifier. Auto-generated when omitted or null.
    * @param {string} name       - Element symbol (e.g. 'C', 'N').
    * @param {object} [properties={}] - Initial atom properties (charge, aromatic, protons, …).
+   * Missing periodic-table fields are derived automatically from `name`.
    * @returns {Atom} The newly created atom.
    */
   addAtom(id, name, properties = {}) {
     const atom = new Atom(id ?? this._generateAutoAtomId(), name, properties);
+    const el = elements[atom.name];
+    if (el) {
+      const hasOwn = (key) => Object.prototype.hasOwnProperty.call(properties, key);
+      if (!hasOwn('group')) {
+        atom.properties.group = el.group;
+      }
+      if (!hasOwn('period')) {
+        atom.properties.period = el.period;
+      }
+      if (!hasOwn('protons')) {
+        atom.properties.protons = el.protons;
+      }
+      if (!hasOwn('neutrons')) {
+        atom.properties.neutrons = el.neutrons;
+      }
+      if (!hasOwn('electrons')) {
+        atom.properties.electrons = el.electrons;
+      }
+      if (!hasOwn('electrons') && atom.properties.protons !== undefined) {
+        atom.properties.electrons = atom.properties.protons - atom.properties.charge;
+      }
+    }
     if (this.atoms.has(atom.id)) {
       throw new Error(`Atom '${atom.id}' already exists.`);
     }

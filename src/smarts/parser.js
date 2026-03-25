@@ -8,6 +8,32 @@ import {
   defaultSmartsBondPred
 } from './primitives.js';
 
+function _extractTrailingAtomMap(inner) {
+  let depth = 0;
+  for (let i = inner.length - 1; i >= 0; i--) {
+    const ch = inner[i];
+    if (ch === ')') {
+      depth++;
+      continue;
+    }
+    if (ch === '(') {
+      depth--;
+      continue;
+    }
+    if (depth === 0 && ch === ':') {
+      const digits = inner.slice(i + 1);
+      if (/^\d+$/.test(digits)) {
+        return {
+          expr: inner.slice(0, i),
+          atomMap: parseInt(digits, 10)
+        };
+      }
+      break;
+    }
+  }
+  return { expr: inner, atomMap: null };
+}
+
 // ---------------------------------------------------------------------------
 // SMARTS → query Molecule
 // ---------------------------------------------------------------------------
@@ -63,9 +89,9 @@ export function parseSMARTS(smarts) {
    * Creates a new query atom node with the given predicate, connects it to
    * `prevId` (if any), and updates `prevId`.
    */
-  function addAtomNode(pred) {
+  function addAtomNode(pred, properties = {}) {
     const id = `q${atomCount++}`;
-    mol.addAtom(id, '*');
+    mol.addAtom(id, '*', properties);
     mol.atoms.get(id)._predicate = pred;
 
     if (prevId !== null) {
@@ -170,7 +196,8 @@ export function parseSMARTS(smarts) {
         throw new Error(`parseSMARTS: unclosed '[' at pos ${pos}`);
       }
       const inner = smarts.slice(pos + 1, closeIdx);
-      addAtomNode(compileAtomExpr(inner, { parseFn: parseSMARTS }));
+      const { expr, atomMap } = _extractTrailingAtomMap(inner);
+      addAtomNode(compileAtomExpr(expr, { parseFn: parseSMARTS }), { reaction: { atomMap } });
       pos = closeIdx + 1;
       continue;
     }

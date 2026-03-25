@@ -203,8 +203,10 @@ function _candidates(state, depth) {
   const qId  = state.queryOrder[depth];
   const qDeg = state.queryIdx.degreeMap.get(qId);
   const mapped = state.targetToQuery;
+  const qHasMappedNeighbor = [...state.queryIdx.neighborSet.get(qId)]
+    .some(qNb => state.queryToTarget.has(qNb));
 
-  const pool = state.targetFrontier.size > 0
+  const pool = (qHasMappedNeighbor && state.targetFrontier.size > 0)
     ? state.targetFrontier
     : state.targetIdx.atoms.keys();
 

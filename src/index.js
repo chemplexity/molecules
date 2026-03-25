@@ -9,3 +9,4 @@ export * from './layout/index.js';
 export * from './utils/index.js';
 export * from './validation/index.js';
 export * from './smarts/index.js';
+export * from './smirks/index.js';

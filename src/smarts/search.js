@@ -119,6 +119,57 @@ function _vf2Options(queryMol, target) {
   };
 }
 
+function _mappingOrderTuple(mapping, queryAtomIds) {
+  return queryAtomIds.map(id => String(mapping.get(id) ?? ''));
+}
+
+function _compareMappingOrder(a, b, queryAtomIds) {
+  const tupleA = _mappingOrderTuple(a, queryAtomIds);
+  const tupleB = _mappingOrderTuple(b, queryAtomIds);
+  const limit = Math.max(tupleA.length, tupleB.length);
+  for (let i = 0; i < limit; i++) {
+    const cmp = tupleA[i].localeCompare(tupleB[i]);
+    if (cmp !== 0) {
+      return cmp;
+    }
+  }
+  return 0;
+}
+
+function* _findSMARTSParsed(target, queryMol, options = {}, { dedupe = true } = {}) {
+  const stereoConstraints = _queryStereoConstraints(queryMol);
+  const { limit, ...restOptions } = options ?? {};
+  const vf2Opts = { ..._vf2Options(queryMol, target), ...restOptions };
+  const queryAtomIds = [...queryMol.atoms.keys()];
+  const matches = [];
+  for (const mapping of findSubgraphMappings(target, queryMol, vf2Opts)) {
+    if (!_mappingStereoMatches(queryMol, target, mapping, stereoConstraints)) {
+      continue;
+    }
+    matches.push(mapping);
+  }
+
+  matches.sort((a, b) => _compareMappingOrder(a, b, queryAtomIds));
+
+  const seen = dedupe ? new Set() : null;
+  let yielded = 0;
+  const max = Number.isFinite(limit) ? limit : Infinity;
+  for (const mapping of matches) {
+    if (dedupe) {
+      const key = [...mapping.values()].sort().join(',');
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+    }
+    yield mapping;
+    yielded++;
+    if (yielded >= max) {
+      return;
+    }
+  }
+}
+
 /**
  * Generator that yields every unique match of `smarts` into `target`.
  *
@@ -135,20 +186,25 @@ function _vf2Options(queryMol, target) {
  */
 export function* findSMARTS(target, smarts, options = {}) {
   const queryMol = parseSMARTS(smarts);
-  const stereoConstraints = _queryStereoConstraints(queryMol);
-  const vf2Opts = { ..._vf2Options(queryMol, target), ...options };
-  const seen = new Set();
-  for (const mapping of findSubgraphMappings(target, queryMol, vf2Opts)) {
-    if (!_mappingStereoMatches(queryMol, target, mapping, stereoConstraints)) {
-      continue;
-    }
-    const key = [...mapping.values()].sort().join(',');
-    if (seen.has(key)) {
-      continue;
-    }
-    seen.add(key);
-    yield mapping;
-  }
+  yield* _findSMARTSParsed(target, queryMol, options, { dedupe: true });
+}
+
+/**
+ * Generator that yields every raw mapping of `smarts` into `target`, without
+ * deduping by the set of matched target atoms.
+ *
+ * This preserves the exact query-atom-to-target-atom embeddings returned by VF2,
+ * which is useful for transform languages such as SMIRKS where different
+ * embeddings over the same atom set can lead to different products.
+ *
+ * @param {import('../core/Molecule.js').Molecule} target
+ * @param {string} smarts
+ * @param {object} [options]
+ * @yields {Map<string, string>}
+ */
+export function* findSMARTSRaw(target, smarts, options = {}) {
+  const queryMol = parseSMARTS(smarts);
+  yield* _findSMARTSParsed(target, queryMol, options, { dedupe: false });
 }
 
 /**
@@ -165,6 +221,23 @@ export function firstSMARTS(target, smarts, options = {}) {
   }
   return null;
 }
+
+/**
+ * Returns the first raw mapping from `smarts` into `target`, or `null` if none.
+ *
+ * @param {import('../core/Molecule.js').Molecule} target
+ * @param {string} smarts
+ * @param {object} [options]
+ * @returns {Map<string, string>|null}
+ */
+export function firstSMARTSRaw(target, smarts, options = {}) {
+  for (const m of findSMARTSRaw(target, smarts, { ...options, limit: 1 })) {
+    return m;
+  }
+  return null;
+}
+
+export { _findSMARTSParsed };
 
 /**
  * Returns `true` if `smarts` matches some subgraph of `target`.

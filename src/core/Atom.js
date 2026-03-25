@@ -30,6 +30,7 @@ export class Atom {
    * @param {number}       [properties.period=0]            - Periodic table period (1–7).
    * @param {number}       [properties.radical=0]           - Count of unpaired electrons stored explicitly on the atom.
    * @param {'R'|'S'|null} [properties.chirality=null]      - CIP chirality designation: `'R'` (rectus) or `'S'` (sinister); `null` if no chirality annotation or not determinable.
+   * @param {{atomMap?: number|null}|undefined} [properties.reaction=undefined] - Reaction/template metadata used by SMIRKS or atom-mapped SMARTS.
    */
   constructor(id, name, {
     charge    = 0,
@@ -40,7 +41,8 @@ export class Atom {
     group     = 0,
     period    = 0,
     radical   = 0,
-    chirality = null
+    chirality = null,
+    reaction  = undefined
   } = {}) {
     /** @type {string} Unique identifier for this atom. */
     this.id = id ?? `${++Atom._nextId}`;
@@ -60,14 +62,25 @@ export class Atom {
     this.z = null;
     /** @type {boolean} Whether the atom should be shown in 2D rendering. Defaults to true. */
     this.visible = true;
-    /** @type {{charge: number, aromatic: boolean, protons: number|undefined, neutrons: number|undefined, electrons: number|undefined, group: number, period: number, radical: number, chirality: 'R'|'S'|null, hybridization: 'sp'|'sp2'|'sp3'|null}} Chemistry-specific element data. */
-    this.properties = { charge, aromatic, protons, neutrons, electrons, group, period, radical: Atom._normalizeRadical(radical), chirality, hybridization: null };
+    /** @type {{charge: number, aromatic: boolean, protons: number|undefined, neutrons: number|undefined, electrons: number|undefined, group: number, period: number, radical: number, chirality: 'R'|'S'|null, hybridization: 'sp'|'sp2'|'sp3'|null, reaction: {atomMap: number|null}}} Chemistry-specific element data. */
+    this.properties = {
+      charge,
+      aromatic,
+      protons,
+      neutrons,
+      electrons,
+      group,
+      period,
+      radical: Atom._normalizeRadical(radical),
+      chirality,
+      hybridization: null,
+      reaction: { ...(reaction ?? {}), atomMap: Atom._normalizeAtomMap(reaction?.atomMap ?? null) }
+    };
   }
 
   /**
    * Normalizes and validates an explicit radical count.
-   *
-   * Phase-1 radical support is limited to 0, 1, or 2 unpaired electrons.
+   * Accepts 0, 1, or 2 unpaired electrons.
    *
    * @private
    * @param {number} radical
@@ -78,6 +91,23 @@ export class Atom {
       throw new RangeError(`Radical count must be an integer in [0, 2], got ${radical}.`);
     }
     return radical;
+  }
+
+  /**
+   * Normalizes and validates a reaction atom-map number.
+   *
+   * @private
+   * @param {number|null|undefined} atomMap
+   * @returns {number|null}
+   */
+  static _normalizeAtomMap(atomMap) {
+    if (atomMap == null) {
+      return null;
+    }
+    if (!Number.isInteger(atomMap) || atomMap < 1) {
+      throw new RangeError(`Atom map number must be a positive integer or null, got ${atomMap}.`);
+    }
+    return atomMap;
   }
 
   /**
@@ -115,6 +145,15 @@ export class Atom {
    */
   getHybridization() {
     return this.properties.hybridization ?? null;
+  }
+
+  /**
+   * Returns the stored reaction atom-map number, or `null` when unset.
+   *
+   * @returns {number|null}
+   */
+  getAtomMap() {
+    return this.properties.reaction?.atomMap ?? null;
   }
 
   /**
@@ -175,6 +214,18 @@ export class Atom {
       throw new RangeError(`hybridization must be 'sp', 'sp2', 'sp3', or null, got ${JSON.stringify(hybridization)}`);
     }
     this.properties.hybridization = hybridization;
+    return this;
+  }
+
+  /**
+   * Sets the reaction atom-map number stored on this atom.
+   *
+   * @param {number|null} atomMap
+   * @returns {this} The atom instance, for chaining.
+   */
+  setAtomMap(atomMap) {
+    this.properties.reaction ??= { atomMap: null };
+    this.properties.reaction.atomMap = Atom._normalizeAtomMap(atomMap);
     return this;
   }
 
@@ -464,7 +515,6 @@ export class Atom {
    * @returns {boolean}
    */
   isInRing(molecule) {
-
     if (this.bonds.length < 2) {
       return false;
     }
@@ -509,7 +559,8 @@ export class Atom {
             return true;
           }
           if (!visited.has(next)) {
-            visited.add(next); queue.push(next);
+            visited.add(next);
+            queue.push(next);
           }
         }
       }

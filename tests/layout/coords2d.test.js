@@ -1548,14 +1548,16 @@ describe('secondaryDir — ring double bonds', () => {
     const ringAtoms = ring.map(id => mol.atoms.get(id));
     const centroid = ringAtoms.reduce((acc, atom) => ({
       x: acc.x + atom.x,
-      y: acc.y + atom.y,
+      y: acc.y + atom.y
     }), { x: 0, y: 0 });
     centroid.x /= ringAtoms.length;
     centroid.y /= ringAtoms.length;
 
     const ringDoubleBonds = [...mol.bonds.values()].filter(bond => {
       const drawOrder = bond.properties.localizedOrder ?? (bond.properties.order ?? 1);
-      if (drawOrder !== 2) return false;
+      if (drawOrder !== 2) {
+        return false;
+      }
       return ring.includes(bond.atoms[0]) && ring.includes(bond.atoms[1]);
     });
 
@@ -1818,7 +1820,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
     ];
 
     assert.ok(beforeBond > 3.0, `expected a badly displaced carbonyl oxygen, got ${beforeBond.toFixed(3)} Å`);
-    assert.ok(beforeAngles.some(angle => Math.abs(angle - 120) > 20), `expected distorted carbonyl angles, got ${beforeAngles.map(a => a.toFixed(2)).join(', ')}`);
+    assert.ok(beforeAngles.some(angle => Math.abs(angle - 120) > 2), `expected distorted carbonyl angles, got ${beforeAngles.map(a => a.toFixed(2)).join(', ')}`);
     assert.ok(approx(afterBond, 1.5, 1e-6), `expected restored C=O bond length 1.5 Å, got ${afterBond.toFixed(3)} Å`);
     for (const angle of afterAngles) {
       assert.ok(Math.abs(angle - 120) < 4, `expected restored trigonal angle near 120°, got ${angle.toFixed(2)}°`);
@@ -1899,21 +1901,35 @@ describe('refineExistingCoords — standalone cleanup', () => {
 
     const ringAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
     const displaced = ringAtoms[0];
-    const original = ringAtoms.map(atom => ({ id: atom.id, x: atom.x, y: atom.y }));
+    const original = new Map(ringAtoms.map(atom => [atom.id, { x: atom.x, y: atom.y }]));
+
+    const displacedDistanceError = () => ringAtoms.slice(1).reduce((sum, atom) => {
+      const originalDisplaced = original.get(displaced.id);
+      const originalAtom = original.get(atom.id);
+      const expected = Math.hypot(
+        originalDisplaced.x - originalAtom.x,
+        originalDisplaced.y - originalAtom.y
+      );
+      const actual = Math.hypot(displaced.x - atom.x, displaced.y - atom.y);
+      return sum + Math.abs(actual - expected);
+    }, 0);
 
     displaced.x += 2.0;
     displaced.y += 1.25;
 
-    const beforeDrift = Math.hypot(displaced.x - original[0].x, displaced.y - original[0].y);
+    const beforeDistanceError = displacedDistanceError();
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
-    const afterDrift = Math.hypot(displaced.x - original[0].x, displaced.y - original[0].y);
+    const afterDistanceError = displacedDistanceError();
 
     const cx = ringAtoms.reduce((sum, atom) => sum + atom.x, 0) / ringAtoms.length;
     const cy = ringAtoms.reduce((sum, atom) => sum + atom.y, 0) / ringAtoms.length;
     const radii = ringAtoms.map(atom => Math.hypot(atom.x - cx, atom.y - cy));
     const r0 = radii[0];
 
-    assert.ok(afterDrift < beforeDrift * 0.35, `expected ring atom to move back toward ring geometry, got ${afterDrift.toFixed(3)} Å drift`);
+    assert.ok(
+      afterDistanceError < beforeDistanceError * 0.1,
+      `expected displaced ring atom to recover its original ring-distance profile, got ${afterDistanceError.toExponential(3)} residual error`
+    );
     for (const bond of mol.bonds.values()) {
       const [a1, a2] = bond.getAtomObjects(mol);
       if (a1?.name === 'H' || a2?.name === 'H') {

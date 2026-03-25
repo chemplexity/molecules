@@ -1,9 +1,8 @@
 /** @module layout */
 
-export { generateCoords, refineExistingCoords } from './coords2d.js';
+import { generateCoords, refineExistingCoords } from './coords2d.js';
 
-import { generateCoords } from './coords2d.js';
-import { refineExistingCoords } from './coords2d.js';
+export { generateCoords, refineExistingCoords } from './coords2d.js';
 
 /**
  * Generate 2D coordinates for `mol` then refine them.
@@ -23,7 +22,7 @@ export function generateAndRefine2dCoords(mol, {
   maxPasses = 6,
   freezeRings = true,
   freezeChiralCenters = false,
-  allowBranchReflect = true,
+  allowBranchReflect = true
 } = {}) {
   generateCoords(mol, { suppressH, bondLength });
   refineExistingCoords(mol, { bondLength, maxPasses, freezeRings, freezeChiralCenters, allowBranchReflect });
