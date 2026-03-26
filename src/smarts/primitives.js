@@ -93,51 +93,114 @@ function _isAroBond(bond) {
 // Ring helpers
 // ---------------------------------------------------------------------------
 
+function _isChordlessCycle(cycle, mol) {
+  const n = cycle.length;
+  if (n < 3) {
+    return false;
+  }
+
+  for (let i = 0; i < n; i++) {
+    for (let j = i + 1; j < n; j++) {
+      const consecutive = (j === i + 1) || (i === 0 && j === n - 1);
+      if (consecutive) {
+        continue;
+      }
+      if (mol.getBond(cycle[i], cycle[j])) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function _shortestPathExcludingAtom(startId, endId, excludedAtomId, mol) {
+  const queue = [[startId]];
+  const visited = new Set([startId, excludedAtomId]);
+  while (queue.length > 0) {
+    const path = queue.shift();
+    const currentId = path[path.length - 1];
+    if (currentId === endId) {
+      return path;
+    }
+    const current = mol.atoms.get(currentId);
+    if (!current) {
+      continue;
+    }
+    for (const bId of current.bonds) {
+      const bond = mol.bonds.get(bId);
+      if (!bond) {
+        continue;
+      }
+      const nextId = bond.getOtherAtom(currentId);
+      if (visited.has(nextId)) {
+        continue;
+      }
+      const next = mol.atoms.get(nextId);
+      if (!next || next.name === 'H') {
+        continue;
+      }
+      visited.add(nextId);
+      queue.push([...path, nextId]);
+    }
+  }
+  return null;
+}
+
+function _minimalCyclesContaining(atom, mol) {
+  const neighbors = atom.getNeighbors(mol)
+    .filter(neighbor => neighbor.name !== 'H')
+    .map(neighbor => neighbor.id);
+  if (neighbors.length < 2) {
+    return [];
+  }
+
+  const cycles = [];
+  const seen = new Set();
+  for (let i = 0; i < neighbors.length; i++) {
+    for (let j = i + 1; j < neighbors.length; j++) {
+      const path = _shortestPathExcludingAtom(neighbors[i], neighbors[j], atom.id, mol);
+      if (!path) {
+        continue;
+      }
+      const cycle = [atom.id, ...path];
+      if (!_isChordlessCycle(cycle, mol)) {
+        continue;
+      }
+      const key = [...cycle].sort().join('\0');
+      if (seen.has(key)) {
+        continue;
+      }
+      seen.add(key);
+      cycles.push(cycle);
+    }
+  }
+  return cycles;
+}
+
 /**
- * Returns a Set of ring sizes (from the SSSR) that contain `atom`.
+ * Returns a Set of chordless ring sizes that contain `atom`.
  *
- * Uses `mol.getRings()` for an exact result.  The pair-BFS heuristic it
- * replaces was incorrect for fused ring systems: the BFS between neighbours
- * in different rings returned the combined path length, adding spurious large
- * ring sizes to the set (e.g. reporting r9 for an indane bridgehead that is
- * only in a 5- and a 6-membered ring).
+ * This avoids the undercounting caused by relying on a fundamental cycle basis
+ * (for example cubane faces) and the overcounting caused by naive neighbour-
+ * pair BFS across fused systems.
  */
 function _ringSizesContaining(atom, mol) {
   const sizes = new Set();
-  for (const ring of mol.getRings()) {
-    if (ring.includes(atom.id)) {
-      sizes.add(ring.length);
-    }
+  for (const cycle of _minimalCyclesContaining(atom, mol)) {
+    sizes.add(cycle.length);
   }
   return sizes;
 }
 
 /**
- * Number of SSSR rings containing `atom`.
+ * Number of chordless rings containing `atom`.
  *
- * Counts the ring bonds (bonds in any ring) incident to `atom`, then maps:
- *   0 ring bonds → 0   (not in any ring)
- *   2 ring bonds → 1   (simple ring member)
- *   n ring bonds → n-1 (ring-junction member; e.g. 3→2 for naphthalene bridgehead)
- *
- * This matches Daylight SSSR semantics for fused and bridged ring systems.
- * (Spiro centers — 4 ring bonds — return 3 instead of 2, a known limitation.)
+ * This is the closest match to Daylight-style ring-path semantics for fused
+ * and bridged systems without relying on a lossy cycle basis.
  */
 function _ringPathCount(atom, mol) {
-  let ringBondCount = 0;
-  for (const bId of atom.bonds) {
-    const bond = mol.bonds.get(bId);
-    if (bond && _isBondInRing(bond, mol)) {
-      ringBondCount++;
-    }
-  }
-  if (ringBondCount === 0) {
-    return 0;
-  }
-  if (ringBondCount === 2) {
-    return 1;
-  }
-  return ringBondCount - 1;
+  return _minimalCyclesContaining(atom, mol).length;
 }
 
 /** Returns `true` if `bond` is part of any ring in `mol`. */

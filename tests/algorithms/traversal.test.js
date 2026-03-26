@@ -27,6 +27,14 @@ describe('bfs', () => {
     assert.equal(depth.get('a1'), 1);
     assert.equal(depth.get('a2'), 2);
   });
+
+  it('returns an empty traversal for an unknown start atom', () => {
+    const mol = propane();
+    const result = bfs(mol, 'missing');
+    assert.deepEqual(result.visited, []);
+    assert.equal(result.parent.size, 0);
+    assert.equal(result.depth.size, 0);
+  });
 });
 
 describe('dfs', () => {
@@ -34,5 +42,13 @@ describe('dfs', () => {
     const mol = propane();
     const { visited } = dfs(mol, 'a0');
     assert.deepEqual(visited.sort(), ['a0', 'a1', 'a2']);
+  });
+
+  it('returns an empty traversal for an unknown start atom', () => {
+    const mol = propane();
+    const result = dfs(mol, 'missing');
+    assert.deepEqual(result.visited, []);
+    assert.equal(result.parent.size, 0);
+    assert.deepEqual(result.finishOrder, []);
   });
 });

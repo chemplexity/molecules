@@ -382,6 +382,13 @@ describe('matchesSMARTS — R<n> ring count', () => {
   it('[R2] NOT found in benzene (each atom in only one ring)', () => {
     assert.equal(matchesSMARTS(mol('c1ccccc1'), '[R2]'), false);
   });
+
+  it('[R3] found in cubane (each carbon belongs to three square faces)', () => {
+    const cubane = mol('C12C3C4C1C5C2C3C45');
+    assert.equal(matchesSMARTS(cubane, '[R3]'), true);
+    assert.equal(collectAll(findSMARTS(cubane, '[R3]')).length, 8);
+    assert.equal(collectAll(findSMARTS(cubane, '[R2]')).length, 0);
+  });
 });
 
 // ---------------------------------------------------------------------------

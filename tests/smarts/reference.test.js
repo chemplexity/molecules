@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../src/io/smiles.js';
 import { matchesSMARTS, functionalGroups } from '../../src/smarts/index.js';
+import { findSMARTS } from '../../src/smarts/search.js';
 
 const fg = functionalGroups;
 
@@ -18,6 +19,24 @@ describe('functionalGroups — hydrocarbons', () => {
   it('alkene found in ethene', () => assert.equal(matchesSMARTS(parseSMILES('C=C'), fg.alkene.smarts), true));
   it('alkene NOT found in ethane', () => assert.equal(matchesSMARTS(parseSMILES('CC'), fg.alkene.smarts), false));
   it('alkyne found in acetylene', () => assert.equal(matchesSMARTS(parseSMILES('C#C'), fg.alkyne.smarts), true));
+  it('bicyclobutane registers two cyclopropane matches', () => {
+    const molecule = parseSMILES('C1C2C1C2');
+    const mappings = [...findSMARTS(molecule, fg.cyclopropane.smarts)];
+    assert.equal(mappings.length, 2);
+
+    const mergedByAnchor = new Map();
+    for (const mapping of mappings) {
+      const anchor = mapping.values().next().value;
+      if (!mergedByAnchor.has(anchor)) {
+        mergedByAnchor.set(anchor, new Set());
+      }
+      for (const atomId of mapping.values()) {
+        mergedByAnchor.get(anchor).add(atomId);
+      }
+    }
+
+    assert.equal(mergedByAnchor.size, 2);
+  });
 });
 
 // ---------------------------------------------------------------------------

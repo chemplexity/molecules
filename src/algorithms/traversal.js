@@ -10,6 +10,9 @@ export function bfs(molecule, startId) {
   const visited = [];
   const parent = new Map();
   const depth = new Map();
+  if (!molecule.atoms.has(startId)) {
+    return { visited, parent, depth };
+  }
   const queue = [startId];
 
   parent.set(startId, null);
@@ -41,6 +44,9 @@ export function dfs(molecule, startId) {
   const visited = new Set();
   const parent = new Map();
   const finishOrder = [];
+  if (!molecule.atoms.has(startId)) {
+    return { visited: [], parent, finishOrder };
+  }
 
   parent.set(startId, null);
 

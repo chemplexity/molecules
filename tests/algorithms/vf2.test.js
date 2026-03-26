@@ -257,6 +257,22 @@ describe('findSubgraphMappings — wildcard predicates', () => {
   });
 });
 
+describe('findSubgraphMappings — radical awareness', () => {
+  it('does not match a closed-shell query atom to a radical target atom by default', () => {
+    const target = new Molecule();
+    target.addAtom('t0', 'C', { radical: 1 });
+    const results = collectAll(findSubgraphMappings(target, singleCarbon()));
+    assert.equal(results.length, 0);
+  });
+
+  it('does not match a radical query atom to a closed-shell target atom by default', () => {
+    const query = singleCarbon();
+    query.atoms.get('c0').setRadical(1);
+    const results = collectAll(findSubgraphMappings(singleCarbon(), query));
+    assert.equal(results.length, 0);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Subgraph semantics — degree filter
 // ---------------------------------------------------------------------------

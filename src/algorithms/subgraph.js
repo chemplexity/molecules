@@ -5,8 +5,8 @@
 // ---------------------------------------------------------------------------
 
 /**
- * Default atom match: element symbol, formal charge, and aromaticity must
- * all be equal.
+ * Default atom match: element symbol, formal charge, aromaticity, and
+ * explicit radical count must all be equal.
  *
  * @param {import('../core/Atom.js').Atom} qAtom  Query atom.
  * @param {import('../core/Atom.js').Atom} tAtom  Target atom.
@@ -20,6 +20,9 @@ export function defaultAtomMatch(qAtom, tAtom) {
     return false;
   }
   if (qAtom.isAromatic() !== tAtom.isAromatic()) {
+    return false;
+  }
+  if (qAtom.getRadical() !== tAtom.getRadical()) {
     return false;
   }
   return true;
