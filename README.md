@@ -7,9 +7,10 @@ A chemical graph theory library for JavaScript. Latest demo of `molecules.js` + 
 ## Features
 
 - **I/O** — parse and serialise SMILES and InChI formats
-- **2D layout** — coordinate generation for skeletal-structure rendering
+- **2D layout** — coordinate generation and refinement for skeletal-structure rendering
 - **Aromaticity** — Hückel π-electron perception for arbitrary ring systems
 - **SMARTS** — substructure search and built-in functional group detection
+- **SMIRKS** — reaction transform parsing and application with built-in reaction templates
 - **Graph matrices** — adjacency, degree, distance, Laplacian, Randić, reciprocal
 - **Topological indices** — Wiener, Balaban, Randić, Zagreb, Harary, Schultz, and more
 - **Physicochemical properties** — logP, TPSA, H-bond donors/acceptors, Lipinski Ro5
@@ -35,8 +36,8 @@ console.log(molecularFormula(mol));   // C2H4O2
 console.log(toCanonicalSMILES(mol));  // canonical SMILES
 console.log(toInChI(mol));            // InChI=1S/C2H4O2/c1-2(3)4/h1H3,(H,3,4)
 
-const { matrix: A } = adjacencyMatrix(mol);
-const { matrix: D } = distanceMatrix(A);
+const A = adjacencyMatrix(mol);
+const D = distanceMatrix(A);
 console.log(wienerIndex(D));          // 10
 ```
 
@@ -71,6 +72,25 @@ const groups = functionalGroups(mol);
 const hits = findSMARTS('[CX3](=O)[OX2H1]', mol);
 console.log(matchesSMARTS('[CX3](=O)[OX2H1]', mol)); // true
 ```
+
+## SMIRKS Reaction Transforms
+
+```js
+import { parseSMILES, parseSMIRKS, applySMIRKS,
+         reactionTemplates } from 'molecules';
+
+// Apply a built-in reaction template
+const alcohol = parseSMILES('CCO');
+const product = applySMIRKS(alcohol, reactionTemplates.alcoholOxidation.smirks);
+
+// Apply a custom SMIRKS transform
+const mol = parseSMILES('CCl');
+const hydrolysed = applySMIRKS(mol, '[C:1][Cl,Br,I:2]>>[C:1][OH:2]');
+```
+
+Built-in templates include `alcoholOxidation`, `carbonylReduction`,
+`alkeneHydrogenation`, `alkynePartialReduction`, `esterHydrolysis`,
+`amideHydrolysis`, `halideHydrolysis`, `dehalogenation`, and more.
 
 ## Descriptors
 
@@ -108,14 +128,12 @@ const warnings = validateValence(parseSMILES('C(C)(C)(C)(C)C'));
 ## Sub-path Imports
 
 ```js
-import { Molecule, Atom, Bond }                        from 'molecules/core';
-import { parseSMILES, toCanonicalSMILES, toInChI }     from 'molecules/io';
-import { wienerIndex, logP, lipinskiRuleOfFive }       from 'molecules/descriptors';
-import { adjacencyMatrix, distanceMatrix }             from 'molecules/matrices';
-import { generateCoords }                              from 'molecules/layout';
-import { findSMARTS, functionalGroups }                from 'molecules/smarts';
-import { perceiveAromaticity, morganRanks }            from 'molecules/algorithms';
-import { validateValence }                             from 'molecules/validation';
+import { Molecule, Atom, Bond }                    from 'molecules/core';
+import { parseSMILES, toCanonicalSMILES, toInChI } from 'molecules/io';
+import { wienerIndex, logP, lipinskiRuleOfFive }   from 'molecules/descriptors';
+import { adjacencyMatrix, distanceMatrix }         from 'molecules/matrices';
+import { perceiveAromaticity, morganRanks }        from 'molecules/algorithms';
+import { validateValence }                         from 'molecules/validation';
 ```
 
 ## Documentation

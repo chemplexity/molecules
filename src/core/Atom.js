@@ -18,19 +18,19 @@ export class Atom {
   static _nextId = 0;
 
   /**
-   * @param {string|null} [id]                              - Unique identifier. Auto-generated as a numeric string when omitted or null.
-   * @param {string} name                                   - Element symbol (e.g. 'C', 'N', 'O').
-   * @param {object} [properties={}]
-   * @param {number}       [properties.charge=0]            - Formal charge.
-   * @param {boolean}      [properties.aromatic=false]      - Whether the atom is aromatic.
-   * @param {number}       [properties.protons=undefined]   - Atomic number (set by parseSMILES).
-   * @param {number}       [properties.neutrons=undefined]  - Neutron count; isotope-adjusted by parseSMILES.
-   * @param {number}       [properties.electrons=undefined] - Electron count (set by parseSMILES).
-   * @param {number}       [properties.group=0]             - Periodic table group (1–18).
-   * @param {number}       [properties.period=0]            - Periodic table period (1–7).
-   * @param {number}       [properties.radical=0]           - Count of unpaired electrons stored explicitly on the atom.
-   * @param {'R'|'S'|null} [properties.chirality=null]      - CIP chirality designation: `'R'` (rectus) or `'S'` (sinister); `null` if no chirality annotation or not determinable.
-   * @param {{atomMap?: number|null}|undefined} [properties.reaction=undefined] - Reaction/template metadata used by SMIRKS or atom-mapped SMARTS.
+   * @param {string|null} [id]                                   - Unique identifier. Auto-generated as a numeric string when omitted or null.
+   * @param {string} name                                        - Element symbol (e.g. 'C', 'N', 'O').
+   * @param {object} [properties={}]                             - Chemistry-specific atom data.
+   * @param {number}                [properties.charge=0]        - Formal charge.
+   * @param {boolean}               [properties.aromatic=false]  - Whether the atom is aromatic.
+   * @param {number|undefined}      [properties.protons]         - Atomic number. Populated by `parseSMILES`; `undefined` for manually-constructed atoms.
+   * @param {number|undefined}      [properties.neutrons]        - Neutron count; isotope-adjusted by `parseSMILES`; `undefined` for manually-constructed atoms.
+   * @param {number|undefined}      [properties.electrons]       - Electron count. Populated by `parseSMILES`; `undefined` for manually-constructed atoms.
+   * @param {number}                [properties.group=0]         - Periodic table group (1–18), or `0` when not yet resolved.
+   * @param {number}                [properties.period=0]        - Periodic table period (1–7), or `0` when not yet resolved.
+   * @param {number}                [properties.radical=0]       - Count of unpaired electrons stored explicitly on the atom.
+   * @param {'R'|'S'|null}          [properties.chirality=null]  - CIP chirality designation: `'R'` (rectus) or `'S'` (sinister); `null` if unannotated or indeterminate.
+   * @param {{atomMap?: number|null}|undefined} [properties.reaction] - Reaction/template metadata used by SMIRKS or atom-mapped SMARTS.
    */
   constructor(id, name, {
     charge    = 0,
@@ -60,7 +60,7 @@ export class Atom {
     this.y = null;
     /** @type {number|null} Z coordinate in Å; `null` until `generateCoords` is called. */
     this.z = null;
-    /** @type {boolean} Whether the atom should be shown in 2D rendering. Defaults to true. */
+    /** @type {boolean} Whether the atom participates in 2D layout and rendering. `false` suppresses the atom from coordinate generation and drawing (e.g. implicit H atoms); has no effect in force-graph mode. */
     this.visible = true;
     /** @type {{charge: number, aromatic: boolean, protons: number|undefined, neutrons: number|undefined, electrons: number|undefined, group: number, period: number, radical: number, chirality: 'R'|'S'|null, hybridization: 'sp'|'sp2'|'sp3'|null, reaction: {atomMap: number|null}}} Chemistry-specific element data. */
     this.properties = {

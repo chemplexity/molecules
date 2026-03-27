@@ -423,6 +423,89 @@ div.tooltip td:first-child {
     color: #333;
 }
 
+#undo-controls {
+    position: absolute;
+    top: 48px;
+    right: 10px;
+    z-index: 10;
+    display: flex;
+    gap: 4px;
+}
+
+#undo-btn, #redo-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+    padding: 0;
+    color: #555;
+}
+
+#undo-btn:hover:not(:disabled), #redo-btn:hover:not(:disabled) {
+    background: #f0f0f0;
+    color: #333;
+}
+
+#undo-btn:disabled, #redo-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+#atom-selector {
+    position: absolute;
+    top: 88px;
+    right: 10px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#atom-selector button {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: background 0.15s, border-color 0.15s;
+    padding: 0;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+#atom-selector button:hover { background: #f0f0f0; }
+
+#elem-btn-C        { color: #333333; }
+#elem-btn-C.active { background: #e8e8e8; border-color: #333333; }
+#elem-btn-N        { color: #3050F8; }
+#elem-btn-N.active { background: #e6eaff; border-color: #3050F8; }
+#elem-btn-O        { color: #FF0D0D; }
+#elem-btn-O.active { background: #ffe8e8; border-color: #FF0D0D; }
+#elem-btn-S        { color: #C8A000; }
+#elem-btn-S.active { background: #fdf8d8; border-color: #C8A000; }
+#elem-btn-P        { color: #FF8000; }
+#elem-btn-P.active { background: #fff0e0; border-color: #FF8000; }
+#elem-btn-F        { color: #6ab52a; }
+#elem-btn-F.active { background: #f2fce4; border-color: #6ab52a; }
+#elem-btn-Cl       { color: #18b018; }
+#elem-btn-Cl.active { background: #e0fce0; border-color: #18b018; }
+#elem-btn-Br       { color: #A62929; }
+#elem-btn-Br.active { background: #fce8e8; border-color: #A62929; }
+#elem-btn-I        { color: #940094; }
+#elem-btn-I.active { background: #f8e0f8; border-color: #940094; }
+
 #rotate-controls {
     position: absolute;
     bottom: 10px;
@@ -539,6 +622,28 @@ div.tooltip td:first-child {
     background: #4080e0;
 }
 
+#erase-btn.active {
+    background: #5090f0;
+    color: #fff;
+    border-color: #3070d0;
+}
+#erase-btn.active:hover {
+    background: #4080e0;
+}
+
+#erase-cursor {
+    position: fixed;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(220, 50, 50, 0.25);
+    border: 2px solid rgba(200, 30, 30, 0.6);
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    display: none;
+    z-index: 9999;
+}
+
 #draw-tools {
     position: absolute;
     top: 10px;
@@ -639,6 +744,7 @@ div.tooltip td:first-child {
 
 <body>
 
+<div id="erase-cursor"></div>
 <div id="wrapper">
 
     <div id="header">
@@ -666,6 +772,31 @@ div.tooltip td:first-child {
             <div id="toggle-controls">
                 <button id="toggle-btn" onclick="toggleMode()">⚡ Force Layout</button>
             </div>
+            <div id="atom-selector">
+                <button id="elem-btn-C" title="Carbon"   onclick="setDrawElement('C')">C</button>
+                <button id="elem-btn-N"                title="Nitrogen" onclick="setDrawElement('N')">N</button>
+                <button id="elem-btn-O"                title="Oxygen"   onclick="setDrawElement('O')">O</button>
+                <button id="elem-btn-S"                title="Sulfur"      onclick="setDrawElement('S')">S</button>
+                <button id="elem-btn-P"                title="Phosphorus"  onclick="setDrawElement('P')">P</button>
+                <button id="elem-btn-F"                title="Fluorine"    onclick="setDrawElement('F')">F</button>
+                <button id="elem-btn-Cl"               title="Chlorine"    onclick="setDrawElement('Cl')">Cl</button>
+                <button id="elem-btn-Br"               title="Bromine"     onclick="setDrawElement('Br')">Br</button>
+                <button id="elem-btn-I"                title="Iodine"      onclick="setDrawElement('I')">I</button>
+            </div>
+            <div id="undo-controls">
+                <button id="undo-btn" title="Undo (Ctrl+Z)" onclick="undoAction()" disabled>
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                        <path d="M3 4.5H8a4 4 0 0 1 0 8H4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/>
+                        <polyline points="5,2.5 3,4.5 5,6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+                <button id="redo-btn" title="Redo (Ctrl+Shift+Z)" onclick="redoAction()" disabled>
+                    <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
+                        <path d="M12 4.5H7a4 4 0 0 0 0 8h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none"/>
+                        <polyline points="10,2.5 12,4.5 10,6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                </button>
+            </div>
             <div id="force-controls">
                 <button id="label-toggle" title="Toggle atom labels" onclick="toggleLabels()">Atom Labels</button>
                 <button id="copy-force-png-btn" title="Copy as PNG" onclick="copyForcePng()">PNG</button>
@@ -681,11 +812,11 @@ div.tooltip td:first-child {
             <div id="clean-controls">
                 <button id="pan-mode-btn" class="active" title="Pan / zoom mode" onclick="togglePanMode()">🤚</button>
                 <button id="select-mode-btn" title="Selection mode — drag to select atoms and bonds" onclick="toggleSelectMode()">⬚</button>
-                <button id="erase-btn" title="Delete selected atoms and bonds" onclick="deleteSelection()">🗑️</button>
+                <button id="erase-btn" title="Erase mode — click atoms or bonds to delete" onclick="toggleEraseMode()">🗑️</button>
                 <button id="clean-2d-btn" title="Clean 2D layout" onclick="cleanLayout2d()">🧹</button>
             </div>
             <div id="draw-tools">
-                <button id="draw-bond-btn" title="Draw bond — click an atom to add a carbon" onclick="toggleDrawBondMode()"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg></button>
+                <button id="draw-bond-btn" title="Draw bond" onclick="toggleDrawBondMode()"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg></button>
             </div>
         </div>
         <div id="sidebar">
@@ -1157,7 +1288,7 @@ const zoom = d3.zoom()
         // In selection mode: block drag-to-pan on background
         // so mousedown starts rubber-band selection instead.
         // Scroll-to-zoom and pinch-zoom are unaffected.
-        if ((_selectMode || _drawBondMode) &&
+        if ((_selectMode || _drawBondMode || _eraseMode) &&
                 (mode === '2d' || mode === 'force') &&
                 (event.type === 'mousedown' || event.type === 'dblclick') && event.button === 0) {
             return false;
@@ -1367,18 +1498,23 @@ svg.on('mousedown.drawbond', function(event) {
     _startDrawBond(null, gX, gY);
 });
 
+svg.on('mousedown.erase', function(event) {
+    if (!_eraseMode || event.button !== 0) return;
+    _erasePainting = true;
+    const cursor = document.getElementById('erase-cursor');
+    cursor.style.left = event.clientX + 'px';
+    cursor.style.top  = event.clientY + 'px';
+    cursor.style.display = 'block';
+});
+
 svg.on('dblclick.select-all', function(event) {
-    if (!_selectMode) return;
+    if (_drawBondMode || _drawBondState || _eraseMode) return;
     const mol = mode === 'force' ? currentMol : _mol2d;
     if (!mol) return;
     if (event.target.closest('.node, .bond-hover-target, .atom-hit, .bond-hit')) return;
-    for (const [id, atom] of mol.atoms) {
-        if (atom.visible !== false) _selectedAtomIds.add(id);
-    }
-    for (const [id, bond] of mol.bonds) {
-        const [a1, a2] = bond.getAtomObjects(mol);
-        if (a1 && a2 && a1.visible !== false && a2.visible !== false) _selectedBondIds.add(id);
-    }
+    if (!_selectMode) window.toggleSelectMode();
+    for (const [id] of mol.atoms) _selectedAtomIds.add(id);
+    for (const [id] of mol.bonds) _selectedBondIds.add(id);
     if (mode === 'force') applyForceSelection(); else _redraw2dSelection();
 });
 
@@ -1407,7 +1543,64 @@ document.addEventListener('mousemove', event => {
     _updateSelectionRect(x, y);
 });
 
+document.addEventListener('mousemove', event => {
+    const cursor = document.getElementById('erase-cursor');
+    if (_erasePainting) {
+        cursor.style.left = event.clientX + 'px';
+        cursor.style.top  = event.clientY + 'px';
+    }
+    if (!_eraseMode || !_erasePainting) return;
+    for (const el of document.elementsFromPoint(event.clientX, event.clientY)) {
+        if (el === _lastEraseHitEl) return;
+        if (el.classList.contains('node')) {
+            const d = d3.select(el).datum();
+            if (!d) continue;
+            if (d.name === 'H') return;
+            _lastEraseHitEl = el;
+            _showPrimitiveHover([d.id], []);
+            const atomId = d.id;
+            requestAnimationFrame(() => { if (_eraseMode && _erasePainting) _eraseItem([atomId], []); });
+            return;
+        }
+        if (el.classList.contains('bond-hover-target')) {
+            const d = d3.select(el).datum();
+            if (!d) continue;
+            const b = molecule.bonds.get(d.id);
+            if (b?.atoms.some(id => molecule.atoms.get(id)?.name === 'H')) return;
+            _lastEraseHitEl = el;
+            _showPrimitiveHover([], [d.id]);
+            const bondId = d.id;
+            requestAnimationFrame(() => { if (_eraseMode && _erasePainting) _eraseItem([], [bondId]); });
+            return;
+        }
+        if (el.classList.contains('atom-hit')) {
+            const g = el.closest('[data-atom-id]');
+            if (!g) continue;
+            _lastEraseHitEl = el;
+            const atomId = g.getAttribute('data-atom-id');
+            _showPrimitiveHover([atomId], []);
+            requestAnimationFrame(() => { if (_eraseMode && _erasePainting) _eraseItem([atomId], []); });
+            return;
+        }
+        if (el.classList.contains('bond-hit')) {
+            const g = el.closest('[data-bond-id]');
+            if (!g) continue;
+            _lastEraseHitEl = el;
+            const bondId = g.getAttribute('data-bond-id');
+            _showPrimitiveHover([], [bondId]);
+            requestAnimationFrame(() => { if (_eraseMode && _erasePainting) _eraseItem([], [bondId]); });
+            return;
+        }
+    }
+    _lastEraseHitEl = null;
+});
+
 document.addEventListener('mouseup', event => {
+    if (event.button === 0) {
+        _erasePainting = false;
+        _lastEraseHitEl = null;
+        document.getElementById('erase-cursor').style.display = 'none';
+    }
     if (_drawBondState) {
         if (event.button === 0) _commitDrawBond();
         return;
@@ -1525,7 +1718,7 @@ function atomTooltipHtml(atom, mol) {
     if (p.aromatic) { rows += row('Aromatic', 'yes'); }
     if (p.chirality) { rows += row('Chirality', p.chirality); }
 
-    const color = atom.name === 'H' ? '#111' : atomColor(atom.name);
+    const color = atomColor(atom.name);
     return `<div class="tt-head" style="color:${color}">${isotopePrefix}${atom.name}${chargeSup}
         <span style="font-size:11px;font-weight:normal;color:#aaa;margin-left:4px">${atom.id}</span>
     </div><table>${rows}</table>`;
@@ -1556,7 +1749,7 @@ function convertMolecule(molecule) {
 
 function createDrag(sim) {
     return d3.drag()
-        .filter(event => !_drawBondMode)
+        .filter(event => !_drawBondMode && !_eraseMode)
         .on('start', (event, d) => {
             if (_drawBondMode) return;
             if (!event.active) sim.alphaTarget(0.3).restart();
@@ -1577,11 +1770,13 @@ function createDrag(sim) {
                 startY: event.y,
                 nodeIds: new Set(dragNodes.map(node => node.id)),
                 positions,
+                _snapped: false,
             };
         })
         .on('drag',  (event, d) => {
             const state = d._dragState;
             if (!state) return;
+            if (!state._snapped) { _takeSnapshot(); state._snapped = true; }
             const dx = event.x - state.startX;
             const dy = event.y - state.startY;
             for (const node of sim.nodes()) {
@@ -1701,6 +1896,12 @@ function updateForce(molecule, {
         .style('cursor', 'grab')
         .on('click', (event, d) => {
             if (_drawBondMode) { _promoteBondOrder(d.id); return; }
+            if (_eraseMode) {
+                const b = molecule.bonds.get(d.id);
+                if (b?.atoms.some(id => molecule.atoms.get(id)?.name === 'H')) return;
+                _eraseItem([], [d.id]);
+                return;
+            }
             _handleForcePrimitiveClick(event, [], [d.id]);
         })
         .on('dblclick', (event, d) => {
@@ -1709,12 +1910,20 @@ function updateForce(molecule, {
             _handleForceComponentDblClick(event, bond.atoms);
         })
         .on('mouseover', (event, d) => {
+            if (_eraseMode && _erasePainting) {
+                const b = molecule.bonds.get(d.id);
+                if (b?.atoms.some(id => molecule.atoms.get(id)?.name === 'H')) return;
+                _showPrimitiveHover([], [d.id]);
+                const bondId = d.id;
+                requestAnimationFrame(() => { if (_eraseMode && _erasePainting) _eraseItem([], [bondId]); });
+                return;
+            }
             _showPrimitiveHover([], [d.id]);
             if (_drawBondMode && !_drawBondHoverSuppressed) {
                 _hoveredBondIds.add(d.id);
                 applyForceSelection();
             }
-            if (_selectMode || _drawBondMode) { return; }
+            if (_selectMode || _drawBondMode || _eraseMode) { return; }
             const bond = molecule.bonds.get(d.id);
             if (!bond) { return; }
             const atom1 = molecule.atoms.get(bond.atoms[0]);
@@ -1763,11 +1972,13 @@ function updateForce(molecule, {
                     startY: event.y,
                     nodeIds,
                     positions,
+                    _snapped: false,
                 };
             })
             .on('drag', function(event) {
                 const state = this._dragState;
                 if (!state) return;
+                if (!state._snapped) { _takeSnapshot(); state._snapped = true; }
                 const dx = event.x - state.startX;
                 const dy = event.y - state.startY;
                 for (const node of simulation.nodes()) {
@@ -1807,25 +2018,52 @@ function updateForce(molecule, {
         .call(createDrag(simulation))
         .on('mousedown.drawbond', function(event, d) {
             if (!_drawBondMode || mode !== 'force' || !currentMol) return;
-            if (d.name === 'H') return;
+            if (d.name === 'H') return; // H can't be a bond source; click handler handles replacement
             event.stopPropagation();
             const [gX, gY] = d3.pointer(event, g.node());
             _startDrawBond(d.id, gX, gY);
         })
         .on('click', (event, d) => {
-            if (_drawBondMode) return;
+            if (_drawBondMode) {
+                if (d.name === 'H' && d.name !== _drawBondElement) {
+                    event.stopPropagation();
+                    const mol = currentMol;
+                    if (!mol) return;
+                    _takeSnapshot();
+                    mol.changeAtomElement(d.id, _drawBondElement);
+                    const affected = new Set([d.id]);
+                    mol.clearStereoAnnotations(affected);
+                    kekulize(mol); refreshAromaticity(mol, { preserveKekule: true });
+                    mol.repairImplicitHydrogens(affected);
+                    _syncInputField(mol); updateFormula(mol); updateDescriptors(mol); updateFunctionalGroups(mol);
+                    updateForce(mol, { preservePositions: true, preserveView: true });
+                }
+                return;
+            }
+            if (_eraseMode) {
+                if (d.name === 'H') return;
+                _eraseItem([d.id], []);
+                return;
+            }
             _handleForcePrimitiveClick(event, [d.id], []);
         })
         .on('dblclick', (event, d) => {
             _handleForceComponentDblClick(event, [d.id]);
         })
         .on('mouseover', (event, d) => {
+            if (_eraseMode && _erasePainting) {
+                if (d.name === 'H') return;
+                _showPrimitiveHover([d.id], []);
+                const atomId = d.id;
+                requestAnimationFrame(() => { if (_eraseMode && _erasePainting) _eraseItem([atomId], []); });
+                return;
+            }
             _showPrimitiveHover([d.id], []);
             if (_drawBondMode && mode === 'force' && !_drawBondHoverSuppressed) {
                 _hoveredAtomIds.add(d.id);
                 applyForceSelection();
             }
-            if (_selectMode || _drawBondMode) { return; }
+            if (_selectMode || _drawBondMode || _eraseMode) { return; }
             const atom = molecule.atoms.get(d.id);
             if (!atom) { return; }
             tooltip.transition().delay(200).style('opacity', 0.9);
@@ -1894,7 +2132,7 @@ function updateForce(molecule, {
             const node = idToNode.get(id);
             if (node && atom.x != null) {
                 node.x = W0 / 2 + (atom.x - cx2d) * FORCE_SCALE;
-                node.y = H0 / 2 + (atom.y - cy2d) * FORCE_SCALE;
+                node.y = H0 / 2 - (atom.y - cy2d) * FORCE_SCALE;
             }
         }
     }
@@ -2238,6 +2476,10 @@ let _hoveredBondIds = new Set();
 let _selectionModifierActive = false;
 let _selectMode      = false;
 let _drawBondMode    = false;
+let _eraseMode       = false;
+let _erasePainting   = false;
+let _lastEraseHitEl  = null;
+let _drawBondElement = 'C';  // atom type placed by the draw-bond tool
 let _drawBondState   = null; // { atomId, ox, oy, ex, ey } during draw-bond drag
 let _drawBondHoverSuppressed = false; // true briefly after commit to block re-hover
 let _preserveSelectionOnNextRender = false;
@@ -2260,8 +2502,8 @@ function _refreshSelectionOverlay() {
 function _getRenderableSelectionIds() {
     if (_selectedAtomIds.size === 0 && _selectedBondIds.size === 0) {
         return {
-            atomIds: (_selectMode || _drawBondMode) ? _hoveredAtomIds : new Set(),
-            bondIds: (_selectMode || _drawBondMode) ? _hoveredBondIds : new Set(),
+            atomIds: (_selectMode || _drawBondMode || _eraseMode) ? _hoveredAtomIds : new Set(),
+            bondIds: (_selectMode || _drawBondMode || _eraseMode) ? _hoveredBondIds : new Set(),
         };
     }
     if (!_selectionModifierActive) {
@@ -2277,7 +2519,7 @@ function _getRenderableSelectionIds() {
 }
 
 function _showPrimitiveHover(atomIds = [], bondIds = []) {
-    if (!_selectMode) return;
+    if (!_selectMode && !_eraseMode) return;
 
     _hoveredAtomIds.clear();
     _hoveredBondIds.clear();
@@ -2355,6 +2597,23 @@ function _toSVGPt2d(a) {
     return { x: W / 2 + (a.x - _cx2d) * SCALE, y: H / 2 - (a.y - _cy2d) * SCALE };
 }
 
+/** Zoom to fit all force-layout nodes within the viewport (unconditional). */
+function _zoomToFitForce() {
+    const nodes = simulation.nodes();
+    if (!nodes.length) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of nodes) {
+        const r = atomRadius(n.protons);
+        if (n.x - r < minX) minX = n.x - r; if (n.x + r > maxX) maxX = n.x + r;
+        if (n.y - r < minY) minY = n.y - r; if (n.y + r > maxY) maxY = n.y + r;
+    }
+    const W = plotEl.clientWidth, H = plotEl.clientHeight, PAD = 40;
+    const scale = Math.min((W - PAD * 2) / (maxX - minX || 1), (H - PAD * 2) / (maxY - minY || 1), 1);
+    const tx = W / 2 - ((minX + maxX) / 2) * scale;
+    const ty = H / 2 - ((minY + maxY) / 2) * scale;
+    svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+}
+
 /** Zoom to fit all 2D atoms in the viewport, but only if any atom is currently off-screen. */
 function _zoomToFitIf2d() {
     if (!_mol2d) return;
@@ -2398,6 +2657,156 @@ function _syncInputField(mol) {
         } catch (e) { /* leave as-is */ }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Undo / Redo history
+// ---------------------------------------------------------------------------
+let _undoStack = [];
+let _redoStack = [];
+const _UNDO_MAX = 50;
+
+function _makeSnapshot() {
+    const mol = mode === 'force' ? currentMol : _mol2d;
+    let snap;
+    if (!mol) {
+        snap = { empty: true, mode };
+    } else {
+        const atoms = [];
+        for (const [id, atom] of mol.atoms) {
+            atoms.push({
+                id,
+                name: atom.name,
+                x: atom.x,
+                y: atom.y,
+                visible: atom.visible,
+                properties: JSON.parse(JSON.stringify(atom.properties))
+            });
+        }
+        const bonds = [];
+        for (const [id, bond] of mol.bonds) {
+            bonds.push({
+                id,
+                atoms: [...bond.atoms],
+                properties: JSON.parse(JSON.stringify(bond.properties))
+            });
+        }
+        snap = { mode, atoms, bonds };
+        if (mode === '2d') {
+            snap.cx2d = _cx2d;
+            snap.cy2d = _cy2d;
+            snap.hCounts2d = _hCounts2d ? [..._hCounts2d] : [];
+            snap.stereoMap2d = _stereoMap2d ? [..._stereoMap2d] : null;
+        } else {
+            snap.nodePositions = simulation.nodes().map(n => ({ id: n.id, x: n.x, y: n.y }));
+        }
+    }
+    return snap;
+}
+
+function _takeSnapshot() {
+    const snap = _makeSnapshot();
+    if (_undoStack.length >= _UNDO_MAX) _undoStack.shift();
+    _undoStack.push(snap);
+    _redoStack = [];
+    _updateUndoBtn();
+    _updateRedoBtn();
+}
+
+function _updateUndoBtn() {
+    const btn = document.getElementById('undo-btn');
+    if (btn) btn.disabled = _undoStack.length === 0;
+}
+
+function _updateRedoBtn() {
+    const btn = document.getElementById('redo-btn');
+    if (btn) btn.disabled = _redoStack.length === 0;
+}
+
+function _restoreSnapshot(snap) {
+    if (snap.empty) {
+        if (snap.mode === 'force') {
+            currentMol = null;
+            if (mode === 'force') {
+                simulation.nodes([]); simulation.force('link').links([]); simulation.stop();
+                g.selectAll('*').remove();
+            }
+        } else {
+            _mol2d = null; _hCounts2d = null; _stereoMap2d = null;
+            if (mode === '2d') g.selectAll('*').remove();
+        }
+        document.getElementById('molecularFormula').innerHTML = '';
+        document.getElementById('molecularWeight').textContent = '';
+        document.getElementById('descriptor-body').innerHTML = '';
+        document.getElementById('fg-body').innerHTML = '';
+        return;
+    }
+
+    // Rebuild molecule from snapshot.
+    const mol = new Molecule();
+    for (const ad of snap.atoms) {
+        const atom = mol.addAtom(ad.id, ad.name, { ...ad.properties });
+        atom.x = ad.x;
+        atom.y = ad.y;
+        if (ad.visible !== undefined) atom.visible = ad.visible;
+        Object.assign(atom.properties, ad.properties);
+    }
+    for (const bd of snap.bonds) {
+        mol.addBond(bd.id, bd.atoms[0], bd.atoms[1], { ...bd.properties }, false);
+        Object.assign(mol.bonds.get(bd.id).properties, bd.properties);
+    }
+
+    _selectedAtomIds.clear();
+    _selectedBondIds.clear();
+
+    if (snap.mode === '2d') {
+        _mol2d = mol;
+        _cx2d = snap.cx2d ?? 0;
+        _cy2d = snap.cy2d ?? 0;
+        _hCounts2d = snap.hCounts2d ? new Map(snap.hCounts2d) : new Map();
+        _stereoMap2d = snap.stereoMap2d ? new Map(snap.stereoMap2d) : new Map();
+        if (mode === '2d') draw2d();
+    } else {
+        currentMol = mol;
+        if (mode === 'force') {
+            updateForce(mol, { preservePositions: true, preserveView: true });
+            if (snap.nodePositions) {
+                const posMap = new Map(snap.nodePositions.map(p => [p.id, p]));
+                for (const node of simulation.nodes()) {
+                    const p = posMap.get(node.id);
+                    if (p) { node.x = p.x; node.y = p.y; node.vx = 0; node.vy = 0; }
+                }
+                simulation.alpha(0).restart();
+            }
+        }
+    }
+
+    updateFormula(mol);
+    updateDescriptors(mol);
+    updateFunctionalGroups(mol);
+    _syncInputField(mol);
+}
+
+window.undoAction = function undoAction() {
+    if (_undoStack.length === 0) return;
+    const redoSnap = _makeSnapshot();
+    if (_redoStack.length >= _UNDO_MAX) _redoStack.shift();
+    _redoStack.push(redoSnap);
+    _updateRedoBtn();
+    const snap = _undoStack.pop();
+    _updateUndoBtn();
+    _restoreSnapshot(snap);
+};
+
+window.redoAction = function redoAction() {
+    if (_redoStack.length === 0) return;
+    const undoSnap = _makeSnapshot();
+    if (_undoStack.length >= _UNDO_MAX) _undoStack.shift();
+    _undoStack.push(undoSnap);
+    _updateUndoBtn();
+    const snap = _redoStack.pop();
+    _updateRedoBtn();
+    _restoreSnapshot(snap);
+};
 
 function _getConnectedComponentAtomIds(mol, seedAtomIds) {
     const componentAtomIds = new Set();
@@ -2735,6 +3144,13 @@ function _promoteBondOrder(bondId) {
     const bond = mol.bonds.get(bondId);
     if (!bond) return;
 
+    if (mode === 'force') {
+        const [a1, a2] = bond.getAtomObjects(mol);
+        if (a1?.name === 'H' || a2?.name === 'H') return;
+    }
+
+    _takeSnapshot();
+
     // For aromatic bonds (order=1.5) use the Kekulé integer order as the base;
     // for plain bonds round in case of any fractional remnant.
     const cur = bond.properties.aromatic
@@ -2773,7 +3189,6 @@ function _promoteBondOrder(bondId) {
         const prevNodeIds = new Set(simulation.nodes().map(n => n.id));
 
         updateForce(mol, { preservePositions: true });
-        _forceKeepInView = true;
 
         const nodes    = simulation.nodes();
         const allLinks = simulation.force('link').links();
@@ -2782,10 +3197,9 @@ function _promoteBondOrder(bondId) {
         const newHNodes = nodes.filter(n => n.name === 'H' && !prevNodeIds.has(n.id));
         const newHIds   = new Set(newHNodes.map(n => n.id));
 
-        // Pre-place each new H atom at the best open angle around its parent
-        // so it starts at a sensible position rather than stacked on the parent.
+        // Pre-place each new H atom at the best open angle around its parent.
         if (newHNodes.length > 0) {
-            const H_DIST = 25; // px — the simulation's link equilibrium distance
+            const H_DIST = 25;
             const newHByParent = new Map();
             for (const hNode of newHNodes) {
                 const link = allLinks.find(l => l.source === hNode || l.target === hNode);
@@ -2795,7 +3209,6 @@ function _promoteBondOrder(bondId) {
                 newHByParent.get(parent).push(hNode);
             }
             for (const [parent, hNodes] of newHByParent) {
-                // Collect angles taken by existing (non-new-H) neighbours.
                 const taken = [];
                 for (const l of allLinks) {
                     if (l.source !== parent && l.target !== parent) continue;
@@ -2813,29 +3226,24 @@ function _promoteBondOrder(bondId) {
                     }
                     hNode.x = parent.x + Math.cos(bestAngle) * H_DIST;
                     hNode.y = parent.y + Math.sin(bestAngle) * H_DIST;
-                    hNode.vx = 0; hNode.vy = 0;
                     taken.push(bestAngle);
                 }
             }
         }
 
-        // Fix every non-new-H atom in place so heavy atoms and existing H atoms
-        // don't jump. New H atoms are left free to settle from their pre-placed
-        // positions via the running simulation.
+        // Pin every atom — including pre-placed new H atoms — so nothing moves.
+        // alpha(0) lets the simulation fire exactly one render tick then stop.
         for (const node of nodes) {
             node.vx = 0; node.vy = 0;
-            if (!newHIds.has(node.id)) { node.fx = node.x; node.fy = node.y; }
+            node.fx = node.x;
+            node.fy = node.y;
         }
-
-        // Unfix all atoms once the simulation has cooled.
         simulation.on('end.unfix', () => {
             for (const node of simulation.nodes()) { node.fx = null; node.fy = null; }
             simulation.on('end.unfix', null);
+            simulation.alpha(0.08).restart();
         });
-
-        // Use a modest alpha so new H atoms settle; with heavy atoms fixed the
-        // rest of the molecule won't drift. No new H atoms → alpha 0 (one tick).
-        simulation.alpha(newHNodes.length > 0 ? 0.3 : 0);
+        simulation.alpha(0);
     } else {
         draw2d();
     }
@@ -2870,28 +3278,54 @@ function _startDrawBond(atomId, gX, gY) {
         .attr('stroke-width', mode === 'force' ? parseFloat(singleBondWidth(1)) : STROKE_W)
         .attr('stroke-linecap', 'round')
         .attr('pointer-events', 'none');
-    // In force mode, show ghost carbon circles:
-    // - origin circle (blank-space start only) — where the source atom will land.
-    // - destination circle — follows the mouse to preview the new atom's position.
+    // In force mode, show ghost atom circles at origin and destination.
+    // In 2D mode, show ghost text labels for heteroatoms (N/O/S) only.
     if (mode === 'force') {
+        const _pr = atomRadius(_DRAW_ELEM_PROTONS[_drawBondElement] ?? 6);
+        const _fc = atomColor(_drawBondElement);
+        const _sc = strokeColor(_drawBondElement);
         if (atomId === null) {
             g.append('circle')
                 .attr('class', 'draw-bond-origin-node')
                 .attr('cx', ox).attr('cy', oy)
-                .attr('r', atomRadius(6))
-                .attr('fill', atomColor('C'))
-                .attr('stroke', strokeColor('C'))
+                .attr('r', _pr)
+                .attr('fill', _fc)
+                .attr('stroke', _sc)
                 .attr('stroke-width', 1)
                 .attr('pointer-events', 'none');
         }
         g.append('circle')
             .attr('class', 'draw-bond-dest-node')
             .attr('cx', ox).attr('cy', oy)
-            .attr('r', atomRadius(6))
-            .attr('fill', atomColor('C'))
-            .attr('stroke', strokeColor('C'))
+            .attr('r', _pr)
+            .attr('fill', _fc)
+            .attr('stroke', _sc)
             .attr('stroke-width', 1)
             .attr('pointer-events', 'none');
+    } else if (_drawBondElement !== 'C') {
+        const _lc = atomColor(_drawBondElement);
+        if (atomId === null) {
+            g.append('text')
+                .attr('class', 'draw-bond-origin-label')
+                .attr('x', ox).attr('y', oy)
+                .attr('text-anchor', 'middle')
+                .attr('dominant-baseline', 'central')
+                .attr('fill', _lc)
+                .attr('font-size', FONT_SIZE)
+                .attr('font-weight', 'bold')
+                .attr('pointer-events', 'none')
+                .text(_drawBondElement);
+        }
+        g.append('text')
+            .attr('class', 'draw-bond-dest-label')
+            .attr('x', ox).attr('y', oy)
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'central')
+            .attr('fill', _lc)
+            .attr('font-size', FONT_SIZE)
+            .attr('font-weight', 'bold')
+            .attr('pointer-events', 'none')
+            .text(_drawBondElement);
     }
 }
 
@@ -2944,16 +3378,57 @@ function _updateDrawBondPreview([mx, my]) {
     _drawBondState.ex = ex;
     _drawBondState.ey = ey;
     _drawBondState.snapAtomId = snapAtomId;
-    g.select('line.draw-bond-preview').attr('x2', ex).attr('y2', ey);
 
-    // Update destination-preview circle in force mode.
-    // Hide it when snapping to an existing atom (no new atom will be created).
+    // In 2D mode, shorten line endpoints to clear heteroatom labels.
+    // In force mode the ghost circles cover the line ends, so no shortening needed.
+    if (mode !== 'force') {
+        const dx = ex - ox, dy = ey - oy;
+        const dist = Math.hypot(dx, dy);
+        let lx1 = ox, ly1 = oy, lx2 = ex, ly2 = ey;
+        if (dist > 1) {
+            const ux = dx / dist, uy = dy / dist;
+            // Source: blank-space start will place _drawBondElement; existing atom uses its own name.
+            const srcName = _drawBondState.atomId
+                ? (_mol2d?.atoms.get(_drawBondState.atomId)?.name ?? 'C')
+                : _drawBondElement;
+            if (srcName !== 'C' && srcName !== 'H') {
+                const gap = labelHalfW(srcName, FONT_SIZE) + 3;
+                lx1 = ox + ux * gap;
+                ly1 = oy + uy * gap;
+            }
+            // Dest: new atom uses _drawBondElement; snap target uses its own name.
+            const dstName = snapAtomId
+                ? (_mol2d?.atoms.get(snapAtomId)?.name ?? 'C')
+                : _drawBondElement;
+            if (dstName !== 'C' && dstName !== 'H') {
+                const gap = labelHalfW(dstName, FONT_SIZE) + 3;
+                lx2 = ex - ux * gap;
+                ly2 = ey - uy * gap;
+            }
+        }
+        g.select('line.draw-bond-preview').attr('x1', lx1).attr('y1', ly1).attr('x2', lx2).attr('y2', ly2);
+    } else {
+        g.select('line.draw-bond-preview').attr('x2', ex).attr('y2', ey);
+    }
+
+    // Update destination-preview circle (force mode).
+    // Hide when snapping to an existing atom — no new atom will be created.
     const destCircle = g.select('circle.draw-bond-dest-node');
     if (!destCircle.empty()) {
         if (snapAtomId !== null) {
             destCircle.attr('display', 'none');
         } else {
             destCircle.attr('display', null).attr('cx', ex).attr('cy', ey);
+        }
+    }
+
+    // Update destination-preview label (2D mode, heteroatoms only).
+    const destLabel = g.select('text.draw-bond-dest-label');
+    if (!destLabel.empty()) {
+        if (snapAtomId !== null) {
+            destLabel.attr('display', 'none');
+        } else {
+            destLabel.attr('display', null).attr('x', ex).attr('y', ey);
         }
     }
 }
@@ -2972,6 +3447,8 @@ function _cancelDrawBond() {
         g.select('line.draw-bond-preview').remove();
         g.select('circle.draw-bond-origin-node').remove();
         g.select('circle.draw-bond-dest-node').remove();
+        g.select('text.draw-bond-origin-label').remove();
+        g.select('text.draw-bond-dest-label').remove();
         _drawBondState = null;
         _clearPrimitiveHover();
         if (mode === 'force') applyForceSelection(); else _redraw2dSelection();
@@ -2993,6 +3470,7 @@ function _ensureMol() {
 // atomId may be null (blank-space click) — in that case a source C is created at (ox, oy).
 // ox, oy are always required (g-space origin of the draw-bond gesture).
 function _autoPlaceBond(atomId, ox, oy) {
+    _takeSnapshot();
     const mol = _ensureMol();
 
     const FORCE_SCALE_VAL = 25;
@@ -3003,13 +3481,13 @@ function _autoPlaceBond(atomId, ox, oy) {
     // ── Resolve / create source atom ─────────────────────────────────────────
     let srcAtom, resolvedId;
     if (atomId === null) {
-        srcAtom = mol.addAtom(null, 'C', {});
+        srcAtom = mol.addAtom(null, _drawBondElement, {});
         if (mode === 'force') {
             let cx2d = 0, cy2d = 0, cnt = 0;
             for (const [, a] of mol.atoms) { if (a.x != null) { cx2d += a.x; cy2d += a.y; cnt++; } }
             if (cnt > 0) { cx2d /= cnt; cy2d /= cnt; }
             srcAtom.x = cx2d + (ox - W / 2) / FORCE_SCALE_VAL;
-            srcAtom.y = cy2d + (oy - H / 2) / FORCE_SCALE_VAL;
+            srcAtom.y = cy2d - (oy - H / 2) / FORCE_SCALE_VAL;
         } else {
             srcAtom.x = _cx2d + (ox - W / 2) / SCALE;
             srcAtom.y = _cy2d - (oy - H / 2) / SCALE;
@@ -3138,7 +3616,7 @@ function _autoPlaceBond(atomId, ox, oy) {
     // ── Remove H from source and place new atom ───────────────────────────────
     const srcH = srcAtom.getNeighbors(mol).find(n => n.name === 'H');
     if (srcH) mol.removeAtom(srcH.id);
-    const newAtom = mol.addAtom(null, 'C', {});
+    const newAtom = mol.addAtom(null, _drawBondElement, {});
     mol.addBond(null, resolvedId, newAtom.id, { order: 1 }, true);
     const affected = new Set([resolvedId, newAtom.id]);
 
@@ -3150,7 +3628,7 @@ function _autoPlaceBond(atomId, ox, oy) {
         for (const [, a] of mol.atoms) { if (a.x != null) { cx2d += a.x; cy2d += a.y; cnt++; } }
         if (cnt > 0) { cx2d /= cnt; cy2d /= cnt; }
         newAtom.x = cx2d + (destGX - W / 2) / FORCE_SCALE_VAL;
-        newAtom.y = cy2d + (destGY - H / 2) / FORCE_SCALE_VAL;
+        newAtom.y = cy2d - (destGY - H / 2) / FORCE_SCALE_VAL;
 
         mol.clearStereoAnnotations(affected);
         kekulize(mol); refreshAromaticity(mol, { preserveKekule: true });
@@ -3200,9 +3678,40 @@ function _commitDrawBond() {
         g.select('line.draw-bond-preview').remove();
         g.select('circle.draw-bond-origin-node').remove();
         g.select('circle.draw-bond-dest-node').remove();
+        g.select('text.draw-bond-origin-label').remove();
+        g.select('text.draw-bond-dest-label').remove();
         _drawBondState = null;
         _clearPrimitiveHover();
         _drawBondHoverSuppressed = true;
+
+        // Click on an existing non-H atom with a different element → replace element.
+        if (atomId !== null) {
+            const mol = mode === 'force' ? currentMol : _mol2d;
+            const clickedAtom = mol?.atoms.get(atomId);
+            if (clickedAtom && clickedAtom.name !== _drawBondElement) {
+                _takeSnapshot();
+                mol.changeAtomElement(atomId, _drawBondElement);
+                const affected = new Set([atomId]);
+                mol.clearStereoAnnotations(affected);
+                kekulize(mol); refreshAromaticity(mol, { preserveKekule: true });
+                mol.repairImplicitHydrogens(affected);
+                _syncInputField(mol); updateFormula(mol); updateDescriptors(mol); updateFunctionalGroups(mol);
+                if (mode === 'force') {
+                    updateForce(mol, { preservePositions: true, preserveView: true });
+                } else {
+                    _hCounts2d = new Map();
+                    for (const [, a] of mol.atoms) {
+                        if (a.name === 'H') continue;
+                        const cnt = a.getNeighbors(mol).filter(n => n.name === 'H').length;
+                        if (cnt > 0) _hCounts2d.set(a.id, cnt);
+                    }
+                    _stereoMap2d = pickStereoWedges(mol);
+                    draw2d();
+                }
+                return;
+            }
+        }
+
         _autoPlaceBond(atomId, ox, oy);
         return;
     }
@@ -3212,9 +3721,19 @@ function _commitDrawBond() {
 
     g.select('line.draw-bond-preview').remove();
     g.select('circle.draw-bond-origin-node').remove();
+    g.select('text.draw-bond-origin-label').remove();
+    g.select('text.draw-bond-dest-label').remove();
     _drawBondState = null;
     _clearPrimitiveHover();
     _drawBondHoverSuppressed = true;
+
+    // Don't create a bond to a hydrogen atom.
+    if (snapAtomId !== null) {
+        const checkMol = mode === 'force' ? currentMol : _mol2d;
+        if (checkMol?.atoms.get(snapAtomId)?.name === 'H') return;
+    }
+
+    _takeSnapshot();
 
     // ── Force mode path ───────────────────────────────────────────────────────
     if (mode === 'force') {
@@ -3231,9 +3750,9 @@ function _commitDrawBond() {
         // Resolve source atom (create from origin if blank-space start).
         let resolvedAtomId = atomId;
         if (atomId === null) {
-            const newSrc = mol.addAtom(null, 'C', {});
+            const newSrc = mol.addAtom(null, _drawBondElement, {});
             newSrc.x = cx2d + (ox - W / 2) / FORCE_SCALE;
-            newSrc.y = cy2d + (oy - H / 2) / FORCE_SCALE;
+            newSrc.y = cy2d - (oy - H / 2) / FORCE_SCALE;
             resolvedAtomId = newSrc.id;
         }
         const srcAtom = mol.atoms.get(resolvedAtomId);
@@ -3271,9 +3790,9 @@ function _commitDrawBond() {
         } else {
             const srcH = srcAtom.getNeighbors(mol).find(n => n.name === 'H');
             if (srcH) mol.removeAtom(srcH.id);
-            const newAtom = mol.addAtom(null, 'C', {});
+            const newAtom = mol.addAtom(null, _drawBondElement, {});
             newAtom.x = cx2d + (ex - W / 2) / FORCE_SCALE;
-            newAtom.y = cy2d + (ey - H / 2) / FORCE_SCALE;
+            newAtom.y = cy2d - (ey - H / 2) / FORCE_SCALE;
             mol.addBond(null, resolvedAtomId, newAtom.id, { order: 1 }, true);
             affected = new Set([resolvedAtomId, newAtom.id]);
             patchPos.set(newAtom.id, { x: ex, y: ey });
@@ -3308,7 +3827,7 @@ function _commitDrawBond() {
     // Resolve source atom (create from origin if blank-space start).
     let resolvedAtomId = atomId;
     if (atomId === null) {
-        const newSrc = mol.addAtom(null, 'C', {});
+        const newSrc = mol.addAtom(null, _drawBondElement, {});
         newSrc.x = _cx2d + (ox - W / 2) / SCALE;
         newSrc.y = _cy2d - (oy - H / 2) / SCALE;
         resolvedAtomId = newSrc.id;
@@ -3361,7 +3880,7 @@ function _commitDrawBond() {
         const srcH = srcAtom.getNeighbors(mol).find(n => n.name === 'H');
         if (srcH) mol.removeAtom(srcH.id);
 
-        const newAtom = mol.addAtom(null, 'C', {});
+        const newAtom = mol.addAtom(null, _drawBondElement, {});
         newAtom.x = newMolX;
         newAtom.y = newMolY;
 
@@ -3497,18 +4016,25 @@ function draw2d() {
             .attr('stroke-width', 12)
             .on('click', event => {
                 if (_drawBondMode) { _promoteBondOrder(bi.bond.id); return; }
+                if (_eraseMode) { _eraseItem([], [bi.bond.id]); return; }
                 _handle2dPrimitiveClick(event, [], [bi.bond.id]);
             })
             .on('dblclick', event => {
                 _handle2dComponentDblClick(event, bi.bond.atoms);
             })
             .on('mouseover', event => {
+                if (_eraseMode && _erasePainting) {
+                    _showPrimitiveHover([], [bi.bond.id]);
+                    const bondId = bi.bond.id;
+                    requestAnimationFrame(() => { if (_eraseMode && _erasePainting) _eraseItem([], [bondId]); });
+                    return;
+                }
                 _showPrimitiveHover([], [bi.bond.id]);
                 if (_drawBondMode && mode === '2d' && !_drawBondHoverSuppressed) {
                     _hoveredBondIds.add(bi.bond.id);
                     _redraw2dSelection();
                 }
-                if (_selectMode || _drawBondMode) { return; }
+                if (_selectMode || _drawBondMode || _eraseMode) { return; }
                 tooltip.transition().delay(150).style('opacity', 0.9);
                 tooltip.html(bondTooltipHtml(bi.bond, sa1, sa2))
                     .style('left', (event.clientX + 13) + 'px')
@@ -3525,7 +4051,7 @@ function draw2d() {
             })
             .style('cursor', 'grab')
             .call(d3.drag()
-                .filter(event => !_drawBondMode)
+                .filter(event => !_drawBondMode && !_eraseMode)
                 .on('start', function(event) {
                     if (_drawBondMode) return;
                     event.sourceEvent.stopPropagation();
@@ -3534,10 +4060,12 @@ function draw2d() {
                     tooltip.style('opacity', 0);
                     d3.select(this).style('cursor', 'grabbing');
                     this._dragState = _capture2dDragState(event, [], [bi.bond.id]);
+                    if (this._dragState) this._dragState._snapped = false;
                 })
                 .on('drag', function(event) {
                     const state = this._dragState;
                     if (!state) return;
+                    if (!state._snapped) { _takeSnapshot(); state._snapped = true; }
                     const [svgX, svgY] = d3.pointer(event.sourceEvent, g.node());
                     const dx = (svgX - state.pX) / SCALE;
                     const dy = -(svgY - state.pY) / SCALE;
@@ -3599,18 +4127,25 @@ function draw2d() {
             })
             .on('click', event => {
                 if (_drawBondMode) return; // handled by mousedown.drawbond
+                if (_eraseMode) { _eraseItem([atom.id], []); return; }
                 _handle2dPrimitiveClick(event, [atom.id], []);
             })
             .on('dblclick', event => {
                 _handle2dComponentDblClick(event, [atom.id]);
             })
             .on('mouseover', event => {
+                if (_eraseMode && _erasePainting) {
+                    _showPrimitiveHover([atom.id], []);
+                    const atomId = atom.id;
+                    requestAnimationFrame(() => { if (_eraseMode && _erasePainting) _eraseItem([atomId], []); });
+                    return;
+                }
                 _showPrimitiveHover([atom.id], []);
                 if (_drawBondMode && mode === '2d' && !_drawBondHoverSuppressed) {
                     _hoveredAtomIds.add(atom.id);
                     _redraw2dSelection();
                 }
-                if (_selectMode || _drawBondMode) { return; }
+                if (_selectMode || _drawBondMode || _eraseMode) { return; }
                 tooltip.transition().delay(150).style('opacity', 0.9);
                 tooltip.html(atomTooltipHtml(atom, mol))
                     .style('left', (event.clientX + 13) + 'px')
@@ -3627,7 +4162,7 @@ function draw2d() {
             });
 
         if (label) {
-            renderAtomLabel(hitGroup, label, atomColor(symbol), labelDx);
+            renderAtomLabel(hitGroup, label, symbol === 'H' ? '#333333' : atomColor(symbol), labelDx);
             if (charge !== 0) {
                 const sign = charge === 1 ? '+' : charge > 1 ? `${charge}+`
                            : charge === -1 ? '−' : `${Math.abs(charge)}−`;
@@ -3635,13 +4170,14 @@ function draw2d() {
                     .attr('class', 'atom-charge')
                     .attr('x', labelDx + labelHalfW(label, FONT_SIZE))
                     .attr('y', -(FONT_SIZE * 0.42))
-                    .attr('fill', atomColor(symbol))
+                    .attr('fill', symbol === 'H' ? '#333333' : atomColor(symbol))
                     .text(sign);
             }
         }
 
         // Drag: move this atom, or the whole selection when dragging a selected primitive.
         hitGroup.call(d3.drag()
+            .filter(event => !_drawBondMode && !_eraseMode)
             .on('start', function(event) {
                 if (_drawBondMode) return; // draw-bond mode uses its own mousedown
                 event.sourceEvent.stopPropagation();
@@ -3650,10 +4186,12 @@ function draw2d() {
                 tooltip.style('opacity', 0);
                 hitGroup.select('circle').style('cursor', 'grabbing');
                 this._dragState = _capture2dDragState(event, [atom.id], []);
+                if (this._dragState) this._dragState._snapped = false;
             })
             .on('drag', function(event) {
                 const state = this._dragState;
                 if (!state) return;
+                if (!state._snapped) { _takeSnapshot(); state._snapped = true; }
                 const [svgX, svgY] = d3.pointer(event.sourceEvent, g.node());
                 const dx = (svgX - state.pX) / SCALE;
                 const dy = -(svgY - state.pY) / SCALE;
@@ -3962,6 +4500,7 @@ window.toggleLabels = function() {
 let _clean2dBtnTimer = null;
 window.cleanLayout2d = function() {
     if (mode !== '2d' || !_mol2d) return;
+    _takeSnapshot();
     refineExistingCoords(_mol2d, {
         bondLength: 1.5,
         maxPasses: 6,
@@ -3977,15 +4516,32 @@ window.cleanLayout2d = function() {
     _clean2dBtnTimer = setTimeout(() => { btn.textContent = '🧹'; }, 1500);
 };
 
+function _syncElemBtns() {
+    for (const e of ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I']) {
+        const btn = document.getElementById(`elem-btn-${e}`);
+        if (btn) btn.classList.toggle('active', e === _drawBondElement);
+    }
+}
+
+function _clearElemBtns() {
+    for (const e of ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I']) {
+        const btn = document.getElementById(`elem-btn-${e}`);
+        if (btn) btn.classList.remove('active');
+    }
+}
+
 window.togglePanMode = function() {
-    if (!_selectMode && !_drawBondMode) return; // already in pan mode
+    if (!_selectMode && !_drawBondMode && !_eraseMode) return; // already in pan mode
     _selectMode = false;
     _drawBondMode = false;
+    _eraseMode = false;
     _cancelDrawBond();
     _clearPrimitiveHover();
+    _clearElemBtns();
     document.getElementById('pan-mode-btn').classList.add('active');
     document.getElementById('select-mode-btn').classList.remove('active');
     document.getElementById('draw-bond-btn').classList.remove('active');
+    document.getElementById('erase-btn').classList.remove('active');
     if (mode === 'force') applyForceSelection();
     else if (_mol2d) draw2d();
 };
@@ -3994,11 +4550,14 @@ window.toggleSelectMode = function() {
     if (_selectMode) return; // already in selection mode
     _selectMode = true;
     _drawBondMode = false;
+    _eraseMode = false;
     _cancelDrawBond();
     _clearPrimitiveHover();
+    _clearElemBtns();
     document.getElementById('select-mode-btn').classList.add('active');
     document.getElementById('pan-mode-btn').classList.remove('active');
     document.getElementById('draw-bond-btn').classList.remove('active');
+    document.getElementById('erase-btn').classList.remove('active');
 };
 
 window.toggleDrawBondMode = function() {
@@ -4006,18 +4565,68 @@ window.toggleDrawBondMode = function() {
     const btn = document.getElementById('draw-bond-btn');
     if (_drawBondMode) {
         _selectMode = false;
+        _eraseMode = false;
         _cancelDrawBond();
         _clearPrimitiveHover();
         document.getElementById('pan-mode-btn').classList.remove('active');
         document.getElementById('select-mode-btn').classList.remove('active');
+        document.getElementById('erase-btn').classList.remove('active');
         btn.classList.add('active');
+        _syncElemBtns();
     } else {
         _cancelDrawBond();
         _clearPrimitiveHover();
         document.getElementById('pan-mode-btn').classList.add('active');
         btn.classList.remove('active');
+        _clearElemBtns();
     }
     if (mode === 'force') applyForceSelection(); else if (_mol2d) draw2d();
+};
+
+window.toggleEraseMode = function() {
+    _eraseMode = !_eraseMode;
+    const btn = document.getElementById('erase-btn');
+    if (_eraseMode) {
+        _selectMode = false;
+        _drawBondMode = false;
+        _cancelDrawBond();
+        _clearElemBtns();
+        document.getElementById('pan-mode-btn').classList.remove('active');
+        document.getElementById('select-mode-btn').classList.remove('active');
+        document.getElementById('draw-bond-btn').classList.remove('active');
+        btn.classList.add('active');
+        if (_selectedAtomIds.size > 0 || _selectedBondIds.size > 0) {
+            deleteSelection();
+            return;
+        }
+        _clearPrimitiveHover();
+    } else {
+        _erasePainting = false;
+        _clearPrimitiveHover();
+        document.getElementById('pan-mode-btn').classList.add('active');
+        btn.classList.remove('active');
+    }
+    if (mode === 'force') applyForceSelection(); else if (_mol2d) draw2d();
+};
+
+function _eraseItem(atomIds, bondIds) {
+    _selectedAtomIds.clear();
+    _selectedBondIds.clear();
+    for (const id of atomIds) _selectedAtomIds.add(id);
+    for (const id of bondIds) _selectedBondIds.add(id);
+    deleteSelection();
+}
+
+const _DRAW_ELEM_PROTONS = { H: 1, B: 5, C: 6, N: 7, O: 8, F: 9, P: 15, S: 16, Cl: 17, Br: 35, I: 53, K: 19 };
+
+window.setDrawElement = function(el) {
+    _drawBondElement = el;
+    if (!_drawBondMode) {
+        // Activating draw-bond mode will call _syncElemBtns via toggleDrawBondMode.
+        window.toggleDrawBondMode();
+    } else {
+        _syncElemBtns();
+    }
 };
 
 // ---------------------------------------------------------------------------
@@ -4065,6 +4674,7 @@ function stopRotate() {
 function startRotate(delta) {
     stopRotate();
     if (mode !== '2d' || !_mol2d) return;
+    _takeSnapshot();
     const step = () => {
         const allAtoms = [..._mol2d.atoms.values()].filter(a => a.x != null);
         if (!allAtoms.length) return;
@@ -4117,9 +4727,10 @@ document.addEventListener('mouseup',    stopRotate);
 document.addEventListener('click', e => {
     const btn = e.target.closest('#flip-h, #flip-v');
     if (!btn) return;
+    if (mode !== '2d' || !_mol2d) return;
+    _takeSnapshot();
     if (btn.id === 'flip-h') flipH = !flipH;
     else                     flipV = !flipV;
-    if (!_mol2d) return;
 
     // Apply the flip directly to the existing (already-rotated) atom coordinates,
     // mirroring around the current centroid — same pattern as startRotate().
@@ -4228,6 +4839,8 @@ function updateDescriptors(molecule, extraH = 0) {
 function _renderMol(mol) {
     currentMol = mol;
     rotationDeg = 0; flipH = false; flipV = false;
+    _undoStack = []; _redoStack = [];
+    _updateUndoBtn(); _updateRedoBtn();
     kekulize(mol);
     if (mode === 'force') {
         updateForce(mol);
@@ -4241,6 +4854,8 @@ function _renderMol(mol) {
 }
 
 function clearMolecule() {
+    _undoStack = []; _redoStack = [];
+    _updateUndoBtn(); _updateRedoBtn();
     currentMol    = null;
     currentSmiles = null;
     currentInchi  = null;
@@ -4317,6 +4932,8 @@ window.deleteSelection = function deleteSelection() {
     if (!mol) return;
     if (_selectedAtomIds.size === 0 && _selectedBondIds.size === 0) return;
 
+    _takeSnapshot();
+
     const is2d = mode === '2d';
     const deletedAtomIds = new Set(_selectedAtomIds);
     const affectedHeavyIds = new Set();
@@ -4388,7 +5005,9 @@ window.deleteSelection = function deleteSelection() {
     if (mode === 'force') {
         currentMol = mol;
         updateForce(mol, { preservePositions: true, preserveView: true });
+        if (mol.atoms.size > 0) _zoomToFitForce();
     } else {
+        fitCurrent2dView();
         draw2d();
     }
 
@@ -4427,6 +5046,60 @@ document.addEventListener('keydown', event => {
         if (_drawBondState) { _cancelDrawBond(); event.preventDefault(); return; }
         if (_drawBondMode)  { window.toggleDrawBondMode(); event.preventDefault(); return; }
         return;
+    }
+
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && (event.key === 'z' || event.key === 'Z')) {
+        redoAction();
+        event.preventDefault();
+        return;
+    }
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key === 'z') {
+        undoAction();
+        event.preventDefault();
+        return;
+    }
+
+    // Change hovered atom element: C / N / O / S keys in select or draw-bond mode.
+    if ((_selectMode || (_drawBondMode && !_drawBondState)) && _hoveredAtomIds.size > 0 &&
+            !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const _elemKeys = { c: 'C', C: 'C', n: 'N', N: 'N', o: 'O', O: 'O', s: 'S', S: 'S', p: 'P', P: 'P', f: 'F', F: 'F', i: 'I', I: 'I', b: 'B', B: 'B', k: 'K', K: 'K' };
+        const newEl = _elemKeys[event.key];
+        if (newEl) {
+            const mol = mode === 'force' ? currentMol : _mol2d;
+            if (mol) {
+                const toChange = [..._hoveredAtomIds].filter(id => {
+                    const a = mol.atoms.get(id);
+                    return a && a.name !== newEl;
+                });
+                if (toChange.length > 0) {
+                    _takeSnapshot();
+                    for (const atomId of toChange) {
+                        mol.changeAtomElement(atomId, newEl);
+                    }
+                    const affected = new Set(toChange);
+                    mol.clearStereoAnnotations(affected);
+                    kekulize(mol);
+                    refreshAromaticity(mol, { preserveKekule: true });
+                    mol.repairImplicitHydrogens(affected);
+                    _syncInputField(mol);
+                    updateFormula(mol); updateDescriptors(mol); updateFunctionalGroups(mol);
+                    if (mode === 'force') {
+                        updateForce(mol, { preservePositions: true, preserveView: true });
+                    } else {
+                        _hCounts2d = new Map();
+                        for (const [, a] of mol.atoms) {
+                            if (a.name === 'H') continue;
+                            const cnt = a.getNeighbors(mol).filter(n => n.name === 'H').length;
+                            if (cnt > 0) _hCounts2d.set(a.id, cnt);
+                        }
+                        _stereoMap2d = pickStereoWedges(mol);
+                        draw2d();
+                    }
+                }
+            }
+            event.preventDefault();
+            return;
+        }
     }
 
     if (event.key !== 'Delete' && event.key !== 'Backspace') return;

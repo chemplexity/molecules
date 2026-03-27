@@ -14,8 +14,8 @@ Parse a SMILES string and compute a topological descriptor:
 import { parseSMILES, wienerIndex, distanceMatrix, adjacencyMatrix } from 'molecules';
 
 const mol = parseSMILES('CCC'); // propane
-const { matrix: A } = adjacencyMatrix(mol);
-const { matrix: D } = distanceMatrix(A);
+const A = adjacencyMatrix(mol);
+const D = distanceMatrix(A);
 
 console.log(wienerIndex(D)); // 4
 ```
@@ -116,9 +116,9 @@ import { parseSMILES, adjacencyMatrix, degreeMatrix,
          reciprocalMatrix, allMatrices } from 'molecules';
 
 const mol = parseSMILES('CCC');
-const { matrix: A } = adjacencyMatrix(mol);
+const A = adjacencyMatrix(mol);
 const DEG = degreeMatrix(A);
-const { matrix: D } = distanceMatrix(A);
+const D = distanceMatrix(A);
 const L = laplacianMatrix(A, DEG);
 ```
 
@@ -140,6 +140,37 @@ const groups = functionalGroups(mol);
 const matches = findSMARTS('[CX3](=O)[OX2H1]', mol);
 console.log(matchesSMARTS('[CX3](=O)[OX2H1]', mol)); // true
 ```
+
+## SMIRKS Reaction Transforms
+
+```js
+import { parseSMILES, applySMIRKS, reactionTemplates } from 'molecules';
+
+// Apply a built-in reaction template
+const alcohol = parseSMILES('CCO');
+const ketone  = applySMIRKS(alcohol, reactionTemplates.alcoholOxidation.smirks);
+
+// Apply a custom SMIRKS transform
+const mol       = parseSMILES('CCl');
+const hydrolysed = applySMIRKS(mol, '[C:1][Cl,Br,I:2]>>[C:1][OH:2]');
+```
+
+The `reactionTemplates` catalogue includes ready-to-use transforms for common
+reactions:
+
+| Key | Reaction |
+|-----|----------|
+| `alcoholOxidation` | Alcohol → carbonyl |
+| `carbonylReduction` | Carbonyl → alcohol |
+| `alkeneHydrogenation` | Alkene → alkane |
+| `alkynePartialReduction` | Alkyne → alkene |
+| `esterHydrolysis` | Ester → acid + alcohol |
+| `amideHydrolysis` | Amide → acid + amine |
+| `halideHydrolysis` | Alkyl halide → alcohol |
+| `dehalogenation` | Remove halide substituent |
+| `carbonCarbonCoupling` | C–C bond formation |
+
+Use `parseSMIRKS` to compile your own transform string into a reusable object.
 
 ## Aromaticity
 
@@ -171,11 +202,17 @@ const order = bfs(mol, [...mol.atoms.keys()][0]);
 ## 2D Coordinate Generation
 
 ```js
-import { parseSMILES, generateCoords } from 'molecules';
+import { parseSMILES, generateCoords,
+         generateAndRefine2dCoords } from 'molecules';
 
 const mol = parseSMILES('c1ccccc1');
+
+// Basic: generate initial coordinates
 generateCoords(mol);
 // Each heavy atom now has atom.x and atom.y in Ångströms
+
+// Recommended: generate then refine in one call
+generateAndRefine2dCoords(mol, { bondLength: 1.5, maxPasses: 6 });
 ```
 
 ## Valence Validation
@@ -192,12 +229,15 @@ const warnings = validateValence(parseSMILES('C(C)(C)(C)(C)C'));
 Import only what you need to keep bundle sizes small:
 
 ```js
-import { Molecule, Atom, Bond } from 'molecules/core';
+import { Molecule, Atom, Bond }                     from 'molecules/core';
 import { parseSMILES, toSMILES, toCanonicalSMILES,
-         parseINCHI, toInChI } from 'molecules/io';
-import { wienerIndex, balabanIndex, logP } from 'molecules/descriptors';
-import { adjacencyMatrix, distanceMatrix } from 'molecules/matrices';
-import { generateCoords } from 'molecules/layout';
+         parseINCHI, toInChI }                      from 'molecules/io';
+import { wienerIndex, balabanIndex, logP }          from 'molecules/descriptors';
+import { adjacencyMatrix, distanceMatrix }          from 'molecules/matrices';
+import { perceiveAromaticity, morganRanks,
+         bfs, dfs }                                 from 'molecules/algorithms';
+import { validateValence }                          from 'molecules/validation';
+```
 import { findSMARTS, functionalGroups } from 'molecules/smarts';
 import { perceiveAromaticity, morganRanks } from 'molecules/algorithms';
 import { validateValence } from 'molecules/validation';

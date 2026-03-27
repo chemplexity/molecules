@@ -1737,7 +1737,8 @@ function _serializeComponent(mol, sortFn = null) {
   const startId = sortFn
     ? [...heavy.atoms.keys()].reduce((best, id) =>
       (sortFn(id) ?? Infinity) < (sortFn(best) ?? Infinity) ? id : best)
-    : heavy.atoms.keys().next().value;
+    : ([...heavy.atoms.entries()].find(([, a]) => a.bonds.length === 1)?.[0]
+       ?? heavy.atoms.keys().next().value);
 
   // ---- Pass 1: DFS to identify ring-closure bonds ----
   // Back edges in the DFS spanning tree become ring-closure bonds.

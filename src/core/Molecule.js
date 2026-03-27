@@ -77,9 +77,6 @@ export class Molecule {
       if (!hasOwn('neutrons')) {
         atom.properties.neutrons = el.neutrons;
       }
-      if (!hasOwn('electrons')) {
-        atom.properties.electrons = el.electrons;
-      }
       if (!hasOwn('electrons') && atom.properties.protons !== undefined) {
         atom.properties.electrons = atom.properties.protons - atom.properties.charge;
       }
@@ -88,6 +85,43 @@ export class Molecule {
       throw new Error(`Atom '${atom.id}' already exists.`);
     }
     this.atoms.set(atom.id, atom);
+    this._ringsCache = null;
+    this._recomputeProperties();
+    return atom;
+  }
+
+  /**
+   * Changes the element of an existing atom, updating all periodic-table
+   * derived properties (group, period, protons, neutrons, electrons).
+   * Non-element properties such as charge, aromatic, stereo, and 2D
+   * coordinates are preserved unchanged.
+   *
+   * @param {string} atomId      - ID of the atom to mutate.
+   * @param {string} newElement  - New element symbol (e.g. `'N'`, `'O'`).
+   * @returns {Atom} The mutated atom.
+   * @throws {Error} If the atom is not found or the element symbol is unknown.
+   */
+  changeAtomElement(atomId, newElement) {
+    const atom = this.atoms.get(atomId);
+    if (!atom) {
+      throw new Error(`Atom '${atomId}' not found.`);
+    }
+    const el = elements[newElement];
+    if (!el) {
+      throw new Error(`Unknown element '${newElement}'.`);
+    }
+    atom.name = newElement;
+    atom.properties.group    = el.group;
+    atom.properties.period   = el.period;
+    atom.properties.protons  = el.protons;
+    atom.properties.neutrons = el.neutrons;
+    // electrons = protons minus charge for a neutral-spin assignment
+    atom.properties.electrons = el.protons - (atom.properties.charge ?? 0);
+    // If the atom was previously hidden (e.g. an implicit H with visible=false),
+    // make it visible now that it is a non-H heavy atom.
+    if (newElement !== 'H' && atom.visible === false) {
+      atom.visible = true;
+    }
     this._ringsCache = null;
     this._recomputeProperties();
     return atom;

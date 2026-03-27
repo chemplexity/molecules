@@ -19,6 +19,14 @@ describe('functionalGroups — hydrocarbons', () => {
   it('alkene found in ethene', () => assert.equal(matchesSMARTS(parseSMILES('C=C'), fg.alkene.smarts), true));
   it('alkene NOT found in ethane', () => assert.equal(matchesSMARTS(parseSMILES('CC'), fg.alkene.smarts), false));
   it('alkyne found in acetylene', () => assert.equal(matchesSMARTS(parseSMILES('C#C'), fg.alkyne.smarts), true));
+  it('cyclopentadiene found in cyclopentadiene', () => assert.equal(matchesSMARTS(mol('C1=CCC=C1'), fg.cyclopentadiene.smarts), true));
+  it('cyclohexadiene found in 1,3-cyclohexadiene', () => assert.equal(matchesSMARTS(mol('C1=CCCC=C1'), fg.cyclohexadiene.smarts), true));
+  it('cycloheptatriene found in cycloheptatriene', () => assert.equal(matchesSMARTS(mol('C1=CC=CCC=C1'), fg.cycloheptatriene.smarts), true));
+  it('fused benzenoid polycycle exposes cyclohexadiene subrings', () => {
+    const molecule = mol('C12C4=CC=CC1=CC=CC2=Cc3c4cccc3');
+    const mappings = [...findSMARTS(molecule, fg.cyclohexadiene.smarts)];
+    assert.equal(mappings.length, 2);
+  });
   it('bicyclobutane registers two cyclopropane matches', () => {
     const molecule = parseSMILES('C1C2C1C2');
     const mappings = [...findSMARTS(molecule, fg.cyclopropane.smarts)];
