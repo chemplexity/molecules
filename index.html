@@ -814,6 +814,7 @@ div.tooltip td:first-child {
                 <button id="select-mode-btn" title="Selection mode — drag to select atoms and bonds" onclick="toggleSelectMode()">⬚</button>
                 <button id="erase-btn" title="Erase mode — click atoms or bonds to delete" onclick="toggleEraseMode()">🗑️</button>
                 <button id="clean-2d-btn" title="Clean 2D layout" onclick="cleanLayout2d()">🧹</button>
+                <button id="clean-force-btn" title="Clean force layout" onclick="cleanLayoutForce()" style="display:none">🧹</button>
             </div>
             <div id="draw-tools">
                 <button id="draw-bond-btn" title="Draw bond" onclick="toggleDrawBondMode()"><svg width="16" height="16" viewBox="0 0 16 16" fill="none"><line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg></button>
@@ -1299,7 +1300,7 @@ const zoom = d3.zoom()
     .on('zoom', event => {
         if (mode === 'force' && event.sourceEvent) {
             _forceAutoFitEnabled = false;
-            _forceKeepInView = false;
+            _disableForceKeepInView();
         }
         g.attr('transform', event.transform);
     });
@@ -1757,17 +1758,22 @@ function convertMolecule(molecule) {
 }
 
 const FORCE_LAYOUT_BOND_LENGTH = 41;
-const FORCE_LAYOUT_H_BOND_LENGTH = 28;
+const FORCE_LAYOUT_H_BOND_LENGTH = 20;
 const FORCE_LAYOUT_MULTIPLE_BOND_FACTOR = 0.93;
 const FORCE_LAYOUT_AROMATIC_BOND_FACTOR = 0.96;
 const FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS = 18;
 const FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH = 0.22;
 const FORCE_LAYOUT_HEAVY_REPULSION = -55;
-const FORCE_LAYOUT_H_REPULSION = -28;
+const FORCE_LAYOUT_H_REPULSION = -25;
+const FORCE_LAYOUT_HH_REPULSION_DISTANCE = 40;
+const FORCE_LAYOUT_HH_REPULSION_STRENGTH = 30.0;
 const FORCE_LAYOUT_FIT_PAD = 40;
 const FORCE_LAYOUT_INITIAL_FIT_PAD = 14;
 const FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE = 0.4;
 const FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER = 1.3;
+const FORCE_LAYOUT_KEEP_IN_VIEW_ALPHA_MIN = 0.08;
+const FORCE_LAYOUT_INITIAL_KEEP_IN_VIEW_TICKS = 8;
+const FORCE_LAYOUT_EDIT_KEEP_IN_VIEW_TICKS = 24;
 
 function _isHydrogenNode(node) {
     return node?.name === 'H';
@@ -1809,6 +1815,42 @@ function _forceAnchorRadius(radius = FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS, strength 
     return force;
 }
 
+function _forceHydrogenRepulsion(maxDistance = FORCE_LAYOUT_HH_REPULSION_DISTANCE, strength = FORCE_LAYOUT_HH_REPULSION_STRENGTH) {
+    let nodes = [];
+    const maxDistanceSq = maxDistance * maxDistance;
+    function force(alpha) {
+        const hydrogens = nodes.filter(node => _isHydrogenNode(node) && node.fx == null && node.fy == null);
+        for (let i = 0; i < hydrogens.length; i++) {
+            const a = hydrogens[i];
+            if (!Number.isFinite(a.x) || !Number.isFinite(a.y)) continue;
+            for (let j = i + 1; j < hydrogens.length; j++) {
+                const b = hydrogens[j];
+                if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) continue;
+                let dx = b.x - a.x;
+                let dy = b.y - a.y;
+                let distSq = dx * dx + dy * dy;
+                if (distSq >= maxDistanceSq) continue;
+                if (distSq < 1e-6) {
+                    dx = 1e-3;
+                    dy = 0;
+                    distSq = dx * dx;
+                }
+                const dist = Math.sqrt(distSq);
+                const overlap = (maxDistance - dist) / maxDistance;
+                const push = overlap * strength * alpha;
+                const ux = dx / dist;
+                const uy = dy / dist;
+                a.vx -= ux * push;
+                a.vy -= uy * push;
+                b.vx += ux * push;
+                b.vy += uy * push;
+            }
+        }
+    }
+    force.initialize = _nodes => { nodes = _nodes; };
+    return force;
+}
+
 function _forceFitTransform(nodes, pad = FORCE_LAYOUT_FIT_PAD, {
     hydrogenRadiusScale = 1,
     scaleMultiplier = 1,
@@ -1834,6 +1876,68 @@ function _forceFitTransform(nodes, pad = FORCE_LAYOUT_FIT_PAD, {
     const tx = W / 2 - ((minX + maxX) / 2) * scale;
     const ty = H / 2 - ((minY + maxY) / 2) * scale;
     return d3.zoomIdentity.translate(tx, ty).scale(scale);
+}
+
+function _normalizeAngle(theta) {
+    let angle = theta % (Math.PI * 2);
+    if (angle < 0) angle += Math.PI * 2;
+    return angle;
+}
+
+function _chooseOpenAngles(occupiedAngles, count) {
+    if (count <= 0) return [];
+    if (!occupiedAngles.length) {
+        return Array.from({ length: count }, (_, index) => (Math.PI * 2 * index) / count);
+    }
+
+    const working = occupiedAngles.map(_normalizeAngle);
+    const chosen = [];
+    for (let i = 0; i < count; i++) {
+        const sorted = [...working].sort((a, b) => a - b);
+        let bestAngle = sorted[0];
+        let bestGap = -1;
+        for (let idx = 0; idx < sorted.length; idx++) {
+            const start = sorted[idx];
+            const end = idx === sorted.length - 1 ? sorted[0] + Math.PI * 2 : sorted[idx + 1];
+            const gap = end - start;
+            if (gap > bestGap) {
+                bestGap = gap;
+                bestAngle = _normalizeAngle(start + gap / 2);
+            }
+        }
+        working.push(bestAngle);
+        chosen.push(bestAngle);
+    }
+    return chosen;
+}
+
+function _placeHydrogensAroundParent(parentNode, hydrogens, links, {
+    distance = FORCE_LAYOUT_H_BOND_LENGTH,
+    excludeIds = null,
+    nodes = null,
+} = {}) {
+    if (!parentNode || !Number.isFinite(parentNode.x) || !Number.isFinite(parentNode.y) || hydrogens.length === 0) return;
+    const excluded = excludeIds ?? new Set();
+    const occupiedAngles = [];
+    for (const link of links) {
+        const source = typeof link.source === 'object'
+            ? link.source
+            : (Array.isArray(nodes) ? nodes[link.source] : null);
+        const target = typeof link.target === 'object'
+            ? link.target
+            : (Array.isArray(nodes) ? nodes[link.target] : null);
+        if (source !== parentNode && target !== parentNode) continue;
+        const other = source === parentNode ? target : source;
+        if (!other || excluded.has(other.id)) continue;
+        if (!Number.isFinite(other.x) || !Number.isFinite(other.y)) continue;
+        occupiedAngles.push(Math.atan2(other.y - parentNode.y, other.x - parentNode.x));
+    }
+    const angles = _chooseOpenAngles(occupiedAngles, hydrogens.length);
+    hydrogens.forEach((hydrogenNode, index) => {
+        const angle = angles[index] ?? ((Math.PI * 2 * index) / hydrogens.length);
+        hydrogenNode.x = parentNode.x + Math.cos(angle) * distance;
+        hydrogenNode.y = parentNode.y + Math.sin(angle) * distance;
+    });
 }
 
 function _buildForceAnchorLayout(molecule) {
@@ -1892,12 +1996,10 @@ function _seedForceNodePositions(graph, molecule, anchorLayout, {
 
     for (const [parentId, hydrogens] of hydrogenGroups) {
         const parentNode = idToNode.get(parentId);
-        if (!parentNode || !Number.isFinite(parentNode.x) || !Number.isFinite(parentNode.y)) continue;
-        const siblingCount = hydrogens.length;
-        hydrogens.forEach((hydrogenNode, index) => {
-            const angle = (Math.PI * 2 * index) / Math.max(1, siblingCount);
-            hydrogenNode.x = parentNode.x + Math.cos(angle) * FORCE_LAYOUT_H_BOND_LENGTH;
-            hydrogenNode.y = parentNode.y + Math.sin(angle) * FORCE_LAYOUT_H_BOND_LENGTH;
+        _placeHydrogensAroundParent(parentNode, hydrogens, graph.links, {
+            distance: FORCE_LAYOUT_H_BOND_LENGTH,
+            excludeIds: new Set(hydrogens.map(node => node.id)),
+            nodes: graph.nodes,
         });
     }
 
@@ -1965,6 +2067,29 @@ function _patchForceNodePositions(patchPos, {
     simulation.alpha(Math.max(simulation.alpha(), alpha)).restart();
 }
 
+// Re-seats hydrogen nodes around patched parent positions so they spawn near their
+// parent instead of at the stale anchor-layout position after _patchForceNodePositions.
+function _reseatHydrogensAroundPatched(patchPos) {
+    if (!patchPos?.size) return;
+    const allNodes = simulation.nodes();
+    const allLinks = simulation.force('link').links();
+    const nodeById  = new Map(allNodes.map(n => [n.id, n]));
+    for (const [parentId] of patchPos) {
+        const parentNode = nodeById.get(parentId);
+        if (!parentNode || !Number.isFinite(parentNode.x)) continue;
+        const hChildren = allLinks
+            .map(l => (l.source?.id === parentId && _isHydrogenNode(l.target)) ? l.target
+                     : (l.target?.id === parentId && _isHydrogenNode(l.source)) ? l.source : null)
+            .filter(Boolean);
+        if (hChildren.length > 0) {
+            _placeHydrogensAroundParent(parentNode, hChildren, allLinks, {
+                distance: FORCE_LAYOUT_H_BOND_LENGTH,
+                excludeIds: new Set(hChildren.map(n => n.id)),
+            });
+        }
+    }
+}
+
 function createDrag(sim) {
     return d3.drag()
         .filter(event => !_drawBondMode && !_eraseMode)
@@ -1972,7 +2097,7 @@ function createDrag(sim) {
             if (_drawBondMode) return;
             if (!event.active) sim.alphaTarget(0.3).restart();
             _forceAutoFitEnabled = false;
-            _forceKeepInView = false;
+            _disableForceKeepInView();
             const selectedDragAtomIds = _getSelectedDragAtomIds(currentMol, [d.id], []);
             const dragNodes = selectedDragAtomIds
                 ? sim.nodes().filter(node => selectedDragAtomIds.has(node.id))
@@ -2033,7 +2158,7 @@ const simulation = d3.forceSimulation()
         .strength(link => (_isHydrogenNode(link.source) || _isHydrogenNode(link.target)) ? 0.8 : 0.9)
         .distance(_forceLinkDistance))
     .force('anchor', _forceAnchorRadius())
-    .force('center', d3.forceCenter(plotEl.clientWidth / 2, plotEl.clientHeight / 2))
+    .force('hRepel', _forceHydrogenRepulsion())
     .velocityDecay(0.35)
     .alphaDecay(0.02)
     .stop();
@@ -2044,7 +2169,7 @@ function updateForce(molecule, {
 } = {}) {
     prepareAromaticBondRendering(molecule);
     _forceAutoFitEnabled = !preserveView;
-    _forceKeepInView = false;
+    _disableForceKeepInView();
 
     const previousNodePositions = preservePositions
         ? new Map(simulation.nodes().map(node => [node.id, {
@@ -2070,6 +2195,7 @@ function updateForce(molecule, {
 
     const graph = convertMolecule(molecule);
     g.selectAll('*').remove();
+    _forceSelLines = null; _forceSelCircles = null; _fgHlLines = null; _fgHlCircles = null;
 
     // Reset zoom to identity for force layout
     if (!preserveView) {
@@ -2149,7 +2275,7 @@ function updateForce(molecule, {
             _showPrimitiveHover([], [d.id]);
             if (_drawBondMode && !_drawBondHoverSuppressed) {
                 _hoveredBondIds.add(d.id);
-                applyForceSelection();
+                _refreshSelectionOverlay();
             }
             if (_selectMode || _drawBondMode || _eraseMode) { return; }
             const bond = molecule.bonds.get(d.id);
@@ -2168,7 +2294,7 @@ function updateForce(molecule, {
         })
         .on('mouseout', () => {
             if (_drawBondState) _resetDrawBondHover();
-            else { _clearPrimitiveHover(); applyForceSelection(); }
+            else { _clearPrimitiveHover(); _refreshSelectionOverlay(); }
             tooltip.transition().duration(50).style('opacity', 0);
         })
         .call(d3.drag()
@@ -2181,7 +2307,7 @@ function updateForce(molecule, {
                     return;
                 }
                 _forceAutoFitEnabled = false;
-                _forceKeepInView = false;
+                _disableForceKeepInView();
                 event.sourceEvent.stopPropagation();
                 tooltip.style('opacity', 0);
                 d3.select(this).style('cursor', 'grabbing');
@@ -2268,7 +2394,30 @@ function updateForce(molecule, {
                     kekulize(mol); refreshAromaticity(mol, { preserveKekule: true });
                     mol.repairImplicitHydrogens(affected);
                     _syncInputField(mol); updateFormula(mol); updateDescriptors(mol); updateFunctionalGroups(mol);
+                    // Capture old H position before updateForce recreates nodes.
+                    const preHNode = simulation.nodes().find(n => n.id === d.id);
+                    let preHX = preHNode?.x, preHY = preHNode?.y;
+                    // Find parent heavy atom via current links before they are rebuilt.
+                    let parentNode = null;
+                    if (preHNode) {
+                        const allLinks = simulation.force('link').links();
+                        for (const l of allLinks) {
+                            const src = l.source, tgt = l.target;
+                            if (src?.id === d.id && !_isHydrogenNode(tgt)) { parentNode = tgt; break; }
+                            if (tgt?.id === d.id && !_isHydrogenNode(src)) { parentNode = src; break; }
+                        }
+                    }
                     updateForce(mol, { preservePositions: true, preserveView: true });
+                    if (parentNode && preHX != null && preHY != null) {
+                        const angle = Math.atan2(preHY - parentNode.y, preHX - parentNode.x);
+                        const pos = {
+                            x: parentNode.x + Math.cos(angle) * FORCE_LAYOUT_BOND_LENGTH,
+                            y: parentNode.y + Math.sin(angle) * FORCE_LAYOUT_BOND_LENGTH,
+                        };
+                        const patchPos = new Map([[d.id, pos]]);
+                        _patchForceNodePositions(patchPos);
+                        _reseatHydrogensAroundPatched(patchPos);
+                    }
                 }
                 return;
             }
@@ -2293,7 +2442,7 @@ function updateForce(molecule, {
             _showPrimitiveHover([d.id], []);
             if (_drawBondMode && mode === 'force' && !_drawBondHoverSuppressed) {
                 _hoveredAtomIds.add(d.id);
-                applyForceSelection();
+                _refreshSelectionOverlay();
             }
             if (_selectMode || _drawBondMode || _eraseMode) { return; }
             const atom = molecule.atoms.get(d.id);
@@ -2309,7 +2458,7 @@ function updateForce(molecule, {
         })
         .on('mouseout', () => {
             if (_drawBondState) _resetDrawBondHover();
-            else { _clearPrimitiveHover(); applyForceSelection(); }
+            else { _clearPrimitiveHover(); _refreshSelectionOverlay(); }
             tooltip.transition().duration(50).style('opacity', 0);
         });
 
@@ -2361,8 +2510,7 @@ function updateForce(molecule, {
         .strength(link => (_isHydrogenNode(link.source) || _isHydrogenNode(link.target)) ? 0.8 : 0.9)
         .distance(_forceLinkDistance);
     simulation.force('anchor', _forceAnchorRadius());
-    simulation.force('center',
-        d3.forceCenter(plotEl.clientWidth / 2, plotEl.clientHeight / 2));
+    simulation.force('hRepel', _forceHydrogenRepulsion());
     simulation.alpha(preservePositions ? 0.2 : 1).restart();
 
     simulation.on('tick', () => {
@@ -2410,20 +2558,17 @@ function updateForce(molecule, {
             .attr('x', d => d.x + atomRadius(d.protons) * OFF + 4)
             .attr('y', d => d.y - atomRadius(d.protons) * OFF);
 
-        // Functional-group highlight layer
-        const _hl = g.select('g.fg-highlight-layer');
-        _hl.selectAll('line')
-            .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-        _hl.selectAll('circle')
-            .attr('cx', d => d.x).attr('cy', d => d.y);
-
-        const _sel = g.select('g.force-selection-layer');
-        _sel.selectAll('line')
-            .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
-            .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
-        _sel.selectAll('circle')
-            .attr('cx', d => d.x).attr('cy', d => d.y);
+        // Functional-group highlight layer (cached — avoids DOM query every tick)
+        if (_fgHlLines) {
+            _fgHlLines.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                      .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+            _fgHlCircles.attr('cx', d => d.x).attr('cy', d => d.y);
+        }
+        if (_forceSelLines) {
+            _forceSelLines.attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+                          .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+            _forceSelCircles.attr('cx', d => d.x).attr('cy', d => d.y);
+        }
 
         if (_forceAutoFitEnabled) {
             const fitTransform = _forceFitTransform(graph.nodes, FORCE_LAYOUT_INITIAL_FIT_PAD, {
@@ -2433,9 +2578,20 @@ function updateForce(molecule, {
             if (fitTransform) {
                 svg.call(zoom.transform, fitTransform);
                 _forceAutoFitEnabled = false;
-                _forceKeepInView = true;
+                _enableForceKeepInView(FORCE_LAYOUT_INITIAL_KEEP_IN_VIEW_TICKS);
             }
         } else if (_forceKeepInView) {
+            if (_forceKeepInViewTicks > 0) {
+                _forceKeepInViewTicks -= 1;
+                if (_forceKeepInViewTicks <= 0) {
+                    _disableForceKeepInView();
+                    return;
+                }
+            }
+            if (simulation.alpha() < FORCE_LAYOUT_KEEP_IN_VIEW_ALPHA_MIN) {
+                _disableForceKeepInView();
+                return;
+            }
             const W = plotEl.clientWidth, H = plotEl.clientHeight;
             const PAD = FORCE_LAYOUT_FIT_PAD;
             const t = d3.zoomTransform(svg.node());
@@ -2449,6 +2605,7 @@ function updateForce(molecule, {
             if (anyOut) {
                 const fitTransform = _forceFitTransform(graph.nodes, FORCE_LAYOUT_FIT_PAD);
                 if (fitTransform) svg.call(zoom.transform, fitTransform);
+                _disableForceKeepInView();
             }
         }
     });
@@ -2463,6 +2620,7 @@ function updateForce(molecule, {
 
 function applyForceHighlights() {
     g.selectAll('g.fg-highlight-layer').remove();
+    _fgHlLines = null; _fgHlCircles = null;
     if (_highlightedAtomIds.size === 0) return;
 
     const HL_COLOR = 'rgb(130, 210, 80)';
@@ -2499,10 +2657,13 @@ function applyForceHighlights() {
         addLines(OL_COLOR, OL); addCircles(OL_COLOR, OL); // outline
         addLines(HL_COLOR,  0); addCircles(HL_COLOR,  0); // fill
     }
+    _fgHlLines   = hlLayer.selectAll('line');
+    _fgHlCircles = hlLayer.selectAll('circle');
 }
 
 function applyForceSelection() {
     g.selectAll('g.force-selection-layer').remove();
+    _forceSelLines = null; _forceSelCircles = null;
     const { atomIds: activeAtomIds, bondIds: activeBondIds } = _getRenderableSelectionIds();
     if (activeAtomIds.size === 0 && activeBondIds.size === 0) return;
 
@@ -2535,6 +2696,8 @@ function applyForceSelection() {
 
     addLines(SEL_OL, OL); addCircles(SEL_OL, OL);
     addLines(SEL_COLOR, 0); addCircles(SEL_COLOR, 0);
+    _forceSelLines   = selLayer.selectAll('line');
+    _forceSelCircles = selLayer.selectAll('circle');
 }
 
 function _syncSelectionToMolecule(mol) {
@@ -2657,12 +2820,28 @@ let _drawBondMode    = false;
 let _eraseMode       = false;
 let _erasePainting   = false;
 let _lastEraseHitEl  = null;
+let _overlayRafId    = null;  // pending rAF for throttled overlay redraw
+let _forceSelLines   = null;  // cached D3 selection of force-selection-layer lines
+let _forceSelCircles = null;  // cached D3 selection of force-selection-layer circles
+let _fgHlLines       = null;  // cached D3 selection of fg-highlight-layer lines
+let _fgHlCircles     = null;  // cached D3 selection of fg-highlight-layer circles
 let _drawBondElement = 'C';  // atom type placed by the draw-bond tool
 let _drawBondState   = null; // { atomId, ox, oy, ex, ey } during draw-bond drag
 let _drawBondHoverSuppressed = false; // true briefly after commit to block re-hover
 let _preserveSelectionOnNextRender = false;
 let _forceAutoFitEnabled = true;
 let _forceKeepInView = false; // true after draw-bond commits: zoom to fit if any node escapes viewport
+let _forceKeepInViewTicks = 0;
+
+function _enableForceKeepInView(ticks = FORCE_LAYOUT_EDIT_KEEP_IN_VIEW_TICKS) {
+    _forceKeepInView = true;
+    _forceKeepInViewTicks = Math.max(0, ticks | 0);
+}
+
+function _disableForceKeepInView() {
+    _forceKeepInView = false;
+    _forceKeepInViewTicks = 0;
+}
 
 function _clearPrimitiveHover() {
     _hoveredAtomIds.clear();
@@ -2670,11 +2849,12 @@ function _clearPrimitiveHover() {
 }
 
 function _refreshSelectionOverlay() {
-    if (mode === 'force') {
-        applyForceSelection();
-    } else if (_mol2d) {
-        _redraw2dSelection();
-    }
+    if (_overlayRafId !== null) return;
+    _overlayRafId = requestAnimationFrame(() => {
+        _overlayRafId = null;
+        if (mode === 'force') applyForceSelection();
+        else if (_mol2d) _redraw2dSelection();
+    });
 }
 
 function _getRenderableSelectionIds() {
@@ -2906,6 +3086,7 @@ function _restoreSnapshot(snap) {
             if (mode === 'force') {
                 simulation.nodes([]); simulation.force('link').links([]); simulation.stop();
                 g.selectAll('*').remove();
+                _forceSelLines = null; _forceSelCircles = null; _fgHlLines = null; _fgHlCircles = null;
             }
         } else {
             _mol2d = null; _hCounts2d = null; _stereoMap2d = null;
@@ -3393,25 +3574,10 @@ function _promoteBondOrder(bondId) {
                 newHByParent.get(parent).push(hNode);
             }
             for (const [parent, hNodes] of newHByParent) {
-                const taken = [];
-                for (const l of allLinks) {
-                    if (l.source !== parent && l.target !== parent) continue;
-                    const other = l.source === parent ? l.target : l.source;
-                    if (newHIds.has(other.id)) continue;
-                    if (Number.isFinite(other.x)) taken.push(Math.atan2(other.y - parent.y, other.x - parent.x));
-                }
-                for (const hNode of hNodes) {
-                    let bestAngle = 0, bestSep = -1;
-                    for (let i = 0; i < 12; i++) {
-                        const cand = (i / 12) * 2 * Math.PI;
-                        let minSep = Math.PI;
-                        for (const a of taken) { let d = Math.abs(cand - a); if (d > Math.PI) d = 2 * Math.PI - d; if (d < minSep) minSep = d; }
-                        if (minSep > bestSep) { bestSep = minSep; bestAngle = cand; }
-                    }
-                    hNode.x = parent.x + Math.cos(bestAngle) * H_DIST;
-                    hNode.y = parent.y + Math.sin(bestAngle) * H_DIST;
-                    taken.push(bestAngle);
-                }
+                _placeHydrogensAroundParent(parent, hNodes, allLinks, {
+                    distance: H_DIST,
+                    excludeIds: newHIds,
+                });
             }
         }
 
@@ -3826,12 +3992,13 @@ function _autoPlaceBond(atomId, ox, oy) {
         _syncInputField(mol);
         updateFormula(mol); updateDescriptors(mol); updateFunctionalGroups(mol);
         updateForce(mol, { preservePositions: true });
-        _forceKeepInView = true;
+        _enableForceKeepInView();
 
         // Patch node positions immediately so generateCoords doesn't misplace them.
         const patchPos = new Map([[newAtom.id, { x: destGX, y: destGY }]]);
-        if (atomId === null) patchPos.set(resolvedId, { x: srcRX, y: srcRY });
+        patchPos.set(resolvedId, { x: srcRX, y: srcRY });
         _patchForceNodePositions(patchPos);
+        _reseatHydrogensAroundPatched(patchPos);
     } else {
         newAtom.x = srcRX + Math.cos(bestAngle) * 1.5;
         newAtom.y = srcRY + Math.sin(bestAngle) * 1.5;
@@ -3884,7 +4051,13 @@ function _commitDrawBond() {
                 mol.repairImplicitHydrogens(affected);
                 _syncInputField(mol); updateFormula(mol); updateDescriptors(mol); updateFunctionalGroups(mol);
                 if (mode === 'force') {
+                    const preNode = simulation.nodes().find(n => n.id === atomId);
                     updateForce(mol, { preservePositions: true, preserveView: true });
+                    if (preNode) {
+                        const patchPos = new Map([[atomId, { x: preNode.x, y: preNode.y }]]);
+                        _patchForceNodePositions(patchPos);
+                        _reseatHydrogensAroundPatched(patchPos);
+                    }
                 } else {
                     _hCounts2d = new Map();
                     for (const [, a] of mol.atoms) {
@@ -3948,7 +4121,12 @@ function _commitDrawBond() {
 
         // Node positions to patch after updateForce (counteract generateCoords).
         const patchPos = new Map();
-        if (atomId === null) patchPos.set(resolvedAtomId, { x: ox, y: oy });
+        if (atomId === null) {
+            patchPos.set(resolvedAtomId, { x: ox, y: oy });
+        } else {
+            const srcN = simulation.nodes().find(n => n.id === resolvedAtomId);
+            if (srcN) patchPos.set(resolvedAtomId, { x: srcN.x, y: srcN.y });
+        }
 
         if (snapAtomId !== null) {
             const destAtom = mol.atoms.get(snapAtomId);
@@ -3974,6 +4152,8 @@ function _commitDrawBond() {
             if (dstH) mol.removeAtom(dstH.id);
             mol.addBond(null, resolvedAtomId, snapAtomId, { order: 1 }, true);
             affected = new Set([resolvedAtomId, snapAtomId]);
+            const snapN = simulation.nodes().find(n => n.id === snapAtomId);
+            if (snapN) patchPos.set(snapAtomId, { x: snapN.x, y: snapN.y });
         } else {
             const srcH = srcAtom.getNeighbors(mol).find(n => n.name === 'H');
             if (srcH) mol.removeAtom(srcH.id);
@@ -3993,10 +4173,11 @@ function _commitDrawBond() {
         _syncInputField(mol);
         updateFormula(mol); updateDescriptors(mol); updateFunctionalGroups(mol);
         updateForce(mol, { preservePositions: true });
-        _forceKeepInView = true;
+        _enableForceKeepInView();
 
         // Patch new node positions so generateCoords doesn't misplace them.
         _patchForceNodePositions(patchPos);
+        _reseatHydrogensAroundPatched(patchPos);
         return;
     }
 
@@ -4111,6 +4292,7 @@ function draw2d() {
     }
 
     g.selectAll('*').remove();
+    _forceSelLines = null; _forceSelCircles = null; _fgHlLines = null; _fgHlCircles = null;
 
     let bgLayer;
     let labelLayer;
@@ -4214,7 +4396,7 @@ function draw2d() {
                 _showPrimitiveHover([], [bi.bond.id]);
                 if (_drawBondMode && mode === '2d' && !_drawBondHoverSuppressed) {
                     _hoveredBondIds.add(bi.bond.id);
-                    _redraw2dSelection();
+                    _refreshSelectionOverlay();
                 }
                 if (_selectMode || _drawBondMode || _eraseMode) { return; }
                 tooltip.transition().delay(150).style('opacity', 0.9);
@@ -4228,7 +4410,7 @@ function draw2d() {
             })
             .on('mouseout', () => {
                 if (_drawBondState) _resetDrawBondHover();
-                else { _clearPrimitiveHover(); _redraw2dSelection(); }
+                else { _clearPrimitiveHover(); _refreshSelectionOverlay(); }
                 tooltip.transition().duration(50).style('opacity', 0);
             })
             .style('cursor', 'grab')
@@ -4325,7 +4507,7 @@ function draw2d() {
                 _showPrimitiveHover([atom.id], []);
                 if (_drawBondMode && mode === '2d' && !_drawBondHoverSuppressed) {
                     _hoveredAtomIds.add(atom.id);
-                    _redraw2dSelection();
+                    _refreshSelectionOverlay();
                 }
                 if (_selectMode || _drawBondMode || _eraseMode) { return; }
                 tooltip.transition().delay(150).style('opacity', 0.9);
@@ -4339,7 +4521,7 @@ function draw2d() {
             })
             .on('mouseout', () => {
                 if (_drawBondState) _resetDrawBondHover();
-                else { _clearPrimitiveHover(); _redraw2dSelection(); }
+                else { _clearPrimitiveHover(); _refreshSelectionOverlay(); }
                 tooltip.transition().duration(50).style('opacity', 0);
             });
 
@@ -4698,6 +4880,17 @@ window.cleanLayout2d = function() {
     _clean2dBtnTimer = setTimeout(() => { btn.textContent = '🧹'; }, 1500);
 };
 
+let _cleanForceBtnTimer = null;
+window.cleanLayoutForce = function() {
+    if (mode !== 'force' || !currentMol) return;
+    _takeSnapshot();
+    updateForce(currentMol);
+    const btn = document.getElementById('clean-force-btn');
+    btn.textContent = '✓';
+    clearTimeout(_cleanForceBtnTimer);
+    _cleanForceBtnTimer = setTimeout(() => { btn.textContent = '🧹'; }, 1500);
+};
+
 function _syncElemBtns() {
     for (const e of ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I']) {
         const btn = document.getElementById(`elem-btn-${e}`);
@@ -4819,23 +5012,26 @@ window.toggleMode = function() {
     const btn          = document.getElementById('toggle-btn');
     const rotateCtrls  = document.getElementById('rotate-controls');
     const cleanCtrls   = document.getElementById('clean-controls');
-    const clean2dBtn   = document.getElementById('clean-2d-btn');
+    const clean2dBtn    = document.getElementById('clean-2d-btn');
+    const cleanForceBtn = document.getElementById('clean-force-btn');
     const drawTools    = document.getElementById('draw-tools');
     const forceCtrls   = document.getElementById('force-controls');
     if (mode === 'force') {
-        btn.textContent            = '⬡ 2D Structure';
-        rotateCtrls.style.display  = 'none';
-        cleanCtrls.style.display   = 'flex';
-        clean2dBtn.style.display   = 'none';
-        drawTools.style.display    = 'flex';
-        forceCtrls.style.display   = 'flex';
+        btn.textContent              = '⬡ 2D Structure';
+        rotateCtrls.style.display    = 'none';
+        cleanCtrls.style.display     = 'flex';
+        clean2dBtn.style.display     = 'none';
+        cleanForceBtn.style.display  = 'flex';
+        drawTools.style.display      = 'flex';
+        forceCtrls.style.display     = 'flex';
     } else {
-        btn.textContent            = '⚡ Force Layout';
-        rotateCtrls.style.display  = 'flex';
-        cleanCtrls.style.display   = 'flex';
-        clean2dBtn.style.display   = 'flex';
-        drawTools.style.display    = 'flex';
-        forceCtrls.style.display   = 'none';
+        btn.textContent              = '⚡ Force Layout';
+        rotateCtrls.style.display    = 'flex';
+        cleanCtrls.style.display     = 'flex';
+        clean2dBtn.style.display     = 'flex';
+        cleanForceBtn.style.display  = 'none';
+        drawTools.style.display      = 'flex';
+        forceCtrls.style.display     = 'none';
     }
 
     if (currentMol || currentSmiles || currentInchi) {
@@ -5052,6 +5248,7 @@ function clearMolecule() {
     _highlightedAtomSets = [];
     _highlightMol = null;
     g.selectAll('*').remove();
+    _forceSelLines = null; _forceSelCircles = null; _fgHlLines = null; _fgHlCircles = null;
     if (mode === 'force') {
         simulation.nodes([]);
         simulation.force('link').links([]);
@@ -5187,7 +5384,7 @@ window.deleteSelection = function deleteSelection() {
     if (mode === 'force') {
         currentMol = mol;
         updateForce(mol, { preservePositions: true, preserveView: true });
-        if (mol.atoms.size > 0) _forceKeepInView = true;
+        if (mol.atoms.size > 0) _enableForceKeepInView();
     } else {
         fitCurrent2dView();
         draw2d();
@@ -5331,8 +5528,6 @@ document.getElementById('smiles-input').addEventListener('paste', event => {
 window.addEventListener('resize', () => {
     if (!currentSmiles && !currentInchi) return;
     if (mode === 'force') {
-        simulation.force('center',
-            d3.forceCenter(plotEl.clientWidth / 2, plotEl.clientHeight / 2));
         simulation.alpha(0.3).restart();
     } else {
         rotationDeg = 0; flipH = false; flipV = false;
