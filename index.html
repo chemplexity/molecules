@@ -1285,6 +1285,7 @@ const g = svg.append('g');
 const zoom = d3.zoom()
     .scaleExtent([0.05, 30])
     .filter(event => {
+        if (event.type === 'wheel') return true;
         // In selection mode: block drag-to-pan on background
         // so mousedown starts rubber-band selection instead.
         // Scroll-to-zoom and pinch-zoom are unaffected.
@@ -1295,7 +1296,13 @@ const zoom = d3.zoom()
         }
         return !event.ctrlKey && !event.button;
     })
-    .on('zoom', event => g.attr('transform', event.transform));
+    .on('zoom', event => {
+        if (mode === 'force' && event.sourceEvent) {
+            _forceAutoFitEnabled = false;
+            _forceKeepInView = false;
+        }
+        g.attr('transform', event.transform);
+    });
 
 svg.call(zoom);
 
@@ -1734,6 +1741,8 @@ function convertMolecule(molecule) {
         protons:   atom.properties.protons,
         charge:    atom.getCharge(),
         aromatic:  atom.isAromatic(),
+        anchorX:   null,
+        anchorY:   null,
     }));
 
     const links = [...molecule.bonds.values()].map(bond => ({
@@ -1745,6 +1754,215 @@ function convertMolecule(molecule) {
     }));
 
     return { nodes, links };
+}
+
+const FORCE_LAYOUT_BOND_LENGTH = 41;
+const FORCE_LAYOUT_H_BOND_LENGTH = 28;
+const FORCE_LAYOUT_MULTIPLE_BOND_FACTOR = 0.93;
+const FORCE_LAYOUT_AROMATIC_BOND_FACTOR = 0.96;
+const FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS = 18;
+const FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH = 0.22;
+const FORCE_LAYOUT_HEAVY_REPULSION = -55;
+const FORCE_LAYOUT_H_REPULSION = -28;
+const FORCE_LAYOUT_FIT_PAD = 40;
+const FORCE_LAYOUT_INITIAL_FIT_PAD = 14;
+const FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE = 0.4;
+const FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER = 1.3;
+
+function _isHydrogenNode(node) {
+    return node?.name === 'H';
+}
+
+function _forceLinkDistance(link) {
+    const source = typeof link.source === 'object' ? link.source : null;
+    const target = typeof link.target === 'object' ? link.target : null;
+    let distance = (_isHydrogenNode(source) || _isHydrogenNode(target))
+        ? FORCE_LAYOUT_H_BOND_LENGTH
+        : FORCE_LAYOUT_BOND_LENGTH;
+
+    if (link.order === 3) distance *= FORCE_LAYOUT_MULTIPLE_BOND_FACTOR * 0.92;
+    else if (link.order === 2) distance *= FORCE_LAYOUT_MULTIPLE_BOND_FACTOR;
+    else if (link.order === 1.5) distance *= FORCE_LAYOUT_AROMATIC_BOND_FACTOR;
+
+    return distance;
+}
+
+function _forceAnchorRadius(radius = FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS, strength = FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH) {
+    let nodes = [];
+    function force(alpha) {
+        for (const node of nodes) {
+            if (_isHydrogenNode(node)) continue;
+            if (!Number.isFinite(node.anchorX) || !Number.isFinite(node.anchorY)) continue;
+            if (node.fx != null || node.fy != null) continue;
+            const dx = node.x - node.anchorX;
+            const dy = node.y - node.anchorY;
+            const dist = Math.hypot(dx, dy);
+            if (!(dist > radius)) continue;
+            const excess = dist - radius;
+            const inv = 1 / dist;
+            const pull = excess * strength * alpha;
+            node.vx -= dx * inv * pull;
+            node.vy -= dy * inv * pull;
+        }
+    }
+    force.initialize = _nodes => { nodes = _nodes; };
+    return force;
+}
+
+function _forceFitTransform(nodes, pad = FORCE_LAYOUT_FIT_PAD, {
+    hydrogenRadiusScale = 1,
+    scaleMultiplier = 1,
+    maxScale = 30,
+} = {}) {
+    if (!nodes?.length) return null;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const node of nodes) {
+        const r = atomRadius(node.protons) * (_isHydrogenNode(node) ? hydrogenRadiusScale : 1);
+        if (node.x - r < minX) minX = node.x - r;
+        if (node.x + r > maxX) maxX = node.x + r;
+        if (node.y - r < minY) minY = node.y - r;
+        if (node.y + r > maxY) maxY = node.y + r;
+    }
+    const W = plotEl.clientWidth || 600;
+    const H = plotEl.clientHeight || 400;
+    const fitScale = Math.min(
+        (W - pad * 2) / (maxX - minX || 1),
+        (H - pad * 2) / (maxY - minY || 1),
+        1
+    );
+    const scale = Math.min(fitScale * scaleMultiplier, maxScale);
+    const tx = W / 2 - ((minX + maxX) / 2) * scale;
+    const ty = H / 2 - ((minY + maxY) / 2) * scale;
+    return d3.zoomIdentity.translate(tx, ty).scale(scale);
+}
+
+function _buildForceAnchorLayout(molecule) {
+    const seedMol = molecule.clone();
+    seedMol.hideHydrogens();
+    generateAndRefine2dCoords(seedMol, { suppressH: true, bondLength: 1.5 });
+    const anchors = new Map();
+    for (const [id, atom] of seedMol.atoms) {
+        if (atom.name === 'H' || atom.visible === false) continue;
+        if (!Number.isFinite(atom.x) || !Number.isFinite(atom.y)) continue;
+        anchors.set(id, { x: atom.x, y: atom.y });
+    }
+    return anchors;
+}
+
+function _seedForceNodePositions(graph, molecule, anchorLayout, {
+    previousNodePositions = null,
+} = {}) {
+    const W0 = plotEl.clientWidth || 600;
+    const H0 = plotEl.clientHeight || 400;
+    const anchorEntries = [...anchorLayout.values()];
+    const idToNode = new Map(graph.nodes.map(node => [node.id, node]));
+
+    if (anchorEntries.length > 0) {
+        let cx2d = 0;
+        let cy2d = 0;
+        for (const pos of anchorEntries) {
+            cx2d += pos.x;
+            cy2d += pos.y;
+        }
+        cx2d /= anchorEntries.length;
+        cy2d /= anchorEntries.length;
+
+        for (const [id, pos] of anchorLayout) {
+            const node = idToNode.get(id);
+            if (!node) continue;
+            node.anchorX = W0 / 2 + (pos.x - cx2d) * (FORCE_LAYOUT_BOND_LENGTH / 1.5);
+            node.anchorY = H0 / 2 - (pos.y - cy2d) * (FORCE_LAYOUT_BOND_LENGTH / 1.5);
+            node.x = node.anchorX;
+            node.y = node.anchorY;
+        }
+    }
+
+    const hydrogenGroups = new Map();
+    for (const bond of graph.links) {
+        const source = graph.nodes[bond.source];
+        const target = graph.nodes[bond.target];
+        if (_isHydrogenNode(source) && !_isHydrogenNode(target)) {
+            if (!hydrogenGroups.has(target.id)) hydrogenGroups.set(target.id, []);
+            hydrogenGroups.get(target.id).push(source);
+        } else if (_isHydrogenNode(target) && !_isHydrogenNode(source)) {
+            if (!hydrogenGroups.has(source.id)) hydrogenGroups.set(source.id, []);
+            hydrogenGroups.get(source.id).push(target);
+        }
+    }
+
+    for (const [parentId, hydrogens] of hydrogenGroups) {
+        const parentNode = idToNode.get(parentId);
+        if (!parentNode || !Number.isFinite(parentNode.x) || !Number.isFinite(parentNode.y)) continue;
+        const siblingCount = hydrogens.length;
+        hydrogens.forEach((hydrogenNode, index) => {
+            const angle = (Math.PI * 2 * index) / Math.max(1, siblingCount);
+            hydrogenNode.x = parentNode.x + Math.cos(angle) * FORCE_LAYOUT_H_BOND_LENGTH;
+            hydrogenNode.y = parentNode.y + Math.sin(angle) * FORCE_LAYOUT_H_BOND_LENGTH;
+        });
+    }
+
+    if (previousNodePositions) {
+        for (const node of graph.nodes) {
+            const previous = previousNodePositions.get(node.id);
+            if (!previous) continue;
+            node.x = previous.x;
+            node.y = previous.y;
+            node.vx = previous.vx;
+            node.vy = previous.vy;
+            node.fx = previous.fx;
+            node.fy = previous.fy;
+            node.anchorX = Number.isFinite(previous.anchorX) ? previous.anchorX : node.anchorX;
+            node.anchorY = Number.isFinite(previous.anchorY) ? previous.anchorY : node.anchorY;
+            if (!_isHydrogenNode(node) &&
+                    !Number.isFinite(node.anchorX) &&
+                    Number.isFinite(previous.x) &&
+                    Number.isFinite(previous.y)) {
+                node.anchorX = previous.x;
+                node.anchorY = previous.y;
+            }
+        }
+
+        for (const link of graph.links) {
+            const source = graph.nodes[link.source];
+            const target = graph.nodes[link.target];
+            const sourcePlaced = Number.isFinite(source?.x) && Number.isFinite(source?.y);
+            const targetPlaced = Number.isFinite(target?.x) && Number.isFinite(target?.y);
+            if (sourcePlaced && !targetPlaced) {
+                target.x = source.x;
+                target.y = source.y;
+            } else if (targetPlaced && !sourcePlaced) {
+                source.x = target.x;
+                source.y = target.y;
+            }
+            if (sourcePlaced && !Number.isFinite(target?.anchorX) && !_isHydrogenNode(target)) {
+                target.anchorX = source.x;
+                target.anchorY = source.y;
+            } else if (targetPlaced && !Number.isFinite(source?.anchorX) && !_isHydrogenNode(source)) {
+                source.anchorX = target.x;
+                source.anchorY = target.y;
+            }
+        }
+    }
+}
+
+function _patchForceNodePositions(patchPos, {
+    setAnchors = true,
+    alpha = 0.18,
+} = {}) {
+    if (!patchPos?.size) return;
+    for (const node of simulation.nodes()) {
+        const p = patchPos.get(node.id);
+        if (!p) continue;
+        if (Number.isFinite(p.x)) node.x = p.x;
+        if (Number.isFinite(p.y)) node.y = p.y;
+        node.vx = 0;
+        node.vy = 0;
+        if (setAnchors && !_isHydrogenNode(node) && Number.isFinite(node.x) && Number.isFinite(node.y)) {
+            node.anchorX = node.x;
+            node.anchorY = node.y;
+        }
+    }
+    simulation.alpha(Math.max(simulation.alpha(), alpha)).restart();
 }
 
 function createDrag(sim) {
@@ -1795,6 +2013,10 @@ function createDrag(sim) {
             if (state) {
                 for (const node of sim.nodes()) {
                     if (!state.nodeIds.has(node.id)) continue;
+                    if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
+                        node.anchorX = node.x;
+                        node.anchorY = node.y;
+                    }
                     node.fx = null;
                     node.fy = null;
                 }
@@ -1804,8 +2026,13 @@ function createDrag(sim) {
 }
 
 const simulation = d3.forceSimulation()
-    .force('charge', d3.forceManyBody().strength(-150).distanceMax(200))
-    .force('link',   d3.forceLink().strength(1.0).distance(25))
+    .force('charge', d3.forceManyBody()
+        .strength(node => _isHydrogenNode(node) ? FORCE_LAYOUT_H_REPULSION : FORCE_LAYOUT_HEAVY_REPULSION)
+        .distanceMax(180))
+    .force('link',   d3.forceLink()
+        .strength(link => (_isHydrogenNode(link.source) || _isHydrogenNode(link.target)) ? 0.8 : 0.9)
+        .distance(_forceLinkDistance))
+    .force('anchor', _forceAnchorRadius())
     .force('center', d3.forceCenter(plotEl.clientWidth / 2, plotEl.clientHeight / 2))
     .velocityDecay(0.35)
     .alphaDecay(0.02)
@@ -1827,12 +2054,13 @@ function updateForce(molecule, {
             vy: node.vy,
             fx: node.fx,
             fy: node.fy,
+            anchorX: node.anchorX,
+            anchorY: node.anchorY,
         }]))
         : null;
     const previousZoomTransform = preserveView ? d3.zoomTransform(svg.node()) : null;
 
-    // Seed initial positions from 2D layout so all atoms start at valid positions.
-    generateCoords(molecule, { suppressH: false, bondLength: 1.5 });
+    const anchorLayout = _buildForceAnchorLayout(molecule);
     if (_preserveSelectionOnNextRender) _syncSelectionToMolecule(molecule);
     else {
         _selectedAtomIds.clear();
@@ -1996,6 +2224,10 @@ function updateForce(molecule, {
                 if (state) {
                     for (const node of simulation.nodes()) {
                         if (!state.nodeIds.has(node.id)) continue;
+                        if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
+                            node.anchorX = node.x;
+                            node.anchorY = node.y;
+                        }
                         node.fx = null;
                         node.fy = null;
                     }
@@ -2118,56 +2350,17 @@ function updateForce(molecule, {
             return c === 1 ? '+' : c > 1 ? `${c}+` : c === -1 ? '−' : `${Math.abs(c)}−`;
         });
 
-    // Apply 2D seed positions to nodes so the simulation starts from a valid layout.
-    // Scale factor matches force link distance / coord bond length (1.5 Å) = 20 px/Å.
-    const FORCE_SCALE = 25;
-    const W0 = plotEl.clientWidth || 600, H0 = plotEl.clientHeight || 400;
-    const atoms2d = [...molecule.atoms.values()].filter(a => a.x != null);
-    if (atoms2d.length > 0) {
-        let cx2d = 0, cy2d = 0;
-        for (const a of atoms2d) { cx2d += a.x; cy2d += a.y; }
-        cx2d /= atoms2d.length; cy2d /= atoms2d.length;
-        const idToNode = new Map(graph.nodes.map(n => [n.id, n]));
-        for (const [id, atom] of molecule.atoms) {
-            const node = idToNode.get(id);
-            if (node && atom.x != null) {
-                node.x = W0 / 2 + (atom.x - cx2d) * FORCE_SCALE;
-                node.y = H0 / 2 - (atom.y - cy2d) * FORCE_SCALE;
-            }
-        }
-    }
-
-    if (previousNodePositions) {
-        for (const node of graph.nodes) {
-            const previous = previousNodePositions.get(node.id);
-            if (!previous) continue;
-            node.x = previous.x;
-            node.y = previous.y;
-            node.vx = previous.vx;
-            node.vy = previous.vy;
-            node.fx = previous.fx;
-            node.fy = previous.fy;
-        }
-
-        // Seed genuinely new nodes from any preserved neighbor so edits do not
-        // re-layout the surviving fragment.
-        for (const link of graph.links) {
-            const source = graph.nodes[link.source];
-            const target = graph.nodes[link.target];
-            const sourcePlaced = Number.isFinite(source?.x) && Number.isFinite(source?.y);
-            const targetPlaced = Number.isFinite(target?.x) && Number.isFinite(target?.y);
-            if (sourcePlaced && !targetPlaced) {
-                target.x = source.x;
-                target.y = source.y;
-            } else if (targetPlaced && !sourcePlaced) {
-                source.x = target.x;
-                source.y = target.y;
-            }
-        }
-    }
+    _seedForceNodePositions(graph, molecule, anchorLayout, { previousNodePositions });
 
     simulation.nodes(graph.nodes);
     simulation.force('link').links(graph.links);
+    simulation.force('charge')
+        .strength(node => _isHydrogenNode(node) ? FORCE_LAYOUT_H_REPULSION : FORCE_LAYOUT_HEAVY_REPULSION)
+        .distanceMax(180);
+    simulation.force('link')
+        .strength(link => (_isHydrogenNode(link.source) || _isHydrogenNode(link.target)) ? 0.8 : 0.9)
+        .distance(_forceLinkDistance);
+    simulation.force('anchor', _forceAnchorRadius());
     simulation.force('center',
         d3.forceCenter(plotEl.clientWidth / 2, plotEl.clientHeight / 2));
     simulation.alpha(preservePositions ? 0.2 : 1).restart();
@@ -2233,44 +2426,29 @@ function updateForce(molecule, {
             .attr('cx', d => d.x).attr('cy', d => d.y);
 
         if (_forceAutoFitEnabled) {
-            // Auto zoom-out to keep molecule in view
-            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-            for (const n of graph.nodes) {
-                const r = atomRadius(n.protons);
-                if (n.x - r < minX) minX = n.x - r;
-                if (n.x + r > maxX) maxX = n.x + r;
-                if (n.y - r < minY) minY = n.y - r;
-                if (n.y + r > maxY) maxY = n.y + r;
+            const fitTransform = _forceFitTransform(graph.nodes, FORCE_LAYOUT_INITIAL_FIT_PAD, {
+                hydrogenRadiusScale: FORCE_LAYOUT_INITIAL_H_RADIUS_SCALE,
+                scaleMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
+            });
+            if (fitTransform) {
+                svg.call(zoom.transform, fitTransform);
+                _forceAutoFitEnabled = false;
+                _forceKeepInView = true;
             }
-            const W = plotEl.clientWidth, H = plotEl.clientHeight;
-            const PAD   = 40;
-            const scale = Math.min((W - PAD * 2) / (maxX - minX || 1),
-                                   (H - PAD * 2) / (maxY - minY || 1), 1);
-            const tx = W / 2 - ((minX + maxX) / 2) * scale;
-            const ty = H / 2 - ((minY + maxY) / 2) * scale;
-            svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
         } else if (_forceKeepInView) {
             const W = plotEl.clientWidth, H = plotEl.clientHeight;
-            const PAD = 40;
+            const PAD = FORCE_LAYOUT_FIT_PAD;
             const t = d3.zoomTransform(svg.node());
             let anyOut = false;
-            let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
             for (const n of graph.nodes) {
                 const r = atomRadius(n.protons);
                 const sx1 = t.x + (n.x - r) * t.k, sy1 = t.y + (n.y - r) * t.k;
                 const sx2 = t.x + (n.x + r) * t.k, sy2 = t.y + (n.y + r) * t.k;
                 if (sx1 < PAD || sx2 > W - PAD || sy1 < PAD || sy2 > H - PAD) anyOut = true;
-                if (n.x - r < minX) minX = n.x - r;
-                if (n.x + r > maxX) maxX = n.x + r;
-                if (n.y - r < minY) minY = n.y - r;
-                if (n.y + r > maxY) maxY = n.y + r;
             }
             if (anyOut) {
-                const scale = Math.min((W - PAD * 2) / (maxX - minX || 1),
-                                       (H - PAD * 2) / (maxY - minY || 1), 1);
-                const tx = W / 2 - ((minX + maxX) / 2) * scale;
-                const ty = H / 2 - ((minY + maxY) / 2) * scale;
-                svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+                const fitTransform = _forceFitTransform(graph.nodes, FORCE_LAYOUT_FIT_PAD);
+                if (fitTransform) svg.call(zoom.transform, fitTransform);
             }
         }
     });
@@ -2601,17 +2779,8 @@ function _toSVGPt2d(a) {
 function _zoomToFitForce() {
     const nodes = simulation.nodes();
     if (!nodes.length) return;
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const n of nodes) {
-        const r = atomRadius(n.protons);
-        if (n.x - r < minX) minX = n.x - r; if (n.x + r > maxX) maxX = n.x + r;
-        if (n.y - r < minY) minY = n.y - r; if (n.y + r > maxY) maxY = n.y + r;
-    }
-    const W = plotEl.clientWidth, H = plotEl.clientHeight, PAD = 40;
-    const scale = Math.min((W - PAD * 2) / (maxX - minX || 1), (H - PAD * 2) / (maxY - minY || 1), 1);
-    const tx = W / 2 - ((minX + maxX) / 2) * scale;
-    const ty = H / 2 - ((minY + maxY) / 2) * scale;
-    svg.call(zoom.transform, d3.zoomIdentity.translate(tx, ty).scale(scale));
+    const fitTransform = _forceFitTransform(nodes, FORCE_LAYOUT_FIT_PAD);
+    if (fitTransform) svg.call(zoom.transform, fitTransform);
 }
 
 /** Zoom to fit all 2D atoms in the viewport, but only if any atom is currently off-screen. */
@@ -2697,7 +2866,15 @@ function _makeSnapshot() {
             snap.hCounts2d = _hCounts2d ? [..._hCounts2d] : [];
             snap.stereoMap2d = _stereoMap2d ? [..._stereoMap2d] : null;
         } else {
-            snap.nodePositions = simulation.nodes().map(n => ({ id: n.id, x: n.x, y: n.y }));
+            snap.nodePositions = simulation.nodes().map(n => ({
+                id: n.id,
+                x: n.x,
+                y: n.y,
+                vx: n.vx,
+                vy: n.vy,
+                anchorX: n.anchorX,
+                anchorY: n.anchorY,
+            }));
         }
     }
     return snap;
@@ -2773,9 +2950,16 @@ function _restoreSnapshot(snap) {
                 const posMap = new Map(snap.nodePositions.map(p => [p.id, p]));
                 for (const node of simulation.nodes()) {
                     const p = posMap.get(node.id);
-                    if (p) { node.x = p.x; node.y = p.y; node.vx = 0; node.vy = 0; }
+                    if (p) {
+                        node.x = p.x;
+                        node.y = p.y;
+                        node.vx = Number.isFinite(p.vx) ? p.vx : 0;
+                        node.vy = Number.isFinite(p.vy) ? p.vy : 0;
+                        node.anchorX = Number.isFinite(p.anchorX) ? p.anchorX : node.anchorX;
+                        node.anchorY = Number.isFinite(p.anchorY) ? p.anchorY : node.anchorY;
+                    }
                 }
-                simulation.alpha(0).restart();
+                simulation.alpha(0.18).restart();
             }
         }
     }
@@ -3332,7 +3516,7 @@ function _startDrawBond(atomId, gX, gY) {
 function _updateDrawBondPreview([mx, my]) {
     if (!_drawBondState) return;
     const { ox, oy } = _drawBondState;
-    const BL = 1.5 * SCALE;
+    const BL = mode === 'force' ? FORCE_LAYOUT_BOND_LENGTH : 1.5 * SCALE;
     const W = plotEl.clientWidth  || 600;
     const H = plotEl.clientHeight || 400;
     const SNAP_R = 30;
@@ -3361,8 +3545,14 @@ function _updateDrawBondPreview([mx, my]) {
 
     if (snapAtomId === null) {
         if (mode === 'force') {
-            // Freeform in force mode — follow mouse without length clamping.
-            ex = mx; ey = my;
+            const dist = Math.hypot(mx - ox, my - oy);
+            if (dist < 1e-6) {
+                ex = ox + BL; ey = oy;
+            } else {
+                const clamped = Math.min(dist, BL);
+                ex = ox + (mx - ox) / dist * clamped;
+                ey = oy + (my - oy) / dist * clamped;
+            }
         } else {
             const dist = Math.hypot(mx - ox, my - oy);
             if (dist < 1e-6) {
@@ -3641,10 +3831,7 @@ function _autoPlaceBond(atomId, ox, oy) {
         // Patch node positions immediately so generateCoords doesn't misplace them.
         const patchPos = new Map([[newAtom.id, { x: destGX, y: destGY }]]);
         if (atomId === null) patchPos.set(resolvedId, { x: srcRX, y: srcRY });
-        for (const node of simulation.nodes()) {
-            const p = patchPos.get(node.id);
-            if (p) { node.x = p.x; node.y = p.y; node.vx = 0; node.vy = 0; }
-        }
+        _patchForceNodePositions(patchPos);
     } else {
         newAtom.x = srcRX + Math.cos(bestAngle) * 1.5;
         newAtom.y = srcRY + Math.sin(bestAngle) * 1.5;
@@ -3809,12 +3996,7 @@ function _commitDrawBond() {
         _forceKeepInView = true;
 
         // Patch new node positions so generateCoords doesn't misplace them.
-        if (patchPos.size > 0) {
-            for (const node of simulation.nodes()) {
-                const p = patchPos.get(node.id);
-                if (p) { node.x = p.x; node.y = p.y; node.vx = 0; node.vy = 0; }
-            }
-        }
+        _patchForceNodePositions(patchPos);
         return;
     }
 
@@ -5005,7 +5187,7 @@ window.deleteSelection = function deleteSelection() {
     if (mode === 'force') {
         currentMol = mol;
         updateForce(mol, { preservePositions: true, preserveView: true });
-        if (mol.atoms.size > 0) _zoomToFitForce();
+        if (mol.atoms.size > 0) _forceKeepInView = true;
     } else {
         fitCurrent2dView();
         draw2d();
