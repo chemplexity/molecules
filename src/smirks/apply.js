@@ -465,6 +465,11 @@ function _applyParsedSMIRKS(molecule, transform, options = {}) {
     if (acceptedMappings.some(prev => _mappingsOverlap(prev, mapping))) {
       continue;
     }
+    // A previous transform may have removed atoms that this match targets.
+    // Skip rather than crash or apply to a stale site.
+    if ([...mapping.values()].some(targetId => !result.atoms.has(targetId))) {
+      continue;
+    }
     result = _applyParsedSMIRKSMatch(result, transform, mapping);
     acceptedMappings.push(mapping);
   }

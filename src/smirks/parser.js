@@ -35,9 +35,13 @@ function _extractTrailingAtomMap(inner) {
     if (depth === 0 && ch === ':') {
       const digits = inner.slice(i + 1);
       if (/^\d+$/.test(digits)) {
+        const n = parseInt(digits, 10);
+        if (n === 0) {
+          break; // :0 is conventionally unmapped; treat as no atom map
+        }
         return {
           body: inner.slice(0, i),
-          atomMap: parseInt(digits, 10)
+          atomMap: n
         };
       }
       break;
