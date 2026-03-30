@@ -670,9 +670,11 @@ function placeRingSystem(molecule, system, rings, bondLength, origin, coords) {
               // when a ring shares 3+ atoms with the parent ring, arc-fitting can
               // place the free "bridge" atom directly on top of an already-placed atom
               // (the arc retraces the parent ring's own circumscribed circle).
-              // Detect this and push the bridge atom outward by 3 × the perpendicular
-              // height h = sqrt(BL² − (chord/2)²), which gives exactly BL separation
-              // from the clashing atom while keeping the bond lengths equal.
+              // Re-place the bridge atom on the perpendicular bisector of its two
+              // ring neighbours, on the side opposite curCenter.  This keeps the
+              // two incident bond lengths equal and avoids ejecting the bridge atom
+              // far outside the bicyclic core when the exact regular-polygon height
+              // is impossible because the neighbours are already too far apart.
               for (let kc = (b1 + 1) % n2; kc !== b2; kc = (kc + 1) % n2) {
                 const freeId  = nextRing[kc];
                 const freePos = coords.get(freeId);
@@ -699,13 +701,51 @@ function placeRingSystem(molecule, system, rings, bondLength, origin, coords) {
                   continue;
                 }
                 const nbMx   = (nbA.x + nbB.x) / 2, nbMy = (nbA.y + nbB.y) / 2;
-                const halfCh = Math.hypot(nbB.x - nbA.x, nbB.y - nbA.y) / 2;
-                const legH   = halfCh < bondLength
-                  ? Math.sqrt(bondLength * bondLength - halfCh * halfCh) : bondLength;
-                const outDx  = nbMx - curCenter.x, outDy = nbMy - curCenter.y;
-                const outLen = Math.hypot(outDx, outDy) || 1;
-                coords.set(freeId, vec2(nbMx + (outDx / outLen) * 3 * legH,
-                  nbMy + (outDy / outLen) * 3 * legH));
+                const chordDx = nbB.x - nbA.x, chordDy = nbB.y - nbA.y;
+                const chordLen = Math.hypot(chordDx, chordDy) || 1;
+                const halfCh = chordLen / 2;
+                const perpX = -chordDy / chordLen, perpY = chordDx / chordLen;
+                const preferredSideDot = (curCenter.x - nbMx) * perpX + (curCenter.y - nbMy) * perpY;
+                const preferredSide = preferredSideDot >= 0 ? -1 : 1;
+                const exactLegH = halfCh < bondLength
+                  ? Math.sqrt(bondLength * bondLength - halfCh * halfCh)
+                  : 0;
+                const otherPlaced = [...coords.entries()].filter(([otherId]) =>
+                  otherId !== freeId && otherId !== nextRing[(ki - 1 + n2) % n2] && otherId !== nextRing[(ki + 1) % n2]
+                );
+                const candidateScore = candidate => {
+                  let minDist = Infinity;
+                  for (const [, otherPos] of otherPlaced) {
+                    minDist = Math.min(minDist, Math.hypot(candidate.x - otherPos.x, candidate.y - otherPos.y));
+                  }
+                  return minDist;
+                };
+                const heightCandidates = exactLegH > 1e-6
+                  ? [0.35, 0.6, 0.85, 1].map(scale => exactLegH * scale)
+                  : [0.2, 0.35, 0.5, 0.65].map(scale => bondLength * scale);
+                let bestCandidate = null;
+                let bestScore = -Infinity;
+                let bestMaxBond = Infinity;
+                for (const height of heightCandidates) {
+                  for (const side of [preferredSide, -preferredSide]) {
+                    const candidate = vec2(
+                      nbMx + side * perpX * height,
+                      nbMy + side * perpY * height
+                    );
+                    const score = candidateScore(candidate);
+                    const maxBond = Math.max(
+                      Math.hypot(candidate.x - nbA.x, candidate.y - nbA.y),
+                      Math.hypot(candidate.x - nbB.x, candidate.y - nbB.y)
+                    );
+                    if (score > bestScore + 1e-6 ||
+                        (Math.abs(score - bestScore) <= 1e-6 && maxBond < bestMaxBond - 1e-6)) {
+                      bestCandidate = candidate;
+                      bestScore = score;
+                      bestMaxBond = maxBond;
+                    }
+                  }
+                }
+                coords.set(freeId, bestCandidate ?? vec2(nbMx, nbMy));
               }
 
               arcFitted = true;

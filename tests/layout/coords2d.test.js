@@ -1370,6 +1370,65 @@ describe('generateCoords — bridged bicyclic (two fused 9-rings, 4-atom bridge)
   });
 });
 
+describe('generateCoords — compact bridged bicyclic amine', () => {
+  const SMILES = 'C1CN2CCC1CC2';
+
+  it('keeps all heavy-atom bonds within 1.5× the standard bond length', () => {
+    const mol = parseSMILES(SMILES);
+    const coords = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    for (const [, bond] of mol.bonds) {
+      const [id1, id2] = bond.atoms;
+      const a1 = mol.atoms.get(id1);
+      const a2 = mol.atoms.get(id2);
+      if (!a1 || !a2 || a1.name === 'H' || a2.name === 'H') {
+        continue;
+      }
+      const p1 = coords.get(id1) ?? a1;
+      const p2 = coords.get(id2) ?? a2;
+      const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+      assert.ok(
+        d <= 1.5 * 1.5,
+        `bond ${id1}-${id2}: ${d.toFixed(3)} Å exceeds 1.5×BL`
+      );
+    }
+  });
+
+  it('avoids heavy-atom overlaps in the compact bridged core', () => {
+    const mol = parseSMILES(SMILES);
+    const coords = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    const entries = [...mol.atoms.entries()].filter(([, a]) => a.name !== 'H');
+
+    for (let i = 0; i < entries.length; i++) {
+      for (let j = i + 1; j < entries.length; j++) {
+        const [id1, a1] = entries[i], [id2, a2] = entries[j];
+        const p1 = coords.get(id1) ?? a1;
+        const p2 = coords.get(id2) ?? a2;
+        const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
+        assert.ok(
+          d >= 0.5,
+          `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`
+        );
+      }
+    }
+  });
+
+  it('keeps the bridge visibly bent instead of collinear', () => {
+    const mol = parseSMILES(SMILES);
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    const bridge = [...mol.atoms.entries()].find(([, atom]) => atom.name !== 'H' && atom.id === 'C5');
+    assert.ok(bridge, 'expected bridge atom C5');
+    const [bridgeId, atom] = bridge;
+    const neighbors = atom.getNeighbors(mol).filter(n => n.name !== 'H');
+    assert.equal(neighbors.length, 2);
+    const [n1, n2] = neighbors;
+    const ux = n1.x - atom.x, uy = n1.y - atom.y;
+    const vx = n2.x - atom.x, vy = n2.y - atom.y;
+    const angle = Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy))))) * 180 / Math.PI;
+    assert.ok(angle < 175, `bridge atom ${bridgeId} remained nearly collinear: ${angle.toFixed(2)}°`);
+  });
+});
+
 describe('generateCoords — parser-independent branch ordering', () => {
   const SMILES = 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN';
   const INCHI = 'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1';
