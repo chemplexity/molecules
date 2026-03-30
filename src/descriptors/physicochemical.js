@@ -406,6 +406,207 @@ export function fsp3(molecule) {
 }
 
 // ---------------------------------------------------------------------------
+// Crippen Molar Refractivity — Wildman & Crippen, JCICS 1999, 39, 868
+// ---------------------------------------------------------------------------
+
+const CRIPPEN_MR = {
+  'C:sp3': 2.516,
+  'C:sp2': 2.433,
+  'C:aro': 2.433,
+  'C:sp': 2.057,
+  'N:sp3': 3.483,
+  'N:sp2': 2.991,
+  'N:aro': 2.991,
+  'N:+': 3.320,
+  'O:oh': 1.229,
+  'O:ether': 1.690,
+  'O:sp2': 2.055,
+  'O:aro': 1.690,
+  'O:-': 1.229,
+  'S': 7.591,
+  'F': 1.014,
+  'Cl': 5.861,
+  'Br': 8.865,
+  'I': 13.855,
+  'P': 6.920
+};
+
+/**
+ * Estimates the molar refractivity using the Crippen atom-contribution method
+ * (Wildman & Crippen, JCICS 1999).
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {number} Molar refractivity (cm³/mol) rounded to two decimal places.
+ */
+export function molarRefractivity(molecule) {
+  assertMolecule(molecule, 'molecule');
+  let sum = 0;
+  for (const atom of _heavyAtoms(molecule)) {
+    const key = _crippinKey(atom, molecule);
+    if (key !== null) {
+      sum += CRIPPEN_MR[key] ?? 0;
+    }
+  }
+  return Math.round(sum * 100) / 100;
+}
+
+// ---------------------------------------------------------------------------
+// Ring descriptors
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the total number of rings (SSSR).
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {number}
+ */
+export function ringCount(molecule) {
+  assertMolecule(molecule, 'molecule');
+  return molecule.getRings().length;
+}
+
+/**
+ * Returns the number of fully-aromatic rings.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {number}
+ */
+export function aromaticRingCount(molecule) {
+  assertMolecule(molecule, 'molecule');
+  return molecule.getRings().filter(ring =>
+    ring.every(atomId => {
+      const a = molecule.atoms.get(atomId);
+      return a && a.isAromatic();
+    })
+  ).length;
+}
+
+// ---------------------------------------------------------------------------
+// Stereocenters
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the number of defined stereocenters.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {number}
+ */
+export function stereocenters(molecule) {
+  assertMolecule(molecule, 'molecule');
+  return molecule.getChiralCenters().length;
+}
+
+// ---------------------------------------------------------------------------
+// Formal charge
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the total formal charge of the molecule.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {number}
+ */
+export function formalCharge(molecule) {
+  assertMolecule(molecule, 'molecule');
+  return molecule.getCharge();
+}
+
+// ---------------------------------------------------------------------------
+// Veber rules
+// ---------------------------------------------------------------------------
+
+/**
+ * Evaluates Veber's oral bioavailability rules:
+ * TPSA ≤ 140 Å² AND rotatable bonds ≤ 10.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {{ tpsa: number, rotatableBonds: number, passes: boolean }}
+ */
+export function veberRules(molecule) {
+  assertMolecule(molecule, 'molecule');
+  const t  = tpsa(molecule);
+  const rb = rotatableBondCount(molecule);
+  return { tpsa: t, rotatableBonds: rb, passes: t <= 140 && rb <= 10 };
+}
+
+// ---------------------------------------------------------------------------
+// QED — Bickerton et al., Nat. Chem. 2012, 4, 90-98
+// Approximate implementation: ADS function for MW/logP (exact Bickerton 2012
+// parameters), Gaussian-bell functions for remaining properties.
+// ---------------------------------------------------------------------------
+
+/**
+ * Asymmetric double-sigmoid (ADS) used by Bickerton 2012.
+ * @private
+ */
+function _ads(x, a, b, c, d, e, f, dmax) {
+  const sig1 = 1 / (1 + Math.exp(-(x - c + d / 2) / e));
+  const sig2 = f > 0
+    ? (1 - 1 / (1 + Math.exp(-(x - c - d / 2) / f)))
+    : (x <= c + d / 2 ? 1 : 0);
+  return Math.max(0, Math.min(1, (a + b * sig1 * sig2) / dmax));
+}
+
+/**
+ * Bell desirability: 1 in [lo, hi], Gaussian decay outside with std σ.
+ * @private
+ */
+function _bellExpD(x, lo, hi, sigma) {
+  if (x < lo) {
+    return Math.exp(-0.5 * ((lo - x) / sigma) ** 2);
+  }
+  if (x > hi) {
+    return Math.exp(-0.5 * ((x - hi) / sigma) ** 2);
+  }
+  return 1;
+}
+
+// Bickerton 2012 Supplementary Table 1 ADS parameters for MW and logP
+const _QED_MW_P   = [2.817065973, 392.5754953, 290.7489764, 2.419764353, 49.22325677, 65.37051707, 104.9805561];
+const _QED_LOGP_P = [3.172690585, 137.8624751, 2.534937000, 4.581007086, 0.822739803, 0.576295313, 131.3186604];
+// Weights for [MW, logP, HBD, HBA, PSA, RotBonds, ArRings] (Bickerton 2012, approx.)
+const _QED_W      = [0.66, 0.47, 0.05, 0.10, 0.09, 0.07, 0.44];
+
+/**
+ * Computes an approximate QED (Quantitative Estimate of Drug-likeness).
+ *
+ * Uses ADS desirability functions for MW and logP (exact Bickerton 2012
+ * parameters) and Gaussian-bell approximations for HBD, HBA, TPSA,
+ * rotatable bonds, and aromatic rings.  The weighted geometric mean follows
+ * Bickerton et al. (Nat. Chem. 2012, 4, 90-98).
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {number} QED score in [0, 1] rounded to three decimal places.
+ */
+export function qed(molecule) {
+  assertMolecule(molecule, 'molecule');
+  const mw   = molecularMass(molecule);
+  const lp   = logP(molecule);
+  const hbd  = hBondDonors(molecule);
+  const hba  = hBondAcceptors(molecule);
+  const psa  = tpsa(molecule);
+  const rotb = rotatableBondCount(molecule);
+  const arom = aromaticRingCount(molecule);
+
+  const d = [
+    _ads(mw,   ..._QED_MW_P),
+    _ads(lp,   ..._QED_LOGP_P),
+    _bellExpD(hbd,  0, 1,   1.5),
+    _bellExpD(hba,  0, 8,   3.0),
+    _bellExpD(psa,  30, 100, 35),
+    _bellExpD(rotb, 0, 5,   3.0),
+    _bellExpD(arom, 0, 3, 1.5)
+  ];
+
+  const wSum = _QED_W.reduce((s, v) => s + v, 0);
+  let lnSum = 0;
+  for (let i = 0; i < _QED_W.length; i++) {
+    lnSum += _QED_W[i] * Math.log(Math.max(d[i], 1e-9));
+  }
+  return Math.round(Math.exp(lnSum / wSum) * 1000) / 1000;
+}
+
+// ---------------------------------------------------------------------------
 // Lipinski Rule of Five
 // ---------------------------------------------------------------------------
 

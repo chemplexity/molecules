@@ -425,13 +425,17 @@ export class Molecule {
 
   /**
    * Removes a bond from the molecule.
-   * Any atom that becomes isolated (degree 0) after the removal is also
-   * deleted. All computed properties (`charge`, `formula`, `mass`, `name`)
-   * are recomputed afterwards.
+   * By default, any atom that becomes isolated (degree 0) after the removal
+   * is also deleted. Pass `{ pruneIsolated: false }` to keep isolated atoms.
+   * All computed properties (`charge`, `formula`, `mass`, `name`) are
+   * recomputed afterwards.
    *
    * @param {string} id - ID of the bond to remove.
+   * @param {object} [opts]
+   * @param {boolean} [opts.pruneIsolated=true] - When true, atoms that become
+   *   isolated after removal are deleted. Pass false to keep them.
    */
-  removeBond(id) {
+  removeBond(id, { pruneIsolated = true } = {}) {
     const bond = this.bonds.get(id);
     if (!bond) {
       return;
@@ -447,11 +451,12 @@ export class Molecule {
     this._ringsCache = null;
     this.bonds.delete(id);
 
-    // Prune atoms that are now completely disconnected.
-    for (const atomId of bond.atoms) {
-      const atom = this.atoms.get(atomId);
-      if (atom && atom.bonds.length === 0) {
-        this.atoms.delete(atomId);
+    if (pruneIsolated) {
+      for (const atomId of bond.atoms) {
+        const atom = this.atoms.get(atomId);
+        if (atom && atom.bonds.length === 0) {
+          this.atoms.delete(atomId);
+        }
       }
     }
 

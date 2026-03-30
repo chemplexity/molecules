@@ -74,9 +74,16 @@ body {
     position: absolute;
     top: 0; bottom: 0; right: 0;
     width: 29%;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid #eee;
+}
+
+#descriptor-panel {
+    flex: 2;
     overflow-y: auto;
     padding: 8px 12px;
-    border-left: 1px solid #eee;
+    border-bottom: 1px solid #eee;
 }
 
 #footer {
@@ -298,13 +305,15 @@ div.tooltip td:first-child {
 
 /* ── Sidebar ─────────────────────────────────────────────────────────── */
 
-#descriptor-table {
+#descriptor-table,
+#pc-table {
     width: 100%;
     border-collapse: collapse;
     font-size: 12px;
 }
 
-#descriptor-table th {
+#descriptor-table th,
+#pc-table th {
     text-align: left;
     color: #555;
     font-size: 13px;
@@ -313,38 +322,64 @@ div.tooltip td:first-child {
     padding: 4px 2px;
 }
 
-#descriptor-table td {
+#descriptor-table td,
+#pc-table td {
     padding: 3px 2px;
     border-bottom: 1px solid #f0f0f0;
     color: #333;
 }
 
-#descriptor-table td:last-child {
+#descriptor-table td:last-child,
+#pc-table td:last-child {
     text-align: right;
     font-variant-numeric: tabular-nums;
     color: #555;
 }
 
-#descriptor-section-title {
-    font-size: 13px;
-    color: #777;
-    font-weight: 600;
+#descriptor-tabs {
+    display: flex;
+    border-bottom: 1px solid #ddd;
     margin-top: 6px;
-    margin-bottom: 2px;
+    margin-bottom: 4px;
+    gap: 2px;
+}
+
+.desc-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 4px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #999;
+    cursor: pointer;
     text-transform: uppercase;
     letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+
+.desc-tab.active {
+    color: #333;
+    border-bottom-color: #333;
+}
+
+.desc-tab:hover:not(.active) {
+    color: #555;
 }
 
 #smarts-panel {
-    margin-top: 16px;
-    padding-top: 12px;
-    border-top: 1px solid #eee;
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
 }
 
 #smarts-section-title {
     font-size: 13px;
     color: #777;
     font-weight: 600;
+    margin-top: 6px;
     margin-bottom: 6px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
@@ -821,11 +856,24 @@ div.tooltip td:first-child {
             </div>
         </div>
         <div id="sidebar">
-            <div id="descriptor-section-title">Descriptors</div>
-            <table id="descriptor-table">
-                <thead><tr><th>Property</th><th>Value</th></tr></thead>
-                <tbody id="descriptor-body"></tbody>
-            </table>
+            <div id="descriptor-panel">
+                <div id="descriptor-tabs">
+                    <button class="desc-tab active" data-tab="topological">Topological</button>
+                    <button class="desc-tab" data-tab="physicochemical">Physicochemical</button>
+                </div>
+                <div id="tab-topological" class="desc-tab-panel">
+                    <table id="descriptor-table">
+                        <thead><tr><th>Property</th><th>Value</th></tr></thead>
+                        <tbody id="descriptor-body"></tbody>
+                    </table>
+                </div>
+                <div id="tab-physicochemical" class="desc-tab-panel" style="display:none">
+                    <table id="pc-table">
+                        <thead><tr><th>Property</th><th>Value</th></tr></thead>
+                        <tbody id="pc-body"></tbody>
+                    </table>
+                </div>
+            </div>
             <div id="smarts-panel">
                 <div id="smarts-section-title">Functional Groups</div>
                 <table id="fg-table">
@@ -1088,6 +1136,12 @@ import {
     plattIndex, szegedIndex
 } from './src/descriptors/topological.js';
 import { findSMARTS, functionalGroups, parseSMARTS } from './src/smarts/index.js';
+import {
+    logP, tpsa, hBondDonors, hBondAcceptors,
+    rotatableBondCount, fsp3, lipinskiRuleOfFive,
+    molarRefractivity, ringCount, aromaticRingCount,
+    stereocenters, veberRules, qed
+} from './src/descriptors/physicochemical.js';
 
 const {
     atomColor, WEDGE_HALF_W, WEDGE_DASHES,
@@ -5209,6 +5263,102 @@ function updateDescriptors(molecule, extraH = 0) {
     tbody.innerHTML = rows
         .map(([label, val]) => `<tr><td>${label}</td><td>${fmtVal(val)}</td></tr>`)
         .join('');
+    updatePhysicochemical(molecule);
+}
+
+const PC_DESCRIPTIONS = {
+    'MW (Da)':          'Molecular weight in Daltons (monoisotopic average mass).',
+    'Formal Charge':    'Net formal charge summed over all atoms.',
+    'logP (Crippen)':   'Estimated lipophilicity using the Crippen atom-contribution method (Wildman & Crippen, 1999).',
+    'MR (Crippen)':     'Molar refractivity (cm³/mol) estimated by Crippen atom contributions — reflects polarisability and molecular volume.',
+    'TPSA (Å²)':        'Topological Polar Surface Area — sum of surface contributions from polar atoms (Ertl, 2000).',
+    'HB Donors':        'Number of hydrogen-bond donors (NH and OH groups, Lipinski definition).',
+    'HB Acceptors':     'Number of hydrogen-bond acceptors (N and O atoms, Lipinski definition).',
+    'Rotatable Bonds':  'Count of single, non-aromatic, non-ring bonds between two non-terminal heavy atoms.',
+    'Fsp3':             'Fraction of sp³ carbons — a measure of molecular complexity and three-dimensionality.',
+    'Ring Count':       'Total number of rings (smallest set of smallest rings, SSSR).',
+    'Aromatic Rings':   'Number of fully aromatic rings.',
+    'Stereocenters':    'Number of atoms with a defined chirality annotation (@ or @@).',
+    'Ro5 Violations':   "Lipinski's Rule of Five: MW ≤ 500, logP ≤ 5, HBD ≤ 5, HBA ≤ 10. One violation is allowed.",
+    'Veber Rules':      'Veber oral bioavailability rules: TPSA ≤ 140 Å² and rotatable bonds ≤ 10.',
+    'QED':              'Quantitative Estimate of Drug-likeness (Bickerton 2012). Weighted geometric mean of MW, logP, HBD, HBA, TPSA, RotBonds, ArRings desirabilities. Approximate implementation.',
+};
+
+function updatePhysicochemical(molecule) {
+    const tbody = document.getElementById('pc-body');
+    if (!tbody) return;
+    const rows = [];
+    try {
+        const mw   = molecularMass(molecule);
+        const lp   = logP(molecule);
+        const mr   = molarRefractivity(molecule);
+        const tp   = tpsa(molecule);
+        const hbd  = hBondDonors(molecule);
+        const hba  = hBondAcceptors(molecule);
+        const rot  = rotatableBondCount(molecule);
+        const fs   = fsp3(molecule);
+        const rc   = ringCount(molecule);
+        const arc  = aromaticRingCount(molecule);
+        const sc   = stereocenters(molecule);
+        const ro5  = lipinskiRuleOfFive(molecule);
+        const veb  = veberRules(molecule);
+        const qedV = qed(molecule);
+        rows.push(
+            ['MW (Da)',          fmtVal(mw)],
+            ['logP (Crippen)',   fmtVal(lp)],
+            ['MR (Crippen)',     fmtVal(mr)],
+            ['TPSA (Å²)',        fmtVal(tp)],
+            ['HB Donors',        hbd],
+            ['HB Acceptors',     hba],
+            ['Rotatable Bonds',  rot],
+            ['Fsp3',             fmtVal(fs)],
+            ['Ring Count',       rc],
+            ['Aromatic Rings',   arc],
+            ['Stereocenters',    sc],
+            ['Ro5 Violations',   `${ro5.violations} (${ro5.passes ? 'pass' : 'fail'})`],
+            ['Veber Rules',      veb.passes ? 'pass' : 'fail'],
+            ['QED',              fmtVal(qedV)],
+        );
+    } catch {}
+    tbody.innerHTML = rows
+        .map(([label, val]) => {
+            const desc = PC_DESCRIPTIONS[label] ?? '';
+            return `<tr data-desc="${desc.replace(/"/g, '&quot;')}"><td>${label}</td><td>${val}</td></tr>`;
+        })
+        .join('');
+}
+
+// Tab switching for descriptor panel
+document.querySelectorAll('.desc-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.desc-tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.desc-tab-panel').forEach(p => { p.style.display = 'none'; });
+        btn.classList.add('active');
+        document.getElementById('tab-' + btn.dataset.tab).style.display = '';
+    });
+});
+
+// Physicochemical row tooltips — event delegation on the table
+{
+    const pcTable = document.getElementById('pc-table');
+    let _pcTipTimer = null;
+    pcTable.addEventListener('mousemove', event => {
+        const tr = event.target.closest('tr[data-desc]');
+        if (!tr || !tr.dataset.desc) return;
+        const td = event.target.closest('td');
+        if (!td || td !== tr.cells[0]) return;
+        clearTimeout(_pcTipTimer);
+        _pcTipTimer = setTimeout(() => {
+            tooltip.html(`<div style="max-width:220px;white-space:normal;line-height:1.4">${tr.dataset.desc}</div>`)
+                .style('left', (event.clientX + 14) + 'px')
+                .style('top',  (event.clientY - 10) + 'px')
+                .style('opacity', 0.95);
+        }, 120);
+    });
+    pcTable.addEventListener('mouseleave', () => {
+        clearTimeout(_pcTipTimer);
+        tooltip.style('opacity', 0);
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -5353,7 +5503,7 @@ window.deleteSelection = function deleteSelection() {
 
     // Remove any explicitly selected bonds not already removed
     for (const id of _selectedBondIds) {
-        if (mol.bonds.has(id)) mol.removeBond(id);
+        if (mol.bonds.has(id)) mol.removeBond(id, { pruneIsolated: false });
     }
 
     mol.clearStereoAnnotations(affectedHeavyIds);
@@ -5382,8 +5532,26 @@ window.deleteSelection = function deleteSelection() {
     updateFunctionalGroups(mol);
 
     if (mode === 'force') {
+        // Capture current screen positions of affected heavy atoms *before*
+        // updateForce rebuilds the simulation. repairImplicitHydrogens above
+        // has already replaced all H atoms on these atoms with new IDs, so
+        // those H atoms won't be in previousNodePositions and would otherwise
+        // snap in from the anchor-layout origin. Patching after updateForce
+        // pins the heavy atoms in place and reseats their new H atoms nearby.
+        const patchPos = new Map();
+        if (simulation) {
+            for (const node of simulation.nodes()) {
+                if (affectedHeavyIds.has(node.id) && Number.isFinite(node.x) && Number.isFinite(node.y)) {
+                    patchPos.set(node.id, { x: node.x, y: node.y });
+                }
+            }
+        }
         currentMol = mol;
         updateForce(mol, { preservePositions: true, preserveView: true });
+        if (patchPos.size) {
+            _patchForceNodePositions(patchPos);
+            _reseatHydrogensAroundPatched(patchPos);
+        }
         if (mol.atoms.size > 0) _enableForceKeepInView();
     } else {
         fitCurrent2dView();
