@@ -21,6 +21,50 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 // Helpers
 // ---------------------------------------------------------------------------
 const COLS = 10;
+const LABEL_SPACE = 22;
+const LABEL_FONT_SIZE = 11;
+const LABEL_MAX_CHARS = 54;
+
+function escapeXml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function clampLabel(text, maxChars = LABEL_MAX_CHARS) {
+  if (!text) {
+    return '';
+  }
+  if (text.length <= maxChars) {
+    return text;
+  }
+  return `${text.slice(0, maxChars - 3)}...`;
+}
+
+function withBottomLabel(cell, labelText) {
+  if (!cell) {
+    return null;
+  }
+  const cellW = cell.cellW;
+  const cellH = cell.cellH + LABEL_SPACE;
+  const label = escapeXml(clampLabel(labelText));
+  const baselineY = cellH - 7;
+
+  const svgContent = [
+    '<g>',
+    cell.svgContent,
+    `<text x="${(cellW / 2).toFixed(2)}" y="${baselineY.toFixed(2)}"` +
+      ' text-anchor="middle" dominant-baseline="alphabetic"' +
+      ' font-family="Arial, Helvetica, sans-serif"' +
+      ` font-size="${LABEL_FONT_SIZE}" fill="#5f5f5f">${label}</text>`,
+    '</g>'
+  ].join('');
+
+  return { svgContent, cellW, cellH };
+}
 
 function saveGrid(molecules, key, renderFn, suffix) {
   console.log(`Rendering ${molecules.length} molecules (${suffix})\u2026`); // eslint-disable-line no-console
@@ -30,7 +74,7 @@ function saveGrid(molecules, key, renderFn, suffix) {
     if (val && !result) {
       console.warn(`  [${i}] failed: ${val}`); // eslint-disable-line no-console
     }
-    return result;
+    return withBottomLabel(result, val);
   });
 
   const svgString = buildCompositeSVG(cells, COLS);

@@ -12,875 +12,8 @@
 }
 </script>
 
-<style>
+<link rel="stylesheet" href="src/app/styles.css">
 
-* { box-sizing: border-box; }
-
-html { height: 100%; }
-
-body {
-    height: 96%;
-    font-family: arial, helvetica, sans-serif;
-    font-size: 12px;
-    margin: 0;
-    background: #fff;
-}
-
-#wrapper {
-    position: relative;
-    min-width: 200px;
-    min-height: 300px;
-    width: 98%;
-    height: 98%;
-    margin: auto;
-    padding: 0;
-    box-shadow: 0 0 25px rgba(159,159,159,0.8);
-}
-
-#header {
-    position: absolute;
-    top: 0;
-    width: 100%;
-    min-height: 85px;
-    margin: auto;
-    padding: 0;
-}
-
-#user-input {
-    width: auto;
-    height: auto;
-    margin: auto;
-    padding: 5px;
-    padding-top: 25px;
-    padding-right: 180px;
-}
-
-#content-main {
-    position: absolute;
-    top: 90px;
-    bottom: 50px;
-    width: 100%;
-    padding: 1px;
-}
-
-#plot {
-    position: absolute;
-    top: 0; bottom: 0; left: 0;
-    width: 70%;
-    overflow: hidden;
-}
-
-#sidebar {
-    position: absolute;
-    top: 0; bottom: 0; right: 0;
-    width: 29%;
-    display: flex;
-    flex-direction: column;
-    border-left: 1px solid #eee;
-}
-
-#descriptor-panel {
-    flex: 2;
-    overflow-y: auto;
-    padding: 8px 12px;
-    border-bottom: 1px solid #eee;
-}
-
-#footer {
-    position: absolute;
-    bottom: 0;
-    width: 100%;
-    height: 50px;
-    border-top: 1px solid #eee;
-    background: #fff;
-}
-
-#content-info {
-    width: auto;
-    padding: 10px;
-    float: left;
-    overflow: hidden;
-}
-
-#content-source {
-    width: auto;
-    padding: 10px;
-    float: right;
-    overflow: hidden;
-}
-
-#content-source a {
-    font-size: 14px;
-    font-weight: normal;
-    color: #53B2C8;
-    text-decoration: none;
-}
-
-.group {
-    position: relative;
-    margin-bottom: 5px;
-}
-
-.examples {
-    color: #999;
-    margin: 0;
-    padding-left: 15px;
-    font-size: 12px;
-    font-weight: normal;
-    font-family: 'Lucida Sans Unicode', sans-serif;
-}
-
-.examples a {
-    color: #53B2C8;
-    font-weight: bold;
-    text-decoration: none;
-    cursor: pointer;
-}
-
-.examples a:hover { text-decoration: underline; }
-
-input {
-    width: 100%;
-    font-size: 16px;
-    padding: 10px 10px 10px 5px;
-    display: block;
-    border: none;
-    border-bottom: 1px solid #757575;
-    background: transparent;
-}
-
-input:focus { outline: none; }
-
-input:focus ~ label, input:valid ~ label {
-    top: -15px;
-    font-size: 13px;
-    color: #5264AE;
-}
-
-label {
-    color: #999;
-    font-size: 16px;
-    font-weight: normal;
-    position: absolute;
-    pointer-events: none;
-    left: 5px;
-    top: 10px;
-    transition: 0.2s ease all;
-}
-
-.bar {
-    position: relative;
-    display: block;
-    width: 100%;
-}
-
-.bar::before, .bar::after {
-    content: '';
-    height: 2px;
-    width: 0;
-    bottom: 0;
-    position: absolute;
-    background: #5264AE;
-    transition: 0.2s ease all;
-}
-
-.bar::before { left: 50%; }
-.bar::after  { right: 50%; }
-
-input:focus ~ .bar::before,
-input:focus ~ .bar::after { width: 50%; }
-
-.highlight {
-    position: absolute;
-    height: 60%;
-    width: 100px;
-    top: 25%;
-    left: 0;
-    pointer-events: none;
-    opacity: 0.5;
-}
-
-input:focus ~ .highlight {
-    animation: inputHighlighter 0.3s ease;
-}
-
-@keyframes inputHighlighter {
-    from { background: #5264AE; }
-    to   { width: 0; background: transparent; }
-}
-
-.svg-plot {
-    width: 100%;
-    height: 100%;
-    display: block;
-}
-
-#plot,
-#plot * {
-    -webkit-user-select: none;
-    user-select: none;
-}
-
-/* ── Tooltip ─────────────────────────────────────────────────────────── */
-
-div.tooltip {
-    position: fixed;
-    text-align: left;
-    width: auto;
-    min-width: 120px;
-    height: auto;
-    padding: 6px 10px 8px;
-    font-size: 12px;
-    font-family: 'Lucida Sans Unicode', sans-serif;
-    background: white;
-    border: 1px solid #bbb;
-    border-radius: 6px;
-    box-shadow: 2px 3px 8px rgba(0,0,0,0.15);
-    pointer-events: none;
-    z-index: 100;
-}
-div.tooltip .tt-head {
-    font-size: 17px;
-    font-weight: bold;
-    margin-bottom: 5px;
-    border-bottom: 1px solid #eee;
-    padding-bottom: 3px;
-}
-div.tooltip table {
-    border-collapse: collapse;
-    width: 100%;
-}
-div.tooltip td {
-    padding: 1px 0;
-    vertical-align: top;
-}
-div.tooltip td:first-child {
-    color: #888;
-    padding-right: 10px;
-    white-space: nowrap;
-}
-
-/* ── Force-layout bond lines ─────────────────────────────────────────── */
-
-.link {
-    stroke: #696969;
-    stroke-linecap: round;
-}
-
-/* ── 2D-structure bond lines ─────────────────────────────────────────── */
-
-.bond {
-    stroke: #111;
-    stroke-linecap: round;
-    fill: none;
-}
-
-.bond-dashed { stroke-dasharray: 5, 3; }
-
-.atom-bg   { fill: none; stroke: none; }
-
-.atom-label {
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 14px;
-    font-weight: bold;
-    text-anchor: middle;
-    pointer-events: none;
-    user-select: none;
-}
-
-.atom-charge {
-    font-family: Arial, Helvetica, sans-serif;
-    font-size: 9px;
-    font-weight: bold;
-    pointer-events: none;
-    user-select: none;
-    dominant-baseline: auto;
-}
-
-.atom-hit {
-    fill: transparent;
-    stroke: none;
-    cursor: default;
-}
-
-/* ── Sidebar ─────────────────────────────────────────────────────────── */
-
-#descriptor-table,
-#pc-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-}
-
-#descriptor-table th,
-#pc-table th {
-    text-align: left;
-    color: #555;
-    font-size: 13px;
-    font-weight: 600;
-    border-bottom: 1px solid #ddd;
-    padding: 4px 2px;
-}
-
-#descriptor-table td,
-#pc-table td {
-    padding: 3px 2px;
-    border-bottom: 1px solid #f0f0f0;
-    color: #333;
-}
-
-#descriptor-table td:last-child,
-#pc-table td:last-child {
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-    color: #555;
-}
-
-#descriptor-tabs {
-    display: flex;
-    border-bottom: 1px solid #ddd;
-    margin-top: 6px;
-    margin-bottom: 4px;
-    gap: 2px;
-}
-
-.desc-tab {
-    flex: 1;
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    padding: 4px 4px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #999;
-    cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-}
-
-.desc-tab.active {
-    color: #333;
-    border-bottom-color: #333;
-}
-
-.desc-tab:hover:not(.active) {
-    color: #555;
-}
-
-#smarts-panel {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 12px;
-}
-
-#smarts-tabs {
-    display: flex;
-    border-bottom: 1px solid #ddd;
-    margin-top: 2px;
-    margin-bottom: 6px;
-    gap: 2px;
-}
-
-.smarts-tab {
-    flex: 1;
-    background: none;
-    border: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    padding: 4px 4px;
-    font-size: 11px;
-    font-weight: 600;
-    color: #999;
-    cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-}
-
-.smarts-tab.active {
-    color: #333;
-    border-bottom-color: #333;
-}
-
-.smarts-tab:hover:not(.active) {
-    color: #555;
-}
-
-.smarts-tab-panel {
-    min-height: 0;
-}
-
-#fg-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-}
-
-#fg-table td {
-    padding: 2px 4px;
-    border-bottom: 1px solid #f0f0f0;
-    color: #333;
-}
-
-#fg-table td:last-child {
-    text-align: right;
-    color: #777;
-    white-space: nowrap;
-}
-
-#fg-table tr {
-    cursor: pointer;
-}
-
-#fg-table tr:hover td {
-    background: #f0f0f0;
-}
-
-#fg-table tr.fg-active td {
-    background: rgba(80, 160, 40, 0.15);
-}
-
-#reaction-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-}
-
-#reaction-table td {
-    padding: 6px 4px;
-    border-bottom: 1px solid #f0f0f0;
-    color: #333;
-    vertical-align: top;
-}
-
-#reaction-table td:last-child {
-    width: 34px;
-    text-align: right;
-    white-space: nowrap;
-}
-
-#reaction-table tr:hover td {
-    background: #f7f7f7;
-}
-
-#reaction-table tr {
-    cursor: pointer;
-}
-
-#reaction-table tr.reaction-active td {
-    background: rgba(80, 160, 40, 0.15);
-}
-
-.reaction-name {
-    font-weight: 400;
-    color: #333;
-    margin-bottom: 2px;
-}
-
-.reaction-count {
-    color: #666;
-    font-variant-numeric: tabular-nums;
-}
-
-.reaction-nav {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    margin-top: 4px;
-}
-
-.reaction-site-label {
-    color: #666;
-    font-size: 11px;
-    min-width: 28px;
-    text-align: center;
-    font-variant-numeric: tabular-nums;
-}
-
-.reaction-nav-btn {
-    width: 22px;
-    height: 22px;
-    border: 1px solid #ccc;
-    border-radius: 11px;
-    background: #fff;
-    color: #555;
-    cursor: pointer;
-    font-size: 14px;
-    line-height: 1;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-}
-
-.reaction-nav-btn:hover {
-    background: #f0f0f0;
-    color: #333;
-}
-
-
-#molecularFormula {
-    font-size: 14px;
-    font-weight: bold;
-    color: #333;
-    display: inline-block;
-}
-
-#molecularWeight {
-    font-size: 13px;
-    color: #777;
-    display: inline-block;
-    margin-left: 10px;
-}
-
-/* ── Plot overlay controls ───────────────────────────────────────────── */
-
-#toggle-controls {
-    position: absolute;
-    top: 10px;
-    right: 10px;
-    z-index: 10;
-}
-
-#toggle-btn {
-    height: 30px;
-    padding: 0 12px;
-    border: 1px solid #ccc;
-    border-radius: 15px;
-    background: #fff;
-    cursor: pointer;
-    font-size: 12px;
-    font-family: arial, helvetica, sans-serif;
-    color: #555;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-    transition: background 0.15s, color 0.15s;
-    white-space: nowrap;
-}
-
-#toggle-btn:hover {
-    background: #f0f0f0;
-    color: #333;
-}
-
-#undo-controls {
-    position: absolute;
-    top: 48px;
-    right: 10px;
-    z-index: 10;
-    display: flex;
-    gap: 4px;
-}
-
-#undo-btn, #redo-btn {
-    width: 32px;
-    height: 32px;
-    border: 1px solid #ccc;
-    border-radius: 50%;
-    background: #fff;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-    transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
-    padding: 0;
-    color: #555;
-}
-
-#undo-btn:hover:not(:disabled), #redo-btn:hover:not(:disabled) {
-    background: #f0f0f0;
-    color: #333;
-}
-
-#undo-btn:disabled, #redo-btn:disabled {
-    opacity: 0.35;
-    cursor: default;
-}
-
-#atom-selector {
-    position: absolute;
-    top: 88px;
-    right: 10px;
-    z-index: 10;
-    display: flex;
-    flex-direction: column;
-    gap: 4px;
-}
-
-#atom-selector button {
-    width: 32px;
-    height: 32px;
-    border: 1px solid #ccc;
-    border-radius: 50%;
-    background: #fff;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-    transition: background 0.15s, border-color 0.15s;
-    padding: 0;
-    font-size: 13px;
-    font-weight: bold;
-}
-
-#atom-selector button:hover { background: #f0f0f0; }
-
-#elem-btn-C        { color: #333333; }
-#elem-btn-C.active { background: #e8e8e8; border-color: #333333; }
-#elem-btn-N        { color: #3050F8; }
-#elem-btn-N.active { background: #e6eaff; border-color: #3050F8; }
-#elem-btn-O        { color: #FF0D0D; }
-#elem-btn-O.active { background: #ffe8e8; border-color: #FF0D0D; }
-#elem-btn-S        { color: #C8A000; }
-#elem-btn-S.active { background: #fdf8d8; border-color: #C8A000; }
-#elem-btn-P        { color: #FF8000; }
-#elem-btn-P.active { background: #fff0e0; border-color: #FF8000; }
-#elem-btn-F        { color: #6ab52a; }
-#elem-btn-F.active { background: #f2fce4; border-color: #6ab52a; }
-#elem-btn-Cl       { color: #18b018; }
-#elem-btn-Cl.active { background: #e0fce0; border-color: #18b018; }
-#elem-btn-Br       { color: #A62929; }
-#elem-btn-Br.active { background: #fce8e8; border-color: #A62929; }
-#elem-btn-I        { color: #940094; }
-#elem-btn-I.active { background: #f8e0f8; border-color: #940094; }
-
-#rotate-controls {
-    position: absolute;
-    bottom: 10px;
-    right: 10px;
-    display: flex;
-    gap: 4px;
-    z-index: 10;
-}
-
-#force-controls {
-    position: absolute;
-    bottom: 10px;
-    right: 10px;
-    display: none;
-    z-index: 10;
-    gap: 4px;
-}
-
-#force-controls button {
-    height: 32px;
-    padding: 0 12px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    background: #fff;
-    cursor: pointer;
-    font-size: 12px;
-    font-family: arial, helvetica, sans-serif;
-    transition: background 0.15s;
-}
-
-#force-controls button:hover { background: #f0f0f0; }
-
-#label-toggle.active {
-    background: #5090f0;
-    color: #fff;
-    border-color: #3060c0;
-}
-
-#label-toggle.active:hover {
-    background: #4080e0;
-}
-
-.svg-plot.labels-hidden .atom-symbol { display: none; }
-
-#rotate-controls button {
-    width: 32px;
-    height: 32px;
-    border: 1px solid #ccc;
-    border-radius: 50%;
-    background: #fff;
-    cursor: pointer;
-    font-size: 17px;
-    color: #555;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-    transition: background 0.15s;
-    padding: 0;
-}
-
-#rotate-controls button:hover {
-    background: #f0f0f0;
-    color: #333;
-}
-
-#rotate-controls #copy-svg-btn,
-#rotate-controls #save-png-btn {
-    font-size: 9px;
-    font-weight: bold;
-}
-
-#clean-controls {
-    position: absolute;
-    bottom: 10px;
-    left: 10px;
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    z-index: 10;
-}
-
-#clean-controls button {
-    width: 32px;
-    height: 32px;
-    border: 1px solid #ccc;
-    border-radius: 50%;
-    background: #fff;
-    cursor: pointer;
-    font-size: 16px;
-    color: #555;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
-    padding: 0;
-}
-
-#clean-controls button:hover {
-    background: #f0f0f0;
-    color: #333;
-}
-
-#pan-mode-btn.active,
-#select-mode-btn.active {
-    background: #5090f0;
-    color: #fff;
-    border-color: #3060c0;
-}
-
-#pan-mode-btn.active:hover,
-#select-mode-btn.active:hover {
-    background: #4080e0;
-}
-
-#erase-btn.active {
-    background: #5090f0;
-    color: #fff;
-    border-color: #3070d0;
-}
-#erase-btn.active:hover {
-    background: #4080e0;
-}
-
-#erase-cursor {
-    position: fixed;
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background: rgba(220, 50, 50, 0.25);
-    border: 2px solid rgba(200, 30, 30, 0.6);
-    pointer-events: none;
-    transform: translate(-50%, -50%);
-    display: none;
-    z-index: 9999;
-}
-
-#draw-tools {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    z-index: 10;
-}
-
-#draw-tools button {
-    width: 32px;
-    height: 32px;
-    border: 1px solid #ccc;
-    border-radius: 50%;
-    background: #fff;
-    cursor: pointer;
-    font-size: 16px;
-    color: #555;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-    transition: background 0.15s, color 0.15s, border-color 0.15s;
-    padding: 0;
-}
-
-#draw-tools button:hover {
-    background: #f0f0f0;
-    color: #333;
-}
-
-#draw-bond-btn.active {
-    background: #5090f0;
-    color: #fff;
-    border-color: #3060c0;
-}
-
-#draw-bond-btn.active:hover {
-    background: #4080e0;
-}
-
-#force-controls #copy-force-png-btn {
-    width: 32px;
-    height: 32px;
-    padding: 0;
-    border-radius: 50%;
-    font-size: 9px;
-    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
-    font-weight: bold;
-    color: #555;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
-}
-
-#force-controls #copy-force-png-btn:hover {
-    color: #333;
-}
-
-/* ── Format toggle (SMILES / InChI) ─────────────────────────────────── */
-
-#format-toggle {
-    position: absolute;
-    top: 14px;
-    right: 12px;
-    display: flex;
-    z-index: 2;
-    border: 1px solid #ccc;
-    border-radius: 28px;
-    overflow: hidden;
-}
-
-#format-toggle button {
-    padding: 8px 18px;
-    border: none;
-    background: #fff;
-    color: #999;
-    cursor: pointer;
-    font-size: 14px;
-    font-family: arial, helvetica, sans-serif;
-    transition: background 0.15s, color 0.15s;
-}
-
-#format-toggle button.active {
-    background: #5264AE;
-    color: #fff;
-}
-
-#format-toggle button:hover:not(.active) {
-    background: #f0f0f0;
-    color: #555;
-}
-
-</style>
 </head>
 
 <body>
@@ -1250,21 +383,12 @@ import {
     centerReaction2dPairCoords as centerReaction2dPairCoordsShared,
 } from './src/layout/reaction2d.js';
 import { molecularFormula, molecularMass } from './src/descriptors/molecular.js';
-import { allMatrices }      from './src/matrices/index.js';
 import { reactionTemplates, applySMIRKS } from './src/smirks/index.js';
 import * as mol2dHelpers from './src/layout/mol2d-helpers.js';
-import {
-    wienerIndex, hyperWienerIndex, balabanIndex,
-    randicIndex, zagreb1, zagreb2, hararyIndex,
-    plattIndex, szegedIndex
-} from './src/descriptors/topological.js';
 import { findSMARTS, functionalGroups, parseSMARTS } from './src/smarts/index.js';
-import {
-    logP, tpsa, hBondDonors, hBondAcceptors,
-    rotatableBondCount, fsp3, lipinskiRuleOfFive,
-    molarRefractivity, ringCount, aromaticRingCount,
-    stereocenters, veberRules, qed
-} from './src/descriptors/physicochemical.js';
+import { updateDescriptors, updatePhysicochemical } from './src/app/ui/descriptors.js';
+import { initUndo, takeSnapshot as _takeSnapshot, clearHistory as _clearUndoHistory, undoAction, redoAction } from './src/app/core/undo.js';
+import { initExport, copyForcePng, copySvg2d, savePng2d } from './src/app/ui/export.js';
 
 const {
     atomColor, WEDGE_HALF_W, WEDGE_DASHES,
@@ -1400,6 +524,90 @@ function _clearReactionPreviewState() {
     _reactionPreviewForcedStereoBondCenters = new Map();
 }
 
+function _serializeSnapshotMol(mol) {
+    if (!mol) return null;
+    const atoms = [];
+    for (const [id, atom] of mol.atoms) {
+        atoms.push({
+            id,
+            name: atom.name,
+            x: atom.x,
+            y: atom.y,
+            visible: atom.visible,
+            properties: JSON.parse(JSON.stringify(atom.properties)),
+        });
+    }
+    const bonds = [];
+    for (const [id, bond] of mol.bonds) {
+        bonds.push({
+            id,
+            atoms: [...bond.atoms],
+            properties: JSON.parse(JSON.stringify(bond.properties)),
+        });
+    }
+    return { atoms, bonds };
+}
+
+function _deserializeSnapshotMol(data) {
+    if (!data) return null;
+    const mol = new Molecule();
+    for (const ad of data.atoms ?? []) {
+        const atom = mol.addAtom(ad.id, ad.name, { ...ad.properties });
+        atom.x = ad.x;
+        atom.y = ad.y;
+        if (ad.visible !== undefined) atom.visible = ad.visible;
+        Object.assign(atom.properties, ad.properties);
+    }
+    for (const bd of data.bonds ?? []) {
+        mol.addBond(bd.id, bd.atoms[0], bd.atoms[1], { ...bd.properties }, false);
+        Object.assign(mol.bonds.get(bd.id).properties, bd.properties);
+    }
+    return mol;
+}
+
+function _captureReactionPreviewSnapshot() {
+    if (!_hasReactionPreview() || !_reactionPreviewSourceMol) return null;
+    return {
+        sourceMol: _serializeSnapshotMol(_reactionPreviewSourceMol),
+        activeReactionSmirks: _activeReactionSmirks,
+        activeReactionMatchIndex: _activeReactionMatchIndex,
+        reactionPreviewLocked: _reactionPreviewLocked,
+        reactantAtomIds: [..._reactionPreviewReactantAtomIds],
+        productAtomIds: [..._reactionPreviewProductAtomIds],
+        productComponentAtomIdSets: (_reactionPreviewProductComponentAtomIdSets ?? []).map(set => [...set]),
+        mappedAtomPairs: [...(_reactionPreviewMappedAtomPairs ?? [])],
+        editedProductAtomIds: [..._reactionPreviewEditedProductAtomIds],
+        preservedReactantStereoByCenter: [..._reactionPreviewPreservedReactantStereoByCenter],
+        preservedReactantStereoBondTypes: [..._reactionPreviewPreservedReactantStereoBondTypes],
+        preservedProductStereoByCenter: [..._reactionPreviewPreservedProductStereoByCenter],
+        preservedProductStereoBondTypes: [..._reactionPreviewPreservedProductStereoBondTypes],
+        forcedStereoByCenter: [..._reactionPreviewForcedStereoByCenter],
+        forcedStereoBondTypes: [..._reactionPreviewForcedStereoBondTypes],
+        forcedStereoBondCenters: [..._reactionPreviewForcedStereoBondCenters],
+    };
+}
+
+function _restoreReactionPreviewSnapshot(previewSnap) {
+    _clearReactionPreviewState();
+    if (!previewSnap) return;
+    _reactionPreviewSourceMol = _deserializeSnapshotMol(previewSnap.sourceMol);
+    _activeReactionSmirks = previewSnap.activeReactionSmirks ?? null;
+    _activeReactionMatchIndex = previewSnap.activeReactionMatchIndex ?? 0;
+    _reactionPreviewLocked = !!previewSnap.reactionPreviewLocked;
+    _reactionPreviewReactantAtomIds = new Set(previewSnap.reactantAtomIds ?? []);
+    _reactionPreviewProductAtomIds = new Set(previewSnap.productAtomIds ?? []);
+    _reactionPreviewProductComponentAtomIdSets = (previewSnap.productComponentAtomIdSets ?? []).map(atomIds => new Set(atomIds));
+    _reactionPreviewMappedAtomPairs = previewSnap.mappedAtomPairs ?? [];
+    _reactionPreviewEditedProductAtomIds = new Set(previewSnap.editedProductAtomIds ?? []);
+    _reactionPreviewPreservedReactantStereoByCenter = new Map(previewSnap.preservedReactantStereoByCenter ?? []);
+    _reactionPreviewPreservedReactantStereoBondTypes = new Map(previewSnap.preservedReactantStereoBondTypes ?? []);
+    _reactionPreviewPreservedProductStereoByCenter = new Map(previewSnap.preservedProductStereoByCenter ?? []);
+    _reactionPreviewPreservedProductStereoBondTypes = new Map(previewSnap.preservedProductStereoBondTypes ?? []);
+    _reactionPreviewForcedStereoByCenter = new Map(previewSnap.forcedStereoByCenter ?? []);
+    _reactionPreviewForcedStereoBondTypes = new Map(previewSnap.forcedStereoBondTypes ?? []);
+    _reactionPreviewForcedStereoBondCenters = new Map(previewSnap.forcedStereoBondCenters ?? []);
+}
+
 function _cloneWithPrefixedIds(mol, prefix) {
     const cloned = new Molecule();
     for (const atom of mol.atoms.values()) {
@@ -1469,6 +677,54 @@ function _reaction2dProductGeometries(items, opts = {}) {
     return (_reactionPreviewProductComponentAtomIdSets ?? [])
         .map(atomIds => _reaction2dArrowGeometryPreferHeavy(items, atomIds, opts))
         .filter(Boolean);
+}
+
+function _reaction2dArrowEndpoints(reactant, product, pad = 0.45) {
+    if (!reactant || !product) return null;
+    const dx = product.cx - reactant.cx;
+    const dy = product.cy - reactant.cy;
+    const distance = Math.hypot(dx, dy);
+    if (distance < 1e-6) return null;
+
+    const ux = dx / distance;
+    const uy = dy / distance;
+    const reactantHalfWidth = Math.max(0, (reactant.maxX - reactant.minX) / 2);
+    const reactantHalfHeight = Math.max(0, (reactant.maxY - reactant.minY) / 2);
+    const productHalfWidth = Math.max(0, (product.maxX - product.minX) / 2);
+    const productHalfHeight = Math.max(0, (product.maxY - product.minY) / 2);
+    const reactantTx = Math.abs(ux) > 1e-6 ? reactantHalfWidth / Math.abs(ux) : Infinity;
+    const reactantTy = Math.abs(uy) > 1e-6 ? reactantHalfHeight / Math.abs(uy) : Infinity;
+    const productTx = Math.abs(ux) > 1e-6 ? productHalfWidth / Math.abs(ux) : Infinity;
+    const productTy = Math.abs(uy) > 1e-6 ? productHalfHeight / Math.abs(uy) : Infinity;
+    const reactantEdge = Math.min(reactantTx, reactantTy);
+    const productEdge = Math.min(productTx, productTy);
+    if (!Number.isFinite(reactantEdge) || !Number.isFinite(productEdge)) return null;
+
+    const start = {
+        x: reactant.cx + ux * (reactantEdge + pad),
+        y: reactant.cy + uy * (reactantEdge + pad),
+    };
+    const end = {
+        x: product.cx - ux * (productEdge + pad),
+        y: product.cy - uy * (productEdge + pad),
+    };
+    const edgeDistance = Math.hypot(end.x - start.x, end.y - start.y);
+    if (edgeDistance >= 0.35) {
+        return { start, end, ux, uy };
+    }
+
+    const inset = Math.max(0.12, Math.min(distance * 0.22, Math.max(pad, 0.8)));
+    if (distance <= inset * 2 + 1e-6) return null;
+    const fallbackStart = {
+        x: reactant.cx + ux * inset,
+        y: reactant.cy + uy * inset,
+    };
+    const fallbackEnd = {
+        x: product.cx - ux * inset,
+        y: product.cy - uy * inset,
+    };
+    if (Math.hypot(fallbackEnd.x - fallbackStart.x, fallbackEnd.y - fallbackStart.y) < 0.35) return null;
+    return { start: fallbackStart, end: fallbackEnd, ux, uy };
 }
 
 function _centerReaction2dPairCoords(mol, bondLength = 1.5) {
@@ -1899,19 +1155,22 @@ function _drawReactionPreviewArrow2d(toSVGPt, atoms) {
     if (_reactionPreviewReactantAtomIds.size === 0 || _reactionPreviewProductAtomIds.size === 0) return;
     const reactant = _reaction2dArrowGeometryPreferHeavy(atoms, _reactionPreviewReactantAtomIds);
     const product = _reaction2dArrowGeometryPreferHeavy(atoms, _reactionPreviewProductAtomIds);
-    if (!reactant || !product || !(product.cx > reactant.cx)) return;
-
-    let start = toSVGPt({ x: reactant.maxX, y: reactant.cy });
-    let end = toSVGPt({ x: product.minX, y: product.cy });
-    if (!(end.x > start.x + 12)) {
-        start = toSVGPt({ x: reactant.cx + 0.5, y: reactant.cy });
-        end = toSVGPt({ x: product.cx - 0.5, y: product.cy });
-    }
-    const midY = (start.y + end.y) / 2;
-    const pad = 26;
-    const x1 = start.x + pad;
-    const x2 = end.x - pad;
-    if (!(x2 > x1 + 12)) return;
+    const arrow = _reaction2dArrowEndpoints(reactant, product);
+    if (!arrow) return;
+    const start = toSVGPt(arrow.start);
+    const end = toSVGPt(arrow.end);
+    const arrowHeadLength = 10;
+    const arrowHeadWidth = 6;
+    const x1 = start.x;
+    const y1 = start.y;
+    const x2 = end.x;
+    const y2 = end.y;
+    const lineLength = Math.hypot(x2 - x1, y2 - y1);
+    if (lineLength < 12) return;
+    const ux = (x2 - x1) / lineLength;
+    const uy = (y2 - y1) / lineLength;
+    const px = -uy;
+    const py = ux;
 
     const arrowLayer = g.append('g')
         .attr('class', 'reaction-preview-arrow')
@@ -1919,14 +1178,14 @@ function _drawReactionPreviewArrow2d(toSVGPt, atoms) {
         .attr('opacity', 0.8);
     arrowLayer.append('line')
         .attr('x1', x1)
-        .attr('y1', midY)
+        .attr('y1', y1)
         .attr('x2', x2)
-        .attr('y2', midY)
+        .attr('y2', y2)
         .attr('stroke', '#444')
         .attr('stroke-width', 2.5)
         .attr('stroke-linecap', 'round');
     arrowLayer.append('path')
-        .attr('d', `M ${x2 - 10} ${midY - 6} L ${x2} ${midY} L ${x2 - 10} ${midY + 6}`)
+        .attr('d', `M ${x2 - ux * arrowHeadLength + px * arrowHeadWidth} ${y2 - uy * arrowHeadLength + py * arrowHeadWidth} L ${x2} ${y2} L ${x2 - ux * arrowHeadLength - px * arrowHeadWidth} ${y2 - uy * arrowHeadLength - py * arrowHeadWidth}`)
         .attr('fill', 'none')
         .attr('stroke', '#444')
         .attr('stroke-width', 2.5)
@@ -1962,17 +1221,20 @@ function _renderReactionPreviewArrowForce(nodes) {
         radiusForItem: node => atomRadius(node.protons),
         hydrogenRadiusScale: 0.75,
     });
-    if (!reactant || !product || !(product.cx > reactant.cx)) return;
-
-    const midY = (reactant.cy + product.cy) / 2;
-    const pad = 26;
-    let x1 = reactant.maxX + pad;
-    let x2 = product.minX - pad;
-    if (!(x2 > x1 + 14)) {
-        x1 = reactant.cx + 16;
-        x2 = product.cx - 16;
-    }
-    if (!(x2 > x1 + 14)) return;
+    const arrow = _reaction2dArrowEndpoints(reactant, product, 16);
+    if (!arrow) return;
+    const x1 = arrow.start.x;
+    const y1 = arrow.start.y;
+    const x2 = arrow.end.x;
+    const y2 = arrow.end.y;
+    const lineLength = Math.hypot(x2 - x1, y2 - y1);
+    if (lineLength < 14) return;
+    const ux = (x2 - x1) / lineLength;
+    const uy = (y2 - y1) / lineLength;
+    const px = -uy;
+    const py = ux;
+    const arrowHeadLength = 10;
+    const arrowHeadWidth = 6;
 
     const arrowLayer = g.append('g')
         .attr('class', 'reaction-preview-arrow')
@@ -1980,14 +1242,14 @@ function _renderReactionPreviewArrowForce(nodes) {
         .attr('opacity', 0.8);
     arrowLayer.append('line')
         .attr('x1', x1)
-        .attr('y1', midY)
+        .attr('y1', y1)
         .attr('x2', x2)
-        .attr('y2', midY)
+        .attr('y2', y2)
         .attr('stroke', '#444')
         .attr('stroke-width', 2.5)
         .attr('stroke-linecap', 'round');
     arrowLayer.append('path')
-        .attr('d', `M ${x2 - 10} ${midY - 6} L ${x2} ${midY} L ${x2 - 10} ${midY + 6}`)
+        .attr('d', `M ${x2 - ux * arrowHeadLength + px * arrowHeadWidth} ${y2 - uy * arrowHeadLength + py * arrowHeadWidth} L ${x2} ${y2} L ${x2 - ux * arrowHeadLength - px * arrowHeadWidth} ${y2 - uy * arrowHeadLength - py * arrowHeadWidth}`)
         .attr('fill', 'none')
         .attr('stroke', '#444')
         .attr('stroke-width', 2.5)
@@ -4093,75 +3355,6 @@ function _syncInputField(mol) {
 // ---------------------------------------------------------------------------
 // Undo / Redo history
 // ---------------------------------------------------------------------------
-let _undoStack = [];
-let _redoStack = [];
-const _UNDO_MAX = 50;
-
-function _makeSnapshot() {
-    const mol = mode === 'force' ? currentMol : _mol2d;
-    let snap;
-    if (!mol) {
-        snap = { empty: true, mode };
-    } else {
-        const atoms = [];
-        for (const [id, atom] of mol.atoms) {
-            atoms.push({
-                id,
-                name: atom.name,
-                x: atom.x,
-                y: atom.y,
-                visible: atom.visible,
-                properties: JSON.parse(JSON.stringify(atom.properties))
-            });
-        }
-        const bonds = [];
-        for (const [id, bond] of mol.bonds) {
-            bonds.push({
-                id,
-                atoms: [...bond.atoms],
-                properties: JSON.parse(JSON.stringify(bond.properties))
-            });
-        }
-        snap = { mode, atoms, bonds };
-        if (mode === '2d') {
-            snap.cx2d = _cx2d;
-            snap.cy2d = _cy2d;
-            snap.hCounts2d = _hCounts2d ? [..._hCounts2d] : [];
-            snap.stereoMap2d = _stereoMap2d ? [..._stereoMap2d] : null;
-        } else {
-            snap.nodePositions = simulation.nodes().map(n => ({
-                id: n.id,
-                x: n.x,
-                y: n.y,
-                vx: n.vx,
-                vy: n.vy,
-                anchorX: n.anchorX,
-                anchorY: n.anchorY,
-            }));
-        }
-    }
-    return snap;
-}
-
-function _takeSnapshot({ clearReactionPreview = true } = {}) {
-    if (clearReactionPreview) _clearReactionPreviewState();
-    const snap = _makeSnapshot();
-    if (_undoStack.length >= _UNDO_MAX) _undoStack.shift();
-    _undoStack.push(snap);
-    _redoStack = [];
-    _updateUndoBtn();
-    _updateRedoBtn();
-}
-
-function _updateUndoBtn() {
-    const btn = document.getElementById('undo-btn');
-    if (btn) btn.disabled = _undoStack.length === 0;
-}
-
-function _updateRedoBtn() {
-    const btn = document.getElementById('redo-btn');
-    if (btn) btn.disabled = _redoStack.length === 0;
-}
 
 function _restoreSnapshot(snap) {
     _clearReactionPreviewState();
@@ -4202,6 +3395,7 @@ function _restoreSnapshot(snap) {
     _selectedBondIds.clear();
 
     if (snap.mode === '2d') {
+        _restoreReactionPreviewSnapshot(snap.reactionPreview ?? null);
         _mol2d = mol;
         _cx2d = snap.cx2d ?? 0;
         _cy2d = snap.cy2d ?? 0;
@@ -4209,6 +3403,7 @@ function _restoreSnapshot(snap) {
         _stereoMap2d = snap.stereoMap2d ? new Map(snap.stereoMap2d) : new Map();
         if (mode === '2d') draw2d();
     } else {
+        _restoreReactionPreviewSnapshot(snap.reactionPreview ?? null);
         currentMol = mol;
         if (mode === 'force') {
             updateForce(mol, { preservePositions: true, preserveView: true });
@@ -4237,27 +3432,29 @@ function _restoreSnapshot(snap) {
     _syncInputField(mol);
 }
 
-window.undoAction = function undoAction() {
-    if (_undoStack.length === 0) return;
-    const redoSnap = _makeSnapshot();
-    if (_redoStack.length >= _UNDO_MAX) _redoStack.shift();
-    _redoStack.push(redoSnap);
-    _updateRedoBtn();
-    const snap = _undoStack.pop();
-    _updateUndoBtn();
-    _restoreSnapshot(snap);
-};
+// Undo/redo — logic lives in src/app/core/undo.js
+initUndo({
+    get mode()         { return mode; },
+    get currentMol()   { return currentMol; },
+    get _mol2d()       { return _mol2d; },
+    get _cx2d()        { return _cx2d; },
+    get _cy2d()        { return _cy2d; },
+    get _hCounts2d()   { return _hCounts2d; },
+    get _stereoMap2d() { return _stereoMap2d; },
+    get simulation()   { return simulation; },
+    getReactionPreviewSnapshot: () => _captureReactionPreviewSnapshot(),
+    clearReactionPreviewState: () => _clearReactionPreviewState(),
+    restoreReactionPreviewSnapshot: snap => _restoreReactionPreviewSnapshot(snap),
+    restoreSnapshot:           snap => _restoreSnapshot(snap),
+});
+window.undoAction = undoAction;
+window.redoAction = redoAction;
 
-window.redoAction = function redoAction() {
-    if (_redoStack.length === 0) return;
-    const undoSnap = _makeSnapshot();
-    if (_undoStack.length >= _UNDO_MAX) _undoStack.shift();
-    _undoStack.push(undoSnap);
-    _updateUndoBtn();
-    const snap = _redoStack.pop();
-    _updateRedoBtn();
-    _restoreSnapshot(snap);
-};
+// Export — logic lives in src/app/ui/export.js
+initExport({ g, simulation, atomRadius, get _mol2d() { return _mol2d; } });
+window.copyForcePng = copyForcePng;
+window.copySvg2d    = copySvg2d;
+window.savePng2d    = savePng2d;
 
 function _getConnectedComponentAtomIds(mol, seedAtomIds) {
     const componentAtomIds = new Set();
@@ -5827,159 +5024,6 @@ function fitCurrent2dView() {
     svg.call(zoom.transform, d3.zoomIdentity.translate(fitTx, fitTy).scale(fitScale));
 }
 
-// ---------------------------------------------------------------------------
-// Shared helper: build molecule SVG element from current 2D state
-// ---------------------------------------------------------------------------
-function _buildMolSvg(withWhiteBg) {
-    const PAD  = 30;
-    const bbox = g.node().getBBox();
-    if (!bbox.width && !bbox.height) return null;
-
-    const vbX = bbox.x - PAD,  vbY = bbox.y - PAD;
-    const vbW = bbox.width  + PAD * 2;
-    const vbH = bbox.height + PAD * 2;
-
-    const ns    = 'http://www.w3.org/2000/svg';
-    const svgEl = document.createElementNS(ns, 'svg');
-    svgEl.setAttribute('xmlns', ns);
-    svgEl.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
-    svgEl.setAttribute('width',  vbW);
-    svgEl.setAttribute('height', vbH);
-
-    if (withWhiteBg) {
-        const bgRect = document.createElementNS(ns, 'rect');
-        bgRect.setAttribute('x', vbX);       bgRect.setAttribute('y', vbY);
-        bgRect.setAttribute('width', vbW);   bgRect.setAttribute('height', vbH);
-        bgRect.setAttribute('fill', 'white');
-        svgEl.appendChild(bgRect);
-    }
-
-    const styleEl = document.createElementNS(ns, 'style');
-    styleEl.textContent = [
-        'line{stroke:#333;stroke-width:1.6px;stroke-linecap:round;fill:none}',
-        '.bond-dashed{stroke-dasharray:5,3}',
-        `.atom-bg{fill:${withWhiteBg ? 'white' : 'none'};stroke:none}`,
-        '.atom-hit{display:none}',
-        '.atom-label{font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold}',
-        '.atom-charge{font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:bold}',
-    ].join(' ');
-    svgEl.appendChild(styleEl);
-
-    const gClone = g.node().cloneNode(true);
-    gClone.removeAttribute('transform');
-    svgEl.appendChild(gClone);
-
-    return svgEl;
-}
-
-// Render SVG → canvas → PNG blob Promise (for ClipboardItem)
-function _svgToPngBlob(svgEl, scale = 2) {
-    const w = parseFloat(svgEl.getAttribute('width'));
-    const h = parseFloat(svgEl.getAttribute('height'));
-    const svgStr = new XMLSerializer().serializeToString(svgEl);
-    const url = URL.createObjectURL(new Blob([svgStr], { type: 'image/svg+xml' }));
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        img.onload = () => {
-            const canvas = document.createElement('canvas');
-            canvas.width  = w * scale;
-            canvas.height = h * scale;
-            const ctx = canvas.getContext('2d');
-            ctx.scale(scale, scale);
-            ctx.drawImage(img, 0, 0);
-            URL.revokeObjectURL(url);
-            canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob')), 'image/png');
-        };
-        img.onerror = reject;
-        img.src = url;
-    });
-}
-
-// ---------------------------------------------------------------------------
-// Copy force layout as PNG (white background)
-// ---------------------------------------------------------------------------
-window.copyForcePng = function() {
-    const PAD   = 30;
-    const nodes = simulation.nodes();
-    if (!nodes.length) return;
-
-    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-    for (const n of nodes) {
-        const r = atomRadius(n.protons);
-        if (n.x - r < minX) minX = n.x - r;
-        if (n.x + r > maxX) maxX = n.x + r;
-        if (n.y - r < minY) minY = n.y - r;
-        if (n.y + r > maxY) maxY = n.y + r;
-    }
-
-    const vbX = minX - PAD, vbY = minY - PAD;
-    const vbW = (maxX - minX) + PAD * 2;
-    const vbH = (maxY - minY) + PAD * 2;
-
-    const ns    = 'http://www.w3.org/2000/svg';
-    const svgEl = document.createElementNS(ns, 'svg');
-    svgEl.setAttribute('xmlns', ns);
-    svgEl.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
-    svgEl.setAttribute('width',  vbW);
-    svgEl.setAttribute('height', vbH);
-
-    const bgRect = document.createElementNS(ns, 'rect');
-    bgRect.setAttribute('x', vbX); bgRect.setAttribute('y', vbY);
-    bgRect.setAttribute('width', vbW); bgRect.setAttribute('height', vbH);
-    bgRect.setAttribute('fill', 'white');
-    svgEl.appendChild(bgRect);
-
-    const styleEl = document.createElementNS(ns, 'style');
-    styleEl.textContent = [
-        '.link{stroke:#696969;stroke-linecap:round;fill:none}',
-        '.atom-symbol,.charge-label{font-family:Arial,Helvetica,sans-serif;font-weight:bold}',
-        '.atom-symbol{font-size:9px;text-anchor:middle;dominant-baseline:central}',
-        '.charge-label{font-size:11px}',
-    ].join(' ');
-    svgEl.appendChild(styleEl);
-
-    const gClone = g.node().cloneNode(true);
-    gClone.removeAttribute('transform');
-    if (document.querySelector('.svg-plot').classList.contains('labels-hidden')) {
-        gClone.querySelectorAll('.atom-symbol, .charge-label').forEach(el => el.remove());
-    }
-    svgEl.appendChild(gClone);
-
-    const btn   = document.getElementById('copy-force-png-btn');
-    const reset = () => { btn.textContent = 'PNG'; btn.style.fontSize = ''; btn.style.fontWeight = ''; };
-    navigator.clipboard.write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
-        .then(() => { btn.textContent = '✓'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); })
-        .catch(() => { btn.textContent = '✗'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); });
-};
-
-// ---------------------------------------------------------------------------
-// Copy 2D layout as PNG with white background (SVG button)
-// ---------------------------------------------------------------------------
-window.copySvg2d = function() {
-    if (!_mol2d) return;
-    const svgEl = _buildMolSvg(true);
-    if (!svgEl) return;
-
-    const btn   = document.getElementById('copy-svg-btn');
-    const reset = () => { btn.textContent = 'SVG'; btn.style.fontSize = ''; btn.style.fontWeight = ''; };
-    navigator.clipboard.write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
-        .then(() => { btn.textContent = '✓'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); })
-        .catch(() => { btn.textContent = '✗'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); });
-};
-
-// Copy 2D layout as PNG (transparent background, 2× resolution)
-// ---------------------------------------------------------------------------
-window.savePng2d = function() {
-    if (!_mol2d) return;
-    const svgEl = _buildMolSvg(false);
-    if (!svgEl) return;
-
-    const btn   = document.getElementById('save-png-btn');
-    const reset = () => { btn.textContent = 'PNG'; btn.style.fontSize = ''; btn.style.fontWeight = ''; };
-    navigator.clipboard.write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
-        .then(() => { btn.textContent = '✓'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); })
-        .catch(() => { btn.textContent = '✗'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500); });
-};
 
 // Mode toggle
 // ---------------------------------------------------------------------------
@@ -6183,7 +5227,7 @@ function stopRotate() {
 function startRotate(delta) {
     stopRotate();
     if (mode !== '2d' || !_mol2d) return;
-    _takeSnapshot();
+    _takeSnapshot({ clearReactionPreview: false });
     const step = () => {
         const allAtoms = [..._mol2d.atoms.values()].filter(a => a.x != null);
         if (!allAtoms.length) return;
@@ -6205,18 +5249,25 @@ function startRotate(delta) {
         _cx2d = _cx;
         _cy2d = _cy;
 
-        // Keep the molecule fitting the viewport — zoom out when it grows wider
-        // during rotation, zoom back in when it returns to a narrower orientation.
         const W = plotEl.clientWidth  || 600;
         const H = plotEl.clientHeight || 400;
-        const PAD = 40;
+        const PAD = _hasReactionPreview() ? 12 : 18;
+        const pads = _viewportFitPadding(PAD);
         const molSVGW = (maxX - minX) * SCALE || 1;
         const molSVGH = (maxY - minY) * SCALE || 1;
-        const neededScale = Math.min((W - PAD * 2) / molSVGW, (H - PAD * 2) / molSVGH, 1);
+        const fitCap = _hasReactionPreview() ? 1.28 : 1;
+        const neededScale = Math.min(
+            (Math.max(1, W - pads.left - pads.right)) / molSVGW,
+            (Math.max(1, H - pads.top - pads.bottom)) / molSVGH,
+            fitCap
+        );
         const currentScale = d3.zoomTransform(svg.node()).k;
         if (Math.abs(neededScale - currentScale) > 0.001) {
             svg.call(zoom.transform, d3.zoomIdentity
-                .translate(W / 2 * (1 - neededScale), H / 2 * (1 - neededScale))
+                .translate(
+                    pads.left + (Math.max(1, W - pads.left - pads.right)) / 2 - (W / 2) * neededScale,
+                    pads.top + (Math.max(1, H - pads.top - pads.bottom)) / 2 - (H / 2) * neededScale
+                )
                 .scale(neededScale));
         }
 
@@ -6237,7 +5288,7 @@ document.addEventListener('click', e => {
     const btn = e.target.closest('#flip-h, #flip-v');
     if (!btn) return;
     if (mode !== '2d' || !_mol2d) return;
-    _takeSnapshot();
+    _takeSnapshot({ clearReactionPreview: false });
     if (btn.id === 'flip-h') flipH = !flipH;
     else                     flipV = !flipV;
 
@@ -6286,123 +5337,6 @@ function updateFormula(molecule, extraH = 0) {
     const mass = molecularMass(molecule) + extraH * 1.008;
     document.getElementById('molecularWeight').textContent =
         `${(Math.round(mass * 100) / 100).toFixed(2)} g/mol`;
-}
-
-// ---------------------------------------------------------------------------
-// Descriptor sidebar
-// ---------------------------------------------------------------------------
-function fmtVal(v) {
-    if (v == null || !isFinite(v)) return '—';
-    return Number.isInteger(v) ? v : v.toFixed(2);
-}
-
-function updateDescriptors(molecule, extraH = 0) {
-    const tbody = document.getElementById('descriptor-body');
-
-    let heavyCount = 0;
-    for (const atom of molecule.atoms.values()) {
-        if (atom.name !== 'H') heavyCount++;
-    }
-
-    let rows = [
-        ['Atoms (total)', molecule.atoms.size + extraH],
-        ['Heavy atoms',   heavyCount],
-        ['Bonds',         molecule.bonds.size],
-    ];
-
-    try {
-        if (heavyCount >= 2) {
-            const { adjacency, degree, distance, reciprocal } = allMatrices(molecule);
-            const W   = wienerIndex(distance);
-            const WW  = hyperWienerIndex(distance);
-            const H   = hararyIndex(reciprocal);
-            const chi = randicIndex(adjacency, degree);
-            const M1  = zagreb1(degree);
-            const M2  = zagreb2(adjacency, degree);
-            const F   = plattIndex(adjacency, degree);
-            const Sz  = szegedIndex(distance, adjacency);
-            let J = null;
-            try { J = balabanIndex(distance, adjacency); } catch {}
-            rows = rows.concat([
-                ['Wiener Index (W)',   W],
-                ['Hyper-Wiener (WW)',  WW],
-                ['Harary Index (H)',   H],
-                ['Balaban Index (J)',  J],
-                ['Randić Index (χ)',   chi],
-                ['Zagreb M1',         M1],
-                ['Zagreb M2',         M2],
-                ['Platt Index (F)',    F],
-                ['Szeged Index (Sz)', Sz],
-            ]);
-        }
-    } catch {}
-
-    tbody.innerHTML = rows
-        .map(([label, val]) => `<tr><td>${label}</td><td>${fmtVal(val)}</td></tr>`)
-        .join('');
-    updatePhysicochemical(molecule);
-}
-
-const PC_DESCRIPTIONS = {
-    'MW (Da)':          'Molecular weight in Daltons (average mass).',
-    'Formal Charge':    'Net formal charge summed over all atoms.',
-    'logP (Crippen)':   'Estimated lipophilicity using the Crippen atom-contribution method (Wildman & Crippen, 1999).',
-    'MR (Crippen)':     'Molar refractivity (cm³/mol) estimated by Crippen atom contributions — reflects polarisability and molecular volume.',
-    'TPSA (Å²)':        'Topological Polar Surface Area — sum of surface contributions from polar atoms (Ertl, 2000).',
-    'HB Donors':        'Number of hydrogen-bond donors (NH and OH groups, Lipinski definition).',
-    'HB Acceptors':     'Number of hydrogen-bond acceptors (N and O atoms, Lipinski definition).',
-    'Rotatable Bonds':  'Count of single, non-aromatic, non-ring bonds between two non-terminal heavy atoms.',
-    'Fsp3':             'Fraction of sp³ carbons — a measure of molecular complexity and three-dimensionality.',
-    'Ring Count':       'Total number of rings (smallest set of smallest rings, SSSR).',
-    'Aromatic Rings':   'Number of fully aromatic rings.',
-    'Stereocenters':    'Number of atoms with a defined chirality annotation (@ or @@).',
-    'Ro5 Violations':   "Lipinski's Rule of Five: MW ≤ 500, logP ≤ 5, HBD ≤ 5, HBA ≤ 10. One violation is allowed.",
-    'Veber Rules':      'Veber oral bioavailability rules: TPSA ≤ 140 Å² and rotatable bonds ≤ 10.',
-    'QED':              'Quantitative Estimate of Drug-likeness (Bickerton 2012). Weighted geometric mean of MW, logP, HBD, HBA, TPSA, RotBonds, ArRings desirabilities. Approximate implementation.',
-};
-
-function updatePhysicochemical(molecule) {
-    const tbody = document.getElementById('pc-body');
-    if (!tbody) return;
-    const rows = [];
-    try {
-        const mw   = molecularMass(molecule);
-        const lp   = logP(molecule);
-        const mr   = molarRefractivity(molecule);
-        const tp   = tpsa(molecule);
-        const hbd  = hBondDonors(molecule);
-        const hba  = hBondAcceptors(molecule);
-        const rot  = rotatableBondCount(molecule);
-        const fs   = fsp3(molecule);
-        const rc   = ringCount(molecule);
-        const arc  = aromaticRingCount(molecule);
-        const sc   = stereocenters(molecule);
-        const ro5  = lipinskiRuleOfFive(molecule);
-        const veb  = veberRules(molecule);
-        const qedV = qed(molecule);
-        rows.push(
-            ['MW (Da)',          fmtVal(mw)],
-            ['logP (Crippen)',   fmtVal(lp)],
-            ['MR (Crippen)',     fmtVal(mr)],
-            ['TPSA (Å²)',        fmtVal(tp)],
-            ['HB Donors',        hbd],
-            ['HB Acceptors',     hba],
-            ['Rotatable Bonds',  rot],
-            ['Fsp3',             fmtVal(fs)],
-            ['Ring Count',       rc],
-            ['Aromatic Rings',   arc],
-            ['Stereocenters',    sc],
-            ['Ro5 Violations',   `${ro5.violations} (${ro5.passes ? 'pass' : 'fail'})`],
-            ['Veber Rules',      veb.passes ? 'pass' : 'fail'],
-            ['QED',              fmtVal(qedV)],
-        );
-    } catch {}
-    tbody.innerHTML = rows
-        .map(([label, val]) => {
-            const desc = PC_DESCRIPTIONS[label] ?? '';
-            return `<tr data-desc="${desc.replace(/"/g, '&quot;')}"><td>${label}</td><td>${val}</td></tr>`;
-        })
-        .join('');
 }
 
 // Tab switching for descriptor panel
@@ -6456,8 +5390,7 @@ function _renderMol(mol) {
     _setHighlight(null);
     currentMol = mol;
     rotationDeg = 0; flipH = false; flipV = false;
-    _undoStack = []; _redoStack = [];
-    _updateUndoBtn(); _updateRedoBtn();
+    _clearUndoHistory();
     kekulize(mol);
     if (mode === 'force') {
         updateForce(mol);
@@ -6473,8 +5406,7 @@ function _renderMol(mol) {
 
 function clearMolecule() {
     _clearReactionPreviewState();
-    _undoStack = []; _redoStack = [];
-    _updateUndoBtn(); _updateRedoBtn();
+    _clearUndoHistory();
     currentMol    = null;
     currentSmiles = null;
     currentInchi  = null;
@@ -6551,6 +5483,29 @@ window._getMolInchi = () => {
 };
 
 window.deleteSelection = function deleteSelection() {
+    if (_hasReactionPreview()) {
+        const reactantSelectedAtomIds = new Set(
+            [..._selectedAtomIds].filter(id => _reactionPreviewReactantAtomIds.has(id))
+        );
+        const reactantSelectedBondIds = new Set();
+        const previewMol = mode === 'force' ? currentMol : _mol2d;
+        if (previewMol) {
+            for (const bondId of _selectedBondIds) {
+                const bond = previewMol.bonds.get(bondId);
+                if (!bond) continue;
+                if (bond.atoms.every(atomId => _reactionPreviewReactantAtomIds.has(atomId))) {
+                    reactantSelectedBondIds.add(bondId);
+                }
+            }
+        }
+        if (_restoreReactionPreviewSource()) {
+            _selectedAtomIds.clear();
+            _selectedBondIds.clear();
+            for (const atomId of reactantSelectedAtomIds) _selectedAtomIds.add(atomId);
+            for (const bondId of reactantSelectedBondIds) _selectedBondIds.add(bondId);
+        }
+    }
+
     const mol = mode === 'force' ? currentMol : _mol2d;
     if (!mol) return;
     if (_selectedAtomIds.size === 0 && _selectedBondIds.size === 0) return;
@@ -6803,7 +5758,7 @@ window.addEventListener('resize', () => {
 // Init
 // ---------------------------------------------------------------------------
 renderExamples();
-const initialSmiles = 'C12=CC=CC=C1C3=C(C=CC=C3)C=C2'; // anthracene
+const initialSmiles = 'CN(C)CCC1=CNC2=C1C=C(C=C2)OC';
 document.getElementById('smiles-input').value = initialSmiles;
 parseAndRender(initialSmiles);
 

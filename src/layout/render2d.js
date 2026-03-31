@@ -14,7 +14,7 @@
 
 import { parseSMILES }    from '../io/smiles.js';
 import { parseINCHI }     from '../io/inchi.js';
-import { generateCoords, refineExistingCoords } from './index.js';
+import { generateAndRefine2dCoords } from './index.js';
 import {
   atomColor,
   WEDGE_HALF_W, WEDGE_DASHES,
@@ -148,8 +148,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
   }
 
   try {
-    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
-    refineExistingCoords(mol, { bondLength: 1.5 });
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5, maxPasses: 6 });
   } catch {
     return null;
   }

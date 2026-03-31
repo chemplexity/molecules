@@ -1,0 +1,867 @@
+
+* { box-sizing: border-box; }
+
+html { height: 100%; }
+
+body {
+    height: 96%;
+    font-family: arial, helvetica, sans-serif;
+    font-size: 12px;
+    margin: 0;
+    background: #fff;
+}
+
+#wrapper {
+    position: relative;
+    min-width: 200px;
+    min-height: 300px;
+    width: 98%;
+    height: 98%;
+    margin: auto;
+    padding: 0;
+    box-shadow: 0 0 25px rgba(159,159,159,0.8);
+}
+
+#header {
+    position: absolute;
+    top: 0;
+    width: 100%;
+    min-height: 85px;
+    margin: auto;
+    padding: 0;
+}
+
+#user-input {
+    width: auto;
+    height: auto;
+    margin: auto;
+    padding: 5px;
+    padding-top: 25px;
+    padding-right: 180px;
+}
+
+#content-main {
+    position: absolute;
+    top: 90px;
+    bottom: 50px;
+    width: 100%;
+    padding: 1px;
+}
+
+#plot {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: 70%;
+    overflow: hidden;
+}
+
+#sidebar {
+    position: absolute;
+    top: 0; bottom: 0; right: 0;
+    width: 29%;
+    display: flex;
+    flex-direction: column;
+    border-left: 1px solid #eee;
+}
+
+#descriptor-panel {
+    flex: 2;
+    overflow-y: auto;
+    padding: 8px 12px;
+    border-bottom: 1px solid #eee;
+}
+
+#footer {
+    position: absolute;
+    bottom: 0;
+    width: 100%;
+    height: 50px;
+    border-top: 1px solid #eee;
+    background: #fff;
+}
+
+#content-info {
+    width: auto;
+    padding: 10px;
+    float: left;
+    overflow: hidden;
+}
+
+#content-source {
+    width: auto;
+    padding: 10px;
+    float: right;
+    overflow: hidden;
+}
+
+#content-source a {
+    font-size: 14px;
+    font-weight: normal;
+    color: #53B2C8;
+    text-decoration: none;
+}
+
+.group {
+    position: relative;
+    margin-bottom: 5px;
+}
+
+.examples {
+    color: #999;
+    margin: 0;
+    padding-left: 15px;
+    font-size: 12px;
+    font-weight: normal;
+    font-family: 'Lucida Sans Unicode', sans-serif;
+}
+
+.examples a {
+    color: #53B2C8;
+    font-weight: bold;
+    text-decoration: none;
+    cursor: pointer;
+}
+
+.examples a:hover { text-decoration: underline; }
+
+input {
+    width: 100%;
+    font-size: 16px;
+    padding: 10px 10px 10px 5px;
+    display: block;
+    border: none;
+    border-bottom: 1px solid #757575;
+    background: transparent;
+}
+
+input:focus { outline: none; }
+
+input:focus ~ label, input:valid ~ label {
+    top: -15px;
+    font-size: 13px;
+    color: #5264AE;
+}
+
+label {
+    color: #999;
+    font-size: 16px;
+    font-weight: normal;
+    position: absolute;
+    pointer-events: none;
+    left: 5px;
+    top: 10px;
+    transition: 0.2s ease all;
+}
+
+.bar {
+    position: relative;
+    display: block;
+    width: 100%;
+}
+
+.bar::before, .bar::after {
+    content: '';
+    height: 2px;
+    width: 0;
+    bottom: 0;
+    position: absolute;
+    background: #5264AE;
+    transition: 0.2s ease all;
+}
+
+.bar::before { left: 50%; }
+.bar::after  { right: 50%; }
+
+input:focus ~ .bar::before,
+input:focus ~ .bar::after { width: 50%; }
+
+.highlight {
+    position: absolute;
+    height: 60%;
+    width: 100px;
+    top: 25%;
+    left: 0;
+    pointer-events: none;
+    opacity: 0.5;
+}
+
+input:focus ~ .highlight {
+    animation: inputHighlighter 0.3s ease;
+}
+
+@keyframes inputHighlighter {
+    from { background: #5264AE; }
+    to   { width: 0; background: transparent; }
+}
+
+.svg-plot {
+    width: 100%;
+    height: 100%;
+    display: block;
+}
+
+#plot,
+#plot * {
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+/* ── Tooltip ─────────────────────────────────────────────────────────── */
+
+div.tooltip {
+    position: fixed;
+    text-align: left;
+    width: auto;
+    min-width: 120px;
+    height: auto;
+    padding: 6px 10px 8px;
+    font-size: 12px;
+    font-family: 'Lucida Sans Unicode', sans-serif;
+    background: white;
+    border: 1px solid #bbb;
+    border-radius: 6px;
+    box-shadow: 2px 3px 8px rgba(0,0,0,0.15);
+    pointer-events: none;
+    z-index: 100;
+}
+div.tooltip .tt-head {
+    font-size: 17px;
+    font-weight: bold;
+    margin-bottom: 5px;
+    border-bottom: 1px solid #eee;
+    padding-bottom: 3px;
+}
+div.tooltip table {
+    border-collapse: collapse;
+    width: 100%;
+}
+div.tooltip td {
+    padding: 1px 0;
+    vertical-align: top;
+}
+div.tooltip td:first-child {
+    color: #888;
+    padding-right: 10px;
+    white-space: nowrap;
+}
+
+/* ── Force-layout bond lines ─────────────────────────────────────────── */
+
+.link {
+    stroke: #696969;
+    stroke-linecap: round;
+}
+
+/* ── 2D-structure bond lines ─────────────────────────────────────────── */
+
+.bond {
+    stroke: #111;
+    stroke-linecap: round;
+    fill: none;
+}
+
+.bond-dashed { stroke-dasharray: 5, 3; }
+
+.atom-bg   { fill: none; stroke: none; }
+
+.atom-label {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 14px;
+    font-weight: bold;
+    text-anchor: middle;
+    pointer-events: none;
+    user-select: none;
+}
+
+.atom-charge {
+    font-family: Arial, Helvetica, sans-serif;
+    font-size: 9px;
+    font-weight: bold;
+    pointer-events: none;
+    user-select: none;
+    dominant-baseline: auto;
+}
+
+.atom-hit {
+    fill: transparent;
+    stroke: none;
+    cursor: default;
+}
+
+/* ── Sidebar ─────────────────────────────────────────────────────────── */
+
+#descriptor-table,
+#pc-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+#descriptor-table th,
+#pc-table th {
+    text-align: left;
+    color: #555;
+    font-size: 13px;
+    font-weight: 600;
+    border-bottom: 1px solid #ddd;
+    padding: 4px 2px;
+}
+
+#descriptor-table td,
+#pc-table td {
+    padding: 3px 2px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+}
+
+#descriptor-table td:last-child,
+#pc-table td:last-child {
+    text-align: right;
+    font-variant-numeric: tabular-nums;
+    color: #555;
+}
+
+#descriptor-tabs {
+    display: flex;
+    border-bottom: 1px solid #ddd;
+    margin-top: 6px;
+    margin-bottom: 4px;
+    gap: 2px;
+}
+
+.desc-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 4px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #999;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+
+.desc-tab.active {
+    color: #333;
+    border-bottom-color: #333;
+}
+
+.desc-tab:hover:not(.active) {
+    color: #555;
+}
+
+#smarts-panel {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+}
+
+#smarts-tabs {
+    display: flex;
+    border-bottom: 1px solid #ddd;
+    margin-top: 2px;
+    margin-bottom: 6px;
+    gap: 2px;
+}
+
+.smarts-tab {
+    flex: 1;
+    background: none;
+    border: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    padding: 4px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: #999;
+    cursor: pointer;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    white-space: nowrap;
+}
+
+.smarts-tab.active {
+    color: #333;
+    border-bottom-color: #333;
+}
+
+.smarts-tab:hover:not(.active) {
+    color: #555;
+}
+
+.smarts-tab-panel {
+    min-height: 0;
+}
+
+#fg-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+#fg-table td {
+    padding: 2px 4px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+}
+
+#fg-table td:last-child {
+    text-align: right;
+    color: #777;
+    white-space: nowrap;
+}
+
+#fg-table tr {
+    cursor: pointer;
+}
+
+#fg-table tr:hover td {
+    background: #f0f0f0;
+}
+
+#fg-table tr.fg-active td {
+    background: rgba(80, 160, 40, 0.15);
+}
+
+#reaction-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+
+#reaction-table td {
+    padding: 6px 4px;
+    border-bottom: 1px solid #f0f0f0;
+    color: #333;
+    vertical-align: top;
+}
+
+#reaction-table td:last-child {
+    width: 34px;
+    text-align: right;
+    white-space: nowrap;
+}
+
+#reaction-table tr:hover td {
+    background: #f7f7f7;
+}
+
+#reaction-table tr {
+    cursor: pointer;
+}
+
+#reaction-table tr.reaction-active td {
+    background: rgba(80, 160, 40, 0.15);
+}
+
+.reaction-name {
+    font-weight: 400;
+    color: #333;
+    margin-bottom: 2px;
+}
+
+.reaction-count {
+    color: #666;
+    font-variant-numeric: tabular-nums;
+}
+
+.reaction-nav {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+}
+
+.reaction-site-label {
+    color: #666;
+    font-size: 11px;
+    min-width: 28px;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+}
+
+.reaction-nav-btn {
+    width: 22px;
+    height: 22px;
+    border: 1px solid #ccc;
+    border-radius: 11px;
+    background: #fff;
+    color: #555;
+    cursor: pointer;
+    font-size: 14px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+}
+
+.reaction-nav-btn:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+
+#molecularFormula {
+    font-size: 14px;
+    font-weight: bold;
+    color: #333;
+    display: inline-block;
+}
+
+#molecularWeight {
+    font-size: 13px;
+    color: #777;
+    display: inline-block;
+    margin-left: 10px;
+}
+
+/* ── Plot overlay controls ───────────────────────────────────────────── */
+
+#toggle-controls {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    z-index: 10;
+}
+
+#toggle-btn {
+    height: 30px;
+    padding: 0 12px;
+    border: 1px solid #ccc;
+    border-radius: 15px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: arial, helvetica, sans-serif;
+    color: #555;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: background 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+
+#toggle-btn:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+#undo-controls {
+    position: absolute;
+    top: 48px;
+    right: 10px;
+    z-index: 10;
+    display: flex;
+    gap: 4px;
+}
+
+#undo-btn, #redo-btn {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: background 0.15s, color 0.15s, border-color 0.15s, opacity 0.15s;
+    padding: 0;
+    color: #555;
+}
+
+#undo-btn:hover:not(:disabled), #redo-btn:hover:not(:disabled) {
+    background: #f0f0f0;
+    color: #333;
+}
+
+#undo-btn:disabled, #redo-btn:disabled {
+    opacity: 0.35;
+    cursor: default;
+}
+
+#atom-selector {
+    position: absolute;
+    top: 88px;
+    right: 10px;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+#atom-selector button {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: background 0.15s, border-color 0.15s;
+    padding: 0;
+    font-size: 13px;
+    font-weight: bold;
+}
+
+#atom-selector button:hover { background: #f0f0f0; }
+
+#elem-btn-C        { color: #333333; }
+#elem-btn-C.active { background: #e8e8e8; border-color: #333333; }
+#elem-btn-N        { color: #3050F8; }
+#elem-btn-N.active { background: #e6eaff; border-color: #3050F8; }
+#elem-btn-O        { color: #FF0D0D; }
+#elem-btn-O.active { background: #ffe8e8; border-color: #FF0D0D; }
+#elem-btn-S        { color: #C8A000; }
+#elem-btn-S.active { background: #fdf8d8; border-color: #C8A000; }
+#elem-btn-P        { color: #FF8000; }
+#elem-btn-P.active { background: #fff0e0; border-color: #FF8000; }
+#elem-btn-F        { color: #6ab52a; }
+#elem-btn-F.active { background: #f2fce4; border-color: #6ab52a; }
+#elem-btn-Cl       { color: #18b018; }
+#elem-btn-Cl.active { background: #e0fce0; border-color: #18b018; }
+#elem-btn-Br       { color: #A62929; }
+#elem-btn-Br.active { background: #fce8e8; border-color: #A62929; }
+#elem-btn-I        { color: #940094; }
+#elem-btn-I.active { background: #f8e0f8; border-color: #940094; }
+
+#rotate-controls {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    display: flex;
+    gap: 4px;
+    z-index: 10;
+}
+
+#force-controls {
+    position: absolute;
+    bottom: 10px;
+    right: 10px;
+    display: none;
+    z-index: 10;
+    gap: 4px;
+}
+
+#force-controls button {
+    height: 32px;
+    padding: 0 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    background: #fff;
+    cursor: pointer;
+    font-size: 12px;
+    font-family: arial, helvetica, sans-serif;
+    transition: background 0.15s;
+}
+
+#force-controls button:hover { background: #f0f0f0; }
+
+#label-toggle.active {
+    background: #5090f0;
+    color: #fff;
+    border-color: #3060c0;
+}
+
+#label-toggle.active:hover {
+    background: #4080e0;
+}
+
+.svg-plot.labels-hidden .atom-symbol { display: none; }
+
+#rotate-controls button {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    font-size: 17px;
+    color: #555;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: background 0.15s;
+    padding: 0;
+}
+
+#rotate-controls button:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+#rotate-controls #copy-svg-btn,
+#rotate-controls #save-png-btn {
+    font-size: 9px;
+    font-weight: bold;
+}
+
+#clean-controls {
+    position: absolute;
+    bottom: 10px;
+    left: 10px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    z-index: 10;
+}
+
+#clean-controls button {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    font-size: 16px;
+    color: #555;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    padding: 0;
+}
+
+#clean-controls button:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+#pan-mode-btn.active,
+#select-mode-btn.active {
+    background: #5090f0;
+    color: #fff;
+    border-color: #3060c0;
+}
+
+#pan-mode-btn.active:hover,
+#select-mode-btn.active:hover {
+    background: #4080e0;
+}
+
+#erase-btn.active {
+    background: #5090f0;
+    color: #fff;
+    border-color: #3070d0;
+}
+#erase-btn.active:hover {
+    background: #4080e0;
+}
+
+#erase-cursor {
+    position: fixed;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: rgba(220, 50, 50, 0.25);
+    border: 2px solid rgba(200, 30, 30, 0.6);
+    pointer-events: none;
+    transform: translate(-50%, -50%);
+    display: none;
+    z-index: 9999;
+}
+
+#draw-tools {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 10;
+}
+
+#draw-tools button {
+    width: 32px;
+    height: 32px;
+    border: 1px solid #ccc;
+    border-radius: 50%;
+    background: #fff;
+    cursor: pointer;
+    font-size: 16px;
+    color: #555;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+    padding: 0;
+}
+
+#draw-tools button:hover {
+    background: #f0f0f0;
+    color: #333;
+}
+
+#draw-bond-btn.active {
+    background: #5090f0;
+    color: #fff;
+    border-color: #3060c0;
+}
+
+#draw-bond-btn.active:hover {
+    background: #4080e0;
+}
+
+#force-controls #copy-force-png-btn {
+    width: 32px;
+    height: 32px;
+    padding: 0;
+    border-radius: 50%;
+    font-size: 9px;
+    font-family: -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    font-weight: bold;
+    color: #555;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.15);
+}
+
+#force-controls #copy-force-png-btn:hover {
+    color: #333;
+}
+
+/* ── Format toggle (SMILES / InChI) ─────────────────────────────────── */
+
+#format-toggle {
+    position: absolute;
+    top: 14px;
+    right: 12px;
+    display: flex;
+    z-index: 2;
+    border: 1px solid #ccc;
+    border-radius: 28px;
+    overflow: hidden;
+}
+
+#format-toggle button {
+    padding: 8px 18px;
+    border: none;
+    background: #fff;
+    color: #999;
+    cursor: pointer;
+    font-size: 14px;
+    font-family: arial, helvetica, sans-serif;
+    transition: background 0.15s, color 0.15s;
+}
+
+#format-toggle button.active {
+    background: #5264AE;
+    color: #fff;
+}
+
+#format-toggle button:hover:not(.active) {
+    background: #f0f0f0;
+    color: #555;
+}
+
