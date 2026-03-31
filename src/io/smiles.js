@@ -271,6 +271,53 @@ function previousAtomSkipBranches(start, keys, atoms, bonds) {
   return null;
 }
 
+function normalizeSmilesSeparators(input) {
+  let normalized = '';
+  let bracketDepth = 0;
+  let pendingSeparator = false;
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+
+    if (ch === '[') {
+      if (pendingSeparator && normalized.length > 0 && normalized[normalized.length - 1] !== '.') {
+        normalized += '.';
+      }
+      pendingSeparator = false;
+      bracketDepth++;
+      normalized += ch;
+      continue;
+    }
+
+    if (ch === ']') {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      normalized += ch;
+      continue;
+    }
+
+    if (bracketDepth === 0 && /\s/.test(ch)) {
+      pendingSeparator = normalized.length > 0;
+      continue;
+    }
+
+    if (bracketDepth === 0 && ch === '.') {
+      if (normalized.length > 0 && normalized[normalized.length - 1] !== '.') {
+        normalized += '.';
+      }
+      pendingSeparator = false;
+      continue;
+    }
+
+    if (pendingSeparator && normalized.length > 0 && normalized[normalized.length - 1] !== '.') {
+      normalized += '.';
+    }
+    pendingSeparator = false;
+    normalized += ch;
+  }
+
+  return normalized;
+}
+
 // ---------------------------------------------------------------------------
 // tokenize
 // ---------------------------------------------------------------------------
@@ -284,6 +331,7 @@ function previousAtomSkipBranches(start, keys, atoms, bonds) {
  * @throws {Error} If no valid atoms are found.
  */
 export function tokenize(input, tokens = []) {
+  input = normalizeSmilesSeparators(input);
 
   for (let i = 0; i < grammar.length; i++) {
     const token = grammar[i];

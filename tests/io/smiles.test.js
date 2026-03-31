@@ -59,6 +59,14 @@ describe('tokenize', () => {
     const atomTokens = tokens.filter(t => t.type === 'atom');
     assert.equal(atomTokens.length, 3);
   });
+
+  it('treats whitespace between fragments like a dot separator', () => {
+    const { tokens } = tokenize('C N');
+    const dotTokens = tokens.filter(t => t.type === 'bond' && t.tag === 'dot');
+    const atomTokens = tokens.filter(t => t.type === 'atom');
+    assert.equal(atomTokens.length, 2);
+    assert.equal(dotTokens.length, 1);
+  });
 });
 
 describe('decode', () => {
@@ -148,6 +156,14 @@ describe('parseSMILES — structure', () => {
 
   it('disconnected molecule C.C: { C: 2, H: 8 }', () => {
     assert.deepEqual(formula(parseSMILES('C.C')), { C: 2, H: 8 });
+  });
+
+  it('treats whitespace-separated fragments like dot-separated fragments', () => {
+    assert.deepEqual(formula(parseSMILES('C N')), { C: 1, N: 1, H: 7 });
+  });
+
+  it('collapses mixed whitespace and dots into one fragment separator', () => {
+    assert.deepEqual(formula(parseSMILES('C .  N')), { C: 1, N: 1, H: 7 });
   });
 });
 

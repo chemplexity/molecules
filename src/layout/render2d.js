@@ -20,7 +20,7 @@ import {
   WEDGE_HALF_W, WEDGE_DASHES,
   perpUnit, shortenLine, secondaryDir,
   labelHalfW, labelHalfH, labelTextOffset,
-  getAtomLabel, pickStereoWedges,
+  getAtomLabel, pickStereoWedges, stereoBondCenterIdForRender,
   kekulize, atomBBox
 } from './mol2d-helpers.js';
 import { Resvg } from '@resvg/resvg-js';
@@ -214,8 +214,11 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
 
     const stereoType = stereoMap.get(bond.id) ?? null;
     let sa1 = a1, sa2 = a2;
-    if (stereoType && a2.getChirality()) {
-      sa1 = a2; sa2 = a1;
+    if (stereoType) {
+      const centerId = stereoBondCenterIdForRender(mol, bond.id);
+      if (centerId === a2.id) {
+        sa1 = a2; sa2 = a1;
+      }
     }
     lines.push(...bondToSVG(bond, sa1, sa2, mol, toSVG, stereoType, aromaticMode));
   }

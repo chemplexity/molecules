@@ -1571,6 +1571,41 @@ describe('generateCoords — alkene substituent geometry', () => {
   });
 });
 
+describe('generateCoords — anchored side-chain completion', () => {
+  it('places the carbonyl oxygen on an amide attached between two ring systems', () => {
+    const mol = parseSMILES('FC(F)(F)C1=CC=C(C=C1)C(=O)N2CCN(CC2)C');
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const carbonylCarbon = [...mol.atoms.values()].find(atom =>
+      atom.name === 'C' &&
+      atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
+      atom.getNeighbors(mol).some(nb => nb.name === 'O' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 2) &&
+      atom.getNeighbors(mol).some(nb => nb.name === 'N') &&
+      atom.getNeighbors(mol).some(nb => nb.name === 'C')
+    );
+
+    assert.ok(carbonylCarbon, 'expected an amide carbonyl carbon');
+
+    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb =>
+      nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2
+    );
+    const nitrogen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'N');
+    const arylCarbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
+
+    assert.ok(oxygen && nitrogen && arylCarbon, 'expected O, N, and aryl neighbors at the carbonyl carbon');
+    assert.ok(Number.isFinite(oxygen.x) && Number.isFinite(oxygen.y), 'expected the carbonyl oxygen to receive finite coordinates');
+
+    const bondLength = Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y);
+    const oxygenClearance = Math.min(
+      Math.hypot(oxygen.x - nitrogen.x, oxygen.y - nitrogen.y),
+      Math.hypot(oxygen.x - arylCarbon.x, oxygen.y - arylCarbon.y)
+    );
+
+    assert.ok(approx(bondLength, 1.5, 1e-6), `expected a 1.5 Å C=O placement, got ${bondLength.toFixed(3)} Å`);
+    assert.ok(oxygenClearance > 1.0, `expected the carbonyl oxygen to render clear of neighboring atoms, got ${oxygenClearance.toFixed(3)} Å`);
+  });
+});
+
 describe('kekulize — charged aromatic InChI imports used by browser rendering', () => {
   it('localizes the imidazolide-like anion before 2D drawing', () => {
     const mol = parseINCHI('InChI=1S/C3H3N2/c1-2-5-3-4-1/h1-3H/q-1');
@@ -1670,6 +1705,35 @@ describe('getAtomLabel — charged carbons', () => {
     assert.equal(
       getAtomLabel(neutralCarbon, new Map(), () => ({ x: 0, y: 0 }), mol),
       null
+    );
+  });
+});
+
+describe('getAtomLabel — hydroxyl orientation', () => {
+  it('keeps carboxylic-acid hydroxyl labels as OH', () => {
+    const mol = parseSMILES('CC(=O)O');
+    const hydroxylO = [...mol.atoms.values()].find(atom =>
+      atom.name === 'O' &&
+      atom.getNeighbors(mol).some(nb => nb.name === 'C' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1)
+    );
+    const carbonylC = hydroxylO.getNeighbors(mol).find(nb => nb.name === 'C');
+    hydroxylO.x = 0; hydroxylO.y = 0;
+    carbonylC.x = 1; carbonylC.y = 0;
+    assert.equal(
+      getAtomLabel(hydroxylO, new Map([[hydroxylO.id, 1]]), atom => ({ x: atom.x, y: atom.y }), mol),
+      'OH'
+    );
+  });
+
+  it('still allows ordinary alcohol oxygens to flip to HO when their neighbor is to the right', () => {
+    const mol = parseSMILES('CO');
+    const alcoholO = [...mol.atoms.values()].find(atom => atom.name === 'O');
+    const carbon = alcoholO.getNeighbors(mol).find(nb => nb.name === 'C');
+    alcoholO.x = 0; alcoholO.y = 0;
+    carbon.x = 1; carbon.y = 0;
+    assert.equal(
+      getAtomLabel(alcoholO, new Map([[alcoholO.id, 1]]), atom => ({ x: atom.x, y: atom.y }), mol),
+      'HO'
     );
   });
 });

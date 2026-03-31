@@ -256,6 +256,12 @@ describe('applySMIRKS', () => {
     assert.equal(toSMILES(product), 'FC(Cl)I');
   });
 
+  it('preserves a neighboring stereocenter when oxidation edits an adjacent alcohol', () => {
+    const product = applySMIRKS(parseSMILES('F[C@H](Cl)CO'), '[C;X4:1][OH:2]>>[C:1]=[O:2]');
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'F[C@H](Cl)C=O');
+  });
+
   it('applies explicit product bond stereo tokens after local cleanup', () => {
     const product = applySMIRKS(parseSMILES('FC=CF'), '[F:1][C:2]=[C:3][F:4]>>[F:1]/[C:2]=[C:3]/[F:4]');
     assert.ok(product);

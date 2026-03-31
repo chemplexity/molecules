@@ -168,7 +168,6 @@ reactions:
 | `amideHydrolysis` | Amide → acid + amine |
 | `halideHydrolysis` | Alkyl halide → alcohol |
 | `dehalogenation` | Remove halide substituent |
-| `carbonCarbonCoupling` | C–C bond formation |
 
 Use `parseSMIRKS` to compile your own transform string into a reusable object.
 

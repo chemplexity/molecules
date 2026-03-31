@@ -988,8 +988,15 @@ function layoutChain(molecule, startAtomId, incomingAngle, placed, bondLength, c
     }) ?? false;
 
     let angles;
-    if (!fRing && !isLinear && neighbors.length >= 2 && placedNbs.length > 0
-        && (placedNbs.length >= 2 || !hasMultipleBond || neighbors.length <= 2)) {
+    const canUseGapStrategy = !fRing &&
+      !isLinear &&
+      placedNbs.length > 0 &&
+      (
+        (neighbors.length >= 2 &&
+          (placedNbs.length >= 2 || !hasMultipleBond || neighbors.length <= 2)) ||
+        (neighbors.length === 1 && placedNbs.length >= 2)
+      );
+    if (canUseGapStrategy) {
       // Compute existing angular constraints from placed neighbours.
       const fixedAngles = placedNbs
         .map(id => angleTo(origin, coords.get(id)))
@@ -1109,7 +1116,7 @@ function layoutChain(molecule, startAtomId, incomingAngle, placed, bondLength, c
       let bestScore = scoreAngles(angles);
       for (const k of steps) {
         const delta = k * INC;
-        const candidate = !fRing && !isLinear && neighbors.length >= 2 && placedNbs.length > 0
+        const candidate = canUseGapStrategy
           ? angles.map(a => normalizeAngle(a + delta))
           : computeChildAngles(neighbors.length, outAngle + delta, false, incoming + delta, isLinear);
         const score = scoreAngles(candidate);
@@ -4868,6 +4875,60 @@ export function generateCoords(molecule, options = {}) {
       const incoming  = angleTo(myCoord, sysCenter); // toward center = "where we came from"
 
       layoutChain(molecule, atomId, incoming, placed, bondLength, coords, true);
+    }
+  }
+
+  // Phase B.5 — place any heavy-atom side branches left behind by the ring-system
+  // anchoring logic. Extended-anchor placement can pre-place one or more acyclic
+  // intermediates so a later ring system can be attached, but those intermediates
+  // are not themselves revisited as phase-B roots. Walk the already-placed heavy
+  // atoms and finish any remaining unplaced heavy-atom branches from there.
+  if (systems.length > 0) {
+    let progressed = true;
+    while (progressed) {
+      progressed = false;
+      const frontier = [...placed]
+        .filter(id => molecule.atoms.get(id)?.name !== 'H' && coords.has(id))
+        .sort((a, b) => _layoutCompareAtomIds(molecule, a, b));
+
+      for (const atomId of frontier) {
+        const unplaced = _layoutNeighbors(molecule, atomId)
+          .filter(id => !placed.has(id) && molecule.atoms.get(id)?.name !== 'H');
+        if (unplaced.length === 0) {
+          continue;
+        }
+
+        const origin = coords.get(atomId);
+        const placedNeighbors = _layoutNeighbors(molecule, atomId)
+          .filter(id => placed.has(id) && coords.has(id) && molecule.atoms.get(id)?.name !== 'H');
+        let incoming = Math.PI;
+        if (origin && placedNeighbors.length > 0) {
+          const parentId = placedNeighbors.length === 1
+            ? placedNeighbors[0]
+            : placedNeighbors.reduce((bestId, id) => {
+              const pos = coords.get(id);
+              if (!pos) {
+                return bestId;
+              }
+              if (!bestId) {
+                return id;
+              }
+              const bestPos = coords.get(bestId);
+              const diff = Math.abs(normalizeAngle(angleTo(origin, pos) - Math.PI));
+              const bestDiff = Math.abs(normalizeAngle(angleTo(origin, bestPos) - Math.PI));
+              return diff < bestDiff ? id : bestId;
+            }, null);
+          if (parentId && coords.has(parentId)) {
+            incoming = angleTo(origin, coords.get(parentId));
+          }
+        }
+
+        const before = placed.size;
+        layoutChain(molecule, atomId, incoming, placed, bondLength, coords, false);
+        if (placed.size > before) {
+          progressed = true;
+        }
+      }
     }
   }
 

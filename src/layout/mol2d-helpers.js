@@ -225,6 +225,22 @@ export function getAtomLabel(atom, hCounts, toSVG, mol) {
     return symbol;
   }
   const hStr = hCount === 1 ? 'H' : `H${hCount}`;
+  if (symbol === 'O') {
+    const heavyNeighbors = atom.getNeighbors(mol).filter(n => n?.name !== 'H');
+    const isCarbonylAdjacentHydroxyl =
+      heavyNeighbors.length === 1 &&
+      heavyNeighbors[0].name === 'C' &&
+      heavyNeighbors[0].getNeighbors(mol).some(nb => {
+        if (!nb || nb.id === atom.id || nb.name !== 'O') {
+          return false;
+        }
+        const bond = mol.getBond(heavyNeighbors[0].id, nb.id);
+        return (bond?.properties.order ?? 1) >= 2;
+      });
+    if (isCarbonylAdjacentHydroxyl) {
+      return symbol + hStr;
+    }
+  }
   const aSVG = toSVG(atom);
   let avgDx = 0, nbCount = 0;
   for (const n of atom.getNeighbors(mol)) {
@@ -253,92 +269,137 @@ export function getAtomLabel(atom, hCounts, toSVG, mol) {
  * @param {import('../core/Molecule.js').Molecule} mol
  * @returns {Map<string, 'wedge'|'dash'>}
  */
+export function stereoBondTypeForCenter(mol, centerId, preferredBondId = null) {
+  const center = mol.atoms.get(centerId);
+  if (!center || center.x == null) {
+    return null;
+  }
+  const chirality = center.getChirality();
+  if (!chirality) {
+    return null;
+  }
+
+  const neighbors = center.getNeighbors(mol).filter(n => n && n.x != null);
+  if (neighbors.length !== 4) {
+    return null;
+  }
+
+  const ranks = assignCIPRanks(centerId, neighbors.map(n => n.id), mol);
+  const entries = neighbors.map((n, i) => {
+    const bond = [...mol.bonds.values()].find(b =>
+      (b.atoms[0] === centerId && b.atoms[1] === n.id) ||
+      (b.atoms[1] === centerId && b.atoms[0] === n.id)
+    );
+    return { atom: n, rank: ranks[i], bond };
+  }).filter(e => e.bond);
+
+  if (entries.length !== 4) {
+    return null;
+  }
+  entries.sort((a, b) => a.rank - b.rank);
+
+  const v = (e) => ({ x: e.atom.x - center.x, y: e.atom.y - center.y });
+  const cross2D = (u, w) => u.x * w.y - u.y * w.x;
+  const visible = entries.filter(e => e.atom.visible !== false);
+  const exocyclic = visible.filter(e => !e.atom.isInRing(mol));
+  const exocyclicHeavy = exocyclic.filter(e => e.atom.name !== 'H');
+  const candidates = exocyclicHeavy.length > 0 ? exocyclicHeavy
+    : exocyclic.length > 0 ? exocyclic
+      : visible.length > 0 ? visible
+        : entries;
+
+  const preferred = preferredBondId != null
+    ? candidates.find(cand => cand.bond.id === preferredBondId) ?? entries.find(entry => entry.bond.id === preferredBondId) ?? null
+    : null;
+
+  const chosen = preferred ?? candidates.reduce((best, cand) =>
+    cand.rank > best.rank || (cand.rank === best.rank && cand.bond.id < best.bond.id)
+      ? cand : best
+  );
+
+  const others = entries.filter(e => e !== chosen).sort((a, b) => b.rank - a.rank);
+  const heavyOtherVecs = others
+    .filter(e => !(e.atom.name === 'H' && e.atom.visible === false))
+    .map(v);
+
+  const safeV = (e) => {
+    if (e.atom.name === 'H' && e.atom.visible === false && heavyOtherVecs.length === 2) {
+      const sx = -(heavyOtherVecs[0].x + heavyOtherVecs[1].x);
+      const sy = -(heavyOtherVecs[0].y + heavyOtherVecs[1].y);
+      const len = vecLen(sx, sy);
+      const bl = vecLen(heavyOtherVecs[0].x, heavyOtherVecs[0].y);
+      return { x: sx / len * bl, y: sy / len * bl };
+    }
+    return v(e);
+  };
+
+  const [vA, vB, vD] = others.map(safeV);
+  const signedArea = cross2D(vA, vB) + cross2D(vB, vD) + cross2D(vD, vA);
+  const lowerCount = entries.filter(e => e.rank < chosen.rank).length;
+  let computed = signedArea > 0 ? 'S' : 'R';
+  if (lowerCount % 2 === 1) {
+    computed = computed === 'S' ? 'R' : 'S';
+  }
+  return {
+    bondId: chosen.bond.id,
+    type: computed === chirality ? 'dash' : 'wedge'
+  };
+}
+
+export function stereoBondCenterIdForRender(mol, bondId) {
+  if (!mol || !bondId) {
+    return null;
+  }
+  const bond = mol.bonds.get(bondId);
+  if (!bond) {
+    return null;
+  }
+
+  const forcedCenterId = mol?.__reactionPreview?.forcedStereoBondCenters?.get?.(bondId) ?? null;
+  if (forcedCenterId && bond.atoms.includes(forcedCenterId)) {
+    return forcedCenterId;
+  }
+
+  const [aId, bId] = bond.atoms;
+  if (mol.atoms.get(aId)?.getChirality?.()) {
+    return aId;
+  }
+  if (mol.atoms.get(bId)?.getChirality?.()) {
+    return bId;
+  }
+  return null;
+}
+
 export function pickStereoWedges(mol) {
   const result = new Map();
-  for (const centerId of mol.getChiralCenters()) {
-    const center = mol.atoms.get(centerId);
-    if (!center || center.x == null) {
+  const forcedBondTypes = mol?.__reactionPreview?.forcedStereoBondTypes ?? null;
+  const lockedCenters = new Set();
+  for (const [bondId, type] of forcedBondTypes ?? new Map()) {
+    const bond = mol?.bonds?.get(bondId);
+    if (!bond) {
       continue;
     }
-    const chirality = center.getChirality();
-    if (!chirality) {
-      continue;
-    }
-
-    const neighbors = center.getNeighbors(mol).filter(n => n && n.x != null);
-    if (neighbors.length !== 4) {
-      continue;
-    }
-
-    const ranks = assignCIPRanks(centerId, neighbors.map(n => n.id), mol);
-    const entries = neighbors.map((n, i) => {
-      const bond = [...mol.bonds.values()].find(b =>
-        (b.atoms[0] === centerId && b.atoms[1] === n.id) ||
-        (b.atoms[1] === centerId && b.atoms[0] === n.id)
-      );
-      return { atom: n, rank: ranks[i], bond };
-    }).filter(e => e.bond);
-
-    if (entries.length !== 4) {
-      continue;
-    }
-    entries.sort((a, b) => a.rank - b.rank);
-
-    const v = (e) => ({ x: e.atom.x - center.x, y: e.atom.y - center.y });
-    const cross2D = (u, w) => u.x * w.y - u.y * w.x;
-    const visible = entries.filter(e => e.atom.visible !== false);
-    const exocyclic = visible.filter(e => !e.atom.isInRing(mol));
-    const exocyclicHeavy = exocyclic.filter(e => e.atom.name !== 'H');
-    const candidates = exocyclicHeavy.length > 0 ? exocyclicHeavy
-      : exocyclic.length > 0 ? exocyclic
-        : visible.length > 0 ? visible
-          : entries;
-
-    // Pick the highest CIP rank among candidates — this is a topological,
-    // rotation-invariant criterion that prefers the most substituted group.
-    const chosen = candidates.reduce((best, cand) =>
-      cand.rank > best.rank || (cand.rank === best.rank && cand.bond.id < best.bond.id)
-        ? cand : best
-    );
-
-    const others = entries.filter(e => e !== chosen).sort((a, b) => b.rank - a.rank);
-
-    // Compute vectors for the signed-area winding check.  If the H atom (lowest
-    // CIP rank, always visible=false) is one of the three remaining substituents,
-    // its placed 2D position was computed from ALL non-H neighbours — including the
-    // chosen exocyclic atom whose coordinates can differ slightly between JavaScript
-    // engines (V8 vs JavaScriptCore) due to force-field refinement.  Using that
-    // engine-dependent position in the cross-product can flip the winding sign and
-    // produce the wrong wedge/dash type in the browser vs Node.js.
-    //
-    // Fix: when H is in `others`, replace its vector with the analytic "opposite of
-    // the centroid of the two heavy atoms in `others`" — a value that depends only
-    // on ring-atom (frozen, deterministic) coordinates, not on variable exocyclic ones.
-    const heavyOtherVecs = others
-      .filter(e => !(e.atom.name === 'H' && e.atom.visible === false))
-      .map(v);
-
-    const safeV = (e) => {
-      if (e.atom.name === 'H' && e.atom.visible === false && heavyOtherVecs.length === 2) {
-        const sx = -(heavyOtherVecs[0].x + heavyOtherVecs[1].x);
-        const sy = -(heavyOtherVecs[0].y + heavyOtherVecs[1].y);
-        const len = vecLen(sx, sy);
-        // Scale to the same magnitude as the first heavy vector so cross products
-        // are numerically comparable (sign is all that matters, but stability helps).
-        const bl = vecLen(heavyOtherVecs[0].x, heavyOtherVecs[0].y);
-        return { x: sx / len * bl, y: sy / len * bl };
+    result.set(bondId, type);
+    for (const atomId of bond.atoms) {
+      if (mol.atoms.get(atomId)?.getChirality?.()) {
+        lockedCenters.add(atomId);
       }
-      return v(e);
-    };
-
-    const [vA, vB, vD] = others.map(safeV);
-    const signedArea = cross2D(vA, vB) + cross2D(vB, vD) + cross2D(vD, vA);
-    const lowerCount = entries.filter(e => e.rank < chosen.rank).length;
-    let computed = signedArea > 0 ? 'S' : 'R';
-    if (lowerCount % 2 === 1) {
-      computed = computed === 'S' ? 'R' : 'S';
     }
-    result.set(chosen.bond.id, computed === chirality ? 'dash' : 'wedge');
+  }
+  const forcedByCenter =
+    mol?.__reactionPreview?.forcedStereoByCenter ??
+    mol?.__reactionPreview?.forcedProductStereoByCenter ??
+    null;
+  for (const centerId of mol.getChiralCenters()) {
+    if (lockedCenters.has(centerId)) {
+      continue;
+    }
+    const forced = forcedByCenter?.get(centerId) ?? null;
+    const stereo = stereoBondTypeForCenter(mol, centerId, forced?.bondId ?? null);
+    if (!stereo) {
+      continue;
+    }
+    result.set(stereo.bondId, forced?.type ?? stereo.type);
   }
   return result;
 }

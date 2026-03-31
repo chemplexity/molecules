@@ -1,6 +1,8 @@
 /** @module smirks/apply */
 
 import { refreshAromaticity } from '../algorithms/aromaticity.js';
+import { kekulize } from '../layout/mol2d-helpers.js';
+import { generateCoords } from '../layout/coords2d.js';
 import { _findSMARTSParsed } from '../smarts/search.js';
 import { parseSMIRKS } from './parser.js';
 
@@ -253,7 +255,12 @@ function _removeBondKeepAtoms(mol, bondId) {
   mol.bonds.delete(bondId);
 }
 
+function _has2dCoords(mol) {
+  return [...mol.atoms.values()].some(atom => Number.isFinite(atom.x) && Number.isFinite(atom.y));
+}
+
 function _applyParsedSMIRKSMatch(molecule, transform, match) {
+  const hadCoords = _has2dCoords(molecule);
   const result = molecule.clone();
   const repairSeedIds = new Set();
   const stereoDirtySeedIds = new Set();
@@ -283,6 +290,9 @@ function _applyParsedSMIRKSMatch(molecule, transform, match) {
       }
       if (topologyChanged) {
         stereoDirtySeedIds.add(targetId);
+        for (const neighbor of targetAtom.getNeighbors(result)) {
+          stereoDirtySeedIds.add(neighbor.id);
+        }
       }
       if (flags.hydrogenCountSpecified) {
         explicitHydrogenSpecs.set(targetId, flags.hydrogenCount);
@@ -404,8 +414,9 @@ function _applyParsedSMIRKSMatch(molecule, transform, match) {
   }
 
   if (stereoDirtySeedIds.size > 0) {
-    result.clearStereoAnnotations(_affectedNeighborhood(result, stereoDirtySeedIds));
+    result.clearStereoAnnotations(stereoDirtySeedIds);
   }
+  kekulize(result);
   refreshAromaticity(result, { preserveKekule: true });
   if (repairSeedIds.size > 0) {
     const repairAtomIds = _affectedNeighborhood(result, repairSeedIds);
@@ -428,6 +439,11 @@ function _applyParsedSMIRKSMatch(molecule, transform, match) {
       atom.setChirality(chirality, result);
     }
   }
+
+  if (hadCoords) {
+    generateCoords(result);
+  }
+
   result._recomputeProperties();
   return result;
 }
