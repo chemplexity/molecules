@@ -413,9 +413,10 @@ const atomBBox = mol2dHelpers.atomBBox ?? function atomBBoxFallback(atoms) {
 // Functional-group SMARTS panel
 // ---------------------------------------------------------------------------
 /** Apply (or clear) a highlight from a list of SMARTS mappings and redraw. */
-function _setHighlight(mappings) {
+function _setHighlight(mappings, options = {}) {
     _highlightedAtomIds.clear();
     _highlightedAtomSets = [];
+    _highlightStyle = options.style ?? 'default';
     if (mappings) {
         for (const mapping of mappings) {
             const atomSet = new Set(mapping.values());
@@ -433,6 +434,64 @@ function _setHighlight(mappings) {
     }
     if (mode === '2d' && _mol2d) draw2d();
     else applyForceHighlights();
+}
+
+const HIGHLIGHT_STYLES = {
+    default: {
+        fill: 'rgb(130, 210, 80)',
+        outline: 'rgb(70, 140, 40)',
+    },
+    physchem: {
+        fill: 'rgb(246, 227, 110)',
+        outline: 'rgb(194, 168, 24)',
+    }
+};
+let _highlightStyle = 'default';
+
+const FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS = 1500;
+let _lastHoveredFunctionalGroupMappings = null;
+let _lastHoveredFunctionalGroupAt = 0;
+let _preserveFunctionalGroupHighlightUntil = 0;
+
+function _rememberHoveredFunctionalGroupMappings(mappings) {
+    if (!mappings?.length) {
+        _lastHoveredFunctionalGroupMappings = null;
+        _lastHoveredFunctionalGroupAt = 0;
+        return;
+    }
+    _lastHoveredFunctionalGroupMappings = mappings.map(mapping => new Map(mapping));
+    _lastHoveredFunctionalGroupAt = Date.now();
+}
+
+function _prepare2dExportHighlightState() {
+    if (_highlightedAtomSets.length > 0) return () => {};
+    if (!_highlightMol || !_lastHoveredFunctionalGroupMappings?.length) return () => {};
+    if (Date.now() - _lastHoveredFunctionalGroupAt > FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS) return () => {};
+    _setHighlight(_lastHoveredFunctionalGroupMappings.map(mapping => new Map(mapping)));
+    return () => {};
+}
+
+function _restoreRecentFunctionalGroupHighlight() {
+    if (_highlightedAtomSets.length > 0) return false;
+    if (!_highlightMol || !_lastHoveredFunctionalGroupMappings?.length) return false;
+    if (Date.now() - _lastHoveredFunctionalGroupAt > FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS) return false;
+    _preserveFunctionalGroupHighlightUntil = Date.now() + FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS;
+    _setHighlight(_lastHoveredFunctionalGroupMappings.map(mapping => new Map(mapping)));
+    return true;
+}
+
+function _restorePersistentHighlight() {
+    const activeFgRow = document.querySelector('#fg-body tr.fg-active');
+    if (activeFgRow?._fgMappings?.length) {
+        _setHighlight(activeFgRow._fgMappings);
+        return true;
+    }
+    if (_reactionPreviewLocked && _reactionPreviewHighlightMappings?.length) {
+        _setHighlight(_reactionPreviewHighlightMappings.map(mapping => new Map(mapping)));
+        return true;
+    }
+    _setHighlight(null);
+    return false;
 }
 
 /** Returns true if id1 and id2 belong to the same SMARTS match instance. */
@@ -460,6 +519,7 @@ let _reactionPreviewPreservedProductStereoBondTypes = new Map();
 let _reactionPreviewForcedStereoByCenter = new Map();
 let _reactionPreviewForcedStereoBondTypes = new Map();
 let _reactionPreviewForcedStereoBondCenters = new Map();
+let _reactionPreviewHighlightMappings = null;
 
 function _hasReactionPreview() {
     return _reactionPreviewReactantAtomIds.size > 0 && _reactionPreviewProductAtomIds.size > 0;
@@ -522,6 +582,7 @@ function _clearReactionPreviewState() {
     _reactionPreviewForcedStereoByCenter = new Map();
     _reactionPreviewForcedStereoBondTypes = new Map();
     _reactionPreviewForcedStereoBondCenters = new Map();
+    _reactionPreviewHighlightMappings = null;
 }
 
 function _serializeSnapshotMol(mol) {
@@ -584,6 +645,7 @@ function _captureReactionPreviewSnapshot() {
         forcedStereoByCenter: [..._reactionPreviewForcedStereoByCenter],
         forcedStereoBondTypes: [..._reactionPreviewForcedStereoBondTypes],
         forcedStereoBondCenters: [..._reactionPreviewForcedStereoBondCenters],
+        reactionPreviewHighlightMappings: (_reactionPreviewHighlightMappings ?? []).map(mapping => [...mapping]),
     };
 }
 
@@ -606,6 +668,7 @@ function _restoreReactionPreviewSnapshot(previewSnap) {
     _reactionPreviewForcedStereoByCenter = new Map(previewSnap.forcedStereoByCenter ?? []);
     _reactionPreviewForcedStereoBondTypes = new Map(previewSnap.forcedStereoBondTypes ?? []);
     _reactionPreviewForcedStereoBondCenters = new Map(previewSnap.forcedStereoBondCenters ?? []);
+    _reactionPreviewHighlightMappings = (previewSnap.reactionPreviewHighlightMappings ?? []).map(mapping => new Map(mapping));
 }
 
 function _cloneWithPrefixedIds(mol, prefix) {
@@ -641,6 +704,26 @@ function _restoreReactionPreviewSource() {
     _clearReactionPreviewState();
     _renderMol(sourceMol);
     return true;
+}
+
+function _prepareReactionPreviewEditTargets({ atomId = null, snapAtomId = null } = {}) {
+    if (!_hasReactionPreview()) return { atomId, snapAtomId, restored: false };
+    const reactantAtomIds = _reactionPreviewReactantAtomIds ?? new Set();
+    if (atomId !== null && !reactantAtomIds.has(atomId)) return null;
+    if (snapAtomId !== null && !reactantAtomIds.has(snapAtomId)) return null;
+    const restored = _restoreReactionPreviewSource();
+    return { atomId, snapAtomId, restored };
+}
+
+function _prepareReactionPreviewBondEditTarget(bondId) {
+    if (!_hasReactionPreview()) return { bondId, restored: false };
+    const previewMol = mode === 'force' ? currentMol : _mol2d;
+    const bond = previewMol?.bonds.get(bondId);
+    if (!bond) return null;
+    const reactantAtomIds = _reactionPreviewReactantAtomIds ?? new Set();
+    if (!bond.atoms.every(atomId => reactantAtomIds.has(atomId))) return null;
+    const restored = _restoreReactionPreviewSource();
+    return { bondId, restored };
 }
 
 function _reaction2dArrowGeometry(items, atomIds, {
@@ -1418,10 +1501,14 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
         _reactionPreviewForcedStereoByCenter = preview.forcedStereoByCenter ?? new Map();
         _reactionPreviewForcedStereoBondTypes = preview.forcedStereoBondTypes ?? new Map();
         _reactionPreviewForcedStereoBondCenters = preview.forcedStereoBondCenters ?? new Map();
+        _reactionPreviewHighlightMappings = preview.highlightMapping
+            ? [new Map(preview.highlightMapping)]
+            : [new Map(site.highlightMapping)];
         _renderMol(preview.mol);
         _setHighlight(preview.highlightMapping ? [preview.highlightMapping] : [site.highlightMapping]);
         return;
     }
+    _reactionPreviewHighlightMappings = [new Map(site.highlightMapping)];
     _setHighlight([site.highlightMapping]);
 }
 
@@ -1447,6 +1534,7 @@ function updateFunctionalGroups(mol) {
     _highlightMol = mol;
     _highlightedAtomIds.clear();
     _highlightedAtomSets = [];
+    _rememberHoveredFunctionalGroupMappings(null);
     const tbody = document.getElementById('fg-body');
     tbody.innerHTML = '';
     for (const [, fg] of Object.entries(functionalGroups)) {
@@ -1459,10 +1547,12 @@ function updateFunctionalGroups(mol) {
 
         tr.addEventListener('mouseenter', () => {
             if (tbody.querySelector('tr.fg-active')) return;
+            _rememberHoveredFunctionalGroupMappings(uniqueMappings);
             _setHighlight(uniqueMappings);
         });
         tr.addEventListener('mouseleave', () => {
             if (tbody.querySelector('tr.fg-active')) return;
+            if (Date.now() < _preserveFunctionalGroupHighlightUntil) return;
             _setHighlight(null);
         });
         tr.addEventListener('click', () => {
@@ -1566,6 +1656,7 @@ function updateReactionTemplatesPanel() {
 // Clear active functional-group row when clicking outside the table.
 document.addEventListener('click', e => {
     if (e.target.closest('#fg-table')) return;
+    if (e.target.closest('#rotate-controls')) return;
     const tbody = document.getElementById('fg-body');
     if (!tbody.querySelector('tr.fg-active')) return;
     tbody.querySelectorAll('tr').forEach(r => r.classList.remove('fg-active'));
@@ -2959,8 +3050,7 @@ function applyForceHighlights() {
     _fgHlLines = null; _fgHlCircles = null;
     if (_highlightedAtomIds.size === 0) return;
 
-    const HL_COLOR = 'rgb(130, 210, 80)';
-    const OL_COLOR = 'rgb(70, 140, 40)';
+    const highlightStyle = HIGHLIGHT_STYLES[_highlightStyle] ?? HIGHLIGHT_STYLES.default;
     const HL_R = 8;
     const OL = 2;
     const hlLayer = g.insert('g', ':first-child').attr('class', 'fg-highlight-layer').attr('opacity', 0.45);
@@ -2990,8 +3080,8 @@ function applyForceHighlights() {
                 .attr('cx', d => d.x).attr('cy', d => d.y);
         };
 
-        addLines(OL_COLOR, OL); addCircles(OL_COLOR, OL); // outline
-        addLines(HL_COLOR,  0); addCircles(HL_COLOR,  0); // fill
+        addLines(highlightStyle.outline, OL); addCircles(highlightStyle.outline, OL); // outline
+        addLines(highlightStyle.fill,  0); addCircles(highlightStyle.fill,  0); // fill
     }
     _fgHlLines   = hlLayer.selectAll('line');
     _fgHlCircles = hlLayer.selectAll('circle');
@@ -3451,7 +3541,13 @@ window.undoAction = undoAction;
 window.redoAction = redoAction;
 
 // Export — logic lives in src/app/ui/export.js
-initExport({ g, simulation, atomRadius, get _mol2d() { return _mol2d; } });
+initExport({
+    g,
+    simulation,
+    atomRadius,
+    get _mol2d() { return _mol2d; },
+    prepare2dExport: () => _prepare2dExportHighlightState(),
+});
 window.copyForcePng = copyForcePng;
 window.copySvg2d    = copySvg2d;
 window.savePng2d    = savePng2d;
@@ -3758,8 +3854,7 @@ function _redraw2dHighlights() {
     const hCounts = _hCounts2d;
     const toSVGPt = _toSVGPt2d;
     const atoms   = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
-    const HL_COLOR = 'rgb(130, 210, 80)';
-    const OL_COLOR = 'rgb(70, 140, 40)';
+    const highlightStyle = HIGHLIGHT_STYLES[_highlightStyle] ?? HIGHLIGHT_STYLES.default;
     const OL = 2;
     const hlLayer = g.insert('g', ':first-child').attr('class', 'atom-highlights').attr('opacity', 0.45);
     for (const atomSet of _highlightedAtomSets) {
@@ -3794,8 +3889,8 @@ function _redraw2dHighlights() {
                     .attr('cx', x).attr('cy', y).attr('r', r + extra)
                     .attr('fill', fill).attr('stroke', 'none');
         };
-        addL(OL_COLOR, OL); addC(OL_COLOR, OL);
-        addL(HL_COLOR,  0); addC(HL_COLOR,  0);
+        addL(highlightStyle.outline, OL); addC(highlightStyle.outline, OL);
+        addL(highlightStyle.fill,  0); addC(highlightStyle.fill,  0);
     }
 }
 
@@ -3804,6 +3899,9 @@ function _redraw2dHighlights() {
 // ---------------------------------------------------------------------------
 
 function _promoteBondOrder(bondId) {
+    const reactionEdit = _prepareReactionPreviewBondEditTarget(bondId);
+    if (reactionEdit === null) return;
+    bondId = reactionEdit?.bondId ?? bondId;
     const mol = mode === 'force' ? currentMol : _mol2d;
     if (!mol) return;
     const bond = mol.bonds.get(bondId);
@@ -4127,6 +4225,9 @@ function _ensureMol() {
 // atomId may be null (blank-space click) — in that case a source C is created at (ox, oy).
 // ox, oy are always required (g-space origin of the draw-bond gesture).
 function _autoPlaceBond(atomId, ox, oy) {
+    const reactionEdit = _prepareReactionPreviewEditTargets({ atomId });
+    if (reactionEdit === null) return;
+    atomId = reactionEdit?.atomId ?? atomId;
     _takeSnapshot();
     const mol = _ensureMol();
 
@@ -4326,7 +4427,7 @@ function _commitDrawBond() {
     if (!_drawBondState) {
         _cancelDrawBond(); return;
     }
-    const { atomId, ox, oy, ex, ey, snapAtomId, dragged } = _drawBondState;
+    let { atomId, ox, oy, ex, ey, snapAtomId, dragged } = _drawBondState;
 
     // No drag (pure click) → auto-place at best angle.
     if (!dragged) {
@@ -4341,6 +4442,9 @@ function _commitDrawBond() {
 
         // Click on an existing non-H atom with a different element → replace element.
         if (atomId !== null) {
+            const reactionEdit = _prepareReactionPreviewEditTargets({ atomId });
+            if (reactionEdit === null) return;
+            atomId = reactionEdit.atomId;
             const mol = mode === 'force' ? currentMol : _mol2d;
             const clickedAtom = mol?.atoms.get(atomId);
             if (clickedAtom && clickedAtom.name !== _drawBondElement) {
@@ -4389,6 +4493,10 @@ function _commitDrawBond() {
     _drawBondHoverSuppressed = true;
 
     // Don't create a bond to a hydrogen atom.
+    const reactionEdit = _prepareReactionPreviewEditTargets({ atomId, snapAtomId });
+    if (reactionEdit === null) return;
+    atomId = reactionEdit.atomId;
+    snapAtomId = reactionEdit.snapAtomId;
     if (snapAtomId !== null) {
         const checkMol = mode === 'force' ? currentMol : _mol2d;
         if (checkMol?.atoms.get(snapAtomId)?.name === 'H') return;
@@ -5045,6 +5153,9 @@ window.cleanLayout2d = function() {
         freezeChiralCenters: false,
         allowBranchReflect: true
     });
+    _alignReaction2dProductOrientation(_mol2d);
+    _spreadReaction2dProductComponents(_mol2d, 1.5);
+    _centerReaction2dPairCoords(_mol2d, 1.5);
     fitCurrent2dView();
     draw2d();
     const btn = document.getElementById('clean-2d-btn');
@@ -5228,6 +5339,7 @@ function startRotate(delta) {
     stopRotate();
     if (mode !== '2d' || !_mol2d) return;
     _takeSnapshot({ clearReactionPreview: false });
+    _restoreRecentFunctionalGroupHighlight();
     const step = () => {
         const allAtoms = [..._mol2d.atoms.values()].filter(a => a.x != null);
         if (!allAtoms.length) return;
@@ -5289,6 +5401,7 @@ document.addEventListener('click', e => {
     if (!btn) return;
     if (mode !== '2d' || !_mol2d) return;
     _takeSnapshot({ clearReactionPreview: false });
+    _restoreRecentFunctionalGroupHighlight();
     if (btn.id === 'flip-h') flipH = !flipH;
     else                     flipV = !flipV;
 
@@ -5363,23 +5476,84 @@ updateReactionTemplatesPanel();
 // Physicochemical row tooltips — event delegation on the table
 {
     const pcTable = document.getElementById('pc-table');
+    const PC_TOOLTIP_DELAY_MS = 2000;
     let _pcTipTimer = null;
+    let _pcHighlightRow = null;
+    let _pcTooltipRow = null;
+    let _pcTooltipCell = null;
+    let _pcTooltipPoint = null;
+    const setPcRowHighlight = tr => {
+        pcTable.querySelectorAll('tr.pc-hover').forEach(row => row.classList.remove('pc-hover'));
+        if (tr) tr.classList.add('pc-hover');
+    };
+    const hidePcTooltip = () => {
+        clearTimeout(_pcTipTimer);
+        _pcTipTimer = null;
+        _pcTooltipRow = null;
+        _pcTooltipCell = null;
+        _pcTooltipPoint = null;
+        tooltip.style('opacity', 0);
+    };
+    const showPcTooltip = () => {
+        if (!_pcTooltipRow?.dataset.desc || !_pcTooltipPoint) return;
+        tooltip.html(`<div style="max-width:220px;white-space:normal;line-height:1.4">${_pcTooltipRow.dataset.desc}</div>`)
+            .style('left', (_pcTooltipPoint.x + 14) + 'px')
+            .style('top',  (_pcTooltipPoint.y - 10) + 'px')
+            .style('opacity', 0.95);
+    };
+    const applyPcHighlight = tr => {
+        if (!tr?.dataset.highlight) return false;
+        try {
+            const groups = JSON.parse(tr.dataset.highlight);
+            if (!Array.isArray(groups) || groups.length === 0) return false;
+            _setHighlight(
+                groups.map(group => new Map(group.map(id => [id, id]))),
+                { style: 'physchem' }
+            );
+            return true;
+        } catch {
+            return false;
+        }
+    };
     pcTable.addEventListener('mousemove', event => {
         const tr = event.target.closest('tr[data-desc]');
-        if (!tr || !tr.dataset.desc) return;
+        if (tr !== _pcHighlightRow) {
+            _pcHighlightRow = tr ?? null;
+            setPcRowHighlight(_pcHighlightRow);
+            if (!_pcHighlightRow || !applyPcHighlight(_pcHighlightRow)) {
+                _restorePersistentHighlight();
+            }
+        }
         const td = event.target.closest('td');
-        if (!td || td !== tr.cells[0]) return;
-        clearTimeout(_pcTipTimer);
-        _pcTipTimer = setTimeout(() => {
-            tooltip.html(`<div style="max-width:220px;white-space:normal;line-height:1.4">${tr.dataset.desc}</div>`)
-                .style('left', (event.clientX + 14) + 'px')
-                .style('top',  (event.clientY - 10) + 'px')
-                .style('opacity', 0.95);
-        }, 120);
+        const onTooltipCell = !!(tr && td && td === tr.cells[0]);
+        if (!onTooltipCell) {
+            hidePcTooltip();
+            return;
+        }
+        _pcTooltipPoint = { x: event.clientX, y: event.clientY };
+        const tooltipVisible = tooltip.style('opacity') !== '0';
+        const tooltipTargetChanged = tr !== _pcTooltipRow || td !== _pcTooltipCell;
+        if (tooltipTargetChanged) {
+            clearTimeout(_pcTipTimer);
+            _pcTooltipRow = tr;
+            _pcTooltipCell = td;
+        }
+        if (tooltipVisible) {
+            showPcTooltip();
+            return;
+        }
+        if (tooltipTargetChanged) {
+            _pcTipTimer = setTimeout(() => {
+                _pcTipTimer = null;
+                showPcTooltip();
+            }, PC_TOOLTIP_DELAY_MS);
+        }
     });
     pcTable.addEventListener('mouseleave', () => {
-        clearTimeout(_pcTipTimer);
-        tooltip.style('opacity', 0);
+        _pcHighlightRow = null;
+        setPcRowHighlight(null);
+        hidePcTooltip();
+        _restorePersistentHighlight();
     });
 }
 
@@ -5436,8 +5610,11 @@ function clearMolecule() {
 
 function parseAndRender(smiles) {
     if (typeof smiles !== 'string' || smiles.length === 0 || smiles.length > 1000) return;
-    if (smiles === currentSmiles && mode === 'force') return;
     _clearReactionPreviewState();
+    if (smiles === currentSmiles && mode === 'force') {
+        updateReactionTemplatesPanel();
+        return;
+    }
 
     let mol;
     try {
@@ -5758,7 +5935,7 @@ window.addEventListener('resize', () => {
 // Init
 // ---------------------------------------------------------------------------
 renderExamples();
-const initialSmiles = 'CN(C)CCC1=CNC2=C1C=C(C=C2)OC';
+const initialSmiles = 'CC(=O)C(Cl)CC(C(C)C)C=C';
 document.getElementById('smiles-input').value = initialSmiles;
 parseAndRender(initialSmiles);
 

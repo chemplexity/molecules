@@ -154,7 +154,8 @@ export const randomMolecule = [
   { smiles: 'CCCCCC1=CC(=C2[CH]3C=C(CC[CH]3C(OC2=C1)(C)C)C)O', inchi: 'InChI=1S/C21H30O2/c1-5-6-7-8-15-12-18(22)20-16-11-14(2)9-10-17(16)21(3,4)23-19(20)13-15/h11-13,16-17,22H,5-10H2,1-4H3' },
   { smiles: 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O', inchi: 'InChI=1S/C6H12O6/c7-1-2-3(8)4(9)5(10)6(11)12-2/h2-11H,1H2/t2-,3-,4+,5-,6?/m1/s1' },
   { smiles: 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN', inchi: 'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1' },
-  { smiles: 'C1=CC(=C(C=C1CCN)O)O', inchi: 'InChI=1S/C8H11NO2/c9-4-3-6-1-2-7(10)8(11)5-6/h1-2,5,10-11H,3-4,9H2' }
+  { smiles: 'C1=CC(=C(C=C1CCN)O)O', inchi: 'InChI=1S/C8H11NO2/c9-4-3-6-1-2-7(10)8(11)5-6/h1-2,5,10-11H,3-4,9H2' },
+  { smiles: 'CN(C)CCC1=CNC2=C1C=C(C=C2)OC', inchi: 'InChI=1S/C13H18N2O/c1-15(2)5-4-10-9-14-13(12)7-6-11(8-12-10)16-3/h6-9,14H,4-5H2,1-3H3' }
 ];
 
 // Expose as a global when loaded in the browser as a module script.

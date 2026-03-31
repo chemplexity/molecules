@@ -427,6 +427,19 @@ function reaction2dHeavyGeometryStats(mol, componentAtomIds) {
   return { minNonbonded, maxBond };
 }
 
+function refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength = 1.5) {
+  if (!mol || !componentAtomIds?.size) {
+    return;
+  }
+  idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength);
+  preserveReaction2dEditedSingleBondTermini(mol, componentAtomIds, bondLength);
+  idealizeReaction2dEditedMultipleBondTermini(mol, componentAtomIds, bondLength);
+  idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength);
+  repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength);
+  finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
+  finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
+}
+
 function preserveReaction2dEditedSingleBondTermini(mol, componentAtomIds, bondLength = 1.5) {
   if (!mol || !componentAtomIds?.size) {
     return;
@@ -1662,6 +1675,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
         product.x = reactant.x;
         product.y = reactant.y;
       }
+      refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength);
       const seededStats = reaction2dHeavyGeometryStats(mol, componentAtomIds);
       if (
         seededStats.maxBond > bondLength * 1.85 ||
@@ -1674,12 +1688,13 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
       scaffoldPairs.length >= 3
         ? scaffoldPairs
         : (anchoredPairs.length >= 3 ? anchoredPairs : []);
-    if (!canSeedHeavyScaffold && exactSnapPairs.length >= 3 && !mappedConnectivityChanged) {
+    if (!canSeedHeavyScaffold && exactSnapPairs.length >= 3) {
       const beforeSnapshot = snapshotReaction2dCoords(mol, componentAtomIds);
       for (const [reactant, product] of exactSnapPairs) {
         product.x = reactant.x;
         product.y = reactant.y;
       }
+      refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength);
       const snappedStats = reaction2dHeavyGeometryStats(mol, componentAtomIds);
       if (
         snappedStats.maxBond > bondLength * 1.85 ||
@@ -1688,13 +1703,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
         restoreReaction2dCoords(mol, beforeSnapshot);
       }
     }
-    idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength);
-    preserveReaction2dEditedSingleBondTermini(mol, componentAtomIds, bondLength);
-    idealizeReaction2dEditedMultipleBondTermini(mol, componentAtomIds, bondLength);
-    idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength);
-    repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength);
-    finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
-    finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
+    refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength);
     preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds);
   }
 }

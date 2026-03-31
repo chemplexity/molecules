@@ -9,8 +9,25 @@ import {
   hBondAcceptors,
   rotatableBondCount,
   fsp3,
+  ringCount,
+  aromaticRingCount,
+  stereocenters,
+  veberRules,
   lipinskiRuleOfFive
 } from '../../src/descriptors/physicochemical.js';
+
+function sortedIds(values) {
+  return [...values].sort((a, b) => String(a).localeCompare(String(b)));
+}
+
+function ringAtomSets(mol) {
+  return mol.getRings()
+    .map(ring => sortedIds(ring))
+    .sort((a, b) =>
+      a.length - b.length ||
+      a.join('\u0000').localeCompare(b.join('\u0000'))
+    );
+}
 
 // ---------------------------------------------------------------------------
 // logP
@@ -93,31 +110,39 @@ describe('tpsa', () => {
 
 describe('hBondDonors', () => {
   it('benzene has 0 donors', () => {
-    assert.equal(hBondDonors(parseSMILES('c1ccccc1')), 0);
+    assert.deepEqual(hBondDonors(parseSMILES('c1ccccc1')), { count: 0, atoms: [] });
   });
 
   it('ethanol has 1 donor (OH)', () => {
-    assert.equal(hBondDonors(parseSMILES('CCO')), 1);
+    const mol = parseSMILES('CCO');
+    const oxygenId = [...mol.atoms.values()].find(atom => atom.name === 'O').id;
+    assert.deepEqual(hBondDonors(mol), { count: 1, atoms: [oxygenId] });
   });
 
   it('acetic acid has 1 donor (COOH)', () => {
-    assert.equal(hBondDonors(parseSMILES('CC(=O)O')), 1);
+    const mol = parseSMILES('CC(=O)O');
+    const donorId = [...mol.atoms.values()]
+      .find(atom => atom.name === 'O' && atom.getHydrogenNeighbors(mol).length > 0)
+      .id;
+    assert.deepEqual(hBondDonors(mol), { count: 1, atoms: [donorId] });
   });
 
   it('methylamine has 1 donor (NH2)', () => {
-    assert.equal(hBondDonors(parseSMILES('CN')), 1);
+    const mol = parseSMILES('CN');
+    const nitrogenId = [...mol.atoms.values()].find(atom => atom.name === 'N').id;
+    assert.deepEqual(hBondDonors(mol), { count: 1, atoms: [nitrogenId] });
   });
 
   it('pyridine has 0 donors', () => {
-    assert.equal(hBondDonors(parseSMILES('c1ccncc1')), 0);
+    assert.deepEqual(hBondDonors(parseSMILES('c1ccncc1')), { count: 0, atoms: [] });
   });
 
   it('nitrobenzene has 0 donors', () => {
-    assert.equal(hBondDonors(parseSMILES('[O-][N+](=O)c1ccccc1')), 0);
+    assert.deepEqual(hBondDonors(parseSMILES('[O-][N+](=O)c1ccccc1')), { count: 0, atoms: [] });
   });
 
   it('methane has 0 donors', () => {
-    assert.equal(hBondDonors(parseSMILES('C')), 0);
+    assert.deepEqual(hBondDonors(parseSMILES('C')), { count: 0, atoms: [] });
   });
 
   it('local hydrogen inference still works when another atom has an explicit H', () => {
@@ -127,7 +152,7 @@ describe('hBondDonors', () => {
     mol.addAtom('h', 'H');
     mol.addBond('b1', 'c', 'n', {}, false);
     mol.addBond('b2', 'c', 'h', {}, false);
-    assert.equal(hBondDonors(mol), 1);
+    assert.deepEqual(hBondDonors(mol), { count: 1, atoms: ['n'] });
     assert.ok(tpsa(mol) > 20);
   });
 
@@ -142,51 +167,73 @@ describe('hBondDonors', () => {
 
 describe('hBondAcceptors', () => {
   it('benzene has 0 acceptors', () => {
-    assert.equal(hBondAcceptors(parseSMILES('c1ccccc1')), 0);
+    assert.deepEqual(hBondAcceptors(parseSMILES('c1ccccc1')), { count: 0, atoms: [] });
   });
 
   it('ethanol has 1 acceptor (O)', () => {
-    assert.equal(hBondAcceptors(parseSMILES('CCO')), 1);
+    const mol = parseSMILES('CCO');
+    const oxygenId = [...mol.atoms.values()].find(atom => atom.name === 'O').id;
+    assert.deepEqual(hBondAcceptors(mol), { count: 1, atoms: [oxygenId] });
   });
 
   it('acetic acid has 1 acceptor (carbonyl O only)', () => {
-    assert.equal(hBondAcceptors(parseSMILES('CC(=O)O')), 1);
+    const mol = parseSMILES('CC(=O)O');
+    const acceptorId = [...mol.atoms.values()]
+      .find(atom => atom.name === 'O' && atom.getHydrogenNeighbors(mol).length === 0)
+      .id;
+    assert.deepEqual(hBondAcceptors(mol), { count: 1, atoms: [acceptorId] });
   });
 
   it('pyridine has 1 acceptor (N)', () => {
-    assert.equal(hBondAcceptors(parseSMILES('c1ccncc1')), 1);
+    const mol = parseSMILES('c1ccncc1');
+    const nitrogenId = [...mol.atoms.values()].find(atom => atom.name === 'N').id;
+    assert.deepEqual(hBondAcceptors(mol), { count: 1, atoms: [nitrogenId] });
   });
 
   it('aniline has 1 acceptor (N)', () => {
-    assert.equal(hBondAcceptors(parseSMILES('Nc1ccccc1')), 1);
+    const mol = parseSMILES('Nc1ccccc1');
+    const nitrogenId = [...mol.atoms.values()].find(atom => atom.name === 'N').id;
+    assert.deepEqual(hBondAcceptors(mol), { count: 1, atoms: [nitrogenId] });
   });
 
   it('pyrrole has 0 acceptors', () => {
-    assert.equal(hBondAcceptors(parseSMILES('[nH]1cccc1')), 0);
+    assert.deepEqual(hBondAcceptors(parseSMILES('[nH]1cccc1')), { count: 0, atoms: [] });
   });
 
   it('ammonium has 0 acceptors', () => {
-    assert.equal(hBondAcceptors(parseSMILES('[NH4+]')), 0);
+    assert.deepEqual(hBondAcceptors(parseSMILES('[NH4+]')), { count: 0, atoms: [] });
   });
 
   it('quaternary ammonium alcohol has 1 acceptor (the alcohol oxygen)', () => {
-    assert.equal(hBondAcceptors(parseSMILES('C[N+](C)(C)CCO')), 1);
+    const mol = parseSMILES('C[N+](C)(C)CCO');
+    const oxygenId = [...mol.atoms.values()].find(atom => atom.name === 'O').id;
+    assert.deepEqual(hBondAcceptors(mol), { count: 1, atoms: [oxygenId] });
   });
 
   it('acetamide has 1 acceptor (carbonyl O only)', () => {
-    assert.equal(hBondAcceptors(parseSMILES('CC(=O)NC')), 1);
+    const mol = parseSMILES('CC(=O)NC');
+    const oxygenId = [...mol.atoms.values()].find(atom => atom.name === 'O').id;
+    assert.deepEqual(hBondAcceptors(mol), { count: 1, atoms: [oxygenId] });
   });
 
   it('nitrobenzene has 2 acceptors (the two oxygens)', () => {
-    assert.equal(hBondAcceptors(parseSMILES('[O-][N+](=O)c1ccccc1')), 2);
+    const mol = parseSMILES('[O-][N+](=O)c1ccccc1');
+    const oxygenIds = sortedIds(
+      [...mol.atoms.values()].filter(atom => atom.name === 'O').map(atom => atom.id)
+    );
+    assert.deepEqual(hBondAcceptors(mol), { count: 2, atoms: oxygenIds });
   });
 
   it('thioethers count as sulfur acceptors', () => {
-    assert.equal(hBondAcceptors(parseSMILES('CSC')), 1);
+    const mol = parseSMILES('CSC');
+    const sulfurId = [...mol.atoms.values()].find(atom => atom.name === 'S').id;
+    assert.deepEqual(hBondAcceptors(mol), { count: 1, atoms: [sulfurId] });
   });
 
   it('trialkyl phosphines count as phosphorus acceptors', () => {
-    assert.equal(hBondAcceptors(parseSMILES('P(C)(C)C')), 1);
+    const mol = parseSMILES('P(C)(C)C');
+    const phosphorusId = [...mol.atoms.values()].find(atom => atom.name === 'P').id;
+    assert.deepEqual(hBondAcceptors(mol), { count: 1, atoms: [phosphorusId] });
   });
 
   it('throws on non-molecule', () => {
@@ -200,35 +247,95 @@ describe('hBondAcceptors', () => {
 
 describe('rotatableBondCount', () => {
   it('ethane has 0 rotatable bonds (terminal atoms)', () => {
-    assert.equal(rotatableBondCount(parseSMILES('CC')), 0);
+    assert.deepEqual(rotatableBondCount(parseSMILES('CC')), { count: 0, bonds: [] });
   });
 
   it('propane has 0 rotatable bonds (both C-C bonds are terminal)', () => {
-    assert.equal(rotatableBondCount(parseSMILES('CCC')), 0);
+    assert.deepEqual(rotatableBondCount(parseSMILES('CCC')), { count: 0, bonds: [] });
   });
 
   it('butane has 1 rotatable bond (central C-C)', () => {
-    assert.equal(rotatableBondCount(parseSMILES('CCCC')), 1);
+    const mol = parseSMILES('CCCC');
+    const bondIds = sortedIds(
+      [...mol.bonds.values()].filter(bond => bond.isRotatable(mol)).map(bond => bond.id)
+    );
+    assert.deepEqual(rotatableBondCount(mol), { count: 1, bonds: bondIds });
   });
 
   it('pentane has 2 rotatable bonds', () => {
-    assert.equal(rotatableBondCount(parseSMILES('CCCCC')), 2);
+    const mol = parseSMILES('CCCCC');
+    const bondIds = sortedIds(
+      [...mol.bonds.values()].filter(bond => bond.isRotatable(mol)).map(bond => bond.id)
+    );
+    assert.deepEqual(rotatableBondCount(mol), { count: 2, bonds: bondIds });
   });
 
   it('benzene has 0 rotatable bonds (aromatic)', () => {
-    assert.equal(rotatableBondCount(parseSMILES('c1ccccc1')), 0);
+    assert.deepEqual(rotatableBondCount(parseSMILES('c1ccccc1')), { count: 0, bonds: [] });
   });
 
   it('cyclohexane ring bonds are not rotatable', () => {
-    assert.equal(rotatableBondCount(parseSMILES('C1CCCCC1')), 0);
+    assert.deepEqual(rotatableBondCount(parseSMILES('C1CCCCC1')), { count: 0, bonds: [] });
   });
 
   it('amide C-N bonds are not counted as rotatable', () => {
-    assert.equal(rotatableBondCount(parseSMILES('CC(=O)NC')), 0);
+    assert.deepEqual(rotatableBondCount(parseSMILES('CC(=O)NC')), { count: 0, bonds: [] });
   });
 
   it('throws on non-molecule', () => {
     assert.throws(() => rotatableBondCount(null), TypeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// ring descriptors / stereocenters / Veber
+// ---------------------------------------------------------------------------
+
+describe('ringCount', () => {
+  it('returns count plus ring atom ids for benzene', () => {
+    const mol = parseSMILES('c1ccccc1');
+    assert.deepEqual(ringCount(mol), {
+      count: 1,
+      atoms: ringAtomSets(mol)
+    });
+  });
+
+  it('returns two rings for naphthalene', () => {
+    const result = ringCount(parseSMILES('c1ccc2ccccc2c1'));
+    assert.equal(result.count, 2);
+    assert.equal(result.atoms.length, 2);
+  });
+});
+
+describe('aromaticRingCount', () => {
+  it('returns aromatic ring atom ids for benzene', () => {
+    const mol = parseSMILES('c1ccccc1');
+    assert.deepEqual(aromaticRingCount(mol), {
+      count: 1,
+      atoms: ringAtomSets(mol)
+    });
+  });
+});
+
+describe('stereocenters', () => {
+  it('returns count plus atom ids for defined stereocenters', () => {
+    const mol = parseSMILES('N[C@@H](C)C(=O)O');
+    assert.deepEqual(stereocenters(mol), {
+      count: 1,
+      atoms: sortedIds(mol.getChiralCenters())
+    });
+  });
+
+  it('returns empty details for achiral molecules', () => {
+    assert.deepEqual(stereocenters(parseSMILES('CC')), { count: 0, atoms: [] });
+  });
+});
+
+describe('veberRules', () => {
+  it('uses the detailed rotatable bond count internally', () => {
+    const result = veberRules(parseSMILES('CCCC'));
+    assert.equal(result.rotatableBonds, 1);
+    assert.equal(result.passes, true);
   });
 });
 

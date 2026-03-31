@@ -321,6 +321,14 @@ div.tooltip td:first-child {
     color: #555;
 }
 
+#pc-table tr[data-highlight] {
+    cursor: pointer;
+}
+
+#pc-table tr.pc-hover td {
+    background: rgba(245, 224, 94, 0.22);
+}
+
 #descriptor-tabs {
     display: flex;
     border-bottom: 1px solid #ddd;
@@ -864,4 +872,3 @@ div.tooltip td:first-child {
     background: #f0f0f0;
     color: #555;
 }
-

@@ -30,15 +30,25 @@ export const reactionTemplates = {
     smirks: '[C;X4;H1,H2:1][OH:2]>>[C:1]=[O:2]',
     excludeOverlaps: ['[C:1](=[O:2])[OH:3]', '[C:1](=[O:2])[O:3][C:4]', '[C:1](=[O:2])[N:3]']
   },
+  aldehydeOxidation: {
+    name: 'Aldehyde Oxidation',
+    smirks: '[CH;X3;H1:1]=[O:2]>>[C:1](=[O:2])O'
+  },
   carbonylReduction: {
     name: 'Carbonyl Reduction',
     smirks: '[C;X3;!$([C](=[O])[O,N,S,F,Cl,Br,I]):1]=[O:2]>>[C:1][OH:2]'
+  },
+  imineReduction: {
+    name: 'Imine Reduction',
+    smirks: '[C;!$([C](=[N])[N,O,S]):1]=[N;!$([N]-[N,O,S]):2]>>[CH2:1][NH:2]'
   },
   alkeneHydrogenation: {
     name: 'Alkene Hydrogenation',
     smirks: '[C+0;!$([C]-[*+,-]):1]=[C+0;!$([C]-[*+,-]):2]>>[C:1][C:2]'
   },
   alkynePartialReduction: { name: 'Alkyne Partial Reduction', smirks: '[C:1]#[C:2]>>[C:1]=[C:2]' },
+  alkyneFullReduction: { name: 'Alkyne Full Reduction', smirks: '[C:1]#[C:2]>>[C:1][C:2]' },
+  benzylicOxidation: { name: 'Benzylic Oxidation', smirks: '[c:2][CH3:1]>>[c:2][CH:1]=O' },
 
   // ---------------------------------------------------------------------------
   // Substitution / functional-group interconversion
@@ -46,21 +56,26 @@ export const reactionTemplates = {
 
   dehalogenation: { name: 'Dehalogenation', smirks: '[C:1][F,Cl,Br,I]>>[C:1]' },
   halideHydrolysis: { name: 'Halide Hydrolysis', smirks: '[C:1][Cl,Br,I:2]>>[C:1][OH:2]' },
+  arylHalideHydrolysis: { name: 'Aryl Halide Hydrolysis', smirks: '[c:1][Cl,Br,I:2]>>[c:1][OH:2]' },
   alcoholHalogenation: {
     name: 'Alcohol Halogenation',
     smirks: '[C;X4:1][OH:2]>>[C:1][Cl:2]',
     excludeOverlaps: ['[C:1](=[O:2])[OH:3]', '[C:1](=[O:2])[O:3][C:4]', '[C:1](=[O:2])[N:3]']
   },
   nitrileHydrogenationToImine: { name: 'Nitrile Hydrogenation To Imine', smirks: '[C:1]#[N:2]>>[CH:1]=[NH:2]' },
+  etherCleavage: { name: 'Ether Cleavage', smirks: '[C;X4;!$(C=O):1][O:2][C;X4;!$(C=O):3]>>[C:1][OH:2].[C:3]O' },
 
   // ---------------------------------------------------------------------------
   // Acyl chemistry
   // ---------------------------------------------------------------------------
 
   esterHydrolysis: { name: 'Ester Hydrolysis', smirks: '[C:1](=[O:2])[O:3][C;!$(C=O):4]>>[C:1](=[O:2])[OH:3].[C:4]O' },
+  esterification: { name: 'Esterification', smirks: '[C:1](=[O:2])[OH:3].[C;X4;!$(C=O):4][OH:5]>>[C:1](=[O:2])[OH0+0:5][C:4].[OH2:3]' },
   saponification: { name: 'Saponification', smirks: '[C:1](=[O:2])[O:3][C;!$(C=O):4]>>[C:1](=[O:2])[OH0-:3].[C:4]O' },
   anhydrideHydrolysis: { name: 'Anhydride Hydrolysis', smirks: '[C:1](=[O:2])[O:3][C:4](=[O:5])>>[C:1](=[O:2])[OH:3].[C:4](=[O:5])O' },
   amideHydrolysis: { name: 'Amide Hydrolysis', smirks: '[C:1](=[O:2])[N:3]>>[C:1](=[O:2])O.[N:3]' },
+  amineAcylation: { name: 'Amine Acylation', smirks: '[C:1](=[O:2])[Cl:3].[NH2+0;!$([N]-[C](=O)):4]>>[C:1](=[O:2])[NH+0:4].[ClH0-:3]' },
+  amineAlkylation: { name: 'Amine Alkylation', smirks: '[C;X4:1][Cl,Br,I:2].[NH2+0;!$([N]-[C](=O)):3]>>[C:1][NH+0:3].[ClH0-:2]' },
   imineHydrolysis: { name: 'Imine Hydrolysis', smirks: '[C:1]=[N:2]>>[C:1]=O.[N:2]' },
   nitrileHydrolysisToAmide: { name: 'Nitrile Hydrolysis To Amide', smirks: '[C:1]#[N:2]>>[C:1](=O)[N:2]' },
   nitrileHydrolysisToAcid: { name: 'Nitrile Hydrolysis To Acid', smirks: '[C:1]#[N:2]>>[C:1](=O)O.[N:2]' },

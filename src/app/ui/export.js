@@ -51,47 +51,51 @@ function _svgToPngBlob(svgEl, scale = 2) {
 
 function _buildMolSvg(withWhiteBg, { atomBgFill = withWhiteBg ? 'white' : 'none' } = {}) {
     const { g } = ctx;
-    const PAD  = 30;
-    const bbox = g.node().getBBox();
-    if (!bbox.width && !bbox.height) return null;
+    const cleanup = typeof ctx.prepare2dExport === 'function' ? ctx.prepare2dExport() : null;
+    try {
+        const PAD  = 30;
+        const bbox = g.node().getBBox();
+        if (!bbox.width && !bbox.height) return null;
 
-    const vbX = bbox.x - PAD,  vbY = bbox.y - PAD;
-    const vbW = bbox.width  + PAD * 2;
-    const vbH = bbox.height + PAD * 2;
+        const vbX = bbox.x - PAD,  vbY = bbox.y - PAD;
+        const vbW = bbox.width  + PAD * 2;
+        const vbH = bbox.height + PAD * 2;
 
-    const ns    = 'http://www.w3.org/2000/svg';
-    const svgEl = document.createElementNS(ns, 'svg');
-    svgEl.setAttribute('xmlns', ns);
-    svgEl.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
-    svgEl.setAttribute('width',  vbW);
-    svgEl.setAttribute('height', vbH);
+        const ns    = 'http://www.w3.org/2000/svg';
+        const svgEl = document.createElementNS(ns, 'svg');
+        svgEl.setAttribute('xmlns', ns);
+        svgEl.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
+        svgEl.setAttribute('width',  vbW);
+        svgEl.setAttribute('height', vbH);
 
-    if (withWhiteBg) {
-        const bgRect = document.createElementNS(ns, 'rect');
-        bgRect.setAttribute('x', vbX);       bgRect.setAttribute('y', vbY);
-        bgRect.setAttribute('width', vbW);   bgRect.setAttribute('height', vbH);
-        bgRect.setAttribute('fill', 'white');
-        svgEl.appendChild(bgRect);
+        if (withWhiteBg) {
+            const bgRect = document.createElementNS(ns, 'rect');
+            bgRect.setAttribute('x', vbX);       bgRect.setAttribute('y', vbY);
+            bgRect.setAttribute('width', vbW);   bgRect.setAttribute('height', vbH);
+            bgRect.setAttribute('fill', 'white');
+            svgEl.appendChild(bgRect);
+        }
+
+        const styleEl = document.createElementNS(ns, 'style');
+        styleEl.textContent = [
+            '.bond{stroke:#333;stroke-linecap:round;fill:none}',
+            '.bond-dashed{stroke-dasharray:5,3}',
+            `.atom-bg{fill:${atomBgFill};stroke:none}`,
+            '.atom-hit,.bond-hit,.bond-hover-target{display:none}',
+            '.atom-label{font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold}',
+            '.atom-charge{font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:bold}',
+        ].join(' ');
+        svgEl.appendChild(styleEl);
+
+        const gClone = g.node().cloneNode(true);
+        gClone.removeAttribute('transform');
+        _removeInteractionOverlays(gClone);
+        _stripSolidBaseFromDashedBondPairs(gClone);
+        svgEl.appendChild(gClone);
+        return svgEl;
+    } finally {
+        cleanup?.();
     }
-
-    const styleEl = document.createElementNS(ns, 'style');
-    styleEl.textContent = [
-        '.bond{stroke:#333;stroke-linecap:round;fill:none}',
-        '.bond-dashed{stroke-dasharray:5,3}',
-        `.atom-bg{fill:${atomBgFill};stroke:none}`,
-        '.atom-hit,.bond-hit,.bond-hover-target{display:none}',
-        '.atom-label{font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:bold}',
-        '.atom-charge{font-family:Arial,Helvetica,sans-serif;font-size:9px;font-weight:bold}',
-    ].join(' ');
-    svgEl.appendChild(styleEl);
-
-    const gClone = g.node().cloneNode(true);
-    gClone.removeAttribute('transform');
-    _removeInteractionOverlays(gClone);
-    _stripSolidBaseFromDashedBondPairs(gClone);
-    svgEl.appendChild(gClone);
-
-    return svgEl;
 }
 
 function _flashBtn(btn, resetLabel) {

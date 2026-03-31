@@ -37,6 +37,30 @@ const PC_DESCRIPTIONS = {
     'QED':              'Quantitative Estimate of Drug-likeness (Bickerton 2012). Weighted geometric mean of MW, logP, HBD, HBA, TPSA, RotBonds, ArRings desirabilities. Approximate implementation.',
 };
 
+function escapeAttr(value) {
+    return String(value).replace(/"/g, '&quot;');
+}
+
+function detailHighlightGroups(detail, molecule, label = '') {
+    if (!detail) return [];
+    if (Array.isArray(detail.atoms) && detail.atoms.length > 0) {
+        if (Array.isArray(detail.atoms[0])) {
+            return detail.atoms.map(group => [...group]);
+        }
+        if (label === 'Stereocenters') {
+            return detail.atoms.map(atomId => [atomId]);
+        }
+        return [ [...detail.atoms] ];
+    }
+    if (Array.isArray(detail.bonds) && detail.bonds.length > 0) {
+        return detail.bonds
+            .map(bondId => molecule.bonds.get(bondId))
+            .filter(Boolean)
+            .map(bond => [...bond.atoms]);
+    }
+    return [];
+}
+
 export function updateDescriptors(molecule, extraH = 0) {
     const tbody = document.getElementById('descriptor-body');
 
@@ -104,26 +128,30 @@ export function updatePhysicochemical(molecule) {
         const veb  = veberRules(molecule);
         const qedV = qed(molecule);
         rows.push(
-            ['MW (Da)',          fmtVal(mw)],
-            ['logP (Crippen)',   fmtVal(lp)],
-            ['MR (Crippen)',     fmtVal(mr)],
-            ['TPSA (Å²)',        fmtVal(tp)],
-            ['HB Donors',        hbd],
-            ['HB Acceptors',     hba],
-            ['Rotatable Bonds',  rot],
-            ['Fsp3',             fmtVal(fs)],
-            ['Ring Count',       rc],
-            ['Aromatic Rings',   arc],
-            ['Stereocenters',    sc],
-            ['Ro5 Violations',   `${ro5.violations} (${ro5.passes ? 'pass' : 'fail'})`],
-            ['Veber Rules',      veb.passes ? 'pass' : 'fail'],
-            ['QED',              fmtVal(qedV)],
+            ['MW (Da)',          fmtVal(mw), null],
+            ['logP (Crippen)',   fmtVal(lp), null],
+            ['MR (Crippen)',     fmtVal(mr), null],
+            ['TPSA (Å²)',        fmtVal(tp), null],
+            ['HB Donors',        hbd.count, hbd],
+            ['HB Acceptors',     hba.count, hba],
+            ['Rotatable Bonds',  rot.count, rot],
+            ['Fsp3',             fmtVal(fs), null],
+            ['Ring Count',       rc.count, rc],
+            ['Aromatic Rings',   arc.count, arc],
+            ['Stereocenters',    sc.count, sc],
+            ['Ro5 Violations',   `${ro5.violations} (${ro5.passes ? 'pass' : 'fail'})`, null],
+            ['Veber Rules',      veb.passes ? 'pass' : 'fail', null],
+            ['QED',              fmtVal(qedV), null],
         );
     } catch {}
     tbody.innerHTML = rows
-        .map(([label, val]) => {
+        .map(([label, val, detail]) => {
             const desc = PC_DESCRIPTIONS[label] ?? '';
-            return `<tr data-desc="${desc.replace(/"/g, '&quot;')}"><td>${label}</td><td>${val}</td></tr>`;
+            const highlightGroups = detailHighlightGroups(detail, molecule, label);
+            const highlightAttr = highlightGroups.length
+                ? ` data-highlight="${escapeAttr(JSON.stringify(highlightGroups))}"`
+                : '';
+            return `<tr data-desc="${escapeAttr(desc)}"${highlightAttr}><td>${label}</td><td>${val}</td></tr>`;
         })
         .join('');
 }

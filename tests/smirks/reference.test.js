@@ -42,6 +42,22 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(toSMILES(product), 'CC');
   });
 
+  it('aldehydeOxidation converts an aldehyde to a carboxylic acid', () => {
+    const product = applySMIRKS(parseSMILES('CC=O'), reactionTemplates.aldehydeOxidation.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'CC(=O)O');
+  });
+
+  it('aldehydeOxidation does not match ketones', () => {
+    const product = applySMIRKS(parseSMILES('CC(C)=O'), reactionTemplates.aldehydeOxidation.smirks);
+    assert.equal(product, null);
+  });
+
+  it('aldehydeOxidation does not match carboxylic acids', () => {
+    const product = applySMIRKS(parseSMILES('CC(=O)O'), reactionTemplates.aldehydeOxidation.smirks);
+    assert.equal(product, null);
+  });
+
   it('alkeneHydrogenation skips alkene sites adjacent to charged atoms', () => {
     const product = applySMIRKS(
       parseSMILES('C1=CC=[C-]C=C1.[Li+]'),
@@ -51,10 +67,38 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(toSMILES(product), 'C1C=C[C-]=CC1.[Li+]');
   });
 
+  it('alkyneFullReduction fully saturates a carbon-carbon triple bond', () => {
+    const product = applySMIRKS(parseSMILES('C#C'), reactionTemplates.alkyneFullReduction.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'CC');
+  });
+
+  it('benzylicOxidation converts toluene into benzaldehyde', () => {
+    const product = applySMIRKS(parseSMILES('Cc1ccccc1'), reactionTemplates.benzylicOxidation.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'O=Cc1ccccc1');
+  });
+
+  it('benzylicOxidation does not match non-methyl benzylic sites', () => {
+    const product = applySMIRKS(parseSMILES('CCc1ccccc1'), reactionTemplates.benzylicOxidation.smirks);
+    assert.equal(product, null);
+  });
+
   it('esterHydrolysis converts a simple ester into acid and alcohol', () => {
     const product = applySMIRKS(parseSMILES('CC(=O)OC'), reactionTemplates.esterHydrolysis.smirks);
     assert.ok(product);
     assert.equal(toSMILES(product), 'CC(=O)O.CO');
+  });
+
+  it('esterification converts a carboxylic acid and alcohol into an ester plus water', () => {
+    const product = applySMIRKS(parseSMILES('CC(=O)O.CO'), reactionTemplates.esterification.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'CC(=O)OC.O');
+  });
+
+  it('esterification does not match phenols as the alcohol partner', () => {
+    const product = applySMIRKS(parseSMILES('CC(=O)O.Oc1ccccc1'), reactionTemplates.esterification.smirks);
+    assert.equal(product, null);
   });
 
   it('saponification converts a simple ester into carboxylate and alcohol', () => {
@@ -75,6 +119,28 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(toSMILES(product), 'CC=O.NC');
   });
 
+  it('amineAcylation converts an acid chloride and primary amine into an amide', () => {
+    const product = applySMIRKS(parseSMILES('CC(=O)Cl.CN'), reactionTemplates.amineAcylation.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'CC(=O)NC.[Cl-]');
+  });
+
+  it('amineAcylation does not match tertiary amines', () => {
+    const product = applySMIRKS(parseSMILES('CC(=O)Cl.CN(C)C'), reactionTemplates.amineAcylation.smirks);
+    assert.equal(product, null);
+  });
+
+  it('amineAlkylation converts an alkyl halide and primary amine into a secondary amine', () => {
+    const product = applySMIRKS(parseSMILES('CCl.CN'), reactionTemplates.amineAlkylation.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'CNC.[Cl-]');
+  });
+
+  it('amineAlkylation does not match tertiary amines', () => {
+    const product = applySMIRKS(parseSMILES('CCl.CN(C)C'), reactionTemplates.amineAlkylation.smirks);
+    assert.equal(product, null);
+  });
+
   it('nitrileHydrolysisToAmide converts a nitrile into an amide', () => {
     const product = applySMIRKS(parseSMILES('CC#N'), reactionTemplates.nitrileHydrolysisToAmide.smirks);
     assert.ok(product);
@@ -91,6 +157,17 @@ describe('reactionTemplates — example applications', () => {
     const product = applySMIRKS(parseSMILES('C=O'), reactionTemplates.carbonylReduction.smirks);
     assert.ok(product);
     assert.equal(toSMILES(product), 'CO');
+  });
+
+  it('imineReduction converts a simple imine into an amine', () => {
+    const product = applySMIRKS(parseSMILES('CC=NC'), reactionTemplates.imineReduction.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'CCNC');
+  });
+
+  it('imineReduction does not match amidines or related heteroatom-substituted imines', () => {
+    const product = applySMIRKS(parseSMILES('CC(=NC)N'), reactionTemplates.imineReduction.smirks);
+    assert.equal(product, null);
   });
 
   it('carbonylReduction does not match carboxylates or acyl derivatives', () => {
@@ -125,10 +202,32 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(product, null);
   });
 
+  it('arylHalideHydrolysis converts an aryl halide into a phenol', () => {
+    const product = applySMIRKS(parseSMILES('c1ccccc1Cl'), reactionTemplates.arylHalideHydrolysis.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'Oc1ccccc1');
+  });
+
+  it('arylHalideHydrolysis does not match alkyl halides', () => {
+    const product = applySMIRKS(parseSMILES('CCl'), reactionTemplates.arylHalideHydrolysis.smirks);
+    assert.equal(product, null);
+  });
+
   it('alcoholCleavage matches a simple alcohol', () => {
     const product = applySMIRKS(parseSMILES('CCO'), reactionTemplates.alcoholCleavage.smirks);
     assert.ok(product);
     assert.equal(toSMILES(product), 'CC.[OH]');
+  });
+
+  it('etherCleavage converts a simple dialkyl ether into two alcohol fragments', () => {
+    const product = applySMIRKS(parseSMILES('COC'), reactionTemplates.etherCleavage.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'CO.CO');
+  });
+
+  it('etherCleavage does not match esters', () => {
+    const product = applySMIRKS(parseSMILES('CC(=O)OC'), reactionTemplates.etherCleavage.smirks);
+    assert.equal(product, null);
   });
 
   it('alcoholCleavage does not match esters or carboxylic acids', () => {

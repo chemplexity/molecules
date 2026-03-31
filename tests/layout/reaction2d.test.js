@@ -671,6 +671,27 @@ test('reaction preview preserves the currently displayed sugar stereobond choice
   }
 });
 
+test('reaction preview preserves the retained sugar scaffold for ether cleavage', () => {
+  const smiles = 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O';
+  const smirks = reactionTemplates.etherCleavage.smirks;
+  const sourceMol = parseSMILES(smiles);
+  const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
+  assert.equal(mappings.length, 2, 'expected two ether-cleavage sites in the sugar example');
+
+  for (const mapping of mappings) {
+    const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+    generateAndRefine2dCoords(preview.mol, { suppressH: true, bondLength: 1.5 });
+    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
+    spreadReaction2dProductComponents(preview.mol, preview, 1.5);
+    centerReaction2dPairCoords(preview.mol, preview, 1.5);
+    const maxError = maxPairDistanceErrorForMappedUnedited(preview);
+    assert.ok(
+      maxError < 0.25,
+      `expected retained ether-cleavage sugar scaffold to stay close, got max error ${maxError.toFixed(3)} Å`
+    );
+  }
+});
+
 test('reaction preview keeps nitrile hydrolysis to acid locally carboxyl-like for isolated nitrile', () => {
   const preview = preparePreview(
     'C#N',

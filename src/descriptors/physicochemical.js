@@ -16,6 +16,19 @@ function _heavyAtoms(mol) {
   return [...mol.atoms.values()].filter(a => a.name !== 'H');
 }
 
+function _sortIds(ids) {
+  return [...ids].sort((a, b) => String(a).localeCompare(String(b)));
+}
+
+function _sortRings(rings) {
+  return rings
+    .map(ring => _sortIds(ring))
+    .sort((a, b) =>
+      a.length - b.length ||
+      a.join('\u0000').localeCompare(b.join('\u0000'))
+    );
+}
+
 /**
  * Infer hybridisation from bond orders.  Returns 'sp', 'sp2', or 'sp3'.
  * Falls back to the stored `properties.hybridization` if set.
@@ -347,25 +360,31 @@ export function tpsa(molecule) {
  * Counts hydrogen-bond donors (NH and OH groups).
  *
  * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {number}
+ * @returns {{ count: number, atoms: string[] }}
  */
 export function hBondDonors(molecule) {
   assertMolecule(molecule, 'molecule');
-  return _heavyAtoms(molecule).filter(a =>
+  const atoms = _sortIds(_heavyAtoms(molecule).filter(a =>
     (a.name === 'O' || a.name === 'N' || a.name === 'S') &&
     _attachedHydrogenCount(a, molecule) > 0
-  ).length;
+  ).map(atom => atom.id));
+  return { count: atoms.length, atoms };
 }
 
 /**
  * Counts hydrogen-bond acceptors (all N and O atoms, Lipinski definition).
  *
  * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {number}
+ * @returns {{ count: number, atoms: string[] }}
  */
 export function hBondAcceptors(molecule) {
   assertMolecule(molecule, 'molecule');
-  return _heavyAtoms(molecule).filter(a => _isHBondAcceptor(a, molecule)).length;
+  const atoms = _sortIds(
+    _heavyAtoms(molecule)
+      .filter(a => _isHBondAcceptor(a, molecule))
+      .map(atom => atom.id)
+  );
+  return { count: atoms.length, atoms };
 }
 
 // ---------------------------------------------------------------------------
@@ -377,11 +396,16 @@ export function hBondAcceptors(molecule) {
  * heavy atoms).  Delegates to {@link Bond#isRotatable}.
  *
  * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {number}
+ * @returns {{ count: number, bonds: string[] }}
  */
 export function rotatableBondCount(molecule) {
   assertMolecule(molecule, 'molecule');
-  return [...molecule.bonds.values()].filter(b => b.isRotatable(molecule)).length;
+  const bonds = _sortIds(
+    [...molecule.bonds.values()]
+      .filter(b => b.isRotatable(molecule))
+      .map(bond => bond.id)
+  );
+  return { count: bonds.length, bonds };
 }
 
 // ---------------------------------------------------------------------------
@@ -458,27 +482,29 @@ export function molarRefractivity(molecule) {
  * Returns the total number of rings (SSSR).
  *
  * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {number}
+ * @returns {{ count: number, atoms: string[][] }}
  */
 export function ringCount(molecule) {
   assertMolecule(molecule, 'molecule');
-  return molecule.getRings().length;
+  const atoms = _sortRings(molecule.getRings());
+  return { count: atoms.length, atoms };
 }
 
 /**
  * Returns the number of fully-aromatic rings.
  *
  * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {number}
+ * @returns {{ count: number, atoms: string[][] }}
  */
 export function aromaticRingCount(molecule) {
   assertMolecule(molecule, 'molecule');
-  return molecule.getRings().filter(ring =>
+  const atoms = _sortRings(molecule.getRings().filter(ring =>
     ring.every(atomId => {
       const a = molecule.atoms.get(atomId);
       return a && a.isAromatic();
     })
-  ).length;
+  ));
+  return { count: atoms.length, atoms };
 }
 
 // ---------------------------------------------------------------------------
@@ -489,11 +515,12 @@ export function aromaticRingCount(molecule) {
  * Returns the number of defined stereocenters.
  *
  * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {number}
+ * @returns {{ count: number, atoms: string[] }}
  */
 export function stereocenters(molecule) {
   assertMolecule(molecule, 'molecule');
-  return molecule.getChiralCenters().length;
+  const atoms = _sortIds(molecule.getChiralCenters());
+  return { count: atoms.length, atoms };
 }
 
 // ---------------------------------------------------------------------------
@@ -526,7 +553,7 @@ export function veberRules(molecule) {
   assertMolecule(molecule, 'molecule');
   const t  = tpsa(molecule);
   const rb = rotatableBondCount(molecule);
-  return { tpsa: t, rotatableBonds: rb, passes: t <= 140 && rb <= 10 };
+  return { tpsa: t, rotatableBonds: rb.count, passes: t <= 140 && rb.count <= 10 };
 }
 
 // ---------------------------------------------------------------------------
@@ -591,11 +618,11 @@ export function qed(molecule) {
   const d = [
     _ads(mw,   ..._QED_MW_P),
     _ads(lp,   ..._QED_LOGP_P),
-    _bellExpD(hbd,  0, 1,   1.5),
-    _bellExpD(hba,  0, 8,   3.0),
+    _bellExpD(hbd.count,  0, 1,   1.5),
+    _bellExpD(hba.count,  0, 8,   3.0),
     _bellExpD(psa,  30, 100, 35),
-    _bellExpD(rotb, 0, 5,   3.0),
-    _bellExpD(arom, 0, 3, 1.5)
+    _bellExpD(rotb.count, 0, 5,   3.0),
+    _bellExpD(arom.count, 0, 3, 1.5)
   ];
 
   const wSum = _QED_W.reduce((s, v) => s + v, 0);
@@ -629,14 +656,14 @@ export function lipinskiRuleOfFive(molecule) {
   const violations = [
     mw  > 500,
     lp  > 5,
-    hbd > 5,
-    hba > 10
+    hbd.count > 5,
+    hba.count > 10
   ].filter(Boolean).length;
   return {
     molecularWeight: mw,
     logP: lp,
-    hBondDonors: hbd,
-    hBondAcceptors: hba,
+    hBondDonors: hbd.count,
+    hBondAcceptors: hba.count,
     violations,
     passes: violations <= 1
   };
