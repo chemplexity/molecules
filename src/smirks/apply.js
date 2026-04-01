@@ -22,7 +22,12 @@ function _validateParsedTransform(transform) {
   if (!transform || typeof transform !== 'object') {
     throw new TypeError('applySMIRKS: expected a parsed SMIRKS transform object');
   }
-  if (!transform.reactant || !transform.product || !(transform.reactantMaps instanceof Map) || !(transform.productMaps instanceof Map)) {
+  if (
+    !transform.reactant ||
+    !transform.product ||
+    !(transform.reactantMaps instanceof Map) ||
+    !(transform.productMaps instanceof Map)
+  ) {
     throw new TypeError('applySMIRKS: parsed transform is missing reactant/product graphs or map tables');
   }
 }
@@ -33,7 +38,7 @@ function _validateMode(options) {
     throw new Error(`applySMIRKS: unsupported mode '${mode}', expected 'first' or 'all'`);
   }
   if (options.mapping !== undefined && mode !== 'first') {
-    throw new Error('applySMIRKS: explicit mapping can only be used with mode \'first\'');
+    throw new Error("applySMIRKS: explicit mapping can only be used with mode 'first'");
   }
   return mode;
 }
@@ -204,8 +209,8 @@ function _setBondState(bond, templateBond) {
   } else {
     bond.setOrder(templateBond.properties.order ?? 1);
   }
-  const topologyChanged = before.order !== (bond.properties.order ?? 1) ||
-    before.aromatic !== (bond.properties.aromatic ?? false);
+  const topologyChanged =
+    before.order !== (bond.properties.order ?? 1) || before.aromatic !== (bond.properties.aromatic ?? false);
   const explicitStereo = templateBond.properties.stereo ?? null;
   if (explicitStereo != null) {
     bond.setStereo(explicitStereo);
@@ -457,12 +462,14 @@ function _applyParsedSMIRKS(molecule, transform, options = {}) {
   }
 
   if (mode === 'first') {
-    const match = options.mapping ?? (() => {
-      for (const mapping of _findSMARTSParsed(molecule, transform.reactant, options, { dedupe: false })) {
-        return mapping;
-      }
-      return null;
-    })();
+    const match =
+      options.mapping ??
+      (() => {
+        for (const mapping of _findSMARTSParsed(molecule, transform.reactant, options, { dedupe: false })) {
+          return mapping;
+        }
+        return null;
+      })();
 
     if (!match) {
       return null;

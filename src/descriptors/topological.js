@@ -11,14 +11,18 @@ function assertSquareMatrix(M, name) {
   const n = M.length;
   for (let i = 0; i < n; i++) {
     if (!Array.isArray(M[i]) || M[i].length !== n) {
-      throw new TypeError(`${name} must be a square (n×n) matrix — row ${i} has length ${M[i]?.length ?? 'undefined'}, expected ${n}.`);
+      throw new TypeError(
+        `${name} must be a square (n×n) matrix — row ${i} has length ${M[i]?.length ?? 'undefined'}, expected ${n}.`
+      );
     }
   }
 }
 
 function assertSameSize(M1, name1, M2, name2) {
   if (M1.length !== M2.length) {
-    throw new TypeError(`${name1} and ${name2} must have the same dimensions — ${name1} is ${M1.length}×${M1.length} but ${name2} is ${M2.length}×${M2.length}.`);
+    throw new TypeError(
+      `${name1} and ${name2} must have the same dimensions — ${name1} is ${M1.length}×${M1.length} but ${name2} is ${M2.length}×${M2.length}.`
+    );
   }
 }
 
@@ -26,7 +30,9 @@ function assertDiagonalMatrix(M, name) {
   for (let i = 0; i < M.length; i++) {
     for (let j = 0; j < M.length; j++) {
       if (i !== j && M[i][j] !== 0) {
-        throw new TypeError(`${name} must be a diagonal matrix — found non-zero value ${M[i][j]} at [${i}][${j}]. Pass the degree matrix from degreeMatrix().`);
+        throw new TypeError(
+          `${name} must be a diagonal matrix — found non-zero value ${M[i][j]} at [${i}][${j}]. Pass the degree matrix from degreeMatrix().`
+        );
       }
     }
   }
@@ -36,7 +42,9 @@ function assertFiniteDistanceMatrix(D, name) {
   for (let i = 0; i < D.length; i++) {
     for (let j = 0; j < D.length; j++) {
       if (!Number.isFinite(D[i][j])) {
-        throw new TypeError(`${name} must represent a connected graph with finite distances — found ${D[i][j]} at [${i}][${j}].`);
+        throw new TypeError(
+          `${name} must represent a connected graph with finite distances — found ${D[i][j]} at [${i}][${j}].`
+        );
       }
     }
   }
@@ -102,7 +110,7 @@ export function balabanIndex(D, A) {
   assertSameSize(D, 'D', A, 'A');
   assertFiniteDistanceMatrix(D, 'D');
   const n = D.length;
-  const rowSums = D.map((row) => row.reduce((a, b) => a + b, 0));
+  const rowSums = D.map(row => row.reduce((a, b) => a + b, 0));
 
   let edgeSum = 0;
   let m = 0;
@@ -542,11 +550,9 @@ export function hosoyaIndex(molecule) {
     let total = count(rest);
 
     // Branch 2: v is matched with each available neighbour still in `remaining`
-    const available = molecule.getNeighbors(v).filter((u) =>
-      molecule.atoms.get(u)?.name !== 'H' && rest.includes(u)
-    );
+    const available = molecule.getNeighbors(v).filter(u => molecule.atoms.get(u)?.name !== 'H' && rest.includes(u));
     for (const u of available) {
-      total += count(rest.filter((x) => x !== u));
+      total += count(rest.filter(x => x !== u));
     }
 
     return total;

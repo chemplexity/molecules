@@ -5,12 +5,12 @@ import { atomColor, kekulize } from '../../layout/mol2d-helpers.js';
 // ---------------------------------------------------------------------------
 // Bond rendering constants
 // ---------------------------------------------------------------------------
-export const BOND_MULT   = 3;
+export const BOND_MULT = 3;
 export const BOND_OFFSET = 2;
-export const PI_STROKE   = { stroke: '#FFFFFF', width: '2px' };
-export const ARO_STROKE  = { stroke: '#696969', width: '3px', dashArray: '3,3' };
+export const PI_STROKE = { stroke: '#FFFFFF', width: '2px' };
+export const ARO_STROKE = { stroke: '#696969', width: '3px', dashArray: '3,3' };
 export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
-export const STROKE_W    = 1.6;  // px
+export const STROKE_W = 1.6; // px
 
 export function strokeColor(symbol) {
   const light = new Set(['H', 'F', 'Cl', 'Mg', 'Ca', 'He', 'Ne', 'Ar', 'B', 'Si', 'Be', 'Li']);
@@ -23,7 +23,7 @@ export function singleBondWidth(order) {
 
 export function renderBondOrder(bond) {
   if (AROMATIC_RENDER_MODE === 'localized' && (bond.properties.aromatic ?? false)) {
-    return bond.properties.localizedOrder ?? (bond.properties.order ?? 1.5);
+    return bond.properties.localizedOrder ?? bond.properties.order ?? 1.5;
   }
   return bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
 }
@@ -42,7 +42,8 @@ export function atomRadius(protons) {
 }
 
 export function xOffset(offset, src, tgt) {
-  const dx = tgt.x - src.x, dy = tgt.y - src.y;
+  const dx = tgt.x - src.x,
+    dy = tgt.y - src.y;
   if (dy === 0 || Math.abs(dx / dy) > 1) {
     return offset * (dy / dx);
   }
@@ -50,7 +51,8 @@ export function xOffset(offset, src, tgt) {
 }
 
 export function yOffset(offset, src, tgt) {
-  const dx = tgt.x - src.x, dy = tgt.y - src.y;
+  const dx = tgt.x - src.x,
+    dy = tgt.y - src.y;
   if (dy === 0 || Math.abs(dx / dy) > 1) {
     return -offset;
   }
@@ -59,11 +61,16 @@ export function yOffset(offset, src, tgt) {
 
 export function bondTooltipHtml(bond, a1, a2) {
   const order = bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
-  const typeLabel = order === 1.5 ? 'Aromatic'
-    : order === 1   ? 'Single'
-      : order === 2   ? 'Double'
-        : order === 3   ? 'Triple'
-          : `Order ${order}`;
+  const typeLabel =
+    order === 1.5
+      ? 'Aromatic'
+      : order === 1
+        ? 'Single'
+        : order === 2
+          ? 'Double'
+          : order === 3
+            ? 'Triple'
+            : `Order ${order}`;
   const bondSymbol = order === 2 ? '=' : order === 3 ? '≡' : '–';
 
   const row = (label, val) => `<tr><td>${label}</td><td><b>${val}</b></td></tr>`;
@@ -105,12 +112,11 @@ export function atomTooltipHtml(atom, _mol) {
 
   const degree = atom.bonds.length;
 
-  const row = (label, val) =>
-    `<tr><td>${label}</td><td><b>${val}</b></td></tr>`;
+  const row = (label, val) => `<tr><td>${label}</td><td><b>${val}</b></td></tr>`;
 
   let rows = '';
-  if (p.protons  != null) {
-    rows += row('Atomic #',  p.protons);
+  if (p.protons != null) {
+    rows += row('Atomic #', p.protons);
   }
   if (p.electrons != null) {
     rows += row('Electrons', p.electrons);
@@ -134,7 +140,8 @@ export function atomTooltipHtml(atom, _mol) {
 }
 
 export function renderAtomLabel(group, label, color, xOffset = 0) {
-  const textEl = group.append('text')
+  const textEl = group
+    .append('text')
     .attr('class', 'atom-label')
     .attr('fill', color)
     .attr('x', xOffset)
@@ -156,16 +163,20 @@ export function renderAtomLabel(group, label, color, xOffset = 0) {
       }
       const ts = textEl.append('tspan').text(word);
       if (first) {
-        ts.attr('dy', '0.35em'); first = false;
+        ts.attr('dy', '0.35em');
+        first = false;
       }
     }
   }
 }
 
 export function addLine(group, x1, y1, x2, y2, extraClass) {
-  return group.append('line')
+  return group
+    .append('line')
     .attr('class', extraClass ? `bond ${extraClass}` : 'bond')
-    .attr('x1', x1).attr('y1', y1)
-    .attr('x2', x2).attr('y2', y2)
+    .attr('x1', x1)
+    .attr('y1', y1)
+    .attr('x2', x2)
+    .attr('y2', y2)
     .style('stroke-width', `${STROKE_W}px`);
 }

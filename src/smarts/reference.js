@@ -15,7 +15,6 @@
  * const isAcid = matchesSMARTS(mol, functionalGroups.carboxylicAcid.smarts);
  */
 export const functionalGroups = {
-
   // ---------------------------------------------------------------------------
   // Hydrocarbons
   // ---------------------------------------------------------------------------
@@ -55,10 +54,22 @@ export const functionalGroups = {
   // Nitrogen functional groups
   // ---------------------------------------------------------------------------
 
-  primaryAmine: { name: 'Primary Amine', smarts: '[NX3H2;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])][#6]' },
-  secondaryAmine: { name: 'Secondary Amine', smarts: '[NX3H1;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])]([#6])[#6]' },
-  tertiaryAmine: { name: 'Tertiary Amine', smarts: '[NX3H0;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])]([#6])([#6])[#6]' },
-  aromaticAmine: { name: 'Aromatic Amine', smarts: '[NX3H2;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])]c' },
+  primaryAmine: {
+    name: 'Primary Amine',
+    smarts: '[NX3H2;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])][#6]'
+  },
+  secondaryAmine: {
+    name: 'Secondary Amine',
+    smarts: '[NX3H1;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])]([#6])[#6]'
+  },
+  tertiaryAmine: {
+    name: 'Tertiary Amine',
+    smarts: '[NX3H0;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])]([#6])([#6])[#6]'
+  },
+  aromaticAmine: {
+    name: 'Aromatic Amine',
+    smarts: '[NX3H2;!$([NX3][CX3](=O));!$([NX3][CX3]=S);!$([NX3][CX3]=[NX2])]c'
+  },
   quaternaryAmmonium: { name: 'Quaternary Ammonium', smarts: '[NX4+]([#6])([#6])([#6])[#6]' },
   amide: { name: 'Amide', smarts: '[NX3][CX3](=O)' },
   primaryAmide: { name: 'Primary Amide', smarts: '[NX3H2][CX3](=O)' },
@@ -148,10 +159,22 @@ export const functionalGroups = {
   cycloheptane: { name: 'Cycloheptane', smarts: '[C;r7]1[C;r7][C;r7][C;r7][C;r7][C;r7][C;r7]1' },
   cyclooctane: { name: 'Cyclooctane', smarts: '[C;r8]1[C;r8][C;r8][C;r8][C;r8][C;r8][C;r8][C;r8]1' },
   cyclononane: { name: 'Cyclononane', smarts: '[C;r9]1[C;r9][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9]1' },
-  cyclodecane: { name: 'Cyclodecane', smarts: '[C;r10]1[C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10]1' },
-  cycloundecane: { name: 'Cycloundecane', smarts: '[C;r11]1[C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11]1' },
-  cyclododecane: { name: 'Cyclododecane', smarts: '[C;r12]1[C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1' },
-  cyclotridecane: { name: 'Cyclotridecane', smarts: '[C;r13]1[C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1' },
+  cyclodecane: {
+    name: 'Cyclodecane',
+    smarts: '[C;r10]1[C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10]1'
+  },
+  cycloundecane: {
+    name: 'Cycloundecane',
+    smarts: '[C;r11]1[C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11]1'
+  },
+  cyclododecane: {
+    name: 'Cyclododecane',
+    smarts: '[C;r12]1[C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1'
+  },
+  cyclotridecane: {
+    name: 'Cyclotridecane',
+    smarts: '[C;r13]1[C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1'
+  },
 
   // ---------------------------------------------------------------------------
   // Cycloalkenes (3–13 membered, exactly the ring with ≥1 non-aromatic C=C)
@@ -164,10 +187,22 @@ export const functionalGroups = {
   cycloheptene: { name: 'Cycloheptene', smarts: '[CX3;r7;!a]1=[CX3;r7;!a][C;r7][C;r7][C;r7][C;r7][C;r7]1' },
   cyclooctene: { name: 'Cyclooctene', smarts: '[CX3;r8;!a]1=[CX3;r8;!a][C;r8][C;r8][C;r8][C;r8][C;r8][C;r8]1' },
   cyclononene: { name: 'Cyclononene', smarts: '[CX3;r9;!a]1=[CX3;r9;!a][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9][C;r9]1' },
-  cyclodecene: { name: 'Cyclodecene', smarts: '[CX3;r10;!a]1=[CX3;r10;!a][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10]1' },
-  cycloundecene: { name: 'Cycloundecene', smarts: '[CX3;r11;!a]1=[CX3;r11;!a][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11]1' },
-  cyclododecene: { name: 'Cyclododecene', smarts: '[CX3;r12;!a]1=[CX3;r12;!a][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1' },
-  cyclotridecene: { name: 'Cyclotridecene', smarts: '[CX3;r13;!a]1=[CX3;r13;!a][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1' },
+  cyclodecene: {
+    name: 'Cyclodecene',
+    smarts: '[CX3;r10;!a]1=[CX3;r10;!a][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10]1'
+  },
+  cycloundecene: {
+    name: 'Cycloundecene',
+    smarts: '[CX3;r11;!a]1=[CX3;r11;!a][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11]1'
+  },
+  cyclododecene: {
+    name: 'Cyclododecene',
+    smarts: '[CX3;r12;!a]1=[CX3;r12;!a][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1'
+  },
+  cyclotridecene: {
+    name: 'Cyclotridecene',
+    smarts: '[CX3;r13;!a]1=[CX3;r13;!a][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1'
+  },
 
   // ---------------------------------------------------------------------------
   // Conjugated cyclodienes (5–13 membered)
@@ -175,26 +210,76 @@ export const functionalGroups = {
 
   cyclopentadiene: { name: 'Cyclopentadiene', smarts: '[CX3;r5;!a]1=[CX3;r5;!a][CX3;r5;!a]=[CX3;r5;!a][C;r5]1' },
   cyclohexadiene: { name: 'Cyclohexadiene', smarts: '[CX3;r6;!a]1=[CX3;r6;!a][CX3;r6;!a]=[CX3;r6;!a][C;r6][C;r6]1' },
-  cycloheptadiene: { name: 'Cycloheptadiene', smarts: '[CX3;r7;!a]1=[CX3;r7;!a][CX3;r7;!a]=[CX3;r7;!a][C;r7][C;r7][C;r7]1' },
-  cyclooctadiene: { name: 'Cyclooctadiene', smarts: '[CX3;r8;!a]1=[CX3;r8;!a][CX3;r8;!a]=[CX3;r8;!a][C;r8][C;r8][C;r8][C;r8]1' },
-  cyclononadiene: { name: 'Cyclononadiene', smarts: '[CX3;r9;!a]1=[CX3;r9;!a][CX3;r9;!a]=[CX3;r9;!a][C;r9][C;r9][C;r9][C;r9][C;r9]1' },
-  cyclodecadiene: { name: 'Cyclodecadiene', smarts: '[CX3;r10;!a]1=[CX3;r10;!a][CX3;r10;!a]=[CX3;r10;!a][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10]1' },
-  cycloundecadiene: { name: 'Cycloundecadiene', smarts: '[CX3;r11;!a]1=[CX3;r11;!a][CX3;r11;!a]=[CX3;r11;!a][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11]1' },
-  cyclododecadiene: { name: 'Cyclododecadiene', smarts: '[CX3;r12;!a]1=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1' },
-  cyclotridecadiene: { name: 'Cyclotridecadiene', smarts: '[CX3;r13;!a]1=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1' },
+  cycloheptadiene: {
+    name: 'Cycloheptadiene',
+    smarts: '[CX3;r7;!a]1=[CX3;r7;!a][CX3;r7;!a]=[CX3;r7;!a][C;r7][C;r7][C;r7]1'
+  },
+  cyclooctadiene: {
+    name: 'Cyclooctadiene',
+    smarts: '[CX3;r8;!a]1=[CX3;r8;!a][CX3;r8;!a]=[CX3;r8;!a][C;r8][C;r8][C;r8][C;r8]1'
+  },
+  cyclononadiene: {
+    name: 'Cyclononadiene',
+    smarts: '[CX3;r9;!a]1=[CX3;r9;!a][CX3;r9;!a]=[CX3;r9;!a][C;r9][C;r9][C;r9][C;r9][C;r9]1'
+  },
+  cyclodecadiene: {
+    name: 'Cyclodecadiene',
+    smarts: '[CX3;r10;!a]1=[CX3;r10;!a][CX3;r10;!a]=[CX3;r10;!a][C;r10][C;r10][C;r10][C;r10][C;r10][C;r10]1'
+  },
+  cycloundecadiene: {
+    name: 'Cycloundecadiene',
+    smarts: '[CX3;r11;!a]1=[CX3;r11;!a][CX3;r11;!a]=[CX3;r11;!a][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11][C;r11]1'
+  },
+  cyclododecadiene: {
+    name: 'Cyclododecadiene',
+    smarts:
+      '[CX3;r12;!a]1=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1'
+  },
+  cyclotridecadiene: {
+    name: 'Cyclotridecadiene',
+    smarts:
+      '[CX3;r13;!a]1=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1'
+  },
 
   // ---------------------------------------------------------------------------
   // Conjugated cyclotrienes (6–13 membered)
   // ---------------------------------------------------------------------------
 
-  cyclohexatriene: { name: 'Cyclohexatriene', smarts: '[CX3;r6;!a]1=[CX3;r6;!a][CX3;r6;!a]=[CX3;r6;!a][CX3;r6;!a]=[CX3;r6;!a]1' },
-  cycloheptatriene: { name: 'Cycloheptatriene', smarts: '[CX3;r7;!a]1=[CX3;r7;!a][CX3;r7;!a]=[CX3;r7;!a][CX3;r7;!a]=[CX3;r7;!a][C;r7]1' },
-  cyclooctatriene: { name: 'Cyclooctatriene', smarts: '[CX3;r8;!a]1=[CX3;r8;!a][CX3;r8;!a]=[CX3;r8;!a][CX3;r8;!a]=[CX3;r8;!a][C;r8][C;r8]1' },
-  cyclononatriene: { name: 'Cyclononatriene', smarts: '[CX3;r9;!a]1=[CX3;r9;!a][CX3;r9;!a]=[CX3;r9;!a][CX3;r9;!a]=[CX3;r9;!a][C;r9][C;r9][C;r9]1' },
-  cyclodecatriene: { name: 'Cyclodecatriene', smarts: '[CX3;r10;!a]1=[CX3;r10;!a][CX3;r10;!a]=[CX3;r10;!a][CX3;r10;!a]=[CX3;r10;!a][C;r10][C;r10][C;r10][C;r10]1' },
-  cycloundecatriene: { name: 'Cycloundecatriene', smarts: '[CX3;r11;!a]1=[CX3;r11;!a][CX3;r11;!a]=[CX3;r11;!a][CX3;r11;!a]=[CX3;r11;!a][C;r11][C;r11][C;r11][C;r11][C;r11]1' },
-  cyclododecatriene: { name: 'Cyclododecatriene', smarts: '[CX3;r12;!a]1=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1' },
-  cyclotridecatriene: { name: 'Cyclotridecatriene', smarts: '[CX3;r13;!a]1=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1' },
+  cyclohexatriene: {
+    name: 'Cyclohexatriene',
+    smarts: '[CX3;r6;!a]1=[CX3;r6;!a][CX3;r6;!a]=[CX3;r6;!a][CX3;r6;!a]=[CX3;r6;!a]1'
+  },
+  cycloheptatriene: {
+    name: 'Cycloheptatriene',
+    smarts: '[CX3;r7;!a]1=[CX3;r7;!a][CX3;r7;!a]=[CX3;r7;!a][CX3;r7;!a]=[CX3;r7;!a][C;r7]1'
+  },
+  cyclooctatriene: {
+    name: 'Cyclooctatriene',
+    smarts: '[CX3;r8;!a]1=[CX3;r8;!a][CX3;r8;!a]=[CX3;r8;!a][CX3;r8;!a]=[CX3;r8;!a][C;r8][C;r8]1'
+  },
+  cyclononatriene: {
+    name: 'Cyclononatriene',
+    smarts: '[CX3;r9;!a]1=[CX3;r9;!a][CX3;r9;!a]=[CX3;r9;!a][CX3;r9;!a]=[CX3;r9;!a][C;r9][C;r9][C;r9]1'
+  },
+  cyclodecatriene: {
+    name: 'Cyclodecatriene',
+    smarts: '[CX3;r10;!a]1=[CX3;r10;!a][CX3;r10;!a]=[CX3;r10;!a][CX3;r10;!a]=[CX3;r10;!a][C;r10][C;r10][C;r10][C;r10]1'
+  },
+  cycloundecatriene: {
+    name: 'Cycloundecatriene',
+    smarts:
+      '[CX3;r11;!a]1=[CX3;r11;!a][CX3;r11;!a]=[CX3;r11;!a][CX3;r11;!a]=[CX3;r11;!a][C;r11][C;r11][C;r11][C;r11][C;r11]1'
+  },
+  cyclododecatriene: {
+    name: 'Cyclododecatriene',
+    smarts:
+      '[CX3;r12;!a]1=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1'
+  },
+  cyclotridecatriene: {
+    name: 'Cyclotridecatriene',
+    smarts:
+      '[CX3;r13;!a]1=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1'
+  },
 
   // ---------------------------------------------------------------------------
   // 6-membered aromatic heterocycles
@@ -238,5 +323,4 @@ export const functionalGroups = {
   quinazoline: { name: 'Quinazoline', smarts: 'c1ccc2ncncc2c1' },
   phthalazine: { name: 'Phthalazine', smarts: 'c1ccc2cnncc2c1' },
   purine: { name: 'Purine', smarts: 'c1ncnc2[nH]cnc12' }
-
 };

@@ -26,11 +26,11 @@ import { defaultAtomMatch, defaultBondMatch } from './subgraph.js';
  */
 function _buildIndex(mol) {
   /** @type {Map<string, Set<string>>} */
-  const neighborSet    = new Map();
+  const neighborSet = new Map();
   /** @type {Map<string, Map<string, string>>} */
   const neighborToBond = new Map();
   /** @type {Map<string, number>} */
-  const elementCount   = new Map();
+  const elementCount = new Map();
 
   for (const [id, atom] of mol.atoms) {
     neighborSet.set(id, new Set());
@@ -41,7 +41,7 @@ function _buildIndex(mol) {
   for (const [bondId, bond] of mol.bonds) {
     const [a, b] = bond.atoms;
     if (!neighborSet.has(a) || !neighborSet.has(b)) {
-      continue;   // dangling bond — skip
+      continue; // dangling bond — skip
     }
     neighborSet.get(a).add(b);
     neighborSet.get(b).add(a);
@@ -84,7 +84,7 @@ function _queryOrder(idx) {
 
   const ordered = [];
   const visited = new Set([root]);
-  const queue   = [root];
+  const queue = [root];
 
   while (queue.length > 0) {
     const cur = queue.shift();
@@ -162,7 +162,7 @@ function _feasible(state, qId, tId) {
 
   for (const [qNb, tNb] of queryToTarget) {
     if (!qNeighbors.has(qNb)) {
-      continue;   // qNb is not a neighbour of qId — skip
+      continue; // qNb is not a neighbour of qId — skip
     }
     // The mapped neighbour tNb must be adjacent to tId.
     if (!tNeighbors.has(tNb)) {
@@ -200,15 +200,13 @@ function _feasible(state, qId, tId) {
  * @returns {string[]}
  */
 function _candidates(state, depth) {
-  const qId  = state.queryOrder[depth];
+  const qId = state.queryOrder[depth];
   const qDeg = state.queryIdx.degreeMap.get(qId);
   const mapped = state.targetToQuery;
-  const qHasMappedNeighbor = [...state.queryIdx.neighborSet.get(qId)]
-    .some(qNb => state.queryToTarget.has(qNb));
+  const qHasMappedNeighbor = [...state.queryIdx.neighborSet.get(qId)].some(qNb => state.queryToTarget.has(qNb));
 
-  const pool = (qHasMappedNeighbor && state.targetFrontier.size > 0)
-    ? state.targetFrontier
-    : state.targetIdx.atoms.keys();
+  const pool =
+    qHasMappedNeighbor && state.targetFrontier.size > 0 ? state.targetFrontier : state.targetIdx.atoms.keys();
 
   const result = [];
   for (const tId of pool) {
@@ -216,7 +214,7 @@ function _candidates(state, depth) {
       continue;
     }
     if (state.targetIdx.degreeMap.get(tId) < qDeg) {
-      continue;   // degree filter
+      continue; // degree filter
     }
     result.push(tId);
   }
@@ -322,10 +320,10 @@ function* _vf2(state, depth) {
  */
 export function* findSubgraphMappings(target, query, options = {}) {
   const {
-    atomMatch          = defaultAtomMatch,
-    bondMatch          = defaultBondMatch,
-    limit              = Infinity,
-    skipElementFilter  = false
+    atomMatch = defaultAtomMatch,
+    bondMatch = defaultBondMatch,
+    limit = Infinity,
+    skipElementFilter = false
   } = options;
 
   // Trivial case: empty query matches everything once.
@@ -342,7 +340,7 @@ export function* findSubgraphMappings(target, query, options = {}) {
     return;
   }
 
-  const queryIdx  = _buildIndex(query);
+  const queryIdx = _buildIndex(query);
   const targetIdx = _buildIndex(target);
 
   // O(n) element-frequency rejection.

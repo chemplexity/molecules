@@ -12,10 +12,7 @@ describe('parseSMIRKS', () => {
   });
 
   it('rejects product maps that are absent from the reactant', () => {
-    assert.throws(
-      () => parseSMIRKS('[C:1]>>[C:1][O:2]'),
-      /product atom map :2 is not present in the reactant/
-    );
+    assert.throws(() => parseSMIRKS('[C:1]>>[C:1][O:2]'), /product atom map :2 is not present in the reactant/);
   });
 
   it('rejects disconnected product fragments without a shared mapped atom', () => {
@@ -29,16 +26,11 @@ describe('parseSMIRKS', () => {
     const transform = parseSMIRKS('[C:1][O:2]>>[C:1].[O:2]');
     const components = transform.product.getComponents();
     assert.equal(components.length, 2);
-    assert.ok(components.every(component =>
-      [...component.atoms.values()].some(atom => atom.getAtomMap() != null)
-    ));
+    assert.ok(components.every(component => [...component.atoms.values()].some(atom => atom.getAtomMap() != null)));
   });
 
   it('rejects product templates ending with a dangling bond token', () => {
-    assert.throws(
-      () => parseSMIRKS('[C:1]>>[C:1]='),
-      /product template cannot end with a bond token/
-    );
+    assert.throws(() => parseSMIRKS('[C:1]>>[C:1]='), /product template cannot end with a bond token/);
   });
 
   it('parses product chirality primitives and resolves them to stored chirality', () => {
@@ -65,10 +57,7 @@ describe('parseSMIRKS', () => {
   });
 
   it('rejects chiral product atoms with more than one bracket hydrogen', () => {
-    assert.throws(
-      () => parseSMIRKS('[C:1]>>[C@@H2:1]'),
-      /chiral product atom '\[C\]' cannot specify H2/
-    );
+    assert.throws(() => parseSMIRKS('[C:1]>>[C@@H2:1]'), /chiral product atom '\[C\]' cannot specify H2/);
   });
 
   it('parses explicit product hydrogen counts, including H0', () => {
@@ -84,17 +73,11 @@ describe('parseSMIRKS', () => {
   });
 
   it('rejects duplicate explicit product hydrogen counts', () => {
-    assert.throws(
-      () => parseSMIRKS('[C:1]>>[CH2H:1]'),
-      /duplicate hydrogen count in product atom/
-    );
+    assert.throws(() => parseSMIRKS('[C:1]>>[CH2H:1]'), /duplicate hydrogen count in product atom/);
   });
 
   it('rejects malformed disconnected product syntax', () => {
-    assert.throws(
-      () => parseSMIRKS('[C:1]>>.C'),
-      /unexpected '\.' at pos 0/
-    );
+    assert.throws(() => parseSMIRKS('[C:1]>>.C'), /unexpected '\.' at pos 0/);
     assert.throws(
       () => parseSMIRKS('[C:1]>>[C:1].'),
       /product template cannot end with a disconnected-component separator/
@@ -102,17 +85,11 @@ describe('parseSMIRKS', () => {
   });
 
   it('rejects unclosed product ring closures', () => {
-    assert.throws(
-      () => parseSMIRKS('[C:1]>>C1CC'),
-      /unclosed ring closure in product template/
-    );
+    assert.throws(() => parseSMIRKS('[C:1]>>C1CC'), /unclosed ring closure in product template/);
   });
 
   it('rejects unsupported product bond tokens', () => {
-    assert.throws(
-      () => parseSMIRKS('[C:1]>>C~C'),
-      /unsupported product bond token '~'/
-    );
+    assert.throws(() => parseSMIRKS('[C:1]>>C~C'), /unsupported product bond token '~'/);
   });
 });
 
@@ -293,11 +270,9 @@ describe('applySMIRKS', () => {
   });
 
   it('applies explicit bond-stereo rewrites across all matches in mode all', () => {
-    const product = applySMIRKS(
-      parseSMILES('FC=CF.FC=CF'),
-      '[F:1][C:2]=[C:3][F:4]>>[F:1]/[C:2]=[C:3]/[F:4]',
-      { mode: 'all' }
-    );
+    const product = applySMIRKS(parseSMILES('FC=CF.FC=CF'), '[F:1][C:2]=[C:3][F:4]>>[F:1]/[C:2]=[C:3]/[F:4]', {
+      mode: 'all'
+    });
     assert.ok(product);
     assert.equal(toSMILES(product), 'F/C=C/F.F/C=C/F');
   });
@@ -323,10 +298,14 @@ describe('applySMIRKS', () => {
     const carbon = [...mol.atoms.values()].find(atom => atom.name === 'C' && atom.id.startsWith('C'));
     const oxygen = [...mol.atoms.values()].find(atom => atom.name === 'O' && atom.id.startsWith('O'));
     assert.throws(
-      () => applySMIRKS(mol, transform, {
-        mode: 'all',
-        mapping: new Map([['q0', carbon.id], ['q1', oxygen.id]])
-      }),
+      () =>
+        applySMIRKS(mol, transform, {
+          mode: 'all',
+          mapping: new Map([
+            ['q0', carbon.id],
+            ['q1', oxygen.id]
+          ])
+        }),
       /explicit mapping can only be used with mode 'first'/
     );
   });
@@ -337,7 +316,10 @@ describe('applySMIRKS', () => {
     const carbon = [...mol.atoms.values()].find(atom => atom.name === 'C' && atom.id.startsWith('C'));
     const oxygen = [...mol.atoms.values()].find(atom => atom.name === 'O' && atom.id.startsWith('O'));
     const product = applySMIRKS(mol, transform, {
-      mapping: new Map([['q0', carbon.id], ['q1', oxygen.id]])
+      mapping: new Map([
+        ['q0', carbon.id],
+        ['q1', oxygen.id]
+      ])
     });
     assert.ok(product);
     assert.equal(toSMILES(product), 'C=O');
@@ -349,9 +331,13 @@ describe('applySMIRKS', () => {
     const carbon = [...mol.atoms.values()].find(atom => atom.name === 'C' && atom.id.startsWith('C'));
     const oxygen = [...mol.atoms.values()].find(atom => atom.name === 'O' && atom.id.startsWith('O'));
     assert.throws(
-      () => applySMIRKS(mol, transform, {
-        mapping: new Map([['q0', oxygen.id], ['q1', carbon.id]])
-      }),
+      () =>
+        applySMIRKS(mol, transform, {
+          mapping: new Map([
+            ['q0', oxygen.id],
+            ['q1', carbon.id]
+          ])
+        }),
       /explicit mapping does not satisfy the reactant SMARTS pattern/
     );
   });
@@ -361,9 +347,10 @@ describe('applySMIRKS', () => {
     const mol = parseSMILES('CO');
     const carbon = [...mol.atoms.values()].find(atom => atom.name === 'C' && atom.id.startsWith('C'));
     assert.throws(
-      () => applySMIRKS(mol, transform, {
-        mapping: new Map([['q0', carbon.id]])
-      }),
+      () =>
+        applySMIRKS(mol, transform, {
+          mapping: new Map([['q0', carbon.id]])
+        }),
       /explicit mapping must bind all 2 reactant atoms/
     );
   });

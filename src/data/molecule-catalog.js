@@ -21,9 +21,7 @@ export function getMoleculeCatalogById(collectionId) {
   if (!normalizedId) {
     return null;
   }
-  return (
-    moleculeCatalog.find(collection => collection.id === normalizedId) ?? null
-  );
+  return moleculeCatalog.find(collection => collection.id === normalizedId) ?? null;
 }
 
 /**
@@ -57,13 +55,9 @@ export function findMolecules(query, options = {}) {
     return [];
   }
 
-  const collectionFilter = options.collectionId
-    ? normalizeCollectionSearchValue(options.collectionId)
-    : '';
+  const collectionFilter = options.collectionId ? normalizeCollectionSearchValue(options.collectionId) : '';
   const exact = options.exact === true;
-  const limit = Number.isFinite(options.limit)
-    ? Math.max(0, options.limit)
-    : Infinity;
+  const limit = Number.isFinite(options.limit) ? Math.max(0, options.limit) : Infinity;
 
   const results = [];
   for (const collection of moleculeCatalog) {
@@ -71,11 +65,7 @@ export function findMolecules(query, options = {}) {
       continue;
     }
 
-    const collectionFields = [
-      collection.id,
-      collection.name,
-      ...(collection.tags ?? [])
-    ];
+    const collectionFields = [collection.id, collection.name, ...(collection.tags ?? [])];
     for (const molecule of collection.molecules) {
       const haystack = [
         molecule.id,

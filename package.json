@@ -65,7 +65,7 @@
     "lint:fix": "eslint \"src/**/*.js\" \"tests/**/*.js\" --fix",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "docs": "jsdoc -c jsdoc.json",
+    "docs": "rm -rf docs/api && jsdoc -c jsdoc.json",
     "prepublishOnly": "npm run lint && npm run build && npm run test"
   },
   "keywords": [
@@ -93,6 +93,7 @@
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-terser": "^0.4.4",
+    "clean-jsdoc-theme": "^4.3.0",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^10.1.8",
     "jsdoc": "^4.0.3",

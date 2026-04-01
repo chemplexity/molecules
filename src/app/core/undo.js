@@ -57,13 +57,11 @@ function _makeSnapshot() {
       });
     }
     snap = { mode: ctx.mode, atoms, bonds };
-    snap.reactionPreview = ctx.getReactionPreviewSnapshot
-      ? ctx.getReactionPreviewSnapshot()
-      : null;
+    snap.reactionPreview = ctx.getReactionPreviewSnapshot ? ctx.getReactionPreviewSnapshot() : null;
     if (ctx.mode === '2d') {
-      snap.cx2d       = ctx._cx2d;
-      snap.cy2d       = ctx._cy2d;
-      snap.hCounts2d  = ctx._hCounts2d  ? [...ctx._hCounts2d]  : [];
+      snap.cx2d = ctx._cx2d;
+      snap.cy2d = ctx._cy2d;
+      snap.hCounts2d = ctx._hCounts2d ? [...ctx._hCounts2d] : [];
       snap.stereoMap2d = ctx._stereoMap2d ? [...ctx._stereoMap2d] : null;
     } else {
       snap.nodePositions = ctx.simulation.nodes().map(n => ({
@@ -82,9 +80,7 @@ function _makeSnapshot() {
 
 export function takeSnapshot({ clearReactionPreview = true } = {}) {
   if (clearReactionPreview) {
-    const restored = ctx.restoreReactionPreviewSource
-      ? ctx.restoreReactionPreviewSource()
-      : false;
+    const restored = ctx.restoreReactionPreviewSource ? ctx.restoreReactionPreviewSource() : false;
     if (!restored) {
       ctx.clearReactionPreviewState();
     }

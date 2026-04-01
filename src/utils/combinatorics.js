@@ -49,7 +49,7 @@ export function combinations(arr, k) {
     return [];
   }
   const [first, ...rest] = arr;
-  const withFirst = combinations(rest, k - 1).map((c) => [first, ...c]);
+  const withFirst = combinations(rest, k - 1).map(c => [first, ...c]);
   const withoutFirst = combinations(rest, k);
   return [...withFirst, ...withoutFirst];
 }

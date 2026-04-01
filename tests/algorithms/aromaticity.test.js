@@ -227,9 +227,8 @@ describe('perceiveAromaticity — hypoxanthine fused ring SMILES', () => {
   it('6-membered ring atoms (not shared with 5-membered ring) are NOT aromatic', () => {
     const mol = parseSMILES('O=c1nc[nH]c2[nH]cnc12');
     perceiveAromaticity(mol);
-    // The carbonyl carbon C2 and its two direct neighbours N3, C4 are exclusively
-    // in the 6-membered ring and must NOT be marked aromatic after perception.
-    const heavy = [...mol.atoms.values()].filter(a => a.name !== 'H');
+    // The carbonyl carbon and its direct neighbours are exclusively in the
+    // 6-membered ring and must NOT be marked aromatic after perception.
     // atoms that neighbour the exocyclic oxygen are exclusively 6-membered ring atoms
     const oAtom = [...mol.atoms.values()].find(a => a.name === 'O');
     const carbonylC = oAtom ? mol.atoms.get(mol.bonds.get([...oAtom.bonds][0]).getOtherAtom(oAtom.id)) : null;

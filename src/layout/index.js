@@ -16,14 +16,17 @@ export { generateCoords, refineExistingCoords } from './coords2d.js';
  * @param {boolean} [opts.freezeChiralCenters=false]
  * @param {boolean} [opts.allowBranchReflect=true]
  */
-export function generateAndRefine2dCoords(mol, {
-  suppressH = true,
-  bondLength = 1.5,
-  maxPasses = 6,
-  freezeRings = true,
-  freezeChiralCenters = false,
-  allowBranchReflect = true
-} = {}) {
+export function generateAndRefine2dCoords(
+  mol,
+  {
+    suppressH = true,
+    bondLength = 1.5,
+    maxPasses = 6,
+    freezeRings = true,
+    freezeChiralCenters = false,
+    allowBranchReflect = true
+  } = {}
+) {
   generateCoords(mol, { suppressH, bondLength });
   refineExistingCoords(mol, { bondLength, maxPasses, freezeRings, freezeChiralCenters, allowBranchReflect });
 }

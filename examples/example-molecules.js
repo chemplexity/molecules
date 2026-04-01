@@ -35,18 +35,27 @@ export const randomMolecule = [
   { smiles: 'c1ccccc1', inchi: 'InChI=1S/C6H6/c1-2-4-6-5-3-1/h1-6H' },
   { smiles: 'OCc1ccccc1', inchi: 'InChI=1S/C7H8O/c8-6-7-4-2-1-3-5-7/h1-5,8H,6H2' },
   { smiles: 'c1ccccc1-c2ccccc2', inchi: 'InChI=1S/C12H10/c1-3-7-11(8-4-1)12-9-5-2-6-10-12/h1-10H' },
-  { smiles: 'C12=CC=CC=C1C3=C(C=CC=C3)C=C2', inchi: 'InChI=1S/C14H10/c1-3-7-13-11(5-1)9-10-12-6-2-4-8-14(12)13/h1-10H' },
+  {
+    smiles: 'C12=CC=CC=C1C3=C(C=CC=C3)C=C2',
+    inchi: 'InChI=1S/C14H10/c1-3-7-13-11(5-1)9-10-12-6-2-4-8-14(12)13/h1-10H'
+  },
   { smiles: 'C1=CC=CN1', inchi: 'InChI=1S/C4H5N/c1-2-4-5-3-1/h1-5H' },
   { smiles: 'c1occc1', inchi: 'InChI=1S/C4H4O/c1-2-4-5-3-1/h1-4H' },
   { smiles: 'c1sccc1', inchi: 'InChI=1S/C4H4S/c1-2-4-5-3-1/h1-4H' },
   { smiles: 'NC(C)C(O)=O', inchi: 'InChI=1S/C3H7NO2/c1-2(4)3(5)6/h2H,4H2,1H3,(H,5,6)' },
-  { smiles: 'NC(CCCNC(N)=N)C(O)=O', inchi: 'InChI=1S/C6H14N4O2/c7-4(5(11)12)2-1-3-10-6(8)9/h4H,1-3,7H2,(H,11,12)(H4,8,9,10)' },
+  {
+    smiles: 'NC(CCCNC(N)=N)C(O)=O',
+    inchi: 'InChI=1S/C6H14N4O2/c7-4(5(11)12)2-1-3-10-6(8)9/h4H,1-3,7H2,(H,11,12)(H4,8,9,10)'
+  },
   { smiles: 'NC(CC(N)=O)C(O)=O', inchi: 'InChI=1S/C4H8N2O3/c5-2(4(8)9)1-3(6)7/h2H,1,5H2,(H2,6,7)(H,8,9)' },
   { smiles: 'NC(CC(O)=O)C(O)=O', inchi: 'InChI=1S/C4H7NO4/c5-2(4(8)9)1-3(6)7/h2H,1,5H2,(H,6,7)(H,8,9)' },
   { smiles: 'NC(CS)C(O)=O', inchi: 'InChI=1S/C3H7NO2S/c4-2(1-7)3(5)6/h2,7H,1,4H2,(H,5,6)' },
   { smiles: 'NC(CCC(O)=O)C(O)=O', inchi: 'InChI=1S/C5H9NO4/c6-3(5(9)10)1-2-4(7)8/h3H,1-2,6H2,(H,7,8)(H,9,10)' },
   { smiles: 'NC(CCC(N)=O)C(O)=O', inchi: 'InChI=1S/C5H10N2O3/c6-3(5(9)10)1-2-4(7)8/h3H,1-2,6H2,(H2,7,8)(H,9,10)' },
-  { smiles: 'NC(CC1=CNC=N1)C(O)=O', inchi: 'InChI=1S/C6H9N3O2/c7-5(6(10)11)1-4-2-8-3-9-4/h2-3,5H,1,7H2,(H,8,9)(H,10,11)' },
+  {
+    smiles: 'NC(CC1=CNC=N1)C(O)=O',
+    inchi: 'InChI=1S/C6H9N3O2/c7-5(6(10)11)1-4-2-8-3-9-4/h2-3,5H,1,7H2,(H,8,9)(H,10,11)'
+  },
   { smiles: 'NC(C(CC)C)C(O)=O', inchi: 'InChI=1S/C6H13NO2/c1-3-4(2)5(7)6(8)9/h4-5H,3,7H2,1-2H3,(H,8,9)' },
   { smiles: 'CC(=O)C(Cl)CC(C(C)C)C=C', inchi: 'InChI=1S/C10H17ClO/c1-5-9(7(2)3)6-10(11)8(4)12/h5,7,9-10H,1,6H2,2-4H3' },
   { smiles: 'C2C(=O)C1COCCC1CC2', inchi: 'InChI=1S/C9H14O2/c10-9-3-1-2-7-4-5-11-6-8(7)9/h7-8H,1-6H2' },
@@ -63,17 +72,29 @@ export const randomMolecule = [
   { smiles: 'C1(C(C(C(C(C1F)Cl)Br)I)N)P', inchi: 'InChI=1S/C6H10BrClFINP/c7-1-2(8)3(9)6(12)5(11)4(1)10/h1-6H,11-12H2' },
   { smiles: 'C(C(C(C(C(C(C(C(C))))))))O', inchi: 'InChI=1S/C9H20O/c1-2-3-4-5-6-7-8-9-10/h10H,2-9H2,1H3' },
   { smiles: 'CC(C)(C(C)(C(C)(C)C)C)C', inchi: 'InChI=1S/C11H24/c1-9(2,3)11(7,8)10(4,5)6/h1-8H3' },
-  { smiles: 'N[C@@H](C(=O)O)C1=CC=CC=C1', inchi: 'InChI=1S/C8H9NO2/c9-7(8(10)11)6-4-2-1-3-5-6/h1-5,7H,9H2,(H,10,11)/t7-/m1/s1' },
-  { smiles: 'N[C@H](C(=O)O)C1=CC=CC=C1', inchi: 'InChI=1S/C8H9NO2/c9-7(8(10)11)6-4-2-1-3-5-6/h1-5,7H,9H2,(H,10,11)/t7-/m0/s1' },
+  {
+    smiles: 'N[C@@H](C(=O)O)C1=CC=CC=C1',
+    inchi: 'InChI=1S/C8H9NO2/c9-7(8(10)11)6-4-2-1-3-5-6/h1-5,7H,9H2,(H,10,11)/t7-/m1/s1'
+  },
+  {
+    smiles: 'N[C@H](C(=O)O)C1=CC=CC=C1',
+    inchi: 'InChI=1S/C8H9NO2/c9-7(8(10)11)6-4-2-1-3-5-6/h1-5,7H,9H2,(H,10,11)/t7-/m0/s1'
+  },
   { smiles: '[NH4+].[Cl-]', inchi: 'InChI=1/ClH.H3N/h1H;1H3/fCl.H4N/h1h;1H/q-1;+1' },
   { smiles: '[Na+].[O-]C(=O)C1=CC=CC=C1', inchi: 'InChI=1S/C7H6O2.Na/c8-7(9)6-4-2-1-3-5-6;/h1-5H,(H,8,9);/q;+1/p-1' },
-  { smiles: '[13CH3][C@H]1CC[C@@H](O)[C@H](C1)N', inchi: 'InChI=1S/C7H15NO/c1-5-2-3-7(9)6(8)4-5/h5-7,9H,2-4,8H2,1H3/t5-,6-,7+/m0/s1/i1+1' },
+  {
+    smiles: '[13CH3][C@H]1CC[C@@H](O)[C@H](C1)N',
+    inchi: 'InChI=1S/C7H15NO/c1-5-2-3-7(9)6(8)4-5/h5-7,9H,2-4,8H2,1H3/t5-,6-,7+/m0/s1/i1+1'
+  },
   { smiles: '[2H]OC([2H])([2H])C', inchi: 'InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3/i2D2,3D' },
   { smiles: '[O-][N+](=O)C1=CC=CC=C1', inchi: 'InChI=1S/C6H5NO2/c8-7(9)6-4-2-1-3-5-6/h1-5H' },
   { smiles: 'C1=CC2=C(C=C1)C=CC=C2', inchi: 'InChI=1S/C10H8/c1-2-6-10-8-4-3-7-9(10)5-1/h1-8H' },
   { smiles: 'c1ncccc1', inchi: 'InChI=1S/C5H5N/c1-2-4-6-5-3-1/h1-5H' },
   { smiles: 'c1cc([N+](=O)[O-])ccc1', inchi: 'InChI=1S/C6H5NO2/c8-7(9)6-4-2-1-3-5-6/h1-5H' },
-  { smiles: 'C1(CC(CC(C1)C(C)(C)C)O)N', inchi: 'InChI=1S/C10H21NO/c1-10(2,3)7-4-8(11)6-9(12)5-7/h7-9,12H,4-6,11H2,1-3H3' },
+  {
+    smiles: 'C1(CC(CC(C1)C(C)(C)C)O)N',
+    inchi: 'InChI=1S/C10H21NO/c1-10(2,3)7-4-8(11)6-9(12)5-7/h7-9,12H,4-6,11H2,1-3H3'
+  },
   { smiles: 'P(=O)(O)(O)O', inchi: 'InChI=1S/H3O4P/c1-5(2,3)4/h(H3,1,2,3,4)' },
   { smiles: 'S(=O)(=O)(N)N', inchi: 'InChI=1S/H4N2O2S/c1-5(2,3)4/h(H4,1,2,3,4)' },
   { smiles: 'C1CN2CCC1CC2', inchi: 'InChI=1S/C7H13N/c1-4-8-5-2-7(1)3-6-8/h7H,1-6H2' },
@@ -82,24 +103,58 @@ export const randomMolecule = [
   { smiles: 'C1(C2(C3(C4(C1C5(C2C3C45)))))', inchi: 'InChI=1S/C9H10/c1-2-4-6-3(1)7-5(2)8(4)9(6)7/h2-9H,1H2' },
   { smiles: 'C%10N(CC%10)C(=O)C', inchi: 'InChI=1S/C5H9NO/c1-5(7)6-3-2-4-6/h2-4H2,1H3' },
   { smiles: 'O=C1N(C)C(=O)N(C)C(=O)N1C', inchi: 'InChI=1S/C6H9N3O3/c1-7-4(10)8(2)6(12)9(3)5(7)11/h1-3H3' },
-  { smiles: 'C1=CC=C(C=C1)C(C(=O)O)(N)P(=O)(O)O', inchi: 'InChI=1S/C8H10NO5P/c9-8(7(10)11,15(12,13)14)6-4-2-1-3-5-6/h1-5H,9H2,(H,10,11)(H2,12,13,14)' },
-  { smiles: 'CC1(C)S[C@@H]2[C@H](NC(=O)C(N)=O)C(=O)N2[C@H]1C(=O)O', inchi: 'InChI=1S/C10H13N3O5S/c1-10(2)4(9(17)18)13-7(16)3(8(13)19-10)12-6(15)5(11)14/h3-4,8H,1-2H3,(H2,11,14)(H,12,15)(H,17,18)/t3-,4+,8-/m1/s1' },
-  { smiles: 'C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O', inchi: 'InChI=1S/C19H30O2/c1-18-9-7-13(20)11-12(18)3-4-14-15-5-6-17(21)19(15,2)10-8-16(14)18/h12,14-17,21H,3-11H2,1-2H3/t12-,14+,15+,16+,17+,18+,19+/m1/s1' },
+  {
+    smiles: 'C1=CC=C(C=C1)C(C(=O)O)(N)P(=O)(O)O',
+    inchi: 'InChI=1S/C8H10NO5P/c9-8(7(10)11,15(12,13)14)6-4-2-1-3-5-6/h1-5H,9H2,(H,10,11)(H2,12,13,14)'
+  },
+  {
+    smiles: 'CC1(C)S[C@@H]2[C@H](NC(=O)C(N)=O)C(=O)N2[C@H]1C(=O)O',
+    inchi:
+      'InChI=1S/C10H13N3O5S/c1-10(2)4(9(17)18)13-7(16)3(8(13)19-10)12-6(15)5(11)14/h3-4,8H,1-2H3,(H2,11,14)(H,12,15)(H,17,18)/t3-,4+,8-/m1/s1'
+  },
+  {
+    smiles: 'C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O',
+    inchi:
+      'InChI=1S/C19H30O2/c1-18-9-7-13(20)11-12(18)3-4-14-15-5-6-17(21)19(15,2)10-8-16(14)18/h12,14-17,21H,3-11H2,1-2H3/t12-,14+,15+,16+,17+,18+,19+/m1/s1'
+  },
   { smiles: 'N#CC(C#N)=C(C#N)C#N', inchi: 'InChI=1S/C6N4/c7-1-5(2-8)6(3-9)4-10' },
   { smiles: 'C(=C(/F)\\F)\\C(/Cl)=C\\Br', inchi: 'InChI=1S/C4H2BrClF2/c1(3(2-5)6)4(7)8/h1-2H/b1-4-,2-3+/m0/s1' },
   { smiles: 'F/C=C/F', inchi: 'InChI=1S/C2H2F2/c1(2-4)3/h1-2H/b1-2+/m0/s1' },
   { smiles: 'F/C=C\\F', inchi: 'InChI=1S/C2H2F2/c1(2-4)3/h1-2H/b1-2-/m0/s1' },
   { smiles: 'C1(=CC=CC=C1)C(=O)[O-].[K+]', inchi: 'InChI=1S/C7H6O2.K/c8-7(9)6-4-2-1-3-5-6;/h1-5H,(H,8,9);/q;+1/p-1' },
   { smiles: '[Cu+2].[O-]S(=O)(=O)[O-]', inchi: 'InChI=1S/Cu.H2O4S/c;1-5(2,3)4/h;(H2,1,2,3,4)/q+2;/p-2' },
-  { smiles: 'Cl[C@H]1[C@@H](Br)[C@H](I)[C@@H](F)[C@H]1N', inchi: 'InChI=1S/C5H7BrClFIN/c6-1-2(7)5(10)3(8)4(1)9/h1-5H,10H2/t1-,2+,3-,4+,5+/m1/s1' },
+  {
+    smiles: 'Cl[C@H]1[C@@H](Br)[C@H](I)[C@@H](F)[C@H]1N',
+    inchi: 'InChI=1S/C5H7BrClFIN/c6-1-2(7)5(10)3(8)4(1)9/h1-5H,10H2/t1-,2+,3-,4+,5+/m1/s1'
+  },
   { smiles: 'C1(CC2(CC3(CC1CC(C2)C3)))', inchi: 'InChI=1S/C11H18/c1-2-9-5-10-3-8(1)4-11(6-9)7-10/h8-11H,1-7H2' },
-  { smiles: 'c1ccc(cc1)C2=NC(=O)N(C(=O)N2)C', inchi: 'InChI=1S/C10H9N3O2/c1-13-9(14)11-8(12-10(13)15)7-5-3-2-4-6-7/h2-6H,1H3,(H,11,12,14,15)' },
-  { smiles: 'N1C=NC2=C1N=CN2[C@H]3C[C@H](O)[C@@H](CO)O3', inchi: 'InChI=1S/C9H12N4O3/c14-2-6-5(15)1-7(16-6)13-4-12-8-9(13)11-3-10-8/h3-7,14-15H,1-2H2,(H,10,11)/t5-,6+,7+/m0/s1' },
-  { smiles: 'OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1O', inchi: 'InChI=1S/C12H22O11/c13-1-3-6(16)8(18)10(11(20)21-3)23-12-9(19)7(17)5(15)4(2-14)22-12/h3-20H,1-2H2/t3-,4-,5-,6-,7+,8+,9-,10+,11-,12+/m1/s1' },
-  { smiles: 'CC(C)(C1=CC(=CC(=C1O)C(C)(C)C)O)C(C)(C)C', inchi: 'InChI=1S/C17H28O2/c1-15(2,3)12-9-11(18)10-13(14(12)19)17(7,8)16(4,5)6/h9-10,18-19H,1-8H3' },
-  { smiles: 'C1=CC=C2C(=C1)C3=CC=CC=C3C=C2', inchi: 'InChI=1S/C14H10/c1-3-7-13-11(5-1)9-10-12-6-2-4-8-14(12)13/h1-10H' },
+  {
+    smiles: 'c1ccc(cc1)C2=NC(=O)N(C(=O)N2)C',
+    inchi: 'InChI=1S/C10H9N3O2/c1-13-9(14)11-8(12-10(13)15)7-5-3-2-4-6-7/h2-6H,1H3,(H,11,12,14,15)'
+  },
+  {
+    smiles: 'N1C=NC2=C1N=CN2[C@H]3C[C@H](O)[C@@H](CO)O3',
+    inchi:
+      'InChI=1S/C9H12N4O3/c14-2-6-5(15)1-7(16-6)13-4-12-8-9(13)11-3-10-8/h3-7,14-15H,1-2H2,(H,10,11)/t5-,6+,7+/m0/s1'
+  },
+  {
+    smiles: 'OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1O',
+    inchi:
+      'InChI=1S/C12H22O11/c13-1-3-6(16)8(18)10(11(20)21-3)23-12-9(19)7(17)5(15)4(2-14)22-12/h3-20H,1-2H2/t3-,4-,5-,6-,7+,8+,9-,10+,11-,12+/m1/s1'
+  },
+  {
+    smiles: 'CC(C)(C1=CC(=CC(=C1O)C(C)(C)C)O)C(C)(C)C',
+    inchi: 'InChI=1S/C17H28O2/c1-15(2,3)12-9-11(18)10-13(14(12)19)17(7,8)16(4,5)6/h9-10,18-19H,1-8H3'
+  },
+  {
+    smiles: 'C1=CC=C2C(=C1)C3=CC=CC=C3C=C2',
+    inchi: 'InChI=1S/C14H10/c1-3-7-13-11(5-1)9-10-12-6-2-4-8-14(12)13/h1-10H'
+  },
   { smiles: 'C1=CC2=C3C=CC=CC3=CC=C2C=C1', inchi: 'InChI=1S/C14H10/c1-3-7-13-11(5-1)9-10-12-6-2-4-8-14(12)13/h1-10H' },
-  { smiles: '[C@@H]1([C@@H]([C@H]([C@@H](O1)O)O)O)O', inchi: 'InChI=1S/C4H8O5/c5-1-2(6)4(8)9-3(1)7/h1-8H/t1-,2-,3-,4-/m1/s1' },
+  {
+    smiles: '[C@@H]1([C@@H]([C@H]([C@@H](O1)O)O)O)O',
+    inchi: 'InChI=1S/C4H8O5/c5-1-2(6)4(8)9-3(1)7/h1-8H/t1-,2-,3-,4-/m1/s1'
+  },
   { smiles: 'N(CC)(CC)(CC)', inchi: 'InChI=1S/C6H15N/c1-4-7(5-2)6-3/h4-6H2,1-3H3' },
   { smiles: 'C[N+](C)(C)CCO', inchi: 'InChI=1S/C5H14NO/c1-6(2,3)4-5-7/h7H,4-5H2,1-3H3/q+1' },
   { smiles: '[O-]C1=CC=CC=C1', inchi: 'InChI=1S/C6H6O/c7-6-4-2-1-3-5-6/h1-5,7H/p-1' },
@@ -116,46 +171,126 @@ export const randomMolecule = [
   { smiles: 'CS(C)=O', inchi: 'InChI=1S/C2H6OS/c1-4(2)3/h1-2H3' },
   { smiles: 'C1CCC2(CC1)CCCCC2', inchi: 'InChI=1S/C11H20/c1-3-7-11(8-4-1)9-5-2-6-10-11/h1-10H2' },
   { smiles: 'C1CC2CCC3CCC(C1)C23', inchi: 'InChI=1S/C11H18/c1-2-8-4-6-10-7-5-9(3-1)11(8)10/h8-11H,1-7H2' },
-  { smiles: 'C1C[C@H]2[C@@H](C1)C=C[C@H]2O', inchi: 'InChI=1S/C8H12O/c9-8-5-4-6-2-1-3-7(6)8/h4-9H,1-3H2/t6-,7-,8+/m0/s1' },
+  {
+    smiles: 'C1C[C@H]2[C@@H](C1)C=C[C@H]2O',
+    inchi: 'InChI=1S/C8H12O/c9-8-5-4-6-2-1-3-7(6)8/h4-9H,1-3H2/t6-,7-,8+/m0/s1'
+  },
   { smiles: 'C1=CN=C[N-]1', inchi: 'InChI=1S/C3H3N2/c1-2-5-3-4-1/h1-3H/q-1' },
   { smiles: '[Zn+2].[Cl-].[Cl-]', inchi: 'InChI=1S/2ClH.Zn/h2*1H;/q;;+2/p-2' },
-  { smiles: 'C(C(C(C(C(C)))))(C(C)(C)C)C', inchi: 'InChI=1S/C11H21/c1-5-6-9-7-11(10,3,4)-8(2)-10(9)/h8-10H,5-7H2,1-4H3' },
+  {
+    smiles: 'C(C(C(C(C(C)))))(C(C)(C)C)C',
+    inchi: 'InChI=1S/C11H21/c1-5-6-9-7-11(10,3,4)-8(2)-10(9)/h8-10H,5-7H2,1-4H3'
+  },
   { smiles: 'CC(C)(C)C1=CC(=O)C(=O)C=C1', inchi: 'InChI=1S/C10H12O2/c1-10(2,3)7-4-5-8(11)9(12)6-7/h4-6H,1-3H3' },
   { smiles: 'O=C([O-])C([N+](C)(C)C)C', inchi: 'InChI=1S/C6H13NO2/c1-5(6(8)9)7(2,3)4/h5H,1-4H3' },
-  { smiles: 'C1(N2CCCCC2)=CC=CC=C1', inchi: 'InChI=1S/C11H15N/c1-3-7-11(8-4-1)12-9-5-2-6-10-12/h1,3-4,7-8H,2,5-6,9-10H2' },
+  {
+    smiles: 'C1(N2CCCCC2)=CC=CC=C1',
+    inchi: 'InChI=1S/C11H15N/c1-3-7-11(8-4-1)12-9-5-2-6-10-12/h1,3-4,7-8H,2,5-6,9-10H2'
+  },
   { smiles: 'C1=CC=C(C=C1)S(=O)(=O)N(C)C', inchi: 'InChI=1S/C8H11NO2S/c1-9(2)12(10,11)8-6-4-3-5-7-8/h3-7H,1-2H3' },
-  { smiles: 'FC(F)(F)C1=CC=C(C=C1)C(=O)N2CCN(CC2)C', inchi: 'InChI=1S/C13H15F3N2O/c1-17-6-8-18(9-7-17)12(19)10-2-4-11(5-3-10)13(14,15)16/h2-5H,6-9H2,1H3' },
+  {
+    smiles: 'FC(F)(F)C1=CC=C(C=C1)C(=O)N2CCN(CC2)C',
+    inchi: 'InChI=1S/C13H15F3N2O/c1-17-6-8-18(9-7-17)12(19)10-2-4-11(5-3-10)13(14,15)16/h2-5H,6-9H2,1H3'
+  },
   { smiles: 'C1CC1C2CC2C3CC3', inchi: 'InChI=1S/C9H14/c1-2-6(1)8-5-9(8)7-3-4-7/h6-9H,1-5H2' },
   { smiles: 'C1OC2(CCCCC2)O1', inchi: 'InChI=1S/C7H12O2/c1-2-4-7(5-3-1)8-6-9-7/h1-6H2' },
   { smiles: 'C1C2C3C4C1C5C4C3C25', inchi: 'InChI=1S/C9H10/c1-2-4-6-3(1)7-5(2)8(4)9(6)7/h2-9H,1H2' },
   { smiles: 'N#C[C@@](Br)(Cl)I', inchi: 'InChI=1S/C2BrClIN/c3-2(4,5)1-6/t2-/m1/s1' },
   { smiles: '[C@](F)(Cl)(Br)I', inchi: 'InChI=1S/CBrClFI/c2-1(3,4)5/t1-/m1/s1' },
-  { smiles: 'C1=CC(=CC=C1/C=C/C(=O)O)O', inchi: 'InChI=1S/C9H8O3/c1(2-8(4)3-5-9(6-4)12)7(10)11/h1-6,11-12H/b1-2+/m0/s1' },
-  { smiles: 'COC1=CC(/C=C/C(=O)O)=CC(OC)=C1O', inchi: 'InChI=1S/C11H12O5/c1-15-9-5-8(4-3-7(12)13)6-10(11(9)14)16-2/h3-6,13-14H,1-2H3/b3-4+/m0/s1' },
-  { smiles: 'C1=CC=C(C=C1)C2(C3CC3)C(=O)NC(=O)N2', inchi: 'InChI=1S/C12H12N2O2/c15-10-12(9-6-7-9,14-11(16)13-10)8-4-2-1-3-5-8/h1-5,9H,6-7H2,(H2,13,14,15,16)' },
+  {
+    smiles: 'C1=CC(=CC=C1/C=C/C(=O)O)O',
+    inchi: 'InChI=1S/C9H8O3/c1(2-8(4)3-5-9(6-4)12)7(10)11/h1-6,11-12H/b1-2+/m0/s1'
+  },
+  {
+    smiles: 'COC1=CC(/C=C/C(=O)O)=CC(OC)=C1O',
+    inchi: 'InChI=1S/C11H12O5/c1-15-9-5-8(4-3-7(12)13)6-10(11(9)14)16-2/h3-6,13-14H,1-2H3/b3-4+/m0/s1'
+  },
+  {
+    smiles: 'C1=CC=C(C=C1)C2(C3CC3)C(=O)NC(=O)N2',
+    inchi: 'InChI=1S/C12H12N2O2/c15-10-12(9-6-7-9,14-11(16)13-10)8-4-2-1-3-5-8/h1-5,9H,6-7H2,(H2,13,14,15,16)'
+  },
   { smiles: 'C%10OC%11CC(C%10)C%11', inchi: 'InChI=1S/C6H10O/c1-2-7-6-3-5(1)4-6/h5-6H,1-4H2' },
   { smiles: 'C1(C2(C3(C4(C5(C1C2C3C45)))))', inchi: 'InChI=1S/C9H10/c1-2-4-3(1)6-8-5(2)7(4)9(6)8/h2-9H,1H2' },
-  { smiles: 'N1([C@H](C)C)C(=O)N(C)C(=O)C(C)(C)C1=O', inchi: 'InChI=1S/C10H16N2O3/c1-6(2)12-8(14)10(3,4)7(13)11(5)9(12)15/h6H,1-5H3' },
-  { smiles: 'C1=CC2=C(C=C1)N(C3CCCCC3)C(=O)C=C2', inchi: 'InChI=1S/C15H17NO/c17-15-11-10-12-6-4-5-9-14(12)16(15)13-7-2-1-3-8-13/h4-6,9-11,13H,1-3,7-8H2' },
+  {
+    smiles: 'N1([C@H](C)C)C(=O)N(C)C(=O)C(C)(C)C1=O',
+    inchi: 'InChI=1S/C10H16N2O3/c1-6(2)12-8(14)10(3,4)7(13)11(5)9(12)15/h6H,1-5H3'
+  },
+  {
+    smiles: 'C1=CC2=C(C=C1)N(C3CCCCC3)C(=O)C=C2',
+    inchi: 'InChI=1S/C15H17NO/c17-15-11-10-12-6-4-5-9-14(12)16(15)13-7-2-1-3-8-13/h4-6,9-11,13H,1-3,7-8H2'
+  },
   { smiles: 'CC1=C(C(=O)NC(=O)N1)N', inchi: 'InChI=1S/C5H7N3O2/c1-2-3(6)4(9)8-5(10)7-2/h6H2,1H3,(H2,7,8,9,10)' },
   { smiles: 'O=C1NC(=O)NC(=O)N1', inchi: 'InChI=1S/C3H3N3O3/c7-1-4-2(8)6-3(9)5-1/h(H3,4,5,6,7,8,9)' },
-  { smiles: '[Fe+2].[O-]C(=O)C1=CC=CC=C1.[O-]C(=O)C2=CC=CC=C2', inchi: 'InChI=1S/2C7H6O2.Fe/c2*8-7(9)6-4-2-1-3-5-6;/h2*1-5H,(H,8,9);/q;;+2/p-2' },
+  {
+    smiles: '[Fe+2].[O-]C(=O)C1=CC=CC=C1.[O-]C(=O)C2=CC=CC=C2',
+    inchi: 'InChI=1S/2C7H6O2.Fe/c2*8-7(9)6-4-2-1-3-5-6;/h2*1-5H,(H,8,9);/q;;+2/p-2'
+  },
   { smiles: 'C1=CC=[C-]C=C1.[Li+]', inchi: 'InChI=1S/C6H5.Li/c1-2-4-6-5-3-1;/h1-5H;/q-1;+1' },
-  { smiles: 'c1ccc(cc1)[C@H](F)[C@@H](Cl)Br', inchi: 'InChI=1S/C8H7BrClF/c9-8(10)7(11)6-4-2-1-3-5-6/h1-5,7-8H/t7-,8+/m0/s1' },
-  { smiles: 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O', inchi: 'InChI=1S/C9H10O2/c10-9(11)8-5-4-6-2-1-3-7(6)8/h1,3-8H,2H2,(H,10,11)/t6-,7-,8-/m0/s1' },
-  { smiles: 'C1CCC2C3CCC4=CC(=O)CCC4(C3CCC12C)C', inchi: 'InChI=1S/C19H28O/c1-18-9-3-4-16(18)15-6-5-13-12-14(20)7-11-19(13,2)17(15)8-10-18/h12,15-17H,3-11H2,1-2H3' },
-  { smiles: 'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1', inchi: 'InChI=1S/C30H50O/c1-19(2)6-5-7-20(3)21-8-11-27-24(16-21)17-23-9-13-28-26-12-10-25(31)18-22(26)14-15-30(28,4)29(23)27/h13,19-27,29,31H,5-12,14-18H2,1-4H3' },
-  { smiles: 'CC(C)(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1', inchi: 'InChI=1S/C26H42O/c1-25(2,3)19-6-8-22-18(14-19)13-17-5-10-23-21-9-7-20(27)15-16(21)11-12-26(23,4)24(17)22/h10,16-22,24,27H,5-9,11-15H2,1-4H3' },
-  { smiles: 'CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C', inchi: 'InChI=1S/C20H25N3O/c1-4-23(5-2)20(24)14-9-16-15-7-6-8-17-19(15)13(11-21-17)10-18(16)22(3)12-14/h6-9,11,14,18,21H,4-5,10,12H2,1-3H3' },
-  { smiles: 'C1=CC2=C(C=C1O)C(=CN2)CCN', inchi: 'InChI=1S/C10H12N2O/c11-4-3-7-6-12-10-2-1-8(13)5-9(7)10/h1-2,5-6,12-13H,3-4,11H2' },
-  { smiles: 'OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1OC(=O)CCCCCC', inchi: 'InChI=1S/C19H34O12/c1-2-3-4-5-6-11(22)30-16-10(8-21)29-19(15(26)14(16)25)31-17-13(24)12(23)9(7-20)28-18(17)27/h9-10,12-21,23-27H,2-8H2,1H3/t9-,10-,12-,13+,14-,15-,16-,17+,18-,19+/m1/s1' },
-  { smiles: 'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)N', inchi: 'InChI=1S/C31H51NO2/c1-18(2)6-5-7-19(3)23-11-12-25-26(28(23)30(32)34)17-21-8-13-27-24-10-9-22(33)16-20(24)14-15-31(27,4)29(21)25/h13,18-26,28-29,33H,5-12,14-17H2,1-4H3,(H2,32,34)' },
-  { smiles: 'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC', inchi: 'InChI=1S/C32H52O3/c1-19(2)7-6-8-20(3)24-12-13-26-27(29(24)31(34)35-5)18-22-9-14-28-25-11-10-23(33)17-21(25)15-16-32(28,4)30(22)26/h14,19-27,29-30,33H,6-13,15-18H2,1-5H3' },
-  { smiles: 'CCCCCC1=CC(=C2[CH]3C=C(CC[CH]3C(OC2=C1)(C)C)C)O', inchi: 'InChI=1S/C21H30O2/c1-5-6-7-8-15-12-18(22)20-16-11-14(2)9-10-17(16)21(3,4)23-19(20)13-15/h11-13,16-17,22H,5-10H2,1-4H3' },
-  { smiles: 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O', inchi: 'InChI=1S/C6H12O6/c7-1-2-3(8)4(9)5(10)6(11)12-2/h2-11H,1H2/t2-,3-,4+,5-,6?/m1/s1' },
-  { smiles: 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN', inchi: 'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1' },
+  {
+    smiles: 'c1ccc(cc1)[C@H](F)[C@@H](Cl)Br',
+    inchi: 'InChI=1S/C8H7BrClF/c9-8(10)7(11)6-4-2-1-3-5-6/h1-5,7-8H/t7-,8+/m0/s1'
+  },
+  {
+    smiles: 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O',
+    inchi: 'InChI=1S/C9H10O2/c10-9(11)8-5-4-6-2-1-3-7(6)8/h1,3-8H,2H2,(H,10,11)/t6-,7-,8-/m0/s1'
+  },
+  {
+    smiles: 'C1CCC2C3CCC4=CC(=O)CCC4(C3CCC12C)C',
+    inchi: 'InChI=1S/C19H28O/c1-18-9-3-4-16(18)15-6-5-13-12-14(20)7-11-19(13,2)17(15)8-10-18/h12,15-17H,3-11H2,1-2H3'
+  },
+  {
+    smiles: 'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1',
+    inchi:
+      'InChI=1S/C30H50O/c1-19(2)6-5-7-20(3)21-8-11-27-24(16-21)17-23-9-13-28-26-12-10-25(31)18-22(26)14-15-30(28,4)29(23)27/h13,19-27,29,31H,5-12,14-18H2,1-4H3'
+  },
+  {
+    smiles: 'CC(C)(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1',
+    inchi:
+      'InChI=1S/C26H42O/c1-25(2,3)19-6-8-22-18(14-19)13-17-5-10-23-21-9-7-20(27)15-16(21)11-12-26(23,4)24(17)22/h10,16-22,24,27H,5-9,11-15H2,1-4H3'
+  },
+  {
+    smiles: 'CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C',
+    inchi:
+      'InChI=1S/C20H25N3O/c1-4-23(5-2)20(24)14-9-16-15-7-6-8-17-19(15)13(11-21-17)10-18(16)22(3)12-14/h6-9,11,14,18,21H,4-5,10,12H2,1-3H3'
+  },
+  {
+    smiles: 'C1=CC2=C(C=C1O)C(=CN2)CCN',
+    inchi: 'InChI=1S/C10H12N2O/c11-4-3-7-6-12-10-2-1-8(13)5-9(7)10/h1-2,5-6,12-13H,3-4,11H2'
+  },
+  {
+    smiles: 'OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1OC(=O)CCCCCC',
+    inchi:
+      'InChI=1S/C19H34O12/c1-2-3-4-5-6-11(22)30-16-10(8-21)29-19(15(26)14(16)25)31-17-13(24)12(23)9(7-20)28-18(17)27/h9-10,12-21,23-27H,2-8H2,1H3/t9-,10-,12-,13+,14-,15-,16-,17+,18-,19+/m1/s1'
+  },
+  {
+    smiles: 'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)N',
+    inchi:
+      'InChI=1S/C31H51NO2/c1-18(2)6-5-7-19(3)23-11-12-25-26(28(23)30(32)34)17-21-8-13-27-24-10-9-22(33)16-20(24)14-15-31(27,4)29(21)25/h13,18-26,28-29,33H,5-12,14-17H2,1-4H3,(H2,32,34)'
+  },
+  {
+    smiles: 'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC',
+    inchi:
+      'InChI=1S/C32H52O3/c1-19(2)7-6-8-20(3)24-12-13-26-27(29(24)31(34)35-5)18-22-9-14-28-25-11-10-23(33)17-21(25)15-16-32(28,4)30(22)26/h14,19-27,29-30,33H,6-13,15-18H2,1-5H3'
+  },
+  {
+    smiles: 'CCCCCC1=CC(=C2[CH]3C=C(CC[CH]3C(OC2=C1)(C)C)C)O',
+    inchi:
+      'InChI=1S/C21H30O2/c1-5-6-7-8-15-12-18(22)20-16-11-14(2)9-10-17(16)21(3,4)23-19(20)13-15/h11-13,16-17,22H,5-10H2,1-4H3'
+  },
+  {
+    smiles: 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O',
+    inchi: 'InChI=1S/C6H12O6/c7-1-2-3(8)4(9)5(10)6(11)12-2/h2-11H,1H2/t2-,3-,4+,5-,6?/m1/s1'
+  },
+  {
+    smiles: 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN',
+    inchi:
+      'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1'
+  },
   { smiles: 'C1=CC(=C(C=C1CCN)O)O', inchi: 'InChI=1S/C8H11NO2/c9-4-3-6-1-2-7(10)8(11)5-6/h1-2,5,10-11H,3-4,9H2' },
-  { smiles: 'CN(C)CCC1=CNC2=C1C=C(C=C2)OC', inchi: 'InChI=1S/C13H18N2O/c1-15(2)5-4-10-9-14-13(12)7-6-11(8-12-10)16-3/h6-9,14H,4-5H2,1-3H3' }
+  {
+    smiles: 'CN(C)CCC1=CNC2=C1C=C(C=C2)OC',
+    inchi: 'InChI=1S/C13H18N2O/c1-15(2)5-4-10-9-14-13(12)7-6-11(8-12-10)16-3/h6-9,14H,4-5H2,1-3H3'
+  }
 ];
 
 // Expose as a global when loaded in the browser as a module script.

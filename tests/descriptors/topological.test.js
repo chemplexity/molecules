@@ -1,7 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
-import { adjacencyMatrix, degreeMatrix, distanceMatrix, reciprocalMatrix, randicMatrix } from '../../src/matrices/index.js';
+import {
+  adjacencyMatrix,
+  degreeMatrix,
+  distanceMatrix,
+  reciprocalMatrix,
+  randicMatrix
+} from '../../src/matrices/index.js';
 import { parseSMILES } from '../../src/io/index.js';
 import {
   wienerIndex,
@@ -412,25 +418,25 @@ function checkIndices(smiles, { W, WW, H, J, chi, platt, sz }) {
   const D = distanceMatrix(A);
   const DEG = degreeMatrix(A);
   const RD = reciprocalMatrix(D);
-  if (W    !== undefined) {
+  if (W !== undefined) {
     assert.equal(wienerIndex(D), W);
   }
-  if (WW   !== undefined) {
+  if (WW !== undefined) {
     assert.equal(hyperWienerIndex(D), WW);
   }
-  if (H    !== undefined) {
+  if (H !== undefined) {
     assert.ok(Math.abs(hararyIndex(RD) - H) < 0.005, `Harary: expected ${H}, got ${hararyIndex(RD)}`);
   }
-  if (J    !== undefined) {
+  if (J !== undefined) {
     assert.ok(Math.abs(balabanIndex(D, A) - J) < 0.005, `Balaban: expected ${J}, got ${balabanIndex(D, A)}`);
   }
-  if (chi  !== undefined) {
+  if (chi !== undefined) {
     assert.ok(Math.abs(randicIndex(A, DEG) - chi) < 0.005, `Randic: expected ${chi}, got ${randicIndex(A, DEG)}`);
   }
   if (platt !== undefined) {
     assert.equal(plattIndex(A, DEG), platt);
   }
-  if (sz   !== undefined) {
+  if (sz !== undefined) {
     assert.equal(szegedIndex(D, A), sz);
   }
 }
@@ -441,34 +447,40 @@ function checkNewIndices(smiles, { abc, ga, harmonic, sc, ecc, wp, schultz, gutm
   const D = distanceMatrix(A);
   const DEG = degreeMatrix(A);
   const tol = 1e-8;
-  if (abc       !== undefined) {
+  if (abc !== undefined) {
     assert.ok(Math.abs(abcIndex(A, DEG) - abc) < tol, `ABC: expected ${abc}, got ${abcIndex(A, DEG)}`);
   }
-  if (ga        !== undefined) {
+  if (ga !== undefined) {
     assert.ok(Math.abs(gaIndex(A, DEG) - ga) < tol, `GA: expected ${ga}, got ${gaIndex(A, DEG)}`);
   }
-  if (harmonic  !== undefined) {
-    assert.ok(Math.abs(harmonicIndex(A, DEG) - harmonic) < tol, `Harmonic: expected ${harmonic}, got ${harmonicIndex(A, DEG)}`);
+  if (harmonic !== undefined) {
+    assert.ok(
+      Math.abs(harmonicIndex(A, DEG) - harmonic) < tol,
+      `Harmonic: expected ${harmonic}, got ${harmonicIndex(A, DEG)}`
+    );
   }
-  if (sc        !== undefined) {
-    assert.ok(Math.abs(sumConnectivityIndex(A, DEG) - sc) < tol, `SC: expected ${sc}, got ${sumConnectivityIndex(A, DEG)}`);
+  if (sc !== undefined) {
+    assert.ok(
+      Math.abs(sumConnectivityIndex(A, DEG) - sc) < tol,
+      `SC: expected ${sc}, got ${sumConnectivityIndex(A, DEG)}`
+    );
   }
-  if (ecc       !== undefined) {
+  if (ecc !== undefined) {
     assert.equal(eccentricConnectivityIndex(A, DEG, D), ecc);
   }
-  if (wp        !== undefined) {
+  if (wp !== undefined) {
     assert.equal(wienerPolarityIndex(D), wp);
   }
-  if (schultz   !== undefined) {
+  if (schultz !== undefined) {
     assert.equal(schultzIndex(DEG, D), schultz);
   }
-  if (gutman    !== undefined) {
+  if (gutman !== undefined) {
     assert.equal(gutmanIndex(DEG, D), gutman);
   }
   if (forgotten !== undefined) {
     assert.equal(forgottenIndex(DEG), forgotten);
   }
-  if (nk        !== undefined) {
+  if (nk !== undefined) {
     assert.equal(narumiKatayamaIndex(DEG), nk);
   }
 }
@@ -481,7 +493,7 @@ describe('topological indices — CSV reference molecules', () => {
     checkIndices('CC(C)CC', { W: 18, WW: 28, H: 6.67, J: 2.54, chi: 2.27, platt: 8, sz: 18 });
   });
   it('CC(C)(C)C (neopentane)', () => {
-    checkIndices('CC(C)(C)C', { W: 16, WW: 22, H: 7.00, J: 3.02, chi: 2.00 });
+    checkIndices('CC(C)(C)C', { W: 16, WW: 22, H: 7.0, J: 3.02, chi: 2.0 });
   });
   it('CC=CC (2-butene)', () => {
     checkIndices('CC=CC', { W: 10, WW: 15, H: 4.33, J: 1.97, chi: 1.91 });
@@ -514,7 +526,7 @@ describe('topological indices — CSV reference molecules', () => {
     checkIndices('CC(O)CC', { W: 18, WW: 28, H: 6.67, J: 2.54, chi: 2.27 });
   });
   it('CC(O)(C)C (tert-butanol)', () => {
-    checkIndices('CC(O)(C)C', { W: 16, WW: 22, H: 7.00, J: 3.02, chi: 2.00 });
+    checkIndices('CC(O)(C)C', { W: 16, WW: 22, H: 7.0, J: 3.02, chi: 2.0 });
   });
   it('C(=O)CCC (butanal)', () => {
     checkIndices('C(=O)CCC', { W: 20, WW: 35, H: 6.42, J: 2.19, chi: 2.41 });
@@ -523,22 +535,28 @@ describe('topological indices — CSV reference molecules', () => {
     checkIndices('CC(=O)CC', { W: 18, WW: 28, H: 6.67, J: 2.54, chi: 2.27 });
   });
   it('C1CCCCC1 (cyclohexane)', () => {
-    checkIndices('C1CCCCC1', { W: 27, WW: 42, H: 10.00, J: 2.00, chi: 3.00 });
+    checkIndices('C1CCCCC1', { W: 27, WW: 42, H: 10.0, J: 2.0, chi: 3.0 });
   });
   it('[C@H]1=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H]1 (cyclooctatetraene)', () => {
-    checkIndices('[C@H]1=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H]1', { W: 64, WW: 120, H: 15.67, J: 2.00, chi: 4.00 });
+    checkIndices('[C@H]1=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H]1', {
+      W: 64,
+      WW: 120,
+      H: 15.67,
+      J: 2.0,
+      chi: 4.0
+    });
   });
   it('c1ccccc1 (benzene)', () => {
-    checkIndices('c1ccccc1', { W: 27, WW: 42, H: 10.00, J: 2.00, chi: 3.00 });
+    checkIndices('c1ccccc1', { W: 27, WW: 42, H: 10.0, J: 2.0, chi: 3.0 });
   });
   it('C12=CC=CC=C1C3=C(C=CC=C3)C=C2 (anthracene)', () => {
     checkIndices('C12=CC=CC=C1C3=C(C=CC=C3)C=C2', { W: 271, WW: 636, H: 41.14, J: 1.74, chi: 6.95 });
   });
   it('c1occc1 (furan)', () => {
-    checkIndices('c1occc1', { W: 15, WW: 20, H: 7.50, J: 2.08, chi: 2.50 });
+    checkIndices('c1occc1', { W: 15, WW: 20, H: 7.5, J: 2.08, chi: 2.5 });
   });
   it('NC(CCCNC(N)=N)C(O)=O (arginine)', () => {
-    checkIndices('NC(CCCNC(N)=N)C(O)=O', { W: 247, WW: 739, H: 26.92, J: 3.20, chi: 5.54 });
+    checkIndices('NC(CCCNC(N)=N)C(O)=O', { W: 247, WW: 739, H: 26.92, J: 3.2, chi: 5.54 });
   });
   it('CC(=O)C(Cl)CC(C(C)C)C=C', () => {
     checkIndices('CC(=O)C(Cl)CC(C(C)C)C=C', { W: 211, WW: 523, H: 28.42, J: 3.85, chi: 5.49, platt: 28, sz: 211 });
@@ -573,7 +591,7 @@ describe('abcIndex — known values', () => {
   it('n-butane ABC = 3√2/2', () => {
     const A = adjacencyMatrix(butane());
     const DEG = degreeMatrix(A);
-    assert.ok(Math.abs(abcIndex(A, DEG) - 3 * Math.SQRT2 / 2) < 1e-10);
+    assert.ok(Math.abs(abcIndex(A, DEG) - (3 * Math.SQRT2) / 2) < 1e-10);
   });
   // isobutane: 3 edges (3,1) → 3·√(2/3) = √6
   it('isobutane ABC = √6', () => {
@@ -594,13 +612,13 @@ describe('gaIndex — known values', () => {
   it('propane GA = 4√2/3', () => {
     const A = adjacencyMatrix(propane());
     const DEG = degreeMatrix(A);
-    assert.ok(Math.abs(gaIndex(A, DEG) - 4 * Math.SQRT2 / 3) < 1e-10);
+    assert.ok(Math.abs(gaIndex(A, DEG) - (4 * Math.SQRT2) / 3) < 1e-10);
   });
   // isobutane: 3 edges (3,1) → 3·(2√3/4) = 3√3/2
   it('isobutane GA = 3√3/2', () => {
     const A = adjacencyMatrix(isobutane());
     const DEG = degreeMatrix(A);
-    assert.ok(Math.abs(gaIndex(A, DEG) - 3 * Math.sqrt(3) / 2) < 1e-10);
+    assert.ok(Math.abs(gaIndex(A, DEG) - (3 * Math.sqrt(3)) / 2) < 1e-10);
   });
   // benzene: 6 edges (2,2) → 6·1 = 6
   it('benzene GA = 6', () => {
@@ -834,7 +852,7 @@ describe('new descriptors — additional molecules', () => {
   it('n-pentane CCCCC', () => {
     checkNewIndices('CCCCC', {
       abc: 2 * Math.SQRT2,
-      ga: 4 * Math.SQRT2 / 3 + 2,
+      ga: (4 * Math.SQRT2) / 3 + 2,
       harmonic: 7 / 3,
       sc: 2 / Math.sqrt(3) + 1,
       ecc: 24,
@@ -876,7 +894,7 @@ describe('new descriptors — additional molecules', () => {
   // Forgotten = 5·2³ = 40; NK = 2^5 = 32
   it('cyclopentane C1CCCC1', () => {
     checkNewIndices('C1CCCC1', {
-      abc: 5 * Math.SQRT2 / 2,
+      abc: (5 * Math.SQRT2) / 2,
       ga: 5,
       harmonic: 5 / 2,
       sc: 5 / 2,

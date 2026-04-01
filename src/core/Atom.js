@@ -32,18 +32,22 @@ export class Atom {
    * @param {'R'|'S'|null}          [properties.chirality=null]  - CIP chirality designation: `'R'` (rectus) or `'S'` (sinister); `null` if unannotated or indeterminate.
    * @param {{atomMap?: number|null}|undefined} [properties.reaction] - Reaction/template metadata used by SMIRKS or atom-mapped SMARTS.
    */
-  constructor(id, name, {
-    charge    = 0,
-    aromatic  = false,
-    protons   = undefined,
-    neutrons  = undefined,
-    electrons = undefined,
-    group     = 0,
-    period    = 0,
-    radical   = 0,
-    chirality = null,
-    reaction  = undefined
-  } = {}) {
+  constructor(
+    id,
+    name,
+    {
+      charge = 0,
+      aromatic = false,
+      protons = undefined,
+      neutrons = undefined,
+      electrons = undefined,
+      group = 0,
+      period = 0,
+      radical = 0,
+      chirality = null,
+      reaction = undefined
+    } = {}
+  ) {
     /** @type {string} Unique identifier for this atom. */
     this.id = id ?? `${++Atom._nextId}`;
     /** @type {string} Universally unique identifier, auto-generated on construction. */
@@ -261,10 +265,10 @@ export class Atom {
       return 0;
     }
     if (group <= 2) {
-      return totalBondOrder - group;  // s-block (H=1, Be=2 …)
+      return totalBondOrder - group; // s-block (H=1, Be=2 …)
     }
     if (group <= 12) {
-      return 0;                       // transition metals
+      return 0; // transition metals
     }
     // p-block
     const base = 18 - group;
@@ -272,7 +276,7 @@ export class Atom {
     if (period && period > 2 && group <= 17) {
       // Period 3+ atoms (S, P, Se, As, …) can use d-orbitals for expanded valence.
       // Walk up by steps of 2 (same parity) until the valence meets or exceeds totalBondOrder.
-      const cap = base + 4;   // S: 6, Se: 6, P: 7, As: 7, Te: 6, …
+      const cap = base + 4; // S: 6, Se: 6, P: 7, As: 7, Te: 6, …
       let v = base;
       while (v < totalBondOrder && v < cap) {
         v += 2;
@@ -294,10 +298,10 @@ export class Atom {
     if (!el) {
       return this;
     }
-    this.properties.group     = el.group;
-    this.properties.period    = el.period;
-    this.properties.protons   = el.protons;
-    this.properties.neutrons  = el.neutrons;
+    this.properties.group = el.group;
+    this.properties.period = el.period;
+    this.properties.protons = el.protons;
+    this.properties.neutrons = el.neutrons;
     this.properties.electrons = el.electrons;
     return this;
   }
@@ -332,7 +336,7 @@ export class Atom {
     }
     const { group } = el;
     let neutralValence;
-    if (group >= 1 && group <= 2)        {
+    if (group >= 1 && group <= 2) {
       neutralValence = group;
     } else if (group >= 13 && group <= 17) {
       neutralValence = 18 - group;
@@ -359,7 +363,7 @@ export class Atom {
     }
     const { group } = el;
     let valence;
-    if (group >= 1 && group <= 2)        {
+    if (group >= 1 && group <= 2) {
       valence = group;
     } else if (group >= 13 && group <= 17) {
       valence = 18 - group;
@@ -538,13 +542,13 @@ export class Atom {
     // potential source handles pendant non-H substituents (e.g. C=O on a
     // ring carbon) that would dead-end if chosen as the lone root.
     for (let i = 0; i < neighborIds.length; i++) {
-      const src     = neighborIds[i];
+      const src = neighborIds[i];
       const targets = new Set(neighborIds.filter((_, j) => j !== i));
       const visited = new Set([id, src]);
-      const queue   = [src];
+      const queue = [src];
 
       while (queue.length > 0) {
-        const current     = queue.shift();
+        const current = queue.shift();
         const currentAtom = molecule.atoms.get(current);
         if (!currentAtom) {
           continue;
@@ -583,10 +587,10 @@ function _cipZ(atomId, mol) {
   if (!atom) {
     return 0;
   }
-  const p  = atom.properties;
+  const p = atom.properties;
   const el = elements[atom.name];
-  const Z  = p.protons  ?? el?.protons  ?? 0;
-  const N  = p.neutrons ?? el?.neutrons ?? Z;
+  const Z = p.protons ?? el?.protons ?? 0;
+  const N = p.neutrons ?? el?.neutrons ?? Z;
   return Z * 1000 + Math.round(Z + N);
 }
 
@@ -596,12 +600,12 @@ function _cipZ(atomId, mol) {
  * Multiple bonds contribute phantom duplicate atoms per the CIP rules.
  */
 function _cipHierarchy(startId, excludeId, mol, maxDepth = 10) {
-  const result   = [[_cipZ(startId, mol)]];
-  let frontier   = [{ id: startId, parentId: excludeId }];
-  const visited  = new Set([excludeId, startId]);
+  const result = [[_cipZ(startId, mol)]];
+  let frontier = [{ id: startId, parentId: excludeId }];
+  const visited = new Set([excludeId, startId]);
 
   for (let depth = 0; depth < maxDepth; depth++) {
-    const levelZ      = [];
+    const levelZ = [];
     const nextFrontier = [];
 
     for (const { id, parentId } of frontier) {
@@ -616,7 +620,7 @@ function _cipHierarchy(startId, excludeId, mol, maxDepth = 10) {
           continue;
         }
         const order = Math.round(b.properties.order ?? 1);
-        const pZ    = _cipZ(parentId, mol);
+        const pZ = _cipZ(parentId, mol);
         for (let p = 1; p < order; p++) {
           levelZ.push(pZ);
         }
@@ -633,7 +637,7 @@ function _cipHierarchy(startId, excludeId, mol, maxDepth = 10) {
           continue;
         }
         const order = Math.round(b.properties.order ?? 1);
-        const oZ    = _cipZ(otherId, mol);
+        const oZ = _cipZ(otherId, mol);
         levelZ.push(oZ);
         for (let p = 1; p < order; p++) {
           levelZ.push(oZ);

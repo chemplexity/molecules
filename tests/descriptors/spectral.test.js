@@ -88,7 +88,12 @@ describe('estradaIndex', () => {
     for (const id of ['a', 'b', 'd', 'e']) {
       mol.addAtom(id, 'C');
     }
-    for (const [bi, id] of [['b0', 'a'], ['b1', 'b'], ['b2', 'd'], ['b3', 'e']]) {
+    for (const [bi, id] of [
+      ['b0', 'a'],
+      ['b1', 'b'],
+      ['b2', 'd'],
+      ['b3', 'e']
+    ]) {
       mol.addBond(bi, 'c', id);
     }
     const A = adjacencyMatrix(mol);

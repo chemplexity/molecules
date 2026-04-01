@@ -31,15 +31,12 @@ function heavyBonds(mol) {
 // ---------------------------------------------------------------------------
 
 describe('parseINCHI — input validation', () => {
-  it('throws on empty string',   () => assert.throws(() => parseINCHI(''),        /non-empty/));
-  it('throws on non-string',     () => assert.throws(() => parseINCHI(null),      /non-empty/));
+  it('throws on empty string', () => assert.throws(() => parseINCHI(''), /non-empty/));
+  it('throws on non-string', () => assert.throws(() => parseINCHI(null), /non-empty/));
   it('throws without InChI= prefix', () => assert.throws(() => parseINCHI('1S/C6H6'), /InChI=/));
-  it('throws on missing formula',    () => assert.throws(() => parseINCHI('InChI=1S'), /formula/));
+  it('throws on missing formula', () => assert.throws(() => parseINCHI('InChI=1S'), /formula/));
   it('throws when the /c layer leaves a heavy atom disconnected', () => {
-    assert.throws(
-      () => parseINCHI('InChI=1S/C4H4O/c1-2-4-3-1/h1-4H'),
-      /leaves heavy atom\(s\) unconnected: 5 \(O\)/
-    );
+    assert.throws(() => parseINCHI('InChI=1S/C4H4O/c1-2-4-3-1/h1-4H'), /leaves heavy atom\(s\) unconnected: 5 \(O\)/);
   });
 });
 
@@ -117,15 +114,22 @@ describe('parseINCHI — sulfamide mobile hydrogens InChI=1S/H4N2O2S/c1-5(2,3)4/
       const [aId, bId] = bond.atoms;
       const a = mol.atoms.get(aId);
       const b = mol.atoms.get(bId);
-      return bond.properties.order === 2 &&
-        ((a?.name === 'S' && b?.name === 'O') || (a?.name === 'O' && b?.name === 'S'));
+      return (
+        bond.properties.order === 2 && ((a?.name === 'S' && b?.name === 'O') || (a?.name === 'O' && b?.name === 'S'))
+      );
     });
 
     assert.equal(nitrogens.length, 2);
     assert.equal(oxygens.length, 2);
     assert.ok(sulfur);
-    assert.deepEqual(nitrogens.map(a => a.getHydrogenNeighbors(mol).length).sort((a, b) => a - b), [2, 2]);
-    assert.deepEqual(oxygens.map(a => a.getHydrogenNeighbors(mol).length).sort((a, b) => a - b), [0, 0]);
+    assert.deepEqual(
+      nitrogens.map(a => a.getHydrogenNeighbors(mol).length).sort((a, b) => a - b),
+      [2, 2]
+    );
+    assert.deepEqual(
+      oxygens.map(a => a.getHydrogenNeighbors(mol).length).sort((a, b) => a - b),
+      [0, 0]
+    );
     assert.equal(soDoubles.length, 2);
   });
 });
@@ -134,26 +138,24 @@ describe('parseINCHI — hydrogen isotopes from /i layer', () => {
   const mol = parseINCHI('InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3/i2D2,3D');
 
   it('preserves deuterium atoms on the correct parents', () => {
-    const deuteriums = [...mol.atoms.values()].filter(atom =>
-      atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 1
+    const deuteriums = [...mol.atoms.values()].filter(
+      atom => atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 1
     );
-    const protiums = [...mol.atoms.values()].filter(atom =>
-      atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 0
+    const protiums = [...mol.atoms.values()].filter(
+      atom => atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 0
     );
     const oxygen = [...mol.atoms.values()].find(atom => atom.name === 'O');
-    const carbonWithTwoD = [...mol.atoms.values()].find(atom =>
-      atom.name === 'C' &&
-      atom.getHydrogenNeighbors(mol).filter(h => Math.round(h.properties.neutrons ?? 0) === 1).length === 2
+    const carbonWithTwoD = [...mol.atoms.values()].find(
+      atom =>
+        atom.name === 'C' &&
+        atom.getHydrogenNeighbors(mol).filter(h => Math.round(h.properties.neutrons ?? 0) === 1).length === 2
     );
 
     assert.equal(deuteriums.length, 3);
     assert.equal(protiums.length, 3);
     assert.ok(oxygen);
     assert.ok(carbonWithTwoD);
-    assert.equal(
-      oxygen.getHydrogenNeighbors(mol).filter(h => Math.round(h.properties.neutrons ?? 0) === 1).length,
-      1
-    );
+    assert.equal(oxygen.getHydrogenNeighbors(mol).filter(h => Math.round(h.properties.neutrons ?? 0) === 1).length, 1);
   });
 });
 
@@ -228,9 +230,10 @@ describe('parseINCHI — guanidine mobile hydrogens prefer terminal imine', () =
 
   it('keeps the side-chain nitrogen single-bonded to the guanidino carbon', () => {
     const nitrogens = [...mol.atoms.values()].filter(atom => atom.name === 'N');
-    const internalNitrogen = nitrogens.find(atom =>
-      atom.getHeavyNeighbors(mol).some(nb => nb.name === 'C') &&
-      atom.getHeavyNeighbors(mol).filter(nb => nb.name === 'C').length === 2
+    const internalNitrogen = nitrogens.find(
+      atom =>
+        atom.getHeavyNeighbors(mol).some(nb => nb.name === 'C') &&
+        atom.getHeavyNeighbors(mol).filter(nb => nb.name === 'C').length === 2
     );
     assert.ok(internalNitrogen);
     const doubleBonds = internalNitrogen.bonds
@@ -243,7 +246,9 @@ describe('parseINCHI — guanidine mobile hydrogens prefer terminal imine', () =
 
 describe('parseINCHI — fused aza aromaticity matches SMILES perception', () => {
   const smiles = parseSMILES('N1C=NC2=C1N=CN2[C@H]3C[C@H](O)[C@@H](CO)O3');
-  const inchi = parseINCHI('InChI=1S/C9H12N4O3/c14-2-6-5(15)1-7(16-6)13-4-12-8-9(13)11-3-10-8/h3-7,14-15H,1-2H2,(H,10,11)/t5-,6+,7+/m0/s1');
+  const inchi = parseINCHI(
+    'InChI=1S/C9H12N4O3/c14-2-6-5(15)1-7(16-6)13-4-12-8-9(13)11-3-10-8/h3-7,14-15H,1-2H2,(H,10,11)/t5-,6+,7+/m0/s1'
+  );
 
   function bondSignature(mol) {
     return heavyBonds(mol)
@@ -292,7 +297,7 @@ describe('parseINCHI — propane InChI=1S/C3H8/c1-3-2/h1-2H3,3H2', () => {
   });
   it('middle C has 2 heavy neighbors', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const middle  = carbons.find(c => c.getHeavyNeighbors(mol).length === 2);
+    const middle = carbons.find(c => c.getHeavyNeighbors(mol).length === 2);
     assert.ok(middle, 'a middle carbon should exist');
     assert.equal(middle.getHydrogenNeighbors(mol).length, 2);
   });
@@ -311,7 +316,7 @@ describe('parseINCHI — isobutane InChI=1S/C4H10/c1-4(2)3/h4H,1-3H3', () => {
   });
   it('central C has 3 heavy neighbors and 1 H', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const centre  = carbons.find(c => c.getHeavyNeighbors(mol).length === 3);
+    const centre = carbons.find(c => c.getHeavyNeighbors(mol).length === 3);
     assert.ok(centre);
     assert.equal(centre.getHydrogenNeighbors(mol).length, 1);
   });
@@ -330,7 +335,7 @@ describe('parseINCHI — neopentane InChI=1S/C5H12/c1-5(2,3)4/h1-4H3', () => {
   });
   it('central C has 4 heavy neighbors and 0 H', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const centre  = carbons.find(c => c.getHeavyNeighbors(mol).length === 4);
+    const centre = carbons.find(c => c.getHeavyNeighbors(mol).length === 4);
     assert.ok(centre);
     assert.equal(centre.getHydrogenNeighbors(mol).length, 0);
   });
@@ -483,7 +488,8 @@ describe('parseINCHI — options', () => {
 
   it('inferBondOrders: false + addHydrogens: false gives bare skeleton', () => {
     const mol = parseINCHI('InChI=1S/C6H6/c1-2-3-4-5-6-1/h1-6H', {
-      inferBondOrders: false, addHydrogens: false
+      inferBondOrders: false,
+      addHydrogens: false
     });
     assert.equal(mol.atomCount, 6);
     assert.equal(mol.bondCount, 6);
@@ -526,9 +532,9 @@ describe('parseINCHI — n-butane InChI=1S/C4H10/c1-2-3-4/h1,4H3,2-3H2', () => {
   it('terminal carbons have 1 heavy neighbor, interior carbons have 2', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
     const terminals = carbons.filter(c => c.getHeavyNeighbors(mol).length === 1);
-    const interior  = carbons.filter(c => c.getHeavyNeighbors(mol).length === 2);
+    const interior = carbons.filter(c => c.getHeavyNeighbors(mol).length === 2);
     assert.equal(terminals.length, 2);
-    assert.equal(interior.length,  2);
+    assert.equal(interior.length, 2);
   });
 });
 
@@ -545,8 +551,7 @@ describe('parseINCHI — n-pentane InChI=1S/C5H12/c1-2-3-4-5/h1,5H3,2-4H2', () =
   });
   it('middle carbon has 2 heavy neighbors and 2 H', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const middle  = carbons.find(c => c.getHeavyNeighbors(mol).length === 2
-                                   && c.getHydrogenNeighbors(mol).length === 2);
+    const middle = carbons.find(c => c.getHeavyNeighbors(mol).length === 2 && c.getHydrogenNeighbors(mol).length === 2);
     assert.ok(middle, 'expected a central CH2 carbon');
   });
 });
@@ -582,7 +587,7 @@ describe('parseINCHI — acetaldehyde InChI=1S/C2H4O/c1-2-3/h2H,1H3', () => {
   });
   it('aldehyde C has exactly 1 H neighbor', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const aldC    = carbons.find(c => c.getHeavyNeighbors(mol).some(n => n.name === 'O'));
+    const aldC = carbons.find(c => c.getHeavyNeighbors(mol).some(n => n.name === 'O'));
     assert.ok(aldC);
     assert.equal(aldC.getHydrogenNeighbors(mol).length, 1);
   });
@@ -593,7 +598,7 @@ describe('parseINCHI — acetone InChI=1S/C3H6O/c1-3(2)4/h1-2H3', () => {
 
   it('formula { C:3, H:6, O:1 }', () => assert.deepEqual(mol.getFormula(), { C: 3, H: 6, O: 1 }));
   it('3 heavy-atom bonds: 2 C-C single and 1 C=O double', () => {
-    const hb     = heavyBonds(mol);
+    const hb = heavyBonds(mol);
     assert.equal(hb.length, 3);
     const singles = hb.filter(b => b.properties.order === 1);
     const doubles = hb.filter(b => b.properties.order === 2);
@@ -650,7 +655,7 @@ describe('parseINCHI — chloromethane InChI=1S/CH3Cl/c1-2/h1H3', () => {
     assert.equal(hb[0].properties.order, 1);
   });
   it('carbon has 3 H neighbors, chlorine has 0 H neighbors', () => {
-    const c  = [...mol.atoms.values()].find(a => a.name === 'C');
+    const c = [...mol.atoms.values()].find(a => a.name === 'C');
     const cl = [...mol.atoms.values()].find(a => a.name === 'Cl');
     assert.equal(c.getHydrogenNeighbors(mol).length, 3);
     assert.equal(cl.getHydrogenNeighbors(mol).length, 0);
@@ -712,7 +717,7 @@ describe('parseINCHI — cyclohexene InChI=1S/C6H10/c1-2-3-4-5-6-1/h1-2H,3-6H2',
     assert.equal(heavyBonds(mol).length, 6);
   });
   it('exactly 1 double bond and 5 single bonds', () => {
-    const hb      = heavyBonds(mol);
+    const hb = heavyBonds(mol);
     const doubles = hb.filter(b => b.properties.order === 2);
     const singles = hb.filter(b => b.properties.order === 1);
     assert.equal(doubles.length, 1);
@@ -796,7 +801,7 @@ describe('parseINCHI — toluene InChI=1S/C7H8/c1-7-5-3-2-4-6-7/h2-6H,1H3', () =
   });
   it('methyl carbon has 3 H and 1 heavy neighbor', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const methyl  = carbons.find(c => c.getHydrogenNeighbors(mol).length === 3);
+    const methyl = carbons.find(c => c.getHydrogenNeighbors(mol).length === 3);
     assert.ok(methyl);
     assert.equal(methyl.getHeavyNeighbors(mol).length, 1);
   });
@@ -824,13 +829,13 @@ describe('parseINCHI — isopropanol InChI=1S/C3H8O/c1-3(2)4/h3-4H,1-2H3', () =>
   });
   it('central carbon (CH) has 3 heavy neighbors and 1 H', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const center  = carbons.find(c => c.getHydrogenNeighbors(mol).length === 1);
+    const center = carbons.find(c => c.getHydrogenNeighbors(mol).length === 1);
     assert.ok(center);
     assert.equal(center.getHeavyNeighbors(mol).length, 3);
   });
   it('two methyl carbons each have 3 H', () => {
-    const carbons  = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const methyls  = carbons.filter(c => c.getHydrogenNeighbors(mol).length === 3);
+    const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
+    const methyls = carbons.filter(c => c.getHydrogenNeighbors(mol).length === 3);
     assert.equal(methyls.length, 2);
   });
   it('oxygen has 1 H (hydroxyl)', () => {
@@ -862,13 +867,13 @@ describe('parseINCHI — diethyl ether InChI=1S/C4H10O/c1-3-5-4-2/h3-4H2,1-2H3',
     assert.equal(o.getHydrogenNeighbors(mol).length, 0);
   });
   it('two methylene carbons each have 2 H', () => {
-    const carbons    = [...mol.atoms.values()].filter(a => a.name === 'C');
+    const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
     const methylenes = carbons.filter(c => c.getHydrogenNeighbors(mol).length === 2);
     assert.equal(methylenes.length, 2);
   });
   it('two methyl carbons each have 3 H', () => {
-    const carbons  = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const methyls  = carbons.filter(c => c.getHydrogenNeighbors(mol).length === 3);
+    const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
+    const methyls = carbons.filter(c => c.getHydrogenNeighbors(mol).length === 3);
     assert.equal(methyls.length, 2);
   });
 });
@@ -889,7 +894,7 @@ describe('parseINCHI — cyclohexanone InChI=1S/C6H10O/c7-6-4-2-1-3-5-6/h1-5H2',
   it('exactly 1 C=O double bond', () => {
     const doubles = heavyBonds(mol).filter(b => b.properties.order === 2);
     assert.equal(doubles.length, 1);
-    const atoms   = doubles[0].atoms.map(id => mol.atoms.get(id).name).sort();
+    const atoms = doubles[0].atoms.map(id => mol.atoms.get(id).name).sort();
     assert.deepEqual(atoms, ['C', 'O']);
   });
   it('6 single bonds (5 C-C ring bonds + 1 more)', () => {
@@ -900,7 +905,7 @@ describe('parseINCHI — cyclohexanone InChI=1S/C6H10O/c7-6-4-2-1-3-5-6/h1-5H2',
     assert.equal(heavyBonds(mol).filter(b => b.properties.aromatic).length, 0);
   });
   it('carbonyl carbon has 0 H and 3 heavy neighbors', () => {
-    const carbons  = [...mol.atoms.values()].filter(a => a.name === 'C');
+    const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
     const carbonyl = carbons.find(c => c.getHydrogenNeighbors(mol).length === 0);
     assert.ok(carbonyl);
     assert.equal(carbonyl.getHeavyNeighbors(mol).length, 3);
@@ -952,12 +957,12 @@ describe('parseINCHI — 2-butyne InChI=1S/C4H6/c1-3-4-2/h1-2H3', () => {
   });
   it('triple-bond carbons have 0 H', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const sp      = carbons.filter(c => c.getHydrogenNeighbors(mol).length === 0);
+    const sp = carbons.filter(c => c.getHydrogenNeighbors(mol).length === 0);
     assert.equal(sp.length, 2);
   });
   it('methyl carbons have 3 H each', () => {
-    const carbons  = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const methyls  = carbons.filter(c => c.getHydrogenNeighbors(mol).length === 3);
+    const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
+    const methyls = carbons.filter(c => c.getHydrogenNeighbors(mol).length === 3);
     assert.equal(methyls.length, 2);
   });
 });
@@ -1004,7 +1009,7 @@ describe('parseINCHI — aniline InChI=1S/C6H7N/c7-6-4-2-1-3-5-6/h1-5H,7H2', () 
   it('1 non-aromatic C-N single bond', () => {
     const nonAromatic = heavyBonds(mol).filter(b => !b.properties.aromatic);
     assert.equal(nonAromatic.length, 1);
-    const atomNames   = nonAromatic[0].atoms.map(id => mol.atoms.get(id).name).sort();
+    const atomNames = nonAromatic[0].atoms.map(id => mol.atoms.get(id).name).sort();
     assert.deepEqual(atomNames, ['C', 'N']);
   });
   it('nitrogen has 2 H neighbors (NH2)', () => {
@@ -1013,7 +1018,7 @@ describe('parseINCHI — aniline InChI=1S/C6H7N/c7-6-4-2-1-3-5-6/h1-5H,7H2', () 
   });
   it('ipso carbon (bonded to N) has 0 H', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const ipso    = carbons.find(c => c.getHeavyNeighbors(mol).some(nb => nb.name === 'N'));
+    const ipso = carbons.find(c => c.getHeavyNeighbors(mol).some(nb => nb.name === 'N'));
     assert.ok(ipso);
     assert.equal(ipso.getHydrogenNeighbors(mol).length, 0);
   });
@@ -1045,7 +1050,7 @@ describe('parseINCHI — phenol InChI=1S/C6H6O/c7-6-4-2-1-3-5-6/h1-5,7H', () => 
   it('1 non-aromatic C-O single bond', () => {
     const nonAromatic = heavyBonds(mol).filter(b => !b.properties.aromatic);
     assert.equal(nonAromatic.length, 1);
-    const atomNames   = nonAromatic[0].atoms.map(id => mol.atoms.get(id).name).sort();
+    const atomNames = nonAromatic[0].atoms.map(id => mol.atoms.get(id).name).sort();
     assert.deepEqual(atomNames, ['C', 'O']);
   });
   it('oxygen has 1 H (hydroxyl)', () => {
@@ -1054,7 +1059,7 @@ describe('parseINCHI — phenol InChI=1S/C6H6O/c7-6-4-2-1-3-5-6/h1-5,7H', () => 
   });
   it('ipso carbon (bonded to O) has 0 H', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const ipso    = carbons.find(c => c.getHeavyNeighbors(mol).some(nb => nb.name === 'O'));
+    const ipso = carbons.find(c => c.getHeavyNeighbors(mol).some(nb => nb.name === 'O'));
     assert.ok(ipso);
     assert.equal(ipso.getHydrogenNeighbors(mol).length, 0);
   });
@@ -1068,10 +1073,8 @@ describe('parseINCHI — phenyllithium InChI=1S/C6H5.Li/c1-2-4-6-5-3-1;/h1-5H;/q
   });
   it('has a lithium cation and one carbanionic ring carbon with no hydrogens', () => {
     const lithium = [...mol.atoms.values()].find(a => a.name === 'Li');
-    const ringAnion = [...mol.atoms.values()].find(a =>
-      a.name === 'C' &&
-      a.properties.charge === -1 &&
-      a.getHydrogenNeighbors(mol).length === 0
+    const ringAnion = [...mol.atoms.values()].find(
+      a => a.name === 'C' && a.properties.charge === -1 && a.getHydrogenNeighbors(mol).length === 0
     );
     assert.ok(lithium);
     assert.equal(lithium.properties.charge, 1);
@@ -1161,7 +1164,7 @@ describe('parseINCHI — glycerol InChI=1S/C3H8O3/c4-1-3(6)2-5/h3-6H,1-2H2', () 
     assert.equal(heavyNbs.filter(a => a.name === 'O').length, 1);
   });
   it('terminal carbons each have 2 H and are each bonded to one oxygen', () => {
-    const carbons  = [...mol.atoms.values()].filter(a => a.name === 'C');
+    const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
     const terminal = carbons.filter(c => c.getHydrogenNeighbors(mol).length === 2);
     assert.equal(terminal.length, 2);
     for (const c of terminal) {
@@ -1210,9 +1213,7 @@ describe('parseINCHI — acrylonitrile InChI=1S/C3H3N/c1-2-3-4/h1H2,2H', () => {
   });
   it('sp-carbon (nitrile end) has 0 H', () => {
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const nitrileC = carbons.find(c =>
-      c.getHeavyNeighbors(mol).some(nb => nb.name === 'N')
-    );
+    const nitrileC = carbons.find(c => c.getHeavyNeighbors(mol).some(nb => nb.name === 'N'));
     assert.ok(nitrileC);
     assert.equal(nitrileC.getHydrogenNeighbors(mol).length, 0);
   });
@@ -1227,11 +1228,11 @@ function roundTrip(smiles) {
   const inchi = toInChI(mol);
   const mol2 = parseINCHI(inchi);
   assert.deepEqual(mol.getFormula(), mol2.getFormula(), `formula mismatch for ${smiles}: ${inchi}`);
-  const hb1 = [...mol.bonds.values()].filter(b =>
-    mol.atoms.get(b.atoms[0])?.name !== 'H' && mol.atoms.get(b.atoms[1])?.name !== 'H'
+  const hb1 = [...mol.bonds.values()].filter(
+    b => mol.atoms.get(b.atoms[0])?.name !== 'H' && mol.atoms.get(b.atoms[1])?.name !== 'H'
   ).length;
-  const hb2 = [...mol2.bonds.values()].filter(b =>
-    mol2.atoms.get(b.atoms[0])?.name !== 'H' && mol2.atoms.get(b.atoms[1])?.name !== 'H'
+  const hb2 = [...mol2.bonds.values()].filter(
+    b => mol2.atoms.get(b.atoms[0])?.name !== 'H' && mol2.atoms.get(b.atoms[1])?.name !== 'H'
   ).length;
   assert.equal(hb1, hb2, `heavy bond count mismatch for ${smiles}: ${inchi}`);
   return inchi;
@@ -1309,22 +1310,22 @@ describe('toInChI — H layer grouping', () => {
 });
 
 describe('toInChI — round-trip (formula + heavy bond count)', () => {
-  it('methane',      () => roundTrip('C'));
-  it('ethane',       () => roundTrip('CC'));
-  it('propane',      () => roundTrip('CCC'));
-  it('isobutane',    () => roundTrip('CC(C)C'));
-  it('neopentane',   () => roundTrip('CC(C)(C)C'));
-  it('benzene',      () => roundTrip('c1ccccc1'));
-  it('cyclohexane',  () => roundTrip('C1CCCCC1'));
+  it('methane', () => roundTrip('C'));
+  it('ethane', () => roundTrip('CC'));
+  it('propane', () => roundTrip('CCC'));
+  it('isobutane', () => roundTrip('CC(C)C'));
+  it('neopentane', () => roundTrip('CC(C)(C)C'));
+  it('benzene', () => roundTrip('c1ccccc1'));
+  it('cyclohexane', () => roundTrip('C1CCCCC1'));
   it('cyclopentane', () => roundTrip('C1CCCC1'));
-  it('naphthalene',  () => roundTrip('c1ccc2ccccc2c1'));
-  it('acetic acid',  () => roundTrip('CC(=O)O'));
-  it('ethanol',      () => roundTrip('CCO'));
-  it('pyridine',     () => roundTrip('c1ccncc1'));
-  it('water',        () => roundTrip('O'));
-  it('ammonia',      () => roundTrip('N'));
-  it('HCN',          () => roundTrip('C#N'));
-  it('CO2',          () => roundTrip('O=C=O'));
+  it('naphthalene', () => roundTrip('c1ccc2ccccc2c1'));
+  it('acetic acid', () => roundTrip('CC(=O)O'));
+  it('ethanol', () => roundTrip('CCO'));
+  it('pyridine', () => roundTrip('c1ccncc1'));
+  it('water', () => roundTrip('O'));
+  it('ammonia', () => roundTrip('N'));
+  it('HCN', () => roundTrip('C#N'));
+  it('CO2', () => roundTrip('O=C=O'));
   it('methane+ammonia (disconnected)', () => roundTrip('C.N'));
 });
 

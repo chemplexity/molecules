@@ -99,9 +99,7 @@ export function laplacianMatrix(A, DEG) {
     throw new TypeError('Invalid matrices for Laplacian matrix');
   }
   const n = A.length;
-  return Array.from({ length: n }, (_, i) =>
-    Array.from({ length: n }, (__, j) => DEG[i][j] - A[i][j])
-  );
+  return Array.from({ length: n }, (_, i) => Array.from({ length: n }, (__, j) => DEG[i][j] - A[i][j]));
 }
 
 /**
@@ -169,12 +167,12 @@ export function reciprocalMatrix(D) {
  *   `atomIds` maps matrix index → atom ID.
  */
 export function allMatrices(molecule) {
-  const atomIds    = [...molecule.atoms.keys()].filter(id => molecule.atoms.get(id).name !== 'H');
-  const adjacency  = adjacencyMatrix(molecule);
-  const degree     = degreeMatrix(adjacency);
-  const distance   = distanceMatrix(adjacency);
-  const laplacian  = laplacianMatrix(adjacency, degree);
-  const randic     = randicMatrix(adjacency, degree);
+  const atomIds = [...molecule.atoms.keys()].filter(id => molecule.atoms.get(id).name !== 'H');
+  const adjacency = adjacencyMatrix(molecule);
+  const degree = degreeMatrix(adjacency);
+  const distance = distanceMatrix(adjacency);
+  const laplacian = laplacianMatrix(adjacency, degree);
+  const randic = randicMatrix(adjacency, degree);
   const reciprocal = reciprocalMatrix(distance);
   return { atomIds, adjacency, degree, distance, laplacian, randic, reciprocal };
 }

@@ -1,0 +1,2096 @@
+<!DOCTYPE html><html lang="en" style="font-size:16px"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Source: io/smiles.js</title><!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]--><script src="scripts/third-party/hljs.js" defer="defer"></script><script src="scripts/third-party/hljs-line-num.js" defer="defer"></script><script src="scripts/third-party/popper.js" defer="defer"></script><script src="scripts/third-party/tippy.js" defer="defer"></script><script src="scripts/third-party/tocbot.min.js"></script><script>var baseURL="/",locationPathname="";baseURL=(locationPathname=document.location.pathname).substr(0,locationPathname.lastIndexOf("/")+1)</script><link rel="stylesheet" href="styles/clean-jsdoc-theme.min.css"><svg aria-hidden="true" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="display:none"><defs><symbol id="copy-icon" viewbox="0 0 488.3 488.3"><g><path d="M314.25,85.4h-227c-21.3,0-38.6,17.3-38.6,38.6v325.7c0,21.3,17.3,38.6,38.6,38.6h227c21.3,0,38.6-17.3,38.6-38.6V124    C352.75,102.7,335.45,85.4,314.25,85.4z M325.75,449.6c0,6.4-5.2,11.6-11.6,11.6h-227c-6.4,0-11.6-5.2-11.6-11.6V124    c0-6.4,5.2-11.6,11.6-11.6h227c6.4,0,11.6,5.2,11.6,11.6V449.6z"/><path d="M401.05,0h-227c-21.3,0-38.6,17.3-38.6,38.6c0,7.5,6,13.5,13.5,13.5s13.5-6,13.5-13.5c0-6.4,5.2-11.6,11.6-11.6h227    c6.4,0,11.6,5.2,11.6,11.6v325.7c0,6.4-5.2,11.6-11.6,11.6c-7.5,0-13.5,6-13.5,13.5s6,13.5,13.5,13.5c21.3,0,38.6-17.3,38.6-38.6    V38.6C439.65,17.3,422.35,0,401.05,0z"/></g></symbol><symbol id="search-icon" viewBox="0 0 512 512"><g><g><path d="M225.474,0C101.151,0,0,101.151,0,225.474c0,124.33,101.151,225.474,225.474,225.474    c124.33,0,225.474-101.144,225.474-225.474C450.948,101.151,349.804,0,225.474,0z M225.474,409.323    c-101.373,0-183.848-82.475-183.848-183.848S124.101,41.626,225.474,41.626s183.848,82.475,183.848,183.848    S326.847,409.323,225.474,409.323z"/></g></g><g><g><path d="M505.902,476.472L386.574,357.144c-8.131-8.131-21.299-8.131-29.43,0c-8.131,8.124-8.131,21.306,0,29.43l119.328,119.328    c4.065,4.065,9.387,6.098,14.715,6.098c5.321,0,10.649-2.033,14.715-6.098C514.033,497.778,514.033,484.596,505.902,476.472z"/></g></g></symbol><symbol id="font-size-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11.246 15H4.754l-2 5H.6L7 4h2l6.4 16h-2.154l-2-5zm-.8-2L8 6.885 5.554 13h4.892zM21 12.535V12h2v8h-2v-.535a4 4 0 1 1 0-6.93zM19 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></symbol><symbol id="add-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2z"/></symbol><symbol id="minus-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M5 11h14v2H5z"/></symbol><symbol id="dark-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M10 7a7 7 0 0 0 12 4.9v.1c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2h.1A6.979 6.979 0 0 0 10 7zm-6 5a8 8 0 0 0 15.062 3.762A9 9 0 0 1 8.238 4.938 7.999 7.999 0 0 0 4 12z"/></symbol><symbol id="light-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12zm0-2a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zm2.121-14.85l1.414 1.415-2.121 2.121-1.414-1.414 2.121-2.121zM5.636 16.95l1.414 1.414-2.121 2.121-1.414-1.414 2.121-2.121zM23 11v2h-3v-2h3zM4 11v2H1v-2h3z"/></symbol><symbol id="reset-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M18.537 19.567A9.961 9.961 0 0 1 12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10c0 2.136-.67 4.116-1.81 5.74L17 12h3a8 8 0 1 0-2.46 5.772l.997 1.795z"/></symbol><symbol id="down-icon" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.7803 6.21967C13.0732 6.51256 13.0732 6.98744 12.7803 7.28033L8.53033 11.5303C8.23744 11.8232 7.76256 11.8232 7.46967 11.5303L3.21967 7.28033C2.92678 6.98744 2.92678 6.51256 3.21967 6.21967C3.51256 5.92678 3.98744 5.92678 4.28033 6.21967L8 9.93934L11.7197 6.21967C12.0126 5.92678 12.4874 5.92678 12.7803 6.21967Z"></path></symbol><symbol id="codepen-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M16.5 13.202L13 15.535v3.596L19.197 15 16.5 13.202zM14.697 12L12 10.202 9.303 12 12 13.798 14.697 12zM20 10.869L18.303 12 20 13.131V10.87zM19.197 9L13 4.869v3.596l3.5 2.333L19.197 9zM7.5 10.798L11 8.465V4.869L4.803 9 7.5 10.798zM4.803 15L11 19.131v-3.596l-3.5-2.333L4.803 15zM4 13.131L5.697 12 4 10.869v2.262zM2 9a1 1 0 0 1 .445-.832l9-6a1 1 0 0 1 1.11 0l9 6A1 1 0 0 1 22 9v6a1 1 0 0 1-.445.832l-9 6a1 1 0 0 1-1.11 0l-9-6A1 1 0 0 1 2 15V9z"/></symbol><symbol id="close-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 10.586l4.95-4.95 1.414 1.414-4.95 4.95 4.95 4.95-1.414 1.414-4.95-4.95-4.95 4.95-1.414-1.414 4.95-4.95-4.95-4.95L7.05 5.636z"/></symbol><symbol id="menu-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M3 4h18v2H3V4zm0 7h18v2H3v-2zm0 7h18v2H3v-2z"/></symbol></defs></svg></head><body data-theme="dark"><div class="sidebar-container"><div class="sidebar" id="sidebar"><div class="sidebar-items-container"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-modules"><div>Modules</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-algorithms.html">algorithms</a></div><div class="sidebar-section-children"><a href="module-algorithms_aromaticity.html">algorithms/aromaticity</a></div><div class="sidebar-section-children"><a href="module-algorithms_morgan.html">algorithms/morgan</a></div><div class="sidebar-section-children"><a href="module-algorithms_paths.html">algorithms/paths</a></div><div class="sidebar-section-children"><a href="module-algorithms_subgraph.html">algorithms/subgraph</a></div><div class="sidebar-section-children"><a href="module-algorithms_traversal.html">algorithms/traversal</a></div><div class="sidebar-section-children"><a href="module-algorithms_vf2.html">algorithms/vf2</a></div><div class="sidebar-section-children"><a href="module-app_core_undo.html">app/core/undo</a></div><div class="sidebar-section-children"><a href="module-app_render_helpers.html">app/render/helpers</a></div><div class="sidebar-section-children"><a href="module-app_render_reaction-2d.html">app/render/reaction-2d</a></div><div class="sidebar-section-children"><a href="module-app_ui_descriptors.html">app/ui/descriptors</a></div><div class="sidebar-section-children"><a href="module-app_ui_export.html">app/ui/export</a></div><div class="sidebar-section-children"><a href="module-core.html">core</a></div><div class="sidebar-section-children"><a href="module-core_Atom.html">core/Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.html">core/Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.html">core/Molecule</a></div><div class="sidebar-section-children"><a href="module-data.html">data</a></div><div class="sidebar-section-children"><a href="module-data_catalog.html">data/catalog</a></div><div class="sidebar-section-children"><a href="module-data_catalog_amino-acids.html">data/catalog/amino-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_fatty-acids.html">data/catalog/fatty-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_nucleobases.html">data/catalog/nucleobases</a></div><div class="sidebar-section-children"><a href="module-data_catalog_polycyclic-aromatic-hydrocarbons.html">data/catalog/polycyclic-aromatic-hydrocarbons</a></div><div class="sidebar-section-children"><a href="module-data_catalog_steroids.html">data/catalog/steroids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_terpenes-and-terpenoids.html">data/catalog/terpenes-and-terpenoids</a></div><div class="sidebar-section-children"><a href="module-data_elements.html">data/elements</a></div><div class="sidebar-section-children"><a href="module-data_molecule-catalog.html">data/molecule-catalog</a></div><div class="sidebar-section-children"><a href="module-descriptors.html">descriptors</a></div><div class="sidebar-section-children"><a href="module-descriptors_information.html">descriptors/information</a></div><div class="sidebar-section-children"><a href="module-descriptors_molecular.html">descriptors/molecular</a></div><div class="sidebar-section-children"><a href="module-descriptors_physicochemical.html">descriptors/physicochemical</a></div><div class="sidebar-section-children"><a href="module-descriptors_spectral.html">descriptors/spectral</a></div><div class="sidebar-section-children"><a href="module-descriptors_topological.html">descriptors/topological</a></div><div class="sidebar-section-children"><a href="module-io.html">io</a></div><div class="sidebar-section-children"><a href="module-io_detect.html">io/detect</a></div><div class="sidebar-section-children"><a href="module-io_inchi.html">io/inchi</a></div><div class="sidebar-section-children"><a href="module-io_json.html">io/json</a></div><div class="sidebar-section-children"><a href="module-io_smiles.html">io/smiles</a></div><div class="sidebar-section-children"><a href="module-layout.html">layout</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d.html">layout/coords2d</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-molecules.html">molecules</a></div><div class="sidebar-section-children"><a href="module-smarts.html">smarts</a></div><div class="sidebar-section-children"><a href="module-smarts_parser.html">smarts/parser</a></div><div class="sidebar-section-children"><a href="module-smarts_primitives.html">smarts/primitives</a></div><div class="sidebar-section-children"><a href="module-smarts_reference.html">smarts/reference</a></div><div class="sidebar-section-children"><a href="module-smarts_search.html">smarts/search</a></div><div class="sidebar-section-children"><a href="module-smirks.html">smirks</a></div><div class="sidebar-section-children"><a href="module-smirks_apply.html">smirks/apply</a></div><div class="sidebar-section-children"><a href="module-smirks_parser.html">smirks/parser</a></div><div class="sidebar-section-children"><a href="module-smirks_reference.html">smirks/reference</a></div><div class="sidebar-section-children"><a href="module-utils.html">utils</a></div><div class="sidebar-section-children"><a href="module-utils_combinatorics.html">utils/combinatorics</a></div><div class="sidebar-section-children"><a href="module-utils_eigenvalues.html">utils/eigenvalues</a></div><div class="sidebar-section-children"><a href="module-utils_matrix.html">utils/matrix</a></div><div class="sidebar-section-children"><a href="module-validation.html">validation</a></div><div class="sidebar-section-children"><a href="module-validation_valence.html">validation/valence</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-core_Atom.Atom.html">Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.Bond.html">Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.Molecule.html">Molecule</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d-SpatialGrid.html">SpatialGrid</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-global"><div>Global</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="global.html#atomBBox">atomBBox</a></div><div class="sidebar-section-children"><a href="global.html#atomColor">atomColor</a></div><div class="sidebar-section-children"><a href="global.html#getAtomLabel">getAtomLabel</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfH">labelHalfH</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfW">labelHalfW</a></div><div class="sidebar-section-children"><a href="global.html#labelTextOffset">labelTextOffset</a></div><div class="sidebar-section-children"><a href="global.html#perpUnit">perpUnit</a></div><div class="sidebar-section-children"><a href="global.html#secondaryDir">secondaryDir</a></div><div class="sidebar-section-children"><a href="global.html#shortenLine">shortenLine</a></div><div class="sidebar-section-children"><a href="global.html#stereoBondTypeForCenter">stereoBondTypeForCenter</a></div><div class="sidebar-section-children"><a href="global.html#vecLen">vecLen</a></div></div></div></div></div><div class="navbar-container" id="VuAckcnZhf"><nav class="navbar"><div class="navbar-left-items"></div><div class="navbar-right-items"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div><nav></nav></nav></div><div class="toc-container"><div class="toc-content"><span class="bold">On this page</span><div id="eed4d2a0bfd64539bb9df78095dec881"></div></div></div><div class="body-wrapper"><div class="main-content"><div class="main-wrapper"><section id="source-page" class="source-page"><header><h1 id="title" class="has-anchor">io_smiles.js</h1></header><article><pre class="prettyprint source lang-js"><code>/** @module io/smiles */
+
+import elements from '../data/elements.js';
+import { Molecule, computeRS } from '../core/Molecule.js';
+import { perceiveAromaticity } from '../algorithms/aromaticity.js';
+import { morganRanks } from '../algorithms/morgan.js';
+
+// ---------------------------------------------------------------------------
+// Grammar — ported from molecules v1 src/main/smiles.js
+// ---------------------------------------------------------------------------
+
+export const grammar = [
+  { type: 'atom', term: 'H', tag: 'H', expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g },
+  { type: 'atom', term: 'D', tag: 'H', expression: /(?=[A-Z])D(?=[^bsy]|$)([0-9]?)+/g },
+  { type: 'atom', term: 'He', tag: 'He', expression: /He/g },
+  { type: 'atom', term: 'Li', tag: 'Li', expression: /Li/g },
+  { type: 'atom', term: 'Be', tag: 'Be', expression: /Be/g },
+  { type: 'atom', term: 'B', tag: 'B', expression: /B(?=[^aehikr]|$)/g },
+  { type: 'atom', term: 'C', tag: 'C', expression: /C(?=[^adeflmru]|$)/g },
+  { type: 'atom', term: 'N', tag: 'N', expression: /N(?=[^adei]|$)/g },
+  { type: 'atom', term: 'O', tag: 'O', expression: /O/g },
+  { type: 'atom', term: 'F', tag: 'F', expression: /F(?=[^elmr]|$)/g },
+  { type: 'atom', term: 'Ne', tag: 'Ne', expression: /Ne/g },
+  { type: 'atom', term: 'Na', tag: 'Na', expression: /Na/g },
+  { type: 'atom', term: 'Mg', tag: 'Mg', expression: /Mg/g },
+  { type: 'atom', term: 'Al', tag: 'Al', expression: /Al/g },
+  { type: 'atom', term: 'Si', tag: 'Si', expression: /Si/g },
+  { type: 'atom', term: 'P', tag: 'P', expression: /P(?=[^admrtu]|$)/g },
+  { type: 'atom', term: 'S', tag: 'S', expression: /S(?=[^egimr]|$)/g },
+  { type: 'atom', term: 'Cl', tag: 'Cl', expression: /Cl/g },
+  { type: 'atom', term: 'Ar', tag: 'Ar', expression: /Ar/g },
+  { type: 'atom', term: 'As', tag: 'As', expression: /As/g },
+  { type: 'atom', term: 'Se', tag: 'Se', expression: /Se/g },
+  { type: 'atom', term: 'Br', tag: 'Br', expression: /Br/g },
+  { type: 'atom', term: 'I', tag: 'I', expression: /I(?=[^r]|$)/g },
+  { type: 'atom', term: 'K', tag: 'K', expression: /K(?=[^r]|$)/g },
+  { type: 'atom', term: 'Ca', tag: 'Ca', expression: /Ca/g },
+  { type: 'atom', term: 'Sc', tag: 'Sc', expression: /Sc/g },
+  { type: 'atom', term: 'Ti', tag: 'Ti', expression: /Ti/g },
+  { type: 'atom', term: 'V', tag: 'V', expression: /V/g },
+  { type: 'atom', term: 'Cr', tag: 'Cr', expression: /Cr/g },
+  { type: 'atom', term: 'Mn', tag: 'Mn', expression: /Mn/g },
+  { type: 'atom', term: 'Fe', tag: 'Fe', expression: /Fe/g },
+  { type: 'atom', term: 'Co', tag: 'Co', expression: /Co/g },
+  { type: 'atom', term: 'Ni', tag: 'Ni', expression: /Ni/g },
+  { type: 'atom', term: 'Cu', tag: 'Cu', expression: /Cu/g },
+  { type: 'atom', term: 'Zn', tag: 'Zn', expression: /Zn/g },
+  { type: 'atom', term: 'Ga', tag: 'Ga', expression: /Ga/g },
+  { type: 'atom', term: 'Ge', tag: 'Ge', expression: /Ge/g },
+  { type: 'atom', term: 'Kr', tag: 'Kr', expression: /Kr/g },
+  { type: 'atom', term: 'Rb', tag: 'Rb', expression: /Rb/g },
+  { type: 'atom', term: 'Sr', tag: 'Sr', expression: /Sr/g },
+  { type: 'atom', term: 'Y', tag: 'Y', expression: /Y(?=[^b]|$)/g },
+  { type: 'atom', term: 'Zr', tag: 'Zr', expression: /Zr/g },
+  { type: 'atom', term: 'Nb', tag: 'Nb', expression: /Nb/g },
+  { type: 'atom', term: 'Mo', tag: 'Mo', expression: /Mo/g },
+  { type: 'atom', term: 'Tc', tag: 'Tc', expression: /Tc/g },
+  { type: 'atom', term: 'Ru', tag: 'Ru', expression: /Ru/g },
+  { type: 'atom', term: 'Rh', tag: 'Rh', expression: /Rh/g },
+  { type: 'atom', term: 'Pd', tag: 'Pd', expression: /Pd/g },
+  { type: 'atom', term: 'Ag', tag: 'Ag', expression: /Ag/g },
+  { type: 'atom', term: 'Cd', tag: 'Cd', expression: /Cd/g },
+  { type: 'atom', term: 'In', tag: 'In', expression: /In/g },
+  { type: 'atom', term: 'Sn', tag: 'Sn', expression: /Sn/g },
+  { type: 'atom', term: 'Sb', tag: 'Sb', expression: /Sb/g },
+  { type: 'atom', term: 'Te', tag: 'Te', expression: /Te/g },
+  { type: 'atom', term: 'Xe', tag: 'Xe', expression: /Xe/g },
+  { type: 'atom', term: 'Cs', tag: 'Cs', expression: /Cs/g },
+  { type: 'atom', term: 'Ba', tag: 'Ba', expression: /Ba/g },
+  { type: 'atom', term: 'La', tag: 'La', expression: /La/g },
+  { type: 'atom', term: 'Ce', tag: 'Ce', expression: /Ce/g },
+  { type: 'atom', term: 'Pr', tag: 'Pr', expression: /Pr/g },
+  { type: 'atom', term: 'Nd', tag: 'Nd', expression: /Nd/g },
+  { type: 'atom', term: 'Pm', tag: 'Pm', expression: /Pm/g },
+  { type: 'atom', term: 'Sm', tag: 'Sm', expression: /Sm/g },
+  { type: 'atom', term: 'Eu', tag: 'Eu', expression: /Eu/g },
+  { type: 'atom', term: 'Gd', tag: 'Gd', expression: /Gd/g },
+  { type: 'atom', term: 'Tb', tag: 'Tb', expression: /Tb/g },
+  { type: 'atom', term: 'Dy', tag: 'Dy', expression: /Dy/g },
+  { type: 'atom', term: 'Ho', tag: 'Ho', expression: /Ho/g },
+  { type: 'atom', term: 'Er', tag: 'Er', expression: /Er/g },
+  { type: 'atom', term: 'Tm', tag: 'Tm', expression: /Tm/g },
+  { type: 'atom', term: 'Yb', tag: 'Yb', expression: /Yb/g },
+  { type: 'atom', term: 'Lu', tag: 'Lu', expression: /Lu/g },
+  { type: 'atom', term: 'Hf', tag: 'Hf', expression: /Hf/g },
+  { type: 'atom', term: 'Ta', tag: 'Ta', expression: /Ta/g },
+  { type: 'atom', term: 'W', tag: 'W', expression: /W/g },
+  { type: 'atom', term: 'Re', tag: 'Re', expression: /Re/g },
+  { type: 'atom', term: 'Os', tag: 'Os', expression: /Os/g },
+  { type: 'atom', term: 'Ir', tag: 'Ir', expression: /Ir/g },
+  { type: 'atom', term: 'Pt', tag: 'Pt', expression: /Pt/g },
+  { type: 'atom', term: 'Au', tag: 'Au', expression: /Au/g },
+  { type: 'atom', term: 'Hg', tag: 'Hg', expression: /Hg/g },
+  { type: 'atom', term: 'Tl', tag: 'Tl', expression: /Tl/g },
+  { type: 'atom', term: 'Pb', tag: 'Pb', expression: /Pb/g },
+  { type: 'atom', term: 'Bi', tag: 'Bi', expression: /Bi/g },
+  { type: 'atom', term: 'Po', tag: 'Po', expression: /Po/g },
+  { type: 'atom', term: 'At', tag: 'At', expression: /At/g },
+  { type: 'atom', term: 'Rn', tag: 'Rn', expression: /Rn/g },
+  { type: 'atom', term: 'Fr', tag: 'Fr', expression: /Fr/g },
+  { type: 'atom', term: 'Ra', tag: 'Ra', expression: /Ra/g },
+  { type: 'atom', term: 'Ac', tag: 'Ac', expression: /Ac/g },
+  { type: 'atom', term: 'Th', tag: 'Th', expression: /Th/g },
+  { type: 'atom', term: 'Pa', tag: 'Pa', expression: /Pa/g },
+  { type: 'atom', term: 'U', tag: 'U', expression: /U/g },
+  { type: 'atom', term: 'Np', tag: 'Np', expression: /Np/g },
+  { type: 'atom', term: 'Pu', tag: 'Pu', expression: /Pu/g },
+  { type: 'atom', term: 'Am', tag: 'Am', expression: /Am/g },
+  { type: 'atom', term: 'Cm', tag: 'Cm', expression: /Cm/g },
+  { type: 'atom', term: 'Bk', tag: 'Bk', expression: /Bk/g },
+  { type: 'atom', term: 'Cf', tag: 'Cf', expression: /Cf/g },
+  { type: 'atom', term: 'Es', tag: 'Es', expression: /Es/g },
+  { type: 'atom', term: 'Fm', tag: 'Fm', expression: /Fm/g },
+  { type: 'atom', term: 'Md', tag: 'Md', expression: /Md/g },
+  { type: 'atom', term: 'No', tag: 'No', expression: /No/g },
+  { type: 'atom', term: 'Lr', tag: 'Lr', expression: /Lr/g },
+  { type: 'atom', term: 'Rf', tag: 'Rf', expression: /Rf/g },
+  { type: 'atom', term: 'Db', tag: 'Db', expression: /Db/g },
+  { type: 'atom', term: 'Sg', tag: 'Sg', expression: /Sg/g },
+  { type: 'atom', term: 'Bh', tag: 'Bh', expression: /Bh/g },
+  { type: 'atom', term: 'Hs', tag: 'Hs', expression: /Hs/g },
+  { type: 'atom', term: 'Mt', tag: 'Mt', expression: /Mt/g },
+  { type: 'atom', term: 'Ds', tag: 'Ds', expression: /Ds/g },
+  { type: 'atom', term: 'Rg', tag: 'Rg', expression: /Rg/g },
+  { type: 'atom', term: 'Cn', tag: 'Cn', expression: /Cn/g },
+  { type: 'atom', term: 'Nh', tag: 'Nh', expression: /Nh/g },
+  { type: 'atom', term: 'Fl', tag: 'Fl', expression: /Fl/g },
+  { type: 'atom', term: 'Mc', tag: 'Mc', expression: /Mc/g },
+  { type: 'atom', term: 'Lv', tag: 'Lv', expression: /Lv/g },
+  { type: 'atom', term: 'Ts', tag: 'Ts', expression: /Ts/g },
+  { type: 'atom', term: 'Og', tag: 'Og', expression: /Og/g },
+  { type: 'atom', term: 'b', tag: 'B', expression: /(?&lt;![R])b(?=[^e]|$)/g },
+  { type: 'atom', term: 'c', tag: 'C', expression: /(?&lt;![T])c(?=[^l]|$)/g },
+  { type: 'atom', term: 'n', tag: 'N', expression: /(?&lt;![MZ])n(?=[^ae]|$)/g },
+  { type: 'atom', term: 'o', tag: 'O', expression: /(?&lt;![M])o(?=[^s]|$)/g },
+  { type: 'atom', term: 'p', tag: 'P', expression: /p/g },
+  { type: 'atom', term: 's', tag: 'S', expression: /s(?=[^ei]|$)/g },
+  { type: 'atom', term: 'se', tag: 'Se', expression: /se/g },
+  { type: 'atom', term: 'as', tag: 'As', expression: /as/g },
+  { type: 'bond', term: '-', tag: 'single', expression: /(?=([^0-9]))[-](?=[^0-9-\]])/g },
+  { type: 'bond', term: '=', tag: 'double', expression: /[=]/g },
+  { type: 'bond', term: '#', tag: 'triple', expression: /[#]/g },
+  { type: 'bond', term: '$', tag: 'quadruple', expression: /[$]/g },
+  { type: 'bond', term: ':', tag: 'aromatic', expression: /(?&lt;![\d%])[:]/g },
+  { type: 'bond', term: '/', tag: 'stereo', expression: /[/]/g },
+  { type: 'bond', term: '\\', tag: 'stereo', expression: /[\\]/g },
+  { type: 'bond', term: '(', tag: 'branch', expression: /[(]/g },
+  { type: 'bond', term: ')', tag: 'branch', expression: /[)]/g },
+  {
+    type: 'bond',
+    term: '%',
+    tag: 'ring',
+    expression: /(?=[^+-])(?:[a-zA-Z]{1,2}[@]{1,2})?(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[=\-#$/\\:]?[%]?\d+(?=([^+]|$))/g
+  },
+  { type: 'bond', term: '.', tag: 'dot', expression: /(?:[A-Z][+-]?[[])?[.]/g },
+  { type: 'property', term: '+', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g },
+  { type: 'property', term: '-', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g },
+  { type: 'property', term: 'n', tag: 'isotope', expression: /(?:[[])[0-9]+[A-Z]{1,2}(?=.?[^[]*[\]])/g },
+  { type: 'property', term: 'S', tag: 'chiral', expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g },
+  { type: 'property', term: 'R', tag: 'chiral', expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g }
+];
+
+// ---------------------------------------------------------------------------
+// Internal helpers
+// ---------------------------------------------------------------------------
+
+function compareArrays(a, b, ab = []) {
+  for (let i = 0; i &lt; a.length; i++) {
+    ab[i] = b.indexOf(a[i]) > -1 ? 1 : 0;
+  }
+  return ab;
+}
+
+function addAtomV1(id, name, value, group = 0, protons = 0, neutrons = 0, electrons = 0) {
+  return {
+    id,
+    name,
+    value,
+    group,
+    protons,
+    neutrons,
+    electrons,
+    bonds: { id: [], atoms: [], electrons: 0 },
+    properties: { chiral: 0, charge: 0, aromatic: 0 }
+  };
+}
+
+function addBondV1(id, name, value, order = 0, atoms = [], stereo = null) {
+  return { id, name, value, order, atoms, stereo };
+}
+
+/**
+ * Extracts the explicit bond order embedded in a ring token term (e.g. 'C=1' → 2).
+ * Returns null if no bond prefix is present.
+ *
+ * @param {string} term - Ring token term.
+ * @returns {number|null}
+ */
+function ringTokenBondOrder(term) {
+  const m = term.match(/[a-zA-Z\]@]([-=#$:/\\])/);
+  if (!m) {
+    return null;
+  }
+  switch (m[1]) {
+    case '=':
+      return 2;
+    case '#':
+      return 3;
+    case '$':
+      return 4;
+    case ':':
+      return 1.5;
+    default:
+      return null; // '-', '/', '\' → use aromatic heuristic
+  }
+}
+
+function nextAtom(start, keys, atoms) {
+  const index = keys.indexOf(start);
+  if (index !== -1) {
+    keys = keys.slice(index, keys.length);
+    for (let i = 1, ii = keys.length; i &lt; ii; i++) {
+      if (atoms[keys[i]] !== undefined) {
+        return keys[i];
+      }
+    }
+  }
+  return null;
+}
+
+function previousAtom(start, keys, atoms) {
+  if (start === '0' &amp;&amp; atoms['0'] !== undefined) {
+    return '0';
+  }
+  const index = keys.indexOf(start);
+  if (index !== -1) {
+    keys = keys.slice(0, index).reverse();
+    for (let i = 0, ii = keys.length; i &lt; ii; i++) {
+      if (atoms[keys[i]] !== undefined) {
+        return keys[i];
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Like previousAtom but skips over `(…)` branch groups when scanning backward.
+ * Used to find the true source atom for stereo bonds that follow a branch close `)`.
+ *
+ * @param {string} start  - key of the bond token to search backward from
+ * @param {string[]} keys - ordered list of all token keys
+ * @param {object}  atoms - atom map
+ * @param {object}  bonds - bond map
+ * @returns {string|null} key of the source atom, or null
+ */
+function previousAtomSkipBranches(start, keys, atoms, bonds) {
+  const index = keys.indexOf(start);
+  if (index === -1) {
+    return null;
+  }
+  let i = index - 1;
+  while (i >= 0) {
+    const key = keys[i];
+    if (bonds[key] !== undefined) {
+      if (bonds[key].value === ')') {
+        // skip the matching (…) branch going backward
+        let depth = 1;
+        i--;
+        while (i >= 0 &amp;&amp; depth > 0) {
+          const k = keys[i];
+          if (bonds[k]?.value === ')') {
+            depth++;
+          } else if (bonds[k]?.value === '(') {
+            depth--;
+          }
+          i--;
+        }
+        continue;
+      }
+    } else if (atoms[key] !== undefined) {
+      return key;
+    }
+    i--;
+  }
+  return null;
+}
+
+function normalizeSmilesSeparators(input) {
+  let normalized = '';
+  let bracketDepth = 0;
+  let pendingSeparator = false;
+
+  for (let i = 0; i &lt; input.length; i++) {
+    const ch = input[i];
+
+    if (ch === '[') {
+      if (pendingSeparator &amp;&amp; normalized.length > 0 &amp;&amp; normalized[normalized.length - 1] !== '.') {
+        normalized += '.';
+      }
+      pendingSeparator = false;
+      bracketDepth++;
+      normalized += ch;
+      continue;
+    }
+
+    if (ch === ']') {
+      bracketDepth = Math.max(0, bracketDepth - 1);
+      normalized += ch;
+      continue;
+    }
+
+    if (bracketDepth === 0 &amp;&amp; /\s/.test(ch)) {
+      pendingSeparator = normalized.length > 0;
+      continue;
+    }
+
+    if (bracketDepth === 0 &amp;&amp; ch === '.') {
+      if (normalized.length > 0 &amp;&amp; normalized[normalized.length - 1] !== '.') {
+        normalized += '.';
+      }
+      pendingSeparator = false;
+      continue;
+    }
+
+    if (pendingSeparator &amp;&amp; normalized.length > 0 &amp;&amp; normalized[normalized.length - 1] !== '.') {
+      normalized += '.';
+    }
+    pendingSeparator = false;
+    normalized += ch;
+  }
+
+  return normalized;
+}
+
+// ---------------------------------------------------------------------------
+// tokenize
+// ---------------------------------------------------------------------------
+
+/**
+ * Parses a SMILES string into an array of tokens using the v1 grammar.
+ *
+ * @param {string} input - SMILES string.
+ * @param {object[]} [tokens=[]]
+ * @returns {{ tokens: object[] }}
+ * @throws {Error} If no valid atoms are found.
+ */
+export function tokenize(input, tokens = []) {
+  input = normalizeSmilesSeparators(input);
+
+  for (let i = 0; i &lt; grammar.length; i++) {
+    const token = grammar[i];
+    let text = [];
+    while ((text = token.expression.exec(input))) {
+      tokens.push({ index: text.index, type: token.type, term: text[0], tag: token.tag });
+    }
+  }
+
+  tokens.sort((a, b) => a.index - b.index);
+
+  // Remove bond tokens that fall inside the character span of a ring token.
+  // Happens when a bond prefix is embedded in the ring token (e.g. 'C=1' captures '=').
+  {
+    const covered = new Set();
+    for (const t of tokens) {
+      if (t.tag === 'ring') {
+        for (let p = t.index + 1; p &lt; t.index + t.term.length; p++) {
+          covered.add(p);
+        }
+      }
+    }
+    if (covered.size > 0) {
+      for (let i = tokens.length - 1; i >= 0; i--) {
+        if (tokens[i].type !== 'atom' &amp;&amp; tokens[i].tag !== 'ring' &amp;&amp; covered.has(tokens[i].index)) {
+          tokens.splice(i, 1);
+        }
+      }
+    }
+  }
+
+  // Bracket-aware atom priority resolution.
+  //
+  // The grammar runs all regexes independently, so the same character position
+  // can collect multiple atom tokens — e.g. 'C' (len 1) and 'Co' (len 2) both
+  // matching at the same index.  The correct winner depends on context:
+  //   • inside  [...] → prefer the longer token (two-letter element wins)
+  //   • outside [...] → prefer the shorter token (single-letter organic atom wins)
+  //
+  // Additionally, when a two-letter element inside brackets is kept, the
+  // aromatic-atom token that matches its second character (e.g. 'o' at index+1
+  // for 'Co') must be removed so it isn't mistakenly decoded as an extra atom.
+  {
+    // Build the set of string positions that lie inside bracket atoms [...].
+    const inBracket = new Set();
+    let depth = 0;
+    for (let i = 0; i &lt; input.length; i++) {
+      if (input[i] === '[') {
+        depth++;
+      }
+      if (depth > 0) {
+        inBracket.add(i);
+      }
+      if (input[i] === ']' &amp;&amp; depth > 0) {
+        depth--;
+      }
+    }
+
+    // Collect all atom tokens grouped by their index position.
+    const atomsByIndex = new Map();
+    for (const t of tokens) {
+      if (t.type !== 'atom') {
+        continue;
+      }
+      if (!atomsByIndex.has(t.index)) {
+        atomsByIndex.set(t.index, []);
+      }
+      atomsByIndex.get(t.index).push(t);
+    }
+
+    const toRemove = new Set();
+
+    // For positions with more than one atom token, keep only the winner.
+    for (const [idx, group] of atomsByIndex) {
+      if (group.length &lt;= 1) {
+        continue;
+      }
+      const inside = inBracket.has(idx);
+      // Sort ascending by term length so group[0] is shortest.
+      group.sort((a, b) => a.term.length - b.term.length);
+      const winner = inside ? group[group.length - 1] : group[0];
+      for (const t of group) {
+        if (t !== winner) {
+          toRemove.add(t);
+        }
+      }
+    }
+
+    // Remove stray aromatic-atom tokens that are the second character of a
+    // two-letter element token kept above (e.g. 'o' at pos 2 when 'Co' is at
+    // pos 1 inside brackets).
+    for (const t of tokens) {
+      if (t.type !== 'atom' || t.term.length !== 1) {
+        continue;
+      }
+      if (!inBracket.has(t.index)) {
+        continue;
+      }
+      // Check whether a two-letter element starts at index-1 and spans this position.
+      const prevGroup = atomsByIndex.get(t.index - 1);
+      if (!prevGroup) {
+        continue;
+      }
+      const hasTwoLetterParent = prevGroup.some(pt => pt.term.length === 2 &amp;&amp; !toRemove.has(pt));
+      if (hasTwoLetterParent) {
+        toRemove.add(t);
+      }
+    }
+
+    // Apply removals in reverse order to preserve splice indices.
+    for (let i = tokens.length - 1; i >= 0; i--) {
+      if (toRemove.has(tokens[i])) {
+        tokens.splice(i, 1);
+      }
+    }
+
+    // Tag atom tokens that sit inside bracket atoms so the implicit-H logic
+    // can skip them (bracket atoms carry explicit H only, per the SMILES spec).
+    for (const t of tokens) {
+      if (t.type === 'atom' &amp;&amp; inBracket.has(t.index)) {
+        t.bracket = true;
+      }
+    }
+  }
+
+  for (let i = 0; i &lt; tokens.length; i++) {
+    if (tokens[i].tag === 'ring') {
+      let ringID = tokens[i].term.match(/[0-9]+/g);
+      if (ringID !== null) {
+        ringID = ringID[0];
+      } else {
+        continue;
+      }
+
+      if (ringID.length > 1) {
+        let exception = 0;
+        for (let j = 0; j &lt; tokens.length; j++) {
+          if (i === j || tokens[j].tag !== 'ring') {
+            continue;
+          }
+          let checkID = tokens[j].term.match(/[0-9]+/g);
+          if (checkID !== null) {
+            checkID = checkID[0];
+          } else {
+            continue;
+          }
+          if (ringID === checkID) {
+            exception = 1;
+            break;
+          }
+        }
+
+        if (exception === 1) {
+          continue;
+        }
+
+        const prefix = tokens[i].term.match(/[a-zA-Z]/g)[0];
+        const bondChar = tokens[i].term.match(/[=\-#$/\\:]/)?.[0] ?? '';
+        for (let j = 0; j &lt; ringID.length; j++) {
+          tokens.splice(i + 1, 0, {
+            index: tokens[i].index + j,
+            type: tokens[i].type,
+            term: prefix + (j === 0 ? bondChar : '') + ringID.substr(j, j + 1),
+            tag: tokens[i].tag
+          });
+        }
+        tokens.splice(i, 1);
+      }
+    }
+  }
+
+  const atomTokens = tokens.filter(token => token.type === 'atom');
+  if (atomTokens.length === 0) {
+    throw new Error('Invalid SMILES: no valid atoms found');
+  }
+
+  return { tokens };
+}
+
+// ---------------------------------------------------------------------------
+// decode
+// ---------------------------------------------------------------------------
+
+/**
+ * Converts a token list (from {@link tokenize}) into v1-format atoms and bonds.
+ *
+ * Returns the raw v1 graph structure, not a {@link Molecule} instance.
+ * Use {@link parseSMILES} to get a Molecule.
+ *
+ * @param {{ tokens: object[] }|object[]} tokens
+ * @returns {{ atoms: object, bonds: object }}
+ * @throws {Error} If token validation fails or no atoms are found.
+ */
+export function decode(tokens) {
+  function validateTokens(tokens) {
+    if (typeof tokens !== 'object') {
+      throw new Error('Tokens must be of type "object"');
+    } else if (tokens.tokens !== undefined) {
+      tokens = tokens.tokens;
+    }
+    const fields = ['index', 'type', 'term', 'tag'];
+    for (let i = 0; i &lt; tokens.length; i++) {
+      const match = compareArrays(fields, Object.keys(tokens[i]));
+      if (match.reduce((a, b) => a + b) &lt; 4) {
+        throw new Error(`Invalid token at index "${i}"`);
+      }
+    }
+    return tokens;
+  }
+
+  function readTokens(tokens, atoms = {}, bonds = {}, properties = {}, keys = {}) {
+    for (let i = 0; i &lt; tokens.length; i++) {
+      const { type, term, tag, index } = tokens[i];
+      const key = index.toString();
+      switch (type) {
+        case 'atom':
+          atoms[key] = addAtomV1(key, tag, term);
+          if (tokens[i].bracket) {
+            atoms[key].bracketAtom = true;
+          }
+          break;
+        case 'bond':
+          bonds[key] = addBondV1(key, tag, term);
+          break;
+        case 'property':
+          properties[key] = { id: key, name: tag, value: term };
+          break;
+      }
+    }
+    keys.all = [];
+    for (let i = 0; i &lt; tokens.length; i++) {
+      keys.all[i] = tokens[i].index.toString();
+    }
+    if (atoms.length &lt; 1) {
+      throw new Error('Could not find atoms');
+    }
+    keys.atoms = Object.keys(atoms);
+    keys.bonds = Object.keys(bonds);
+    keys.properties = Object.keys(properties);
+    return [atoms, bonds, properties, keys];
+  }
+
+  function defaultAtoms(atoms, keys) {
+    for (let i = 0; i &lt; keys.atoms.length; i++) {
+      const atomID = keys.atoms[i];
+      if (elements[atoms[atomID].name] === undefined) {
+        continue;
+      }
+      let element = elements[atoms[atomID].name];
+      if (atoms[atomID].value === 'D') {
+        element = elements[atoms[atomID].value];
+      }
+      atoms[atomID].group = element.group;
+      atoms[atomID].protons = element.protons;
+      atoms[atomID].neutrons = element.neutrons;
+      atoms[atomID].electrons = element.electrons;
+      atoms[atomID].bonds = { id: [], atoms: [], electrons: 0 };
+      atoms[atomID].properties = { chiral: 0, charge: 0, aromatic: 0 };
+      if (atoms[atomID].value === atoms[atomID].value.toLowerCase()) {
+        atoms[atomID].properties.aromatic = 1;
+      }
+    }
+    return atoms;
+  }
+
+  function updateAtomProps(atoms, properties, keys) {
+    for (let i = 0; i &lt; keys.properties.length; i++) {
+      const propertyID = keys.properties[i];
+      const { name, value } = properties[propertyID];
+      switch (name) {
+        case 'chiral':
+          if (atoms[propertyID] !== undefined) {
+            atoms[propertyID].properties.chiral = value.slice(value.indexOf('@'));
+          }
+          break;
+        case 'isotope': {
+          const isotope = value.match(/[0-9]+/g);
+          const atomID = 1 + isotope.toString().length + parseInt(propertyID);
+          if (isotope >= 0 &amp;&amp; isotope &lt; 250 &amp;&amp; atoms[atomID] !== undefined) {
+            const neutrons = isotope - atoms[atomID].protons;
+            if (neutrons >= 0) {
+              atoms[atomID].neutrons = neutrons;
+            }
+          }
+          break;
+        }
+        case 'charge': {
+          const sign = value.indexOf('+') !== -1 ? 1 : -1;
+          let charge = value.match(/(?:[^H])[0-9]+/g);
+          if (charge !== null &amp;&amp; atoms[propertyID] !== undefined) {
+            charge = charge[0].substr(1);
+            atoms[propertyID].properties.charge = charge * sign;
+            break;
+          }
+          charge = value.match(/([+]+|[-]+)/g);
+          if (charge !== null &amp;&amp; atoms[propertyID] !== undefined) {
+            atoms[propertyID].properties.charge = charge[0].length * sign;
+          }
+          break;
+        }
+      }
+    }
+    return atoms;
+  }
+
+  function explicitBonds(atoms, bonds, keys) {
+    if (keys.bonds.length === 0 || keys.bonds === undefined) {
+      return [atoms, bonds, keys];
+    }
+
+    // Tracks ring-bond token IDs that have already been consumed as the
+    // *closing* end of a ring closure pair.  When ring-closure numbers are
+    // reused (e.g. the same digit appears 4+ times in a SMILES string),
+    // the closing token must not be re-processed as a new opening token —
+    // doing so creates spurious extra bonds.
+    const matchedRingTargets = new Set();
+
+    for (let i = 0; i &lt; keys.bonds.length; i++) {
+      const bondID = keys.bonds[i];
+      let sourceAtom = atoms[previousAtom(bondID, keys.all, atoms)];
+      let targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
+      const bondIndex = keys.all.indexOf(bondID);
+      let sourceIndex = 0;
+      let targetIndex = 0;
+
+      if (sourceAtom !== undefined &amp;&amp; sourceAtom !== null) {
+        sourceIndex = keys.atoms.indexOf(sourceAtom.id);
+        if ((bonds[bondID].name === 'double' || bonds[bondID].name === 'triple') &amp;&amp; sourceAtom.name === 'H') {
+          while ((sourceAtom.name === 'H' || atoms[keys.atoms[sourceIndex]] === undefined) &amp;&amp; sourceIndex > -1) {
+            sourceAtom = atoms[keys.atoms[sourceIndex]];
+            sourceIndex -= 1;
+          }
+        }
+        sourceIndex = keys.all.indexOf(sourceAtom.id);
+      }
+      if (sourceIndex &lt; 0) {
+        continue;
+      }
+      if (targetAtom !== undefined &amp;&amp; targetAtom !== null) {
+        targetIndex = keys.all.indexOf(targetAtom.id);
+      }
+
+      let exceptions = 0;
+      if (targetIndex > bondIndex &amp;&amp; bondIndex > sourceIndex) {
+        if (bonds[keys.all[bondIndex - 1]] !== undefined) {
+          const bond1 = bonds[keys.all[bondIndex - 1]].value;
+          const bond2 = bonds[bondID].value;
+          switch (bond1) {
+            case ')':
+            case '(':
+              switch (bond2) {
+                case '-':
+                case '=':
+                case '#':
+                case '$':
+                case ':':
+                case '/':
+                case '\\':
+                case '.':
+                  exceptions = 1;
+              }
+          }
+        }
+      }
+
+      switch (bonds[bondID].name) {
+        case 'single':
+          if (exceptions === 1 || sourceAtom === undefined || targetAtom === undefined) {
+            continue;
+          }
+          bonds[bondID].order = 1;
+          bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
+          break;
+        case 'double':
+          if (exceptions === 1 || sourceAtom === undefined || targetAtom === undefined) {
+            continue;
+          } else if (targetAtom.name === 'H') {
+            continue;
+          }
+          bonds[bondID].order = 2;
+          bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
+          break;
+        case 'triple':
+          if (exceptions === 1 || sourceAtom === undefined || targetAtom === undefined) {
+            continue;
+          } else if (targetAtom.name === 'H') {
+            continue;
+          }
+          bonds[bondID].order = 3;
+          bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
+          break;
+        case 'quadruple':
+          if (exceptions === 1 || sourceAtom === undefined || targetAtom === undefined) {
+            continue;
+          } else if (targetAtom.name === 'H') {
+            continue;
+          }
+          bonds[bondID].order = 4;
+          bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
+          break;
+        case 'aromatic':
+          if (exceptions === 1 || sourceAtom === undefined || targetAtom === undefined) {
+            continue;
+          }
+          bonds[bondID].order = 1.5;
+          bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
+          break;
+        case 'stereo': {
+          if (targetAtom === undefined) {
+            continue;
+          }
+          // Use branch-aware source detection: C(F)/Cl needs to find C, not F
+          let stereoSrcId;
+          if (exceptions === 1) {
+            stereoSrcId = previousAtomSkipBranches(bondID, keys.all, atoms, bonds);
+          } else {
+            stereoSrcId = sourceAtom?.id ?? null;
+          }
+          if (!stereoSrcId) {
+            continue;
+          }
+          bonds[bondID].order = 1;
+          bonds[bondID].stereo = bonds[bondID].value;
+          bonds[bondID].atoms = [atoms[stereoSrcId].id, targetAtom.id];
+          break;
+        }
+        case 'dot':
+          if (exceptions === 1 || sourceAtom === undefined || targetAtom === undefined) {
+            continue;
+          }
+          bonds[bondID].order = 0;
+          bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
+          break;
+        case 'branch': {
+          const keysBefore = keys.all.slice(0, bondIndex).reverse();
+          const keysAfter = keys.all.slice(bondIndex + 1, keys.all.length);
+
+          switch (bonds[bondID].value) {
+            case '(':
+              for (let j = 0, skip = 0; j &lt; keysBefore.length; j++) {
+                sourceAtom = atoms[keysBefore[j]];
+                if (sourceAtom !== undefined &amp;&amp; sourceAtom.name !== 'H' &amp;&amp; skip === 0) {
+                  let bondOrder = 1;
+                  if (sourceAtom.properties.aromatic === 1 &amp;&amp; targetAtom.properties.aromatic === 1) {
+                    bondOrder = 1.5;
+                  }
+                  bonds[bondID].order = bondOrder;
+                  bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
+                  break;
+                } else if (bonds[keysBefore[j]] !== undefined) {
+                  switch (bonds[keysBefore[j]].value) {
+                    case ')':
+                      skip++;
+                      break;
+                    case '(':
+                      skip--;
+                      break;
+                  }
+                }
+              }
+              for (let j = 0, bondOrder = bonds[bondID].order, skip = 0; j &lt; keysAfter.length; j++) {
+                if (bonds[keysAfter[j]] !== undefined &amp;&amp; skip === 0) {
+                  switch (bonds[keysAfter[j]].value) {
+                    case '-':
+                      bondOrder = 1;
+                      break;
+                    case '=':
+                      bondOrder = 2;
+                      break;
+                    case '#':
+                      bondOrder = 3;
+                      break;
+                    case '.':
+                      bondOrder = 0;
+                      break;
+                  }
+                }
+                if (skip === 0) {
+                  bonds[bondID].order = bondOrder;
+                  break;
+                } else if (bonds[keysAfter[j]] !== undefined) {
+                  switch (bonds[keysAfter[j]].value) {
+                    case ')':
+                      skip--;
+                      break;
+                    case '(':
+                      skip++;
+                      break;
+                  }
+                }
+              }
+              break;
+
+            case ')':
+              for (let j = 0, skip = 1; j &lt; keysBefore.length; j++) {
+                sourceAtom = atoms[keysBefore[j]];
+                if (sourceAtom !== undefined &amp;&amp; sourceAtom.name !== 'H' &amp;&amp; skip === 0) {
+                  bonds[bondID].order = 1;
+                  bonds[bondID].atoms[0] = sourceAtom.id;
+                  break;
+                } else if (bonds[keysBefore[j]] !== undefined) {
+                  switch (bonds[keysBefore[j]].value) {
+                    case ')':
+                      skip++;
+                      break;
+                    case '(':
+                      skip--;
+                      break;
+                  }
+                }
+              }
+              for (let j = 0, bondOrder = bonds[bondID].order, skip = 0; j &lt; keysAfter.length; j++) {
+                targetAtom = atoms[keysAfter[j]];
+                if (bonds[keysAfter[j]] !== undefined &amp;&amp; skip === 0) {
+                  switch (bonds[keysAfter[j]].value) {
+                    case '-':
+                      bondOrder = 1;
+                      break;
+                    case '=':
+                      bondOrder = 2;
+                      break;
+                    case '#':
+                      bondOrder = 3;
+                      break;
+                    case '.':
+                      bondOrder = 0;
+                      break;
+                  }
+                }
+                if (targetAtom !== undefined &amp;&amp; skip === 0) {
+                  if (
+                    sourceAtom !== undefined &amp;&amp;
+                    sourceAtom.properties.aromatic === 1 &amp;&amp;
+                    targetAtom.properties.aromatic === 1
+                  ) {
+                    bondOrder = 1.5;
+                  }
+                  bonds[bondID].order = bondOrder;
+                  bonds[bondID].atoms[1] = targetAtom.id;
+                  break;
+                } else if (bonds[keysAfter[j]] !== undefined) {
+                  switch (bonds[keysAfter[j]].value) {
+                    case ')':
+                      skip--;
+                      break;
+                    case '(':
+                      skip++;
+                      break;
+                  }
+                }
+              }
+              break;
+          }
+          break;
+        }
+        case 'ring': {
+          // Skip tokens already consumed as the closing end of an earlier pair.
+          // This prevents spurious bonds when a ring-closure digit is reused.
+          if (matchedRingTargets.has(bondID)) {
+            break;
+          }
+
+          const sourceID = bonds[bondID].value.match(/[0-9]+/g);
+          const bondsBefore = keys.bonds.slice(0, keys.bonds.indexOf(bondID));
+          const bondsAfter = keys.bonds.slice(keys.bonds.indexOf(bondID), keys.bonds.length);
+
+          for (let j = 1; j &lt; bondsAfter.length; j++) {
+            if (bonds[bondsAfter[j]].name !== 'ring') {
+              continue;
+            }
+            if (matchedRingTargets.has(bondsAfter[j])) {
+              continue;
+            }
+            const targetID = bonds[bondsAfter[j]].value.match(/[0-9]+/g);
+            let targetIndex = bondsAfter[j];
+            let srcIdx = bondID;
+
+            if (sourceID !== null &amp;&amp; targetID !== null &amp;&amp; sourceID[0] === targetID[0]) {
+              while (atoms[srcIdx] === undefined &amp;&amp; srcIdx >= -1) {
+                srcIdx -= 1;
+              }
+              while (atoms[targetIndex] === undefined &amp;&amp; targetIndex >= -1) {
+                targetIndex -= 1;
+              }
+              if (srcIdx === -1 || targetIndex === -1) {
+                break;
+              }
+              let bondOrder = 1;
+              if (atoms[srcIdx].properties.aromatic === 1 &amp;&amp; atoms[targetIndex].properties.aromatic === 1) {
+                bondOrder = 1.5;
+              }
+              // Prefer explicit bond type encoded in either ring token's term (e.g. 'C=1' or 'c:1')
+              const srcBO = ringTokenBondOrder(bonds[bondID].value);
+              const tgtBO = ringTokenBondOrder(bonds[bondsAfter[j]].value);
+              if (srcBO !== null) {
+                bondOrder = srcBO;
+              } else if (tgtBO !== null) {
+                bondOrder = tgtBO;
+              }
+              bonds[bondID].order = bondOrder;
+              bonds[bondID].isAromatic = bondOrder === 1.5;
+              bonds[bondID].atoms = [srcIdx.toString(), targetIndex.toString()];
+              matchedRingTargets.add(bondsAfter[j]);
+              break;
+            }
+
+            if (j === bondsAfter.length - 1) {
+              for (let k = 0; k &lt; bondsBefore.length; k++) {
+                if (bonds[bondsAfter[j]].name !== 'ring') {
+                  continue;
+                }
+                const targetID2 = bonds[bondsBefore[k]].value.match(/[0-9]+/g);
+                let targetIndex = bondID;
+                let srcIdx = bondsBefore[k];
+                if (sourceID !== null &amp;&amp; targetID2 !== null &amp;&amp; sourceID[0] === targetID2[0]) {
+                  while (atoms[srcIdx] === undefined &amp;&amp; srcIdx >= -1) {
+                    srcIdx -= 1;
+                  }
+                  while (atoms[targetIndex] === undefined &amp;&amp; targetIndex >= -1) {
+                    targetIndex -= 1;
+                  }
+                  if (srcIdx === -1 || targetIndex === -1) {
+                    break;
+                  }
+                  let bondOrder = 1;
+                  if (atoms[srcIdx].properties.aromatic === 1 &amp;&amp; atoms[targetIndex].properties.aromatic === 1) {
+                    bondOrder = 1.5;
+                  }
+                  bonds[bondID].order = bondOrder;
+                  bonds[bondID].isAromatic = bondOrder === 1.5;
+                  bonds[bondID].atoms = [srcIdx.toString(), targetIndex.toString()];
+                  break;
+                }
+              }
+            }
+          }
+          break;
+        }
+      }
+    }
+
+    // Remove duplicate / incomplete bonds
+    for (let i = 0; i &lt; keys.bonds.length; i++) {
+      if (keys.bonds[i] === undefined) {
+        keys.bonds.splice(i, 1);
+        i--;
+        continue;
+      }
+      if (bonds[keys.bonds[i]].atoms.length !== 2) {
+        delete bonds[keys.bonds[i]];
+        keys.bonds.splice(i, 1);
+        i--;
+        continue;
+      }
+      if (i === keys.bonds.length - 1) {
+        continue;
+      }
+
+      const bondsAfter = keys.bonds.slice(i, keys.bonds.length);
+      for (let j = 0; j &lt; bondsAfter.length; j++) {
+        if (j === 0) {
+          continue;
+        }
+        const bondID2 = bondsAfter[j];
+        const a = bonds[keys.bonds[i]];
+        const b = bonds[bondID2];
+        if (a === undefined || b === undefined) {
+          continue;
+        }
+        if (
+          (a.atoms[0] === b.atoms[0] &amp;&amp; a.atoms[1] === b.atoms[1]) ||
+          (a.atoms[0] === b.atoms[1] &amp;&amp; a.atoms[1] === b.atoms[0])
+        ) {
+          if (a.name === 'ring' &amp;&amp; b.name === 'ring') {
+            delete bonds[bondID2];
+            keys.bonds.splice(keys.bonds.indexOf(bondID2), 1);
+          } else if (a.name === 'branch' &amp;&amp; (b.name === 'single' || b.name === 'double' || b.name === 'triple')) {
+            delete bonds[keys.bonds[i]];
+            keys.bonds.splice(i, 1);
+          } else if ((a.name === 'single' || a.name === 'double' || a.name === 'triple') &amp;&amp; b.name === 'branch') {
+            delete bonds[bondID2];
+            keys.bonds.splice(keys.bonds.indexOf(bondID2), 1);
+          } else {
+            delete bonds[keys.bonds[i]];
+            keys.bonds.splice(i, 1);
+          }
+          i--;
+          break;
+        }
+      }
+    }
+
+    // Add bond references to atoms
+    for (let i = 0; i &lt; keys.bonds.length; i++) {
+      const bondID2 = keys.bonds[i];
+      if (bonds[bondID2].name === 'dot') {
+        continue;
+      }
+      const sourceID = bonds[bondID2].atoms[0];
+      const targetID = bonds[bondID2].atoms[1];
+      if (sourceID === undefined || targetID === undefined) {
+        continue;
+      }
+      atoms[sourceID].bonds.id.push(bondID2);
+      atoms[targetID].bonds.id.push(bondID2);
+      atoms[sourceID].bonds.atoms.push(targetID);
+      atoms[targetID].bonds.atoms.push(sourceID);
+      atoms[sourceID].bonds.electrons += bonds[bondID2].order;
+      atoms[targetID].bonds.electrons += bonds[bondID2].order;
+    }
+
+    return [atoms, bonds, keys];
+  }
+
+  function implicitBonds(atoms, bonds, keys) {
+    // Standard valences for atoms with multiple allowed valences (OpenSMILES organic subset).
+    // Aromatic atoms are excluded: their 1.5-order bonds give fractional electron sums that
+    // must not be fed into the integer valence table — use 18−group for them as before.
+    const MULTI_VALENCE = { B: [3], N: [3, 5], P: [3, 5], S: [2, 4, 6] };
+    const stdValence = atom => {
+      if (!atom.properties.aromatic) {
+        const mv = MULTI_VALENCE[atom.name];
+        if (mv) {
+          const v = mv.find(x => x >= atom.bonds.electrons);
+          return v !== undefined ? v : mv[mv.length - 1];
+        }
+      }
+      return 18 - atom.group;
+    };
+
+    const valence = group => {
+      if (group === 0 || (group > 2 &amp;&amp; group &lt;= 12)) {
+        return 12;
+      } else if (group &lt;= 2) {
+        return 2;
+      } else if (group > 12 &amp;&amp; group &lt;= 18) {
+        return 18;
+      }
+    };
+
+    const charge = (electrons, ch) => {
+      if (ch > 0) {
+        return electrons - ch;
+      }
+      return electrons;
+    };
+
+    const checkRow = (group, protons, electrons) => {
+      if (group > 12 &amp;&amp; protons > 10 &amp;&amp; electrons &lt;= 0) {
+        return electrons + 4;
+      } else {
+        return electrons;
+      }
+    };
+
+    const updateAtomsBonds = (sourceID, targetID, bondID, bondOrder) => {
+      atoms[sourceID].bonds.id.push(bondID);
+      atoms[targetID].bonds.id.push(bondID);
+      atoms[sourceID].bonds.atoms.push(targetID);
+      atoms[targetID].bonds.atoms.push(sourceID);
+      atoms[sourceID].bonds.electrons += bondOrder;
+      atoms[targetID].bonds.electrons += bondOrder;
+    };
+
+    for (let i = 0; i &lt; keys.atoms.length - 1; i++) {
+      let sourceAtom = atoms[keys.atoms[i]];
+      const targetAtom = atoms[keys.atoms[i + 1]];
+      let sourceIndex = i;
+
+      while ((sourceAtom.name === 'H' || atoms[keys.atoms[sourceIndex]] === undefined) &amp;&amp; sourceIndex > -1) {
+        sourceAtom = atoms[keys.atoms[sourceIndex]];
+        sourceIndex -= 1;
+      }
+      if (!sourceAtom) {
+        continue;
+      }
+
+      let sourceTotal = charge(valence(sourceAtom.group) - sourceAtom.bonds.electrons, sourceAtom.properties.charge);
+      let targetTotal = charge(valence(targetAtom.group) - targetAtom.bonds.electrons, targetAtom.properties.charge);
+      sourceTotal = checkRow(sourceAtom.group, sourceAtom.properties.protons, sourceTotal);
+      targetTotal = checkRow(targetAtom.group, targetAtom.properties.protons, targetTotal);
+
+      if (sourceTotal &lt;= 0 || targetTotal &lt;= 0) {
+        continue;
+      }
+      if (sourceAtom.bonds.atoms.indexOf(targetAtom.id) !== -1) {
+        continue;
+      }
+
+      const n = keys.all.indexOf(targetAtom.id) - keys.all.indexOf(sourceAtom.id);
+      let exceptions = 0;
+
+      if (n > 1) {
+        const keysBetween = keys.all.slice(keys.all.indexOf(sourceAtom.id) + 1, keys.all.indexOf(targetAtom.id));
+        for (let j = 0; j &lt; keysBetween.length; j++) {
+          if (bonds[keysBetween[j]] === undefined) {
+            exceptions += 0;
+          } else if (bonds[keysBetween[j]].name !== 'ring') {
+            exceptions += 1;
+          }
+        }
+      }
+
+      if (exceptions === 0) {
+        const bondID = sourceAtom.name + sourceAtom.id + (targetAtom.name + targetAtom.id);
+        const bondValue = sourceAtom.name + targetAtom.name;
+        let bondName = 'single';
+        let bondOrder = 1;
+        if (sourceAtom.name === 'H' || targetAtom.name === 'H') {
+          bondName = 'H';
+        }
+        if (sourceAtom.properties.aromatic === 1 &amp;&amp; targetAtom.properties.aromatic === 1) {
+          bondName = 'aromatic';
+          bondOrder = 1.5;
+        }
+        keys.bonds.push(bondID);
+        bonds[bondID] = addBondV1(bondID, bondName, bondValue, bondOrder, [sourceAtom.id, targetAtom.id]);
+        updateAtomsBonds(sourceAtom.id, targetAtom.id, bondID, bondOrder);
+      }
+    }
+
+    // Add implicit hydrogen
+    const H = elements.H;
+
+    const update = (x, sourceID, sourceName) => {
+      const bondID = `H${x + 1}${sourceName}${sourceID}`;
+      const targetID = bondID;
+      atoms[targetID] = addAtomV1(targetID, 'H', 'H', H.group, H.protons, H.neutrons, H.electrons);
+      bonds[bondID] = addBondV1(bondID, 'H', 'H', 1, [sourceID, targetID]);
+      atoms[sourceID].bonds.id.push(bondID);
+      atoms[sourceID].bonds.atoms.push(targetID);
+      atoms[sourceID].bonds.electrons += 1;
+      atoms[targetID].bonds.id.push(bondID);
+      atoms[targetID].bonds.atoms.push(sourceID);
+      atoms[targetID].bonds.electrons += 1;
+    };
+
+    for (let i = 0; i &lt; keys.atoms.length; i++) {
+      const sourceAtom = atoms[keys.atoms[i]];
+      if (sourceAtom.group === 0 || (sourceAtom.group &lt; 13 &amp;&amp; sourceAtom.group > 1)) {
+        continue;
+      }
+
+      const bondCount = sourceAtom.bonds.atoms.length;
+
+      if (sourceAtom.name !== 'H' &amp;&amp; bondCount > 0) {
+        for (let j = 0; j &lt; bondCount; j++) {
+          const targetID = sourceAtom.bonds.atoms[j];
+          const targetAtom = atoms[targetID];
+          if (targetAtom.name === 'H') {
+            const count = parseInt(targetAtom.value.match(/[0-9]+/g));
+            if (count > 1 &amp;&amp; count &lt; sourceAtom.electrons) {
+              for (let k = 0; k &lt; count - 1; k++) {
+                update(k, sourceAtom.id, sourceAtom.name);
+              }
+            }
+          }
+        }
+      } else if (sourceAtom.name === 'H' &amp;&amp; sourceAtom.properties.charge === 0 &amp;&amp; bondCount === 0) {
+        update(i, sourceAtom.id, sourceAtom.name);
+      }
+
+      // Bracket atoms carry explicit H only — skip the valence-fill logic.
+      if (sourceAtom.bracketAtom) {
+        continue;
+      }
+
+      let total = stdValence(sourceAtom) - sourceAtom.bonds.electrons;
+      const ch = sourceAtom.properties.charge;
+      if (total &lt;= 0 || sourceAtom.group === 1) {
+        continue;
+      }
+      if (ch > 0) {
+        total -= ch;
+      } else if (ch &lt; 0) {
+        total += ch;
+        if (total === 1) {
+          total -= 1;
+          atoms[sourceAtom.id].bonds.electrons += 1;
+        }
+      }
+      if (total &lt;= 0) {
+        continue;
+      }
+      for (let j = 0; j &lt; total; j++) {
+        if (sourceAtom.properties.aromatic === 1 &amp;&amp; j > 1) {
+          continue;
+        }
+        update(j, sourceAtom.id, sourceAtom.name);
+      }
+    }
+
+    return [atoms, bonds, keys];
+  }
+
+  function clean(atoms, bonds) {
+    const atomID = Object.keys(atoms);
+    const bondID = Object.keys(bonds);
+
+    for (let i = 0; i &lt; bondID.length; i++) {
+      const source = atoms[bonds[bondID[i]].atoms[0]];
+      const target = atoms[bonds[bondID[i]].atoms[1]];
+      const order = bonds[bondID[i]].order;
+      bonds[bondID[i]].value = source.name + order + target.name;
+    }
+
+    const getID = (name, i) => name + (i + 1);
+    const setID = (obj, a, b) => {
+      if (Object.prototype.hasOwnProperty.call(obj, a)) {
+        obj[b] = obj[a];
+        delete obj[a];
+      }
+    };
+
+    for (let i = 0; i &lt; atomID.length; i++) {
+      const oldID = atomID[i];
+      const newID = getID(atoms[oldID].name, i);
+      atoms[oldID].id = newID;
+      for (let j = 0; j &lt; atoms[oldID].bonds.id.length; j++) {
+        let key = atoms[oldID].bonds.id[j];
+        let index = bonds[key].atoms.indexOf(oldID);
+        if (index !== -1) {
+          bonds[key].atoms[index] = newID;
+        }
+        key = atoms[oldID].bonds.atoms[j];
+        index = atoms[key].bonds.atoms.indexOf(oldID);
+        if (index !== -1) {
+          atoms[key].bonds.atoms[index] = newID;
+        }
+      }
+      setID(atoms, oldID, newID);
+    }
+
+    return [atoms, bonds];
+  }
+
+  const validTokens = validateTokens(tokens);
+  if (!validTokens) {
+    throw new Error('Invalid SMILES: token validation failed');
+  }
+
+  const readResult = readTokens(validTokens);
+  if (!readResult || !Array.isArray(readResult) || readResult.length &lt; 4) {
+    throw new Error('Invalid SMILES: could not parse atoms/bonds');
+  }
+  let [atoms, bonds, , keys] = readResult;
+  const properties = readResult[2];
+
+  if (!atoms || Object.keys(atoms).length &lt; 1) {
+    throw new Error('Invalid SMILES: no atoms found');
+  }
+
+  atoms = defaultAtoms(atoms, keys);
+  atoms = updateAtomProps(atoms, properties, keys);
+
+  const _explicit = explicitBonds(atoms, bonds, keys);
+  atoms = _explicit[0];
+  bonds = _explicit[1];
+  keys = _explicit[2];
+
+  const _implicit = implicitBonds(atoms, bonds, keys);
+  atoms = _implicit[0];
+  bonds = _implicit[1];
+  keys = _implicit[2];
+
+  const _clean = clean(atoms, bonds);
+  atoms = _clean[0];
+  bonds = _clean[1];
+
+  return { atoms, bonds };
+}
+
+// ---------------------------------------------------------------------------
+// parseSMILES
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Chirality — SMILES neighbour-order extraction
+// ---------------------------------------------------------------------------
+
+/**
+ * Scans backward from `bracketOpenPos - 1` to find the position of the
+ * "from" atom: the atom immediately before the `[` of a bracket atom in the
+ * SMILES chain, correctly skipping `(…)` branches and treating `[…]` bracket
+ * atoms as single units.
+ *
+ * Returns the character index of the from-atom, or -1 if none (chain start).
+ *
+ * @param {number}        bracketOpenPos - index of the `[` character
+ * @param {string}        smiles
+ * @param {Map&lt;number,string>} posToClean - char-position → clean atom ID
+ * @returns {number}
+ */
+function findFromAtomPos(bracketOpenPos, smiles, posToClean) {
+  let i = bracketOpenPos - 1;
+  while (i >= 0) {
+    if (smiles[i] === ')') {
+      // Skip entire matching (…) branch going backward
+      let depth = 1;
+      i--;
+      while (i >= 0 &amp;&amp; depth > 0) {
+        if (smiles[i] === ')') {
+          depth++;
+        } else if (smiles[i] === '(') {
+          depth--;
+        }
+        i--;
+      }
+    } else if (smiles[i] === ']') {
+      // Find matching [ going backward, then grab the atom inside
+      let j = i - 1;
+      while (j >= 0 &amp;&amp; smiles[j] !== '[') {
+        j--;
+      }
+      for (let k = j + 1; k &lt; i; k++) {
+        if (posToClean.has(k)) {
+          return k;
+        }
+      }
+      i = j - 1;
+    } else if (posToClean.has(i)) {
+      return i;
+    } else {
+      i--;
+    }
+  }
+  return -1;
+}
+
+/**
+ * Returns the character position of the atom that owns a ring token.
+ *
+ * Ring tokens sometimes include the atom text inside the token span
+ * (`[C@H]1`, `C=1`) and sometimes start at the digit immediately after the
+ * atom (`C1`, `[C@@H]4`). Prefer an atom token that falls inside the ring
+ * token span, then fall back to the nearest atom token immediately before the
+ * ring token.
+ *
+ * @param {{ index: number, term: string }} ringToken
+ * @param {Array&lt;{ index: number }>} atomTokens
+ * @returns {number|null}
+ */
+function findRingTokenAtomPos(ringToken, atomTokens) {
+  const direct = atomTokens.find(
+    atom => atom.index >= ringToken.index &amp;&amp; atom.index &lt; ringToken.index + ringToken.term.length
+  );
+  if (direct) {
+    return direct.index;
+  }
+
+  let previous = null;
+  for (const atom of atomTokens) {
+    if (atom.index > ringToken.index) {
+      break;
+    }
+    previous = atom;
+  }
+  return previous?.index ?? null;
+}
+
+/**
+ * Builds a map from clean atom ID → SMILES chirality neighbour order for every
+ * `@`/`@@` atom in the SMILES string.
+ *
+ * The clean atom ID scheme mirrors what `decode()`'s internal `clean()` step
+ * produces: atoms are numbered sequentially by ascending character position,
+ * and each gets the ID `&lt;elementSymbol>&lt;rank>` (e.g. `C1`, `H3`, `N4`).
+ *
+ * The SMILES chirality neighbour order is:
+ *   0. the "from" atom (the last atom token before the opening `[`)
+ *   1. the bracket H (the first atom token inside `[…]`, if any)
+ *   2+ remaining neighbours in left-to-right SMILES string order
+ *        (first atom of each `(…)` branch, then the chain continuation)
+ *
+ * Ring-closure bonds at the chiral centre are handled: both ring tokens
+ * embedded inside the bracket and depth-0 ring closures after `]` are
+ * inserted into the neighbour list in SMILES reading order.  Chain-start
+ * atoms (no preceding atom) are also supported.
+ *
+ * @param {string}   smiles  - original SMILES string
+ * @param {object[]} tokens  - token list from {@link tokenize}
+ * @returns {Map&lt;string, {chiral: '@'|'@@', neighbors: string[]}>}
+ */
+function extractChiralNeighborOrders(smiles, tokens) {
+  // ── 1. Build position → cleanId map ─────────────────────────────────────
+  // clean() numbers atoms by their order in Object.keys(atoms), which for
+  // numeric-string keys is ascending numeric (= character-position) order,
+  // followed by non-numeric keys (implicit H atoms — ignored here because
+  // chiral centres always use bracket notation with explicit atoms).
+  const atomTokens = tokens.filter(t => t.type === 'atom').sort((a, b) => a.index - b.index);
+
+  const posToClean = new Map(); // char position → clean ID
+  atomTokens.forEach((t, i) => posToClean.set(t.index, t.tag + (i + 1)));
+
+  // ── 2. Collect chiral property tokens ───────────────────────────────────
+  // Property regex for chiral matches "C@" or "C@@" (element + token).
+  const chiralProps = tokens.filter(t => t.type === 'property' &amp;&amp; t.tag === 'chiral');
+
+  const result = new Map();
+
+  for (const cp of chiralProps) {
+    // cp.term  = 'C@' or 'C@@'
+    // cp.index = character position of the element in the SMILES string
+    const chiralToken = cp.term.includes('@@') ? '@@' : '@';
+    const atomPos = cp.index;
+    const cleanId = posToClean.get(atomPos);
+    if (!cleanId) {
+      continue;
+    }
+
+    // Must be a bracket atom
+    if (atomPos === 0 || smiles[atomPos - 1] !== '[') {
+      continue;
+    }
+
+    // Find closing ']'
+    let bracketEnd = -1;
+    for (let i = atomPos; i &lt; smiles.length; i++) {
+      if (smiles[i] === ']') {
+        bracketEnd = i;
+        break;
+      }
+    }
+    if (bracketEnd &lt; 0) {
+      continue;
+    }
+
+    const neighbors = [];
+
+    // ── 2a. From atom: backward scan from '[' properly skipping branches ──
+    // Scan backwards from bracketOpenPos-1, skipping (…) branches and
+    // treating […] bracket atoms as a single unit.
+    // Chain-start atoms (fromPos &lt; 0) have no from-atom; their first neighbour
+    // in SMILES order will be the first ring closure or branch/chain atom
+    // collected below.
+    const bracketOpenPos = atomPos - 1; // we already verified smiles[atomPos-1]==='['
+    const fromPos = findFromAtomPos(bracketOpenPos, smiles, posToClean);
+    if (fromPos >= 0) {
+      neighbors.push(posToClean.get(fromPos));
+    }
+
+    // ── 2b. Bracket H: atom token inside (atomPos, bracketEnd) ──────────
+    const bracketAtoms = atomTokens.filter(t => t.index > atomPos &amp;&amp; t.index &lt; bracketEnd);
+    for (const ba of bracketAtoms) {
+      neighbors.push(posToClean.get(ba.index));
+    }
+
+    // ── 2c-pre. Ring closures embedded in the bracket ────────────────────
+    // For atoms like `[C@H]3`, the ring token `H]3` starts inside the
+    // bracket (index between atomPos and bracketEnd).  The ring digit `3`
+    // appears right after `]` in the SMILES, so the ring partner comes
+    // before the chain continuation in SMILES neighbour order.
+    const handledRingNums = new Set();
+    for (const rt of tokens) {
+      if (rt.tag !== 'ring') {
+        continue;
+      }
+      if (rt.index &lt; atomPos || rt.index > bracketEnd) {
+        continue;
+      }
+      const m = rt.term.match(/\d+/);
+      if (!m) {
+        continue;
+      }
+      const ringNum = m[0];
+      // Find the partner ring token (same ring number, outside our bracket)
+      const partner = tokens.find(pt => pt.tag === 'ring' &amp;&amp; pt !== rt &amp;&amp; pt.term.match(/\d+/)?.[0] === ringNum);
+      if (!partner) {
+        continue;
+      }
+      const partnerAtomPos = findRingTokenAtomPos(partner, atomTokens);
+      if (partnerAtomPos === null) {
+        continue;
+      }
+      const partnerCleanId = posToClean.get(partnerAtomPos);
+      if (partnerCleanId) {
+        neighbors.push(partnerCleanId);
+        handledRingNums.add(ringNum);
+      }
+    }
+
+    // ── 2c. Post-bracket neighbours: branches + chain continuation ───────
+    // Sort all post-bracket tokens by position and scan depth.
+    const postTokens = tokens.filter(t => t.index > bracketEnd).sort((a, b) => a.index - b.index);
+
+    let depth = 0;
+    let capturedInBranch = false; // reset per branch
+
+    for (const pt of postTokens) {
+      if (pt.type === 'bond' &amp;&amp; pt.tag === 'branch') {
+        if (pt.term === '(') {
+          depth++;
+          if (depth === 1) {
+            capturedInBranch = false;
+          } // new top-level branch
+        } else {
+          depth--;
+        }
+      } else if (pt.type === 'atom') {
+        if (depth === 0) {
+          // Chain continuation — only one
+          neighbors.push(posToClean.get(pt.index));
+          break;
+        } else if (depth === 1 &amp;&amp; !capturedInBranch) {
+          // First atom of a direct branch
+          neighbors.push(posToClean.get(pt.index));
+          capturedInBranch = true;
+        }
+      } else if (pt.tag === 'ring' &amp;&amp; depth === 0) {
+        const ringNum = pt.term.match(/\d+/)?.[0];
+        if (ringNum &amp;&amp; !handledRingNums.has(ringNum)) {
+          // Unhandled depth-0 ring closure — find the partner and add it
+          const partner = tokens.find(pr => pr.tag === 'ring' &amp;&amp; pr !== pt &amp;&amp; pr.term.match(/\d+/)?.[0] === ringNum);
+          if (partner) {
+            const partnerAtomPos = findRingTokenAtomPos(partner, atomTokens);
+            if (partnerAtomPos !== null) {
+              const partnerCleanId = posToClean.get(partnerAtomPos);
+              if (partnerCleanId) {
+                neighbors.push(partnerCleanId);
+                handledRingNums.add(ringNum);
+              }
+            }
+          }
+        }
+        // Do not break — chain continuation may follow
+      }
+    }
+
+    if (neighbors.length === 4 &amp;&amp; neighbors.every(Boolean)) {
+      result.set(cleanId, { chiral: chiralToken, neighbors });
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Parses a SMILES string and returns a {@link Molecule}.
+ *
+ * Internally uses the v1 {@link tokenize} and {@link decode} pipeline,
+ * then converts the result into a Molecule. Each Atom gains extra
+ * periodic-table properties: `protons`, `neutrons`, `electrons`, `group`, `period`.
+ *
+ * @param {string} smiles - SMILES notation string.
+ * @param {{ preserveAromaticBondOrders?: boolean }} [options]
+ * @returns {Molecule}
+ * @throws {Error} If the SMILES string cannot be parsed.
+ */
+export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) {
+  if (typeof smiles !== 'string' || smiles.trim() === '') {
+    throw new Error('Invalid SMILES input: must be a non-empty string');
+  }
+  const { tokens } = tokenize(smiles);
+  const { atoms: v1Atoms, bonds: v1Bonds } = decode({ tokens });
+  const mol = new Molecule();
+
+  for (const atom of Object.values(v1Atoms)) {
+    const a = mol.addAtom(atom.id, atom.name, {
+      charge: atom.properties.charge,
+      aromatic: atom.properties.aromatic === 1
+    });
+    // Restore isotope-adjusted neutrons — the v1 parser may have overridden
+    // the table default (e.g. [13C] sets neutrons = 13 − 6 = 7).
+    a.properties.neutrons = atom.neutrons;
+  }
+
+  for (const bond of Object.values(v1Bonds)) {
+    if (bond.atoms.length !== 2) {
+      continue;
+    }
+    if (bond.name === 'dot') {
+      continue;
+    }
+    const [a, b] = bond.atoms;
+    if (!mol.atoms.has(a) || !mol.atoms.has(b)) {
+      continue;
+    }
+    mol.addBond(
+      null,
+      a,
+      b,
+      {
+        order: bond.order,
+        aromatic: bond.name === 'aromatic' || bond.isAromatic === true,
+        stereo: bond.stereo || null
+      },
+      false
+    );
+  }
+
+  // ── Mark bracket H atoms bonded to non-H atoms as invisible ────────────
+  // e.g. the H in [C@H] is a stereo H — it needs 2D coords for the wedge
+  // bond but should not appear as a visible atom in skeletal rendering.
+  for (const v1atom of Object.values(v1Atoms)) {
+    if (v1atom.name !== 'H' || !v1atom.bracketAtom) {
+      continue;
+    }
+    const molAtom = mol.atoms.get(v1atom.id);
+    if (!molAtom) {
+      continue;
+    }
+    const hasNonHNeighbor = molAtom.getNeighbors(mol).some(n => n &amp;&amp; n.name !== 'H');
+    if (hasNonHNeighbor) {
+      molAtom.visible = false;
+    }
+  }
+
+  // ── Compute CIP R/S for each chiral centre ──────────────────────────────
+  const chiralOrders = extractChiralNeighborOrders(smiles, tokens);
+  for (const [cleanId, { chiral, neighbors }] of chiralOrders) {
+    const atom = mol.atoms.get(cleanId);
+    if (!atom) {
+      continue;
+    }
+    atom.properties.chirality = computeRS(chiral, neighbors, cleanId, mol);
+  }
+
+  perceiveAromaticity(mol, { preserveKekule: preserveAromaticBondOrders });
+
+  mol.properties.formula = mol.getFormula();
+  mol.properties.mass = mol.getMass();
+  mol.properties.charge = mol.getCharge();
+  mol.name = mol.getName();
+
+  return mol;
+}
+
+// ---------------------------------------------------------------------------
+// toSMILES
+// ---------------------------------------------------------------------------
+
+/**
+ * Normal SMILES valence for each organic-subset element (lowest standard valence).
+ * @type {Object.&lt;string, number>}
+ */
+const ORGANIC_VALENCE = { B: 3, C: 4, N: 3, O: 2, P: 3, S: 2, F: 1, Cl: 1, Br: 1, I: 1 };
+
+/**
+ * Returns `true` when `atom` is a standard pendant hydrogen that can be
+ * represented implicitly in SMILES output (uncharged, mass-number 1, pendant
+ * to exactly one non-H atom).
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {Set&lt;string>} nonHIds - Set of atom IDs that are not hydrogen.
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {boolean}
+ */
+function _isStrippable(atom, nonHIds, mol) {
+  if (atom.name !== 'H') {
+    return false;
+  }
+  if ((atom.properties.charge ?? 0) !== 0) {
+    return false;
+  }
+  if (atom.properties.protons !== undefined &amp;&amp; atom.properties.neutrons !== undefined) {
+    if (Math.round(atom.properties.protons + atom.properties.neutrons) !== 1) {
+      return false;
+    }
+  }
+  // Must be pendant (exactly 1 bond) and that bond must be to a non-H atom.
+  if (atom.bonds.length !== 1) {
+    return false;
+  }
+  const b = mol.bonds.get(atom.bonds[0]);
+  return b != null &amp;&amp; nonHIds.has(b.getOtherAtom(atom.id));
+}
+
+/**
+ * Builds the SMILES atom token for `atom`.
+ *
+ * Returns a bare element symbol when the atom is in the organic subset, has no
+ * charge, no non-standard isotope, and the SMILES implicit-H rule would assign
+ * exactly `pendantHCount` hydrogens.  Otherwise returns a bracket atom
+ * (e.g. `[NH4+]`, `[13CH4]`, `[nH]`).
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {number} pendantHCount  - Number of implicit H atoms to encode.
+ * @param {number} heavyBondOrder - Sum of bond orders to heavy-atom neighbours.
+ * @param {string} [chiralToken=''] - Chirality token (`@` or `@@`) to embed in the bracket atom, or empty string when absent.
+ * @returns {string}
+ */
+function _atomToken(atom, pendantHCount, heavyBondOrder, chiralToken = '') {
+  const name = atom.name;
+  const charge = atom.properties.charge ?? 0;
+  const aromatic = atom.properties.aromatic ?? false;
+
+  // Determine if a non-standard isotope is present.
+  let massNum = null;
+  if (atom.properties.protons !== undefined &amp;&amp; atom.properties.neutrons !== undefined) {
+    const atomMass = Math.round(atom.properties.protons + atom.properties.neutrons);
+    const elData = elements[name];
+    const stdMass = elData ? Math.round(elData.protons + elData.neutrons) : atomMass;
+    if (atomMass !== stdMass) {
+      massNum = atomMass;
+    }
+  }
+
+  // Bare organic-subset symbol when all conditions are satisfied.
+  // Chirality always requires bracket notation.
+  if (name in ORGANIC_VALENCE &amp;&amp; charge === 0 &amp;&amp; massNum === null &amp;&amp; chiralToken === '') {
+    const impliedH = Math.max(0, ORGANIC_VALENCE[name] - heavyBondOrder);
+    if (Math.round(impliedH) === pendantHCount) {
+      return aromatic ? name.toLowerCase() : name;
+    }
+  }
+
+  // Bracket notation: [massSymbolchiralHcountcharge]
+  let s = '[';
+  if (massNum !== null) {
+    s += massNum;
+  }
+  s += aromatic ? name.toLowerCase() : name;
+  if (chiralToken) {
+    s += chiralToken;
+  }
+  if (pendantHCount === 1) {
+    s += 'H';
+  } else if (pendantHCount > 1) {
+    s += `H${pendantHCount}`;
+  }
+  if (charge > 0) {
+    s += charge === 1 ? '+' : `+${charge}`;
+  } else if (charge &lt; 0) {
+    s += charge === -1 ? '-' : `${charge}`;
+  }
+  s += ']';
+  return s;
+}
+
+/**
+ * Returns the SMILES bond character for `bond`.
+ * Single bonds (order 1) and aromatic bonds both return `''` (implicit).
+ *
+ * When `fromId` is supplied and the bond has a directional stereo property
+ * (`'/'` or `'\\'`), returns the direction relative to `fromId` as the
+ * source atom (flipping when `fromId` is `bond.atoms[1]`).
+ *
+ * @param {import('../core/Bond.js').Bond} bond
+ * @param {string|null} [fromId]
+ * @returns {string}
+ */
+function _bondToken(bond, fromId = null) {
+  if (!bond || bond.properties.aromatic) {
+    return '';
+  }
+  if (bond.properties.stereo &amp;&amp; fromId !== null) {
+    const s = bond.properties.stereo;
+    return bond.atoms[0] === fromId ? s : s === '/' ? '\\' : '/';
+  }
+  switch (bond.properties.order ?? 1) {
+    case 2:
+      return '=';
+    case 3:
+      return '#';
+    case 4:
+      return '$';
+    default:
+      return '';
+  }
+}
+
+/**
+ * Formats a ring-closure integer as its SMILES token:
+ * single digits 1–9 are written bare; 10+ use `%nn` notation.
+ *
+ * @param {number} n
+ * @returns {string}
+ */
+function _ringToken(n) {
+  return n &lt; 10 ? `${n}` : `%${n}`;
+}
+
+/**
+ * Serialises a single *connected* `Molecule` component into a SMILES string.
+ *
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {Function|null} [sortFn=null] - Optional atom-ranking function `(atomId) => number` used by canonical serialisation to enforce a deterministic DFS traversal order.
+ * @returns {string}
+ */
+function _serializeComponent(mol, sortFn = null) {
+  // ---- Identify strippable (implicit) H atoms ----
+  const nonHIds = new Set([...mol.atoms.keys()].filter(id => mol.atoms.get(id).name !== 'H'));
+
+  // For each non-H atom, count how many neighbouring H atoms are strippable.
+  const pendantH = new Map();
+  for (const id of nonHIds) {
+    let n = 0;
+    for (const bId of mol.atoms.get(id).bonds) {
+      const b = mol.bonds.get(bId);
+      const other = b &amp;&amp; mol.atoms.get(b.getOtherAtom(id));
+      if (other &amp;&amp; _isStrippable(other, nonHIds, mol)) {
+        n++;
+      }
+    }
+    pendantH.set(id, n);
+  }
+
+  // Build the heavy-atom subgraph (retains non-strippable H, e.g. [2H] or H2).
+  const keepIds = [...mol.atoms.keys()].filter(id => !_isStrippable(mol.atoms.get(id), nonHIds, mol));
+  const heavy = mol.getSubgraph(keepIds);
+
+  if (heavy.atomCount === 0) {
+    return '';
+  }
+
+  // When a canonical sort function is supplied, reorder each atom's bond list
+  // by the canonical rank of the other end.  This makes dfs1, _chiralTokenFor,
+  // and emit all traverse neighbours in canonical rank order automatically.
+  if (sortFn) {
+    for (const [atomId, atom] of heavy.atoms) {
+      atom.bonds.sort((b1, b2) => {
+        const o1 = heavy.bonds.get(b1)?.getOtherAtom(atomId) ?? '';
+        const o2 = heavy.bonds.get(b2)?.getOtherAtom(atomId) ?? '';
+        return (sortFn(o1) ?? 0) - (sortFn(o2) ?? 0);
+      });
+    }
+  }
+
+  const startId = sortFn
+    ? [...heavy.atoms.keys()].reduce((best, id) => ((sortFn(id) ?? Infinity) &lt; (sortFn(best) ?? Infinity) ? id : best))
+    : ([...heavy.atoms.entries()].find(([, a]) => a.bonds.length === 1)?.[0] ?? heavy.atoms.keys().next().value);
+
+  // ---- Pass 1: DFS to identify ring-closure bonds ----
+  // Back edges in the DFS spanning tree become ring-closure bonds.
+  // The "opener" is the ancestor atom (visited earlier); the "closer" is the
+  // descendant that discovers the back edge.  The bond symbol is placed at
+  // the opener so that the v1 ring-token parser can extract it.
+  const visited1 = new Set();
+  const inStack1 = new Set();
+  const entryBond = new Map(); // atomId → bondId we arrived via
+  const ringBondId = new Map(); // bondId → ring-closure number
+  const atomRings = new Map(); // atomId → [{num, bond, isOpener}]
+  let ringSeq = 1;
+
+  const dfs1 = id => {
+    visited1.add(id);
+    inStack1.add(id);
+    for (const bId of heavy.atoms.get(id).bonds) {
+      if (bId === entryBond.get(id)) {
+        continue;
+      }
+      const bond = heavy.bonds.get(bId);
+      const nextId = bond.getOtherAtom(id);
+      if (!visited1.has(nextId)) {
+        entryBond.set(nextId, bId);
+        dfs1(nextId);
+      } else if (inStack1.has(nextId) &amp;&amp; !ringBondId.has(bId)) {
+        // Back edge: id = closer, nextId = opener (ancestor).
+        const num = ringSeq++;
+        ringBondId.set(bId, num);
+        if (!atomRings.has(id)) {
+          atomRings.set(id, []);
+        }
+        if (!atomRings.has(nextId)) {
+          atomRings.set(nextId, []);
+        }
+        // Bond symbol at opener so v1 ring-token parser sees it.
+        atomRings.get(nextId).push({ num, bond, isOpener: true });
+        atomRings.get(id).push({ num, bond, isOpener: false });
+      }
+    }
+    inStack1.delete(id);
+  };
+  dfs1(startId);
+
+  const ringBondSet = new Set(ringBondId.keys());
+
+  // ---- Pass 2: DFS emission ----
+  const emitted = new Set();
+
+  // ---- Helper: compute @/@@  chirality token for a chiral atom ----
+  // Reconstructs the SMILES neighbour order that emit() will produce for this
+  // atom and tries both tokens against the stored CIP designation.
+  // Returns '' when no unique chirality can be resolved (e.g. fewer than 4
+  // distinct CIP ranks).
+  const _chiralTokenFor = id => {
+    const atom = mol.atoms.get(id);
+    if (!atom || !atom.isChiralCenter()) {
+      return '';
+    }
+
+    // 1. DFS parent — the atom we arrived from.
+    const entryBondId = entryBond.get(id);
+    const parentId = entryBondId ? (heavy.bonds.get(entryBondId)?.getOtherAtom(id) ?? null) : null;
+
+    // 2. Strippable (implicit) H atom in original mol, if any.
+    let hAtomId = null;
+    for (const bId of atom.bonds) {
+      const b = mol.bonds.get(bId);
+      const other = b &amp;&amp; mol.atoms.get(b.getOtherAtom(id));
+      if (other &amp;&amp; _isStrippable(other, nonHIds, mol)) {
+        hAtomId = other.id;
+        break;
+      }
+    }
+
+    // 3. Ring-closure partners in atomRings order.
+    const ringPartners = (atomRings.get(id) ?? []).map(({ bond }) => bond.getOtherAtom(id));
+
+    // 4. DFS children (heavy bonds, not ring-bonds, not parent) in bond
+    //    iteration order — matches the order emit() uses for branches/chain.
+    const childIds = [];
+    for (const bId of heavy.atoms.get(id).bonds) {
+      if (ringBondSet.has(bId)) {
+        continue;
+      }
+      const b = heavy.bonds.get(bId);
+      const nextId = b?.getOtherAtom(id);
+      if (nextId &amp;&amp; nextId !== parentId) {
+        childIds.push(nextId);
+      }
+    }
+
+    // Assemble SMILES neighbour list in chirality-convention order:
+    // from-atom, bracket-H, ring-partners, branch/chain children.
+    const neighbors = [];
+    if (parentId) {
+      neighbors.push(parentId);
+    }
+    if (hAtomId) {
+      neighbors.push(hAtomId);
+    }
+    neighbors.push(...ringPartners);
+    neighbors.push(...childIds);
+
+    if (neighbors.length !== 4) {
+      return '';
+    }
+
+    const stored = atom.getChirality();
+    if (computeRS('@', neighbors, id, mol) === stored) {
+      return '@';
+    }
+    if (computeRS('@@', neighbors, id, mol) === stored) {
+      return '@@';
+    }
+    return '';
+  };
+
+  const emit = id => {
+    emitted.add(id);
+    const atom = heavy.atoms.get(id);
+
+    // Sum of bond orders over all bonds in the heavy subgraph (used for
+    // implicit-H calculation; aromatic bonds contribute 1.5 each).
+    const heavyBO = atom.bonds.reduce((acc, bId) => acc + (heavy.bonds.get(bId)?.properties.order ?? 1), 0);
+
+    const chiralTok = _chiralTokenFor(id);
+    let s = _atomToken(atom, pendantH.get(id) ?? 0, heavyBO, chiralTok);
+
+    // Ring-closure annotations appended right after the atom symbol.
+    // Bond character is placed at the opener only.
+    for (const { num, bond, isOpener } of atomRings.get(id) ?? []) {
+      s += (isOpener ? _bondToken(bond, id) : '') + _ringToken(num);
+    }
+
+    // Spanning-tree children (non-ring bonds to unvisited atoms).
+    const children = [];
+    for (const bId of atom.bonds) {
+      if (ringBondSet.has(bId)) {
+        continue;
+      }
+      const bond = heavy.bonds.get(bId);
+      const nextId = bond.getOtherAtom(id);
+      if (!emitted.has(nextId)) {
+        children.push({ nextId, bond });
+      }
+    }
+
+    // All children except the last are written as branches in parentheses.
+    for (let i = 0; i &lt; children.length; i++) {
+      const { nextId, bond } = children[i];
+      const bs = _bondToken(bond, id);
+      s += i &lt; children.length - 1 ? `(${bs}${emit(nextId)})` : `${bs}${emit(nextId)}`;
+    }
+
+    return s;
+  };
+
+  return emit(startId);
+}
+
+/**
+ * Serializes a {@link Molecule} to a SMILES string.
+ *
+ * The output is non-canonical (traversal follows internal atom insertion order)
+ * but is valid SMILES that round-trips through {@link parseSMILES} to a
+ * chemically equivalent molecule.
+ *
+ * **Supported features**
+ * - Organic-subset atoms with implicit H (B, C, N, O, P, S, F, Cl, Br, I)
+ * - Bracket atoms: explicit charge, H count, and isotope mass number
+ * - Ring systems (ring-closure numbers 1–99+, `%nn` notation)
+ * - Branch notation
+ * - Double / triple / quadruple bonds
+ * - Aromatic atoms and bonds (lowercase symbols, implicit `:`)
+ * - Disconnected molecules as dot-separated components
+ *
+ * - Tetrahedral chirality (`@` / `@@`) for atoms with a stored CIP
+ *   designation (`properties.chirality === 'R'` or `'S'`)
+ * - E/Z geometry (`/` / `\\`) on bonds that carry a stored stereo direction
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {string}
+ */
+export function toSMILES(molecule) {
+  if (molecule.atomCount === 0) {
+    return '';
+  }
+  return molecule
+    .getComponents()
+    .map(comp => _serializeComponent(comp))
+    .join('.');
+}
+
+/**
+ * Serializes a {@link Molecule} to a **canonical** SMILES string.
+ *
+ * Atom traversal order is determined by the Morgan extended-connectivity
+ * algorithm (Weininger 1989), so the same molecular graph always produces
+ * the same string regardless of how the molecule was constructed or which
+ * input SMILES was parsed.  The output is therefore suitable as a
+ * deduplication key or database identifier.
+ *
+ * Disconnected components are each canonicalized independently and then
+ * sorted lexicographically before being joined with `'.'`.
+ *
+ * All features of {@link toSMILES} are preserved: chirality (`@`/`@@`),
+ * E/Z geometry (`/`/`\\`), isotopes, charges, aromatic atoms, ring closures.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {string}
+ */
+export function toCanonicalSMILES(molecule) {
+  if (molecule.atomCount === 0) {
+    return '';
+  }
+  const parts = molecule.getComponents().map(comp => {
+    const ranks = morganRanks(comp);
+    return _serializeComponent(comp, id => ranks.get(id) ?? 0);
+  });
+  parts.sort();
+  return parts.join('.');
+}
+</code></pre></article></section></div></div></div><div class="search-container" id="PkfLWpAbet" style="display:none"><div class="wrapper" id="iCxFxjkHbP"><button class="icon-button search-close-button" id="VjLlGakifb" aria-label="close search"><svg><use xlink:href="#close-icon"></use></svg></button><div class="search-box-c"><svg><use xlink:href="#search-icon"></use></svg> <input type="text" id="vpcKVYIppa" class="search-input" placeholder="Search..." autofocus></div><div class="search-result-c" id="fWwVHRuDuN"><span class="search-result-c-text">Type anything to view search result</span></div></div></div><div class="mobile-menu-icon-container"><button class="icon-button" id="mobile-menu" data-isopen="false" aria-label="menu"><svg><use xlink:href="#menu-icon"></use></svg></button></div><div id="mobile-sidebar" class="mobile-sidebar-container"><div class="mobile-sidebar-wrapper"><div class="mobile-nav-links"></div><div class="mobile-sidebar-items-c"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-modules"><div>Modules</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-algorithms.html">algorithms</a></div><div class="sidebar-section-children"><a href="module-algorithms_aromaticity.html">algorithms/aromaticity</a></div><div class="sidebar-section-children"><a href="module-algorithms_morgan.html">algorithms/morgan</a></div><div class="sidebar-section-children"><a href="module-algorithms_paths.html">algorithms/paths</a></div><div class="sidebar-section-children"><a href="module-algorithms_subgraph.html">algorithms/subgraph</a></div><div class="sidebar-section-children"><a href="module-algorithms_traversal.html">algorithms/traversal</a></div><div class="sidebar-section-children"><a href="module-algorithms_vf2.html">algorithms/vf2</a></div><div class="sidebar-section-children"><a href="module-app_core_undo.html">app/core/undo</a></div><div class="sidebar-section-children"><a href="module-app_render_helpers.html">app/render/helpers</a></div><div class="sidebar-section-children"><a href="module-app_render_reaction-2d.html">app/render/reaction-2d</a></div><div class="sidebar-section-children"><a href="module-app_ui_descriptors.html">app/ui/descriptors</a></div><div class="sidebar-section-children"><a href="module-app_ui_export.html">app/ui/export</a></div><div class="sidebar-section-children"><a href="module-core.html">core</a></div><div class="sidebar-section-children"><a href="module-core_Atom.html">core/Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.html">core/Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.html">core/Molecule</a></div><div class="sidebar-section-children"><a href="module-data.html">data</a></div><div class="sidebar-section-children"><a href="module-data_catalog.html">data/catalog</a></div><div class="sidebar-section-children"><a href="module-data_catalog_amino-acids.html">data/catalog/amino-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_fatty-acids.html">data/catalog/fatty-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_nucleobases.html">data/catalog/nucleobases</a></div><div class="sidebar-section-children"><a href="module-data_catalog_polycyclic-aromatic-hydrocarbons.html">data/catalog/polycyclic-aromatic-hydrocarbons</a></div><div class="sidebar-section-children"><a href="module-data_catalog_steroids.html">data/catalog/steroids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_terpenes-and-terpenoids.html">data/catalog/terpenes-and-terpenoids</a></div><div class="sidebar-section-children"><a href="module-data_elements.html">data/elements</a></div><div class="sidebar-section-children"><a href="module-data_molecule-catalog.html">data/molecule-catalog</a></div><div class="sidebar-section-children"><a href="module-descriptors.html">descriptors</a></div><div class="sidebar-section-children"><a href="module-descriptors_information.html">descriptors/information</a></div><div class="sidebar-section-children"><a href="module-descriptors_molecular.html">descriptors/molecular</a></div><div class="sidebar-section-children"><a href="module-descriptors_physicochemical.html">descriptors/physicochemical</a></div><div class="sidebar-section-children"><a href="module-descriptors_spectral.html">descriptors/spectral</a></div><div class="sidebar-section-children"><a href="module-descriptors_topological.html">descriptors/topological</a></div><div class="sidebar-section-children"><a href="module-io.html">io</a></div><div class="sidebar-section-children"><a href="module-io_detect.html">io/detect</a></div><div class="sidebar-section-children"><a href="module-io_inchi.html">io/inchi</a></div><div class="sidebar-section-children"><a href="module-io_json.html">io/json</a></div><div class="sidebar-section-children"><a href="module-io_smiles.html">io/smiles</a></div><div class="sidebar-section-children"><a href="module-layout.html">layout</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d.html">layout/coords2d</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-molecules.html">molecules</a></div><div class="sidebar-section-children"><a href="module-smarts.html">smarts</a></div><div class="sidebar-section-children"><a href="module-smarts_parser.html">smarts/parser</a></div><div class="sidebar-section-children"><a href="module-smarts_primitives.html">smarts/primitives</a></div><div class="sidebar-section-children"><a href="module-smarts_reference.html">smarts/reference</a></div><div class="sidebar-section-children"><a href="module-smarts_search.html">smarts/search</a></div><div class="sidebar-section-children"><a href="module-smirks.html">smirks</a></div><div class="sidebar-section-children"><a href="module-smirks_apply.html">smirks/apply</a></div><div class="sidebar-section-children"><a href="module-smirks_parser.html">smirks/parser</a></div><div class="sidebar-section-children"><a href="module-smirks_reference.html">smirks/reference</a></div><div class="sidebar-section-children"><a href="module-utils.html">utils</a></div><div class="sidebar-section-children"><a href="module-utils_combinatorics.html">utils/combinatorics</a></div><div class="sidebar-section-children"><a href="module-utils_eigenvalues.html">utils/eigenvalues</a></div><div class="sidebar-section-children"><a href="module-utils_matrix.html">utils/matrix</a></div><div class="sidebar-section-children"><a href="module-validation.html">validation</a></div><div class="sidebar-section-children"><a href="module-validation_valence.html">validation/valence</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-core_Atom.Atom.html">Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.Bond.html">Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.Molecule.html">Molecule</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d-SpatialGrid.html">SpatialGrid</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-global"><div>Global</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="global.html#atomBBox">atomBBox</a></div><div class="sidebar-section-children"><a href="global.html#atomColor">atomColor</a></div><div class="sidebar-section-children"><a href="global.html#getAtomLabel">getAtomLabel</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfH">labelHalfH</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfW">labelHalfW</a></div><div class="sidebar-section-children"><a href="global.html#labelTextOffset">labelTextOffset</a></div><div class="sidebar-section-children"><a href="global.html#perpUnit">perpUnit</a></div><div class="sidebar-section-children"><a href="global.html#secondaryDir">secondaryDir</a></div><div class="sidebar-section-children"><a href="global.html#shortenLine">shortenLine</a></div><div class="sidebar-section-children"><a href="global.html#stereoBondTypeForCenter">stereoBondTypeForCenter</a></div><div class="sidebar-section-children"><a href="global.html#vecLen">vecLen</a></div></div></div><div class="mobile-navbar-actions"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div></div></div><script type="text/javascript" src="scripts/core.min.js"></script><script src="scripts/search.min.js" defer="defer"></script><script src="scripts/third-party/fuse.js" defer="defer"></script><script type="text/javascript">var tocbotInstance=tocbot.init({tocSelector:"#eed4d2a0bfd64539bb9df78095dec881",contentSelector:".main-content",headingSelector:"h1, h2, h3",hasInnerContainers:!0,scrollContainer:".main-content",headingsOffset:130,onClick:bringLinkToView})</script></body></html>

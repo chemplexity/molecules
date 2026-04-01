@@ -220,7 +220,13 @@ describe('findSMARTS — match counts', () => {
   it('disconnected SMARTS matches disconnected target components', () => {
     const results = collectAll(findSMARTSRaw(mol('C.O'), '[C:1].[O:2]'));
     assert.equal(results.length, 1);
-    assert.deepEqual([...results[0].entries()], [['q0', 'C1'], ['q1', 'O2']]);
+    assert.deepEqual(
+      [...results[0].entries()],
+      [
+        ['q0', 'C1'],
+        ['q1', 'O2']
+      ]
+    );
   });
 });
 

@@ -4,8 +4,14 @@ import { randomUUID } from 'node:crypto';
 import { Atom } from './Atom.js';
 import { Bond } from './Bond.js';
 import elements from '../data/elements.js';
-import { findSubgraphMappings as _vf2Mappings, findFirstSubgraphMapping as _vf2First, matchesSubgraph as _vf2Matches } from '../algorithms/vf2.js';
-import { findSMARTS as _smartsFind, firstSMARTS as _smartsFirst, matchesSMARTS as _smartsMatches } from '../smarts/index.js';
+import {
+  findSubgraphMappings as _vf2Mappings,
+  findFirstSubgraphMapping as _vf2First,
+  matchesSubgraph as _vf2Matches
+} from '../algorithms/vf2.js';
+// Smarts functions are registered lazily by smarts/index.js to avoid a
+// circular dependency (Molecule → smarts → parser → Molecule).
+let _smartsFind, _smartsFirst, _smartsMatches;
 
 /**
  * Represents a molecular graph where atoms are vertices and bonds are edges.
@@ -13,6 +19,13 @@ import { findSMARTS as _smartsFind, firstSMARTS as _smartsFirst, matchesSMARTS a
 export class Molecule {
   /** @type {number} Monotonically increasing counter used for auto-generated IDs. */
   static _nextId = 0;
+
+  /** @private Called once by smarts/index.js to inject SMARTS search functions. */
+  static _registerSMARTS(find, first, matches) {
+    _smartsFind = find;
+    _smartsFirst = first;
+    _smartsMatches = matches;
+  }
 
   /**
    * @param {string|null} [id] - Unique identifier. Auto-generated as a numeric string when omitted or null.
@@ -64,7 +77,7 @@ export class Molecule {
     const atom = new Atom(id ?? this._generateAutoAtomId(), name, properties);
     const el = elements[atom.name];
     if (el) {
-      const hasOwn = (key) => Object.prototype.hasOwnProperty.call(properties, key);
+      const hasOwn = key => Object.prototype.hasOwnProperty.call(properties, key);
       if (!hasOwn('group')) {
         atom.properties.group = el.group;
       }
@@ -111,9 +124,9 @@ export class Molecule {
       throw new Error(`Unknown element '${newElement}'.`);
     }
     atom.name = newElement;
-    atom.properties.group    = el.group;
-    atom.properties.period   = el.period;
-    atom.properties.protons  = el.protons;
+    atom.properties.group = el.group;
+    atom.properties.period = el.period;
+    atom.properties.protons = el.protons;
     atom.properties.neutrons = el.neutrons;
     // electrons = protons minus charge for a neutral-spin assignment
     atom.properties.electrons = el.protons - (atom.properties.charge ?? 0);
@@ -142,7 +155,7 @@ export class Molecule {
         const other = bond.getOtherAtom(id);
         const otherAtom = this.atoms.get(other);
         if (otherAtom) {
-          otherAtom.bonds = otherAtom.bonds.filter((b) => b !== bondId);
+          otherAtom.bonds = otherAtom.bonds.filter(b => b !== bondId);
         }
         const [a, b] = bond.atoms;
         this._bondIndex.delete(a < b ? `${a},${b}` : `${b},${a}`);
@@ -219,7 +232,7 @@ export class Molecule {
     }
     const { group } = el;
     let valence;
-    if (group >= 1 && group <= 2)    {
+    if (group >= 1 && group <= 2) {
       valence = group;
     } else if (group >= 13 && group <= 17) {
       valence = 18 - group;
@@ -289,9 +302,7 @@ export class Molecule {
    * @returns {Molecule} The current molecule.
    */
   repairImplicitHydrogens(atomIds = null) {
-    const targetIds = atomIds == null
-      ? [...this.atoms.keys()]
-      : [...new Set(atomIds)];
+    const targetIds = atomIds == null ? [...this.atoms.keys()] : [...new Set(atomIds)];
 
     for (const atomId of targetIds) {
       const atom = this.atoms.get(atomId);
@@ -327,9 +338,7 @@ export class Molecule {
    * @returns {Molecule} The current molecule.
    */
   clearStereoAnnotations(atomIds = null) {
-    const targetIds = atomIds == null
-      ? [...this.atoms.keys()]
-      : [...new Set(atomIds)];
+    const targetIds = atomIds == null ? [...this.atoms.keys()] : [...new Set(atomIds)];
 
     for (const atomId of targetIds) {
       const atom = this.atoms.get(atomId);
@@ -443,7 +452,7 @@ export class Molecule {
     for (const atomId of bond.atoms) {
       const atom = this.atoms.get(atomId);
       if (atom) {
-        atom.bonds = atom.bonds.filter((b) => b !== id);
+        atom.bonds = atom.bonds.filter(b => b !== id);
       }
     }
     const [a, b] = bond.atoms;
@@ -470,10 +479,10 @@ export class Molecule {
    * @private
    */
   _recomputeProperties() {
-    this.properties.charge  = this.getCharge();
+    this.properties.charge = this.getCharge();
     this.properties.formula = this.getFormula();
-    this.properties.mass    = this.getMass();
-    this.name               = this.getName();
+    this.properties.mass = this.getMass();
+    this.name = this.getName();
   }
 
   /**
@@ -521,7 +530,7 @@ export class Molecule {
     if (!atom) {
       return [];
     }
-    return atom.bonds.map((bondId) => {
+    return atom.bonds.map(bondId => {
       const bond = this.bonds.get(bondId);
       return bond.getOtherAtom(id);
     });
@@ -604,7 +613,7 @@ export class Molecule {
   getName() {
     const formula = this.getFormula(); // already CHNOPS-ordered
     return Object.entries(formula)
-      .map(([el, n]) => n === 1 ? el : el + n)
+      .map(([el, n]) => (n === 1 ? el : el + n))
       .join('');
   }
 
@@ -708,7 +717,7 @@ export class Molecule {
       return [atomIdA];
     }
     const parent = new Map([[atomIdA, null]]);
-    const queue  = [atomIdA];
+    const queue = [atomIdA];
     outer: while (queue.length > 0) {
       const current = queue.shift();
       for (const bId of this.atoms.get(current).bonds) {
@@ -770,22 +779,22 @@ export class Molecule {
     // Smallest Rings (SSSR) approach and finds the correct local rings even in
     // fused polycyclic systems where a DFS-basis would produce large macrocycles.
     const allRings = [];
-    const seen     = new Set();
+    const seen = new Set();
 
     for (const [bondId, bond] of this.bonds) {
       const [u, v] = bond.atoms;
 
       // BFS from u, skipping bondId, looking for v.
-      const prev  = new Map([[u, null]]);
+      const prev = new Map([[u, null]]);
       const queue = [u];
-      let   found = false;
+      let found = false;
 
       outer: while (queue.length > 0) {
         const cur = queue.shift();
-        for (const bId of (this.atoms.get(cur)?.bonds ?? [])) {
+        for (const bId of this.atoms.get(cur)?.bonds ?? []) {
           if (bId === bondId) {
             continue;
-          }           // skip the removed bond
+          } // skip the removed bond
           const b = this.bonds.get(bId);
           if (!b) {
             continue;
@@ -796,7 +805,8 @@ export class Molecule {
           }
           prev.set(next, cur);
           if (next === v) {
-            found = true; break outer;
+            found = true;
+            break outer;
           }
           queue.push(next);
         }
@@ -804,7 +814,7 @@ export class Molecule {
 
       if (!found) {
         continue;
-      }                       // bridge bond — not in any ring
+      } // bridge bond — not in any ring
 
       // Reconstruct atom path from v back to u.
       const ring = [];
@@ -839,7 +849,7 @@ export class Molecule {
    */
   getSubgraph(atomIds) {
     const idSet = new Set(atomIds);
-    const sub   = new Molecule();
+    const sub = new Molecule();
 
     for (const id of atomIds) {
       const atom = this.atoms.get(id);
@@ -873,7 +883,7 @@ export class Molecule {
    * @returns {Molecule[]}
    */
   getComponents() {
-    const visited    = new Set();
+    const visited = new Set();
     const components = [];
 
     for (const startId of this.atoms.keys()) {
@@ -881,7 +891,7 @@ export class Molecule {
         continue;
       }
       const component = new Set();
-      const queue     = [startId];
+      const queue = [startId];
       while (queue.length > 0) {
         const current = queue.shift();
         if (visited.has(current)) {
@@ -1081,14 +1091,15 @@ export class Molecule {
       return null;
     }
 
-    const flip = s => s === '/' ? '\\' : '/';
+    const flip = s => (s === '/' ? '\\' : '/');
 
-    const infoAt = (sp2Id) => {
+    const infoAt = sp2Id => {
       const sp2 = this.atoms.get(sp2Id);
       if (!sp2) {
         return null;
       }
-      let dir = null, markedId = null;
+      let dir = null,
+        markedId = null;
       const otherIds = [];
       for (const bId of sp2.bonds) {
         if (bId === bondId) {
@@ -1100,7 +1111,7 @@ export class Molecule {
         }
         const otherId = b.getOtherAtom(sp2Id);
         if (b.properties.stereo) {
-          dir      = b.atoms[0] === sp2Id ? b.properties.stereo : flip(b.properties.stereo);
+          dir = b.atoms[0] === sp2Id ? b.properties.stereo : flip(b.properties.stereo);
           markedId = otherId;
         } else {
           otherIds.push(otherId);
@@ -1171,7 +1182,7 @@ export class Molecule {
    * @param {object}   [options]  See {@link findSubgraphMappings} for supported keys.
    * @yields {Map<string, string>}
    */
-  * findSubgraphMappings(query, options = {}) {
+  *findSubgraphMappings(query, options = {}) {
     yield* _vf2Mappings(this, query, options);
   }
 
@@ -1229,7 +1240,7 @@ export class Molecule {
    * @param {object} [options]
    * @yields {Map<string, string>}
    */
-  * findSMARTS(smarts, options = {}) {
+  *findSMARTS(smarts, options = {}) {
     yield* _smartsFind(this, smarts, options);
   }
 
@@ -1319,10 +1330,10 @@ function _cipZ(atomId, mol) {
   if (!atom) {
     return 0;
   }
-  const p   = atom.properties;
-  const el  = elements[atom.name];
-  const Z   = p.protons   ?? el?.protons   ?? 0;
-  const N   = p.neutrons  ?? el?.neutrons  ?? Z;   // fallback: N ≈ Z
+  const p = atom.properties;
+  const el = elements[atom.name];
+  const Z = p.protons ?? el?.protons ?? 0;
+  const N = p.neutrons ?? el?.neutrons ?? Z; // fallback: N ≈ Z
   return Z * 1000 + Math.round(Z + N);
 }
 
@@ -1470,7 +1481,7 @@ export function computeRS(chiralToken, smilesNeighborIds, centerId, mol) {
   indexed.sort((a, b) => a.rank - b.rank);
   const sortedIds = indexed.map(x => x.id);
 
-  const pSign     = _permSign(smilesNeighborIds, sortedIds);
+  const pSign = _permSign(smilesNeighborIds, sortedIds);
   const smilesSign = chiralToken === '@@' ? 1 : -1;
   return smilesSign * pSign > 0 ? 'R' : 'S';
 }

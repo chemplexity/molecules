@@ -116,7 +116,7 @@ function _parseTemplateAtomInner(inner) {
   } else if (first >= 'a' && first <= 'z') {
     const next = pos + 1 < body.length ? body[pos + 1] : null;
     if (next !== null && next >= 'a' && next <= 'z') {
-      const sym2 = (first + next);
+      const sym2 = first + next;
       if (elements[sym2[0].toUpperCase() + sym2.slice(1)] !== undefined) {
         name = sym2[0].toUpperCase() + sym2.slice(1);
         aromatic = true;
@@ -139,7 +139,7 @@ function _parseTemplateAtomInner(inner) {
       if (chiralitySpecified) {
         throw new Error(`parseSMIRKS: duplicate chirality primitive in product atom '[${inner}]'`);
       }
-      chiralityToken = (body[pos + 1] === '@') ? '@@' : '@';
+      chiralityToken = body[pos + 1] === '@' ? '@@' : '@';
       chiralitySpecified = true;
       pos += chiralityToken.length;
       continue;
@@ -227,7 +227,9 @@ function _annotateProductStereo(productText, product) {
       continue;
     }
     if (flags.hydrogenCountSpecified && flags.hydrogenCount > 1) {
-      throw new Error(`parseSMIRKS: chiral product atom '[${productAtom.name}]' cannot specify H${flags.hydrogenCount}`);
+      throw new Error(
+        `parseSMIRKS: chiral product atom '[${productAtom.name}]' cannot specify H${flags.hydrogenCount}`
+      );
     }
     const stereoAtom = stereoMol.atoms.get(productToStereoAtomId.get(productAtom.id));
     if (!stereoAtom?.getChirality()) {
@@ -257,7 +259,11 @@ function _parseBareTemplateAtom(text, pos) {
     if (next !== null && next >= 'a' && next <= 'z') {
       const sym2 = ch + next;
       if (elements[sym2] !== undefined) {
-        return { name: sym2, properties: { aromatic: false, charge: 0, reaction: _buildTemplateReaction(null) }, len: 2 };
+        return {
+          name: sym2,
+          properties: { aromatic: false, charge: 0, reaction: _buildTemplateReaction(null) },
+          len: 2
+        };
       }
     }
     if (elements[ch] !== undefined) {
@@ -268,7 +274,7 @@ function _parseBareTemplateAtom(text, pos) {
   if (ch >= 'a' && ch <= 'z') {
     const next = pos + 1 < text.length ? text[pos + 1] : null;
     if (next !== null && next >= 'a' && next <= 'z') {
-      const sym2 = (ch + next);
+      const sym2 = ch + next;
       const cap = sym2[0].toUpperCase() + sym2.slice(1);
       if (elements[cap] !== undefined) {
         return { name: cap, properties: { aromatic: true, charge: 0, reaction: _buildTemplateReaction(null) }, len: 2 };
@@ -413,7 +419,9 @@ function _parseProductTemplate(template) {
 
     if ('-=#:/\\~@'.includes(ch)) {
       if (prevId == null || pendingBondProps) {
-        throw new Error(`parseSMIRKS: bond token '${ch}' at pos ${pos} is not attached to a valid product atom sequence`);
+        throw new Error(
+          `parseSMIRKS: bond token '${ch}' at pos ${pos} is not attached to a valid product atom sequence`
+        );
       }
       setPendingBond(ch);
       pos++;
@@ -443,7 +451,7 @@ function _parseProductTemplate(template) {
   }
 
   if (branchStack.length > 0) {
-    throw new Error('parseSMIRKS: unclosed \'(\' in product template');
+    throw new Error("parseSMIRKS: unclosed '(' in product template");
   }
   if (ringOpens.size > 0) {
     throw new Error('parseSMIRKS: unclosed ring closure in product template');
@@ -480,7 +488,7 @@ export function parseSMIRKS(smirks) {
 
   const parts = smirks.split('>>');
   if (parts.length !== 2) {
-    throw new Error('parseSMIRKS: expected exactly one \'>>\' separator');
+    throw new Error("parseSMIRKS: expected exactly one '>>' separator");
   }
 
   const [reactantText, productText] = parts;
@@ -499,13 +507,17 @@ export function parseSMIRKS(smirks) {
 
   const sharedMaps = [...productMaps.keys()].filter(atomMap => reactantMaps.has(atomMap));
   if (sharedMaps.length === 0) {
-    throw new Error('parseSMIRKS: phase-1 SMIRKS requires at least one mapped atom shared between reactant and product');
+    throw new Error(
+      'parseSMIRKS: phase-1 SMIRKS requires at least one mapped atom shared between reactant and product'
+    );
   }
 
   for (const component of product.getComponents()) {
     const hasSharedMap = [...component.atoms.values()].some(atom => atom.getAtomMap() != null);
     if (!hasSharedMap) {
-      throw new Error('parseSMIRKS: phase-1 SMIRKS does not support disconnected product fragments without a shared mapped atom');
+      throw new Error(
+        'parseSMIRKS: phase-1 SMIRKS does not support disconnected product fragments without a shared mapped atom'
+      );
     }
   }
 

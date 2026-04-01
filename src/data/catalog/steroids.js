@@ -37,8 +37,7 @@ const steroidsCatalog = {
       id: 'estradiol',
       name: 'Estradiol',
       smiles: 'CC34CCC2c1ccc(O)cc1CCC2C3CCC4O',
-      inchi:
-        'InChI=1S/C18H24O2/c1-18(13,14)7-5-12-11(4-6-15-10-16(8-9-17(12)15)20)13-2-3-14-19/h8-14,19-20H,2-7H2,1H3',
+      inchi: 'InChI=1S/C18H24O2/c1-18(13,14)7-5-12-11(4-6-15-10-16(8-9-17(12)15)20)13-2-3-14-19/h8-14,19-20H,2-7H2,1H3',
       tags: ['steroid', 'hormone', 'estrogen'],
       aliases: ['17beta-estradiol', 'estradiol']
     },

@@ -1,12 +1,7 @@
 /** @module smarts/parser */
 
 import { Molecule } from '../core/Molecule.js';
-import {
-  compileAtomExpr,
-  compileBondToken,
-  compileBareAtomToken,
-  defaultSmartsBondPred
-} from './primitives.js';
+import { compileAtomExpr, compileBondToken, compileBareAtomToken, defaultSmartsBondPred } from './primitives.js';
 
 function _extractTrailingAtomMap(inner) {
   let depth = 0;
@@ -214,7 +209,7 @@ export function parseSMARTS(smarts) {
   }
 
   if (branchStack.length > 0) {
-    throw new Error('parseSMARTS: unclosed \'(\'');
+    throw new Error("parseSMARTS: unclosed '('");
   }
   if (ringOpens.size > 0) {
     throw new Error('parseSMARTS: unclosed ring closure');

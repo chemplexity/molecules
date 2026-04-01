@@ -10,8 +10,7 @@ const fattyAcidsCatalog = {
       id: 'lauric-acid',
       name: 'Lauric Acid',
       smiles: 'CCCCCCCCCCCC(=O)O',
-      inchi:
-        'InChI=1S/C12H24O2/c1-2-3-4-5-6-7-8-9-10-11-12(13)14/h14H,2-11H2,1H3',
+      inchi: 'InChI=1S/C12H24O2/c1-2-3-4-5-6-7-8-9-10-11-12(13)14/h14H,2-11H2,1H3',
       tags: ['fatty-acid', 'saturated', 'medium-chain'],
       aliases: ['dodecanoic acid', 'C12:0']
     },
@@ -19,8 +18,7 @@ const fattyAcidsCatalog = {
       id: 'myristic-acid',
       name: 'Myristic Acid',
       smiles: 'CCCCCCCCCCCCCC(=O)O',
-      inchi:
-        'InChI=1S/C14H28O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14(15)16/h16H,2-13H2,1H3',
+      inchi: 'InChI=1S/C14H28O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14(15)16/h16H,2-13H2,1H3',
       tags: ['fatty-acid', 'saturated', 'long-chain'],
       aliases: ['tetradecanoic acid', 'C14:0']
     },
@@ -28,8 +26,7 @@ const fattyAcidsCatalog = {
       id: 'palmitic-acid',
       name: 'Palmitic Acid',
       smiles: 'CCCCCCCCCCCCCCCC(=O)O',
-      inchi:
-        'InChI=1S/C16H32O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16(17)18/h18H,2-15H2,1H3',
+      inchi: 'InChI=1S/C16H32O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16(17)18/h18H,2-15H2,1H3',
       tags: ['fatty-acid', 'saturated', 'long-chain'],
       aliases: ['hexadecanoic acid', 'C16:0']
     },
@@ -37,8 +34,7 @@ const fattyAcidsCatalog = {
       id: 'stearic-acid',
       name: 'Stearic Acid',
       smiles: 'CCCCCCCCCCCCCCCCCC(=O)O',
-      inchi:
-        'InChI=1S/C18H36O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18(19)20/h20H,2-17H2,1H3',
+      inchi: 'InChI=1S/C18H36O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18(19)20/h20H,2-17H2,1H3',
       tags: ['fatty-acid', 'saturated', 'long-chain'],
       aliases: ['octadecanoic acid', 'C18:0']
     },

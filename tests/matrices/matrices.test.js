@@ -1,7 +1,14 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
-import { adjacencyMatrix, degreeMatrix, distanceMatrix, laplacianMatrix, randicMatrix, reciprocalMatrix } from '../../src/matrices/index.js';
+import {
+  adjacencyMatrix,
+  degreeMatrix,
+  distanceMatrix,
+  laplacianMatrix,
+  randicMatrix,
+  reciprocalMatrix
+} from '../../src/matrices/index.js';
 import { parseSMILES } from '../../src/io/index.js';
 
 function propane() {
@@ -72,7 +79,10 @@ describe('reciprocalMatrix', () => {
   });
 
   it('handles zero distances as 0 in reciprocal', () => {
-    const D = [[0, 1], [1, 0]];
+    const D = [
+      [0, 1],
+      [1, 0]
+    ];
     const RD = reciprocalMatrix(D);
     assert.equal(RD[0][0], 0);
     assert.equal(RD[0][1], 1);
@@ -154,7 +164,10 @@ describe('distanceMatrix — via parseSMILES', () => {
   });
 
   it('all-zero adjacency (disconnected) produces 0 on diagonal', () => {
-    const D = distanceMatrix([[0, 0], [0, 0]]);
+    const D = distanceMatrix([
+      [0, 0],
+      [0, 0]
+    ]);
     assert.equal(D[0][0], 0);
     assert.equal(D[1][1], 0);
   });

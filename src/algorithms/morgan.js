@@ -39,7 +39,7 @@ function assignRanks(invariants) {
   const rank = new Array(n).fill(0);
   for (let j = 1; j < n; j++) {
     const prev = order[j - 1];
-    const cur  = order[j];
+    const cur = order[j];
     rank[cur] = rank[prev] + (lexCmp(invariants[prev], invariants[cur]) !== 0 ? 1 : 0);
   }
   // Return unique count alongside rank to avoid a separate new Set(rank).size call.
@@ -78,8 +78,8 @@ export function morganRanks(mol) {
     return new Map();
   }
 
-  const ids  = atoms.map(a => a.id);
-  const idx  = new Map(ids.map((id, i) => [id, i]));   // atomId → index
+  const ids = atoms.map(a => a.id);
+  const idx = new Map(ids.map((id, i) => [id, i])); // atomId → index
 
   // Heavy-atom neighbor index lists.
   const neighbors = atoms.map(atom => {
@@ -116,13 +116,13 @@ export function morganRanks(mol) {
   // ---- 2. Initial invariant tuples -------------------------------------------
   const initInvariants = atoms.map((atom, i) => {
     const atomicNum = atom.properties.protons ?? 0;
-    const degree    = neighbors[i].length;
-    const charge    = atom.getCharge();
-    let   isotope   = 0;
+    const degree = neighbors[i].length;
+    const charge = atom.getCharge();
+    let isotope = 0;
     if (atom.properties.protons != null && atom.properties.neutrons != null) {
       const mass = Math.round(atom.properties.protons + atom.properties.neutrons);
-      const el   = elements[atom.name];
-      const std  = el ? Math.round(el.protons + el.neutrons) : mass;
+      const el = elements[atom.name];
+      const std = el ? Math.round(el.protons + el.neutrons) : mass;
       if (mass !== std) {
         isotope = mass;
       }
@@ -140,7 +140,7 @@ export function morganRanks(mol) {
     const inv = rank.map((r, i) => {
       const nbRanks = neighbors[i].map(j => rank[j]);
       nbRanks.sort((a, b) => a - b);
-      nbRanks.unshift(r);   // prepend self-rank in place; no spread allocation
+      nbRanks.unshift(r); // prepend self-rank in place; no spread allocation
       return nbRanks;
     });
     return assignRanks(inv);
@@ -153,7 +153,7 @@ export function morganRanks(mol) {
     if (next.unique <= unique) {
       break;
     }
-    rank   = next.rank;
+    rank = next.rank;
     unique = next.unique;
   }
 
@@ -172,7 +172,8 @@ export function morganRanks(mol) {
     let tiedRank = -1;
     for (let r = 0; r <= n; r++) {
       if ((counts.get(r) ?? 0) > 1) {
-        tiedRank = r; break;
+        tiedRank = r;
+        break;
       }
     }
     if (tiedRank < 0) {
@@ -181,7 +182,7 @@ export function morganRanks(mol) {
 
     // Among tied atoms, choose the one with the lex-min initial invariant.
     // Fall back to original index order for a fully deterministic tiebreak.
-    const tied = rank.map((r, i) => r === tiedRank ? i : -1).filter(i => i >= 0);
+    const tied = rank.map((r, i) => (r === tiedRank ? i : -1)).filter(i => i >= 0);
     tied.sort((a, b) => {
       const d = lexCmp(initInvariants[a], initInvariants[b]);
       return d !== 0 ? d : a - b;
@@ -198,7 +199,7 @@ export function morganRanks(mol) {
       if (next.unique <= unique) {
         break;
       }
-      rank   = next.rank;
+      rank = next.rank;
       unique = next.unique;
     }
   }

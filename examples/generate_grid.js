@@ -12,12 +12,7 @@
 import { writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import {
-  renderMolSVGFromSMILES,
-  renderMolSVGFromINCHI,
-  buildCompositeSVG,
-  svgToPng
-} from '../src/layout/render2d.js';
+import { renderMolSVGFromSMILES, renderMolSVGFromINCHI, buildCompositeSVG, svgToPng } from '../src/layout/render2d.js';
 import { randomMolecule } from './example-molecules.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -106,12 +101,7 @@ function saveGrid(molecules, key, renderFn, suffix) {
 // Generate both grids
 // ---------------------------------------------------------------------------
 const opts = { showChiralLabels: true };
-saveGrid(
-  randomMolecule,
-  'smiles',
-  smi => renderMolSVGFromSMILES(smi, opts),
-  'smiles'
-);
+saveGrid(randomMolecule, 'smiles', smi => renderMolSVGFromSMILES(smi, opts), 'smiles');
 saveGrid(
   randomMolecule.filter(m => m.inchi),
   'inchi',

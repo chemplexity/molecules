@@ -48,17 +48,17 @@ describe('toCanonicalSMILES — invariance', () => {
 
 describe('toCanonicalSMILES — idempotence', () => {
   const corpus = [
-    'C',           // methane
-    'CC',          // ethane
-    'CCC',         // propane
-    'CC(C)C',      // isobutane
-    'c1ccccc1',    // benzene
-    'c1ccc2ccccc2c1',  // naphthalene
-    'CC=O',        // acetaldehyde
-    'CC(=O)O',     // acetic acid
-    'c1ccncc1',    // pyridine
-    'C#N',         // hydrogen cyanide
-    'CC(=O)Oc1ccccc1C(=O)O'  // aspirin
+    'C', // methane
+    'CC', // ethane
+    'CCC', // propane
+    'CC(C)C', // isobutane
+    'c1ccccc1', // benzene
+    'c1ccc2ccccc2c1', // naphthalene
+    'CC=O', // acetaldehyde
+    'CC(=O)O', // acetic acid
+    'c1ccncc1', // pyridine
+    'C#N', // hydrogen cyanide
+    'CC(=O)Oc1ccccc1C(=O)O' // aspirin
   ];
 
   for (const smi of corpus) {
@@ -91,7 +91,7 @@ describe('toCanonicalSMILES — disconnected molecules', () => {
 describe('toCanonicalSMILES — stereo round-trip', () => {
   it('[C@@H](F)(Cl)Br round-trips with same chirality token', () => {
     const mol1 = parseSMILES('[C@@H](F)(Cl)Br');
-    const s    = toCanonicalSMILES(mol1);
+    const s = toCanonicalSMILES(mol1);
     const mol2 = parseSMILES(s);
     // Both molecules must have exactly one chiral centre with the same R/S.
     const c1 = [...mol1.atoms.values()].find(a => a.properties.chirality);
@@ -108,10 +108,7 @@ describe('toCanonicalSMILES — stereo round-trip', () => {
 
 describe('toCanonicalSMILES — structural cases', () => {
   it('produces a non-empty string for every corpus molecule', () => {
-    const mols = [
-      'C', 'CC', 'C=C', 'C#C', 'c1ccccc1', 'C1CCCCC1',
-      '[NH4+]', '[OH-]', '[13C]', 'CCO', 'CC(=O)O'
-    ];
+    const mols = ['C', 'CC', 'C=C', 'C#C', 'c1ccccc1', 'C1CCCCC1', '[NH4+]', '[OH-]', '[13C]', 'CCO', 'CC(=O)O'];
     for (const smi of mols) {
       const s = canonical(smi);
       assert.ok(s.length > 0, `empty output for ${smi}`);
@@ -120,12 +117,12 @@ describe('toCanonicalSMILES — structural cases', () => {
 
   it('re-parses to a molecule with the same heavy-atom count', () => {
     const cases = [
-      ['CC(=O)O',  4],   // acetic acid: C, C, O, O
-      ['c1ccccc1', 6],   // benzene: 6 C
-      ['c1ccncc1', 6]   // pyridine: 5 C + 1 N
+      ['CC(=O)O', 4], // acetic acid: C, C, O, O
+      ['c1ccccc1', 6], // benzene: 6 C
+      ['c1ccncc1', 6] // pyridine: 5 C + 1 N
     ];
     for (const [smi, expectedHeavy] of cases) {
-      const s    = canonical(smi);
+      const s = canonical(smi);
       const mol2 = parseSMILES(s);
       const heavy = [...mol2.atoms.values()].filter(a => a.name !== 'H').length;
       assert.equal(heavy, expectedHeavy, `${smi}: expected ${expectedHeavy} heavy atoms, got ${heavy}`);

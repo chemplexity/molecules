@@ -101,7 +101,7 @@ function _isChordlessCycle(cycle, mol) {
 
   for (let i = 0; i < n; i++) {
     for (let j = i + 1; j < n; j++) {
-      const consecutive = (j === i + 1) || (i === 0 && j === n - 1);
+      const consecutive = j === i + 1 || (i === 0 && j === n - 1);
       if (consecutive) {
         continue;
       }
@@ -148,7 +148,8 @@ function _shortestPathExcludingAtom(startId, endId, excludedAtomId, mol) {
 }
 
 function _minimalCyclesContaining(atom, mol) {
-  const neighbors = atom.getNeighbors(mol)
+  const neighbors = atom
+    .getNeighbors(mol)
     .filter(neighbor => neighbor.name !== 'H')
     .map(neighbor => neighbor.id);
   if (neighbors.length < 2) {
@@ -270,22 +271,42 @@ export function compileBondToken(smarts, pos) {
   const ch = smarts[pos];
   switch (ch) {
     case '-':
-      return { pred: (tB) => !(tB.properties.aromatic ?? false) && (tB.properties.order ?? 1) === 1, len: 1, props: { order: 1, aromatic: false, stereo: null } };
+      return {
+        pred: tB => !(tB.properties.aromatic ?? false) && (tB.properties.order ?? 1) === 1,
+        len: 1,
+        props: { order: 1, aromatic: false, stereo: null }
+      };
     case '=':
-      return { pred: (tB) => !(tB.properties.aromatic ?? false) && (tB.properties.order ?? 1) === 2, len: 1, props: { order: 2, aromatic: false, stereo: null } };
+      return {
+        pred: tB => !(tB.properties.aromatic ?? false) && (tB.properties.order ?? 1) === 2,
+        len: 1,
+        props: { order: 2, aromatic: false, stereo: null }
+      };
     case '#':
-      return { pred: (tB) => (tB.properties.order ?? 1) === 3, len: 1, props: { order: 3, aromatic: false, stereo: null } };
+      return {
+        pred: tB => (tB.properties.order ?? 1) === 3,
+        len: 1,
+        props: { order: 3, aromatic: false, stereo: null }
+      };
     case ':':
-      return { pred: (tB) => _isAroBond(tB), len: 1, props: { order: 1.5, aromatic: true, stereo: null } };
+      return { pred: tB => _isAroBond(tB), len: 1, props: { order: 1.5, aromatic: true, stereo: null } };
     case '@':
-      return { pred: (tB, tMol) => _isBondInRing(tB, tMol), len: 1, props: { order: 1, aromatic: false, stereo: null } };
+      return {
+        pred: (tB, tMol) => _isBondInRing(tB, tMol),
+        len: 1,
+        props: { order: 1, aromatic: false, stereo: null }
+      };
     case '~':
       return { pred: () => true, len: 1, props: {} };
     case '/':
     case '\\':
       // Directional bonds are still single bonds structurally; the full
       // / vs \ relation is checked after VF2 using the final atom mapping.
-      return { pred: (tB) => !(tB.properties.aromatic ?? false) && (tB.properties.order ?? 1) === 1, len: 1, props: { order: 1, aromatic: false, stereo: ch } };
+      return {
+        pred: tB => !(tB.properties.aromatic ?? false) && (tB.properties.order ?? 1) === 1,
+        len: 1,
+        props: { order: 1, aromatic: false, stereo: ch }
+      };
     default:
       return null;
   }
@@ -321,16 +342,16 @@ export function compileBareAtomToken(smarts, pos) {
     if (next !== null && next >= 'a' && next <= 'z') {
       const sym2 = ch + next;
       if (elements[sym2] !== undefined) {
-        return { pred: (a) => a.name === sym2 && !(a.properties.aromatic ?? false), len: 2 };
+        return { pred: a => a.name === sym2 && !(a.properties.aromatic ?? false), len: 2 };
       }
     }
-    return { pred: (a) => a.name === ch && !(a.properties.aromatic ?? false), len: 1 };
+    return { pred: a => a.name === ch && !(a.properties.aromatic ?? false), len: 1 };
   }
 
   // Lowercase → aromatic element (single letter)
   if (ch >= 'a' && ch <= 'z') {
     const sym = ch.toUpperCase();
-    return { pred: (a) => a.name === sym && (a.properties.aromatic ?? false) === true, len: 1 };
+    return { pred: a => a.name === sym && (a.properties.aromatic ?? false) === true, len: 1 };
   }
 
   return null;
@@ -383,7 +404,8 @@ export function compileAtomExpr(expr, options = {}) {
   }
   function accept(ch) {
     if (peek() === ch) {
-      pos++; return true;
+      pos++;
+      return true;
     }
     return false;
   }
@@ -455,14 +477,17 @@ export function compileAtomExpr(expr, options = {}) {
     }
 
     if (ch === '*') {
-      pos++; return () => true;
+      pos++;
+      return () => true;
     }
 
     if (ch === 'a') {
-      pos++; return (a) => (a.properties.aromatic ?? false) === true;
+      pos++;
+      return a => (a.properties.aromatic ?? false) === true;
     }
     if (ch === 'A') {
-      pos++; return (a) => (a.properties.aromatic ?? false) === false;
+      pos++;
+      return a => (a.properties.aromatic ?? false) === false;
     }
 
     if (ch === '#') {
@@ -471,25 +496,25 @@ export function compileAtomExpr(expr, options = {}) {
       if (n === null) {
         return () => false;
       }
-      return (a) => _protons(a) === n;
+      return a => _protons(a) === n;
     }
 
     if (ch === '+') {
       pos++;
       const n = readDigits();
       if (n === null) {
-        return (a) => (a.properties.charge ?? 0) > 0;
+        return a => (a.properties.charge ?? 0) > 0;
       }
-      return (a) => (a.properties.charge ?? 0) === n;
+      return a => (a.properties.charge ?? 0) === n;
     }
 
     if (ch === '-') {
       pos++;
       const n = readDigits();
       if (n === null) {
-        return (a) => (a.properties.charge ?? 0) < 0;
+        return a => (a.properties.charge ?? 0) < 0;
       }
-      return (a) => (a.properties.charge ?? 0) === -n;
+      return a => (a.properties.charge ?? 0) === -n;
     }
 
     if (ch === 'H') {
@@ -504,7 +529,7 @@ export function compileAtomExpr(expr, options = {}) {
         next === null || next === '+' || next === '-' || next === ',' || next === ';' || next === '&' || next === ')';
       if (startsNewPrimitive && nextStartsModifier) {
         pos++;
-        return (a) => a.name === 'H' && !(a.properties.aromatic ?? false);
+        return a => a.name === 'H' && !(a.properties.aromatic ?? false);
       }
 
       pos++;
@@ -597,16 +622,16 @@ export function compileAtomExpr(expr, options = {}) {
         const sym2 = ch + next;
         if (elements[sym2] !== undefined) {
           pos++;
-          return (a) => a.name === sym2 && !(a.properties.aromatic ?? false);
+          return a => a.name === sym2 && !(a.properties.aromatic ?? false);
         }
       }
-      return (a) => a.name === ch && !(a.properties.aromatic ?? false);
+      return a => a.name === ch && !(a.properties.aromatic ?? false);
     }
 
     // Lowercase (not 'a' or 'v', already handled above) → aromatic element
     if (ch >= 'a' && ch <= 'z') {
       pos++;
-      return (a) => a.name === ch.toUpperCase() && (a.properties.aromatic ?? false) === true;
+      return a => a.name === ch.toUpperCase() && (a.properties.aromatic ?? false) === true;
     }
 
     // Unknown primitive — skip character, always false

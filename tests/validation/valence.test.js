@@ -136,7 +136,7 @@ describe('validateValence — valid molecules', () => {
 describe('validateValence — over-bonded carbon', () => {
   it('C with 5 single bonds produces exactly one warning', () => {
     const mol = buildWithNBonds('C', 5);
-    const ws  = centerWarnings(mol);
+    const ws = centerWarnings(mol);
     assert.equal(ws.length, 1);
     assert.equal(ws[0].element, 'C');
     assert.equal(ws[0].bondOrder, 5);
@@ -252,21 +252,21 @@ describe('validateValence — transition metals are skipped', () => {
 describe('validateValence — warning object shape', () => {
   it('warning has atomId, element, charge, radical, bondOrder, allowed, message', () => {
     const mol = buildWithNBonds('C', 5);
-    const [w]  = validateValence(mol);
-    assert.equal(typeof w.atomId,    'string');
-    assert.equal(typeof w.element,   'string');
-    assert.equal(typeof w.charge,    'number');
-    assert.equal(typeof w.radical,   'number');
+    const [w] = validateValence(mol);
+    assert.equal(typeof w.atomId, 'string');
+    assert.equal(typeof w.element, 'string');
+    assert.equal(typeof w.charge, 'number');
+    assert.equal(typeof w.radical, 'number');
     assert.equal(typeof w.bondOrder, 'number');
     assert.ok(Array.isArray(w.allowed));
-    assert.equal(typeof w.message,   'string');
+    assert.equal(typeof w.message, 'string');
     assert.ok(w.message.includes('C'));
     assert.ok(w.message.includes('5'));
   });
 
   it('message includes allowed bond orders', () => {
     const mol = buildWithNBonds('C', 5);
-    const [w]  = validateValence(mol);
+    const [w] = validateValence(mol);
     assert.ok(w.message.includes('0, 2, 4'));
   });
 });
@@ -284,7 +284,13 @@ describe('validateValence — multiple violations in one molecule', () => {
       mol.addBond(null, 'bad2', `nb2_${i}`, { order: 1 }, false);
     }
     const ws = validateValence(mol);
-    assert.ok(ws.some(w => w.atomId === 'bad1'), 'bad1 should be flagged');
-    assert.ok(ws.some(w => w.atomId === 'bad2'), 'bad2 should be flagged');
+    assert.ok(
+      ws.some(w => w.atomId === 'bad1'),
+      'bad1 should be flagged'
+    );
+    assert.ok(
+      ws.some(w => w.atomId === 'bad2'),
+      'bad2 should be flagged'
+    );
   });
 });

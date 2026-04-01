@@ -18,7 +18,7 @@ export function computeEigenvalues(M) {
     return [M[0][0]];
   }
 
-  const A = M.map((row) => [...row]);
+  const A = M.map(row => [...row]);
   const MAX_SWEEPS = 100 * n * n;
 
   for (let sweep = 0; sweep < MAX_SWEEPS; sweep++) {

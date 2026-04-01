@@ -39,8 +39,8 @@ describe('parseSMILES', () => {
     const carbon = [...mol.atoms.values()].find(a => a.name === 'C');
     assert.ok(carbon !== undefined);
     assert.equal(carbon.properties.protons, 6);
-    assert.equal(carbon.properties.group,   14);
-    assert.equal(carbon.properties.period,  2);
+    assert.equal(carbon.properties.group, 14);
+    assert.equal(carbon.properties.period, 2);
   });
 });
 
@@ -49,9 +49,9 @@ describe('tokenize', () => {
     const { tokens } = tokenize('CC');
     assert.ok(tokens.length > 0);
     assert.ok('index' in tokens[0]);
-    assert.ok('type'  in tokens[0]);
-    assert.ok('term'  in tokens[0]);
-    assert.ok('tag'   in tokens[0]);
+    assert.ok('type' in tokens[0]);
+    assert.ok('term' in tokens[0]);
+    assert.ok('tag' in tokens[0]);
   });
 
   it('identifies atom tokens for propane', () => {
@@ -635,8 +635,7 @@ describe('toSMILES — isotopes (round-trip)', () => {
     const mol = parseSMILES('[2H][2H]');
     const s = toSMILES(mol);
     // Both D atoms must remain explicit in the output
-    assert.ok(s.includes('[2H]') || s.includes('[D]') || s.includes('D'),
-      `expected deuterium in output, got: ${s}`);
+    assert.ok(s.includes('[2H]') || s.includes('[D]') || s.includes('D'), `expected deuterium in output, got: ${s}`);
   });
 });
 
@@ -673,21 +672,18 @@ describe('toSMILES — bicyclic (round-trip)', () => {
 
 describe('toSMILES — corpus spot checks (round-trip mass)', () => {
   const cases = [
-    ['CCCCC',        72.151],
-    ['CC(C)CC',      72.151],
-    ['CC(C)(C)C',    72.151],
-    ['C=CCC',        56.108],
-    ['CC#CC',        54.090],
-    ['OCCCC',        74.121],
-    ['CC(=O)CC',     72.105]
+    ['CCCCC', 72.151],
+    ['CC(C)CC', 72.151],
+    ['CC(C)(C)C', 72.151],
+    ['C=CCC', 56.108],
+    ['CC#CC', 54.09],
+    ['OCCCC', 74.121],
+    ['CC(=O)CC', 72.105]
   ];
   for (const [smiles, expected] of cases) {
     it(`${smiles} — round-trip mass ≈ ${expected}`, () => {
       const mol = roundTrip(smiles);
-      assert.ok(
-        Math.abs(molecularMass(mol) - expected) < 0.1,
-        `expected ≈${expected}, got ${molecularMass(mol)}`
-      );
+      assert.ok(Math.abs(molecularMass(mol) - expected) < 0.1, `expected ≈${expected}, got ${molecularMass(mol)}`);
     });
   }
 });
@@ -697,7 +693,7 @@ describe('toSMILES — corpus spot checks (round-trip mass)', () => {
 // ---------------------------------------------------------------------------
 
 describe('toSMILES — @/@@ chirality output', () => {
-  const rtChirality = (smiles) => {
+  const rtChirality = smiles => {
     const out = toSMILES(parseSMILES(smiles));
     return [...parseSMILES(out).atoms.values()].find(a => a.isChiralCenter())?.getChirality() ?? null;
   };
@@ -738,9 +734,9 @@ describe('toSMILES — @/@@ chirality output', () => {
 });
 
 describe('toSMILES — E/Z stereo output', () => {
-  const rtEZ = (smiles) => {
+  const rtEZ = smiles => {
     const mol2 = parseSMILES(toSMILES(parseSMILES(smiles)));
-    const dbl  = [...mol2.bonds.values()].find(b => b.properties.order === 2);
+    const dbl = [...mol2.bonds.values()].find(b => b.properties.order === 2);
     return dbl ? mol2.getEZStereo(dbl.id) : null;
   };
 

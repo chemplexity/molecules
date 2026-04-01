@@ -23,7 +23,7 @@ function _queryStereoConstraints(queryMol) {
       continue;
     }
 
-    const infoAt = (sp2Id) => {
+    const infoAt = sp2Id => {
       const atom = queryMol.atoms.get(sp2Id);
       if (!atom) {
         return null;

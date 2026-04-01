@@ -46,13 +46,13 @@ function _svgToPngBlob(svgEl, scale = 2) {
     const img = new Image();
     img.onload = () => {
       const canvas = document.createElement('canvas');
-      canvas.width  = w * scale;
+      canvas.width = w * scale;
       canvas.height = h * scale;
       const c = canvas.getContext('2d');
       c.scale(scale, scale);
       c.drawImage(img, 0, 0);
       URL.revokeObjectURL(url);
-      canvas.toBlob(b => b ? resolve(b) : reject(new Error('toBlob')), 'image/png');
+      canvas.toBlob(b => (b ? resolve(b) : reject(new Error('toBlob'))), 'image/png');
     };
     img.onerror = reject;
     img.src = url;
@@ -63,27 +63,30 @@ function _buildMolSvg(withWhiteBg, { atomBgFill = withWhiteBg ? 'white' : 'none'
   const { g } = ctx;
   const cleanup = typeof ctx.prepare2dExport === 'function' ? ctx.prepare2dExport() : null;
   try {
-    const PAD  = 30;
+    const PAD = 30;
     const bbox = g.node().getBBox();
     if (!bbox.width && !bbox.height) {
       return null;
     }
 
-    const vbX = bbox.x - PAD,  vbY = bbox.y - PAD;
-    const vbW = bbox.width  + PAD * 2;
+    const vbX = bbox.x - PAD,
+      vbY = bbox.y - PAD;
+    const vbW = bbox.width + PAD * 2;
     const vbH = bbox.height + PAD * 2;
 
-    const ns    = 'http://www.w3.org/2000/svg';
+    const ns = 'http://www.w3.org/2000/svg';
     const svgEl = document.createElementNS(ns, 'svg');
     svgEl.setAttribute('xmlns', ns);
     svgEl.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
-    svgEl.setAttribute('width',  vbW);
+    svgEl.setAttribute('width', vbW);
     svgEl.setAttribute('height', vbH);
 
     if (withWhiteBg) {
       const bgRect = document.createElementNS(ns, 'rect');
-      bgRect.setAttribute('x', vbX);       bgRect.setAttribute('y', vbY);
-      bgRect.setAttribute('width', vbW);   bgRect.setAttribute('height', vbH);
+      bgRect.setAttribute('x', vbX);
+      bgRect.setAttribute('y', vbY);
+      bgRect.setAttribute('width', vbW);
+      bgRect.setAttribute('height', vbH);
       bgRect.setAttribute('fill', 'white');
       svgEl.appendChild(bgRect);
     }
@@ -112,27 +115,38 @@ function _buildMolSvg(withWhiteBg, { atomBgFill = withWhiteBg ? 'white' : 'none'
 
 function _flashBtn(btn, resetLabel) {
   const reset = () => {
-    btn.textContent = resetLabel; btn.style.fontSize = ''; btn.style.fontWeight = '';
+    btn.textContent = resetLabel;
+    btn.style.fontSize = '';
+    btn.style.fontWeight = '';
   };
   return {
     ok: () => {
-      btn.textContent = '✓'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500);
+      btn.textContent = '✓';
+      btn.style.fontSize = '16px';
+      btn.style.fontWeight = 'normal';
+      setTimeout(reset, 1500);
     },
     fail: () => {
-      btn.textContent = '✗'; btn.style.fontSize = '16px'; btn.style.fontWeight = 'normal'; setTimeout(reset, 1500);
+      btn.textContent = '✗';
+      btn.style.fontSize = '16px';
+      btn.style.fontWeight = 'normal';
+      setTimeout(reset, 1500);
     }
   };
 }
 
 export function copyForcePng() {
   const { simulation, g } = ctx;
-  const PAD   = 30;
+  const PAD = 30;
   const nodes = simulation.nodes();
   if (!nodes.length) {
     return;
   }
 
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
   for (const n of nodes) {
     const r = atomRadius(n.protons);
     if (n.x - r < minX) {
@@ -149,20 +163,23 @@ export function copyForcePng() {
     }
   }
 
-  const vbX = minX - PAD, vbY = minY - PAD;
-  const vbW = (maxX - minX) + PAD * 2;
-  const vbH = (maxY - minY) + PAD * 2;
+  const vbX = minX - PAD,
+    vbY = minY - PAD;
+  const vbW = maxX - minX + PAD * 2;
+  const vbH = maxY - minY + PAD * 2;
 
-  const ns    = 'http://www.w3.org/2000/svg';
+  const ns = 'http://www.w3.org/2000/svg';
   const svgEl = document.createElementNS(ns, 'svg');
   svgEl.setAttribute('xmlns', ns);
   svgEl.setAttribute('viewBox', `${vbX} ${vbY} ${vbW} ${vbH}`);
-  svgEl.setAttribute('width',  vbW);
+  svgEl.setAttribute('width', vbW);
   svgEl.setAttribute('height', vbH);
 
   const bgRect = document.createElementNS(ns, 'rect');
-  bgRect.setAttribute('x', vbX); bgRect.setAttribute('y', vbY);
-  bgRect.setAttribute('width', vbW); bgRect.setAttribute('height', vbH);
+  bgRect.setAttribute('x', vbX);
+  bgRect.setAttribute('y', vbY);
+  bgRect.setAttribute('width', vbW);
+  bgRect.setAttribute('height', vbH);
   bgRect.setAttribute('fill', 'white');
   svgEl.appendChild(bgRect);
 
@@ -182,10 +199,12 @@ export function copyForcePng() {
   }
   svgEl.appendChild(gClone);
 
-  const btn   = document.getElementById('copy-force-png-btn');
+  const btn = document.getElementById('copy-force-png-btn');
   const flash = _flashBtn(btn, 'PNG');
-  navigator.clipboard.write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
-    .then(flash.ok).catch(flash.fail);
+  navigator.clipboard
+    .write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
+    .then(flash.ok)
+    .catch(flash.fail);
 }
 
 export function copySvg2d() {
@@ -197,10 +216,12 @@ export function copySvg2d() {
     return;
   }
 
-  const btn   = document.getElementById('copy-svg-btn');
+  const btn = document.getElementById('copy-svg-btn');
   const flash = _flashBtn(btn, 'SVG');
-  navigator.clipboard.write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
-    .then(flash.ok).catch(flash.fail);
+  navigator.clipboard
+    .write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
+    .then(flash.ok)
+    .catch(flash.fail);
 }
 
 export function savePng2d() {
@@ -212,8 +233,10 @@ export function savePng2d() {
     return;
   }
 
-  const btn   = document.getElementById('save-png-btn');
+  const btn = document.getElementById('save-png-btn');
   const flash = _flashBtn(btn, 'PNG');
-  navigator.clipboard.write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
-    .then(flash.ok).catch(flash.fail);
+  navigator.clipboard
+    .write([new ClipboardItem({ 'image/png': _svgToPngBlob(svgEl) })])
+    .then(flash.ok)
+    .catch(flash.fail);
 }

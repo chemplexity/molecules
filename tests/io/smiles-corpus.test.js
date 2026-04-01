@@ -164,7 +164,7 @@ describe('SMILES corpus — Cycloalkanes', () => {
 describe('SMILES corpus — Cycloalkenes', () => {
   it('1,4-cyclohexadiene C1C=CCC=C1: C6H8', () => {
     assert.deepEqual(formula(parseSMILES('C1C=CCC=C1')), { C: 6, H: 8 });
-    assertMass('C1C=CCC=C1', 80.130);
+    assertMass('C1C=CCC=C1', 80.13);
   });
 
   it('cyclooctatetraene [C@H]1=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H][C@@H]=[C@@H]1: C8H8', () => {
@@ -181,7 +181,7 @@ describe('SMILES corpus — Aromatic', () => {
 
   it('benzyl alcohol OCc1ccccc1: C7H8O', () => {
     assert.deepEqual(formula(parseSMILES('OCc1ccccc1')), { C: 7, H: 8, O: 1 });
-    assertMass('OCc1ccccc1', 108.140);
+    assertMass('OCc1ccccc1', 108.14);
   });
 
   it('biphenyl c1ccccc1-c2ccccc2: C12H10', () => {
@@ -227,7 +227,7 @@ describe('SMILES corpus — Charged species', () => {
 describe('SMILES corpus — Salts', () => {
   it('sodium chloride [Na+].[Cl-]: NaCl', () => {
     assert.deepEqual(formula(parseSMILES('[Na+].[Cl-]')), { Na: 1, Cl: 1 });
-    assertMass('[Na+].[Cl-]', 58.440);
+    assertMass('[Na+].[Cl-]', 58.44);
   });
 
   it('ammonium thiosulfate [NH4+].[NH4+].[O-]S(=O)(=O)[S-]: N2H8O3S2', () => {
@@ -249,32 +249,27 @@ describe('SMILES corpus — Isotopes', () => {
 
   it('[14C] complex CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC: C13H24ClINO2', () => {
     // [14C] has no explicit H in the bracket → 0 H per SMILES spec
-    assert.deepEqual(
-      formula(parseSMILES('CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC')),
-      { C: 13, H: 24, Cl: 1, I: 1, N: 1, O: 2 }
-    );
+    assert.deepEqual(formula(parseSMILES('CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC')), {
+      C: 13,
+      H: 24,
+      Cl: 1,
+      I: 1,
+      N: 1,
+      O: 2
+    });
     assertMass('CCOC(Cl)C1C[14C](I)C1NOCC(C)CCC', 390.686);
   });
 
   it('[13CH3] at chain start bonds to ring: [13CH3][C@H]1CC[C@@H](O)[C@H](C1)N: C7H15NO', () => {
-    assert.deepEqual(
-      formula(parseSMILES('[13CH3][C@H]1CC[C@@H](O)[C@H](C1)N')),
-      { C: 7, H: 15, N: 1, O: 1 }
-    );
+    assert.deepEqual(formula(parseSMILES('[13CH3][C@H]1CC[C@@H](O)[C@H](C1)N')), { C: 7, H: 15, N: 1, O: 1 });
   });
 
   it('[2H] at chain start bonds to next atom: [2H]OC([2H])([2H])C: C2H6O', () => {
-    assert.deepEqual(
-      formula(parseSMILES('[2H]OC([2H])([2H])C')),
-      { C: 2, H: 6, O: 1 }
-    );
+    assert.deepEqual(formula(parseSMILES('[2H]OC([2H])([2H])C')), { C: 2, H: 6, O: 1 });
   });
 
   it('[2H] as sole substituent: [2H]C: C1H4', () => {
-    assert.deepEqual(
-      formula(parseSMILES('[2H]C')),
-      { C: 1, H: 4 }
-    );
+    assert.deepEqual(formula(parseSMILES('[2H]C')), { C: 1, H: 4 });
   });
 });
 
@@ -290,10 +285,11 @@ describe('SMILES corpus — Chiral', () => {
   });
 
   it('glucose (chiral mixed): C6H12O6', () => {
-    assert.deepEqual(
-      formula(parseSMILES('O[C@@]([H])(O1)[C@@](O)([H])[C@@]([H])(O)[C@]1([C@@](CO)(O)[H])[H]')),
-      { C: 6, H: 12, O: 6 }
-    );
+    assert.deepEqual(formula(parseSMILES('O[C@@]([H])(O1)[C@@](O)([H])[C@@]([H])(O)[C@]1([C@@](CO)(O)[H])[H]')), {
+      C: 6,
+      H: 12,
+      O: 6
+    });
     assertMass('O[C@@]([H])(O1)[C@@](O)([H])[C@@]([H])(O)[C@]1([C@@](CO)(O)[H])[H]', 180.156);
   });
 });
@@ -326,7 +322,7 @@ describe('SMILES corpus — Amino acids', () => {
 
   it('glutamate NC(CCC(O)=O)C(O)=O: C5H9NO4', () => {
     assert.deepEqual(formula(parseSMILES('NC(CCC(O)=O)C(O)=O')), { C: 5, H: 9, N: 1, O: 4 });
-    assertMass('NC(CCC(O)=O)C(O)=O', 147.130);
+    assertMass('NC(CCC(O)=O)C(O)=O', 147.13);
   });
 
   it('glutamine NC(CCC(N)=O)C(O)=O: C5H10N2O3', () => {
@@ -358,14 +354,14 @@ describe('SMILES corpus — Relaxed syntax', () => {
 
   it('piperidine with outer parens (N1CCCCC1): C5H11N', () => {
     assert.deepEqual(formula(parseSMILES('(N1CCCCC1)')), { C: 5, H: 11, N: 1 });
-    assertMass('(N1CCCCC1)', 85.150);
+    assertMass('(N1CCCCC1)', 85.15);
   });
 
   it('deeply nested C22 chain: C22H46', () => {
-    assert.deepEqual(
-      formula(parseSMILES('C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C))))))))))))))))))))C')),
-      { C: 22, H: 46 }
-    );
+    assert.deepEqual(formula(parseSMILES('C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C))))))))))))))))))))C')), {
+      C: 22,
+      H: 46
+    });
     assertMass('C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C(C))))))))))))))))))))C', 310.5988);
   });
 });

@@ -26,32 +26,37 @@ npm install molecules
 ## Quick Start
 
 ```js
-import { parseSMILES, toCanonicalSMILES, toInChI,
-         molecularFormula, wienerIndex,
-         adjacencyMatrix, distanceMatrix } from 'molecules';
+import {
+  parseSMILES,
+  toCanonicalSMILES,
+  toInChI,
+  molecularFormula,
+  wienerIndex,
+  adjacencyMatrix,
+  distanceMatrix
+} from 'molecules';
 
 const mol = parseSMILES('CC(=O)O'); // acetic acid
 
-console.log(molecularFormula(mol));   // C2H4O2
-console.log(toCanonicalSMILES(mol));  // canonical SMILES
-console.log(toInChI(mol));            // InChI=1S/C2H4O2/c1-2(3)4/h1H3,(H,3,4)
+console.log(molecularFormula(mol)); // C2H4O2
+console.log(toCanonicalSMILES(mol)); // canonical SMILES
+console.log(toInChI(mol)); // InChI=1S/C2H4O2/c1-2(3)4/h1H3,(H,3,4)
 
 const A = adjacencyMatrix(mol);
 const D = distanceMatrix(A);
-console.log(wienerIndex(D));          // 10
+console.log(wienerIndex(D)); // 10
 ```
 
 ## Parsing and Serialisation
 
 ```js
-import { parseSMILES, toSMILES, toCanonicalSMILES,
-         parseINCHI, toInChI, toJSON, fromJSON } from 'molecules';
+import { parseSMILES, toSMILES, toCanonicalSMILES, parseINCHI, toInChI, toJSON, fromJSON } from 'molecules';
 
 const mol = parseSMILES('[C@@H](F)(Cl)Br');
 
-toSMILES(mol);          // preserves input atom order
+toSMILES(mol); // preserves input atom order
 toCanonicalSMILES(mol); // stable, Morgan-ranked identifier
-toInChI(mol);           // full InChI with stereo (/t, /b) and isotope (/i) layers
+toInChI(mol); // full InChI with stereo (/t, /b) and isotope (/i) layers
 
 const mol2 = parseINCHI('InChI=1S/C6H6/c1-2-4-6-5-3-1/h1-6H');
 ```
@@ -59,8 +64,7 @@ const mol2 = parseINCHI('InChI=1S/C6H6/c1-2-4-6-5-3-1/h1-6H');
 ## SMARTS and Functional Groups
 
 ```js
-import { parseSMILES, findSMARTS, matchesSMARTS,
-         functionalGroups } from 'molecules';
+import { parseSMILES, findSMARTS, matchesSMARTS, functionalGroups } from 'molecules';
 
 const mol = parseSMILES('CC(=O)O');
 
@@ -76,8 +80,7 @@ console.log(matchesSMARTS('[CX3](=O)[OX2H1]', mol)); // true
 ## SMIRKS Reaction Transforms
 
 ```js
-import { parseSMILES, parseSMIRKS, applySMIRKS,
-         reactionTemplates } from 'molecules';
+import { parseSMILES, parseSMIRKS, applySMIRKS, reactionTemplates } from 'molecules';
 
 // Apply a built-in reaction template
 const alcohol = parseSMILES('CCO');
@@ -97,12 +100,25 @@ Built-in templates include `alcoholOxidation`, `carbonylReduction`,
 ```js
 import {
   // Physicochemical
-  logP, tpsa, hBondDonors, hBondAcceptors, lipinskiRuleOfFive,
+  logP,
+  tpsa,
+  hBondDonors,
+  hBondAcceptors,
+  lipinskiRuleOfFive,
   // Topological
-  wienerIndex, balabanIndex, randicIndex, zagreb1, zagreb2,
-  hararyIndex, szegedIndex, hosoyaIndex, eccentricConnectivityIndex,
+  wienerIndex,
+  balabanIndex,
+  randicIndex,
+  zagreb1,
+  zagreb2,
+  hararyIndex,
+  szegedIndex,
+  hosoyaIndex,
+  eccentricConnectivityIndex,
   // Spectral / information
-  spectralRadius, estradaIndex, graphEntropy
+  spectralRadius,
+  estradaIndex,
+  graphEntropy
 } from 'molecules';
 ```
 
@@ -128,12 +144,30 @@ const warnings = validateValence(parseSMILES('C(C)(C)(C)(C)C'));
 ## Sub-path Imports
 
 ```js
-import { Molecule, Atom, Bond }                    from 'molecules/core';
+import { Molecule, Atom, Bond } from 'molecules/core';
 import { parseSMILES, toCanonicalSMILES, toInChI } from 'molecules/io';
-import { wienerIndex, logP, lipinskiRuleOfFive }   from 'molecules/descriptors';
-import { adjacencyMatrix, distanceMatrix }         from 'molecules/matrices';
-import { perceiveAromaticity, morganRanks }        from 'molecules/algorithms';
-import { validateValence }                         from 'molecules/validation';
+import { wienerIndex, logP, lipinskiRuleOfFive } from 'molecules/descriptors';
+import { adjacencyMatrix, distanceMatrix } from 'molecules/matrices';
+import { perceiveAromaticity, morganRanks } from 'molecules/algorithms';
+import { validateValence } from 'molecules/validation';
+```
+
+## Molecule Catalog
+
+A curated catalog of common molecules organised into named collections (amino acids, nucleobases, lipids, polycyclic aromatic hydrocarbons, and more).
+
+```js
+import { moleculeCatalog, findMolecules, getMoleculeCatalogById } from 'molecules/data';
+
+// All collections
+console.log(moleculeCatalog.length); // number of collections
+
+// Search across all collections by name, alias, or tag
+const hits = findMolecules('adenine'); // [{ molecule, collection }]
+
+// Look up a collection by id
+const nucleobases = getMoleculeCatalogById('nucleobases');
+console.log(nucleobases.molecules.map(m => m.name));
 ```
 
 ## Documentation

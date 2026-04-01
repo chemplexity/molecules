@@ -59,10 +59,7 @@ describe('reactionTemplates — example applications', () => {
   });
 
   it('alkeneHydrogenation skips alkene sites adjacent to charged atoms', () => {
-    const product = applySMIRKS(
-      parseSMILES('C1=CC=[C-]C=C1.[Li+]'),
-      reactionTemplates.alkeneHydrogenation.smirks
-    );
+    const product = applySMIRKS(parseSMILES('C1=CC=[C-]C=C1.[Li+]'), reactionTemplates.alkeneHydrogenation.smirks);
     assert.ok(product);
     assert.equal(toSMILES(product), 'C1C=C[C-]=CC1.[Li+]');
   });
@@ -142,10 +139,7 @@ describe('reactionTemplates — example applications', () => {
   });
 
   it('amineAlkylation does not match congested or non-chloride haloamines', () => {
-    const product = applySMIRKS(
-      parseSMILES('C1(C(C(C(C(C1F)Cl)Br)I)N)P'),
-      reactionTemplates.amineAlkylation.smirks
-    );
+    const product = applySMIRKS(parseSMILES('C1(C(C(C(C(C1F)Cl)Br)I)N)P'), reactionTemplates.amineAlkylation.smirks);
     assert.equal(product, null);
   });
 
@@ -179,34 +173,22 @@ describe('reactionTemplates — example applications', () => {
   });
 
   it('carbonylReduction does not match carboxylates or acyl derivatives', () => {
-    const product = applySMIRKS(
-      parseSMILES('O=C([O-])C([N+](C)(C)C)C'),
-      reactionTemplates.carbonylReduction.smirks
-    );
+    const product = applySMIRKS(parseSMILES('O=C([O-])C([N+](C)(C)C)C'), reactionTemplates.carbonylReduction.smirks);
     assert.equal(product, null);
   });
 
   it('alcoholOxidation does not match a carboxylic acid hydroxyl', () => {
-    const product = applySMIRKS(
-      parseSMILES('N[C@H](C(=O)O)C1=CC=CC=C1'),
-      reactionTemplates.alcoholOxidation.smirks
-    );
+    const product = applySMIRKS(parseSMILES('N[C@H](C(=O)O)C1=CC=CC=C1'), reactionTemplates.alcoholOxidation.smirks);
     assert.equal(product, null);
   });
 
   it('alcoholOxidation does not match tertiary alcohol centers', () => {
-    const product = applySMIRKS(
-      parseSMILES('CC(O)(C)C'),
-      reactionTemplates.alcoholOxidation.smirks
-    );
+    const product = applySMIRKS(parseSMILES('CC(O)(C)C'), reactionTemplates.alcoholOxidation.smirks);
     assert.equal(product, null);
   });
 
   it('alcoholHalogenation does not match carboxylic acids', () => {
-    const product = applySMIRKS(
-      parseSMILES('NC(CC(O)=O)C(O)=O'),
-      reactionTemplates.alcoholHalogenation.smirks
-    );
+    const product = applySMIRKS(parseSMILES('NC(CC(O)=O)C(O)=O'), reactionTemplates.alcoholHalogenation.smirks);
     assert.equal(product, null);
   });
 
@@ -239,18 +221,12 @@ describe('reactionTemplates — example applications', () => {
   });
 
   it('alcoholCleavage does not match esters or carboxylic acids', () => {
-    const product = applySMIRKS(
-      parseSMILES('CC(=O)Oc1ccccc1C(=O)O'),
-      reactionTemplates.alcoholCleavage.smirks
-    );
+    const product = applySMIRKS(parseSMILES('CC(=O)Oc1ccccc1C(=O)O'), reactionTemplates.alcoholCleavage.smirks);
     assert.equal(product, null);
   });
 
   it('alcoholCleavage matches tertiary alcohol centers', () => {
-    const product = applySMIRKS(
-      parseSMILES('CC(O)(C)C'),
-      reactionTemplates.alcoholCleavage.smirks
-    );
+    const product = applySMIRKS(parseSMILES('CC(O)(C)C'), reactionTemplates.alcoholCleavage.smirks);
     assert.notEqual(product, null);
   });
 
@@ -281,10 +257,7 @@ describe('reactionTemplates — example applications', () => {
   });
 
   it('carboxylateProtonation protonates a carboxylate cleanly', () => {
-    const product = applySMIRKS(
-      parseSMILES('CC(=O)[O-]'),
-      reactionTemplates.carboxylateProtonation.smirks
-    );
+    const product = applySMIRKS(parseSMILES('CC(=O)[O-]'), reactionTemplates.carboxylateProtonation.smirks);
     assert.ok(product);
     assert.equal(toSMILES(product), 'CC(=O)O');
   });
@@ -296,10 +269,7 @@ describe('reactionTemplates — example applications', () => {
   });
 
   it('amineProtonation adds a proton to a primary amine site', () => {
-    const product = applySMIRKS(
-      parseSMILES('NC(CC1=CNC=N1)C(O)=O'),
-      reactionTemplates.amineProtonation.smirks
-    );
+    const product = applySMIRKS(parseSMILES('NC(CC1=CNC=N1)C(O)=O'), reactionTemplates.amineProtonation.smirks);
     assert.ok(product);
     assert.match(toSMILES(product), /\[NH3\+\]/);
   });
@@ -311,10 +281,7 @@ describe('reactionTemplates — example applications', () => {
   });
 
   it('ammoniumDeprotonation does not match quaternary ammonium centers without N-H', () => {
-    const product = applySMIRKS(
-      parseSMILES('C[N+](C)(C)CCO'),
-      reactionTemplates.ammoniumDeprotonation.smirks
-    );
+    const product = applySMIRKS(parseSMILES('C[N+](C)(C)CCO'), reactionTemplates.ammoniumDeprotonation.smirks);
     assert.equal(product, null);
   });
 

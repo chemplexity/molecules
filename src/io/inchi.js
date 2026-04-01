@@ -18,7 +18,7 @@ function parseFormulaComponent(componentStr) {
     if (!m[1]) {
       continue;
     }
-    const el    = m[1];
+    const el = m[1];
     const count = m[2] === '' ? 1 : parseInt(m[2], 10);
     if (el === 'H') {
       continue;
@@ -123,7 +123,7 @@ function expandAtomList(listStr) {
     const dash = part.indexOf('-');
     if (dash > 0) {
       const from = parseInt(part.slice(0, dash), 10);
-      const to   = parseInt(part.slice(dash + 1), 10);
+      const to = parseInt(part.slice(dash + 1), 10);
       for (let i = from; i <= to; i++) {
         atoms.push(i);
       }
@@ -196,7 +196,7 @@ function parseHydrogenLayer(hStr, componentOffsets = []) {
 function parseConnectionSection(cStr) {
   const raw = [];
   const src = cStr.trim();
-  let pos   = 0;
+  let pos = 0;
 
   function readNumber() {
     let s = '';
@@ -320,19 +320,17 @@ function parseConnectionLayer(cStr, componentOffsets = []) {
  * @returns {number}
  */
 function parseChargeLayer(qStr) {
-  return expandRepeatedSections(qStr)
-    .reduce((sum, part) => {
-      const n = parseInt(part, 10);
-      return sum + (isNaN(n) ? 0 : n);
-    }, 0);
+  return expandRepeatedSections(qStr).reduce((sum, part) => {
+    const n = parseInt(part, 10);
+    return sum + (isNaN(n) ? 0 : n);
+  }, 0);
 }
 
 function parseChargeComponents(qStr) {
-  return expandRepeatedSections(qStr)
-    .map(part => {
-      const n = parseInt(part, 10);
-      return isNaN(n) ? 0 : n;
-    });
+  return expandRepeatedSections(qStr).map(part => {
+    const n = parseInt(part, 10);
+    return isNaN(n) ? 0 : n;
+  });
 }
 
 function parseIsotopeLayer(iStr, componentOffsets = []) {
@@ -343,7 +341,10 @@ function parseIsotopeLayer(iStr, componentOffsets = []) {
   for (let sectionIdx = 0; sectionIdx < sections.length; sectionIdx++) {
     const section = sections[sectionIdx];
     const offset = componentOffsets[sectionIdx] ?? 0;
-    for (const token of section.split(',').map(s => s.trim()).filter(Boolean)) {
+    for (const token of section
+      .split(',')
+      .map(s => s.trim())
+      .filter(Boolean)) {
       let match = token.match(/^(\d+)([+-]\d+)$/);
       if (match) {
         atomMassDeltas.set(offset + parseInt(match[1], 10), parseInt(match[2], 10));
@@ -433,7 +434,7 @@ function smallestRingForBond(mol, bond, allowedAtoms) {
   }
 
   const parent = new Map([[idA, null]]);
-  const queue  = [idA];
+  const queue = [idA];
 
   while (queue.length > 0) {
     const curr = queue.shift();
@@ -454,7 +455,8 @@ function smallestRingForBond(mol, bond, allowedAtoms) {
         const path = [curr];
         let c = curr;
         while (parent.get(c) !== null) {
-          c = parent.get(c); path.push(c);
+          c = parent.get(c);
+          path.push(c);
         }
         path.reverse();
         path.push(idB);
@@ -507,7 +509,7 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
    * Iterates over all bonds whose both endpoints are heavy atoms (in heavySet).
    * Calls cb(bond, idA, idB) for each such bond.
    */
-  const forHeavyBonds = (cb) => {
+  const forHeavyBonds = cb => {
     for (const bond of mol.bonds.values()) {
       const [idA, idB] = bond.atoms;
       if (heavySet.has(idA) && heavySet.has(idB)) {
@@ -526,7 +528,7 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
       return 0;
     }
     const { group, period } = el;
-    if (group >= 1  && group <= 2)  {
+    if (group >= 1 && group <= 2) {
       return group;
     }
     if (group >= 13 && group <= 17) {
@@ -614,8 +616,11 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
           .filter(bond => !aromaticBondIds.has(bond.id))
           .filter(bond => {
             const otherId = bond.getOtherAtom(atomId);
-            return heavySet.has(otherId) && !isAromaticRingAtom(otherId, aromaticBondIds)
-              && (!requireNeighborCapacity || remaining(otherId) > 0);
+            return (
+              heavySet.has(otherId) &&
+              !isAromaticRingAtom(otherId, aromaticBondIds) &&
+              (!requireNeighborCapacity || remaining(otherId) > 0)
+            );
           });
         if (eligibleBonds.length !== 1) {
           continue;
@@ -672,7 +677,7 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
     //   remaining = 0, C      → sp3 carbon: disqualifies the ring
     //   remaining ≥ 2         → sp3 or hypervalent: disqualifies the ring
     {
-      const isHuckel = (n) => n >= 2 && (n - 2) % 4 === 0;
+      const isHuckel = n => n >= 2 && (n - 2) % 4 === 0;
       let pi = 0;
       let validRing = true;
       for (const id of ring) {
@@ -683,7 +688,8 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
         } else if (rem === 0 && a && a.name !== 'C') {
           pi += 2; // heteroatom lone-pair donor (furan O, pyrrole N, thiophene S, …)
         } else {
-          validRing = false; break; // sp3 C or hypervalent atom — not conjugated
+          validRing = false;
+          break; // sp3 C or hypervalent atom — not conjugated
         }
       }
       if (!validRing) {
@@ -708,13 +714,15 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
     for (let i = 0; i < ring.length - 1; i++) {
       const b = mol.getBond(ring[i], ring[i + 1]);
       if (b) {
-        b.properties.aromatic = true; aromaticBondIds.add(b.id);
+        b.properties.aromatic = true;
+        aromaticBondIds.add(b.id);
       }
     }
     // Close the ring (last atom back to first)
     const close = mol.getBond(ring[ring.length - 1], ring[0]);
     if (close) {
-      close.properties.aromatic = true; aromaticBondIds.add(close.id);
+      close.properties.aromatic = true;
+      aromaticBondIds.add(close.id);
     }
   }
 
@@ -733,11 +741,12 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
   //   3. If π satisfies Hückel (4n + 2), mark all intra-system bonds aromatic.
   if (uniqueRings.size > 1) {
     const ringList = [...uniqueRings.values()];
-    const rc       = ringList.length;
-    const ufP      = Array.from({ length: rc }, (_, i) => i);
-    const ufFind   = (x) => {
+    const rc = ringList.length;
+    const ufP = Array.from({ length: rc }, (_, i) => i);
+    const ufFind = x => {
       while (ufP[x] !== x) {
-        ufP[x] = ufP[ufP[x]]; x = ufP[x];
+        ufP[x] = ufP[ufP[x]];
+        x = ufP[x];
       }
       return x;
     };
@@ -775,10 +784,12 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
           if (a && a.name !== 'C') {
             pi += 2; // lone-pair donor (N, O, S, Se …)
           } else {
-            ok = false; break; // sp3 carbon or unexpected valence
+            ok = false;
+            break; // sp3 carbon or unexpected valence
           }
         } else {
-          ok = false; break; // rem ≥ 2 or negative — not suitable
+          ok = false;
+          break; // rem ≥ 2 or negative — not suitable
         }
       }
       if (!ok) {
@@ -1004,10 +1015,13 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
   // restoring the localized bond orders and re-running the shared aromaticity
   // pass, both parsers settle on the same final aromatic bond pattern.
   const restorableComponents = aromaticComponents.filter(component => {
-    return component.bondIds.length > 0 && component.bondIds.every(bondId => {
-      const bond = mol.bonds.get(bondId);
-      return bond && Number.isInteger(bond.properties.localizedOrder);
-    });
+    return (
+      component.bondIds.length > 0 &&
+      component.bondIds.every(bondId => {
+        const bond = mol.bonds.get(bondId);
+        return bond && Number.isInteger(bond.properties.localizedOrder);
+      })
+    );
   });
   if (restorableComponents.length > 0) {
     for (const component of restorableComponents) {
@@ -1071,7 +1085,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
     throw new Error('parseINCHI: string must start with "InChI="');
   }
 
-  const body  = str.slice('InChI='.length);
+  const body = str.slice('InChI='.length);
   const parts = body.split('/');
 
   // parts[0] = version (e.g. "1S" or "1")
@@ -1125,9 +1139,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
     }
   }
 
-  const hInfo = layers['h']
-    ? parseHydrogenLayer(layers['h'], componentOffsets)
-    : { fixed: new Map(), mobile: [] };
+  const hInfo = layers['h'] ? parseHydrogenLayer(layers['h'], componentOffsets) : { fixed: new Map(), mobile: [] };
   const isotopeInfo = layers['i']
     ? parseIsotopeLayer(layers['i'], componentOffsets)
     : { atomMassDeltas: new Map(), hydrogenIsotopes: new Map() };
@@ -1139,10 +1151,10 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
   // Phase 1 — build heavy-atom skeleton from formula
   // -------------------------------------------------------------------------
   const atomList = parseFormula(activeFormulaStr); // [null, 'C', 'C', 'O', ...]
-  const n        = atomList.length - 1;      // total number of heavy atoms
+  const n = atomList.length - 1; // total number of heavy atoms
 
   function buildHeavySkeleton() {
-    const mol       = new Molecule();
+    const mol = new Molecule();
     const idByIndex = new Map(); // InChI index (1-based) → atom ID in mol
     const componentHeavyAtomIds = formulaComponents.map(() => []);
 
@@ -1175,9 +1187,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         for (let i = 1; i <= n; i++) {
           orphaned.push(`${i} (${atomList[i]})`);
         }
-        throw new Error(
-          `parseINCHI: formula requires a /c layer for connected heavy atom(s): ${orphaned.join(', ')}`
-        );
+        throw new Error(`parseINCHI: formula requires a /c layer for connected heavy atom(s): ${orphaned.join(', ')}`);
       }
       return {
         mol,
@@ -1211,21 +1221,13 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         orphaned.push(`${i} (${atomList[i]})`);
       }
       if (orphaned.length > 0) {
-        throw new Error(
-          `parseINCHI: /c layer leaves heavy atom(s) unconnected: ${orphaned.join(', ')}`
-        );
+        throw new Error(`parseINCHI: /c layer leaves heavy atom(s) unconnected: ${orphaned.join(', ')}`);
       }
     }
     return { mol, idByIndex, heavyAtomIds: [...idByIndex.values()], componentHeavyAtomIds, connectionInfo };
   }
 
-  const {
-    mol: baseMol,
-    idByIndex,
-    heavyAtomIds,
-    componentHeavyAtomIds,
-    connectionInfo
-  } = buildHeavySkeleton();
+  const { mol: baseMol, idByIndex, heavyAtomIds, componentHeavyAtomIds, connectionInfo } = buildHeavySkeleton();
 
   // Apply heavy-atom isotope deltas from /i and queue hydrogen isotopes (D/T)
   // for attachment later when explicit H atoms are built.
@@ -1242,9 +1244,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
   }
 
   function cloneHydrogenIsotopeQueues() {
-    return new Map(
-      [...isotopeInfo.hydrogenIsotopes.entries()].map(([idx, queue]) => [idx, [...queue]])
-    );
+    return new Map([...isotopeInfo.hydrogenIsotopes.entries()].map(([idx, queue]) => [idx, [...queue]]));
   }
 
   function applyHydrogenIsotope(parentIndex, hAtom, queues) {
@@ -1274,7 +1274,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
   for (let i = 0; i < Math.min(componentChargeTargets.length, rawComponentCharges.length); i++) {
     componentChargeTargets[i] = rawComponentCharges[i];
   }
-  const protonDelta = layers['p'] ? (parseInt(layers['p'], 10) || 0) : 0;
+  const protonDelta = layers['p'] ? parseInt(layers['p'], 10) || 0 : 0;
 
   function componentMobileHydrogenCount(componentIdx) {
     return hInfo.mobile.reduce((sum, group) => {
@@ -1387,16 +1387,18 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         continue;
       }
 
-      const computedCharges = atomIds.map(atomId => {
-        const atom = mol.atoms.get(atomId);
-        if (!atom) {
-          return null;
-        }
-        const totalBO = atom.bonds.reduce((sum, bondId) => {
-          return sum + (mol.bonds.get(bondId)?.properties.order ?? 1);
-        }, 0);
-        return { atom, charge: inferredFormalCharge(atom, totalBO) };
-      }).filter(Boolean);
+      const computedCharges = atomIds
+        .map(atomId => {
+          const atom = mol.atoms.get(atomId);
+          if (!atom) {
+            return null;
+          }
+          const totalBO = atom.bonds.reduce((sum, bondId) => {
+            return sum + (mol.bonds.get(bondId)?.properties.order ?? 1);
+          }, 0);
+          return { atom, charge: inferredFormalCharge(atom, totalBO) };
+        })
+        .filter(Boolean);
 
       let computedToAssign = computedCharges;
       const totalComputedCharge = computedCharges.reduce((sum, entry) => sum + entry.charge, 0);
@@ -1441,8 +1443,8 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       }
 
       const compSet = new Set(atomIds);
-      const componentBonds = [...mol.bonds.values()].filter(bond =>
-        compSet.has(bond.atoms[0]) && compSet.has(bond.atoms[1])
+      const componentBonds = [...mol.bonds.values()].filter(
+        bond => compSet.has(bond.atoms[0]) && compSet.has(bond.atoms[1])
       );
       const allAro = componentBonds.length > 0 && componentBonds.every(bond => bond.properties.aromatic === true);
       if (!allAro) {
@@ -1466,9 +1468,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         }, 0);
         return { atom, charge: inferredFormalCharge(atom, totalLocalizedBO) };
       });
-      const totalLocalizedCharge = localizedCharges
-        .filter(Boolean)
-        .reduce((sum, entry) => sum + entry.charge, 0);
+      const totalLocalizedCharge = localizedCharges.filter(Boolean).reduce((sum, entry) => sum + entry.charge, 0);
       if (totalLocalizedCharge === targetCharge) {
         for (const entry of localizedCharges) {
           if (entry) {
@@ -1511,18 +1511,17 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         continue;
       }
 
-      const ring = rings.find(ringAtomIds =>
-        ringAtomIds.length === 6 &&
-        ringAtomIds.every(id => atomIds.includes(id)) &&
-        atomIds.every(id => ringAtomIds.includes(id))
+      const ring = rings.find(
+        ringAtomIds =>
+          ringAtomIds.length === 6 &&
+          ringAtomIds.every(id => atomIds.includes(id)) &&
+          atomIds.every(id => ringAtomIds.includes(id))
       );
       if (!ring) {
         continue;
       }
 
-      const ringHeavyDegrees = atomIds.map(id =>
-        mol.atoms.get(id)?.getHeavyNeighbors(mol).length ?? 0
-      );
+      const ringHeavyDegrees = atomIds.map(id => mol.atoms.get(id)?.getHeavyNeighbors(mol).length ?? 0);
       if (!ringHeavyDegrees.every(deg => deg === 2)) {
         continue;
       }
@@ -1535,10 +1534,9 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         continue;
       }
       const chargeAtomId = chargeCandidates[0];
-      if (!atomIds.every(id =>
-        id === chargeAtomId ||
-        (mol.atoms.get(id)?.getHydrogenNeighbors(mol).length ?? 0) === 1
-      )) {
+      if (
+        !atomIds.every(id => id === chargeAtomId || (mol.atoms.get(id)?.getHydrogenNeighbors(mol).length ?? 0) === 1)
+      ) {
         continue;
       }
 
@@ -1588,7 +1586,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
     if (tetraStereoEntries.length === 0) {
       return;
     }
-    const tokenForParity = (parity) => {
+    const tokenForParity = parity => {
       let token = parity === '-' ? '@@' : '@';
       if (inversionFlag === 1) {
         token = token === '@' ? '@@' : '@';
@@ -1611,7 +1609,8 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         .sort((a, b) => a - b)
         .map(idx => idByIndex.get(idx))
         .filter(Boolean);
-      const hydrogenIds = center.getNeighbors(mol)
+      const hydrogenIds = center
+        .getNeighbors(mol)
         .filter(atom => atom.name === 'H')
         .map(atom => atom.id);
       const neighborOrder = [...orderedHeavy, ...hydrogenIds];
@@ -1628,7 +1627,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
   }
 
   function encodeStereoDirection(bond, centerId, dir) {
-    bond.setStereo(bond.atoms[0] === centerId ? dir : (dir === '/' ? '\\' : '/'));
+    bond.setStereo(bond.atoms[0] === centerId ? dir : dir === '/' ? '\\' : '/');
   }
 
   function applyDoubleBondStereo(mol) {
@@ -1724,14 +1723,14 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
   }
 
   function correctHydrogenDeficit(mol, hydrogenIsotopeQueues) {
-    const getRem = (atom) => {
+    const getRem = atom => {
       const el = elements[atom.name];
       if (!el) {
         return 0;
       }
       const { group } = el;
       let nv = 0;
-      if (group >= 1  && group <= 2)  {
+      if (group >= 1 && group <= 2) {
         nv = group;
       } else if (group >= 13 && group <= 17) {
         nv = 18 - group;
@@ -1822,9 +1821,9 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
           return false;
         }
         const nitrogen = mol.atoms.get(bond.getOtherAtom(atom.id));
-        return nitrogen &&
-          nitrogen.getHeavyNeighbors(mol).length === 1 &&
-          nitrogen.getHydrogenNeighbors(mol).length > 0;
+        return (
+          nitrogen && nitrogen.getHeavyNeighbors(mol).length === 1 && nitrogen.getHydrogenNeighbors(mol).length > 0
+        );
       });
       if (!terminalAmineBond) {
         continue;
@@ -1860,7 +1859,11 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       // heteroatom H atoms (e.g. phenol O-H that becomes phenolate O⁻ via /p-1)
       // are present during aromaticity detection.  correctHydrogenDeficit then
       // removes the surplus H after bonds are settled.
-      inferBondOrders(mol, heavyAtomIds, componentChargeTargets.reduce((s, c) => s + c, 0));
+      inferBondOrders(
+        mol,
+        heavyAtomIds,
+        componentChargeTargets.reduce((s, c) => s + c, 0)
+      );
       correctHydrogenDeficit(mol, hydrogenIsotopeQueues);
       preferTerminalImineNitrogens(mol);
       fixMonoanionicArylComponents(mol);
@@ -1983,9 +1986,13 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
     const totalCombos = perGroupAssignments.reduce((p, a) => p * a.length, 1);
     if (totalCombos > MAX_WALK_COMBOS) {
       const heavyMol = baseMol.clone();
-      inferBondOrders(heavyMol, heavyAtomIds, componentChargeTargets.reduce((s, c) => s + c, 0));
+      inferBondOrders(
+        heavyMol,
+        heavyAtomIds,
+        componentChargeTargets.reduce((s, c) => s + c, 0)
+      );
 
-      const inferredRemaining = (atomIdx) => {
+      const inferredRemaining = atomIdx => {
         const atomId = idByIndex.get(atomIdx);
         const atom = atomId ? heavyMol.atoms.get(atomId) : null;
         if (!atom) {
@@ -2014,9 +2021,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         let bestAssignment = assignments[0];
         let bestCapMatch = -Infinity;
         for (const assignment of assignments) {
-          const capMatch = assignment.reduce(
-            (s, n, i) => s + n * inferredRemaining(group.atoms[i]), 0
-          );
+          const capMatch = assignment.reduce((s, n, i) => s + n * inferredRemaining(group.atoms[i]), 0);
           if (capMatch > bestCapMatch) {
             bestCapMatch = capMatch;
             bestAssignment = assignment;
@@ -2079,11 +2084,11 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
 
   // Recompute derived properties.
   mol.properties.formula = mol.getFormula();
-  mol.properties.mass    = mol.getMass();
+  mol.properties.mass = mol.getMass();
   if (!layers['q'] && !layers['p']) {
     mol.properties.charge = mol.getCharge();
   }
-  mol.name               = mol.getName();
+  mol.name = mol.getName();
 
   return mol;
 }
@@ -2119,7 +2124,9 @@ function _hillFormula(counts) {
       s += counts.H;
     }
   }
-  for (const el of Object.keys(counts).filter(e => e !== 'C' && e !== 'H' && counts[e] > 0).sort()) {
+  for (const el of Object.keys(counts)
+    .filter(e => e !== 'C' && e !== 'H' && counts[e] > 0)
+    .sort()) {
     s += el;
     if (counts[el] > 1) {
       s += counts[el];
@@ -2198,10 +2205,13 @@ function _hLayerSection(hCounts) {
     }
     byCount.get(h).push(idx);
   }
-  return [...byCount.keys()].sort((a, b) => a - b).map(h => {
-    const rangeStr = _compressRanges(byCount.get(h).sort((a, b) => a - b));
-    return h === 1 ? `${rangeStr}H` : `${rangeStr}H${h}`;
-  }).join(',');
+  return [...byCount.keys()]
+    .sort((a, b) => a - b)
+    .map(h => {
+      const rangeStr = _compressRanges(byCount.get(h).sort((a, b) => a - b));
+      return h === 1 ? `${rangeStr}H` : `${rangeStr}H${h}`;
+    })
+    .join(',');
 }
 
 function _connectionSection(heavy, inchiIndexOf) {
@@ -2251,10 +2261,7 @@ function _connectionSection(heavy, inchiIndexOf) {
     if (kidStrings.length > 0) {
       // Has tree children: back edges + all-but-last kids go to branches,
       // last kid is the chain continuation.
-      branchItems = [
-        ...backs.map(n => String(inchiIndexOf.get(n))),
-        ...kidStrings.slice(0, -1)
-      ];
+      branchItems = [...backs.map(n => String(inchiIndexOf.get(n))), ...kidStrings.slice(0, -1)];
       continuation = kidStrings[kidStrings.length - 1];
     } else if (backs.length > 0) {
       // Leaf in spanning tree but has back edges (ring closures).
@@ -2323,7 +2330,8 @@ function _tRawEntries(comp, inchiIndexOf) {
       continue;
     }
     const hNeighborIds = atom.getHydrogenNeighbors(comp).map(h => h.id);
-    const heavyNeighborIds = comp.getNeighbors(atomId)
+    const heavyNeighborIds = comp
+      .getNeighbors(atomId)
       .filter(nId => comp.atoms.get(nId)?.name !== 'H')
       .sort((a, b) => (inchiIndexOf.get(a) ?? 0) - (inchiIndexOf.get(b) ?? 0));
     const neighborOrder = [...heavyNeighborIds, ...hNeighborIds];
@@ -2445,9 +2453,10 @@ export function toInChI(molecule) {
 
   const tEntriesPerComp = compData.map(d => _tRawEntries(d.comp, d.inchiIndexOf));
   const mFlag = _chooseMFlag(tEntriesPerComp.flat());
-  const tEntriesCanon = mFlag === 1
-    ? tEntriesPerComp.map(entries => entries.map(e => ({ ...e, parity: e.parity === '+' ? '-' : '+' })))
-    : tEntriesPerComp;
+  const tEntriesCanon =
+    mFlag === 1
+      ? tEntriesPerComp.map(entries => entries.map(e => ({ ...e, parity: e.parity === '+' ? '-' : '+' })))
+      : tEntriesPerComp;
   const tSections = tEntriesCanon.map(entries => entries.map(e => `${e.idx}${e.parity}`).join(','));
   const tLayer = tSections.some(s => s !== '') ? tSections.join(';') : null;
 

@@ -12,14 +12,38 @@ import { assignCIPRanks } from '../core/Molecule.js';
 // CPK atom colours
 // ---------------------------------------------------------------------------
 export const CPK = {
-  H: '#FFFFFF', He: '#D9FFFF', Li: '#CC80FF', Be: '#C2FF00',
-  B: '#FFB5B5', C: '#333333', N: '#3050F8', O: '#FF0D0D',
-  F: '#90E050', Ne: '#B3E3F5', Na: '#AB5CF2', Mg: '#8AFF00',
-  Al: '#BFA6A6', Si: '#F0C8A0', P: '#FF8000', S: '#C8A000',
-  Cl: '#1FF01F', Ar: '#80D1E3', K: '#8F40D4', Ca: '#3DFF00',
-  Sc: '#E6E6E6', Ti: '#BFC2C7', V: '#A6A6AB', Cr: '#8A99C7',
-  Mn: '#9C7AC7', Fe: '#E06633', Co: '#F090A0', Ni: '#50D050',
-  Cu: '#C88033', Zn: '#7D80B0', Br: '#A62929', I: '#940094'
+  H: '#FFFFFF',
+  He: '#D9FFFF',
+  Li: '#CC80FF',
+  Be: '#C2FF00',
+  B: '#FFB5B5',
+  C: '#333333',
+  N: '#3050F8',
+  O: '#FF0D0D',
+  F: '#90E050',
+  Ne: '#B3E3F5',
+  Na: '#AB5CF2',
+  Mg: '#8AFF00',
+  Al: '#BFA6A6',
+  Si: '#F0C8A0',
+  P: '#FF8000',
+  S: '#C8A000',
+  Cl: '#1FF01F',
+  Ar: '#80D1E3',
+  K: '#8F40D4',
+  Ca: '#3DFF00',
+  Sc: '#E6E6E6',
+  Ti: '#BFC2C7',
+  V: '#A6A6AB',
+  Cr: '#8A99C7',
+  Mn: '#9C7AC7',
+  Fe: '#E06633',
+  Co: '#F090A0',
+  Ni: '#50D050',
+  Cu: '#C88033',
+  Zn: '#7D80B0',
+  Br: '#A62929',
+  I: '#940094'
 };
 const DEFAULT_COLOR = '#FF69B4';
 
@@ -31,8 +55,8 @@ export function atomColor(sym) {
 // ---------------------------------------------------------------------------
 // Stereo bond constants (same in both renderers)
 // ---------------------------------------------------------------------------
-export const WEDGE_HALF_W = 6;  // px — half-width at the wide end
-export const WEDGE_DASHES = 6;  // number of hash lines in a dashed bond
+export const WEDGE_HALF_W = 6; // px — half-width at the wide end
+export const WEDGE_DASHES = 6; // number of hash lines in a dashed bond
 
 // ---------------------------------------------------------------------------
 // Geometry helpers
@@ -50,7 +74,10 @@ export function vecLen(x, y) {
  * @returns {{ minX: number, maxX: number, minY: number, maxY: number, cx: number, cy: number }}
  */
 export function atomBBox(atoms) {
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
   for (const a of atoms) {
     if (a.x < minX) {
       minX = a.x;
@@ -76,12 +103,16 @@ export function perpUnit(dx, dy) {
 
 /** Shorten a line segment by d1 at the start and d2 at the end. */
 export function shortenLine(x1, y1, x2, y2, d1, d2) {
-  const dx = x2 - x1, dy = y2 - y1;
+  const dx = x2 - x1,
+    dy = y2 - y1;
   const len = vecLen(dx, dy);
-  const ux = dx / len, uy = dy / len;
+  const ux = dx / len,
+    uy = dy / len;
   return {
-    x1: x1 + ux * d1, y1: y1 + uy * d1,
-    x2: x2 - ux * d2, y2: y2 - uy * d2
+    x1: x1 + ux * d1,
+    y1: y1 + uy * d1,
+    x2: x2 - ux * d2,
+    y2: y2 - uy * d2
   };
 }
 
@@ -97,16 +128,16 @@ export function shortenLine(x1, y1, x2, y2, d1, d2) {
  * @returns {1|-1}
  */
 export function secondaryDir(a1, a2, mol, toSVG) {
-  const s1 = toSVG(a1), s2 = toSVG(a2);
+  const s1 = toSVG(a1),
+    s2 = toSVG(a2);
   const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
   const mid = { x: (s1.x + s2.x) / 2, y: (s1.y + s2.y) / 2 };
 
-  const ringDots = mol.getRings()
+  const ringDots = mol
+    .getRings()
     .filter(ring => ring.includes(a1.id) && ring.includes(a2.id))
     .map(ring => {
-      const ringAtoms = ring
-        .map(id => mol.atoms.get(id))
-        .filter(atom => atom && atom.x != null);
+      const ringAtoms = ring.map(id => mol.atoms.get(id)).filter(atom => atom && atom.x != null);
       if (ringAtoms.length < 3) {
         return null;
       }
@@ -242,13 +273,15 @@ export function getAtomLabel(atom, hCounts, toSVG, mol) {
     }
   }
   const aSVG = toSVG(atom);
-  let avgDx = 0, nbCount = 0;
+  let avgDx = 0,
+    nbCount = 0;
   for (const n of atom.getNeighbors(mol)) {
     if (n && n.x != null) {
-      avgDx += toSVG(n).x - aSVG.x; nbCount++;
+      avgDx += toSVG(n).x - aSVG.x;
+      nbCount++;
     }
   }
-  return (nbCount > 0 && avgDx > 0) ? hStr + symbol : symbol + hStr;
+  return nbCount > 0 && avgDx > 0 ? hStr + symbol : symbol + hStr;
 }
 
 // ---------------------------------------------------------------------------
@@ -284,51 +317,62 @@ export function stereoBondTypeForCenter(mol, centerId, preferredBondId = null) {
     return null;
   }
 
-  const ranks = assignCIPRanks(centerId, neighbors.map(n => n.id), mol);
-  const entries = neighbors.map((n, i) => {
-    const bond = [...mol.bonds.values()].find(b =>
-      (b.atoms[0] === centerId && b.atoms[1] === n.id) ||
-      (b.atoms[1] === centerId && b.atoms[0] === n.id)
-    );
-    return { atom: n, rank: ranks[i], bond };
-  }).filter(e => e.bond);
+  const ranks = assignCIPRanks(
+    centerId,
+    neighbors.map(n => n.id),
+    mol
+  );
+  const entries = neighbors
+    .map((n, i) => {
+      const bond = [...mol.bonds.values()].find(
+        b => (b.atoms[0] === centerId && b.atoms[1] === n.id) || (b.atoms[1] === centerId && b.atoms[0] === n.id)
+      );
+      return { atom: n, rank: ranks[i], bond };
+    })
+    .filter(e => e.bond);
 
   if (entries.length !== 4) {
     return null;
   }
   entries.sort((a, b) => a.rank - b.rank);
 
-  const v = (e) => ({ x: e.atom.x - center.x, y: e.atom.y - center.y });
+  const v = e => ({ x: e.atom.x - center.x, y: e.atom.y - center.y });
   const cross2D = (u, w) => u.x * w.y - u.y * w.x;
   const visible = entries.filter(e => e.atom.visible !== false);
   const exocyclic = visible.filter(e => !e.atom.isInRing(mol));
   const exocyclicHeavy = exocyclic.filter(e => e.atom.name !== 'H');
-  const candidates = exocyclicHeavy.length > 0 ? exocyclicHeavy
-    : exocyclic.length > 0 ? exocyclic
-      : visible.length > 0 ? visible
-        : entries;
+  const candidates =
+    exocyclicHeavy.length > 0
+      ? exocyclicHeavy
+      : exocyclic.length > 0
+        ? exocyclic
+        : visible.length > 0
+          ? visible
+          : entries;
 
-  const preferred = preferredBondId != null
-    ? candidates.find(cand => cand.bond.id === preferredBondId) ?? entries.find(entry => entry.bond.id === preferredBondId) ?? null
-    : null;
+  const preferred =
+    preferredBondId != null
+      ? (candidates.find(cand => cand.bond.id === preferredBondId) ??
+        entries.find(entry => entry.bond.id === preferredBondId) ??
+        null)
+      : null;
 
-  const chosen = preferred ?? candidates.reduce((best, cand) =>
-    cand.rank > best.rank || (cand.rank === best.rank && cand.bond.id < best.bond.id)
-      ? cand : best
-  );
+  const chosen =
+    preferred ??
+    candidates.reduce((best, cand) =>
+      cand.rank > best.rank || (cand.rank === best.rank && cand.bond.id < best.bond.id) ? cand : best
+    );
 
   const others = entries.filter(e => e !== chosen).sort((a, b) => b.rank - a.rank);
-  const heavyOtherVecs = others
-    .filter(e => !(e.atom.name === 'H' && e.atom.visible === false))
-    .map(v);
+  const heavyOtherVecs = others.filter(e => !(e.atom.name === 'H' && e.atom.visible === false)).map(v);
 
-  const safeV = (e) => {
+  const safeV = e => {
     if (e.atom.name === 'H' && e.atom.visible === false && heavyOtherVecs.length === 2) {
       const sx = -(heavyOtherVecs[0].x + heavyOtherVecs[1].x);
       const sy = -(heavyOtherVecs[0].y + heavyOtherVecs[1].y);
       const len = vecLen(sx, sy);
       const bl = vecLen(heavyOtherVecs[0].x, heavyOtherVecs[0].y);
-      return { x: sx / len * bl, y: sy / len * bl };
+      return { x: (sx / len) * bl, y: (sy / len) * bl };
     }
     return v(e);
   };
@@ -387,9 +431,7 @@ export function pickStereoWedges(mol) {
     }
   }
   const forcedByCenter =
-    mol?.__reactionPreview?.forcedStereoByCenter ??
-    mol?.__reactionPreview?.forcedProductStereoByCenter ??
-    null;
+    mol?.__reactionPreview?.forcedStereoByCenter ?? mol?.__reactionPreview?.forcedProductStereoByCenter ?? null;
   for (const centerId of mol.getChiralCenters()) {
     if (lockedCenters.has(centerId)) {
       continue;
@@ -425,14 +467,27 @@ export function kekulize(mol) {
 
   const aroAtomIds = new Set();
   for (const b of aroBonds) {
-    aroAtomIds.add(b.atoms[0]); aroAtomIds.add(b.atoms[1]);
+    aroAtomIds.add(b.atoms[0]);
+    aroAtomIds.add(b.atoms[1]);
   }
 
   // Neutral σ-frame valence for common aromatic elements.
   // Used to determine whether an atom has capacity for a π (double) bond.
   const SIGMA_VAL = {
-    B: 3, C: 4, N: 3, O: 2, F: 1,
-    Si: 4, P: 3, S: 2, Cl: 1, As: 3, Se: 2, Br: 1, Te: 2, I: 1
+    B: 3,
+    C: 4,
+    N: 3,
+    O: 2,
+    F: 1,
+    Si: 4,
+    P: 3,
+    S: 2,
+    Cl: 1,
+    As: 3,
+    Se: 2,
+    Br: 1,
+    Te: 2,
+    I: 1
   };
 
   // For each aromatic atom, sum the σ-frame contribution of every bond it has
@@ -502,8 +557,10 @@ export function kekulize(mol) {
         visited.add(u);
         const mateOfU = mate.get(u);
         if (mateOfU === null || dfs(mateOfU)) {
-          mate.set(v, u); mate.set(u, v);
-          matchedBond.set(v, bondId); matchedBond.set(u, bondId);
+          mate.set(v, u);
+          mate.set(u, v);
+          matchedBond.set(v, bondId);
+          matchedBond.set(u, bondId);
           return true;
         }
       }

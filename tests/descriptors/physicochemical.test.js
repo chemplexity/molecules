@@ -21,12 +21,10 @@ function sortedIds(values) {
 }
 
 function ringAtomSets(mol) {
-  return mol.getRings()
+  return mol
+    .getRings()
     .map(ring => sortedIds(ring))
-    .sort((a, b) =>
-      a.length - b.length ||
-      a.join('\u0000').localeCompare(b.join('\u0000'))
-    );
+    .sort((a, b) => a.length - b.length || a.join('\u0000').localeCompare(b.join('\u0000')));
 }
 
 // ---------------------------------------------------------------------------
@@ -121,9 +119,9 @@ describe('hBondDonors', () => {
 
   it('acetic acid has 1 donor (COOH)', () => {
     const mol = parseSMILES('CC(=O)O');
-    const donorId = [...mol.atoms.values()]
-      .find(atom => atom.name === 'O' && atom.getHydrogenNeighbors(mol).length > 0)
-      .id;
+    const donorId = [...mol.atoms.values()].find(
+      atom => atom.name === 'O' && atom.getHydrogenNeighbors(mol).length > 0
+    ).id;
     assert.deepEqual(hBondDonors(mol), { count: 1, atoms: [donorId] });
   });
 
@@ -178,9 +176,9 @@ describe('hBondAcceptors', () => {
 
   it('acetic acid has 1 acceptor (carbonyl O only)', () => {
     const mol = parseSMILES('CC(=O)O');
-    const acceptorId = [...mol.atoms.values()]
-      .find(atom => atom.name === 'O' && atom.getHydrogenNeighbors(mol).length === 0)
-      .id;
+    const acceptorId = [...mol.atoms.values()].find(
+      atom => atom.name === 'O' && atom.getHydrogenNeighbors(mol).length === 0
+    ).id;
     assert.deepEqual(hBondAcceptors(mol), { count: 1, atoms: [acceptorId] });
   });
 
@@ -226,9 +224,7 @@ describe('hBondAcceptors', () => {
 
   it('nitrobenzene has 2 acceptors (the two oxygens)', () => {
     const mol = parseSMILES('[O-][N+](=O)c1ccccc1');
-    const oxygenIds = sortedIds(
-      [...mol.atoms.values()].filter(atom => atom.name === 'O').map(atom => atom.id)
-    );
+    const oxygenIds = sortedIds([...mol.atoms.values()].filter(atom => atom.name === 'O').map(atom => atom.id));
     assert.deepEqual(hBondAcceptors(mol), { count: 2, atoms: oxygenIds });
   });
 
@@ -264,17 +260,13 @@ describe('rotatableBondCount', () => {
 
   it('butane has 1 rotatable bond (central C-C)', () => {
     const mol = parseSMILES('CCCC');
-    const bondIds = sortedIds(
-      [...mol.bonds.values()].filter(bond => bond.isRotatable(mol)).map(bond => bond.id)
-    );
+    const bondIds = sortedIds([...mol.bonds.values()].filter(bond => bond.isRotatable(mol)).map(bond => bond.id));
     assert.deepEqual(rotatableBondCount(mol), { count: 1, bonds: bondIds });
   });
 
   it('pentane has 2 rotatable bonds', () => {
     const mol = parseSMILES('CCCCC');
-    const bondIds = sortedIds(
-      [...mol.bonds.values()].filter(bond => bond.isRotatable(mol)).map(bond => bond.id)
-    );
+    const bondIds = sortedIds([...mol.bonds.values()].filter(bond => bond.isRotatable(mol)).map(bond => bond.id));
     assert.deepEqual(rotatableBondCount(mol), { count: 2, bonds: bondIds });
   });
 
@@ -406,9 +398,7 @@ describe('lipinskiRuleOfFive', () => {
 
   it('a very large lipophilic molecule accumulates violations', () => {
     // C40 linear chain: MW >> 500, logP >> 5
-    const result = lipinskiRuleOfFive(
-      parseSMILES('CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC')
-    );
+    const result = lipinskiRuleOfFive(parseSMILES('CCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC'));
     assert.ok(result.violations >= 2, `expected ≥2 violations, got ${result.violations}`);
     assert.equal(result.passes, false);
   });

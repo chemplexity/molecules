@@ -26,13 +26,13 @@ console.log(wienerIndex(D)); // 4
 import { parseSMILES, toSMILES, toCanonicalSMILES, parseINCHI, toInChI } from 'molecules';
 
 // SMILES round-trip
-const mol = parseSMILES('CC(=O)O');  // acetic acid
-console.log(toSMILES(mol));          // CC(=O)O  (input order)
+const mol = parseSMILES('CC(=O)O'); // acetic acid
+console.log(toSMILES(mol)); // CC(=O)O  (input order)
 console.log(toCanonicalSMILES(mol)); // canonical, stable identifier
 
 // InChI round-trip
-const inchi = toInChI(mol);          // InChI=1S/C2H4O2/c1-2(3)4/h1H3,(H,3,4)
-const mol2  = parseINCHI(inchi);
+const inchi = toInChI(mol); // InChI=1S/C2H4O2/c1-2(3)4/h1H3,(H,3,4)
+const mol2 = parseINCHI(inchi);
 
 // JSON serialisation
 import { toJSON, fromJSON } from 'molecules';
@@ -69,26 +69,39 @@ import { parseSMILES, molecularFormula, molecularMass } from 'molecules';
 
 const mol = parseSMILES('c1ccccc1'); // benzene
 console.log(molecularFormula(mol)); // C6H6
-console.log(molecularMass(mol));    // 78.11
+console.log(molecularMass(mol)); // 78.11
 ```
 
 ### Topological indices
 
 ```js
 import {
-  wienerIndex, hyperWienerIndex, balabanIndex, randicIndex,
-  zagreb1, zagreb2, hararyIndex, plattIndex, szegedIndex,
-  hosoyaIndex, abcIndex, gaIndex, harmonicIndex,
-  eccentricConnectivityIndex, wienerPolarityIndex,
-  schultzIndex, gutmanIndex, forgottenIndex, narumiKatayamaIndex
+  wienerIndex,
+  hyperWienerIndex,
+  balabanIndex,
+  randicIndex,
+  zagreb1,
+  zagreb2,
+  hararyIndex,
+  plattIndex,
+  szegedIndex,
+  hosoyaIndex,
+  abcIndex,
+  gaIndex,
+  harmonicIndex,
+  eccentricConnectivityIndex,
+  wienerPolarityIndex,
+  schultzIndex,
+  gutmanIndex,
+  forgottenIndex,
+  narumiKatayamaIndex
 } from 'molecules';
 ```
 
 ### Physicochemical properties
 
 ```js
-import { logP, tpsa, hBondDonors, hBondAcceptors,
-         rotatableBondCount, fsp3, lipinskiRuleOfFive } from 'molecules';
+import { logP, tpsa, hBondDonors, hBondAcceptors, rotatableBondCount, fsp3, lipinskiRuleOfFive } from 'molecules';
 
 const mol = parseSMILES('CC(=O)Oc1ccccc1C(=O)O'); // aspirin
 const rule = lipinskiRuleOfFive(mol);
@@ -98,8 +111,7 @@ const rule = lipinskiRuleOfFive(mol);
 ### Spectral descriptors
 
 ```js
-import { adjacencySpectrum, laplacianSpectrum,
-         spectralRadius, estradaIndex } from 'molecules';
+import { adjacencySpectrum, laplacianSpectrum, spectralRadius, estradaIndex } from 'molecules';
 ```
 
 ### Information-theoretic descriptors
@@ -111,9 +123,16 @@ import { graphEntropy, topologicalEntropy } from 'molecules';
 ## Graph Matrices
 
 ```js
-import { parseSMILES, adjacencyMatrix, degreeMatrix,
-         distanceMatrix, laplacianMatrix, randicMatrix,
-         reciprocalMatrix, allMatrices } from 'molecules';
+import {
+  parseSMILES,
+  adjacencyMatrix,
+  degreeMatrix,
+  distanceMatrix,
+  laplacianMatrix,
+  randicMatrix,
+  reciprocalMatrix,
+  allMatrices
+} from 'molecules';
 
 const mol = parseSMILES('CCC');
 const A = adjacencyMatrix(mol);
@@ -127,8 +146,7 @@ const L = laplacianMatrix(A, DEG);
 ## SMARTS Matching and Functional Groups
 
 ```js
-import { parseSMILES, findSMARTS, matchesSMARTS,
-         functionalGroups } from 'molecules';
+import { parseSMILES, findSMARTS, matchesSMARTS, functionalGroups } from 'molecules';
 
 const mol = parseSMILES('CC(=O)O');
 
@@ -148,26 +166,26 @@ import { parseSMILES, applySMIRKS, reactionTemplates } from 'molecules';
 
 // Apply a built-in reaction template
 const alcohol = parseSMILES('CCO');
-const ketone  = applySMIRKS(alcohol, reactionTemplates.alcoholOxidation.smirks);
+const ketone = applySMIRKS(alcohol, reactionTemplates.alcoholOxidation.smirks);
 
 // Apply a custom SMIRKS transform
-const mol       = parseSMILES('CCl');
+const mol = parseSMILES('CCl');
 const hydrolysed = applySMIRKS(mol, '[C:1][Cl,Br,I:2]>>[C:1][OH:2]');
 ```
 
 The `reactionTemplates` catalogue includes ready-to-use transforms for common
 reactions:
 
-| Key | Reaction |
-|-----|----------|
-| `alcoholOxidation` | Alcohol → carbonyl |
-| `carbonylReduction` | Carbonyl → alcohol |
-| `alkeneHydrogenation` | Alkene → alkane |
-| `alkynePartialReduction` | Alkyne → alkene |
-| `esterHydrolysis` | Ester → acid + alcohol |
-| `amideHydrolysis` | Amide → acid + amine |
-| `halideHydrolysis` | Alkyl halide → alcohol |
-| `dehalogenation` | Remove halide substituent |
+| Key                      | Reaction                  |
+| ------------------------ | ------------------------- |
+| `alcoholOxidation`       | Alcohol → carbonyl        |
+| `carbonylReduction`      | Carbonyl → alcohol        |
+| `alkeneHydrogenation`    | Alkene → alkane           |
+| `alkynePartialReduction` | Alkyne → alkene           |
+| `esterHydrolysis`        | Ester → acid + alcohol    |
+| `amideHydrolysis`        | Amide → acid + amine      |
+| `halideHydrolysis`       | Alkyl halide → alcohol    |
+| `dehalogenation`         | Remove halide substituent |
 
 Use `parseSMIRKS` to compile your own transform string into a reusable object.
 
@@ -185,10 +203,9 @@ perceiveAromaticity(mol, { preserveKekule: true });
 ## Graph Traversal and Subgraph Isomorphism
 
 ```js
-import { parseSMILES, bfs, dfs,
-         findSubgraphMappings, matchesSubgraph } from 'molecules';
+import { parseSMILES, bfs, dfs, findSubgraphMappings, matchesSubgraph } from 'molecules';
 
-const mol   = parseSMILES('c1ccccc1CC');
+const mol = parseSMILES('c1ccccc1CC');
 const query = parseSMILES('c1ccccc1');
 
 const mappings = findSubgraphMappings(mol, query);
@@ -201,8 +218,7 @@ const order = bfs(mol, [...mol.atoms.keys()][0]);
 ## 2D Coordinate Generation
 
 ```js
-import { parseSMILES, generateCoords,
-         generateAndRefine2dCoords } from 'molecules';
+import { parseSMILES, generateCoords, generateAndRefine2dCoords } from 'molecules';
 
 const mol = parseSMILES('c1ccccc1');
 
@@ -228,16 +244,18 @@ const warnings = validateValence(parseSMILES('C(C)(C)(C)(C)C'));
 Import only what you need to keep bundle sizes small:
 
 ```js
-import { Molecule, Atom, Bond }                     from 'molecules/core';
-import { parseSMILES, toSMILES, toCanonicalSMILES,
-         parseINCHI, toInChI }                      from 'molecules/io';
-import { wienerIndex, balabanIndex, logP }          from 'molecules/descriptors';
-import { adjacencyMatrix, distanceMatrix }          from 'molecules/matrices';
-import { perceiveAromaticity, morganRanks,
-         bfs, dfs }                                 from 'molecules/algorithms';
-import { validateValence }                          from 'molecules/validation';
+import { Molecule, Atom, Bond } from 'molecules/core';
+import { parseSMILES, toSMILES, toCanonicalSMILES, parseINCHI, toInChI } from 'molecules/io';
+import { wienerIndex, balabanIndex, logP } from 'molecules/descriptors';
+import { adjacencyMatrix, distanceMatrix } from 'molecules/matrices';
+import { perceiveAromaticity, morganRanks, bfs, dfs } from 'molecules/algorithms';
+import { validateValence } from 'molecules/validation';
 ```
+
 import { findSMARTS, functionalGroups } from 'molecules/smarts';
 import { perceiveAromaticity, morganRanks } from 'molecules/algorithms';
 import { validateValence } from 'molecules/validation';
+
+```
+
 ```

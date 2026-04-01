@@ -1,0 +1,382 @@
+<!DOCTYPE html><html lang="en" style="font-size:16px"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Source: algorithms/aromaticity.js</title><!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]--><script src="scripts/third-party/hljs.js" defer="defer"></script><script src="scripts/third-party/hljs-line-num.js" defer="defer"></script><script src="scripts/third-party/popper.js" defer="defer"></script><script src="scripts/third-party/tippy.js" defer="defer"></script><script src="scripts/third-party/tocbot.min.js"></script><script>var baseURL="/",locationPathname="";baseURL=(locationPathname=document.location.pathname).substr(0,locationPathname.lastIndexOf("/")+1)</script><link rel="stylesheet" href="styles/clean-jsdoc-theme.min.css"><svg aria-hidden="true" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="display:none"><defs><symbol id="copy-icon" viewbox="0 0 488.3 488.3"><g><path d="M314.25,85.4h-227c-21.3,0-38.6,17.3-38.6,38.6v325.7c0,21.3,17.3,38.6,38.6,38.6h227c21.3,0,38.6-17.3,38.6-38.6V124    C352.75,102.7,335.45,85.4,314.25,85.4z M325.75,449.6c0,6.4-5.2,11.6-11.6,11.6h-227c-6.4,0-11.6-5.2-11.6-11.6V124    c0-6.4,5.2-11.6,11.6-11.6h227c6.4,0,11.6,5.2,11.6,11.6V449.6z"/><path d="M401.05,0h-227c-21.3,0-38.6,17.3-38.6,38.6c0,7.5,6,13.5,13.5,13.5s13.5-6,13.5-13.5c0-6.4,5.2-11.6,11.6-11.6h227    c6.4,0,11.6,5.2,11.6,11.6v325.7c0,6.4-5.2,11.6-11.6,11.6c-7.5,0-13.5,6-13.5,13.5s6,13.5,13.5,13.5c21.3,0,38.6-17.3,38.6-38.6    V38.6C439.65,17.3,422.35,0,401.05,0z"/></g></symbol><symbol id="search-icon" viewBox="0 0 512 512"><g><g><path d="M225.474,0C101.151,0,0,101.151,0,225.474c0,124.33,101.151,225.474,225.474,225.474    c124.33,0,225.474-101.144,225.474-225.474C450.948,101.151,349.804,0,225.474,0z M225.474,409.323    c-101.373,0-183.848-82.475-183.848-183.848S124.101,41.626,225.474,41.626s183.848,82.475,183.848,183.848    S326.847,409.323,225.474,409.323z"/></g></g><g><g><path d="M505.902,476.472L386.574,357.144c-8.131-8.131-21.299-8.131-29.43,0c-8.131,8.124-8.131,21.306,0,29.43l119.328,119.328    c4.065,4.065,9.387,6.098,14.715,6.098c5.321,0,10.649-2.033,14.715-6.098C514.033,497.778,514.033,484.596,505.902,476.472z"/></g></g></symbol><symbol id="font-size-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11.246 15H4.754l-2 5H.6L7 4h2l6.4 16h-2.154l-2-5zm-.8-2L8 6.885 5.554 13h4.892zM21 12.535V12h2v8h-2v-.535a4 4 0 1 1 0-6.93zM19 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></symbol><symbol id="add-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2z"/></symbol><symbol id="minus-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M5 11h14v2H5z"/></symbol><symbol id="dark-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M10 7a7 7 0 0 0 12 4.9v.1c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2h.1A6.979 6.979 0 0 0 10 7zm-6 5a8 8 0 0 0 15.062 3.762A9 9 0 0 1 8.238 4.938 7.999 7.999 0 0 0 4 12z"/></symbol><symbol id="light-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12zm0-2a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zm2.121-14.85l1.414 1.415-2.121 2.121-1.414-1.414 2.121-2.121zM5.636 16.95l1.414 1.414-2.121 2.121-1.414-1.414 2.121-2.121zM23 11v2h-3v-2h3zM4 11v2H1v-2h3z"/></symbol><symbol id="reset-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M18.537 19.567A9.961 9.961 0 0 1 12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10c0 2.136-.67 4.116-1.81 5.74L17 12h3a8 8 0 1 0-2.46 5.772l.997 1.795z"/></symbol><symbol id="down-icon" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.7803 6.21967C13.0732 6.51256 13.0732 6.98744 12.7803 7.28033L8.53033 11.5303C8.23744 11.8232 7.76256 11.8232 7.46967 11.5303L3.21967 7.28033C2.92678 6.98744 2.92678 6.51256 3.21967 6.21967C3.51256 5.92678 3.98744 5.92678 4.28033 6.21967L8 9.93934L11.7197 6.21967C12.0126 5.92678 12.4874 5.92678 12.7803 6.21967Z"></path></symbol><symbol id="codepen-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M16.5 13.202L13 15.535v3.596L19.197 15 16.5 13.202zM14.697 12L12 10.202 9.303 12 12 13.798 14.697 12zM20 10.869L18.303 12 20 13.131V10.87zM19.197 9L13 4.869v3.596l3.5 2.333L19.197 9zM7.5 10.798L11 8.465V4.869L4.803 9 7.5 10.798zM4.803 15L11 19.131v-3.596l-3.5-2.333L4.803 15zM4 13.131L5.697 12 4 10.869v2.262zM2 9a1 1 0 0 1 .445-.832l9-6a1 1 0 0 1 1.11 0l9 6A1 1 0 0 1 22 9v6a1 1 0 0 1-.445.832l-9 6a1 1 0 0 1-1.11 0l-9-6A1 1 0 0 1 2 15V9z"/></symbol><symbol id="close-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 10.586l4.95-4.95 1.414 1.414-4.95 4.95 4.95 4.95-1.414 1.414-4.95-4.95-4.95 4.95-1.414-1.414 4.95-4.95-4.95-4.95L7.05 5.636z"/></symbol><symbol id="menu-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M3 4h18v2H3V4zm0 7h18v2H3v-2zm0 7h18v2H3v-2z"/></symbol></defs></svg></head><body data-theme="dark"><div class="sidebar-container"><div class="sidebar" id="sidebar"><div class="sidebar-items-container"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-modules"><div>Modules</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-algorithms.html">algorithms</a></div><div class="sidebar-section-children"><a href="module-algorithms_aromaticity.html">algorithms/aromaticity</a></div><div class="sidebar-section-children"><a href="module-algorithms_morgan.html">algorithms/morgan</a></div><div class="sidebar-section-children"><a href="module-algorithms_paths.html">algorithms/paths</a></div><div class="sidebar-section-children"><a href="module-algorithms_subgraph.html">algorithms/subgraph</a></div><div class="sidebar-section-children"><a href="module-algorithms_traversal.html">algorithms/traversal</a></div><div class="sidebar-section-children"><a href="module-algorithms_vf2.html">algorithms/vf2</a></div><div class="sidebar-section-children"><a href="module-app_core_undo.html">app/core/undo</a></div><div class="sidebar-section-children"><a href="module-app_render_helpers.html">app/render/helpers</a></div><div class="sidebar-section-children"><a href="module-app_render_reaction-2d.html">app/render/reaction-2d</a></div><div class="sidebar-section-children"><a href="module-app_ui_descriptors.html">app/ui/descriptors</a></div><div class="sidebar-section-children"><a href="module-app_ui_export.html">app/ui/export</a></div><div class="sidebar-section-children"><a href="module-core.html">core</a></div><div class="sidebar-section-children"><a href="module-core_Atom.html">core/Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.html">core/Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.html">core/Molecule</a></div><div class="sidebar-section-children"><a href="module-data.html">data</a></div><div class="sidebar-section-children"><a href="module-data_catalog.html">data/catalog</a></div><div class="sidebar-section-children"><a href="module-data_catalog_amino-acids.html">data/catalog/amino-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_fatty-acids.html">data/catalog/fatty-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_nucleobases.html">data/catalog/nucleobases</a></div><div class="sidebar-section-children"><a href="module-data_catalog_polycyclic-aromatic-hydrocarbons.html">data/catalog/polycyclic-aromatic-hydrocarbons</a></div><div class="sidebar-section-children"><a href="module-data_catalog_steroids.html">data/catalog/steroids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_terpenes-and-terpenoids.html">data/catalog/terpenes-and-terpenoids</a></div><div class="sidebar-section-children"><a href="module-data_elements.html">data/elements</a></div><div class="sidebar-section-children"><a href="module-data_molecule-catalog.html">data/molecule-catalog</a></div><div class="sidebar-section-children"><a href="module-descriptors.html">descriptors</a></div><div class="sidebar-section-children"><a href="module-descriptors_information.html">descriptors/information</a></div><div class="sidebar-section-children"><a href="module-descriptors_molecular.html">descriptors/molecular</a></div><div class="sidebar-section-children"><a href="module-descriptors_physicochemical.html">descriptors/physicochemical</a></div><div class="sidebar-section-children"><a href="module-descriptors_spectral.html">descriptors/spectral</a></div><div class="sidebar-section-children"><a href="module-descriptors_topological.html">descriptors/topological</a></div><div class="sidebar-section-children"><a href="module-io.html">io</a></div><div class="sidebar-section-children"><a href="module-io_detect.html">io/detect</a></div><div class="sidebar-section-children"><a href="module-io_inchi.html">io/inchi</a></div><div class="sidebar-section-children"><a href="module-io_json.html">io/json</a></div><div class="sidebar-section-children"><a href="module-io_smiles.html">io/smiles</a></div><div class="sidebar-section-children"><a href="module-layout.html">layout</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d.html">layout/coords2d</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-molecules.html">molecules</a></div><div class="sidebar-section-children"><a href="module-smarts.html">smarts</a></div><div class="sidebar-section-children"><a href="module-smarts_parser.html">smarts/parser</a></div><div class="sidebar-section-children"><a href="module-smarts_primitives.html">smarts/primitives</a></div><div class="sidebar-section-children"><a href="module-smarts_reference.html">smarts/reference</a></div><div class="sidebar-section-children"><a href="module-smarts_search.html">smarts/search</a></div><div class="sidebar-section-children"><a href="module-smirks.html">smirks</a></div><div class="sidebar-section-children"><a href="module-smirks_apply.html">smirks/apply</a></div><div class="sidebar-section-children"><a href="module-smirks_parser.html">smirks/parser</a></div><div class="sidebar-section-children"><a href="module-smirks_reference.html">smirks/reference</a></div><div class="sidebar-section-children"><a href="module-utils.html">utils</a></div><div class="sidebar-section-children"><a href="module-utils_combinatorics.html">utils/combinatorics</a></div><div class="sidebar-section-children"><a href="module-utils_eigenvalues.html">utils/eigenvalues</a></div><div class="sidebar-section-children"><a href="module-utils_matrix.html">utils/matrix</a></div><div class="sidebar-section-children"><a href="module-validation.html">validation</a></div><div class="sidebar-section-children"><a href="module-validation_valence.html">validation/valence</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-core_Atom.Atom.html">Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.Bond.html">Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.Molecule.html">Molecule</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d-SpatialGrid.html">SpatialGrid</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-global"><div>Global</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="global.html#atomBBox">atomBBox</a></div><div class="sidebar-section-children"><a href="global.html#atomColor">atomColor</a></div><div class="sidebar-section-children"><a href="global.html#getAtomLabel">getAtomLabel</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfH">labelHalfH</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfW">labelHalfW</a></div><div class="sidebar-section-children"><a href="global.html#labelTextOffset">labelTextOffset</a></div><div class="sidebar-section-children"><a href="global.html#perpUnit">perpUnit</a></div><div class="sidebar-section-children"><a href="global.html#secondaryDir">secondaryDir</a></div><div class="sidebar-section-children"><a href="global.html#shortenLine">shortenLine</a></div><div class="sidebar-section-children"><a href="global.html#stereoBondTypeForCenter">stereoBondTypeForCenter</a></div><div class="sidebar-section-children"><a href="global.html#vecLen">vecLen</a></div></div></div></div></div><div class="navbar-container" id="VuAckcnZhf"><nav class="navbar"><div class="navbar-left-items"></div><div class="navbar-right-items"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div><nav></nav></nav></div><div class="toc-container"><div class="toc-content"><span class="bold">On this page</span><div id="eed4d2a0bfd64539bb9df78095dec881"></div></div></div><div class="body-wrapper"><div class="main-content"><div class="main-wrapper"><section id="source-page" class="source-page"><header><h1 id="title" class="has-anchor">algorithms_aromaticity.js</h1></header><article><pre class="prettyprint source lang-js"><code>/** @module algorithms/aromaticity */
+
+/**
+ * Counts the π electrons contributed by `atom` when it is part of `ringAtomSet`.
+ *
+ * Rules (Hückel):
+ *  - C (neutral, participates in ring double bond): 1
+ *  - C+ (carbocation):                              0
+ *  - C- (carbanion):                                2
+ *  - N pyridine-like (no H, one ring double bond):  1
+ *  - N pyrrole-like  (has H, lone pair into ring):  2
+ *  - O / S (lone pair into ring):                   2
+ *  - B (empty p orbital):                           0
+ *  - Already-marked aromatic atom (order=1.5):      1  (each contributes 1 to the 4n+2 sum)
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {Set&lt;string>} ringAtomSet  Atom IDs in the candidate ring.
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {number|null}  π electrons contributed, or null if indeterminate / disqualifies ring.
+ */
+function _piElectrons(atom, ringAtomSet, mol) {
+  const el = atom.name;
+  const charge = atom.properties.charge ?? 0;
+
+  const ringBonds = atom.bonds
+    .map(bId => mol.bonds.get(bId))
+    .filter(b => b &amp;&amp; ringAtomSet.has(b.getOtherAtom(atom.id)));
+
+  // A ring bond counts as "double" if it is an explicit double bond (Kekulé)
+  // or if it is already flagged aromatic / order 1.5 (SMILES-aromatic input).
+  // Note: O/S/pyrrole-N always donate 2 electrons regardless of bond type,
+  // so we only use this flag for C and pyridine-like N.
+  const hasRingPiBond = ringBonds.some(
+    b => b.properties.order === 2 || b.properties.aromatic || b.properties.order === 1.5
+  );
+
+  if (el === 'C') {
+    if (charge === 1) {
+      return 0;
+    }
+    if (charge === -1) {
+      return 2;
+    }
+    return hasRingPiBond ? 1 : null;
+  }
+
+  if (el === 'N') {
+    if (charge === 1) {
+      return hasRingPiBond ? 1 : null;
+    }
+    if (charge === -1) {
+      return 2;
+    }
+    // Pyrrole-like: has H attached → lone pair donated to ring → 2 electrons.
+    // Check this BEFORE pyridine-like so that SMILES-aromatic [nH] is handled
+    // correctly (its bonds are 1.5 but it still donates 2 electrons, not 1).
+    const hasH = atom.bonds.some(bId => {
+      const b = mol.bonds.get(bId);
+      if (!b) {
+        return false;
+      }
+      return mol.atoms.get(b.getOtherAtom(atom.id))?.name === 'H';
+    });
+    if (hasH) {
+      return 2;
+    }
+    // Pyridine-like: sp2, ring π bond present → contributes 1.
+    return hasRingPiBond ? 1 : null;
+  }
+
+  if (el === 'O' || el === 'S') {
+    // Furan/thiophene-like (no ring double bond): lone pair donated → 2 π electrons.
+    // Pyrylium/thiopyrylium-like (explicit Kekulé double bond in the ring, e.g. C=[O+]):
+    //   O/S acts as a pyridine-N equivalent → 1 π electron from the π bond.
+    const hasKekulePiBond = ringBonds.some(b => b.properties.order === 2);
+    return hasKekulePiBond ? 1 : 2;
+  }
+
+  if (el === 'B') {
+    return 0;
+  }
+
+  // Unknown element — cannot determine aromaticity.
+  return null;
+}
+
+/**
+ * Returns true if `piCount` satisfies Hückel's rule (4n + 2, n ≥ 0).
+ *
+ * @param {number} piCount
+ * @returns {boolean}
+ */
+function _isHuckel(piCount) {
+  if (piCount &lt; 2) {
+    return false;
+  }
+  return (piCount - 2) % 4 === 0;
+}
+
+/**
+ * Perceives aromaticity in `mol` using Hückel's rule (4n + 2 π electrons).
+ *
+ * Works with both:
+ *  - **Kekulé input** (explicit alternating single/double bonds, e.g. Kekulé benzene)
+ *  - **SMILES-aromatic input** (lowercase atoms, bond order 1.5, e.g. `c1ccccc1`)
+ *
+ * For each ring in the Smallest Set of Smallest Rings (SSSR), π electrons are
+ * counted per atom.  If the total satisfies Hückel's rule the ring is marked
+ * aromatic: `atom.properties.aromatic = true` for every atom in the ring, and
+ * every ring bond gets `bond.setAromatic(true)`.
+ *
+ * When `options.preserveKekule` is true, any existing integer ring-bond order
+ * is copied to `bond.properties.localizedOrder` before the bond is converted
+ * to aromatic order 1.5. Renderers can prefer that preserved localized order
+ * when they want a Kekule-style depiction of an aromatic system.
+ *
+ * Rings containing hydrogen atoms are skipped (H is never sp2 in a ring).
+ *
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {{ preserveKekule?: boolean }} [options]
+ * @returns {string[][]}  Array of aromatic rings, each as an array of atom IDs.
+ */
+/**
+ * Assigns `localizedOrder` (1 or 2) to bonds that are currently flagged
+ * aromatic but do NOT belong to any confirmed aromatic ring.  This covers
+ * cases where the SMILES parser used lowercase atoms for a ring which Hückel
+ * analysis rejected (e.g. the pyrimidinone ring in hypoxanthine written as
+ * `O=c1nc[nH]c2[nH]cnc12`).  Without this step those bonds would all be
+ * reset to order 1, losing the C=N double bond character.
+ *
+ * The algorithm is a simplified maximum-matching identical in logic to the
+ * `kekulize` function in layout/mol2d-helpers, restricted to the stale atoms.
+ *
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {Set&lt;string>} confirmedAromaticBondIds Bonds that belong to a genuine aromatic ring.
+ */
+function _kekulizeStale(mol, confirmedAromaticBondIds) {
+  // Neutral σ-frame valence for common aromatic elements.
+  const SIGMA_VAL = { B: 3, C: 4, N: 3, O: 2, F: 1, Si: 4, P: 3, S: 2, Cl: 1, As: 3, Se: 2, Br: 1, Te: 2, I: 1 };
+
+  const staleBondIds = new Set();
+  const staleAtomIds = new Set();
+  for (const bond of mol.bonds.values()) {
+    if (bond.properties.aromatic &amp;&amp; !confirmedAromaticBondIds.has(bond.id)) {
+      staleBondIds.add(bond.id);
+      staleAtomIds.add(bond.atoms[0]);
+      staleAtomIds.add(bond.atoms[1]);
+    }
+  }
+  if (staleBondIds.size === 0) {
+    return;
+  }
+
+  // Compute sigma-frame bond order for each stale atom (treat stale bonds as
+  // order 1, confirmed-aromatic bonds as order 1, non-aromatic bonds at face value).
+  const sigmaBO = new Map();
+  for (const id of staleAtomIds) {
+    sigmaBO.set(id, 0);
+  }
+
+  for (const bond of mol.bonds.values()) {
+    const [a, b] = bond.atoms;
+    let contrib;
+    if (staleBondIds.has(bond.id) || confirmedAromaticBondIds.has(bond.id)) {
+      contrib = 1;
+    } else {
+      contrib = bond.properties.order ?? 1;
+    }
+    if (staleAtomIds.has(a)) {
+      sigmaBO.set(a, sigmaBO.get(a) + contrib);
+    }
+    if (staleAtomIds.has(b)) {
+      sigmaBO.set(b, sigmaBO.get(b) + contrib);
+    }
+  }
+
+  // Atoms with available valence for a π bond.
+  const canHaveDouble = new Set();
+  for (const id of staleAtomIds) {
+    const atom = mol.atoms.get(id);
+    const base = SIGMA_VAL[atom.name] ?? 4;
+    const adjusted = Math.max(0, base + (atom.getCharge() ?? 0));
+    if (adjusted - sigmaBO.get(id) >= 1) {
+      canHaveDouble.add(id);
+    }
+  }
+
+  // Build matching adjacency restricted to stale bonds between two π-capable atoms.
+  const adj = new Map();
+  for (const id of canHaveDouble) {
+    adj.set(id, []);
+  }
+  for (const bond of mol.bonds.values()) {
+    if (!staleBondIds.has(bond.id)) {
+      continue;
+    }
+    const [a, b] = bond.atoms;
+    if (canHaveDouble.has(a) &amp;&amp; canHaveDouble.has(b)) {
+      adj.get(a).push({ bondId: bond.id, otherId: b });
+      adj.get(b).push({ bondId: bond.id, otherId: a });
+    }
+  }
+
+  // Maximum matching via augmenting paths (Berge's theorem).
+  const mate = new Map();
+  const matchedBond = new Map();
+  for (const id of canHaveDouble) {
+    mate.set(id, null);
+    matchedBond.set(id, null);
+  }
+
+  function _tryAugment(startId) {
+    const visited = new Set([startId]);
+    function dfs(v) {
+      for (const { bondId, otherId: u } of adj.get(v)) {
+        if (visited.has(u)) {
+          continue;
+        }
+        visited.add(u);
+        if (mate.get(u) === null || dfs(mate.get(u))) {
+          mate.set(v, u);
+          mate.set(u, v);
+          matchedBond.set(v, bondId);
+          matchedBond.set(u, bondId);
+          return true;
+        }
+      }
+      return false;
+    }
+    return dfs(startId);
+  }
+
+  for (const id of canHaveDouble) {
+    if (mate.get(id) === null) {
+      _tryAugment(id);
+    }
+  }
+
+  const doubleBondIds = new Set(matchedBond.values());
+  doubleBondIds.delete(null);
+
+  for (const bond of mol.bonds.values()) {
+    if (!staleBondIds.has(bond.id)) {
+      continue;
+    }
+    bond.properties.localizedOrder = doubleBondIds.has(bond.id) ? 2 : 1;
+  }
+}
+
+export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
+  // Clear any atom-aromatic flags set by the SMILES parser so that only
+  // rings which actually satisfy Hückel's rule end up marked aromatic.
+  // Bond order/aromatic flags are intentionally left intact: _piElectrons
+  // relies on them (1.5 for SMILES-aromatic input, 2 for Kekulé) to count
+  // π electrons.
+  for (const atom of mol.atoms.values()) {
+    atom.properties.aromatic = false;
+  }
+
+  const rings = mol.getRings();
+  const aromaticRings = [];
+  const done = new Array(rings.length).fill(false);
+  const aromaticBondIds = new Set();
+
+  // Iterate until no new aromatic rings are found.  Fused ring systems (e.g.
+  // phenanthrene) can require multiple passes: the middle ring only becomes
+  // recognisable as aromatic after the two outer rings are processed.
+  let anyNew = true;
+  while (anyNew) {
+    anyNew = false;
+    for (let ri = 0; ri &lt; rings.length; ri++) {
+      if (done[ri]) {
+        continue;
+      }
+      const ring = rings[ri];
+      const ringAtomSet = new Set(ring);
+
+      // Skip rings containing hydrogen.
+      if (ring.some(id => mol.atoms.get(id)?.name === 'H')) {
+        done[ri] = true;
+        continue;
+      }
+
+      let piTotal = 0;
+      let valid = true;
+
+      for (const atomId of ring) {
+        const atom = mol.atoms.get(atomId);
+        if (!atom) {
+          valid = false;
+          break;
+        }
+
+        const pi = _piElectrons(atom, ringAtomSet, mol);
+        if (pi === null) {
+          valid = false;
+          break;
+        }
+        piTotal += pi;
+      }
+
+      if (!valid || !_isHuckel(piTotal)) {
+        continue;
+      }
+
+      done[ri] = true;
+      anyNew = true;
+
+      // Mark atoms.
+      for (const atomId of ring) {
+        mol.atoms.get(atomId).properties.aromatic = true;
+      }
+
+      // Mark bonds between consecutive ring atoms.
+      for (let i = 0; i &lt; ring.length; i++) {
+        const a = ring[i];
+        const b = ring[(i + 1) % ring.length];
+        const bond = mol.getBond(a, b);
+        if (bond) {
+          if (preserveKekule &amp;&amp; Number.isInteger(bond.properties.order)) {
+            bond.properties.localizedOrder = bond.properties.order;
+          }
+          bond.setAromatic(true);
+          aromaticBondIds.add(bond.id);
+        }
+      }
+
+      aromaticRings.push(ring);
+    }
+  }
+
+  // Kekulize stale bonds (aromatic-flagged bonds whose ring failed Hückel):
+  // run maximum-matching to assign localizedOrder 1 or 2 before clearing the
+  // aromatic flag, so non-aromatic rings parsed from lowercase SMILES (e.g.
+  // the pyrimidinone ring in hypoxanthine) retain their correct bond orders.
+  _kekulizeStale(mol, aromaticBondIds);
+
+  // Remove stale aromatic flags from bonds that the SMILES parser marked
+  // as 1.5-order but whose ring failed Hückel analysis.  Bonds shared with
+  // a genuinely aromatic ring (tracked in aromaticBondIds) are left alone.
+  for (const bond of mol.bonds.values()) {
+    if (bond.properties.aromatic &amp;&amp; !aromaticBondIds.has(bond.id)) {
+      bond.properties.order = bond.properties.localizedOrder ?? 1;
+      bond.properties.aromatic = false;
+      delete bond.properties.localizedOrder;
+    }
+  }
+
+  return aromaticRings;
+}
+
+/**
+ * Clears stale aromatic flags/bond orders and re-perceives aromaticity.
+ *
+ * This is intended for graph edits where an originally aromatic system may
+ * have been broken. Callers should ensure any aromatic bonds that need a
+ * recoverable Kekule assignment already carry `localizedOrder` (for example
+ * by calling `kekulize(mol)` beforehand).
+ *
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {{ preserveKekule?: boolean }} [options]
+ * @returns {string[][]} Array of aromatic rings after refresh.
+ */
+export function refreshAromaticity(mol, { preserveKekule = true } = {}) {
+  for (const atom of mol.atoms.values()) {
+    atom.properties.aromatic = false;
+  }
+
+  for (const bond of mol.bonds.values()) {
+    if (!bond.properties.aromatic) {
+      continue;
+    }
+    bond.properties.order = Number.isInteger(bond.properties.localizedOrder) ? bond.properties.localizedOrder : 1;
+    bond.properties.aromatic = false;
+    delete bond.properties.localizedOrder;
+  }
+
+  return perceiveAromaticity(mol, { preserveKekule });
+}
+</code></pre></article></section></div></div></div><div class="search-container" id="PkfLWpAbet" style="display:none"><div class="wrapper" id="iCxFxjkHbP"><button class="icon-button search-close-button" id="VjLlGakifb" aria-label="close search"><svg><use xlink:href="#close-icon"></use></svg></button><div class="search-box-c"><svg><use xlink:href="#search-icon"></use></svg> <input type="text" id="vpcKVYIppa" class="search-input" placeholder="Search..." autofocus></div><div class="search-result-c" id="fWwVHRuDuN"><span class="search-result-c-text">Type anything to view search result</span></div></div></div><div class="mobile-menu-icon-container"><button class="icon-button" id="mobile-menu" data-isopen="false" aria-label="menu"><svg><use xlink:href="#menu-icon"></use></svg></button></div><div id="mobile-sidebar" class="mobile-sidebar-container"><div class="mobile-sidebar-wrapper"><div class="mobile-nav-links"></div><div class="mobile-sidebar-items-c"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-modules"><div>Modules</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-algorithms.html">algorithms</a></div><div class="sidebar-section-children"><a href="module-algorithms_aromaticity.html">algorithms/aromaticity</a></div><div class="sidebar-section-children"><a href="module-algorithms_morgan.html">algorithms/morgan</a></div><div class="sidebar-section-children"><a href="module-algorithms_paths.html">algorithms/paths</a></div><div class="sidebar-section-children"><a href="module-algorithms_subgraph.html">algorithms/subgraph</a></div><div class="sidebar-section-children"><a href="module-algorithms_traversal.html">algorithms/traversal</a></div><div class="sidebar-section-children"><a href="module-algorithms_vf2.html">algorithms/vf2</a></div><div class="sidebar-section-children"><a href="module-app_core_undo.html">app/core/undo</a></div><div class="sidebar-section-children"><a href="module-app_render_helpers.html">app/render/helpers</a></div><div class="sidebar-section-children"><a href="module-app_render_reaction-2d.html">app/render/reaction-2d</a></div><div class="sidebar-section-children"><a href="module-app_ui_descriptors.html">app/ui/descriptors</a></div><div class="sidebar-section-children"><a href="module-app_ui_export.html">app/ui/export</a></div><div class="sidebar-section-children"><a href="module-core.html">core</a></div><div class="sidebar-section-children"><a href="module-core_Atom.html">core/Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.html">core/Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.html">core/Molecule</a></div><div class="sidebar-section-children"><a href="module-data.html">data</a></div><div class="sidebar-section-children"><a href="module-data_catalog.html">data/catalog</a></div><div class="sidebar-section-children"><a href="module-data_catalog_amino-acids.html">data/catalog/amino-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_fatty-acids.html">data/catalog/fatty-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_nucleobases.html">data/catalog/nucleobases</a></div><div class="sidebar-section-children"><a href="module-data_catalog_polycyclic-aromatic-hydrocarbons.html">data/catalog/polycyclic-aromatic-hydrocarbons</a></div><div class="sidebar-section-children"><a href="module-data_catalog_steroids.html">data/catalog/steroids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_terpenes-and-terpenoids.html">data/catalog/terpenes-and-terpenoids</a></div><div class="sidebar-section-children"><a href="module-data_elements.html">data/elements</a></div><div class="sidebar-section-children"><a href="module-data_molecule-catalog.html">data/molecule-catalog</a></div><div class="sidebar-section-children"><a href="module-descriptors.html">descriptors</a></div><div class="sidebar-section-children"><a href="module-descriptors_information.html">descriptors/information</a></div><div class="sidebar-section-children"><a href="module-descriptors_molecular.html">descriptors/molecular</a></div><div class="sidebar-section-children"><a href="module-descriptors_physicochemical.html">descriptors/physicochemical</a></div><div class="sidebar-section-children"><a href="module-descriptors_spectral.html">descriptors/spectral</a></div><div class="sidebar-section-children"><a href="module-descriptors_topological.html">descriptors/topological</a></div><div class="sidebar-section-children"><a href="module-io.html">io</a></div><div class="sidebar-section-children"><a href="module-io_detect.html">io/detect</a></div><div class="sidebar-section-children"><a href="module-io_inchi.html">io/inchi</a></div><div class="sidebar-section-children"><a href="module-io_json.html">io/json</a></div><div class="sidebar-section-children"><a href="module-io_smiles.html">io/smiles</a></div><div class="sidebar-section-children"><a href="module-layout.html">layout</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d.html">layout/coords2d</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-molecules.html">molecules</a></div><div class="sidebar-section-children"><a href="module-smarts.html">smarts</a></div><div class="sidebar-section-children"><a href="module-smarts_parser.html">smarts/parser</a></div><div class="sidebar-section-children"><a href="module-smarts_primitives.html">smarts/primitives</a></div><div class="sidebar-section-children"><a href="module-smarts_reference.html">smarts/reference</a></div><div class="sidebar-section-children"><a href="module-smarts_search.html">smarts/search</a></div><div class="sidebar-section-children"><a href="module-smirks.html">smirks</a></div><div class="sidebar-section-children"><a href="module-smirks_apply.html">smirks/apply</a></div><div class="sidebar-section-children"><a href="module-smirks_parser.html">smirks/parser</a></div><div class="sidebar-section-children"><a href="module-smirks_reference.html">smirks/reference</a></div><div class="sidebar-section-children"><a href="module-utils.html">utils</a></div><div class="sidebar-section-children"><a href="module-utils_combinatorics.html">utils/combinatorics</a></div><div class="sidebar-section-children"><a href="module-utils_eigenvalues.html">utils/eigenvalues</a></div><div class="sidebar-section-children"><a href="module-utils_matrix.html">utils/matrix</a></div><div class="sidebar-section-children"><a href="module-validation.html">validation</a></div><div class="sidebar-section-children"><a href="module-validation_valence.html">validation/valence</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-core_Atom.Atom.html">Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.Bond.html">Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.Molecule.html">Molecule</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d-SpatialGrid.html">SpatialGrid</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-global"><div>Global</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="global.html#atomBBox">atomBBox</a></div><div class="sidebar-section-children"><a href="global.html#atomColor">atomColor</a></div><div class="sidebar-section-children"><a href="global.html#getAtomLabel">getAtomLabel</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfH">labelHalfH</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfW">labelHalfW</a></div><div class="sidebar-section-children"><a href="global.html#labelTextOffset">labelTextOffset</a></div><div class="sidebar-section-children"><a href="global.html#perpUnit">perpUnit</a></div><div class="sidebar-section-children"><a href="global.html#secondaryDir">secondaryDir</a></div><div class="sidebar-section-children"><a href="global.html#shortenLine">shortenLine</a></div><div class="sidebar-section-children"><a href="global.html#stereoBondTypeForCenter">stereoBondTypeForCenter</a></div><div class="sidebar-section-children"><a href="global.html#vecLen">vecLen</a></div></div></div><div class="mobile-navbar-actions"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div></div></div><script type="text/javascript" src="scripts/core.min.js"></script><script src="scripts/search.min.js" defer="defer"></script><script src="scripts/third-party/fuse.js" defer="defer"></script><script type="text/javascript">var tocbotInstance=tocbot.init({tocSelector:"#eed4d2a0bfd64539bb9df78095dec881",contentSelector:".main-content",headingSelector:"h1, h2, h3",hasInnerContainers:!0,scrollContainer:".main-content",headingsOffset:130,onClick:bringLinkToView})</script></body></html>

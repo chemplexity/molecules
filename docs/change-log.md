@@ -14,4 +14,4 @@
 2026-03-28 - "Made minor fixes across the project."
 2026-03-29 - "Fixed demo issues, added physicochemical descriptors to the demo, and corrected bridge-atom drawing behavior."
 2026-03-30 - "Added reaction preview support, refactored `index.html`, fixed demo issues, expanded reaction templates, improved PNG/SVG export, and added atom/bond highlighting for physicochemical properties."
-2026-03-31 - "Refactored `index.html` further, added a known-molecule catalog, enabled automatic SMILES/InChI input detection, and included assorted fixes."
+2026-03-31 - "Refactored `index.html` further, added a known-molecule catalog, enabled automatic SMILES/InChI input detection, fixed aromaticity perception to clear stale flags from non-aromatic rings, added Kekulisation of stale bonds to restore correct double-bond orders, fixed hydrogen-bond acceptor counting for guanidine nitrogens, added Ctrl/Cmd+A select-all shortcut, renamed UI label to 'Molecule Catalog', and included assorted fixes."

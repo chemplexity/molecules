@@ -58,8 +58,7 @@ const polycyclicAromaticHydrocarbonsCatalog = {
       id: 'pyrene',
       name: 'Pyrene',
       smiles: 'c1cc2ccc3cccc4ccc(c1)c2c34',
-      inchi:
-        'InChI=1S/C16H10/c1-3-11-7-9-13-5-2-6-14-10-8-12(4-1)15(11)16(13)14/h1-10H',
+      inchi: 'InChI=1S/C16H10/c1-3-11-7-9-13-5-2-6-14-10-8-12(4-1)15(11)16(13)14/h1-10H',
       tags: ['pah', 'aromatic', 'four-ring'],
       aliases: ['pyrene']
     },
@@ -67,8 +66,7 @@ const polycyclicAromaticHydrocarbonsCatalog = {
       id: 'fluoranthene',
       name: 'Fluoranthene',
       smiles: 'C1=CC=C2C(=C1)C1=CC=CC3=CC=CC2=C13',
-      inchi:
-        'InChI=1S/C16H10/c1-2-8-13-12(7-1)14-9-3-5-11-6-4-10-15(13)16(11)14/h1-10H',
+      inchi: 'InChI=1S/C16H10/c1-2-8-13-12(7-1)14-9-3-5-11-6-4-10-15(13)16(11)14/h1-10H',
       tags: ['pah', 'aromatic', 'four-ring'],
       aliases: ['fluoranthene']
     },
@@ -76,8 +74,7 @@ const polycyclicAromaticHydrocarbonsCatalog = {
       id: 'benzo-a-pyrene',
       name: 'Benzo[a]pyrene',
       smiles: 'C1=CC=C2C(=C1)C=C1C=CC3=CC=CC4=CC=C2C1=C34',
-      inchi:
-        'InChI=1S/C20H12/c1-2-7-17-15(4-1)12-16-9-8-13-5-3-6-14-10-11-18(17)20(16)19(13)14/h1-12H',
+      inchi: 'InChI=1S/C20H12/c1-2-7-17-15(4-1)12-16-9-8-13-5-3-6-14-10-11-18(17)20(16)19(13)14/h1-12H',
       tags: ['pah', 'aromatic', 'five-ring'],
       aliases: ['benzo[a]pyrene', 'BaP']
     },
@@ -85,8 +82,7 @@ const polycyclicAromaticHydrocarbonsCatalog = {
       id: 'perylene',
       name: 'Perylene',
       smiles: 'C1=CC2=C3C(=C1)C4=CC=CC5=C4C(=CC=C5)C3=CC=C2',
-      inchi:
-        'InChI=1S/C20H12/c1-5-13-6-2-11-17-18-12-4-8-14-7-3-10-16(15(9-1)19(13)17)20(14)18/h1-12H',
+      inchi: 'InChI=1S/C20H12/c1-5-13-6-2-11-17-18-12-4-8-14-7-3-10-16(15(9-1)19(13)17)20(14)18/h1-12H',
       tags: ['pah', 'aromatic', 'five-ring'],
       aliases: ['perylene']
     },

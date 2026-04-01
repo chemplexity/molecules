@@ -1,9 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  guessChemicalStringFormat,
-  detectChemicalStringFormat
-} from '../../src/io/index.js';
+import { guessChemicalStringFormat, detectChemicalStringFormat } from '../../src/io/index.js';
 
 describe('guessChemicalStringFormat', () => {
   it('returns smiles for valid-looking SMILES', () => {

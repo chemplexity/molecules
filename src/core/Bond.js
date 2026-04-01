@@ -72,8 +72,7 @@ export class Bond {
    * @returns {boolean}
    */
   connects(atomA, atomB) {
-    return (this.atoms[0] === atomA && this.atoms[1] === atomB) ||
-           (this.atoms[0] === atomB && this.atoms[1] === atomA);
+    return (this.atoms[0] === atomA && this.atoms[1] === atomB) || (this.atoms[0] === atomB && this.atoms[1] === atomA);
   }
 
   /**
@@ -105,10 +104,7 @@ export class Bond {
    * @returns {[import('./Atom.js').Atom|null, import('./Atom.js').Atom|null]}
    */
   getAtomObjects(molecule) {
-    return [
-      molecule.atoms.get(this.atoms[0]) ?? null,
-      molecule.atoms.get(this.atoms[1]) ?? null
-    ];
+    return [molecule.atoms.get(this.atoms[0]) ?? null, molecule.atoms.get(this.atoms[1]) ?? null];
   }
 
   /**
@@ -124,10 +120,10 @@ export class Bond {
     const [idA, idB] = this.atoms;
     // BFS from idA to idB through paths that do NOT use this bond.
     const visited = new Set([idA]);
-    const queue   = [idA];
+    const queue = [idA];
     while (queue.length > 0) {
       const current = queue.shift();
-      for (const bId of (molecule.atoms.get(current)?.bonds ?? [])) {
+      for (const bId of molecule.atoms.get(current)?.bonds ?? []) {
         if (bId === this.id) {
           continue;
         } // skip this bond
@@ -140,7 +136,8 @@ export class Bond {
           return true;
         }
         if (!visited.has(next)) {
-          visited.add(next); queue.push(next);
+          visited.add(next);
+          queue.push(next);
         }
       }
     }
@@ -249,7 +246,7 @@ export class Bond {
       return false;
     }
 
-    const hasOtherHeavy = (atomId) => {
+    const hasOtherHeavy = atomId => {
       const atom = molecule.atoms.get(atomId);
       return atom.bonds.some(bId => {
         if (bId === this.id) {
@@ -266,7 +263,10 @@ export class Bond {
     };
 
     const isConjugatedAmideLike = () => {
-      const endpoints = [[atomA, atomB, idA], [atomB, atomA, idB]];
+      const endpoints = [
+        [atomA, atomB, idA],
+        [atomB, atomA, idB]
+      ];
       for (const [hetero, center, _heteroId] of endpoints) {
         if (!hetero || !center) {
           continue;

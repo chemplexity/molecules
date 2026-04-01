@@ -25,12 +25,12 @@ describe('Atom', () => {
 
   it('properties default to safe values when not provided', () => {
     const a = new Atom('a0', 'C');
-    assert.equal(a.properties.charge,    0);
-    assert.equal(a.properties.aromatic,  false);
-    assert.equal(a.properties.protons,   undefined);
-    assert.equal(a.properties.neutrons,  undefined);
+    assert.equal(a.properties.charge, 0);
+    assert.equal(a.properties.aromatic, false);
+    assert.equal(a.properties.protons, undefined);
+    assert.equal(a.properties.neutrons, undefined);
     assert.equal(a.properties.electrons, undefined);
-    assert.equal(a.properties.group,  0);
+    assert.equal(a.properties.group, 0);
     assert.equal(a.properties.period, 0);
     assert.deepEqual(a.properties.reaction, { atomMap: null });
     assert.equal(a.properties.radical, 0);
@@ -38,15 +38,22 @@ describe('Atom', () => {
 
   it('accepts properties via constructor', () => {
     const a = new Atom('a0', 'C', {
-      protons: 6, neutrons: 6.0107, electrons: 6, group: 14, period: 2,
-      charge: -1, aromatic: true, radical: 1, reaction: { atomMap: 7 }
+      protons: 6,
+      neutrons: 6.0107,
+      electrons: 6,
+      group: 14,
+      period: 2,
+      charge: -1,
+      aromatic: true,
+      radical: 1,
+      reaction: { atomMap: 7 }
     });
-    assert.equal(a.properties.protons,   6);
-    assert.equal(a.properties.neutrons,  6.0107);
+    assert.equal(a.properties.protons, 6);
+    assert.equal(a.properties.neutrons, 6.0107);
     assert.equal(a.properties.electrons, 6);
-    assert.equal(a.properties.group,  14);
-    assert.equal(a.properties.period,  2);
-    assert.equal(a.properties.charge,  -1);
+    assert.equal(a.properties.group, 14);
+    assert.equal(a.properties.period, 2);
+    assert.equal(a.properties.charge, -1);
     assert.equal(a.properties.aromatic, true);
     assert.deepEqual(a.properties.reaction, { atomMap: 7 });
     assert.equal(a.properties.radical, 1);
@@ -70,17 +77,17 @@ describe('Atom', () => {
   it('setCharge updates charge and derives electrons from protons', () => {
     const a = new Atom('a0', 'N', { protons: 7, electrons: 7 });
     a.setCharge(1);
-    assert.equal(a.properties.charge,    1);
+    assert.equal(a.properties.charge, 1);
     assert.equal(a.properties.electrons, 6); // 7 - 1
     a.setCharge(-1);
-    assert.equal(a.properties.charge,    -1);
+    assert.equal(a.properties.charge, -1);
     assert.equal(a.properties.electrons, 8); // 7 - (-1)
   });
 
   it('setCharge leaves electrons unchanged when protons is not set', () => {
     const a = new Atom('a0', 'C'); // protons = undefined
     a.setCharge(1);
-    assert.equal(a.properties.charge,    1);
+    assert.equal(a.properties.charge, 1);
     assert.equal(a.properties.electrons, undefined);
   });
 
@@ -109,7 +116,7 @@ describe('Atom', () => {
 
   it('getHybridization returns the stored hybridization or null', () => {
     assert.equal(new Atom('a0', 'C').getHybridization(), null);
-    assert.equal(new Atom('a1', 'C', { }).setHybridization('sp2').getHybridization(), 'sp2');
+    assert.equal(new Atom('a1', 'C', {}).setHybridization('sp2').getHybridization(), 'sp2');
   });
 
   it('getAtomMap returns the stored reaction atom map or null', () => {
@@ -170,10 +177,10 @@ describe('Atom', () => {
     const a = new Atom('a0', 'C');
     assert.equal(a.properties.group, 0); // not yet resolved
     a.resolveElement();
-    assert.equal(a.properties.group,     14);
-    assert.equal(a.properties.period,     2);
-    assert.equal(a.properties.protons,    6);
-    assert.equal(a.properties.electrons,  6);
+    assert.equal(a.properties.group, 14);
+    assert.equal(a.properties.period, 2);
+    assert.equal(a.properties.protons, 6);
+    assert.equal(a.properties.electrons, 6);
   });
 
   it('resolveElement returns the atom for chaining', () => {
@@ -214,7 +221,7 @@ describe('Atom', () => {
   });
 
   it('computeCharge — transition metals return 0', () => {
-    assert.equal(new Atom('a', 'Fe', { group: 8 }).computeCharge(3),  0);
+    assert.equal(new Atom('a', 'Fe', { group: 8 }).computeCharge(3), 0);
   });
 
   it('computeCharge — no group set returns 0', () => {
@@ -224,17 +231,21 @@ describe('Atom', () => {
   it('parseSMILES sets element properties on atoms', () => {
     const mol = parseSMILES('C');
     const carbon = [...mol.atoms.values()].find(a => a.name === 'C');
-    assert.equal(carbon.properties.protons,   6);
+    assert.equal(carbon.properties.protons, 6);
     assert.equal(carbon.properties.electrons, 6);
-    assert.equal(carbon.properties.group,  14);
-    assert.equal(carbon.properties.period,  2);
+    assert.equal(carbon.properties.group, 14);
+    assert.equal(carbon.properties.period, 2);
   });
 
   it('isInRing — atom in a 3-membered ring returns true', () => {
     // Triangle: A-B-C-A
     const mol = new Molecule();
-    mol.addAtom('A', 'C'); mol.addAtom('B', 'C'); mol.addAtom('C', 'C');
-    mol.addBond('b1', 'A', 'B'); mol.addBond('b2', 'B', 'C'); mol.addBond('b3', 'C', 'A');
+    mol.addAtom('A', 'C');
+    mol.addAtom('B', 'C');
+    mol.addAtom('C', 'C');
+    mol.addBond('b1', 'A', 'B');
+    mol.addBond('b2', 'B', 'C');
+    mol.addBond('b3', 'C', 'A');
     assert.equal(mol.atoms.get('A').isInRing(mol), true);
     assert.equal(mol.atoms.get('B').isInRing(mol), true);
   });
@@ -256,16 +267,22 @@ describe('Atom', () => {
   it('isInRing — terminal atom in a chain returns false', () => {
     // Linear chain: A-B-C, end atoms A and C are not in a ring
     const mol = new Molecule();
-    mol.addAtom('A', 'C'); mol.addAtom('B', 'C'); mol.addAtom('C', 'C');
-    mol.addBond('b1', 'A', 'B'); mol.addBond('b2', 'B', 'C');
+    mol.addAtom('A', 'C');
+    mol.addAtom('B', 'C');
+    mol.addAtom('C', 'C');
+    mol.addBond('b1', 'A', 'B');
+    mol.addBond('b2', 'B', 'C');
     assert.equal(mol.atoms.get('A').isInRing(mol), false);
     assert.equal(mol.atoms.get('C').isInRing(mol), false);
   });
 
   it('isInRing — middle atom in an open chain returns false', () => {
     const mol = new Molecule();
-    mol.addAtom('A', 'C'); mol.addAtom('B', 'C'); mol.addAtom('C', 'C');
-    mol.addBond('b1', 'A', 'B'); mol.addBond('b2', 'B', 'C');
+    mol.addAtom('A', 'C');
+    mol.addAtom('B', 'C');
+    mol.addAtom('C', 'C');
+    mol.addBond('b1', 'A', 'B');
+    mol.addBond('b2', 'B', 'C');
     assert.equal(mol.atoms.get('B').isInRing(mol), false);
   });
 
@@ -278,10 +295,14 @@ describe('Atom', () => {
   it('isInRing — degree-1 atom (pendant) returns false', () => {
     // Ring with one pendant: B-A-ring. B has degree 1.
     const mol = new Molecule();
-    mol.addAtom('A', 'C'); mol.addAtom('B', 'C');
-    mol.addAtom('C', 'C'); mol.addAtom('D', 'C');
-    mol.addBond('b1', 'A', 'C'); mol.addBond('b2', 'C', 'D');
-    mol.addBond('b3', 'D', 'A'); mol.addBond('b4', 'A', 'B');
+    mol.addAtom('A', 'C');
+    mol.addAtom('B', 'C');
+    mol.addAtom('C', 'C');
+    mol.addAtom('D', 'C');
+    mol.addBond('b1', 'A', 'C');
+    mol.addBond('b2', 'C', 'D');
+    mol.addBond('b3', 'D', 'A');
+    mol.addBond('b4', 'A', 'B');
     assert.equal(mol.atoms.get('B').isInRing(mol), false);
     assert.equal(mol.atoms.get('A').isInRing(mol), true);
   });
@@ -293,13 +314,13 @@ describe('Bond', () => {
     assert.equal(b.id, 'b0');
     assert.deepEqual(b.atoms, ['a0', 'a1']);
     assert.deepEqual(b.tags, []);
-    assert.equal(b.properties.order,    1);
+    assert.equal(b.properties.order, 1);
     assert.equal(b.properties.aromatic, false);
   });
 
   it('accepts properties via constructor', () => {
     const b = new Bond('b0', ['a0', 'a1'], { order: 2, aromatic: true });
-    assert.equal(b.properties.order,    2);
+    assert.equal(b.properties.order, 2);
     assert.equal(b.properties.aromatic, true);
   });
 
@@ -649,7 +670,7 @@ describe('Molecule', () => {
     const mol = new Molecule();
     mol.addAtom('a0', 'N', { protons: 7, electrons: 7, charge: 0 });
     mol.setAtomCharge('a0', 1);
-    assert.equal(mol.atoms.get('a0').properties.charge,    1);
+    assert.equal(mol.atoms.get('a0').properties.charge, 1);
     assert.equal(mol.atoms.get('a0').properties.electrons, 6);
     assert.equal(mol.properties.charge, 1);
   });
@@ -794,9 +815,9 @@ describe('Molecule', () => {
     mol.removeBond('b0');
     assert.equal(mol.atomCount, 0);
     assert.deepEqual(mol.properties.formula, {});
-    assert.equal(mol.properties.mass,   0);
+    assert.equal(mol.properties.mass, 0);
     assert.equal(mol.properties.charge, 0);
-    assert.equal(mol.name,              '');
+    assert.equal(mol.name, '');
   });
 
   it('repairImplicitHydrogens restores local valence without moving surviving heavy atoms', () => {
@@ -806,7 +827,8 @@ describe('Molecule', () => {
 
     const alcoholCarbon = oxygen.getNeighbors(mol).find(atom => atom.name === 'C');
     assert.ok(alcoholCarbon);
-    const oxygenHydrogens = oxygen.getNeighbors(mol)
+    const oxygenHydrogens = oxygen
+      .getNeighbors(mol)
       .filter(atom => atom.name === 'H')
       .map(atom => atom.id);
 
@@ -870,8 +892,12 @@ describe('Molecule', () => {
 
   it('isAtomInRing — delegates to Atom#isInRing', () => {
     const mol = new Molecule();
-    mol.addAtom('A', 'C'); mol.addAtom('B', 'C'); mol.addAtom('C', 'C');
-    mol.addBond('b1', 'A', 'B'); mol.addBond('b2', 'B', 'C'); mol.addBond('b3', 'C', 'A');
+    mol.addAtom('A', 'C');
+    mol.addAtom('B', 'C');
+    mol.addAtom('C', 'C');
+    mol.addBond('b1', 'A', 'B');
+    mol.addBond('b2', 'B', 'C');
+    mol.addBond('b3', 'C', 'A');
     assert.equal(mol.isAtomInRing('A'), true);
     assert.equal(mol.isAtomInRing('B'), true);
   });
@@ -925,8 +951,10 @@ describe('Bond#isRotatable', () => {
   it('single bond between two internal carbons is rotatable (butane central bond)', () => {
     // CC-CC: central bond b1 between a1 and a2 — each has another heavy neighbor
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
-    mol.addAtom('a2', 'C'); mol.addAtom('a3', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
+    mol.addAtom('a2', 'C');
+    mol.addAtom('a3', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     mol.addBond('b1', 'a1', 'a2', {}, false);
     mol.addBond('b2', 'a2', 'a3', {}, false);
@@ -935,15 +963,18 @@ describe('Bond#isRotatable', () => {
 
   it('terminal bond is not rotatable', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     assert.equal(mol.bonds.get('b0').isRotatable(mol), false);
   });
 
   it('double bond is not rotatable', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
-    mol.addAtom('a2', 'C'); mol.addAtom('a3', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
+    mol.addAtom('a2', 'C');
+    mol.addAtom('a3', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     mol.addBond('b1', 'a1', 'a2', { order: 2 }, false);
     mol.addBond('b2', 'a2', 'a3', {}, false);
@@ -979,7 +1010,8 @@ describe('Atom#getValence', () => {
 
   it('double bond contributes 2', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     mol.addBond('b0', 'a0', 'a1', { order: 2 }, false);
     assert.equal(mol.atoms.get('a0').getValence(mol), 2);
   });
@@ -996,7 +1028,8 @@ describe('Atom#isSaturated', () => {
     // C in CH2=CH2: C-C(order2) + 2 C-H = bond order 4 total → actually saturated by count
     // Test unsaturation via a bare C with one double bond and no H
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     mol.addBond('b0', 'a0', 'a1', { order: 2 }, false);
     // a0 has total bond order 2, neutral valence 4 → not saturated
     assert.equal(mol.atoms.get('a0').isSaturated(mol), false);
@@ -1018,14 +1051,16 @@ describe('Atom#implicitHydrogenCount', () => {
 
   it('C with one heavy neighbor needs 3 H', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     assert.equal(mol.atoms.get('a0').implicitHydrogenCount(mol), 3);
   });
 
   it('C with one double bond needs 2 H', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     mol.addBond('b0', 'a0', 'a1', { order: 2 }, false);
     assert.equal(mol.atoms.get('a0').implicitHydrogenCount(mol), 2);
   });
@@ -1057,7 +1092,7 @@ describe('Atom#getHeavyNeighbors / getHydrogenNeighbors', () => {
   it('propane middle C has 2 heavy and 2 H neighbors', () => {
     const mol = parseSMILES('CCC');
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const middle  = carbons.find(c => c.getHeavyNeighbors(mol).length === 2);
+    const middle = carbons.find(c => c.getHeavyNeighbors(mol).length === 2);
     assert.equal(middle.getHeavyNeighbors(mol).length, 2);
     assert.equal(middle.getHydrogenNeighbors(mol).length, 2);
     assert.ok(middle.getHeavyNeighbors(mol).every(a => a.name === 'C'));
@@ -1080,7 +1115,8 @@ describe('Atom#getHeavyNeighbors / getHydrogenNeighbors', () => {
 describe('Molecule#getBond', () => {
   it('returns the bond connecting two atoms', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     assert.equal(mol.getBond('a0', 'a1')?.id, 'b0');
     assert.equal(mol.getBond('a1', 'a0')?.id, 'b0'); // order-independent
@@ -1088,7 +1124,8 @@ describe('Molecule#getBond', () => {
 
   it('returns null when no bond exists', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     assert.equal(mol.getBond('a0', 'a1'), null);
   });
 });
@@ -1096,7 +1133,8 @@ describe('Molecule#getBond', () => {
 describe('Molecule#updateBond', () => {
   it('changes bond order and recomputes properties', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     assert.equal(mol.bonds.get('b0').properties.order, 1);
     mol.updateBond('b0', { order: 2 });
@@ -1111,7 +1149,9 @@ describe('Molecule#updateBond', () => {
 describe('Molecule#getPath', () => {
   it('propane: path from end to end is [a0, a1, a2]', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C'); mol.addAtom('a2', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
+    mol.addAtom('a2', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     mol.addBond('b1', 'a1', 'a2', {}, false);
     assert.deepEqual(mol.getPath('a0', 'a2'), ['a0', 'a1', 'a2']);
@@ -1125,7 +1165,8 @@ describe('Molecule#getPath', () => {
 
   it('disconnected atoms return null', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     assert.equal(mol.getPath('a0', 'a1'), null);
   });
 
@@ -1138,7 +1179,9 @@ describe('Molecule#getPath', () => {
 describe('Molecule#getRings', () => {
   it('propane (acyclic) has 0 rings', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C'); mol.addAtom('a2', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
+    mol.addAtom('a2', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     mol.addBond('b1', 'a1', 'a2', {}, false);
     assert.equal(mol.getRings().length, 0);
@@ -1146,7 +1189,9 @@ describe('Molecule#getRings', () => {
 
   it('cyclopropane has 1 ring of length 3', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C'); mol.addAtom('a2', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
+    mol.addAtom('a2', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     mol.addBond('b1', 'a1', 'a2', {}, false);
     mol.addBond('b2', 'a2', 'a0', {}, false);
@@ -1184,7 +1229,9 @@ describe('Molecule#getRings', () => {
 describe('Molecule#getSubgraph', () => {
   it('extracts a subset of atoms and their connecting bonds', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C'); mol.addAtom('a2', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
+    mol.addAtom('a2', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     mol.addBond('b1', 'a1', 'a2', {}, false);
     const sub = mol.getSubgraph(['a0', 'a1']);
@@ -1195,7 +1242,8 @@ describe('Molecule#getSubgraph', () => {
 
   it('preserves atom and bond IDs', () => {
     const mol = new Molecule();
-    mol.addAtom('x', 'N'); mol.addAtom('y', 'O');
+    mol.addAtom('x', 'N');
+    mol.addAtom('y', 'O');
     mol.addBond('bxy', 'x', 'y', {}, false);
     const sub = mol.getSubgraph(['x', 'y']);
     assert.ok(sub.atoms.has('x'));
@@ -1204,7 +1252,9 @@ describe('Molecule#getSubgraph', () => {
 
   it('boundary bonds are excluded', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C'); mol.addAtom('a2', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
+    mol.addAtom('a2', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     mol.addBond('b1', 'a1', 'a2', {}, false);
     const sub = mol.getSubgraph(['a0', 'a1']); // b1 connects a1→a2 which is outside
@@ -1239,7 +1289,8 @@ describe('Molecule#getSubgraph', () => {
 
   it('retains duplicate-bond protection in the extracted molecule', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
 
     const sub = mol.getSubgraph(['a0', 'a1']);
@@ -1279,7 +1330,8 @@ describe('Molecule#getComponents', () => {
 describe('Molecule#clone', () => {
   it('produces an independent deep copy', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
     const copy = mol.clone();
     assert.equal(copy.atomCount, mol.atomCount);
@@ -1291,7 +1343,8 @@ describe('Molecule#clone', () => {
 
   it('preserves atom and bond IDs', () => {
     const mol = new Molecule();
-    mol.addAtom('x', 'N'); mol.addAtom('y', 'O');
+    mol.addAtom('x', 'N');
+    mol.addAtom('y', 'O');
     mol.addBond('bxy', 'x', 'y', {}, false);
     const copy = mol.clone();
     assert.ok(copy.atoms.has('x'));
@@ -1332,7 +1385,8 @@ describe('Molecule#clone', () => {
 
   it('retains duplicate-bond protection in the clone', () => {
     const mol = new Molecule();
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C');
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
     mol.addBond('b0', 'a0', 'a1', {}, false);
 
     const copy = mol.clone();
@@ -1371,7 +1425,8 @@ describe('Molecule#merge', () => {
 
   it('remaps colliding bond IDs from the second molecule and rewrites endpoints', () => {
     const mol1 = new Molecule();
-    mol1.addAtom('a0', 'C'); mol1.addAtom('a1', 'C');
+    mol1.addAtom('a0', 'C');
+    mol1.addAtom('a1', 'C');
     const bond1 = mol1.addBond('b0', 'a0', 'a1', {}, false);
     const mol2 = new Molecule();
     const atom2a = mol2.addAtom('a0', 'N');
@@ -1397,8 +1452,10 @@ describe('Molecule#merge', () => {
   });
 
   it('recomputes properties on the merged result', () => {
-    const mol1 = new Molecule(); mol1.addAtom('c1', 'C');
-    const mol2 = new Molecule(); mol2.addAtom('n1', 'N');
+    const mol1 = new Molecule();
+    mol1.addAtom('c1', 'C');
+    const mol2 = new Molecule();
+    mol2.addAtom('n1', 'N');
     const merged = mol1.merge(mol2);
     assert.deepEqual(merged.properties.formula, { C: 1, N: 1 });
   });
@@ -1428,7 +1485,8 @@ describe('Molecule#merge', () => {
 
   it('retains duplicate-bond protection for pre-existing merged bonds', () => {
     const mol1 = new Molecule();
-    mol1.addAtom('a0', 'C'); mol1.addAtom('a1', 'C');
+    mol1.addAtom('a0', 'C');
+    mol1.addAtom('a1', 'C');
     mol1.addBond('b0', 'a0', 'a1', {}, false);
 
     const mol2 = new Molecule();
@@ -1440,7 +1498,8 @@ describe('Molecule#merge', () => {
 
   it('retains duplicate-bond protection for remapped merged bonds', () => {
     const mol1 = new Molecule();
-    mol1.addAtom('a0', 'C'); mol1.addAtom('a1', 'C');
+    mol1.addAtom('a0', 'C');
+    mol1.addAtom('a1', 'C');
 
     const mol2 = new Molecule();
     const atomA = mol2.addAtom('a0', 'N');
@@ -1463,7 +1522,9 @@ describe('Molecule#merge', () => {
 describe('Atom – getNeighbors', () => {
   it('returns all neighbour Atom instances', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C'); mol.addAtom('b', 'N'); mol.addAtom('c', 'O');
+    mol.addAtom('a', 'C');
+    mol.addAtom('b', 'N');
+    mol.addAtom('c', 'O');
     mol.addBond('b1', 'a', 'b', {}, false);
     mol.addBond('b2', 'a', 'c', {}, false);
     const neighbors = mol.atoms.get('a').getNeighbors(mol);
@@ -1481,7 +1542,8 @@ describe('Atom – getNeighbors', () => {
 
   it('returns a single neighbour for a terminal atom', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C'); mol.addAtom('b', 'C');
+    mol.addAtom('a', 'C');
+    mol.addAtom('b', 'C');
     mol.addBond('b1', 'a', 'b', {}, false);
     const neighbors = mol.atoms.get('a').getNeighbors(mol);
     assert.equal(neighbors.length, 1);
@@ -1497,7 +1559,9 @@ describe('Atom – getDegree', () => {
 
   it('returns the number of bonds', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C'); mol.addAtom('b', 'C'); mol.addAtom('c', 'C');
+    mol.addAtom('a', 'C');
+    mol.addAtom('b', 'C');
+    mol.addAtom('c', 'C');
     mol.addBond('b1', 'a', 'b', {}, false);
     mol.addBond('b2', 'a', 'c', {}, false);
     assert.equal(mol.atoms.get('a').getDegree(), 2);
@@ -1513,7 +1577,8 @@ describe('Atom – isTerminal', () => {
 
   it('returns true for an atom with exactly one bond', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C'); mol.addAtom('b', 'C');
+    mol.addAtom('a', 'C');
+    mol.addAtom('b', 'C');
     mol.addBond('b1', 'a', 'b', {}, false);
     assert.equal(mol.atoms.get('a').isTerminal(), true);
     assert.equal(mol.atoms.get('b').isTerminal(), true);
@@ -1521,7 +1586,9 @@ describe('Atom – isTerminal', () => {
 
   it('returns false for an atom with two or more bonds', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C'); mol.addAtom('b', 'C'); mol.addAtom('c', 'C');
+    mol.addAtom('a', 'C');
+    mol.addAtom('b', 'C');
+    mol.addAtom('c', 'C');
     mol.addBond('b1', 'a', 'b', {}, false);
     mol.addBond('b2', 'a', 'c', {}, false);
     assert.equal(mol.atoms.get('a').isTerminal(), false);
@@ -1529,7 +1596,9 @@ describe('Atom – isTerminal', () => {
 
   it('terminal atoms in a chain: first and last are terminal, middle is not', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C'); mol.addAtom('b', 'C'); mol.addAtom('c', 'C');
+    mol.addAtom('a', 'C');
+    mol.addAtom('b', 'C');
+    mol.addAtom('c', 'C');
     mol.addBond('b1', 'a', 'b', {}, false);
     mol.addBond('b2', 'b', 'c', {}, false);
     assert.equal(mol.atoms.get('a').isTerminal(), true);
@@ -1541,7 +1610,9 @@ describe('Atom – isTerminal', () => {
 describe('Bond – isInRing', () => {
   it('returns true for a bond inside a 3-membered ring', () => {
     const mol = new Molecule();
-    mol.addAtom('A', 'C'); mol.addAtom('B', 'C'); mol.addAtom('C', 'C');
+    mol.addAtom('A', 'C');
+    mol.addAtom('B', 'C');
+    mol.addAtom('C', 'C');
     mol.addBond('b1', 'A', 'B', {}, false);
     mol.addBond('b2', 'B', 'C', {}, false);
     mol.addBond('b3', 'C', 'A', {}, false);
@@ -1565,7 +1636,9 @@ describe('Bond – isInRing', () => {
 
   it('returns false for a bond in an open chain', () => {
     const mol = new Molecule();
-    mol.addAtom('A', 'C'); mol.addAtom('B', 'C'); mol.addAtom('C', 'C');
+    mol.addAtom('A', 'C');
+    mol.addAtom('B', 'C');
+    mol.addAtom('C', 'C');
     mol.addBond('b1', 'A', 'B', {}, false);
     mol.addBond('b2', 'B', 'C', {}, false);
     assert.equal(mol.bonds.get('b1').isInRing(mol), false);
@@ -1575,7 +1648,10 @@ describe('Bond – isInRing', () => {
   it('returns false for a pendant bond attached to a ring', () => {
     // 3-membered ring A-B-C-A with pendant D attached to A
     const mol = new Molecule();
-    mol.addAtom('A', 'C'); mol.addAtom('B', 'C'); mol.addAtom('C', 'C'); mol.addAtom('D', 'C');
+    mol.addAtom('A', 'C');
+    mol.addAtom('B', 'C');
+    mol.addAtom('C', 'C');
+    mol.addAtom('D', 'C');
     mol.addBond('ring1', 'A', 'B', {}, false);
     mol.addBond('ring2', 'B', 'C', {}, false);
     mol.addBond('ring3', 'C', 'A', {}, false);
@@ -1588,7 +1664,8 @@ describe('Bond – isInRing', () => {
 describe('Bond – getAtomObjects', () => {
   it('returns the two Atom instances for a bond', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C'); mol.addAtom('b', 'N');
+    mol.addAtom('a', 'C');
+    mol.addAtom('b', 'N');
     mol.addBond('b1', 'a', 'b', {}, false);
     const [atomA, atomB] = mol.bonds.get('b1').getAtomObjects(mol);
     assert.ok(atomA instanceof Atom);
@@ -1599,7 +1676,8 @@ describe('Bond – getAtomObjects', () => {
 
   it('returns atoms with correct element names', () => {
     const mol = new Molecule();
-    mol.addAtom('x', 'O'); mol.addAtom('y', 'H');
+    mol.addAtom('x', 'O');
+    mol.addAtom('y', 'H');
     mol.addBond('b1', 'x', 'y', {}, false);
     const [o, h] = mol.bonds.get('b1').getAtomObjects(mol);
     assert.equal(o.name, 'O');
@@ -1663,16 +1741,18 @@ describe('Bond – setAromatic', () => {
 
   it('throws TypeError for non-boolean value', () => {
     const b = new Bond('b0', ['a0', 'a1']);
-    assert.throws(() => b.setAromatic(1),    /TypeError|boolean/);
+    assert.throws(() => b.setAromatic(1), /TypeError|boolean/);
     assert.throws(() => b.setAromatic('yes'), /TypeError|boolean/);
-    assert.throws(() => b.setAromatic(null),  /TypeError|boolean/);
+    assert.throws(() => b.setAromatic(null), /TypeError|boolean/);
   });
 });
 
 describe('Molecule – findAtom', () => {
   it('returns the first matching atom', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C'); mol.addAtom('b', 'O'); mol.addAtom('c', 'N');
+    mol.addAtom('a', 'C');
+    mol.addAtom('b', 'O');
+    mol.addAtom('c', 'N');
     const result = mol.findAtom(a => a.name === 'O');
     assert.ok(result instanceof Atom);
     assert.equal(result.id, 'b');
@@ -1681,11 +1761,17 @@ describe('Molecule – findAtom', () => {
   it('returns null when no atom matches', () => {
     const mol = new Molecule();
     mol.addAtom('a', 'C');
-    assert.equal(mol.findAtom(a => a.name === 'Fe'), null);
+    assert.equal(
+      mol.findAtom(a => a.name === 'Fe'),
+      null
+    );
   });
 
   it('returns null on an empty molecule', () => {
-    assert.equal(new Molecule().findAtom(a => a.name === 'C'), null);
+    assert.equal(
+      new Molecule().findAtom(a => a.name === 'C'),
+      null
+    );
   });
 
   it('works with charge-based predicate', () => {
@@ -1700,7 +1786,9 @@ describe('Molecule – findAtom', () => {
 describe('Molecule – findBond', () => {
   it('returns the first matching bond', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C'); mol.addAtom('b', 'C'); mol.addAtom('c', 'C');
+    mol.addAtom('a', 'C');
+    mol.addAtom('b', 'C');
+    mol.addAtom('c', 'C');
     mol.addBond('b1', 'a', 'b', { order: 1 }, false);
     mol.addBond('b2', 'b', 'c', { order: 2 }, false);
     const result = mol.findBond(b => b.properties.order === 2);
@@ -1710,15 +1798,22 @@ describe('Molecule – findBond', () => {
 
   it('returns null when no bond matches', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C'); mol.addAtom('b', 'C');
+    mol.addAtom('a', 'C');
+    mol.addAtom('b', 'C');
     mol.addBond('b1', 'a', 'b', {}, false);
-    assert.equal(mol.findBond(b => b.properties.order === 3), null);
+    assert.equal(
+      mol.findBond(b => b.properties.order === 3),
+      null
+    );
   });
 
   it('returns null on a molecule with no bonds', () => {
     const mol = new Molecule();
     mol.addAtom('a', 'C');
-    assert.equal(mol.findBond(() => true), null);
+    assert.equal(
+      mol.findBond(() => true),
+      null
+    );
   });
 });
 
@@ -1727,8 +1822,10 @@ describe('Molecule – hideHydrogens', () => {
     // Build CH4 manually (1 C + 4 H)
     const mol = new Molecule();
     mol.addAtom('C1', 'C');
-    mol.addAtom('H1', 'H'); mol.addAtom('H2', 'H');
-    mol.addAtom('H3', 'H'); mol.addAtom('H4', 'H');
+    mol.addAtom('H1', 'H');
+    mol.addAtom('H2', 'H');
+    mol.addAtom('H3', 'H');
+    mol.addAtom('H4', 'H');
     mol.addBond('b1', 'C1', 'H1', {}, false);
     mol.addBond('b2', 'C1', 'H2', {}, false);
     mol.addBond('b3', 'C1', 'H3', {}, false);
@@ -1743,7 +1840,8 @@ describe('Molecule – hideHydrogens', () => {
 
   it('does not remove atoms from the graph', () => {
     const mol = new Molecule();
-    mol.addAtom('C1', 'C'); mol.addAtom('H1', 'H');
+    mol.addAtom('C1', 'C');
+    mol.addAtom('H1', 'H');
     mol.addBond('b1', 'C1', 'H1', {}, false);
     mol.hideHydrogens();
     assert.equal(mol.atomCount, 2);
@@ -1758,7 +1856,8 @@ describe('Molecule – hideHydrogens', () => {
 
   it('leaves heavy atoms visible', () => {
     const mol = new Molecule();
-    mol.addAtom('C1', 'C'); mol.addAtom('N1', 'N');
+    mol.addAtom('C1', 'C');
+    mol.addAtom('N1', 'N');
     mol.addBond('b1', 'C1', 'N1', {}, false);
     mol.hideHydrogens();
     assert.equal(mol.atoms.get('C1').visible, true);
@@ -1810,7 +1909,8 @@ describe('Molecule – neutralizeCharge', () => {
 
   it('is a no-op on a molecule already at zero charge', () => {
     const mol = new Molecule();
-    mol.addAtom('a', 'C'); mol.addAtom('b', 'N');
+    mol.addAtom('a', 'C');
+    mol.addAtom('b', 'N');
     mol.neutralizeCharge();
     assert.equal(mol.properties.charge, 0);
   });
@@ -1819,15 +1919,20 @@ describe('Molecule – neutralizeCharge', () => {
 describe('CIP R/S — isotope mass tiebreaking (Task 3)', () => {
   it('[C@@]([13C])([12C])([2H])O — 4 distinct priorities, chirality assigned', () => {
     const mol = parseSMILES('[C@@]([13C])([12C])([2H])O');
-    assert.equal(mol.getChiralCenters().length, 1,
-      '[13C] vs [12C] and [2H] vs H should yield 4 distinct CIP priorities');
+    assert.equal(
+      mol.getChiralCenters().length,
+      1,
+      '[13C] vs [12C] and [2H] vs H should yield 4 distinct CIP priorities'
+    );
   });
 
   it('[C@@]([13C])([12C])([2H])O and [C@]([13C])([12C])([2H])O give opposite R/S', () => {
     const c1 = [...parseSMILES('[C@@]([13C])([12C])([2H])O').atoms.values()]
-      .find(a => a.isChiralCenter())?.getChirality();
+      .find(a => a.isChiralCenter())
+      ?.getChirality();
     const c2 = [...parseSMILES('[C@]([13C])([12C])([2H])O').atoms.values()]
-      .find(a => a.isChiralCenter())?.getChirality();
+      .find(a => a.isChiralCenter())
+      ?.getChirality();
     assert.ok(c1 && c2 && c1 !== c2, 'expected opposite chirality');
   });
 
@@ -1844,12 +1949,10 @@ describe('CIP R/S — isotope mass tiebreaking (Task 3)', () => {
 });
 
 describe('Molecule.assignHybridizations', () => {
-  const hyb = (smiles) => {
+  const hyb = smiles => {
     const mol = parseSMILES(smiles);
     mol.assignHybridizations();
-    return [...mol.atoms.values()]
-      .filter(a => a.name !== 'H')
-      .map(a => a.properties.hybridization);
+    return [...mol.atoms.values()].filter(a => a.name !== 'H').map(a => a.properties.hybridization);
   };
 
   it('sp3 for all carbons in ethane', () => {

@@ -11,5 +11,5 @@ const DEG = degreeMatrix(A);
 
 console.log('Propane (CCC)');
 console.log('  Atoms:', mol.atomCount, '  Bonds:', mol.bondCount);
-console.log('  Wiener index W =', wienerIndex(D));       // 4
+console.log('  Wiener index W =', wienerIndex(D)); // 4
 console.log('  Randić index χ =', randicIndex(A, DEG).toFixed(4));

@@ -1,10 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import {
-  moleculeCatalog,
-  getMoleculeCatalogById,
-  findMolecules
-} from '../../src/data/molecule-catalog.js';
+import { moleculeCatalog, getMoleculeCatalogById, findMolecules } from '../../src/data/molecule-catalog.js';
 import { parseSMILES, toInChI } from '../../src/io/index.js';
 
 function atomCounts(smiles) {
@@ -27,24 +23,13 @@ function unsaturatedPositionsFromAcid(smiles) {
       atom.name === 'C' &&
       atom.bonds.some(bondId => {
         const currentBond = bondById(bondId);
-        const otherId =
-          currentBond.atoms[0] === atom.id
-            ? currentBond.atoms[1]
-            : currentBond.atoms[0];
-        return (
-          currentBond.properties.order === 2 && atomById(otherId)?.name === 'O'
-        );
+        const otherId = currentBond.atoms[0] === atom.id ? currentBond.atoms[1] : currentBond.atoms[0];
+        return currentBond.properties.order === 2 && atomById(otherId)?.name === 'O';
       })
   );
   const alpha = carbonyl.bonds
     .map(bondById)
-    .map(currentBond =>
-      atomById(
-        currentBond.atoms[0] === carbonyl.id
-          ? currentBond.atoms[1]
-          : currentBond.atoms[0]
-      )
-    )
+    .map(currentBond => atomById(currentBond.atoms[0] === carbonyl.id ? currentBond.atoms[1] : currentBond.atoms[0]))
     .find(atom => atom?.name === 'C');
 
   const chain = [alpha.id];
@@ -53,11 +38,7 @@ function unsaturatedPositionsFromAcid(smiles) {
   for (;;) {
     const nextId = atomById(currentId)
       .bonds.map(bondById)
-      .map(currentBond =>
-        currentBond.atoms[0] === currentId
-          ? currentBond.atoms[1]
-          : currentBond.atoms[0]
-      )
+      .map(currentBond => (currentBond.atoms[0] === currentId ? currentBond.atoms[1] : currentBond.atoms[0]))
       .find(id => id !== previousId && atomById(id)?.name === 'C');
     if (!nextId) {
       break;
@@ -69,9 +50,7 @@ function unsaturatedPositionsFromAcid(smiles) {
 
   const positions = [];
   for (let i = 0; i < chain.length - 1; i++) {
-    const currentBond = bonds.find(
-      bond => bond.atoms.includes(chain[i]) && bond.atoms.includes(chain[i + 1])
-    );
+    const currentBond = bonds.find(bond => bond.atoms.includes(chain[i]) && bond.atoms.includes(chain[i + 1]));
     if (currentBond?.properties.order === 2) {
       positions.push(i + 2);
     }
@@ -100,14 +79,12 @@ function ccDoubleBondStereoPairs(smiles) {
       left.bonds
         .filter(id => id !== bond.id)
         .map(bondById)
-        .find(currentBond => currentBond.properties.stereo)?.properties
-        .stereo ?? null;
+        .find(currentBond => currentBond.properties.stereo)?.properties.stereo ?? null;
     const rightStereo =
       right.bonds
         .filter(id => id !== bond.id)
         .map(bondById)
-        .find(currentBond => currentBond.properties.stereo)?.properties
-        .stereo ?? null;
+        .find(currentBond => currentBond.properties.stereo)?.properties.stereo ?? null;
 
     pairs.push([leftStereo, rightStereo]);
   }
@@ -120,18 +97,11 @@ describe('moleculeCatalog', () => {
     assert.equal(Array.isArray(moleculeCatalog), true);
     assert.equal(moleculeCatalog.length >= 2, true);
     assert.equal(getMoleculeCatalogById('amino-acids')?.molecules.length, 20);
-    assert.equal(
-      getMoleculeCatalogById('polycyclic-aromatic-hydrocarbons')?.molecules
-        .length,
-      11
-    );
+    assert.equal(getMoleculeCatalogById('polycyclic-aromatic-hydrocarbons')?.molecules.length, 11);
     assert.equal(getMoleculeCatalogById('fatty-acids')?.molecules.length, 10);
     assert.equal(getMoleculeCatalogById('steroids')?.molecules.length, 6);
     assert.equal(getMoleculeCatalogById('nucleobases')?.molecules.length, 6);
-    assert.equal(
-      getMoleculeCatalogById('terpenes-and-terpenoids')?.molecules.length,
-      6
-    );
+    assert.equal(getMoleculeCatalogById('terpenes-and-terpenoids')?.molecules.length, 6);
   });
 
   it('requires id, name, smiles, and inchi for all molecules', () => {
@@ -148,11 +118,7 @@ describe('moleculeCatalog', () => {
   it('keeps smiles and inchi internally consistent', () => {
     for (const collection of moleculeCatalog) {
       for (const molecule of collection.molecules) {
-        assert.equal(
-          toInChI(parseSMILES(molecule.smiles)),
-          molecule.inchi,
-          `${collection.id}/${molecule.id}`
-        );
+        assert.equal(toInChI(parseSMILES(molecule.smiles)), molecule.inchi, `${collection.id}/${molecule.id}`);
       }
     }
   });
@@ -165,9 +131,7 @@ describe('getMoleculeCatalogById', () => {
   });
 
   it('normalizes surrounding whitespace and case', () => {
-    const collection = getMoleculeCatalogById(
-      '  Polycyclic-Aromatic-Hydrocarbons  '
-    );
+    const collection = getMoleculeCatalogById('  Polycyclic-Aromatic-Hydrocarbons  ');
     assert.equal(collection?.name, 'Polycyclic Aromatic Hydrocarbons');
   });
 
@@ -201,11 +165,7 @@ describe('findMolecules', () => {
     const results = findMolecules('branched-chain', {
       collectionId: 'amino-acids'
     });
-    assert.deepEqual(results.map(result => result.molecule.id).sort(), [
-      'isoleucine',
-      'leucine',
-      'valine'
-    ]);
+    assert.deepEqual(results.map(result => result.molecule.id).sort(), ['isoleucine', 'leucine', 'valine']);
   });
 
   it('finds molecules by collection metadata', () => {
@@ -218,9 +178,7 @@ describe('findMolecules', () => {
       exact: true,
       collectionId: 'amino-acids'
     });
-    assert.deepEqual(results.map(result => result.molecule.id).sort(), [
-      'alanine'
-    ]);
+    assert.deepEqual(results.map(result => result.molecule.id).sort(), ['alanine']);
   });
 
   it('supports result limits', () => {
@@ -251,11 +209,7 @@ describe('moleculeCatalog structural validation', () => {
       }
       const counts = atomCounts(molecule.smiles);
       assert.equal(counts.C, expected[molecule.id].C, molecule.id);
-      assert.deepEqual(
-        unsaturatedPositionsFromAcid(molecule.smiles),
-        expected[molecule.id].positions,
-        molecule.id
-      );
+      assert.deepEqual(unsaturatedPositionsFromAcid(molecule.smiles), expected[molecule.id].positions, molecule.id);
     }
   });
 
@@ -273,19 +227,9 @@ describe('moleculeCatalog structural validation', () => {
       if (!expectedIds.includes(molecule.id)) {
         continue;
       }
-      for (const [leftStereo, rightStereo] of ccDoubleBondStereoPairs(
-        molecule.smiles
-      )) {
-        assert.equal(
-          leftStereo !== null && rightStereo !== null,
-          true,
-          `${molecule.id} should encode alkene stereo`
-        );
-        assert.notEqual(
-          leftStereo,
-          rightStereo,
-          `${molecule.id} should remain cis (Z)`
-        );
+      for (const [leftStereo, rightStereo] of ccDoubleBondStereoPairs(molecule.smiles)) {
+        assert.equal(leftStereo !== null && rightStereo !== null, true, `${molecule.id} should encode alkene stereo`);
+        assert.notEqual(leftStereo, rightStereo, `${molecule.id} should remain cis (Z)`);
       }
     }
   });
@@ -312,11 +256,7 @@ describe('moleculeCatalog structural validation', () => {
         if (!expected[molecule.id]) {
           continue;
         }
-        assert.deepEqual(
-          atomCounts(molecule.smiles),
-          expected[molecule.id],
-          molecule.id
-        );
+        assert.deepEqual(atomCounts(molecule.smiles), expected[molecule.id], molecule.id);
       }
     }
   });
@@ -324,11 +264,7 @@ describe('moleculeCatalog structural validation', () => {
   it('stores steroids without explicit stereochemistry', () => {
     const collection = getMoleculeCatalogById('steroids');
     for (const molecule of collection.molecules) {
-      assert.equal(
-        molecule.smiles.includes('@'),
-        false,
-        `${molecule.id} should not include atom stereochemistry`
-      );
+      assert.equal(molecule.smiles.includes('@'), false, `${molecule.id} should not include atom stereochemistry`);
       assert.equal(
         /\/t|\/m\d|\/s\d/.test(molecule.inchi),
         false,

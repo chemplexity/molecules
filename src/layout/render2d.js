@@ -12,32 +12,40 @@
  *                    'delocalized'         — uniform 1.5-order dashed bond
  */
 
-import { parseSMILES }    from '../io/smiles.js';
-import { parseINCHI }     from '../io/inchi.js';
+import { parseSMILES } from '../io/smiles.js';
+import { parseINCHI } from '../io/inchi.js';
 import { generateAndRefine2dCoords } from './index.js';
 import {
   atomColor,
-  WEDGE_HALF_W, WEDGE_DASHES,
-  perpUnit, shortenLine, secondaryDir,
-  labelHalfW, labelHalfH, labelTextOffset,
-  getAtomLabel, pickStereoWedges, stereoBondCenterIdForRender,
-  kekulize, atomBBox
+  WEDGE_HALF_W,
+  WEDGE_DASHES,
+  perpUnit,
+  shortenLine,
+  secondaryDir,
+  labelHalfW,
+  labelHalfH,
+  labelTextOffset,
+  getAtomLabel,
+  pickStereoWedges,
+  stereoBondCenterIdForRender,
+  kekulize,
+  atomBBox
 } from './mol2d-helpers.js';
 import { Resvg } from '@resvg/resvg-js';
 
 // ---------------------------------------------------------------------------
 // Rendering constants
 // ---------------------------------------------------------------------------
-export const SCALE    = 46;   // px per Ångström
-export const BOND_OFF = 5.5;  // px between parallel bond lines
-export const STROKE_W = 1.5;  // px
-export const FONT_SIZE = 11;  // px
-export const CELL_PAD  = 22;  // px padding inside each cell
+export const SCALE = 46; // px per Ångström
+export const BOND_OFF = 5.5; // px between parallel bond lines
+export const STROKE_W = 1.5; // px
+export const FONT_SIZE = 11; // px
+export const CELL_PAD = 22; // px padding inside each cell
 export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
 
 function renderBondOrder(bond, mode = AROMATIC_RENDER_MODE) {
   if (mode === 'localized' && (bond.properties.aromatic ?? false)) {
-    return bond.properties.localizedOrder ?? (bond.properties.order ?? 1.5);
+    return bond.properties.localizedOrder ?? bond.properties.order ?? 1.5;
   }
   return bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
 }
@@ -57,7 +65,8 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, aromaticMode = AROMATIC
   const out = [];
 
   if (stereoType === 'wedge' || stereoType === 'dash') {
-    const s1 = toSVG(a1), s2 = toSVG(a2);
+    const s1 = toSVG(a1),
+      s2 = toSVG(a2);
     const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
     if (stereoType === 'wedge') {
       const pts =
@@ -73,8 +82,8 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, aromaticMode = AROMATIC
         const hw = WEDGE_HALF_W * t;
         out.push(
           `<line x1="${(px - nx * hw).toFixed(2)}" y1="${(py - ny * hw).toFixed(2)}"` +
-          ` x2="${(px + nx * hw).toFixed(2)}" y2="${(py + ny * hw).toFixed(2)}"` +
-          ' stroke="#111" stroke-width="1.2" stroke-linecap="round"/>'
+            ` x2="${(px + nx * hw).toFixed(2)}" y2="${(py + ny * hw).toFixed(2)}"` +
+            ' stroke="#111" stroke-width="1.2" stroke-linecap="round"/>'
         );
       }
     }
@@ -82,8 +91,10 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, aromaticMode = AROMATIC
   }
 
   const order = renderBondOrder(bond, aromaticMode);
-  const s1 = toSVG(a1), s2 = toSVG(a2);
-  const dx = s2.x - s1.x, dy = s2.y - s1.y;
+  const s1 = toSVG(a1),
+    s2 = toSVG(a2);
+  const dx = s2.x - s1.x,
+    dy = s2.y - s1.y;
   const { nx, ny } = perpUnit(dx, dy);
 
   const lineEl = (x1, y1, x2, y2, dash) =>
@@ -95,20 +106,22 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, aromaticMode = AROMATIC
   } else if (order === 2) {
     const dir = secondaryDir(a1, a2, mol, toSVG);
     out.push(lineEl(s1.x, s1.y, s2.x, s2.y, false));
-    const ox = nx * BOND_OFF * dir, oy = ny * BOND_OFF * dir;
+    const ox = nx * BOND_OFF * dir,
+      oy = ny * BOND_OFF * dir;
     const l2 = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 4, 4);
     out.push(lineEl(l2.x1, l2.y1, l2.x2, l2.y2, false));
   } else if (order === 3) {
     for (const d of [-BOND_OFF, 0, BOND_OFF]) {
-      const ox = nx * d, oy = ny * d;
-      const lt = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy,
-        d !== 0 ? 4 : 0, d !== 0 ? 4 : 0);
+      const ox = nx * d,
+        oy = ny * d;
+      const lt = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, d !== 0 ? 4 : 0, d !== 0 ? 4 : 0);
       out.push(lineEl(lt.x1, lt.y1, lt.x2, lt.y2, false));
     }
   } else if (order === 1.5) {
     const dir = secondaryDir(a1, a2, mol, toSVG);
     out.push(lineEl(s1.x, s1.y, s2.x, s2.y, false));
-    const ox = nx * BOND_OFF * dir, oy = ny * BOND_OFF * dir;
+    const ox = nx * BOND_OFF * dir,
+      oy = ny * BOND_OFF * dir;
     const ld = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 5, 5);
     out.push(lineEl(ld.x1, ld.y1, ld.x2, ld.y2, true));
   }
@@ -167,10 +180,14 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
       continue;
     }
     const others = parent.getNeighbors(mol).filter(n => n.id !== atom.id);
-    let sumX = 0, sumY = 0, cnt = 0;
+    let sumX = 0,
+      sumY = 0,
+      cnt = 0;
     for (const nb of others) {
       if (nb.x != null) {
-        sumX += nb.x - parent.x; sumY += nb.y - parent.y; cnt++;
+        sumX += nb.x - parent.x;
+        sumY += nb.y - parent.y;
+        cnt++;
       }
     }
     const angle = cnt > 0 ? Math.atan2(-sumY, -sumX) : 0;
@@ -193,9 +210,9 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
   const cellW = Math.max(molW + CELL_PAD * 2, 90);
   const cellH = Math.max(molH + CELL_PAD * 2, 80);
 
-  const toSVG = (a) => ({
+  const toSVG = a => ({
     x: cellW / 2 + (a.x - cx) * SCALE,
-    y: cellH / 2 - (a.y - cy) * SCALE  // negate y: mol coords are y-up, SVG is y-down
+    y: cellH / 2 - (a.y - cy) * SCALE // negate y: mol coords are y-up, SVG is y-down
   });
 
   const lines = [];
@@ -212,11 +229,13 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
     }
 
     const stereoType = stereoMap.get(bond.id) ?? null;
-    let sa1 = a1, sa2 = a2;
+    let sa1 = a1,
+      sa2 = a2;
     if (stereoType) {
       const centerId = stereoBondCenterIdForRender(mol, bond.id);
       if (centerId === a2.id) {
-        sa1 = a2; sa2 = a1;
+        sa1 = a2;
+        sa2 = a1;
       }
     }
     lines.push(...bondToSVG(bond, sa1, sa2, mol, toSVG, stereoType, aromaticMode));
@@ -229,7 +248,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
       continue;
     }
     const [ba1, ba2] = bond.getAtomObjects(mol);
-    const hAtom   = ba1?.visible === false ? ba1 : (ba2?.visible === false ? ba2 : null);
+    const hAtom = ba1?.visible === false ? ba1 : ba2?.visible === false ? ba2 : null;
     const heavyAt = hAtom ? (hAtom === ba1 ? ba2 : ba1) : null;
     if (!heavyAt) {
       continue;
@@ -280,8 +299,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
     const charge = atom.getCharge();
     let chargeSup = '';
     if (charge !== 0) {
-      const sign = charge === 1 ? '+' : charge > 1 ? `${charge}+`
-        : charge === -1 ? '−' : `${Math.abs(charge)}−`;
+      const sign = charge === 1 ? '+' : charge > 1 ? `${charge}+` : charge === -1 ? '−' : `${Math.abs(charge)}−`;
       chargeSup = `<text x="${(x + dx + hw).toFixed(2)}" y="${(y - FONT_SIZE * 0.42).toFixed(2)}" font-family="sans-serif" font-size="${(FONT_SIZE * 0.8).toFixed(1)}" fill="${color}" text-anchor="start">${escapeXml(sign)}</text>`;
     }
 
@@ -320,7 +338,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
 export function buildCompositeSVG(cells, cols) {
   const rows = Math.ceil(cells.length / cols);
 
-  const colWidths  = Array(cols).fill(0);
+  const colWidths = Array(cols).fill(0);
   const rowHeights = Array(rows).fill(0);
 
   for (let idx = 0; idx < cells.length; idx++) {
@@ -330,7 +348,7 @@ export function buildCompositeSVG(cells, cols) {
     }
     const col = idx % cols;
     const row = Math.floor(idx / cols);
-    colWidths[col]  = Math.max(colWidths[col],  cell.cellW);
+    colWidths[col] = Math.max(colWidths[col], cell.cellW);
     rowHeights[row] = Math.max(rowHeights[row], cell.cellH);
   }
 
@@ -362,7 +380,7 @@ export function buildCompositeSVG(cells, cols) {
     const cell = cells[idx];
     const col = idx % cols;
     const row = Math.floor(idx / cols);
-    const x = colX[col] + (colWidths[col]  - (cell?.cellW ?? 0)) / 2;
+    const x = colX[col] + (colWidths[col] - (cell?.cellW ?? 0)) / 2;
     const y = rowY[row] + (rowHeights[row] - (cell?.cellH ?? 0)) / 2;
     if (cell) {
       parts.push(`<g transform="translate(${x.toFixed(2)},${y.toFixed(2)})">`);

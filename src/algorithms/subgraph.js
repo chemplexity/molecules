@@ -44,7 +44,7 @@ export function defaultBondMatch(qBond, tBond) {
     return false;
   }
   if (qAro) {
-    return true;    // both aromatic — no order comparison needed
+    return true; // both aromatic — no order comparison needed
   }
   return (qBond.properties.order ?? 1) === (tBond.properties.order ?? 1);
 }
@@ -101,12 +101,10 @@ export function makeAtomMatcher(constraints) {
     if (constraints.element !== undefined && tAtom.name !== constraints.element) {
       return false;
     }
-    if (constraints.charge !== undefined &&
-        tAtom.getCharge() !== constraints.charge) {
+    if (constraints.charge !== undefined && tAtom.getCharge() !== constraints.charge) {
       return false;
     }
-    if (constraints.aromatic !== undefined &&
-        tAtom.isAromatic() !== constraints.aromatic) {
+    if (constraints.aromatic !== undefined && tAtom.isAromatic() !== constraints.aromatic) {
       return false;
     }
     return true;
@@ -127,12 +125,14 @@ export function makeAtomMatcher(constraints) {
  */
 export function makeBondMatcher(constraints) {
   return (_qBond, tBond) => {
-    if (constraints.aromatic !== undefined &&
-        (tBond.properties.aromatic ?? false) !== constraints.aromatic) {
+    if (constraints.aromatic !== undefined && (tBond.properties.aromatic ?? false) !== constraints.aromatic) {
       return false;
     }
-    if (constraints.order !== undefined && !(tBond.properties.aromatic ?? false) &&
-        (tBond.properties.order ?? 1) !== constraints.order) {
+    if (
+      constraints.order !== undefined &&
+      !(tBond.properties.aromatic ?? false) &&
+      (tBond.properties.order ?? 1) !== constraints.order
+    ) {
       return false;
     }
     return true;

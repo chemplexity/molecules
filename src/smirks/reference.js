@@ -20,7 +20,6 @@
  * const product = applySMIRKS(mol, reactionTemplates.halideHydrolysis.smirks);
  */
 export const reactionTemplates = {
-
   // ---------------------------------------------------------------------------
   // Oxidation / reduction motifs
   // ---------------------------------------------------------------------------
@@ -70,19 +69,34 @@ export const reactionTemplates = {
   // ---------------------------------------------------------------------------
 
   esterHydrolysis: { name: 'Ester Hydrolysis', smirks: '[C:1](=[O:2])[O:3][C;!$(C=O):4]>>[C:1](=[O:2])[OH:3].[C:4]O' },
-  esterification: { name: 'Esterification', smirks: '[C:1](=[O:2])[OH:3].[C;X4;!$(C=O):4][OH:5]>>[C:1](=[O:2])[OH0+0:5][C:4].[OH2:3]' },
+  esterification: {
+    name: 'Esterification',
+    smirks: '[C:1](=[O:2])[OH:3].[C;X4;!$(C=O):4][OH:5]>>[C:1](=[O:2])[OH0+0:5][C:4].[OH2:3]'
+  },
   saponification: { name: 'Saponification', smirks: '[C:1](=[O:2])[O:3][C;!$(C=O):4]>>[C:1](=[O:2])[OH0-:3].[C:4]O' },
-  anhydrideHydrolysis: { name: 'Anhydride Hydrolysis', smirks: '[C:1](=[O:2])[O:3][C:4](=[O:5])>>[C:1](=[O:2])[OH:3].[C:4](=[O:5])O' },
+  anhydrideHydrolysis: {
+    name: 'Anhydride Hydrolysis',
+    smirks: '[C:1](=[O:2])[O:3][C:4](=[O:5])>>[C:1](=[O:2])[OH:3].[C:4](=[O:5])O'
+  },
   amideHydrolysis: { name: 'Amide Hydrolysis', smirks: '[C:1](=[O:2])[N:3]>>[C:1](=[O:2])O.[N:3]' },
-  amineAcylation: { name: 'Amine Acylation', smirks: '[C:1](=[O:2])[Cl:3].[NH2+0;!$([N]-[C](=O)):4]>>[C:1](=[O:2])[NH+0:4].[ClH0-:3]' },
-  amineAlkylation: { name: 'Amine Alkylation', smirks: '[C;X4;H2,H3:1][Cl:2].[NH2+0;!$([N]-[C](=O)):3]>>[C:1][NH+0:3].[ClH0-:2]' },
+  amineAcylation: {
+    name: 'Amine Acylation',
+    smirks: '[C:1](=[O:2])[Cl:3].[NH2+0;!$([N]-[C](=O)):4]>>[C:1](=[O:2])[NH+0:4].[ClH0-:3]'
+  },
+  amineAlkylation: {
+    name: 'Amine Alkylation',
+    smirks: '[C;X4;H2,H3:1][Cl:2].[NH2+0;!$([N]-[C](=O)):3]>>[C:1][NH+0:3].[ClH0-:2]'
+  },
   imineHydrolysis: { name: 'Imine Hydrolysis', smirks: '[C:1]=[N:2]>>[C:1]=O.[N:2]' },
   nitrileHydrolysisToAmide: { name: 'Nitrile Hydrolysis To Amide', smirks: '[C:1]#[N:2]>>[C:1](=O)[N:2]' },
   nitrileHydrolysisToAcid: { name: 'Nitrile Hydrolysis To Acid', smirks: '[C:1]#[N:2]>>[C:1](=O)O.[N:2]' },
   lactoneHydrolysis: { name: 'Lactone Hydrolysis', smirks: '[C;r:1](=[O:2])[O;r:3][C:4]>>[C:1](=[O:2])[OH:3].[C:4]O' },
   lactamHydrolysis: { name: 'Lactam Hydrolysis', smirks: '[C;r:1](=[O:2])[N;r:3]>>[C:1](=[O:2])O.[N:3]' },
   acidChlorideHydrolysis: { name: 'Acid Chloride Hydrolysis', smirks: '[C:1](=[O:2])[Cl:3]>>[C:1](=[O:2])[OH:3]' },
-  carboxylicAcidDeprotonation: { name: 'Carboxylic Acid Deprotonation', smirks: '[C:1](=[O:2])[OH:3]>>[C:1](=[O:2])[OH0-:3]' },
+  carboxylicAcidDeprotonation: {
+    name: 'Carboxylic Acid Deprotonation',
+    smirks: '[C:1](=[O:2])[OH:3]>>[C:1](=[O:2])[OH0-:3]'
+  },
   carboxylateProtonation: { name: 'Carboxylate Protonation', smirks: '[C:1](=[O:2])[OH0-:3]>>[C:1](=[O:2])[OH+0:3]' },
 
   // ---------------------------------------------------------------------------
@@ -95,13 +109,21 @@ export const reactionTemplates = {
     excludeOverlaps: ['[C:1](=[O:2])[OH:3]', '[C:1](=[O:2])[O:3][C:4]', '[C:1](=[O:2])[N:3]']
   },
   alcoholDehydration: { name: 'Alcohol Dehydration', smirks: '[C;X4:1][CH2:2][OH:3]>>[C:1]=[CH:2].[OH2:3]' },
-  alkylChlorideElimination: { name: 'Alkyl Chloride Elimination', smirks: '[C;X4:1][CH2:2][Cl:3]>>[C:1]=[CH:2].[Cl-:3]' },
-  sulfideOxidationToSulfoxide: { name: 'Sulfide Oxidation To Sulfoxide', smirks: '[C:2][S:1][C:3]>>[C:2][S:1](=O)[C:3]' },
-  sulfoxideOxidationToSulfone: { name: 'Sulfoxide Oxidation To Sulfone', smirks: '[C:2][S:1](=[O:4])[C:3]>>[C:2][S:1](=[O:4])(=O)[C:3]' },
+  alkylChlorideElimination: {
+    name: 'Alkyl Chloride Elimination',
+    smirks: '[C;X4:1][CH2:2][Cl:3]>>[C:1]=[CH:2].[Cl-:3]'
+  },
+  sulfideOxidationToSulfoxide: {
+    name: 'Sulfide Oxidation To Sulfoxide',
+    smirks: '[C:2][S:1][C:3]>>[C:2][S:1](=O)[C:3]'
+  },
+  sulfoxideOxidationToSulfone: {
+    name: 'Sulfoxide Oxidation To Sulfone',
+    smirks: '[C:2][S:1](=[O:4])[C:3]>>[C:2][S:1](=[O:4])(=O)[C:3]'
+  },
   amineProtonation: { name: 'Amine Protonation', smirks: '[NH2+0;!$([N]-[C](=O)):1]>>[NH3+:1]' },
   ammoniumDeprotonation: { name: 'Ammonium Deprotonation', smirks: '[N+;!H0:1]>>[N+0:1]' },
   phenolDeprotonation: { name: 'Phenol Deprotonation', smirks: '[c:1][OH:2]>>[c:1][OH0-:2]' },
   phenolateProtonation: { name: 'Phenolate Protonation', smirks: '[c:1][OH0-:2]>>[c:1][OH+0:2]' },
   nitroReduction: { name: 'Nitro Reduction', smirks: '[N+:1](=[O:2])[O-:3]>>[NH2+0:1]' }
-
 };

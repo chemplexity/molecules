@@ -26,9 +26,7 @@ export function ones(n, m) {
  * @returns {number[][]}
  */
 export function identity(n) {
-  return Array.from({ length: n }, (_, i) =>
-    Array.from({ length: n }, (__, j) => (i === j ? 1 : 0))
-  );
+  return Array.from({ length: n }, (_, i) => Array.from({ length: n }, (__, j) => (i === j ? 1 : 0)));
 }
 
 /**
@@ -82,7 +80,7 @@ export function multiplyMatrices(A, B) {
  * @returns {number[][]}
  */
 export function scalarMultiply(A, k) {
-  return A.map((row) => row.map((val) => val * k));
+  return A.map(row => row.map(val => val * k));
 }
 
 /**
@@ -91,5 +89,5 @@ export function scalarMultiply(A, k) {
  * @returns {number[][]} m×n matrix.
  */
 export function transposeMatrix(A) {
-  return A[0].map((_, j) => A.map((row) => row[j]));
+  return A[0].map((_, j) => A.map(row => row[j]));
 }

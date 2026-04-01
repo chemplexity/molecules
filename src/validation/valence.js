@@ -64,17 +64,15 @@ export function validateValence(molecule) {
     //   period-1 group-18 (He): special case → 2, not 8
     //   p-block (groups 13–18): V = group − 10
     //   s-block (groups 1–2):   V = group
-    const V = (group === 18 && period === 1) ? 2
-      : group >= 13 ? group - 10
-        : group;
+    const V = group === 18 && period === 1 ? 2 : group >= 13 ? group - 10 : group;
 
     const charge = atom.getCharge();
     const radical = atom.getRadical();
-    const ec     = V - charge - radical; // effective electrons available for bonding
+    const ec = V - charge - radical; // effective electrons available for bonding
 
     // Compute allowedMax from orbital-count constraints
-    const shellSize  = period === 1 ? 2 : 8;
-    const octetMax   = ec >= 0 ? Math.max(0, Math.min(ec, shellSize - ec)) : 0;
+    const shellSize = period === 1 ? 2 : 8;
+    const octetMax = ec >= 0 ? Math.max(0, Math.min(ec, shellSize - ec)) : 0;
     const allowedMax = period <= 2 ? octetMax : Math.min(Math.max(0, ec), 8);
 
     // Build the set of allowed bond orders (same parity as ec, up to allowedMax)
@@ -108,7 +106,8 @@ export function validateValence(molecule) {
         radical,
         bondOrder: totalBO,
         allowed,
-        message: `${atom.name}(${atomId}): bond order ${totalBO} is not valid ` +
+        message:
+          `${atom.name}(${atomId}): bond order ${totalBO} is not valid ` +
           `for ${atom.name} with charge ${chargeStr}${radicalStr} ` +
           `(allowed: ${allowed.length ? allowed.join(', ') : 'none'})`
       });

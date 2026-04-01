@@ -31,7 +31,7 @@ export function _setHighlight(mappings, options = {}) {
       // Include explicit H atoms bonded to any matched atom
       if (_highlightMol) {
         for (const atomId of [...atomSet]) {
-          for (const nb of (_highlightMol.atoms.get(atomId)?.getNeighbors(_highlightMol) ?? [])) {
+          for (const nb of _highlightMol.atoms.get(atomId)?.getNeighbors(_highlightMol) ?? []) {
             if (nb.name === 'H') {
               atomSet.add(nb.id);
             }
@@ -68,9 +68,9 @@ let _lastHoveredFunctionalGroupMappings = null;
 let _lastHoveredFunctionalGroupAt = 0;
 let _preserveFunctionalGroupHighlightUntil = 0;
 
-const _highlightedAtomIds  = new Set();
+const _highlightedAtomIds = new Set();
 let _highlightedAtomSets = []; // one Set<atomId> per SMARTS match instance
-let _highlightMol        = null; // molecule used for last updateFunctionalGroups call
+let _highlightMol = null; // molecule used for last updateFunctionalGroups call
 
 function _rememberHoveredFunctionalGroupMappings(mappings) {
   if (!mappings?.length) {
@@ -173,17 +173,14 @@ export function _plotOverlayFitPadding(basePad = 40) {
       return null;
     }
     const rect = el.getBoundingClientRect();
-    return (rect.width > 0 && rect.height > 0) ? rect : null;
+    return rect.width > 0 && rect.height > 0 ? rect : null;
   };
   for (const id of ['draw-tools']) {
     const rect = visibleRect(id);
     if (!rect) {
       continue;
     }
-    pads.left = Math.max(
-      pads.left,
-      rect.right - plotRect.left + (reactionPreview ? 22 : 16)
-    );
+    pads.left = Math.max(pads.left, rect.right - plotRect.left + (reactionPreview ? 22 : 16));
   }
   for (const id of ['atom-selector', 'toggle-controls', 'undo-controls', 'rotate-controls', 'force-controls']) {
     const rect = visibleRect(id);
@@ -314,7 +311,9 @@ export function _restoreReactionPreviewSnapshot(previewSnap) {
   _reactionPreviewLocked = !!previewSnap.reactionPreviewLocked;
   _reactionPreviewReactantAtomIds = new Set(previewSnap.reactantAtomIds ?? []);
   _reactionPreviewProductAtomIds = new Set(previewSnap.productAtomIds ?? []);
-  _reactionPreviewProductComponentAtomIdSets = (previewSnap.productComponentAtomIdSets ?? []).map(atomIds => new Set(atomIds));
+  _reactionPreviewProductComponentAtomIdSets = (previewSnap.productComponentAtomIdSets ?? []).map(
+    atomIds => new Set(atomIds)
+  );
   _reactionPreviewMappedAtomPairs = previewSnap.mappedAtomPairs ?? [];
   _reactionPreviewEditedProductAtomIds = new Set(previewSnap.editedProductAtomIds ?? []);
   _reactionPreviewPreservedReactantStereoByCenter = new Map(previewSnap.preservedReactantStereoByCenter ?? []);
@@ -325,7 +324,9 @@ export function _restoreReactionPreviewSnapshot(previewSnap) {
   _reactionPreviewForcedStereoBondTypes = new Map(previewSnap.forcedStereoBondTypes ?? []);
   _reactionPreviewForcedStereoBondCenters = new Map(previewSnap.forcedStereoBondCenters ?? []);
   _reactionPreviewReactantReferenceCoords = new Map(previewSnap.reactantReferenceCoords ?? []);
-  _reactionPreviewHighlightMappings = (previewSnap.reactionPreviewHighlightMappings ?? []).map(mapping => new Map(mapping));
+  _reactionPreviewHighlightMappings = (previewSnap.reactionPreviewHighlightMappings ?? []).map(
+    mapping => new Map(mapping)
+  );
 }
 
 function _cloneWithPrefixedIds(mol, prefix) {
@@ -397,14 +398,14 @@ export function _prepareReactionPreviewBondEditTarget(bondId) {
   return { bondId, restored };
 }
 
-function _reaction2dArrowGeometry(items, atomIds, {
-  hydrogenRadiusScale = 1,
-  radiusForItem = () => 0
-} = {}) {
+function _reaction2dArrowGeometry(items, atomIds, { hydrogenRadiusScale = 1, radiusForItem = () => 0 } = {}) {
   if (!atomIds?.size) {
     return null;
   }
-  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  let minX = Infinity,
+    maxX = -Infinity,
+    minY = Infinity,
+    maxY = -Infinity;
   let count = 0;
   for (const item of items) {
     if (!atomIds.has(item.id)) {
@@ -511,20 +512,28 @@ export function _centerReaction2dPairCoords(mol, bondLength = 1.5) {
   if (!_hasReactionPreview() || !mol) {
     return;
   }
-  centerReaction2dPairCoordsShared(mol, {
-    reactantAtomIds: _reactionPreviewReactantAtomIds,
-    productAtomIds: _reactionPreviewProductAtomIds,
-    productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
-  }, bondLength);
+  centerReaction2dPairCoordsShared(
+    mol,
+    {
+      reactantAtomIds: _reactionPreviewReactantAtomIds,
+      productAtomIds: _reactionPreviewProductAtomIds,
+      productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
+    },
+    bondLength
+  );
 }
 
 export function _spreadReaction2dProductComponents(mol, bondLength = 1.5) {
   if (!_hasReactionPreview() || !mol || (_reactionPreviewProductComponentAtomIdSets?.length ?? 0) < 2) {
     return;
   }
-  spreadReaction2dProductComponentsShared(mol, {
-    productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
-  }, bondLength);
+  spreadReaction2dProductComponentsShared(
+    mol,
+    {
+      productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets
+    },
+    bondLength
+  );
 }
 
 function _reaction2dMappedAtomLocallyAnchored(reactant, product, mol, componentAtomIds) {
@@ -546,14 +555,16 @@ function _reaction2dMappedAtomLocallyAnchored(reactant, product, mol, componentA
   if ((reactant.getRadical?.() ?? 0) !== (product.getRadical?.() ?? 0)) {
     return false;
   }
-  const reactantMappedNeighbors = reactant.getNeighbors(mol)
+  const reactantMappedNeighbors = reactant
+    .getNeighbors(mol)
     .filter(nb => _reactionPreviewReactantAtomIds.has(nb.id))
     .map(nb => {
       const bond = mol.getBond(reactant.id, nb.id);
       return `${nb.id}:${bond?.properties.order ?? 1}:${bond?.properties.aromatic ?? false}`;
     })
     .sort();
-  const productMappedNeighbors = product.getNeighbors(mol)
+  const productMappedNeighbors = product
+    .getNeighbors(mol)
     .filter(nb => componentAtomIds.has(nb.id))
     .map(nb => {
       const bond = mol.getBond(product.id, nb.id);
@@ -580,11 +591,13 @@ function _reaction2dMappedAtomScaffoldCompatible(reactant, product, mol, compone
     return false;
   }
 
-  const reactantMappedNeighbors = reactant.getNeighbors(mol)
+  const reactantMappedNeighbors = reactant
+    .getNeighbors(mol)
     .filter(nb => _reactionPreviewReactantAtomIds.has(nb.id))
     .map(nb => nb.id)
     .sort();
-  const productMappedNeighbors = product.getNeighbors(mol)
+  const productMappedNeighbors = product
+    .getNeighbors(mol)
     .filter(nb => componentAtomIds.has(nb.id))
     .map(nb => _reaction2dSourceAtomId(nb.id))
     .sort();
@@ -639,11 +652,10 @@ function _idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.
     }
 
     const sourceCenterId = _reaction2dSourceAtomId(centerId);
-    const reactantCenter = _reactionPreviewReactantAtomIds.has(sourceCenterId)
-      ? mol.atoms.get(sourceCenterId)
-      : null;
+    const reactantCenter = _reactionPreviewReactantAtomIds.has(sourceCenterId) ? mol.atoms.get(sourceCenterId) : null;
 
-    const heavyNeighbors = center.getNeighbors(mol)
+    const heavyNeighbors = center
+      .getNeighbors(mol)
       .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighbors.length === 0) {
       continue;
@@ -736,7 +748,8 @@ function _idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 
     if (!center || center.name === 'H' || center.x == null || center.y == null) {
       continue;
     }
-    const heavyNeighbors = center.getNeighbors(mol)
+    const heavyNeighbors = center
+      .getNeighbors(mol)
       .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighbors.length !== 3) {
       continue;
@@ -788,12 +801,7 @@ function _idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 
 
       const first = anchored[0];
       const second = anchored[1];
-      const candidates = circleIntersections(
-        first.atom,
-        first.targetLength,
-        second.atom,
-        second.targetLength
-      );
+      const candidates = circleIntersections(first.atom, first.targetLength, second.atom, second.targetLength);
       if (candidates.length > 0) {
         let best = null;
         for (const candidate of candidates) {
@@ -856,8 +864,8 @@ function _idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 
       const anchor = anchored[0];
       const baseAngle = Math.atan2(anchor.atom.y - center.y, anchor.atom.x - center.x);
       const candidateLayouts = [
-        [baseAngle + (2 * Math.PI / 3), baseAngle - (2 * Math.PI / 3)],
-        [baseAngle - (2 * Math.PI / 3), baseAngle + (2 * Math.PI / 3)]
+        [baseAngle + (2 * Math.PI) / 3, baseAngle - (2 * Math.PI) / 3],
+        [baseAngle - (2 * Math.PI) / 3, baseAngle + (2 * Math.PI) / 3]
       ];
 
       let best = null;
@@ -902,54 +910,54 @@ function _repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength 
     }
     if (mappedProductIds.has(atomId)) {
       const sourceId = _reaction2dSourceAtomId(atomId);
-      const reactantAtom = _reactionPreviewReactantAtomIds.has(sourceId)
-        ? mol.atoms.get(sourceId)
-        : null;
+      const reactantAtom = _reactionPreviewReactantAtomIds.has(sourceId) ? mol.atoms.get(sourceId) : null;
       if (_reaction2dMappedAtomLocallyAnchored(reactantAtom, atom, mol, componentAtomIds)) {
         continue;
       }
     }
-    const heavyNeighbors = atom.getNeighbors(mol)
+    const heavyNeighbors = atom
+      .getNeighbors(mol)
       .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null);
     if (heavyNeighbors.length !== 1) {
       continue;
     }
     const parent = heavyNeighbors[0];
     const atomBond = mol.getBond(atom.id, parent.id);
-    const parentHeavyNeighbors = parent.getNeighbors(mol)
+    const parentHeavyNeighbors = parent
+      .getNeighbors(mol)
       .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     const parentHasTrigonalEditedGeometry =
-            _reactionPreviewEditedProductAtomIds.has(parent.id) &&
-            parentHeavyNeighbors.length === 3 &&
-            parentHeavyNeighbors.some(nb => (mol.getBond(parent.id, nb.id)?.properties.order ?? 1) >= 2);
+      _reactionPreviewEditedProductAtomIds.has(parent.id) &&
+      parentHeavyNeighbors.length === 3 &&
+      parentHeavyNeighbors.some(nb => (mol.getBond(parent.id, nb.id)?.properties.order ?? 1) >= 2);
     if (parentHasTrigonalEditedGeometry) {
       continue;
     }
-    const targetBondLength = bondLength * (
-      (atomBond?.properties.order ?? 1) >= 3 ? 0.78 :
-        (atomBond?.properties.order ?? 1) >= 2 ? 0.86 :
-          1
-    );
+    const targetBondLength =
+      bondLength * ((atomBond?.properties.order ?? 1) >= 3 ? 0.78 : (atomBond?.properties.order ?? 1) >= 2 ? 0.86 : 1);
     const parentSourceId = _reaction2dSourceAtomId(parent.id);
-    const reactantParent = _reactionPreviewReactantAtomIds.has(parentSourceId)
-      ? mol.atoms.get(parentSourceId)
-      : null;
+    const reactantParent = _reactionPreviewReactantAtomIds.has(parentSourceId) ? mol.atoms.get(parentSourceId) : null;
     const mappedSiblingSourceIds = new Set(
-      parent.getNeighbors(mol)
+      parent
+        .getNeighbors(mol)
         .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && mappedProductIds.has(nb.id))
         .map(nb => _reaction2dSourceAtomId(nb.id))
     );
     const lostReactantNeighbors = reactantParent
-      ? reactantParent.getNeighbors(mol).filter(nb =>
-        _reactionPreviewReactantAtomIds.has(nb.id) &&
-                nb.id !== parentSourceId &&
-                nb.name !== 'H' &&
-                nb.x != null &&
-                nb.y != null &&
-                !mappedSiblingSourceIds.has(nb.id)
-      )
+      ? reactantParent
+          .getNeighbors(mol)
+          .filter(
+            nb =>
+              _reactionPreviewReactantAtomIds.has(nb.id) &&
+              nb.id !== parentSourceId &&
+              nb.name !== 'H' &&
+              nb.x != null &&
+              nb.y != null &&
+              !mappedSiblingSourceIds.has(nb.id)
+          )
       : [];
-    const siblings = parent.getNeighbors(mol)
+    const siblings = parent
+      .getNeighbors(mol)
       .filter(nb => componentAtomIds.has(nb.id) && nb.id !== atom.id && nb.name !== 'H' && nb.x != null);
     const carbonylLikeParent = siblings.some(sibling => {
       const siblingBond = mol.getBond(parent.id, sibling.id);
@@ -957,14 +965,16 @@ function _repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength 
     });
     const bondOrder = atomBond?.properties.order ?? 1;
     const shouldReplaceLostNeighborDirection =
-            bondOrder === 1 &&
-            carbonylLikeParent &&
-            lostReactantNeighbors.length > 0;
+      bondOrder === 1 && carbonylLikeParent && lostReactantNeighbors.length > 0;
     const preferSiblingGeometry =
-            bondOrder >= 2 ||
-            (bondOrder === 1 && carbonylLikeParent && !shouldReplaceLostNeighborDirection);
+      bondOrder >= 2 || (bondOrder === 1 && carbonylLikeParent && !shouldReplaceLostNeighborDirection);
 
-    if (!preferSiblingGeometry && lostReactantNeighbors.length > 0 && reactantParent?.x != null && reactantParent?.y != null) {
+    if (
+      !preferSiblingGeometry &&
+      lostReactantNeighbors.length > 0 &&
+      reactantParent?.x != null &&
+      reactantParent?.y != null
+    ) {
       let vx = 0;
       let vy = 0;
       for (const neighbor of lostReactantNeighbors) {
@@ -1030,11 +1040,13 @@ export function _drawReactionPreviewArrow2d(toSVGPt, atoms) {
   const px = -uy;
   const py = ux;
 
-  const arrowLayer = ctx.g.append('g')
+  const arrowLayer = ctx.g
+    .append('g')
     .attr('class', 'reaction-preview-arrow')
     .attr('pointer-events', 'none')
     .attr('opacity', 0.8);
-  arrowLayer.append('line')
+  arrowLayer
+    .append('line')
     .attr('x1', x1)
     .attr('y1', y1)
     .attr('x2', x2)
@@ -1042,8 +1054,12 @@ export function _drawReactionPreviewArrow2d(toSVGPt, atoms) {
     .attr('stroke', '#444')
     .attr('stroke-width', 2.5)
     .attr('stroke-linecap', 'round');
-  arrowLayer.append('path')
-    .attr('d', `M ${x2 - ux * arrowHeadLength + px * arrowHeadWidth} ${y2 - uy * arrowHeadLength + py * arrowHeadWidth} L ${x2} ${y2} L ${x2 - ux * arrowHeadLength - px * arrowHeadWidth} ${y2 - uy * arrowHeadLength - py * arrowHeadWidth}`)
+  arrowLayer
+    .append('path')
+    .attr(
+      'd',
+      `M ${x2 - ux * arrowHeadLength + px * arrowHeadWidth} ${y2 - uy * arrowHeadLength + py * arrowHeadWidth} L ${x2} ${y2} L ${x2 - ux * arrowHeadLength - px * arrowHeadWidth} ${y2 - uy * arrowHeadLength - py * arrowHeadWidth}`
+    )
     .attr('fill', 'none')
     .attr('stroke', '#444')
     .attr('stroke-width', 2.5)
@@ -1055,7 +1071,8 @@ export function _drawReactionPreviewArrow2d(toSVGPt, atoms) {
     const left = productGeometries[i];
     const right = productGeometries[i + 1];
     const plus = toSVGPt({ x: (left.maxX + right.minX) / 2, y: (left.cy + right.cy) / 2 });
-    arrowLayer.append('text')
+    arrowLayer
+      .append('text')
       .attr('x', plus.x)
       .attr('y', plus.y)
       .attr('fill', '#444')
@@ -1085,10 +1102,16 @@ export function _renderReactionPreviewArrowForce(nodes) {
   if (!arrow) {
     return;
   }
-  const startInsideReactant = arrow.start.x >= reactant.minX && arrow.start.x <= reactant.maxX
-        && arrow.start.y >= reactant.minY && arrow.start.y <= reactant.maxY;
-  const endInsideProduct = arrow.end.x >= product.minX && arrow.end.x <= product.maxX
-        && arrow.end.y >= product.minY && arrow.end.y <= product.maxY;
+  const startInsideReactant =
+    arrow.start.x >= reactant.minX &&
+    arrow.start.x <= reactant.maxX &&
+    arrow.start.y >= reactant.minY &&
+    arrow.start.y <= reactant.maxY;
+  const endInsideProduct =
+    arrow.end.x >= product.minX &&
+    arrow.end.x <= product.maxX &&
+    arrow.end.y >= product.minY &&
+    arrow.end.y <= product.maxY;
   if (startInsideReactant || endInsideProduct) {
     return;
   }
@@ -1107,11 +1130,13 @@ export function _renderReactionPreviewArrowForce(nodes) {
   const arrowHeadLength = 10;
   const arrowHeadWidth = 6;
 
-  const arrowLayer = ctx.g.append('g')
+  const arrowLayer = ctx.g
+    .append('g')
     .attr('class', 'reaction-preview-arrow')
     .attr('pointer-events', 'none')
     .attr('opacity', 0.8);
-  arrowLayer.append('line')
+  arrowLayer
+    .append('line')
     .attr('x1', x1)
     .attr('y1', y1)
     .attr('x2', x2)
@@ -1119,8 +1144,12 @@ export function _renderReactionPreviewArrowForce(nodes) {
     .attr('stroke', '#444')
     .attr('stroke-width', 2.5)
     .attr('stroke-linecap', 'round');
-  arrowLayer.append('path')
-    .attr('d', `M ${x2 - ux * arrowHeadLength + px * arrowHeadWidth} ${y2 - uy * arrowHeadLength + py * arrowHeadWidth} L ${x2} ${y2} L ${x2 - ux * arrowHeadLength - px * arrowHeadWidth} ${y2 - uy * arrowHeadLength - py * arrowHeadWidth}`)
+  arrowLayer
+    .append('path')
+    .attr(
+      'd',
+      `M ${x2 - ux * arrowHeadLength + px * arrowHeadWidth} ${y2 - uy * arrowHeadLength + py * arrowHeadWidth} L ${x2} ${y2} L ${x2 - ux * arrowHeadLength - px * arrowHeadWidth} ${y2 - uy * arrowHeadLength - py * arrowHeadWidth}`
+    )
     .attr('fill', 'none')
     .attr('stroke', '#444')
     .attr('stroke-width', 2.5)
@@ -1134,7 +1163,8 @@ export function _renderReactionPreviewArrowForce(nodes) {
   for (let i = 0; i < productGeometries.length - 1; i++) {
     const left = productGeometries[i];
     const right = productGeometries[i + 1];
-    arrowLayer.append('text')
+    arrowLayer
+      .append('text')
       .attr('x', (left.maxX + right.minX) / 2)
       .attr('y', (left.cy + right.cy) / 2)
       .attr('fill', '#444')
@@ -1214,9 +1244,7 @@ function _mergeMappingsByAnchor(smarts, mappings) {
       mergedByAnchor.get(key).add(id);
     }
   }
-  return [...mergedByAnchor.values()].map(
-    atomSet => new Map([...atomSet].map(id => [id, id]))
-  );
+  return [...mergedByAnchor.values()].map(atomSet => new Map([...atomSet].map(id => [id, id])));
 }
 
 function _groupMappingsByAnchor(smarts, mappings) {
@@ -1331,21 +1359,25 @@ export function _alignReaction2dProductOrientation(mol) {
   if (!_hasReactionPreview() || !_reactionPreviewMappedAtomPairs?.length) {
     return;
   }
-  alignReaction2dProductOrientationShared(mol, {
-    reactantAtomIds: _reactionPreviewReactantAtomIds,
-    productAtomIds: _reactionPreviewProductAtomIds,
-    productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets,
-    mappedAtomPairs: _reactionPreviewMappedAtomPairs,
-    editedProductAtomIds: _reactionPreviewEditedProductAtomIds,
-    preservedReactantStereoByCenter: _reactionPreviewPreservedReactantStereoByCenter,
-    preservedReactantStereoBondTypes: _reactionPreviewPreservedReactantStereoBondTypes,
-    preservedProductStereoByCenter: _reactionPreviewPreservedProductStereoByCenter,
-    preservedProductStereoBondTypes: _reactionPreviewPreservedProductStereoBondTypes,
-    forcedStereoByCenter: _reactionPreviewForcedStereoByCenter,
-    forcedStereoBondTypes: _reactionPreviewForcedStereoBondTypes,
-    forcedStereoBondCenters: _reactionPreviewForcedStereoBondCenters,
-    reactantReferenceCoords: _reactionPreviewReactantReferenceCoords
-  }, 1.5);
+  alignReaction2dProductOrientationShared(
+    mol,
+    {
+      reactantAtomIds: _reactionPreviewReactantAtomIds,
+      productAtomIds: _reactionPreviewProductAtomIds,
+      productComponentAtomIdSets: _reactionPreviewProductComponentAtomIdSets,
+      mappedAtomPairs: _reactionPreviewMappedAtomPairs,
+      editedProductAtomIds: _reactionPreviewEditedProductAtomIds,
+      preservedReactantStereoByCenter: _reactionPreviewPreservedReactantStereoByCenter,
+      preservedReactantStereoBondTypes: _reactionPreviewPreservedReactantStereoBondTypes,
+      preservedProductStereoByCenter: _reactionPreviewPreservedProductStereoByCenter,
+      preservedProductStereoBondTypes: _reactionPreviewPreservedProductStereoBondTypes,
+      forcedStereoByCenter: _reactionPreviewForcedStereoByCenter,
+      forcedStereoBondTypes: _reactionPreviewForcedStereoBondTypes,
+      forcedStereoBondCenters: _reactionPreviewForcedStereoBondCenters,
+      reactantReferenceCoords: _reactionPreviewReactantReferenceCoords
+    },
+    1.5
+  );
 }
 
 export function updateFunctionalGroups(mol) {
@@ -1448,19 +1480,23 @@ export function updateReactionTemplatesPanel() {
       siteLabel.className = 'reaction-site-label';
       siteLabel.textContent = `${_activeReactionMatchIndex + 1}/${siteCount}`;
       const sourceMol = (_reactionPreviewSourceMol ?? ctx.currentMol ?? ctx._mol2d)?.clone();
-      nav.appendChild(_previewNavButton('‹', 'Previous reaction site', () => {
-        if (!sourceMol) {
-          return;
-        }
-        _activateReactionEntry(sourceMol, entry, _activeReactionMatchIndex - 1);
-      }));
+      nav.appendChild(
+        _previewNavButton('‹', 'Previous reaction site', () => {
+          if (!sourceMol) {
+            return;
+          }
+          _activateReactionEntry(sourceMol, entry, _activeReactionMatchIndex - 1);
+        })
+      );
       nav.appendChild(siteLabel);
-      nav.appendChild(_previewNavButton('›', 'Next reaction site', () => {
-        if (!sourceMol) {
-          return;
-        }
-        _activateReactionEntry(sourceMol, entry, _activeReactionMatchIndex + 1);
-      }));
+      nav.appendChild(
+        _previewNavButton('›', 'Next reaction site', () => {
+          if (!sourceMol) {
+            return;
+          }
+          _activateReactionEntry(sourceMol, entry, _activeReactionMatchIndex + 1);
+        })
+      );
       nameCell.appendChild(nav);
     }
 
@@ -1480,7 +1516,9 @@ export function updateReactionTemplatesPanel() {
     });
     tr.addEventListener('click', event => {
       event.stopPropagation();
-      document.getElementById('fg-body')?.querySelectorAll('tr')
+      document
+        .getElementById('fg-body')
+        ?.querySelectorAll('tr')
         .forEach(r => r.classList.remove('fg-active'));
       if (_reactionPreviewLocked && _activeReactionSmirks === entry.smirks) {
         _restoreReactionPreviewSource();
@@ -1500,31 +1538,35 @@ export function updateReactionTemplatesPanel() {
 }
 
 // Clear active functional-group row when clicking outside the table.
-document.addEventListener('click', e => {
-  if (e.target.closest('#fg-table')) {
-    return;
-  }
-  if (e.target.closest('#rotate-controls')) {
-    return;
-  }
-  const tbody = document.getElementById('fg-body');
-  if (!tbody.querySelector('tr.fg-active')) {
-    return;
-  }
-  tbody.querySelectorAll('tr').forEach(r => r.classList.remove('fg-active'));
-  _setHighlight(null);
-}, true);
+document.addEventListener(
+  'click',
+  e => {
+    if (e.target.closest('#fg-table')) {
+      return;
+    }
+    if (e.target.closest('#rotate-controls')) {
+      return;
+    }
+    const tbody = document.getElementById('fg-body');
+    if (!tbody.querySelector('tr.fg-active')) {
+      return;
+    }
+    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('fg-active'));
+    _setHighlight(null);
+  },
+  true
+);
 
-export function getHighlightedAtomIds()  {
+export function getHighlightedAtomIds() {
   return _highlightedAtomIds;
 }
 export function getHighlightedAtomSets() {
   return _highlightedAtomSets;
 }
-export function getHighlightMol()        {
+export function getHighlightMol() {
   return _highlightMol;
 }
-export function getHighlightStyle()      {
+export function getHighlightStyle() {
   return _highlightStyle;
 }
 export function clearHighlightState() {

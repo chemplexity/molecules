@@ -6,9 +6,17 @@
   "opts": {
     "destination": "docs/api",
     "recurse": true,
-    "readme": "README.md"
+    "readme": "README.md",
+    "template": "node_modules/clean-jsdoc-theme"
   },
   "plugins": ["plugins/markdown"],
+  "theme_opts": {
+    "title": "molecules.js",
+    "homepageTitle": "molecules.js API Reference",
+    "search": true,
+    "darkMode": true,
+    "codeTheme": "base16/tomorrow-night"
+  },
   "tags": {
     "allowUnknownTags": true
   }

@@ -37,7 +37,7 @@ function propane() {
 
 function isobutane() {
   const mol = new Molecule();
-  mol.addAtom('a0', 'C');  // centre
+  mol.addAtom('a0', 'C'); // centre
   mol.addAtom('a1', 'C');
   mol.addAtom('a2', 'C');
   mol.addAtom('a3', 'C');
@@ -90,17 +90,17 @@ function naphthalene() {
     mol.addAtom(`a${i}`, 'C');
   }
   // Ring A: 0-1-2-3-4-5-0
-  mol.addBond('b0',  'a0', 'a1', {}, false);
-  mol.addBond('b1',  'a1', 'a2', {}, false);
-  mol.addBond('b2',  'a2', 'a3', {}, false);
-  mol.addBond('b3',  'a3', 'a4', {}, false);
-  mol.addBond('b4',  'a4', 'a5', {}, false);
-  mol.addBond('b5',  'a5', 'a0', {}, false);
+  mol.addBond('b0', 'a0', 'a1', {}, false);
+  mol.addBond('b1', 'a1', 'a2', {}, false);
+  mol.addBond('b2', 'a2', 'a3', {}, false);
+  mol.addBond('b3', 'a3', 'a4', {}, false);
+  mol.addBond('b4', 'a4', 'a5', {}, false);
+  mol.addBond('b5', 'a5', 'a0', {}, false);
   // Ring B: 4-6-7-8-9-5-4
-  mol.addBond('b6',  'a4', 'a6', {}, false);
-  mol.addBond('b7',  'a6', 'a7', {}, false);
-  mol.addBond('b8',  'a7', 'a8', {}, false);
-  mol.addBond('b9',  'a8', 'a9', {}, false);
+  mol.addBond('b6', 'a4', 'a6', {}, false);
+  mol.addBond('b7', 'a6', 'a7', {}, false);
+  mol.addBond('b8', 'a7', 'a8', {}, false);
+  mol.addBond('b9', 'a8', 'a9', {}, false);
   mol.addBond('b10', 'a9', 'a5', {}, false);
   return mol;
 }
@@ -129,7 +129,7 @@ function spiro() {
 /** Benzene with one methyl substituent (toluene skeleton, heavy atoms only). */
 function methylbenzene() {
   const mol = benzene();
-  mol.addAtom('a6', 'C');  // methyl carbon
+  mol.addAtom('a6', 'C'); // methyl carbon
   mol.addBond('b6', 'a0', 'a6', {}, false);
   return mol;
 }
@@ -188,7 +188,7 @@ function angleDeg(a, b, c) {
   const mu = Math.hypot(ux, uy);
   const mv = Math.hypot(vx, vy);
   const cos = dot / (mu * mv);
-  return Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+  return (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
 }
 
 function approx(actual, expected, tol = 1e-6) {
@@ -286,10 +286,12 @@ function preferredBackbonePath(mol) {
       }
       const ringCount = path.filter(id => ringAtoms.has(id)).length;
       const score = path.length - ringCount * 0.6;
-      if (!best ||
-          score > best.score ||
-          (score === best.score && ringCount < best.ringCount) ||
-          (score === best.score && ringCount === best.ringCount && path.length > best.path.length)) {
+      if (
+        !best ||
+        score > best.score ||
+        (score === best.score && ringCount < best.ringCount) ||
+        (score === best.score && ringCount === best.ringCount && path.length > best.path.length)
+      ) {
         best = { path, ringCount, score };
       }
     }
@@ -431,10 +433,7 @@ describe('generateCoords — benzene ring geometry', () => {
     const atoms = [...mol.atoms.values()];
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
-        const d = Math.hypot(
-          atoms[i].x - atoms[j].x,
-          atoms[i].y - atoms[j].y
-        );
+        const d = Math.hypot(atoms[i].x - atoms[j].x, atoms[i].y - atoms[j].y);
         assert.ok(d > 0.1, `atoms ${i} and ${j} overlap (d=${d})`);
       }
     }
@@ -477,9 +476,8 @@ describe('generateCoords — chain angles', () => {
     const a2 = mol.atoms.get('a2');
     const v1 = { x: a0.x - a1.x, y: a0.y - a1.y };
     const v2 = { x: a2.x - a1.x, y: a2.y - a1.y };
-    const cos = (v1.x * v2.x + v1.y * v2.y) /
-                (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y));
-    const angleDeg = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+    const cos = (v1.x * v2.x + v1.y * v2.y) / (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y));
+    const angleDeg = (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
     assert.ok(Math.abs(angleDeg - 120) < 1, `bond angle ${angleDeg.toFixed(2)}° != 120°`);
   });
 
@@ -490,12 +488,12 @@ describe('generateCoords — chain angles', () => {
     const children = ['a1', 'a2', 'a3'].map(id => mol.atoms.get(id));
     for (let i = 0; i < children.length; i++) {
       for (let j = i + 1; j < children.length; j++) {
-        const ci = children[i], cj = children[j];
+        const ci = children[i],
+          cj = children[j];
         const v1 = { x: ci.x - centre.x, y: ci.y - centre.y };
         const v2 = { x: cj.x - centre.x, y: cj.y - centre.y };
-        const cos = (v1.x * v2.x + v1.y * v2.y) /
-                    (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y));
-        const angleDeg = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+        const cos = (v1.x * v2.x + v1.y * v2.y) / (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y));
+        const angleDeg = (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
         assert.ok(Math.abs(angleDeg - 120) < 1, `angle ${i}-${j}: ${angleDeg.toFixed(2)}° != 120°`);
       }
     }
@@ -522,10 +520,7 @@ describe('generateCoords — naphthalene (fused bicyclic)', () => {
     const atoms = [...mol.atoms.values()];
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
-        const d = Math.hypot(
-          atoms[i].x - atoms[j].x,
-          atoms[i].y - atoms[j].y
-        );
+        const d = Math.hypot(atoms[i].x - atoms[j].x, atoms[i].y - atoms[j].y);
         assert.ok(d > 0.5, `atoms ${i} and ${j} overlap (d=${d.toFixed(4)})`);
       }
     }
@@ -569,10 +564,7 @@ describe('generateCoords — spiro bicyclic', () => {
     const atoms = [...mol.atoms.values()];
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
-        const d = Math.hypot(
-          atoms[i].x - atoms[j].x,
-          atoms[i].y - atoms[j].y
-        );
+        const d = Math.hypot(atoms[i].x - atoms[j].x, atoms[i].y - atoms[j].y);
         assert.ok(d > 0.1, `atoms ${i} and ${j} overlap (d=${d.toFixed(4)})`);
       }
     }
@@ -695,13 +687,18 @@ function naphthaleneMethyl() {
   for (let i = 0; i < 11; i++) {
     mol.addAtom(`a${i}`, 'C');
   }
-  mol.addBond('b0',  'a0', 'a1', {}, false); mol.addBond('b1',  'a1', 'a2', {}, false);
-  mol.addBond('b2',  'a2', 'a3', {}, false); mol.addBond('b3',  'a3', 'a4', {}, false);
-  mol.addBond('b4',  'a4', 'a5', {}, false); mol.addBond('b5',  'a5', 'a0', {}, false);
-  mol.addBond('b6',  'a4', 'a6', {}, false); mol.addBond('b7',  'a6', 'a7', {}, false);
-  mol.addBond('b8',  'a7', 'a8', {}, false); mol.addBond('b9',  'a8', 'a9', {}, false);
+  mol.addBond('b0', 'a0', 'a1', {}, false);
+  mol.addBond('b1', 'a1', 'a2', {}, false);
+  mol.addBond('b2', 'a2', 'a3', {}, false);
+  mol.addBond('b3', 'a3', 'a4', {}, false);
+  mol.addBond('b4', 'a4', 'a5', {}, false);
+  mol.addBond('b5', 'a5', 'a0', {}, false);
+  mol.addBond('b6', 'a4', 'a6', {}, false);
+  mol.addBond('b7', 'a6', 'a7', {}, false);
+  mol.addBond('b8', 'a7', 'a8', {}, false);
+  mol.addBond('b9', 'a8', 'a9', {}, false);
   mol.addBond('b10', 'a9', 'a5', {}, false);
-  mol.addBond('b11', 'a0', 'a10', {}, false);  // methyl substituent
+  mol.addBond('b11', 'a0', 'a10', {}, false); // methyl substituent
   return mol;
 }
 
@@ -749,10 +746,7 @@ describe('generateCoords — cyclopentane ring geometry', () => {
     const atoms = [...mol.atoms.values()];
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
-        const d = Math.hypot(
-          atoms[i].x - atoms[j].x,
-          atoms[i].y - atoms[j].y
-        );
+        const d = Math.hypot(atoms[i].x - atoms[j].x, atoms[i].y - atoms[j].y);
         assert.ok(d > 0.1, `atoms ${i} and ${j} overlap (d=${d})`);
       }
     }
@@ -790,10 +784,7 @@ describe('generateCoords — cycloheptane ring geometry', () => {
     const atoms = [...mol.atoms.values()];
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
-        const d = Math.hypot(
-          atoms[i].x - atoms[j].x,
-          atoms[i].y - atoms[j].y
-        );
+        const d = Math.hypot(atoms[i].x - atoms[j].x, atoms[i].y - atoms[j].y);
         assert.ok(d > 0.1, `atoms ${i} and ${j} overlap (d=${d})`);
       }
     }
@@ -819,10 +810,7 @@ describe('generateCoords — neopentane (degree-4 centre)', () => {
     const terminals = ['a1', 'a2', 'a3', 'a4'].map(id => mol.atoms.get(id));
     for (let i = 0; i < terminals.length; i++) {
       for (let j = i + 1; j < terminals.length; j++) {
-        const d = Math.hypot(
-          terminals[i].x - terminals[j].x,
-          terminals[i].y - terminals[j].y
-        );
+        const d = Math.hypot(terminals[i].x - terminals[j].x, terminals[i].y - terminals[j].y);
         assert.ok(d > 0.5, `terminals ${i} and ${j} overlap (d=${d.toFixed(4)})`);
       }
     }
@@ -847,13 +835,12 @@ describe('generateCoords — long-chain bond angles', () => {
     generateCoords(mol);
     for (let i = 1; i <= 8; i++) {
       const prev = mol.atoms.get(`a${i - 1}`);
-      const cur  = mol.atoms.get(`a${i}`);
+      const cur = mol.atoms.get(`a${i}`);
       const next = mol.atoms.get(`a${i + 1}`);
       const v1 = { x: prev.x - cur.x, y: prev.y - cur.y };
       const v2 = { x: next.x - cur.x, y: next.y - cur.y };
-      const cos = (v1.x * v2.x + v1.y * v2.y) /
-                  (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y));
-      const angleDeg = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+      const cos = (v1.x * v2.x + v1.y * v2.y) / (Math.hypot(v1.x, v1.y) * Math.hypot(v2.x, v2.y));
+      const angleDeg = (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
       assert.ok(Math.abs(angleDeg - 120) < 1, `atom ${i}: angle=${angleDeg.toFixed(2)}°`);
     }
   });
@@ -864,10 +851,7 @@ describe('generateCoords — long-chain bond angles', () => {
     const atoms = [...mol.atoms.values()];
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
-        const d = Math.hypot(
-          atoms[i].x - atoms[j].x,
-          atoms[i].y - atoms[j].y
-        );
+        const d = Math.hypot(atoms[i].x - atoms[j].x, atoms[i].y - atoms[j].y);
         assert.ok(d > 0.1, `atoms a${i} and a${j} overlap (d=${d.toFixed(4)})`);
       }
     }
@@ -960,15 +944,24 @@ describe('generateCoords — disconnected molecule tiling', () => {
   it('two disconnected linear chains are horizontally separated', () => {
     const mol = new Molecule();
     // Chain A: a0-a1-a2
-    mol.addAtom('a0', 'C'); mol.addAtom('a1', 'C'); mol.addAtom('a2', 'C');
-    mol.addBond('bA0', 'a0', 'a1', {}, false); mol.addBond('bA1', 'a1', 'a2', {}, false);
+    mol.addAtom('a0', 'C');
+    mol.addAtom('a1', 'C');
+    mol.addAtom('a2', 'C');
+    mol.addBond('bA0', 'a0', 'a1', {}, false);
+    mol.addBond('bA1', 'a1', 'a2', {}, false);
     // Chain B: b0-b1-b2
-    mol.addAtom('b0', 'C'); mol.addAtom('b1', 'C'); mol.addAtom('b2', 'C');
-    mol.addBond('bB0', 'b0', 'b1', {}, false); mol.addBond('bB1', 'b1', 'b2', {}, false);
+    mol.addAtom('b0', 'C');
+    mol.addAtom('b1', 'C');
+    mol.addAtom('b2', 'C');
+    mol.addBond('bB0', 'b0', 'b1', {}, false);
+    mol.addBond('bB1', 'b1', 'b2', {}, false);
     generateCoords(mol);
     const aMaxX = Math.max(mol.atoms.get('a0').x, mol.atoms.get('a1').x, mol.atoms.get('a2').x);
     const bMinX = Math.min(mol.atoms.get('b0').x, mol.atoms.get('b1').x, mol.atoms.get('b2').x);
-    assert.ok(bMinX > aMaxX, `chain B (minX=${bMinX.toFixed(3)}) should start right of chain A (maxX=${aMaxX.toFixed(3)})`);
+    assert.ok(
+      bMinX > aMaxX,
+      `chain B (minX=${bMinX.toFixed(3)}) should start right of chain A (maxX=${aMaxX.toFixed(3)})`
+    );
   });
 });
 
@@ -998,10 +991,7 @@ describe('generateCoords — indane (5+6 fused ring system)', () => {
     const atoms = [...mol.atoms.values()];
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
-        const d = Math.hypot(
-          atoms[i].x - atoms[j].x,
-          atoms[i].y - atoms[j].y
-        );
+        const d = Math.hypot(atoms[i].x - atoms[j].x, atoms[i].y - atoms[j].y);
         assert.ok(d > 0.1, `atoms ${atoms[i].id} and ${atoms[j].id} overlap (d=${d.toFixed(4)})`);
       }
     }
@@ -1037,10 +1027,7 @@ describe('generateCoords — naphthalene + methyl substituent', () => {
     const atoms = [...mol.atoms.values()];
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
-        const d = Math.hypot(
-          atoms[i].x - atoms[j].x,
-          atoms[i].y - atoms[j].y
-        );
+        const d = Math.hypot(atoms[i].x - atoms[j].x, atoms[i].y - atoms[j].y);
         assert.ok(d > 0.5, `atoms ${atoms[i].id} and ${atoms[j].id} overlap (d=${d.toFixed(4)})`);
       }
     }
@@ -1078,8 +1065,10 @@ describe('generateCoords — flat-top hexagon orientation', () => {
         Math.abs(angle - Math.PI / 2 + 2 * Math.PI),
         Math.abs(angle + Math.PI / 2 - 2 * Math.PI)
       );
-      assert.ok(distFromVertical > 0.03,
-        `atom ${a.id} is too close to vertical (angle=${(angle * 180 / Math.PI).toFixed(1)}°) — expected flat-top`);
+      assert.ok(
+        distFromVertical > 0.03,
+        `atom ${a.id} is too close to vertical (angle=${((angle * 180) / Math.PI).toFixed(1)}°) — expected flat-top`
+      );
     }
   });
 
@@ -1097,8 +1086,10 @@ describe('generateCoords — flat-top hexagon orientation', () => {
         Math.abs(angle - Math.PI / 2 + 2 * Math.PI),
         Math.abs(angle + Math.PI / 2 - 2 * Math.PI)
       );
-      assert.ok(distFromVertical > 0.03,
-        `atom ${a.id} angle ${(angle * 180 / Math.PI).toFixed(1)}° is too close to vertical — expected flat-top`);
+      assert.ok(
+        distFromVertical > 0.03,
+        `atom ${a.id} angle ${((angle * 180) / Math.PI).toFixed(1)}° is too close to vertical — expected flat-top`
+      );
     }
   });
 });
@@ -1108,11 +1099,14 @@ describe('generateCoords — principal-axis orientation (naphthalene)', () => {
     const mol = naphthalene();
     generateCoords(mol);
     const atoms = [...mol.atoms.values()];
-    const xs = atoms.map(a => a.x), ys = atoms.map(a => a.y);
-    const width  = Math.max(...xs) - Math.min(...xs);
+    const xs = atoms.map(a => a.x),
+      ys = atoms.map(a => a.y);
+    const width = Math.max(...xs) - Math.min(...xs);
     const height = Math.max(...ys) - Math.min(...ys);
-    assert.ok(width > height,
-      `naphthalene should be wider than tall after orientation: width=${width.toFixed(3)}, height=${height.toFixed(3)}`);
+    assert.ok(
+      width > height,
+      `naphthalene should be wider than tall after orientation: width=${width.toFixed(3)}, height=${height.toFixed(3)}`
+    );
   });
 });
 
@@ -1141,7 +1135,7 @@ describe('generateCoords — barbiturate substituent direction', () => {
 
     for (const rid of ringSet) {
       const rpos = mol.atoms.get(rid);
-      const outward = Math.atan2(rpos.y - cy, rpos.x - cx) * 180 / Math.PI;
+      const outward = (Math.atan2(rpos.y - cy, rpos.x - cx) * 180) / Math.PI;
 
       for (const nbId of mol.getNeighbors(rid)) {
         if (ringSet.has(nbId)) {
@@ -1152,8 +1146,8 @@ describe('generateCoords — barbiturate substituent direction', () => {
           continue;
         }
 
-        const angle = Math.atan2(nb.y - rpos.y, nb.x - rpos.x) * 180 / Math.PI;
-        const diff  = ((angle - outward + 540) % 360) - 180; // signed, in (-180, 180]
+        const angle = (Math.atan2(nb.y - rpos.y, nb.x - rpos.x) * 180) / Math.PI;
+        const diff = ((angle - outward + 540) % 360) - 180; // signed, in (-180, 180]
         assert.ok(
           Math.abs(diff) < 90,
           `Substituent ${rid}→${nbId} points inward: angle=${angle.toFixed(1)}°, outward=${outward.toFixed(1)}°, diff=${diff.toFixed(1)}°`
@@ -1169,7 +1163,10 @@ describe('generateCoords — barbiturate substituent direction', () => {
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
         const d = Math.hypot(atoms[i].x - atoms[j].x, atoms[i].y - atoms[j].y);
-        assert.ok(d > 0.5, `atoms ${atoms[i].id}(${atoms[i].name}) and ${atoms[j].id}(${atoms[j].name}) overlap (d=${d.toFixed(4)})`);
+        assert.ok(
+          d > 0.5,
+          `atoms ${atoms[i].id}(${atoms[i].name}) and ${atoms[j].id}(${atoms[j].name}) overlap (d=${d.toFixed(4)})`
+        );
       }
     }
   });
@@ -1206,11 +1203,14 @@ describe('generateCoords — TCNE sp/sp2 geometry', () => {
 
       for (let i = 0; i < nbs.length; i++) {
         for (let j = i + 1; j < nbs.length; j++) {
-          const a = mol.atoms.get(nbs[i]), b = mol.atoms.get(nbs[j]);
-          const ux = a.x - atom.x, uy = a.y - atom.y;
-          const vx = b.x - atom.x, vy = b.y - atom.y;
+          const a = mol.atoms.get(nbs[i]),
+            b = mol.atoms.get(nbs[j]);
+          const ux = a.x - atom.x,
+            uy = a.y - atom.y;
+          const vx = b.x - atom.x,
+            vy = b.y - atom.y;
           const cos = (ux * vx + uy * vy) / ((Math.hypot(ux, uy) || 1e-9) * (Math.hypot(vx, vy) || 1e-9));
-          const ang = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+          const ang = (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
           assert.ok(
             Math.abs(ang - 180) < 1,
             `sp carbon ${id}: angle ${nbs[i]}-${id}-${nbs[j]} = ${ang.toFixed(1)}° (expected 180°)`
@@ -1238,11 +1238,14 @@ describe('generateCoords — TCNE sp/sp2 geometry', () => {
       const nbs = mol.getNeighbors(id).filter(n => mol.atoms.get(n)?.x != null);
       for (let i = 0; i < nbs.length; i++) {
         for (let j = i + 1; j < nbs.length; j++) {
-          const a = mol.atoms.get(nbs[i]), b = mol.atoms.get(nbs[j]);
-          const ux = a.x - atom.x, uy = a.y - atom.y;
-          const vx = b.x - atom.x, vy = b.y - atom.y;
+          const a = mol.atoms.get(nbs[i]),
+            b = mol.atoms.get(nbs[j]);
+          const ux = a.x - atom.x,
+            uy = a.y - atom.y;
+          const vx = b.x - atom.x,
+            vy = b.y - atom.y;
           const cos = (ux * vx + uy * vy) / ((Math.hypot(ux, uy) || 1e-9) * (Math.hypot(vx, vy) || 1e-9));
-          const ang = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+          const ang = (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
           assert.ok(
             Math.abs(ang - 120) < 1,
             `sp2 carbon ${id}: angle ${nbs[i]}-${id}-${nbs[j]} = ${ang.toFixed(1)}° (expected 120°)`
@@ -1292,12 +1295,10 @@ describe('generateCoords — three-ring linker (pyridine+morpholine off trimetho
     const atoms = [...mol.atoms.entries()].filter(([, a]) => a.name !== 'H' && a.x != null);
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
-        const [id1, a1] = atoms[i], [id2, a2] = atoms[j];
+        const [id1, a1] = atoms[i],
+          [id2, a2] = atoms[j];
         const d = Math.hypot(a1.x - a2.x, a1.y - a2.y);
-        assert.ok(
-          d >= 0.5,
-          `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`
-        );
+        assert.ok(d >= 0.5, `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`);
       }
     }
   });
@@ -1342,12 +1343,10 @@ describe('generateCoords — three-adjacent-tBu groups (H ghost blocking fix)', 
     const atoms = [...mol.atoms.entries()].filter(([, a]) => a.name !== 'H' && a.x != null);
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
-        const [id1, a1] = atoms[i], [id2, a2] = atoms[j];
+        const [id1, a1] = atoms[i],
+          [id2, a2] = atoms[j];
         const d = Math.hypot(a1.x - a2.x, a1.y - a2.y);
-        assert.ok(
-          d >= 0.5,
-          `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`
-        );
+        assert.ok(d >= 0.5, `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`);
       }
     }
   });
@@ -1375,10 +1374,7 @@ describe('generateCoords — bridged bicyclic (two fused 9-rings, 4-atom bridge)
         continue;
       }
       const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-      assert.ok(
-        d <= 1.5 * 1.5,
-        `bond ${id1}-${id2}: ${d.toFixed(3)} Å exceeds 1.5×BL`
-      );
+      assert.ok(d <= 1.5 * 1.5, `bond ${id1}-${id2}: ${d.toFixed(3)} Å exceeds 1.5×BL`);
     }
   });
 
@@ -1389,17 +1385,15 @@ describe('generateCoords — bridged bicyclic (two fused 9-rings, 4-atom bridge)
     const entries = [...mol.atoms.entries()].filter(([, a]) => a.name !== 'H');
     for (let i = 0; i < entries.length; i++) {
       for (let j = i + 1; j < entries.length; j++) {
-        const [id1, a1] = entries[i], [id2, a2] = entries[j];
+        const [id1, a1] = entries[i],
+          [id2, a2] = entries[j];
         const p1 = coords.get(id1) ?? a1;
         const p2 = coords.get(id2) ?? a2;
         if (!p1 || !p2) {
           continue;
         }
         const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-        assert.ok(
-          d >= 0.5,
-          `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`
-        );
+        assert.ok(d >= 0.5, `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`);
       }
     }
   });
@@ -1422,10 +1416,7 @@ describe('generateCoords — compact bridged bicyclic amine', () => {
       const p1 = coords.get(id1) ?? a1;
       const p2 = coords.get(id2) ?? a2;
       const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-      assert.ok(
-        d <= 1.5 * 1.5,
-        `bond ${id1}-${id2}: ${d.toFixed(3)} Å exceeds 1.5×BL`
-      );
+      assert.ok(d <= 1.5 * 1.5, `bond ${id1}-${id2}: ${d.toFixed(3)} Å exceeds 1.5×BL`);
     }
   });
 
@@ -1436,14 +1427,12 @@ describe('generateCoords — compact bridged bicyclic amine', () => {
 
     for (let i = 0; i < entries.length; i++) {
       for (let j = i + 1; j < entries.length; j++) {
-        const [id1, a1] = entries[i], [id2, a2] = entries[j];
+        const [id1, a1] = entries[i],
+          [id2, a2] = entries[j];
         const p1 = coords.get(id1) ?? a1;
         const p2 = coords.get(id2) ?? a2;
         const d = Math.hypot(p1.x - p2.x, p1.y - p2.y);
-        assert.ok(
-          d >= 0.5,
-          `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`
-        );
+        assert.ok(d >= 0.5, `atoms ${id1}(${a1.name}) and ${id2}(${a2.name}) overlap: d = ${d.toFixed(3)} Å`);
       }
     }
   });
@@ -1457,9 +1446,13 @@ describe('generateCoords — compact bridged bicyclic amine', () => {
     const neighbors = atom.getNeighbors(mol).filter(n => n.name !== 'H');
     assert.equal(neighbors.length, 2);
     const [n1, n2] = neighbors;
-    const ux = n1.x - atom.x, uy = n1.y - atom.y;
-    const vx = n2.x - atom.x, vy = n2.y - atom.y;
-    const angle = Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy))))) * 180 / Math.PI;
+    const ux = n1.x - atom.x,
+      uy = n1.y - atom.y;
+    const vx = n2.x - atom.x,
+      vy = n2.y - atom.y;
+    const angle =
+      (Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy))))) * 180) /
+      Math.PI;
     assert.ok(angle < 175, `bridge atom ${bridgeId} remained nearly collinear: ${angle.toFixed(2)}°`);
   });
 });
@@ -1476,7 +1469,8 @@ describe('generateCoords — coronene (7-ring PAH)', () => {
     generateCoords(mol, { suppressH: true });
     for (const bond of mol.bonds.values()) {
       const [aId, bId] = bond.atoms;
-      const a = mol.atoms.get(aId), b = mol.atoms.get(bId);
+      const a = mol.atoms.get(aId),
+        b = mol.atoms.get(bId);
       if (a.name === 'H' || b.name === 'H') {
         continue;
       }
@@ -1506,7 +1500,8 @@ describe('generateCoords — coronene (7-ring PAH)', () => {
 
 describe('generateCoords — parser-independent branch ordering', () => {
   const SMILES = 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN';
-  const INCHI = 'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1';
+  const INCHI =
+    'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1';
 
   it('SMILES and InChI layouts match for the same peptide graph', () => {
     const smilesMol = parseSMILES(SMILES);
@@ -1557,14 +1552,8 @@ describe('generateCoords — bond-to-label crowding', () => {
 
     const dist = pointToSegmentDistance(carbonylO, imineN, imineC);
     const branchSep = Math.hypot(carbonylC.x - imineC.x, carbonylC.y - imineC.y);
-    assert.ok(
-      dist >= 0.7,
-      `imine bond crowds carbonyl oxygen: segment distance ${dist.toFixed(3)} Å`
-    );
-    assert.ok(
-      branchSep >= 1.2,
-      `imine carbon folds into carbonyl carbon: distance ${branchSep.toFixed(3)} Å`
-    );
+    assert.ok(dist >= 0.7, `imine bond crowds carbonyl oxygen: segment distance ${dist.toFixed(3)} Å`);
+    assert.ok(branchSep >= 1.2, `imine carbon folds into carbonyl carbon: distance ${branchSep.toFixed(3)} Å`);
   });
 });
 
@@ -1589,10 +1578,7 @@ describe('generateCoords — extended chain spread', () => {
       oxygenClearance >= 2.0,
       `alkyl tail curls back toward carbonyl oxygen: clearance ${oxygenClearance.toFixed(3)} Å`
     );
-    assert.ok(
-      tailExtent >= 5.5,
-      `alkyl tail not sufficiently extended: end-to-end ${tailExtent.toFixed(3)} Å`
-    );
+    assert.ok(tailExtent >= 5.5, `alkyl tail not sufficiently extended: end-to-end ${tailExtent.toFixed(3)} Å`);
 
     const tailAngles = [
       angleDeg(mol.atoms.get('C34'), mol.atoms.get('C36'), mol.atoms.get('C37')),
@@ -1602,10 +1588,7 @@ describe('generateCoords — extended chain spread', () => {
       angleDeg(mol.atoms.get('C39'), mol.atoms.get('C40'), mol.atoms.get('C41'))
     ];
     for (const ang of tailAngles) {
-      assert.ok(
-        approx(ang, 120, 1e-6),
-        `alkyl tail bond angle drifted from zigzag geometry: ${ang.toFixed(3)}°`
-      );
+      assert.ok(approx(ang, 120, 1e-6), `alkyl tail bond angle drifted from zigzag geometry: ${ang.toFixed(3)}°`);
     }
   });
 
@@ -1663,10 +1646,7 @@ describe('generateCoords — extended chain spread', () => {
     const ys = heavy.map(atom => atom.y);
     const width = Math.max(...xs) - Math.min(...xs);
     const height = Math.max(...ys) - Math.min(...ys);
-    assert.ok(
-      endToEnd >= 6.0,
-      `EPA backbone compacted into a loop: end-to-end ${endToEnd.toFixed(3)} Å`
-    );
+    assert.ok(endToEnd >= 6.0, `EPA backbone compacted into a loop: end-to-end ${endToEnd.toFixed(3)} Å`);
     assert.ok(
       width >= height,
       `EPA should prefer a landscape orientation: width=${width.toFixed(3)} Å height=${height.toFixed(3)} Å`
@@ -1763,24 +1743,30 @@ describe('generateCoords — anchored side-chain completion', () => {
     const mol = parseSMILES('FC(F)(F)C1=CC=C(C=C1)C(=O)N2CCN(CC2)C');
     generateCoords(mol, { suppressH: true, bondLength: 1.5 });
 
-    const carbonylCarbon = [...mol.atoms.values()].find(atom =>
-      atom.name === 'C' &&
-      atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
-      atom.getNeighbors(mol).some(nb => nb.name === 'O' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 2) &&
-      atom.getNeighbors(mol).some(nb => nb.name === 'N') &&
-      atom.getNeighbors(mol).some(nb => nb.name === 'C')
+    const carbonylCarbon = [...mol.atoms.values()].find(
+      atom =>
+        atom.name === 'C' &&
+        atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
+        atom
+          .getNeighbors(mol)
+          .some(nb => nb.name === 'O' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 2) &&
+        atom.getNeighbors(mol).some(nb => nb.name === 'N') &&
+        atom.getNeighbors(mol).some(nb => nb.name === 'C')
     );
 
     assert.ok(carbonylCarbon, 'expected an amide carbonyl carbon');
 
-    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb =>
-      nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2
-    );
+    const oxygen = carbonylCarbon
+      .getNeighbors(mol)
+      .find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
     const nitrogen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'N');
     const arylCarbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
 
     assert.ok(oxygen && nitrogen && arylCarbon, 'expected O, N, and aryl neighbors at the carbonyl carbon');
-    assert.ok(Number.isFinite(oxygen.x) && Number.isFinite(oxygen.y), 'expected the carbonyl oxygen to receive finite coordinates');
+    assert.ok(
+      Number.isFinite(oxygen.x) && Number.isFinite(oxygen.y),
+      'expected the carbonyl oxygen to receive finite coordinates'
+    );
 
     const bondLength = Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y);
     const oxygenClearance = Math.min(
@@ -1789,7 +1775,10 @@ describe('generateCoords — anchored side-chain completion', () => {
     );
 
     assert.ok(approx(bondLength, 1.5, 1e-6), `expected a 1.5 Å C=O placement, got ${bondLength.toFixed(3)} Å`);
-    assert.ok(oxygenClearance > 1.0, `expected the carbonyl oxygen to render clear of neighboring atoms, got ${oxygenClearance.toFixed(3)} Å`);
+    assert.ok(
+      oxygenClearance > 1.0,
+      `expected the carbonyl oxygen to render clear of neighboring atoms, got ${oxygenClearance.toFixed(3)} Å`
+    );
   });
 });
 
@@ -1827,15 +1816,18 @@ describe('secondaryDir — ring double bonds', () => {
     assert.ok(ring, 'expected a six-membered ring');
 
     const ringAtoms = ring.map(id => mol.atoms.get(id));
-    const centroid = ringAtoms.reduce((acc, atom) => ({
-      x: acc.x + atom.x,
-      y: acc.y + atom.y
-    }), { x: 0, y: 0 });
+    const centroid = ringAtoms.reduce(
+      (acc, atom) => ({
+        x: acc.x + atom.x,
+        y: acc.y + atom.y
+      }),
+      { x: 0, y: 0 }
+    );
     centroid.x /= ringAtoms.length;
     centroid.y /= ringAtoms.length;
 
     const ringDoubleBonds = [...mol.bonds.values()].filter(bond => {
-      const drawOrder = bond.properties.localizedOrder ?? (bond.properties.order ?? 1);
+      const drawOrder = bond.properties.localizedOrder ?? bond.properties.order ?? 1;
       if (drawOrder !== 2) {
         return false;
       }
@@ -1883,9 +1875,7 @@ describe('getAtomLabel — charged carbons', () => {
     const mol = parseSMILES('CC');
     const neutralCarbon = [...mol.atoms.values()].find(
       atom =>
-        atom.name === 'C' &&
-        (atom.properties.charge ?? 0) === 0 &&
-        atom.getNeighbors(mol).some(nb => nb.name !== 'H')
+        atom.name === 'C' && (atom.properties.charge ?? 0) === 0 && atom.getNeighbors(mol).some(nb => nb.name !== 'H')
     );
 
     assert.ok(neutralCarbon, 'expected a neutral substituted carbon');
@@ -1899,13 +1889,16 @@ describe('getAtomLabel — charged carbons', () => {
 describe('getAtomLabel — hydroxyl orientation', () => {
   it('keeps carboxylic-acid hydroxyl labels as OH', () => {
     const mol = parseSMILES('CC(=O)O');
-    const hydroxylO = [...mol.atoms.values()].find(atom =>
-      atom.name === 'O' &&
-      atom.getNeighbors(mol).some(nb => nb.name === 'C' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1)
+    const hydroxylO = [...mol.atoms.values()].find(
+      atom =>
+        atom.name === 'O' &&
+        atom.getNeighbors(mol).some(nb => nb.name === 'C' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1)
     );
     const carbonylC = hydroxylO.getNeighbors(mol).find(nb => nb.name === 'C');
-    hydroxylO.x = 0; hydroxylO.y = 0;
-    carbonylC.x = 1; carbonylC.y = 0;
+    hydroxylO.x = 0;
+    hydroxylO.y = 0;
+    carbonylC.x = 1;
+    carbonylC.y = 0;
     assert.equal(
       getAtomLabel(hydroxylO, new Map([[hydroxylO.id, 1]]), atom => ({ x: atom.x, y: atom.y }), mol),
       'OH'
@@ -1916,8 +1909,10 @@ describe('getAtomLabel — hydroxyl orientation', () => {
     const mol = parseSMILES('CO');
     const alcoholO = [...mol.atoms.values()].find(atom => atom.name === 'O');
     const carbon = alcoholO.getNeighbors(mol).find(nb => nb.name === 'C');
-    alcoholO.x = 0; alcoholO.y = 0;
-    carbon.x = 1; carbon.y = 0;
+    alcoholO.x = 0;
+    alcoholO.y = 0;
+    carbon.x = 1;
+    carbon.y = 0;
     assert.equal(
       getAtomLabel(alcoholO, new Map([[alcoholO.id, 1]]), atom => ({ x: atom.x, y: atom.y }), mol),
       'HO'
@@ -1931,10 +1926,14 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
     const [c1, c2, o3, c4] = heavyAtoms;
 
-    c1.x = 0;   c1.y = 0;
-    c2.x = 1.5; c2.y = 0;
-    o3.x = 3.0; o3.y = 0;
-    c4.x = 1.5; c4.y = 0;
+    c1.x = 0;
+    c1.y = 0;
+    c2.x = 1.5;
+    c2.y = 0;
+    o3.x = 3.0;
+    o3.y = 0;
+    c4.x = 1.5;
+    c4.y = 0;
 
     const beforeOverlap = Math.hypot(c2.x - c4.x, c2.y - c4.y);
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 4 });
@@ -1996,7 +1995,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
       const v2x = c3.x - c2.x;
       const v2y = c3.y - c2.y;
       const cos = (v1x * v2x + v1y * v2y) / (Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y));
-      return Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+      return (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
     })();
 
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
@@ -2007,12 +2006,15 @@ describe('refineExistingCoords — standalone cleanup', () => {
       const v2x = c3.x - c2.x;
       const v2y = c3.y - c2.y;
       const cos = (v1x * v2x + v1y * v2y) / (Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y));
-      return Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+      return (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
     })();
     const restoredBond = Math.hypot(c3.x - c2.x, c3.y - c2.y);
 
     assert.ok(beforeAngle > 170, `expected a badly straightened chain, got ${beforeAngle.toFixed(2)}°`);
-    assert.ok(Math.abs(afterAngle - 120) < 3, `expected restored zigzag angle near 120°, got ${afterAngle.toFixed(2)}°`);
+    assert.ok(
+      Math.abs(afterAngle - 120) < 3,
+      `expected restored zigzag angle near 120°, got ${afterAngle.toFixed(2)}°`
+    );
     assert.ok(approx(restoredBond, 1.5, 1e-6), `expected restored bond length 1.5 Å, got ${restoredBond.toFixed(3)} Å`);
   });
 
@@ -2021,25 +2023,29 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
     const [c1, c2, c3, c4, c5, c6] = heavyAtoms;
 
-    c1.x = 0.0;  c1.y = 0.0;
-    c2.x = 1.5;  c2.y = 0.0;
-    c3.x = 2.25; c3.y = 1.2990381057;
-    c4.x = 1.5;  c4.y = 2.5980762114;
-    c5.x = 0.0;  c5.y = 2.5980762114;
-    c6.x = -0.75; c6.y = 1.2990381057;
+    c1.x = 0.0;
+    c1.y = 0.0;
+    c2.x = 1.5;
+    c2.y = 0.0;
+    c3.x = 2.25;
+    c3.y = 1.2990381057;
+    c4.x = 1.5;
+    c4.y = 2.5980762114;
+    c5.x = 0.0;
+    c5.y = 2.5980762114;
+    c6.x = -0.75;
+    c6.y = 1.2990381057;
 
     const beforeEndToEnd = Math.hypot(c6.x - c1.x, c6.y - c1.y);
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
     const afterEndToEnd = Math.hypot(c6.x - c1.x, c6.y - c1.y);
 
-    const internalAngles = [
-      angleDeg(c1, c2, c3),
-      angleDeg(c2, c3, c4),
-      angleDeg(c3, c4, c5),
-      angleDeg(c4, c5, c6)
-    ];
+    const internalAngles = [angleDeg(c1, c2, c3), angleDeg(c2, c3, c4), angleDeg(c3, c4, c5), angleDeg(c4, c5, c6)];
 
-    assert.ok(beforeEndToEnd < 2.0, `expected a compact curled chain before refine, got ${beforeEndToEnd.toFixed(3)} Å`);
+    assert.ok(
+      beforeEndToEnd < 2.0,
+      `expected a compact curled chain before refine, got ${beforeEndToEnd.toFixed(3)} Å`
+    );
     assert.ok(afterEndToEnd > 3.0, `expected a more extended chain after refine, got ${afterEndToEnd.toFixed(3)} Å`);
     for (const angle of internalAngles) {
       assert.ok(Math.abs(angle - 120) < 3, `expected preserved zigzag bond angles near 120°, got ${angle.toFixed(2)}°`);
@@ -2055,14 +2061,15 @@ describe('refineExistingCoords — standalone cleanup', () => {
     generateCoords(mol);
 
     const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
-    const carbonylCarbon = heavyAtoms.find(atom =>
-      atom.name === 'C' &&
-      atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
-      atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
+    const carbonylCarbon = heavyAtoms.find(
+      atom =>
+        atom.name === 'C' &&
+        atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
+        atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
     );
-    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb =>
-      nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2
-    );
+    const oxygen = carbonylCarbon
+      .getNeighbors(mol)
+      .find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
     const nitrogen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'N');
     const carbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
 
@@ -2074,10 +2081,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
       nitrogen.y = carbonylCarbon.y + (dy / len) * 1.5;
     }
 
-    const beforeAngles = [
-      angleDeg(oxygen, carbonylCarbon, nitrogen),
-      angleDeg(carbon, carbonylCarbon, nitrogen)
-    ];
+    const beforeAngles = [angleDeg(oxygen, carbonylCarbon, nitrogen), angleDeg(carbon, carbonylCarbon, nitrogen)];
 
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
 
@@ -2088,7 +2092,10 @@ describe('refineExistingCoords — standalone cleanup', () => {
     ];
     const cnBond = Math.hypot(nitrogen.x - carbonylCarbon.x, nitrogen.y - carbonylCarbon.y);
 
-    assert.ok(beforeAngles.some(angle => Math.abs(angle - 120) > 20), `expected badly distorted sp2 angles, got ${beforeAngles.map(a => a.toFixed(2)).join(', ')}`);
+    assert.ok(
+      beforeAngles.some(angle => Math.abs(angle - 120) > 20),
+      `expected badly distorted sp2 angles, got ${beforeAngles.map(a => a.toFixed(2)).join(', ')}`
+    );
     for (const angle of afterAngles) {
       assert.ok(Math.abs(angle - 120) < 4, `expected restored trigonal angle near 120°, got ${angle.toFixed(2)}°`);
     }
@@ -2100,14 +2107,15 @@ describe('refineExistingCoords — standalone cleanup', () => {
     generateCoords(mol);
 
     const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
-    const carbonylCarbon = heavyAtoms.find(atom =>
-      atom.name === 'C' &&
-      atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
-      atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
+    const carbonylCarbon = heavyAtoms.find(
+      atom =>
+        atom.name === 'C' &&
+        atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
+        atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
     );
-    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb =>
-      nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2
-    );
+    const oxygen = carbonylCarbon
+      .getNeighbors(mol)
+      .find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
     const nitrogen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'N');
     const carbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
 
@@ -2115,10 +2123,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
     oxygen.y = carbonylCarbon.y + 1.8;
 
     const beforeBond = Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y);
-    const beforeAngles = [
-      angleDeg(oxygen, carbonylCarbon, nitrogen),
-      angleDeg(oxygen, carbonylCarbon, carbon)
-    ];
+    const beforeAngles = [angleDeg(oxygen, carbonylCarbon, nitrogen), angleDeg(oxygen, carbonylCarbon, carbon)];
 
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
 
@@ -2130,7 +2135,10 @@ describe('refineExistingCoords — standalone cleanup', () => {
     ];
 
     assert.ok(beforeBond > 3.0, `expected a badly displaced carbonyl oxygen, got ${beforeBond.toFixed(3)} Å`);
-    assert.ok(beforeAngles.some(angle => Math.abs(angle - 120) > 2), `expected distorted carbonyl angles, got ${beforeAngles.map(a => a.toFixed(2)).join(', ')}`);
+    assert.ok(
+      beforeAngles.some(angle => Math.abs(angle - 120) > 2),
+      `expected distorted carbonyl angles, got ${beforeAngles.map(a => a.toFixed(2)).join(', ')}`
+    );
     assert.ok(approx(afterBond, 1.5, 1e-6), `expected restored C=O bond length 1.5 Å, got ${afterBond.toFixed(3)} Å`);
     for (const angle of afterAngles) {
       assert.ok(Math.abs(angle - 120) < 4, `expected restored trigonal angle near 120°, got ${angle.toFixed(2)}°`);
@@ -2141,25 +2149,30 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const mol = parseSMILES('O=C(O)c1ccccc1');
     generateCoords(mol, { bondLength: 1.5 });
 
-    const carbonylCarbon = [...mol.atoms.values()].find(atom =>
-      atom.name === 'C' &&
-      atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
-      atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2) &&
-      atom.getNeighbors(mol).some(nb => nb.name === 'O') &&
-      atom.getNeighbors(mol).some(nb => nb.name === 'C')
+    const carbonylCarbon = [...mol.atoms.values()].find(
+      atom =>
+        atom.name === 'C' &&
+        atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
+        atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2) &&
+        atom.getNeighbors(mol).some(nb => nb.name === 'O') &&
+        atom.getNeighbors(mol).some(nb => nb.name === 'C')
     );
-    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb =>
-      nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2
-    );
-    const hydroxylOxygen = carbonylCarbon.getNeighbors(mol).find(nb =>
-      nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 1
-    );
+    const oxygen = carbonylCarbon
+      .getNeighbors(mol)
+      .find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
+    const hydroxylOxygen = carbonylCarbon
+      .getNeighbors(mol)
+      .find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 1);
     const arylCarbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
 
     oxygen.x += 2.8;
     oxygen.y += 1.4;
-    hydroxylOxygen.x = carbonylCarbon.x + (oxygen.x - carbonylCarbon.x) / Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y) * 1.5;
-    hydroxylOxygen.y = carbonylCarbon.y + (oxygen.y - carbonylCarbon.y) / Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y) * 1.5;
+    hydroxylOxygen.x =
+      carbonylCarbon.x +
+      ((oxygen.x - carbonylCarbon.x) / Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y)) * 1.5;
+    hydroxylOxygen.y =
+      carbonylCarbon.y +
+      ((oxygen.y - carbonylCarbon.y) / Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y)) * 1.5;
 
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
 
@@ -2169,7 +2182,10 @@ describe('refineExistingCoords — standalone cleanup', () => {
       angleDeg(hydroxylOxygen, carbonylCarbon, arylCarbon)
     ];
     for (const angle of afterAngles) {
-      assert.ok(Math.abs(angle - 120) < 4, `expected restored benzoic-acid trigonal angle near 120°, got ${angle.toFixed(2)}°`);
+      assert.ok(
+        Math.abs(angle - 120) < 4,
+        `expected restored benzoic-acid trigonal angle near 120°, got ${angle.toFixed(2)}°`
+      );
     }
   });
 
@@ -2177,10 +2193,11 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const mol = parseINCHI('InChI=1S/C9H8O4/c1-6(10)13-8-5-3-2-4-7(8)9(11)12/h2-5H,1H3,(H,11,12)');
 
     const assertCarbonylAngles = stage => {
-      const carbonylCenters = [...mol.atoms.values()].filter(atom =>
-        atom.name === 'C' &&
-        atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
-        atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
+      const carbonylCenters = [...mol.atoms.values()].filter(
+        atom =>
+          atom.name === 'C' &&
+          atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
+          atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
       );
 
       assert.equal(carbonylCenters.length, 2, `expected 2 carbonyl centers in aspirin during ${stage}`);
@@ -2193,7 +2210,10 @@ describe('refineExistingCoords — standalone cleanup', () => {
           }
         }
         for (const angle of angles) {
-          assert.ok(Math.abs(angle - 120) < 4, `expected aspirin carbonyl angle near 120° during ${stage}, got ${angle.toFixed(2)}° at ${carbonylCarbon.id}`);
+          assert.ok(
+            Math.abs(angle - 120) < 4,
+            `expected aspirin carbonyl angle near 120° during ${stage}, got ${angle.toFixed(2)}° at ${carbonylCarbon.id}`
+          );
         }
       }
     };
@@ -2213,16 +2233,14 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const displaced = ringAtoms[0];
     const original = new Map(ringAtoms.map(atom => [atom.id, { x: atom.x, y: atom.y }]));
 
-    const displacedDistanceError = () => ringAtoms.slice(1).reduce((sum, atom) => {
-      const originalDisplaced = original.get(displaced.id);
-      const originalAtom = original.get(atom.id);
-      const expected = Math.hypot(
-        originalDisplaced.x - originalAtom.x,
-        originalDisplaced.y - originalAtom.y
-      );
-      const actual = Math.hypot(displaced.x - atom.x, displaced.y - atom.y);
-      return sum + Math.abs(actual - expected);
-    }, 0);
+    const displacedDistanceError = () =>
+      ringAtoms.slice(1).reduce((sum, atom) => {
+        const originalDisplaced = original.get(displaced.id);
+        const originalAtom = original.get(atom.id);
+        const expected = Math.hypot(originalDisplaced.x - originalAtom.x, originalDisplaced.y - originalAtom.y);
+        const actual = Math.hypot(displaced.x - atom.x, displaced.y - atom.y);
+        return sum + Math.abs(actual - expected);
+      }, 0);
 
     displaced.x += 2.0;
     displaced.y += 1.25;
@@ -2284,17 +2302,26 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const afterDiff = Math.abs(((afterAngle - afterOutward + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
     const bondLen = Math.hypot(substituent.x - ringAtom.x, substituent.y - ringAtom.y);
 
-    assert.ok(beforeDiff > Math.PI / 2, `expected inward-pointing substituent before refine, got ${beforeDiff * 180 / Math.PI}°`);
-    assert.ok(afterDiff < 25 * Math.PI / 180, `expected outward ring substituent after refine, got ${afterDiff * 180 / Math.PI}°`);
-    assert.ok(approx(bondLen, 1.5, 1e-6), `expected restored aryl-substituent bond length 1.5 Å, got ${bondLen.toFixed(3)} Å`);
+    assert.ok(
+      beforeDiff > Math.PI / 2,
+      `expected inward-pointing substituent before refine, got ${(beforeDiff * 180) / Math.PI}°`
+    );
+    assert.ok(
+      afterDiff < (25 * Math.PI) / 180,
+      `expected outward ring substituent after refine, got ${(afterDiff * 180) / Math.PI}°`
+    );
+    assert.ok(
+      approx(bondLen, 1.5, 1e-6),
+      `expected restored aryl-substituent bond length 1.5 Å, got ${bondLen.toFixed(3)} Å`
+    );
   });
 
   it('restores a displaced terminal alkene carbon in an alkene side chain', () => {
     const mol = parseSMILES('CC(=O)C(Cl)CC(C(C)C)C=C');
     generateCoords(mol, { bondLength: 1.5 });
 
-    const dblBond = [...mol.bonds.values()].find(bond =>
-      (bond.properties.order ?? 1) === 2 && bond.getAtomObjects(mol).every(atom => atom.name === 'C')
+    const dblBond = [...mol.bonds.values()].find(
+      bond => (bond.properties.order ?? 1) === 2 && bond.getAtomObjects(mol).every(atom => atom.name === 'C')
     );
     const [a, b] = dblBond.getAtomObjects(mol);
     const terminal = [a, b].find(atom => atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 1);
@@ -2313,16 +2340,22 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const afterAngle = angleDeg(prev, internal, terminal);
 
     assert.ok(beforeLen > 3.0, `expected badly stretched alkene bond before refine, got ${beforeLen.toFixed(3)} Å`);
-    assert.ok(Math.abs(afterLen - 1.5) < 1e-6, `expected restored alkene bond length 1.5 Å, got ${afterLen.toFixed(3)} Å`);
-    assert.ok(Math.abs(afterAngle - 120) < 4, `expected restored alkene angle near 120°, got ${afterAngle.toFixed(2)}°`);
+    assert.ok(
+      Math.abs(afterLen - 1.5) < 1e-6,
+      `expected restored alkene bond length 1.5 Å, got ${afterLen.toFixed(3)} Å`
+    );
+    assert.ok(
+      Math.abs(afterAngle - 120) < 4,
+      `expected restored alkene angle near 120°, got ${afterAngle.toFixed(2)}°`
+    );
   });
 
   it('restores a displaced internal alkene carbon together with its terminal alkene partner', () => {
     const mol = parseSMILES('CC(=O)C(Cl)CC(C(C)C)C=C');
     generateCoords(mol, { bondLength: 1.5 });
 
-    const dblBond = [...mol.bonds.values()].find(bond =>
-      (bond.properties.order ?? 1) === 2 && bond.getAtomObjects(mol).every(atom => atom.name === 'C')
+    const dblBond = [...mol.bonds.values()].find(
+      bond => (bond.properties.order ?? 1) === 2 && bond.getAtomObjects(mol).every(atom => atom.name === 'C')
     );
     const [a, b] = dblBond.getAtomObjects(mol);
     const terminal = [a, b].find(atom => atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 1);
@@ -2342,9 +2375,21 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const afterDouble = Math.hypot(internal.x - terminal.x, internal.y - terminal.y);
     const afterAngle = angleDeg(prev, internal, terminal);
 
-    assert.ok(beforeSingle > 2.0 || beforeDouble > 2.0, `expected distorted alkene geometry before refine, got single=${beforeSingle.toFixed(3)} Å double=${beforeDouble.toFixed(3)} Å`);
-    assert.ok(Math.abs(afterSingle - 1.5) < 1e-6, `expected restored allylic bond length 1.5 Å, got ${afterSingle.toFixed(3)} Å`);
-    assert.ok(Math.abs(afterDouble - 1.5) < 1e-6, `expected restored alkene bond length 1.5 Å, got ${afterDouble.toFixed(3)} Å`);
-    assert.ok(Math.abs(afterAngle - 120) < 4, `expected restored alkene angle near 120°, got ${afterAngle.toFixed(2)}°`);
+    assert.ok(
+      beforeSingle > 2.0 || beforeDouble > 2.0,
+      `expected distorted alkene geometry before refine, got single=${beforeSingle.toFixed(3)} Å double=${beforeDouble.toFixed(3)} Å`
+    );
+    assert.ok(
+      Math.abs(afterSingle - 1.5) < 1e-6,
+      `expected restored allylic bond length 1.5 Å, got ${afterSingle.toFixed(3)} Å`
+    );
+    assert.ok(
+      Math.abs(afterDouble - 1.5) < 1e-6,
+      `expected restored alkene bond length 1.5 Å, got ${afterDouble.toFixed(3)} Å`
+    );
+    assert.ok(
+      Math.abs(afterAngle - 120) < 4,
+      `expected restored alkene angle near 120°, got ${afterAngle.toFixed(2)}°`
+    );
   });
 });
