@@ -116,6 +116,12 @@ describe('functionalGroups — halogens', () => {
   });
   it('arylHalide found in chlorobenzene', () => assert.equal(matchesSMARTS(mol('c1ccccc1Cl'), fg.arylHalide.smarts), true));
   it('arylHalide NOT found in chloromethane', () => assert.equal(matchesSMARTS(mol('CCl'), fg.arylHalide.smarts), false));
+  it('generic organohalides do not overlap acyl halides', () => {
+    const acetylChloride = mol('CC(=O)Cl');
+    assert.equal(matchesSMARTS(acetylChloride, fg.acylHalide.smarts), true);
+    assert.equal(matchesSMARTS(acetylChloride, fg.organochloride.smarts), false);
+    assert.equal(matchesSMARTS(acetylChloride, fg.organohalide.smarts), false);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -128,8 +134,6 @@ describe('functionalGroups — aromatic heterocycles', () => {
   it('furan found in furan', () => assert.equal(matchesSMARTS(mol('c1ccoc1'), fg.furan.smarts), true));
   it('thiophene found in thiophene', () => assert.equal(matchesSMARTS(mol('c1ccsc1'), fg.thiophene.smarts), true));
   it('quinoline found in quinoline', () => assert.equal(matchesSMARTS(mol('c1ccc2ncccc2c1'), fg.quinoline.smarts), true));
-  it('naphthalene found in naphthalene', () => assert.equal(matchesSMARTS(mol('c1ccc2ccccc2c1'), fg.naphthalene.smarts), true));
-  it('naphthalene NOT found in benzene', () => assert.equal(matchesSMARTS(mol('c1ccccc1'), fg.naphthalene.smarts), false));
 });
 
 // ---------------------------------------------------------------------------

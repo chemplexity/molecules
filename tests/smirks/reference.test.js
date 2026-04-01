@@ -141,6 +141,14 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(product, null);
   });
 
+  it('amineAlkylation does not match congested or non-chloride haloamines', () => {
+    const product = applySMIRKS(
+      parseSMILES('C1(C(C(C(C(C1F)Cl)Br)I)N)P'),
+      reactionTemplates.amineAlkylation.smirks
+    );
+    assert.equal(product, null);
+  });
+
   it('nitrileHydrolysisToAmide converts a nitrile into an amide', () => {
     const product = applySMIRKS(parseSMILES('CC#N'), reactionTemplates.nitrileHydrolysisToAmide.smirks);
     assert.ok(product);
@@ -216,7 +224,7 @@ describe('reactionTemplates — example applications', () => {
   it('alcoholCleavage matches a simple alcohol', () => {
     const product = applySMIRKS(parseSMILES('CCO'), reactionTemplates.alcoholCleavage.smirks);
     assert.ok(product);
-    assert.equal(toSMILES(product), 'CC.[OH]');
+    assert.equal(toSMILES(product), 'CC.O');
   });
 
   it('etherCleavage converts a simple dialkyl ether into two alcohol fragments', () => {
@@ -238,12 +246,12 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(product, null);
   });
 
-  it('alcoholCleavage does not match tertiary alcohol centers', () => {
+  it('alcoholCleavage matches tertiary alcohol centers', () => {
     const product = applySMIRKS(
       parseSMILES('CC(O)(C)C'),
       reactionTemplates.alcoholCleavage.smirks
     );
-    assert.equal(product, null);
+    assert.notEqual(product, null);
   });
 
   it('alcoholCleavage keeps heavy atoms non-overlapping after 2D transform', () => {

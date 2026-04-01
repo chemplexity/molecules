@@ -75,7 +75,7 @@ export const reactionTemplates = {
   anhydrideHydrolysis: { name: 'Anhydride Hydrolysis', smirks: '[C:1](=[O:2])[O:3][C:4](=[O:5])>>[C:1](=[O:2])[OH:3].[C:4](=[O:5])O' },
   amideHydrolysis: { name: 'Amide Hydrolysis', smirks: '[C:1](=[O:2])[N:3]>>[C:1](=[O:2])O.[N:3]' },
   amineAcylation: { name: 'Amine Acylation', smirks: '[C:1](=[O:2])[Cl:3].[NH2+0;!$([N]-[C](=O)):4]>>[C:1](=[O:2])[NH+0:4].[ClH0-:3]' },
-  amineAlkylation: { name: 'Amine Alkylation', smirks: '[C;X4:1][Cl,Br,I:2].[NH2+0;!$([N]-[C](=O)):3]>>[C:1][NH+0:3].[ClH0-:2]' },
+  amineAlkylation: { name: 'Amine Alkylation', smirks: '[C;X4;H2,H3:1][Cl:2].[NH2+0;!$([N]-[C](=O)):3]>>[C:1][NH+0:3].[ClH0-:2]' },
   imineHydrolysis: { name: 'Imine Hydrolysis', smirks: '[C:1]=[N:2]>>[C:1]=O.[N:2]' },
   nitrileHydrolysisToAmide: { name: 'Nitrile Hydrolysis To Amide', smirks: '[C:1]#[N:2]>>[C:1](=O)[N:2]' },
   nitrileHydrolysisToAcid: { name: 'Nitrile Hydrolysis To Acid', smirks: '[C:1]#[N:2]>>[C:1](=O)O.[N:2]' },
@@ -91,7 +91,7 @@ export const reactionTemplates = {
 
   alcoholCleavage: {
     name: 'Alcohol Cleavage',
-    smirks: '[C;X4;H1,H2:1][OH:2]>>[C:1].[OH:2]',
+    smirks: '[C;X4;H0,H1,H2:1][OH:2]>>[C:1].[OH2:2]',
     excludeOverlaps: ['[C:1](=[O:2])[OH:3]', '[C:1](=[O:2])[O:3][C:4]', '[C:1](=[O:2])[N:3]']
   },
   alcoholDehydration: { name: 'Alcohol Dehydration', smirks: '[C;X4:1][CH2:2][OH:3]>>[C:1]=[CH:2].[OH2:3]' },

@@ -127,11 +127,11 @@ export const functionalGroups = {
   // Halogens
   // ---------------------------------------------------------------------------
 
-  organofluoride: { name: 'Organofluoride', smarts: '[#6][F]' },
-  organochloride: { name: 'Organochloride', smarts: '[#6][Cl]' },
-  organobromide: { name: 'Organobromide', smarts: '[#6][Br]' },
-  organoiodide: { name: 'Organoiodide', smarts: '[#6][I]' },
-  organohalide: { name: 'Organohalide', smarts: '[#6][F,Cl,Br,I]' },
+  organofluoride: { name: 'Organofluoride', smarts: '[#6;!$([CX3](=O)[F])][F]' },
+  organochloride: { name: 'Organochloride', smarts: '[#6;!$([CX3](=O)[Cl])][Cl]' },
+  organobromide: { name: 'Organobromide', smarts: '[#6;!$([CX3](=O)[Br])][Br]' },
+  organoiodide: { name: 'Organoiodide', smarts: '[#6;!$([CX3](=O)[I])][I]' },
+  organohalide: { name: 'Organohalide', smarts: '[#6;!$([CX3](=O)[F,Cl,Br,I])][F,Cl,Br,I]' },
   gemDihalide: { name: 'Gem-Dihalide', smarts: '[CX4]([F,Cl,Br,I])[F,Cl,Br,I]' },
   trihalide: { name: 'Trihalide', smarts: '[CX4]([F,Cl,Br,I])([F,Cl,Br,I])[F,Cl,Br,I]' },
   vinylHalide: { name: 'Vinyl Halide', smarts: '[CX3]=[CX3][F,Cl,Br,I]' },
@@ -225,7 +225,6 @@ export const functionalGroups = {
   // Fused aromatic / heteroaromatic ring systems
   // ---------------------------------------------------------------------------
 
-  naphthalene: { name: 'Naphthalene', smarts: 'c1ccc2ccccc2c1' },
   indole: { name: 'Indole', smarts: 'c1ccc2[nH]ccc2c1' },
   benzofuran: { name: 'Benzofuran', smarts: 'c1ccc2occc2c1' },
   benzothiophene: { name: 'Benzothiophene', smarts: 'c1ccc2sccc2c1' },

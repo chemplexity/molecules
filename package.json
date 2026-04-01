@@ -1,7 +1,7 @@
 {
   "name": "molecules",
   "version": "0.1.0",
-  "description": "Chemical graph theory library — molecular graphs, topological indices, spectral descriptors",
+  "description": "JavaScript cheminformatics toolkit for molecular graphs, SMILES/InChI, SMARTS/SMIRKS, 2D layout, and molecular descriptors",
   "type": "module",
   "sideEffects": false,
   "main": "./lib/index.js",
@@ -9,35 +9,41 @@
   "exports": {
     ".": {
       "import": "./es/index.js",
-      "require": "./lib/index.js"
+      "require": "./lib/index.js",
+      "default": "./es/index.js"
     },
     "./core": {
-      "import": "./es/core/index.js",
-      "require": "./lib/core/index.js"
+      "import": "./src/core/index.js"
     },
     "./algorithms": {
-      "import": "./es/algorithms/index.js",
-      "require": "./lib/algorithms/index.js"
+      "import": "./src/algorithms/index.js"
     },
     "./matrices": {
-      "import": "./es/matrices/index.js",
-      "require": "./lib/matrices/index.js"
+      "import": "./src/matrices/index.js"
     },
     "./descriptors": {
-      "import": "./es/descriptors/index.js",
-      "require": "./lib/descriptors/index.js"
+      "import": "./src/descriptors/index.js"
+    },
+    "./data": {
+      "import": "./src/data/index.js"
     },
     "./io": {
-      "import": "./es/io/index.js",
-      "require": "./lib/io/index.js"
+      "import": "./src/io/index.js"
+    },
+    "./layout": {
+      "import": "./src/layout/index.js"
+    },
+    "./smarts": {
+      "import": "./src/smarts/index.js"
+    },
+    "./smirks": {
+      "import": "./src/smirks/index.js"
     },
     "./utils": {
-      "import": "./es/utils/index.js",
-      "require": "./lib/utils/index.js"
+      "import": "./src/utils/index.js"
     },
     "./validation": {
-      "import": "./es/validation/index.js",
-      "require": "./lib/validation/index.js"
+      "import": "./src/validation/index.js"
     },
     "./package.json": "./package.json"
   },
@@ -63,12 +69,16 @@
   "keywords": [
     "chemistry",
     "cheminformatics",
+    "computational-chemistry",
+    "molecule",
     "molecular-graph",
-    "graph-theory",
-    "topological-index",
-    "wiener-index",
-    "spectral-graph-theory",
     "smiles",
+    "inchi",
+    "smarts",
+    "smirks",
+    "molecular-descriptors",
+    "graph-theory",
+    "drug-discovery",
     "qsar"
   ],
   "author": "",

@@ -62,6 +62,62 @@ function maxPairDistanceErrorForMappedUnedited(preview) {
   return maxError;
 }
 
+function minHeavyDistanceToEdited(preview, startId) {
+  const componentAtomIds = preview.productComponentAtomIdSets
+    .find(atomIds => atomIds.has(startId));
+  if (!componentAtomIds?.has(startId)) {
+    return Infinity;
+  }
+  if (preview.editedProductAtomIds.has(startId)) {
+    return 0;
+  }
+  const start = preview.mol.atoms.get(startId);
+  if (!start || start.name === 'H') {
+    return Infinity;
+  }
+  const queue = [{ id: startId, distance: 0 }];
+  const visited = new Set([startId]);
+  while (queue.length > 0) {
+    const { id, distance } = queue.shift();
+    const atom = preview.mol.atoms.get(id);
+    if (!atom) {
+      continue;
+    }
+    for (const neighbor of atom.getNeighbors(preview.mol)) {
+      if (!componentAtomIds.has(neighbor.id) || neighbor.name === 'H' || visited.has(neighbor.id)) {
+        continue;
+      }
+      if (preview.editedProductAtomIds.has(neighbor.id)) {
+        return distance + 1;
+      }
+      visited.add(neighbor.id);
+      queue.push({ id: neighbor.id, distance: distance + 1 });
+    }
+  }
+  return Infinity;
+}
+
+function maxPairDistanceErrorForRetainedScaffold(preview, minDistanceFromEdited = 2) {
+  const pairs = preview.mappedAtomPairs
+    .filter(([reactantId, productId]) =>
+      !preview.editedProductAtomIds.has(productId) &&
+      preview.mol.atoms.get(reactantId)?.name !== 'H' &&
+      preview.mol.atoms.get(productId)?.name !== 'H' &&
+      minHeavyDistanceToEdited(preview, productId) > minDistanceFromEdited
+    );
+  let maxError = 0;
+  for (let i = 0; i < pairs.length; i++) {
+    for (let j = i + 1; j < pairs.length; j++) {
+      const [r1, p1] = pairs[i];
+      const [r2, p2] = pairs[j];
+      const reactantDistance = distance(preview.mol.atoms.get(r1), preview.mol.atoms.get(r2));
+      const productDistance = distance(preview.mol.atoms.get(p1), preview.mol.atoms.get(p2));
+      maxError = Math.max(maxError, Math.abs(productDistance - reactantDistance));
+    }
+  }
+  return maxError;
+}
+
 function largestProductComponent(preview) {
   let best = null;
   for (const atomIds of preview.productComponentAtomIdSets) {
@@ -94,6 +150,18 @@ function heavyGeometryStats(preview, atomIds) {
     }
   }
   return { minNonbonded, maxBond, minBond };
+}
+
+function atomIdBounds(preview, atomIds) {
+  const atoms = [...atomIds]
+    .map(id => preview.mol.atoms.get(id))
+    .filter(atom => atom && atom.name !== 'H');
+  const xs = atoms.map(atom => atom.x);
+  const ys = atoms.map(atom => atom.y);
+  return {
+    width: Math.max(...xs) - Math.min(...xs),
+    height: Math.max(...ys) - Math.min(...ys)
+  };
 }
 
 function findProductCarbonylCenters(preview, predicate) {
@@ -684,10 +752,20 @@ test('reaction preview preserves the retained sugar scaffold for ether cleavage'
     alignReaction2dProductOrientation(preview.mol, preview, 1.5);
     spreadReaction2dProductComponents(preview.mol, preview, 1.5);
     centerReaction2dPairCoords(preview.mol, preview, 1.5);
-    const maxError = maxPairDistanceErrorForMappedUnedited(preview);
+    const component = largestProductComponent(preview);
+    const stats = heavyGeometryStats(preview, component);
+    const maxError = maxPairDistanceErrorForRetainedScaffold(preview, 1);
     assert.ok(
-      maxError < 0.25,
-      `expected retained ether-cleavage sugar scaffold to stay close, got max error ${maxError.toFixed(3)} Å`
+      stats.maxBond < 1.95,
+      `expected ether-cleavage sugar preview to avoid stretched heavy bonds, got ${stats.maxBond.toFixed(3)} Å`
+    );
+    assert.ok(
+      stats.minNonbonded > 0.8,
+      `expected ether-cleavage sugar preview to avoid heavy-atom overlap, got ${stats.minNonbonded.toFixed(3)} Å`
+    );
+    assert.ok(
+      maxError < 1.0,
+      `expected retained ether-cleavage sugar scaffold outside the local cleavage neighborhood to stay close, got max error ${maxError.toFixed(3)} Å`
     );
   }
 });
@@ -885,6 +963,84 @@ test('reaction preview preserves fused-ring scaffold geometry for steroid alkene
   );
 });
 
+test('reaction preview keeps long polyunsaturated-chain alkene hydrogenation locally bent across all mappings', () => {
+  const smiles = 'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O';
+  const sourceMol = parseSMILES(smiles);
+  const reactantSmarts = reactionTemplates.alkeneHydrogenation.smirks.split('>>')[0];
+  const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
+  assert.ok(mappings.length > 0, 'expected alkene-hydrogenation mappings for long polyunsaturated chain');
+
+  for (const [index, mapping] of mappings.entries()) {
+    const preview = buildReaction2dMol(sourceMol, reactionTemplates.alkeneHydrogenation.smirks, mapping);
+    assert.ok(preview, `expected preview for mapping ${index}`);
+    generateAndRefine2dCoords(preview.mol, { suppressH: true, bondLength: 1.5 });
+    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
+    spreadReaction2dProductComponents(preview.mol, preview, 1.5);
+    centerReaction2dPairCoords(preview.mol, preview, 1.5);
+
+    const editedCarbons = [...preview.editedProductAtomIds]
+      .map(id => preview.mol.atoms.get(id))
+      .filter(atom => atom?.name === 'C');
+    assert.equal(editedCarbons.length, 2, `expected two edited carbons for mapping ${index}`);
+
+    for (const atom of editedCarbons) {
+      const carbonNeighbors = atom.getNeighbors(preview.mol)
+        .filter(nb => nb.name !== 'H' && preview.productAtomIds.has(nb.id));
+      if (carbonNeighbors.length !== 2) {
+        continue;
+      }
+      const localAngle = angleDeg(carbonNeighbors[0], atom, carbonNeighbors[1]);
+      assert.ok(
+        localAngle > 100 && localAngle < 140,
+        `expected bent local geometry for mapping ${index} at ${atom.id}, got ${localAngle.toFixed(1)}°`
+      );
+    }
+  }
+});
+
+test('reaction preview preserves long polyunsaturated-chain scaffold shape for alkene hydrogenation across EPA and DHA mappings', () => {
+  for (const smiles of [
+    'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O',
+    'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O'
+  ]) {
+    const sourceMol = parseSMILES(smiles);
+    const reactantSmarts = reactionTemplates.alkeneHydrogenation.smirks.split('>>')[0];
+    const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
+    assert.ok(mappings.length > 0, `expected alkene-hydrogenation mappings for ${smiles}`);
+
+    for (const [index, mapping] of mappings.entries()) {
+      const preview = buildReaction2dMol(sourceMol, reactionTemplates.alkeneHydrogenation.smirks, mapping);
+      assert.ok(preview, `expected preview for mapping ${index} of ${smiles}`);
+      generateAndRefine2dCoords(preview.mol, { suppressH: true, bondLength: 1.5 });
+      alignReaction2dProductOrientation(preview.mol, preview, 1.5);
+      spreadReaction2dProductComponents(preview.mol, preview, 1.5);
+      centerReaction2dPairCoords(preview.mol, preview, 1.5);
+
+      const maxError = maxPairDistanceErrorForMappedUnedited(preview);
+      assert.ok(
+        maxError < 0.05,
+        `expected preserved EPA/DHA scaffold distances to stay close for mapping ${index} of ${smiles}, got ${maxError.toFixed(3)} Å`
+      );
+
+      const productBounds = atomIdBounds(preview, largestProductComponent(preview));
+      assert.ok(
+        productBounds.width >= productBounds.height,
+        `expected product chain to stay landscape for mapping ${index} of ${smiles}, got width=${productBounds.width.toFixed(3)} Å height=${productBounds.height.toFixed(3)} Å`
+      );
+
+      const geometry = heavyGeometryStats(preview, largestProductComponent(preview));
+      assert.ok(
+        geometry.minNonbonded >= 1.2,
+        `expected no tight self-overlap for mapping ${index} of ${smiles}, got nearest non-bonded distance ${geometry.minNonbonded.toFixed(3)} Å`
+      );
+      assert.ok(
+        geometry.maxBond <= 1.85,
+        `expected no stretched product bonds for mapping ${index} of ${smiles}, got ${geometry.maxBond.toFixed(3)} Å`
+      );
+    }
+  }
+});
+
 test('reaction preview keeps alcohol cleavage local chain angle for sec-butanol', () => {
   const preview = preparePreview(
     'CC(O)CC',
@@ -916,4 +1072,34 @@ test('reaction preview keeps terminal carbon-halogen bond bent after alcohol hal
   assert.ok(chainNeighbor, 'expected terminal carbon to retain chain neighbor');
   const angle = angleDeg(chainNeighbor, terminalCarbon, chlorine);
   assert.ok(angle > 105 && angle < 135, `expected terminal C-Cl bond to stay bent, got ${angle.toFixed(1)}°`);
+});
+
+test('reaction preview keeps alkyne full reduction locally bent for 2-butyne', () => {
+  const preview = preparePreview(
+    'CC#CC',
+    reactionTemplates.alkyneFullReduction.smirks
+  );
+  const productCarbons = [...preview.mol.atoms.values()]
+    .filter(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C')
+    .sort((a, b) => a.id.localeCompare(b.id));
+  assert.equal(productCarbons.length, 4, 'expected four carbons in fully reduced 2-butyne product');
+  const angle1 = angleDeg(productCarbons[0], productCarbons[1], productCarbons[2]);
+  const angle2 = angleDeg(productCarbons[1], productCarbons[2], productCarbons[3]);
+  assert.ok(angle1 > 100 && angle1 < 140, `expected first reduced sp3 angle to stay bent, got ${angle1.toFixed(1)}°`);
+  assert.ok(angle2 > 100 && angle2 < 140, `expected second reduced sp3 angle to stay bent, got ${angle2.toFixed(1)}°`);
+});
+
+test('reaction preview keeps alkyne partial reduction locally bent for 2-butyne', () => {
+  const preview = preparePreview(
+    'CC#CC',
+    reactionTemplates.alkynePartialReduction.smirks
+  );
+  const productCarbons = [...preview.mol.atoms.values()]
+    .filter(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C')
+    .sort((a, b) => a.id.localeCompare(b.id));
+  assert.equal(productCarbons.length, 4, 'expected four carbons in partially reduced 2-butyne product');
+  const angle1 = angleDeg(productCarbons[0], productCarbons[1], productCarbons[2]);
+  const angle2 = angleDeg(productCarbons[1], productCarbons[2], productCarbons[3]);
+  assert.ok(angle1 > 100 && angle1 < 140, `expected first alkene angle to stay bent, got ${angle1.toFixed(1)}°`);
+  assert.ok(angle2 > 100 && angle2 < 140, `expected second alkene angle to stay bent, got ${angle2.toFixed(1)}°`);
 });

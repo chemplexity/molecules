@@ -655,7 +655,20 @@ function placeRingSystem(molecule, system, rings, bondLength, origin, coords) {
                 cwDelta += TWO_PI;
               }
               const totalArc  = nBonds * alpha;
-              const arcDirMul = Math.abs(cwDelta - totalArc) <= Math.abs(TWO_PI - cwDelta - totalArc) ? -1 : 1;
+              let   arcDirMul = Math.abs(cwDelta - totalArc) <= Math.abs(TWO_PI - cwDelta - totalArc) ? -1 : 1;
+              // When h ≈ 0 (degenerate semicircle: chord = 2R so both CW and CCW
+              // arc lengths equal totalArc), the ≤ tiebreak can pick the wrong
+              // direction, placing the first free atom on the interior side (on top
+              // of an already-placed atom).  Guard: if the first free atom would land
+              // on the same side of the chord as curCenter, flip the direction.
+              {
+                const firstFreeAngle = angleS + arcDirMul * alpha;
+                const firstFreeDot   = (arcCx + R * Math.cos(firstFreeAngle) - mx) * cpx
+                                     + (arcCy + R * Math.sin(firstFreeAngle) - my) * cpy;
+                if (dotPre * firstFreeDot > 0) {
+                  arcDirMul = -arcDirMul;
+                }
+              }
 
               let k2 = (b1 + 1) % n2, step2 = 1;
               while (k2 !== b2) {
@@ -2026,6 +2039,13 @@ function normalizeOrientation(coords, molecule) {
     return;
   }
 
+  const heavyIds = [...coords.keys()].filter(
+    id => molecule.atoms.has(id) && molecule.atoms.get(id).name !== 'H'
+  );
+  if (heavyIds.length < 2) {
+    return;
+  }
+
   const preferredBackbone = findPreferredBackbonePath(molecule);
   if (preferredBackbone &&
       preferredBackbone.ringCount === 0 &&
@@ -2035,9 +2055,6 @@ function normalizeOrientation(coords, molecule) {
     if (start && end) {
       const ang = Math.atan2(end.y - start.y, end.x - start.x);
       if (Math.abs(ang) >= 1e-6) {
-        const heavyIds = [...coords.keys()].filter(
-          id => molecule.atoms.has(id) && molecule.atoms.get(id).name !== 'H'
-        );
         let sx = 0;
         let sy = 0;
         for (const id of heavyIds) {
@@ -2047,6 +2064,38 @@ function normalizeOrientation(coords, molecule) {
         }
         rotateCoords(coords, vec2(sx / heavyIds.length, sy / heavyIds.length), -ang);
       }
+
+      let sx = 0;
+      let sy = 0;
+      for (const id of heavyIds) {
+        const p = coords.get(id);
+        sx += p.x;
+        sy += p.y;
+      }
+      const cx = sx / heavyIds.length;
+      const cy = sy / heavyIds.length;
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+      for (const id of heavyIds) {
+        const p = coords.get(id);
+        if (!p) {
+          continue;
+        }
+        if (p.x < minX) {
+          minX = p.x;
+        }
+        if (p.x > maxX) {
+          maxX = p.x;
+        }
+        if (p.y < minY) {
+          minY = p.y;
+        }
+        if (p.y > maxY) {
+          maxY = p.y;
+        }
+      }
+      if (maxY - minY > maxX - minX) {
+        rotateCoords(coords, vec2(cx, cy), Math.PI / 2);
+      }
       return;
     }
   }
@@ -2054,12 +2103,6 @@ function normalizeOrientation(coords, molecule) {
   // Only include heavy (non-H) atoms in the inertia calculation so that
   // explicit hydrogens — placed radially, often asymmetrically — do not
   // distort the principal axis of the heavy-atom skeleton.
-  const heavyIds = [...coords.keys()].filter(
-    id => molecule.atoms.has(id) && molecule.atoms.get(id).name !== 'H'
-  );
-  if (heavyIds.length < 2) {
-    return;
-  }
 
   // Centroid of heavy atoms.
   let sx = 0, sy = 0;
@@ -2140,6 +2183,57 @@ function normalizeOrientation(coords, molecule) {
       rotateCoords(coords, vec2(cx, cy), Math.PI / 2);
     }
   }
+}
+
+function shouldPreferFinalLandscapeOrientation(molecule) {
+  const preferredBackbone = findPreferredBackbonePath(molecule);
+  return Boolean(
+    preferredBackbone &&
+    preferredBackbone.ringCount === 0 &&
+    preferredBackbone.path.length >= 8
+  );
+}
+
+function preferLandscapeOrientation(coords, molecule) {
+  const heavyIds = [...coords.keys()].filter(
+    id => molecule.atoms.has(id) && molecule.atoms.get(id).name !== 'H'
+  );
+  if (heavyIds.length < 2) {
+    return;
+  }
+
+  let sx = 0;
+  let sy = 0;
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const id of heavyIds) {
+    const p = coords.get(id);
+    if (!p) {
+      continue;
+    }
+    sx += p.x;
+    sy += p.y;
+    if (p.x < minX) {
+      minX = p.x;
+    }
+    if (p.x > maxX) {
+      maxX = p.x;
+    }
+    if (p.y < minY) {
+      minY = p.y;
+    }
+    if (p.y > maxY) {
+      maxY = p.y;
+    }
+  }
+
+  if (maxY - minY <= maxX - minX) {
+    return;
+  }
+
+  rotateCoords(coords, vec2(sx / heavyIds.length, sy / heavyIds.length), Math.PI / 2);
 }
 
 // ---------------------------------------------------------------------------
@@ -2466,42 +2560,147 @@ function actualAlkeneStereoFromCoords(molecule, coords, bond) {
   return Math.sign(crossA) === Math.sign(crossB) ? 'Z' : 'E';
 }
 
-function enforceAcyclicEZStereo(molecule, coords) {
+function enforceAcyclicEZStereo(molecule, coords, {
+  preserveLongChainSpan = false,
+  maxLongChainSpanLoss = 0
+} = {}) {
   const ringAtomIds = new Set(molecule.getRings().flat());
+  const heavyIds = [...molecule.atoms.keys()].filter(atomId => molecule.atoms.get(atomId)?.name !== 'H');
+  const bondedHeavyPairs = new Set(
+    [...molecule.bonds.values()]
+      .filter(bond => bond.atoms.every(atomId => molecule.atoms.get(atomId)?.name !== 'H'))
+      .map(bond => {
+        const [aId, bId] = bond.atoms;
+        return aId < bId ? `${aId}\0${bId}` : `${bId}\0${aId}`;
+      })
+  );
+  const chainPaths = collectAllRefinementChainPaths(molecule, {
+    heavyIds,
+    cycleData: { ringAtomIds }
+  });
 
-  for (const bond of molecule.bonds.values()) {
+  const stereoBonds = [...molecule.bonds.values()].filter(bond => {
     if (bond.properties.aromatic || (bond.properties.order ?? 1) !== 2) {
-      continue;
+      return false;
     }
-
-    const targetStereo = molecule.getEZStereo(bond.id);
-    if (targetStereo == null) {
-      continue;
-    }
-
     const [aId, bId] = bond.atoms;
-    if (ringAtomIds.has(aId) || ringAtomIds.has(bId)) {
-      continue;
+    return molecule.getEZStereo(bond.id) != null && !ringAtomIds.has(aId) && !ringAtomIds.has(bId);
+  });
+
+  const maxPasses = Math.max(1, stereoBonds.length * 2);
+
+  const matchedStereoCount = currentCoords => stereoBonds.reduce((count, currentBond) => {
+    const target = molecule.getEZStereo(currentBond.id);
+    return count + (actualAlkeneStereoFromCoords(molecule, currentCoords, currentBond) === target ? 1 : 0);
+  }, 0);
+
+  const heavyClearanceScore = currentCoords => {
+    let minDist = Infinity;
+    for (let i = 0; i < heavyIds.length; i++) {
+      const aId = heavyIds[i];
+      const aPos = currentCoords.get(aId);
+      if (!aPos) {
+        continue;
+      }
+      for (let j = i + 1; j < heavyIds.length; j++) {
+        const bId = heavyIds[j];
+        const key = aId < bId ? `${aId}\0${bId}` : `${bId}\0${aId}`;
+        if (bondedHeavyPairs.has(key)) {
+          continue;
+        }
+        const bPos = currentCoords.get(bId);
+        if (!bPos) {
+          continue;
+        }
+        const dist = Math.hypot(aPos.x - bPos.x, aPos.y - bPos.y);
+        if (dist < minDist) {
+          minDist = dist;
+        }
+      }
     }
+    return minDist;
+  };
 
-    const actualStereo = actualAlkeneStereoFromCoords(molecule, coords, bond);
-    if (actualStereo == null || actualStereo === targetStereo) {
-      continue;
+  const longChainSpanScore = currentCoords => chainPaths.reduce((sum, path) => {
+    if (path.length < 10) {
+      return sum;
     }
+    const startPos = currentCoords.get(path[0]);
+    if (!startPos) {
+      return sum;
+    }
+    const terminalIds = [path[path.length - 1], path[path.length - 2]].filter(Boolean);
+    let best = 0;
+    for (const atomId of terminalIds) {
+      const pos = currentCoords.get(atomId);
+      if (!pos) {
+        continue;
+      }
+      const dist = Math.hypot(startPos.x - pos.x, startPos.y - pos.y);
+      if (dist > best) {
+        best = dist;
+      }
+    }
+    return sum + best;
+  }, 0);
 
-    const sideA = collectSideAtoms(molecule, aId, bId);
-    const sideB = collectSideAtoms(molecule, bId, aId);
-    const primarySide = countHeavyAtoms(molecule, sideA) <= countHeavyAtoms(molecule, sideB) ? sideA : sideB;
-    const fallbackSide = primarySide === sideA ? sideB : sideA;
+  for (let pass = 0; pass < maxPasses; pass++) {
+    let changed = false;
+    const currentSpanScore = preserveLongChainSpan ? longChainSpanScore(coords) : -Infinity;
 
-    for (const side of [primarySide, fallbackSide]) {
-      const reflected = reflectSubtreeCoords(coords, side, aId, bId);
-      for (const [atomId, pos] of reflected) {
+    for (const bond of stereoBonds) {
+      const targetStereo = molecule.getEZStereo(bond.id);
+      const actualStereo = actualAlkeneStereoFromCoords(molecule, coords, bond);
+      if (actualStereo == null || actualStereo === targetStereo) {
+        continue;
+      }
+
+      const [aId, bId] = bond.atoms;
+      const sideA = collectSideAtoms(molecule, aId, bId);
+      const sideB = collectSideAtoms(molecule, bId, aId);
+      const candidates = [
+        { side: sideA, heavyCount: countHeavyAtoms(molecule, sideA) },
+        { side: sideB, heavyCount: countHeavyAtoms(molecule, sideB) }
+      ];
+
+      let bestCandidate = null;
+      for (const candidate of candidates) {
+        const reflected = reflectSubtreeCoords(coords, candidate.side, aId, bId);
+        const candidateCoords = new Map(coords);
+        for (const [atomId, pos] of reflected) {
+          candidateCoords.set(atomId, pos);
+        }
+        if (actualAlkeneStereoFromCoords(molecule, candidateCoords, bond) !== targetStereo) {
+          continue;
+        }
+
+        const score = matchedStereoCount(candidateCoords);
+        const span = longChainSpanScore(candidateCoords);
+        const clearance = heavyClearanceScore(candidateCoords);
+        if (preserveLongChainSpan && span + maxLongChainSpanLoss + 1e-6 < currentSpanScore) {
+          continue;
+        }
+        if (!bestCandidate ||
+            score > bestCandidate.score ||
+            (score === bestCandidate.score && span > bestCandidate.span + 1e-6) ||
+            (score === bestCandidate.score && Math.abs(span - bestCandidate.span) <= 1e-6 && clearance > bestCandidate.clearance + 1e-6) ||
+            (score === bestCandidate.score && Math.abs(span - bestCandidate.span) <= 1e-6 && Math.abs(clearance - bestCandidate.clearance) <= 1e-6 && candidate.heavyCount < bestCandidate.heavyCount)) {
+          bestCandidate = { reflected, score, span, clearance, heavyCount: candidate.heavyCount };
+        }
+      }
+
+      if (!bestCandidate) {
+        continue;
+      }
+
+      for (const [atomId, pos] of bestCandidate.reflected) {
         coords.set(atomId, pos);
       }
-      if (actualAlkeneStereoFromCoords(molecule, coords, bond) === targetStereo) {
-        break;
-      }
+      changed = true;
+    }
+
+    if (!changed) {
+      break;
     }
   }
 }
@@ -3142,7 +3341,8 @@ function isRefinementChainBond(molecule, aId, bId, allowedAtomIds = null) {
     return false;
   }
   const bond = molecule.getBond(aId, bId);
-  return Boolean(bond && !bond.properties.aromatic && (bond.properties.order ?? 1) === 1);
+  const order = bond?.properties.order ?? 1;
+  return Boolean(bond && !bond.properties.aromatic && (order === 1 || order === 2));
 }
 
 function isRefinementChainAtom(molecule, atomId, ringAtomIds, allowedAtomIds = null) {
@@ -4111,27 +4311,569 @@ function buildExtendedZigZagChainTransforms(molecule, baseCoords, candidate, ctx
         currentSign *= -1;
       }
 
-      for (const { anchorId, atomIds } of sideSubtrees) {
-        const oldAnchor = baseCoords.get(anchorId);
-        const newAnchor = updates.get(anchorId);
-        if (!oldAnchor || !newAnchor) {
-          continue;
-        }
-        const dx = newAnchor.x - oldAnchor.x;
-        const dy = newAnchor.y - oldAnchor.y;
-        for (const atomId of atomIds) {
-          const pos = baseCoords.get(atomId);
-          if (pos) {
-            updates.set(atomId, vec2(pos.x + dx, pos.y + dy));
-          }
-        }
-      }
+      applyOrientedSideSubtreeUpdates(molecule, baseCoords, updates, path, sideSubtrees);
 
       transforms.push(updates);
     }
   }
 
   return transforms;
+}
+
+function collectChainSideSubtrees(molecule, path, allowedAtomIds = null) {
+  const pathSet = new Set(path);
+  const sideSubtrees = [];
+  const seenSide = new Set();
+
+  for (const anchorId of path) {
+    for (const nbId of _layoutNeighbors(molecule, anchorId)) {
+      if (pathSet.has(nbId) || seenSide.has(nbId)) {
+        continue;
+      }
+      if (allowedAtomIds && !allowedAtomIds.has(nbId)) {
+        continue;
+      }
+
+      const subtree = new Set();
+      const queue = [nbId];
+      while (queue.length > 0) {
+        const curId = queue.shift();
+        if (subtree.has(curId) || pathSet.has(curId)) {
+          continue;
+        }
+        if (allowedAtomIds && !allowedAtomIds.has(curId)) {
+          continue;
+        }
+        subtree.add(curId);
+        seenSide.add(curId);
+        for (const nextId of _layoutNeighbors(molecule, curId)) {
+          if (!subtree.has(nextId) && !pathSet.has(nextId)) {
+            queue.push(nextId);
+          }
+        }
+      }
+
+      if (subtree.size > 0) {
+        sideSubtrees.push({ anchorId, atomIds: subtree });
+      }
+    }
+  }
+
+  return sideSubtrees;
+}
+
+function applyOrientedSideSubtreeUpdates(molecule, baseCoords, updates, path, sideSubtrees) {
+  const pathSet = new Set(path);
+
+  for (const { anchorId, atomIds } of sideSubtrees) {
+    const oldAnchor = baseCoords.get(anchorId);
+    const newAnchor = updates.get(anchorId);
+    if (!oldAnchor || !newAnchor) {
+      continue;
+    }
+
+    const pathNeighborIds = _layoutNeighbors(molecule, anchorId)
+      .filter(atomId => pathSet.has(atomId))
+      .filter(atomId => baseCoords.has(atomId))
+      .filter(atomId => updates.has(atomId));
+
+    let deltaAngle = 0;
+    if (pathNeighborIds.length > 0) {
+      const oldRefs = pathNeighborIds.map(atomId => baseCoords.get(atomId)).filter(Boolean);
+      const newRefs = pathNeighborIds.map(atomId => updates.get(atomId)).filter(Boolean);
+      const oldAngle = averageDirectionAwayFromRefs(oldAnchor, oldRefs);
+      const newAngle = averageDirectionAwayFromRefs(newAnchor, newRefs);
+      if (oldAngle != null && newAngle != null) {
+        deltaAngle = normalizeAngle(newAngle - oldAngle);
+      }
+    }
+
+    for (const atomId of atomIds) {
+      const pos = baseCoords.get(atomId);
+      if (!pos) {
+        continue;
+      }
+      const rotated = Math.abs(deltaAngle) > 1e-9 ? rotateAround(pos, oldAnchor, deltaAngle) : pos;
+      updates.set(atomId, vec2(
+        rotated.x + (newAnchor.x - oldAnchor.x),
+        rotated.y + (newAnchor.y - oldAnchor.y)
+      ));
+    }
+  }
+}
+
+function optimizeTerminalChainSideSubtrees(molecule, baseCoords, updates, path, sideSubtrees, ctx) {
+  const terminalSet = new Set([path[0], path[path.length - 1]]);
+  const candidateAngles = [0, DEG60, -DEG60, DEG120, -DEG120, Math.PI];
+  const edgeKey = (a, b) => a < b ? `${a}\0${b}` : `${b}\0${a}`;
+
+  for (const { anchorId, atomIds } of sideSubtrees) {
+    if (!terminalSet.has(anchorId)) {
+      continue;
+    }
+
+    const anchorPos = updates.get(anchorId);
+    if (!anchorPos) {
+      continue;
+    }
+
+    const subtreeIds = [...atomIds].filter(atomId => (updates.get(atomId) ?? baseCoords.get(atomId)));
+    const subtreeSet = new Set(subtreeIds);
+    const heavySubtreeIds = subtreeIds.filter(atomId => molecule.atoms.get(atomId)?.name !== 'H');
+    if (heavySubtreeIds.length === 0) {
+      continue;
+    }
+
+    const pathNeighborId = _layoutNeighbors(molecule, anchorId)
+      .find(atomId => atomId !== anchorId && (atomId === path[0] || atomId === path[path.length - 1] || path.includes(atomId)));
+    const pathNeighborPos = pathNeighborId ? updates.get(pathNeighborId) ?? baseCoords.get(pathNeighborId) : null;
+    const awayRef = pathNeighborPos ? vec2(anchorPos.x - pathNeighborPos.x, anchorPos.y - pathNeighborPos.y) : null;
+    const awayRefLen = awayRef ? Math.hypot(awayRef.x, awayRef.y) : 0;
+
+    let bestRotation = 0;
+    let bestClearance = -Infinity;
+    let bestDirectionScore = -Infinity;
+
+    for (const deltaAngle of candidateAngles) {
+      const rotated = new Map();
+      for (const atomId of subtreeIds) {
+        const pos = updates.get(atomId) ?? baseCoords.get(atomId);
+        if (!pos) {
+          continue;
+        }
+        rotated.set(
+          atomId,
+          Math.abs(deltaAngle) > 1e-9 ? rotateAround(pos, anchorPos, deltaAngle) : pos
+        );
+      }
+
+      let minDist = Infinity;
+      for (const atomId of heavySubtreeIds) {
+        const pos = rotated.get(atomId);
+        if (!pos) {
+          continue;
+        }
+        for (const otherId of ctx.heavyIds) {
+          if (otherId === atomId || subtreeSet.has(otherId)) {
+            continue;
+          }
+          if (ctx.bondedPairs.has(edgeKey(atomId, otherId))) {
+            continue;
+          }
+          const otherPos = updates.get(otherId) ?? baseCoords.get(otherId);
+          if (!otherPos) {
+            continue;
+          }
+          const dist = Math.hypot(pos.x - otherPos.x, pos.y - otherPos.y);
+          if (dist < minDist) {
+            minDist = dist;
+          }
+        }
+      }
+
+      if (!Number.isFinite(minDist)) {
+        minDist = Infinity;
+      }
+
+      let directionScore = 0;
+      if (awayRef && awayRefLen > 1e-9) {
+        let centroidX = 0;
+        let centroidY = 0;
+        let count = 0;
+        for (const atomId of heavySubtreeIds) {
+          const pos = rotated.get(atomId);
+          if (!pos) {
+            continue;
+          }
+          centroidX += pos.x;
+          centroidY += pos.y;
+          count++;
+        }
+        if (count > 0) {
+          centroidX /= count;
+          centroidY /= count;
+          const dirX = centroidX - anchorPos.x;
+          const dirY = centroidY - anchorPos.y;
+          const dirLen = Math.hypot(dirX, dirY);
+          if (dirLen > 1e-9) {
+            directionScore = ((dirX * awayRef.x) + (dirY * awayRef.y)) / (dirLen * awayRefLen);
+          }
+        }
+      }
+
+      if (minDist > bestClearance + 1e-6 || (Math.abs(minDist - bestClearance) <= 1e-6 && directionScore > bestDirectionScore)) {
+        bestRotation = deltaAngle;
+        bestClearance = minDist;
+        bestDirectionScore = directionScore;
+      }
+    }
+
+    if (Math.abs(bestRotation) > 1e-9) {
+      for (const atomId of subtreeIds) {
+        const pos = updates.get(atomId) ?? baseCoords.get(atomId);
+        if (!pos) {
+          continue;
+        }
+        updates.set(atomId, rotateAround(pos, anchorPos, bestRotation));
+      }
+    }
+  }
+}
+
+function buildUnfurledChainPathTransforms(molecule, baseCoords, path, ctx) {
+  if (path.length < 4) {
+    return [];
+  }
+
+  const start = baseCoords.get(path[0]);
+  const second = baseCoords.get(path[1]);
+  if (!start || !second) {
+    return [];
+  }
+
+  const startAngle = angleTo(start, second);
+  const targetLength = ctx.bondLength;
+  const sideSubtrees = collectChainSideSubtrees(molecule, path);
+  const pathBonds = [];
+  for (let i = 0; i < path.length - 1; i++) {
+    pathBonds.push(molecule.getBond(path[i], path[i + 1]));
+  }
+  const transforms = [];
+  const startAngles = new Set([startAngle.toFixed(6)]);
+  if (path.length >= 10) {
+    for (const delta of [DEG60, -DEG60, DEG120, -DEG120, Math.PI]) {
+      startAngles.add(normalizeAngle(startAngle + delta).toFixed(6));
+    }
+  }
+
+  for (const startAngleKey of startAngles) {
+    const seededStartAngle = Number(startAngleKey);
+    for (const parity of [1, -1]) {
+      const updates = new Map();
+      updates.set(path[0], start);
+      updates.set(path[1], project(start, seededStartAngle, targetLength));
+
+      let currentPos = updates.get(path[1]);
+      let currentDir = seededStartAngle;
+      let defaultSign = parity;
+      let pendingDoubleEntrySign = null;
+
+      for (let i = 2; i < path.length; i++) {
+        const prevBond = pathBonds[i - 2];
+        const nextBond = pathBonds[i - 1];
+        let turnSign = defaultSign;
+
+        if (prevBond && !prevBond.properties.aromatic && (prevBond.properties.order ?? 1) === 2 && pendingDoubleEntrySign != null) {
+          const targetStereo = molecule.getEZStereo(prevBond.id);
+          if (targetStereo === 'Z') {
+            turnSign = pendingDoubleEntrySign;
+          } else if (targetStereo === 'E') {
+            turnSign = -pendingDoubleEntrySign;
+          }
+        }
+
+        const nextDir = normalizeAngle(currentDir + turnSign * DEG60);
+        const nextPos = project(currentPos, nextDir, targetLength);
+        updates.set(path[i], nextPos);
+        currentPos = nextPos;
+        currentDir = nextDir;
+        defaultSign *= -1;
+        pendingDoubleEntrySign = nextBond && !nextBond.properties.aromatic && (nextBond.properties.order ?? 1) === 2
+          ? turnSign
+          : null;
+      }
+
+      applyOrientedSideSubtreeUpdates(molecule, baseCoords, updates, path, sideSubtrees);
+      optimizeTerminalChainSideSubtrees(molecule, baseCoords, updates, path, sideSubtrees, ctx);
+
+      transforms.push(updates);
+    }
+  }
+
+  return transforms;
+}
+
+function minimumHeavyNonBondedDistanceForCoords(coords, ctx) {
+  let minDist = Infinity;
+  for (let i = 0; i < ctx.heavyIds.length; i++) {
+    const aId = ctx.heavyIds[i];
+    const aPos = coords.get(aId);
+    if (!aPos) {
+      continue;
+    }
+    for (let j = i + 1; j < ctx.heavyIds.length; j++) {
+      const bId = ctx.heavyIds[j];
+      if (ctx.bondedPairs.has(`${aId}\0${bId}`)) {
+        continue;
+      }
+      const bPos = coords.get(bId);
+      if (!bPos) {
+        continue;
+      }
+      const dist = Math.hypot(aPos.x - bPos.x, aPos.y - bPos.y);
+      if (dist < minDist) {
+        minDist = dist;
+      }
+    }
+  }
+  return minDist;
+}
+
+function longChainPathMetrics(coords, path) {
+  if (!path || path.length < 2) {
+    return {
+      endToEnd: 0,
+      terminalSpan: 0,
+      terminalClosure: Infinity,
+      pathMinNonBonded: Infinity
+    };
+  }
+
+  const startPos = coords.get(path[0]);
+  const endPos = coords.get(path[path.length - 1]);
+  const endToEnd = startPos && endPos
+    ? Math.hypot(startPos.x - endPos.x, startPos.y - endPos.y)
+    : 0;
+
+  const terminalIds = path.slice(-Math.min(4, path.length));
+  let terminalSpan = 0;
+  if (startPos) {
+    for (const atomId of terminalIds) {
+      const pos = coords.get(atomId);
+      if (!pos) {
+        continue;
+      }
+      terminalSpan = Math.max(terminalSpan, Math.hypot(startPos.x - pos.x, startPos.y - pos.y));
+    }
+  }
+
+  let terminalClosure = Infinity;
+  const startIds = path.slice(0, Math.min(4, path.length));
+  for (let i = 0; i < startIds.length; i++) {
+    const aPos = coords.get(startIds[i]);
+    if (!aPos) {
+      continue;
+    }
+    for (let j = 0; j < terminalIds.length; j++) {
+      const pathIndexA = i;
+      const pathIndexB = path.length - terminalIds.length + j;
+      if (pathIndexB - pathIndexA <= 2) {
+        continue;
+      }
+      const bPos = coords.get(terminalIds[j]);
+      if (!bPos) {
+        continue;
+      }
+      const dist = Math.hypot(aPos.x - bPos.x, aPos.y - bPos.y);
+      if (dist < terminalClosure) {
+        terminalClosure = dist;
+      }
+    }
+  }
+
+  let pathMinNonBonded = Infinity;
+  for (let i = 0; i < path.length; i++) {
+    const aPos = coords.get(path[i]);
+    if (!aPos) {
+      continue;
+    }
+    for (let j = i + 3; j < path.length; j++) {
+      const bPos = coords.get(path[j]);
+      if (!bPos) {
+        continue;
+      }
+      const dist = Math.hypot(aPos.x - bPos.x, aPos.y - bPos.y);
+      if (dist < pathMinNonBonded) {
+        pathMinNonBonded = dist;
+      }
+    }
+  }
+
+  return {
+    endToEnd,
+    terminalSpan,
+    terminalClosure,
+    pathMinNonBonded
+  };
+}
+
+function spreadCompactedChainPaths(molecule, baseCoords, ctx) {
+  const chainPaths = ctx.chainPaths ??= collectAllRefinementChainPaths(molecule, ctx);
+  let currentCoords = baseCoords;
+  let currentScore = scoreLayoutIssues(collectLayoutIssues(molecule, currentCoords, ctx));
+
+  for (const path of chainPaths) {
+    if (path.length < 6) {
+      continue;
+    }
+
+    const metrics = longChainPathMetrics(currentCoords, path);
+    const endToEnd = metrics.endToEnd;
+    const idealEndToEnd = ctx.bondLength * (path.length - 1) * 0.82;
+    const needsSpread = (
+      endToEnd < idealEndToEnd ||
+      metrics.terminalClosure < ctx.bondLength * 1.35 ||
+      metrics.pathMinNonBonded < ctx.bondLength * 0.90
+    );
+    if (!needsSpread) {
+      continue;
+    }
+
+    let bestCoords = null;
+    let bestScore = currentScore;
+    let bestMetrics = metrics;
+    let rescueCoords = null;
+    let rescueScore = currentScore;
+    let rescueMetrics = metrics;
+    let rescueClearance = -Infinity;
+    for (const updates of buildUnfurledChainPathTransforms(molecule, currentCoords, path, ctx)) {
+      const trialCoords = applyRefinementCoords(currentCoords, updates);
+      const trialScore = scoreLayoutIssues(collectLayoutIssues(molecule, trialCoords, ctx));
+      const trialMetrics = longChainPathMetrics(trialCoords, path);
+      const trialClearance = minimumHeavyNonBondedDistanceForCoords(trialCoords, ctx);
+      const stronglyImprovesBackbone = (
+        (
+          trialMetrics.pathMinNonBonded > Math.max(bestMetrics.pathMinNonBonded, ctx.bondLength * 0.95) + 1e-6 ||
+          trialMetrics.terminalClosure > Math.max(bestMetrics.terminalClosure, ctx.bondLength * 1.75) + 1e-6 ||
+          trialMetrics.endToEnd > bestMetrics.endToEnd + ctx.bondLength * 2
+        ) &&
+        trialClearance >= ctx.bondLength * 0.9
+      );
+
+      if (trialScore + 1e-6 < bestScore || stronglyImprovesBackbone) {
+        bestScore = trialScore;
+        bestCoords = trialCoords;
+        bestMetrics = trialMetrics;
+      }
+
+      if (
+        trialMetrics.pathMinNonBonded > rescueMetrics.pathMinNonBonded + 1e-6 ||
+        (Math.abs(trialMetrics.pathMinNonBonded - rescueMetrics.pathMinNonBonded) <= 1e-6 &&
+          trialMetrics.terminalClosure > rescueMetrics.terminalClosure + 1e-6) ||
+        (Math.abs(trialMetrics.pathMinNonBonded - rescueMetrics.pathMinNonBonded) <= 1e-6 &&
+          Math.abs(trialMetrics.terminalClosure - rescueMetrics.terminalClosure) <= 1e-6 &&
+          trialMetrics.terminalSpan > rescueMetrics.terminalSpan + 1e-6) ||
+        (Math.abs(trialMetrics.pathMinNonBonded - rescueMetrics.pathMinNonBonded) <= 1e-6 &&
+          Math.abs(trialMetrics.terminalClosure - rescueMetrics.terminalClosure) <= 1e-6 &&
+          Math.abs(trialMetrics.terminalSpan - rescueMetrics.terminalSpan) <= 1e-6 &&
+          trialClearance > rescueClearance + 1e-6)
+      ) {
+        rescueCoords = trialCoords;
+        rescueScore = trialScore;
+        rescueMetrics = trialMetrics;
+        rescueClearance = trialClearance;
+      }
+    }
+
+    const severeLoop = (
+      endToEnd < ctx.bondLength * 3 ||
+      metrics.terminalClosure < ctx.bondLength * 1.1 ||
+      metrics.pathMinNonBonded < ctx.bondLength * 0.75
+    );
+    const rescueOpensBackbone = (
+      rescueMetrics.terminalSpan > metrics.terminalSpan + ctx.bondLength * 2 ||
+      rescueMetrics.terminalClosure > metrics.terminalClosure + ctx.bondLength * 1.5 ||
+      rescueMetrics.pathMinNonBonded > metrics.pathMinNonBonded + ctx.bondLength * 0.5
+    );
+    if (!bestCoords && severeLoop && rescueCoords && rescueOpensBackbone && rescueClearance >= ctx.bondLength * 0.75) {
+      bestCoords = rescueCoords;
+      bestScore = rescueScore;
+      bestMetrics = rescueMetrics;
+    }
+
+    if (bestCoords) {
+      currentCoords = bestCoords;
+      currentScore = bestScore;
+    }
+  }
+
+  return currentCoords;
+}
+
+function rescueSeverelyCompactedLongChains(molecule, baseCoords, ctx, {
+  preserveStereo = false
+} = {}) {
+  const chainPaths = ctx.chainPaths ??= collectAllRefinementChainPaths(molecule, ctx);
+  const ringAtomIds = preserveStereo ? new Set(molecule.getRings().flat()) : null;
+  const stereoBonds = preserveStereo ? [...molecule.bonds.values()].filter(bond => {
+    if (bond.properties.aromatic || (bond.properties.order ?? 1) !== 2) {
+      return false;
+    }
+    const [aId, bId] = bond.atoms;
+    return molecule.getEZStereo(bond.id) != null && !ringAtomIds.has(aId) && !ringAtomIds.has(bId);
+  }) : [];
+  let currentCoords = baseCoords;
+
+  const matchedStereoCount = coords => stereoBonds.reduce((count, bond) => {
+    const target = molecule.getEZStereo(bond.id);
+    return count + (actualAlkeneStereoFromCoords(molecule, coords, bond) === target ? 1 : 0);
+  }, 0);
+
+  for (const path of chainPaths) {
+    if (path.length < 10) {
+      continue;
+    }
+
+    const currentMetrics = longChainPathMetrics(currentCoords, path);
+    const needsRescue = (
+      currentMetrics.terminalSpan < ctx.bondLength * 6 ||
+      currentMetrics.terminalClosure < ctx.bondLength * 1.35 ||
+      currentMetrics.pathMinNonBonded < ctx.bondLength * 0.90
+    );
+    if (!needsRescue) {
+      continue;
+    }
+
+    let bestCoords = null;
+    let bestStereoCount = -Infinity;
+    let bestMetrics = currentMetrics;
+    let bestClearance = -Infinity;
+    const baselineStereoCount = preserveStereo ? matchedStereoCount(currentCoords) : -Infinity;
+    for (const updates of buildUnfurledChainPathTransforms(molecule, currentCoords, path, ctx)) {
+      const trialCoords = applyRefinementCoords(currentCoords, updates);
+      const trialStereoCount = matchedStereoCount(trialCoords);
+      const trialMetrics = longChainPathMetrics(trialCoords, path);
+      const trialClearance = minimumHeavyNonBondedDistanceForCoords(trialCoords, ctx);
+      const rescueQualified = (
+        (
+          trialMetrics.terminalSpan > currentMetrics.terminalSpan + ctx.bondLength * 2 ||
+          trialMetrics.terminalClosure > currentMetrics.terminalClosure + ctx.bondLength * 1.5 ||
+          trialMetrics.pathMinNonBonded > currentMetrics.pathMinNonBonded + ctx.bondLength * 0.5
+        ) &&
+        trialClearance >= ctx.bondLength * 0.75
+      );
+      if (!rescueQualified || (preserveStereo && trialStereoCount < baselineStereoCount)) {
+        continue;
+      }
+      if (
+        trialStereoCount > bestStereoCount ||
+        (trialStereoCount === bestStereoCount && trialMetrics.pathMinNonBonded > bestMetrics.pathMinNonBonded + 1e-6) ||
+        (trialStereoCount === bestStereoCount &&
+          Math.abs(trialMetrics.pathMinNonBonded - bestMetrics.pathMinNonBonded) <= 1e-6 &&
+          trialMetrics.terminalClosure > bestMetrics.terminalClosure + 1e-6) ||
+        (trialStereoCount === bestStereoCount &&
+          Math.abs(trialMetrics.pathMinNonBonded - bestMetrics.pathMinNonBonded) <= 1e-6 &&
+          Math.abs(trialMetrics.terminalClosure - bestMetrics.terminalClosure) <= 1e-6 &&
+          trialMetrics.terminalSpan > bestMetrics.terminalSpan + 1e-6) ||
+        (trialStereoCount === bestStereoCount &&
+          Math.abs(trialMetrics.pathMinNonBonded - bestMetrics.pathMinNonBonded) <= 1e-6 &&
+          Math.abs(trialMetrics.terminalClosure - bestMetrics.terminalClosure) <= 1e-6 &&
+          Math.abs(trialMetrics.terminalSpan - bestMetrics.terminalSpan) <= 1e-6 &&
+          trialClearance > bestClearance + 1e-6)
+      ) {
+        bestCoords = trialCoords;
+        bestStereoCount = trialStereoCount;
+        bestMetrics = trialMetrics;
+        bestClearance = trialClearance;
+      }
+    }
+
+    if (bestCoords) {
+      currentCoords = bestCoords;
+    }
+  }
+
+  return currentCoords;
 }
 
 function buildAttachedMultipleBondProjectionTransforms(molecule, baseCoords, candidate, ctx) {
@@ -4465,12 +5207,26 @@ export function refineExistingCoords(molecule, options = {}) {
   }
 
   currentCoords = idealizeStrictTrigonalCenters(molecule, currentCoords, ctx);
+  currentCoords = spreadCompactedChainPaths(molecule, currentCoords, ctx);
   currentCoords = _separateOverlappingComponents(molecule, currentCoords, bondLength);
   if (ctx.cycleData.ringAtomIds.size > 0) {
     normalizeOrientation(currentCoords, molecule);
   }
   levelCoords(currentCoords, molecule);
-
+  currentCoords = spreadCompactedChainPaths(molecule, currentCoords, ctx);
+  enforceAcyclicEZStereo(molecule, currentCoords);
+  currentCoords = rescueSeverelyCompactedLongChains(molecule, currentCoords, ctx);
+  enforceAcyclicEZStereo(molecule, currentCoords, {
+    preserveLongChainSpan: true,
+    maxLongChainSpanLoss: bondLength * 8
+  });
+  enforceAcyclicEZStereo(molecule, currentCoords);
+  currentCoords = rescueSeverelyCompactedLongChains(molecule, currentCoords, ctx, {
+    preserveStereo: true
+  });
+  if (shouldPreferFinalLandscapeOrientation(molecule)) {
+    preferLandscapeOrientation(currentCoords, molecule);
+  }
   for (const [atomId, pos] of currentCoords) {
     const atom = molecule.atoms.get(atomId);
     if (atom) {
@@ -5502,7 +6258,9 @@ export function generateCoords(molecule, options = {}) {
   // Rotate molecules so the principal axis (maximum spatial spread, from 2D
   // inertia tensor) is horizontal.  For long acyclic backbones (≥ 8 atoms)
   // normalizeOrientation aligns the start-to-end backbone direction instead.
-  normalizeOrientation(coords, molecule);
+  if (shouldPreferFinalLandscapeOrientation(molecule)) {
+    preferLandscapeOrientation(coords, molecule);
+  }
 
   // Phase I — re-sync suppressed hydrogen positions.
   // Suppressed H atoms were placed at their parent's position in phase D,
@@ -5546,10 +6304,80 @@ export function generateCoords(molecule, options = {}) {
         coords.set(atomId, pos);
       }
     }
+
+    const spread = spreadCompactedChainPaths(molecule, coords, trigonalCtx);
+    if (spread !== coords) {
+      coords.clear();
+      for (const [atomId, pos] of spread) {
+        coords.set(atomId, pos);
+      }
+    }
   }
 
-  // Phase J — level to the nearest 30° bond-angle grid, then write back.
+  // Phase J — level to the nearest 30° bond-angle grid.
   levelCoords(coords, molecule);
+
+  {
+    const finalChainCtx = buildRefinementContext(molecule, coords, {
+      bondLength,
+      freezeRings: systems.length > 0,
+      freezeChiralCenters: false,
+      includeRingSystemCandidates: false
+    });
+    const spread = spreadCompactedChainPaths(molecule, coords, finalChainCtx);
+    if (spread !== coords) {
+      coords.clear();
+      for (const [atomId, pos] of spread) {
+        coords.set(atomId, pos);
+      }
+    }
+  }
+
+  // Phase J.1 — re-enforce simple acyclic alkene E/Z geometry on the final
+  // leveled coordinates. The earlier enforcement pass can be perturbed by
+  // later idealization/leveling passes, which is especially visible on long
+  // polyunsaturated chains.
+  enforceAcyclicEZStereo(molecule, coords);
+  {
+    const rescueCtx = buildRefinementContext(molecule, coords, {
+      bondLength,
+      freezeRings: systems.length > 0,
+      freezeChiralCenters: false,
+      includeRingSystemCandidates: false
+    });
+    const rescued = rescueSeverelyCompactedLongChains(molecule, coords, rescueCtx);
+    if (rescued !== coords) {
+      coords.clear();
+      for (const [atomId, pos] of rescued) {
+        coords.set(atomId, pos);
+      }
+    }
+  }
+  enforceAcyclicEZStereo(molecule, coords, {
+    preserveLongChainSpan: true,
+    maxLongChainSpanLoss: bondLength * 8
+  });
+  enforceAcyclicEZStereo(molecule, coords);
+  {
+    const rescueCtx = buildRefinementContext(molecule, coords, {
+      bondLength,
+      freezeRings: systems.length > 0,
+      freezeChiralCenters: false,
+      includeRingSystemCandidates: false
+    });
+    const rescued = rescueSeverelyCompactedLongChains(molecule, coords, rescueCtx, {
+      preserveStereo: true
+    });
+    if (rescued !== coords) {
+      coords.clear();
+      for (const [atomId, pos] of rescued) {
+        coords.set(atomId, pos);
+      }
+    }
+  }
+  normalizeOrientation(coords, molecule);
+
+  // Write back final coordinates.
   for (const [atomId, { x, y }] of coords) {
     const atom = molecule.atoms.get(atomId);
     if (atom) {

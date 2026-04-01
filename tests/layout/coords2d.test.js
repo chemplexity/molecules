@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
-import { generateCoords } from '../../src/layout/index.js';
+import { generateCoords, generateAndRefine2dCoords } from '../../src/layout/index.js';
 import { getAtomLabel, kekulize, labelTextOffset, perpUnit, secondaryDir } from '../../src/layout/mol2d-helpers.js';
 import { refineExistingCoords } from '../../src/layout/coords2d.js';
 import { parseINCHI } from '../../src/io/inchi.js';
@@ -210,6 +210,41 @@ function drawnAlkeneStereo(mol, leftSubId, leftSp2Id, rightSp2Id, rightSubId) {
   assert.ok(Math.abs(crossRight) > 1e-6, 'right substituent became collinear with the alkene axis');
 
   return Math.sign(crossLeft) === Math.sign(crossRight) ? 'Z' : 'E';
+}
+
+function drawnStereoForAcyclicAlkenes(mol) {
+  const result = [];
+  const ringAtoms = new Set(mol.getRings().flat());
+
+  for (const bond of mol.bonds.values()) {
+    if ((bond.properties.order ?? 1) !== 2 || bond.properties.aromatic) {
+      continue;
+    }
+
+    const target = mol.getEZStereo?.(bond.id);
+    if (!target) {
+      continue;
+    }
+
+    const [leftId, rightId] = bond.atoms;
+    if (ringAtoms.has(leftId) || ringAtoms.has(rightId)) {
+      continue;
+    }
+
+    const left = mol.atoms.get(leftId);
+    const right = mol.atoms.get(rightId);
+    const leftSub = left?.getNeighbors(mol).find(atom => atom.id !== rightId && atom.name !== 'H');
+    const rightSub = right?.getNeighbors(mol).find(atom => atom.id !== leftId && atom.name !== 'H');
+    assert.ok(left && right && leftSub && rightSub, `expected substituents for ${leftId}=${rightId}`);
+
+    result.push({
+      bondId: bond.id,
+      target,
+      actual: drawnAlkeneStereo(mol, leftSub.id, leftId, rightId, rightSub.id)
+    });
+  }
+
+  return result;
 }
 
 function preferredBackbonePath(mol) {
@@ -1429,6 +1464,46 @@ describe('generateCoords — compact bridged bicyclic amine', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Coronene — degenerate semicircle arc direction
+// ---------------------------------------------------------------------------
+
+describe('generateCoords — coronene (7-ring PAH)', () => {
+  const SMILES = 'C1=CC2=C3C4=C1C=CC5=C4C6=C(C=C5)C=CC7=C6C3=C(C=C2)C=C7';
+
+  it('all bonds have length 1.5', () => {
+    const mol = parseSMILES(SMILES);
+    generateCoords(mol, { suppressH: true });
+    for (const bond of mol.bonds.values()) {
+      const [aId, bId] = bond.atoms;
+      const a = mol.atoms.get(aId), b = mol.atoms.get(bId);
+      if (a.name === 'H' || b.name === 'H') {
+        continue;
+      }
+      const d = Math.hypot(a.x - b.x, a.y - b.y);
+      assert.ok(Math.abs(d - 1.5) < 1e-3, `bond ${aId}-${bId} length ${d.toFixed(4)} ≠ 1.5`);
+    }
+  });
+
+  it('all 7 hexagonal rings are regular (no deformed ring)', () => {
+    const mol = parseSMILES(SMILES);
+    generateCoords(mol, { suppressH: true });
+    const rings = mol.getRings();
+    for (let ri = 0; ri < rings.length; ri++) {
+      const ring = rings[ri];
+      if (ring.length !== 6) {
+        continue;
+      }
+      const atoms = ring.map(id => mol.atoms.get(id));
+      const cx = atoms.reduce((s, a) => s + a.x, 0) / 6;
+      const cy = atoms.reduce((s, a) => s + a.y, 0) / 6;
+      const radii = atoms.map(a => Math.hypot(a.x - cx, a.y - cy));
+      const spread = Math.max(...radii) - Math.min(...radii);
+      assert.ok(spread < 0.05, `ring ${ri} is deformed: circumradius spread = ${spread.toFixed(4)}`);
+    }
+  });
+});
+
 describe('generateCoords — parser-independent branch ordering', () => {
   const SMILES = 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN';
   const INCHI = 'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1';
@@ -1533,6 +1608,102 @@ describe('generateCoords — extended chain spread', () => {
       );
     }
   });
+
+  it('keeps a long polyunsaturated fatty-acid chain from curling back into its acid group', () => {
+    const mol = parseSMILES('CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5, maxPasses: 6 });
+
+    const heavy = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
+    let minNonBonded = Infinity;
+
+    for (let i = 0; i < heavy.length; i++) {
+      for (let j = i + 1; j < heavy.length; j++) {
+        const a = heavy[i];
+        const b = heavy[j];
+        const bonded = a.bonds.some(bondId => {
+          const bond = mol.bonds.get(bondId);
+          return bond?.atoms.includes(b.id);
+        });
+        if (bonded) {
+          continue;
+        }
+        const dist = Math.hypot(a.x - b.x, a.y - b.y);
+        if (dist < minNonBonded) {
+          minNonBonded = dist;
+        }
+      }
+    }
+
+    const acidHydroxyl = mol.atoms.get('O24');
+    const earlyChainCarbon = mol.atoms.get('C5');
+    assert.ok(acidHydroxyl && earlyChainCarbon, 'expected stable DHA atom ids');
+
+    const acidClearance = Math.hypot(acidHydroxyl.x - earlyChainCarbon.x, acidHydroxyl.y - earlyChainCarbon.y);
+    assert.ok(
+      acidClearance >= 2.0,
+      `acid hydroxyl curled back into the chain: clearance ${acidClearance.toFixed(3)} Å`
+    );
+    assert.ok(
+      minNonBonded >= 0.9,
+      `polyunsaturated chain self-overlap too tight: nearest non-bonded distance ${minNonBonded.toFixed(3)} Å`
+    );
+  });
+
+  it('keeps eicosapentaenoic acid from compacting into a closed loop', () => {
+    const mol = parseSMILES('CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5, maxPasses: 6 });
+
+    const start = mol.atoms.get('C1');
+    const nearEnd = mol.atoms.get('C19');
+    assert.ok(start && nearEnd, 'expected stable EPA atom ids');
+
+    const endToEnd = Math.hypot(start.x - nearEnd.x, start.y - nearEnd.y);
+    const heavy = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
+    const xs = heavy.map(atom => atom.x);
+    const ys = heavy.map(atom => atom.y);
+    const width = Math.max(...xs) - Math.min(...xs);
+    const height = Math.max(...ys) - Math.min(...ys);
+    assert.ok(
+      endToEnd >= 6.0,
+      `EPA backbone compacted into a loop: end-to-end ${endToEnd.toFixed(3)} Å`
+    );
+    assert.ok(
+      width >= height,
+      `EPA should prefer a landscape orientation: width=${width.toFixed(3)} Å height=${height.toFixed(3)} Å`
+    );
+  });
+
+  it('keeps arachidonic acid from folding late chain atoms back onto the methyl terminus', () => {
+    const mol = parseSMILES('CCCCC\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5, maxPasses: 6 });
+
+    const heavy = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
+    let minNonBonded = Infinity;
+    for (let i = 0; i < heavy.length; i++) {
+      for (let j = i + 1; j < heavy.length; j++) {
+        const a = heavy[i];
+        const b = heavy[j];
+        if (mol.getBond(a.id, b.id)) {
+          continue;
+        }
+        minNonBonded = Math.min(minNonBonded, Math.hypot(a.x - b.x, a.y - b.y));
+      }
+    }
+
+    const start = mol.atoms.get('C1');
+    const lateChain = mol.atoms.get('C19');
+    assert.ok(start && lateChain, 'expected stable arachidonic-acid atom ids');
+
+    const terminalClearance = Math.hypot(start.x - lateChain.x, start.y - lateChain.y);
+    assert.ok(
+      terminalClearance >= 2.0,
+      `arachidonic acid late chain folded onto the methyl terminus: clearance ${terminalClearance.toFixed(3)} Å`
+    );
+    assert.ok(
+      minNonBonded >= 0.9,
+      `arachidonic acid self-overlap too tight: nearest non-bonded distance ${minNonBonded.toFixed(3)} Å`
+    );
+  });
 });
 
 describe('generateCoords — alkene substituent geometry', () => {
@@ -1568,6 +1739,22 @@ describe('generateCoords — alkene substituent geometry', () => {
     generateCoords(mol, { suppressH: true, bondLength: 1.5 });
 
     assert.equal(drawnAlkeneStereo(mol, 'F1', 'C2', 'C3', 'F4'), 'Z');
+  });
+
+  it('preserves cis geometry across curated polyunsaturated fatty acids after full 2D refinement', () => {
+    const smilesList = [
+      'CCCCC\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O',
+      'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O',
+      'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O'
+    ];
+
+    for (const smiles of smilesList) {
+      const mol = parseSMILES(smiles);
+      generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5, maxPasses: 6 });
+      for (const { bondId, target, actual } of drawnStereoForAcyclicAlkenes(mol)) {
+        assert.equal(actual, target, `${smiles} bond ${bondId} expected ${target}, got ${actual}`);
+      }
+    }
   });
 });
 
