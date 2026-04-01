@@ -1,6 +1,6 @@
 {
   "name": "molecules",
-  "version": "0.1.0",
+  "version": "2026.3.31",
   "description": "JavaScript cheminformatics toolkit for molecular graphs, SMILES/InChI, SMARTS/SMIRKS, 2D layout, and molecular descriptors",
   "type": "module",
   "sideEffects": false,
@@ -63,6 +63,8 @@
     "test:coverage": "node --test --experimental-test-coverage 'tests/**/*.test.js'",
     "lint": "eslint \"src/**/*.js\" \"tests/**/*.js\"",
     "lint:fix": "eslint \"src/**/*.js\" \"tests/**/*.js\" --fix",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "docs": "jsdoc -c jsdoc.json",
     "prepublishOnly": "npm run lint && npm run build && npm run test"
   },
@@ -92,7 +94,9 @@
     "@rollup/plugin-node-resolve": "^15.2.3",
     "@rollup/plugin-terser": "^0.4.4",
     "eslint": "^8.57.0",
+    "eslint-config-prettier": "^10.1.8",
     "jsdoc": "^4.0.3",
+    "prettier": "^3.8.1",
     "rimraf": "^5.0.5",
     "rollup": "^4.13.0"
   }

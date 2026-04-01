@@ -1,10 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  moleculeCollections,
-  getMoleculeCollectionById,
+  moleculeCatalog,
+  getMoleculeCatalogById,
   findMolecules
-} from '../../src/data/molecule-collections.js';
+} from '../../src/data/molecule-catalog.js';
 import { parseSMILES, toInChI } from '../../src/io/index.js';
 
 function atomCounts(smiles) {
@@ -22,23 +22,42 @@ function unsaturatedPositionsFromAcid(smiles) {
   const bonds = [...mol.bonds.values()];
   const atomById = id => mol.atoms.get(id);
   const bondById = id => mol.bonds.get(id);
-  const carbonyl = atoms.find(atom => atom.name === 'C' && atom.bonds.some(bondId => {
-    const currentBond = bondById(bondId);
-    const otherId = currentBond.atoms[0] === atom.id ? currentBond.atoms[1] : currentBond.atoms[0];
-    return currentBond.properties.order === 2 && atomById(otherId)?.name === 'O';
-  }));
+  const carbonyl = atoms.find(
+    atom =>
+      atom.name === 'C' &&
+      atom.bonds.some(bondId => {
+        const currentBond = bondById(bondId);
+        const otherId =
+          currentBond.atoms[0] === atom.id
+            ? currentBond.atoms[1]
+            : currentBond.atoms[0];
+        return (
+          currentBond.properties.order === 2 && atomById(otherId)?.name === 'O'
+        );
+      })
+  );
   const alpha = carbonyl.bonds
     .map(bondById)
-    .map(currentBond => atomById(currentBond.atoms[0] === carbonyl.id ? currentBond.atoms[1] : currentBond.atoms[0]))
+    .map(currentBond =>
+      atomById(
+        currentBond.atoms[0] === carbonyl.id
+          ? currentBond.atoms[1]
+          : currentBond.atoms[0]
+      )
+    )
     .find(atom => atom?.name === 'C');
 
   const chain = [alpha.id];
   let previousId = carbonyl.id;
   let currentId = alpha.id;
   for (;;) {
-    const nextId = atomById(currentId).bonds
-      .map(bondById)
-      .map(currentBond => currentBond.atoms[0] === currentId ? currentBond.atoms[1] : currentBond.atoms[0])
+    const nextId = atomById(currentId)
+      .bonds.map(bondById)
+      .map(currentBond =>
+        currentBond.atoms[0] === currentId
+          ? currentBond.atoms[1]
+          : currentBond.atoms[0]
+      )
       .find(id => id !== previousId && atomById(id)?.name === 'C');
     if (!nextId) {
       break;
@@ -50,7 +69,9 @@ function unsaturatedPositionsFromAcid(smiles) {
 
   const positions = [];
   for (let i = 0; i < chain.length - 1; i++) {
-    const currentBond = bonds.find(bond => bond.atoms.includes(chain[i]) && bond.atoms.includes(chain[i + 1]));
+    const currentBond = bonds.find(
+      bond => bond.atoms.includes(chain[i]) && bond.atoms.includes(chain[i + 1])
+    );
     if (currentBond?.properties.order === 2) {
       positions.push(i + 2);
     }
@@ -75,14 +96,18 @@ function ccDoubleBondStereoPairs(smiles) {
       continue;
     }
 
-    const leftStereo = left.bonds
-      .filter(id => id !== bond.id)
-      .map(bondById)
-      .find(currentBond => currentBond.properties.stereo)?.properties.stereo ?? null;
-    const rightStereo = right.bonds
-      .filter(id => id !== bond.id)
-      .map(bondById)
-      .find(currentBond => currentBond.properties.stereo)?.properties.stereo ?? null;
+    const leftStereo =
+      left.bonds
+        .filter(id => id !== bond.id)
+        .map(bondById)
+        .find(currentBond => currentBond.properties.stereo)?.properties
+        .stereo ?? null;
+    const rightStereo =
+      right.bonds
+        .filter(id => id !== bond.id)
+        .map(bondById)
+        .find(currentBond => currentBond.properties.stereo)?.properties
+        .stereo ?? null;
 
     pairs.push([leftStereo, rightStereo]);
   }
@@ -90,18 +115,27 @@ function ccDoubleBondStereoPairs(smiles) {
   return pairs;
 }
 
-describe('moleculeCollections', () => {
+describe('moleculeCatalog', () => {
   it('contains the expected collections', () => {
-    assert.equal(Array.isArray(moleculeCollections), true);
-    assert.equal(moleculeCollections.length >= 2, true);
-    assert.equal(getMoleculeCollectionById('amino-acids')?.molecules.length, 20);
-    assert.equal(getMoleculeCollectionById('polycyclic-aromatic-hydrocarbons')?.molecules.length, 11);
-    assert.equal(getMoleculeCollectionById('fatty-acids')?.molecules.length, 10);
-    assert.equal(getMoleculeCollectionById('steroids')?.molecules.length, 6);
+    assert.equal(Array.isArray(moleculeCatalog), true);
+    assert.equal(moleculeCatalog.length >= 2, true);
+    assert.equal(getMoleculeCatalogById('amino-acids')?.molecules.length, 20);
+    assert.equal(
+      getMoleculeCatalogById('polycyclic-aromatic-hydrocarbons')?.molecules
+        .length,
+      11
+    );
+    assert.equal(getMoleculeCatalogById('fatty-acids')?.molecules.length, 10);
+    assert.equal(getMoleculeCatalogById('steroids')?.molecules.length, 6);
+    assert.equal(getMoleculeCatalogById('nucleobases')?.molecules.length, 6);
+    assert.equal(
+      getMoleculeCatalogById('terpenes-and-terpenoids')?.molecules.length,
+      6
+    );
   });
 
   it('requires id, name, smiles, and inchi for all molecules', () => {
-    for (const collection of moleculeCollections) {
+    for (const collection of moleculeCatalog) {
       for (const molecule of collection.molecules) {
         assert.ok(molecule.id);
         assert.ok(molecule.name);
@@ -112,7 +146,7 @@ describe('moleculeCollections', () => {
   });
 
   it('keeps smiles and inchi internally consistent', () => {
-    for (const collection of moleculeCollections) {
+    for (const collection of moleculeCatalog) {
       for (const molecule of collection.molecules) {
         assert.equal(
           toInChI(parseSMILES(molecule.smiles)),
@@ -124,40 +158,54 @@ describe('moleculeCollections', () => {
   });
 });
 
-describe('getMoleculeCollectionById', () => {
+describe('getMoleculeCatalogById', () => {
   it('returns a collection by exact id', () => {
-    const collection = getMoleculeCollectionById('amino-acids');
+    const collection = getMoleculeCatalogById('amino-acids');
     assert.equal(collection?.name, 'Amino Acids');
   });
 
   it('normalizes surrounding whitespace and case', () => {
-    const collection = getMoleculeCollectionById('  Polycyclic-Aromatic-Hydrocarbons  ');
+    const collection = getMoleculeCatalogById(
+      '  Polycyclic-Aromatic-Hydrocarbons  '
+    );
     assert.equal(collection?.name, 'Polycyclic Aromatic Hydrocarbons');
   });
 
   it('returns null for an unknown collection id', () => {
-    assert.equal(getMoleculeCollectionById('not-real'), null);
+    assert.equal(getMoleculeCatalogById('not-real'), null);
   });
 });
 
 describe('findMolecules', () => {
   it('finds molecules by name', () => {
     const results = findMolecules('alanine');
-    assert.equal(results.some(result => result.molecule.id === 'alanine'), true);
-    assert.equal(results.every(result => result.collectionId === 'amino-acids'), true);
+    assert.equal(
+      results.some(result => result.molecule.id === 'alanine'),
+      true
+    );
+    assert.equal(
+      results.every(result => result.collectionId === 'amino-acids'),
+      true
+    );
   });
 
   it('finds molecules by alias', () => {
     const results = findMolecules('Trp');
-    assert.equal(results.some(result => result.molecule.id === 'tryptophan'), true);
+    assert.equal(
+      results.some(result => result.molecule.id === 'tryptophan'),
+      true
+    );
   });
 
   it('finds molecules by tag', () => {
-    const results = findMolecules('branched-chain', { collectionId: 'amino-acids' });
-    assert.deepEqual(
-      results.map(result => result.molecule.id).sort(),
-      ['isoleucine', 'leucine', 'valine']
-    );
+    const results = findMolecules('branched-chain', {
+      collectionId: 'amino-acids'
+    });
+    assert.deepEqual(results.map(result => result.molecule.id).sort(), [
+      'isoleucine',
+      'leucine',
+      'valine'
+    ]);
   });
 
   it('finds molecules by collection metadata', () => {
@@ -166,8 +214,13 @@ describe('findMolecules', () => {
   });
 
   it('supports exact matching', () => {
-    const results = findMolecules('A', { exact: true, collectionId: 'amino-acids' });
-    assert.deepEqual(results.map(result => result.molecule.id).sort(), ['alanine']);
+    const results = findMolecules('A', {
+      exact: true,
+      collectionId: 'amino-acids'
+    });
+    assert.deepEqual(results.map(result => result.molecule.id).sort(), [
+      'alanine'
+    ]);
   });
 
   it('supports result limits', () => {
@@ -180,7 +233,7 @@ describe('findMolecules', () => {
   });
 });
 
-describe('moleculeCollections structural validation', () => {
+describe('moleculeCatalog structural validation', () => {
   it('stores the correct fatty-acid chain lengths and unsaturation positions', () => {
     const expected = {
       'oleic-acid': { C: 18, positions: [9] },
@@ -191,14 +244,18 @@ describe('moleculeCollections structural validation', () => {
       'docosahexaenoic-acid': { C: 22, positions: [4, 7, 10, 13, 16, 19] }
     };
 
-    const collection = getMoleculeCollectionById('fatty-acids');
+    const collection = getMoleculeCatalogById('fatty-acids');
     for (const molecule of collection.molecules) {
       if (!expected[molecule.id]) {
         continue;
       }
       const counts = atomCounts(molecule.smiles);
       assert.equal(counts.C, expected[molecule.id].C, molecule.id);
-      assert.deepEqual(unsaturatedPositionsFromAcid(molecule.smiles), expected[molecule.id].positions, molecule.id);
+      assert.deepEqual(
+        unsaturatedPositionsFromAcid(molecule.smiles),
+        expected[molecule.id].positions,
+        molecule.id
+      );
     }
   });
 
@@ -211,14 +268,24 @@ describe('moleculeCollections structural validation', () => {
       'docosahexaenoic-acid'
     ];
 
-    const collection = getMoleculeCollectionById('fatty-acids');
+    const collection = getMoleculeCatalogById('fatty-acids');
     for (const molecule of collection.molecules) {
       if (!expectedIds.includes(molecule.id)) {
         continue;
       }
-      for (const [leftStereo, rightStereo] of ccDoubleBondStereoPairs(molecule.smiles)) {
-        assert.equal(leftStereo !== null && rightStereo !== null, true, `${molecule.id} should encode alkene stereo`);
-        assert.notEqual(leftStereo, rightStereo, `${molecule.id} should remain cis (Z)`);
+      for (const [leftStereo, rightStereo] of ccDoubleBondStereoPairs(
+        molecule.smiles
+      )) {
+        assert.equal(
+          leftStereo !== null && rightStereo !== null,
+          true,
+          `${molecule.id} should encode alkene stereo`
+        );
+        assert.notEqual(
+          leftStereo,
+          rightStereo,
+          `${molecule.id} should remain cis (Z)`
+        );
       }
     }
   });
@@ -240,21 +307,33 @@ describe('moleculeCollections structural validation', () => {
       cortisol: { C: 21, H: 30, O: 5 }
     };
 
-    for (const collection of moleculeCollections) {
+    for (const collection of moleculeCatalog) {
       for (const molecule of collection.molecules) {
         if (!expected[molecule.id]) {
           continue;
         }
-        assert.deepEqual(atomCounts(molecule.smiles), expected[molecule.id], molecule.id);
+        assert.deepEqual(
+          atomCounts(molecule.smiles),
+          expected[molecule.id],
+          molecule.id
+        );
       }
     }
   });
 
   it('stores steroids without explicit stereochemistry', () => {
-    const collection = getMoleculeCollectionById('steroids');
+    const collection = getMoleculeCatalogById('steroids');
     for (const molecule of collection.molecules) {
-      assert.equal(molecule.smiles.includes('@'), false, `${molecule.id} should not include atom stereochemistry`);
-      assert.equal(/\/t|\/m\d|\/s\d/.test(molecule.inchi), false, `${molecule.id} should not include InChI stereolayers`);
+      assert.equal(
+        molecule.smiles.includes('@'),
+        false,
+        `${molecule.id} should not include atom stereochemistry`
+      );
+      assert.equal(
+        /\/t|\/m\d|\/s\d/.test(molecule.inchi),
+        false,
+        `${molecule.id} should not include InChI stereolayers`
+      );
     }
   });
 });

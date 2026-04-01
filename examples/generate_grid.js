@@ -11,8 +11,13 @@
 
 import { writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
-import { dirname, join }  from 'path';
-import { renderMolSVGFromSMILES, renderMolSVGFromINCHI, buildCompositeSVG, svgToPng } from '../src/layout/render2d.js';
+import { dirname, join } from 'path';
+import {
+  renderMolSVGFromSMILES,
+  renderMolSVGFromINCHI,
+  buildCompositeSVG,
+  svgToPng
+} from '../src/layout/render2d.js';
 import { randomMolecule } from './example-molecules.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -80,12 +85,12 @@ function saveGrid(molecules, key, renderFn, suffix) {
   const svgString = buildCompositeSVG(cells, COLS);
   const pngBuffer = svgToPng(svgString);
 
-  const now      = new Date();
-  const yyyy     = now.getFullYear();
-  const mm       = String(now.getMonth() + 1).padStart(2, '0');
-  const dd       = String(now.getDate()).padStart(2, '0');
+  const now = new Date();
+  const yyyy = now.getFullYear();
+  const mm = String(now.getMonth() + 1).padStart(2, '0');
+  const dd = String(now.getDate()).padStart(2, '0');
   const baseName = `${yyyy}${mm}${dd}_molecules_test_grid_${suffix}`;
-  let   outPath  = join(__dirname, `${baseName}.png`);
+  let outPath = join(__dirname, `${baseName}.png`);
   if (existsSync(outPath)) {
     let n = 1;
     while (existsSync(join(__dirname, `${baseName}-${n}.png`))) {
@@ -101,5 +106,15 @@ function saveGrid(molecules, key, renderFn, suffix) {
 // Generate both grids
 // ---------------------------------------------------------------------------
 const opts = { showChiralLabels: true };
-saveGrid(randomMolecule, 'smiles', smi  => renderMolSVGFromSMILES(smi,   opts), 'smiles');
-saveGrid(randomMolecule.filter(m => m.inchi), 'inchi', inchi => renderMolSVGFromINCHI(inchi, opts), 'inchi');
+saveGrid(
+  randomMolecule,
+  'smiles',
+  smi => renderMolSVGFromSMILES(smi, opts),
+  'smiles'
+);
+saveGrid(
+  randomMolecule.filter(m => m.inchi),
+  'inchi',
+  inchi => renderMolSVGFromINCHI(inchi, opts),
+  'inchi'
+);

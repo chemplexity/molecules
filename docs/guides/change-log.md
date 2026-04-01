@@ -1,0 +1,17 @@
+# Change Log
+
+2026-03-17 - "Improved 2D coordinate generation and geometry, added stereochemistry rendering and valence validation, enhanced the demo, and added a script to generate a grid of test molecules."
+2026-03-18 - "Added atom hybridization detection, VF2 matching, SMARTS substructure search, and functional-group highlighting, while also fixing stereochemistry, 2D geometry, chirality/isotope handling, and InChI parsing issues in the demo and library."
+2026-03-19 - "Expanded SMARTS and functional-group detection, added canonical SMILES, aromaticity calculation, drug-likeness indicators, and `toInChI`, and improved SMILES/InChI parsing plus demo integration."
+2026-03-20 - "Added cleaner 2D geometry refinement, updated the README and getting-started guide, improved demo behavior and bond-hover details, and made minor refactors, optimizations, and import fixes."
+2026-03-21 - "Applied general fixes across the core algorithms."
+2026-03-22 - "Added selection and pan mode, delete-atoms/bonds controls, and further algorithm, selection, and demo bug fixes."
+2026-03-23 - "Added bond and selection dragging, improved 2D coordinates and label placement, introduced radical support, and made additional fixes and refactors."
+2026-03-24 - "Added support for the SMIRKS reaction language and delivered various related fixes and improvements."
+2026-03-25 - "Added atom and bond creation to the demo, introduced SMIRKS reaction templates, and made minor fixes."
+2026-03-26 - "Added undo/redo controls, expanded bond-creation atom types, improved force-layout structures in the demo, and applied more fixes."
+2026-03-27 - "Improved the demo’s force-layout behavior."
+2026-03-28 - "Made minor fixes across the project."
+2026-03-29 - "Fixed demo issues, added physicochemical descriptors to the demo, and corrected bridge-atom drawing behavior."
+2026-03-30 - "Added reaction preview support, refactored `index.html`, fixed demo issues, expanded reaction templates, improved PNG/SVG export, and added atom/bond highlighting for physicochemical properties."
+2026-03-31 - "Refactored `index.html` further, added a known-molecule catalog, enabled automatic SMILES/InChI input detection, and included assorted fixes."

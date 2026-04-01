@@ -19,7 +19,7 @@
  * @returns {number|null}  π electrons contributed, or null if indeterminate / disqualifies ring.
  */
 function _piElectrons(atom, ringAtomSet, mol) {
-  const el     = atom.name;
+  const el = atom.name;
   const charge = atom.properties.charge ?? 0;
 
   const ringBonds = atom.bonds
@@ -31,11 +31,14 @@ function _piElectrons(atom, ringAtomSet, mol) {
   // Note: O/S/pyrrole-N always donate 2 electrons regardless of bond type,
   // so we only use this flag for C and pyridine-like N.
   const hasRingPiBond = ringBonds.some(
-    b => b.properties.order === 2 || b.properties.aromatic || b.properties.order === 1.5
+    b =>
+      b.properties.order === 2 ||
+      b.properties.aromatic ||
+      b.properties.order === 1.5
   );
 
   if (el === 'C') {
-    if (charge === 1)  {
+    if (charge === 1) {
       return 0;
     }
     if (charge === -1) {
@@ -45,7 +48,7 @@ function _piElectrons(atom, ringAtomSet, mol) {
   }
 
   if (el === 'N') {
-    if (charge === 1)  {
+    if (charge === 1) {
       return hasRingPiBond ? 1 : null;
     }
     if (charge === -1) {
@@ -140,21 +143,24 @@ export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
 
       // Skip rings containing hydrogen.
       if (ring.some(id => mol.atoms.get(id)?.name === 'H')) {
-        done[ri] = true; continue;
+        done[ri] = true;
+        continue;
       }
 
       let piTotal = 0;
-      let valid   = true;
+      let valid = true;
 
       for (const atomId of ring) {
         const atom = mol.atoms.get(atomId);
         if (!atom) {
-          valid = false; break;
+          valid = false;
+          break;
         }
 
         const pi = _piElectrons(atom, ringAtomSet, mol);
         if (pi === null) {
-          valid = false; break;
+          valid = false;
+          break;
         }
         piTotal += pi;
       }
@@ -164,7 +170,7 @@ export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
       }
 
       done[ri] = true;
-      anyNew   = true;
+      anyNew = true;
 
       // Mark atoms.
       for (const atomId of ring) {

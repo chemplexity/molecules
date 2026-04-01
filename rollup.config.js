@@ -34,9 +34,9 @@ export default [
   {
     input,
     output: {
-      file: 'dist/molecules-v2.umd.js',
+      file: 'dist/molecules.umd.js',
       format: 'umd',
-      name: 'MoleculesV2',
+      name: 'Molecules',
       sourcemap: true
     },
     plugins: sharedPlugins
@@ -46,9 +46,9 @@ export default [
   {
     input,
     output: {
-      file: 'dist/molecules-v2.umd.min.js',
+      file: 'dist/molecules.umd.min.js',
       format: 'umd',
-      name: 'MoleculesV2',
+      name: 'Molecules',
       sourcemap: true
     },
     plugins: [...sharedPlugins, terser()]

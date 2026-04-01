@@ -216,6 +216,14 @@ describe('hBondAcceptors', () => {
     assert.deepEqual(hBondAcceptors(mol), { count: 1, atoms: [oxygenId] });
   });
 
+  it('counts both guanidine NH atoms as acceptors in the arginine side chain case', () => {
+    const mol = parseSMILES('N[C@@H](CCCNC(N)=N)C(=O)O');
+    const acceptors = hBondAcceptors(mol);
+    assert.equal(acceptors.count, 5);
+    assert.ok(acceptors.atoms.includes('N7'));
+    assert.ok(acceptors.atoms.includes('N9'));
+  });
+
   it('nitrobenzene has 2 acceptors (the two oxygens)', () => {
     const mol = parseSMILES('[O-][N+](=O)c1ccccc1');
     const oxygenIds = sortedIds(

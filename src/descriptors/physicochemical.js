@@ -23,10 +23,7 @@ function _sortIds(ids) {
 function _sortRings(rings) {
   return rings
     .map(ring => _sortIds(ring))
-    .sort((a, b) =>
-      a.length - b.length ||
-      a.join('\u0000').localeCompare(b.join('\u0000'))
-    );
+    .sort((a, b) => a.length - b.length || a.join('\u0000').localeCompare(b.join('\u0000')));
 }
 
 /**
@@ -58,8 +55,16 @@ function _hybSp(atom, mol) {
 
 /** Standard valences for implicit-H calculation. */
 const VALENCE = {
-  C: 4, N: 3, O: 2, S: 2, P: 3,
-  F: 1, Cl: 1, Br: 1, I: 1, B: 3
+  C: 4,
+  N: 3,
+  O: 2,
+  S: 2,
+  P: 3,
+  F: 1,
+  Cl: 1,
+  Br: 1,
+  I: 1,
+  B: 3
 };
 
 function _targetValence(atom) {
@@ -114,13 +119,13 @@ function _attachedHydrogenCount(atom, mol) {
   const explicit = atom.getHydrogenNeighbors
     ? atom.getHydrogenNeighbors(mol).length
     : atom.bonds.reduce((count, bId) => {
-      const bond = mol.bonds.get(bId);
-      if (!bond) {
-        return count;
-      }
-      const other = mol.atoms.get(bond.getOtherAtom(atom.id));
-      return count + (other?.name === 'H' ? 1 : 0);
-    }, 0);
+        const bond = mol.bonds.get(bId);
+        if (!bond) {
+          return count;
+        }
+        const other = mol.atoms.get(bond.getOtherAtom(atom.id));
+        return count + (other?.name === 'H' ? 1 : 0);
+      }, 0);
   if (explicit > 0) {
     return explicit;
   }
@@ -178,8 +183,29 @@ function _isAmideLikeNitrogen(atom, mol) {
       continue;
     }
     const other = mol.atoms.get(bond.getOtherAtom(atom.id));
-    if (other && ['C', 'S', 'P'].includes(other.name) && _hasMultipleBondToHetero(other, mol, bId)) {
-      return true;
+    if (!other || !['C', 'S', 'P'].includes(other.name)) {
+      continue;
+    }
+    // Only suppress acceptor behaviour when the adjacent multiple bond is to
+    // an electronegative atom that is NOT nitrogen (i.e. C=O, C=S, C=P).
+    // Guanidine/amidine carbons carry C=N, so their NH groups remain
+    // genuine acceptors and must NOT be excluded here.
+    for (const bId2 of other.bonds) {
+      if (bId2 === bId) {
+        continue;
+      }
+      const bond2 = mol.bonds.get(bId2);
+      if (!bond2) {
+        continue;
+      }
+      const order2 = bond2.properties.order ?? 1;
+      if (order2 < 2) {
+        continue;
+      }
+      const neighbor = mol.atoms.get(bond2.getOtherAtom(other.id));
+      if (neighbor && ['O', 'S', 'P'].includes(neighbor.name)) {
+        return true; // true amide-like: C=O–N, C=S–N, etc.
+      }
     }
   }
   return false;
@@ -227,25 +253,25 @@ function _isHBondAcceptor(atom, mol) {
 // ---------------------------------------------------------------------------
 
 const CRIPPEN = {
-  'C:sp3': 0.2940,
+  'C:sp3': 0.294,
   'C:sp2': 0.1439,
   'C:aro': 0.1441,
-  'C:sp': 0.0000,
+  'C:sp': 0.0,
   'N:sp3': -0.2729,
   'N:sp2': -0.1624,
   'N:aro': -0.3572,
   'N:+': -1.0187,
-  'O:oh': -0.6820,   // alcohol / carboxylic acid OH (has implicit H)
-  'O:ether': +0.1552,   // aliphatic ether or ester O (no H, sp3) — Wildman O1
-  'O:sp2': -0.4962,   // carbonyl =O
-  'O:aro': -0.4400,   // aromatic O
-  'O:-': -0.9390,   // carboxylate O−
-  'S': 0.2220,
-  'F': 0.4202,
-  'Cl': 0.6482,
-  'Br': 0.8850,
-  'I': 1.3500,
-  'P': 0.4500
+  'O:oh': -0.682, // alcohol / carboxylic acid OH (has implicit H)
+  'O:ether': +0.1552, // aliphatic ether or ester O (no H, sp3) — Wildman O1
+  'O:sp2': -0.4962, // carbonyl =O
+  'O:aro': -0.44, // aromatic O
+  'O:-': -0.939, // carboxylate O−
+  S: 0.222,
+  F: 0.4202,
+  Cl: 0.6482,
+  Br: 0.885,
+  I: 1.35,
+  P: 0.45
 };
 
 function _crippinKey(atom, mol) {
@@ -313,8 +339,8 @@ export function tpsa(molecule) {
   assertMolecule(molecule, 'molecule');
   let sum = 0;
   for (const atom of _heavyAtoms(molecule)) {
-    const el  = atom.name;
-    const h   = _attachedHydrogenCount(atom, molecule);
+    const el = atom.name;
+    const h = _attachedHydrogenCount(atom, molecule);
     const hyb = _hybSp(atom, molecule);
     const charge = atom.getCharge();
     if (el === 'O') {
@@ -325,7 +351,7 @@ export function tpsa(molecule) {
       } else if (hyb === 'sp2' || hyb === 'aro' || atom.isAromatic()) {
         sum += 17.07; // C=O / aromatic O
       } else {
-        sum += 9.23;  // ether
+        sum += 9.23; // ether
       }
     } else if (el === 'N') {
       if (charge > 0 && h === 0) {
@@ -344,7 +370,7 @@ export function tpsa(molecule) {
         }
       }
     } else if (el === 'S') {
-      sum += h >= 1 ? 38.80 : 25.30;
+      sum += h >= 1 ? 38.8 : 25.3;
     } else if (el === 'P') {
       sum += 9.81;
     }
@@ -364,10 +390,11 @@ export function tpsa(molecule) {
  */
 export function hBondDonors(molecule) {
   assertMolecule(molecule, 'molecule');
-  const atoms = _sortIds(_heavyAtoms(molecule).filter(a =>
-    (a.name === 'O' || a.name === 'N' || a.name === 'S') &&
-    _attachedHydrogenCount(a, molecule) > 0
-  ).map(atom => atom.id));
+  const atoms = _sortIds(
+    _heavyAtoms(molecule)
+      .filter(a => (a.name === 'O' || a.name === 'N' || a.name === 'S') && _attachedHydrogenCount(a, molecule) > 0)
+      .map(atom => atom.id)
+  );
   return { count: atoms.length, atoms };
 }
 
@@ -400,11 +427,7 @@ export function hBondAcceptors(molecule) {
  */
 export function rotatableBondCount(molecule) {
   assertMolecule(molecule, 'molecule');
-  const bonds = _sortIds(
-    [...molecule.bonds.values()]
-      .filter(b => b.isRotatable(molecule))
-      .map(bond => bond.id)
-  );
+  const bonds = _sortIds([...molecule.bonds.values()].filter(b => b.isRotatable(molecule)).map(bond => bond.id));
   return { count: bonds.length, bonds };
 }
 
@@ -441,18 +464,18 @@ const CRIPPEN_MR = {
   'N:sp3': 3.483,
   'N:sp2': 2.991,
   'N:aro': 2.991,
-  'N:+': 3.320,
+  'N:+': 3.32,
   'O:oh': 1.229,
-  'O:ether': 1.690,
+  'O:ether': 1.69,
   'O:sp2': 2.055,
-  'O:aro': 1.690,
+  'O:aro': 1.69,
   'O:-': 1.229,
-  'S': 7.591,
-  'F': 1.014,
-  'Cl': 5.861,
-  'Br': 8.865,
-  'I': 13.855,
-  'P': 6.920
+  S: 7.591,
+  F: 1.014,
+  Cl: 5.861,
+  Br: 8.865,
+  I: 13.855,
+  P: 6.92
 };
 
 /**
@@ -498,12 +521,14 @@ export function ringCount(molecule) {
  */
 export function aromaticRingCount(molecule) {
   assertMolecule(molecule, 'molecule');
-  const atoms = _sortRings(molecule.getRings().filter(ring =>
-    ring.every(atomId => {
-      const a = molecule.atoms.get(atomId);
-      return a && a.isAromatic();
-    })
-  ));
+  const atoms = _sortRings(
+    molecule.getRings().filter(ring =>
+      ring.every(atomId => {
+        const a = molecule.atoms.get(atomId);
+        return a && a.isAromatic();
+      })
+    )
+  );
   return { count: atoms.length, atoms };
 }
 
@@ -551,7 +576,7 @@ export function formalCharge(molecule) {
  */
 export function veberRules(molecule) {
   assertMolecule(molecule, 'molecule');
-  const t  = tpsa(molecule);
+  const t = tpsa(molecule);
   const rb = rotatableBondCount(molecule);
   return { tpsa: t, rotatableBonds: rb.count, passes: t <= 140 && rb.count <= 10 };
 }
@@ -568,9 +593,7 @@ export function veberRules(molecule) {
  */
 function _ads(x, a, b, c, d, e, f, dmax) {
   const sig1 = 1 / (1 + Math.exp(-(x - c + d / 2) / e));
-  const sig2 = f > 0
-    ? (1 - 1 / (1 + Math.exp(-(x - c - d / 2) / f)))
-    : (x <= c + d / 2 ? 1 : 0);
+  const sig2 = f > 0 ? 1 - 1 / (1 + Math.exp(-(x - c - d / 2) / f)) : x <= c + d / 2 ? 1 : 0;
   return Math.max(0, Math.min(1, (a + b * sig1 * sig2) / dmax));
 }
 
@@ -589,10 +612,10 @@ function _bellExpD(x, lo, hi, sigma) {
 }
 
 // Bickerton 2012 Supplementary Table 1 ADS parameters for MW and logP
-const _QED_MW_P   = [2.817065973, 392.5754953, 290.7489764, 2.419764353, 49.22325677, 65.37051707, 104.9805561];
-const _QED_LOGP_P = [3.172690585, 137.8624751, 2.534937000, 4.581007086, 0.822739803, 0.576295313, 131.3186604];
+const _QED_MW_P = [2.817065973, 392.5754953, 290.7489764, 2.419764353, 49.22325677, 65.37051707, 104.9805561];
+const _QED_LOGP_P = [3.172690585, 137.8624751, 2.534937, 4.581007086, 0.822739803, 0.576295313, 131.3186604];
 // Weights for [MW, logP, HBD, HBA, PSA, RotBonds, ArRings] (Bickerton 2012, approx.)
-const _QED_W      = [0.66, 0.47, 0.05, 0.10, 0.09, 0.07, 0.44];
+const _QED_W = [0.66, 0.47, 0.05, 0.1, 0.09, 0.07, 0.44];
 
 /**
  * Computes an approximate QED (Quantitative Estimate of Drug-likeness).
@@ -607,21 +630,21 @@ const _QED_W      = [0.66, 0.47, 0.05, 0.10, 0.09, 0.07, 0.44];
  */
 export function qed(molecule) {
   assertMolecule(molecule, 'molecule');
-  const mw   = molecularMass(molecule);
-  const lp   = logP(molecule);
-  const hbd  = hBondDonors(molecule);
-  const hba  = hBondAcceptors(molecule);
-  const psa  = tpsa(molecule);
+  const mw = molecularMass(molecule);
+  const lp = logP(molecule);
+  const hbd = hBondDonors(molecule);
+  const hba = hBondAcceptors(molecule);
+  const psa = tpsa(molecule);
   const rotb = rotatableBondCount(molecule);
   const arom = aromaticRingCount(molecule);
 
   const d = [
-    _ads(mw,   ..._QED_MW_P),
-    _ads(lp,   ..._QED_LOGP_P),
-    _bellExpD(hbd.count,  0, 1,   1.5),
-    _bellExpD(hba.count,  0, 8,   3.0),
-    _bellExpD(psa,  30, 100, 35),
-    _bellExpD(rotb.count, 0, 5,   3.0),
+    _ads(mw, ..._QED_MW_P),
+    _ads(lp, ..._QED_LOGP_P),
+    _bellExpD(hbd.count, 0, 1, 1.5),
+    _bellExpD(hba.count, 0, 8, 3.0),
+    _bellExpD(psa, 30, 100, 35),
+    _bellExpD(rotb.count, 0, 5, 3.0),
     _bellExpD(arom.count, 0, 3, 1.5)
   ];
 
@@ -649,16 +672,11 @@ export function qed(molecule) {
  */
 export function lipinskiRuleOfFive(molecule) {
   assertMolecule(molecule, 'molecule');
-  const mw  = molecularMass(molecule);
-  const lp  = logP(molecule);
+  const mw = molecularMass(molecule);
+  const lp = logP(molecule);
   const hbd = hBondDonors(molecule);
   const hba = hBondAcceptors(molecule);
-  const violations = [
-    mw  > 500,
-    lp  > 5,
-    hbd.count > 5,
-    hba.count > 10
-  ].filter(Boolean).length;
+  const violations = [mw > 500, lp > 5, hbd.count > 5, hba.count > 10].filter(Boolean).length;
   return {
     molecularWeight: mw,
     logP: lp,
