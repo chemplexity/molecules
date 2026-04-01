@@ -31,10 +31,7 @@ function _piElectrons(atom, ringAtomSet, mol) {
   // Note: O/S/pyrrole-N always donate 2 electrons regardless of bond type,
   // so we only use this flag for C and pyridine-like N.
   const hasRingPiBond = ringBonds.some(
-    b =>
-      b.properties.order === 2 ||
-      b.properties.aromatic ||
-      b.properties.order === 1.5
+    b => b.properties.order === 2 || b.properties.aromatic || b.properties.order === 1.5
   );
 
   if (el === 'C') {
@@ -123,10 +120,147 @@ function _isHuckel(piCount) {
  * @param {{ preserveKekule?: boolean }} [options]
  * @returns {string[][]}  Array of aromatic rings, each as an array of atom IDs.
  */
+/**
+ * Assigns `localizedOrder` (1 or 2) to bonds that are currently flagged
+ * aromatic but do NOT belong to any confirmed aromatic ring.  This covers
+ * cases where the SMILES parser used lowercase atoms for a ring which Hückel
+ * analysis rejected (e.g. the pyrimidinone ring in hypoxanthine written as
+ * `O=c1nc[nH]c2[nH]cnc12`).  Without this step those bonds would all be
+ * reset to order 1, losing the C=N double bond character.
+ *
+ * The algorithm is a simplified maximum-matching identical in logic to the
+ * `kekulize` function in layout/mol2d-helpers, restricted to the stale atoms.
+ *
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {Set<string>} confirmedAromaticBondIds Bonds that belong to a genuine aromatic ring.
+ */
+function _kekulizeStale(mol, confirmedAromaticBondIds) {
+  // Neutral σ-frame valence for common aromatic elements.
+  const SIGMA_VAL = { B: 3, C: 4, N: 3, O: 2, F: 1, Si: 4, P: 3, S: 2, Cl: 1, As: 3, Se: 2, Br: 1, Te: 2, I: 1 };
+
+  const staleBondIds = new Set();
+  const staleAtomIds = new Set();
+  for (const bond of mol.bonds.values()) {
+    if (bond.properties.aromatic && !confirmedAromaticBondIds.has(bond.id)) {
+      staleBondIds.add(bond.id);
+      staleAtomIds.add(bond.atoms[0]);
+      staleAtomIds.add(bond.atoms[1]);
+    }
+  }
+  if (staleBondIds.size === 0) {
+    return;
+  }
+
+  // Compute sigma-frame bond order for each stale atom (treat stale bonds as
+  // order 1, confirmed-aromatic bonds as order 1, non-aromatic bonds at face value).
+  const sigmaBO = new Map();
+  for (const id of staleAtomIds) {
+    sigmaBO.set(id, 0);
+  }
+
+  for (const bond of mol.bonds.values()) {
+    const [a, b] = bond.atoms;
+    let contrib;
+    if (staleBondIds.has(bond.id) || confirmedAromaticBondIds.has(bond.id)) {
+      contrib = 1;
+    } else {
+      contrib = bond.properties.order ?? 1;
+    }
+    if (staleAtomIds.has(a)) {
+      sigmaBO.set(a, sigmaBO.get(a) + contrib);
+    }
+    if (staleAtomIds.has(b)) {
+      sigmaBO.set(b, sigmaBO.get(b) + contrib);
+    }
+  }
+
+  // Atoms with available valence for a π bond.
+  const canHaveDouble = new Set();
+  for (const id of staleAtomIds) {
+    const atom = mol.atoms.get(id);
+    const base = SIGMA_VAL[atom.name] ?? 4;
+    const adjusted = Math.max(0, base + (atom.getCharge() ?? 0));
+    if (adjusted - sigmaBO.get(id) >= 1) {
+      canHaveDouble.add(id);
+    }
+  }
+
+  // Build matching adjacency restricted to stale bonds between two π-capable atoms.
+  const adj = new Map();
+  for (const id of canHaveDouble) {
+    adj.set(id, []);
+  }
+  for (const bond of mol.bonds.values()) {
+    if (!staleBondIds.has(bond.id)) {
+      continue;
+    }
+    const [a, b] = bond.atoms;
+    if (canHaveDouble.has(a) && canHaveDouble.has(b)) {
+      adj.get(a).push({ bondId: bond.id, otherId: b });
+      adj.get(b).push({ bondId: bond.id, otherId: a });
+    }
+  }
+
+  // Maximum matching via augmenting paths (Berge's theorem).
+  const mate = new Map();
+  const matchedBond = new Map();
+  for (const id of canHaveDouble) {
+    mate.set(id, null);
+    matchedBond.set(id, null);
+  }
+
+  function _tryAugment(startId) {
+    const visited = new Set([startId]);
+    function dfs(v) {
+      for (const { bondId, otherId: u } of adj.get(v)) {
+        if (visited.has(u)) {
+          continue;
+        }
+        visited.add(u);
+        if (mate.get(u) === null || dfs(mate.get(u))) {
+          mate.set(v, u);
+          mate.set(u, v);
+          matchedBond.set(v, bondId);
+          matchedBond.set(u, bondId);
+          return true;
+        }
+      }
+      return false;
+    }
+    return dfs(startId);
+  }
+
+  for (const id of canHaveDouble) {
+    if (mate.get(id) === null) {
+      _tryAugment(id);
+    }
+  }
+
+  const doubleBondIds = new Set(matchedBond.values());
+  doubleBondIds.delete(null);
+
+  for (const bond of mol.bonds.values()) {
+    if (!staleBondIds.has(bond.id)) {
+      continue;
+    }
+    bond.properties.localizedOrder = doubleBondIds.has(bond.id) ? 2 : 1;
+  }
+}
+
 export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
+  // Clear any atom-aromatic flags set by the SMILES parser so that only
+  // rings which actually satisfy Hückel's rule end up marked aromatic.
+  // Bond order/aromatic flags are intentionally left intact: _piElectrons
+  // relies on them (1.5 for SMILES-aromatic input, 2 for Kekulé) to count
+  // π electrons.
+  for (const atom of mol.atoms.values()) {
+    atom.properties.aromatic = false;
+  }
+
   const rings = mol.getRings();
   const aromaticRings = [];
   const done = new Array(rings.length).fill(false);
+  const aromaticBondIds = new Set();
 
   // Iterate until no new aromatic rings are found.  Fused ring systems (e.g.
   // phenanthrene) can require multiple passes: the middle ring only becomes
@@ -187,10 +321,28 @@ export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
             bond.properties.localizedOrder = bond.properties.order;
           }
           bond.setAromatic(true);
+          aromaticBondIds.add(bond.id);
         }
       }
 
       aromaticRings.push(ring);
+    }
+  }
+
+  // Kekulize stale bonds (aromatic-flagged bonds whose ring failed Hückel):
+  // run maximum-matching to assign localizedOrder 1 or 2 before clearing the
+  // aromatic flag, so non-aromatic rings parsed from lowercase SMILES (e.g.
+  // the pyrimidinone ring in hypoxanthine) retain their correct bond orders.
+  _kekulizeStale(mol, aromaticBondIds);
+
+  // Remove stale aromatic flags from bonds that the SMILES parser marked
+  // as 1.5-order but whose ring failed Hückel analysis.  Bonds shared with
+  // a genuinely aromatic ring (tracked in aromaticBondIds) are left alone.
+  for (const bond of mol.bonds.values()) {
+    if (bond.properties.aromatic && !aromaticBondIds.has(bond.id)) {
+      bond.properties.order = bond.properties.localizedOrder ?? 1;
+      bond.properties.aromatic = false;
+      delete bond.properties.localizedOrder;
     }
   }
 
@@ -218,9 +370,7 @@ export function refreshAromaticity(mol, { preserveKekule = true } = {}) {
     if (!bond.properties.aromatic) {
       continue;
     }
-    bond.properties.order = Number.isInteger(bond.properties.localizedOrder)
-      ? bond.properties.localizedOrder
-      : 1;
+    bond.properties.order = Number.isInteger(bond.properties.localizedOrder) ? bond.properties.localizedOrder : 1;
     bond.properties.aromatic = false;
     delete bond.properties.localizedOrder;
   }

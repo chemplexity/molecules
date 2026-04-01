@@ -186,11 +186,13 @@ describe('refreshAromaticity — graph edits', () => {
     const deletedCarbon = [...mol.atoms.values()].find(atom => atom.name === 'C');
     assert.ok(deletedCarbon);
 
-    const deletedHydrogenIds = deletedCarbon.getNeighbors(mol)
+    const deletedHydrogenIds = deletedCarbon
+      .getNeighbors(mol)
       .filter(atom => atom.name === 'H')
       .map(atom => atom.id);
     const affectedHeavyIds = new Set(
-      deletedCarbon.getNeighbors(mol)
+      deletedCarbon
+        .getNeighbors(mol)
         .filter(atom => atom.name !== 'H')
         .map(atom => atom.id)
     );
@@ -207,5 +209,47 @@ describe('refreshAromaticity — graph edits', () => {
     assert.deepEqual(mol.getFormula(), { C: 5, H: 8 });
     assert.equal([...mol.atoms.values()].filter(atom => atom.properties.aromatic).length, 0);
     assert.equal([...mol.bonds.values()].filter(bond => bond.properties.aromatic).length, 0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Hypoxanthine — 6-membered ring should NOT be aromatic
+// ---------------------------------------------------------------------------
+
+describe('perceiveAromaticity — hypoxanthine fused ring SMILES', () => {
+  it('detects only the 5-membered imidazole ring as aromatic', () => {
+    const mol = parseSMILES('O=c1nc[nH]c2[nH]cnc12');
+    const rings = perceiveAromaticity(mol);
+    assert.equal(rings.length, 1, 'expected exactly 1 aromatic ring');
+    assert.equal(rings[0].length, 5, 'the aromatic ring should be 5-membered');
+  });
+
+  it('6-membered ring atoms (not shared with 5-membered ring) are NOT aromatic', () => {
+    const mol = parseSMILES('O=c1nc[nH]c2[nH]cnc12');
+    perceiveAromaticity(mol);
+    // The carbonyl carbon C2 and its two direct neighbours N3, C4 are exclusively
+    // in the 6-membered ring and must NOT be marked aromatic after perception.
+    const heavy = [...mol.atoms.values()].filter(a => a.name !== 'H');
+    // atoms that neighbour the exocyclic oxygen are exclusively 6-membered ring atoms
+    const oAtom = [...mol.atoms.values()].find(a => a.name === 'O');
+    const carbonylC = oAtom ? mol.atoms.get(mol.bonds.get([...oAtom.bonds][0]).getOtherAtom(oAtom.id)) : null;
+    assert.ok(carbonylC, 'carbonyl carbon should exist');
+    assert.equal(carbonylC.properties.aromatic ?? false, false, 'carbonyl C must not be aromatic');
+  });
+
+  it('bonds exclusive to the 6-membered ring are NOT marked aromatic', () => {
+    const mol = parseSMILES('O=c1nc[nH]c2[nH]cnc12');
+    perceiveAromaticity(mol);
+    const oAtom = [...mol.atoms.values()].find(a => a.name === 'O');
+    const carbonylCId = mol.bonds.get([...oAtom.bonds][0]).getOtherAtom(oAtom.id);
+    // All bonds incident to the carbonyl carbon (excluding the C=O bond itself)
+    // that go to another ring atom should NOT be aromatic.
+    for (const bId of mol.atoms.get(carbonylCId).bonds) {
+      const bond = mol.bonds.get(bId);
+      const otherId = bond.getOtherAtom(carbonylCId);
+      if (mol.atoms.get(otherId)?.name !== 'O') {
+        assert.equal(bond.properties.aromatic ?? false, false, `bond ${bId} should not be aromatic`);
+      }
+    }
   });
 });

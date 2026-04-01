@@ -70,3 +70,6 @@ dist/utilities/
 # Test artifacts
 test-results/
 junit.xml
+
+# Folders
+docs/agent/

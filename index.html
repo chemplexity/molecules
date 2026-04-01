@@ -25,7 +25,7 @@
                 <button id="inchi-mode-btn" onclick="setInputFormat('inchi')">InChI</button>
             </div>
             <div id="collection-picker">
-                <select id="collection-select" aria-label="Molecule catalog">
+                <select id="collection-select" aria-label="Molecule Catalog...">
                     <option value="">Molecule Catalog...</option>
                 </select>
             </div>
@@ -4723,7 +4723,7 @@
         }
 
         function populateCollectionPicker() {
-            const options = ['<option value="">Molecule Collection...</option>'];
+            const options = ['<option value="">Molecule Catalog...</option>'];
             for (const collection of moleculeCatalog) {
                 options.push(`<optgroup label="${collection.name}">`);
                 for (const molecule of collection.molecules) {
@@ -4945,7 +4945,24 @@
             }
 
             const tag = document.activeElement?.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+            const isTextInput = tag === 'INPUT' || tag === 'TEXTAREA';
+
+            // Ctrl/Cmd+A: select all atoms when not in a text input; otherwise let the browser handle it.
+            if ((event.metaKey || event.ctrlKey) && event.key === 'a') {
+                if (isTextInput) return;
+                const mol = mode === 'force' ? currentMol : _mol2d;
+                if (mol) {
+                    if (!_selectMode) window.toggleSelectMode();
+                    for (const [id] of mol.atoms) _selectedAtomIds.add(id);
+                    for (const [id] of mol.bonds) _selectedBondIds.add(id);
+                    if (mode === 'force') applyForceSelection();
+                    else _redraw2dSelection();
+                }
+                event.preventDefault();
+                return;
+            }
+
+            if (isTextInput) return;
 
             // Arrow-key panning
             const PAN_STEP = 40;
@@ -4984,6 +5001,19 @@
             }
             if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key === 'z') {
                 undoAction();
+                event.preventDefault();
+                return;
+            }
+
+            if ((event.metaKey || event.ctrlKey) && event.key === 'a') {
+                const mol = mode === 'force' ? currentMol : _mol2d;
+                if (mol) {
+                    if (!_selectMode) window.toggleSelectMode();
+                    for (const [id] of mol.atoms) _selectedAtomIds.add(id);
+                    for (const [id] of mol.bonds) _selectedBondIds.add(id);
+                    if (mode === 'force') applyForceSelection();
+                    else _redraw2dSelection();
+                }
                 event.preventDefault();
                 return;
             }

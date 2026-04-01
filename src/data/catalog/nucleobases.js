@@ -50,7 +50,7 @@ const nucleobasesCatalog = {
       id: 'hypoxanthine',
       name: 'Hypoxanthine',
       smiles: 'O=c1nc[nH]c2[nH]cnc12',
-      inchi: 'InChI=1S/C5H4N4O/c1-6-3-4(7-1)8-2-9-5(3)10/h1-2,7-8H',
+      inchi: 'InChI=1S/C5H4N4O/c1-6-3(4-5(7-1)9-2-8-4)10/h1-2,7,9H',
       tags: ['nucleobase', 'purine', 'metabolite'],
       aliases: ['inosine base', '6-hydroxypurine']
     }
