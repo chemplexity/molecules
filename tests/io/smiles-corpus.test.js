@@ -18,10 +18,7 @@ function formula(mol) {
 
 function assertMass(smiles, expected) {
   const mol = parseSMILES(smiles);
-  assert.ok(
-    Math.abs(molecularMass(mol) - expected) < EPS,
-    `mass of ${smiles}: expected ≈${expected}, got ${molecularMass(mol)}`
-  );
+  assert.ok(Math.abs(molecularMass(mol) - expected) < EPS, `mass of ${smiles}: expected ≈${expected}, got ${molecularMass(mol)}`);
 }
 
 describe('SMILES corpus — Alkanes', () => {

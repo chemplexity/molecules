@@ -14,6 +14,46 @@ function parse(smiles) {
   return mol;
 }
 
+function snapshotState(mol) {
+  const bondOrders = new Map();
+  for (const [bondId, bond] of mol.bonds) {
+    bondOrders.set(bondId, bond.properties.localizedOrder ?? bond.properties.order ?? 1);
+  }
+
+  const atomCharges = new Map();
+  const atomRadicals = new Map();
+  for (const [atomId, atom] of mol.atoms) {
+    atomCharges.set(atomId, atom.properties.charge ?? 0);
+    atomRadicals.set(atomId, atom.properties.radical ?? 0);
+  }
+
+  return { bondOrders, atomCharges, atomRadicals };
+}
+
+function transitionCost(fromState, toState) {
+  let cost = 0;
+
+  for (const [bondId, fromOrder] of fromState.bondOrders) {
+    if ((toState.bondOrders.get(bondId) ?? fromOrder) !== fromOrder) {
+      cost += 2;
+    }
+  }
+
+  for (const [atomId, fromCharge] of fromState.atomCharges) {
+    if ((toState.atomCharges.get(atomId) ?? fromCharge) !== fromCharge) {
+      cost += 1;
+    }
+  }
+
+  for (const [atomId, fromRadical] of fromState.atomRadicals) {
+    if ((toState.atomRadicals.get(atomId) ?? fromRadical) !== fromRadical) {
+      cost += 1;
+    }
+  }
+
+  return cost;
+}
+
 // ---------------------------------------------------------------------------
 // availableLonePairs
 // ---------------------------------------------------------------------------
@@ -98,14 +138,14 @@ describe('generateResonanceStructures — carboxylate', () => {
     mol.setResonanceState(1);
     // Find the carboxylate carbon: the C bonded to exactly 2 oxygens
     const carboxylC = [...mol.atoms.values()].find(a => {
-      if (a.name !== 'C') return false;
+      if (a.name !== 'C') {
+        return false;
+      }
       const oCount = a.bonds.filter(id => mol.atoms.get(mol.bonds.get(id)?.getOtherAtom(a.id))?.name === 'O').length;
       return oCount === 2;
     });
     assert.ok(carboxylC, 'carboxylate carbon not found');
-    const coBonds = carboxylC.bonds
-      .map(id => mol.bonds.get(id))
-      .filter(b => mol.atoms.get(b.getOtherAtom(carboxylC.id))?.name === 'O');
+    const coBonds = carboxylC.bonds.map(id => mol.bonds.get(id)).filter(b => mol.atoms.get(b.getOtherAtom(carboxylC.id))?.name === 'O');
     assert.equal(coBonds.length, 2);
     const orders = coBonds.map(b => b.properties.localizedOrder ?? b.properties.order).sort();
     assert.deepEqual(orders, [1, 2]);
@@ -117,16 +157,12 @@ describe('generateResonanceStructures — carboxylate', () => {
 
     // Record state 1 bond orders for the two C-O bonds
     const carboxylC = [...mol.atoms.values()].find(a => {
-      const oNeighbours = a.bonds
-        .map(id => mol.bonds.get(id))
-        .filter(b => mol.atoms.get(b.getOtherAtom(a.id))?.name === 'O');
+      const oNeighbours = a.bonds.map(id => mol.bonds.get(id)).filter(b => mol.atoms.get(b.getOtherAtom(a.id))?.name === 'O');
       return oNeighbours.length === 2;
     });
     assert.ok(carboxylC, 'could not find carboxylate carbon');
 
-    const coBonds = carboxylC.bonds
-      .map(id => mol.bonds.get(id))
-      .filter(b => mol.atoms.get(b.getOtherAtom(carboxylC.id))?.name === 'O');
+    const coBonds = carboxylC.bonds.map(id => mol.bonds.get(id)).filter(b => mol.atoms.get(b.getOtherAtom(carboxylC.id))?.name === 'O');
 
     mol.setResonanceState(1);
     const s1Orders = coBonds.map(b => b.properties.localizedOrder ?? b.properties.order);
@@ -145,14 +181,10 @@ describe('generateResonanceStructures — carboxylate', () => {
     generateResonanceStructures(mol);
 
     const carboxylC = [...mol.atoms.values()].find(a => {
-      const oNeighbours = a.bonds
-        .map(id => mol.bonds.get(id))
-        .filter(b => mol.atoms.get(b.getOtherAtom(a.id))?.name === 'O');
+      const oNeighbours = a.bonds.map(id => mol.bonds.get(id)).filter(b => mol.atoms.get(b.getOtherAtom(a.id))?.name === 'O');
       return oNeighbours.length === 2;
     });
-    const coBonds = carboxylC.bonds
-      .map(id => mol.bonds.get(id))
-      .filter(b => mol.atoms.get(b.getOtherAtom(carboxylC.id))?.name === 'O');
+    const coBonds = carboxylC.bonds.map(id => mol.bonds.get(id)).filter(b => mol.atoms.get(b.getOtherAtom(carboxylC.id))?.name === 'O');
 
     mol.setResonanceState(1);
     const s1Orders = coBonds.map(b => b.properties.localizedOrder ?? b.properties.order);
@@ -176,6 +208,18 @@ describe('generateResonanceStructures — benzene', () => {
     assert.equal(mol.resonanceCount, 2);
   });
 
+  it('clone preserves resonance metadata and state switching stays independent', () => {
+    const mol = parse('c1ccccc1');
+    generateResonanceStructures(mol);
+
+    const copy = mol.clone();
+    assert.equal(copy.resonanceCount, 2);
+
+    copy.setResonanceState(2);
+    assert.equal(copy.properties.resonance.currentState, 2);
+    assert.equal(mol.properties.resonance.currentState, 1);
+  });
+
   it('the two states have alternating single/double localizedOrders', () => {
     const mol = parse('c1ccccc1');
     generateResonanceStructures(mol);
@@ -193,6 +237,51 @@ describe('generateResonanceStructures — benzene', () => {
   });
 });
 
+describe('generateResonanceStructures — charge-separated toggle', () => {
+  it('keeps charge-separated carbonyl contributors when enabled', () => {
+    const mol = parse('CC=O');
+    generateResonanceStructures(mol, { includeChargeSeparatedStates: true });
+    assert.equal(mol.resonanceCount, 2);
+
+    mol.setResonanceState(2);
+    const charges = [...mol.atoms.values()]
+      .map(atom => atom.properties.charge ?? 0)
+      .filter(charge => charge !== 0)
+      .sort((a, b) => a - b);
+    assert.deepEqual(charges, [-1, 1]);
+  });
+
+  it('suppresses charge-separated carbonyl contributors when disabled', () => {
+    const mol = parse('CC=O');
+    generateResonanceStructures(mol, { includeChargeSeparatedStates: false });
+    assert.equal(mol.resonanceCount, 1);
+    assert.deepEqual(mol.getResonanceStates(), [{ id: 1, weight: 100 }]);
+  });
+
+  it('keeps neutral aromatic alternates when charge-separated states are disabled', () => {
+    const mol = parse('c1ccccc1');
+    generateResonanceStructures(mol, { includeChargeSeparatedStates: false });
+    assert.equal(mol.resonanceCount, 2);
+  });
+
+  it('collapses unrelated resonance-region permutations when disabled', () => {
+    const mol = parseSMILES('O=CCCCC=O');
+    generateResonanceStructures(mol, {
+      includeIndependentComponentPermutations: false
+    });
+    assert.equal(mol.resonanceCount, 3);
+  });
+
+  it('drops multi-charge-spread permutations within one conjugated component when disabled', () => {
+    const mol = parseSMILES('CC1=C(C(=O)NC(=O)N1)N');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.equal(mol.resonanceCount, 1);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Propyne — non-conjugated alkyne
 // ---------------------------------------------------------------------------
@@ -202,6 +291,63 @@ describe('generateResonanceStructures — propyne (non-conjugated alkyne)', () =
     const mol = parse('CC#C');
     generateResonanceStructures(mol);
     assert.equal(mol.resonanceCount, 1);
+  });
+});
+
+describe('generateResonanceStructures — fused aromatic heterocycles', () => {
+  it('finds 2 resonance states for serotonin-like indoles instead of falling back to 1', () => {
+    const mol = parseSMILES('NCCc1c[nH]c2ccc(O)cc12');
+    assert.doesNotThrow(() => generateResonanceStructures(mol));
+    assert.equal(mol.resonanceCount, 2);
+    assert.deepEqual(mol.getResonanceStates(), [
+      { id: 1, weight: 100 },
+      { id: 2, weight: 100 }
+    ]);
+  });
+
+  it('finds 2 resonance states for dimethyltryptamine-like indoles', () => {
+    const mol = parseSMILES('CN(C)CCc1c[nH]c2cccc(O)c12');
+    generateResonanceStructures(mol);
+    assert.equal(mol.resonanceCount, 2);
+  });
+
+  it('finds 2 resonance states for fused aromatic N-rings written in Kekule form', () => {
+    const mol = parseSMILES('C1=CC2=C(C=C1O)C(=CN2)CCN');
+    generateResonanceStructures(mol);
+    assert.equal(mol.resonanceCount, 2);
+  });
+
+  it('includes charge-separated furan contributors without exploding benzene-like permutations', () => {
+    const mol = parseSMILES('c1occc1');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.equal(mol.resonanceCount, 5);
+
+    const chargedStates = [];
+    for (let i = 1; i <= mol.resonanceCount; i++) {
+      mol.setResonanceState(i);
+      chargedStates.push([...mol.atoms.values()].map(atom => ({ name: atom.name, charge: atom.properties.charge ?? 0 })).filter(atom => atom.charge !== 0));
+    }
+
+    assert.ok(chargedStates.some(state => state.some(atom => atom.name === 'O' && atom.charge === 1)));
+    assert.ok(chargedStates.some(state => state.some(atom => atom.name === 'C' && atom.charge === -1)));
+  });
+
+  it('includes charge-separated pyrrole contributors for standalone [nH] aromatic rings', () => {
+    const mol = parseSMILES('[nH]1cccc1');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.equal(mol.resonanceCount, 5);
+    assert.ok(
+      [...Array(mol.resonanceCount).keys()].some(index => {
+        mol.setResonanceState(index + 1);
+        return [...mol.atoms.values()].some(atom => atom.name === 'N' && (atom.properties.charge ?? 0) === 1);
+      })
+    );
   });
 });
 
@@ -215,7 +361,7 @@ describe('generateResonanceStructures — allyl radical', () => {
     const mol = parseSMILES('[CH2]=C[CH2]');
     // manually set radical on terminal carbon
     const atoms = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const terminal = atoms.find(a => a.bonds.length === 1);
+    const terminal = atoms.find(a => a.bonds.filter(id => mol.atoms.get(mol.bonds.get(id)?.getOtherAtom(a.id))?.name !== 'H').length === 1);
     assert.ok(terminal);
     terminal.properties.radical = 1;
     generateResonanceStructures(mol);
@@ -250,6 +396,17 @@ describe('clearResonanceStates', () => {
     const ordersAfterClear = [...mol.bonds.values()].map(b => b.properties.localizedOrder ?? b.properties.order);
     assert.deepEqual(ordersBeforeClear, ordersAfterClear);
   });
+
+  it('recomputes cleanly when stale atom/bond resonance tables remain without top-level metadata', () => {
+    const mol = parse('c1ccccc1');
+    generateResonanceStructures(mol);
+
+    const copy = mol.clone();
+    delete copy.properties.resonance;
+
+    generateResonanceStructures(copy);
+    assert.equal(copy.resonanceCount, 2);
+  });
 });
 
 describe('resetResonance', () => {
@@ -279,7 +436,6 @@ describe('auto-clear on mutation', () => {
     generateResonanceStructures(mol);
     assert.ok(mol.properties.resonance);
 
-    const atomIds = [...mol.atoms.keys()];
     // Add a new atom and bond
     mol.addAtom(null, 'C', {});
     assert.equal(mol.properties.resonance, undefined);
@@ -336,6 +492,31 @@ describe('getResonanceStates', () => {
     const mol = parse('CCO');
     const states = mol.getResonanceStates();
     assert.deepEqual(states, [{ id: 1, weight: 100 }]);
+  });
+
+  it('orders states so each next step minimizes the visible change', () => {
+    const mol = parse('N[C@@H](CCCNC(N)=N)C(=O)O');
+    generateResonanceStructures(mol);
+    assert.ok(mol.resonanceCount >= 3);
+
+    const states = [];
+    for (let i = 1; i <= mol.resonanceCount; i++) {
+      mol.setResonanceState(i);
+      states.push(snapshotState(mol));
+    }
+
+    for (let i = 1; i < states.length; i++) {
+      const current = states[i - 1];
+      const chosen = states[i];
+      const chosenCost = transitionCost(current, chosen);
+      let minRemainingCost = Infinity;
+
+      for (let j = i; j < states.length; j++) {
+        minRemainingCost = Math.min(minRemainingCost, transitionCost(current, states[j]));
+      }
+
+      assert.equal(chosenCost, minRemainingCost);
+    }
   });
 });
 

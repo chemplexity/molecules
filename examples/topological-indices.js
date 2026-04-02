@@ -2,15 +2,7 @@
  * Example: compute multiple topological indices on several molecules.
  */
 import { parseSMILES, adjacencyMatrix, distanceMatrix, degreeMatrix, reciprocalMatrix } from '../src/index.js';
-import {
-  wienerIndex,
-  hyperWienerIndex,
-  balabanIndex,
-  zagreb1,
-  zagreb2,
-  hararyIndex,
-  hosoyaIndex
-} from '../src/descriptors/topological.js';
+import { wienerIndex, hyperWienerIndex, balabanIndex, zagreb1, zagreb2, hararyIndex, hosoyaIndex } from '../src/descriptors/topological.js';
 
 const molecules = [
   { name: 'Methane', smiles: 'C' },

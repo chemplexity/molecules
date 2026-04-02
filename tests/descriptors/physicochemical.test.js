@@ -119,9 +119,7 @@ describe('hBondDonors', () => {
 
   it('acetic acid has 1 donor (COOH)', () => {
     const mol = parseSMILES('CC(=O)O');
-    const donorId = [...mol.atoms.values()].find(
-      atom => atom.name === 'O' && atom.getHydrogenNeighbors(mol).length > 0
-    ).id;
+    const donorId = [...mol.atoms.values()].find(atom => atom.name === 'O' && atom.getHydrogenNeighbors(mol).length > 0).id;
     assert.deepEqual(hBondDonors(mol), { count: 1, atoms: [donorId] });
   });
 
@@ -176,9 +174,7 @@ describe('hBondAcceptors', () => {
 
   it('acetic acid has 1 acceptor (carbonyl O only)', () => {
     const mol = parseSMILES('CC(=O)O');
-    const acceptorId = [...mol.atoms.values()].find(
-      atom => atom.name === 'O' && atom.getHydrogenNeighbors(mol).length === 0
-    ).id;
+    const acceptorId = [...mol.atoms.values()].find(atom => atom.name === 'O' && atom.getHydrogenNeighbors(mol).length === 0).id;
     assert.deepEqual(hBondAcceptors(mol), { count: 1, atoms: [acceptorId] });
   });
 

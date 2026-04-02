@@ -114,9 +114,7 @@ describe('parseINCHI — sulfamide mobile hydrogens InChI=1S/H4N2O2S/c1-5(2,3)4/
       const [aId, bId] = bond.atoms;
       const a = mol.atoms.get(aId);
       const b = mol.atoms.get(bId);
-      return (
-        bond.properties.order === 2 && ((a?.name === 'S' && b?.name === 'O') || (a?.name === 'O' && b?.name === 'S'))
-      );
+      return bond.properties.order === 2 && ((a?.name === 'S' && b?.name === 'O') || (a?.name === 'O' && b?.name === 'S'));
     });
 
     assert.equal(nitrogens.length, 2);
@@ -138,17 +136,11 @@ describe('parseINCHI — hydrogen isotopes from /i layer', () => {
   const mol = parseINCHI('InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3/i2D2,3D');
 
   it('preserves deuterium atoms on the correct parents', () => {
-    const deuteriums = [...mol.atoms.values()].filter(
-      atom => atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 1
-    );
-    const protiums = [...mol.atoms.values()].filter(
-      atom => atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 0
-    );
+    const deuteriums = [...mol.atoms.values()].filter(atom => atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 1);
+    const protiums = [...mol.atoms.values()].filter(atom => atom.name === 'H' && Math.round(atom.properties.neutrons ?? 0) === 0);
     const oxygen = [...mol.atoms.values()].find(atom => atom.name === 'O');
     const carbonWithTwoD = [...mol.atoms.values()].find(
-      atom =>
-        atom.name === 'C' &&
-        atom.getHydrogenNeighbors(mol).filter(h => Math.round(h.properties.neutrons ?? 0) === 1).length === 2
+      atom => atom.name === 'C' && atom.getHydrogenNeighbors(mol).filter(h => Math.round(h.properties.neutrons ?? 0) === 1).length === 2
     );
 
     assert.equal(deuteriums.length, 3);
@@ -218,10 +210,7 @@ describe('parseINCHI — charged heteroaromatic ring', () => {
 
   it('retains the net -1 charge on the aromatic ring', () => {
     assert.equal(mol.properties.charge, -1);
-    assert.equal(
-      [...mol.atoms.values()].filter(atom => (atom.properties.charge ?? 0) === -1 && atom.name === 'N').length,
-      1
-    );
+    assert.equal([...mol.atoms.values()].filter(atom => (atom.properties.charge ?? 0) === -1 && atom.name === 'N').length, 1);
   });
 });
 
@@ -231,9 +220,7 @@ describe('parseINCHI — guanidine mobile hydrogens prefer terminal imine', () =
   it('keeps the side-chain nitrogen single-bonded to the guanidino carbon', () => {
     const nitrogens = [...mol.atoms.values()].filter(atom => atom.name === 'N');
     const internalNitrogen = nitrogens.find(
-      atom =>
-        atom.getHeavyNeighbors(mol).some(nb => nb.name === 'C') &&
-        atom.getHeavyNeighbors(mol).filter(nb => nb.name === 'C').length === 2
+      atom => atom.getHeavyNeighbors(mol).some(nb => nb.name === 'C') && atom.getHeavyNeighbors(mol).filter(nb => nb.name === 'C').length === 2
     );
     assert.ok(internalNitrogen);
     const doubleBonds = internalNitrogen.bonds
@@ -259,9 +246,7 @@ describe('parseINCHI — cytosine tautomer localization', () => {
 
 describe('parseINCHI — fused aza aromaticity matches SMILES perception', () => {
   const smiles = parseSMILES('N1C=NC2=C1N=CN2[C@H]3C[C@H](O)[C@@H](CO)O3');
-  const inchi = parseINCHI(
-    'InChI=1S/C9H12N4O3/c14-2-6-5(15)1-7(16-6)13-4-12-8-9(13)11-3-10-8/h3-7,14-15H,1-2H2,(H,10,11)/t5-,6+,7+/m0/s1'
-  );
+  const inchi = parseINCHI('InChI=1S/C9H12N4O3/c14-2-6-5(15)1-7(16-6)13-4-12-8-9(13)11-3-10-8/h3-7,14-15H,1-2H2,(H,10,11)/t5-,6+,7+/m0/s1');
 
   function bondSignature(mol) {
     return heavyBonds(mol)
@@ -1086,9 +1071,7 @@ describe('parseINCHI — phenyllithium InChI=1S/C6H5.Li/c1-2-4-6-5-3-1;/h1-5H;/q
   });
   it('has a lithium cation and one carbanionic ring carbon with no hydrogens', () => {
     const lithium = [...mol.atoms.values()].find(a => a.name === 'Li');
-    const ringAnion = [...mol.atoms.values()].find(
-      a => a.name === 'C' && a.properties.charge === -1 && a.getHydrogenNeighbors(mol).length === 0
-    );
+    const ringAnion = [...mol.atoms.values()].find(a => a.name === 'C' && a.properties.charge === -1 && a.getHydrogenNeighbors(mol).length === 0);
     assert.ok(lithium);
     assert.equal(lithium.properties.charge, 1);
     assert.ok(ringAnion);
@@ -1241,12 +1224,8 @@ function roundTrip(smiles) {
   const inchi = toInChI(mol);
   const mol2 = parseINCHI(inchi);
   assert.deepEqual(mol.getFormula(), mol2.getFormula(), `formula mismatch for ${smiles}: ${inchi}`);
-  const hb1 = [...mol.bonds.values()].filter(
-    b => mol.atoms.get(b.atoms[0])?.name !== 'H' && mol.atoms.get(b.atoms[1])?.name !== 'H'
-  ).length;
-  const hb2 = [...mol2.bonds.values()].filter(
-    b => mol2.atoms.get(b.atoms[0])?.name !== 'H' && mol2.atoms.get(b.atoms[1])?.name !== 'H'
-  ).length;
+  const hb1 = [...mol.bonds.values()].filter(b => mol.atoms.get(b.atoms[0])?.name !== 'H' && mol.atoms.get(b.atoms[1])?.name !== 'H').length;
+  const hb2 = [...mol2.bonds.values()].filter(b => mol2.atoms.get(b.atoms[0])?.name !== 'H' && mol2.atoms.get(b.atoms[1])?.name !== 'H').length;
   assert.equal(hb1, hb2, `heavy bond count mismatch for ${smiles}: ${inchi}`);
   return inchi;
 }

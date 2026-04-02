@@ -232,13 +232,11 @@ export const functionalGroups = {
   },
   cyclododecadiene: {
     name: 'Cyclododecadiene',
-    smarts:
-      '[CX3;r12;!a]1=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1'
+    smarts: '[CX3;r12;!a]1=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1'
   },
   cyclotridecadiene: {
     name: 'Cyclotridecadiene',
-    smarts:
-      '[CX3;r13;!a]1=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1'
+    smarts: '[CX3;r13;!a]1=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1'
   },
 
   // ---------------------------------------------------------------------------
@@ -267,18 +265,15 @@ export const functionalGroups = {
   },
   cycloundecatriene: {
     name: 'Cycloundecatriene',
-    smarts:
-      '[CX3;r11;!a]1=[CX3;r11;!a][CX3;r11;!a]=[CX3;r11;!a][CX3;r11;!a]=[CX3;r11;!a][C;r11][C;r11][C;r11][C;r11][C;r11]1'
+    smarts: '[CX3;r11;!a]1=[CX3;r11;!a][CX3;r11;!a]=[CX3;r11;!a][CX3;r11;!a]=[CX3;r11;!a][C;r11][C;r11][C;r11][C;r11][C;r11]1'
   },
   cyclododecatriene: {
     name: 'Cyclododecatriene',
-    smarts:
-      '[CX3;r12;!a]1=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1'
+    smarts: '[CX3;r12;!a]1=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][CX3;r12;!a]=[CX3;r12;!a][C;r12][C;r12][C;r12][C;r12][C;r12][C;r12]1'
   },
   cyclotridecatriene: {
     name: 'Cyclotridecatriene',
-    smarts:
-      '[CX3;r13;!a]1=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1'
+    smarts: '[CX3;r13;!a]1=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][CX3;r13;!a]=[CX3;r13;!a][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13][C;r13]1'
   },
 
   // ---------------------------------------------------------------------------

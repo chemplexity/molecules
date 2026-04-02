@@ -128,11 +128,7 @@ export function makeBondMatcher(constraints) {
     if (constraints.aromatic !== undefined && (tBond.properties.aromatic ?? false) !== constraints.aromatic) {
       return false;
     }
-    if (
-      constraints.order !== undefined &&
-      !(tBond.properties.aromatic ?? false) &&
-      (tBond.properties.order ?? 1) !== constraints.order
-    ) {
+    if (constraints.order !== undefined && !(tBond.properties.aromatic ?? false) && (tBond.properties.order ?? 1) !== constraints.order) {
       return false;
     }
     return true;

@@ -123,16 +123,7 @@ import { graphEntropy, topologicalEntropy } from 'molecules';
 ## Graph Matrices
 
 ```js
-import {
-  parseSMILES,
-  adjacencyMatrix,
-  degreeMatrix,
-  distanceMatrix,
-  laplacianMatrix,
-  randicMatrix,
-  reciprocalMatrix,
-  allMatrices
-} from 'molecules';
+import { parseSMILES, adjacencyMatrix, degreeMatrix, distanceMatrix, laplacianMatrix, randicMatrix, reciprocalMatrix, allMatrices } from 'molecules';
 
 const mol = parseSMILES('CCC');
 const A = adjacencyMatrix(mol);

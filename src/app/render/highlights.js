@@ -119,14 +119,7 @@ function _queryAtomAnchorSignature(queryMol, atom) {
     })
     .sort()
     .join('|');
-  return [
-    atom.name ?? '*',
-    atom.isAromatic?.() ?? false,
-    atom.getCharge?.() ?? 0,
-    atom.bonds.length,
-    atom.isInRing?.(queryMol) ?? false,
-    bondSignature
-  ].join(';');
+  return [atom.name ?? '*', atom.isAromatic?.() ?? false, atom.getCharge?.() ?? 0, atom.bonds.length, atom.isInRing?.(queryMol) ?? false, bondSignature].join(';');
 }
 
 function _functionalGroupAnchorQueryIds(smarts) {
@@ -365,6 +358,9 @@ if (typeof document !== 'undefined') {
     'click',
     event => {
       if (event.target.closest('#fg-table')) {
+        return;
+      }
+      if (event.target.closest('#resonance-panel')) {
         return;
       }
       if (event.target.closest('#rotate-controls')) {

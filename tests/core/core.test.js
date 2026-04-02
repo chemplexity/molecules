@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule, Atom, Bond } from '../../src/core/index.js';
 import { parseSMILES } from '../../src/io/index.js';
+import { generateResonanceStructures } from '../../src/algorithms/resonance.js';
 
 describe('Atom', () => {
   it('constructs with defaults', () => {
@@ -1296,6 +1297,16 @@ describe('Molecule#getSubgraph', () => {
     const sub = mol.getSubgraph(['a0', 'a1']);
     assert.throws(() => sub.addBond('b1', 'a1', 'a0', {}, false), /already exists/);
   });
+
+  it('does not leak top-level resonance metadata from the source molecule', () => {
+    const mol = parseSMILES('c1ccccc1');
+    generateResonanceStructures(mol);
+    assert.equal(mol.resonanceCount, 2);
+
+    const sub = mol.getSubgraph(['0', '1', '2']);
+    assert.equal(sub.properties.resonance, undefined);
+    assert.equal(sub.resonanceCount, 1);
+  });
 });
 
 describe('Molecule#getComponents', () => {
@@ -1919,20 +1930,12 @@ describe('Molecule – neutralizeCharge', () => {
 describe('CIP R/S — isotope mass tiebreaking (Task 3)', () => {
   it('[C@@]([13C])([12C])([2H])O — 4 distinct priorities, chirality assigned', () => {
     const mol = parseSMILES('[C@@]([13C])([12C])([2H])O');
-    assert.equal(
-      mol.getChiralCenters().length,
-      1,
-      '[13C] vs [12C] and [2H] vs H should yield 4 distinct CIP priorities'
-    );
+    assert.equal(mol.getChiralCenters().length, 1, '[13C] vs [12C] and [2H] vs H should yield 4 distinct CIP priorities');
   });
 
   it('[C@@]([13C])([12C])([2H])O and [C@]([13C])([12C])([2H])O give opposite R/S', () => {
-    const c1 = [...parseSMILES('[C@@]([13C])([12C])([2H])O').atoms.values()]
-      .find(a => a.isChiralCenter())
-      ?.getChirality();
-    const c2 = [...parseSMILES('[C@]([13C])([12C])([2H])O').atoms.values()]
-      .find(a => a.isChiralCenter())
-      ?.getChirality();
+    const c1 = [...parseSMILES('[C@@]([13C])([12C])([2H])O').atoms.values()].find(a => a.isChiralCenter())?.getChirality();
+    const c2 = [...parseSMILES('[C@]([13C])([12C])([2H])O').atoms.values()].find(a => a.isChiralCenter())?.getChirality();
     assert.ok(c1 && c2 && c1 !== c2, 'expected opposite chirality');
   });
 

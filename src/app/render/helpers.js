@@ -71,19 +71,13 @@ export function updateRenderOptions(nextOptions = {}) {
     }
   }
   if (nextOptions.forceAtomSizeMultiplier !== undefined) {
-    const clamped = _clampOptionValue(
-      Number(nextOptions.forceAtomSizeMultiplier),
-      RENDER_OPTION_LIMITS.forceAtomSizeMultiplier
-    );
+    const clamped = _clampOptionValue(Number(nextOptions.forceAtomSizeMultiplier), RENDER_OPTION_LIMITS.forceAtomSizeMultiplier);
     if (clamped !== null) {
       merged.forceAtomSizeMultiplier = clamped;
     }
   }
   if (nextOptions.forceBondThicknessMultiplier !== undefined) {
-    const clamped = _clampOptionValue(
-      Number(nextOptions.forceBondThicknessMultiplier),
-      RENDER_OPTION_LIMITS.forceBondThicknessMultiplier
-    );
+    const clamped = _clampOptionValue(Number(nextOptions.forceBondThicknessMultiplier), RENDER_OPTION_LIMITS.forceBondThicknessMultiplier);
     if (clamped !== null) {
       merged.forceBondThicknessMultiplier = clamped;
     }
@@ -169,16 +163,7 @@ export function yOffset(offset, src, tgt) {
 
 export function bondTooltipHtml(bond, a1, a2) {
   const order = bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
-  const typeLabel =
-    order === 1.5
-      ? 'Aromatic'
-      : order === 1
-        ? 'Single'
-        : order === 2
-          ? 'Double'
-          : order === 3
-            ? 'Triple'
-            : `Order ${order}`;
+  const typeLabel = order === 1.5 ? 'Aromatic' : order === 1 ? 'Single' : order === 2 ? 'Double' : order === 3 ? 'Triple' : `Order ${order}`;
   const bondSymbol = order === 2 ? '=' : order === 3 ? '≡' : '–';
 
   const row = (label, val) => `<tr><td>${label}</td><td><b>${val}</b></td></tr>`;
@@ -194,12 +179,7 @@ export function bondTooltipHtml(bond, a1, a2) {
 }
 
 function escapeHtml(text) {
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;');
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 export function atomTooltipHtml(atom, _mol, valenceWarning = null, layout = '2d') {
@@ -251,9 +231,7 @@ export function atomTooltipHtml(atom, _mol, valenceWarning = null, layout = '2d'
   }
 
   const color = atomColor(atom.name, layout);
-  const warningHtml = valenceWarning
-    ? `<div style="margin:6px 0 8px;color:#b3202e;font-weight:600">${escapeHtml(valenceWarning.reason)}</div>`
-    : '';
+  const warningHtml = valenceWarning ? `<div style="margin:6px 0 8px;color:#b3202e;font-weight:600">${escapeHtml(valenceWarning.reason)}</div>` : '';
   return `<div class="tt-head" style="color:${color}">${isotopePrefix}${atom.name}${chargeSup}
         <span style="font-size:11px;font-weight:normal;color:#aaa;margin-left:4px">${atom.id}</span>
     </div>${warningHtml}<table>${rows}</table>`;

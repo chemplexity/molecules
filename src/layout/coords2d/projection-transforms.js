@@ -17,7 +17,7 @@ import {
   idealRefinementAngle,
   isStrictTrigonalRefinementCenter,
   ringSubstituentTargetAngle,
-  scoreLayoutIssues,
+  scoreLayoutIssues
 } from './refinement-issues.js';
 
 /**
@@ -228,10 +228,7 @@ export function buildStrictTrigonalCenterTransforms(molecule, baseCoords, center
   const infos = neighbors.map(neighborId => {
     const subtree = collectRefinementSubtree(molecule, neighborId, centerId, ctx.frozenAtoms);
     const movable = Boolean(
-      subtree &&
-      subtree.size > 0 &&
-      countHeavyAtoms(molecule, subtree) > 0 &&
-      countHeavyAtoms(molecule, subtree) <= ctx.heavyIds.length - countHeavyAtoms(molecule, subtree)
+      subtree && subtree.size > 0 && countHeavyAtoms(molecule, subtree) > 0 && countHeavyAtoms(molecule, subtree) <= ctx.heavyIds.length - countHeavyAtoms(molecule, subtree)
     );
     return {
       neighborId,
@@ -264,16 +261,7 @@ export function buildStrictTrigonalCenterTransforms(molecule, baseCoords, center
       fixedInfos.map(info => info.pos)
     );
     if (targetAngle != null) {
-      transforms.push(
-        reprojectSubtreeCoords(
-          baseCoords,
-          movableInfos[0].subtree,
-          centerId,
-          movableInfos[0].neighborId,
-          targetAngle,
-          ctx.bondLength
-        )
-      );
+      transforms.push(reprojectSubtreeCoords(baseCoords, movableInfos[0].subtree, centerId, movableInfos[0].neighborId, targetAngle, ctx.bondLength));
     }
     return transforms;
   }
@@ -288,22 +276,8 @@ export function buildStrictTrigonalCenterTransforms(molecule, baseCoords, center
     for (const [firstAngle, secondAngle] of assignments) {
       transforms.push(
         mergeUpdates([
-          reprojectSubtreeCoords(
-            baseCoords,
-            movableInfos[0].subtree,
-            centerId,
-            movableInfos[0].neighborId,
-            firstAngle,
-            ctx.bondLength
-          ),
-          reprojectSubtreeCoords(
-            baseCoords,
-            movableInfos[1].subtree,
-            centerId,
-            movableInfos[1].neighborId,
-            secondAngle,
-            ctx.bondLength
-          )
+          reprojectSubtreeCoords(baseCoords, movableInfos[0].subtree, centerId, movableInfos[0].neighborId, firstAngle, ctx.bondLength),
+          reprojectSubtreeCoords(baseCoords, movableInfos[1].subtree, centerId, movableInfos[1].neighborId, secondAngle, ctx.bondLength)
         ])
       );
     }
@@ -331,10 +305,7 @@ export function idealizeStrictTrigonalCenters(molecule, baseCoords, ctx, { maxPa
     let changed = false;
     const centerIds = ctx.heavyIds
       .filter(atomId => getTerminalMultipleBondNeighborId(molecule, atomId))
-      .sort(
-        (a, b) =>
-          strictTrigonalCenterError(molecule, currentCoords, b) - strictTrigonalCenterError(molecule, currentCoords, a)
-      );
+      .sort((a, b) => strictTrigonalCenterError(molecule, currentCoords, b) - strictTrigonalCenterError(molecule, currentCoords, a));
 
     for (const centerId of centerIds) {
       const baseLocalError = strictTrigonalCenterError(molecule, currentCoords, centerId);
@@ -352,10 +323,7 @@ export function idealizeStrictTrigonalCenters(molecule, baseCoords, ctx, { maxPa
           continue;
         }
         const trialScore = scoreLayoutIssues(collectLayoutIssues(molecule, trialCoords, ctx));
-        if (
-          (!requireNonWorseScore || trialScore <= currentScore + 1e-6) &&
-          (trialScore + 1e-6 < bestScore || trialLocalError + 1e-6 < bestLocalError)
-        ) {
+        if ((!requireNonWorseScore || trialScore <= currentScore + 1e-6) && (trialScore + 1e-6 < bestScore || trialLocalError + 1e-6 < bestLocalError)) {
           bestCoords = trialCoords;
           bestScore = trialScore;
           bestLocalError = trialLocalError;
@@ -426,10 +394,7 @@ export function buildChainProjectionTransforms(molecule, baseCoords, candidate, 
       continue;
     }
     const refAngle = angleTo(pivot, refPos);
-    const candidateAngles =
-      idealAngle >= Math.PI - 1e-6
-        ? [normalizeAngle(refAngle + Math.PI)]
-        : [normalizeAngle(refAngle + idealAngle), normalizeAngle(refAngle - idealAngle)];
+    const candidateAngles = idealAngle >= Math.PI - 1e-6 ? [normalizeAngle(refAngle + Math.PI)] : [normalizeAngle(refAngle + idealAngle), normalizeAngle(refAngle - idealAngle)];
 
     for (const angle of candidateAngles) {
       const key = angle.toFixed(6);
@@ -437,16 +402,7 @@ export function buildChainProjectionTransforms(molecule, baseCoords, candidate, 
         continue;
       }
       seenAngles.add(key);
-      transforms.push(
-        reprojectSubtreeCoords(
-          baseCoords,
-          candidate.atomIds,
-          candidate.pivotId,
-          candidate.movingId,
-          angle,
-          targetLength
-        )
-      );
+      transforms.push(reprojectSubtreeCoords(baseCoords, candidate.atomIds, candidate.pivotId, candidate.movingId, angle, targetLength));
     }
   }
 
@@ -490,16 +446,7 @@ export function buildPlanarProjectionTransforms(molecule, baseCoords, candidate,
     return [];
   }
 
-  return [
-    reprojectSubtreeCoords(
-      baseCoords,
-      candidate.atomIds,
-      candidate.pivotId,
-      candidate.movingId,
-      targetAngle,
-      ctx.bondLength
-    )
-  ];
+  return [reprojectSubtreeCoords(baseCoords, candidate.atomIds, candidate.pivotId, candidate.movingId, targetAngle, ctx.bondLength)];
 }
 
 /**
@@ -519,16 +466,7 @@ export function buildRingSubstituentProjectionTransforms(molecule, baseCoords, c
   if (targetAngle == null) {
     return [];
   }
-  return [
-    reprojectSubtreeCoords(
-      baseCoords,
-      candidate.atomIds,
-      candidate.pivotId,
-      candidate.movingId,
-      targetAngle,
-      ctx.bondLength
-    )
-  ];
+  return [reprojectSubtreeCoords(baseCoords, candidate.atomIds, candidate.pivotId, candidate.movingId, targetAngle, ctx.bondLength)];
 }
 
 /**
@@ -846,10 +784,7 @@ export function optimizeTerminalChainSideSubtrees(molecule, baseCoords, updates,
         }
       }
 
-      if (
-        minDist > bestClearance + 1e-6 ||
-        (Math.abs(minDist - bestClearance) <= 1e-6 && directionScore > bestDirectionScore)
-      ) {
+      if (minDist > bestClearance + 1e-6 || (Math.abs(minDist - bestClearance) <= 1e-6 && directionScore > bestDirectionScore)) {
         bestRotation = deltaAngle;
         bestClearance = minDist;
         bestDirectionScore = directionScore;
@@ -921,12 +856,7 @@ export function buildUnfurledChainPathTransforms(molecule, baseCoords, path, ctx
         const nextBond = pathBonds[i - 1];
         let turnSign = defaultSign;
 
-        if (
-          prevBond &&
-          !prevBond.properties.aromatic &&
-          (prevBond.properties.order ?? 1) === 2 &&
-          pendingDoubleEntrySign != null
-        ) {
+        if (prevBond && !prevBond.properties.aromatic && (prevBond.properties.order ?? 1) === 2 && pendingDoubleEntrySign != null) {
           const targetStereo = molecule.getEZStereo(prevBond.id);
           if (targetStereo === 'Z') {
             turnSign = pendingDoubleEntrySign;
@@ -941,8 +871,7 @@ export function buildUnfurledChainPathTransforms(molecule, baseCoords, path, ctx
         currentPos = nextPos;
         currentDir = nextDir;
         defaultSign *= -1;
-        pendingDoubleEntrySign =
-          nextBond && !nextBond.properties.aromatic && (nextBond.properties.order ?? 1) === 2 ? turnSign : null;
+        pendingDoubleEntrySign = nextBond && !nextBond.properties.aromatic && (nextBond.properties.order ?? 1) === 2 ? turnSign : null;
       }
 
       applyOrientedSideSubtreeUpdates(molecule, baseCoords, updates, path, sideSubtrees);
@@ -1095,10 +1024,7 @@ export function spreadCompactedChainPaths(molecule, baseCoords, ctx) {
     const metrics = longChainPathMetrics(currentCoords, path);
     const endToEnd = metrics.endToEnd;
     const idealEndToEnd = ctx.bondLength * (path.length - 1) * 0.82;
-    const needsSpread =
-      endToEnd < idealEndToEnd ||
-      metrics.terminalClosure < ctx.bondLength * 1.35 ||
-      metrics.pathMinNonBonded < ctx.bondLength * 0.9;
+    const needsSpread = endToEnd < idealEndToEnd || metrics.terminalClosure < ctx.bondLength * 1.35 || metrics.pathMinNonBonded < ctx.bondLength * 0.9;
     if (!needsSpread) {
       continue;
     }
@@ -1129,8 +1055,7 @@ export function spreadCompactedChainPaths(molecule, baseCoords, ctx) {
 
       if (
         trialMetrics.pathMinNonBonded > rescueMetrics.pathMinNonBonded + 1e-6 ||
-        (Math.abs(trialMetrics.pathMinNonBonded - rescueMetrics.pathMinNonBonded) <= 1e-6 &&
-          trialMetrics.terminalClosure > rescueMetrics.terminalClosure + 1e-6) ||
+        (Math.abs(trialMetrics.pathMinNonBonded - rescueMetrics.pathMinNonBonded) <= 1e-6 && trialMetrics.terminalClosure > rescueMetrics.terminalClosure + 1e-6) ||
         (Math.abs(trialMetrics.pathMinNonBonded - rescueMetrics.pathMinNonBonded) <= 1e-6 &&
           Math.abs(trialMetrics.terminalClosure - rescueMetrics.terminalClosure) <= 1e-6 &&
           trialMetrics.terminalSpan > rescueMetrics.terminalSpan + 1e-6) ||
@@ -1146,10 +1071,7 @@ export function spreadCompactedChainPaths(molecule, baseCoords, ctx) {
       }
     }
 
-    const severeLoop =
-      endToEnd < ctx.bondLength * 3 ||
-      metrics.terminalClosure < ctx.bondLength * 1.1 ||
-      metrics.pathMinNonBonded < ctx.bondLength * 0.75;
+    const severeLoop = endToEnd < ctx.bondLength * 3 || metrics.terminalClosure < ctx.bondLength * 1.1 || metrics.pathMinNonBonded < ctx.bondLength * 0.75;
     const rescueOpensBackbone =
       rescueMetrics.terminalSpan > metrics.terminalSpan + ctx.bondLength * 2 ||
       rescueMetrics.terminalClosure > metrics.terminalClosure + ctx.bondLength * 1.5 ||
@@ -1207,9 +1129,7 @@ export function rescueSeverelyCompactedLongChains(molecule, baseCoords, ctx, { p
 
     const currentMetrics = longChainPathMetrics(currentCoords, path);
     const needsRescue =
-      currentMetrics.terminalSpan < ctx.bondLength * 6 ||
-      currentMetrics.terminalClosure < ctx.bondLength * 1.35 ||
-      currentMetrics.pathMinNonBonded < ctx.bondLength * 0.9;
+      currentMetrics.terminalSpan < ctx.bondLength * 6 || currentMetrics.terminalClosure < ctx.bondLength * 1.35 || currentMetrics.pathMinNonBonded < ctx.bondLength * 0.9;
     if (!needsRescue) {
       continue;
     }
@@ -1312,23 +1232,11 @@ export function buildAttachedMultipleBondProjectionTransforms(molecule, baseCoor
         return;
       }
       seenAngles.add(key);
-      transforms.push(
-        reprojectSubtreeCoords(
-          baseCoords,
-          childAtoms,
-          candidate.movingId,
-          childId,
-          normalizeAngle(angle),
-          ctx.bondLength
-        )
-      );
+      transforms.push(reprojectSubtreeCoords(baseCoords, childAtoms, candidate.movingId, childId, normalizeAngle(angle), ctx.bondLength));
     };
 
     if (Math.abs(idealAngle - DEG120) < 1e-6 && refIds.length >= 2) {
-      const targetAngle = averageDirectionAwayFromRefs(
-        moving,
-        refIds.map(atomId => baseCoords.get(atomId)).filter(Boolean)
-      );
+      const targetAngle = averageDirectionAwayFromRefs(moving, refIds.map(atomId => baseCoords.get(atomId)).filter(Boolean));
       if (targetAngle != null) {
         addAngle(targetAngle);
       }

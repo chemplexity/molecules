@@ -18,14 +18,7 @@ export { generateCoords, refineExistingCoords } from './coords2d.js';
  */
 export function generateAndRefine2dCoords(
   mol,
-  {
-    suppressH = true,
-    bondLength = 1.5,
-    maxPasses = 6,
-    freezeRings = true,
-    freezeChiralCenters = false,
-    allowBranchReflect = true
-  } = {}
+  { suppressH = true, bondLength = 1.5, maxPasses = 6, freezeRings = true, freezeChiralCenters = false, allowBranchReflect = true } = {}
 ) {
   generateCoords(mol, { suppressH, bondLength });
   refineExistingCoords(mol, { bondLength, maxPasses, freezeRings, freezeChiralCenters, allowBranchReflect });

@@ -6,12 +6,7 @@ import { reactionTemplates } from '../../src/smirks/reference.js';
 import { findSMARTSRaw } from '../../src/smarts/search.js';
 import { generateAndRefine2dCoords } from '../../src/layout/index.js';
 import { pickStereoWedges, stereoBondCenterIdForRender } from '../../src/layout/mol2d-helpers.js';
-import {
-  buildReaction2dMol,
-  alignReaction2dProductOrientation,
-  spreadReaction2dProductComponents,
-  centerReaction2dPairCoords
-} from '../../src/layout/reaction2d.js';
+import { buildReaction2dMol, alignReaction2dProductOrientation, spreadReaction2dProductComponents, centerReaction2dPairCoords } from '../../src/layout/reaction2d.js';
 
 function preparePreview(smiles, smirks) {
   const sourceMol = parseSMILES(smiles);
@@ -44,10 +39,7 @@ function angleDeg(a, b, c) {
 
 function maxPairDistanceErrorForMappedUnedited(preview) {
   const pairs = preview.mappedAtomPairs.filter(
-    ([reactantId, productId]) =>
-      !preview.editedProductAtomIds.has(productId) &&
-      preview.mol.atoms.get(reactantId)?.name !== 'H' &&
-      preview.mol.atoms.get(productId)?.name !== 'H'
+    ([reactantId, productId]) => !preview.editedProductAtomIds.has(productId) && preview.mol.atoms.get(reactantId)?.name !== 'H' && preview.mol.atoms.get(productId)?.name !== 'H'
   );
   let maxError = 0;
   for (let i = 0; i < pairs.length; i++) {
@@ -197,23 +189,15 @@ function findProductCarbonylCenters(preview, predicate) {
 test('reaction preview preserves ring scaffold geometry for alkene hydrogenation', () => {
   const preview = preparePreview('C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O', reactionTemplates.alkeneHydrogenation.smirks);
   const maxError = maxPairDistanceErrorForMappedUnedited(preview);
-  assert.ok(
-    maxError < 0.15,
-    `expected preserved ring scaffold distances to stay close, got max error ${maxError.toFixed(3)} Å`
-  );
+  assert.ok(maxError < 0.15, `expected preserved ring scaffold distances to stay close, got max error ${maxError.toFixed(3)} Å`);
 });
 
 test('reaction preview keeps terminal alkene hydrogenation in a zig-zag for C=CCC', () => {
   const preview = preparePreview('C=CCC', reactionTemplates.alkeneHydrogenation.smirks);
-  const atoms = [...preview.mol.atoms.values()]
-    .filter(atom => preview.productAtomIds.has(atom.id) && atom.name !== 'H')
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const atoms = [...preview.mol.atoms.values()].filter(atom => preview.productAtomIds.has(atom.id) && atom.name !== 'H').sort((a, b) => a.id.localeCompare(b.id));
   assert.equal(atoms.length, 4, 'expected four heavy atoms in hydrogenated product');
   const angle = angleDeg(atoms[0], atoms[1], atoms[2]);
-  assert.ok(
-    angle > 100 && angle < 140,
-    `expected new saturated chain angle to stay zig-zag-like, got ${angle.toFixed(1)}°`
-  );
+  assert.ok(angle > 100 && angle < 140, `expected new saturated chain angle to stay zig-zag-like, got ${angle.toFixed(1)}°`);
 });
 
 test('reaction preview keeps nitrile hydrolysis to amide carbonyl locally trigonal', () => {
@@ -223,21 +207,13 @@ test('reaction preview keeps nitrile hydrolysis to amide carbonyl locally trigon
       return false;
     }
     const neighbors = atom.getNeighbors(preview.mol);
-    const oxygen = neighbors.find(
-      nb => nb.name === 'O' && (preview.mol.getBond(atom.id, nb.id)?.properties.order ?? 1) >= 2
-    );
-    const nitrogen = neighbors.find(
-      nb => nb.name === 'N' && (preview.mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1
-    );
+    const oxygen = neighbors.find(nb => nb.name === 'O' && (preview.mol.getBond(atom.id, nb.id)?.properties.order ?? 1) >= 2);
+    const nitrogen = neighbors.find(nb => nb.name === 'N' && (preview.mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1);
     return !!oxygen && !!nitrogen;
   });
   assert.ok(amideCarbonyl, 'expected amide carbonyl center in preview');
-  const oxygen = amideCarbonyl
-    .getNeighbors(preview.mol)
-    .find(nb => nb.name === 'O' && (preview.mol.getBond(amideCarbonyl.id, nb.id)?.properties.order ?? 1) >= 2);
-  const nitrogen = amideCarbonyl
-    .getNeighbors(preview.mol)
-    .find(nb => nb.name === 'N' && (preview.mol.getBond(amideCarbonyl.id, nb.id)?.properties.order ?? 1) === 1);
+  const oxygen = amideCarbonyl.getNeighbors(preview.mol).find(nb => nb.name === 'O' && (preview.mol.getBond(amideCarbonyl.id, nb.id)?.properties.order ?? 1) >= 2);
+  const nitrogen = amideCarbonyl.getNeighbors(preview.mol).find(nb => nb.name === 'N' && (preview.mol.getBond(amideCarbonyl.id, nb.id)?.properties.order ?? 1) === 1);
   const angle = angleDeg(oxygen, amideCarbonyl, nitrogen);
   assert.ok(angle > 105 && angle < 135, `expected amide O=C-N angle to be trigonal, got ${angle.toFixed(1)}°`);
   assert.ok(distance(amideCarbonyl, oxygen) < 1.4, 'expected carbonyl bond to stay short');
@@ -249,12 +225,8 @@ test('reaction preview keeps lactam hydrolysis acid geometry locally trigonal', 
   const acidCenters = findProductCarbonylCenters(preview);
   assert.ok(acidCenters.length >= 1, 'expected at least one acid-like carbonyl center in lactam hydrolysis preview');
   const worstAngle = acidCenters.reduce((worst, atom) => {
-    const oDouble = atom
-      .getNeighbors(preview.mol)
-      .find(nb => nb.name === 'O' && (preview.mol.getBond(atom.id, nb.id)?.properties.order ?? 1) >= 2);
-    const oSingle = atom
-      .getNeighbors(preview.mol)
-      .find(nb => nb.name === 'O' && (preview.mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1);
+    const oDouble = atom.getNeighbors(preview.mol).find(nb => nb.name === 'O' && (preview.mol.getBond(atom.id, nb.id)?.properties.order ?? 1) >= 2);
+    const oSingle = atom.getNeighbors(preview.mol).find(nb => nb.name === 'O' && (preview.mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1);
     const angle = angleDeg(oDouble, atom, oSingle);
     return Math.min(worst, angle);
   }, Infinity);
@@ -277,22 +249,10 @@ test('reaction preview keeps amide hydrolysis acid center compact on the preserv
   const scaffoldNeighbor = preview.mol.atoms.get('__rxn_product__0:C7');
   const oDouble = preview.mol.atoms.get('__rxn_product__0:O9');
   const oSingle = preview.mol.atoms.get('__rxn_product__0:0');
-  assert.ok(
-    acidCenter && scaffoldNeighbor && oDouble && oSingle,
-    'expected mapped scaffold acid center in amide hydrolysis preview'
-  );
-  assert.ok(
-    distance(acidCenter, scaffoldNeighbor) < 1.7,
-    `expected scaffold-to-acid bond to stay compact, got ${distance(acidCenter, scaffoldNeighbor).toFixed(3)} Å`
-  );
-  assert.ok(
-    distance(acidCenter, oDouble) < 1.4,
-    `expected carbonyl bond to stay short, got ${distance(acidCenter, oDouble).toFixed(3)} Å`
-  );
-  assert.ok(
-    distance(acidCenter, oSingle) < 1.7,
-    `expected acid single bond to stay compact, got ${distance(acidCenter, oSingle).toFixed(3)} Å`
-  );
+  assert.ok(acidCenter && scaffoldNeighbor && oDouble && oSingle, 'expected mapped scaffold acid center in amide hydrolysis preview');
+  assert.ok(distance(acidCenter, scaffoldNeighbor) < 1.7, `expected scaffold-to-acid bond to stay compact, got ${distance(acidCenter, scaffoldNeighbor).toFixed(3)} Å`);
+  assert.ok(distance(acidCenter, oDouble) < 1.4, `expected carbonyl bond to stay short, got ${distance(acidCenter, oDouble).toFixed(3)} Å`);
+  assert.ok(distance(acidCenter, oSingle) < 1.7, `expected acid single bond to stay compact, got ${distance(acidCenter, oSingle).toFixed(3)} Å`);
 });
 
 test('reaction preview keeps retained chain geometry sane for alcohol cleavage and dehalogenation', () => {
@@ -301,68 +261,34 @@ test('reaction preview keeps retained chain geometry sane for alcohol cleavage a
     const preview = preparePreview(smiles, smirks);
     const component = largestProductComponent(preview);
     const stats = heavyGeometryStats(preview, component);
-    assert.ok(
-      stats.minBond > 1.05,
-      `expected no compressed heavy-atom bonds, got ${stats.minBond.toFixed(3)} Å for ${smirks}`
-    );
-    assert.ok(
-      stats.maxBond < 1.85,
-      `expected no stretched heavy-atom bonds, got ${stats.maxBond.toFixed(3)} Å for ${smirks}`
-    );
-    assert.ok(
-      stats.minNonbonded > 0.8,
-      `expected no heavy-atom overlap, got ${stats.minNonbonded.toFixed(3)} Å for ${smirks}`
-    );
+    assert.ok(stats.minBond > 1.05, `expected no compressed heavy-atom bonds, got ${stats.minBond.toFixed(3)} Å for ${smirks}`);
+    assert.ok(stats.maxBond < 1.85, `expected no stretched heavy-atom bonds, got ${stats.maxBond.toFixed(3)} Å for ${smirks}`);
+    assert.ok(stats.minNonbonded > 0.8, `expected no heavy-atom overlap, got ${stats.minNonbonded.toFixed(3)} Å for ${smirks}`);
   }
 });
 
 test('reaction preview preserves local zig-zag geometry for branched-chain dehalogenation', () => {
   const preview = preparePreview('CC(CC(Cl)CCO)C', reactionTemplates.dehalogenation.smirks);
-  const c3 = [...preview.mol.atoms.values()].find(
-    atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C3')
-  );
-  const c4 = [...preview.mol.atoms.values()].find(
-    atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C4')
-  );
-  const c6 = [...preview.mol.atoms.values()].find(
-    atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C6')
-  );
-  const c2 = [...preview.mol.atoms.values()].find(
-    atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C2')
-  );
-  const c7 = [...preview.mol.atoms.values()].find(
-    atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C7')
-  );
+  const c3 = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C3'));
+  const c4 = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C4'));
+  const c6 = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C6'));
+  const c2 = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C2'));
+  const c7 = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C7'));
   assert.ok(c2 && c3 && c4 && c6 && c7, 'expected mapped chain atoms in dehalogenation preview');
   const leftAngle = angleDeg(c2, c3, c4);
   const rightAngle = angleDeg(c4, c6, c7);
-  assert.ok(
-    leftAngle > 100 && leftAngle < 140,
-    `expected left branch angle to stay zig-zag-like, got ${leftAngle.toFixed(1)}°`
-  );
-  assert.ok(
-    rightAngle > 100 && rightAngle < 140,
-    `expected right branch angle to stay zig-zag-like, got ${rightAngle.toFixed(1)}°`
-  );
+  assert.ok(leftAngle > 100 && leftAngle < 140, `expected left branch angle to stay zig-zag-like, got ${leftAngle.toFixed(1)}°`);
+  assert.ok(rightAngle > 100 && rightAngle < 140, `expected right branch angle to stay zig-zag-like, got ${rightAngle.toFixed(1)}°`);
 });
 
 test('reaction preview preserves local zig-zag geometry for branched-chain alcohol cleavage', () => {
   const preview = preparePreview('CC(CC(Cl)CCO)C', reactionTemplates.alcoholCleavage.smirks);
-  const c4 = [...preview.mol.atoms.values()].find(
-    atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C4')
-  );
-  const c6 = [...preview.mol.atoms.values()].find(
-    atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C6')
-  );
-  const c7 = [...preview.mol.atoms.values()].find(
-    atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C7')
-  );
+  const c4 = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C4'));
+  const c6 = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C6'));
+  const c7 = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C7'));
   assert.ok(c4 && c6 && c7, 'expected retained chain atoms in alcohol cleavage preview');
   const angle = angleDeg(c4, c6, c7);
-  assert.ok(
-    angle > 100 && angle < 140,
-    `expected retained cleavage-site chain angle to stay zig-zag-like, got ${angle.toFixed(1)}°`
-  );
+  assert.ok(angle > 100 && angle < 140, `expected retained cleavage-site chain angle to stay zig-zag-like, got ${angle.toFixed(1)}°`);
 });
 
 test('reaction preview preserves product wedge or dash display for an untouched stereocenter', () => {
@@ -374,9 +300,7 @@ test('reaction preview preserves product wedge or dash display for an untouched 
   const sourceWedges = pickStereoWedges(sourceMol);
   const sourceCenter = [...sourceMol.atoms.values()].find(atom => atom.getChirality());
   assert.ok(sourceCenter, 'expected one chiral reactant center');
-  const sourceStereo = [...sourceWedges].find(([bondId]) =>
-    sourceMol.bonds.get(bondId)?.atoms.includes(sourceCenter.id)
-  );
+  const sourceStereo = [...sourceWedges].find(([bondId]) => sourceMol.bonds.get(bondId)?.atoms.includes(sourceCenter.id));
   assert.ok(sourceStereo, 'expected reactant wedge/dash assignment');
   const sourceBond = sourceMol.bonds.get(sourceStereo[0]);
   const sourceOtherId = sourceBond.atoms[0] === sourceCenter.id ? sourceBond.atoms[1] : sourceBond.atoms[0];
@@ -395,11 +319,7 @@ test('reaction preview preserves product wedge or dash display for an untouched 
   const productWedges = pickStereoWedges(preview.mol);
   const productBond = preview.mol.getBond(productCenterId, productOtherId);
   assert.ok(productBond, 'expected preserved product bond at untouched stereocenter');
-  assert.equal(
-    productWedges.get(productBond.id),
-    sourceStereo[1],
-    'expected product wedge/dash display to match the reactant'
-  );
+  assert.equal(productWedges.get(productBond.id), sourceStereo[1], 'expected product wedge/dash display to match the reactant');
 });
 
 test('reaction preview preserves sugar stereobond display across alcohol cleavage sites', () => {
@@ -457,11 +377,7 @@ test('reaction preview preserves sugar stereobond display across alcohol cleavag
       }
       const current = productStereoByCenter.get(productCenterId);
       assert.ok(current, `expected stereobond assignment for preserved sugar center ${productCenterId}`);
-      assert.equal(
-        current.type,
-        sourceStereo.type,
-        `expected sugar cleavage to preserve wedge/dash display for preserved stereocenter ${productCenterId}`
-      );
+      assert.equal(current.type, sourceStereo.type, `expected sugar cleavage to preserve wedge/dash display for preserved stereocenter ${productCenterId}`);
     }
   }
 });
@@ -517,11 +433,7 @@ test('reaction preview preserves reactant-side sugar stereobond display across a
     for (const [centerId, sourceStereo] of sourceStereoByCenter) {
       const current = reactantStereoByCenter.get(centerId);
       assert.ok(current, `expected reactant-side stereobond assignment for sugar center ${centerId}`);
-      assert.equal(
-        current.type,
-        sourceStereo.type,
-        `expected reactant-side sugar cleavage preview to preserve wedge/dash display for ${centerId}`
-      );
+      assert.equal(current.type, sourceStereo.type, `expected reactant-side sugar cleavage preview to preserve wedge/dash display for ${centerId}`);
     }
   }
 });
@@ -531,9 +443,7 @@ test('reaction preview preserves the exact reactant stereobond set across sugar 
   const smirks = reactionTemplates.alcoholCleavage.smirks;
   const sourceMol = parseSMILES(smiles);
   generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 1.5 });
-  const sourceStereoBonds = [...pickStereoWedges(sourceMol)]
-    .map(([bondId, type]) => ({ bondId, type }))
-    .sort((a, b) => a.bondId.localeCompare(b.bondId));
+  const sourceStereoBonds = [...pickStereoWedges(sourceMol)].map(([bondId, type]) => ({ bondId, type })).sort((a, b) => a.bondId.localeCompare(b.bondId));
 
   const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
   assert.equal(mappings.length, 5, 'expected five alcohol-cleavage sites in the sugar example');
@@ -557,11 +467,7 @@ test('reaction preview preserves the exact reactant stereobond set across sugar 
       .map(([bondId, type]) => ({ bondId, type }))
       .sort((a, b) => a.bondId.localeCompare(b.bondId));
 
-    assert.deepEqual(
-      reactantStereoBonds,
-      sourceStereoBonds,
-      'expected the reactant-side sugar preview to preserve the exact stereobond set'
-    );
+    assert.deepEqual(reactantStereoBonds, sourceStereoBonds, 'expected the reactant-side sugar preview to preserve the exact stereobond set');
   }
 });
 
@@ -584,11 +490,7 @@ test('reaction preview keeps stereo render centers pinned to the original untouc
     for (const [productCenterId, preserved] of preview.preservedProductStereoByCenter) {
       const bond = preview.mol.getBond(productCenterId, preserved.otherProductId);
       assert.ok(bond, `expected preserved product stereo bond for ${productCenterId}`);
-      assert.equal(
-        stereoBondCenterIdForRender(preview.mol, bond.id),
-        productCenterId,
-        `expected render-time stereo center to stay pinned to ${productCenterId}`
-      );
+      assert.equal(stereoBondCenterIdForRender(preview.mol, bond.id), productCenterId, `expected render-time stereo center to stay pinned to ${productCenterId}`);
     }
   }
 });
@@ -632,9 +534,7 @@ test('reaction preview preserves sugar stereobond display even when built from a
     atom.x = parent.x + Math.cos(angle) * hLen;
     atom.y = parent.y + Math.sin(angle) * hLen;
   }
-  const sourceStereo = [...pickStereoWedges(sourceDisplayMol)]
-    .map(([bondId, type]) => ({ bondId, type }))
-    .sort((a, b) => a.bondId.localeCompare(b.bondId));
+  const sourceStereo = [...pickStereoWedges(sourceDisplayMol)].map(([bondId, type]) => ({ bondId, type })).sort((a, b) => a.bondId.localeCompare(b.bondId));
   const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
 
   for (const mapping of mappings) {
@@ -684,11 +584,7 @@ test('reaction preview preserves sugar stereobond display even when built from a
       })
       .map(([bondId, type]) => ({ bondId, type }))
       .sort((a, b) => a.bondId.localeCompare(b.bondId));
-    assert.deepEqual(
-      reactantStereo,
-      sourceStereo,
-      'expected reactant-side stereobond display to stay unchanged from an unprepared source input'
-    );
+    assert.deepEqual(reactantStereo, sourceStereo, 'expected reactant-side stereobond display to stay unchanged from an unprepared source input');
 
     const productStereo = [...pickStereoWedges(preview.mol)]
       .filter(([bondId]) => {
@@ -704,9 +600,7 @@ test('reaction preview preserves sugar stereobond display even when built from a
       if (!sourceBond) {
         continue;
       }
-      const productAtoms = sourceBond.atoms.map(
-        atomId => preservedMapped.find(([reactantId]) => reactantId === atomId)?.[1] ?? null
-      );
+      const productAtoms = sourceBond.atoms.map(atomId => preservedMapped.find(([reactantId]) => reactantId === atomId)?.[1] ?? null);
       if (productAtoms.some(atomId => !atomId || preview.editedProductAtomIds.has(atomId))) {
         continue;
       }
@@ -772,9 +666,7 @@ test('reaction preview preserves the currently displayed sugar stereobond choice
     atom.y = parent.y + Math.sin(angle) * hLen;
   }
 
-  const sourceStereo = [...pickStereoWedges(sourceMol)]
-    .map(([bondId, type]) => ({ bondId, type }))
-    .sort((a, b) => a.bondId.localeCompare(b.bondId));
+  const sourceStereo = [...pickStereoWedges(sourceMol)].map(([bondId, type]) => ({ bondId, type })).sort((a, b) => a.bondId.localeCompare(b.bondId));
   const mappings = [...findSMARTSRaw(parseSMILES(smiles), smirks.split('>>')[0])];
 
   for (const mapping of mappings) {
@@ -824,11 +716,7 @@ test('reaction preview preserves the currently displayed sugar stereobond choice
       })
       .map(([bondId, type]) => ({ bondId, type }))
       .sort((a, b) => a.bondId.localeCompare(b.bondId));
-    assert.deepEqual(
-      reactantStereo,
-      sourceStereo,
-      'expected reactant-side preview to preserve the currently displayed stereobond choices after source rotation'
-    );
+    assert.deepEqual(reactantStereo, sourceStereo, 'expected reactant-side preview to preserve the currently displayed stereobond choices after source rotation');
   }
 });
 
@@ -857,14 +745,8 @@ test('reaction preview preserves the retained sugar scaffold for ether cleavage'
     centerReaction2dPairCoords(preview.mol, preview, 1.5);
     const stats = heavyGeometryStats(preview, component);
     const internalDrift = maxPairDistanceDeltaFromSnapshot(preview.mol, component, isolatedSnapshot);
-    assert.ok(
-      stats.maxBond < 1.95,
-      `expected ether-cleavage sugar preview to avoid stretched heavy bonds, got ${stats.maxBond.toFixed(3)} Å`
-    );
-    assert.ok(
-      stats.minNonbonded > 0.8,
-      `expected ether-cleavage sugar preview to avoid heavy-atom overlap, got ${stats.minNonbonded.toFixed(3)} Å`
-    );
+    assert.ok(stats.maxBond < 1.95, `expected ether-cleavage sugar preview to avoid stretched heavy bonds, got ${stats.maxBond.toFixed(3)} Å`);
+    assert.ok(stats.minNonbonded > 0.8, `expected ether-cleavage sugar preview to avoid heavy-atom overlap, got ${stats.minNonbonded.toFixed(3)} Å`);
     assert.ok(
       internalDrift < 1e-6,
       `expected ether-cleavage sugar product geometry to survive reaction alignment unchanged, got max pair-distance drift ${internalDrift.toExponential(3)} Å`
@@ -876,12 +758,8 @@ test('reaction preview keeps nitrile hydrolysis to acid locally carboxyl-like fo
   const preview = preparePreview('C#N', reactionTemplates.nitrileHydrolysisToAcid.smirks);
   const acidCenter = findProductCarbonylCenters(preview)[0];
   assert.ok(acidCenter, 'expected acid carbonyl center in preview');
-  const oDouble = acidCenter
-    .getNeighbors(preview.mol)
-    .find(nb => nb.name === 'O' && (preview.mol.getBond(acidCenter.id, nb.id)?.properties.order ?? 1) >= 2);
-  const oSingle = acidCenter
-    .getNeighbors(preview.mol)
-    .find(nb => nb.name === 'O' && (preview.mol.getBond(acidCenter.id, nb.id)?.properties.order ?? 1) === 1);
+  const oDouble = acidCenter.getNeighbors(preview.mol).find(nb => nb.name === 'O' && (preview.mol.getBond(acidCenter.id, nb.id)?.properties.order ?? 1) >= 2);
+  const oSingle = acidCenter.getNeighbors(preview.mol).find(nb => nb.name === 'O' && (preview.mol.getBond(acidCenter.id, nb.id)?.properties.order ?? 1) === 1);
   const angle = angleDeg(oDouble, acidCenter, oSingle);
   assert.ok(angle > 100 && angle < 140, `expected isolated acid O-C-O angle to stay open, got ${angle.toFixed(1)}°`);
   assert.ok(distance(acidCenter, oDouble) < 1.4, 'expected isolated carbonyl bond to stay short');
@@ -891,14 +769,8 @@ test('reaction preview keeps nitrile hydrolysis to acid locally carboxyl-like fo
 test('reaction preview keeps nitrile-to-imine product scaffold compact', () => {
   const preview = preparePreview('N#CC(C#N)=C(C#N)C#N', reactionTemplates.nitrileHydrogenationToImine.smirks);
   const stats = heavyGeometryStats(preview, largestProductComponent(preview));
-  assert.ok(
-    stats.maxBond < 1.85,
-    `expected no stretched heavy-atom bonds in nitrile-to-imine preview, got ${stats.maxBond.toFixed(3)} Å`
-  );
-  assert.ok(
-    stats.minNonbonded > 0.8,
-    `expected no heavy-atom overlap in nitrile-to-imine preview, got ${stats.minNonbonded.toFixed(3)} Å`
-  );
+  assert.ok(stats.maxBond < 1.85, `expected no stretched heavy-atom bonds in nitrile-to-imine preview, got ${stats.maxBond.toFixed(3)} Å`);
+  assert.ok(stats.minNonbonded > 0.8, `expected no heavy-atom overlap in nitrile-to-imine preview, got ${stats.minNonbonded.toFixed(3)} Å`);
 });
 
 test('reaction preview keeps all nitrile-to-imine mappings compact', () => {
@@ -920,14 +792,8 @@ test('reaction preview keeps all nitrile-to-imine mappings compact', () => {
     centerReaction2dPairCoords(preview.mol, preview, 1.5);
 
     const stats = heavyGeometryStats(preview, largestProductComponent(preview));
-    assert.ok(
-      stats.maxBond < 1.85,
-      `expected no stretched heavy-atom bonds in nitrile-to-imine mapping ${index}, got ${stats.maxBond.toFixed(3)} Å`
-    );
-    assert.ok(
-      stats.minNonbonded > 0.8,
-      `expected no heavy-atom overlap in nitrile-to-imine mapping ${index}, got ${stats.minNonbonded.toFixed(3)} Å`
-    );
+    assert.ok(stats.maxBond < 1.85, `expected no stretched heavy-atom bonds in nitrile-to-imine mapping ${index}, got ${stats.maxBond.toFixed(3)} Å`);
+    assert.ok(stats.minNonbonded > 0.8, `expected no heavy-atom overlap in nitrile-to-imine mapping ${index}, got ${stats.minNonbonded.toFixed(3)} Å`);
   }
 });
 
@@ -935,9 +801,7 @@ test('reaction preview preserves exact stereobond choices on both sides for unto
   const smiles = 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O';
   const sourceMol = parseSMILES(smiles);
   generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 1.5 });
-  const sourceStereoBonds = [...pickStereoWedges(sourceMol)]
-    .map(([bondId, type]) => ({ bondId, type }))
-    .sort((a, b) => a.bondId.localeCompare(b.bondId));
+  const sourceStereoBonds = [...pickStereoWedges(sourceMol)].map(([bondId, type]) => ({ bondId, type })).sort((a, b) => a.bondId.localeCompare(b.bondId));
   assert.deepEqual(
     sourceStereoBonds,
     [
@@ -957,18 +821,10 @@ test('reaction preview preserves exact stereobond choices on both sides for unto
   centerReaction2dPairCoords(preview.mol, preview, 1.5);
 
   const reactantStereoBonds = [...pickStereoWedges(preview.mol)]
-    .filter(
-      ([bondId]) =>
-        preview.reactantAtomIds.has(preview.mol.bonds.get(bondId)?.atoms[0]) ||
-        preview.reactantAtomIds.has(preview.mol.bonds.get(bondId)?.atoms[1])
-    )
+    .filter(([bondId]) => preview.reactantAtomIds.has(preview.mol.bonds.get(bondId)?.atoms[0]) || preview.reactantAtomIds.has(preview.mol.bonds.get(bondId)?.atoms[1]))
     .map(([bondId, type]) => ({ bondId, type }))
     .sort((a, b) => a.bondId.localeCompare(b.bondId));
-  assert.deepEqual(
-    reactantStereoBonds,
-    sourceStereoBonds,
-    'expected reactant-side stereobond choices to stay unchanged in reaction preview'
-  );
+  assert.deepEqual(reactantStereoBonds, sourceStereoBonds, 'expected reactant-side stereobond choices to stay unchanged in reaction preview');
 
   const productStereoBonds = [...pickStereoWedges(preview.mol)]
     .filter(([bondId]) => bondId.startsWith('__rxn_product__0:'))
@@ -988,14 +844,8 @@ test('reaction preview preserves exact stereobond choices on both sides for unto
 test('reaction preview keeps lactam hydrolysis ring-opening product compact for bridged imide', () => {
   const preview = preparePreview('C1=CC=C(C=C1)C2(C3CC3)C(=O)NC(=O)N2', reactionTemplates.lactamHydrolysis.smirks);
   const stats = heavyGeometryStats(preview, largestProductComponent(preview));
-  assert.ok(
-    stats.maxBond < 1.85,
-    `expected no stretched heavy-atom bonds in bridged lactam hydrolysis preview, got ${stats.maxBond.toFixed(3)} Å`
-  );
-  assert.ok(
-    stats.minNonbonded > 0.8,
-    `expected no heavy-atom overlap in bridged lactam hydrolysis preview, got ${stats.minNonbonded.toFixed(3)} Å`
-  );
+  assert.ok(stats.maxBond < 1.85, `expected no stretched heavy-atom bonds in bridged lactam hydrolysis preview, got ${stats.maxBond.toFixed(3)} Å`);
+  assert.ok(stats.minNonbonded > 0.8, `expected no heavy-atom overlap in bridged lactam hydrolysis preview, got ${stats.minNonbonded.toFixed(3)} Å`);
 });
 
 test('reaction preview keeps lactam hydrolysis ring-opening product compact for tert-butyl imide mapping 2', () => {
@@ -1009,45 +859,28 @@ test('reaction preview keeps lactam hydrolysis ring-opening product compact for 
   spreadReaction2dProductComponents(preview.mol, preview, 1.5);
   centerReaction2dPairCoords(preview.mol, preview, 1.5);
   const stats = heavyGeometryStats(preview, largestProductComponent(preview));
-  assert.ok(
-    stats.maxBond < 1.85,
-    `expected no stretched heavy-atom bonds in tert-butyl lactam hydrolysis preview, got ${stats.maxBond.toFixed(3)} Å`
-  );
-  assert.ok(
-    stats.minNonbonded > 0.8,
-    `expected no heavy-atom overlap in tert-butyl lactam hydrolysis preview, got ${stats.minNonbonded.toFixed(3)} Å`
-  );
+  assert.ok(stats.maxBond < 1.85, `expected no stretched heavy-atom bonds in tert-butyl lactam hydrolysis preview, got ${stats.maxBond.toFixed(3)} Å`);
+  assert.ok(stats.minNonbonded > 0.8, `expected no heavy-atom overlap in tert-butyl lactam hydrolysis preview, got ${stats.minNonbonded.toFixed(3)} Å`);
 });
 
 test('reaction preview keeps remaining alkene substituent bent after dehalogenation', () => {
   const preview = preparePreview('F/C=C/F', reactionTemplates.dehalogenation.smirks);
-  const fluorine = [...preview.mol.atoms.values()].find(
-    atom => preview.productAtomIds.has(atom.id) && atom.name === 'F'
-  );
+  const fluorine = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'F');
   assert.ok(fluorine, 'expected remaining fluorine in dehalogenation preview');
   const alkeneCarbon = fluorine.getNeighbors(preview.mol).find(nb => nb.name === 'C');
   assert.ok(alkeneCarbon, 'expected fluorine to remain attached to alkene carbon');
-  const otherAlkeneCarbon = alkeneCarbon
-    .getNeighbors(preview.mol)
-    .find(nb => nb.id !== fluorine.id && (preview.mol.getBond(alkeneCarbon.id, nb.id)?.properties.order ?? 1) >= 2);
+  const otherAlkeneCarbon = alkeneCarbon.getNeighbors(preview.mol).find(nb => nb.id !== fluorine.id && (preview.mol.getBond(alkeneCarbon.id, nb.id)?.properties.order ?? 1) >= 2);
   assert.ok(otherAlkeneCarbon, 'expected alkene carbon partner in dehalogenation preview');
   const angle = angleDeg(fluorine, alkeneCarbon, otherAlkeneCarbon);
-  assert.ok(
-    angle > 105 && angle < 135,
-    `expected remaining vinylic substituent bend to stay near trigonal, got ${angle.toFixed(1)}°`
-  );
+  assert.ok(angle > 105 && angle < 135, `expected remaining vinylic substituent bend to stay near trigonal, got ${angle.toFixed(1)}°`);
 });
 
 test('reaction preview keeps acid-chloride hydrolysis locally carboxyl-like', () => {
   const preview = preparePreview('ClC(CCC)=O', reactionTemplates.halideHydrolysis.smirks);
   const acidCenter = findProductCarbonylCenters(preview)[0];
   assert.ok(acidCenter, 'expected carboxylic-acid center after acid-chloride hydrolysis');
-  const oDouble = acidCenter
-    .getNeighbors(preview.mol)
-    .find(nb => nb.name === 'O' && (preview.mol.getBond(acidCenter.id, nb.id)?.properties.order ?? 1) >= 2);
-  const oSingle = acidCenter
-    .getNeighbors(preview.mol)
-    .find(nb => nb.name === 'O' && (preview.mol.getBond(acidCenter.id, nb.id)?.properties.order ?? 1) === 1);
+  const oDouble = acidCenter.getNeighbors(preview.mol).find(nb => nb.name === 'O' && (preview.mol.getBond(acidCenter.id, nb.id)?.properties.order ?? 1) >= 2);
+  const oSingle = acidCenter.getNeighbors(preview.mol).find(nb => nb.name === 'O' && (preview.mol.getBond(acidCenter.id, nb.id)?.properties.order ?? 1) === 1);
   const carbonNeighbor = acidCenter.getNeighbors(preview.mol).find(nb => nb.name === 'C');
   assert.ok(oDouble && oSingle && carbonNeighbor, 'expected O=C(O)-C geometry');
   assert.ok(
@@ -1063,10 +896,7 @@ test('reaction preview keeps acid-chloride hydrolysis locally carboxyl-like', ()
 test('reaction preview keeps acid-chloride dehalogenation locally aldehyde-like', () => {
   const preview = preparePreview('ClC(CCC)=O', reactionTemplates.dehalogenation.smirks);
   const aldehydeCenter = [...preview.mol.atoms.values()].find(
-    atom =>
-      preview.productAtomIds.has(atom.id) &&
-      atom.name === 'C' &&
-      atom.getNeighbors(preview.mol).some(nb => nb.name === 'O')
+    atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.getNeighbors(preview.mol).some(nb => nb.name === 'O')
   );
   assert.ok(aldehydeCenter, 'expected aldehyde carbonyl center after acid-chloride dehalogenation');
   const oxygen = aldehydeCenter.getNeighbors(preview.mol).find(nb => nb.name === 'O');
@@ -1077,15 +907,9 @@ test('reaction preview keeps acid-chloride dehalogenation locally aldehyde-like'
 });
 
 test('reaction preview preserves fused-ring scaffold geometry for steroid alkene hydrogenation', () => {
-  const preview = preparePreview(
-    'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1',
-    reactionTemplates.alkeneHydrogenation.smirks
-  );
+  const preview = preparePreview('CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1', reactionTemplates.alkeneHydrogenation.smirks);
   const error = maxPairDistanceErrorForMappedUnedited(preview);
-  assert.ok(
-    error < 0.05,
-    `expected unchanged fused-ring scaffold distances to stay locked after alkene hydrogenation, got ${error.toFixed(3)} Å`
-  );
+  assert.ok(error < 0.05, `expected unchanged fused-ring scaffold distances to stay locked after alkene hydrogenation, got ${error.toFixed(3)} Å`);
 });
 
 test('reaction preview keeps long polyunsaturated-chain alkene hydrogenation locally bent across all mappings', () => {
@@ -1106,32 +930,22 @@ test('reaction preview keeps long polyunsaturated-chain alkene hydrogenation loc
     spreadReaction2dProductComponents(preview.mol, preview, 1.5);
     centerReaction2dPairCoords(preview.mol, preview, 1.5);
 
-    const editedCarbons = [...preview.editedProductAtomIds]
-      .map(id => preview.mol.atoms.get(id))
-      .filter(atom => atom?.name === 'C');
+    const editedCarbons = [...preview.editedProductAtomIds].map(id => preview.mol.atoms.get(id)).filter(atom => atom?.name === 'C');
     assert.equal(editedCarbons.length, 2, `expected two edited carbons for mapping ${index}`);
 
     for (const atom of editedCarbons) {
-      const carbonNeighbors = atom
-        .getNeighbors(preview.mol)
-        .filter(nb => nb.name !== 'H' && preview.productAtomIds.has(nb.id));
+      const carbonNeighbors = atom.getNeighbors(preview.mol).filter(nb => nb.name !== 'H' && preview.productAtomIds.has(nb.id));
       if (carbonNeighbors.length !== 2) {
         continue;
       }
       const localAngle = angleDeg(carbonNeighbors[0], atom, carbonNeighbors[1]);
-      assert.ok(
-        localAngle > 100 && localAngle < 140,
-        `expected bent local geometry for mapping ${index} at ${atom.id}, got ${localAngle.toFixed(1)}°`
-      );
+      assert.ok(localAngle > 100 && localAngle < 140, `expected bent local geometry for mapping ${index} at ${atom.id}, got ${localAngle.toFixed(1)}°`);
     }
   }
 });
 
 test('reaction preview preserves long polyunsaturated-chain scaffold shape for alkene hydrogenation across EPA and DHA mappings', () => {
-  for (const smiles of [
-    'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O',
-    'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O'
-  ]) {
+  for (const smiles of ['CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O', 'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O']) {
     const sourceMol = parseSMILES(smiles);
     const reactantSmarts = reactionTemplates.alkeneHydrogenation.smirks.split('>>')[0];
     const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
@@ -1149,10 +963,7 @@ test('reaction preview preserves long polyunsaturated-chain scaffold shape for a
       centerReaction2dPairCoords(preview.mol, preview, 1.5);
 
       const maxError = maxPairDistanceErrorForMappedUnedited(preview);
-      assert.ok(
-        maxError < 0.05,
-        `expected preserved EPA/DHA scaffold distances to stay close for mapping ${index} of ${smiles}, got ${maxError.toFixed(3)} Å`
-      );
+      assert.ok(maxError < 0.05, `expected preserved EPA/DHA scaffold distances to stay close for mapping ${index} of ${smiles}, got ${maxError.toFixed(3)} Å`);
 
       const productBounds = atomIdBounds(preview, largestProductComponent(preview));
       assert.ok(
@@ -1165,10 +976,7 @@ test('reaction preview preserves long polyunsaturated-chain scaffold shape for a
         geometry.minNonbonded >= 1.2,
         `expected no tight self-overlap for mapping ${index} of ${smiles}, got nearest non-bonded distance ${geometry.minNonbonded.toFixed(3)} Å`
       );
-      assert.ok(
-        geometry.maxBond <= 1.85,
-        `expected no stretched product bonds for mapping ${index} of ${smiles}, got ${geometry.maxBond.toFixed(3)} Å`
-      );
+      assert.ok(geometry.maxBond <= 1.85, `expected no stretched product bonds for mapping ${index} of ${smiles}, got ${geometry.maxBond.toFixed(3)} Å`);
     }
   }
 });
@@ -1190,9 +998,7 @@ test('reaction preview keeps alcohol cleavage local chain angle for sec-butanol'
 
 test('reaction preview keeps terminal carbon-halogen bond bent after alcohol halogenation', () => {
   const preview = preparePreview('C(C(C(C(C(C(C(C(C))))))))O', reactionTemplates.alcoholHalogenation.smirks);
-  const chlorine = [...preview.mol.atoms.values()].find(
-    atom => preview.productAtomIds.has(atom.id) && atom.name === 'Cl'
-  );
+  const chlorine = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'Cl');
   assert.ok(chlorine, 'expected chlorine in alcohol halogenation preview');
   const terminalCarbon = chlorine.getNeighbors(preview.mol).find(nb => nb.name === 'C');
   assert.ok(terminalCarbon, 'expected chlorine to attach to terminal carbon');
@@ -1204,9 +1010,7 @@ test('reaction preview keeps terminal carbon-halogen bond bent after alcohol hal
 
 test('reaction preview keeps alkyne full reduction locally bent for 2-butyne', () => {
   const preview = preparePreview('CC#CC', reactionTemplates.alkyneFullReduction.smirks);
-  const productCarbons = [...preview.mol.atoms.values()]
-    .filter(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C')
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const productCarbons = [...preview.mol.atoms.values()].filter(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C').sort((a, b) => a.id.localeCompare(b.id));
   assert.equal(productCarbons.length, 4, 'expected four carbons in fully reduced 2-butyne product');
   const angle1 = angleDeg(productCarbons[0], productCarbons[1], productCarbons[2]);
   const angle2 = angleDeg(productCarbons[1], productCarbons[2], productCarbons[3]);
@@ -1216,9 +1020,7 @@ test('reaction preview keeps alkyne full reduction locally bent for 2-butyne', (
 
 test('reaction preview keeps alkyne partial reduction locally bent for 2-butyne', () => {
   const preview = preparePreview('CC#CC', reactionTemplates.alkynePartialReduction.smirks);
-  const productCarbons = [...preview.mol.atoms.values()]
-    .filter(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C')
-    .sort((a, b) => a.id.localeCompare(b.id));
+  const productCarbons = [...preview.mol.atoms.values()].filter(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C').sort((a, b) => a.id.localeCompare(b.id));
   assert.equal(productCarbons.length, 4, 'expected four carbons in partially reduced 2-butyne product');
   const angle1 = angleDeg(productCarbons[0], productCarbons[1], productCarbons[2]);
   const angle2 = angleDeg(productCarbons[1], productCarbons[2], productCarbons[3]);

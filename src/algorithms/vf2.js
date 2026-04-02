@@ -90,9 +90,7 @@ function _queryOrder(idx) {
     const cur = queue.shift();
     ordered.push(cur);
     // Sort neighbours by degree descending before enqueuing.
-    const nbs = [...idx.neighborSet.get(cur)]
-      .filter(nb => !visited.has(nb))
-      .sort((a, b) => idx.degreeMap.get(b) - idx.degreeMap.get(a));
+    const nbs = [...idx.neighborSet.get(cur)].filter(nb => !visited.has(nb)).sort((a, b) => idx.degreeMap.get(b) - idx.degreeMap.get(a));
     for (const nb of nbs) {
       visited.add(nb);
       queue.push(nb);
@@ -205,8 +203,7 @@ function _candidates(state, depth) {
   const mapped = state.targetToQuery;
   const qHasMappedNeighbor = [...state.queryIdx.neighborSet.get(qId)].some(qNb => state.queryToTarget.has(qNb));
 
-  const pool =
-    qHasMappedNeighbor && state.targetFrontier.size > 0 ? state.targetFrontier : state.targetIdx.atoms.keys();
+  const pool = qHasMappedNeighbor && state.targetFrontier.size > 0 ? state.targetFrontier : state.targetIdx.atoms.keys();
 
   const result = [];
   for (const tId of pool) {
@@ -319,12 +316,7 @@ function* _vf2(state, depth) {
  * @yields {Map<string, string>}
  */
 export function* findSubgraphMappings(target, query, options = {}) {
-  const {
-    atomMatch = defaultAtomMatch,
-    bondMatch = defaultBondMatch,
-    limit = Infinity,
-    skipElementFilter = false
-  } = options;
+  const { atomMatch = defaultAtomMatch, bondMatch = defaultBondMatch, limit = Infinity, skipElementFilter = false } = options;
 
   // Trivial case: empty query matches everything once.
   if (query.atoms.size === 0) {

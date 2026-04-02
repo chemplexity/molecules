@@ -16,10 +16,7 @@ describe('parseSMIRKS', () => {
   });
 
   it('rejects disconnected product fragments without a shared mapped atom', () => {
-    assert.throws(
-      () => parseSMIRKS('[C:1]>>[C:1].Cl'),
-      /does not support disconnected product fragments without a shared mapped atom/
-    );
+    assert.throws(() => parseSMIRKS('[C:1]>>[C:1].Cl'), /does not support disconnected product fragments without a shared mapped atom/);
   });
 
   it('allows disconnected product fragments when each component retains a shared mapped atom', () => {
@@ -50,10 +47,7 @@ describe('parseSMIRKS', () => {
   });
 
   it('rejects duplicate product chirality primitives', () => {
-    assert.throws(
-      () => parseSMIRKS('[F:1][C:2]([Cl:3])[Br:4]>>[F:1][C@H@@:2]([Cl:3])[Br:4]'),
-      /duplicate chirality primitive in product atom/
-    );
+    assert.throws(() => parseSMIRKS('[F:1][C:2]([Cl:3])[Br:4]>>[F:1][C@H@@:2]([Cl:3])[Br:4]'), /duplicate chirality primitive in product atom/);
   });
 
   it('rejects chiral product atoms with more than one bracket hydrogen', () => {
@@ -78,10 +72,7 @@ describe('parseSMIRKS', () => {
 
   it('rejects malformed disconnected product syntax', () => {
     assert.throws(() => parseSMIRKS('[C:1]>>.C'), /unexpected '\.' at pos 0/);
-    assert.throws(
-      () => parseSMIRKS('[C:1]>>[C:1].'),
-      /product template cannot end with a disconnected-component separator/
-    );
+    assert.throws(() => parseSMIRKS('[C:1]>>[C:1].'), /product template cannot end with a disconnected-component separator/);
   });
 
   it('rejects unclosed product ring closures', () => {

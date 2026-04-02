@@ -274,9 +274,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
     const hh = labelHalfH(label, FONT_SIZE);
     const dx = labelTextOffset(label, FONT_SIZE);
 
-    labelEls.push(
-      `<rect x="${(x + dx - hw).toFixed(2)}" y="${(y - hh).toFixed(2)}" width="${(hw * 2).toFixed(2)}" height="${(hh * 2).toFixed(2)}" fill="white" rx="2"/>`
-    );
+    labelEls.push(`<rect x="${(x + dx - hw).toFixed(2)}" y="${(y - hh).toFixed(2)}" width="${(hw * 2).toFixed(2)}" height="${(hh * 2).toFixed(2)}" fill="white" rx="2"/>`);
 
     let textContent = '';
     let i = 0;
@@ -322,12 +320,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
     }
   }
 
-  const svgContent = [
-    `<rect width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" fill="white"/>`,
-    ...lines,
-    ...labelEls,
-    ...chiralEls
-  ].join('\n');
+  const svgContent = [`<rect width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" fill="white"/>`, ...lines, ...labelEls, ...chiralEls].join('\n');
 
   return { svgContent, cellW, cellH };
 }
@@ -364,10 +357,7 @@ export function buildCompositeSVG(cells, cols) {
   const totalW = colX[cols - 1] + colWidths[cols - 1];
   const totalH = rowY[rows - 1] + rowHeights[rows - 1];
 
-  const parts = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}">`,
-    `<rect width="${totalW}" height="${totalH}" fill="white"/>`
-  ];
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}">`, `<rect width="${totalW}" height="${totalH}" fill="white"/>`];
 
   for (let c = 1; c < cols; c++) {
     parts.push(`<line x1="${colX[c]}" y1="0" x2="${colX[c]}" y2="${totalH}" stroke="#e0e0e0" stroke-width="1"/>`);

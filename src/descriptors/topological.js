@@ -11,18 +11,14 @@ function assertSquareMatrix(M, name) {
   const n = M.length;
   for (let i = 0; i < n; i++) {
     if (!Array.isArray(M[i]) || M[i].length !== n) {
-      throw new TypeError(
-        `${name} must be a square (n×n) matrix — row ${i} has length ${M[i]?.length ?? 'undefined'}, expected ${n}.`
-      );
+      throw new TypeError(`${name} must be a square (n×n) matrix — row ${i} has length ${M[i]?.length ?? 'undefined'}, expected ${n}.`);
     }
   }
 }
 
 function assertSameSize(M1, name1, M2, name2) {
   if (M1.length !== M2.length) {
-    throw new TypeError(
-      `${name1} and ${name2} must have the same dimensions — ${name1} is ${M1.length}×${M1.length} but ${name2} is ${M2.length}×${M2.length}.`
-    );
+    throw new TypeError(`${name1} and ${name2} must have the same dimensions — ${name1} is ${M1.length}×${M1.length} but ${name2} is ${M2.length}×${M2.length}.`);
   }
 }
 
@@ -30,9 +26,7 @@ function assertDiagonalMatrix(M, name) {
   for (let i = 0; i < M.length; i++) {
     for (let j = 0; j < M.length; j++) {
       if (i !== j && M[i][j] !== 0) {
-        throw new TypeError(
-          `${name} must be a diagonal matrix — found non-zero value ${M[i][j]} at [${i}][${j}]. Pass the degree matrix from degreeMatrix().`
-        );
+        throw new TypeError(`${name} must be a diagonal matrix — found non-zero value ${M[i][j]} at [${i}][${j}]. Pass the degree matrix from degreeMatrix().`);
       }
     }
   }
@@ -42,9 +36,7 @@ function assertFiniteDistanceMatrix(D, name) {
   for (let i = 0; i < D.length; i++) {
     for (let j = 0; j < D.length; j++) {
       if (!Number.isFinite(D[i][j])) {
-        throw new TypeError(
-          `${name} must represent a connected graph with finite distances — found ${D[i][j]} at [${i}][${j}].`
-        );
+        throw new TypeError(`${name} must represent a connected graph with finite distances — found ${D[i][j]} at [${i}][${j}].`);
       }
     }
   }

@@ -1,0 +1,1549 @@
+<!DOCTYPE html><html lang="en" style="font-size:16px"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Source: algorithms/resonance.js</title><!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]--><script src="scripts/third-party/hljs.js" defer="defer"></script><script src="scripts/third-party/hljs-line-num.js" defer="defer"></script><script src="scripts/third-party/popper.js" defer="defer"></script><script src="scripts/third-party/tippy.js" defer="defer"></script><script src="scripts/third-party/tocbot.min.js"></script><script>var baseURL="/",locationPathname="";baseURL=(locationPathname=document.location.pathname).substr(0,locationPathname.lastIndexOf("/")+1)</script><link rel="stylesheet" href="styles/clean-jsdoc-theme.min.css"><svg aria-hidden="true" version="1.1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" style="display:none"><defs><symbol id="copy-icon" viewbox="0 0 488.3 488.3"><g><path d="M314.25,85.4h-227c-21.3,0-38.6,17.3-38.6,38.6v325.7c0,21.3,17.3,38.6,38.6,38.6h227c21.3,0,38.6-17.3,38.6-38.6V124    C352.75,102.7,335.45,85.4,314.25,85.4z M325.75,449.6c0,6.4-5.2,11.6-11.6,11.6h-227c-6.4,0-11.6-5.2-11.6-11.6V124    c0-6.4,5.2-11.6,11.6-11.6h227c6.4,0,11.6,5.2,11.6,11.6V449.6z"/><path d="M401.05,0h-227c-21.3,0-38.6,17.3-38.6,38.6c0,7.5,6,13.5,13.5,13.5s13.5-6,13.5-13.5c0-6.4,5.2-11.6,11.6-11.6h227    c6.4,0,11.6,5.2,11.6,11.6v325.7c0,6.4-5.2,11.6-11.6,11.6c-7.5,0-13.5,6-13.5,13.5s6,13.5,13.5,13.5c21.3,0,38.6-17.3,38.6-38.6    V38.6C439.65,17.3,422.35,0,401.05,0z"/></g></symbol><symbol id="search-icon" viewBox="0 0 512 512"><g><g><path d="M225.474,0C101.151,0,0,101.151,0,225.474c0,124.33,101.151,225.474,225.474,225.474    c124.33,0,225.474-101.144,225.474-225.474C450.948,101.151,349.804,0,225.474,0z M225.474,409.323    c-101.373,0-183.848-82.475-183.848-183.848S124.101,41.626,225.474,41.626s183.848,82.475,183.848,183.848    S326.847,409.323,225.474,409.323z"/></g></g><g><g><path d="M505.902,476.472L386.574,357.144c-8.131-8.131-21.299-8.131-29.43,0c-8.131,8.124-8.131,21.306,0,29.43l119.328,119.328    c4.065,4.065,9.387,6.098,14.715,6.098c5.321,0,10.649-2.033,14.715-6.098C514.033,497.778,514.033,484.596,505.902,476.472z"/></g></g></symbol><symbol id="font-size-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11.246 15H4.754l-2 5H.6L7 4h2l6.4 16h-2.154l-2-5zm-.8-2L8 6.885 5.554 13h4.892zM21 12.535V12h2v8h-2v-.535a4 4 0 1 1 0-6.93zM19 18a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/></symbol><symbol id="add-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2z"/></symbol><symbol id="minus-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M5 11h14v2H5z"/></symbol><symbol id="dark-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M10 7a7 7 0 0 0 12 4.9v.1c0 5.523-4.477 10-10 10S2 17.523 2 12 6.477 2 12 2h.1A6.979 6.979 0 0 0 10 7zm-6 5a8 8 0 0 0 15.062 3.762A9 9 0 0 1 8.238 4.938 7.999 7.999 0 0 0 4 12z"/></symbol><symbol id="light-theme-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 18a6 6 0 1 1 0-12 6 6 0 0 1 0 12zm0-2a4 4 0 1 0 0-8 4 4 0 0 0 0 8zM11 1h2v3h-2V1zm0 19h2v3h-2v-3zM3.515 4.929l1.414-1.414L7.05 5.636 5.636 7.05 3.515 4.93zM16.95 18.364l1.414-1.414 2.121 2.121-1.414 1.414-2.121-2.121zm2.121-14.85l1.414 1.415-2.121 2.121-1.414-1.414 2.121-2.121zM5.636 16.95l1.414 1.414-2.121 2.121-1.414-1.414 2.121-2.121zM23 11v2h-3v-2h3zM4 11v2H1v-2h3z"/></symbol><symbol id="reset-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M18.537 19.567A9.961 9.961 0 0 1 12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10c0 2.136-.67 4.116-1.81 5.74L17 12h3a8 8 0 1 0-2.46 5.772l.997 1.795z"/></symbol><symbol id="down-icon" viewBox="0 0 16 16"><path fill-rule="evenodd" clip-rule="evenodd" d="M12.7803 6.21967C13.0732 6.51256 13.0732 6.98744 12.7803 7.28033L8.53033 11.5303C8.23744 11.8232 7.76256 11.8232 7.46967 11.5303L3.21967 7.28033C2.92678 6.98744 2.92678 6.51256 3.21967 6.21967C3.51256 5.92678 3.98744 5.92678 4.28033 6.21967L8 9.93934L11.7197 6.21967C12.0126 5.92678 12.4874 5.92678 12.7803 6.21967Z"></path></symbol><symbol id="codepen-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M16.5 13.202L13 15.535v3.596L19.197 15 16.5 13.202zM14.697 12L12 10.202 9.303 12 12 13.798 14.697 12zM20 10.869L18.303 12 20 13.131V10.87zM19.197 9L13 4.869v3.596l3.5 2.333L19.197 9zM7.5 10.798L11 8.465V4.869L4.803 9 7.5 10.798zM4.803 15L11 19.131v-3.596l-3.5-2.333L4.803 15zM4 13.131L5.697 12 4 10.869v2.262zM2 9a1 1 0 0 1 .445-.832l9-6a1 1 0 0 1 1.11 0l9 6A1 1 0 0 1 22 9v6a1 1 0 0 1-.445.832l-9 6a1 1 0 0 1-1.11 0l-9-6A1 1 0 0 1 2 15V9z"/></symbol><symbol id="close-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M12 10.586l4.95-4.95 1.414 1.414-4.95 4.95 4.95 4.95-1.414 1.414-4.95-4.95-4.95 4.95-1.414-1.414 4.95-4.95-4.95-4.95L7.05 5.636z"/></symbol><symbol id="menu-icon" viewBox="0 0 24 24"><path fill="none" d="M0 0h24v24H0z"/><path d="M3 4h18v2H3V4zm0 7h18v2H3v-2zm0 7h18v2H3v-2z"/></symbol></defs></svg></head><body data-theme="dark"><div class="sidebar-container"><div class="sidebar" id="sidebar"><div class="sidebar-items-container"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-modules"><div>Modules</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-algorithms.html">algorithms</a></div><div class="sidebar-section-children"><a href="module-algorithms_aromaticity.html">algorithms/aromaticity</a></div><div class="sidebar-section-children"><a href="module-algorithms_morgan.html">algorithms/morgan</a></div><div class="sidebar-section-children"><a href="module-algorithms_paths.html">algorithms/paths</a></div><div class="sidebar-section-children"><a href="module-algorithms_resonance.html">algorithms/resonance</a></div><div class="sidebar-section-children"><a href="module-algorithms_subgraph.html">algorithms/subgraph</a></div><div class="sidebar-section-children"><a href="module-algorithms_traversal.html">algorithms/traversal</a></div><div class="sidebar-section-children"><a href="module-algorithms_vf2.html">algorithms/vf2</a></div><div class="sidebar-section-children"><a href="module-app_core_undo.html">app/core/undo</a></div><div class="sidebar-section-children"><a href="module-app_render_helpers.html">app/render/helpers</a></div><div class="sidebar-section-children"><a href="module-app_render_highlights.html">app/render/highlights</a></div><div class="sidebar-section-children"><a href="module-app_render_reaction-2d.html">app/render/reaction-2d</a></div><div class="sidebar-section-children"><a href="module-app_render_resonance.html">app/render/resonance</a></div><div class="sidebar-section-children"><a href="module-app_ui_descriptors.html">app/ui/descriptors</a></div><div class="sidebar-section-children"><a href="module-app_ui_export.html">app/ui/export</a></div><div class="sidebar-section-children"><a href="module-core.html">core</a></div><div class="sidebar-section-children"><a href="module-core_Atom.html">core/Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.html">core/Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.html">core/Molecule</a></div><div class="sidebar-section-children"><a href="module-data.html">data</a></div><div class="sidebar-section-children"><a href="module-data_catalog.html">data/catalog</a></div><div class="sidebar-section-children"><a href="module-data_catalog_amino-acids.html">data/catalog/amino-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_fatty-acids.html">data/catalog/fatty-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_nucleobases.html">data/catalog/nucleobases</a></div><div class="sidebar-section-children"><a href="module-data_catalog_polycyclic-aromatic-hydrocarbons.html">data/catalog/polycyclic-aromatic-hydrocarbons</a></div><div class="sidebar-section-children"><a href="module-data_catalog_psychoactive-compounds.html">data/catalog/psychoactive-compounds</a></div><div class="sidebar-section-children"><a href="module-data_catalog_steroids.html">data/catalog/steroids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_terpenes-and-terpenoids.html">data/catalog/terpenes-and-terpenoids</a></div><div class="sidebar-section-children"><a href="module-data_elements.html">data/elements</a></div><div class="sidebar-section-children"><a href="module-data_molecule-catalog.html">data/molecule-catalog</a></div><div class="sidebar-section-children"><a href="module-descriptors.html">descriptors</a></div><div class="sidebar-section-children"><a href="module-descriptors_information.html">descriptors/information</a></div><div class="sidebar-section-children"><a href="module-descriptors_molecular.html">descriptors/molecular</a></div><div class="sidebar-section-children"><a href="module-descriptors_physicochemical.html">descriptors/physicochemical</a></div><div class="sidebar-section-children"><a href="module-descriptors_spectral.html">descriptors/spectral</a></div><div class="sidebar-section-children"><a href="module-descriptors_topological.html">descriptors/topological</a></div><div class="sidebar-section-children"><a href="module-io.html">io</a></div><div class="sidebar-section-children"><a href="module-io_detect.html">io/detect</a></div><div class="sidebar-section-children"><a href="module-io_inchi.html">io/inchi</a></div><div class="sidebar-section-children"><a href="module-io_json.html">io/json</a></div><div class="sidebar-section-children"><a href="module-io_smiles.html">io/smiles</a></div><div class="sidebar-section-children"><a href="module-layout.html">layout</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d.html">layout/coords2d</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_force-field-refine.html">layout/coords2d/force-field-refine</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_geom2d.html">layout/coords2d/geom2d</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_neighbor-ordering.html">layout/coords2d/neighbor-ordering</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_orientation.html">layout/coords2d/orientation</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_projection-transforms.html">layout/coords2d/projection-transforms</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_refinement-context.html">layout/coords2d/refinement-context</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_refinement-issues.html">layout/coords2d/refinement-issues</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_ring-detection.html">layout/coords2d/ring-detection</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_spatial-grid.html">layout/coords2d/spatial-grid</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_stereo-enforcement.html">layout/coords2d/stereo-enforcement</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-molecules.html">molecules</a></div><div class="sidebar-section-children"><a href="module-smarts.html">smarts</a></div><div class="sidebar-section-children"><a href="module-smarts_parser.html">smarts/parser</a></div><div class="sidebar-section-children"><a href="module-smarts_primitives.html">smarts/primitives</a></div><div class="sidebar-section-children"><a href="module-smarts_reference.html">smarts/reference</a></div><div class="sidebar-section-children"><a href="module-smarts_search.html">smarts/search</a></div><div class="sidebar-section-children"><a href="module-smirks.html">smirks</a></div><div class="sidebar-section-children"><a href="module-smirks_apply.html">smirks/apply</a></div><div class="sidebar-section-children"><a href="module-smirks_parser.html">smirks/parser</a></div><div class="sidebar-section-children"><a href="module-smirks_reference.html">smirks/reference</a></div><div class="sidebar-section-children"><a href="module-utils.html">utils</a></div><div class="sidebar-section-children"><a href="module-utils_combinatorics.html">utils/combinatorics</a></div><div class="sidebar-section-children"><a href="module-utils_eigenvalues.html">utils/eigenvalues</a></div><div class="sidebar-section-children"><a href="module-utils_matrix.html">utils/matrix</a></div><div class="sidebar-section-children"><a href="module-validation.html">validation</a></div><div class="sidebar-section-children"><a href="module-validation_valence.html">validation/valence</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-core_Atom.Atom.html">Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.Bond.html">Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.Molecule.html">Molecule</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_spatial-grid.SpatialGrid.html">SpatialGrid</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-global"><div>Global</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="global.html#atomBBox">atomBBox</a></div><div class="sidebar-section-children"><a href="global.html#atomColor">atomColor</a></div><div class="sidebar-section-children"><a href="global.html#getAtomLabel">getAtomLabel</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfH">labelHalfH</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfW">labelHalfW</a></div><div class="sidebar-section-children"><a href="global.html#labelTextOffset">labelTextOffset</a></div><div class="sidebar-section-children"><a href="global.html#perpUnit">perpUnit</a></div><div class="sidebar-section-children"><a href="global.html#secondaryDir">secondaryDir</a></div><div class="sidebar-section-children"><a href="global.html#shortenLine">shortenLine</a></div><div class="sidebar-section-children"><a href="global.html#stereoBondTypeForCenter">stereoBondTypeForCenter</a></div><div class="sidebar-section-children"><a href="global.html#vecLen">vecLen</a></div></div></div></div></div><div class="navbar-container" id="VuAckcnZhf"><nav class="navbar"><div class="navbar-left-items"></div><div class="navbar-right-items"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div><nav></nav></nav></div><div class="toc-container"><div class="toc-content"><span class="bold">On this page</span><div id="eed4d2a0bfd64539bb9df78095dec881"></div></div></div><div class="body-wrapper"><div class="main-content"><div class="main-wrapper"><section id="source-page" class="source-page"><header><h1 id="title" class="has-anchor">algorithms_resonance.js</h1></header><article><pre class="prettyprint source lang-js"><code>/** @module algorithms/resonance */
+
+import { kekulize } from '../layout/mol2d-helpers.js';
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+/** Maximum valence for common elements used in validation. */
+const MAX_VALENCE = {
+  H: 1,
+  B: 3,
+  C: 4,
+  N: 4, // can be 5 with formal charge
+  O: 3, // can be 3 with formal charge
+  F: 1,
+  Si: 4,
+  P: 5,
+  S: 6,
+  Cl: 1,
+  As: 5,
+  Se: 6,
+  Br: 1,
+  Te: 6,
+  I: 1
+};
+
+/** Neutral sigma-frame valence targets for common aromatic elements. */
+const AROMATIC_SIGMA_VALENCE = {
+  B: 3,
+  C: 4,
+  N: 3,
+  O: 2,
+  F: 1,
+  Si: 4,
+  P: 3,
+  S: 2,
+  Cl: 1,
+  As: 3,
+  Se: 2,
+  Br: 1,
+  Te: 2,
+  I: 1
+};
+
+/**
+ * Returns the number of aromatic in-ring pi bonds an atom is expected to take
+ * part in for a valid localized aromatic contributor.
+ *
+ * This mirrors the aromaticity model used in `algorithms/aromaticity.js`:
+ * carbon and pyridine-like nitrogens contribute one electron via a ring pi
+ * bond, while pyrrole-/furan-like heteroatoms contribute via a lone pair and
+ * therefore take part in zero ring pi bonds. Cationic O/S and pyridinium-like
+ * N shift back to one ring pi bond.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {number} formalCharge
+ * @returns {number|null}
+ */
+function _expectedAromaticPiBondCount(atom, molecule, formalCharge) {
+  if (!atom?.properties?.aromatic) {
+    return null;
+  }
+
+  if (atom.name === 'C') {
+    return formalCharge === 0 ? 1 : 0;
+  }
+
+  if (atom.name === 'N') {
+    if (formalCharge === -1) {
+      return 0;
+    }
+    if (formalCharge === 1) {
+      return 1;
+    }
+    const hasHydrogen = atom.bonds.some(bondId => {
+      const bond = molecule.bonds.get(bondId);
+      return bond &amp;&amp; molecule.atoms.get(bond.getOtherAtom(atom.id))?.name === 'H';
+    });
+    return hasHydrogen ? 0 : 1;
+  }
+
+  if (atom.name === 'O' || atom.name === 'S') {
+    return formalCharge > 0 ? 1 : 0;
+  }
+
+  if (atom.name === 'B') {
+    return 0;
+  }
+
+  const sigmaTarget = AROMATIC_SIGMA_VALENCE[atom.name];
+  if (sigmaTarget === undefined) {
+    return null;
+  }
+  return formalCharge === 0 &amp;&amp; sigmaTarget > 2 ? 1 : 0;
+}
+
+/**
+ * Returns the localised ring-pi electron contribution for an atom within a
+ * specific aromatic ring under a proposed resonance state.
+ *
+ * This mirrors the Hückel bookkeeping from `algorithms/aromaticity.js`, but
+ * uses the candidate state's localised bond orders and formal charges.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {Set&lt;string>} ringAtomSet
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Map&lt;string, number>} bondOrders
+ * @param {number} formalCharge
+ * @returns {number|null}
+ */
+function _localizedRingPiElectrons(atom, ringAtomSet, molecule, bondOrders, formalCharge) {
+  const ringBonds = atom.bonds.map(bondId => molecule.bonds.get(bondId)).filter(bond => bond &amp;&amp; ringAtomSet.has(bond.getOtherAtom(atom.id)));
+
+  const hasRingPiBond = ringBonds.some(bond => {
+    const localizedOrder = bondOrders.get(bond.id) ?? bond.properties.localizedOrder ?? bond.properties.order ?? 1;
+    return localizedOrder >= 2;
+  });
+
+  if (atom.name === 'C') {
+    if (formalCharge === 1) {
+      return 0;
+    }
+    if (formalCharge === -1) {
+      return hasRingPiBond ? null : 2;
+    }
+    if (hasRingPiBond) {
+      return 1;
+    }
+    // Junction carbon in a fused aromatic system: its pi bond may lie entirely
+    // in the adjacent ring. If it has a double bond to any aromatic neighbour
+    // outside this ring, it still contributes 1 pi electron to this ring's count.
+    const hasAdjacentAromaticPiBond = atom.bonds.some(bondId => {
+      const bond = molecule.bonds.get(bondId);
+      if (!bond) {
+        return false;
+      }
+      const neighborId = bond.getOtherAtom(atom.id);
+      if (ringAtomSet.has(neighborId)) {
+        return false;
+      }
+      const neighbor = molecule.atoms.get(neighborId);
+      if (!neighbor?.properties?.aromatic) {
+        return false;
+      }
+      const localizedOrder = bondOrders.get(bondId) ?? bond.properties.localizedOrder ?? bond.properties.order ?? 1;
+      return localizedOrder >= 2;
+    });
+    return hasAdjacentAromaticPiBond ? 1 : null;
+  }
+
+  if (atom.name === 'N') {
+    if (formalCharge === 1) {
+      return hasRingPiBond ? 1 : null;
+    }
+    if (formalCharge === -1) {
+      return hasRingPiBond ? null : 2;
+    }
+    const hasHydrogen = atom.bonds.some(bondId => {
+      const bond = molecule.bonds.get(bondId);
+      return bond &amp;&amp; molecule.atoms.get(bond.getOtherAtom(atom.id))?.name === 'H';
+    });
+    if (hasHydrogen) {
+      return hasRingPiBond ? null : 2;
+    }
+    return hasRingPiBond ? 1 : null;
+  }
+
+  if (atom.name === 'O' || atom.name === 'S') {
+    if (formalCharge > 0) {
+      return hasRingPiBond ? 1 : null;
+    }
+    return hasRingPiBond ? null : 2;
+  }
+
+  if (atom.name === 'B') {
+    return 0;
+  }
+
+  return null;
+}
+
+/**
+ * Returns true when `piCount` satisfies Hückel's 4n + 2 rule.
+ *
+ * @param {number} piCount
+ * @returns {boolean}
+ */
+function _isHuckelCount(piCount) {
+  if (piCount &lt; 2) {
+    return false;
+  }
+  return (piCount - 2) % 4 === 0;
+}
+
+// ---------------------------------------------------------------------------
+// Step 1 — Pi system identification
+// ---------------------------------------------------------------------------
+
+/**
+ * Determines whether an atom is a cumulene central atom (allene-type sp carbon)
+ * that should be excluded from the planar conjugated pi system.
+ *
+ * A cumulene centre has two or more double bonds, is not in a ring, and is
+ * carbon — these have orthogonal pi orbitals and do not participate in
+ * planar delocalization.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {boolean}
+ */
+function _isCumuleneCentre(atom, molecule) {
+  if (atom.name !== 'C') {
+    return false;
+  }
+  if (atom.isInRing(molecule)) {
+    return false;
+  }
+  let doubleBondCount = 0;
+  for (const bondId of atom.bonds) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    const order = bond.properties.localizedOrder ?? bond.properties.order ?? 1;
+    if (order >= 2) {
+      doubleBondCount++;
+    }
+  }
+  return doubleBondCount >= 2;
+}
+
+/**
+ * Identifies the set of atoms and bonds that participate in electron
+ * delocalization — the "pi system" for resonance enumeration.
+ *
+ * Includes:
+ * - All bonds with order ≥ 2 or aromatic flag
+ * - Adjacent atoms that can donate a lone pair or accept one (carbocation)
+ * - Atoms with a radical adjacent to any pi-system bond
+ * - Expands transitively until stable
+ *
+ * Excludes cumulene central atoms (allene-type carbons with two orthogonal
+ * pi bonds outside rings).
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {{ atomIds: Set&lt;string>, bondIds: Set&lt;string> }}
+ */
+function _buildPiSystem(molecule) {
+  const bondIds = new Set();
+  const atomIds = new Set();
+
+  // Seed with all pi bonds
+  for (const [bondId, bond] of molecule.bonds) {
+    const order = bond.properties.localizedOrder ?? bond.properties.order ?? 1;
+    if (order >= 2 || bond.properties.aromatic) {
+      bondIds.add(bondId);
+      bond.atoms.forEach(id => atomIds.add(id));
+    }
+  }
+
+  // Expand transitively: add lone-pair donors, radical atoms, and carbocations
+  // that are adjacent to any current pi-system bond, then pull in their bonds
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [, atom] of molecule.atoms) {
+      if (atom.name === 'H') {
+        continue;
+      }
+      if (_isCumuleneCentre(atom, molecule)) {
+        continue;
+      }
+      const isDonor = atom.availableLonePairs(molecule) >= 1;
+      const isAcceptor = atom.name === 'C' &amp;&amp; (atom.properties.charge ?? 0) === 1;
+      const isRadical = (atom.properties.radical ?? 0) > 0;
+      if (!isDonor &amp;&amp; !isAcceptor &amp;&amp; !isRadical) {
+        continue;
+      }
+      // Check if adjacent to an existing pi-system bond or atom
+      let adjacent = false;
+      for (const bondId of atom.bonds) {
+        const bond = molecule.bonds.get(bondId);
+        if (!bond) {
+          continue;
+        }
+        const other = bond.getOtherAtom(atom.id);
+        if (bondIds.has(bondId) || atomIds.has(other)) {
+          adjacent = true;
+          break;
+        }
+      }
+      if (!adjacent) {
+        continue;
+      }
+      if (!atomIds.has(atom.id)) {
+        atomIds.add(atom.id);
+        changed = true;
+      }
+      // Pull in all single bonds adjacent to this atom that connect to pi atoms
+      for (const bondId of atom.bonds) {
+        if (bondIds.has(bondId)) {
+          continue;
+        }
+        const bond = molecule.bonds.get(bondId);
+        if (!bond) {
+          continue;
+        }
+        const other = bond.getOtherAtom(atom.id);
+        if (atomIds.has(other)) {
+          bondIds.add(bondId);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  // Remove cumulene centres from atomIds (they seeded via bonds but shouldn't participate)
+  for (const atomId of [...atomIds]) {
+    const atom = molecule.atoms.get(atomId);
+    if (atom &amp;&amp; _isCumuleneCentre(atom, molecule)) {
+      atomIds.delete(atomId);
+    }
+  }
+
+  return { atomIds, bondIds };
+}
+
+/**
+ * Splits the pi system into connected components using only bonds that belong
+ * to the pi-system graph.
+ *
+ * Disconnected components represent independent resonance regions. Their
+ * Cartesian-product permutations are often mathematically valid but visually
+ * noisy, so callers can use these components to suppress multi-region state
+ * combinations.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Set&lt;string>} atomIds
+ * @param {Set&lt;string>} bondIds
+ * @returns {Array&lt;{ atomIds: Set&lt;string>, bondIds: Set&lt;string> }>}
+ */
+function _piSystemComponents(molecule, atomIds, bondIds) {
+  const adjacency = new Map();
+  for (const atomId of atomIds) {
+    adjacency.set(atomId, []);
+  }
+  for (const bondId of bondIds) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    const [aId, bId] = bond.atoms;
+    if (!atomIds.has(aId) || !atomIds.has(bId)) {
+      continue;
+    }
+    adjacency.get(aId).push({ atomId: bId, bondId });
+    adjacency.get(bId).push({ atomId: aId, bondId });
+  }
+
+  const visited = new Set();
+  const components = [];
+
+  for (const atomId of atomIds) {
+    if (visited.has(atomId)) {
+      continue;
+    }
+    const componentAtomIds = new Set();
+    const componentBondIds = new Set();
+    const stack = [atomId];
+    visited.add(atomId);
+
+    while (stack.length > 0) {
+      const currentId = stack.pop();
+      componentAtomIds.add(currentId);
+      for (const edge of adjacency.get(currentId) ?? []) {
+        componentBondIds.add(edge.bondId);
+        if (!visited.has(edge.atomId)) {
+          visited.add(edge.atomId);
+          stack.push(edge.atomId);
+        }
+      }
+    }
+
+    components.push({ atomIds: componentAtomIds, bondIds: componentBondIds });
+  }
+
+  return components;
+}
+
+// ---------------------------------------------------------------------------
+// Step 2 — Bond classification
+// ---------------------------------------------------------------------------
+
+/**
+ * Classifies each pi-system bond into fixed and candidate contributions.
+ *
+ * Triple bonds contribute one fixed pi bond (always present). They also
+ * participate as a matching candidate only when conjugated — i.e. when at
+ * least one of their endpoint atoms is also adjacent to another pi-system bond
+ * (making electron delocalization meaningful). An isolated C≡C with no
+ * adjacent pi system is treated as fixed-only; demoting it to a double bond
+ * would produce a carbene with no resonance pathway for the displaced electrons.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Set&lt;string>} bondIds
+ * @returns {{ fixedBondIds: Set&lt;string>, candidateBondIds: Set&lt;string> }}
+ */
+function _classifyBonds(molecule, bondIds) {
+  const fixedBondIds = new Set();
+  const candidateBondIds = new Set();
+  for (const bondId of bondIds) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    const order = bond.properties.localizedOrder ?? bond.properties.order ?? 1;
+    if (order >= 3) {
+      fixedBondIds.add(bondId);
+      // Only add as candidate if conjugated (endpoint has another pi bond)
+      const isConjugated = bond.atoms.some(atomId => {
+        const atom = molecule.atoms.get(atomId);
+        if (!atom) {
+          return false;
+        }
+        for (const othBondId of atom.bonds) {
+          if (othBondId !== bondId &amp;&amp; bondIds.has(othBondId)) {
+            return true;
+          }
+        }
+        return false;
+      });
+      if (isConjugated) {
+        candidateBondIds.add(bondId);
+      }
+    } else {
+      candidateBondIds.add(bondId);
+    }
+  }
+  return { fixedBondIds, candidateBondIds };
+}
+
+// ---------------------------------------------------------------------------
+// Step 3 — Enumerate all valid matchings
+// ---------------------------------------------------------------------------
+
+function _commonNeutralValences(symbol, group, period) {
+  if (symbol === 'H') {
+    return [1];
+  }
+  if (symbol === 'He' || group === 18) {
+    return [0];
+  }
+  if (group === 1 || group === 2) {
+    return [group];
+  }
+  if (group === 13) {
+    return [3];
+  }
+  if (group === 14) {
+    return [4];
+  }
+  if (group === 15) {
+    return period &lt;= 2 ? [3] : [3, 5];
+  }
+  if (group === 16) {
+    return period &lt;= 2 ? [2] : [2, 4, 6];
+  }
+  if (group === 17) {
+    return [1];
+  }
+  return [];
+}
+
+function _shiftedCommonValences(symbol, atom, charge) {
+  const group = atom.properties.group;
+  const period = atom.properties.period;
+  const radical = atom.properties.radical ?? 0;
+  const base = _commonNeutralValences(symbol, group, period);
+  if (base.length === 0) {
+    return [];
+  }
+
+  const shift =
+    symbol === 'H'
+      ? v => v - Math.abs(charge) - radical
+      : group === 14
+        ? v => v - Math.abs(charge) - radical
+        : group >= 15 &amp;&amp; group &lt;= 17
+          ? v => v + charge - radical
+          : v => v - charge - radical;
+
+  return [...new Set(base.map(shift).filter(v => Number.isInteger(v) &amp;&amp; v >= 0 &amp;&amp; v &lt;= 8))].sort((a, b) => a - b);
+}
+
+/**
+ * Returns plausible formal charges for an atom at a proposed total bond order.
+ *
+ * This mirrors the common-valence families from validation logic instead of
+ * force-filling octets. That keeps electron-deficient contributors such as
+ * `C+=O-` reachable, which the earlier octet-fill heuristic incorrectly
+ * rejected by assigning the carbon a negative charge.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {number} bondSum
+ * @param {number} maxCharge
+ * @returns {number[]}
+ */
+function _candidateFormalCharges(atom, bondSum, maxCharge) {
+  const group = atom.properties.group;
+  if (!group || (group >= 3 &amp;&amp; group &lt;= 12)) {
+    return [atom.properties.charge ?? 0];
+  }
+
+  const candidates = [];
+  for (let charge = -maxCharge; charge &lt;= maxCharge; charge++) {
+    const allowedValences = _shiftedCommonValences(atom.name, atom, charge);
+    if (allowedValences.includes(bondSum)) {
+      candidates.push(charge);
+    }
+  }
+
+  if (candidates.length > 0) {
+    return candidates;
+  }
+
+  const fallback = atom.computeCharge(bondSum);
+  return Math.abs(fallback) &lt;= maxCharge ? [fallback] : [];
+}
+
+function _formalChargeAssignmentCost(atom, charge) {
+  const canonicalCharge = atom.properties.charge ?? 0;
+  let cost = Math.abs(charge - canonicalCharge) * 8 + Math.abs(charge) * 4;
+
+  if (charge &lt; 0) {
+    if (atom.name === 'O' || atom.name === 'N' || atom.name === 'S' || atom.name === 'F' || atom.name === 'Cl' || atom.name === 'Br' || atom.name === 'I') {
+      cost -= 2;
+    } else {
+      cost += 2;
+    }
+  } else if (charge > 0) {
+    if (atom.name === 'O' || atom.name === 'N' || atom.name === 'F' || atom.name === 'Cl' || atom.name === 'Br' || atom.name === 'I') {
+      cost += 2;
+    } else {
+      cost -= 1;
+    }
+  }
+
+  return cost;
+}
+
+function _legacyFormalCharge(atom, bondSum) {
+  const group = atom.properties.group;
+  if (!group) {
+    return atom.properties.charge ?? 0;
+  }
+
+  const valenceElectrons = group &lt;= 2 ? group : group - 10;
+  const maxElectrons = atom.name === 'H' ? 2 : 8;
+  const lonePairElectrons = Math.max(0, maxElectrons - 2 * bondSum);
+  return valenceElectrons - lonePairElectrons - bondSum;
+}
+
+/**
+ * Derives formal charges for all pi-system atoms given a bond-order assignment.
+ *
+ * Instead of inferring lone pairs by padding every atom to an octet, this
+ * chooses a charge assignment whose bond-order sums fit each element's common
+ * charge-shifted valence family while conserving the canonical total charge.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Set&lt;string>} atomIds
+ * @param {Map&lt;string, number>} bondOrders - bondId → resolved integer order
+ * @param {number} maxCharge
+ * @returns {Map&lt;string, number>|null} atomId → formal charge
+ */
+function _deriveFormalCharges(molecule, atomIds, bondOrders, maxCharge) {
+  const atomEntries = [];
+  const fixedCharges = new Map();
+  let canonicalTotalCharge = 0;
+  let fixedChargeTotal = 0;
+
+  for (const atomId of atomIds) {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+
+    let bondSum = 0;
+    for (const bondId of atom.bonds) {
+      const bond = molecule.bonds.get(bondId);
+      if (!bond) {
+        continue;
+      }
+      bondSum += bondOrders.has(bondId) ? bondOrders.get(bondId) : (bond.properties.localizedOrder ?? bond.properties.order ?? 1);
+    }
+
+    if (atom.properties.aromatic) {
+      const fixedCharge = _legacyFormalCharge(atom, bondSum);
+      fixedCharges.set(atomId, fixedCharge);
+      fixedChargeTotal += fixedCharge;
+      canonicalTotalCharge += atom.properties.charge ?? 0;
+      continue;
+    }
+
+    const candidates = _candidateFormalCharges(atom, bondSum, maxCharge);
+    if (candidates.length === 0) {
+      return null;
+    }
+
+    atomEntries.push({
+      atomId,
+      atom,
+      candidates: [...candidates].sort((a, b) => _formalChargeAssignmentCost(atom, a) - _formalChargeAssignmentCost(atom, b) || Math.abs(a) - Math.abs(b))
+    });
+    canonicalTotalCharge += atom.properties.charge ?? 0;
+  }
+
+  atomEntries.sort((a, b) => a.candidates.length - b.candidates.length);
+
+  const best = { cost: Infinity, charges: null };
+  const current = new Map();
+  const targetChargeTotal = canonicalTotalCharge - fixedChargeTotal;
+
+  function backtrack(index, runningTotal, runningCost) {
+    if (runningCost >= best.cost) {
+      return;
+    }
+    if (index === atomEntries.length) {
+      if (runningTotal !== targetChargeTotal) {
+        return;
+      }
+      best.cost = runningCost;
+      best.charges = new Map([...fixedCharges, ...current]);
+      return;
+    }
+
+    let minRemaining = 0;
+    let maxRemaining = 0;
+    for (let i = index; i &lt; atomEntries.length; i++) {
+      minRemaining += Math.min(...atomEntries[i].candidates);
+      maxRemaining += Math.max(...atomEntries[i].candidates);
+    }
+    if (runningTotal + minRemaining > targetChargeTotal || runningTotal + maxRemaining &lt; targetChargeTotal) {
+      return;
+    }
+
+    const entry = atomEntries[index];
+    for (const charge of entry.candidates) {
+      current.set(entry.atomId, charge);
+      backtrack(index + 1, runningTotal + charge, runningCost + _formalChargeAssignmentCost(entry.atom, charge));
+      current.delete(entry.atomId);
+    }
+  }
+
+  backtrack(0, 0, 0);
+  if (best.charges) {
+    return best.charges;
+  }
+  return fixedCharges.size > 0 &amp;&amp; atomEntries.length === 0 ? fixedCharges : null;
+}
+
+/**
+ * Validates that no atom in the pi system exceeds its maximum valence or
+ * acquires a formal charge magnitude greater than `maxCharge` after a
+ * proposed bond-order assignment.
+ *
+ * For atoms that were originally aromatic, also checks that the assignment
+ * produces a valid Kekulé form in the aromatic subgraph. Carbon- and
+ * pyridine-like atoms must participate in exactly one aromatic pi bond,
+ * while pyrrole-/furan-like heteroatoms that donate a lone pair must
+ * participate in none. This avoids partial matchings while still allowing
+ * fused heteroaromatics such as indoles.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Set&lt;string>} atomIds
+ * @param {Map&lt;string, number>} bondOrders
+ * @param {Map&lt;string, number>} formalCharges
+ * @param {number} maxCharge
+ * @returns {boolean}
+ */
+function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge) {
+  const aromaticRings = molecule.getRings().filter(ring => ring.every(atomId => molecule.atoms.get(atomId)?.properties?.aromatic));
+
+  for (const atomId of atomIds) {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+
+    let bondSum = 0;
+    for (const bondId of atom.bonds) {
+      const bond = molecule.bonds.get(bondId);
+      if (!bond) {
+        continue;
+      }
+      bondSum += bondOrders.has(bondId) ? bondOrders.get(bondId) : (bond.properties.localizedOrder ?? bond.properties.order ?? 1);
+    }
+
+    const maxVal = MAX_VALENCE[atom.name];
+    if (maxVal !== undefined &amp;&amp; bondSum > maxVal) {
+      return false;
+    }
+
+    // For originally aromatic atoms, validate the localized aromatic matching
+    // directly. Some aromatic heteroatoms ([nH], o, s, ...) contribute a lone
+    // pair instead of an in-ring pi bond, so bond-sum heuristics are too
+    // strict; count matched aromatic pi bonds instead.
+    if (atom.properties.aromatic) {
+      let matchedAromaticPiBonds = 0;
+
+      for (const aromaticBondId of atom.bonds) {
+        const aromaticBond = molecule.bonds.get(aromaticBondId);
+        if (!aromaticBond || !aromaticBond.properties.aromatic) {
+          continue;
+        }
+
+        const localizedOrder = bondOrders.has(aromaticBondId) ? bondOrders.get(aromaticBondId) : (aromaticBond.properties.localizedOrder ?? aromaticBond.properties.order ?? 1);
+
+        if (localizedOrder >= 2) {
+          matchedAromaticPiBonds++;
+        }
+      }
+
+      const expectedMatchedAromaticPiBonds = _expectedAromaticPiBondCount(atom, molecule, formalCharges.get(atomId) ?? 0);
+      if (expectedMatchedAromaticPiBonds !== null &amp;&amp; matchedAromaticPiBonds !== expectedMatchedAromaticPiBonds) {
+        return false;
+      }
+    }
+
+    const fc = formalCharges.get(atomId) ?? 0;
+    if (Math.abs(fc) > maxCharge) {
+      return false;
+    }
+  }
+
+  for (const ring of aromaticRings) {
+    const ringAtomSet = new Set(ring);
+    let piTotal = 0;
+    let positiveCount = 0;
+    let negativeCount = 0;
+    const positiveAtoms = [];
+
+    for (const atomId of ring) {
+      const atom = molecule.atoms.get(atomId);
+      if (!atom) {
+        return false;
+      }
+      const formalCharge = formalCharges.get(atomId) ?? 0;
+      if (formalCharge > 0) {
+        positiveCount++;
+        positiveAtoms.push(atom);
+      } else if (formalCharge &lt; 0) {
+        negativeCount++;
+      }
+      const pi = _localizedRingPiElectrons(atom, ringAtomSet, molecule, bondOrders, formalCharge);
+      if (pi === null) {
+        return false;
+      }
+      piTotal += pi;
+    }
+
+    if (!((positiveCount === 0 &amp;&amp; negativeCount === 0) || (positiveCount === 1 &amp;&amp; negativeCount === 1))) {
+      return false;
+    }
+
+    if (positiveCount === 1 &amp;&amp; negativeCount === 1) {
+      const supportsChargeSeparatedAromaticState = positiveAtoms.every(
+        atom => atom.name === 'O' || atom.name === 'S' || atom.name === 'Se' || atom.name === 'Te'
+      );
+      if (!supportsChargeSeparatedAromaticState) {
+        return false;
+      }
+    }
+
+    if (!_isHuckelCount(piTotal)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Serialises a bond-order assignment + atom charge/radical map to a
+ * deduplication string key.
+ *
+ * @param {Map&lt;string, number>} bondOrders
+ * @param {Map&lt;string, number>} atomCharges
+ * @param {Map&lt;string, number>} atomRadicals
+ * @returns {string}
+ */
+function _stateKey(bondOrders, atomCharges, atomRadicals) {
+  const bParts = [...bondOrders.entries()].sort(([a], [b]) => (a &lt; b ? -1 : 1)).map(([id, o]) => `${id}:${o}`);
+  const aParts = [...atomCharges.entries()].sort(([a], [b]) => (a &lt; b ? -1 : 1)).map(([id, c]) => `${id}:${c}`);
+  const rParts = [...atomRadicals.entries()].sort(([a], [b]) => (a &lt; b ? -1 : 1)).map(([id, r]) => `${id}:${r}`);
+  return `${bParts.join('|')}/${aParts.join('|')}/${rParts.join('|')}`;
+}
+
+/**
+ * Enumerates all valid bond-order assignments for the pi-system candidate bonds
+ * via backtracking, collecting up to `maxContributors` states.
+ *
+ * Each candidate bond is either "matched" (order 2) or "unmatched" (order 1),
+ * plus any fixed pi bond contribution for triples. After assigning all bonds,
+ * formal charges are derived and validity is checked.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Set&lt;string>} atomIds
+ * @param {string[]} candidates - Ordered array of candidate bond IDs
+ * @param {Set&lt;string>} fixedBondIds
+ * @param {number} maxContributors
+ * @param {number} maxCharge
+ * @returns {Array&lt;{ bondOrders: Map&lt;string, number>, atomCharges: Map&lt;string, number>, atomRadicals: Map&lt;string, number> }>}
+ */
+function _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxContributors, maxCharge) {
+  const results = [];
+  const seen = new Set();
+
+  // Current assignment: candidateIdx → true (double) | false (single)
+  const assignment = new Array(candidates.length).fill(false);
+
+  // Precompute baseline bond order for non-candidate bonds (stays constant)
+  // Track which atoms have been matched (have a double bond) to enforce
+  // that each atom can participate in at most one double bond from the
+  // candidate set (standard matching constraint).
+
+  function buildBondOrders() {
+    const bo = new Map();
+    for (let i = 0; i &lt; candidates.length; i++) {
+      const bondId = candidates[i];
+      const base = fixedBondIds.has(bondId) ? 1 : 0; // fixed adds +1 always
+      bo.set(bondId, base + (assignment[i] ? 1 : 0) + (fixedBondIds.has(bondId) ? 1 : 0));
+    }
+    // Correct: triple bonds have fixed 1 + candidate 1 = 2 when matched, 1+1=fixed=2 when not
+    // Re-do: for triple bonds, base order is 2 (1 fixed + 1 sigma), candidate adds 1 more → 3
+    // For double/aromatic/single: base order is 1 (sigma only), candidate adds 1 → 2
+    // Actually, let's recompute cleanly:
+    const bo2 = new Map();
+    for (let i = 0; i &lt; candidates.length; i++) {
+      const bondId = candidates[i];
+      const isTriple = fixedBondIds.has(bondId);
+      // sigma (1) + fixed pi (1 if triple) + candidate pi (1 if matched)
+      bo2.set(bondId, 1 + (isTriple ? 1 : 0) + (assignment[i] ? 1 : 0));
+    }
+    return bo2;
+  }
+
+  function backtrack(idx, matchedAtoms) {
+    if (results.length >= maxContributors) {
+      return;
+    }
+    if (idx === candidates.length) {
+      const bondOrders = buildBondOrders();
+      const atomCharges = _deriveFormalCharges(molecule, atomIds, bondOrders, maxCharge);
+      if (!atomCharges) {
+        return;
+      }
+      const atomRadicals = new Map();
+      for (const atomId of atomIds) {
+        atomRadicals.set(atomId, molecule.atoms.get(atomId)?.properties.radical ?? 0);
+      }
+      if (!checkChargeConservation(atomCharges)) {
+        return;
+      }
+      if (!_isValidState(molecule, atomIds, bondOrders, atomCharges, maxCharge)) {
+        return;
+      }
+      const key = _stateKey(bondOrders, atomCharges, atomRadicals);
+      if (seen.has(key)) {
+        return;
+      }
+      seen.add(key);
+      results.push({ bondOrders, atomCharges, atomRadicals });
+      return;
+    }
+
+    const bondId = candidates[idx];
+    const bond = molecule.bonds.get(bondId);
+    const [aId, bId] = bond.atoms;
+
+    // Try unmatched (single/order-1 candidate)
+    assignment[idx] = false;
+    backtrack(idx + 1, matchedAtoms);
+
+    // Try matched (double/order-2 candidate) — only if neither endpoint is already matched
+    if (!matchedAtoms.has(aId) &amp;&amp; !matchedAtoms.has(bId)) {
+      assignment[idx] = true;
+      matchedAtoms.add(aId);
+      matchedAtoms.add(bId);
+      backtrack(idx + 1, matchedAtoms);
+      matchedAtoms.delete(aId);
+      matchedAtoms.delete(bId);
+      assignment[idx] = false;
+    }
+  }
+
+  // Canonical total formal charge of pi-system atoms — must be preserved in every state.
+  let canonicalTotalCharge = 0;
+  for (const atomId of atomIds) {
+    canonicalTotalCharge += molecule.atoms.get(atomId)?.properties.charge ?? 0;
+  }
+
+  function checkChargeConservation(atomCharges) {
+    let total = 0;
+    for (const fc of atomCharges.values()) {
+      total += fc;
+    }
+    return total === canonicalTotalCharge;
+  }
+
+  backtrack(0, new Set());
+  return results;
+}
+
+/**
+ * Generates radical-migration states by moving unpaired electrons along
+ * conjugated paths within the pi system.
+ *
+ * For each radical atom R adjacent to a pi-system bond to atom A:
+ * - If R−A is single and A=B is double: radical hops to B (R=A−B•)
+ * - If R−A is single and A is terminal in pi system: radical migrates to A (R−•A)
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Set&lt;string>} atomIds
+ * @param {Set&lt;string>} bondIds
+ * @param {Array&lt;{ bondOrders: Map&lt;string, number>, atomCharges: Map&lt;string, number>, atomRadicals: Map&lt;string, number> }>} baseStates
+ * @param {number} maxContributors
+ * @param {Set&lt;string>} seen
+ * @returns {Array&lt;{ bondOrders: Map&lt;string, number>, atomCharges: Map&lt;string, number>, atomRadicals: Map&lt;string, number> }>}
+ */
+function _enumerateRadicalStates(molecule, atomIds, bondIds, baseStates, maxContributors, seen) {
+  const results = [];
+
+  for (const base of baseStates) {
+    if (results.length + baseStates.length >= maxContributors) {
+      break;
+    }
+
+    for (const atomId of atomIds) {
+      const atom = molecule.atoms.get(atomId);
+      if (!atom || (atom.properties.radical ?? 0) === 0) {
+        continue;
+      }
+
+      // Try migrating one radical electron to each pi-adjacent atom
+      for (const bondId of atom.bonds) {
+        const bond = molecule.bonds.get(bondId);
+        if (!bond || !bondIds.has(bondId)) {
+          continue;
+        }
+        const otherId = bond.getOtherAtom(atomId);
+        if (!atomIds.has(otherId)) {
+          continue;
+        }
+        const otherAtom = molecule.atoms.get(otherId);
+        if (!otherAtom) {
+          continue;
+        }
+
+        // Radical hops: R• − A → R − A•
+        const newRadicals = new Map(base.atomRadicals);
+        const srcRadical = newRadicals.get(atomId) ?? atom.properties.radical ?? 0;
+        const dstRadical = newRadicals.get(otherId) ?? otherAtom.properties.radical ?? 0;
+        if (srcRadical &lt; 1 || dstRadical >= 2) {
+          continue;
+        }
+
+        newRadicals.set(atomId, srcRadical - 1);
+        newRadicals.set(otherId, dstRadical + 1);
+
+        const key = _stateKey(base.bondOrders, base.atomCharges, newRadicals);
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        results.push({ bondOrders: new Map(base.bondOrders), atomCharges: new Map(base.atomCharges), atomRadicals: newRadicals });
+
+        if (results.length + baseStates.length >= maxContributors) {
+          break;
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
+// ---------------------------------------------------------------------------
+// Step 4 — Score and sort
+// ---------------------------------------------------------------------------
+
+/**
+ * Computes a stability weight for a resonance state.
+ *
+ * Higher weight = more stable (shown first). Based on Pauling's minimum
+ * formal charge principle:
+ * - Base: 100
+ * - −20 per formal charge on any atom
+ * - −10 extra per charge on carbon specifically
+ * - −5 per charge-separated pair (+ on one atom, − on non-adjacent atom)
+ * - +5 if all pi-system atoms satisfy the octet rule
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Set&lt;string>} atomIds
+ * @param {Map&lt;string, number>} atomCharges
+ * @param {Map&lt;string, number>} bondOrders
+ * @returns {number}
+ */
+function _scoreState(molecule, atomIds, atomCharges, bondOrders) {
+  let weight = 100;
+
+  const chargedAtomIds = [];
+  for (const atomId of atomIds) {
+    const charge = atomCharges.get(atomId) ?? 0;
+    if (charge !== 0) {
+      weight -= 20;
+      const atom = molecule.atoms.get(atomId);
+      if (atom?.name === 'C') {
+        weight -= 10;
+      }
+      chargedAtomIds.push(atomId);
+    }
+  }
+
+  // Penalise charge-separated pairs on non-adjacent atoms
+  const bondedPairs = new Set();
+  for (const [bondId] of molecule.bonds) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    const [a, b] = bond.atoms;
+    bondedPairs.add(`${a}\0${b}`);
+    bondedPairs.add(`${b}\0${a}`);
+  }
+  for (let i = 0; i &lt; chargedAtomIds.length; i++) {
+    for (let j = i + 1; j &lt; chargedAtomIds.length; j++) {
+      const ci = atomCharges.get(chargedAtomIds[i]) ?? 0;
+      const cj = atomCharges.get(chargedAtomIds[j]) ?? 0;
+      if (ci * cj &lt; 0 &amp;&amp; !bondedPairs.has(`${chargedAtomIds[i]}\0${chargedAtomIds[j]}`)) {
+        weight -= 5;
+      }
+    }
+  }
+
+  // Bonus if all pi-system atoms satisfy the octet
+  let allOctets = true;
+  for (const atomId of atomIds) {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom || atom.name === 'H') {
+      continue;
+    }
+    let bondSum = 0;
+    for (const bondId of atom.bonds) {
+      const bond = molecule.bonds.get(bondId);
+      if (!bond) {
+        continue;
+      }
+      bondSum += bondOrders.has(bondId) ? bondOrders.get(bondId) : (bond.properties.localizedOrder ?? bond.properties.order ?? 1);
+    }
+    const group = atom.properties.group;
+    if (!group) {
+      continue;
+    }
+    const valenceElectrons = group &lt;= 2 ? group : group - 10;
+    const lonePairs = Math.max(0, Math.min(8 - bondSum, valenceElectrons - bondSum));
+    const totalElectrons = bondSum + lonePairs;
+    if (totalElectrons !== 8 &amp;&amp; atom.name !== 'H' &amp;&amp; atom.name !== 'B') {
+      allOctets = false;
+      break;
+    }
+  }
+  if (allOctets) {
+    weight += 5;
+  }
+
+  return weight;
+}
+
+/**
+ * Computes a visual transition cost between two resonance states.
+ *
+ * Lower cost means fewer bond-order, charge, or radical changes would be seen
+ * when cycling between the two states.
+ *
+ * @param {{ bondOrders: Map&lt;string, number>, atomCharges: Map&lt;string, number>, atomRadicals: Map&lt;string, number> }} fromState
+ * @param {{ bondOrders: Map&lt;string, number>, atomCharges: Map&lt;string, number>, atomRadicals: Map&lt;string, number> }} toState
+ * @param {Set&lt;string>} atomIds
+ * @param {Set&lt;string>} bondIds
+ * @returns {number}
+ */
+function _stateTransitionCost(fromState, toState, atomIds, bondIds) {
+  let cost = 0;
+
+  for (const bondId of bondIds) {
+    const fromOrder = fromState.bondOrders.get(bondId) ?? 1;
+    const toOrder = toState.bondOrders.get(bondId) ?? fromOrder;
+    if (fromOrder !== toOrder) {
+      cost += 2;
+    }
+  }
+
+  for (const atomId of atomIds) {
+    const fromCharge = fromState.atomCharges.get(atomId) ?? 0;
+    const toCharge = toState.atomCharges.get(atomId) ?? fromCharge;
+    if (fromCharge !== toCharge) {
+      cost += 1;
+    }
+
+    const fromRadical = fromState.atomRadicals.get(atomId) ?? 0;
+    const toRadical = toState.atomRadicals.get(atomId) ?? fromRadical;
+    if (fromRadical !== toRadical) {
+      cost += 1;
+    }
+  }
+
+  return cost;
+}
+
+/**
+ * Returns whether a candidate state's atom charges exactly match the live
+ * canonical charge assignment on every pi-system atom.
+ *
+ * When false, the state introduces charge separation or relocates formal
+ * charge relative to the canonical structure.
+ *
+ * @param {{ atomCharges: Map&lt;string, number> }} state
+ * @param {Map&lt;string, number>} canonicalAtomCharges
+ * @param {Set&lt;string>} atomIds
+ * @returns {boolean}
+ */
+function _matchesCanonicalAtomCharges(state, canonicalAtomCharges, atomIds) {
+  for (const atomId of atomIds) {
+    if ((state.atomCharges.get(atomId) ?? 0) !== (canonicalAtomCharges.get(atomId) ?? 0)) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Counts how many disconnected pi-system components differ from the canonical
+ * live structure in the given state.
+ *
+ * @param {{ bondOrders: Map&lt;string, number>, atomCharges: Map&lt;string, number>, atomRadicals: Map&lt;string, number> }} state
+ * @param {Map&lt;string, number>} canonicalBondOrders
+ * @param {Map&lt;string, number>} canonicalAtomCharges
+ * @param {Map&lt;string, number>} canonicalAtomRadicals
+ * @param {Array&lt;{ atomIds: Set&lt;string>, bondIds: Set&lt;string> }>} components
+ * @returns {number}
+ */
+function _changedComponentCount(state, canonicalBondOrders, canonicalAtomCharges, canonicalAtomRadicals, components) {
+  let changedCount = 0;
+
+  for (const component of components) {
+    let componentChanged = false;
+
+    for (const bondId of component.bondIds) {
+      if ((state.bondOrders.get(bondId) ?? canonicalBondOrders.get(bondId) ?? 1) !== (canonicalBondOrders.get(bondId) ?? 1)) {
+        componentChanged = true;
+        break;
+      }
+    }
+
+    if (!componentChanged) {
+      for (const atomId of component.atomIds) {
+        if ((state.atomCharges.get(atomId) ?? canonicalAtomCharges.get(atomId) ?? 0) !== (canonicalAtomCharges.get(atomId) ?? 0)) {
+          componentChanged = true;
+          break;
+        }
+        if ((state.atomRadicals.get(atomId) ?? canonicalAtomRadicals.get(atomId) ?? 0) !== (canonicalAtomRadicals.get(atomId) ?? 0)) {
+          componentChanged = true;
+          break;
+        }
+      }
+    }
+
+    if (componentChanged) {
+      changedCount++;
+    }
+  }
+
+  return changedCount;
+}
+
+/**
+ * Orders alternate resonance states so cycling between neighbors tends to show
+ * the smallest visible change at each step, while keeping more stable states
+ * earlier when multiple candidates are equally close.
+ *
+ * @param {{ bondOrders: Map&lt;string, number>, atomCharges: Map&lt;string, number>, atomRadicals: Map&lt;string, number>, weight: number }} canonicalState
+ * @param {Array&lt;{ bondOrders: Map&lt;string, number>, atomCharges: Map&lt;string, number>, atomRadicals: Map&lt;string, number>, weight: number }>} alternateStates
+ * @param {Set&lt;string>} atomIds
+ * @param {Set&lt;string>} bondIds
+ * @returns {Array&lt;{ bondOrders: Map&lt;string, number>, atomCharges: Map&lt;string, number>, atomRadicals: Map&lt;string, number>, weight: number }>}
+ */
+function _orderAlternateStatesForCycling(canonicalState, alternateStates, atomIds, bondIds) {
+  const remaining = [...alternateStates];
+  const ordered = [];
+  let current = canonicalState;
+
+  while (remaining.length > 0) {
+    let bestIndex = 0;
+    let bestCost = Infinity;
+    let bestWeight = -Infinity;
+    let bestKey = '';
+
+    for (let i = 0; i &lt; remaining.length; i++) {
+      const candidate = remaining[i];
+      const cost = _stateTransitionCost(current, candidate, atomIds, bondIds);
+      const weight = candidate.weight ?? 0;
+      const key = _stateKey(candidate.bondOrders, candidate.atomCharges, candidate.atomRadicals);
+
+      if (cost &lt; bestCost || (cost === bestCost &amp;&amp; weight > bestWeight) || (cost === bestCost &amp;&amp; weight === bestWeight &amp;&amp; key &lt; bestKey)) {
+        bestIndex = i;
+        bestCost = cost;
+        bestWeight = weight;
+        bestKey = key;
+      }
+    }
+
+    const [next] = remaining.splice(bestIndex, 1);
+    ordered.push(next);
+    current = next;
+  }
+
+  return ordered;
+}
+
+/**
+ * Serialises a state after filling in any omitted bond-order, charge, or
+ * radical entries from the canonical live structure.
+ *
+ * This prevents sparse internal state maps from being treated as distinct
+ * contributors when they render identically to the canonical form.
+ *
+ * @param {{ bondOrders: Map&lt;string, number>, atomCharges: Map&lt;string, number>, atomRadicals: Map&lt;string, number> }} state
+ * @param {Map&lt;string, number>} canonicalBondOrders
+ * @param {Map&lt;string, number>} canonicalAtomCharges
+ * @param {Map&lt;string, number>} canonicalAtomRadicals
+ * @param {Set&lt;string>} atomIds
+ * @param {Set&lt;string>} bondIds
+ * @returns {string}
+ */
+function _resolvedStateKey(state, canonicalBondOrders, canonicalAtomCharges, canonicalAtomRadicals, atomIds, bondIds) {
+  const resolvedBondOrders = new Map();
+  for (const bondId of bondIds) {
+    resolvedBondOrders.set(bondId, state.bondOrders.get(bondId) ?? canonicalBondOrders.get(bondId) ?? 1);
+  }
+
+  const resolvedAtomCharges = new Map();
+  const resolvedAtomRadicals = new Map();
+  for (const atomId of atomIds) {
+    resolvedAtomCharges.set(atomId, state.atomCharges.get(atomId) ?? canonicalAtomCharges.get(atomId) ?? 0);
+    resolvedAtomRadicals.set(atomId, state.atomRadicals.get(atomId) ?? canonicalAtomRadicals.get(atomId) ?? 0);
+  }
+
+  return _stateKey(resolvedBondOrders, resolvedAtomCharges, resolvedAtomRadicals);
+}
+
+/**
+ * Computes the total absolute formal charge magnitude across the tracked atoms
+ * in a state.
+ *
+ * This is used as a lightweight proxy for how much charge separation a state
+ * introduces. When collapsing permutation-heavy contributors, we keep neutral
+ * states plus at most a single localized charge-separated pair.
+ *
+ * @param {{ atomCharges: Map&lt;string, number> }} state
+ * @param {Set&lt;string>} atomIds
+ * @returns {number}
+ */
+function _totalAbsoluteChargeMagnitude(state, atomIds) {
+  let total = 0;
+  for (const atomId of atomIds) {
+    total += Math.abs(state.atomCharges.get(atomId) ?? 0);
+  }
+  return total;
+}
+
+/**
+ * Returns whether a state stays within the "single localized charge shift"
+ * window relative to the canonical structure.
+ *
+ * Neutral canonical structures may introduce one localized charge-separated
+ * pair (total absolute charge 2). Already-charged canonical structures may
+ * rearrange their existing charges, but do not gain extra total charge
+ * separation when permutation-collapsing is enabled.
+ *
+ * @param {{ atomCharges: Map&lt;string, number> }} state
+ * @param {Set&lt;string>} atomIds
+ * @param {number} canonicalAbsoluteChargeMagnitude
+ * @returns {boolean}
+ */
+function _isSingleChargeShiftState(state, atomIds, canonicalAbsoluteChargeMagnitude) {
+  const totalAbsoluteChargeMagnitude = _totalAbsoluteChargeMagnitude(state, atomIds);
+  const maxAllowedAbsoluteChargeMagnitude = canonicalAbsoluteChargeMagnitude === 0 ? 2 : canonicalAbsoluteChargeMagnitude;
+  return totalAbsoluteChargeMagnitude &lt;= maxAllowedAbsoluteChargeMagnitude;
+}
+
+// ---------------------------------------------------------------------------
+// Step 5 — Write to model
+// ---------------------------------------------------------------------------
+
+/**
+ * Snapshots the current live bond/atom properties as state 1 and writes all
+ * enumerated states into `bond.properties.resonance` and
+ * `atom.properties.resonance`, then sets `molecule.properties.resonance`.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Set&lt;string>} atomIds
+ * @param {Set&lt;string>} bondIds
+ * @param {Array&lt;{ bondOrders: Map&lt;string, number>, atomCharges: Map&lt;string, number>, atomRadicals: Map&lt;string, number>, weight: number }>} states
+ */
+function _writeToModel(molecule, atomIds, bondIds, states) {
+  // Capture state 1 snapshot from live properties
+  const state1BondOrders = new Map();
+  for (const bondId of bondIds) {
+    const bond = molecule.bonds.get(bondId);
+    if (bond) {
+      state1BondOrders.set(bondId, bond.properties.localizedOrder ?? bond.properties.order ?? 1);
+    }
+  }
+  const state1AtomCharges = new Map();
+  const state1AtomRadicals = new Map();
+  for (const atomId of atomIds) {
+    const atom = molecule.atoms.get(atomId);
+    if (atom) {
+      state1AtomCharges.set(atomId, atom.properties.charge ?? 0);
+      state1AtomRadicals.set(atomId, atom.properties.radical ?? 0);
+    }
+  }
+
+  // Build full state list:
+  // - index 0 is always the canonical snapshot (live properties before enumeration)
+  // - indices 1..n are the enumerated alternates, excluding any that are identical
+  //   to the canonical snapshot (to avoid duplicating state 1)
+  const canonicalKey = _stateKey(state1BondOrders, state1AtomCharges, new Map([...state1AtomRadicals]));
+  const seenResolvedKeys = new Set([canonicalKey]);
+  const alternateStates = [];
+  for (const state of states) {
+    const resolvedKey = _resolvedStateKey(state, state1BondOrders, state1AtomCharges, state1AtomRadicals, atomIds, bondIds);
+    if (seenResolvedKeys.has(resolvedKey)) {
+      continue;
+    }
+    seenResolvedKeys.add(resolvedKey);
+    alternateStates.push(state);
+  }
+
+  const canonicalState = {
+    bondOrders: state1BondOrders,
+    atomCharges: state1AtomCharges,
+    atomRadicals: state1AtomRadicals,
+    weight: states[0]?.weight ?? 100
+  };
+  const orderedAlternates = _orderAlternateStatesForCycling(canonicalState, alternateStates, atomIds, bondIds);
+  const allStates = [canonicalState, ...orderedAlternates];
+
+  const weights = allStates.map(s => s.weight);
+
+  // Write bond resonance tables — only for bonds that change across states
+  for (const bondId of bondIds) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    const s1Order = state1BondOrders.get(bondId) ?? 1;
+    const s1LocOrder = bond.properties.localizedOrder ?? null;
+    const s1Aromatic = bond.properties.aromatic ?? false;
+    const s1Stereo = bond.properties.stereo ?? null;
+
+    let differs = false;
+    for (let i = 1; i &lt; allStates.length; i++) {
+      const stateOrder = allStates[i].bondOrders.get(bondId);
+      if (stateOrder !== undefined &amp;&amp; stateOrder !== s1Order) {
+        differs = true;
+        break;
+      }
+    }
+    if (!differs) {
+      continue;
+    }
+
+    const stateMap = {};
+    stateMap[1] = { order: s1Order, localizedOrder: s1LocOrder, aromatic: s1Aromatic, stereo: s1Stereo };
+    for (let i = 1; i &lt; allStates.length; i++) {
+      const stateOrder = allStates[i].bondOrders.get(bondId) ?? s1Order;
+      stateMap[i + 1] = {
+        order: stateOrder,
+        localizedOrder: stateOrder >= 2 ? stateOrder : null,
+        aromatic: false,
+        stereo: null
+      };
+    }
+    bond.properties.resonance = { states: stateMap };
+  }
+
+  // Write atom resonance tables — only for atoms that change across states
+  for (const atomId of atomIds) {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    const s1Charge = state1AtomCharges.get(atomId) ?? 0;
+    const s1Radical = state1AtomRadicals.get(atomId) ?? 0;
+
+    let differs = false;
+    for (let i = 1; i &lt; allStates.length; i++) {
+      const stateCharge = allStates[i].atomCharges.get(atomId);
+      const stateRadical = allStates[i].atomRadicals.get(atomId);
+      if ((stateCharge !== undefined &amp;&amp; stateCharge !== s1Charge) || (stateRadical !== undefined &amp;&amp; stateRadical !== s1Radical)) {
+        differs = true;
+        break;
+      }
+    }
+    if (!differs) {
+      continue;
+    }
+
+    const stateMap = {};
+    stateMap[1] = { charge: s1Charge, radical: s1Radical };
+    for (let i = 1; i &lt; allStates.length; i++) {
+      stateMap[i + 1] = {
+        charge: allStates[i].atomCharges.get(atomId) ?? s1Charge,
+        radical: allStates[i].atomRadicals.get(atomId) ?? s1Radical
+      };
+    }
+    atom.properties.resonance = { states: stateMap };
+  }
+
+  molecule.properties.resonance = { count: allStates.length, currentState: 1, weights };
+}
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+/**
+ * Generates all resonance structures for a molecule and writes the results
+ * directly into the molecular graph.
+ *
+ * After calling this function:
+ * - `molecule.properties.resonance` holds `{ count, currentState, weights }`
+ * - Each bond whose order changes across states carries
+ *   `bond.properties.resonance.states`
+ * - Each atom whose charge or radical changes carries
+ *   `atom.properties.resonance.states`
+ *
+ * Use `molecule.setResonanceState(n)` to switch to a different contributor.
+ * Use `molecule.resetResonance()` to restore the canonical form and clear all
+ * tables. Any structural edit (`addAtom`, `removeBond`, etc.) automatically
+ * clears stale tables.
+ *
+ * If the molecule has no pi system (e.g. `CCO`), a single-state entry is
+ * written with `count: 1` and no bond/atom tables are populated.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {object} [options={}]
+ * @param {number} [options.maxContributors=16] - Maximum number of resonance
+ *   states to enumerate. Collected in discovery order; no pre-sorting before
+ *   the cap is applied.
+ * @param {number} [options.maxCharge=1] - Maximum allowed formal charge
+ *   magnitude on any atom. States that would produce larger charges are
+ *   discarded.
+ * @param {boolean} [options.includeChargeSeparatedStates=true] - When false,
+ *   only keeps contributors whose per-atom formal charges match the canonical
+ *   live structure. This suppresses charge-separated carbonyl-like forms such
+ *   as `C=O &lt;-> C-O-`.
+ * @param {boolean} [options.includeIndependentComponentPermutations=true] -
+ *   When false, drops states that differ from the canonical structure in more
+ *   than one disconnected pi-system component at once. This removes Cartesian-
+ *   product permutations from unrelated resonance regions while keeping local
+ *   alternates within each conjugated component.
+ */
+export function generateResonanceStructures(molecule, options = {}) {
+  const { maxContributors = 16, maxCharge = 1, includeChargeSeparatedStates = true, includeIndependentComponentPermutations = true } = options;
+
+  // Recompute from a clean canonical baseline so clones, mode switches, and
+  // repeated calls cannot accumulate stale resonance tables.
+  if (molecule.properties.resonance) {
+    molecule.setResonanceState(1);
+  }
+  molecule.clearResonanceStates();
+
+  // Ensure aromatic bonds have localizedOrder before snapshotting
+  kekulize(molecule);
+
+  const { atomIds, bondIds } = _buildPiSystem(molecule);
+
+  if (bondIds.size === 0) {
+    // No pi system — single state, nothing to write
+    molecule.properties.resonance = { count: 1, currentState: 1, weights: [100] };
+    return;
+  }
+
+  const { fixedBondIds, candidateBondIds } = _classifyBonds(molecule, bondIds);
+  const candidates = [...candidateBondIds];
+  const components = _piSystemComponents(molecule, atomIds, bondIds);
+  const canonicalAtomCharges = new Map();
+  const canonicalAtomRadicals = new Map();
+  const canonicalBondOrders = new Map();
+  let canonicalAbsoluteChargeMagnitude = 0;
+  for (const bondId of bondIds) {
+    const bond = molecule.bonds.get(bondId);
+    canonicalBondOrders.set(bondId, bond?.properties.localizedOrder ?? bond?.properties.order ?? 1);
+  }
+  for (const atomId of atomIds) {
+    const canonicalCharge = molecule.atoms.get(atomId)?.properties.charge ?? 0;
+    canonicalAtomCharges.set(atomId, canonicalCharge);
+    canonicalAbsoluteChargeMagnitude += Math.abs(canonicalCharge);
+    canonicalAtomRadicals.set(atomId, molecule.atoms.get(atomId)?.properties.radical ?? 0);
+  }
+
+  // Enumerate paired-electron matchings
+  const pairedStates = _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxContributors, maxCharge);
+
+  // Enumerate radical-migration states on top of paired states
+  const seen = new Set(pairedStates.map(s => _stateKey(s.bondOrders, s.atomCharges, s.atomRadicals)));
+  const radicalStates = _enumerateRadicalStates(molecule, atomIds, bondIds, pairedStates, maxContributors, seen);
+
+  const allRawStates = [...pairedStates, ...radicalStates]
+    .filter(state => includeChargeSeparatedStates || _matchesCanonicalAtomCharges(state, canonicalAtomCharges, atomIds))
+    .filter(state => includeIndependentComponentPermutations || _changedComponentCount(state, canonicalBondOrders, canonicalAtomCharges, canonicalAtomRadicals, components) &lt;= 1)
+    .filter(state => _isSingleChargeShiftState(state, atomIds, canonicalAbsoluteChargeMagnitude))
+    .slice(0, maxContributors);
+
+  // Score each state
+  const scoredStates = allRawStates.map(s => ({
+    ...s,
+    weight: _scoreState(molecule, atomIds, s.atomCharges, s.bondOrders)
+  }));
+
+  if (scoredStates.length === 0) {
+    _writeToModel(molecule, atomIds, bondIds, []);
+    return;
+  }
+
+  // Sort by weight descending — state 1 (canonical) keeps index 0 regardless
+  const canonical = scoredStates[0];
+  const rest = scoredStates.slice(1).sort((a, b) => b.weight - a.weight);
+  const finalStates = [canonical, ...rest];
+
+  _writeToModel(molecule, atomIds, bondIds, finalStates);
+}
+</code></pre></article></section></div></div></div><div class="search-container" id="PkfLWpAbet" style="display:none"><div class="wrapper" id="iCxFxjkHbP"><button class="icon-button search-close-button" id="VjLlGakifb" aria-label="close search"><svg><use xlink:href="#close-icon"></use></svg></button><div class="search-box-c"><svg><use xlink:href="#search-icon"></use></svg> <input type="text" id="vpcKVYIppa" class="search-input" placeholder="Search..." autofocus></div><div class="search-result-c" id="fWwVHRuDuN"><span class="search-result-c-text">Type anything to view search result</span></div></div></div><div class="mobile-menu-icon-container"><button class="icon-button" id="mobile-menu" data-isopen="false" aria-label="menu"><svg><use xlink:href="#menu-icon"></use></svg></button></div><div id="mobile-sidebar" class="mobile-sidebar-container"><div class="mobile-sidebar-wrapper"><div class="mobile-nav-links"></div><div class="mobile-sidebar-items-c"><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-modules"><div>Modules</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-algorithms.html">algorithms</a></div><div class="sidebar-section-children"><a href="module-algorithms_aromaticity.html">algorithms/aromaticity</a></div><div class="sidebar-section-children"><a href="module-algorithms_morgan.html">algorithms/morgan</a></div><div class="sidebar-section-children"><a href="module-algorithms_paths.html">algorithms/paths</a></div><div class="sidebar-section-children"><a href="module-algorithms_resonance.html">algorithms/resonance</a></div><div class="sidebar-section-children"><a href="module-algorithms_subgraph.html">algorithms/subgraph</a></div><div class="sidebar-section-children"><a href="module-algorithms_traversal.html">algorithms/traversal</a></div><div class="sidebar-section-children"><a href="module-algorithms_vf2.html">algorithms/vf2</a></div><div class="sidebar-section-children"><a href="module-app_core_undo.html">app/core/undo</a></div><div class="sidebar-section-children"><a href="module-app_render_helpers.html">app/render/helpers</a></div><div class="sidebar-section-children"><a href="module-app_render_highlights.html">app/render/highlights</a></div><div class="sidebar-section-children"><a href="module-app_render_reaction-2d.html">app/render/reaction-2d</a></div><div class="sidebar-section-children"><a href="module-app_render_resonance.html">app/render/resonance</a></div><div class="sidebar-section-children"><a href="module-app_ui_descriptors.html">app/ui/descriptors</a></div><div class="sidebar-section-children"><a href="module-app_ui_export.html">app/ui/export</a></div><div class="sidebar-section-children"><a href="module-core.html">core</a></div><div class="sidebar-section-children"><a href="module-core_Atom.html">core/Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.html">core/Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.html">core/Molecule</a></div><div class="sidebar-section-children"><a href="module-data.html">data</a></div><div class="sidebar-section-children"><a href="module-data_catalog.html">data/catalog</a></div><div class="sidebar-section-children"><a href="module-data_catalog_amino-acids.html">data/catalog/amino-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_fatty-acids.html">data/catalog/fatty-acids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_nucleobases.html">data/catalog/nucleobases</a></div><div class="sidebar-section-children"><a href="module-data_catalog_polycyclic-aromatic-hydrocarbons.html">data/catalog/polycyclic-aromatic-hydrocarbons</a></div><div class="sidebar-section-children"><a href="module-data_catalog_psychoactive-compounds.html">data/catalog/psychoactive-compounds</a></div><div class="sidebar-section-children"><a href="module-data_catalog_steroids.html">data/catalog/steroids</a></div><div class="sidebar-section-children"><a href="module-data_catalog_terpenes-and-terpenoids.html">data/catalog/terpenes-and-terpenoids</a></div><div class="sidebar-section-children"><a href="module-data_elements.html">data/elements</a></div><div class="sidebar-section-children"><a href="module-data_molecule-catalog.html">data/molecule-catalog</a></div><div class="sidebar-section-children"><a href="module-descriptors.html">descriptors</a></div><div class="sidebar-section-children"><a href="module-descriptors_information.html">descriptors/information</a></div><div class="sidebar-section-children"><a href="module-descriptors_molecular.html">descriptors/molecular</a></div><div class="sidebar-section-children"><a href="module-descriptors_physicochemical.html">descriptors/physicochemical</a></div><div class="sidebar-section-children"><a href="module-descriptors_spectral.html">descriptors/spectral</a></div><div class="sidebar-section-children"><a href="module-descriptors_topological.html">descriptors/topological</a></div><div class="sidebar-section-children"><a href="module-io.html">io</a></div><div class="sidebar-section-children"><a href="module-io_detect.html">io/detect</a></div><div class="sidebar-section-children"><a href="module-io_inchi.html">io/inchi</a></div><div class="sidebar-section-children"><a href="module-io_json.html">io/json</a></div><div class="sidebar-section-children"><a href="module-io_smiles.html">io/smiles</a></div><div class="sidebar-section-children"><a href="module-layout.html">layout</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d.html">layout/coords2d</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_force-field-refine.html">layout/coords2d/force-field-refine</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_geom2d.html">layout/coords2d/geom2d</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_neighbor-ordering.html">layout/coords2d/neighbor-ordering</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_orientation.html">layout/coords2d/orientation</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_projection-transforms.html">layout/coords2d/projection-transforms</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_refinement-context.html">layout/coords2d/refinement-context</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_refinement-issues.html">layout/coords2d/refinement-issues</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_ring-detection.html">layout/coords2d/ring-detection</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_spatial-grid.html">layout/coords2d/spatial-grid</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_stereo-enforcement.html">layout/coords2d/stereo-enforcement</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-matrices.html">matrices</a></div><div class="sidebar-section-children"><a href="module-molecules.html">molecules</a></div><div class="sidebar-section-children"><a href="module-smarts.html">smarts</a></div><div class="sidebar-section-children"><a href="module-smarts_parser.html">smarts/parser</a></div><div class="sidebar-section-children"><a href="module-smarts_primitives.html">smarts/primitives</a></div><div class="sidebar-section-children"><a href="module-smarts_reference.html">smarts/reference</a></div><div class="sidebar-section-children"><a href="module-smarts_search.html">smarts/search</a></div><div class="sidebar-section-children"><a href="module-smirks.html">smirks</a></div><div class="sidebar-section-children"><a href="module-smirks_apply.html">smirks/apply</a></div><div class="sidebar-section-children"><a href="module-smirks_parser.html">smirks/parser</a></div><div class="sidebar-section-children"><a href="module-smirks_reference.html">smirks/reference</a></div><div class="sidebar-section-children"><a href="module-utils.html">utils</a></div><div class="sidebar-section-children"><a href="module-utils_combinatorics.html">utils/combinatorics</a></div><div class="sidebar-section-children"><a href="module-utils_eigenvalues.html">utils/eigenvalues</a></div><div class="sidebar-section-children"><a href="module-utils_matrix.html">utils/matrix</a></div><div class="sidebar-section-children"><a href="module-validation.html">validation</a></div><div class="sidebar-section-children"><a href="module-validation_valence.html">validation/valence</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-classes"><div>Classes</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="module-core_Atom.Atom.html">Atom</a></div><div class="sidebar-section-children"><a href="module-core_Bond.Bond.html">Bond</a></div><div class="sidebar-section-children"><a href="module-core_Molecule.Molecule.html">Molecule</a></div><div class="sidebar-section-children"><a href="module-layout_coords2d_spatial-grid.SpatialGrid.html">SpatialGrid</a></div></div><div class="sidebar-section-title with-arrow" data-isopen="false" id="sidebar-global"><div>Global</div><svg><use xlink:href="#down-icon"></use></svg></div><div class="sidebar-section-children-container"><div class="sidebar-section-children"><a href="global.html#atomBBox">atomBBox</a></div><div class="sidebar-section-children"><a href="global.html#atomColor">atomColor</a></div><div class="sidebar-section-children"><a href="global.html#getAtomLabel">getAtomLabel</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfH">labelHalfH</a></div><div class="sidebar-section-children"><a href="global.html#labelHalfW">labelHalfW</a></div><div class="sidebar-section-children"><a href="global.html#labelTextOffset">labelTextOffset</a></div><div class="sidebar-section-children"><a href="global.html#perpUnit">perpUnit</a></div><div class="sidebar-section-children"><a href="global.html#secondaryDir">secondaryDir</a></div><div class="sidebar-section-children"><a href="global.html#shortenLine">shortenLine</a></div><div class="sidebar-section-children"><a href="global.html#stereoBondTypeForCenter">stereoBondTypeForCenter</a></div><div class="sidebar-section-children"><a href="global.html#vecLen">vecLen</a></div></div></div><div class="mobile-navbar-actions"><div class="navbar-right-item"><button class="icon-button search-button" aria-label="open-search"><svg><use xlink:href="#search-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button theme-toggle" aria-label="toggle-theme"><svg><use class="theme-svg-use" xlink:href="#light-theme-icon"></use></svg></button></div><div class="navbar-right-item"><button class="icon-button font-size" aria-label="change-font-size"><svg><use xlink:href="#font-size-icon"></use></svg></button></div></div></div></div><script type="text/javascript" src="scripts/core.min.js"></script><script src="scripts/search.min.js" defer="defer"></script><script src="scripts/third-party/fuse.js" defer="defer"></script><script type="text/javascript">var tocbotInstance=tocbot.init({tocSelector:"#eed4d2a0bfd64539bb9df78095dec881",contentSelector:".main-content",headingSelector:"h1, h2, h3",hasInnerContainers:!0,scrollContainer:".main-content",headingsOffset:130,onClick:bringLinkToView})</script></body></html>

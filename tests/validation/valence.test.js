@@ -58,8 +58,7 @@ describe('validateValence — valid molecules', () => {
   });
 
   it('the reported cannabinoid example produces no warnings', () => {
-    const smiles =
-      'Oc1c(c(O)cc(c1)CCCCC)[C@@H]2\\C=C(/CC[C@H]2\\C(=C)C)C';
+    const smiles = 'Oc1c(c(O)cc(c1)CCCCC)[C@@H]2\\C=C(/CC[C@H]2\\C(=C)C)C';
     assert.deepEqual(validateValence(parseSMILES(smiles)), []);
   });
 

@@ -11,6 +11,7 @@ import {
 } from '../../layout/reaction2d.js';
 import { atomRadius } from './helpers.js';
 import { _setHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback } from './highlights.js';
+import { updateResonancePanel } from './resonance.js';
 
 let ctx = {};
 
@@ -200,9 +201,7 @@ export function _restoreReactionPreviewSnapshot(previewSnap) {
   _reactionPreviewLocked = !!previewSnap.reactionPreviewLocked;
   _reactionPreviewReactantAtomIds = new Set(previewSnap.reactantAtomIds ?? []);
   _reactionPreviewProductAtomIds = new Set(previewSnap.productAtomIds ?? []);
-  _reactionPreviewProductComponentAtomIdSets = (previewSnap.productComponentAtomIdSets ?? []).map(
-    atomIds => new Set(atomIds)
-  );
+  _reactionPreviewProductComponentAtomIdSets = (previewSnap.productComponentAtomIdSets ?? []).map(atomIds => new Set(atomIds));
   _reactionPreviewMappedAtomPairs = previewSnap.mappedAtomPairs ?? [];
   _reactionPreviewEditedProductAtomIds = new Set(previewSnap.editedProductAtomIds ?? []);
   _reactionPreviewPreservedReactantStereoByCenter = new Map(previewSnap.preservedReactantStereoByCenter ?? []);
@@ -213,9 +212,7 @@ export function _restoreReactionPreviewSnapshot(previewSnap) {
   _reactionPreviewForcedStereoBondTypes = new Map(previewSnap.forcedStereoBondTypes ?? []);
   _reactionPreviewForcedStereoBondCenters = new Map(previewSnap.forcedStereoBondCenters ?? []);
   _reactionPreviewReactantReferenceCoords = new Map(previewSnap.reactantReferenceCoords ?? []);
-  _reactionPreviewHighlightMappings = (previewSnap.reactionPreviewHighlightMappings ?? []).map(
-    mapping => new Map(mapping)
-  );
+  _reactionPreviewHighlightMappings = (previewSnap.reactionPreviewHighlightMappings ?? []).map(mapping => new Map(mapping));
 }
 
 function _cloneWithPrefixedIds(mol, prefix) {
@@ -229,13 +226,7 @@ function _cloneWithPrefixedIds(mol, prefix) {
     copy.tags = [...(atom.tags ?? [])];
   }
   for (const bond of mol.bonds.values()) {
-    const copy = cloned.addBond(
-      `${prefix}${bond.id}`,
-      `${prefix}${bond.atoms[0]}`,
-      `${prefix}${bond.atoms[1]}`,
-      JSON.parse(JSON.stringify(bond.properties ?? {})),
-      false
-    );
+    const copy = cloned.addBond(`${prefix}${bond.id}`, `${prefix}${bond.atoms[0]}`, `${prefix}${bond.atoms[1]}`, JSON.parse(JSON.stringify(bond.properties ?? {})), false);
     copy.tags = [...(bond.tags ?? [])];
   }
   return cloned;
@@ -334,9 +325,7 @@ export function _reaction2dSourceAtomId(productAtomId) {
 }
 
 export function _reaction2dProductGeometries(items, opts = {}) {
-  return (_reactionPreviewProductComponentAtomIdSets ?? [])
-    .map(atomIds => _reaction2dArrowGeometryPreferHeavy(items, atomIds, opts))
-    .filter(Boolean);
+  return (_reactionPreviewProductComponentAtomIdSets ?? []).map(atomIds => _reaction2dArrowGeometryPreferHeavy(items, atomIds, opts)).filter(Boolean);
 }
 
 export function _reaction2dArrowEndpoints(reactant, product, pad = 0.45) {
@@ -543,9 +532,7 @@ function _idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.
     const sourceCenterId = _reaction2dSourceAtomId(centerId);
     const reactantCenter = _reactionPreviewReactantAtomIds.has(sourceCenterId) ? mol.atoms.get(sourceCenterId) : null;
 
-    const heavyNeighbors = center
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighbors = center.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighbors.length === 0) {
       continue;
     }
@@ -555,9 +542,7 @@ function _idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.
 
     const anchored = heavyNeighbors
       .map(nb => {
-        const reactantNb = _reactionPreviewReactantAtomIds.has(_reaction2dSourceAtomId(nb.id))
-          ? mol.atoms.get(_reaction2dSourceAtomId(nb.id))
-          : null;
+        const reactantNb = _reactionPreviewReactantAtomIds.has(_reaction2dSourceAtomId(nb.id)) ? mol.atoms.get(_reaction2dSourceAtomId(nb.id)) : null;
         const bond = mol.getBond(center.id, nb.id);
         return {
           atom: nb,
@@ -581,12 +566,7 @@ function _idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.
         }
       }
       if (bestPair) {
-        const candidates = circleIntersections(
-          bestPair.first.atom,
-          bestPair.first.targetLength,
-          bestPair.second.atom,
-          bestPair.second.targetLength
-        );
+        const candidates = circleIntersections(bestPair.first.atom, bestPair.first.targetLength, bestPair.second.atom, bestPair.second.targetLength);
         if (candidates.length > 0) {
           let best = null;
           for (const candidate of candidates) {
@@ -626,20 +606,14 @@ function _idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 
   if (!mol || !componentAtomIds?.size) {
     return;
   }
-  const mappedProductIds = new Set(
-    (_reactionPreviewMappedAtomPairs ?? [])
-      .filter(([, productId]) => componentAtomIds.has(productId))
-      .map(([, productId]) => productId)
-  );
+  const mappedProductIds = new Set((_reactionPreviewMappedAtomPairs ?? []).filter(([, productId]) => componentAtomIds.has(productId)).map(([, productId]) => productId));
 
   for (const centerId of componentAtomIds) {
     const center = mol.atoms.get(centerId);
     if (!center || center.name === 'H' || center.x == null || center.y == null) {
       continue;
     }
-    const heavyNeighbors = center
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighbors = center.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighbors.length !== 3) {
       continue;
     }
@@ -787,11 +761,7 @@ function _repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength 
   if (!mol || !componentAtomIds?.size) {
     return;
   }
-  const mappedProductIds = new Set(
-    (_reactionPreviewMappedAtomPairs ?? [])
-      .filter(([, productId]) => componentAtomIds.has(productId))
-      .map(([, productId]) => productId)
-  );
+  const mappedProductIds = new Set((_reactionPreviewMappedAtomPairs ?? []).filter(([, productId]) => componentAtomIds.has(productId)).map(([, productId]) => productId));
   for (const atomId of componentAtomIds) {
     const atom = mol.atoms.get(atomId);
     if (!atom || atom.x == null || atom.name === 'H') {
@@ -804,17 +774,13 @@ function _repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength 
         continue;
       }
     }
-    const heavyNeighbors = atom
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null);
+    const heavyNeighbors = atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null);
     if (heavyNeighbors.length !== 1) {
       continue;
     }
     const parent = heavyNeighbors[0];
     const atomBond = mol.getBond(atom.id, parent.id);
-    const parentHeavyNeighbors = parent
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const parentHeavyNeighbors = parent.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     const parentHasTrigonalEditedGeometry =
       _reactionPreviewEditedProductAtomIds.has(parent.id) &&
       parentHeavyNeighbors.length === 3 &&
@@ -822,8 +788,7 @@ function _repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength 
     if (parentHasTrigonalEditedGeometry) {
       continue;
     }
-    const targetBondLength =
-      bondLength * ((atomBond?.properties.order ?? 1) >= 3 ? 0.78 : (atomBond?.properties.order ?? 1) >= 2 ? 0.86 : 1);
+    const targetBondLength = bondLength * ((atomBond?.properties.order ?? 1) >= 3 ? 0.78 : (atomBond?.properties.order ?? 1) >= 2 ? 0.86 : 1);
     const parentSourceId = _reaction2dSourceAtomId(parent.id);
     const reactantParent = _reactionPreviewReactantAtomIds.has(parentSourceId) ? mol.atoms.get(parentSourceId) : null;
     const mappedSiblingSourceIds = new Set(
@@ -836,34 +801,19 @@ function _repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength 
       ? reactantParent
           .getNeighbors(mol)
           .filter(
-            nb =>
-              _reactionPreviewReactantAtomIds.has(nb.id) &&
-              nb.id !== parentSourceId &&
-              nb.name !== 'H' &&
-              nb.x != null &&
-              nb.y != null &&
-              !mappedSiblingSourceIds.has(nb.id)
+            nb => _reactionPreviewReactantAtomIds.has(nb.id) && nb.id !== parentSourceId && nb.name !== 'H' && nb.x != null && nb.y != null && !mappedSiblingSourceIds.has(nb.id)
           )
       : [];
-    const siblings = parent
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.id !== atom.id && nb.name !== 'H' && nb.x != null);
+    const siblings = parent.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.id !== atom.id && nb.name !== 'H' && nb.x != null);
     const carbonylLikeParent = siblings.some(sibling => {
       const siblingBond = mol.getBond(parent.id, sibling.id);
       return (siblingBond?.properties.order ?? 1) >= 2;
     });
     const bondOrder = atomBond?.properties.order ?? 1;
-    const shouldReplaceLostNeighborDirection =
-      bondOrder === 1 && carbonylLikeParent && lostReactantNeighbors.length > 0;
-    const preferSiblingGeometry =
-      bondOrder >= 2 || (bondOrder === 1 && carbonylLikeParent && !shouldReplaceLostNeighborDirection);
+    const shouldReplaceLostNeighborDirection = bondOrder === 1 && carbonylLikeParent && lostReactantNeighbors.length > 0;
+    const preferSiblingGeometry = bondOrder >= 2 || (bondOrder === 1 && carbonylLikeParent && !shouldReplaceLostNeighborDirection);
 
-    if (
-      !preferSiblingGeometry &&
-      lostReactantNeighbors.length > 0 &&
-      reactantParent?.x != null &&
-      reactantParent?.y != null
-    ) {
+    if (!preferSiblingGeometry && lostReactantNeighbors.length > 0 && reactantParent?.x != null && reactantParent?.y != null) {
       let vx = 0;
       let vy = 0;
       for (const neighbor of lostReactantNeighbors) {
@@ -929,20 +879,8 @@ export function _drawReactionPreviewArrow2d(toSVGPt, atoms) {
   const px = -uy;
   const py = ux;
 
-  const arrowLayer = ctx.g
-    .append('g')
-    .attr('class', 'reaction-preview-arrow')
-    .attr('pointer-events', 'none')
-    .attr('opacity', 0.8);
-  arrowLayer
-    .append('line')
-    .attr('x1', x1)
-    .attr('y1', y1)
-    .attr('x2', x2)
-    .attr('y2', y2)
-    .attr('stroke', '#444')
-    .attr('stroke-width', 2.5)
-    .attr('stroke-linecap', 'round');
+  const arrowLayer = ctx.g.append('g').attr('class', 'reaction-preview-arrow').attr('pointer-events', 'none').attr('opacity', 0.8);
+  arrowLayer.append('line').attr('x1', x1).attr('y1', y1).attr('x2', x2).attr('y2', y2).attr('stroke', '#444').attr('stroke-width', 2.5).attr('stroke-linecap', 'round');
   arrowLayer
     .append('path')
     .attr(
@@ -991,16 +929,8 @@ export function _renderReactionPreviewArrowForce(nodes) {
   if (!arrow) {
     return;
   }
-  const startInsideReactant =
-    arrow.start.x >= reactant.minX &&
-    arrow.start.x <= reactant.maxX &&
-    arrow.start.y >= reactant.minY &&
-    arrow.start.y <= reactant.maxY;
-  const endInsideProduct =
-    arrow.end.x >= product.minX &&
-    arrow.end.x <= product.maxX &&
-    arrow.end.y >= product.minY &&
-    arrow.end.y <= product.maxY;
+  const startInsideReactant = arrow.start.x >= reactant.minX && arrow.start.x <= reactant.maxX && arrow.start.y >= reactant.minY && arrow.start.y <= reactant.maxY;
+  const endInsideProduct = arrow.end.x >= product.minX && arrow.end.x <= product.maxX && arrow.end.y >= product.minY && arrow.end.y <= product.maxY;
   if (startInsideReactant || endInsideProduct) {
     return;
   }
@@ -1019,20 +949,8 @@ export function _renderReactionPreviewArrowForce(nodes) {
   const arrowHeadLength = 10;
   const arrowHeadWidth = 6;
 
-  const arrowLayer = ctx.g
-    .append('g')
-    .attr('class', 'reaction-preview-arrow')
-    .attr('pointer-events', 'none')
-    .attr('opacity', 0.8);
-  arrowLayer
-    .append('line')
-    .attr('x1', x1)
-    .attr('y1', y1)
-    .attr('x2', x2)
-    .attr('y2', y2)
-    .attr('stroke', '#444')
-    .attr('stroke-width', 2.5)
-    .attr('stroke-linecap', 'round');
+  const arrowLayer = ctx.g.append('g').attr('class', 'reaction-preview-arrow').attr('pointer-events', 'none').attr('opacity', 0.8);
+  arrowLayer.append('line').attr('x1', x1).attr('y1', y1).attr('x2', x2).attr('y2', y2).attr('stroke', '#444').attr('stroke-width', 2.5).attr('stroke-linecap', 'round');
   arrowLayer
     .append('path')
     .attr(
@@ -1111,9 +1029,7 @@ function _filterReactionMatchGroups(mol, entry, reactantSmarts, mappings) {
     return groups;
   }
 
-  const excludedSets = excludePatterns.flatMap(pattern =>
-    [...findSMARTS(mol, pattern)].map(mapping => new Set(mapping.values()))
-  );
+  const excludedSets = excludePatterns.flatMap(pattern => [...findSMARTS(mol, pattern)].map(mapping => new Set(mapping.values())));
   if (excludedSets.length === 0) {
     return groups;
   }
@@ -1162,10 +1078,9 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
     _reactionPreviewForcedStereoBondTypes = preview.forcedStereoBondTypes ?? new Map();
     _reactionPreviewForcedStereoBondCenters = preview.forcedStereoBondCenters ?? new Map();
     _reactionPreviewReactantReferenceCoords = preview.reactantReferenceCoords ?? new Map();
-    _reactionPreviewHighlightMappings = preview.highlightMapping
-      ? [new Map(preview.highlightMapping)]
-      : [new Map(site.highlightMapping)];
-    ctx.renderMol(preview.mol);
+    _reactionPreviewHighlightMappings = preview.highlightMapping ? [new Map(preview.highlightMapping)] : [new Map(site.highlightMapping)];
+    ctx.renderMol(preview.mol, { recomputeResonance: false, refreshResonancePanel: false });
+    updateResonancePanel(_reactionPreviewSourceMol ?? sourceMol, { recompute: false });
     _setHighlight(preview.highlightMapping ? [preview.highlightMapping] : [site.highlightMapping]);
     return;
   }

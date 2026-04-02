@@ -26,12 +26,7 @@ const LABEL_FONT_SIZE = 11;
 const LABEL_MAX_CHARS = 54;
 
 function escapeXml(text) {
-  return String(text)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&apos;');
+  return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&apos;');
 }
 
 function clampLabel(text, maxChars = LABEL_MAX_CHARS) {

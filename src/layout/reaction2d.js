@@ -14,13 +14,7 @@ export function cloneWithPrefixedIds(mol, prefix) {
     copy.tags = [...(atom.tags ?? [])];
   }
   for (const bond of mol.bonds.values()) {
-    const copy = cloned.addBond(
-      `${prefix}${bond.id}`,
-      `${prefix}${bond.atoms[0]}`,
-      `${prefix}${bond.atoms[1]}`,
-      JSON.parse(JSON.stringify(bond.properties ?? {})),
-      false
-    );
+    const copy = cloned.addBond(`${prefix}${bond.id}`, `${prefix}${bond.atoms[0]}`, `${prefix}${bond.atoms[1]}`, JSON.parse(JSON.stringify(bond.properties ?? {})), false);
     copy.tags = [...(bond.tags ?? [])];
   }
   return cloned;
@@ -96,10 +90,7 @@ export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
   const reactantAffectedAtomIds = new Set(mapping ? [...mapping.values()] : []);
   const productAffectedAtomIds = new Set();
   const layoutReferenceMol = prepareReaction2dLayoutReferenceMol(sourceMol.clone());
-  const reactantReferenceCoords = snapshotReaction2dCoords(
-    layoutReferenceMol,
-    new Set(layoutReferenceMol.atoms.keys())
-  );
+  const reactantReferenceCoords = snapshotReaction2dCoords(layoutReferenceMol, new Set(layoutReferenceMol.atoms.keys()));
   const sourceStereoReferenceMol = prepareReaction2dStereoReferenceMol(reactantMol.clone());
   const sourceStereoBondTypes = new Map(pickStereoWedges(sourceStereoReferenceMol));
   const sourceStereoByCenter = new Map();
@@ -533,9 +524,7 @@ function restoreReaction2dCoords(mol, snapshot) {
 }
 
 function reaction2dHeavyGeometryStats(mol, componentAtomIds) {
-  const atoms = [...componentAtomIds]
-    .map(id => mol.atoms.get(id))
-    .filter(atom => atom && atom.name !== 'H' && atom.x != null && atom.y != null);
+  const atoms = [...componentAtomIds].map(id => mol.atoms.get(id)).filter(atom => atom && atom.name !== 'H' && atom.x != null && atom.y != null);
   let minNonbonded = Infinity;
   let maxBond = 0;
 
@@ -624,10 +613,7 @@ function idealizeReaction2dReducedAlkynePairs(mol, componentAtomIds, bondLength 
 
     const sourceAId = sourceAtomId(aId);
     const sourceBId = sourceAtomId(bId);
-    if (
-      !mol.__reactionPreview.reactantAtomIds.has(sourceAId) ||
-      !mol.__reactionPreview.reactantAtomIds.has(sourceBId)
-    ) {
+    if (!mol.__reactionPreview.reactantAtomIds.has(sourceAId) || !mol.__reactionPreview.reactantAtomIds.has(sourceBId)) {
       continue;
     }
     const reactantBond = mol.getBond(sourceAId, sourceBId);
@@ -644,12 +630,8 @@ function idealizeReaction2dReducedAlkynePairs(mol, componentAtomIds, bondLength 
       continue;
     }
 
-    const heavyNeighborsA = atomA
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
-    const heavyNeighborsB = atomB
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighborsA = atomA.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighborsB = atomB.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighborsA.length !== 2 || heavyNeighborsB.length !== 2) {
       continue;
     }
@@ -761,10 +743,7 @@ function idealizeReaction2dReducedAlkenePairs(mol, componentAtomIds, bondLength 
 
     const sourceAId = sourceAtomId(aId);
     const sourceBId = sourceAtomId(bId);
-    if (
-      !mol.__reactionPreview.reactantAtomIds.has(sourceAId) ||
-      !mol.__reactionPreview.reactantAtomIds.has(sourceBId)
-    ) {
+    if (!mol.__reactionPreview.reactantAtomIds.has(sourceAId) || !mol.__reactionPreview.reactantAtomIds.has(sourceBId)) {
       continue;
     }
     const reactantBond = mol.getBond(sourceAId, sourceBId);
@@ -781,12 +760,8 @@ function idealizeReaction2dReducedAlkenePairs(mol, componentAtomIds, bondLength 
       continue;
     }
 
-    const heavyNeighborsA = atomA
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
-    const heavyNeighborsB = atomB
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighborsA = atomA.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighborsB = atomB.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighborsA.length !== 2 || heavyNeighborsB.length !== 2) {
       continue;
     }
@@ -909,9 +884,7 @@ function preserveReaction2dEditedSingleBondTermini(mol, componentAtomIds, bondLe
       continue;
     }
 
-    const heavyNeighbors = center
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighbors = center.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighbors.length !== 1) {
       continue;
     }
@@ -925,12 +898,8 @@ function preserveReaction2dEditedSingleBondTermini(mol, componentAtomIds, bondLe
 
     const sourceCenterId = sourceAtomId(center.id);
     const sourceParentId = sourceAtomId(parent.id);
-    const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceCenterId)
-      ? mol.atoms.get(sourceCenterId)
-      : null;
-    const reactantParent = mol.__reactionPreview.reactantAtomIds.has(sourceParentId)
-      ? mol.atoms.get(sourceParentId)
-      : null;
+    const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceCenterId) ? mol.atoms.get(sourceCenterId) : null;
+    const reactantParent = mol.__reactionPreview.reactantAtomIds.has(sourceParentId) ? mol.atoms.get(sourceParentId) : null;
     if (
       reactantCenter?.x == null ||
       reactantCenter?.y == null ||
@@ -941,9 +910,7 @@ function preserveReaction2dEditedSingleBondTermini(mol, componentAtomIds, bondLe
       continue;
     }
 
-    const reactantHeavyNeighborCount = reactantCenter
-      .getNeighbors(mol)
-      .filter(nb => mol.__reactionPreview.reactantAtomIds.has(nb.id) && nb.name !== 'H').length;
+    const reactantHeavyNeighborCount = reactantCenter.getNeighbors(mol).filter(nb => mol.__reactionPreview.reactantAtomIds.has(nb.id) && nb.name !== 'H').length;
     if (reactantHeavyNeighborCount > 1) {
       continue;
     }
@@ -959,18 +926,8 @@ function preserveReaction2dEditedSingleBondTermini(mol, componentAtomIds, bondLe
       x: parent.x + (vx / len) * targetLength,
       y: parent.y + (vy / len) * targetLength
     };
-    const currentScore = reaction2dCandidateLayoutScore(
-      mol,
-      componentAtomIds,
-      [{ atom: center, x: center.x, y: center.y }],
-      bondLength
-    );
-    const candidateScore = reaction2dCandidateLayoutScore(
-      mol,
-      componentAtomIds,
-      [{ atom: center, x: candidate.x, y: candidate.y }],
-      bondLength
-    );
+    const currentScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: center, x: center.x, y: center.y }], bondLength);
+    const candidateScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: center, x: candidate.x, y: candidate.y }], bondLength);
     if (candidateScore <= currentScore) {
       center.x = candidate.x;
       center.y = candidate.y;
@@ -1015,13 +972,9 @@ function idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.5
     }
 
     const sourceCenterId = sourceAtomId(centerId);
-    const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceCenterId)
-      ? mol.atoms.get(sourceCenterId)
-      : null;
+    const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceCenterId) ? mol.atoms.get(sourceCenterId) : null;
 
-    const heavyNeighbors = center
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighbors = center.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighbors.length === 0) {
       continue;
     }
@@ -1031,9 +984,7 @@ function idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.5
 
     const anchored = heavyNeighbors
       .map(nb => {
-        const reactantNb = mol.__reactionPreview.reactantAtomIds.has(sourceAtomId(nb.id))
-          ? mol.atoms.get(sourceAtomId(nb.id))
-          : null;
+        const reactantNb = mol.__reactionPreview.reactantAtomIds.has(sourceAtomId(nb.id)) ? mol.atoms.get(sourceAtomId(nb.id)) : null;
         const bond = mol.getBond(center.id, nb.id);
         return {
           atom: nb,
@@ -1049,13 +1000,8 @@ function idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.5
         if (!mol.__reactionPreview.editedProductAtomIds.has(center.id)) {
           return true;
         }
-        const infoHeavyNeighbors = info.atom
-          .getNeighbors(mol)
-          .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H');
-        const isTerminalMappedHetero =
-          ['O', 'N', 'S'].includes(info.atom.name) &&
-          infoHeavyNeighbors.length === 1 &&
-          infoHeavyNeighbors[0]?.id === center.id;
+        const infoHeavyNeighbors = info.atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H');
+        const isTerminalMappedHetero = ['O', 'N', 'S'].includes(info.atom.name) && infoHeavyNeighbors.length === 1 && infoHeavyNeighbors[0]?.id === center.id;
         return !isTerminalMappedHetero;
       });
 
@@ -1072,12 +1018,7 @@ function idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.5
         }
       }
       if (bestPair) {
-        const candidates = circleIntersections(
-          bestPair.first.atom,
-          bestPair.first.targetLength,
-          bestPair.second.atom,
-          bestPair.second.targetLength
-        );
+        const candidates = circleIntersections(bestPair.first.atom, bestPair.first.targetLength, bestPair.second.atom, bestPair.second.targetLength);
         if (candidates.length > 0) {
           let best = null;
           for (const candidate of [{ x: center.x, y: center.y }, ...candidates]) {
@@ -1086,12 +1027,7 @@ function idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.5
               score += 0.35 * ((candidate.x - reactantCenter.x) ** 2 + (candidate.y - reactantCenter.y) ** 2);
             }
             for (const info of [bestPair.first, bestPair.second]) {
-              if (
-                info.reactant?.x == null ||
-                info.reactant?.y == null ||
-                reactantCenter?.x == null ||
-                reactantCenter?.y == null
-              ) {
+              if (info.reactant?.x == null || info.reactant?.y == null || reactantCenter?.x == null || reactantCenter?.y == null) {
                 continue;
               }
               const reactantDx = reactantCenter.x - info.reactant.x;
@@ -1109,12 +1045,7 @@ function idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.5
               const cy = candidateDy / candidateLen;
               score += 0.9 * ((cx - rx) ** 2 + (cy - ry) ** 2);
             }
-            score += reaction2dCandidateLayoutScore(
-              mol,
-              componentAtomIds,
-              [{ atom: center, x: candidate.x, y: candidate.y }],
-              bondLength
-            );
+            score += reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: center, x: candidate.x, y: candidate.y }], bondLength);
             if (!best || score < best.score) {
               best = { candidate, score };
             }
@@ -1139,22 +1070,10 @@ function idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.5
             x: anchor.atom.x + (vx / vlen) * anchor.targetLength,
             y: anchor.atom.y + (vy / vlen) * anchor.targetLength
           };
-          const reactantPenalty = point =>
-            0.75 * ((point.x - reactantCenter.x) ** 2 + (point.y - reactantCenter.y) ** 2);
+          const reactantPenalty = point => 0.75 * ((point.x - reactantCenter.x) ** 2 + (point.y - reactantCenter.y) ** 2);
           const currentScore =
-            reaction2dCandidateLayoutScore(
-              mol,
-              componentAtomIds,
-              [{ atom: center, x: center.x, y: center.y }],
-              bondLength
-            ) + reactantPenalty({ x: center.x, y: center.y });
-          const candidateScore =
-            reaction2dCandidateLayoutScore(
-              mol,
-              componentAtomIds,
-              [{ atom: center, x: candidate.x, y: candidate.y }],
-              bondLength
-            ) + reactantPenalty(candidate);
+            reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: center, x: center.x, y: center.y }], bondLength) + reactantPenalty({ x: center.x, y: center.y });
+          const candidateScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: center, x: candidate.x, y: candidate.y }], bondLength) + reactantPenalty(candidate);
           if (candidateScore <= currentScore) {
             center.x = candidate.x;
             center.y = candidate.y;
@@ -1179,9 +1098,7 @@ function idealizeReaction2dEditedMultipleBondTermini(mol, componentAtomIds, bond
       continue;
     }
 
-    const heavyNeighbors = center
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighbors = center.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighbors.length !== 1) {
       continue;
     }
@@ -1195,12 +1112,8 @@ function idealizeReaction2dEditedMultipleBondTermini(mol, componentAtomIds, bond
 
     const sourceCenterId = sourceAtomId(center.id);
     const sourceParentId = sourceAtomId(parent.id);
-    const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceCenterId)
-      ? mol.atoms.get(sourceCenterId)
-      : null;
-    const reactantParent = mol.__reactionPreview.reactantAtomIds.has(sourceParentId)
-      ? mol.atoms.get(sourceParentId)
-      : null;
+    const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceCenterId) ? mol.atoms.get(sourceCenterId) : null;
+    const reactantParent = mol.__reactionPreview.reactantAtomIds.has(sourceParentId) ? mol.atoms.get(sourceParentId) : null;
     if (
       reactantCenter?.x == null ||
       reactantCenter?.y == null ||
@@ -1222,18 +1135,8 @@ function idealizeReaction2dEditedMultipleBondTermini(mol, componentAtomIds, bond
       x: parent.x + (vx / len) * targetLength,
       y: parent.y + (vy / len) * targetLength
     };
-    const currentScore = reaction2dCandidateLayoutScore(
-      mol,
-      componentAtomIds,
-      [{ atom: center, x: center.x, y: center.y }],
-      bondLength
-    );
-    const candidateScore = reaction2dCandidateLayoutScore(
-      mol,
-      componentAtomIds,
-      [{ atom: center, x: candidate.x, y: candidate.y }],
-      bondLength
-    );
+    const currentScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: center, x: center.x, y: center.y }], bondLength);
+    const candidateScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: center, x: candidate.x, y: candidate.y }], bondLength);
     if (candidateScore <= currentScore) {
       center.x = candidate.x;
       center.y = candidate.y;
@@ -1245,20 +1148,14 @@ function idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 1
   if (!mol || !componentAtomIds?.size) {
     return;
   }
-  const mappedProductIds = new Set(
-    (mol.__reactionPreview.mappedAtomPairs ?? [])
-      .filter(([, productId]) => componentAtomIds.has(productId))
-      .map(([, productId]) => productId)
-  );
+  const mappedProductIds = new Set((mol.__reactionPreview.mappedAtomPairs ?? []).filter(([, productId]) => componentAtomIds.has(productId)).map(([, productId]) => productId));
 
   for (const centerId of componentAtomIds) {
     const center = mol.atoms.get(centerId);
     if (!center || center.name === 'H' || center.x == null || center.y == null) {
       continue;
     }
-    const heavyNeighbors = center
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighbors = center.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighbors.length !== 3) {
       continue;
     }
@@ -1270,9 +1167,7 @@ function idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 1
         atom: nb,
         reactant,
         order: bond?.properties.order ?? 1,
-        scaffold: mappedProductIds.has(nb.id)
-          ? mappedAtomReaction2dScaffoldCompatible(reactant, nb, mol, componentAtomIds)
-          : false,
+        scaffold: mappedProductIds.has(nb.id) ? mappedAtomReaction2dScaffoldCompatible(reactant, nb, mol, componentAtomIds) : false,
         anchored: mappedAtomReaction2dLocallyAnchored(reactant, nb, mol, componentAtomIds),
         targetLength: scaledReaction2dBondLength(bond?.properties.order ?? 1, bondLength)
       };
@@ -1281,8 +1176,7 @@ function idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 1
     if (!neighborInfo.some(info => info.order >= 2)) {
       continue;
     }
-    const isCarbonylLikeCenter =
-      center.name === 'C' && neighborInfo.some(info => info.order >= 2 && info.atom.name === 'O');
+    const isCarbonylLikeCenter = center.name === 'C' && neighborInfo.some(info => info.order >= 2 && info.atom.name === 'O');
     if (isCarbonylLikeCenter) {
       continue;
     }
@@ -1302,9 +1196,7 @@ function idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 1
           const centerCandidates = [{ x: center.x, y: center.y }];
           if (anchor.reactant?.x != null && anchor.reactant?.y != null) {
             const sourceCenterId = sourceAtomId(center.id);
-            const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceCenterId)
-              ? mol.atoms.get(sourceCenterId)
-              : null;
+            const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceCenterId) ? mol.atoms.get(sourceCenterId) : null;
             if (reactantCenter?.x != null && reactantCenter?.y != null) {
               const vx = reactantCenter.x - anchor.reactant.x;
               const vy = reactantCenter.y - anchor.reactant.y;
@@ -1321,10 +1213,7 @@ function idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 1
             score: reaction2dCandidateLayoutScore(
               mol,
               componentAtomIds,
-              [
-                { atom: center, x: center.x, y: center.y },
-                ...movingInfos.map(info => ({ atom: info.atom, x: info.atom.x, y: info.atom.y }))
-              ],
+              [{ atom: center, x: center.x, y: center.y }, ...movingInfos.map(info => ({ atom: info.atom, x: info.atom.x, y: info.atom.y }))],
               bondLength
             ),
             centerCandidate: { x: center.x, y: center.y },
@@ -1346,12 +1235,7 @@ function idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 1
                 const y = centerCandidate.y + Math.sin(angle) * info.targetLength;
                 placed.push({ atom: info.atom, x, y });
               }
-              const score = reaction2dCandidateLayoutScore(
-                mol,
-                componentAtomIds,
-                [{ atom: center, x: centerCandidate.x, y: centerCandidate.y }, ...placed],
-                bondLength
-              );
+              const score = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: center, x: centerCandidate.x, y: centerCandidate.y }, ...placed], bondLength);
               if (score < best.score) {
                 best = { score, centerCandidate, placed };
               }
@@ -1450,12 +1334,7 @@ function idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 1
           y: center.y + (vy / vlen) * moving[0].targetLength
         };
         const centerReactant = mappedProductIds.has(center.id) ? mol.atoms.get(sourceAtomId(center.id)) : null;
-        const rawCandidateScore = reaction2dCandidateLayoutScore(
-          mol,
-          componentAtomIds,
-          [{ atom: moving[0].atom, x: candidate.x, y: candidate.y }],
-          bondLength
-        );
+        const rawCandidateScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: moving[0].atom, x: candidate.x, y: candidate.y }], bondLength);
         const shouldPreserveUneditedCenterOrientation =
           !mol.__reactionPreview.editedProductAtomIds.has(center.id) &&
           mappedAtomReaction2dScaffoldCompatible(centerReactant, center, mol, componentAtomIds) &&
@@ -1467,23 +1346,12 @@ function idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 1
           continue;
         }
         const reactantPenalty =
-          moving[0].reactant?.x != null && moving[0].reactant?.y != null
-            ? point => 5 * ((point.x - moving[0].reactant.x) ** 2 + (point.y - moving[0].reactant.y) ** 2)
-            : () => 0;
+          moving[0].reactant?.x != null && moving[0].reactant?.y != null ? point => 5 * ((point.x - moving[0].reactant.x) ** 2 + (point.y - moving[0].reactant.y) ** 2) : () => 0;
         const currentScore =
-          reaction2dCandidateLayoutScore(
-            mol,
-            componentAtomIds,
-            [{ atom: moving[0].atom, x: moving[0].atom.x, y: moving[0].atom.y }],
-            bondLength
-          ) + reactantPenalty({ x: moving[0].atom.x, y: moving[0].atom.y });
+          reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: moving[0].atom, x: moving[0].atom.x, y: moving[0].atom.y }], bondLength) +
+          reactantPenalty({ x: moving[0].atom.x, y: moving[0].atom.y });
         const candidateScore =
-          reaction2dCandidateLayoutScore(
-            mol,
-            componentAtomIds,
-            [{ atom: moving[0].atom, x: candidate.x, y: candidate.y }],
-            bondLength
-          ) + reactantPenalty(candidate);
+          reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom: moving[0].atom, x: candidate.x, y: candidate.y }], bondLength) + reactantPenalty(candidate);
         if (candidateScore <= currentScore) {
           moving[0].atom.x = candidate.x;
           moving[0].atom.y = candidate.y;
@@ -1537,24 +1405,16 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
   if (!mol || !componentAtomIds?.size) {
     return;
   }
-  const mappedProductIds = new Set(
-    (mol.__reactionPreview.mappedAtomPairs ?? [])
-      .filter(([, productId]) => componentAtomIds.has(productId))
-      .map(([, productId]) => productId)
-  );
+  const mappedProductIds = new Set((mol.__reactionPreview.mappedAtomPairs ?? []).filter(([, productId]) => componentAtomIds.has(productId)).map(([, productId]) => productId));
   const productIdBySourceId = new Map(
-    (mol.__reactionPreview.mappedAtomPairs ?? [])
-      .filter(([, productId]) => componentAtomIds.has(productId))
-      .map(([srcId, productId]) => [srcId, productId])
+    (mol.__reactionPreview.mappedAtomPairs ?? []).filter(([, productId]) => componentAtomIds.has(productId)).map(([srcId, productId]) => [srcId, productId])
   );
   for (const atomId of componentAtomIds) {
     const atom = mol.atoms.get(atomId);
     if (!atom || atom.x == null || atom.name === 'H') {
       continue;
     }
-    const heavyNeighbors = atom
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null);
+    const heavyNeighbors = atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null);
     if (heavyNeighbors.length !== 1) {
       continue;
     }
@@ -1563,9 +1423,7 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
     if (mol.__reactionPreview.editedProductAtomIds.has(atom.id) && (atomBond?.properties.order ?? 1) >= 2) {
       continue;
     }
-    const parentHeavyNeighbors = parent
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const parentHeavyNeighbors = parent.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     const parentHasTrigonalEditedGeometry =
       mol.__reactionPreview.editedProductAtomIds.has(parent.id) &&
       parentHeavyNeighbors.length === 3 &&
@@ -1578,9 +1436,7 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
     const sourceId = sourceAtomId(atomId);
     const reactantAtom = mol.__reactionPreview.reactantAtomIds.has(sourceId) ? mol.atoms.get(sourceId) : null;
     const parentSourceId = sourceAtomId(parent.id);
-    const reactantParent = mol.__reactionPreview.reactantAtomIds.has(parentSourceId)
-      ? mol.atoms.get(parentSourceId)
-      : null;
+    const reactantParent = mol.__reactionPreview.reactantAtomIds.has(parentSourceId) ? mol.atoms.get(parentSourceId) : null;
     const reactantPeripheralDirection =
       reactantAtom?.x != null &&
       reactantAtom?.y != null &&
@@ -1592,13 +1448,9 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
             y: reactantAtom.y - reactantParent.y
           }
         : null;
-    const reactantHeavyNeighborCount = reactantAtom
-      ? reactantAtom.getNeighbors(mol).filter(nb => mol.__reactionPreview.reactantAtomIds.has(nb.id) && nb.name !== 'H')
-          .length
-      : 0;
+    const reactantHeavyNeighborCount = reactantAtom ? reactantAtom.getNeighbors(mol).filter(nb => mol.__reactionPreview.reactantAtomIds.has(nb.id) && nb.name !== 'H').length : 0;
     const wasTerminalInReactant = reactantHeavyNeighborCount <= 1;
-    const preserveEditedTerminusDirection =
-      mol.__reactionPreview.editedProductAtomIds.has(atom.id) && !!reactantPeripheralDirection && wasTerminalInReactant;
+    const preserveEditedTerminusDirection = mol.__reactionPreview.editedProductAtomIds.has(atom.id) && !!reactantPeripheralDirection && wasTerminalInReactant;
     const reactantLostHeavyNeighbor =
       reactantAtom &&
       reactantAtom
@@ -1608,9 +1460,7 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
             mol.__reactionPreview.reactantAtomIds.has(nb.id) &&
             nb.id !== reactantParent?.id &&
             nb.name !== 'H' &&
-            !parent
-              .getNeighbors(mol)
-              .some(productNb => componentAtomIds.has(productNb.id) && sourceAtomId(productNb.id) === nb.id)
+            !parent.getNeighbors(mol).some(productNb => componentAtomIds.has(productNb.id) && sourceAtomId(productNb.id) === nb.id)
         );
     const preserveMappedTerminalHeteroDirection =
       !mol.__reactionPreview.editedProductAtomIds.has(atom.id) &&
@@ -1624,9 +1474,7 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
       preserveMappedTerminalHeteroDirection ||
       (!!reactantPeripheralDirection &&
         wasTerminalInReactant &&
-        (['F', 'Cl', 'Br', 'I'].includes(atom.name) ||
-          (reactantAtom && reactantAtom.name !== atom.name) ||
-          reactantLostHeavyNeighbor));
+        (['F', 'Cl', 'Br', 'I'].includes(atom.name) || (reactantAtom && reactantAtom.name !== atom.name) || reactantLostHeavyNeighbor));
     if (preserveReactantPeripheralDirection) {
       const len = Math.hypot(reactantPeripheralDirection.x, reactantPeripheralDirection.y);
       if (len >= 1e-6) {
@@ -1634,18 +1482,8 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
           x: parent.x + (reactantPeripheralDirection.x / len) * targetBondLength,
           y: parent.y + (reactantPeripheralDirection.y / len) * targetBondLength
         };
-        const currentScore = reaction2dCandidateLayoutScore(
-          mol,
-          componentAtomIds,
-          [{ atom, x: atom.x, y: atom.y }],
-          bondLength
-        );
-        const candidateScore = reaction2dCandidateLayoutScore(
-          mol,
-          componentAtomIds,
-          [{ atom, x: candidate.x, y: candidate.y }],
-          bondLength
-        );
+        const currentScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom, x: atom.x, y: atom.y }], bondLength);
+        const candidateScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom, x: candidate.x, y: candidate.y }], bondLength);
         if (candidateScore <= currentScore) {
           atom.x = candidate.x;
           atom.y = candidate.y;
@@ -1653,10 +1491,7 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
         }
       }
     }
-    if (
-      mappedProductIds.has(atomId) &&
-      mappedAtomReaction2dLocallyAnchored(reactantAtom, atom, mol, componentAtomIds)
-    ) {
+    if (mappedProductIds.has(atomId) && mappedAtomReaction2dLocallyAnchored(reactantAtom, atom, mol, componentAtomIds)) {
       continue;
     }
     const mappedSiblingSourceIds = new Set(
@@ -1679,24 +1514,15 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
               !mol.__reactionPreview.editedProductAtomIds.has(productIdBySourceId.get(nb.id))
           )
       : [];
-    const siblings = parent
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.id !== atom.id && nb.name !== 'H' && nb.x != null);
+    const siblings = parent.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.id !== atom.id && nb.name !== 'H' && nb.x != null);
     const carbonylLikeParent = siblings.some(sibling => {
       const siblingBond = mol.getBond(parent.id, sibling.id);
       return (siblingBond?.properties.order ?? 1) >= 2;
     });
-    const shouldReplaceLostNeighborDirection =
-      bondOrder === 1 && carbonylLikeParent && lostReactantNeighbors.length > 0;
-    const preferSiblingGeometry =
-      bondOrder >= 2 || (bondOrder === 1 && carbonylLikeParent && !shouldReplaceLostNeighborDirection);
+    const shouldReplaceLostNeighborDirection = bondOrder === 1 && carbonylLikeParent && lostReactantNeighbors.length > 0;
+    const preferSiblingGeometry = bondOrder >= 2 || (bondOrder === 1 && carbonylLikeParent && !shouldReplaceLostNeighborDirection);
 
-    if (
-      !preferSiblingGeometry &&
-      lostReactantNeighbors.length > 0 &&
-      reactantParent?.x != null &&
-      reactantParent?.y != null
-    ) {
+    if (!preferSiblingGeometry && lostReactantNeighbors.length > 0 && reactantParent?.x != null && reactantParent?.y != null) {
       let vx = 0;
       let vy = 0;
       for (const neighbor of lostReactantNeighbors) {
@@ -1712,18 +1538,8 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
           x: parent.x + (vx / vlen) * targetBondLength,
           y: parent.y + (vy / vlen) * targetBondLength
         };
-        const currentScore = reaction2dCandidateLayoutScore(
-          mol,
-          componentAtomIds,
-          [{ atom, x: atom.x, y: atom.y }],
-          bondLength
-        );
-        const candidateScore = reaction2dCandidateLayoutScore(
-          mol,
-          componentAtomIds,
-          [{ atom, x: candidate.x, y: candidate.y }],
-          bondLength
-        );
+        const currentScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom, x: atom.x, y: atom.y }], bondLength);
+        const candidateScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom, x: candidate.x, y: candidate.y }], bondLength);
         if (candidateScore <= currentScore) {
           atom.x = candidate.x;
           atom.y = candidate.y;
@@ -1752,18 +1568,8 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
       x: parent.x + (vx / vlen) * targetBondLength,
       y: parent.y + (vy / vlen) * targetBondLength
     };
-    const currentScore = reaction2dCandidateLayoutScore(
-      mol,
-      componentAtomIds,
-      [{ atom, x: atom.x, y: atom.y }],
-      bondLength
-    );
-    const candidateScore = reaction2dCandidateLayoutScore(
-      mol,
-      componentAtomIds,
-      [{ atom, x: candidate.x, y: candidate.y }],
-      bondLength
-    );
+    const currentScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom, x: atom.x, y: atom.y }], bondLength);
+    const candidateScore = reaction2dCandidateLayoutScore(mol, componentAtomIds, [{ atom, x: candidate.x, y: candidate.y }], bondLength);
     if (candidateScore <= currentScore) {
       atom.x = candidate.x;
       atom.y = candidate.y;
@@ -1785,9 +1591,7 @@ function finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bon
       continue;
     }
 
-    const heavyNeighbors = center
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighbors = center.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighbors.length !== 2) {
       continue;
     }
@@ -1811,25 +1615,14 @@ function finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bon
 
     let baseAngle = null;
     const sourceCenterId = sourceAtomId(centerId);
-    const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceCenterId)
-      ? mol.atoms.get(sourceCenterId)
-      : null;
+    const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceCenterId) ? mol.atoms.get(sourceCenterId) : null;
     if (reactantCenter?.x != null && reactantCenter?.y != null) {
       const mappedSourceIds = new Set(
-        heavyNeighbors
-          .filter(nb => sourceAtomId(nb.id) !== nb.id || mol.__reactionPreview.reactantAtomIds.has(sourceAtomId(nb.id)))
-          .map(nb => sourceAtomId(nb.id))
+        heavyNeighbors.filter(nb => sourceAtomId(nb.id) !== nb.id || mol.__reactionPreview.reactantAtomIds.has(sourceAtomId(nb.id))).map(nb => sourceAtomId(nb.id))
       );
       const lostReactantNeighbors = reactantCenter
         .getNeighbors(mol)
-        .filter(
-          nb =>
-            mol.__reactionPreview.reactantAtomIds.has(nb.id) &&
-            nb.name !== 'H' &&
-            nb.x != null &&
-            nb.y != null &&
-            !mappedSourceIds.has(nb.id)
-        );
+        .filter(nb => mol.__reactionPreview.reactantAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null && !mappedSourceIds.has(nb.id));
       if (lostReactantNeighbors.length > 0) {
         let vx = 0;
         let vy = 0;
@@ -1914,18 +1707,14 @@ function finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLeng
       continue;
     }
 
-    const heavyNeighbors = center
-      .getNeighbors(mol)
-      .filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
+    const heavyNeighbors = center.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && nb.x != null && nb.y != null);
     if (heavyNeighbors.length !== 3) {
       continue;
     }
 
     const infos = heavyNeighbors.map(nb => {
       const bond = mol.getBond(center.id, nb.id);
-      const reactant = mol.__reactionPreview.reactantAtomIds.has(sourceAtomId(nb.id))
-        ? mol.atoms.get(sourceAtomId(nb.id))
-        : null;
+      const reactant = mol.__reactionPreview.reactantAtomIds.has(sourceAtomId(nb.id)) ? mol.atoms.get(sourceAtomId(nb.id)) : null;
       return {
         atom: nb,
         order: bond?.properties.order ?? 1,
@@ -2002,10 +1791,8 @@ function preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds) {
     return;
   }
   const resolved = previewState.forcedStereoByCenter instanceof Map ? previewState.forcedStereoByCenter : new Map();
-  const resolvedBondTypes =
-    previewState.forcedStereoBondTypes instanceof Map ? previewState.forcedStereoBondTypes : new Map();
-  const resolvedBondCenters =
-    previewState.forcedStereoBondCenters instanceof Map ? previewState.forcedStereoBondCenters : new Map();
+  const resolvedBondTypes = previewState.forcedStereoBondTypes instanceof Map ? previewState.forcedStereoBondTypes : new Map();
+  const resolvedBondCenters = previewState.forcedStereoBondCenters instanceof Map ? previewState.forcedStereoBondCenters : new Map();
 
   const ensureDisplayedStereo = (centerId, bond, desiredType) => {
     if (!bond || !centerId || !desiredType) {
@@ -2059,9 +1846,7 @@ function preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds) {
       continue;
     }
     const center = mol.atoms.get(centerId);
-    const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceAtomId(centerId))
-      ? mol.atoms.get(sourceAtomId(centerId))
-      : null;
+    const reactantCenter = mol.__reactionPreview.reactantAtomIds.has(sourceAtomId(centerId)) ? mol.atoms.get(sourceAtomId(centerId)) : null;
     if (!center || !reactantCenter) {
       continue;
     }
@@ -2151,9 +1936,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     productCx /= pairs.length;
     productCy /= pairs.length;
 
-    const anchoredPairs = pairs.filter(([reactant, product]) =>
-      mappedAtomReaction2dLocallyAnchored(reactant, product, mol, componentAtomIds)
-    );
+    const anchoredPairs = pairs.filter(([reactant, product]) => mappedAtomReaction2dLocallyAnchored(reactant, product, mol, componentAtomIds));
     const fittingPairs = anchoredPairs.length > 0 ? anchoredPairs : pairs;
     if (anchoredPairs.length > 0) {
       reactantCx = 0;
@@ -2219,12 +2002,8 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
       atom.x = reactantCx + dx * cosA - dy * sinA;
       atom.y = reactantCy + dx * sinA + dy * cosA;
     }
-    const scaffoldPairs = pairs.filter(([reactant, product]) =>
-      mappedAtomReaction2dScaffoldCompatible(reactant, product, mol, componentAtomIds)
-    );
-    const stableScaffoldPairs = scaffoldPairs.filter(
-      ([, product]) => product.name !== 'H' && reaction2dMinHeavyDistanceToEdited(mol, product.id, componentAtomIds) > 1
-    );
+    const scaffoldPairs = pairs.filter(([reactant, product]) => mappedAtomReaction2dScaffoldCompatible(reactant, product, mol, componentAtomIds));
+    const stableScaffoldPairs = scaffoldPairs.filter(([, product]) => product.name !== 'H' && reaction2dMinHeavyDistanceToEdited(mol, product.id, componentAtomIds) > 1);
     const hasEditedMultipleBondCenter = [...componentAtomIds].some(atomId => {
       if (!mol.__reactionPreview.editedProductAtomIds.has(atomId)) {
         return false;
@@ -2233,19 +2012,11 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
       if (!atom || atom.name === 'H') {
         return false;
       }
-      return atom
-        .getNeighbors(mol)
-        .some(
-          nb =>
-            componentAtomIds.has(nb.id) && nb.name !== 'H' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) >= 2
-        );
+      return atom.getNeighbors(mol).some(nb => componentAtomIds.has(nb.id) && nb.name !== 'H' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) >= 2);
     });
     const mappedHeavyPairs = pairs.filter(([reactant, product]) => reactant.name !== 'H' && product.name !== 'H');
-    const componentHeavyAtomCount = [...componentAtomIds]
-      .map(atomId => mol.atoms.get(atomId))
-      .filter(atom => atom && atom.name !== 'H').length;
-    const canSeedHeavyScaffold =
-      mappedHeavyPairs.length >= 3 && mappedHeavyPairs.length === componentHeavyAtomCount && !mappedConnectivityChanged;
+    const componentHeavyAtomCount = [...componentAtomIds].map(atomId => mol.atoms.get(atomId)).filter(atom => atom && atom.name !== 'H').length;
+    const canSeedHeavyScaffold = mappedHeavyPairs.length >= 3 && mappedHeavyPairs.length === componentHeavyAtomCount && !mappedConnectivityChanged;
     if (canSeedHeavyScaffold) {
       const beforeSnapshot = snapshotReaction2dCoords(mol, componentAtomIds);
       for (const [reactant, product] of mappedHeavyPairs) {
@@ -2271,12 +2042,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
         restoreReaction2dCoords(mol, beforeSnapshot);
       }
     }
-    if (
-      mappedConnectivityChanged &&
-      !mappedRingMembershipChanged &&
-      !hasEditedMultipleBondCenter &&
-      stableScaffoldPairs.length >= 2
-    ) {
+    if (mappedConnectivityChanged && !mappedRingMembershipChanged && !hasEditedMultipleBondCenter && stableScaffoldPairs.length >= 2) {
       const beforeSnapshot = snapshotReaction2dCoords(mol, componentAtomIds);
       for (const [reactant, product] of stableScaffoldPairs) {
         product.x = reactant.x;

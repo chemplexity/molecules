@@ -67,19 +67,11 @@ export function findMolecules(query, options = {}) {
 
     const collectionFields = [collection.id, collection.name, ...(collection.tags ?? [])];
     for (const molecule of collection.molecules) {
-      const haystack = [
-        molecule.id,
-        molecule.name,
-        molecule.smiles,
-        molecule.inchi,
-        ...(molecule.tags ?? []),
-        ...(molecule.aliases ?? []),
-        ...collectionFields
-      ].map(normalizeCollectionSearchValue);
+      const haystack = [molecule.id, molecule.name, molecule.smiles, molecule.inchi, ...(molecule.tags ?? []), ...(molecule.aliases ?? []), ...collectionFields].map(
+        normalizeCollectionSearchValue
+      );
 
-      const matched = exact
-        ? haystack.some(value => value === normalizedQuery)
-        : haystack.some(value => value.includes(normalizedQuery));
+      const matched = exact ? haystack.some(value => value === normalizedQuery) : haystack.some(value => value.includes(normalizedQuery));
 
       if (!matched) {
         continue;

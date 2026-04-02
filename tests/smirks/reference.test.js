@@ -248,10 +248,7 @@ describe('reactionTemplates — example applications', () => {
   });
 
   it('carboxylicAcidDeprotonation removes the acidic hydrogen cleanly', () => {
-    const product = applySMIRKS(
-      parseSMILES('CC(=O)Oc1ccccc1C(=O)O'),
-      reactionTemplates.carboxylicAcidDeprotonation.smirks
-    );
+    const product = applySMIRKS(parseSMILES('CC(=O)Oc1ccccc1C(=O)O'), reactionTemplates.carboxylicAcidDeprotonation.smirks);
     assert.ok(product);
     assert.equal(toSMILES(product), 'CC(=O)Oc1c(cccc1)C(=O)[O-]');
   });

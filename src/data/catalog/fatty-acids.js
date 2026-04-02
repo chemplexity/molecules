@@ -42,8 +42,7 @@ const fattyAcidsCatalog = {
       id: 'oleic-acid',
       name: 'Oleic Acid',
       smiles: 'CCCCCCCC/C=C\\CCCCCCCC(=O)O',
-      inchi:
-        'InChI=1S/C18H34O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18(19)20/h9-10,20H,2-8,11-17H2,1H3/b9-10-/m0/s1',
+      inchi: 'InChI=1S/C18H34O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18(19)20/h9-10,20H,2-8,11-17H2,1H3/b9-10-/m0/s1',
       tags: ['fatty-acid', 'monounsaturated', 'omega-9'],
       aliases: ['cis-9-octadecenoic acid', 'C18:1']
     },
@@ -51,8 +50,7 @@ const fattyAcidsCatalog = {
       id: 'linoleic-acid',
       name: 'Linoleic Acid',
       smiles: 'CCCCC/C=C\\C/C=C\\CCCCCCCC(=O)O',
-      inchi:
-        'InChI=1S/C18H32O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18(19)20/h6-7,9-10,20H,2-5,8,11-17H2,1H3/b6-7-,9-10-/m0/s1',
+      inchi: 'InChI=1S/C18H32O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18(19)20/h6-7,9-10,20H,2-5,8,11-17H2,1H3/b6-7-,9-10-/m0/s1',
       tags: ['fatty-acid', 'polyunsaturated', 'omega-6'],
       aliases: ['cis,cis-9,12-octadecadienoic acid', 'C18:2']
     },
@@ -60,8 +58,7 @@ const fattyAcidsCatalog = {
       id: 'alpha-linolenic-acid',
       name: 'Alpha-Linolenic Acid',
       smiles: 'CC/C=C\\C/C=C\\C/C=C\\CCCCCCCC(=O)O',
-      inchi:
-        'InChI=1S/C18H30O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18(19)20/h3-4,6-7,9-10,20H,2,5,8,11-17H2,1H3/b3-4-,6-7-,9-10-/m0/s1',
+      inchi: 'InChI=1S/C18H30O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18(19)20/h3-4,6-7,9-10,20H,2,5,8,11-17H2,1H3/b3-4-,6-7-,9-10-/m0/s1',
       tags: ['fatty-acid', 'polyunsaturated', 'omega-3'],
       aliases: ['ALA', 'cis,cis,cis-9,12,15-octadecatrienoic acid', 'C18:3']
     },
@@ -69,8 +66,7 @@ const fattyAcidsCatalog = {
       id: 'arachidonic-acid',
       name: 'Arachidonic Acid',
       smiles: 'CCCCC\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O',
-      inchi:
-        'InChI=1S/C20H32O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18-19-20(21)22/h6-7,9-10,12-13,15-16,22H,2-5,8,11,14,17-19H2,1H3/b6-7-,9-10-,12-13-,15-16-/m0/s1',
+      inchi: 'InChI=1S/C20H32O2/c1-2-3-4-5-6-7-8-9-10-11-12-13-14-15-16-17-18-19-20(21)22/h6-7,9-10,12-13,15-16,22H,2-5,8,11,14,17-19H2,1H3/b6-7-,9-10-,12-13-,15-16-/m0/s1',
       tags: ['fatty-acid', 'polyunsaturated', 'omega-6'],
       aliases: ['AA', 'all-cis-5,8,11,14-eicosatetraenoic acid', 'C20:4']
     },

@@ -147,7 +147,6 @@ export function collectSideAtoms(molecule, startId, blockedId) {
   return side;
 }
 
-
 /**
  * Enforces the target E/Z stereo configuration of all acyclic double bonds by reflecting
  * one substituent side across the bond axis when the current geometry is incorrect.
@@ -283,9 +282,7 @@ export function enforceAcyclicEZStereo(molecule, coords, { preserveLongChainSpan
           !bestCandidate ||
           score > bestCandidate.score ||
           (score === bestCandidate.score && span > bestCandidate.span + 1e-6) ||
-          (score === bestCandidate.score &&
-            Math.abs(span - bestCandidate.span) <= 1e-6 &&
-            clearance > bestCandidate.clearance + 1e-6) ||
+          (score === bestCandidate.score && Math.abs(span - bestCandidate.span) <= 1e-6 && clearance > bestCandidate.clearance + 1e-6) ||
           (score === bestCandidate.score &&
             Math.abs(span - bestCandidate.span) <= 1e-6 &&
             Math.abs(clearance - bestCandidate.clearance) <= 1e-6 &&
@@ -400,11 +397,7 @@ export function optimizeAcyclicMultipleBondSubtrees(molecule, coords, bondLength
       { pivotId: bId, movingId: aId, sideAtoms: aSide }
     ].filter(
       ({ pivotId, movingId, sideAtoms }) =>
-        coords.has(pivotId) &&
-        coords.has(movingId) &&
-        sideAtoms.size > 1 &&
-        sideAtoms.size <= molecule.atomCount - sideAtoms.size &&
-        heavyDegree(movingId) > 1
+        coords.has(pivotId) && coords.has(movingId) && sideAtoms.size > 1 && sideAtoms.size <= molecule.atomCount - sideAtoms.size && heavyDegree(movingId) > 1
     );
 
     for (const { pivotId, movingId, sideAtoms } of candidates) {
@@ -441,4 +434,3 @@ export function optimizeAcyclicMultipleBondSubtrees(molecule, coords, bondLength
     }
   }
 }
-

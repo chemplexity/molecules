@@ -36,15 +36,7 @@ console.log(molecularMass(caffeine)); // 194.19  (monoisotopic, Da)
 All physicochemical functions accept a `Molecule` as their first argument.
 
 ```js
-import {
-  logP,
-  tpsa,
-  hBondDonors,
-  hBondAcceptors,
-  rotatableBondCount,
-  fsp3,
-  lipinskiRuleOfFive
-} from 'molecules/descriptors';
+import { logP, tpsa, hBondDonors, hBondAcceptors, rotatableBondCount, fsp3, lipinskiRuleOfFive } from 'molecules/descriptors';
 import { parseSMILES } from 'molecules';
 
 const aspirin = parseSMILES('CC(=O)Oc1ccccc1C(=O)O');

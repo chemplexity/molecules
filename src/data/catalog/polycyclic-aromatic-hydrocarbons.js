@@ -90,8 +90,7 @@ const polycyclicAromaticHydrocarbonsCatalog = {
       id: 'coronene',
       name: 'Coronene',
       smiles: 'C1=CC2=C3C4=C1C=CC5=C4C6=C(C=C5)C=CC7=C6C3=C(C=C2)C=C7',
-      inchi:
-        'InChI=1S/C24H12/c1-2-14-5-6-16-9-11-18-12-10-17-8-7-15-4-3-13(1)19-20(14)22(16)24(18)23(17)21(15)19/h1-12H',
+      inchi: 'InChI=1S/C24H12/c1-2-14-5-6-16-9-11-18-12-10-17-8-7-15-4-3-13(1)19-20(14)22(16)24(18)23(17)21(15)19/h1-12H',
       tags: ['pah', 'aromatic', 'seven-ring'],
       aliases: ['coronene']
     }

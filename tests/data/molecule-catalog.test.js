@@ -222,13 +222,7 @@ describe('moleculeCatalog structural validation', () => {
   });
 
   it('keeps the curated polyunsaturated fatty-acid double bonds cis in runtime SMILES', () => {
-    const expectedIds = [
-      'linoleic-acid',
-      'alpha-linolenic-acid',
-      'arachidonic-acid',
-      'eicosapentaenoic-acid',
-      'docosahexaenoic-acid'
-    ];
+    const expectedIds = ['linoleic-acid', 'alpha-linolenic-acid', 'arachidonic-acid', 'eicosapentaenoic-acid', 'docosahexaenoic-acid'];
 
     const collection = getMoleculeCatalogById('fatty-acids');
     for (const molecule of collection.molecules) {
@@ -273,11 +267,7 @@ describe('moleculeCatalog structural validation', () => {
     const collection = getMoleculeCatalogById('steroids');
     for (const molecule of collection.molecules) {
       assert.equal(molecule.smiles.includes('@'), false, `${molecule.id} should not include atom stereochemistry`);
-      assert.equal(
-        /\/t|\/m\d|\/s\d/.test(molecule.inchi),
-        false,
-        `${molecule.id} should not include InChI stereolayers`
-      );
+      assert.equal(/\/t|\/m\d|\/s\d/.test(molecule.inchi), false, `${molecule.id} should not include InChI stereolayers`);
     }
   });
 });

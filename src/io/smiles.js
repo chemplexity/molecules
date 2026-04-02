@@ -300,8 +300,7 @@ function previousAtomSkipBranches(start, keys, atoms, bonds) {
  * @returns {string|null}
  */
 function previousBondSourceAtom(start, keys, atoms, bonds = null) {
-  const previous = key =>
-    bonds ? previousAtomSkipBranches(key, keys, atoms, bonds) : previousAtom(key, keys, atoms);
+  const previous = key => (bonds ? previousAtomSkipBranches(key, keys, atoms, bonds) : previousAtom(key, keys, atoms));
 
   let atomKey = previous(start);
   while (atomKey !== null) {
@@ -905,11 +904,7 @@ export function decode(tokens) {
                   }
                 }
                 if (targetAtom !== undefined && skip === 0) {
-                  if (
-                    sourceAtom !== undefined &&
-                    sourceAtom.properties.aromatic === 1 &&
-                    targetAtom.properties.aromatic === 1
-                  ) {
+                  if (sourceAtom !== undefined && sourceAtom.properties.aromatic === 1 && targetAtom.properties.aromatic === 1) {
                     bondOrder = 1.5;
                   }
                   bonds[bondID].order = bondOrder;
@@ -1044,10 +1039,7 @@ export function decode(tokens) {
         if (a === undefined || b === undefined) {
           continue;
         }
-        if (
-          (a.atoms[0] === b.atoms[0] && a.atoms[1] === b.atoms[1]) ||
-          (a.atoms[0] === b.atoms[1] && a.atoms[1] === b.atoms[0])
-        ) {
+        if ((a.atoms[0] === b.atoms[0] && a.atoms[1] === b.atoms[1]) || (a.atoms[0] === b.atoms[1] && a.atoms[1] === b.atoms[0])) {
           if (a.name === 'ring' && b.name === 'ring') {
             delete bonds[bondID2];
             keys.bonds.splice(keys.bonds.indexOf(bondID2), 1);
@@ -1418,9 +1410,7 @@ function findFromAtomPos(bracketOpenPos, smiles, posToClean) {
  * @returns {number|null}
  */
 function findRingTokenAtomPos(ringToken, atomTokens) {
-  const direct = atomTokens.find(
-    atom => atom.index >= ringToken.index && atom.index < ringToken.index + ringToken.term.length
-  );
+  const direct = atomTokens.find(atom => atom.index >= ringToken.index && atom.index < ringToken.index + ringToken.term.length);
   if (direct) {
     return direct.index;
   }

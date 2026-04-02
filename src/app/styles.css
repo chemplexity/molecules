@@ -556,13 +556,13 @@ div.tooltip td:first-child {
 #smarts-panel {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 12px;
+  padding: 6px 12px 8px;
 }
 
 #smarts-tabs {
   display: flex;
   border-bottom: 1px solid #ddd;
-  margin-top: 2px;
+  margin-top: 0;
   margin-bottom: 6px;
   gap: 2px;
 }
@@ -632,7 +632,20 @@ div.tooltip td:first-child {
   font-size: 12px;
 }
 
+#resonance-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
 #reaction-table td {
+  padding: 6px 4px;
+  border-bottom: 1px solid #f0f0f0;
+  color: #333;
+  vertical-align: top;
+}
+
+#resonance-table td {
   padding: 6px 4px;
   border-bottom: 1px solid #f0f0f0;
   color: #333;
@@ -645,7 +658,17 @@ div.tooltip td:first-child {
   white-space: nowrap;
 }
 
+#resonance-table td:last-child {
+  width: 34px;
+  text-align: right;
+  white-space: nowrap;
+}
+
 #reaction-table tr:hover td {
+  background: #f7f7f7;
+}
+
+#resonance-table tr.resonance-clickable:hover td {
   background: #f7f7f7;
 }
 
@@ -653,8 +676,16 @@ div.tooltip td:first-child {
   cursor: pointer;
 }
 
+#resonance-table tr.resonance-clickable {
+  cursor: pointer;
+}
+
 #reaction-table tr.reaction-active td {
   background: rgba(80, 160, 40, 0.15);
+}
+
+#resonance-table tr.resonance-active td {
+  background: rgba(0, 0, 0, 0.06);
 }
 
 .reaction-name {

@@ -958,10 +958,7 @@ describe('generateCoords — disconnected molecule tiling', () => {
     generateCoords(mol);
     const aMaxX = Math.max(mol.atoms.get('a0').x, mol.atoms.get('a1').x, mol.atoms.get('a2').x);
     const bMinX = Math.min(mol.atoms.get('b0').x, mol.atoms.get('b1').x, mol.atoms.get('b2').x);
-    assert.ok(
-      bMinX > aMaxX,
-      `chain B (minX=${bMinX.toFixed(3)}) should start right of chain A (maxX=${aMaxX.toFixed(3)})`
-    );
+    assert.ok(bMinX > aMaxX, `chain B (minX=${bMinX.toFixed(3)}) should start right of chain A (maxX=${aMaxX.toFixed(3)})`);
   });
 });
 
@@ -1065,10 +1062,7 @@ describe('generateCoords — flat-top hexagon orientation', () => {
         Math.abs(angle - Math.PI / 2 + 2 * Math.PI),
         Math.abs(angle + Math.PI / 2 - 2 * Math.PI)
       );
-      assert.ok(
-        distFromVertical > 0.03,
-        `atom ${a.id} is too close to vertical (angle=${((angle * 180) / Math.PI).toFixed(1)}°) — expected flat-top`
-      );
+      assert.ok(distFromVertical > 0.03, `atom ${a.id} is too close to vertical (angle=${((angle * 180) / Math.PI).toFixed(1)}°) — expected flat-top`);
     }
   });
 
@@ -1086,10 +1080,7 @@ describe('generateCoords — flat-top hexagon orientation', () => {
         Math.abs(angle - Math.PI / 2 + 2 * Math.PI),
         Math.abs(angle + Math.PI / 2 - 2 * Math.PI)
       );
-      assert.ok(
-        distFromVertical > 0.03,
-        `atom ${a.id} angle ${((angle * 180) / Math.PI).toFixed(1)}° is too close to vertical — expected flat-top`
-      );
+      assert.ok(distFromVertical > 0.03, `atom ${a.id} angle ${((angle * 180) / Math.PI).toFixed(1)}° is too close to vertical — expected flat-top`);
     }
   });
 });
@@ -1103,10 +1094,7 @@ describe('generateCoords — principal-axis orientation (naphthalene)', () => {
       ys = atoms.map(a => a.y);
     const width = Math.max(...xs) - Math.min(...xs);
     const height = Math.max(...ys) - Math.min(...ys);
-    assert.ok(
-      width > height,
-      `naphthalene should be wider than tall after orientation: width=${width.toFixed(3)}, height=${height.toFixed(3)}`
-    );
+    assert.ok(width > height, `naphthalene should be wider than tall after orientation: width=${width.toFixed(3)}, height=${height.toFixed(3)}`);
   });
 });
 
@@ -1148,10 +1136,7 @@ describe('generateCoords — barbiturate substituent direction', () => {
 
         const angle = (Math.atan2(nb.y - rpos.y, nb.x - rpos.x) * 180) / Math.PI;
         const diff = ((angle - outward + 540) % 360) - 180; // signed, in (-180, 180]
-        assert.ok(
-          Math.abs(diff) < 90,
-          `Substituent ${rid}→${nbId} points inward: angle=${angle.toFixed(1)}°, outward=${outward.toFixed(1)}°, diff=${diff.toFixed(1)}°`
-        );
+        assert.ok(Math.abs(diff) < 90, `Substituent ${rid}→${nbId} points inward: angle=${angle.toFixed(1)}°, outward=${outward.toFixed(1)}°, diff=${diff.toFixed(1)}°`);
       }
     }
   });
@@ -1163,10 +1148,7 @@ describe('generateCoords — barbiturate substituent direction', () => {
     for (let i = 0; i < atoms.length; i++) {
       for (let j = i + 1; j < atoms.length; j++) {
         const d = Math.hypot(atoms[i].x - atoms[j].x, atoms[i].y - atoms[j].y);
-        assert.ok(
-          d > 0.5,
-          `atoms ${atoms[i].id}(${atoms[i].name}) and ${atoms[j].id}(${atoms[j].name}) overlap (d=${d.toFixed(4)})`
-        );
+        assert.ok(d > 0.5, `atoms ${atoms[i].id}(${atoms[i].name}) and ${atoms[j].id}(${atoms[j].name}) overlap (d=${d.toFixed(4)})`);
       }
     }
   });
@@ -1211,10 +1193,7 @@ describe('generateCoords — TCNE sp/sp2 geometry', () => {
             vy = b.y - atom.y;
           const cos = (ux * vx + uy * vy) / ((Math.hypot(ux, uy) || 1e-9) * (Math.hypot(vx, vy) || 1e-9));
           const ang = (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
-          assert.ok(
-            Math.abs(ang - 180) < 1,
-            `sp carbon ${id}: angle ${nbs[i]}-${id}-${nbs[j]} = ${ang.toFixed(1)}° (expected 180°)`
-          );
+          assert.ok(Math.abs(ang - 180) < 1, `sp carbon ${id}: angle ${nbs[i]}-${id}-${nbs[j]} = ${ang.toFixed(1)}° (expected 180°)`);
         }
       }
     }
@@ -1246,10 +1225,7 @@ describe('generateCoords — TCNE sp/sp2 geometry', () => {
             vy = b.y - atom.y;
           const cos = (ux * vx + uy * vy) / ((Math.hypot(ux, uy) || 1e-9) * (Math.hypot(vx, vy) || 1e-9));
           const ang = (Math.acos(Math.max(-1, Math.min(1, cos))) * 180) / Math.PI;
-          assert.ok(
-            Math.abs(ang - 120) < 1,
-            `sp2 carbon ${id}: angle ${nbs[i]}-${id}-${nbs[j]} = ${ang.toFixed(1)}° (expected 120°)`
-          );
+          assert.ok(Math.abs(ang - 120) < 1, `sp2 carbon ${id}: angle ${nbs[i]}-${id}-${nbs[j]} = ${ang.toFixed(1)}° (expected 120°)`);
         }
       }
     }
@@ -1281,10 +1257,7 @@ describe('generateCoords — three-ring linker (pyridine+morpholine off trimetho
         continue;
       }
       const d = Math.hypot(a1.x - a2.x, a1.y - a2.y);
-      assert.ok(
-        d >= 1.0 && d <= 2.5,
-        `bond ${bond.atoms[0]}(${a1.name})-${bond.atoms[1]}(${a2.name}): length ${d.toFixed(3)} Å out of [1.0, 2.5]`
-      );
+      assert.ok(d >= 1.0 && d <= 2.5, `bond ${bond.atoms[0]}(${a1.name})-${bond.atoms[1]}(${a2.name}): length ${d.toFixed(3)} Å out of [1.0, 2.5]`);
     }
   });
 
@@ -1329,10 +1302,7 @@ describe('generateCoords — three-adjacent-tBu groups (H ghost blocking fix)', 
         continue;
       }
       const d = Math.hypot(a1.x - a2.x, a1.y - a2.y);
-      assert.ok(
-        Math.abs(d - 1.5) < 1e-6,
-        `bond ${bond.atoms[0]}(${a1.name})-${bond.atoms[1]}(${a2.name}): length ${d.toFixed(4)} Å`
-      );
+      assert.ok(Math.abs(d - 1.5) < 1e-6, `bond ${bond.atoms[0]}(${a1.name})-${bond.atoms[1]}(${a2.name}): length ${d.toFixed(4)} Å`);
     }
   });
 
@@ -1450,9 +1420,7 @@ describe('generateCoords — compact bridged bicyclic amine', () => {
       uy = n1.y - atom.y;
     const vx = n2.x - atom.x,
       vy = n2.y - atom.y;
-    const angle =
-      (Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy))))) * 180) /
-      Math.PI;
+    const angle = (Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy))))) * 180) / Math.PI;
     assert.ok(angle < 175, `bridge atom ${bridgeId} remained nearly collinear: ${angle.toFixed(2)}°`);
   });
 });
@@ -1500,8 +1468,7 @@ describe('generateCoords — coronene (7-ring PAH)', () => {
 
 describe('generateCoords — parser-independent branch ordering', () => {
   const SMILES = 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN';
-  const INCHI =
-    'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1';
+  const INCHI = 'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1';
 
   it('SMILES and InChI layouts match for the same peptide graph', () => {
     const smilesMol = parseSMILES(SMILES);
@@ -1522,10 +1489,7 @@ describe('generateCoords — parser-independent branch ordering', () => {
     const xValues = path.map(id => mol.atoms.get(id)?.x ?? NaN);
 
     for (let i = 1; i < xValues.length; i++) {
-      assert.ok(
-        xValues[i] > xValues[i - 1],
-        `backbone x-order regressed at ${path[i - 1]} -> ${path[i]}: ${xValues[i - 1]} !< ${xValues[i]}`
-      );
+      assert.ok(xValues[i] > xValues[i - 1], `backbone x-order regressed at ${path[i - 1]} -> ${path[i]}: ${xValues[i - 1]} !< ${xValues[i]}`);
     }
 
     const start = mol.atoms.get(path[0]);
@@ -1574,10 +1538,7 @@ describe('generateCoords — extended chain spread', () => {
     const oxygenClearance = Math.hypot(carbonylO.x - tailCarbon.x, carbonylO.y - tailCarbon.y);
     const tailExtent = Math.hypot(tailEnd.x - tailStart.x, tailEnd.y - tailStart.y);
 
-    assert.ok(
-      oxygenClearance >= 2.0,
-      `alkyl tail curls back toward carbonyl oxygen: clearance ${oxygenClearance.toFixed(3)} Å`
-    );
+    assert.ok(oxygenClearance >= 2.0, `alkyl tail curls back toward carbonyl oxygen: clearance ${oxygenClearance.toFixed(3)} Å`);
     assert.ok(tailExtent >= 5.5, `alkyl tail not sufficiently extended: end-to-end ${tailExtent.toFixed(3)} Å`);
 
     const tailAngles = [
@@ -1622,14 +1583,8 @@ describe('generateCoords — extended chain spread', () => {
     assert.ok(acidHydroxyl && earlyChainCarbon, 'expected stable DHA atom ids');
 
     const acidClearance = Math.hypot(acidHydroxyl.x - earlyChainCarbon.x, acidHydroxyl.y - earlyChainCarbon.y);
-    assert.ok(
-      acidClearance >= 2.0,
-      `acid hydroxyl curled back into the chain: clearance ${acidClearance.toFixed(3)} Å`
-    );
-    assert.ok(
-      minNonBonded >= 0.9,
-      `polyunsaturated chain self-overlap too tight: nearest non-bonded distance ${minNonBonded.toFixed(3)} Å`
-    );
+    assert.ok(acidClearance >= 2.0, `acid hydroxyl curled back into the chain: clearance ${acidClearance.toFixed(3)} Å`);
+    assert.ok(minNonBonded >= 0.9, `polyunsaturated chain self-overlap too tight: nearest non-bonded distance ${minNonBonded.toFixed(3)} Å`);
   });
 
   it('keeps eicosapentaenoic acid from compacting into a closed loop', () => {
@@ -1647,10 +1602,7 @@ describe('generateCoords — extended chain spread', () => {
     const width = Math.max(...xs) - Math.min(...xs);
     const height = Math.max(...ys) - Math.min(...ys);
     assert.ok(endToEnd >= 6.0, `EPA backbone compacted into a loop: end-to-end ${endToEnd.toFixed(3)} Å`);
-    assert.ok(
-      width >= height,
-      `EPA should prefer a landscape orientation: width=${width.toFixed(3)} Å height=${height.toFixed(3)} Å`
-    );
+    assert.ok(width >= height, `EPA should prefer a landscape orientation: width=${width.toFixed(3)} Å height=${height.toFixed(3)} Å`);
   });
 
   it('keeps arachidonic acid from folding late chain atoms back onto the methyl terminus', () => {
@@ -1675,14 +1627,8 @@ describe('generateCoords — extended chain spread', () => {
     assert.ok(start && lateChain, 'expected stable arachidonic-acid atom ids');
 
     const terminalClearance = Math.hypot(start.x - lateChain.x, start.y - lateChain.y);
-    assert.ok(
-      terminalClearance >= 2.0,
-      `arachidonic acid late chain folded onto the methyl terminus: clearance ${terminalClearance.toFixed(3)} Å`
-    );
-    assert.ok(
-      minNonBonded >= 0.9,
-      `arachidonic acid self-overlap too tight: nearest non-bonded distance ${minNonBonded.toFixed(3)} Å`
-    );
+    assert.ok(terminalClearance >= 2.0, `arachidonic acid late chain folded onto the methyl terminus: clearance ${terminalClearance.toFixed(3)} Å`);
+    assert.ok(minNonBonded >= 0.9, `arachidonic acid self-overlap too tight: nearest non-bonded distance ${minNonBonded.toFixed(3)} Å`);
   });
 });
 
@@ -1697,14 +1643,8 @@ describe('generateCoords — alkene substituent geometry', () => {
     const fluorine2 = mol.atoms.get('F4');
 
     assert.ok(carbon1 && carbon2 && fluorine1 && fluorine2, 'expected stable difluoroethene atom ids');
-    assert.ok(
-      approx(angleDeg(fluorine1, carbon1, carbon2), 120, 1e-6),
-      `left alkene substituent angle drifted: ${angleDeg(fluorine1, carbon1, carbon2).toFixed(3)}°`
-    );
-    assert.ok(
-      approx(angleDeg(carbon1, carbon2, fluorine2), 120, 1e-6),
-      `right alkene substituent angle drifted: ${angleDeg(carbon1, carbon2, fluorine2).toFixed(3)}°`
-    );
+    assert.ok(approx(angleDeg(fluorine1, carbon1, carbon2), 120, 1e-6), `left alkene substituent angle drifted: ${angleDeg(fluorine1, carbon1, carbon2).toFixed(3)}°`);
+    assert.ok(approx(angleDeg(carbon1, carbon2, fluorine2), 120, 1e-6), `right alkene substituent angle drifted: ${angleDeg(carbon1, carbon2, fluorine2).toFixed(3)}°`);
   });
 
   it('lays out trans difluoroethene with E geometry', () => {
@@ -1722,11 +1662,7 @@ describe('generateCoords — alkene substituent geometry', () => {
   });
 
   it('preserves cis geometry across curated polyunsaturated fatty acids after full 2D refinement', () => {
-    const smilesList = [
-      'CCCCC\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O',
-      'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O',
-      'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O'
-    ];
+    const smilesList = ['CCCCC\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O', 'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCCC(=O)O', 'CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O'];
 
     for (const smiles of smilesList) {
       const mol = parseSMILES(smiles);
@@ -1747,38 +1683,25 @@ describe('generateCoords — anchored side-chain completion', () => {
       atom =>
         atom.name === 'C' &&
         atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
-        atom
-          .getNeighbors(mol)
-          .some(nb => nb.name === 'O' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 2) &&
+        atom.getNeighbors(mol).some(nb => nb.name === 'O' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 2) &&
         atom.getNeighbors(mol).some(nb => nb.name === 'N') &&
         atom.getNeighbors(mol).some(nb => nb.name === 'C')
     );
 
     assert.ok(carbonylCarbon, 'expected an amide carbonyl carbon');
 
-    const oxygen = carbonylCarbon
-      .getNeighbors(mol)
-      .find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
+    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
     const nitrogen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'N');
     const arylCarbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
 
     assert.ok(oxygen && nitrogen && arylCarbon, 'expected O, N, and aryl neighbors at the carbonyl carbon');
-    assert.ok(
-      Number.isFinite(oxygen.x) && Number.isFinite(oxygen.y),
-      'expected the carbonyl oxygen to receive finite coordinates'
-    );
+    assert.ok(Number.isFinite(oxygen.x) && Number.isFinite(oxygen.y), 'expected the carbonyl oxygen to receive finite coordinates');
 
     const bondLength = Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y);
-    const oxygenClearance = Math.min(
-      Math.hypot(oxygen.x - nitrogen.x, oxygen.y - nitrogen.y),
-      Math.hypot(oxygen.x - arylCarbon.x, oxygen.y - arylCarbon.y)
-    );
+    const oxygenClearance = Math.min(Math.hypot(oxygen.x - nitrogen.x, oxygen.y - nitrogen.y), Math.hypot(oxygen.x - arylCarbon.x, oxygen.y - arylCarbon.y));
 
     assert.ok(approx(bondLength, 1.5, 1e-6), `expected a 1.5 Å C=O placement, got ${bondLength.toFixed(3)} Å`);
-    assert.ok(
-      oxygenClearance > 1.0,
-      `expected the carbonyl oxygen to render clear of neighboring atoms, got ${oxygenClearance.toFixed(3)} Å`
-    );
+    assert.ok(oxygenClearance > 1.0, `expected the carbonyl oxygen to render clear of neighboring atoms, got ${oxygenClearance.toFixed(3)} Å`);
   });
 });
 
@@ -1860,9 +1783,7 @@ describe('labelTextOffset — hydrogen-bearing labels', () => {
 describe('getAtomLabel — charged carbons', () => {
   it('shows a label for substituted carbons with formal charge', () => {
     const mol = parseSMILES('C1=CC=[C-]C=C1.[Li+]');
-    const chargedCarbon = [...mol.atoms.values()].find(
-      atom => atom.name === 'C' && (atom.properties.charge ?? 0) === -1
-    );
+    const chargedCarbon = [...mol.atoms.values()].find(atom => atom.name === 'C' && (atom.properties.charge ?? 0) === -1);
 
     assert.ok(chargedCarbon, 'expected a negatively charged carbon');
     assert.equal(
@@ -1873,10 +1794,7 @@ describe('getAtomLabel — charged carbons', () => {
 
   it('keeps neutral substituted carbons unlabeled', () => {
     const mol = parseSMILES('CC');
-    const neutralCarbon = [...mol.atoms.values()].find(
-      atom =>
-        atom.name === 'C' && (atom.properties.charge ?? 0) === 0 && atom.getNeighbors(mol).some(nb => nb.name !== 'H')
-    );
+    const neutralCarbon = [...mol.atoms.values()].find(atom => atom.name === 'C' && (atom.properties.charge ?? 0) === 0 && atom.getNeighbors(mol).some(nb => nb.name !== 'H'));
 
     assert.ok(neutralCarbon, 'expected a neutral substituted carbon');
     assert.equal(
@@ -1890,9 +1808,7 @@ describe('getAtomLabel — hydroxyl orientation', () => {
   it('keeps carboxylic-acid hydroxyl labels as OH', () => {
     const mol = parseSMILES('CC(=O)O');
     const hydroxylO = [...mol.atoms.values()].find(
-      atom =>
-        atom.name === 'O' &&
-        atom.getNeighbors(mol).some(nb => nb.name === 'C' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1)
+      atom => atom.name === 'O' && atom.getNeighbors(mol).some(nb => nb.name === 'C' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1)
     );
     const carbonylC = hydroxylO.getNeighbors(mol).find(nb => nb.name === 'C');
     hydroxylO.x = 0;
@@ -2011,10 +1927,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const restoredBond = Math.hypot(c3.x - c2.x, c3.y - c2.y);
 
     assert.ok(beforeAngle > 170, `expected a badly straightened chain, got ${beforeAngle.toFixed(2)}°`);
-    assert.ok(
-      Math.abs(afterAngle - 120) < 3,
-      `expected restored zigzag angle near 120°, got ${afterAngle.toFixed(2)}°`
-    );
+    assert.ok(Math.abs(afterAngle - 120) < 3, `expected restored zigzag angle near 120°, got ${afterAngle.toFixed(2)}°`);
     assert.ok(approx(restoredBond, 1.5, 1e-6), `expected restored bond length 1.5 Å, got ${restoredBond.toFixed(3)} Å`);
   });
 
@@ -2042,10 +1955,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
 
     const internalAngles = [angleDeg(c1, c2, c3), angleDeg(c2, c3, c4), angleDeg(c3, c4, c5), angleDeg(c4, c5, c6)];
 
-    assert.ok(
-      beforeEndToEnd < 2.0,
-      `expected a compact curled chain before refine, got ${beforeEndToEnd.toFixed(3)} Å`
-    );
+    assert.ok(beforeEndToEnd < 2.0, `expected a compact curled chain before refine, got ${beforeEndToEnd.toFixed(3)} Å`);
     assert.ok(afterEndToEnd > 3.0, `expected a more extended chain after refine, got ${afterEndToEnd.toFixed(3)} Å`);
     for (const angle of internalAngles) {
       assert.ok(Math.abs(angle - 120) < 3, `expected preserved zigzag bond angles near 120°, got ${angle.toFixed(2)}°`);
@@ -2063,13 +1973,9 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
     const carbonylCarbon = heavyAtoms.find(
       atom =>
-        atom.name === 'C' &&
-        atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
-        atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
+        atom.name === 'C' && atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 && atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
     );
-    const oxygen = carbonylCarbon
-      .getNeighbors(mol)
-      .find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
+    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
     const nitrogen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'N');
     const carbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
 
@@ -2085,11 +1991,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
 
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
 
-    const afterAngles = [
-      angleDeg(oxygen, carbonylCarbon, nitrogen),
-      angleDeg(carbon, carbonylCarbon, nitrogen),
-      angleDeg(oxygen, carbonylCarbon, carbon)
-    ];
+    const afterAngles = [angleDeg(oxygen, carbonylCarbon, nitrogen), angleDeg(carbon, carbonylCarbon, nitrogen), angleDeg(oxygen, carbonylCarbon, carbon)];
     const cnBond = Math.hypot(nitrogen.x - carbonylCarbon.x, nitrogen.y - carbonylCarbon.y);
 
     assert.ok(
@@ -2109,13 +2011,9 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
     const carbonylCarbon = heavyAtoms.find(
       atom =>
-        atom.name === 'C' &&
-        atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
-        atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
+        atom.name === 'C' && atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 && atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
     );
-    const oxygen = carbonylCarbon
-      .getNeighbors(mol)
-      .find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
+    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
     const nitrogen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'N');
     const carbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
 
@@ -2128,11 +2026,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
 
     const afterBond = Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y);
-    const afterAngles = [
-      angleDeg(oxygen, carbonylCarbon, nitrogen),
-      angleDeg(oxygen, carbonylCarbon, carbon),
-      angleDeg(nitrogen, carbonylCarbon, carbon)
-    ];
+    const afterAngles = [angleDeg(oxygen, carbonylCarbon, nitrogen), angleDeg(oxygen, carbonylCarbon, carbon), angleDeg(nitrogen, carbonylCarbon, carbon)];
 
     assert.ok(beforeBond > 3.0, `expected a badly displaced carbonyl oxygen, got ${beforeBond.toFixed(3)} Å`);
     assert.ok(
@@ -2157,35 +2051,20 @@ describe('refineExistingCoords — standalone cleanup', () => {
         atom.getNeighbors(mol).some(nb => nb.name === 'O') &&
         atom.getNeighbors(mol).some(nb => nb.name === 'C')
     );
-    const oxygen = carbonylCarbon
-      .getNeighbors(mol)
-      .find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
-    const hydroxylOxygen = carbonylCarbon
-      .getNeighbors(mol)
-      .find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 1);
+    const oxygen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 2);
+    const hydroxylOxygen = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'O' && (mol.getBond(carbonylCarbon.id, nb.id)?.properties.order ?? 1) === 1);
     const arylCarbon = carbonylCarbon.getNeighbors(mol).find(nb => nb.name === 'C');
 
     oxygen.x += 2.8;
     oxygen.y += 1.4;
-    hydroxylOxygen.x =
-      carbonylCarbon.x +
-      ((oxygen.x - carbonylCarbon.x) / Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y)) * 1.5;
-    hydroxylOxygen.y =
-      carbonylCarbon.y +
-      ((oxygen.y - carbonylCarbon.y) / Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y)) * 1.5;
+    hydroxylOxygen.x = carbonylCarbon.x + ((oxygen.x - carbonylCarbon.x) / Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y)) * 1.5;
+    hydroxylOxygen.y = carbonylCarbon.y + ((oxygen.y - carbonylCarbon.y) / Math.hypot(oxygen.x - carbonylCarbon.x, oxygen.y - carbonylCarbon.y)) * 1.5;
 
     refineExistingCoords(mol, { bondLength: 1.5, maxPasses: 6 });
 
-    const afterAngles = [
-      angleDeg(oxygen, carbonylCarbon, hydroxylOxygen),
-      angleDeg(oxygen, carbonylCarbon, arylCarbon),
-      angleDeg(hydroxylOxygen, carbonylCarbon, arylCarbon)
-    ];
+    const afterAngles = [angleDeg(oxygen, carbonylCarbon, hydroxylOxygen), angleDeg(oxygen, carbonylCarbon, arylCarbon), angleDeg(hydroxylOxygen, carbonylCarbon, arylCarbon)];
     for (const angle of afterAngles) {
-      assert.ok(
-        Math.abs(angle - 120) < 4,
-        `expected restored benzoic-acid trigonal angle near 120°, got ${angle.toFixed(2)}°`
-      );
+      assert.ok(Math.abs(angle - 120) < 4, `expected restored benzoic-acid trigonal angle near 120°, got ${angle.toFixed(2)}°`);
     }
   });
 
@@ -2195,9 +2074,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const assertCarbonylAngles = stage => {
       const carbonylCenters = [...mol.atoms.values()].filter(
         atom =>
-          atom.name === 'C' &&
-          atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 &&
-          atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
+          atom.name === 'C' && atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 3 && atom.bonds.some(bondId => (mol.bonds.get(bondId)?.properties.order ?? 1) === 2)
       );
 
       assert.equal(carbonylCenters.length, 2, `expected 2 carbonyl centers in aspirin during ${stage}`);
@@ -2210,10 +2087,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
           }
         }
         for (const angle of angles) {
-          assert.ok(
-            Math.abs(angle - 120) < 4,
-            `expected aspirin carbonyl angle near 120° during ${stage}, got ${angle.toFixed(2)}° at ${carbonylCarbon.id}`
-          );
+          assert.ok(Math.abs(angle - 120) < 4, `expected aspirin carbonyl angle near 120° during ${stage}, got ${angle.toFixed(2)}° at ${carbonylCarbon.id}`);
         }
       }
     };
@@ -2278,9 +2152,7 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const ring = mol.getRings().find(r => r.length === 6);
     assert.ok(ring, 'expected a six-membered ring');
     const ringSet = new Set(ring);
-    const ringAtom = ring
-      .map(id => mol.atoms.get(id))
-      .find(atom => atom.getNeighbors(mol).some(nb => !ringSet.has(nb.id) && nb.name !== 'H'));
+    const ringAtom = ring.map(id => mol.atoms.get(id)).find(atom => atom.getNeighbors(mol).some(nb => !ringSet.has(nb.id) && nb.name !== 'H'));
     const substituent = ringAtom.getNeighbors(mol).find(nb => !ringSet.has(nb.id) && nb.name !== 'H');
 
     const cx = ring.reduce((sum, id) => sum + mol.atoms.get(id).x, 0) / ring.length;
@@ -2302,27 +2174,16 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const afterDiff = Math.abs(((afterAngle - afterOutward + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
     const bondLen = Math.hypot(substituent.x - ringAtom.x, substituent.y - ringAtom.y);
 
-    assert.ok(
-      beforeDiff > Math.PI / 2,
-      `expected inward-pointing substituent before refine, got ${(beforeDiff * 180) / Math.PI}°`
-    );
-    assert.ok(
-      afterDiff < (25 * Math.PI) / 180,
-      `expected outward ring substituent after refine, got ${(afterDiff * 180) / Math.PI}°`
-    );
-    assert.ok(
-      approx(bondLen, 1.5, 1e-6),
-      `expected restored aryl-substituent bond length 1.5 Å, got ${bondLen.toFixed(3)} Å`
-    );
+    assert.ok(beforeDiff > Math.PI / 2, `expected inward-pointing substituent before refine, got ${(beforeDiff * 180) / Math.PI}°`);
+    assert.ok(afterDiff < (25 * Math.PI) / 180, `expected outward ring substituent after refine, got ${(afterDiff * 180) / Math.PI}°`);
+    assert.ok(approx(bondLen, 1.5, 1e-6), `expected restored aryl-substituent bond length 1.5 Å, got ${bondLen.toFixed(3)} Å`);
   });
 
   it('restores a displaced terminal alkene carbon in an alkene side chain', () => {
     const mol = parseSMILES('CC(=O)C(Cl)CC(C(C)C)C=C');
     generateCoords(mol, { bondLength: 1.5 });
 
-    const dblBond = [...mol.bonds.values()].find(
-      bond => (bond.properties.order ?? 1) === 2 && bond.getAtomObjects(mol).every(atom => atom.name === 'C')
-    );
+    const dblBond = [...mol.bonds.values()].find(bond => (bond.properties.order ?? 1) === 2 && bond.getAtomObjects(mol).every(atom => atom.name === 'C'));
     const [a, b] = dblBond.getAtomObjects(mol);
     const terminal = [a, b].find(atom => atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 1);
     const internal = a.id === terminal.id ? b : a;
@@ -2340,23 +2201,15 @@ describe('refineExistingCoords — standalone cleanup', () => {
     const afterAngle = angleDeg(prev, internal, terminal);
 
     assert.ok(beforeLen > 3.0, `expected badly stretched alkene bond before refine, got ${beforeLen.toFixed(3)} Å`);
-    assert.ok(
-      Math.abs(afterLen - 1.5) < 1e-6,
-      `expected restored alkene bond length 1.5 Å, got ${afterLen.toFixed(3)} Å`
-    );
-    assert.ok(
-      Math.abs(afterAngle - 120) < 4,
-      `expected restored alkene angle near 120°, got ${afterAngle.toFixed(2)}°`
-    );
+    assert.ok(Math.abs(afterLen - 1.5) < 1e-6, `expected restored alkene bond length 1.5 Å, got ${afterLen.toFixed(3)} Å`);
+    assert.ok(Math.abs(afterAngle - 120) < 4, `expected restored alkene angle near 120°, got ${afterAngle.toFixed(2)}°`);
   });
 
   it('restores a displaced internal alkene carbon together with its terminal alkene partner', () => {
     const mol = parseSMILES('CC(=O)C(Cl)CC(C(C)C)C=C');
     generateCoords(mol, { bondLength: 1.5 });
 
-    const dblBond = [...mol.bonds.values()].find(
-      bond => (bond.properties.order ?? 1) === 2 && bond.getAtomObjects(mol).every(atom => atom.name === 'C')
-    );
+    const dblBond = [...mol.bonds.values()].find(bond => (bond.properties.order ?? 1) === 2 && bond.getAtomObjects(mol).every(atom => atom.name === 'C'));
     const [a, b] = dblBond.getAtomObjects(mol);
     const terminal = [a, b].find(atom => atom.getNeighbors(mol).filter(nb => nb.name !== 'H').length === 1);
     const internal = a.id === terminal.id ? b : a;
@@ -2379,17 +2232,8 @@ describe('refineExistingCoords — standalone cleanup', () => {
       beforeSingle > 2.0 || beforeDouble > 2.0,
       `expected distorted alkene geometry before refine, got single=${beforeSingle.toFixed(3)} Å double=${beforeDouble.toFixed(3)} Å`
     );
-    assert.ok(
-      Math.abs(afterSingle - 1.5) < 1e-6,
-      `expected restored allylic bond length 1.5 Å, got ${afterSingle.toFixed(3)} Å`
-    );
-    assert.ok(
-      Math.abs(afterDouble - 1.5) < 1e-6,
-      `expected restored alkene bond length 1.5 Å, got ${afterDouble.toFixed(3)} Å`
-    );
-    assert.ok(
-      Math.abs(afterAngle - 120) < 4,
-      `expected restored alkene angle near 120°, got ${afterAngle.toFixed(2)}°`
-    );
+    assert.ok(Math.abs(afterSingle - 1.5) < 1e-6, `expected restored allylic bond length 1.5 Å, got ${afterSingle.toFixed(3)} Å`);
+    assert.ok(Math.abs(afterDouble - 1.5) < 1e-6, `expected restored alkene bond length 1.5 Å, got ${afterDouble.toFixed(3)} Å`);
+    assert.ok(Math.abs(afterAngle - 120) < 4, `expected restored alkene angle near 120°, got ${afterAngle.toFixed(2)}°`);
   });
 });

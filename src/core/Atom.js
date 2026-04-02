@@ -171,9 +171,7 @@ export class Atom {
    */
   setCharge(charge) {
     if (this.properties.protons !== undefined && this.properties.protons - charge < 0) {
-      throw new RangeError(
-        `Charge ${charge} would result in negative electron count for ${this.name} (protons: ${this.properties.protons}).`
-      );
+      throw new RangeError(`Charge ${charge} would result in negative electron count for ${this.name} (protons: ${this.properties.protons}).`);
     }
     this.properties.charge = charge;
     if (this.properties.protons !== undefined) {

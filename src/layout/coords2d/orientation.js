@@ -224,4 +224,3 @@ export function preferLandscapeOrientation(coords, molecule) {
 
   rotateCoords(coords, vec2(sx / heavyIds.length, sy / heavyIds.length), Math.PI / 2);
 }
-

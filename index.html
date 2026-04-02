@@ -62,38 +62,14 @@
           <div id="undo-controls">
             <button id="undo-btn" title="Undo (Ctrl+Z)" onclick="undoAction()" disabled>
               <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-                <path
-                  d="M3 4.5H8a4 4 0 0 1 0 8H4"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                  fill="none"
-                />
-                <polyline
-                  points="5,2.5 3,4.5 5,6.5"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
+                <path d="M3 4.5H8a4 4 0 0 1 0 8H4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" />
+                <polyline points="5,2.5 3,4.5 5,6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </button>
             <button id="redo-btn" title="Redo (Ctrl+Shift+Z)" onclick="redoAction()" disabled>
               <svg width="15" height="15" viewBox="0 0 15 15" fill="none">
-                <path
-                  d="M12 4.5H7a4 4 0 0 0 0 8h4"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                  fill="none"
-                />
-                <polyline
-                  points="10,2.5 12,4.5 10,6.5"
-                  stroke="currentColor"
-                  stroke-width="1.7"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                />
+                <path d="M12 4.5H7a4 4 0 0 0 0 8h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" fill="none" />
+                <polyline points="10,2.5 12,4.5 10,6.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" />
               </svg>
             </button>
           </div>
@@ -111,20 +87,10 @@
           </div>
           <div id="clean-controls">
             <button id="pan-mode-btn" class="active" title="Pan / zoom mode" onclick="togglePanMode()">🤚</button>
-            <button
-              id="select-mode-btn"
-              title="Selection mode — drag to select atoms and bonds"
-              onclick="toggleSelectMode()"
-            >
-              ⬚
-            </button>
-            <button id="erase-btn" title="Erase mode — click atoms or bonds to delete" onclick="toggleEraseMode()">
-              🗑️
-            </button>
+            <button id="select-mode-btn" title="Selection mode — drag to select atoms and bonds" onclick="toggleSelectMode()">⬚</button>
+            <button id="erase-btn" title="Erase mode — click atoms or bonds to delete" onclick="toggleEraseMode()">🗑️</button>
             <button id="clean-2d-btn" title="Clean 2D layout" onclick="cleanLayout2d()">🧹</button>
-            <button id="clean-force-btn" title="Clean force layout" onclick="cleanLayoutForce()" style="display: none">
-              🧹
-            </button>
+            <button id="clean-force-btn" title="Clean force layout" onclick="cleanLayoutForce()" style="display: none">🧹</button>
           </div>
           <div id="draw-tools">
             <button id="draw-bond-btn" title="Draw bond" onclick="toggleDrawBondMode()">
@@ -167,6 +133,7 @@
             <div id="smarts-tabs">
               <button class="smarts-tab active" data-tab="functional-groups">Functional Groups</button>
               <button class="smarts-tab" data-tab="reactions">Reactions</button>
+              <button class="smarts-tab" data-tab="other">Other</button>
             </div>
             <div id="tab-functional-groups" class="smarts-tab-panel">
               <table id="fg-table">
@@ -176,6 +143,11 @@
             <div id="tab-reactions" class="smarts-tab-panel" style="display: none">
               <table id="reaction-table">
                 <tbody id="reaction-body"></tbody>
+              </table>
+            </div>
+            <div id="tab-other" class="smarts-tab-panel" style="display: none">
+              <table id="resonance-table">
+                <tbody id="resonance-body"></tbody>
               </table>
             </div>
           </div>
@@ -261,8 +233,7 @@
         {
           name: 'GHK-Cu',
           smiles: 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN',
-          inchi:
-            'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1'
+          inchi: 'InChI=1S/C14H24N6O4/c15-4-2-1-3-10(14(23)24)20-13(22)11(19-12(21)6-16)5-9-7-17-8-18-9/h7-8,10-11H,1-6,15-16H2,(H,17,18)(H,19,21)(H,20,22)(H,23,24)/t10-,11?/m0/s1'
         },
         {
           name: 'aspirin',
@@ -287,8 +258,7 @@
         {
           name: 'LSD',
           smiles: 'CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C',
-          inchi:
-            'InChI=1S/C20H25N3O/c1-4-23(5-2)20(24)14-9-16-15-7-6-8-17-19(15)13(11-21-17)10-18(16)22(3)12-14/h6-9,11,14,18H,4-5,10,12H2,1-3H3'
+          inchi: 'InChI=1S/C20H25N3O/c1-4-23(5-2)20(24)14-9-16-15-7-6-8-17-19(15)13(11-21-17)10-18(16)22(3)12-14/h6-9,11,14,18H,4-5,10,12H2,1-3H3'
         }
       ];
 
@@ -298,8 +268,7 @@
         inputMode = fmt;
         document.getElementById('smiles-mode-btn').classList.toggle('active', fmt === 'smiles');
         document.getElementById('inchi-mode-btn').classList.toggle('active', fmt === 'inchi');
-        document.getElementById('input-label').textContent =
-          fmt === 'inchi' ? 'Input InChI notation...' : 'Input SMILES notation...';
+        document.getElementById('input-label').textContent = fmt === 'inchi' ? 'Input InChI notation...' : 'Input SMILES notation...';
 
         let inputVal = preserveInput ? (inputValue ?? document.getElementById('smiles-input').value) : '';
         if (!preserveInput && fmt === 'smiles' && prev === 'inchi' && window._getMolSmiles) {
@@ -323,17 +292,10 @@
         const links = exampleMolecules
           .map(m => {
             const val = isInchi ? m.inchi : m.smiles;
-            return (
-              '<a href="#" onclick="parseInput(\'' +
-              val.replace(/\\/g, '\\\\').replace(/'/g, "\\'") +
-              '\'); return false">' +
-              m.name +
-              '</a>'
-            );
+            return '<a href="#" onclick="parseInput(\'' + val.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); return false">' + m.name + '</a>';
           })
           .join(', ');
-        document.getElementById('examples-list').innerHTML =
-          '<i>examples:&nbsp;</i>' + links + ', <a href="#" onclick="pickRandomMolecule(); return false">random</a>';
+        document.getElementById('examples-list').innerHTML = '<i>examples:&nbsp;</i>' + links + ', <a href="#" onclick="pickRandomMolecule(); return false">random</a>';
       }
 
       function pickRandomMolecule() {
@@ -373,13 +335,7 @@
       import { generateCoords, refineExistingCoords, generateAndRefine2dCoords } from './src/layout/index.js';
       import * as mol2dHelpers from './src/layout/mol2d-helpers.js';
       import { updateDescriptors, updatePhysicochemical, updateFormula } from './src/app/ui/descriptors.js';
-      import {
-        initUndo,
-        takeSnapshot as _takeSnapshot,
-        clearHistory as _clearUndoHistory,
-        undoAction,
-        redoAction
-      } from './src/app/core/undo.js';
+      import { initUndo, takeSnapshot as _takeSnapshot, clearHistory as _clearUndoHistory, undoAction, redoAction } from './src/app/core/undo.js';
       import { initExport, copyForcePng, copySvg2d, savePng2d } from './src/app/ui/export.js';
       import {
         BOND_MULT,
@@ -440,6 +396,7 @@
         updateReactionTemplatesPanel,
         _viewportFitPadding
       } from './src/app/render/reaction-2d.js';
+      import { initResonancePanel, updateResonancePanel, clearResonancePanelState, resetActiveResonanceView } from './src/app/render/resonance.js';
 
       const {
         WEDGE_HALF_W,
@@ -648,10 +605,7 @@
 
           for (const link of simulation.force('link').links()) {
             if (additive) {
-              if (
-                _selectedBondIds.has(link.id) &&
-                (!_selectedAtomIds.has(link.source.id) || !_selectedAtomIds.has(link.target.id))
-              ) {
+              if (_selectedBondIds.has(link.id) && (!_selectedAtomIds.has(link.source.id) || !_selectedAtomIds.has(link.target.id))) {
                 _selectedBondIds.delete(link.id);
               } else if (_selectedAtomIds.has(link.source.id) && _selectedAtomIds.has(link.target.id)) {
                 _selectedBondIds.add(link.id);
@@ -881,8 +835,8 @@
           if (atomId) break;
         }
 
-        const valenceWarning = atomId ? _activeValenceWarningMap.get(atomId) ?? null : null;
-        const atom = atomId ? mol.atoms.get(atomId) ?? null : null;
+        const valenceWarning = atomId ? (_activeValenceWarningMap.get(atomId) ?? null) : null;
+        const atom = atomId ? (mol.atoms.get(atomId) ?? null) : null;
         if (!atom || !valenceWarning) {
           if (_selectionValenceTooltipAtomId !== null) {
             _selectionValenceTooltipAtomId = null;
@@ -967,8 +921,7 @@
       function _forceLinkDistance(link) {
         const source = typeof link.source === 'object' ? link.source : null;
         const target = typeof link.target === 'object' ? link.target : null;
-        let distance =
-          _isHydrogenNode(source) || _isHydrogenNode(target) ? FORCE_LAYOUT_H_BOND_LENGTH : FORCE_LAYOUT_BOND_LENGTH;
+        let distance = _isHydrogenNode(source) || _isHydrogenNode(target) ? FORCE_LAYOUT_H_BOND_LENGTH : FORCE_LAYOUT_BOND_LENGTH;
 
         if (link.order === 3) distance *= FORCE_LAYOUT_MULTIPLE_BOND_FACTOR * 0.92;
         else if (link.order === 2) distance *= FORCE_LAYOUT_MULTIPLE_BOND_FACTOR;
@@ -977,10 +930,7 @@
         return distance;
       }
 
-      function _forceAnchorRadius(
-        radius = FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS,
-        strength = FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH
-      ) {
+      function _forceAnchorRadius(radius = FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS, strength = FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH) {
         let nodes = [];
         function force(alpha) {
           for (const node of nodes) {
@@ -1004,10 +954,7 @@
         return force;
       }
 
-      function _forceHydrogenRepulsion(
-        maxDistance = FORCE_LAYOUT_HH_REPULSION_DISTANCE,
-        strength = FORCE_LAYOUT_HH_REPULSION_STRENGTH
-      ) {
+      function _forceHydrogenRepulsion(maxDistance = FORCE_LAYOUT_HH_REPULSION_DISTANCE, strength = FORCE_LAYOUT_HH_REPULSION_STRENGTH) {
         let nodes = [];
         const maxDistanceSq = maxDistance * maxDistance;
         function force(alpha) {
@@ -1045,11 +992,7 @@
         return force;
       }
 
-      function _forceFitTransform(
-        nodes,
-        pad = FORCE_LAYOUT_FIT_PAD,
-        { hydrogenRadiusScale = 1, scaleMultiplier = 1, maxScale = 30 } = {}
-      ) {
+      function _forceFitTransform(nodes, pad = FORCE_LAYOUT_FIT_PAD, { hydrogenRadiusScale = 1, scaleMultiplier = 1, maxScale = 30 } = {}) {
         if (!nodes?.length) return null;
         let minX = Infinity,
           maxX = -Infinity,
@@ -1109,21 +1052,13 @@
         return chosen;
       }
 
-      function _placeHydrogensAroundParent(
-        parentNode,
-        hydrogens,
-        links,
-        { distance = FORCE_LAYOUT_H_BOND_LENGTH, excludeIds = null, nodes = null } = {}
-      ) {
-        if (!parentNode || !Number.isFinite(parentNode.x) || !Number.isFinite(parentNode.y) || hydrogens.length === 0)
-          return;
+      function _placeHydrogensAroundParent(parentNode, hydrogens, links, { distance = FORCE_LAYOUT_H_BOND_LENGTH, excludeIds = null, nodes = null } = {}) {
+        if (!parentNode || !Number.isFinite(parentNode.x) || !Number.isFinite(parentNode.y) || hydrogens.length === 0) return;
         const excluded = excludeIds ?? new Set();
         const occupiedAngles = [];
         for (const link of links) {
-          const source =
-            typeof link.source === 'object' ? link.source : Array.isArray(nodes) ? nodes[link.source] : null;
-          const target =
-            typeof link.target === 'object' ? link.target : Array.isArray(nodes) ? nodes[link.target] : null;
+          const source = typeof link.source === 'object' ? link.source : Array.isArray(nodes) ? nodes[link.source] : null;
+          const target = typeof link.target === 'object' ? link.target : Array.isArray(nodes) ? nodes[link.target] : null;
           if (source !== parentNode && target !== parentNode) continue;
           const other = source === parentNode ? target : source;
           if (!other || excluded.has(other.id)) continue;
@@ -1217,12 +1152,7 @@
             node.fy = previous.fy;
             node.anchorX = Number.isFinite(previous.anchorX) ? previous.anchorX : node.anchorX;
             node.anchorY = Number.isFinite(previous.anchorY) ? previous.anchorY : node.anchorY;
-            if (
-              !_isHydrogenNode(node) &&
-              !Number.isFinite(node.anchorX) &&
-              Number.isFinite(previous.x) &&
-              Number.isFinite(previous.y)
-            ) {
+            if (!_isHydrogenNode(node) && !Number.isFinite(node.anchorX) && Number.isFinite(previous.x) && Number.isFinite(previous.y)) {
               node.anchorX = previous.x;
               node.anchorY = previous.y;
             }
@@ -1279,13 +1209,7 @@
           const parentNode = nodeById.get(parentId);
           if (!parentNode || !Number.isFinite(parentNode.x)) continue;
           const hChildren = allLinks
-            .map(l =>
-              l.source?.id === parentId && _isHydrogenNode(l.target)
-                ? l.target
-                : l.target?.id === parentId && _isHydrogenNode(l.source)
-                  ? l.source
-                  : null
-            )
+            .map(l => (l.source?.id === parentId && _isHydrogenNode(l.target) ? l.target : l.target?.id === parentId && _isHydrogenNode(l.source) ? l.source : null))
             .filter(Boolean);
           if (hChildren.length > 0) {
             _placeHydrogensAroundParent(parentNode, hChildren, allLinks, {
@@ -1664,8 +1588,7 @@
                 _syncInputField(mol);
                 updateFormula(mol);
                 updateDescriptors(mol);
-                updateFunctionalGroups(mol);
-                updateReactionTemplatesPanel();
+                _updateAnalysisPanels(mol);
                 // Capture old H position before updateForce recreates nodes.
                 const preHNode = simulation.nodes().find(n => n.id === d.id);
                 let preHX = preHNode?.x,
@@ -1877,9 +1800,7 @@
           }
 
           const OFF = 0.707; // cos/sin 45°
-          chargeLabel
-            .attr('x', d => d.x + atomRadius(d.protons) * OFF + 4)
-            .attr('y', d => d.y - atomRadius(d.protons) * OFF);
+          chargeLabel.attr('x', d => d.x + atomRadius(d.protons) * OFF + 4).attr('y', d => d.y - atomRadius(d.protons) * OFF);
 
           // Functional-group highlight layer (cached — avoids DOM query every tick)
           if (_fgHlLines) {
@@ -1977,10 +1898,7 @@
               .append('line')
               .datum(d => d)
               .attr('stroke', stroke)
-              .attr(
-                'stroke-width',
-                d => Math.min(atomRadius(d.source.protons), atomRadius(d.target.protons)) * 2 + HL_R * 2 + extra * 2
-              )
+              .attr('stroke-width', d => Math.min(atomRadius(d.source.protons), atomRadius(d.target.protons)) * 2 + HL_R * 2 + extra * 2)
               .attr('stroke-linecap', 'round')
               .attr('x1', d => d.source.x)
               .attr('y1', d => d.source.y)
@@ -2022,11 +1940,7 @@
         const BOND_SEL_R = 6; // extra radius for bond highlight caps
         const ATOM_SEL_R = 13; // larger extra radius so atom circles exceed bond caps
         const OL = 2;
-        const selLayer = g
-          .insert('g', ':first-child')
-          .attr('class', 'force-selection-layer')
-          .attr('opacity', 0.45)
-          .style('pointer-events', 'none');
+        const selLayer = g.insert('g', ':first-child').attr('class', 'force-selection-layer').attr('opacity', 0.45).style('pointer-events', 'none');
 
         const selectedNodes = simulation.nodes().filter(node => activeAtomIds.has(node.id));
         const selectedLinks = simulation
@@ -2042,10 +1956,7 @@
             .append('line')
             .datum(d => d)
             .attr('stroke', stroke)
-            .attr(
-              'stroke-width',
-              d => Math.min(atomRadius(d.source.protons), atomRadius(d.target.protons)) * 2 + BOND_SEL_R * 2 + extra * 2
-            )
+            .attr('stroke-width', d => Math.min(atomRadius(d.source.protons), atomRadius(d.target.protons)) * 2 + BOND_SEL_R * 2 + extra * 2)
             .attr('stroke-linecap', 'round')
             .attr('x1', d => d.source.x)
             .attr('y1', d => d.source.y)
@@ -2094,11 +2005,7 @@
         const OL = 2;
 
         // Insert behind the bond layer (same stacking as fg highlights).
-        const selLayer = g
-          .insert('g', 'g.bonds')
-          .attr('class', 'atom-selection')
-          .attr('opacity', 0.45)
-          .style('pointer-events', 'none');
+        const selLayer = g.insert('g', 'g.bonds').attr('class', 'atom-selection').attr('opacity', 0.45).style('pointer-events', 'none');
 
         const BOND_SEL_PAD = 5; // extra px beyond label half-width for bond highlight
         const ATOM_SEL_PAD = 12; // larger pad so atom circles clearly exceed bond caps
@@ -2111,18 +2018,15 @@
           if (ba1.visible === false || ba2.visible === false) continue;
           const p1 = toSVGPt(ba1),
             p2 = toSVGPt(ba2);
-          const r1 =
-            Math.max(labelHalfW(getAtomLabel(ba1, hCounts, toSVGPt, mol) || ba1.name, FONT_SIZE), 10) + BOND_SEL_PAD;
-          const r2 =
-            Math.max(labelHalfW(getAtomLabel(ba2, hCounts, toSVGPt, mol) || ba2.name, FONT_SIZE), 10) + BOND_SEL_PAD;
+          const r1 = Math.max(labelHalfW(getAtomLabel(ba1, hCounts, toSVGPt, mol) || ba1.name, FONT_SIZE), 10) + BOND_SEL_PAD;
+          const r2 = Math.max(labelHalfW(getAtomLabel(ba2, hCounts, toSVGPt, mol) || ba2.name, FONT_SIZE), 10) + BOND_SEL_PAD;
           mBonds.push({ p1, p2, w: Math.min(r1, r2) * 2 });
         }
         const mAtoms = [];
         for (const atom of atoms) {
           if (!activeAtomIds.has(atom.id)) continue;
           const { x, y } = toSVGPt(atom);
-          const r =
-            Math.max(labelHalfW(getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name, FONT_SIZE), 10) + ATOM_SEL_PAD;
+          const r = Math.max(labelHalfW(getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name, FONT_SIZE), 10) + ATOM_SEL_PAD;
           mAtoms.push({ x, y, r });
         }
 
@@ -2385,6 +2289,31 @@
         }
       }
 
+      /**
+       * Refreshes the chemistry-analysis sidebar panels for the current
+       * molecule. Resonance contributors are recomputed by default so newly
+       * parsed molecules and structural edits stay synchronized with the UI.
+       *
+       * @param {Molecule|null} mol
+       * @param {object} [options={}]
+       * @param {boolean} [options.recomputeResonance=true]
+       * @param {boolean} [options.refreshResonancePanel=true]
+       */
+      function _updateAnalysisPanels(mol, options = {}) {
+        const { recomputeResonance = true, refreshResonancePanel = true } = options;
+        if (!mol) {
+          document.getElementById('fg-body').innerHTML = '';
+          document.getElementById('reaction-body').innerHTML = '';
+          clearResonancePanelState();
+          return;
+        }
+        updateFunctionalGroups(mol);
+        updateReactionTemplatesPanel();
+        if (refreshResonancePanel) {
+          updateResonancePanel(mol, { recompute: recomputeResonance });
+        }
+      }
+
       // ---------------------------------------------------------------------------
       // Undo / Redo history
       // ---------------------------------------------------------------------------
@@ -2472,8 +2401,7 @@
 
         updateFormula(mol);
         updateDescriptors(mol);
-        updateFunctionalGroups(mol);
-        updateReactionTemplatesPanel();
+        _updateAnalysisPanels(mol);
         const syncMol = snap.reactionPreview?.sourceMol
           ? (() => {
               const source = new Molecule();
@@ -2570,7 +2498,23 @@
         },
         draw2d: () => draw2d(),
         applyForceHighlights: () => applyForceHighlights(),
-        renderMol: mol => _renderMol(mol)
+        renderMol: (mol, options = {}) => _renderMol(mol, options)
+      });
+
+      initResonancePanel({
+        get mode() {
+          return mode;
+        },
+        get currentMol() {
+          return currentMol;
+        },
+        get _mol2d() {
+          return _mol2d;
+        },
+        draw2d: () => draw2d(),
+        updateForce: (mol, options = {}) => updateForce(mol, options),
+        hasReactionPreview: () => _hasReactionPreview(),
+        restoreReactionPreviewSource: () => _restoreReactionPreviewSource()
       });
 
       const optionsOverlayEl = document.getElementById('options-overlay');
@@ -2624,21 +2568,9 @@
         const nextOptions = updateRenderOptions({
           showValenceWarnings: optionsShowValenceWarningsEl.checked,
           twoDAtomColoring: optionsTwoDAtomColoringEl.checked,
-          twoDAtomFontSize: _clampOptionInputValue(
-            optionsTwoDAtomFontSizeEl,
-            RENDER_OPTION_LIMITS.twoDAtomFontSize,
-            currentOptions.twoDAtomFontSize
-          ),
-          twoDBondThickness: _clampOptionInputValue(
-            optionsTwoDBondThicknessEl,
-            RENDER_OPTION_LIMITS.twoDBondThickness,
-            currentOptions.twoDBondThickness
-          ),
-          forceAtomSizeMultiplier: _clampOptionInputValue(
-            optionsForceAtomSizeEl,
-            RENDER_OPTION_LIMITS.forceAtomSizeMultiplier,
-            currentOptions.forceAtomSizeMultiplier
-          ),
+          twoDAtomFontSize: _clampOptionInputValue(optionsTwoDAtomFontSizeEl, RENDER_OPTION_LIMITS.twoDAtomFontSize, currentOptions.twoDAtomFontSize),
+          twoDBondThickness: _clampOptionInputValue(optionsTwoDBondThicknessEl, RENDER_OPTION_LIMITS.twoDBondThickness, currentOptions.twoDBondThickness),
+          forceAtomSizeMultiplier: _clampOptionInputValue(optionsForceAtomSizeEl, RENDER_OPTION_LIMITS.forceAtomSizeMultiplier, currentOptions.forceAtomSizeMultiplier),
           forceBondThicknessMultiplier: _clampOptionInputValue(
             optionsForceBondThicknessEl,
             RENDER_OPTION_LIMITS.forceBondThicknessMultiplier,
@@ -2867,9 +2799,7 @@
           });
         const useElementAnchorBox = isCarbonylAdjacentHydroxyl;
         const cx = useElementAnchorBox ? 0 : labelTextOffset(label, FONT_SIZE);
-        const hw = useElementAnchorBox
-          ? (FONT_SIZE * 0.38 * elementLabel.length + 4) / 2 + 7
-          : labelHalfW(label, FONT_SIZE) + 1;
+        const hw = useElementAnchorBox ? (FONT_SIZE * 0.38 * elementLabel.length + 4) / 2 + 7 : labelHalfW(label, FONT_SIZE) + 1;
         const hh = labelHalfH(label, FONT_SIZE) + 1;
         const dirX = dx / len;
         const dirY = dy / len;
@@ -2914,12 +2844,7 @@
             container
               .append('polygon')
               .attr('class', 'bond bond-wedge')
-              .attr(
-                'points',
-                `${s1.x},${s1.y} ` +
-                  `${s2.x - nx * WEDGE_HALF_W},${s2.y - ny * WEDGE_HALF_W} ` +
-                  `${s2.x + nx * WEDGE_HALF_W},${s2.y + ny * WEDGE_HALF_W}`
-              )
+              .attr('points', `${s1.x},${s1.y} ` + `${s2.x - nx * WEDGE_HALF_W},${s2.y - ny * WEDGE_HALF_W} ` + `${s2.x + nx * WEDGE_HALF_W},${s2.y + ny * WEDGE_HALF_W}`)
               .style('fill', '#111')
               .style('stroke', 'none');
           } else {
@@ -2966,14 +2891,7 @@
           for (const d of [-BOND_OFF_2D, 0, BOND_OFF_2D]) {
             const ox = nx * d,
               oy = ny * d;
-            const lt = shortenLine(
-              s1.x + ox,
-              s1.y + oy,
-              s2.x + ox,
-              s2.y + oy,
-              d !== 0 ? Math.max(c1, 4) : c1,
-              d !== 0 ? Math.max(c2, 4) : c2
-            );
+            const lt = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, d !== 0 ? Math.max(c1, 4) : c1, d !== 0 ? Math.max(c2, 4) : c2);
             addLine(container, lt.x1, lt.y1, lt.x2, lt.y2);
           }
         } else if (order === 1.5) {
@@ -3068,11 +2986,7 @@
 
         // For aromatic bonds (order=1.5) use the Kekulé integer order as the base;
         // for plain bonds round in case of any fractional remnant.
-        const cur = bond.properties.aromatic
-          ? Number.isInteger(bond.properties.localizedOrder)
-            ? bond.properties.localizedOrder
-            : 1
-          : Math.round(bond.properties.order ?? 1);
+        const cur = bond.properties.aromatic ? (Number.isInteger(bond.properties.localizedOrder) ? bond.properties.localizedOrder : 1) : Math.round(bond.properties.order ?? 1);
         const nextOrder = cur >= 3 ? 1 : cur + 1;
 
         bond.properties.order = nextOrder;
@@ -3101,8 +3015,7 @@
 
         updateFormula(mol);
         updateDescriptors(mol);
-        updateFunctionalGroups(mol);
-        updateReactionTemplatesPanel();
+        _updateAnalysisPanels(mol);
         if (mode === 'force') {
           const prevNodeIds = new Set(simulation.nodes().map(n => n.id));
 
@@ -3321,9 +3234,7 @@
             const ux = dx / dist,
               uy = dy / dist;
             // Source: blank-space start will place _drawBondElement; existing atom uses its own name.
-            const srcName = _drawBondState.atomId
-              ? (_mol2d?.atoms.get(_drawBondState.atomId)?.name ?? 'C')
-              : _drawBondElement;
+            const srcName = _drawBondState.atomId ? (_mol2d?.atoms.get(_drawBondState.atomId)?.name ?? 'C') : _drawBondElement;
             if (srcName !== 'C' && srcName !== 'H') {
               const gap = labelHalfW(srcName, FONT_SIZE) + 3;
               lx1 = ox + ux * gap;
@@ -3610,8 +3521,7 @@
           _syncInputField(mol);
           updateFormula(mol);
           updateDescriptors(mol);
-          updateFunctionalGroups(mol);
-          updateReactionTemplatesPanel();
+          _updateAnalysisPanels(mol);
           updateForce(mol, { preservePositions: true });
           _enableForceKeepInView();
 
@@ -3639,8 +3549,7 @@
           _syncInputField(mol);
           updateFormula(mol);
           updateDescriptors(mol);
-          updateFunctionalGroups(mol);
-          updateReactionTemplatesPanel();
+          _updateAnalysisPanels(mol);
           draw2d();
           _zoomToFitIf2d();
         }
@@ -3682,8 +3591,7 @@
               _syncInputField(mol);
               updateFormula(mol);
               updateDescriptors(mol);
-              updateFunctionalGroups(mol);
-              updateReactionTemplatesPanel();
+              _updateAnalysisPanels(mol);
               if (mode === 'force') {
                 const preNode = simulation.nodes().find(n => n.id === atomId);
                 updateForce(mol, {
@@ -3791,19 +3699,13 @@
             if (!destAtom) return;
             const alreadyBonded = [...mol.bonds.values()].some(b => {
               const [a1, a2] = b.getAtomObjects(mol);
-              return (
-                (a1?.id === resolvedAtomId && a2?.id === snapAtomId) ||
-                (a1?.id === snapAtomId && a2?.id === resolvedAtomId)
-              );
+              return (a1?.id === resolvedAtomId && a2?.id === snapAtomId) || (a1?.id === snapAtomId && a2?.id === resolvedAtomId);
             });
             if (alreadyBonded) {
               // Snap-to existing bond → promote its order instead of creating a duplicate.
               const existing = [...mol.bonds.values()].find(b => {
                 const [a1, a2] = b.getAtomObjects(mol);
-                return (
-                  (a1?.id === resolvedAtomId && a2?.id === snapAtomId) ||
-                  (a1?.id === snapAtomId && a2?.id === resolvedAtomId)
-                );
+                return (a1?.id === resolvedAtomId && a2?.id === snapAtomId) || (a1?.id === snapAtomId && a2?.id === resolvedAtomId);
               });
               if (existing) _promoteBondOrder(existing.id);
               return;
@@ -3835,8 +3737,7 @@
           _syncInputField(mol);
           updateFormula(mol);
           updateDescriptors(mol);
-          updateFunctionalGroups(mol);
-          updateReactionTemplatesPanel();
+          _updateAnalysisPanels(mol);
           updateForce(mol, { preservePositions: true });
           _enableForceKeepInView();
 
@@ -3871,19 +3772,13 @@
           // Do nothing if a bond already exists between these two atoms.
           const alreadyBonded = [...mol.bonds.values()].some(b => {
             const [a1, a2] = b.getAtomObjects(mol);
-            return (
-              (a1?.id === resolvedAtomId && a2?.id === snapAtomId) ||
-              (a1?.id === snapAtomId && a2?.id === resolvedAtomId)
-            );
+            return (a1?.id === resolvedAtomId && a2?.id === snapAtomId) || (a1?.id === snapAtomId && a2?.id === resolvedAtomId);
           });
           if (alreadyBonded) {
             // Snap-to existing bond → promote its order instead of creating a duplicate.
             const existing = [...mol.bonds.values()].find(b => {
               const [a1, a2] = b.getAtomObjects(mol);
-              return (
-                (a1?.id === resolvedAtomId && a2?.id === snapAtomId) ||
-                (a1?.id === snapAtomId && a2?.id === resolvedAtomId)
-              );
+              return (a1?.id === resolvedAtomId && a2?.id === snapAtomId) || (a1?.id === snapAtomId && a2?.id === resolvedAtomId);
             });
             if (existing) _promoteBondOrder(existing.id);
             return;
@@ -3939,8 +3834,7 @@
 
         updateFormula(mol);
         updateDescriptors(mol);
-        updateFunctionalGroups(mol);
-        updateReactionTemplatesPanel();
+        _updateAnalysisPanels(mol);
         draw2d();
         _zoomToFitIf2d();
       }
@@ -4047,14 +3941,7 @@
           for (const atom of warningAtoms) {
             const { x, y } = toSVGPt(atom);
             const r = Math.max(labelHalfW(getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name, FONT_SIZE), 10) + 7;
-            warningLayer
-              .append('circle')
-              .attr('class', 'valence-warning')
-              .attr('cx', x)
-              .attr('cy', y)
-              .attr('r', r)
-              .attr('fill', VALENCE_WARNING_FILL)
-              .attr('stroke', 'none');
+            warningLayer.append('circle').attr('class', 'valence-warning').attr('cx', x).attr('cy', y).attr('r', r).attr('fill', VALENCE_WARNING_FILL).attr('stroke', 'none');
           }
         }
 
@@ -4210,10 +4097,7 @@
           const label = getAtomLabel(atom, hCounts, toSVGPt, mol);
           const labelDx = labelTextOffset(label, FONT_SIZE);
 
-          const hitGroup = labelLayer
-            .append('g')
-            .attr('data-atom-id', atom.id)
-            .attr('transform', `translate(${x},${y})`);
+          const hitGroup = labelLayer.append('g').attr('data-atom-id', atom.id).attr('transform', `translate(${x},${y})`);
 
           hitGroup
             .append('circle')
@@ -4285,8 +4169,7 @@
           if (label) {
             renderAtomLabel(hitGroup, label, symbol === 'H' ? '#333333' : atomColor(symbol, '2d'), labelDx, FONT_SIZE);
             if (charge !== 0) {
-              const sign =
-                charge === 1 ? '+' : charge > 1 ? `${charge}+` : charge === -1 ? '−' : `${Math.abs(charge)}−`;
+              const sign = charge === 1 ? '+' : charge > 1 ? `${charge}+` : charge === -1 ? '−' : `${Math.abs(charge)}−`;
               hitGroup
                 .append('text')
                 .attr('class', 'atom-charge')
@@ -4340,7 +4223,16 @@
         }
       }
 
-      function render2d(mol) {
+      /**
+       * Renders the provided molecule in 2D and refreshes the sidebar panels.
+       *
+       * @param {Molecule} mol
+       * @param {object} [options={}]
+       * @param {boolean} [options.recomputeResonance=true]
+       * @param {boolean} [options.refreshResonancePanel=true]
+       */
+      function render2d(mol, options = {}) {
+        const { recomputeResonance = true, refreshResonancePanel = true } = options;
         // Count H neighbours before stripping
         const hCounts = new Map();
         for (const [, atom] of mol.atoms) {
@@ -4420,11 +4312,7 @@
         const molSVGW = (maxX - minX) * SCALE || 1;
         const molSVGH = (maxY - minY) * SCALE || 1;
         const fitCap = _hasReactionPreview() ? 1.28 : 1;
-        const fitScale = Math.min(
-          Math.max(1, W - pads.left - pads.right) / molSVGW,
-          Math.max(1, H - pads.top - pads.bottom) / molSVGH,
-          fitCap
-        );
+        const fitScale = Math.min(Math.max(1, W - pads.left - pads.right) / molSVGW, Math.max(1, H - pads.top - pads.bottom) / molSVGH, fitCap);
         const fitTx = pads.left + Math.max(1, W - pads.left - pads.right) / 2 - (W / 2) * fitScale;
         const fitTy = pads.top + Math.max(1, H - pads.top - pads.bottom) / 2 - (H / 2) * fitScale;
         svg.call(zoom.transform, d3.zoomIdentity.translate(fitTx, fitTy).scale(fitScale));
@@ -4461,8 +4349,7 @@
         // Sidebar updates — only on new molecule, not on every highlight redraw
         updateFormula(mol);
         updateDescriptors(mol);
-        updateFunctionalGroups(mol);
-        updateReactionTemplatesPanel();
+        _updateAnalysisPanels(mol, { recomputeResonance, refreshResonancePanel });
       }
 
       function fitCurrent2dView() {
@@ -4481,11 +4368,7 @@
         const molSVGW = (maxX - minX) * SCALE || 1;
         const molSVGH = (maxY - minY) * SCALE || 1;
         const fitCap = _hasReactionPreview() ? 1.28 : 1;
-        const fitScale = Math.min(
-          Math.max(1, W - pads.left - pads.right) / molSVGW,
-          Math.max(1, H - pads.top - pads.bottom) / molSVGH,
-          fitCap
-        );
+        const fitScale = Math.min(Math.max(1, W - pads.left - pads.right) / molSVGW, Math.max(1, H - pads.top - pads.bottom) / molSVGH, fitCap);
         const fitTx = pads.left + Math.max(1, W - pads.left - pads.right) / 2 - (W / 2) * fitScale;
         const fitTy = pads.top + Math.max(1, H - pads.top - pads.bottom) / 2 - (H / 2) * fitScale;
         svg.call(zoom.transform, d3.zoomIdentity.translate(fitTx, fitTy).scale(fitScale));
@@ -4670,6 +4553,8 @@
       // ---------------------------------------------------------------------------
       window.toggleMode = function () {
         _clearPrimitiveHover();
+        const previousMode = mode;
+        const resonanceResetMol = previousMode === 'force' ? currentMol : _mol2d;
         mode = mode === 'force' ? '2d' : 'force';
 
         const btn = document.getElementById('toggle-btn');
@@ -4698,16 +4583,13 @@
         }
 
         if (currentMol || currentSmiles || currentInchi) {
+          resetActiveResonanceView(resonanceResetMol);
           simulation.stop();
           rotationDeg = 0;
           flipH = false;
           flipV = false;
           _preserveSelectionOnNextRender = true;
-          const _mol = currentMol
-            ? currentMol.clone()
-            : currentInchi
-              ? parseINCHI(currentInchi)
-              : parseSMILES(currentSmiles);
+          const _mol = resonanceResetMol ? resonanceResetMol.clone() : currentInchi ? parseINCHI(currentInchi) : parseSMILES(currentSmiles);
           _renderMol(_mol);
         }
       };
@@ -4759,11 +4641,7 @@
           const molSVGW = (maxX - minX) * SCALE || 1;
           const molSVGH = (maxY - minY) * SCALE || 1;
           const fitCap = _hasReactionPreview() ? 1.28 : 1;
-          const neededScale = Math.min(
-            Math.max(1, W - pads.left - pads.right) / molSVGW,
-            Math.max(1, H - pads.top - pads.bottom) / molSVGH,
-            fitCap
-          );
+          const neededScale = Math.min(Math.max(1, W - pads.left - pads.right) / molSVGW, Math.max(1, H - pads.top - pads.bottom) / molSVGH, fitCap);
           const currentScale = d3.zoomTransform(svg.node()).k;
           if (Math.abs(neededScale - currentScale) > 0.001) {
             svg.call(
@@ -4845,7 +4723,7 @@
         });
       });
 
-      updateReactionTemplatesPanel();
+      _updateAnalysisPanels(currentMol ?? _mol2d);
 
       // Physicochemical row tooltips — event delegation on the table
       {
@@ -4989,7 +4867,16 @@
       // ---------------------------------------------------------------------------
       // Input handling
       // ---------------------------------------------------------------------------
-      function _renderMol(mol) {
+      /**
+       * Renders the provided molecule in the active layout mode.
+       *
+       * @param {Molecule} mol
+       * @param {object} [options={}]
+       * @param {boolean} [options.recomputeResonance=true]
+       * @param {boolean} [options.refreshResonancePanel=true]
+       */
+      function _renderMol(mol, options = {}) {
+        const { recomputeResonance = true, refreshResonancePanel = true } = options;
         _setHighlight(null);
         currentMol = mol;
         rotationDeg = 0;
@@ -5001,11 +4888,10 @@
           updateForce(mol);
           updateFormula(mol);
           updateDescriptors(mol);
-          updateFunctionalGroups(mol);
-          updateReactionTemplatesPanel();
+          _updateAnalysisPanels(mol, { recomputeResonance, refreshResonancePanel });
         } else {
           simulation.stop();
-          render2d(mol);
+          render2d(mol, { recomputeResonance, refreshResonancePanel });
         }
       }
 
@@ -5039,15 +4925,14 @@
         document.getElementById('molecularFormula').innerHTML = '';
         document.getElementById('molecularWeight').textContent = '';
         document.getElementById('descriptor-body').innerHTML = '';
-        document.getElementById('fg-body').innerHTML = '';
-        document.getElementById('reaction-body').innerHTML = '';
+        _updateAnalysisPanels(null);
       }
 
       function parseAndRender(smiles) {
         if (typeof smiles !== 'string' || smiles.length === 0 || smiles.length > 1000) return;
         _clearReactionPreviewState();
         if (smiles === currentSmiles && mode === 'force') {
-          updateReactionTemplatesPanel();
+          _updateAnalysisPanels(currentMol, { recomputeResonance: false });
           return;
         }
 
@@ -5185,9 +5070,7 @@
 
       window.deleteSelection = function deleteSelection() {
         if (_hasReactionPreview()) {
-          const reactantSelectedAtomIds = new Set(
-            [..._selectedAtomIds].filter(id => _reactionPreviewReactantAtomIds.has(id))
-          );
+          const reactantSelectedAtomIds = new Set([..._selectedAtomIds].filter(id => _reactionPreviewReactantAtomIds.has(id)));
           const reactantSelectedBondIds = new Set();
           const previewMol = mode === 'force' ? currentMol : _mol2d;
           if (previewMol) {
@@ -5280,8 +5163,7 @@
 
         updateFormula(mol);
         updateDescriptors(mol);
-        updateFunctionalGroups(mol);
-        updateReactionTemplatesPanel();
+        _updateAnalysisPanels(mol);
 
         if (mode === 'force') {
           // Capture current screen positions of affected heavy atoms *before*
@@ -5350,12 +5232,7 @@
 
         // Arrow-key panning
         const PAN_STEP = 40;
-        if (
-          event.key === 'ArrowUp' ||
-          event.key === 'ArrowDown' ||
-          event.key === 'ArrowLeft' ||
-          event.key === 'ArrowRight'
-        ) {
+        if (event.key === 'ArrowUp' || event.key === 'ArrowDown' || event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
           const dx = event.key === 'ArrowLeft' ? PAN_STEP : event.key === 'ArrowRight' ? -PAN_STEP : 0;
           const dy = event.key === 'ArrowUp' ? PAN_STEP : event.key === 'ArrowDown' ? -PAN_STEP : 0;
           const t = d3.zoomTransform(svg.node());
@@ -5403,13 +5280,7 @@
         }
 
         // Change hovered atom element: C / N / O / S keys in select or draw-bond mode.
-        if (
-          (_selectMode || (_drawBondMode && !_drawBondState)) &&
-          _hoveredAtomIds.size > 0 &&
-          !event.metaKey &&
-          !event.ctrlKey &&
-          !event.altKey
-        ) {
+        if ((_selectMode || (_drawBondMode && !_drawBondState)) && _hoveredAtomIds.size > 0 && !event.metaKey && !event.ctrlKey && !event.altKey) {
           const _elemKeys = {
             c: 'C',
             C: 'C',
@@ -5451,8 +5322,7 @@
                 _syncInputField(mol);
                 updateFormula(mol);
                 updateDescriptors(mol);
-                updateFunctionalGroups(mol);
-                updateReactionTemplatesPanel();
+                _updateAnalysisPanels(mol);
                 if (mode === 'force') {
                   updateForce(mol, {
                     preservePositions: true,

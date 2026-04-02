@@ -523,10 +523,8 @@ export function compileAtomExpr(expr, options = {}) {
       // another atom primitive as in [CH]) denotes hydrogen-count.
       const next = pos + 1 < expr.length ? expr[pos + 1] : null;
       const prev = prevChar();
-      const startsNewPrimitive =
-        prev === null || prev === '!' || prev === '(' || prev === ',' || prev === ';' || prev === '&';
-      const nextStartsModifier =
-        next === null || next === '+' || next === '-' || next === ',' || next === ';' || next === '&' || next === ')';
+      const startsNewPrimitive = prev === null || prev === '!' || prev === '(' || prev === ',' || prev === ';' || prev === '&';
+      const nextStartsModifier = next === null || next === '+' || next === '-' || next === ',' || next === ';' || next === '&' || next === ')';
       if (startsNewPrimitive && nextStartsModifier) {
         pos++;
         return a => a.name === 'H' && !(a.properties.aromatic ?? false);

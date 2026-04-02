@@ -21,9 +21,7 @@ function _sortIds(ids) {
 }
 
 function _sortRings(rings) {
-  return rings
-    .map(ring => _sortIds(ring))
-    .sort((a, b) => a.length - b.length || a.join('\u0000').localeCompare(b.join('\u0000')));
+  return rings.map(ring => _sortIds(ring)).sort((a, b) => a.length - b.length || a.join('\u0000').localeCompare(b.join('\u0000')));
 }
 
 /**

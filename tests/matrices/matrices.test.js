@@ -1,14 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
-import {
-  adjacencyMatrix,
-  degreeMatrix,
-  distanceMatrix,
-  laplacianMatrix,
-  randicMatrix,
-  reciprocalMatrix
-} from '../../src/matrices/index.js';
+import { adjacencyMatrix, degreeMatrix, distanceMatrix, laplacianMatrix, randicMatrix, reciprocalMatrix } from '../../src/matrices/index.js';
 import { parseSMILES } from '../../src/io/index.js';
 
 function propane() {

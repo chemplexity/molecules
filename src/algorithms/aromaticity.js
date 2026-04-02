@@ -22,17 +22,13 @@ function _piElectrons(atom, ringAtomSet, mol) {
   const el = atom.name;
   const charge = atom.properties.charge ?? 0;
 
-  const ringBonds = atom.bonds
-    .map(bId => mol.bonds.get(bId))
-    .filter(b => b && ringAtomSet.has(b.getOtherAtom(atom.id)));
+  const ringBonds = atom.bonds.map(bId => mol.bonds.get(bId)).filter(b => b && ringAtomSet.has(b.getOtherAtom(atom.id)));
 
   // A ring bond counts as "double" if it is an explicit double bond (Kekulé)
   // or if it is already flagged aromatic / order 1.5 (SMILES-aromatic input).
   // Note: O/S/pyrrole-N always donate 2 electrons regardless of bond type,
   // so we only use this flag for C and pyridine-like N.
-  const hasRingPiBond = ringBonds.some(
-    b => b.properties.order === 2 || b.properties.aromatic || b.properties.order === 1.5
-  );
+  const hasRingPiBond = ringBonds.some(b => b.properties.order === 2 || b.properties.aromatic || b.properties.order === 1.5);
 
   if (el === 'C') {
     if (charge === 1) {

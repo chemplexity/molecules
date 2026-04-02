@@ -44,15 +44,11 @@ export function topologicalEntropy(D) {
   const n = D.length;
   for (let i = 0; i < n; i++) {
     if (!Array.isArray(D[i]) || D[i].length !== n) {
-      throw new TypeError(
-        `D must be a square (n×n) matrix — row ${i} has length ${D[i]?.length ?? 'undefined'}, expected ${n}.`
-      );
+      throw new TypeError(`D must be a square (n×n) matrix — row ${i} has length ${D[i]?.length ?? 'undefined'}, expected ${n}.`);
     }
     for (let j = 0; j < n; j++) {
       if (!Number.isFinite(D[i][j])) {
-        throw new TypeError(
-          `D must represent a connected graph with finite distances — found ${D[i][j]} at [${i}][${j}].`
-        );
+        throw new TypeError(`D must represent a connected graph with finite distances — found ${D[i][j]} at [${i}][${j}].`);
       }
     }
   }

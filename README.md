@@ -26,15 +26,7 @@ npm install molecules
 ## Quick Start
 
 ```js
-import {
-  parseSMILES,
-  toCanonicalSMILES,
-  toInChI,
-  molecularFormula,
-  wienerIndex,
-  adjacencyMatrix,
-  distanceMatrix
-} from 'molecules';
+import { parseSMILES, toCanonicalSMILES, toInChI, molecularFormula, wienerIndex, adjacencyMatrix, distanceMatrix } from 'molecules';
 
 const mol = parseSMILES('CC(=O)O'); // acetic acid
 

@@ -1,13 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
-import {
-  adjacencyMatrix,
-  degreeMatrix,
-  distanceMatrix,
-  reciprocalMatrix,
-  randicMatrix
-} from '../../src/matrices/index.js';
+import { adjacencyMatrix, degreeMatrix, distanceMatrix, reciprocalMatrix, randicMatrix } from '../../src/matrices/index.js';
 import { parseSMILES } from '../../src/io/index.js';
 import {
   wienerIndex,
@@ -454,16 +448,10 @@ function checkNewIndices(smiles, { abc, ga, harmonic, sc, ecc, wp, schultz, gutm
     assert.ok(Math.abs(gaIndex(A, DEG) - ga) < tol, `GA: expected ${ga}, got ${gaIndex(A, DEG)}`);
   }
   if (harmonic !== undefined) {
-    assert.ok(
-      Math.abs(harmonicIndex(A, DEG) - harmonic) < tol,
-      `Harmonic: expected ${harmonic}, got ${harmonicIndex(A, DEG)}`
-    );
+    assert.ok(Math.abs(harmonicIndex(A, DEG) - harmonic) < tol, `Harmonic: expected ${harmonic}, got ${harmonicIndex(A, DEG)}`);
   }
   if (sc !== undefined) {
-    assert.ok(
-      Math.abs(sumConnectivityIndex(A, DEG) - sc) < tol,
-      `SC: expected ${sc}, got ${sumConnectivityIndex(A, DEG)}`
-    );
+    assert.ok(Math.abs(sumConnectivityIndex(A, DEG) - sc) < tol, `SC: expected ${sc}, got ${sumConnectivityIndex(A, DEG)}`);
   }
   if (ecc !== undefined) {
     assert.equal(eccentricConnectivityIndex(A, DEG, D), ecc);

@@ -317,13 +317,7 @@ export function measureRingSystemDeviation(baseCoords, ringSystem) {
 export function buildRefinementContext(
   molecule,
   coords,
-  {
-    bondLength = DEFAULT_BOND_LENGTH,
-    freezeRings = true,
-    freezeChiralCenters = false,
-    includeRingSystemCandidates = true,
-    generateCoords = null
-  } = {}
+  { bondLength = DEFAULT_BOND_LENGTH, freezeRings = true, freezeChiralCenters = false, includeRingSystemCandidates = true, generateCoords = null } = {}
 ) {
   _buildLayoutNeighborCache(molecule);
 
@@ -347,12 +341,7 @@ export function buildRefinementContext(
     const [aId, bId] = bond.atoms;
     bondedPairs.add(`${aId}\0${bId}`);
     bondedPairs.add(`${bId}\0${aId}`);
-    if (
-      coords.has(aId) &&
-      coords.has(bId) &&
-      molecule.atoms.get(aId)?.name !== 'H' &&
-      molecule.atoms.get(bId)?.name !== 'H'
-    ) {
+    if (coords.has(aId) && coords.has(bId) && molecule.atoms.get(aId)?.name !== 'H' && molecule.atoms.get(bId)?.name !== 'H') {
       heavyBonds.push(bond);
     }
   }
@@ -450,8 +439,7 @@ export function buildRefinementContext(
     }
   }
 
-  const ringSystemCandidates =
-    freezeRings && includeRingSystemCandidates ? collectRingSystemCandidates(molecule, bondLength, cycleData, generateCoords) : [];
+  const ringSystemCandidates = freezeRings && includeRingSystemCandidates ? collectRingSystemCandidates(molecule, bondLength, cycleData, generateCoords) : [];
 
   return {
     bondLength,
@@ -466,4 +454,3 @@ export function buildRefinementContext(
     rings: molecule.getRings().filter(ring => ring.length >= 3)
   };
 }
-

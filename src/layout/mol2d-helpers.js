@@ -161,8 +161,7 @@ export function secondaryDir(a1, a2, mol, toSVG) {
     }
   }
 
-  const resolveNbs = (atom, excludeId) =>
-    atom.getNeighbors(mol).filter(n => n && n.id !== excludeId && n.name !== 'H' && n.x != null);
+  const resolveNbs = (atom, excludeId) => atom.getNeighbors(mol).filter(n => n && n.id !== excludeId && n.name !== 'H' && n.x != null);
   const allNb = [...resolveNbs(a1, a2.id), ...resolveNbs(a2, a1.id)];
   if (allNb.length === 0) {
     return 1;
@@ -324,9 +323,7 @@ export function stereoBondTypeForCenter(mol, centerId, preferredBondId = null) {
   );
   const entries = neighbors
     .map((n, i) => {
-      const bond = [...mol.bonds.values()].find(
-        b => (b.atoms[0] === centerId && b.atoms[1] === n.id) || (b.atoms[1] === centerId && b.atoms[0] === n.id)
-      );
+      const bond = [...mol.bonds.values()].find(b => (b.atoms[0] === centerId && b.atoms[1] === n.id) || (b.atoms[1] === centerId && b.atoms[0] === n.id));
       return { atom: n, rank: ranks[i], bond };
     })
     .filter(e => e.bond);
@@ -341,27 +338,12 @@ export function stereoBondTypeForCenter(mol, centerId, preferredBondId = null) {
   const visible = entries.filter(e => e.atom.visible !== false);
   const exocyclic = visible.filter(e => !e.atom.isInRing(mol));
   const exocyclicHeavy = exocyclic.filter(e => e.atom.name !== 'H');
-  const candidates =
-    exocyclicHeavy.length > 0
-      ? exocyclicHeavy
-      : exocyclic.length > 0
-        ? exocyclic
-        : visible.length > 0
-          ? visible
-          : entries;
+  const candidates = exocyclicHeavy.length > 0 ? exocyclicHeavy : exocyclic.length > 0 ? exocyclic : visible.length > 0 ? visible : entries;
 
   const preferred =
-    preferredBondId != null
-      ? (candidates.find(cand => cand.bond.id === preferredBondId) ??
-        entries.find(entry => entry.bond.id === preferredBondId) ??
-        null)
-      : null;
+    preferredBondId != null ? (candidates.find(cand => cand.bond.id === preferredBondId) ?? entries.find(entry => entry.bond.id === preferredBondId) ?? null) : null;
 
-  const chosen =
-    preferred ??
-    candidates.reduce((best, cand) =>
-      cand.rank > best.rank || (cand.rank === best.rank && cand.bond.id < best.bond.id) ? cand : best
-    );
+  const chosen = preferred ?? candidates.reduce((best, cand) => (cand.rank > best.rank || (cand.rank === best.rank && cand.bond.id < best.bond.id) ? cand : best));
 
   const others = entries.filter(e => e !== chosen).sort((a, b) => b.rank - a.rank);
   const heavyOtherVecs = others.filter(e => !(e.atom.name === 'H' && e.atom.visible === false)).map(v);
@@ -430,8 +412,7 @@ export function pickStereoWedges(mol) {
       }
     }
   }
-  const forcedByCenter =
-    mol?.__reactionPreview?.forcedStereoByCenter ?? mol?.__reactionPreview?.forcedProductStereoByCenter ?? null;
+  const forcedByCenter = mol?.__reactionPreview?.forcedStereoByCenter ?? mol?.__reactionPreview?.forcedProductStereoByCenter ?? null;
   for (const centerId of mol.getChiralCenters()) {
     if (lockedCenters.has(centerId)) {
       continue;

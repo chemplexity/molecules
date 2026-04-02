@@ -3,12 +3,7 @@ import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
 import { parseSMILES } from '../../src/io/index.js';
 import { findSubgraphMappings, findFirstSubgraphMapping, matchesSubgraph } from '../../src/algorithms/vf2.js';
-import {
-  wildcardAtomMatch,
-  wildcardBondMatch,
-  elementOnlyAtomMatch,
-  makeAtomMatcher
-} from '../../src/algorithms/subgraph.js';
+import { wildcardAtomMatch, wildcardBondMatch, elementOnlyAtomMatch, makeAtomMatcher } from '../../src/algorithms/subgraph.js';
 
 // ---------------------------------------------------------------------------
 // Test molecule builders (no implicit H — use addBond with false flag)

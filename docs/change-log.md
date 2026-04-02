@@ -2,6 +2,7 @@
 
 ## 2026-04-01
 
+- Added a resonance sidebar panel with contributor count, click-to-lock cycling, and automatic recomputation on molecule changes
 - Initial implementation of determining resonance structures of a molecule
 - Added an options window for 2D atom coloring, 2D bond thickness, force atom size, force bond thickness, reset button, 2D atom font-size, and 'Show Valence Warnings' toggle
 - Made physicochemical highlight rows lock and unlock on click

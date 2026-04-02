@@ -263,10 +263,7 @@ export function forceFieldRefine(molecule, coords, frozen, bondLength, allRingAt
           // For backbone triples entirely within a large ring, spring toward the
           // ring's own initial geometry (not 120°).  A 53-atom ring has interior
           // angles ~173°; forcing 120° would severely contract the backbone.
-          const backboneInitAng =
-            isLargeRingAtom(cId) && isLargeRingAtom(bId) && isLargeRingAtom(dId)
-              ? (initAngles.get(`${cId},${bId},${dId}`) ?? null)
-              : null;
+          const backboneInitAng = isLargeRingAtom(cId) && isLargeRingAtom(bId) && isLargeRingAtom(dId) ? (initAngles.get(`${cId},${bId},${dId}`) ?? null) : null;
           const delta = theta - (backboneInitAng !== null ? backboneInitAng : ideal);
           if (Math.abs(delta) < 1e-8) {
             continue;

@@ -10,10 +10,7 @@ describe('getHighlightStyleVariant', () => {
 
   it('cycles through the default rainbow palette by highlight index', () => {
     assert.deepEqual(getHighlightStyleVariant('default', 1), HIGHLIGHT_STYLE_PALETTES.default[1]);
-    assert.deepEqual(
-      getHighlightStyleVariant('default', HIGHLIGHT_STYLE_PALETTES.default.length),
-      HIGHLIGHT_STYLE_PALETTES.default[0]
-    );
+    assert.deepEqual(getHighlightStyleVariant('default', HIGHLIGHT_STYLE_PALETTES.default.length), HIGHLIGHT_STYLE_PALETTES.default[0]);
   });
 
   it('keeps physchem highlights on their dedicated palette', () => {

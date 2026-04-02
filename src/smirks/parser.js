@@ -227,9 +227,7 @@ function _annotateProductStereo(productText, product) {
       continue;
     }
     if (flags.hydrogenCountSpecified && flags.hydrogenCount > 1) {
-      throw new Error(
-        `parseSMIRKS: chiral product atom '[${productAtom.name}]' cannot specify H${flags.hydrogenCount}`
-      );
+      throw new Error(`parseSMIRKS: chiral product atom '[${productAtom.name}]' cannot specify H${flags.hydrogenCount}`);
     }
     const stereoAtom = stereoMol.atoms.get(productToStereoAtomId.get(productAtom.id));
     if (!stereoAtom?.getChirality()) {
@@ -419,9 +417,7 @@ function _parseProductTemplate(template) {
 
     if ('-=#:/\\~@'.includes(ch)) {
       if (prevId == null || pendingBondProps) {
-        throw new Error(
-          `parseSMIRKS: bond token '${ch}' at pos ${pos} is not attached to a valid product atom sequence`
-        );
+        throw new Error(`parseSMIRKS: bond token '${ch}' at pos ${pos} is not attached to a valid product atom sequence`);
       }
       setPendingBond(ch);
       pos++;
@@ -507,17 +503,13 @@ export function parseSMIRKS(smirks) {
 
   const sharedMaps = [...productMaps.keys()].filter(atomMap => reactantMaps.has(atomMap));
   if (sharedMaps.length === 0) {
-    throw new Error(
-      'parseSMIRKS: phase-1 SMIRKS requires at least one mapped atom shared between reactant and product'
-    );
+    throw new Error('parseSMIRKS: phase-1 SMIRKS requires at least one mapped atom shared between reactant and product');
   }
 
   for (const component of product.getComponents()) {
     const hasSharedMap = [...component.atoms.values()].some(atom => atom.getAtomMap() != null);
     if (!hasSharedMap) {
-      throw new Error(
-        'parseSMIRKS: phase-1 SMIRKS does not support disconnected product fragments without a shared mapped atom'
-      );
+      throw new Error('parseSMIRKS: phase-1 SMIRKS does not support disconnected product fragments without a shared mapped atom');
     }
   }
 

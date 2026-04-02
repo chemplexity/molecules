@@ -3,20 +3,38 @@
 import elements from '../data/elements.js';
 
 function commonNeutralValences(symbol, { group, period }) {
-  if (symbol === 'H') return [1];
-  if (symbol === 'He' || group === 18) return [0];
-  if (group === 1 || group === 2) return [group];
-  if (group === 13) return [3];
-  if (group === 14) return [4];
-  if (group === 15) return period <= 2 ? [3] : [3, 5];
-  if (group === 16) return period <= 2 ? [2] : [2, 4, 6];
-  if (group === 17) return [1];
+  if (symbol === 'H') {
+    return [1];
+  }
+  if (symbol === 'He' || group === 18) {
+    return [0];
+  }
+  if (group === 1 || group === 2) {
+    return [group];
+  }
+  if (group === 13) {
+    return [3];
+  }
+  if (group === 14) {
+    return [4];
+  }
+  if (group === 15) {
+    return period <= 2 ? [3] : [3, 5];
+  }
+  if (group === 16) {
+    return period <= 2 ? [2] : [2, 4, 6];
+  }
+  if (group === 17) {
+    return [1];
+  }
   return [];
 }
 
 function shiftedCommonValences(symbol, el, charge, radical) {
   const base = commonNeutralValences(symbol, el);
-  if (base.length === 0) return [];
+  if (base.length === 0) {
+    return [];
+  }
 
   const shift =
     symbol === 'H'

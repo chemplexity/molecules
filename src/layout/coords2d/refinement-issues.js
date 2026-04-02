@@ -361,9 +361,7 @@ export function collectRefinementChainPath(molecule, startId, ringAtomIds, allow
  * @returns {string[][]} Array of chain paths, each an ordered array of atom IDs with length >= 2
  */
 export function collectAllRefinementChainPaths(molecule, ctx) {
-  const eligible = new Set(
-    ctx.heavyIds.filter(atomId => isRefinementChainAtom(molecule, atomId, ctx.cycleData.ringAtomIds))
-  );
+  const eligible = new Set(ctx.heavyIds.filter(atomId => isRefinementChainAtom(molecule, atomId, ctx.cycleData.ringAtomIds)));
   const neighborMap = new Map();
   for (const atomId of eligible) {
     neighborMap.set(
@@ -685,8 +683,7 @@ export function collectLayoutIssues(molecule, coords, ctx) {
     }
 
     const ideal = idealRefinementAngle(molecule, pivotId);
-    const strictTrigonal =
-      ideal === DEG120 && neighbors.length === 3 && isStrictTrigonalRefinementCenter(molecule, pivotId);
+    const strictTrigonal = ideal === DEG120 && neighbors.length === 3 && isStrictTrigonalRefinementCenter(molecule, pivotId);
     const worstErrThreshold = strictTrigonal ? (4 * Math.PI) / 180 : (12 * Math.PI) / 180;
     const avgErrThreshold = strictTrigonal ? (3 * Math.PI) / 180 : 0;
     let worstErr = 0;
@@ -718,8 +715,7 @@ export function collectLayoutIssues(molecule, coords, ctx) {
     if (worstErr > worstErrThreshold || (strictTrigonal && avgErr > avgErrThreshold)) {
       issues.push({
         type: neighbors.length === 3 ? 'planar_angle' : 'chain_angle',
-        severity:
-          (strictTrigonal ? 10 : 8) + worstErr * (strictTrigonal ? 34 : 22) + avgErr * (strictTrigonal ? 16 : 8),
+        severity: (strictTrigonal ? 10 : 8) + worstErr * (strictTrigonal ? 34 : 22) + avgErr * (strictTrigonal ? 16 : 8),
         atoms: [pivotId, ...neighbors]
       });
     }
@@ -821,4 +817,3 @@ export function collectLayoutIssues(molecule, coords, ctx) {
 export function scoreLayoutIssues(issues) {
   return issues.reduce((sum, issue) => sum + issue.severity, 0);
 }
-

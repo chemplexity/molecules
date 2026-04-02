@@ -2,17 +2,7 @@
 
 import { molecularFormula, molecularMass } from '../../descriptors/molecular.js';
 import { allMatrices } from '../../matrices/index.js';
-import {
-  wienerIndex,
-  hyperWienerIndex,
-  balabanIndex,
-  randicIndex,
-  zagreb1,
-  zagreb2,
-  hararyIndex,
-  plattIndex,
-  szegedIndex
-} from '../../descriptors/topological.js';
+import { wienerIndex, hyperWienerIndex, balabanIndex, randicIndex, zagreb1, zagreb2, hararyIndex, plattIndex, szegedIndex } from '../../descriptors/topological.js';
 import {
   logP,
   tpsa,
@@ -40,8 +30,7 @@ const PC_DESCRIPTIONS = {
   'MW (Da)': 'Molecular weight in Daltons (average mass).',
   'Formal Charge': 'Net formal charge summed over all atoms.',
   'logP (Crippen)': 'Estimated lipophilicity using the Crippen atom-contribution method (Wildman & Crippen, 1999).',
-  'MR (Crippen)':
-    'Molar refractivity (cm³/mol) estimated by Crippen atom contributions — reflects polarisability and molecular volume.',
+  'MR (Crippen)': 'Molar refractivity (cm³/mol) estimated by Crippen atom contributions — reflects polarisability and molecular volume.',
   'TPSA (Å²)': 'Topological Polar Surface Area — sum of surface contributions from polar atoms (Ertl, 2000).',
   'HB Donors': 'Number of hydrogen-bond donors (NH and OH groups, Lipinski definition).',
   'HB Acceptors': 'Number of hydrogen-bond acceptors (N and O atoms, Lipinski definition).',

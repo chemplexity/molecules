@@ -4,14 +4,23 @@ import { randomUUID } from 'node:crypto';
 import { Atom } from './Atom.js';
 import { Bond } from './Bond.js';
 import elements from '../data/elements.js';
-import {
-  findSubgraphMappings as _vf2Mappings,
-  findFirstSubgraphMapping as _vf2First,
-  matchesSubgraph as _vf2Matches
-} from '../algorithms/vf2.js';
+import { findSubgraphMappings as _vf2Mappings, findFirstSubgraphMapping as _vf2First, matchesSubgraph as _vf2Matches } from '../algorithms/vf2.js';
 // Smarts functions are registered lazily by smarts/index.js to avoid a
 // circular dependency (Molecule → smarts → parser → Molecule).
 let _smartsFind, _smartsFirst, _smartsMatches;
+
+/**
+ * Deep-clones a plain property bag used on molecules, atoms, and bonds.
+ *
+ * @param {object|undefined|null} value
+ * @returns {object}
+ */
+function _clonePropertyBag(value) {
+  if (!value || typeof value !== 'object') {
+    return {};
+  }
+  return JSON.parse(JSON.stringify(value));
+}
 
 /**
  * Represents a molecular graph where atoms are vertices and bonds are edges.
@@ -404,7 +413,7 @@ export class Molecule {
    * @returns {Atom}
    */
   _copyAtom(atom) {
-    const copy = new Atom(atom.id, atom.name, { ...atom.properties });
+    const copy = new Atom(atom.id, atom.name, _clonePropertyBag(atom.properties));
     copy.uuid = atom.uuid;
     copy.tags = [...atom.tags];
     copy.x = atom.x;
@@ -422,7 +431,7 @@ export class Molecule {
    * @returns {Bond}
    */
   _copyBond(bond) {
-    const copy = new Bond(bond.id, [...bond.atoms], { ...bond.properties });
+    const copy = new Bond(bond.id, [...bond.atoms], _clonePropertyBag(bond.properties));
     copy.uuid = bond.uuid;
     copy.tags = [...bond.tags];
     return copy;
@@ -1017,7 +1026,14 @@ export class Molecule {
    * @returns {Molecule}
    */
   clone() {
-    return this.getSubgraph([...this.atoms.keys()]);
+    const copy = this.getSubgraph([...this.atoms.keys()]);
+    copy.name = this.name;
+    copy.tags = [...this.tags];
+    copy.properties = {
+      ...copy.properties,
+      ..._clonePropertyBag(this.properties)
+    };
+    return copy;
   }
 
   /**
