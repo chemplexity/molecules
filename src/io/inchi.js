@@ -1797,6 +1797,12 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       if (atom.name !== 'C') {
         continue;
       }
+      // Ring amidines/lactams such as cytosine should keep their localized
+      // heterocycle bond pattern; this heuristic is only intended for open-chain
+      // amidine / guanidine-like systems.
+      if (atom.isInRing(mol)) {
+        continue;
+      }
       const nBonds = atom.bonds
         .map(bondId => mol.bonds.get(bondId))
         .filter(Boolean)

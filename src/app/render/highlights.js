@@ -1,0 +1,406 @@
+/** @module app/render/highlights */
+
+import { findSMARTS, parseSMARTS, functionalGroups } from '../../smarts/index.js';
+
+let ctx = {};
+
+export function initHighlights(context) {
+  ctx = context;
+}
+
+/** Apply (or clear) a highlight from a list of SMARTS mappings and redraw. */
+export function _setHighlight(mappings, options = {}) {
+  _highlightedAtomIds.clear();
+  _highlightedAtomSets = [];
+  _highlightStyle = options.style ?? 'default';
+  if (mappings) {
+    for (const mapping of mappings) {
+      const atomSet = new Set(mapping.values());
+      // Include explicit H atoms bonded to any matched atom.
+      if (_highlightMol) {
+        for (const atomId of [...atomSet]) {
+          for (const nb of _highlightMol.atoms.get(atomId)?.getNeighbors(_highlightMol) ?? []) {
+            if (nb.name === 'H') {
+              atomSet.add(nb.id);
+            }
+          }
+        }
+      }
+      for (const atomId of atomSet) {
+        _highlightedAtomIds.add(atomId);
+      }
+      _highlightedAtomSets.push(atomSet);
+    }
+  }
+  if (ctx.mode === '2d' && ctx._mol2d) {
+    ctx.draw2d();
+  } else {
+    ctx.applyForceHighlights();
+  }
+}
+
+export const HIGHLIGHT_STYLES = {
+  default: {
+    fill: 'rgb(130, 210, 80)',
+    outline: 'rgb(70, 140, 40)'
+  },
+  physchem: {
+    fill: 'rgb(246, 227, 110)',
+    outline: 'rgb(194, 168, 24)'
+  }
+};
+
+let _highlightStyle = 'default';
+
+const FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS = 1500;
+let _lastHoveredFunctionalGroupMappings = null;
+let _lastHoveredFunctionalGroupAt = 0;
+let _preserveFunctionalGroupHighlightUntil = 0;
+
+const _highlightedAtomIds = new Set();
+let _highlightedAtomSets = []; // one Set<atomId> per SMARTS match instance
+let _highlightMol = null; // molecule used for last updateFunctionalGroups call
+
+const _functionalGroupAnchorCache = new Map();
+let _persistentHighlightFallback = null;
+let _activeFunctionalGroupKey = null;
+let _activeFunctionalGroupMatchIndex = 0;
+
+function _rememberHoveredFunctionalGroupMappings(mappings) {
+  if (!mappings?.length) {
+    _lastHoveredFunctionalGroupMappings = null;
+    _lastHoveredFunctionalGroupAt = 0;
+    return;
+  }
+  _lastHoveredFunctionalGroupMappings = mappings.map(mapping => new Map(mapping));
+  _lastHoveredFunctionalGroupAt = Date.now();
+}
+
+function _functionalGroupKey(fg) {
+  return `${fg.name}::${fg.smarts}`;
+}
+
+function _functionalGroupNavButton(label, title, onActivate) {
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'reaction-nav-btn';
+  btn.title = title;
+  btn.textContent = label;
+  btn.addEventListener('mousedown', event => {
+    event.preventDefault();
+    event.stopPropagation();
+    onActivate();
+  });
+  btn.addEventListener('click', event => {
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  return btn;
+}
+
+function _clearActiveFunctionalGroupState() {
+  _activeFunctionalGroupKey = null;
+  _activeFunctionalGroupMatchIndex = 0;
+}
+
+function _activeFunctionalGroupMappingsForRow(row) {
+  if (!row?._fgMappings?.length) {
+    return null;
+  }
+  const index = Math.max(0, Math.min(row._fgActiveIndex ?? 0, row._fgMappings.length - 1));
+  return [row._fgMappings[index]];
+}
+
+function _queryAtomAnchorSignature(queryMol, atom) {
+  const bondSignature = atom.bonds
+    .map(bondId => {
+      const bond = queryMol.bonds.get(bondId);
+      return `${bond?.properties.order ?? 1}:${bond?.properties.aromatic ?? false}`;
+    })
+    .sort()
+    .join('|');
+  return [
+    atom.name ?? '*',
+    atom.isAromatic?.() ?? false,
+    atom.getCharge?.() ?? 0,
+    atom.bonds.length,
+    atom.isInRing?.(queryMol) ?? false,
+    bondSignature
+  ].join(';');
+}
+
+function _functionalGroupAnchorQueryIds(smarts) {
+  let cached = _functionalGroupAnchorCache.get(smarts);
+  if (cached) {
+    return cached;
+  }
+
+  const queryMol = parseSMARTS(smarts);
+  const classes = new Map();
+  for (const atom of queryMol.atoms.values()) {
+    const signature = _queryAtomAnchorSignature(queryMol, atom);
+    if (!classes.has(signature)) {
+      classes.set(signature, []);
+    }
+    classes.get(signature).push(atom.id);
+  }
+
+  const ranked = [...classes.values()].sort((aIds, bIds) => {
+    if (aIds.length !== bIds.length) {
+      return aIds.length - bIds.length;
+    }
+    const aDegree = Math.max(...aIds.map(id => queryMol.atoms.get(id)?.bonds.length ?? 0));
+    const bDegree = Math.max(...bIds.map(id => queryMol.atoms.get(id)?.bonds.length ?? 0));
+    if (aDegree !== bDegree) {
+      return bDegree - aDegree;
+    }
+    return aIds.join(',').localeCompare(bIds.join(','));
+  });
+
+  cached = ranked[0] ?? [...queryMol.atoms.keys()];
+  _functionalGroupAnchorCache.set(smarts, cached);
+  return cached;
+}
+
+export function getHighlightAnchorQueryIds(smarts) {
+  return _functionalGroupAnchorQueryIds(smarts);
+}
+
+function _mergeMappingsByAnchor(smarts, mappings) {
+  const anchorQueryIds = _functionalGroupAnchorQueryIds(smarts);
+  const mergedByAnchor = new Map();
+  for (const mapping of mappings) {
+    const anchorKey = anchorQueryIds
+      .map(queryId => mapping.get(queryId))
+      .filter(Boolean)
+      .sort()
+      .join(',');
+    const key = anchorKey || [...mapping.values()].sort().join(',');
+    if (!mergedByAnchor.has(key)) {
+      mergedByAnchor.set(key, new Set());
+    }
+    for (const id of mapping.values()) {
+      mergedByAnchor.get(key).add(id);
+    }
+  }
+  return [...mergedByAnchor.values()].map(atomSet => new Map([...atomSet].map(id => [id, id])));
+}
+
+export function _prepare2dExportHighlightState() {
+  if (_highlightedAtomSets.length > 0) {
+    return () => {};
+  }
+  if (!_highlightMol || !_lastHoveredFunctionalGroupMappings?.length) {
+    return () => {};
+  }
+  if (Date.now() - _lastHoveredFunctionalGroupAt > FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS) {
+    return () => {};
+  }
+  _setHighlight(_lastHoveredFunctionalGroupMappings.map(mapping => new Map(mapping)));
+  return () => {};
+}
+
+export function _restoreRecentFunctionalGroupHighlight() {
+  if (_highlightedAtomSets.length > 0) {
+    return false;
+  }
+  if (!_highlightMol || !_lastHoveredFunctionalGroupMappings?.length) {
+    return false;
+  }
+  if (Date.now() - _lastHoveredFunctionalGroupAt > FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS) {
+    return false;
+  }
+  _preserveFunctionalGroupHighlightUntil = Date.now() + FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS;
+  _setHighlight(_lastHoveredFunctionalGroupMappings.map(mapping => new Map(mapping)));
+  return true;
+}
+
+export function setPersistentHighlightFallback(fn) {
+  _persistentHighlightFallback = typeof fn === 'function' ? fn : null;
+}
+
+export function _restorePersistentHighlight() {
+  const activeFgRow = document.querySelector('#fg-body tr.fg-active');
+  const activeFgMappings = _activeFunctionalGroupMappingsForRow(activeFgRow);
+  if (activeFgMappings) {
+    _setHighlight(activeFgMappings);
+    return true;
+  }
+  if (_persistentHighlightFallback?.()) {
+    return true;
+  }
+  _setHighlight(null);
+  return false;
+}
+
+/** Returns true if id1 and id2 belong to the same SMARTS match instance. */
+export function _isBondHighlighted(id1, id2) {
+  for (const set of _highlightedAtomSets) {
+    if (set.has(id1) && set.has(id2)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+export function updateFunctionalGroups(mol) {
+  _highlightMol = mol;
+  _highlightedAtomIds.clear();
+  _highlightedAtomSets = [];
+  _rememberHoveredFunctionalGroupMappings(null);
+  const previousActiveKey = _activeFunctionalGroupKey;
+  const previousActiveIndex = _activeFunctionalGroupMatchIndex;
+  let activeStillPresent = false;
+  const tbody = document.getElementById('fg-body');
+  tbody.innerHTML = '';
+  for (const [, fg] of Object.entries(functionalGroups)) {
+    const mappings = [...findSMARTS(mol, fg.smarts)];
+    if (mappings.length === 0) {
+      continue;
+    }
+    const uniqueMappings = _mergeMappingsByAnchor(fg.smarts, mappings);
+    const siteCount = uniqueMappings.length;
+    const key = _functionalGroupKey(fg);
+    const isActive = previousActiveKey === key;
+    const activeIndex = isActive ? Math.max(0, Math.min(previousActiveIndex, siteCount - 1)) : 0;
+    const tr = document.createElement('tr');
+    if (isActive) {
+      activeStillPresent = true;
+      _activeFunctionalGroupKey = key;
+      _activeFunctionalGroupMatchIndex = activeIndex;
+      tr.classList.add('fg-active');
+    }
+    tr._fgMappings = uniqueMappings;
+    tr._fgActiveIndex = activeIndex;
+
+    const nameCell = document.createElement('td');
+    const countCell = document.createElement('td');
+    countCell.className = 'reaction-count';
+    countCell.textContent = String(siteCount);
+
+    const name = document.createElement('div');
+    name.className = 'reaction-name';
+    name.textContent = fg.name;
+    nameCell.appendChild(name);
+
+    if (isActive && siteCount > 1) {
+      const nav = document.createElement('div');
+      nav.className = 'reaction-nav';
+      const siteLabel = document.createElement('span');
+      siteLabel.className = 'reaction-site-label';
+      siteLabel.textContent = `${activeIndex + 1}/${siteCount}`;
+      nav.appendChild(
+        _functionalGroupNavButton('‹', 'Previous functional-group match', () => {
+          _activeFunctionalGroupMatchIndex = (activeIndex - 1 + siteCount) % siteCount;
+          _setHighlight([uniqueMappings[_activeFunctionalGroupMatchIndex]]);
+          updateFunctionalGroups(_highlightMol);
+        })
+      );
+      nav.appendChild(siteLabel);
+      nav.appendChild(
+        _functionalGroupNavButton('›', 'Next functional-group match', () => {
+          _activeFunctionalGroupMatchIndex = (activeIndex + 1) % siteCount;
+          _setHighlight([uniqueMappings[_activeFunctionalGroupMatchIndex]]);
+          updateFunctionalGroups(_highlightMol);
+        })
+      );
+      nameCell.appendChild(nav);
+    }
+
+    tr.appendChild(nameCell);
+    tr.appendChild(countCell);
+
+    tr.addEventListener('mouseenter', () => {
+      if (tbody.querySelector('tr.fg-active')) {
+        return;
+      }
+      _rememberHoveredFunctionalGroupMappings(uniqueMappings);
+      _setHighlight(uniqueMappings);
+    });
+    tr.addEventListener('mouseleave', () => {
+      if (tbody.querySelector('tr.fg-active')) {
+        return;
+      }
+      if (Date.now() < _preserveFunctionalGroupHighlightUntil) {
+        return;
+      }
+      _setHighlight(null);
+    });
+    tr.addEventListener('mousedown', event => {
+      if (event.button !== 0) {
+        return;
+      }
+      const wasActive = tr.classList.contains('fg-active');
+      tbody.querySelectorAll('tr').forEach(row => row.classList.remove('fg-active'));
+      _rememberHoveredFunctionalGroupMappings(uniqueMappings);
+      if (wasActive) {
+        _clearActiveFunctionalGroupState();
+        _setHighlight(uniqueMappings);
+        return;
+      }
+      _activeFunctionalGroupKey = key;
+      _activeFunctionalGroupMatchIndex = 0;
+      tr.classList.add('fg-active');
+      _setHighlight([uniqueMappings[0]]);
+      updateFunctionalGroups(_highlightMol);
+    });
+    tbody.appendChild(tr);
+  }
+  if (!activeStillPresent && previousActiveKey !== null) {
+    _clearActiveFunctionalGroupState();
+    return;
+  }
+  if (activeStillPresent) {
+    const activeFgRow = tbody.querySelector('tr.fg-active');
+    const activeFgMappings = _activeFunctionalGroupMappingsForRow(activeFgRow);
+    if (activeFgMappings) {
+      _setHighlight(activeFgMappings);
+    }
+  }
+}
+
+if (typeof document !== 'undefined') {
+  // Clear active functional-group row when clicking outside the table.
+  document.addEventListener(
+    'click',
+    event => {
+      if (event.target.closest('#fg-table')) {
+        return;
+      }
+      if (event.target.closest('#rotate-controls')) {
+        return;
+      }
+      const tbody = document.getElementById('fg-body');
+      if (!tbody?.querySelector('tr.fg-active')) {
+        return;
+      }
+      _clearActiveFunctionalGroupState();
+      tbody.querySelectorAll('tr').forEach(row => row.classList.remove('fg-active'));
+      _setHighlight(null);
+    },
+    true
+  );
+}
+
+export function getHighlightedAtomIds() {
+  return _highlightedAtomIds;
+}
+
+export function getHighlightedAtomSets() {
+  return _highlightedAtomSets;
+}
+
+export function getHighlightMol() {
+  return _highlightMol;
+}
+
+export function getHighlightStyle() {
+  return _highlightStyle;
+}
+
+export function clearHighlightState() {
+  _highlightedAtomIds.clear();
+  _highlightedAtomSets = [];
+  _highlightMol = null;
+  _clearActiveFunctionalGroupState();
+}

@@ -57,6 +57,12 @@ describe('validateValence — valid molecules', () => {
     assert.deepEqual(validateValence(parseSMILES('c1ccccc1')), []);
   });
 
+  it('the reported cannabinoid example produces no warnings', () => {
+    const smiles =
+      'Oc1c(c(O)cc(c1)CCCCC)[C@@H]2\\C=C(/CC[C@H]2\\C(=C)C)C';
+    assert.deepEqual(validateValence(parseSMILES(smiles)), []);
+  });
+
   it('pyridine c1ccncc1 produces no warnings', () => {
     assert.deepEqual(validateValence(parseSMILES('c1ccncc1')), []);
   });

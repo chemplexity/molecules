@@ -1,102 +1,107 @@
 # Change Log
 
-## 2026-03-17
+## 2026-04-01
 
-- Improved 2D coordinate generation and geometry
-- Added stereochemistry rendering and valence validation
-- Enhanced the demo
-- Added a script to generate a grid of test molecules
+- Refactor coords2d.js
+- Added per-match navigation for multi-hit functional groups in the sidebar
+- Moved shared highlight and functional-group panel logic into `src/app/render/highlights.js`
+- Made functional-group table rows toggle their locked highlight on repeated mouse-down
+- Fixed SMILES parsing so directional bonds after bracket stereocenters stay attached to the stereocenter
+- Fixed `parseINCHI` so ring amidines like cytosine keep the correct amino-keto localization
+- Added a psychoactive-compounds collection to the molecule catalog
+- Added valence-warning atom highlights and hover explanations in the demo
 
-## 2026-03-18
+## 2026-03-31
 
-- Added atom hybridisation detection, VF2 matching, SMARTS substructure search, and functional-group highlighting
-- Fixed stereochemistry, 2D geometry, chirality/isotope handling, and InChI parsing issues
+- Miscellaneous fixes
+- Renamed UI label to "Molecule Catalog"
+- Added Ctrl/Cmd+A select-all shortcut
+- Fixed hydrogen-bond acceptor counting for guanidine nitrogens
+- Added Kekulisation of stale bonds to restore correct double-bond orders
+- Fixed aromaticity perception to clear stale flags from non-aromatic rings
+- Enabled automatic SMILES/InChI input detection
+- Added a known-molecule catalog
+- Refactored `index.html` further
 
-## 2026-03-19
+## 2026-03-30
 
-- Expanded SMARTS and functional-group detection
-- Added canonical SMILES, aromaticity calculation, drug-likeness indicators, and `toInChI`
-- Improved SMILES/InChI parsing and demo integration
+- Added atom/bond highlighting for physicochemical properties
+- Improved PNG/SVG export
+- Expanded reaction templates
+- Fixed demo issues
+- Refactored `index.html`
+- Added reaction preview support
 
-## 2026-03-20
+## 2026-03-29
 
-- Added cleaner 2D geometry refinement
-- Updated the README and getting-started guide
-- Improved demo behavior and bond-hover details
-- Minor refactors, optimisations, and import fixes
-
-## 2026-03-21
-
-- General fixes across the core algorithms
-
-## 2026-03-22
-
-- Added selection and pan mode
-- Added delete-atoms/bonds controls
-- Algorithm, selection, and demo bug fixes
-
-## 2026-03-23
-
-- Added bond and selection dragging
-- Improved 2D coordinates and label placement
-- Introduced radical support
-- Miscellaneous fixes and refactors
-
-## 2026-03-24
-
-- Added support for the SMIRKS reaction language
-- Various related fixes and improvements
-
-## 2026-03-25
-
-- Added atom and bond creation to the demo
-- Introduced SMIRKS reaction templates
-- Minor fixes
-
-## 2026-03-26
-
-- Added undo/redo controls
-- Expanded bond-creation atom types
-- Improved force-layout structures in the demo
-- More fixes
-
-## 2026-03-27
-
-- Improved force-layout behavior
+- Corrected bridge-atom drawing behavior
+- Added physicochemical descriptors to the demo
+- Fixed demo issues
 
 ## 2026-03-28
 
 - Minor fixes across the project
 
-## 2026-03-29
+## 2026-03-27
 
-- Fixed demo issues
-- Added physicochemical descriptors to the demo
-- Corrected bridge-atom drawing behavior
+- Improved force-layout behavior
 
-## 2026-03-30
+## 2026-03-26
 
-- Added reaction preview support
-- Refactored `index.html`
-- Fixed demo issues
-- Expanded reaction templates
-- Improved PNG/SVG export
-- Added atom/bond highlighting for physicochemical properties
+- More fixes
+- Improved force-layout structures in the demo
+- Expanded bond-creation atom types
+- Added undo/redo controls
 
-## 2026-03-31
+## 2026-03-25
 
-- Refactored `index.html` further
-- Added a known-molecule catalog
-- Enabled automatic SMILES/InChI input detection
-- Fixed aromaticity perception to clear stale flags from non-aromatic rings
-- Added Kekulisation of stale bonds to restore correct double-bond orders
-- Fixed hydrogen-bond acceptor counting for guanidine nitrogens
-- Added Ctrl/Cmd+A select-all shortcut
-- Renamed UI label to "Molecule Catalog"
-- Miscellaneous fixes
+- Minor fixes
+- Introduced SMIRKS reaction templates
+- Added atom and bond creation to the demo
 
-## 2026-04-01
+## 2026-03-24
 
-- Added valence-warning atom highlights and hover explanations in the demo
-- Added a psychoactive-compounds collection to the molecule catalog
-- Refactor coords2d.js
+- Various related fixes and improvements
+- Added support for the SMIRKS reaction language
+
+## 2026-03-23
+
+- Miscellaneous fixes and refactors
+- Introduced radical support
+- Improved 2D coordinates and label placement
+- Added bond and selection dragging
+
+## 2026-03-22
+
+- Algorithm, selection, and demo bug fixes
+- Added delete-atoms/bonds controls
+- Added selection and pan mode
+
+## 2026-03-21
+
+- General fixes across the core algorithms
+
+## 2026-03-20
+
+- Minor refactors, optimisations, and import fixes
+- Improved demo behavior and bond-hover details
+- Updated the README and getting-started guide
+- Added cleaner 2D geometry refinement
+
+## 2026-03-19
+
+- Improved SMILES/InChI parsing and demo integration
+- Added canonical SMILES, aromaticity calculation, drug-likeness indicators, and `toInChI`
+- Expanded SMARTS and functional-group detection
+
+## 2026-03-18
+
+- Fixed stereochemistry, 2D geometry, chirality/isotope handling, and InChI parsing issues
+- Added atom hybridisation detection, VF2 matching, SMARTS substructure search, and functional-group highlighting
+
+## 2026-03-17
+
+- Added a script to generate a grid of test molecules
+- Enhanced the demo
+- Added stereochemistry rendering and valence validation
+- Improved 2D coordinate generation and geometry

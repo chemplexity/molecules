@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseINCHI, toInChI, parseSMILES } from '../../src/io/index.js';
+import { parseINCHI, toInChI, parseSMILES, toCanonicalSMILES } from '../../src/io/index.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -241,6 +241,19 @@ describe('parseINCHI — guanidine mobile hydrogens prefer terminal imine', () =
       .filter(Boolean)
       .filter(bond => (bond.properties.order ?? 1) === 2);
     assert.equal(doubleBonds.length, 0);
+  });
+});
+
+describe('parseINCHI — cytosine tautomer localization', () => {
+  it('keeps the amino-keto pyrimidine form when round-tripping generated InChI', () => {
+    const original = parseSMILES('NC1=NC(=O)NC=C1');
+    const roundTripped = parseINCHI(toInChI(original));
+    assert.equal(toCanonicalSMILES(roundTripped), toCanonicalSMILES(original));
+  });
+
+  it('prefers the amino-keto form for standard cytosine InChI input', () => {
+    const mol = parseINCHI('InChI=1S/C4H5N3O/c5-3-1-2-6-4(8)7-3/h1-2H,(H3,5,6,7,8)');
+    assert.equal(toCanonicalSMILES(mol), toCanonicalSMILES(parseSMILES('NC1=NC(=O)NC=C1')));
   });
 });
 

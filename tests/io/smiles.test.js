@@ -165,6 +165,15 @@ describe('parseSMILES — structure', () => {
   it('collapses mixed whitespace and dots into one fragment separator', () => {
     assert.deepEqual(formula(parseSMILES('C .  N')), { C: 1, N: 1, H: 7 });
   });
+
+  it('keeps bracket stereo hydrogens as single-bonded helper atoms', () => {
+    const mol = parseSMILES(
+      String.raw`Oc1c(c(O)cc(c1)CCCCC)[C@@H]2\C=C(/CC[C@H]2\C(=C)C)C`
+    );
+    const stereoHydrogens = [...mol.atoms.values()].filter(atom => atom.name === 'H' && atom.visible === false);
+    assert.ok(stereoHydrogens.length >= 2);
+    assert.ok(stereoHydrogens.every(atom => atom.bonds.length === 1));
+  });
 });
 
 describe('parseSMILES — input validation', () => {

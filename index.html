@@ -352,22 +352,29 @@
         addLine
       } from './src/app/render/helpers.js';
       import {
-        initReaction2d,
         HIGHLIGHT_STYLES,
         _setHighlight,
-        _hasReactionPreview,
         _isBondHighlighted,
-        _plotOverlayFitPadding,
-        _viewportFitPadding,
-        _clearReactionPreviewState,
-        _captureReactionPreviewSnapshot,
-        _restoreReactionPreviewSnapshot,
         _prepare2dExportHighlightState,
         _restoreRecentFunctionalGroupHighlight,
         _restorePersistentHighlight,
+        updateFunctionalGroups,
+        getHighlightedAtomIds,
+        getHighlightedAtomSets,
+        getHighlightStyle,
+        clearHighlightState,
+        initHighlights
+      } from './src/app/render/highlights.js';
+      import {
+        initReaction2d,
+        _plotOverlayFitPadding,
+        _clearReactionPreviewState,
+        _captureReactionPreviewSnapshot,
+        _restoreReactionPreviewSnapshot,
         _restoreReactionPreviewSource,
         _prepareReactionPreviewEditTargets,
         _prepareReactionPreviewBondEditTarget,
+        _hasReactionPreview,
         _reaction2dSourceAtomId,
         _reaction2dProductGeometries,
         _reaction2dArrowEndpoints,
@@ -376,12 +383,8 @@
         _alignReaction2dProductOrientation,
         _drawReactionPreviewArrow2d,
         _renderReactionPreviewArrowForce,
-        updateFunctionalGroups,
         updateReactionTemplatesPanel,
-        getHighlightedAtomIds,
-        getHighlightedAtomSets,
-        getHighlightStyle,
-        clearHighlightState
+        _viewportFitPadding
       } from './src/app/render/reaction-2d.js';
 
       const {
@@ -2471,6 +2474,17 @@
       });
       window.undoAction = undoAction;
       window.redoAction = redoAction;
+
+      initHighlights({
+        get mode() {
+          return mode;
+        },
+        get _mol2d() {
+          return _mol2d;
+        },
+        draw2d: () => draw2d(),
+        applyForceHighlights: () => applyForceHighlights()
+      });
 
       // Export — logic lives in src/app/ui/export.js
       initExport({

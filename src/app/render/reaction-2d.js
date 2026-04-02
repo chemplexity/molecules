@@ -1,7 +1,7 @@
 /** @module app/render/reaction-2d */
 
 import { Molecule } from '../../core/Molecule.js';
-import { findSMARTS, parseSMARTS, functionalGroups } from '../../smarts/index.js';
+import { findSMARTS } from '../../smarts/index.js';
 import { reactionTemplates } from '../../smirks/index.js';
 import {
   buildReaction2dMol as buildReaction2dMolShared,
@@ -10,132 +10,21 @@ import {
   centerReaction2dPairCoords as centerReaction2dPairCoordsShared
 } from '../../layout/reaction2d.js';
 import { atomRadius } from './helpers.js';
+import { _setHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback } from './highlights.js';
 
 let ctx = {};
 
 export function initReaction2d(context) {
   ctx = context;
-}
-
-// ---------------------------------------------------------------------------
-// Functional-group SMARTS panel
-// ---------------------------------------------------------------------------
-/** Apply (or clear) a highlight from a list of SMARTS mappings and redraw. */
-export function _setHighlight(mappings, options = {}) {
-  _highlightedAtomIds.clear();
-  _highlightedAtomSets = [];
-  _highlightStyle = options.style ?? 'default';
-  if (mappings) {
-    for (const mapping of mappings) {
-      const atomSet = new Set(mapping.values());
-      // Include explicit H atoms bonded to any matched atom
-      if (_highlightMol) {
-        for (const atomId of [...atomSet]) {
-          for (const nb of _highlightMol.atoms.get(atomId)?.getNeighbors(_highlightMol) ?? []) {
-            if (nb.name === 'H') {
-              atomSet.add(nb.id);
-            }
-          }
-        }
-      }
-      for (const atomId of atomSet) {
-        _highlightedAtomIds.add(atomId);
-      }
-      _highlightedAtomSets.push(atomSet);
-    }
-  }
-  if (ctx.mode === '2d' && ctx._mol2d) {
-    ctx.draw2d();
-  } else {
-    ctx.applyForceHighlights();
-  }
-}
-
-export const HIGHLIGHT_STYLES = {
-  default: {
-    fill: 'rgb(130, 210, 80)',
-    outline: 'rgb(70, 140, 40)'
-  },
-  physchem: {
-    fill: 'rgb(246, 227, 110)',
-    outline: 'rgb(194, 168, 24)'
-  }
-};
-let _highlightStyle = 'default';
-
-const FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS = 1500;
-let _lastHoveredFunctionalGroupMappings = null;
-let _lastHoveredFunctionalGroupAt = 0;
-let _preserveFunctionalGroupHighlightUntil = 0;
-
-const _highlightedAtomIds = new Set();
-let _highlightedAtomSets = []; // one Set<atomId> per SMARTS match instance
-let _highlightMol = null; // molecule used for last updateFunctionalGroups call
-
-function _rememberHoveredFunctionalGroupMappings(mappings) {
-  if (!mappings?.length) {
-    _lastHoveredFunctionalGroupMappings = null;
-    _lastHoveredFunctionalGroupAt = 0;
-    return;
-  }
-  _lastHoveredFunctionalGroupMappings = mappings.map(mapping => new Map(mapping));
-  _lastHoveredFunctionalGroupAt = Date.now();
-}
-
-export function _prepare2dExportHighlightState() {
-  if (_highlightedAtomSets.length > 0) {
-    return () => {};
-  }
-  if (!_highlightMol || !_lastHoveredFunctionalGroupMappings?.length) {
-    return () => {};
-  }
-  if (Date.now() - _lastHoveredFunctionalGroupAt > FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS) {
-    return () => {};
-  }
-  _setHighlight(_lastHoveredFunctionalGroupMappings.map(mapping => new Map(mapping)));
-  return () => {};
-}
-
-export function _restoreRecentFunctionalGroupHighlight() {
-  if (_highlightedAtomSets.length > 0) {
-    return false;
-  }
-  if (!_highlightMol || !_lastHoveredFunctionalGroupMappings?.length) {
-    return false;
-  }
-  if (Date.now() - _lastHoveredFunctionalGroupAt > FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS) {
-    return false;
-  }
-  _preserveFunctionalGroupHighlightUntil = Date.now() + FUNCTIONAL_GROUP_EXPORT_HOVER_GRACE_MS;
-  _setHighlight(_lastHoveredFunctionalGroupMappings.map(mapping => new Map(mapping)));
-  return true;
-}
-
-export function _restorePersistentHighlight() {
-  const activeFgRow = document.querySelector('#fg-body tr.fg-active');
-  if (activeFgRow?._fgMappings?.length) {
-    _setHighlight(activeFgRow._fgMappings);
-    return true;
-  }
-  if (_reactionPreviewLocked && _reactionPreviewHighlightMappings?.length) {
-    _setHighlight(_reactionPreviewHighlightMappings.map(mapping => new Map(mapping)));
-    return true;
-  }
-  _setHighlight(null);
-  return false;
-}
-
-/** Returns true if id1 and id2 belong to the same SMARTS match instance. */
-export function _isBondHighlighted(id1, id2) {
-  for (const set of _highlightedAtomSets) {
-    if (set.has(id1) && set.has(id2)) {
+  setPersistentHighlightFallback(() => {
+    if (_reactionPreviewLocked && _reactionPreviewHighlightMappings?.length) {
+      _setHighlight(_reactionPreviewHighlightMappings.map(mapping => new Map(mapping)));
       return true;
     }
-  }
-  return false;
+    return false;
+  });
 }
 
-const _functionalGroupAnchorCache = new Map();
 let _reactionPreviewSourceMol = null;
 let _activeReactionSmirks = null;
 let _activeReactionMatchIndex = 0;
@@ -1176,79 +1065,8 @@ export function _renderReactionPreviewArrowForce(nodes) {
   }
 }
 
-function _queryAtomAnchorSignature(queryMol, atom) {
-  const bondSignature = atom.bonds
-    .map(bondId => {
-      const bond = queryMol.bonds.get(bondId);
-      return `${bond?.properties.order ?? 1}:${bond?.properties.aromatic ?? false}`;
-    })
-    .sort()
-    .join('|');
-  return [
-    atom.name ?? '*',
-    atom.isAromatic?.() ?? false,
-    atom.getCharge?.() ?? 0,
-    atom.bonds.length,
-    atom.isInRing?.(queryMol) ?? false,
-    bondSignature
-  ].join(';');
-}
-
-function _functionalGroupAnchorQueryIds(smarts) {
-  let cached = _functionalGroupAnchorCache.get(smarts);
-  if (cached) {
-    return cached;
-  }
-
-  const queryMol = parseSMARTS(smarts);
-  const classes = new Map();
-  for (const atom of queryMol.atoms.values()) {
-    const signature = _queryAtomAnchorSignature(queryMol, atom);
-    if (!classes.has(signature)) {
-      classes.set(signature, []);
-    }
-    classes.get(signature).push(atom.id);
-  }
-
-  const ranked = [...classes.values()].sort((aIds, bIds) => {
-    if (aIds.length !== bIds.length) {
-      return aIds.length - bIds.length;
-    }
-    const aDegree = Math.max(...aIds.map(id => queryMol.atoms.get(id)?.bonds.length ?? 0));
-    const bDegree = Math.max(...bIds.map(id => queryMol.atoms.get(id)?.bonds.length ?? 0));
-    if (aDegree !== bDegree) {
-      return bDegree - aDegree;
-    }
-    return aIds.join(',').localeCompare(bIds.join(','));
-  });
-
-  cached = ranked[0] ?? [...queryMol.atoms.keys()];
-  _functionalGroupAnchorCache.set(smarts, cached);
-  return cached;
-}
-
-function _mergeMappingsByAnchor(smarts, mappings) {
-  const anchorQueryIds = _functionalGroupAnchorQueryIds(smarts);
-  const mergedByAnchor = new Map();
-  for (const m of mappings) {
-    const anchorKey = anchorQueryIds
-      .map(queryId => m.get(queryId))
-      .filter(Boolean)
-      .sort()
-      .join(',');
-    const key = anchorKey || [...m.values()].sort().join(',');
-    if (!mergedByAnchor.has(key)) {
-      mergedByAnchor.set(key, new Set());
-    }
-    for (const id of m.values()) {
-      mergedByAnchor.get(key).add(id);
-    }
-  }
-  return [...mergedByAnchor.values()].map(atomSet => new Map([...atomSet].map(id => [id, id])));
-}
-
 function _groupMappingsByAnchor(smarts, mappings) {
-  const anchorQueryIds = _functionalGroupAnchorQueryIds(smarts);
+  const anchorQueryIds = getHighlightAnchorQueryIds(smarts);
   const grouped = new Map();
   for (const mapping of mappings) {
     const anchorKey = anchorQueryIds
@@ -1380,48 +1198,6 @@ export function _alignReaction2dProductOrientation(mol) {
   );
 }
 
-export function updateFunctionalGroups(mol) {
-  _highlightMol = mol;
-  _highlightedAtomIds.clear();
-  _highlightedAtomSets = [];
-  _rememberHoveredFunctionalGroupMappings(null);
-  const tbody = document.getElementById('fg-body');
-  tbody.innerHTML = '';
-  for (const [, fg] of Object.entries(functionalGroups)) {
-    const mappings = [...findSMARTS(mol, fg.smarts)];
-    if (mappings.length === 0) {
-      continue;
-    }
-    const uniqueMappings = _mergeMappingsByAnchor(fg.smarts, mappings);
-    const tr = document.createElement('tr');
-    tr.innerHTML = `<td>${fg.name}</td><td>${uniqueMappings.length}</td>`;
-    tr._fgMappings = uniqueMappings;
-
-    tr.addEventListener('mouseenter', () => {
-      if (tbody.querySelector('tr.fg-active')) {
-        return;
-      }
-      _rememberHoveredFunctionalGroupMappings(uniqueMappings);
-      _setHighlight(uniqueMappings);
-    });
-    tr.addEventListener('mouseleave', () => {
-      if (tbody.querySelector('tr.fg-active')) {
-        return;
-      }
-      if (Date.now() < _preserveFunctionalGroupHighlightUntil) {
-        return;
-      }
-      _setHighlight(null);
-    });
-    tr.addEventListener('click', () => {
-      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('fg-active'));
-      tr.classList.add('fg-active');
-      _setHighlight(uniqueMappings);
-    });
-    tbody.appendChild(tr);
-  }
-}
-
 export function updateReactionTemplatesPanel() {
   const tbody = document.getElementById('reaction-body');
   if (!tbody) {
@@ -1535,42 +1311,4 @@ export function updateReactionTemplatesPanel() {
     });
     tbody.appendChild(tr);
   }
-}
-
-// Clear active functional-group row when clicking outside the table.
-document.addEventListener(
-  'click',
-  e => {
-    if (e.target.closest('#fg-table')) {
-      return;
-    }
-    if (e.target.closest('#rotate-controls')) {
-      return;
-    }
-    const tbody = document.getElementById('fg-body');
-    if (!tbody.querySelector('tr.fg-active')) {
-      return;
-    }
-    tbody.querySelectorAll('tr').forEach(r => r.classList.remove('fg-active'));
-    _setHighlight(null);
-  },
-  true
-);
-
-export function getHighlightedAtomIds() {
-  return _highlightedAtomIds;
-}
-export function getHighlightedAtomSets() {
-  return _highlightedAtomSets;
-}
-export function getHighlightMol() {
-  return _highlightMol;
-}
-export function getHighlightStyle() {
-  return _highlightStyle;
-}
-export function clearHighlightState() {
-  _highlightedAtomIds.clear();
-  _highlightedAtomSets = [];
-  _highlightMol = null;
 }

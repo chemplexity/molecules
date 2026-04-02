@@ -286,6 +286,34 @@ function previousAtomSkipBranches(start, keys, atoms, bonds) {
   return null;
 }
 
+/**
+ * Finds the previous atom token that should act as a bond source.
+ *
+ * Bracket hydrogens such as the `H` in `[C@H]` are auxiliary stereo tokens, not
+ * true traversal anchors. When an explicit bond follows the bracket atom, the
+ * source must remain the bracket atom rather than that hydrogen.
+ *
+ * @param {string} start
+ * @param {string[]} keys
+ * @param {object} atoms
+ * @param {object|null} [bonds=null]
+ * @returns {string|null}
+ */
+function previousBondSourceAtom(start, keys, atoms, bonds = null) {
+  const previous = key =>
+    bonds ? previousAtomSkipBranches(key, keys, atoms, bonds) : previousAtom(key, keys, atoms);
+
+  let atomKey = previous(start);
+  while (atomKey !== null) {
+    const atom = atoms[atomKey];
+    if (!(atom?.name === 'H' && atom?.bracketAtom)) {
+      return atomKey;
+    }
+    atomKey = previous(atomKey);
+  }
+  return null;
+}
+
 function normalizeSmilesSeparators(input) {
   let normalized = '';
   let bracketDepth = 0;
@@ -666,7 +694,7 @@ export function decode(tokens) {
 
     for (let i = 0; i < keys.bonds.length; i++) {
       const bondID = keys.bonds[i];
-      let sourceAtom = atoms[previousAtom(bondID, keys.all, atoms)];
+      let sourceAtom = atoms[previousBondSourceAtom(bondID, keys.all, atoms)];
       let targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
       const bondIndex = keys.all.indexOf(bondID);
       let sourceIndex = 0;
@@ -761,7 +789,7 @@ export function decode(tokens) {
           // Use branch-aware source detection: C(F)/Cl needs to find C, not F
           let stereoSrcId;
           if (exceptions === 1) {
-            stereoSrcId = previousAtomSkipBranches(bondID, keys.all, atoms, bonds);
+            stereoSrcId = previousBondSourceAtom(bondID, keys.all, atoms, bonds);
           } else {
             stereoSrcId = sourceAtom?.id ?? null;
           }
