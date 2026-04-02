@@ -531,8 +531,9 @@ export function buildExtendedZigZagChainTransforms(molecule, baseCoords, candida
       }
       const subtree = new Set();
       const queue = [nbId];
-      while (queue.length > 0) {
-        const curId = queue.shift();
+      let queueHead = 0;
+      while (queueHead < queue.length) {
+        const curId = queue[queueHead++];
         if (subtree.has(curId) || pathSet.has(curId) || !candidate.atomIds.has(curId)) {
           continue;
         }
@@ -602,8 +603,9 @@ export function collectChainSideSubtrees(molecule, path, allowedAtomIds = null) 
 
       const subtree = new Set();
       const queue = [nbId];
-      while (queue.length > 0) {
-        const curId = queue.shift();
+      let queueHead = 0;
+      while (queueHead < queue.length) {
+        const curId = queue[queueHead++];
         if (subtree.has(curId) || pathSet.has(curId)) {
           continue;
         }

@@ -1,5 +1,30 @@
 # Change Log
 
+## 2026-04-02
+
+- Erase paint mode now erases atoms/bonds on circle-edge contact, not just cursor center
+- Added tooltip to Atom Coloring option explaining CPK colors vs. black and white
+- Functional-group match cycling now includes an `All` highlight state
+- Fixed ether functional-group SMARTS so phosphoesters like `P-O-C` are no longer misclassified as ethers
+- Fixed `Alcohol Dehydration` so primary alcohols dehydrate to valence-clean alkenes and no longer match when the beta carbon has no removable hydrogen
+- Removed the misleading `Alcohol Cleavage` reaction template and its related docs/tests
+- Fixed draw-bond mode placing linear bonds
+- Force layout rotate/flip buttons added to toolbar (between Atom Labels and PNG); wired to undo history
+- `fsp3` now returns `{ value, atoms }` enabling sp³ carbon highlighting in the Fsp3 physicochemical row
+- Optimized `allPairsShortestPaths()` halving matrix-fill operations
+- Added `{ recompute: false }` option to `Molecule.addAtom()` to skip eager `_recomputeProperties()` during batch construction
+- Added a global `Show Lone Pairs` option with final-pass lone-pair dot placement in both 2D and force layouts
+- Refined lone-pair rendering to follow local bond/ring orientation, support four-pair halides
+- Updated charge rendering to use thin circled badges and switched metal atom colors to a more restrained metallic palette, including silver `Ag`, gold `Au`, platinum `Pt`, and mercury `Hg`
+- Added a global `Atom Tooltips` option and made charge badges avoid nearby bond and lone-pair directions in both 2D and force rendering
+- Added real SVG clipboard export for both 2D and force layouts, including a new force-mode `SVG` export button
+- Made force-layout PNG clipboard export transparent and adjusted SVG clipboard
+- Replaced shift-based BFS queues with O(1) head-index traversal across core, SMARTS, and layout hot paths
+- Replaced inline array-literal `.includes()` calls with module-level `Set` constants
+- Fixed `OH`/`HO` label orientation so hydroxyl labels follow the displayed heavy-atom direction
+- Optimized `getBond()` in `Molecule` to use `_bondIndex` for O(1) bond lookup instead of O(E) linear scan
+- Optimized `_recomputeProperties()` to compute `getFormula()` once and pass it to `getName()`, eliminating a redundant full atom traversal on every molecule mutation; `getName()` now accepts an optional pre-computed formula argument with fallback to `getFormula()`
+
 ## 2026-04-01
 
 - Added a resonance sidebar panel with contributor count, click-to-lock cycling, and automatic recomputation on molecule changes

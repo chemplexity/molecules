@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { applySMIRKS, parseSMILES, parseSMIRKS, reactionTemplates, toSMILES, generateCoords } from '../../src/index.js';
+import { applySMIRKS, parseSMILES, parseSMIRKS, reactionTemplates, toSMILES } from '../../src/index.js';
 
 describe('reactionTemplates — schema', () => {
   for (const [key, entry] of Object.entries(reactionTemplates)) {
@@ -203,12 +203,6 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(product, null);
   });
 
-  it('alcoholCleavage matches a simple alcohol', () => {
-    const product = applySMIRKS(parseSMILES('CCO'), reactionTemplates.alcoholCleavage.smirks);
-    assert.ok(product);
-    assert.equal(toSMILES(product), 'CC.O');
-  });
-
   it('etherCleavage converts a simple dialkyl ether into two alcohol fragments', () => {
     const product = applySMIRKS(parseSMILES('COC'), reactionTemplates.etherCleavage.smirks);
     assert.ok(product);
@@ -220,31 +214,17 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(product, null);
   });
 
-  it('alcoholCleavage does not match esters or carboxylic acids', () => {
-    const product = applySMIRKS(parseSMILES('CC(=O)Oc1ccccc1C(=O)O'), reactionTemplates.alcoholCleavage.smirks);
-    assert.equal(product, null);
-  });
-
-  it('alcoholCleavage matches tertiary alcohol centers', () => {
-    const product = applySMIRKS(parseSMILES('CC(O)(C)C'), reactionTemplates.alcoholCleavage.smirks);
-    assert.notEqual(product, null);
-  });
-
-  it('alcoholCleavage keeps heavy atoms non-overlapping after 2D transform', () => {
-    const source = parseSMILES('CC(O)(C)');
-    generateCoords(source);
-    const product = applySMIRKS(source, reactionTemplates.alcoholCleavage.smirks);
+  it('alcoholDehydration converts ethanol into ethene plus water without valence errors', async () => {
+    const { validateValence } = await import('../../src/validation/index.js');
+    const product = applySMIRKS(parseSMILES('CCO'), reactionTemplates.alcoholDehydration.smirks);
     assert.ok(product);
+    assert.equal(toSMILES(product), 'C=C.O');
+    assert.deepEqual(validateValence(product), []);
+  });
 
-    const heavy = [...product.atoms.values()].filter(atom => atom.name !== 'H');
-    for (let i = 0; i < heavy.length; i++) {
-      for (let j = i + 1; j < heavy.length; j++) {
-        const dx = (heavy[i].x ?? 0) - (heavy[j].x ?? 0);
-        const dy = (heavy[i].y ?? 0) - (heavy[j].y ?? 0);
-        const distance = Math.hypot(dx, dy);
-        assert.ok(distance > 0.01, `overlap between ${heavy[i].id} and ${heavy[j].id}`);
-      }
-    }
+  it('alcoholDehydration does not match alcohols without a beta hydrogen', () => {
+    const product = applySMIRKS(parseSMILES('CC(C)(C)CO'), reactionTemplates.alcoholDehydration.smirks);
+    assert.equal(product, null);
   });
 
   it('carboxylicAcidDeprotonation removes the acidic hydrogen cleanly', () => {

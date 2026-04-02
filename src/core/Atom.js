@@ -577,9 +577,10 @@ export class Atom {
       const targets = new Set(neighborIds.filter((_, j) => j !== i));
       const visited = new Set([id, src]);
       const queue = [src];
+      let queueHead = 0;
 
-      while (queue.length > 0) {
-        const current = queue.shift();
+      while (queueHead < queue.length) {
+        const current = queue[queueHead++];
         const currentAtom = molecule.atoms.get(current);
         if (!currentAtom) {
           continue;

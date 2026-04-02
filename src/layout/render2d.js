@@ -2,14 +2,15 @@
  * render2d.js — reusable 2D skeletal-structure renderer
  *
  * Exports:
- *   renderMolSVG(mol, opts)              → { svgContent, cellW, cellH } | null
- *   renderMolSVGFromSMILES(smiles, opts) → { svgContent, cellW, cellH } | null
- *   renderMolSVGFromINCHI(inchi, opts)   → { svgContent, cellW, cellH } | null
+ *   renderMolSVG(mol, options)              → { svgContent, cellW, cellH } | null
+ *   renderMolSVGFromSMILES(smiles, options) → { svgContent, cellW, cellH } | null
+ *   renderMolSVGFromINCHI(inchi, options)   → { svgContent, cellW, cellH } | null
  *   buildCompositeSVG(cells, cols)       → SVG string
  *   svgToPng(svgString)                  → Buffer (PNG)
  *
- * opts.aromaticMode  'localized' (default) — Kekulé alternating single/double
- *                    'delocalized'         — uniform 1.5-order dashed bond
+ * options.aromaticMode  'localized' (default) — Kekulé alternating single/double
+ *                       'delocalized'         — uniform 1.5-order dashed bond
+ * options.showLonePairs false (default) — render lone-pair dots on eligible atoms
  */
 
 import { parseSMILES } from '../io/smiles.js';
@@ -25,7 +26,10 @@ import {
   labelHalfW,
   labelHalfH,
   labelTextOffset,
+  formatChargeLabel,
+  computeChargeBadgePlacement,
   getAtomLabel,
+  computeLonePairDotPositions,
   pickStereoWedges,
   stereoBondCenterIdForRender,
   kekulize,
@@ -135,7 +139,7 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, aromaticMode = AROMATIC
 // Accepts a pre-parsed Molecule object.
 // Returns { svgContent: string, cellW: number, cellH: number } or null.
 // ---------------------------------------------------------------------------
-export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = AROMATIC_RENDER_MODE } = {}) {
+export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = false, aromaticMode = AROMATIC_RENDER_MODE } = {}) {
   if (!mol || mol.atoms.size === 0) {
     return null;
   }
@@ -263,9 +267,27 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
 
   // Atom labels
   const labelEls = [];
+  const lonePairEls = [];
+  const lonePairDotsByAtomId = new Map();
   for (const atom of atoms) {
     const label = getAtomLabel(atom, hCounts, toSVG, mol);
+    let lonePairDots = [];
+    if (showLonePairs) {
+      lonePairDots = computeLonePairDotPositions(atom, mol, {
+        pointForAtom: toSVG,
+        label,
+        fontSize: FONT_SIZE,
+        offsetFromBoundary: label ? 5 : 6,
+        dotSpacing: 4.2
+      });
+      lonePairDotsByAtomId.set(atom.id, lonePairDots);
+    }
     if (!label) {
+      if (showLonePairs) {
+        for (const dot of lonePairDots) {
+          lonePairEls.push(`<circle class="lone-pair" cx="${dot.x.toFixed(2)}" cy="${dot.y.toFixed(2)}" r="1.45" fill="#111"/>`);
+        }
+      }
       continue;
     }
     const { x, y } = toSVG(atom);
@@ -297,13 +319,35 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
     const charge = atom.getCharge();
     let chargeSup = '';
     if (charge !== 0) {
-      const sign = charge === 1 ? '+' : charge > 1 ? `${charge}+` : charge === -1 ? '−' : `${Math.abs(charge)}−`;
-      chargeSup = `<text x="${(x + dx + hw).toFixed(2)}" y="${(y - FONT_SIZE * 0.42).toFixed(2)}" font-family="sans-serif" font-size="${(FONT_SIZE * 0.8).toFixed(1)}" fill="${color}" text-anchor="start">${escapeXml(sign)}</text>`;
+      const sign = formatChargeLabel(charge);
+      const extraOccupiedAngles = showLonePairs
+        ? (lonePairDotsByAtomId.get(atom.id) ?? [])
+            .map(dot => Math.atan2(dot.y - y, dot.x - x))
+            .filter(Number.isFinite)
+        : [];
+      const placement = computeChargeBadgePlacement(atom, mol, {
+        pointForAtom: toSVG,
+        label,
+        fontSize: FONT_SIZE,
+        chargeLabel: sign,
+        extraOccupiedAngles
+      });
+      if (placement) {
+        chargeSup =
+          `<circle class="atom-charge-ring" cx="${placement.x.toFixed(2)}" cy="${placement.y.toFixed(2)}" r="${placement.radius.toFixed(2)}" fill="white" stroke="#111" stroke-width="0.9"/>` +
+          `<text class="atom-charge-text" x="${placement.x.toFixed(2)}" y="${placement.y.toFixed(2)}" font-family="sans-serif" font-size="${placement.fontSize.toFixed(1)}" font-weight="700" fill="#111" text-anchor="middle" dominant-baseline="central">${escapeXml(sign)}</text>`;
+      }
     }
 
     labelEls.push(
       `<text x="${(x + dx).toFixed(2)}" y="${y.toFixed(2)}" font-family="sans-serif" font-size="${FONT_SIZE}" fill="${color}" text-anchor="middle" dominant-baseline="central">${textContent}</text>${chargeSup}`
     );
+
+    if (showLonePairs) {
+      for (const dot of lonePairDots) {
+        lonePairEls.push(`<circle class="lone-pair" cx="${dot.x.toFixed(2)}" cy="${dot.y.toFixed(2)}" r="1.45" fill="#111"/>`);
+      }
+    }
   }
 
   const chiralEls = [];
@@ -320,7 +364,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, aromaticMode = ARO
     }
   }
 
-  const svgContent = [`<rect width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" fill="white"/>`, ...lines, ...labelEls, ...chiralEls].join('\n');
+  const svgContent = [`<rect width="${cellW.toFixed(2)}" height="${cellH.toFixed(2)}" fill="white"/>`, ...lines, ...labelEls, ...lonePairEls, ...chiralEls].join('\n');
 
   return { svgContent, cellW, cellH };
 }

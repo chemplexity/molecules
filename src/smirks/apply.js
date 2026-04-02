@@ -263,6 +263,11 @@ function _applyParsedSMIRKSMatch(molecule, transform, match) {
   const result = molecule.clone();
   const repairSeedIds = new Set();
   const stereoDirtySeedIds = new Set();
+  // Atoms that must have chirality cleared because a *neighbour's element* changed
+  // (different element = different CIP priority = old R/S meaningless).
+  // Contrast with purely topological changes (e.g. same-element O→O in ether
+  // cleavage) where the existing chirality annotation remains valid.
+  const stereoForceCleanAtomIds = new Set();
   const explicitHydrogenSpecs = new Map();
   const explicitAtomStereoSpecs = new Map();
   const explicitBondStereoSpecs = new Map();
@@ -289,8 +294,10 @@ function _applyParsedSMIRKSMatch(molecule, transform, match) {
       }
       if (topologyChanged) {
         stereoDirtySeedIds.add(targetId);
+        stereoForceCleanAtomIds.add(targetId);
         for (const neighbor of targetAtom.getNeighbors(result)) {
           stereoDirtySeedIds.add(neighbor.id);
+          stereoForceCleanAtomIds.add(neighbor.id);
         }
       }
       if (flags.hydrogenCountSpecified) {
@@ -412,6 +419,26 @@ function _applyParsedSMIRKSMatch(molecule, transform, match) {
     repairSeedIds.delete(targetId);
   }
 
+  // For mapped atoms that are dirty (connectivity changed) but whose product
+  // template does not explicitly specify chirality, preserve the existing R/S
+  // designation — e.g. ether cleavage replaces one O neighbour with another
+  // equivalent O, so the stereocentre configuration is unchanged.
+  // Exception: if the atom is in stereoForceCleanAtomIds (a neighbour actually
+  // changed element, altering CIP priority), clear as before.
+  const preservedChiralities = new Map();
+  for (const atomId of stereoDirtySeedIds) {
+    if (
+      keptTargetIds.has(atomId) &&
+      !explicitAtomStereoSpecs.has(atomId) &&
+      !stereoForceCleanAtomIds.has(atomId)
+    ) {
+      const ch = result.atoms.get(atomId)?.getChirality();
+      if (ch) {
+        preservedChiralities.set(atomId, ch);
+      }
+    }
+  }
+
   if (stereoDirtySeedIds.size > 0) {
     result.clearStereoAnnotations(stereoDirtySeedIds);
   }
@@ -436,6 +463,17 @@ function _applyParsedSMIRKSMatch(molecule, transform, match) {
     const atom = result.atoms.get(atomId);
     if (atom && chirality) {
       atom.setChirality(chirality, result);
+    }
+  }
+  // Restore preserved chiralities (explicit specs take precedence above).
+  for (const [atomId, chirality] of preservedChiralities) {
+    if (explicitAtomStereoSpecs.has(atomId)) continue;
+    const atom = result.atoms.get(atomId);
+    if (!atom) continue;
+    try {
+      atom.setChirality(chirality, result);
+    } catch {
+      // atom is no longer a tetrahedral stereocentre after the transform; skip
     }
   }
 

@@ -85,9 +85,10 @@ function _queryOrder(idx) {
   const ordered = [];
   const visited = new Set([root]);
   const queue = [root];
+  let queueHead = 0;
 
-  while (queue.length > 0) {
-    const cur = queue.shift();
+  while (queueHead < queue.length) {
+    const cur = queue[queueHead++];
     ordered.push(cur);
     // Sort neighbours by degree descending before enqueuing.
     const nbs = [...idx.neighborSet.get(cur)].filter(nb => !visited.has(nb)).sort((a, b) => idx.degreeMap.get(b) - idx.degreeMap.get(a));

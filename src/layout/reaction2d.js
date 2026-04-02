@@ -3,6 +3,16 @@ import { applySMIRKS } from '../smirks/index.js';
 import { generateAndRefine2dCoords } from './index.js';
 import { pickStereoWedges, stereoBondTypeForCenter } from './mol2d-helpers.js';
 
+// ---------------------------------------------------------------------------
+// Element-set constants (module-level to avoid repeated inline allocations)
+// ---------------------------------------------------------------------------
+
+/** Terminal heteroatoms whose peripheral direction is preserved in reaction layout. */
+const _TERMINAL_HETEROATOMS = new Set(['O', 'N', 'S']);
+
+/** Halogen atoms whose peripheral direction is preserved in reaction layout. */
+const _HALOGENS = new Set(['F', 'Cl', 'Br', 'I']);
+
 export function cloneWithPrefixedIds(mol, prefix) {
   const cloned = new Molecule();
   for (const atom of mol.atoms.values()) {
@@ -558,8 +568,9 @@ function reaction2dMinHeavyDistanceToEdited(mol, startId, componentAtomIds) {
 
   const queue = [{ id: startId, distance: 0 }];
   const visited = new Set([startId]);
-  while (queue.length > 0) {
-    const { id, distance } = queue.shift();
+  let queueHead = 0;
+  while (queueHead < queue.length) {
+    const { id, distance } = queue[queueHead++];
     const atom = mol.atoms.get(id);
     if (!atom) {
       continue;
@@ -1001,7 +1012,7 @@ function idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.5
           return true;
         }
         const infoHeavyNeighbors = info.atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H');
-        const isTerminalMappedHetero = ['O', 'N', 'S'].includes(info.atom.name) && infoHeavyNeighbors.length === 1 && infoHeavyNeighbors[0]?.id === center.id;
+        const isTerminalMappedHetero = _TERMINAL_HETEROATOMS.has(info.atom.name) && infoHeavyNeighbors.length === 1 && infoHeavyNeighbors[0]?.id === center.id;
         return !isTerminalMappedHetero;
       });
 
@@ -1467,14 +1478,12 @@ function repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength =
       mappedProductIds.has(atom.id) &&
       !!reactantPeripheralDirection &&
       wasTerminalInReactant &&
-      ['O', 'N', 'S'].includes(atom.name) &&
+      _TERMINAL_HETEROATOMS.has(atom.name) &&
       bondOrder === 1;
     const preserveReactantPeripheralDirection =
       preserveEditedTerminusDirection ||
       preserveMappedTerminalHeteroDirection ||
-      (!!reactantPeripheralDirection &&
-        wasTerminalInReactant &&
-        (['F', 'Cl', 'Br', 'I'].includes(atom.name) || (reactantAtom && reactantAtom.name !== atom.name) || reactantLostHeavyNeighbor));
+      (!!reactantPeripheralDirection && wasTerminalInReactant && (_HALOGENS.has(atom.name) || (reactantAtom && reactantAtom.name !== atom.name) || reactantLostHeavyNeighbor));
     if (preserveReactantPeripheralDirection) {
       const len = Math.hypot(reactantPeripheralDirection.x, reactantPeripheralDirection.y);
       if (len >= 1e-6) {

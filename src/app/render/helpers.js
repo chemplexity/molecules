@@ -16,6 +16,8 @@ export const RENDER_OPTION_LIMITS = Object.freeze({
 });
 const DEFAULT_RENDER_OPTIONS = Object.freeze({
   showValenceWarnings: true,
+  showAtomTooltips: true,
+  showLonePairs: false,
   twoDAtomColoring: true,
   twoDAtomFontSize: 14,
   twoDBondThickness: 1.6,
@@ -54,6 +56,12 @@ export function updateRenderOptions(nextOptions = {}) {
   const merged = { ..._renderOptions };
   if (typeof nextOptions.showValenceWarnings === 'boolean') {
     merged.showValenceWarnings = nextOptions.showValenceWarnings;
+  }
+  if (typeof nextOptions.showAtomTooltips === 'boolean') {
+    merged.showAtomTooltips = nextOptions.showAtomTooltips;
+  }
+  if (typeof nextOptions.showLonePairs === 'boolean') {
+    merged.showLonePairs = nextOptions.showLonePairs;
   }
   if (typeof nextOptions.twoDAtomColoring === 'boolean') {
     merged.twoDAtomColoring = nextOptions.twoDAtomColoring;
@@ -268,6 +276,22 @@ export function renderAtomLabel(group, label, color, xOffset = 0, fontSize = DEF
       }
     }
   }
+}
+
+export function renderLonePairDots(group, dots, { radius = 1.5, fill = '#111111', stroke = 'none', strokeWidth = 0, className = 'lone-pair' } = {}) {
+  const dotGroup = group.append('g').attr('class', 'lone-pair-dots').attr('pointer-events', 'none');
+  for (const dot of dots) {
+    dotGroup
+      .append('circle')
+      .attr('class', className)
+      .attr('cx', dot.x)
+      .attr('cy', dot.y)
+      .attr('r', radius)
+      .attr('fill', fill)
+      .attr('stroke', stroke)
+      .attr('stroke-width', strokeWidth);
+  }
+  return dotGroup;
 }
 
 export function addLine(group, x1, y1, x2, y2, extraClass) {

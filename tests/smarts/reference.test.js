@@ -56,6 +56,10 @@ describe('functionalGroups — oxygen groups', () => {
   it('alcohol NOT found in diethyl ether', () => assert.equal(matchesSMARTS(mol('CCOCC'), fg.alcohol.smarts), false));
   it('phenol found in phenol', () => assert.equal(matchesSMARTS(parseSMILES('Oc1ccccc1'), fg.phenol.smarts), true));
   it('ether found in dimethyl ether', () => assert.equal(matchesSMARTS(mol('COC'), fg.ether.smarts), true));
+  it('ether NOT found in a phosphate monoester', () => assert.equal(matchesSMARTS(mol('COP(=O)(O)O'), fg.ether.smarts), false));
+  it('ether NOT found for aryl phosphoesters like the reported P-O-C case', () => {
+    assert.equal(matchesSMARTS(parseSMILES('CN(C)CCC1=CNC2=C1C(=CC=C2)OP(=O)(O)O'), fg.ether.smarts), false);
+  });
   it('aldehyde found in acetaldehyde', () => assert.equal(matchesSMARTS(parseSMILES('CC=O'), fg.aldehyde.smarts), true));
   it('ketone found in acetone', () => assert.equal(matchesSMARTS(mol('CC(=O)C'), fg.ketone.smarts), true));
   it('ketone NOT found in acetaldehyde', () => assert.equal(matchesSMARTS(mol('CC=O'), fg.ketone.smarts), false));

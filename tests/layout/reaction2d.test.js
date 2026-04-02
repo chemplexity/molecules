@@ -5,8 +5,10 @@ import { parseSMILES } from '../../src/io/smiles.js';
 import { reactionTemplates } from '../../src/smirks/reference.js';
 import { findSMARTSRaw } from '../../src/smarts/search.js';
 import { generateAndRefine2dCoords } from '../../src/layout/index.js';
-import { pickStereoWedges, stereoBondCenterIdForRender } from '../../src/layout/mol2d-helpers.js';
+import { pickStereoWedges } from '../../src/layout/mol2d-helpers.js';
 import { buildReaction2dMol, alignReaction2dProductOrientation, spreadReaction2dProductComponents, centerReaction2dPairCoords } from '../../src/layout/reaction2d.js';
+import { _chooseReactionPreviewForceArrow } from '../../src/app/render/reaction-2d.js';
+import { validateValence } from '../../src/validation/index.js';
 
 function preparePreview(smiles, smirks) {
   const sourceMol = parseSMILES(smiles);
@@ -186,6 +188,48 @@ function findProductCarbonylCenters(preview, predicate) {
   });
 }
 
+test('force reaction arrow shifts to a clearer parallel lane when atoms block the centerline', () => {
+  const reactant = { minX: -22, maxX: -6, minY: -8, maxY: 8, cx: -14, cy: 0 };
+  const product = { minX: 6, maxX: 22, minY: -8, maxY: 8, cx: 14, cy: 0 };
+  const nodes = [
+    { id: 'r1', name: 'C', protons: 6, x: -14, y: 0 },
+    { id: 'p1', name: 'C', protons: 6, x: 14, y: 0 },
+    { id: 'blocker', name: 'H', protons: 1, x: 0, y: 0 }
+  ];
+
+  const arrow = _chooseReactionPreviewForceArrow(reactant, product, nodes, {
+    pad: 16,
+    radiusForItem: node => (node.name === 'H' ? 8 : 10),
+    hydrogenRadiusScale: 0.75
+  });
+
+  assert.ok(arrow, 'expected a force reaction arrow candidate');
+  assert.notEqual(arrow.offset, 0, 'expected blocked centerline arrow to shift off the midpoint');
+  assert.ok(Math.abs(arrow.start.y - reactant.cy) > 1, 'expected shifted arrow to move away from the blocked centerline');
+});
+
+test('force reaction arrow keeps its previous lane when the new lane is only marginally better', () => {
+  const reactant = { minX: -22, maxX: -6, minY: -8, maxY: 8, cx: -14, cy: 0 };
+  const product = { minX: 6, maxX: 22, minY: -8, maxY: 8, cx: 14, cy: 0 };
+  const nodes = [
+    { id: 'r1', name: 'C', protons: 6, x: -14, y: 0 },
+    { id: 'p1', name: 'C', protons: 6, x: 14, y: 0 },
+    { id: 'topBlocker', name: 'H', protons: 1, x: 0, y: 10 },
+    { id: 'bottomBlocker', name: 'H', protons: 1, x: 0, y: -15 }
+  ];
+
+  const arrow = _chooseReactionPreviewForceArrow(reactant, product, nodes, {
+    pad: 16,
+    radiusForItem: node => (node.name === 'H' ? 8 : 10),
+    hydrogenRadiusScale: 0.75,
+    previousOffset: -10,
+    stickyTolerance: 6
+  });
+
+  assert.ok(arrow, 'expected a force reaction arrow candidate');
+  assert.equal(arrow.offset, -10, 'expected previous arrow lane to be kept when still nearly as clear');
+});
+
 test('reaction preview preserves ring scaffold geometry for alkene hydrogenation', () => {
   const preview = preparePreview('C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O', reactionTemplates.alkeneHydrogenation.smirks);
   const maxError = maxPairDistanceErrorForMappedUnedited(preview);
@@ -198,6 +242,11 @@ test('reaction preview keeps terminal alkene hydrogenation in a zig-zag for C=CC
   assert.equal(atoms.length, 4, 'expected four heavy atoms in hydrogenated product');
   const angle = angleDeg(atoms[0], atoms[1], atoms[2]);
   assert.ok(angle > 100 && angle < 140, `expected new saturated chain angle to stay zig-zag-like, got ${angle.toFixed(1)}°`);
+});
+
+test('reaction preview stays valence-clean for ethanol dehydration', () => {
+  const preview = preparePreview('CCO', reactionTemplates.alcoholDehydration.smirks);
+  assert.deepEqual(validateValence(preview.mol), []);
 });
 
 test('reaction preview keeps nitrile hydrolysis to amide carbonyl locally trigonal', () => {
@@ -255,9 +304,35 @@ test('reaction preview keeps amide hydrolysis acid center compact on the preserv
   assert.ok(distance(acidCenter, oSingle) < 1.7, `expected acid single bond to stay compact, got ${distance(acidCenter, oSingle).toFixed(3)} Å`);
 });
 
-test('reaction preview keeps retained chain geometry sane for alcohol cleavage and dehalogenation', () => {
+test('reaction preview keeps the cytosine amide-hydrolysis product leveled', () => {
+  const sourceMol = parseSMILES('NC1=NC(=O)N(C=C1)C(=O)N');
+  const reactantSmarts = reactionTemplates.amideHydrolysis.smirks.split('>>')[0];
+  const mappings = [...findSMARTSRaw(sourceMol, reactantSmarts)];
+  const mapping = mappings[3];
+  assert.ok(mapping, 'expected the cytosine ring-nitrogen amide-hydrolysis mapping');
+
+  const preview = buildReaction2dMol(sourceMol, reactionTemplates.amideHydrolysis.smirks, mapping);
+  generateAndRefine2dCoords(preview.mol, { suppressH: true, bondLength: 1.5 });
+  alignReaction2dProductOrientation(preview.mol, preview, 1.5);
+  spreadReaction2dProductComponents(preview.mol, preview, 1.5);
+  centerReaction2dPairCoords(preview.mol, preview, 1.5);
+
+  const topLeft = preview.mol.atoms.get('__rxn_product__0:N1');
+  const topRight = preview.mol.atoms.get('__rxn_product__0:C2');
+  const midLeft = preview.mol.atoms.get('__rxn_product__0:N3');
+  const midRight = preview.mol.atoms.get('__rxn_product__0:C4');
+  const bottomLeft = preview.mol.atoms.get('__rxn_product__0:C8');
+  const bottomRight = preview.mol.atoms.get('__rxn_product__0:C7');
+  assert.ok(topLeft && topRight && midLeft && midRight && bottomLeft && bottomRight, 'expected mapped cytosine product ring atoms');
+
+  assert.ok(Math.abs(topLeft.y - topRight.y) < 0.05, `expected top edge to stay level, got Δy=${Math.abs(topLeft.y - topRight.y).toFixed(3)} Å`);
+  assert.ok(Math.abs(midLeft.y - midRight.y) < 0.05, `expected middle edge to stay level, got Δy=${Math.abs(midLeft.y - midRight.y).toFixed(3)} Å`);
+  assert.ok(Math.abs(bottomLeft.y - bottomRight.y) < 0.05, `expected bottom edge to stay level, got Δy=${Math.abs(bottomLeft.y - bottomRight.y).toFixed(3)} Å`);
+});
+
+test('reaction preview keeps retained chain geometry sane for dehalogenation', () => {
   const smiles = 'CC(CC(Cl)CCO)C';
-  for (const smirks of [reactionTemplates.alcoholCleavage.smirks, reactionTemplates.dehalogenation.smirks]) {
+  for (const smirks of [reactionTemplates.dehalogenation.smirks]) {
     const preview = preparePreview(smiles, smirks);
     const component = largestProductComponent(preview);
     const stats = heavyGeometryStats(preview, component);
@@ -279,16 +354,6 @@ test('reaction preview preserves local zig-zag geometry for branched-chain dehal
   const rightAngle = angleDeg(c4, c6, c7);
   assert.ok(leftAngle > 100 && leftAngle < 140, `expected left branch angle to stay zig-zag-like, got ${leftAngle.toFixed(1)}°`);
   assert.ok(rightAngle > 100 && rightAngle < 140, `expected right branch angle to stay zig-zag-like, got ${rightAngle.toFixed(1)}°`);
-});
-
-test('reaction preview preserves local zig-zag geometry for branched-chain alcohol cleavage', () => {
-  const preview = preparePreview('CC(CC(Cl)CCO)C', reactionTemplates.alcoholCleavage.smirks);
-  const c4 = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C4'));
-  const c6 = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C6'));
-  const c7 = [...preview.mol.atoms.values()].find(atom => preview.productAtomIds.has(atom.id) && atom.name === 'C' && atom.id.endsWith(':C7'));
-  assert.ok(c4 && c6 && c7, 'expected retained chain atoms in alcohol cleavage preview');
-  const angle = angleDeg(c4, c6, c7);
-  assert.ok(angle > 100 && angle < 140, `expected retained cleavage-site chain angle to stay zig-zag-like, got ${angle.toFixed(1)}°`);
 });
 
 test('reaction preview preserves product wedge or dash display for an untouched stereocenter', () => {
@@ -320,404 +385,6 @@ test('reaction preview preserves product wedge or dash display for an untouched 
   const productBond = preview.mol.getBond(productCenterId, productOtherId);
   assert.ok(productBond, 'expected preserved product bond at untouched stereocenter');
   assert.equal(productWedges.get(productBond.id), sourceStereo[1], 'expected product wedge/dash display to match the reactant');
-});
-
-test('reaction preview preserves sugar stereobond display across alcohol cleavage sites', () => {
-  const smiles = 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O';
-  const smirks = reactionTemplates.alcoholCleavage.smirks;
-  const sourceMol = parseSMILES(smiles);
-  generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 1.5 });
-
-  const sourceStereoByCenter = new Map();
-  for (const [bondId, type] of pickStereoWedges(sourceMol)) {
-    const bond = sourceMol.bonds.get(bondId);
-    const [aId, bId] = bond.atoms;
-    const a = sourceMol.atoms.get(aId);
-    const b = sourceMol.atoms.get(bId);
-    const centerId = a?.getChirality() ? aId : b?.getChirality() ? bId : null;
-    if (!centerId) {
-      continue;
-    }
-    const otherId = centerId === aId ? bId : aId;
-    sourceStereoByCenter.set(centerId, { otherId, type });
-  }
-
-  const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
-  assert.equal(mappings.length, 5, 'expected five alcohol-cleavage sites in the sugar example');
-
-  for (const mapping of mappings) {
-    const preview = buildReaction2dMol(sourceMol, smirks, mapping);
-    assert.ok(preview, 'expected reaction preview to be buildable');
-    generateAndRefine2dCoords(preview.mol, {
-      suppressH: true,
-      bondLength: 1.5
-    });
-    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
-    spreadReaction2dProductComponents(preview.mol, preview, 1.5);
-    centerReaction2dPairCoords(preview.mol, preview, 1.5);
-
-    const productStereoByCenter = new Map();
-    for (const [bondId, type] of pickStereoWedges(preview.mol)) {
-      const bond = preview.mol.bonds.get(bondId);
-      const [aId, bId] = bond.atoms;
-      const a = preview.mol.atoms.get(aId);
-      const b = preview.mol.atoms.get(bId);
-      const centerId = a?.getChirality() ? aId : b?.getChirality() ? bId : null;
-      if (!centerId) {
-        continue;
-      }
-      const otherId = centerId === aId ? bId : aId;
-      productStereoByCenter.set(centerId, { otherId, type });
-    }
-
-    for (const [sourceCenterId, sourceStereo] of sourceStereoByCenter) {
-      const productCenterId = preview.mappedAtomPairs.find(([reactantId]) => reactantId === sourceCenterId)?.[1];
-      if (!productCenterId || preview.editedProductAtomIds.has(productCenterId)) {
-        continue;
-      }
-      const current = productStereoByCenter.get(productCenterId);
-      assert.ok(current, `expected stereobond assignment for preserved sugar center ${productCenterId}`);
-      assert.equal(current.type, sourceStereo.type, `expected sugar cleavage to preserve wedge/dash display for preserved stereocenter ${productCenterId}`);
-    }
-  }
-});
-
-test('reaction preview preserves reactant-side sugar stereobond display across alcohol cleavage sites', () => {
-  const smiles = 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O';
-  const smirks = reactionTemplates.alcoholCleavage.smirks;
-  const sourceMol = parseSMILES(smiles);
-  generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 1.5 });
-
-  const sourceStereoByCenter = new Map();
-  for (const [bondId, type] of pickStereoWedges(sourceMol)) {
-    const bond = sourceMol.bonds.get(bondId);
-    const [aId, bId] = bond.atoms;
-    const a = sourceMol.atoms.get(aId);
-    const b = sourceMol.atoms.get(bId);
-    const centerId = a?.getChirality() ? aId : b?.getChirality() ? bId : null;
-    if (!centerId) {
-      continue;
-    }
-    const otherId = centerId === aId ? bId : aId;
-    sourceStereoByCenter.set(centerId, { otherId, type });
-  }
-
-  const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
-  assert.equal(mappings.length, 5, 'expected five alcohol-cleavage sites in the sugar example');
-
-  for (const mapping of mappings) {
-    const preview = buildReaction2dMol(sourceMol, smirks, mapping);
-    assert.ok(preview, 'expected reaction preview to be buildable');
-    generateAndRefine2dCoords(preview.mol, {
-      suppressH: true,
-      bondLength: 1.5
-    });
-    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
-    spreadReaction2dProductComponents(preview.mol, preview, 1.5);
-    centerReaction2dPairCoords(preview.mol, preview, 1.5);
-
-    const reactantStereoByCenter = new Map();
-    for (const [bondId, type] of pickStereoWedges(preview.mol)) {
-      const bond = preview.mol.bonds.get(bondId);
-      const [aId, bId] = bond.atoms;
-      const a = preview.mol.atoms.get(aId);
-      const b = preview.mol.atoms.get(bId);
-      const centerId = a?.getChirality() ? aId : b?.getChirality() ? bId : null;
-      if (!centerId || !preview.reactantAtomIds.has(centerId)) {
-        continue;
-      }
-      const otherId = centerId === aId ? bId : aId;
-      reactantStereoByCenter.set(centerId, { otherId, type });
-    }
-
-    for (const [centerId, sourceStereo] of sourceStereoByCenter) {
-      const current = reactantStereoByCenter.get(centerId);
-      assert.ok(current, `expected reactant-side stereobond assignment for sugar center ${centerId}`);
-      assert.equal(current.type, sourceStereo.type, `expected reactant-side sugar cleavage preview to preserve wedge/dash display for ${centerId}`);
-    }
-  }
-});
-
-test('reaction preview preserves the exact reactant stereobond set across sugar alcohol-cleavage mappings', () => {
-  const smiles = 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O';
-  const smirks = reactionTemplates.alcoholCleavage.smirks;
-  const sourceMol = parseSMILES(smiles);
-  generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 1.5 });
-  const sourceStereoBonds = [...pickStereoWedges(sourceMol)].map(([bondId, type]) => ({ bondId, type })).sort((a, b) => a.bondId.localeCompare(b.bondId));
-
-  const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
-  assert.equal(mappings.length, 5, 'expected five alcohol-cleavage sites in the sugar example');
-
-  for (const mapping of mappings) {
-    const preview = buildReaction2dMol(sourceMol, smirks, mapping);
-    assert.ok(preview, 'expected reaction preview to be buildable');
-    generateAndRefine2dCoords(preview.mol, {
-      suppressH: true,
-      bondLength: 1.5
-    });
-    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
-    spreadReaction2dProductComponents(preview.mol, preview, 1.5);
-    centerReaction2dPairCoords(preview.mol, preview, 1.5);
-
-    const reactantStereoBonds = [...pickStereoWedges(preview.mol)]
-      .filter(([bondId]) => {
-        const bond = preview.mol.bonds.get(bondId);
-        return bond && bond.atoms.every(atomId => preview.reactantAtomIds.has(atomId));
-      })
-      .map(([bondId, type]) => ({ bondId, type }))
-      .sort((a, b) => a.bondId.localeCompare(b.bondId));
-
-    assert.deepEqual(reactantStereoBonds, sourceStereoBonds, 'expected the reactant-side sugar preview to preserve the exact stereobond set');
-  }
-});
-
-test('reaction preview keeps stereo render centers pinned to the original untouched sugar stereocenters', () => {
-  const smiles = 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O';
-  const smirks = reactionTemplates.alcoholCleavage.smirks;
-  const sourceMol = parseSMILES(smiles);
-  const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
-
-  for (const mapping of mappings) {
-    const preview = buildReaction2dMol(sourceMol, smirks, mapping);
-    generateAndRefine2dCoords(preview.mol, {
-      suppressH: true,
-      bondLength: 1.5
-    });
-    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
-    spreadReaction2dProductComponents(preview.mol, preview, 1.5);
-    centerReaction2dPairCoords(preview.mol, preview, 1.5);
-
-    for (const [productCenterId, preserved] of preview.preservedProductStereoByCenter) {
-      const bond = preview.mol.getBond(productCenterId, preserved.otherProductId);
-      assert.ok(bond, `expected preserved product stereo bond for ${productCenterId}`);
-      assert.equal(stereoBondCenterIdForRender(preview.mol, bond.id), productCenterId, `expected render-time stereo center to stay pinned to ${productCenterId}`);
-    }
-  }
-});
-
-test('reaction preview preserves sugar stereobond display even when built from an unprepared source molecule', () => {
-  const smiles = 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O';
-  const smirks = reactionTemplates.alcoholCleavage.smirks;
-  const sourceMol = parseSMILES(smiles);
-  const sourceDisplayMol = parseSMILES(smiles);
-  sourceDisplayMol.hideHydrogens();
-  generateAndRefine2dCoords(sourceDisplayMol, {
-    suppressH: true,
-    bondLength: 1.5
-  });
-  for (const atom of sourceDisplayMol.atoms.values()) {
-    if (atom.name !== 'H' || atom.visible !== false) {
-      continue;
-    }
-    const nbrs = atom.getNeighbors(sourceDisplayMol);
-    if (nbrs.length !== 1) {
-      continue;
-    }
-    const parent = nbrs[0];
-    if (!parent.getChirality()) {
-      continue;
-    }
-    const others = parent.getNeighbors(sourceDisplayMol).filter(n => n.id !== atom.id);
-    let sumX = 0;
-    let sumY = 0;
-    let cnt = 0;
-    for (const nb of others) {
-      if (nb.x == null) {
-        continue;
-      }
-      sumX += nb.x - parent.x;
-      sumY += nb.y - parent.y;
-      cnt++;
-    }
-    const angle = cnt > 0 ? Math.atan2(-sumY, -sumX) : 0;
-    const hLen = 1.5 * 0.75;
-    atom.x = parent.x + Math.cos(angle) * hLen;
-    atom.y = parent.y + Math.sin(angle) * hLen;
-  }
-  const sourceStereo = [...pickStereoWedges(sourceDisplayMol)].map(([bondId, type]) => ({ bondId, type })).sort((a, b) => a.bondId.localeCompare(b.bondId));
-  const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
-
-  for (const mapping of mappings) {
-    const preview = buildReaction2dMol(sourceMol.clone(), smirks, mapping);
-    preview.mol.hideHydrogens();
-    generateAndRefine2dCoords(preview.mol, {
-      suppressH: true,
-      bondLength: 1.5
-    });
-    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
-    spreadReaction2dProductComponents(preview.mol, preview, 1.5);
-    centerReaction2dPairCoords(preview.mol, preview, 1.5);
-    for (const atom of preview.mol.atoms.values()) {
-      if (atom.name !== 'H' || atom.visible !== false) {
-        continue;
-      }
-      const nbrs = atom.getNeighbors(preview.mol);
-      if (nbrs.length !== 1) {
-        continue;
-      }
-      const parent = nbrs[0];
-      if (!parent.getChirality()) {
-        continue;
-      }
-      const others = parent.getNeighbors(preview.mol).filter(n => n.id !== atom.id);
-      let sumX = 0;
-      let sumY = 0;
-      let cnt = 0;
-      for (const nb of others) {
-        if (nb.x == null) {
-          continue;
-        }
-        sumX += nb.x - parent.x;
-        sumY += nb.y - parent.y;
-        cnt++;
-      }
-      const angle = cnt > 0 ? Math.atan2(-sumY, -sumX) : 0;
-      const hLen = 1.5 * 0.75;
-      atom.x = parent.x + Math.cos(angle) * hLen;
-      atom.y = parent.y + Math.sin(angle) * hLen;
-    }
-
-    const reactantStereo = [...pickStereoWedges(preview.mol)]
-      .filter(([bondId]) => {
-        const bond = preview.mol.bonds.get(bondId);
-        return bond && bond.atoms.every(atomId => preview.reactantAtomIds.has(atomId));
-      })
-      .map(([bondId, type]) => ({ bondId, type }))
-      .sort((a, b) => a.bondId.localeCompare(b.bondId));
-    assert.deepEqual(reactantStereo, sourceStereo, 'expected reactant-side stereobond display to stay unchanged from an unprepared source input');
-
-    const productStereo = [...pickStereoWedges(preview.mol)]
-      .filter(([bondId]) => {
-        const bond = preview.mol.bonds.get(bondId);
-        return bond && bond.atoms.every(atomId => preview.productAtomIds.has(atomId));
-      })
-      .map(([bondId, type]) => ({ bondId, type }))
-      .sort((a, b) => a.bondId.localeCompare(b.bondId));
-
-    for (const [sourceBondId, type] of sourceStereo.map(entry => [entry.bondId, entry.type])) {
-      const preservedMapped = preview.mappedAtomPairs.map(([reactantId, productId]) => [reactantId, productId]);
-      const sourceBond = sourceDisplayMol.bonds.get(sourceBondId);
-      if (!sourceBond) {
-        continue;
-      }
-      const productAtoms = sourceBond.atoms.map(atomId => preservedMapped.find(([reactantId]) => reactantId === atomId)?.[1] ?? null);
-      if (productAtoms.some(atomId => !atomId || preview.editedProductAtomIds.has(atomId))) {
-        continue;
-      }
-      const productBond = preview.mol.getBond(productAtoms[0], productAtoms[1]);
-      assert.ok(productBond, 'expected preserved product stereobond');
-      assert.ok(
-        productStereo.some(entry => entry.bondId === productBond.id && entry.type === type),
-        'expected preserved product stereobond display to match source display'
-      );
-    }
-  }
-});
-
-test('reaction preview preserves the currently displayed sugar stereobond choices after source rotation', () => {
-  const smiles = 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O';
-  const smirks = reactionTemplates.alcoholCleavage.smirks;
-  const sourceMol = parseSMILES(smiles);
-  sourceMol.hideHydrogens();
-  generateAndRefine2dCoords(sourceMol, { suppressH: true, bondLength: 1.5 });
-
-  const allAtoms = [...sourceMol.atoms.values()].filter(atom => atom.x != null);
-  let cx = 0;
-  let cy = 0;
-  for (const atom of allAtoms) {
-    cx += atom.x;
-    cy += atom.y;
-  }
-  cx /= allAtoms.length;
-  cy /= allAtoms.length;
-  for (const atom of allAtoms) {
-    const dx = atom.x - cx;
-    const dy = atom.y - cy;
-    atom.x = cx - dy;
-    atom.y = cy + dx;
-  }
-  for (const atom of sourceMol.atoms.values()) {
-    if (atom.name !== 'H' || atom.visible !== false) {
-      continue;
-    }
-    const nbrs = atom.getNeighbors(sourceMol);
-    if (nbrs.length !== 1) {
-      continue;
-    }
-    const parent = nbrs[0];
-    if (!parent.getChirality()) {
-      continue;
-    }
-    const others = parent.getNeighbors(sourceMol).filter(n => n.id !== atom.id);
-    let sumX = 0;
-    let sumY = 0;
-    let cnt = 0;
-    for (const nb of others) {
-      if (nb.x == null) {
-        continue;
-      }
-      sumX += nb.x - parent.x;
-      sumY += nb.y - parent.y;
-      cnt++;
-    }
-    const angle = cnt > 0 ? Math.atan2(-sumY, -sumX) : 0;
-    const hLen = 1.5 * 0.75;
-    atom.x = parent.x + Math.cos(angle) * hLen;
-    atom.y = parent.y + Math.sin(angle) * hLen;
-  }
-
-  const sourceStereo = [...pickStereoWedges(sourceMol)].map(([bondId, type]) => ({ bondId, type })).sort((a, b) => a.bondId.localeCompare(b.bondId));
-  const mappings = [...findSMARTSRaw(parseSMILES(smiles), smirks.split('>>')[0])];
-
-  for (const mapping of mappings) {
-    const preview = buildReaction2dMol(sourceMol.clone(), smirks, mapping);
-    preview.mol.hideHydrogens();
-    generateAndRefine2dCoords(preview.mol, {
-      suppressH: true,
-      bondLength: 1.5
-    });
-    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
-    spreadReaction2dProductComponents(preview.mol, preview, 1.5);
-    centerReaction2dPairCoords(preview.mol, preview, 1.5);
-    for (const atom of preview.mol.atoms.values()) {
-      if (atom.name !== 'H' || atom.visible !== false) {
-        continue;
-      }
-      const nbrs = atom.getNeighbors(preview.mol);
-      if (nbrs.length !== 1) {
-        continue;
-      }
-      const parent = nbrs[0];
-      if (!parent.getChirality()) {
-        continue;
-      }
-      const others = parent.getNeighbors(preview.mol).filter(n => n.id !== atom.id);
-      let sumX = 0;
-      let sumY = 0;
-      let cnt = 0;
-      for (const nb of others) {
-        if (nb.x == null) {
-          continue;
-        }
-        sumX += nb.x - parent.x;
-        sumY += nb.y - parent.y;
-        cnt++;
-      }
-      const angle = cnt > 0 ? Math.atan2(-sumY, -sumX) : 0;
-      const hLen = 1.5 * 0.75;
-      atom.x = parent.x + Math.cos(angle) * hLen;
-      atom.y = parent.y + Math.sin(angle) * hLen;
-    }
-
-    const reactantStereo = [...pickStereoWedges(preview.mol)]
-      .filter(([bondId]) => {
-        const bond = preview.mol.bonds.get(bondId);
-        return bond && bond.atoms.every(atomId => preview.reactantAtomIds.has(atomId));
-      })
-      .map(([bondId, type]) => ({ bondId, type }))
-      .sort((a, b) => a.bondId.localeCompare(b.bondId));
-    assert.deepEqual(reactantStereo, sourceStereo, 'expected reactant-side preview to preserve the currently displayed stereobond choices after source rotation');
-  }
 });
 
 test('reaction preview preserves the retained sugar scaffold for ether cleavage', () => {
@@ -979,21 +646,6 @@ test('reaction preview preserves long polyunsaturated-chain scaffold shape for a
       assert.ok(geometry.maxBond <= 1.85, `expected no stretched product bonds for mapping ${index} of ${smiles}, got ${geometry.maxBond.toFixed(3)} Å`);
     }
   }
-});
-
-test('reaction preview keeps alcohol cleavage local chain angle for sec-butanol', () => {
-  const preview = preparePreview('CC(O)CC', reactionTemplates.alcoholCleavage.smirks);
-  const centralCarbon = [...preview.mol.atoms.values()].find(atom => {
-    if (!preview.productAtomIds.has(atom.id) || atom.name !== 'C') {
-      return false;
-    }
-    const carbonNeighbors = atom.getNeighbors(preview.mol).filter(nb => nb.name === 'C');
-    return carbonNeighbors.length === 2;
-  });
-  assert.ok(centralCarbon, 'expected retained secondary carbon in alcohol cleavage preview');
-  const carbonNeighbors = centralCarbon.getNeighbors(preview.mol).filter(nb => nb.name === 'C');
-  const angle = angleDeg(carbonNeighbors[0], centralCarbon, carbonNeighbors[1]);
-  assert.ok(angle > 105 && angle < 135, `expected retained chain angle to stay bent, got ${angle.toFixed(1)}°`);
 });
 
 test('reaction preview keeps terminal carbon-halogen bond bent after alcohol halogenation', () => {

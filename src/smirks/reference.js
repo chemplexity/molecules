@@ -103,12 +103,7 @@ export const reactionTemplates = {
   // Bond construction / cleavage
   // ---------------------------------------------------------------------------
 
-  alcoholCleavage: {
-    name: 'Alcohol Cleavage',
-    smirks: '[C;X4;H0,H1,H2:1][OH:2]>>[C:1].[OH2:2]',
-    excludeOverlaps: ['[C:1](=[O:2])[OH:3]', '[C:1](=[O:2])[O:3][C:4]', '[C:1](=[O:2])[N:3]']
-  },
-  alcoholDehydration: { name: 'Alcohol Dehydration', smirks: '[C;X4:1][CH2:2][OH:3]>>[C:1]=[CH:2].[OH2:3]' },
+  alcoholDehydration: { name: 'Alcohol Dehydration', smirks: '[C;X4;!H0:1][CH2:2][OH:3]>>[C:1]=[CH2:2].[OH2:3]' },
   alkylChlorideElimination: {
     name: 'Alkyl Chloride Elimination',
     smirks: '[C;X4:1][CH2:2][Cl:3]>>[C:1]=[CH:2].[Cl-:3]'

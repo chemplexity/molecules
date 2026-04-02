@@ -341,23 +341,32 @@ describe('veberRules', () => {
 
 describe('fsp3', () => {
   it('methane = 1.0 (all sp3)', () => {
-    assert.equal(fsp3(parseSMILES('C')), 1);
+    assert.equal(fsp3(parseSMILES('C')).value, 1);
   });
 
   it('benzene = 0.0 (all sp2)', () => {
-    assert.equal(fsp3(parseSMILES('c1ccccc1')), 0);
+    assert.equal(fsp3(parseSMILES('c1ccccc1')).value, 0);
   });
 
   it('cyclohexane = 1.0 (all sp3)', () => {
-    assert.equal(fsp3(parseSMILES('C1CCCCC1')), 1);
+    assert.equal(fsp3(parseSMILES('C1CCCCC1')).value, 1);
   });
 
   it('ethene = 0.0 (both sp2)', () => {
-    assert.equal(fsp3(parseSMILES('C=C')), 0);
+    assert.equal(fsp3(parseSMILES('C=C')).value, 0);
   });
 
   it('returns 0 for a molecule with no carbons', () => {
-    assert.equal(fsp3(parseSMILES('O')), 0);
+    const result = fsp3(parseSMILES('O'));
+    assert.equal(result.value, 0);
+    assert.deepEqual(result.atoms, []);
+  });
+
+  it('returns sp3 atom IDs for a mixed molecule', () => {
+    const mol = parseSMILES('CC=C'); // C0 sp3, C1 sp2, C2 sp2
+    const result = fsp3(mol);
+    assert.equal(result.value, 0.333);
+    assert.equal(result.atoms.length, 1);
   });
 
   it('throws on non-molecule', () => {

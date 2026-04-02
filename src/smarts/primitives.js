@@ -117,8 +117,9 @@ function _isChordlessCycle(cycle, mol) {
 function _shortestPathExcludingAtom(startId, endId, excludedAtomId, mol) {
   const queue = [[startId]];
   const visited = new Set([startId, excludedAtomId]);
-  while (queue.length > 0) {
-    const path = queue.shift();
+  let queueHead = 0;
+  while (queueHead < queue.length) {
+    const path = queue[queueHead++];
     const currentId = path[path.length - 1];
     if (currentId === endId) {
       return path;
@@ -209,8 +210,9 @@ function _isBondInRing(bond, mol) {
   const [startId, endId] = bond.atoms;
   const visited = new Set([startId]);
   const queue = [startId];
-  while (queue.length > 0) {
-    const cur = queue.shift();
+  let queueHead = 0;
+  while (queueHead < queue.length) {
+    const cur = queue[queueHead++];
     const atom = mol.atoms.get(cur);
     if (!atom) {
       continue;

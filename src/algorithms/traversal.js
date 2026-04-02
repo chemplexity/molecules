@@ -14,12 +14,13 @@ export function bfs(molecule, startId) {
     return { visited, parent, depth };
   }
   const queue = [startId];
+  let queueHead = 0;
 
   parent.set(startId, null);
   depth.set(startId, 0);
 
-  while (queue.length > 0) {
-    const current = queue.shift();
+  while (queueHead < queue.length) {
+    const current = queue[queueHead++];
     visited.push(current);
 
     for (const neighbor of molecule.getNeighbors(current)) {

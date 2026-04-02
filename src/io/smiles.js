@@ -1622,10 +1622,15 @@ export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) 
   const mol = new Molecule();
 
   for (const atom of Object.values(v1Atoms)) {
-    const a = mol.addAtom(atom.id, atom.name, {
-      charge: atom.properties.charge,
-      aromatic: atom.properties.aromatic === 1
-    });
+    const a = mol.addAtom(
+      atom.id,
+      atom.name,
+      {
+        charge: atom.properties.charge,
+        aromatic: atom.properties.aromatic === 1
+      },
+      { recompute: false }
+    );
     // Restore isotope-adjusted neutrons — the v1 parser may have overridden
     // the table default (e.g. [13C] sets neutrons = 13 − 6 = 7).
     a.properties.neutrons = atom.neutrons;
@@ -1684,10 +1689,7 @@ export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) 
 
   perceiveAromaticity(mol, { preserveKekule: preserveAromaticBondOrders });
 
-  mol.properties.formula = mol.getFormula();
-  mol.properties.mass = mol.getMass();
-  mol.properties.charge = mol.getCharge();
-  mol.name = mol.getName();
+  mol._recomputeProperties();
 
   return mol;
 }

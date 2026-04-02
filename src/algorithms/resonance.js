@@ -6,25 +6,6 @@ import { kekulize } from '../layout/mol2d-helpers.js';
 // Constants
 // ---------------------------------------------------------------------------
 
-/** Maximum valence for common elements used in validation. */
-const MAX_VALENCE = {
-  H: 1,
-  B: 3,
-  C: 4,
-  N: 4, // can be 5 with formal charge
-  O: 3, // can be 3 with formal charge
-  F: 1,
-  Si: 4,
-  P: 5,
-  S: 6,
-  Cl: 1,
-  As: 5,
-  Se: 6,
-  Br: 1,
-  Te: 6,
-  I: 1
-};
-
 /** Neutral sigma-frame valence targets for common aromatic elements. */
 const AROMATIC_SIGMA_VALENCE = {
   B: 3,
@@ -42,6 +23,9 @@ const AROMATIC_SIGMA_VALENCE = {
   Te: 2,
   I: 1
 };
+
+/** Halides that can support exocyclic aromatic charge-separated donor states. */
+const EXOCYCLIC_AROMATIC_HALIDE_DONOR_SYMBOLS = new Set(['F', 'Cl', 'Br', 'I']);
 
 /**
  * Returns the common neutral valence family for an element.
@@ -258,6 +242,44 @@ function _expectedAromaticPiBondCount(atom, molecule, formalCharge) {
 }
 
 /**
+ * Returns true when an aromatic atom is double-bonded to a positively charged
+ * exocyclic halide donor that can feed electron density into the aromatic ring.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {Set<string>|null} ringAtomSet
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Map<string, number>} bondOrders
+ * @param {Map<string, number>} formalCharges
+ * @returns {boolean}
+ */
+function _hasExocyclicPositiveDonorPiBond(atom, ringAtomSet, molecule, bondOrders, formalCharges) {
+  for (const bondId of atom.bonds) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+
+    const neighborId = bond.getOtherAtom(atom.id);
+    if (ringAtomSet?.has(neighborId)) {
+      continue;
+    }
+
+    const neighbor = molecule.atoms.get(neighborId);
+    if (!neighbor || neighbor.properties?.aromatic || !EXOCYCLIC_AROMATIC_HALIDE_DONOR_SYMBOLS.has(neighbor.name)) {
+      continue;
+    }
+
+    const localizedOrder = bondOrders.get(bond.id) ?? bond.properties.localizedOrder ?? bond.properties.order ?? 1;
+    const formalCharge = formalCharges.get(neighborId) ?? 0;
+    if (localizedOrder >= 2 && formalCharge === 1) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Returns the localised ring-pi electron contribution for an atom within a
  * specific aromatic ring under a proposed resonance state.
  *
@@ -269,9 +291,10 @@ function _expectedAromaticPiBondCount(atom, molecule, formalCharge) {
  * @param {import('../core/Molecule.js').Molecule} molecule
  * @param {Map<string, number>} bondOrders
  * @param {number} formalCharge
+ * @param {Map<string, number>} formalCharges
  * @returns {number|null}
  */
-function _localizedRingPiElectrons(atom, ringAtomSet, molecule, bondOrders, formalCharge) {
+function _localizedRingPiElectrons(atom, ringAtomSet, molecule, bondOrders, formalCharge, formalCharges) {
   const ringBonds = atom.bonds.map(bondId => molecule.bonds.get(bondId)).filter(bond => bond && ringAtomSet.has(bond.getOtherAtom(atom.id)));
 
   const hasRingPiBond = ringBonds.some(bond => {
@@ -308,7 +331,13 @@ function _localizedRingPiElectrons(atom, ringAtomSet, molecule, bondOrders, form
       const localizedOrder = bondOrders.get(bondId) ?? bond.properties.localizedOrder ?? bond.properties.order ?? 1;
       return localizedOrder >= 2;
     });
-    return hasAdjacentAromaticPiBond ? 1 : null;
+    if (hasAdjacentAromaticPiBond) {
+      return 1;
+    }
+    if (_hasExocyclicPositiveDonorPiBond(atom, ringAtomSet, molecule, bondOrders, formalCharges)) {
+      return 0;
+    }
+    return null;
   }
 
   if (atom.name === 'N') {
@@ -340,6 +369,57 @@ function _localizedRingPiElectrons(atom, ringAtomSet, molecule, bondOrders, form
   }
 
   return null;
+}
+
+/**
+ * Returns true when an aromatic ring carries a supported exocyclic donor pair.
+ *
+ * These are charge-separated aromatic contributors where the positive charge
+ * lives on a lone-pair donor outside the ring (for example `Cl+` in
+ * chlorobenzene-like contributors) while the ring itself carries the
+ * compensating negative charge.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {string[]} ring
+ * @param {Map<string, number>} bondOrders
+ * @param {Map<string, number>} formalCharges
+ * @returns {boolean}
+ */
+function _hasSupportedExocyclicAromaticDonorPair(molecule, ring, bondOrders, formalCharges) {
+  const ringAtomSet = new Set(ring);
+  let donorCount = 0;
+
+  for (const ringAtomId of ring) {
+    const ringAtom = molecule.atoms.get(ringAtomId);
+    if (!ringAtom) {
+      return false;
+    }
+
+    for (const bondId of ringAtom.bonds) {
+      const bond = molecule.bonds.get(bondId);
+      if (!bond) {
+        continue;
+      }
+
+      const neighborId = bond.getOtherAtom(ringAtomId);
+      if (ringAtomSet.has(neighborId)) {
+        continue;
+      }
+
+      const neighbor = molecule.atoms.get(neighborId);
+      if (!neighbor || neighbor.properties?.aromatic || !EXOCYCLIC_AROMATIC_HALIDE_DONOR_SYMBOLS.has(neighbor.name)) {
+        continue;
+      }
+
+      const localizedOrder = bondOrders.get(bond.id) ?? bond.properties.localizedOrder ?? bond.properties.order ?? 1;
+      const formalCharge = formalCharges.get(neighborId) ?? 0;
+      if (localizedOrder >= 2 && formalCharge === 1) {
+        donorCount++;
+      }
+    }
+  }
+
+  return donorCount === 1;
 }
 
 /**
@@ -761,8 +841,9 @@ function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge) 
       bondSum += bondOrders.has(bondId) ? bondOrders.get(bondId) : (bond.properties.localizedOrder ?? bond.properties.order ?? 1);
     }
 
-    const maxVal = MAX_VALENCE[atom.name];
-    if (maxVal !== undefined && bondSum > maxVal) {
+    const formalCharge = formalCharges.get(atomId) ?? 0;
+    const allowedValences = _shiftedCommonValences(atom.name, atom, formalCharge);
+    if (allowedValences.length > 0 && !allowedValences.includes(bondSum)) {
       return false;
     }
 
@@ -786,7 +867,10 @@ function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge) 
         }
       }
 
-      const expectedMatchedAromaticPiBonds = _expectedAromaticPiBondCount(atom, molecule, formalCharges.get(atomId) ?? 0);
+      const formalCharge = formalCharges.get(atomId) ?? 0;
+      const hasExocyclicDonorPiBond =
+        atom.name === 'C' && formalCharge === 0 && _hasExocyclicPositiveDonorPiBond(atom, null, molecule, bondOrders, formalCharges);
+      const expectedMatchedAromaticPiBonds = hasExocyclicDonorPiBond ? 0 : _expectedAromaticPiBondCount(atom, molecule, formalCharge);
       if (expectedMatchedAromaticPiBonds !== null && matchedAromaticPiBonds !== expectedMatchedAromaticPiBonds) {
         return false;
       }
@@ -817,18 +901,25 @@ function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge) 
       } else if (formalCharge < 0) {
         negativeCount++;
       }
-      const pi = _localizedRingPiElectrons(atom, ringAtomSet, molecule, bondOrders, formalCharge);
+      const pi = _localizedRingPiElectrons(atom, ringAtomSet, molecule, bondOrders, formalCharge, formalCharges);
       if (pi === null) {
         return false;
       }
       piTotal += pi;
     }
 
-    if (!((positiveCount === 0 && negativeCount === 0) || (positiveCount === 1 && negativeCount === 1))) {
+    const hasNeutralRingCharges = positiveCount === 0 && negativeCount === 0;
+    const hasInternalChargeSeparatedPair = positiveCount === 1 && negativeCount === 1;
+    const hasExocyclicDonorPair =
+      positiveCount === 0 &&
+      negativeCount === 1 &&
+      _hasSupportedExocyclicAromaticDonorPair(molecule, ring, bondOrders, formalCharges);
+
+    if (!(hasNeutralRingCharges || hasInternalChargeSeparatedPair || hasExocyclicDonorPair)) {
       return false;
     }
 
-    if (positiveCount === 1 && negativeCount === 1) {
+    if (hasInternalChargeSeparatedPair) {
       const supportsChargeSeparatedAromaticState = positiveAtoms.every(
         atom =>
           atom.name === 'O' ||
@@ -870,12 +961,54 @@ function _stateKey(bondOrders, atomCharges, atomRadicals) {
 }
 
 /**
+ * Returns how many candidate pi bonds an atom may participate in at once.
+ *
+ * Most second-row atoms top out at one movable pi bond, which reproduces the
+ * usual matching constraint used for carbonyls and aromatic carbons. Expanded-
+ * octet centers such as sulfur or phosphorus can legitimately host more than
+ * one movable pi bond, so their limit is derived from the largest common
+ * charge-shifted valence family available within `maxCharge`.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Set<string>} fixedBondIds
+ * @param {number} maxCharge
+ * @returns {number}
+ */
+function _maxCandidatePiBondCount(atom, molecule, fixedBondIds, maxCharge) {
+  let baselineBondOrder = 0;
+  let canonicalBondOrder = 0;
+  for (const bondId of atom.bonds) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    baselineBondOrder += 1 + (fixedBondIds.has(bondId) ? 1 : 0);
+    canonicalBondOrder += bond.properties.localizedOrder ?? bond.properties.order ?? 1;
+  }
+
+  let maxAllowedValence = Math.max(baselineBondOrder, canonicalBondOrder);
+  for (let charge = -maxCharge; charge <= maxCharge; charge++) {
+    const allowedValences = _shiftedCommonValences(atom.name, atom, charge);
+    for (const valence of allowedValences) {
+      if (valence > maxAllowedValence) {
+        maxAllowedValence = valence;
+      }
+    }
+  }
+
+  return Math.max(0, maxAllowedValence - baselineBondOrder);
+}
+
+/**
  * Enumerates all valid bond-order assignments for the pi-system candidate bonds
  * via backtracking, collecting up to `maxContributors` states.
  *
  * Each candidate bond is either "matched" (order 2) or "unmatched" (order 1),
- * plus any fixed pi bond contribution for triples. After assigning all bonds,
- * formal charges are derived and validity is checked.
+ * plus any fixed pi bond contribution for triples. Most atoms can take part in
+ * only one matched candidate bond at a time, but expanded-octet centers such as
+ * sulfate sulfur may host multiple matched bonds simultaneously. After
+ * assigning all bonds, formal charges are derived and validity is checked.
  *
  * @param {import('../core/Molecule.js').Molecule} molecule
  * @param {Set<string>} atomIds
@@ -892,22 +1025,16 @@ function _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxCon
   // Current assignment: candidateIdx → true (double) | false (single)
   const assignment = new Array(candidates.length).fill(false);
 
-  // Precompute baseline bond order for non-candidate bonds (stays constant)
-  // Track which atoms have been matched (have a double bond) to enforce
-  // that each atom can participate in at most one double bond from the
-  // candidate set (standard matching constraint).
+  const atomPiBondLimits = new Map();
+  for (const atomId of atomIds) {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    atomPiBondLimits.set(atomId, _maxCandidatePiBondCount(atom, molecule, fixedBondIds, maxCharge));
+  }
 
   function buildBondOrders() {
-    const bo = new Map();
-    for (let i = 0; i < candidates.length; i++) {
-      const bondId = candidates[i];
-      const base = fixedBondIds.has(bondId) ? 1 : 0; // fixed adds +1 always
-      bo.set(bondId, base + (assignment[i] ? 1 : 0) + (fixedBondIds.has(bondId) ? 1 : 0));
-    }
-    // Correct: triple bonds have fixed 1 + candidate 1 = 2 when matched, 1+1=fixed=2 when not
-    // Re-do: for triple bonds, base order is 2 (1 fixed + 1 sigma), candidate adds 1 more → 3
-    // For double/aromatic/single: base order is 1 (sigma only), candidate adds 1 → 2
-    // Actually, let's recompute cleanly:
     const bo2 = new Map();
     for (let i = 0; i < candidates.length; i++) {
       const bondId = candidates[i];
@@ -918,7 +1045,7 @@ function _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxCon
     return bo2;
   }
 
-  function backtrack(idx, matchedAtoms) {
+  function backtrack(idx, matchedBondCounts) {
     if (results.length >= maxContributors) {
       return;
     }
@@ -953,16 +1080,17 @@ function _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxCon
 
     // Try unmatched (single/order-1 candidate)
     assignment[idx] = false;
-    backtrack(idx + 1, matchedAtoms);
+    backtrack(idx + 1, matchedBondCounts);
 
-    // Try matched (double/order-2 candidate) — only if neither endpoint is already matched
-    if (!matchedAtoms.has(aId) && !matchedAtoms.has(bId)) {
+    // Try matched (double/order-2 candidate) if both endpoints still have
+    // room for another movable pi bond under their common valence families.
+    if ((matchedBondCounts.get(aId) ?? 0) < (atomPiBondLimits.get(aId) ?? 0) && (matchedBondCounts.get(bId) ?? 0) < (atomPiBondLimits.get(bId) ?? 0)) {
       assignment[idx] = true;
-      matchedAtoms.add(aId);
-      matchedAtoms.add(bId);
-      backtrack(idx + 1, matchedAtoms);
-      matchedAtoms.delete(aId);
-      matchedAtoms.delete(bId);
+      matchedBondCounts.set(aId, (matchedBondCounts.get(aId) ?? 0) + 1);
+      matchedBondCounts.set(bId, (matchedBondCounts.get(bId) ?? 0) + 1);
+      backtrack(idx + 1, matchedBondCounts);
+      matchedBondCounts.set(aId, (matchedBondCounts.get(aId) ?? 1) - 1);
+      matchedBondCounts.set(bId, (matchedBondCounts.get(bId) ?? 1) - 1);
       assignment[idx] = false;
     }
   }
@@ -981,7 +1109,7 @@ function _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxCon
     return total === canonicalTotalCharge;
   }
 
-  backtrack(0, new Set());
+  backtrack(0, new Map());
   return results;
 }
 
@@ -1371,6 +1499,21 @@ function _isSingleChargeShiftState(state, atomIds, canonicalAbsoluteChargeMagnit
   return totalAbsoluteChargeMagnitude <= maxAllowedAbsoluteChargeMagnitude;
 }
 
+/**
+ * Returns the internal search budget used while enumerating raw contributors.
+ *
+ * The public `maxContributors` limit is applied only after charge/permutation
+ * filtering and scoring. Searching more broadly than the final display cap
+ * prevents chemically useful local contributors from being dropped simply
+ * because noisy states were discovered earlier during backtracking.
+ *
+ * @param {number} maxContributors
+ * @returns {number}
+ */
+function _enumerationBudget(maxContributors) {
+  return Math.max(maxContributors * 8, 64);
+}
+
 // ---------------------------------------------------------------------------
 // Step 5 — Write to model
 // ---------------------------------------------------------------------------
@@ -1547,6 +1690,7 @@ function _writeToModel(molecule, atomIds, bondIds, states) {
  */
 export function generateResonanceStructures(molecule, options = {}) {
   const { maxContributors = 16, maxCharge = 1, includeChargeSeparatedStates = true, includeIndependentComponentPermutations = true } = options;
+  const enumerationBudget = _enumerationBudget(maxContributors);
 
   // Recompute from a clean canonical baseline so clones, mode switches, and
   // repeated calls cannot accumulate stale resonance tables.
@@ -1585,11 +1729,11 @@ export function generateResonanceStructures(molecule, options = {}) {
   }
 
   // Enumerate paired-electron matchings
-  const pairedStates = _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxContributors, maxCharge);
+  const pairedStates = _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, enumerationBudget, maxCharge);
 
   // Enumerate radical-migration states on top of paired states
   const seen = new Set(pairedStates.map(s => _stateKey(s.bondOrders, s.atomCharges, s.atomRadicals)));
-  const radicalStates = _enumerateRadicalStates(molecule, atomIds, bondIds, pairedStates, maxContributors, seen);
+  const radicalStates = _enumerateRadicalStates(molecule, atomIds, bondIds, pairedStates, enumerationBudget, seen);
 
   const allRawStates = [...pairedStates, ...radicalStates]
     .filter(state => includeChargeSeparatedStates || _matchesCanonicalAtomCharges(state, canonicalAtomCharges, atomIds))

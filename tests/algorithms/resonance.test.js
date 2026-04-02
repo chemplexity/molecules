@@ -278,7 +278,12 @@ describe('generateResonanceStructures — charge-separated toggle', () => {
       includeChargeSeparatedStates: true,
       includeIndependentComponentPermutations: false
     });
-    assert.equal(mol.resonanceCount, 1);
+
+    for (let i = 1; i <= mol.resonanceCount; i++) {
+      mol.setResonanceState(i);
+      const absoluteChargeMagnitude = [...mol.atoms.values()].reduce((sum, atom) => sum + Math.abs(atom.properties.charge ?? 0), 0);
+      assert.ok(absoluteChargeMagnitude <= 2, `expected only single local charge shifts, got |q| sum ${absoluteChargeMagnitude} in state ${i}`);
+    }
   });
 });
 
@@ -291,6 +296,26 @@ describe('generateResonanceStructures — propyne (non-conjugated alkyne)', () =
     const mol = parse('CC#C');
     generateResonanceStructures(mol);
     assert.equal(mol.resonanceCount, 1);
+  });
+});
+
+describe('generateResonanceStructures — expanded-octet oxyanions', () => {
+  it('enumerates sulfate resonance structures on the dianion itself', () => {
+    const mol = parseSMILES('[O-]S(=O)(=O)[O-]');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.equal(mol.resonanceCount, 6);
+  });
+
+  it('preserves sulfate resonance when a spectator metal ion is present', () => {
+    const mol = parseSMILES('[Cu+2].[O-]S(=O)(=O)[O-]');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.equal(mol.resonanceCount, 6);
   });
 });
 
@@ -348,6 +373,131 @@ describe('generateResonanceStructures — fused aromatic heterocycles', () => {
         return [...mol.atoms.values()].some(atom => atom.name === 'N' && (atom.properties.charge ?? 0) === 1);
       })
     );
+  });
+});
+
+describe('generateResonanceStructures — development regressions', () => {
+  it('includes exocyclic halide donor contributors for aryl halides', () => {
+    const mol = parseSMILES('Clc1ccccc1');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.ok(mol.resonanceCount > 2);
+    assert.ok(
+      [...Array(mol.resonanceCount).keys()].some(index => {
+        mol.setResonanceState(index + 1);
+        return [...mol.atoms.values()].some(atom => atom.name === 'Cl' && (atom.properties.charge ?? 0) === 1);
+      })
+    );
+  });
+
+  it('finds resonance in the tetrahydro-beta-carboline aromatic system', () => {
+    const mol = parseSMILES('CN(C)CCC1=CNC2=C1C=C(C=C2)OC');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.equal(mol.resonanceCount, 2);
+  });
+
+  it('finds the three Kekule forms of naphthalene', () => {
+    const mol = parseSMILES('c1ccc2ccccc2c1');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.equal(mol.resonanceCount, 3);
+  });
+
+  it('finds amide-like contributors in cyclic triones', () => {
+    const mol = parseSMILES('O=C1NC(=O)NC(=O)N1');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.ok(mol.resonanceCount > 1);
+    assert.ok(
+      [...Array(mol.resonanceCount).keys()].some(index => {
+        mol.setResonanceState(index + 1);
+        return [...mol.atoms.values()].some(atom => atom.name === 'O' && (atom.properties.charge ?? 0) === -1);
+      })
+    );
+  });
+
+  it('keeps resonance localized to either benzoate component in multi-component salts', () => {
+    const mol = parseSMILES('[Fe+2].[O-]C(=O)C1=CC=CC=C1.[O-]C(=O)C2=CC=CC=C2');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.equal(mol.resonanceCount, 5);
+
+    let sawFirstBenzoateCarbonylShift = false;
+    let sawSecondBenzoateCarbonylShift = false;
+    for (let i = 1; i <= mol.resonanceCount; i++) {
+      mol.setResonanceState(i);
+      const chargedOxygens = [...mol.atoms.values()]
+        .filter(atom => atom.name === 'O' && (atom.properties.charge ?? 0) === -1)
+        .map(atom => atom.id);
+      if (chargedOxygens.includes('O4')) {
+        sawFirstBenzoateCarbonylShift = true;
+      }
+      if (chargedOxygens.includes('O13')) {
+        sawSecondBenzoateCarbonylShift = true;
+      }
+    }
+
+    assert.equal(sawFirstBenzoateCarbonylShift, true);
+    assert.equal(sawSecondBenzoateCarbonylShift, true);
+  });
+
+  it('keeps tertiary-amide carbonyl charge-separated contributors in polycyclic systems', () => {
+    const mol = parseSMILES('CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.ok(mol.resonanceCount > 1);
+
+    let sawCarbonylOxygenAnion = false;
+    for (let i = 1; i <= mol.resonanceCount; i++) {
+      mol.setResonanceState(i);
+      if ([...mol.atoms.values()].some(atom => atom.id === 'O7' && (atom.properties.charge ?? 0) === -1)) {
+        sawCarbonylOxygenAnion = true;
+        break;
+      }
+    }
+
+    assert.equal(sawCarbonylOxygenAnion, true);
+  });
+
+  it('finds both carbonyl and ring contributors in histidine-like imidazole amides', () => {
+    const mol = parseSMILES('C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.ok(mol.resonanceCount > 1);
+
+    let sawCarbonylOxygenAnion = false;
+    let sawRingChargeSeparatedState = false;
+    for (let i = 1; i <= mol.resonanceCount; i++) {
+      mol.setResonanceState(i);
+      const chargedAtoms = [...mol.atoms.values()].filter(atom => (atom.properties.charge ?? 0) !== 0);
+      if (chargedAtoms.some(atom => atom.name === 'O' && (atom.properties.charge ?? 0) === -1)) {
+        sawCarbonylOxygenAnion = true;
+      }
+      if (
+        chargedAtoms.some(atom => atom.id === 'N3' && (atom.properties.charge ?? 0) === 1) &&
+        chargedAtoms.some(atom => (atom.id === 'C1' || atom.id === 'C2' || atom.id === 'N5') && (atom.properties.charge ?? 0) === -1)
+      ) {
+        sawRingChargeSeparatedState = true;
+      }
+    }
+
+    assert.equal(sawCarbonylOxygenAnion, true);
+    assert.equal(sawRingChargeSeparatedState, true);
   });
 });
 

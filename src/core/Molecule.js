@@ -80,9 +80,14 @@ export class Molecule {
    * @param {string} name       - Element symbol (e.g. 'C', 'N').
    * @param {object} [properties={}] - Initial atom properties (charge, aromatic, protons, …).
    * Missing periodic-table fields are derived automatically from `name`.
+   * @param {object}  [options={}]
+   * @param {boolean} [options.recompute=true] - When `false`, skips the automatic
+   *   `_recomputeProperties()` call after adding the atom. Use this flag when
+   *   adding many atoms in a batch (e.g. during parsing) and call
+   *   `_recomputeProperties()` once after the batch is complete.
    * @returns {Atom} The newly created atom.
    */
-  addAtom(id, name, properties = {}) {
+  addAtom(id, name, properties = {}, { recompute = true } = {}) {
     const atom = new Atom(id ?? this._generateAutoAtomId(), name, properties);
     const el = elements[atom.name];
     if (el) {
@@ -111,7 +116,9 @@ export class Molecule {
     if (this.properties.resonance) {
       this.clearResonanceStates();
     }
-    this._recomputeProperties();
+    if (recompute) {
+      this._recomputeProperties();
+    }
     return atom;
   }
 
@@ -458,8 +465,8 @@ export class Molecule {
    * recomputed afterwards.
    *
    * @param {string} id - ID of the bond to remove.
-   * @param {object} [opts]
-   * @param {boolean} [opts.pruneIsolated=true] - When true, atoms that become
+   * @param {object} [options]
+   * @param {boolean} [options.pruneIsolated=true] - When true, atoms that become
    *   isolated after removal are deleted. Pass false to keep them.
    */
   removeBond(id, { pruneIsolated = true } = {}) {
@@ -497,13 +504,17 @@ export class Molecule {
    * Recomputes and stores all derived molecular properties:
    * `charge`, `formula`, `mass`, and `name`.
    *
+   * `getFormula()` is called once and the result is reused for `getName()`,
+   * avoiding a second full atom traversal per mutation.
+   *
    * @private
    */
   _recomputeProperties() {
     this.properties.charge = this.getCharge();
-    this.properties.formula = this.getFormula();
+    const formula = this.getFormula();
+    this.properties.formula = formula;
     this.properties.mass = this.getMass();
-    this.name = this.getName();
+    this.name = this.getName(formula);
   }
 
   /**
@@ -635,11 +646,16 @@ export class Molecule {
    * Returns the CHNOPS-ordered formula string
    * (C, H, N, O, P, S first, then remaining elements alphabetically).
    *
+   * An optional pre-computed formula object may be supplied to avoid a
+   * redundant atom traversal when the caller already holds the result of
+   * {@link getFormula}. When omitted, `getFormula()` is called internally.
+   *
+   * @param {Object.<string, number>} [formula] - Pre-computed formula map (CHNOPS-ordered).
    * @returns {string} e.g. `'C6H6'` for benzene.
    */
-  getName() {
-    const formula = this.getFormula(); // already CHNOPS-ordered
-    return Object.entries(formula)
+  getName(formula) {
+    const f = formula ?? this.getFormula();
+    return Object.entries(f)
       .map(([el, n]) => (n === 1 ? el : el + n))
       .join('');
   }
@@ -698,17 +714,16 @@ export class Molecule {
   /**
    * Returns the bond connecting `atomIdA` and `atomIdB`, or `null` if none exists.
    *
+   * Uses `_bondIndex` for O(1) lookup.
+   *
    * @param {string} atomIdA
    * @param {string} atomIdB
    * @returns {import('./Bond.js').Bond|null}
    */
   getBond(atomIdA, atomIdB) {
-    for (const bond of this.bonds.values()) {
-      if (bond.connects(atomIdA, atomIdB)) {
-        return bond;
-      }
-    }
-    return null;
+    const key = atomIdA < atomIdB ? `${atomIdA},${atomIdB}` : `${atomIdB},${atomIdA}`;
+    const bondId = this._bondIndex.get(key);
+    return bondId !== undefined ? (this.bonds.get(bondId) ?? null) : null;
   }
 
   /**
@@ -745,8 +760,9 @@ export class Molecule {
     }
     const parent = new Map([[atomIdA, null]]);
     const queue = [atomIdA];
-    outer: while (queue.length > 0) {
-      const current = queue.shift();
+    let queueHead = 0;
+    outer: while (queueHead < queue.length) {
+      const current = queue[queueHead++];
       for (const bId of this.atoms.get(current).bonds) {
         const b = this.bonds.get(bId);
         if (!b) {
@@ -814,10 +830,11 @@ export class Molecule {
       // BFS from u, skipping bondId, looking for v.
       const prev = new Map([[u, null]]);
       const queue = [u];
+      let queueHead = 0;
       let found = false;
 
-      outer: while (queue.length > 0) {
-        const cur = queue.shift();
+      outer: while (queueHead < queue.length) {
+        const cur = queue[queueHead++];
         for (const bId of this.atoms.get(cur)?.bonds ?? []) {
           if (bId === bondId) {
             continue;
@@ -919,8 +936,9 @@ export class Molecule {
       }
       const component = new Set();
       const queue = [startId];
-      while (queue.length > 0) {
-        const current = queue.shift();
+      let queueHead = 0;
+      while (queueHead < queue.length) {
+        const current = queue[queueHead++];
         if (visited.has(current)) {
           continue;
         }

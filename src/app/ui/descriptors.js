@@ -35,7 +35,7 @@ const PC_DESCRIPTIONS = {
   'HB Donors': 'Number of hydrogen-bond donors (NH and OH groups, Lipinski definition).',
   'HB Acceptors': 'Number of hydrogen-bond acceptors (N and O atoms, Lipinski definition).',
   'Rotatable Bonds': 'Count of single, non-aromatic, non-ring bonds between two non-terminal heavy atoms.',
-  Fsp3: 'Fraction of sp³ carbons — a measure of molecular complexity and three-dimensionality.',
+  'Fsp3 (carbons)': 'Fraction of sp³ carbons — a measure of molecular complexity and three-dimensionality.',
   'Ring Count': 'Total number of rings (smallest set of smallest rings, SSSR).',
   'Aromatic Rings': 'Number of fully aromatic rings.',
   Stereocenters: 'Number of atoms with a defined chirality annotation (@ or @@).',
@@ -56,7 +56,7 @@ function detailHighlightGroups(detail, molecule, label = '') {
     if (Array.isArray(detail.atoms[0])) {
       return detail.atoms.map(group => [...group]);
     }
-    if (label === 'Stereocenters') {
+    if (label === 'Stereocenters' || label === 'Fsp3 (carbons)') {
       return detail.atoms.map(atomId => [atomId]);
     }
     return [[...detail.atoms]];
@@ -186,7 +186,7 @@ export function updatePhysicochemical(molecule) {
       ['HB Donors', hbd.count, hbd],
       ['HB Acceptors', hba.count, hba],
       ['Rotatable Bonds', rot.count, rot],
-      ['Fsp3', fmtVal(fs), null],
+      ['Fsp3 (carbons)', fmtVal(fs.value), fs],
       ['Ring Count', rc.count, rc],
       ['Aromatic Rings', arc.count, arc],
       ['Stereocenters', sc.count, sc],

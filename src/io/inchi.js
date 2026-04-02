@@ -1147,7 +1147,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
     const componentHeavyAtomIds = formulaComponents.map(() => []);
 
     for (let i = 1; i <= n; i++) {
-      const atom = mol.addAtom(null, atomList[i]);
+      const atom = mol.addAtom(null, atomList[i], {}, { recompute: false });
       atom.resolveElement();
       idByIndex.set(i, atom.id);
       componentHeavyAtomIds[componentIndexByAtomIndex[i]]?.push(atom.id);
@@ -1690,7 +1690,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
         continue;
       }
       for (let i = 0; i < count; i++) {
-        const hAtom = mol.addAtom(null, 'H');
+        const hAtom = mol.addAtom(null, 'H', {}, { recompute: false });
         hAtom.resolveElement();
         applyHydrogenIsotope(idx, hAtom, hydrogenIsotopeQueues);
         hAtom.visible = false;
@@ -1737,7 +1737,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
           break;
         }
         const atom = candidates[0];
-        const hAtom = mol.addAtom(null, 'H');
+        const hAtom = mol.addAtom(null, 'H', {}, { recompute: false });
         hAtom.resolveElement();
         const atomIdx = atomIndexForId(atom.id);
         if (atomIdx != null) {
@@ -1822,7 +1822,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
       }
 
       mol.removeAtom(terminalHydrogen.id);
-      const newHydrogen = mol.addAtom(null, 'H');
+      const newHydrogen = mol.addAtom(null, 'H', {}, { recompute: false });
       newHydrogen.resolveElement();
       newHydrogen.visible = false;
       mol.addBond(null, internalNitrogen.id, newHydrogen.id, { order: 1 }, false);

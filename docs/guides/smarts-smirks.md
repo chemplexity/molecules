@@ -305,7 +305,6 @@ Each entry has `name` and `smirks`.
 | `phenolateProtonation`        | Phenolate → phenol             |
 | `alcoholDehydration`          | Alcohol → alkene               |
 | `alkylChlorideElimination`    | Alkyl chloride → alkene        |
-| `alcoholCleavage`             | Alcohol → carbocation fragment |
 
 ### Applying templates in bulk
 

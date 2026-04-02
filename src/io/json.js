@@ -35,14 +35,15 @@ export function fromJSON(json) {
   const mol = new Molecule();
 
   for (const a of data.atoms) {
-    mol.addAtom(a.id, a.name, a.properties ?? {});
+    mol.addAtom(a.id, a.name, a.properties ?? {}, { recompute: false });
   }
 
   for (const b of data.bonds) {
     if (mol.atoms.has(b.atoms[0]) && mol.atoms.has(b.atoms[1])) {
-      mol.addBond(null, b.atoms[0], b.atoms[1], b.properties ?? {});
+      mol.addBond(null, b.atoms[0], b.atoms[1], b.properties ?? {}, false);
     }
   }
 
+  mol._recomputeProperties();
   return mol;
 }

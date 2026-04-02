@@ -95,11 +95,11 @@ function saveGrid(molecules, key, renderFn, suffix) {
 // ---------------------------------------------------------------------------
 // Generate both grids
 // ---------------------------------------------------------------------------
-const opts = { showChiralLabels: true };
-saveGrid(randomMolecule, 'smiles', smi => renderMolSVGFromSMILES(smi, opts), 'smiles');
+const options = { showChiralLabels: true };
+saveGrid(randomMolecule, 'smiles', smi => renderMolSVGFromSMILES(smi, options), 'smiles');
 saveGrid(
   randomMolecule.filter(m => m.inchi),
   'inchi',
-  inchi => renderMolSVGFromINCHI(inchi, opts),
+  inchi => renderMolSVGFromINCHI(inchi, options),
   'inchi'
 );

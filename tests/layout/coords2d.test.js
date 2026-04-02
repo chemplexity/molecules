@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
 import { generateCoords, generateAndRefine2dCoords } from '../../src/layout/index.js';
-import { getAtomLabel, kekulize, labelTextOffset, perpUnit, secondaryDir } from '../../src/layout/mol2d-helpers.js';
+import { computeChargeBadgePlacement, computeLonePairDotPositions, displayedLonePairCount, getAtomLabel, kekulize, labelTextOffset, perpUnit, secondaryDir } from '../../src/layout/mol2d-helpers.js';
 import { refineExistingCoords } from '../../src/layout/coords2d.js';
 import { parseINCHI } from '../../src/io/inchi.js';
 import { parseSMILES } from '../../src/io/smiles.js';
@@ -1805,7 +1805,7 @@ describe('getAtomLabel — charged carbons', () => {
 });
 
 describe('getAtomLabel — hydroxyl orientation', () => {
-  it('keeps carboxylic-acid hydroxyl labels as OH', () => {
+  it('uses HO for carboxylic-acid hydroxyls when the carbonyl carbon is to the right', () => {
     const mol = parseSMILES('CC(=O)O');
     const hydroxylO = [...mol.atoms.values()].find(
       atom => atom.name === 'O' && atom.getNeighbors(mol).some(nb => nb.name === 'C' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1)
@@ -1817,7 +1817,7 @@ describe('getAtomLabel — hydroxyl orientation', () => {
     carbonylC.y = 0;
     assert.equal(
       getAtomLabel(hydroxylO, new Map([[hydroxylO.id, 1]]), atom => ({ x: atom.x, y: atom.y }), mol),
-      'OH'
+      'HO'
     );
   });
 
@@ -1833,6 +1833,475 @@ describe('getAtomLabel — hydroxyl orientation', () => {
       getAtomLabel(alcoholO, new Map([[alcoholO.id, 1]]), atom => ({ x: atom.x, y: atom.y }), mol),
       'HO'
     );
+  });
+
+  it('keeps vertically placed carboxylic-acid hydroxyl labels as OH', () => {
+    const mol = parseSMILES('CC(=O)O');
+    const hydroxylO = [...mol.atoms.values()].find(
+      atom => atom.name === 'O' && atom.getNeighbors(mol).some(nb => nb.name === 'C' && (mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1)
+    );
+    const carbonylC = hydroxylO.getNeighbors(mol).find(nb => nb.name === 'C');
+    hydroxylO.x = 0;
+    hydroxylO.y = 0;
+    carbonylC.x = 0;
+    carbonylC.y = -1;
+    assert.equal(
+      getAtomLabel(hydroxylO, new Map([[hydroxylO.id, 1]]), atom => ({ x: atom.x, y: atom.y }), mol),
+      'OH'
+    );
+  });
+
+  it('uses HO for the left carboxylic-acid oxygen in NC(CCC(O)=O)C(O)=O', () => {
+    const mol = parseSMILES('NC(CCC(O)=O)C(O)=O');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+    const hCounts = new Map();
+    for (const atom of mol.atoms.values()) {
+      if (atom.name === 'H') {
+        continue;
+      }
+      const count = atom.getNeighbors(mol).filter(n => n.name === 'H').length;
+      if (count > 0) {
+        hCounts.set(atom.id, count);
+      }
+    }
+    mol.hideHydrogens();
+
+    const leftHydroxylO = mol.atoms.get('O9');
+    assert.ok(leftHydroxylO, 'expected the left carboxylic-acid hydroxyl oxygen');
+    assert.equal(getAtomLabel(leftHydroxylO, hCounts, atom => ({ x: atom.x, y: atom.y }), mol), 'HO');
+  });
+});
+
+describe('computeLonePairDotPositions', () => {
+  it('places alcohol oxygen lone pairs in the open sectors around the final label geometry', () => {
+    const mol = parseSMILES('CO');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const hCounts = new Map();
+    for (const atom of mol.atoms.values()) {
+      if (atom.name === 'H') {
+        continue;
+      }
+      const count = atom.getNeighbors(mol).filter(neighbor => neighbor.name === 'H').length;
+      if (count > 0) {
+        hCounts.set(atom.id, count);
+      }
+    }
+    mol.hideHydrogens();
+
+    const oxygen = [...mol.atoms.values()].find(atom => atom.name === 'O' && atom.visible !== false);
+    assert.ok(oxygen, 'expected visible oxygen atom');
+
+    const toSVG = atom => ({ x: atom.x * 40, y: -atom.y * 40 });
+    const label = getAtomLabel(oxygen, hCounts, toSVG, mol);
+    const dots = computeLonePairDotPositions(oxygen, mol, {
+      pointForAtom: toSVG,
+      label,
+      fontSize: 14,
+      offsetFromBoundary: 5,
+      dotSpacing: 4.2
+    });
+
+    const center = toSVG(oxygen);
+    const carbon = oxygen.getNeighbors(mol).find(neighbor => neighbor.name === 'C');
+    const bondPoint = toSVG(carbon);
+    const bondDx = bondPoint.x - center.x;
+    const bondDy = bondPoint.y - center.y;
+    const bondLength = Math.hypot(bondDx, bondDy) || 1;
+    const bondUnit = { x: bondDx / bondLength, y: bondDy / bondLength };
+    const tangentUnit = { x: -bondUnit.y, y: bondUnit.x };
+    const pairCenters = [];
+    for (let i = 0; i < dots.length; i += 2) {
+      pairCenters.push({
+        x: (dots[i].x + dots[i + 1].x) / 2,
+        y: (dots[i].y + dots[i + 1].y) / 2
+      });
+    }
+    assert.equal(dots.length, 4, 'expected two lone pairs to render as four dots');
+    assert.ok(
+      pairCenters.every(pairCenter => {
+        const dx = pairCenter.x - center.x;
+        const dy = pairCenter.y - center.y;
+        return dx * bondUnit.x + dy * bondUnit.y < -5;
+      }),
+      'expected both lone pairs to align opposite the bond direction'
+    );
+    assert.ok(
+      pairCenters.some(pairCenter => {
+        const dx = pairCenter.x - center.x;
+        const dy = pairCenter.y - center.y;
+        return dx * tangentUnit.x + dy * tangentUnit.y < -5;
+      }),
+      'expected one lone pair on one side of the local bond axis'
+    );
+    assert.ok(
+      pairCenters.some(pairCenter => {
+        const dx = pairCenter.x - center.x;
+        const dy = pairCenter.y - center.y;
+        return dx * tangentUnit.x + dy * tangentUnit.y > 5;
+      }),
+      'expected one lone pair on the other side of the local bond axis'
+    );
+  });
+
+  it('places three lone pairs as left, top, and right around an isolated ion label', () => {
+    const mol = new Molecule();
+    const chlorine = mol.addAtom('cl1', 'Cl');
+    chlorine.x = 0;
+    chlorine.y = 0;
+
+    const dots = computeLonePairDotPositions(chlorine, mol, {
+      pointForAtom: atom => ({ x: atom.x, y: atom.y }),
+      label: 'Cl',
+      fontSize: 14,
+      pairCount: 3,
+      offsetFromBoundary: 5,
+      dotSpacing: 4
+    });
+    const pairCenters = [];
+    for (let i = 0; i < dots.length; i += 2) {
+      pairCenters.push({
+        x: (dots[i].x + dots[i + 1].x) / 2,
+        y: (dots[i].y + dots[i + 1].y) / 2
+      });
+    }
+
+    assert.equal(pairCenters.length, 3, 'expected three lone-pair centers');
+    assert.ok(
+      pairCenters.some(center => center.x < -10 && Math.abs(center.y) < 4),
+      'expected one lone pair to the left of the label'
+    );
+    assert.ok(
+      pairCenters.some(center => center.x > 10 && Math.abs(center.y) < 4),
+      'expected one lone pair to the right of the label'
+    );
+    assert.ok(
+      pairCenters.some(center => Math.abs(center.x) < 4 && center.y < -10),
+      'expected one lone pair above the label'
+    );
+  });
+
+  it('places two lone pairs at the upper diagonals around an isolated ion label', () => {
+    const mol = new Molecule();
+    const oxygen = mol.addAtom('o1', 'O');
+    oxygen.x = 0;
+    oxygen.y = 0;
+
+    const dots = computeLonePairDotPositions(oxygen, mol, {
+      pointForAtom: atom => ({ x: atom.x, y: atom.y }),
+      label: 'O',
+      fontSize: 14,
+      pairCount: 2,
+      offsetFromBoundary: 5,
+      dotSpacing: 4
+    });
+    const pairCenters = [];
+    for (let i = 0; i < dots.length; i += 2) {
+      pairCenters.push({
+        x: (dots[i].x + dots[i + 1].x) / 2,
+        y: (dots[i].y + dots[i + 1].y) / 2
+      });
+    }
+
+    assert.equal(pairCenters.length, 2, 'expected two lone-pair centers');
+    assert.ok(pairCenters.every(center => center.y < -5), 'expected both lone pairs above the label');
+    assert.ok(pairCenters.some(center => center.x < -5), 'expected one lone pair on the upper-left diagonal');
+    assert.ok(pairCenters.some(center => center.x > 5), 'expected one lone pair on the upper-right diagonal');
+  });
+
+  it('places four lone pairs at the cardinal positions around an isolated halide label', () => {
+    const mol = new Molecule();
+    const chlorine = mol.addAtom('cl1', 'Cl', { charge: -1 });
+    chlorine.x = 0;
+    chlorine.y = 0;
+
+    const dots = computeLonePairDotPositions(chlorine, mol, {
+      pointForAtom: atom => ({ x: atom.x, y: atom.y }),
+      label: 'Cl',
+      fontSize: 14,
+      offsetFromBoundary: 5,
+      dotSpacing: 4
+    });
+    const pairCenters = [];
+    for (let i = 0; i < dots.length; i += 2) {
+      pairCenters.push({
+        x: (dots[i].x + dots[i + 1].x) / 2,
+        y: (dots[i].y + dots[i + 1].y) / 2
+      });
+    }
+
+    assert.equal(pairCenters.length, 4, 'expected four lone-pair centers');
+    assert.ok(pairCenters.some(center => Math.abs(center.x) < 4 && center.y < -10), 'expected one lone pair above');
+    assert.ok(pairCenters.some(center => Math.abs(center.x) < 4 && center.y > 10), 'expected one lone pair below');
+    assert.ok(pairCenters.some(center => center.x < -10 && Math.abs(center.y) < 4), 'expected one lone pair left');
+    assert.ok(pairCenters.some(center => center.x > 10 && Math.abs(center.y) < 4), 'expected one lone pair right');
+  });
+
+  it('prefers a cardinal direction for an isolated single lone pair', () => {
+    const mol = new Molecule();
+    const nitrogen = mol.addAtom('n1', 'N');
+    nitrogen.x = 0;
+    nitrogen.y = 0;
+
+    const dots = computeLonePairDotPositions(nitrogen, mol, {
+      pointForAtom: atom => ({ x: atom.x, y: atom.y }),
+      label: 'N',
+      fontSize: 14,
+      pairCount: 1,
+      offsetFromBoundary: 5,
+      dotSpacing: 4
+    });
+    const center = {
+      x: (dots[0].x + dots[1].x) / 2,
+      y: (dots[0].y + dots[1].y) / 2
+    };
+
+    assert.ok(Math.abs(center.x) < 4, 'expected the lone pair to stay centered horizontally');
+    assert.ok(center.y < -10, 'expected the lone pair to be placed above the label');
+  });
+
+  it('falls back to an adjacent diagonal when the preferred single-lone-pair direction is blocked', () => {
+    const mol = new Molecule();
+    const nitrogen = mol.addAtom('n1', 'N');
+    nitrogen.x = 0;
+    nitrogen.y = 0;
+
+    const dots = computeLonePairDotPositions(nitrogen, mol, {
+      pointForAtom: atom => ({ x: atom.x, y: atom.y }),
+      label: 'N',
+      fontSize: 14,
+      pairCount: 1,
+      offsetFromBoundary: 5,
+      dotSpacing: 4,
+      extraOccupiedAngles: [-Math.PI / 2]
+    });
+    const center = {
+      x: (dots[0].x + dots[1].x) / 2,
+      y: (dots[0].y + dots[1].y) / 2
+    };
+
+    assert.ok(center.y < -5, 'expected the lone pair to stay on the upper side of the atom');
+    assert.ok(Math.abs(center.x) > 5, 'expected the blocked top position to fall back to a diagonal');
+  });
+
+  it('rotates ring-atom lone-pair north to the outward vertex bisector', () => {
+    const mol = new Molecule();
+    const oxygen = mol.addAtom('o1', 'O');
+    const carbonA = mol.addAtom('c1', 'C');
+    const carbonB = mol.addAtom('c2', 'C');
+    oxygen.x = 0;
+    oxygen.y = 0;
+    carbonA.x = -1;
+    carbonA.y = -1;
+    carbonB.x = 1;
+    carbonB.y = -1;
+    mol.addBond('b1', oxygen.id, carbonA.id, {}, false);
+    mol.addBond('b2', carbonA.id, carbonB.id, {}, false);
+    mol.addBond('b3', carbonB.id, oxygen.id, {}, false);
+
+    const dots = computeLonePairDotPositions(oxygen, mol, {
+      pointForAtom: atom => ({ x: atom.x * 20, y: atom.y * 20 }),
+      label: 'O',
+      fontSize: 14,
+      pairCount: 2,
+      offsetFromBoundary: 5,
+      dotSpacing: 4
+    });
+    const pairCenters = [];
+    for (let i = 0; i < dots.length; i += 2) {
+      pairCenters.push({
+        x: (dots[i].x + dots[i + 1].x) / 2,
+        y: (dots[i].y + dots[i + 1].y) / 2
+      });
+    }
+    const center = { x: oxygen.x * 20, y: oxygen.y * 20 };
+    const inward = {
+      x: (carbonA.x * 20 - center.x) + (carbonB.x * 20 - center.x),
+      y: (carbonA.y * 20 - center.y) + (carbonB.y * 20 - center.y)
+    };
+    const outward = { x: -inward.x, y: -inward.y };
+    const outwardLength = Math.hypot(outward.x, outward.y) || 1;
+    const outwardUnit = { x: outward.x / outwardLength, y: outward.y / outwardLength };
+    const tangentUnit = { x: -outwardUnit.y, y: outwardUnit.x };
+
+    assert.equal(pairCenters.length, 2, 'expected two lone-pair centers');
+    assert.ok(
+      pairCenters.every(pairCenter => {
+        const dx = pairCenter.x - center.x;
+        const dy = pairCenter.y - center.y;
+        return dx * outwardUnit.x + dy * outwardUnit.y > 5;
+      }),
+      'expected both lone pairs to point outward from the ring vertex'
+    );
+    assert.ok(
+      pairCenters.some(pairCenter => {
+        const dx = pairCenter.x - center.x;
+        const dy = pairCenter.y - center.y;
+        return dx * tangentUnit.x + dy * tangentUnit.y < -5;
+      }),
+      'expected one lone pair on the outward-left diagonal'
+    );
+    assert.ok(
+      pairCenters.some(pairCenter => {
+        const dx = pairCenter.x - center.x;
+        const dy = pairCenter.y - center.y;
+        return dx * tangentUnit.x + dy * tangentUnit.y > 5;
+      }),
+      'expected one lone pair on the outward-right diagonal'
+    );
+  });
+
+  it('counts one displayed lone pair for aromatic [nH] nitrogens', () => {
+    const mol = parseSMILES('c1ccc2[nH]ccc2c1');
+    const aromaticNH = [...mol.atoms.values()].find(atom => atom.name === 'N');
+
+    assert.ok(aromaticNH, 'expected aromatic [nH] atom');
+    assert.equal(displayedLonePairCount(aromaticNH, mol), 1);
+  });
+
+  it('counts no displayed lone pairs for tetrahydroborate boron', () => {
+    const mol = parseSMILES('[BH4-]');
+    const boron = [...mol.atoms.values()].find(atom => atom.name === 'B');
+
+    assert.ok(boron, 'expected boron atom');
+    assert.equal(displayedLonePairCount(boron, mol), 0);
+  });
+
+  it('keeps the top anionic ring nitrogen lone pairs above the atom in C1=CN=C[N-]1', () => {
+    const mol = parseSMILES('C1=CN=C[N-]1');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const hCounts = new Map();
+    for (const atom of mol.atoms.values()) {
+      if (atom.name === 'H') {
+        continue;
+      }
+      const count = atom.getNeighbors(mol).filter(neighbor => neighbor.name === 'H').length;
+      if (count > 0) {
+        hCounts.set(atom.id, count);
+      }
+    }
+    mol.hideHydrogens();
+
+    const topAnionicNitrogen = [...mol.atoms.values()]
+      .filter(atom => atom.name === 'N' && atom.getCharge() === -1 && atom.visible !== false)
+      .sort((a, b) => a.y - b.y)[0];
+    assert.ok(topAnionicNitrogen, 'expected visible anionic ring nitrogen');
+
+    const toSVG = atom => ({ x: atom.x * 40, y: -atom.y * 40 });
+    const center = toSVG(topAnionicNitrogen);
+    const label = getAtomLabel(topAnionicNitrogen, hCounts, toSVG, mol);
+    const dots = computeLonePairDotPositions(topAnionicNitrogen, mol, {
+      pointForAtom: toSVG,
+      label,
+      fontSize: 14
+    });
+    const pairCenters = [];
+    for (let i = 0; i < dots.length; i += 2) {
+      pairCenters.push({
+        x: (dots[i].x + dots[i + 1].x) / 2,
+        y: (dots[i].y + dots[i + 1].y) / 2
+      });
+    }
+
+    assert.equal(pairCenters.length, 2, 'expected two displayed lone pairs');
+    assert.ok(pairCenters.every(pairCenter => pairCenter.y < center.y - 5), 'expected both lone pairs above the nitrogen');
+  });
+
+  it('supports stable orientation geometry separate from rendered positions', () => {
+    const mol = new Molecule();
+    const oxygen = mol.addAtom('o1', 'O');
+    const carbon = mol.addAtom('c1', 'C');
+    oxygen.x = 0;
+    oxygen.y = 0;
+    carbon.x = 1;
+    carbon.y = 0;
+    mol.addBond('b1', oxygen.id, carbon.id, { order: 2 }, false);
+
+    const dots = computeLonePairDotPositions(oxygen, mol, {
+      pointForAtom: atom => (atom.id === oxygen.id ? { x: 0, y: 0 } : { x: 5, y: 20 }),
+      orientationPointForAtom: atom => (atom.id === oxygen.id ? { x: 0, y: 0 } : { x: 20, y: 0 }),
+      label: 'O',
+      fontSize: 14
+    });
+    const pairCenters = [];
+    for (let i = 0; i < dots.length; i += 2) {
+      pairCenters.push({
+        x: (dots[i].x + dots[i + 1].x) / 2,
+        y: (dots[i].y + dots[i + 1].y) / 2
+      });
+    }
+
+    assert.ok(pairCenters.every(pairCenter => pairCenter.x < -5), 'expected lone-pair orientation to follow the stable outward reference direction');
+  });
+
+  it('places lone pairs on the outward side of a northwest-pointing carbonyl oxygen', () => {
+    const mol = new Molecule();
+    const oxygen = mol.addAtom('o1', 'O');
+    const carbon = mol.addAtom('c1', 'C');
+    oxygen.x = 0;
+    oxygen.y = 0;
+    carbon.x = 1;
+    carbon.y = 1;
+    mol.addBond('b1', oxygen.id, carbon.id, { order: 2 }, false);
+
+    const dots = computeLonePairDotPositions(oxygen, mol, {
+      pointForAtom: atom => ({ x: atom.x * 20, y: -atom.y * 20 }),
+      label: 'O',
+      fontSize: 14
+    });
+    const pairCenters = [];
+    for (let i = 0; i < dots.length; i += 2) {
+      pairCenters.push({
+        x: (dots[i].x + dots[i + 1].x) / 2,
+        y: (dots[i].y + dots[i + 1].y) / 2
+      });
+    }
+
+    assert.equal(pairCenters.length, 2, 'expected two lone-pair centers');
+    assert.ok(pairCenters.some(pairCenter => pairCenter.x < -5), 'expected one lone pair on the west side of the oxygen');
+    assert.ok(pairCenters.some(pairCenter => pairCenter.y > 5), 'expected one lone pair on the outward side of the oxygen');
+    assert.ok(pairCenters.every(pairCenter => !(pairCenter.x > 5 && pairCenter.y < -5)), 'expected no lone pair to fall into the inward southeast quadrant');
+  });
+});
+
+describe('computeChargeBadgePlacement', () => {
+  it('moves a charge badge away from a bond direction that would overlap it', () => {
+    const mol = new Molecule();
+    const nitrogen = mol.addAtom('n1', 'N', { charge: 1 });
+    const carbon = mol.addAtom('c1', 'C');
+    nitrogen.x = 0;
+    nitrogen.y = 0;
+    carbon.x = 1;
+    carbon.y = -1;
+    mol.addBond('b1', nitrogen.id, carbon.id, {}, false);
+
+    const placement = computeChargeBadgePlacement(nitrogen, mol, {
+      pointForAtom: atom => ({ x: atom.x * 20, y: atom.y * 20 }),
+      label: 'N',
+      fontSize: 14
+    });
+
+    assert.ok(placement, 'expected charge badge placement');
+    assert.ok(placement.x < -5, 'expected the charge badge to avoid the northeast bond direction');
+    assert.ok(placement.y > 5, 'expected the charge badge to avoid the northeast bond direction');
+  });
+
+  it('avoids lone-pair occupied directions when placing a charge badge', () => {
+    const mol = new Molecule();
+    const oxygen = mol.addAtom('o1', 'O', { charge: -1 });
+    oxygen.x = 0;
+    oxygen.y = 0;
+
+    const placement = computeChargeBadgePlacement(oxygen, mol, {
+      pointForAtom: atom => ({ x: atom.x * 20, y: atom.y * 20 }),
+      label: 'O',
+      fontSize: 14,
+      extraOccupiedAngles: [-Math.PI / 4]
+    });
+
+    assert.ok(placement, 'expected charge badge placement');
+    assert.ok(!(placement.x > 5 && placement.y < -5), 'expected the charge badge to avoid the blocked top-right lone-pair direction');
   });
 });
 

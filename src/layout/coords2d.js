@@ -192,6 +192,7 @@ function placeRingSystem(molecule, system, rings, bondLength, origin, coords) {
   }, ringIds[0]);
   const visitedRings = new Set();
   const queue = [startRingId];
+  let queueHead = 0;
   visitedRings.add(startRingId);
 
   // Place the first ring as a regular polygon (or ellipse) at origin.
@@ -199,8 +200,8 @@ function placeRingSystem(molecule, system, rings, bondLength, origin, coords) {
   const firstRing = rings[startRingId];
   placeRing(firstRing, origin.x, origin.y, bondLength, 0, coords);
 
-  while (queue.length > 0) {
-    const curRingIdx = queue.shift();
+  while (queueHead < queue.length) {
+    const curRingIdx = queue[queueHead++];
     const curCenter = centroid(rings[curRingIdx], coords);
 
     for (const nextRingIdx of ringAdj.get(curRingIdx)) {
@@ -1022,8 +1023,9 @@ function refineCoords(molecule, coords, frozen, bondLength) {
   function subtreeSize(startId) {
     const visited = new Set();
     const q = [startId];
-    while (q.length > 0) {
-      const cur = q.shift();
+    let qHead = 0;
+    while (qHead < q.length) {
+      const cur = q[qHead++];
       if (visited.has(cur)) {
         continue;
       }
@@ -1153,8 +1155,9 @@ function refineCoords(molecule, coords, frozen, bondLength) {
       // Collect the subtree rooted at subId (no frozen atoms).
       const subtree = new Set();
       const q = [subId];
-      while (q.length > 0) {
-        const cur = q.shift();
+      let qHead = 0;
+      while (qHead < q.length) {
+        const cur = q[qHead++];
         if (subtree.has(cur)) {
           continue;
         }
@@ -1765,8 +1768,9 @@ export function generateCoords(molecule, options = {}) {
       const srcSet = new Set(src.atomIds);
       const visited = new Set(srcSet);
       const q = [...src.atomIds];
-      while (q.length > 0) {
-        const cur = q.shift();
+      let qHead = 0;
+      while (qHead < q.length) {
+        const cur = q[qHead++];
         for (const nb of _layoutNeighbors(molecule, cur)) {
           if (visited.has(nb)) {
             continue;
@@ -1788,9 +1792,10 @@ export function generateCoords(molecule, options = {}) {
     const ordered = [];
     const inQueue = new Set();
     const bfsQ = [unsorted[0]];
+    let bfsQHead = 0;
     inQueue.add(unsorted[0]);
-    while (bfsQ.length > 0) {
-      const cur = bfsQ.shift();
+    while (bfsQHead < bfsQ.length) {
+      const cur = bfsQ[bfsQHead++];
       ordered.push(cur);
       // Among unqueued ring systems that can reach `cur` (or be reached from it),
       // enqueue preferring the largest (already sorted by size in unsorted).
@@ -2059,8 +2064,9 @@ export function generateCoords(molecule, options = {}) {
       function chainSize(startId, ringSet) {
         const vis = new Set();
         const q = [startId];
-        while (q.length) {
-          const cur = q.shift();
+        let qHead = 0;
+        while (qHead < q.length) {
+          const cur = q[qHead++];
           if (vis.has(cur)) {
             continue;
           }
@@ -2239,8 +2245,9 @@ export function generateCoords(molecule, options = {}) {
       const isHAtom = id => molecule.atoms.get(id)?.name === 'H';
       const snapQueue = [...ringAtomSet].filter(id => !isHAtom(id));
       const snapSeen = new Set(snapQueue);
-      while (snapQueue.length > 0) {
-        const parentId = snapQueue.shift();
+      let snapQueueHead = 0;
+      while (snapQueueHead < snapQueue.length) {
+        const parentId = snapQueue[snapQueueHead++];
         const cp = coords.get(parentId);
         if (!cp) {
           continue;
@@ -2280,8 +2287,9 @@ export function generateCoords(molecule, options = {}) {
       const bfsSnapFromRings = () => {
         const snapQ = [...ringAtomSet].filter(id => !isHAtomCC(id));
         const snapSeen = new Set(snapQ);
-        while (snapQ.length > 0) {
-          const pId = snapQ.shift();
+        let snapQHead = 0;
+        while (snapQHead < snapQ.length) {
+          const pId = snapQ[snapQHead++];
           const cp = coords.get(pId);
           if (!cp) {
             continue;
@@ -2399,8 +2407,9 @@ export function generateCoords(molecule, options = {}) {
               let anchored = false;
               const ancBfsQ = [subId];
               const ancSeen = new Set([subId, ringId]);
-              outer2: while (ancBfsQ.length > 0) {
-                const cur = ancBfsQ.shift();
+              let ancBfsQHead = 0;
+              outer2: while (ancBfsQHead < ancBfsQ.length) {
+                const cur = ancBfsQ[ancBfsQHead++];
                 for (const nb of _layoutNeighbors(molecule, cur)) {
                   if (ancSeen.has(nb) || isHSub(nb)) {
                     continue;
@@ -2495,8 +2504,9 @@ export function generateCoords(molecule, options = {}) {
           let anchored = false;
           const ancBfsQ2 = [subId];
           const ancSeen2 = new Set([subId, parentRingId]);
-          outer3: while (ancBfsQ2.length > 0) {
-            const cur = ancBfsQ2.shift();
+          let ancBfsQ2Head = 0;
+          outer3: while (ancBfsQ2Head < ancBfsQ2.length) {
+            const cur = ancBfsQ2[ancBfsQ2Head++];
             for (const nb of _layoutNeighbors(molecule, cur)) {
               if (ancSeen2.has(nb) || isHProx(nb)) {
                 continue;
@@ -2601,9 +2611,10 @@ export function generateCoords(molecule, options = {}) {
           // BFS to collect the subtree and check if it bridges another ring.
           const subtree = new Set([subId]);
           const bfsQ = [subId];
+          let bfsQHead = 0;
           let anchored = false;
-          outerF2: while (bfsQ.length > 0) {
-            const cur = bfsQ.shift();
+          outerF2: while (bfsQHead < bfsQ.length) {
+            const cur = bfsQ[bfsQHead++];
             for (const nb of _layoutNeighbors(molecule, cur)) {
               if (nb === ringId || subtree.has(nb) || isHF2(nb)) {
                 continue;
@@ -2685,8 +2696,9 @@ export function generateCoords(molecule, options = {}) {
       {
         const snapQueue = [acyclicRoot];
         const snapSeen = new Set(snapQueue);
-        while (snapQueue.length > 0) {
-          const pId = snapQueue.shift();
+        let snapQueueHead = 0;
+        while (snapQueueHead < snapQueue.length) {
+          const pId = snapQueue[snapQueueHead++];
           const cp = coords.get(pId);
           if (!cp) {
             continue;

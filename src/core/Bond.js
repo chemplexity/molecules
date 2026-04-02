@@ -2,6 +2,16 @@
 
 import { randomUUID } from 'node:crypto';
 
+// ---------------------------------------------------------------------------
+// Element-set constants (module-level to avoid repeated inline allocations)
+// ---------------------------------------------------------------------------
+
+/** Atoms that can serve as a carbonyl-like centre (C=O, C=S, S=O, P=O, …). */
+const _CARBONYL_CENTERS = new Set(['C', 'S', 'P']);
+
+/** Heteroatoms that can receive a multiple bond from a carbonyl-like centre. */
+const _HETEROATOMS = new Set(['O', 'N', 'S', 'P']);
+
 /**
  * Represents a bond (edge) in a molecular graph.
  *
@@ -16,10 +26,10 @@ export class Bond {
    * @param {string|null} [id]  - Unique identifier. Auto-generated as a numeric string when omitted or null.
    * @param {[string, string]} atoms - IDs of the two connected atoms.
    * @param {object} [properties={}]
-   * @param {number} [properties.order=1]        - Bond order. Integer localized bonds use 1/2/3/4;
+   * @param {number} [properties.order=1] - Bond order. Integer localized bonds use 1/2/3/4;
    *   aromatic bonds may also use 1.5 as a resonance-averaged order.
    * @param {boolean} [properties.aromatic=false] - Whether the bond is aromatic.
-   * @param {string|null} [properties.stereo=null]    - SMILES directional-bond marker: `'/'`
+   * @param {string|null} [properties.stereo=null] - SMILES directional-bond marker: `'/'`
    *   or `'\\'`. `atoms[0]` is the source and `atoms[1]` the target as written in SMILES.
    *   `'/'` means traversal src→tgt goes upward; `'\\'` means downward. E/Z designation is
    *   derived by `Molecule.getEZStereo()`, not stored here directly.
@@ -121,8 +131,9 @@ export class Bond {
     // BFS from idA to idB through paths that do NOT use this bond.
     const visited = new Set([idA]);
     const queue = [idA];
-    while (queue.length > 0) {
-      const current = queue.shift();
+    let queueHead = 0;
+    while (queueHead < queue.length) {
+      const current = queue[queueHead++];
       for (const bId of molecule.atoms.get(current)?.bonds ?? []) {
         if (bId === this.id) {
           continue;
@@ -274,7 +285,7 @@ export class Bond {
         if (hetero.name !== 'N') {
           continue;
         }
-        if (!['C', 'S', 'P'].includes(center.name)) {
+        if (!_CARBONYL_CENTERS.has(center.name)) {
           continue;
         }
         for (const bId of center.bonds) {
@@ -287,7 +298,7 @@ export class Bond {
           }
           const otherId = b.getOtherAtom(center.id);
           const other = molecule.atoms.get(otherId);
-          if (other && ['O', 'N', 'S', 'P'].includes(other.name)) {
+          if (other && _HETEROATOMS.has(other.name)) {
             return true;
           }
         }

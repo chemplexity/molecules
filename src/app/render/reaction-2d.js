@@ -44,6 +44,7 @@ let _reactionPreviewForcedStereoBondTypes = new Map();
 let _reactionPreviewForcedStereoBondCenters = new Map();
 let _reactionPreviewReactantReferenceCoords = new Map();
 let _reactionPreviewHighlightMappings = null;
+let _reactionPreviewForceArrowOffset = 0;
 
 export function _hasReactionPreview() {
   return _reactionPreviewReactantAtomIds.size > 0 && _reactionPreviewProductAtomIds.size > 0;
@@ -115,6 +116,7 @@ export function _clearReactionPreviewState() {
   _reactionPreviewForcedStereoBondCenters = new Map();
   _reactionPreviewReactantReferenceCoords = new Map();
   _reactionPreviewHighlightMappings = null;
+  _reactionPreviewForceArrowOffset = 0;
 }
 
 function _serializeSnapshotMol(mol) {
@@ -312,20 +314,20 @@ function _reaction2dArrowGeometry(items, atomIds, { hydrogenRadiusScale = 1, rad
   return { minX, maxX, minY, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
 }
 
-function _reaction2dArrowGeometryPreferHeavy(items, atomIds, opts = {}) {
+function _reaction2dArrowGeometryPreferHeavy(items, atomIds, options = {}) {
   const heavyItems = items.filter(item => atomIds.has(item.id) && item.name !== 'H');
   if (heavyItems.length > 0) {
-    return _reaction2dArrowGeometry(heavyItems, atomIds, opts);
+    return _reaction2dArrowGeometry(heavyItems, atomIds, options);
   }
-  return _reaction2dArrowGeometry(items, atomIds, opts);
+  return _reaction2dArrowGeometry(items, atomIds, options);
 }
 
 export function _reaction2dSourceAtomId(productAtomId) {
   return typeof productAtomId === 'string' ? productAtomId.split(':').slice(1).join(':') : productAtomId;
 }
 
-export function _reaction2dProductGeometries(items, opts = {}) {
-  return (_reactionPreviewProductComponentAtomIdSets ?? []).map(atomIds => _reaction2dArrowGeometryPreferHeavy(items, atomIds, opts)).filter(Boolean);
+export function _reaction2dProductGeometries(items, options = {}) {
+  return (_reactionPreviewProductComponentAtomIdSets ?? []).map(atomIds => _reaction2dArrowGeometryPreferHeavy(items, atomIds, options)).filter(Boolean);
 }
 
 export function _reaction2dArrowEndpoints(reactant, product, pad = 0.45) {
@@ -384,6 +386,107 @@ export function _reaction2dArrowEndpoints(reactant, product, pad = 0.45) {
     return null;
   }
   return { start: fallbackStart, end: fallbackEnd, ux, uy };
+}
+
+function _pointToSegmentDistance(point, start, end) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq <= 1e-9) {
+    return Math.hypot(point.x - start.x, point.y - start.y);
+  }
+  const t = Math.max(0, Math.min(1, ((point.x - start.x) * dx + (point.y - start.y) * dy) / lenSq));
+  const projX = start.x + dx * t;
+  const projY = start.y + dy * t;
+  return Math.hypot(point.x - projX, point.y - projY);
+}
+
+export function _chooseReactionPreviewForceArrow(
+  reactant,
+  product,
+  items,
+  {
+    pad = 16,
+    radiusForItem = () => 0,
+    hydrogenRadiusScale = 0.75,
+    previousOffset = 0,
+    stickyTolerance = 5
+  } = {}
+) {
+  const arrow = _reaction2dArrowEndpoints(reactant, product, pad);
+  if (!arrow) {
+    return null;
+  }
+  const startInsideReactant =
+    arrow.start.x >= reactant.minX && arrow.start.x <= reactant.maxX && arrow.start.y >= reactant.minY && arrow.start.y <= reactant.maxY;
+  const endInsideProduct = arrow.end.x >= product.minX && arrow.end.x <= product.maxX && arrow.end.y >= product.minY && arrow.end.y <= product.maxY;
+  if (startInsideReactant || endInsideProduct) {
+    return null;
+  }
+
+  const { start, end, ux, uy } = arrow;
+  const lineLength = Math.hypot(end.x - start.x, end.y - start.y);
+  if (lineLength < 14) {
+    return null;
+  }
+  const px = -uy;
+  const py = ux;
+  const verticalSpan = Math.max(reactant.maxY - reactant.minY, product.maxY - product.minY);
+  const maxOffset = Math.max(14, Math.min(54, verticalSpan * 0.9 + 10));
+  const candidateOffsets = [0, -10, 10, -18, 18, -28, 28, -40, 40, -54, 54].filter(offset => Math.abs(offset) <= maxOffset + 1e-6);
+
+  let best = null;
+  let bestClearance = -Infinity;
+  let bestOffsetPreference = Infinity;
+  const linePad = 7;
+  for (const offset of candidateOffsets) {
+    const shiftedStart = { x: start.x + px * offset, y: start.y + py * offset };
+    const shiftedEnd = { x: end.x + px * offset, y: end.y + py * offset };
+    let minClearance = Infinity;
+    for (const item of items) {
+      if (!Number.isFinite(item?.x) || !Number.isFinite(item?.y)) {
+        continue;
+      }
+      const radius = radiusForItem(item) * (item.name === 'H' ? hydrogenRadiusScale : 1);
+      const clearance = _pointToSegmentDistance(item, shiftedStart, shiftedEnd) - radius - linePad;
+      if (clearance < minClearance) {
+        minClearance = clearance;
+      }
+    }
+    const offsetPreference = Math.abs(offset);
+    if (
+      minClearance > bestClearance + 1e-6 ||
+      (Math.abs(minClearance - bestClearance) <= 1e-6 && offsetPreference < bestOffsetPreference)
+    ) {
+      best = { start: shiftedStart, end: shiftedEnd, ux, uy, offset };
+      bestClearance = minClearance;
+      bestOffsetPreference = offsetPreference;
+    }
+  }
+
+  if (best && Number.isFinite(previousOffset)) {
+    const sticky = candidateOffsets.find(offset => Math.abs(offset - previousOffset) <= 1e-6);
+    if (sticky != null) {
+      const shiftedStart = { x: start.x + px * sticky, y: start.y + py * sticky };
+      const shiftedEnd = { x: end.x + px * sticky, y: end.y + py * sticky };
+      let stickyClearance = Infinity;
+      for (const item of items) {
+        if (!Number.isFinite(item?.x) || !Number.isFinite(item?.y)) {
+          continue;
+        }
+        const radius = radiusForItem(item) * (item.name === 'H' ? hydrogenRadiusScale : 1);
+        const clearance = _pointToSegmentDistance(item, shiftedStart, shiftedEnd) - radius - linePad;
+        if (clearance < stickyClearance) {
+          stickyClearance = clearance;
+        }
+      }
+      if (stickyClearance + stickyTolerance >= bestClearance) {
+        best = { start: shiftedStart, end: shiftedEnd, ux, uy, offset: sticky };
+      }
+    }
+  }
+
+  return best;
 }
 
 export function _centerReaction2dPairCoords(mol, bondLength = 1.5) {
@@ -925,15 +1028,16 @@ export function _renderReactionPreviewArrowForce(nodes) {
     radiusForItem: node => atomRadius(node.protons),
     hydrogenRadiusScale: 0.75
   });
-  const arrow = _reaction2dArrowEndpoints(reactant, product, 16);
+  const arrow = _chooseReactionPreviewForceArrow(reactant, product, nodes, {
+    pad: 16,
+    radiusForItem: node => atomRadius(node.protons),
+    hydrogenRadiusScale: 0.75,
+    previousOffset: _reactionPreviewForceArrowOffset
+  });
   if (!arrow) {
     return;
   }
-  const startInsideReactant = arrow.start.x >= reactant.minX && arrow.start.x <= reactant.maxX && arrow.start.y >= reactant.minY && arrow.start.y <= reactant.maxY;
-  const endInsideProduct = arrow.end.x >= product.minX && arrow.end.x <= product.maxX && arrow.end.y >= product.minY && arrow.end.y <= product.maxY;
-  if (startInsideReactant || endInsideProduct) {
-    return;
-  }
+  _reactionPreviewForceArrowOffset = arrow.offset ?? 0;
   const x1 = arrow.start.x;
   const y1 = arrow.start.y;
   const x2 = arrow.end.x;
@@ -1086,6 +1190,40 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
   }
   _reactionPreviewHighlightMappings = [new Map(site.highlightMapping)];
   _setHighlight([site.highlightMapping]);
+}
+
+export function _reapplyActiveReactionPreview() {
+  if (!_reactionPreviewLocked || !_activeReactionSmirks || !_reactionPreviewSourceMol) {
+    return false;
+  }
+  const entry = Object.values(reactionTemplates).find(candidate => candidate.smirks === _activeReactionSmirks);
+  if (!entry) {
+    return false;
+  }
+  const sourceMol = _reactionPreviewSourceMol.clone();
+  const reactantSmarts = entry.smirks.split('>>')[0]?.trim();
+  if (!reactantSmarts) {
+    return false;
+  }
+  const mappings = [...findSMARTS(sourceMol, reactantSmarts)];
+  if (mappings.length === 0) {
+    return false;
+  }
+  const matchGroups = _filterReactionMatchGroups(sourceMol, entry, reactantSmarts, mappings);
+  if (matchGroups.length === 0) {
+    return false;
+  }
+  _activateReactionEntry(
+    sourceMol,
+    {
+      ...entry,
+      matchGroups
+    },
+    Math.min(_activeReactionMatchIndex, matchGroups.length - 1),
+    { lock: true }
+  );
+  updateReactionTemplatesPanel();
+  return true;
 }
 
 export function _alignReaction2dProductOrientation(mol) {

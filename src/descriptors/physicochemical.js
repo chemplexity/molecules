@@ -3,6 +3,19 @@
 import { molecularMass } from './molecular.js';
 
 // ---------------------------------------------------------------------------
+// Element-set constants (module-level to avoid repeated inline allocations)
+// ---------------------------------------------------------------------------
+
+/** Heteroatoms that accept a multiple bond from a carbonyl-like centre. */
+const _HETEROATOMS = new Set(['O', 'N', 'S', 'P']);
+
+/** Atoms that can act as a carbonyl-like centre (C=O, C=S, S=O, P=O, …). */
+const _CARBONYL_CENTERS = new Set(['C', 'S', 'P']);
+
+/** Heteroatoms that donate lone pairs to oxygen/sulphur-like acceptor sites. */
+const _OSP_HETEROATOMS = new Set(['O', 'S', 'P']);
+
+// ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
 
@@ -144,7 +157,7 @@ function _hasMultipleBondToHetero(center, mol, excludeBondId = null) {
       continue;
     }
     const other = mol.atoms.get(bond.getOtherAtom(center.id));
-    if (other && ['O', 'N', 'S', 'P'].includes(other.name)) {
+    if (other && _HETEROATOMS.has(other.name)) {
       return true;
     }
   }
@@ -164,7 +177,7 @@ function _isAcidicOH(atom, mol) {
       continue;
     }
     const other = mol.atoms.get(bond.getOtherAtom(atom.id));
-    if (other && ['C', 'S', 'P'].includes(other.name) && _hasMultipleBondToHetero(other, mol, bId)) {
+    if (other && _CARBONYL_CENTERS.has(other.name) && _hasMultipleBondToHetero(other, mol, bId)) {
       return true;
     }
   }
@@ -181,7 +194,7 @@ function _isAmideLikeNitrogen(atom, mol) {
       continue;
     }
     const other = mol.atoms.get(bond.getOtherAtom(atom.id));
-    if (!other || !['C', 'S', 'P'].includes(other.name)) {
+    if (!other || !_CARBONYL_CENTERS.has(other.name)) {
       continue;
     }
     // Only suppress acceptor behaviour when the adjacent multiple bond is to
@@ -201,7 +214,7 @@ function _isAmideLikeNitrogen(atom, mol) {
         continue;
       }
       const neighbor = mol.atoms.get(bond2.getOtherAtom(other.id));
-      if (neighbor && ['O', 'S', 'P'].includes(neighbor.name)) {
+      if (neighbor && _OSP_HETEROATOMS.has(neighbor.name)) {
         return true; // true amide-like: C=O–N, C=S–N, etc.
       }
     }
@@ -438,16 +451,18 @@ export function rotatableBondCount(molecule) {
  * complexity and three-dimensionality.
  *
  * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {number} Value in [0, 1] rounded to three decimal places.
+ * @returns {{ value: number, atoms: string[] }} `value` is rounded to three
+ *   decimal places; `atoms` is the sorted list of sp3 carbon atom IDs.
  */
 export function fsp3(molecule) {
   assertMolecule(molecule, 'molecule');
   const carbons = _heavyAtoms(molecule).filter(a => a.name === 'C');
   if (carbons.length === 0) {
-    return 0;
+    return { value: 0, atoms: [] };
   }
-  const sp3Count = carbons.filter(a => _hybSp(a, molecule) === 'sp3').length;
-  return Math.round((sp3Count / carbons.length) * 1000) / 1000;
+  const sp3Atoms = carbons.filter(a => _hybSp(a, molecule) === 'sp3');
+  const value = Math.round((sp3Atoms.length / carbons.length) * 1000) / 1000;
+  return { value, atoms: _sortIds(sp3Atoms.map(a => a.id)) };
 }
 
 // ---------------------------------------------------------------------------

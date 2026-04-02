@@ -8,13 +8,13 @@ export { generateCoords, refineExistingCoords } from './coords2d.js';
  * Generate 2D coordinates for `mol` then refine them.
  *
  * @param {import('../core/Molecule.js').Molecule} mol
- * @param {object} [opts]
- * @param {boolean} [opts.suppressH=true]
- * @param {number}  [opts.bondLength=1.5]
- * @param {number}  [opts.maxPasses=6]
- * @param {boolean} [opts.freezeRings=true]
- * @param {boolean} [opts.freezeChiralCenters=false]
- * @param {boolean} [opts.allowBranchReflect=true]
+ * @param {object} [options]
+ * @param {boolean} [options.suppressH=true]
+ * @param {number}  [options.bondLength=1.5]
+ * @param {number}  [options.maxPasses=6]
+ * @param {boolean} [options.freezeRings=true]
+ * @param {boolean} [options.freezeChiralCenters=false]
+ * @param {boolean} [options.allowBranchReflect=true]
  */
 export function generateAndRefine2dCoords(
   mol,

@@ -25,8 +25,9 @@ export function findPreferredBackbonePath(molecule) {
   for (const startId of heavyIds) {
     const prev = new Map([[startId, null]]);
     const queue = [startId];
-    while (queue.length > 0) {
-      const cur = queue.shift();
+    let queueHead = 0;
+    while (queueHead < queue.length) {
+      const cur = queue[queueHead++];
       for (const nb of _layoutNeighbors(molecule, cur)) {
         if (molecule.atoms.get(nb)?.name === 'H' || prev.has(nb)) {
           continue;
@@ -131,8 +132,9 @@ export function collectSideAtoms(molecule, startId, blockedId) {
   const side = new Set();
   const queue = [startId];
   const seen = new Set([blockedId]);
-  while (queue.length > 0) {
-    const cur = queue.shift();
+  let queueHead = 0;
+  while (queueHead < queue.length) {
+    const cur = queue[queueHead++];
     if (seen.has(cur)) {
       continue;
     }

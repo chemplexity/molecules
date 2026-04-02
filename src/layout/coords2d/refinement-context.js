@@ -38,8 +38,9 @@ export function collectRefinementSubtree(molecule, startId, blockedId, frozenAto
   const subtree = new Set();
   const queue = [startId];
   const seen = new Set([blockedId]);
-  while (queue.length > 0) {
-    const cur = queue.shift();
+  let queueHead = 0;
+  while (queueHead < queue.length) {
+    const cur = queue[queueHead++];
     if (seen.has(cur)) {
       continue;
     }
@@ -87,8 +88,9 @@ export function collectCycleData(molecule) {
   const hasAlternatePath = (startId, endId, excludedBondId) => {
     const queue = [startId];
     const seen = new Set();
-    while (queue.length > 0) {
-      const cur = queue.shift();
+    let queueHead = 0;
+    while (queueHead < queue.length) {
+      const cur = queue[queueHead++];
       if (cur === endId) {
         return true;
       }
@@ -154,8 +156,9 @@ export function collectRingSystemCandidates(molecule, bondLength, cycleData, gen
     }
     const atomIds = new Set();
     const queue = [atomId];
-    while (queue.length > 0) {
-      const cur = queue.shift();
+    let queueHead = 0;
+    while (queueHead < queue.length) {
+      const cur = queue[queueHead++];
       if (seen.has(cur) || !ringAtomSet.has(cur)) {
         continue;
       }

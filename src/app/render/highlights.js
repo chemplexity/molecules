@@ -65,6 +65,7 @@ const _functionalGroupAnchorCache = new Map();
 let _persistentHighlightFallback = null;
 let _activeFunctionalGroupKey = null;
 let _activeFunctionalGroupMatchIndex = 0;
+const FUNCTIONAL_GROUP_ALL_MATCH_INDEX = -1;
 
 function _rememberHoveredFunctionalGroupMappings(mappings) {
   if (!mappings?.length) {
@@ -103,11 +104,65 @@ function _clearActiveFunctionalGroupState() {
   _activeFunctionalGroupMatchIndex = 0;
 }
 
+/**
+ * Normalizes a functional-group match index for a given site count.
+ *
+ * `-1` is reserved for the synthetic "All" cycle state when there are
+ * multiple matches; otherwise the value is clamped into `[0, siteCount - 1]`.
+ *
+ * @param {number} index
+ * @param {number} siteCount
+ * @returns {number}
+ */
+function _normalizeFunctionalGroupMatchIndex(index, siteCount) {
+  if (siteCount <= 1) {
+    return 0;
+  }
+  if (index === FUNCTIONAL_GROUP_ALL_MATCH_INDEX) {
+    return FUNCTIONAL_GROUP_ALL_MATCH_INDEX;
+  }
+  return Math.max(0, Math.min(index ?? 0, siteCount - 1));
+}
+
+/**
+ * Cycles through functional-group match states, including the synthetic
+ * "All" state after the last individual match.
+ *
+ * @param {number} currentIndex
+ * @param {number} delta
+ * @param {number} siteCount
+ * @returns {number}
+ */
+function _cycleFunctionalGroupMatchIndex(currentIndex, delta, siteCount) {
+  if (siteCount <= 1) {
+    return 0;
+  }
+  const states = [...Array.from({ length: siteCount }, (_, index) => index), FUNCTIONAL_GROUP_ALL_MATCH_INDEX];
+  const normalizedCurrent = _normalizeFunctionalGroupMatchIndex(currentIndex, siteCount);
+  const currentPos = Math.max(0, states.indexOf(normalizedCurrent));
+  const nextPos = (currentPos + delta + states.length) % states.length;
+  return states[nextPos];
+}
+
+/**
+ * Formats the active functional-group cycle label.
+ *
+ * @param {number} index
+ * @param {number} siteCount
+ * @returns {string}
+ */
+function _functionalGroupMatchIndexLabel(index, siteCount) {
+  return index === FUNCTIONAL_GROUP_ALL_MATCH_INDEX ? 'All' : `${index + 1}/${siteCount}`;
+}
+
 function _activeFunctionalGroupMappingsForRow(row) {
   if (!row?._fgMappings?.length) {
     return null;
   }
-  const index = Math.max(0, Math.min(row._fgActiveIndex ?? 0, row._fgMappings.length - 1));
+  const index = _normalizeFunctionalGroupMatchIndex(row._fgActiveIndex ?? 0, row._fgMappings.length);
+  if (index === FUNCTIONAL_GROUP_ALL_MATCH_INDEX) {
+    return row._fgMappings.map(mapping => new Map(mapping));
+  }
   return [row._fgMappings[index]];
 }
 
@@ -255,7 +310,7 @@ export function updateFunctionalGroups(mol) {
     const siteCount = uniqueMappings.length;
     const key = _functionalGroupKey(fg);
     const isActive = previousActiveKey === key;
-    const activeIndex = isActive ? Math.max(0, Math.min(previousActiveIndex, siteCount - 1)) : 0;
+    const activeIndex = isActive ? _normalizeFunctionalGroupMatchIndex(previousActiveIndex, siteCount) : 0;
     const tr = document.createElement('tr');
     if (isActive) {
       activeStillPresent = true;
@@ -281,19 +336,19 @@ export function updateFunctionalGroups(mol) {
       nav.className = 'reaction-nav';
       const siteLabel = document.createElement('span');
       siteLabel.className = 'reaction-site-label';
-      siteLabel.textContent = `${activeIndex + 1}/${siteCount}`;
+      siteLabel.textContent = _functionalGroupMatchIndexLabel(activeIndex, siteCount);
       nav.appendChild(
         _functionalGroupNavButton('‹', 'Previous functional-group match', () => {
-          _activeFunctionalGroupMatchIndex = (activeIndex - 1 + siteCount) % siteCount;
-          _setHighlight([uniqueMappings[_activeFunctionalGroupMatchIndex]]);
+          _activeFunctionalGroupMatchIndex = _cycleFunctionalGroupMatchIndex(activeIndex, -1, siteCount);
+          _setHighlight(_activeFunctionalGroupMappingsForRow({ _fgMappings: uniqueMappings, _fgActiveIndex: _activeFunctionalGroupMatchIndex }));
           updateFunctionalGroups(_highlightMol);
         })
       );
       nav.appendChild(siteLabel);
       nav.appendChild(
         _functionalGroupNavButton('›', 'Next functional-group match', () => {
-          _activeFunctionalGroupMatchIndex = (activeIndex + 1) % siteCount;
-          _setHighlight([uniqueMappings[_activeFunctionalGroupMatchIndex]]);
+          _activeFunctionalGroupMatchIndex = _cycleFunctionalGroupMatchIndex(activeIndex, 1, siteCount);
+          _setHighlight(_activeFunctionalGroupMappingsForRow({ _fgMappings: uniqueMappings, _fgActiveIndex: _activeFunctionalGroupMatchIndex }));
           updateFunctionalGroups(_highlightMol);
         })
       );

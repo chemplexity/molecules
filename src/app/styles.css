@@ -174,18 +174,18 @@ body {
 }
 
 .options-body {
-  padding: 14px 18px 18px;
+  padding: 12px 18px 16px;
   overflow: auto;
 }
 
 .options-section + .options-section {
-  margin-top: 18px;
-  padding-top: 18px;
+  margin-top: 14px;
+  padding-top: 14px;
   border-top: 1px solid #dfe8eb;
 }
 
 .options-section h3 {
-  margin: 0 0 12px;
+  margin: 0 0 9px;
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -197,7 +197,7 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
-  padding: 10px 0;
+  padding: 8px 0;
   border-top: 1px solid #f1f4f6;
   color: #31464e;
   font-size: 13px;
@@ -464,13 +464,18 @@ div.tooltip td:first-child {
   user-select: none;
 }
 
-.atom-charge {
+.atom-charge-text,
+.charge-label-text {
   font-family: Arial, Helvetica, sans-serif;
   font-size: 9px;
   font-weight: bold;
   pointer-events: none;
   user-select: none;
-  dominant-baseline: auto;
+}
+
+.atom-charge-ring,
+.charge-label-ring {
+  pointer-events: none;
 }
 
 .atom-hit {
@@ -937,7 +942,9 @@ div.tooltip td:first-child {
   gap: 4px;
 }
 
-#force-controls button {
+#label-toggle,
+#copy-force-svg-btn,
+#copy-force-png-btn {
   height: 32px;
   padding: 0 12px;
   border: 1px solid #ccc;
@@ -949,7 +956,9 @@ div.tooltip td:first-child {
   transition: background 0.15s;
 }
 
-#force-controls button:hover {
+#label-toggle:hover,
+#copy-force-svg-btn:hover,
+#copy-force-png-btn:hover {
   background: #f0f0f0;
 }
 
@@ -967,7 +976,11 @@ div.tooltip td:first-child {
   display: none;
 }
 
-#rotate-controls button {
+#rotate-controls button,
+#force-rotate-ccw,
+#force-rotate-cw,
+#force-flip-h,
+#force-flip-v {
   width: 32px;
   height: 32px;
   border: 1px solid #ccc;
@@ -984,7 +997,11 @@ div.tooltip td:first-child {
   padding: 0;
 }
 
-#rotate-controls button:hover {
+#rotate-controls button:hover,
+#force-rotate-ccw:hover,
+#force-rotate-cw:hover,
+#force-flip-h:hover,
+#force-flip-v:hover {
   background: #f0f0f0;
   color: #333;
 }
@@ -1109,6 +1126,7 @@ div.tooltip td:first-child {
   background: #4080e0;
 }
 
+#force-controls #copy-force-svg-btn,
 #force-controls #copy-force-png-btn {
   width: 32px;
   height: 32px;
@@ -1124,6 +1142,7 @@ div.tooltip td:first-child {
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
 }
 
+#force-controls #copy-force-svg-btn:hover,
 #force-controls #copy-force-png-btn:hover {
   color: #333;
 }

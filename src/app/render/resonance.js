@@ -277,6 +277,12 @@ if (typeof document !== 'undefined') {
       if (event.target.closest('#resonance-table')) {
         return;
       }
+      // Don't reset when the user interacts with toolbar controls (rotate,
+      // flip, export buttons) — those are view operations that should leave
+      // the active resonance contributor intact.
+      if (event.target.closest('#rotate-controls, #force-controls')) {
+        return;
+      }
       if (!_resonanceLocked) {
         return;
       }

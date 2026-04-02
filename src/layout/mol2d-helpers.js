@@ -14,34 +14,38 @@ import { assignCIPRanks } from '../core/Molecule.js';
 export const CPK = {
   H: '#FFFFFF',
   He: '#D9FFFF',
-  Li: '#CC80FF',
-  Be: '#C2FF00',
+  Li: '#7D828A',
+  Be: '#70757D',
   B: '#FFB5B5',
   C: '#333333',
   N: '#3050F8',
   O: '#FF0D0D',
   F: '#90E050',
   Ne: '#B3E3F5',
-  Na: '#AB5CF2',
-  Mg: '#8AFF00',
-  Al: '#BFA6A6',
+  Na: '#767B83',
+  Mg: '#5E636B',
+  Al: '#7A7E85',
   Si: '#F0C8A0',
   P: '#FF8000',
   S: '#C8A000',
   Cl: '#1FF01F',
   Ar: '#80D1E3',
-  K: '#8F40D4',
-  Ca: '#3DFF00',
-  Sc: '#E6E6E6',
-  Ti: '#BFC2C7',
-  V: '#A6A6AB',
-  Cr: '#8A99C7',
-  Mn: '#9C7AC7',
-  Fe: '#E06633',
-  Co: '#F090A0',
-  Ni: '#50D050',
+  K: '#6F747C',
+  Ca: '#747981',
+  Sc: '#9CA1A8',
+  Ti: '#9298A0',
+  V: '#7E848D',
+  Cr: '#808791',
+  Mn: '#7B808A',
+  Fe: '#7A8088',
+  Co: '#6F7680',
+  Ni: '#737A83',
   Cu: '#C88033',
-  Zn: '#7D80B0',
+  Zn: '#8D939C',
+  Ag: '#C0C0C0',
+  Pt: '#C9CDD2',
+  Au: '#D4AF37',
+  Hg: '#B8C3CF',
   Br: '#A62929',
   I: '#940094'
 };
@@ -233,6 +237,21 @@ export function labelTextOffset(label, fontSize) {
   return 0;
 }
 
+export function formatChargeLabel(charge) {
+  if (!charge) {
+    return '';
+  }
+  return charge === 1 ? '+' : charge > 1 ? `${charge}+` : charge === -1 ? '−' : `${Math.abs(charge)}−`;
+}
+
+export function chargeBadgeMetrics(chargeLabel, fontSize) {
+  const label = chargeLabel ?? '';
+  const textLength = Math.max(1, label.length);
+  const chargeFontSize = fontSize * 0.8;
+  const radius = Math.max(chargeFontSize * 0.62, chargeFontSize * 0.28 * textLength + 2.6);
+  return { fontSize: chargeFontSize, radius };
+}
+
 /**
  * Returns the display label for an atom in 2D skeletal notation, or null
  * for unlabelled carbons.  The H-count subscript is placed left or right
@@ -255,32 +274,560 @@ export function getAtomLabel(atom, hCounts, toSVG, mol) {
     return symbol;
   }
   const hStr = hCount === 1 ? 'H' : `H${hCount}`;
-  if (symbol === 'O') {
-    const heavyNeighbors = atom.getNeighbors(mol).filter(n => n?.name !== 'H');
-    const isCarbonylAdjacentHydroxyl =
-      heavyNeighbors.length === 1 &&
-      heavyNeighbors[0].name === 'C' &&
-      heavyNeighbors[0].getNeighbors(mol).some(nb => {
-        if (!nb || nb.id === atom.id || nb.name !== 'O') {
-          return false;
-        }
-        const bond = mol.getBond(heavyNeighbors[0].id, nb.id);
-        return (bond?.properties.order ?? 1) >= 2;
-      });
-    if (isCarbonylAdjacentHydroxyl) {
-      return symbol + hStr;
-    }
-  }
   const aSVG = toSVG(atom);
   let avgDx = 0,
     nbCount = 0;
   for (const n of atom.getNeighbors(mol)) {
-    if (n && n.x != null) {
+    if (n && n.name !== 'H' && n.x != null) {
       avgDx += toSVG(n).x - aSVG.x;
       nbCount++;
     }
   }
   return nbCount > 0 && avgDx > 0 ? hStr + symbol : symbol + hStr;
+}
+
+// ---------------------------------------------------------------------------
+// Lone-pair placement
+// ---------------------------------------------------------------------------
+
+const TAU = Math.PI * 2;
+
+function normalizeAngle(angle) {
+  let result = angle % TAU;
+  if (result < 0) {
+    result += TAU;
+  }
+  return result;
+}
+
+function dedupeAngles(angles, tolerance = 1e-3) {
+  const sorted = angles
+    .filter(Number.isFinite)
+    .map(normalizeAngle)
+    .sort((a, b) => a - b);
+  const unique = [];
+  for (const angle of sorted) {
+    if (unique.length === 0 || Math.abs(angle - unique[unique.length - 1]) > tolerance) {
+      unique.push(angle);
+    }
+  }
+  if (unique.length > 1 && TAU - unique[unique.length - 1] + unique[0] <= tolerance) {
+    unique.pop();
+  }
+  return unique;
+}
+
+function labelOccupiedAngles(label) {
+  if (!label) {
+    return [];
+  }
+  if (/^H\d*[A-Z][a-z]?$/.test(label)) {
+    return [Math.PI];
+  }
+  if (/^[A-Z][a-z]?H\d*$/.test(label)) {
+    return [0];
+  }
+  return [];
+}
+
+function displayedValenceElectrons(atom) {
+  const group = atom?.properties?.group;
+  if (!group || group >= 18 || (group >= 3 && group <= 12)) {
+    return 0;
+  }
+  return group <= 2 ? group : group - 10;
+}
+
+function displayedBondOrderSum(atom, mol) {
+  let sum = 0;
+  for (const bondId of atom.bonds) {
+    const bond = mol.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    sum += bond.properties.aromatic ? 1 : (bond.properties.order ?? 1);
+  }
+  return sum;
+}
+
+export function displayedLonePairCount(atom, mol) {
+  if (!atom || !mol) {
+    return 0;
+  }
+  const valenceElectrons = displayedValenceElectrons(atom);
+  if (valenceElectrons <= 0) {
+    return 0;
+  }
+  const charge = atom.getCharge() ?? 0;
+  const radical = atom.getRadical?.() ?? 0;
+  const nonbondingElectrons = valenceElectrons - displayedBondOrderSum(atom, mol) - charge - radical;
+  return Math.max(0, Math.floor(nonbondingElectrons / 2));
+}
+
+function rotatedAngles(baseAngles, rotation) {
+  return baseAngles.map(angle => normalizeAngle(angle + rotation));
+}
+
+function angularDistance(a, b) {
+  const delta = Math.abs(normalizeAngle(a) - normalizeAngle(b));
+  return Math.min(delta, TAU - delta);
+}
+
+function minimumAngularClearance(angle, occupiedAngles) {
+  if (occupiedAngles.length === 0) {
+    return Math.PI;
+  }
+  let best = Infinity;
+  for (const occupiedAngle of occupiedAngles) {
+    best = Math.min(best, angularDistance(angle, occupiedAngle));
+  }
+  return best;
+}
+
+function choosePreferredSingleAngle(occupiedAngles, preferredNorthAngle = -Math.PI / 2) {
+  const candidateGroups = [
+    [preferredNorthAngle],
+    rotatedAngles([-Math.PI / 4, Math.PI / 4], preferredNorthAngle),
+    rotatedAngles([-Math.PI / 2, Math.PI / 2, Math.PI], preferredNorthAngle),
+    rotatedAngles([(-3 * Math.PI) / 4, (3 * Math.PI) / 4], preferredNorthAngle)
+  ];
+
+  for (const candidates of candidateGroups) {
+    let bestAngle = null;
+    let bestScore = -1;
+    let bestNorthDistance = Infinity;
+    for (const angle of candidates) {
+      const score = minimumAngularClearance(angle, occupiedAngles);
+      const northDistance = angularDistance(angle, preferredNorthAngle);
+      if (score > bestScore || (Math.abs(score - bestScore) <= 1e-6 && northDistance < bestNorthDistance)) {
+        bestScore = score;
+        bestNorthDistance = northDistance;
+        bestAngle = angle;
+      }
+    }
+    if (bestScore >= Math.PI / 6) {
+      return bestAngle;
+    }
+  }
+
+  let fallbackAngle = preferredNorthAngle;
+  let fallbackScore = -1;
+  let fallbackNorthDistance = Infinity;
+  for (const angle of candidateGroups.flat()) {
+    const score = minimumAngularClearance(angle, occupiedAngles);
+    const northDistance = angularDistance(angle, preferredNorthAngle);
+    if (score > fallbackScore || (Math.abs(score - fallbackScore) <= 1e-6 && northDistance < fallbackNorthDistance)) {
+      fallbackScore = score;
+      fallbackNorthDistance = northDistance;
+      fallbackAngle = angle;
+    }
+  }
+  return fallbackAngle;
+}
+
+function hasMinimumAngularClearance(angles, occupiedAngles, minimum = Math.PI / 6) {
+  return angles.every(angle => minimumAngularClearance(angle, occupiedAngles) >= minimum);
+}
+
+function preferredPatternAngles(count, preferredNorthAngle) {
+  if (!Number.isFinite(preferredNorthAngle)) {
+    return null;
+  }
+  if (count === 1) {
+    return [preferredNorthAngle];
+  }
+  if (count === 2) {
+    return rotatedAngles([(-3 * Math.PI) / 4, -Math.PI / 4], preferredNorthAngle + Math.PI / 2);
+  }
+  if (count === 3) {
+    return rotatedAngles([Math.PI, -Math.PI / 2, 0], preferredNorthAngle + Math.PI / 2);
+  }
+  if (count === 4) {
+    return rotatedAngles([-Math.PI / 2, Math.PI / 2, Math.PI, 0], preferredNorthAngle + Math.PI / 2);
+  }
+  return null;
+}
+
+function ringVertexNorthAngle(atom, mol, pointForAtom) {
+  if (!atom?.isInRing?.(mol)) {
+    return null;
+  }
+  const center = pointForAtom(atom);
+  if (!center || !Number.isFinite(center.x) || !Number.isFinite(center.y)) {
+    return null;
+  }
+
+  const ringNeighborIds = new Set();
+  const ringCenters = [];
+  for (const ring of mol.getRings()) {
+    const atomIndex = ring.indexOf(atom.id);
+    if (atomIndex < 0 || ring.length < 3) {
+      continue;
+    }
+    ringNeighborIds.add(ring[(atomIndex - 1 + ring.length) % ring.length]);
+    ringNeighborIds.add(ring[(atomIndex + 1) % ring.length]);
+
+    let cx = 0;
+    let cy = 0;
+    let count = 0;
+    for (const atomId of ring) {
+      const point = pointForAtom(mol.atoms.get(atomId));
+      if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+        continue;
+      }
+      cx += point.x;
+      cy += point.y;
+      count++;
+    }
+    if (count > 0) {
+      ringCenters.push({ x: cx / count, y: cy / count });
+    }
+  }
+
+  let inwardX = 0;
+  let inwardY = 0;
+  for (const neighborId of ringNeighborIds) {
+    const point = pointForAtom(mol.atoms.get(neighborId));
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      continue;
+    }
+    inwardX += point.x - center.x;
+    inwardY += point.y - center.y;
+  }
+  if (Math.hypot(inwardX, inwardY) <= 1e-6) {
+    for (const ringCenter of ringCenters) {
+      inwardX += ringCenter.x - center.x;
+      inwardY += ringCenter.y - center.y;
+    }
+  }
+  if (Math.hypot(inwardX, inwardY) <= 1e-6) {
+    return null;
+  }
+  return Math.atan2(-inwardY, -inwardX);
+}
+
+function chooseLargestGapBisector(angles) {
+  const normalized = dedupeAngles(angles);
+  if (normalized.length === 0) {
+    return null;
+  }
+  if (normalized.length === 1) {
+    return normalizeAngle(normalized[0] + Math.PI);
+  }
+  let bestAngle = normalized[0];
+  let bestGap = -1;
+  for (let idx = 0; idx < normalized.length; idx++) {
+    const start = normalized[idx];
+    const end = idx === normalized.length - 1 ? normalized[0] + TAU : normalized[idx + 1];
+    const gap = end - start;
+    if (gap > bestGap) {
+      bestGap = gap;
+      bestAngle = normalizeAngle(start + gap / 2);
+    }
+  }
+  return bestAngle;
+}
+
+function localNorthAngle(atom, mol, pointForAtom) {
+  const ringNorth = ringVertexNorthAngle(atom, mol, pointForAtom);
+  if (Number.isFinite(ringNorth)) {
+    return ringNorth;
+  }
+
+  const center = pointForAtom(atom);
+  const heavyNeighborAngles = atom
+    .getNeighbors(mol)
+    .filter(neighbor => neighbor && neighbor.name !== 'H')
+    .map(neighbor => {
+      const point = pointForAtom(neighbor);
+      if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+        return null;
+      }
+      return Math.atan2(point.y - center.y, point.x - center.x);
+    })
+    .filter(Number.isFinite);
+
+  if (heavyNeighborAngles.length === 1) {
+    return normalizeAngle(heavyNeighborAngles[0] + Math.PI);
+  }
+  if (heavyNeighborAngles.length >= 2) {
+    return chooseLargestGapBisector(heavyNeighborAngles);
+  }
+  return -Math.PI / 2;
+}
+
+function chooseLonePairAngles(occupiedAngles, count, preferredNorthAngle = -Math.PI / 2) {
+  if (!Number.isFinite(count) || count <= 0) {
+    return [];
+  }
+  const occupied = dedupeAngles(occupiedAngles);
+  const preferredPattern = preferredPatternAngles(count, preferredNorthAngle);
+  if (preferredPattern && hasMinimumAngularClearance(preferredPattern, occupied)) {
+    return preferredPattern;
+  }
+  if (occupied.length === 0) {
+    if (preferredPattern) {
+      return preferredPattern;
+    }
+    return Array.from({ length: count }, (_, index) => normalizeAngle((TAU * index) / count));
+  }
+  if (count === 1) {
+    return [choosePreferredSingleAngle(occupied, preferredNorthAngle)];
+  }
+  if (occupied.length === 1) {
+    const opposite = normalizeAngle(occupied[0] + Math.PI);
+    if (count === 2) {
+      return [normalizeAngle(opposite - Math.PI / 4), normalizeAngle(opposite + Math.PI / 4)];
+    }
+    if (count === 3) {
+      return [normalizeAngle(opposite - Math.PI / 2), opposite, normalizeAngle(opposite + Math.PI / 2)];
+    }
+  }
+
+  const working = [...occupied];
+  const chosen = [];
+  for (let i = 0; i < count; i++) {
+    const sorted = [...working].sort((a, b) => a - b);
+    let bestAngle = sorted[0];
+    let bestGap = -1;
+    for (let idx = 0; idx < sorted.length; idx++) {
+      const start = sorted[idx];
+      const end = idx === sorted.length - 1 ? sorted[0] + TAU : sorted[idx + 1];
+      const gap = end - start;
+      if (gap > bestGap) {
+        bestGap = gap;
+        bestAngle = normalizeAngle(start + gap / 2);
+      }
+    }
+    working.push(bestAngle);
+    chosen.push(bestAngle);
+  }
+  return chosen;
+}
+
+function rayDistanceToLabelBox(angle, label, fontSize) {
+  const halfWidth = labelHalfW(label, fontSize);
+  const halfHeight = labelHalfH(label, fontSize);
+  if (halfWidth <= 0 || halfHeight <= 0) {
+    return 0;
+  }
+
+  const centerX = labelTextOffset(label, fontSize);
+  const dirX = Math.cos(angle);
+  const dirY = Math.sin(angle);
+  const candidates = [];
+  const minX = centerX - halfWidth;
+  const maxX = centerX + halfWidth;
+  const minY = -halfHeight;
+  const maxY = halfHeight;
+
+  if (Math.abs(dirX) > 1e-8) {
+    for (const edgeX of [minX, maxX]) {
+      const t = edgeX / dirX;
+      if (t < 0) {
+        continue;
+      }
+      const hitY = dirY * t;
+      if (hitY >= minY - 1e-6 && hitY <= maxY + 1e-6) {
+        candidates.push(t);
+      }
+    }
+  }
+  if (Math.abs(dirY) > 1e-8) {
+    for (const edgeY of [minY, maxY]) {
+      const t = edgeY / dirY;
+      if (t < 0) {
+        continue;
+      }
+      const hitX = dirX * t;
+      if (hitX >= minX - 1e-6 && hitX <= maxX + 1e-6) {
+        candidates.push(t);
+      }
+    }
+  }
+
+  return candidates.length > 0 ? Math.min(...candidates) : 0;
+}
+
+/**
+ * Computes a non-overlapping position for a circled charge badge near an atom.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {object} options
+ * @param {function} options.pointForAtom - maps an atom to {x, y} render coords
+ * @param {function} [options.orientationPointForAtom=pointForAtom]
+ * @param {string|null} [options.label=null] - rendered atom label, if any
+ * @param {number} [options.fontSize=14]
+ * @param {number} [options.baseRadius=0]
+ * @param {number} [options.offsetFromBoundary=3]
+ * @param {string} [options.chargeLabel]
+ * @param {number[]} [options.extraOccupiedAngles=[]]
+ * @returns {{x:number,y:number,radius:number,fontSize:number,text:string,angle:number}|null}
+ */
+export function computeChargeBadgePlacement(
+  atom,
+  mol,
+  {
+    pointForAtom,
+    orientationPointForAtom = pointForAtom,
+    label = null,
+    fontSize = 14,
+    baseRadius = 0,
+    offsetFromBoundary = 3,
+    chargeLabel = formatChargeLabel(atom?.getCharge?.() ?? 0),
+    extraOccupiedAngles = [],
+    preferredAngle = -Math.PI / 4,
+    stickyAngle = null,
+    stickyTolerance = Math.PI / 18
+  } = {}
+) {
+  if (!atom || !mol || typeof pointForAtom !== 'function' || !chargeLabel) {
+    return null;
+  }
+
+  const center = pointForAtom(atom);
+  const orientationCenter = orientationPointForAtom(atom);
+  if (!center || !Number.isFinite(center.x) || !Number.isFinite(center.y)) {
+    return null;
+  }
+  if (!orientationCenter || !Number.isFinite(orientationCenter.x) || !Number.isFinite(orientationCenter.y)) {
+    return null;
+  }
+
+  const occupiedAngles = [];
+  for (const neighbor of atom.getNeighbors(mol)) {
+    const point = orientationPointForAtom(neighbor);
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      continue;
+    }
+    const dx = point.x - orientationCenter.x;
+    const dy = point.y - orientationCenter.y;
+    if (Math.hypot(dx, dy) <= 1e-6) {
+      continue;
+    }
+    occupiedAngles.push(Math.atan2(dy, dx));
+  }
+  occupiedAngles.push(...extraOccupiedAngles);
+
+  let bestAngle = preferredAngle;
+  let bestScore = -1;
+  let bestPreference = Infinity;
+  for (let idx = 0; idx < 16; idx++) {
+    const angle = normalizeAngle(preferredAngle + (TAU * idx) / 16);
+    const score = minimumAngularClearance(angle, occupiedAngles);
+    const preference = angularDistance(angle, preferredAngle);
+    if (score > bestScore || (Math.abs(score - bestScore) <= 1e-6 && preference < bestPreference)) {
+      bestScore = score;
+      bestPreference = preference;
+      bestAngle = angle;
+    }
+  }
+
+  if (stickyAngle != null && Number.isFinite(stickyAngle)) {
+    const normalizedStickyAngle = normalizeAngle(stickyAngle);
+    const stickyScore = minimumAngularClearance(normalizedStickyAngle, occupiedAngles);
+    if (stickyScore + stickyTolerance >= bestScore) {
+      bestAngle = normalizedStickyAngle;
+    }
+  }
+
+  const metrics = chargeBadgeMetrics(chargeLabel, fontSize);
+  const boundary = Math.max(baseRadius, rayDistanceToLabelBox(bestAngle, label, fontSize));
+  const distance = boundary + offsetFromBoundary + metrics.radius;
+  return {
+    x: center.x + Math.cos(bestAngle) * distance,
+    y: center.y + Math.sin(bestAngle) * distance,
+    radius: metrics.radius,
+    fontSize: metrics.fontSize,
+    text: chargeLabel,
+    angle: bestAngle
+  };
+}
+
+/**
+ * Computes rendered lone-pair dot positions for a labeled atom.
+ *
+ * The caller supplies a point-mapping function so the same placement logic
+ * can be reused by both the SVG/browser 2D renderer and the force renderer.
+ * Angles are chosen only after the final neighbor geometry is known.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {object} options
+ * @param {function} options.pointForAtom - maps an atom to {x, y} render coords
+ * @param {string|null} [options.label=null] - rendered atom label, if any
+ * @param {number} [options.fontSize=14]
+ * @param {number} [options.baseRadius=0] - minimum clearance around the atom
+ * @param {number} [options.offsetFromBoundary=6] - radial offset beyond atom/label
+ * @param {number} [options.dotSpacing=4] - distance between the two dots
+ * @param {number} [options.pairCount] - explicit lone-pair count override
+ * @param {number[]} [options.extraOccupiedAngles=[]] - additional blocked directions
+ * @returns {Array<{x:number, y:number}>}
+ */
+export function computeLonePairDotPositions(
+  atom,
+  mol,
+  {
+    pointForAtom,
+    orientationPointForAtom = pointForAtom,
+    label = null,
+    fontSize = 14,
+    baseRadius = 0,
+    offsetFromBoundary = 6,
+    dotSpacing = 4,
+    pairCount = displayedLonePairCount(atom, mol),
+    extraOccupiedAngles = []
+  } = {}
+) {
+  if (!atom || !mol || typeof pointForAtom !== 'function' || pairCount <= 0) {
+    return [];
+  }
+
+  const center = pointForAtom(atom);
+  const orientationCenter = orientationPointForAtom(atom);
+  if (!center || !Number.isFinite(center.x) || !Number.isFinite(center.y)) {
+    return [];
+  }
+  if (!orientationCenter || !Number.isFinite(orientationCenter.x) || !Number.isFinite(orientationCenter.y)) {
+    return [];
+  }
+
+  const occupiedAngles = [];
+  for (const neighbor of atom.getNeighbors(mol)) {
+    const point = orientationPointForAtom(neighbor);
+    if (!point || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+      continue;
+    }
+    const dx = point.x - orientationCenter.x;
+    const dy = point.y - orientationCenter.y;
+    if (Math.hypot(dx, dy) <= 1e-6) {
+      continue;
+    }
+    occupiedAngles.push(Math.atan2(dy, dx));
+  }
+  occupiedAngles.push(...labelOccupiedAngles(label));
+  occupiedAngles.push(...extraOccupiedAngles);
+
+  const preferredNorthAngle = localNorthAngle(atom, mol, orientationPointForAtom);
+  const chosenAngles = chooseLonePairAngles(occupiedAngles, pairCount, preferredNorthAngle);
+  const dots = [];
+  for (const angle of chosenAngles) {
+    const boundary = Math.max(baseRadius, rayDistanceToLabelBox(angle, label, fontSize));
+    const distance = boundary + offsetFromBoundary;
+    const dirX = Math.cos(angle);
+    const dirY = Math.sin(angle);
+    const tangentX = -dirY;
+    const tangentY = dirX;
+    const pairCenterX = center.x + dirX * distance;
+    const pairCenterY = center.y + dirY * distance;
+    const halfSpacing = dotSpacing / 2;
+    dots.push(
+      { x: pairCenterX - tangentX * halfSpacing, y: pairCenterY - tangentY * halfSpacing },
+      { x: pairCenterX + tangentX * halfSpacing, y: pairCenterY + tangentY * halfSpacing }
+    );
+  }
+  return dots;
 }
 
 // ---------------------------------------------------------------------------
