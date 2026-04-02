@@ -410,6 +410,39 @@ export class Atom {
   }
 
   /**
+   * Returns the number of lone pairs available for electron donation.
+   *
+   * Uses the group number as the valence electron count and subtracts the
+   * current bond order sum, formal charge, and radical electrons before
+   * dividing by 2. Radical electrons are excluded before dividing so they
+   * are not mistakenly counted as part of a lone pair.
+   *
+   * Returns 0 for transition metals, noble gases, unknown elements, or when
+   * the computed electron count is negative.
+   *
+   * @param {import('./Molecule.js').Molecule} molecule
+   * @returns {number}
+   */
+  availableLonePairs(molecule) {
+    const group = this.properties.group;
+    if (!group || group <= 2 || group >= 18) {
+      return 0;
+    }
+    if (group >= 3 && group <= 12) {
+      return 0; // transition metals
+    }
+    // s-block (groups 1-2): valence electrons = group number
+    // p-block (groups 13-17): valence electrons = group − 10
+    // (e.g. C group 14 → 4, N group 15 → 5, O group 16 → 6)
+    const valenceElectrons = group <= 2 ? group : group - 10;
+    const bondOrderSum = this.getValence(molecule);
+    const charge = this.properties.charge ?? 0;
+    const radical = this.properties.radical ?? 0;
+    const nonbonding = valenceElectrons - bondOrderSum - charge - radical;
+    return Math.max(0, Math.floor(nonbonding / 2));
+  }
+
+  /**
    * Returns the degree (number of bonds) of this atom.
    *
    * @returns {number}

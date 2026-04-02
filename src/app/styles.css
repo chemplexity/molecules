@@ -99,6 +99,9 @@ body {
   padding: 10px;
   float: right;
   overflow: hidden;
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 #content-source a {
@@ -106,6 +109,165 @@ body {
   font-weight: normal;
   color: #53b2c8;
   text-decoration: none;
+}
+
+#options-btn {
+  width: 30px;
+  height: 30px;
+  border: 1px solid #d4d9dd;
+  border-radius: 8px;
+  background: #fff;
+  color: #4f6972;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+#options-btn:hover {
+  background: #f2f8fa;
+  border-color: #a9cfd7;
+  transform: translateY(-1px);
+}
+
+#options-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 34, 41, 0.22);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 300;
+}
+
+#options-overlay[hidden] {
+  display: none;
+}
+
+#options-modal {
+  width: min(340px, calc(100vw - 32px));
+  max-height: min(640px, calc(100vh - 48px));
+  background: #fff;
+  border: 1px solid #d8e2e6;
+  border-radius: 16px;
+  box-shadow: 0 18px 50px rgba(31, 52, 61, 0.18);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.options-header {
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid #ecf1f3;
+  background: linear-gradient(180deg, #fbfdfe 0%, #f5fafc 100%);
+}
+
+.options-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: #26414a;
+}
+
+.options-body {
+  padding: 14px 18px 18px;
+  overflow: auto;
+}
+
+.options-section + .options-section {
+  margin-top: 18px;
+  padding-top: 18px;
+  border-top: 1px solid #dfe8eb;
+}
+
+.options-section h3 {
+  margin: 0 0 12px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #5b7a84;
+}
+
+.option-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 10px 0;
+  border-top: 1px solid #f1f4f6;
+  color: #31464e;
+  font-size: 13px;
+}
+
+.options-section .option-row:first-of-type {
+  border-top: 0;
+}
+
+.option-row input[type='number'] {
+  width: 88px;
+  padding: 6px 8px;
+  border: 1px solid #ced8dc;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #233841;
+  background: #fff;
+}
+
+.option-row input[type='number']:focus {
+  outline: none;
+  border-color: #7db7c4;
+  box-shadow: 0 0 0 3px rgba(83, 178, 200, 0.14);
+}
+
+.option-toggle input[type='checkbox'] {
+  width: 18px;
+  height: 18px;
+  accent-color: #53b2c8;
+}
+
+.options-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 18px 18px;
+  border-top: 1px solid #ecf1f3;
+  background: #fbfcfd;
+}
+
+.options-actions button {
+  min-width: 78px;
+  padding: 8px 14px;
+  border-radius: 9px;
+  border: 1px solid #ccd8dc;
+  background: #fff;
+  color: #35515b;
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.options-actions button:hover {
+  background: #f3f8fa;
+  border-color: #9fc8d1;
+  transform: translateY(-1px);
+}
+
+#options-apply-btn {
+  background: #53b2c8;
+  border-color: #53b2c8;
+  color: #fff;
+}
+
+#options-apply-btn:hover {
+  background: #469db2;
+  border-color: #469db2;
 }
 
 .group {
@@ -133,7 +295,7 @@ body {
   text-decoration: underline;
 }
 
-input {
+.group input {
   width: 100%;
   font-size: 16px;
   padding: 10px 10px 10px 5px;
@@ -143,18 +305,18 @@ input {
   background: transparent;
 }
 
-input:focus {
+.group input:focus {
   outline: none;
 }
 
-input:focus ~ label,
-input:valid ~ label {
+.group input:focus ~ label,
+.group input:valid ~ label {
   top: -15px;
   font-size: 13px;
   color: #5264ae;
 }
 
-label {
+.group label {
   color: #999;
   font-size: 16px;
   font-weight: normal;
@@ -165,14 +327,14 @@ label {
   transition: 0.2s ease all;
 }
 
-.bar {
+.group .bar {
   position: relative;
   display: block;
   width: 100%;
 }
 
-.bar::before,
-.bar::after {
+.group .bar::before,
+.group .bar::after {
   content: '';
   height: 2px;
   width: 0;
@@ -182,19 +344,19 @@ label {
   transition: 0.2s ease all;
 }
 
-.bar::before {
+.group .bar::before {
   left: 50%;
 }
-.bar::after {
+.group .bar::after {
   right: 50%;
 }
 
-input:focus ~ .bar::before,
-input:focus ~ .bar::after {
+.group input:focus ~ .bar::before,
+.group input:focus ~ .bar::after {
   width: 50%;
 }
 
-.highlight {
+.group .highlight {
   position: absolute;
   height: 60%;
   width: 100px;
@@ -204,7 +366,7 @@ input:focus ~ .bar::after {
   opacity: 0.5;
 }
 
-input:focus ~ .highlight {
+.group input:focus ~ .highlight {
   animation: inputHighlighter 0.3s ease;
 }
 

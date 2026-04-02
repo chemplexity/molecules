@@ -99,6 +99,9 @@ export class Molecule {
     }
     this.atoms.set(atom.id, atom);
     this._ringsCache = null;
+    if (this.properties.resonance) {
+      this.clearResonanceStates();
+    }
     this._recomputeProperties();
     return atom;
   }
@@ -164,6 +167,9 @@ export class Molecule {
     }
     this.atoms.delete(id);
     this._ringsCache = null;
+    if (this.properties.resonance) {
+      this.clearResonanceStates();
+    }
     this._recomputeProperties();
   }
 
@@ -200,6 +206,9 @@ export class Molecule {
     this._ringsCache = null;
     this.atoms.get(atomA).bonds.push(bond.id);
     this.atoms.get(atomB).bonds.push(bond.id);
+    if (this.properties.resonance) {
+      this.clearResonanceStates();
+    }
     if (implicitHydrogen) {
       this._adjustImplicitHydrogens(atomA);
       this._adjustImplicitHydrogens(atomB);
@@ -459,6 +468,9 @@ export class Molecule {
     this._bondIndex.delete(a < b ? `${a},${b}` : `${b},${a}`);
     this._ringsCache = null;
     this.bonds.delete(id);
+    if (this.properties.resonance) {
+      this.clearResonanceStates();
+    }
 
     if (pruneIsolated) {
       for (const atomId of bond.atoms) {
@@ -499,6 +511,9 @@ export class Molecule {
       return null;
     }
     atom.setCharge(charge);
+    if (this.properties.resonance) {
+      this.clearResonanceStates();
+    }
     this._recomputeProperties();
     return atom;
   }
@@ -516,6 +531,9 @@ export class Molecule {
       return null;
     }
     atom.setRadical(radicalCount);
+    if (this.properties.resonance) {
+      this.clearResonanceStates();
+    }
     this._recomputeProperties();
     return atom;
   }
@@ -1254,6 +1272,110 @@ export class Molecule {
    */
   querySMARTS(smarts, options = {}) {
     return [..._smartsFind(this, smarts, options)];
+  }
+
+  // ---------------------------------------------------------------------------
+  // Resonance state management
+  // ---------------------------------------------------------------------------
+
+  /**
+   * Total number of resonance states computed for this molecule.
+   * Returns 1 when `generateResonanceStructures` has not been called.
+   *
+   * @returns {number}
+   */
+  get resonanceCount() {
+    return this.properties.resonance?.count ?? 1;
+  }
+
+  /**
+   * Returns a summary of all resonance states as an array of `{ id, weight }`
+   * objects sorted by state index. Data is sourced from
+   * `molecule.properties.resonance.weights`.
+   *
+   * Returns `[{ id: 1, weight: 100 }]` when resonance has not been generated.
+   *
+   * @returns {{ id: number, weight: number }[]}
+   */
+  getResonanceStates() {
+    const res = this.properties.resonance;
+    if (!res) {
+      return [{ id: 1, weight: 100 }];
+    }
+    return res.weights.map((weight, i) => ({ id: i + 1, weight }));
+  }
+
+  /**
+   * Applies resonance state `n` to the molecule by writing the stored bond
+   * and atom properties for that state into the live `bond.properties` and
+   * `atom.properties`. The renderer sees updated values without any knowledge
+   * of resonance.
+   *
+   * @param {number} n - 1-based state index.
+   * @throws {RangeError} If `n` is out of range.
+   */
+  setResonanceState(n) {
+    const res = this.properties.resonance;
+    if (!res) {
+      return;
+    }
+    if (n < 1 || n > res.count) {
+      throw new RangeError(`Resonance state ${n} is out of range [1, ${res.count}].`);
+    }
+    res.currentState = n;
+    for (const bond of this.bonds.values()) {
+      const rs = bond.properties.resonance;
+      if (!rs) {
+        continue;
+      }
+      const state = rs.states[n];
+      if (!state) {
+        continue;
+      }
+      bond.properties.order = state.order;
+      bond.properties.localizedOrder = state.localizedOrder;
+      bond.properties.aromatic = state.aromatic;
+      bond.properties.stereo = state.stereo;
+    }
+    for (const atom of this.atoms.values()) {
+      const rs = atom.properties.resonance;
+      if (!rs) {
+        continue;
+      }
+      const state = rs.states[n];
+      if (!state) {
+        continue;
+      }
+      atom.properties.charge = state.charge;
+      atom.properties.radical = state.radical;
+    }
+  }
+
+  /**
+   * Restores state 1 (the canonical as-parsed form) and then removes all
+   * resonance tables from bonds, atoms, and the molecule.
+   */
+  resetResonance() {
+    this.setResonanceState(1);
+    this.clearResonanceStates();
+  }
+
+  /**
+   * Removes all resonance state tables from bonds, atoms, and the molecule
+   * without changing any live bond or atom property values. Use
+   * `resetResonance()` first if you want to restore the canonical form.
+   *
+   * Called automatically by `addAtom`, `removeAtom`, `addBond`, `removeBond`,
+   * `setAtomCharge`, and `setAtomRadical` when resonance states are present.
+   */
+  clearResonanceStates() {
+    for (const bond of this.bonds.values()) {
+      delete bond.properties.resonance;
+    }
+    for (const atom of this.atoms.values()) {
+      delete atom.properties.resonance;
+    }
+    delete this.properties.resonance;
   }
 }
 

@@ -212,9 +212,7 @@ export function updatePhysicochemical(molecule) {
     .map(([label, val, detail]) => {
       const desc = PC_DESCRIPTIONS[label] ?? '';
       const highlightGroups = detailHighlightGroups(detail, molecule, label);
-      const highlightAttr = highlightGroups.length
-        ? ` data-highlight="${escapeAttr(JSON.stringify(highlightGroups))}"`
-        : '';
+      const highlightAttr = detail ? ` data-highlight="${escapeAttr(JSON.stringify(highlightGroups))}"` : '';
       return `<tr data-desc="${escapeAttr(desc)}"${highlightAttr}><td>${label}</td><td>${val}</td></tr>`;
     })
     .join('');

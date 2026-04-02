@@ -2,6 +2,9 @@
 
 ## 2026-04-01
 
+- Initial implementation of determining resonance structures of a molecule
+- Added an options window for 2D atom coloring, 2D bond thickness, force atom size, force bond thickness, reset button, 2D atom font-size, and 'Show Valence Warnings' toggle
+- Made physicochemical highlight rows lock and unlock on click
 - Refactor coords2d.js
 - Added per-match navigation for multi-hit functional groups in the sidebar
 - Moved shared highlight and functional-group panel logic into `src/app/render/highlights.js`

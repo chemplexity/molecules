@@ -1,16 +1,99 @@
 /** @module app/render/helpers */
 
-import { atomColor, kekulize } from '../../layout/mol2d-helpers.js';
+import { atomColor as baseAtomColor, kekulize } from '../../layout/mol2d-helpers.js';
 
 // ---------------------------------------------------------------------------
 // Bond rendering constants
 // ---------------------------------------------------------------------------
 export const BOND_MULT = 3;
 export const BOND_OFFSET = 2;
-export const PI_STROKE = { stroke: '#FFFFFF', width: '2px' };
-export const ARO_STROKE = { stroke: '#696969', width: '3px', dashArray: '3,3' };
 export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
-export const STROKE_W = 1.6; // px
+export const RENDER_OPTION_LIMITS = Object.freeze({
+  twoDAtomFontSize: { min: 10, max: 24, step: 1 },
+  twoDBondThickness: { min: 0.8, max: 4, step: 0.1 },
+  forceAtomSizeMultiplier: { min: 0.5, max: 2.5, step: 0.1 },
+  forceBondThicknessMultiplier: { min: 0.5, max: 2.5, step: 0.1 }
+});
+const DEFAULT_RENDER_OPTIONS = Object.freeze({
+  showValenceWarnings: true,
+  twoDAtomColoring: true,
+  twoDAtomFontSize: 14,
+  twoDBondThickness: 1.6,
+  forceAtomSizeMultiplier: 1,
+  forceBondThicknessMultiplier: 1
+});
+
+export let PI_STROKE = { stroke: '#FFFFFF', width: '2px' };
+export let ARO_STROKE = { stroke: '#696969', width: '3px', dashArray: '3,3' };
+export let STROKE_W = DEFAULT_RENDER_OPTIONS.twoDBondThickness; // px
+let _renderOptions = { ...DEFAULT_RENDER_OPTIONS };
+
+function _clampOptionValue(value, limits) {
+  if (!Number.isFinite(value)) {
+    return null;
+  }
+  return Math.min(limits.max, Math.max(limits.min, value));
+}
+
+function _syncDerivedRenderConstants() {
+  const twoDScale = _renderOptions.twoDBondThickness / DEFAULT_RENDER_OPTIONS.twoDBondThickness;
+  STROKE_W = _renderOptions.twoDBondThickness;
+  PI_STROKE = { stroke: '#FFFFFF', width: `${2 * twoDScale}px` };
+  ARO_STROKE = { stroke: '#696969', width: `${3 * twoDScale}px`, dashArray: '3,3' };
+}
+
+export function getRenderOptions() {
+  return { ..._renderOptions };
+}
+
+export function getDefaultRenderOptions() {
+  return { ...DEFAULT_RENDER_OPTIONS };
+}
+
+export function updateRenderOptions(nextOptions = {}) {
+  const merged = { ..._renderOptions };
+  if (typeof nextOptions.showValenceWarnings === 'boolean') {
+    merged.showValenceWarnings = nextOptions.showValenceWarnings;
+  }
+  if (typeof nextOptions.twoDAtomColoring === 'boolean') {
+    merged.twoDAtomColoring = nextOptions.twoDAtomColoring;
+  }
+  if (nextOptions.twoDAtomFontSize !== undefined) {
+    const clamped = _clampOptionValue(Number(nextOptions.twoDAtomFontSize), RENDER_OPTION_LIMITS.twoDAtomFontSize);
+    if (clamped !== null) {
+      merged.twoDAtomFontSize = Math.round(clamped);
+    }
+  }
+  if (nextOptions.twoDBondThickness !== undefined) {
+    const clamped = _clampOptionValue(Number(nextOptions.twoDBondThickness), RENDER_OPTION_LIMITS.twoDBondThickness);
+    if (clamped !== null) {
+      merged.twoDBondThickness = clamped;
+    }
+  }
+  if (nextOptions.forceAtomSizeMultiplier !== undefined) {
+    const clamped = _clampOptionValue(
+      Number(nextOptions.forceAtomSizeMultiplier),
+      RENDER_OPTION_LIMITS.forceAtomSizeMultiplier
+    );
+    if (clamped !== null) {
+      merged.forceAtomSizeMultiplier = clamped;
+    }
+  }
+  if (nextOptions.forceBondThicknessMultiplier !== undefined) {
+    const clamped = _clampOptionValue(
+      Number(nextOptions.forceBondThicknessMultiplier),
+      RENDER_OPTION_LIMITS.forceBondThicknessMultiplier
+    );
+    if (clamped !== null) {
+      merged.forceBondThicknessMultiplier = clamped;
+    }
+  }
+  _renderOptions = merged;
+  _syncDerivedRenderConstants();
+  return getRenderOptions();
+}
+
+_syncDerivedRenderConstants();
 export const HIGHLIGHT_STYLE_PALETTES = {
   default: [
     { fill: 'rgb(130, 210, 80)', outline: 'rgb(70, 140, 40)' },
@@ -29,13 +112,20 @@ export function getHighlightStyleVariant(styleName = 'default', index = 0) {
   return palette[((index % palette.length) + palette.length) % palette.length];
 }
 
+export function atomColor(sym, layout = '2d') {
+  if (layout === '2d' && !_renderOptions.twoDAtomColoring) {
+    return '#333333';
+  }
+  return baseAtomColor(sym);
+}
+
 export function strokeColor(symbol) {
   const light = new Set(['H', 'F', 'Cl', 'Mg', 'Ca', 'He', 'Ne', 'Ar', 'B', 'Si', 'Be', 'Li']);
   return light.has(symbol) ? '#888' : 'rgba(0,0,0,0.25)';
 }
 
 export function singleBondWidth(order) {
-  return `${(order * BOND_MULT - 1) * (BOND_MULT / 2)}px`;
+  return `${(order * BOND_MULT - 1) * (BOND_MULT / 2) * _renderOptions.forceBondThicknessMultiplier}px`;
 }
 
 export function renderBondOrder(bond) {
@@ -51,11 +141,12 @@ export function prepareAromaticBondRendering(molecule) {
   }
 }
 
-export function atomRadius(protons) {
+export function atomRadius(protons, layout = 'force') {
   if (protons == null || protons >= 11) {
-    return 10;
+    return 10 * (layout === 'force' ? _renderOptions.forceAtomSizeMultiplier : 1);
   }
-  return Math.sqrt(protons + 2.7) * 2.8;
+  const baseRadius = Math.sqrt(protons + 2.7) * 2.8;
+  return baseRadius * (layout === 'force' ? _renderOptions.forceAtomSizeMultiplier : 1);
 }
 
 export function xOffset(offset, src, tgt) {
@@ -111,7 +202,7 @@ function escapeHtml(text) {
     .replace(/'/g, '&#39;');
 }
 
-export function atomTooltipHtml(atom, _mol, valenceWarning = null) {
+export function atomTooltipHtml(atom, _mol, valenceWarning = null, layout = '2d') {
   const p = atom.properties;
   const charge = p.charge ?? 0;
 
@@ -159,7 +250,7 @@ export function atomTooltipHtml(atom, _mol, valenceWarning = null) {
     rows += row('Chirality', p.chirality);
   }
 
-  const color = atomColor(atom.name);
+  const color = atomColor(atom.name, layout);
   const warningHtml = valenceWarning
     ? `<div style="margin:6px 0 8px;color:#b3202e;font-weight:600">${escapeHtml(valenceWarning.reason)}</div>`
     : '';
@@ -168,12 +259,13 @@ export function atomTooltipHtml(atom, _mol, valenceWarning = null) {
     </div>${warningHtml}<table>${rows}</table>`;
 }
 
-export function renderAtomLabel(group, label, color, xOffset = 0) {
+export function renderAtomLabel(group, label, color, xOffset = 0, fontSize = DEFAULT_RENDER_OPTIONS.twoDAtomFontSize) {
   const textEl = group
     .append('text')
     .attr('class', 'atom-label')
     .attr('fill', color)
     .attr('x', xOffset)
+    .style('font-size', `${fontSize}px`)
     .attr('pointer-events', 'none')
     .attr('text-anchor', 'middle');
   let i = 0;

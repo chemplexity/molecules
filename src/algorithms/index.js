@@ -14,3 +14,4 @@ export {
 } from './subgraph.js';
 export { perceiveAromaticity, refreshAromaticity } from './aromaticity.js';
 export { morganRanks } from './morgan.js';
+export { generateResonanceStructures } from './resonance.js';
