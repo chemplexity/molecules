@@ -6,14 +6,14 @@
  *   - YYYYmmdd_molecules_test_grid_smiles.png  (rendered from SMILES)
  *   - YYYYmmdd_molecules_test_grid_inchi.png   (rendered from InChI; null entries skipped)
  *
- * Usage:  node examples/generate_grid.js
+ * Usage:  node scripts/validation/generate-molecule-grid.js
  */
 
 import { writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { renderMolSVGFromSMILES, renderMolSVGFromINCHI, buildCompositeSVG, svgToPng } from '../src/layout/render2d.js';
-import { randomMolecule } from './example-molecules.js';
+import { renderMolSVGFromSMILES, renderMolSVGFromINCHI, buildCompositeSVG, svgToPng } from '../../src/layout/render2d.js';
+import { randomMolecule } from '../../examples/example-molecules.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -67,7 +67,7 @@ function withBottomLabel(cell, labelText) {
 }
 
 function saveGrid(molecules, key, renderFn, suffix) {
-  console.log(`Rendering ${molecules.length} molecules (${suffix})\u2026`); // eslint-disable-line no-console
+  console.log(`Rendering ${molecules.length} molecules (${suffix})…`); // eslint-disable-line no-console
   const cells = molecules.map((mol, i) => {
     const val = mol[key];
     const result = val ? renderFn(val) : null;

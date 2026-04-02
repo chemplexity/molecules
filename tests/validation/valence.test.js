@@ -89,6 +89,10 @@ describe('validateValence — valid molecules', () => {
     assert.deepEqual(validateValence(parseSMILES('CCl')), []);
   });
 
+  it('isolated bromide [Br-] produces no warnings', () => {
+    assert.deepEqual(validateValence(parseSMILES('[Br-]')), []);
+  });
+
   it('nitrobenzene [O-][N+](=O)c1ccccc1 produces no warnings', () => {
     assert.deepEqual(validateValence(parseSMILES('[O-][N+](=O)c1ccccc1')), []);
   });
@@ -140,13 +144,25 @@ describe('validateValence — over-bonded carbon', () => {
     assert.equal(ws.length, 1);
     assert.equal(ws[0].element, 'C');
     assert.equal(ws[0].bondOrder, 5);
-    assert.deepEqual(ws[0].allowed, [0, 2, 4]);
+    assert.deepEqual(ws[0].allowed, [4]);
   });
 
   it('C with 6 single bonds produces a warning', () => {
     const ws = centerWarnings(buildWithNBonds('C', 6));
     assert.equal(ws.length, 1);
     assert.equal(ws[0].bondOrder, 6);
+  });
+
+  it('neutral C with 2 single bonds now produces a warning', () => {
+    const ws = centerWarnings(buildWithNBonds('C', 2));
+    assert.equal(ws.length, 1);
+    assert.deepEqual(ws[0].allowed, [4]);
+  });
+
+  it('neutral C with 0 bonds now produces a warning', () => {
+    const ws = centerWarnings(buildWithNBonds('C', 0));
+    assert.equal(ws.length, 1);
+    assert.deepEqual(ws[0].allowed, [4]);
   });
 });
 
@@ -156,8 +172,7 @@ describe('validateValence — nitrogen parity violation', () => {
     assert.equal(ws.length, 1);
     assert.equal(ws[0].element, 'N');
     assert.equal(ws[0].bondOrder, 4);
-    // ec = 5 − 0 = 5 (odd) → allowed odd values ≤ min(5, 4): [1, 3]
-    assert.deepEqual(ws[0].allowed, [1, 3]);
+    assert.deepEqual(ws[0].allowed, [3]);
   });
 
   it('N with 4 bonds and charge +1 produces no warning', () => {
@@ -176,8 +191,7 @@ describe('validateValence — oxygen', () => {
     const ws = centerWarnings(buildWithNBonds('O', 3));
     assert.equal(ws.length, 1);
     assert.equal(ws[0].element, 'O');
-    // ec = 6 (even), period-2 allowedMax = min(6, 8−6) = 2 → allowed: [0, 2]
-    assert.deepEqual(ws[0].allowed, [0, 2]);
+    assert.deepEqual(ws[0].allowed, [2]);
   });
 
   it('O with 3 bonds and charge +1 produces no warning', () => {
@@ -193,7 +207,7 @@ describe('validateValence — oxygen', () => {
   it('O with 2 bonds and radical 1 produces a warning', () => {
     const ws = centerWarnings(buildWithNBonds('O', 2, { radical: 1 }));
     assert.equal(ws.length, 1);
-    assert.deepEqual(ws[0].allowed, [1, 3]);
+    assert.deepEqual(ws[0].allowed, [1]);
   });
 });
 
@@ -236,6 +250,19 @@ describe('validateValence — phosphorus and sulfur (expanded octet)', () => {
   });
 });
 
+describe('validateValence — heavier halogens stay monovalent by default', () => {
+  it('Br with 1 bond produces no warning', () => {
+    const mol = buildWithNBonds('Br', 1);
+    assert.equal(centerWarnings(mol).length, 0);
+  });
+
+  it('Br with 5 bonds produces a warning', () => {
+    const ws = centerWarnings(buildWithNBonds('Br', 5));
+    assert.equal(ws.length, 1);
+    assert.deepEqual(ws[0].allowed, [1]);
+  });
+});
+
 describe('validateValence — transition metals are skipped', () => {
   it('Fe(II) produces no warnings', () => {
     const mol = new Molecule();
@@ -250,7 +277,7 @@ describe('validateValence — transition metals are skipped', () => {
 });
 
 describe('validateValence — warning object shape', () => {
-  it('warning has atomId, element, charge, radical, bondOrder, allowed, message', () => {
+  it('warning has atomId, element, charge, radical, bondOrder, allowed, reason, message', () => {
     const mol = buildWithNBonds('C', 5);
     const [w] = validateValence(mol);
     assert.equal(typeof w.atomId, 'string');
@@ -259,15 +286,17 @@ describe('validateValence — warning object shape', () => {
     assert.equal(typeof w.radical, 'number');
     assert.equal(typeof w.bondOrder, 'number');
     assert.ok(Array.isArray(w.allowed));
+    assert.equal(typeof w.reason, 'string');
     assert.equal(typeof w.message, 'string');
     assert.ok(w.message.includes('C'));
     assert.ok(w.message.includes('5'));
   });
 
-  it('message includes allowed bond orders', () => {
+  it('reason and message include allowed bond orders', () => {
     const mol = buildWithNBonds('C', 5);
     const [w] = validateValence(mol);
-    assert.ok(w.message.includes('0, 2, 4'));
+    assert.ok(w.reason.includes('4'));
+    assert.ok(w.message.includes('4'));
   });
 });
 

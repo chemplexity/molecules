@@ -94,3 +94,9 @@
 - Added Ctrl/Cmd+A select-all shortcut
 - Renamed UI label to "Molecule Catalog"
 - Miscellaneous fixes
+
+## 2026-04-01
+
+- Added valence-warning atom highlights and hover explanations in the demo
+- Added a psychoactive-compounds collection to the molecule catalog
+- Refactor coords2d.js

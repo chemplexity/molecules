@@ -319,6 +319,7 @@
       import { parseINCHI, toInChI } from './src/io/inchi.js';
       import { detectChemicalStringFormat } from './src/io/detect.js';
       import { moleculeCatalog } from './src/data/molecule-catalog.js';
+      import { validateValence } from './src/validation/index.js';
       import { refreshAromaticity } from './src/algorithms/aromaticity.js';
       import { generateCoords, refineExistingCoords, generateAndRefine2dCoords } from './src/layout/index.js';
       import * as mol2dHelpers from './src/layout/mol2d-helpers.js';
@@ -432,6 +433,13 @@
       let rotationDeg = 0;
       let flipH = false; // mirror about vertical axis (x → -x)
       let flipV = false; // mirror about horizontal axis (y → -y)
+      const VALENCE_WARNING_FILL = 'rgba(214, 48, 49, 0.3)';
+      let _activeValenceWarningMap = new Map();
+      let _selectionValenceTooltipAtomId = null;
+
+      function valenceWarningMapFor(molecule) {
+        return new Map(validateValence(molecule).map(warning => [warning.atomId, warning]));
+      }
 
       // ---------------------------------------------------------------------------
       // D3 SVG setup (shared by both modes)
@@ -781,6 +789,56 @@
           }
         }
         _lastEraseHitEl = null;
+      });
+
+      document.addEventListener('mousemove', event => {
+        const warningHoverMode = _selectMode || (_drawBondMode && !_drawBondState);
+        if (!warningHoverMode || _eraseMode || (mode !== '2d' && mode !== 'force')) {
+          if (_selectionValenceTooltipAtomId !== null) {
+            _selectionValenceTooltipAtomId = null;
+            tooltip.interrupt().style('opacity', 0);
+          }
+          return;
+        }
+
+        const mol = mode === 'force' ? currentMol : _mol2d;
+        if (!mol || _activeValenceWarningMap.size === 0) {
+          if (_selectionValenceTooltipAtomId !== null) {
+            _selectionValenceTooltipAtomId = null;
+            tooltip.interrupt().style('opacity', 0);
+          }
+          return;
+        }
+
+        let atomId = null;
+        for (const el of document.elementsFromPoint(event.clientX, event.clientY)) {
+          if (el.classList?.contains('node')) {
+            const datum = d3.select(el).datum();
+            atomId = datum?.id ?? null;
+            if (atomId) break;
+          }
+          const atomHitGroup = el.classList?.contains('atom-hit') ? el.closest('[data-atom-id]') : el.closest?.('[data-atom-id]');
+          atomId = atomHitGroup?.getAttribute?.('data-atom-id') ?? null;
+          if (atomId) break;
+        }
+
+        const valenceWarning = atomId ? _activeValenceWarningMap.get(atomId) ?? null : null;
+        const atom = atomId ? mol.atoms.get(atomId) ?? null : null;
+        if (!atom || !valenceWarning) {
+          if (_selectionValenceTooltipAtomId !== null) {
+            _selectionValenceTooltipAtomId = null;
+            tooltip.interrupt().style('opacity', 0);
+          }
+          return;
+        }
+
+        _selectionValenceTooltipAtomId = atomId;
+        tooltip
+          .interrupt()
+          .style('opacity', 0.9)
+          .html(atomTooltipHtml(atom, mol, valenceWarning))
+          .style('left', event.clientX + 13 + 'px')
+          .style('top', event.clientY - 20 + 'px');
       });
 
       document.addEventListener('mouseup', event => {
@@ -1265,6 +1323,8 @@
 
       function updateForce(molecule, { preservePositions = false, preserveView = preservePositions } = {}) {
         prepareAromaticBondRendering(molecule);
+        const valenceWarningMap = valenceWarningMapFor(molecule);
+        _activeValenceWarningMap = valenceWarningMap;
         _forceAutoFitEnabled = !preserveView;
         _disableForceKeepInView();
 
@@ -1299,6 +1359,7 @@
         g.selectAll('*').remove();
         _forceSelLines = null;
         _forceSelCircles = null;
+        _forceValenceWarningCircles = null;
         _fgHlLines = null;
         _fgHlCircles = null;
 
@@ -1311,6 +1372,20 @@
           .selectAll('line.link-base')
           .data(graph.links, d => d.id)
           .enter();
+
+        const valenceWarningNodes = graph.nodes.filter(node => valenceWarningMap.has(node.id));
+        _forceValenceWarningCircles = g
+          .append('g')
+          .attr('class', 'valence-warning-layer')
+          .style('pointer-events', 'none')
+          .selectAll('circle.valence-warning')
+          .data(valenceWarningNodes, d => d.id)
+          .enter()
+          .append('circle')
+          .attr('class', 'valence-warning')
+          .attr('r', d => atomRadius(d.protons) + 6)
+          .attr('fill', VALENCE_WARNING_FILL)
+          .attr('stroke', 'none');
 
         const singleBond = bondEnter
           .append('line')
@@ -1595,23 +1670,32 @@
               _hoveredAtomIds.add(d.id);
               _refreshSelectionOverlay();
             }
-            if (_selectMode || _drawBondMode || _eraseMode) {
-              return;
-            }
             const atom = molecule.atoms.get(d.id);
             if (!atom) {
               return;
             }
-            tooltip.transition().delay(200).style('opacity', 0.9);
+            const valenceWarning = valenceWarningMap.get(d.id) ?? null;
+            if (_eraseMode || ((_selectMode || _drawBondMode) && !valenceWarning)) {
+              return;
+            }
+            if ((_selectMode || _drawBondMode) && valenceWarning) {
+              _selectionValenceTooltipAtomId = d.id;
+              tooltip.interrupt().style('opacity', 0.9);
+            } else {
+              tooltip.transition().delay(200).style('opacity', 0.9);
+            }
             tooltip
-              .html(atomTooltipHtml(atom, molecule))
+              .html(atomTooltipHtml(atom, molecule, valenceWarning))
               .style('left', event.clientX + 13 + 'px')
               .style('top', event.clientY - 20 + 'px');
           })
           .on('mousemove', event => {
             tooltip.style('left', event.clientX + 13 + 'px').style('top', event.clientY - 20 + 'px');
           })
-          .on('mouseout', () => {
+          .on('mouseout', (event, d) => {
+            if (_selectMode && _selectionValenceTooltipAtomId === d.id) {
+              return;
+            }
             if (_drawBondState) _resetDrawBondHover();
             else {
               _clearPrimitiveHover();
@@ -1729,6 +1813,9 @@
 
           atom.attr('cx', d => d.x).attr('cy', d => d.y);
           atomSymbol.attr('x', d => d.x).attr('y', d => d.y);
+          if (_forceValenceWarningCircles) {
+            _forceValenceWarningCircles.attr('cx', d => d.x).attr('cy', d => d.y);
+          }
 
           const OFF = 0.707; // cos/sin 45°
           chargeLabel
@@ -1876,7 +1963,11 @@
         const BOND_SEL_R = 6; // extra radius for bond highlight caps
         const ATOM_SEL_R = 13; // larger extra radius so atom circles exceed bond caps
         const OL = 2;
-        const selLayer = g.insert('g', ':first-child').attr('class', 'force-selection-layer').attr('opacity', 0.45);
+        const selLayer = g
+          .insert('g', ':first-child')
+          .attr('class', 'force-selection-layer')
+          .attr('opacity', 0.45)
+          .style('pointer-events', 'none');
 
         const selectedNodes = simulation.nodes().filter(node => activeAtomIds.has(node.id));
         const selectedLinks = simulation
@@ -1944,7 +2035,11 @@
         const OL = 2;
 
         // Insert behind the bond layer (same stacking as fg highlights).
-        const selLayer = g.insert('g', 'g.bonds').attr('class', 'atom-selection').attr('opacity', 0.45);
+        const selLayer = g
+          .insert('g', 'g.bonds')
+          .attr('class', 'atom-selection')
+          .attr('opacity', 0.45)
+          .style('pointer-events', 'none');
 
         const BOND_SEL_PAD = 5; // extra px beyond label half-width for bond highlight
         const ATOM_SEL_PAD = 12; // larger pad so atom circles clearly exceed bond caps
@@ -2028,6 +2123,7 @@
       let _overlayRafId = null; // pending rAF for throttled overlay redraw
       let _forceSelLines = null; // cached D3 selection of force-selection-layer lines
       let _forceSelCircles = null; // cached D3 selection of force-selection-layer circles
+      let _forceValenceWarningCircles = null; // cached D3 selection of force valence-warning circles
       let _fgHlLines = null; // cached D3 selection of fg-highlight-layer lines
       let _fgHlCircles = null; // cached D3 selection of fg-highlight-layer circles
       let _drawBondElement = 'C'; // atom type placed by the draw-bond tool
@@ -2246,13 +2342,18 @@
               g.selectAll('*').remove();
               _forceSelLines = null;
               _forceSelCircles = null;
+              _forceValenceWarningCircles = null;
               _fgHlLines = null;
               _fgHlCircles = null;
+              _activeValenceWarningMap = new Map();
+              _selectionValenceTooltipAtomId = null;
             }
           } else {
             _mol2d = null;
             _hCounts2d = null;
             _stereoMap2d = null;
+            _activeValenceWarningMap = new Map();
+            _selectionValenceTooltipAtomId = null;
             if (mode === '2d') g.selectAll('*').remove();
           }
           document.getElementById('molecularFormula').innerHTML = '';
@@ -3674,6 +3775,8 @@
         const mol = _mol2d;
         const hCounts = _hCounts2d;
         const toSVGPt = _toSVGPt2d;
+        const valenceWarningMap = valenceWarningMapFor(mol);
+        _activeValenceWarningMap = valenceWarningMap;
 
         const stereoMap = _stereoMap2d;
         const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
@@ -3689,6 +3792,7 @@
         g.selectAll('*').remove();
         _forceSelLines = null;
         _forceSelCircles = null;
+        _forceValenceWarningCircles = null;
         _fgHlLines = null;
         _fgHlCircles = null;
 
@@ -3758,12 +3862,34 @@
 
           _redraw2dHighlights();
           _redraw2dSelection();
+          _redraw2dValenceWarnings();
+        }
+
+        function _redraw2dValenceWarnings() {
+          g.select('g.valence-warning-layer').remove();
+          const warningAtoms = atoms.filter(atom => valenceWarningMap.has(atom.id));
+          if (warningAtoms.length === 0) return;
+          const warningLayer = g.append('g').attr('class', 'valence-warning-layer').style('pointer-events', 'none');
+          for (const atom of warningAtoms) {
+            const { x, y } = toSVGPt(atom);
+            const r = Math.max(labelHalfW(getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name, FONT_SIZE), 10) + 7;
+            warningLayer
+              .append('circle')
+              .attr('class', 'valence-warning')
+              .attr('cx', x)
+              .attr('cy', y)
+              .attr('r', r)
+              .attr('fill', VALENCE_WARNING_FILL)
+              .attr('stroke', 'none');
+          }
         }
 
         // Layer 0 — functional-group highlights (behind bonds)
         _redraw2dHighlights();
         // Layer 0b — selection highlights (behind bonds, in front of fg highlights)
         _redraw2dSelection();
+        // Layer 0c — valence warnings (behind bonds and labels)
+        _redraw2dValenceWarnings();
 
         // Layer 1 — bonds (each wrapped in a <g data-bond-id> for incremental drag updates)
         const chiralCenterIds = new Set(mol.getChiralCenters());
@@ -3952,12 +4078,18 @@
                 _hoveredAtomIds.add(atom.id);
                 _refreshSelectionOverlay();
               }
-              if (_selectMode || _drawBondMode || _eraseMode) {
+              const valenceWarning = valenceWarningMap.get(atom.id) ?? null;
+              if (_eraseMode || ((_selectMode || _drawBondMode) && !valenceWarning)) {
                 return;
               }
-              tooltip.transition().delay(150).style('opacity', 0.9);
+              if ((_selectMode || _drawBondMode) && valenceWarning) {
+                _selectionValenceTooltipAtomId = atom.id;
+                tooltip.interrupt().style('opacity', 0.9);
+              } else {
+                tooltip.transition().delay(150).style('opacity', 0.9);
+              }
               tooltip
-                .html(atomTooltipHtml(atom, mol))
+                .html(atomTooltipHtml(atom, mol, valenceWarning))
                 .style('left', event.clientX + 13 + 'px')
                 .style('top', event.clientY - 20 + 'px');
             })
@@ -3965,6 +4097,9 @@
               tooltip.style('left', event.clientX + 13 + 'px').style('top', event.clientY - 20 + 'px');
             })
             .on('mouseout', () => {
+              if (_selectMode && _selectionValenceTooltipAtomId === atom.id) {
+                return;
+              }
               if (_drawBondState) _resetDrawBondHover();
               else {
                 _clearPrimitiveHover();
@@ -3983,6 +4118,7 @@
                 .attr('class', 'atom-charge')
                 .attr('x', labelDx + labelHalfW(label, FONT_SIZE))
                 .attr('y', -(FONT_SIZE * 0.42))
+                .attr('pointer-events', 'none')
                 .attr('fill', symbol === 'H' ? '#333333' : atomColor(symbol))
                 .text(sign);
             }
@@ -4661,8 +4797,11 @@
         g.selectAll('*').remove();
         _forceSelLines = null;
         _forceSelCircles = null;
+        _forceValenceWarningCircles = null;
         _fgHlLines = null;
         _fgHlCircles = null;
+        _activeValenceWarningMap = new Map();
+        _selectionValenceTooltipAtomId = null;
         if (mode === 'force') {
           simulation.nodes([]);
           simulation.force('link').links([]);

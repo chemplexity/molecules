@@ -2,21 +2,60 @@
 
 import elements from '../data/elements.js';
 
+function commonNeutralValences(symbol, { group, period }) {
+  if (symbol === 'H') return [1];
+  if (symbol === 'He' || group === 18) return [0];
+  if (group === 1 || group === 2) return [group];
+  if (group === 13) return [3];
+  if (group === 14) return [4];
+  if (group === 15) return period <= 2 ? [3] : [3, 5];
+  if (group === 16) return period <= 2 ? [2] : [2, 4, 6];
+  if (group === 17) return [1];
+  return [];
+}
+
+function shiftedCommonValences(symbol, el, charge, radical) {
+  const base = commonNeutralValences(symbol, el);
+  if (base.length === 0) return [];
+
+  const shift =
+    symbol === 'H'
+      ? v => v - Math.abs(charge) - radical
+      : el.group === 14
+        ? v => v - Math.abs(charge) - radical
+        : el.group >= 15 && el.group <= 17
+          ? v => v + charge - radical
+          : v => v - charge - radical;
+
+  return [...new Set(base.map(shift).filter(v => Number.isInteger(v) && v >= 0 && v <= 8))].sort((a, b) => a - b);
+}
+
 /**
  * Validates the valence (total bond order) of each atom in a molecule.
  *
- * Uses the electron-count parity rule derived from formal-charge theory:
+ * Uses the electron-count parity rule derived from formal-charge theory,
+ * then narrows the result to common valence families for the element:
  *
  *   ec = valenceElectrons(element) − formalCharge − radicalCount
  *
- *   allowed bond orders = non-negative integers ≤ allowedMax
- *                         that share the same parity as ec
+ *   candidate bond orders = non-negative integers ≤ allowedMax
+ *                           that share the same parity as ec
+ *
+ *   allowed bond orders = candidate bond orders ∩ shiftedCommonValences
  *
  * where `allowedMax` enforces orbital-count limits:
  *   - period 1  (H, He):  min(ec, 2 − ec)  — one s orbital, 2 e⁻ max
  *   - period 2  (Li–Ne):  min(ec, 8 − ec)  — octet rule from both ends;
- *                          correctly gives C→4, N→3, O→2, F→1 for neutral atoms
- *   - period 3+ (Na–Xe):  min(ec, 8)       — d-orbital participation, generous cap
+ *                          caps the candidate set for second-row atoms
+ *   - halogens (group 17): min(ec, 8 − ec) — keep Cl/Br/I monovalent by default
+ *   - other period 3+ main-group atoms: min(ec, 8) — d-orbital participation, generous cap
+ *
+ * Common valence families are then shifted by charge / radical in the direction
+ * that matches ordinary chemistry:
+ *   - C/Si family: neutral 4; charged/radical species usually step down
+ *   - N/P family: neutral 3 (plus 5 for heavier atoms); cations step up
+ *   - O/S family: neutral 2 (plus 4/6 for heavier atoms); cations step up
+ *   - halogens: neutral 1; anions step down to 0
  *
  * Aromatic atoms are skipped: their bond orders are resonance-averaged
  * (fractional) and only well-defined after Kekulé assignment.
@@ -35,6 +74,7 @@ import elements from '../data/elements.js';
  *   radical:   number,
  *   bondOrder: number,
  *   allowed:   number[],
+ *   reason:    string,
  *   message:   string
  * }>} Array of warning objects — empty when all atoms are valid.
  */
@@ -73,17 +113,22 @@ export function validateValence(molecule) {
     // Compute allowedMax from orbital-count constraints
     const shellSize = period === 1 ? 2 : 8;
     const octetMax = ec >= 0 ? Math.max(0, Math.min(ec, shellSize - ec)) : 0;
-    const allowedMax = period <= 2 ? octetMax : Math.min(Math.max(0, ec), 8);
+    const allowExpandedOctet = period > 2 && group !== 17;
+    const allowedMax = allowExpandedOctet ? Math.min(Math.max(0, ec), 8) : octetMax;
 
-    // Build the set of allowed bond orders (same parity as ec, up to allowedMax)
-    const allowed = [];
+    // Build the candidate set from parity/orbital rules.
+    const candidates = [];
     if (ec >= 0) {
       const parity = ec % 2;
       for (let bo = parity; bo <= allowedMax; bo += 2) {
-        allowed.push(bo);
+        candidates.push(bo);
       }
     }
-    // ec < 0 (charge exceeds valence electrons) → allowed stays empty
+    // ec < 0 (charge exceeds valence electrons) → candidate set stays empty.
+
+    // Keep only the common valence states that fit the parity/orbital guardrails.
+    const preferred = new Set(shiftedCommonValences(atom.name, el, charge, radical));
+    const allowed = candidates.filter(bo => preferred.has(bo));
 
     // Sum bond orders using Math.floor so fractional aromatic bond orders
     // (1.5, stored by the SMILES parser) become sigma-bond counts (1).
@@ -99,6 +144,8 @@ export function validateValence(molecule) {
     if (!allowed.includes(totalBO)) {
       const chargeStr = charge > 0 ? `+${charge}` : `${charge}`;
       const radicalStr = radical > 0 ? `, radical ${radical}` : '';
+      const allowedStr = allowed.length ? allowed.join(', ') : 'none';
+      const reason = `Bond order ${totalBO} is not valid for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed: ${allowedStr})`;
       warnings.push({
         atomId,
         element: atom.name,
@@ -106,10 +153,8 @@ export function validateValence(molecule) {
         radical,
         bondOrder: totalBO,
         allowed,
-        message:
-          `${atom.name}(${atomId}): bond order ${totalBO} is not valid ` +
-          `for ${atom.name} with charge ${chargeStr}${radicalStr} ` +
-          `(allowed: ${allowed.length ? allowed.join(', ') : 'none'})`
+        reason,
+        message: `${atom.name}(${atomId}): ${reason}`
       });
     }
   }

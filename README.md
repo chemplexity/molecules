@@ -115,7 +115,7 @@ import {
   szegedIndex,
   hosoyaIndex,
   eccentricConnectivityIndex,
-  // Spectral / information
+  // Spectral
   spectralRadius,
   estradaIndex,
   graphEntropy

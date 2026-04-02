@@ -11,6 +11,23 @@ export const PI_STROKE = { stroke: '#FFFFFF', width: '2px' };
 export const ARO_STROKE = { stroke: '#696969', width: '3px', dashArray: '3,3' };
 export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
 export const STROKE_W = 1.6; // px
+export const HIGHLIGHT_STYLE_PALETTES = {
+  default: [
+    { fill: 'rgb(130, 210, 80)', outline: 'rgb(70, 140, 40)' },
+    { fill: 'rgb(86, 190, 230)', outline: 'rgb(36, 119, 166)' },
+    { fill: 'rgb(110, 148, 235)', outline: 'rgb(64, 90, 176)' },
+    { fill: 'rgb(179, 123, 235)', outline: 'rgb(118, 68, 178)' },
+    { fill: 'rgb(237, 124, 198)', outline: 'rgb(177, 70, 140)' },
+    { fill: 'rgb(236, 129, 96)', outline: 'rgb(176, 79, 52)' },
+    { fill: 'rgb(241, 194, 84)', outline: 'rgb(181, 136, 31)' }
+  ],
+  physchem: [{ fill: 'rgb(246, 227, 110)', outline: 'rgb(194, 168, 24)' }]
+};
+
+export function getHighlightStyleVariant(styleName = 'default', index = 0) {
+  const palette = HIGHLIGHT_STYLE_PALETTES[styleName] ?? HIGHLIGHT_STYLE_PALETTES.default;
+  return palette[((index % palette.length) + palette.length) % palette.length];
+}
 
 export function strokeColor(symbol) {
   const light = new Set(['H', 'F', 'Cl', 'Mg', 'Ca', 'He', 'Ne', 'Ar', 'B', 'Si', 'Be', 'Li']);
@@ -85,7 +102,16 @@ export function bondTooltipHtml(bond, a1, a2) {
     </div><table>${rows}</table>`;
 }
 
-export function atomTooltipHtml(atom, _mol) {
+function escapeHtml(text) {
+  return String(text)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+export function atomTooltipHtml(atom, _mol, valenceWarning = null) {
   const p = atom.properties;
   const charge = p.charge ?? 0;
 
@@ -134,9 +160,12 @@ export function atomTooltipHtml(atom, _mol) {
   }
 
   const color = atomColor(atom.name);
+  const warningHtml = valenceWarning
+    ? `<div style="margin:6px 0 8px;color:#b3202e;font-weight:600">${escapeHtml(valenceWarning.reason)}</div>`
+    : '';
   return `<div class="tt-head" style="color:${color}">${isotopePrefix}${atom.name}${chargeSup}
         <span style="font-size:11px;font-weight:normal;color:#aaa;margin-left:4px">${atom.id}</span>
-    </div><table>${rows}</table>`;
+    </div>${warningHtml}<table>${rows}</table>`;
 }
 
 export function renderAtomLabel(group, label, color, xOffset = 0) {
@@ -145,6 +174,7 @@ export function renderAtomLabel(group, label, color, xOffset = 0) {
     .attr('class', 'atom-label')
     .attr('fill', color)
     .attr('x', xOffset)
+    .attr('pointer-events', 'none')
     .attr('text-anchor', 'middle');
   let i = 0;
   let first = true;

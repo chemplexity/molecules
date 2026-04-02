@@ -102,6 +102,14 @@ describe('moleculeCatalog', () => {
     assert.equal(getMoleculeCatalogById('steroids')?.molecules.length, 6);
     assert.equal(getMoleculeCatalogById('nucleobases')?.molecules.length, 6);
     assert.equal(getMoleculeCatalogById('terpenes-and-terpenoids')?.molecules.length, 6);
+    assert.equal(getMoleculeCatalogById('psychoactive-compounds')?.molecules.length, 18);
+  });
+
+  it('keeps collection groups sorted alphabetically by display name', () => {
+    assert.deepEqual(
+      moleculeCatalog.map(collection => collection.name),
+      [...moleculeCatalog.map(collection => collection.name)].sort((a, b) => a.localeCompare(b))
+    );
   });
 
   it('requires id, name, smiles, and inchi for all molecules', () => {

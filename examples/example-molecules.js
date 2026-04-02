@@ -1,5 +1,6 @@
 /**
- * Shared molecule list used by index.html (random picker) and generate_grid.js.
+ * Shared molecule list used by index.html (random picker) and the validation
+ * grid generator script.
  *
  * Each entry has:
  *   smiles {string}  — SMILES string

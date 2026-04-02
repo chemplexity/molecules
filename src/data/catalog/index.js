@@ -6,6 +6,7 @@ import fattyAcidsCatalog from './fatty-acids.js';
 import steroidsCatalog from './steroids.js';
 import nucleobasesCatalog from './nucleobases.js';
 import terpenesAndTerpenoidsCatalog from './terpenes-and-terpenoids.js';
+import psychoactiveCompoundsCatalog from './psychoactive-compounds.js';
 
 export {
   aminoAcidsCatalog,
@@ -13,16 +14,20 @@ export {
   fattyAcidsCatalog,
   steroidsCatalog,
   nucleobasesCatalog,
-  terpenesAndTerpenoidsCatalog
+  terpenesAndTerpenoidsCatalog,
+  psychoactiveCompoundsCatalog
 };
 
-export const moleculeCatalog = [
+const unsortedMoleculeCatalog = [
   aminoAcidsCatalog,
   polycyclicAromaticHydrocarbonsCatalog,
   fattyAcidsCatalog,
   steroidsCatalog,
   nucleobasesCatalog,
-  terpenesAndTerpenoidsCatalog
+  terpenesAndTerpenoidsCatalog,
+  psychoactiveCompoundsCatalog
 ];
+
+export const moleculeCatalog = unsortedMoleculeCatalog.slice().sort((a, b) => a.name.localeCompare(b.name));
 
 export default moleculeCatalog;
