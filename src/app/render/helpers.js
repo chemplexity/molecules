@@ -302,5 +302,6 @@ export function addLine(group, x1, y1, x2, y2, extraClass) {
     .attr('y1', y1)
     .attr('x2', x2)
     .attr('y2', y2)
+    .attr('pointer-events', 'none')
     .style('stroke-width', `${STROKE_W}px`);
 }

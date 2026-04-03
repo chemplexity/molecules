@@ -398,7 +398,9 @@
         _restoreReactionPreviewSource,
         _prepareReactionPreviewEditTargets,
         _prepareReactionPreviewBondEditTarget,
+        _prepareReactionPreviewEraseTargets,
         _hasReactionPreview,
+        _isReactionPreviewEditableAtomId,
         _reaction2dSourceAtomId,
         _reaction2dProductGeometries,
         _reaction2dArrowEndpoints,
@@ -411,8 +413,13 @@
         updateReactionTemplatesPanel,
         _viewportFitPadding
       } from './src/app/render/reaction-2d.js';
-      import { initResonancePanel, updateResonancePanel, clearResonancePanelState, resetActiveResonanceView } from './src/app/render/resonance.js';
-
+      import {
+        initResonancePanel,
+        updateResonancePanel,
+        clearResonancePanelState,
+        resetActiveResonanceView,
+        prepareResonanceStateForStructuralEdit
+      } from './src/app/render/resonance.js';
       const {
         WEDGE_HALF_W,
         WEDGE_DASHES,
@@ -427,7 +434,7 @@
         computeChargeBadgePlacement,
         getAtomLabel,
         computeLonePairDotPositions,
-        pickStereoWedges,
+        syncDisplayStereo,
         stereoBondCenterIdForRender,
         kekulize
       } = mol2dHelpers;
@@ -708,6 +715,7 @@
         if (!_drawBondMode) return;
         if (mode !== '2d' && mode !== 'force') return;
         if (event.button !== 0) return;
+        if (_hasReactionPreview()) return;
         // Only fire on blank space — atom/node mousedown.drawbond already stopPropagation'd.
         if (event.target.closest('.atom-hit, .bond-hit, .node, .bond-hover-target')) return;
         event.stopPropagation();
@@ -787,8 +795,17 @@
         // Force-layout: node/bond hit areas closely match visible size.
         // Sample the cursor centre AND 8 perimeter points so erasing fires
         // as soon as the visible circle edge reaches the node/bond.
+        // Exclude 2D .atom-hit/.bond-hit from the unfiltered centre sample.
+        // .atom-hit circles have a large radius; .bond-hit lines have
+        // stroke-width 12 SVG units which scales with D3 zoom — at high zoom
+        // the hit area can reach far beyond the visible eraser circle.
+        // Both are handled by the geometry-checked querySelectorAll path below.
         const PERIM_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315];
-        for (const el of document.elementsFromPoint(cx, cy)) addIfUnseen(el);
+        for (const el of document.elementsFromPoint(cx, cy)) {
+          if (!el.classList.contains('atom-hit') && !el.classList.contains('bond-hit')) {
+            addIfUnseen(el);
+          }
+        }
         for (const a of PERIM_ANGLES) {
           const rad = (a * Math.PI) / 180;
           const px = cx + ERASE_R * Math.cos(rad);
@@ -810,7 +827,9 @@
           const pt = root.createSVGPoint();
           pt.x = x;
           pt.y = y;
-          const ctm = svgEl.getCTM();
+          // getScreenCTM maps element coords → screen coords (same space as
+          // event.clientX/Y), unlike getCTM which is SVG-viewport-relative.
+          const ctm = svgEl.getScreenCTM();
           return ctm ? pt.matrixTransform(ctm) : null;
         };
         const distToSegment = (px, py, ax, ay, bx, by) => {
@@ -846,7 +865,7 @@
           if (el.classList.contains('node')) {
             const d = d3.select(el).datum();
             if (!d) continue;
-            if (d.name === 'H') return;
+            if (d.name === 'H') continue;
             _lastEraseHitEl = el;
             _showPrimitiveHover([d.id], []);
             const atomId = d.id;
@@ -859,7 +878,7 @@
             const d = d3.select(el).datum();
             if (!d) continue;
             const b = currentMol?.bonds.get(d.id);
-            if (b?.atoms.some(id => currentMol.atoms.get(id)?.name === 'H')) return;
+            if (b?.atoms.some(id => currentMol.atoms.get(id)?.name === 'H')) continue;
             _lastEraseHitEl = el;
             _showPrimitiveHover([], [d.id]);
             const bondId = d.id;
@@ -895,8 +914,8 @@
       });
 
       document.addEventListener('mousemove', event => {
-        const warningHoverMode = _selectMode || (_drawBondMode && !_drawBondState);
-        if (!warningHoverMode || _eraseMode || (mode !== '2d' && mode !== 'force')) {
+        const warningHoverMode = _selectMode || (_drawBondMode && !_drawBondState) || _eraseMode;
+        if (!warningHoverMode || (mode !== '2d' && mode !== 'force')) {
           if (_selectionValenceTooltipAtomId !== null) {
             _selectionValenceTooltipAtomId = null;
             tooltip.interrupt().style('opacity', 0);
@@ -1676,19 +1695,28 @@
           .on('mousedown.drawbond', function (event, d) {
             if (!_drawBondMode || mode !== 'force' || !currentMol) return;
             if (d.name === 'H') return; // H can't be a bond source; click handler handles replacement
+            if (!_isReactionPreviewEditableAtomId(d.id)) return;
             event.stopPropagation();
             const [gX, gY] = d3.pointer(event, g.node());
             _startDrawBond(d.id, gX, gY);
           })
           .on('click', (event, d) => {
             if (_drawBondMode) {
+              if (!_isReactionPreviewEditableAtomId(d.id)) {
+                event.stopPropagation();
+                return;
+              }
               if (d.name === 'H' && d.name !== _drawBondElement) {
                 event.stopPropagation();
-                const mol = currentMol;
+                const reactionEdit = _prepareReactionPreviewEditTargets({ atomId: d.id });
+                if (reactionEdit === null) return;
+                const structuralEdit = _prepareResonanceStructuralEdit(currentMol);
+                const mol = structuralEdit.mol;
                 if (!mol) return;
                 _takeSnapshot();
-                mol.changeAtomElement(d.id, _drawBondElement);
-                const affected = new Set([d.id]);
+                const atomId = reactionEdit.atomId;
+                mol.changeAtomElement(atomId, _drawBondElement);
+                const affected = new Set([atomId]);
                 mol.clearStereoAnnotations(affected);
                 kekulize(mol);
                 refreshAromaticity(mol, { preserveKekule: true });
@@ -1698,7 +1726,7 @@
                 updateDescriptors(mol);
                 _updateAnalysisPanels(mol);
                 // Capture old H position before updateForce recreates nodes.
-                const preHNode = simulation.nodes().find(n => n.id === d.id);
+                const preHNode = simulation.nodes().find(n => n.id === atomId);
                 let preHX = preHNode?.x,
                   preHY = preHNode?.y;
                 // Find parent heavy atom via current links before they are rebuilt.
@@ -1708,11 +1736,11 @@
                   for (const l of allLinks) {
                     const src = l.source,
                       tgt = l.target;
-                    if (src?.id === d.id && !_isHydrogenNode(tgt)) {
+                    if (src?.id === atomId && !_isHydrogenNode(tgt)) {
                       parentNode = tgt;
                       break;
                     }
-                    if (tgt?.id === d.id && !_isHydrogenNode(src)) {
+                    if (tgt?.id === atomId && !_isHydrogenNode(src)) {
                       parentNode = src;
                       break;
                     }
@@ -1728,7 +1756,7 @@
                     x: parentNode.x + Math.cos(angle) * FORCE_LAYOUT_BOND_LENGTH,
                     y: parentNode.y + Math.sin(angle) * FORCE_LAYOUT_BOND_LENGTH
                   };
-                  const patchPos = new Map([[d.id, pos]]);
+                  const patchPos = new Map([[atomId, pos]]);
                   _patchForceNodePositions(patchPos);
                   _reseatHydrogensAroundPatched(patchPos);
                 }
@@ -2448,14 +2476,6 @@
         };
       }
 
-      /** Zoom to fit all force-layout nodes within the viewport (unconditional). */
-      function _zoomToFitForce() {
-        const nodes = simulation.nodes();
-        if (!nodes.length) return;
-        const fitTransform = _forceFitTransform(nodes, FORCE_LAYOUT_FIT_PAD);
-        if (fitTransform) svg.call(zoom.transform, fitTransform);
-      }
-
       /** Zoom to fit all 2D atoms in the viewport, but only if any atom is currently off-screen. */
       function _zoomToFitIf2d() {
         if (!_mol2d) return;
@@ -2569,6 +2589,7 @@
           document.getElementById('molecularWeight').textContent = '';
           document.getElementById('descriptor-body').innerHTML = '';
           document.getElementById('fg-body').innerHTML = '';
+          _restoreZoomTransformSnapshot(snap.zoomTransform);
           return;
         }
 
@@ -2596,7 +2617,10 @@
           _cy2d = snap.cy2d ?? 0;
           _hCounts2d = snap.hCounts2d ? new Map(snap.hCounts2d) : new Map();
           _stereoMap2d = snap.stereoMap2d ? new Map(snap.stereoMap2d) : new Map();
-          if (mode === '2d') draw2d();
+          if (mode === '2d') {
+            draw2d();
+            _restoreZoomTransformSnapshot(snap.zoomTransform);
+          }
         } else {
           _restoreReactionPreviewSnapshot(snap.reactionPreview ?? null);
           currentMol = mol;
@@ -2617,6 +2641,7 @@
               }
               simulation.alpha(0.18).restart();
             }
+            _restoreZoomTransformSnapshot(snap.zoomTransform);
           }
         }
 
@@ -2675,6 +2700,7 @@
         clearReactionPreviewState: () => _clearReactionPreviewState(),
         restoreReactionPreviewSource: () => _restoreReactionPreviewSource(),
         restoreReactionPreviewSnapshot: snap => _restoreReactionPreviewSnapshot(snap),
+        getZoomTransformSnapshot: () => _captureZoomTransformSnapshot(),
         restoreSnapshot: snap => _restoreSnapshot(snap)
       });
       window.undoAction = undoAction;
@@ -3198,13 +3224,95 @@
       // Draw-bond tool helpers
       // ---------------------------------------------------------------------------
 
-      function _promoteBondOrder(bondId) {
-        const reactionEdit = _prepareReactionPreviewBondEditTarget(bondId);
-        if (reactionEdit === null) return;
-        bondId = reactionEdit?.bondId ?? bondId;
-        const mol = mode === 'force' ? currentMol : _mol2d;
+      function _restore2dEditViewport(zoomSnapshot, { reactionRestored = false, resonanceReset = false, zoomToFit = false } = {}) {
+        if (mode !== '2d') {
+          return;
+        }
+        if ((reactionRestored || resonanceReset) && zoomSnapshot) {
+          _restoreZoomTransformSnapshot(zoomSnapshot);
+          return;
+        }
+        if (zoomToFit) {
+          _zoomToFitIf2d();
+        }
+      }
+
+      function _prepareResonanceStructuralEdit(mol) {
+        const structuralEdit = prepareResonanceStateForStructuralEdit(mol);
+        if (structuralEdit.resonanceCleared) {
+          mol = mode === 'force' ? currentMol : _mol2d;
+        } else if (structuralEdit.resonanceReset) {
+          mol = mode === 'force' ? currentMol : _mol2d;
+        }
+        return { mol: structuralEdit.mol ?? mol, resonanceReset: structuralEdit.resonanceReset };
+      }
+
+      function _dearomatizeBondAromaticComponent(mol, startBondId) {
+        const visitedBondIds = new Set();
+        const atomIds = new Set();
+        const queue = [startBondId];
+
+        while (queue.length > 0) {
+          const bondId = queue.shift();
+          if (visitedBondIds.has(bondId)) continue;
+          const bond = mol.bonds.get(bondId);
+          if (!bond?.properties?.aromatic) continue;
+          visitedBondIds.add(bondId);
+          for (const atomId of bond.atoms) {
+            atomIds.add(atomId);
+            const atom = mol.atoms.get(atomId);
+            if (!atom) continue;
+            for (const neighborBondId of atom.bonds) {
+              if (visitedBondIds.has(neighborBondId)) continue;
+              const neighborBond = mol.bonds.get(neighborBondId);
+              if (neighborBond?.properties?.aromatic) {
+                queue.push(neighborBondId);
+              }
+            }
+          }
+        }
+
+        for (const bondId of visitedBondIds) {
+          const bond = mol.bonds.get(bondId);
+          if (!bond) continue;
+          bond.properties.order = Number.isInteger(bond.properties.localizedOrder) ? bond.properties.localizedOrder : 1;
+          bond.properties.aromatic = false;
+          delete bond.properties.localizedOrder;
+        }
+        for (const atomId of atomIds) {
+          const atom = mol.atoms.get(atomId);
+          if (atom) {
+            atom.properties.aromatic = false;
+          }
+        }
+      }
+
+      function _promoteBondOrder(bondId, options = {}) {
+        const {
+          reactionRestored = false,
+          skipReactionPreviewPrep = false,
+          skipResonancePrep = false,
+          resonanceReset: presetResonanceReset = false,
+          skipSnapshot = false,
+          zoomSnapshot = mode === '2d' ? _captureZoomTransformSnapshot() : null
+        } = options;
+
+        let reactionEdit = { bondId, restored: reactionRestored };
+        if (!skipReactionPreviewPrep) {
+          reactionEdit = _prepareReactionPreviewBondEditTarget(bondId);
+          if (reactionEdit === null) return;
+          bondId = reactionEdit?.bondId ?? bondId;
+        }
+
+        let mol = mode === 'force' ? currentMol : _mol2d;
+        let resonanceReset = presetResonanceReset;
+        if (!skipResonancePrep) {
+          const structuralEdit = _prepareResonanceStructuralEdit(mol);
+          mol = structuralEdit.mol;
+          resonanceReset = structuralEdit.resonanceReset;
+        }
         if (!mol) return;
-        const bond = mol.bonds.get(bondId);
+        let bond = mol.bonds.get(bondId);
         if (!bond) return;
 
         if (mode === 'force') {
@@ -3212,11 +3320,20 @@
           if (a1?.name === 'H' || a2?.name === 'H') return;
         }
 
-        _takeSnapshot();
+        if (!skipSnapshot) {
+          _takeSnapshot();
+        }
+
+        const wasAromatic = !!bond.properties.aromatic;
+        if (wasAromatic) {
+          _dearomatizeBondAromaticComponent(mol, bondId);
+          bond = mol.bonds.get(bondId);
+          if (!bond) return;
+        }
 
         // For aromatic bonds (order=1.5) use the Kekulé integer order as the base;
         // for plain bonds round in case of any fractional remnant.
-        const cur = bond.properties.aromatic ? (Number.isInteger(bond.properties.localizedOrder) ? bond.properties.localizedOrder : 1) : Math.round(bond.properties.order ?? 1);
+        const cur = Math.round(bond.properties.order ?? 1);
         const nextOrder = cur >= 3 ? 1 : cur + 1;
 
         bond.properties.order = nextOrder;
@@ -3226,8 +3343,10 @@
         const [a1, a2] = bond.getAtomObjects(mol);
         const affected = new Set([a1?.id, a2?.id].filter(Boolean));
         mol.clearStereoAnnotations(affected);
-        kekulize(mol);
-        refreshAromaticity(mol, { preserveKekule: true });
+        if (!wasAromatic) {
+          kekulize(mol);
+          refreshAromaticity(mol, { preserveKekule: true });
+        }
         mol.repairImplicitHydrogens(affected);
 
         if (mode !== 'force') {
@@ -3237,9 +3356,10 @@
             const cnt = a.getNeighbors(mol).filter(n => n.name === 'H').length;
             if (cnt > 0) _hCounts2d.set(a.id, cnt);
           }
-          _stereoMap2d = pickStereoWedges(mol);
+          _stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
         }
         _drawBondHoverSuppressed = true;
+        _clearPrimitiveHover();
 
         _syncInputField(mol);
 
@@ -3296,10 +3416,17 @@
           simulation.alpha(0);
         } else {
           draw2d();
+          _restore2dEditViewport(zoomSnapshot, {
+            reactionRestored: reactionEdit?.restored,
+            resonanceReset
+          });
         }
       }
 
       function _startDrawBond(atomId, gX, gY) {
+        if (!_isReactionPreviewEditableAtomId(atomId)) {
+          return;
+        }
         // Compute the origin in g-space from the atom's actual rendered position.
         let ox, oy;
         if (atomId === null) {
@@ -3550,11 +3677,13 @@
       // atomId may be null (blank-space click) — in that case a source C is created at (ox, oy).
       // ox, oy are always required (g-space origin of the draw-bond gesture).
       function _autoPlaceBond(atomId, ox, oy) {
+        const zoomSnapshot = mode === '2d' ? _captureZoomTransformSnapshot() : null;
         const reactionEdit = _prepareReactionPreviewEditTargets({ atomId });
         if (reactionEdit === null) return;
         atomId = reactionEdit?.atomId ?? atomId;
+        const structuralEdit = _prepareResonanceStructuralEdit(mode === 'force' ? currentMol : _mol2d);
         _takeSnapshot();
-        const mol = _ensureMol();
+        const mol = structuralEdit.mol ?? _ensureMol();
 
         const FORCE_SCALE_VAL = 25;
         const steps = 12; // 30° increments
@@ -3775,13 +3904,17 @@
             const cnt = a.getNeighbors(mol).filter(n => n.name === 'H').length;
             if (cnt > 0) _hCounts2d.set(a.id, cnt);
           }
-          _stereoMap2d = pickStereoWedges(mol);
+          _stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
           _syncInputField(mol);
           updateFormula(mol);
           updateDescriptors(mol);
           _updateAnalysisPanels(mol);
           draw2d();
-          _zoomToFitIf2d();
+          _restore2dEditViewport(zoomSnapshot, {
+            reactionRestored: reactionEdit?.restored,
+            resonanceReset: structuralEdit.resonanceReset,
+            zoomToFit: true
+          });
         }
       }
 
@@ -3790,6 +3923,7 @@
           _cancelDrawBond();
           return;
         }
+        const zoomSnapshot = mode === '2d' ? _captureZoomTransformSnapshot() : null;
         let { atomId, ox, oy, ex, ey, snapAtomId, dragged } = _drawBondState;
 
         // No drag (pure click), or drag released very close to origin (accidental
@@ -3813,7 +3947,8 @@
             const reactionEdit = _prepareReactionPreviewEditTargets({ atomId });
             if (reactionEdit === null) return;
             atomId = reactionEdit.atomId;
-            const mol = mode === 'force' ? currentMol : _mol2d;
+            const structuralEdit = _prepareResonanceStructuralEdit(mode === 'force' ? currentMol : _mol2d);
+            const mol = structuralEdit.mol;
             const clickedAtom = mol?.atoms.get(atomId);
             if (clickedAtom && clickedAtom.name !== _drawBondElement) {
               _takeSnapshot();
@@ -3845,8 +3980,12 @@
                   const cnt = a.getNeighbors(mol).filter(n => n.name === 'H').length;
                   if (cnt > 0) _hCounts2d.set(a.id, cnt);
                 }
-                _stereoMap2d = pickStereoWedges(mol);
+                _stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
                 draw2d();
+                _restore2dEditViewport(zoomSnapshot, {
+                  reactionRestored: reactionEdit?.restored,
+                  resonanceReset: structuralEdit.resonanceReset
+                });
               }
               return;
             }
@@ -3858,6 +3997,7 @@
 
         g.select('line.draw-bond-preview').remove();
         g.select('circle.draw-bond-origin-node').remove();
+        g.select('circle.draw-bond-dest-node').remove();
         g.select('text.draw-bond-origin-label').remove();
         g.select('text.draw-bond-dest-label').remove();
         _drawBondState = null;
@@ -3872,8 +4012,9 @@
         if (reactionEdit === null) return;
         atomId = reactionEdit.atomId;
         snapAtomId = reactionEdit.snapAtomId;
+        const structuralEdit = _prepareResonanceStructuralEdit(mode === 'force' ? currentMol : _mol2d);
         if (snapAtomId !== null) {
-          const checkMol = mode === 'force' ? currentMol : _mol2d;
+          const checkMol = structuralEdit.mol;
           if (checkMol?.atoms.get(snapAtomId)?.name === 'H') return;
         }
 
@@ -3881,7 +4022,7 @@
 
         // ── Force mode path ───────────────────────────────────────────────────────
         if (mode === 'force') {
-          const mol = _ensureMol();
+          const mol = structuralEdit.mol ?? _ensureMol();
           const W = plotEl.clientWidth || 600;
           const H = plotEl.clientHeight || 400;
           const FORCE_SCALE = 25;
@@ -3936,7 +4077,16 @@
                 const [a1, a2] = b.getAtomObjects(mol);
                 return (a1?.id === resolvedAtomId && a2?.id === snapAtomId) || (a1?.id === snapAtomId && a2?.id === resolvedAtomId);
               });
-              if (existing) _promoteBondOrder(existing.id);
+              if (existing) {
+                _promoteBondOrder(existing.id, {
+                  zoomSnapshot,
+                  skipReactionPreviewPrep: true,
+                  skipResonancePrep: true,
+                  skipSnapshot: true,
+                  reactionRestored: reactionEdit?.restored,
+                  resonanceReset: structuralEdit.resonanceReset
+                });
+              }
               return;
             }
             const srcH = srcAtom.getNeighbors(mol).find(n => n.name === 'H');
@@ -3977,7 +4127,7 @@
         }
 
         // ── 2D mode path ──────────────────────────────────────────────────────────
-        const mol = _ensureMol();
+        const mol = structuralEdit.mol ?? _ensureMol();
         const W = plotEl.clientWidth || 600;
         const H = plotEl.clientHeight || 400;
         let affected;
@@ -4009,7 +4159,16 @@
               const [a1, a2] = b.getAtomObjects(mol);
               return (a1?.id === resolvedAtomId && a2?.id === snapAtomId) || (a1?.id === snapAtomId && a2?.id === resolvedAtomId);
             });
-            if (existing) _promoteBondOrder(existing.id);
+            if (existing) {
+              _promoteBondOrder(existing.id, {
+                zoomSnapshot,
+                skipReactionPreviewPrep: true,
+                skipResonancePrep: true,
+                skipSnapshot: true,
+                reactionRestored: reactionEdit?.restored,
+                resonanceReset: structuralEdit.resonanceReset
+              });
+            }
             return;
           }
 
@@ -4057,7 +4216,7 @@
           const cnt = a.getNeighbors(mol).filter(n => n.name === 'H').length;
           if (cnt > 0) _hCounts2d.set(a.id, cnt);
         }
-        _stereoMap2d = pickStereoWedges(mol);
+        _stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
 
         _syncInputField(mol);
 
@@ -4065,7 +4224,11 @@
         updateDescriptors(mol);
         _updateAnalysisPanels(mol);
         draw2d();
-        _zoomToFitIf2d();
+        _restore2dEditViewport(zoomSnapshot, {
+          reactionRestored: reactionEdit?.restored,
+          resonanceReset: structuralEdit.resonanceReset,
+          zoomToFit: true
+        });
       }
 
       function draw2d() {
@@ -4245,11 +4408,24 @@
             .attr('y1', p1.y)
             .attr('x2', p2.x)
             .attr('y2', p2.y)
-            .attr('stroke', 'rgba(0,0,0,0)')
-            .attr('stroke-width', 12)
+            .attr('stroke', '#000')
+            .attr('stroke-opacity', 0)
+            .attr(
+              'stroke-width',
+              (() => {
+                const order = renderBondOrder(bi.bond);
+                return order >= 3 ? 24 : order >= 1.5 ? 18 : 12;
+              })()
+            )
+            .style('pointer-events', 'stroke')
+            .on('mousedown', event => {
+              if (!_drawBondMode) return;
+              event.preventDefault();
+              event.stopPropagation();
+              _promoteBondOrder(bi.bond.id);
+            })
             .on('click', event => {
               if (_drawBondMode) {
-                _promoteBondOrder(bi.bond.id);
                 return;
               }
               if (_eraseMode) {
@@ -4376,6 +4552,7 @@
             .on('mousedown.drawbond', function (event) {
               // Intercept mousedown before it bubbles to hitGroup's d3.drag.
               if (!_drawBondMode || mode !== '2d' || !_mol2d) return;
+              if (!_isReactionPreviewEditableAtomId(atom.id)) return;
               event.stopPropagation();
               const [gX, gY] = d3.pointer(event, g.node());
               _startDrawBond(atom.id, gX, gY);
@@ -4617,7 +4794,7 @@
 
         // Decrement hCount for any H shown via a stereo bond so the atom label
         // for that heavy atom does not show a spurious H subscript.
-        const stereoMap = pickStereoWedges(mol);
+        const stereoMap = syncDisplayStereo(mol);
         for (const [bondId] of stereoMap) {
           const bond = mol.bonds.get(bondId);
           if (!bond) continue;
@@ -4816,13 +4993,40 @@
       };
 
       function _eraseItem(atomIds, bondIds) {
+        if (_hasReactionPreview()) {
+          _hoveredAtomIds.clear();
+          _hoveredBondIds.clear();
+          return;
+        }
+        const eraseTargets = _prepareReactionPreviewEraseTargets(atomIds, bondIds);
+        if (eraseTargets.atomIds.length === 0 && eraseTargets.bondIds.length === 0) {
+          _hoveredAtomIds.clear();
+          _hoveredBondIds.clear();
+          return;
+        }
         _selectedAtomIds.clear();
         _selectedBondIds.clear();
-        for (const id of atomIds) _selectedAtomIds.add(id);
-        for (const id of bondIds) _selectedBondIds.add(id);
+        for (const id of eraseTargets.atomIds) _selectedAtomIds.add(id);
+        for (const id of eraseTargets.bondIds) _selectedBondIds.add(id);
         deleteSelection();
         _hoveredAtomIds.clear();
         _hoveredBondIds.clear();
+      }
+
+      function _captureZoomTransformSnapshot() {
+        const t = d3.zoomTransform(svg.node());
+        return { x: t.x, y: t.y, k: t.k };
+      }
+
+      function _restoreZoomTransformSnapshot(snapshot) {
+        if (!snapshot) {
+          return;
+        }
+        svg.call(zoom.transform, d3.zoomIdentity.translate(snapshot.x, snapshot.y).scale(snapshot.k));
+      }
+
+      function _pickStereoWedgesPreserving2dChoice(mol) {
+        return syncDisplayStereo(mol, _stereoMap2d);
       }
 
       const _DRAW_ELEM_PROTONS = {
@@ -5073,7 +5277,7 @@
 
         // Recompute centroid and stereo wedge assignments (orientation has changed).
         ({ cx: _cx2d, cy: _cy2d } = atomBBox(allAtoms));
-        _stereoMap2d = pickStereoWedges(_mol2d);
+        _stereoMap2d = _pickStereoWedgesPreserving2dChoice(_mol2d);
 
         draw2d();
       });
@@ -5449,29 +5653,17 @@
 
       window.deleteSelection = function deleteSelection() {
         if (_hasReactionPreview()) {
-          const reactantSelectedAtomIds = new Set([..._selectedAtomIds].filter(id => _reactionPreviewReactantAtomIds.has(id)));
-          const reactantSelectedBondIds = new Set();
-          const previewMol = mode === 'force' ? currentMol : _mol2d;
-          if (previewMol) {
-            for (const bondId of _selectedBondIds) {
-              const bond = previewMol.bonds.get(bondId);
-              if (!bond) continue;
-              if (bond.atoms.every(atomId => _reactionPreviewReactantAtomIds.has(atomId))) {
-                reactantSelectedBondIds.add(bondId);
-              }
-            }
-          }
-          if (_restoreReactionPreviewSource()) {
-            _selectedAtomIds.clear();
-            _selectedBondIds.clear();
-            for (const atomId of reactantSelectedAtomIds) _selectedAtomIds.add(atomId);
-            for (const bondId of reactantSelectedBondIds) _selectedBondIds.add(bondId);
-          }
+          return;
         }
 
-        const mol = mode === 'force' ? currentMol : _mol2d;
+        let mol = mode === 'force' ? currentMol : _mol2d;
         if (!mol) return;
         if (_selectedAtomIds.size === 0 && _selectedBondIds.size === 0) return;
+
+        if (resetActiveResonanceView(mol)) {
+          mol = mode === 'force' ? currentMol : _mol2d;
+          if (!mol) return;
+        }
 
         _takeSnapshot();
 
@@ -5535,7 +5727,7 @@
             const count = atom.getNeighbors(mol).filter(n => n.name === 'H').length;
             if (count > 0) _hCounts2d.set(atom.id, count);
           }
-          _stereoMap2d = pickStereoWedges(mol);
+          _stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
         }
 
         _syncInputField(mol);
@@ -5682,13 +5874,49 @@
           };
           const newEl = _elemKeys[event.key];
           if (newEl) {
-            const mol = mode === 'force' ? currentMol : _mol2d;
+            const zoomSnapshot = mode === '2d' ? _captureZoomTransformSnapshot() : null;
+            let mol = mode === 'force' ? currentMol : _mol2d;
             if (mol) {
-              const toChange = [..._hoveredAtomIds].filter(id => {
+              let toChange = [..._hoveredAtomIds].filter(id => {
+                if (!_isReactionPreviewEditableAtomId(id)) {
+                  return false;
+                }
                 const a = mol.atoms.get(id);
                 return a && a.name !== newEl;
               });
               if (toChange.length > 0) {
+                let reactionRestored = false;
+                if (_hasReactionPreview()) {
+                  const reactionEdit = _prepareReactionPreviewEditTargets({ atomId: toChange[0] });
+                  if (reactionEdit === null) {
+                    event.preventDefault();
+                    return;
+                  }
+                  reactionRestored = !!reactionEdit.restored;
+                  mol = mode === 'force' ? currentMol : _mol2d;
+                  if (!mol) {
+                    event.preventDefault();
+                    return;
+                  }
+                  toChange = toChange.filter(id => {
+                    const a = mol.atoms.get(id);
+                    return a && a.name !== newEl;
+                  });
+                }
+                const structuralEdit = _prepareResonanceStructuralEdit(mol);
+                mol = structuralEdit.mol;
+                if (!mol) {
+                  event.preventDefault();
+                  return;
+                }
+                toChange = toChange.filter(id => {
+                  const a = mol.atoms.get(id);
+                  return a && a.name !== newEl;
+                });
+                if (toChange.length === 0) {
+                  event.preventDefault();
+                  return;
+                }
                 _takeSnapshot();
                 for (const atomId of toChange) {
                   mol.changeAtomElement(atomId, newEl);
@@ -5714,8 +5942,12 @@
                     const cnt = a.getNeighbors(mol).filter(n => n.name === 'H').length;
                     if (cnt > 0) _hCounts2d.set(a.id, cnt);
                   }
-                  _stereoMap2d = pickStereoWedges(mol);
+                  _stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
                   draw2d();
+                  _restore2dEditViewport(zoomSnapshot, {
+                    reactionRestored,
+                    resonanceReset: structuralEdit.resonanceReset
+                  });
                 }
               }
             }

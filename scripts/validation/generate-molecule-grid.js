@@ -95,7 +95,7 @@ function saveGrid(molecules, key, renderFn, suffix) {
 // ---------------------------------------------------------------------------
 // Generate both grids
 // ---------------------------------------------------------------------------
-const options = { showChiralLabels: true };
+const options = { showChiralLabels: true, showLonePairs: true };
 saveGrid(randomMolecule, 'smiles', smi => renderMolSVGFromSMILES(smi, options), 'smiles');
 saveGrid(
   randomMolecule.filter(m => m.inchi),

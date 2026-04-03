@@ -50,6 +50,13 @@ export function _hasReactionPreview() {
   return _reactionPreviewReactantAtomIds.size > 0 && _reactionPreviewProductAtomIds.size > 0;
 }
 
+export function _isReactionPreviewEditableAtomId(atomId) {
+  if (!_hasReactionPreview() || atomId == null) {
+    return true;
+  }
+  return _reactionPreviewReactantAtomIds.has(atomId);
+}
+
 export function _plotOverlayFitPadding(basePad = 40) {
   const pads = { left: basePad, right: basePad, top: basePad, bottom: basePad };
   const reactionPreview = _hasReactionPreview();
@@ -280,6 +287,21 @@ export function _prepareReactionPreviewBondEditTarget(bondId) {
   return { bondId, restored };
 }
 
+export function _prepareReactionPreviewEraseTargets(atomIds = [], bondIds = []) {
+  if (!_hasReactionPreview()) {
+    return {
+      atomIds: [...new Set(atomIds)],
+      bondIds: [...new Set(bondIds)],
+      restored: false
+    };
+  }
+  return {
+    atomIds: [],
+    bondIds: [],
+    restored: false
+  };
+}
+
 function _reaction2dArrowGeometry(items, atomIds, { hydrogenRadiusScale = 1, radiusForItem = () => 0 } = {}) {
   if (!atomIds?.size) {
     return null;
@@ -405,20 +427,13 @@ export function _chooseReactionPreviewForceArrow(
   reactant,
   product,
   items,
-  {
-    pad = 16,
-    radiusForItem = () => 0,
-    hydrogenRadiusScale = 0.75,
-    previousOffset = 0,
-    stickyTolerance = 5
-  } = {}
+  { pad = 16, radiusForItem = () => 0, hydrogenRadiusScale = 0.75, previousOffset = 0, stickyTolerance = 5 } = {}
 ) {
   const arrow = _reaction2dArrowEndpoints(reactant, product, pad);
   if (!arrow) {
     return null;
   }
-  const startInsideReactant =
-    arrow.start.x >= reactant.minX && arrow.start.x <= reactant.maxX && arrow.start.y >= reactant.minY && arrow.start.y <= reactant.maxY;
+  const startInsideReactant = arrow.start.x >= reactant.minX && arrow.start.x <= reactant.maxX && arrow.start.y >= reactant.minY && arrow.start.y <= reactant.maxY;
   const endInsideProduct = arrow.end.x >= product.minX && arrow.end.x <= product.maxX && arrow.end.y >= product.minY && arrow.end.y <= product.maxY;
   if (startInsideReactant || endInsideProduct) {
     return null;
@@ -454,10 +469,7 @@ export function _chooseReactionPreviewForceArrow(
       }
     }
     const offsetPreference = Math.abs(offset);
-    if (
-      minClearance > bestClearance + 1e-6 ||
-      (Math.abs(minClearance - bestClearance) <= 1e-6 && offsetPreference < bestOffsetPreference)
-    ) {
+    if (minClearance > bestClearance + 1e-6 || (Math.abs(minClearance - bestClearance) <= 1e-6 && offsetPreference < bestOffsetPreference)) {
       best = { start: shiftedStart, end: shiftedEnd, ux, uy, offset };
       bestClearance = minClearance;
       bestOffsetPreference = offsetPreference;

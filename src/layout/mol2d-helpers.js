@@ -283,7 +283,13 @@ export function getAtomLabel(atom, hCounts, toSVG, mol) {
       nbCount++;
     }
   }
-  return nbCount > 0 && avgDx > 0 ? hStr + symbol : symbol + hStr;
+  // Standalone atom (no heavy-atom neighbors): use conventional formula order.
+  // Halogens and chalcogens write H first: HF, HCl, HBr, HI, H2O, H2S, H2Se.
+  if (nbCount === 0) {
+    const hFirstStandalone = new Set(['F', 'Cl', 'Br', 'I', 'O', 'S', 'Se', 'Te']);
+    return hFirstStandalone.has(symbol) ? hStr + symbol : symbol + hStr;
+  }
+  return avgDx > 0 ? hStr + symbol : symbol + hStr;
 }
 
 // ---------------------------------------------------------------------------
@@ -915,8 +921,57 @@ export function stereoBondTypeForCenter(mol, centerId, preferredBondId = null) {
   }
   return {
     bondId: chosen.bond.id,
-    type: computed === chirality ? 'dash' : 'wedge'
+    type: computed === chirality ? 'dash' : 'wedge',
+    centerId
   };
+}
+
+/**
+ * Applies an explicit displayed stereo choice back onto the chiral center by
+ * updating its stored CIP designation so the requested bond renders as the
+ * requested wedge/dash type for the current geometry.
+ *
+ * This should only be used for intentional stereo-edit actions. Ordinary
+ * redraws should continue treating stored chirality as the chemistry truth and
+ * derive wedge/dash from that.
+ *
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {string} centerId
+ * @param {string} bondId
+ * @param {'wedge'|'dash'} desiredType
+ * @returns {{ bondId: string, type: 'wedge'|'dash', centerId: string }|null}
+ */
+export function applyDisplayedStereoToCenter(mol, centerId, bondId, desiredType) {
+  if (!mol || !centerId || !bondId || (desiredType !== 'wedge' && desiredType !== 'dash')) {
+    return null;
+  }
+  const center = mol.atoms.get(centerId);
+  const bond = mol.bonds.get(bondId);
+  if (!center || !bond || !bond.atoms.includes(centerId)) {
+    return null;
+  }
+
+  const current = stereoBondTypeForCenter(mol, centerId, bondId);
+  if (current?.type === desiredType) {
+    return current;
+  }
+
+  const candidates = center.getChirality() ? [center.getChirality() === 'R' ? 'S' : 'R'] : ['R', 'S'];
+  const originalChirality = center.getChirality();
+  for (const candidate of candidates) {
+    try {
+      center.setChirality(candidate, mol);
+    } catch {
+      continue;
+    }
+    const resolved = stereoBondTypeForCenter(mol, centerId, bondId);
+    if (resolved?.type === desiredType) {
+      return resolved;
+    }
+  }
+
+  center.setChirality(originalChirality);
+  return stereoBondTypeForCenter(mol, centerId, bondId);
 }
 
 export function stereoBondCenterIdForRender(mol, bondId) {
@@ -933,6 +988,11 @@ export function stereoBondCenterIdForRender(mol, bondId) {
     return forcedCenterId;
   }
 
+  const displayCenterId = bond.properties.display?.centerId ?? null;
+  if (displayCenterId && bond.atoms.includes(displayCenterId)) {
+    return displayCenterId;
+  }
+
   const [aId, bId] = bond.atoms;
   if (mol.atoms.get(aId)?.getChirality?.()) {
     return aId;
@@ -943,35 +1003,121 @@ export function stereoBondCenterIdForRender(mol, bondId) {
   return null;
 }
 
-export function pickStereoWedges(mol) {
-  const result = new Map();
+function _clearBondDisplayStereo(bond) {
+  if (!bond?.properties?.display) {
+    return;
+  }
+  delete bond.properties.display.as;
+  delete bond.properties.display.centerId;
+  if (Object.keys(bond.properties.display).length === 0) {
+    delete bond.properties.display;
+  }
+}
+
+function _setBondDisplayStereo(bond, type, centerId = null) {
+  if (!bond || (type !== 'wedge' && type !== 'dash')) {
+    _clearBondDisplayStereo(bond);
+    return;
+  }
+  bond.properties.display ??= {};
+  bond.properties.display.as = type;
+  if (centerId) {
+    bond.properties.display.centerId = centerId;
+  } else {
+    delete bond.properties.display.centerId;
+  }
+}
+
+function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
+  const assignments = [];
   const forcedBondTypes = mol?.__reactionPreview?.forcedStereoBondTypes ?? null;
+  const forcedBondCenters = mol?.__reactionPreview?.forcedStereoBondCenters ?? null;
   const lockedCenters = new Set();
   for (const [bondId, type] of forcedBondTypes ?? new Map()) {
     const bond = mol?.bonds?.get(bondId);
     if (!bond) {
       continue;
     }
-    result.set(bondId, type);
-    for (const atomId of bond.atoms) {
-      if (mol.atoms.get(atomId)?.getChirality?.()) {
-        lockedCenters.add(atomId);
-      }
+    const centerId = forcedBondCenters?.get?.(bondId) ?? bond.atoms.find(atomId => mol.atoms.get(atomId)?.getChirality?.()) ?? null;
+    assignments.push({ bondId, type, centerId });
+    if (centerId) {
+      lockedCenters.add(centerId);
     }
+  }
+  const storedDisplayByCenter = new Map();
+  const preferredBondByCenter = new Map();
+  for (const bond of mol?.bonds?.values?.() ?? []) {
+    const displayAs = bond.properties.display?.as ?? null;
+    if (displayAs !== 'wedge' && displayAs !== 'dash') {
+      continue;
+    }
+    const centerId = bond.properties.display?.centerId ?? stereoBondCenterIdForRender(mol, bond.id);
+    if (!centerId || preferredBondByCenter.has(centerId)) {
+      continue;
+    }
+    preferredBondByCenter.set(centerId, bond.id);
+    storedDisplayByCenter.set(centerId, {
+      bondId: bond.id,
+      type: displayAs,
+      centerId
+    });
+  }
+  for (const [bondId] of previousStereoMap ?? new Map()) {
+    const centerId = stereoBondCenterIdForRender(mol, bondId);
+    if (!centerId || preferredBondByCenter.has(centerId)) {
+      continue;
+    }
+    preferredBondByCenter.set(centerId, bondId);
+    storedDisplayByCenter.set(centerId, {
+      bondId,
+      type: previousStereoMap.get(bondId),
+      centerId
+    });
   }
   const forcedByCenter = mol?.__reactionPreview?.forcedStereoByCenter ?? mol?.__reactionPreview?.forcedProductStereoByCenter ?? null;
   for (const centerId of mol.getChiralCenters()) {
     if (lockedCenters.has(centerId)) {
       continue;
     }
+    const stored = storedDisplayByCenter.get(centerId) ?? null;
+    if (stored) {
+      const storedBond = mol?.bonds?.get?.(stored.bondId) ?? null;
+      if (storedBond && storedBond.atoms.includes(centerId)) {
+        assignments.push(stored);
+        continue;
+      }
+    }
     const forced = forcedByCenter?.get(centerId) ?? null;
-    const stereo = stereoBondTypeForCenter(mol, centerId, forced?.bondId ?? null);
+    const stereo = stereoBondTypeForCenter(mol, centerId, forced?.bondId ?? preferredBondByCenter.get(centerId) ?? null);
     if (!stereo) {
       continue;
     }
-    result.set(stereo.bondId, forced?.type ?? stereo.type);
+    assignments.push({
+      bondId: stereo.bondId,
+      type: forced?.type ?? stereo.type,
+      centerId
+    });
+  }
+  return assignments;
+}
+
+export function pickStereoWedges(mol, previousStereoMap = null) {
+  const result = new Map();
+  for (const { bondId, type } of _resolveStereoDisplayAssignments(mol, previousStereoMap)) {
+    result.set(bondId, type);
   }
   return result;
+}
+
+export function syncDisplayStereo(mol, previousStereoMap = null) {
+  const assignments = _resolveStereoDisplayAssignments(mol, previousStereoMap);
+  for (const bond of mol?.bonds?.values?.() ?? []) {
+    _clearBondDisplayStereo(bond);
+  }
+  for (const { bondId, type, centerId } of assignments) {
+    _setBondDisplayStereo(mol?.bonds?.get?.(bondId) ?? null, type, centerId);
+  }
+  return new Map(assignments.map(({ bondId, type }) => [bondId, type]));
 }
 
 // ---------------------------------------------------------------------------

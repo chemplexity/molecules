@@ -11,7 +11,8 @@ const _UNDO_MAX = 50;
  * @param {{ mode, currentMol, _mol2d, _cx2d, _cy2d, _hCounts2d, _stereoMap2d,
  *           simulation, getReactionPreviewSnapshot, clearReactionPreviewState,
  *           restoreReactionPreviewSource,
- *           restoreReactionPreviewSnapshot, restoreSnapshot }} context
+ *           restoreReactionPreviewSnapshot, restoreSnapshot,
+ *           getZoomTransformSnapshot }} context
  */
 export function initUndo(context) {
   ctx = context;
@@ -75,6 +76,7 @@ function _makeSnapshot() {
       }));
     }
   }
+  snap.zoomTransform = ctx.getZoomTransformSnapshot ? ctx.getZoomTransformSnapshot() : null;
   return snap;
 }
 

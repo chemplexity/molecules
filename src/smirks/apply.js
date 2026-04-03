@@ -427,11 +427,7 @@ function _applyParsedSMIRKSMatch(molecule, transform, match) {
   // changed element, altering CIP priority), clear as before.
   const preservedChiralities = new Map();
   for (const atomId of stereoDirtySeedIds) {
-    if (
-      keptTargetIds.has(atomId) &&
-      !explicitAtomStereoSpecs.has(atomId) &&
-      !stereoForceCleanAtomIds.has(atomId)
-    ) {
+    if (keptTargetIds.has(atomId) && !explicitAtomStereoSpecs.has(atomId) && !stereoForceCleanAtomIds.has(atomId)) {
       const ch = result.atoms.get(atomId)?.getChirality();
       if (ch) {
         preservedChiralities.set(atomId, ch);
@@ -467,9 +463,13 @@ function _applyParsedSMIRKSMatch(molecule, transform, match) {
   }
   // Restore preserved chiralities (explicit specs take precedence above).
   for (const [atomId, chirality] of preservedChiralities) {
-    if (explicitAtomStereoSpecs.has(atomId)) continue;
+    if (explicitAtomStereoSpecs.has(atomId)) {
+      continue;
+    }
     const atom = result.atoms.get(atomId);
-    if (!atom) continue;
+    if (!atom) {
+      continue;
+    }
     try {
       atom.setChirality(chirality, result);
     } catch {

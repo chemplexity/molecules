@@ -21,6 +21,8 @@ const RESONANCE_PANEL_OPTIONS = {
 let _resonanceLocked = false;
 let _activeResonanceState = 1;
 
+const _RESONANCE_PRESERVE_CLICK_SELECTORS = ['#plot', '#rotate-controls', '#force-controls', '#clean-controls', '#draw-tools', '#atom-selector', '#toggle-controls'].join(', ');
+
 /**
  * Initializes the resonance-panel renderer with the app context it needs to
  * redraw the active molecule in either 2D or force mode.
@@ -50,6 +52,16 @@ export function clearResonancePanelState() {
   }
 }
 
+export function shouldPreserveResonanceForClickTarget(target) {
+  if (!target?.closest) {
+    return false;
+  }
+  if (target.closest('#resonance-table')) {
+    return true;
+  }
+  return !!target.closest(_RESONANCE_PRESERVE_CLICK_SELECTORS);
+}
+
 /**
  * Restores the molecule's default resonance contributor, unlocks the
  * resonance row, redraws the current mode, and refreshes the panel UI.
@@ -71,6 +83,27 @@ export function resetActiveResonanceView(mol = _currentResonanceMolecule()) {
   _redrawResonanceMolecule(mol);
   _renderResonancePanel(mol);
   return true;
+}
+
+/**
+ * Prepares a molecule for a structural edit by restoring contributor 1 and
+ * clearing any stored resonance tables so later recomputation starts from the
+ * edited graph instead of reviving stale contributors.
+ *
+ * @param {import('../../core/Molecule.js').Molecule|null} [mol]
+ * @returns {{mol: import('../../core/Molecule.js').Molecule|null, resonanceReset: boolean, resonanceCleared: boolean}}
+ */
+export function prepareResonanceStateForStructuralEdit(mol = _currentResonanceMolecule()) {
+  mol = _resolveResonanceTargetMolecule(mol);
+  if (!mol?.properties?.resonance) {
+    return { mol, resonanceReset: false, resonanceCleared: false };
+  }
+  const resonanceReset = _resonanceLocked;
+  mol.setResonanceState(1);
+  mol.clearResonanceStates();
+  _resonanceLocked = false;
+  _activeResonanceState = 1;
+  return { mol, resonanceReset, resonanceCleared: true };
 }
 
 /**
@@ -274,13 +307,9 @@ if (typeof document !== 'undefined') {
   document.addEventListener(
     'click',
     event => {
-      if (event.target.closest('#resonance-table')) {
-        return;
-      }
-      // Don't reset when the user interacts with toolbar controls (rotate,
-      // flip, export buttons) — those are view operations that should leave
-      // the active resonance contributor intact.
-      if (event.target.closest('#rotate-controls, #force-controls')) {
+      // Don't reset when the user interacts with resonance navigation or
+      // view/tool controls; those shouldn't kick the user back to contributor 1.
+      if (shouldPreserveResonanceForClickTarget(event.target)) {
         return;
       }
       if (!_resonanceLocked) {

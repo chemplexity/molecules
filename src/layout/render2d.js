@@ -320,11 +320,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
     let chargeSup = '';
     if (charge !== 0) {
       const sign = formatChargeLabel(charge);
-      const extraOccupiedAngles = showLonePairs
-        ? (lonePairDotsByAtomId.get(atom.id) ?? [])
-            .map(dot => Math.atan2(dot.y - y, dot.x - x))
-            .filter(Number.isFinite)
-        : [];
+      const extraOccupiedAngles = showLonePairs ? (lonePairDotsByAtomId.get(atom.id) ?? []).map(dot => Math.atan2(dot.y - y, dot.x - x)).filter(Number.isFinite) : [];
       const placement = computeChargeBadgePlacement(atom, mol, {
         pointForAtom: toSVG,
         label,

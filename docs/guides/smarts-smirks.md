@@ -295,16 +295,16 @@ Each entry has `name` and `smirks`.
 
 **Acid/base and other**
 
-| Key                           | Description                    |
-| ----------------------------- | ------------------------------ |
-| `carboxylicAcidDeprotonation` | Acid → carboxylate             |
-| `carboxylateProtonation`      | Carboxylate → acid             |
-| `amineProtonation`            | Amine → ammonium               |
-| `ammoniumDeprotonation`       | Ammonium → amine               |
-| `phenolDeprotonation`         | Phenol → phenolate             |
-| `phenolateProtonation`        | Phenolate → phenol             |
-| `alcoholDehydration`          | Alcohol → alkene               |
-| `alkylChlorideElimination`    | Alkyl chloride → alkene        |
+| Key                           | Description             |
+| ----------------------------- | ----------------------- |
+| `carboxylicAcidDeprotonation` | Acid → carboxylate      |
+| `carboxylateProtonation`      | Carboxylate → acid      |
+| `amineProtonation`            | Amine → ammonium        |
+| `ammoniumDeprotonation`       | Ammonium → amine        |
+| `phenolDeprotonation`         | Phenol → phenolate      |
+| `phenolateProtonation`        | Phenolate → phenol      |
+| `alcoholDehydration`          | Alcohol → alkene        |
+| `alkylChlorideElimination`    | Alkyl chloride → alkene |
 
 ### Applying templates in bulk
 

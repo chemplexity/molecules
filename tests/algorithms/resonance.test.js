@@ -437,9 +437,7 @@ describe('generateResonanceStructures — development regressions', () => {
     let sawSecondBenzoateCarbonylShift = false;
     for (let i = 1; i <= mol.resonanceCount; i++) {
       mol.setResonanceState(i);
-      const chargedOxygens = [...mol.atoms.values()]
-        .filter(atom => atom.name === 'O' && (atom.properties.charge ?? 0) === -1)
-        .map(atom => atom.id);
+      const chargedOxygens = [...mol.atoms.values()].filter(atom => atom.name === 'O' && (atom.properties.charge ?? 0) === -1).map(atom => atom.id);
       if (chargedOxygens.includes('O4')) {
         sawFirstBenzoateCarbonylShift = true;
       }

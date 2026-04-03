@@ -5,6 +5,9 @@
 - Erase paint mode now erases atoms/bonds on circle-edge contact, not just cursor center
 - Added tooltip to Atom Coloring option explaining CPK colors vs. black and white
 - Functional-group match cycling now includes an `All` highlight state
+- Moved 2D wedge/dash persistence onto `bond.properties.display`, storing the chosen displayed stereo bond on the bond itself instead of relying only on transient UI maps
+- Preserved existing 2D wedge-bond choices for untouched stereocenters during unrelated graph edits so adding/removing distant atoms no longer flips another center’s displayed wedge bond
+- Preserved the stored 2D wedge or dash type as well, so remote substituent edits no longer flip an untouched stereobond from wedge to dash or vice versa
 - Fixed ether functional-group SMARTS so phosphoesters like `P-O-C` are no longer misclassified as ethers
 - Fixed `Alcohol Dehydration` so primary alcohols dehydrate to valence-clean alkenes and no longer match when the beta carbon has no removable hydrogen
 - Removed the misleading `Alcohol Cleavage` reaction template and its related docs/tests

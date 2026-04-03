@@ -2,7 +2,20 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
 import { generateCoords, generateAndRefine2dCoords } from '../../src/layout/index.js';
-import { computeChargeBadgePlacement, computeLonePairDotPositions, displayedLonePairCount, getAtomLabel, kekulize, labelTextOffset, perpUnit, secondaryDir } from '../../src/layout/mol2d-helpers.js';
+import {
+  computeChargeBadgePlacement,
+  computeLonePairDotPositions,
+  applyDisplayedStereoToCenter,
+  displayedLonePairCount,
+  getAtomLabel,
+  kekulize,
+  labelTextOffset,
+  perpUnit,
+  pickStereoWedges,
+  secondaryDir,
+  stereoBondTypeForCenter,
+  syncDisplayStereo
+} from '../../src/layout/mol2d-helpers.js';
 import { refineExistingCoords } from '../../src/layout/coords2d.js';
 import { parseINCHI } from '../../src/io/inchi.js';
 import { parseSMILES } from '../../src/io/smiles.js';
@@ -1868,7 +1881,10 @@ describe('getAtomLabel — hydroxyl orientation', () => {
 
     const leftHydroxylO = mol.atoms.get('O9');
     assert.ok(leftHydroxylO, 'expected the left carboxylic-acid hydroxyl oxygen');
-    assert.equal(getAtomLabel(leftHydroxylO, hCounts, atom => ({ x: atom.x, y: atom.y }), mol), 'HO');
+    assert.equal(
+      getAtomLabel(leftHydroxylO, hCounts, atom => ({ x: atom.x, y: atom.y }), mol),
+      'HO'
+    );
   });
 });
 
@@ -2004,9 +2020,18 @@ describe('computeLonePairDotPositions', () => {
     }
 
     assert.equal(pairCenters.length, 2, 'expected two lone-pair centers');
-    assert.ok(pairCenters.every(center => center.y < -5), 'expected both lone pairs above the label');
-    assert.ok(pairCenters.some(center => center.x < -5), 'expected one lone pair on the upper-left diagonal');
-    assert.ok(pairCenters.some(center => center.x > 5), 'expected one lone pair on the upper-right diagonal');
+    assert.ok(
+      pairCenters.every(center => center.y < -5),
+      'expected both lone pairs above the label'
+    );
+    assert.ok(
+      pairCenters.some(center => center.x < -5),
+      'expected one lone pair on the upper-left diagonal'
+    );
+    assert.ok(
+      pairCenters.some(center => center.x > 5),
+      'expected one lone pair on the upper-right diagonal'
+    );
   });
 
   it('places four lone pairs at the cardinal positions around an isolated halide label', () => {
@@ -2031,10 +2056,22 @@ describe('computeLonePairDotPositions', () => {
     }
 
     assert.equal(pairCenters.length, 4, 'expected four lone-pair centers');
-    assert.ok(pairCenters.some(center => Math.abs(center.x) < 4 && center.y < -10), 'expected one lone pair above');
-    assert.ok(pairCenters.some(center => Math.abs(center.x) < 4 && center.y > 10), 'expected one lone pair below');
-    assert.ok(pairCenters.some(center => center.x < -10 && Math.abs(center.y) < 4), 'expected one lone pair left');
-    assert.ok(pairCenters.some(center => center.x > 10 && Math.abs(center.y) < 4), 'expected one lone pair right');
+    assert.ok(
+      pairCenters.some(center => Math.abs(center.x) < 4 && center.y < -10),
+      'expected one lone pair above'
+    );
+    assert.ok(
+      pairCenters.some(center => Math.abs(center.x) < 4 && center.y > 10),
+      'expected one lone pair below'
+    );
+    assert.ok(
+      pairCenters.some(center => center.x < -10 && Math.abs(center.y) < 4),
+      'expected one lone pair left'
+    );
+    assert.ok(
+      pairCenters.some(center => center.x > 10 && Math.abs(center.y) < 4),
+      'expected one lone pair right'
+    );
   });
 
   it('prefers a cardinal direction for an isolated single lone pair', () => {
@@ -2116,8 +2153,8 @@ describe('computeLonePairDotPositions', () => {
     }
     const center = { x: oxygen.x * 20, y: oxygen.y * 20 };
     const inward = {
-      x: (carbonA.x * 20 - center.x) + (carbonB.x * 20 - center.x),
-      y: (carbonA.y * 20 - center.y) + (carbonB.y * 20 - center.y)
+      x: carbonA.x * 20 - center.x + (carbonB.x * 20 - center.x),
+      y: carbonA.y * 20 - center.y + (carbonB.y * 20 - center.y)
     };
     const outward = { x: -inward.x, y: -inward.y };
     const outwardLength = Math.hypot(outward.x, outward.y) || 1;
@@ -2183,9 +2220,7 @@ describe('computeLonePairDotPositions', () => {
     }
     mol.hideHydrogens();
 
-    const topAnionicNitrogen = [...mol.atoms.values()]
-      .filter(atom => atom.name === 'N' && atom.getCharge() === -1 && atom.visible !== false)
-      .sort((a, b) => a.y - b.y)[0];
+    const topAnionicNitrogen = [...mol.atoms.values()].filter(atom => atom.name === 'N' && atom.getCharge() === -1 && atom.visible !== false).sort((a, b) => a.y - b.y)[0];
     assert.ok(topAnionicNitrogen, 'expected visible anionic ring nitrogen');
 
     const toSVG = atom => ({ x: atom.x * 40, y: -atom.y * 40 });
@@ -2205,7 +2240,10 @@ describe('computeLonePairDotPositions', () => {
     }
 
     assert.equal(pairCenters.length, 2, 'expected two displayed lone pairs');
-    assert.ok(pairCenters.every(pairCenter => pairCenter.y < center.y - 5), 'expected both lone pairs above the nitrogen');
+    assert.ok(
+      pairCenters.every(pairCenter => pairCenter.y < center.y - 5),
+      'expected both lone pairs above the nitrogen'
+    );
   });
 
   it('supports stable orientation geometry separate from rendered positions', () => {
@@ -2232,7 +2270,10 @@ describe('computeLonePairDotPositions', () => {
       });
     }
 
-    assert.ok(pairCenters.every(pairCenter => pairCenter.x < -5), 'expected lone-pair orientation to follow the stable outward reference direction');
+    assert.ok(
+      pairCenters.every(pairCenter => pairCenter.x < -5),
+      'expected lone-pair orientation to follow the stable outward reference direction'
+    );
   });
 
   it('places lone pairs on the outward side of a northwest-pointing carbonyl oxygen', () => {
@@ -2259,9 +2300,96 @@ describe('computeLonePairDotPositions', () => {
     }
 
     assert.equal(pairCenters.length, 2, 'expected two lone-pair centers');
-    assert.ok(pairCenters.some(pairCenter => pairCenter.x < -5), 'expected one lone pair on the west side of the oxygen');
-    assert.ok(pairCenters.some(pairCenter => pairCenter.y > 5), 'expected one lone pair on the outward side of the oxygen');
-    assert.ok(pairCenters.every(pairCenter => !(pairCenter.x > 5 && pairCenter.y < -5)), 'expected no lone pair to fall into the inward southeast quadrant');
+    assert.ok(
+      pairCenters.some(pairCenter => pairCenter.x < -5),
+      'expected one lone pair on the west side of the oxygen'
+    );
+    assert.ok(
+      pairCenters.some(pairCenter => pairCenter.y > 5),
+      'expected one lone pair on the outward side of the oxygen'
+    );
+    assert.ok(
+      pairCenters.every(pairCenter => !(pairCenter.x > 5 && pairCenter.y < -5)),
+      'expected no lone pair to fall into the inward southeast quadrant'
+    );
+  });
+});
+
+describe('pickStereoWedges', () => {
+  it('stores and preserves an existing wedge bond choice when an unrelated remote substituent edit changes CIP ranking', () => {
+    const mol = parseSMILES('C[C@](CC)(CCC)CCCC');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const initial = [...syncDisplayStereo(mol)];
+    assert.deepEqual(initial, [['2', 'dash']]);
+    assert.deepEqual(mol.bonds.get('2').properties.display, { as: 'dash', centerId: 'C2' });
+
+    const chlorine = mol.addAtom(null, 'Cl', {});
+    const editedAtom = mol.atoms.get('C4');
+    chlorine.x = editedAtom.x + 1;
+    chlorine.y = editedAtom.y;
+    mol.addBond(null, 'C4', chlorine.id, { order: 1 }, true);
+
+    const freshMol = parseSMILES('C[C@](CC)(CCC)CCCC');
+    generateAndRefine2dCoords(freshMol, { suppressH: true, bondLength: 1.5 });
+    const freshChlorine = freshMol.addAtom(null, 'Cl', {});
+    const freshEditedAtom = freshMol.atoms.get('C4');
+    freshChlorine.x = freshEditedAtom.x + 1;
+    freshChlorine.y = freshEditedAtom.y;
+    const freshBond = freshMol.addBond(null, 'C4', freshChlorine.id, { order: 1 }, true);
+    delete freshBond.properties.display;
+
+    const recomputed = [...pickStereoWedges(freshMol)];
+    assert.deepEqual(recomputed, [['0', 'dash']]);
+
+    const preserved = [...syncDisplayStereo(mol)];
+    assert.deepEqual(preserved, initial);
+    assert.deepEqual(mol.bonds.get('2').properties.display, { as: 'dash', centerId: 'C2' });
+  });
+
+  it('preserves the stored wedge or dash type when a remote substituent edit would otherwise flip it', () => {
+    const mol = parseSMILES('C[C@](F)(CC)CCC');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const initial = [...syncDisplayStereo(mol)];
+    assert.deepEqual(initial, [['0', 'dash']]);
+    assert.deepEqual(mol.bonds.get('0').properties.display, { as: 'dash', centerId: 'C2' });
+
+    const freshMol = parseSMILES('C[C@](F)(CC)CCC');
+    generateAndRefine2dCoords(freshMol, { suppressH: true, bondLength: 1.5 });
+
+    for (const currentMol of [mol, freshMol]) {
+      const chlorine = currentMol.addAtom(null, 'Cl', {});
+      const editedAtom = currentMol.atoms.get('C4');
+      chlorine.x = editedAtom.x + 1;
+      chlorine.y = editedAtom.y;
+      currentMol.addBond(null, 'C4', chlorine.id, { order: 1 }, true);
+    }
+
+    const recomputed = [...pickStereoWedges(freshMol)];
+    assert.deepEqual(recomputed, [['0', 'wedge']]);
+
+    const preserved = [...syncDisplayStereo(mol)];
+    assert.deepEqual(preserved, initial);
+    assert.deepEqual(mol.bonds.get('0').properties.display, { as: 'dash', centerId: 'C2' });
+  });
+
+  it('can update the stored R/S assignment to satisfy an explicit displayed wedge or dash choice', () => {
+    const mol = parseSMILES('C[C@](F)(CC)CCC');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    const center = mol.atoms.get('C2');
+    const initialChirality = center.getChirality();
+    const initial = stereoBondTypeForCenter(mol, 'C2', '0');
+    assert.ok(initial, 'expected initial displayed stereo for bond 0');
+
+    const desiredType = initial.type === 'wedge' ? 'dash' : 'wedge';
+    const updated = applyDisplayedStereoToCenter(mol, 'C2', '0', desiredType);
+
+    assert.ok(updated, 'expected explicit displayed stereo update to succeed');
+    assert.equal(updated.type, desiredType);
+    assert.equal(stereoBondTypeForCenter(mol, 'C2', '0')?.type, desiredType);
+    assert.equal(center.getChirality(), initialChirality === 'R' ? 'S' : 'R');
   });
 });
 

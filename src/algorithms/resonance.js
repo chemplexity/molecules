@@ -868,8 +868,7 @@ function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge) 
       }
 
       const formalCharge = formalCharges.get(atomId) ?? 0;
-      const hasExocyclicDonorPiBond =
-        atom.name === 'C' && formalCharge === 0 && _hasExocyclicPositiveDonorPiBond(atom, null, molecule, bondOrders, formalCharges);
+      const hasExocyclicDonorPiBond = atom.name === 'C' && formalCharge === 0 && _hasExocyclicPositiveDonorPiBond(atom, null, molecule, bondOrders, formalCharges);
       const expectedMatchedAromaticPiBonds = hasExocyclicDonorPiBond ? 0 : _expectedAromaticPiBondCount(atom, molecule, formalCharge);
       if (expectedMatchedAromaticPiBonds !== null && matchedAromaticPiBonds !== expectedMatchedAromaticPiBonds) {
         return false;
@@ -910,10 +909,7 @@ function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge) 
 
     const hasNeutralRingCharges = positiveCount === 0 && negativeCount === 0;
     const hasInternalChargeSeparatedPair = positiveCount === 1 && negativeCount === 1;
-    const hasExocyclicDonorPair =
-      positiveCount === 0 &&
-      negativeCount === 1 &&
-      _hasSupportedExocyclicAromaticDonorPair(molecule, ring, bondOrders, formalCharges);
+    const hasExocyclicDonorPair = positiveCount === 0 && negativeCount === 1 && _hasSupportedExocyclicAromaticDonorPair(molecule, ring, bondOrders, formalCharges);
 
     if (!(hasNeutralRingCharges || hasInternalChargeSeparatedPair || hasExocyclicDonorPair)) {
       return false;
@@ -926,10 +922,7 @@ function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge) 
           atom.name === 'S' ||
           atom.name === 'Se' ||
           atom.name === 'Te' ||
-          (atom.name === 'N' &&
-            atom.getHydrogenNeighbors(molecule).length > 0 &&
-            ring.length === 5 &&
-            ring.every(atomId => (aromaticRingMembershipCounts.get(atomId) ?? 0) === 1))
+          (atom.name === 'N' && atom.getHydrogenNeighbors(molecule).length > 0 && ring.length === 5 && ring.every(atomId => (aromaticRingMembershipCounts.get(atomId) ?? 0) === 1))
       );
       if (!supportsChargeSeparatedAromaticState) {
         return false;

@@ -259,7 +259,9 @@ export class Molecule {
     let valence;
     if (group >= 1 && group <= 2) {
       valence = group;
-    } else if (group >= 13 && group <= 17) {
+    } else if (group === 13) {
+      valence = 3; // Group 13 (B, Al…) is trivalent — does not fill an octet
+    } else if (group >= 14 && group <= 17) {
       valence = 18 - group;
     } else {
       return;

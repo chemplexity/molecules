@@ -1,7 +1,7 @@
 import { Molecule } from '../core/Molecule.js';
 import { applySMIRKS } from '../smirks/index.js';
 import { generateAndRefine2dCoords } from './index.js';
-import { pickStereoWedges, stereoBondTypeForCenter } from './mol2d-helpers.js';
+import { applyDisplayedStereoToCenter, pickStereoWedges } from './mol2d-helpers.js';
 
 // ---------------------------------------------------------------------------
 // Element-set constants (module-level to avoid repeated inline allocations)
@@ -10,8 +10,32 @@ import { pickStereoWedges, stereoBondTypeForCenter } from './mol2d-helpers.js';
 /** Terminal heteroatoms whose peripheral direction is preserved in reaction layout. */
 const _TERMINAL_HETEROATOMS = new Set(['O', 'N', 'S']);
 
-/** Halogen atoms whose peripheral direction is preserved in reaction layout. */
+/** Halogens whose peripheral direction is preserved in reaction layout. */
 const _HALOGENS = new Set(['F', 'Cl', 'Br', 'I']);
+
+/**
+ * Returns true when the heavy-atom bond lengths in `mol` are consistent with
+ * chemistry-space 2D coordinates (expected ~`bondLength` Å) rather than
+ * force-layout pixel coordinates (~41 px per bond). Forces the range
+ * [bondLength*0.2, bondLength*5] which comfortably separates the two scales.
+ */
+function _coordsAreChemScale(mol, bondLength = 1.5) {
+  let sum = 0,
+    count = 0;
+  for (const bond of mol.bonds.values()) {
+    const [a, b] = bond.getAtomObjects(mol);
+    if (!a || !b || a.x == null || b.x == null || a.name === 'H' || b.name === 'H') {
+      continue;
+    }
+    sum += Math.hypot(b.x - a.x, b.y - a.y);
+    count++;
+  }
+  if (count === 0) {
+    return false;
+  }
+  const avg = sum / count;
+  return avg >= bondLength * 0.2 && avg <= bondLength * 5;
+}
 
 export function cloneWithPrefixedIds(mol, prefix) {
   const cloned = new Molecule();
@@ -37,7 +61,8 @@ function prepareReaction2dStereoReferenceMol(mol, bondLength = 1.5) {
   mol.hideHydrogens();
   const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
   const hasExistingHeavyCoords = heavyAtoms.length > 0 && heavyAtoms.every(atom => atom.x != null && atom.y != null);
-  if (!hasExistingHeavyCoords) {
+  const hasChem2dScale = hasExistingHeavyCoords && _coordsAreChemScale(mol, bondLength);
+  if (!hasChem2dScale) {
     generateAndRefine2dCoords(mol, { suppressH: true, bondLength });
   }
   for (const atom of mol.atoms.values()) {
@@ -78,7 +103,8 @@ function prepareReaction2dLayoutReferenceMol(mol, bondLength = 1.5) {
   }
   const heavyAtoms = [...mol.atoms.values()].filter(atom => atom.name !== 'H');
   const hasExistingHeavyCoords = heavyAtoms.length > 0 && heavyAtoms.every(atom => atom.x != null && atom.y != null);
-  if (!hasExistingHeavyCoords) {
+  const hasChem2dScale = hasExistingHeavyCoords && _coordsAreChemScale(mol, bondLength);
+  if (!hasChem2dScale) {
     generateAndRefine2dCoords(mol, { suppressH: true, bondLength });
   }
   return mol;
@@ -200,6 +226,36 @@ export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
   for (const id of productAffectedAtomIds) {
     highlightMapping.set(id, id);
   }
+
+  // Offset product component(s) to the right of the reactant so that force-mode
+  // can seed the simulation from non-overlapping positions.  (In 2D mode,
+  // render2d → alignReaction2dProductOrientation + centerReaction2dPairCoords
+  // will reposition everything anyway, but in force mode updateForce is called
+  // directly on the preview mol and relies on atom.x / atom.y as anchors.)
+  const reactantHeavy = [...reactantMol.atoms.values()].filter(a => a.name !== 'H' && Number.isFinite(a.x));
+  if (reactantHeavy.length > 0) {
+    const reactantMaxX = Math.max(...reactantHeavy.map(a => a.x));
+    const reactantMinX = Math.min(...reactantHeavy.map(a => a.x));
+    const reactantWidth = reactantMaxX - reactantMinX;
+    let cursor = reactantMaxX + reactantWidth * 0.5 + 3.0;
+    for (const componentAtomIds of productComponentAtomIdSets) {
+      const productHeavy = [...componentAtomIds].map(id => previewMol.atoms.get(id)).filter(a => a && a.name !== 'H' && Number.isFinite(a.x));
+      if (productHeavy.length === 0) {
+        continue;
+      }
+      const pMinX = Math.min(...productHeavy.map(a => a.x));
+      const pMaxX = Math.max(...productHeavy.map(a => a.x));
+      const dx = cursor - pMinX;
+      for (const atomId of componentAtomIds) {
+        const atom = previewMol.atoms.get(atomId);
+        if (atom && Number.isFinite(atom.x)) {
+          atom.x += dx;
+        }
+      }
+      cursor += pMaxX - pMinX + 3.0;
+    }
+  }
+
   return {
     mol: previewMol,
     reactantAtomIds: new Set(reactantMol.atoms.keys()),
@@ -704,18 +760,16 @@ function idealizeReaction2dReducedAlkynePairs(mol, componentAtomIds, bondLength 
       const rotatedMidY = (rotated[0].y + rotated[3].y) / 2;
       const translateX = targetMidX - rotatedMidX;
       const translateY = targetMidY - rotatedMidY;
+      const rotatedOuterAX = rotated[0].x + translateX;
+      const rotatedOuterAY = rotated[0].y + translateY;
+      const rotatedOuterBX = rotated[3].x + translateX;
+      const rotatedOuterBY = rotated[3].y + translateY;
       const candidatePlacements = [
-        { atom: outerA, x: rotated[0].x + translateX, y: rotated[0].y + translateY },
         { atom: atomA, x: rotated[1].x + translateX, y: rotated[1].y + translateY },
-        { atom: atomB, x: rotated[2].x + translateX, y: rotated[2].y + translateY },
-        { atom: outerB, x: rotated[3].x + translateX, y: rotated[3].y + translateY }
+        { atom: atomB, x: rotated[2].x + translateX, y: rotated[2].y + translateY }
       ];
       let score = reaction2dCandidateLayoutScore(mol, componentAtomIds, candidatePlacements, bondLength);
-      score +=
-        0.15 *
-        ((candidatePlacements[0].x - outerA.x) ** 2 +
-          (candidatePlacements[0].y - outerA.y) ** 2 +
-          ((candidatePlacements[3].x - outerB.x) ** 2 + (candidatePlacements[3].y - outerB.y) ** 2));
+      score += 0.15 * ((rotatedOuterAX - outerA.x) ** 2 + (rotatedOuterAY - outerA.y) ** 2 + (rotatedOuterBX - outerB.x) ** 2 + (rotatedOuterBY - outerB.y) ** 2);
       if (score < best.score) {
         best = { score, placements: candidatePlacements };
       }
@@ -855,18 +909,16 @@ function idealizeReaction2dReducedAlkenePairs(mol, componentAtomIds, bondLength 
       const rotatedMidY = (rotated[0].y + rotated[3].y) / 2;
       const translateX = targetMidX - rotatedMidX;
       const translateY = targetMidY - rotatedMidY;
+      const rotatedOuterAX = rotated[0].x + translateX;
+      const rotatedOuterAY = rotated[0].y + translateY;
+      const rotatedOuterBX = rotated[3].x + translateX;
+      const rotatedOuterBY = rotated[3].y + translateY;
       const candidatePlacements = [
-        { atom: outerA, x: rotated[0].x + translateX, y: rotated[0].y + translateY },
         { atom: atomA, x: rotated[1].x + translateX, y: rotated[1].y + translateY },
-        { atom: atomB, x: rotated[2].x + translateX, y: rotated[2].y + translateY },
-        { atom: outerB, x: rotated[3].x + translateX, y: rotated[3].y + translateY }
+        { atom: atomB, x: rotated[2].x + translateX, y: rotated[2].y + translateY }
       ];
       let score = reaction2dCandidateLayoutScore(mol, componentAtomIds, candidatePlacements, bondLength);
-      score +=
-        0.15 *
-        ((candidatePlacements[0].x - outerA.x) ** 2 +
-          (candidatePlacements[0].y - outerA.y) ** 2 +
-          ((candidatePlacements[3].x - outerB.x) ** 2 + (candidatePlacements[3].y - outerB.y) ** 2));
+      score += 0.15 * ((rotatedOuterAX - outerA.x) ** 2 + (rotatedOuterAY - outerA.y) ** 2 + (rotatedOuterBX - outerB.x) ** 2 + (rotatedOuterBY - outerB.y) ** 2);
       if (score < best.score) {
         best = { score, placements: candidatePlacements };
       }
@@ -1807,22 +1859,7 @@ function preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds) {
     if (!bond || !centerId || !desiredType) {
       return;
     }
-    const center = mol.atoms.get(centerId);
-    if (!center) {
-      return;
-    }
-    const current = stereoBondTypeForCenter(mol, centerId, bond.id);
-    if (current && current.type === desiredType) {
-      return;
-    }
-    const currentChirality = center.getChirality();
-    if (currentChirality === 'R' || currentChirality === 'S') {
-      center.setChirality(currentChirality === 'R' ? 'S' : 'R');
-      const flipped = stereoBondTypeForCenter(mol, centerId, bond.id);
-      if (!flipped || flipped.type !== desiredType) {
-        center.setChirality(currentChirality);
-      }
-    }
+    applyDisplayedStereoToCenter(mol, centerId, bond.id, desiredType);
   };
 
   for (const [bondId, type] of previewState.preservedReactantStereoBondTypes ?? new Map()) {

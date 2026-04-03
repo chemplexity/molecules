@@ -7,7 +7,14 @@ import { findSMARTSRaw } from '../../src/smarts/search.js';
 import { generateAndRefine2dCoords } from '../../src/layout/index.js';
 import { pickStereoWedges } from '../../src/layout/mol2d-helpers.js';
 import { buildReaction2dMol, alignReaction2dProductOrientation, spreadReaction2dProductComponents, centerReaction2dPairCoords } from '../../src/layout/reaction2d.js';
-import { _chooseReactionPreviewForceArrow } from '../../src/app/render/reaction-2d.js';
+import {
+  initReaction2d,
+  _chooseReactionPreviewForceArrow,
+  _isReactionPreviewEditableAtomId,
+  _prepareReactionPreviewEraseTargets,
+  _restoreReactionPreviewSnapshot,
+  _clearReactionPreviewState
+} from '../../src/app/render/reaction-2d.js';
 import { validateValence } from '../../src/validation/index.js';
 
 function preparePreview(smiles, smirks) {
@@ -22,6 +29,24 @@ function preparePreview(smiles, smirks) {
   spreadReaction2dProductComponents(preview.mol, preview, 1.5);
   centerReaction2dPairCoords(preview.mol, preview, 1.5);
   return preview;
+}
+
+function serializeMol(mol) {
+  return {
+    atoms: [...mol.atoms.entries()].map(([id, atom]) => ({
+      id,
+      name: atom.name,
+      x: atom.x,
+      y: atom.y,
+      visible: atom.visible,
+      properties: JSON.parse(JSON.stringify(atom.properties))
+    })),
+    bonds: [...mol.bonds.entries()].map(([id, bond]) => ({
+      id,
+      atoms: [...bond.atoms],
+      properties: JSON.parse(JSON.stringify(bond.properties))
+    }))
+  };
 }
 
 function distance(a, b) {
@@ -228,6 +253,140 @@ test('force reaction arrow keeps its previous lane when the new lane is only mar
 
   assert.ok(arrow, 'expected a force reaction arrow candidate');
   assert.equal(arrow.offset, -10, 'expected previous arrow lane to be kept when still nearly as clear');
+});
+
+test('reaction preview erase targets ignore product-side atoms and bonds', () => {
+  const sourceMol = parseSMILES('CCO');
+  const smirks = reactionTemplates.alcoholDehydration.smirks;
+  const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][0];
+  const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+  assert.ok(preview, 'expected dehydration preview to be buildable');
+
+  const context = {
+    mode: '2d',
+    _mol2d: preview.mol,
+    currentMol: null,
+    renderMol(mol) {
+      this._mol2d = mol;
+    }
+  };
+  initReaction2d(context);
+  _restoreReactionPreviewSnapshot({
+    sourceMol: serializeMol(sourceMol),
+    reactantAtomIds: [...preview.reactantAtomIds],
+    productAtomIds: [...preview.productAtomIds],
+    productComponentAtomIdSets: preview.productComponentAtomIdSets.map(atomIds => [...atomIds]),
+    mappedAtomPairs: [...preview.mappedAtomPairs],
+    editedProductAtomIds: [...preview.editedProductAtomIds],
+    preservedReactantStereoByCenter: [],
+    preservedReactantStereoBondTypes: [],
+    preservedProductStereoByCenter: [],
+    preservedProductStereoBondTypes: [],
+    forcedStereoByCenter: [],
+    forcedStereoBondTypes: [],
+    forcedStereoBondCenters: [],
+    reactantReferenceCoords: [],
+    reactionPreviewHighlightMappings: []
+  });
+
+  const productC1 = preview.mappedAtomPairs.find(([sourceId]) => sourceId === 'C1')?.[1];
+  const productC2 = preview.mappedAtomPairs.find(([sourceId]) => sourceId === 'C2')?.[1];
+  assert.ok(productC1 && productC2, 'expected mapped dehydration product carbons');
+  const productBond = preview.mol.getBond(productC1, productC2);
+  assert.ok(productBond, 'expected dehydration product bond');
+
+  const eraseTargets = _prepareReactionPreviewEraseTargets([productC2], [productBond.id]);
+  assert.equal(eraseTargets.restored, false, 'expected product-side erase requests to leave reaction preview untouched');
+  assert.deepEqual(eraseTargets.atomIds, []);
+  assert.deepEqual(eraseTargets.bondIds, []);
+  assert.ok(context._mol2d?.atoms.has(productC2), 'expected preview molecule to remain active in the render context');
+
+  _clearReactionPreviewState();
+});
+
+test('reaction preview only allows atom edits on the reactant side', () => {
+  const sourceMol = parseSMILES('CCO');
+  const smirks = reactionTemplates.alcoholDehydration.smirks;
+  const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][0];
+  const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+  assert.ok(preview, 'expected dehydration preview to be buildable');
+
+  initReaction2d({
+    mode: '2d',
+    _mol2d: preview.mol,
+    currentMol: null,
+    renderMol() {}
+  });
+  _restoreReactionPreviewSnapshot({
+    sourceMol: serializeMol(sourceMol),
+    reactantAtomIds: [...preview.reactantAtomIds],
+    productAtomIds: [...preview.productAtomIds],
+    productComponentAtomIdSets: preview.productComponentAtomIdSets.map(atomIds => [...atomIds]),
+    mappedAtomPairs: [...preview.mappedAtomPairs],
+    editedProductAtomIds: [...preview.editedProductAtomIds],
+    preservedReactantStereoByCenter: [],
+    preservedReactantStereoBondTypes: [],
+    preservedProductStereoByCenter: [],
+    preservedProductStereoBondTypes: [],
+    forcedStereoByCenter: [],
+    forcedStereoBondTypes: [],
+    forcedStereoBondCenters: [],
+    reactantReferenceCoords: [],
+    reactionPreviewHighlightMappings: []
+  });
+
+  const productC2 = preview.mappedAtomPairs.find(([sourceId]) => sourceId === 'C2')?.[1];
+  assert.ok(productC2, 'expected mapped product atom');
+  assert.equal(_isReactionPreviewEditableAtomId('C2'), true);
+  assert.equal(_isReactionPreviewEditableAtomId(productC2), false);
+
+  _clearReactionPreviewState();
+});
+
+test('reaction preview erase targets also ignore reactant-side atoms and bonds', () => {
+  const sourceMol = parseSMILES('CCO');
+  const smirks = reactionTemplates.alcoholDehydration.smirks;
+  const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][0];
+  const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+  assert.ok(preview, 'expected dehydration preview to be buildable');
+
+  const context = {
+    mode: '2d',
+    _mol2d: preview.mol,
+    currentMol: null,
+    renderMol(mol) {
+      this._mol2d = mol;
+    }
+  };
+  initReaction2d(context);
+  _restoreReactionPreviewSnapshot({
+    sourceMol: serializeMol(sourceMol),
+    reactantAtomIds: [...preview.reactantAtomIds],
+    productAtomIds: [...preview.productAtomIds],
+    productComponentAtomIdSets: preview.productComponentAtomIdSets.map(atomIds => [...atomIds]),
+    mappedAtomPairs: [...preview.mappedAtomPairs],
+    editedProductAtomIds: [...preview.editedProductAtomIds],
+    preservedReactantStereoByCenter: [],
+    preservedReactantStereoBondTypes: [],
+    preservedProductStereoByCenter: [],
+    preservedProductStereoBondTypes: [],
+    forcedStereoByCenter: [],
+    forcedStereoBondTypes: [],
+    forcedStereoBondCenters: [],
+    reactantReferenceCoords: [],
+    reactionPreviewHighlightMappings: []
+  });
+
+  const reactantBond = preview.mol.getBond('C1', 'C2');
+  assert.ok(reactantBond, 'expected reactant-side bond in preview');
+
+  const eraseTargets = _prepareReactionPreviewEraseTargets(['C2'], [reactantBond.id]);
+  assert.equal(eraseTargets.restored, false, 'expected reactant-side erase requests to stay in reaction preview');
+  assert.deepEqual(eraseTargets.atomIds, []);
+  assert.deepEqual(eraseTargets.bondIds, []);
+  assert.ok(context._mol2d?.atoms.has('C2'), 'expected preview molecule to remain active in the render context');
+
+  _clearReactionPreviewState();
 });
 
 test('reaction preview preserves ring scaffold geometry for alkene hydrogenation', () => {
