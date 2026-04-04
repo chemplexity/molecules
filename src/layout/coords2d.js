@@ -2664,11 +2664,18 @@ export function generateCoords(molecule, options = {}) {
 
     straightenPreferredBackbone(molecule, coords, findPreferredBackbonePath(molecule));
   } else if (acyclicRoot !== null) {
-    // Acyclic near-collision fallback: if the DFS layout folded a branch so
-    // that two non-bonded heavy atoms ended up too close (< 0.6 × bondLength),
+    // Straighten the preferred backbone first: the DFS zigzag can produce a
+    // hexagonal spiral (always turning the same direction) for certain branched
+    // chains (e.g. open-chain polyols).  Straightening before the near-collision
+    // check produces a proper alternating zigzag with no near-collisions, making
+    // the force-field fallback unnecessary in most cases.
+    const isHAtom2 = id => molecule.atoms.get(id)?.name === 'H';
+    straightenPreferredBackbone(molecule, coords, findPreferredBackbonePath(molecule));
+
+    // Acyclic near-collision fallback: if the DFS layout (even after straightening)
+    // still has two non-bonded heavy atoms too close (< 0.6 × bondLength),
     // run the force field with ALL atoms movable to push them apart, then
     // restore exact bond lengths with a BFS snap from the root.
-    const isHAtom2 = id => molecule.atoms.get(id)?.name === 'H';
     const heavyIds = [...coords.keys()].filter(id => molecule.atoms.has(id) && !isHAtom2(id));
     const bondedSet = new Set();
     for (const [, bond] of molecule.bonds) {
@@ -2721,12 +2728,9 @@ export function generateCoords(molecule, options = {}) {
           }
         }
       }
+      // Re-straighten after force-field perturbation.
+      straightenPreferredBackbone(molecule, coords, findPreferredBackbonePath(molecule));
     }
-
-    // Straighten the preferred backbone for pure acyclic molecules: the DFS
-    // zigzag can produce a hexagonal spiral (always turning the same direction)
-    // when all atoms have degree ≤ 2.  This corrects turn direction alternation.
-    straightenPreferredBackbone(molecule, coords, findPreferredBackbonePath(molecule));
   }
 
   optimizeAcyclicMultipleBondSubtrees(molecule, coords, bondLength);

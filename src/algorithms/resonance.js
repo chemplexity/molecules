@@ -1027,6 +1027,46 @@ function _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxCon
     atomPiBondLimits.set(atomId, _maxCandidatePiBondCount(atom, molecule, fixedBondIds, maxCharge));
   }
 
+  // Forward-checking support: for aromatic atoms that must have exactly one
+  // localized pi bond, detect dead branches as soon as their last candidate bond
+  // is processed rather than waiting until the leaf.
+  //
+  // Safe condition: only applies when the ENTIRE pi system is pure carbon.
+  // In pure-hydrocarbon aromatic systems (e.g. coronene, pyrene) the Hückel
+  // check in _isValidState rules out C+ / C– states, so every aromatic carbon
+  // with limit > 0 strictly needs ≥ 1 pi bond.  For mixed systems containing
+  // even one heteroatom, charge-separated contributors can leave ring carbons
+  // with 0 pi bonds legitimately (e.g. indole zwitterion), so we skip the
+  // check to avoid false-positive pruning.
+  const allPiAtomsAreCarbon = [...atomIds].every(id => molecule.atoms.get(id)?.name === 'C');
+
+  const atomPiBondNeeds = new Map();
+  for (const [atomId, limit] of atomPiBondLimits) {
+    let needs = 0;
+    if (allPiAtomsAreCarbon && limit > 0 && molecule.atoms.get(atomId)?.properties?.aromatic) {
+      needs = 1;
+    }
+    atomPiBondNeeds.set(atomId, needs);
+  }
+
+  // For each atom, the index of its last candidate bond in `candidates`.
+  const lastCandidateIdxForAtom = new Map();
+  for (let i = 0; i < candidates.length; i++) {
+    const bond = molecule.bonds.get(candidates[i]);
+    for (const atomId of bond.atoms) {
+      if (atomIds.has(atomId)) {
+        lastCandidateIdxForAtom.set(atomId, i);
+      }
+    }
+  }
+  // Group atoms (with needs > 0) by the index of their last candidate bond.
+  const atomsCompletingAt = new Array(candidates.length).fill(null).map(() => []);
+  for (const [atomId, lastIdx] of lastCandidateIdxForAtom) {
+    if ((atomPiBondNeeds.get(atomId) ?? 0) > 0) {
+      atomsCompletingAt[lastIdx].push(atomId);
+    }
+  }
+
   function buildBondOrders() {
     const bo2 = new Map();
     for (let i = 0; i < candidates.length; i++) {
@@ -1042,6 +1082,19 @@ function _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxCon
     if (results.length >= maxContributors) {
       return;
     }
+
+    // Forward-check: as soon as an atom's last candidate bond is processed,
+    // verify it has already accumulated its minimum required pi bonds. If not,
+    // this entire subtree will always fail _isValidState — prune it now.
+    // `idx` is the next bond to process, so atoms completing at idx-1 are done.
+    if (idx > 0) {
+      for (const atomId of atomsCompletingAt[idx - 1]) {
+        if ((matchedBondCounts.get(atomId) ?? 0) < (atomPiBondNeeds.get(atomId) ?? 0)) {
+          return;
+        }
+      }
+    }
+
     if (idx === candidates.length) {
       const bondOrders = buildBondOrders();
       const atomCharges = _deriveFormalCharges(molecule, atomIds, bondOrders, maxCharge);

@@ -10,20 +10,23 @@ import {
   centerReaction2dPairCoords as centerReaction2dPairCoordsShared
 } from '../../layout/reaction2d.js';
 import { atomRadius } from './helpers.js';
-import { _setHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback } from './highlights.js';
+import { _setHighlight, _restorePersistentHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback } from './highlights.js';
 import { updateResonancePanel } from './resonance.js';
 
 let ctx = {};
 
 export function initReaction2d(context) {
   ctx = context;
-  setPersistentHighlightFallback(() => {
-    if (_reactionPreviewLocked && _reactionPreviewHighlightMappings?.length) {
-      _setHighlight(_reactionPreviewHighlightMappings.map(mapping => new Map(mapping)));
-      return true;
-    }
-    return false;
-  });
+  setPersistentHighlightFallback(
+    () => {
+      if (_reactionPreviewLocked && _reactionPreviewHighlightMappings?.length) {
+        _setHighlight(_reactionPreviewHighlightMappings.map(mapping => new Map(mapping)));
+        return true;
+      }
+      return false;
+    },
+    { key: 'reaction-preview', isActive: () => _reactionPreviewLocked && !!_reactionPreviewHighlightMappings?.length }
+  );
 }
 
 let _reactionPreviewSourceMol = null;
@@ -1353,7 +1356,7 @@ export function updateReactionTemplatesPanel() {
       if (_reactionPreviewLocked) {
         return;
       }
-      _setHighlight(null);
+      _restorePersistentHighlight();
     });
     tr.addEventListener('click', event => {
       event.stopPropagation();

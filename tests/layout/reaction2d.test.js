@@ -580,6 +580,34 @@ test('reaction preview preserves the retained sugar scaffold for ether cleavage'
   }
 });
 
+test('reaction preview keeps ether-cleavage ring-opening product leveled (landscape)', () => {
+  // Glucose (ring form): ether cleavage opens the ring to an open-chain hexitol.
+  // After alignment to the reactant scaffold, the open-chain backbone should be
+  // re-leveled (horizontal) rather than tilted to match the ring orientation.
+  const smiles = 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O';
+  const smirks = reactionTemplates.etherCleavage.smirks;
+  const sourceMol = parseSMILES(smiles);
+  const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
+
+  for (const mapping of mappings) {
+    const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+    assert.ok(preview, 'expected ether-cleavage preview to build');
+    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
+
+    for (const atomIds of preview.productComponentAtomIdSets) {
+      const atoms = [...atomIds].map(id => preview.mol.atoms.get(id)).filter(a => a && a.name !== 'H');
+      if (atoms.length < 8) {
+        continue;
+      }
+      const bounds = atomIdBounds(preview, atomIds);
+      assert.ok(
+        bounds.width > bounds.height,
+        `expected open-chain ether-cleavage product to be landscape after alignment, got width=${bounds.width.toFixed(2)} height=${bounds.height.toFixed(2)}`
+      );
+    }
+  }
+});
+
 test('reaction preview keeps nitrile hydrolysis to acid locally carboxyl-like for isolated nitrile', () => {
   const preview = preparePreview('C#N', reactionTemplates.nitrileHydrolysisToAcid.smirks);
   const acidCenter = findProductCarbonylCenters(preview)[0];

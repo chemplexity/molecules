@@ -1,5 +1,7 @@
 /** @module app/core/undo */
 
+import { prepareResonanceUndoSnapshot } from '../render/resonance.js';
+
 let ctx = {};
 
 let _undoStack = [];
@@ -33,7 +35,8 @@ function _updateRedoBtn() {
 }
 
 function _makeSnapshot() {
-  const mol = ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
+  const liveMol = ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
+  const { mol, resonanceView } = prepareResonanceUndoSnapshot(liveMol);
   let snap;
   if (!mol) {
     snap = { empty: true, mode: ctx.mode };
@@ -57,7 +60,13 @@ function _makeSnapshot() {
         properties: JSON.parse(JSON.stringify(bond.properties))
       });
     }
-    snap = { mode: ctx.mode, atoms, bonds };
+    snap = {
+      mode: ctx.mode,
+      atoms,
+      bonds,
+      moleculeProperties: JSON.parse(JSON.stringify(mol.properties ?? {})),
+      resonanceView
+    };
     snap.reactionPreview = ctx.getReactionPreviewSnapshot ? ctx.getReactionPreviewSnapshot() : null;
     if (ctx.mode === '2d') {
       snap.cx2d = ctx._cx2d;

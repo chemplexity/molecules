@@ -3,7 +3,63 @@ import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../src/io/index.js';
 import { generateResonanceStructures } from '../../src/algorithms/index.js';
-import { prepareResonanceStateForStructuralEdit, shouldPreserveResonanceForClickTarget } from '../../src/app/render/resonance.js';
+import {
+  captureResonanceViewSnapshot,
+  initResonancePanel,
+  prepareResonanceStateForStructuralEdit,
+  prepareResonanceUndoSnapshot,
+  restoreResonanceViewSnapshot,
+  shouldPreserveResonanceForClickTarget
+} from '../../src/app/render/resonance.js';
+
+function makeMockElement(tagName = 'div') {
+  let _textContent = '';
+  let _innerHTML = '';
+  const classes = new Set();
+  return {
+    tagName,
+    children: [],
+    className: '',
+    style: {},
+    get textContent() {
+      return _textContent;
+    },
+    set textContent(value) {
+      _textContent = String(value);
+    },
+    get innerHTML() {
+      return _innerHTML;
+    },
+    set innerHTML(value) {
+      _innerHTML = String(value);
+      this.children = [];
+      _textContent = '';
+    },
+    classList: {
+      add(...tokens) {
+        for (const token of tokens) {
+          classes.add(token);
+        }
+      },
+      contains(token) {
+        return classes.has(token);
+      }
+    },
+    appendChild(child) {
+      this.children.push(child);
+      return child;
+    },
+    addEventListener() {}
+  };
+}
+
+function collectText(node) {
+  let text = node?.textContent ?? '';
+  for (const child of node?.children ?? []) {
+    text += collectText(child);
+  }
+  return text;
+}
 
 function mockTarget(matches = new Set()) {
   return {
@@ -58,5 +114,76 @@ describe('prepareResonanceStateForStructuralEdit', () => {
     });
     assert.ok(carbonyl);
     assert.equal(carbonyl.properties.order, 2);
+  });
+});
+
+describe('resonance undo snapshots', () => {
+  it('stores canonical contributor data while preserving the active contributor view separately', () => {
+    const mol = parseSMILES('CC=O');
+    generateResonanceStructures(mol);
+    restoreResonanceViewSnapshot(mol, { locked: true, activeState: 2 });
+
+    const viewSnapshot = captureResonanceViewSnapshot(mol);
+    const prepared = prepareResonanceUndoSnapshot(mol);
+    const carbonyl = [...prepared.mol.bonds.values()].find(bond => {
+      const [a1, a2] = bond.getAtomObjects(prepared.mol);
+      return (a1.name === 'C' && a2.name === 'O') || (a1.name === 'O' && a2.name === 'C');
+    });
+
+    assert.deepEqual(viewSnapshot, { locked: true, activeState: 2 });
+    assert.deepEqual(prepared.resonanceView, { locked: true, activeState: 2 });
+    assert.equal(carbonyl.properties.order, 2);
+  });
+
+  it('rerenders the resonance row label when a locked contributor view is restored', () => {
+    const previousDocument = globalThis.document;
+    const resonanceBody = makeMockElement('tbody');
+    globalThis.document = {
+      getElementById(id) {
+        return id === 'resonance-body' ? resonanceBody : null;
+      },
+      createElement(tagName) {
+        return makeMockElement(tagName);
+      }
+    };
+
+    try {
+      const mol = parseSMILES('CC=O');
+      generateResonanceStructures(mol);
+
+      const restored = restoreResonanceViewSnapshot(mol, { locked: true, activeState: 2 });
+
+      assert.equal(restored, true);
+      assert.equal(resonanceBody.children.length, 1);
+      assert.match(collectText(resonanceBody.children[0]), /2\/2/);
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
+  it('does not collapse reaction preview while capturing an undo snapshot', () => {
+    const mol = parseSMILES('CC=O');
+    generateResonanceStructures(mol);
+    restoreResonanceViewSnapshot(mol, { locked: true, activeState: 2 });
+
+    let restoreCalls = 0;
+    initResonancePanel({
+      mode: '2d',
+      _mol2d: mol,
+      currentMol: null,
+      draw2d() {},
+      updateForce() {},
+      hasReactionPreview: () => true,
+      restoreReactionPreviewSource: () => {
+        restoreCalls += 1;
+        return true;
+      }
+    });
+
+    const prepared = prepareResonanceUndoSnapshot(mol);
+
+    assert.equal(restoreCalls, 0);
+    assert.equal(prepared.mol, mol);
+    assert.equal(prepared.resonanceView, null);
   });
 });

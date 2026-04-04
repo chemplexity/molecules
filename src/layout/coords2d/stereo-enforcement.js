@@ -117,6 +117,64 @@ export function straightenPreferredBackbone(molecule, coords, pathInfo) {
     previousSign = sign === 0 ? desiredSign : sign;
   }
 
+  // Second pass: normalize every backbone bond-angle to exactly 120°.
+  // The reflection-based sign pass above may leave some turns at non-120° angles
+  // (e.g. 150°) when a reflection moves an atom off the ideal hexagonal grid.
+  // Rotating the "next" suffix around each backbone atom corrects the magnitude
+  // while preserving the alternating-sign pattern established by the first pass.
+  for (let i = 1; i < pathInfo.path.length - 1; i++) {
+    const centerId = pathInfo.path[i];
+    const prevId = pathInfo.path[i - 1];
+    const nextId = pathInfo.path[i + 1];
+
+    const centerPos = coords.get(centerId);
+    const prevPos = coords.get(prevId);
+    const nextPos = coords.get(nextId);
+    if (!centerPos || !prevPos || !nextPos) {
+      continue;
+    }
+
+    const prevDir = Math.atan2(prevPos.y - centerPos.y, prevPos.x - centerPos.x);
+    const nextDir = Math.atan2(nextPos.y - centerPos.y, nextPos.x - centerPos.x);
+    let diff = nextDir - prevDir;
+    while (diff > Math.PI) {
+      diff -= 2 * Math.PI;
+    }
+    while (diff <= -Math.PI) {
+      diff += 2 * Math.PI;
+    }
+
+    // Skip collinear (straight-line) backbone segments — no turn to normalise.
+    if (Math.abs(diff) < 1e-4) {
+      continue;
+    }
+
+    const target = (Math.PI * 2) / 3; // 120° in radians
+    const rotation = (diff > 0 ? target : -target) - diff;
+    if (Math.abs(rotation) < 1e-6) {
+      continue;
+    }
+
+    const suffixAtoms = collectSideAtoms(molecule, centerId, prevId);
+    const cosR = Math.cos(rotation);
+    const sinR = Math.sin(rotation);
+    for (const atomId of suffixAtoms) {
+      if (atomId === centerId) {
+        continue;
+      }
+      const pos = coords.get(atomId);
+      if (!pos) {
+        continue;
+      }
+      const dx = pos.x - centerPos.x;
+      const dy = pos.y - centerPos.y;
+      coords.set(atomId, {
+        x: centerPos.x + dx * cosR - dy * sinR,
+        y: centerPos.y + dx * sinR + dy * cosR
+      });
+    }
+  }
+
   return true;
 }
 

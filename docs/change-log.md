@@ -1,5 +1,14 @@
 # Change Log
 
+## 2026-04-03
+
+- Fix 2D layout geometry for open-chain polyols (e.g. ether cleavage products
+- Preserve molecule geometry when exiting reaction preview so manually drawn coordinates are no longer overwritten by auto-clean
+- Input bar changes (typing, paste, catalog selection) now participate in undo/redo
+- Fix selection highlight stuck on product atom after Delete in reaction-preview mode
+- Fix functional group highlight lost when clicking rotate/flip in force mode
+- Optimize resonance structures calculation
+
 ## 2026-04-02
 
 - Erase paint mode now erases atoms/bonds on circle-edge contact, not just cursor center

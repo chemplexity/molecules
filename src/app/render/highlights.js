@@ -62,7 +62,7 @@ let _highlightedAtomSets = []; // one Set<atomId> per SMARTS match instance
 let _highlightMol = null; // molecule used for last updateFunctionalGroups call
 
 const _functionalGroupAnchorCache = new Map();
-let _persistentHighlightFallback = null;
+const _persistentHighlightFallbacks = new Map();
 let _activeFunctionalGroupKey = null;
 let _activeFunctionalGroupMatchIndex = 0;
 const FUNCTIONAL_GROUP_ALL_MATCH_INDEX = -1;
@@ -263,8 +263,25 @@ export function _restoreRecentFunctionalGroupHighlight() {
   return true;
 }
 
-export function setPersistentHighlightFallback(fn) {
-  _persistentHighlightFallback = typeof fn === 'function' ? fn : null;
+export function setPersistentHighlightFallback(fn, options = {}) {
+  const key = options.key ?? 'default';
+  if (typeof fn !== 'function') {
+    _persistentHighlightFallbacks.delete(key);
+    return;
+  }
+  _persistentHighlightFallbacks.set(key, {
+    restore: fn,
+    isActive: typeof options.isActive === 'function' ? options.isActive : null
+  });
+}
+
+export function hasPersistentHighlightFallback() {
+  for (const { isActive } of [..._persistentHighlightFallbacks.values()].reverse()) {
+    if (!isActive || isActive()) {
+      return true;
+    }
+  }
+  return false;
 }
 
 export function _restorePersistentHighlight() {
@@ -274,8 +291,10 @@ export function _restorePersistentHighlight() {
     _setHighlight(activeFgMappings);
     return true;
   }
-  if (_persistentHighlightFallback?.()) {
-    return true;
+  for (const { restore } of [..._persistentHighlightFallbacks.values()].reverse()) {
+    if (restore?.()) {
+      return true;
+    }
   }
   _setHighlight(null);
   return false;
@@ -372,7 +391,7 @@ export function updateFunctionalGroups(mol) {
       if (Date.now() < _preserveFunctionalGroupHighlightUntil) {
         return;
       }
-      _setHighlight(null);
+      _restorePersistentHighlight();
     });
     tr.addEventListener('mousedown', event => {
       if (event.button !== 0) {
@@ -419,6 +438,9 @@ if (typeof document !== 'undefined') {
         return;
       }
       if (event.target.closest('#rotate-controls')) {
+        return;
+      }
+      if (event.target.closest('#force-controls')) {
         return;
       }
       const tbody = document.getElementById('fg-body');

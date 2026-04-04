@@ -106,6 +106,51 @@ export function prepareResonanceStateForStructuralEdit(mol = _currentResonanceMo
   return { mol, resonanceReset, resonanceCleared: true };
 }
 
+export function captureResonanceViewSnapshot(mol = _currentResonanceMolecule()) {
+  mol = _resolveResonanceTargetMolecule(mol);
+  if (!_resonanceLocked || !mol?.properties?.resonance) {
+    return null;
+  }
+  return {
+    locked: true,
+    activeState: _activeResonanceState
+  };
+}
+
+export function prepareResonanceUndoSnapshot(mol = _currentResonanceMolecule()) {
+  // Undo snapshots for reaction preview should never route through the
+  // resonance target resolver, because that resolver intentionally restores the
+  // source molecule and would collapse the live preview during snapshot
+  // capture. The preview snapshot already carries its own source molecule.
+  if (ctx.hasReactionPreview?.()) {
+    return { mol, resonanceView: null };
+  }
+  const resonanceView = captureResonanceViewSnapshot(mol);
+  if (!resonanceView) {
+    return { mol, resonanceView: null };
+  }
+  const previousState = resonanceView.activeState;
+  mol.setResonanceState(1);
+  const snapshotMol = mol.clone();
+  mol.setResonanceState(previousState);
+  return { mol: snapshotMol, resonanceView };
+}
+
+export function restoreResonanceViewSnapshot(mol, snapshot = null) {
+  if (!snapshot?.locked || !mol?.properties?.resonance) {
+    _resonanceLocked = false;
+    _activeResonanceState = 1;
+    _renderResonancePanel(mol);
+    return false;
+  }
+  const nextState = Math.max(1, Math.min(snapshot.activeState ?? 1, mol.resonanceCount));
+  _resonanceLocked = true;
+  _activeResonanceState = nextState;
+  mol.setResonanceState(nextState);
+  _renderResonancePanel(mol);
+  return true;
+}
+
 /**
  * Recomputes resonance contributors for the given molecule and refreshes the
  * resonance panel. Structural edits should call this after the molecular graph
@@ -229,6 +274,9 @@ function _activateResonanceState(mol, state) {
  * @param {import('../../core/Molecule.js').Molecule|null} mol
  */
 function _renderResonancePanel(mol) {
+  if (typeof document === 'undefined') {
+    return;
+  }
   const tbody = document.getElementById('resonance-body');
   if (!tbody) {
     return;

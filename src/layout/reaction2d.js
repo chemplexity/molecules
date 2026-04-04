@@ -1,6 +1,7 @@
 import { Molecule } from '../core/Molecule.js';
 import { applySMIRKS } from '../smirks/index.js';
 import { generateAndRefine2dCoords } from './index.js';
+import { normalizeOrientation, shouldPreferFinalLandscapeOrientation } from './coords2d/orientation.js';
 import { applyDisplayedStereoToCenter, pickStereoWedges } from './mol2d-helpers.js';
 
 // ---------------------------------------------------------------------------
@@ -2104,6 +2105,47 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
       refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength);
     }
     preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds);
+
+    // Ring-opening reactions (e.g. ether cleavage) produce an acyclic chain
+    // from a cyclic reactant.  The best-fit rotation above aligns the product
+    // to the reactant ring orientation, leaving the backbone tilted.  When the
+    // ring membership changed and the product component has a long acyclic
+    // backbone, re-apply canonical landscape orientation so the chain is level.
+    if (mappedRingMembershipChanged) {
+      const checkMol = new Molecule();
+      for (const atomId of componentAtomIds) {
+        const atom = mol.atoms.get(atomId);
+        if (!atom) {
+          continue;
+        }
+        const copy = checkMol.addAtom(atom.id, atom.name, {});
+        copy.x = atom.x;
+        copy.y = atom.y;
+      }
+      for (const bond of mol.bonds.values()) {
+        const [aId, bId] = bond.atoms;
+        if (componentAtomIds.has(aId) && componentAtomIds.has(bId)) {
+          checkMol.addBond(bond.id, aId, bId, {}, false);
+        }
+      }
+      if (shouldPreferFinalLandscapeOrientation(checkMol)) {
+        const componentCoords = new Map();
+        for (const atomId of componentAtomIds) {
+          const atom = mol.atoms.get(atomId);
+          if (atom?.x != null) {
+            componentCoords.set(atomId, { x: atom.x, y: atom.y });
+          }
+        }
+        normalizeOrientation(componentCoords, checkMol);
+        for (const [atomId, pos] of componentCoords) {
+          const atom = mol.atoms.get(atomId);
+          if (atom) {
+            atom.x = pos.x;
+            atom.y = pos.y;
+          }
+        }
+      }
+    }
   }
 }
 

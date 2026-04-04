@@ -241,7 +241,7 @@
         {
           name: 'glucose',
           smiles: 'C([C@@H]1[C@H]([C@@H]([C@H](C(O1)O)O)O)O)O',
-          inchi: 'InChI=1S/C6H12O6/c7-1-2-3(8)4(9)5(10)6(11)12-2/h2-11H,1H2'
+          inchi: 'InChI=1S/C6H12O6/c1(2-3(4(5(6(11)12-2)10)9)8)7/h2-11H,1H2/t2-,3-,4+,5-/m1/s1'
         },
         {
           name: 'GHK-Cu',
@@ -261,7 +261,7 @@
         {
           name: 'dopamine',
           smiles: 'C1=CC(=C(C=C1CCN)O)O',
-          inchi: 'InChI=1S/C8H11NO2/c9-4-3-6-1-2-7(10)8(11)5-6/h1-2,5,9-10H,3-4,7H2'
+          inchi: 'InChI=1S/C8H11NO2/c9-4-3-6-1-2-7(10)8(11)5-6/h1-2,5,10-11H,3-4,9H2'
         },
         {
           name: 'anthracene',
@@ -387,7 +387,8 @@
         getHighlightedAtomSets,
         getHighlightStyle,
         clearHighlightState,
-        initHighlights
+        initHighlights,
+        setPersistentHighlightFallback
       } from './src/app/render/highlights.js';
       import {
         initReaction2d,
@@ -418,7 +419,8 @@
         updateResonancePanel,
         clearResonancePanelState,
         resetActiveResonanceView,
-        prepareResonanceStateForStructuralEdit
+        prepareResonanceStateForStructuralEdit,
+        restoreResonanceViewSnapshot
       } from './src/app/render/resonance.js';
       const {
         WEDGE_HALF_W,
@@ -2606,6 +2608,14 @@
           mol.addBond(bd.id, bd.atoms[0], bd.atoms[1], { ...bd.properties }, false);
           Object.assign(mol.bonds.get(bd.id).properties, bd.properties);
         }
+        if (snap.moleculeProperties) {
+          mol.properties = {
+            ...mol.properties,
+            ...snap.moleculeProperties
+          };
+        }
+
+        const inputSyncMol = mol.clone();
 
         _selectedAtomIds.clear();
         _selectedBondIds.clear();
@@ -2647,7 +2657,16 @@
 
         updateFormula(mol);
         updateDescriptors(mol);
-        _updateAnalysisPanels(mol);
+        _updateAnalysisPanels(mol, { recomputeResonance: true });
+        if (snap.resonanceView?.locked && restoreResonanceViewSnapshot(mol, snap.resonanceView)) {
+          if (snap.mode === '2d' && mode === '2d') {
+            draw2d();
+            _restoreZoomTransformSnapshot(snap.zoomTransform);
+          } else if (snap.mode === 'force' && mode === 'force') {
+            updateForce(mol, { preservePositions: true, preserveView: true });
+            _restoreZoomTransformSnapshot(snap.zoomTransform);
+          }
+        }
         const syncMol = snap.reactionPreview?.sourceMol
           ? (() => {
               const source = new Molecule();
@@ -2666,7 +2685,7 @@
               }
               return source;
             })()
-          : mol;
+          : inputSyncMol;
         _syncInputField(syncMol);
       }
 
@@ -3228,7 +3247,13 @@
         if (mode !== '2d') {
           return;
         }
-        if ((reactionRestored || resonanceReset) && zoomSnapshot) {
+        // When resonance was reset the molecule size is unchanged, so restoring
+        // the pre-edit zoom avoids an unwanted viewport jump.
+        // reactionRestored is intentionally excluded here: _restoreReactionPreviewSource
+        // already called render2d which computed the correct fit for the source
+        // molecule.  Restoring the reaction-preview snapshot (captured while
+        // reactant + product were visible) would zoom the viewport back out.
+        if (resonanceReset && zoomSnapshot) {
           _restoreZoomTransformSnapshot(zoomSnapshot);
           return;
         }
@@ -4705,7 +4730,7 @@
        * @param {boolean} [options.refreshResonancePanel=true]
        */
       function render2d(mol, options = {}) {
-        const { recomputeResonance = true, refreshResonancePanel = true } = options;
+        const { recomputeResonance = true, refreshResonancePanel = true, preserveGeometry = false } = options;
         // Count H neighbours before stripping
         const hCounts = new Map();
         for (const [, atom] of mol.atoms) {
@@ -4716,7 +4741,9 @@
         mol.hideHydrogens();
         prepareAromaticBondRendering(mol);
 
-        generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+        if (!preserveGeometry) {
+          generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+        }
         _alignReaction2dProductOrientation(mol);
         _spreadReaction2dProductComponents(mol, 1.5);
         _centerReaction2dPairCoords(mol, 1.5);
@@ -5251,6 +5278,7 @@
             patchPos.set(n.id, { x: n.x, y: n.y });
           }
           _patchForceNodePositions(patchPos, { setAnchors: true, alpha: 0 });
+          _restorePersistentHighlight();
           return;
         }
 
@@ -5361,6 +5389,23 @@
             return false;
           }
         };
+        setPersistentHighlightFallback(
+          () => {
+            syncPcLockedRow();
+            if (!_pcLockedRow) {
+              return false;
+            }
+            setPcRowHighlight(_pcLockedRow);
+            return applyPcHighlight(_pcLockedRow);
+          },
+          {
+            key: 'physchem',
+            isActive: () => {
+              syncPcLockedRow();
+              return !!_pcLockedRow;
+            }
+          }
+        );
         pcTable.addEventListener('mousemove', event => {
           syncPcLockedRow();
           const tr = event.target.closest('tr[data-desc]');
@@ -5457,15 +5502,20 @@
        * @param {object} [options={}]
        * @param {boolean} [options.recomputeResonance=true]
        * @param {boolean} [options.refreshResonancePanel=true]
+       * @param {boolean} [options.preserveHistory=false] When true the undo/redo
+       *   stacks are NOT cleared.  Use this when loading a new molecule from the
+       *   input bar so the previous state remains undoable.
        */
       function _renderMol(mol, options = {}) {
-        const { recomputeResonance = true, refreshResonancePanel = true } = options;
+        const { recomputeResonance = true, refreshResonancePanel = true, preserveHistory = false, preserveGeometry = false } = options;
         _setHighlight(null);
         currentMol = mol;
         rotationDeg = 0;
         flipH = false;
         flipV = false;
-        _clearUndoHistory();
+        if (!preserveHistory) {
+          _clearUndoHistory();
+        }
         kekulize(mol);
         if (mode === 'force') {
           updateForce(mol);
@@ -5474,13 +5524,15 @@
           _updateAnalysisPanels(mol, { recomputeResonance, refreshResonancePanel });
         } else {
           simulation.stop();
-          render2d(mol, { recomputeResonance, refreshResonancePanel });
+          render2d(mol, { recomputeResonance, refreshResonancePanel, preserveGeometry });
         }
       }
 
       function clearMolecule() {
+        if (currentMol || _mol2d) {
+          _takeSnapshot({ clearReactionPreview: false });
+        }
         _clearReactionPreviewState();
-        _clearUndoHistory();
         currentMol = null;
         currentSmiles = null;
         currentInchi = null;
@@ -5530,7 +5582,10 @@
         if (!mol || mol.atoms.size === 0) return;
         currentSmiles = smiles;
         currentInchi = null;
-        _renderMol(mol);
+        if (currentMol || _mol2d) {
+          _takeSnapshot({ clearReactionPreview: false });
+        }
+        _renderMol(mol, { preserveHistory: true });
       }
 
       function parseAndRenderInchi(inchi) {
@@ -5548,7 +5603,10 @@
         if (!mol || mol.atoms.size === 0) return;
         currentSmiles = null;
         currentInchi = inchi;
-        _renderMol(mol);
+        if (currentMol || _mol2d) {
+          _takeSnapshot({ clearReactionPreview: false });
+        }
+        _renderMol(mol, { preserveHistory: true });
       }
 
       window._parseSmiles = parseAndRender;
@@ -5653,6 +5711,9 @@
 
       window.deleteSelection = function deleteSelection() {
         if (_hasReactionPreview()) {
+          _selectedAtomIds.clear();
+          _selectedBondIds.clear();
+          _refreshSelectionOverlay();
           return;
         }
 
