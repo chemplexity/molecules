@@ -59,6 +59,8 @@
     "clean": "rimraf lib es dist",
     "prebuild": "npm run clean",
     "test": "node --test 'tests/**/*.test.js'",
+    "test:e2e": "playwright test",
+    "test:e2e:headed": "playwright test --headed",
     "test:watch": "node --test --watch 'tests/**/*.test.js'",
     "test:coverage": "node --test --experimental-test-coverage 'tests/**/*.test.js'",
     "lint": "eslint \"src/**/*.js\" \"tests/**/*.js\"",
@@ -81,7 +83,8 @@
     "molecular-descriptors",
     "graph-theory",
     "drug-discovery",
-    "qsar"
+    "qsar",
+    "chemdraw"
   ],
   "author": "",
   "license": "MIT",
@@ -89,6 +92,7 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@resvg/resvg-js": "^2.6.2",
     "@rollup/plugin-commonjs": "^25.0.7",
     "@rollup/plugin-node-resolve": "^15.2.3",
