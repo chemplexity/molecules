@@ -75,11 +75,9 @@ export function createSessionSnapshotManager(deps) {
       if (atomData.visible !== undefined) {
         atom.visible = atomData.visible;
       }
-      Object.assign(atom.properties, atomData.properties);
     }
     for (const bondData of data.bonds ?? []) {
       built.addBond(bondData.id, bondData.atoms[0], bondData.atoms[1], { ...bondData.properties }, false);
-      Object.assign(built.bonds.get(bondData.id).properties, bondData.properties);
     }
     if (data.moleculeProperties) {
       built.properties = {
@@ -94,23 +92,7 @@ export function createSessionSnapshotManager(deps) {
     if (!snapshotMol) {
       return null;
     }
-    const source = new deps.Molecule();
-    for (const atomData of snapshotMol.atoms ?? []) {
-      const atom = source.addAtom(atomData.id, atomData.name, {
-        ...atomData.properties
-      });
-      atom.x = atomData.x;
-      atom.y = atomData.y;
-      if (atomData.visible !== undefined) {
-        atom.visible = atomData.visible;
-      }
-      Object.assign(atom.properties, atomData.properties);
-    }
-    for (const bondData of snapshotMol.bonds ?? []) {
-      source.addBond(bondData.id, bondData.atoms[0], bondData.atoms[1], { ...bondData.properties }, false);
-      Object.assign(source.bonds.get(bondData.id).properties, bondData.properties);
-    }
-    return source;
+    return buildSnapshotMol(snapshotMol);
   }
 
   function capture(options = {}) {
@@ -118,7 +100,6 @@ export function createSessionSnapshotManager(deps) {
     const activeMol = deps.getActiveMolecule();
     const reactionPreview = deps.captureReactionPreviewSnapshot();
     const resonanceUndo = reactionPreview ? { mol: activeMol, resonanceView: null } : deps.prepareResonanceUndoSnapshot(activeMol);
-    const resonanceView = reactionPreview ? null : resonanceUndo.resonanceView;
     const snapshotMol = reactionPreview?.sourceMol ? reactionPreview.sourceMol : deps.serializeSnapshotMol(resonanceUndo.mol);
     const documentState = activeMol
       ? {
@@ -148,7 +129,7 @@ export function createSessionSnapshotManager(deps) {
       panelState: deps.capturePanelState(),
       overlayState: {
         reactionPreview,
-        resonanceView
+        resonanceView: null
       }
     };
   }
@@ -163,13 +144,10 @@ export function createSessionSnapshotManager(deps) {
     deps.setFlipH(!!snap.flipH);
     deps.setFlipV(!!snap.flipV);
     deps.clearReactionPreviewState();
-    if (snap.mode === '2d') {
-      deps.clearForceState();
-    } else if (snap.mode === 'force') {
-      deps.clear2dState();
-    }
 
     if (snap.empty) {
+      deps.clearForceState();
+      deps.clear2dState();
       deps.setCurrentSmiles(snap.currentSmiles ?? null);
       deps.setCurrentInchi(snap.currentInchi ?? null);
       if (snap.inputMode) {
@@ -178,21 +156,20 @@ export function createSessionSnapshotManager(deps) {
           inputValue: snap.inputValue ?? ''
         });
       }
-      if (snap.mode === 'force') {
-        deps.setCurrentMol(null);
-        if (deps.getMode() === 'force') {
-          deps.clearForceState();
-        }
-      } else {
-        deps.setMol2d(null);
-        deps.clear2dState();
-      }
+      deps.setCurrentMol(null);
+      deps.setMol2d(null);
       deps.clearAnalysisState();
       deps.clearHighlightState();
       deps.restorePanelState(snap.panelState ?? null);
       deps.restoreInteractionState(snap);
       deps.restoreZoomTransform(snap.zoomTransform);
       return;
+    }
+
+    if (snap.mode === '2d') {
+      deps.clearForceState();
+    } else if (snap.mode === 'force') {
+      deps.clear2dState();
     }
 
     const snapshotMolData = snap.reactionPreview?.sourceMol ?? {

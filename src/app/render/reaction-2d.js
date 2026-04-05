@@ -49,6 +49,10 @@ let _reactionPreviewReactantReferenceCoords = new Map();
 let _reactionPreviewHighlightMappings = null;
 let _reactionPreviewForceArrowOffset = 0;
 
+function _takeReactionPreviewHistoryStep() {
+  ctx.takeSnapshot?.({ clearReactionPreview: false });
+}
+
 export function _hasReactionPreview() {
   return _reactionPreviewReactantAtomIds.size > 0 && _reactionPreviewProductAtomIds.size > 0;
 }
@@ -1205,7 +1209,12 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
     _reactionPreviewForcedStereoBondCenters = preview.forcedStereoBondCenters ?? new Map();
     _reactionPreviewReactantReferenceCoords = preview.reactantReferenceCoords ?? new Map();
     _reactionPreviewHighlightMappings = preview.highlightMapping ? [new Map(preview.highlightMapping)] : [new Map(site.highlightMapping)];
-    ctx.renderMol(preview.mol, { recomputeResonance: false, refreshResonancePanel: false, preserveHistory: true });
+    ctx.renderMol(preview.mol, {
+      recomputeResonance: false,
+      refreshResonancePanel: false,
+      preserveHistory: true,
+      preserveAnalysis: true
+    });
     updateResonancePanel(_reactionPreviewSourceMol ?? sourceMol, { recompute: false });
     _setHighlight(preview.highlightMapping ? [preview.highlightMapping] : [site.highlightMapping]);
     return;
@@ -1372,6 +1381,7 @@ export function updateReactionTemplatesPanel() {
         ?.querySelectorAll('tr')
         .forEach(r => r.classList.remove('fg-active'));
       if (_reactionPreviewLocked && _activeReactionSmirks === entry.smirks) {
+        _takeReactionPreviewHistoryStep();
         _restoreReactionPreviewSource();
         _setHighlight(null);
         updateReactionTemplatesPanel();
@@ -1381,6 +1391,7 @@ export function updateReactionTemplatesPanel() {
       if (!sourceMol) {
         return;
       }
+      _takeReactionPreviewHistoryStep();
       _activateReactionEntry(sourceMol, entry, 0, { lock: true });
       updateReactionTemplatesPanel();
     });

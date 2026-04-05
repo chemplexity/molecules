@@ -1,87 +1,124 @@
 /** @module app/core/undo */
 
-let ctx = {};
+export function createUndoManager({ maxEntries = 50, getDocument = () => globalThis.document } = {}) {
+  let ctx = {};
+  let undoStack = [];
+  let redoStack = [];
 
-let _undoStack = [];
-let _redoStack = [];
-const _UNDO_MAX = 50;
-
-/**
- * Inject shared state accessors.  Call once after simulation and g are created.
- * @param {{ captureAppSnapshot, restoreAppSnapshot, clearReactionPreviewState, restoreReactionPreviewSource }} context
- */
-export function initUndo(context) {
-  ctx = context;
-}
-
-function _updateUndoBtn() {
-  const btn = document.getElementById('undo-btn');
-  if (btn) {
-    btn.disabled = _undoStack.length === 0;
+  function getButton(id) {
+    const doc = getDocument?.();
+    return doc?.getElementById?.(id) ?? null;
   }
-}
 
-function _updateRedoBtn() {
-  const btn = document.getElementById('redo-btn');
-  if (btn) {
-    btn.disabled = _redoStack.length === 0;
-  }
-}
-
-function _makeSnapshot(options) {
-  return ctx.captureAppSnapshot(options);
-}
-
-export function takeSnapshot({ clearReactionPreview = true, snapshot = null, ...snapshotOptions } = {}) {
-  if (!snapshot && clearReactionPreview) {
-    const restored = ctx.restoreReactionPreviewSource ? ctx.restoreReactionPreviewSource() : false;
-    if (!restored) {
-      ctx.clearReactionPreviewState();
+  function updateUndoBtn() {
+    const btn = getButton('undo-btn');
+    if (btn) {
+      btn.disabled = undoStack.length === 0;
     }
   }
-  const snap = snapshot ?? _makeSnapshot(snapshotOptions);
-  if (_undoStack.length >= _UNDO_MAX) {
-    _undoStack.shift();
+
+  function updateRedoBtn() {
+    const btn = getButton('redo-btn');
+    if (btn) {
+      btn.disabled = redoStack.length === 0;
+    }
   }
-  _undoStack.push(snap);
-  _redoStack = [];
-  _updateUndoBtn();
-  _updateRedoBtn();
+
+  function makeSnapshot(options) {
+    return ctx.captureAppSnapshot(options);
+  }
+
+  function clearHistory() {
+    undoStack = [];
+    redoStack = [];
+    updateUndoBtn();
+    updateRedoBtn();
+  }
+
+  function initUndo(context, { resetHistory = true } = {}) {
+    ctx = context;
+    if (resetHistory) {
+      clearHistory();
+    } else {
+      updateUndoBtn();
+      updateRedoBtn();
+    }
+  }
+
+  function takeSnapshot({ clearReactionPreview = true, snapshot = null, ...snapshotOptions } = {}) {
+    if (snapshot && clearReactionPreview) {
+      throw new Error('takeSnapshot cannot clear reaction preview when an explicit snapshot is provided; pass clearReactionPreview: false.');
+    }
+    if (!snapshot && clearReactionPreview) {
+      const restored = ctx.restoreReactionPreviewSource ? ctx.restoreReactionPreviewSource() : false;
+      if (!restored) {
+        ctx.clearReactionPreviewState();
+      }
+    }
+    const nextSnapshot = snapshot ?? makeSnapshot(snapshotOptions);
+    if (undoStack.length >= maxEntries) {
+      undoStack.shift();
+    }
+    undoStack.push(nextSnapshot);
+    redoStack = [];
+    updateUndoBtn();
+    updateRedoBtn();
+  }
+
+  function discardLastSnapshot() {
+    if (undoStack.length === 0) {
+      return null;
+    }
+    const removed = undoStack.pop();
+    updateUndoBtn();
+    return removed;
+  }
+
+  function undoAction() {
+    if (undoStack.length === 0) {
+      return;
+    }
+    const redoSnap = makeSnapshot();
+    if (redoStack.length >= maxEntries) {
+      redoStack.shift();
+    }
+    redoStack.push(redoSnap);
+    updateRedoBtn();
+    const snap = undoStack.pop();
+    updateUndoBtn();
+    ctx.restoreAppSnapshot(snap);
+  }
+
+  function redoAction() {
+    if (redoStack.length === 0) {
+      return;
+    }
+    const undoSnap = makeSnapshot();
+    if (undoStack.length >= maxEntries) {
+      undoStack.shift();
+    }
+    undoStack.push(undoSnap);
+    updateUndoBtn();
+    const snap = redoStack.pop();
+    updateRedoBtn();
+    ctx.restoreAppSnapshot(snap);
+  }
+
+  return {
+    initUndo,
+    takeSnapshot,
+    discardLastSnapshot,
+    undoAction,
+    redoAction,
+    clearHistory
+  };
 }
 
-export function undoAction() {
-  if (_undoStack.length === 0) {
-    return;
-  }
-  const redoSnap = _makeSnapshot();
-  if (_redoStack.length >= _UNDO_MAX) {
-    _redoStack.shift();
-  }
-  _redoStack.push(redoSnap);
-  _updateRedoBtn();
-  const snap = _undoStack.pop();
-  _updateUndoBtn();
-  ctx.restoreAppSnapshot(snap);
-}
+const defaultUndoManager = createUndoManager();
 
-export function clearHistory() {
-  _undoStack = [];
-  _redoStack = [];
-  _updateUndoBtn();
-  _updateRedoBtn();
-}
-
-export function redoAction() {
-  if (_redoStack.length === 0) {
-    return;
-  }
-  const undoSnap = _makeSnapshot();
-  if (_undoStack.length >= _UNDO_MAX) {
-    _undoStack.shift();
-  }
-  _undoStack.push(undoSnap);
-  _updateUndoBtn();
-  const snap = _redoStack.pop();
-  _updateRedoBtn();
-  ctx.restoreAppSnapshot(snap);
-}
+export const initUndo = (...args) => defaultUndoManager.initUndo(...args);
+export const takeSnapshot = (...args) => defaultUndoManager.takeSnapshot(...args);
+export const discardLastSnapshot = (...args) => defaultUndoManager.discardLastSnapshot(...args);
+export const undoAction = (...args) => defaultUndoManager.undoAction(...args);
+export const redoAction = (...args) => defaultUndoManager.redoAction(...args);
+export const clearHistory = (...args) => defaultUndoManager.clearHistory(...args);

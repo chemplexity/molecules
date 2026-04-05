@@ -54,6 +54,13 @@ function makeDeps({ mode = '2d', hasReactionPreview = false } = {}) {
       history: {
         takeSnapshot(options) {
           calls.push(['takeSnapshot', options]);
+        },
+        captureSnapshot() {
+          calls.push(['captureSnapshot']);
+          return { id: 'captured-snapshot' };
+        },
+        discardLastSnapshot() {
+          calls.push(['discardLastSnapshot']);
         }
       },
       panels: {},
@@ -153,9 +160,10 @@ describe('createEditorActions', () => {
     assert.equal(result.performed, true);
     assert.deepEqual(calls, [
       ['prepareReactionPreviewBondEditTarget', 'bond-1'],
+      ['captureSnapshot'],
       ['prepareResonanceStructuralEdit', mol],
-      ['takeSnapshot', undefined],
-      ['mutate', { bondId: 'bond-2', restored: true }, true],
+      ['takeSnapshot', { clearReactionPreview: false, snapshot: { id: 'captured-snapshot' } }],
+      ['mutate', { bondId: 'bond-2', restored: true, previousSnapshot: { id: 'captured-snapshot' } }, true],
       ['setActiveMolecule', mol],
       ['clearPrimitiveHover'],
       ['suppressDrawBondHover'],
@@ -225,6 +233,71 @@ describe('createEditorActions', () => {
 
     assert.equal(result.performed, false);
     assert.equal(result.cancelled, true);
-    assert.deepEqual(calls, [['prepareResonanceStructuralEdit', deps.state.documentState.getActiveMolecule()]]);
+    assert.deepEqual(calls, [['captureSnapshot'], ['prepareResonanceStructuralEdit', deps.state.documentState.getActiveMolecule()]]);
+  });
+
+  it('uses the overlay-prep previous snapshot instead of recapturing after reaction-preview restore', () => {
+    const { deps, calls, mol } = makeDeps();
+    deps.overlays.prepareReactionPreviewBondEditTarget = payload => {
+      calls.push(['prepareReactionPreviewBondEditTarget', payload]);
+      return { bondId: 'bond-2', restored: true, previousSnapshot: { id: 'overlay-snapshot' } };
+    };
+    const actions = createEditorActions(deps);
+
+    const result = actions.performStructuralEdit(
+      'promote-bond-order',
+      {
+        overlayPolicy: ReactionPreviewPolicy.prepareBondTarget,
+        reactionPreviewPayload: 'bond-1',
+        resonancePolicy: ResonancePolicy.normalizeForEdit,
+        snapshotPolicy: SnapshotPolicy.take
+      },
+      ({ reactionEdit }) => {
+        calls.push(['mutate', reactionEdit]);
+        return {};
+      }
+    );
+
+    assert.equal(result.performed, true);
+    assert.deepEqual(calls, [
+      ['prepareReactionPreviewBondEditTarget', 'bond-1'],
+      ['prepareResonanceStructuralEdit', mol],
+      ['takeSnapshot', { clearReactionPreview: false, snapshot: { id: 'overlay-snapshot' } }],
+      ['mutate', { bondId: 'bond-2', restored: true, previousSnapshot: { id: 'overlay-snapshot' } }],
+      ['setActiveMolecule', mol],
+      ['syncInputField', mol],
+      ['updateFormula', mol],
+      ['updateDescriptors', mol],
+      ['updatePanels', mol],
+      ['sync2dDerivedState', mol],
+      ['draw2d']
+    ]);
+  });
+
+  it('discards the just-taken snapshot when mutateFn cancels late', () => {
+    const { deps, calls, mol } = makeDeps();
+    const actions = createEditorActions(deps);
+
+    const result = actions.performStructuralEdit(
+      'late-cancel-edit',
+      {
+        resonancePolicy: ResonancePolicy.normalizeForEdit,
+        snapshotPolicy: SnapshotPolicy.take
+      },
+      () => {
+        calls.push(['mutate']);
+        return { cancelled: true };
+      }
+    );
+
+    assert.equal(result.performed, false);
+    assert.equal(result.cancelled, true);
+    assert.deepEqual(calls, [
+      ['captureSnapshot'],
+      ['prepareResonanceStructuralEdit', mol],
+      ['takeSnapshot', { clearReactionPreview: false, snapshot: { id: 'captured-snapshot' } }],
+      ['mutate'],
+      ['discardLastSnapshot']
+    ]);
   });
 });

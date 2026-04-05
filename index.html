@@ -276,8 +276,14 @@
       ];
 
       function setInputFormat(fmt, options = {}) {
-        const { preserveInput = false, inputValue = null } = options;
+        const { preserveInput = false, inputValue = null, recordHistory = !preserveInput } = options;
         const prev = inputMode;
+        if (fmt !== prev && recordHistory) {
+          window._takeInputFormatSnapshot?.({
+            prevInputMode: prev,
+            visibleInputValue: document.getElementById('smiles-input').value ?? ''
+          });
+        }
         inputMode = fmt;
         document.getElementById('smiles-mode-btn').classList.toggle('active', fmt === 'smiles');
         document.getElementById('inchi-mode-btn').classList.toggle('active', fmt === 'inchi');
@@ -353,7 +359,7 @@
       import { generateCoords, refineExistingCoords, generateAndRefine2dCoords } from './src/layout/index.js';
       import * as mol2dHelpers from './src/layout/mol2d-helpers.js';
       import { updateDescriptors, updatePhysicochemical, updateFormula } from './src/app/ui/descriptors.js';
-      import { initUndo, takeSnapshot as _takeSnapshot, clearHistory as _clearUndoHistory, undoAction, redoAction } from './src/app/core/undo.js';
+      import { initUndo, takeSnapshot as _takeSnapshot, discardLastSnapshot as _discardLastSnapshot, clearHistory as _clearUndoHistory, undoAction, redoAction } from './src/app/core/undo.js';
       import { createAppController } from './src/app/core/app-controller.js';
       import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from './src/app/core/editor-actions.js';
       import { createSessionSnapshotManager } from './src/app/core/session-snapshot.js';
@@ -2192,7 +2198,8 @@
         state: appState,
         history: {
           takeSnapshot: options => _takeSnapshot(options),
-          captureSnapshot: options => _captureAppSnapshot(options)
+          captureSnapshot: options => _captureAppSnapshot(options),
+          discardLastSnapshot: () => _discardLastSnapshot()
         },
         renderers: {
           draw2d: () => draw2d(),
@@ -2535,7 +2542,7 @@
         captureInteractionState: () => sessionUiState.captureInteractionState(),
         captureHighlightState: () => ({
           functionalGroup: captureHighlightSnapshot(),
-          physchem: _capturePhyschemHighlightSnapshot()
+          physchem: null
         }),
         capturePanelState: () => sessionUiState.capturePanelState(),
         setRotationDeg: value => {
@@ -2716,7 +2723,8 @@
         draw2d: () => draw2d(),
         applyForceHighlights: () => applyForceHighlights(),
         renderMol: (mol, options = {}) => _renderMol(mol, options),
-        captureAppSnapshot: options => appController.captureAppSnapshot(options)
+        captureAppSnapshot: options => appController.captureAppSnapshot(options),
+        takeSnapshot: options => _takeSnapshot(options)
       });
 
       initResonancePanel({
@@ -3729,6 +3737,12 @@
           _cancelDrawBond();
           return;
         }
+        const restoreReactionPreviewNoOp = reactionEdit => {
+          if (!reactionEdit?.restored || !reactionEdit.previousSnapshot) {
+            return;
+          }
+          _restoreSnapshot(reactionEdit.previousSnapshot);
+        };
         const zoomSnapshot = mode === '2d' ? _captureZoomTransformSnapshot() : null;
         let { atomId, ox, oy, ex, ey, snapAtomId, dragged } = _drawBondState;
 
@@ -3790,7 +3804,10 @@
         const structuralEdit = _prepareResonanceStructuralEdit(mode === 'force' ? currentMol : _mol2d);
         if (snapAtomId !== null) {
           const checkMol = structuralEdit.mol;
-          if (checkMol?.atoms.get(snapAtomId)?.name === 'H') return;
+          if (checkMol?.atoms.get(snapAtomId)?.name === 'H') {
+            restoreReactionPreviewNoOp(reactionEdit);
+            return;
+          }
         }
 
         _takeSnapshot(
@@ -4427,7 +4444,7 @@
        * @param {boolean} [options.refreshResonancePanel=true]
        */
       function render2d(mol, options = {}) {
-        const { recomputeResonance = true, refreshResonancePanel = true, preserveGeometry = false } = options;
+        const { recomputeResonance = true, refreshResonancePanel = true, preserveGeometry = false, preserveAnalysis = false } = options;
         // Count H neighbours before stripping
         const hCounts = new Map();
         for (const [, atom] of mol.atoms) {
@@ -4546,9 +4563,11 @@
         draw2d();
 
         // Sidebar updates — only on new molecule, not on every highlight redraw
-        updateFormula(mol);
-        updateDescriptors(mol);
-        _updateAnalysisPanels(mol, { recomputeResonance, refreshResonancePanel });
+        if (!preserveAnalysis) {
+          updateFormula(mol);
+          updateDescriptors(mol);
+          _updateAnalysisPanels(mol, { recomputeResonance, refreshResonancePanel });
+        }
       }
 
       function fitCurrent2dView() {
@@ -4899,9 +4918,19 @@
        *   input bar so the previous state remains undoable.
        * @param {boolean} [options.preserveView=false] When true in force mode,
        *   keep the current zoom/viewport instead of refitting the graph.
+       * @param {boolean} [options.preserveAnalysis=false] When true, keep the
+       *   current formula/descriptor/sidebar summary instead of recomputing it
+       *   from the rendered molecule. Used for overlays like reaction preview.
        */
       function _renderMol(mol, options = {}) {
-        const { recomputeResonance = true, refreshResonancePanel = true, preserveHistory = false, preserveGeometry = false, preserveView = false } = options;
+        const {
+          recomputeResonance = true,
+          refreshResonancePanel = true,
+          preserveHistory = false,
+          preserveGeometry = false,
+          preserveView = false,
+          preserveAnalysis = false
+        } = options;
         clearHighlightState();
         currentMol = mol;
         rotationDeg = 0;
@@ -4913,12 +4942,14 @@
         kekulize(mol);
         if (mode === 'force') {
           updateForce(mol, { preserveView });
-          updateFormula(mol);
-          updateDescriptors(mol);
-          _updateAnalysisPanels(mol, { recomputeResonance, refreshResonancePanel });
+          if (!preserveAnalysis) {
+            updateFormula(mol);
+            updateDescriptors(mol);
+            _updateAnalysisPanels(mol, { recomputeResonance, refreshResonancePanel });
+          }
         } else {
           simulation.stop();
-          render2d(mol, { recomputeResonance, refreshResonancePanel, preserveGeometry });
+          render2d(mol, { recomputeResonance, refreshResonancePanel, preserveGeometry, preserveAnalysis });
         }
       }
 
@@ -5131,6 +5162,19 @@
         } catch (e) {
           return null;
         }
+      };
+      window._takeInputFormatSnapshot = ({ prevInputMode, visibleInputValue } = {}) => {
+        const currentMolSmiles = window._getMolSmiles?.() ?? '';
+        const currentMolInchi = window._getMolInchi?.() ?? '';
+        _takeSnapshot({
+          clearReactionPreview: false,
+          documentState: {
+            currentSmiles: (prevInputMode === 'smiles' ? visibleInputValue : currentSmiles ?? currentMolSmiles) || null,
+            currentInchi: (prevInputMode === 'inchi' ? visibleInputValue : currentInchi ?? currentMolInchi) || null,
+            inputMode: prevInputMode ?? inputMode,
+            inputValue: visibleInputValue ?? ''
+          }
+        });
       };
       window.deleteSelection = function deleteSelection() {
         if (_selectedAtomIds.size === 0 && _selectedBondIds.size === 0) return;

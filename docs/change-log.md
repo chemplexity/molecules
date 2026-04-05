@@ -13,6 +13,14 @@
 - Fix blank 2D canvas after force undo and mode switch
 - Restore InChI text correctly on undo after format switches
 - Keep resonance row state aligned with undo/redo restores
+- Let reaction preview entry participate in undo/redo
+- Stop physicochemical row locks from persisting through undo/redo
+- Stop resonance contributor viewing from persisting through undo/redo
+- Include SMILES/InChI mode toggles in undo/redo
+- Keep hydrogen bond-draw no-ops from leaving reaction preview or adding history
+- Keep reaction preview from changing the molecular weight summary
+- Fix several audited undo snapshot and restore edge cases
+- Refactor undo history into an instantiable manager and tighten its snapshot API
 
 ## 2026-04-04
 

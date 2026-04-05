@@ -47,11 +47,13 @@ export function createEditorActions(deps) {
       if (reactionEdit === null) {
         return { performed: false, blockedByOverlay: true, kind, mode };
       }
+      previousSnapshot = reactionEdit?.previousSnapshot ?? previousSnapshot;
     } else if (overlayPolicy === ReactionPreviewPolicy.prepareEditTargets) {
       reactionEdit = deps.overlays.prepareReactionPreviewEditTargets(reactionPreviewPayload ?? {});
       if (reactionEdit === null) {
         return { performed: false, blockedByOverlay: true, kind, mode };
       }
+      previousSnapshot = reactionEdit?.previousSnapshot ?? previousSnapshot;
     }
 
     if (!previousSnapshot && resonancePolicy === ResonancePolicy.normalizeForEdit && snapshotPolicy === SnapshotPolicy.take) {
@@ -86,6 +88,7 @@ export function createEditorActions(deps) {
       return { performed: false, cancelled: true, kind, mode, reactionEdit, resonanceReset };
     }
 
+    let snapshotTaken = false;
     if (snapshotPolicy === SnapshotPolicy.take) {
       deps.history.takeSnapshot(
         previousSnapshot
@@ -96,10 +99,14 @@ export function createEditorActions(deps) {
             }
           : snapshotOptions
       );
+      snapshotTaken = true;
     }
 
     const result = mutateFn(context) ?? {};
     if (result.cancelled) {
+      if (snapshotTaken) {
+        deps.history.discardLastSnapshot?.();
+      }
       return { performed: false, cancelled: true, kind, mode, reactionEdit, resonanceReset };
     }
 
