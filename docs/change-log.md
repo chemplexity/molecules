@@ -1,5 +1,28 @@
 # Change Log
 
+## 2026-04-05
+
+- Add Pauling electronegativity (`en`) data to `src/data/elements.js`
+- Add bond polarity descriptors and export them from `src/descriptors/index.js`
+- Make flips swap displayed wedge/dash stereo
+- Preserve extra atom and bond properties during molecule clones
+- Let Delete/Backspace erase hovered atoms and bonds in erase mode
+- Include 2D/force mode switches in undo/redo
+- Prevent force auto-fit from overwriting restored 2D zoom
+- Preserve force zoom when leaving reaction preview via resonance
+- Fix blank 2D canvas after force undo and mode switch
+- Restore InChI text correctly on undo after format switches
+- Keep resonance row state aligned with undo/redo restores
+
+## 2026-04-04
+
+- Refactor app interaction logic out of `index.html`
+- Add playwright for browser app testing
+- Capture undo snapshots at drag start so undo restores reaction-preview edits to the real locked preview state
+- Capture pre-load snapshots before clearing reaction preview so undo after loading a new molecule restores the locked preview state
+- Switched undo/redo to capture a fuller app session snapshot, including tool mode, selection, active tabs, and locked panel highlights
+- Extract session UI snapshot helpers for panel/tool/selection restore out of `index.html`
+
 ## 2026-04-03
 
 - Fix 2D layout geometry for open-chain polyols (e.g. ether cleavage products

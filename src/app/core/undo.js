@@ -1,7 +1,5 @@
 /** @module app/core/undo */
 
-import { prepareResonanceUndoSnapshot } from '../render/resonance.js';
-
 let ctx = {};
 
 let _undoStack = [];
@@ -10,11 +8,7 @@ const _UNDO_MAX = 50;
 
 /**
  * Inject shared state accessors.  Call once after simulation and g are created.
- * @param {{ mode, currentMol, _mol2d, _cx2d, _cy2d, _hCounts2d, _stereoMap2d,
- *           simulation, getReactionPreviewSnapshot, clearReactionPreviewState,
- *           restoreReactionPreviewSource,
- *           restoreReactionPreviewSnapshot, restoreSnapshot,
- *           getZoomTransformSnapshot }} context
+ * @param {{ captureAppSnapshot, restoreAppSnapshot, clearReactionPreviewState, restoreReactionPreviewSource }} context
  */
 export function initUndo(context) {
   ctx = context;
@@ -34,69 +28,18 @@ function _updateRedoBtn() {
   }
 }
 
-function _makeSnapshot() {
-  const liveMol = ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
-  const { mol, resonanceView } = prepareResonanceUndoSnapshot(liveMol);
-  let snap;
-  if (!mol) {
-    snap = { empty: true, mode: ctx.mode };
-  } else {
-    const atoms = [];
-    for (const [id, atom] of mol.atoms) {
-      atoms.push({
-        id,
-        name: atom.name,
-        x: atom.x,
-        y: atom.y,
-        visible: atom.visible,
-        properties: JSON.parse(JSON.stringify(atom.properties))
-      });
-    }
-    const bonds = [];
-    for (const [id, bond] of mol.bonds) {
-      bonds.push({
-        id,
-        atoms: [...bond.atoms],
-        properties: JSON.parse(JSON.stringify(bond.properties))
-      });
-    }
-    snap = {
-      mode: ctx.mode,
-      atoms,
-      bonds,
-      moleculeProperties: JSON.parse(JSON.stringify(mol.properties ?? {})),
-      resonanceView
-    };
-    snap.reactionPreview = ctx.getReactionPreviewSnapshot ? ctx.getReactionPreviewSnapshot() : null;
-    if (ctx.mode === '2d') {
-      snap.cx2d = ctx._cx2d;
-      snap.cy2d = ctx._cy2d;
-      snap.hCounts2d = ctx._hCounts2d ? [...ctx._hCounts2d] : [];
-      snap.stereoMap2d = ctx._stereoMap2d ? [...ctx._stereoMap2d] : null;
-    } else {
-      snap.nodePositions = ctx.simulation.nodes().map(n => ({
-        id: n.id,
-        x: n.x,
-        y: n.y,
-        vx: n.vx,
-        vy: n.vy,
-        anchorX: n.anchorX,
-        anchorY: n.anchorY
-      }));
-    }
-  }
-  snap.zoomTransform = ctx.getZoomTransformSnapshot ? ctx.getZoomTransformSnapshot() : null;
-  return snap;
+function _makeSnapshot(options) {
+  return ctx.captureAppSnapshot(options);
 }
 
-export function takeSnapshot({ clearReactionPreview = true } = {}) {
-  if (clearReactionPreview) {
+export function takeSnapshot({ clearReactionPreview = true, snapshot = null, ...snapshotOptions } = {}) {
+  if (!snapshot && clearReactionPreview) {
     const restored = ctx.restoreReactionPreviewSource ? ctx.restoreReactionPreviewSource() : false;
     if (!restored) {
       ctx.clearReactionPreviewState();
     }
   }
-  const snap = _makeSnapshot();
+  const snap = snapshot ?? _makeSnapshot(snapshotOptions);
   if (_undoStack.length >= _UNDO_MAX) {
     _undoStack.shift();
   }
@@ -118,7 +61,7 @@ export function undoAction() {
   _updateRedoBtn();
   const snap = _undoStack.pop();
   _updateUndoBtn();
-  ctx.restoreSnapshot(snap);
+  ctx.restoreAppSnapshot(snap);
 }
 
 export function clearHistory() {
@@ -140,5 +83,5 @@ export function redoAction() {
   _updateUndoBtn();
   const snap = _redoStack.pop();
   _updateRedoBtn();
-  ctx.restoreSnapshot(snap);
+  ctx.restoreAppSnapshot(snap);
 }

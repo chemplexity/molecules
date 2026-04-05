@@ -161,6 +161,35 @@ describe('resonance undo snapshots', () => {
     }
   });
 
+  it('rerenders the resonance row as unlocked when no locked contributor view is restored', () => {
+    const previousDocument = globalThis.document;
+    const resonanceBody = makeMockElement('tbody');
+    globalThis.document = {
+      getElementById(id) {
+        return id === 'resonance-body' ? resonanceBody : null;
+      },
+      createElement(tagName) {
+        return makeMockElement(tagName);
+      }
+    };
+
+    try {
+      const mol = parseSMILES('CC=O');
+      generateResonanceStructures(mol);
+      restoreResonanceViewSnapshot(mol, { locked: true, activeState: 2 });
+
+      const restored = restoreResonanceViewSnapshot(mol, null);
+      const row = resonanceBody.children[0];
+
+      assert.equal(restored, false);
+      assert.equal(resonanceBody.children.length, 1);
+      assert.equal(row.classList.contains('resonance-active'), false);
+      assert.doesNotMatch(collectText(row), /2\/2/);
+    } finally {
+      globalThis.document = previousDocument;
+    }
+  });
+
   it('does not collapse reaction preview while capturing an undo snapshot', () => {
     const mol = parseSMILES('CC=O');
     generateResonanceStructures(mol);

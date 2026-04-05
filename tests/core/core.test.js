@@ -309,6 +309,17 @@ describe('Atom', () => {
   });
 });
 
+describe('Molecule cloning', () => {
+  it('preserves non-constructor atom and bond properties such as localized aromatic orders', () => {
+    const mol = parseSMILES('C1=CC2=CC3=CC=CC=C3C=C2C=C1');
+    const clone = mol.clone();
+
+    const aromaticOrders = [...clone.bonds.values()].filter(bond => bond.properties.aromatic).map(bond => bond.properties.localizedOrder);
+    assert.equal(aromaticOrders.length, 16);
+    assert.ok(aromaticOrders.every(order => order === 1 || order === 2));
+  });
+});
+
 describe('Bond', () => {
   it('constructs with defaults', () => {
     const b = new Bond('b0', ['a0', 'a1']);

@@ -180,8 +180,10 @@ export function _captureReactionPreviewSnapshot() {
   if (!_hasReactionPreview() || !_reactionPreviewSourceMol) {
     return null;
   }
+  const displayMol = ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
   return {
     sourceMol: _serializeSnapshotMol(_reactionPreviewSourceMol),
+    displayMol: _serializeSnapshotMol(displayMol),
     activeReactionSmirks: _activeReactionSmirks,
     activeReactionMatchIndex: _activeReactionMatchIndex,
     reactionPreviewLocked: _reactionPreviewLocked,
@@ -254,13 +256,16 @@ export function _restoreReactionPreviewSource() {
   }
   const sourceMol = _reactionPreviewSourceMol.clone();
   _clearReactionPreviewState();
-  ctx.renderMol(sourceMol);
+  ctx.renderMol(sourceMol, {
+    preserveHistory: true,
+    preserveView: ctx.mode === 'force'
+  });
   return true;
 }
 
 export function _prepareReactionPreviewEditTargets({ atomId = null, snapAtomId = null } = {}) {
   if (!_hasReactionPreview()) {
-    return { atomId, snapAtomId, restored: false };
+    return { atomId, snapAtomId, restored: false, previousSnapshot: null };
   }
   const reactantAtomIds = _reactionPreviewReactantAtomIds ?? new Set();
   if (atomId !== null && !reactantAtomIds.has(atomId)) {
@@ -269,13 +274,14 @@ export function _prepareReactionPreviewEditTargets({ atomId = null, snapAtomId =
   if (snapAtomId !== null && !reactantAtomIds.has(snapAtomId)) {
     return null;
   }
+  const previousSnapshot = ctx.captureAppSnapshot?.() ?? null;
   const restored = _restoreReactionPreviewSource();
-  return { atomId, snapAtomId, restored };
+  return { atomId, snapAtomId, restored, previousSnapshot };
 }
 
 export function _prepareReactionPreviewBondEditTarget(bondId) {
   if (!_hasReactionPreview()) {
-    return { bondId, restored: false };
+    return { bondId, restored: false, previousSnapshot: null };
   }
   const previewMol = ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
   const bond = previewMol?.bonds.get(bondId);
@@ -286,8 +292,9 @@ export function _prepareReactionPreviewBondEditTarget(bondId) {
   if (!bond.atoms.every(atomId => reactantAtomIds.has(atomId))) {
     return null;
   }
+  const previousSnapshot = ctx.captureAppSnapshot?.() ?? null;
   const restored = _restoreReactionPreviewSource();
-  return { bondId, restored };
+  return { bondId, restored, previousSnapshot };
 }
 
 export function _prepareReactionPreviewEraseTargets(atomIds = [], bondIds = []) {
@@ -1198,7 +1205,7 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
     _reactionPreviewForcedStereoBondCenters = preview.forcedStereoBondCenters ?? new Map();
     _reactionPreviewReactantReferenceCoords = preview.reactantReferenceCoords ?? new Map();
     _reactionPreviewHighlightMappings = preview.highlightMapping ? [new Map(preview.highlightMapping)] : [new Map(site.highlightMapping)];
-    ctx.renderMol(preview.mol, { recomputeResonance: false, refreshResonancePanel: false });
+    ctx.renderMol(preview.mol, { recomputeResonance: false, refreshResonancePanel: false, preserveHistory: true });
     updateResonancePanel(_reactionPreviewSourceMol ?? sourceMol, { recompute: false });
     _setHighlight(preview.highlightMapping ? [preview.highlightMapping] : [site.highlightMapping]);
     return;

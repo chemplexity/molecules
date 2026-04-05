@@ -27,6 +27,17 @@ export {
 
 export { graphEntropy, topologicalEntropy } from './information.js';
 
-export { logP, tpsa, hBondDonors, hBondAcceptors, rotatableBondCount, fsp3, lipinskiRuleOfFive } from './physicochemical.js';
+export {
+  logP,
+  tpsa,
+  hBondDonors,
+  hBondAcceptors,
+  rotatableBondCount,
+  fsp3,
+  lipinskiRuleOfFive,
+  bondElectronegativityDifference,
+  bondPolarities,
+  meanBondPolarity
+} from './physicochemical.js';
 
 export { adjacencySpectrum, laplacianSpectrum, spectralRadius, estradaIndex } from './spectral.js';

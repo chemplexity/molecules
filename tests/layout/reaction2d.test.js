@@ -9,12 +9,14 @@ import { pickStereoWedges } from '../../src/layout/mol2d-helpers.js';
 import { buildReaction2dMol, alignReaction2dProductOrientation, spreadReaction2dProductComponents, centerReaction2dPairCoords } from '../../src/layout/reaction2d.js';
 import {
   initReaction2d,
+  _reapplyActiveReactionPreview,
   _chooseReactionPreviewForceArrow,
   _isReactionPreviewEditableAtomId,
   _prepareReactionPreviewEraseTargets,
   _restoreReactionPreviewSnapshot,
   _clearReactionPreviewState
 } from '../../src/app/render/reaction-2d.js';
+import { initHighlights } from '../../src/app/render/highlights.js';
 import { validateValence } from '../../src/validation/index.js';
 
 function preparePreview(smiles, smirks) {
@@ -341,6 +343,66 @@ test('reaction preview only allows atom edits on the reactant side', () => {
   assert.equal(_isReactionPreviewEditableAtomId(productC2), false);
 
   _clearReactionPreviewState();
+});
+
+test('reaction preview snapshot can reapply the locked preview as an overlay instead of treating it as the main molecule', () => {
+  const sourceMol = parseSMILES('CCO');
+  const smirks = reactionTemplates.alcoholDehydration.smirks;
+  const mapping = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])][0];
+  const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+  assert.ok(preview, 'expected dehydration preview to be buildable');
+
+  const previousDocument = globalThis.document;
+  const renderCalls = [];
+  try {
+    globalThis.document = {
+      getElementById() {
+        return null;
+      }
+    };
+    initHighlights({
+      mode: '2d',
+      _mol2d: null,
+      draw2d() {},
+      applyForceHighlights() {}
+    });
+    initReaction2d({
+      mode: '2d',
+      _mol2d: sourceMol,
+      currentMol: null,
+      renderMol(mol, options = {}) {
+        renderCalls.push({ mol, options });
+      }
+    });
+    _restoreReactionPreviewSnapshot({
+      sourceMol: serializeMol(sourceMol),
+      activeReactionSmirks: smirks,
+      activeReactionMatchIndex: 0,
+      reactionPreviewLocked: true,
+      reactantAtomIds: [...preview.reactantAtomIds],
+      productAtomIds: [...preview.productAtomIds],
+      productComponentAtomIdSets: preview.productComponentAtomIdSets.map(atomIds => [...atomIds]),
+      mappedAtomPairs: [...preview.mappedAtomPairs],
+      editedProductAtomIds: [...preview.editedProductAtomIds],
+      preservedReactantStereoByCenter: [],
+      preservedReactantStereoBondTypes: [],
+      preservedProductStereoByCenter: [],
+      preservedProductStereoBondTypes: [],
+      forcedStereoByCenter: [],
+      forcedStereoBondTypes: [],
+      forcedStereoBondCenters: [],
+      reactantReferenceCoords: [],
+      reactionPreviewHighlightMappings: []
+    });
+
+    assert.equal(_reapplyActiveReactionPreview(), true, 'expected locked preview snapshot to reapply');
+    assert.equal(renderCalls.length, 1, 'expected preview reapply to render once');
+    assert.equal(renderCalls[0].options?.preserveHistory, true, 'expected preview reapply to preserve undo history');
+    assert.ok(renderCalls[0].mol.atoms.size > sourceMol.atoms.size, 'expected reapply to render the composite preview rather than the source molecule');
+  } finally {
+    globalThis.document = previousDocument;
+    _clearReactionPreviewState();
+  }
 });
 
 test('reaction preview erase targets also ignore reactant-side atoms and bonds', () => {

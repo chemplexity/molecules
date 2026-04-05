@@ -422,7 +422,9 @@ export class Molecule {
    * @returns {Atom}
    */
   _copyAtom(atom) {
-    const copy = new Atom(atom.id, atom.name, _clonePropertyBag(atom.properties));
+    const properties = _clonePropertyBag(atom.properties);
+    const copy = new Atom(atom.id, atom.name, properties);
+    Object.assign(copy.properties, properties);
     copy.uuid = atom.uuid;
     copy.tags = [...atom.tags];
     copy.x = atom.x;
@@ -440,7 +442,9 @@ export class Molecule {
    * @returns {Bond}
    */
   _copyBond(bond) {
-    const copy = new Bond(bond.id, [...bond.atoms], _clonePropertyBag(bond.properties));
+    const properties = _clonePropertyBag(bond.properties);
+    const copy = new Bond(bond.id, [...bond.atoms], properties);
+    Object.assign(copy.properties, properties);
     copy.uuid = bond.uuid;
     copy.tags = [...bond.tags];
     return copy;

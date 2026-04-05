@@ -13,7 +13,10 @@ import {
   aromaticRingCount,
   stereocenters,
   veberRules,
-  lipinskiRuleOfFive
+  lipinskiRuleOfFive,
+  bondElectronegativityDifference,
+  bondPolarities,
+  meanBondPolarity
 } from '../../src/descriptors/physicochemical.js';
 
 function sortedIds(values) {
@@ -410,5 +413,126 @@ describe('lipinskiRuleOfFive', () => {
 
   it('throws on non-molecule', () => {
     assert.throws(() => lipinskiRuleOfFive(null), TypeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bondElectronegativityDifference
+// ---------------------------------------------------------------------------
+
+describe('bondElectronegativityDifference', () => {
+  it('H-F bond has ionic-range delta (~1.78)', () => {
+    const mol = parseSMILES('[H]F');
+    const bondId = [...mol.bonds.keys()][0];
+    const delta = bondElectronegativityDifference(mol, bondId);
+    assert.ok(delta !== null, 'expected a numeric delta');
+    assert.ok(Math.abs(delta - 1.78) < 0.01, `expected ~1.78, got ${delta}`);
+  });
+
+  it('C-C bond in ethane is nonpolar (delta = 0)', () => {
+    const mol = parseSMILES('CC');
+    const bondId = [...mol.bonds.keys()][0];
+    assert.equal(bondElectronegativityDifference(mol, bondId), 0);
+  });
+
+  it('C-O bond in methanol has correct delta (~0.89)', () => {
+    const mol = parseSMILES('CO');
+    const coBondId = [...mol.bonds.values()].find(b => {
+      const a = mol.atoms.get(b.atoms[0]);
+      const c = mol.atoms.get(b.atoms[1]);
+      return (a?.name === 'C' && c?.name === 'O') || (a?.name === 'O' && c?.name === 'C');
+    })?.id;
+    assert.ok(coBondId !== undefined, 'C-O bond not found');
+    const delta = bondElectronegativityDifference(mol, coBondId);
+    assert.ok(Math.abs(delta - 0.89) < 0.01, `expected ~0.89, got ${delta}`);
+  });
+
+  it('C=O bond has same delta as C-O (bond order not used)', () => {
+    const methanol = parseSMILES('CO');
+    const formaldehyde = parseSMILES('C=O');
+    const findCO = mol =>
+      [...mol.bonds.values()].find(b => {
+        const a = mol.atoms.get(b.atoms[0]);
+        const c = mol.atoms.get(b.atoms[1]);
+        return (a?.name === 'C' && c?.name === 'O') || (a?.name === 'O' && c?.name === 'C');
+      })?.id;
+    const d1 = bondElectronegativityDifference(methanol, findCO(methanol));
+    const d2 = bondElectronegativityDifference(formaldehyde, findCO(formaldehyde));
+    assert.equal(d1, d2);
+  });
+
+  it('returns null for unknown bondId', () => {
+    const mol = parseSMILES('CC');
+    assert.equal(bondElectronegativityDifference(mol, 'nonexistent-bond'), null);
+  });
+
+  it('throws on non-molecule', () => {
+    assert.throws(() => bondElectronegativityDifference(null, '1'), TypeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// bondPolarities
+// ---------------------------------------------------------------------------
+
+describe('bondPolarities', () => {
+  it('returns one entry per bond', () => {
+    const mol = parseSMILES('CC');
+    const result = bondPolarities(mol);
+    assert.equal(result.length, mol.bonds.size);
+  });
+
+  it('each entry has bondId and delta fields', () => {
+    const mol = parseSMILES('CCO');
+    for (const entry of bondPolarities(mol)) {
+      assert.ok('bondId' in entry, 'missing bondId');
+      assert.ok('delta' in entry, 'missing delta');
+    }
+  });
+
+  it('benzene C-C aromatic bonds all have delta = 0', () => {
+    const mol = parseSMILES('c1ccccc1');
+    for (const { bondId, delta } of bondPolarities(mol)) {
+      const b = mol.bonds.get(bondId);
+      const a = mol.atoms.get(b.atoms[0]);
+      const c = mol.atoms.get(b.atoms[1]);
+      if (a.name === 'C' && c.name === 'C') {
+        assert.equal(delta, 0, `C-C bond ${bondId} expected delta 0, got ${delta}`);
+      }
+    }
+  });
+
+  it('throws on non-molecule', () => {
+    assert.throws(() => bondPolarities(null), TypeError);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// meanBondPolarity
+// ---------------------------------------------------------------------------
+
+describe('meanBondPolarity', () => {
+  it('[H][H] (same-element bond) has mean polarity = 0', () => {
+    assert.equal(meanBondPolarity(parseSMILES('[H][H]')), 0);
+  });
+
+  it('water ([H]O[H]) has mean polarity ~1.24 (O-H delta)', () => {
+    const mol = parseSMILES('[H]O[H]');
+    const mean = meanBondPolarity(mol);
+    assert.ok(Math.abs(mean - 1.24) < 0.01, `expected ~1.24, got ${mean}`);
+  });
+
+  it('benzene mean polarity includes C-H bonds (~0.175)', () => {
+    // benzene has 6 C–C (delta=0) + 6 C–H (delta≈0.35) bonds; mean ≈ 0.175
+    const mean = meanBondPolarity(parseSMILES('c1ccccc1'));
+    assert.ok(Math.abs(mean - 0.175) < 0.01, `expected ~0.175, got ${mean}`);
+  });
+
+  it('returns a number', () => {
+    assert.equal(typeof meanBondPolarity(parseSMILES('CCO')), 'number');
+  });
+
+  it('throws on non-molecule', () => {
+    assert.throws(() => meanBondPolarity(null), TypeError);
   });
 });

@@ -471,6 +471,36 @@ export function getHighlightStyle() {
   return _highlightStyle;
 }
 
+export function captureHighlightSnapshot() {
+  return {
+    activeFunctionalGroupKey: _activeFunctionalGroupKey,
+    activeFunctionalGroupMatchIndex: _activeFunctionalGroupMatchIndex
+  };
+}
+
+export function restoreHighlightSnapshot(snapshot, mol) {
+  _clearActiveFunctionalGroupState();
+  if (!mol) {
+    clearHighlightState();
+    return false;
+  }
+  _highlightMol = mol;
+  if (snapshot?.activeFunctionalGroupKey) {
+    _activeFunctionalGroupKey = snapshot.activeFunctionalGroupKey;
+    _activeFunctionalGroupMatchIndex = snapshot.activeFunctionalGroupMatchIndex ?? 0;
+  }
+  updateFunctionalGroups(mol);
+  if (_activeFunctionalGroupKey) {
+    const activeFgRow = document.querySelector('#fg-body tr.fg-active');
+    const activeFgMappings = _activeFunctionalGroupMappingsForRow(activeFgRow);
+    if (activeFgMappings) {
+      _setHighlight(activeFgMappings);
+      return true;
+    }
+  }
+  return false;
+}
+
 export function clearHighlightState() {
   _highlightedAtomIds.clear();
   _highlightedAtomSets = [];

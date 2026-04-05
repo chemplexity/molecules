@@ -1120,6 +1120,21 @@ export function syncDisplayStereo(mol, previousStereoMap = null) {
   return new Map(assignments.map(({ bondId, type }) => [bondId, type]));
 }
 
+export function flipDisplayStereo(mol, previousStereoMap = null) {
+  const assignments = _resolveStereoDisplayAssignments(mol, previousStereoMap).map(({ bondId, type, centerId }) => ({
+    bondId,
+    type: type === 'wedge' ? 'dash' : 'wedge',
+    centerId
+  }));
+  for (const bond of mol?.bonds?.values?.() ?? []) {
+    _clearBondDisplayStereo(bond);
+  }
+  for (const { bondId, type, centerId } of assignments) {
+    _setBondDisplayStereo(mol?.bonds?.get?.(bondId) ?? null, type, centerId);
+  }
+  return new Map(assignments.map(({ bondId, type }) => [bondId, type]));
+}
+
 // ---------------------------------------------------------------------------
 // kekulize — assign localizedOrder (1 or 2) to aromatic bonds that lack it.
 //

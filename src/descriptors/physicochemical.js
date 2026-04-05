@@ -1,6 +1,7 @@
 /** @module descriptors/physicochemical */
 
 import { molecularMass } from './molecular.js';
+import elements from '../data/elements.js';
 
 // ---------------------------------------------------------------------------
 // Element-set constants (module-level to avoid repeated inline allocations)
@@ -698,4 +699,74 @@ export function lipinskiRuleOfFive(molecule) {
     violations,
     passes: violations <= 1
   };
+}
+
+// ---------------------------------------------------------------------------
+// Bond electronegativity difference (Pauling scale)
+// ---------------------------------------------------------------------------
+
+/**
+ * Returns the absolute Pauling electronegativity difference |χ_A − χ_B| for a
+ * single bond.  Returns `null` if either atom has no EN data or if the bond is
+ * not found.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {string} bondId
+ * @returns {number|null}
+ */
+export function bondElectronegativityDifference(molecule, bondId) {
+  assertMolecule(molecule, 'molecule');
+  const bond = molecule.bonds.get(bondId);
+  if (!bond) {
+    return null;
+  }
+  const atomA = molecule.atoms.get(bond.atoms[0]);
+  const atomB = molecule.atoms.get(bond.atoms[1]);
+  if (!atomA || !atomB) {
+    return null;
+  }
+  // Deuterium shares hydrogen's EN
+  const symbolA = atomA.name === 'D' ? 'H' : atomA.name;
+  const symbolB = atomB.name === 'D' ? 'H' : atomB.name;
+  const enA = elements[symbolA]?.electronegativity ?? null;
+  const enB = elements[symbolB]?.electronegativity ?? null;
+  if (enA === null || enB === null) {
+    return null;
+  }
+  return Math.round(Math.abs(enA - enB) * 100) / 100;
+}
+
+/**
+ * Returns an array of `{ bondId, delta }` objects for every bond in the
+ * molecule.  `delta` is `null` when either atom has no electronegativity data.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {Array<{ bondId: string, delta: number|null }>}
+ */
+export function bondPolarities(molecule) {
+  assertMolecule(molecule, 'molecule');
+  return [...molecule.bonds.keys()].map(bondId => ({
+    bondId,
+    delta: bondElectronegativityDifference(molecule, bondId)
+  }));
+}
+
+/**
+ * Returns the mean Pauling electronegativity difference averaged over all bonds
+ * for which both atoms have EN data.  Returns `0` for a molecule with no such
+ * bonds.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @returns {number}
+ */
+export function meanBondPolarity(molecule) {
+  assertMolecule(molecule, 'molecule');
+  const deltas = bondPolarities(molecule)
+    .map(({ delta }) => delta)
+    .filter(d => d !== null);
+  if (deltas.length === 0) {
+    return 0;
+  }
+  const mean = deltas.reduce((sum, d) => sum + d, 0) / deltas.length;
+  return Math.round(mean * 10000) / 10000;
 }
