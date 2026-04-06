@@ -75,9 +75,11 @@ export function createSessionSnapshotManager(deps) {
       if (atomData.visible !== undefined) {
         atom.visible = atomData.visible;
       }
+      Object.assign(atom.properties, atomData.properties);
     }
     for (const bondData of data.bonds ?? []) {
       built.addBond(bondData.id, bondData.atoms[0], bondData.atoms[1], { ...bondData.properties }, false);
+      Object.assign(built.bonds.get(bondData.id).properties, bondData.properties);
     }
     if (data.moleculeProperties) {
       built.properties = {

@@ -113,6 +113,30 @@ test('undo preserves localized aromatic rendering for anthracene after loading a
     .toEqual({ dashed: 0, hits: 16 });
 });
 
+test('undo preserves localized aromatic rendering for rotated aza-aromatic ring systems', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN');
+  await expect
+    .poll(async () =>
+      page.evaluate(() => ({
+        dashed: document.querySelectorAll('line.bond-dashed').length
+      }))
+    )
+    .toEqual({ dashed: 0 });
+
+  await page.locator('#rotate-cw').click();
+  await page.locator('#undo-btn').click();
+
+  await expect
+    .poll(async () =>
+      page.evaluate(() => ({
+        dashed: document.querySelectorAll('line.bond-dashed').length
+      }))
+    )
+    .toEqual({ dashed: 0 });
+});
+
 test('undo restores selection mode and selected atoms as part of the app session', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -133,6 +157,23 @@ test('undo restores selection mode and selected atoms as part of the app session
   await expect(page.locator('g.atom-selection circle')).toHaveCount(selectedCircleCount);
 });
 
+test('undo after hovered delete in selection mode does not restore a sticky synthetic selection', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#select-mode-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+
+  await page.locator('g[data-atom-id="O3"] .atom-hit').hover();
+  await page.keyboard.press('Delete');
+  await expect(page.locator('#smiles-input')).toHaveValue('CC');
+
+  await page.locator('#undo-btn').click();
+  await expect(page.locator('#smiles-input')).toHaveValue('CCO');
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('g.atom-selection circle')).toHaveCount(0);
+});
+
 test('physicochemical row locks do not persist through undo and redo', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -151,6 +192,39 @@ test('physicochemical row locks do not persist through undo and redo', async ({ 
   await page.locator('#redo-btn').click();
   await page.locator('#undo-btn').click();
   await expect(fsp3Row).not.toHaveClass(/pc-hover/);
+});
+
+test('the resonance tab does not persist through undo and redo', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=CC=CC=C1');
+  await page.getByRole('button', { name: 'Other' }).click();
+  await expect(page.getByRole('button', { name: 'Other' })).toHaveClass(/active/);
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#undo-btn').click();
+
+  await expect(page.getByRole('button', { name: 'Functional Groups' })).toHaveClass(/active/);
+  await expect(page.getByRole('button', { name: 'Other' })).not.toHaveClass(/active/);
+});
+
+test('functional group rows stay visible when selecting one during reaction preview', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const reactionRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+  await reactionRow.click();
+  await expect(reactionRow).toHaveClass(/reaction-active/);
+
+  await page.getByRole('button', { name: 'Functional Groups' }).click();
+  const beforeCount = await page.locator('#fg-body tr').count();
+  expect(beforeCount).toBeGreaterThan(0);
+
+  const alcoholRow = page.locator('#fg-body tr').filter({ hasText: 'Alcohol' }).first();
+  await alcoholRow.click();
+
+  await expect(page.locator('#fg-body tr')).toHaveCount(beforeCount);
 });
 
 test('delete key removes a hovered atom while erase mode is active', async ({ page }) => {
@@ -196,6 +270,72 @@ test('delete key removes a hovered bond while draw mode is active', async ({ pag
   await page.keyboard.press('Delete');
 
   await expect(page.locator('line.bond-hit')).toHaveCount(1);
+});
+
+test('delete key is a no-op for a hovered force hydrogen while draw mode is active', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.locator('#draw-bond-btn').click();
+
+  const beforeAttempt = await page.locator('#smiles-input').inputValue();
+  const forceAtoms = await page.evaluate(() => {
+    const circles = Array.from(document.querySelectorAll('circle.node'));
+    const labels = Array.from(document.querySelectorAll('text.atom-symbol'));
+    return circles.map((circle, index) => {
+      const rect = circle.getBoundingClientRect();
+      const label = labels[index]?.textContent?.trim() ?? '';
+      return {
+        label,
+        cx: rect.left + rect.width / 2,
+        cy: rect.top + rect.height / 2
+      };
+    });
+  });
+  const hydrogenTarget = [...forceAtoms].find(atom => atom.label === 'H');
+  expect(hydrogenTarget).toBeTruthy();
+
+  await page.mouse.move(hydrogenTarget.cx, hydrogenTarget.cy);
+  await page.keyboard.press('Delete');
+
+  await expect(page.locator('#smiles-input')).toHaveValue(beforeAttempt);
+});
+
+test('delete key is a no-op for a hovered force C-H bond while draw mode is active', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await page.locator('#draw-bond-btn').click();
+
+  const beforeAttempt = await page.locator('#smiles-input').inputValue();
+  const forceAtoms = await page.evaluate(() => {
+    const circles = Array.from(document.querySelectorAll('circle.node'));
+    const labels = Array.from(document.querySelectorAll('text.atom-symbol'));
+    return circles.map((circle, index) => {
+      const rect = circle.getBoundingClientRect();
+      const label = labels[index]?.textContent?.trim() ?? '';
+      return {
+        label,
+        cx: rect.left + rect.width / 2,
+        cy: rect.top + rect.height / 2
+      };
+    });
+  });
+  const hydrogenTarget = forceAtoms.find(atom => atom.label === 'H') ?? null;
+  expect(hydrogenTarget).toBeTruthy();
+  const nearestCarbon = forceAtoms
+    .filter(atom => atom.label === 'C')
+    .sort((a, b) => Math.hypot(a.cx - hydrogenTarget.cx, a.cy - hydrogenTarget.cy) - Math.hypot(b.cx - hydrogenTarget.cx, b.cy - hydrogenTarget.cy))[0];
+  expect(nearestCarbon).toBeTruthy();
+
+  await page.mouse.move((hydrogenTarget.cx + nearestCarbon.cx) / 2, (hydrogenTarget.cy + nearestCarbon.cy) / 2);
+  await page.keyboard.press('Delete');
+
+  await expect(page.locator('#smiles-input')).toHaveValue(beforeAttempt);
 });
 
 test('reaction preview can be entered and toggled back off from the reactions table', async ({ page }) => {
@@ -425,6 +565,60 @@ test('clicking a resonance structure from force reaction preview preserves the f
   await expect.poll(async () => rootTransform(page)).toBe(beforeResonanceClick);
 });
 
+test('bond electronegativity toggle does not exit reaction preview', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC=O');
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const reductionRow = page.locator('#reaction-body tr').filter({ hasText: 'Carbonyl Reduction' }).first();
+  await reductionRow.click();
+  await expect(reductionRow).toHaveClass(/reaction-active/);
+  const previewBondCount = await page.locator('line.bond-hit').count();
+
+  await page.getByRole('button', { name: 'Other' }).click();
+  const bondEnRow = page.locator('#bond-en-body tr').filter({ hasText: 'Bond Electronegativity' }).first();
+  await expect(bondEnRow).toBeVisible();
+  await bondEnRow.click();
+  await expect(bondEnRow).toHaveClass(/resonance-active/);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  await expect(reductionRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('line.bond-hit')).toHaveCount(previewBondCount);
+});
+
+test('force SVG export includes charge labels', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C[NH3+]');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(page.locator('g.charge-label')).toHaveCount(1);
+
+  await page.locator('#copy-force-svg-btn').click();
+
+  const readForceSvgClipboard = async () =>
+    page.evaluate(async () => {
+      const items = await navigator.clipboard.read();
+      for (const item of items) {
+        if (!item.types.includes('image/svg+xml')) {
+          continue;
+        }
+        const blob = await item.getType('image/svg+xml');
+        return await blob.text();
+      }
+      return '';
+    });
+
+  await expect.poll(readForceSvgClipboard).not.toBe('');
+  const svgText = await readForceSvgClipboard();
+
+  expect(svgText).toContain('charge-label');
+  expect(svgText).toContain('charge-label-text');
+  expect(svgText).not.toContain('-9999');
+  expect(svgText).not.toContain('<line></line>');
+});
+
 test('flipping the view swaps wedge and dash stereo display', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -553,6 +747,31 @@ test('undo after loading a new molecule from reaction preview restores the locke
   await expect(page.locator('#smiles-input')).toHaveValue('CCO');
   const afterUndo = await bondSignature(page);
   await expect(afterUndo).toEqual(beforeReplace);
+});
+
+test('undo and redo stay coherent when leaving reaction preview through resonance view', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC=O');
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const reductionRow = page.locator('#reaction-body tr').filter({ hasText: 'Carbonyl Reduction' }).first();
+  await reductionRow.click();
+  await expect(reductionRow).toHaveClass(/reaction-active/);
+  const previewBondCount = await page.locator('line.bond-hit').count();
+
+  await page.getByRole('button', { name: 'Other' }).click();
+  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
+  await resonanceRow.click();
+  await expect(reductionRow).not.toHaveClass(/reaction-active/);
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+
+  await page.locator('#undo-btn').click();
+  await expect(reductionRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('line.bond-hit')).toHaveCount(previewBondCount);
+
+  await page.locator('#redo-btn').click();
+  await expect(page.locator('#reaction-body tr').filter({ hasText: 'Carbonyl Reduction' })).toHaveCount(0);
+  await expect(resonanceRow).not.toHaveClass(/resonance-active/);
 });
 
 test('undo after editing from a locked resonance view leaves the resonance row unlocked', async ({ page }) => {

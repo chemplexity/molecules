@@ -103,10 +103,20 @@ function makeDeps() {
         calls.push(['restoreReactionPreviewSnapshot', snapshot]);
       },
       restore2dState(displayMol, snap) {
-        calls.push(['restore2dState', displayMol.properties, snap.mode]);
+        calls.push([
+          'restore2dState',
+          displayMol.properties,
+          snap.mode,
+          [...displayMol.bonds.values()].map(bond => ({ id: bond.id, properties: { ...bond.properties } }))
+        ]);
       },
       restoreForceState(displayMol, snap) {
-        calls.push(['restoreForceState', displayMol.properties, snap.mode]);
+        calls.push([
+          'restoreForceState',
+          displayMol.properties,
+          snap.mode,
+          [...displayMol.bonds.values()].map(bond => ({ id: bond.id, properties: { ...bond.properties } }))
+        ]);
       },
       updateFormula(mol) {
         calls.push(['updateFormula', mol.properties]);
@@ -224,5 +234,56 @@ describe('createSessionSnapshotManager', () => {
 
     assert.equal(calls.filter(call => call[0] === 'clearForceState').length, 1);
     assert.equal(calls.filter(call => call[0] === 'clear2dState').length, 1);
+  });
+
+  it('restores non-constructor bond properties such as localized aromatic orders', () => {
+    const { deps, calls } = makeDeps();
+    const manager = createSessionSnapshotManager(deps);
+
+    manager.restore({
+      mode: '2d',
+      atoms: [
+        { id: 'A1', name: 'C', properties: { aromatic: true }, x: 0, y: 0 },
+        { id: 'A2', name: 'N', properties: { aromatic: true }, x: 1, y: 0 }
+      ],
+      bonds: [
+        {
+          id: 'B1',
+          atoms: ['A1', 'A2'],
+          properties: {
+            order: 1.5,
+            aromatic: true,
+            localizedOrder: 2
+          }
+        }
+      ],
+      moleculeProperties: {},
+      currentSmiles: null,
+      currentInchi: null,
+      inputMode: null,
+      inputValue: null,
+      cx2d: 0,
+      cy2d: 0,
+      hCounts2d: [],
+      stereoMap2d: null,
+      zoomTransform: null,
+      rotationDeg: 0,
+      flipH: false,
+      flipV: false,
+      selectedAtomIds: [],
+      selectedBondIds: [],
+      toolMode: 'pan',
+      drawBondElement: 'C',
+      forceAutoFitEnabled: true,
+      forceKeepInView: false,
+      forceKeepInViewTicks: 0,
+      highlightState: null,
+      panelState: null,
+      reactionPreview: null,
+      resonanceView: null
+    });
+
+    const restore2dCall = calls.find(call => call[0] === 'restore2dState');
+    assert.equal(restore2dCall?.[3]?.[0]?.properties?.localizedOrder, 2);
   });
 });

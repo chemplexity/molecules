@@ -35,6 +35,7 @@ const _RESONANCE_PRESERVE_CLICK_SELECTORS = ['#plot', '#rotate-controls', '#forc
  * @param {Function} context.updateForce
  * @param {Function} [context.hasReactionPreview]
  * @param {Function} [context.restoreReactionPreviewSource]
+ * @param {Function} [context.takeSnapshot]
  */
 export function initResonancePanel(context) {
   ctx = context;
@@ -257,6 +258,9 @@ function _resonanceNavButton(label, title, onActivate) {
  * @param {number} state
  */
 function _activateResonanceState(mol, state) {
+  if (ctx.hasReactionPreview?.()) {
+    ctx.takeSnapshot?.({ clearReactionPreview: false });
+  }
   mol = _resolveResonanceTargetMolecule(mol);
   if (!mol?.properties?.resonance) {
     return;

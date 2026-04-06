@@ -1050,7 +1050,18 @@ export class Molecule {
    * @returns {Molecule}
    */
   clone() {
-    const copy = this.getSubgraph([...this.atoms.keys()]);
+    const copy = new Molecule();
+    for (const atom of this.atoms.values()) {
+      const atomCopy = this._copyAtom(atom);
+      copy.atoms.set(atomCopy.id, atomCopy);
+    }
+    for (const bond of this.bonds.values()) {
+      const bondCopy = this._copyBond(bond);
+      copy.bonds.set(bondCopy.id, bondCopy);
+      copy.atoms.get(bondCopy.atoms[0]).bonds.push(bondCopy.id);
+      copy.atoms.get(bondCopy.atoms[1]).bonds.push(bondCopy.id);
+    }
+    copy._rebuildBondIndex();
     copy.name = this.name;
     copy.tags = [...this.tags];
     copy.properties = {

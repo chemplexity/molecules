@@ -2,6 +2,8 @@
 
 ## 2026-04-05
 
+- Add bond electronegativity overlay in demo
+- Fix copying .svg and .png molecules in force layout with charges
 - Add Pauling electronegativity (`en`) data to `src/data/elements.js`
 - Add bond polarity descriptors and export them from `src/descriptors/index.js`
 - Make flips swap displayed wedge/dash stereo
@@ -16,11 +18,20 @@
 - Let reaction preview entry participate in undo/redo
 - Stop physicochemical row locks from persisting through undo/redo
 - Stop resonance contributor viewing from persisting through undo/redo
+- Stop the resonance tab from persisting through undo/redo
+- Capture reaction-preview exits through resonance in undo/redo
 - Include SMILES/InChI mode toggles in undo/redo
 - Keep hydrogen bond-draw no-ops from leaving reaction preview or adding history
 - Keep reaction preview from changing the molecular weight summary
+- Keep the bond electronegativity toggle from exiting reaction preview
+- Include force charge labels in SVG/PNG export
+- Preserve localized aromatic bond orders across undo/redo restores
 - Fix several audited undo snapshot and restore edge cases
 - Refactor undo history into an instantiable manager and tighten its snapshot API
+- Extract draw-bond commit logic into an interaction module
+- Extract delete and erase editing logic into an interaction module
+- Extract primitive drag gesture coordination into an interaction module
+- Keep hovered keyboard deletes from turning into sticky undo selection
 
 ## 2026-04-04
 

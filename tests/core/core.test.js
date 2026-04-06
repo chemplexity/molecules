@@ -318,6 +318,17 @@ describe('Molecule cloning', () => {
     assert.equal(aromaticOrders.length, 16);
     assert.ok(aromaticOrders.every(order => order === 1 || order === 2));
   });
+
+  it('preserves localized aromatic orders for aza-aromatic rings after cloning', () => {
+    const mol = parseSMILES('C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN');
+    const clone = mol.clone();
+
+    const aromaticOrders = [...clone.bonds.values()]
+      .filter(bond => bond.properties.aromatic)
+      .map(bond => bond.properties.localizedOrder);
+    assert.ok(aromaticOrders.length > 0);
+    assert.ok(aromaticOrders.every(order => order === 1 || order === 2));
+  });
 });
 
 describe('Bond', () => {

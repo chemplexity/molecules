@@ -1,6 +1,15 @@
 /** @module app/core/session-ui-state */
 
 export function createSessionUiStateBridge(deps) {
+  const DEFAULT_SMARTS_TAB = 'functional-groups';
+
+  function _restoreSmartsTab(tab = DEFAULT_SMARTS_TAB) {
+    deps.document.querySelectorAll('.smarts-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === tab));
+    deps.document.querySelectorAll('.smarts-tab-panel').forEach(panel => {
+      panel.style.display = panel.id === `tab-${tab}` ? '' : 'none';
+    });
+  }
+
   function serializeSnapshotMol(mol) {
     if (!mol) {
       return null;
@@ -37,6 +46,7 @@ export function createSessionUiStateBridge(deps) {
       deps.document.getElementById('fg-body').innerHTML = '';
       deps.document.getElementById('reaction-body').innerHTML = '';
       deps.clearResonancePanelState();
+      deps.clearBondEnPanel?.();
       return;
     }
     deps.updateFunctionalGroups(mol);
@@ -44,12 +54,14 @@ export function createSessionUiStateBridge(deps) {
     if (refreshResonancePanel) {
       deps.updateResonancePanel(mol, { recompute: recomputeResonance });
     }
+    deps.updateBondEnPanel?.(mol);
   }
 
   function capturePanelState() {
+    const smartsTab = deps.document.querySelector('.smarts-tab.active')?.dataset.tab ?? null;
     return {
       descriptorTab: deps.document.querySelector('.desc-tab.active')?.dataset.tab ?? null,
-      smartsTab: deps.document.querySelector('.smarts-tab.active')?.dataset.tab ?? null
+      smartsTab: smartsTab === 'other' ? null : smartsTab
     };
   }
 
@@ -60,12 +72,7 @@ export function createSessionUiStateBridge(deps) {
         panel.style.display = panel.id === `tab-${panelState.descriptorTab}` ? '' : 'none';
       });
     }
-    if (panelState?.smartsTab) {
-      deps.document.querySelectorAll('.smarts-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.tab === panelState.smartsTab));
-      deps.document.querySelectorAll('.smarts-tab-panel').forEach(panel => {
-        panel.style.display = panel.id === `tab-${panelState.smartsTab}` ? '' : 'none';
-      });
-    }
+    _restoreSmartsTab(panelState?.smartsTab ?? DEFAULT_SMARTS_TAB);
   }
 
   function captureInteractionState() {

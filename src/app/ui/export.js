@@ -37,6 +37,45 @@ function _removeInteractionOverlays(root) {
   }
 }
 
+function _removeOffscreenExportArtifacts(root) {
+  if (!root) {
+    return;
+  }
+  for (const el of root.querySelectorAll('[transform*="-9999"],[transform*="-9999."]')) {
+    el.remove();
+  }
+}
+
+function _removeInvalidSvgGeometry(root) {
+  if (!root) {
+    return;
+  }
+  for (const line of root.querySelectorAll('line')) {
+    const hasCoords = line.hasAttribute('x1') && line.hasAttribute('y1') && line.hasAttribute('x2') && line.hasAttribute('y2');
+    if (!hasCoords) {
+      line.remove();
+    }
+  }
+  for (const circle of root.querySelectorAll('circle')) {
+    const hasCoords = circle.hasAttribute('cx') && circle.hasAttribute('cy') && circle.hasAttribute('r');
+    if (!hasCoords) {
+      circle.remove();
+    }
+  }
+  for (const text of root.querySelectorAll('text')) {
+    const hasContent = (text.textContent ?? '').trim().length > 0;
+    if (!hasContent) {
+      text.remove();
+    }
+  }
+  for (const path of root.querySelectorAll('path')) {
+    const d = path.getAttribute('d');
+    if (!d || !d.trim()) {
+      path.remove();
+    }
+  }
+}
+
 function _replaceForceWhiteSeparatorsForTransparentExport(root) {
   if (!root) {
     return;
@@ -145,6 +184,37 @@ function _svgToPngBlob(svgEl, scale = 2) {
 
 function _serializeSvg(svgEl) {
   return new XMLSerializer().serializeToString(svgEl);
+}
+
+function _measureClonedSvgBBox(gClone) {
+  if (!gClone) {
+    return null;
+  }
+  const ns = 'http://www.w3.org/2000/svg';
+  const probeSvg = document.createElementNS(ns, 'svg');
+  probeSvg.setAttribute('xmlns', ns);
+  probeSvg.setAttribute('width', '0');
+  probeSvg.setAttribute('height', '0');
+  probeSvg.style.position = 'fixed';
+  probeSvg.style.left = '-9999px';
+  probeSvg.style.top = '-9999px';
+  probeSvg.style.opacity = '0';
+  probeSvg.style.pointerEvents = 'none';
+  probeSvg.style.overflow = 'visible';
+  const probeClone = gClone.cloneNode(true);
+  probeSvg.appendChild(probeClone);
+  document.body.appendChild(probeSvg);
+  try {
+    const bbox = probeClone.getBBox();
+    if (!Number.isFinite(bbox?.x) || !Number.isFinite(bbox?.y) || !Number.isFinite(bbox?.width) || !Number.isFinite(bbox?.height)) {
+      return null;
+    }
+    return bbox;
+  } catch {
+    return null;
+  } finally {
+    probeSvg.remove();
+  }
 }
 
 function _svgToDataUrl(svgStr) {
@@ -320,30 +390,51 @@ function _buildForceSvg(withWhiteBg = true) {
     return null;
   }
 
-  let minX = Infinity,
-    maxX = -Infinity,
-    minY = Infinity,
-    maxY = -Infinity;
-  for (const n of nodes) {
-    const r = atomRadius(n.protons);
-    if (n.x - r < minX) {
-      minX = n.x - r;
-    }
-    if (n.x + r > maxX) {
-      maxX = n.x + r;
-    }
-    if (n.y - r < minY) {
-      minY = n.y - r;
-    }
-    if (n.y + r > maxY) {
-      maxY = n.y + r;
-    }
+  const gClone = g.node().cloneNode(true);
+  gClone.removeAttribute('transform');
+  _removeInteractionOverlays(gClone);
+  _removeOffscreenExportArtifacts(gClone);
+  _removeInvalidSvgGeometry(gClone);
+  if (!withWhiteBg) {
+    _replaceForceWhiteSeparatorsForTransparentExport(gClone);
+  }
+  if (document.querySelector('.svg-plot').classList.contains('labels-hidden')) {
+    gClone.querySelectorAll('.atom-symbol').forEach(el => el.remove());
   }
 
-  const vbX = minX - PAD,
-    vbY = minY - PAD;
-  const vbW = maxX - minX + PAD * 2;
-  const vbH = maxY - minY + PAD * 2;
+  let contentBBox = _measureClonedSvgBBox(gClone);
+  if (!contentBBox || (!contentBBox.width && !contentBBox.height)) {
+    let minX = Infinity,
+      maxX = -Infinity,
+      minY = Infinity,
+      maxY = -Infinity;
+    for (const n of nodes) {
+      const r = atomRadius(n.protons);
+      if (n.x - r < minX) {
+        minX = n.x - r;
+      }
+      if (n.x + r > maxX) {
+        maxX = n.x + r;
+      }
+      if (n.y - r < minY) {
+        minY = n.y - r;
+      }
+      if (n.y + r > maxY) {
+        maxY = n.y + r;
+      }
+    }
+    contentBBox = {
+      x: minX,
+      y: minY,
+      width: maxX - minX,
+      height: maxY - minY
+    };
+  }
+
+  const vbX = contentBBox.x - PAD;
+  const vbY = contentBBox.y - PAD;
+  const vbW = contentBBox.width + PAD * 2;
+  const vbH = contentBBox.height + PAD * 2;
 
   const ns = 'http://www.w3.org/2000/svg';
   const svgEl = document.createElementNS(ns, 'svg');
@@ -372,15 +463,6 @@ function _buildForceSvg(withWhiteBg = true) {
   ].join(' ');
   svgEl.appendChild(styleEl);
 
-  const gClone = g.node().cloneNode(true);
-  gClone.removeAttribute('transform');
-  _removeInteractionOverlays(gClone);
-  if (!withWhiteBg) {
-    _replaceForceWhiteSeparatorsForTransparentExport(gClone);
-  }
-  if (document.querySelector('.svg-plot').classList.contains('labels-hidden')) {
-    gClone.querySelectorAll('.atom-symbol, .charge-label').forEach(el => el.remove());
-  }
   svgEl.appendChild(gClone);
   return svgEl;
 }

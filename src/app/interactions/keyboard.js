@@ -3,6 +3,36 @@
 export function initKeyboardInteractions(context) {
   const { doc = document, win = window } = context;
 
+  function canDeleteHoveredAtom(atomId) {
+    const mol = context.state.documentState.getActiveMolecule();
+    if (!mol) {
+      return false;
+    }
+    const atom = mol.atoms.get(atomId);
+    if (!atom) {
+      return false;
+    }
+    if (context.state.viewState.getMode() === 'force' && atom.name === 'H') {
+      return false;
+    }
+    return true;
+  }
+
+  function canDeleteHoveredBond(bondId) {
+    const mol = context.state.documentState.getActiveMolecule();
+    if (!mol) {
+      return false;
+    }
+    const bond = mol.bonds.get(bondId);
+    if (!bond) {
+      return false;
+    }
+    if (context.state.viewState.getMode() === 'force') {
+      return !bond.atoms.some(atomId => mol.atoms.get(atomId)?.name === 'H');
+    }
+    return true;
+  }
+
   doc.addEventListener('keydown', event => {
     if (event.key === 'Meta' || event.key === 'Control') {
       const nextActive = !!(event.metaKey || event.ctrlKey);
@@ -130,13 +160,22 @@ export function initKeyboardInteractions(context) {
       context.state.overlayState.getSelectedBondIds().size === 0 &&
       (context.state.overlayState.getHoveredAtomIds().size > 0 || context.state.overlayState.getHoveredBondIds().size > 0)
     ) {
+      const hoveredDeleteAtomIds = [];
+      const hoveredDeleteBondIds = [];
       for (const id of context.state.overlayState.getHoveredAtomIds()) {
-        context.state.overlayState.getSelectedAtomIds().add(id);
+        if (canDeleteHoveredAtom(id)) {
+          hoveredDeleteAtomIds.push(id);
+        }
       }
       for (const id of context.state.overlayState.getHoveredBondIds()) {
-        context.state.overlayState.getSelectedBondIds().add(id);
+        if (canDeleteHoveredBond(id)) {
+          hoveredDeleteBondIds.push(id);
+        }
       }
       context.view.clearPrimitiveHover();
+      context.actions.deleteTargets?.(hoveredDeleteAtomIds, hoveredDeleteBondIds, { transient: true });
+      event.preventDefault();
+      return;
     }
     context.actions.deleteSelection();
     event.preventDefault();

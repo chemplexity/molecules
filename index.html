@@ -153,6 +153,7 @@
             <div id="tab-other" class="smarts-tab-panel" style="display: none">
               <table id="resonance-table">
                 <tbody id="resonance-body"></tbody>
+                <tbody id="bond-en-body"></tbody>
               </table>
             </div>
           </div>
@@ -359,12 +360,22 @@
       import { generateCoords, refineExistingCoords, generateAndRefine2dCoords } from './src/layout/index.js';
       import * as mol2dHelpers from './src/layout/mol2d-helpers.js';
       import { updateDescriptors, updatePhysicochemical, updateFormula } from './src/app/ui/descriptors.js';
-      import { initUndo, takeSnapshot as _takeSnapshot, discardLastSnapshot as _discardLastSnapshot, clearHistory as _clearUndoHistory, undoAction, redoAction } from './src/app/core/undo.js';
+      import {
+        initUndo,
+        takeSnapshot as _takeSnapshot,
+        discardLastSnapshot as _discardLastSnapshot,
+        clearHistory as _clearUndoHistory,
+        undoAction,
+        redoAction
+      } from './src/app/core/undo.js';
       import { createAppController } from './src/app/core/app-controller.js';
       import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from './src/app/core/editor-actions.js';
       import { createSessionSnapshotManager } from './src/app/core/session-snapshot.js';
       import { createSessionUiStateBridge } from './src/app/core/session-ui-state.js';
       import { initExport, copyForcePng, copyForceSvg, copySvg2d, savePng2d } from './src/app/ui/export.js';
+      import { createDrawBondCommitActions } from './src/app/interactions/draw-bond-commit.js';
+      import { createEditingActions } from './src/app/interactions/editing.js';
+      import { createDragGestureActions } from './src/app/interactions/drag-gestures.js';
       import {
         BOND_MULT,
         BOND_OFFSET,
@@ -440,6 +451,7 @@
         prepareResonanceUndoSnapshot,
         restoreResonanceViewSnapshot
       } from './src/app/render/resonance.js';
+      import { initBondEnPanel, updateBondEnPanel, clearBondEnPanel, getBondEnOverlayData } from './src/app/render/bond-en-polarity.js';
       import { createNavigationActions, initNavigationInteractions } from './src/app/interactions/navigation.js';
       import { createSelectionActions } from './src/app/interactions/selection.js';
       import { createDrawBondPreviewActions } from './src/app/interactions/draw-bond-preview.js';
@@ -519,6 +531,12 @@
       // ---------------------------------------------------------------------------
       const plotEl = document.getElementById('plot');
       const tooltip = d3.select('#atom-tooltip');
+
+      // EN label color: black at t=0 (nonpolar) → vivid orange-red at t=1 (most polar)
+      function _enLabelColor(t) {
+        const f = Math.max(0, Math.min(1, t));
+        return `rgb(${Math.round(50 + 180 * f)},${Math.round(50 - 30 * f)},${Math.round(50 - 40 * f)})`;
+      }
       const inputEl = document.getElementById('smiles-input');
       const collectionSelectEl = document.getElementById('collection-select');
 
@@ -987,69 +1005,7 @@
       }
 
       function createDrag(sim) {
-        return d3
-          .drag()
-          .filter(event => !_drawBondMode && !_eraseMode)
-          .on('start', (event, d) => {
-            if (_drawBondMode) return;
-            if (!event.active) sim.alphaTarget(0.3).restart();
-            _forceAutoFitEnabled = false;
-            _disableForceKeepInView();
-            const selectedDragAtomIds = _getSelectedDragAtomIds(currentMol, [d.id], []);
-            const dragNodes = selectedDragAtomIds ? sim.nodes().filter(node => selectedDragAtomIds.has(node.id)) : [d];
-            const positions = new Map();
-            for (const node of dragNodes) {
-              positions.set(node.id, { x: node.x, y: node.y });
-              node.fx = node.x;
-              node.fy = node.y;
-            }
-            d._dragState = {
-              startX: event.x,
-              startY: event.y,
-              nodeIds: new Set(dragNodes.map(node => node.id)),
-              positions,
-              _snapped: false,
-              previousSnapshot: _captureAppSnapshot()
-            };
-          })
-          .on('drag', (event, d) => {
-            const state = d._dragState;
-            if (!state) return;
-            if (!state._snapped) {
-              _takeSnapshot({
-                clearReactionPreview: false,
-                snapshot: state.previousSnapshot ?? _captureAppSnapshot()
-              });
-              state._snapped = true;
-            }
-            const dx = event.x - state.startX;
-            const dy = event.y - state.startY;
-            for (const node of sim.nodes()) {
-              if (!state.nodeIds.has(node.id)) continue;
-              const pos = state.positions.get(node.id);
-              if (!pos) continue;
-              node.fx = pos.x + dx;
-              node.fy = pos.y + dy;
-              node.x = node.fx;
-              node.y = node.fy;
-            }
-          })
-          .on('end', (event, d) => {
-            if (!event.active) sim.alphaTarget(0);
-            const state = d._dragState;
-            if (state) {
-              for (const node of sim.nodes()) {
-                if (!state.nodeIds.has(node.id)) continue;
-                if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
-                  node.anchorX = node.x;
-                  node.anchorY = node.y;
-                }
-                node.fx = null;
-                node.fy = null;
-              }
-            }
-            d._dragState = null;
-          });
+        return dragGestureActions.createForceAtomDrag(sim);
       }
 
       const simulation = d3
@@ -1211,81 +1167,7 @@
           .on('mouseout', () => {
             primitiveEventHandlers.handleForceBondMouseOut();
           })
-          .call(
-            d3
-              .drag()
-              .filter(event => !_drawBondMode)
-              .on('start', function (event, d) {
-                if (_drawBondMode) return;
-                const selectedDragAtomIds = _getSelectedDragAtomIds(molecule, [], [d.id]);
-                if (!selectedDragAtomIds) {
-                  this._dragState = null;
-                  return;
-                }
-                _forceAutoFitEnabled = false;
-                _disableForceKeepInView();
-                event.sourceEvent.stopPropagation();
-                tooltip.style('opacity', 0);
-                d3.select(this).style('cursor', 'grabbing');
-                if (!event.active) simulation.alphaTarget(0.3).restart();
-                const positions = new Map();
-                const nodeIds = new Set();
-                for (const node of simulation.nodes()) {
-                  if (!selectedDragAtomIds.has(node.id)) continue;
-                  positions.set(node.id, { x: node.x, y: node.y });
-                  nodeIds.add(node.id);
-                  node.fx = node.x;
-                  node.fy = node.y;
-                }
-                this._dragState = {
-                  startX: event.x,
-                  startY: event.y,
-                  nodeIds,
-                  positions,
-                  _snapped: false,
-                  previousSnapshot: _captureAppSnapshot()
-                };
-              })
-              .on('drag', function (event) {
-                const state = this._dragState;
-                if (!state) return;
-                if (!state._snapped) {
-                  _takeSnapshot({
-                    clearReactionPreview: false,
-                    snapshot: state.previousSnapshot ?? _captureAppSnapshot()
-                  });
-                  state._snapped = true;
-                }
-                const dx = event.x - state.startX;
-                const dy = event.y - state.startY;
-                for (const node of simulation.nodes()) {
-                  if (!state.nodeIds.has(node.id)) continue;
-                  const pos = state.positions.get(node.id);
-                  if (!pos) continue;
-                  node.fx = pos.x + dx;
-                  node.fy = pos.y + dy;
-                  node.x = node.fx;
-                  node.y = node.fy;
-                }
-              })
-              .on('end', function (event) {
-                const state = this._dragState;
-                if (state) {
-                  for (const node of simulation.nodes()) {
-                    if (!state.nodeIds.has(node.id)) continue;
-                    if (Number.isFinite(node.x) && Number.isFinite(node.y)) {
-                      node.anchorX = node.x;
-                      node.anchorY = node.y;
-                    }
-                    node.fx = null;
-                    node.fy = null;
-                  }
-                }
-                if (!event.active) simulation.alphaTarget(0);
-                this._dragState = null;
-                d3.select(this).style('cursor', 'grab');
-              })
-          );
+          .call(dragGestureActions.createForceBondDrag(simulation, molecule));
 
         const atom = g
           .selectAll('circle.node')
@@ -1494,6 +1376,40 @@
         _updateForceLonePairs();
         _updateForceChargeLabels();
 
+        // Bond electronegativity overlay for force mode
+        const _forceEnData = getBondEnOverlayData(molecule);
+        const _forceLinkById = new Map(graph.links.map(l => [l.id, l]));
+        let _forceBondEnLabels = null;
+        if (_forceEnData) {
+          const fEnLayer = g.append('g').attr('class', 'force-bond-en').style('pointer-events', 'none');
+          const labelData = _forceEnData.map(({ bondId, label, t }) => ({ link: _forceLinkById.get(bondId), label, t })).filter(d => d.link);
+          _forceBondEnLabels = fEnLayer
+            .selectAll('text.force-bond-en-label')
+            .data(labelData)
+            .enter()
+            .append('text')
+            .attr('class', 'force-bond-en-label')
+            .attr('text-anchor', 'middle')
+            .attr('dominant-baseline', 'central')
+            .attr('font-size', '10px')
+            .attr('pointer-events', 'none')
+            .attr('fill', d => _enLabelColor(d.t))
+            .text(d => d.label);
+        }
+
+        function _updateForceBondEnLabels() {
+          if (!_forceBondEnLabels) return;
+          _forceBondEnLabels.attr('transform', d => {
+            const dx = d.link.target.x - d.link.source.x;
+            const dy = d.link.target.y - d.link.source.y;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            const x = (d.link.source.x + d.link.target.x) / 2 + (-dy / len) * 13;
+            const y = (d.link.source.y + d.link.target.y) / 2 + (dx / len) * 13;
+            return `translate(${x},${y})`;
+          });
+        }
+        _updateForceBondEnLabels();
+
         simulation.on('tick', () => {
           _renderReactionPreviewArrowForce(graph.nodes);
 
@@ -1547,6 +1463,7 @@
 
           _updateForceLonePairs();
           _updateForceChargeLabels();
+          _updateForceBondEnLabels();
 
           // Functional-group highlight layer (cached — avoids DOM query every tick)
           if (_fgHlLines) {
@@ -2271,7 +2188,7 @@
           cancelDrawBond: () => drawBondPreviewActions.cancel()
         },
         actions: {
-          deleteSelection: () => window.deleteSelection()
+          deleteSelection: () => editingActions.deleteSelection()
         },
         dom: {
           panButton: document.getElementById('pan-mode-btn'),
@@ -2279,6 +2196,95 @@
           drawBondButton: document.getElementById('draw-bond-btn'),
           eraseButton: document.getElementById('erase-btn'),
           getElementButton: element => document.getElementById(`elem-btn-${element}`)
+        }
+      });
+
+      const editingActions = createEditingActions({
+        state: appState,
+        actions: {
+          performStructuralEdit: (...args) => appController.performStructuralEdit(...args)
+        },
+        overlays: {
+          hasReactionPreview: () => _hasReactionPreview(),
+          prepareReactionPreviewEraseTargets: (atomIds, bondIds) => _prepareReactionPreviewEraseTargets(atomIds, bondIds)
+        },
+        policies: {
+          reactionPreview: {
+            block: ReactionPreviewPolicy.block
+          },
+          resonance: {
+            normalizeForEdit: ResonancePolicy.normalizeForEdit
+          },
+          snapshot: {
+            take: SnapshotPolicy.take
+          },
+          viewport: {
+            none: ViewportPolicy.none
+          }
+        },
+        chemistry: {
+          clearStereoAnnotations: (mol, affectedIds) => mol.clearStereoAnnotations(affectedIds),
+          kekulize,
+          refreshAromaticity
+        },
+        force: {
+          getSimulation: () => simulation,
+          patchNodePositions: patchPos => _patchForceNodePositions(patchPos),
+          reseatHydrogensAroundPatched: patchPos => _reseatHydrogensAroundPatched(patchPos)
+        },
+        twoD: {
+          fitCurrentView: () => fitCurrent2dView()
+        },
+        view: {
+          refreshSelectionOverlay: () => _refreshSelectionOverlay()
+        },
+        dom: {
+          flashEraseButton: () => {
+            const btn = document.getElementById('erase-btn');
+            if (!btn) {
+              return;
+            }
+            btn.textContent = '✓';
+            setTimeout(() => {
+              btn.textContent = '🗑️';
+            }, 1500);
+          }
+        }
+      });
+
+      const dragGestureActions = createDragGestureActions({
+        d3: {
+          createDrag: () => d3.drag()
+        },
+        state: {
+          getDrawBondMode: () => _drawBondMode,
+          getEraseMode: () => _eraseMode
+        },
+        history: {
+          captureSnapshot: () => _captureAppSnapshot(),
+          takeSnapshot: options => _takeSnapshot(options)
+        },
+        selection: {
+          getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => _getSelectedDragAtomIds(mol, atomIds, bondIds)
+        },
+        molecule: {
+          getCurrent: () => currentMol
+        },
+        force: {
+          setAutoFitEnabled: value => {
+            _forceAutoFitEnabled = value;
+          },
+          disableKeepInView: () => _disableForceKeepInView()
+        },
+        view: {
+          clearPrimitiveHover: () => _clearPrimitiveHover(),
+          refresh2dSelection: () => _redraw2dSelection(),
+          hideTooltip: () => {
+            tooltip.style('opacity', 0);
+          },
+          setElementCursor: (element, value) => {
+            d3.select(element).style('cursor', value);
+          }
         }
       });
 
@@ -2337,6 +2343,84 @@
         }
       });
 
+      const drawBondCommitActions = createDrawBondCommitActions({
+        getMode: () => mode,
+        getDrawBondElement: () => _drawBondElement,
+        preview: {
+          clearArtifacts: () => drawBondPreviewActions.clearArtifacts(),
+          cancel: () => drawBondPreviewActions.cancel()
+        },
+        state: {
+          getDrawBondState: () => _drawBondState,
+          setDrawBondState: value => {
+            _drawBondState = value;
+          }
+        },
+        view: {
+          clearPrimitiveHover: () => _clearPrimitiveHover(),
+          setDrawBondHoverSuppressed: value => {
+            _drawBondHoverSuppressed = value;
+          },
+          captureZoomTransform: () => _captureZoomTransformSnapshot(),
+          restore2dEditViewport: (zoomSnapshot, options = {}) => _restore2dEditViewport(zoomSnapshot, options)
+        },
+        plot: {
+          getSize: () => ({
+            width: plotEl.clientWidth || 600,
+            height: plotEl.clientHeight || 400
+          })
+        },
+        constants: {
+          scale: SCALE,
+          forceScale: 25
+        },
+        snapshot: {
+          capture: options => _captureAppSnapshot(options),
+          restore: snap => _restoreSnapshot(snap)
+        },
+        history: {
+          takeSnapshot: options => _takeSnapshot(options)
+        },
+        overlays: {
+          prepareReactionPreviewEditTargets: payload => _prepareReactionPreviewEditTargets(payload),
+          prepareResonanceStructuralEdit: mol => _prepareResonanceStructuralEdit(mol)
+        },
+        molecule: {
+          getActive: () => (mode === 'force' ? currentMol : _mol2d),
+          ensureActive: () => _ensureMol()
+        },
+        force: {
+          getNodeById: atomId => simulation.nodes().find(node => node.id === atomId),
+          getNodes: () => simulation.nodes(),
+          patchNodePositions: patchPos => _patchForceNodePositions(patchPos),
+          reseatHydrogensAroundPatched: patchPos => _reseatHydrogensAroundPatched(patchPos),
+          enableKeepInView: () => _enableForceKeepInView()
+        },
+        twoD: {
+          getCenterX: () => _cx2d,
+          getCenterY: () => _cy2d,
+          syncDerivedState: mol => _sync2dDerivedState(mol)
+        },
+        chemistry: {
+          kekulize,
+          refreshAromaticity
+        },
+        analysis: {
+          syncInputField: mol => _syncInputField(mol),
+          updateFormula: mol => updateFormula(mol),
+          updateDescriptors: mol => updateDescriptors(mol),
+          updatePanels: mol => _updateAnalysisPanels(mol)
+        },
+        renderers: {
+          draw2d: () => draw2d(),
+          updateForce: (mol, options = {}) => updateForce(mol, options)
+        },
+        actions: {
+          changeAtomElements: (atomIds, newEl, options = {}) => _changeAtomElements(atomIds, newEl, options),
+          promoteBondOrder: (bondId, options = {}) => _promoteBondOrder(bondId, options)
+        }
+      });
+
       const primitiveSelectionActions = createPrimitiveSelectionActions({
         state: appState,
         renderers: {
@@ -2366,7 +2450,7 @@
         },
         actions: {
           promoteBondOrder: bondId => _promoteBondOrder(bondId),
-          eraseItem: (atomIds, bondIds) => _eraseItem(atomIds, bondIds),
+          eraseItem: (atomIds, bondIds) => editingActions.eraseItem(atomIds, bondIds),
           replaceForceHydrogenAtom: (atomId, mol) => _replaceForceHydrogenWithDrawElement(atomId, mol)
         },
         view: {
@@ -2378,11 +2462,17 @@
         tooltip: {
           showDelayed: (html, event, delay = 150) => {
             tooltip.transition().delay(delay).style('opacity', 0.9);
-            tooltip.html(html).style('left', event.clientX + 13 + 'px').style('top', event.clientY - 20 + 'px');
+            tooltip
+              .html(html)
+              .style('left', event.clientX + 13 + 'px')
+              .style('top', event.clientY - 20 + 'px');
           },
           showImmediate: (html, event) => {
             tooltip.interrupt().style('opacity', 0.9);
-            tooltip.html(html).style('left', event.clientX + 13 + 'px').style('top', event.clientY - 20 + 'px');
+            tooltip
+              .html(html)
+              .style('left', event.clientX + 13 + 'px')
+              .style('top', event.clientY - 20 + 'px');
           },
           move: event => {
             tooltip.style('left', event.clientX + 13 + 'px').style('top', event.clientY - 20 + 'px');
@@ -2416,6 +2506,8 @@
         updateReactionTemplatesPanel: () => updateReactionTemplatesPanel(),
         updateResonancePanel: (mol, options = {}) => updateResonancePanel(mol, options),
         clearResonancePanelState: () => clearResonancePanelState(),
+        updateBondEnPanel: mol => updateBondEnPanel(mol),
+        clearBondEnPanel: () => clearBondEnPanel(),
         getSelectedAtomIds: () => _selectedAtomIds,
         getSelectedBondIds: () => _selectedBondIds,
         getSelectMode: () => _selectMode,
@@ -2740,7 +2832,22 @@
         draw2d: () => draw2d(),
         updateForce: (mol, options = {}) => updateForce(mol, options),
         hasReactionPreview: () => _hasReactionPreview(),
-        restoreReactionPreviewSource: () => _restoreReactionPreviewSource()
+        restoreReactionPreviewSource: () => _restoreReactionPreviewSource(),
+        takeSnapshot: options => _takeSnapshot(options)
+      });
+
+      initBondEnPanel({
+        get mode() {
+          return mode;
+        },
+        get currentMol() {
+          return currentMol;
+        },
+        get _mol2d() {
+          return _mol2d;
+        },
+        draw2d: () => draw2d(),
+        updateForce: (mol, options = {}) => updateForce(mol, options)
       });
 
       initNavigationInteractions({
@@ -2758,7 +2865,8 @@
           isReactionPreviewEditableAtomId: id => _isReactionPreviewEditableAtomId(id)
         },
         actions: {
-          deleteSelection: () => window.deleteSelection(),
+          deleteSelection: () => editingActions.deleteSelection(),
+          deleteTargets: (atomIds, bondIds, options = {}) => editingActions.deleteTargets(atomIds, bondIds, options),
           changeAtomElements: (atomIds, newEl) => _changeAtomElements(atomIds, newEl)
         },
         history: {
@@ -2792,7 +2900,7 @@
           commit: () => _commitDrawBond()
         },
         actions: {
-          eraseItem: (atomIds, bondIds) => _eraseItem(atomIds, bondIds)
+          eraseItem: (atomIds, bondIds) => editingActions.eraseItem(atomIds, bondIds)
         },
         view: {
           getZoomTransform: () => d3.zoomTransform(svg.node()),
@@ -3218,7 +3326,7 @@
             viewportPolicy: ViewportPolicy.restoreEdit,
             zoomSnapshot,
             preflight: ({ mol, mode, reactionEdit }) => {
-              const targetBondId = skipReactionPreviewPrep ? bondId : reactionEdit?.bondId ?? bondId;
+              const targetBondId = skipReactionPreviewPrep ? bondId : (reactionEdit?.bondId ?? bondId);
               const bond = mol.bonds.get(targetBondId);
               if (!bond) {
                 return false;
@@ -3233,7 +3341,7 @@
             }
           },
           ({ mol, mode, reactionEdit }) => {
-            const targetBondId = skipReactionPreviewPrep ? bondId : reactionEdit?.bondId ?? bondId;
+            const targetBondId = skipReactionPreviewPrep ? bondId : (reactionEdit?.bondId ?? bondId);
             let bond = mol.bonds.get(targetBondId);
             if (!bond) {
               return { cancelled: true };
@@ -3483,551 +3591,11 @@
       // atomId may be null (blank-space click) — in that case a source C is created at (ox, oy).
       // ox, oy are always required (g-space origin of the draw-bond gesture).
       function _autoPlaceBond(atomId, ox, oy) {
-        const zoomSnapshot = mode === '2d' ? _captureZoomTransformSnapshot() : null;
-        const reactionEdit = _prepareReactionPreviewEditTargets({ atomId });
-        if (reactionEdit === null) return;
-        atomId = reactionEdit?.atomId ?? atomId;
-        const previousSnapshot = reactionEdit?.previousSnapshot ?? _captureAppSnapshot();
-        const structuralEdit = _prepareResonanceStructuralEdit(mode === 'force' ? currentMol : _mol2d);
-        _takeSnapshot(
-          previousSnapshot
-            ? {
-                clearReactionPreview: false,
-                snapshot: previousSnapshot
-              }
-            : undefined
-        );
-        const mol = structuralEdit.mol ?? _ensureMol();
-
-        const FORCE_SCALE_VAL = 25;
-        const steps = 12; // 30° increments
-        const W = plotEl.clientWidth || 600;
-        const H = plotEl.clientHeight || 400;
-
-        // ── Resolve / create source atom ─────────────────────────────────────────
-        let srcAtom, resolvedId;
-        if (atomId === null) {
-          srcAtom = mol.addAtom(null, _drawBondElement, {});
-          if (mode === 'force') {
-            let cx2d = 0,
-              cy2d = 0,
-              cnt = 0;
-            for (const [, a] of mol.atoms) {
-              if (a.x != null) {
-                cx2d += a.x;
-                cy2d += a.y;
-                cnt++;
-              }
-            }
-            if (cnt > 0) {
-              cx2d /= cnt;
-              cy2d /= cnt;
-            }
-            srcAtom.x = cx2d + (ox - W / 2) / FORCE_SCALE_VAL;
-            srcAtom.y = cy2d - (oy - H / 2) / FORCE_SCALE_VAL;
-          } else {
-            srcAtom.x = _cx2d + (ox - W / 2) / SCALE;
-            srcAtom.y = _cy2d - (oy - H / 2) / SCALE;
-          }
-          resolvedId = srcAtom.id;
-        } else {
-          srcAtom = mol.atoms.get(atomId);
-          if (!srcAtom) return;
-          resolvedId = atomId;
-        }
-
-        // ── Source position in the rendering coordinate system ───────────────────
-        // force: g-space (node coords); 2D: mol coords (y-up).
-        let srcRX, srcRY;
-        if (mode === 'force') {
-          const srcNode = simulation.nodes().find(n => n.id === resolvedId);
-          srcRX = srcNode ? srcNode.x : ox; // fall back to g-space click for brand-new atom
-          srcRY = srcNode ? srcNode.y : oy;
-        } else {
-          srcRX = srcAtom.x;
-          srcRY = srcAtom.y;
-        }
-
-        // ── Collect existing bond angles ──────────────────────────────────────────
-        const existingAngles = [];
-        for (const bId of srcAtom.bonds) {
-          const b = mol.bonds.get(bId);
-          if (!b) continue;
-          const otherId = b.getOtherAtom(resolvedId);
-          if (mode === 'force') {
-            const otherNode = simulation.nodes().find(n => n.id === otherId);
-            if (!otherNode) continue;
-            existingAngles.push(Math.atan2(otherNode.y - srcRY, otherNode.x - srcRX));
-          } else {
-            const otherAtom = mol.atoms.get(otherId);
-            if (!otherAtom || otherAtom.x == null || otherAtom.visible === false) continue;
-            existingAngles.push(Math.atan2(otherAtom.y - srcRY, otherAtom.x - srcRX));
-          }
-        }
-
-        // ── Pick best angle ───────────────────────────────────────────────────────
-        let bestAngle;
-
-        if (existingAngles.length === 0) {
-          // No heavy bonds yet: start at 330° (−30°) so zig-zag alternates cleanly.
-          bestAngle = (11 / 12) * 2 * Math.PI;
-        } else if (existingAngles.length === 1) {
-          // Terminal atom: continue the chain with a 120° internal angle (zig-zag).
-          // backAngle = direction from source toward its one heavy neighbor.
-          const back = existingAngles[0];
-          const opt1 = back + (2 * Math.PI) / 3; // +120°
-          const opt2 = back - (2 * Math.PI) / 3; // −120°
-          const sBack = Math.sin(back);
-          const s1 = Math.sin(opt1);
-          const s2 = Math.sin(opt2);
-          if (Math.abs(sBack) > 1e-6) {
-            // Pick the option whose sin has the same sign as sBack — this makes
-            // consecutive bonds alternate their y-component (zig-zag).
-            const ok1 = s1 * sBack > 0;
-            const ok2 = s2 * sBack > 0;
-            if (ok1 && !ok2) bestAngle = opt1;
-            else if (ok2 && !ok1) bestAngle = opt2;
-            else bestAngle = Math.cos(opt1) >= Math.cos(opt2) ? opt1 : opt2; // rightward tiebreak
-          } else {
-            // Back-bond is horizontal: prefer the downward option (negative sin).
-            bestAngle = s1 <= s2 ? opt1 : opt2;
-          }
-          bestAngle = ((bestAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-        } else {
-          // Multiple existing bonds: maximize minimum angular separation.
-          bestAngle = 0;
-          let bestMinSep = -1;
-          for (let i = 0; i < steps; i++) {
-            const candidate = (i / steps) * 2 * Math.PI;
-            let minSep = Math.PI;
-            for (const a of existingAngles) {
-              let diff = Math.abs(candidate - a);
-              if (diff > Math.PI) diff = 2 * Math.PI - diff;
-              if (diff < minSep) minSep = diff;
-            }
-            if (minSep > bestMinSep) {
-              bestMinSep = minSep;
-              bestAngle = candidate;
-            }
-          }
-        }
-
-        // ── Avoid placing on top of an existing atom ─────────────────────────────
-        // Proposed destination distance: bond length in the current coordinate space.
-        // Force: g-space pixels (1.5 Å × 25 px/Å). 2D: mol coords Å.
-        {
-          const BL = mode === 'force' ? 1.5 * FORCE_SCALE_VAL : 1.5;
-          const THRESH2 = (BL * 0.7) ** 2;
-          const overlaps = angle => {
-            const px = srcRX + Math.cos(angle) * BL;
-            const py = srcRY + Math.sin(angle) * BL;
-            if (mode === 'force') {
-              for (const node of simulation.nodes()) {
-                if (node.id === resolvedId) continue;
-                const dx = node.x - px,
-                  dy = node.y - py;
-                if (dx * dx + dy * dy < THRESH2) return true;
-              }
-            } else {
-              for (const [id, atom] of mol.atoms) {
-                if (id === resolvedId || atom.x == null || atom.visible === false) continue;
-                const dx = atom.x - px,
-                  dy = atom.y - py;
-                if (dx * dx + dy * dy < THRESH2) return true;
-              }
-            }
-            return false;
-          };
-          if (overlaps(bestAngle)) {
-            let fallback = bestAngle,
-              bestSep = -1;
-            for (let i = 0; i < steps; i++) {
-              const cand = (i / steps) * 2 * Math.PI;
-              if (overlaps(cand)) continue;
-              let minSep = Math.PI;
-              for (const a of existingAngles) {
-                let diff = Math.abs(cand - a);
-                if (diff > Math.PI) diff = 2 * Math.PI - diff;
-                if (diff < minSep) minSep = diff;
-              }
-              if (minSep > bestSep) {
-                bestSep = minSep;
-                fallback = cand;
-              }
-            }
-            bestAngle = fallback;
-          }
-        }
-
-        // ── Remove H from source and place new atom ───────────────────────────────
-        const srcH = srcAtom.getNeighbors(mol).find(n => n.name === 'H');
-        if (srcH) mol.removeAtom(srcH.id);
-        const newAtom = mol.addAtom(null, _drawBondElement, {});
-        mol.addBond(null, resolvedId, newAtom.id, { order: 1 }, true);
-        const affected = new Set([resolvedId, newAtom.id]);
-
-        if (mode === 'force') {
-          const BL_PX = 1.5 * FORCE_SCALE_VAL;
-          const destGX = srcRX + Math.cos(bestAngle) * BL_PX;
-          const destGY = srcRY + Math.sin(bestAngle) * BL_PX;
-          let cx2d = 0,
-            cy2d = 0,
-            cnt = 0;
-          for (const [, a] of mol.atoms) {
-            if (a.x != null) {
-              cx2d += a.x;
-              cy2d += a.y;
-              cnt++;
-            }
-          }
-          if (cnt > 0) {
-            cx2d /= cnt;
-            cy2d /= cnt;
-          }
-          newAtom.x = cx2d + (destGX - W / 2) / FORCE_SCALE_VAL;
-          newAtom.y = cy2d - (destGY - H / 2) / FORCE_SCALE_VAL;
-
-          mol.clearStereoAnnotations(affected);
-          kekulize(mol);
-          refreshAromaticity(mol, { preserveKekule: true });
-          mol.repairImplicitHydrogens(affected);
-          _syncInputField(mol);
-          updateFormula(mol);
-          updateDescriptors(mol);
-          _updateAnalysisPanels(mol);
-          updateForce(mol, { preservePositions: true });
-          _enableForceKeepInView();
-
-          // Patch node positions immediately so generateCoords doesn't misplace them.
-          const patchPos = new Map([[newAtom.id, { x: destGX, y: destGY }]]);
-          patchPos.set(resolvedId, { x: srcRX, y: srcRY });
-          _patchForceNodePositions(patchPos);
-          _reseatHydrogensAroundPatched(patchPos);
-        } else {
-          newAtom.x = srcRX + Math.cos(bestAngle) * 1.5;
-          newAtom.y = srcRY + Math.sin(bestAngle) * 1.5;
-
-          mol.clearStereoAnnotations(affected);
-          kekulize(mol);
-          refreshAromaticity(mol, { preserveKekule: true });
-          mol.repairImplicitHydrogens(affected);
-
-          _hCounts2d = new Map();
-          for (const [, a] of mol.atoms) {
-            if (a.name === 'H') continue;
-            const cnt = a.getNeighbors(mol).filter(n => n.name === 'H').length;
-            if (cnt > 0) _hCounts2d.set(a.id, cnt);
-          }
-          _stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
-          _syncInputField(mol);
-          updateFormula(mol);
-          updateDescriptors(mol);
-          _updateAnalysisPanels(mol);
-          draw2d();
-          _restore2dEditViewport(zoomSnapshot, {
-            reactionRestored: reactionEdit?.restored,
-            resonanceReset: structuralEdit.resonanceReset,
-            zoomToFit: true
-          });
-        }
+        return drawBondCommitActions.autoPlaceBond(atomId, ox, oy);
       }
 
       function _commitDrawBond() {
-        if (!_drawBondState) {
-          _cancelDrawBond();
-          return;
-        }
-        const restoreReactionPreviewNoOp = reactionEdit => {
-          if (!reactionEdit?.restored || !reactionEdit.previousSnapshot) {
-            return;
-          }
-          _restoreSnapshot(reactionEdit.previousSnapshot);
-        };
-        const zoomSnapshot = mode === '2d' ? _captureZoomTransformSnapshot() : null;
-        let { atomId, ox, oy, ex, ey, snapAtomId, dragged } = _drawBondState;
-
-        // No drag (pure click), or drag released very close to origin (accidental
-        // mouse movement during what the user intended as a click) → auto-place
-        // at the best angle rather than either cancelling or using the random
-        // drag direction. The threshold of 30 g-space units is half a bond
-        // length, which is large enough to be deliberate at any normal zoom
-        // level but small enough to catch the jitter that produces linear bonds.
-        if (!dragged || Math.hypot(ex - ox, ey - oy) < 30) {
-          g.select('line.draw-bond-preview').remove();
-          g.select('circle.draw-bond-origin-node').remove();
-          g.select('circle.draw-bond-dest-node').remove();
-          g.select('text.draw-bond-origin-label').remove();
-          g.select('text.draw-bond-dest-label').remove();
-          _drawBondState = null;
-          _clearPrimitiveHover();
-          _drawBondHoverSuppressed = true;
-
-          // Click on an existing non-H atom with a different element → replace element.
-          if (atomId !== null) {
-            const reactionEdit = _prepareReactionPreviewEditTargets({ atomId });
-            if (reactionEdit === null) return;
-            atomId = reactionEdit.atomId;
-            const mol = mode === 'force' ? currentMol : _mol2d;
-            const clickedAtom = mol?.atoms.get(atomId);
-            if (clickedAtom && clickedAtom.name !== _drawBondElement) {
-              _changeAtomElements([atomId], _drawBondElement, {
-                zoomSnapshot,
-                overlayPolicy: ReactionPreviewPolicy.preserve,
-                reactionEdit
-              });
-              return;
-            }
-          }
-
-          _autoPlaceBond(atomId, ox, oy);
-          return;
-        }
-
-        g.select('line.draw-bond-preview').remove();
-        g.select('circle.draw-bond-origin-node').remove();
-        g.select('circle.draw-bond-dest-node').remove();
-        g.select('text.draw-bond-origin-label').remove();
-        g.select('text.draw-bond-dest-label').remove();
-        _drawBondState = null;
-        _clearPrimitiveHover();
-        _drawBondHoverSuppressed = true;
-
-        // Don't create a bond to a hydrogen atom.
-        const reactionEdit = _prepareReactionPreviewEditTargets({
-          atomId,
-          snapAtomId
-        });
-        if (reactionEdit === null) return;
-        atomId = reactionEdit.atomId;
-        snapAtomId = reactionEdit.snapAtomId;
-        const previousSnapshot = reactionEdit?.previousSnapshot ?? _captureAppSnapshot();
-        const structuralEdit = _prepareResonanceStructuralEdit(mode === 'force' ? currentMol : _mol2d);
-        if (snapAtomId !== null) {
-          const checkMol = structuralEdit.mol;
-          if (checkMol?.atoms.get(snapAtomId)?.name === 'H') {
-            restoreReactionPreviewNoOp(reactionEdit);
-            return;
-          }
-        }
-
-        _takeSnapshot(
-          previousSnapshot
-            ? {
-                clearReactionPreview: false,
-                snapshot: previousSnapshot
-              }
-            : undefined
-        );
-
-        // ── Force mode path ───────────────────────────────────────────────────────
-        if (mode === 'force') {
-          const mol = structuralEdit.mol ?? _ensureMol();
-          const W = plotEl.clientWidth || 600;
-          const H = plotEl.clientHeight || 400;
-          const FORCE_SCALE = 25;
-
-          // Centroid before adding new atoms.
-          let cx2d = 0,
-            cy2d = 0,
-            cnt = 0;
-          for (const [, a] of mol.atoms) {
-            if (a.x != null) {
-              cx2d += a.x;
-              cy2d += a.y;
-              cnt++;
-            }
-          }
-          if (cnt > 0) {
-            cx2d /= cnt;
-            cy2d /= cnt;
-          }
-
-          // Resolve source atom (create from origin if blank-space start).
-          let resolvedAtomId = atomId;
-          if (atomId === null) {
-            const newSrc = mol.addAtom(null, _drawBondElement, {});
-            newSrc.x = cx2d + (ox - W / 2) / FORCE_SCALE;
-            newSrc.y = cy2d - (oy - H / 2) / FORCE_SCALE;
-            resolvedAtomId = newSrc.id;
-          }
-          const srcAtom = mol.atoms.get(resolvedAtomId);
-          if (!srcAtom) return;
-          let affected;
-
-          // Node positions to patch after updateForce (counteract generateCoords).
-          const patchPos = new Map();
-          if (atomId === null) {
-            patchPos.set(resolvedAtomId, { x: ox, y: oy });
-          } else {
-            const srcN = simulation.nodes().find(n => n.id === resolvedAtomId);
-            if (srcN) patchPos.set(resolvedAtomId, { x: srcN.x, y: srcN.y });
-          }
-
-          if (snapAtomId !== null) {
-            const destAtom = mol.atoms.get(snapAtomId);
-            if (!destAtom) return;
-            const alreadyBonded = [...mol.bonds.values()].some(b => {
-              const [a1, a2] = b.getAtomObjects(mol);
-              return (a1?.id === resolvedAtomId && a2?.id === snapAtomId) || (a1?.id === snapAtomId && a2?.id === resolvedAtomId);
-            });
-            if (alreadyBonded) {
-              // Snap-to existing bond → promote its order instead of creating a duplicate.
-              const existing = [...mol.bonds.values()].find(b => {
-                const [a1, a2] = b.getAtomObjects(mol);
-                return (a1?.id === resolvedAtomId && a2?.id === snapAtomId) || (a1?.id === snapAtomId && a2?.id === resolvedAtomId);
-              });
-              if (existing) {
-                _promoteBondOrder(existing.id, {
-                  zoomSnapshot,
-                  skipReactionPreviewPrep: true,
-                  skipResonancePrep: true,
-                  skipSnapshot: true,
-                  reactionRestored: reactionEdit?.restored,
-                  resonanceReset: structuralEdit.resonanceReset
-                });
-              }
-              return;
-            }
-            const srcH = srcAtom.getNeighbors(mol).find(n => n.name === 'H');
-            if (srcH) mol.removeAtom(srcH.id);
-            const dstH = destAtom.getNeighbors(mol).find(n => n.name === 'H');
-            if (dstH) mol.removeAtom(dstH.id);
-            mol.addBond(null, resolvedAtomId, snapAtomId, { order: 1 }, true);
-            affected = new Set([resolvedAtomId, snapAtomId]);
-            const snapN = simulation.nodes().find(n => n.id === snapAtomId);
-            if (snapN) patchPos.set(snapAtomId, { x: snapN.x, y: snapN.y });
-          } else {
-            const srcH = srcAtom.getNeighbors(mol).find(n => n.name === 'H');
-            if (srcH) mol.removeAtom(srcH.id);
-            const newAtom = mol.addAtom(null, _drawBondElement, {});
-            newAtom.x = cx2d + (ex - W / 2) / FORCE_SCALE;
-            newAtom.y = cy2d - (ey - H / 2) / FORCE_SCALE;
-            mol.addBond(null, resolvedAtomId, newAtom.id, { order: 1 }, true);
-            affected = new Set([resolvedAtomId, newAtom.id]);
-            patchPos.set(newAtom.id, { x: ex, y: ey });
-          }
-
-          mol.clearStereoAnnotations(affected);
-          kekulize(mol);
-          refreshAromaticity(mol, { preserveKekule: true });
-          mol.repairImplicitHydrogens(affected);
-
-          _syncInputField(mol);
-          updateFormula(mol);
-          updateDescriptors(mol);
-          _updateAnalysisPanels(mol);
-          updateForce(mol, { preservePositions: true });
-          _enableForceKeepInView();
-
-          // Patch new node positions so generateCoords doesn't misplace them.
-          _patchForceNodePositions(patchPos);
-          _reseatHydrogensAroundPatched(patchPos);
-          return;
-        }
-
-        // ── 2D mode path ──────────────────────────────────────────────────────────
-        const mol = structuralEdit.mol ?? _ensureMol();
-        const W = plotEl.clientWidth || 600;
-        const H = plotEl.clientHeight || 400;
-        let affected;
-
-        // Resolve source atom (create from origin if blank-space start).
-        let resolvedAtomId = atomId;
-        if (atomId === null) {
-          const newSrc = mol.addAtom(null, _drawBondElement, {});
-          newSrc.x = _cx2d + (ox - W / 2) / SCALE;
-          newSrc.y = _cy2d - (oy - H / 2) / SCALE;
-          resolvedAtomId = newSrc.id;
-        }
-        const srcAtom = mol.atoms.get(resolvedAtomId);
-        if (!srcAtom) return;
-
-        if (snapAtomId !== null) {
-          // ── Bond to existing atom ──────────────────────────────────────────
-          const destAtom = mol.atoms.get(snapAtomId);
-          if (!destAtom) return;
-
-          // Do nothing if a bond already exists between these two atoms.
-          const alreadyBonded = [...mol.bonds.values()].some(b => {
-            const [a1, a2] = b.getAtomObjects(mol);
-            return (a1?.id === resolvedAtomId && a2?.id === snapAtomId) || (a1?.id === snapAtomId && a2?.id === resolvedAtomId);
-          });
-          if (alreadyBonded) {
-            // Snap-to existing bond → promote its order instead of creating a duplicate.
-            const existing = [...mol.bonds.values()].find(b => {
-              const [a1, a2] = b.getAtomObjects(mol);
-              return (a1?.id === resolvedAtomId && a2?.id === snapAtomId) || (a1?.id === snapAtomId && a2?.id === resolvedAtomId);
-            });
-            if (existing) {
-              _promoteBondOrder(existing.id, {
-                zoomSnapshot,
-                skipReactionPreviewPrep: true,
-                skipResonancePrep: true,
-                skipSnapshot: true,
-                reactionRestored: reactionEdit?.restored,
-                resonanceReset: structuralEdit.resonanceReset
-              });
-            }
-            return;
-          }
-
-          // Remove one explicit H from each endpoint if present.
-          const srcH = srcAtom.getNeighbors(mol).find(n => n.name === 'H');
-          if (srcH) mol.removeAtom(srcH.id);
-          const dstH = destAtom.getNeighbors(mol).find(n => n.name === 'H');
-          if (dstH) mol.removeAtom(dstH.id);
-
-          mol.addBond(null, resolvedAtomId, snapAtomId, { order: 1 }, true);
-          affected = new Set([resolvedAtomId, snapAtomId]);
-        } else {
-          // ── Create new carbon atom ─────────────────────────────────────────
-          // Snap the drag angle to the nearest 30° grid.
-          const rawAngle = Math.atan2(ey - oy, ex - ox);
-          const snapStep = Math.PI / 6;
-          const snapped = Math.round(rawAngle / snapStep) * snapStep;
-          const BL = 1.5; // Å
-          // mol coords: x rightward, y upward — so negate the SVG-space sin
-          const newMolX = srcAtom.x + Math.cos(snapped) * BL;
-          const newMolY = srcAtom.y - Math.sin(snapped) * BL;
-
-          // Remove one explicit H from source if present.
-          const srcH = srcAtom.getNeighbors(mol).find(n => n.name === 'H');
-          if (srcH) mol.removeAtom(srcH.id);
-
-          const newAtom = mol.addAtom(null, _drawBondElement, {});
-          newAtom.x = newMolX;
-          newAtom.y = newMolY;
-
-          mol.addBond(null, resolvedAtomId, newAtom.id, { order: 1 }, true);
-          affected = new Set([resolvedAtomId, newAtom.id]);
-        }
-
-        // Repair aromaticity and hydrogen counts on affected atoms.
-        mol.clearStereoAnnotations(affected);
-        kekulize(mol);
-        refreshAromaticity(mol, { preserveKekule: true });
-        mol.repairImplicitHydrogens(affected);
-
-        // Refresh 2D display state.
-        _hCounts2d = new Map();
-        for (const [, a] of mol.atoms) {
-          if (a.name === 'H') continue;
-          const cnt = a.getNeighbors(mol).filter(n => n.name === 'H').length;
-          if (cnt > 0) _hCounts2d.set(a.id, cnt);
-        }
-        _stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
-
-        _syncInputField(mol);
-
-        updateFormula(mol);
-        updateDescriptors(mol);
-        _updateAnalysisPanels(mol);
-        draw2d();
-        _restore2dEditViewport(zoomSnapshot, {
-          reactionRestored: reactionEdit?.restored,
-          resonanceReset: structuralEdit.resonanceReset,
-          zoomToFit: true
-        });
+        return drawBondCommitActions.commit();
       }
 
       function draw2d() {
@@ -4093,6 +3661,69 @@
             }
             const atomGroup = lonePairLayer.append('g').attr('class', 'atom-lone-pairs').attr('data-atom-id', atom.id);
             renderLonePairDots(atomGroup, dots, { radius: 1.45, fill: '#111111' });
+          }
+        }
+
+        function _redraw2dBondEnOverlay() {
+          g.select('g.bond-en-overlay').remove();
+          const overlayData = getBondEnOverlayData(mol);
+          if (!overlayData) return;
+          const enLayer = g.append('g').attr('class', 'bond-en-overlay').style('pointer-events', 'none');
+          const bondInfoMap = new Map(bondInfos.map(bi => [bi.bond.id, bi]));
+          const EN_FS = 12;
+          const EN_CHW = EN_FS * 0.62;
+          const EN_CHH = EN_FS * 1.2;
+          const EN_PAD = 3;
+          const EN_BASE = 15;
+          const placed = [];
+          function _enOverlaps(cx, cy, hw, hh) {
+            for (const p of placed) {
+              if (Math.abs(cx - p.cx) < hw + p.hw + EN_PAD && Math.abs(cy - p.cy) < hh + p.hh + EN_PAD) return true;
+            }
+            return false;
+          }
+          for (const { bondId, label, t } of overlayData) {
+            const bi = bondInfoMap.get(bondId);
+            if (!bi) continue;
+            const p1 = toSVGPt(bi.a1),
+              p2 = toSVGPt(bi.a2);
+            const mx = (p1.x + p2.x) / 2,
+              my = (p1.y + p2.y) / 2;
+            const dx = p2.x - p1.x,
+              dy = p2.y - p1.y;
+            const len = Math.sqrt(dx * dx + dy * dy) || 1;
+            const nx = -dy / len,
+              ny = dx / len;
+            const hw = (label.length * EN_CHW) / 2;
+            const hh = EN_CHH / 2;
+            // For multi-line bonds prefer the side opposite the secondary line.
+            const order = renderBondOrder(bi.bond);
+            let pref = 1;
+            if (order >= 2 || order === 1.5) {
+              pref = -secondaryDir(bi.a1, bi.a2, mol, toSVGPt);
+            }
+            const offsets = [EN_BASE * pref, EN_BASE * -pref, EN_BASE * 2 * pref, EN_BASE * 2 * -pref, EN_BASE * 3 * pref, EN_BASE * 3 * -pref];
+            let cx = mx + nx * EN_BASE * pref,
+              cy = my + ny * EN_BASE * pref;
+            for (const off of offsets) {
+              const tx = mx + nx * off,
+                ty = my + ny * off;
+              if (!_enOverlaps(tx, ty, hw, hh)) {
+                cx = tx;
+                cy = ty;
+                break;
+              }
+            }
+            placed.push({ cx, cy, hw, hh });
+            enLayer
+              .append('text')
+              .attr('x', cx)
+              .attr('y', cy)
+              .attr('text-anchor', 'middle')
+              .attr('dominant-baseline', 'central')
+              .attr('font-size', `${EN_FS}px`)
+              .attr('fill', _enLabelColor(t))
+              .text(label);
           }
         }
 
@@ -4162,6 +3793,7 @@
           _redraw2dSelection();
           _redraw2dValenceWarnings();
           _draw2dLonePairs();
+          _redraw2dBondEnOverlay();
         }
 
         function _redraw2dValenceWarnings() {
@@ -4238,51 +3870,13 @@
             })
             .style('cursor', 'grab')
             .call(
-              d3
-                .drag()
-                .filter(event => !_drawBondMode && !_eraseMode)
-                .on('start', function (event) {
-                  if (_drawBondMode) return;
-                  event.sourceEvent.stopPropagation();
-                  _clearPrimitiveHover();
-                  _redraw2dSelection();
-                  tooltip.style('opacity', 0);
-                  d3.select(this).style('cursor', 'grabbing');
-                  this._dragState = _capture2dDragState(event, [], [bi.bond.id]);
-                  if (this._dragState) {
-                    this._dragState._snapped = false;
-                    this._dragState.previousSnapshot = _captureAppSnapshot();
-                  }
-                })
-                .on('drag', function (event) {
-                  const state = this._dragState;
-                  if (!state) return;
-                  if (!state._snapped) {
-                    _takeSnapshot({
-                      clearReactionPreview: false,
-                      snapshot: state.previousSnapshot ?? _captureAppSnapshot()
-                    });
-                    state._snapped = true;
-                  }
-                  const [svgX, svgY] = d3.pointer(event.sourceEvent, g.node());
-                  const dx = (svgX - state.pX) / SCALE;
-                  const dy = -(svgY - state.pY) / SCALE;
-                  for (const [atomId, pos] of state.atomPositions) {
-                    const movedAtom = mol.atoms.get(atomId);
-                    if (!movedAtom) continue;
-                    movedAtom.x = pos.x + dx;
-                    movedAtom.y = pos.y + dy;
-                  }
-                  _redraw2dDragTargets(state.movedAtomIds);
-                })
-                .on('end', function () {
-                  const state = this._dragState;
-                  this._dragState = null;
-                  d3.select(this).style('cursor', 'grab');
-                  if (state?._snapped) {
-                    draw2d();
-                  }
-                })
+              dragGestureActions.create2dBondDrag(mol, bi.bond.id, {
+                captureDragState: (event, _molecule, atomIds = [], bondIds = []) => _capture2dDragState(event, atomIds, bondIds),
+                redrawDragTargets: (_molecule, movedAtomIds) => _redraw2dDragTargets(movedAtomIds),
+                pointer: sourceEvent => d3.pointer(sourceEvent, g.node()),
+                scale: SCALE,
+                draw: () => draw2d()
+              })
             );
         }
 
@@ -4381,51 +3975,19 @@
 
           // Drag: move this atom, or the whole selection when dragging a selected primitive.
           hitGroup.call(
-            d3
-              .drag()
-              .filter(event => !_drawBondMode && !_eraseMode)
-              .on('start', function (event) {
-                if (_drawBondMode) return; // draw-bond mode uses its own mousedown
-                event.sourceEvent.stopPropagation();
-                _clearPrimitiveHover();
-                _redraw2dSelection();
-                tooltip.style('opacity', 0);
+            dragGestureActions.create2dAtomDrag(mol, atom.id, {
+              captureDragState: (event, _molecule, atomIds = [], bondIds = []) => _capture2dDragState(event, atomIds, bondIds),
+              redrawDragTargets: (_molecule, movedAtomIds) => _redraw2dDragTargets(movedAtomIds),
+              pointer: sourceEvent => d3.pointer(sourceEvent, g.node()),
+              scale: SCALE,
+              draw: () => draw2d(),
+              setDraggingCursor: () => {
                 hitGroup.select('circle').style('cursor', 'grabbing');
-                this._dragState = _capture2dDragState(event, [atom.id], []);
-                if (this._dragState) {
-                  this._dragState._snapped = false;
-                  this._dragState.previousSnapshot = _captureAppSnapshot();
-                }
-              })
-              .on('drag', function (event) {
-                const state = this._dragState;
-                if (!state) return;
-                if (!state._snapped) {
-                  _takeSnapshot({
-                    clearReactionPreview: false,
-                    snapshot: state.previousSnapshot ?? _captureAppSnapshot()
-                  });
-                  state._snapped = true;
-                }
-                const [svgX, svgY] = d3.pointer(event.sourceEvent, g.node());
-                const dx = (svgX - state.pX) / SCALE;
-                const dy = -(svgY - state.pY) / SCALE;
-                for (const [atomId, pos] of state.atomPositions) {
-                  const movedAtom = mol.atoms.get(atomId);
-                  if (!movedAtom) continue;
-                  movedAtom.x = pos.x + dx;
-                  movedAtom.y = pos.y + dy;
-                }
-                _redraw2dDragTargets(state.movedAtomIds);
-              })
-              .on('end', function () {
-                const state = this._dragState;
-                this._dragState = null;
+              },
+              resetCursor: () => {
                 hitGroup.select('circle').style('cursor', 'grab');
-                if (state?._snapped) {
-                  draw2d();
-                }
-              })
+              }
+            })
           );
         }
 
@@ -4433,6 +3995,9 @@
           lonePairLayer = g.append('g').attr('class', 'lone-pairs').style('pointer-events', 'none');
           _draw2dLonePairs();
         }
+
+        // Bond electronegativity overlay
+        _redraw2dBondEnOverlay();
       }
 
       /**
@@ -4628,24 +4193,7 @@
       };
 
       function _eraseItem(atomIds, bondIds) {
-        if (_hasReactionPreview()) {
-          _hoveredAtomIds.clear();
-          _hoveredBondIds.clear();
-          return;
-        }
-        const eraseTargets = _prepareReactionPreviewEraseTargets(atomIds, bondIds);
-        if (eraseTargets.atomIds.length === 0 && eraseTargets.bondIds.length === 0) {
-          _hoveredAtomIds.clear();
-          _hoveredBondIds.clear();
-          return;
-        }
-        _selectedAtomIds.clear();
-        _selectedBondIds.clear();
-        for (const id of eraseTargets.atomIds) _selectedAtomIds.add(id);
-        for (const id of eraseTargets.bondIds) _selectedBondIds.add(id);
-        deleteSelection();
-        _hoveredAtomIds.clear();
-        _hoveredBondIds.clear();
+        return editingActions.eraseItem(atomIds, bondIds);
       }
 
       function _captureZoomTransformSnapshot() {
@@ -4931,7 +4479,9 @@
           preserveView = false,
           preserveAnalysis = false
         } = options;
-        clearHighlightState();
+        if (!preserveAnalysis) {
+          clearHighlightState();
+        }
         currentMol = mol;
         rotationDeg = 0;
         flipH = false;
@@ -5169,124 +4719,15 @@
         _takeSnapshot({
           clearReactionPreview: false,
           documentState: {
-            currentSmiles: (prevInputMode === 'smiles' ? visibleInputValue : currentSmiles ?? currentMolSmiles) || null,
-            currentInchi: (prevInputMode === 'inchi' ? visibleInputValue : currentInchi ?? currentMolInchi) || null,
+            currentSmiles: (prevInputMode === 'smiles' ? visibleInputValue : (currentSmiles ?? currentMolSmiles)) || null,
+            currentInchi: (prevInputMode === 'inchi' ? visibleInputValue : (currentInchi ?? currentMolInchi)) || null,
             inputMode: prevInputMode ?? inputMode,
             inputValue: visibleInputValue ?? ''
           }
         });
       };
       window.deleteSelection = function deleteSelection() {
-        if (_selectedAtomIds.size === 0 && _selectedBondIds.size === 0) return;
-
-        const edit = appController.performStructuralEdit(
-          'delete-selection',
-          {
-            overlayPolicy: ReactionPreviewPolicy.block,
-            resonancePolicy: ResonancePolicy.normalizeForEdit,
-            snapshotPolicy: SnapshotPolicy.take,
-            viewportPolicy: ViewportPolicy.none
-          },
-          ({ mol, mode }) => {
-            const deletedAtomIds = new Set(_selectedAtomIds);
-            const deletedBondIds = new Set(_selectedBondIds);
-            const affectedHeavyIds = new Set();
-
-            for (const id of deletedAtomIds) {
-              const atom = mol.atoms.get(id);
-              if (!atom) continue;
-              for (const neighbor of atom.getNeighbors(mol)) {
-                if (neighbor.name === 'H' || deletedAtomIds.has(neighbor.id)) continue;
-                affectedHeavyIds.add(neighbor.id);
-              }
-            }
-
-            for (const id of deletedBondIds) {
-              const bond = mol.bonds.get(id);
-              if (!bond) continue;
-              for (const atomId of bond.atoms) {
-                const atom = mol.atoms.get(atomId);
-                if (!atom || atom.name === 'H' || deletedAtomIds.has(atomId)) continue;
-                affectedHeavyIds.add(atomId);
-              }
-            }
-
-            for (const id of deletedAtomIds) {
-              const atom = mol.atoms.get(id);
-              if (!atom) continue;
-              const attachedHydrogenIds = atom
-                .getNeighbors(mol)
-                .filter(n => n.name === 'H')
-                .map(n => n.id);
-              mol.removeAtom(id);
-              for (const hId of attachedHydrogenIds) {
-                mol.removeAtom(hId);
-              }
-            }
-
-            for (const id of deletedBondIds) {
-              if (mol.bonds.has(id)) mol.removeBond(id, { pruneIsolated: false });
-            }
-
-            mol.clearStereoAnnotations(affectedHeavyIds);
-            kekulize(mol);
-            refreshAromaticity(mol, { preserveKekule: true });
-            mol.repairImplicitHydrogens(affectedHeavyIds);
-
-            _selectedAtomIds.clear();
-            _selectedBondIds.clear();
-
-            return {
-              force:
-                mode === 'force'
-                  ? {
-                      options: { preservePositions: true, preserveView: true },
-                      beforeRender: () => {
-                        const patchPos = new Map();
-                        if (simulation) {
-                          for (const node of simulation.nodes()) {
-                            if (affectedHeavyIds.has(node.id) && Number.isFinite(node.x) && Number.isFinite(node.y)) {
-                              patchPos.set(node.id, { x: node.x, y: node.y });
-                            }
-                          }
-                        }
-                        return patchPos;
-                      },
-                      afterRender: (_context, patchPos) => {
-                        if (patchPos.size) {
-                          _patchForceNodePositions(patchPos);
-                          _reseatHydrogensAroundPatched(patchPos);
-                        }
-                      },
-                      enableKeepInView: mol.atoms.size > 0
-                    }
-                  : null,
-              twoD:
-                mode === '2d'
-                  ? {
-                      preRender: () => {
-                        fitCurrent2dView();
-                      }
-                    }
-                  : null
-            };
-          }
-        );
-
-        if (edit.blockedByOverlay) {
-          _selectedAtomIds.clear();
-          _selectedBondIds.clear();
-          _refreshSelectionOverlay();
-          return;
-        }
-
-        const btn = document.getElementById('erase-btn');
-        if (btn) {
-          btn.textContent = '✓';
-          setTimeout(() => {
-            btn.textContent = '🗑️';
-          }, 1500);
-        }
+        return editingActions.deleteSelection();
       };
 
       inputEl.addEventListener('input', event => {

@@ -154,6 +154,56 @@ describe('createSessionUiStateBridge', () => {
     assert.equal(smartsPanels[1].style.display, 'none');
   });
 
+  it('treats the resonance/other tab as transient and restores the default SMARTS tab when absent', () => {
+    const smartsButtons = [
+      { dataset: { tab: 'functional-groups' }, classList: makeClassList() },
+      { dataset: { tab: 'reactions' }, classList: makeClassList() },
+      { dataset: { tab: 'other' }, classList: makeClassList(['active']) }
+    ];
+    const smartsPanels = [
+      { id: 'tab-functional-groups', style: { display: 'none' } },
+      { id: 'tab-reactions', style: { display: 'none' } },
+      { id: 'tab-other', style: { display: '' } }
+    ];
+
+    const documentMock = {
+      querySelector(selector) {
+        if (selector === '.smarts-tab.active') {
+          return smartsButtons.find(btn => btn.classList.contains('active')) ?? null;
+        }
+        return null;
+      },
+      querySelectorAll(selector) {
+        if (selector === '.smarts-tab') {
+          return smartsButtons;
+        }
+        if (selector === '.smarts-tab-panel') {
+          return smartsPanels;
+        }
+        return [];
+      },
+      getElementById() {
+        return { innerHTML: '' };
+      }
+    };
+
+    const bridge = makeSessionUiStateBridge({ document: documentMock });
+
+    assert.deepEqual(bridge.capturePanelState(), {
+      descriptorTab: null,
+      smartsTab: null
+    });
+
+    bridge.restorePanelState({ descriptorTab: null, smartsTab: null });
+
+    assert.equal(smartsButtons[0].classList.contains('active'), true);
+    assert.equal(smartsButtons[1].classList.contains('active'), false);
+    assert.equal(smartsButtons[2].classList.contains('active'), false);
+    assert.equal(smartsPanels[0].style.display, '');
+    assert.equal(smartsPanels[1].style.display, 'none');
+    assert.equal(smartsPanels[2].style.display, 'none');
+  });
+
   it('captures and restores interaction state through one helper', () => {
     let selectedAtomIds = new Set(['a1']);
     let selectedBondIds = new Set(['b1']);
