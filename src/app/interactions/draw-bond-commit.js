@@ -74,8 +74,8 @@ export function createDrawBondCommitActions(context) {
         srcAtom.x = cx2d + (ox - plotWidth / 2) / forceScale;
         srcAtom.y = cy2d - (oy - plotHeight / 2) / forceScale;
       } else {
-        srcAtom.x = context.twoD.getCenterX() + (ox - plotWidth / 2) / context.constants.scale;
-        srcAtom.y = context.twoD.getCenterY() - (oy - plotHeight / 2) / context.constants.scale;
+        srcAtom.x = context.view2D.getCenterX() + (ox - plotWidth / 2) / context.constants.scale;
+        srcAtom.y = context.view2D.getCenterY() - (oy - plotHeight / 2) / context.constants.scale;
       }
       resolvedId = srcAtom.id;
     } else {
@@ -277,7 +277,7 @@ export function createDrawBondCommitActions(context) {
     context.chemistry.kekulize(mol);
     context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
     mol.repairImplicitHydrogens(affected);
-    context.twoD.syncDerivedState(mol);
+    context.view2D.syncDerivedState(mol);
     context.analysis.syncInputField(mol);
     context.analysis.updateFormula(mol);
     context.analysis.updateDescriptors(mol);
@@ -469,8 +469,8 @@ export function createDrawBondCommitActions(context) {
     let resolvedAtomId = atomId;
     if (atomId === null) {
       const newSrc = mol.addAtom(null, context.getDrawBondElement(), {});
-      newSrc.x = context.twoD.getCenterX() + (ox - plotWidth / 2) / context.constants.scale;
-      newSrc.y = context.twoD.getCenterY() - (oy - plotHeight / 2) / context.constants.scale;
+      newSrc.x = context.view2D.getCenterX() + (ox - plotWidth / 2) / context.constants.scale;
+      newSrc.y = context.view2D.getCenterY() - (oy - plotHeight / 2) / context.constants.scale;
       resolvedAtomId = newSrc.id;
     }
     const srcAtom = mol.atoms.get(resolvedAtomId);
@@ -531,7 +531,7 @@ export function createDrawBondCommitActions(context) {
     context.chemistry.kekulize(mol);
     context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
     mol.repairImplicitHydrogens(affected);
-    context.twoD.syncDerivedState(mol);
+    context.view2D.syncDerivedState(mol);
     context.analysis.syncInputField(mol);
     context.analysis.updateFormula(mol);
     context.analysis.updateDescriptors(mol);

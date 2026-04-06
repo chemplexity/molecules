@@ -32,13 +32,13 @@ export function createDrawBondPreviewActions(context) {
       ox = node ? node.x : gX;
       oy = node ? node.y : gY;
     } else {
-      const atom = context.twoD.getAtomById(atomId);
+      const atom = context.view2D.getAtomById(atomId);
       if (!atom || atom.x == null) {
         return;
       }
       const { width, height } = context.plot.getSize();
-      ox = width / 2 + (atom.x - context.twoD.getCenterX()) * context.constants.scale;
-      oy = height / 2 - (atom.y - context.twoD.getCenterY()) * context.constants.scale;
+      ox = width / 2 + (atom.x - context.view2D.getCenterX()) * context.constants.scale;
+      oy = height / 2 - (atom.y - context.view2D.getCenterY()) * context.constants.scale;
     }
 
     const ex = ox;
@@ -141,12 +141,12 @@ export function createDrawBondPreviewActions(context) {
         }
       }
     } else {
-      for (const atom of context.twoD.getAtoms()) {
+      for (const atom of context.view2D.getAtoms()) {
         if (atom.id === drawBondState.atomId || atom.x == null || atom.visible === false) {
           continue;
         }
-        const ax = width / 2 + (atom.x - context.twoD.getCenterX()) * context.constants.scale;
-        const ay = height / 2 - (atom.y - context.twoD.getCenterY()) * context.constants.scale;
+        const ax = width / 2 + (atom.x - context.view2D.getCenterX()) * context.constants.scale;
+        const ay = height / 2 - (atom.y - context.view2D.getCenterY()) * context.constants.scale;
         if (Math.hypot(mx - ax, my - ay) <= snapRadius) {
           ex = ax;
           ey = ay;
@@ -186,13 +186,13 @@ export function createDrawBondPreviewActions(context) {
       if (dist > 1) {
         const ux = dx / dist;
         const uy = dy / dist;
-        const sourceName = drawBondState.atomId ? context.twoD.getAtomById(drawBondState.atomId)?.name ?? 'C' : context.getDrawBondElement();
+        const sourceName = drawBondState.atomId ? context.view2D.getAtomById(drawBondState.atomId)?.name ?? 'C' : context.getDrawBondElement();
         if (sourceName !== 'C' && sourceName !== 'H') {
           const gap = context.helpers.labelHalfW(sourceName, context.constants.fontSize) + 3;
           lx1 = ox + ux * gap;
           ly1 = oy + uy * gap;
         }
-        const destName = snapAtomId ? context.twoD.getAtomById(snapAtomId)?.name ?? 'C' : context.getDrawBondElement();
+        const destName = snapAtomId ? context.view2D.getAtomById(snapAtomId)?.name ?? 'C' : context.getDrawBondElement();
         if (destName !== 'C' && destName !== 'H') {
           const gap = context.helpers.labelHalfW(destName, context.constants.fontSize) + 3;
           lx2 = ex - ux * gap;

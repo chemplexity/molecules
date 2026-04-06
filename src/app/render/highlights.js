@@ -1,6 +1,7 @@
 /** @module app/render/highlights */
 
 import { findSMARTS, parseSMARTS, functionalGroups } from '../../smarts/index.js';
+import { getAtomLabel, labelHalfW } from '../../layout/mol2d-helpers.js';
 
 let ctx = {};
 
@@ -37,6 +38,89 @@ export function _setHighlight(mappings, options = {}) {
   } else {
     ctx.applyForceHighlights();
   }
+}
+
+export function create2DHighlightRenderer(context) {
+  function highlightRadius(atom, hCounts, toSVGPt, mol) {
+    const label = getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name;
+    return Math.max(labelHalfW(label, context.constants.getFontSize()), 10) + 5;
+  }
+
+  function redraw2dHighlights() {
+    const graphSelection = context.view.getGraphSelection();
+    graphSelection.select('g.atom-highlights').remove();
+
+    const mol = context.state.getMol();
+    if (getHighlightedAtomIds().size === 0 || !mol) {
+      return;
+    }
+
+    const hCounts = context.state.getHCounts();
+    const toSVGPt = context.helpers.toSVGPt;
+    const atoms = [...mol.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
+    const highlightStyle = HIGHLIGHT_STYLES[getHighlightStyle()] ?? HIGHLIGHT_STYLES.default;
+    const outlinePadding = 2;
+    const highlightLayer = graphSelection.insert('g', ':first-child').attr('class', 'atom-highlights').attr('opacity', 0.45);
+
+    for (const atomSet of getHighlightedAtomSets()) {
+      const matchedBonds = [];
+      for (const bond of mol.bonds.values()) {
+        const [atom1, atom2] = bond.getAtomObjects(mol);
+        if (!atom1 || !atom2 || atom1.x == null || atom2.x == null) {
+          continue;
+        }
+        if (atom1.visible === false || atom2.visible === false) {
+          continue;
+        }
+        if (!atomSet.has(atom1.id) || !atomSet.has(atom2.id)) {
+          continue;
+        }
+        const point1 = toSVGPt(atom1);
+        const point2 = toSVGPt(atom2);
+        const radius1 = highlightRadius(atom1, hCounts, toSVGPt, mol);
+        const radius2 = highlightRadius(atom2, hCounts, toSVGPt, mol);
+        matchedBonds.push({ point1, point2, width: Math.min(radius1, radius2) * 2 });
+      }
+
+      const matchedAtoms = [];
+      for (const atom of atoms) {
+        if (!atomSet.has(atom.id)) {
+          continue;
+        }
+        const { x, y } = toSVGPt(atom);
+        matchedAtoms.push({ x, y, radius: highlightRadius(atom, hCounts, toSVGPt, mol) });
+      }
+
+      const addLines = (stroke, extra) => {
+        for (const { point1, point2, width } of matchedBonds) {
+          highlightLayer
+            .append('line')
+            .attr('x1', point1.x)
+            .attr('y1', point1.y)
+            .attr('x2', point2.x)
+            .attr('y2', point2.y)
+            .attr('stroke', stroke)
+            .attr('stroke-width', width + extra * 2)
+            .attr('stroke-linecap', 'round');
+        }
+      };
+
+      const addCircles = (fill, extra) => {
+        for (const { x, y, radius } of matchedAtoms) {
+          highlightLayer.append('circle').attr('cx', x).attr('cy', y).attr('r', radius + extra).attr('fill', fill).attr('stroke', 'none');
+        }
+      };
+
+      addLines(highlightStyle.outline, outlinePadding);
+      addCircles(highlightStyle.outline, outlinePadding);
+      addLines(highlightStyle.fill, 0);
+      addCircles(highlightStyle.fill, 0);
+    }
+  }
+
+  return {
+    redraw2dHighlights
+  };
 }
 
 export const HIGHLIGHT_STYLES = {

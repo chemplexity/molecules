@@ -39,6 +39,17 @@
 - Keep SMILES/InChI format toggles tied to the source molecule during reaction preview
 - Extract shared render policy into `src/app/render/render-runtime.js`
 - Extract the 2D scene renderer into `src/app/render/scene-2d.js`
+- Extract 2D selection and hover overlay logic into `src/app/render/selection-overlay.js`
+- Extract shared 2D render helpers into `src/app/render/2d-helpers.js`
+- Extract 2D highlight redraw into `src/app/render/highlights.js`
+- Extract structural edit policy into `src/app/interactions/structural-edit-actions.js`
+- Extract selection-state and zoom-transform helpers into `src/app`
+- Extract session runtime snapshot/restore helpers into `src/app/core/session-runtime-bridge.js`
+- Extract app-state and session-snapshot dependency bridges into `src/app/core`
+- Extract app-controller and undo dependency bridges into `src/app/core`
+- Extract reaction, resonance, and bond-EN panel dependency bridges into `src/app/render`
+- Extract options modal logic into `src/app/ui/options-modal.js`
+- Extract tab switching and physicochemical panel UI logic into `src/app/ui`
 - Preserve 2D zoom when entering or restoring reaction preview
 - Fix reaction preview site count labels when cycling between matches
 - Restore the original 2D zoom after exiting reaction preview

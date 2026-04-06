@@ -33,7 +33,7 @@ function _compute2dFitTransform(ctx, atoms) {
   return ctx.d3.zoomIdentity.translate(fitTx, fitTy).scale(fitScale);
 }
 
-export function createTwoDSceneRenderer(ctx) {
+export function create2DSceneRenderer(ctx) {
   const DRAW_MODE_ATOM_HIT_PAD = 6;
 
   function draw2d() {

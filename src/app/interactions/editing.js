@@ -120,7 +120,7 @@ export function createEditingActions(context) {
             mode === '2d'
               ? {
                   preRender: () => {
-                    context.twoD.fitCurrentView();
+                    context.view2D.fitCurrentView();
                   }
                 }
               : null
