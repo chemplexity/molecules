@@ -258,7 +258,7 @@ function _has2dCoords(mol) {
   return [...mol.atoms.values()].some(atom => Number.isFinite(atom.x) && Number.isFinite(atom.y));
 }
 
-function _applyParsedSMIRKSMatch(molecule, transform, match) {
+function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = false } = {}) {
   const hadCoords = _has2dCoords(molecule);
   const result = molecule.clone();
   const repairSeedIds = new Set();
@@ -477,7 +477,7 @@ function _applyParsedSMIRKSMatch(molecule, transform, match) {
     }
   }
 
-  if (hadCoords) {
+  if (hadCoords && !skipCoordGen) {
     generateCoords(result);
   }
 
@@ -506,7 +506,7 @@ function _applyParsedSMIRKS(molecule, transform, options = {}) {
     if (!match) {
       return null;
     }
-    return _applyParsedSMIRKSMatch(molecule, transform, match);
+    return _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen: !!options.skipCoordGen });
   }
 
   const mappings = [..._findSMARTSParsed(molecule, transform.reactant, options, { dedupe: false })];
@@ -525,7 +525,7 @@ function _applyParsedSMIRKS(molecule, transform, options = {}) {
     if ([...mapping.values()].some(targetId => !result.atoms.has(targetId))) {
       continue;
     }
-    result = _applyParsedSMIRKSMatch(result, transform, mapping);
+    result = _applyParsedSMIRKSMatch(result, transform, mapping, { skipCoordGen: !!options.skipCoordGen });
     acceptedMappings.push(mapping);
   }
 

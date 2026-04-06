@@ -246,6 +246,54 @@ describe('createStructuralEditActions', () => {
     assert.equal(result.clearPrimitiveHover, true);
   });
 
+  it('seeds force atom edits from the edited atom position before the first redraw', () => {
+    const atom = makeAtom('a1', 'O');
+    const mol = {
+      atoms: new Map([['a1', atom]]),
+      changeAtomElement(atomId, newEl) {
+        this.atoms.get(atomId).name = newEl;
+      },
+      clearStereoAnnotations(affected) {
+        this.clearedStereo = affected;
+      },
+      repairImplicitHydrogens(affected) {
+        this.repairedHydrogens = affected;
+      }
+    };
+
+    let captured = null;
+    const { context } = makeBaseContext({
+      simulation: {
+        nodes: () => [{ id: 'a1', name: 'O', x: 120, y: 80 }],
+        force: () => ({ links: () => [] }),
+        on() {},
+        alpha() {
+          return this;
+        },
+        restart() {
+          return this;
+        }
+      },
+      context: {
+        controller: {
+          performStructuralEdit(kind, options, mutate) {
+            captured = { kind, options };
+            return mutate({ mol, mode: 'force' });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.changeAtomElements(['a1'], 'C', { zoomSnapshot: 'zoom-snapshot' });
+
+    assert.equal(captured.kind, 'change-atom-elements');
+    assert.equal(atom.name, 'C');
+    assert.equal(result.force.options.preservePositions, true);
+    assert.equal(result.force.options.preserveView, true);
+    assert.deepEqual(result.force.options.initialPatchPos, new Map([['a1', { x: 120, y: 80 }]]));
+  });
+
   it('replaces a force hydrogen with the draw element and patches its position', () => {
     const hydrogen = makeAtom('h1', 'H');
     const carbon = makeAtom('c1', 'C');

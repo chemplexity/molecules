@@ -12,11 +12,17 @@ export function createEditingActions(context) {
     } = options;
     const selectedAtomIds = context.state.overlayState.getSelectedAtomIds();
     const selectedBondIds = context.state.overlayState.getSelectedBondIds();
-    const targetAtomIds = transient ? new Set(atomIds) : selectedAtomIds;
-    const targetBondIds = transient ? new Set(bondIds) : selectedBondIds;
+    const targetAtomIds = transient ? new Set(atomIds) : new Set(selectedAtomIds);
+    const targetBondIds = transient ? new Set(bondIds) : new Set(selectedBondIds);
 
     if (targetAtomIds.size === 0 && targetBondIds.size === 0) {
       return undefined;
+    }
+
+    if (!transient) {
+      selectedAtomIds.clear();
+      selectedBondIds.clear();
+      context.view.refreshSelectionOverlay?.();
     }
 
     const edit = context.actions.performStructuralEdit(
@@ -85,11 +91,6 @@ export function createEditingActions(context) {
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
         mol.repairImplicitHydrogens(affectedHeavyIds);
 
-        if (!transient) {
-          selectedAtomIds.clear();
-          selectedBondIds.clear();
-        }
-
         return {
           force:
             mode === 'force'
@@ -129,11 +130,6 @@ export function createEditingActions(context) {
     );
 
     if (edit?.blockedByOverlay) {
-      if (!transient) {
-        selectedAtomIds.clear();
-        selectedBondIds.clear();
-      }
-      context.view.refreshSelectionOverlay();
       return edit;
     }
 

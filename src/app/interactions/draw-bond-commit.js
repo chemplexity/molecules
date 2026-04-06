@@ -235,6 +235,8 @@ export function createDrawBondCommitActions(context) {
       const bondLengthPx = 1.5 * forceScale;
       const destGX = srcRX + Math.cos(bestAngle) * bondLengthPx;
       const destGY = srcRY + Math.sin(bestAngle) * bondLengthPx;
+      const patchPos = new Map([[newAtom.id, { x: destGX, y: destGY }]]);
+      patchPos.set(resolvedId, { x: srcRX, y: srcRY });
       let cx2d = 0;
       let cy2d = 0;
       let count = 0;
@@ -260,13 +262,11 @@ export function createDrawBondCommitActions(context) {
       context.analysis.updateFormula(mol);
       context.analysis.updateDescriptors(mol);
       context.analysis.updatePanels(mol);
-      context.renderers.updateForce(mol, { preservePositions: true });
+      context.renderers.updateForce(mol, {
+        preservePositions: true,
+        initialPatchPos: patchPos
+      });
       context.force.enableKeepInView();
-
-      const patchPos = new Map([[newAtom.id, { x: destGX, y: destGY }]]);
-      patchPos.set(resolvedId, { x: srcRX, y: srcRY });
-      context.force.patchNodePositions(patchPos);
-      context.force.reseatHydrogensAroundPatched(patchPos);
       return;
     }
 
@@ -455,10 +455,11 @@ export function createDrawBondCommitActions(context) {
       context.analysis.updateFormula(mol);
       context.analysis.updateDescriptors(mol);
       context.analysis.updatePanels(mol);
-      context.renderers.updateForce(mol, { preservePositions: true });
+      context.renderers.updateForce(mol, {
+        preservePositions: true,
+        initialPatchPos: patchPos
+      });
       context.force.enableKeepInView();
-      context.force.patchNodePositions(patchPos);
-      context.force.reseatHydrogensAroundPatched(patchPos);
       return;
     }
 

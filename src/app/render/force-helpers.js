@@ -324,7 +324,7 @@ export function createForceHelpers(context) {
     }
   }
 
-  function patchForceNodePositions(patchPos, { setAnchors = true, alpha = 0.18 } = {}) {
+  function patchForceNodePositions(patchPos, { setAnchors = true, alpha = 0.18, restart = true } = {}) {
     if (!patchPos?.size) {return;}
     for (const node of context.simulation.nodes()) {
       const pos = patchPos.get(node.id);
@@ -338,10 +338,12 @@ export function createForceHelpers(context) {
         node.anchorY = node.y;
       }
     }
-    context.simulation.alpha(Math.max(context.simulation.alpha(), alpha)).restart();
+    if (restart) {
+      context.simulation.alpha(Math.max(context.simulation.alpha(), alpha)).restart();
+    }
   }
 
-  function reseatHydrogensAroundPatched(patchPos) {
+  function reseatHydrogensAroundPatched(patchPos, { resetVelocity = true } = {}) {
     if (!patchPos?.size) {return;}
     const allNodes = context.simulation.nodes();
     const allLinks = context.simulation.force('link').links();
@@ -357,6 +359,12 @@ export function createForceHelpers(context) {
           distance: FORCE_LAYOUT_H_BOND_LENGTH,
           excludeIds: new Set(hChildren.map(node => node.id))
         });
+        if (resetVelocity) {
+          for (const hydrogenNode of hChildren) {
+            hydrogenNode.vx = 0;
+            hydrogenNode.vy = 0;
+          }
+        }
       }
     }
   }

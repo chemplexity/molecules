@@ -2057,31 +2057,49 @@ export function generateCoords(molecule, options = {}) {
     // and subsequent atoms use clash avoidance only when necessary.  This prevents the
     // common ortho-disubstituted case (e.g. aspirin) from forcing the larger chain into
     // a distorted angle because the smaller chain was placed first.
-    const phaseBOrder = [...system.atomIds].sort((a, b) => {
-      const unplacedA = _layoutNeighbors(molecule, a).filter(id => !placed.has(id));
-      const unplacedB = _layoutNeighbors(molecule, b).filter(id => !placed.has(id));
-      // BFS size of substituent subtree (non-ring side only)
-      function chainSize(startId, ringSet) {
-        const vis = new Set();
-        const q = [startId];
-        let qHead = 0;
-        while (qHead < q.length) {
-          const cur = q[qHead++];
-          if (vis.has(cur)) {
-            continue;
-          }
+    //
+    // Chain sizes are counted in HEAVY ATOMS ONLY (H excluded) and then coarsened
+    // into three levels: 0 = no chain, 1 = short chain (1–2 heavy atoms, e.g. methyl
+    // or ethyl), 2 = longer chain (≥ 3 heavy atoms).  Coarsening keeps the Phase B
+    // ordering stable when a substituent gains or loses a single terminal CH₂ — such a
+    // change must not flip the processing order and thereby invert the whole ring-system
+    // orientation.
+    const _phaseBRingSet = new Set(system.atomIds);
+    const _phaseBChainHeavySize = startId => {
+      const vis = new Set();
+      const q = [startId];
+      let qHead = 0;
+      while (qHead < q.length) {
+        const cur = q[qHead++];
+        if (vis.has(cur)) {
+          continue;
+        }
+        const curAtom = molecule.atoms.get(cur);
+        if (curAtom && curAtom.name !== 'H') {
           vis.add(cur);
-          for (const nb of _layoutNeighbors(molecule, cur)) {
-            if (!ringSet.has(nb) && !vis.has(nb)) {
-              q.push(nb);
-            }
+        }
+        for (const nb of _layoutNeighbors(molecule, cur)) {
+          if (!_phaseBRingSet.has(nb) && !vis.has(nb) && molecule.atoms.get(nb)?.name !== 'H') {
+            q.push(nb);
           }
         }
-        return vis.size;
       }
-      const ringSet = new Set(system.atomIds);
-      const sA = unplacedA.reduce((s, id) => s + chainSize(id, ringSet), 0);
-      const sB = unplacedB.reduce((s, id) => s + chainSize(id, ringSet), 0);
+      return vis.size;
+    };
+    const _phaseBChainLevel = sz => {
+      if (sz === 0) {
+        return 0;
+      }
+      if (sz <= 2) {
+        return 1;
+      }
+      return 2;
+    };
+    const phaseBOrder = [...system.atomIds].sort((a, b) => {
+      const unplacedA = _layoutNeighbors(molecule, a).filter(id => !placed.has(id) && molecule.atoms.get(id)?.name !== 'H');
+      const unplacedB = _layoutNeighbors(molecule, b).filter(id => !placed.has(id) && molecule.atoms.get(id)?.name !== 'H');
+      const sA = _phaseBChainLevel(unplacedA.reduce((s, id) => s + _phaseBChainHeavySize(id), 0));
+      const sB = _phaseBChainLevel(unplacedB.reduce((s, id) => s + _phaseBChainHeavySize(id), 0));
       if (sB !== sA) {
         return sB - sA; // descending
       }

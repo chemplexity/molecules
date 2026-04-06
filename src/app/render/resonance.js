@@ -206,7 +206,7 @@ function _resolveResonanceTargetMolecule(mol) {
   const restored = ctx.restoreReactionPreviewSource?.(
     ctx.mode === '2d'
       ? { restoreEntryZoom: true, restoreEntryDisplay: true }
-      : undefined
+      : { restoreEntryZoom: true }
   );
   if (!restored) {
     return mol;

@@ -40,6 +40,27 @@ async function rootTransform(page) {
   return await page.evaluate(() => document.querySelector('.svg-plot > g')?.getAttribute('transform') ?? null);
 }
 
+async function forceNodesWithinPlot(page, padding = 4) {
+  return await page.evaluate(pad => {
+    const plot = document.querySelector('.svg-plot');
+    if (!plot) {
+      return false;
+    }
+    const plotRect = plot.getBoundingClientRect();
+    const nodes = Array.from(document.querySelectorAll('circle.node'));
+    if (nodes.length === 0) {
+      return false;
+    }
+    return nodes.every(node => {
+      const rect = node.getBoundingClientRect();
+      return rect.left >= plotRect.left + pad &&
+        rect.top >= plotRect.top + pad &&
+        rect.right <= plotRect.right - pad &&
+        rect.bottom <= plotRect.bottom - pad;
+    });
+  }, padding);
+}
+
 test('input changes participate in undo/redo through the real browser UI', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -234,7 +255,7 @@ test('undo preserves localized aromatic rendering for rotated aza-aromatic ring 
     )
     .toEqual({ dashed: 0 });
 
-  await page.locator('#rotate-cw').click();
+  await page.locator('#force-rotate-cw').click();
   await page.locator('#undo-btn').click();
 
   await expect
@@ -276,6 +297,26 @@ test('undo after hovered delete in selection mode does not restore a sticky synt
   await page.locator('g[data-atom-id="O3"] .atom-hit').hover();
   await page.keyboard.press('Delete');
   await expect(page.locator('#smiles-input')).toHaveValue('CC');
+
+  await page.locator('#undo-btn').click();
+  await expect(page.locator('#smiles-input')).toHaveValue('CCO');
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('g.atom-selection circle')).toHaveCount(0);
+});
+
+test('undo after deleting a real selection restores the atoms without restoring the old selection', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#select-mode-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+
+  await page.locator('g[data-atom-id="O3"] .atom-hit').click();
+  await expect(page.locator('g.atom-selection circle')).not.toHaveCount(0);
+
+  await page.keyboard.press('Delete');
+  await expect(page.locator('#smiles-input')).toHaveValue('CC');
+  await expect(page.locator('g.atom-selection circle')).toHaveCount(0);
 
   await page.locator('#undo-btn').click();
   await expect(page.locator('#smiles-input')).toHaveValue('CCO');
@@ -518,6 +559,99 @@ test('delete key is a no-op for a hovered force C-H bond while draw mode is acti
   await expect(page.locator('#smiles-input')).toHaveValue(beforeAttempt);
 });
 
+test('drawing a new force bond keeps the force scene visible', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(page.locator('circle.node')).toHaveCount(9);
+
+  await page.locator('#draw-bond-btn').click();
+  await expect(page.locator('#draw-bond-btn')).toHaveClass(/active/);
+
+  const forceAtoms = await page.evaluate(() => {
+    const circles = Array.from(document.querySelectorAll('circle.node'));
+    const labels = Array.from(document.querySelectorAll('text.atom-symbol'));
+    return circles.map((circle, index) => {
+      const rect = circle.getBoundingClientRect();
+      const label = labels[index]?.textContent?.trim() ?? '';
+      return {
+        label,
+        cx: rect.left + rect.width / 2,
+        cy: rect.top + rect.height / 2
+      };
+    });
+  });
+  const carbonSource = [...forceAtoms].filter(atom => atom.label === 'C').sort((a, b) => a.cx - b.cx)[0] ?? null;
+  expect(carbonSource).toBeTruthy();
+
+  await page.mouse.move(carbonSource.cx, carbonSource.cy);
+  await page.mouse.down();
+  await page.mouse.move(carbonSource.cx - 70, carbonSource.cy - 35, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.locator('circle.node')).toHaveCount(12);
+  await expect(page.locator('.svg-plot > g')).toBeVisible();
+  await expect(page.locator('#smiles-input')).toHaveValue(/C/);
+});
+
+test('editing a force atom updates the implicit hydrogens around the edited atom', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(page.locator('circle.node')).toHaveCount(6);
+  await page.locator('#select-mode-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+
+  const forceAtoms = await page.evaluate(() => {
+    const circles = Array.from(document.querySelectorAll('circle.node'));
+    const labels = Array.from(document.querySelectorAll('text.atom-symbol'));
+    return circles.map((circle, index) => {
+      const rect = circle.getBoundingClientRect();
+      const label = labels[index]?.textContent?.trim() ?? '';
+      return {
+        label,
+        cx: rect.left + rect.width / 2,
+        cy: rect.top + rect.height / 2
+      };
+    });
+  });
+  const oxygenTarget = [...forceAtoms].filter(atom => atom.label === 'O').sort((a, b) => b.cx - a.cx)[0] ?? null;
+  expect(oxygenTarget).toBeTruthy();
+
+  await page.mouse.move(oxygenTarget.cx, oxygenTarget.cy);
+  await page.keyboard.press('C');
+
+  await expect(page.locator('#smiles-input')).toHaveValue('CC');
+  await expect(page.locator('circle.node')).toHaveCount(8);
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const circles = Array.from(document.querySelectorAll('circle.node'));
+        const labels = Array.from(document.querySelectorAll('text.atom-symbol'));
+        const atoms = circles.map((circle, index) => {
+          const rect = circle.getBoundingClientRect();
+          return {
+            label: labels[index]?.textContent?.trim() ?? '',
+            cx: rect.left + rect.width / 2,
+            cy: rect.top + rect.height / 2
+          };
+        });
+        const carbons = atoms.filter(atom => atom.label === 'C').sort((a, b) => b.cx - a.cx);
+        const hydrogens = atoms.filter(atom => atom.label === 'H');
+        const editedCarbon = carbons[0] ?? null;
+        if (!editedCarbon) {
+          return 0;
+        }
+        return hydrogens.filter(atom => Math.hypot(atom.cx - editedCarbon.cx, atom.cy - editedCarbon.cy) < 45).length;
+      })
+    )
+    .toBeGreaterThanOrEqual(3);
+});
+
 test('reaction preview can be entered and toggled back off from the reactions table', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -532,6 +666,39 @@ test('reaction preview can be entered and toggled back off from the reactions ta
 
   await dehydrationRow.click();
   await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
+});
+
+test('reaction preview ignores a disconnected 2d draw after it has been undone', async ({ page }) => {
+  await page.goto('/index.html');
+
+  const initialSmiles = 'CC(=O)C(Cl)CC(C(C)C)C=C';
+  await expect(page.locator('#smiles-input')).toHaveValue(initialSmiles);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const hydrogenationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alkene Hydrogenation' }).first();
+  await expect(hydrogenationRow).toBeVisible();
+
+  await hydrogenationRow.click();
+  await expect(hydrogenationRow).toHaveClass(/reaction-active/);
+  const baselinePreview = JSON.stringify(await bondSignature(page));
+
+  await hydrogenationRow.click();
+  await expect(hydrogenationRow).not.toHaveClass(/reaction-active/);
+
+  await page.locator('#draw-bond-btn').click();
+  const plotBox = await page.locator('#plot').boundingBox();
+  expect(plotBox).toBeTruthy();
+  await page.mouse.click(plotBox.x + plotBox.width - 120, plotBox.y + plotBox.height - 120);
+
+  await expect(page.locator('#smiles-input')).not.toHaveValue(initialSmiles);
+  await expect(page.locator('#smiles-input')).toHaveValue(/\./);
+
+  await page.locator('#undo-btn').click();
+  await expect(page.locator('#smiles-input')).toHaveValue(initialSmiles);
+
+  await hydrogenationRow.click();
+  await expect(hydrogenationRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => JSON.stringify(await bondSignature(page))).toBe(baselinePreview);
 });
 
 test('exiting reaction preview restores the prior 2d zoom transform', async ({ page }) => {
@@ -621,6 +788,32 @@ test('exiting reaction preview restores the prior force zoom transform', async (
   await dehydrationRow.click();
   await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
   await expect.poll(async () => await rootTransform(page)).toBe(beforePreview);
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
+});
+
+test('exiting reaction preview after switching from force back to 2d restores the 2d zoom transform', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  const beforeForcePreview = await rootTransform(page);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => await rootTransform(page)).not.toBe(beforeForcePreview);
+
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('Force');
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+
+  await dehydrationRow.click();
+  await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
+  await expect.poll(async () => await rootTransform(page)).toBe(beforeForcePreview);
 });
 
 test('reaction preview entry participates in undo and redo', async ({ page }) => {
@@ -863,27 +1056,28 @@ test('reaction preview redo restores the rotated preview geometry', async ({ pag
   await expect(dehydrationRow).toHaveClass(/reaction-active/);
 });
 
-test('clicking a resonance structure from force reaction preview preserves the force zoom', async ({ page }) => {
+test('clicking a resonance structure from force reaction preview restores the pre-preview force zoom and keeps the molecule in view', async ({ page }) => {
   await page.goto('/index.html');
 
-  await loadSmiles(page, 'CC=O');
+  await loadSmiles(page, 'CC(=O)C(Cl)CC(C(C)C)C=C');
   await page.locator('#toggle-btn').click();
   await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  const beforePreview = await rootTransform(page);
 
   await page.getByRole('button', { name: 'Reactions' }).click();
   const reductionRow = page.locator('#reaction-body tr').filter({ hasText: 'Carbonyl Reduction' }).first();
   await expect(reductionRow).toBeVisible();
   await reductionRow.click();
   await expect(reductionRow).toHaveClass(/reaction-active/);
-
-  const beforeResonanceClick = await rootTransform(page);
+  await expect.poll(async () => await rootTransform(page)).not.toBe(beforePreview);
 
   await page.getByRole('button', { name: 'Other' }).click();
   const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
   await expect(resonanceRow).toBeVisible();
   await resonanceRow.click();
   await expect(resonanceRow).toHaveClass(/resonance-active/);
-  await expect.poll(async () => rootTransform(page)).toBe(beforeResonanceClick);
+  await expect.poll(async () => rootTransform(page)).toBe(beforePreview);
+  await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
 });
 
 test('clicking a resonance structure from 2d reaction preview restores the pre-preview zoom', async ({ page }) => {

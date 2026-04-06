@@ -18,6 +18,9 @@ export function createReaction2dDeps(deps) {
     renderMol: deps.renderers.renderMol,
     captureZoomTransform: deps.view.captureZoomTransform,
     restoreZoomTransform: deps.view.restoreZoomTransform,
+    captureForceNodePositions: deps.force?.captureNodePositions,
+    restoreForceNodePositions: deps.force?.restoreNodePositions,
+    restartForceSimulation: deps.force?.restart,
     captureAppSnapshot: deps.history.captureAppSnapshot,
     takeSnapshot: deps.history.takeSnapshot
   };

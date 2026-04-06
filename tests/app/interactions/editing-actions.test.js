@@ -99,6 +99,7 @@ describe('createEditingActions', () => {
     assert.deepEqual([...selectedAtomIds], []);
     assert.deepEqual([...selectedBondIds], []);
     assert.deepEqual(calls, [
+      ['refreshSelectionOverlay'],
       [
         'performStructuralEdit',
         'delete-selection',
@@ -108,8 +109,7 @@ describe('createEditingActions', () => {
           snapshotPolicy: SnapshotPolicy.take,
           viewportPolicy: ViewportPolicy.none
         }
-      ],
-      ['refreshSelectionOverlay']
+      ]
     ]);
   });
 
@@ -142,12 +142,13 @@ describe('createEditingActions', () => {
     const result = actions.eraseItem(['a1'], ['b1']);
 
     assert.deepEqual(result, { performed: true });
-    assert.deepEqual([...selectedAtomIds], ['a9']);
-    assert.deepEqual([...selectedBondIds], ['b9']);
+    assert.deepEqual([...selectedAtomIds], []);
+    assert.deepEqual([...selectedBondIds], []);
     assert.deepEqual([...hoveredAtomIds], []);
     assert.deepEqual([...hoveredBondIds], []);
     assert.deepEqual(calls, [
       ['prepareReactionPreviewEraseTargets', ['a1'], ['b1']],
+      ['refreshSelectionOverlay'],
       [
         'performStructuralEdit',
         'delete-selection',
@@ -187,5 +188,32 @@ describe('createEditingActions', () => {
       ],
       ['flashEraseButton']
     ]);
+  });
+
+  it('clears the live selection before deleting so undo does not restore it', () => {
+    const { actions, calls, selectedAtomIds, selectedBondIds } = makeContext({
+      selectedAtomIds: ['a1'],
+      selectedBondIds: ['b1'],
+      performStructuralEdit: (_kind, _options, mutate) => {
+        mutate({
+          mol: {
+            atoms: new Map(),
+            bonds: new Map(),
+            clearStereoAnnotations: () => {},
+            repairImplicitHydrogens: () => {}
+          },
+          mode: '2d'
+        });
+        return { performed: true };
+      }
+    });
+
+    const result = actions.deleteSelection();
+
+    assert.deepEqual(result, { performed: true });
+    assert.deepEqual([...selectedAtomIds], []);
+    assert.deepEqual([...selectedBondIds], []);
+    assert.equal(calls[0][0], 'refreshSelectionOverlay');
+    assert.equal(calls[1][0], 'performStructuralEdit');
   });
 });

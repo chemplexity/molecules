@@ -241,6 +241,12 @@ function makeRenderer({ preserveSelectionOnNextRender = false, hasHighlights = f
       forceLinkDistance: () => 30,
       forceAnchorRadius: () => ({ kind: 'anchor' }),
       forceHydrogenRepulsion: () => ({ kind: 'hRepel' }),
+      patchForceNodePositions: (patchPos, options = {}) => {
+        records.push(['patchForceNodePositions', patchPos, options]);
+      },
+      reseatHydrogensAroundPatched: (patchPos, options = {}) => {
+        records.push(['reseatHydrogensAroundPatched', patchPos, options]);
+      },
       forceFitTransform: () => null,
       isHydrogenNode: node => node?.name === 'H',
       enLabelColor: () => '#000',
@@ -330,5 +336,30 @@ describe('createForceSceneRenderer', () => {
         ['call', 'zoomTransform', { kind: 'identity' }]
       ]
     );
+  });
+
+  it('applies initial force patches before the first restarted tick', () => {
+    const { renderer, records } = makeRenderer();
+    const patchPos = new Map([['a1', { x: 120, y: 140 }]]);
+
+    renderer.updateForce({ id: 'mol-patch', atoms: new Map(), bonds: new Map() }, {
+      preservePositions: true,
+      initialPatchPos: patchPos
+    });
+
+    const patchIndex = records.findIndex(entry => entry[0] === 'patchForceNodePositions');
+    const reseatIndex = records.findIndex(entry => entry[0] === 'reseatHydrogensAroundPatched');
+    const alphaIndex = records.findIndex(entry => entry[0] === 'simulation.alpha.set');
+    const restartIndex = records.findIndex(entry => entry[0] === 'simulation.restart');
+
+    assert.ok(patchIndex >= 0);
+    assert.ok(reseatIndex >= 0);
+    assert.ok(alphaIndex >= 0);
+    assert.ok(restartIndex >= 0);
+    assert.ok(patchIndex < alphaIndex);
+    assert.ok(reseatIndex < alphaIndex);
+    assert.ok(alphaIndex < restartIndex);
+    assert.deepEqual(records[patchIndex], ['patchForceNodePositions', patchPos, { alpha: 0, restart: false }]);
+    assert.deepEqual(records[reseatIndex], ['reseatHydrogensAroundPatched', patchPos, { resetVelocity: true }]);
   });
 });

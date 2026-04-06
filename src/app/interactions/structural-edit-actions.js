@@ -5,6 +5,33 @@ import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy 
 const FORCE_RESEAT_HYDROGEN_DISTANCE = 25;
 
 export function createStructuralEditActions(context) {
+  function buildForceInitialPatchPos(atomIds) {
+    const simulation = context.force.getSimulation?.();
+    const previousNodes = simulation?.nodes?.();
+    if (!Array.isArray(previousNodes) || previousNodes.length === 0) {
+      return null;
+    }
+
+    const previousNodePositions = new Map();
+    for (const node of previousNodes) {
+      if (!Number.isFinite(node?.x) || !Number.isFinite(node?.y)) {
+        continue;
+      }
+      previousNodePositions.set(node.id, { x: node.x, y: node.y });
+    }
+
+    const patchPos = new Map();
+    for (const atomId of atomIds) {
+      const position = previousNodePositions.get(atomId);
+      if (!position) {
+        continue;
+      }
+      patchPos.set(atomId, position);
+    }
+
+    return patchPos.size > 0 ? patchPos : null;
+  }
+
   function restore2dEditViewport(zoomSnapshot, { reactionRestored = false, reactionEntryZoomSnapshot = null, resonanceReset = false, zoomToFit = false } = {}) {
     if (context.getMode() !== '2d') {
       return;
@@ -158,7 +185,13 @@ export function createStructuralEditActions(context) {
           mode === 'force'
             ? {
                 options: { preservePositions: true },
-                beforeRender: () => new Set(context.force.getSimulation().nodes().map(node => node.id)),
+                beforeRender: () =>
+                  new Set(
+                    context.force
+                      .getSimulation()
+                      .nodes()
+                      .map(node => node.id)
+                  ),
                 afterRender: (_editContext, prevNodeIds) => {
                   const simulation = context.force.getSimulation();
                   const nodes = simulation.nodes();
@@ -262,16 +295,18 @@ export function createStructuralEditActions(context) {
         context.chemistry.kekulize(mol);
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
         mol.repairImplicitHydrogens(affected);
+        const initialPatchPos = mode === 'force' ? buildForceInitialPatchPos(toChange) : null;
         return {
           clearSelection: true,
           clearPrimitiveHover: true,
+          suppressPrimitiveHover: true,
           restorePrimitiveHover: {
             atomIds: toChange
           },
           force:
             mode === 'force'
               ? {
-                  options: { preservePositions: true, preserveView: true }
+                  options: { preservePositions: true, preserveView: true, initialPatchPos }
                 }
               : null
         };

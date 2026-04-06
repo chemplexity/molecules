@@ -116,7 +116,7 @@ export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
     return null;
   }
   const reactantMol = sourceMol.clone();
-  const productMol = applySMIRKS(sourceMol, smirks, { mode: 'first', ...(mapping ? { mapping } : {}) });
+  const productMol = applySMIRKS(sourceMol, smirks, { mode: 'first', skipCoordGen: true, ...(mapping ? { mapping } : {}) });
   if (!productMol) {
     return null;
   }

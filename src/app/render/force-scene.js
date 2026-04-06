@@ -23,7 +23,7 @@ function _capturePreviousNodePositions(simulation) {
 }
 
 export function createForceSceneRenderer(ctx) {
-  function updateForce(molecule, { preservePositions = false, preserveView = preservePositions } = {}) {
+  function updateForce(molecule, { preservePositions = false, preserveView = preservePositions, initialPatchPos = null } = {}) {
     prepareAromaticBondRendering(molecule);
     const { showLonePairs } = getRenderOptions();
     const valenceWarningMap = ctx.helpers.valenceWarningMapFor(molecule);
@@ -346,6 +346,12 @@ export function createForceSceneRenderer(ctx) {
       .distance(ctx.helpers.forceLinkDistance);
     ctx.simulation.force('anchor', ctx.helpers.forceAnchorRadius());
     ctx.simulation.force('hRepel', ctx.helpers.forceHydrogenRepulsion());
+    if (initialPatchPos?.size) {
+      // Apply edit-driven force patches before the first restarted tick so
+      // newly-added hydrogens do not animate in from the temporary seed layout.
+      ctx.helpers.patchForceNodePositions(initialPatchPos, { alpha: 0, restart: false });
+      ctx.helpers.reseatHydrogensAroundPatched(initialPatchPos, { resetVelocity: true });
+    }
     ctx.simulation.alpha(preservePositions ? 0.2 : 1).restart();
     _updateForceLonePairs();
     _updateForceChargeLabels();

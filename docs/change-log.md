@@ -2,6 +2,23 @@
 
 ## 2026-04-06
 
+- Move bootstrap dependency builders into `src/app/bootstrap/deps`
+- Move the main app module script out of `index.html` into `src/app/bootstrap/app-entry.js`
+- Make 2D reaction previews follow the restored molecule after undo
+- Extract interaction runtime call wiring out of `index.html`
+- Extract app runtime call wiring out of `index.html`
+- Extract final bootstrap call wiring out of `index.html`
+- Extract runtime bridge setup out of `index.html`
+- Extract scene wrapper bridges out of `index.html`
+- Extract interaction runtime setup out of `index.html`
+- Keep deleted selections from sticking after undo
+- Extract render scene dependency builders out of `index.html`
+- Extract bootstrap dependency builders out of `index.html`
+- Extract interaction action dependency builders out of `index.html`
+- Extract app runtime manager setup into `src/app/bootstrap/app-runtime.js`
+- Restore saved force node positions when leaving reaction preview
+- Extract shared bootstrap runtime state into `src/app/bootstrap/runtime-state.js`
+- Extract shared bootstrap DOM handles into `src/app/bootstrap/dom-elements.js`
 - Extract startup, resize, and global action bridges into `src/app/ui/app-shell.js`
 - Extract UI init dependency bridges into `src/app/ui`
 - Extract remaining thin app delegates into `src/app/core/app-delegates.js`

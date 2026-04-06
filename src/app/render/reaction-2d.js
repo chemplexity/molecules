@@ -50,6 +50,8 @@ let _reactionPreviewHighlightMappings = null;
 let _reactionPreviewForceArrowOffset = 0;
 let _reactionPreviewEntryZoomTransform = null;
 let _reactionPreviewEntryDisplayMol = null;
+let _reactionPreviewEntryMode = null;
+let _reactionPreviewEntryForceNodePositions = null;
 
 function _takeReactionPreviewHistoryStep() {
   ctx.takeSnapshot?.({ clearReactionPreview: false });
@@ -135,6 +137,8 @@ export function _clearReactionPreviewState() {
   _reactionPreviewForceArrowOffset = 0;
   _reactionPreviewEntryZoomTransform = null;
   _reactionPreviewEntryDisplayMol = null;
+  _reactionPreviewEntryMode = null;
+  _reactionPreviewEntryForceNodePositions = null;
 }
 
 function _serializeSnapshotMol(mol) {
@@ -210,12 +214,21 @@ export function _captureReactionPreviewSnapshot() {
     reactantReferenceCoords: [..._reactionPreviewReactantReferenceCoords],
     reactionPreviewHighlightMappings: (_reactionPreviewHighlightMappings ?? []).map(mapping => [...mapping]),
     entryZoomTransform: _reactionPreviewEntryZoomTransform ? { ..._reactionPreviewEntryZoomTransform } : null,
-    entryDisplayMol: _serializeSnapshotMol(_reactionPreviewEntryDisplayMol)
+    entryDisplayMol: _serializeSnapshotMol(_reactionPreviewEntryDisplayMol),
+    entryMode: _reactionPreviewEntryMode ?? null,
+    entryForceNodePositions: _reactionPreviewEntryForceNodePositions ? [..._reactionPreviewEntryForceNodePositions] : null
   };
 }
 
 export function _getReactionPreviewSourceMol() {
   return _reactionPreviewSourceMol?.clone() ?? null;
+}
+
+function _getReactionTemplateSourceMol() {
+  if (_reactionPreviewSourceMol) {
+    return _reactionPreviewSourceMol;
+  }
+  return ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
 }
 
 export function _restoreReactionPreviewSnapshot(previewSnap) {
@@ -243,6 +256,8 @@ export function _restoreReactionPreviewSnapshot(previewSnap) {
   _reactionPreviewHighlightMappings = (previewSnap.reactionPreviewHighlightMappings ?? []).map(mapping => new Map(mapping));
   _reactionPreviewEntryZoomTransform = previewSnap.entryZoomTransform ? { ...previewSnap.entryZoomTransform } : null;
   _reactionPreviewEntryDisplayMol = _deserializeSnapshotMol(previewSnap.entryDisplayMol);
+  _reactionPreviewEntryMode = previewSnap.entryMode ?? null;
+  _reactionPreviewEntryForceNodePositions = previewSnap.entryForceNodePositions ? new Map(previewSnap.entryForceNodePositions) : null;
 }
 
 function _cloneWithPrefixedIds(mol, prefix) {
@@ -270,15 +285,22 @@ export function _restoreReactionPreviewSource({ restoreEntryZoom = false, restor
   if (!_reactionPreviewSourceMol) {
     return false;
   }
-  const sourceMol = restoreEntryDisplay && _reactionPreviewEntryDisplayMol ? _reactionPreviewEntryDisplayMol.clone() : _reactionPreviewSourceMol.clone();
+  const canRestoreEntryState = !!_reactionPreviewEntryMode && _reactionPreviewEntryMode === ctx.mode;
+  const shouldRestoreEntryDisplay = restoreEntryDisplay && canRestoreEntryState && !!_reactionPreviewEntryDisplayMol;
+  const sourceMol = shouldRestoreEntryDisplay ? _reactionPreviewEntryDisplayMol.clone() : _reactionPreviewSourceMol.clone();
   const entryZoomTransform = _reactionPreviewEntryZoomTransform ? { ..._reactionPreviewEntryZoomTransform } : null;
+  const entryForceNodePositions = canRestoreEntryState && ctx.mode === 'force' && _reactionPreviewEntryForceNodePositions ? new Map(_reactionPreviewEntryForceNodePositions) : null;
   _clearReactionPreviewState();
   ctx.renderMol(sourceMol, {
     preserveHistory: true,
-    preserveView: true,
-    preserveGeometry: restoreEntryDisplay && ctx.mode === '2d'
+    preserveView: !!(restoreEntryZoom && canRestoreEntryState && entryZoomTransform),
+    preserveGeometry: shouldRestoreEntryDisplay && ctx.mode === '2d'
   });
-  if (restoreEntryZoom && entryZoomTransform) {
+  if (entryForceNodePositions?.size) {
+    ctx.restoreForceNodePositions?.(entryForceNodePositions);
+    ctx.restartForceSimulation?.();
+  }
+  if (restoreEntryZoom && canRestoreEntryState && entryZoomTransform) {
     ctx.restoreZoomTransform?.(entryZoomTransform);
   }
   return true;
@@ -1206,8 +1228,10 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
   const site = entry.matchGroups[normalizedIndex];
   const preview = _buildReaction2dMol(sourceMol, entry.smirks, site.applyMapping);
   if (lock && !_reactionPreviewLocked && !_reactionPreviewEntryZoomTransform) {
+    _reactionPreviewEntryMode = ctx.mode;
     _reactionPreviewEntryZoomTransform = ctx.captureZoomTransform?.() ?? null;
     _reactionPreviewEntryDisplayMol = (ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d)?.clone?.() ?? null;
+    _reactionPreviewEntryForceNodePositions = ctx.mode === 'force' ? ctx.captureForceNodePositions?.() ?? null : null;
   }
   if (lock) {
     _activeReactionSmirks = entry.smirks;
@@ -1310,7 +1334,7 @@ export function updateReactionTemplatesPanel() {
   if (!tbody) {
     return;
   }
-  const mol = _reactionPreviewSourceMol ?? ctx.currentMol ?? ctx._mol2d;
+  const mol = _getReactionTemplateSourceMol();
   if (!mol) {
     tbody.innerHTML = '';
     return;
@@ -1358,7 +1382,7 @@ export function updateReactionTemplatesPanel() {
 
     if (isActive && siteCount > 1) {
       const activateSite = siteIndex => {
-        const sourceMol = (_reactionPreviewSourceMol ?? ctx.currentMol ?? ctx._mol2d)?.clone();
+        const sourceMol = _getReactionTemplateSourceMol()?.clone();
         if (!sourceMol) {
           return;
         }
@@ -1411,7 +1435,7 @@ export function updateReactionTemplatesPanel() {
         updateReactionTemplatesPanel();
         return;
       }
-      const sourceMol = (_reactionPreviewSourceMol ?? ctx.currentMol ?? ctx._mol2d)?.clone();
+      const sourceMol = _getReactionTemplateSourceMol()?.clone();
       if (!sourceMol) {
         return;
       }

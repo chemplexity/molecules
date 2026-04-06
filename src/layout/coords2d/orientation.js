@@ -178,6 +178,30 @@ export function normalizeOrientation(coords, molecule) {
       rotateCoords(coords, vec2(cx, cy), Math.PI / 2);
     }
   }
+
+  // Resolve 180° orientation ambiguity for ring-containing molecules.
+  // After the inertia-tensor rotation, the elongation axis is horizontal but
+  // there are two valid orientations (ring left or ring right).  A single
+  // side-chain CH₂ addition can shift the inertia just enough to flip the
+  // choice, inverting the whole ring orientation between near-identical molecules.
+  // Convention: the ring-system centroid should be on the positive-x side of
+  // the heavy-atom centroid.  When it is not, rotate 180° to correct it.
+  const rings = molecule.getRings();
+  if (rings.length > 0) {
+    const ringAtomIds = new Set(rings.flatMap(r => r));
+    let rxSum = 0;
+    let rCount = 0;
+    for (const id of ringAtomIds) {
+      const p = coords.get(id);
+      if (p && molecule.atoms.get(id)?.name !== 'H') {
+        rxSum += p.x;
+        rCount++;
+      }
+    }
+    if (rCount > 0 && rxSum / rCount < cx - 1e-6) {
+      rotateCoords(coords, vec2(cx, cy), Math.PI);
+    }
+  }
 }
 
 export function shouldPreferFinalLandscapeOrientation(molecule) {

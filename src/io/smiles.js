@@ -2111,3 +2111,25 @@ export function toCanonicalSMILES(molecule) {
   parts.sort();
   return parts.join('.');
 }
+
+/**
+ * Returns true when two molecules have identical structure: the same atom
+ * elements, formal charges, bond orders, aromaticity, isotopes, and
+ * connectivity (including stereochemistry).
+ *
+ * Comparison is based on canonical SMILES, so the atom and bond IDs of the
+ * two objects do not matter — only the chemical graph does.
+ *
+ * @param {import('../core/Molecule.js').Molecule} a
+ * @param {import('../core/Molecule.js').Molecule} b
+ * @returns {boolean}
+ */
+export function sameMolecule(a, b) {
+  if (a === b) {
+    return true;
+  }
+  if (a.atoms.size !== b.atoms.size || a.bonds.size !== b.bonds.size) {
+    return false;
+  }
+  return toCanonicalSMILES(a) === toCanonicalSMILES(b);
+}

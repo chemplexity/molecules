@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseSMILES, toCanonicalSMILES } from '../../src/io/smiles.js';
+import { parseSMILES, toCanonicalSMILES, sameMolecule } from '../../src/io/smiles.js';
 
 // ---------------------------------------------------------------------------
 // Helper
@@ -127,5 +127,52 @@ describe('toCanonicalSMILES — structural cases', () => {
       const heavy = [...mol2.atoms.values()].filter(a => a.name !== 'H').length;
       assert.equal(heavy, expectedHeavy, `${smi}: expected ${expectedHeavy} heavy atoms, got ${heavy}`);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// sameMolecule
+// ---------------------------------------------------------------------------
+
+describe('sameMolecule', () => {
+  it('returns true for the same object reference', () => {
+    const m = parseSMILES('CCO');
+    assert.equal(sameMolecule(m, m), true);
+  });
+
+  it('returns true for the same molecule parsed from different traversal order', () => {
+    assert.equal(sameMolecule(parseSMILES('CCO'), parseSMILES('OCC')), true);
+  });
+
+  it('returns true for benzene in aromatic vs Kekulé SMILES', () => {
+    assert.equal(sameMolecule(parseSMILES('c1ccccc1'), parseSMILES('C1=CC=CC=C1')), true);
+  });
+
+  it('returns true for the same ring written from different start atoms', () => {
+    assert.equal(sameMolecule(parseSMILES('C1CCCCC1'), parseSMILES('C1CCCCC1')), true);
+  });
+
+  it('returns false for constitutional isomers with the same formula', () => {
+    assert.equal(sameMolecule(parseSMILES('CCCC'), parseSMILES('CC(C)C')), false);
+  });
+
+  it('returns false for molecules with different atom counts', () => {
+    assert.equal(sameMolecule(parseSMILES('CCO'), parseSMILES('CO')), false);
+  });
+
+  it('returns false for molecules with same atoms but different bond orders', () => {
+    assert.equal(sameMolecule(parseSMILES('CC'), parseSMILES('C=C')), false);
+  });
+
+  it('returns false for molecules with different elements', () => {
+    assert.equal(sameMolecule(parseSMILES('CCN'), parseSMILES('CCO')), false);
+  });
+
+  it('returns false for molecules with different formal charges', () => {
+    assert.equal(sameMolecule(parseSMILES('[NH4+]'), parseSMILES('N')), false);
+  });
+
+  it('returns true for a multi-component salt written in both component orders', () => {
+    assert.equal(sameMolecule(parseSMILES('[Na+].[Cl-]'), parseSMILES('[Cl-].[Na+]')), true);
   });
 });
