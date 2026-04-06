@@ -1,5 +1,11 @@
 import { test, expect } from '@playwright/test';
 
+test.beforeEach(async ({ page }) => {
+  page.on('pageerror', error => {
+    throw error;
+  });
+});
+
 async function loadSmiles(page, smiles) {
   const input = page.locator('#smiles-input');
   await input.fill(smiles);
@@ -302,7 +308,7 @@ test('drawing a new 2d bond clears an existing 2d selection highlight', async ({
   await expect(page.locator('g.atom-selection line')).toHaveCount(0);
 });
 
-test('editing a 2d atom clears an existing 2d selection highlight', async ({ page }) => {
+test('editing a 2d atom clears selection and immediately restores the hovered highlight', async ({ page }) => {
   await page.goto('/index.html');
 
   await loadSmiles(page, 'CCO');
@@ -314,8 +320,23 @@ test('editing a 2d atom clears an existing 2d selection highlight', async ({ pag
   await page.keyboard.press('N');
 
   await expect(page.locator('#smiles-input')).toHaveValue('CCN');
-  await expect(page.locator('g.atom-selection circle')).toHaveCount(0);
+  await expect(page.locator('g.atom-selection circle')).not.toHaveCount(0);
   await expect(page.locator('g.atom-selection line')).toHaveCount(0);
+});
+
+test('changing a 2d bond immediately restores the hovered highlight', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#draw-bond-btn').click();
+  await expect(page.locator('#draw-bond-btn')).toHaveClass(/active/);
+
+  const targetBond = page.locator('line.bond-hit').nth(1);
+  await targetBond.hover();
+  await targetBond.click();
+
+  await expect(page.locator('#smiles-input')).toHaveValue('CC=O');
+  await expect(page.locator('g.atom-selection line')).not.toHaveCount(0);
 });
 
 test('2d line mode increases the atom hit target radius', async ({ page }) => {

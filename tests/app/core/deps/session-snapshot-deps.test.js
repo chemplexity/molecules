@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createSessionSnapshotDeps } from '../../../src/app/core/session-snapshot-deps.js';
+import { createSessionSnapshotDeps } from '../../../../src/app/core/deps/session-snapshot-deps.js';
 
 describe('createSessionSnapshotDeps', () => {
   it('builds the snapshot manager dependency bundle from grouped bridges', () => {

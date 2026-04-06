@@ -123,6 +123,73 @@ export function create2DHighlightRenderer(context) {
   };
 }
 
+export function createForceHighlightRenderer(context) {
+  function applyForceHighlights() {
+    const graphSelection = context.view.getGraphSelection();
+    graphSelection.selectAll('g.fg-highlight-layer').remove();
+    context.cache.setHighlightLines(null);
+    context.cache.setHighlightCircles(null);
+    if (getHighlightedAtomIds().size === 0) {
+      return;
+    }
+
+    const highlightStyle = HIGHLIGHT_STYLES[getHighlightStyle()] ?? HIGHLIGHT_STYLES.default;
+    const highlightRadius = context.constants.getHighlightRadius();
+    const outlineWidth = context.constants.getOutlineWidth();
+    const highlightLayer = graphSelection.insert('g', ':first-child').attr('class', 'fg-highlight-layer').attr('opacity', 0.45);
+
+    const nodeMap = new Map(context.force.getNodes().map(node => [node.id, node]));
+    const allLinks = context.force.getLinks();
+
+    for (const atomSet of getHighlightedAtomSets()) {
+      const matchedLinks = allLinks.filter(link => atomSet.has(link.source.id) && atomSet.has(link.target.id));
+      const matchedNodes = [...atomSet].map(id => nodeMap.get(id)).filter(Boolean);
+
+      const addLines = (stroke, extra) => {
+        highlightLayer
+          .selectAll(null)
+          .data(matchedLinks)
+          .enter()
+          .append('line')
+          .datum(d => d)
+          .attr('stroke', stroke)
+          .attr('stroke-width', d => Math.min(context.helpers.atomRadius(d.source.protons), context.helpers.atomRadius(d.target.protons)) * 2 + highlightRadius * 2 + extra * 2)
+          .attr('stroke-linecap', 'round')
+          .attr('x1', d => d.source.x)
+          .attr('y1', d => d.source.y)
+          .attr('x2', d => d.target.x)
+          .attr('y2', d => d.target.y);
+      };
+
+      const addCircles = (fill, extra) => {
+        highlightLayer
+          .selectAll(null)
+          .data(matchedNodes)
+          .enter()
+          .append('circle')
+          .datum(d => d)
+          .attr('r', d => context.helpers.atomRadius(d.protons) + highlightRadius + extra)
+          .attr('fill', fill)
+          .attr('stroke', 'none')
+          .attr('cx', d => d.x)
+          .attr('cy', d => d.y);
+      };
+
+      addLines(highlightStyle.outline, outlineWidth);
+      addCircles(highlightStyle.outline, outlineWidth);
+      addLines(highlightStyle.fill, 0);
+      addCircles(highlightStyle.fill, 0);
+    }
+
+    context.cache.setHighlightLines(highlightLayer.selectAll('line'));
+    context.cache.setHighlightCircles(highlightLayer.selectAll('circle'));
+  }
+
+  return {
+    applyForceHighlights
+  };
+}
+
 export const HIGHLIGHT_STYLES = {
   default: {
     fill: 'rgb(130, 210, 80)',

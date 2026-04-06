@@ -28,6 +28,7 @@ export function createAppStateBridge(deps) {
       sync2dDerivedState: deps.viewState.sync2dDerivedState,
       syncStereoMap2d: deps.viewState.syncStereoMap2d,
       clearPrimitiveHover: deps.viewState.clearPrimitiveHover,
+      setPrimitiveHover: deps.viewState.setPrimitiveHover,
       suppressDrawBondHover: deps.viewState.suppressDrawBondHover,
       setPrimitiveHoverSuppressed: deps.viewState.setPrimitiveHoverSuppressed,
       setDrawBondHoverSuppressed: deps.viewState.setDrawBondHoverSuppressed,

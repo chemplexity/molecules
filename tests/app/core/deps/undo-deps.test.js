@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createUndoDeps } from '../../../src/app/core/undo-deps.js';
+import { createUndoDeps } from '../../../../src/app/core/deps/undo-deps.js';
 
 describe('createUndoDeps', () => {
   it('builds the undo dependency bridge from live callbacks', () => {

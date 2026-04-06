@@ -1,7 +1,7 @@
 import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { create2DHighlightRenderer, _setHighlight, clearHighlightState, initHighlights } from '../../../src/app/render/highlights.js';
+import { create2DHighlightRenderer, createForceHighlightRenderer, _setHighlight, clearHighlightState, initHighlights } from '../../../src/app/render/highlights.js';
 
 class FakeSelection {
   constructor(records) {
@@ -30,6 +30,26 @@ class FakeSelection {
 
   attr(name, value) {
     this.records.push(['attr', name, value]);
+    return this;
+  }
+
+  selectAll(selector) {
+    this.records.push(['selectAll', selector]);
+    return this;
+  }
+
+  data(value) {
+    this.records.push(['data', value]);
+    return this;
+  }
+
+  enter() {
+    this.records.push(['enter']);
+    return this;
+  }
+
+  datum(value) {
+    this.records.push(['datum', value]);
     return this;
   }
 }
@@ -132,6 +152,44 @@ describe('create2DHighlightRenderer', () => {
 
     renderer.redraw2dHighlights();
 
+    assert.ok(records.some(([kind, tag]) => kind === 'insert' && tag === 'g'));
+    assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
+    assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
+  });
+
+  it('renders highlighted atoms and bonds into the extracted force highlight layer', () => {
+    const records = [];
+    const nodes = [
+      { id: 'a1', x: 10, y: 10, protons: 6 },
+      { id: 'a2', x: 40, y: 10, protons: 6 }
+    ];
+    const links = [{ id: 'b1', source: nodes[0], target: nodes[1] }];
+    _setHighlight([new Map([['a1', 'a1'], ['a2', 'a2']])]);
+
+    const renderer = createForceHighlightRenderer({
+      view: {
+        getGraphSelection: () => new FakeSelection(records)
+      },
+      force: {
+        getNodes: () => nodes,
+        getLinks: () => links
+      },
+      cache: {
+        setHighlightLines: value => records.push(['setHighlightLines', value]),
+        setHighlightCircles: value => records.push(['setHighlightCircles', value])
+      },
+      constants: {
+        getHighlightRadius: () => 8,
+        getOutlineWidth: () => 2
+      },
+      helpers: {
+        atomRadius: () => 10
+      }
+    });
+
+    renderer.applyForceHighlights();
+
+    assert.ok(records.some(([kind, selector]) => kind === 'selectAll' && selector === 'g.fg-highlight-layer'));
     assert.ok(records.some(([kind, tag]) => kind === 'insert' && tag === 'g'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));

@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createBondEnPanelDeps } from '../../../src/app/render/bond-en-panel-deps.js';
+import { createBondEnPanelDeps } from '../../../../src/app/render/deps/bond-en-panel-deps.js';
 
 describe('createBondEnPanelDeps', () => {
   it('groups bond electronegativity panel wiring without changing behavior', () => {

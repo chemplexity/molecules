@@ -10,6 +10,59 @@ export function createSelectionOverlayManager(ctx) {
     ctx.state.getHoveredBondIds().clear();
   }
 
+  function setPrimitiveHover(atomIds = [], bondIds = []) {
+    clearPrimitiveHover();
+
+    if (ctx.state.getMode() === '2d') {
+      const mol = ctx.molecule.getMol2D();
+      if (!mol) {
+        return;
+      }
+      for (const atomId of atomIds) {
+        const atom = mol.atoms.get(atomId);
+        if (!atom || atom.x == null || atom.visible === false) {
+          continue;
+        }
+        ctx.state.getHoveredAtomIds().add(atomId);
+      }
+      for (const bondId of bondIds) {
+        const bond = mol.bonds.get(bondId);
+        if (!bond) {
+          continue;
+        }
+        const [atom1, atom2] = bond.getAtomObjects(mol);
+        if (!atom1 || !atom2 || atom1.x == null || atom2.x == null) {
+          continue;
+        }
+        const isHiddenBond = atom1.visible === false || atom2.visible === false;
+        if (isHiddenBond && !(ctx.view2D.getStereoMap()?.has(bond.id))) {
+          continue;
+        }
+        ctx.state.getHoveredBondIds().add(bondId);
+      }
+      refreshSelectionOverlay();
+      return;
+    }
+
+    if (ctx.state.getMode() === 'force') {
+      const mol = ctx.molecule.getForceMol();
+      if (!mol) {
+        return;
+      }
+      for (const atomId of atomIds) {
+        if (mol.atoms.has(atomId)) {
+          ctx.state.getHoveredAtomIds().add(atomId);
+        }
+      }
+      for (const bondId of bondIds) {
+        if (mol.bonds.has(bondId)) {
+          ctx.state.getHoveredBondIds().add(bondId);
+        }
+      }
+      refreshSelectionOverlay();
+    }
+  }
+
   function getRenderableSelectionIds() {
     const mol = ctx.state.getMode() === 'force' ? ctx.molecule.getForceMol() : ctx.molecule.getMol2D();
     const liveHoveredAtomIds = mol ? new Set([...ctx.state.getHoveredAtomIds()].filter(id => mol.atoms.has(id))) : new Set();
@@ -138,64 +191,84 @@ export function createSelectionOverlayManager(ctx) {
     if (!ctx.state.getSelectMode() && !ctx.state.getEraseMode()) {
       return;
     }
-
-    clearPrimitiveHover();
-
-    if (ctx.state.getMode() === '2d') {
-      const mol = ctx.molecule.getMol2D();
-      if (!mol) {
-        return;
-      }
-      for (const atomId of atomIds) {
-        const atom = mol.atoms.get(atomId);
-        if (!atom || atom.x == null || atom.visible === false) {
-          continue;
-        }
-        ctx.state.getHoveredAtomIds().add(atomId);
-      }
-      for (const bondId of bondIds) {
-        const bond = mol.bonds.get(bondId);
-        if (!bond) {
-          continue;
-        }
-        const [atom1, atom2] = bond.getAtomObjects(mol);
-        if (!atom1 || !atom2 || atom1.x == null || atom2.x == null) {
-          continue;
-        }
-        const isHiddenBond = atom1.visible === false || atom2.visible === false;
-        if (isHiddenBond && !(ctx.view2D.getStereoMap()?.has(bond.id))) {
-          continue;
-        }
-        ctx.state.getHoveredBondIds().add(bondId);
-      }
-      refreshSelectionOverlay();
-      return;
-    }
-
-    if (ctx.state.getMode() === 'force') {
-      const mol = ctx.molecule.getForceMol();
-      if (!mol) {
-        return;
-      }
-      for (const atomId of atomIds) {
-        if (mol.atoms.has(atomId)) {
-          ctx.state.getHoveredAtomIds().add(atomId);
-        }
-      }
-      for (const bondId of bondIds) {
-        if (mol.bonds.has(bondId)) {
-          ctx.state.getHoveredBondIds().add(bondId);
-        }
-      }
-      refreshSelectionOverlay();
-    }
+    setPrimitiveHover(atomIds, bondIds);
   }
 
   return {
     clearPrimitiveHover,
+    setPrimitiveHover,
     getRenderableSelectionIds,
     redraw2dSelection,
     refreshSelectionOverlay,
     showPrimitiveHover
+  };
+}
+
+export function createForceSelectionRenderer(ctx) {
+  function applyForceSelection() {
+    const graphSelection = ctx.view.getGraphSelection();
+    graphSelection.selectAll('g.force-selection-layer').remove();
+    ctx.cache.setSelectionLines(null);
+    ctx.cache.setSelectionCircles(null);
+
+    const { atomIds: activeAtomIds, bondIds: activeBondIds } = ctx.selection.getRenderableSelectionIds();
+    if (activeAtomIds.size === 0 && activeBondIds.size === 0) {
+      return;
+    }
+
+    const selectionColor = ctx.constants.getSelectionColor();
+    const selectionOutline = ctx.constants.getSelectionOutline();
+    const bondSelectionRadius = ctx.constants.getBondSelectionRadius();
+    const atomSelectionRadius = ctx.constants.getAtomSelectionRadius();
+    const outlineWidth = ctx.constants.getOutlineWidth();
+    const selectionLayer = graphSelection
+      .insert('g', ':first-child')
+      .attr('class', 'force-selection-layer')
+      .attr('opacity', 0.45)
+      .style('pointer-events', 'none');
+
+    const selectedNodes = ctx.force.getNodes().filter(node => activeAtomIds.has(node.id));
+    const selectedLinks = ctx.force.getLinks().filter(link => activeBondIds.has(link.id));
+
+    const addLines = (stroke, extra) => {
+      selectionLayer
+        .selectAll(null)
+        .data(selectedLinks)
+        .enter()
+        .append('line')
+        .datum(d => d)
+        .attr('stroke', stroke)
+        .attr('stroke-width', d => Math.min(ctx.helpers.atomRadius(d.source.protons), ctx.helpers.atomRadius(d.target.protons)) * 2 + bondSelectionRadius * 2 + extra * 2)
+        .attr('stroke-linecap', 'round')
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y);
+    };
+
+    const addCircles = (fill, extra) => {
+      selectionLayer
+        .selectAll(null)
+        .data(selectedNodes)
+        .enter()
+        .append('circle')
+        .datum(d => d)
+        .attr('r', d => ctx.helpers.atomRadius(d.protons) + atomSelectionRadius + extra)
+        .attr('fill', fill)
+        .attr('stroke', 'none')
+        .attr('cx', d => d.x)
+        .attr('cy', d => d.y);
+    };
+
+    addLines(selectionOutline, outlineWidth);
+    addCircles(selectionOutline, outlineWidth);
+    addLines(selectionColor, 0);
+    addCircles(selectionColor, 0);
+    ctx.cache.setSelectionLines(selectionLayer.selectAll('line'));
+    ctx.cache.setSelectionCircles(selectionLayer.selectAll('circle'));
+  }
+
+  return {
+    applyForceSelection
   };
 }

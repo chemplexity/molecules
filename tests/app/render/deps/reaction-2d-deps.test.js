@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createReaction2dDeps } from '../../../src/app/render/reaction-2d-deps.js';
+import { createReaction2dDeps } from '../../../../src/app/render/deps/reaction-2d-deps.js';
 
 describe('createReaction2dDeps', () => {
   it('groups reaction-preview panel wiring without changing behavior', () => {

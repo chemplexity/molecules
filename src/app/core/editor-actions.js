@@ -163,6 +163,13 @@ export function createEditorActions(deps) {
       twoDResult.postRender?.(context);
     }
 
+    if (result.restorePrimitiveHover) {
+      deps.view.setPrimitiveHover?.(
+        result.restorePrimitiveHover.atomIds ?? [],
+        result.restorePrimitiveHover.bondIds ?? []
+      );
+    }
+
     return {
       performed: true,
       kind,

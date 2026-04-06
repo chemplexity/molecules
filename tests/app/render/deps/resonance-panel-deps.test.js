@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createResonancePanelDeps } from '../../../src/app/render/resonance-panel-deps.js';
+import { createResonancePanelDeps } from '../../../../src/app/render/deps/resonance-panel-deps.js';
 
 describe('createResonancePanelDeps', () => {
   it('groups resonance panel wiring without changing behavior', () => {

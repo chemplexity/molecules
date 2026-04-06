@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createAppControllerDeps } from '../../../src/app/core/app-controller-deps.js';
+import { createAppControllerDeps } from '../../../../src/app/core/deps/app-controller-deps.js';
 
 describe('createAppControllerDeps', () => {
   it('groups the app-controller dependency bridges without changing behavior', () => {

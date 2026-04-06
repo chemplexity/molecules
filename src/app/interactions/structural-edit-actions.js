@@ -209,6 +209,9 @@ export function createStructuralEditActions(context) {
         return {
           suppressDrawBondHover: true,
           clearPrimitiveHover: true,
+          restorePrimitiveHover: {
+            bondIds: [activeBondId]
+          },
           force: forceResult
         };
       }
@@ -261,8 +264,10 @@ export function createStructuralEditActions(context) {
         mol.repairImplicitHydrogens(affected);
         return {
           clearSelection: true,
-          suppressPrimitiveHover: true,
           clearPrimitiveHover: true,
+          restorePrimitiveHover: {
+            atomIds: toChange
+          },
           force:
             mode === 'force'
               ? {

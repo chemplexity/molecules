@@ -1,5 +1,13 @@
 # Change Log
 
+## 2026-04-06
+
+- Extract startup, resize, and global action bridges into `src/app/ui/app-shell.js`
+- Extract UI init dependency bridges into `src/app/ui`
+- Extract remaining thin app delegates into `src/app/core/app-delegates.js`
+- Extract runtime panel, snapshot, and mode-chrome helpers into `src/app/ui/runtime-ui.js`
+- Resolve `runtime-ui` session bridge lazily so draw, atom-edit, and delete flows keep working after startup
+
 ## 2026-04-05
 
 - Add bond electronegativity overlay in demo
@@ -210,3 +218,6 @@
 - Enhanced the demo
 - Added stereochemistry rendering and valence validation
 - Improved 2D coordinate generation and geometry
+- Move force highlight and selection overlay rendering out of `index.html`
+- Extract force keep-in-view state helpers and remove more inline render wrappers
+- Move top-level plot interaction wiring out of `index.html`

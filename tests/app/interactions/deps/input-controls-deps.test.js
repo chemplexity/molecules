@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createInputControlsDeps } from '../../../src/app/interactions/input-controls-deps.js';
+import { createInputControlsDeps } from '../../../../src/app/interactions/deps/input-controls-deps.js';
 
 describe('createInputControlsDeps', () => {
   it('groups input-controls dependencies without changing the exposed shape', () => {

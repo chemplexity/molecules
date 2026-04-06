@@ -1,7 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { createInputFlowDeps } from '../../../src/app/core/input-flow-deps.js';
+import { createInputFlowDeps } from '../../../../src/app/core/deps/input-flow-deps.js';
 
 describe('createInputFlowDeps', () => {
   it('groups the input-flow dependency bridges without changing behavior', () => {

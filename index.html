@@ -319,22 +319,29 @@
         redoAction
       } from './src/app/core/undo.js';
       import { createAppController } from './src/app/core/app-controller.js';
-      import { createAppControllerDeps } from './src/app/core/app-controller-deps.js';
+      import { createAppDelegates } from './src/app/core/app-delegates.js';
+      import { createAppControllerDeps } from './src/app/core/deps/app-controller-deps.js';
       import { createAppStateBridge } from './src/app/core/app-state-bridge.js';
-      import { createInputFlowDeps } from './src/app/core/input-flow-deps.js';
+      import { createInputFlowDeps } from './src/app/core/deps/input-flow-deps.js';
       import { createInputFlowManager } from './src/app/core/input-flow.js';
       import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from './src/app/core/editor-actions.js';
       import { createSessionSnapshotManager } from './src/app/core/session-snapshot.js';
-      import { createSessionSnapshotDeps } from './src/app/core/session-snapshot-deps.js';
+      import { createSessionSnapshotDeps } from './src/app/core/deps/session-snapshot-deps.js';
       import { createSessionRuntimeBridge } from './src/app/core/session-runtime-bridge.js';
       import { createSessionUiStateBridge } from './src/app/core/session-ui-state.js';
-      import { createUndoDeps } from './src/app/core/undo-deps.js';
+      import { createUndoDeps } from './src/app/core/deps/undo-deps.js';
       import { initOptionsModal } from './src/app/ui/options-modal.js';
+      import { createOptionsModalDeps } from './src/app/ui/deps/options-modal-deps.js';
+      import { initAppShell } from './src/app/ui/app-shell.js';
+      import { createAppShellDeps } from './src/app/ui/deps/app-shell-deps.js';
       import { initPhyschemPanel } from './src/app/ui/physchem-panel.js';
+      import { createPhyschemPanelDeps } from './src/app/ui/deps/physchem-panel-deps.js';
+      import { initPlotInteractions } from './src/app/ui/plot-interactions.js';
+      import { createRuntimeUi } from './src/app/ui/runtime-ui.js';
       import { initTabPanels } from './src/app/ui/tab-panels.js';
       import { initExport, copyForcePng, copyForceSvg, copySvg2d, savePng2d } from './src/app/ui/export.js';
       import { createInputControls } from './src/app/interactions/input-controls.js';
-      import { createInputControlsDeps } from './src/app/interactions/input-controls-deps.js';
+      import { createInputControlsDeps } from './src/app/interactions/deps/input-controls-deps.js';
       import { createDrawBondCommitActions } from './src/app/interactions/draw-bond-commit.js';
       import { createEditingActions } from './src/app/interactions/editing.js';
       import { createDragGestureActions } from './src/app/interactions/drag-gestures.js';
@@ -364,7 +371,6 @@
         renderLonePairDots
       } from './src/app/render/helpers.js';
       import {
-        HIGHLIGHT_STYLES,
         _setHighlight,
         _isBondHighlighted,
         _prepare2dExportHighlightState,
@@ -372,12 +378,11 @@
         _restorePersistentHighlight,
         updateFunctionalGroups,
         getHighlightedAtomIds,
-        getHighlightedAtomSets,
-        getHighlightStyle,
         captureHighlightSnapshot,
         restoreHighlightSnapshot,
         clearHighlightState,
         create2DHighlightRenderer,
+        createForceHighlightRenderer,
         initHighlights,
         setPersistentHighlightFallback
       } from './src/app/render/highlights.js';
@@ -406,7 +411,7 @@
         updateReactionTemplatesPanel,
         _viewportFitPadding
       } from './src/app/render/reaction-2d.js';
-      import { createReaction2dDeps } from './src/app/render/reaction-2d-deps.js';
+      import { createReaction2dDeps } from './src/app/render/deps/reaction-2d-deps.js';
       import {
         initResonancePanel,
         updateResonancePanel,
@@ -416,10 +421,11 @@
         prepareResonanceUndoSnapshot,
         restoreResonanceViewSnapshot
       } from './src/app/render/resonance.js';
-      import { createResonancePanelDeps } from './src/app/render/resonance-panel-deps.js';
+      import { createResonancePanelDeps } from './src/app/render/deps/resonance-panel-deps.js';
       import { initBondEnPanel, updateBondEnPanel, clearBondEnPanel, getBondEnOverlayData } from './src/app/render/bond-en-polarity.js';
-      import { createBondEnPanelDeps } from './src/app/render/bond-en-panel-deps.js';
+      import { createBondEnPanelDeps } from './src/app/render/deps/bond-en-panel-deps.js';
       import { createForceSceneRenderer } from './src/app/render/force-scene.js';
+      import { createForceViewportStateHelpers } from './src/app/render/force-viewport-state.js';
       import {
         FORCE_LAYOUT_BOND_LENGTH,
         FORCE_LAYOUT_INITIAL_FIT_PAD,
@@ -440,7 +446,7 @@
       import { create2DSceneRenderer } from './src/app/render/scene-2d.js';
       import { create2DRenderHelpers } from './src/app/render/2d-helpers.js';
       import { createRenderRuntime } from './src/app/render/render-runtime.js';
-      import { createSelectionOverlayManager } from './src/app/render/selection-overlay.js';
+      import { createForceSelectionRenderer, createSelectionOverlayManager } from './src/app/render/selection-overlay.js';
       import { createZoomTransformHelpers } from './src/app/render/zoom-transform.js';
       import { createNavigationActions, initNavigationInteractions } from './src/app/interactions/navigation.js';
       import { createSelectionActions } from './src/app/interactions/selection.js';
@@ -530,10 +536,6 @@
       const inputEl = document.getElementById('smiles-input');
       const collectionSelectEl = document.getElementById('collection-select');
 
-      plotEl.addEventListener('selectstart', event => {
-        event.preventDefault();
-      });
-
       const svg = d3.select('#plot').append('svg').attr('class', 'svg-plot labels-hidden');
 
       svg.append('rect').attr('fill', 'white').attr('width', '100%').attr('height', '100%');
@@ -561,7 +563,7 @@
         .on('zoom', event => {
           if (mode === 'force' && event.sourceEvent) {
             _forceAutoFitEnabled = false;
-            _disableForceKeepInView();
+            forceViewportStateHelpers.disableKeepInView();
           }
           g.attr('transform', event.transform);
         });
@@ -575,56 +577,6 @@
       function _isAdditiveSelectionEvent(event) {
         return isAdditiveSelectionEvent(event);
       }
-
-      document.addEventListener('mousemove', event => {
-        const warningHoverMode = _selectMode || (_drawBondMode && !_drawBondState) || _eraseMode;
-        if (!warningHoverMode || (mode !== '2d' && mode !== 'force')) {
-          if (_selectionValenceTooltipAtomId !== null) {
-            _selectionValenceTooltipAtomId = null;
-            tooltip.interrupt().style('opacity', 0);
-          }
-          return;
-        }
-
-        const mol = mode === 'force' ? currentMol : _mol2d;
-        if (!getRenderOptions().showAtomTooltips || !mol || _activeValenceWarningMap.size === 0) {
-          if (_selectionValenceTooltipAtomId !== null) {
-            _selectionValenceTooltipAtomId = null;
-            tooltip.interrupt().style('opacity', 0);
-          }
-          return;
-        }
-
-        let atomId = null;
-        for (const el of document.elementsFromPoint(event.clientX, event.clientY)) {
-          if (el.classList?.contains('node')) {
-            const datum = d3.select(el).datum();
-            atomId = datum?.id ?? null;
-            if (atomId) break;
-          }
-          const atomHitGroup = el.classList?.contains('atom-hit') ? el.closest('[data-atom-id]') : el.closest?.('[data-atom-id]');
-          atomId = atomHitGroup?.getAttribute?.('data-atom-id') ?? null;
-          if (atomId) break;
-        }
-
-        const valenceWarning = atomId ? (_activeValenceWarningMap.get(atomId) ?? null) : null;
-        const atom = atomId ? (mol.atoms.get(atomId) ?? null) : null;
-        if (!atom || !valenceWarning) {
-          if (_selectionValenceTooltipAtomId !== null) {
-            _selectionValenceTooltipAtomId = null;
-            tooltip.interrupt().style('opacity', 0);
-          }
-          return;
-        }
-
-        _selectionValenceTooltipAtomId = atomId;
-        tooltip
-          .interrupt()
-          .style('opacity', 0.9)
-          .html(atomTooltipHtml(atom, mol, valenceWarning, mode === 'force' ? 'force' : '2d'))
-          .style('left', event.clientX + 13 + 'px')
-          .style('top', event.clientY - 20 + 'px');
-      });
 
       // ---------------------------------------------------------------------------
       // ══ FORCE LAYOUT ══════════════════════════════════════════════════════════
@@ -662,132 +614,6 @@
         spreadReaction2dProductComponents: (mol, bondLength) => _spreadReaction2dProductComponents(mol, bondLength),
         centerReaction2dPairCoords: (mol, bondLength) => _centerReaction2dPairCoords(mol, bondLength)
       });
-
-      function updateForce(molecule, { preservePositions = false, preserveView = preservePositions } = {}) {
-        return forceSceneRenderer.updateForce(molecule, { preservePositions, preserveView });
-      }
-
-      function applyForceHighlights() {
-        g.selectAll('g.fg-highlight-layer').remove();
-        _fgHlLines = null;
-        _fgHlCircles = null;
-        if (getHighlightedAtomIds().size === 0) return;
-
-        const highlightStyle = HIGHLIGHT_STYLES[getHighlightStyle()] ?? HIGHLIGHT_STYLES.default;
-        const HL_R = 8;
-        const OL = 2;
-        const hlLayer = g.insert('g', ':first-child').attr('class', 'fg-highlight-layer').attr('opacity', 0.45);
-
-        const nodeMap = new Map(simulation.nodes().map(n => [n.id, n]));
-        const allLinks = simulation.force('link').links();
-
-        // Draw each match instance as its own unit so fills cover their own outlines.
-        for (const atomSet of getHighlightedAtomSets()) {
-          const mLinks = allLinks.filter(l => atomSet.has(l.source.id) && atomSet.has(l.target.id));
-          const mNodes = [...atomSet].map(id => nodeMap.get(id)).filter(Boolean);
-
-          const addLines = (stroke, extra) => {
-            hlLayer
-              .selectAll(null)
-              .data(mLinks)
-              .enter()
-              .append('line')
-              .datum(d => d)
-              .attr('stroke', stroke)
-              .attr('stroke-width', d => Math.min(atomRadius(d.source.protons), atomRadius(d.target.protons)) * 2 + HL_R * 2 + extra * 2)
-              .attr('stroke-linecap', 'round')
-              .attr('x1', d => d.source.x)
-              .attr('y1', d => d.source.y)
-              .attr('x2', d => d.target.x)
-              .attr('y2', d => d.target.y);
-          };
-          const addCircles = (fill, extra) => {
-            hlLayer
-              .selectAll(null)
-              .data(mNodes)
-              .enter()
-              .append('circle')
-              .datum(d => d)
-              .attr('r', d => atomRadius(d.protons) + HL_R + extra)
-              .attr('fill', fill)
-              .attr('stroke', 'none')
-              .attr('cx', d => d.x)
-              .attr('cy', d => d.y);
-          };
-
-          addLines(highlightStyle.outline, OL);
-          addCircles(highlightStyle.outline, OL); // outline
-          addLines(highlightStyle.fill, 0);
-          addCircles(highlightStyle.fill, 0); // fill
-        }
-        _fgHlLines = hlLayer.selectAll('line');
-        _fgHlCircles = hlLayer.selectAll('circle');
-      }
-
-      function applyForceSelection() {
-        g.selectAll('g.force-selection-layer').remove();
-        _forceSelLines = null;
-        _forceSelCircles = null;
-        const { atomIds: activeAtomIds, bondIds: activeBondIds } = selectionOverlayManager.getRenderableSelectionIds();
-        if (activeAtomIds.size === 0 && activeBondIds.size === 0) return;
-
-        const SEL_COLOR = 'rgb(150, 200, 255)';
-        const SEL_OL = 'rgb(40, 100, 210)';
-        const BOND_SEL_R = 6; // extra radius for bond highlight caps
-        const ATOM_SEL_R = 13; // larger extra radius so atom circles exceed bond caps
-        const OL = 2;
-        const selLayer = g.insert('g', ':first-child').attr('class', 'force-selection-layer').attr('opacity', 0.45).style('pointer-events', 'none');
-
-        const selectedNodes = simulation.nodes().filter(node => activeAtomIds.has(node.id));
-        const selectedLinks = simulation
-          .force('link')
-          .links()
-          .filter(link => activeBondIds.has(link.id));
-
-        const addLines = (stroke, extra) => {
-          selLayer
-            .selectAll(null)
-            .data(selectedLinks)
-            .enter()
-            .append('line')
-            .datum(d => d)
-            .attr('stroke', stroke)
-            .attr('stroke-width', d => Math.min(atomRadius(d.source.protons), atomRadius(d.target.protons)) * 2 + BOND_SEL_R * 2 + extra * 2)
-            .attr('stroke-linecap', 'round')
-            .attr('x1', d => d.source.x)
-            .attr('y1', d => d.source.y)
-            .attr('x2', d => d.target.x)
-            .attr('y2', d => d.target.y);
-        };
-        const addCircles = (fill, extra) => {
-          selLayer
-            .selectAll(null)
-            .data(selectedNodes)
-            .enter()
-            .append('circle')
-            .datum(d => d)
-            .attr('r', d => atomRadius(d.protons) + ATOM_SEL_R + extra)
-            .attr('fill', fill)
-            .attr('stroke', 'none')
-            .attr('cx', d => d.x)
-            .attr('cy', d => d.y);
-        };
-
-        addLines(SEL_OL, OL);
-        addCircles(SEL_OL, OL);
-        addLines(SEL_COLOR, 0);
-        addCircles(SEL_COLOR, 0);
-        _forceSelLines = selLayer.selectAll('line');
-        _forceSelCircles = selLayer.selectAll('circle');
-      }
-
-      function _syncSelectionToMolecule(mol) {
-        return selectionStateHelpers.syncSelectionToMolecule(mol);
-      }
-
-      function _redraw2dSelection() {
-        return selectionOverlayManager.redraw2dSelection();
-      }
 
       // ---------------------------------------------------------------------------
       // ══ 2D STRUCTURE ══════════════════════════════════════════════════════════
@@ -828,16 +654,6 @@
       let _forceKeepInViewTicks = 0;
       let _capturePhyschemHighlightSnapshot = () => null;
       let _restorePhyschemHighlightSnapshot = () => false;
-
-      function _enableForceKeepInView(ticks = FORCE_LAYOUT_EDIT_KEEP_IN_VIEW_TICKS) {
-        _forceKeepInView = true;
-        _forceKeepInViewTicks = Math.max(0, ticks | 0);
-      }
-
-      function _disableForceKeepInView() {
-        _forceKeepInView = false;
-        _forceKeepInViewTicks = 0;
-      }
 
       const selectionStateHelpers = createSelectionStateHelpers({
         state: {
@@ -906,6 +722,45 @@
         }
       });
 
+      const forceHighlightRenderer = createForceHighlightRenderer({
+        view: {
+          getGraphSelection: () => g
+        },
+        force: {
+          getNodes: () => simulation.nodes(),
+          getLinks: () => simulation.force('link').links()
+        },
+        cache: {
+          setHighlightLines: value => {
+            _fgHlLines = value;
+          },
+          setHighlightCircles: value => {
+            _fgHlCircles = value;
+          }
+        },
+        constants: {
+          getHighlightRadius: () => 8,
+          getOutlineWidth: () => 2
+        },
+        helpers: {
+          atomRadius
+        }
+      });
+
+      const forceViewportStateHelpers = createForceViewportStateHelpers({
+        state: {
+          setKeepInView: value => {
+            _forceKeepInView = value;
+          },
+          setKeepInViewTicks: value => {
+            _forceKeepInViewTicks = value;
+          }
+        },
+        constants: {
+          getDefaultKeepInViewTicks: () => FORCE_LAYOUT_EDIT_KEEP_IN_VIEW_TICKS
+        }
+      });
+
       const forceSceneRenderer = createForceSceneRenderer({
         d3,
         svg,
@@ -933,8 +788,8 @@
             _forceAutoFitEnabled = value;
           },
           isForceAutoFitEnabled: () => _forceAutoFitEnabled,
-          enableKeepInView: ticks => _enableForceKeepInView(ticks),
-          disableKeepInView: () => _disableForceKeepInView(),
+          enableKeepInView: ticks => forceViewportStateHelpers.enableKeepInView(ticks),
+          disableKeepInView: () => forceViewportStateHelpers.disableKeepInView(),
           isKeepInViewEnabled: () => _forceKeepInView,
           getKeepInViewTicks: () => _forceKeepInViewTicks,
           setKeepInViewTicks: value => {
@@ -1065,7 +920,7 @@
           getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => selectionStateHelpers.getSelectedDragAtomIds(mol, atomIds, bondIds),
           drawBond: (container, bond, a1, a2, mol, toSVGPt, stereoType = null) => render2DHelpers.drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType),
           redrawHighlights: () => _redraw2dHighlights(),
-          redrawSelection: () => _redraw2dSelection(),
+          redrawSelection: () => selectionOverlayManager.redraw2dSelection(),
           generateAndRefine2dCoords: (mol, options = {}) => generateAndRefine2dCoords(mol, options),
           alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
           spreadReaction2dProductComponents: (mol, spacing) => _spreadReaction2dProductComponents(mol, spacing),
@@ -1140,6 +995,45 @@
         }
       });
 
+      const forceSelectionRenderer = createForceSelectionRenderer({
+        view: {
+          getGraphSelection: () => g
+        },
+        selection: {
+          getRenderableSelectionIds: () => selectionOverlayManager.getRenderableSelectionIds()
+        },
+        force: {
+          getNodes: () => simulation.nodes(),
+          getLinks: () => simulation.force('link').links()
+        },
+        cache: {
+          setSelectionLines: value => {
+            _forceSelLines = value;
+          },
+          setSelectionCircles: value => {
+            _forceSelCircles = value;
+          }
+        },
+        constants: {
+          getSelectionColor: () => 'rgb(150, 200, 255)',
+          getSelectionOutline: () => 'rgb(40, 100, 210)',
+          getBondSelectionRadius: () => 6,
+          getAtomSelectionRadius: () => 13,
+          getOutlineWidth: () => 2
+        },
+        helpers: {
+          atomRadius
+        }
+      });
+
+      function applyForceHighlights() {
+        return forceHighlightRenderer.applyForceHighlights();
+      }
+
+      function applyForceSelection() {
+        return forceSelectionRenderer.applyForceSelection();
+      }
+
       function _clearPrimitiveHover() {
         return selectionOverlayManager.clearPrimitiveHover();
       }
@@ -1156,6 +1050,10 @@
         return selectionOverlayManager.showPrimitiveHover(atomIds, bondIds);
       }
 
+      function _setPrimitiveHover(atomIds = [], bondIds = []) {
+        return selectionOverlayManager.setPrimitiveHover(atomIds, bondIds);
+      }
+
       function _getSelectedDragAtomIds(mol, atomIds = [], bondIds = []) {
         return selectionStateHelpers.getSelectedDragAtomIds(mol, atomIds, bondIds);
       }
@@ -1169,52 +1067,37 @@
         return render2DHelpers.zoomToFitIf2d();
       }
 
-      /** Update the SMILES/InChI input field to reflect the current molecule state. */
-      function _syncInputField(mol) {
-        return sessionRuntimeBridge.syncInputField(mol);
-      }
+      const runtimeUi = createRuntimeUi({
+        getSessionRuntimeBridge: () => sessionRuntimeBridge,
+        render2DHelpers,
+        getSessionUiState: () => sessionUiState,
+        getSessionSnapshotManager: () => sessionSnapshotManager,
+        dom: {
+          getToggleButtonElement: () => document.getElementById('toggle-btn'),
+          getRotateControlsElement: () => document.getElementById('rotate-controls'),
+          getCleanControlsElement: () => document.getElementById('clean-controls'),
+          getClean2dButtonElement: () => document.getElementById('clean-2d-btn'),
+          getCleanForceButtonElement: () => document.getElementById('clean-force-btn'),
+          getDrawToolsElement: () => document.getElementById('draw-tools'),
+          getForceControlsElement: () => document.getElementById('force-controls')
+        }
+      });
 
-      function _sync2dDerivedState(mol) {
-        return render2DHelpers.sync2dDerivedState(mol);
-      }
-
-      function _serializeSnapshotMol(mol) {
-        return sessionUiState.serializeSnapshotMol(mol);
-      }
-
-      function _captureAppSnapshot(options = {}) {
-        return sessionSnapshotManager.capture(options);
-      }
-
-      /**
-       * Refreshes the chemistry-analysis sidebar panels for the current
-       * molecule. Resonance contributors are recomputed by default so newly
-       * parsed molecules and structural edits stay synchronized with the UI.
-       *
-       * @param {Molecule|null} mol
-       * @param {object} [options={}]
-       * @param {boolean} [options.recomputeResonance=true]
-       * @param {boolean} [options.refreshResonancePanel=true]
-       */
-      function _updateAnalysisPanels(mol, options = {}) {
-        return sessionUiState.updateAnalysisPanels(mol, options);
-      }
+      const {
+        syncInputField: _syncInputField,
+        sync2dDerivedState: _sync2dDerivedState,
+        serializeSnapshotMol: _serializeSnapshotMol,
+        captureAppSnapshot: _captureAppSnapshot,
+        updateAnalysisPanels: _updateAnalysisPanels,
+        restorePanelState: _restorePanelState,
+        restoreInteractionState: _restoreInteractionState,
+        restoreSnapshot: _restoreSnapshot,
+        updateModeChrome: _updateModeChrome
+      } = runtimeUi;
 
       // ---------------------------------------------------------------------------
       // Undo / Redo history
       // ---------------------------------------------------------------------------
-
-      function _restorePanelState(panelState = null) {
-        return sessionUiState.restorePanelState(panelState);
-      }
-
-      function _restoreInteractionState(snap) {
-        return sessionUiState.restoreInteractionState(snap);
-      }
-
-      function _restoreSnapshot(snap) {
-        return sessionSnapshotManager.restore(snap);
-      }
 
       const appState = createAppStateBridge({
         documentState: {
@@ -1264,6 +1147,7 @@
             _stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
           },
           clearPrimitiveHover: () => _clearPrimitiveHover(),
+          setPrimitiveHover: (atomIds = [], bondIds = []) => _setPrimitiveHover(atomIds, bondIds),
           suppressDrawBondHover: () => {
             _drawBondHoverSuppressed = true;
           },
@@ -1275,7 +1159,7 @@
           },
           restorePersistentHighlight: () => _restorePersistentHighlight(),
           fitCurrent2dView: () => fitCurrent2dView(),
-          enableForceKeepInView: () => _enableForceKeepInView(),
+          enableForceKeepInView: () => forceViewportStateHelpers.enableKeepInView(),
           getZoomTransform: () => d3.zoomTransform(svg.node()),
           setZoomTransform: transform => svg.call(zoom.transform, transform),
           makeZoomIdentity: (x, y, k) => d3.zoomIdentity.translate(x, y).scale(k),
@@ -1346,7 +1230,7 @@
         },
         scene: {
           draw2d: () => draw2d(),
-          updateForce: (mol, options = {}) => updateForce(mol, options),
+          updateForce: (mol, options = {}) => forceSceneRenderer.updateForce(mol, options),
           render2d: (mol, options = {}) => render2d(mol, options)
         },
         analysis: {
@@ -1361,33 +1245,6 @@
           g.selectAll('*').remove();
         }
       };
-
-      function _updateModeChrome(nextMode) {
-        const btn = document.getElementById('toggle-btn');
-        const rotateCtrls = document.getElementById('rotate-controls');
-        const cleanCtrls = document.getElementById('clean-controls');
-        const clean2dBtn = document.getElementById('clean-2d-btn');
-        const cleanForceBtn = document.getElementById('clean-force-btn');
-        const drawTools = document.getElementById('draw-tools');
-        const forceCtrls = document.getElementById('force-controls');
-        if (nextMode === 'force') {
-          btn.textContent = '⬡ 2D Structure';
-          rotateCtrls.style.display = 'none';
-          cleanCtrls.style.display = 'flex';
-          clean2dBtn.style.display = 'none';
-          cleanForceBtn.style.display = 'flex';
-          drawTools.style.display = 'flex';
-          forceCtrls.style.display = 'flex';
-        } else {
-          btn.textContent = '⚡ Force Layout';
-          rotateCtrls.style.display = 'flex';
-          cleanCtrls.style.display = 'flex';
-          clean2dBtn.style.display = 'flex';
-          cleanForceBtn.style.display = 'none';
-          drawTools.style.display = 'flex';
-          forceCtrls.style.display = 'none';
-        }
-      }
 
       const navigationActions = createNavigationActions({
         state: appState,
@@ -1548,11 +1405,11 @@
           setAutoFitEnabled: value => {
             _forceAutoFitEnabled = value;
           },
-          disableKeepInView: () => _disableForceKeepInView()
+          disableKeepInView: () => forceViewportStateHelpers.disableKeepInView()
         },
         view: {
           clearPrimitiveHover: () => _clearPrimitiveHover(),
-          refresh2dSelection: () => _redraw2dSelection(),
+          refresh2dSelection: () => selectionOverlayManager.redraw2dSelection(),
           hideTooltip: () => {
             tooltip.style('opacity', 0);
           },
@@ -1584,7 +1441,7 @@
         },
         renderers: {
           applyForceSelection: () => applyForceSelection(),
-          redraw2dSelection: () => _redraw2dSelection()
+          redraw2dSelection: () => selectionOverlayManager.redraw2dSelection()
         },
         plot: {
           getSize: () => ({
@@ -1668,7 +1525,7 @@
           getNodes: () => simulation.nodes(),
           patchNodePositions: patchPos => forceHelpers.patchForceNodePositions(patchPos),
           reseatHydrogensAroundPatched: patchPos => forceHelpers.reseatHydrogensAroundPatched(patchPos),
-          enableKeepInView: () => _enableForceKeepInView()
+          enableKeepInView: () => forceViewportStateHelpers.enableKeepInView()
         },
         view2D: {
           getCenterX: () => _cx2d,
@@ -1917,7 +1774,7 @@
           setAutoFitEnabled: value => {
             _forceAutoFitEnabled = value;
           },
-          disableKeepInView: () => _disableForceKeepInView(),
+          disableKeepInView: () => forceViewportStateHelpers.disableKeepInView(),
           restoreNodePositions: positionMap => {
             for (const node of simulation.nodes()) {
               const position = positionMap.get(node.id);
@@ -1941,7 +1798,7 @@
             g.selectAll('*').remove();
           },
           draw2d: () => draw2d(),
-          updateForce: (mol, options = {}) => updateForce(mol, options)
+          updateForce: (mol, options = {}) => forceSceneRenderer.updateForce(mol, options)
         },
         cache: {
           reset: () => {
@@ -2279,8 +2136,6 @@
           restoreAppSnapshot: snap => appController.restoreAppSnapshot(snap)
         })
       );
-      window.undoAction = undoAction;
-      window.redoAction = redoAction;
 
       initHighlights({
         get mode() {
@@ -2302,10 +2157,6 @@
         },
         prepare2dExport: () => _prepare2dExportHighlightState()
       });
-      window.copyForcePng = copyForcePng;
-      window.copyForceSvg = copyForceSvg;
-      window.copySvg2d = copySvg2d;
-      window.savePng2d = savePng2d;
 
       // Reaction preview — logic lives in src/app/render/reaction-2d.js
       initReaction2d(
@@ -2395,7 +2246,7 @@
           getZoomTransform: () => d3.zoomTransform(svg.node()),
           setZoomTransform: transform => svg.call(zoom.transform, transform),
           makeZoomIdentity: (x, y, k) => d3.zoomIdentity.translate(x, y).scale(k),
-          applySelectionOverlay: () => (mode === 'force' ? applyForceSelection() : _redraw2dSelection()),
+          applySelectionOverlay: () => (mode === 'force' ? applyForceSelection() : selectionOverlayManager.redraw2dSelection()),
           refreshSelectionOverlay: () => _refreshSelectionOverlay(),
           clearPrimitiveHover: () => _clearPrimitiveHover()
         }
@@ -2405,7 +2256,7 @@
         state: appState,
         selection: selectionActions,
         renderers: {
-          applySelectionOverlay: () => (mode === 'force' ? applyForceSelection() : _redraw2dSelection())
+          applySelectionOverlay: () => (mode === 'force' ? applyForceSelection() : selectionOverlayManager.redraw2dSelection())
         },
         overlays: {
           hasReactionPreview: () => _hasReactionPreview()
@@ -2444,7 +2295,73 @@
         }
       });
 
-      const optionsModal = initOptionsModal({
+      const appDelegates = createAppDelegates({
+        state: {
+          getMode: () => mode,
+          getCurrentMol: () => currentMol,
+          setCurrentMol: value => {
+            currentMol = value;
+          },
+          getMol2d: () => _mol2d,
+          setMol2d: value => {
+            _mol2d = value;
+          },
+          clear2dDerivedState: () => {
+            _hCounts2d = new Map();
+            _stereoMap2d = new Map();
+          },
+          getStereoMap2d: () => _stereoMap2d
+        },
+        primitiveSelection: primitiveSelectionActions,
+        render2DHelpers,
+        highlight2DRenderer,
+        structuralEditActions,
+        drawBondPreviewActions,
+        drawBondCommitActions,
+        scene2DRenderer,
+        editingActions,
+        zoomTransformHelpers,
+        stereo: {
+          syncDisplayStereo
+        },
+        renderRuntime,
+        inputFlowManager
+      });
+
+      const {
+        handle2dPrimitiveClick: _handle2dPrimitiveClick,
+        handle2dComponentDblClick: _handle2dComponentDblClick,
+        handleForcePrimitiveClick: _handleForcePrimitiveClick,
+        handleForceComponentDblClick: _handleForceComponentDblClick,
+        drawBond: _drawBond,
+        redraw2dHighlights: _redraw2dHighlights,
+        restore2dEditViewport: _restore2dEditViewport,
+        prepareResonanceStructuralEdit: _prepareResonanceStructuralEdit,
+        promoteBondOrder: _promoteBondOrder,
+        changeAtomElements: _changeAtomElements,
+        replaceForceHydrogenWithDrawElement: _replaceForceHydrogenWithDrawElement,
+        startDrawBond: _startDrawBond,
+        updateDrawBondPreview: _updateDrawBondPreview,
+        resetDrawBondHover: _resetDrawBondHover,
+        cancelDrawBond: _cancelDrawBond,
+        ensureMol: _ensureMol,
+        autoPlaceBond: _autoPlaceBond,
+        commitDrawBond: _commitDrawBond,
+        draw2d,
+        render2d,
+        fitCurrent2dView,
+        eraseItem: _eraseItem,
+        captureZoomTransformSnapshot: _captureZoomTransformSnapshot,
+        restoreZoomTransformSnapshot: _restoreZoomTransformSnapshot,
+        pickStereoWedgesPreserving2dChoice: _pickStereoWedgesPreserving2dChoice,
+        renderMol: _renderMol,
+        clearMolecule,
+        parseAndRender,
+        parseAndRenderInchi
+      } = appDelegates;
+
+      const optionsModal = initOptionsModal(
+        createOptionsModalDeps({
         doc: document,
         dom: {
           getOverlayElement: () => document.getElementById('options-overlay'),
@@ -2482,176 +2399,17 @@
         },
         renderers: {
           draw2d: () => draw2d(),
-          updateForce: (mol, options = {}) => updateForce(mol, options)
+          updateForce: (mol, options = {}) => forceSceneRenderer.updateForce(mol, options)
         }
-      });
-
-      window.openOptionsModal = function () {
-        optionsModal.open();
-      };
-
-      function _handle2dPrimitiveClick(event, atomIds = [], bondIds = []) {
-        primitiveSelectionActions.handle2dPrimitiveClick(event, atomIds, bondIds);
-      }
-
-      function _handle2dComponentDblClick(event, seedAtomIds) {
-        primitiveSelectionActions.handle2dComponentDblClick(event, seedAtomIds);
-      }
-
-      function _handleForcePrimitiveClick(event, atomIds = [], bondIds = []) {
-        primitiveSelectionActions.handleForcePrimitiveClick(event, atomIds, bondIds);
-      }
-
-      function _handleForceComponentDblClick(event, seedAtomIds) {
-        primitiveSelectionActions.handleForceComponentDblClick(event, seedAtomIds);
-      }
-
-      function _drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType = null) {
-        return render2DHelpers.drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType);
-      }
-
-      function _redraw2dHighlights() {
-        return highlight2DRenderer.redraw2dHighlights();
-      }
+        })
+      );
 
       // ---------------------------------------------------------------------------
       // Draw-bond tool helpers
       // ---------------------------------------------------------------------------
 
-      function _restore2dEditViewport(zoomSnapshot, { reactionRestored = false, reactionEntryZoomSnapshot = null, resonanceReset = false, zoomToFit = false } = {}) {
-        return structuralEditActions.restore2dEditViewport(zoomSnapshot, { reactionRestored, reactionEntryZoomSnapshot, resonanceReset, zoomToFit });
-      }
-
-      function _prepareResonanceStructuralEdit(mol) {
-        return structuralEditActions.prepareResonanceStructuralEdit(mol);
-      }
-
-      function _promoteBondOrder(bondId, options = {}) {
-        return structuralEditActions.promoteBondOrder(bondId, options);
-      }
-
-      function _changeAtomElements(atomIds, newEl, options = {}) {
-        return structuralEditActions.changeAtomElements(atomIds, newEl, options);
-      }
-
-      function _replaceForceHydrogenWithDrawElement(atomId, mol = currentMol) {
-        return structuralEditActions.replaceForceHydrogenWithDrawElement(atomId, mol);
-      }
-
-      function _startDrawBond(atomId, gX, gY) {
-        return drawBondPreviewActions.start(atomId, gX, gY);
-      }
-
-      function _updateDrawBondPreview([mx, my]) {
-        return drawBondPreviewActions.update([mx, my]);
-      }
-
-      // During a bond drag, reset hover to only the source atom (clears any
-      // transient highlights from atoms/bonds the cursor passed over).
-      function _resetDrawBondHover() {
-        return drawBondPreviewActions.resetHover();
-      }
-
-      function _cancelDrawBond() {
-        return drawBondPreviewActions.cancel();
-      }
-
-      // Places a new bonded C at the best 30°-grid angle from the source atom.
-      // Returns the active molecule, creating an empty one if none exists yet.
-      function _ensureMol() {
-        if (mode === 'force') {
-          if (!currentMol) {
-            currentMol = new Molecule();
-          }
-          return currentMol;
-        } else {
-          if (!_mol2d) {
-            _mol2d = new Molecule();
-            _hCounts2d = new Map();
-            _stereoMap2d = new Map();
-          }
-          return _mol2d;
-        }
-      }
-
-      // atomId may be null (blank-space click) — in that case a source C is created at (ox, oy).
-      // ox, oy are always required (g-space origin of the draw-bond gesture).
-      function _autoPlaceBond(atomId, ox, oy) {
-        return drawBondCommitActions.autoPlaceBond(atomId, ox, oy);
-      }
-
-      function _commitDrawBond() {
-        return drawBondCommitActions.commit();
-      }
-
-      function draw2d() {
-        return scene2DRenderer.draw2d();
-      }
-
-      /**
-       * Renders the provided molecule in 2D and refreshes the sidebar panels.
-       *
-       * @param {Molecule} mol
-       * @param {object} [options={}]
-       * @param {boolean} [options.recomputeResonance=true]
-       * @param {boolean} [options.refreshResonancePanel=true]
-       */
-      function render2d(mol, options = {}) {
-        return scene2DRenderer.render2d(mol, options);
-      }
-
-      function fitCurrent2dView() {
-        return scene2DRenderer.fitCurrent2dView();
-      }
-
       // Mode toggle
       // ---------------------------------------------------------------------------
-      window.toggleLabels = function () {
-        const svgEl = document.querySelector('.svg-plot');
-        svgEl.classList.toggle('labels-hidden');
-        const btn = document.getElementById('label-toggle');
-        btn.classList.toggle('active', !svgEl.classList.contains('labels-hidden'));
-      };
-
-      window.cleanLayout2d = function () {
-        appController.performViewAction('clean-layout-2d');
-      };
-
-      window.cleanLayoutForce = function () {
-        appController.performViewAction('clean-layout-force');
-      };
-
-      window.togglePanMode = function () {
-        selectionActions.togglePanMode();
-      };
-
-      window.toggleSelectMode = function () {
-        selectionActions.toggleSelectMode();
-      };
-
-      window.toggleDrawBondMode = function () {
-        selectionActions.toggleDrawBondMode();
-      };
-
-      window.toggleEraseMode = function () {
-        selectionActions.toggleEraseMode();
-      };
-
-      function _eraseItem(atomIds, bondIds) {
-        return editingActions.eraseItem(atomIds, bondIds);
-      }
-
-      function _captureZoomTransformSnapshot() {
-        return zoomTransformHelpers.captureZoomTransformSnapshot();
-      }
-
-      function _restoreZoomTransformSnapshot(snapshot) {
-        return zoomTransformHelpers.restoreZoomTransformSnapshot(snapshot);
-      }
-
-      function _pickStereoWedgesPreserving2dChoice(mol) {
-        return syncDisplayStereo(mol, _stereoMap2d);
-      }
 
       const _DRAW_ELEM_PROTONS = {
         H: 1,
@@ -2668,14 +2426,52 @@
         K: 19
       };
 
-      window.setDrawElement = function (el) {
-        selectionActions.setDrawElement(el);
-      };
+      // ---------------------------------------------------------------------------
+
+      initPlotInteractions({
+        plotEl,
+        document,
+        state: {
+          getSelectMode: () => _selectMode,
+          getDrawBondMode: () => _drawBondMode,
+          hasDrawBondState: () => !!_drawBondState,
+          getEraseMode: () => _eraseMode,
+          isRenderableMode: () => mode === '2d' || mode === 'force',
+          getActiveMolecule: () => (mode === 'force' ? currentMol : _mol2d),
+          getTooltipMode: () => (mode === 'force' ? 'force' : '2d')
+        },
+        options: {
+          getShowAtomTooltips: () => getRenderOptions().showAtomTooltips
+        },
+        analysis: {
+          getActiveValenceWarningMap: () => _activeValenceWarningMap
+        },
+        tooltipState: {
+          getSelectionValenceTooltipAtomId: () => _selectionValenceTooltipAtomId,
+          setSelectionValenceTooltipAtomId: value => {
+            _selectionValenceTooltipAtomId = value;
+          }
+        },
+        tooltip: {
+          hide: () => {
+            tooltip.interrupt().style('opacity', 0);
+          },
+          show: (html, event) => {
+            tooltip.interrupt().style('opacity', 0.9).html(html).style('left', event.clientX + 13 + 'px').style('top', event.clientY - 20 + 'px');
+          }
+        },
+        helpers: {
+          getNodeDatum: element => d3.select(element).datum()
+        },
+        molecule: {
+          getAtomById: (atomId, mol) => mol.atoms.get(atomId) ?? null
+        },
+        formatters: {
+          atomTooltipHtml
+        }
+      });
 
       // ---------------------------------------------------------------------------
-      window.toggleMode = function () {
-        appController.performViewAction('toggle-mode');
-      };
 
       // Tab switching for descriptor panel
       initTabPanels({ doc: document });
@@ -2684,7 +2480,8 @@
 
       // Physicochemical row tooltips — event delegation on the table
       {
-        const physchemPanel = initPhyschemPanel({
+        const physchemPanel = initPhyschemPanel(
+          createPhyschemPanelDeps({
           dom: {
             getTableElement: () => document.getElementById('pc-table')
           },
@@ -2694,7 +2491,8 @@
             restorePersistentHighlight: () => _restorePersistentHighlight(),
             setPersistentHighlightFallback: (fn, options) => setPersistentHighlightFallback(fn, options)
           }
-        });
+          })
+        );
         _capturePhyschemHighlightSnapshot = () => physchemPanel.captureSnapshot();
         _restorePhyschemHighlightSnapshot = snapshot => physchemPanel.restoreSnapshot(snapshot);
       }
@@ -2702,89 +2500,82 @@
       // ---------------------------------------------------------------------------
       // Input handling
       // ---------------------------------------------------------------------------
-      /**
-       * Renders the provided molecule in the active layout mode.
-       *
-       * @param {Molecule} mol
-       * @param {object} [options={}]
-       * @param {boolean} [options.recomputeResonance=true]
-       * @param {boolean} [options.refreshResonancePanel=true]
-       * @param {boolean} [options.preserveHistory=false] When true the undo/redo
-       *   stacks are NOT cleared.  Use this when loading a new molecule from the
-       *   input bar so the previous state remains undoable.
-       * @param {boolean} [options.preserveView=false] When true in force mode,
-       *   keep the current zoom/viewport instead of refitting the graph.
-       * @param {boolean} [options.preserveAnalysis=false] When true, keep the
-       *   current formula/descriptor/sidebar summary instead of recomputing it
-       *   from the rendered molecule. Used for overlays like reaction preview.
-       */
-      function _renderMol(mol, options = {}) {
-        return renderRuntime.renderMol(mol, options);
-      }
-
-      function clearMolecule() {
-        return inputFlowManager.clearMolecule();
-      }
-
-      function parseAndRender(smiles) {
-        return inputFlowManager.parseAndRenderSmiles(smiles);
-      }
-
-      function parseAndRenderInchi(inchi) {
-        return inputFlowManager.parseAndRenderInchi(inchi);
-      }
-
-      window._parseSmiles = smiles => inputFlowManager.parseAndRenderSmiles(smiles);
-      window._parseInchi = inchi => inputFlowManager.parseAndRenderInchi(inchi);
-      window._parseInput = value => inputFlowManager.parseInput(value);
-      window._setInputFormat = (fmt, options = {}) => inputFlowManager.setInputFormat(fmt, options);
-      window._renderExamples = () => inputControls.renderExamples();
-      window._pickRandomMolecule = () => inputControls.pickRandomMolecule();
-      window._getMolSmiles = () => {
-        const mol = _getReactionPreviewSourceMol() ?? currentMol;
-        if (!mol) return null;
-        try {
-          return toSMILES(mol);
-        } catch (e) {
-          return null;
-        }
-      };
-      window._getMolInchi = () => {
-        const mol = _getReactionPreviewSourceMol() ?? currentMol;
-        if (!mol) return null;
-        try {
-          return toInChI(mol);
-        } catch (e) {
-          return null;
-        }
-      };
-      window._takeInputFormatSnapshot = payload => inputFlowManager.takeInputFormatSnapshot(payload);
-      window.deleteSelection = function deleteSelection() {
-        return editingActions.deleteSelection();
-      };
       inputControls.bind();
-
-      window.addEventListener('resize', () => {
-        if (!currentSmiles && !currentInchi) return;
-        if (mode === 'force') {
-          simulation.alpha(0.3).restart();
-        } else {
-          rotationDeg = 0;
-          flipH = false;
-          flipV = false;
-          const _mol = currentInchi ? parseINCHI(currentInchi) : parseSMILES(currentSmiles);
-          render2d(_mol);
+      const appShell = initAppShell(
+        createAppShellDeps({
+        win: window,
+        dom: {
+          getPlotElement: () => document.querySelector('.svg-plot'),
+          getLabelToggleElement: () => document.getElementById('label-toggle')
+        },
+        history: {
+          undo: () => undoAction(),
+          redo: () => redoAction()
+        },
+        exportActions: {
+          copyForcePng: () => copyForcePng(),
+          copyForceSvg: () => copyForceSvg(),
+          copySvg2d: () => copySvg2d(),
+          savePng2d: () => savePng2d()
+        },
+        options: {
+          open: () => optionsModal.open()
+        },
+        navigation: {
+          cleanLayout2d: () => appController.performViewAction('clean-layout-2d'),
+          cleanLayoutForce: () => appController.performViewAction('clean-layout-force'),
+          toggleMode: () => appController.performViewAction('toggle-mode')
+        },
+        selection: {
+          togglePanMode: () => selectionActions.togglePanMode(),
+          toggleSelectMode: () => selectionActions.toggleSelectMode(),
+          toggleDrawBondMode: () => selectionActions.toggleDrawBondMode(),
+          toggleEraseMode: () => selectionActions.toggleEraseMode(),
+          setDrawElement: el => selectionActions.setDrawElement(el)
+        },
+        editing: {
+          deleteSelection: () => editingActions.deleteSelection()
+        },
+        state: {
+          hasLoadedInput: () => !!(currentSmiles || currentInchi),
+          getMode: () => mode
+        },
+        view: {
+          handleForceResize: () => simulation.alpha(0.3).restart(),
+          handle2DResize: () => {
+            rotationDeg = 0;
+            flipH = false;
+            flipV = false;
+            const _mol = currentInchi ? parseINCHI(currentInchi) : parseSMILES(currentSmiles);
+            render2d(_mol);
+          }
+        },
+        input: {
+          parseSmiles: smiles => inputFlowManager.parseAndRenderSmiles(smiles),
+          parseInchi: inchi => inputFlowManager.parseAndRenderInchi(inchi),
+          parseInput: value => inputFlowManager.parseInput(value),
+          setInputFormat: (fmt, options = {}) => inputFlowManager.setInputFormat(fmt, options),
+          renderExamples: () => inputControls.renderExamples(),
+          pickRandomMolecule: () => inputControls.pickRandomMolecule(),
+          getCanonicalMol: () => _getReactionPreviewSourceMol() ?? currentMol,
+          toSmiles: mol => toSMILES(mol),
+          toInchi: mol => toInChI(mol),
+          takeInputFormatSnapshot: payload => inputFlowManager.takeInputFormatSnapshot(payload)
+        },
+        initialState: {
+          getInitialSmiles: () => 'CC(=O)C(Cl)CC(C(C)C)C=C',
+          setInputValue: value => {
+            document.getElementById('smiles-input').value = value;
+          },
+          syncCollectionPicker: value => inputControls.syncCollectionPickerForInputValue(value)
         }
-      });
+        })
+      );
 
       // ---------------------------------------------------------------------------
       // Init
       // ---------------------------------------------------------------------------
-      renderExamples();
-      const initialSmiles = 'CC(=O)C(Cl)CC(C(C)C)C=C';
-      document.getElementById('smiles-input').value = initialSmiles;
-      inputControls.syncCollectionPickerForInputValue(initialSmiles);
-      parseAndRender(initialSmiles);
+      appShell.bootstrap();
     </script>
   </body>
 </html>
