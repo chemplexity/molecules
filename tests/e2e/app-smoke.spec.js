@@ -85,6 +85,109 @@ test('input format toggle participates in undo and redo', async ({ page }) => {
   await expect(page.locator('#smiles-input')).toHaveValue('InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3');
 });
 
+test('undo restores pasted SMILES correctly after auto-switching out of InChI mode', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#inchi-mode-btn').click();
+  await expect(page.locator('#inchi-mode-btn')).toHaveClass(/active/);
+
+  const input = page.locator('#smiles-input');
+  await input.fill('CCC');
+  await input.evaluate(element => {
+    element.dispatchEvent(new Event('paste', { bubbles: true }));
+  });
+  await expect(page.locator('#smiles-mode-btn')).toHaveClass(/active/);
+  await expect(input).toHaveValue('CCC');
+
+  await loadSmiles(page, 'CCN');
+  await expect(input).toHaveValue('CCN');
+
+  await page.locator('#undo-btn').click();
+  await expect(input).toHaveValue('CCC');
+});
+
+test('undo after pasting SMILES in InChI mode restores the prior InChI-backed molecule text', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await page.locator('#inchi-mode-btn').click();
+  await expect(page.locator('#inchi-mode-btn')).toHaveClass(/active/);
+
+  await page.evaluate(() => {
+    const entries = window.randomMolecule.filter(entry => entry.inchi);
+    window.parseInput(entries[0].inchi);
+    window.parseInput(entries[1].inchi);
+  });
+
+  const beforePaste = await page.locator('#smiles-input').inputValue();
+  expect(beforePaste.startsWith('InChI=')).toBeTruthy();
+
+  await page.evaluate(() => {
+    const input = document.getElementById('smiles-input');
+    input.focus();
+    input.setSelectionRange(0, input.value.length);
+    const data = new DataTransfer();
+    data.setData('text/plain', 'CCC');
+    input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+
+  await expect(page.locator('#smiles-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('#smiles-input')).toHaveValue('CCC');
+
+  await page.locator('#undo-btn').click();
+  await expect(page.locator('#inchi-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('#smiles-input')).toHaveValue(beforePaste);
+});
+
+test('undo restores pasted SMILES after editing a pasted molecule that auto-switched out of InChI mode', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCN');
+  await page.locator('#inchi-mode-btn').click();
+  await expect(page.locator('#inchi-mode-btn')).toHaveClass(/active/);
+
+  const input = page.locator('#smiles-input');
+  await input.fill('CCO');
+  await input.evaluate(element => {
+    element.dispatchEvent(new Event('paste', { bubbles: true }));
+  });
+  await expect(page.locator('#smiles-mode-btn')).toHaveClass(/active/);
+  await expect(input).toHaveValue('CCO');
+
+  await page.locator('#erase-btn').click();
+  await page.locator('g[data-atom-id="O3"] .atom-hit').hover();
+  await page.keyboard.press('Delete');
+  await expect(input).toHaveValue('CC');
+
+  await page.locator('#undo-btn').click();
+  await expect(page.locator('#smiles-mode-btn')).toHaveClass(/active/);
+  await expect(input).toHaveValue('CCO');
+});
+
+test('undo restores pasted SMILES after an immediate molecule change from InChI paste mode', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#inchi-mode-btn').click();
+  await expect(page.locator('#inchi-mode-btn')).toHaveClass(/active/);
+
+  await page.evaluate(() => {
+    const input = document.getElementById('smiles-input');
+    input.focus();
+    input.setSelectionRange(0, input.value.length);
+    const data = new DataTransfer();
+    data.setData('text/plain', 'CCC');
+    input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+    window.parseInput('CCN');
+  });
+
+  await expect(page.locator('#smiles-input')).toHaveValue('CCN');
+
+  await page.locator('#undo-btn').click();
+  await expect(page.locator('#smiles-mode-btn')).toHaveClass(/active/);
+  await expect(page.locator('#smiles-input')).toHaveValue('CCC');
+});
+
 test('undo preserves localized aromatic rendering for anthracene after loading another molecule', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -389,6 +492,22 @@ test('reaction preview does not change the molecular weight summary', async ({ p
   await dehydrationRow.click();
   await expect(dehydrationRow).toHaveClass(/reaction-active/);
   await expect(page.locator('#molecularWeight')).toHaveText(beforeWeight ?? '');
+});
+
+test('switching SMILES/InChI format in reaction preview keeps the source molecule input', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+
+  await page.locator('#inchi-mode-btn').click();
+  await expect(page.locator('#smiles-input')).toHaveValue('InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3');
+
+  await page.locator('#smiles-mode-btn').click();
+  await expect(page.locator('#smiles-input')).toHaveValue('CCO');
 });
 
 test('mode toggle participates in undo and redo', async ({ page }) => {

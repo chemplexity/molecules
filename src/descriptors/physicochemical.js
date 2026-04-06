@@ -20,27 +20,61 @@ const _OSP_HETEROATOMS = new Set(['O', 'S', 'P']);
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/**
+ * Throws a `TypeError` if `mol` is not a Molecule-like object (with `.atoms`
+ * and `.bonds` Maps).
+ *
+ * @param {*} mol
+ * @param {string} name - Parameter name used in the error message.
+ */
 function assertMolecule(mol, name) {
   if (!mol || !(mol.atoms instanceof Map) || !(mol.bonds instanceof Map)) {
     throw new TypeError(`${name} must be a Molecule instance with .atoms and .bonds Maps.`);
   }
 }
 
+/**
+ * Returns all non-hydrogen atoms in `mol`.
+ *
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {import('../core/Atom.js').Atom[]}
+ */
 function _heavyAtoms(mol) {
   return [...mol.atoms.values()].filter(a => a.name !== 'H');
 }
 
+/**
+ * Returns `ids` sorted lexicographically (stable, no mutation).
+ *
+ * @param {Iterable<string>} ids
+ * @returns {string[]}
+ */
 function _sortIds(ids) {
   return [...ids].sort((a, b) => String(a).localeCompare(String(b)));
 }
 
+/**
+ * Returns a deterministically sorted copy of `rings` (sorted atom IDs within
+ * each ring, then rings sorted by length then lexicographically).  Used to
+ * produce stable, order-independent descriptor values.
+ *
+ * @param {string[][]} rings
+ * @returns {string[][]}
+ */
 function _sortRings(rings) {
   return rings.map(ring => _sortIds(ring)).sort((a, b) => a.length - b.length || a.join('\u0000').localeCompare(b.join('\u0000')));
 }
 
 /**
- * Infer hybridisation from bond orders.  Returns 'sp', 'sp2', or 'sp3'.
- * Falls back to the stored `properties.hybridization` if set.
+ * Infers hybridisation of `atom` from its bond orders.
+ *
+ * Returns `'sp'` when a triple bond is present, `'sp2'` when a double or
+ * aromatic bond is present, otherwise `'sp3'`.  Falls back to the stored
+ * `atom.properties.hybridization` value if one is already set.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {'sp'|'sp2'|'sp3'}
  */
 function _hybSp(atom, mol) {
   if (atom.getHybridization()) {
@@ -79,6 +113,13 @@ const VALENCE = {
   B: 3
 };
 
+/**
+ * Returns the primary valence target for `atom` used when counting implicit
+ * hydrogens for descriptor calculations (SMILES valence convention).
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @returns {number|undefined} `undefined` for elements not in the valence table.
+ */
 function _targetValence(atom) {
   const charge = atom.getCharge();
   switch (atom.name) {
@@ -127,6 +168,15 @@ function _implicitH(atom, mol) {
   return Math.max(0, targetValence - bondOrderSum);
 }
 
+/**
+ * Returns the total number of hydrogen atoms attached to `atom` — explicit
+ * H neighbours first, falling back to the implicit H count from
+ * `_implicitH` when no explicit H atoms are found.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {number}
+ */
 function _attachedHydrogenCount(atom, mol) {
   const explicit = atom.getHydrogenNeighbors
     ? atom.getHydrogenNeighbors(mol).length
@@ -144,6 +194,16 @@ function _attachedHydrogenCount(atom, mol) {
   return _implicitH(atom, mol);
 }
 
+/**
+ * Returns `true` when `center` has at least one multiple bond (order ≥ 2) to
+ * a heteroatom (O, N, S, P), excluding the bond with ID `excludeBondId`.
+ * Used to detect carbonyl-like or sulfonyl-like centres.
+ *
+ * @param {import('../core/Atom.js').Atom} center
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {string|null} [excludeBondId=null]
+ * @returns {boolean}
+ */
 function _hasMultipleBondToHetero(center, mol, excludeBondId = null) {
   for (const bId of center.bonds) {
     if (bId === excludeBondId) {
@@ -165,6 +225,16 @@ function _hasMultipleBondToHetero(center, mol, excludeBondId = null) {
   return false;
 }
 
+/**
+ * Returns `true` when `atom` is an oxygen that bears at least one hydrogen
+ * and is directly bonded to a carbonyl-like centre (C=O, C=S, S=O, P=O, …).
+ * Used to exclude carboxylic-acid and ester OH groups from the H-bond donor
+ * count in some lipophilicity models.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {boolean}
+ */
 function _isAcidicOH(atom, mol) {
   if (atom.name !== 'O') {
     return false;
@@ -185,6 +255,19 @@ function _isAcidicOH(atom, mol) {
   return false;
 }
 
+/**
+ * Returns `true` when `atom` is a nitrogen that is conjugated to a carbonyl-
+ * like centre via a C–N single bond (amide, sulfonamide, phosphonamide, …).
+ * Such nitrogens have reduced H-bond acceptor strength and are excluded from
+ * the acceptor count.
+ *
+ * Guanidine and amidine carbons (C=N) are intentionally NOT matched, so their
+ * NH groups remain counted as genuine acceptors.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {boolean}
+ */
 function _isAmideLikeNitrogen(atom, mol) {
   if (atom.name !== 'N') {
     return false;
@@ -223,6 +306,22 @@ function _isAmideLikeNitrogen(atom, mol) {
   return false;
 }
 
+/**
+ * Returns `true` when `atom` qualifies as a hydrogen-bond acceptor under the
+ * Lipinski definition (O, N, S, P with available lone pairs).
+ *
+ * Exclusions:
+ * - Positively charged atoms (ammonium, oxonium, …)
+ * - Aromatic N that bears an H (pyrrole-like; it donates its lone pair into
+ *   the ring π-system)
+ * - Amide-like N conjugated to a carbonyl centre
+ * - Acidic OH groups (carboxylic acids, sulfonamides)
+ * - S/P with a multiple bond to a heteroatom (sulfonyl-like)
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {boolean}
+ */
 function _isHBondAcceptor(atom, mol) {
   const charge = atom.getCharge();
   const hydrogens = _attachedHydrogenCount(atom, mol);
@@ -286,6 +385,14 @@ const CRIPPEN = {
   P: 0.45
 };
 
+/**
+ * Maps `atom` to a Crippen atom-type key (e.g. `'C:sp3'`, `'O:oh'`, `'N:+'`).
+ * Returns `null` for elements not covered by the simplified Crippen table.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {string|null}
+ */
 function _crippinKey(atom, mol) {
   const el = atom.name;
   const charge = atom.getCharge();

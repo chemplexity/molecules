@@ -2,6 +2,17 @@
 
 import elements from '../data/elements.js';
 
+/**
+ * Returns the set of commonly-accepted neutral bond-order valences for an
+ * element, based on its periodic-table group and period.
+ *
+ * Examples: C→[4], N→[3] (period 2) or [3,5] (period 3+), O→[2] or [2,4,6],
+ * halogens→[1], noble gases→[0].  Transition metals return `[]`.
+ *
+ * @param {string} symbol
+ * @param {{ group: number, period: number }} el
+ * @returns {number[]}
+ */
 function commonNeutralValences(symbol, { group, period }) {
   if (symbol === 'H') {
     return [1];
@@ -30,6 +41,23 @@ function commonNeutralValences(symbol, { group, period }) {
   return [];
 }
 
+/**
+ * Shifts the common neutral valence family for `symbol` by the given formal
+ * charge and radical count, returning only non-negative integer valences in
+ * the range [0, 8].
+ *
+ * The shift direction follows ordinary chemistry conventions:
+ * - C/Si group (14): always subtract `|charge| + radical`
+ * - N/O/S groups (15–17): add `charge − radical` (cations step up)
+ * - H: subtract `|charge| + radical`
+ * - Others: subtract `charge + radical`
+ *
+ * @param {string} symbol
+ * @param {{ group: number, period: number }} el
+ * @param {number} charge - Formal charge.
+ * @param {number} radical - Unpaired electron count.
+ * @returns {number[]}
+ */
 function shiftedCommonValences(symbol, el, charge, radical) {
   const base = commonNeutralValences(symbol, el);
   if (base.length === 0) {

@@ -532,6 +532,30 @@ function _applyParsedSMIRKS(molecule, transform, options = {}) {
   return acceptedMappings.length > 0 ? result : null;
 }
 
+/**
+ * Applies a SMIRKS reaction transform to `molecule` and returns a new
+ * `Molecule` with the transformation applied, or `null` when the reactant
+ * pattern does not match.
+ *
+ * `smirks` may be either a SMIRKS string or a pre-parsed transform object
+ * (as returned by `parseSMIRKS`).  Passing a pre-parsed transform avoids
+ * re-parsing on repeated calls.
+ *
+ * **Options:**
+ * - `mode`    `'first'` (default) — apply the transform at the first
+ *             matching site only. `'all'` — apply at every non-overlapping
+ *             matching site in one pass.
+ * - `mapping` `Map<reactantAtomId, targetAtomId>` — an explicit atom mapping
+ *             to use instead of searching for a match.  Only valid with
+ *             `mode: 'first'`.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {string|object} smirks - SMIRKS string or pre-parsed transform.
+ * @param {object} [options]
+ * @param {'first'|'all'} [options.mode='first']
+ * @param {Map<string,string>} [options.mapping]
+ * @returns {import('../core/Molecule.js').Molecule|null}
+ */
 export function applySMIRKS(molecule, smirks, options = {}) {
   const transform = typeof smirks === 'string' ? parseSMIRKS(smirks) : smirks;
   return _applyParsedSMIRKS(molecule, transform, options);

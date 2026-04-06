@@ -15,6 +15,7 @@ export { generateCoords, refineExistingCoords } from './coords2d.js';
  * @param {boolean} [options.freezeRings=true]
  * @param {boolean} [options.freezeChiralCenters=false]
  * @param {boolean} [options.allowBranchReflect=true]
+ * @returns {void} Coordinates are written directly onto the atoms in `mol`.
  */
 export function generateAndRefine2dCoords(
   mol,

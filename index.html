@@ -277,72 +277,22 @@
       ];
 
       function setInputFormat(fmt, options = {}) {
-        const { preserveInput = false, inputValue = null, recordHistory = !preserveInput } = options;
-        const prev = inputMode;
-        if (fmt !== prev && recordHistory) {
-          window._takeInputFormatSnapshot?.({
-            prevInputMode: prev,
-            visibleInputValue: document.getElementById('smiles-input').value ?? ''
-          });
-        }
-        inputMode = fmt;
-        document.getElementById('smiles-mode-btn').classList.toggle('active', fmt === 'smiles');
-        document.getElementById('inchi-mode-btn').classList.toggle('active', fmt === 'inchi');
-        document.getElementById('input-label').textContent = fmt === 'inchi' ? 'Input InChI notation...' : 'Input SMILES notation...';
-
-        let inputVal = preserveInput ? (inputValue ?? document.getElementById('smiles-input').value) : '';
-        if (!preserveInput && fmt === 'smiles' && prev === 'inchi' && window._getMolSmiles) {
-          inputVal = window._getMolSmiles() || '';
-        }
-        if (!preserveInput && fmt === 'inchi' && prev === 'smiles' && window._getMolInchi) {
-          inputVal = window._getMolInchi() || '';
-        }
-        if (!preserveInput && window._getCollectionInputValue) {
-          inputVal = window._getCollectionInputValue(fmt) || inputVal;
-        }
-        document.getElementById('smiles-input').value = inputVal;
-        if (fmt === 'inchi') {
-          currentInchi = inputVal || null;
-        } else {
-          currentSmiles = inputVal || null;
-        }
-        if (window._syncCollectionPickerForInputValue) {
-          window._syncCollectionPickerForInputValue(inputVal);
-        }
-        renderExamples();
+        window._setInputFormat?.(fmt, options);
       }
 
       function renderExamples() {
-        const isInchi = inputMode === 'inchi';
-        const links = exampleMolecules
-          .map(m => {
-            const val = isInchi ? m.inchi : m.smiles;
-            return '<a href="#" onclick="parseInput(\'' + val.replace(/\\/g, '\\\\').replace(/'/g, "\\'") + '\'); return false">' + m.name + '</a>';
-          })
-          .join(', ');
-        document.getElementById('examples-list').innerHTML = '<i>examples:&nbsp;</i>' + links + ', <a href="#" onclick="pickRandomMolecule(); return false">random</a>';
+        window._renderExamples?.();
       }
 
       function pickRandomMolecule() {
-        const pool = inputMode === 'inchi' ? randomMolecule.filter(m => m.inchi) : randomMolecule;
-        const mol = pool[Math.floor(Math.random() * pool.length)];
-        parseInput(inputMode === 'inchi' ? mol.inchi : mol.smiles);
+        window._pickRandomMolecule?.();
       }
 
       function parseInput(val) {
-        if (!val) {
-          return;
-        }
-        document.getElementById('smiles-input').value = val;
-        if (window._syncCollectionPickerForInputValue) {
-          window._syncCollectionPickerForInputValue(val);
-        }
-        if (inputMode === 'inchi') {
-          window._parseInchi && window._parseInchi(val);
-        } else {
-          window._parseSmiles && window._parseSmiles(val);
-        }
+        window._parseInput?.(val);
       }
+
+      window._getExampleMolecules = () => exampleMolecules;
     </script>
 
     <!-- Load shared molecule list; sets window.randomMolecule for the picker below. -->
@@ -369,10 +319,12 @@
         redoAction
       } from './src/app/core/undo.js';
       import { createAppController } from './src/app/core/app-controller.js';
+      import { createInputFlowManager } from './src/app/core/input-flow.js';
       import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from './src/app/core/editor-actions.js';
       import { createSessionSnapshotManager } from './src/app/core/session-snapshot.js';
       import { createSessionUiStateBridge } from './src/app/core/session-ui-state.js';
       import { initExport, copyForcePng, copyForceSvg, copySvg2d, savePng2d } from './src/app/ui/export.js';
+      import { createInputControls } from './src/app/interactions/input-controls.js';
       import { createDrawBondCommitActions } from './src/app/interactions/draw-bond-commit.js';
       import { createEditingActions } from './src/app/interactions/editing.js';
       import { createDragGestureActions } from './src/app/interactions/drag-gestures.js';
@@ -423,6 +375,7 @@
         _plotOverlayFitPadding,
         _clearReactionPreviewState,
         _captureReactionPreviewSnapshot,
+        _getReactionPreviewSourceMol,
         _restoreReactionPreviewSnapshot,
         _restoreReactionPreviewSource,
         _prepareReactionPreviewEditTargets,
@@ -2569,6 +2522,9 @@
         refreshSelectionOverlay: () => _refreshSelectionOverlay()
       });
 
+      let inputFlowManager;
+      let inputControls;
+
       sessionSnapshotManager = createSessionSnapshotManager({
         Molecule,
         getMode: () => mode,
@@ -2595,7 +2551,7 @@
         },
         getInputMode: () => inputMode,
         getInputValue: () => inputEl.value,
-        setInputFormat: (fmt, options = {}) => setInputFormat(fmt, options),
+        setInputFormat: (fmt, options = {}) => inputFlowManager.setInputFormat(fmt, options),
         syncInputField: mol => _syncInputField(mol),
         serializeSnapshotMol: mol => sessionUiState.serializeSnapshotMol(mol),
         captureReactionPreviewSnapshot: () => _captureReactionPreviewSnapshot(),
@@ -2727,6 +2683,137 @@
             updateForce(mol, { preservePositions: true, preserveView: true });
             _restoreZoomTransformSnapshot(snap.zoomTransform);
           }
+        }
+      });
+
+      inputFlowManager = createInputFlowManager({
+        state: {
+          getInputMode: () => inputMode,
+          setInputMode: value => {
+            inputMode = value;
+          },
+          getCurrentSmiles: () => currentSmiles,
+          setCurrentSmiles: value => {
+            currentSmiles = value;
+          },
+          getCurrentInchi: () => currentInchi,
+          setCurrentInchi: value => {
+            currentInchi = value;
+          },
+          getCurrentMol: () => currentMol,
+          setCurrentMol: value => {
+            currentMol = value;
+          },
+          getMol2d: () => _mol2d,
+          setMol2d: value => {
+            _mol2d = value;
+          },
+          getMode: () => mode,
+          clear2dDerivedState: () => {
+            _hCounts2d = null;
+            _stereoMap2d = null;
+          },
+          clearSelection: () => {
+            _selectedAtomIds.clear();
+            _selectedBondIds.clear();
+          },
+          clearHovered: () => {
+            _hoveredAtomIds.clear();
+            _hoveredBondIds.clear();
+          },
+          clearForceRenderCaches: () => {
+            _forceSelLines = null;
+            _forceSelCircles = null;
+            _forceValenceWarningCircles = null;
+            _fgHlLines = null;
+            _fgHlCircles = null;
+          },
+          resetValenceWarnings: () => {
+            _activeValenceWarningMap = new Map();
+            _selectionValenceTooltipAtomId = null;
+          }
+        },
+        dom: {
+          getInputElement: () => inputEl,
+          setInputFormatButtons: fmt => {
+            document.getElementById('smiles-mode-btn').classList.toggle('active', fmt === 'smiles');
+            document.getElementById('inchi-mode-btn').classList.toggle('active', fmt === 'inchi');
+          },
+          setInputLabel: text => {
+            document.getElementById('input-label').textContent = text;
+          }
+        },
+        history: {
+          takeSnapshot: options => _takeSnapshot(options)
+        },
+        snapshot: {
+          capture: options => _captureAppSnapshot(options)
+        },
+        molecule: {
+          getMolSmiles: () => window._getMolSmiles?.() ?? null,
+          getMolInchi: () => window._getMolInchi?.() ?? null
+        },
+        collection: {
+          getInputValue: fmt => inputControls?.getCollectionInputValue(fmt) ?? '',
+          syncPickerForInputValue: value => inputControls?.syncCollectionPickerForInputValue(value)
+        },
+        examples: {
+          render: () => inputControls?.renderExamples()
+        },
+        parsers: {
+          parseSMILES,
+          parseINCHI,
+          detectChemicalStringFormat
+        },
+        overlays: {
+          hasReactionPreview: () => _hasReactionPreview(),
+          clearReactionPreviewState: () => _clearReactionPreviewState()
+        },
+        renderers: {
+          renderMol: (mol, options = {}) => _renderMol(mol, options),
+          clearScene: () => {
+            g.selectAll('*').remove();
+          }
+        },
+        highlights: {
+          clear: () => clearHighlightState()
+        },
+        force: {
+          clearIfActive: () => {
+            if (mode === 'force') {
+              simulation.nodes([]);
+              simulation.force('link').links([]);
+              simulation.stop();
+            }
+          }
+        },
+        analysis: {
+          updatePanels: (mol, options = {}) => _updateAnalysisPanels(mol, options),
+          clearSummary: () => {
+            document.getElementById('molecularFormula').innerHTML = '';
+            document.getElementById('molecularWeight').textContent = '';
+            document.getElementById('descriptor-body').innerHTML = '';
+          }
+        }
+      });
+
+      inputControls = createInputControls({
+        data: {
+          exampleMolecules: window._getExampleMolecules?.() ?? [],
+          randomMolecule: window.randomMolecule ?? [],
+          moleculeCatalog
+        },
+        state: {
+          getInputMode: () => inputMode
+        },
+        dom: {
+          getInputElement: () => inputEl,
+          getCollectionSelectElement: () => collectionSelectEl,
+          getExamplesElement: () => document.getElementById('examples-list')
+        },
+        actions: {
+          parseInput: value => inputFlowManager.parseInput(value),
+          parseInputWithAutoFormat: value => inputFlowManager.parseInputWithAutoFormat(value)
         }
       });
 
@@ -4504,247 +4591,46 @@
       }
 
       function clearMolecule() {
-        if (currentMol || _mol2d) {
-          _takeSnapshot({ clearReactionPreview: false });
-        }
-        _clearReactionPreviewState();
-        currentMol = null;
-        currentSmiles = null;
-        currentInchi = null;
-        _mol2d = null;
-        _hCounts2d = null;
-        _stereoMap2d = null;
-        _selectedAtomIds.clear();
-        _selectedBondIds.clear();
-        _hoveredAtomIds.clear();
-        _hoveredBondIds.clear();
-        clearHighlightState();
-        g.selectAll('*').remove();
-        _forceSelLines = null;
-        _forceSelCircles = null;
-        _forceValenceWarningCircles = null;
-        _fgHlLines = null;
-        _fgHlCircles = null;
-        _activeValenceWarningMap = new Map();
-        _selectionValenceTooltipAtomId = null;
-        if (mode === 'force') {
-          simulation.nodes([]);
-          simulation.force('link').links([]);
-          simulation.stop();
-        }
-        document.getElementById('molecularFormula').innerHTML = '';
-        document.getElementById('molecularWeight').textContent = '';
-        document.getElementById('descriptor-body').innerHTML = '';
-        _updateAnalysisPanels(null);
+        return inputFlowManager.clearMolecule();
       }
 
       function parseAndRender(smiles) {
-        if (typeof smiles !== 'string' || smiles.length === 0 || smiles.length > 1000) return;
-        if (smiles === currentSmiles && mode === 'force' && !_hasReactionPreview()) {
-          _updateAnalysisPanels(currentMol, { recomputeResonance: false });
-          return;
-        }
-
-        let mol;
-        try {
-          mol = parseSMILES(smiles);
-        } catch (e) {
-          console.warn('SMILES parse error:', e.message);
-          return;
-        }
-
-        if (!mol || mol.atoms.size === 0) return;
-        const previousInputSmiles = currentSmiles ?? window._getMolSmiles?.() ?? '';
-        const previousInputInchi = currentInchi ?? window._getMolInchi?.() ?? '';
-        const previousDocumentState =
-          currentMol || _mol2d
-            ? {
-                currentSmiles: previousInputSmiles || null,
-                currentInchi: previousInputInchi || null,
-                inputMode,
-                inputValue: inputMode === 'inchi' ? previousInputInchi : previousInputSmiles
-              }
-            : null;
-        const previousSnapshot = previousDocumentState ? _captureAppSnapshot({ documentState: previousDocumentState }) : null;
-        _clearReactionPreviewState();
-        if (currentMol || _mol2d) {
-          _takeSnapshot({
-            clearReactionPreview: false,
-            snapshot: previousSnapshot
-          });
-        }
-        currentSmiles = smiles;
-        currentInchi = null;
-        _renderMol(mol, { preserveHistory: true });
+        return inputFlowManager.parseAndRenderSmiles(smiles);
       }
 
       function parseAndRenderInchi(inchi) {
-        if (typeof inchi !== 'string' || inchi.length === 0 || inchi.length > 2000) return;
-
-        let mol;
-        try {
-          mol = parseINCHI(inchi);
-        } catch (e) {
-          console.warn('InChI parse error:', e.message);
-          return;
-        }
-
-        if (!mol || mol.atoms.size === 0) return;
-        const previousInputSmiles = currentSmiles ?? window._getMolSmiles?.() ?? '';
-        const previousInputInchi = currentInchi ?? window._getMolInchi?.() ?? '';
-        const previousDocumentState =
-          currentMol || _mol2d
-            ? {
-                currentSmiles: previousInputSmiles || null,
-                currentInchi: previousInputInchi || null,
-                inputMode,
-                inputValue: inputMode === 'inchi' ? previousInputInchi : previousInputSmiles
-              }
-            : null;
-        const previousSnapshot = previousDocumentState ? _captureAppSnapshot({ documentState: previousDocumentState }) : null;
-        _clearReactionPreviewState();
-        if (currentMol || _mol2d) {
-          _takeSnapshot({
-            clearReactionPreview: false,
-            snapshot: previousSnapshot
-          });
-        }
-        currentSmiles = null;
-        currentInchi = inchi;
-        _renderMol(mol, { preserveHistory: true });
+        return inputFlowManager.parseAndRenderInchi(inchi);
       }
 
-      window._parseSmiles = parseAndRender;
-      window._parseInchi = parseAndRenderInchi;
-
-      const collectionEntries = moleculeCatalog.flatMap(collection =>
-        collection.molecules.map(molecule => ({
-          collectionId: collection.id,
-          collectionName: collection.name,
-          ...molecule
-        }))
-      );
-      const collectionEntriesById = new Map(collectionEntries.map(entry => [entry.id, entry]));
-
-      function selectedCollectionEntry() {
-        return collectionEntriesById.get(collectionSelectEl.value) ?? null;
-      }
-
-      function collectionValueForMode(entry, fmt = inputMode) {
-        if (!entry) {
-          return '';
-        }
-        return fmt === 'inchi' ? entry.inchi : entry.smiles;
-      }
-
-      function populateCollectionPicker() {
-        const options = ['<option value="">Molecule Catalog...</option>'];
-        for (const collection of moleculeCatalog) {
-          options.push(`<optgroup label="${collection.name}">`);
-          for (const molecule of collection.molecules) {
-            options.push(`<option value="${molecule.id}">${molecule.name}</option>`);
-          }
-          options.push('</optgroup>');
-        }
-        collectionSelectEl.innerHTML = options.join('');
-      }
-
-      function syncCollectionPickerForInputValue(value) {
-        const entry = selectedCollectionEntry();
-        if (!entry) {
-          return;
-        }
-        if (String(value ?? '') !== collectionValueForMode(entry)) {
-          collectionSelectEl.value = '';
-        }
-      }
-
-      window._getCollectionInputValue = fmt => collectionValueForMode(selectedCollectionEntry(), fmt);
-      window._syncCollectionPickerForInputValue = syncCollectionPickerForInputValue;
-
-      function parseInputWithAutoFormat(rawValue) {
-        const value = typeof rawValue === 'string' ? rawValue.trim() : '';
-        if (value.length === 0) {
-          clearMolecule();
-          return;
-        }
-
-        const detectedFormat = detectChemicalStringFormat(value);
-        const parseFormat = detectedFormat ?? inputMode;
-
-        if (detectedFormat && detectedFormat !== inputMode) {
-          setInputFormat(detectedFormat, {
-            preserveInput: true,
-            inputValue: value
-          });
-        }
-
-        if (parseFormat === 'inchi') {
-          parseAndRenderInchi(value);
-        } else {
-          parseAndRender(value);
-        }
-      }
-
-      populateCollectionPicker();
-
-      collectionSelectEl.addEventListener('change', () => {
-        const entry = selectedCollectionEntry();
-        if (!entry) {
-          return;
-        }
-        const value = collectionValueForMode(entry);
-        inputEl.value = value;
-        parseInputWithAutoFormat(value);
-      });
+      window._parseSmiles = smiles => inputFlowManager.parseAndRenderSmiles(smiles);
+      window._parseInchi = inchi => inputFlowManager.parseAndRenderInchi(inchi);
+      window._parseInput = value => inputFlowManager.parseInput(value);
+      window._setInputFormat = (fmt, options = {}) => inputFlowManager.setInputFormat(fmt, options);
+      window._renderExamples = () => inputControls.renderExamples();
+      window._pickRandomMolecule = () => inputControls.pickRandomMolecule();
       window._getMolSmiles = () => {
-        if (!currentMol) return null;
+        const mol = _getReactionPreviewSourceMol() ?? currentMol;
+        if (!mol) return null;
         try {
-          return toSMILES(currentMol);
+          return toSMILES(mol);
         } catch (e) {
           return null;
         }
       };
       window._getMolInchi = () => {
-        if (!currentMol) return null;
+        const mol = _getReactionPreviewSourceMol() ?? currentMol;
+        if (!mol) return null;
         try {
-          return toInChI(currentMol);
+          return toInChI(mol);
         } catch (e) {
           return null;
         }
       };
-      window._takeInputFormatSnapshot = ({ prevInputMode, visibleInputValue } = {}) => {
-        const currentMolSmiles = window._getMolSmiles?.() ?? '';
-        const currentMolInchi = window._getMolInchi?.() ?? '';
-        _takeSnapshot({
-          clearReactionPreview: false,
-          documentState: {
-            currentSmiles: (prevInputMode === 'smiles' ? visibleInputValue : (currentSmiles ?? currentMolSmiles)) || null,
-            currentInchi: (prevInputMode === 'inchi' ? visibleInputValue : (currentInchi ?? currentMolInchi)) || null,
-            inputMode: prevInputMode ?? inputMode,
-            inputValue: visibleInputValue ?? ''
-          }
-        });
-      };
+      window._takeInputFormatSnapshot = payload => inputFlowManager.takeInputFormatSnapshot(payload);
       window.deleteSelection = function deleteSelection() {
         return editingActions.deleteSelection();
       };
-
-      inputEl.addEventListener('input', event => {
-        syncCollectionPickerForInputValue(event.target.value);
-      });
-
-      inputEl.addEventListener('keyup', event => {
-        if (event.key === 'Enter') {
-          parseInputWithAutoFormat(event.target.value);
-        }
-      });
-
-      inputEl.addEventListener('paste', event => {
-        setTimeout(() => {
-          parseInputWithAutoFormat(event.target.value);
-        }, 0);
-      });
+      inputControls.bind();
 
       window.addEventListener('resize', () => {
         if (!currentSmiles && !currentInchi) return;
@@ -4765,7 +4651,7 @@
       renderExamples();
       const initialSmiles = 'CC(=O)C(Cl)CC(C(C)C)C=C';
       document.getElementById('smiles-input').value = initialSmiles;
-      syncCollectionPickerForInputValue(initialSmiles);
+      inputControls.syncCollectionPickerForInputValue(initialSmiles);
       parseAndRender(initialSmiles);
     </script>
   </body>

@@ -3,10 +3,25 @@
 import { parseSMARTS } from './parser.js';
 import { findSubgraphMappings } from '../algorithms/vf2.js';
 
+/**
+ * Flips a SMILES directional-bond marker: `'/'` ↔ `'\\'`.
+ *
+ * @param {'/'|'\\'} dir
+ * @returns {'/'|'\\'}
+ */
 function _flipStereoDir(dir) {
   return dir === '/' ? '\\' : '/';
 }
 
+/**
+ * Returns the stereo direction of `bond` as seen from `atomId`.
+ * The stored direction is defined relative to `bond.atoms[0]`; if `atomId`
+ * is `bond.atoms[1]` the direction is flipped.
+ *
+ * @param {import('../core/Bond.js').Bond|undefined} bond
+ * @param {string} atomId
+ * @returns {'/'|'\\'|null}
+ */
 function _bondStereoRelativeTo(bond, atomId) {
   const dir = bond?.properties?.stereo ?? null;
   if (!dir) {
@@ -15,6 +30,22 @@ function _bondStereoRelativeTo(bond, atomId) {
   return bond.atoms[0] === atomId ? dir : _flipStereoDir(dir);
 }
 
+/**
+ * Extracts E/Z stereo constraints from a parsed SMARTS query molecule.
+ *
+ * For each double bond in `queryMol` that has directional (`/`/`\\`) bonds
+ * on both sp2 ends, records whether the two marked substituents should be on
+ * the same or opposite sides of the double bond (`'same'` → Z, `'opposite'`
+ * → E by SMILES convention).
+ *
+ * @param {import('../core/Molecule.js').Molecule} queryMol
+ * @returns {Array<{
+ *   qDoubleBondId: string,
+ *   qA: string, qB: string,
+ *   qMarkedA: string, qMarkedB: string,
+ *   relation: 'same'|'opposite'
+ * }>}
+ */
 function _queryStereoConstraints(queryMol) {
   const constraints = [];
 
@@ -64,6 +95,16 @@ function _queryStereoConstraints(queryMol) {
   return constraints;
 }
 
+/**
+ * Returns `true` when the E/Z stereo `constraints` derived from the query
+ * are all satisfied by the current `mapping` into `target`.
+ *
+ * @param {import('../core/Molecule.js').Molecule} queryMol
+ * @param {import('../core/Molecule.js').Molecule} target
+ * @param {Map<string,string>} mapping - Query → target atom ID map.
+ * @param {ReturnType<typeof _queryStereoConstraints>} constraints
+ * @returns {boolean}
+ */
 function _mappingStereoMatches(queryMol, target, mapping, constraints) {
   if (constraints.length === 0) {
     return true;
@@ -119,10 +160,27 @@ function _vf2Options(queryMol, target) {
   };
 }
 
+/**
+ * Produces a sort key for a mapping: an array of target-atom ID strings in
+ * query-atom-ID order, used for deterministic mapping ordering.
+ *
+ * @param {Map<string,string>} mapping
+ * @param {string[]} queryAtomIds
+ * @returns {string[]}
+ */
 function _mappingOrderTuple(mapping, queryAtomIds) {
   return queryAtomIds.map(id => String(mapping.get(id) ?? ''));
 }
 
+/**
+ * Comparator for sorting mappings by their `_mappingOrderTuple`.
+ * Returns negative / 0 / positive like `Array.prototype.sort`.
+ *
+ * @param {Map<string,string>} a
+ * @param {Map<string,string>} b
+ * @param {string[]} queryAtomIds
+ * @returns {number}
+ */
 function _compareMappingOrder(a, b, queryAtomIds) {
   const tupleA = _mappingOrderTuple(a, queryAtomIds);
   const tupleB = _mappingOrderTuple(b, queryAtomIds);
@@ -136,6 +194,21 @@ function _compareMappingOrder(a, b, queryAtomIds) {
   return 0;
 }
 
+/**
+ * Internal generator that runs a parsed SMARTS query molecule against
+ * `target` via VF2, applies stereo filtering, sorts results deterministically,
+ * and optionally deduplicates mappings by covered atom set.
+ *
+ * Exported for use by `smirks/apply.js` (which needs raw, non-deduplicated
+ * results).  Prefer the public `findSMARTS` / `findSMARTSRaw` APIs instead.
+ *
+ * @param {import('../core/Molecule.js').Molecule} target
+ * @param {import('../core/Molecule.js').Molecule} queryMol - Pre-parsed SMARTS molecule.
+ * @param {object} [options]
+ * @param {number} [options.limit=Infinity]
+ * @param {{ dedupe?: boolean }} [internalOptions]
+ * @yields {Map<string,string>}
+ */
 function* _findSMARTSParsed(target, queryMol, options = {}, { dedupe = true } = {}) {
   const stereoConstraints = _queryStereoConstraints(queryMol);
   const { limit, ...restOptions } = options ?? {};

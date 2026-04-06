@@ -51,7 +51,12 @@ export const CPK = {
 };
 const DEFAULT_COLOR = '#FF69B4';
 
-/** Returns the CPK fill colour for an element symbol. */
+/**
+ * Returns the CPK fill colour for an element symbol.
+ *
+ * @param {string} sym - Element symbol (e.g. `'C'`, `'O'`).
+ * @returns {string} Hex colour string (e.g. `'#FF0D0D'`), or hot-pink for unknown elements.
+ */
 export function atomColor(sym) {
   return CPK[sym] ?? DEFAULT_COLOR;
 }
@@ -66,7 +71,14 @@ export const WEDGE_DASHES = 6; // number of hash lines in a dashed bond
 // Geometry helpers
 // ---------------------------------------------------------------------------
 
-/** Length of 2D vector (x, y). Returns at least 1 to avoid division by zero. */
+/**
+ * Returns the length of a 2D vector. Returns at least `1` to avoid
+ * division-by-zero in callers that use this as a denominator.
+ *
+ * @param {number} x
+ * @param {number} y
+ * @returns {number}
+ */
 export function vecLen(x, y) {
   return Math.sqrt(x * x + y * y) || 1;
 }
@@ -99,13 +111,28 @@ export function atomBBox(atoms) {
   return { minX, maxX, minY, maxY, cx: (minX + maxX) / 2, cy: (minY + maxY) / 2 };
 }
 
-/** Unit perpendicular vector (rotated 90° CCW) for a direction (dx, dy). */
+/**
+ * Returns a unit vector perpendicular to `(dx, dy)`, rotated 90° counter-clockwise.
+ *
+ * @param {number} dx
+ * @param {number} dy
+ * @returns {{ nx: number, ny: number }}
+ */
 export function perpUnit(dx, dy) {
   const len = vecLen(dx, dy);
   return { nx: -dy / len, ny: dx / len };
 }
 
-/** Shorten a line segment by d1 at the start and d2 at the end. */
+/**
+ * Shortens a line segment by `d1` at the start and `d2` at the end,
+ * keeping the original direction.
+ *
+ * @param {number} x1 @param {number} y1 - Start point.
+ * @param {number} x2 @param {number} y2 - End point.
+ * @param {number} d1 - Distance to trim from the start.
+ * @param {number} d2 - Distance to trim from the end.
+ * @returns {{ x1: number, y1: number, x2: number, y2: number }}
+ */
 export function shortenLine(x1, y1, x2, y2, d1, d2) {
   const dx = x2 - x1,
     dy = y2 - y1;
@@ -237,6 +264,19 @@ export function labelTextOffset(label, fontSize) {
   return 0;
 }
 
+/**
+ * Formats a formal charge integer as a display string suitable for rendering
+ * in a charge badge.
+ *
+ * - `0` → `''`
+ * - `1` → `'+'`
+ * - `n > 1` → `'n+'`
+ * - `-1` → `'−'` (Unicode minus)
+ * - `n < -1` → `'|n|−'`
+ *
+ * @param {number} charge
+ * @returns {string}
+ */
 export function formatChargeLabel(charge) {
   if (!charge) {
     return '';
@@ -244,6 +284,16 @@ export function formatChargeLabel(charge) {
   return charge === 1 ? '+' : charge > 1 ? `${charge}+` : charge === -1 ? '−' : `${Math.abs(charge)}−`;
 }
 
+/**
+ * Computes the font size and circle radius for a charge badge.
+ *
+ * The badge radius is at least large enough to contain one character and
+ * scales with the text length for multi-character labels (e.g. `'2+'`).
+ *
+ * @param {string} chargeLabel - The formatted charge string (from `formatChargeLabel`).
+ * @param {number} fontSize - Base font size in px.
+ * @returns {{ fontSize: number, radius: number }}
+ */
 export function chargeBadgeMetrics(chargeLabel, fontSize) {
   const label = chargeLabel ?? '';
   const textLength = Math.max(1, label.length);
@@ -356,6 +406,17 @@ function displayedBondOrderSum(atom, mol) {
   return sum;
 }
 
+/**
+ * Returns the number of lone pairs to render for `atom`.
+ *
+ * Computed as `floor((valenceElectrons − bondOrderSum − formalCharge − radicalElectrons) / 2)`.
+ * Returns 0 for transition metals, noble gases, unknown elements, and when
+ * `atom` or `mol` are falsy.
+ *
+ * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Molecule.js').Molecule} mol
+ * @returns {number}
+ */
 export function displayedLonePairCount(atom, mol) {
   if (!atom || !mol) {
     return 0;

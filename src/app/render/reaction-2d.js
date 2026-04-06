@@ -208,6 +208,10 @@ export function _captureReactionPreviewSnapshot() {
   };
 }
 
+export function _getReactionPreviewSourceMol() {
+  return _reactionPreviewSourceMol?.clone() ?? null;
+}
+
 export function _restoreReactionPreviewSnapshot(previewSnap) {
   _clearReactionPreviewState();
   if (!previewSnap) {

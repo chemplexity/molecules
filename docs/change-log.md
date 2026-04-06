@@ -32,6 +32,11 @@
 - Extract delete and erase editing logic into an interaction module
 - Extract primitive drag gesture coordination into an interaction module
 - Keep hovered keyboard deletes from turning into sticky undo selection
+- Extract input parsing, loading, and format-switch history into a core module
+- Parse pasted SMILES synchronously so undo stays aligned after InChI-mode paste flows
+- Preserve the prior InChI input state when pasted SMILES auto-switches formats
+- Extract input textbox, picker, example, and random-molecule controls into an interaction module
+- Keep SMILES/InChI format toggles tied to the source molecule during reaction preview
 
 ## 2026-04-04
 
