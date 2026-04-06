@@ -203,7 +203,11 @@ function _resolveResonanceTargetMolecule(mol) {
   if (!ctx.hasReactionPreview?.()) {
     return mol;
   }
-  const restored = ctx.restoreReactionPreviewSource?.();
+  const restored = ctx.restoreReactionPreviewSource?.(
+    ctx.mode === '2d'
+      ? { restoreEntryZoom: true, restoreEntryDisplay: true }
+      : undefined
+  );
   if (!restored) {
     return mol;
   }

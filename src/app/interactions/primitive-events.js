@@ -1,6 +1,15 @@
 /** @module app/interactions/primitive-events */
 
 export function createPrimitiveEventHandlers(context) {
+  function showPrimitiveHover(atomIds = [], bondIds = []) {
+    if (context.view.isPrimitiveHoverSuppressed?.()) {
+      context.view.setPrimitiveHoverSuppressed?.(false);
+      return false;
+    }
+    context.view.showPrimitiveHover(atomIds, bondIds);
+    return true;
+  }
+
   function maybeRefreshDrawBondHover(id, kind) {
     if (!context.state.overlayState.getDrawBondMode() || context.view.isDrawBondHoverSuppressed()) {
       return;
@@ -40,10 +49,12 @@ export function createPrimitiveEventHandlers(context) {
 
   function handle2dBondMouseOver(event, bond, atom1, atom2) {
     if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
-      context.view.showPrimitiveHover([], [bond.id]);
+      showPrimitiveHover([], [bond.id]);
       return;
     }
-    context.view.showPrimitiveHover([], [bond.id]);
+    if (!showPrimitiveHover([], [bond.id])) {
+      return;
+    }
     maybeRefreshDrawBondHover(bond.id, 'bond');
     if (context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode()) {
       return;
@@ -89,10 +100,12 @@ export function createPrimitiveEventHandlers(context) {
 
   function handle2dAtomMouseOver(event, atom, mol, valenceWarning) {
     if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
-      context.view.showPrimitiveHover([atom.id], []);
+      showPrimitiveHover([atom.id], []);
       return;
     }
-    context.view.showPrimitiveHover([atom.id], []);
+    if (!showPrimitiveHover([atom.id], [])) {
+      return;
+    }
     maybeRefreshDrawBondHover(atom.id, 'atom');
     const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
     if (!showAtomTooltips || (context.state.overlayState.getEraseMode() && !valenceWarning) || ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode()) && !valenceWarning)) {
@@ -144,10 +157,12 @@ export function createPrimitiveEventHandlers(context) {
       if (bond?.atoms.some(id => molecule.atoms.get(id)?.name === 'H')) {
         return;
       }
-      context.view.showPrimitiveHover([], [bondId]);
+      showPrimitiveHover([], [bondId]);
       return;
     }
-    context.view.showPrimitiveHover([], [bondId]);
+    if (!showPrimitiveHover([], [bondId])) {
+      return;
+    }
     maybeRefreshDrawBondHover(bondId, 'bond');
     if (context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode()) {
       return;
@@ -219,10 +234,12 @@ export function createPrimitiveEventHandlers(context) {
       if (atomNode.name === 'H') {
         return;
       }
-      context.view.showPrimitiveHover([atomNode.id], []);
+      showPrimitiveHover([atomNode.id], []);
       return;
     }
-    context.view.showPrimitiveHover([atomNode.id], []);
+    if (!showPrimitiveHover([atomNode.id], [])) {
+      return;
+    }
     maybeRefreshDrawBondHover(atomNode.id, 'atom');
     const atom = molecule.atoms.get(atomNode.id);
     if (!atom) {

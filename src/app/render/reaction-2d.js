@@ -48,6 +48,8 @@ let _reactionPreviewForcedStereoBondCenters = new Map();
 let _reactionPreviewReactantReferenceCoords = new Map();
 let _reactionPreviewHighlightMappings = null;
 let _reactionPreviewForceArrowOffset = 0;
+let _reactionPreviewEntryZoomTransform = null;
+let _reactionPreviewEntryDisplayMol = null;
 
 function _takeReactionPreviewHistoryStep() {
   ctx.takeSnapshot?.({ clearReactionPreview: false });
@@ -131,6 +133,8 @@ export function _clearReactionPreviewState() {
   _reactionPreviewReactantReferenceCoords = new Map();
   _reactionPreviewHighlightMappings = null;
   _reactionPreviewForceArrowOffset = 0;
+  _reactionPreviewEntryZoomTransform = null;
+  _reactionPreviewEntryDisplayMol = null;
 }
 
 function _serializeSnapshotMol(mol) {
@@ -204,7 +208,9 @@ export function _captureReactionPreviewSnapshot() {
     forcedStereoBondTypes: [..._reactionPreviewForcedStereoBondTypes],
     forcedStereoBondCenters: [..._reactionPreviewForcedStereoBondCenters],
     reactantReferenceCoords: [..._reactionPreviewReactantReferenceCoords],
-    reactionPreviewHighlightMappings: (_reactionPreviewHighlightMappings ?? []).map(mapping => [...mapping])
+    reactionPreviewHighlightMappings: (_reactionPreviewHighlightMappings ?? []).map(mapping => [...mapping]),
+    entryZoomTransform: _reactionPreviewEntryZoomTransform ? { ..._reactionPreviewEntryZoomTransform } : null,
+    entryDisplayMol: _serializeSnapshotMol(_reactionPreviewEntryDisplayMol)
   };
 }
 
@@ -235,6 +241,8 @@ export function _restoreReactionPreviewSnapshot(previewSnap) {
   _reactionPreviewForcedStereoBondCenters = new Map(previewSnap.forcedStereoBondCenters ?? []);
   _reactionPreviewReactantReferenceCoords = new Map(previewSnap.reactantReferenceCoords ?? []);
   _reactionPreviewHighlightMappings = (previewSnap.reactionPreviewHighlightMappings ?? []).map(mapping => new Map(mapping));
+  _reactionPreviewEntryZoomTransform = previewSnap.entryZoomTransform ? { ...previewSnap.entryZoomTransform } : null;
+  _reactionPreviewEntryDisplayMol = _deserializeSnapshotMol(previewSnap.entryDisplayMol);
 }
 
 function _cloneWithPrefixedIds(mol, prefix) {
@@ -258,22 +266,27 @@ function _buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
   return buildReaction2dMolShared(sourceMol, smirks, mapping);
 }
 
-export function _restoreReactionPreviewSource() {
+export function _restoreReactionPreviewSource({ restoreEntryZoom = false, restoreEntryDisplay = false } = {}) {
   if (!_reactionPreviewSourceMol) {
     return false;
   }
-  const sourceMol = _reactionPreviewSourceMol.clone();
+  const sourceMol = restoreEntryDisplay && _reactionPreviewEntryDisplayMol ? _reactionPreviewEntryDisplayMol.clone() : _reactionPreviewSourceMol.clone();
+  const entryZoomTransform = _reactionPreviewEntryZoomTransform ? { ..._reactionPreviewEntryZoomTransform } : null;
   _clearReactionPreviewState();
   ctx.renderMol(sourceMol, {
     preserveHistory: true,
-    preserveView: ctx.mode === 'force'
+    preserveView: true,
+    preserveGeometry: restoreEntryDisplay && ctx.mode === '2d'
   });
+  if (restoreEntryZoom && entryZoomTransform) {
+    ctx.restoreZoomTransform?.(entryZoomTransform);
+  }
   return true;
 }
 
 export function _prepareReactionPreviewEditTargets({ atomId = null, snapAtomId = null } = {}) {
   if (!_hasReactionPreview()) {
-    return { atomId, snapAtomId, restored: false, previousSnapshot: null };
+    return { atomId, snapAtomId, restored: false, previousSnapshot: null, entryZoomTransform: null };
   }
   const reactantAtomIds = _reactionPreviewReactantAtomIds ?? new Set();
   if (atomId !== null && !reactantAtomIds.has(atomId)) {
@@ -283,13 +296,14 @@ export function _prepareReactionPreviewEditTargets({ atomId = null, snapAtomId =
     return null;
   }
   const previousSnapshot = ctx.captureAppSnapshot?.() ?? null;
+  const entryZoomTransform = _reactionPreviewEntryZoomTransform ? { ..._reactionPreviewEntryZoomTransform } : null;
   const restored = _restoreReactionPreviewSource();
-  return { atomId, snapAtomId, restored, previousSnapshot };
+  return { atomId, snapAtomId, restored, previousSnapshot, entryZoomTransform };
 }
 
 export function _prepareReactionPreviewBondEditTarget(bondId) {
   if (!_hasReactionPreview()) {
-    return { bondId, restored: false, previousSnapshot: null };
+    return { bondId, restored: false, previousSnapshot: null, entryZoomTransform: null };
   }
   const previewMol = ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
   const bond = previewMol?.bonds.get(bondId);
@@ -301,8 +315,9 @@ export function _prepareReactionPreviewBondEditTarget(bondId) {
     return null;
   }
   const previousSnapshot = ctx.captureAppSnapshot?.() ?? null;
+  const entryZoomTransform = _reactionPreviewEntryZoomTransform ? { ..._reactionPreviewEntryZoomTransform } : null;
   const restored = _restoreReactionPreviewSource();
-  return { bondId, restored, previousSnapshot };
+  return { bondId, restored, previousSnapshot, entryZoomTransform };
 }
 
 export function _prepareReactionPreviewEraseTargets(atomIds = [], bondIds = []) {
@@ -1190,6 +1205,10 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
   const normalizedIndex = ((siteIndex % siteCount) + siteCount) % siteCount;
   const site = entry.matchGroups[normalizedIndex];
   const preview = _buildReaction2dMol(sourceMol, entry.smirks, site.applyMapping);
+  if (lock && !_reactionPreviewLocked && !_reactionPreviewEntryZoomTransform) {
+    _reactionPreviewEntryZoomTransform = ctx.captureZoomTransform?.() ?? null;
+    _reactionPreviewEntryDisplayMol = (ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d)?.clone?.() ?? null;
+  }
   if (lock) {
     _activeReactionSmirks = entry.smirks;
     _activeReactionMatchIndex = normalizedIndex;
@@ -1338,27 +1357,28 @@ export function updateReactionTemplatesPanel() {
     nameCell.appendChild(name);
 
     if (isActive && siteCount > 1) {
+      const activateSite = siteIndex => {
+        const sourceMol = (_reactionPreviewSourceMol ?? ctx.currentMol ?? ctx._mol2d)?.clone();
+        if (!sourceMol) {
+          return;
+        }
+        _activateReactionEntry(sourceMol, entry, siteIndex);
+        updateReactionTemplatesPanel();
+      };
       const nav = document.createElement('div');
       nav.className = 'reaction-nav';
       const siteLabel = document.createElement('span');
       siteLabel.className = 'reaction-site-label';
       siteLabel.textContent = `${_activeReactionMatchIndex + 1}/${siteCount}`;
-      const sourceMol = (_reactionPreviewSourceMol ?? ctx.currentMol ?? ctx._mol2d)?.clone();
       nav.appendChild(
         _previewNavButton('‹', 'Previous reaction site', () => {
-          if (!sourceMol) {
-            return;
-          }
-          _activateReactionEntry(sourceMol, entry, _activeReactionMatchIndex - 1);
+          activateSite(_activeReactionMatchIndex - 1);
         })
       );
       nav.appendChild(siteLabel);
       nav.appendChild(
         _previewNavButton('›', 'Next reaction site', () => {
-          if (!sourceMol) {
-            return;
-          }
-          _activateReactionEntry(sourceMol, entry, _activeReactionMatchIndex + 1);
+          activateSite(_activeReactionMatchIndex + 1);
         })
       );
       nameCell.appendChild(nav);
@@ -1386,7 +1406,7 @@ export function updateReactionTemplatesPanel() {
         .forEach(r => r.classList.remove('fg-active'));
       if (_reactionPreviewLocked && _activeReactionSmirks === entry.smirks) {
         _takeReactionPreviewHistoryStep();
-        _restoreReactionPreviewSource();
+        _restoreReactionPreviewSource({ restoreEntryZoom: true, restoreEntryDisplay: true });
         _setHighlight(null);
         updateReactionTemplatesPanel();
         return;

@@ -277,6 +277,62 @@ test('undo after hovered delete in selection mode does not restore a sticky synt
   await expect(page.locator('g.atom-selection circle')).toHaveCount(0);
 });
 
+test('drawing a new 2d bond clears an existing 2d selection highlight', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#select-mode-btn').click();
+  await page.locator('g[data-atom-id="O3"] .atom-hit').click();
+  await expect(page.locator('g.atom-selection circle')).not.toHaveCount(0);
+
+  await page.locator('#draw-bond-btn').click();
+  const oxygen = page.locator('g[data-atom-id="O3"] .atom-hit');
+  const box = await oxygen.boundingBox();
+  expect(box).toBeTruthy();
+
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 80, startY - 50, { steps: 10 });
+  await page.mouse.up();
+
+  await expect(page.locator('#smiles-input')).toHaveValue('CCOC');
+  await expect(page.locator('g.atom-selection circle')).toHaveCount(0);
+  await expect(page.locator('g.atom-selection line')).toHaveCount(0);
+});
+
+test('editing a 2d atom clears an existing 2d selection highlight', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#select-mode-btn').click();
+  await page.locator('g[data-atom-id="O3"] .atom-hit').click();
+  await expect(page.locator('g.atom-selection circle')).not.toHaveCount(0);
+
+  await page.locator('g[data-atom-id="O3"] .atom-hit').hover();
+  await page.keyboard.press('N');
+
+  await expect(page.locator('#smiles-input')).toHaveValue('CCN');
+  await expect(page.locator('g.atom-selection circle')).toHaveCount(0);
+  await expect(page.locator('g.atom-selection line')).toHaveCount(0);
+});
+
+test('2d line mode increases the atom hit target radius', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+
+  const atomHit = page.locator('g[data-atom-id="O3"] .atom-hit');
+  const baseRadius = Number(await atomHit.getAttribute('r'));
+  expect(Number.isFinite(baseRadius)).toBeTruthy();
+
+  await page.locator('#draw-bond-btn').click();
+
+  const drawModeRadius = Number(await page.locator('g[data-atom-id="O3"] .atom-hit').getAttribute('r'));
+  expect(drawModeRadius).toBeGreaterThan(baseRadius);
+});
+
 test('physicochemical row locks do not persist through undo and redo', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -457,6 +513,95 @@ test('reaction preview can be entered and toggled back off from the reactions ta
   await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
 });
 
+test('exiting reaction preview restores the prior 2d zoom transform', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  const beforePreview = await rootTransform(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => await rootTransform(page)).not.toBe(beforePreview);
+
+  await dehydrationRow.click();
+  await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
+  await expect.poll(async () => await rootTransform(page)).toBe(beforePreview);
+});
+
+test('exiting reaction preview restores a manually zoomed 2d transform', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.mouse.wheel(0, -900);
+  const beforePreview = await rootTransform(page);
+  const beforePreviewBonds = await bondSignature(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => await rootTransform(page)).not.toBe(beforePreview);
+
+  await dehydrationRow.click();
+  await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
+  await expect.poll(async () => await rootTransform(page)).toBe(beforePreview);
+  await expect.poll(async () => JSON.stringify(await bondSignature(page))).toBe(JSON.stringify(beforePreviewBonds));
+});
+
+test('editing from reaction preview restores the pre-preview 2d zoom transform', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#plot').hover();
+  await page.mouse.wheel(0, -900);
+  const beforePreview = await rootTransform(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => await rootTransform(page)).not.toBe(beforePreview);
+
+  await page.locator('#draw-bond-btn').click();
+  const oxygen = page.locator('g[data-atom-id="O3"] .atom-hit');
+  const box = await oxygen.boundingBox();
+  expect(box).toBeTruthy();
+
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 80, startY - 50, { steps: 10 });
+  await page.mouse.up();
+
+  await expect(page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' })).toHaveCount(0);
+  await expect.poll(async () => await rootTransform(page)).toBe(beforePreview);
+});
+
+test('exiting reaction preview restores the prior force zoom transform', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+  const beforePreview = await rootTransform(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => await rootTransform(page)).not.toBe(beforePreview);
+
+  await dehydrationRow.click();
+  await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
+  await expect.poll(async () => await rootTransform(page)).toBe(beforePreview);
+});
+
 test('reaction preview entry participates in undo and redo', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -479,6 +624,25 @@ test('reaction preview entry participates in undo and redo', async ({ page }) =>
   await page.locator('#redo-btn').click();
   await expect(dehydrationRow).toHaveClass(/reaction-active/);
   await expect(page.locator('line.bond-hit')).toHaveCount(previewBondCount);
+});
+
+test('reaction preview site navigation updates the active site count label', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'OCCO');
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+
+  await expect(dehydrationRow).toBeVisible();
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('#reaction-body tr.reaction-active .reaction-site-label')).toHaveText('1/2');
+
+  await dehydrationRow.locator('button[title="Next reaction site"]').click();
+  await expect(page.locator('#reaction-body tr.reaction-active .reaction-site-label')).toHaveText('2/2');
+
+  await page.locator('#reaction-body tr.reaction-active button[title="Previous reaction site"]').click();
+  await expect(page.locator('#reaction-body tr.reaction-active .reaction-site-label')).toHaveText('1/2');
 });
 
 test('reaction preview does not change the molecular weight summary', async ({ page }) => {
@@ -592,7 +756,7 @@ test('redo restores the fitted 2d zoom for a newly loaded molecule', async ({ pa
   await expect.poll(async () => rootTransform(page)).toBe(afterLoad);
 });
 
-test('undo and redo preserve 2d zoom through reaction preview entry', async ({ page }) => {
+test('reaction preview entry refits 2d zoom and redo restores that preview fit', async ({ page }) => {
   await page.goto('/index.html');
 
   await loadSmiles(page, 'CCO');
@@ -605,6 +769,8 @@ test('undo and redo preserve 2d zoom through reaction preview entry', async ({ p
   const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
   await dehydrationRow.click();
   await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  const previewTransform = await rootTransform(page);
+  await expect(previewTransform).not.toBe(beforePreview);
 
   await page.locator('#undo-btn').click();
   await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
@@ -612,7 +778,22 @@ test('undo and redo preserve 2d zoom through reaction preview entry', async ({ p
 
   await page.locator('#redo-btn').click();
   await expect(dehydrationRow).toHaveClass(/reaction-active/);
-  await expect.poll(async () => rootTransform(page)).toBe(beforePreview);
+  await expect.poll(async () => rootTransform(page)).toBe(previewTransform);
+});
+
+test('reaction preview entry refits force zoom', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  const beforePreview = await rootTransform(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => rootTransform(page)).not.toBe(beforePreview);
 });
 
 test('undoing a force-mode molecule change still allows switching back to a visible 2d structure', async ({ page }) => {
@@ -682,6 +863,29 @@ test('clicking a resonance structure from force reaction preview preserves the f
   await resonanceRow.click();
   await expect(resonanceRow).toHaveClass(/resonance-active/);
   await expect.poll(async () => rootTransform(page)).toBe(beforeResonanceClick);
+});
+
+test('clicking a resonance structure from 2d reaction preview restores the pre-preview zoom', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC=O');
+  await page.locator('#plot').hover();
+  await page.mouse.wheel(0, -900);
+  const beforePreview = await rootTransform(page);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const reductionRow = page.locator('#reaction-body tr').filter({ hasText: 'Carbonyl Reduction' }).first();
+  await expect(reductionRow).toBeVisible();
+  await reductionRow.click();
+  await expect(reductionRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => await rootTransform(page)).not.toBe(beforePreview);
+
+  await page.getByRole('button', { name: 'Other' }).click();
+  const resonanceRow = page.locator('#resonance-body tr').filter({ hasText: 'Resonance Structures' }).first();
+  await expect(resonanceRow).toBeVisible();
+  await resonanceRow.click();
+  await expect(resonanceRow).toHaveClass(/resonance-active/);
+  await expect.poll(async () => rootTransform(page)).toBe(beforePreview);
 });
 
 test('bond electronegativity toggle does not exit reaction preview', async ({ page }) => {

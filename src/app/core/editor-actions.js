@@ -112,6 +112,15 @@ export function createEditorActions(deps) {
 
     deps.state.documentState.setActiveMolecule(mol);
 
+    if (result.clearSelection) {
+      deps.state.overlayState?.getSelectedAtomIds?.().clear();
+      deps.state.overlayState?.getSelectedBondIds?.().clear();
+    }
+
+    if (result.suppressPrimitiveHover) {
+      deps.view.setPrimitiveHoverSuppressed?.(true);
+    }
+
     if (result.clearPrimitiveHover) {
       deps.view.clearPrimitiveHover();
     }
@@ -146,6 +155,7 @@ export function createEditorActions(deps) {
       if (options.viewportPolicy === ViewportPolicy.restoreEdit) {
         deps.view.restore2dEditViewport(zoomSnapshot, {
           reactionRestored: reactionEdit?.restored,
+          reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
           resonanceReset,
           zoomToFit: !!twoDResult.zoomToFit
         });

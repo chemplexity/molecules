@@ -37,6 +37,12 @@
 - Preserve the prior InChI input state when pasted SMILES auto-switches formats
 - Extract input textbox, picker, example, and random-molecule controls into an interaction module
 - Keep SMILES/InChI format toggles tied to the source molecule during reaction preview
+- Extract shared render policy into `src/app/render/render-runtime.js`
+- Extract the 2D scene renderer into `src/app/render/scene-2d.js`
+- Preserve 2D zoom when entering or restoring reaction preview
+- Fix reaction preview site count labels when cycling between matches
+- Restore the original 2D zoom after exiting reaction preview
+- Restore the pre-preview display state when exiting reaction preview
 
 ## 2026-04-04
 

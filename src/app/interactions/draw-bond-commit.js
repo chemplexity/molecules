@@ -3,6 +3,10 @@
 import { ReactionPreviewPolicy } from '../core/editor-actions.js';
 
 export function createDrawBondCommitActions(context) {
+  function clearSelectionBeforeStructuralDraw() {
+    context.selection?.clearSelection?.();
+  }
+
   function clearPreviewState() {
     context.preview.clearArtifacts();
     context.state.setDrawBondState(null);
@@ -278,9 +282,11 @@ export function createDrawBondCommitActions(context) {
     context.analysis.updateFormula(mol);
     context.analysis.updateDescriptors(mol);
     context.analysis.updatePanels(mol);
+    clearSelectionBeforeStructuralDraw();
     context.renderers.draw2d();
     context.view.restore2dEditViewport(zoomSnapshot, {
       reactionRestored: reactionEdit?.restored,
+      reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
       resonanceReset: structuralEdit.resonanceReset,
       zoomToFit: true
     });
@@ -409,6 +415,7 @@ export function createDrawBondCommitActions(context) {
             skipResonancePrep: true,
             skipSnapshot: true,
             reactionRestored: reactionEdit?.restored,
+            reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
             resonanceReset: structuralEdit.resonanceReset
           });
           return;
@@ -484,6 +491,7 @@ export function createDrawBondCommitActions(context) {
           skipResonancePrep: true,
           skipSnapshot: true,
           reactionRestored: reactionEdit?.restored,
+          reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
           resonanceReset: structuralEdit.resonanceReset
         });
         return;
@@ -528,9 +536,11 @@ export function createDrawBondCommitActions(context) {
     context.analysis.updateFormula(mol);
     context.analysis.updateDescriptors(mol);
     context.analysis.updatePanels(mol);
+    clearSelectionBeforeStructuralDraw();
     context.renderers.draw2d();
     context.view.restore2dEditViewport(zoomSnapshot, {
       reactionRestored: reactionEdit?.restored,
+      reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
       resonanceReset: structuralEdit.resonanceReset,
       zoomToFit: true
     });
