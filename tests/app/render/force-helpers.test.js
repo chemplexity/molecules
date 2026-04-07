@@ -6,6 +6,7 @@ import {
   FORCE_LAYOUT_H_BOND_LENGTH,
   FORCE_LAYOUT_MULTIPLE_BOND_FACTOR,
   FORCE_LAYOUT_AROMATIC_BOND_FACTOR,
+  createForceAnchorRadiusForce,
   createForceHelpers,
   forceLinkDistance,
   placeHydrogensAroundParent,
@@ -46,6 +47,18 @@ describe('force-helpers', () => {
     assert.ok(Math.abs(hydrogen.y) < 1e-6);
     assert.equal(hydrogen.anchorX, hydrogen.x);
     assert.equal(hydrogen.anchorY, hydrogen.y);
+  });
+
+  it('keeps heavy atoms gently tethered to the seeded 2D anchor shape', () => {
+    const anchorForce = createForceAnchorRadiusForce(10, 0.3);
+    const nearNode = { id: 'c1', name: 'C', x: 6, y: 0, vx: 0, vy: 0, anchorX: 0, anchorY: 0 };
+    const farNode = { id: 'c2', name: 'C', x: 16, y: 0, vx: 0, vy: 0, anchorX: 0, anchorY: 0 };
+    anchorForce.initialize([nearNode, farNode]);
+
+    anchorForce(1);
+
+    assert.ok(nearNode.vx < 0, 'near nodes should still be nudged back toward the 2D seed');
+    assert.ok(farNode.vx < nearNode.vx, 'farther nodes should be pulled back more strongly');
   });
 
   it('seeds positions and patches force nodes through the extracted helper bundle', () => {

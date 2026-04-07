@@ -6,8 +6,8 @@ export const FORCE_LAYOUT_BOND_LENGTH = 41;
 export const FORCE_LAYOUT_H_BOND_LENGTH = 20;
 export const FORCE_LAYOUT_MULTIPLE_BOND_FACTOR = 0.93;
 export const FORCE_LAYOUT_AROMATIC_BOND_FACTOR = 0.96;
-export const FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS = 18;
-export const FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH = 0.22;
+export const FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS = 12;
+export const FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH = 0.26;
 export const FORCE_LAYOUT_HEAVY_REPULSION = -55;
 export const FORCE_LAYOUT_H_REPULSION = -25;
 export const FORCE_LAYOUT_HH_REPULSION_DISTANCE = 40;
@@ -19,6 +19,7 @@ export const FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER = 1.3;
 export const FORCE_LAYOUT_KEEP_IN_VIEW_ALPHA_MIN = 0.08;
 export const FORCE_LAYOUT_INITIAL_KEEP_IN_VIEW_TICKS = 8;
 export const FORCE_LAYOUT_EDIT_KEEP_IN_VIEW_TICKS = 24;
+const FORCE_LAYOUT_HEAVY_ANCHOR_SOFT_RATIO = 0.22;
 
 export function convertMolecule(molecule) {
   const atomEntries = [...molecule.atoms.entries()];
@@ -63,6 +64,8 @@ export function forceLinkDistance(link) {
 
 export function createForceAnchorRadiusForce(radius = FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS, strength = FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH) {
   let nodes = [];
+  const softStrength = strength * FORCE_LAYOUT_HEAVY_ANCHOR_SOFT_RATIO;
+  const hardStrength = Math.max(0, strength - softStrength);
   function force(alpha) {
     for (const node of nodes) {
       if (isHydrogenNode(node)) {continue;}
@@ -71,10 +74,9 @@ export function createForceAnchorRadiusForce(radius = FORCE_LAYOUT_HEAVY_ANCHOR_
       const dx = node.x - node.anchorX;
       const dy = node.y - node.anchorY;
       const dist = Math.hypot(dx, dy);
-      if (!(dist > radius)) {continue;}
-      const excess = dist - radius;
       const inv = 1 / dist;
-      const pull = excess * strength * alpha;
+      if (!(dist > 1e-6)) {continue;}
+      const pull = (dist * softStrength + Math.max(0, dist - radius) * hardStrength) * alpha;
       node.vx -= dx * inv * pull;
       node.vy -= dy * inv * pull;
     }
