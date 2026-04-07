@@ -58,6 +58,8 @@ describe('app-state dependency builder', () => {
       getErasePainting: () => false,
       getDrawBondElement: () => 'C',
       setDrawBondElement() {},
+      getDrawBondType: () => 'single',
+      setDrawBondType() {},
       setErasePainting() {}
     });
 

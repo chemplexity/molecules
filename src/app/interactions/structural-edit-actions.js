@@ -1,8 +1,122 @@
 /** @module app/interactions/structural-edit-actions */
 
 import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../core/editor-actions.js';
+import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
 
 const FORCE_RESEAT_HYDROGEN_DISTANCE = 25;
+
+function clearBondDisplayStereo(bond) {
+  if (!bond?.properties?.display) {
+    return;
+  }
+  delete bond.properties.display.as;
+  delete bond.properties.display.centerId;
+  delete bond.properties.display.manual;
+  if (Object.keys(bond.properties.display).length === 0) {
+    delete bond.properties.display;
+  }
+}
+
+function setBondDisplayStereo(bond, type, { centerId = null, manual = false } = {}) {
+  if (!bond || (type !== 'wedge' && type !== 'dash')) {
+    clearBondDisplayStereo(bond);
+    return;
+  }
+  bond.properties.display ??= {};
+  bond.properties.display.as = type;
+  if (centerId && bond.atoms.includes(centerId)) {
+    bond.properties.display.centerId = centerId;
+  } else {
+    delete bond.properties.display.centerId;
+  }
+  if (manual) {
+    bond.properties.display.manual = true;
+  } else {
+    delete bond.properties.display.manual;
+  }
+}
+
+function tryApplyExplicitStereoAssignment(mol, bond, drawBondType, preferredCenterId = null) {
+  if (!mol || !bond || (drawBondType !== 'wedge' && drawBondType !== 'dash')) {
+    return null;
+  }
+  const resolvedPreferredCenterId = getPreferredBondDisplayCenterId(mol, bond.id, preferredCenterId);
+  // Only attempt chirality resolution at the preferred (origin) atom to ensure
+  // the wedge/dash always originates from the intended end of the bond.
+  const center = mol.atoms.get(resolvedPreferredCenterId);
+  if (typeof center?.getChirality === 'function' && typeof center?.setChirality === 'function') {
+    const resolved = applyDisplayedStereoToCenter(mol, resolvedPreferredCenterId, bond.id, drawBondType);
+    if (resolved?.type === drawBondType) {
+      setBondDisplayStereo(bond, drawBondType, { centerId: resolvedPreferredCenterId, manual: true });
+      return resolved;
+    }
+  }
+
+  setBondDisplayStereo(bond, drawBondType, { centerId: resolvedPreferredCenterId, manual: true });
+  return null;
+}
+
+function isExplicitBondDrawTypeNoOp(bond, drawBondType, preferredCenterId = null) {
+  if (!bond || !drawBondType) {
+    return false;
+  }
+  if (drawBondType === 'double') {
+    return !bond.properties.aromatic && Math.round(bond.properties.order ?? 1) === 2;
+  }
+  if (drawBondType === 'triple') {
+    return !bond.properties.aromatic && Math.round(bond.properties.order ?? 1) === 3;
+  }
+  if (drawBondType === 'aromatic') {
+    return bond.properties.aromatic === true;
+  }
+  if (drawBondType === 'wedge' || drawBondType === 'dash') {
+    // Only a no-op when the type AND direction (centerId) already match.
+    return (
+      Math.round(bond.properties.order ?? 1) === 1 &&
+      !bond.properties.aromatic &&
+      bond.properties.display?.as === drawBondType &&
+      (preferredCenterId == null || bond.properties.display?.centerId == null || bond.properties.display?.centerId === preferredCenterId)
+    );
+  }
+  return false;
+}
+
+function applyExplicitBondDrawType(bond, drawBondType) {
+  if (!bond || !drawBondType || drawBondType === 'single') {
+    return false;
+  }
+  clearBondDisplayStereo(bond);
+  bond.setStereo(null);
+  if (drawBondType === 'aromatic') {
+    bond.setAromatic(true);
+    return true;
+  }
+  if (drawBondType === 'double') {
+    bond.setOrder(2);
+    return true;
+  }
+  if (drawBondType === 'triple') {
+    bond.setOrder(3);
+    return true;
+  }
+  bond.setOrder(1);
+  if (drawBondType === 'wedge' || drawBondType === 'dash') {
+    bond.properties.display ??= {};
+    bond.properties.display.as = drawBondType;
+    bond.properties.display.manual = true;
+    return true;
+  }
+  return drawBondType === 'single';
+}
+
+function shouldClearManualBondDisplay(bond, drawBondType) {
+  return (
+    drawBondType === 'single' &&
+    (bond?.properties?.order ?? 1) === 1 &&
+    bond?.properties?.display?.manual === true &&
+    (bond?.properties?.display?.as === 'wedge' || bond?.properties?.display?.as === 'dash')
+  );
+}
 
 export function createStructuralEditActions(context) {
   function buildForceInitialPatchPos(atomIds) {
@@ -114,8 +228,11 @@ export function createStructuralEditActions(context) {
       skipReactionPreviewPrep = false,
       skipResonancePrep = false,
       skipSnapshot = false,
+      drawBondType = null,
+      preferredCenterId = null,
       zoomSnapshot = context.getMode() === '2d' ? context.view.captureZoomTransformSnapshot() : null
     } = options;
+    const explicitDrawBondType = drawBondType && drawBondType !== 'single' ? drawBondType : null;
 
     return context.controller.performStructuralEdit(
       'promote-bond-order',
@@ -138,6 +255,9 @@ export function createStructuralEditActions(context) {
             if (atom1?.name === 'H' || atom2?.name === 'H') {
               return false;
             }
+          }
+          if (isExplicitBondDrawTypeNoOp(bond, explicitDrawBondType, preferredCenterId)) {
+            return false;
           }
           return true;
         }
@@ -166,20 +286,34 @@ export function createStructuralEditActions(context) {
           }
         }
 
-        const currentOrder = Math.round(bond.properties.order ?? 1);
-        const nextOrder = currentOrder >= 3 ? 1 : currentOrder + 1;
-        bond.properties.order = nextOrder;
-        bond.properties.aromatic = false;
-        delete bond.properties.localizedOrder;
+        if (shouldClearManualBondDisplay(bond, drawBondType)) {
+          clearBondDisplayStereo(bond);
+          bond.setStereo(null);
+          bond.properties.order = 1;
+          bond.properties.aromatic = false;
+          delete bond.properties.localizedOrder;
+        } else if (explicitDrawBondType) {
+          applyExplicitBondDrawType(bond, explicitDrawBondType);
+          delete bond.properties.localizedOrder;
+        } else {
+          const currentOrder = Math.round(bond.properties.order ?? 1);
+          const nextOrder = currentOrder >= 3 ? 1 : currentOrder + 1;
+          bond.properties.order = nextOrder;
+          bond.properties.aromatic = false;
+          delete bond.properties.localizedOrder;
+        }
 
         const [atom1, atom2] = bond.getAtomObjects(mol);
         const affected = new Set([atom1?.id, atom2?.id].filter(Boolean));
         mol.clearStereoAnnotations(affected);
-        if (!wasAromatic) {
+        if (!wasAromatic && explicitDrawBondType !== 'aromatic') {
           context.chemistry.kekulize(mol);
           context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
         }
         mol.repairImplicitHydrogens(affected);
+        if (explicitDrawBondType === 'wedge' || explicitDrawBondType === 'dash') {
+          tryApplyExplicitStereoAssignment(mol, bond, explicitDrawBondType, preferredCenterId);
+        }
 
         const forceResult =
           mode === 'force'

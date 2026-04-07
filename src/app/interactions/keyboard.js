@@ -34,6 +34,8 @@ export function initKeyboardInteractions(context) {
   }
 
   doc.addEventListener('keydown', event => {
+    const normalizedKey = typeof event.key === 'string' ? event.key.toLowerCase() : '';
+
     if (event.key === 'Meta' || event.key === 'Control') {
       const nextActive = !!(event.metaKey || event.ctrlKey);
       if (context.state.overlayState.getSelectionModifierActive() !== nextActive) {
@@ -45,7 +47,18 @@ export function initKeyboardInteractions(context) {
     const tag = doc.activeElement?.tagName;
     const isTextInput = tag === 'INPUT' || tag === 'TEXTAREA';
 
-    if ((event.metaKey || event.ctrlKey) && event.key === 'a') {
+    if ((event.metaKey || event.ctrlKey) && event.shiftKey && normalizedKey === 'z') {
+      context.history.redo();
+      event.preventDefault();
+      return;
+    }
+    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && normalizedKey === 'z') {
+      context.history.undo();
+      event.preventDefault();
+      return;
+    }
+
+    if ((event.metaKey || event.ctrlKey) && normalizedKey === 'a') {
       if (isTextInput) {
         return;
       }
@@ -91,17 +104,6 @@ export function initKeyboardInteractions(context) {
         event.preventDefault();
         return;
       }
-      return;
-    }
-
-    if ((event.metaKey || event.ctrlKey) && event.shiftKey && (event.key === 'z' || event.key === 'Z')) {
-      context.history.redo();
-      event.preventDefault();
-      return;
-    }
-    if ((event.metaKey || event.ctrlKey) && !event.shiftKey && event.key === 'z') {
-      context.history.undo();
-      event.preventDefault();
       return;
     }
 

@@ -26,6 +26,7 @@ describe('runtime bridge bootstrap', () => {
       eraseMode: false,
       erasePainting: false,
       drawBondElement: 'C',
+      drawBondType: 'single',
       preserveSelectionOnNextRender: false,
       sessionRuntimeBridge: {
         syncInputField(mol) {

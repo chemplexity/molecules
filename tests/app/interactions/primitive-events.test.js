@@ -57,7 +57,8 @@ function makeContext(overrides = {}) {
       resetHover() {
         calls.push(['resetHover']);
       },
-      getElement: () => 'N'
+      getElement: () => 'N',
+      getType: () => 'triple'
     },
     actions: {
       promoteBondOrder(...args) {
@@ -148,7 +149,7 @@ describe('createPrimitiveEventHandlers', () => {
       bonds: new Map()
     });
 
-    assert.deepEqual(calls, [['promoteBondOrder', 'b1']]);
+    assert.deepEqual(calls, [['promoteBondOrder', 'b1', { drawBondType: 'triple' }]]);
   });
 
   it('routes force hydrogen click in draw-bond mode to element replacement', () => {

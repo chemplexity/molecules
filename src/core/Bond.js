@@ -33,7 +33,7 @@ export class Bond {
    *   or `'\\'`. `atoms[0]` is the source and `atoms[1]` the target as written in SMILES.
    *   `'/'` means traversal src→tgt goes upward; `'\\'` means downward. E/Z designation is
    *   derived by `Molecule.getEZStereo()`, not stored here directly.
-   * @param {{as?: 'wedge'|'dash', centerId?: string}|undefined} [properties.display=undefined]
+   * @param {{as?: 'wedge'|'dash', centerId?: string, manual?: boolean}|undefined} [properties.display=undefined]
    *   Optional renderer-facing display override metadata. Used by the 2D renderer to persist
    *   which bond should be drawn as a wedge or dash for a surviving stereocenter.
    */
@@ -46,7 +46,7 @@ export class Bond {
     this.atoms = atoms;
     /** @type {Array} Arbitrary tags for application use. */
     this.tags = [];
-    /** @type {{order: number, aromatic: boolean, stereo: string|null, display?: {as?: 'wedge'|'dash', centerId?: string}}} */
+    /** @type {{order: number, aromatic: boolean, stereo: string|null, display?: {as?: 'wedge'|'dash', centerId?: string, manual?: boolean}}} */
     this.properties = { order, aromatic, stereo, ...(display !== undefined ? { display } : {}) };
   }
 

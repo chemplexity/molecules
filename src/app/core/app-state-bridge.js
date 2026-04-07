@@ -57,6 +57,8 @@ export function createAppStateBridge(deps) {
       getErasePainting: deps.overlayState.getErasePainting,
       getDrawBondElement: deps.overlayState.getDrawBondElement,
       setDrawBondElement: deps.overlayState.setDrawBondElement,
+      getDrawBondType: deps.overlayState.getDrawBondType,
+      setDrawBondType: deps.overlayState.setDrawBondType,
       setErasePainting: deps.overlayState.setErasePainting
     }
   };

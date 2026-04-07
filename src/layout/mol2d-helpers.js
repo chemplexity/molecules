@@ -1040,6 +1040,115 @@ export function applyDisplayedStereoToCenter(mol, centerId, bondId, desiredType)
   return stereoBondTypeForCenter(mol, centerId, bondId);
 }
 
+function _bondSidePriority(mol, startId, blockedId) {
+  const visited = new Set([blockedId]);
+  const queue = [{ atomId: startId, depth: 0 }];
+  let heavyCount = 0;
+  let totalProtons = 0;
+  let branchScore = 0;
+  let maxDepth = 0;
+  const shellSignature = [];
+
+  while (queue.length > 0) {
+    const { atomId, depth } = queue.shift();
+    if (visited.has(atomId)) {
+      continue;
+    }
+    visited.add(atomId);
+    const atom = mol?.atoms?.get?.(atomId) ?? null;
+    if (!atom || atom.name === 'H') {
+      continue;
+    }
+
+    heavyCount += 1;
+    totalProtons += atom.properties?.protons ?? 0;
+    maxDepth = Math.max(maxDepth, depth);
+    shellSignature[depth] ??= [];
+    shellSignature[depth].push(atom.properties?.protons ?? 0);
+
+    const nextHeavyNeighbors = atom.getNeighbors(mol).filter(neighbor => neighbor && neighbor.id !== blockedId && neighbor.name !== 'H' && !visited.has(neighbor.id));
+    if (nextHeavyNeighbors.length > 1) {
+      branchScore += nextHeavyNeighbors.length - 1;
+    }
+    for (const neighbor of nextHeavyNeighbors) {
+      queue.push({ atomId: neighbor.id, depth: depth + 1 });
+    }
+  }
+
+  for (const layer of shellSignature) {
+    if (Array.isArray(layer)) {
+      layer.sort((a, b) => b - a);
+    }
+  }
+
+  const startAtom = mol?.atoms?.get?.(startId) ?? null;
+  const startHeavyDegree = startAtom ? startAtom.getNeighbors(mol).filter(neighbor => neighbor && neighbor.id !== blockedId && neighbor.name !== 'H').length : 0;
+
+  return {
+    heavyCount,
+    totalProtons,
+    branchScore,
+    maxDepth,
+    startProtons: startAtom?.properties?.protons ?? 0,
+    startHeavyDegree,
+    shellSignature
+  };
+}
+
+function _compareBondSidePriority(left, right) {
+  const scalarKeys = ['heavyCount', 'totalProtons', 'branchScore', 'maxDepth', 'startHeavyDegree', 'startProtons'];
+  for (const key of scalarKeys) {
+    const diff = (left?.[key] ?? 0) - (right?.[key] ?? 0);
+    if (diff !== 0) {
+      return diff;
+    }
+  }
+
+  const maxShells = Math.max(left?.shellSignature?.length ?? 0, right?.shellSignature?.length ?? 0);
+  for (let i = 0; i < maxShells; i++) {
+    const leftShell = left?.shellSignature?.[i] ?? [];
+    const rightShell = right?.shellSignature?.[i] ?? [];
+    const maxEntries = Math.max(leftShell.length, rightShell.length);
+    for (let j = 0; j < maxEntries; j++) {
+      const diff = (leftShell[j] ?? -1) - (rightShell[j] ?? -1);
+      if (diff !== 0) {
+        return diff;
+      }
+    }
+  }
+
+  return 0;
+}
+
+export function getPreferredBondDisplayCenterId(mol, bondId, preferredCenterId = null) {
+  if (!mol || !bondId) {
+    return null;
+  }
+  const bond = mol.bonds.get(bondId);
+  if (!bond) {
+    return null;
+  }
+  if (preferredCenterId && bond.atoms.includes(preferredCenterId)) {
+    return preferredCenterId;
+  }
+
+  const [atomIdA, atomIdB] = bond.atoms;
+  if (!atomIdA || !atomIdB) {
+    return atomIdA ?? atomIdB ?? null;
+  }
+
+  const priorityA = _bondSidePriority(mol, atomIdA, atomIdB);
+  const priorityB = _bondSidePriority(mol, atomIdB, atomIdA);
+  const comparison = _compareBondSidePriority(priorityA, priorityB);
+  if (comparison > 0) {
+    return atomIdA;
+  }
+  if (comparison < 0) {
+    return atomIdB;
+  }
+  return atomIdA;
+}
+
 export function stereoBondCenterIdForRender(mol, bondId) {
   if (!mol || !bondId) {
     return null;
@@ -1075,18 +1184,24 @@ function _clearBondDisplayStereo(bond) {
   }
   delete bond.properties.display.as;
   delete bond.properties.display.centerId;
+  delete bond.properties.display.manual;
   if (Object.keys(bond.properties.display).length === 0) {
     delete bond.properties.display;
   }
 }
 
-function _setBondDisplayStereo(bond, type, centerId = null) {
+function _setBondDisplayStereo(bond, type, centerId = null, manual = false) {
   if (!bond || (type !== 'wedge' && type !== 'dash')) {
     _clearBondDisplayStereo(bond);
     return;
   }
   bond.properties.display ??= {};
   bond.properties.display.as = type;
+  if (manual) {
+    bond.properties.display.manual = true;
+  } else {
+    delete bond.properties.display.manual;
+  }
   if (centerId) {
     bond.properties.display.centerId = centerId;
   } else {
@@ -1099,6 +1214,17 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
   const forcedBondTypes = mol?.__reactionPreview?.forcedStereoBondTypes ?? null;
   const forcedBondCenters = mol?.__reactionPreview?.forcedStereoBondCenters ?? null;
   const lockedCenters = new Set();
+  for (const bond of mol?.bonds?.values?.() ?? []) {
+    const displayAs = bond.properties.display?.as ?? null;
+    if ((displayAs !== 'wedge' && displayAs !== 'dash') || bond.properties.display?.manual !== true) {
+      continue;
+    }
+    const centerId = bond.properties.display?.centerId ?? null;
+    assignments.push({ bondId: bond.id, type: displayAs, centerId, manual: true });
+    if (centerId) {
+      lockedCenters.add(centerId);
+    }
+  }
   for (const [bondId, type] of forcedBondTypes ?? new Map()) {
     const bond = mol?.bonds?.get(bondId);
     if (!bond) {
@@ -1114,7 +1240,7 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
   const preferredBondByCenter = new Map();
   for (const bond of mol?.bonds?.values?.() ?? []) {
     const displayAs = bond.properties.display?.as ?? null;
-    if (displayAs !== 'wedge' && displayAs !== 'dash') {
+    if ((displayAs !== 'wedge' && displayAs !== 'dash') || bond.properties.display?.manual === true) {
       continue;
     }
     const centerId = bond.properties.display?.centerId ?? stereoBondCenterIdForRender(mol, bond.id);
@@ -1141,7 +1267,9 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
     });
   }
   const forcedByCenter = mol?.__reactionPreview?.forcedStereoByCenter ?? mol?.__reactionPreview?.forcedProductStereoByCenter ?? null;
+  const visitedCenters = new Set();
   for (const centerId of mol.getChiralCenters()) {
+    visitedCenters.add(centerId);
     if (lockedCenters.has(centerId)) {
       continue;
     }
@@ -1164,6 +1292,21 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
       centerId
     });
   }
+  // Preserve stored assignments for centers whose chirality was cleared (not in getChiralCenters).
+  // This prevents nearby auto-assigned stereo bonds from disappearing when a bond is drawn
+  // between two existing stereocenters and clearStereoAnnotations resets one center's chirality.
+  for (const [centerId, stored] of storedDisplayByCenter) {
+    if (visitedCenters.has(centerId) || lockedCenters.has(centerId)) {
+      continue;
+    }
+    if (assignments.some(a => a.centerId === centerId)) {
+      continue;
+    }
+    const storedBond = mol?.bonds?.get?.(stored.bondId) ?? null;
+    if (storedBond && storedBond.atoms.includes(centerId)) {
+      assignments.push({ bondId: stored.bondId, type: stored.type, centerId });
+    }
+  }
   return assignments;
 }
 
@@ -1180,23 +1323,24 @@ export function syncDisplayStereo(mol, previousStereoMap = null) {
   for (const bond of mol?.bonds?.values?.() ?? []) {
     _clearBondDisplayStereo(bond);
   }
-  for (const { bondId, type, centerId } of assignments) {
-    _setBondDisplayStereo(mol?.bonds?.get?.(bondId) ?? null, type, centerId);
+  for (const { bondId, type, centerId, manual = false } of assignments) {
+    _setBondDisplayStereo(mol?.bonds?.get?.(bondId) ?? null, type, centerId, manual);
   }
   return new Map(assignments.map(({ bondId, type }) => [bondId, type]));
 }
 
 export function flipDisplayStereo(mol, previousStereoMap = null) {
-  const assignments = _resolveStereoDisplayAssignments(mol, previousStereoMap).map(({ bondId, type, centerId }) => ({
+  const assignments = _resolveStereoDisplayAssignments(mol, previousStereoMap).map(({ bondId, type, centerId, manual = false }) => ({
     bondId,
     type: type === 'wedge' ? 'dash' : 'wedge',
-    centerId
+    centerId,
+    manual
   }));
   for (const bond of mol?.bonds?.values?.() ?? []) {
     _clearBondDisplayStereo(bond);
   }
-  for (const { bondId, type, centerId } of assignments) {
-    _setBondDisplayStereo(mol?.bonds?.get?.(bondId) ?? null, type, centerId);
+  for (const { bondId, type, centerId, manual = false } of assignments) {
+    _setBondDisplayStereo(mol?.bonds?.get?.(bondId) ?? null, type, centerId, manual);
   }
   return new Map(assignments.map(({ bondId, type }) => [bondId, type]));
 }

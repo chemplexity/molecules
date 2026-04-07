@@ -27,6 +27,50 @@ function makeBond(id, atomA, atomB) {
   };
 }
 
+function makeEditableMol(atom) {
+  let atomCounter = 1;
+  let bondCounter = 0;
+  const mol = {
+    atoms: new Map([[atom.id, atom]]),
+    bonds: new Map(),
+    addAtom(_id, name) {
+      atomCounter += 1;
+      const newAtom = makeAtom(`a${atomCounter}`, name);
+      this.atoms.set(newAtom.id, newAtom);
+      return newAtom;
+    },
+    addBond(_id, atomA, atomB, properties = {}) {
+      bondCounter += 1;
+      const bond = {
+        id: `b${bondCounter}`,
+        atoms: [atomA, atomB],
+        properties: { order: 1, aromatic: false, ...properties },
+        setStereo() {},
+        setAromatic(value) {
+          this.properties.aromatic = value;
+        },
+        setOrder(value) {
+          this.properties.order = value;
+          this.properties.aromatic = false;
+        },
+        getAtomObjects(currentMol) {
+          return [currentMol.atoms.get(atomA), currentMol.atoms.get(atomB)];
+        }
+      };
+      this.bonds.set(bond.id, bond);
+      this.atoms.get(atomA)?.bonds.push(bond.id);
+      this.atoms.get(atomB)?.bonds.push(bond.id);
+      return bond;
+    },
+    removeAtom(atomId) {
+      this.atoms.delete(atomId);
+    },
+    clearStereoAnnotations() {},
+    repairImplicitHydrogens() {}
+  };
+  return mol;
+}
+
 function makeActions(overrides = {}) {
   let drawBondState = overrides.initialDrawBondState ?? null;
   const calls = {
@@ -41,6 +85,7 @@ function makeActions(overrides = {}) {
   const context = {
     getMode: () => overrides.mode ?? '2d',
     getDrawBondElement: () => overrides.drawBondElement ?? 'O',
+    getDrawBondType: () => overrides.drawBondType ?? 'single',
     preview: {
       clearArtifacts: () => {
         calls.preview.push('clearArtifacts');
@@ -63,8 +108,8 @@ function makeActions(overrides = {}) {
         calls.view.push(['setDrawBondHoverSuppressed', value]);
       },
       captureZoomTransform: () => 'zoom-snapshot',
-      restore2dEditViewport: () => {
-        calls.view.push('restore2dEditViewport');
+      restore2dEditViewport: (...args) => {
+        calls.view.push(['restore2dEditViewport', ...args]);
       }
     },
     plot: {
@@ -86,10 +131,8 @@ function makeActions(overrides = {}) {
       }
     },
     overlays: {
-      prepareReactionPreviewEditTargets: payload =>
-        overrides.reactionEditFactory ? overrides.reactionEditFactory(payload) : { ...payload, restored: false },
-      prepareResonanceStructuralEdit: mol =>
-        overrides.structuralEditFactory ? overrides.structuralEditFactory(mol) : { mol, resonanceReset: false }
+      prepareReactionPreviewEditTargets: payload => (overrides.reactionEditFactory ? overrides.reactionEditFactory(payload) : { ...payload, restored: false }),
+      prepareResonanceStructuralEdit: mol => (overrides.structuralEditFactory ? overrides.structuralEditFactory(mol) : { mol, resonanceReset: false })
     },
     molecule: {
       getActive: () => overrides.activeMol ?? null,
@@ -277,6 +320,8 @@ describe('createDrawBondCommitActions', () => {
       {
         bondId: 'b1',
         options: {
+          drawBondType: 'single',
+          preferredCenterId: 'a1',
           zoomSnapshot: 'zoom-snapshot',
           skipReactionPreviewPrep: true,
           skipResonancePrep: true,
@@ -287,5 +332,50 @@ describe('createDrawBondCommitActions', () => {
         }
       }
     ]);
+  });
+
+  it('preserves the current 2D zoom when auto-placing a bond from reaction preview', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    const mol = makeEditableMol(srcAtom);
+    const { actions, calls } = makeActions({
+      activeMol: mol,
+      reactionEditFactory: payload => ({
+        ...payload,
+        restored: false,
+        previousSnapshot: { id: 'captured-before-autoplace' }
+      })
+    });
+
+    actions.autoPlaceBond('a1', 300, 200);
+
+    assert.deepEqual(calls.view.at(-1), [
+      'restore2dEditViewport',
+      'zoom-snapshot',
+      {
+        reactionRestored: false,
+        reactionEntryZoomSnapshot: null,
+        resonanceReset: false
+      }
+    ]);
+  });
+
+  it('stores manual wedge display metadata when auto-placing a new wedge bond', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    srcAtom.x = 0;
+    srcAtom.y = 0;
+    const mol = makeEditableMol(srcAtom);
+    const { actions } = makeActions({
+      activeMol: mol,
+      drawBondType: 'wedge'
+    });
+
+    actions.autoPlaceBond('a1', 300, 200);
+
+    const newBond = [...mol.bonds.values()][0];
+    assert.deepEqual(newBond.properties.display, {
+      as: 'wedge',
+      manual: true,
+      centerId: 'a1'
+    });
   });
 });

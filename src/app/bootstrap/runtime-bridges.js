@@ -67,6 +67,10 @@ export function initializeRuntimeBridges(deps) {
       getDrawBondElement: () => deps.runtimeState.drawBondElement,
       setDrawBondElement: value => {
         deps.runtimeState.drawBondElement = value;
+      },
+      getDrawBondType: () => deps.runtimeState.drawBondType,
+      setDrawBondType: value => {
+        deps.runtimeState.drawBondType = value;
       }
     })
   );

@@ -109,7 +109,9 @@ export function createForceSceneRendererDeps(ctx) {
       forceFitTransform: (nodes, pad, options) => ctx.forceFitTransform(nodes, pad, options),
       isHydrogenNode: node => ctx.isHydrogenNode(node),
       enLabelColor: value => ctx.enLabelColor(value),
-      renderReactionPreviewArrowForce: nodes => ctx.renderReactionPreviewArrowForce(nodes)
+      renderReactionPreviewArrowForce: nodes => ctx.renderReactionPreviewArrowForce(nodes),
+      generateAndRefine2dCoords: (mol, options) => ctx.generateAndRefine2dCoords(mol, options),
+      alignReaction2dProductOrientation: mol => ctx.alignReaction2dProductOrientation(mol)
     },
     events: {
       handleForceBondClick: (event, bondId, molecule) => ctx.handleForceBondClick(event, bondId, molecule),
@@ -167,15 +169,15 @@ export function create2DSceneRendererDeps(ctx) {
       clearSelection: () => ctx.clearSelection()
     },
     overlay: {
-      getDrawBondMode: () => ctx.getDrawBondMode()
+      getDrawBondMode: () => ctx.getDrawBondMode(),
+      getDrawBondType: () => ctx.getDrawBondType?.()
     },
     helpers: {
       valenceWarningMapFor: molecule => ctx.valenceWarningMapFor(molecule),
       toSVGPt: atom => ctx.toSVGPt(atom),
       secondaryDir: ctx.secondaryDir,
       getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => ctx.getSelectedDragAtomIds(mol, atomIds, bondIds),
-      drawBond: (container, bond, a1, a2, mol, toSVGPt, stereoType = null) =>
-        ctx.drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType),
+      drawBond: (container, bond, a1, a2, mol, toSVGPt, stereoType = null) => ctx.drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType),
       redrawHighlights: () => ctx.redrawHighlights(),
       redrawSelection: () => ctx.redrawSelection(),
       generateAndRefine2dCoords: (mol, options = {}) => ctx.generateAndRefine2dCoords(mol, options),
@@ -205,7 +207,7 @@ export function create2DSceneRendererDeps(ctx) {
       create2dAtomDrag: (mol, atomId, options) => ctx.create2dAtomDrag(mol, atomId, options)
     },
     actions: {
-      promoteBondOrder: bondId => ctx.promoteBondOrder(bondId)
+      promoteBondOrder: (bondId, options = {}) => ctx.promoteBondOrder(bondId, options)
     },
     view: {
       getOrientation: () => ctx.getOrientation()

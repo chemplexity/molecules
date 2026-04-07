@@ -85,7 +85,7 @@ export function _plotOverlayFitPadding(basePad = 40) {
     const rect = el.getBoundingClientRect();
     return rect.width > 0 && rect.height > 0 ? rect : null;
   };
-  for (const id of ['draw-tools']) {
+  for (const id of ['draw-bond-btn']) {
     const rect = visibleRect(id);
     if (!rect) {
       continue;

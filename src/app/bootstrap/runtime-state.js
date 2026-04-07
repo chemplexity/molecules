@@ -39,6 +39,7 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
     functionalGroupHighlightLines: null,
     functionalGroupHighlightCircles: null,
     drawBondElement: 'C',
+    drawBondType: 'single',
     drawBondState: null,
     drawBondHoverSuppressed: false,
     primitiveHoverSuppressed: false,

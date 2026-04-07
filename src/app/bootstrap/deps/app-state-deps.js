@@ -99,6 +99,10 @@ export function createAppStateBridgeDeps(ctx) {
       setDrawBondElement: value => {
         ctx.setDrawBondElement(value);
       },
+      getDrawBondType: () => ctx.getDrawBondType(),
+      setDrawBondType: value => {
+        ctx.setDrawBondType(value);
+      },
       setErasePainting: value => {
         ctx.setErasePainting(value);
       }

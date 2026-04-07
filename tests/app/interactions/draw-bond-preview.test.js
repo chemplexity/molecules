@@ -10,9 +10,13 @@ class FakeSelection {
   }
 
   append(tag) {
-    const node = { tag, attrs: {}, text: '', removed: false };
+    const node = { tag, attrs: {}, text: '', removed: false, parent: this.node ?? null };
     this.root.nodes.push(node);
     return new FakeSelection(this.root, node);
+  }
+
+  insert(tag) {
+    return this.append(tag);
   }
 
   attr(name, value) {
@@ -37,6 +41,16 @@ class FakeSelection {
   remove() {
     if (this.node) {
       this.node.removed = true;
+      const stack = [this.node];
+      while (stack.length > 0) {
+        const current = stack.pop();
+        for (const child of this.root.nodes) {
+          if (child.parent === current && !child.removed) {
+            child.removed = true;
+            stack.push(child);
+          }
+        }
+      }
     }
     return this;
   }
@@ -52,9 +66,13 @@ class FakeRootSelection {
   }
 
   append(tag) {
-    const node = { tag, attrs: {}, text: '', removed: false };
+    const node = { tag, attrs: {}, text: '', removed: false, parent: null };
     this.nodes.push(node);
     return new FakeSelection(this, node);
+  }
+
+  insert(tag) {
+    return this.append(tag);
   }
 
   select(selector) {
@@ -75,6 +93,8 @@ function makeActions(overrides = {}) {
     g,
     getMode: () => overrides.mode ?? '2d',
     getDrawBondElement: () => overrides.drawBondElement ?? 'O',
+    getDrawBondType: () => overrides.drawBondType ?? 'single',
+    getDrawElemProtons: () => ({ O: 8, C: 6 }),
     overlays: {
       isReactionPreviewEditableAtomId: atomId => overrides.isEditableAtomId?.(atomId) ?? true
     },
@@ -120,8 +140,7 @@ function makeActions(overrides = {}) {
       scale: 40,
       forceBondLength: 25,
       strokeWidth: 2,
-      fontSize: 22,
-      drawElemProtons: { O: 8, C: 6 }
+      fontSize: 22
     },
     helpers: {
       atomRadius: protonCount => protonCount,
@@ -159,7 +178,7 @@ describe('createDrawBondPreviewActions', () => {
       ey: 120,
       dragged: false
     });
-    assert.equal(g.select('line.draw-bond-preview').empty(), false);
+    assert.equal(g.select('g.draw-bond-preview').empty(), false);
     assert.equal(g.select('text.draw-bond-dest-label').empty(), false);
   });
 
@@ -202,7 +221,68 @@ describe('createDrawBondPreviewActions', () => {
     actions.cancel();
 
     assert.equal(getDrawBondState(), null);
-    assert.equal(g.select('line.draw-bond-preview').empty(), true);
+    assert.equal(g.select('g.draw-bond-preview').empty(), true);
     assert.deepEqual(calls, ['clearPrimitiveHover', 'redraw2dSelection']);
+  });
+
+  it('renders multiple preview segments for a double bond selection', () => {
+    const source = { id: 'a1', x: 0, y: 0, visible: true, name: 'C' };
+    const { actions, g } = makeActions({
+      drawBondType: 'double',
+      atomById: atomId => (atomId === 'a1' ? source : null)
+    });
+
+    actions.start('a1', 0, 0);
+    actions.update([360, 160]);
+
+    const liveSegments = g.nodes.filter(node => !node.removed && node.attrs.class === 'draw-bond-preview-segment');
+    assert.equal(liveSegments.length, 2);
+  });
+
+  it('renders force-mode double previews with the final-style separator treatment', () => {
+    const source = { id: 'a1', x: 0, y: 0, visible: true, name: 'C' };
+    const { actions, g } = makeActions({
+      mode: 'force',
+      drawBondType: 'double',
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', x: 120, y: 120 } : null)
+    });
+
+    actions.start('a1', 120, 120);
+    actions.update([170, 120]);
+
+    const liveSegments = g.nodes.filter(node => !node.removed && node.attrs.class === 'draw-bond-preview-segment');
+    assert.equal(liveSegments.length, 2);
+    assert.equal(liveSegments[0].attrs['stroke-width'], 3);
+    assert.equal(liveSegments[1].attrs.stroke, '#fff');
+  });
+
+  it('renders force-mode triple previews with two white separators', () => {
+    const { actions, g } = makeActions({
+      mode: 'force',
+      drawBondType: 'triple',
+      forceNodeById: atomId => (atomId === 'a1' ? { id: 'a1', x: 120, y: 120 } : null)
+    });
+
+    actions.start('a1', 120, 120);
+    actions.update([170, 120]);
+
+    const liveSegments = g.nodes.filter(node => !node.removed && node.attrs.class === 'draw-bond-preview-segment');
+    assert.equal(liveSegments.length, 3);
+    assert.equal(liveSegments[1].attrs.stroke, '#fff');
+    assert.equal(liveSegments[2].attrs.stroke, '#fff');
+  });
+
+  it('renders a wedge preview polygon for a wedge bond selection', () => {
+    const source = { id: 'a1', x: 0, y: 0, visible: true, name: 'C' };
+    const { actions, g } = makeActions({
+      drawBondType: 'wedge',
+      atomById: atomId => (atomId === 'a1' ? source : null)
+    });
+
+    actions.start('a1', 0, 0);
+    actions.update([360, 160]);
+
+    const wedgePolygons = g.nodes.filter(node => !node.removed && node.attrs.class === 'draw-bond-preview-wedge');
+    assert.equal(wedgePolygons.length, 1);
   });
 });

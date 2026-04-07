@@ -83,6 +83,7 @@ export function createSessionUiStateBridge(deps) {
       selectedBondIds: [...deps.getSelectedBondIds()],
       toolMode: deps.getDrawBondMode() ? 'draw-bond' : deps.getEraseMode() ? 'erase' : deps.getSelectMode() ? 'select' : 'pan',
       drawBondElement: deps.getDrawBondElement(),
+      drawBondType: deps.getDrawBondType?.() ?? 'single',
       forceAutoFitEnabled: deps.getForceAutoFitEnabled(),
       forceKeepInView: deps.getForceKeepInView(),
       forceKeepInViewTicks: deps.getForceKeepInViewTicks()
@@ -99,6 +100,7 @@ export function createSessionUiStateBridge(deps) {
     deps.setDrawBondHoverSuppressed(false);
     deps.setErasePainting(false);
     deps.setDrawBondElement(snapshot.drawBondElement ?? 'C');
+    deps.setDrawBondType?.(snapshot.drawBondType ?? 'single');
     deps.setSelectMode(snapshot.toolMode === 'select');
     deps.setDrawBondMode(snapshot.toolMode === 'draw-bond');
     deps.setEraseMode(snapshot.toolMode === 'erase');

@@ -131,8 +131,12 @@ describe('createAppStateBridge', () => {
         },
         getErasePainting: () => false,
         getDrawBondElement: () => 'N',
+        getDrawBondType: () => 'double',
         setDrawBondElement: value => {
           records.push(['setDrawBondElement', value]);
+        },
+        setDrawBondType: value => {
+          records.push(['setDrawBondType', value]);
         },
         setErasePainting: value => {
           records.push(['setErasePainting', value]);
@@ -143,12 +147,15 @@ describe('createAppStateBridge', () => {
     assert.equal(bridge.viewState.getMode(), '2d');
     assert.deepEqual(bridge.viewState.captureZoomTransform(), { x: 1, y: 2, k: 3 });
     assert.equal(bridge.overlayState.getDrawBondElement(), 'N');
+    assert.equal(bridge.overlayState.getDrawBondType(), 'double');
     bridge.viewState.restore2dEditViewport('zoom', { zoomToFit: true });
     bridge.overlayState.setDrawBondElement('O');
+    bridge.overlayState.setDrawBondType('triple');
 
     assert.deepEqual(records, [
       ['restore2dEditViewport', 'zoom', { zoomToFit: true }],
-      ['setDrawBondElement', 'O']
+      ['setDrawBondElement', 'O'],
+      ['setDrawBondType', 'triple']
     ]);
   });
 });

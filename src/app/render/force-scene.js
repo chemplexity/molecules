@@ -1,7 +1,7 @@
 /** @module app/render/force-scene */
 
 import { getRenderOptions, atomColor, strokeColor, singleBondWidth, prepareAromaticBondRendering, atomRadius, xOffset, yOffset, PI_STROKE, ARO_STROKE } from './helpers.js';
-import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, computeLonePairDotPositions, secondaryDir } from '../../layout/mol2d-helpers.js';
+import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, computeLonePairDotPositions, secondaryDir, syncDisplayStereo } from '../../layout/mol2d-helpers.js';
 import { getBondEnOverlayData } from './bond-en-polarity.js';
 import { atomNumberingLabelDistance, getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationAngle } from './atom-numbering.js';
 
@@ -36,6 +36,73 @@ export function createForceSceneRenderer(ctx) {
     const previousZoomTransform = preserveView ? ctx.d3.zoomTransform(ctx.svg.node()) : null;
 
     const anchorLayout = ctx.helpers.buildForceAnchorLayout(molecule);
+
+    // Mirror the 2D render flow to seed stereo bond assignments on the real molecule.
+    // Runs on initial load (no stereo set yet) AND whenever a reaction preview is active
+    // (product bonds need stereo assignments; sp2 product bonds from oxidation etc. must
+    // have stale auto-stereo cleared).  Matches scene-2d.js step-for-step:
+    //   1. hideHydrogens() on clone  — marks H as visible=false so safeV() in
+    //      stereoBondTypeForCenter uses the inferred position, not the zero-displacement
+    //      coords that suppressH writes.
+    //   2. generateAndRefine2dCoords({ suppressH:true }) — heavy-atom layout + H at parent.
+    //   3. alignReaction2dProductOrientation — sets forced stereo maps in __reactionPreview,
+    //      restores reactant reference coords, relays product atoms.
+    //   4. H placement loop (condition: visible===false, same as scene-2d.js) — overwrites
+    //      the H-at-parent coords with a geometrically valid angle so CIP winding is correct.
+    //   5. syncDisplayStereo — forced maps → correct centerId; unforced centers use real H pos.
+    //   6. Copy-back: set display from clone; clear stale auto-stereo on real bonds the clone
+    //      did not assign (e.g. sp2 product after oxidation).
+    const hasDisplayStereo = [...molecule.bonds.values()].some(b => b.properties.display?.as);
+    const isReactionPreviewMol = [...molecule.atoms.keys()].some(id => typeof id === 'string' && id.includes(':'));
+    if ((!hasDisplayStereo || isReactionPreviewMol) && (molecule.getChiralCenters?.()?.length ?? 0) > 0) {
+      const stereoClone = molecule.clone();
+      stereoClone.hideHydrogens();
+      ctx.helpers.generateAndRefine2dCoords(stereoClone, { suppressH: true, bondLength: 1.5 });
+      ctx.helpers.alignReaction2dProductOrientation(stereoClone);
+      for (const [, atom] of stereoClone.atoms) {
+        if (atom.name !== 'H' || atom.visible !== false) {
+          continue;
+        }
+        const nbrs = atom.getNeighbors(stereoClone);
+        if (nbrs.length !== 1) {
+          continue;
+        }
+        const parent = nbrs[0];
+        if (!parent.getChirality() || parent.x == null) {
+          continue;
+        }
+        const others = parent.getNeighbors(stereoClone).filter(n => n.id !== atom.id);
+        let sumX = 0,
+          sumY = 0,
+          cnt = 0;
+        for (const nb of others) {
+          if (nb.x != null) {
+            sumX += nb.x - parent.x;
+            sumY += nb.y - parent.y;
+            cnt++;
+          }
+        }
+        const angle = cnt > 0 ? Math.atan2(-sumY, -sumX) : 0;
+        atom.x = parent.x + Math.cos(angle) * (1.5 * 0.75);
+        atom.y = parent.y + Math.sin(angle) * (1.5 * 0.75);
+      }
+      syncDisplayStereo(stereoClone);
+      for (const [bondId, seedBond] of stereoClone.bonds) {
+        const realBond = molecule.bonds.get(bondId);
+        if (!realBond) {
+          continue;
+        }
+        if (seedBond.properties.display?.as) {
+          realBond.properties.display = { ...seedBond.properties.display };
+        } else if (realBond.properties.display?.as && !realBond.properties.display?.manual) {
+          delete realBond.properties.display.as;
+          delete realBond.properties.display.centerId;
+          if (Object.keys(realBond.properties.display).length === 0) {
+            delete realBond.properties.display;
+          }
+        }
+      }
+    }
     if (ctx.state.getPreserveSelectionOnNextRender()) {
       ctx.state.syncSelectionToMolecule(molecule);
     } else {
@@ -144,6 +211,63 @@ export function createForceSceneRenderer(ctx) {
         ctx.events.handleForceBondMouseOut();
       })
       .call(ctx.drag.createForceBondDrag(ctx.simulation, molecule));
+
+    // Stereo bond display (wedge / dash) — pre-create elements positioned in tick
+    const stereoBondLayer = ctx.g.append('g').attr('class', 'force-stereo-bonds').style('pointer-events', 'none');
+    const FORCE_WEDGE_HW = 5;
+    const FORCE_DASH_COUNT = 6;
+    const forceStereoBondInfo = [];
+    for (const link of graph.links) {
+      const bond = molecule.bonds.get(link.id);
+      const displayAs = bond?.properties?.display?.as;
+      if (displayAs !== 'wedge' && displayAs !== 'dash') {
+        continue;
+      }
+      const centerId = bond.properties.display?.centerId ?? link.source.id;
+      if (displayAs === 'wedge') {
+        const poly = stereoBondLayer.append('polygon').attr('fill', '#111').attr('pointer-events', 'none');
+        forceStereoBondInfo.push({ type: 'wedge', element: poly, centerId, link });
+      } else {
+        const lines = [];
+        for (let i = 0; i < FORCE_DASH_COUNT; i++) {
+          lines.push(stereoBondLayer.append('line').attr('stroke', '#111').attr('stroke-width', 1.2).attr('stroke-linecap', 'round').attr('pointer-events', 'none'));
+        }
+        forceStereoBondInfo.push({ type: 'dash', elements: lines, centerId, link });
+      }
+    }
+    // Hide the plain stroke for dash bonds (its hash lines replace it); wedge polygons cover the line automatically
+    singleBond.filter(d => molecule.bonds.get(d.id)?.properties?.display?.as === 'dash').style('stroke', 'none');
+
+    function _updateForceStereoDisplay() {
+      for (const info of forceStereoBondInfo) {
+        const { centerId, link } = info;
+        const src = centerId === link.source.id ? link.source : link.target;
+        const tgt = centerId === link.source.id ? link.target : link.source;
+        const dx = tgt.x - src.x;
+        const dy = tgt.y - src.y;
+        const len = Math.sqrt(dx * dx + dy * dy) || 1;
+        const nx = -dy / len;
+        const ny = dx / len;
+        if (info.type === 'wedge') {
+          info.element.attr(
+            'points',
+            `${src.x},${src.y} ${tgt.x - nx * FORCE_WEDGE_HW},${tgt.y - ny * FORCE_WEDGE_HW} ${tgt.x + nx * FORCE_WEDGE_HW},${tgt.y + ny * FORCE_WEDGE_HW}`
+          );
+        } else {
+          for (let i = 0; i < FORCE_DASH_COUNT; i++) {
+            const t = (i + 1) / (FORCE_DASH_COUNT + 1);
+            const px = src.x + dx * t;
+            const py = src.y + dy * t;
+            const hw = FORCE_WEDGE_HW * t;
+            info.elements[i]
+              .attr('x1', px - nx * hw)
+              .attr('y1', py - ny * hw)
+              .attr('x2', px + nx * hw)
+              .attr('y2', py + ny * hw);
+          }
+        }
+      }
+    }
 
     const atom = ctx.g
       .selectAll('circle.node')
@@ -356,6 +480,7 @@ export function createForceSceneRenderer(ctx) {
     ctx.simulation.alpha(preservePositions ? 0.2 : 1).restart();
     _updateForceLonePairs();
     _updateForceChargeLabels();
+    _updateForceStereoDisplay();
 
     const forceEnData = getBondEnOverlayData(molecule);
     const forceLinkById = new Map(graph.links.map(link => [link.id, link]));
@@ -530,6 +655,7 @@ export function createForceSceneRenderer(ctx) {
       _updateForceChargeLabels();
       _updateForceBondEnLabels();
       _updateForceAtomNumberLabels();
+      _updateForceStereoDisplay();
 
       const highlightLines = ctx.cache.getHighlightLines();
       const highlightCircles = ctx.cache.getHighlightCircles();

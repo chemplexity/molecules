@@ -100,8 +100,10 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       panButton: ctx.panButton,
       selectButton: ctx.selectButton,
       drawBondButton: ctx.drawBondButton,
+      drawTools: ctx.drawTools,
       eraseButton: ctx.eraseButton,
-      getElementButton: element => ctx.getElementButton(element)
+      getElementButton: element => ctx.getElementButton(element),
+      getBondDrawTypeButton: type => ctx.getBondDrawTypeButton(type)
     })
   );
 
@@ -154,6 +156,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       g: ctx.g,
       getMode: () => ctx.getMode(),
       getDrawBondElement: () => ctx.getDrawBondElement(),
+      getDrawBondType: () => ctx.getDrawBondType(),
       getDrawElemProtons: () => ctx.getDrawElemProtons(),
       isReactionPreviewEditableAtomId: id => ctx.isReactionPreviewEditableAtomId(id),
       getDrawBondState: () => ctx.getDrawBondState(),
@@ -175,6 +178,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       get2DCenterY: () => ctx.get2DCenterY(),
       scale: ctx.scale,
       forceBondLength: ctx.forceBondLength,
+      bondOffset2d: ctx.bondOffset2d,
       strokeWidth: ctx.strokeWidth,
       fontSize: ctx.fontSize,
       atomRadius: ctx.atomRadius,
@@ -189,6 +193,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
     depBuilders.createDrawBondCommitActionDeps({
       getMode: () => ctx.getMode(),
       getDrawBondElement: () => ctx.getDrawBondElement(),
+      getDrawBondType: () => ctx.getDrawBondType(),
       clearPreviewArtifacts: () => drawBondPreviewActions.clearArtifacts(),
       cancelPreview: () => drawBondPreviewActions.cancel(),
       getDrawBondState: () => ctx.getDrawBondState(),
@@ -253,9 +258,11 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       startDrawBond: (atomId, gX, gY) => drawBondPreviewActions.start(atomId, gX, gY),
       resetDrawBondHover: () => drawBondPreviewActions.resetHover(),
       getDrawBondElement: () => ctx.getDrawBondElement(),
-      promoteBondOrder: bondId => ctx.promoteBondOrder(bondId),
+      getDrawBondType: () => ctx.getDrawBondType(),
+      promoteBondOrder: (bondId, promoteOptions = {}) => ctx.promoteBondOrder(bondId, promoteOptions),
       eraseItem: (atomIds, bondIds) => editingActions.eraseItem(atomIds, bondIds),
       replaceForceHydrogenAtom: (atomId, mol) => ctx.replaceForceHydrogenAtom(atomId, mol),
+      autoPlaceBond: (atomId, ox, oy) => drawBondCommitActions.autoPlaceBond(atomId, ox, oy),
       showPrimitiveHover: (atomIds = [], bondIds = []) => ctx.showPrimitiveHover(atomIds, bondIds),
       clearPrimitiveHover: () => ctx.clearPrimitiveHover(),
       refreshSelectionOverlay: () => ctx.refreshSelectionOverlay(),

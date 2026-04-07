@@ -33,8 +33,12 @@ describe('createAppShellDeps', () => {
         togglePanMode: () => 'togglePanMode',
         toggleSelectMode: () => 'toggleSelectMode',
         toggleDrawBondMode: () => 'toggleDrawBondMode',
+        handleDrawBondButtonClick: () => 'handleDrawBondButtonClick',
+        openDrawBondDrawer: () => 'openDrawBondDrawer',
+        closeDrawBondDrawer: () => 'closeDrawBondDrawer',
         toggleEraseMode: () => 'toggleEraseMode',
-        setDrawElement: value => `setDrawElement:${value}`
+        setDrawElement: value => `setDrawElement:${value}`,
+        setDrawBondType: value => `setDrawBondType:${value}`
       },
       editing: {
         deleteSelection: () => 'deleteSelection'
@@ -73,6 +77,7 @@ describe('createAppShellDeps', () => {
     assert.equal(deps.options.open(), 'open');
     assert.equal(deps.navigation.toggleMode(), 'toggleMode');
     assert.equal(deps.selection.setDrawElement('N'), 'setDrawElement:N');
+    assert.equal(deps.selection.setDrawBondType('dash'), 'setDrawBondType:dash');
     assert.equal(deps.editing.deleteSelection(), 'deleteSelection');
     assert.equal(deps.state.hasLoadedInput(), true);
     assert.equal(deps.view.handle2DResize(), 'handle2DResize');

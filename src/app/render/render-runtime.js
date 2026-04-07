@@ -22,20 +22,13 @@ export function createRenderRuntime(deps) {
    * @param {boolean} [options.preserveAnalysis=false]
    */
   function renderMol(mol, options = {}) {
-    const {
-      recomputeResonance = true,
-      refreshResonancePanel = true,
-      preserveHistory = false,
-      preserveGeometry = false,
-      preserveView = false,
-      preserveAnalysis = false
-    } = options;
+    const { recomputeResonance = true, refreshResonancePanel = true, preserveHistory = false, preserveGeometry = false, preserveView = false, preserveAnalysis = false } = options;
 
     if (!preserveAnalysis) {
       deps.highlights.clear();
     }
 
-    const previous2dZoom = deps.state.getMode() === '2d' && preserveView ? deps.view.captureZoomTransform?.() ?? null : null;
+    const previous2dZoom = deps.state.getMode() === '2d' && preserveView ? (deps.view.captureZoomTransform?.() ?? null) : null;
 
     deps.state.setCurrentMol(mol);
     deps.view.resetOrientation();

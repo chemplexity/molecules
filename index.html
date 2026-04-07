@@ -98,11 +98,65 @@
             <button id="clean-force-btn" title="Clean force layout" onclick="cleanLayoutForce()" style="display: none">🧹</button>
           </div>
           <div id="draw-tools">
-            <button id="draw-bond-btn" title="Draw bond" onclick="toggleDrawBondMode()">
+            <button id="draw-bond-btn" type="button" title="Draw bond" onclick="handleDrawBondButtonClick()">
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <line x1="2" y1="14" x2="14" y2="2" stroke="currentColor" stroke-width="3.2" stroke-linecap="round" />
+                <g transform="rotate(-45 8 8)">
+                  <line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+                </g>
               </svg>
             </button>
+            <div id="draw-bond-drawer" aria-label="Bond draw options">
+              <button id="draw-bond-type-single" type="button" data-bond-draw-type="single" title="Single bond" onclick="setDrawBondType('single')">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <g transform="rotate(-45 8 8)">
+                    <line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+                  </g>
+                </svg>
+              </button>
+              <button id="draw-bond-type-double" type="button" data-bond-draw-type="double" title="Double bond" onclick="setDrawBondType('double')">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <g transform="rotate(-45 8 8)">
+                    <line x1="3" y1="6.4" x2="13" y2="6.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+                    <line x1="3" y1="9.6" x2="13" y2="9.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+                  </g>
+                </svg>
+              </button>
+              <button id="draw-bond-type-triple" type="button" data-bond-draw-type="triple" title="Triple bond" onclick="setDrawBondType('triple')">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <g transform="rotate(-45 8 8)">
+                    <line x1="3" y1="5.8" x2="13" y2="5.8" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" />
+                    <line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" />
+                    <line x1="3" y1="10.2" x2="13" y2="10.2" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" />
+                  </g>
+                </svg>
+              </button>
+              <button id="draw-bond-type-aromatic" type="button" data-bond-draw-type="aromatic" title="Aromatic bond" onclick="setDrawBondType('aromatic')">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <g transform="rotate(-45 8 8)">
+                    <line x1="3" y1="6.4" x2="13" y2="6.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" />
+                    <line x1="3" y1="9.6" x2="13" y2="9.6" stroke="currentColor" stroke-width="1.45" stroke-linecap="round" stroke-dasharray="2.1 1.8" />
+                  </g>
+                </svg>
+              </button>
+              <button id="draw-bond-type-wedge" type="button" data-bond-draw-type="wedge" title="Wedge bond" onclick="setDrawBondType('wedge')">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <g transform="rotate(-45 8 8)">
+                    <polygon points="3,8 13,5 13,11" fill="currentColor" />
+                  </g>
+                </svg>
+              </button>
+              <button id="draw-bond-type-dash" type="button" data-bond-draw-type="dash" title="Dash bond" onclick="setDrawBondType('dash')">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <g transform="rotate(-45 8 8)">
+                    <line x1="4.6" y1="7.2" x2="4.6" y2="8.8" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" />
+                    <line x1="6.5" y1="6.5" x2="6.5" y2="9.5" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" />
+                    <line x1="8.4" y1="5.8" x2="8.4" y2="10.2" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" />
+                    <line x1="10.3" y1="5.1" x2="10.3" y2="10.9" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" />
+                    <line x1="12.2" y1="4.4" x2="12.2" y2="11.6" stroke="currentColor" stroke-width="1.15" stroke-linecap="round" />
+                  </g>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
         <div id="sidebar">

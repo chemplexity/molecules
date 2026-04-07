@@ -55,8 +55,12 @@ describe('interaction-runtime dependency builder', () => {
       panButton: {},
       selectButton: {},
       drawBondButton: {},
+      drawTools: {},
       eraseButton: {},
       getElementButton() {
+        return {};
+      },
+      getBondDrawTypeButton() {
         return {};
       },
       performStructuralEdit() {},
@@ -90,6 +94,7 @@ describe('interaction-runtime dependency builder', () => {
       g: {},
       getMode: () => '2d',
       getDrawBondElement: () => 'C',
+      getDrawBondType: () => 'single',
       getDrawElemProtons: () => DRAW_ELEM_PROTONS,
       isReactionPreviewEditableAtomId: () => false,
       getDrawBondState: () => null,

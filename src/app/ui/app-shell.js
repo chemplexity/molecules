@@ -42,8 +42,12 @@ export function initAppShell(context) {
   bindGlobal(win, 'togglePanMode', () => context.selection.togglePanMode());
   bindGlobal(win, 'toggleSelectMode', () => context.selection.toggleSelectMode());
   bindGlobal(win, 'toggleDrawBondMode', () => context.selection.toggleDrawBondMode());
+  bindGlobal(win, 'handleDrawBondButtonClick', () => context.selection.handleDrawBondButtonClick());
+  bindGlobal(win, 'openDrawBondDrawer', () => context.selection.openDrawBondDrawer());
+  bindGlobal(win, 'closeDrawBondDrawer', () => context.selection.closeDrawBondDrawer());
   bindGlobal(win, 'toggleEraseMode', () => context.selection.toggleEraseMode());
   bindGlobal(win, 'setDrawElement', el => context.selection.setDrawElement(el));
+  bindGlobal(win, 'setDrawBondType', type => context.selection.setDrawBondType(type));
   bindGlobal(win, 'toggleMode', () => context.navigation.toggleMode());
 
   bindGlobal(win, '_parseSmiles', smiles => context.input.parseSmiles(smiles));

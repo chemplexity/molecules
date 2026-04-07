@@ -233,7 +233,7 @@ export function create2DSceneRenderer(ctx) {
         const bGroup = bondLayer.select(`[data-bond-id="${bInfo.bond.id}"]`);
         const hitLine = bGroup.select('.bond-hit');
         bGroup.selectAll(':not(.bond-hit)').remove();
-        const st = stereoMap ? stereoMap.get(bInfo.bond.id) : null;
+        const st = (stereoMap ? stereoMap.get(bInfo.bond.id) : null) ?? bInfo.bond.properties?.display?.as ?? null;
         let ssa1 = bInfo.a1;
         let ssa2 = bInfo.a2;
         if (st) {
@@ -284,7 +284,7 @@ export function create2DSceneRenderer(ctx) {
     bondLayer = ctx.g.append('g').attr('class', 'bonds');
     for (const bi of bondInfos) {
       const bg = bondLayer.append('g').attr('data-bond-id', bi.bond.id);
-      const stereoType = stereoMap ? stereoMap.get(bi.bond.id) : null;
+      const stereoType = (stereoMap ? stereoMap.get(bi.bond.id) : null) ?? bi.bond.properties?.display?.as ?? null;
       let sa1 = bi.a1;
       let sa2 = bi.a2;
       if (stereoType) {
@@ -319,7 +319,6 @@ export function create2DSceneRenderer(ctx) {
           }
           event.preventDefault();
           event.stopPropagation();
-          ctx.actions.promoteBondOrder(bi.bond.id);
         })
         .on('click', event => {
           ctx.events.handle2dBondClick(event, bi.bond.id);

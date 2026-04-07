@@ -2375,6 +2375,17 @@ describe('pickStereoWedges', () => {
     assert.deepEqual(mol.bonds.get('0').properties.display, { as: 'dash', centerId: 'C2' });
   });
 
+  it('preserves a manually assigned wedge or dash display on a non-stereogenic bond', () => {
+    const mol = ethane();
+    const bond = mol.bonds.get('b0');
+    bond.properties.display = { as: 'dash', manual: true };
+
+    const preserved = [...syncDisplayStereo(mol)];
+
+    assert.deepEqual(preserved, [['b0', 'dash']]);
+    assert.deepEqual(bond.properties.display, { as: 'dash', manual: true });
+  });
+
   it('can update the stored R/S assignment to satisfy an explicit displayed wedge or dash choice', () => {
     const mol = parseSMILES('C[C@](F)(CC)CCC');
     generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });

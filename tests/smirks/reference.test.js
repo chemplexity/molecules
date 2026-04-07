@@ -269,13 +269,13 @@ describe('reactionTemplates — example applications', () => {
   it('amineProtonation protonates a neutral amine', () => {
     const product = applySMIRKS(parseSMILES('CN'), reactionTemplates.amineProtonation.smirks);
     assert.ok(product);
-    assert.equal(toSMILES(product), 'C[NH2+]');
+    assert.equal(toSMILES(product), 'C[NH3+]');
   });
 
   it('amineProtonation adds a proton to a primary amine site', () => {
     const product = applySMIRKS(parseSMILES('NC(CC1=CNC=N1)C(O)=O'), reactionTemplates.amineProtonation.smirks);
     assert.ok(product);
-    assert.match(toSMILES(product), /\[NH2\+\]/);
+    assert.match(toSMILES(product), /\[NH3\+\]/);
   });
 
   it('ammoniumDeprotonation deprotonates an ammonium center', () => {

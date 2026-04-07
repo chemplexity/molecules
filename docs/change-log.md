@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-04-07
+
+- Add bond picker tool, double, tripple, aromatic, wedge, dash
+- Display stereochemistry bonds in force layout mode
+- Fix issue with amine protonation
+
 ## 2026-04-06
 
 - Stiffen force layout bonds

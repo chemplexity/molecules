@@ -145,6 +145,9 @@ export function createEditorActions(deps) {
       if (forceResult.enableKeepInView) {
         deps.view.enableForceKeepInView();
       }
+      if (options.viewportPolicy === ViewportPolicy.restoreEdit && reactionEdit?.restored && reactionEdit?.entryZoomTransform) {
+        deps.view.restoreZoomTransformSnapshot(reactionEdit.entryZoomTransform);
+      }
     } else {
       const twoDResult = result.twoD ?? {};
       if (result.sync2dDerived !== false) {
@@ -164,10 +167,7 @@ export function createEditorActions(deps) {
     }
 
     if (result.restorePrimitiveHover) {
-      deps.view.setPrimitiveHover?.(
-        result.restorePrimitiveHover.atomIds ?? [],
-        result.restorePrimitiveHover.bondIds ?? []
-      );
+      deps.view.setPrimitiveHover?.(result.restorePrimitiveHover.atomIds ?? [], result.restorePrimitiveHover.bondIds ?? []);
     }
 
     return {

@@ -114,8 +114,12 @@ describe('interaction runtime bootstrap', () => {
         panButton: {},
         selectButton: {},
         drawBondButton: {},
+        drawTools: {},
         eraseButton: {},
         getElementButton() {
+          return {};
+        },
+        getBondDrawTypeButton() {
           return {};
         },
         performStructuralEdit() {},
@@ -149,6 +153,7 @@ describe('interaction runtime bootstrap', () => {
         g: { id: 'g' },
         getMode: () => '2d',
         getDrawBondElement: () => 'C',
+        getDrawBondType: () => 'single',
         getDrawElemProtons: () => ({ C: 6 }),
         isReactionPreviewEditableAtomId: () => false,
         getDrawBondState: () => null,

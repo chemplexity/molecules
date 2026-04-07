@@ -377,8 +377,12 @@ export function finalizeAppBootstrap(ctx) {
         togglePanMode: () => ctx.actions.selectionActions.togglePanMode(),
         toggleSelectMode: () => ctx.actions.selectionActions.toggleSelectMode(),
         toggleDrawBondMode: () => ctx.actions.selectionActions.toggleDrawBondMode(),
+        handleDrawBondButtonClick: () => ctx.actions.selectionActions.handleDrawBondButtonClick(),
+        openDrawBondDrawer: () => ctx.actions.selectionActions.openDrawBondDrawer(),
+        closeDrawBondDrawer: () => ctx.actions.selectionActions.closeDrawBondDrawer(),
         toggleEraseMode: () => ctx.actions.selectionActions.toggleEraseMode(),
-        setDrawElement: el => ctx.actions.selectionActions.setDrawElement(el)
+        setDrawElement: el => ctx.actions.selectionActions.setDrawElement(el),
+        setDrawBondType: type => ctx.actions.selectionActions.setDrawBondType(type)
       },
       editing: {
         deleteSelection: () => ctx.actions.editingActions.deleteSelection()

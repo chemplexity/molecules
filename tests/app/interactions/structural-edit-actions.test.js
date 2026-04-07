@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 
 import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../../../src/app/core/editor-actions.js';
 import { createStructuralEditActions } from '../../../src/app/interactions/structural-edit-actions.js';
+import { parseSMILES } from '../../../src/io/smiles.js';
+import { generateAndRefine2dCoords } from '../../../src/layout/index.js';
 
 function makeAtom(id, name) {
   return {
@@ -25,6 +27,17 @@ function makeBond(id, atomId1, atomId2, properties = {}) {
     id,
     atoms: [atomId1, atomId2],
     properties: { order: 1, aromatic: false, ...properties },
+    setStereo(value) {
+      this.properties.stereo = value;
+    },
+    setAromatic(value) {
+      this.properties.aromatic = value;
+      this.properties.order = value ? 1.5 : 1;
+    },
+    setOrder(value) {
+      this.properties.order = value;
+      this.properties.aromatic = false;
+    },
     getAtomObjects(mol) {
       return [mol.atoms.get(atomId1) ?? null, mol.atoms.get(atomId2) ?? null];
     },
@@ -205,6 +218,320 @@ describe('createStructuralEditActions', () => {
     assert.equal(atom2.properties.aromatic, false);
     assert.equal(result.clearPrimitiveHover, true);
     assert.equal(result.suppressDrawBondHover, true);
+  });
+
+  it('keeps normal promotion cycling when single bond draw mode is selected', () => {
+    const atom1 = makeAtom('a1', 'C');
+    const atom2 = makeAtom('a2', 'C');
+    const bond = makeBond('b1', 'a1', 'a2', { order: 1 });
+    const mol = {
+      atoms: new Map([
+        ['a1', atom1],
+        ['a2', atom2]
+      ]),
+      bonds: new Map(),
+      clearStereoAnnotations() {},
+      repairImplicitHydrogens() {}
+    };
+    attachBond(mol, bond);
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.promoteBondOrder('b1', {
+      drawBondType: 'single',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(bond.properties.order, 2);
+    assert.equal(bond.properties.aromatic, false);
+  });
+
+  it('stores manual dash display metadata when explicitly applying a dash bond', () => {
+    const atom1 = makeAtom('a1', 'C');
+    const atom2 = makeAtom('a2', 'C');
+    const bond = makeBond('b1', 'a1', 'a2', { order: 1 });
+    const mol = {
+      atoms: new Map([
+        ['a1', atom1],
+        ['a2', atom2]
+      ]),
+      bonds: new Map(),
+      clearStereoAnnotations() {},
+      repairImplicitHydrogens() {}
+    };
+    attachBond(mol, bond);
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.promoteBondOrder('b1', {
+      drawBondType: 'dash',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.deepEqual(bond.properties.display, {
+      as: 'dash',
+      centerId: 'a1',
+      manual: true
+    });
+    assert.equal(bond.properties.order, 1);
+  });
+
+  it('uses the larger substituent side as the manual wedge center on a clicked non-stereogenic bond', () => {
+    const mol = parseSMILES('CCO');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+    const oxygen = [...mol.atoms.values()].find(atom => atom.name === 'O');
+    const attachedCarbon = oxygen.getNeighbors(mol).find(atom => atom.name === 'C');
+    const bond = [...mol.bonds.values()].find(currentBond => currentBond.connects(oxygen.id, attachedCarbon.id));
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.promoteBondOrder(bond.id, {
+      drawBondType: 'wedge',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.deepEqual(bond.properties.display, {
+      as: 'wedge',
+      centerId: attachedCarbon.id,
+      manual: true
+    });
+  });
+
+  it('treats applying double to an existing double bond as a no-op', () => {
+    const atom1 = makeAtom('a1', 'C');
+    const atom2 = makeAtom('a2', 'O');
+    const bond = makeBond('b1', 'a1', 'a2', { order: 2 });
+    const mol = {
+      atoms: new Map([
+        ['a1', atom1],
+        ['a2', atom2]
+      ]),
+      bonds: new Map()
+    };
+    attachBond(mol, bond);
+
+    let mutateCalled = false;
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const preflightResult = options.preflight({ mol, mode: '2d', reactionEdit: null });
+            if (preflightResult === false) {
+              return { cancelled: true };
+            }
+            mutateCalled = true;
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.promoteBondOrder('b1', {
+      drawBondType: 'double',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(result.cancelled, true);
+    assert.equal(mutateCalled, false);
+    assert.equal(bond.properties.order, 2);
+  });
+
+  it('treats applying triple to an existing triple bond as a no-op', () => {
+    const atom1 = makeAtom('a1', 'C');
+    const atom2 = makeAtom('a2', 'N');
+    const bond = makeBond('b1', 'a1', 'a2', { order: 3 });
+    const mol = {
+      atoms: new Map([
+        ['a1', atom1],
+        ['a2', atom2]
+      ]),
+      bonds: new Map()
+    };
+    attachBond(mol, bond);
+
+    let mutateCalled = false;
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const preflightResult = options.preflight({ mol, mode: '2d', reactionEdit: null });
+            if (preflightResult === false) {
+              return { cancelled: true };
+            }
+            mutateCalled = true;
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.promoteBondOrder('b1', {
+      drawBondType: 'triple',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(result.cancelled, true);
+    assert.equal(mutateCalled, false);
+    assert.equal(bond.properties.order, 3);
+  });
+
+  it('treats applying aromatic to an existing aromatic bond as a no-op', () => {
+    const atom1 = makeAtom('a1', 'C');
+    const atom2 = makeAtom('a2', 'C');
+    const bond = makeBond('b1', 'a1', 'a2', { order: 1.5, aromatic: true, localizedOrder: 2 });
+    const mol = {
+      atoms: new Map([
+        ['a1', atom1],
+        ['a2', atom2]
+      ]),
+      bonds: new Map()
+    };
+    attachBond(mol, bond);
+
+    let mutateCalled = false;
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const preflightResult = options.preflight({ mol, mode: '2d', reactionEdit: null });
+            if (preflightResult === false) {
+              return { cancelled: true };
+            }
+            mutateCalled = true;
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.promoteBondOrder('b1', {
+      drawBondType: 'aromatic',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(result.cancelled, true);
+    assert.equal(mutateCalled, false);
+    assert.equal(bond.properties.aromatic, true);
+  });
+
+  it('clears a manual wedge or dash display when single bond mode is selected', () => {
+    const atom1 = makeAtom('a1', 'C');
+    const atom2 = makeAtom('a2', 'C');
+    const bond = makeBond('b1', 'a1', 'a2', { order: 1, display: { as: 'dash', manual: true, centerId: 'a1' } });
+    const mol = {
+      atoms: new Map([
+        ['a1', atom1],
+        ['a2', atom2]
+      ]),
+      bonds: new Map(),
+      clearStereoAnnotations() {},
+      repairImplicitHydrogens() {}
+    };
+    attachBond(mol, bond);
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.promoteBondOrder('b1', {
+      drawBondType: 'single',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(bond.properties.order, 1);
+    assert.equal(bond.properties.display, undefined);
+  });
+
+  it('assigns tetrahedral chirality when applying a wedge to a real stereogenic center', () => {
+    const mol = parseSMILES('CC(F)(Cl)Br');
+    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+    const center = [...mol.atoms.values()].find(atom => atom.name === 'C' && atom.getNeighbors(mol).some(neighbor => neighbor.name === 'F'));
+    const fluorine = [...mol.atoms.values()].find(atom => atom.name === 'F');
+    const bond = [...mol.bonds.values()].find(currentBond => currentBond.connects(center.id, fluorine.id));
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.promoteBondOrder(bond.id, {
+      drawBondType: 'wedge',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.match(center.getChirality(), /^[RS]$/);
+    assert.deepEqual(bond.properties.display, {
+      as: 'wedge',
+      manual: true,
+      centerId: center.id
+    });
   });
 
   it('changes atom elements through the extracted structural-edit action', () => {

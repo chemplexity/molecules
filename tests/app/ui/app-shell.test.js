@@ -94,11 +94,23 @@ describe('initAppShell', () => {
         toggleDrawBondMode: () => {
           records.push(['toggleDrawBondMode']);
         },
+        handleDrawBondButtonClick: () => {
+          records.push(['handleDrawBondButtonClick']);
+        },
+        openDrawBondDrawer: () => {
+          records.push(['openDrawBondDrawer']);
+        },
+        closeDrawBondDrawer: () => {
+          records.push(['closeDrawBondDrawer']);
+        },
         toggleEraseMode: () => {
           records.push(['toggleEraseMode']);
         },
         setDrawElement: el => {
           records.push(['setDrawElement', el]);
+        },
+        setDrawBondType: type => {
+          records.push(['setDrawBondType', type]);
         }
       },
       editing: {
@@ -170,8 +182,12 @@ describe('initAppShell', () => {
     win.togglePanMode();
     win.toggleSelectMode();
     win.toggleDrawBondMode();
+    win.handleDrawBondButtonClick();
+    win.openDrawBondDrawer();
+    win.closeDrawBondDrawer();
     win.toggleEraseMode();
     win.setDrawElement('N');
+    win.setDrawBondType('dash');
     win.toggleMode();
     win._parseSmiles('CCN');
     win._parseInchi('InChI=1S/CH4/h1H4');
@@ -204,8 +220,12 @@ describe('initAppShell', () => {
       ['togglePanMode'],
       ['toggleSelectMode'],
       ['toggleDrawBondMode'],
+      ['handleDrawBondButtonClick'],
+      ['openDrawBondDrawer'],
+      ['closeDrawBondDrawer'],
       ['toggleEraseMode'],
       ['setDrawElement', 'N'],
+      ['setDrawBondType', 'dash'],
       ['toggleMode'],
       ['parseSmiles', 'CCN'],
       ['parseInchi', 'InChI=1S/CH4/h1H4'],
@@ -236,7 +256,17 @@ describe('initAppShell', () => {
       exportActions: { copyForcePng() {}, copyForceSvg() {}, copySvg2d() {}, savePng2d() {} },
       options: { open() {} },
       navigation: { cleanLayout2d() {}, cleanLayoutForce() {}, toggleMode() {} },
-      selection: { togglePanMode() {}, toggleSelectMode() {}, toggleDrawBondMode() {}, toggleEraseMode() {}, setDrawElement() {} },
+      selection: {
+        togglePanMode() {},
+        toggleSelectMode() {},
+        toggleDrawBondMode() {},
+        handleDrawBondButtonClick() {},
+        openDrawBondDrawer() {},
+        closeDrawBondDrawer() {},
+        toggleEraseMode() {},
+        setDrawElement() {},
+        setDrawBondType() {}
+      },
       editing: { deleteSelection() {} },
       state: {
         hasLoadedInput: () => false,
@@ -287,7 +317,17 @@ describe('initAppShell', () => {
       exportActions: { copyForcePng() {}, copyForceSvg() {}, copySvg2d() {}, savePng2d() {} },
       options: { open() {} },
       navigation: { cleanLayout2d() {}, cleanLayoutForce() {}, toggleMode() {} },
-      selection: { togglePanMode() {}, toggleSelectMode() {}, toggleDrawBondMode() {}, toggleEraseMode() {}, setDrawElement() {} },
+      selection: {
+        togglePanMode() {},
+        toggleSelectMode() {},
+        toggleDrawBondMode() {},
+        handleDrawBondButtonClick() {},
+        openDrawBondDrawer() {},
+        closeDrawBondDrawer() {},
+        toggleEraseMode() {},
+        setDrawElement() {},
+        setDrawBondType() {}
+      },
       editing: { deleteSelection() {} },
       state: {
         hasLoadedInput: () => true,

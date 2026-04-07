@@ -1,8 +1,46 @@
 /** @module app/interactions/selection */
 
 const DRAW_ELEMENTS = ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I'];
+const DRAW_BOND_TYPES = ['single', 'double', 'triple', 'aromatic', 'wedge', 'dash'];
 
 export function createSelectionActions(context) {
+  function setDrawBondDrawerHoverSuppressed(value) {
+    context.dom.drawTools?.classList?.toggle?.('drawer-hover-suppressed', value);
+  }
+
+  if (context.dom.drawTools && typeof context.dom.drawTools.addEventListener === 'function' && !context.dom.drawTools.__bondDrawerHoverSuppressBound) {
+    context.dom.drawTools.addEventListener('mouseleave', () => {
+      setDrawBondDrawerHoverSuppressed(false);
+    });
+    context.dom.drawTools.__bondDrawerHoverSuppressBound = true;
+  }
+
+  function syncDrawBondButtonIcon() {
+    const activeType = context.state.overlayState.getDrawBondType?.() ?? 'single';
+    const sourceButton = context.dom.getBondDrawTypeButton?.(activeType);
+    const drawBondButton = context.dom.drawBondButton;
+    if (!sourceButton || !drawBondButton || typeof sourceButton.innerHTML !== 'string') {
+      return;
+    }
+    drawBondButton.innerHTML = sourceButton.innerHTML;
+  }
+
+  function openDrawBondDrawer() {
+    setDrawBondDrawerHoverSuppressed(false);
+    context.dom.drawTools?.classList?.add('drawer-open');
+  }
+
+  function closeDrawBondDrawer() {
+    context.dom.drawTools?.classList?.remove('drawer-open');
+  }
+
+  function toggleDrawBondDrawer() {
+    if (!context.dom.drawTools?.classList) {
+      return;
+    }
+    context.dom.drawTools.classList.toggle('drawer-open');
+  }
+
   function syncToolButtonsFromState() {
     const selectMode = context.state.overlayState.getSelectMode();
     const drawBondMode = context.state.overlayState.getDrawBondMode();
@@ -16,8 +54,12 @@ export function createSelectionActions(context) {
 
     if (drawBondMode) {
       syncElementButtons();
+      syncBondDrawTypeButtons();
+      syncDrawBondButtonIcon();
     } else {
       clearElementButtons();
+      clearBondDrawTypeButtons();
+      closeDrawBondDrawer();
     }
   }
 
@@ -34,6 +76,25 @@ export function createSelectionActions(context) {
   function clearElementButtons() {
     for (const element of DRAW_ELEMENTS) {
       const btn = context.dom.getElementButton(element);
+      if (btn) {
+        btn.classList.remove('active');
+      }
+    }
+  }
+
+  function syncBondDrawTypeButtons() {
+    const activeType = context.state.overlayState.getDrawBondType?.() ?? 'single';
+    for (const type of DRAW_BOND_TYPES) {
+      const btn = context.dom.getBondDrawTypeButton?.(type);
+      if (btn) {
+        btn.classList.toggle('active', type === activeType);
+      }
+    }
+  }
+
+  function clearBondDrawTypeButtons() {
+    for (const type of DRAW_BOND_TYPES) {
+      const btn = context.dom.getBondDrawTypeButton?.(type);
       if (btn) {
         btn.classList.remove('active');
       }
@@ -58,6 +119,8 @@ export function createSelectionActions(context) {
     context.drawBond.cancelDrawBond();
     context.view.clearPrimitiveHover();
     clearElementButtons();
+    clearBondDrawTypeButtons();
+    closeDrawBondDrawer();
     context.dom.panButton.classList.add('active');
     context.dom.selectButton.classList.remove('active');
     context.dom.drawBondButton.classList.remove('active');
@@ -75,6 +138,8 @@ export function createSelectionActions(context) {
     context.drawBond.cancelDrawBond();
     context.view.clearPrimitiveHover();
     clearElementButtons();
+    clearBondDrawTypeButtons();
+    closeDrawBondDrawer();
     context.dom.selectButton.classList.add('active');
     context.dom.panButton.classList.remove('active');
     context.dom.drawBondButton.classList.remove('active');
@@ -95,12 +160,16 @@ export function createSelectionActions(context) {
       context.dom.eraseButton.classList.remove('active');
       btn.classList.add('active');
       syncElementButtons();
+      syncBondDrawTypeButtons();
+      syncDrawBondButtonIcon();
     } else {
       context.drawBond.cancelDrawBond();
       context.view.clearPrimitiveHover();
       context.dom.panButton.classList.add('active');
       btn.classList.remove('active');
       clearElementButtons();
+      clearBondDrawTypeButtons();
+      closeDrawBondDrawer();
     }
     rerenderToolOverlay();
   }
@@ -114,6 +183,8 @@ export function createSelectionActions(context) {
       context.state.overlayState.setDrawBondMode(false);
       context.drawBond.cancelDrawBond();
       clearElementButtons();
+      clearBondDrawTypeButtons();
+      closeDrawBondDrawer();
       context.dom.panButton.classList.remove('active');
       context.dom.selectButton.classList.remove('active');
       context.dom.drawBondButton.classList.remove('active');
@@ -141,14 +212,45 @@ export function createSelectionActions(context) {
     }
   }
 
+  function setDrawBondType(type) {
+    if (!DRAW_BOND_TYPES.includes(type)) {
+      return;
+    }
+    context.state.overlayState.setDrawBondType?.(type);
+    if (!context.state.overlayState.getDrawBondMode()) {
+      toggleDrawBondMode();
+    } else {
+      syncBondDrawTypeButtons();
+    }
+    syncDrawBondButtonIcon();
+    closeDrawBondDrawer();
+    setDrawBondDrawerHoverSuppressed(true);
+  }
+
+  function handleDrawBondButtonClick() {
+    if (!context.state.overlayState.getDrawBondMode()) {
+      toggleDrawBondMode();
+      return;
+    }
+    toggleDrawBondDrawer();
+  }
+
   return {
     togglePanMode,
     toggleSelectMode,
     toggleDrawBondMode,
     toggleEraseMode,
     setDrawElement,
+    setDrawBondType,
+    handleDrawBondButtonClick,
+    openDrawBondDrawer,
+    closeDrawBondDrawer,
+    toggleDrawBondDrawer,
     syncToolButtonsFromState,
     syncElementButtons,
-    clearElementButtons
+    clearElementButtons,
+    syncBondDrawTypeButtons,
+    clearBondDrawTypeButtons,
+    syncDrawBondButtonIcon
   };
 }

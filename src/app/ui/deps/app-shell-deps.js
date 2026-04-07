@@ -29,8 +29,12 @@ export function createAppShellDeps(deps) {
       togglePanMode: deps.selection.togglePanMode,
       toggleSelectMode: deps.selection.toggleSelectMode,
       toggleDrawBondMode: deps.selection.toggleDrawBondMode,
+      handleDrawBondButtonClick: deps.selection.handleDrawBondButtonClick,
+      openDrawBondDrawer: deps.selection.openDrawBondDrawer,
+      closeDrawBondDrawer: deps.selection.closeDrawBondDrawer,
       toggleEraseMode: deps.selection.toggleEraseMode,
-      setDrawElement: deps.selection.setDrawElement
+      setDrawElement: deps.selection.setDrawElement,
+      setDrawBondType: deps.selection.setDrawBondType
     },
     editing: {
       deleteSelection: deps.editing.deleteSelection

@@ -53,6 +53,10 @@ export function createAppRuntimeDeps(ctx) {
       setDrawBondElement: value => {
         ctx.setDrawBondElement(value);
       },
+      getDrawBondType: () => ctx.getDrawBondType(),
+      setDrawBondType: value => {
+        ctx.setDrawBondType(value);
+      },
       clearSelection: () => {
         ctx.clearSelection();
       },

@@ -94,7 +94,11 @@ function makeDeps() {
         calls.push(['restorePanelState', panelState]);
       },
       restoreInteractionState(snapshot) {
-        calls.push(['restoreInteractionState', snapshot.toolMode ?? snapshot.interactionState?.toolMode ?? null]);
+        calls.push([
+          'restoreInteractionState',
+          snapshot.toolMode ?? snapshot.interactionState?.toolMode ?? null,
+          snapshot.drawBondType ?? snapshot.interactionState?.drawBondType ?? null
+        ]);
       },
       restoreZoomTransform(snapshot) {
         calls.push(['restoreZoomTransform', snapshot]);
@@ -285,5 +289,51 @@ describe('createSessionSnapshotManager', () => {
 
     const restore2dCall = calls.find(call => call[0] === 'restore2dState');
     assert.equal(restore2dCall?.[3]?.[0]?.properties?.localizedOrder, 2);
+  });
+
+  it('preserves the selected bond draw type when restoring an app snapshot', () => {
+    const { deps, calls } = makeDeps();
+    const manager = createSessionSnapshotManager(deps);
+
+    manager.restore({
+      mode: '2d',
+      documentState: {
+        mode: '2d',
+        molecule: {
+          atoms: [{ id: 'A1', name: 'C', properties: {}, x: 0, y: 0 }],
+          bonds: [],
+          moleculeProperties: {}
+        }
+      },
+      viewState: {
+        zoomTransform: null,
+        rotationDeg: 0,
+        flipH: false,
+        flipV: false,
+        cx2d: 0,
+        cy2d: 0,
+        hCounts2d: [],
+        stereoMap2d: null
+      },
+      interactionState: {
+        selectedAtomIds: [],
+        selectedBondIds: [],
+        toolMode: 'draw-bond',
+        drawBondElement: 'C',
+        drawBondType: 'dash',
+        forceAutoFitEnabled: true,
+        forceKeepInView: false,
+        forceKeepInViewTicks: 0
+      },
+      highlightState: null,
+      panelState: null,
+      overlayState: {
+        reactionPreview: null,
+        resonanceView: null
+      }
+    });
+
+    const restoreInteractionCall = calls.find(call => call[0] === 'restoreInteractionState');
+    assert.deepEqual(restoreInteractionCall, ['restoreInteractionState', 'draw-bond', 'dash']);
   });
 });

@@ -56,6 +56,7 @@ function makeSessionUiStateBridge(overrides = {}) {
     getDrawBondMode: () => false,
     getEraseMode: () => false,
     getDrawBondElement: () => 'C',
+    getDrawBondType: () => 'single',
     getForceAutoFitEnabled: () => true,
     getForceKeepInView: () => false,
     getForceKeepInViewTicks: () => 0,
@@ -68,6 +69,7 @@ function makeSessionUiStateBridge(overrides = {}) {
     setDrawBondHoverSuppressed() {},
     setErasePainting() {},
     setDrawBondElement() {},
+    setDrawBondType() {},
     setSelectMode() {},
     setDrawBondMode() {},
     setEraseMode() {},
@@ -211,6 +213,7 @@ describe('createSessionUiStateBridge', () => {
     let drawBondMode = false;
     let eraseMode = false;
     let drawBondElement = 'N';
+    let drawBondType = 'double';
     let forceAutoFitEnabled = false;
     let forceKeepInView = true;
     let forceKeepInViewTicks = 4;
@@ -223,6 +226,7 @@ describe('createSessionUiStateBridge', () => {
       getDrawBondMode: () => drawBondMode,
       getEraseMode: () => eraseMode,
       getDrawBondElement: () => drawBondElement,
+      getDrawBondType: () => drawBondType,
       getForceAutoFitEnabled: () => forceAutoFitEnabled,
       getForceKeepInView: () => forceKeepInView,
       getForceKeepInViewTicks: () => forceKeepInViewTicks,
@@ -252,6 +256,9 @@ describe('createSessionUiStateBridge', () => {
       },
       setDrawBondElement(value) {
         drawBondElement = value;
+      },
+      setDrawBondType(value) {
+        drawBondType = value;
       },
       setSelectMode(value) {
         selectMode = value;
@@ -293,6 +300,7 @@ describe('createSessionUiStateBridge', () => {
       selectedBondIds: ['b1'],
       toolMode: 'select',
       drawBondElement: 'N',
+      drawBondType: 'double',
       forceAutoFitEnabled: false,
       forceKeepInView: true,
       forceKeepInViewTicks: 4
@@ -303,6 +311,7 @@ describe('createSessionUiStateBridge', () => {
       selectedBondIds: ['b2'],
       toolMode: 'draw-bond',
       drawBondElement: 'O',
+      drawBondType: 'dash',
       forceAutoFitEnabled: true,
       forceKeepInView: false,
       forceKeepInViewTicks: 1
@@ -314,6 +323,7 @@ describe('createSessionUiStateBridge', () => {
     assert.equal(drawBondMode, true);
     assert.equal(eraseMode, false);
     assert.equal(drawBondElement, 'O');
+    assert.equal(drawBondType, 'dash');
     assert.equal(forceAutoFitEnabled, true);
     assert.equal(forceKeepInView, false);
     assert.equal(forceKeepInViewTicks, 1);

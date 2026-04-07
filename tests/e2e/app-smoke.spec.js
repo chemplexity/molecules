@@ -29,6 +29,12 @@ async function bondSignature(page) {
   );
 }
 
+async function clickBondHit(page, selector) {
+  const box = await page.locator(selector).boundingBox();
+  expect(box).toBeTruthy();
+  await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+}
+
 async function stereoGlyphState(page) {
   return await page.evaluate(() => ({
     wedgeCount: document.querySelectorAll('polygon.bond-wedge').length,
@@ -1508,4 +1514,155 @@ test('redo after editing from a locked resonance view also leaves the resonance 
   await page.locator('#redo-btn').click();
   await expect(resonanceRow).not.toHaveClass(/resonance-active/);
   await expect(resonanceRow).not.toContainText('2/2');
+});
+
+test('bond drawer selection updates the active option, main tool icon, and collapses the drawer', async ({ page }) => {
+  await page.goto('/index.html');
+
+  const drawButton = page.locator('#draw-bond-btn');
+  const doubleButton = page.locator('#draw-bond-type-double');
+
+  await drawButton.click();
+  await expect(doubleButton).toBeVisible();
+
+  await doubleButton.click();
+
+  await expect(doubleButton).toHaveClass(/active/);
+  await expect(drawButton).toHaveClass(/active/);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const mainButton = document.getElementById('draw-bond-btn');
+        const selectedButton = document.getElementById('draw-bond-type-double');
+        return (
+          (mainButton?.innerHTML ?? '') === (selectedButton?.innerHTML ?? '') &&
+          !(document.getElementById('draw-tools')?.classList.contains('drawer-open') ?? true)
+        );
+      })
+    )
+    .toBe(true);
+});
+
+test('undo preserves the selected bond draw type after undoing a bond edit', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CCO');
+
+  await page.locator('#draw-bond-btn').click();
+  await page.locator('#draw-bond-type-dash').click();
+
+  const targetBond = page.locator('line.bond-hit').nth(1);
+  await targetBond.click();
+  await expect.poll(() => page.evaluate(() => document.querySelectorAll('line.bond-hash').length)).toBeGreaterThan(0);
+
+  await page.locator('#undo-btn').click();
+
+  await expect(page.locator('#draw-bond-type-dash')).toHaveClass(/active/);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const mainButton = document.getElementById('draw-bond-btn');
+        const selectedButton = document.getElementById('draw-bond-type-dash');
+        return (mainButton?.innerHTML ?? '') === (selectedButton?.innerHTML ?? '');
+      })
+    )
+    .toBe(true);
+});
+
+test('wedge and dash bond types render as actual bond glyphs when selected', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CCO');
+
+  await page.locator('#draw-bond-btn').click();
+  await page.locator('#draw-bond-type-wedge').click();
+  await page.locator('line.bond-hit').nth(1).click();
+  await expect.poll(() => page.evaluate(() => document.querySelectorAll('polygon.bond-wedge').length)).toBeGreaterThan(0);
+
+  await page.locator('#draw-bond-btn').click();
+  await page.locator('#draw-bond-type-dash').click();
+  await page.locator('line.bond-hit').nth(1).click();
+  await expect.poll(() => page.evaluate(() => document.querySelectorAll('line.bond-hash').length)).toBeGreaterThan(0);
+});
+
+test('the live bond preview reflects the selected bond type while dragging', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CCO');
+
+  await page.locator('#draw-bond-btn').click();
+  await page.locator('#draw-bond-type-double').click();
+
+  const oxygen = page.locator('g[data-atom-id="O3"] .atom-hit');
+  const box = await oxygen.boundingBox();
+  expect(box).toBeTruthy();
+
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 80, startY - 50, { steps: 10 });
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        previewGroup: document.querySelectorAll('g.draw-bond-preview').length,
+        previewSegments: document.querySelectorAll('line.draw-bond-preview-segment').length
+      }))
+    )
+    .toEqual({ previewGroup: 1, previewSegments: 2 });
+
+  await page.mouse.up();
+});
+
+test('placing double on an existing double bond is a no-op', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CC=O');
+  const undoWasDisabled = await page.locator('#undo-btn').isDisabled();
+
+  await page.locator('#draw-bond-btn').click();
+  await page.locator('#draw-bond-type-double').click();
+  await clickBondHit(page, 'g[data-bond-id="0"] .bond-hit');
+
+  await expect(page.locator('#smiles-input')).toHaveValue('CC=O');
+  await expect.poll(() => page.locator('#undo-btn').isDisabled()).toBe(undoWasDisabled);
+});
+
+test('placing triple on an existing triple bond is a no-op', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CC#N');
+  const undoWasDisabled = await page.locator('#undo-btn').isDisabled();
+
+  await page.locator('#draw-bond-btn').click();
+  await page.locator('#draw-bond-type-triple').click();
+  await clickBondHit(page, 'g[data-bond-id="0"] .bond-hit');
+
+  await expect(page.locator('#smiles-input')).toHaveValue('CC#N');
+  await expect.poll(() => page.locator('#undo-btn').isDisabled()).toBe(undoWasDisabled);
+});
+
+test('placing aromatic on an existing aromatic bond is a no-op', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'c1ccccc1');
+  const undoWasDisabled = await page.locator('#undo-btn').isDisabled();
+
+  await page.locator('#draw-bond-btn').click();
+  await page.locator('#draw-bond-type-aromatic').click();
+  await clickBondHit(page, 'g[data-bond-id="0"] .bond-hit');
+
+  await expect(page.locator('#smiles-input')).toHaveValue('c1ccccc1');
+  await expect.poll(() => page.locator('#undo-btn').isDisabled()).toBe(undoWasDisabled);
+});
+
+test('wedge display only changes exported stereochemistry for a real chiral center', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CC(F)(Cl)Br');
+
+  await page.locator('#draw-bond-btn').click();
+  await page.locator('#draw-bond-type-wedge').click();
+  await page.locator('line.bond-hit').nth(1).click();
+  await expect(page.locator('#smiles-input')).toHaveValue(/@/);
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#draw-bond-btn').click();
+  await page.locator('#draw-bond-type-wedge').click();
+  await page.locator('line.bond-hit').nth(1).click();
+  await expect(page.locator('#smiles-input')).toHaveValue('CCO');
 });

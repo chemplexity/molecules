@@ -33,7 +33,7 @@ export function createPrimitiveEventHandlers(context) {
 
   function handle2dBondClick(event, bondId) {
     if (context.state.overlayState.getDrawBondMode()) {
-      context.actions.promoteBondOrder(bondId);
+      context.actions.promoteBondOrder(bondId, { drawBondType: context.drawBond.getType?.() ?? 'single' });
       return;
     }
     if (context.state.overlayState.getEraseMode()) {
@@ -133,7 +133,7 @@ export function createPrimitiveEventHandlers(context) {
 
   function handleForceBondClick(event, bondId, molecule) {
     if (context.state.overlayState.getDrawBondMode()) {
-      context.actions.promoteBondOrder(bondId);
+      context.actions.promoteBondOrder(bondId, { drawBondType: context.drawBond.getType?.() ?? 'single' });
       return;
     }
     if (context.state.overlayState.getEraseMode()) {
@@ -211,6 +211,16 @@ export function createPrimitiveEventHandlers(context) {
       }
       if (atom.name === 'H' && atom.name !== context.drawBond.getElement()) {
         event.stopPropagation();
+        const drawType = context.drawBond.getType?.() ?? 'single';
+        if (drawType === 'wedge' || drawType === 'dash') {
+          const molAtom = molecule.atoms.get(atom.id);
+          const parentAtom = molAtom?.getNeighbors(molecule).find(n => n.name !== 'H');
+          if (parentAtom) {
+            const [gX, gY] = context.pointer(event, context.dom.gNode());
+            context.actions.autoPlaceBond(parentAtom.id, gX, gY);
+            return;
+          }
+        }
         context.actions.replaceForceHydrogenAtom(atom.id, molecule);
       }
       return;

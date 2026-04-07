@@ -367,6 +367,8 @@ const forceSceneRenderer = createForceSceneRenderer(
     isHydrogenNode: node => forceHelpers.isHydrogenNode(node),
     enLabelColor: value => enLabelColor(value),
     renderReactionPreviewArrowForce: nodes => _renderReactionPreviewArrowForce(nodes),
+    generateAndRefine2dCoords: (mol, options = {}) => generateAndRefine2dCoords(mol, options),
+    alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
     handleForceBondClick: (event, bondId, molecule) => primitiveEventHandlers.handleForceBondClick(event, bondId, molecule),
     handleForceBondDblClick: (event, atomIds) => primitiveEventHandlers.handleForceBondDblClick(event, atomIds),
     handleForceBondMouseOver: (event, bondId, molecule) => primitiveEventHandlers.handleForceBondMouseOver(event, bondId, molecule),
@@ -431,6 +433,7 @@ const scene2DRenderer = create2DSceneRenderer(
       runtimeState.selectedBondIds.clear();
     },
     getDrawBondMode: () => runtimeState.drawBondMode,
+    getDrawBondType: () => runtimeState.drawBondType,
     valenceWarningMapFor: molecule => runtimeState.valenceWarningMapFor(molecule),
     toSVGPt: atom => render2DHelpers.toSVGPt2d(atom),
     secondaryDir,
@@ -459,7 +462,7 @@ const scene2DRenderer = create2DSceneRenderer(
     handle2dAtomMouseOut: atomId => primitiveEventHandlers.handle2dAtomMouseOut(atomId),
     create2dBondDrag: (mol, bondId, options) => dragGestureActions.create2dBondDrag(mol, bondId, options),
     create2dAtomDrag: (mol, atomId, options) => dragGestureActions.create2dAtomDrag(mol, atomId, options),
-    promoteBondOrder: bondId => _promoteBondOrder(bondId),
+    promoteBondOrder: (bondId, options = {}) => _promoteBondOrder(bondId, options),
     getOrientation: () => ({ rotationDeg: runtimeState.rotationDeg, flipH: runtimeState.flipH, flipV: runtimeState.flipV }),
     updateFormula: mol => updateFormula(mol),
     updateDescriptors: mol => updateDescriptors(mol),
@@ -667,6 +670,7 @@ const {
       runtimeState.preserveSelectionOnNextRender = value;
     },
     scale: SCALE,
+    bondOffset2d: BOND_OFF_2D,
     patchForceNodePositions: (patchPos, options = {}) => forceHelpers.patchForceNodePositions(patchPos, options),
     forceFitTransform: (nodes, pad, options = {}) => forceHelpers.forceFitTransform(nodes, pad, options),
     forceFitPad: FORCE_LAYOUT_FIT_PAD,
@@ -684,8 +688,10 @@ const {
     panButton: domElements.getPanButtonElement(),
     selectButton: domElements.getSelectButtonElement(),
     drawBondButton: domElements.getDrawBondButtonElement(),
+    drawTools: domElements.getDrawToolsElement(),
     eraseButton: domElements.getEraseButtonElement(),
     getElementButton: element => domElements.getElementButtonElement(element),
+    getBondDrawTypeButton: type => domElements.getBondDrawTypeButtonElement(type),
     performStructuralEdit: (...args) => runtimeState.appController.performStructuralEdit(...args),
     prepareReactionPreviewEraseTargets: (atomIds, bondIds) => _prepareReactionPreviewEraseTargets(atomIds, bondIds),
     reactionPreviewBlock: ReactionPreviewPolicy.block,
@@ -728,6 +734,7 @@ const {
     g,
     getMode: () => runtimeState.mode,
     getDrawBondElement: () => runtimeState.drawBondElement,
+    getDrawBondType: () => runtimeState.drawBondType,
     getDrawElemProtons: () => DRAW_ELEM_PROTONS,
     isReactionPreviewEditableAtomId: id => _isReactionPreviewEditableAtomId(id),
     getDrawBondState: () => runtimeState.drawBondState,
@@ -858,6 +865,10 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     getDrawBondElement: () => runtimeState.drawBondElement,
     setDrawBondElement: value => {
       runtimeState.drawBondElement = value;
+    },
+    getDrawBondType: () => runtimeState.drawBondType,
+    setDrawBondType: value => {
+      runtimeState.drawBondType = value;
     },
     clearSelection: () => {
       runtimeState.selectedAtomIds.clear();

@@ -18,6 +18,7 @@ describe('runtime-state bootstrap helpers', () => {
     assert.deepEqual([...runtimeState.selectedBondIds], []);
     assert.equal(runtimeState.selectMode, false);
     assert.equal(runtimeState.drawBondElement, 'C');
+    assert.equal(runtimeState.drawBondType, 'single');
     assert.equal(runtimeState.forceAutoFitEnabled, true);
     assert.deepEqual([...runtimeState.activeValenceWarningMap.entries()], []);
     assert.equal(VALENCE_WARNING_FILL, 'rgba(214, 48, 49, 0.3)');

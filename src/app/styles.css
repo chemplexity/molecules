@@ -1103,10 +1103,12 @@ div.tooltip td:first-child {
   position: absolute;
   top: 10px;
   left: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  width: 320px;
+  height: 32px;
   z-index: 10;
+  pointer-events: auto;
+  display: flex;
+  align-items: center;
 }
 
 #draw-tools button {
@@ -1125,8 +1127,12 @@ div.tooltip td:first-child {
   transition:
     background 0.15s,
     color 0.15s,
-    border-color 0.15s;
+    border-color 0.15s,
+    transform 0.18s ease,
+    box-shadow 0.18s ease,
+    opacity 0.18s ease;
   padding: 0;
+  pointer-events: auto;
 }
 
 #draw-tools button:hover {
@@ -1142,6 +1148,46 @@ div.tooltip td:first-child {
 
 #draw-bond-btn.active:hover {
   background: #4080e0;
+}
+
+#draw-bond-drawer {
+  position: absolute;
+  left: 40px;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+#draw-tools:not(.drawer-hover-suppressed):hover #draw-bond-drawer,
+#draw-tools.drawer-open #draw-bond-drawer {
+  pointer-events: auto;
+}
+
+#draw-bond-drawer button {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-10px) scale(0.92);
+  background: rgba(255, 255, 255, 0.98);
+}
+
+#draw-tools:not(.drawer-hover-suppressed):hover #draw-bond-drawer button,
+#draw-tools.drawer-open #draw-bond-drawer button {
+  opacity: 1;
+  transform: translateX(0) scale(1);
+  pointer-events: auto;
+}
+
+#draw-bond-drawer button:hover,
+#draw-bond-drawer button.active {
+  box-shadow: 0 4px 12px rgba(48, 96, 192, 0.18);
+}
+
+#draw-bond-drawer button.active {
+  background: #5090f0;
+  color: #fff;
+  border-color: #3060c0;
 }
 
 #force-controls #copy-force-svg-btn,

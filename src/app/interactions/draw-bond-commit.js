@@ -1,6 +1,86 @@
 /** @module app/interactions/draw-bond-commit */
 
 import { ReactionPreviewPolicy } from '../core/editor-actions.js';
+import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
+
+function _clearBondDisplayStereo(bond) {
+  if (!bond?.properties?.display) {
+    return;
+  }
+  delete bond.properties.display.as;
+  delete bond.properties.display.centerId;
+  delete bond.properties.display.manual;
+  if (Object.keys(bond.properties.display).length === 0) {
+    delete bond.properties.display;
+  }
+}
+
+function _setBondDisplayStereo(bond, type, { centerId = null, manual = false } = {}) {
+  if (!bond || (type !== 'wedge' && type !== 'dash')) {
+    _clearBondDisplayStereo(bond);
+    return;
+  }
+  bond.properties.display ??= {};
+  bond.properties.display.as = type;
+  if (centerId && bond.atoms.includes(centerId)) {
+    bond.properties.display.centerId = centerId;
+  } else {
+    delete bond.properties.display.centerId;
+  }
+  if (manual) {
+    bond.properties.display.manual = true;
+  } else {
+    delete bond.properties.display.manual;
+  }
+}
+
+function _tryApplyExplicitStereoAssignment(mol, bond, drawBondType, preferredCenterId = null) {
+  if (!mol || !bond || (drawBondType !== 'wedge' && drawBondType !== 'dash')) {
+    return null;
+  }
+  const resolvedPreferredCenterId = getPreferredBondDisplayCenterId(mol, bond.id, preferredCenterId);
+  // Only attempt chirality resolution at the origin atom (resolvedPreferredCenterId) to ensure
+  // the wedge/dash always originates from the atom the user started dragging from.
+  const center = mol.atoms.get(resolvedPreferredCenterId);
+  if (typeof center?.getChirality === 'function' && typeof center?.setChirality === 'function') {
+    const resolved = applyDisplayedStereoToCenter(mol, resolvedPreferredCenterId, bond.id, drawBondType);
+    if (resolved?.type === drawBondType) {
+      _setBondDisplayStereo(bond, drawBondType, { centerId: resolvedPreferredCenterId, manual: true });
+      return resolved;
+    }
+  }
+
+  _setBondDisplayStereo(bond, drawBondType, { centerId: resolvedPreferredCenterId, manual: true });
+  return null;
+}
+
+function _applyBondDrawType(mol, bond, drawBondType, preferredCenterId = null) {
+  if (!bond) {
+    return;
+  }
+  const type = drawBondType ?? 'single';
+  _clearBondDisplayStereo(bond);
+  bond.setStereo?.(null);
+  if (type === 'aromatic') {
+    bond.setAromatic(true);
+    return;
+  }
+  if (type === 'double') {
+    bond.setOrder(2);
+    return;
+  }
+  if (type === 'triple') {
+    bond.setOrder(3);
+    return;
+  }
+  bond.setOrder(1);
+  if (type === 'wedge' || type === 'dash') {
+    _setBondDisplayStereo(bond, type, {
+      centerId: getPreferredBondDisplayCenterId(mol, bond.id, preferredCenterId) ?? preferredCenterId,
+      manual: true
+    });
+  }
+}
 
 export function createDrawBondCommitActions(context) {
   function clearSelectionBeforeStructuralDraw() {
@@ -29,6 +109,7 @@ export function createDrawBondCommitActions(context) {
   }
 
   function autoPlaceBond(atomId, ox, oy) {
+    const drawBondType = context.getDrawBondType?.() ?? 'single';
     const mode = context.getMode();
     const zoomSnapshot = mode === '2d' ? context.view.captureZoomTransform() : null;
     const reactionEdit = context.overlays.prepareReactionPreviewEditTargets({ atomId });
@@ -95,6 +176,18 @@ export function createDrawBondCommitActions(context) {
     } else {
       srcRX = srcAtom.x;
       srcRY = srcAtom.y;
+    }
+
+    // When atomId is an existing atom and ox,oy is meaningfully distant from it (e.g.
+    // redirected from an H-click in wedge/dash mode), treat ox,oy as the preferred
+    // direction rather than picking the most-open angle from existing bonds.
+    let forcedAngle = null;
+    if (mode === 'force' && atomId !== null && Number.isFinite(srcRX) && Number.isFinite(srcRY)) {
+      const ddx = ox - srcRX;
+      const ddy = oy - srcRY;
+      if (Math.hypot(ddx, ddy) > 5) {
+        forcedAngle = Math.atan2(ddy, ddx);
+      }
     }
 
     const existingAngles = [];
@@ -228,13 +321,15 @@ export function createDrawBondCommitActions(context) {
       mol.removeAtom(srcHydrogen.id);
     }
     const newAtom = mol.addAtom(null, context.getDrawBondElement(), {});
-    mol.addBond(null, resolvedId, newAtom.id, { order: 1 }, true);
+    const newBond = mol.addBond(null, resolvedId, newAtom.id, { order: 1 }, false);
+    _applyBondDrawType(mol, newBond, drawBondType, resolvedId);
     const affected = new Set([resolvedId, newAtom.id]);
 
     if (mode === 'force') {
       const bondLengthPx = 1.5 * forceScale;
-      const destGX = srcRX + Math.cos(bestAngle) * bondLengthPx;
-      const destGY = srcRY + Math.sin(bestAngle) * bondLengthPx;
+      const angle = forcedAngle !== null ? forcedAngle : bestAngle;
+      const destGX = srcRX + Math.cos(angle) * bondLengthPx;
+      const destGY = srcRY + Math.sin(angle) * bondLengthPx;
       const patchPos = new Map([[newAtom.id, { x: destGX, y: destGY }]]);
       patchPos.set(resolvedId, { x: srcRX, y: srcRY });
       let cx2d = 0;
@@ -255,9 +350,12 @@ export function createDrawBondCommitActions(context) {
       newAtom.y = cy2d - (destGY - plotHeight / 2) / forceScale;
 
       mol.clearStereoAnnotations(affected);
-      context.chemistry.kekulize(mol);
-      context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+      if (drawBondType !== 'aromatic') {
+        context.chemistry.kekulize(mol);
+        context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+      }
       mol.repairImplicitHydrogens(affected);
+      _tryApplyExplicitStereoAssignment(mol, newBond, drawBondType, resolvedId);
       context.analysis.syncInputField(mol);
       context.analysis.updateFormula(mol);
       context.analysis.updateDescriptors(mol);
@@ -274,9 +372,12 @@ export function createDrawBondCommitActions(context) {
     newAtom.y = srcRY + Math.sin(bestAngle) * 1.5;
 
     mol.clearStereoAnnotations(affected);
-    context.chemistry.kekulize(mol);
-    context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+    if (drawBondType !== 'aromatic') {
+      context.chemistry.kekulize(mol);
+      context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+    }
     mol.repairImplicitHydrogens(affected);
+    _tryApplyExplicitStereoAssignment(mol, newBond, drawBondType, resolvedId);
     context.view2D.syncDerivedState(mol);
     context.analysis.syncInputField(mol);
     context.analysis.updateFormula(mol);
@@ -287,8 +388,7 @@ export function createDrawBondCommitActions(context) {
     context.view.restore2dEditViewport(zoomSnapshot, {
       reactionRestored: reactionEdit?.restored,
       reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
-      resonanceReset: structuralEdit.resonanceReset,
-      zoomToFit: true
+      resonanceReset: structuralEdit.resonanceReset
     });
   }
 
@@ -298,6 +398,7 @@ export function createDrawBondCommitActions(context) {
       context.preview.cancel();
       return;
     }
+    const drawBondType = context.getDrawBondType?.() ?? 'single';
 
     const mode = context.getMode();
     const zoomSnapshot = mode === '2d' ? context.view.captureZoomTransform() : null;
@@ -391,6 +492,7 @@ export function createDrawBondCommitActions(context) {
         return;
       }
       let affected;
+      let newBond = null;
 
       const patchPos = new Map();
       if (atomId === null) {
@@ -410,6 +512,8 @@ export function createDrawBondCommitActions(context) {
         const existingBond = findExistingBond(mol, resolvedAtomId, snapAtomId);
         if (existingBond) {
           context.actions.promoteBondOrder(existingBond.id, {
+            drawBondType,
+            preferredCenterId: resolvedAtomId,
             zoomSnapshot,
             skipReactionPreviewPrep: true,
             skipResonancePrep: true,
@@ -428,7 +532,8 @@ export function createDrawBondCommitActions(context) {
         if (destHydrogen) {
           mol.removeAtom(destHydrogen.id);
         }
-        mol.addBond(null, resolvedAtomId, snapAtomId, { order: 1 }, true);
+        newBond = mol.addBond(null, resolvedAtomId, snapAtomId, { order: 1 }, false);
+        _applyBondDrawType(mol, newBond, drawBondType, resolvedAtomId);
         affected = new Set([resolvedAtomId, snapAtomId]);
         const snapNode = context.force.getNodeById(snapAtomId);
         if (snapNode) {
@@ -442,15 +547,21 @@ export function createDrawBondCommitActions(context) {
         const newAtom = mol.addAtom(null, context.getDrawBondElement(), {});
         newAtom.x = cx2d + (ex - plotWidth / 2) / forceScale;
         newAtom.y = cy2d - (ey - plotHeight / 2) / forceScale;
-        mol.addBond(null, resolvedAtomId, newAtom.id, { order: 1 }, true);
+        newBond = mol.addBond(null, resolvedAtomId, newAtom.id, { order: 1 }, false);
+        _applyBondDrawType(mol, newBond, drawBondType, resolvedAtomId);
         affected = new Set([resolvedAtomId, newAtom.id]);
         patchPos.set(newAtom.id, { x: ex, y: ey });
       }
 
       mol.clearStereoAnnotations(affected);
-      context.chemistry.kekulize(mol);
-      context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+      if (drawBondType !== 'aromatic') {
+        context.chemistry.kekulize(mol);
+        context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+      }
       mol.repairImplicitHydrogens(affected);
+      if (newBond) {
+        _tryApplyExplicitStereoAssignment(mol, newBond, drawBondType, resolvedAtomId);
+      }
       context.analysis.syncInputField(mol);
       context.analysis.updateFormula(mol);
       context.analysis.updateDescriptors(mol);
@@ -459,6 +570,9 @@ export function createDrawBondCommitActions(context) {
         preservePositions: true,
         initialPatchPos: patchPos
       });
+      if (reactionEdit?.restored && reactionEdit?.entryZoomTransform) {
+        context.view.restoreZoomTransformSnapshot(reactionEdit.entryZoomTransform);
+      }
       context.force.enableKeepInView();
       return;
     }
@@ -466,6 +580,7 @@ export function createDrawBondCommitActions(context) {
     const mol = structuralEdit.mol ?? context.molecule.ensureActive();
     const { width: plotWidth, height: plotHeight } = context.plot.getSize();
     let affected;
+    let newBond = null;
 
     let resolvedAtomId = atomId;
     if (atomId === null) {
@@ -487,6 +602,8 @@ export function createDrawBondCommitActions(context) {
       const existingBond = findExistingBond(mol, resolvedAtomId, snapAtomId);
       if (existingBond) {
         context.actions.promoteBondOrder(existingBond.id, {
+          drawBondType,
+          preferredCenterId: resolvedAtomId,
           zoomSnapshot,
           skipReactionPreviewPrep: true,
           skipResonancePrep: true,
@@ -506,7 +623,8 @@ export function createDrawBondCommitActions(context) {
       if (destHydrogen) {
         mol.removeAtom(destHydrogen.id);
       }
-      mol.addBond(null, resolvedAtomId, snapAtomId, { order: 1 }, true);
+      newBond = mol.addBond(null, resolvedAtomId, snapAtomId, { order: 1 }, false);
+      _applyBondDrawType(mol, newBond, drawBondType, resolvedAtomId);
       affected = new Set([resolvedAtomId, snapAtomId]);
     } else {
       const rawAngle = Math.atan2(ey - oy, ex - ox);
@@ -524,14 +642,20 @@ export function createDrawBondCommitActions(context) {
       const newAtom = mol.addAtom(null, context.getDrawBondElement(), {});
       newAtom.x = newMolX;
       newAtom.y = newMolY;
-      mol.addBond(null, resolvedAtomId, newAtom.id, { order: 1 }, true);
+      newBond = mol.addBond(null, resolvedAtomId, newAtom.id, { order: 1 }, false);
+      _applyBondDrawType(mol, newBond, drawBondType, resolvedAtomId);
       affected = new Set([resolvedAtomId, newAtom.id]);
     }
 
     mol.clearStereoAnnotations(affected);
-    context.chemistry.kekulize(mol);
-    context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+    if (drawBondType !== 'aromatic') {
+      context.chemistry.kekulize(mol);
+      context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+    }
     mol.repairImplicitHydrogens(affected);
+    if (newBond) {
+      _tryApplyExplicitStereoAssignment(mol, newBond, drawBondType, resolvedAtomId);
+    }
     context.view2D.syncDerivedState(mol);
     context.analysis.syncInputField(mol);
     context.analysis.updateFormula(mol);
@@ -542,8 +666,7 @@ export function createDrawBondCommitActions(context) {
     context.view.restore2dEditViewport(zoomSnapshot, {
       reactionRestored: reactionEdit?.restored,
       reactionEntryZoomSnapshot: reactionEdit?.entryZoomTransform ?? null,
-      resonanceReset: structuralEdit.resonanceReset,
-      zoomToFit: true
+      resonanceReset: structuralEdit.resonanceReset
     });
   }
 

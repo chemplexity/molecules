@@ -83,8 +83,10 @@ export function createSelectionActionDeps(ctx) {
       panButton: ctx.panButton,
       selectButton: ctx.selectButton,
       drawBondButton: ctx.drawBondButton,
+      drawTools: ctx.drawTools,
       eraseButton: ctx.eraseButton,
-      getElementButton: element => ctx.getElementButton(element)
+      getElementButton: element => ctx.getElementButton(element),
+      getBondDrawTypeButton: type => ctx.getBondDrawTypeButton(type)
     }
   };
 }
@@ -176,6 +178,7 @@ export function createDrawBondPreviewActionDeps(ctx) {
     g: ctx.g,
     getMode: () => ctx.getMode(),
     getDrawBondElement: () => ctx.getDrawBondElement(),
+    getDrawBondType: () => ctx.getDrawBondType(),
     getDrawElemProtons: () => ctx.getDrawElemProtons(),
     overlays: {
       isReactionPreviewEditableAtomId: id => ctx.isReactionPreviewEditableAtomId(id)
@@ -212,6 +215,7 @@ export function createDrawBondPreviewActionDeps(ctx) {
     constants: {
       scale: ctx.scale,
       forceBondLength: ctx.forceBondLength,
+      bondOffset2d: ctx.bondOffset2d,
       strokeWidth: ctx.strokeWidth,
       fontSize: ctx.fontSize
     },
@@ -229,6 +233,7 @@ export function createDrawBondCommitActionDeps(ctx) {
   return {
     getMode: () => ctx.getMode(),
     getDrawBondElement: () => ctx.getDrawBondElement(),
+    getDrawBondType: () => ctx.getDrawBondType(),
     preview: {
       clearArtifacts: () => ctx.clearPreviewArtifacts(),
       cancel: () => ctx.cancelPreview()
@@ -333,12 +338,14 @@ export function createPrimitiveEventHandlerDeps(ctx) {
       hasDrawBondState: () => !!ctx.getDrawBondState(),
       start: (atomId, gX, gY) => ctx.startDrawBond(atomId, gX, gY),
       resetHover: () => ctx.resetDrawBondHover(),
-      getElement: () => ctx.getDrawBondElement()
+      getElement: () => ctx.getDrawBondElement(),
+      getType: () => ctx.getDrawBondType()
     },
     actions: {
-      promoteBondOrder: bondId => ctx.promoteBondOrder(bondId),
+      promoteBondOrder: (bondId, options = {}) => ctx.promoteBondOrder(bondId, options),
       eraseItem: (atomIds, bondIds) => ctx.eraseItem(atomIds, bondIds),
-      replaceForceHydrogenAtom: (atomId, mol) => ctx.replaceForceHydrogenAtom(atomId, mol)
+      replaceForceHydrogenAtom: (atomId, mol) => ctx.replaceForceHydrogenAtom(atomId, mol),
+      autoPlaceBond: (atomId, ox, oy) => ctx.autoPlaceBond(atomId, ox, oy)
     },
     view: {
       showPrimitiveHover: (atomIds = [], bondIds = []) => ctx.showPrimitiveHover(atomIds, bondIds),

@@ -71,6 +71,9 @@ describe('dom-elements bootstrap helpers', () => {
       },
       querySelector(selector) {
         return selector === '.svg-plot' ? svgPlot : null;
+      },
+      querySelectorAll() {
+        return [];
       }
     };
 
@@ -144,6 +147,9 @@ describe('dom-elements bootstrap helpers', () => {
       },
       querySelector(selector) {
         return selector === '.svg-plot' ? createElement() : null;
+      },
+      querySelectorAll() {
+        return [];
       }
     };
 

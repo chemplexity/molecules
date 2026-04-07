@@ -284,7 +284,12 @@ export class Molecule {
     }
 
     const radical = atom.getRadical();
-    const neededH = Math.max(0, valence - nonHBondOrder - radical);
+    // For groups 15–16 (N, P, O, S …) positive charge increases effective
+    // valence by 1 (ammonium, oxonium) and negative charge decreases it —
+    // matching the SMILES implicit-H convention.
+    const charge = atom.properties.charge ?? 0;
+    const chargeAdj = (group >= 15 && group <= 16) ? charge : 0;
+    const neededH = Math.max(0, valence - nonHBondOrder - radical + chargeAdj);
 
     // Remove existing pendant H atoms.
     for (const hId of pendantHIds) {

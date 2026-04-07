@@ -55,6 +55,8 @@ describe('app-runtime dependency builder', () => {
       setEraseMode() {},
       getDrawBondElement: () => 'C',
       setDrawBondElement() {},
+      getDrawBondType: () => 'single',
+      setDrawBondType() {},
       clearSelection() {},
       clearHovered() {},
       clearHoveredAtomIds() {},

@@ -11,6 +11,9 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const panButton = document.getElementById('pan-mode-btn');
   const selectButton = document.getElementById('select-mode-btn');
   const drawBondButton = document.getElementById('draw-bond-btn');
+  const bondDrawTypeButtons = new Map(
+    [...document.querySelectorAll('[data-bond-draw-type]')].map(button => [button.dataset.bondDrawType, button])
+  );
   const eraseButton = document.getElementById('erase-btn');
   const molecularFormula = document.getElementById('molecularFormula');
   const molecularWeight = document.getElementById('molecularWeight');
@@ -74,6 +77,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getPanButtonElement: () => panButton,
     getSelectButtonElement: () => selectButton,
     getDrawBondButtonElement: () => drawBondButton,
+    getBondDrawTypeButtonElement: type => bondDrawTypeButtons.get(type) ?? null,
     getEraseButtonElement: () => eraseButton,
     getElementButtonElement: element => document.getElementById(`elem-btn-${element}`),
     getMolecularFormulaElement: () => molecularFormula,

@@ -370,11 +370,11 @@ describe('applySMIRKS', () => {
 
     const primary = applySMIRKS(parseSMILES('CN'), rxn);
     assert.ok(primary);
-    assert.equal(toSMILES(primary), 'C[NH2+]');
+    assert.equal(toSMILES(primary), 'C[NH3+]');
 
     const secondary = applySMIRKS(parseSMILES('CNC'), rxn);
     assert.ok(secondary);
-    assert.equal(toSMILES(secondary), 'C[NH+]C');
+    assert.equal(toSMILES(secondary), 'C[NH2+]C');
   });
 
   it('reduces a nitro group to an aniline plus two water fragments per the template', () => {
