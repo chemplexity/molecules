@@ -7,6 +7,179 @@ import { findPreferredBackbonePath } from './stereo-enforcement.js';
 // Canonical orientation — rotate so principal axis is horizontal
 // ---------------------------------------------------------------------------
 
+function _trimTerminalPeripheralHeteroEndpoints(path, molecule) {
+  if (!Array.isArray(path) || path.length < 3 || !molecule) {
+    return path;
+  }
+
+  let start = 0;
+  let end = path.length - 1;
+  const isTerminalPeripheralHetero = atomId => {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom || atom.name === 'H' || atom.name === 'C') {
+      return false;
+    }
+    const heavyDegree = atom.getNeighbors(molecule).filter(nb => nb.name !== 'H').length;
+    return heavyDegree <= 1;
+  };
+
+  while (end - start + 1 >= 3 && isTerminalPeripheralHetero(path[start])) {
+    start++;
+  }
+  while (end - start + 1 >= 3 && isTerminalPeripheralHetero(path[end])) {
+    end--;
+  }
+  return path.slice(start, end + 1);
+}
+
+function _isLandscapeChainBond(molecule, aId, bId) {
+  const bond = molecule.getBond(aId, bId);
+  const order = bond?.properties.order ?? 1;
+  return Boolean(bond && !bond.properties.aromatic && (order === 1 || order === 2));
+}
+
+function _longestNonRingLandscapePath(molecule) {
+  const ringAtoms = new Set(molecule.getRings().flat());
+  const heavyIds = [...molecule.atoms.keys()].filter(atomId => {
+    const atom = molecule.atoms.get(atomId);
+    return atom && atom.name !== 'H' && !ringAtoms.has(atomId);
+  });
+  if (heavyIds.length < 2) {
+    return null;
+  }
+
+  const adjacency = new Map();
+  for (const atomId of heavyIds) {
+    const atom = molecule.atoms.get(atomId);
+    const neighbors = atom
+      .getNeighbors(molecule)
+      .filter(neighbor => neighbor.name !== 'H' && !ringAtoms.has(neighbor.id))
+      .filter(neighbor => _isLandscapeChainBond(molecule, atomId, neighbor.id))
+      .map(neighbor => neighbor.id);
+    adjacency.set(atomId, neighbors);
+  }
+
+  let bestPath = null;
+  const nonCarbonCount = path => path.reduce((count, atomId) => count + (molecule.atoms.get(atomId)?.name === 'C' ? 0 : 1), 0);
+  const comparePaths = (candidate, incumbent) => {
+    if (!incumbent) {
+      return 1;
+    }
+    if (candidate.length !== incumbent.length) {
+      return candidate.length - incumbent.length;
+    }
+    return nonCarbonCount(incumbent) - nonCarbonCount(candidate);
+  };
+
+  for (const startId of heavyIds) {
+    const prev = new Map([[startId, null]]);
+    const queue = [startId];
+    let queueHead = 0;
+    while (queueHead < queue.length) {
+      const curId = queue[queueHead++];
+      for (const nbId of adjacency.get(curId) ?? []) {
+        if (prev.has(nbId)) {
+          continue;
+        }
+        prev.set(nbId, curId);
+        queue.push(nbId);
+      }
+    }
+
+    for (const endId of heavyIds) {
+      if (endId === startId || !prev.has(endId)) {
+        continue;
+      }
+      const path = [];
+      for (let curId = endId; curId != null; curId = prev.get(curId)) {
+        path.push(curId);
+      }
+      path.reverse();
+      if (comparePaths(path, bestPath) > 0) {
+        bestPath = path;
+      }
+    }
+  }
+
+  return bestPath;
+}
+
+function _landscapePathMinLength(molecule) {
+  return molecule.getRings().length > 0 ? 6 : 8;
+}
+
+function _orientationPathScore(path, molecule) {
+  if (!path?.length) {
+    return -Infinity;
+  }
+
+  const ringAtoms = new Set(molecule.getRings().flat());
+  const endpoints = [path[0], path[path.length - 1]];
+  const ringAnchoredEndpoints = endpoints.reduce((count, atomId) => {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom) {
+      return count;
+    }
+    return count + (atom.getNeighbors(molecule).some(neighbor => neighbor.name !== 'H' && ringAtoms.has(neighbor.id)) ? 1 : 0);
+  }, 0);
+  const terminalLeafEndpoints = endpoints.reduce((count, atomId) => {
+    const atom = molecule.atoms.get(atomId);
+    if (!atom) {
+      return count;
+    }
+    const heavyDegree = atom.getNeighbors(molecule).filter(neighbor => neighbor.name !== 'H').length;
+    return count + (heavyDegree <= 1 ? 1 : 0);
+  }, 0);
+
+  return path.length + ringAnchoredEndpoints * 1.5 - terminalLeafEndpoints * 0.25;
+}
+
+function _preferredLandscapeOrientationPath(molecule) {
+  const preferredBackbone = findPreferredBackbonePath(molecule);
+  const longestNonRingPath = _trimTerminalPeripheralHeteroEndpoints(_longestNonRingLandscapePath(molecule), molecule);
+  const preferLongerPath = candidate => {
+    if (!candidate?.length) {
+      return longestNonRingPath?.length >= 2 ? longestNonRingPath : null;
+    }
+    if (!longestNonRingPath?.length || _orientationPathScore(candidate, molecule) >= _orientationPathScore(longestNonRingPath, molecule)) {
+      return candidate;
+    }
+    return longestNonRingPath;
+  };
+
+  if (!preferredBackbone?.path?.length) {
+    return longestNonRingPath?.length >= 2 ? longestNonRingPath : null;
+  }
+
+  const trimmedPath = _trimTerminalPeripheralHeteroEndpoints(preferredBackbone.path, molecule);
+  if (trimmedPath.length < 2) {
+    return longestNonRingPath?.length >= 2 ? longestNonRingPath : null;
+  }
+  if (preferredBackbone.ringCount === 0) {
+    return preferLongerPath(trimmedPath);
+  }
+
+  const ringAtoms = new Set(molecule.getRings().flat());
+  let bestRun = null;
+  let currentRun = [];
+  const commitRun = () => {
+    if (currentRun.length >= 2 && (!bestRun || currentRun.length > bestRun.length)) {
+      bestRun = [...currentRun];
+    }
+    currentRun = [];
+  };
+
+  for (const atomId of trimmedPath) {
+    if (ringAtoms.has(atomId)) {
+      commitRun();
+      continue;
+    }
+    currentRun.push(atomId);
+  }
+  commitRun();
+  return preferLongerPath(bestRun);
+}
+
 /**
  * Rotates all atoms in `coords` so the principal axis (direction of maximum
  * spatial spread, computed via the 2D inertia tensor) is horizontal.
@@ -30,10 +203,10 @@ export function normalizeOrientation(coords, molecule) {
     return;
   }
 
-  const preferredBackbone = findPreferredBackbonePath(molecule);
-  if (preferredBackbone && preferredBackbone.ringCount === 0 && preferredBackbone.path.length >= 8) {
-    const start = coords.get(preferredBackbone.path[0]);
-    const end = coords.get(preferredBackbone.path[preferredBackbone.path.length - 1]);
+  const orientPath = _preferredLandscapeOrientationPath(molecule);
+  if (orientPath && orientPath.length >= _landscapePathMinLength(molecule)) {
+    const start = coords.get(orientPath[0]);
+    const end = coords.get(orientPath[orientPath.length - 1]);
     if (start && end) {
       const ang = Math.atan2(end.y - start.y, end.x - start.x);
       if (Math.abs(ang) >= 1e-6) {
@@ -206,7 +379,11 @@ export function normalizeOrientation(coords, molecule) {
 
 export function shouldPreferFinalLandscapeOrientation(molecule) {
   const preferredBackbone = findPreferredBackbonePath(molecule);
-  return Boolean(preferredBackbone && preferredBackbone.ringCount === 0 && preferredBackbone.path.length >= 8);
+  if (preferredBackbone && preferredBackbone.ringCount === 0 && preferredBackbone.path.length >= 8) {
+    return true;
+  }
+  const orientPath = _preferredLandscapeOrientationPath(molecule);
+  return Boolean(orientPath && orientPath.length >= _landscapePathMinLength(molecule));
 }
 
 export function preferLandscapeOrientation(coords, molecule) {

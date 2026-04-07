@@ -22,7 +22,6 @@ describe('finalize-bootstrap dependency builder', () => {
 
     const deps = createFinalizeAppBootstrapDeps({
       createAppDelegates() {},
-      createUndoDeps() {},
       createReaction2dDeps() {},
       createResonancePanelDeps() {},
       createBondEnPanelDeps() {},
@@ -152,7 +151,6 @@ describe('finalize-bootstrap dependency builder', () => {
     const updateForceCalls = [];
     const deps = createFinalizeAppBootstrapDeps({
       createAppDelegates() {},
-      createUndoDeps() {},
       createReaction2dDeps() {},
       createResonancePanelDeps() {},
       createBondEnPanelDeps() {},

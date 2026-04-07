@@ -2,6 +2,9 @@
 
 ## 2026-04-06
 
+- Add Atom Numbering toggle to the Other panel (works in 2D, force, and reaction preview)
+- Skip redundant full-molecule coordinate generation when activating a reaction preview
+- Cache empty ring array for acyclic molecules in `getRings()`
 - Fix stereo bonds not toggling on repeated flips in reaction preview mode
 - Fix alkyl chloride elimination
 - Refresh hidden SMARTS panels lazily when their tab is opened

@@ -20,6 +20,10 @@ export function createInputFlowManager(deps) {
     const prev = deps.state.getInputMode();
     const inputEl = deps.dom.getInputElement();
 
+    if (fmt === prev && !preserveInput && inputValue === null) {
+      return;
+    }
+
     if (fmt !== prev && recordHistory) {
       takeInputFormatSnapshot({
         prevInputMode: prev,

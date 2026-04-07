@@ -197,6 +197,19 @@ function atomIdBounds(preview, atomIds) {
   };
 }
 
+function alternatingRowSpread(atoms) {
+  const points = atoms.filter(atom => atom && atom.x != null && atom.y != null).sort((a, b) => a.x - b.x);
+  if (points.length < 4) {
+    return { even: 0, odd: 0 };
+  }
+  const evenYs = points.filter((_, index) => index % 2 === 0).map(atom => atom.y);
+  const oddYs = points.filter((_, index) => index % 2 === 1).map(atom => atom.y);
+  return {
+    even: Math.max(...evenYs) - Math.min(...evenYs),
+    odd: Math.max(...oddYs) - Math.min(...oddYs)
+  };
+}
+
 function findProductCarbonylCenters(preview, predicate) {
   return [...preview.mol.atoms.values()].filter(atom => {
     if (!preview.productAtomIds.has(atom.id) || atom.name !== 'C') {
@@ -470,6 +483,40 @@ test('reaction preview stays valence-clean for ethanol dehydration', () => {
   assert.deepEqual(validateValence(preview.mol), []);
 });
 
+test('reaction preview preserves sugar-ring geometry for alcohol dehydration across all matches', () => {
+  const smiles = 'OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1O';
+  const sourceMol = parseSMILES(smiles);
+  const smirks = reactionTemplates.alcoholDehydration.smirks;
+  const mappings = [...findSMARTSRaw(sourceMol, smirks.split('>>')[0])];
+  assert.ok(mappings.length > 0, 'expected alcohol-dehydration mappings for sugar scaffold');
+
+  for (const [index, mapping] of mappings.entries()) {
+    const preview = buildReaction2dMol(sourceMol, smirks, mapping);
+    assert.ok(preview, `expected dehydration preview for mapping ${index}`);
+    generateAndRefine2dCoords(preview.mol, { suppressH: true, bondLength: 1.5 });
+    alignReaction2dProductOrientation(preview.mol, preview, 1.5);
+    spreadReaction2dProductComponents(preview.mol, preview, 1.5);
+    centerReaction2dPairCoords(preview.mol, preview, 1.5);
+
+    const productIdBySourceId = new Map(preview.mappedAtomPairs.map(([reactantId, productId]) => [reactantId, productId]));
+    const ringSourceIds = [...productIdBySourceId.keys()].filter(atomId => sourceMol.atoms.get(atomId)?.name !== 'H' && sourceMol.atoms.get(atomId)?.isInRing(sourceMol));
+    let maxError = 0;
+    for (let i = 0; i < ringSourceIds.length; i++) {
+      for (let j = i + 1; j < ringSourceIds.length; j++) {
+        const reactantA = preview.mol.atoms.get(ringSourceIds[i]);
+        const reactantB = preview.mol.atoms.get(ringSourceIds[j]);
+        const productA = preview.mol.atoms.get(productIdBySourceId.get(ringSourceIds[i]));
+        const productB = preview.mol.atoms.get(productIdBySourceId.get(ringSourceIds[j]));
+        if (!reactantA || !reactantB || !productA || !productB) {
+          continue;
+        }
+        maxError = Math.max(maxError, Math.abs(distance(reactantA, reactantB) - distance(productA, productB)));
+      }
+    }
+    assert.ok(maxError < 0.05, `expected sugar-ring scaffold distances to stay locked for mapping ${index}, got ${maxError.toFixed(3)} Å`);
+  }
+});
+
 test('reaction preview keeps nitrile hydrolysis to amide carbonyl locally trigonal', () => {
   const preview = preparePreview('N#CC(C#N)=C(C#N)C#N', reactionTemplates.nitrileHydrolysisToAmide.smirks);
   const amideCarbonyl = [...preview.mol.atoms.values()].find(atom => {
@@ -665,6 +712,12 @@ test('reaction preview keeps ether-cleavage ring-opening product leveled (landsc
       assert.ok(
         bounds.width > bounds.height,
         `expected open-chain ether-cleavage product to be landscape after alignment, got width=${bounds.width.toFixed(2)} height=${bounds.height.toFixed(2)}`
+      );
+      const carbonBackbone = atoms.filter(atom => atom.name === 'C');
+      const rowSpread = alternatingRowSpread(carbonBackbone);
+      assert.ok(
+        rowSpread.even < 0.05 && rowSpread.odd < 0.05,
+        `expected open-chain ether-cleavage carbon backbone rows to stay level after alignment, got even spread ${rowSpread.even.toFixed(3)} Å and odd spread ${rowSpread.odd.toFixed(3)} Å`
       );
     }
   }

@@ -2,6 +2,7 @@
 
 import { getRenderOptions, atomColor, renderAtomLabel, renderLonePairDots, renderBondOrder, prepareAromaticBondRendering } from './helpers.js';
 import { getBondEnOverlayData } from './bond-en-polarity.js';
+import { getAtomNumberMap } from './atom-numbering.js';
 import {
   labelHalfW,
   labelHalfH,
@@ -53,9 +54,13 @@ export function create2DSceneRenderer(ctx) {
     const bondInfos = [];
     for (const bond of mol.bonds.values()) {
       const [a1, a2] = bond.getAtomObjects(mol);
-      if (!a1 || !a2 || a1.x == null || a2.x == null) {continue;}
+      if (!a1 || !a2 || a1.x == null || a2.x == null) {
+        continue;
+      }
       const isHBond = a1.visible === false || a2.visible === false;
-      if (isHBond && !(stereoMap && stereoMap.has(bond.id))) {continue;}
+      if (isHBond && !(stereoMap && stereoMap.has(bond.id))) {
+        continue;
+      }
       bondInfos.push({ bond, a1, a2 });
     }
 
@@ -106,7 +111,9 @@ export function create2DSceneRenderer(ctx) {
     function _redraw2dBondEnOverlay() {
       ctx.g.select('g.bond-en-overlay').remove();
       const overlayData = getBondEnOverlayData(mol);
-      if (!overlayData) {return;}
+      if (!overlayData) {
+        return;
+      }
       const enLayer = ctx.g.append('g').attr('class', 'bond-en-overlay').style('pointer-events', 'none');
       const bondInfoMap = new Map(bondInfos.map(bi => [bi.bond.id, bi]));
       const EN_FS = 12;
@@ -117,13 +124,17 @@ export function create2DSceneRenderer(ctx) {
       const placed = [];
       function _enOverlaps(cx, cy, hw, hh) {
         for (const p of placed) {
-          if (Math.abs(cx - p.cx) < hw + p.hw + EN_PAD && Math.abs(cy - p.cy) < hh + p.hh + EN_PAD) {return true;}
+          if (Math.abs(cx - p.cx) < hw + p.hw + EN_PAD && Math.abs(cy - p.cy) < hh + p.hh + EN_PAD) {
+            return true;
+          }
         }
         return false;
       }
       for (const { bondId, label, t } of overlayData) {
         const bi = bondInfoMap.get(bondId);
-        if (!bi) {continue;}
+        if (!bi) {
+          continue;
+        }
         const p1 = toSVGPt(bi.a1);
         const p2 = toSVGPt(bi.a2);
         const mx = (p1.x + p2.x) / 2;
@@ -172,7 +183,9 @@ export function create2DSceneRenderer(ctx) {
       if (!selectedDragAtomIds) {
         for (const bondId of bondIds) {
           const bond = mol.bonds.get(bondId);
-          if (!bond) {continue;}
+          if (!bond) {
+            continue;
+          }
           movedAtomIds.add(bond.atoms[0]);
           movedAtomIds.add(bond.atoms[1]);
         }
@@ -181,7 +194,9 @@ export function create2DSceneRenderer(ctx) {
       const atomPositions = new Map();
       for (const atomId of movedAtomIds) {
         const movedAtom = mol.atoms.get(atomId);
-        if (!movedAtom || movedAtom.x == null) {continue;}
+        if (!movedAtom || movedAtom.x == null) {
+          continue;
+        }
         atomPositions.set(atomId, { x: movedAtom.x, y: movedAtom.y });
       }
       return {
@@ -196,7 +211,9 @@ export function create2DSceneRenderer(ctx) {
       lonePairDotsByAtomId.clear();
       for (const atomId of movedAtomIds) {
         const movedAtom = mol.atoms.get(atomId);
-        if (!movedAtom || movedAtom.x == null) {continue;}
+        if (!movedAtom || movedAtom.x == null) {
+          continue;
+        }
         const np = toSVGPt(movedAtom);
         labelLayer.select(`[data-atom-id="${atomId}"]`).attr('transform', `translate(${np.x},${np.y})`);
         const lbl = getAtomLabel(movedAtom, hCounts, toSVGPt, mol);
@@ -210,7 +227,9 @@ export function create2DSceneRenderer(ctx) {
       }
 
       for (const bInfo of bondInfos) {
-        if (!movedAtomIds.has(bInfo.a1.id) && !movedAtomIds.has(bInfo.a2.id)) {continue;}
+        if (!movedAtomIds.has(bInfo.a1.id) && !movedAtomIds.has(bInfo.a2.id)) {
+          continue;
+        }
         const bGroup = bondLayer.select(`[data-bond-id="${bInfo.bond.id}"]`);
         const hitLine = bGroup.select('.bond-hit');
         bGroup.selectAll(':not(.bond-hit)').remove();
@@ -219,7 +238,9 @@ export function create2DSceneRenderer(ctx) {
         let ssa2 = bInfo.a2;
         if (st) {
           const centerId = stereoBondCenterIdForRender(mol, bInfo.bond.id);
-          if (centerId === ssa2.id) {[ssa1, ssa2] = [ssa2, ssa1];}
+          if (centerId === ssa2.id) {
+            [ssa1, ssa2] = [ssa2, ssa1];
+          }
         }
         ctx.helpers.drawBond(bGroup, bInfo.bond, ssa1, ssa2, mol, toSVGPt, st ?? null);
         const hp1 = toSVGPt(ssa1);
@@ -232,12 +253,15 @@ export function create2DSceneRenderer(ctx) {
       _redraw2dValenceWarnings();
       _draw2dLonePairs();
       _redraw2dBondEnOverlay();
+      _redraw2dAtomNumberingOverlay();
     }
 
     function _redraw2dValenceWarnings() {
       ctx.g.select('g.valence-warning-layer').remove();
       const warningAtoms = atoms.filter(atom => valenceWarningMap.has(atom.id));
-      if (warningAtoms.length === 0) {return;}
+      if (warningAtoms.length === 0) {
+        return;
+      }
       const warningLayer = ctx.g.append('g').attr('class', 'valence-warning-layer').style('pointer-events', 'none');
       for (const atom of warningAtoms) {
         const { x, y } = toSVGPt(atom);
@@ -265,7 +289,9 @@ export function create2DSceneRenderer(ctx) {
       let sa2 = bi.a2;
       if (stereoType) {
         const centerId = stereoBondCenterIdForRender(mol, bi.bond.id);
-        if (centerId === sa2.id) {[sa1, sa2] = [sa2, sa1];}
+        if (centerId === sa2.id) {
+          [sa1, sa2] = [sa2, sa1];
+        }
       }
       ctx.helpers.drawBond(bg, bi.bond, sa1, sa2, mol, toSVGPt, stereoType ?? null);
 
@@ -288,7 +314,9 @@ export function create2DSceneRenderer(ctx) {
         )
         .style('pointer-events', 'stroke')
         .on('mousedown', event => {
-          if (!ctx.overlay.getDrawBondMode()) {return;}
+          if (!ctx.overlay.getDrawBondMode()) {
+            return;
+          }
           event.preventDefault();
           event.stopPropagation();
           ctx.actions.promoteBondOrder(bi.bond.id);
@@ -324,7 +352,9 @@ export function create2DSceneRenderer(ctx) {
     for (const atom of atoms) {
       const label = getAtomLabel(atom, hCounts, toSVGPt, mol);
       const hw = labelHalfW(label, fontSize);
-      if (hw === 0) {continue;}
+      if (hw === 0) {
+        continue;
+      }
       const hh = labelHalfH(label, fontSize);
       const dx = labelTextOffset(label, fontSize);
       const { x, y } = toSVGPt(atom);
@@ -354,7 +384,7 @@ export function create2DSceneRenderer(ctx) {
         .attr('class', 'atom-hit')
         .attr('r', Math.max(labelHalfW(label || symbol, fontSize), 10) + (ctx.overlay.getDrawBondMode() ? DRAW_MODE_ATOM_HIT_PAD : 0))
         .style('cursor', 'grab')
-        .on('mousedown.drawbond', (event) => {
+        .on('mousedown.drawbond', event => {
           ctx.events.handle2dAtomMouseDownDrawBond(event, atom.id);
         })
         .on('click', event => {
@@ -432,6 +462,87 @@ export function create2DSceneRenderer(ctx) {
     }
 
     _redraw2dBondEnOverlay();
+    _redraw2dAtomNumberingOverlay();
+  }
+
+  function _redraw2dAtomNumberingOverlay() {
+    ctx.g.select('g.atom-numbering-overlay').remove();
+    const mol = ctx.state.getMol();
+    if (!mol) {
+      return;
+    }
+    const numberMap = getAtomNumberMap(mol);
+    if (!numberMap) {
+      return;
+    }
+    const NUM_FS = 10;
+    const NUM_DIST = 15;
+    const toSVGPt = ctx.helpers.toSVGPt;
+    const { showLonePairs } = getRenderOptions();
+    const fSize = ctx.constants.getFontSize();
+    const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
+    const numLayer = ctx.g.append('g').attr('class', 'atom-numbering-overlay').style('pointer-events', 'none');
+    for (const atom of atoms) {
+      const num = numberMap.get(atom.id);
+      if (num == null) {
+        continue;
+      }
+      const { x, y } = toSVGPt(atom);
+      const label = String(num);
+      // Blocked angles: ALL neighbors (including hidden H — avoids OH-label overlap),
+      // plus charge badge direction and lone pair directions when relevant.
+      const allNeighbors = atom.getNeighbors(mol).filter(n => n.x != null);
+      const visNeighbors = allNeighbors.filter(n => n.visible !== false);
+      const blockedAngles = allNeighbors.map(nb => {
+        const { x: nx, y: ny } = toSVGPt(nb);
+        return Math.atan2(ny - y, nx - x);
+      });
+      if (atom.getCharge?.() !== 0) {
+        const placement = computeChargeBadgePlacement(atom, mol, {
+          pointForAtom: toSVGPt,
+          neighbors: visNeighbors,
+          fontSize: fSize,
+          containerChargeAngle: null
+        });
+        if (placement) { blockedAngles.push(placement.angle); }
+      }
+      if (showLonePairs) {
+        const lp = computeLonePairDotPositions(atom, mol, {
+          pointForAtom: toSVGPt,
+          label: null,
+          fontSize: fSize,
+          offsetFromBoundary: 6,
+          dotSpacing: 4.2
+        });
+        for (const dot of lp) { blockedAngles.push(Math.atan2(dot.y - y, dot.x - x)); }
+      }
+      let angle;
+      if (blockedAngles.length === 0) {
+        angle = -Math.PI / 4;
+      } else {
+        const sorted = blockedAngles.slice().sort((a, b) => a - b);
+        let bestGap = 0;
+        angle = sorted[0] + Math.PI;
+        for (let i = 0; i < sorted.length; i++) {
+          const a1 = sorted[i];
+          const a2 = i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + 2 * Math.PI;
+          const gap = a2 - a1;
+          if (gap > bestGap) {
+            bestGap = gap;
+            angle = a1 + gap / 2;
+          }
+        }
+      }
+      numLayer
+        .append('text')
+        .attr('x', x + Math.cos(angle) * NUM_DIST)
+        .attr('y', y + Math.sin(angle) * NUM_DIST)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'central')
+        .attr('font-size', `${NUM_FS}px`)
+        .attr('fill', '#444')
+        .text(label);
+    }
   }
 
   function render2d(mol, options = {}) {
@@ -458,11 +569,17 @@ export function create2DSceneRenderer(ctx) {
     ctx.helpers.centerReaction2dPairCoords(mol, 1.5);
 
     for (const [, atom] of mol.atoms) {
-      if (atom.name !== 'H' || atom.visible !== false) {continue;}
+      if (atom.name !== 'H' || atom.visible !== false) {
+        continue;
+      }
       const nbrs = atom.getNeighbors(mol);
-      if (nbrs.length !== 1) {continue;}
+      if (nbrs.length !== 1) {
+        continue;
+      }
       const parent = nbrs[0];
-      if (!parent.getChirality()) {continue;}
+      if (!parent.getChirality()) {
+        continue;
+      }
       const others = parent.getNeighbors(mol).filter(n => n.id !== atom.id);
       let sumX = 0;
       let sumY = 0;
@@ -503,15 +620,21 @@ export function create2DSceneRenderer(ctx) {
         }
       }
       if (flipH) {
-        for (const a of allAtoms) {a.x = 2 * mx - a.x;}
+        for (const a of allAtoms) {
+          a.x = 2 * mx - a.x;
+        }
       }
       if (flipV) {
-        for (const a of allAtoms) {a.y = 2 * my - a.y;}
+        for (const a of allAtoms) {
+          a.y = 2 * my - a.y;
+        }
       }
     }
 
     const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
-    if (atoms.length === 0) {return;}
+    if (atoms.length === 0) {
+      return;
+    }
 
     const { cx, cy } = atomBBox(atoms);
     ctx.svg.call(ctx.zoom.transform, _compute2dFitTransform(ctx, atoms));
@@ -519,14 +642,21 @@ export function create2DSceneRenderer(ctx) {
     const stereoMap = syncDisplayStereo(mol);
     for (const [bondId] of stereoMap) {
       const bond = mol.bonds.get(bondId);
-      if (!bond) {continue;}
+      if (!bond) {
+        continue;
+      }
       const [ba1, ba2] = bond.getAtomObjects(mol);
       const hAtom = ba1?.visible === false ? ba1 : ba2?.visible === false ? ba2 : null;
       const heavyAt = hAtom ? (hAtom === ba1 ? ba2 : ba1) : null;
-      if (!heavyAt) {continue;}
+      if (!heavyAt) {
+        continue;
+      }
       const n = (hCounts.get(heavyAt.id) ?? 0) - 1;
-      if (n <= 0) {hCounts.delete(heavyAt.id);}
-      else {hCounts.set(heavyAt.id, n);}
+      if (n <= 0) {
+        hCounts.delete(heavyAt.id);
+      } else {
+        hCounts.set(heavyAt.id, n);
+      }
     }
 
     ctx.state.setScene({ mol, hCounts, cx, cy, stereoMap });
@@ -548,9 +678,13 @@ export function create2DSceneRenderer(ctx) {
 
   function fitCurrent2dView() {
     const mol = ctx.state.getMol();
-    if (!mol) {return;}
+    if (!mol) {
+      return;
+    }
     const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
-    if (atoms.length === 0) {return;}
+    if (atoms.length === 0) {
+      return;
+    }
     const { cx, cy } = atomBBox(atoms);
     ctx.state.setCenter(cx, cy);
     ctx.svg.call(ctx.zoom.transform, _compute2dFitTransform(ctx, atoms));

@@ -1365,7 +1365,7 @@ function refineCoords(molecule, coords, frozen, bondLength) {
  * @param {Map<string,{x:number,y:number}>} coords
  * @param {import('../core/Molecule.js').Molecule} molecule
  */
-function levelCoords(coords, molecule) {
+export function levelCoords(coords, molecule) {
   const heavyIds = [...coords.keys()].filter(id => molecule.atoms.has(id) && molecule.atoms.get(id)?.name !== 'H');
   if (heavyIds.length < 2) {
     return;

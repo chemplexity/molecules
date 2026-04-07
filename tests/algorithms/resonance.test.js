@@ -505,15 +505,52 @@ describe('generateResonanceStructures — development regressions', () => {
 
 describe('generateResonanceStructures — allyl radical', () => {
   it('finds 2 states: radical migrates from one terminal C to the other', () => {
-    // [CH2]=C[CH2] with radical on terminal CH2
+    // [CH2]=C[CH2•]
     const mol = parseSMILES('[CH2]=C[CH2]');
-    // manually set radical on terminal carbon
-    const atoms = [...mol.atoms.values()].filter(a => a.name === 'C');
-    const terminal = atoms.find(a => a.bonds.filter(id => mol.atoms.get(mol.bonds.get(id)?.getOtherAtom(a.id))?.name !== 'H').length === 1);
-    assert.ok(terminal);
-    terminal.properties.radical = 1;
+    const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
+    const ccBondIdsFor = atom => atom.bonds.filter(id => mol.atoms.get(mol.bonds.get(id)?.getOtherAtom(atom.id))?.name === 'C');
+    const terminals = carbons.filter(a => ccBondIdsFor(a).length === 1);
+    const central = carbons.find(a => ccBondIdsFor(a).length === 2);
+
+    assert.equal(terminals.length, 2);
+    assert.ok(central);
+
+    const allylicTerminal = terminals.find(atom => {
+      const bond = mol.bonds.get(ccBondIdsFor(atom)[0]);
+      return (bond?.properties.localizedOrder ?? bond?.properties.order ?? 1) === 1;
+    });
+    assert.ok(allylicTerminal, 'single-bonded allylic terminal carbon not found');
+    allylicTerminal.properties.radical = 1;
+
     generateResonanceStructures(mol);
     assert.ok(mol.resonanceCount >= 2, `expected ≥2 states, got ${mol.resonanceCount}`);
+
+    const observedTerminalRadicals = new Set();
+    for (let stateId = 1; stateId <= mol.resonanceCount; stateId++) {
+      mol.setResonanceState(stateId);
+
+      const radicalTerminal = terminals.find(atom => (atom.properties.radical ?? 0) === 1);
+      if (!radicalTerminal) {
+        continue;
+      }
+
+      const oppositeTerminal = terminals.find(atom => atom.id !== radicalTerminal.id);
+      const doubleBond = [...mol.bonds.values()].find(bond => {
+        if (!bond.atoms.includes(central.id) || !bond.atoms.includes(oppositeTerminal.id)) {
+          return false;
+        }
+        return (bond.properties.localizedOrder ?? bond.properties.order ?? 1) === 2;
+      });
+
+      if (doubleBond) {
+        observedTerminalRadicals.add(radicalTerminal.id);
+      }
+    }
+
+    assert.deepEqual(
+      [...observedTerminalRadicals].sort(),
+      terminals.map(atom => atom.id).sort()
+    );
   });
 });
 

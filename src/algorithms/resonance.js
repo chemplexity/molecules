@@ -77,12 +77,12 @@ function _commonNeutralValences(symbol, group, period) {
  * @param {string} symbol
  * @param {import('../core/Atom.js').Atom} atom
  * @param {number} charge
+ * @param {number} [radical=atom.properties.radical ?? 0]
  * @returns {number[]}
  */
-function _shiftedCommonValences(symbol, atom, charge) {
+function _shiftedCommonValences(symbol, atom, charge, radical = atom.properties.radical ?? 0) {
   const group = atom.properties.group;
   const period = atom.properties.period;
-  const radical = atom.properties.radical ?? 0;
   const base = _commonNeutralValences(symbol, group, period);
   if (base.length === 0) {
     return [];
@@ -109,9 +109,10 @@ function _shiftedCommonValences(symbol, atom, charge) {
  * @param {import('../core/Atom.js').Atom} atom
  * @param {number} bondSum
  * @param {number} maxCharge
+ * @param {number} [radical=atom.properties.radical ?? 0]
  * @returns {number[]}
  */
-function _candidateFormalCharges(atom, bondSum, maxCharge) {
+function _candidateFormalCharges(atom, bondSum, maxCharge, radical = atom.properties.radical ?? 0) {
   const group = atom.properties.group;
   if (!group || (group >= 3 && group <= 12)) {
     return [atom.properties.charge ?? 0];
@@ -119,7 +120,7 @@ function _candidateFormalCharges(atom, bondSum, maxCharge) {
 
   const candidates = [];
   for (let charge = -maxCharge; charge <= maxCharge; charge++) {
-    const allowedValences = _shiftedCommonValences(atom.name, atom, charge);
+    const allowedValences = _shiftedCommonValences(atom.name, atom, charge, radical);
     if (allowedValences.includes(bondSum)) {
       candidates.push(charge);
     }
@@ -710,9 +711,10 @@ function _classifyBonds(molecule, bondIds) {
  * @param {Set<string>} atomIds
  * @param {Map<string, number>} bondOrders - bondId → resolved integer order
  * @param {number} maxCharge
+ * @param {Map<string, number>|null} [atomRadicals=null]
  * @returns {Map<string, number>|null} atomId → formal charge
  */
-function _deriveFormalCharges(molecule, atomIds, bondOrders, maxCharge) {
+function _deriveFormalCharges(molecule, atomIds, bondOrders, maxCharge, atomRadicals = null) {
   const atomEntries = [];
   const fixedCharges = new Map();
   let canonicalTotalCharge = 0;
@@ -741,7 +743,8 @@ function _deriveFormalCharges(molecule, atomIds, bondOrders, maxCharge) {
       continue;
     }
 
-    const candidates = _candidateFormalCharges(atom, bondSum, maxCharge);
+    const radical = atomRadicals?.get(atomId) ?? atom.properties.radical ?? 0;
+    const candidates = _candidateFormalCharges(atom, bondSum, maxCharge, radical);
     if (candidates.length === 0) {
       return null;
     }
@@ -815,9 +818,10 @@ function _deriveFormalCharges(molecule, atomIds, bondOrders, maxCharge) {
  * @param {Map<string, number>} bondOrders
  * @param {Map<string, number>} formalCharges
  * @param {number} maxCharge
+ * @param {Map<string, number>|null} [atomRadicals=null]
  * @returns {boolean}
  */
-function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge) {
+function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge, atomRadicals = null) {
   const aromaticRings = molecule.getRings().filter(ring => ring.every(atomId => molecule.atoms.get(atomId)?.properties?.aromatic));
   const aromaticRingMembershipCounts = new Map();
   for (const ring of aromaticRings) {
@@ -842,7 +846,8 @@ function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge) 
     }
 
     const formalCharge = formalCharges.get(atomId) ?? 0;
-    const allowedValences = _shiftedCommonValences(atom.name, atom, formalCharge);
+    const radical = atomRadicals?.get(atomId) ?? atom.properties.radical ?? 0;
+    const allowedValences = _shiftedCommonValences(atom.name, atom, formalCharge, radical);
     if (allowedValences.length > 0 && !allowedValences.includes(bondSum)) {
       return false;
     }
@@ -951,6 +956,20 @@ function _stateKey(bondOrders, atomCharges, atomRadicals) {
   const aParts = [...atomCharges.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, c]) => `${id}:${c}`);
   const rParts = [...atomRadicals.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, r]) => `${id}:${r}`);
   return `${bParts.join('|')}/${aParts.join('|')}/${rParts.join('|')}`;
+}
+
+/**
+ * Resolves a bond's order from a candidate state, falling back to the live
+ * localized/canonical order when the state stores only partial overrides.
+ *
+ * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Map<string, number>} bondOrders
+ * @param {string} bondId
+ * @returns {number}
+ */
+function _resolvedBondOrder(molecule, bondOrders, bondId) {
+  const bond = molecule.bonds.get(bondId);
+  return bondOrders.get(bondId) ?? bond?.properties.localizedOrder ?? bond?.properties.order ?? 1;
 }
 
 /**
@@ -1160,22 +1179,24 @@ function _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxCon
 }
 
 /**
- * Generates radical-migration states by moving unpaired electrons along
- * conjugated paths within the pi system.
+ * Generates radical-migration states by shifting an allylic radical across a
+ * three-atom conjugated path within the pi system.
  *
- * For each radical atom R adjacent to a pi-system bond to atom A:
- * - If R−A is single and A=B is double: radical hops to B (R=A−B•)
- * - If R−A is single and A is terminal in pi system: radical migrates to A (R−•A)
+ * For each radical atom R connected to an intermediate atom A and a distal
+ * atom B by alternating bond orders 1/2 or 2/1:
+ * - R-A-B with orders 1/2 becomes 2/1 and the radical moves from R to B
+ * - R-A-B with orders 2/1 becomes 1/2 and the radical moves from R to B
  *
  * @param {import('../core/Molecule.js').Molecule} molecule
  * @param {Set<string>} atomIds
  * @param {Set<string>} bondIds
  * @param {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }>} baseStates
  * @param {number} maxContributors
+ * @param {number} maxCharge
  * @param {Set<string>} seen
  * @returns {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }>}
  */
-function _enumerateRadicalStates(molecule, atomIds, bondIds, baseStates, maxContributors, seen) {
+function _enumerateRadicalStates(molecule, atomIds, bondIds, baseStates, maxContributors, maxCharge, seen) {
   const results = [];
 
   for (const base of baseStates) {
@@ -1183,47 +1204,96 @@ function _enumerateRadicalStates(molecule, atomIds, bondIds, baseStates, maxCont
       break;
     }
 
+    let targetChargeTotal = 0;
+    for (const charge of base.atomCharges.values()) {
+      targetChargeTotal += charge;
+    }
+
     for (const atomId of atomIds) {
       const atom = molecule.atoms.get(atomId);
-      if (!atom || (atom.properties.radical ?? 0) === 0) {
+      const atomRadical = base.atomRadicals.get(atomId) ?? atom?.properties.radical ?? 0;
+      if (!atom || atomRadical === 0) {
         continue;
       }
 
-      // Try migrating one radical electron to each pi-adjacent atom
-      for (const bondId of atom.bonds) {
-        const bond = molecule.bonds.get(bondId);
-        if (!bond || !bondIds.has(bondId)) {
+      for (const firstBondId of atom.bonds) {
+        const firstBond = molecule.bonds.get(firstBondId);
+        if (!firstBond || !bondIds.has(firstBondId)) {
           continue;
         }
-        const otherId = bond.getOtherAtom(atomId);
-        if (!atomIds.has(otherId)) {
+        const intermediateId = firstBond.getOtherAtom(atomId);
+        if (!atomIds.has(intermediateId)) {
           continue;
         }
-        const otherAtom = molecule.atoms.get(otherId);
-        if (!otherAtom) {
-          continue;
-        }
-
-        // Radical hops: R• − A → R − A•
-        const newRadicals = new Map(base.atomRadicals);
-        const srcRadical = newRadicals.get(atomId) ?? atom.properties.radical ?? 0;
-        const dstRadical = newRadicals.get(otherId) ?? otherAtom.properties.radical ?? 0;
-        if (srcRadical < 1 || dstRadical >= 2) {
+        const intermediateAtom = molecule.atoms.get(intermediateId);
+        if (!intermediateAtom) {
           continue;
         }
 
-        newRadicals.set(atomId, srcRadical - 1);
-        newRadicals.set(otherId, dstRadical + 1);
-
-        const key = _stateKey(base.bondOrders, base.atomCharges, newRadicals);
-        if (seen.has(key)) {
+        const firstOrder = _resolvedBondOrder(molecule, base.bondOrders, firstBondId);
+        if (firstOrder !== 1 && firstOrder !== 2) {
           continue;
         }
-        seen.add(key);
-        results.push({ bondOrders: new Map(base.bondOrders), atomCharges: new Map(base.atomCharges), atomRadicals: newRadicals });
 
-        if (results.length + baseStates.length >= maxContributors) {
-          break;
+        for (const secondBondId of intermediateAtom.bonds) {
+          if (secondBondId === firstBondId) {
+            continue;
+          }
+          const secondBond = molecule.bonds.get(secondBondId);
+          if (!secondBond || !bondIds.has(secondBondId)) {
+            continue;
+          }
+
+          const destinationId = secondBond.getOtherAtom(intermediateId);
+          if (destinationId === atomId || !atomIds.has(destinationId)) {
+            continue;
+          }
+
+          const secondOrder = _resolvedBondOrder(molecule, base.bondOrders, secondBondId);
+          if (firstOrder + secondOrder !== 3) {
+            continue;
+          }
+
+          const destinationAtom = molecule.atoms.get(destinationId);
+          const destinationRadical = base.atomRadicals.get(destinationId) ?? destinationAtom?.properties.radical ?? 0;
+          if (destinationRadical >= 2) {
+            continue;
+          }
+
+          const newRadicals = new Map(base.atomRadicals);
+          newRadicals.set(atomId, atomRadical - 1);
+          newRadicals.set(destinationId, destinationRadical + 1);
+
+          const newBondOrders = new Map(base.bondOrders);
+          newBondOrders.set(firstBondId, secondOrder);
+          newBondOrders.set(secondBondId, firstOrder);
+
+          const newAtomCharges = _deriveFormalCharges(molecule, atomIds, newBondOrders, maxCharge, newRadicals);
+          if (!newAtomCharges) {
+            continue;
+          }
+
+          let totalCharge = 0;
+          for (const charge of newAtomCharges.values()) {
+            totalCharge += charge;
+          }
+          if (totalCharge !== targetChargeTotal) {
+            continue;
+          }
+          if (!_isValidState(molecule, atomIds, newBondOrders, newAtomCharges, maxCharge, newRadicals)) {
+            continue;
+          }
+
+          const key = _stateKey(newBondOrders, newAtomCharges, newRadicals);
+          if (seen.has(key)) {
+            continue;
+          }
+          seen.add(key);
+          results.push({ bondOrders: newBondOrders, atomCharges: newAtomCharges, atomRadicals: newRadicals });
+
+          if (results.length + baseStates.length >= maxContributors) {
+            break;
+          }
         }
       }
     }
@@ -1779,7 +1849,7 @@ export function generateResonanceStructures(molecule, options = {}) {
 
   // Enumerate radical-migration states on top of paired states
   const seen = new Set(pairedStates.map(s => _stateKey(s.bondOrders, s.atomCharges, s.atomRadicals)));
-  const radicalStates = _enumerateRadicalStates(molecule, atomIds, bondIds, pairedStates, enumerationBudget, seen);
+  const radicalStates = _enumerateRadicalStates(molecule, atomIds, bondIds, pairedStates, enumerationBudget, maxCharge, seen);
 
   const allRawStates = [...pairedStates, ...radicalStates]
     .filter(state => includeChargeSeparatedStates || _matchesCanonicalAtomCharges(state, canonicalAtomCharges, atomIds))

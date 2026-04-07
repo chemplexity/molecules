@@ -1643,6 +1643,7 @@ describe('generateCoords — extended chain spread', () => {
     assert.ok(terminalClearance >= 2.0, `arachidonic acid late chain folded onto the methyl terminus: clearance ${terminalClearance.toFixed(3)} Å`);
     assert.ok(minNonBonded >= 0.9, `arachidonic acid self-overlap too tight: nearest non-bonded distance ${minNonBonded.toFixed(3)} Å`);
   });
+
 });
 
 describe('generateCoords — alkene substituent geometry', () => {

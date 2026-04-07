@@ -1,18 +1,13 @@
 import * as d3 from 'https://cdn.jsdelivr.net/npm/d3@7/+esm';
 import { finalizeAppBootstrap } from './app-bootstrap.js';
-import { createFinalizeBootstrapCallDeps } from './deps/finalize-bootstrap-call-deps.js';
 import { createFinalizeAppBootstrapDeps } from './deps/finalize-bootstrap-deps.js';
 import { initializeAppRuntime } from './app-runtime.js';
-import { createAppRuntimeCallDeps } from './deps/app-runtime-call-deps.js';
 import { createAppRuntimeDeps } from './deps/app-runtime-deps.js';
-import { DRAW_ELEM_PROTONS, createInteractionRuntimeCallDeps } from './deps/interaction-runtime-call-deps.js';
-import { createInteractionRuntimeDeps } from './deps/interaction-runtime-deps.js';
+import { DRAW_ELEM_PROTONS, createInteractionRuntimeDeps } from './deps/interaction-runtime-deps.js';
 import { createBootstrapDom } from './dom-elements.js';
 import { exampleMolecules } from './example-molecules.js';
 import { initializeInteractionRuntime } from './interaction-runtime.js';
-import { initLegacyInputGlobals } from './legacy-input-globals.js';
 import { atomBBoxFallback, enLabelColor, initForceSimulation, initPlotBootstrap } from './plot-bootstrap.js';
-import { createSceneBridges } from './scene-bridges.js';
 import { initializeRuntimeBridges } from './runtime-bridges.js';
 import { VALENCE_WARNING_FILL, createRuntimeState } from './runtime-state.js';
 import { parseSMILES, toSMILES } from '../../io/smiles.js';
@@ -28,7 +23,6 @@ import { updateDescriptors, updateFormula } from '../ui/descriptors.js';
 import { initUndo, takeSnapshot as _takeSnapshot, discardLastSnapshot as _discardLastSnapshot, clearHistory as _clearUndoHistory, undoAction, redoAction } from '../core/undo.js';
 import { createAppDelegates } from '../core/app-delegates.js';
 import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../core/editor-actions.js';
-import { createUndoDeps } from '../core/deps/undo-deps.js';
 import { initOptionsModal } from '../ui/options-modal.js';
 import { createOptionsModalDeps } from '../ui/deps/options-modal-deps.js';
 import { initAppShell } from '../ui/app-shell.js';
@@ -86,7 +80,9 @@ import {
   _renderReactionPreviewArrowForce,
   _reapplyActiveReactionPreview,
   updateReactionTemplatesPanel,
-  _viewportFitPadding
+  _viewportFitPadding,
+  _getReactionPreviewReactantAtomIds,
+  _getReactionPreviewMappedAtomPairs
 } from '../render/reaction-2d.js';
 import { createReaction2dDeps } from '../render/deps/reaction-2d-deps.js';
 import {
@@ -107,9 +103,9 @@ import {
   prepareResonanceUndoSnapshot,
   restoreResonanceViewSnapshot
 } from '../render/resonance.js';
-import { createResonancePanelDeps } from '../render/deps/resonance-panel-deps.js';
 import { initBondEnPanel, updateBondEnPanel, clearBondEnPanel } from '../render/bond-en-polarity.js';
-import { createBondEnPanelDeps } from '../render/deps/bond-en-panel-deps.js';
+import { initAtomNumberingPanel, updateAtomNumberingPanel, clearAtomNumberingPanel } from '../render/atom-numbering.js';
+import { createBondEnPanelDeps, createResonancePanelDeps, createAtomNumberingPanelDeps } from '../render/deps/panel-deps.js';
 import { createForceSceneRenderer } from '../render/force-scene.js';
 import { createForceViewportStateHelpers } from '../render/force-viewport-state.js';
 import {
@@ -139,10 +135,19 @@ import { initKeyboardInteractions } from '../interactions/keyboard.js';
 
 const { WEDGE_HALF_W, WEDGE_DASHES, perpUnit, shortenLine, secondaryDir, labelHalfW, syncDisplayStereo, flipDisplayStereo, kekulize } = mol2dHelpers;
 
-initLegacyInputGlobals({
-  win: window,
-  exampleMolecules
-});
+window.setInputFormat = (fmt, options = {}) => {
+  window._setInputFormat?.(fmt, options);
+};
+window.renderExamples = () => {
+  window._renderExamples?.();
+};
+window.pickRandomMolecule = () => {
+  window._pickRandomMolecule?.();
+};
+window.parseInput = value => {
+  window._parseInput?.(value);
+};
+window._getExampleMolecules = () => exampleMolecules;
 
 const atomBBox = mol2dHelpers.atomBBox ?? atomBBoxFallback;
 
@@ -506,24 +511,16 @@ const forceSelectionRenderer = createForceSelectionRenderer(
   })
 );
 
-const {
-  applyForceHighlights,
-  applyForceSelection,
-  clearPrimitiveHover: _clearPrimitiveHover,
-  refreshSelectionOverlay: _refreshSelectionOverlay,
-  getRenderableSelectionIds: _getRenderableSelectionIds,
-  showPrimitiveHover: _showPrimitiveHover,
-  setPrimitiveHover: _setPrimitiveHover,
-  getSelectedDragAtomIds: _getSelectedDragAtomIds,
-  toSVGPt2d: _toSVGPt2d,
-  zoomToFitIf2d: _zoomToFitIf2d
-} = createSceneBridges({
-  forceHighlightRenderer,
-  forceSelectionRenderer,
-  selectionOverlayManager,
-  selectionStateHelpers,
-  render2DHelpers
-});
+const applyForceHighlights = () => forceHighlightRenderer.applyForceHighlights();
+const applyForceSelection = () => forceSelectionRenderer.applyForceSelection();
+const _clearPrimitiveHover = () => selectionOverlayManager.clearPrimitiveHover();
+const _refreshSelectionOverlay = () => selectionOverlayManager.refreshSelectionOverlay();
+const _getRenderableSelectionIds = () => selectionOverlayManager.getRenderableSelectionIds();
+const _showPrimitiveHover = (atomIds = [], bondIds = []) => selectionOverlayManager.showPrimitiveHover(atomIds, bondIds);
+const _setPrimitiveHover = (atomIds = [], bondIds = []) => selectionOverlayManager.setPrimitiveHover(atomIds, bondIds);
+const _getSelectedDragAtomIds = (mol, atomIds = [], bondIds = []) => selectionStateHelpers.getSelectedDragAtomIds(mol, atomIds, bondIds);
+const _toSVGPt2d = atom => render2DHelpers.toSVGPt2d(atom);
+const _zoomToFitIf2d = () => render2DHelpers.zoomToFitIf2d();
 
 const {
   syncInputField: _syncInputField,
@@ -618,486 +615,487 @@ const {
   primitiveSelectionActions,
   primitiveEventHandlers
 } = initializeInteractionRuntime(
-  createInteractionRuntimeDeps(
-    createInteractionRuntimeCallDeps({
-      appState,
-      takeSnapshot: options => _takeSnapshot(options),
-      captureAppSnapshot: options => _captureAppSnapshot(options),
-      discardLastSnapshot: () => _discardLastSnapshot(),
-      renderRuntime,
-      hasReactionPreview: () => _hasReactionPreview(),
-      reapplyActiveReactionPreview: () => _reapplyActiveReactionPreview(),
-      resetActiveResonanceView,
-      alignReaction2dProductOrientation: _alignReaction2dProductOrientation,
-      spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
-      centerReaction2dPairCoords: _centerReaction2dPairCoords,
-      viewportFitPadding: _viewportFitPadding,
-      generateAndRefine2dCoords,
-      refineExistingCoords,
-      atomBBox,
-      flipDisplayStereo,
-      clearPrimitiveHover: () => _clearPrimitiveHover(),
-      restorePersistentHighlight: () => _restorePersistentHighlight(),
-      getFitCurrent2dView: () => fitCurrent2dView,
-      getZoomTransform: () => d3.zoomTransform(svg.node()),
-      setZoomTransform: transform => svg.call(zoom.transform, transform),
-      makeZoomIdentity: (x, y, k) => d3.zoomIdentity.translate(x, y).scale(k),
-      syncStereoMap2d: mol => {
-        runtimeState.stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
-      },
-      flipStereoMap2d: mol => {
-        runtimeState.stereoMap2d = flipDisplayStereo(mol, runtimeState.stereoMap2d);
-        const preview = mol.__reactionPreview;
-        if (preview) {
-          if (preview.forcedStereoBondTypes?.size) {
-            for (const [bondId] of preview.forcedStereoBondTypes) {
-              const newType = runtimeState.stereoMap2d.get(bondId);
-              if (newType !== undefined) {
-                preview.forcedStereoBondTypes.set(bondId, newType);
-              }
-            }
-          }
-          if (preview.forcedStereoByCenter?.size) {
-            for (const [centerId, info] of preview.forcedStereoByCenter) {
-              const newType = runtimeState.stereoMap2d.get(info.bondId);
-              if (newType !== undefined) {
-                preview.forcedStereoByCenter.set(centerId, { ...info, type: newType });
-              }
+  createInteractionRuntimeDeps({
+    appState,
+    takeSnapshot: options => _takeSnapshot(options),
+    captureAppSnapshot: options => _captureAppSnapshot(options),
+    discardLastSnapshot: () => _discardLastSnapshot(),
+    renderRuntime,
+    hasReactionPreview: () => _hasReactionPreview(),
+    reapplyActiveReactionPreview: () => _reapplyActiveReactionPreview(),
+    resetActiveResonanceView,
+    alignReaction2dProductOrientation: _alignReaction2dProductOrientation,
+    spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
+    centerReaction2dPairCoords: _centerReaction2dPairCoords,
+    viewportFitPadding: _viewportFitPadding,
+    generateAndRefine2dCoords,
+    refineExistingCoords,
+    atomBBox,
+    flipDisplayStereo,
+    clearPrimitiveHover: () => _clearPrimitiveHover(),
+    restorePersistentHighlight: () => _restorePersistentHighlight(),
+    getFitCurrent2dView: () => fitCurrent2dView,
+    getZoomTransform: () => d3.zoomTransform(svg.node()),
+    setZoomTransform: transform => svg.call(zoom.transform, transform),
+    makeZoomIdentity: (x, y, k) => d3.zoomIdentity.translate(x, y).scale(k),
+    syncStereoMap2d: mol => {
+      runtimeState.stereoMap2d = _pickStereoWedgesPreserving2dChoice(mol);
+    },
+    flipStereoMap2d: mol => {
+      runtimeState.stereoMap2d = flipDisplayStereo(mol, runtimeState.stereoMap2d);
+      const preview = mol.__reactionPreview;
+      if (preview) {
+        if (preview.forcedStereoBondTypes?.size) {
+          for (const [bondId] of preview.forcedStereoBondTypes) {
+            const newType = runtimeState.stereoMap2d.get(bondId);
+            if (newType !== undefined) {
+              preview.forcedStereoBondTypes.set(bondId, newType);
             }
           }
         }
-      },
-      setPreserveSelectionOnNextRender: value => {
-        runtimeState.preserveSelectionOnNextRender = value;
-      },
-      scale: SCALE,
-      patchForceNodePositions: (patchPos, options = {}) => forceHelpers.patchForceNodePositions(patchPos, options),
-      forceFitTransform: (nodes, pad, options = {}) => forceHelpers.forceFitTransform(nodes, pad, options),
-      forceFitPad: FORCE_LAYOUT_FIT_PAD,
-      forceInitialZoomMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
-      zoomTransformsDiffer: (a, b, epsilon) => forceHelpers.zoomTransformsDiffer(a, b, epsilon),
-      parseSMILES,
-      parseINCHI,
-      simulation,
-      plotEl,
-      clean2dButton: domElements.getClean2dButtonElement(),
-      cleanForceButton: domElements.getCleanForceButtonElement(),
-      updateModeChrome: _updateModeChrome,
-      getDraw2D: () => draw2d,
-      applyForceSelection,
-      panButton: domElements.getPanButtonElement(),
-      selectButton: domElements.getSelectButtonElement(),
-      drawBondButton: domElements.getDrawBondButtonElement(),
-      eraseButton: domElements.getEraseButtonElement(),
-      getElementButton: element => domElements.getElementButtonElement(element),
-      performStructuralEdit: (...args) => runtimeState.appController.performStructuralEdit(...args),
-      prepareReactionPreviewEraseTargets: (atomIds, bondIds) => _prepareReactionPreviewEraseTargets(atomIds, bondIds),
-      reactionPreviewBlock: ReactionPreviewPolicy.block,
-      normalizeResonanceForEdit: ResonancePolicy.normalizeForEdit,
-      takeSnapshotPolicy: SnapshotPolicy.take,
-      viewportNonePolicy: ViewportPolicy.none,
-      clearStereoAnnotations: (mol, affectedIds) => mol.clearStereoAnnotations(affectedIds),
-      kekulize,
-      refreshAromaticity,
-      patchNodePositions: patchPos => forceHelpers.patchForceNodePositions(patchPos),
-      reseatHydrogensAroundPatched: patchPos => forceHelpers.reseatHydrogensAroundPatched(patchPos),
-      refreshSelectionOverlay: () => _refreshSelectionOverlay(),
-      flashEraseButton: () => {
-        const btn = domElements.getEraseButtonElement();
-        if (!btn) {
-          return;
+        if (preview.forcedStereoByCenter?.size) {
+          for (const [centerId, info] of preview.forcedStereoByCenter) {
+            const newType = runtimeState.stereoMap2d.get(info.bondId);
+            if (newType !== undefined) {
+              preview.forcedStereoByCenter.set(centerId, { ...info, type: newType });
+            }
+          }
         }
-        btn.textContent = '✓';
-        setTimeout(() => {
-          btn.textContent = '🗑️';
-        }, 1500);
-      },
-      createDrag: () => d3.drag(),
-      getDrawBondMode: () => runtimeState.drawBondMode,
-      getEraseMode: () => runtimeState.eraseMode,
-      captureSnapshot: () => _captureAppSnapshot(),
-      getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => selectionStateHelpers.getSelectedDragAtomIds(mol, atomIds, bondIds),
-      getCurrentMolecule: () => runtimeState.currentMol,
-      setAutoFitEnabled: value => {
-        runtimeState.forceAutoFitEnabled = value;
-      },
-      disableKeepInView: () => forceViewportStateHelpers.disableKeepInView(),
-      refresh2dSelection: () => selectionOverlayManager.redraw2dSelection(),
-      hideTooltip: () => {
-        tooltip.transition().duration(50).style('opacity', 0);
-      },
-      setElementCursor: (element, value) => {
-        d3.select(element).style('cursor', value);
-      },
-      g,
-      getMode: () => runtimeState.mode,
-      getDrawBondElement: () => runtimeState.drawBondElement,
-      getDrawElemProtons: () => DRAW_ELEM_PROTONS,
-      isReactionPreviewEditableAtomId: id => _isReactionPreviewEditableAtomId(id),
-      getDrawBondState: () => runtimeState.drawBondState,
-      setDrawBondState: value => {
-        runtimeState.drawBondState = value;
-      },
-      clearHoveredAtomIds: () => runtimeState.hoveredAtomIds.clear(),
-      clearHoveredBondIds: () => runtimeState.hoveredBondIds.clear(),
-      addHoveredAtomId: atomId => runtimeState.hoveredAtomIds.add(atomId),
-      redraw2dSelection: () => selectionOverlayManager.redraw2dSelection(),
-      getPlotSize: () => ({
-        width: plotEl.clientWidth || 600,
-        height: plotEl.clientHeight || 400
-      }),
-      getForceNodeById: atomId => simulation.nodes().find(node => node.id === atomId),
-      getForceNodes: () => simulation.nodes(),
-      get2DAtomById: atomId => runtimeState.mol2d?.atoms.get(atomId),
-      get2DAtoms: () => (runtimeState.mol2d ? [...runtimeState.mol2d.atoms.values()] : []),
-      get2DCenterX: () => runtimeState.cx2d,
-      get2DCenterY: () => runtimeState.cy2d,
-      forceBondLength: FORCE_LAYOUT_BOND_LENGTH,
-      strokeWidth: STROKE_W,
-      fontSize: runtimeState.fontSize,
-      atomRadius,
-      atomColor,
-      strokeColor,
-      singleBondWidth,
-      labelHalfW,
-      setDrawBondHoverSuppressed: value => {
-        runtimeState.drawBondHoverSuppressed = value;
-      },
-      captureZoomTransform: () => zoomTransformHelpers.captureZoomTransformSnapshot(),
-      restore2dEditViewport: (zoomSnapshot, options = {}) => _restore2dEditViewport(zoomSnapshot, options),
-      forceScale: 25,
-      restoreSnapshot: snap => _restoreSnapshot(snap),
-      prepareReactionPreviewEditTargets: payload => _prepareReactionPreviewEditTargets(payload),
-      prepareResonanceStructuralEdit: mol => _prepareResonanceStructuralEdit(mol),
-      getActiveMolecule: () => (runtimeState.mode === 'force' ? runtimeState.currentMol : runtimeState.mol2d),
-      ensureActiveMolecule: () => _ensureMol(),
-      enableKeepInView: () => forceViewportStateHelpers.enableKeepInView(),
-      sync2DDerivedState: mol => render2DHelpers.sync2dDerivedState(mol),
-      syncInputField: mol => _syncInputField(mol),
-      updateFormula: mol => updateFormula(mol),
-      updateDescriptors: mol => updateDescriptors(mol),
-      updatePanels: mol => _updateAnalysisPanels(mol),
-      draw2d: () => renderRuntime.draw2d(),
-      updateForce: (mol, options = {}) => renderRuntime.updateForce(mol, options),
-      clearSelection: () => {
-        runtimeState.selectedAtomIds.clear();
-        runtimeState.selectedBondIds.clear();
-      },
-      changeAtomElements: (atomIds, newEl, options = {}) => _changeAtomElements(atomIds, newEl, options),
-      promoteBondOrder: (bondId, options = {}) => _promoteBondOrder(bondId, options),
-      isAdditiveSelectionEvent: event => _isAdditiveSelectionEvent(event),
-      hasVisibleStereoBond: bondId => runtimeState.stereoMap2d && runtimeState.stereoMap2d.has(bondId),
-      replaceForceHydrogenAtom: (atomId, mol) => _replaceForceHydrogenWithDrawElement(atomId, mol),
-      showPrimitiveHover: (atomIds = [], bondIds = []) => _showPrimitiveHover(atomIds, bondIds),
-      isDrawBondHoverSuppressed: () => runtimeState.drawBondHoverSuppressed,
-      isPrimitiveHoverSuppressed: () => runtimeState.primitiveHoverSuppressed,
-      setPrimitiveHoverSuppressed: value => {
-        runtimeState.primitiveHoverSuppressed = value;
-      },
-      showDelayedTooltip: (html, event, delay = 150) => {
-        tooltip.transition().delay(delay).style('opacity', 0.9);
-        tooltip
-          .html(html)
-          .style('left', `${event.clientX + 13}px`)
-          .style('top', `${event.clientY - 20}px`);
-      },
-      showImmediateTooltip: (html, event) => {
-        tooltip.interrupt().style('opacity', 0.9);
-        tooltip
-          .html(html)
-          .style('left', `${event.clientX + 13}px`)
-          .style('top', `${event.clientY - 20}px`);
-      },
-      moveTooltip: event => {
-        tooltip.style('left', `${event.clientX + 13}px`).style('top', `${event.clientY - 20}px`);
-      },
-      getSelectionValenceTooltipAtomId: () => runtimeState.selectionValenceTooltipAtomId,
-      setSelectionValenceTooltipAtomId: value => {
-        runtimeState.selectionValenceTooltipAtomId = value;
-      },
-      getRenderOptions,
-      atomTooltipHtml,
-      bondTooltipHtml,
-      pointer: (event, node) => d3.pointer(event, node),
-      getGNode: () => g.node()
-    })
-  )
+      }
+    },
+    setPreserveSelectionOnNextRender: value => {
+      runtimeState.preserveSelectionOnNextRender = value;
+    },
+    scale: SCALE,
+    patchForceNodePositions: (patchPos, options = {}) => forceHelpers.patchForceNodePositions(patchPos, options),
+    forceFitTransform: (nodes, pad, options = {}) => forceHelpers.forceFitTransform(nodes, pad, options),
+    forceFitPad: FORCE_LAYOUT_FIT_PAD,
+    forceInitialZoomMultiplier: FORCE_LAYOUT_INITIAL_ZOOM_MULTIPLIER,
+    zoomTransformsDiffer: (a, b, epsilon) => forceHelpers.zoomTransformsDiffer(a, b, epsilon),
+    parseSMILES,
+    parseINCHI,
+    simulation,
+    plotEl,
+    clean2dButton: domElements.getClean2dButtonElement(),
+    cleanForceButton: domElements.getCleanForceButtonElement(),
+    updateModeChrome: _updateModeChrome,
+    getDraw2D: () => draw2d,
+    applyForceSelection,
+    panButton: domElements.getPanButtonElement(),
+    selectButton: domElements.getSelectButtonElement(),
+    drawBondButton: domElements.getDrawBondButtonElement(),
+    eraseButton: domElements.getEraseButtonElement(),
+    getElementButton: element => domElements.getElementButtonElement(element),
+    performStructuralEdit: (...args) => runtimeState.appController.performStructuralEdit(...args),
+    prepareReactionPreviewEraseTargets: (atomIds, bondIds) => _prepareReactionPreviewEraseTargets(atomIds, bondIds),
+    reactionPreviewBlock: ReactionPreviewPolicy.block,
+    normalizeResonanceForEdit: ResonancePolicy.normalizeForEdit,
+    takeSnapshotPolicy: SnapshotPolicy.take,
+    viewportNonePolicy: ViewportPolicy.none,
+    clearStereoAnnotations: (mol, affectedIds) => mol.clearStereoAnnotations(affectedIds),
+    kekulize,
+    refreshAromaticity,
+    patchNodePositions: patchPos => forceHelpers.patchForceNodePositions(patchPos),
+    reseatHydrogensAroundPatched: patchPos => forceHelpers.reseatHydrogensAroundPatched(patchPos),
+    refreshSelectionOverlay: () => _refreshSelectionOverlay(),
+    flashEraseButton: () => {
+      const btn = domElements.getEraseButtonElement();
+      if (!btn) {
+        return;
+      }
+      btn.textContent = '✓';
+      setTimeout(() => {
+        btn.textContent = '🗑️';
+      }, 1500);
+    },
+    createDrag: () => d3.drag(),
+    getDrawBondMode: () => runtimeState.drawBondMode,
+    getEraseMode: () => runtimeState.eraseMode,
+    captureSnapshot: () => _captureAppSnapshot(),
+    getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => selectionStateHelpers.getSelectedDragAtomIds(mol, atomIds, bondIds),
+    getCurrentMolecule: () => runtimeState.currentMol,
+    setAutoFitEnabled: value => {
+      runtimeState.forceAutoFitEnabled = value;
+    },
+    disableKeepInView: () => forceViewportStateHelpers.disableKeepInView(),
+    refresh2dSelection: () => selectionOverlayManager.redraw2dSelection(),
+    hideTooltip: () => {
+      tooltip.transition().duration(50).style('opacity', 0);
+    },
+    setElementCursor: (element, value) => {
+      d3.select(element).style('cursor', value);
+    },
+    g,
+    getMode: () => runtimeState.mode,
+    getDrawBondElement: () => runtimeState.drawBondElement,
+    getDrawElemProtons: () => DRAW_ELEM_PROTONS,
+    isReactionPreviewEditableAtomId: id => _isReactionPreviewEditableAtomId(id),
+    getDrawBondState: () => runtimeState.drawBondState,
+    setDrawBondState: value => {
+      runtimeState.drawBondState = value;
+    },
+    clearHoveredAtomIds: () => runtimeState.hoveredAtomIds.clear(),
+    clearHoveredBondIds: () => runtimeState.hoveredBondIds.clear(),
+    addHoveredAtomId: atomId => runtimeState.hoveredAtomIds.add(atomId),
+    redraw2dSelection: () => selectionOverlayManager.redraw2dSelection(),
+    getPlotSize: () => ({
+      width: plotEl.clientWidth || 600,
+      height: plotEl.clientHeight || 400
+    }),
+    getForceNodeById: atomId => simulation.nodes().find(node => node.id === atomId),
+    getForceNodes: () => simulation.nodes(),
+    get2DAtomById: atomId => runtimeState.mol2d?.atoms.get(atomId),
+    get2DAtoms: () => (runtimeState.mol2d ? [...runtimeState.mol2d.atoms.values()] : []),
+    get2DCenterX: () => runtimeState.cx2d,
+    get2DCenterY: () => runtimeState.cy2d,
+    forceBondLength: FORCE_LAYOUT_BOND_LENGTH,
+    strokeWidth: STROKE_W,
+    fontSize: runtimeState.fontSize,
+    atomRadius,
+    atomColor,
+    strokeColor,
+    singleBondWidth,
+    labelHalfW,
+    setDrawBondHoverSuppressed: value => {
+      runtimeState.drawBondHoverSuppressed = value;
+    },
+    captureZoomTransform: () => zoomTransformHelpers.captureZoomTransformSnapshot(),
+    restore2dEditViewport: (zoomSnapshot, options = {}) => _restore2dEditViewport(zoomSnapshot, options),
+    forceScale: 25,
+    restoreSnapshot: snap => _restoreSnapshot(snap),
+    prepareReactionPreviewEditTargets: payload => _prepareReactionPreviewEditTargets(payload),
+    prepareResonanceStructuralEdit: mol => _prepareResonanceStructuralEdit(mol),
+    getActiveMolecule: () => (runtimeState.mode === 'force' ? runtimeState.currentMol : runtimeState.mol2d),
+    ensureActiveMolecule: () => _ensureMol(),
+    enableKeepInView: () => forceViewportStateHelpers.enableKeepInView(),
+    sync2DDerivedState: mol => render2DHelpers.sync2dDerivedState(mol),
+    syncInputField: mol => _syncInputField(mol),
+    updateFormula: mol => updateFormula(mol),
+    updateDescriptors: mol => updateDescriptors(mol),
+    updatePanels: mol => _updateAnalysisPanels(mol),
+    draw2d: () => renderRuntime.draw2d(),
+    updateForce: (mol, options = {}) => renderRuntime.updateForce(mol, options),
+    clearSelection: () => {
+      runtimeState.selectedAtomIds.clear();
+      runtimeState.selectedBondIds.clear();
+    },
+    changeAtomElements: (atomIds, newEl, options = {}) => _changeAtomElements(atomIds, newEl, options),
+    promoteBondOrder: (bondId, options = {}) => _promoteBondOrder(bondId, options),
+    isAdditiveSelectionEvent: event => _isAdditiveSelectionEvent(event),
+    hasVisibleStereoBond: bondId => runtimeState.stereoMap2d && runtimeState.stereoMap2d.has(bondId),
+    replaceForceHydrogenAtom: (atomId, mol) => _replaceForceHydrogenWithDrawElement(atomId, mol),
+    showPrimitiveHover: (atomIds = [], bondIds = []) => _showPrimitiveHover(atomIds, bondIds),
+    isDrawBondHoverSuppressed: () => runtimeState.drawBondHoverSuppressed,
+    isPrimitiveHoverSuppressed: () => runtimeState.primitiveHoverSuppressed,
+    setPrimitiveHoverSuppressed: value => {
+      runtimeState.primitiveHoverSuppressed = value;
+    },
+    showDelayedTooltip: (html, event, delay = 150) => {
+      tooltip.transition().delay(delay).style('opacity', 0.9);
+      tooltip
+        .html(html)
+        .style('left', `${event.clientX + 13}px`)
+        .style('top', `${event.clientY - 20}px`);
+    },
+    showImmediateTooltip: (html, event) => {
+      tooltip.interrupt().style('opacity', 0.9);
+      tooltip
+        .html(html)
+        .style('left', `${event.clientX + 13}px`)
+        .style('top', `${event.clientY - 20}px`);
+    },
+    moveTooltip: event => {
+      tooltip.style('left', `${event.clientX + 13}px`).style('top', `${event.clientY - 20}px`);
+    },
+    getSelectionValenceTooltipAtomId: () => runtimeState.selectionValenceTooltipAtomId,
+    setSelectionValenceTooltipAtomId: value => {
+      runtimeState.selectionValenceTooltipAtomId = value;
+    },
+    getRenderOptions,
+    atomTooltipHtml,
+    bondTooltipHtml,
+    pointer: (event, node) => d3.pointer(event, node),
+    getGNode: () => g.node()
+  })
 );
 
 const { inputFlowManager, inputControls } = initializeAppRuntime(
-  createAppRuntimeDeps(
-    createAppRuntimeCallDeps({
-      Molecule,
-      document,
-      window,
-      runtimeState,
-      inputEl,
-      getInputMode: () => window.inputMode,
-      setInputMode: value => {
-        window.inputMode = value;
-      },
-      domElements,
-      plotEl,
-      toSMILES,
-      toInChI,
-      appState,
-      getSelectedAtomIds: () => runtimeState.selectedAtomIds,
-      getSelectedBondIds: () => runtimeState.selectedBondIds,
-      setSelectedAtomIds: value => {
-        runtimeState.selectedAtomIds = value;
-      },
-      setSelectedBondIds: value => {
-        runtimeState.selectedBondIds = value;
-      },
-      getSelectMode: () => runtimeState.selectMode,
-      setSelectMode: value => {
-        runtimeState.selectMode = value;
-      },
-      getDrawBondMode: () => runtimeState.drawBondMode,
-      setDrawBondMode: value => {
-        runtimeState.drawBondMode = value;
-      },
-      getEraseMode: () => runtimeState.eraseMode,
-      setEraseMode: value => {
-        runtimeState.eraseMode = value;
-      },
-      getDrawBondElement: () => runtimeState.drawBondElement,
-      setDrawBondElement: value => {
-        runtimeState.drawBondElement = value;
-      },
-      clearSelection: () => {
-        runtimeState.selectedAtomIds.clear();
-        runtimeState.selectedBondIds.clear();
-      },
-      clearHovered: () => {
-        runtimeState.hoveredAtomIds.clear();
-        runtimeState.hoveredBondIds.clear();
-      },
-      clearHoveredAtomIds: () => runtimeState.hoveredAtomIds.clear(),
-      clearHoveredBondIds: () => runtimeState.hoveredBondIds.clear(),
-      setSelectionModifierActive: value => {
-        runtimeState.selectionModifierActive = value;
-      },
-      setErasePainting: value => {
-        runtimeState.erasePainting = value;
-      },
-      syncToolButtonsFromState: () => selectionActions.syncToolButtonsFromState(),
-      refreshSelectionOverlay: () => _refreshSelectionOverlay(),
-      setDrawBondState: value => {
-        runtimeState.drawBondState = value;
-      },
-      setDrawBondHoverSuppressed: value => {
-        runtimeState.drawBondHoverSuppressed = value;
-      },
-      clearDrawBondArtifacts: () => drawBondPreviewActions.clearArtifacts(),
-      getForceAutoFitEnabled: () => runtimeState.forceAutoFitEnabled,
-      setForceAutoFitEnabled: value => {
-        runtimeState.forceAutoFitEnabled = value;
-      },
-      getForceKeepInView: () => runtimeState.forceKeepInView,
-      setForceKeepInView: value => {
-        runtimeState.forceKeepInView = value;
-      },
-      getForceKeepInViewTicks: () => runtimeState.forceKeepInViewTicks,
-      setForceKeepInViewTicks: value => {
-        runtimeState.forceKeepInViewTicks = value;
-      },
-      disableForceKeepInView: () => forceViewportStateHelpers.disableKeepInView(),
-      simulation,
-      isHydrogenNode,
-      forceHelpers,
-      g,
-      getDraw2D: () => draw2d,
-      forceSceneRenderer,
-      resetForceRenderCaches: () => {
-        runtimeState.forceSelectionLines = null;
-        runtimeState.forceSelectionCircles = null;
-        runtimeState.forceValenceWarningCircles = null;
-        runtimeState.functionalGroupHighlightLines = null;
-        runtimeState.functionalGroupHighlightCircles = null;
-      },
-      syncInputField: mol => _syncInputField(mol),
-      captureAppSnapshot: options => _captureAppSnapshot(options),
-      restoreSnapshot: snap => _restoreSnapshot(snap),
-      inputFlowRenderers,
-      renderRuntime,
-      updateFunctionalGroups: mol => updateFunctionalGroups(mol),
-      updateFormula: mol => updateFormula(mol),
-      updateDescriptors: mol => updateDescriptors(mol),
-      updateAnalysisPanels: (mol, options = {}) => _updateAnalysisPanels(mol, options),
-      updateReactionTemplatesPanel: () => updateReactionTemplatesPanel(),
-      updateResonancePanel: (mol, options = {}) => updateResonancePanel(mol, options),
-      clearResonancePanelState: () => clearResonancePanelState(),
-      updateBondEnPanel: mol => updateBondEnPanel(mol),
-      clearBondEnPanel: () => clearBondEnPanel(),
-      captureReactionPreviewSnapshot: () => _captureReactionPreviewSnapshot(),
-      restoreReactionPreviewSnapshot: snap => _restoreReactionPreviewSnapshot(snap),
-      clearReactionPreviewState: () => _clearReactionPreviewState(),
-      reapplyActiveReactionPreview: () => _reapplyActiveReactionPreview(),
-      hasReactionPreview: () => _hasReactionPreview(),
-      prepareReactionPreviewBondEditTarget: bondId => _prepareReactionPreviewBondEditTarget(bondId),
-      prepareReactionPreviewEditTargets: payload => _prepareReactionPreviewEditTargets(payload),
-      prepareResonanceUndoSnapshot: mol => prepareResonanceUndoSnapshot(mol),
-      restoreResonanceViewSnapshot: (mol, snap) => restoreResonanceViewSnapshot(mol, snap),
-      prepareResonanceStructuralEdit: mol => _prepareResonanceStructuralEdit(mol),
-      prepareResonanceStateForStructuralEdit: mol => prepareResonanceStateForStructuralEdit(mol),
-      captureHighlightSnapshot: () => captureHighlightSnapshot(),
-      clearHighlightState: () => clearHighlightState(),
-      restoreHighlightSnapshot: (snapshot, mol) => restoreHighlightSnapshot(snapshot, mol),
-      restorePhyschemHighlightSnapshot: snapshot => runtimeState.restorePhyschemHighlightSnapshot(snapshot),
-      restorePersistentHighlight: () => _restorePersistentHighlight(),
-      takeSnapshot: options => _takeSnapshot(options),
-      updateModeChrome: nextMode => _updateModeChrome(nextMode),
-      restoreZoomTransformSnapshot: snapshot => _restoreZoomTransformSnapshot(snapshot),
-      captureZoomTransformSnapshot: () => _captureZoomTransformSnapshot(),
-      zoomTransformHelpers,
-      zoomToFitIf2d: () => _zoomToFitIf2d(),
-      tooltip,
-      parseSMILES,
-      parseINCHI,
-      detectChemicalStringFormat,
-      kekulize,
-      refreshAromaticity,
-      navigationActions,
-      exampleMolecules,
-      moleculeCatalog,
-      forceBondLength: FORCE_LAYOUT_BOND_LENGTH
-    })
-  )
+  createAppRuntimeDeps({
+    Molecule,
+    document,
+    window,
+    runtimeState,
+    inputEl,
+    getInputMode: () => window.inputMode,
+    setInputMode: value => {
+      window.inputMode = value;
+    },
+    domElements,
+    plotEl,
+    toSMILES,
+    toInChI,
+    appState,
+    getSelectedAtomIds: () => runtimeState.selectedAtomIds,
+    getSelectedBondIds: () => runtimeState.selectedBondIds,
+    setSelectedAtomIds: value => {
+      runtimeState.selectedAtomIds = value;
+    },
+    setSelectedBondIds: value => {
+      runtimeState.selectedBondIds = value;
+    },
+    getSelectMode: () => runtimeState.selectMode,
+    setSelectMode: value => {
+      runtimeState.selectMode = value;
+    },
+    getDrawBondMode: () => runtimeState.drawBondMode,
+    setDrawBondMode: value => {
+      runtimeState.drawBondMode = value;
+    },
+    getEraseMode: () => runtimeState.eraseMode,
+    setEraseMode: value => {
+      runtimeState.eraseMode = value;
+    },
+    getDrawBondElement: () => runtimeState.drawBondElement,
+    setDrawBondElement: value => {
+      runtimeState.drawBondElement = value;
+    },
+    clearSelection: () => {
+      runtimeState.selectedAtomIds.clear();
+      runtimeState.selectedBondIds.clear();
+    },
+    clearHovered: () => {
+      runtimeState.hoveredAtomIds.clear();
+      runtimeState.hoveredBondIds.clear();
+    },
+    clearHoveredAtomIds: () => runtimeState.hoveredAtomIds.clear(),
+    clearHoveredBondIds: () => runtimeState.hoveredBondIds.clear(),
+    setSelectionModifierActive: value => {
+      runtimeState.selectionModifierActive = value;
+    },
+    setErasePainting: value => {
+      runtimeState.erasePainting = value;
+    },
+    syncToolButtonsFromState: () => selectionActions.syncToolButtonsFromState(),
+    refreshSelectionOverlay: () => _refreshSelectionOverlay(),
+    setDrawBondState: value => {
+      runtimeState.drawBondState = value;
+    },
+    setDrawBondHoverSuppressed: value => {
+      runtimeState.drawBondHoverSuppressed = value;
+    },
+    clearDrawBondArtifacts: () => drawBondPreviewActions.clearArtifacts(),
+    getForceAutoFitEnabled: () => runtimeState.forceAutoFitEnabled,
+    setForceAutoFitEnabled: value => {
+      runtimeState.forceAutoFitEnabled = value;
+    },
+    getForceKeepInView: () => runtimeState.forceKeepInView,
+    setForceKeepInView: value => {
+      runtimeState.forceKeepInView = value;
+    },
+    getForceKeepInViewTicks: () => runtimeState.forceKeepInViewTicks,
+    setForceKeepInViewTicks: value => {
+      runtimeState.forceKeepInViewTicks = value;
+    },
+    disableForceKeepInView: () => forceViewportStateHelpers.disableKeepInView(),
+    simulation,
+    isHydrogenNode,
+    forceHelpers,
+    g,
+    getDraw2D: () => draw2d,
+    forceSceneRenderer,
+    resetForceRenderCaches: () => {
+      runtimeState.forceSelectionLines = null;
+      runtimeState.forceSelectionCircles = null;
+      runtimeState.forceValenceWarningCircles = null;
+      runtimeState.functionalGroupHighlightLines = null;
+      runtimeState.functionalGroupHighlightCircles = null;
+    },
+    syncInputField: mol => _syncInputField(mol),
+    captureAppSnapshot: options => _captureAppSnapshot(options),
+    restoreSnapshot: snap => _restoreSnapshot(snap),
+    inputFlowRenderers,
+    renderRuntime,
+    updateFunctionalGroups: mol => updateFunctionalGroups(mol),
+    updateFormula: mol => updateFormula(mol),
+    updateDescriptors: mol => updateDescriptors(mol),
+    updateAnalysisPanels: (mol, options = {}) => _updateAnalysisPanels(mol, options),
+    updateReactionTemplatesPanel: () => updateReactionTemplatesPanel(),
+    updateResonancePanel: (mol, options = {}) => updateResonancePanel(mol, options),
+    clearResonancePanelState: () => clearResonancePanelState(),
+    updateBondEnPanel: mol => updateBondEnPanel(mol),
+    clearBondEnPanel: () => clearBondEnPanel(),
+    updateAtomNumberingPanel: mol => updateAtomNumberingPanel(mol),
+    clearAtomNumberingPanel: () => clearAtomNumberingPanel(),
+    getReactionPreviewReactantAtomIds: () => _getReactionPreviewReactantAtomIds(),
+    getReactionPreviewMappedAtomPairs: () => _getReactionPreviewMappedAtomPairs(),
+    captureReactionPreviewSnapshot: () => _captureReactionPreviewSnapshot(),
+    restoreReactionPreviewSnapshot: snap => _restoreReactionPreviewSnapshot(snap),
+    clearReactionPreviewState: () => _clearReactionPreviewState(),
+    reapplyActiveReactionPreview: () => _reapplyActiveReactionPreview(),
+    hasReactionPreview: () => _hasReactionPreview(),
+    prepareReactionPreviewBondEditTarget: bondId => _prepareReactionPreviewBondEditTarget(bondId),
+    prepareReactionPreviewEditTargets: payload => _prepareReactionPreviewEditTargets(payload),
+    prepareResonanceUndoSnapshot: mol => prepareResonanceUndoSnapshot(mol),
+    restoreResonanceViewSnapshot: (mol, snap) => restoreResonanceViewSnapshot(mol, snap),
+    prepareResonanceStructuralEdit: mol => _prepareResonanceStructuralEdit(mol),
+    prepareResonanceStateForStructuralEdit: mol => prepareResonanceStateForStructuralEdit(mol),
+    captureHighlightSnapshot: () => captureHighlightSnapshot(),
+    clearHighlightState: () => clearHighlightState(),
+    restoreHighlightSnapshot: (snapshot, mol) => restoreHighlightSnapshot(snapshot, mol),
+    restorePhyschemHighlightSnapshot: snapshot => runtimeState.restorePhyschemHighlightSnapshot(snapshot),
+    restorePersistentHighlight: () => _restorePersistentHighlight(),
+    takeSnapshot: options => _takeSnapshot(options),
+    updateModeChrome: nextMode => _updateModeChrome(nextMode),
+    restoreZoomTransformSnapshot: snapshot => _restoreZoomTransformSnapshot(snapshot),
+    captureZoomTransformSnapshot: () => _captureZoomTransformSnapshot(),
+    zoomTransformHelpers,
+    zoomToFitIf2d: () => _zoomToFitIf2d(),
+    tooltip,
+    parseSMILES,
+    parseINCHI,
+    detectChemicalStringFormat,
+    kekulize,
+    refreshAromaticity,
+    navigationActions,
+    exampleMolecules,
+    moleculeCatalog,
+    forceBondLength: FORCE_LAYOUT_BOND_LENGTH
+  })
 );
 
 finalizeAppBootstrap(
-  createFinalizeAppBootstrapDeps(
-    createFinalizeBootstrapCallDeps({
-      createAppDelegates,
-      createUndoDeps,
-      createReaction2dDeps,
-      createResonancePanelDeps,
-      createBondEnPanelDeps,
-      createOptionsModalDeps,
-      createPhyschemPanelDeps,
-      createAppShellDeps,
-      initUndo,
-      initHighlights,
-      initExport,
-      initReaction2d,
-      initResonancePanel,
-      initBondEnPanel,
-      initNavigationInteractions,
-      initKeyboardInteractions,
-      initGestureInteractions,
-      initOptionsModal,
-      initPlotInteractions,
-      initTabPanels,
-      initPhyschemPanel,
-      initAppShell,
-      setDelegates: appDelegates => {
-        ({
-          handle2dPrimitiveClick: _handle2dPrimitiveClick,
-          handle2dComponentDblClick: _handle2dComponentDblClick,
-          handleForcePrimitiveClick: _handleForcePrimitiveClick,
-          handleForceComponentDblClick: _handleForceComponentDblClick,
-          drawBond: _drawBond,
-          redraw2dHighlights: _redraw2dHighlights,
-          restore2dEditViewport: _restore2dEditViewport,
-          prepareResonanceStructuralEdit: _prepareResonanceStructuralEdit,
-          promoteBondOrder: _promoteBondOrder,
-          changeAtomElements: _changeAtomElements,
-          replaceForceHydrogenWithDrawElement: _replaceForceHydrogenWithDrawElement,
-          startDrawBond: _startDrawBond,
-          updateDrawBondPreview: _updateDrawBondPreview,
-          resetDrawBondHover: _resetDrawBondHover,
-          cancelDrawBond: _cancelDrawBond,
-          ensureMol: _ensureMol,
-          autoPlaceBond: _autoPlaceBond,
-          commitDrawBond: _commitDrawBond,
-          draw2d,
-          render2d,
-          fitCurrent2dView,
-          eraseItem: _eraseItem,
-          captureZoomTransformSnapshot: _captureZoomTransformSnapshot,
-          restoreZoomTransformSnapshot: _restoreZoomTransformSnapshot,
-          pickStereoWedgesPreserving2dChoice: _pickStereoWedgesPreserving2dChoice,
-          renderMol: _renderMol,
-          clearMolecule: _clearMolecule,
-          parseAndRender: _parseAndRender,
-          parseAndRenderInchi: _parseAndRenderInchi
-        } = appDelegates);
-      },
-      appController: runtimeState.appController,
-      runtimeState,
-      appState,
-      getDrawBondState: () => runtimeState.drawBondState,
-      setDrawBondHoverSuppressed: value => {
-        runtimeState.drawBondHoverSuppressed = value;
-      },
-      getSelectMode: () => runtimeState.selectMode,
-      getDrawBondMode: () => runtimeState.drawBondMode,
-      getEraseMode: () => runtimeState.eraseMode,
-      setCapturePhyschemHighlightSnapshot: fn => {
-        runtimeState.capturePhyschemHighlightSnapshot = fn;
-      },
-      setRestorePhyschemHighlightSnapshot: fn => {
-        runtimeState.restorePhyschemHighlightSnapshot = fn;
-      },
-      getInitialSmiles: () => 'CC(=O)C(Cl)CC(C(C)C)C=C',
-      primitiveSelectionActions,
-      drawBondPreviewActions,
-      drawBondCommitActions,
-      editingActions,
-      selectionActions,
-      render2DHelpers,
-      highlight2DRenderer,
-      scene2DRenderer,
-      zoomTransformHelpers,
-      renderRuntime,
-      applyForceHighlights: () => applyForceHighlights(),
-      refreshSelectionOverlay: () => _refreshSelectionOverlay(),
-      applyForceSelection: () => applyForceSelection(),
-      selectionOverlayManager,
-      forceSceneRenderer,
-      syncDisplayStereo,
-      clearReactionPreviewState: () => _clearReactionPreviewState(),
-      restoreReactionPreviewSource: options => _restoreReactionPreviewSource(options),
-      reapplyActiveReactionPreview: () => _reapplyActiveReactionPreview(),
-      hasReactionPreview: () => _hasReactionPreview(),
-      isReactionPreviewEditableAtomId: id => _isReactionPreviewEditableAtomId(id),
-      getReactionPreviewSourceMol: () => _getReactionPreviewSourceMol(),
-      takeSnapshot: options => _takeSnapshot(options),
-      undoAction: () => undoAction(),
-      redoAction: () => redoAction(),
-      d3,
-      svg,
-      zoom,
-      g,
-      plotEl,
-      simulation,
-      document,
-      window,
-      tooltip,
-      domElements,
-      clearPrimitiveHover: () => _clearPrimitiveHover(),
-      showPrimitiveHover: (atomIds = [], bondIds = []) => _showPrimitiveHover(atomIds, bondIds),
-      updateAnalysisPanels: (mol, options = {}) => _updateAnalysisPanels(mol, options),
-      prepare2dExportHighlightState: () => _prepare2dExportHighlightState(),
-      setHighlight: (mappings, options = {}) => _setHighlight(mappings, options),
-      restorePersistentHighlight: () => _restorePersistentHighlight(),
-      setPersistentHighlightFallback: (fn, options) => setPersistentHighlightFallback(fn, options),
-      renderOptionLimits: RENDER_OPTION_LIMITS,
-      getRenderOptions: () => getRenderOptions(),
-      getDefaultRenderOptions: () => getDefaultRenderOptions(),
-      updateRenderOptions: nextOptions => updateRenderOptions(nextOptions),
-      inputControls,
-      inputFlowManager,
-      parseSMILES,
-      parseINCHI,
-      copyForcePng,
-      copyForceSvg,
-      copySvg2d,
-      savePng2d,
-      atomTooltipHtml,
-      toSMILES,
-      toInChI
-    })
-  )
+  createFinalizeAppBootstrapDeps({
+    createAppDelegates,
+    createReaction2dDeps,
+    createResonancePanelDeps,
+    createBondEnPanelDeps,
+    createAtomNumberingPanelDeps,
+    createOptionsModalDeps,
+    createPhyschemPanelDeps,
+    createAppShellDeps,
+    initUndo,
+    initHighlights,
+    initExport,
+    initReaction2d,
+    initResonancePanel,
+    initBondEnPanel,
+    initAtomNumberingPanel,
+    initNavigationInteractions,
+    initKeyboardInteractions,
+    initGestureInteractions,
+    initOptionsModal,
+    initPlotInteractions,
+    initTabPanels,
+    initPhyschemPanel,
+    initAppShell,
+    setDelegates: appDelegates => {
+      ({
+        handle2dPrimitiveClick: _handle2dPrimitiveClick,
+        handle2dComponentDblClick: _handle2dComponentDblClick,
+        handleForcePrimitiveClick: _handleForcePrimitiveClick,
+        handleForceComponentDblClick: _handleForceComponentDblClick,
+        drawBond: _drawBond,
+        redraw2dHighlights: _redraw2dHighlights,
+        restore2dEditViewport: _restore2dEditViewport,
+        prepareResonanceStructuralEdit: _prepareResonanceStructuralEdit,
+        promoteBondOrder: _promoteBondOrder,
+        changeAtomElements: _changeAtomElements,
+        replaceForceHydrogenWithDrawElement: _replaceForceHydrogenWithDrawElement,
+        startDrawBond: _startDrawBond,
+        updateDrawBondPreview: _updateDrawBondPreview,
+        resetDrawBondHover: _resetDrawBondHover,
+        cancelDrawBond: _cancelDrawBond,
+        ensureMol: _ensureMol,
+        autoPlaceBond: _autoPlaceBond,
+        commitDrawBond: _commitDrawBond,
+        draw2d,
+        render2d,
+        fitCurrent2dView,
+        eraseItem: _eraseItem,
+        captureZoomTransformSnapshot: _captureZoomTransformSnapshot,
+        restoreZoomTransformSnapshot: _restoreZoomTransformSnapshot,
+        pickStereoWedgesPreserving2dChoice: _pickStereoWedgesPreserving2dChoice,
+        renderMol: _renderMol,
+        clearMolecule: _clearMolecule,
+        parseAndRender: _parseAndRender,
+        parseAndRenderInchi: _parseAndRenderInchi
+      } = appDelegates);
+    },
+    appController: runtimeState.appController,
+    runtimeState,
+    appState,
+    getDrawBondState: () => runtimeState.drawBondState,
+    setDrawBondHoverSuppressed: value => {
+      runtimeState.drawBondHoverSuppressed = value;
+    },
+    getSelectMode: () => runtimeState.selectMode,
+    getDrawBondMode: () => runtimeState.drawBondMode,
+    getEraseMode: () => runtimeState.eraseMode,
+    setCapturePhyschemHighlightSnapshot: fn => {
+      runtimeState.capturePhyschemHighlightSnapshot = fn;
+    },
+    setRestorePhyschemHighlightSnapshot: fn => {
+      runtimeState.restorePhyschemHighlightSnapshot = fn;
+    },
+    getInitialSmiles: () => 'CC(=O)C(Cl)CC(C(C)C)C=C',
+    primitiveSelectionActions,
+    drawBondPreviewActions,
+    drawBondCommitActions,
+    editingActions,
+    selectionActions,
+    render2DHelpers,
+    highlight2DRenderer,
+    scene2DRenderer,
+    zoomTransformHelpers,
+    renderRuntime,
+    applyForceHighlights: () => applyForceHighlights(),
+    refreshSelectionOverlay: () => _refreshSelectionOverlay(),
+    applyForceSelection: () => applyForceSelection(),
+    selectionOverlayManager,
+    forceSceneRenderer,
+    syncDisplayStereo,
+    clearReactionPreviewState: () => _clearReactionPreviewState(),
+    restoreReactionPreviewSource: options => _restoreReactionPreviewSource(options),
+    reapplyActiveReactionPreview: () => _reapplyActiveReactionPreview(),
+    hasReactionPreview: () => _hasReactionPreview(),
+    isReactionPreviewEditableAtomId: id => _isReactionPreviewEditableAtomId(id),
+    getReactionPreviewSourceMol: () => _getReactionPreviewSourceMol(),
+    getReactionPreviewMappedAtomPairs: () => _getReactionPreviewMappedAtomPairs(),
+    getReactionPreviewReactantAtomIds: () => _getReactionPreviewReactantAtomIds(),
+    takeSnapshot: options => _takeSnapshot(options),
+    undoAction: () => undoAction(),
+    redoAction: () => redoAction(),
+    d3,
+    svg,
+    zoom,
+    g,
+    plotEl,
+    simulation,
+    document,
+    window,
+    tooltip,
+    domElements,
+    clearPrimitiveHover: () => _clearPrimitiveHover(),
+    showPrimitiveHover: (atomIds = [], bondIds = []) => _showPrimitiveHover(atomIds, bondIds),
+    updateAnalysisPanels: (mol, options = {}) => _updateAnalysisPanels(mol, options),
+    prepare2dExportHighlightState: () => _prepare2dExportHighlightState(),
+    setHighlight: (mappings, options = {}) => _setHighlight(mappings, options),
+    restorePersistentHighlight: () => _restorePersistentHighlight(),
+    setPersistentHighlightFallback: (fn, options) => setPersistentHighlightFallback(fn, options),
+    renderOptionLimits: RENDER_OPTION_LIMITS,
+    getRenderOptions: () => getRenderOptions(),
+    getDefaultRenderOptions: () => getDefaultRenderOptions(),
+    updateRenderOptions: nextOptions => updateRenderOptions(nextOptions),
+    inputControls,
+    inputFlowManager,
+    parseSMILES,
+    parseINCHI,
+    copyForcePng,
+    copyForceSvg,
+    copySvg2d,
+    savePng2d,
+    atomTooltipHtml,
+    toSMILES,
+    toInChI
+  })
 );

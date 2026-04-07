@@ -1,6 +1,19 @@
 /** @module app/bootstrap/deps/interaction-runtime-deps */
 
-export { DRAW_ELEM_PROTONS } from './interaction-runtime-call-deps.js';
+export const DRAW_ELEM_PROTONS = {
+  H: 1,
+  B: 5,
+  C: 6,
+  N: 7,
+  O: 8,
+  F: 9,
+  P: 15,
+  S: 16,
+  Cl: 17,
+  Br: 35,
+  I: 53,
+  K: 19
+};
 
 export function createInteractionRuntimeDeps(ctx) {
   return {

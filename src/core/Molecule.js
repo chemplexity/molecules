@@ -820,7 +820,8 @@ export class Molecule {
     const c = this.getComponents().length;
     const ringCount = m - n + c;
     if (ringCount <= 0) {
-      return [];
+      this._ringsCache = [];
+      return this._ringsCache;
     }
 
     // For each bond (u,v), find the smallest ring containing it by running a

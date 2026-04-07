@@ -469,7 +469,13 @@ export function updateFunctionalGroups(mol) {
   const previousActiveKey = _activeFunctionalGroupKey;
   const previousActiveIndex = _activeFunctionalGroupMatchIndex;
   let activeStillPresent = false;
+  if (typeof document === 'undefined') {
+    return;
+  }
   const tbody = document.getElementById('fg-body');
+  if (!tbody) {
+    return;
+  }
   tbody.innerHTML = '';
   for (const [, fg] of Object.entries(functionalGroups)) {
     const mappings = [...findSMARTS(mol, fg.smarts)];

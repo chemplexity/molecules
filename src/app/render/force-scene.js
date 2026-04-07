@@ -3,6 +3,7 @@
 import { getRenderOptions, atomColor, strokeColor, singleBondWidth, prepareAromaticBondRendering, atomRadius, xOffset, yOffset, PI_STROKE, ARO_STROKE } from './helpers.js';
 import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, computeLonePairDotPositions } from '../../layout/mol2d-helpers.js';
 import { getBondEnOverlayData } from './bond-en-polarity.js';
+import { getAtomNumberMap } from './atom-numbering.js';
 
 function _capturePreviousNodePositions(simulation) {
   return new Map(
@@ -391,12 +392,94 @@ export function createForceSceneRenderer(ctx) {
     }
     _updateForceBondEnLabels();
 
+    const forceNumberMap = getAtomNumberMap(molecule);
+    const forceNodeById2 = new Map(graph.nodes.map(node => [node.id, node]));
+    let forceAtomNumberLabels = null;
+    if (forceNumberMap) {
+      // Build per-node neighbor list for bond-avoidance offset.
+      const nodeNeighbors = new Map(graph.nodes.map(n => [n.id, []]));
+      for (const link of graph.links) {
+        nodeNeighbors.get(link.source.id)?.push(link.target);
+        nodeNeighbors.get(link.target.id)?.push(link.source);
+      }
+      const numLayer = ctx.g.append('g').attr('class', 'force-atom-numbering').style('pointer-events', 'none');
+      const numData = [...forceNumberMap.entries()]
+        .map(([id, num]) => ({
+          node: forceNodeById2.get(id),
+          label: String(num),
+          neighbors: nodeNeighbors.get(id) ?? []
+        }))
+        .filter(d => d.node);
+      forceAtomNumberLabels = numLayer
+        .selectAll('text.force-atom-num')
+        .data(numData)
+        .enter()
+        .append('text')
+        .attr('class', 'force-atom-num')
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'central')
+        .attr('font-size', '10px')
+        .attr('pointer-events', 'none')
+        .attr('fill', '#444')
+        .text(d => d.label);
+    }
+
+    const _NUM_DIST = 15;
+    function _updateForceAtomNumberLabels() {
+      if (!forceAtomNumberLabels) {
+        return;
+      }
+      forceAtomNumberLabels.attr('transform', d => {
+        const { node, neighbors } = d;
+        // Blocked angles: bond directions, charge badge, lone pairs.
+        const blockedAngles = neighbors.map(nb => Math.atan2(nb.y - node.y, nb.x - node.x));
+        const chargeAngle = forceChargeAngleByAtomId.get(node.id);
+        if (chargeAngle != null) {
+          blockedAngles.push(chargeAngle);
+        }
+        const atom = molecule.atoms.get(node.id);
+        if (atom && showLonePairs) {
+          const lp = _forceLonePairDotsForAtom(atom);
+          for (const dot of lp) {
+            blockedAngles.push(Math.atan2(dot.y - node.y, dot.x - node.x));
+          }
+        }
+        let angle;
+        if (blockedAngles.length === 0) {
+          angle = -Math.PI / 4;
+        } else {
+          const sorted = blockedAngles.slice().sort((a, b) => a - b);
+          let bestGap = 0;
+          angle = sorted[0] + Math.PI;
+          for (let i = 0; i < sorted.length; i++) {
+            const a1 = sorted[i];
+            const a2 = i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + 2 * Math.PI;
+            const gap = a2 - a1;
+            if (gap > bestGap) {
+              bestGap = gap;
+              angle = a1 + gap / 2;
+            }
+          }
+        }
+        return `translate(${node.x + Math.cos(angle) * _NUM_DIST},${node.y + Math.sin(angle) * _NUM_DIST})`;
+      });
+    }
+    _updateForceAtomNumberLabels();
+
     ctx.simulation.on('tick', () => {
       ctx.helpers.renderReactionPreviewArrowForce(graph.nodes);
 
-      singleBond.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+      singleBond
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y);
 
-      doubleSep.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+      doubleSep
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y);
 
       aroBond1
         .attr('x1', d => d.source.x - xOffset(ctx.constants.bondOffset, d.source, d.target))
@@ -422,7 +505,11 @@ export function createForceSceneRenderer(ctx) {
         .attr('x2', d => d.target.x - xOffset(-ctx.constants.bondOffset, d.source, d.target))
         .attr('y2', d => d.target.y - yOffset(-ctx.constants.bondOffset, d.source, d.target));
 
-      bondHoverTarget.attr('x1', d => d.source.x).attr('y1', d => d.source.y).attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+      bondHoverTarget
+        .attr('x1', d => d.source.x)
+        .attr('y1', d => d.source.y)
+        .attr('x2', d => d.target.x)
+        .attr('y2', d => d.target.y);
 
       atom.attr('cx', d => d.x).attr('cy', d => d.y);
       atomSymbol.attr('x', d => d.x).attr('y', d => d.y);
@@ -435,6 +522,7 @@ export function createForceSceneRenderer(ctx) {
       _updateForceLonePairs();
       _updateForceChargeLabels();
       _updateForceBondEnLabels();
+      _updateForceAtomNumberLabels();
 
       const highlightLines = ctx.cache.getHighlightLines();
       const highlightCircles = ctx.cache.getHighlightCircles();

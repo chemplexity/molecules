@@ -47,6 +47,7 @@ export function createSessionUiStateBridge(deps) {
       deps.document.getElementById('reaction-body').innerHTML = '';
       deps.clearResonancePanelState();
       deps.clearBondEnPanel?.();
+      deps.clearAtomNumberingPanel?.();
       return;
     }
     deps.updateFunctionalGroups(mol);
@@ -55,6 +56,7 @@ export function createSessionUiStateBridge(deps) {
       deps.updateResonancePanel(mol, { recompute: recomputeResonance });
     }
     deps.updateBondEnPanel?.(mol);
+    deps.updateAtomNumberingPanel?.(mol);
   }
 
   function capturePanelState() {

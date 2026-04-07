@@ -1,6 +1,7 @@
 import { Molecule } from '../core/Molecule.js';
 import { applySMIRKS } from '../smirks/index.js';
 import { generateAndRefine2dCoords } from './index.js';
+import { levelCoords } from './coords2d.js';
 import { normalizeOrientation, shouldPreferFinalLandscapeOrientation } from './coords2d/orientation.js';
 import { applyDisplayedStereoToCenter, pickStereoWedges } from './mol2d-helpers.js';
 
@@ -429,6 +430,27 @@ export function mappedAtomReaction2dLocallyAnchored(reactant, product, mol, comp
     })
     .sort();
   return reactantMappedNeighbors.join('|') === productMappedNeighbors.join('|');
+}
+
+function restoreMappedReaction2dRingScaffoldCoords(mol, componentAtomIds) {
+  if (!mol?.__reactionPreview?.mappedAtomPairs?.length || !componentAtomIds?.size) {
+    return;
+  }
+  for (const [reactantId, productId] of mol.__reactionPreview.mappedAtomPairs) {
+    if (!componentAtomIds.has(productId)) {
+      continue;
+    }
+    const reactantAtom = mol.atoms.get(reactantId);
+    const productAtom = mol.atoms.get(productId);
+    if (!reactantAtom || !productAtom || reactantAtom.name === 'H' || productAtom.name === 'H') {
+      continue;
+    }
+    if (!reactantAtom.isInRing(mol) || !productAtom.isInRing(mol)) {
+      continue;
+    }
+    productAtom.x = reactantAtom.x;
+    productAtom.y = reactantAtom.y;
+  }
 }
 
 function scaledReaction2dBondLength(order, bondLength = 1.5) {
@@ -1213,8 +1235,12 @@ function idealizeReaction2dTrigonalCenters(mol, componentAtomIds, bondLength = 1
     return;
   }
   const mappedProductIds = new Set((mol.__reactionPreview.mappedAtomPairs ?? []).filter(([, productId]) => componentAtomIds.has(productId)).map(([, productId]) => productId));
+  const ringAtomIds = new Set(mol.getRings().flat());
 
   for (const centerId of componentAtomIds) {
+    if (ringAtomIds.has(centerId)) {
+      continue;
+    }
     const center = mol.atoms.get(centerId);
     if (!center || center.name === 'H' || center.x == null || center.y == null) {
       continue;
@@ -2104,6 +2130,9 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     if (!mappedConnectivityChanged) {
       refineReaction2dEditedGeometry(mol, componentAtomIds, bondLength);
     }
+    if (!mappedRingMembershipChanged) {
+      restoreMappedReaction2dRingScaffoldCoords(mol, componentAtomIds);
+    }
     preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds);
 
     // Ring-opening reactions (e.g. ether cleavage) produce an acyclic chain
@@ -2137,6 +2166,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
           }
         }
         normalizeOrientation(componentCoords, checkMol);
+        levelCoords(componentCoords, checkMol);
         for (const [atomId, pos] of componentCoords) {
           const atom = mol.atoms.get(atomId);
           if (atom) {

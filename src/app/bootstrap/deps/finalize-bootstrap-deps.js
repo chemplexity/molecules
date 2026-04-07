@@ -4,10 +4,10 @@ export function createFinalizeAppBootstrapDeps(ctx) {
   return {
     factories: {
       createAppDelegates: ctx.createAppDelegates,
-      createUndoDeps: ctx.createUndoDeps,
       createReaction2dDeps: ctx.createReaction2dDeps,
       createResonancePanelDeps: ctx.createResonancePanelDeps,
       createBondEnPanelDeps: ctx.createBondEnPanelDeps,
+      createAtomNumberingPanelDeps: ctx.createAtomNumberingPanelDeps,
       createOptionsModalDeps: ctx.createOptionsModalDeps,
       createPhyschemPanelDeps: ctx.createPhyschemPanelDeps,
       createAppShellDeps: ctx.createAppShellDeps,
@@ -17,6 +17,7 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       initReaction2d: ctx.initReaction2d,
       initResonancePanel: ctx.initResonancePanel,
       initBondEnPanel: ctx.initBondEnPanel,
+      initAtomNumberingPanel: ctx.initAtomNumberingPanel,
       initNavigationInteractions: ctx.initNavigationInteractions,
       initKeyboardInteractions: ctx.initKeyboardInteractions,
       initGestureInteractions: ctx.initGestureInteractions,
@@ -102,7 +103,9 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       reapplyActiveReactionPreview: () => ctx.reapplyActiveReactionPreview(),
       hasReactionPreview: () => ctx.hasReactionPreview(),
       isReactionPreviewEditableAtomId: id => ctx.isReactionPreviewEditableAtomId(id),
-      getReactionPreviewSourceMol: () => ctx.getReactionPreviewSourceMol()
+      getReactionPreviewSourceMol: () => ctx.getReactionPreviewSourceMol(),
+      getReactionPreviewMappedAtomPairs: () => ctx.getReactionPreviewMappedAtomPairs(),
+      getReactionPreviewReactantAtomIds: () => ctx.getReactionPreviewReactantAtomIds()
     },
     history: {
       takeSnapshot: options => ctx.takeSnapshot(options),
@@ -132,7 +135,12 @@ export function createFinalizeAppBootstrapDeps(ctx) {
         ctx.tooltip.interrupt().style('opacity', 0);
       },
       showTooltip: (html, event) => {
-        ctx.tooltip.interrupt().style('opacity', 0.9).html(html).style('left', `${event.clientX + 13}px`).style('top', `${event.clientY - 20}px`);
+        ctx.tooltip
+          .interrupt()
+          .style('opacity', 0.9)
+          .html(html)
+          .style('left', `${event.clientX + 13}px`)
+          .style('top', `${event.clientY - 20}px`);
       },
       handleForceResize: () => {
         if (ctx.runtimeState.currentMol) {

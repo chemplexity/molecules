@@ -238,7 +238,10 @@ export function atomTooltipHtml(atom, _mol, valenceWarning = null, layout = '2d'
     rows += row('Chirality', p.chirality);
   }
 
-  const color = atomColor(atom.name, layout);
+  let color = atomColor(atom.name, layout);
+  if (atom.name === 'H' && layout === 'force') {
+    color = 'black';
+  }
   const warningHtml = valenceWarning ? `<div style="margin:6px 0 8px;color:#b3202e;font-weight:600">${escapeHtml(valenceWarning.reason)}</div>` : '';
   return `<div class="tt-head" style="color:${color}">${isotopePrefix}${atom.name}${chargeSup}
         <span style="font-size:11px;font-weight:normal;color:#aaa;margin-left:4px">${atom.id}</span>

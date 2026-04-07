@@ -29,23 +29,14 @@ export function finalizeAppBootstrap(ctx) {
 
   ctx.setDelegates?.(appDelegates);
 
-  const {
-    changeAtomElements,
-    draw2d,
-    captureZoomTransformSnapshot,
-    restoreZoomTransformSnapshot,
-    commitDrawBond,
-    render2d
-  } = appDelegates;
+  const { changeAtomElements, draw2d, captureZoomTransformSnapshot, restoreZoomTransformSnapshot, commitDrawBond, render2d } = appDelegates;
 
-  ctx.factories.initUndo(
-    ctx.factories.createUndoDeps({
-      captureAppSnapshot: options => ctx.controller.captureAppSnapshot(options),
-      clearReactionPreviewState: () => ctx.overlays.clearReactionPreviewState(),
-      restoreReactionPreviewSource: () => ctx.overlays.restoreReactionPreviewSource(),
-      restoreAppSnapshot: snap => ctx.controller.restoreAppSnapshot(snap)
-    })
-  );
+  ctx.factories.initUndo({
+    captureAppSnapshot: options => ctx.controller.captureAppSnapshot(options),
+    clearReactionPreviewState: () => ctx.overlays.clearReactionPreviewState(),
+    restoreReactionPreviewSource: () => ctx.overlays.restoreReactionPreviewSource(),
+    restoreAppSnapshot: snap => ctx.controller.restoreAppSnapshot(snap)
+  });
 
   ctx.factories.initHighlights({
     get mode() {
@@ -155,6 +146,25 @@ export function finalizeAppBootstrap(ctx) {
       renderers: {
         draw2d: () => draw2d(),
         updateForce: ctx.render.renderRuntime.updateForce
+      }
+    })
+  );
+
+  ctx.factories.initAtomNumberingPanel(
+    ctx.factories.createAtomNumberingPanelDeps({
+      state: {
+        getMode: ctx.state.getMode,
+        getCurrentMol: ctx.state.getCurrentMol,
+        getMol2d: ctx.state.getMol2d
+      },
+      renderers: {
+        draw2d: () => draw2d(),
+        updateForce: ctx.render.renderRuntime.updateForce
+      },
+      overlays: {
+        hasReactionPreview: () => ctx.overlays.hasReactionPreview(),
+        getReactionPreviewMappedAtomPairs: () => ctx.overlays.getReactionPreviewMappedAtomPairs(),
+        getReactionPreviewReactantAtomIds: () => ctx.overlays.getReactionPreviewReactantAtomIds()
       }
     })
   );
@@ -380,9 +390,7 @@ export function finalizeAppBootstrap(ctx) {
             return;
           }
           ctx.view.resetOrientation();
-          const mol = ctx.state.getCurrentInchi()
-            ? ctx.parsers.parseINCHI(ctx.state.getCurrentInchi())
-            : ctx.parsers.parseSMILES(ctx.state.getCurrentSmiles());
+          const mol = ctx.state.getCurrentInchi() ? ctx.parsers.parseINCHI(ctx.state.getCurrentInchi()) : ctx.parsers.parseSMILES(ctx.state.getCurrentSmiles());
           render2d(mol);
         }
       },

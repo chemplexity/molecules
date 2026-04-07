@@ -225,6 +225,14 @@ export function _getReactionPreviewSourceMol() {
   return _reactionPreviewSourceMol?.clone() ?? null;
 }
 
+export function _getReactionPreviewReactantAtomIds() {
+  return _reactionPreviewReactantAtomIds;
+}
+
+export function _getReactionPreviewMappedAtomPairs() {
+  return _reactionPreviewMappedAtomPairs ?? [];
+}
+
 function _getReactionTemplateSourceMol() {
   if (_reactionPreviewSourceMol) {
     return _reactionPreviewSourceMol;
@@ -1267,7 +1275,8 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
       recomputeResonance: false,
       refreshResonancePanel: false,
       preserveHistory: true,
-      preserveAnalysis: true
+      preserveAnalysis: true,
+      preserveGeometry: true
     });
     updateFunctionalGroups(preview.mol);
     updateResonancePanel(_reactionPreviewSourceMol ?? sourceMol, { recompute: false });
