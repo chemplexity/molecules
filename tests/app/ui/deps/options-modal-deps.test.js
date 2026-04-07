@@ -11,9 +11,9 @@ describe('createOptionsModalDeps', () => {
         getOverlayElement: () => 'overlay',
         getShowValenceWarningsElement: () => 'valence',
         getShowAtomTooltipsElement: () => 'tooltips',
-        getShowLonePairsElement: () => 'lonePairs',
         get2DAtomColoringElement: () => 'atomColoring',
         get2DAtomFontSizeElement: () => 'fontSize',
+        getAtomNumberingFontSizeElement: () => 'atomNumberingFontSize',
         get2DBondThicknessElement: () => 'bondThickness',
         getForceAtomSizeElement: () => 'forceAtomSize',
         getForceBondThicknessElement: () => 'forceBondThickness',
@@ -44,6 +44,7 @@ describe('createOptionsModalDeps', () => {
 
     assert.equal(deps.doc.id, 'doc');
     assert.equal(deps.dom.getOverlayElement(), 'overlay');
+    assert.equal(deps.dom.getAtomNumberingFontSizeElement(), 'atomNumberingFontSize');
     assert.equal(deps.options.getRenderOptions(), 'renderOptions');
     assert.deepEqual(deps.options.updateRenderOptions('x'), { next: 'x' });
     assert.equal(deps.state.getMode(), '2d');

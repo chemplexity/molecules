@@ -37,24 +37,24 @@ describe('initOptionsModal', () => {
     const currentOptions = {
       showValenceWarnings: true,
       showAtomTooltips: true,
-      showLonePairs: false,
       twoDAtomColoring: true,
       twoDAtomFontSize: 14,
+      atomNumberingFontSize: 10,
       twoDBondThickness: 1.6,
       forceAtomSizeMultiplier: 1,
       forceBondThicknessMultiplier: 1
     };
     const defaultOptions = {
       ...currentOptions,
-      showLonePairs: true,
-      twoDAtomFontSize: 18
+      twoDAtomFontSize: 18,
+      atomNumberingFontSize: 12
     };
 
     const showValenceWarningsEl = makeCheckbox();
     const showAtomTooltipsEl = makeCheckbox();
-    const showLonePairsEl = makeCheckbox();
     const twoDAtomColoringEl = makeCheckbox();
     const twoDAtomFontSizeEl = makeInput();
+    const atomNumberingFontSizeEl = makeInput();
     const twoDBondThicknessEl = makeInput();
     const forceAtomSizeEl = makeInput();
     const forceBondThicknessEl = makeInput();
@@ -72,9 +72,9 @@ describe('initOptionsModal', () => {
         getOverlayElement: () => overlayEl,
         getShowValenceWarningsElement: () => showValenceWarningsEl,
         getShowAtomTooltipsElement: () => showAtomTooltipsEl,
-        getShowLonePairsElement: () => showLonePairsEl,
         get2DAtomColoringElement: () => twoDAtomColoringEl,
         get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
+        getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
         get2DBondThicknessElement: () => twoDBondThicknessEl,
         getForceAtomSizeElement: () => forceAtomSizeEl,
         getForceBondThicknessElement: () => forceBondThicknessEl,
@@ -85,6 +85,7 @@ describe('initOptionsModal', () => {
       options: {
         limits: {
           twoDAtomFontSize: { min: 10, max: 24 },
+          atomNumberingFontSize: { min: 8, max: 24 },
           twoDBondThickness: { min: 0.8, max: 4 },
           forceAtomSizeMultiplier: { min: 0.5, max: 2.5 },
           forceBondThicknessMultiplier: { min: 0.5, max: 2.5 }
@@ -115,15 +116,16 @@ describe('initOptionsModal', () => {
     assert.equal(overlayEl.hidden, false);
     assert.equal(showValenceWarningsEl.checked, true);
     assert.equal(showAtomTooltipsEl.checked, true);
-    assert.equal(showLonePairsEl.checked, false);
     assert.equal(twoDAtomFontSizeEl.value, '14');
+    assert.equal(atomNumberingFontSizeEl.value, '10');
 
     resetBtnEl.trigger('click');
-    assert.equal(showLonePairsEl.checked, true);
     assert.equal(twoDAtomFontSizeEl.value, '18');
+    assert.equal(atomNumberingFontSizeEl.value, '12');
 
     showAtomTooltipsEl.checked = false;
     twoDAtomFontSizeEl.value = '30';
+    atomNumberingFontSizeEl.value = '30';
     applyBtnEl.trigger('click');
 
     assert.equal(overlayEl.hidden, true);
@@ -133,9 +135,9 @@ describe('initOptionsModal', () => {
         {
           showValenceWarnings: true,
           showAtomTooltips: false,
-          showLonePairs: true,
           twoDAtomColoring: true,
           twoDAtomFontSize: 24,
+          atomNumberingFontSize: 24,
           twoDBondThickness: 1.6,
           forceAtomSizeMultiplier: 1,
           forceBondThicknessMultiplier: 1

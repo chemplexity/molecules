@@ -48,6 +48,8 @@ export function createAtomNumberingPanelDeps(deps) {
     },
     draw2d: deps.renderers.draw2d,
     updateForce: deps.renderers.updateForce,
+    getRenderOptions: deps.options.getRenderOptions,
+    updateRenderOptions: deps.options.updateRenderOptions,
     hasReactionPreview: deps.overlays.hasReactionPreview,
     getReactionPreviewReactantAtomIds: deps.overlays.getReactionPreviewReactantAtomIds,
     getReactionPreviewMappedAtomPairs: deps.overlays.getReactionPreviewMappedAtomPairs

@@ -2,6 +2,7 @@
 
 ## 2026-04-06
 
+- Fix atom numbering for reaction mapping
 - Add Atom Numbering toggle to the Other panel (works in 2D, force, and reaction preview)
 - Skip redundant full-molecule coordinate generation when activating a reaction preview
 - Cache empty ring array for acyclic molecules in `getRings()`

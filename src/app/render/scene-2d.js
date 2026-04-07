@@ -2,7 +2,7 @@
 
 import { getRenderOptions, atomColor, renderAtomLabel, renderLonePairDots, renderBondOrder, prepareAromaticBondRendering } from './helpers.js';
 import { getBondEnOverlayData } from './bond-en-polarity.js';
-import { getAtomNumberMap } from './atom-numbering.js';
+import { atomNumberingLabelDistance, getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationAngle } from './atom-numbering.js';
 import {
   labelHalfW,
   labelHalfH,
@@ -475,10 +475,9 @@ export function create2DSceneRenderer(ctx) {
     if (!numberMap) {
       return;
     }
-    const NUM_FS = 10;
-    const NUM_DIST = 15;
+    const { showLonePairs, atomNumberingFontSize } = getRenderOptions();
+    const NUM_FS = atomNumberingFontSize;
     const toSVGPt = ctx.helpers.toSVGPt;
-    const { showLonePairs } = getRenderOptions();
     const fSize = ctx.constants.getFontSize();
     const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
     const numLayer = ctx.g.append('g').attr('class', 'atom-numbering-overlay').style('pointer-events', 'none');
@@ -493,9 +492,12 @@ export function create2DSceneRenderer(ctx) {
       // plus charge badge direction and lone pair directions when relevant.
       const allNeighbors = atom.getNeighbors(mol).filter(n => n.x != null);
       const visNeighbors = allNeighbors.filter(n => n.visible !== false);
-      const blockedAngles = allNeighbors.map(nb => {
+      const blockedSectors = allNeighbors.map(nb => {
         const { x: nx, y: ny } = toSVGPt(nb);
-        return Math.atan2(ny - y, nx - x);
+        const angle = Math.atan2(ny - y, nx - x);
+        const order = renderBondOrder(mol.getBond(atom.id, nb.id));
+        const spread = order >= 2 ? 0.52 : 0.4;
+        return { angle, spread };
       });
       if (atom.getCharge?.() !== 0) {
         const placement = computeChargeBadgePlacement(atom, mol, {
@@ -504,7 +506,9 @@ export function create2DSceneRenderer(ctx) {
           fontSize: fSize,
           containerChargeAngle: null
         });
-        if (placement) { blockedAngles.push(placement.angle); }
+        if (placement) {
+          blockedSectors.push({ angle: placement.angle, spread: 0.3 });
+        }
       }
       if (showLonePairs) {
         const lp = computeLonePairDotPositions(atom, mol, {
@@ -514,29 +518,29 @@ export function create2DSceneRenderer(ctx) {
           offsetFromBoundary: 6,
           dotSpacing: 4.2
         });
-        for (const dot of lp) { blockedAngles.push(Math.atan2(dot.y - y, dot.x - x)); }
-      }
-      let angle;
-      if (blockedAngles.length === 0) {
-        angle = -Math.PI / 4;
-      } else {
-        const sorted = blockedAngles.slice().sort((a, b) => a - b);
-        let bestGap = 0;
-        angle = sorted[0] + Math.PI;
-        for (let i = 0; i < sorted.length; i++) {
-          const a1 = sorted[i];
-          const a2 = i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + 2 * Math.PI;
-          const gap = a2 - a1;
-          if (gap > bestGap) {
-            bestGap = gap;
-            angle = a1 + gap / 2;
-          }
+        for (const dot of lp) {
+          blockedSectors.push({ angle: Math.atan2(dot.y - y, dot.x - x), spread: 0.26 });
         }
       }
+      for (const nb of allNeighbors) {
+        const bond = mol.getBond(atom.id, nb.id);
+        const order = renderBondOrder(bond);
+        if (order !== 2 && order !== 1.5) {
+          continue;
+        }
+        const { x: nx, y: ny } = toSVGPt(nb);
+        const dir = ctx.helpers.secondaryDir(atom, nb, mol, toSVGPt);
+        const sideAngle = multipleBondSideBlockerAngle({ x, y }, { x: nx, y: ny }, dir);
+        if (sideAngle != null) {
+          blockedSectors.push({ angle: sideAngle, spread: 0.5 });
+        }
+      }
+      const angle = pickAtomAnnotationAngle(blockedSectors);
+      const labelDistance = atomNumberingLabelDistance(NUM_FS, label);
       numLayer
         .append('text')
-        .attr('x', x + Math.cos(angle) * NUM_DIST)
-        .attr('y', y + Math.sin(angle) * NUM_DIST)
+        .attr('x', x + Math.cos(angle) * labelDistance)
+        .attr('y', y + Math.sin(angle) * labelDistance)
         .attr('text-anchor', 'middle')
         .attr('dominant-baseline', 'central')
         .attr('font-size', `${NUM_FS}px`)

@@ -2,6 +2,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { applySMIRKS, parseSMILES, parseSMIRKS, toSMILES } from '../../src/index.js';
 
+function sortDotSmiles(smiles) {
+  return smiles.split('.').sort().join('.');
+}
+
 describe('parseSMIRKS', () => {
   it('parses mapped reactant and product graphs', () => {
     const transform = parseSMIRKS('[C:1][O:2]>>[C:1]=[O:2]');
@@ -344,5 +348,39 @@ describe('applySMIRKS', () => {
         }),
       /explicit mapping must bind all 2 reactant atoms/
     );
+  });
+
+  it('acylates primary and secondary amines but rejects tertiary amines', () => {
+    const rxn = '[C:1](=[O:2])[Cl:3].[N+0;!H0;!$([N]-[C](=O)):4]>>[C:1](=[O:2])[N+0:4].[ClH0-:3]';
+
+    const primary = applySMIRKS(parseSMILES('CC(=O)Cl.CN'), rxn);
+    assert.ok(primary);
+    assert.equal(toSMILES(primary), 'CC(=O)NC.[Cl-]');
+
+    const secondary = applySMIRKS(parseSMILES('CC(=O)Cl.CNC'), rxn);
+    assert.ok(secondary);
+    assert.equal(toSMILES(secondary), 'CC(=O)N(C)C.[Cl-]');
+
+    const tertiary = applySMIRKS(parseSMILES('CC(=O)Cl.CN(C)C'), rxn);
+    assert.equal(tertiary, null);
+  });
+
+  it('protonates neutral primary and secondary amines according to the template charge rewrite', () => {
+    const rxn = '[N+0;!$([N]-[C](=O)):1]>>[N+:1]';
+
+    const primary = applySMIRKS(parseSMILES('CN'), rxn);
+    assert.ok(primary);
+    assert.equal(toSMILES(primary), 'C[NH2+]');
+
+    const secondary = applySMIRKS(parseSMILES('CNC'), rxn);
+    assert.ok(secondary);
+    assert.equal(toSMILES(secondary), 'C[NH+]C');
+  });
+
+  it('reduces a nitro group to an aniline plus two water fragments per the template', () => {
+    const rxn = '[N+:1](=[O:2])[O-:3]>>[N+0:1].[OH2+0:2].[OH2+0:3]';
+    const product = applySMIRKS(parseSMILES('O=[N+]([O-])c1ccccc1'), rxn);
+    assert.ok(product);
+    assert.equal(sortDotSmiles(toSMILES(product)), 'Nc1ccccc1.O.O');
   });
 });

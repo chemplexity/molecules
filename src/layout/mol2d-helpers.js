@@ -168,19 +168,24 @@ export function secondaryDir(a1, a2, mol, toSVG) {
     .getRings()
     .filter(ring => ring.includes(a1.id) && ring.includes(a2.id))
     .map(ring => {
-      const ringAtoms = ring.map(id => mol.atoms.get(id)).filter(atom => atom && atom.x != null);
-      if (ringAtoms.length < 3) {
+      const ringPoints = ring
+        .map(id => {
+          const atom = mol.atoms.get(id);
+          const svg = atom ? toSVG(atom) : null;
+          return atom && svg ? { atom, svg } : null;
+        })
+        .filter(Boolean);
+      if (ringPoints.length < 3) {
         return null;
       }
       let cx = 0;
       let cy = 0;
-      for (const atom of ringAtoms) {
-        const svg = toSVG(atom);
+      for (const { svg } of ringPoints) {
         cx += svg.x;
         cy += svg.y;
       }
-      cx /= ringAtoms.length;
-      cy /= ringAtoms.length;
+      cx /= ringPoints.length;
+      cy /= ringPoints.length;
       return (cx - mid.x) * nx + (cy - mid.y) * ny;
     })
     .filter(dot => dot != null && Math.abs(dot) > 1e-6);

@@ -126,6 +126,10 @@ export function finalizeAppBootstrap(ctx) {
         draw2d: () => draw2d(),
         updateForce: ctx.render.renderRuntime.updateForce
       },
+      options: {
+        getRenderOptions: () => ctx.options.getRenderOptions(),
+        updateRenderOptions: nextOptions => ctx.options.updateRenderOptions(nextOptions)
+      },
       overlays: {
         hasReactionPreview: () => ctx.overlays.hasReactionPreview(),
         restoreReactionPreviewSource: options => ctx.overlays.restoreReactionPreviewSource(options)
@@ -160,6 +164,10 @@ export function finalizeAppBootstrap(ctx) {
       renderers: {
         draw2d: () => draw2d(),
         updateForce: ctx.render.renderRuntime.updateForce
+      },
+      options: {
+        getRenderOptions: () => ctx.options.getRenderOptions(),
+        updateRenderOptions: nextOptions => ctx.options.updateRenderOptions(nextOptions)
       },
       overlays: {
         hasReactionPreview: () => ctx.overlays.hasReactionPreview(),
@@ -250,9 +258,9 @@ export function finalizeAppBootstrap(ctx) {
         getOverlayElement: () => ctx.dom.getOptionsOverlayElement(),
         getShowValenceWarningsElement: () => ctx.dom.getShowValenceWarningsElement(),
         getShowAtomTooltipsElement: () => ctx.dom.getShowAtomTooltipsElement(),
-        getShowLonePairsElement: () => ctx.dom.getShowLonePairsElement(),
         get2DAtomColoringElement: () => ctx.dom.get2DAtomColoringElement(),
         get2DAtomFontSizeElement: () => ctx.dom.get2DAtomFontSizeElement(),
+        getAtomNumberingFontSizeElement: () => ctx.dom.getAtomNumberingFontSizeElement(),
         get2DBondThicknessElement: () => ctx.dom.get2DBondThicknessElement(),
         getForceAtomSizeElement: () => ctx.dom.getForceAtomSizeElement(),
         getForceBondThicknessElement: () => ctx.dom.getForceBondThicknessElement(),

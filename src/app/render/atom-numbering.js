@@ -2,6 +2,69 @@
 
 let ctx = {};
 let _atomNumberingActive = false;
+const TWO_PI = Math.PI * 2;
+const DEFAULT_NUMBERING_FALLBACK_ANGLE = -Math.PI / 4;
+const DEFAULT_NUMBERING_ANGLE_STEPS = 72;
+
+function _normalizeAngle(angle) {
+  let normalized = angle;
+  while (normalized <= -Math.PI) {
+    normalized += TWO_PI;
+  }
+  while (normalized > Math.PI) {
+    normalized -= TWO_PI;
+  }
+  return normalized;
+}
+
+function _angularDistance(a, b) {
+  return Math.abs(_normalizeAngle(a - b));
+}
+
+export function pickAtomAnnotationAngle(blockedSectors = [], fallbackAngle = DEFAULT_NUMBERING_FALLBACK_ANGLE) {
+  if (!Array.isArray(blockedSectors) || blockedSectors.length === 0) {
+    return fallbackAngle;
+  }
+
+  let bestAngle = fallbackAngle;
+  let bestClearance = -Infinity;
+  let bestFallbackDistance = Infinity;
+  for (let step = 0; step < DEFAULT_NUMBERING_ANGLE_STEPS; step++) {
+    const angle = -Math.PI + (step / DEFAULT_NUMBERING_ANGLE_STEPS) * TWO_PI;
+    let clearance = Infinity;
+    for (const sector of blockedSectors) {
+      const spread = Math.max(0, sector?.spread ?? 0);
+      const separation = _angularDistance(angle, sector?.angle ?? 0) - spread;
+      clearance = Math.min(clearance, separation);
+    }
+    const fallbackDistance = _angularDistance(angle, fallbackAngle);
+    if (clearance > bestClearance + 1e-6 || (Math.abs(clearance - bestClearance) <= 1e-6 && fallbackDistance < bestFallbackDistance)) {
+      bestAngle = angle;
+      bestClearance = clearance;
+      bestFallbackDistance = fallbackDistance;
+    }
+  }
+  return bestAngle;
+}
+
+export function atomNumberingLabelDistance(fontSize, label = '') {
+  const labelLength = String(label).length;
+  return Math.max(15, Math.round(fontSize + 6 + Math.max(0, labelLength - 1) * 2));
+}
+
+export function multipleBondSideBlockerAngle(start, end, side = 1, forwardBias = 0.45) {
+  const dx = (end?.x ?? 0) - (start?.x ?? 0);
+  const dy = (end?.y ?? 0) - (start?.y ?? 0);
+  const len = Math.hypot(dx, dy) || 1;
+  if (!Number.isFinite(len) || len <= 0) {
+    return null;
+  }
+  const ux = dx / len;
+  const uy = dy / len;
+  const perpX = (-dy / len) * (side >= 0 ? 1 : -1);
+  const perpY = (dx / len) * (side >= 0 ? 1 : -1);
+  return Math.atan2(uy * forwardBias + perpY, ux * forwardBias + perpX);
+}
 
 /**
  * Initializes the atom-numbering panel renderer with the app context it
@@ -25,6 +88,30 @@ function _currentDisplayedMol() {
   return ctx.mode === 'force' ? (ctx.currentMol ?? null) : (ctx._mol2d ?? null);
 }
 
+function _otherPanelRow({ label, title, active, onClick }) {
+  const tr = document.createElement('tr');
+  tr.classList.add('resonance-clickable');
+  tr.title = title;
+  if (active) {
+    tr.classList.add('resonance-active');
+  }
+
+  const nameCell = document.createElement('td');
+  const countCell = document.createElement('td');
+  countCell.className = 'reaction-count';
+  countCell.textContent = active ? 'On' : 'Off';
+
+  const name = document.createElement('div');
+  name.className = 'reaction-name';
+  name.textContent = label;
+  nameCell.appendChild(name);
+
+  tr.appendChild(nameCell);
+  tr.appendChild(countCell);
+  tr.addEventListener('click', onClick);
+  return tr;
+}
+
 /**
  * Returns whether the atom numbering overlay is currently active.
  *
@@ -42,8 +129,12 @@ export function getAtomNumberingActive() {
  * order, followed by hydrogen atoms.
  *
  * In reaction preview mode, reactant atoms are numbered first (heavy then H).
- * Product atoms that map to a reactant atom inherit that reactant atom's number.
- * Unmapped product atoms are omitted.
+ * Product atoms that map to a reactant atom of the same element inherit that
+ * reactant atom's number.  If the element changes across the mapping (e.g.
+ * O→Cl in alcohol halogenation) the product atom is treated as new.
+ * Unmapped product H atoms whose parent heavy atom is mapped inherit an available
+ * reactant H number from that parent's H pool, so unchanged hydrogens keep their
+ * original numbers. Truly new atoms (no inferred source) get fresh numbers.
  *
  * @param {import('../../core/Molecule.js').Molecule|null} mol
  * @returns {Map<string, number>|null}
@@ -76,23 +167,82 @@ export function getAtomNumberMap(mol) {
       }
     }
     // Product atoms: mapped → inherit source number;
-    // unmapped (new atoms in the product) → continue numbering after reactant atoms.
-    const unmappedHeavy = [];
-    const unmappedH = [];
+    // unmapped product H → infer from parent heavy atom's reactant H atoms;
+    // truly new atoms → continue numbering after reactant atoms.
+
+    // Build: reactant heavy atom id → ordered list of its reactant H atom ids.
+    const reactantHeavyToHs = new Map();
+    for (const [id, atom] of mol.atoms) {
+      if (reactantAtomIds.has(id) && atom.name === 'H') {
+        const parentHeavy = atom.getNeighbors(mol).find(nb => nb.name !== 'H');
+        if (parentHeavy) {
+          if (!reactantHeavyToHs.has(parentHeavy.id)) {
+            reactantHeavyToHs.set(parentHeavy.id, []);
+          }
+          reactantHeavyToHs.get(parentHeavy.id).push(id);
+        }
+      }
+    }
+
+    // Track reactant H ids already claimed by an explicit mapping entry.
+    const usedReactantHs = new Set();
+    for (const [srcId] of mappedAtomPairs) {
+      if (mol.atoms.get(srcId)?.name === 'H') {
+        usedReactantHs.add(srcId);
+      }
+    }
+
+    // Pass 1: explicit mappings (only when the element is preserved).
+    const unmappedProductAtoms = [];
     for (const [id, atom] of mol.atoms) {
       if (!reactantAtomIds.has(id)) {
         const sourceId = productToSource.get(id);
         if (sourceId != null && numbers.has(sourceId)) {
-          numbers.set(id, numbers.get(sourceId));
-        } else if (atom.name !== 'H') {
-          unmappedHeavy.push(id);
+          const srcAtom = mol.atoms.get(sourceId);
+          if (!srcAtom || srcAtom.name === atom.name) {
+            // Same element: inherit the reactant number.
+            numbers.set(id, numbers.get(sourceId));
+          } else {
+            // Element changed (e.g. O→Cl): treat product atom as new.
+            unmappedProductAtoms.push([id, atom]);
+          }
         } else {
-          unmappedH.push(id);
+          unmappedProductAtoms.push([id, atom]);
         }
       }
     }
-    for (const id of unmappedHeavy) { numbers.set(id, n++); }
-    for (const id of unmappedH) { numbers.set(id, n++); }
+
+    // Pass 2: for unmapped product H atoms, inherit from parent's reactant H pool.
+    const unmappedHeavy = [];
+    const newProductHs = [];
+    for (const [id, atom] of unmappedProductAtoms) {
+      if (atom.name !== 'H') {
+        unmappedHeavy.push(id);
+      } else {
+        const parentHeavy = atom.getNeighbors(mol).find(nb => nb.name !== 'H');
+        let inherited = false;
+        if (parentHeavy && !reactantAtomIds.has(parentHeavy.id)) {
+          const srcHeavyId = productToSource.get(parentHeavy.id);
+          if (srcHeavyId != null) {
+            const available = (reactantHeavyToHs.get(srcHeavyId) ?? []).filter(hid => !usedReactantHs.has(hid));
+            if (available.length > 0) {
+              usedReactantHs.add(available[0]);
+              numbers.set(id, numbers.get(available[0]));
+              inherited = true;
+            }
+          }
+        }
+        if (!inherited) {
+          newProductHs.push(id);
+        }
+      }
+    }
+    for (const id of unmappedHeavy) {
+      numbers.set(id, n++);
+    }
+    for (const id of newProductHs) {
+      numbers.set(id, n++);
+    }
   } else {
     let n = 1;
     for (const [id, atom] of mol.atoms) {
@@ -141,35 +291,36 @@ export function updateAtomNumberingPanel(mol) {
 
   tbody.innerHTML = '';
 
-  const tr = document.createElement('tr');
-  tr.classList.add('resonance-clickable');
-  tr.title = 'Display sequential atom indices. Non-hydrogen atoms are numbered first, then hydrogen atoms.';
-  if (_atomNumberingActive) {
-    tr.classList.add('resonance-active');
-  }
+  tbody.appendChild(
+    _otherPanelRow({
+      label: 'Atom Numbering',
+      title: 'Display sequential atom indices. Non-hydrogen atoms are numbered first, then hydrogen atoms.',
+      active: _atomNumberingActive,
+      onClick: event => {
+        event.stopPropagation();
+        _atomNumberingActive = !_atomNumberingActive;
+        const displayedMol = _currentDisplayedMol() ?? mol;
+        updateAtomNumberingPanel(displayedMol);
+        _redraw(displayedMol);
+      }
+    })
+  );
 
-  const nameCell = document.createElement('td');
-  const countCell = document.createElement('td');
-  countCell.className = 'reaction-count';
-  countCell.textContent = _atomNumberingActive ? 'On' : 'Off';
-
-  const name = document.createElement('div');
-  name.className = 'reaction-name';
-  name.textContent = 'Atom Numbering';
-  nameCell.appendChild(name);
-
-  tr.appendChild(nameCell);
-  tr.appendChild(countCell);
-
-  tr.addEventListener('click', event => {
-    event.stopPropagation();
-    _atomNumberingActive = !_atomNumberingActive;
-    const displayedMol = _currentDisplayedMol() ?? mol;
-    updateAtomNumberingPanel(displayedMol);
-    _redraw(displayedMol);
-  });
-
-  tbody.appendChild(tr);
+  const showLonePairs = Boolean(ctx.getRenderOptions?.().showLonePairs);
+  tbody.appendChild(
+    _otherPanelRow({
+      label: 'Lone Pairs',
+      title: 'Display lone pair dots on atoms when available.',
+      active: showLonePairs,
+      onClick: event => {
+        event.stopPropagation();
+        ctx.updateRenderOptions?.({ showLonePairs: !showLonePairs });
+        const displayedMol = _currentDisplayedMol() ?? mol;
+        updateAtomNumberingPanel(displayedMol);
+        _redraw(displayedMol);
+      }
+    })
+  );
 }
 
 function _redraw(mol) {

@@ -179,17 +179,35 @@ body {
 }
 
 .options-section + .options-section {
-  margin-top: 14px;
-  padding-top: 14px;
+  margin-top: 10px;
+  padding-top: 10px;
   border-top: 1px solid #dfe8eb;
 }
 
 .options-section h3 {
-  margin: 0 0 9px;
+  margin: 0 0 7px;
   font-size: 13px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
   color: #5b7a84;
+  text-decoration: underline;
+  text-decoration-color: #9bb7bf;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+}
+
+.options-subsection {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-top: 12px;
+}
+
+.options-subsection h4 {
+  margin: 0 0 1px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #516a73;
 }
 
 .option-row {
@@ -197,7 +215,7 @@ body {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 14px;
-  padding: 8px 0;
+  padding: 4px 0;
   border-top: 1px solid #f1f4f6;
   color: #31464e;
   font-size: 13px;

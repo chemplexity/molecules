@@ -1,9 +1,9 @@
 /** @module app/render/force-scene */
 
 import { getRenderOptions, atomColor, strokeColor, singleBondWidth, prepareAromaticBondRendering, atomRadius, xOffset, yOffset, PI_STROKE, ARO_STROKE } from './helpers.js';
-import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, computeLonePairDotPositions } from '../../layout/mol2d-helpers.js';
+import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, computeLonePairDotPositions, secondaryDir } from '../../layout/mol2d-helpers.js';
 import { getBondEnOverlayData } from './bond-en-polarity.js';
-import { getAtomNumberMap } from './atom-numbering.js';
+import { atomNumberingLabelDistance, getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationAngle } from './atom-numbering.js';
 
 function _capturePreviousNodePositions(simulation) {
   return new Map(
@@ -371,7 +371,7 @@ export function createForceSceneRenderer(ctx) {
         .attr('class', 'force-bond-en-label')
         .attr('text-anchor', 'middle')
         .attr('dominant-baseline', 'central')
-        .attr('font-size', '10px')
+        .attr('font-size', `${getRenderOptions().atomNumberingFontSize}px`)
         .attr('pointer-events', 'none')
         .attr('fill', d => ctx.helpers.enLabelColor(d.t))
         .text(d => d.label);
@@ -396,18 +396,21 @@ export function createForceSceneRenderer(ctx) {
     const forceNodeById2 = new Map(graph.nodes.map(node => [node.id, node]));
     let forceAtomNumberLabels = null;
     if (forceNumberMap) {
-      // Build per-node neighbor list for bond-avoidance offset.
       const nodeNeighbors = new Map(graph.nodes.map(n => [n.id, []]));
+      const nodeLinks = new Map(graph.nodes.map(n => [n.id, []]));
       for (const link of graph.links) {
         nodeNeighbors.get(link.source.id)?.push(link.target);
         nodeNeighbors.get(link.target.id)?.push(link.source);
+        nodeLinks.get(link.source.id)?.push(link);
+        nodeLinks.get(link.target.id)?.push(link);
       }
       const numLayer = ctx.g.append('g').attr('class', 'force-atom-numbering').style('pointer-events', 'none');
       const numData = [...forceNumberMap.entries()]
         .map(([id, num]) => ({
           node: forceNodeById2.get(id),
           label: String(num),
-          neighbors: nodeNeighbors.get(id) ?? []
+          neighbors: nodeNeighbors.get(id) ?? [],
+          links: nodeLinks.get(id) ?? []
         }))
         .filter(d => d.node);
       forceAtomNumberLabels = numLayer
@@ -418,50 +421,54 @@ export function createForceSceneRenderer(ctx) {
         .attr('class', 'force-atom-num')
         .attr('text-anchor', 'middle')
         .attr('dominant-baseline', 'central')
-        .attr('font-size', '10px')
+        .attr('font-size', `${getRenderOptions().atomNumberingFontSize}px`)
         .attr('pointer-events', 'none')
         .attr('fill', '#444')
         .text(d => d.label);
     }
-
-    const _NUM_DIST = 15;
     function _updateForceAtomNumberLabels() {
       if (!forceAtomNumberLabels) {
         return;
       }
       forceAtomNumberLabels.attr('transform', d => {
-        const { node, neighbors } = d;
-        // Blocked angles: bond directions, charge badge, lone pairs.
-        const blockedAngles = neighbors.map(nb => Math.atan2(nb.y - node.y, nb.x - node.x));
-        const chargeAngle = forceChargeAngleByAtomId.get(node.id);
+        const { node, neighbors, links, label } = d;
+        const blockedSectors = neighbors.map(nb => {
+          const angle = Math.atan2(nb.y - node.y, nb.x - node.x);
+          const link = links.find(candidate => candidate.source.id === nb.id || candidate.target.id === nb.id);
+          const spread = (link?.order ?? 1) >= 2 ? 0.52 : 0.4;
+          return { angle, spread };
+        });
+        const chargeAngle = forceChargeAngleByAtomId.get(node.id) ?? null;
         if (chargeAngle != null) {
-          blockedAngles.push(chargeAngle);
+          blockedSectors.push({ angle: chargeAngle, spread: 0.3 });
         }
         const atom = molecule.atoms.get(node.id);
         if (atom && showLonePairs) {
           const lp = _forceLonePairDotsForAtom(atom);
           for (const dot of lp) {
-            blockedAngles.push(Math.atan2(dot.y - node.y, dot.x - node.x));
+            blockedSectors.push({ angle: Math.atan2(dot.y - node.y, dot.x - node.x), spread: 0.32 });
           }
         }
-        let angle;
-        if (blockedAngles.length === 0) {
-          angle = -Math.PI / 4;
-        } else {
-          const sorted = blockedAngles.slice().sort((a, b) => a - b);
-          let bestGap = 0;
-          angle = sorted[0] + Math.PI;
-          for (let i = 0; i < sorted.length; i++) {
-            const a1 = sorted[i];
-            const a2 = i + 1 < sorted.length ? sorted[i + 1] : sorted[0] + 2 * Math.PI;
-            const gap = a2 - a1;
-            if (gap > bestGap) {
-              bestGap = gap;
-              angle = a1 + gap / 2;
+        if (atom) {
+          for (const link of links) {
+            if (link.order !== 2 && link.order !== 1.5) {
+              continue;
+            }
+            const otherNode = link.source.id === node.id ? link.target : link.source;
+            const otherAtom = molecule.atoms.get(otherNode.id);
+            if (!otherAtom) {
+              continue;
+            }
+            const dir = secondaryDir(atom, otherAtom, molecule, pointForForceAtom);
+            const sideAngle = multipleBondSideBlockerAngle(node, otherNode, dir);
+            if (sideAngle != null) {
+              blockedSectors.push({ angle: sideAngle, spread: 0.5 });
             }
           }
         }
-        return `translate(${node.x + Math.cos(angle) * _NUM_DIST},${node.y + Math.sin(angle) * _NUM_DIST})`;
+        const angle = pickAtomAnnotationAngle(blockedSectors);
+        const labelDistance = atomNumberingLabelDistance(getRenderOptions().atomNumberingFontSize, label);
+        return `translate(${node.x + Math.cos(angle) * labelDistance},${node.y + Math.sin(angle) * labelDistance})`;
       });
     }
     _updateForceAtomNumberLabels();

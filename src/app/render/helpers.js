@@ -10,6 +10,7 @@ export const BOND_OFFSET = 2;
 export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
 export const RENDER_OPTION_LIMITS = Object.freeze({
   twoDAtomFontSize: { min: 10, max: 24, step: 1 },
+  atomNumberingFontSize: { min: 8, max: 24, step: 1 },
   twoDBondThickness: { min: 0.8, max: 4, step: 0.1 },
   forceAtomSizeMultiplier: { min: 0.5, max: 2.5, step: 0.1 },
   forceBondThicknessMultiplier: { min: 0.5, max: 2.5, step: 0.1 }
@@ -20,6 +21,7 @@ const DEFAULT_RENDER_OPTIONS = Object.freeze({
   showLonePairs: false,
   twoDAtomColoring: true,
   twoDAtomFontSize: 14,
+  atomNumberingFontSize: 10,
   twoDBondThickness: 1.6,
   forceAtomSizeMultiplier: 1,
   forceBondThicknessMultiplier: 1
@@ -70,6 +72,12 @@ export function updateRenderOptions(nextOptions = {}) {
     const clamped = _clampOptionValue(Number(nextOptions.twoDAtomFontSize), RENDER_OPTION_LIMITS.twoDAtomFontSize);
     if (clamped !== null) {
       merged.twoDAtomFontSize = Math.round(clamped);
+    }
+  }
+  if (nextOptions.atomNumberingFontSize !== undefined) {
+    const clamped = _clampOptionValue(Number(nextOptions.atomNumberingFontSize), RENDER_OPTION_LIMITS.atomNumberingFontSize);
+    if (clamped !== null) {
+      merged.atomNumberingFontSize = Math.round(clamped);
     }
   }
   if (nextOptions.twoDBondThickness !== undefined) {

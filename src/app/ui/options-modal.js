@@ -6,9 +6,9 @@ export function initOptionsModal(context) {
   const overlayEl = context.dom.getOverlayElement();
   const showValenceWarningsEl = context.dom.getShowValenceWarningsElement();
   const showAtomTooltipsEl = context.dom.getShowAtomTooltipsElement();
-  const showLonePairsEl = context.dom.getShowLonePairsElement();
   const twoDAtomColoringEl = context.dom.get2DAtomColoringElement();
   const twoDAtomFontSizeEl = context.dom.get2DAtomFontSizeElement();
+  const atomNumberingFontSizeEl = context.dom.getAtomNumberingFontSizeElement();
   const twoDBondThicknessEl = context.dom.get2DBondThicknessElement();
   const forceAtomSizeEl = context.dom.getForceAtomSizeElement();
   const forceBondThicknessEl = context.dom.getForceBondThicknessElement();
@@ -34,9 +34,9 @@ export function initOptionsModal(context) {
   function syncForm(options = context.options.getRenderOptions()) {
     showValenceWarningsEl.checked = options.showValenceWarnings;
     showAtomTooltipsEl.checked = options.showAtomTooltips;
-    showLonePairsEl.checked = options.showLonePairs;
     twoDAtomColoringEl.checked = options.twoDAtomColoring;
     twoDAtomFontSizeEl.value = formatOptionNumber(options.twoDAtomFontSize);
+    atomNumberingFontSizeEl.value = formatOptionNumber(options.atomNumberingFontSize);
     twoDBondThicknessEl.value = formatOptionNumber(options.twoDBondThickness);
     forceAtomSizeEl.value = formatOptionNumber(options.forceAtomSizeMultiplier);
     forceBondThicknessEl.value = formatOptionNumber(options.forceBondThicknessMultiplier);
@@ -56,9 +56,13 @@ export function initOptionsModal(context) {
     const nextOptions = context.options.updateRenderOptions({
       showValenceWarnings: showValenceWarningsEl.checked,
       showAtomTooltips: showAtomTooltipsEl.checked,
-      showLonePairs: showLonePairsEl.checked,
       twoDAtomColoring: twoDAtomColoringEl.checked,
       twoDAtomFontSize: clampOptionInputValue(twoDAtomFontSizeEl, context.options.limits.twoDAtomFontSize, currentOptions.twoDAtomFontSize),
+      atomNumberingFontSize: clampOptionInputValue(
+        atomNumberingFontSizeEl,
+        context.options.limits.atomNumberingFontSize,
+        currentOptions.atomNumberingFontSize
+      ),
       twoDBondThickness: clampOptionInputValue(twoDBondThicknessEl, context.options.limits.twoDBondThickness, currentOptions.twoDBondThickness),
       forceAtomSizeMultiplier: clampOptionInputValue(forceAtomSizeEl, context.options.limits.forceAtomSizeMultiplier, currentOptions.forceAtomSizeMultiplier),
       forceBondThicknessMultiplier: clampOptionInputValue(
