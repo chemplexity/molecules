@@ -10,7 +10,8 @@ import {
   centerReaction2dPairCoords as centerReaction2dPairCoordsShared
 } from '../../layout/reaction2d.js';
 import { atomRadius } from './helpers.js';
-import { _setHighlight, _restorePersistentHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback } from './highlights.js';
+import { _setHighlight, _restorePersistentHighlight, getHighlightAnchorQueryIds, setPersistentHighlightFallback, updateFunctionalGroups } from './highlights.js';
+import { morganRanks } from '../../algorithms/morgan.js';
 import { updateResonancePanel } from './resonance.js';
 
 let ctx = {};
@@ -1154,16 +1155,22 @@ export function _renderReactionPreviewArrowForce(nodes) {
   }
 }
 
-function _groupMappingsByAnchor(smarts, mappings) {
+function _groupMappingsByAnchorAndEquivalence(mol, smarts, mappings) {
   const anchorQueryIds = getHighlightAnchorQueryIds(smarts);
+  const ranks = morganRanks(mol);
   const grouped = new Map();
   for (const mapping of mappings) {
-    const anchorKey = anchorQueryIds
+    const anchorPart = anchorQueryIds
       .map(queryId => mapping.get(queryId))
       .filter(Boolean)
       .sort()
       .join(',');
-    const key = anchorKey || [...mapping.values()].sort().join(',');
+
+    const sortedQueryIds = [...mapping.keys()].sort();
+    const equivPart = sortedQueryIds.map(qId => ranks.get(mapping.get(qId))).join(',');
+
+    const key = anchorPart ? `${anchorPart}|${equivPart}` : equivPart;
+
     if (!grouped.has(key)) {
       grouped.set(key, {
         applyMapping: mapping,
@@ -1194,7 +1201,7 @@ function _previewNavButton(label, title, onClick) {
 }
 
 function _filterReactionMatchGroups(mol, entry, reactantSmarts, mappings) {
-  const groups = _groupMappingsByAnchor(reactantSmarts, mappings);
+  const groups = _groupMappingsByAnchorAndEquivalence(mol, reactantSmarts, mappings);
   const excludePatterns = entry.excludeOverlaps ?? [];
   if (excludePatterns.length === 0) {
     return groups;
@@ -1231,7 +1238,7 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
     _reactionPreviewEntryMode = ctx.mode;
     _reactionPreviewEntryZoomTransform = ctx.captureZoomTransform?.() ?? null;
     _reactionPreviewEntryDisplayMol = (ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d)?.clone?.() ?? null;
-    _reactionPreviewEntryForceNodePositions = ctx.mode === 'force' ? ctx.captureForceNodePositions?.() ?? null : null;
+    _reactionPreviewEntryForceNodePositions = ctx.mode === 'force' ? (ctx.captureForceNodePositions?.() ?? null) : null;
   }
   if (lock) {
     _activeReactionSmirks = entry.smirks;
@@ -1262,6 +1269,7 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
       preserveHistory: true,
       preserveAnalysis: true
     });
+    updateFunctionalGroups(preview.mol);
     updateResonancePanel(_reactionPreviewSourceMol ?? sourceMol, { recompute: false });
     _setHighlight(preview.highlightMapping ? [preview.highlightMapping] : [site.highlightMapping]);
     return;

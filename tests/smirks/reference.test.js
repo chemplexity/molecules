@@ -222,8 +222,31 @@ describe('reactionTemplates — example applications', () => {
     assert.deepEqual(validateValence(product), []);
   });
 
+  it('alcoholDehydration converts secondary and tertiary alcohols', () => {
+    assert.equal(toSMILES(applySMIRKS(parseSMILES('CC(O)C'), reactionTemplates.alcoholDehydration.smirks)), 'C=CC.O');
+    assert.equal(toSMILES(applySMIRKS(parseSMILES('CC(C)(O)C'), reactionTemplates.alcoholDehydration.smirks)), 'C=C(C)C.O');
+  });
+
   it('alcoholDehydration does not match alcohols without a beta hydrogen', () => {
     const product = applySMIRKS(parseSMILES('CC(C)(C)CO'), reactionTemplates.alcoholDehydration.smirks);
+    assert.equal(product, null);
+  });
+
+  it('alkylChlorideElimination converts an alkyl chloride to an alkene and HCl without valence errors', async () => {
+    const { validateValence } = await import('../../src/validation/index.js');
+    const product = applySMIRKS(parseSMILES('CCCl'), reactionTemplates.alkylChlorideElimination.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'C=C.Cl');
+    assert.deepEqual(validateValence(product), []);
+  });
+
+  it('alkylChlorideElimination converts secondary and tertiary alkyl chlorides', () => {
+    assert.equal(toSMILES(applySMIRKS(parseSMILES('CC(Cl)C'), reactionTemplates.alkylChlorideElimination.smirks)), 'C=CC.Cl');
+    assert.equal(toSMILES(applySMIRKS(parseSMILES('CC(C)(Cl)C'), reactionTemplates.alkylChlorideElimination.smirks)), 'C=C(C)C.Cl');
+  });
+
+  it('alkylChlorideElimination does not match alkyl chlorides without a beta hydrogen', () => {
+    const product = applySMIRKS(parseSMILES('CC(C)(C)CCl'), reactionTemplates.alkylChlorideElimination.smirks);
     assert.equal(product, null);
   });
 

@@ -62,6 +62,7 @@ export function createFinalizeBootstrapCallDeps(ctx) {
     syncDisplayStereo: ctx.syncDisplayStereo,
     clearReactionPreviewState: () => ctx.clearReactionPreviewState(),
     restoreReactionPreviewSource: options => ctx.restoreReactionPreviewSource(options),
+    reapplyActiveReactionPreview: () => ctx.reapplyActiveReactionPreview(),
     hasReactionPreview: () => ctx.hasReactionPreview(),
     isReactionPreviewEditableAtomId: id => ctx.isReactionPreviewEditableAtomId(id),
     getReactionPreviewSourceMol: () => ctx.getReactionPreviewSourceMol(),

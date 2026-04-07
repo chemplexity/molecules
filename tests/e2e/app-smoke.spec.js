@@ -61,6 +61,27 @@ async function forceNodesWithinPlot(page, padding = 4) {
   }, padding);
 }
 
+async function plotGeometryWithinPlot(page, padding = 4) {
+  return await page.evaluate(pad => {
+    const plot = document.querySelector('.svg-plot');
+    if (!plot) {
+      return false;
+    }
+    const plotRect = plot.getBoundingClientRect();
+    const geometry = Array.from(document.querySelectorAll('line.bond-hit, circle.atom-hit'));
+    if (geometry.length === 0) {
+      return false;
+    }
+    return geometry.every(node => {
+      const rect = node.getBoundingClientRect();
+      return rect.left >= plotRect.left + pad &&
+        rect.top >= plotRect.top + pad &&
+        rect.right <= plotRect.right - pad &&
+        rect.bottom <= plotRect.bottom - pad;
+    });
+  }, padding);
+}
+
 test('input changes participate in undo/redo through the real browser UI', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -347,6 +368,88 @@ test('drawing a new 2d bond clears an existing 2d selection highlight', async ({
   await expect(page.locator('#smiles-input')).toHaveValue('CCOC');
   await expect(page.locator('g.atom-selection circle')).toHaveCount(0);
   await expect(page.locator('g.atom-selection line')).toHaveCount(0);
+});
+
+test('cleaning a drawn 2d branch restores strict trigonal angles', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCC');
+  await page.locator('#draw-bond-btn').click();
+
+  const middleCarbon = page.locator('g[data-atom-id="C2"] .atom-hit');
+  const box = await middleCarbon.boundingBox();
+  if (!box) {
+    throw new Error('Expected a drawable atom hit target for C2');
+  }
+
+  const startX = box.x + box.width / 2;
+  const startY = box.y + box.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 48, startY - 36, { steps: 8 });
+  await page.mouse.up();
+
+  await expect(page.locator('#smiles-input')).toHaveValue('CC(C)C');
+
+  await page.locator('#clean-2d-btn').click();
+
+  const centerAngles = await page.evaluate(() => {
+    const centers = [...document.querySelectorAll('g[data-atom-id] .atom-hit')].map(el => {
+      const rect = el.getBoundingClientRect();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2
+      };
+    });
+    if (centers.length < 4) {
+      return null;
+    }
+
+    let bestAngles = null;
+    let bestScore = Infinity;
+    for (let i = 0; i < centers.length; i++) {
+      const center = centers[i];
+      const neighbors = centers
+        .filter((_, idx) => idx !== i)
+        .map(point => ({
+          ...point,
+          dist: Math.hypot(point.x - center.x, point.y - center.y)
+        }))
+        .sort((a, b) => a.dist - b.dist)
+        .slice(0, 3);
+      if (neighbors.length !== 3) {
+        continue;
+      }
+
+      const angles = [];
+      for (let j = 0; j < neighbors.length; j++) {
+        for (let k = j + 1; k < neighbors.length; k++) {
+          const a = neighbors[j];
+          const b = neighbors[k];
+          const v1x = a.x - center.x;
+          const v1y = a.y - center.y;
+          const v2x = b.x - center.x;
+          const v2y = b.y - center.y;
+          const dot = v1x * v2x + v1y * v2y;
+          const mag = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y) || 1;
+          angles.push(Math.acos(Math.min(1, Math.max(-1, dot / mag))) * (180 / Math.PI));
+        }
+      }
+
+      const score = Math.max(...angles.map(angle => Math.abs(angle - 120)));
+      if (score < bestScore) {
+        bestScore = score;
+        bestAngles = angles;
+      }
+    }
+
+    return bestAngles;
+  });
+
+  expect(centerAngles).toBeTruthy();
+  for (const angle of centerAngles) {
+    expect(Math.abs(angle - 120)).toBeLessThan(5);
+  }
 });
 
 test('editing a 2d atom clears selection and immediately restores the hovered highlight', async ({ page }) => {
@@ -791,6 +894,38 @@ test('exiting reaction preview restores the prior force zoom transform', async (
   await expect.poll(async () => await forceNodesWithinPlot(page)).toBe(true);
 });
 
+test('resizing the window in force layout keeps the molecule in view', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCCCCCCCCCCCCCCCCCCC');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+  await expect.poll(async () => await forceNodesWithinPlot(page, 2)).toBe(true);
+
+  await page.setViewportSize({ width: 560, height: 520 });
+
+  await expect.poll(async () => await forceNodesWithinPlot(page, 2)).toBe(true);
+});
+
+test('resizing the window in 2d reaction preview keeps the preview active', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const dehydrationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' }).first();
+
+  await dehydrationRow.click();
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  const beforeResize = await rootTransform(page);
+
+  await page.setViewportSize({ width: 560, height: 520 });
+
+  await expect(dehydrationRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => await rootTransform(page)).not.toBe(beforeResize);
+  await expect.poll(async () => await plotGeometryWithinPlot(page, 2)).toBe(true);
+  await expect(page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Dehydration' })).toHaveCount(1);
+});
+
 test('exiting reaction preview after switching from force back to 2d restores the 2d zoom transform', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -870,6 +1005,24 @@ test('reaction preview does not change the molecular weight summary', async ({ p
   await dehydrationRow.click();
   await expect(dehydrationRow).toHaveClass(/reaction-active/);
   await expect(page.locator('#molecularWeight')).toHaveText(beforeWeight ?? '');
+});
+
+test('reaction preview functional groups apply to the full preview molecule', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.getByRole('button', { name: 'Functional Groups' }).click();
+  await expect(page.locator('#fg-body tr').filter({ hasText: 'Carbonyl' })).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const oxidationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alcohol Oxidation' }).first();
+  await oxidationRow.click();
+  await expect(oxidationRow).toHaveClass(/reaction-active/);
+
+  await page.getByRole('button', { name: 'Functional Groups' }).click();
+  await expect(page.locator('#fg-body tr').filter({ hasText: 'Alcohol' })).toHaveCount(1);
+  await expect(page.locator('#fg-body tr').filter({ hasText: 'Carbonyl' })).toHaveCount(1);
+  await expect(page.locator('#fg-body tr').filter({ hasText: 'Aldehyde' })).toHaveCount(1);
 });
 
 test('switching SMILES/InChI format in reaction preview keeps the source molecule input', async ({ page }) => {

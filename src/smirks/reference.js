@@ -103,10 +103,10 @@ export const reactionTemplates = {
   // Bond construction / cleavage
   // ---------------------------------------------------------------------------
 
-  alcoholDehydration: { name: 'Alcohol Dehydration', smirks: '[C;X4;!H0:1][CH2:2][OH:3]>>[C:1]=[CH2:2].[OH2:3]' },
+  alcoholDehydration: { name: 'Alcohol Dehydration', smirks: '[C;X4;!H0:1][C;X4:2][OH:3]>>[C:1]=[C:2].[OH2:3]' },
   alkylChlorideElimination: {
     name: 'Alkyl Chloride Elimination',
-    smirks: '[C;X4:1][CH2:2][Cl:3]>>[C:1]=[CH:2].[Cl-:3]'
+    smirks: '[C;X4;!H0:1][C;X4:2][Cl:3]>>[C:1]=[C:2].[ClH:3]'
   },
   sulfideOxidationToSulfoxide: {
     name: 'Sulfide Oxidation To Sulfoxide',

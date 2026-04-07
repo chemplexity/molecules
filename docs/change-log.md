@@ -2,6 +2,10 @@
 
 ## 2026-04-06
 
+- Fix stereo bonds not toggling on repeated flips in reaction preview mode
+- Fix alkyl chloride elimination
+- Refresh hidden SMARTS panels lazily when their tab is opened
+- Skip chemistry and analysis recompute for view-only mode and preview restores
 - Move bootstrap dependency builders into `src/app/bootstrap/deps`
 - Move the main app module script out of `index.html` into `src/app/bootstrap/app-entry.js`
 - Make 2D reaction previews follow the restored molecule after undo

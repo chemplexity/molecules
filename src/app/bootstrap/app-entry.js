@@ -25,14 +25,7 @@ import { refreshAromaticity } from '../../algorithms/aromaticity.js';
 import { refineExistingCoords, generateAndRefine2dCoords } from '../../layout/index.js';
 import * as mol2dHelpers from '../../layout/mol2d-helpers.js';
 import { updateDescriptors, updateFormula } from '../ui/descriptors.js';
-import {
-  initUndo,
-  takeSnapshot as _takeSnapshot,
-  discardLastSnapshot as _discardLastSnapshot,
-  clearHistory as _clearUndoHistory,
-  undoAction,
-  redoAction
-} from '../core/undo.js';
+import { initUndo, takeSnapshot as _takeSnapshot, discardLastSnapshot as _discardLastSnapshot, clearHistory as _clearUndoHistory, undoAction, redoAction } from '../core/undo.js';
 import { createAppDelegates } from '../core/app-delegates.js';
 import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../core/editor-actions.js';
 import { createUndoDeps } from '../core/deps/undo-deps.js';
@@ -144,17 +137,7 @@ import { initNavigationInteractions } from '../interactions/navigation.js';
 import { initGestureInteractions, isAdditiveSelectionEvent } from '../interactions/gesture-layer.js';
 import { initKeyboardInteractions } from '../interactions/keyboard.js';
 
-const {
-  WEDGE_HALF_W,
-  WEDGE_DASHES,
-  perpUnit,
-  shortenLine,
-  secondaryDir,
-  labelHalfW,
-  syncDisplayStereo,
-  flipDisplayStereo,
-  kekulize
-} = mol2dHelpers;
+const { WEDGE_HALF_W, WEDGE_DASHES, perpUnit, shortenLine, secondaryDir, labelHalfW, syncDisplayStereo, flipDisplayStereo, kekulize } = mol2dHelpers;
 
 initLegacyInputGlobals({
   win: window,
@@ -649,6 +632,7 @@ const {
       spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
       centerReaction2dPairCoords: _centerReaction2dPairCoords,
       viewportFitPadding: _viewportFitPadding,
+      generateAndRefine2dCoords,
       refineExistingCoords,
       atomBBox,
       flipDisplayStereo,
@@ -663,6 +647,25 @@ const {
       },
       flipStereoMap2d: mol => {
         runtimeState.stereoMap2d = flipDisplayStereo(mol, runtimeState.stereoMap2d);
+        const preview = mol.__reactionPreview;
+        if (preview) {
+          if (preview.forcedStereoBondTypes?.size) {
+            for (const [bondId] of preview.forcedStereoBondTypes) {
+              const newType = runtimeState.stereoMap2d.get(bondId);
+              if (newType !== undefined) {
+                preview.forcedStereoBondTypes.set(bondId, newType);
+              }
+            }
+          }
+          if (preview.forcedStereoByCenter?.size) {
+            for (const [centerId, info] of preview.forcedStereoByCenter) {
+              const newType = runtimeState.stereoMap2d.get(info.bondId);
+              if (newType !== undefined) {
+                preview.forcedStereoByCenter.set(centerId, { ...info, type: newType });
+              }
+            }
+          }
+        }
       },
       setPreserveSelectionOnNextRender: value => {
         runtimeState.preserveSelectionOnNextRender = value;
@@ -1056,6 +1059,7 @@ finalizeAppBootstrap(
       syncDisplayStereo,
       clearReactionPreviewState: () => _clearReactionPreviewState(),
       restoreReactionPreviewSource: options => _restoreReactionPreviewSource(options),
+      reapplyActiveReactionPreview: () => _reapplyActiveReactionPreview(),
       hasReactionPreview: () => _hasReactionPreview(),
       isReactionPreviewEditableAtomId: id => _isReactionPreviewEditableAtomId(id),
       getReactionPreviewSourceMol: () => _getReactionPreviewSourceMol(),

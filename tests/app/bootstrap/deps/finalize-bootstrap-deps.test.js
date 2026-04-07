@@ -147,4 +147,141 @@ describe('finalize-bootstrap dependency builder', () => {
     assert.equal(drawBondHoverSuppressed, true);
     assert.equal(tookSnapshot, true);
   });
+
+  it('re-fits the force scene on resize when a molecule is loaded', () => {
+    const updateForceCalls = [];
+    const deps = createFinalizeAppBootstrapDeps({
+      createAppDelegates() {},
+      createUndoDeps() {},
+      createReaction2dDeps() {},
+      createResonancePanelDeps() {},
+      createBondEnPanelDeps() {},
+      createOptionsModalDeps() {},
+      createPhyschemPanelDeps() {},
+      createAppShellDeps() {},
+      initUndo() {},
+      initHighlights() {},
+      initExport() {},
+      initReaction2d() {},
+      initResonancePanel() {},
+      initBondEnPanel() {},
+      initNavigationInteractions() {},
+      initKeyboardInteractions() {},
+      initGestureInteractions() {},
+      initOptionsModal() {},
+      initPlotInteractions() {},
+      initTabPanels() {},
+      initPhyschemPanel() {},
+      initAppShell() {},
+      setDelegates() {},
+      appController: {},
+      runtimeState: {
+        mode: 'force',
+        currentMol: { id: 'mol-force' },
+        selectionValenceTooltipAtomId: null,
+        activeValenceWarningMap: new Map()
+      },
+      appState: {},
+      getDrawBondState: () => null,
+      setDrawBondHoverSuppressed() {},
+      getSelectMode: () => false,
+      getDrawBondMode: () => false,
+      getEraseMode: () => false,
+      setCapturePhyschemHighlightSnapshot() {},
+      setRestorePhyschemHighlightSnapshot() {},
+      getInitialSmiles: () => 'CCO',
+      primitiveSelectionActions: {},
+      drawBondPreviewActions: {},
+      drawBondCommitActions: {},
+      editingActions: {},
+      selectionActions: {},
+      render2DHelpers: {},
+      highlight2DRenderer: {},
+      scene2DRenderer: {},
+      zoomTransformHelpers: {},
+      renderRuntime: {},
+      applyForceHighlights() {},
+      refreshSelectionOverlay() {},
+      applyForceSelection() {},
+      selectionOverlayManager: { redraw2dSelection() {} },
+      forceSceneRenderer: {
+        updateForce(mol, options) {
+          updateForceCalls.push([mol, options]);
+        }
+      },
+      syncDisplayStereo() {},
+      clearReactionPreviewState() {},
+      restoreReactionPreviewSource() {},
+      hasReactionPreview: () => false,
+      isReactionPreviewEditableAtomId: () => false,
+      getReactionPreviewSourceMol: () => null,
+      takeSnapshot() {},
+      undoAction() {},
+      redoAction() {},
+      d3: {
+        zoomTransform: () => ({}),
+        zoomIdentity: { translate: () => ({ scale: () => ({}) }) },
+        select: element => ({ datum: () => element })
+      },
+      svg: {
+        node: () => ({}),
+        call() {}
+      },
+      zoom: {},
+      g: {},
+      plotEl: {},
+      simulation: {
+        alpha() {
+          return { restart() {} };
+        }
+      },
+      document: {},
+      window: {},
+      tooltip: {
+        interrupt() {
+          return {
+            style() {
+              return {
+                html() {
+                  return { style() {} };
+                }
+              };
+            },
+            html() {
+              return { style() {} };
+            }
+          };
+        }
+      },
+      domElements: {
+        setInputValue() {}
+      },
+      clearPrimitiveHover() {},
+      showPrimitiveHover() {},
+      updateAnalysisPanels() {},
+      prepare2dExportHighlightState() {},
+      setHighlight() {},
+      restorePersistentHighlight() {},
+      setPersistentHighlightFallback() {},
+      renderOptionLimits: {},
+      getRenderOptions: () => ({}),
+      getDefaultRenderOptions: () => ({}),
+      updateRenderOptions() {},
+      inputControls: {},
+      inputFlowManager: {},
+      parseSMILES() {},
+      parseINCHI() {},
+      copyForcePng() {},
+      copyForceSvg() {},
+      copySvg2d() {},
+      savePng2d() {},
+      atomTooltipHtml() {},
+      toSMILES() {},
+      toInChI() {}
+    });
+
+    deps.view.handleForceResize();
+
+    assert.deepEqual(updateForceCalls, [[{ id: 'mol-force' }, { preservePositions: true, preserveView: false }]]);
+  });
 });

@@ -18,18 +18,24 @@ export function createNavigationActions(context) {
     }
     context.history.takeSnapshot({ clearReactionPreview: false });
     const mol = context.state.documentState.getMol2d();
-    context.helpers.refineExistingCoords(mol, {
-      bondLength: 1.5,
-      maxPasses: 6,
-      freezeRings: true,
-      freezeChiralCenters: false,
-      allowBranchReflect: true
+    const relayoutMol = mol.clone();
+    const hasStrictRelayout = typeof context.helpers.generateAndRefine2dCoords === 'function';
+    if (hasStrictRelayout) {
+      context.helpers.generateAndRefine2dCoords(relayoutMol, {
+        suppressH: true,
+        bondLength: 1.5,
+        maxPasses: 12,
+        freezeRings: true,
+        freezeChiralCenters: false,
+        allowBranchReflect: true
+      });
+    }
+    context.view.setPreserveSelectionOnNextRender(true);
+    context.renderers.renderMol(relayoutMol, {
+      preserveHistory: true,
+      preserveAnalysis: true,
+      preserveGeometry: hasStrictRelayout
     });
-    context.overlays.alignReaction2dProductOrientation(mol);
-    context.overlays.spreadReaction2dProductComponents(mol, 1.5);
-    context.overlays.centerReaction2dPairCoords(mol, 1.5);
-    context.view.fitCurrent2dView();
-    context.renderers.draw2d();
     const btn = context.dom.clean2dButton;
     if (btn) {
       btn.textContent = '✓';

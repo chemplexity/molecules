@@ -372,6 +372,13 @@ export function finalizeAppBootstrap(ctx) {
       view: {
         handleForceResize: () => ctx.view.handleForceResize(),
         handle2DResize: () => {
+          if (ctx.overlays.hasReactionPreview()) {
+            if (ctx.overlays.reapplyActiveReactionPreview()) {
+              ctx.render.scene2DRenderer.fitCurrent2dView();
+              return;
+            }
+            return;
+          }
           ctx.view.resetOrientation();
           const mol = ctx.state.getCurrentInchi()
             ? ctx.parsers.parseINCHI(ctx.state.getCurrentInchi())

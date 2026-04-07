@@ -99,6 +99,7 @@ export function createFinalizeAppBootstrapDeps(ctx) {
     overlays: {
       clearReactionPreviewState: () => ctx.clearReactionPreviewState(),
       restoreReactionPreviewSource: options => ctx.restoreReactionPreviewSource(options),
+      reapplyActiveReactionPreview: () => ctx.reapplyActiveReactionPreview(),
       hasReactionPreview: () => ctx.hasReactionPreview(),
       isReactionPreviewEditableAtomId: id => ctx.isReactionPreviewEditableAtomId(id),
       getReactionPreviewSourceMol: () => ctx.getReactionPreviewSourceMol()
@@ -133,7 +134,16 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       showTooltip: (html, event) => {
         ctx.tooltip.interrupt().style('opacity', 0.9).html(html).style('left', `${event.clientX + 13}px`).style('top', `${event.clientY - 20}px`);
       },
-      handleForceResize: () => ctx.simulation.alpha(0.3).restart(),
+      handleForceResize: () => {
+        if (ctx.runtimeState.currentMol) {
+          ctx.forceSceneRenderer.updateForce(ctx.runtimeState.currentMol, {
+            preservePositions: true,
+            preserveView: false
+          });
+          return;
+        }
+        ctx.simulation.alpha(0.3).restart();
+      },
       resetOrientation: () => {
         ctx.runtimeState.rotationDeg = 0;
         ctx.runtimeState.flipH = false;
