@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { parseSMILES, tokenize, decode, toJSON, fromJSON, toSMILES } from '../../src/io/index.js';
 import { Molecule } from '../../src/core/index.js';
 import { molecularFormula, molecularMass } from '../../src/descriptors/molecular.js';
+import { validateValence } from '../../src/validation/index.js';
 
 // Derive molecular formula from a Molecule's atom Map
 function formula(mol) {
@@ -41,6 +42,56 @@ describe('parseSMILES', () => {
     assert.equal(carbon.properties.protons, 6);
     assert.equal(carbon.properties.group, 14);
     assert.equal(carbon.properties.period, 2);
+  });
+
+  it('parses ruthenium complex with synthetic %XX ring closures', () => {
+    const smiles = 'CC1=CC2=C3C=C(CCCCCCCCC(=O)N[C@H]4[C@H]5C[C@@H]6C[C@@H](C[C@H]4C6)C5)C=CN3[Ru++]34(N5C=CC=CC5=C5C=CC=CN35)(N3C=CC=CC3=C3C=CC=CN43)N2C=C1';
+    const mol = parseSMILES(smiles);
+    assert.ok(mol.atomCount > 0);
+    assert.ok(mol.bondCount > 0);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'Ru').length, 1);
+  });
+
+  it('parses tantalum cluster with reused single-digit ring closures', () => {
+    const smiles = '[Ta]1234567[Br][Ta]1189%10%11[Br][Ta]2112%12%13%14([Ta]33([Br]4)([Br]1)[Ta]821([Br][Ta]5931([Br]%12)([Br]6)[Br]%10)([Br]%13)([Br]%14)[Br]%11)[Br]7';
+    const mol = parseSMILES(smiles);
+    assert.ok(mol.atomCount > 0);
+    assert.ok(mol.bondCount > 0);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'Ta').length, 6);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'Br').length, 12);
+  });
+
+  it('parses bracket chiral steroid ring closures without dropping single-digit bonds', () => {
+    const smiles = '[H][C@@]12CC[C@@]3(CCC(=O)O3)[C@@]1(C)C[C@H]1O[C@@]11[C@@]2([H])[C@@H](CC2=CC(=O)CC[C@]12C)C(=O)OC';
+    const mol = parseSMILES(smiles);
+    assert.equal(validateValence(mol).length, 0);
+  });
+
+  it('parses bracket metal ring closures with adjacent single-digit labels as one connected complex', () => {
+    const smiles = 'C1=CN(C=N1)[Os++]123n4ccccc4-c4ccccn14.c1ccn2c(c1)-c1ccccn31';
+    const mol = parseSMILES(smiles);
+    assert.equal(validateValence(mol).length, 0);
+    assert.equal(mol.getComponents().length, 1);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'Os').length, 1);
+    assert.equal(
+      [...mol.bonds.values()].filter(bond => bond.properties.order === 1.5 && bond.properties.aromatic !== true).length,
+      0
+    );
+    assert.ok(
+      [...mol.bonds.values()].some(
+        bond =>
+          ((bond.atoms[0] === 'C23' && bond.atoms[1] === 'C25') || (bond.atoms[0] === 'C25' && bond.atoms[1] === 'C23')) &&
+          bond.properties.order === 1 &&
+          bond.properties.aromatic === false
+      )
+    );
+  });
+
+  it('ignores bracket-charge text when pairing cobalt corrin ring closures', () => {
+    const smiles =
+      'C1(CC[C@@]2([C@@H](CC(N)=O)[C@@]3([C@@]4([N+]5=C([C@H]([C@@]4(CC(N)=O)C)CCC(N)=O)C(C)=C4[N+]6=C(C=C7[N+]8=C([C@H](C7(C)C)CCC(N)=O)C(C)=C2N3[Co-3]568([N+]2=CN([C@H]3O[C@@H]([C@@H](OP(O[C@@H](CN1)C)([O-])=O)[C@H]3O)CO)C1=CC(C)=C(C=C21)C)C)[C@H]([C@@]4(CC(N)=O)C)CCC(N)=O)C)[H])C)=O';
+    const mol = parseSMILES(smiles);
+    assert.equal(validateValence(mol).length, 0);
   });
 });
 

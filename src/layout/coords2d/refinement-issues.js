@@ -426,26 +426,38 @@ export function collectLayoutIssues(molecule, coords, ctx) {
   // only the 3×3 cell neighbourhood needs to be examined for proximity tests.
   // This reduces the atom-pair and bond-atom loops from O(n²) to O(n) for
   // spread-out molecules.
+  // The grid is cached on ctx keyed by coords reference — repeated calls with
+  // the same coords Map (e.g. scoring the same base layout in one pass) skip
+  // the O(n) rebuild entirely.
   const cellSize = nearAtomThresh;
-  const gridCells = new Map(); // "cx,cy" → number[] (indices into heavyIds)
-  const atomCellCx = new Int32Array(ctx.heavyIds.length);
-  const atomCellCy = new Int32Array(ctx.heavyIds.length);
-  for (let i = 0; i < ctx.heavyIds.length; i++) {
-    const p = coords.get(ctx.heavyIds[i]);
-    if (!p) {
-      continue;
+  let gridCells, atomCellCx, atomCellCy;
+  const _cache = ctx._gridCache;
+  if (_cache && _cache.coordsRef === coords) {
+    ({ gridCells, atomCellCx, atomCellCy } = _cache);
+  } else {
+    gridCells = new Map(); // "cx,cy" → number[] (indices into heavyIds)
+    atomCellCx = new Int32Array(ctx.heavyIds.length);
+    atomCellCy = new Int32Array(ctx.heavyIds.length);
+    for (let i = 0; i < ctx.heavyIds.length; i++) {
+      const p = coords.get(ctx.heavyIds[i]);
+      if (!p) {
+        continue;
+      }
+      const cx = Math.floor(p.x / cellSize);
+      const cy = Math.floor(p.y / cellSize);
+      atomCellCx[i] = cx;
+      atomCellCy[i] = cy;
+      const key = `${cx},${cy}`;
+      let cell = gridCells.get(key);
+      if (!cell) {
+        cell = [];
+        gridCells.set(key, cell);
+      }
+      cell.push(i);
     }
-    const cx = Math.floor(p.x / cellSize);
-    const cy = Math.floor(p.y / cellSize);
-    atomCellCx[i] = cx;
-    atomCellCy[i] = cy;
-    const key = `${cx},${cy}`;
-    let cell = gridCells.get(key);
-    if (!cell) {
-      cell = [];
-      gridCells.set(key, cell);
+    if (ctx._gridCache !== undefined) {
+      ctx._gridCache = { coordsRef: coords, gridCells, atomCellCx, atomCellCy };
     }
-    cell.push(i);
   }
 
   // Collect indices of atoms in the 3×3 neighbourhood of cell (cx, cy).
@@ -561,6 +573,11 @@ export function collectLayoutIssues(molecule, coords, ctx) {
       }
     }
 
+    // Cap at 8 crossings — enough to identify the problem region without
+    // scanning the full O(b²) matrix when the layout is badly tangled.
+    if (issues.filter(iss => iss.type === 'bond_crossing').length >= 8) {
+      break;
+    }
     for (let j = i + 1; j < ctx.heavyBonds.length; j++) {
       const otherBond = ctx.heavyBonds[j];
       const shared = bond.atoms.some(atomId => otherBond.atoms.includes(atomId));

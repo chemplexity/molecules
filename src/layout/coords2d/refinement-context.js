@@ -72,12 +72,20 @@ export function countHeavyAtoms(molecule, atomIds) {
   return count;
 }
 
+// Cycle data depends only on molecule topology, so the same molecule object
+// always produces the same result. Cache in a WeakMap so the O(bonds × n)
+// BFS-per-bond computation runs at most once per molecule reference.
+const _cycleDataCache = new WeakMap();
+
 /**
  * Identifies all bonds and atoms that are part of rings in the molecule.
  * @param {object} molecule - The molecule graph
  * @returns {{ ringBondIds: Set<string>, ringAtomIds: Set<string> }} Sets of ring bond and atom IDs
  */
 export function collectCycleData(molecule) {
+  if (_cycleDataCache.has(molecule)) {
+    return _cycleDataCache.get(molecule);
+  }
   const ringBondIds = new Set();
   const ringAtomIds = new Set();
 
@@ -129,7 +137,9 @@ export function collectCycleData(molecule) {
     }
   }
 
-  return { ringBondIds, ringAtomIds };
+  const result = { ringBondIds, ringAtomIds };
+  _cycleDataCache.set(molecule, result);
+  return result;
 }
 
 /**
@@ -140,10 +150,34 @@ export function collectCycleData(molecule) {
  * @param {(subgraph: import('../../core/Molecule.js').Molecule, options: object) => void} generateCoords - Function used to lay out a subgraph; called as generateCoords(subgraph, options)
  * @returns {Array<{ atomIds: Set<string>, templateCoords: Map<string, {x: number, y: number}> }>} Array of ring system descriptors
  */
+// Rotatable/multiple-bond candidates depend only on topology + freeze flags,
+// not on current coordinates. Cache them so the O(bonds × n) subtree traversals
+// run only once per (molecule, freezeRings, freezeChiralCenters) combination.
+const _topoCandidateCache = new WeakMap(); // molecule → Map<flagsKey, { rotatableCandidates, multipleBondCandidates }>
+
+// Memoize ring templates per molecule reference + bondLength. Keyed by a
+// string of sorted atom IDs so the same ring system is only laid out once
+// even when generateCoords is called recursively for subgraphs.
+const _ringTemplateMemo = new WeakMap(); // molecule → Map<cacheKey, templateCoords>
+
+/**
+ * Collects ring system candidates from the molecule for 2D layout.
+ * Results are memoized per molecule reference and bond length.
+ * @param {object} molecule - The molecule graph
+ * @param {number} bondLength - Target bond length for ring templates
+ * @param {{ ringAtomIds: Set<string>, ringBondIds: Set<string> }} cycleData - Precomputed cycle data
+ * @param {(mol: object, opts: object) => Map} generateCoords - Recursive coord generator for sub-rings
+ * @returns {Array<object>} Array of ring system candidate objects
+ */
 export function collectRingSystemCandidates(molecule, bondLength, cycleData, generateCoords) {
   const ringAtomSet = cycleData.ringAtomIds;
   const systems = [];
   const seen = new Set();
+
+  if (!_ringTemplateMemo.has(molecule)) {
+    _ringTemplateMemo.set(molecule, new Map());
+  }
+  const memo = _ringTemplateMemo.get(molecule);
 
   for (const atomId of ringAtomSet) {
     if (seen.has(atomId)) {
@@ -169,13 +203,18 @@ export function collectRingSystemCandidates(molecule, bondLength, cycleData, gen
       continue;
     }
 
-    const ringSubgraph = molecule.getSubgraph([...atomIds]);
-    generateCoords(ringSubgraph, { suppressH: true, bondLength });
-    const templateCoords = new Map();
-    for (const [ringAtomId, atom] of ringSubgraph.atoms) {
-      if (Number.isFinite(atom.x) && Number.isFinite(atom.y)) {
-        templateCoords.set(ringAtomId, vec2(atom.x, atom.y));
+    const cacheKey = `${bondLength.toFixed(6)}:${[...atomIds].sort().join(',')}`;
+    let templateCoords = memo.get(cacheKey);
+    if (!templateCoords) {
+      const ringSubgraph = molecule.getSubgraph([...atomIds]);
+      generateCoords(ringSubgraph, { suppressH: true, bondLength });
+      templateCoords = new Map();
+      for (const [ringAtomId, atom] of ringSubgraph.atoms) {
+        if (Number.isFinite(atom.x) && Number.isFinite(atom.y)) {
+          templateCoords.set(ringAtomId, vec2(atom.x, atom.y));
+        }
       }
+      memo.set(cacheKey, templateCoords);
     }
     if (templateCoords.size >= 3) {
       systems.push({ atomIds, templateCoords });
@@ -341,97 +380,109 @@ export function buildRefinementContext(
     }
   }
 
-  const rotatableCandidates = [];
-  const multipleBondCandidates = [];
-  for (const [, bond] of molecule.bonds) {
-    const [aId, bId] = bond.atoms;
-    const atomA = molecule.atoms.get(aId);
-    const atomB = molecule.atoms.get(bId);
-    if (!atomA || !atomB) {
-      continue;
-    }
-    if (atomA.name === 'H' || atomB.name === 'H' || cycleData.ringBondIds.has(bond.id)) {
-      continue;
-    }
-    if (!coords.has(aId) || !coords.has(bId)) {
-      continue;
-    }
+  const flagsKey = `${freezeRings ? 1 : 0}:${freezeChiralCenters ? 1 : 0}`;
+  const topoEntry = _topoCandidateCache.get(molecule)?.get(flagsKey);
+  let rotatableCandidates, multipleBondCandidates;
 
-    const order = bond.properties.order ?? 1;
-    const sideA = collectRefinementSubtree(molecule, aId, bId, frozenAtoms);
-    const sideB = collectRefinementSubtree(molecule, bId, aId, frozenAtoms);
+  if (topoEntry) {
+    ({ rotatableCandidates, multipleBondCandidates } = topoEntry);
+  } else {
+    rotatableCandidates = [];
+    multipleBondCandidates = [];
+    for (const [, bond] of molecule.bonds) {
+      const [aId, bId] = bond.atoms;
+      const atomA = molecule.atoms.get(aId);
+      const atomB = molecule.atoms.get(bId);
+      if (!atomA || !atomB) {
+        continue;
+      }
+      if (atomA.name === 'H' || atomB.name === 'H' || cycleData.ringBondIds.has(bond.id)) {
+        continue;
+      }
+      if (!coords.has(aId) || !coords.has(bId)) {
+        continue;
+      }
 
-    if (order === 1 && !bond.properties.aromatic) {
-      const choices = [];
-      if (sideA && sideA.size > 0) {
-        choices.push({
-          kind: 'rotatable',
+      const order = bond.properties.order ?? 1;
+      const sideA = collectRefinementSubtree(molecule, aId, bId, frozenAtoms);
+      const sideB = collectRefinementSubtree(molecule, bId, aId, frozenAtoms);
+
+      if (order === 1 && !bond.properties.aromatic) {
+        const choices = [];
+        if (sideA && sideA.size > 0) {
+          choices.push({
+            kind: 'rotatable',
+            bondId: bond.id,
+            pivotId: bId,
+            movingId: aId,
+            atomIds: sideA,
+            heavyCount: countHeavyAtoms(molecule, sideA)
+          });
+        }
+        if (sideB && sideB.size > 0) {
+          choices.push({
+            kind: 'rotatable',
+            bondId: bond.id,
+            pivotId: aId,
+            movingId: bId,
+            atomIds: sideB,
+            heavyCount: countHeavyAtoms(molecule, sideB)
+          });
+        }
+        if (choices.length === 0) {
+          continue;
+        }
+
+        choices.sort((a, b) => {
+          if (a.heavyCount !== b.heavyCount) {
+            return a.heavyCount - b.heavyCount;
+          }
+          if (a.atomIds.size !== b.atomIds.size) {
+            return a.atomIds.size - b.atomIds.size;
+          }
+          if (a.pivotId !== b.pivotId) {
+            return _layoutCompareAtomIds(molecule, a.pivotId, b.pivotId);
+          }
+          return _layoutCompareAtomIds(molecule, a.movingId, b.movingId);
+        });
+
+        rotatableCandidates.push(choices[0]);
+        continue;
+      }
+
+      if (order < 2 || bond.properties.aromatic) {
+        continue;
+      }
+
+      const heavyDegreeA = _layoutNeighbors(molecule, aId).filter(nb => molecule.atoms.get(nb)?.name !== 'H').length;
+      const heavyDegreeB = _layoutNeighbors(molecule, bId).filter(nb => molecule.atoms.get(nb)?.name !== 'H').length;
+      const heavySideA = sideA ? countHeavyAtoms(molecule, sideA) : 0;
+      const heavySideB = sideB ? countHeavyAtoms(molecule, sideB) : 0;
+      if (sideA && heavySideA === 1 && heavyDegreeA === 1 && !frozenAtoms.has(aId)) {
+        multipleBondCandidates.push({
+          kind: 'multiple_terminal',
           bondId: bond.id,
           pivotId: bId,
           movingId: aId,
           atomIds: sideA,
-          heavyCount: countHeavyAtoms(molecule, sideA)
+          heavyCount: heavySideA
         });
       }
-      if (sideB && sideB.size > 0) {
-        choices.push({
-          kind: 'rotatable',
+      if (sideB && heavySideB === 1 && heavyDegreeB === 1 && !frozenAtoms.has(bId)) {
+        multipleBondCandidates.push({
+          kind: 'multiple_terminal',
           bondId: bond.id,
           pivotId: aId,
           movingId: bId,
           atomIds: sideB,
-          heavyCount: countHeavyAtoms(molecule, sideB)
+          heavyCount: heavySideB
         });
       }
-      if (choices.length === 0) {
-        continue;
-      }
-
-      choices.sort((a, b) => {
-        if (a.heavyCount !== b.heavyCount) {
-          return a.heavyCount - b.heavyCount;
-        }
-        if (a.atomIds.size !== b.atomIds.size) {
-          return a.atomIds.size - b.atomIds.size;
-        }
-        if (a.pivotId !== b.pivotId) {
-          return _layoutCompareAtomIds(molecule, a.pivotId, b.pivotId);
-        }
-        return _layoutCompareAtomIds(molecule, a.movingId, b.movingId);
-      });
-
-      rotatableCandidates.push(choices[0]);
-      continue;
     }
-
-    if (order < 2 || bond.properties.aromatic) {
-      continue;
+    if (!_topoCandidateCache.has(molecule)) {
+      _topoCandidateCache.set(molecule, new Map());
     }
-
-    const heavyDegreeA = _layoutNeighbors(molecule, aId).filter(nb => molecule.atoms.get(nb)?.name !== 'H').length;
-    const heavyDegreeB = _layoutNeighbors(molecule, bId).filter(nb => molecule.atoms.get(nb)?.name !== 'H').length;
-    const heavySideA = sideA ? countHeavyAtoms(molecule, sideA) : 0;
-    const heavySideB = sideB ? countHeavyAtoms(molecule, sideB) : 0;
-    if (sideA && heavySideA === 1 && heavyDegreeA === 1 && !frozenAtoms.has(aId)) {
-      multipleBondCandidates.push({
-        kind: 'multiple_terminal',
-        bondId: bond.id,
-        pivotId: bId,
-        movingId: aId,
-        atomIds: sideA,
-        heavyCount: heavySideA
-      });
-    }
-    if (sideB && heavySideB === 1 && heavyDegreeB === 1 && !frozenAtoms.has(bId)) {
-      multipleBondCandidates.push({
-        kind: 'multiple_terminal',
-        bondId: bond.id,
-        pivotId: aId,
-        movingId: bId,
-        atomIds: sideB,
-        heavyCount: heavySideB
-      });
-    }
+    _topoCandidateCache.get(molecule).set(flagsKey, { rotatableCandidates, multipleBondCandidates });
   }
 
   const ringSystemCandidates = freezeRings && includeRingSystemCandidates ? collectRingSystemCandidates(molecule, bondLength, cycleData, generateCoords) : [];
@@ -446,6 +497,9 @@ export function buildRefinementContext(
     rotatableCandidates,
     multipleBondCandidates,
     ringSystemCandidates,
-    rings: molecule.getRings().filter(ring => ring.length >= 3)
+    rings: molecule.getRings().filter(ring => ring.length >= 3),
+    // Cache slot for collectLayoutIssues — keyed by coords Map reference so
+    // repeated calls with the same coords object skip the O(n) grid rebuild.
+    _gridCache: null
   };
 }

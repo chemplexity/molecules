@@ -239,7 +239,7 @@ export function enforceAcyclicEZStereo(molecule, coords, { preserveLongChainSpan
     return molecule.getEZStereo(bond.id) != null && !ringAtomIds.has(aId) && !ringAtomIds.has(bId);
   });
 
-  const maxPasses = Math.max(1, stereoBonds.length * 2);
+  const maxPasses = Math.max(1, stereoBonds.length);
 
   const matchedStereoCount = currentCoords =>
     stereoBonds.reduce((count, currentBond) => {
@@ -247,31 +247,83 @@ export function enforceAcyclicEZStereo(molecule, coords, { preserveLongChainSpan
       return count + (actualAlkeneStereoFromCoords(molecule, currentCoords, currentBond) === target ? 1 : 0);
     }, 0);
 
+  // heavyClearanceScore: minimum non-bonded heavy-atom distance.
+  // Uses a spatial grid (O(n·k)) instead of an O(n²) all-pairs loop.
+  // Pairs farther than CLEAR_R are irrelevant for comparison purposes;
+  // when no close pair exists the function returns CLEAR_R (large = good).
+  // Estimate bond length from the first heavy bond found in coords.
+  let _estBondLength = 1.5;
+  for (const bond of molecule.bonds.values()) {
+    const [aId, bId] = bond.atoms;
+    if (molecule.atoms.get(aId)?.name === 'H' || molecule.atoms.get(bId)?.name === 'H') {
+      continue;
+    }
+    const pa = coords.get(aId),
+      pb = coords.get(bId);
+    if (pa && pb) {
+      _estBondLength = Math.hypot(pa.x - pb.x, pa.y - pb.y) || 1.5;
+      break;
+    }
+  }
+  const CLEAR_R = _estBondLength * 3;
+  const CLEAR_R2 = CLEAR_R * CLEAR_R;
+  let _clearCacheRef = null;
+  let _clearGrid = null;
   const heavyClearanceScore = currentCoords => {
-    let minDist = Infinity;
-    for (let i = 0; i < heavyIds.length; i++) {
-      const aId = heavyIds[i];
+    if (_clearCacheRef !== currentCoords) {
+      _clearGrid = new Map();
+      for (const aId of heavyIds) {
+        const p = currentCoords.get(aId);
+        if (!p) {
+          continue;
+        }
+        const key = `${Math.floor(p.x / CLEAR_R)},${Math.floor(p.y / CLEAR_R)}`;
+        let cell = _clearGrid.get(key);
+        if (!cell) {
+          cell = [];
+          _clearGrid.set(key, cell);
+        }
+        cell.push(aId);
+      }
+      _clearCacheRef = currentCoords;
+    }
+    let minDist2 = CLEAR_R2;
+    for (const aId of heavyIds) {
       const aPos = currentCoords.get(aId);
       if (!aPos) {
         continue;
       }
-      for (let j = i + 1; j < heavyIds.length; j++) {
-        const bId = heavyIds[j];
-        const key = aId < bId ? `${aId}\0${bId}` : `${bId}\0${aId}`;
-        if (bondedHeavyPairs.has(key)) {
-          continue;
-        }
-        const bPos = currentCoords.get(bId);
-        if (!bPos) {
-          continue;
-        }
-        const dist = Math.hypot(aPos.x - bPos.x, aPos.y - bPos.y);
-        if (dist < minDist) {
-          minDist = dist;
+      const cx0 = Math.floor(aPos.x / CLEAR_R) - 1;
+      const cy0 = Math.floor(aPos.y / CLEAR_R) - 1;
+      for (let gx = 0; gx <= 2; gx++) {
+        for (let gy = 0; gy <= 2; gy++) {
+          const cell = _clearGrid.get(`${cx0 + gx},${cy0 + gy}`);
+          if (!cell) {
+            continue;
+          }
+          for (const bId of cell) {
+            if (bId <= aId) {
+              continue; // process each pair once (lexicographic dedup)
+            }
+            const key = aId < bId ? `${aId}\0${bId}` : `${bId}\0${aId}`;
+            if (bondedHeavyPairs.has(key)) {
+              continue;
+            }
+            const bPos = currentCoords.get(bId);
+            if (!bPos) {
+              continue;
+            }
+            const dx = aPos.x - bPos.x,
+              dy = aPos.y - bPos.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 < minDist2) {
+              minDist2 = d2;
+            }
+          }
         }
       }
     }
-    return minDist;
+    return Math.sqrt(minDist2);
   };
 
   const longChainSpanScore = currentCoords =>

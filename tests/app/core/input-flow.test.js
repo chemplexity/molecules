@@ -176,9 +176,10 @@ describe('createInputFlowManager', () => {
       capturedSnapshot: { id: 'previous-snapshot' }
     });
 
-    manager.parseAndRenderSmiles('CCC');
+    manager.parseInput('CCC');
 
-    assert.deepEqual(calls.slice(0, 3), [
+    assert.deepEqual(calls.slice(0, 4), [
+      ['syncPickerForInputValue', 'CCC'],
       [
         'captureSnapshot',
         {
@@ -255,5 +256,23 @@ describe('createInputFlowManager', () => {
       calls.find(([name]) => name === 'takeSnapshot'),
       ['takeSnapshot', { clearReactionPreview: false, snapshot: { id: 'previous-snapshot' } }]
     );
+  });
+
+  it('accepts SMILES inputs longer than 1000 characters up to the raised 2000-character limit', () => {
+    const longSmiles = 'C'.repeat(1001);
+    const { manager, calls, getState } = makeManager({
+      parseSMILES: value => {
+        calls.push(['parseSMILES', value.length]);
+        return { atoms: new Map([['a1', {}]]) };
+      }
+    });
+
+    manager.parseInput(longSmiles);
+
+    assert.deepEqual(
+      calls.find(([name]) => name === 'parseSMILES'),
+      ['parseSMILES', 1001]
+    );
+    assert.equal(getState().currentSmiles, longSmiles);
   });
 });

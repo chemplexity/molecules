@@ -1543,6 +1543,30 @@ test('bond drawer selection updates the active option, main tool icon, and colla
     .toBe(true);
 });
 
+test('charge mode suppresses native contextmenu on right click in the live app', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'C');
+
+  await page.locator('#charge-positive-btn').click();
+  await expect(page.locator('#charge-positive-btn')).toHaveClass(/active/);
+
+  const atomHit = page.locator('g[data-atom-id="C1"] .atom-hit');
+  await atomHit.click({ button: 'right' });
+
+  await expect.poll(() => page.evaluate(() => window._getMolSmiles?.() ?? null)).toBe('[CH3-]');
+  await expect.poll(() => page.evaluate(() => ({
+    bodyHandler: typeof document.body?.oncontextmenu,
+    docElHandler: typeof document.documentElement?.oncontextmenu,
+    docHandler: typeof document.oncontextmenu,
+    windowHandler: typeof window.oncontextmenu
+  }))).toMatchObject({
+    bodyHandler: 'function',
+    docElHandler: 'function',
+    docHandler: 'function',
+    windowHandler: 'function'
+  });
+});
+
 test('undo preserves the selected bond draw type after undoing a bond edit', async ({ page }) => {
   await page.goto('/index.html');
   await loadSmiles(page, 'CCO');

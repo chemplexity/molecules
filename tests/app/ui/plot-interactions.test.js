@@ -17,16 +17,55 @@ function makeTooltip(records) {
 describe('initPlotInteractions', () => {
   it('prevents text selection in the plot container', () => {
     let selectStartHandler = null;
-    initPlotInteractions({
-      plotEl: {
-        addEventListener(type, handler) {
-          if (type === 'selectstart') {
-            selectStartHandler = handler;
-          }
+    let contextMenuHandler = null;
+    let mouseDownHandler = null;
+    let documentMouseDownHandler = null;
+    let documentContextMenuHandler = null;
+    let windowMouseDownHandler = null;
+    let windowAuxClickHandler = null;
+    let windowContextMenuHandler = null;
+    const plotEl = {
+      addEventListener(type, handler) {
+        if (type === 'selectstart') {
+          selectStartHandler = handler;
         }
-      },
+        if (type === 'contextmenu') {
+          contextMenuHandler = handler;
+        }
+        if (type === 'mousedown') {
+          mouseDownHandler = handler;
+        }
+      }
+    };
+    const docEl = {};
+    const bodyEl = {};
+    const win = {
+      addEventListener(type, handler) {
+        if (type === 'mousedown') {
+          windowMouseDownHandler = handler;
+        }
+        if (type === 'auxclick') {
+          windowAuxClickHandler = handler;
+        }
+        if (type === 'contextmenu') {
+          windowContextMenuHandler = handler;
+        }
+      }
+    };
+    initPlotInteractions({
+      plotEl,
+      window: win,
       document: {
-        addEventListener() {},
+        documentElement: docEl,
+        body: bodyEl,
+        addEventListener(type, handler) {
+          if (type === 'mousedown') {
+            documentMouseDownHandler = handler;
+          }
+          if (type === 'contextmenu') {
+            documentContextMenuHandler = handler;
+          }
+        },
         elementsFromPoint() {
           return [];
         }
@@ -70,6 +109,309 @@ describe('initPlotInteractions', () => {
     });
 
     assert.equal(prevented, true);
+    assert.equal(typeof contextMenuHandler, 'function');
+    assert.equal(typeof mouseDownHandler, 'function');
+    assert.equal(typeof documentMouseDownHandler, 'function');
+    assert.equal(typeof documentContextMenuHandler, 'function');
+    assert.equal(typeof windowMouseDownHandler, 'function');
+    assert.equal(typeof windowAuxClickHandler, 'function');
+    assert.equal(typeof windowContextMenuHandler, 'function');
+    assert.equal(typeof plotEl.oncontextmenu, 'function');
+    assert.equal(typeof plotEl.onmousedown, 'function');
+    assert.equal(typeof docEl.oncontextmenu, 'function');
+    assert.equal(typeof docEl.onmousedown, 'function');
+    assert.equal(typeof bodyEl.oncontextmenu, 'function');
+    assert.equal(typeof bodyEl.onmousedown, 'function');
+    assert.equal(typeof win.oncontextmenu, 'function');
+    assert.equal(typeof win.onmousedown, 'function');
+  });
+
+  it('suppresses the native context menu while a charge tool is active', () => {
+    let contextMenuHandler = null;
+    const plotEl = {
+      addEventListener(type, handler) {
+        if (type === 'contextmenu') {
+          contextMenuHandler = handler;
+        }
+      }
+    };
+    const win = {
+      addEventListener() {}
+    };
+    const docEl = {};
+    const bodyEl = {};
+
+    initPlotInteractions({
+      plotEl,
+      window: win,
+      document: {
+        documentElement: docEl,
+        body: bodyEl,
+        addEventListener() {},
+        elementsFromPoint() {
+          return [];
+        }
+      },
+      state: {
+        getSelectMode: () => false,
+        getDrawBondMode: () => false,
+        hasDrawBondState: () => false,
+        getEraseMode: () => false,
+        getChargeTool: () => 'positive',
+        isRenderableMode: () => true,
+        getActiveMolecule: () => null,
+        getTooltipMode: () => '2d'
+      },
+      options: {
+        getShowAtomTooltips: () => true
+      },
+      analysis: {
+        getActiveValenceWarningMap: () => new Map()
+      },
+      tooltipState: {
+        getSelectionValenceTooltipAtomId: () => null,
+        setSelectionValenceTooltipAtomId() {}
+      },
+      tooltip: makeTooltip([]),
+      helpers: {
+        getNodeDatum: () => null
+      },
+      molecule: {
+        getAtomById: () => null
+      },
+      formatters: {
+        atomTooltipHtml: () => ''
+      }
+    });
+
+    let prevented = false;
+    contextMenuHandler({
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    assert.equal(prevented, true);
+
+    prevented = false;
+    const result = win.oncontextmenu({
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {},
+      stopImmediatePropagation() {}
+    });
+    assert.equal(prevented, true);
+    assert.equal(result, false);
+  });
+
+  it('suppresses secondary mousedown in charge mode before the browser menu opens', () => {
+    let documentMouseDownHandler = null;
+    const plotEl = {
+      addEventListener() {}
+    };
+
+    initPlotInteractions({
+      plotEl,
+      window: {
+        addEventListener() {}
+      },
+      document: {
+        addEventListener(type, handler) {
+          if (type === 'mousedown') {
+            documentMouseDownHandler = handler;
+          }
+        },
+        elementsFromPoint() {
+          return [];
+        }
+      },
+      state: {
+        getSelectMode: () => false,
+        getDrawBondMode: () => false,
+        hasDrawBondState: () => false,
+        getEraseMode: () => false,
+        getChargeTool: () => 'negative',
+        isRenderableMode: () => true,
+        getActiveMolecule: () => null,
+        getTooltipMode: () => '2d'
+      },
+      options: {
+        getShowAtomTooltips: () => true
+      },
+      analysis: {
+        getActiveValenceWarningMap: () => new Map()
+      },
+      tooltipState: {
+        getSelectionValenceTooltipAtomId: () => null,
+        setSelectionValenceTooltipAtomId() {}
+      },
+      tooltip: makeTooltip([]),
+      helpers: {
+        getNodeDatum: () => null
+      },
+      molecule: {
+        getAtomById: () => null
+      },
+      formatters: {
+        atomTooltipHtml: () => ''
+      }
+    });
+
+    let prevented = false;
+    let stopped = false;
+    documentMouseDownHandler({
+      button: 2,
+      ctrlKey: false,
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {
+        stopped = true;
+      }
+    });
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+  });
+
+  it('suppresses document-level context menus anywhere during charge mode', () => {
+    let documentContextMenuHandler = null;
+    const plotEl = {
+      addEventListener() {}
+    };
+
+    initPlotInteractions({
+      plotEl,
+      window: {
+        addEventListener() {}
+      },
+      document: {
+        addEventListener(type, handler) {
+          if (type === 'contextmenu') {
+            documentContextMenuHandler = handler;
+          }
+        },
+        elementsFromPoint() {
+          return [];
+        }
+      },
+      state: {
+        getSelectMode: () => false,
+        getDrawBondMode: () => false,
+        hasDrawBondState: () => false,
+        getEraseMode: () => false,
+        getChargeTool: () => 'positive',
+        isRenderableMode: () => true,
+        getActiveMolecule: () => null,
+        getTooltipMode: () => '2d'
+      },
+      options: {
+        getShowAtomTooltips: () => true
+      },
+      analysis: {
+        getActiveValenceWarningMap: () => new Map()
+      },
+      tooltipState: {
+        getSelectionValenceTooltipAtomId: () => null,
+        setSelectionValenceTooltipAtomId() {}
+      },
+      tooltip: makeTooltip([]),
+      helpers: {
+        getNodeDatum: () => null
+      },
+      molecule: {
+        getAtomById: () => null
+      },
+      formatters: {
+        atomTooltipHtml: () => ''
+      }
+    });
+
+    let prevented = false;
+    let stopped = false;
+    documentContextMenuHandler({
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {
+        stopped = true;
+      }
+    });
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
+  });
+
+  it('suppresses window-level context menus during charge mode', () => {
+    let windowContextMenuHandler = null;
+    const plotEl = {
+      addEventListener() {}
+    };
+
+    initPlotInteractions({
+      plotEl,
+      window: {
+        addEventListener(type, handler) {
+          if (type === 'contextmenu') {
+            windowContextMenuHandler = handler;
+          }
+        }
+      },
+      document: {
+        addEventListener() {},
+        elementsFromPoint() {
+          return [];
+        }
+      },
+      state: {
+        getSelectMode: () => false,
+        getDrawBondMode: () => false,
+        hasDrawBondState: () => false,
+        getEraseMode: () => false,
+        getChargeTool: () => 'positive',
+        isRenderableMode: () => true,
+        getActiveMolecule: () => null,
+        getTooltipMode: () => '2d'
+      },
+      options: {
+        getShowAtomTooltips: () => true
+      },
+      analysis: {
+        getActiveValenceWarningMap: () => new Map()
+      },
+      tooltipState: {
+        getSelectionValenceTooltipAtomId: () => null,
+        setSelectionValenceTooltipAtomId() {}
+      },
+      tooltip: makeTooltip([]),
+      helpers: {
+        getNodeDatum: () => null
+      },
+      molecule: {
+        getAtomById: () => null
+      },
+      formatters: {
+        atomTooltipHtml: () => ''
+      }
+    });
+
+    let prevented = false;
+    let stopped = false;
+    windowContextMenuHandler({
+      preventDefault() {
+        prevented = true;
+      },
+      stopPropagation() {
+        stopped = true;
+      },
+      stopImmediatePropagation() {
+        stopped = true;
+      }
+    });
+
+    assert.equal(prevented, true);
+    assert.equal(stopped, true);
   });
 
   it('shows a valence tooltip for the hovered force atom and hides it when the hover clears', () => {

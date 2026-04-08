@@ -1,17 +1,75 @@
 /** @module algorithms/aromaticity */
 
+function _isTransitionMetal(atom) {
+  const group = atom?.properties?.group ?? 0;
+  return group >= 3 && group <= 12;
+}
+
+function _hasPiOrder(bond) {
+  return bond?.properties?.order === 2 || bond?.properties?.aromatic || bond?.properties?.order === 1.5;
+}
+
+function _hasFusedExocyclicRingPiBond(atom, ringAtomSet, mol) {
+  for (const bondId of atom.bonds) {
+    const bond = mol.bonds.get(bondId);
+    if (!_hasPiOrder(bond)) {
+      continue;
+    }
+    const other = mol.atoms.get(bond.getOtherAtom(atom.id));
+    if (!other || other.name === 'H' || _isTransitionMetal(other) || ringAtomSet.has(other.id)) {
+      continue;
+    }
+    if (other.isInRing(mol)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function _isFusedPyridineLikeNitrogen(atom, ringBonds, ringAtomSet, mol) {
+  if (atom.name !== 'N' || (atom.properties.charge ?? 0) !== 0) {
+    return false;
+  }
+  const hasH = atom.bonds.some(bId => {
+    const b = mol.bonds.get(bId);
+    if (!b) {
+      return false;
+    }
+    return mol.atoms.get(b.getOtherAtom(atom.id))?.name === 'H';
+  });
+  if (hasH || ringBonds.length !== 2 || ringBonds.some(_hasPiOrder)) {
+    return false;
+  }
+  return ringBonds.some(bond => {
+    const neighbor = mol.atoms.get(bond.getOtherAtom(atom.id));
+    return neighbor && _hasFusedExocyclicRingPiBond(neighbor, ringAtomSet, mol);
+  });
+}
+
+function _aromaticRingCandidates(mol) {
+  const hasTransitionMetal = [...mol.atoms.values()].some(_isTransitionMetal);
+  if (!hasTransitionMetal) {
+    return mol.getRings();
+  }
+  const organicRingAtomIds = [...mol.atoms.keys()].filter(id => {
+    const atom = mol.atoms.get(id);
+    return atom && atom.name !== 'H' && !_isTransitionMetal(atom);
+  });
+  return mol.getSubgraph(organicRingAtomIds).getRings();
+}
+
 /**
  * Counts the π electrons contributed by `atom` when it is part of `ringAtomSet`.
  *
  * Rules (Hückel):
- *  - C (neutral, participates in ring double bond): 1
- *  - C+ (carbocation):                              0
- *  - C- (carbanion):                                2
- *  - N pyridine-like (no H, one ring double bond):  1
- *  - N pyrrole-like  (has H, lone pair into ring):  2
- *  - O / S (lone pair into ring):                   2
- *  - B (empty p orbital):                           0
- *  - Already-marked aromatic atom (order=1.5):      1  (each contributes 1 to the 4n+2 sum)
+ *  - C (neutral, participates in ring/fused-system pi bond): 1
+ *  - C+ (carbocation):                                       0
+ *  - C- (carbanion):                                         2
+ *  - N pyridine-like / fused aza-ring (no H):                1
+ *  - N pyrrole-like  (has H, lone pair into ring):           2
+ *  - O / S (lone pair into ring):                            2
+ *  - B (empty p orbital):                                    0
+ *  - Already-marked aromatic atom (order=1.5):               1
  * @param {import('../core/Atom.js').Atom} atom - The atom object.
  * @param {Set<string>} ringAtomSet  Atom IDs in the candidate ring.
  * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
@@ -27,7 +85,8 @@ function _piElectrons(atom, ringAtomSet, mol) {
   // or if it is already flagged aromatic / order 1.5 (SMILES-aromatic input).
   // Note: O/S/pyrrole-N always donate 2 electrons regardless of bond type,
   // so we only use this flag for C and pyridine-like N.
-  const hasRingPiBond = ringBonds.some(b => b.properties.order === 2 || b.properties.aromatic || b.properties.order === 1.5);
+  const hasRingPiBond = ringBonds.some(_hasPiOrder);
+  const hasFusedExocyclicRingPiBond = _hasFusedExocyclicRingPiBond(atom, ringAtomSet, mol);
 
   if (el === 'C') {
     if (charge === 1) {
@@ -36,12 +95,12 @@ function _piElectrons(atom, ringAtomSet, mol) {
     if (charge === -1) {
       return 2;
     }
-    return hasRingPiBond ? 1 : null;
+    return hasRingPiBond || hasFusedExocyclicRingPiBond ? 1 : null;
   }
 
   if (el === 'N') {
     if (charge === 1) {
-      return hasRingPiBond ? 1 : null;
+      return hasRingPiBond || hasFusedExocyclicRingPiBond ? 1 : null;
     }
     if (charge === -1) {
       return 2;
@@ -60,7 +119,10 @@ function _piElectrons(atom, ringAtomSet, mol) {
       return 2;
     }
     // Pyridine-like: sp2, ring π bond present → contributes 1.
-    return hasRingPiBond ? 1 : null;
+    if (hasRingPiBond || hasFusedExocyclicRingPiBond || _isFusedPyridineLikeNitrogen(atom, ringBonds, ringAtomSet, mol)) {
+      return 1;
+    }
+    return null;
   }
 
   if (el === 'O' || el === 'S') {
@@ -249,7 +311,7 @@ export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
     atom.properties.aromatic = false;
   }
 
-  const rings = mol.getRings();
+  const rings = _aromaticRingCandidates(mol);
   const aromaticRings = [];
   const done = new Array(rings.length).fill(false);
   const aromaticBondIds = new Set();

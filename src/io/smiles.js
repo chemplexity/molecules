@@ -369,6 +369,30 @@ export function tokenize(input, tokens = []) {
 
   tokens.sort((a, b) => a.index - b.index);
 
+  // Charge / chiral / isotope property tokens inside bracket atoms can overlap
+  // with the generic ring-token regex. Valid bracket ring closures start at the
+  // same index as the owning atom token (e.g. `[N+]5`, `[C@H]3`), but bogus
+  // matches can also start *inside* the property span itself (e.g. `o-3` from
+  // `[Co-3]568`). Those interior matches are not real ring closures and can
+  // steal partners from later legitimate tokens.
+  {
+    const propertySpans = tokens
+      .filter(t => t.type === 'property')
+      .map(t => ({ start: t.index, end: t.index + t.term.length }));
+    if (propertySpans.length > 0) {
+      for (let i = tokens.length - 1; i >= 0; i--) {
+        if (tokens[i].tag !== 'ring') {
+          continue;
+        }
+        const start = tokens[i].index;
+        const insideProperty = propertySpans.some(span => start > span.start && start < span.end);
+        if (insideProperty) {
+          tokens.splice(i, 1);
+        }
+      }
+    }
+  }
+
   // Remove bond tokens that fall inside the character span of a ring token.
   // Happens when a bond prefix is embedded in the ring token (e.g. 'C=1' captures '=').
   {
@@ -483,6 +507,54 @@ export function tokenize(input, tokens = []) {
     }
   }
 
+  // The grammar ring regex can only match one ring closure per token because it
+  // requires a leading atom character.  Two cases produce uncaptured %XX closures:
+  //
+  //   1. Back-to-back %XX on the same atom: [C@]%10%11, [C@H]%11%12
+  //      The first %XX is captured inside the bracket term; the second %XX
+  //      immediately follows and has no atom letter.
+  //
+  //   2. A plain-digit ring closure immediately followed by a %XX closure:
+  //      c7%11 — the regex captures "c7" (ring 7) and leaves "%11" uncovered.
+  //
+  // In both cases the uncovered %XX token later looks like a multi-digit ring
+  // number, the split loop finds no matching partner, and incorrectly splits the
+  // digits into single-digit phantom ring tokens, creating a self-loop.
+  //
+  // Fix: after all grammar matches are collected, walk every ring token and emit
+  // a synthetic bond token for every %XX sequence that immediately follows the
+  // token's span in the input.  Must run BEFORE the split loop.
+  {
+    // Also emit synthetic tokens for any %XX that appears right after a closing
+    // bracket ] followed immediately by %XX (bracket ring closures like [C@H]%10%11
+    // where the first %10 was captured in the bracket term but %11 was not).
+    const coveredPositions = new Set(tokens.map(t => t.index));
+    const toAdd = [];
+
+    for (const t of tokens) {
+      if (t.tag !== 'ring') {
+        continue;
+      }
+      let pos = t.index + t.term.length;
+      while (pos + 2 <= input.length && input[pos] === '%' && /\d/.test(input[pos + 1]) && /\d/.test(input[pos + 2])) {
+        if (!coveredPositions.has(pos)) {
+          coveredPositions.add(pos);
+          toAdd.push({
+            index: pos,
+            type: 'bond',
+            term: input.slice(pos, pos + 3),
+            tag: 'ring'
+          });
+        }
+        pos += 3;
+      }
+    }
+    if (toAdd.length > 0) {
+      tokens.push(...toAdd);
+      tokens.sort((a, b) => a.index - b.index);
+    }
+  }
+
   for (let i = 0; i < tokens.length; i++) {
     if (tokens[i].tag === 'ring') {
       let ringID = tokens[i].term.match(/[0-9]+/g);
@@ -493,20 +565,23 @@ export function tokenize(input, tokens = []) {
       }
 
       if (ringID.length > 1) {
+        const isExplicitMultiDigitClosure = tokens[i].term.includes('%');
         let exception = 0;
-        for (let j = 0; j < tokens.length; j++) {
-          if (i === j || tokens[j].tag !== 'ring') {
-            continue;
-          }
-          let checkID = tokens[j].term.match(/[0-9]+/g);
-          if (checkID !== null) {
-            checkID = checkID[0];
-          } else {
-            continue;
-          }
-          if (ringID === checkID) {
-            exception = 1;
-            break;
+        if (isExplicitMultiDigitClosure) {
+          for (let j = 0; j < tokens.length; j++) {
+            if (i === j || tokens[j].tag !== 'ring') {
+              continue;
+            }
+            let checkID = tokens[j].term.match(/[0-9]+/g);
+            if (checkID !== null) {
+              checkID = checkID[0];
+            } else {
+              continue;
+            }
+            if (ringID === checkID) {
+              exception = 1;
+              break;
+            }
           }
         }
 
@@ -514,13 +589,25 @@ export function tokenize(input, tokens = []) {
           continue;
         }
 
-        const prefix = tokens[i].term.match(/[a-zA-Z]/g)[0];
+        const prefixMatch = tokens[i].term.match(/[a-zA-Z\]]/g);
+        // Synthetic %XX closures can legitimately be bare ring tokens with no
+        // atom/bracket prefix. They are already split out as standalone
+        // closures above, so skip the legacy digit-splitting rewrite for those
+        // terms. Bracket closures like `[Os++]123` arrive here as `]123` and
+        // still need to be split into `]1` + `]2` + `]3`.
+        if (prefixMatch === null) {
+          continue;
+        }
+        // Plain adjacent digits after an atom or bracket atom are always
+        // separate single-digit ring closures in SMILES (`C12` == `C1` + `C2`).
+        // Only `%12`-style terms represent a true multi-digit closure.
+        const prefix = prefixMatch[prefixMatch.length - 1];
         const bondChar = tokens[i].term.match(/[=\-#$/\\:]/)?.[0] ?? '';
         for (let j = 0; j < ringID.length; j++) {
           tokens.splice(i + 1, 0, {
             index: tokens[i].index + j,
             type: tokens[i].type,
-            term: prefix + (j === 0 ? bondChar : '') + ringID.substr(j, j + 1),
+            term: prefix + (j === 0 ? bondChar : '') + ringID.slice(j, j + 1),
             tag: tokens[i].tag
           });
         }
@@ -663,6 +750,14 @@ export function decode(tokens) {
       return [atoms, bonds, keys];
     }
 
+    function resolveRingEndpointIndex(tokenId) {
+      let atomIndex = Number(tokenId);
+      while (atomIndex >= -1 && (atoms[atomIndex] === undefined || (atoms[atomIndex].bracketAtom && atoms[atomIndex].name === 'H'))) {
+        atomIndex -= 1;
+      }
+      return atomIndex >= 0 ? atomIndex : null;
+    }
+
     // Tracks ring-bond token IDs that have already been consumed as the
     // *closing* end of a ring closure pair.  When ring-closure numbers are
     // reused (e.g. the same digit appears 4+ times in a SMILES string),
@@ -672,9 +767,15 @@ export function decode(tokens) {
 
     for (let i = 0; i < keys.bonds.length; i++) {
       const bondID = keys.bonds[i];
-      let sourceAtom = atoms[previousBondSourceAtom(bondID, keys.all, atoms)];
-      let targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
       const bondIndex = keys.all.indexOf(bondID);
+      const previousKey = bondIndex > 0 ? keys.all[bondIndex - 1] : null;
+      const previousIsBranchClose = previousKey != null && bonds[previousKey]?.value === ')';
+      let sourceAtom = atoms[
+        previousIsBranchClose
+          ? previousBondSourceAtom(bondID, keys.all, atoms, bonds)
+          : previousBondSourceAtom(bondID, keys.all, atoms)
+      ];
+      let targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
       let sourceIndex = 0;
       let targetIndex = 0;
 
@@ -712,7 +813,7 @@ export function decode(tokens) {
                 case '/':
                 case '\\':
                 case '.':
-                  exceptions = 1;
+                  exceptions = previousIsBranchClose ? 0 : 1;
               }
           }
         }
@@ -758,6 +859,7 @@ export function decode(tokens) {
             continue;
           }
           bonds[bondID].order = 1.5;
+          bonds[bondID].isAromatic = true;
           bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
           break;
         case 'stereo': {
@@ -800,6 +902,7 @@ export function decode(tokens) {
                     bondOrder = 1.5;
                   }
                   bonds[bondID].order = bondOrder;
+                  bonds[bondID].isAromatic = bondOrder === 1.5;
                   bonds[bondID].atoms = [sourceAtom.id, targetAtom.id];
                   break;
                 } else if (bonds[keysBefore[j]] !== undefined) {
@@ -832,6 +935,7 @@ export function decode(tokens) {
                 }
                 if (skip === 0) {
                   bonds[bondID].order = bondOrder;
+                  bonds[bondID].isAromatic = bondOrder === 1.5;
                   break;
                 } else if (bonds[keysAfter[j]] !== undefined) {
                   switch (bonds[keysAfter[j]].value) {
@@ -847,6 +951,15 @@ export function decode(tokens) {
               break;
 
             case ')':
+              if (keysAfter.length > 0) {
+                const immediateNextBond = bonds[keysAfter[0]];
+                if (
+                  immediateNextBond &&
+                  ['-', '=', '#', '$', ':', '/', '\\', '.'].includes(immediateNextBond.value)
+                ) {
+                  break;
+                }
+              }
               for (let j = 0, skip = 1; j < keysBefore.length; j++) {
                 sourceAtom = atoms[keysBefore[j]];
                 if (sourceAtom !== undefined && sourceAtom.name !== 'H' && skip === 0) {
@@ -887,6 +1000,7 @@ export function decode(tokens) {
                     bondOrder = 1.5;
                   }
                   bonds[bondID].order = bondOrder;
+                  bonds[bondID].isAromatic = bondOrder === 1.5;
                   bonds[bondID].atoms[1] = targetAtom.id;
                   break;
                 } else if (bonds[keysAfter[j]] !== undefined) {
@@ -927,14 +1041,18 @@ export function decode(tokens) {
             let srcIdx = bondID;
 
             if (sourceID !== null && targetID !== null && sourceID[0] === targetID[0]) {
-              while (atoms[srcIdx] === undefined && srcIdx >= -1) {
-                srcIdx -= 1;
+              // Walk backward to find the owning atom. Skip bracket-H atoms
+              // (e.g. the H in [C@H]) because they are not valid ring endpoints.
+              srcIdx = resolveRingEndpointIndex(srcIdx);
+              targetIndex = resolveRingEndpointIndex(targetIndex);
+              if (srcIdx === null || targetIndex === null) {
+                continue;
               }
-              while (atoms[targetIndex] === undefined && targetIndex >= -1) {
-                targetIndex -= 1;
-              }
-              if (srcIdx === -1 || targetIndex === -1) {
-                break;
+              if (srcIdx === targetIndex) {
+                // Reused ring digits can appear multiple times on the same atom.
+                // Keep searching for the next valid partner instead of creating
+                // an impossible self-loop.
+                continue;
               }
               let bondOrder = 1;
               if (atoms[srcIdx].properties.aromatic === 1 && atoms[targetIndex].properties.aromatic === 1) {
@@ -957,25 +1075,31 @@ export function decode(tokens) {
 
             if (j === bondsAfter.length - 1) {
               for (let k = 0; k < bondsBefore.length; k++) {
-                if (bonds[bondsAfter[j]].name !== 'ring') {
+                if (bonds[bondsBefore[k]].name !== 'ring' || matchedRingTargets.has(bondsBefore[k])) {
                   continue;
                 }
                 const targetID2 = bonds[bondsBefore[k]].value.match(/[0-9]+/g);
                 let targetIndex = bondID;
                 let srcIdx = bondsBefore[k];
                 if (sourceID !== null && targetID2 !== null && sourceID[0] === targetID2[0]) {
-                  while (atoms[srcIdx] === undefined && srcIdx >= -1) {
-                    srcIdx -= 1;
+                  srcIdx = resolveRingEndpointIndex(srcIdx);
+                  targetIndex = resolveRingEndpointIndex(targetIndex);
+                  if (srcIdx === null || targetIndex === null) {
+                    continue;
                   }
-                  while (atoms[targetIndex] === undefined && targetIndex >= -1) {
-                    targetIndex -= 1;
-                  }
-                  if (srcIdx === -1 || targetIndex === -1) {
-                    break;
+                  if (srcIdx === targetIndex) {
+                    continue;
                   }
                   let bondOrder = 1;
                   if (atoms[srcIdx].properties.aromatic === 1 && atoms[targetIndex].properties.aromatic === 1) {
                     bondOrder = 1.5;
+                  }
+                  const srcBO = ringTokenBondOrder(bonds[bondsBefore[k]].value);
+                  const tgtBO = ringTokenBondOrder(bonds[bondID].value);
+                  if (srcBO !== null) {
+                    bondOrder = srcBO;
+                  } else if (tgtBO !== null) {
+                    bondOrder = tgtBO;
                   }
                   bonds[bondID].order = bondOrder;
                   bonds[bondID].isAromatic = bondOrder === 1.5;

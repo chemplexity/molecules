@@ -1185,6 +1185,21 @@ describe('Atom#implicitHydrogenCount', () => {
     c.setRadical(1);
     assert.equal(c.implicitHydrogenCount(mol), 3);
   });
+
+  it('changeAtomElement rebalances inherited carbon hydrogens when a terminal carbon becomes sulfur', () => {
+    const mol = parseSMILES('CC');
+    const terminalCarbon = [...mol.atoms.values()].find(
+      atom => atom.name === 'C' && atom.getHeavyNeighbors(mol).length === 1 && atom.getHydrogenNeighbors(mol).length === 3
+    );
+    assert.ok(terminalCarbon);
+
+    mol.changeAtomElement(terminalCarbon.id, 'S');
+
+    const sulfur = mol.atoms.get(terminalCarbon.id);
+    assert.equal(sulfur.name, 'S');
+    assert.equal(sulfur.getHeavyNeighbors(mol).length, 1);
+    assert.equal(sulfur.getHydrogenNeighbors(mol).length, 1);
+  });
 });
 
 describe('Atom#getHeavyNeighbors / getHydrogenNeighbors', () => {

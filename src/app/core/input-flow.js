@@ -104,7 +104,7 @@ export function createInputFlowManager(deps) {
 
   function parseAndRenderSmiles(smiles, options = {}) {
     const { previousSnapshot = null } = options;
-    if (typeof smiles !== 'string' || smiles.length === 0 || smiles.length > 1000) {
+    if (typeof smiles !== 'string' || smiles.length === 0 || smiles.length > 2000) {
       return;
     }
     if (smiles === deps.state.getCurrentSmiles() && deps.state.getMode() === 'force' && !deps.overlays.hasReactionPreview()) {

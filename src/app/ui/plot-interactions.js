@@ -5,9 +5,118 @@
  * @param {object} deps - Flat app context providing plotEl, document, state, tooltip, options, analysis, and helper accessors.
  */
 export function initPlotInteractions(deps) {
+  const win = deps.window ?? deps.document?.defaultView ?? null;
+  const docEl = deps.document?.documentElement ?? null;
+  const bodyEl = deps.document?.body ?? null;
+
+  function isChargeModeActive() {
+    return deps.state.isRenderableMode() && !!deps.state.getChargeTool?.();
+  }
+
+  function suppressChargeModeSecondaryEvent(event) {
+    if (!isChargeModeActive()) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation?.();
+    event.stopImmediatePropagation?.();
+  }
+
+  function installLegacySecondarySuppressors(target) {
+    if (!target) {
+      return;
+    }
+
+    const previousMouseDown = target.onmousedown;
+    target.onmousedown = event => {
+      if (isChargeModeActive() && (event?.button === 2 || event?.ctrlKey)) {
+        suppressChargeModeSecondaryEvent(event);
+        return false;
+      }
+      if (typeof previousMouseDown === 'function') {
+        return previousMouseDown.call(target, event);
+      }
+      return true;
+    };
+
+    const previousContextMenu = target.oncontextmenu;
+    target.oncontextmenu = event => {
+      if (isChargeModeActive()) {
+        suppressChargeModeSecondaryEvent(event);
+        return false;
+      }
+      if (typeof previousContextMenu === 'function') {
+        return previousContextMenu.call(target, event);
+      }
+      return true;
+    };
+  }
+
   deps.plotEl.addEventListener('selectstart', event => {
     event.preventDefault();
   });
+
+  deps.plotEl.addEventListener('mousedown', event => {
+    if (event.button === 2 || event.ctrlKey) {
+      suppressChargeModeSecondaryEvent(event);
+    }
+  });
+
+  deps.plotEl.addEventListener('contextmenu', event => {
+    suppressChargeModeSecondaryEvent(event);
+  });
+
+  deps.document.addEventListener(
+    'mousedown',
+    event => {
+      if (event.button === 2 || event.ctrlKey) {
+        suppressChargeModeSecondaryEvent(event);
+      }
+    },
+    true
+  );
+
+  deps.document.addEventListener(
+    'contextmenu',
+    event => {
+      suppressChargeModeSecondaryEvent(event);
+    },
+    true
+  );
+
+  win?.addEventListener(
+    'mousedown',
+    event => {
+      if (event.button === 2 || event.ctrlKey) {
+        suppressChargeModeSecondaryEvent(event);
+      }
+    },
+    true
+  );
+
+  win?.addEventListener(
+    'auxclick',
+    event => {
+      if (event.button === 2 || event.ctrlKey) {
+        suppressChargeModeSecondaryEvent(event);
+      }
+    },
+    true
+  );
+
+  win?.addEventListener(
+    'contextmenu',
+    event => {
+      suppressChargeModeSecondaryEvent(event);
+    },
+    true
+  );
+
+  installLegacySecondarySuppressors(win);
+  installLegacySecondarySuppressors(deps.document);
+  installLegacySecondarySuppressors(docEl);
+  installLegacySecondarySuppressors(bodyEl);
+  installLegacySecondarySuppressors(deps.plotEl);
 
   deps.document.addEventListener('mousemove', event => {
     const warningHoverMode =

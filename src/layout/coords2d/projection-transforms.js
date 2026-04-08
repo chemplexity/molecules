@@ -817,9 +817,13 @@ export function buildUnfurledChainPathTransforms(molecule, baseCoords, path, ctx
     pathBonds.push(molecule.getBond(path[i], path[i + 1]));
   }
   const transforms = [];
+  // For very long chains (≥20) try all 5 rotation offsets; for medium chains
+  // (10-19) only 3 are needed — the extreme ±120° variants rarely win and
+  // each extra angle doubles evaluation cost downstream.
   const startAngles = new Set([startAngle.toFixed(6)]);
   if (path.length >= 10) {
-    for (const delta of [DEG60, -DEG60, DEG120, -DEG120, Math.PI]) {
+    const deltas = path.length >= 20 ? [DEG60, -DEG60, DEG120, -DEG120, Math.PI] : [DEG60, -DEG60, Math.PI];
+    for (const delta of deltas) {
       startAngles.add(normalizeAngle(startAngle + delta).toFixed(6));
     }
   }
@@ -876,29 +880,61 @@ export function buildUnfurledChainPathTransforms(molecule, baseCoords, path, ctx
  * @returns {number} Minimum non-bonded heavy-atom distance, or Infinity if fewer than two heavy atoms exist
  */
 export function minimumHeavyNonBondedDistanceForCoords(coords, ctx) {
-  let minDist = Infinity;
-  for (let i = 0; i < ctx.heavyIds.length; i++) {
-    const aId = ctx.heavyIds[i];
+  // Spatial grid (O(n·k)) instead of O(n²) all-pairs loop.
+  // Search radius = 3 × bondLength; pairs farther than that are irrelevant
+  // for detecting clashes. Returns the search radius when no close pair found.
+  const searchR = ctx.bondLength * 3;
+  const searchR2 = searchR * searchR;
+  const grid = new Map();
+  for (const aId of ctx.heavyIds) {
+    const p = coords.get(aId);
+    if (!p) {
+      continue;
+    }
+    const key = `${Math.floor(p.x / searchR)},${Math.floor(p.y / searchR)}`;
+    let cell = grid.get(key);
+    if (!cell) {
+      cell = [];
+      grid.set(key, cell);
+    }
+    cell.push(aId);
+  }
+  let minDist2 = searchR2;
+  for (const aId of ctx.heavyIds) {
     const aPos = coords.get(aId);
     if (!aPos) {
       continue;
     }
-    for (let j = i + 1; j < ctx.heavyIds.length; j++) {
-      const bId = ctx.heavyIds[j];
-      if (ctx.bondedPairs.has(`${aId}\0${bId}`)) {
-        continue;
-      }
-      const bPos = coords.get(bId);
-      if (!bPos) {
-        continue;
-      }
-      const dist = Math.hypot(aPos.x - bPos.x, aPos.y - bPos.y);
-      if (dist < minDist) {
-        minDist = dist;
+    const cx0 = Math.floor(aPos.x / searchR) - 1;
+    const cy0 = Math.floor(aPos.y / searchR) - 1;
+    for (let gx = 0; gx <= 2; gx++) {
+      for (let gy = 0; gy <= 2; gy++) {
+        const cell = grid.get(`${cx0 + gx},${cy0 + gy}`);
+        if (!cell) {
+          continue;
+        }
+        for (const bId of cell) {
+          if (bId <= aId) {
+            continue; // process each pair once (lexicographic dedup)
+          }
+          if (ctx.bondedPairs.has(`${aId}\0${bId}`)) {
+            continue;
+          }
+          const bPos = coords.get(bId);
+          if (!bPos) {
+            continue;
+          }
+          const dx = aPos.x - bPos.x,
+            dy = aPos.y - bPos.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 < minDist2) {
+            minDist2 = d2;
+          }
+        }
       }
     }
   }
-  return minDist;
+  return Math.sqrt(minDist2);
 }
 
 /**
@@ -1033,6 +1069,10 @@ export function spreadCompactedChainPaths(molecule, baseCoords, ctx) {
         bestScore = trialScore;
         bestCoords = trialCoords;
         bestMetrics = trialMetrics;
+        // Perfect solution found — no point evaluating remaining transforms.
+        if (trialScore === 0 && trialClearance >= ctx.bondLength * 0.95) {
+          break;
+        }
       }
 
       if (
@@ -1153,6 +1193,13 @@ export function rescueSeverelyCompactedLongChains(molecule, baseCoords, ctx, { p
         bestStereoCount = trialStereoCount;
         bestMetrics = trialMetrics;
         bestClearance = trialClearance;
+        if (
+          trialMetrics.pathMinNonBonded >= ctx.bondLength * 0.95 &&
+          trialMetrics.terminalClosure >= ctx.bondLength * 1.35 &&
+          trialClearance >= ctx.bondLength * 0.95
+        ) {
+          break; // all rescue criteria met — no need to try more transforms
+        }
       }
     }
 

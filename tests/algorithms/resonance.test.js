@@ -377,6 +377,24 @@ describe('generateResonanceStructures — fused aromatic heterocycles', () => {
 });
 
 describe('generateResonanceStructures — development regressions', () => {
+  it('keeps two Kekule contributors for pyridinium-style aromatic n+ rings', () => {
+    const mol = parseSMILES('c1cc[n+]cc1');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.equal(mol.resonanceCount, 2);
+  });
+
+  it('keeps two Kekule contributors for protonated fused aromatic [nH+] rings', () => {
+    const mol = parseSMILES('c1[nH+]cccc1');
+    generateResonanceStructures(mol, {
+      includeChargeSeparatedStates: true,
+      includeIndependentComponentPermutations: false
+    });
+    assert.equal(mol.resonanceCount, 2);
+  });
+
   it('includes exocyclic halide donor contributors for aryl halides', () => {
     const mol = parseSMILES('Clc1ccccc1');
     generateResonanceStructures(mol, {
@@ -497,6 +515,21 @@ describe('generateResonanceStructures — development regressions', () => {
     assert.equal(sawCarbonylOxygenAnion, true);
     assert.equal(sawRingChargeSeparatedState, true);
   });
+
+  it(
+    'does not explode on Ru-bound fused aza systems when independent permutations are disabled',
+    { timeout: 1000 },
+    () => {
+      const mol = parseSMILES('C1=CC2=C3C=C(CCCCCCCCC(=O)N[C@H]4[C@H]5C[C@@H]6C[C@@H](C[C@H]4C6)C5)C=CN3[Ru++]34(N5C=CC=CC5=C5C=CC=CN35)(N3C=CC=CC3=C3C=CC=CN43)N2C=C1');
+      assert.doesNotThrow(() => {
+        generateResonanceStructures(mol, {
+          includeChargeSeparatedStates: true,
+          includeIndependentComponentPermutations: false
+        });
+      });
+      assert.ok(mol.resonanceCount >= 1);
+    }
+  );
 });
 
 // ---------------------------------------------------------------------------

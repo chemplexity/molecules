@@ -1,8 +1,16 @@
 # Change Log
 
+## 2026-04-08
+
+- Fix bugs with new charge state buttons
+- Optimizations to 2d coordinate generation
+- Fix SMILES tokenizer for ring closures (example: [C@]%10%11 and c7%11)
+- Fix bugs with aromaticity detection
+- Fix charge button right click functionality
+- Raise max character limit for input box to 2000
+
 ## 2026-04-07
 
-- Add
 - Remove docs/api for now
 - Add bond picker tool, double, tripple, aromatic, wedge, dash
 - Display stereochemistry bonds in force layout mode

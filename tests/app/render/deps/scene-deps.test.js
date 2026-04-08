@@ -107,6 +107,7 @@ describe('scene deps builders', () => {
       handleForceBondMouseOut: () => records.push(['bondOut']),
       handleForceAtomMouseDownDrawBond: () => records.push(['atomDown']),
       handleForceAtomClick: () => records.push(['atomClick']),
+      handleForceAtomContextMenu: () => records.push(['atomContext']),
       handleForceAtomDblClick: () => records.push(['atomDbl']),
       handleForceAtomMouseOver: () => records.push(['atomOver']),
       handleForceAtomMouseMove: () => records.push(['atomMove']),
@@ -124,8 +125,12 @@ describe('scene deps builders', () => {
     assert.equal(deps.helpers.forceAnchorRadius(), 9);
     assert.deepEqual(deps.drag.createForceAtomDrag('sim'), { sim: 'sim', type: 'atom' });
     assert.equal(deps.callbacks.hasHighlights(), true);
+    deps.events.handleForceAtomContextMenu();
     deps.callbacks.applyForceSelection();
-    assert.deepEqual(records, [['applySelection']]);
+    assert.deepEqual(records, [
+      ['atomContext'],
+      ['applySelection']
+    ]);
   });
 
   it('builds 2d scene, selection overlay, and force selection deps', () => {
@@ -173,6 +178,7 @@ describe('scene deps builders', () => {
       handle2dBondMouseOut: () => records.push(['bondOut']),
       handle2dAtomMouseDownDrawBond: () => records.push(['atomDown']),
       handle2dAtomClick: () => records.push(['atomClick']),
+      handle2dAtomContextMenu: () => records.push(['atomContext']),
       handle2dAtomDblClick: () => records.push(['atomDbl']),
       handle2dAtomMouseOver: () => records.push(['atomOver']),
       handle2dAtomMouseMove: () => records.push(['atomMove']),
@@ -224,12 +230,14 @@ describe('scene deps builders', () => {
     assert.equal(scene2D.constants.scale, 60);
     assert.equal(scene2D.overlay.getDrawBondMode(), true);
     assert.deepEqual(scene2D.drag.create2dAtomDrag(), { type: 'atom' });
+    scene2D.events.handle2dAtomContextMenu();
     assert.equal(overlay.state.getMode(), '2d');
     assert.equal(overlay.state.getChargeTool(), 'positive');
     assert.deepEqual(forceSelection.selection.getRenderableSelectionIds(), { atomIds: [1], bondIds: [2] });
     forceSelection.cache.setSelectionLines('L');
     forceSelection.cache.setSelectionCircles('C');
-    assert.deepEqual(records.slice(-2), [
+    assert.deepEqual(records.slice(-3), [
+      ['atomContext'],
       ['selectionLines', 'L'],
       ['selectionCircles', 'C']
     ]);

@@ -6,6 +6,13 @@ function collectWarningAtomIds(mol, targetIds) {
   return new Set(validateValence(mol).filter(warning => targetIds.has(warning.atomId)).map(warning => warning.atomId));
 }
 
+/**
+ * Repairs implicit hydrogens on atoms when their valence improves after an edit.
+ * Returns true if any hydrogen counts were updated, false otherwise.
+ * @param {object} mol - The molecule to repair
+ * @param {Iterable<string>} atomIds - Atom IDs to check and potentially repair
+ * @returns {boolean} Whether any implicit hydrogen counts were changed
+ */
 export function repairImplicitHydrogensWhenValenceImproves(mol, atomIds) {
   if (typeof mol?.repairImplicitHydrogens !== 'function' || typeof mol?.clone !== 'function') {
     return false;

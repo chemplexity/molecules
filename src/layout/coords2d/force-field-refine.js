@@ -147,6 +147,28 @@ export function forceFieldRefine(molecule, coords, frozen, bondLength, allRingAt
     nb13.set(id, s);
   }
 
+  // Spatial grid for non-bonded repulsion. Cell size equals REP_CUT so the
+  // 3×3 neighbourhood is guaranteed to contain every atom within REP_CUT.
+  // Maintained incrementally in the integration step to avoid an O(n) rebuild
+  // each iteration — only moved atoms are removed and re-inserted.
+  const _repGrid = new Map(); // `${cx},${cy}` → Set<string>
+  for (const bId of heavyArr) {
+    const cb = coords.get(bId);
+    if (!cb) {
+      continue;
+    }
+    const cx = Math.floor(cb.x / REP_CUT);
+    const cy = Math.floor(cb.y / REP_CUT);
+    const key = `${cx},${cy}`;
+    let cell = _repGrid.get(key);
+    if (!cell) {
+      cell = new Set();
+      _repGrid.set(key, cell);
+    }
+    cell.add(bId);
+  }
+  const REP_CUT2 = REP_CUT * REP_CUT;
+
   // Ideal interior bond angle for a given central atom.
   // 180° for sp (triple bond or two cumulated double bonds), 120° otherwise.
   function idealBondAngle(atomId) {
@@ -164,8 +186,9 @@ export function forceFieldRefine(molecule, coords, frozen, bondLength, allRingAt
     return DEG120;
   }
 
-  // Scale iteration count with molecule size so large macropeptides converge.
-  const MAX_ITER = Math.max(200, movArr.length * 5);
+  // Scale iteration count with molecule size. 3× gives sufficient convergence
+  // for large peptides while halving worst-case cost vs the old 5× factor.
+  const MAX_ITER = Math.max(200, movArr.length * 3);
 
   // Typed arrays for force accumulation — avoids Map overhead per iteration.
   const fx = new Float64Array(movArr.length);
@@ -310,31 +333,40 @@ export function forceFieldRefine(molecule, coords, frozen, bondLength, allRingAt
     }
 
     // ------------------------------------------------------------------ //
-    // 3. Non-bonded repulsion                                              //
+    // 3. Non-bonded repulsion (spatial grid: O(n·k) instead of O(n²))    //
     // ------------------------------------------------------------------ //
     for (let i = 0; i < movArr.length; i++) {
       const aId = movArr[i];
       const ca = coords.get(aId);
       const ex12 = nb12.get(aId);
       const ex13 = nb13.get(aId);
-
-      for (const bId of heavyArr) {
-        if (bId === aId || ex12?.has(bId) || ex13?.has(bId)) {
-          continue;
+      const cx0 = Math.floor(ca.x / REP_CUT) - 1;
+      const cy0 = Math.floor(ca.y / REP_CUT) - 1;
+      for (let gx = 0; gx <= 2; gx++) {
+        for (let gy = 0; gy <= 2; gy++) {
+          const cell = _repGrid.get(`${cx0 + gx},${cy0 + gy}`);
+          if (!cell) {
+            continue;
+          }
+          for (const bId of cell) {
+            if (bId === aId || ex12?.has(bId) || ex13?.has(bId)) {
+              continue;
+            }
+            const cb = coords.get(bId);
+            const dx = ca.x - cb.x,
+              dy = ca.y - cb.y;
+            const d2 = dx * dx + dy * dy;
+            if (d2 >= REP_CUT2) {
+              continue;
+            }
+            // Soft-wall: F = K_REP * (BL/d)³ / d (points away from b).
+            const d = Math.sqrt(d2) || 1e-9;
+            const r = bondLength / d;
+            const F = (K_REP * r * r * r) / d;
+            fx[i] += F * dx;
+            fy[i] += F * dy;
+          }
         }
-        const cb = coords.get(bId);
-        const dx = ca.x - cb.x,
-          dy = ca.y - cb.y;
-        const d = Math.hypot(dx, dy) || 1e-9;
-        if (d >= REP_CUT) {
-          continue;
-        }
-
-        // Soft-wall: F = K_REP * (BL/d)³ / d (points away from b).
-        const r = bondLength / d;
-        const F = (K_REP * r * r * r) / d;
-        fx[i] += F * dx;
-        fy[i] += F * dy;
       }
     }
 
@@ -366,7 +398,25 @@ export function forceFieldRefine(molecule, coords, frozen, bondLength, allRingAt
         dy *= s;
       }
       const c = coords.get(movArr[i]);
-      coords.set(movArr[i], { x: c.x + dx, y: c.y + dy });
+      const newX = c.x + dx,
+        newY = c.y + dy;
+      // Incrementally update repulsion grid — only when the atom crosses a
+      // cell boundary to minimise Set churn in the common case.
+      const oCx = Math.floor(c.x / REP_CUT);
+      const oCy = Math.floor(c.y / REP_CUT);
+      const nCx = Math.floor(newX / REP_CUT);
+      const nCy = Math.floor(newY / REP_CUT);
+      if (oCx !== nCx || oCy !== nCy) {
+        _repGrid.get(`${oCx},${oCy}`)?.delete(movArr[i]);
+        const nKey = `${nCx},${nCy}`;
+        let nCell = _repGrid.get(nKey);
+        if (!nCell) {
+          nCell = new Set();
+          _repGrid.set(nKey, nCell);
+        }
+        nCell.add(movArr[i]);
+      }
+      coords.set(movArr[i], { x: newX, y: newY });
       const actual = Math.min(disp, MAX_STEP);
       if (actual > maxDisp) {
         maxDisp = actual;

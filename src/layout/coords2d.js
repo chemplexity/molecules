@@ -1109,6 +1109,27 @@ function refineCoords(molecule, coords, frozen, bondLength) {
     // until the least-clashing rotation is chosen.
     const INC = Math.PI / 6;
     const rotSteps = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5, 6];
+    // Use a Set for O(1) exclusion instead of O(m) Array.includes().
+    const subNeighborSet = new Set(subNeighbors);
+    // Build a spatial grid from current atom positions so the inner clash scan
+    // is O(k) per probe point instead of O(n). Cell size = 2×bondLength so the
+    // 3×3 neighbourhood covers the 0.45×bondLength clash radius with margin.
+    const CLASH_THRESH = bondLength * 0.45;
+    const CLASH_CELL = bondLength * 2;
+    const clashGrid = new Map();
+    for (const id of allAtomIds) {
+      const c = coords.get(id);
+      if (!c) {
+        continue;
+      }
+      const key = `${Math.floor(c.x / CLASH_CELL)},${Math.floor(c.y / CLASH_CELL)}`;
+      let cell = clashGrid.get(key);
+      if (!cell) {
+        cell = [];
+        clashGrid.set(key, cell);
+      }
+      cell.push(id);
+    }
     let finalAngles = proposedAngles;
     let bestClashes = Infinity;
     for (const k of rotSteps) {
@@ -1120,14 +1141,24 @@ function refineCoords(molecule, coords, frozen, bondLength) {
         if (ringPolyForLoop && pointInPolygon(p, ringPolyForLoop)) {
           clashes += 100;
         }
-        for (const id of allAtomIds) {
-          if (subNeighbors.includes(id)) {
-            continue;
-          }
-          const c = coords.get(id);
-          if (c && Math.hypot(c.x - p.x, c.y - p.y) < bondLength * 0.45) {
-            clashes++;
-            break;
+        const cx0 = Math.floor(p.x / CLASH_CELL) - 1;
+        const cy0 = Math.floor(p.y / CLASH_CELL) - 1;
+        outer: for (let gx = 0; gx <= 2; gx++) {
+          for (let gy = 0; gy <= 2; gy++) {
+            const cell = clashGrid.get(`${cx0 + gx},${cy0 + gy}`);
+            if (!cell) {
+              continue;
+            }
+            for (const id of cell) {
+              if (subNeighborSet.has(id)) {
+                continue;
+              }
+              const c = coords.get(id);
+              if (c && Math.hypot(c.x - p.x, c.y - p.y) < CLASH_THRESH) {
+                clashes++;
+                break outer;
+              }
+            }
           }
         }
       }

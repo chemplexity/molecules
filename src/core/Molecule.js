@@ -158,6 +158,10 @@ export class Molecule {
     if (newElement !== 'H' && atom.visible === false) {
       atom.visible = true;
     }
+    // Rebalance the atom's hidden/implicit hydrogen shell against the new
+    // element's default valence family. This prevents edits like C -> S from
+    // inheriting carbon's old CH3 hydrogen count and becoming SH3.
+    this._adjustImplicitHydrogens(atomId);
     this._ringsCache = null;
     this._recomputeProperties();
     return atom;
