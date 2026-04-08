@@ -65,6 +65,10 @@ export function initializeRuntimeBridges(deps) {
       setEraseMode: value => {
         deps.runtimeState.eraseMode = value;
       },
+      getChargeTool: () => deps.runtimeState.chargeTool ?? null,
+      setChargeTool: value => {
+        deps.runtimeState.chargeTool = value ?? null;
+      },
       getErasePainting: () => deps.runtimeState.erasePainting,
       setErasePainting: value => {
         deps.runtimeState.erasePainting = value;

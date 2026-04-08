@@ -1,10 +1,11 @@
 /** @module core/Molecule */
 
 import { randomUUID } from 'node:crypto';
-import { Atom } from './Atom.js';
+import { Atom, getImplicitHydrogenChargeAdjustment } from './Atom.js';
 import { Bond } from './Bond.js';
 import elements from '../data/elements.js';
 import { findSubgraphMappings as _vf2Mappings, findFirstSubgraphMapping as _vf2First, matchesSubgraph as _vf2Matches } from '../algorithms/vf2.js';
+import { validateValence } from '../validation/index.js';
 // Smarts functions are registered lazily by smarts/index.js to avoid a
 // circular dependency (Molecule → smarts → parser → Molecule).
 let _smartsFind, _smartsFirst, _smartsMatches;
@@ -286,11 +287,13 @@ export class Molecule {
     }
 
     const radical = atom.getRadical();
-    // For groups 15–16 (N, P, O, S …) positive charge increases effective
-    // valence by 1 (ammonium, oxonium) and negative charge decreases it —
-    // matching the SMILES implicit-H convention.
+    // Charge shifts the implicit-H target according to the same families used
+    // by valence validation:
+    // - group 14 centers (C/Si) step down by |charge| or radical count
+    // - groups 15–16 (N/P/O/S) shift by one protonation step in the charge
+    //   direction, avoiding multi-step auto-protonation like O+2 -> OH3+2
     const charge = atom.properties.charge ?? 0;
-    const chargeAdj = group >= 15 && group <= 16 ? charge : 0;
+    const chargeAdj = getImplicitHydrogenChargeAdjustment(group, charge);
     const neededH = Math.max(0, valence - nonHBondOrder - radical + chargeAdj);
 
     // Remove existing pendant H atoms.
@@ -336,13 +339,22 @@ export class Molecule {
    */
   repairImplicitHydrogens(atomIds = null) {
     const targetIds = atomIds == null ? [...this.atoms.keys()] : [...new Set(atomIds)];
+    const warningAtomIdsBefore = new Set(validateValence(this).map(warning => warning.atomId));
 
     for (const atomId of targetIds) {
       const atom = this.atoms.get(atomId);
       if (!atom || atom.name === 'H') {
         continue;
       }
-
+      if (!warningAtomIdsBefore.has(atomId)) {
+        continue;
+      }
+      const repairedPreview = this.clone();
+      repairedPreview._adjustImplicitHydrogens(atomId);
+      const warningAtomIdsAfter = new Set(validateValence(repairedPreview).map(warning => warning.atomId));
+      if (warningAtomIdsAfter.has(atomId)) {
+        continue;
+      }
       this._adjustImplicitHydrogens(atomId);
 
       if (atom.x == null || atom.y == null) {

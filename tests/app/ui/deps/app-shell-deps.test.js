@@ -37,6 +37,7 @@ describe('createAppShellDeps', () => {
         openDrawBondDrawer: () => 'openDrawBondDrawer',
         closeDrawBondDrawer: () => 'closeDrawBondDrawer',
         toggleEraseMode: () => 'toggleEraseMode',
+        setChargeTool: value => `setChargeTool:${value}`,
         setDrawElement: value => `setDrawElement:${value}`,
         setDrawBondType: value => `setDrawBondType:${value}`
       },
@@ -76,6 +77,7 @@ describe('createAppShellDeps', () => {
     assert.equal(deps.exportActions.copyForceSvg(), 'copyForceSvg');
     assert.equal(deps.options.open(), 'open');
     assert.equal(deps.navigation.toggleMode(), 'toggleMode');
+    assert.equal(deps.selection.setChargeTool('positive'), 'setChargeTool:positive');
     assert.equal(deps.selection.setDrawElement('N'), 'setDrawElement:N');
     assert.equal(deps.selection.setDrawBondType('dash'), 'setDrawBondType:dash');
     assert.equal(deps.editing.deleteSelection(), 'deleteSelection');

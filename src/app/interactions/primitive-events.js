@@ -6,10 +6,13 @@
  * @returns {object} Object with handlers for 2D/force bond and atom click, double-click, mouse-over, mouse-move, mouse-out, and draw-bond mouse-down events.
  */
 export function createPrimitiveEventHandlers(context) {
+  function getChargeTool() {
+    return context.state.overlayState.getChargeTool?.() ?? null;
+  }
+
   function showPrimitiveHover(atomIds = [], bondIds = []) {
     if (context.view.isPrimitiveHoverSuppressed?.()) {
       context.view.setPrimitiveHoverSuppressed?.(false);
-      return false;
     }
     context.view.showPrimitiveHover(atomIds, bondIds);
     return true;
@@ -53,6 +56,10 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handle2dBondMouseOver(event, bond, atom1, atom2) {
+    const chargeTool = getChargeTool();
+    if (chargeTool) {
+      return;
+    }
     if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
       showPrimitiveHover([], [bond.id]);
       return;
@@ -92,6 +99,14 @@ export function createPrimitiveEventHandlers(context) {
     if (context.state.overlayState.getDrawBondMode()) {
       return;
     }
+    const chargeTool = getChargeTool();
+    if (chargeTool) {
+      context.actions.changeAtomCharge(atomId, {
+        chargeTool,
+        decrement: false
+      });
+      return;
+    }
     if (context.state.overlayState.getEraseMode()) {
       context.actions.eraseItem([atomId], []);
       return;
@@ -99,11 +114,25 @@ export function createPrimitiveEventHandlers(context) {
     context.selection.handle2dPrimitiveClick(event, [atomId], []);
   }
 
+  function handle2dAtomContextMenu(event, atom) {
+    const chargeTool = getChargeTool();
+    if (!chargeTool) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    context.actions.changeAtomCharge(atom.id ?? atom, {
+      chargeTool,
+      decrement: true
+    });
+  }
+
   function handle2dAtomDblClick(event, atomId) {
     context.selection.handle2dComponentDblClick(event, [atomId]);
   }
 
   function handle2dAtomMouseOver(event, atom, mol, valenceWarning) {
+    const chargeTool = getChargeTool();
     if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
       showPrimitiveHover([atom.id], []);
       return;
@@ -114,6 +143,7 @@ export function createPrimitiveEventHandlers(context) {
     maybeRefreshDrawBondHover(atom.id, 'atom');
     const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
     if (
+      chargeTool ||
       !showAtomTooltips ||
       (context.state.overlayState.getEraseMode() && !valenceWarning) ||
       ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode()) && !valenceWarning)
@@ -161,6 +191,10 @@ export function createPrimitiveEventHandlers(context) {
   }
 
   function handleForceBondMouseOver(event, bondId, molecule) {
+    const chargeTool = getChargeTool();
+    if (chargeTool) {
+      return;
+    }
     if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
       const bond = molecule.bonds.get(bondId);
       if (bond?.atoms.some(id => molecule.atoms.get(id)?.name === 'H')) {
@@ -234,6 +268,17 @@ export function createPrimitiveEventHandlers(context) {
       }
       return;
     }
+    const chargeTool = getChargeTool();
+    if (chargeTool) {
+      if (atom.name === 'H') {
+        return;
+      }
+      context.actions.changeAtomCharge(atom.id, {
+        chargeTool,
+        decrement: false
+      });
+      return;
+    }
     if (context.state.overlayState.getEraseMode()) {
       if (atom.name === 'H') {
         return;
@@ -244,11 +289,31 @@ export function createPrimitiveEventHandlers(context) {
     context.selection.handleForcePrimitiveClick(event, [atom.id], []);
   }
 
+  function handleForceAtomContextMenu(event, atom) {
+    const chargeTool = getChargeTool();
+    if (!chargeTool) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    if (atom.name === 'H') {
+      return;
+    }
+    context.actions.changeAtomCharge(atom.id, {
+      chargeTool,
+      decrement: true
+    });
+  }
+
   function handleForceAtomDblClick(event, atomId) {
     context.selection.handleForceComponentDblClick(event, [atomId]);
   }
 
   function handleForceAtomMouseOver(event, atomNode, molecule, valenceWarning) {
+    const chargeTool = getChargeTool();
+    if (chargeTool && atomNode.name === 'H') {
+      return;
+    }
     if (context.state.overlayState.getEraseMode() && context.state.overlayState.getErasePainting()) {
       if (atomNode.name === 'H') {
         return;
@@ -266,6 +331,7 @@ export function createPrimitiveEventHandlers(context) {
     }
     const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
     if (
+      chargeTool ||
       !showAtomTooltips ||
       (context.state.overlayState.getEraseMode() && !valenceWarning) ||
       ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode()) && !valenceWarning)
@@ -300,6 +366,7 @@ export function createPrimitiveEventHandlers(context) {
     handle2dBondMouseOut,
     handle2dAtomMouseDownDrawBond,
     handle2dAtomClick,
+    handle2dAtomContextMenu,
     handle2dAtomDblClick,
     handle2dAtomMouseOver,
     handle2dAtomMouseMove,
@@ -311,6 +378,7 @@ export function createPrimitiveEventHandlers(context) {
     handleForceBondMouseOut,
     handleForceAtomMouseDownDrawBond,
     handleForceAtomClick,
+    handleForceAtomContextMenu,
     handleForceAtomDblClick,
     handleForceAtomMouseOver,
     handleForceAtomMouseMove,

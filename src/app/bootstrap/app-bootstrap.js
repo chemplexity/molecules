@@ -304,6 +304,7 @@ export function finalizeAppBootstrap(ctx) {
       getDrawBondMode: () => ctx.state.getDrawBondMode(),
       hasDrawBondState: () => ctx.state.hasDrawBondState(),
       getEraseMode: () => ctx.state.getEraseMode(),
+      getChargeTool: () => ctx.state.getChargeTool?.() ?? null,
       isRenderableMode: () => ctx.state.isRenderableMode(),
       getActiveMolecule: () => ctx.state.getActiveMolecule(),
       getTooltipMode: () => ctx.state.getTooltipMode()
@@ -387,6 +388,7 @@ export function finalizeAppBootstrap(ctx) {
         openDrawBondDrawer: () => ctx.actions.selectionActions.openDrawBondDrawer(),
         closeDrawBondDrawer: () => ctx.actions.selectionActions.closeDrawBondDrawer(),
         toggleEraseMode: () => ctx.actions.selectionActions.toggleEraseMode(),
+        setChargeTool: tool => ctx.actions.selectionActions.setChargeTool(tool),
         setDrawElement: el => ctx.actions.selectionActions.setDrawElement(el),
         setDrawBondType: type => ctx.actions.selectionActions.setDrawBondType(type)
       },

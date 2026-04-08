@@ -129,6 +129,10 @@ describe('createAppStateBridge', () => {
         setEraseMode: value => {
           records.push(['setEraseMode', value]);
         },
+        getChargeTool: () => 'positive',
+        setChargeTool: value => {
+          records.push(['setChargeTool', value]);
+        },
         getErasePainting: () => false,
         getDrawBondElement: () => 'N',
         getDrawBondType: () => 'double',
@@ -146,14 +150,17 @@ describe('createAppStateBridge', () => {
 
     assert.equal(bridge.viewState.getMode(), '2d');
     assert.deepEqual(bridge.viewState.captureZoomTransform(), { x: 1, y: 2, k: 3 });
+    assert.equal(bridge.overlayState.getChargeTool(), 'positive');
     assert.equal(bridge.overlayState.getDrawBondElement(), 'N');
     assert.equal(bridge.overlayState.getDrawBondType(), 'double');
     bridge.viewState.restore2dEditViewport('zoom', { zoomToFit: true });
+    bridge.overlayState.setChargeTool('negative');
     bridge.overlayState.setDrawBondElement('O');
     bridge.overlayState.setDrawBondType('triple');
 
     assert.deepEqual(records, [
       ['restore2dEditViewport', 'zoom', { zoomToFit: true }],
+      ['setChargeTool', 'negative'],
       ['setDrawBondElement', 'O'],
       ['setDrawBondType', 'triple']
     ]);

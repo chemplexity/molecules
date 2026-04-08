@@ -97,6 +97,11 @@ describe('Atom', () => {
     assert.equal(a.properties.charge, -1);
   });
 
+  it('setCharge throws when a positive charge would force the electron count below zero', () => {
+    const a = new Atom('a0', 'O', { protons: 8, electrons: 8 });
+    assert.throws(() => a.setCharge(9), RangeError);
+  });
+
   it('setAromatic stores the aromatic flag and returns the atom', () => {
     const a = new Atom('a0', 'C');
     const ret = a.setAromatic(true);
@@ -890,6 +895,61 @@ describe('Molecule', () => {
     assert.equal(carbon.properties.radical, 1);
   });
 
+  it('repairImplicitHydrogens removes one hydrogen when methane becomes positively charged', () => {
+    const mol = parseSMILES('C');
+    const carbon = [...mol.atoms.values()].find(atom => atom.name === 'C');
+    assert.ok(carbon);
+
+    mol.setAtomCharge(carbon.id, 1);
+    mol.repairImplicitHydrogens([carbon.id]);
+
+    assert.equal(carbon.getHydrogenNeighbors(mol).length, 3);
+  });
+
+  it('repairImplicitHydrogens leaves doubly charged ammonia unchanged when protonation would still be invalid', () => {
+    const mol = parseSMILES('N');
+    const nitrogen = [...mol.atoms.values()].find(atom => atom.name === 'N');
+    assert.ok(nitrogen);
+
+    mol.setAtomCharge(nitrogen.id, 2);
+    mol.repairImplicitHydrogens([nitrogen.id]);
+
+    assert.equal(nitrogen.getHydrogenNeighbors(mol).length, 3);
+  });
+
+  it('repairImplicitHydrogens leaves doubly reduced phosphine unchanged when adjustment would create a warning', () => {
+    const mol = parseSMILES('P');
+    const phosphorus = [...mol.atoms.values()].find(atom => atom.name === 'P');
+    assert.ok(phosphorus);
+
+    mol.setAtomCharge(phosphorus.id, -2);
+    mol.repairImplicitHydrogens([phosphorus.id]);
+
+    assert.equal(phosphorus.getHydrogenNeighbors(mol).length, 3);
+  });
+
+  it('repairImplicitHydrogens leaves doubly reduced hydrogen sulfide unchanged when adjustment would create a warning', () => {
+    const mol = parseSMILES('S');
+    const sulfur = [...mol.atoms.values()].find(atom => atom.name === 'S');
+    assert.ok(sulfur);
+
+    mol.setAtomCharge(sulfur.id, -2);
+    mol.repairImplicitHydrogens([sulfur.id]);
+
+    assert.equal(sulfur.getHydrogenNeighbors(mol).length, 2);
+  });
+
+  it('repairImplicitHydrogens leaves doubly charged alcohol oxygen unchanged when protonation would still be invalid', () => {
+    const mol = parseSMILES('CO');
+    const oxygen = [...mol.atoms.values()].find(atom => atom.name === 'O');
+    assert.ok(oxygen);
+
+    mol.setAtomCharge(oxygen.id, 2);
+    mol.repairImplicitHydrogens([oxygen.id]);
+
+    assert.equal(oxygen.getHydrogenNeighbors(mol).length, 1);
+  });
+
   it('clearStereoAnnotations removes local atom and bond stereo metadata', () => {
     const chiralMol = parseSMILES('C[C@@H](F)Cl');
     const center = [...chiralMol.atoms.values()].find(atom => atom.properties.chirality);
@@ -1092,6 +1152,22 @@ describe('Atom#implicitHydrogenCount', () => {
     const mol = new Molecule();
     mol.addAtom('a0', 'O');
     assert.equal(mol.atoms.get('a0').implicitHydrogenCount(mol), 2);
+  });
+
+  it('positively charged carbon needs one fewer implicit hydrogen', () => {
+    const mol = new Molecule();
+    const carbon = mol.addAtom('a0', 'C');
+    carbon.resolveElement();
+    carbon.setCharge(1);
+    assert.equal(carbon.implicitHydrogenCount(mol), 3);
+  });
+
+  it('doubly charged nitrogen only shifts the implicit-hydrogen target by one protonation step', () => {
+    const mol = new Molecule();
+    const nitrogen = mol.addAtom('a0', 'N');
+    nitrogen.resolveElement();
+    nitrogen.setCharge(2);
+    assert.equal(nitrogen.implicitHydrogenCount(mol), 4);
   });
 
   it('C with all H explicit shows 0 implicit H remaining', () => {

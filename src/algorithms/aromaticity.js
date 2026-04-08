@@ -92,28 +92,6 @@ function _isHuckel(piCount) {
 }
 
 /**
- * Perceives aromaticity in `mol` using Hückel's rule (4n + 2 π electrons).
- *
- * Works with both:
- *  - **Kekulé input** (explicit alternating single/double bonds, e.g. Kekulé benzene)
- *  - **SMILES-aromatic input** (lowercase atoms, bond order 1.5, e.g. `c1ccccc1`)
- *
- * For each ring in the Smallest Set of Smallest Rings (SSSR), π electrons are
- * counted per atom.  If the total satisfies Hückel's rule the ring is marked
- * aromatic: `atom.properties.aromatic = true` for every atom in the ring, and
- * every ring bond gets `bond.setAromatic(true)`.
- *
- * When `options.preserveKekule` is true, any existing integer ring-bond order
- * is copied to `bond.properties.localizedOrder` before the bond is converted
- * to aromatic order 1.5. Renderers can prefer that preserved localized order
- * when they want a Kekule-style depiction of an aromatic system.
- *
- * Rings containing hydrogen atoms are skipped (H is never sp2 in a ring).
- * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
- * @param {{ preserveKekule?: boolean }} [options] - Configuration options.
- * @returns {string[][]}  Array of aromatic rings, each as an array of atom IDs.
- */
-/**
  * Assigns `localizedOrder` (1 or 2) to bonds that are currently flagged
  * aromatic but do NOT belong to any confirmed aromatic ring.  This covers
  * cases where the SMILES parser used lowercase atoms for a ring which Hückel
@@ -240,12 +218,26 @@ function _kekulizeStale(mol, confirmedAromaticBondIds) {
 }
 
 /**
- * Detects and marks aromatic atoms and bonds in a molecule using Hückel's rule.
- * Mutates atom and bond properties in-place.
+ * Perceives aromaticity in `mol` using Hückel's rule (4n + 2 π electrons).
+ *
+ * Works with both:
+ *  - **Kekulé input** (explicit alternating single/double bonds, e.g. Kekulé benzene)
+ *  - **SMILES-aromatic input** (lowercase atoms, bond order 1.5, e.g. `c1ccccc1`)
+ *
+ * For each ring in the Smallest Set of Smallest Rings (SSSR), π electrons are
+ * counted per atom.  If the total satisfies Hückel's rule the ring is marked
+ * aromatic: `atom.properties.aromatic = true` for every atom in the ring, and
+ * every ring bond gets `bond.setAromatic(true)`.
+ *
+ * When `options.preserveKekule` is true, any existing integer ring-bond order
+ * is copied to `bond.properties.localizedOrder` before the bond is converted
+ * to aromatic order 1.5. Renderers can prefer that preserved localized order
+ * when they want a Kekule-style depiction of an aromatic system.
+ *
+ * Rings containing hydrogen atoms are skipped (H is never sp2 in a ring).
  * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
- * @param {object} [options] - Options.
- * @param {boolean} [options.preserveKekule] - When true, existing Kekulé bond orders are preserved.
- * @returns {string[][]} Array of aromatic rings found in the molecule.
+ * @param {{ preserveKekule?: boolean }} [options] - Configuration options.
+ * @returns {string[][]} Array of aromatic rings, each as an array of atom IDs.
  */
 export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
   // Clear any atom-aromatic flags set by the SMILES parser so that only

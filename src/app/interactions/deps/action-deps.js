@@ -99,6 +99,7 @@ export function createSelectionActionDeps(ctx) {
       drawBondButton: ctx.drawBondButton,
       drawTools: ctx.drawTools,
       eraseButton: ctx.eraseButton,
+      getChargeToolButton: tool => ctx.getChargeToolButton(tool),
       getElementButton: element => ctx.getElementButton(element),
       getBondDrawTypeButton: type => ctx.getBondDrawTypeButton(type)
     }
@@ -172,7 +173,8 @@ export function createDragGestureActionDeps(ctx) {
     },
     state: {
       getDrawBondMode: () => ctx.getDrawBondMode(),
-      getEraseMode: () => ctx.getEraseMode()
+      getEraseMode: () => ctx.getEraseMode(),
+      getChargeTool: () => ctx.getChargeTool?.() ?? null
     },
     history: {
       captureSnapshot: () => ctx.captureSnapshot(),
@@ -402,6 +404,7 @@ export function createPrimitiveEventHandlerDeps(ctx) {
     actions: {
       promoteBondOrder: (bondId, options = {}) => ctx.promoteBondOrder(bondId, options),
       eraseItem: (atomIds, bondIds) => ctx.eraseItem(atomIds, bondIds),
+      changeAtomCharge: (atomId, options = {}) => ctx.changeAtomCharge(atomId, options),
       replaceForceHydrogenAtom: (atomId, mol) => ctx.replaceForceHydrogenAtom(atomId, mol),
       autoPlaceBond: (atomId, ox, oy) => ctx.autoPlaceBond(atomId, ox, oy)
     },

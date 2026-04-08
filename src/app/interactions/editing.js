@@ -1,5 +1,7 @@
 /** @module app/interactions/editing */
 
+import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
+
 /**
  * Creates editing action handlers for deleting atoms/bonds and erasing items in both 2D and force-layout modes.
  * @param {object} context - Dependency context providing state, view, view2D, actions, policies, chemistry, force, overlays, and dom.
@@ -94,7 +96,7 @@ export function createEditingActions(context) {
         context.chemistry.clearStereoAnnotations(mol, affectedHeavyIds);
         context.chemistry.kekulize(mol);
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
-        mol.repairImplicitHydrogens(affectedHeavyIds);
+        repairImplicitHydrogensWhenValenceImproves(mol, affectedHeavyIds);
 
         return {
           force:

@@ -8,6 +8,7 @@
 - Display stereochemistry bonds in force layout mode
 - Fix issue with amine protonation
 - Update JSDoc for all files
+- Add buttons in demo to edit charge state
 
 ## 2026-04-06
 

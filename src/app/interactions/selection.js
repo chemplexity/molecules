@@ -2,6 +2,7 @@
 
 const DRAW_ELEMENTS = ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I'];
 const DRAW_BOND_TYPES = ['single', 'double', 'triple', 'aromatic', 'wedge', 'dash'];
+const CHARGE_TOOLS = ['positive', 'negative'];
 
 /**
  * Creates selection action handlers for tool-mode toggling (pan, select, draw-bond, erase), element/bond-type switching, and toolbar button synchronization.
@@ -50,12 +51,14 @@ export function createSelectionActions(context) {
     const selectMode = context.state.overlayState.getSelectMode();
     const drawBondMode = context.state.overlayState.getDrawBondMode();
     const eraseMode = context.state.overlayState.getEraseMode();
-    const panMode = !selectMode && !drawBondMode && !eraseMode;
+    const chargeTool = context.state.overlayState.getChargeTool?.() ?? null;
+    const panMode = !selectMode && !drawBondMode && !eraseMode && chargeTool == null;
 
     context.dom.panButton.classList.toggle('active', panMode);
     context.dom.selectButton.classList.toggle('active', selectMode);
     context.dom.drawBondButton.classList.toggle('active', drawBondMode);
     context.dom.eraseButton.classList.toggle('active', eraseMode);
+    syncChargeButtons();
 
     if (drawBondMode) {
       syncElementButtons();
@@ -65,6 +68,25 @@ export function createSelectionActions(context) {
       clearElementButtons();
       clearBondDrawTypeButtons();
       closeDrawBondDrawer();
+    }
+  }
+
+  function syncChargeButtons() {
+    const activeTool = context.state.overlayState.getChargeTool?.() ?? null;
+    for (const tool of CHARGE_TOOLS) {
+      const btn = context.dom.getChargeToolButton?.(tool);
+      if (btn) {
+        btn.classList.toggle('active', tool === activeTool);
+      }
+    }
+  }
+
+  function clearChargeButtons() {
+    for (const tool of CHARGE_TOOLS) {
+      const btn = context.dom.getChargeToolButton?.(tool);
+      if (btn) {
+        btn.classList.remove('active');
+      }
     }
   }
 
@@ -115,16 +137,23 @@ export function createSelectionActions(context) {
   }
 
   function togglePanMode() {
-    if (!context.state.overlayState.getSelectMode() && !context.state.overlayState.getDrawBondMode() && !context.state.overlayState.getEraseMode()) {
+    if (
+      !context.state.overlayState.getSelectMode() &&
+      !context.state.overlayState.getDrawBondMode() &&
+      !context.state.overlayState.getEraseMode() &&
+      (context.state.overlayState.getChargeTool?.() ?? null) == null
+    ) {
       return;
     }
     context.state.overlayState.setSelectMode(false);
     context.state.overlayState.setDrawBondMode(false);
     context.state.overlayState.setEraseMode(false);
+    context.state.overlayState.setChargeTool?.(null);
     context.drawBond.cancelDrawBond();
     context.view.clearPrimitiveHover();
     clearElementButtons();
     clearBondDrawTypeButtons();
+    clearChargeButtons();
     closeDrawBondDrawer();
     context.dom.panButton.classList.add('active');
     context.dom.selectButton.classList.remove('active');
@@ -140,10 +169,12 @@ export function createSelectionActions(context) {
     context.state.overlayState.setSelectMode(true);
     context.state.overlayState.setDrawBondMode(false);
     context.state.overlayState.setEraseMode(false);
+    context.state.overlayState.setChargeTool?.(null);
     context.drawBond.cancelDrawBond();
     context.view.clearPrimitiveHover();
     clearElementButtons();
     clearBondDrawTypeButtons();
+    clearChargeButtons();
     closeDrawBondDrawer();
     context.dom.selectButton.classList.add('active');
     context.dom.panButton.classList.remove('active');
@@ -158,11 +189,13 @@ export function createSelectionActions(context) {
     if (next) {
       context.state.overlayState.setSelectMode(false);
       context.state.overlayState.setEraseMode(false);
+      context.state.overlayState.setChargeTool?.(null);
       context.drawBond.cancelDrawBond();
       context.view.clearPrimitiveHover();
       context.dom.panButton.classList.remove('active');
       context.dom.selectButton.classList.remove('active');
       context.dom.eraseButton.classList.remove('active');
+      clearChargeButtons();
       btn.classList.add('active');
       syncElementButtons();
       syncBondDrawTypeButtons();
@@ -174,6 +207,7 @@ export function createSelectionActions(context) {
       btn.classList.remove('active');
       clearElementButtons();
       clearBondDrawTypeButtons();
+      clearChargeButtons();
       closeDrawBondDrawer();
     }
     rerenderToolOverlay();
@@ -186,9 +220,11 @@ export function createSelectionActions(context) {
     if (next) {
       context.state.overlayState.setSelectMode(false);
       context.state.overlayState.setDrawBondMode(false);
+      context.state.overlayState.setChargeTool?.(null);
       context.drawBond.cancelDrawBond();
       clearElementButtons();
       clearBondDrawTypeButtons();
+      clearChargeButtons();
       closeDrawBondDrawer();
       context.dom.panButton.classList.remove('active');
       context.dom.selectButton.classList.remove('active');
@@ -204,7 +240,31 @@ export function createSelectionActions(context) {
       context.view.clearPrimitiveHover();
       context.dom.panButton.classList.add('active');
       btn.classList.remove('active');
+      clearChargeButtons();
     }
+    rerenderToolOverlay();
+  }
+
+  function setChargeTool(tool) {
+    if (!CHARGE_TOOLS.includes(tool)) {
+      return;
+    }
+    const currentTool = context.state.overlayState.getChargeTool?.() ?? null;
+    const nextTool = currentTool === tool ? null : tool;
+    context.state.overlayState.setChargeTool?.(nextTool);
+    context.state.overlayState.setSelectMode(false);
+    context.state.overlayState.setDrawBondMode(false);
+    context.state.overlayState.setEraseMode(false);
+    context.drawBond.cancelDrawBond();
+    context.view.clearPrimitiveHover();
+    clearElementButtons();
+    clearBondDrawTypeButtons();
+    closeDrawBondDrawer();
+    context.dom.selectButton.classList.remove('active');
+    context.dom.drawBondButton.classList.remove('active');
+    context.dom.eraseButton.classList.remove('active');
+    context.dom.panButton.classList.toggle('active', nextTool == null);
+    syncChargeButtons();
     rerenderToolOverlay();
   }
 
@@ -245,6 +305,7 @@ export function createSelectionActions(context) {
     toggleSelectMode,
     toggleDrawBondMode,
     toggleEraseMode,
+    setChargeTool,
     setDrawElement,
     setDrawBondType,
     handleDrawBondButtonClick,
@@ -256,6 +317,8 @@ export function createSelectionActions(context) {
     clearElementButtons,
     syncBondDrawTypeButtons,
     clearBondDrawTypeButtons,
+    syncChargeButtons,
+    clearChargeButtons,
     syncDrawBondButtonIcon
   };
 }

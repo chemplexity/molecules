@@ -138,7 +138,7 @@ export function createSessionSnapshotManager(deps) {
       panelState: deps.capturePanelState(),
       overlayState: {
         reactionPreview,
-        resonanceView: null
+        resonanceView: resonanceUndo.resonanceView ?? null
       }
     };
   }
@@ -189,7 +189,7 @@ export function createSessionSnapshotManager(deps) {
     const previewDisplayMolData = snap.reactionPreview?.displayMol ?? null;
 
     const mol = buildSnapshotMol(snapshotMolData);
-    const displayMol = buildSnapshotMol(previewDisplayMolData) ?? mol.clone();
+    const displayMol = buildSnapshotMol(previewDisplayMolData) ?? mol;
     const inputSyncMol = mol.clone();
 
     if (snap.mode === '2d') {

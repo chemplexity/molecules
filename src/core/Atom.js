@@ -4,6 +4,27 @@ import { randomUUID } from 'node:crypto';
 import elements from '../data/elements.js';
 
 /**
+ * Returns the implicit-hydrogen valence adjustment for a charged main-group atom.
+ *
+ * This is intentionally narrower than the full valence validator:
+ * - group 14 centers (C/Si) step down with charge magnitude
+ * - groups 15–16 (N/P/O/S) only auto-shift by one protonation step
+ * - all other groups leave the neutral implicit-H target unchanged
+ * @param {number} group - Periodic-table group.
+ * @param {number} charge - Formal charge.
+ * @returns {number} Signed adjustment applied to the neutral implicit-H target.
+ */
+export function getImplicitHydrogenChargeAdjustment(group, charge) {
+  if (group === 14) {
+    return -Math.abs(charge);
+  }
+  if (group >= 15 && group <= 16) {
+    return Math.sign(charge);
+  }
+  return 0;
+}
+
+/**
  * Represents an atom (vertex) in a molecular graph.
  *
  * Element-specific data (`charge`, `aromatic`, `protons`, `neutrons`,
@@ -331,8 +352,8 @@ export class Atom {
    * Returns the number of implicit hydrogen atoms this atom would bear given
    * its current bonding, without mutating the molecule.
    *
-   * Counts only non-H bond order toward the neutral valence; pendant H atoms
-   * already attached are not counted as implicit.
+   * Counts only non-H bond order toward the charge-adjusted valence target;
+   * pendant H atoms already attached are not counted as implicit.
    * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
    * @returns {number} The computed numeric value.
    */
@@ -350,7 +371,9 @@ export class Atom {
     } else {
       return 0;
     }
-    return Math.max(0, valence - this.getValence(molecule) - this.getRadical());
+    const charge = this.getCharge();
+    const chargeAdj = getImplicitHydrogenChargeAdjustment(group, charge);
+    return Math.max(0, valence - this.getValence(molecule) - this.getRadical() + chargeAdj);
   }
 
   /**

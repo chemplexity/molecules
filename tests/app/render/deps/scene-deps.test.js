@@ -191,6 +191,7 @@ describe('scene deps builders', () => {
       getSelectMode: () => true,
       getDrawBondMode: () => false,
       getEraseMode: () => false,
+      getChargeTool: () => 'positive',
       getSelectionModifierActive: () => false,
       getSelectedAtomIds: () => new Set([1]),
       getSelectedBondIds: () => new Set([2]),
@@ -224,6 +225,7 @@ describe('scene deps builders', () => {
     assert.equal(scene2D.overlay.getDrawBondMode(), true);
     assert.deepEqual(scene2D.drag.create2dAtomDrag(), { type: 'atom' });
     assert.equal(overlay.state.getMode(), '2d');
+    assert.equal(overlay.state.getChargeTool(), 'positive');
     assert.deepEqual(forceSelection.selection.getRenderableSelectionIds(), { atomIds: [1], bondIds: [2] });
     forceSelection.cache.setSelectionLines('L');
     forceSelection.cache.setSelectionCircles('C');

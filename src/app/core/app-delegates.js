@@ -54,6 +54,9 @@ export function createAppDelegates(deps) {
     changeAtomElements(atomIds, newEl, options = {}) {
       return deps.structuralEditActions.changeAtomElements(atomIds, newEl, options);
     },
+    changeAtomCharge(atomId, options = {}) {
+      return deps.structuralEditActions.changeAtomCharge(atomId, options);
+    },
     replaceForceHydrogenWithDrawElement(atomId, mol = deps.state.getCurrentMol()) {
       return deps.structuralEditActions.replaceForceHydrogenWithDrawElement(atomId, mol);
     },

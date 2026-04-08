@@ -106,6 +106,9 @@ describe('initAppShell', () => {
         toggleEraseMode: () => {
           records.push(['toggleEraseMode']);
         },
+        setChargeTool: tool => {
+          records.push(['setChargeTool', tool]);
+        },
         setDrawElement: el => {
           records.push(['setDrawElement', el]);
         },
@@ -186,6 +189,7 @@ describe('initAppShell', () => {
     win.openDrawBondDrawer();
     win.closeDrawBondDrawer();
     win.toggleEraseMode();
+    win.setChargeTool('positive');
     win.setDrawElement('N');
     win.setDrawBondType('dash');
     win.toggleMode();
@@ -224,6 +228,7 @@ describe('initAppShell', () => {
       ['openDrawBondDrawer'],
       ['closeDrawBondDrawer'],
       ['toggleEraseMode'],
+      ['setChargeTool', 'positive'],
       ['setDrawElement', 'N'],
       ['setDrawBondType', 'dash'],
       ['toggleMode'],

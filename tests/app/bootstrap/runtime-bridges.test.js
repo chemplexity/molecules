@@ -24,6 +24,7 @@ describe('runtime bridge bootstrap', () => {
       selectMode: false,
       drawBondMode: false,
       eraseMode: false,
+      chargeTool: null,
       erasePainting: false,
       drawBondElement: 'C',
       drawBondType: 'single',
@@ -128,6 +129,8 @@ describe('runtime bridge bootstrap', () => {
 
     bridges.appState.documentState.setActiveMolecule('next');
     assert.equal(runtimeState.mol2d, 'next');
+    bridges.appState.overlayState.setChargeTool('positive');
+    assert.equal(bridges.appState.overlayState.getChargeTool(), 'positive');
 
     bridges.renderRuntime.draw2d();
     bridges.renderRuntime.renderMol('mol');

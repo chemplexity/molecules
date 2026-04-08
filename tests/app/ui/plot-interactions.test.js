@@ -205,4 +205,71 @@ describe('initPlotInteractions', () => {
       ['hide']
     ]);
   });
+
+  it('does not show valence tooltips while charge mode is active', () => {
+    const records = [];
+    const warningMap = new Map([['a1', { atomId: 'a1', code: 'warn' }]]);
+    const atom = { id: 'a1', name: 'C' };
+    let mousemoveHandler = null;
+
+    initPlotInteractions({
+      plotEl: {
+        addEventListener() {}
+      },
+      document: {
+        addEventListener(type, handler) {
+          if (type === 'mousemove') {
+            mousemoveHandler = handler;
+          }
+        },
+        elementsFromPoint() {
+          return [
+            {
+              classList: {
+                contains(value) {
+                  return value === 'node';
+                }
+              }
+            }
+          ];
+        }
+      },
+      state: {
+        getSelectMode: () => false,
+        getDrawBondMode: () => false,
+        hasDrawBondState: () => false,
+        getEraseMode: () => false,
+        getChargeTool: () => 'positive',
+        isRenderableMode: () => true,
+        getActiveMolecule: () => ({ atoms: new Map([['a1', atom]]) }),
+        getTooltipMode: () => 'force'
+      },
+      options: {
+        getShowAtomTooltips: () => true
+      },
+      analysis: {
+        getActiveValenceWarningMap: () => warningMap
+      },
+      tooltipState: {
+        getSelectionValenceTooltipAtomId: () => null,
+        setSelectionValenceTooltipAtomId(value) {
+          records.push(['setSelectionTooltipAtomId', value]);
+        }
+      },
+      tooltip: makeTooltip(records),
+      helpers: {
+        getNodeDatum: () => ({ id: 'a1' })
+      },
+      molecule: {
+        getAtomById: atomId => (atomId === 'a1' ? atom : null)
+      },
+      formatters: {
+        atomTooltipHtml: () => 'tooltip'
+      }
+    });
+
+    mousemoveHandler({ clientX: 10, clientY: 20 });
+
+    assert.deepEqual(records, []);
+  });
 });

@@ -40,6 +40,7 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
     drawBondMode: false,
     eraseMode: false,
     erasePainting: false,
+    chargeTool: null,
     forceSelectionLines: null,
     forceSelectionCircles: null,
     forceValenceWarningCircles: null,

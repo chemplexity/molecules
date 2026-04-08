@@ -5,10 +5,6 @@ import { Molecule, computeRS } from '../core/Molecule.js';
 import { perceiveAromaticity } from '../algorithms/aromaticity.js';
 import { morganRanks } from '../algorithms/morgan.js';
 
-// ---------------------------------------------------------------------------
-// Grammar — ported from molecules v1 src/main/smiles.js
-// ---------------------------------------------------------------------------
-
 export const grammar = [
   { type: 'atom', term: 'H', tag: 'H', expression: /(?=[A-Z])H(?=[^efgos]|$)([0-9]?)+/g },
   { type: 'atom', term: 'D', tag: 'H', expression: /(?=[A-Z])D(?=[^bsy]|$)([0-9]?)+/g },
@@ -159,10 +155,6 @@ export const grammar = [
   { type: 'property', term: 'S', tag: 'chiral', expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g },
   { type: 'property', term: 'R', tag: 'chiral', expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g }
 ];
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
 
 function compareArrays(a, b, ab = []) {
   for (let i = 0; i < a.length; i++) {
@@ -357,10 +349,6 @@ function normalizeSmilesSeparators(input) {
   return normalized;
 }
 
-// ---------------------------------------------------------------------------
-// tokenize
-// ---------------------------------------------------------------------------
-
 /**
  * Parses a SMILES string into an array of tokens using the v1 grammar.
  * @param {string} input - SMILES string.
@@ -548,10 +536,6 @@ export function tokenize(input, tokens = []) {
 
   return { tokens };
 }
-
-// ---------------------------------------------------------------------------
-// decode
-// ---------------------------------------------------------------------------
 
 /**
  * Converts a token list (from {@link tokenize}) into v1-format atoms and bonds.
@@ -1334,14 +1318,6 @@ export function decode(tokens) {
   return { atoms, bonds };
 }
 
-// ---------------------------------------------------------------------------
-// parseSMILES
-// ---------------------------------------------------------------------------
-
-// ---------------------------------------------------------------------------
-// Chirality — SMILES neighbour-order extraction
-// ---------------------------------------------------------------------------
-
 /**
  * Scans backward from `bracketOpenPos - 1` to find the position of the
  * "from" atom: the atom immediately before the `[` of a bracket atom in the
@@ -1684,10 +1660,6 @@ export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) 
 
   return mol;
 }
-
-// ---------------------------------------------------------------------------
-// toSMILES
-// ---------------------------------------------------------------------------
 
 /**
  * Normal SMILES valence for each organic-subset element (lowest standard valence).

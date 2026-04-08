@@ -42,6 +42,7 @@ function makeBaseContext(overrides = {}) {
   let selectMode = false;
   let drawBondMode = false;
   let eraseMode = false;
+  let chargeTool = null;
   let erasePainting = false;
   const selectedAtomIds = new Set();
   const selectedBondIds = new Set();
@@ -77,6 +78,10 @@ function makeBaseContext(overrides = {}) {
         getEraseMode: () => eraseMode,
         setEraseMode: value => {
           eraseMode = value;
+        },
+        getChargeTool: () => chargeTool,
+        setChargeTool: value => {
+          chargeTool = value;
         },
         getErasePainting: () => erasePainting,
         setErasePainting: value => {
@@ -158,7 +163,8 @@ function makeBaseContext(overrides = {}) {
     state: {
       setMode: value => (mode = value),
       setSelectMode: value => (selectMode = value),
-      setDrawBondMode: value => (drawBondMode = value)
+      setDrawBondMode: value => (drawBondMode = value),
+      setChargeTool: value => (chargeTool = value)
     }
   };
 }
@@ -226,5 +232,40 @@ describe('initGestureInteractions', () => {
     assert.deepEqual(calls, ['toggleSelectMode', 'applySelectionOverlay']);
     assert.deepEqual([...selectedAtomIds].sort(), ['a1', 'a2']);
     assert.deepEqual([...selectedBondIds], ['b1']);
+  });
+
+  it('does not trigger blank-space select-all while charge mode is active', () => {
+    const calls = [];
+    const mol = {
+      atoms: new Map([
+        ['a1', {}],
+        ['a2', {}]
+      ]),
+      bonds: new Map([['b1', {}]])
+    };
+    const { context, svg, selectedAtomIds, selectedBondIds, state } = makeBaseContext({
+      selection: {
+        toggleSelectMode() {
+          calls.push('toggleSelectMode');
+        }
+      },
+      renderers: {
+        applySelectionOverlay() {
+          calls.push('applySelectionOverlay');
+        }
+      }
+    });
+    context.state.documentState.getMol2d = () => mol;
+    state.setChargeTool('positive');
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('dblclick.select-all')({
+      target: { closest: () => null }
+    });
+
+    assert.deepEqual(calls, []);
+    assert.deepEqual([...selectedAtomIds], []);
+    assert.deepEqual([...selectedBondIds], []);
   });
 });

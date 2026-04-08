@@ -59,6 +59,8 @@ export function createAppStateBridge(deps) {
       setDrawBondMode: deps.overlayState.setDrawBondMode,
       getEraseMode: deps.overlayState.getEraseMode,
       setEraseMode: deps.overlayState.setEraseMode,
+      getChargeTool: deps.overlayState.getChargeTool,
+      setChargeTool: deps.overlayState.setChargeTool,
       getErasePainting: deps.overlayState.getErasePainting,
       getDrawBondElement: deps.overlayState.getDrawBondElement,
       setDrawBondElement: deps.overlayState.setDrawBondElement,

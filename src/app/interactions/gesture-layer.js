@@ -406,7 +406,12 @@ export function initGestureInteractions(context) {
   });
 
   svg.on('dblclick.select-all', event => {
-    if (context.state.overlayState.getDrawBondMode() || context.drawBond.hasDrawBondState() || context.state.overlayState.getEraseMode()) {
+    if (
+      context.state.overlayState.getDrawBondMode() ||
+      context.drawBond.hasDrawBondState() ||
+      context.state.overlayState.getEraseMode() ||
+      context.state.overlayState.getChargeTool?.()
+    ) {
       return;
     }
     const mol = context.state.viewState.getMode() === 'force' ? context.state.documentState.getCurrentMol() : context.state.documentState.getMol2d();

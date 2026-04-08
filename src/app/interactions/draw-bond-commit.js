@@ -2,6 +2,7 @@
 
 import { ReactionPreviewPolicy } from '../core/editor-actions.js';
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
+import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
 
 /**
  * Removes all display-stereo properties (as, centerId, manual) from a bond,
@@ -393,7 +394,7 @@ export function createDrawBondCommitActions(context) {
         context.chemistry.kekulize(mol);
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
       }
-      mol.repairImplicitHydrogens(affected);
+      repairImplicitHydrogensWhenValenceImproves(mol, affected);
       _tryApplyExplicitStereoAssignment(mol, newBond, drawBondType, resolvedId);
       context.analysis.syncInputField(mol);
       context.analysis.updateFormula(mol);
@@ -415,7 +416,7 @@ export function createDrawBondCommitActions(context) {
       context.chemistry.kekulize(mol);
       context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
     }
-    mol.repairImplicitHydrogens(affected);
+    repairImplicitHydrogensWhenValenceImproves(mol, affected);
     _tryApplyExplicitStereoAssignment(mol, newBond, drawBondType, resolvedId);
     context.view2D.syncDerivedState(mol);
     context.analysis.syncInputField(mol);
@@ -597,7 +598,7 @@ export function createDrawBondCommitActions(context) {
         context.chemistry.kekulize(mol);
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
       }
-      mol.repairImplicitHydrogens(affected);
+      repairImplicitHydrogensWhenValenceImproves(mol, affected);
       if (newBond) {
         _tryApplyExplicitStereoAssignment(mol, newBond, drawBondType, resolvedAtomId);
       }
@@ -691,7 +692,7 @@ export function createDrawBondCommitActions(context) {
       context.chemistry.kekulize(mol);
       context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
     }
-    mol.repairImplicitHydrogens(affected);
+    repairImplicitHydrogensWhenValenceImproves(mol, affected);
     if (newBond) {
       _tryApplyExplicitStereoAssignment(mol, newBond, drawBondType, resolvedAtomId);
     }

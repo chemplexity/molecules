@@ -2,16 +2,21 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../../../src/app/core/editor-actions.js';
+import { repairImplicitHydrogensWhenValenceImproves } from '../../../src/app/interactions/implicit-hydrogen-repair.js';
 import { createStructuralEditActions } from '../../../src/app/interactions/structural-edit-actions.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { generateAndRefine2dCoords } from '../../../src/layout/index.js';
+import { validateValence } from '../../../src/validation/index.js';
 
 function makeAtom(id, name) {
   return {
     id,
     name,
     bonds: [],
-    properties: { aromatic: false },
+    properties: { aromatic: false, charge: 0 },
+    getCharge() {
+      return this.properties.charge ?? 0;
+    },
     getNeighbors(mol) {
       return this.bonds
         .map(bondId => mol.bonds.get(bondId))
@@ -256,6 +261,46 @@ describe('createStructuralEditActions', () => {
 
     assert.equal(bond.properties.order, 2);
     assert.equal(bond.properties.aromatic, false);
+  });
+
+  it('does not repair implicit hydrogens for charged atoms when promoting a bond order', () => {
+    const atom1 = makeAtom('a1', 'N');
+    atom1.properties.charge = 1;
+    const atom2 = makeAtom('a2', 'C');
+    const bond = makeBond('b1', 'a1', 'a2', { order: 1 });
+    let repairedHydrogens = null;
+    const mol = {
+      atoms: new Map([
+        ['a1', atom1],
+        ['a2', atom2]
+      ]),
+      bonds: new Map(),
+      clearStereoAnnotations() {},
+      repairImplicitHydrogens(affected) {
+        repairedHydrogens = affected;
+      }
+    };
+    attachBond(mol, bond);
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.promoteBondOrder('b1', {
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(repairedHydrogens, null);
   });
 
   it('stores manual dash display metadata when explicitly applying a dash bond', () => {
@@ -691,5 +736,236 @@ describe('createStructuralEditActions', () => {
     const patchPos = patchCall[1];
     assert.equal(patchPos.get('h1').x, 30);
     assert.equal(patchPos.get('h1').y, 0);
+  });
+
+  it('changes atom charge through the extracted structural-edit action', () => {
+    let repairedHydrogens = false;
+    const atom = {
+      id: 'a1',
+      name: 'N',
+      properties: { charge: 0 },
+      getCharge() {
+        return this.properties.charge;
+      }
+    };
+    const mol = {
+      atoms: new Map([['a1', atom]]),
+      setAtomCharge(atomId, charge) {
+        this.atoms.get(atomId).properties.charge = charge;
+      },
+      repairImplicitHydrogens(affected) {
+        repairedHydrogens = affected;
+      }
+    };
+
+    let captured = null;
+    const { context, calls } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(kind, options, mutate) {
+            captured = { kind, options };
+            return mutate({ mol, mode: '2d', reactionEdit: { atomId: 'a1' } });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.changeAtomCharge('a1', {
+      chargeTool: 'positive',
+      decrement: false,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(captured.kind, 'change-atom-charge');
+    assert.equal(captured.options.overlayPolicy, ReactionPreviewPolicy.prepareEditTargets);
+    assert.equal(captured.options.resonancePolicy, ResonancePolicy.normalizeForEdit);
+    assert.equal(atom.properties.charge, 1);
+    assert.equal(repairedHydrogens, false);
+    assert.equal(result.clearPrimitiveHover, true);
+    assert.equal(result.suppressPrimitiveHover, true);
+    assert.deepEqual(
+      calls.filter(([kind]) => kind === 'kekulize' || kind === 'refreshAromaticity'),
+      [
+        ['kekulize', mol],
+        ['refreshAromaticity', mol, { preserveKekule: true }]
+      ]
+    );
+  });
+
+  it('applies charge-tool edits as signed one-step deltas', () => {
+    const atom = {
+      id: 'a1',
+      name: 'N',
+      properties: { charge: -1 },
+      getCharge() {
+        return this.properties.charge;
+      }
+    };
+    const mol = {
+      atoms: new Map([['a1', atom]]),
+      setAtomCharge(atomId, charge) {
+        this.atoms.get(atomId).properties.charge = charge;
+      }
+    };
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: { atomId: 'a1' } });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.changeAtomCharge('a1', { chargeTool: 'positive' });
+    assert.equal(atom.properties.charge, 0);
+
+    actions.changeAtomCharge('a1', { chargeTool: 'negative' });
+    assert.equal(atom.properties.charge, -1);
+
+    actions.changeAtomCharge('a1', { chargeTool: 'negative', decrement: true });
+    assert.equal(atom.properties.charge, 0);
+  });
+
+  it('repairs implicit hydrogens after a charge edit when that clears a local valence warning', () => {
+    const mol = parseSMILES('CO');
+    const oxygenId = [...mol.atoms.values()].find(atom => atom.name === 'O')?.id;
+    const originalAtomCount = mol.atomCount;
+    const originalBondCount = mol.bondCount;
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: { atomId: oxygenId } });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.changeAtomCharge(oxygenId, {
+      chargeTool: 'negative',
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(mol.atoms.get(oxygenId)?.getCharge?.() ?? mol.atoms.get(oxygenId)?.properties?.charge, -1);
+    assert.equal(validateValence(mol).some(warning => warning.atomId === oxygenId), false);
+    assert.equal(mol.atomCount, originalAtomCount - 1);
+    assert.equal(mol.bondCount, originalBondCount - 1);
+  });
+
+  it('removes one hydrogen after a positive charge edit on methane when that clears the local valence warning', () => {
+    const mol = parseSMILES('C');
+    const carbonId = [...mol.atoms.values()].find(atom => atom.name === 'C')?.id;
+    const originalAtomCount = mol.atomCount;
+    const originalBondCount = mol.bondCount;
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: { atomId: carbonId } });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.changeAtomCharge(carbonId, {
+      chargeTool: 'positive',
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(mol.atoms.get(carbonId)?.getCharge?.() ?? mol.atoms.get(carbonId)?.properties?.charge, 1);
+    assert.equal(validateValence(mol).some(warning => warning.atomId === carbonId), false);
+    assert.equal(mol.atomCount, originalAtomCount - 1);
+    assert.equal(mol.bondCount, originalBondCount - 1);
+  });
+
+  it('does not auto-add extra hydrogens for implausible multi-positive oxygen charge edits', () => {
+    const mol = parseSMILES('CO');
+    const oxygenId = [...mol.atoms.values()].find(atom => atom.name === 'O')?.id;
+    const originalAtomCount = mol.atomCount;
+    const originalBondCount = mol.bondCount;
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: { atomId: oxygenId } });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.changeAtomCharge(oxygenId, {
+      nextCharge: 2,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(mol.atoms.get(oxygenId)?.getCharge?.() ?? mol.atoms.get(oxygenId)?.properties?.charge, 2);
+    assert.equal(validateValence(mol).some(warning => warning.atomId === oxygenId), true);
+    assert.equal(mol.atomCount, originalAtomCount);
+    assert.equal(mol.bondCount, originalBondCount);
+  });
+
+  it('does not auto-add extra hydrogens for implausible multi-positive nitrogen charge edits', () => {
+    const mol = parseSMILES('N');
+    const nitrogenId = [...mol.atoms.values()].find(atom => atom.name === 'N')?.id;
+    const originalAtomCount = mol.atomCount;
+    const originalBondCount = mol.bondCount;
+
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, _options, mutate) {
+            return mutate({ mol, mode: '2d', reactionEdit: { atomId: nitrogenId } });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.changeAtomCharge(nitrogenId, {
+      nextCharge: 2,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(mol.atoms.get(nitrogenId)?.getCharge?.() ?? mol.atoms.get(nitrogenId)?.properties?.charge, 2);
+    assert.equal(validateValence(mol).some(warning => warning.atomId === nitrogenId), true);
+    assert.equal(mol.atomCount, originalAtomCount);
+    assert.equal(mol.bondCount, originalBondCount);
+  });
+});
+
+describe('repairImplicitHydrogensWhenValenceImproves', () => {
+  it('repairs implicit hydrogens when that clears a local valence warning', () => {
+    const mol = parseSMILES('[CH3]');
+    const carbonId = [...mol.atoms.values()].find(atom => atom.name === 'C')?.id;
+
+    assert.equal(validateValence(mol).some(warning => warning.atomId === carbonId), true);
+
+    const repaired = repairImplicitHydrogensWhenValenceImproves(mol, [carbonId]);
+
+    assert.equal(repaired, true);
+    assert.equal(validateValence(mol).some(warning => warning.atomId === carbonId), false);
+  });
+
+  it('leaves implicit hydrogens unchanged when there is no local valence warning to fix', () => {
+    const mol = parseSMILES('C');
+    const carbonId = [...mol.atoms.values()].find(atom => atom.name === 'C')?.id;
+    const originalAtomCount = mol.atomCount;
+    const originalBondCount = mol.bondCount;
+
+    const repaired = repairImplicitHydrogensWhenValenceImproves(mol, [carbonId]);
+
+    assert.equal(repaired, false);
+    assert.equal(mol.atomCount, originalAtomCount);
+    assert.equal(mol.bondCount, originalBondCount);
   });
 });

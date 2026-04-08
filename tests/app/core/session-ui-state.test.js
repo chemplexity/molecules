@@ -55,6 +55,7 @@ function makeSessionUiStateBridge(overrides = {}) {
     getSelectMode: () => false,
     getDrawBondMode: () => false,
     getEraseMode: () => false,
+    getChargeTool: () => null,
     getDrawBondElement: () => 'C',
     getDrawBondType: () => 'single',
     getForceAutoFitEnabled: () => true,
@@ -68,6 +69,7 @@ function makeSessionUiStateBridge(overrides = {}) {
     setDrawBondState() {},
     setDrawBondHoverSuppressed() {},
     setErasePainting() {},
+    setChargeTool() {},
     setDrawBondElement() {},
     setDrawBondType() {},
     setSelectMode() {},
@@ -212,6 +214,7 @@ describe('createSessionUiStateBridge', () => {
     let selectMode = true;
     let drawBondMode = false;
     let eraseMode = false;
+    let chargeTool = 'positive';
     let drawBondElement = 'N';
     let drawBondType = 'double';
     let forceAutoFitEnabled = false;
@@ -225,6 +228,7 @@ describe('createSessionUiStateBridge', () => {
       getSelectMode: () => selectMode,
       getDrawBondMode: () => drawBondMode,
       getEraseMode: () => eraseMode,
+      getChargeTool: () => chargeTool,
       getDrawBondElement: () => drawBondElement,
       getDrawBondType: () => drawBondType,
       getForceAutoFitEnabled: () => forceAutoFitEnabled,
@@ -253,6 +257,9 @@ describe('createSessionUiStateBridge', () => {
       },
       setErasePainting(value) {
         calls.push(['setErasePainting', value]);
+      },
+      setChargeTool(value) {
+        chargeTool = value;
       },
       setDrawBondElement(value) {
         drawBondElement = value;
@@ -299,6 +306,7 @@ describe('createSessionUiStateBridge', () => {
       selectedAtomIds: ['a1'],
       selectedBondIds: ['b1'],
       toolMode: 'select',
+      chargeTool: 'positive',
       drawBondElement: 'N',
       drawBondType: 'double',
       forceAutoFitEnabled: false,
@@ -309,7 +317,8 @@ describe('createSessionUiStateBridge', () => {
     bridge.restoreInteractionState({
       selectedAtomIds: ['a2'],
       selectedBondIds: ['b2'],
-      toolMode: 'draw-bond',
+      toolMode: 'charge-negative',
+      chargeTool: 'negative',
       drawBondElement: 'O',
       drawBondType: 'dash',
       forceAutoFitEnabled: true,
@@ -320,8 +329,9 @@ describe('createSessionUiStateBridge', () => {
     assert.deepEqual([...selectedAtomIds], ['a2']);
     assert.deepEqual([...selectedBondIds], ['b2']);
     assert.equal(selectMode, false);
-    assert.equal(drawBondMode, true);
+    assert.equal(drawBondMode, false);
     assert.equal(eraseMode, false);
+    assert.equal(chargeTool, 'negative');
     assert.equal(drawBondElement, 'O');
     assert.equal(drawBondType, 'dash');
     assert.equal(forceAutoFitEnabled, true);

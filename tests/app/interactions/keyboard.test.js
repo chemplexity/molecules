@@ -42,7 +42,10 @@ function makeKeyboardContext({ activeTagName = 'BODY' } = {}) {
     },
     selection: {
       toggleSelectMode() {},
-      toggleDrawBondMode() {}
+      toggleDrawBondMode() {},
+      setChargeTool(tool) {
+        records.push(['setChargeTool', tool]);
+      }
     },
     drawBond: {
       hasDrawBondState: () => false,
@@ -117,5 +120,78 @@ describe('initKeyboardInteractions', () => {
 
     assert.deepEqual(records, ['redo']);
     assert.equal(prevented, true);
+  });
+
+  it('routes the main keyboard plus shortcut to positive charge mode', () => {
+    const { handlers, records } = makeKeyboardContext();
+    let prevented = false;
+
+    handlers.get('keydown')({
+      key: '+',
+      code: 'Equal',
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: true,
+      altKey: false,
+      repeat: false,
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    assert.deepEqual(records, [['setChargeTool', 'positive']]);
+    assert.equal(prevented, true);
+  });
+
+  it('routes the main keyboard minus shortcut to negative charge mode', () => {
+    const { handlers, records } = makeKeyboardContext();
+    let prevented = false;
+
+    handlers.get('keydown')({
+      key: '-',
+      code: 'Minus',
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      repeat: false,
+      preventDefault() {
+        prevented = true;
+      }
+    });
+
+    assert.deepEqual(records, [['setChargeTool', 'negative']]);
+    assert.equal(prevented, true);
+  });
+
+  it('routes numpad charge shortcuts to the matching charge tools', () => {
+    const { handlers, records } = makeKeyboardContext();
+
+    handlers.get('keydown')({
+      key: '+',
+      code: 'NumpadAdd',
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      repeat: false,
+      preventDefault() {}
+    });
+
+    handlers.get('keydown')({
+      key: '-',
+      code: 'NumpadSubtract',
+      metaKey: false,
+      ctrlKey: false,
+      shiftKey: false,
+      altKey: false,
+      repeat: false,
+      preventDefault() {}
+    });
+
+    assert.deepEqual(records, [
+      ['setChargeTool', 'positive'],
+      ['setChargeTool', 'negative']
+    ]);
   });
 });

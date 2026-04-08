@@ -51,6 +51,7 @@ export function initAppShell(context) {
   bindGlobal(win, 'openDrawBondDrawer', () => context.selection.openDrawBondDrawer());
   bindGlobal(win, 'closeDrawBondDrawer', () => context.selection.closeDrawBondDrawer());
   bindGlobal(win, 'toggleEraseMode', () => context.selection.toggleEraseMode());
+  bindGlobal(win, 'setChargeTool', tool => context.selection.setChargeTool(tool));
   bindGlobal(win, 'setDrawElement', el => context.selection.setDrawElement(el));
   bindGlobal(win, 'setDrawBondType', type => context.selection.setDrawBondType(type));
   bindGlobal(win, 'toggleMode', () => context.navigation.toggleMode());

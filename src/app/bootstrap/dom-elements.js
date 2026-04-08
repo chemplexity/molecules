@@ -20,6 +20,8 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const panButton = document.getElementById('pan-mode-btn');
   const selectButton = document.getElementById('select-mode-btn');
   const drawBondButton = document.getElementById('draw-bond-btn');
+  const positiveChargeButton = document.getElementById('charge-positive-btn');
+  const negativeChargeButton = document.getElementById('charge-negative-btn');
   const bondDrawTypeButtons = new Map(
     [...document.querySelectorAll('[data-bond-draw-type]')].map(button => [button.dataset.bondDrawType, button])
   );
@@ -86,6 +88,8 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     getPanButtonElement: () => panButton,
     getSelectButtonElement: () => selectButton,
     getDrawBondButtonElement: () => drawBondButton,
+    getPositiveChargeButtonElement: () => positiveChargeButton,
+    getNegativeChargeButtonElement: () => negativeChargeButton,
     getBondDrawTypeButtonElement: type => bondDrawTypeButtons.get(type) ?? null,
     getEraseButtonElement: () => eraseButton,
     getElementButtonElement: element => document.getElementById(`elem-btn-${element}`),

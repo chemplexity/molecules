@@ -43,6 +43,7 @@ describe('createAppDelegates', () => {
         prepareResonanceStructuralEdit: mol => ['prepareResonanceStructuralEdit', mol],
         promoteBondOrder: (...args) => ['promoteBondOrder', ...args],
         changeAtomElements: (...args) => ['changeAtomElements', ...args],
+        changeAtomCharge: (...args) => ['changeAtomCharge', ...args],
         replaceForceHydrogenWithDrawElement: (...args) => ['replaceForceHydrogenWithDrawElement', ...args]
       },
       drawBondPreviewActions: {
@@ -89,6 +90,7 @@ describe('createAppDelegates', () => {
     assert.deepEqual(delegates.prepareResonanceStructuralEdit('mol'), ['prepareResonanceStructuralEdit', 'mol']);
     assert.deepEqual(delegates.promoteBondOrder(7, { foo: 'bar' }), ['promoteBondOrder', 7, { foo: 'bar' }]);
     assert.deepEqual(delegates.changeAtomElements([1], 'N', { baz: 'qux' }), ['changeAtomElements', [1], 'N', { baz: 'qux' }]);
+    assert.deepEqual(delegates.changeAtomCharge('a1', { chargeTool: 'positive' }), ['changeAtomCharge', 'a1', { chargeTool: 'positive' }]);
     assert.deepEqual(delegates.replaceForceHydrogenWithDrawElement(5, 'molX'), ['replaceForceHydrogenWithDrawElement', 5, 'molX']);
     assert.deepEqual(delegates.startDrawBond(1, 2, 3), ['start', 1, 2, 3]);
     assert.deepEqual(delegates.updateDrawBondPreview([4, 5]), ['update', [4, 5]]);

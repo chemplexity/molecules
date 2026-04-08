@@ -39,6 +39,7 @@ export function createAppShellDeps(deps) {
       openDrawBondDrawer: deps.selection.openDrawBondDrawer,
       closeDrawBondDrawer: deps.selection.closeDrawBondDrawer,
       toggleEraseMode: deps.selection.toggleEraseMode,
+      setChargeTool: deps.selection.setChargeTool,
       setDrawElement: deps.selection.setDrawElement,
       setDrawBondType: deps.selection.setDrawBondType
     },

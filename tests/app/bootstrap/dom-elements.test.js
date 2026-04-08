@@ -39,6 +39,8 @@ describe('dom-elements bootstrap helpers', () => {
       'pan-mode-btn': createElement(),
       'select-mode-btn': createElement(),
       'draw-bond-btn': createElement(),
+      'charge-positive-btn': createElement(),
+      'charge-negative-btn': createElement(),
       'erase-btn': createElement(),
       molecularFormula: createElement(),
       molecularWeight: createElement(),
@@ -95,6 +97,8 @@ describe('dom-elements bootstrap helpers', () => {
     assert.equal(dom.getExamplesElement(), examplesList);
     assert.equal(dom.getSvgPlotElement(), svgPlot);
     assert.equal(dom.getElementButtonElement('C'), elements['elem-btn-C']);
+    assert.equal(dom.getPositiveChargeButtonElement(), elements['charge-positive-btn']);
+    assert.equal(dom.getNegativeChargeButtonElement(), elements['charge-negative-btn']);
   });
 
   it('clears the summary fields through shared helpers', () => {
@@ -116,6 +120,8 @@ describe('dom-elements bootstrap helpers', () => {
       'pan-mode-btn': createElement(),
       'select-mode-btn': createElement(),
       'draw-bond-btn': createElement(),
+      'charge-positive-btn': createElement(),
+      'charge-negative-btn': createElement(),
       'erase-btn': createElement(),
       molecularFormula,
       molecularWeight,

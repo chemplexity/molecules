@@ -72,6 +72,14 @@ export function createSelectionOverlayManager(ctx) {
     const mol = ctx.state.getMode() === 'force' ? ctx.molecule.getForceMol() : ctx.molecule.getMol2D();
     const liveHoveredAtomIds = mol ? new Set([...ctx.state.getHoveredAtomIds()].filter(id => mol.atoms.has(id))) : new Set();
     const liveHoveredBondIds = mol ? new Set([...ctx.state.getHoveredBondIds()].filter(id => mol.bonds.has(id))) : new Set();
+    const chargeTool = ctx.state.getChargeTool?.() ?? null;
+
+    if (chargeTool) {
+      return {
+        atomIds: liveHoveredAtomIds,
+        bondIds: liveHoveredBondIds
+      };
+    }
 
     if (ctx.state.getSelectedAtomIds().size === 0 && ctx.state.getSelectedBondIds().size === 0) {
       return {
@@ -193,7 +201,7 @@ export function createSelectionOverlayManager(ctx) {
   }
 
   function showPrimitiveHover(atomIds = [], bondIds = []) {
-    if (!ctx.state.getSelectMode() && !ctx.state.getEraseMode()) {
+    if (!ctx.state.getSelectMode() && !ctx.state.getDrawBondMode() && !ctx.state.getEraseMode() && !ctx.state.getChargeTool?.()) {
       return;
     }
     setPrimitiveHover(atomIds, bondIds);

@@ -1104,11 +1104,17 @@ div.tooltip td:first-child {
   top: 10px;
   left: 10px;
   width: 320px;
-  height: 32px;
+  min-height: 104px;
   z-index: 10;
   pointer-events: auto;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
+}
+
+#draw-tool-primary-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
 #draw-tools button {
@@ -1140,13 +1146,17 @@ div.tooltip td:first-child {
   color: #333;
 }
 
-#draw-bond-btn.active {
+#draw-bond-btn.active,
+#charge-positive-btn.active,
+#charge-negative-btn.active {
   background: #5090f0;
   color: #fff;
   border-color: #3060c0;
 }
 
-#draw-bond-btn.active:hover {
+#draw-bond-btn.active:hover,
+#charge-positive-btn.active:hover,
+#charge-negative-btn.active:hover {
   background: #4080e0;
 }
 
@@ -1160,7 +1170,7 @@ div.tooltip td:first-child {
   pointer-events: none;
 }
 
-#draw-tools:not(.drawer-hover-suppressed):hover #draw-bond-drawer,
+#draw-tools:not(.drawer-hover-suppressed):has(#draw-bond-btn:hover) #draw-bond-drawer,
 #draw-tools.drawer-open #draw-bond-drawer {
   pointer-events: auto;
 }
@@ -1172,7 +1182,7 @@ div.tooltip td:first-child {
   background: rgba(255, 255, 255, 0.98);
 }
 
-#draw-tools:not(.drawer-hover-suppressed):hover #draw-bond-drawer button,
+#draw-tools:not(.drawer-hover-suppressed):has(#draw-bond-btn:hover) #draw-bond-drawer button,
 #draw-tools.drawer-open #draw-bond-drawer button {
   opacity: 1;
   transform: translateX(0) scale(1);

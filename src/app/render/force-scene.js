@@ -297,6 +297,9 @@ export function createForceSceneRenderer(ctx) {
       .on('click', (event, d) => {
         ctx.events.handleForceAtomClick(event, d, molecule);
       })
+      .on('contextmenu', (event, d) => {
+        ctx.events.handleForceAtomContextMenu(event, d);
+      })
       .on('dblclick', (event, d) => {
         ctx.events.handleForceAtomDblClick(event, d.id);
       })

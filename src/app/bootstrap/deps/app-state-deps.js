@@ -100,6 +100,10 @@ export function createAppStateBridgeDeps(ctx) {
       setEraseMode: value => {
         ctx.setEraseMode(value);
       },
+      getChargeTool: () => ctx.getChargeTool?.() ?? null,
+      setChargeTool: value => {
+        ctx.setChargeTool?.(value ?? null);
+      },
       getErasePainting: () => ctx.getErasePainting(),
       getDrawBondElement: () => ctx.getDrawBondElement(),
       setDrawBondElement: value => {

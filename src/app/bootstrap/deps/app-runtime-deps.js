@@ -55,6 +55,10 @@ export function createAppRuntimeDeps(ctx) {
       setEraseMode: value => {
         ctx.setEraseMode(value);
       },
+      getChargeTool: () => ctx.getChargeTool?.() ?? null,
+      setChargeTool: value => {
+        ctx.setChargeTool?.(value ?? null);
+      },
       getDrawBondElement: () => ctx.getDrawBondElement(),
       setDrawBondElement: value => {
         ctx.setDrawBondElement(value);

@@ -2,6 +2,7 @@
 
 import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../core/editor-actions.js';
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
+import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
 
 const FORCE_RESEAT_HYDROGEN_DISTANCE = 25;
 
@@ -118,10 +119,21 @@ function shouldClearManualBondDisplay(bond, drawBondType) {
   );
 }
 
+function resolveChargeToolNextValue(currentCharge, chargeTool, explicitNextCharge = null, decrement = false) {
+  if (Number.isInteger(explicitNextCharge)) {
+    return explicitNextCharge;
+  }
+  if (chargeTool !== 'positive' && chargeTool !== 'negative') {
+    return currentCharge;
+  }
+  const signedStep = chargeTool === 'positive' ? 1 : -1;
+  return currentCharge + (decrement ? -signedStep : signedStep);
+}
+
 /**
  * Creates structural edit action handlers for bond-order promotion, atom-element changes, force-hydrogen replacement, and 2D viewport restoration.
  * @param {object} context - Dependency context providing controller, getMode, getDrawBondElement, molecule, view, resonance, chemistry, force, and constants.
- * @returns {object} Object with `restore2dEditViewport`, `prepareResonanceStructuralEdit`, `promoteBondOrder`, `changeAtomElements`, and `replaceForceHydrogenWithDrawElement`.
+ * @returns {object} Object with `restore2dEditViewport`, `prepareResonanceStructuralEdit`, `promoteBondOrder`, `changeAtomElements`, `changeAtomCharge`, and `replaceForceHydrogenWithDrawElement`.
  */
 export function createStructuralEditActions(context) {
   function buildForceInitialPatchPos(atomIds) {
@@ -315,7 +327,7 @@ export function createStructuralEditActions(context) {
           context.chemistry.kekulize(mol);
           context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
         }
-        mol.repairImplicitHydrogens(affected);
+        repairImplicitHydrogensWhenValenceImproves(mol, affected);
         if (explicitDrawBondType === 'wedge' || explicitDrawBondType === 'dash') {
           tryApplyExplicitStereoAssignment(mol, bond, explicitDrawBondType, preferredCenterId);
         }
@@ -433,7 +445,7 @@ export function createStructuralEditActions(context) {
         mol.clearStereoAnnotations(affected);
         context.chemistry.kekulize(mol);
         context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
-        mol.repairImplicitHydrogens(affected);
+        repairImplicitHydrogensWhenValenceImproves(mol, affected);
         const initialPatchPos = mode === 'force' ? buildForceInitialPatchPos(toChange) : null;
         return {
           clearSelection: true,
@@ -441,6 +453,82 @@ export function createStructuralEditActions(context) {
           suppressPrimitiveHover: true,
           restorePrimitiveHover: {
             atomIds: toChange
+          },
+          force:
+            mode === 'force'
+              ? {
+                  options: { preservePositions: true, preserveView: true, initialPatchPos }
+                }
+              : null
+        };
+      }
+    );
+  }
+
+  function changeAtomCharge(atomId, options = {}) {
+    const {
+      chargeTool = null,
+      decrement = false,
+      nextCharge = null,
+      zoomSnapshot = context.getMode() === '2d' ? context.view.captureZoomTransformSnapshot() : null,
+      overlayPolicy = ReactionPreviewPolicy.prepareEditTargets,
+      reactionPreviewPayload = atomId ? { atomId } : null,
+      reactionEdit = null
+    } = options;
+
+    if (!atomId) {
+      return { performed: false, cancelled: true };
+    }
+
+    return context.controller.performStructuralEdit(
+      'change-atom-charge',
+      {
+        overlayPolicy,
+        reactionPreviewPayload,
+        reactionEdit,
+        resonancePolicy: ResonancePolicy.normalizeForEdit,
+        snapshotPolicy: SnapshotPolicy.take,
+        viewportPolicy: ViewportPolicy.restoreEdit,
+        zoomSnapshot,
+        preflight: ({ mol, reactionEdit: activeReactionEdit }) => {
+          const targetAtomId = activeReactionEdit?.atomId ?? atomId;
+          const atom = mol.atoms.get(targetAtomId);
+          if (!atom) {
+            return false;
+          }
+          const resolvedNextCharge = resolveChargeToolNextValue(atom.getCharge?.() ?? atom.properties?.charge ?? 0, chargeTool, nextCharge, decrement);
+          return resolvedNextCharge !== (atom.getCharge?.() ?? atom.properties?.charge ?? 0);
+        }
+      },
+      ({ mol, mode, reactionEdit: activeReactionEdit }) => {
+        const targetAtomId = activeReactionEdit?.atomId ?? atomId;
+        const atom = mol.atoms.get(targetAtomId);
+        if (!atom) {
+          return { cancelled: true };
+        }
+        const currentCharge = atom.getCharge?.() ?? atom.properties?.charge ?? 0;
+        const resolvedNextCharge = resolveChargeToolNextValue(currentCharge, chargeTool, nextCharge, decrement);
+        if (resolvedNextCharge === currentCharge) {
+          return { cancelled: true };
+        }
+
+        try {
+          mol.setAtomCharge(targetAtomId, resolvedNextCharge);
+        } catch {
+          return { cancelled: true };
+        }
+
+        const affected = new Set([targetAtomId]);
+        repairImplicitHydrogensWhenValenceImproves(mol, affected);
+        context.chemistry.kekulize(mol);
+        context.chemistry.refreshAromaticity(mol, { preserveKekule: true });
+        const initialPatchPos = mode === 'force' ? buildForceInitialPatchPos([targetAtomId]) : null;
+
+        return {
+          clearPrimitiveHover: true,
+          suppressPrimitiveHover: true,
+          restorePrimitiveHover: {
+            atomIds: [targetAtomId]
           },
           force:
             mode === 'force'
@@ -533,6 +621,7 @@ export function createStructuralEditActions(context) {
     prepareResonanceStructuralEdit,
     promoteBondOrder,
     changeAtomElements,
+    changeAtomCharge,
     replaceForceHydrogenWithDrawElement
   };
 }

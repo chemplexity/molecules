@@ -160,7 +160,7 @@ const { plotEl, tooltip, inputEl, collectionSelectEl, svg, g, zoom } = initPlotB
   d3,
   document,
   getInteractionModeActive: event =>
-    (runtimeState.selectMode || runtimeState.drawBondMode || runtimeState.eraseMode) &&
+    (runtimeState.selectMode || runtimeState.drawBondMode || runtimeState.eraseMode || runtimeState.chargeTool != null) &&
     (runtimeState.mode === '2d' || runtimeState.mode === 'force') &&
     (event.type === 'mousedown' || event.type === 'dblclick') &&
     event.button === 0,
@@ -477,6 +477,7 @@ const selectionOverlayManager = createSelectionOverlayManager(
     getSelectMode: () => runtimeState.selectMode,
     getDrawBondMode: () => runtimeState.drawBondMode,
     getEraseMode: () => runtimeState.eraseMode,
+    getChargeTool: () => runtimeState.chargeTool,
     getSelectionModifierActive: () => runtimeState.selectionModifierActive,
     getSelectedAtomIds: () => runtimeState.selectedAtomIds,
     getSelectedBondIds: () => runtimeState.selectedBondIds,
@@ -588,6 +589,7 @@ let _restore2dEditViewport;
 let _prepareResonanceStructuralEdit;
 let _promoteBondOrder;
 let _changeAtomElements;
+let _changeAtomCharge;
 let _replaceForceHydrogenWithDrawElement;
 let _startDrawBond;
 let _updateDrawBondPreview;
@@ -690,6 +692,7 @@ const {
     drawBondButton: domElements.getDrawBondButtonElement(),
     drawTools: domElements.getDrawToolsElement(),
     eraseButton: domElements.getEraseButtonElement(),
+    getChargeToolButton: tool => (tool === 'positive' ? domElements.getPositiveChargeButtonElement() : tool === 'negative' ? domElements.getNegativeChargeButtonElement() : null),
     getElementButton: element => domElements.getElementButtonElement(element),
     getBondDrawTypeButton: type => domElements.getBondDrawTypeButtonElement(type),
     performStructuralEdit: (...args) => runtimeState.appController.performStructuralEdit(...args),
@@ -717,6 +720,7 @@ const {
     createDrag: () => d3.drag(),
     getDrawBondMode: () => runtimeState.drawBondMode,
     getEraseMode: () => runtimeState.eraseMode,
+    getChargeTool: () => runtimeState.chargeTool,
     captureSnapshot: () => _captureAppSnapshot(),
     getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => selectionStateHelpers.getSelectedDragAtomIds(mol, atomIds, bondIds),
     getCurrentMolecule: () => runtimeState.currentMol,
@@ -787,6 +791,7 @@ const {
       runtimeState.selectedBondIds.clear();
     },
     changeAtomElements: (atomIds, newEl, options = {}) => _changeAtomElements(atomIds, newEl, options),
+    changeAtomCharge: (atomId, options = {}) => _changeAtomCharge(atomId, options),
     promoteBondOrder: (bondId, options = {}) => _promoteBondOrder(bondId, options),
     isAdditiveSelectionEvent: event => _isAdditiveSelectionEvent(event),
     hasVisibleStereoBond: bondId => runtimeState.stereoMap2d && runtimeState.stereoMap2d.has(bondId),
@@ -861,6 +866,10 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     getEraseMode: () => runtimeState.eraseMode,
     setEraseMode: value => {
       runtimeState.eraseMode = value;
+    },
+    getChargeTool: () => runtimeState.chargeTool,
+    setChargeTool: value => {
+      runtimeState.chargeTool = value;
     },
     getDrawBondElement: () => runtimeState.drawBondElement,
     setDrawBondElement: value => {
@@ -1011,6 +1020,7 @@ finalizeAppBootstrap(
         prepareResonanceStructuralEdit: _prepareResonanceStructuralEdit,
         promoteBondOrder: _promoteBondOrder,
         changeAtomElements: _changeAtomElements,
+        changeAtomCharge: _changeAtomCharge,
         replaceForceHydrogenWithDrawElement: _replaceForceHydrogenWithDrawElement,
         startDrawBond: _startDrawBond,
         updateDrawBondPreview: _updateDrawBondPreview,
@@ -1042,6 +1052,7 @@ finalizeAppBootstrap(
     getSelectMode: () => runtimeState.selectMode,
     getDrawBondMode: () => runtimeState.drawBondMode,
     getEraseMode: () => runtimeState.eraseMode,
+    getChargeTool: () => runtimeState.chargeTool,
     setCapturePhyschemHighlightSnapshot: fn => {
       runtimeState.capturePhyschemHighlightSnapshot = fn;
     },

@@ -66,8 +66,9 @@ function makeAtom(id, { x = 0, y = 0, visible = true, name = 'C' } = {}) {
     y,
     visible,
     name,
+    properties: { charge: 0 },
     getCharge() {
-      return 0;
+      return this.properties.charge ?? 0;
     },
     getNeighbors() {
       return [];
@@ -108,6 +109,7 @@ function makeManager(options = {}) {
       getSelectMode: () => options.selectMode ?? false,
       getDrawBondMode: () => options.drawBondMode ?? false,
       getEraseMode: () => options.eraseMode ?? false,
+      getChargeTool: () => options.chargeTool ?? null,
       getSelectionModifierActive: () => options.selectionModifierActive ?? false,
       getSelectedAtomIds: () => selectedAtomIds,
       getSelectedBondIds: () => selectedBondIds,
@@ -196,6 +198,27 @@ describe('createSelectionOverlayManager', () => {
     assert.deepEqual([...withModifier.bondIds], ['b1']);
   });
 
+  it('prefers hovered charge targets over stale selection while a charge tool is active', () => {
+    const mol = {
+      atoms: new Map([
+        ['a1', makeAtom('a1')],
+        ['a2', makeAtom('a2')]
+      ]),
+      bonds: new Map()
+    };
+    const { manager } = makeManager({
+      mode: '2d',
+      chargeTool: 'positive',
+      selectedAtomIds: new Set(['a1']),
+      hoveredAtomIds: new Set(['a2']),
+      mol2D: mol
+    });
+
+    const { atomIds, bondIds } = manager.getRenderableSelectionIds();
+    assert.deepEqual([...atomIds], ['a2']);
+    assert.deepEqual([...bondIds], []);
+  });
+
   it('filters 2D hover targets against visibility and stereo-hidden bonds', () => {
     const visibleAtom = makeAtom('a1', { visible: true });
     const hiddenAtom = makeAtom('a2', { visible: false });
@@ -243,6 +266,30 @@ describe('createSelectionOverlayManager', () => {
     });
 
     manager.setPrimitiveHover(['a1'], ['b1']);
+
+    assert.deepEqual([...hoveredAtomIds], ['a1']);
+    assert.deepEqual([...hoveredBondIds], ['b1']);
+    assert.equal(typeof scheduler.callback, 'function');
+  });
+
+  it('allows shared primitive hover updates while draw-bond mode is active', () => {
+    const atomA = makeAtom('a1', { x: 10, y: 10 });
+    const atomB = makeAtom('a2', { x: 40, y: 10 });
+    const bond = makeBond('b1', atomA, atomB);
+    const mol = {
+      atoms: new Map([
+        ['a1', atomA],
+        ['a2', atomB]
+      ]),
+      bonds: new Map([['b1', bond]])
+    };
+    const { manager, hoveredAtomIds, hoveredBondIds, scheduler } = makeManager({
+      mode: '2d',
+      drawBondMode: true,
+      mol2D: mol
+    });
+
+    manager.showPrimitiveHover(['a1'], ['b1']);
 
     assert.deepEqual([...hoveredAtomIds], ['a1']);
     assert.deepEqual([...hoveredBondIds], ['b1']);

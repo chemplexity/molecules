@@ -119,6 +119,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       drawBondButton: ctx.drawBondButton,
       drawTools: ctx.drawTools,
       eraseButton: ctx.eraseButton,
+      getChargeToolButton: tool => ctx.getChargeToolButton(tool),
       getElementButton: element => ctx.getElementButton(element),
       getBondDrawTypeButton: type => ctx.getBondDrawTypeButton(type)
     })
@@ -151,6 +152,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       createDrag: () => ctx.createDrag(),
       getDrawBondMode: () => ctx.getDrawBondMode(),
       getEraseMode: () => ctx.getEraseMode(),
+      getChargeTool: () => ctx.getChargeTool?.() ?? null,
       captureSnapshot: () => ctx.captureSnapshot(),
       takeSnapshot: options => ctx.takeSnapshot(options),
       getSelectedDragAtomIds: (mol, atomIds = [], bondIds = []) => ctx.getSelectedDragAtomIds(mol, atomIds, bondIds),
@@ -278,6 +280,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       getDrawBondType: () => ctx.getDrawBondType(),
       promoteBondOrder: (bondId, promoteOptions = {}) => ctx.promoteBondOrder(bondId, promoteOptions),
       eraseItem: (atomIds, bondIds) => editingActions.eraseItem(atomIds, bondIds),
+      changeAtomCharge: (atomId, changeOptions = {}) => ctx.changeAtomCharge(atomId, changeOptions),
       replaceForceHydrogenAtom: (atomId, mol) => ctx.replaceForceHydrogenAtom(atomId, mol),
       autoPlaceBond: (atomId, ox, oy) => drawBondCommitActions.autoPlaceBond(atomId, ox, oy),
       showPrimitiveHover: (atomIds = [], bondIds = []) => ctx.showPrimitiveHover(atomIds, bondIds),

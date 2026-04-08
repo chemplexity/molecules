@@ -86,7 +86,18 @@ export function createSessionUiStateBridge(deps) {
     return {
       selectedAtomIds: [...deps.getSelectedAtomIds()],
       selectedBondIds: [...deps.getSelectedBondIds()],
-      toolMode: deps.getDrawBondMode() ? 'draw-bond' : deps.getEraseMode() ? 'erase' : deps.getSelectMode() ? 'select' : 'pan',
+      toolMode: deps.getDrawBondMode()
+        ? 'draw-bond'
+        : deps.getEraseMode()
+          ? 'erase'
+          : deps.getSelectMode()
+            ? 'select'
+            : deps.getChargeTool?.() === 'positive'
+              ? 'charge-positive'
+              : deps.getChargeTool?.() === 'negative'
+                ? 'charge-negative'
+                : 'pan',
+      chargeTool: deps.getChargeTool?.() ?? null,
       drawBondElement: deps.getDrawBondElement(),
       drawBondType: deps.getDrawBondType?.() ?? 'single',
       forceAutoFitEnabled: deps.getForceAutoFitEnabled(),
@@ -96,6 +107,9 @@ export function createSessionUiStateBridge(deps) {
   }
 
   function restoreInteractionState(snapshot) {
+    const restoredChargeTool =
+      snapshot.chargeTool ??
+      (snapshot.toolMode === 'charge-positive' ? 'positive' : snapshot.toolMode === 'charge-negative' ? 'negative' : null);
     deps.setSelectedAtomIds(new Set(snapshot.selectedAtomIds ?? []));
     deps.setSelectedBondIds(new Set(snapshot.selectedBondIds ?? []));
     deps.clearHoveredAtomIds();
@@ -104,6 +118,7 @@ export function createSessionUiStateBridge(deps) {
     deps.setDrawBondState(null);
     deps.setDrawBondHoverSuppressed(false);
     deps.setErasePainting(false);
+    deps.setChargeTool?.(restoredChargeTool);
     deps.setDrawBondElement(snapshot.drawBondElement ?? 'C');
     deps.setDrawBondType?.(snapshot.drawBondType ?? 'single');
     deps.setSelectMode(snapshot.toolMode === 'select');

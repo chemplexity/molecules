@@ -394,6 +394,9 @@ export function create2DSceneRenderer(ctx) {
         .on('click', event => {
           ctx.events.handle2dAtomClick(event, atom.id);
         })
+        .on('contextmenu', event => {
+          ctx.events.handle2dAtomContextMenu(event, atom);
+        })
         .on('dblclick', event => {
           ctx.events.handle2dAtomDblClick(event, atom.id);
         })

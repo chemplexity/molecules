@@ -37,10 +37,102 @@ function makeButton() {
 }
 
 describe('createSelectionActions', () => {
+  it('togglePanMode exits charge mode and marks pan active', () => {
+    let selectMode = false;
+    let drawBondMode = false;
+    let eraseMode = false;
+    let chargeTool = 'positive';
+    const calls = [];
+    const buttons = {
+      pan: makeButton(),
+      select: makeButton(),
+      draw: makeButton(),
+      erase: makeButton(),
+      positive: makeButton(),
+      negative: makeButton()
+    };
+
+    const actions = createSelectionActions({
+      state: {
+        viewState: {
+          getMode: () => '2d'
+        },
+        documentState: {
+          getMol2d: () => ({ id: 'mol' })
+        },
+        overlayState: {
+          getSelectMode: () => selectMode,
+          setSelectMode: value => {
+            selectMode = value;
+          },
+          getDrawBondMode: () => drawBondMode,
+          setDrawBondMode: value => {
+            drawBondMode = value;
+          },
+          getEraseMode: () => eraseMode,
+          setEraseMode: value => {
+            eraseMode = value;
+          },
+          getChargeTool: () => chargeTool,
+          setChargeTool: value => {
+            chargeTool = value;
+          },
+          getDrawBondElement: () => 'C',
+          setDrawBondElement() {},
+          getDrawBondType: () => 'single',
+          setDrawBondType() {},
+          getSelectedAtomIds: () => new Set(),
+          getSelectedBondIds: () => new Set(),
+          setErasePainting() {}
+        }
+      },
+      renderers: {
+        draw2d() {
+          calls.push('draw2d');
+        },
+        applyForceSelection() {}
+      },
+      view: {
+        clearPrimitiveHover() {
+          calls.push('clearPrimitiveHover');
+        }
+      },
+      drawBond: {
+        cancelDrawBond() {
+          calls.push('cancelDrawBond');
+        }
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: buttons.pan,
+        selectButton: buttons.select,
+        drawBondButton: buttons.draw,
+        drawTools: makeButton(),
+        eraseButton: buttons.erase,
+        getChargeToolButton: tool => buttons[tool] ?? null,
+        getElementButton: () => null,
+        getBondDrawTypeButton: () => null
+      }
+    });
+
+    actions.togglePanMode();
+
+    assert.equal(selectMode, false);
+    assert.equal(drawBondMode, false);
+    assert.equal(eraseMode, false);
+    assert.equal(chargeTool, null);
+    assert.equal(buttons.pan.classList.contains('active'), true);
+    assert.equal(buttons.positive.classList.contains('active'), false);
+    assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'draw2d']);
+  });
+
   it('toggleDrawBondMode deactivates other tool modes and rerenders', () => {
     let selectMode = true;
     let drawBondMode = false;
     let eraseMode = true;
+    let chargeTool = null;
     let drawBondElement = 'N';
     let drawBondType = 'single';
     const calls = [];
@@ -74,6 +166,10 @@ describe('createSelectionActions', () => {
           getEraseMode: () => eraseMode,
           setEraseMode: value => {
             eraseMode = value;
+          },
+          getChargeTool: () => chargeTool,
+          setChargeTool: value => {
+            chargeTool = value;
           },
           getDrawBondElement: () => drawBondElement,
           setDrawBondElement: value => {
@@ -137,6 +233,7 @@ describe('createSelectionActions', () => {
 
   it('setDrawElement activates draw-bond mode when needed', () => {
     let drawBondMode = false;
+    let chargeTool = null;
     let drawBondElement = 'C';
     let drawBondType = 'single';
     const calls = [];
@@ -157,6 +254,10 @@ describe('createSelectionActions', () => {
           },
           getEraseMode: () => false,
           setEraseMode() {},
+          getChargeTool: () => chargeTool,
+          setChargeTool: value => {
+            chargeTool = value;
+          },
           getDrawBondElement: () => drawBondElement,
           setDrawBondElement: value => {
             drawBondElement = value;
@@ -209,6 +310,7 @@ describe('createSelectionActions', () => {
 
   it('setDrawBondType enables draw mode, marks the active option, updates the main button icon, and closes the drawer', () => {
     let drawBondMode = false;
+    let chargeTool = null;
     let drawBondType = 'single';
     const drawTools = makeButton();
     const dashButton = makeButton();
@@ -232,6 +334,10 @@ describe('createSelectionActions', () => {
           },
           getEraseMode: () => false,
           setEraseMode() {},
+          getChargeTool: () => chargeTool,
+          setChargeTool: value => {
+            chargeTool = value;
+          },
           getDrawBondElement: () => 'C',
           setDrawBondElement() {},
           getDrawBondType: () => drawBondType,
@@ -282,6 +388,97 @@ describe('createSelectionActions', () => {
     assert.equal(drawTools.classList.contains('drawer-hover-suppressed'), true);
     assert.equal(dashButton.classList.contains('active'), true);
     assert.equal(drawBondButton.innerHTML, '<svg>dash</svg>');
+    assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'draw2d']);
+  });
+
+  it('setChargeTool activates the requested charge tool and clears other modes', () => {
+    let selectMode = true;
+    let drawBondMode = true;
+    let eraseMode = true;
+    let chargeTool = null;
+    const calls = [];
+    const buttons = {
+      pan: makeButton(),
+      select: makeButton(),
+      draw: makeButton(),
+      erase: makeButton(),
+      positive: makeButton(),
+      negative: makeButton()
+    };
+
+    const actions = createSelectionActions({
+      state: {
+        viewState: {
+          getMode: () => '2d'
+        },
+        documentState: {
+          getMol2d: () => ({ id: 'mol' })
+        },
+        overlayState: {
+          getSelectMode: () => selectMode,
+          setSelectMode: value => {
+            selectMode = value;
+          },
+          getDrawBondMode: () => drawBondMode,
+          setDrawBondMode: value => {
+            drawBondMode = value;
+          },
+          getEraseMode: () => eraseMode,
+          setEraseMode: value => {
+            eraseMode = value;
+          },
+          getChargeTool: () => chargeTool,
+          setChargeTool: value => {
+            chargeTool = value;
+          },
+          getDrawBondElement: () => 'C',
+          setDrawBondElement() {},
+          getDrawBondType: () => 'single',
+          setDrawBondType() {},
+          getSelectedAtomIds: () => new Set(),
+          getSelectedBondIds: () => new Set(),
+          setErasePainting() {}
+        }
+      },
+      renderers: {
+        draw2d() {
+          calls.push('draw2d');
+        },
+        applyForceSelection() {}
+      },
+      view: {
+        clearPrimitiveHover() {
+          calls.push('clearPrimitiveHover');
+        }
+      },
+      drawBond: {
+        cancelDrawBond() {
+          calls.push('cancelDrawBond');
+        }
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: buttons.pan,
+        selectButton: buttons.select,
+        drawBondButton: buttons.draw,
+        drawTools: makeButton(),
+        eraseButton: buttons.erase,
+        getChargeToolButton: tool => buttons[tool] ?? null,
+        getElementButton: () => null,
+        getBondDrawTypeButton: () => null
+      }
+    });
+
+    actions.setChargeTool('positive');
+
+    assert.equal(selectMode, false);
+    assert.equal(drawBondMode, false);
+    assert.equal(eraseMode, false);
+    assert.equal(chargeTool, 'positive');
+    assert.equal(buttons.positive.classList.contains('active'), true);
+    assert.equal(buttons.pan.classList.contains('active'), false);
     assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'draw2d']);
   });
 });

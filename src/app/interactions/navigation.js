@@ -278,6 +278,18 @@ export function createNavigationActions(context) {
         }
       }
       context.renderers.updateForce(mol, { preservePositions: true, preserveView: true });
+      if (context.overlays.hasReactionPreview()) {
+        const renderedNodes = context.simulation.nodes().filter(node => Number.isFinite(node.x) && Number.isFinite(node.y));
+        const fitTransform = context.force.forceFitTransform(renderedNodes, context.force.fitPad, {
+          scaleMultiplier: context.force.initialZoomMultiplier
+        });
+        if (fitTransform) {
+          const currentTransform = context.view.getZoomTransform();
+          if (context.force.zoomTransformsDiffer(fitTransform, currentTransform)) {
+            context.view.setZoomTransform(fitTransform);
+          }
+        }
+      }
       context.view.restorePersistentHighlight();
       return;
     }

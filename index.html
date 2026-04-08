@@ -98,13 +98,28 @@
             <button id="clean-force-btn" title="Clean force layout" onclick="cleanLayoutForce()" style="display: none">🧹</button>
           </div>
           <div id="draw-tools">
-            <button id="draw-bond-btn" type="button" title="Draw bond" onclick="handleDrawBondButtonClick()">
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <g transform="rotate(-45 8 8)">
-                  <line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
-                </g>
-              </svg>
-            </button>
+            <div id="draw-tool-primary-stack">
+              <button id="draw-bond-btn" type="button" title="Draw bond" onclick="handleDrawBondButtonClick()">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <g transform="rotate(-45 8 8)">
+                    <line x1="3" y1="8" x2="13" y2="8" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" />
+                  </g>
+                </svg>
+              </button>
+              <button id="charge-positive-btn" type="button" title="Add positive charge" onclick="setChargeTool('positive')">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6" fill="#d64242" />
+                  <path d="M8 4.8V11.2" stroke="#fff" stroke-width="1.8" stroke-linecap="round" />
+                  <path d="M4.8 8H11.2" stroke="#fff" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+              </button>
+              <button id="charge-negative-btn" type="button" title="Add negative charge" onclick="setChargeTool('negative')">
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <circle cx="8" cy="8" r="6" fill="#2f73d9" />
+                  <path d="M4.8 8H11.2" stroke="#fff" stroke-width="1.8" stroke-linecap="round" />
+                </svg>
+              </button>
+            </div>
             <div id="draw-bond-drawer" aria-label="Bond draw options">
               <button id="draw-bond-type-single" type="button" data-bond-draw-type="single" title="Single bond" onclick="setDrawBondType('single')">
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none">

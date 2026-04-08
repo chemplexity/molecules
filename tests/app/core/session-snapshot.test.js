@@ -163,7 +163,110 @@ function makeDeps() {
   };
 }
 
+function makeCaptureDeps() {
+  const activeMol = new FakeMolecule();
+  activeMol.addAtom('A1', 'C', {});
+  activeMol.properties = { resonance: { count: 2, currentState: 1 } };
+
+  return {
+    Molecule: FakeMolecule,
+    getMode: () => '2d',
+    setMode() {},
+    updateModeChrome() {},
+    getActiveMolecule: () => activeMol,
+    getCurrentMol: () => null,
+    setCurrentMol() {},
+    getMol2d: () => activeMol,
+    setMol2d() {},
+    getCurrentSmiles: () => 'C',
+    setCurrentSmiles() {},
+    getCurrentInchi: () => null,
+    setCurrentInchi() {},
+    getInputMode: () => 'smiles',
+    getInputValue: () => 'C',
+    setInputFormat() {},
+    syncInputField() {},
+    serializeSnapshotMol: mol => ({
+      atoms: [...mol.atoms.values()].map(atom => ({
+        id: atom.id,
+        name: atom.name,
+        x: atom.x,
+        y: atom.y,
+        visible: atom.visible,
+        properties: { ...atom.properties }
+      })),
+      bonds: [],
+      moleculeProperties: { ...mol.properties }
+    }),
+    captureReactionPreviewSnapshot: () => null,
+    restoreReactionPreviewSnapshot() {},
+    clearReactionPreviewState() {},
+    reapplyActiveReactionPreview() {
+      return false;
+    },
+    updateReactionTemplatesPanel() {},
+    prepareResonanceUndoSnapshot: mol => ({ mol, resonanceView: { locked: true, activeState: 2 } }),
+    restoreResonanceViewSnapshot() {
+      return false;
+    },
+    captureViewState: () => ({
+      mode: '2d',
+      zoomTransform: null,
+      rotationDeg: 0,
+      flipH: false,
+      flipV: false,
+      cx2d: 0,
+      cy2d: 0,
+      hCounts2d: [],
+      stereoMap2d: null
+    }),
+    captureInteractionState: () => ({
+      selectedAtomIds: [],
+      selectedBondIds: [],
+      toolMode: 'pan',
+      drawBondElement: 'C',
+      drawBondType: 'single',
+      forceAutoFitEnabled: true,
+      forceKeepInView: false,
+      forceKeepInViewTicks: 0
+    }),
+    captureHighlightState: () => null,
+    capturePanelState: () => null,
+    setRotationDeg() {},
+    setFlipH() {},
+    setFlipV() {},
+    restoreZoomTransform() {},
+    clearForceState() {},
+    clear2dState() {},
+    clearAnalysisState() {},
+    restore2dState() {},
+    restoreForceState() {},
+    restorePanelState() {},
+    restoreInteractionState() {},
+    clearHighlightState() {},
+    restoreFunctionalGroupHighlightSnapshot() {
+      return false;
+    },
+    restorePhyschemHighlightSnapshot() {
+      return false;
+    },
+    restorePersistentHighlight() {},
+    updateFormula() {},
+    updateDescriptors() {},
+    updateAnalysisPanels() {},
+    redrawRestoredResonanceView() {}
+  };
+}
+
 describe('createSessionSnapshotManager', () => {
+  it('stores the resonance view snapshot when capturing undo state', () => {
+    const manager = createSessionSnapshotManager(makeCaptureDeps());
+
+    const snapshot = manager.capture();
+
+    assert.deepEqual(snapshot.overlayState?.resonanceView, { locked: true, activeState: 2 });
+  });
+
   it('preserves molecule-level properties when syncing input from a reaction-preview source snapshot', () => {
     const { deps, calls } = makeDeps();
     const manager = createSessionSnapshotManager(deps);
@@ -335,5 +438,59 @@ describe('createSessionSnapshotManager', () => {
 
     const restoreInteractionCall = calls.find(call => call[0] === 'restoreInteractionState');
     assert.deepEqual(restoreInteractionCall, ['restoreInteractionState', 'draw-bond', 'dash']);
+  });
+
+  it('restores resonance analysis against the same 2D molecule instance shown in the viewport', () => {
+    const { deps, calls } = makeDeps();
+    deps.restoreResonanceViewSnapshot = mol => {
+      calls.push(['restoreResonanceViewSnapshot', mol]);
+      return false;
+    };
+    deps.updateAnalysisPanels = mol => {
+      calls.push(['updateAnalysisPanels', mol]);
+    };
+    deps.restore2dState = (displayMol, snap) => {
+      calls.push(['restore2dState', displayMol, snap.mode]);
+    };
+
+    const manager = createSessionSnapshotManager(deps);
+
+    manager.restore({
+      mode: '2d',
+      atoms: [{ id: 'A1', name: 'C', properties: {}, x: 0, y: 0 }],
+      bonds: [],
+      moleculeProperties: { restored: true },
+      currentSmiles: 'C',
+      currentInchi: null,
+      inputMode: null,
+      inputValue: null,
+      cx2d: 0,
+      cy2d: 0,
+      hCounts2d: [],
+      stereoMap2d: null,
+      zoomTransform: null,
+      rotationDeg: 0,
+      flipH: false,
+      flipV: false,
+      selectedAtomIds: [],
+      selectedBondIds: [],
+      toolMode: 'pan',
+      drawBondElement: 'C',
+      forceAutoFitEnabled: true,
+      forceKeepInView: false,
+      forceKeepInViewTicks: 0,
+      highlightState: null,
+      panelState: null,
+      reactionPreview: null,
+      resonanceView: null
+    });
+
+    const restoredDisplayMol = calls.find(call => call[0] === 'restore2dState')?.[1];
+    const analysisMol = calls.find(call => call[0] === 'updateAnalysisPanels')?.[1];
+    const resonanceMol = calls.find(call => call[0] === 'restoreResonanceViewSnapshot')?.[1];
+
+    assert.ok(restoredDisplayMol);
+    assert.equal(analysisMol, restoredDisplayMol);
+    assert.equal(resonanceMol, restoredDisplayMol);
   });
 });

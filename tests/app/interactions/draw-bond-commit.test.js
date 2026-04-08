@@ -11,6 +11,10 @@ function makeAtom(id, name = 'C') {
     x: 0,
     y: 0,
     bonds: [],
+    properties: { charge: 0 },
+    getCharge() {
+      return this.properties.charge ?? 0;
+    },
     getNeighbors() {
       return [];
     }
@@ -66,7 +70,9 @@ function makeEditableMol(atom) {
       this.atoms.delete(atomId);
     },
     clearStereoAnnotations() {},
-    repairImplicitHydrogens() {}
+    repairImplicitHydrogens(affected) {
+      this.repairedHydrogens = affected;
+    }
   };
   return mol;
 }
@@ -377,5 +383,20 @@ describe('createDrawBondCommitActions', () => {
       manual: true,
       centerId: 'a1'
     });
+  });
+
+  it('does not repair implicit hydrogens on charged atoms when manually adding a bond', () => {
+    const srcAtom = makeAtom('a1', 'N');
+    srcAtom.properties.charge = 1;
+    srcAtom.x = 0;
+    srcAtom.y = 0;
+    const mol = makeEditableMol(srcAtom);
+    const { actions } = makeActions({
+      activeMol: mol
+    });
+
+    actions.autoPlaceBond('a1', 300, 200);
+
+    assert.equal(mol.repairedHydrogens, undefined);
   });
 });

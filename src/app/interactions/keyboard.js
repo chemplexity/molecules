@@ -39,6 +39,8 @@ export function initKeyboardInteractions(context) {
 
   doc.addEventListener('keydown', event => {
     const normalizedKey = typeof event.key === 'string' ? event.key.toLowerCase() : '';
+    const isPositiveChargeShortcut = event.key === '+' || event.code === 'NumpadAdd' || (event.code === 'Equal' && event.shiftKey);
+    const isNegativeChargeShortcut = event.key === '-' || event.key === '_' || event.code === 'NumpadSubtract' || (event.code === 'Minus' && event.shiftKey);
 
     if (event.key === 'Meta' || event.key === 'Control') {
       const nextActive = !!(event.metaKey || event.ctrlKey);
@@ -85,6 +87,19 @@ export function initKeyboardInteractions(context) {
 
     if (isTextInput) {
       return;
+    }
+
+    if (!event.metaKey && !event.ctrlKey && !event.altKey && !event.repeat) {
+      if (isPositiveChargeShortcut) {
+        context.selection.setChargeTool('positive');
+        event.preventDefault();
+        return;
+      }
+      if (isNegativeChargeShortcut) {
+        context.selection.setChargeTool('negative');
+        event.preventDefault();
+        return;
+      }
     }
 
     const PAN_STEP = 40;
