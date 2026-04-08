@@ -1,5 +1,11 @@
 /** @module app/bootstrap/deps/render-runtime-deps */
 
+/**
+ * Builds the structured dependency object for the RenderRuntime factory,
+ * mapping flat context properties into named sub-objects (state, view, history, highlights, chemistry, simulation, scene, analysis).
+ * @param {object} ctx - Flat app context providing RenderRuntime-related methods and values.
+ * @returns {object} Dependency object consumed by `createRenderRuntime`.
+ */
 export function createRenderRuntimeDeps(ctx) {
   return {
     state: {

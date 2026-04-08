@@ -192,9 +192,8 @@ function addBondV1(id, name, value, order = 0, atoms = [], stereo = null) {
 /**
  * Extracts the explicit bond order embedded in a ring token term (e.g. 'C=1' → 2).
  * Returns null if no bond prefix is present.
- *
  * @param {string} term - Ring token term.
- * @returns {number|null}
+ * @returns {number|null} The computed value, or `null` if not applicable.
  */
 function ringTokenBondOrder(term) {
   const m = term.match(/[a-zA-Z\]@]([-=#$:/\\])/);
@@ -247,7 +246,6 @@ function previousAtom(start, keys, atoms) {
 /**
  * Like previousAtom but skips over `(…)` branch groups when scanning backward.
  * Used to find the true source atom for stereo bonds that follow a branch close `)`.
- *
  * @param {string} start  - key of the bond token to search backward from
  * @param {string[]} keys - ordered list of all token keys
  * @param {object}  atoms - atom map
@@ -292,12 +290,11 @@ function previousAtomSkipBranches(start, keys, atoms, bonds) {
  * Bracket hydrogens such as the `H` in `[C@H]` are auxiliary stereo tokens, not
  * true traversal anchors. When an explicit bond follows the bracket atom, the
  * source must remain the bracket atom rather than that hydrogen.
- *
- * @param {string} start
- * @param {string[]} keys
- * @param {object} atoms
- * @param {object|null} [bonds=null]
- * @returns {string|null}
+ * @param {string} start - The start value.
+ * @param {string[]} keys - The keys value.
+ * @param {object} atoms - Array of atoms.
+ * @param {object|null} [bonds] - Array of bonds.
+ * @returns {string|null} The result string, or `null` if not applicable.
  */
 function previousBondSourceAtom(start, keys, atoms, bonds = null) {
   const previous = key => (bonds ? previousAtomSkipBranches(key, keys, atoms, bonds) : previousAtom(key, keys, atoms));
@@ -366,10 +363,9 @@ function normalizeSmilesSeparators(input) {
 
 /**
  * Parses a SMILES string into an array of tokens using the v1 grammar.
- *
  * @param {string} input - SMILES string.
- * @param {object[]} [tokens=[]]
- * @returns {{ tokens: object[] }}
+ * @param {object[]} [tokens] - Pre-existing token array to append to.
+ * @returns {{ tokens: object[] }} The result object.
  * @throws {Error} If no valid atoms are found.
  */
 export function tokenize(input, tokens = []) {
@@ -562,9 +558,8 @@ export function tokenize(input, tokens = []) {
  *
  * Returns the raw v1 graph structure, not a {@link Molecule} instance.
  * Use {@link parseSMILES} to get a Molecule.
- *
- * @param {{ tokens: object[] }|object[]} tokens
- * @returns {{ atoms: object, bonds: object }}
+ * @param {{ tokens: object[] }|object[]} tokens - Array of parsed tokens.
+ * @returns {{ atoms: object, bonds: object }} The result object.
  * @throws {Error} If token validation fails or no atoms are found.
  */
 export function decode(tokens) {
@@ -1354,11 +1349,10 @@ export function decode(tokens) {
  * atoms as single units.
  *
  * Returns the character index of the from-atom, or -1 if none (chain start).
- *
  * @param {number}        bracketOpenPos - index of the `[` character
- * @param {string}        smiles
+ * @param {string} smiles - SMILES notation string.
  * @param {Map<number,string>} posToClean - char-position → clean atom ID
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 function findFromAtomPos(bracketOpenPos, smiles, posToClean) {
   let i = bracketOpenPos - 1;
@@ -1404,10 +1398,9 @@ function findFromAtomPos(bracketOpenPos, smiles, posToClean) {
  * atom (`C1`, `[C@@H]4`). Prefer an atom token that falls inside the ring
  * token span, then fall back to the nearest atom token immediately before the
  * ring token.
- *
- * @param {{ index: number, term: string }} ringToken
- * @param {Array<{ index: number }>} atomTokens
- * @returns {number|null}
+ * @param {{ index: number, term: string }} ringToken - Ring-closure token object.
+ * @param {Array<{ index: number }>} atomTokens - The atomTokens value.
+ * @returns {number|null} The computed value, or `null` if not applicable.
  */
 function findRingTokenAtomPos(ringToken, atomTokens) {
   const direct = atomTokens.find(atom => atom.index >= ringToken.index && atom.index < ringToken.index + ringToken.term.length);
@@ -1443,10 +1436,9 @@ function findRingTokenAtomPos(ringToken, atomTokens) {
  * embedded inside the bracket and depth-0 ring closures after `]` are
  * inserted into the neighbour list in SMILES reading order.  Chain-start
  * atoms (no preceding atom) are also supported.
- *
  * @param {string}   smiles  - original SMILES string
  * @param {object[]} tokens  - token list from {@link tokenize}
- * @returns {Map<string, {chiral: '@'|'@@', neighbors: string[]}>}
+ * @returns {Map<string, {chiral: '@'|'@@', neighbors: string[]}>} The resulting map.
  */
 function extractChiralNeighborOrders(smiles, tokens) {
   // ── 1. Build position → cleanId map ─────────────────────────────────────
@@ -1607,10 +1599,9 @@ function extractChiralNeighborOrders(smiles, tokens) {
  * Internally uses the v1 {@link tokenize} and {@link decode} pipeline,
  * then converts the result into a Molecule. Each Atom gains extra
  * periodic-table properties: `protons`, `neutrons`, `electrons`, `group`, `period`.
- *
  * @param {string} smiles - SMILES notation string.
- * @param {{ preserveAromaticBondOrders?: boolean }} [options]
- * @returns {Molecule}
+ * @param {{ preserveAromaticBondOrders?: boolean }} [options] - Configuration options.
+ * @returns {Molecule} The resulting molecule.
  * @throws {Error} If the SMILES string cannot be parsed.
  */
 export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) {
@@ -1700,7 +1691,7 @@ export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) 
 
 /**
  * Normal SMILES valence for each organic-subset element (lowest standard valence).
- * @type {Object.<string, number>}
+ * @type {Record<string, number>}
  */
 const ORGANIC_VALENCE = { B: 3, C: 4, N: 3, O: 2, P: 3, S: 2, F: 1, Cl: 1, Br: 1, I: 1 };
 
@@ -1708,11 +1699,10 @@ const ORGANIC_VALENCE = { B: 3, C: 4, N: 3, O: 2, P: 3, S: 2, F: 1, Cl: 1, Br: 1
  * Returns `true` when `atom` is a standard pendant hydrogen that can be
  * represented implicitly in SMILES output (uncharged, mass-number 1, pendant
  * to exactly one non-H atom).
- *
- * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
  * @param {Set<string>} nonHIds - Set of atom IDs that are not hydrogen.
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {boolean}
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _isStrippable(atom, nonHIds, mol) {
   if (atom.name !== 'H') {
@@ -1741,12 +1731,11 @@ function _isStrippable(atom, nonHIds, mol) {
  * charge, no non-standard isotope, and the SMILES implicit-H rule would assign
  * exactly `pendantHCount` hydrogens.  Otherwise returns a bracket atom
  * (e.g. `[NH4+]`, `[13CH4]`, `[nH]`).
- *
- * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
  * @param {number} pendantHCount  - Number of implicit H atoms to encode.
  * @param {number} heavyBondOrder - Sum of bond orders to heavy-atom neighbours.
- * @param {string} [chiralToken=''] - Chirality token (`@` or `@@`) to embed in the bracket atom, or empty string when absent.
- * @returns {string}
+ * @param {string} [chiralToken] - Chirality token (`@` or `@@`) to embed in the bracket atom, or empty string when absent.
+ * @returns {string} The result string.
  */
 function _atomToken(atom, pendantHCount, heavyBondOrder, chiralToken = '') {
   const name = atom.name;
@@ -1803,10 +1792,9 @@ function _atomToken(atom, pendantHCount, heavyBondOrder, chiralToken = '') {
  * When `fromId` is supplied and the bond has a directional stereo property
  * (`'/'` or `'\\'`), returns the direction relative to `fromId` as the
  * source atom (flipping when `fromId` is `bond.atoms[1]`).
- *
- * @param {import('../core/Bond.js').Bond} bond
- * @param {string|null} [fromId]
- * @returns {string}
+ * @param {import('../core/Bond.js').Bond} bond - The bond object.
+ * @param {string|null} [fromId] - The fromId value.
+ * @returns {string} The result string.
  */
 function _bondToken(bond, fromId = null) {
   if (!bond || bond.properties.aromatic) {
@@ -1831,9 +1819,8 @@ function _bondToken(bond, fromId = null) {
 /**
  * Formats a ring-closure integer as its SMILES token:
  * single digits 1–9 are written bare; 10+ use `%nn` notation.
- *
- * @param {number} n
- * @returns {string}
+ * @param {number} n - Count or dimension.
+ * @returns {string} The result string.
  */
 function _ringToken(n) {
   return n < 10 ? `${n}` : `%${n}`;
@@ -1841,10 +1828,9 @@ function _ringToken(n) {
 
 /**
  * Serialises a single *connected* `Molecule` component into a SMILES string.
- *
- * @param {import('../core/Molecule.js').Molecule} mol
- * @param {Function|null} [sortFn=null] - Optional atom-ranking function `(atomId) => number` used by canonical serialisation to enforce a deterministic DFS traversal order.
- * @returns {string}
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {((atomId: string) => number)|null} [sortFn] - Optional atom-ranking function `(atomId) => number` used by canonical serialisation to enforce a deterministic DFS traversal order.
+ * @returns {string} The result string.
  */
 function _serializeComponent(mol, sortFn = null) {
   // ---- Identify strippable (implicit) H atoms ----
@@ -2068,9 +2054,8 @@ function _serializeComponent(mol, sortFn = null) {
  * - Tetrahedral chirality (`@` / `@@`) for atoms with a stored CIP
  *   designation (`properties.chirality === 'R'` or `'S'`)
  * - E/Z geometry (`/` / `\\`) on bonds that carry a stored stereo direction
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {string}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {string} The result string.
  */
 export function toSMILES(molecule) {
   if (molecule.atomCount === 0) {
@@ -2096,9 +2081,8 @@ export function toSMILES(molecule) {
  *
  * All features of {@link toSMILES} are preserved: chirality (`@`/`@@`),
  * E/Z geometry (`/`/`\\`), isotopes, charges, aromatic atoms, ring closures.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {string}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {string} The result string.
  */
 export function toCanonicalSMILES(molecule) {
   if (molecule.atomCount === 0) {
@@ -2119,10 +2103,9 @@ export function toCanonicalSMILES(molecule) {
  *
  * Comparison is based on canonical SMILES, so the atom and bond IDs of the
  * two objects do not matter — only the chemical graph does.
- *
- * @param {import('../core/Molecule.js').Molecule} a
- * @param {import('../core/Molecule.js').Molecule} b
- * @returns {boolean}
+ * @param {import('../core/Molecule.js').Molecule} a - First value or atom.
+ * @param {import('../core/Molecule.js').Molecule} b - Second value or atom.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 export function sameMolecule(a, b) {
   if (a === b) {

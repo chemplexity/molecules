@@ -1,5 +1,10 @@
 /** @module app/core/input-flow */
 
+/**
+ * Creates the input flow manager that handles parsing, rendering, format switching, and clearing of molecules from user input.
+ * @param {object} deps - Dependency object providing state, dom, history, snapshot, molecule, collection, examples, parsers, overlays, renderers, highlights, force, and analysis.
+ * @returns {object} Object with `setInputFormat`, `clearMolecule`, `parseAndRenderSmiles`, `parseAndRenderInchi`, `parseInputWithAutoFormat`, `parseInput`, and `takeInputFormatSnapshot`.
+ */
 export function createInputFlowManager(deps) {
   function takeInputFormatSnapshot({ prevInputMode, visibleInputValue } = {}) {
     const currentMolSmiles = deps.molecule.getMolSmiles?.() ?? '';

@@ -100,6 +100,7 @@
     "clean-jsdoc-theme": "^4.3.0",
     "eslint": "^8.57.0",
     "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-jsdoc": "^62.9.0",
     "jsdoc": "^4.0.3",
     "prettier": "^3.8.1",
     "rimraf": "^5.0.5",

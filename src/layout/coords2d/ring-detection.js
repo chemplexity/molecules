@@ -3,9 +3,8 @@
 /**
  * Groups the output of `molecule.getRings()` into ring systems.
  * Two rings belong to the same system if they share at least one atom.
- *
- * @param {string[][]} rings
- * @returns {{ atomIds: string[], ringIds: number[] }[]}
+ * @param {string[][]} rings - Array of ring atom ID arrays.
+ * @returns {{ atomIds: string[], ringIds: number[] }[]} Array of results.
  */
 export function detectRingSystems(rings) {
   if (rings.length === 0) {
@@ -62,7 +61,9 @@ export function detectRingSystems(rings) {
 
 /**
  * Returns atom IDs shared between two rings (as arrays).
- * @param {string[]} ringA @param {string[]} ringB @returns {string[]}
+ * @param {string[]} ringA - First ring as atom ID array.
+ * @param {string[]} ringB - Second ring as atom ID array.
+ * @returns {string[]} Array of shared atom IDs.
  */
 export function findSharedAtoms(ringA, ringB) {
   const setA = new Set(ringA);

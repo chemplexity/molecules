@@ -1,5 +1,14 @@
 /** @module app/bootstrap/dom-elements */
 
+/**
+ * Queries all application DOM elements from the document and returns accessor functions for each.
+ * @param {object} params - DOM bootstrap parameters.
+ * @param {Document} params.document - The browser document used for querying elements.
+ * @param {Element} params.plotEl - The SVG plot container element.
+ * @param {HTMLInputElement} params.inputEl - The chemical-string input element.
+ * @param {HTMLSelectElement} params.collectionSelectEl - The molecule-collection picker element.
+ * @returns {object} Accessor object containing getters and setters for every application DOM element.
+ */
 export function createBootstrapDom({ document, plotEl, inputEl, collectionSelectEl }) {
   const toggleButton = document.getElementById('toggle-btn');
   const rotateControls = document.getElementById('rotate-controls');

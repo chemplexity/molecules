@@ -5,7 +5,6 @@
  *
  * Iteratively zeroes the largest off-diagonal element via Givens rotations until
  * all off-diagonal elements are below a tolerance.
- *
  * @param {number[][]} M - Real symmetric n×n matrix.
  * @returns {number[]} Array of n eigenvalues (unordered).
  */

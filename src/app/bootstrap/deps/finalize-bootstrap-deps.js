@@ -1,5 +1,11 @@
 /** @module app/bootstrap/deps/finalize-bootstrap-deps */
 
+/**
+ * Builds the structured dependency object for the FinalizeAppBootstrap factory,
+ * mapping flat context properties into named sub-objects (factories, state, actions, render, stereo, overlays, history, dom, view, analysis, highlights, options, input, parsers, export, helpers, molecule, formatters, io).
+ * @param {object} ctx - Flat app context providing FinalizeAppBootstrap-related methods and values.
+ * @returns {object} Dependency object consumed by `finalizeAppBootstrap`.
+ */
 export function createFinalizeAppBootstrapDeps(ctx) {
   return {
     factories: {

@@ -60,9 +60,8 @@ function expandFormulaComponentStrings(formulaStr) {
  * Component order is preserved from the formula layer so semicolon-separated
  * layers such as `/h...;...` can be mapped onto the correct disconnected
  * components. Within each component, heavy atoms follow Hill order without H.
- *
  * @param {string} formulaStr - e.g. "C6H6" or "ClH.H3N"
- * @returns {string[][]}
+ * @returns {string[][]} Array of results.
  */
 function parseFormulaComponents(formulaStr) {
   return expandFormulaComponentStrings(formulaStr).map(parseFormulaComponent);
@@ -98,7 +97,6 @@ function expandRepeatedSections(layerStr) {
 /**
  * Parses an InChI formula string into an ordered array of heavy-atom element
  * symbols (1-indexed; index 0 is a null placeholder).
- *
  * @param {string} formulaStr - e.g. "C6H6" or "C2H6O"
  * @returns {(string|null)[]} e.g. [null, 'C', 'C', 'O'] for "C2H6O"
  */
@@ -113,9 +111,8 @@ function parseFormula(formulaStr) {
 /**
  * Expands an InChI atom-list string into an array of 1-based atom indices.
  * Supports single numbers ("1"), ranges ("1-6"), and comma-lists ("1,5,3-4").
- *
- * @param {string} listStr
- * @returns {number[]}
+ * @param {string} listStr - The listStr value.
+ * @returns {number[]} Array of results.
  */
 function expandAtomList(listStr) {
   const atoms = [];
@@ -143,10 +140,9 @@ function expandAtomList(listStr) {
  *   "1H3,2H2,3H"  atom 1→3H, atom 2→2H, atom 3→1H
  *   "1,5H2"       atoms 1 and 5, 2 H each
  *   "(H,11,12)"   mobile/exchangeable H shared between listed atoms
- *
- * @param {string} hStr
- * @param {number[]} [componentOffsets=[]] - per-component 1-based atom index offsets
- * @returns {{ fixed: Map<number, number>, mobile: Array<{ count: number, atoms: number[] }> }}
+ * @param {string} hStr - The hStr value.
+ * @param {number[]} [componentOffsets] - Per-component 1-based atom index offsets.
+ * @returns {{ fixed: Map<number, number>, mobile: Array<{ count: number, atoms: number[] }> }} The result object.
  */
 function parseHydrogenLayer(hStr, componentOffsets = []) {
   const fixed = new Map();
@@ -189,9 +185,8 @@ function parseHydrogenLayer(hStr, componentOffsets = []) {
  *
  * Ring closures are handled naturally: a repeated atom number simply adds
  * another bond to the already-placed atom.
- *
  * @param {string} cStr - e.g. "1-2-3" | "1-4(2)3" | "1-2-3-4-5-6-1"
- * @returns {[number, number][]}
+ * @returns {[number, number][]} Array of results.
  */
 function parseConnectionSection(cStr) {
   const raw = [];
@@ -315,9 +310,8 @@ function parseConnectionLayer(cStr, componentOffsets = []) {
 
 /**
  * Parses the InChI /q (charge) layer.
- *
  * @param {string} qStr - e.g. "+1" or "-2"
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 function parseChargeLayer(qStr) {
   return expandRepeatedSections(qStr).reduce((sum, part) => {
@@ -421,11 +415,10 @@ function parseInversionLayer(mStr) {
  *
  * Runs a BFS from one endpoint to the other, excluding the bond itself.
  * The returned array does NOT repeat the start/end atom.
- *
- * @param {Molecule} mol
- * @param {import('../core/Bond.js').Bond} bond
+ * @param {Molecule} mol - The molecule graph.
+ * @param {import('../core/Bond.js').Bond} bond - The bond object.
  * @param {Set<string>} allowedAtoms - Only traverse atoms in this set.
- * @returns {string[]|null}
+ * @returns {string[]|null} Array of results.
  */
 function smallestRingForBond(mol, bond, allowedAtoms) {
   const [idA, idB] = bond.atoms;
@@ -491,15 +484,19 @@ function smallestRingForBond(mol, bond, allowedAtoms) {
  * belongs to an aromatic ring are skipped to prevent exocyclic substituents
  * (e.g. carboxyl groups on benzene) from being incorrectly promoted.
  * This loop repeats until no further changes occur.
- *
- * @param {Molecule} mol
+ * @param {Molecule} mol - The molecule graph.
  * @param {string[]} heavyAtomIds - IDs of heavy atoms in the molecule.
- * @param {number} [totalCharge=0] - Net formal charge of the molecule component; used to adjust valence targets when charge-bearing atoms are present.
+ * @param {number} [totalCharge] - Net formal charge of the molecule component; used to adjust valence targets when charge-bearing atoms are present.
  */
 function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
   const heavySet = new Set(heavyAtomIds);
 
-  /** Returns true when atomId has at least one bond in aroBondIds. */
+  /**
+   * Returns true when atomId has at least one bond in aroBondIds.
+   * @param {string} atomId - The atom ID to check.
+   * @param {Set.<string>} aroBondIds - Set of aromatic bond IDs.
+   * @returns {boolean} True if the atom is part of an aromatic ring.
+   */
   const isAromaticRingAtom = (atomId, aroBondIds) => {
     const atom = mol.atoms.get(atomId);
     return atom !== undefined && atom.bonds.some(bId => aroBondIds.has(bId));
@@ -508,6 +505,7 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
   /**
    * Iterates over all bonds whose both endpoints are heavy atoms (in heavySet).
    * Calls cb(bond, idA, idB) for each such bond.
+   * @param {(bond: Bond, idA: string, idB: string) => void} cb - Callback invoked per heavy bond.
    */
   const forHeavyBonds = cb => {
     for (const bond of mol.bonds.values()) {
@@ -1051,17 +1049,16 @@ function inferBondOrders(mol, heavyAtomIds, totalCharge = 0) {
  *
  * Relative/racemic stereo flags (/s values other than the absolute standard
  * cases) and isotope (/i) layers are still ignored.
- *
- * @param {string}  inchiStr
- * @param {object}  [options]
- * @param {boolean} [options.inferBondOrders=true]
+ * @param {string} inchiStr - The inchiStr value.
+ * @param {object} [options] - Configuration options.
+ * @param {boolean} [options.inferBondOrders] - Configuration sub-option.
  *   Run greedy bond-order inference and aromatic detection after building the
  *   connectivity graph. Set to `false` to get a graph where every bond has
  *   order 1.
- * @param {boolean} [options.addHydrogens=true]
+ * @param {boolean} [options.addHydrogens] - Configuration sub-option.
  *   Attach explicit H atoms from the /h layer. Set to `false` to return a
  *   hydrogen-suppressed graph.
- * @returns {Molecule}
+ * @returns {Molecule} The resulting molecule.
  * @throws {Error} For malformed input or unsupported InChI versions.
  */
 export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydrogens = true } = {}) {
@@ -1146,6 +1143,9 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
    * `<symbol><1-based-rank>` (e.g. `C1`, `C2`, `O1`, `H3`).
    * The rank is the smallest positive integer not already taken for that
    * element in the molecule.
+   * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+   * @param {string} name - Element symbol.
+   * @returns {string} A unique atom ID for the given element.
    */
   function _inchiAtomId(mol, name) {
     let k = 1;
@@ -1428,6 +1428,7 @@ export function parseINCHI(inchiStr, { inferBondOrders: doInfer = true, addHydro
    * so assignComponentFormalCharges computes 0 for every atom and skips the component.
    * This function assigns the net charge to a single atom — the one with the fewest
    * H neighbours (or the first atom in tie cases) — after the standard pass has run.
+   * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
    */
   function fixDelocalisedChargedRings(mol) {
     for (let i = 0; i < componentHeavyAtomIds.length; i++) {
@@ -2403,9 +2404,8 @@ function _iLayerSection(heavy, inchiIndexOf) {
  * For disconnected molecules (salts, mixtures) each layer is
  * semicolon-separated by component; components are ordered largest-first
  * (most heavy atoms), then alphabetically by Hill formula.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {string}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {string} The result string.
  */
 export function toInChI(molecule) {
   if (molecule.atomCount === 0) {

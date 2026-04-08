@@ -9,8 +9,7 @@ import { reflectSubtreeCoords } from './projection-transforms.js';
 
 /**
  * Finds the longest acyclic heavy-atom path through the molecule, preferring paths with fewer ring atoms.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @returns {{ path: string[], ringCount: number, score: number }|null} Best path info, or null if fewer than 2 heavy atoms
  */
 export function findPreferredBackbonePath(molecule) {
@@ -67,8 +66,7 @@ export function findPreferredBackbonePath(molecule) {
  * Straightens the preferred backbone path into an alternating zigzag by reflecting suffixes
  * that turn in the same direction as the preceding segment.
  * Only acts on all-acyclic paths of 8+ atoms that cover at least 45% of heavy atoms.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} coords - Atom coordinates (mutated in place)
  * @param {{ path: string[], ringCount: number }|null} pathInfo - Result from findPreferredBackbonePath
  * @returns {boolean} True if any straightening was applied
@@ -180,8 +178,7 @@ export function straightenPreferredBackbone(molecule, coords, pathInfo) {
 
 /**
  * Collects all atoms reachable from startId without crossing blockedId (no frozen-atom restriction).
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {string} startId - Atom ID to begin traversal from
  * @param {string} blockedId - Atom ID acting as the traversal boundary
  * @returns {Set<string>} Set of atom IDs on the startId side of the bond
@@ -211,12 +208,11 @@ export function collectSideAtoms(molecule, startId, blockedId) {
  * Enforces the target E/Z stereo configuration of all acyclic double bonds by reflecting
  * one substituent side across the bond axis when the current geometry is incorrect.
  * Chooses the reflection candidate that maximises matched stereo count, then chain span, then clearance.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} coords - Atom coordinates (mutated in place)
- * @param {object} [options]
- * @param {boolean} [options.preserveLongChainSpan=false] - Reject moves that reduce long-chain end-to-end span
- * @param {number} [options.maxLongChainSpanLoss=0] - Tolerated span loss when preserveLongChainSpan is true
+ * @param {object} [options] - Configuration options.
+ * @param {boolean} [options.preserveLongChainSpan] - Reject moves that reduce long-chain end-to-end span
+ * @param {number} [options.maxLongChainSpanLoss] - Tolerated span loss when preserveLongChainSpan is true
  * @returns {void}
  */
 export function enforceAcyclicEZStereo(molecule, coords, { preserveLongChainSpan = false, maxLongChainSpanLoss = 0 } = {}) {
@@ -371,8 +367,7 @@ export function enforceAcyclicEZStereo(molecule, coords, { preserveLongChainSpan
 /**
  * Rotates substituents around each acyclic multiple bond to minimise atom clashes and bond-atom crowding,
  * choosing the best small-angle delta from a fixed candidate set (0, ±π/6, ±π/3).
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} coords - Atom coordinates (mutated in place)
  * @param {number} bondLength - Target bond length used for distance thresholds
  * @returns {void}

@@ -1,5 +1,10 @@
 /** @module app/ui/physchem-panel */
 
+/**
+ * Initialises the physicochemical properties panel with row hover, tooltip, and lock interactions.
+ * @param {object} context - Flat app context providing DOM accessors, tooltip, and configuration values.
+ * @returns {void}
+ */
 export function initPhyschemPanel(context) {
   const pcTable = context.dom.getTableElement();
   const tooltip = context.tooltip;

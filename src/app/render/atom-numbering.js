@@ -21,6 +21,12 @@ function _angularDistance(a, b) {
   return Math.abs(_normalizeAngle(a - b));
 }
 
+/**
+ * Picks the placement angle for an atom annotation that maximizes clearance from all blocked sector angles.
+ * @param {Array<{angle: number, spread: number}>} [blockedSectors] - Array of blocked angular sectors, each with a center angle and half-spread in radians.
+ * @param {number} [fallbackAngle] - Default angle used when no blockedSectors are provided and as a tiebreaker.
+ * @returns {number} Best placement angle in radians.
+ */
 export function pickAtomAnnotationAngle(blockedSectors = [], fallbackAngle = DEFAULT_NUMBERING_FALLBACK_ANGLE) {
   if (!Array.isArray(blockedSectors) || blockedSectors.length === 0) {
     return fallbackAngle;
@@ -47,11 +53,25 @@ export function pickAtomAnnotationAngle(blockedSectors = [], fallbackAngle = DEF
   return bestAngle;
 }
 
+/**
+ * Computes the radial distance (in pixels) from an atom center to place an atom-numbering label.
+ * @param {number} fontSize - Current font size in pixels.
+ * @param {string} [label] - Label text whose length influences the offset.
+ * @returns {number} Pixel distance from the atom center to the label.
+ */
 export function atomNumberingLabelDistance(fontSize, label = '') {
   const labelLength = String(label).length;
   return Math.max(15, Math.round(fontSize + 6 + Math.max(0, labelLength - 1) * 2));
 }
 
+/**
+ * Computes the angular blocker direction introduced by one side of a multiple bond to guide atom annotation placement.
+ * @param {{x: number, y: number}} start - SVG coordinates of the bond's start atom.
+ * @param {{x: number, y: number}} end - SVG coordinates of the bond's end atom.
+ * @param {number} [side] - Which side of the bond (+1 or -1) the parallel line lies on.
+ * @param {number} [forwardBias] - Weight applied to the along-bond direction in the blocker angle blend.
+ * @returns {number|null} Blocker angle in radians, or null if the bond has zero length.
+ */
 export function multipleBondSideBlockerAngle(start, end, side = 1, forwardBias = 0.45) {
   const dx = (end?.x ?? 0) - (start?.x ?? 0);
   const dy = (end?.y ?? 0) - (start?.y ?? 0);
@@ -69,16 +89,15 @@ export function multipleBondSideBlockerAngle(start, end, side = 1, forwardBias =
 /**
  * Initializes the atom-numbering panel renderer with the app context it
  * needs to redraw the active molecule in either 2D or force mode.
- *
- * @param {object} context
- * @param {'2d'|'force'} context.mode
- * @param {import('../../core/Molecule.js').Molecule|null} context.currentMol
- * @param {import('../../core/Molecule.js').Molecule|null} context._mol2d
- * @param {Function} context.draw2d
- * @param {Function} context.updateForce
- * @param {Function} [context.hasReactionPreview]
- * @param {Function} [context.getReactionPreviewReactantAtomIds]
- * @param {Function} [context.getReactionPreviewMappedAtomPairs]
+ * @param {object} context - App context object.
+ * @param {'2d'|'force'} context.mode - Current layout mode.
+ * @param {import('../../core/Molecule.js').Molecule|null} context.currentMol - Active molecule in force mode.
+ * @param {import('../../core/Molecule.js').Molecule|null} context._mol2d - Active molecule in 2D mode.
+ * @param {() => void} context.draw2d - Triggers a 2D redraw.
+ * @param {(mol: object, options?: object) => void} context.updateForce - Triggers a force-layout redraw.
+ * @param {() => boolean} [context.hasReactionPreview] - Returns true when a reaction preview is active.
+ * @param {() => Set<string>} [context.getReactionPreviewReactantAtomIds] - Returns reactant atom IDs for the current reaction preview.
+ * @param {() => Array<Array<string>>} [context.getReactionPreviewMappedAtomPairs] - Returns mapped atom pairs for the current reaction preview.
  */
 export function initAtomNumberingPanel(context) {
   ctx = context;
@@ -114,8 +133,7 @@ function _otherPanelRow({ label, title, active, onClick }) {
 
 /**
  * Returns whether the atom numbering overlay is currently active.
- *
- * @returns {boolean}
+ * @returns {boolean} True if the atom numbering overlay is active.
  */
 export function getAtomNumberingActive() {
   return _atomNumberingActive;
@@ -135,9 +153,8 @@ export function getAtomNumberingActive() {
  * Unmapped product H atoms whose parent heavy atom is mapped inherit an available
  * reactant H number from that parent's H pool, so unchanged hydrogens keep their
  * original numbers. Truly new atoms (no inferred source) get fresh numbers.
- *
- * @param {import('../../core/Molecule.js').Molecule|null} mol
- * @returns {Map<string, number>|null}
+ * @param {import('../../core/Molecule.js').Molecule|null} mol - The molecule to number atoms in.
+ * @returns {Map<string, number>|null} Map from atom ID to 1-based atom number, or null when overlay is inactive.
  */
 export function getAtomNumberMap(mol) {
   if (!_atomNumberingActive || !mol) {
@@ -273,8 +290,7 @@ export function clearAtomNumberingPanel() {
 
 /**
  * Renders or refreshes the Atom Numbering toggle row.
- *
- * @param {import('../../core/Molecule.js').Molecule|null} mol
+ * @param {import('../../core/Molecule.js').Molecule|null} mol - The molecule to render the panel for.
  */
 export function updateAtomNumberingPanel(mol) {
   if (typeof document === 'undefined') {

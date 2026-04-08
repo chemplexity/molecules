@@ -7,8 +7,7 @@ const DEFAULT_BOND_LENGTH = 1.5;
 
 /**
  * Extracts existing finite 2D coordinates from a molecule's atoms into a Map.
- *
- * @param {Object} molecule - Molecule whose atoms are inspected
+ * @param {object} molecule - Molecule whose atoms are inspected
  * @returns {Map<string, {x: number, y: number}>} Map of atom ID to 2D position
  */
 export function readExistingCoords(molecule) {
@@ -23,8 +22,7 @@ export function readExistingCoords(molecule) {
 
 /**
  * Collects all atoms reachable from startId without crossing blockedId or any frozen atom.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {string} startId - Atom ID to begin the traversal from
  * @param {string} blockedId - Atom ID that acts as the traversal boundary
  * @param {Set<string>} frozenAtoms - Atom IDs that must not be included
@@ -60,8 +58,7 @@ export function collectRefinementSubtree(molecule, startId, blockedId, frozenAto
 
 /**
  * Counts non-hydrogen atoms in a collection of atom IDs.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Iterable<string>} atomIds - Atom IDs to inspect
  * @returns {number} Number of heavy (non-H) atoms
  */
@@ -77,8 +74,7 @@ export function countHeavyAtoms(molecule, atomIds) {
 
 /**
  * Identifies all bonds and atoms that are part of rings in the molecule.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @returns {{ ringBondIds: Set<string>, ringAtomIds: Set<string> }} Sets of ring bond and atom IDs
  */
 export function collectCycleData(molecule) {
@@ -138,11 +134,10 @@ export function collectCycleData(molecule) {
 
 /**
  * Generates idealized coordinate templates for each connected ring system in the molecule.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {number} bondLength - Target bond length used when generating template coordinates
  * @param {{ ringAtomIds: Set<string> }} cycleData - Cycle data from collectCycleData
- * @param {Function} generateCoords - Function used to lay out a subgraph; called as generateCoords(subgraph, options)
+ * @param {(subgraph: import('../../core/Molecule.js').Molecule, options: object) => void} generateCoords - Function used to lay out a subgraph; called as generateCoords(subgraph, options)
  * @returns {Array<{ atomIds: Set<string>, templateCoords: Map<string, {x: number, y: number}> }>} Array of ring system descriptors
  */
 export function collectRingSystemCandidates(molecule, bondLength, cycleData, generateCoords) {
@@ -192,7 +187,6 @@ export function collectRingSystemCandidates(molecule, bondLength, cycleData, gen
 
 /**
  * Aligns template coordinates onto target coordinates using a least-squares rotation (and optional Y-reflection).
- *
  * @param {Map<string, {x: number, y: number}>} templateCoords - Ideal coordinates to align
  * @param {Map<string, {x: number, y: number}>} targetCoords - Reference coordinates to align onto
  * @param {Iterable<string>} atomIds - Atom IDs to use as alignment anchors
@@ -263,7 +257,6 @@ export function alignTemplateCoords(templateCoords, targetCoords, atomIds) {
 
 /**
  * Measures how far the current coordinates deviate from the idealized ring-system template.
- *
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {{ atomIds: Set<string>, templateCoords: Map<string, {x: number, y: number}> }} ringSystem - Ring system descriptor from collectRingSystemCandidates
  * @returns {{ aligned: Map<string, {x: number, y: number}>, maxDisp: number, rmsDisp: number }|null} Deviation metrics and aligned template, or null on failure
@@ -306,16 +299,15 @@ export function measureRingSystemDeviation(baseCoords, ringSystem) {
  *
  * Identifies heavy atoms, bonds, frozen atoms, rotatable/multiple-bond candidates,
  * and ring-system templates that will be referenced by issue detection and transform passes.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} coords - Current atom coordinates
- * @param {object} [options]
- * @param {number} [options.bondLength=1.5] - Target bond length
- * @param {boolean} [options.freezeRings=true] - Whether ring atoms should be frozen during refinement
- * @param {boolean} [options.freezeChiralCenters=false] - Whether chiral centres should be frozen
- * @param {boolean} [options.includeRingSystemCandidates=true] - Whether to generate ring-system templates
- * @param {Function|null} [options.generateCoords=null] - Coordinate generator used for ring templates
- * @returns {Object} Refinement context with heavyIds, heavyBonds, bondedPairs, cycleData, frozenAtoms, rotatableCandidates, multipleBondCandidates, ringSystemCandidates, and rings
+ * @param {object} [options] - Configuration options.
+ * @param {number} [options.bondLength] - Target bond length
+ * @param {boolean} [options.freezeRings] - Whether ring atoms should be frozen during refinement
+ * @param {boolean} [options.freezeChiralCenters] - Whether chiral centres should be frozen
+ * @param {boolean} [options.includeRingSystemCandidates] - Whether to generate ring-system templates
+ * @param {((subgraph: import('../../core/Molecule.js').Molecule, options: object) => void)|null} [options.generateCoords] - Coordinate generator used for ring templates
+ * @returns {object} Refinement context with heavyIds, heavyBonds, bondedPairs, cycleData, frozenAtoms, rotatableCandidates, multipleBondCandidates, ringSystemCandidates, and rings
  */
 export function buildRefinementContext(
   molecule,

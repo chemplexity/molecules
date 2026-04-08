@@ -1,5 +1,10 @@
 /** @module app/ui/runtime-ui */
 
+/**
+ * Creates and returns the runtime UI controller that manages mode chrome, molecule updates, and interaction handlers.
+ * @param {object} deps - Flat app context providing DOM accessors, session bridges, state, and render helpers.
+ * @returns {object} Runtime UI controller object with methods for updating the UI in response to state changes.
+ */
 export function createRuntimeUi(deps) {
   function getSessionRuntimeBridge() {
     return deps.getSessionRuntimeBridge ? deps.getSessionRuntimeBridge() : deps.sessionRuntimeBridge;

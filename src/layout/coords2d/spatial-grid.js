@@ -6,8 +6,7 @@ const DEFAULT_BOND_LENGTH = 1.5;
  * Lightweight grid that maps 2D cell coordinates to sets of atom IDs.
  * Cell size equals `bondLength` so a 3×3 neighbourhood covers all atoms
  * within one bond length of any query point.
- *
- * @param {number} cellSize
+ * @param {number} cellSize - The cellSize value.
  */
 export class SpatialGrid {
   constructor(cellSize) {
@@ -31,7 +30,15 @@ export class SpatialGrid {
       s.delete(id);
     }
   }
-  /** Returns true if any atom (other than those in `exclude`) is within `thresh` of (x,y). */
+  /**
+   * Returns true if any atom (other than those in `exclude`) is within `thresh` of (x,y).
+   * @param {number} x - Query x coordinate.
+   * @param {number} y - Query y coordinate.
+   * @param {number} thresh - Distance threshold.
+   * @param {Set.<string>|null} [exclude] - Atom IDs to ignore.
+   * @param {Map.<string, {x:number,y:number}>} coords - Map of atom ID to coordinates.
+   * @returns {boolean} True if a nearby atom exists.
+   */
   hasNear(x, y, thresh, exclude, coords) {
     const cx0 = Math.floor(x / this.cs) - 1;
     const cy0 = Math.floor(y / this.cs) - 1;
@@ -54,7 +61,12 @@ export class SpatialGrid {
     }
     return false;
   }
-  /** Build from an existing coords map (all entries). */
+  /**
+   * Build from an existing coords map (all entries).
+   * @param {Map.<string, {x:number,y:number}>} coords - Map of atom ID to coordinates.
+   * @param {number} [cellSize] - Grid cell size (defaults to bond length).
+   * @returns {SpatialGrid} New grid populated from the coords map.
+   */
   static fromCoords(coords, cellSize = DEFAULT_BOND_LENGTH) {
     const g = new SpatialGrid(cellSize);
     for (const [id, { x, y }] of coords) {

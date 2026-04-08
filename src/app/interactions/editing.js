@@ -1,5 +1,10 @@
 /** @module app/interactions/editing */
 
+/**
+ * Creates editing action handlers for deleting atoms/bonds and erasing items in both 2D and force-layout modes.
+ * @param {object} context - Dependency context providing state, view, view2D, actions, policies, chemistry, force, overlays, and dom.
+ * @returns {object} Object with `deleteSelection`, `deleteTargets`, and `eraseItem`.
+ */
 export function createEditingActions(context) {
   function clearHovered() {
     context.state.overlayState.getHoveredAtomIds().clear();

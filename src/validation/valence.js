@@ -8,10 +8,9 @@ import elements from '../data/elements.js';
  *
  * Examples: C→[4], N→[3] (period 2) or [3,5] (period 3+), O→[2] or [2,4,6],
  * halogens→[1], noble gases→[0].  Transition metals return `[]`.
- *
- * @param {string} symbol
- * @param {{ group: number, period: number }} el
- * @returns {number[]}
+ * @param {string} symbol - The atomic symbol.
+ * @param {{ group: number, period: number }} el - Element symbol or node.
+ * @returns {number[]} Array of results.
  */
 function commonNeutralValences(symbol, { group, period }) {
   if (symbol === 'H') {
@@ -51,12 +50,11 @@ function commonNeutralValences(symbol, { group, period }) {
  * - N/O/S groups (15–17): add `charge − radical` (cations step up)
  * - H: subtract `|charge| + radical`
  * - Others: subtract `charge + radical`
- *
- * @param {string} symbol
- * @param {{ group: number, period: number }} el
+ * @param {string} symbol - The atomic symbol.
+ * @param {{ group: number, period: number }} el - Element symbol or node.
  * @param {number} charge - Formal charge.
  * @param {number} radical - Unpaired electron count.
- * @returns {number[]}
+ * @returns {number[]} Array of results.
  */
 function shiftedCommonValences(symbol, el, charge, radical) {
   const base = commonNeutralValences(symbol, el);
@@ -111,8 +109,7 @@ function shiftedCommonValences(symbol, el, charge, radical) {
  * Bond orders are floored before summing so that fractional aromatic bond
  * orders stored by the SMILES parser (1.5) are treated as sigma bonds (1)
  * for non-aromatic atoms that border aromatic rings.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @returns {Array<{
  *   atomId:    string,
  *   element:   string,

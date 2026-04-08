@@ -1,5 +1,11 @@
 /** @module app/core/app-controller-deps */
 
+/**
+ * Builds the structured dependency object for the AppController factory,
+ * mapping flat dependency properties into named sub-objects (state, renderers, history, panels, analysis, dom, overlays, snapshot, navigation).
+ * @param {object} deps - Flat app context providing AppController-related methods and values.
+ * @returns {object} Dependency object consumed by `createAppController`.
+ */
 export function createAppControllerDeps(deps) {
   return {
     state: deps.state,

@@ -1,5 +1,10 @@
 /** @module app/interactions/selection-state */
 
+/**
+ * Creates selection state helpers for syncing selection to a molecule and resolving which atoms to drag based on current selection.
+ * @param {object} context - Dependency context providing a `state` object with selection getters and setters.
+ * @returns {object} Object with `syncSelectionToMolecule` and `getSelectedDragAtomIds` helper functions.
+ */
 export function createSelectionStateHelpers(context) {
   function syncSelectionToMolecule(mol) {
     const selectedAtomIds = context.state.getSelectedAtomIds();

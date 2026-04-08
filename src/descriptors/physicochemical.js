@@ -23,8 +23,7 @@ const _OSP_HETEROATOMS = new Set(['O', 'S', 'P']);
 /**
  * Throws a `TypeError` if `mol` is not a Molecule-like object (with `.atoms`
  * and `.bonds` Maps).
- *
- * @param {*} mol
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
  * @param {string} name - Parameter name used in the error message.
  */
 function assertMolecule(mol, name) {
@@ -35,9 +34,8 @@ function assertMolecule(mol, name) {
 
 /**
  * Returns all non-hydrogen atoms in `mol`.
- *
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {import('../core/Atom.js').Atom[]}
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {import('../core/Atom.js').Atom[]} Array of results.
  */
 function _heavyAtoms(mol) {
   return [...mol.atoms.values()].filter(a => a.name !== 'H');
@@ -45,9 +43,8 @@ function _heavyAtoms(mol) {
 
 /**
  * Returns `ids` sorted lexicographically (stable, no mutation).
- *
- * @param {Iterable<string>} ids
- * @returns {string[]}
+ * @param {Iterable<string>} ids - The ids value.
+ * @returns {string[]} Array of results.
  */
 function _sortIds(ids) {
   return [...ids].sort((a, b) => String(a).localeCompare(String(b)));
@@ -57,9 +54,8 @@ function _sortIds(ids) {
  * Returns a deterministically sorted copy of `rings` (sorted atom IDs within
  * each ring, then rings sorted by length then lexicographically).  Used to
  * produce stable, order-independent descriptor values.
- *
- * @param {string[][]} rings
- * @returns {string[][]}
+ * @param {string[][]} rings - Array of ring atom ID arrays.
+ * @returns {string[][]} Array of results.
  */
 function _sortRings(rings) {
   return rings.map(ring => _sortIds(ring)).sort((a, b) => a.length - b.length || a.join('\u0000').localeCompare(b.join('\u0000')));
@@ -71,10 +67,9 @@ function _sortRings(rings) {
  * Returns `'sp'` when a triple bond is present, `'sp2'` when a double or
  * aromatic bond is present, otherwise `'sp3'`.  Falls back to the stored
  * `atom.properties.hybridization` value if one is already set.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {'sp'|'sp2'|'sp3'}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {'sp'|'sp2'|'sp3'} The computed result.
  */
 function _hybSp(atom, mol) {
   if (atom.getHybridization()) {
@@ -116,8 +111,7 @@ const VALENCE = {
 /**
  * Returns the primary valence target for `atom` used when counting implicit
  * hydrogens for descriptor calculations (SMILES valence convention).
- *
- * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
  * @returns {number|undefined} `undefined` for elements not in the valence table.
  */
 function _targetValence(atom) {
@@ -146,6 +140,9 @@ function _targetValence(atom) {
  * `implicitH = primaryValence − Σ(bond orders) − |formal charge adjustment|`.
  *
  * Returns 0 for elements not in the valence table or when the atom is over-bonded.
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number} The estimated implicit hydrogen count.
  */
 function _implicitH(atom, mol) {
   const targetValence = _targetValence(atom);
@@ -172,10 +169,9 @@ function _implicitH(atom, mol) {
  * Returns the total number of hydrogen atoms attached to `atom` — explicit
  * H neighbours first, falling back to the implicit H count from
  * `_implicitH` when no explicit H atoms are found.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {number}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number} The computed numeric value.
  */
 function _attachedHydrogenCount(atom, mol) {
   const explicit = atom.getHydrogenNeighbors
@@ -198,11 +194,10 @@ function _attachedHydrogenCount(atom, mol) {
  * Returns `true` when `center` has at least one multiple bond (order ≥ 2) to
  * a heteroatom (O, N, S, P), excluding the bond with ID `excludeBondId`.
  * Used to detect carbonyl-like or sulfonyl-like centres.
- *
- * @param {import('../core/Atom.js').Atom} center
- * @param {import('../core/Molecule.js').Molecule} mol
- * @param {string|null} [excludeBondId=null]
- * @returns {boolean}
+ * @param {import('../core/Atom.js').Atom} center - Center coordinates {x, y}.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string|null} [excludeBondId] - The excludeBondId value.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _hasMultipleBondToHetero(center, mol, excludeBondId = null) {
   for (const bId of center.bonds) {
@@ -230,10 +225,9 @@ function _hasMultipleBondToHetero(center, mol, excludeBondId = null) {
  * and is directly bonded to a carbonyl-like centre (C=O, C=S, S=O, P=O, …).
  * Used to exclude carboxylic-acid and ester OH groups from the H-bond donor
  * count in some lipophilicity models.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {boolean}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _isAcidicOH(atom, mol) {
   if (atom.name !== 'O') {
@@ -263,10 +257,9 @@ function _isAcidicOH(atom, mol) {
  *
  * Guanidine and amidine carbons (C=N) are intentionally NOT matched, so their
  * NH groups remain counted as genuine acceptors.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {boolean}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _isAmideLikeNitrogen(atom, mol) {
   if (atom.name !== 'N') {
@@ -317,10 +310,9 @@ function _isAmideLikeNitrogen(atom, mol) {
  * - Amide-like N conjugated to a carbonyl centre
  * - Acidic OH groups (carboxylic acids, sulfonamides)
  * - S/P with a multiple bond to a heteroatom (sulfonyl-like)
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {boolean}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _isHBondAcceptor(atom, mol) {
   const charge = atom.getCharge();
@@ -388,10 +380,9 @@ const CRIPPEN = {
 /**
  * Maps `atom` to a Crippen atom-type key (e.g. `'C:sp3'`, `'O:oh'`, `'N:+'`).
  * Returns `null` for elements not covered by the simplified Crippen table.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {string|null}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {string|null} The result string, or `null` if not applicable.
  */
 function _crippinKey(atom, mol) {
   const el = atom.name;
@@ -427,8 +418,7 @@ function _crippinKey(atom, mol) {
 
 /**
  * Estimates lipophilicity using the Crippen atom-contribution method.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @returns {number} logP rounded to two decimal places.
  */
 export function logP(molecule) {
@@ -450,8 +440,7 @@ export function logP(molecule) {
 /**
  * Computes the Topological Polar Surface Area (Å²) using Ertl atomic
  * contributions.  Only N, O, S, and P atoms contribute.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @returns {number} TPSA in Å² rounded to two decimal places.
  */
 export function tpsa(molecule) {
@@ -503,9 +492,8 @@ export function tpsa(molecule) {
 
 /**
  * Counts hydrogen-bond donors (NH and OH groups).
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {{ count: number, atoms: string[] }}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {{ count: number, atoms: string[] }} The result object.
  */
 export function hBondDonors(molecule) {
   assertMolecule(molecule, 'molecule');
@@ -519,9 +507,8 @@ export function hBondDonors(molecule) {
 
 /**
  * Counts hydrogen-bond acceptors (all N and O atoms, Lipinski definition).
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {{ count: number, atoms: string[] }}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {{ count: number, atoms: string[] }} The result object.
  */
 export function hBondAcceptors(molecule) {
   assertMolecule(molecule, 'molecule');
@@ -540,9 +527,8 @@ export function hBondAcceptors(molecule) {
 /**
  * Counts rotatable bonds (single, non-aromatic, between two non-terminal
  * heavy atoms).  Delegates to {@link Bond#isRotatable}.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {{ count: number, bonds: string[] }}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {{ count: number, bonds: string[] }} The result object.
  */
 export function rotatableBondCount(molecule) {
   assertMolecule(molecule, 'molecule');
@@ -557,8 +543,7 @@ export function rotatableBondCount(molecule) {
 /**
  * Computes the fraction of sp3 carbons (Fsp3), a measure of molecular
  * complexity and three-dimensionality.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @returns {{ value: number, atoms: string[] }} `value` is rounded to three
  *   decimal places; `atoms` is the sorted list of sp3 carbon atom IDs.
  */
@@ -602,8 +587,7 @@ const CRIPPEN_MR = {
 /**
  * Estimates the molar refractivity using the Crippen atom-contribution method
  * (Wildman & Crippen, JCICS 1999).
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @returns {number} Molar refractivity (cm³/mol) rounded to two decimal places.
  */
 export function molarRefractivity(molecule) {
@@ -624,9 +608,8 @@ export function molarRefractivity(molecule) {
 
 /**
  * Returns the total number of rings (SSSR).
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {{ count: number, atoms: string[][] }}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {{ count: number, atoms: string[][] }} The result object.
  */
 export function ringCount(molecule) {
   assertMolecule(molecule, 'molecule');
@@ -636,9 +619,8 @@ export function ringCount(molecule) {
 
 /**
  * Returns the number of fully-aromatic rings.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {{ count: number, atoms: string[][] }}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {{ count: number, atoms: string[][] }} The result object.
  */
 export function aromaticRingCount(molecule) {
   assertMolecule(molecule, 'molecule');
@@ -659,9 +641,8 @@ export function aromaticRingCount(molecule) {
 
 /**
  * Returns the number of defined stereocenters.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {{ count: number, atoms: string[] }}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {{ count: number, atoms: string[] }} The result object.
  */
 export function stereocenters(molecule) {
   assertMolecule(molecule, 'molecule');
@@ -675,9 +656,8 @@ export function stereocenters(molecule) {
 
 /**
  * Returns the total formal charge of the molecule.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {number}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {number} The computed numeric value.
  */
 export function formalCharge(molecule) {
   assertMolecule(molecule, 'molecule');
@@ -691,9 +671,8 @@ export function formalCharge(molecule) {
 /**
  * Evaluates Veber's oral bioavailability rules:
  * TPSA ≤ 140 Å² AND rotatable bonds ≤ 10.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {{ tpsa: number, rotatableBonds: number, passes: boolean }}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {{ tpsa: number, rotatableBonds: number, passes: boolean }} The result object.
  */
 export function veberRules(molecule) {
   assertMolecule(molecule, 'molecule');
@@ -710,7 +689,16 @@ export function veberRules(molecule) {
 
 /**
  * Asymmetric double-sigmoid (ADS) used by Bickerton 2012.
+ * @param {number} x - X coordinate.
+ * @param {Vec2} a - First point.
+ * @param {Vec2} b - Second point.
+ * @param {Vec2} c - Third point.
+ * @param {number} d - ADS parameter d.
+ * @param {number} e - ADS parameter e.
+ * @param {number} f - ADS parameter f.
+ * @param {number} dmax - ADS domain maximum.
  * @private
+ * @returns {number} Desirability score in [0, 1].
  */
 function _ads(x, a, b, c, d, e, f, dmax) {
   const sig1 = 1 / (1 + Math.exp(-(x - c + d / 2) / e));
@@ -720,7 +708,12 @@ function _ads(x, a, b, c, d, e, f, dmax) {
 
 /**
  * Bell desirability: 1 in [lo, hi], Gaussian decay outside with std σ.
+ * @param {number} x - X coordinate.
+ * @param {number} lo - Lower bound.
+ * @param {number} hi - Upper bound.
+ * @param {number} sigma - Sigma parameter value.
  * @private
+ * @returns {number} Desirability score in [0, 1].
  */
 function _bellExpD(x, lo, hi, sigma) {
   if (x < lo) {
@@ -745,8 +738,7 @@ const _QED_W = [0.66, 0.47, 0.05, 0.1, 0.09, 0.07, 0.44];
  * parameters) and Gaussian-bell approximations for HBD, HBA, TPSA,
  * rotatable bonds, and aromatic rings.  The weighted geometric mean follows
  * Bickerton et al. (Nat. Chem. 2012, 4, 90-98).
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @returns {number} QED score in [0, 1] rounded to three decimal places.
  */
 export function qed(molecule) {
@@ -786,10 +778,9 @@ export function qed(molecule) {
  *
  * Returns an object with individual descriptor values, the number of
  * violations, and a `passes` boolean (Lipinski allows one violation).
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @returns {{ molecularWeight: number, logP: number, hBondDonors: number,
- *             hBondAcceptors: number, violations: number, passes: boolean }}
+ *             hBondAcceptors: number, violations: number, passes: boolean }} The result object.
  */
 export function lipinskiRuleOfFive(molecule) {
   assertMolecule(molecule, 'molecule');
@@ -816,10 +807,9 @@ export function lipinskiRuleOfFive(molecule) {
  * Returns the absolute Pauling electronegativity difference |χ_A − χ_B| for a
  * single bond.  Returns `null` if either atom has no EN data or if the bond is
  * not found.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {string} bondId
- * @returns {number|null}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {string} bondId - The bond ID.
+ * @returns {number|null} The computed value, or `null` if not applicable.
  */
 export function bondElectronegativityDifference(molecule, bondId) {
   assertMolecule(molecule, 'molecule');
@@ -846,9 +836,8 @@ export function bondElectronegativityDifference(molecule, bondId) {
 /**
  * Returns an array of `{ bondId, delta }` objects for every bond in the
  * molecule.  `delta` is `null` when either atom has no electronegativity data.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {Array<{ bondId: string, delta: number|null }>}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {Array<{ bondId: string, delta: number|null }>} Array of results.
  */
 export function bondPolarities(molecule) {
   assertMolecule(molecule, 'molecule');
@@ -862,9 +851,8 @@ export function bondPolarities(molecule) {
  * Returns the mean Pauling electronegativity difference averaged over all bonds
  * for which both atoms have EN data.  Returns `0` for a molecule with no such
  * bonds.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {number}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {number} The computed numeric value.
  */
 export function meanBondPolarity(molecule) {
   assertMolecule(molecule, 'molecule');

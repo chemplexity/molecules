@@ -1,5 +1,10 @@
 /** @module app/render/render-runtime */
 
+/**
+ * Creates the render runtime, wiring the shared scene renderer into `draw2d`, `updateForce`, and `renderMol` delegates.
+ * @param {object} deps - Dependency object providing `scene` with `draw2d`, `updateForce`, and `renderMol` methods.
+ * @returns {object} Object with `draw2d`, `updateForce`, and `renderMol` functions.
+ */
 export function createRenderRuntime(deps) {
   function draw2d() {
     return deps.scene.draw2d();
@@ -11,15 +16,14 @@ export function createRenderRuntime(deps) {
 
   /**
    * Renders the provided molecule in the active layout mode.
-   *
-   * @param {object} mol
-   * @param {object} [options={}]
-   * @param {boolean} [options.recomputeResonance=true]
-   * @param {boolean} [options.refreshResonancePanel=true]
-   * @param {boolean} [options.preserveHistory=false]
-   * @param {boolean} [options.preserveGeometry=false]
-   * @param {boolean} [options.preserveView=false]
-   * @param {boolean} [options.preserveAnalysis=false]
+   * @param {object} mol - The molecule to render.
+   * @param {object} [options] - Optional rendering flags.
+   * @param {boolean} [options.recomputeResonance] - When true, regenerates resonance contributors before rendering.
+   * @param {boolean} [options.refreshResonancePanel] - When true, updates the resonance panel UI after rendering.
+   * @param {boolean} [options.preserveHistory] - When true, skips pushing a new undo snapshot.
+   * @param {boolean} [options.preserveGeometry] - When true, retains the existing 2D coordinates.
+   * @param {boolean} [options.preserveView] - When true, does not reset the viewport transform.
+   * @param {boolean} [options.preserveAnalysis] - When true, keeps existing analysis highlights.
    */
   function renderMol(mol, options = {}) {
     const { recomputeResonance = true, refreshResonancePanel = true, preserveHistory = false, preserveGeometry = false, preserveView = false, preserveAnalysis = false } = options;

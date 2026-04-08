@@ -484,6 +484,8 @@ describe('parseSMILES – CIP R/S ring-closure chirality', () => {
  * Parse → serialize → re-parse, returning the re-parsed Molecule.
  * Used to verify round-trip chemical equivalence without relying on
  * canonical string equality.
+ * @param {string} smiles - The SMILES string.
+ * @returns {object} The re-parsed molecule.
  */
 function roundTrip(smiles) {
   return parseSMILES(toSMILES(parseSMILES(smiles)));

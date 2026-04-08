@@ -2,6 +2,11 @@
 
 import { Molecule } from '../../core/Molecule.js';
 
+/**
+ * Creates the app-delegates object that exposes high-level editor, drawing, and render operations consumed by scene renderers and interaction handlers.
+ * @param {object} deps - Dependency object including state, primitive selection, render helpers, structural edit actions, draw-bond actions, scene renderer, editing actions, zoom helpers, stereo helpers, render runtime, and input flow manager.
+ * @returns {object} Delegate object with methods for primitive click handling, bond drawing, atom element changes, 2D rendering, zoom, and molecule parsing.
+ */
 export function createAppDelegates(deps) {
   function ensureMol() {
     if (deps.state.getMode() === 'force') {

@@ -1,9 +1,18 @@
 /** @module app/interactions/gesture-layer */
 
+/**
+ * Returns true when the event's modifier keys indicate an additive (extend) selection gesture.
+ * @param {MouseEvent} event - The mouse event to test.
+ * @returns {boolean} True if the Meta or Ctrl key is held.
+ */
 export function isAdditiveSelectionEvent(event) {
   return !!(event.metaKey || event.ctrlKey);
 }
 
+/**
+ * Attaches all SVG and document-level gesture event listeners for selection drag, draw-bond, and erase-paint interactions.
+ * @param {object} context - Dependency context providing svg, g, state, simulation, view, drawBond, selection, renderers, actions, helpers, overlays, pointer, schedule, and dom.
+ */
 export function initGestureInteractions(context) {
   const { svg, g, doc = document } = context;
 

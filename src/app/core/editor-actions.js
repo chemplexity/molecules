@@ -22,6 +22,11 @@ export const ViewportPolicy = Object.freeze({
   restoreEdit: 'restore-edit'
 });
 
+/**
+ * Creates the editor actions object which coordinates structural edits, snapshot policy, reaction preview policy, and re-rendering.
+ * @param {object} deps - Dependency object providing state, renderers, history, analysis, view, and overlays.
+ * @returns {object} Object containing the `performStructuralEdit` function.
+ */
 export function createEditorActions(deps) {
   function performStructuralEdit(kind, options = {}, mutateFn) {
     const {

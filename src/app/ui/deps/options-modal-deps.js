@@ -1,5 +1,11 @@
 /** @module app/ui/options-modal-deps */
 
+/**
+ * Builds the structured dependency object for the OptionsModal factory,
+ * mapping flat dependency properties into named sub-objects (doc, dom, options, state, view, renderers).
+ * @param {object} deps - Flat app context providing OptionsModal-related methods and values.
+ * @returns {object} Dependency object consumed by `createOptionsModal`.
+ */
 export function createOptionsModalDeps(deps) {
   return {
     doc: deps.doc,

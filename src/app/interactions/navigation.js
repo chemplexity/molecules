@@ -1,5 +1,10 @@
 /** @module app/interactions/navigation */
 
+/**
+ * Creates navigation action handlers for mode toggling, layout cleaning, rotation, and flipping in both 2D and force-layout modes.
+ * @param {object} context - Dependency context providing state, history, view, renderers, dom, simulation, force, helpers, overlays, parsers, and actions.
+ * @returns {object} Object with `cleanLayout2d`, `cleanLayoutForce`, `toggleMode`, `startRotate`, `stopRotate`, and `flip`.
+ */
 export function createNavigationActions(context) {
   let rotateInterval = null;
   let clean2dBtnTimer = null;
@@ -93,12 +98,7 @@ export function createNavigationActions(context) {
       return;
     }
 
-    const mol =
-      resonanceResetMol
-        ? resonanceResetMol.clone()
-        : currentInchi
-          ? context.parsers.parseINCHI(currentInchi)
-          : context.parsers.parseSMILES(currentSmiles);
+    const mol = resonanceResetMol ? resonanceResetMol.clone() : currentInchi ? context.parsers.parseINCHI(currentInchi) : context.parsers.parseSMILES(currentSmiles);
     context.renderers.renderMol(mol, { preserveHistory: true });
   }
 
@@ -241,7 +241,42 @@ export function createNavigationActions(context) {
         patchPos.set(node.id, { x: node.x, y: node.y });
       }
       context.force.patchForceNodePositions(patchPos, { setAnchors: true, alpha: 0 });
-      context.helpers.flipDisplayStereo?.(mol);
+      const flipResult = context.helpers.flipDisplayStereo?.(mol);
+      if (flipResult?.size && mol?.__reactionPreview) {
+        // Flip every stereo-type entry in all reaction-preview Maps.
+        // These Map objects are the same references as the module-level
+        // _reactionPreview* variables in reaction-2d.js (passed by reference
+        // via _alignReaction2dProductOrientation → preserveReaction2dStereoDisplay).
+        // preserveReaction2dStereoDisplay rebuilds forcedStereoByCenter /
+        // forcedStereoBondTypes from the preserved* maps every render, so ALL
+        // maps must be flipped here to prevent the next render from undoing it.
+        const flipType = t => (t === 'wedge' ? 'dash' : t === 'dash' ? 'wedge' : t);
+        const preview = mol.__reactionPreview;
+        for (const [k, v] of preview.forcedStereoBondTypes ?? new Map()) {
+          preview.forcedStereoBondTypes.set(k, flipType(v));
+        }
+        for (const [k, v] of preview.preservedReactantStereoBondTypes ?? new Map()) {
+          preview.preservedReactantStereoBondTypes.set(k, flipType(v));
+        }
+        for (const [k, v] of preview.preservedProductStereoBondTypes ?? new Map()) {
+          preview.preservedProductStereoBondTypes.set(k, flipType(v));
+        }
+        for (const [k, v] of preview.forcedStereoByCenter ?? new Map()) {
+          if (v?.type) {
+            preview.forcedStereoByCenter.set(k, { ...v, type: flipType(v.type) });
+          }
+        }
+        for (const [k, v] of preview.preservedReactantStereoByCenter ?? new Map()) {
+          if (v?.type) {
+            preview.preservedReactantStereoByCenter.set(k, { ...v, type: flipType(v.type) });
+          }
+        }
+        for (const [k, v] of preview.preservedProductStereoByCenter ?? new Map()) {
+          if (v?.type) {
+            preview.preservedProductStereoByCenter.set(k, { ...v, type: flipType(v.type) });
+          }
+        }
+      }
       context.renderers.updateForce(mol, { preservePositions: true, preserveView: true });
       context.view.restorePersistentHighlight();
       return;
@@ -295,6 +330,12 @@ export function createNavigationActions(context) {
   };
 }
 
+/**
+ * Attaches document-level mouse event listeners for rotate and flip button interactions.
+ * @param {object} params - Navigation interaction parameters.
+ * @param {Document} [params.doc] - Document to attach listeners to (defaults to globalThis.document).
+ * @param {object} params.controller - App controller with `performViewAction` for dispatching navigation actions.
+ */
 export function initNavigationInteractions({ doc = document, controller }) {
   doc.addEventListener('mousedown', event => {
     const btn = event.target.closest('#rotate-ccw, #rotate-cw, #force-rotate-ccw, #force-rotate-cw');

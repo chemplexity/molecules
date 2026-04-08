@@ -33,11 +33,10 @@ const EXOCYCLIC_AROMATIC_HALIDE_DONOR_SYMBOLS = new Set(['F', 'Cl', 'Br', 'I']);
  * These are the same "ordinary chemistry" valence families used by the
  * validator and serve as the neutral baseline before any charge/radical shift
  * is applied during resonance charge assignment.
- *
- * @param {string} symbol
- * @param {number} group
- * @param {number} period
- * @returns {number[]}
+ * @param {string} symbol - The atomic symbol.
+ * @param {number} group - The group value.
+ * @param {number} period - The period value.
+ * @returns {number[]} Array of results.
  */
 function _commonNeutralValences(symbol, group, period) {
   if (symbol === 'H') {
@@ -73,12 +72,11 @@ function _commonNeutralValences(symbol, group, period) {
  * This mirrors the common-valence logic in validation: carbon-family atoms
  * usually step down with charge magnitude, while heavier pnictogens/chalcogens
  * can step up under cationic resonance assignments.
- *
- * @param {string} symbol
- * @param {import('../core/Atom.js').Atom} atom
- * @param {number} charge
- * @param {number} [radical=atom.properties.radical ?? 0]
- * @returns {number[]}
+ * @param {string} symbol - The atomic symbol.
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {number} charge - Formal charge value.
+ * @param {number} [radical] - Radical electron count.
+ * @returns {number[]} Array of results.
  */
 function _shiftedCommonValences(symbol, atom, charge, radical = atom.properties.radical ?? 0) {
   const group = atom.properties.group;
@@ -105,12 +103,11 @@ function _shiftedCommonValences(symbol, atom, charge, radical = atom.properties.
  *
  * Candidate charges are limited to values whose shifted common valence family
  * can accommodate the proposed total bond order.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {number} bondSum
- * @param {number} maxCharge
- * @param {number} [radical=atom.properties.radical ?? 0]
- * @returns {number[]}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {number} bondSum - The bondSum value.
+ * @param {number} maxCharge - Maximum allowed formal charge.
+ * @param {number} [radical] - Radical electron count.
+ * @returns {number[]} Array of results.
  */
 function _candidateFormalCharges(atom, bondSum, maxCharge, radical = atom.properties.radical ?? 0) {
   const group = atom.properties.group;
@@ -140,10 +137,9 @@ function _candidateFormalCharges(atom, bondSum, maxCharge, radical = atom.proper
  * Lower cost is preferred. The canonical live charge is favored, small charge
  * magnitudes are preferred over larger ones, and heteroatoms are biased toward
  * negative charge while carbons are biased away from it.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {number} charge
- * @returns {number}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {number} charge - Formal charge value.
+ * @returns {number} The computed numeric value.
  */
 function _formalChargeAssignmentCost(atom, charge) {
   const canonicalCharge = atom.properties.charge ?? 0;
@@ -172,10 +168,9 @@ function _formalChargeAssignmentCost(atom, charge) {
  * Aromatic resonance enumeration already has dedicated ring-level validation,
  * and the earlier octet-fill bookkeeping works well there, so we keep it for
  * aromatic atoms while using the newer valence-family solver for non-aromatics.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {number} bondSum
- * @returns {number}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {number} bondSum - The bondSum value.
+ * @returns {number} The computed numeric value.
  */
 function _legacyFormalCharge(atom, bondSum) {
   const group = atom.properties.group;
@@ -198,11 +193,10 @@ function _legacyFormalCharge(atom, bondSum) {
  * bond, while pyrrole-/furan-like heteroatoms contribute via a lone pair and
  * therefore take part in zero ring pi bonds. Cationic O/S and pyridinium-like
  * N shift back to one ring pi bond.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {number} formalCharge
- * @returns {number|null}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {number} formalCharge - The formalCharge value.
+ * @returns {number|null} The computed value, or `null` if not applicable.
  */
 function _expectedAromaticPiBondCount(atom, molecule, formalCharge) {
   if (!atom?.properties?.aromatic) {
@@ -245,13 +239,12 @@ function _expectedAromaticPiBondCount(atom, molecule, formalCharge) {
 /**
  * Returns true when an aromatic atom is double-bonded to a positively charged
  * exocyclic halide donor that can feed electron density into the aromatic ring.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {Set<string>|null} ringAtomSet
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Map<string, number>} bondOrders
- * @param {Map<string, number>} formalCharges
- * @returns {boolean}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {Set<string>|null} ringAtomSet - The ringAtomSet value.
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Map<string, number>} bondOrders - Map of bond ID to bond order.
+ * @param {Map<string, number>} formalCharges - Map of atom ID to formal charge.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _hasExocyclicPositiveDonorPiBond(atom, ringAtomSet, molecule, bondOrders, formalCharges) {
   for (const bondId of atom.bonds) {
@@ -286,14 +279,13 @@ function _hasExocyclicPositiveDonorPiBond(atom, ringAtomSet, molecule, bondOrder
  *
  * This mirrors the Hückel bookkeeping from `algorithms/aromaticity.js`, but
  * uses the candidate state's localised bond orders and formal charges.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {Set<string>} ringAtomSet
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Map<string, number>} bondOrders
- * @param {number} formalCharge
- * @param {Map<string, number>} formalCharges
- * @returns {number|null}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {Set<string>} ringAtomSet - The ringAtomSet value.
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Map<string, number>} bondOrders - Map of bond ID to bond order.
+ * @param {number} formalCharge - The formalCharge value.
+ * @param {Map<string, number>} formalCharges - Map of atom ID to formal charge.
+ * @returns {number|null} The computed value, or `null` if not applicable.
  */
 function _localizedRingPiElectrons(atom, ringAtomSet, molecule, bondOrders, formalCharge, formalCharges) {
   const ringBonds = atom.bonds.map(bondId => molecule.bonds.get(bondId)).filter(bond => bond && ringAtomSet.has(bond.getOtherAtom(atom.id)));
@@ -379,12 +371,11 @@ function _localizedRingPiElectrons(atom, ringAtomSet, molecule, bondOrders, form
  * lives on a lone-pair donor outside the ring (for example `Cl+` in
  * chlorobenzene-like contributors) while the ring itself carries the
  * compensating negative charge.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {string[]} ring
- * @param {Map<string, number>} bondOrders
- * @param {Map<string, number>} formalCharges
- * @returns {boolean}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {string[]} ring - Ring atom ID array.
+ * @param {Map<string, number>} bondOrders - Map of bond ID to bond order.
+ * @param {Map<string, number>} formalCharges - Map of atom ID to formal charge.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _hasSupportedExocyclicAromaticDonorPair(molecule, ring, bondOrders, formalCharges) {
   const ringAtomSet = new Set(ring);
@@ -425,9 +416,8 @@ function _hasSupportedExocyclicAromaticDonorPair(molecule, ring, bondOrders, for
 
 /**
  * Returns true when `piCount` satisfies Hückel's 4n + 2 rule.
- *
- * @param {number} piCount
- * @returns {boolean}
+ * @param {number} piCount - The piCount value.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _isHuckelCount(piCount) {
   if (piCount < 2) {
@@ -447,10 +437,9 @@ function _isHuckelCount(piCount) {
  * A cumulene centre has two or more double bonds, is not in a ring, and is
  * carbon — these have orthogonal pi orbitals and do not participate in
  * planar delocalization.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {boolean}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _isCumuleneCentre(atom, molecule) {
   if (atom.name !== 'C') {
@@ -485,9 +474,8 @@ function _isCumuleneCentre(atom, molecule) {
  *
  * Excludes cumulene central atoms (allene-type carbons with two orthogonal
  * pi bonds outside rings).
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {{ atomIds: Set<string>, bondIds: Set<string> }}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {{ atomIds: Set<string>, bondIds: Set<string> }} The result object.
  */
 function _buildPiSystem(molecule) {
   const bondIds = new Set();
@@ -577,11 +565,10 @@ function _buildPiSystem(molecule) {
  * Cartesian-product permutations are often mathematically valid but visually
  * noisy, so callers can use these components to suppress multi-region state
  * combinations.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Set<string>} atomIds
- * @param {Set<string>} bondIds
- * @returns {Array<{ atomIds: Set<string>, bondIds: Set<string> }>}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Set<string>} atomIds - Array of atom IDs.
+ * @param {Set<string>} bondIds - Array of bond IDs.
+ * @returns {Array<{ atomIds: Set<string>, bondIds: Set<string> }>} Array of results.
  */
 function _piSystemComponents(molecule, atomIds, bondIds) {
   const adjacency = new Map();
@@ -644,10 +631,9 @@ function _piSystemComponents(molecule, atomIds, bondIds) {
  * (making electron delocalization meaningful). An isolated C≡C with no
  * adjacent pi system is treated as fixed-only; demoting it to a double bond
  * would produce a carbene with no resonance pathway for the displaced electrons.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Set<string>} bondIds
- * @returns {{ fixedBondIds: Set<string>, candidateBondIds: Set<string> }}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Set<string>} bondIds - Array of bond IDs.
+ * @returns {{ fixedBondIds: Set<string>, candidateBondIds: Set<string> }} The result object.
  */
 function _classifyBonds(molecule, bondIds) {
   const fixedBondIds = new Set();
@@ -694,11 +680,10 @@ function _classifyBonds(molecule, bondIds) {
  * force-filling octets. That keeps electron-deficient contributors such as
  * `C+=O-` reachable, which the earlier octet-fill heuristic incorrectly
  * rejected by assigning the carbon a negative charge.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {number} bondSum
- * @param {number} maxCharge
- * @returns {number[]}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {number} bondSum - The bondSum value.
+ * @param {number} maxCharge - Maximum allowed formal charge.
+ * @returns {number[]} Array of results.
  */
 /**
  * Derives formal charges for all pi-system atoms given a bond-order assignment.
@@ -706,12 +691,11 @@ function _classifyBonds(molecule, bondIds) {
  * Instead of inferring lone pairs by padding every atom to an octet, this
  * chooses a charge assignment whose bond-order sums fit each element's common
  * charge-shifted valence family while conserving the canonical total charge.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Set<string>} atomIds
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Set<string>} atomIds - Array of atom IDs.
  * @param {Map<string, number>} bondOrders - bondId → resolved integer order
- * @param {number} maxCharge
- * @param {Map<string, number>|null} [atomRadicals=null]
+ * @param {number} maxCharge - Maximum allowed formal charge.
+ * @param {Map<string, number>|null} [atomRadicals] - Map of atom ID to radical electron count.
  * @returns {Map<string, number>|null} atomId → formal charge
  */
 function _deriveFormalCharges(molecule, atomIds, bondOrders, maxCharge, atomRadicals = null) {
@@ -812,14 +796,13 @@ function _deriveFormalCharges(molecule, atomIds, bondOrders, maxCharge, atomRadi
  * while pyrrole-/furan-like heteroatoms that donate a lone pair must
  * participate in none. This avoids partial matchings while still allowing
  * fused heteroaromatics such as indoles.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Set<string>} atomIds
- * @param {Map<string, number>} bondOrders
- * @param {Map<string, number>} formalCharges
- * @param {number} maxCharge
- * @param {Map<string, number>|null} [atomRadicals=null]
- * @returns {boolean}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Set<string>} atomIds - Array of atom IDs.
+ * @param {Map<string, number>} bondOrders - Map of bond ID to bond order.
+ * @param {Map<string, number>} formalCharges - Map of atom ID to formal charge.
+ * @param {number} maxCharge - Maximum allowed formal charge.
+ * @param {Map<string, number>|null} [atomRadicals] - Map of atom ID to radical electron count.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge, atomRadicals = null) {
   const aromaticRings = molecule.getRings().filter(ring => ring.every(atomId => molecule.atoms.get(atomId)?.properties?.aromatic));
@@ -945,11 +928,10 @@ function _isValidState(molecule, atomIds, bondOrders, formalCharges, maxCharge, 
 /**
  * Serialises a bond-order assignment + atom charge/radical map to a
  * deduplication string key.
- *
- * @param {Map<string, number>} bondOrders
- * @param {Map<string, number>} atomCharges
- * @param {Map<string, number>} atomRadicals
- * @returns {string}
+ * @param {Map<string, number>} bondOrders - Map of bond ID to bond order.
+ * @param {Map<string, number>} atomCharges - The atomCharges value.
+ * @param {Map<string, number>} atomRadicals - The atomRadicals value.
+ * @returns {string} The result string.
  */
 function _stateKey(bondOrders, atomCharges, atomRadicals) {
   const bParts = [...bondOrders.entries()].sort(([a], [b]) => (a < b ? -1 : 1)).map(([id, o]) => `${id}:${o}`);
@@ -961,11 +943,10 @@ function _stateKey(bondOrders, atomCharges, atomRadicals) {
 /**
  * Resolves a bond's order from a candidate state, falling back to the live
  * localized/canonical order when the state stores only partial overrides.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Map<string, number>} bondOrders
- * @param {string} bondId
- * @returns {number}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Map<string, number>} bondOrders - Map of bond ID to bond order.
+ * @param {string} bondId - The bond ID.
+ * @returns {number} The computed numeric value.
  */
 function _resolvedBondOrder(molecule, bondOrders, bondId) {
   const bond = molecule.bonds.get(bondId);
@@ -980,12 +961,11 @@ function _resolvedBondOrder(molecule, bondOrders, bondId) {
  * octet centers such as sulfur or phosphorus can legitimately host more than
  * one movable pi bond, so their limit is derived from the largest common
  * charge-shifted valence family available within `maxCharge`.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Set<string>} fixedBondIds
- * @param {number} maxCharge
- * @returns {number}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Set<string>} fixedBondIds - The fixedBondIds value.
+ * @param {number} maxCharge - Maximum allowed formal charge.
+ * @returns {number} The computed numeric value.
  */
 function _maxCandidatePiBondCount(atom, molecule, fixedBondIds, maxCharge) {
   let baselineBondOrder = 0;
@@ -1021,14 +1001,13 @@ function _maxCandidatePiBondCount(atom, molecule, fixedBondIds, maxCharge) {
  * only one matched candidate bond at a time, but expanded-octet centers such as
  * sulfate sulfur may host multiple matched bonds simultaneously. After
  * assigning all bonds, formal charges are derived and validity is checked.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Set<string>} atomIds
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Set<string>} atomIds - Array of atom IDs.
  * @param {string[]} candidates - Ordered array of candidate bond IDs
- * @param {Set<string>} fixedBondIds
- * @param {number} maxContributors
- * @param {number} maxCharge
- * @returns {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }>}
+ * @param {Set<string>} fixedBondIds - The fixedBondIds value.
+ * @param {number} maxContributors - Maximum number of resonance contributors.
+ * @param {number} maxCharge - Maximum allowed formal charge.
+ * @returns {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }>} Array of results.
  */
 function _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxContributors, maxCharge) {
   const results = [];
@@ -1186,15 +1165,14 @@ function _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, maxCon
  * atom B by alternating bond orders 1/2 or 2/1:
  * - R-A-B with orders 1/2 becomes 2/1 and the radical moves from R to B
  * - R-A-B with orders 2/1 becomes 1/2 and the radical moves from R to B
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Set<string>} atomIds
- * @param {Set<string>} bondIds
- * @param {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }>} baseStates
- * @param {number} maxContributors
- * @param {number} maxCharge
- * @param {Set<string>} seen
- * @returns {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }>}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Set<string>} atomIds - Array of atom IDs.
+ * @param {Set<string>} bondIds - Array of bond IDs.
+ * @param {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }>} baseStates - The baseStates value.
+ * @param {number} maxContributors - Maximum number of resonance contributors.
+ * @param {number} maxCharge - Maximum allowed formal charge.
+ * @param {Set<string>} seen - Set of already seen identifiers.
+ * @returns {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }>} Array of results.
  */
 function _enumerateRadicalStates(molecule, atomIds, bondIds, baseStates, maxContributors, maxCharge, seen) {
   const results = [];
@@ -1316,12 +1294,11 @@ function _enumerateRadicalStates(molecule, atomIds, bondIds, baseStates, maxCont
  * - −10 extra per charge on carbon specifically
  * - −5 per charge-separated pair (+ on one atom, − on non-adjacent atom)
  * - +5 if all pi-system atoms satisfy the octet rule
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Set<string>} atomIds
- * @param {Map<string, number>} atomCharges
- * @param {Map<string, number>} bondOrders
- * @returns {number}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Set<string>} atomIds - Array of atom IDs.
+ * @param {Map<string, number>} atomCharges - The atomCharges value.
+ * @param {Map<string, number>} bondOrders - Map of bond ID to bond order.
+ * @returns {number} The computed numeric value.
  */
 function _scoreState(molecule, atomIds, atomCharges, bondOrders) {
   let weight = 100;
@@ -1399,12 +1376,11 @@ function _scoreState(molecule, atomIds, atomCharges, bondOrders) {
  *
  * Lower cost means fewer bond-order, charge, or radical changes would be seen
  * when cycling between the two states.
- *
- * @param {{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }} fromState
- * @param {{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }} toState
- * @param {Set<string>} atomIds
- * @param {Set<string>} bondIds
- * @returns {number}
+ * @param {{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }} fromState - The fromState value.
+ * @param {{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }} toState - Target application state.
+ * @param {Set<string>} atomIds - Array of atom IDs.
+ * @param {Set<string>} bondIds - Array of bond IDs.
+ * @returns {number} The computed numeric value.
  */
 function _stateTransitionCost(fromState, toState, atomIds, bondIds) {
   let cost = 0;
@@ -1440,11 +1416,10 @@ function _stateTransitionCost(fromState, toState, atomIds, bondIds) {
  *
  * When false, the state introduces charge separation or relocates formal
  * charge relative to the canonical structure.
- *
- * @param {{ atomCharges: Map<string, number> }} state
- * @param {Map<string, number>} canonicalAtomCharges
- * @param {Set<string>} atomIds
- * @returns {boolean}
+ * @param {{ atomCharges: Map<string, number> }} state - Application state object.
+ * @param {Map<string, number>} canonicalAtomCharges - Map of canonical atom IDs to formal charges.
+ * @param {Set<string>} atomIds - Array of atom IDs.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _matchesCanonicalAtomCharges(state, canonicalAtomCharges, atomIds) {
   for (const atomId of atomIds) {
@@ -1458,13 +1433,12 @@ function _matchesCanonicalAtomCharges(state, canonicalAtomCharges, atomIds) {
 /**
  * Counts how many disconnected pi-system components differ from the canonical
  * live structure in the given state.
- *
- * @param {{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }} state
- * @param {Map<string, number>} canonicalBondOrders
- * @param {Map<string, number>} canonicalAtomCharges
- * @param {Map<string, number>} canonicalAtomRadicals
- * @param {Array<{ atomIds: Set<string>, bondIds: Set<string> }>} components
- * @returns {number}
+ * @param {{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }} state - Application state object.
+ * @param {Map<string, number>} canonicalBondOrders - The canonicalBondOrders value.
+ * @param {Map<string, number>} canonicalAtomCharges - Map of canonical atom IDs to formal charges.
+ * @param {Map<string, number>} canonicalAtomRadicals - The canonicalAtomRadicals value.
+ * @param {Array<{ atomIds: Set<string>, bondIds: Set<string> }>} components - Array of connected component atom ID arrays.
+ * @returns {number} The computed numeric value.
  */
 function _changedComponentCount(state, canonicalBondOrders, canonicalAtomCharges, canonicalAtomRadicals, components) {
   let changedCount = 0;
@@ -1504,12 +1478,11 @@ function _changedComponentCount(state, canonicalBondOrders, canonicalAtomCharges
  * Orders alternate resonance states so cycling between neighbors tends to show
  * the smallest visible change at each step, while keeping more stable states
  * earlier when multiple candidates are equally close.
- *
- * @param {{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number>, weight: number }} canonicalState
- * @param {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number>, weight: number }>} alternateStates
- * @param {Set<string>} atomIds
- * @param {Set<string>} bondIds
- * @returns {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number>, weight: number }>}
+ * @param {{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number>, weight: number }} canonicalState - The canonicalState value.
+ * @param {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number>, weight: number }>} alternateStates - The alternateStates value.
+ * @param {Set<string>} atomIds - Array of atom IDs.
+ * @param {Set<string>} bondIds - Array of bond IDs.
+ * @returns {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number>, weight: number }>} Array of results.
  */
 function _orderAlternateStatesForCycling(canonicalState, alternateStates, atomIds, bondIds) {
   const remaining = [...alternateStates];
@@ -1550,14 +1523,13 @@ function _orderAlternateStatesForCycling(canonicalState, alternateStates, atomId
  *
  * This prevents sparse internal state maps from being treated as distinct
  * contributors when they render identically to the canonical form.
- *
- * @param {{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }} state
- * @param {Map<string, number>} canonicalBondOrders
- * @param {Map<string, number>} canonicalAtomCharges
- * @param {Map<string, number>} canonicalAtomRadicals
- * @param {Set<string>} atomIds
- * @param {Set<string>} bondIds
- * @returns {string}
+ * @param {{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number> }} state - Application state object.
+ * @param {Map<string, number>} canonicalBondOrders - The canonicalBondOrders value.
+ * @param {Map<string, number>} canonicalAtomCharges - Map of canonical atom IDs to formal charges.
+ * @param {Map<string, number>} canonicalAtomRadicals - The canonicalAtomRadicals value.
+ * @param {Set<string>} atomIds - Array of atom IDs.
+ * @param {Set<string>} bondIds - Array of bond IDs.
+ * @returns {string} The result string.
  */
 function _resolvedStateKey(state, canonicalBondOrders, canonicalAtomCharges, canonicalAtomRadicals, atomIds, bondIds) {
   const resolvedBondOrders = new Map();
@@ -1582,10 +1554,9 @@ function _resolvedStateKey(state, canonicalBondOrders, canonicalAtomCharges, can
  * This is used as a lightweight proxy for how much charge separation a state
  * introduces. When collapsing permutation-heavy contributors, we keep neutral
  * states plus at most a single localized charge-separated pair.
- *
- * @param {{ atomCharges: Map<string, number> }} state
- * @param {Set<string>} atomIds
- * @returns {number}
+ * @param {{ atomCharges: Map<string, number> }} state - Application state object.
+ * @param {Set<string>} atomIds - Array of atom IDs.
+ * @returns {number} The computed numeric value.
  */
 function _totalAbsoluteChargeMagnitude(state, atomIds) {
   let total = 0;
@@ -1603,11 +1574,10 @@ function _totalAbsoluteChargeMagnitude(state, atomIds) {
  * pair (total absolute charge 2). Already-charged canonical structures may
  * rearrange their existing charges, but do not gain extra total charge
  * separation when permutation-collapsing is enabled.
- *
- * @param {{ atomCharges: Map<string, number> }} state
- * @param {Set<string>} atomIds
- * @param {number} canonicalAbsoluteChargeMagnitude
- * @returns {boolean}
+ * @param {{ atomCharges: Map<string, number> }} state - Application state object.
+ * @param {Set<string>} atomIds - Array of atom IDs.
+ * @param {number} canonicalAbsoluteChargeMagnitude - The canonicalAbsoluteChargeMagnitude value.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _isSingleChargeShiftState(state, atomIds, canonicalAbsoluteChargeMagnitude) {
   const totalAbsoluteChargeMagnitude = _totalAbsoluteChargeMagnitude(state, atomIds);
@@ -1622,9 +1592,8 @@ function _isSingleChargeShiftState(state, atomIds, canonicalAbsoluteChargeMagnit
  * filtering and scoring. Searching more broadly than the final display cap
  * prevents chemically useful local contributors from being dropped simply
  * because noisy states were discovered earlier during backtracking.
- *
- * @param {number} maxContributors
- * @returns {number}
+ * @param {number} maxContributors - Maximum number of resonance contributors.
+ * @returns {number} The computed numeric value.
  */
 function _enumerationBudget(maxContributors) {
   return Math.max(maxContributors * 8, 64);
@@ -1638,11 +1607,10 @@ function _enumerationBudget(maxContributors) {
  * Snapshots the current live bond/atom properties as state 1 and writes all
  * enumerated states into `bond.properties.resonance` and
  * `atom.properties.resonance`, then sets `molecule.properties.resonance`.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Set<string>} atomIds
- * @param {Set<string>} bondIds
- * @param {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number>, weight: number }>} states
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Set<string>} atomIds - Array of atom IDs.
+ * @param {Set<string>} bondIds - Array of bond IDs.
+ * @param {Array<{ bondOrders: Map<string, number>, atomCharges: Map<string, number>, atomRadicals: Map<string, number>, weight: number }>} states - Array of application states.
  */
 function _writeToModel(molecule, atomIds, bondIds, states) {
   // Capture state 1 snapshot from live properties
@@ -1785,20 +1753,19 @@ function _writeToModel(molecule, atomIds, bondIds, states) {
  *
  * If the molecule has no pi system (e.g. `CCO`), a single-state entry is
  * written with `count: 1` and no bond/atom tables are populated.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {object} [options={}]
- * @param {number} [options.maxContributors=16] - Maximum number of resonance
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {object} [options] - Configuration options.
+ * @param {number} [options.maxContributors] - Maximum number of resonance
  *   states to enumerate. Collected in discovery order; no pre-sorting before
  *   the cap is applied.
- * @param {number} [options.maxCharge=1] - Maximum allowed formal charge
+ * @param {number} [options.maxCharge] - Maximum allowed formal charge
  *   magnitude on any atom. States that would produce larger charges are
  *   discarded.
- * @param {boolean} [options.includeChargeSeparatedStates=true] - When false,
+ * @param {boolean} [options.includeChargeSeparatedStates] - When false,
  *   only keeps contributors whose per-atom formal charges match the canonical
  *   live structure. This suppresses charge-separated carbonyl-like forms such
  *   as `C=O <-> C-O-`.
- * @param {boolean} [options.includeIndependentComponentPermutations=true] -
+ * @param {boolean} [options.includeIndependentComponentPermutations] -
  *   When false, drops states that differ from the canonical structure in more
  *   than one disconnected pi-system component at once. This removes Cartesian-
  *   product permutations from unrelated resonance regions while keeping local

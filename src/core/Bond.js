@@ -25,15 +25,15 @@ export class Bond {
   /**
    * @param {string|null} [id]  - Unique identifier. Auto-generated as a numeric string when omitted or null.
    * @param {[string, string]} atoms - IDs of the two connected atoms.
-   * @param {object} [properties={}]
-   * @param {number} [properties.order=1] - Bond order. Integer localized bonds use 1/2/3/4;
+   * @param {object} [properties] - Property map.
+   * @param {number} [properties.order] - Bond order. Integer localized bonds use 1/2/3/4;
    *   aromatic bonds may also use 1.5 as a resonance-averaged order.
-   * @param {boolean} [properties.aromatic=false] - Whether the bond is aromatic.
-   * @param {string|null} [properties.stereo=null] - SMILES directional-bond marker: `'/'`
+   * @param {boolean} [properties.aromatic] - Whether the bond is aromatic.
+   * @param {string|null} [properties.stereo] - SMILES directional-bond marker: `'/'`
    *   or `'\\'`. `atoms[0]` is the source and `atoms[1]` the target as written in SMILES.
    *   `'/'` means traversal src→tgt goes upward; `'\\'` means downward. E/Z designation is
    *   derived by `Molecule.getEZStereo()`, not stored here directly.
-   * @param {{as?: 'wedge'|'dash', centerId?: string, manual?: boolean}|undefined} [properties.display=undefined]
+   * @param {{as?: 'wedge'|'dash', centerId?: string, manual?: boolean}|undefined} [properties.display] - The properties.display value.
    *   Optional renderer-facing display override metadata. Used by the 2D renderer to persist
    *   which bond should be drawn as a wedge or dash for a surviving stereocenter.
    */
@@ -53,8 +53,7 @@ export class Bond {
   /**
    * Returns the bond order.
    * Convenience accessor for `this.properties.order`.
-   *
-   * @returns {number}
+   * @returns {number} The computed numeric value.
    */
   getOrder() {
     return this.properties.order;
@@ -63,9 +62,8 @@ export class Bond {
   /**
    * Given one atom ID that participates in this bond, returns the other.
    * Returns `null` if `atomId` is not one of the bond's atoms.
-   *
-   * @param {string} atomId
-   * @returns {string|null}
+   * @param {string} atomId - The atom ID.
+   * @returns {string|null} The result string, or `null` if not applicable.
    */
   getOtherAtom(atomId) {
     if (this.atoms[0] === atomId) {
@@ -79,10 +77,9 @@ export class Bond {
 
   /**
    * Returns `true` if this bond connects the two given atom IDs (in either order).
-   *
-   * @param {string} atomA
-   * @param {string} atomB
-   * @returns {boolean}
+   * @param {string} atomA - First atom.
+   * @param {string} atomB - Second atom.
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   connects(atomA, atomB) {
     return (this.atoms[0] === atomA && this.atoms[1] === atomB) || (this.atoms[0] === atomB && this.atoms[1] === atomA);
@@ -90,9 +87,8 @@ export class Bond {
 
   /**
    * Returns `true` if `atomId` is one of the two atoms in this bond.
-   *
-   * @param {string} atomId
-   * @returns {boolean}
+   * @param {string} atomId - The atom ID.
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   bondedTo(atomId) {
     return this.atoms[0] === atomId || this.atoms[1] === atomId;
@@ -102,8 +98,7 @@ export class Bond {
    * Returns the nominal pi-bond contribution of this bond: `order - 1`.
    * Examples: single bonds return 0, double bonds 1, triple bonds 2,
    * and aromatic 1.5-order bonds return 0.5.
-   *
-   * @returns {number}
+   * @returns {number} The computed numeric value.
    */
   getPiOrder() {
     return (this.properties.order ?? 1) - 1;
@@ -112,9 +107,8 @@ export class Bond {
   /**
    * Returns the two `Atom` instances connected by this bond.
    * Returns `[null, null]` for either atom that is not found in the molecule.
-   *
-   * @param {import('./Molecule.js').Molecule} molecule
-   * @returns {[import('./Atom.js').Atom|null, import('./Atom.js').Atom|null]}
+   * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
+   * @returns {[import('./Atom.js').Atom|null, import('./Atom.js').Atom|null]} The computed result.
    */
   getAtomObjects(molecule) {
     return [molecule.atoms.get(this.atoms[0]) ?? null, molecule.atoms.get(this.atoms[1]) ?? null];
@@ -125,9 +119,8 @@ export class Bond {
    * A bond is in a ring if and only if both of its endpoint atoms are in a
    * ring AND they share at least two independent paths (detected by temporarily
    * removing this bond and checking reachability).
-   *
-   * @param {import('./Molecule.js').Molecule} molecule
-   * @returns {boolean}
+   * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   isInRing(molecule) {
     const [idA, idB] = this.atoms;
@@ -162,9 +155,8 @@ export class Bond {
    * Sets the bond order and returns `this` for chaining.
    * Automatically clears the `aromatic` flag when an integer order is set,
    * because an explicit integer order unambiguously describes a localised bond.
-   *
    * @param {number} order - New bond order (must be a positive integer).
-   * @returns {this}
+   * @returns {this} The computed result.
    * @throws {RangeError} If `order` is not a positive integer.
    */
   setOrder(order) {
@@ -182,9 +174,8 @@ export class Bond {
    * The two fields are kept in sync automatically:
    * - `setAromatic(true)`  sets `order` to `1.5` (resonance-averaged).
    * - `setAromatic(false)` sets `order` to `1`   (single bond).
-   *
-   * @param {boolean} value
-   * @returns {this}
+   * @param {boolean} value - The value.
+   * @returns {this} The computed result.
    * @throws {TypeError} If `value` is not a boolean.
    */
   setAromatic(value) {
@@ -198,8 +189,7 @@ export class Bond {
 
   /**
    * Returns the directional stereo marker stored on this bond: `'/'`, `'\\'`, or `null`.
-   *
-   * @returns {'/'|'\\'|null}
+   * @returns {'/'|'\\'|null} The computed result.
    */
   getStereo() {
     return this.properties.stereo;
@@ -207,7 +197,6 @@ export class Bond {
 
   /**
    * Sets the directional stereo marker on this bond.
-   *
    * @param {'/'|'\\'|null} value - SMILES directional marker, or `null` to clear.
    * @returns {this} The bond instance, for chaining.
    * @throws {RangeError} If `value` is not `'/'`, `'\\'`, or `null`.
@@ -222,8 +211,7 @@ export class Bond {
 
   /**
    * Returns `true` when this bond carries a directional stereo annotation (`'/'` or `'\\'`).
-   *
-   * @returns {boolean}
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   hasStereo() {
     return this.properties.stereo !== null;
@@ -236,9 +224,8 @@ export class Bond {
    *
    * "Non-terminal" means the atom has at least one other heavy-atom neighbor
    * besides the atom it shares this bond with.
-   *
-   * @param {import('./Molecule.js').Molecule} molecule
-   * @returns {boolean}
+   * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   isRotatable(molecule) {
     if ((this.properties.order ?? 1) !== 1) {

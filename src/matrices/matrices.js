@@ -6,8 +6,7 @@
  * Hydrogen atoms are excluded; only heavy atoms appear as rows/columns.
  * A[i][j] = 1 if heavy atoms i and j share a bond, 0 otherwise.
  * Atoms are indexed in insertion order.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @returns {number[][]} The n×n adjacency matrix over heavy atoms.
  */
 export function adjacencyMatrix(molecule) {
@@ -36,7 +35,6 @@ export function adjacencyMatrix(molecule) {
  * Builds the degree matrix from an adjacency matrix.
  *
  * DEG is a diagonal matrix where DEG[i][i] = sum of row i in A (the vertex degree).
- *
  * @param {number[][]} A - Square adjacency matrix.
  * @returns {number[][]} The n×n diagonal degree matrix.
  */
@@ -56,7 +54,6 @@ export function degreeMatrix(A) {
  * Builds the distance matrix from an adjacency matrix using Floyd-Warshall.
  *
  * D[i][j] = shortest path length between atom i and atom j.
- *
  * @param {number[][]} A - Square adjacency matrix.
  * @returns {number[][]} The n×n distance matrix.
  */
@@ -89,7 +86,6 @@ export function distanceMatrix(A) {
 
 /**
  * Builds the Laplacian matrix L = DEG - A.
- *
  * @param {number[][]} A - Square adjacency matrix.
  * @param {number[][]} DEG - Diagonal degree matrix.
  * @returns {number[][]} The n×n Laplacian matrix.
@@ -106,7 +102,6 @@ export function laplacianMatrix(A, DEG) {
  * Builds the Randić matrix.
  *
  * R[i][j] = 1 / sqrt(deg(i) * deg(j)) if atoms i and j are bonded, 0 otherwise.
- *
  * @param {number[][]} A - Square adjacency matrix.
  * @param {number[][]} DEG - Diagonal degree matrix.
  * @returns {number[][]} The n×n Randić matrix.
@@ -132,7 +127,6 @@ export function randicMatrix(A, DEG) {
  * Builds the reciprocal distance matrix.
  *
  * RD[i][j] = 1 / D[i][j] for i ≠ j, 0 for i = j.
- *
  * @param {number[][]} D - Square distance matrix.
  * @returns {number[][]} The n×n reciprocal distance matrix.
  */
@@ -153,8 +147,7 @@ export function reciprocalMatrix(D) {
 
 /**
  * Computes all standard matrices for a molecule in a single pass.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @returns {{
  *   atomIds:    string[],
  *   adjacency:  number[][],
@@ -163,7 +156,7 @@ export function reciprocalMatrix(D) {
  *   laplacian:  number[][],
  *   randic:     number[][],
  *   reciprocal: number[][]
- * }}
+ * }} The result object.
  *   `atomIds` maps matrix index → atom ID.
  */
 export function allMatrices(molecule) {

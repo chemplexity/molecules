@@ -8,7 +8,13 @@ import { validateValence } from '../../src/validation/valence.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Build a molecule with a central atom bonded to `n` carbon neighbours. */
+/**
+ * Build a molecule with a central atom bonded to `n` carbon neighbours.
+ * @param {string} centerSymbol - Element symbol of the center atom.
+ * @param {number} n - Number of carbon neighbours to add.
+ * @param {object} [centerProps] - Optional properties for the center atom.
+ * @returns {object} The constructed molecule.
+ */
 function buildWithNBonds(centerSymbol, n, centerProps = {}) {
   const mol = new Molecule();
   mol.addAtom('center', centerSymbol, centerProps);
@@ -19,7 +25,11 @@ function buildWithNBonds(centerSymbol, n, centerProps = {}) {
   return mol;
 }
 
-/** Return warnings only for the atom with id 'center'. */
+/**
+ * Return warnings only for the atom with id 'center'.
+ * @param {object} mol - The molecule graph.
+ * @returns {Array} Array of validation warnings for the center atom.
+ */
 function centerWarnings(mol) {
   return validateValence(mol).filter(w => w.atomId === 'center');
 }

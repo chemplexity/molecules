@@ -41,6 +41,23 @@ const defaultDepBuilders = {
   createPrimitiveEventHandlerDeps
 };
 
+/**
+ * Wires up all interaction subsystems (navigation, selection, editing, drag,
+ * draw-bond preview/commit, primitive selection, and primitive event handlers)
+ * using the provided app context. Factories and dep-builders can be overridden
+ * via `options` for testing.
+ * @param {object} ctx - App context supplying state, render runtime, and all
+ *   delegate methods used by the interaction subsystems.
+ * @param {object} [options] - Optional overrides.
+ * @param {object} [options.factories] - Action-factory overrides (defaults to
+ *   the standard `createXxxActions` imports).
+ * @param {object} [options.depBuilders] - Dep-builder overrides (defaults to
+ *   the standard `createXxxActionDeps` imports).
+ * @returns {{ navigationActions, selectionActions, editingActions,
+ *   dragGestureActions, drawBondPreviewActions, drawBondCommitActions,
+ *   primitiveSelectionActions, primitiveEventHandlers }} Initialized action
+ *   objects for each interaction subsystem.
+ */
 export function initializeInteractionRuntime(ctx, options = {}) {
   const factories = options.factories ?? defaultFactories;
   const depBuilders = options.depBuilders ?? defaultDepBuilders;

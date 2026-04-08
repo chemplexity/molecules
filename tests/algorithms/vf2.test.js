@@ -58,7 +58,11 @@ function triangle() {
   return mol;
 }
 
-/** Collects all mappings from a generator into an array. */
+/**
+ * Collects all mappings from a generator into an array.
+ * @param {Iterable} gen - The generator or iterable to collect.
+ * @returns {Array} Array of all yielded values.
+ */
 function collectAll(gen) {
   const results = [];
   for (const m of gen) {

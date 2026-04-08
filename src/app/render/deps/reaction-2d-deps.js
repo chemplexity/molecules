@@ -1,5 +1,11 @@
 /** @module app/render/reaction-2d-deps */
 
+/**
+ * Builds the structured dependency object for the Reaction2d factory,
+ * mapping flat dependency properties into a flat dependency object (g, plotEl, mode, currentMol, _mol2d, draw2d, render helpers, zoom/force/history accessors).
+ * @param {object} deps - Flat app context providing Reaction2d-related methods and values.
+ * @returns {object} Dependency object consumed by `createReaction2d`.
+ */
 export function createReaction2dDeps(deps) {
   return {
     g: deps.g,

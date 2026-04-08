@@ -3,6 +3,11 @@
 import { ReactionPreviewPolicy } from '../core/editor-actions.js';
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
 
+/**
+ * Removes all display-stereo properties (as, centerId, manual) from a bond,
+ * deleting the `display` object entirely if it becomes empty.
+ * @param {import('../../core/Bond.js').Bond} bond - Bond to clear stereo display on.
+ */
 function _clearBondDisplayStereo(bond) {
   if (!bond?.properties?.display) {
     return;
@@ -15,6 +20,15 @@ function _clearBondDisplayStereo(bond) {
   }
 }
 
+/**
+ * Sets display-stereo type on a bond. Clears stereo if `type` is not
+ * `'wedge'` or `'dash'`.
+ * @param {import('../../core/Bond.js').Bond} bond - Bond to update.
+ * @param {string|null} type - `'wedge'`, `'dash'`, or any other value to clear.
+ * @param {object} [options] - Optional stereo placement options.
+ * @param {string|null} [options.centerId] - Atom id the wedge/dash originates from.
+ * @param {boolean} [options.manual] - Whether the assignment was made manually by the user.
+ */
 function _setBondDisplayStereo(bond, type, { centerId = null, manual = false } = {}) {
   if (!bond || (type !== 'wedge' && type !== 'dash')) {
     _clearBondDisplayStereo(bond);
@@ -34,6 +48,16 @@ function _setBondDisplayStereo(bond, type, { centerId = null, manual = false } =
   }
 }
 
+/**
+ * Attempts to resolve and apply an explicit stereo assignment for a wedge/dash
+ * bond at the preferred center atom. Returns the resolved stereo result, or
+ * `null` if chirality could not be resolved or the bond type is not stereo.
+ * @param {import('../../core/Molecule.js').Molecule} mol - Molecule containing the bond.
+ * @param {import('../../core/Bond.js').Bond} bond - Newly added bond to assign stereo to.
+ * @param {string} drawBondType - Bond draw type (`'wedge'` or `'dash'`).
+ * @param {string|null} [preferredCenterId] - Preferred origin atom id for the wedge/dash.
+ * @returns {object|null} Resolved stereo result, or `null` if not applicable.
+ */
 function _tryApplyExplicitStereoAssignment(mol, bond, drawBondType, preferredCenterId = null) {
   if (!mol || !bond || (drawBondType !== 'wedge' && drawBondType !== 'dash')) {
     return null;
@@ -54,6 +78,14 @@ function _tryApplyExplicitStereoAssignment(mol, bond, drawBondType, preferredCen
   return null;
 }
 
+/**
+ * Applies the selected draw type to a bond, setting its order and display-stereo
+ * properties accordingly. Clears any prior stereo annotation before applying.
+ * @param {import('../../core/Molecule.js').Molecule} mol - Molecule containing the bond.
+ * @param {import('../../core/Bond.js').Bond} bond - Bond to update.
+ * @param {string} drawBondType - One of `'single'`, `'double'`, `'triple'`, `'aromatic'`, `'wedge'`, `'dash'`.
+ * @param {string|null} [preferredCenterId] - Preferred origin atom id for wedge/dash bonds.
+ */
 function _applyBondDrawType(mol, bond, drawBondType, preferredCenterId = null) {
   if (!bond) {
     return;
@@ -82,6 +114,13 @@ function _applyBondDrawType(mol, bond, drawBondType, preferredCenterId = null) {
   }
 }
 
+/**
+ * Creates draw-bond commit action handlers wired to the provided context.
+ * @param {object} context - App context providing state, molecule, view, history,
+ *   overlay, snapshot, chemistry, analysis, renderer, and force sub-objects.
+ * @returns {{ autoPlaceBond: (atomId: string|null, ox: number, oy: number) => void, commit: () => void }} The result object.
+ *   Action handlers for auto-placing a bond and committing a drag-drawn bond.
+ */
 export function createDrawBondCommitActions(context) {
   function clearSelectionBeforeStructuralDraw() {
     context.selection?.clearSelection?.();

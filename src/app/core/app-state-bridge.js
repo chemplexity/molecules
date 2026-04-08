@@ -1,5 +1,10 @@
 /** @module app/core/app-state-bridge */
 
+/**
+ * Creates the structured app state bridge object by forwarding dependency accessors into typed sub-namespaces.
+ * @param {object} deps - Flat dependency object providing documentState, viewState, and overlayState accessor groups.
+ * @returns {object} App state object with `documentState`, `viewState`, and `overlayState` sub-namespaces.
+ */
 export function createAppStateBridge(deps) {
   return {
     documentState: {

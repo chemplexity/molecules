@@ -10,7 +10,6 @@
  * Each entry has:
  *   `name`   — human-readable display name
  *   `smirks` — SMIRKS transform for use with `parseSMIRKS` / `applySMIRKS`
- *
  * @example
  * import { reactionTemplates } from './src/smirks/reference.js';
  * import { applySMIRKS } from './src/smirks/index.js';

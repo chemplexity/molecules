@@ -16,6 +16,11 @@ function initTabGroup(buttons, panelsByTab) {
   });
 }
 
+/**
+ * Initialises all tab-group panels in the descriptor and SMARTS sections of the UI.
+ * @param {object} [options] - Optional configuration.
+ * @param {Document} [options.doc] - Document used for querying tab buttons and panels.
+ */
 export function initTabPanels({ doc = document } = {}) {
   const descButtons = [...doc.querySelectorAll('.desc-tab')];
   const descPanels = new Map(

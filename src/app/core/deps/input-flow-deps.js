@@ -1,5 +1,11 @@
 /** @module app/core/input-flow-deps */
 
+/**
+ * Builds the structured dependency object for the InputFlow factory,
+ * mapping flat dependency properties into named sub-objects (state, dom, history, snapshot, molecule, collection, examples, parsers, overlays, renderers, highlights, force, analysis).
+ * @param {object} deps - Flat app context providing InputFlow-related methods and values.
+ * @returns {object} Dependency object consumed by `createInputFlow`.
+ */
 export function createInputFlowDeps(deps) {
   return {
     state: {

@@ -6,7 +6,12 @@ import { parseINCHI, toInChI, parseSMILES, toCanonicalSMILES } from '../../src/i
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Count atoms of a given element in the molecule. */
+/**
+ * Count atoms of a given element in the molecule.
+ * @param {object} mol - The molecule graph.
+ * @param {string} symbol - Element symbol.
+ * @returns {number} Count of atoms with that element symbol.
+ */
 function countElement(mol, symbol) {
   let n = 0;
   for (const atom of mol.atoms.values()) {
@@ -17,7 +22,11 @@ function countElement(mol, symbol) {
   return n;
 }
 
-/** Return heavy-atom bonds (both endpoints non-H). */
+/**
+ * Return heavy-atom bonds (both endpoints non-H).
+ * @param {object} mol - The molecule graph.
+ * @returns {Array} Array of bonds with both endpoints being heavy atoms.
+ */
 function heavyBonds(mol) {
   return [...mol.bonds.values()].filter(b => {
     const a = mol.atoms.get(b.atoms[0]);

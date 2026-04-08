@@ -5,9 +5,8 @@ import { findSubgraphMappings } from '../algorithms/vf2.js';
 
 /**
  * Flips a SMILES directional-bond marker: `'/'` ↔ `'\\'`.
- *
- * @param {'/'|'\\'} dir
- * @returns {'/'|'\\'}
+ * @param {'/'|'\\'} dir - The dir value.
+ * @returns {'/'|'\\'} The computed result.
  */
 function _flipStereoDir(dir) {
   return dir === '/' ? '\\' : '/';
@@ -17,10 +16,9 @@ function _flipStereoDir(dir) {
  * Returns the stereo direction of `bond` as seen from `atomId`.
  * The stored direction is defined relative to `bond.atoms[0]`; if `atomId`
  * is `bond.atoms[1]` the direction is flipped.
- *
- * @param {import('../core/Bond.js').Bond|undefined} bond
- * @param {string} atomId
- * @returns {'/'|'\\'|null}
+ * @param {import('../core/Bond.js').Bond|undefined} bond - The bond object.
+ * @param {string} atomId - The atom ID.
+ * @returns {'/'|'\\'|null} The computed result.
  */
 function _bondStereoRelativeTo(bond, atomId) {
   const dir = bond?.properties?.stereo ?? null;
@@ -37,14 +35,13 @@ function _bondStereoRelativeTo(bond, atomId) {
  * on both sp2 ends, records whether the two marked substituents should be on
  * the same or opposite sides of the double bond (`'same'` → Z, `'opposite'`
  * → E by SMILES convention).
- *
- * @param {import('../core/Molecule.js').Molecule} queryMol
+ * @param {import('../core/Molecule.js').Molecule} queryMol - Query molecule for subgraph matching.
  * @returns {Array<{
  *   qDoubleBondId: string,
  *   qA: string, qB: string,
  *   qMarkedA: string, qMarkedB: string,
  *   relation: 'same'|'opposite'
- * }>}
+ * }>} Array of results.
  */
 function _queryStereoConstraints(queryMol) {
   const constraints = [];
@@ -98,12 +95,11 @@ function _queryStereoConstraints(queryMol) {
 /**
  * Returns `true` when the E/Z stereo `constraints` derived from the query
  * are all satisfied by the current `mapping` into `target`.
- *
- * @param {import('../core/Molecule.js').Molecule} queryMol
- * @param {import('../core/Molecule.js').Molecule} target
+ * @param {import('../core/Molecule.js').Molecule} queryMol - Query molecule for subgraph matching.
+ * @param {import('../core/Molecule.js').Molecule} target - The target structure.
  * @param {Map<string,string>} mapping - Query → target atom ID map.
- * @param {ReturnType<typeof _queryStereoConstraints>} constraints
- * @returns {boolean}
+ * @param {ReturnType<typeof _queryStereoConstraints>} constraints - Layout constraint set.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _mappingStereoMatches(queryMol, target, mapping, constraints) {
   if (constraints.length === 0) {
@@ -147,10 +143,9 @@ function _mappingStereoMatches(queryMol, target, mapping, constraints) {
  *
  * Each atom in `queryMol` must have a `_predicate(tAtom, targetMol) → boolean`
  * property.  Each bond must have a `_predicate(tBond) → boolean` property.
- *
- * @param {import('../core/Molecule.js').Molecule} queryMol
- * @param {import('../core/Molecule.js').Molecule} target
- * @returns {{ atomMatch: function, bondMatch: function, skipElementFilter: true }}
+ * @param {import('../core/Molecule.js').Molecule} queryMol - Query molecule for subgraph matching.
+ * @param {import('../core/Molecule.js').Molecule} target - The target structure.
+ * @returns {{ atomMatch: (qAtom: import('../core/Atom.js').Atom, tAtom: import('../core/Atom.js').Atom) => boolean, bondMatch: (qBond: import('../core/Bond.js').Bond, tBond: import('../core/Bond.js').Bond) => boolean, skipElementFilter: true }} The result object.
  */
 function _vf2Options(queryMol, target) {
   return {
@@ -163,10 +158,9 @@ function _vf2Options(queryMol, target) {
 /**
  * Produces a sort key for a mapping: an array of target-atom ID strings in
  * query-atom-ID order, used for deterministic mapping ordering.
- *
- * @param {Map<string,string>} mapping
- * @param {string[]} queryAtomIds
- * @returns {string[]}
+ * @param {Map<string,string>} mapping - Atom-to-atom mapping (query ID → target ID).
+ * @param {string[]} queryAtomIds - The queryAtomIds value.
+ * @returns {string[]} Array of results.
  */
 function _mappingOrderTuple(mapping, queryAtomIds) {
   return queryAtomIds.map(id => String(mapping.get(id) ?? ''));
@@ -175,11 +169,10 @@ function _mappingOrderTuple(mapping, queryAtomIds) {
 /**
  * Comparator for sorting mappings by their `_mappingOrderTuple`.
  * Returns negative / 0 / positive like `Array.prototype.sort`.
- *
- * @param {Map<string,string>} a
- * @param {Map<string,string>} b
- * @param {string[]} queryAtomIds
- * @returns {number}
+ * @param {Map<string,string>} a - First value or atom.
+ * @param {Map<string,string>} b - Second value or atom.
+ * @param {string[]} queryAtomIds - The queryAtomIds value.
+ * @returns {number} The computed numeric value.
  */
 function _compareMappingOrder(a, b, queryAtomIds) {
   const tupleA = _mappingOrderTuple(a, queryAtomIds);
@@ -201,12 +194,11 @@ function _compareMappingOrder(a, b, queryAtomIds) {
  *
  * Exported for use by `smirks/apply.js` (which needs raw, non-deduplicated
  * results).  Prefer the public `findSMARTS` / `findSMARTSRaw` APIs instead.
- *
- * @param {import('../core/Molecule.js').Molecule} target
+ * @param {import('../core/Molecule.js').Molecule} target - The target structure.
  * @param {import('../core/Molecule.js').Molecule} queryMol - Pre-parsed SMARTS molecule.
- * @param {object} [options]
- * @param {number} [options.limit=Infinity]
- * @param {{ dedupe?: boolean }} [internalOptions]
+ * @param {object} [options] - Configuration options.
+ * @param {number} [options.limit] - Maximum number of results.
+ * @param {{ dedupe?: boolean }} [internalOptions] - The internalOptions value.
  * @yields {Map<string,string>}
  */
 function* _findSMARTSParsed(target, queryMol, options = {}, { dedupe = true } = {}) {
@@ -250,11 +242,10 @@ function* _findSMARTSParsed(target, queryMol, options = {}, { dedupe = true } = 
  * atom IDs (VF2 can return the same atom set multiple times via different
  * traversal orderings, e.g. 12× per ring). Each yielded value is a
  * `Map<queryAtomId, targetAtomId>`.
- *
- * @param {import('../core/Molecule.js').Molecule} target
- * @param {string} smarts
- * @param {object} [options]
- * @param {number} [options.limit=Infinity]
+ * @param {import('../core/Molecule.js').Molecule} target - The target structure.
+ * @param {string} smarts - SMARTS pattern string.
+ * @param {object} [options] - Configuration options.
+ * @param {number} [options.limit] - Maximum number of results.
  * @yields {Map<string, string>}
  */
 export function* findSMARTS(target, smarts, options = {}) {
@@ -269,10 +260,9 @@ export function* findSMARTS(target, smarts, options = {}) {
  * This preserves the exact query-atom-to-target-atom embeddings returned by VF2,
  * which is useful for transform languages such as SMIRKS where different
  * embeddings over the same atom set can lead to different products.
- *
- * @param {import('../core/Molecule.js').Molecule} target
- * @param {string} smarts
- * @param {object} [options]
+ * @param {import('../core/Molecule.js').Molecule} target - The target structure.
+ * @param {string} smarts - SMARTS pattern string.
+ * @param {object} [options] - Configuration options.
  * @yields {Map<string, string>}
  */
 export function* findSMARTSRaw(target, smarts, options = {}) {
@@ -282,11 +272,10 @@ export function* findSMARTSRaw(target, smarts, options = {}) {
 
 /**
  * Returns the first mapping from `smarts` into `target`, or `null` if none.
- *
- * @param {import('../core/Molecule.js').Molecule} target
- * @param {string} smarts
- * @param {object} [options]
- * @returns {Map<string, string>|null}
+ * @param {import('../core/Molecule.js').Molecule} target - The target structure.
+ * @param {string} smarts - SMARTS pattern string.
+ * @param {object} [options] - Configuration options.
+ * @returns {Map<string, string>|null} The resulting map.
  */
 export function firstSMARTS(target, smarts, options = {}) {
   for (const m of findSMARTS(target, smarts, { ...options, limit: 1 })) {
@@ -297,11 +286,10 @@ export function firstSMARTS(target, smarts, options = {}) {
 
 /**
  * Returns the first raw mapping from `smarts` into `target`, or `null` if none.
- *
- * @param {import('../core/Molecule.js').Molecule} target
- * @param {string} smarts
- * @param {object} [options]
- * @returns {Map<string, string>|null}
+ * @param {import('../core/Molecule.js').Molecule} target - The target structure.
+ * @param {string} smarts - SMARTS pattern string.
+ * @param {object} [options] - Configuration options.
+ * @returns {Map<string, string>|null} The resulting map.
  */
 export function firstSMARTSRaw(target, smarts, options = {}) {
   for (const m of findSMARTSRaw(target, smarts, { ...options, limit: 1 })) {
@@ -314,11 +302,10 @@ export { _findSMARTSParsed };
 
 /**
  * Returns `true` if `smarts` matches some subgraph of `target`.
- *
- * @param {import('../core/Molecule.js').Molecule} target
- * @param {string} smarts
- * @param {object} [options]
- * @returns {boolean}
+ * @param {import('../core/Molecule.js').Molecule} target - The target structure.
+ * @param {string} smarts - SMARTS pattern string.
+ * @param {object} [options] - Configuration options.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 export function matchesSMARTS(target, smarts, options = {}) {
   return firstSMARTS(target, smarts, options) !== null;

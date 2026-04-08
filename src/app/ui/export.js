@@ -6,7 +6,7 @@ let ctx = {};
 
 /**
  * Inject shared state references.  Call once after g and simulation are created.
- * @param {{ g, simulation, _mol2d }} context
+ * @param {{ g: object, simulation: object, _mol2d: object }} context - Shared SVG group, force simulation, and 2D molecule state.
  */
 export function initExport(context) {
   ctx = context;
@@ -489,6 +489,9 @@ function _flashBtn(btn, resetLabel) {
   };
 }
 
+/**
+ * Copies the current force-layout view as a PNG image to the clipboard.
+ */
 export function copyForcePng() {
   const svgEl = _buildForceSvg(false);
   if (!svgEl) {
@@ -503,6 +506,9 @@ export function copyForcePng() {
     .catch(flash.fail);
 }
 
+/**
+ * Copies the current force-layout view as an SVG to the clipboard.
+ */
 export function copyForceSvg() {
   const svgEl = _buildForceSvg(true);
   if (!svgEl) {
@@ -514,6 +520,9 @@ export function copyForceSvg() {
   _copySvgToClipboard(svgEl).then(flash.ok).catch(flash.fail);
 }
 
+/**
+ * Copies the current 2D structure view as an SVG to the clipboard.
+ */
 export function copySvg2d() {
   if (!ctx._mol2d) {
     return;
@@ -528,6 +537,9 @@ export function copySvg2d() {
   _copySvgToClipboard(svgEl).then(flash.ok).catch(flash.fail);
 }
 
+/**
+ * Copies the current 2D structure view as a PNG image to the clipboard.
+ */
 export function savePng2d() {
   if (!ctx._mol2d) {
     return;

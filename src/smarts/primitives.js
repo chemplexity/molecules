@@ -7,12 +7,21 @@ import { findSubgraphMappings as _findSubgraph } from '../algorithms/vf2.js';
 // Molecular property helpers (used by atom primitives)
 // ---------------------------------------------------------------------------
 
-/** Atomic number of an atom, falling back to the elements table. */
+/**
+ * Atomic number of an atom, falling back to the elements table.
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @returns {number} The proton count.
+ */
 function _protons(atom) {
   return atom.properties.protons ?? elements[atom.name]?.protons ?? 0;
 }
 
-/** Count of explicit H neighbors in `mol`. */
+/**
+ * Count of explicit H neighbors in `mol`.
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number} The total hydrogen count.
+ */
 function _totalHCount(atom, mol) {
   let n = 0;
   for (const bId of atom.bonds) {
@@ -29,7 +38,12 @@ function _totalHCount(atom, mol) {
   return n;
 }
 
-/** Count of heavy (non-H) neighbors in `mol`. */
+/**
+ * Count of heavy (non-H) neighbors in `mol`.
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number} The heavy-neighbor count.
+ */
 function _heavyDegree(atom, mol) {
   let n = 0;
   for (const bId of atom.bonds) {
@@ -46,7 +60,12 @@ function _heavyDegree(atom, mol) {
   return n;
 }
 
-/** Total bond count (connectivity), including bonds to H. */
+/**
+ * Total bond count (connectivity), including bonds to H.
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number} Total bond connectivity.
+ */
 function _totalConnectivity(atom, mol) {
   let n = 0;
   for (const bId of atom.bonds) {
@@ -57,7 +76,12 @@ function _totalConnectivity(atom, mol) {
   return n;
 }
 
-/** Sum of bond orders (valence). */
+/**
+ * Sum of bond orders (valence).
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number} The total valence (sum of bond orders).
+ */
 function _valence(atom, mol) {
   let v = 0;
   for (const bId of atom.bonds) {
@@ -81,9 +105,8 @@ function _valence(atom, mol) {
  * (explicit `:` bond token) or `order: 1.5` with `aromatic: false` (implicit
  * bond between lowercase aromatic atoms, including ring-closure bonds).  Both
  * representations are treated as "aromatic" by SMARTS predicates.
- *
- * @param {import('../core/Bond.js').Bond} bond
- * @returns {boolean}
+ * @param {import('../core/Bond.js').Bond} bond - The bond object.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _isAroBond(bond) {
   return (bond.properties.aromatic ?? false) || (bond.properties.order ?? 1) === 1.5;
@@ -186,6 +209,9 @@ function _minimalCyclesContaining(atom, mol) {
  * This avoids the undercounting caused by relying on a fundamental cycle basis
  * (for example cubane faces) and the overcounting caused by naive neighbour-
  * pair BFS across fused systems.
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {Set.<number>} Set of ring sizes containing the atom.
  */
 function _ringSizesContaining(atom, mol) {
   const sizes = new Set();
@@ -200,12 +226,20 @@ function _ringSizesContaining(atom, mol) {
  *
  * This is the closest match to Daylight-style ring-path semantics for fused
  * and bridged systems without relying on a lossy cycle basis.
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number} Number of chordless rings containing the atom.
  */
 function _ringPathCount(atom, mol) {
   return _minimalCyclesContaining(atom, mol).length;
 }
 
-/** Returns `true` if `bond` is part of any ring in `mol`. */
+/**
+ * Returns `true` if `bond` is part of any ring in `mol`.
+ * @param {import('../core/Bond.js').Bond} bond - The bond object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
+ */
 function _isBondInRing(bond, mol) {
   const [startId, endId] = bond.atoms;
   const visited = new Set([startId]);
@@ -246,9 +280,8 @@ function _isBondInRing(bond, mol) {
 /**
  * Default SMARTS bond predicate — matches single bonds and aromatic bonds.
  * Applied when no explicit bond token appears between two atoms in a SMARTS.
- *
- * @param {import('../core/Bond.js').Bond} tBond
- * @returns {boolean}
+ * @param {import('../core/Bond.js').Bond} tBond - The tBond value.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 export function defaultSmartsBondPred(tBond) {
   return _isAroBond(tBond) || (tBond.properties.order ?? 1) === 1;
@@ -264,10 +297,9 @@ export function defaultSmartsBondPred(tBond) {
  * `len` is the number of characters consumed.
  *
  * Returns `null` if the character is not a bond token.
- *
- * @param {string} smarts
- * @param {number} pos
- * @returns {{ pred: function, len: number, props?: object }|null}
+ * @param {string} smarts - SMARTS pattern string.
+ * @param {number} pos - The pos value.
+ * @returns {{pred: (atom: import('../core/Atom.js').Atom, mol: import('../core/Molecule.js').Molecule) => boolean, len: number, props?: object} | null} The result object.
  */
 export function compileBondToken(smarts, pos) {
   const ch = smarts[pos];
@@ -326,10 +358,9 @@ export function compileBondToken(smarts, pos) {
  * `*`        → any atom (wildcard)
  *
  * Returns `{ pred, len }` or `null` if the character is not a valid bare atom.
- *
- * @param {string} smarts
- * @param {number} pos
- * @returns {{ pred: function, len: number }|null}
+ * @param {string} smarts - SMARTS pattern string.
+ * @param {number} pos - The pos value.
+ * @returns {{pred: (atom: import('../core/Atom.js').Atom, mol: import('../core/Molecule.js').Molecule) => boolean, len: number} | null} The result object.
  */
 export function compileBareAtomToken(smarts, pos) {
   const ch = smarts[pos];
@@ -388,11 +419,10 @@ export function compileBareAtomToken(smarts, pos) {
  *   `$(smarts)` recursive SMARTS — requires `options.parseFn`
  *   Element symbol (uppercase, optionally + one lowercase) — element match
  *   Lowercase element symbol (e.g. `c`) — aromatic element
- *
  * @param {string} expr  Contents between `[` and `]`.
- * @param {object} [options]
- * @param {function} [options.parseFn]  `parseSMARTS` callback for `$()` recursive SMARTS.
- * @returns {function(import('../core/Atom.js').Atom, import('../core/Molecule.js').Molecule): boolean}
+ * @param {object} [options] - Configuration options.
+ * @param {(smarts: string) => object} [options.parseFn]  `parseSMARTS` callback for `$()` recursive SMARTS.
+ * @returns {function(import('../core/Atom.js').Atom, import('../core/Molecule.js').Molecule): boolean} The computed result.
  */
 export function compileAtomExpr(expr, options = {}) {
   let pos = 0;

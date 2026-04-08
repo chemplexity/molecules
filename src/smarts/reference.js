@@ -6,7 +6,6 @@
  * Each entry has:
  *   `name`   — human-readable display name
  *   `smarts` — SMARTS pattern for use with `matchesSMARTS`, `findSMARTS`, etc.
- *
  * @example
  * import { functionalGroups } from './src/smarts/reference.js';
  * import { matchesSMARTS } from './src/smarts/index.js';

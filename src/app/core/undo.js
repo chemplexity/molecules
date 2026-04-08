@@ -1,5 +1,12 @@
 /** @module app/core/undo */
 
+/**
+ * Creates an isolated undo/redo manager with its own stack and UI button state.
+ * @param {object} [options] - Optional configuration.
+ * @param {number} [options.maxEntries] - Maximum number of undo/redo entries to retain.
+ * @param {() => Document} [options.getDocument] - Returns the document used to look up undo/redo buttons.
+ * @returns {object} Object with `initUndo`, `takeSnapshot`, `discardLastSnapshot`, `undoAction`, `redoAction`, and `clearHistory`.
+ */
 export function createUndoManager({ maxEntries = 50, getDocument = () => globalThis.document } = {}) {
   let ctx = {};
   let undoStack = [];

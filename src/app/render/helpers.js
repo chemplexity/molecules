@@ -46,14 +46,27 @@ function _syncDerivedRenderConstants() {
   ARO_STROKE = { stroke: '#696969', width: `${3 * twoDScale}px`, dashArray: '3,3' };
 }
 
+/**
+ * Returns a shallow copy of the current render options object.
+ * @returns {object} Current render options.
+ */
 export function getRenderOptions() {
   return { ..._renderOptions };
 }
 
+/**
+ * Returns a shallow copy of the default render options object.
+ * @returns {object} Default render options.
+ */
 export function getDefaultRenderOptions() {
   return { ...DEFAULT_RENDER_OPTIONS };
 }
 
+/**
+ * Merges valid properties from the provided options into the current render options and updates derived constants.
+ * @param {object} [nextOptions] - Optional partial render options to apply.
+ * @returns {object} The updated render options after merging.
+ */
 export function updateRenderOptions(nextOptions = {}) {
   const merged = { ..._renderOptions };
   if (typeof nextOptions.showValenceWarnings === 'boolean') {
@@ -117,11 +130,23 @@ export const HIGHLIGHT_STYLE_PALETTES = {
   physchem: [{ fill: 'rgb(246, 227, 110)', outline: 'rgb(194, 168, 24)' }]
 };
 
+/**
+ * Returns a highlight style object `{fill, outline}` from the named palette at the given index, wrapping cyclically.
+ * @param {string} [styleName] - Palette name; falls back to `'default'` if not found.
+ * @param {number} [index] - Zero-based index into the palette; wraps cyclically.
+ * @returns {{fill: string, outline: string}} Highlight fill and outline color strings.
+ */
 export function getHighlightStyleVariant(styleName = 'default', index = 0) {
   const palette = HIGHLIGHT_STYLE_PALETTES[styleName] ?? HIGHLIGHT_STYLE_PALETTES.default;
   return palette[((index % palette.length) + palette.length) % palette.length];
 }
 
+/**
+ * Returns the display color for an atom symbol, respecting the current 2D atom-coloring setting.
+ * @param {string} sym - Element symbol (e.g. `'O'`, `'N'`).
+ * @param {string} [layout] - Layout mode: `'2d'` or `'force'`.
+ * @returns {string} CSS color string.
+ */
 export function atomColor(sym, layout = '2d') {
   if (layout === '2d' && !_renderOptions.twoDAtomColoring) {
     return '#333333';
@@ -129,15 +154,30 @@ export function atomColor(sym, layout = '2d') {
   return baseAtomColor(sym);
 }
 
+/**
+ * Returns the stroke color used for an atom circle outline in force-layout mode, choosing a lighter or darker tint based on the element.
+ * @param {string} symbol - Element symbol.
+ * @returns {string} CSS color string.
+ */
 export function strokeColor(symbol) {
   const light = new Set(['H', 'F', 'Cl', 'Mg', 'Ca', 'He', 'Ne', 'Ar', 'B', 'Si', 'Be', 'Li']);
   return light.has(symbol) ? '#888' : 'rgba(0,0,0,0.25)';
 }
 
+/**
+ * Returns the CSS stroke-width string for a force-layout bond of the given order, scaled by the current bond-thickness multiplier.
+ * @param {number} order - Bond order (1, 2, or 3).
+ * @returns {string} CSS pixel width string (e.g. `'3px'`).
+ */
 export function singleBondWidth(order) {
   return `${(order * BOND_MULT - 1) * (BOND_MULT / 2) * _renderOptions.forceBondThicknessMultiplier}px`;
 }
 
+/**
+ * Returns the effective render order for a bond, resolving aromatic bonds according to the current render mode.
+ * @param {object} bond - Bond object with a `properties` map containing `order` and `aromatic`.
+ * @returns {number} Effective render order (1, 1.5, 2, or 3).
+ */
 export function renderBondOrder(bond) {
   if (AROMATIC_RENDER_MODE === 'localized' && (bond.properties.aromatic ?? false)) {
     return bond.properties.localizedOrder ?? bond.properties.order ?? 1.5;
@@ -145,12 +185,22 @@ export function renderBondOrder(bond) {
   return bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
 }
 
+/**
+ * Prepares a molecule for aromatic bond rendering by kekulizing it when localized aromatic mode is active.
+ * @param {object} molecule - Molecule instance to kekulize in place if needed.
+ */
 export function prepareAromaticBondRendering(molecule) {
   if (AROMATIC_RENDER_MODE === 'localized') {
     kekulize(molecule);
   }
 }
 
+/**
+ * Returns the display radius (in pixels) for an atom in force-layout or 2D mode based on its proton count.
+ * @param {number|null} protons - Atomic number; null or ≥11 uses the default heavy-atom radius.
+ * @param {string} [layout] - Layout mode: `'force'` applies the atom-size multiplier, `'2d'` does not.
+ * @returns {number} Radius in pixels.
+ */
 export function atomRadius(protons, layout = 'force') {
   if (protons == null || protons >= 11) {
     return 10 * (layout === 'force' ? _renderOptions.forceAtomSizeMultiplier : 1);
@@ -159,6 +209,13 @@ export function atomRadius(protons, layout = 'force') {
   return baseRadius * (layout === 'force' ? _renderOptions.forceAtomSizeMultiplier : 1);
 }
 
+/**
+ * Returns the x-component of the parallel offset vector for a secondary bond line.
+ * @param {number} offset - Desired perpendicular offset magnitude.
+ * @param {{x: number, y: number}} src - Source atom screen coordinates.
+ * @param {{x: number, y: number}} tgt - Target atom screen coordinates.
+ * @returns {number} X offset value in pixels.
+ */
 export function xOffset(offset, src, tgt) {
   const dx = tgt.x - src.x,
     dy = tgt.y - src.y;
@@ -168,6 +225,13 @@ export function xOffset(offset, src, tgt) {
   return offset;
 }
 
+/**
+ * Returns the y-component of the parallel offset vector for a secondary bond line.
+ * @param {number} offset - Desired perpendicular offset magnitude.
+ * @param {{x: number, y: number}} src - Source atom screen coordinates.
+ * @param {{x: number, y: number}} tgt - Target atom screen coordinates.
+ * @returns {number} Y offset value in pixels.
+ */
 export function yOffset(offset, src, tgt) {
   const dx = tgt.x - src.x,
     dy = tgt.y - src.y;
@@ -177,6 +241,13 @@ export function yOffset(offset, src, tgt) {
   return offset * -(dx / dy);
 }
 
+/**
+ * Generates the HTML string for a bond hover tooltip.
+ * @param {object} bond - Bond object with `properties` containing order, aromatic, and optionally stereo.
+ * @param {object} a1 - First atom object with a `name` property.
+ * @param {object} a2 - Second atom object with a `name` property.
+ * @returns {string} HTML string for the tooltip content.
+ */
 export function bondTooltipHtml(bond, a1, a2) {
   const order = bond.properties.aromatic ? 1.5 : (bond.properties.order ?? 1);
   const typeLabel = order === 1.5 ? 'Aromatic' : order === 1 ? 'Single' : order === 2 ? 'Double' : order === 3 ? 'Triple' : `Order ${order}`;
@@ -198,6 +269,14 @@ function escapeHtml(text) {
   return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
+/**
+ * Generates the HTML string for an atom hover tooltip, including atomic properties and any valence warning.
+ * @param {object} atom - Atom object with `name`, `bonds`, `id`, and `properties`.
+ * @param {object} _mol - Molecule instance (unused directly but kept for signature compatibility).
+ * @param {object|null} [valenceWarning] - Optional valence warning object with a `reason` string.
+ * @param {string} [layout] - Layout mode: `'2d'` or `'force'` (affects atom color rendering).
+ * @returns {string} HTML string for the tooltip content.
+ */
 export function atomTooltipHtml(atom, _mol, valenceWarning = null, layout = '2d') {
   const p = atom.properties;
   const charge = p.charge ?? 0;
@@ -256,6 +335,14 @@ export function atomTooltipHtml(atom, _mol, valenceWarning = null, layout = '2d'
     </div>${warningHtml}<table>${rows}</table>`;
 }
 
+/**
+ * Renders an atom label as an SVG text element with subscripted digit spans appended to the given D3 group.
+ * @param {object} group - D3 selection of the parent SVG group element.
+ * @param {string} label - Atom label string, potentially containing digits (e.g. `'NH2'`).
+ * @param {string} color - CSS color for the label text.
+ * @param {number} [xOffset] - Horizontal offset from the atom center in pixels.
+ * @param {number} [fontSize] - Font size in pixels.
+ */
 export function renderAtomLabel(group, label, color, xOffset = 0, fontSize = DEFAULT_RENDER_OPTIONS.twoDAtomFontSize) {
   const textEl = group
     .append('text')
@@ -289,6 +376,18 @@ export function renderAtomLabel(group, label, color, xOffset = 0, fontSize = DEF
   }
 }
 
+/**
+ * Renders lone-pair dot circles into the given D3 group element.
+ * @param {object} group - D3 selection of the parent SVG group element.
+ * @param {Array<{x: number, y: number}>} dots - Array of dot position objects.
+ * @param {object} [options] - Optional styling parameters.
+ * @param {number} [options.radius] - Dot radius in pixels.
+ * @param {string} [options.fill] - Dot fill color.
+ * @param {string} [options.stroke] - Dot stroke color.
+ * @param {number} [options.strokeWidth] - Dot stroke width in pixels.
+ * @param {string} [options.className] - CSS class applied to each dot circle.
+ * @returns {object} D3 selection of the newly appended dot group element.
+ */
 export function renderLonePairDots(group, dots, { radius = 1.5, fill = '#111111', stroke = 'none', strokeWidth = 0, className = 'lone-pair' } = {}) {
   const dotGroup = group.append('g').attr('class', 'lone-pair-dots').attr('pointer-events', 'none');
   for (const dot of dots) {
@@ -305,6 +404,16 @@ export function renderLonePairDots(group, dots, { radius = 1.5, fill = '#111111'
   return dotGroup;
 }
 
+/**
+ * Appends a bond line SVG element to the given D3 group with the current stroke width.
+ * @param {object} group - D3 selection of the parent SVG group element.
+ * @param {number} x1 - Start x coordinate.
+ * @param {number} y1 - Start y coordinate.
+ * @param {number} x2 - End x coordinate.
+ * @param {number} y2 - End y coordinate.
+ * @param {string} [extraClass] - Additional CSS class to append to the `bond` class.
+ * @returns {object} D3 selection of the appended line element.
+ */
 export function addLine(group, x1, y1, x2, y2, extraClass) {
   return group
     .append('line')

@@ -139,6 +139,15 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, aromaticMode = AROMATIC
 // Accepts a pre-parsed Molecule object.
 // Returns { svgContent: string, cellW: number, cellH: number } or null.
 // ---------------------------------------------------------------------------
+/**
+ * Renders a molecule as an SVG fragment.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule to render.
+ * @param {object} [options] - Rendering options.
+ * @param {boolean} [options.showChiralLabels] - Whether to show chiral labels.
+ * @param {boolean} [options.showLonePairs] - Whether to show lone pairs.
+ * @param {string} [options.aromaticMode] - Aromatic ring rendering mode.
+ * @returns {{svgContent: string, cellW: number, cellH: number}|null} SVG fragment or null.
+ */
 export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = false, aromaticMode = AROMATIC_RENDER_MODE } = {}) {
   if (!mol || mol.atoms.size === 0) {
     return null;
@@ -368,6 +377,12 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
 // ---------------------------------------------------------------------------
 // buildCompositeSVG — assemble rendered cells into a grid SVG string
 // ---------------------------------------------------------------------------
+/**
+ * Assembles rendered SVG cells into a grid SVG string.
+ * @param {Array<{svgContent: string, cellW: number, cellH: number}|null>} cells - Array of rendered cells.
+ * @param {number} cols - Number of columns in the grid.
+ * @returns {string} The composite SVG string.
+ */
 export function buildCompositeSVG(cells, cols) {
   const rows = Math.ceil(cells.length / cols);
 
@@ -426,6 +441,12 @@ export function buildCompositeSVG(cells, cols) {
 // ---------------------------------------------------------------------------
 // renderMolSVGFromSMILES / renderMolSVGFromINCHI — convenience wrappers
 // ---------------------------------------------------------------------------
+/**
+ * Parses a SMILES string and renders the resulting molecule as SVG.
+ * @param {string} smiles - The SMILES string to parse.
+ * @param {object} [options] - Rendering options passed to renderMolSVG.
+ * @returns {{svgContent: string, cellW: number, cellH: number}|null} SVG fragment or null.
+ */
 export function renderMolSVGFromSMILES(smiles, options) {
   let mol;
   try {
@@ -436,6 +457,12 @@ export function renderMolSVGFromSMILES(smiles, options) {
   return renderMolSVG(mol, options);
 }
 
+/**
+ * Parses an InChI string and renders the resulting molecule as SVG.
+ * @param {string} inchi - The InChI string to parse.
+ * @param {object} [options] - Rendering options passed to renderMolSVG.
+ * @returns {{svgContent: string, cellW: number, cellH: number}|null} SVG fragment or null.
+ */
 export function renderMolSVGFromINCHI(inchi, options) {
   let mol;
   try {
@@ -449,6 +476,11 @@ export function renderMolSVGFromINCHI(inchi, options) {
 // ---------------------------------------------------------------------------
 // svgToPng — convert an SVG string to a PNG Buffer via resvg-js
 // ---------------------------------------------------------------------------
+/**
+ * Converts an SVG string to a PNG Buffer.
+ * @param {string} svgString - The SVG content to convert.
+ * @returns {Buffer} PNG image buffer.
+ */
 export function svgToPng(svgString) {
   const resvg = new Resvg(svgString, {
     fitTo: { mode: 'original' },

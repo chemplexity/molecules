@@ -3,6 +3,11 @@
 const DRAW_ELEMENTS = ['C', 'N', 'O', 'S', 'P', 'F', 'Cl', 'Br', 'I'];
 const DRAW_BOND_TYPES = ['single', 'double', 'triple', 'aromatic', 'wedge', 'dash'];
 
+/**
+ * Creates selection action handlers for tool-mode toggling (pan, select, draw-bond, erase), element/bond-type switching, and toolbar button synchronization.
+ * @param {object} context - Dependency context providing state, view, dom, drawBond, renderers, and actions.
+ * @returns {object} Object with `togglePanMode`, `toggleSelectMode`, `toggleDrawBondMode`, `toggleEraseMode`, `setDrawElement`, `setDrawBondType`, `handleDrawBondButtonClick`, `openDrawBondDrawer`, `closeDrawBondDrawer`, `toggleDrawBondDrawer`, and sync/clear button helpers.
+ */
 export function createSelectionActions(context) {
   function setDrawBondDrawerHoverSuppressed(value) {
     context.dom.drawTools?.classList?.toggle?.('drawer-hover-suppressed', value);

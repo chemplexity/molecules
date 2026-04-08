@@ -10,8 +10,8 @@ import { defaultAtomMatch, defaultBondMatch } from './subgraph.js';
  * @typedef {object} MolIndex
  * @property {Map<string, Set<string>>}          neighborSet     atomId → Set of neighbor IDs
  * @property {Map<string, Map<string, string>>}  neighborToBond  atomId → (neighborId → bondId)
- * @property {Map<string, import('../core/Atom.js').Atom>}  atoms
- * @property {Map<string, import('../core/Bond.js').Bond>}  bonds
+ * @property {Map<string, import('../core/Atom.js').Atom>}  atoms       atomId → Atom object
+ * @property {Map<string, import('../core/Bond.js').Bond>}  bonds       bondId → Bond object
  * @property {Map<string, number>}               degreeMap       atomId → degree
  * @property {Map<string, number>}               elementCount    element → count
  */
@@ -20,9 +20,8 @@ import { defaultAtomMatch, defaultBondMatch } from './subgraph.js';
  * Builds an O(V+E) adjacency index for a molecule.
  * Constructed once per `findSubgraphMappings` call for both the query and
  * target; not cached on the Molecule instance (which is mutable).
- *
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {MolIndex}
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {MolIndex} The computed result.
  */
 function _buildIndex(mol) {
   /** @type {Map<string, Set<string>>} */
@@ -68,9 +67,8 @@ function _buildIndex(mol) {
  * factor eliminated first); within each BFS level sort by degree descending
  * (maximises look-ahead pruning effectiveness).  Disconnected components are
  * appended after, also sorted by degree.
- *
- * @param {MolIndex} idx
- * @returns {string[]}
+ * @param {MolIndex} idx - The idx value.
+ * @returns {string[]} Array of results.
  */
 function _queryOrder(idx) {
   const ids = [...idx.atoms.keys()];
@@ -117,10 +115,9 @@ function _queryOrder(idx) {
  * it lacks sufficient atoms of some element.  Runs in O(distinct elements
  * in query).  Only valid when `atomMatch === defaultAtomMatch` (exact
  * element matching); pass `skipElementFilter: true` for wildcards.
- *
- * @param {MolIndex} queryIdx
- * @param {MolIndex} targetIdx
- * @returns {boolean}
+ * @param {MolIndex} queryIdx - The queryIdx value.
+ * @param {MolIndex} targetIdx - The targetIdx value.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _elementFrequencyOk(queryIdx, targetIdx) {
   for (const [el, count] of queryIdx.elementCount) {
@@ -143,11 +140,10 @@ function _elementFrequencyOk(queryIdx, targetIdx) {
  * 2. For every already-mapped neighbour `qNb` of `qId`, its image `tNb`
  *    must be adjacent to `tId`, and the bond `(tId, tNb)` must be
  *    compatible with `(qId, qNb)`.
- *
- * @param {object}   state
- * @param {string}   qId
- * @param {string}   tId
- * @returns {boolean}
+ * @param {object}   state - The VF2 matching state.
+ * @param {string}   qId - Query atom ID.
+ * @param {string}   tId - Target (candidate) atom ID.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _feasible(state, qId, tId) {
   const { queryIdx, targetIdx, queryToTarget, atomMatch, bondMatch } = state;
@@ -193,10 +189,9 @@ function _feasible(state, qId, tId) {
  *
  * Degree filter: a query atom of degree d can only map to a target atom
  * with degree ≥ d (subgraph, not induced-subgraph semantics).
- *
- * @param {object} state
- * @param {number} depth
- * @returns {string[]}
+ * @param {object} state - Application state object.
+ * @param {number} depth - Traversal depth limit.
+ * @returns {string[]} Array of results.
  */
 function _candidates(state, depth) {
   const qId = state.queryOrder[depth];
@@ -306,14 +301,13 @@ function* _vf2(state, depth) {
  * - `limit`              `number` — stop after this many mappings (default: `Infinity`)
  * - `skipElementFilter`  `boolean` — disable the O(n) element-frequency pre-filter
  *                        (required when using wildcard or SMARTS atom predicates)
- *
- * @param {import('../core/Molecule.js').Molecule} target
- * @param {import('../core/Molecule.js').Molecule} query
- * @param {object} [options]
- * @param {function} [options.atomMatch]
- * @param {function} [options.bondMatch]
- * @param {number}   [options.limit=Infinity]
- * @param {boolean}  [options.skipElementFilter=false]
+ * @param {import('../core/Molecule.js').Molecule} target - The target structure.
+ * @param {import('../core/Molecule.js').Molecule} query - The query structure.
+ * @param {object} [options] - Configuration options.
+ * @param {(qAtom: import('../core/Atom.js').Atom, tAtom: import('../core/Atom.js').Atom) => boolean} [options.atomMatch] - Configuration sub-option.
+ * @param {(qBond: import('../core/Bond.js').Bond, tBond: import('../core/Bond.js').Bond) => boolean} [options.bondMatch] - Configuration sub-option.
+ * @param {number} [options.limit] - Maximum number of results.
+ * @param {boolean} [options.skipElementFilter] - Configuration sub-option.
  * @yields {Map<string, string>}
  */
 export function* findSubgraphMappings(target, query, options = {}) {
@@ -368,11 +362,10 @@ export function* findSubgraphMappings(target, query, options = {}) {
  * Returns the first mapping from `query` into `target`, or `null` if none
  * exists.  Equivalent to consuming the first value from
  * `findSubgraphMappings(target, query, { ...options, limit: 1 })`.
- *
- * @param {import('../core/Molecule.js').Molecule} target
- * @param {import('../core/Molecule.js').Molecule} query
- * @param {object} [options]
- * @returns {Map<string, string>|null}
+ * @param {import('../core/Molecule.js').Molecule} target - The target structure.
+ * @param {import('../core/Molecule.js').Molecule} query - The query structure.
+ * @param {object} [options] - Configuration options.
+ * @returns {Map<string, string>|null} The resulting map.
  */
 export function findFirstSubgraphMapping(target, query, options = {}) {
   for (const m of findSubgraphMappings(target, query, { ...options, limit: 1 })) {
@@ -383,11 +376,10 @@ export function findFirstSubgraphMapping(target, query, options = {}) {
 
 /**
  * Returns `true` if `query` is isomorphic to some subgraph of `target`.
- *
- * @param {import('../core/Molecule.js').Molecule} target
- * @param {import('../core/Molecule.js').Molecule} query
- * @param {object} [options]
- * @returns {boolean}
+ * @param {import('../core/Molecule.js').Molecule} target - The target structure.
+ * @param {import('../core/Molecule.js').Molecule} query - The query structure.
+ * @param {object} [options] - Configuration options.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 export function matchesSubgraph(target, query, options = {}) {
   return findFirstSubgraphMapping(target, query, options) !== null;

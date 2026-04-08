@@ -1,5 +1,9 @@
 /** @module app/ui/plot-interactions */
 
+/**
+ * Attaches all mouse and pointer event handlers to the plot element for selection, drawing, and tooltip interactions.
+ * @param {object} deps - Flat app context providing plotEl, document, state, tooltip, options, analysis, and helper accessors.
+ */
 export function initPlotInteractions(deps) {
   deps.plotEl.addEventListener('selectstart', event => {
     event.preventDefault();

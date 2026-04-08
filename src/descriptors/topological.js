@@ -52,9 +52,8 @@ function assertMolecule(mol, name) {
 
 /**
  * Computes the Wiener index W = Σ D[i][j] for i < j.
- *
  * @param {number[][]} D - All-pairs shortest-path distance matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function wienerIndex(D) {
   assertSquareMatrix(D, 'D');
@@ -70,9 +69,8 @@ export function wienerIndex(D) {
 
 /**
  * Computes the Hyper-Wiener index WW = (1/2) * Σ (D[i][j] + D[i][j]²) for i < j.
- *
  * @param {number[][]} D - All-pairs shortest-path distance matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function hyperWienerIndex(D) {
   assertSquareMatrix(D, 'D');
@@ -91,10 +89,9 @@ export function hyperWienerIndex(D) {
  *
  * J = (m / (m - n + 2)) * Σ (s_i * s_j)^(-1/2) for each edge (i,j),
  * where s_i is the row sum of D for atom i, n = atom count, m = bond count.
- *
  * @param {number[][]} D - All-pairs shortest-path distance matrix.
  * @param {number[][]} A - Adjacency matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function balabanIndex(D, A) {
   assertSquareMatrix(D, 'D');
@@ -121,10 +118,9 @@ export function balabanIndex(D, A) {
 
 /**
  * Computes the Randić connectivity index χ = Σ (deg(i) * deg(j))^(-1/2) for each edge.
- *
  * @param {number[][]} A - Adjacency matrix.
  * @param {number[][]} DEG - Diagonal degree matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function randicIndex(A, DEG) {
   assertSquareMatrix(A, 'A');
@@ -149,9 +145,8 @@ export function randicIndex(A, DEG) {
 
 /**
  * Computes the first Zagreb index M1 = Σ deg(i)².
- *
  * @param {number[][]} DEG - Diagonal degree matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function zagreb1(DEG) {
   assertSquareMatrix(DEG, 'DEG');
@@ -161,10 +156,9 @@ export function zagreb1(DEG) {
 
 /**
  * Computes the second Zagreb index M2 = Σ deg(i) * deg(j) for each edge (i,j).
- *
  * @param {number[][]} A - Adjacency matrix.
  * @param {number[][]} DEG - Diagonal degree matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function zagreb2(A, DEG) {
   assertSquareMatrix(A, 'A');
@@ -185,9 +179,8 @@ export function zagreb2(A, DEG) {
 
 /**
  * Computes the Harary index H = (1/2) * Σ RD[i][j].
- *
  * @param {number[][]} RD - Reciprocal distance matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function hararyIndex(RD) {
   assertSquareMatrix(RD, 'RD');
@@ -205,10 +198,9 @@ export function hararyIndex(RD) {
  *
  * Equivalently, F = M1 − 2m where M1 is the first Zagreb index and m is the
  * number of edges.
- *
  * @param {number[][]} A   - Adjacency matrix.
  * @param {number[][]} DEG - Diagonal degree matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function plattIndex(A, DEG) {
   assertSquareMatrix(A, 'A');
@@ -234,10 +226,9 @@ export function plattIndex(A, DEG) {
  * are excluded from both counts.
  *
  * For acyclic graphs (trees) Sz equals the Wiener index.
- *
  * @param {number[][]} D - All-pairs shortest-path distance matrix.
  * @param {number[][]} A - Adjacency matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function szegedIndex(D, A) {
   assertSquareMatrix(D, 'D');
@@ -270,10 +261,9 @@ export function szegedIndex(D, A) {
  * Computes the Atom-Bond Connectivity (ABC) index.
  *
  * ABC = Σ √((deg(i) + deg(j) − 2) / (deg(i) · deg(j))) for each edge (i,j).
- *
  * @param {number[][]} A   - Adjacency matrix.
  * @param {number[][]} DEG - Diagonal degree matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function abcIndex(A, DEG) {
   assertSquareMatrix(A, 'A');
@@ -300,10 +290,9 @@ export function abcIndex(A, DEG) {
  * Computes the Geometric-Arithmetic (GA) index.
  *
  * GA = Σ 2√(deg(i) · deg(j)) / (deg(i) + deg(j)) for each edge (i,j).
- *
  * @param {number[][]} A   - Adjacency matrix.
  * @param {number[][]} DEG - Diagonal degree matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function gaIndex(A, DEG) {
   assertSquareMatrix(A, 'A');
@@ -330,10 +319,9 @@ export function gaIndex(A, DEG) {
  * Computes the Harmonic index.
  *
  * H = Σ 2 / (deg(i) + deg(j)) for each edge (i,j).
- *
  * @param {number[][]} A   - Adjacency matrix.
  * @param {number[][]} DEG - Diagonal degree matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function harmonicIndex(A, DEG) {
   assertSquareMatrix(A, 'A');
@@ -360,10 +348,9 @@ export function harmonicIndex(A, DEG) {
  * Computes the Sum-Connectivity index.
  *
  * χ_s = Σ 1 / √(deg(i) + deg(j)) for each edge (i,j).
- *
  * @param {number[][]} A   - Adjacency matrix.
  * @param {number[][]} DEG - Diagonal degree matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function sumConnectivityIndex(A, DEG) {
   assertSquareMatrix(A, 'A');
@@ -390,11 +377,10 @@ export function sumConnectivityIndex(A, DEG) {
  * Computes the Eccentric Connectivity index.
  *
  * ξ = Σ deg(i) · ecc(i), where ecc(i) = max_j D[i][j] (eccentricity of vertex i).
- *
  * @param {number[][]} A   - Adjacency matrix.
  * @param {number[][]} DEG - Diagonal degree matrix.
  * @param {number[][]} D   - All-pairs shortest-path distance matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function eccentricConnectivityIndex(A, DEG, D) {
   assertSquareMatrix(A, 'A');
@@ -417,9 +403,8 @@ export function eccentricConnectivityIndex(A, DEG, D) {
  * Computes the Wiener Polarity index.
  *
  * Wₚ = number of pairs of vertices (i,j) with D[i][j] = 3.
- *
  * @param {number[][]} D - All-pairs shortest-path distance matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function wienerPolarityIndex(D) {
   assertSquareMatrix(D, 'D');
@@ -439,10 +424,9 @@ export function wienerPolarityIndex(D) {
  * Computes the Schultz index (Molecular Topological Index, MTI).
  *
  * MTI = Σ_{i<j} (deg(i) + deg(j)) · D[i][j].
- *
  * @param {number[][]} DEG - Diagonal degree matrix.
  * @param {number[][]} D   - All-pairs shortest-path distance matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function schultzIndex(DEG, D) {
   assertSquareMatrix(DEG, 'DEG');
@@ -464,10 +448,9 @@ export function schultzIndex(DEG, D) {
  * Computes the Gutman index.
  *
  * Gut = Σ_{i<j} deg(i) · deg(j) · D[i][j].
- *
  * @param {number[][]} DEG - Diagonal degree matrix.
  * @param {number[][]} D   - All-pairs shortest-path distance matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function gutmanIndex(DEG, D) {
   assertSquareMatrix(DEG, 'DEG');
@@ -489,9 +472,8 @@ export function gutmanIndex(DEG, D) {
  * Computes the Forgotten index (F-index / third Zagreb index).
  *
  * F = Σ deg(i)³.
- *
  * @param {number[][]} DEG - Diagonal degree matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function forgottenIndex(DEG) {
   assertSquareMatrix(DEG, 'DEG');
@@ -503,9 +485,8 @@ export function forgottenIndex(DEG) {
  * Computes the Narumi-Katayama index.
  *
  * NK = ∏ deg(i) (product of all vertex degrees).
- *
  * @param {number[][]} DEG - Diagonal degree matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function narumiKatayamaIndex(DEG) {
   assertSquareMatrix(DEG, 'DEG');
@@ -519,9 +500,8 @@ export function narumiKatayamaIndex(DEG) {
  *
  * Uses a branching recursion: for the first remaining vertex v, either
  * exclude it from the matching or pair it with one of its available neighbours.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {number}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {number} The computed numeric value.
  */
 export function hosoyaIndex(molecule) {
   assertMolecule(molecule, 'molecule');
@@ -530,7 +510,7 @@ export function hosoyaIndex(molecule) {
 
   /**
    * @param {string[]} remaining - Atom IDs not yet assigned.
-   * @returns {number}
+   * @returns {number} The computed numeric value.
    */
   function count(remaining) {
     if (remaining.length === 0) {

@@ -1,5 +1,11 @@
 /** @module app/render/deps/scene-deps */
 
+/**
+ * Builds the structured dependency object for the 2DHighlightRenderer factory,
+ * mapping flat context properties into named sub-objects (view, state, helpers, constants).
+ * @param {object} ctx - Flat app context providing 2DHighlightRenderer-related methods and values.
+ * @returns {object} Dependency object consumed by `create2DHighlightRenderer`.
+ */
 export function create2DHighlightRendererDeps(ctx) {
   return {
     view: {
@@ -18,6 +24,12 @@ export function create2DHighlightRendererDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the ForceHighlightRenderer factory,
+ * mapping flat context properties into named sub-objects (view, force, cache, constants, helpers).
+ * @param {object} ctx - Flat app context providing ForceHighlightRenderer-related methods and values.
+ * @returns {object} Dependency object consumed by `createForceHighlightRenderer`.
+ */
 export function createForceHighlightRendererDeps(ctx) {
   return {
     view: {
@@ -41,6 +53,12 @@ export function createForceHighlightRendererDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the ForceViewportState factory,
+ * mapping flat context properties into named sub-objects (state, constants).
+ * @param {object} ctx - Flat app context providing ForceViewportState-related methods and values.
+ * @returns {object} Dependency object consumed by `createForceViewportState`.
+ */
 export function createForceViewportStateDeps(ctx) {
   return {
     state: {
@@ -53,6 +71,12 @@ export function createForceViewportStateDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the ForceSceneRenderer factory,
+ * mapping flat context properties into named sub-objects (d3, svg, zoom, g, plotEl, simulation, constants, state, cache, helpers, events, drag, callbacks).
+ * @param {object} ctx - Flat app context providing ForceSceneRenderer-related methods and values.
+ * @returns {object} Dependency object consumed by `createForceSceneRenderer`.
+ */
 export function createForceSceneRendererDeps(ctx) {
   return {
     d3: ctx.d3,
@@ -139,6 +163,12 @@ export function createForceSceneRendererDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the 2DSceneRenderer factory,
+ * mapping flat context properties into named sub-objects (d3, svg, zoom, g, plotEl, constants, state, cache, selection, overlay, helpers, events, drag, actions, view, analysis).
+ * @param {object} ctx - Flat app context providing 2DSceneRenderer-related methods and values.
+ * @returns {object} Dependency object consumed by `create2DSceneRenderer`.
+ */
 export function create2DSceneRendererDeps(ctx) {
   return {
     d3: ctx.d3,
@@ -220,6 +250,12 @@ export function create2DSceneRendererDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the SelectionOverlayManager factory,
+ * mapping flat context properties into named sub-objects (scheduler, state, molecule, view2D, view, renderers, constants).
+ * @param {object} ctx - Flat app context providing SelectionOverlayManager-related methods and values.
+ * @returns {object} Dependency object consumed by `createSelectionOverlayManager`.
+ */
 export function createSelectionOverlayManagerDeps(ctx) {
   return {
     scheduler: {
@@ -257,6 +293,12 @@ export function createSelectionOverlayManagerDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the ForceSelectionRenderer factory,
+ * mapping flat context properties into named sub-objects (view, selection, force, cache, constants, helpers).
+ * @param {object} ctx - Flat app context providing ForceSelectionRenderer-related methods and values.
+ * @returns {object} Dependency object consumed by `createForceSelectionRenderer`.
+ */
 export function createForceSelectionRendererDeps(ctx) {
   return {
     view: {

@@ -2,6 +2,11 @@
 
 import { labelHalfW, getAtomLabel } from '../../layout/mol2d-helpers.js';
 
+/**
+ * Creates the selection overlay manager, coordinating hover and selection highlight rendering across both 2D and force layout modes.
+ * @param {object} ctx - Context providing `state`, `molecule`, `view`, `view2D`, `constants`, `renderers`, `selection`, and `scheduler`.
+ * @returns {object} Object with `clearPrimitiveHover`, `setPrimitiveHover`, `getRenderableSelectionIds`, `redraw2dSelection`, `refreshSelectionOverlay`, and `showPrimitiveHover` functions.
+ */
 export function createSelectionOverlayManager(ctx) {
   let overlayRafId = null;
 
@@ -204,6 +209,11 @@ export function createSelectionOverlayManager(ctx) {
   };
 }
 
+/**
+ * Creates the force-layout selection renderer that draws selection overlays on the force graph.
+ * @param {object} ctx - Context providing `view`, `cache`, `constants`, `helpers`, `force`, and `selection`.
+ * @returns {object} Object with an `applyForceSelection` function.
+ */
 export function createForceSelectionRenderer(ctx) {
   function applyForceSelection() {
     const graphSelection = ctx.view.getGraphSelection();

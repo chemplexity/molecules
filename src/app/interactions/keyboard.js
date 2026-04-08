@@ -1,5 +1,9 @@
 /** @module app/interactions/keyboard */
 
+/**
+ * Attaches keyboard event listeners for undo/redo, select-all, arrow-key panning, escape, element shortcuts, and delete/backspace.
+ * @param {object} context - Dependency context providing state, selection, history, view, drawBond, overlays, actions, and optional doc/win overrides.
+ */
 export function initKeyboardInteractions(context) {
   const { doc = document, win = window } = context;
 

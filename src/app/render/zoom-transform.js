@@ -1,5 +1,10 @@
 /** @module app/render/zoom-transform */
 
+/**
+ * Creates zoom-transform snapshot helpers for capturing and restoring the SVG pan/zoom state.
+ * @param {object} deps - Dependency object providing `d3`, `svg`, and `zoom` for transform operations.
+ * @returns {object} Object with `captureZoomTransformSnapshot` and `restoreZoomTransformSnapshot` functions.
+ */
 export function createZoomTransformHelpers(deps) {
   function captureZoomTransformSnapshot() {
     const transform = deps.d3.zoomTransform(deps.svg.node());

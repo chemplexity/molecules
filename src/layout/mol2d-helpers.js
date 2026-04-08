@@ -53,7 +53,6 @@ const DEFAULT_COLOR = '#FF69B4';
 
 /**
  * Returns the CPK fill colour for an element symbol.
- *
  * @param {string} sym - Element symbol (e.g. `'C'`, `'O'`).
  * @returns {string} Hex colour string (e.g. `'#FF0D0D'`), or hot-pink for unknown elements.
  */
@@ -74,10 +73,9 @@ export const WEDGE_DASHES = 6; // number of hash lines in a dashed bond
 /**
  * Returns the length of a 2D vector. Returns at least `1` to avoid
  * division-by-zero in callers that use this as a denominator.
- *
- * @param {number} x
- * @param {number} y
- * @returns {number}
+ * @param {number} x - X coordinate.
+ * @param {number} y - Y coordinate.
+ * @returns {number} The computed numeric value.
  */
 export function vecLen(x, y) {
   return Math.sqrt(x * x + y * y) || 1;
@@ -85,9 +83,8 @@ export function vecLen(x, y) {
 
 /**
  * Axis-aligned bounding box of a set of atoms with 2D coordinates.
- *
  * @param {Array<{x:number, y:number}>} atoms - Array of objects with x and y properties.
- * @returns {{ minX: number, maxX: number, minY: number, maxY: number, cx: number, cy: number }}
+ * @returns {{ minX: number, maxX: number, minY: number, maxY: number, cx: number, cy: number }} The result object.
  */
 export function atomBBox(atoms) {
   let minX = Infinity,
@@ -113,10 +110,9 @@ export function atomBBox(atoms) {
 
 /**
  * Returns a unit vector perpendicular to `(dx, dy)`, rotated 90° counter-clockwise.
- *
- * @param {number} dx
- * @param {number} dy
- * @returns {{ nx: number, ny: number }}
+ * @param {number} dx - X-axis displacement.
+ * @param {number} dy - Y-axis displacement.
+ * @returns {{ nx: number, ny: number }} The result object.
  */
 export function perpUnit(dx, dy) {
   const len = vecLen(dx, dy);
@@ -126,12 +122,13 @@ export function perpUnit(dx, dy) {
 /**
  * Shortens a line segment by `d1` at the start and `d2` at the end,
  * keeping the original direction.
- *
- * @param {number} x1 @param {number} y1 - Start point.
- * @param {number} x2 @param {number} y2 - End point.
+ * @param {number} x1 - Start point x.
+ * @param {number} y1 - Start point y.
+ * @param {number} x2 - End point x.
+ * @param {number} y2 - End point y.
  * @param {number} d1 - Distance to trim from the start.
  * @param {number} d2 - Distance to trim from the end.
- * @returns {{ x1: number, y1: number, x2: number, y2: number }}
+ * @returns {{ x1: number, y1: number, x2: number, y2: number }} The result object.
  */
 export function shortenLine(x1, y1, x2, y2, d1, d2) {
   const dx = x2 - x1,
@@ -151,12 +148,11 @@ export function shortenLine(x1, y1, x2, y2, d1, d2) {
  * Returns +1 or -1 indicating which side of the bond axis the secondary
  * parallel line of a double bond should be placed on, based on the
  * positions of neighbouring heavy atoms.
- *
- * @param {import('../core/Atom.js').Atom} a1
- * @param {import('../core/Atom.js').Atom} a2
- * @param {import('../core/Molecule.js').Molecule} mol
- * @param {function} toSVG - converts an atom to { x, y } in SVG space
- * @returns {1|-1}
+ * @param {import('../core/Atom.js').Atom} a1 - The a1 value.
+ * @param {import('../core/Atom.js').Atom} a2 - The a2 value.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {(atom: import('../core/Atom.js').Atom) => {x: number, y: number}} toSVG - Converts an atom to `{x, y}` in SVG space.
+ * @returns {1|-1} The computed result.
  */
 export function secondaryDir(a1, a2, mol, toSVG) {
   const s1 = toSVG(a1),
@@ -216,10 +212,9 @@ export function secondaryDir(a1, a2, mol, toSVG) {
 
 /**
  * Half-width of an atom label bounding box in SVG pixels.
- *
- * @param {string|null} label
+ * @param {string|null} label - The label string.
  * @param {number} fontSize - font size in px
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function labelHalfW(label, fontSize) {
   if (!label) {
@@ -230,10 +225,9 @@ export function labelHalfW(label, fontSize) {
 
 /**
  * Half-height of an atom label bounding box in SVG pixels.
- *
- * @param {string|null} label
+ * @param {string|null} label - The label string.
  * @param {number} fontSize - font size in px
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function labelHalfH(label, fontSize) {
   if (!label) {
@@ -246,10 +240,9 @@ export function labelHalfH(label, fontSize) {
  * Returns the horizontal shift applied to the rendered text box so the element
  * symbol stays centered on the atom while any attached H fragment extends to
  * the chosen side.
- *
- * @param {string|null} label
+ * @param {string|null} label - The label string.
  * @param {number} fontSize - font size in px
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function labelTextOffset(label, fontSize) {
   if (!label) {
@@ -278,9 +271,8 @@ export function labelTextOffset(label, fontSize) {
  * - `n > 1` → `'n+'`
  * - `-1` → `'−'` (Unicode minus)
  * - `n < -1` → `'|n|−'`
- *
- * @param {number} charge
- * @returns {string}
+ * @param {number} charge - Formal charge value.
+ * @returns {string} The result string.
  */
 export function formatChargeLabel(charge) {
   if (!charge) {
@@ -294,10 +286,9 @@ export function formatChargeLabel(charge) {
  *
  * The badge radius is at least large enough to contain one character and
  * scales with the text length for multi-character labels (e.g. `'2+'`).
- *
  * @param {string} chargeLabel - The formatted charge string (from `formatChargeLabel`).
  * @param {number} fontSize - Base font size in px.
- * @returns {{ fontSize: number, radius: number }}
+ * @returns {{ fontSize: number, radius: number }} The result object.
  */
 export function chargeBadgeMetrics(chargeLabel, fontSize) {
   const label = chargeLabel ?? '';
@@ -311,12 +302,11 @@ export function chargeBadgeMetrics(chargeLabel, fontSize) {
  * Returns the display label for an atom in 2D skeletal notation, or null
  * for unlabelled carbons.  The H-count subscript is placed left or right
  * of the element symbol based on the average neighbour direction.
- *
- * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
  * @param {Map<string,number>} hCounts - atom id → implicit-H count
- * @param {function} toSVG - converts an atom to { x, y } in SVG space
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {string|null}
+ * @param {(atom: import('../core/Atom.js').Atom) => {x: number, y: number}} toSVG - Converts an atom to `{x, y}` in SVG space.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {string|null} The result string, or `null` if not applicable.
  */
 export function getAtomLabel(atom, hCounts, toSVG, mol) {
   const symbol = atom.name;
@@ -417,10 +407,9 @@ function displayedBondOrderSum(atom, mol) {
  * Computed as `floor((valenceElectrons − bondOrderSum − formalCharge − radicalElectrons) / 2)`.
  * Returns 0 for transition metals, noble gases, unknown elements, and when
  * `atom` or `mol` are falsy.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {number}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number} The computed numeric value.
  */
 export function displayedLonePairCount(atom, mol) {
   if (!atom || !mol) {
@@ -723,19 +712,21 @@ function rayDistanceToLabelBox(angle, label, fontSize) {
 
 /**
  * Computes a non-overlapping position for a circled charge badge near an atom.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} mol
- * @param {object} options
- * @param {function} options.pointForAtom - maps an atom to {x, y} render coords
- * @param {function} [options.orientationPointForAtom=pointForAtom]
- * @param {string|null} [options.label=null] - rendered atom label, if any
- * @param {number} [options.fontSize=14]
- * @param {number} [options.baseRadius=0]
- * @param {number} [options.offsetFromBoundary=3]
- * @param {string} [options.chargeLabel]
- * @param {number[]} [options.extraOccupiedAngles=[]]
- * @returns {{x:number,y:number,radius:number,fontSize:number,text:string,angle:number}|null}
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {object} options - Configuration options.
+ * @param {(atom: import('../core/Atom.js').Atom) => {x: number, y: number}} options.pointForAtom - Maps an atom to `{x, y}` render coordinates.
+ * @param {(atom: import('../core/Atom.js').Atom) => {x: number, y: number}} [options.orientationPointForAtom] - Maps an atom to orientation render coordinates.
+ * @param {string|null} [options.label] - rendered atom label, if any
+ * @param {number} [options.fontSize] - Font size for rendering.
+ * @param {number} [options.baseRadius] - Configuration sub-option.
+ * @param {number} [options.offsetFromBoundary] - Configuration sub-option.
+ * @param {string} [options.chargeLabel] - Configuration sub-option.
+ * @param {number[]} [options.extraOccupiedAngles] - Additional blocked angular directions.
+ * @param {number} [options.preferredAngle] - preferred angle for badge placement in radians
+ * @param {number|null} [options.stickyAngle] - if set, locks badge to this angle
+ * @param {number} [options.stickyTolerance] - angular tolerance for sticky snapping
+ * @returns {{x:number,y:number,radius:number,fontSize:number,text:string,angle:number}|null} The result object.
  */
 export function computeChargeBadgePlacement(
   atom,
@@ -823,19 +814,19 @@ export function computeChargeBadgePlacement(
  * The caller supplies a point-mapping function so the same placement logic
  * can be reused by both the SVG/browser 2D renderer and the force renderer.
  * Angles are chosen only after the final neighbor geometry is known.
- *
- * @param {import('../core/Atom.js').Atom} atom
- * @param {import('../core/Molecule.js').Molecule} mol
- * @param {object} options
- * @param {function} options.pointForAtom - maps an atom to {x, y} render coords
- * @param {string|null} [options.label=null] - rendered atom label, if any
- * @param {number} [options.fontSize=14]
- * @param {number} [options.baseRadius=0] - minimum clearance around the atom
- * @param {number} [options.offsetFromBoundary=6] - radial offset beyond atom/label
- * @param {number} [options.dotSpacing=4] - distance between the two dots
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {object} options - Configuration options.
+ * @param {(atom: import('../core/Atom.js').Atom) => {x: number, y: number}} options.pointForAtom - Maps an atom to `{x, y}` render coordinates.
+ * @param {(atom: import('../core/Atom.js').Atom) => {x: number, y: number}} [options.orientationPointForAtom] - Maps an atom to orientation coordinates.
+ * @param {string|null} [options.label] - rendered atom label, if any
+ * @param {number} [options.fontSize] - Font size for rendering.
+ * @param {number} [options.baseRadius] - minimum clearance around the atom
+ * @param {number} [options.offsetFromBoundary] - radial offset beyond atom/label
+ * @param {number} [options.dotSpacing] - distance between the two dots
  * @param {number} [options.pairCount] - explicit lone-pair count override
- * @param {number[]} [options.extraOccupiedAngles=[]] - additional blocked directions
- * @returns {Array<{x:number, y:number}>}
+ * @param {number[]} [options.extraOccupiedAngles] - Additional blocked angular directions.
+ * @returns {Array<{x:number, y:number}>} Array of results.
  */
 export function computeLonePairDotPositions(
   atom,
@@ -916,9 +907,10 @@ export function computeLonePairDotPositions(
  * perpendicular to the main chain).  The wedge/dash type is determined via
  * parity-aware CIP winding so the correct absolute configuration is conveyed
  * regardless of which substituent is chosen.
- *
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {Map<string, 'wedge'|'dash'>}
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string} centerId - ID of the stereo center atom.
+ * @param {string|null} [preferredBondId] - Preferred bond ID for the stereo wedge.
+ * @returns {Map<string, 'wedge'|'dash'>} The resulting map.
  */
 export function stereoBondTypeForCenter(mol, centerId, preferredBondId = null) {
   const center = mol.atoms.get(centerId);
@@ -1000,12 +992,11 @@ export function stereoBondTypeForCenter(mol, centerId, preferredBondId = null) {
  * This should only be used for intentional stereo-edit actions. Ordinary
  * redraws should continue treating stored chirality as the chemistry truth and
  * derive wedge/dash from that.
- *
- * @param {import('../core/Molecule.js').Molecule} mol
- * @param {string} centerId
- * @param {string} bondId
- * @param {'wedge'|'dash'} desiredType
- * @returns {{ bondId: string, type: 'wedge'|'dash', centerId: string }|null}
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string} centerId - ID of the center atom.
+ * @param {string} bondId - The bond ID.
+ * @param {'wedge'|'dash'} desiredType - The desiredType value.
+ * @returns {{ bondId: string, type: 'wedge'|'dash', centerId: string }|null} The result object.
  */
 export function applyDisplayedStereoToCenter(mol, centerId, bondId, desiredType) {
   if (!mol || !centerId || !bondId || (desiredType !== 'wedge' && desiredType !== 'dash')) {
@@ -1120,6 +1111,13 @@ function _compareBondSidePriority(left, right) {
   return 0;
 }
 
+/**
+ * Returns the preferred stereo center atom ID to use when rendering the given bond.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string} bondId - Bond ID to query.
+ * @param {string|null} [preferredCenterId] - Hint for preferred center.
+ * @returns {string|null} The preferred center atom ID, or null.
+ */
 export function getPreferredBondDisplayCenterId(mol, bondId, preferredCenterId = null) {
   if (!mol || !bondId) {
     return null;
@@ -1149,6 +1147,12 @@ export function getPreferredBondDisplayCenterId(mol, bondId, preferredCenterId =
   return atomIdA;
 }
 
+/**
+ * Returns the stereo center atom ID to use when rendering the given bond.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string} bondId - Bond ID to query.
+ * @returns {string|null} The center atom ID, or null.
+ */
 export function stereoBondCenterIdForRender(mol, bondId) {
   if (!mol || !bondId) {
     return null;
@@ -1310,6 +1314,12 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
   return assignments;
 }
 
+/**
+ * Computes a Map of bond ID to stereo wedge type ('wedge' | 'dash') for all chiral centers.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {Map.<string, string>|null} [previousStereoMap] - Previous stereo assignment map.
+ * @returns {Map.<string, string>} Map from bond ID to 'wedge' or 'dash'.
+ */
 export function pickStereoWedges(mol, previousStereoMap = null) {
   const result = new Map();
   for (const { bondId, type } of _resolveStereoDisplayAssignments(mol, previousStereoMap)) {
@@ -1318,6 +1328,12 @@ export function pickStereoWedges(mol, previousStereoMap = null) {
   return result;
 }
 
+/**
+ * Applies stereo wedge assignments to bond display properties.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {Map.<string, string>|null} [previousStereoMap] - Previous stereo assignment map.
+ * @returns {Map.<string, string>} New stereo map from bond ID to 'wedge' or 'dash'.
+ */
 export function syncDisplayStereo(mol, previousStereoMap = null) {
   const assignments = _resolveStereoDisplayAssignments(mol, previousStereoMap);
   for (const bond of mol?.bonds?.values?.() ?? []) {
@@ -1329,6 +1345,12 @@ export function syncDisplayStereo(mol, previousStereoMap = null) {
   return new Map(assignments.map(({ bondId, type }) => [bondId, type]));
 }
 
+/**
+ * Flips all stereo wedge assignments (wedge ↔ dash) and applies them.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {Map.<string, string>|null} [previousStereoMap] - Previous stereo assignment map.
+ * @returns {Map.<string, string>} New stereo map from bond ID to 'wedge' or 'dash'.
+ */
 export function flipDisplayStereo(mol, previousStereoMap = null) {
   const assignments = _resolveStereoDisplayAssignments(mol, previousStereoMap).map(({ bondId, type, centerId, manual = false }) => ({
     bondId,
@@ -1353,6 +1375,11 @@ export function flipDisplayStereo(mol, previousStereoMap = null) {
 // left untouched.  The function mutates bond.properties in-place and is
 // idempotent — calling it twice has no additional effect.
 // ---------------------------------------------------------------------------
+/**
+ * Assigns localizedOrder (1 or 2) to aromatic bonds that lack it, using maximum matching.
+ * Mutates bond properties in-place.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ */
 export function kekulize(mol) {
   const aroBonds = [];
   for (const bond of mol.bonds.values()) {

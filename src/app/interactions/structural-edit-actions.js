@@ -118,6 +118,11 @@ function shouldClearManualBondDisplay(bond, drawBondType) {
   );
 }
 
+/**
+ * Creates structural edit action handlers for bond-order promotion, atom-element changes, force-hydrogen replacement, and 2D viewport restoration.
+ * @param {object} context - Dependency context providing controller, getMode, getDrawBondElement, molecule, view, resonance, chemistry, force, and constants.
+ * @returns {object} Object with `restore2dEditViewport`, `prepareResonanceStructuralEdit`, `promoteBondOrder`, `changeAtomElements`, and `replaceForceHydrogenWithDrawElement`.
+ */
 export function createStructuralEditActions(context) {
   function buildForceInitialPatchPos(atomIds) {
     const simulation = context.force.getSimulation?.();

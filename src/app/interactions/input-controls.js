@@ -4,6 +4,11 @@ function escapeForInlineJs(value) {
   return String(value).replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 }
 
+/**
+ * Creates the input controls that manage the molecule catalog picker, example links, random molecule selection, and SMILES/InChI input field bindings.
+ * @param {object} deps - Dependency object providing data, state, dom, and actions.
+ * @returns {object} Object with `bind`, `renderExamples`, `pickRandomMolecule`, `getCollectionInputValue`, and `syncCollectionPickerForInputValue`.
+ */
 export function createInputControls(deps) {
   const collectionEntries = deps.data.moleculeCatalog.flatMap(collection =>
     collection.molecules.map(molecule => ({

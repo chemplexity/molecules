@@ -6,6 +6,11 @@ import { createRuntimeUi } from '../ui/runtime-ui.js';
 import { createAppStateBridgeDeps } from './deps/app-state-deps.js';
 import { createRenderRuntimeDeps } from './deps/render-runtime-deps.js';
 
+/**
+ * Instantiates and connects the runtime UI, app state bridge, and render runtime from the provided dependencies.
+ * @param {object} deps - Flat dependency object providing runtimeState, render helpers, zoom utilities, and analysis updaters.
+ * @returns {object} Object exposing `appState`, `renderRuntime`, and convenience methods for input sync, snapshots, analysis panels, and mode chrome.
+ */
 export function initializeRuntimeBridges(deps) {
   const runtimeUi = createRuntimeUi({
     getSessionRuntimeBridge: () => deps.runtimeState.sessionRuntimeBridge,

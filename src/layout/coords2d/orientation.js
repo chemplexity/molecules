@@ -189,9 +189,8 @@ function _preferredLandscapeOrientationPath(molecule) {
  * zigzag and must NOT be rotated (their bond-length exactness depends on
  * the fixed geometry).  So the caller is responsible for only invoking this
  * when appropriate (currently: ring-containing molecules only).
- *
  * @param {Map<string, Vec2>} coords  – mutated in-place
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  */
 export function normalizeOrientation(coords, molecule) {
   if (coords.size < 2) {
@@ -377,6 +376,11 @@ export function normalizeOrientation(coords, molecule) {
   }
 }
 
+/**
+ * Returns true when the molecule should be oriented in landscape mode based on backbone length.
+ * @param {import('../../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {boolean} True if landscape orientation is preferred.
+ */
 export function shouldPreferFinalLandscapeOrientation(molecule) {
   const preferredBackbone = findPreferredBackbonePath(molecule);
   if (preferredBackbone && preferredBackbone.ringCount === 0 && preferredBackbone.path.length >= 8) {
@@ -386,6 +390,12 @@ export function shouldPreferFinalLandscapeOrientation(molecule) {
   return Boolean(orientPath && orientPath.length >= _landscapePathMinLength(molecule));
 }
 
+/**
+ * Rotates the coordinate map so that the longest backbone runs horizontally.
+ * Mutates `coords` in-place.
+ * @param {Map.<string, {x:number,y:number}>} coords - Mutable atom coordinate map.
+ * @param {import('../../core/Molecule.js').Molecule} molecule - The molecule graph.
+ */
 export function preferLandscapeOrientation(coords, molecule) {
   const heavyIds = [...coords.keys()].filter(id => molecule.atoms.has(id) && molecule.atoms.get(id).name !== 'H');
   if (heavyIds.length < 2) {

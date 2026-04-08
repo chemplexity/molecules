@@ -2,9 +2,9 @@
 
 /**
  * Performs a breadth-first search starting from the given atom.
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @param {string} startId - ID of the starting atom.
- * @returns {{ visited: string[], parent: Map<string, string|null>, depth: Map<string, number> }}
+ * @returns {{ visited: string[], parent: Map<string, string|null>, depth: Map<string, number> }} The result object.
  */
 export function bfs(molecule, startId) {
   const visited = [];
@@ -37,9 +37,9 @@ export function bfs(molecule, startId) {
 
 /**
  * Performs a depth-first search starting from the given atom.
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @param {string} startId - ID of the starting atom.
- * @returns {{ visited: string[], parent: Map<string, string|null>, finishOrder: string[] }}
+ * @returns {{ visited: string[], parent: Map<string, string|null>, finishOrder: string[] }} The result object.
  */
 export function dfs(molecule, startId) {
   const visited = new Set();
@@ -52,7 +52,7 @@ export function dfs(molecule, startId) {
   parent.set(startId, null);
 
   /**
-   * @param {string} id
+   * @param {string} id - Unique identifier.
    */
   function visit(id) {
     visited.add(id);

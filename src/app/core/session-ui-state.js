@@ -1,5 +1,10 @@
 /** @module app/core/session-ui-state */
 
+/**
+ * Creates the session UI state bridge that manages panel state, interaction state serialization, and analysis panel updates.
+ * @param {object} deps - Dependency object providing document, functional group updaters, reaction/resonance/bond-EN/atom-numbering panel helpers, and selection state accessors.
+ * @returns {object} Object with `serializeSnapshotMol`, `updateAnalysisPanels`, `capturePanelState`, `restorePanelState`, `captureInteractionState`, and `restoreInteractionState`.
+ */
 export function createSessionUiStateBridge(deps) {
   const DEFAULT_SMARTS_TAB = 'functional-groups';
 

@@ -70,6 +70,11 @@ function detailHighlightGroups(detail, molecule, label = '') {
   return [];
 }
 
+/**
+ * Recalculates and renders graph-theoretical descriptors for the given molecule into the descriptor panel.
+ * @param {object} molecule - Molecule object whose descriptors will be computed.
+ * @param {number} [extraH] - Additional implicit hydrogen count to include in atom totals.
+ */
 export function updateDescriptors(molecule, extraH = 0) {
   const tbody = document.getElementById('descriptor-body');
 
@@ -123,6 +128,11 @@ export function updateDescriptors(molecule, extraH = 0) {
   updatePhysicochemical(molecule);
 }
 
+/**
+ * Updates the molecular formula and molecular weight display elements for the given molecule.
+ * @param {object} molecule - Molecule object used to compute the formula and mass.
+ * @param {number} [extraH] - Additional implicit hydrogen count to add to the formula.
+ */
 export function updateFormula(molecule, extraH = 0) {
   const formula = molecularFormula(molecule);
   if (extraH > 0) {
@@ -157,6 +167,10 @@ export function updateFormula(molecule, extraH = 0) {
   document.getElementById('molecularWeight').textContent = `${(Math.round(mass * 100) / 100).toFixed(2)} g/mol`;
 }
 
+/**
+ * Recalculates and renders physicochemical properties for the given molecule into the physchem panel.
+ * @param {object} molecule - Molecule object whose physicochemical properties will be computed.
+ */
 export function updatePhysicochemical(molecule) {
   const tbody = document.getElementById('pc-body');
   if (!tbody) {

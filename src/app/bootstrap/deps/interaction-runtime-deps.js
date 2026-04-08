@@ -15,6 +15,12 @@ export const DRAW_ELEM_PROTONS = {
   K: 19
 };
 
+/**
+ * Builds the structured dependency object for the InteractionRuntime factory,
+ * mapping flat context properties into a flat dependency object used by interaction handlers.
+ * @param {object} ctx - Flat app context providing InteractionRuntime-related methods and values.
+ * @returns {object} Dependency object consumed by `createInteractionRuntime`.
+ */
 export function createInteractionRuntimeDeps(ctx) {
   return {
     appState: ctx.appState,

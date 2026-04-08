@@ -4,7 +4,6 @@ import { computeEigenvalues } from '../utils/index.js';
 
 /**
  * Computes the eigenvalues of the adjacency matrix, sorted in descending order.
- *
  * @param {number[][]} A - Square symmetric adjacency matrix.
  * @returns {number[]} Eigenvalues sorted descending.
  */
@@ -17,7 +16,6 @@ export function adjacencySpectrum(A) {
  *
  * The second-smallest eigenvalue (algebraic connectivity / Fiedler value) indicates
  * graph connectivity strength.
- *
  * @param {number[][]} L - Square symmetric Laplacian matrix.
  * @returns {number[]} Eigenvalues sorted ascending.
  */
@@ -27,9 +25,8 @@ export function laplacianSpectrum(L) {
 
 /**
  * Returns the spectral radius (largest eigenvalue of the adjacency matrix).
- *
  * @param {number[][]} A - Square symmetric adjacency matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function spectralRadius(A) {
   return adjacencySpectrum(A)[0] ?? 0;
@@ -39,9 +36,8 @@ export function spectralRadius(A) {
  * Computes the Estrada index.
  *
  * EE = Σ e^λᵢ for all eigenvalues λᵢ of the adjacency matrix.
- *
  * @param {number[][]} A - Square symmetric adjacency matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function estradaIndex(A) {
   const eigenvalues = computeEigenvalues(A);

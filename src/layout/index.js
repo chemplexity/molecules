@@ -6,15 +6,14 @@ export { generateCoords, refineExistingCoords } from './coords2d.js';
 
 /**
  * Generate 2D coordinates for `mol` then refine them.
- *
- * @param {import('../core/Molecule.js').Molecule} mol
- * @param {object} [options]
- * @param {boolean} [options.suppressH=true]
- * @param {number}  [options.bondLength=1.5]
- * @param {number}  [options.maxPasses=6]
- * @param {boolean} [options.freezeRings=true]
- * @param {boolean} [options.freezeChiralCenters=false]
- * @param {boolean} [options.allowBranchReflect=true]
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {object} [options] - Configuration options.
+ * @param {boolean} [options.suppressH] - Whether to suppress hydrogen display.
+ * @param {number} [options.bondLength] - Configuration sub-option.
+ * @param {number} [options.maxPasses] - Configuration sub-option.
+ * @param {boolean} [options.freezeRings] - Configuration sub-option.
+ * @param {boolean} [options.freezeChiralCenters] - Configuration sub-option.
+ * @param {boolean} [options.allowBranchReflect] - Configuration sub-option.
  * @returns {void} Coordinates are written directly onto the atoms in `mol`.
  */
 export function generateAndRefine2dCoords(

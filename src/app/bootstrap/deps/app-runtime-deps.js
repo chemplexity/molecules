@@ -1,5 +1,11 @@
 /** @module app/bootstrap/deps/app-runtime-deps */
 
+/**
+ * Builds the structured dependency object for the AppRuntime factory,
+ * mapping flat context properties into named sub-objects (input, dom, io, state, selection, drawBond, force, scene, cache, runtime, renderers, analysis, overlays, resonance, highlights, history, view, molecule, parsers, chemistry, actions, data, constants).
+ * @param {object} ctx - Flat app context providing AppRuntime-related methods and values.
+ * @returns {object} Dependency object consumed by `createAppRuntime`.
+ */
 export function createAppRuntimeDeps(ctx) {
   return {
     Molecule: ctx.Molecule,

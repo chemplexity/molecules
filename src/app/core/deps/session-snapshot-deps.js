@@ -1,5 +1,11 @@
 /** @module app/core/session-snapshot-deps */
 
+/**
+ * Builds the structured dependency object for the SessionSnapshot factory,
+ * mapping flat dependency properties into a flat dependency object used by snapshot capture and restore operations.
+ * @param {object} deps - Flat app context providing SessionSnapshot-related methods and values.
+ * @returns {object} Dependency object consumed by `createSessionSnapshot`.
+ */
 export function createSessionSnapshotDeps(deps) {
   return {
     Molecule: deps.Molecule,

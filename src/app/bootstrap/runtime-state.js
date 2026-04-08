@@ -2,6 +2,13 @@
 
 export const VALENCE_WARNING_FILL = 'rgba(214, 48, 49, 0.3)';
 
+/**
+ * Allocates and returns the mutable runtime state object that holds the current molecule, view mode, selection, and render state.
+ * @param {object} params - Runtime state initialization parameters.
+ * @param {() => object} params.getRenderOptions - Returns the current render options object (used to seed the initial font size).
+ * @param {(mol: object) => object[]} params.validateValence - Returns an array of valence warnings for a given molecule.
+ * @returns {object} Mutable runtime state object shared across the application.
+ */
 export function createRuntimeState({ getRenderOptions, validateValence }) {
   const runtimeState = {
     mode: '2d',

@@ -240,7 +240,7 @@ describe('createDrawBondPreviewActions', () => {
   });
 
   it('renders force-mode double previews with the final-style separator treatment', () => {
-    const source = { id: 'a1', x: 0, y: 0, visible: true, name: 'C' };
+    const _source = { id: 'a1', x: 0, y: 0, visible: true, name: 'C' };
     const { actions, g } = makeActions({
       mode: 'force',
       drawBondType: 'double',

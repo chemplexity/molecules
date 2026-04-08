@@ -4,9 +4,8 @@ import { Molecule } from '../core/Molecule.js';
 
 /**
  * Serialises a molecule to a plain JSON string.
- *
- * @param {Molecule} molecule
- * @returns {string}
+ * @param {Molecule} molecule - The molecule graph.
+ * @returns {string} The result string.
  */
 export function toJSON(molecule) {
   return JSON.stringify({
@@ -26,9 +25,8 @@ export function toJSON(molecule) {
 
 /**
  * Deserialises a molecule from a JSON string produced by {@link toJSON}.
- *
- * @param {string} json
- * @returns {Molecule}
+ * @param {string} json - The json value.
+ * @returns {Molecule} The resulting molecule.
  */
 export function fromJSON(json) {
   const data = JSON.parse(json);

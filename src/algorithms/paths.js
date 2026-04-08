@@ -11,9 +11,8 @@ import { bfs } from './traversal.js';
  * The molecular graph is undirected, so D[i][j] = D[j][i]. Each BFS pass
  * fills only the upper triangle and mirrors the result, halving the number
  * of matrix-fill operations.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {{ matrix: number[][], atomIds: string[] }}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {{ matrix: number[][], atomIds: string[] }} The result object.
  *   `matrix` is the n×n distance matrix; `atomIds` maps row/column index to atom ID.
  */
 export function allPairsShortestPaths(molecule) {

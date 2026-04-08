@@ -21,6 +21,11 @@ export const FORCE_LAYOUT_INITIAL_KEEP_IN_VIEW_TICKS = 8;
 export const FORCE_LAYOUT_EDIT_KEEP_IN_VIEW_TICKS = 24;
 const FORCE_LAYOUT_HEAVY_ANCHOR_SOFT_RATIO = 0.22;
 
+/**
+ * Converts a Molecule instance into a plain graph object with node and link arrays suitable for D3 force simulation.
+ * @param {object} molecule - Molecule instance with `atoms` and `bonds` Maps.
+ * @returns {{nodes: Array<object>, links: Array<object>}} Graph with D3-compatible nodes and links.
+ */
 export function convertMolecule(molecule) {
   const atomEntries = [...molecule.atoms.entries()];
   const idToIndex = new Map(atomEntries.map(([id], index) => [id, index]));
@@ -46,10 +51,20 @@ export function convertMolecule(molecule) {
   return { nodes, links };
 }
 
+/**
+ * Returns true when the given force-simulation node represents a hydrogen atom.
+ * @param {{name?: string}} node - A force-simulation node object.
+ * @returns {boolean} True if the node's name is `'H'`.
+ */
 export function isHydrogenNode(node) {
   return node?.name === 'H';
 }
 
+/**
+ * Returns the ideal link distance (in pixels) for a force-simulation bond based on whether either endpoint is hydrogen and the bond order.
+ * @param {{source: object, target: object, order: number}} link - A force-simulation link with resolved source/target node objects.
+ * @returns {number} Distance in pixels.
+ */
 export function forceLinkDistance(link) {
   const source = typeof link.source === 'object' ? link.source : null;
   const target = typeof link.target === 'object' ? link.target : null;
@@ -62,6 +77,12 @@ export function forceLinkDistance(link) {
   return distance;
 }
 
+/**
+ * Creates a D3 custom force that pulls heavy atoms toward their anchor positions within a given radius.
+ * @param {number} [radius] - Distance from anchor within which the soft force applies.
+ * @param {number} [strength] - Base strength coefficient for the anchor pull.
+ * @returns {object} D3-compatible force function with an `initialize` method.
+ */
 export function createForceAnchorRadiusForce(radius = FORCE_LAYOUT_HEAVY_ANCHOR_RADIUS, strength = FORCE_LAYOUT_HEAVY_ANCHOR_STRENGTH) {
   let nodes = [];
   const softStrength = strength * FORCE_LAYOUT_HEAVY_ANCHOR_SOFT_RATIO;
@@ -87,6 +108,12 @@ export function createForceAnchorRadiusForce(radius = FORCE_LAYOUT_HEAVY_ANCHOR_
   return force;
 }
 
+/**
+ * Creates a D3 custom force that repels hydrogen nodes from each other when they are within a maximum distance.
+ * @param {number} [maxDistance] - Maximum distance at which the repulsion force acts.
+ * @param {number} [strength] - Strength coefficient for the repulsion.
+ * @returns {object} D3-compatible force function with an `initialize` method.
+ */
 export function createForceHydrogenRepulsionForce(maxDistance = FORCE_LAYOUT_HH_REPULSION_DISTANCE, strength = FORCE_LAYOUT_HH_REPULSION_STRENGTH) {
   let nodes = [];
   const maxDistanceSq = maxDistance * maxDistance;
@@ -125,6 +152,13 @@ export function createForceHydrogenRepulsionForce(maxDistance = FORCE_LAYOUT_HH_
   return force;
 }
 
+/**
+ * Returns true when two D3 zoom transforms differ by more than the given epsilon in any of x, y, or k.
+ * @param {object|null} a - First zoom transform (or null).
+ * @param {object|null} b - Second zoom transform (or null).
+ * @param {number} [epsilon] - Tolerance for floating-point comparison.
+ * @returns {boolean} True if the transforms are meaningfully different.
+ */
 export function zoomTransformsDiffer(a, b, epsilon = 0.001) {
   if (!a || !b) {
     return true;
@@ -165,6 +199,16 @@ function chooseOpenAngles(occupiedAngles, count) {
   return chosen;
 }
 
+/**
+ * Positions hydrogen nodes radially around their parent heavy atom, choosing open angles not occupied by other bonds.
+ * @param {object} parentNode - The parent heavy-atom simulation node with finite x/y coordinates.
+ * @param {Array<object>} hydrogens - Hydrogen simulation nodes to reposition.
+ * @param {Array<object>} links - All current simulation links (used to determine occupied angles).
+ * @param {object} [options] - Optional placement parameters.
+ * @param {number} [options.distance] - Radial distance from parent at which to place each hydrogen.
+ * @param {Set<string>} [options.excludeIds] - Node IDs to exclude when computing occupied angles.
+ * @param {Array<object>} [options.nodes] - Full node array, required when link source/target are indices rather than objects.
+ */
 export function placeHydrogensAroundParent(parentNode, hydrogens, links, { distance = FORCE_LAYOUT_H_BOND_LENGTH, excludeIds = null, nodes = null } = {}) {
   if (!parentNode || !Number.isFinite(parentNode.x) || !Number.isFinite(parentNode.y) || hydrogens.length === 0) {return;}
   const excluded = excludeIds ?? new Set();
@@ -188,6 +232,11 @@ export function placeHydrogensAroundParent(parentNode, hydrogens, links, { dista
   });
 }
 
+/**
+ * Creates a bundle of force-layout helper functions bound to the simulation and plot context.
+ * @param {object} context - Context providing `simulation`, `plotEl`, `d3`, `viewportFitPadding`, `generateAndRefine2dCoords`, `alignReaction2dProductOrientation`, `spreadReaction2dProductComponents`, and `centerReaction2dPairCoords`.
+ * @returns {object} Object with `buildForceAnchorLayout`, `convertMolecule`, `seedForceNodePositions`, `forceLinkDistance`, `forceAnchorRadius`, `forceHydrogenRepulsion`, `forceFitTransform`, `isHydrogenNode`, `zoomTransformsDiffer`, `placeHydrogensAroundParent`, `patchForceNodePositions`, and `reseatHydrogensAroundPatched`.
+ */
 export function createForceHelpers(context) {
   function forceFitTransform(nodes, pad = FORCE_LAYOUT_FIT_PAD, { hydrogenRadiusScale = 1, scaleMultiplier = 1, maxScale = 30 } = {}) {
     if (!nodes?.length) {return null;}

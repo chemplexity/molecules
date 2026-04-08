@@ -20,6 +20,9 @@ const _HALOGENS = new Set(['F', 'Cl', 'Br', 'I']);
  * chemistry-space 2D coordinates (expected ~`bondLength` Å) rather than
  * force-layout pixel coordinates (~41 px per bond). Forces the range
  * [bondLength*0.2, bondLength*5] which comfortably separates the two scales.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True if coordinates are in chemistry scale.
  */
 function _coordsAreChemScale(mol, bondLength = 1.5) {
   let sum = 0,
@@ -39,6 +42,11 @@ function _coordsAreChemScale(mol, bondLength = 1.5) {
   return avg >= bondLength * 0.2 && avg <= bondLength * 5;
 }
 
+/**
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string} prefix - String prefix.
+ * @returns {import('../core/Molecule.js').Molecule} Cloned molecule with prefixed IDs.
+ */
 export function cloneWithPrefixedIds(mol, prefix) {
   const cloned = new Molecule();
   for (const atom of mol.atoms.values()) {
@@ -112,6 +120,12 @@ function prepareReaction2dLayoutReferenceMol(mol, bondLength = 1.5) {
   return mol;
 }
 
+/**
+ * @param {import('../core/Molecule.js').Molecule} sourceMol - The source molecule.
+ * @param {string} smirks - SMIRKS reaction string.
+ * @param {Map.<string, string>} mapping - Atom-to-atom mapping (query ID → target ID).
+ * @returns {import('../core/Molecule.js').Molecule|null} The reaction 2D scaffold, or null if inputs are invalid.
+ */
 export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
   if (!sourceMol || !smirks) {
     return null;
@@ -278,6 +292,10 @@ export function buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
   };
 }
 
+/**
+ * @param {string} productAtomId - Product atom ID.
+ * @returns {string} The corresponding source atom ID.
+ */
 export function sourceAtomId(productAtomId) {
   return typeof productAtomId === 'string' ? productAtomId.split(':').slice(1).join(':') : productAtomId;
 }
@@ -360,6 +378,13 @@ function relayoutReaction2dComponentInIsolation(mol, componentAtomIds, bondLengt
   }
 }
 
+/**
+ * @param {import('../core/Molecule.js').Molecule} reactant - The reactant molecule.
+ * @param {import('../core/Molecule.js').Molecule} product - The product molecule.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string[]} componentAtomIds - Array of atom IDs in the component.
+ * @returns {boolean} True if the mapped atom is scaffold-compatible with the reactant.
+ */
 export function mappedAtomReaction2dScaffoldCompatible(reactant, product, mol, componentAtomIds) {
   if (!reactant || !product) {
     return false;
@@ -394,6 +419,13 @@ export function mappedAtomReaction2dScaffoldCompatible(reactant, product, mol, c
   return reactantMappedNeighbors.join('|') === productMappedNeighbors.join('|');
 }
 
+/**
+ * @param {import('../core/Molecule.js').Molecule} reactant - The reactant molecule.
+ * @param {import('../core/Molecule.js').Molecule} product - The product molecule.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string[]} componentAtomIds - Array of atom IDs in the component.
+ * @returns {boolean} True if the mapped atom is locally anchored to the reactant geometry.
+ */
 export function mappedAtomReaction2dLocallyAnchored(reactant, product, mol, componentAtomIds) {
   if (!reactant || !product) {
     return false;
@@ -1946,6 +1978,11 @@ function preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds) {
   previewState.forcedProductStereoByCenter = resolved;
 }
 
+/**
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {object} previewState - Reaction preview state object.
+ * @param {number} bondLength - Target bond length.
+ */
 export function alignReaction2dProductOrientation(mol, previewState, bondLength = 1.5) {
   if (!previewState?.mappedAtomPairs?.length) {
     return;
@@ -2179,6 +2216,11 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
   }
 }
 
+/**
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {object} previewState - Reaction preview state object.
+ * @param {number} bondLength - Target bond length.
+ */
 export function spreadReaction2dProductComponents(mol, previewState, bondLength = 1.5) {
   if (!previewState || !mol || (previewState.productComponentAtomIdSets?.length ?? 0) < 2) {
     return;
@@ -2217,6 +2259,11 @@ export function spreadReaction2dProductComponents(mol, previewState, bondLength 
   }
 }
 
+/**
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {object} previewState - Reaction preview state object.
+ * @param {number} bondLength - Target bond length.
+ */
 export function centerReaction2dPairCoords(mol, previewState, bondLength = 1.5) {
   if (!previewState || !mol) {
     return;

@@ -34,6 +34,11 @@ function _compute2dFitTransform(ctx, atoms) {
   return ctx.d3.zoomIdentity.translate(fitTx, fitTy).scale(fitScale);
 }
 
+/**
+ * Creates the 2D scene renderer, providing `draw2d`, `render2d`, and `fitCurrent2dView` for the active SVG canvas.
+ * @param {object} ctx - Context providing `state`, `helpers`, `constants`, `view`, `overlay`, `drag`, `events`, `zoom`, `svg`, `g`, `d3`, `cache`, `selection`, and `analysis`.
+ * @returns {object} Object with `draw2d`, `render2d`, and `fitCurrent2dView` functions.
+ */
 export function create2DSceneRenderer(ctx) {
   const DRAW_MODE_ATOM_HIT_PAD = 6;
 

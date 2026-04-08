@@ -4,7 +4,7 @@
  * Creates an n×m matrix filled with zeros.
  * @param {number} n - Number of rows.
  * @param {number} m - Number of columns.
- * @returns {number[][]}
+ * @returns {number[][]} Array of results.
  */
 export function zeros(n, m) {
   return Array.from({ length: n }, () => new Array(m).fill(0));
@@ -14,7 +14,7 @@ export function zeros(n, m) {
  * Creates an n×m matrix filled with ones.
  * @param {number} n - Number of rows.
  * @param {number} m - Number of columns.
- * @returns {number[][]}
+ * @returns {number[][]} Array of results.
  */
 export function ones(n, m) {
   return Array.from({ length: n }, () => new Array(m).fill(1));
@@ -23,7 +23,7 @@ export function ones(n, m) {
 /**
  * Creates an n×n identity matrix.
  * @param {number} n - Matrix size.
- * @returns {number[][]}
+ * @returns {number[][]} Array of results.
  */
 export function identity(n) {
   return Array.from({ length: n }, (_, i) => Array.from({ length: n }, (__, j) => (i === j ? 1 : 0)));
@@ -31,9 +31,9 @@ export function identity(n) {
 
 /**
  * Adds two matrices element-wise.
- * @param {number[][]} A
- * @param {number[][]} B
- * @returns {number[][]}
+ * @param {number[][]} A - The A value.
+ * @param {number[][]} B - The B value.
+ * @returns {number[][]} Array of results.
  */
 export function addMatrices(A, B) {
   return A.map((row, i) => row.map((val, j) => val + B[i][j]));
@@ -41,9 +41,9 @@ export function addMatrices(A, B) {
 
 /**
  * Subtracts matrix B from A element-wise.
- * @param {number[][]} A
- * @param {number[][]} B
- * @returns {number[][]}
+ * @param {number[][]} A - The A value.
+ * @param {number[][]} B - The B value.
+ * @returns {number[][]} Array of results.
  */
 export function subtractMatrices(A, B) {
   return A.map((row, i) => row.map((val, j) => val - B[i][j]));
@@ -75,9 +75,9 @@ export function multiplyMatrices(A, B) {
 
 /**
  * Multiplies a matrix by a scalar.
- * @param {number[][]} A
+ * @param {number[][]} A - The A value.
  * @param {number} k - Scalar multiplier.
- * @returns {number[][]}
+ * @returns {number[][]} Array of results.
  */
 export function scalarMultiply(A, k) {
   return A.map(row => row.map(val => val * k));

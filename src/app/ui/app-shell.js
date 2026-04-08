@@ -17,6 +17,11 @@ function serializeCurrentMol(getMol, serialize) {
   }
 }
 
+/**
+ * Binds all global window action handlers required by the application shell.
+ * @param {object} context - Flat app context providing DOM, history, export, options, and navigation accessors.
+ * @returns {void}
+ */
 export function initAppShell(context) {
   const { win = window } = context;
 

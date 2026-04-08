@@ -9,10 +9,9 @@ import elements from '../data/elements.js';
 /**
  * Lexicographically compares two arrays of numbers.
  * Returns negative / 0 / positive like Array.sort's comparator.
- *
- * @param {number[]} a
- * @param {number[]} b
- * @returns {number}
+ * @param {number[]} a - First value or atom.
+ * @param {number[]} b - Second value or atom.
+ * @returns {number} The computed numeric value.
  */
 function lexCmp(a, b) {
   const len = Math.max(a.length, b.length);
@@ -29,9 +28,8 @@ function lexCmp(a, b) {
  * Given an array of invariant arrays (one per atom), returns an integer rank
  * array where rank 0 is the lex-smallest invariant and tied atoms share the
  * same rank.
- *
  * @param {number[][]} invariants  One tuple per atom.
- * @returns {number[]}
+ * @returns {number[]} Array of results.
  */
 function assignRanks(invariants) {
   const n = invariants.length;
@@ -65,9 +63,8 @@ function assignRanks(invariants) {
  * deterministically: within each tied group the lex-min initial-invariant
  * atom is ranked first, then Morgan is re-run until stability.  Repeating
  * this until all ranks are unique guarantees a fully canonical ordering.
- *
- * @param {import('../core/Molecule.js').Molecule} mol
- * @returns {Map<string, number>}
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {Map<string, number>} The resulting map.
  *   Maps heavy-atom ID to canonical rank (0 = first in canonical SMILES).
  */
 export function morganRanks(mol) {
@@ -135,6 +132,8 @@ export function morganRanks(mol) {
   /**
    * One round of Morgan extension: extend each atom's invariant with the
    * sorted neighbor ranks.
+   * @param {number[]} rank - Current rank array.
+   * @returns {number[]} Updated rank array after one extension round.
    */
   function extendRanks(rank) {
     const inv = rank.map((r, i) => {

@@ -12,9 +12,8 @@ function normalizeCollectionSearchValue(value) {
 
 /**
  * Find a molecule collection by its stable collection id.
- *
- * @param {string} collectionId
- * @returns {object|null}
+ * @param {string} collectionId - The collectionId value.
+ * @returns {object|null} The computed result.
  */
 export function getMoleculeCatalogById(collectionId) {
   const normalizedId = normalizeCollectionSearchValue(collectionId);
@@ -29,13 +28,12 @@ export function getMoleculeCatalogById(collectionId) {
  *
  * Matches against molecule `id`, `name`, `aliases`, `tags`, `smiles`, `inchi`,
  * and the parent collection `id`, `name`, and `tags`.
- *
- * @param {string} query
+ * @param {string} query - The query structure.
  * @param {{
  *   collectionId?: string,
  *   exact?: boolean,
  *   limit?: number
- * }} [options]
+ * }} [options] - Configuration options.
  * @returns {Array<{
  *   collectionId: string,
  *   collectionName: string,
@@ -47,7 +45,7 @@ export function getMoleculeCatalogById(collectionId) {
  *     tags: string[],
  *     aliases: string[]
  *   }
- * }>}
+ * }>} Array of matching catalog entries.
  */
 export function findMolecules(query, options = {}) {
   const normalizedQuery = normalizeCollectionSearchValue(query);

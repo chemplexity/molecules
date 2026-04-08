@@ -4,9 +4,8 @@
  * Computes the graph entropy based on vertex degree partitioning (Mowshowitz 1968).
  *
  * H = -Σ (nk/n) * log2(nk/n), where nk = number of atoms with degree k.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @returns {number}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @returns {number} The computed numeric value.
  */
 export function graphEntropy(molecule) {
   const heavyIds = [...molecule.atoms.keys()].filter(id => molecule.atoms.get(id)?.name !== 'H');
@@ -33,9 +32,8 @@ export function graphEntropy(molecule) {
  * Computes the topological information index based on distance sums (Bonchev-Trinajstić).
  *
  * Uses the row sums of the distance matrix as the partition criterion.
- *
  * @param {number[][]} D - All-pairs shortest-path distance matrix.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function topologicalEntropy(D) {
   if (!Array.isArray(D) || D.length === 0 || !Array.isArray(D[0])) {

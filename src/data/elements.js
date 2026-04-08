@@ -15,8 +15,7 @@
  * - `electronegativity` : Pauling electronegativity (2 decimal places); `null` for
  *                 noble gases and elements with no reliable Pauling value
  *                 (most f-block and all superheavy elements).
- *
- * @type {Object.<string, {protons: number, neutrons: number, electrons: number, group: number, period: number, electronegativity: number|null}>}
+ * @type {Record<string, {protons: number, neutrons: number, electrons: number, group: number, period: number, electronegativity: number|null}>}
  */
 const elements = {
   // Period 1

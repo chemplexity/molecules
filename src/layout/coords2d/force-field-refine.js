@@ -20,11 +20,11 @@ const DEG120 = (2 * Math.PI) / 3;
  * Ring atoms (`frozen`) are held fixed throughout.  The integrator runs up to
  * `MAX_ITER` damped gradient-descent steps; it exits early once the maximum
  * per-atom displacement drops below `CONVERGE`.
- *
- * @param {import('../../core/Molecule.js').Molecule} molecule
+ * @param {import('../../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @param {Map<string, {x:number,y:number}>} coords   – mutated in-place
  * @param {Set<string>} frozen         – atom IDs that must not move (ring atoms)
- * @param {number} bondLength
+ * @param {number} bondLength - Target bond length.
+ * @param {Set.<string>} [allRingAtoms] - Set of all ring atom IDs.
  */
 export function forceFieldRefine(molecule, coords, frozen, bondLength, allRingAtoms = new Set()) {
   const K_BOND = 8.0; // bond-length spring constant

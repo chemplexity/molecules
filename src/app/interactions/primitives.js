@@ -29,6 +29,11 @@ function getConnectedComponentAtomIds(mol, seedAtomIds) {
   return componentAtomIds;
 }
 
+/**
+ * Creates primitive selection action handlers for selecting individual atoms/bonds and connected components in both 2D and force-layout modes.
+ * @param {object} context - Dependency context providing state, view, renderers, and helpers.
+ * @returns {object} Object with `select2dComponent`, `select2dPrimitive`, `handle2dPrimitiveClick`, `handle2dComponentDblClick`, `selectForceComponent`, `selectForcePrimitive`, `handleForcePrimitiveClick`, and `handleForceComponentDblClick`.
+ */
 export function createPrimitiveSelectionActions(context) {
   function select2dComponent(seedAtomIds, additive = false) {
     const mol = context.state.documentState.getMol2d();

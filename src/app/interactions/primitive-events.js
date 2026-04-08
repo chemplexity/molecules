@@ -1,5 +1,10 @@
 /** @module app/interactions/primitive-events */
 
+/**
+ * Creates event handler functions for all atom and bond mouse interactions in both 2D and force-layout modes.
+ * @param {object} context - Dependency context providing state, view, selection, actions, drawBond, overlays, tooltip, tooltipState, formatters, options, pointer, and dom.
+ * @returns {object} Object with handlers for 2D/force bond and atom click, double-click, mouse-over, mouse-move, mouse-out, and draw-bond mouse-down events.
+ */
 export function createPrimitiveEventHandlers(context) {
   function showPrimitiveHover(atomIds = [], bondIds = []) {
     if (context.view.isPrimitiveHoverSuppressed?.()) {
@@ -108,7 +113,11 @@ export function createPrimitiveEventHandlers(context) {
     }
     maybeRefreshDrawBondHover(atom.id, 'atom');
     const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
-    if (!showAtomTooltips || (context.state.overlayState.getEraseMode() && !valenceWarning) || ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode()) && !valenceWarning)) {
+    if (
+      !showAtomTooltips ||
+      (context.state.overlayState.getEraseMode() && !valenceWarning) ||
+      ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode()) && !valenceWarning)
+    ) {
       return;
     }
     if ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode()) && valenceWarning) {
@@ -256,7 +265,11 @@ export function createPrimitiveEventHandlers(context) {
       return;
     }
     const showAtomTooltips = context.options.getRenderOptions().showAtomTooltips;
-    if (!showAtomTooltips || (context.state.overlayState.getEraseMode() && !valenceWarning) || ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode()) && !valenceWarning)) {
+    if (
+      !showAtomTooltips ||
+      (context.state.overlayState.getEraseMode() && !valenceWarning) ||
+      ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode()) && !valenceWarning)
+    ) {
       return;
     }
     if ((context.state.overlayState.getSelectMode() || context.state.overlayState.getDrawBondMode() || context.state.overlayState.getEraseMode()) && valenceWarning) {

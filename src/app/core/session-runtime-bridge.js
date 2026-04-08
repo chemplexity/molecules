@@ -1,5 +1,10 @@
 /** @module app/core/session-runtime-bridge */
 
+/**
+ * Creates the session runtime bridge that handles input field sync, view-state capture, and state restoration for 2D and force modes.
+ * @param {object} deps - Dependency object providing io, state, dom, view, force, scene, cache, selection, analysis, and document accessors.
+ * @returns {object} Object with `syncInputField`, `captureViewState`, `clearForceState`, `clear2dState`, `clearAnalysisState`, `restore2dState`, `restoreForceState`, and `redrawRestoredResonanceView`.
+ */
 export function createSessionRuntimeBridge(deps) {
   function syncInputField(mol) {
     try {

@@ -4,7 +4,8 @@ module.exports = {
     node: true,
     browser: true
   },
-  extends: ['eslint:recommended', 'prettier'],
+  extends: ['eslint:recommended', 'prettier', 'plugin:jsdoc/recommended'],
+  plugins: ['jsdoc'],
   parserOptions: {
     ecmaVersion: 2022,
     sourceType: 'module'
@@ -32,7 +33,23 @@ module.exports = {
     'prefer-template': 'error',
 
     // Keep ESLint focused on code quality; Prettier owns formatting.
-    'spaced-comment': 'error'
+    'spaced-comment': 'error',
+
+    // JSDoc — warn on missing docs so gaps surface without blocking builds
+    'jsdoc/require-jsdoc': ['warn', {
+      publicOnly: true,
+      require: {
+        FunctionDeclaration: true,
+        ArrowFunctionExpression: false,
+        ClassDeclaration: true,
+        MethodDefinition: false
+      }
+    }],
+    'jsdoc/require-param': 'warn',
+    'jsdoc/require-returns': 'warn',
+    'jsdoc/check-param-names': 'error',
+    'jsdoc/check-tag-names': 'error',
+    'jsdoc/no-undefined-types': 'off'
   },
   overrides: [
     {

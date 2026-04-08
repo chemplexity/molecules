@@ -12,9 +12,8 @@ const INVALID_END = /[(=#$:/\\.%.-]$/;
  * Normalises the InChI prefix to the canonical mixed-case form `'InChI='`.
  * The InChI standard is case-insensitive for the prefix but tools expect
  * exactly `'InChI='`, so inputs like `'inchi='` or `'INCHI='` are fixed here.
- *
- * @param {string} input
- * @returns {string}
+ * @param {string} input - Input string to parse.
+ * @returns {string} The result string.
  */
 function canonicalizeInChIPrefix(input) {
   return input.replace(INCHI_PREFIX, 'InChI=');
@@ -31,9 +30,8 @@ function canonicalizeInChIPrefix(input) {
  * - All ring-closure digits appear an even number of times.
  * - Every character is covered by at least one token from `tokenize()`.
  * - At least one atom token is present.
- *
- * @param {string} input
- * @returns {boolean}
+ * @param {string} input - Input string to parse.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function looksLikeSmiles(input) {
   if (!ALLOWED_SMILES_CHARS.test(input) || INVALID_START.test(input) || INVALID_END.test(input)) {
@@ -153,9 +151,8 @@ function looksLikeSmiles(input) {
  *
  * Returns `'smiles'`, `'inchi'`, or `null` (when the format cannot be
  * determined, or when `input` is not a non-whitespace string).
- *
- * @param {string} input
- * @returns {'smiles'|'inchi'|null}
+ * @param {string} input - Input string to parse.
+ * @returns {'smiles'|'inchi'|null} The computed result.
  */
 export function guessChemicalStringFormat(input) {
   if (typeof input !== 'string') {
@@ -184,12 +181,11 @@ export function guessChemicalStringFormat(input) {
  * parse throws, `null` is returned.
  *
  * Returns `'smiles'`, `'inchi'`, or `null`.
- *
- * @param {string} input
- * @param {object} [options]
- * @param {boolean} [options.validate=false] - When `true`, confirms the guess
+ * @param {string} input - Input string to parse.
+ * @param {object} [options] - Configuration options.
+ * @param {boolean} [options.validate] - When `true`, confirms the guess
  *   with a full parse attempt.
- * @returns {'smiles'|'inchi'|null}
+ * @returns {'smiles'|'inchi'|null} The computed result.
  */
 export function detectChemicalStringFormat(input, { validate = false } = {}) {
   const guess = guessChemicalStringFormat(input);

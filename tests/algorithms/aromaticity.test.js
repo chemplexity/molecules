@@ -9,7 +9,11 @@ import { matchesSMARTS } from '../../src/smarts/index.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Parse SMILES and run perceiveAromaticity. */
+/**
+ * Parse SMILES and run perceiveAromaticity.
+ * @param {string} smiles - The SMILES string.
+ * @returns {object} The molecule with aromaticity perceived.
+ */
 function parse(smiles) {
   const mol = parseSMILES(smiles);
   perceiveAromaticity(mol);

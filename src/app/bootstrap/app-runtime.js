@@ -12,6 +12,11 @@ import { createInputControls } from '../interactions/input-controls.js';
 import { createInputControlsDeps } from '../interactions/deps/input-controls-deps.js';
 import { createStructuralEditActions } from '../interactions/structural-edit-actions.js';
 
+/**
+ * Creates the core application runtime by wiring session, input flow, input controls, controller, and structural edit actions.
+ * @param {object} deps - Structured dependency context providing state, factories, io, analysis, overlays, and other runtime collaborators.
+ * @returns {object} Object containing `inputFlowManager` and `inputControls`.
+ */
 export function createAppRuntime(deps) {
   const managers = {
     inputFlowManager: null,
@@ -378,6 +383,11 @@ export function createAppRuntime(deps) {
   };
 }
 
+/**
+ * Convenience wrapper that calls `createAppRuntime` with the standard set of injected factories.
+ * @param {object} deps - Structured dependency context as accepted by `createAppRuntime`, without the `factories` key.
+ * @returns {object} Object containing `inputFlowManager` and `inputControls`.
+ */
 export function initializeAppRuntime(deps) {
   return createAppRuntime({
     ...deps,

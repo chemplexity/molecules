@@ -32,6 +32,7 @@ const DEFAULT_BOND_LENGTH = 1.5;
 const TWO_PI = 2 * Math.PI;
 const DEG60 = Math.PI / 3; // 60°
 const DEG120 = (2 * Math.PI) / 3;
+
 // ---------------------------------------------------------------------------
 // Ring placement
 // ---------------------------------------------------------------------------
@@ -43,10 +44,10 @@ const DEG120 = (2 * Math.PI) / 3;
  * exact `bondLength` intervals along the four edges of a rectangle, keeping
  * all ring bonds at the correct length.  The rectangle aspect ratio is chosen
  * to approximate the golden ratio.
- *
  * @param {string[]} ringAtomIds - Ordered atom IDs around the ring.
- * @param {number} cx @param {number} cy - Ring center.
- * @param {number} bondLength
+ * @param {number} cx - Ring center x.
+ * @param {number} cy - Ring center y.
+ * @param {number} bondLength - Target bond length.
  * @param {number} startAngle - Radians, angle from center to first atom.
  * @param {Map<string, Vec2>} coords - Mutated in-place.
  */
@@ -131,13 +132,12 @@ function placeRing(ringAtomIds, cx, cy, bondLength, startAngle, coords) {
 /**
  * Places a ring system (one or more fused/spiro rings).
  * Modifies `coords` in-place. All placed atom IDs are added to `placed`.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {{ atomIds: string[], ringIds: number[] }} system
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {{ atomIds: string[], ringIds: number[] }} system - Ring system descriptor.
  * @param {string[][]} rings - Full array from molecule.getRings()
- * @param {number} bondLength
+ * @param {number} bondLength - Target bond length.
  * @param {Vec2} origin - Where the first ring center goes.
- * @param {Map<string, Vec2>} coords
+ * @param {Map<string, Vec2>} coords - 2D coordinate map (atom ID → {x, y}).
  */
 function placeRingSystem(molecule, system, rings, bondLength, origin, coords) {
   const { ringIds } = system;
@@ -518,7 +518,6 @@ function placeRingSystem(molecule, system, rings, bondLength, origin, coords) {
 
 /**
  * Computes outgoing angles for `n` child atoms from a parent atom.
- *
  * @param {number} n - Number of children.
  * @param {number} outAngle - Preferred continuation direction (radians).
  * @param {boolean} fromRing - Whether the parent is a ring atom.
@@ -565,13 +564,12 @@ function computeChildAngles(n, outAngle, fromRing, incomingAngle, isLinear = fal
  * Returns the number of proposed child positions that are too close to any
  * already-placed atom.  Uses a SpatialGrid for O(1) lookup when provided,
  * otherwise falls back to a linear scan.
- *
- * @param {number[]} angles
- * @param {Vec2} origin
- * @param {Map<string, Vec2>} coords
- * @param {number} bondLength
- * @param {SpatialGrid|null} [grid]
- * @returns {number}
+ * @param {number[]} angles - The angles value.
+ * @param {Vec2} origin - The origin value.
+ * @param {Map<string, Vec2>} coords - 2D coordinate map (atom ID → {x, y}).
+ * @param {number} bondLength - Target bond length.
+ * @param {SpatialGrid|null} [grid] - The grid value.
+ * @returns {number} The computed numeric value.
  */
 function countClashes(angles, origin, coords, bondLength, grid = null) {
   const thresh = bondLength * 0.5;
@@ -599,12 +597,11 @@ function countClashes(angles, origin, coords, bondLength, grid = null) {
  * The atom at `startAtomId` must already have coordinates.
  * Uses an explicit stack (iterative) to avoid call-stack overflows on large
  * molecules, and a SpatialGrid for O(1) clash detection.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {string} startAtomId
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {string} startAtomId - The startAtomId value.
  * @param {number} incomingAngle - Radians from which we arrived at startAtomId.
  * @param {Set<string>} placed - Atoms already placed; mutated.
- * @param {number} bondLength
+ * @param {number} bondLength - Target bond length.
  * @param {Map<string, Vec2>} coords - Mutated.
  * @param {boolean} fromRing - Whether startAtomId is a ring atom.
  * @param {SpatialGrid|null} [grid] - Optional spatial grid; if null, one is built lazily.
@@ -852,10 +849,9 @@ function layoutChain(molecule, startAtomId, incomingAngle, placed, bondLength, c
 /**
  * Places explicit pendant H atoms (degree 1, element 'H') near their heavy-atom parent.
  * H atoms are placed radially away from the parent's other neighbors.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Map<string, Vec2>} coords
- * @param {number} bondLength
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Map<string, Vec2>} coords - 2D coordinate map (atom ID → {x, y}).
+ * @param {number} bondLength - Target bond length.
  */
 function placeHydrogens(molecule, coords, bondLength) {
   const hLen = bondLength * 0.75;
@@ -910,10 +906,9 @@ function placeHydrogens(molecule, coords, bondLength) {
 
 /**
  * Lays out each connected component separately and tiles them horizontally.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {object} options
- * @returns {Map<string, Vec2>}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {object} options - Configuration options.
+ * @returns {Map<string, Vec2>} The resulting map.
  */
 function layoutComponents(molecule, options) {
   const components = molecule.getComponents();
@@ -961,10 +956,9 @@ function layoutComponents(molecule, options) {
 /**
  * Returns the ideal interior bond angle (radians) for an atom based on its
  * degree and bond orders (sp / sp2 / sp3 hybridisation).
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {string} atomId
- * @returns {number}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {string} atomId - The atom ID.
+ * @returns {number} The computed numeric value.
  */
 function _idealAngle(molecule, atomId) {
   const atom = molecule.atoms.get(atomId);
@@ -1004,11 +998,10 @@ function _idealAngle(molecule, atomId) {
  *   4. Re-run layoutChain on each substituent's subtree from the new position.
  *
  * Ring atoms (in `frozen`) are never moved.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Map<string, Vec2>} coords
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Map<string, Vec2>} coords - 2D coordinate map (atom ID → {x, y}).
  * @param {Set<string>} frozen  - Atom IDs that must not move (ring atoms).
- * @param {number} bondLength
+ * @param {number} bondLength - Target bond length.
  */
 function refineCoords(molecule, coords, frozen, bondLength) {
   // Helper: is an atom a hydrogen?
@@ -1361,9 +1354,8 @@ function refineCoords(molecule, coords, frozen, bondLength) {
  * at least one bond exactly onto its grid, then selecting the one that minimises
  * the total squared deviation across all bonds.  This is exact and works for
  * any ring size or mixture of ring sizes without special-casing.
- *
- * @param {Map<string,{x:number,y:number}>} coords
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {Map<string,{x:number,y:number}>} coords - 2D coordinate map (atom ID → {x, y}).
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  */
 export function levelCoords(coords, molecule) {
   const heavyIds = [...coords.keys()].filter(id => molecule.atoms.has(id) && molecule.atoms.get(id)?.name !== 'H');
@@ -1499,16 +1491,15 @@ export function levelCoords(coords, molecule) {
  * flips branches, realigns ring systems and multiple bonds to minimise layout
  * issues (clashes, bad stereo, non-ideal angles). The molecule object is not
  * mutated — the improved coordinates are returned as a Map.
- *
- * @param {Object} molecule - Molecule with atoms that already have x/y coords.
- * @param {Object} [options={}]
- * @param {number} [options.bondLength=DEFAULT_BOND_LENGTH] - Target bond length in px.
- * @param {number} [options.maxPasses=6] - Maximum refinement iterations.
- * @param {boolean} [options.freezeRings=true] - Keep ring atom positions fixed.
- * @param {boolean} [options.freezeChiralCenters=false] - Keep chiral centers fixed.
- * @param {boolean} [options.allowBranchReflect=true] - Allow branch reflections.
+ * @param {object} molecule - Molecule with atoms that already have x/y coords.
+ * @param {object} [options] - Configuration options.
+ * @param {number} [options.bondLength] - Target bond length in px.
+ * @param {number} [options.maxPasses] - Maximum refinement iterations.
+ * @param {boolean} [options.freezeRings] - Keep ring atom positions fixed.
+ * @param {boolean} [options.freezeChiralCenters] - Keep chiral centers fixed.
+ * @param {boolean} [options.allowBranchReflect] - Allow branch reflections.
  * @param {number[]} [options.rotateAngles] - Candidate rotation angles (radians).
- * @param {number} [options.maxCandidatesPerPass=24] - Max bond-rotation candidates per pass.
+ * @param {number} [options.maxCandidatesPerPass] - Max bond-rotation candidates per pass.
  * @returns {Map<string, {x: number, y: number}>} Atom id → refined coordinate map.
  */
 export function refineExistingCoords(molecule, options = {}) {
@@ -1709,11 +1700,10 @@ export function refineExistingCoords(molecule, options = {}) {
 /**
  * Assigns 2D coordinates to every atom in `molecule`.
  * Coordinates are written to `atom.x` and `atom.y`.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {object}  [options]
- * @param {number}  [options.bondLength=1.5]  Target bond length in Angstroms.
- * @param {boolean} [options.suppressH=true]  When true, explicit H atoms are
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {object} [options] - Configuration options.
+ * @param {number}  [options.bondLength]  Target bond length in Angstroms.
+ * @param {boolean} [options.suppressH]  When true, explicit H atoms are
  *   placed at their parent position (offset slightly) rather than laid out as
  *   full chain atoms.
  * @returns {Map<string, { x: number, y: number }>} Map from atom ID to {x, y}.

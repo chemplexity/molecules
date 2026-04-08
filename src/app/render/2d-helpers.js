@@ -3,6 +3,11 @@
 import { renderBondOrder, addLine } from './helpers.js';
 import { labelHalfW, labelHalfH, labelTextOffset, getAtomLabel } from '../../layout/mol2d-helpers.js';
 
+/**
+ * Creates 2D render helper functions for SVG point conversion, bond drawing, viewport fitting, and derived state synchronization.
+ * @param {object} ctx - Dependency context providing plotEl, state, constants, geometry, stereo, d3, svg, and zoom.
+ * @returns {object} Object with `toSVGPt2d`, `drawBond`, `zoomToFitIf2d`, and `sync2dDerivedState`.
+ */
 export function create2DRenderHelpers(ctx) {
   function toSVGPt2d(atom) {
     const width = ctx.plotEl.clientWidth || 600;

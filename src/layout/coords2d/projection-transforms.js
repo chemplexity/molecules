@@ -22,7 +22,6 @@ import {
 
 /**
  * Rotates a set of atoms around a pivot atom by a given angle.
- *
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {Iterable<string>} atomIds - Atom IDs to rotate
  * @param {string} originId - Atom ID of the rotation pivot
@@ -46,7 +45,6 @@ export function rotateSubtreeCoords(baseCoords, atomIds, originId, angle) {
 
 /**
  * Reflects a set of atoms across the line defined by two axis atoms.
- *
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {Iterable<string>} atomIds - Atom IDs to reflect
  * @param {string} axisAId - First atom ID defining the reflection axis
@@ -71,7 +69,6 @@ export function reflectSubtreeCoords(baseCoords, atomIds, axisAId, axisBId) {
 
 /**
  * Translates a subtree so that the bond from pivotId to movingId has exactly targetLength.
- *
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {Iterable<string>} atomIds - Atom IDs to translate
  * @param {string} pivotId - Fixed anchor atom ID
@@ -112,7 +109,6 @@ export function reanchorSubtreeCoords(baseCoords, atomIds, pivotId, movingId, ta
 
 /**
  * Rotates and translates a subtree so that the bond pivotId→movingId points at targetAngle with targetLength.
- *
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {Iterable<string>} atomIds - Atom IDs in the subtree to reproject
  * @param {string} pivotId - Fixed anchor atom ID
@@ -150,7 +146,6 @@ export function reprojectSubtreeCoords(baseCoords, atomIds, pivotId, movingId, t
 
 /**
  * Returns a new coordinate map with the given updates merged in, leaving baseCoords unchanged.
- *
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {Map<string, {x: number, y: number}>} updates - Coordinate overrides to apply
  * @returns {Map<string, {x: number, y: number}>} New coordinate map
@@ -165,8 +160,7 @@ export function applyRefinementCoords(baseCoords, updates) {
 
 /**
  * Computes the mean angular deviation from 120° for all bond pairs at a strict trigonal center.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} coords - Current atom coordinates
  * @param {string} centerId - Atom ID of the trigonal center
  * @returns {number} Mean angular error in radians, or Infinity if the center is invalid
@@ -201,11 +195,10 @@ export function strictTrigonalCenterError(molecule, coords, centerId) {
 
 /**
  * Generates candidate coordinate updates that place neighbors of a strict trigonal center at ideal 120° angles.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {string} centerId - Atom ID of the trigonal center
- * @param {Object} ctx - Refinement context from buildRefinementContext
+ * @param {object} ctx - Refinement context from buildRefinementContext
  * @returns {Array<Map<string, {x: number, y: number}>>} Array of coordinate-update maps to try
  */
 export function buildStrictTrigonalCenterTransforms(molecule, baseCoords, centerId, ctx) {
@@ -288,13 +281,12 @@ export function buildStrictTrigonalCenterTransforms(molecule, baseCoords, center
 
 /**
  * Iteratively improves all strict trigonal centers toward ideal 120° geometry.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Starting atom coordinates
- * @param {Object} ctx - Refinement context from buildRefinementContext
- * @param {object} [options]
- * @param {number} [options.maxPasses=2] - Maximum number of refinement passes
- * @param {boolean} [options.requireNonWorseScore=true] - Reject moves that increase the total layout score
+ * @param {object} ctx - Refinement context from buildRefinementContext
+ * @param {object} [options] - Configuration options.
+ * @param {number} [options.maxPasses] - Maximum number of refinement passes
+ * @param {boolean} [options.requireNonWorseScore] - Reject moves that increase the total layout score
  * @returns {Map<string, {x: number, y: number}>} Updated coordinate map
  */
 export function idealizeStrictTrigonalCenters(molecule, baseCoords, ctx, { maxPasses = 2, requireNonWorseScore = true } = {}) {
@@ -347,7 +339,6 @@ export function idealizeStrictTrigonalCenters(molecule, baseCoords, ctx, { maxPa
 
 /**
  * Snaps current ring-system coordinates to their idealized template via alignment.
- *
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {{ atomIds: Set<string>, templateCoords: Map<string, {x: number, y: number}> }} ringSystem - Ring system descriptor
  * @returns {Map<string, {x: number, y: number}>} Updated coordinate map (unchanged if alignment fails)
@@ -360,11 +351,10 @@ export function applyRingSystemTemplate(baseCoords, ringSystem) {
 /**
  * Generates candidate projection transforms for a rotatable chain-bond candidate,
  * placing the moving subtree at ideal angles relative to the pivot's other neighbors.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {{ pivotId: string, movingId: string, atomIds: Set<string> }} candidate - Rotatable bond candidate
- * @param {Object} ctx - Refinement context from buildRefinementContext
+ * @param {object} ctx - Refinement context from buildRefinementContext
  * @returns {Array<Map<string, {x: number, y: number}>>} Array of coordinate-update maps to try
  */
 export function buildChainProjectionTransforms(molecule, baseCoords, candidate, ctx) {
@@ -412,11 +402,10 @@ export function buildChainProjectionTransforms(molecule, baseCoords, candidate, 
 /**
  * Generates a projection transform for a planar (trigonal) candidate by pointing the moving subtree
  * directly away from the pivot's other two heavy neighbors.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {{ pivotId: string, movingId: string, atomIds: Set<string> }} candidate - Rotatable bond candidate
- * @param {Object} ctx - Refinement context from buildRefinementContext
+ * @param {object} ctx - Refinement context from buildRefinementContext
  * @returns {Array<Map<string, {x: number, y: number}>>} Array containing at most one coordinate-update map
  */
 export function buildPlanarProjectionTransforms(molecule, baseCoords, candidate, ctx) {
@@ -451,11 +440,10 @@ export function buildPlanarProjectionTransforms(molecule, baseCoords, candidate,
 
 /**
  * Generates a projection transform that places a ring substituent at the ideal outward angle from its ring atom.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {{ pivotId: string, movingId: string, atomIds: Set<string> }} candidate - Rotatable bond candidate
- * @param {Object} ctx - Refinement context from buildRefinementContext
+ * @param {object} ctx - Refinement context from buildRefinementContext
  * @returns {Array<Map<string, {x: number, y: number}>>} Array containing at most one coordinate-update map
  */
 export function buildRingSubstituentProjectionTransforms(molecule, baseCoords, candidate, ctx) {
@@ -472,11 +460,10 @@ export function buildRingSubstituentProjectionTransforms(molecule, baseCoords, c
 /**
  * Generates zigzag-extended chain transforms for a rotatable candidate whose moving subtree
  * begins a linear chain of 3 or more atoms, alternating turn direction at 60° steps.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {{ kind: string, pivotId: string, movingId: string, atomIds: Set<string> }} candidate - Rotatable bond candidate
- * @param {Object} ctx - Refinement context from buildRefinementContext
+ * @param {object} ctx - Refinement context from buildRefinementContext
  * @returns {Array<Map<string, {x: number, y: number}>>} Array of coordinate-update maps to try
  */
 export function buildExtendedZigZagChainTransforms(molecule, baseCoords, candidate, ctx) {
@@ -581,10 +568,9 @@ export function buildExtendedZigZagChainTransforms(molecule, baseCoords, candida
 
 /**
  * Collects all side-chain subtrees branching off a linear chain path.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {string[]} path - Ordered atom IDs forming the backbone chain
- * @param {Set<string>|null} [allowedAtomIds=null] - Optional atom whitelist for subtree traversal
+ * @param {Set<string>|null} [allowedAtomIds] - Optional atom whitelist for subtree traversal
  * @returns {Array<{ anchorId: string, atomIds: Set<string> }>} Array of side subtree descriptors
  */
 export function collectChainSideSubtrees(molecule, path, allowedAtomIds = null) {
@@ -633,8 +619,7 @@ export function collectChainSideSubtrees(molecule, path, allowedAtomIds = null) 
 /**
  * Repositions side-chain subtrees in updates to match the new orientation of their chain anchor atoms.
  * Rotates and translates each subtree to track how the anchor moved relative to its path neighbors.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Original atom coordinates before updates
  * @param {Map<string, {x: number, y: number}>} updates - In-progress coordinate updates (mutated in place)
  * @param {string[]} path - Ordered atom IDs of the backbone chain
@@ -680,13 +665,12 @@ export function applyOrientedSideSubtreeUpdates(molecule, baseCoords, updates, p
 
 /**
  * Rotates side subtrees attached to the terminal atoms of a chain path to maximize clearance from other atoms.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Original atom coordinates before updates
  * @param {Map<string, {x: number, y: number}>} updates - In-progress coordinate updates (mutated in place)
  * @param {string[]} path - Ordered atom IDs of the backbone chain
  * @param {Array<{ anchorId: string, atomIds: Set<string> }>} sideSubtrees - Side subtree descriptors
- * @param {Object} ctx - Refinement context from buildRefinementContext
+ * @param {object} ctx - Refinement context from buildRefinementContext
  * @returns {void}
  */
 export function optimizeTerminalChainSideSubtrees(molecule, baseCoords, updates, path, sideSubtrees, ctx) {
@@ -808,11 +792,10 @@ export function optimizeTerminalChainSideSubtrees(molecule, baseCoords, updates,
 /**
  * Generates fully-extended zigzag layouts for a chain path, with both parities and multiple start angles.
  * EZ stereo of double bonds along the path is respected when stereo data is present.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {string[]} path - Ordered atom IDs of the chain to unfurl
- * @param {Object} ctx - Refinement context from buildRefinementContext
+ * @param {object} ctx - Refinement context from buildRefinementContext
  * @returns {Array<Map<string, {x: number, y: number}>>} Array of coordinate-update maps to try
  */
 export function buildUnfurledChainPathTransforms(molecule, baseCoords, path, ctx) {
@@ -888,9 +871,8 @@ export function buildUnfurledChainPathTransforms(molecule, baseCoords, path, ctx
 
 /**
  * Returns the minimum distance between any two non-bonded heavy atoms in the current coordinates.
- *
  * @param {Map<string, {x: number, y: number}>} coords - Current atom coordinates
- * @param {Object} ctx - Refinement context from buildRefinementContext
+ * @param {object} ctx - Refinement context from buildRefinementContext
  * @returns {number} Minimum non-bonded heavy-atom distance, or Infinity if fewer than two heavy atoms exist
  */
 export function minimumHeavyNonBondedDistanceForCoords(coords, ctx) {
@@ -923,10 +905,9 @@ export function minimumHeavyNonBondedDistanceForCoords(coords, ctx) {
  * Computes geometry quality metrics for a chain path: end-to-end distance, terminal span,
  * terminal closure (minimum distance between start and end region atoms), and minimum non-bonded
  * distance between non-adjacent path atoms.
- *
  * @param {Map<string, {x: number, y: number}>} coords - Current atom coordinates
  * @param {string[]} path - Ordered atom IDs of the chain
- * @returns {{ endToEnd: number, terminalSpan: number, terminalClosure: number, pathMinNonBonded: number }}
+ * @returns {{ endToEnd: number, terminalSpan: number, terminalClosure: number, pathMinNonBonded: number }} The result object.
  */
 export function longChainPathMetrics(coords, path) {
   if (!path || path.length < 2) {
@@ -1007,10 +988,9 @@ export function longChainPathMetrics(coords, path) {
 /**
  * Attempts to unfurl compacted or looped chain paths by trying extended zigzag layouts.
  * Accepts a new layout only when it reduces the layout score or strongly improves backbone geometry.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Starting atom coordinates
- * @param {Object} ctx - Refinement context from buildRefinementContext
+ * @param {object} ctx - Refinement context from buildRefinementContext
  * @returns {Map<string, {x: number, y: number}>} Updated coordinate map
  */
 export function spreadCompactedChainPaths(molecule, baseCoords, ctx) {
@@ -1096,12 +1076,11 @@ export function spreadCompactedChainPaths(molecule, baseCoords, ctx) {
 /**
  * Rescues severely looped or compacted long chains (≥10 atoms) by applying extended zigzag layouts
  * that substantially improve backbone spread, optionally preserving EZ stereo.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Starting atom coordinates
- * @param {Object} ctx - Refinement context from buildRefinementContext
- * @param {object} [options]
- * @param {boolean} [options.preserveStereo=false] - Reject candidates that reduce the number of matched stereo bonds
+ * @param {object} ctx - Refinement context from buildRefinementContext
+ * @param {object} [options] - Configuration options.
+ * @param {boolean} [options.preserveStereo] - Reject candidates that reduce the number of matched stereo bonds
  * @returns {Map<string, {x: number, y: number}>} Updated coordinate map
  */
 export function rescueSeverelyCompactedLongChains(molecule, baseCoords, ctx, { preserveStereo = false } = {}) {
@@ -1188,11 +1167,10 @@ export function rescueSeverelyCompactedLongChains(molecule, baseCoords, ctx, { p
 /**
  * Generates projection transforms for terminal atoms of multiple bonds attached to the moving end
  * of a candidate, repositioning them at ideal angles relative to the moving atom's other neighbors.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} baseCoords - Current atom coordinates
  * @param {{ movingId: string, atomIds: Set<string> }} candidate - Multiple-bond candidate
- * @param {Object} ctx - Refinement context from buildRefinementContext
+ * @param {object} ctx - Refinement context from buildRefinementContext
  * @returns {Array<Map<string, {x: number, y: number}>>} Array of coordinate-update maps to try
  */
 export function buildAttachedMultipleBondProjectionTransforms(molecule, baseCoords, candidate, ctx) {
@@ -1267,11 +1245,10 @@ export function buildAttachedMultipleBondProjectionTransforms(molecule, baseCoor
  * overlap (or nearly touch), re-arranges them in a horizontal row with
  * `bondLength * 2` gaps between them, vertically centred at y = 0.
  * Returns the (possibly updated) coords map; the input map is never mutated.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {Map<string, Vec2>} coords
- * @param {number} bondLength
- * @returns {Map<string, Vec2>}
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {Map<string, Vec2>} coords - 2D coordinate map (atom ID → {x, y}).
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, Vec2>} The resulting map.
  */
 export function _separateOverlappingComponents(molecule, coords, bondLength) {
   const components = molecule.getComponents();
@@ -1358,15 +1335,14 @@ export function _separateOverlappingComponents(molecule, coords, bondLength) {
  *
  * Reads `atom.x` / `atom.y`, mutates them in place when an improving move is
  * found, and returns the final coordinate map.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
- * @param {object} [options]
- * @param {number} [options.bondLength=1.5]
- * @param {number} [options.maxPasses=6]
- * @param {boolean} [options.freezeRings=true]
- * @param {boolean} [options.freezeChiralCenters=false]
- * @param {boolean} [options.allowBranchReflect=true]
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
+ * @param {object} [options] - Configuration options.
+ * @param {number} [options.bondLength] - Configuration sub-option.
+ * @param {number} [options.maxPasses] - Configuration sub-option.
+ * @param {boolean} [options.freezeRings] - Configuration sub-option.
+ * @param {boolean} [options.freezeChiralCenters] - Configuration sub-option.
+ * @param {boolean} [options.allowBranchReflect] - Configuration sub-option.
  * @param {number[]} [options.rotateAngles] Rotation candidates in radians.
- * @param {number} [options.maxCandidatesPerPass=24] - Maximum number of rotatable-bond candidates evaluated per pass. Capping this keeps refinement interactive for large molecules.
- * @returns {Map<string, { x: number, y: number }>}
+ * @param {number} [options.maxCandidatesPerPass] - Maximum number of rotatable-bond candidates evaluated per pass. Capping this keeps refinement interactive for large molecules.
+ * @returns {Map<string, { x: number, y: number }>} The resulting map.
  */

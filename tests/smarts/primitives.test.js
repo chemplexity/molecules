@@ -8,14 +8,23 @@ import { parseSMARTS } from '../../src/smarts/index.js';
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Returns the first non-H atom from a SMILES string. */
+/**
+ * Returns the first non-H atom from a SMILES string.
+ * @param {string} smiles - The SMILES string.
+ * @returns {{atom: object, mol: object}} The first heavy atom and its molecule.
+ */
 function firstAtom(smiles) {
   const mol = parseSMILES(smiles);
   const atom = [...mol.atoms.values()].find(a => a.name !== 'H');
   return { atom, mol };
 }
 
-/** Compiles an expression and tests it against the first atom of `smiles`. */
+/**
+ * Compiles an expression and tests it against the first atom of `smiles`.
+ * @param {string} expr - The SMARTS atom expression.
+ * @param {string} smiles - The SMILES string to test against.
+ * @returns {boolean} The result of the compiled predicate on the first atom.
+ */
 function test(expr, smiles) {
   const { atom, mol } = firstAtom(smiles);
   return compileAtomExpr(expr)(atom, mol);

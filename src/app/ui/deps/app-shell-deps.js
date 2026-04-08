@@ -1,5 +1,11 @@
 /** @module app/ui/app-shell-deps */
 
+/**
+ * Builds the structured dependency object for the AppShell factory,
+ * mapping flat dependency properties into named sub-objects (win, dom, history, exportActions, options, navigation, selection, editing, state, view, input, initialState).
+ * @param {object} deps - Flat app context providing AppShell-related methods and values.
+ * @returns {object} Dependency object consumed by `createAppShell`.
+ */
 export function createAppShellDeps(deps) {
   return {
     win: deps.win,

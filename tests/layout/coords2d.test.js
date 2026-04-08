@@ -96,6 +96,7 @@ function cyclohexane() {
 /**
  * Naphthalene skeleton: 10 C atoms, 11 bonds (two fused 6-rings sharing a bond).
  * Connectivity: 0-1-2-3-4-5-0 (ring A) and 5-6-7-8-9-4 + 4-5 (ring B shares bond 4-5).
+ * @returns {object} The naphthalene molecule.
  */
 function naphthalene() {
   const mol = new Molecule();
@@ -118,7 +119,10 @@ function naphthalene() {
   return mol;
 }
 
-/** Two 5-membered rings sharing exactly one atom (spiro carbon). */
+/**
+ * Two 5-membered rings sharing exactly one atom (spiro carbon).
+ * @returns {object} The spiro molecule.
+ */
 function spiro() {
   const mol = new Molecule();
   for (let i = 0; i < 9; i++) {
@@ -139,7 +143,10 @@ function spiro() {
   return mol;
 }
 
-/** Benzene with one methyl substituent (toluene skeleton, heavy atoms only). */
+/**
+ * Benzene with one methyl substituent (toluene skeleton, heavy atoms only).
+ * @returns {object} The methylbenzene molecule.
+ */
 function methylbenzene() {
   const mol = benzene();
   mol.addAtom('a6', 'C'); // methyl carbon
@@ -662,7 +669,10 @@ function cycloheptane() {
   return mol;
 }
 
-/** C(CH3)4 heavy-atom skeleton: central carbon bonded to 4 methyl carbons. */
+/**
+ * C(CH3)4 heavy-atom skeleton: central carbon bonded to 4 methyl carbons.
+ * @returns {object} The neopentane molecule.
+ */
 function neopentane() {
   const mol = new Molecule();
   mol.addAtom('a0', 'C');
@@ -678,6 +688,7 @@ function neopentane() {
 /**
  * Indane skeleton: 6-ring fused to 5-ring sharing one bond.
  * 6-ring: a0-a1-a2-a3-a4-a5-a0; 5-ring shares bond a4-a5: a4-a6-a7-a8-a5-a4.
+ * @returns {object} The indane molecule.
  */
 function indane() {
   const mol = new Molecule();
@@ -694,7 +705,10 @@ function indane() {
   return mol;
 }
 
-/** Naphthalene skeleton (from existing tests) with one extra methyl substituent on a0. */
+/**
+ * Naphthalene skeleton (from existing tests) with one extra methyl substituent on a0.
+ * @returns {object} The naphthaleneMethyl molecule.
+ */
 function naphthaleneMethyl() {
   const mol = new Molecule();
   for (let i = 0; i < 11; i++) {
@@ -715,7 +729,10 @@ function naphthaleneMethyl() {
   return mol;
 }
 
-/** Two disconnected fragments: benzene + isolated N atom. */
+/**
+ * Two disconnected fragments: benzene + isolated N atom.
+ * @returns {object} The molecule with two disconnected fragments.
+ */
 function benzeneAndN() {
   const mol = new Molecule();
   for (let i = 0; i < 6; i++) {
@@ -1643,7 +1660,6 @@ describe('generateCoords — extended chain spread', () => {
     assert.ok(terminalClearance >= 2.0, `arachidonic acid late chain folded onto the methyl terminus: clearance ${terminalClearance.toFixed(3)} Å`);
     assert.ok(minNonBonded >= 0.9, `arachidonic acid self-overlap too tight: nearest non-bonded distance ${minNonBonded.toFixed(3)} Å`);
   });
-
 });
 
 describe('generateCoords — alkene substituent geometry', () => {

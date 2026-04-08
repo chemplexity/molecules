@@ -1,5 +1,11 @@
 /** @module app/bootstrap/app-bootstrap */
 
+/**
+ * Wires together all post-bootstrap factories and initializes the full application shell,
+ * including delegates, undo, highlights, export, panels, interaction layers, options modal, and the app shell.
+ * @param {object} ctx - Structured dependency context assembled by `createFinalizeAppBootstrapDeps`.
+ * @returns {object} Object containing `appDelegates`, `appShell`, `optionsModal`, and `physchemPanel`.
+ */
 export function finalizeAppBootstrap(ctx) {
   const appDelegates = ctx.factories.createAppDelegates({
     state: {

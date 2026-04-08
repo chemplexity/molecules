@@ -485,6 +485,13 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
   return result;
 }
 
+/**
+ * Applies a pre-parsed SMIRKS transform to a molecule.
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule to transform.
+ * @param {object} transform - Parsed SMIRKS transform object from parseSMIRKS.
+ * @param {object} [options] - Application options.
+ * @returns {import('../core/Molecule.js').Molecule|Array.<import('../core/Molecule.js').Molecule>} Transformed molecule or array of molecules.
+ */
 function _applyParsedSMIRKS(molecule, transform, options = {}) {
   _validateParsedTransform(transform);
   const mode = _validateMode(options);
@@ -548,13 +555,12 @@ function _applyParsedSMIRKS(molecule, transform, options = {}) {
  * - `mapping` `Map<reactantAtomId, targetAtomId>` — an explicit atom mapping
  *             to use instead of searching for a match.  Only valid with
  *             `mode: 'first'`.
- *
- * @param {import('../core/Molecule.js').Molecule} molecule
+ * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @param {string|object} smirks - SMIRKS string or pre-parsed transform.
- * @param {object} [options]
- * @param {'first'|'all'} [options.mode='first']
- * @param {Map<string,string>} [options.mapping]
- * @returns {import('../core/Molecule.js').Molecule|null}
+ * @param {object} [options] - Configuration options.
+ * @param {'first'|'all'} [options.mode] - Configuration sub-option.
+ * @param {Map<string,string>} [options.mapping] - Configuration sub-option.
+ * @returns {import('../core/Molecule.js').Molecule|null} The computed result.
  */
 export function applySMIRKS(molecule, smirks, options = {}) {
   const transform = typeof smirks === 'string' ? parseSMIRKS(smirks) : smirks;

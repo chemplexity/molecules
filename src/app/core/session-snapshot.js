@@ -1,5 +1,10 @@
 /** @module app/core/session-snapshot */
 
+/**
+ * Creates the session snapshot manager that handles capturing and restoring full application state snapshots for undo/redo.
+ * @param {object} deps - Dependency object providing Molecule constructor, mode getters/setters, view state helpers, overlay helpers, history, and analysis updaters.
+ * @returns {{capture: (options?: object) => object, restore: (snapshot: object) => void}} Object with `capture` and `restore` snapshot functions.
+ */
 export function createSessionSnapshotManager(deps) {
   function legacySnapshotFromAppSnapshot(snapshot) {
     if (!snapshot?.documentState && !snapshot?.viewState && !snapshot?.overlayState) {
@@ -231,7 +236,7 @@ export function createSessionSnapshotManager(deps) {
       deps.setCurrentInchi(snap.currentInchi ?? null);
       deps.setInputFormat(snap.inputMode, {
         preserveInput: true,
-        inputValue: snap.inputValue ?? (snap.inputMode === 'inchi' ? deps.getCurrentInchi() ?? '' : deps.getCurrentSmiles() ?? '')
+        inputValue: snap.inputValue ?? (snap.inputMode === 'inchi' ? (deps.getCurrentInchi() ?? '') : (deps.getCurrentSmiles() ?? ''))
       });
     } else {
       deps.syncInputField(syncMol);

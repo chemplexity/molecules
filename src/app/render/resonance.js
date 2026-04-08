@@ -10,7 +10,6 @@ let ctx = {};
  * The UI currently keeps charge-separated contributors enabled, but collapses
  * independent-region permutations so the panel emphasizes locally meaningful
  * contributors rather than every Cartesian-product combination.
- *
  * @type {{ includeChargeSeparatedStates: boolean, includeIndependentComponentPermutations: boolean }}
  */
 const RESONANCE_PANEL_OPTIONS = {
@@ -26,16 +25,15 @@ const _RESONANCE_PRESERVE_CLICK_SELECTORS = ['#plot', '#rotate-controls', '#forc
 /**
  * Initializes the resonance-panel renderer with the app context it needs to
  * redraw the active molecule in either 2D or force mode.
- *
- * @param {object} context
- * @param {'2d'|'force'} context.mode
- * @param {import('../../core/Molecule.js').Molecule|null} context.currentMol
- * @param {import('../../core/Molecule.js').Molecule|null} context._mol2d
- * @param {Function} context.draw2d
- * @param {Function} context.updateForce
- * @param {Function} [context.hasReactionPreview]
- * @param {Function} [context.restoreReactionPreviewSource]
- * @param {Function} [context.takeSnapshot]
+ * @param {object} context - App context object.
+ * @param {'2d'|'force'} context.mode - Current layout mode.
+ * @param {import('../../core/Molecule.js').Molecule|null} context.currentMol - Active molecule in force mode.
+ * @param {import('../../core/Molecule.js').Molecule|null} context._mol2d - Active molecule in 2D mode.
+ * @param {() => void} context.draw2d - Triggers a 2D redraw.
+ * @param {(mol: object, options?: object) => void} context.updateForce - Triggers a force-layout redraw.
+ * @param {() => boolean} [context.hasReactionPreview] - Returns true when a reaction preview is active.
+ * @param {(options?: object) => boolean} [context.restoreReactionPreviewSource] - Restores the reaction preview source molecule.
+ * @param {(options?: object) => void} [context.takeSnapshot] - Pushes an undo snapshot.
  */
 export function initResonancePanel(context) {
   ctx = context;
@@ -53,6 +51,11 @@ export function clearResonancePanelState() {
   }
 }
 
+/**
+ * Returns whether a click on the given DOM target should leave the current resonance contributor locked.
+ * @param {EventTarget|null} target - The element that received the click event.
+ * @returns {boolean} True if the resonance view should be preserved for this target.
+ */
 export function shouldPreserveResonanceForClickTarget(target) {
   if (!target?.closest) {
     return false;
@@ -66,9 +69,8 @@ export function shouldPreserveResonanceForClickTarget(target) {
 /**
  * Restores the molecule's default resonance contributor, unlocks the
  * resonance row, redraws the current mode, and refreshes the panel UI.
- *
- * @param {import('../../core/Molecule.js').Molecule|null} [mol]
- * @returns {boolean}
+ * @param {import('../../core/Molecule.js').Molecule|null} [mol] - Molecule to reset; defaults to the currently displayed molecule.
+ * @returns {boolean} True if a locked contributor was reset, false if resonance was already unlocked.
  */
 export function resetActiveResonanceView(mol = _currentResonanceMolecule()) {
   mol = _resolveResonanceTargetMolecule(mol);
@@ -90,9 +92,8 @@ export function resetActiveResonanceView(mol = _currentResonanceMolecule()) {
  * Prepares a molecule for a structural edit by restoring contributor 1 and
  * clearing any stored resonance tables so later recomputation starts from the
  * edited graph instead of reviving stale contributors.
- *
- * @param {import('../../core/Molecule.js').Molecule|null} [mol]
- * @returns {{mol: import('../../core/Molecule.js').Molecule|null, resonanceReset: boolean, resonanceCleared: boolean}}
+ * @param {import('../../core/Molecule.js').Molecule|null} [mol] - Molecule to prepare; defaults to the currently displayed molecule.
+ * @returns {{mol: import('../../core/Molecule.js').Molecule|null, resonanceReset: boolean, resonanceCleared: boolean}} Structural edit preparation result.
  */
 export function prepareResonanceStateForStructuralEdit(mol = _currentResonanceMolecule()) {
   mol = _resolveResonanceTargetMolecule(mol);
@@ -107,6 +108,11 @@ export function prepareResonanceStateForStructuralEdit(mol = _currentResonanceMo
   return { mol, resonanceReset, resonanceCleared: true };
 }
 
+/**
+ * Captures the current locked resonance contributor index for undo/redo snapshot purposes.
+ * @param {import('../../core/Molecule.js').Molecule|null} [mol] - Molecule to snapshot; defaults to the currently displayed molecule.
+ * @returns {{locked: boolean, activeState: number}|null} Snapshot object, or null if resonance is not locked.
+ */
 export function captureResonanceViewSnapshot(mol = _currentResonanceMolecule()) {
   mol = _resolveResonanceTargetMolecule(mol);
   if (!_resonanceLocked || !mol?.properties?.resonance) {
@@ -118,6 +124,11 @@ export function captureResonanceViewSnapshot(mol = _currentResonanceMolecule()) 
   };
 }
 
+/**
+ * Prepares a molecule snapshot suitable for undo history, reverting to contributor 1 before cloning if resonance is locked.
+ * @param {import('../../core/Molecule.js').Molecule|null} [mol] - Molecule to snapshot; defaults to the currently displayed molecule.
+ * @returns {{mol: import('../../core/Molecule.js').Molecule|null, resonanceView: {locked: boolean, activeState: number}|null}} The snapshot molecule and associated resonance view state.
+ */
 export function prepareResonanceUndoSnapshot(mol = _currentResonanceMolecule()) {
   // Undo snapshots for reaction preview should never route through the
   // resonance target resolver, because that resolver intentionally restores the
@@ -137,6 +148,12 @@ export function prepareResonanceUndoSnapshot(mol = _currentResonanceMolecule()) 
   return { mol: snapshotMol, resonanceView };
 }
 
+/**
+ * Restores the resonance contributor view from a previously captured snapshot and refreshes the panel.
+ * @param {import('../../core/Molecule.js').Molecule|null} mol - Molecule to apply the snapshot to.
+ * @param {{locked: boolean, activeState: number}|null} [snapshot] - Snapshot from `captureResonanceViewSnapshot`, or null to reset to contributor 1.
+ * @returns {boolean} True if a locked resonance state was successfully restored, false if reset to default.
+ */
 export function restoreResonanceViewSnapshot(mol, snapshot = null) {
   if (!snapshot?.locked || !mol?.properties?.resonance) {
     _resonanceLocked = false;
@@ -156,10 +173,9 @@ export function restoreResonanceViewSnapshot(mol, snapshot = null) {
  * Recomputes resonance contributors for the given molecule and refreshes the
  * resonance panel. Structural edits should call this after the molecular graph
  * changes so stale contributor tables are discarded.
- *
- * @param {import('../../core/Molecule.js').Molecule|null} mol
- * @param {object} [options={}]
- * @param {boolean} [options.recompute=true]
+ * @param {import('../../core/Molecule.js').Molecule|null} mol - The molecule to recompute resonance for.
+ * @param {object} [options] - Optional configuration.
+ * @param {boolean} [options.recompute] - When false, skips recomputation and only refreshes the panel UI.
  */
 export function updateResonancePanel(mol, options = {}) {
   const { recompute = true } = options;
@@ -185,8 +201,7 @@ export function updateResonancePanel(mol, options = {}) {
 
 /**
  * Returns the currently rendered molecule for the active mode.
- *
- * @returns {import('../../core/Molecule.js').Molecule|null}
+ * @returns {import('../../core/Molecule.js').Molecule|null} The active 2D or force-layout molecule.
  */
 function _currentResonanceMolecule() {
   return ctx.mode === 'force' ? (ctx.currentMol ?? null) : (ctx._mol2d ?? null);
@@ -195,19 +210,14 @@ function _currentResonanceMolecule() {
 /**
  * If a reaction preview is currently active, restores the source molecule so
  * resonance clicks always operate on the real molecule instead of the preview.
- *
- * @param {import('../../core/Molecule.js').Molecule|null} mol
- * @returns {import('../../core/Molecule.js').Molecule|null}
+ * @param {import('../../core/Molecule.js').Molecule|null} mol - Molecule to resolve.
+ * @returns {import('../../core/Molecule.js').Molecule|null} The resolved molecule, or the original if no preview is active.
  */
 function _resolveResonanceTargetMolecule(mol) {
   if (!ctx.hasReactionPreview?.()) {
     return mol;
   }
-  const restored = ctx.restoreReactionPreviewSource?.(
-    ctx.mode === '2d'
-      ? { restoreEntryZoom: true, restoreEntryDisplay: true }
-      : { restoreEntryZoom: true }
-  );
+  const restored = ctx.restoreReactionPreviewSource?.(ctx.mode === '2d' ? { restoreEntryZoom: true, restoreEntryDisplay: true } : { restoreEntryZoom: true });
   if (!restored) {
     return mol;
   }
@@ -217,8 +227,7 @@ function _resolveResonanceTargetMolecule(mol) {
 /**
  * Redraws the active molecule after a resonance contributor change while
  * keeping the current view stable in force mode.
- *
- * @param {import('../../core/Molecule.js').Molecule} mol
+ * @param {import('../../core/Molecule.js').Molecule} mol - The molecule to redraw.
  */
 function _redrawResonanceMolecule(mol) {
   if (ctx.mode === 'force') {
@@ -230,11 +239,10 @@ function _redrawResonanceMolecule(mol) {
 
 /**
  * Creates a small circular navigation button for the resonance panel.
- *
- * @param {string} label
- * @param {string} title
- * @param {Function} onActivate
- * @returns {HTMLButtonElement}
+ * @param {string} label - Button text label.
+ * @param {string} title - Tooltip title.
+ * @param {() => void} onActivate - Callback invoked when the button is clicked.
+ * @returns {HTMLButtonElement} The created button element.
  */
 function _resonanceNavButton(label, title, onActivate) {
   const btn = document.createElement('button');
@@ -257,9 +265,8 @@ function _resonanceNavButton(label, title, onActivate) {
 /**
  * Applies a specific resonance contributor to the current molecule and updates
  * the row state shown in the resonance panel.
- *
- * @param {import('../../core/Molecule.js').Molecule} mol
- * @param {number} state
+ * @param {import('../../core/Molecule.js').Molecule} mol - The molecule to apply the state to.
+ * @param {number} state - 1-based resonance contributor index to activate.
  */
 function _activateResonanceState(mol, state) {
   if (ctx.hasReactionPreview?.()) {
@@ -278,8 +285,7 @@ function _activateResonanceState(mol, state) {
 
 /**
  * Renders the resonance row for the provided molecule.
- *
- * @param {import('../../core/Molecule.js').Molecule|null} mol
+ * @param {import('../../core/Molecule.js').Molecule|null} mol - The molecule to render the panel for.
  */
 function _renderResonancePanel(mol) {
   if (typeof document === 'undefined') {

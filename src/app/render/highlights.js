@@ -5,11 +5,20 @@ import { getAtomLabel, labelHalfW } from '../../layout/mol2d-helpers.js';
 
 let ctx = {};
 
+/**
+ * Initializes the highlights module with the shared app context needed for redrawing after highlight changes.
+ * @param {object} context - Context object providing `mode`, `_mol2d`, `draw2d`, and `applyForceHighlights`.
+ */
 export function initHighlights(context) {
   ctx = context;
 }
 
-/** Apply (or clear) a highlight from a list of SMARTS mappings and redraw. */
+/**
+ * Applies or clears a highlight from a list of SMARTS mappings and triggers a redraw.
+ * @param {Array<Map>|null} mappings - Array of atom-id mappings (one per SMARTS match instance), or null to clear.
+ * @param {object} [options] - Optional rendering hints.
+ * @param {string} [options.style] - Named highlight style to apply (e.g. `'default'` or `'physchem'`).
+ */
 export function _setHighlight(mappings, options = {}) {
   _highlightedAtomIds.clear();
   _highlightedAtomSets = [];
@@ -40,6 +49,11 @@ export function _setHighlight(mappings, options = {}) {
   }
 }
 
+/**
+ * Creates the 2D highlight renderer that draws atom and bond highlight overlays onto the SVG graph.
+ * @param {object} context - Context providing `view`, `state`, `helpers`, and `constants` for rendering.
+ * @returns {object} Object with a `redraw2dHighlights` function.
+ */
 export function create2DHighlightRenderer(context) {
   function highlightRadius(atom, hCounts, toSVGPt, mol) {
     const label = getAtomLabel(atom, hCounts, toSVGPt, mol) || atom.name;
@@ -107,7 +121,13 @@ export function create2DHighlightRenderer(context) {
 
       const addCircles = (fill, extra) => {
         for (const { x, y, radius } of matchedAtoms) {
-          highlightLayer.append('circle').attr('cx', x).attr('cy', y).attr('r', radius + extra).attr('fill', fill).attr('stroke', 'none');
+          highlightLayer
+            .append('circle')
+            .attr('cx', x)
+            .attr('cy', y)
+            .attr('r', radius + extra)
+            .attr('fill', fill)
+            .attr('stroke', 'none');
         }
       };
 
@@ -123,6 +143,11 @@ export function create2DHighlightRenderer(context) {
   };
 }
 
+/**
+ * Creates the force-layout highlight renderer that draws atom and bond highlight overlays onto the force graph.
+ * @param {object} context - Context providing `view`, `cache`, `constants`, `helpers`, and `force` for rendering.
+ * @returns {object} Object with an `applyForceHighlights` function.
+ */
 export function createForceHighlightRenderer(context) {
   function applyForceHighlights() {
     const graphSelection = context.view.getGraphSelection();
@@ -260,10 +285,9 @@ function _clearActiveFunctionalGroupState() {
  *
  * `-1` is reserved for the synthetic "All" cycle state when there are
  * multiple matches; otherwise the value is clamped into `[0, siteCount - 1]`.
- *
- * @param {number} index
- * @param {number} siteCount
- * @returns {number}
+ * @param {number} index - The raw index to normalize.
+ * @param {number} siteCount - Total number of match sites.
+ * @returns {number} Normalized index in `[0, siteCount - 1]`, or -1 for the "All" state.
  */
 function _normalizeFunctionalGroupMatchIndex(index, siteCount) {
   if (siteCount <= 1) {
@@ -278,11 +302,10 @@ function _normalizeFunctionalGroupMatchIndex(index, siteCount) {
 /**
  * Cycles through functional-group match states, including the synthetic
  * "All" state after the last individual match.
- *
- * @param {number} currentIndex
- * @param {number} delta
- * @param {number} siteCount
- * @returns {number}
+ * @param {number} currentIndex - Current active index.
+ * @param {number} delta - Step direction (+1 or -1).
+ * @param {number} siteCount - Total number of match sites.
+ * @returns {number} Next index after cycling.
  */
 function _cycleFunctionalGroupMatchIndex(currentIndex, delta, siteCount) {
   if (siteCount <= 1) {
@@ -297,10 +320,9 @@ function _cycleFunctionalGroupMatchIndex(currentIndex, delta, siteCount) {
 
 /**
  * Formats the active functional-group cycle label.
- *
- * @param {number} index
- * @param {number} siteCount
- * @returns {string}
+ * @param {number} index - Current active index.
+ * @param {number} siteCount - Total number of match sites.
+ * @returns {string} Display label such as "1/3" or "All".
  */
 function _functionalGroupMatchIndexLabel(index, siteCount) {
   return index === FUNCTIONAL_GROUP_ALL_MATCH_INDEX ? 'All' : `${index + 1}/${siteCount}`;
@@ -361,6 +383,11 @@ function _functionalGroupAnchorQueryIds(smarts) {
   return cached;
 }
 
+/**
+ * Returns the query atom ids that serve as canonical anchors for deduplicating SMARTS matches.
+ * @param {string} smarts - SMARTS pattern string to look up or compute anchor ids for.
+ * @returns {string[]} Array of query atom ids representing the anchor atoms.
+ */
 export function getHighlightAnchorQueryIds(smarts) {
   return _functionalGroupAnchorQueryIds(smarts);
 }
@@ -385,6 +412,10 @@ function _mergeMappingsByAnchor(smarts, mappings) {
   return [...mergedByAnchor.values()].map(atomSet => new Map([...atomSet].map(id => [id, id])));
 }
 
+/**
+ * Applies a transient highlight from the last hovered functional-group mappings for 2D export, if within the grace period.
+ * @returns {() => void} Cleanup no-op (always returns an empty function).
+ */
 export function _prepare2dExportHighlightState() {
   if (_highlightedAtomSets.length > 0) {
     return () => {};
@@ -399,6 +430,10 @@ export function _prepare2dExportHighlightState() {
   return () => {};
 }
 
+/**
+ * Restores a highlight from the most recently hovered functional-group mappings if still within the grace period.
+ * @returns {boolean} True if a hover highlight was successfully restored, false otherwise.
+ */
 export function _restoreRecentFunctionalGroupHighlight() {
   if (_highlightedAtomSets.length > 0) {
     return false;
@@ -414,6 +449,13 @@ export function _restoreRecentFunctionalGroupHighlight() {
   return true;
 }
 
+/**
+ * Registers or removes a named persistent highlight fallback that is tried when no explicit highlight is active.
+ * @param {(() => void)|null} fn - Restore function called when the fallback is activated, or a non-function value to remove the entry.
+ * @param {object} [options] - Configuration options for the fallback entry.
+ * @param {string} [options.key] - Unique key identifying this fallback entry (defaults to `'default'`).
+ * @param {() => boolean} [options.isActive] - Optional predicate; if provided, only activates the fallback when it returns true.
+ */
 export function setPersistentHighlightFallback(fn, options = {}) {
   const key = options.key ?? 'default';
   if (typeof fn !== 'function') {
@@ -426,6 +468,10 @@ export function setPersistentHighlightFallback(fn, options = {}) {
   });
 }
 
+/**
+ * Returns whether any registered persistent highlight fallback is currently active.
+ * @returns {boolean} True if at least one fallback has no `isActive` guard or its guard returns true.
+ */
 export function hasPersistentHighlightFallback() {
   for (const { isActive } of [..._persistentHighlightFallbacks.values()].reverse()) {
     if (!isActive || isActive()) {
@@ -435,6 +481,10 @@ export function hasPersistentHighlightFallback() {
   return false;
 }
 
+/**
+ * Restores the most recently active highlight from the active functional-group row or registered fallbacks, clearing all highlights if none succeed.
+ * @returns {boolean} True if a highlight was successfully restored, false if all highlights were cleared.
+ */
 export function _restorePersistentHighlight() {
   const activeFgRow = document.querySelector('#fg-body tr.fg-active');
   const activeFgMappings = _activeFunctionalGroupMappingsForRow(activeFgRow);
@@ -451,7 +501,12 @@ export function _restorePersistentHighlight() {
   return false;
 }
 
-/** Returns true if id1 and id2 belong to the same SMARTS match instance. */
+/**
+ * Returns true if both atom ids belong to the same highlighted SMARTS match instance.
+ * @param {string} id1 - First atom id.
+ * @param {string} id2 - Second atom id.
+ * @returns {boolean} True if the two atoms share a highlighted match set.
+ */
 export function _isBondHighlighted(id1, id2) {
   for (const set of _highlightedAtomSets) {
     if (set.has(id1) && set.has(id2)) {
@@ -461,6 +516,10 @@ export function _isBondHighlighted(id1, id2) {
   return false;
 }
 
+/**
+ * Recomputes functional-group SMARTS matches for the given molecule and rebuilds the functional-group panel UI.
+ * @param {object} mol - Molecule whose functional groups should be recomputed and displayed.
+ */
 export function updateFunctionalGroups(mol) {
   _highlightMol = mol;
   _highlightedAtomIds.clear();
@@ -612,22 +671,42 @@ if (typeof document !== 'undefined') {
   );
 }
 
+/**
+ * Returns the flat set of all currently highlighted atom ids across all match instances.
+ * @returns {Set<string>} Set of highlighted atom ids.
+ */
 export function getHighlightedAtomIds() {
   return _highlightedAtomIds;
 }
 
+/**
+ * Returns the array of per-match-instance atom-id sets currently highlighted.
+ * @returns {Array<Set<string>>} Array of Sets, one per SMARTS match instance.
+ */
 export function getHighlightedAtomSets() {
   return _highlightedAtomSets;
 }
 
+/**
+ * Returns the molecule used for the last `updateFunctionalGroups` call, or null if none.
+ * @returns {object|null} The last molecule passed to `updateFunctionalGroups`, or null.
+ */
 export function getHighlightMol() {
   return _highlightMol;
 }
 
+/**
+ * Returns the name of the currently active highlight style.
+ * @returns {string} Highlight style key (e.g. `'default'` or `'physchem'`).
+ */
 export function getHighlightStyle() {
   return _highlightStyle;
 }
 
+/**
+ * Captures the current active functional-group selection state for later restoration via undo/redo.
+ * @returns {{activeFunctionalGroupKey: string|null, activeFunctionalGroupMatchIndex: number}} Snapshot of active functional-group state.
+ */
 export function captureHighlightSnapshot() {
   return {
     activeFunctionalGroupKey: _activeFunctionalGroupKey,
@@ -635,6 +714,12 @@ export function captureHighlightSnapshot() {
   };
 }
 
+/**
+ * Restores the highlight and functional-group panel state from a previously captured snapshot.
+ * @param {{activeFunctionalGroupKey: string|null, activeFunctionalGroupMatchIndex: number}|null} snapshot - Snapshot object from `captureHighlightSnapshot`, or null to clear.
+ * @param {object|null} mol - Current molecule to re-run SMARTS searches against.
+ * @returns {boolean} True if a highlight was successfully restored, false otherwise.
+ */
 export function restoreHighlightSnapshot(snapshot, mol) {
   _clearActiveFunctionalGroupState();
   if (!mol) {
@@ -658,6 +743,9 @@ export function restoreHighlightSnapshot(snapshot, mol) {
   return false;
 }
 
+/**
+ * Clears all highlight state including highlighted atom sets, the reference molecule, and the active functional-group selection.
+ */
 export function clearHighlightState() {
   _highlightedAtomIds.clear();
   _highlightedAtomSets = [];

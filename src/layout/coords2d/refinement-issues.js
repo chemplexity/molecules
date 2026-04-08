@@ -10,7 +10,6 @@ const DEG120 = (2 * Math.PI) / 3;
 
 /**
  * Returns the turn sign (+1, -1, or 0) for the sequence a→b→c in 2D coordinate space.
- *
  * @param {Map<string, {x: number, y: number}>} coords - Atom coordinates
  * @param {string} aId - Atom ID of the first point
  * @param {string} bId - Atom ID of the pivot point
@@ -24,8 +23,7 @@ export function backboneTurnSign(coords, aId, bId, cId) {
 /**
  * Returns the atom ID of the highest-CIP-priority substituent on an sp2 atom, excluding the double-bond partner.
  * Returns null if no unique highest-priority substituent exists.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {string} sp2Id - Atom ID of the sp2 center
  * @param {string} otherSp2Id - Atom ID of the other alkene carbon (excluded from substituents)
  * @returns {string|null} Atom ID of the highest-priority substituent, or null
@@ -57,10 +55,9 @@ export function highestPriorityAlkeneSubstituentId(molecule, sp2Id, otherSp2Id) 
 
 /**
  * Determines the actual E/Z stereochemistry of an alkene bond from the current 2D coordinates.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} coords - Current atom coordinates
- * @param {Object} bond - The double bond to evaluate
+ * @param {object} bond - The double bond to evaluate
  * @returns {'E'|'Z'|null} Stereodescriptor, or null if it cannot be determined
  */
 export function actualAlkeneStereoFromCoords(molecule, coords, bond) {
@@ -96,7 +93,6 @@ export function actualAlkeneStereoFromCoords(molecule, coords, bond) {
 
 /**
  * Tests whether two line segments properly intersect (share an interior crossing point, not endpoints).
- *
  * @param {{x: number, y: number}} a1 - First endpoint of segment A
  * @param {{x: number, y: number}} a2 - Second endpoint of segment A
  * @param {{x: number, y: number}} b1 - First endpoint of segment B
@@ -118,7 +114,6 @@ export function segmentsProperlyIntersect(a1, a2, b1, b2) {
 
 /**
  * Computes the angle at vertex b formed by vectors b→a and b→c, in radians.
- *
  * @param {{x: number, y: number}} a - First point
  * @param {{x: number, y: number}} b - Vertex point
  * @param {{x: number, y: number}} c - Third point
@@ -141,8 +136,7 @@ export function angleBetweenPoints(a, b, c) {
 /**
  * Returns the ideal bond angle (in radians) at an atom for use during refinement.
  * Returns π for linear centers (triple bonds or two double bonds), 2π/3 otherwise.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {string} atomId - Atom ID to evaluate
  * @returns {number} Ideal angle in radians
  */
@@ -170,10 +164,9 @@ export function idealRefinementAngle(molecule, atomId) {
 /**
  * Returns true if an atom is a strict trigonal center: exactly 3 heavy neighbors,
  * exactly one double bond, and no triple bonds.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {string} atomId - Atom ID to test
- * @returns {boolean}
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 export function isStrictTrigonalRefinementCenter(molecule, atomId) {
   const atom = molecule.atoms.get(atomId);
@@ -196,8 +189,7 @@ export function isStrictTrigonalRefinementCenter(molecule, atomId) {
 /**
  * Finds a neighbor of atomId that is connected via a non-aromatic multiple bond
  * and has heavy degree 1 (i.e., is a terminal multiple-bond atom).
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {string} atomId - Atom ID to inspect
  * @returns {string|null} Atom ID of the terminal multiple-bond neighbor, or null
  */
@@ -225,7 +217,6 @@ export function getTerminalMultipleBondNeighborId(molecule, atomId) {
 
 /**
  * Computes the average direction pointing away from a set of reference positions relative to a pivot.
- *
  * @param {{x: number, y: number}} pivot - The origin point
  * @param {Array<{x: number, y: number}>} refPositions - Reference positions to average away from
  * @returns {number|null} Angle in radians pointing away from the centroid of references, or null if degenerate
@@ -251,8 +242,7 @@ export function averageDirectionAwayFromRefs(pivot, refPositions) {
 
 /**
  * Computes the ideal outward direction for a substituent attached to a ring atom.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} coords - Current atom coordinates
  * @param {string} pivotId - Atom ID of the ring atom bearing the substituent
  * @param {Set<string>} ringAtomIds - Set of all ring atom IDs
@@ -276,12 +266,11 @@ export function ringSubstituentTargetAngle(molecule, coords, pivotId, ringAtomId
 /**
  * Returns true if the bond between aId and bId qualifies as a chain bond for refinement
  * (non-aromatic single or double bond, both atoms within the allowed set).
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {string} aId - First atom ID
  * @param {string} bId - Second atom ID
- * @param {Set<string>|null} [allowedAtomIds=null] - Optional atom whitelist; both endpoints must be in it
- * @returns {boolean}
+ * @param {Set<string>|null} [allowedAtomIds] - Optional atom whitelist; both endpoints must be in it
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 export function isRefinementChainBond(molecule, aId, bId, allowedAtomIds = null) {
   if (allowedAtomIds && (!allowedAtomIds.has(aId) || !allowedAtomIds.has(bId))) {
@@ -295,12 +284,11 @@ export function isRefinementChainBond(molecule, aId, bId, allowedAtomIds = null)
 /**
  * Returns true if an atom is eligible to participate in a refinement chain
  * (heavy, non-ring, and all its heavy neighbors are connected by chain bonds).
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {string} atomId - Atom ID to test
  * @param {Set<string>} ringAtomIds - Set of all ring atom IDs
- * @param {Set<string>|null} [allowedAtomIds=null] - Optional atom whitelist
- * @returns {boolean}
+ * @param {Set<string>|null} [allowedAtomIds] - Optional atom whitelist
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 export function isRefinementChainAtom(molecule, atomId, ringAtomIds, allowedAtomIds = null) {
   if (allowedAtomIds && !allowedAtomIds.has(atomId)) {
@@ -321,11 +309,10 @@ export function isRefinementChainAtom(molecule, atomId, ringAtomIds, allowedAtom
 
 /**
  * Traces the longest linear chain path starting from startId through eligible chain atoms.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {string} startId - Atom ID to start tracing from
  * @param {Set<string>} ringAtomIds - Set of all ring atom IDs
- * @param {Set<string>|null} [allowedAtomIds=null] - Optional atom whitelist
+ * @param {Set<string>|null} [allowedAtomIds] - Optional atom whitelist
  * @returns {string[]} Ordered array of atom IDs along the chain (may be empty)
  */
 export function collectRefinementChainPath(molecule, startId, ringAtomIds, allowedAtomIds = null) {
@@ -355,8 +342,7 @@ export function collectRefinementChainPath(molecule, startId, ringAtomIds, allow
 
 /**
  * Enumerates all non-overlapping linear chain paths across the molecule using the refinement context.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {{ heavyIds: string[], cycleData: { ringAtomIds: Set<string> } }} ctx - Refinement context (or compatible subset)
  * @returns {string[][]} Array of chain paths, each an ordered array of atom IDs with length >= 2
  */
@@ -422,10 +408,9 @@ export function collectAllRefinementChainPaths(molecule, ctx) {
  * Checks for atom overlaps, near-atom proximity, bond stretching/compression,
  * bond-atom crowding, bond crossings, bad bond angles, ring geometry deviations,
  * chain compaction/curling, and atoms placed inside ring polygons.
- *
- * @param {Object} molecule - The molecule graph
+ * @param {object} molecule - The molecule graph
  * @param {Map<string, {x: number, y: number}>} coords - Current atom coordinates
- * @param {Object} ctx - Refinement context from buildRefinementContext
+ * @param {object} ctx - Refinement context from buildRefinementContext
  * @returns {Array<{ type: string, severity: number, atoms: string[], bonds?: string[] }>} Issues sorted by descending severity
  */
 export function collectLayoutIssues(molecule, coords, ctx) {
@@ -810,7 +795,6 @@ export function collectLayoutIssues(molecule, coords, ctx) {
 
 /**
  * Sums the severity scores of all detected layout issues into a single scalar.
- *
  * @param {Array<{ severity: number }>} issues - Issues array from collectLayoutIssues
  * @returns {number} Total severity score (lower is better)
  */

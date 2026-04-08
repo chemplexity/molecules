@@ -1,5 +1,10 @@
 /** @module app/interactions/draw-bond-preview */
 
+/**
+ * Creates draw-bond preview action handlers that manage the transient preview geometry shown while the user drags to place a new bond.
+ * @param {object} context - Dependency context providing g, state, getMode, force, view2D, plot, renderers, view, helpers, constants, overlays, and getDrawBondElement.
+ * @returns {object} Object with `clearArtifacts`, `start`, `update`, `resetHover`, `cancel`, and `markDragged`.
+ */
 export function createDrawBondPreviewActions(context) {
   function removePreviewGeometry() {
     context.g.select('g.draw-bond-preview').remove();

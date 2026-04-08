@@ -3,7 +3,7 @@
 /**
  * Computes n! (factorial).
  * @param {number} n - Non-negative integer.
- * @returns {number}
+ * @returns {number} The computed numeric value.
  */
 export function factorial(n) {
   let result = 1;
@@ -15,9 +15,9 @@ export function factorial(n) {
 
 /**
  * Computes the binomial coefficient C(n, k).
- * @param {number} n
- * @param {number} k
- * @returns {number}
+ * @param {number} n - Count or dimension.
+ * @param {number} k - Parameter value.
+ * @returns {number} The computed numeric value.
  */
 export function binomial(n, k) {
   if (k < 0 || k > n) {
@@ -37,9 +37,9 @@ export function binomial(n, k) {
 /**
  * Returns all k-element combinations of an array.
  * @template T
- * @param {T[]} arr
- * @param {number} k
- * @returns {T[][]}
+ * @param {T[]} arr - The arr value.
+ * @param {number} k - Parameter value.
+ * @returns {T[][]} Array of results.
  */
 export function combinations(arr, k) {
   if (k === 0) {

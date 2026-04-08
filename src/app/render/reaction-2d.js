@@ -16,6 +16,10 @@ import { updateResonancePanel } from './resonance.js';
 
 let ctx = {};
 
+/**
+ * Initializes the reaction-2d module with the shared app context and registers the reaction-preview highlight fallback.
+ * @param {object} context - Context providing `mode`, `currentMol`, `_mol2d`, `renderMol`, `takeSnapshot`, and related helpers.
+ */
 export function initReaction2d(context) {
   ctx = context;
   setPersistentHighlightFallback(
@@ -58,10 +62,19 @@ function _takeReactionPreviewHistoryStep() {
   ctx.takeSnapshot?.({ clearReactionPreview: false });
 }
 
+/**
+ * Returns whether a reaction preview is currently active (both reactant and product atom sets are populated).
+ * @returns {boolean} True if a reaction preview is active.
+ */
 export function _hasReactionPreview() {
   return _reactionPreviewReactantAtomIds.size > 0 && _reactionPreviewProductAtomIds.size > 0;
 }
 
+/**
+ * Returns whether the given atom id is editable in the current reaction preview context.
+ * @param {string|null} atomId - Atom id to check.
+ * @returns {boolean} True if the atom can be edited (either no preview is active, or the atom is a reactant atom).
+ */
 export function _isReactionPreviewEditableAtomId(atomId) {
   if (!_hasReactionPreview() || atomId == null) {
     return true;
@@ -69,6 +82,11 @@ export function _isReactionPreviewEditableAtomId(atomId) {
   return _reactionPreviewReactantAtomIds.has(atomId);
 }
 
+/**
+ * Computes the per-side viewport padding needed to avoid overlap with visible UI overlays during a fit-to-view operation.
+ * @param {number} [basePad] - Minimum padding in pixels applied to all sides before overlay adjustments (defaults to 40).
+ * @returns {{left: number, right: number, top: number, bottom: number}} Object with per-side padding values in pixels.
+ */
 export function _plotOverlayFitPadding(basePad = 40) {
   const pads = { left: basePad, right: basePad, top: basePad, bottom: basePad };
   const reactionPreview = _hasReactionPreview();
@@ -111,11 +129,19 @@ export function _plotOverlayFitPadding(basePad = 40) {
   return pads;
 }
 
+/**
+ * Returns the per-side viewport fit padding, delegating to `_plotOverlayFitPadding`.
+ * @param {number} [basePad] - Base padding in pixels (defaults to 40).
+ * @returns {{left: number, right: number, top: number, bottom: number}} Per-side padding values in pixels.
+ */
 export function _viewportFitPadding(basePad = 40) {
   const pads = _plotOverlayFitPadding(basePad);
   return pads;
 }
 
+/**
+ * Resets all reaction preview state variables to their initial empty values.
+ */
 export function _clearReactionPreviewState() {
   _reactionPreviewSourceMol = null;
   _activeReactionSmirks = null;
@@ -189,6 +215,10 @@ function _deserializeSnapshotMol(data) {
   return mol;
 }
 
+/**
+ * Captures the full reaction preview state as a serializable snapshot for undo/redo history.
+ * @returns {object|null} Snapshot object containing all preview state, or null if no preview is active.
+ */
 export function _captureReactionPreviewSnapshot() {
   if (!_hasReactionPreview() || !_reactionPreviewSourceMol) {
     return null;
@@ -221,14 +251,26 @@ export function _captureReactionPreviewSnapshot() {
   };
 }
 
+/**
+ * Returns a clone of the reaction preview source molecule, or null if none is set.
+ * @returns {object|null} Cloned source molecule or null.
+ */
 export function _getReactionPreviewSourceMol() {
   return _reactionPreviewSourceMol?.clone() ?? null;
 }
 
+/**
+ * Returns the set of atom ids belonging to the reactant portion of the current reaction preview.
+ * @returns {Set<string>} Set of reactant atom ids.
+ */
 export function _getReactionPreviewReactantAtomIds() {
   return _reactionPreviewReactantAtomIds;
 }
 
+/**
+ * Returns the array of reactant-to-product atom id pairs established by the active reaction SMIRKS mapping.
+ * @returns {Array<[string, string]>} Array of `[reactantAtomId, productAtomId]` pairs.
+ */
 export function _getReactionPreviewMappedAtomPairs() {
   return _reactionPreviewMappedAtomPairs ?? [];
 }
@@ -240,6 +282,10 @@ function _getReactionTemplateSourceMol() {
   return ctx.mode === 'force' ? ctx.currentMol : ctx._mol2d;
 }
 
+/**
+ * Restores full reaction preview state from a previously captured snapshot.
+ * @param {object|null} previewSnap - Snapshot object from `_captureReactionPreviewSnapshot`, or null to clear state.
+ */
 export function _restoreReactionPreviewSnapshot(previewSnap) {
   _clearReactionPreviewState();
   if (!previewSnap) {
@@ -290,6 +336,13 @@ function _buildReaction2dMol(sourceMol, smirks, mapping = undefined) {
   return buildReaction2dMolShared(sourceMol, smirks, mapping);
 }
 
+/**
+ * Clears the reaction preview and re-renders the source molecule, optionally restoring the entry zoom and display state.
+ * @param {object} [options] - Options controlling what entry state is restored.
+ * @param {boolean} [options.restoreEntryZoom] - Whether to restore the zoom transform captured at preview entry.
+ * @param {boolean} [options.restoreEntryDisplay] - Whether to restore the display molecule captured at preview entry.
+ * @returns {boolean} True if the source was restored, false if no source mol was set.
+ */
 export function _restoreReactionPreviewSource({ restoreEntryZoom = false, restoreEntryDisplay = false } = {}) {
   if (!_reactionPreviewSourceMol) {
     return false;
@@ -315,6 +368,13 @@ export function _restoreReactionPreviewSource({ restoreEntryZoom = false, restor
   return true;
 }
 
+/**
+ * Prepares edit targets for a structural edit during a reaction preview, restoring the source molecule if needed.
+ * @param {object} [options] - Options specifying which atom ids are being edited.
+ * @param {string|null} [options.atomId] - Primary atom id being edited, or null.
+ * @param {string|null} [options.snapAtomId] - Secondary atom id used for snapping, or null.
+ * @returns {{atomId: string|null, snapAtomId: string|null, restored: boolean, previousSnapshot: object|null, entryZoomTransform: object|null}|null} Prepared targets, or null if the atom is not editable in the current preview.
+ */
 export function _prepareReactionPreviewEditTargets({ atomId = null, snapAtomId = null } = {}) {
   if (!_hasReactionPreview()) {
     return { atomId, snapAtomId, restored: false, previousSnapshot: null, entryZoomTransform: null };
@@ -332,6 +392,11 @@ export function _prepareReactionPreviewEditTargets({ atomId = null, snapAtomId =
   return { atomId, snapAtomId, restored, previousSnapshot, entryZoomTransform };
 }
 
+/**
+ * Prepares a bond edit target during a reaction preview, restoring the source molecule if the bond belongs to the reactant.
+ * @param {string} bondId - Id of the bond being edited.
+ * @returns {{bondId: string, restored: boolean, previousSnapshot: object|null, entryZoomTransform: object|null}|null} Prepared target, or null if the bond is not editable.
+ */
 export function _prepareReactionPreviewBondEditTarget(bondId) {
   if (!_hasReactionPreview()) {
     return { bondId, restored: false, previousSnapshot: null, entryZoomTransform: null };
@@ -351,6 +416,12 @@ export function _prepareReactionPreviewBondEditTarget(bondId) {
   return { bondId, restored, previousSnapshot, entryZoomTransform };
 }
 
+/**
+ * Returns the filtered erase targets for the current reaction preview context (always empty during an active preview).
+ * @param {string[]} [atomIds] - Candidate atom ids to erase.
+ * @param {string[]} [bondIds] - Candidate bond ids to erase.
+ * @returns {{atomIds: string[], bondIds: string[], restored: boolean}} Filtered targets and whether the source was restored.
+ */
 export function _prepareReactionPreviewEraseTargets(atomIds = [], bondIds = []) {
   if (!_hasReactionPreview()) {
     return {
@@ -408,14 +479,32 @@ function _reaction2dArrowGeometryPreferHeavy(items, atomIds, options = {}) {
   return _reaction2dArrowGeometry(items, atomIds, options);
 }
 
+/**
+ * Extracts the source (reactant) atom id from a product atom id that may be prefixed with a reaction step identifier.
+ * @param {string} productAtomId - Product atom id, potentially prefixed with a colon-separated step key.
+ * @returns {string} The source atom id with any leading step prefix removed.
+ */
 export function _reaction2dSourceAtomId(productAtomId) {
   return typeof productAtomId === 'string' ? productAtomId.split(':').slice(1).join(':') : productAtomId;
 }
 
+/**
+ * Computes bounding-box geometries for each product component atom set in the current reaction preview.
+ * @param {Array<object>} items - Array of positioned atoms or nodes with `id`, `x`, `y`, and `name` properties.
+ * @param {object} [options] - Optional geometry options passed to the underlying bounding-box helper.
+ * @returns {Array<object>} Array of geometry objects (one per product component) with `minX`, `maxX`, `minY`, `maxY`, `cx`, and `cy`.
+ */
 export function _reaction2dProductGeometries(items, options = {}) {
   return (_reactionPreviewProductComponentAtomIdSets ?? []).map(atomIds => _reaction2dArrowGeometryPreferHeavy(items, atomIds, options)).filter(Boolean);
 }
 
+/**
+ * Computes the start and end points for a reaction arrow between reactant and product bounding boxes.
+ * @param {object|null} reactant - Reactant bounding-box geometry with `cx`, `cy`, `minX`, `maxX`, `minY`, `maxY`.
+ * @param {object|null} product - Product bounding-box geometry with `cx`, `cy`, `minX`, `maxX`, `minY`, `maxY`.
+ * @param {number} [pad] - Additional inset padding in coordinate units added beyond the bounding-box edges (defaults to 0.45).
+ * @returns {{start: {x: number, y: number}, end: {x: number, y: number}, ux: number, uy: number}|null} Arrow endpoints and unit direction, or null if a valid arrow cannot be drawn.
+ */
 export function _reaction2dArrowEndpoints(reactant, product, pad = 0.45) {
   if (!reactant || !product) {
     return null;
@@ -487,6 +576,19 @@ function _pointToSegmentDistance(point, start, end) {
   return Math.hypot(point.x - projX, point.y - projY);
 }
 
+/**
+ * Chooses the best perpendicular offset for a force-layout reaction preview arrow that maximises clearance from atoms.
+ * @param {object} reactant - Bounding geometry of the reactant group.
+ * @param {object} product - Bounding geometry of the product group.
+ * @param {Array} items - Atom nodes used for clearance checking.
+ * @param {object} [options] - Optional configuration.
+ * @param {number} [options.pad] - Padding between the bounding box and arrow endpoints.
+ * @param {(item: object) => number} [options.radiusForItem] - Returns the display radius for a given item.
+ * @param {number} [options.hydrogenRadiusScale] - Scale factor applied to hydrogen radii.
+ * @param {number} [options.previousOffset] - Previous arrow offset used for sticky hysteresis.
+ * @param {number} [options.stickyTolerance] - Clearance tolerance for keeping the previous offset.
+ * @returns {object|null} Arrow descriptor with start, end, unit-vector, and offset, or null when no valid arrow exists.
+ */
 export function _chooseReactionPreviewForceArrow(
   reactant,
   product,
@@ -565,6 +667,11 @@ export function _chooseReactionPreviewForceArrow(
   return best;
 }
 
+/**
+ * Centers reactant and product coordinate pairs in the 2D reaction preview layout.
+ * @param {object} mol - Molecule whose atom coordinates will be adjusted.
+ * @param {number} [bondLength] - Target bond length used for scaling.
+ */
 export function _centerReaction2dPairCoords(mol, bondLength = 1.5) {
   if (!_hasReactionPreview() || !mol) {
     return;
@@ -580,6 +687,11 @@ export function _centerReaction2dPairCoords(mol, bondLength = 1.5) {
   );
 }
 
+/**
+ * Spreads disconnected product components apart in the 2D reaction preview layout.
+ * @param {object} mol - Molecule whose product-component atom coordinates will be spread.
+ * @param {number} [bondLength] - Target bond length used for spacing calculations.
+ */
 export function _spreadReaction2dProductComponents(mol, bondLength = 1.5) {
   if (!_hasReactionPreview() || !mol || (_reactionPreviewProductComponentAtomIdSets?.length ?? 0) < 2) {
     return;
@@ -1031,6 +1143,11 @@ function _repositionReaction2dPeripheralAtoms(mol, componentAtomIds, bondLength 
   }
 }
 
+/**
+ * Draws the reaction arrow and product-plus signs onto the 2D structure SVG layer.
+ * @param {(pt: object) => object} toSVGPt - Converts a molecule-space point to SVG viewport coordinates.
+ * @param {Array} atoms - Array of atom objects used for bounding-box geometry.
+ */
 export function _drawReactionPreviewArrow2d(toSVGPt, atoms) {
   if (_reactionPreviewReactantAtomIds.size === 0 || _reactionPreviewProductAtomIds.size === 0) {
     return;
@@ -1090,6 +1207,10 @@ export function _drawReactionPreviewArrow2d(toSVGPt, atoms) {
   }
 }
 
+/**
+ * Clears and redraws the reaction arrow overlay on the force-layout SVG using current node positions.
+ * @param {Array} nodes - Force-simulation node array providing current x/y positions and atom metadata.
+ */
 export function _renderReactionPreviewArrowForce(nodes) {
   ctx.g.selectAll('g.reaction-preview-arrow').remove();
   if (_reactionPreviewReactantAtomIds.size === 0 || _reactionPreviewProductAtomIds.size === 0) {
@@ -1287,6 +1408,10 @@ function _activateReactionEntry(sourceMol, entry, siteIndex = 0, { lock = true }
   _setHighlight([site.highlightMapping]);
 }
 
+/**
+ * Re-applies the currently locked reaction preview using the stored source molecule and active SMIRKS.
+ * @returns {boolean} True if the preview was successfully re-applied, false otherwise.
+ */
 export function _reapplyActiveReactionPreview() {
   if (!_reactionPreviewLocked || !_activeReactionSmirks || !_reactionPreviewSourceMol) {
     return false;
@@ -1321,6 +1446,10 @@ export function _reapplyActiveReactionPreview() {
   return true;
 }
 
+/**
+ * Aligns the 2D orientation of product atoms to best match the reactant reference frame.
+ * @param {object} mol - Molecule whose product atom coordinates will be rotated or reflected.
+ */
 export function _alignReaction2dProductOrientation(mol) {
   if (!_hasReactionPreview() || !_reactionPreviewMappedAtomPairs?.length) {
     return;
@@ -1346,6 +1475,9 @@ export function _alignReaction2dProductOrientation(mol) {
   );
 }
 
+/**
+ * Refreshes the reaction templates panel table with match counts for the current molecule.
+ */
 export function updateReactionTemplatesPanel() {
   const tbody = document.getElementById('reaction-body');
   if (!tbody) {

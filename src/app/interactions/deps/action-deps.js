@@ -1,5 +1,12 @@
 /** @module app/interactions/deps/action-deps */
 
+/**
+ * Builds the structured dependency object for the navigation action factory,
+ * mapping flat app-context properties into named sub-objects (history, view,
+ * force, overlays, etc.).
+ * @param {object} ctx - Flat app context supplying navigation-related methods and values.
+ * @returns {object} Dependency object consumed by `createNavigationActions`.
+ */
 export function createNavigationActionDeps(ctx) {
   return {
     state: ctx.appState,
@@ -63,6 +70,13 @@ export function createNavigationActionDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the selection action factory,
+ * mapping flat app-context properties into named sub-objects (state, renderers,
+ * view, drawBond, actions, dom).
+ * @param {object} ctx - Flat app context supplying selection-related methods and values.
+ * @returns {object} Dependency object consumed by `createSelectionActions`.
+ */
 export function createSelectionActionDeps(ctx) {
   return {
     state: ctx.appState,
@@ -91,6 +105,13 @@ export function createSelectionActionDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the editing action factory,
+ * mapping flat app-context properties into named sub-objects (state, actions,
+ * overlays, policies, chemistry, force, view, dom).
+ * @param {object} ctx - Flat app context supplying editing-related methods and values.
+ * @returns {object} Dependency object consumed by `createEditingActions`.
+ */
 export function createEditingActionDeps(ctx) {
   return {
     state: ctx.appState,
@@ -137,6 +158,13 @@ export function createEditingActionDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the drag-gesture action factory,
+ * mapping flat app-context properties into named sub-objects (d3, state,
+ * history, selection, molecule, force, view).
+ * @param {object} ctx - Flat app context supplying drag-related methods and values.
+ * @returns {object} Dependency object consumed by `createDragGestureActions`.
+ */
 export function createDragGestureActionDeps(ctx) {
   return {
     d3: {
@@ -173,6 +201,13 @@ export function createDragGestureActionDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the draw-bond preview action
+ * factory, mapping flat app-context properties into named sub-objects (state,
+ * view, force, view2D, plot, constants, helpers, overlays, renderers).
+ * @param {object} ctx - Flat app context supplying draw-bond preview methods and values.
+ * @returns {object} Dependency object consumed by `createDrawBondPreviewActions`.
+ */
 export function createDrawBondPreviewActionDeps(ctx) {
   return {
     g: ctx.g,
@@ -229,6 +264,14 @@ export function createDrawBondPreviewActionDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the draw-bond commit action
+ * factory, mapping flat app-context properties into named sub-objects
+ * (preview, state, view, snapshot, history, overlays, molecule, force,
+ * view2D, chemistry, analysis, renderers, selection, actions).
+ * @param {object} ctx - Flat app context supplying draw-bond commit methods and values.
+ * @returns {object} Dependency object consumed by `createDrawBondCommitActions`.
+ */
 export function createDrawBondCommitActionDeps(ctx) {
   return {
     getMode: () => ctx.getMode(),
@@ -310,6 +353,13 @@ export function createDrawBondCommitActionDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the primitive selection action
+ * factory, mapping flat app-context properties into named sub-objects (state,
+ * renderers, view, helpers).
+ * @param {object} ctx - Flat app context supplying primitive-selection methods and values.
+ * @returns {object} Dependency object consumed by `createPrimitiveSelectionActions`.
+ */
 export function createPrimitiveSelectionActionDeps(ctx) {
   return {
     state: ctx.appState,
@@ -327,6 +377,14 @@ export function createPrimitiveSelectionActionDeps(ctx) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the primitive event handler
+ * factory, mapping flat app-context properties into named sub-objects (state,
+ * selection, overlays, drawBond, actions, view, tooltip, tooltipState,
+ * options, formatters, pointer, dom).
+ * @param {object} ctx - Flat app context supplying primitive event handler methods and values.
+ * @returns {object} Dependency object consumed by `createPrimitiveEventHandlers`.
+ */
 export function createPrimitiveEventHandlerDeps(ctx) {
   return {
     state: ctx.appState,

@@ -1,5 +1,11 @@
 /** @module app/render/panel-deps */
 
+/**
+ * Builds the structured dependency object for the BondEnPanel factory,
+ * mapping flat dependency properties into a panel dependency object (mode, currentMol, _mol2d, draw2d, updateForce).
+ * @param {object} deps - Flat app context providing BondEnPanel-related methods and values.
+ * @returns {object} Dependency object consumed by `createBondEnPanel`.
+ */
 export function createBondEnPanelDeps(deps) {
   return {
     get mode() {
@@ -16,6 +22,12 @@ export function createBondEnPanelDeps(deps) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the ResonancePanel factory,
+ * mapping flat dependency properties into a panel dependency object (mode, currentMol, _mol2d, draw2d, updateForce, hasReactionPreview, restoreReactionPreviewSource, takeSnapshot).
+ * @param {object} deps - Flat app context providing ResonancePanel-related methods and values.
+ * @returns {object} Dependency object consumed by `createResonancePanel`.
+ */
 export function createResonancePanelDeps(deps) {
   return {
     get mode() {
@@ -35,6 +47,12 @@ export function createResonancePanelDeps(deps) {
   };
 }
 
+/**
+ * Builds the structured dependency object for the AtomNumberingPanel factory,
+ * mapping flat dependency properties into a panel dependency object (mode, currentMol, _mol2d, draw2d, updateForce, getRenderOptions, updateRenderOptions, reaction preview accessors).
+ * @param {object} deps - Flat app context providing AtomNumberingPanel-related methods and values.
+ * @returns {object} Dependency object consumed by `createAtomNumberingPanel`.
+ */
 export function createAtomNumberingPanelDeps(deps) {
   return {
     get mode() {

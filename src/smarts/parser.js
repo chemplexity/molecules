@@ -52,9 +52,8 @@ function _extractTrailingAtomMap(inner) {
  * - Branches: `(…)`
  * - Ring closures: single digit `1`–`9` or `%nn`
  * - Disconnected components: `.`
- *
- * @param {string} smarts
- * @returns {Molecule}
+ * @param {string} smarts - SMARTS pattern string.
+ * @returns {Molecule} The resulting molecule.
  */
 export function parseSMARTS(smarts) {
   if (typeof smarts !== 'string' || smarts.length === 0) {
@@ -83,6 +82,9 @@ export function parseSMARTS(smarts) {
   /**
    * Creates a new query atom node with the given predicate, connects it to
    * `prevId` (if any), and updates `prevId`.
+   * @param {(atom: Atom, mol: Molecule) => boolean} pred - Atom predicate function.
+   * @param {object} [properties] - Optional atom properties.
+   * @returns {string} The new atom node ID.
    */
   function addAtomNode(pred, properties = {}) {
     const id = `q${atomCount++}`;

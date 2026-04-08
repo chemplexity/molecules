@@ -1,5 +1,10 @@
 /** @module app/ui/options-modal */
 
+/**
+ * Initialises the options modal, binding all input elements and button handlers to app context.
+ * @param {object} context - Flat app context providing DOM accessors, option readers/writers, and modal state.
+ * @returns {void}
+ */
 export function initOptionsModal(context) {
   const { doc = document } = context;
 
@@ -58,18 +63,10 @@ export function initOptionsModal(context) {
       showAtomTooltips: showAtomTooltipsEl.checked,
       twoDAtomColoring: twoDAtomColoringEl.checked,
       twoDAtomFontSize: clampOptionInputValue(twoDAtomFontSizeEl, context.options.limits.twoDAtomFontSize, currentOptions.twoDAtomFontSize),
-      atomNumberingFontSize: clampOptionInputValue(
-        atomNumberingFontSizeEl,
-        context.options.limits.atomNumberingFontSize,
-        currentOptions.atomNumberingFontSize
-      ),
+      atomNumberingFontSize: clampOptionInputValue(atomNumberingFontSizeEl, context.options.limits.atomNumberingFontSize, currentOptions.atomNumberingFontSize),
       twoDBondThickness: clampOptionInputValue(twoDBondThicknessEl, context.options.limits.twoDBondThickness, currentOptions.twoDBondThickness),
       forceAtomSizeMultiplier: clampOptionInputValue(forceAtomSizeEl, context.options.limits.forceAtomSizeMultiplier, currentOptions.forceAtomSizeMultiplier),
-      forceBondThicknessMultiplier: clampOptionInputValue(
-        forceBondThicknessEl,
-        context.options.limits.forceBondThicknessMultiplier,
-        currentOptions.forceBondThicknessMultiplier
-      )
+      forceBondThicknessMultiplier: clampOptionInputValue(forceBondThicknessEl, context.options.limits.forceBondThicknessMultiplier, currentOptions.forceBondThicknessMultiplier)
     });
     context.view.setFontSize(nextOptions.twoDAtomFontSize);
     if (!nextOptions.showAtomTooltips) {

@@ -11,9 +11,8 @@ let _smartsFind, _smartsFirst, _smartsMatches;
 
 /**
  * Deep-clones a plain property bag used on molecules, atoms, and bonds.
- *
- * @param {object|undefined|null} value
- * @returns {object}
+ * @param {object|undefined|null} value - The value.
+ * @returns {object} The result object.
  */
 function _clonePropertyBag(value) {
   if (!value || typeof value !== 'object') {
@@ -29,7 +28,12 @@ export class Molecule {
   /** @type {number} Monotonically increasing counter used for auto-generated IDs. */
   static _nextId = 0;
 
-  /** @private Called once by smarts/index.js to inject SMARTS search functions. */
+  /**
+   * @param {(mol: Molecule, smarts: string, options?: object) => Iterable.<Map.<string, string>>} find - SMARTS find-all callback.
+   * @param {(mol: Molecule, smarts: string, options?: object) => Map.<string, string>|null} first - SMARTS find-first callback.
+   * @param {Array.<object>} matches - Array of match result objects.
+   * @private
+   */
   static _registerSMARTS(find, first, matches) {
     _smartsFind = find;
     _smartsFirst = first;
@@ -54,13 +58,13 @@ export class Molecule {
     this.bonds = new Map();
     /** @type {{mass?: number, formula?: object}} Computed molecular properties. */
     this.properties = {};
-    /** @private Canonical-pair → bond ID index for O(1) duplicate detection. */
+    /** @private*/
     this._bondIndex = new Map();
-    /** @private Cached SSSR rings; null when stale. */
+    /** @private*/
     this._ringsCache = null;
-    /** @private Monotonically increasing auto atom ID counter scoped to this molecule. */
+    /** @private*/
     this._nextAtomId = 0;
-    /** @private Monotonically increasing auto bond ID counter scoped to this molecule. */
+    /** @private*/
     this._nextBondId = 0;
   }
 
@@ -78,10 +82,10 @@ export class Molecule {
    * Adds an atom to the molecule.
    * @param {string|null} [id]  - Unique atom identifier. Auto-generated when omitted or null.
    * @param {string} name       - Element symbol (e.g. 'C', 'N').
-   * @param {object} [properties={}] - Initial atom properties (charge, aromatic, protons, …).
+   * @param {object} [properties] - Initial atom properties (charge, aromatic, protons, …).
    * Missing periodic-table fields are derived automatically from `name`.
-   * @param {object}  [options={}]
-   * @param {boolean} [options.recompute=true] - When `false`, skips the automatic
+   * @param {object}  [options] - Configuration options.
+   * @param {boolean} [options.recompute] - When `false`, skips the automatic
    *   `_recomputeProperties()` call after adding the atom. Use this flag when
    *   adding many atoms in a batch (e.g. during parsing) and call
    *   `_recomputeProperties()` once after the batch is complete.
@@ -127,7 +131,6 @@ export class Molecule {
    * derived properties (group, period, protons, neutrons, electrons).
    * Non-element properties such as charge, aromatic, stereo, and 2D
    * coordinates are preserved unchanged.
-   *
    * @param {string} atomId      - ID of the atom to mutate.
    * @param {string} newElement  - New element symbol (e.g. `'N'`, `'O'`).
    * @returns {Atom} The mutated atom.
@@ -194,8 +197,8 @@ export class Molecule {
    * @param {string|null} [id]  - Unique bond identifier. Auto-generated when omitted or null.
    * @param {string} atomA - ID of the first atom.
    * @param {string} atomB - ID of the second atom.
-   * @param {object} [properties={}] - Initial bond properties (order, aromatic, …).
-   * @param {boolean} [implicitHydrogen=true] - When true, implicit hydrogen counts on both atoms are recomputed after the bond is added.
+   * @param {object} [properties] - Initial bond properties (order, aromatic, …).
+   * @param {boolean} [implicitHydrogen] - When true, implicit hydrogen counts on both atoms are recomputed after the bond is added.
    * @returns {Bond} The newly created bond.
    * @throws {Error} If either atom does not exist in the molecule.
    */
@@ -242,7 +245,6 @@ export class Molecule {
    * - Groups 1–2  (s-block): valence = group
    * - Groups 13–17 (p-block): valence = 18 − group
    * - Groups 3–12 (transition metals) or group 18: no adjustment
-   *
    * @private
    * @param {string} atomId - ID of the atom to adjust.
    */
@@ -288,7 +290,7 @@ export class Molecule {
     // valence by 1 (ammonium, oxonium) and negative charge decreases it —
     // matching the SMILES implicit-H convention.
     const charge = atom.properties.charge ?? 0;
-    const chargeAdj = (group >= 15 && group <= 16) ? charge : 0;
+    const chargeAdj = group >= 15 && group <= 16 ? charge : 0;
     const neededH = Math.max(0, valence - nonHBondOrder - radical + chargeAdj);
 
     // Remove existing pendant H atoms.
@@ -328,8 +330,7 @@ export class Molecule {
    * Rebuilds implicit hydrogens on the specified heavy atoms without changing
    * their existing coordinates. Hidden H atoms created during repair inherit
    * their parent atom's current position so local edits do not force relayout.
-   *
-   * @param {Iterable<string>|null} [atomIds=null] - Atom IDs to repair. When
+   * @param {Iterable<string>|null} [atomIds] - Atom IDs to repair. When
    *   omitted, all heavy atoms in the molecule are repaired.
    * @returns {Molecule} The current molecule.
    */
@@ -364,8 +365,7 @@ export class Molecule {
    * Clears stored stereo annotations on the specified atoms and any bonds
    * attached to them. This is useful after interactive graph edits where the
    * original stereochemistry annotation may no longer be trustworthy.
-   *
-   * @param {Iterable<string>|null} [atomIds=null] - Atom IDs whose local stereo
+   * @param {Iterable<string>|null} [atomIds] - Atom IDs whose local stereo
    *   metadata should be cleared. When omitted, clears all stereo annotations.
    * @returns {Molecule} The current molecule.
    */
@@ -391,9 +391,8 @@ export class Molecule {
 
   /**
    * Generates the next unused auto atom ID for this molecule.
-   *
    * @private
-   * @returns {string}
+   * @returns {string} The result string.
    */
   _generateAutoAtomId() {
     let id;
@@ -405,9 +404,8 @@ export class Molecule {
 
   /**
    * Generates the next unused auto bond ID for this molecule.
-   *
    * @private
-   * @returns {string}
+   * @returns {string} The result string.
    */
   _generateAutoBondId() {
     let id;
@@ -421,10 +419,9 @@ export class Molecule {
    * Creates a structural copy of an atom for molecule-level copy operations.
    *
    * Preserves chemistry state, coordinates, and supported display metadata.
-   *
    * @private
-   * @param {Atom} atom
-   * @returns {Atom}
+   * @param {Atom} atom - The atom object.
+   * @returns {Atom} The resulting atom.
    */
   _copyAtom(atom) {
     const properties = _clonePropertyBag(atom.properties);
@@ -441,10 +438,9 @@ export class Molecule {
 
   /**
    * Creates a structural copy of a bond for molecule-level copy operations.
-   *
    * @private
-   * @param {Bond} bond
-   * @returns {Bond}
+   * @param {Bond} bond - The bond object.
+   * @returns {Bond} The resulting bond.
    */
   _copyBond(bond) {
     const properties = _clonePropertyBag(bond.properties);
@@ -457,7 +453,6 @@ export class Molecule {
 
   /**
    * Rebuilds the canonical atom-pair → bond-ID index from the current bond set.
-   *
    * @private
    */
   _rebuildBondIndex() {
@@ -474,10 +469,9 @@ export class Molecule {
    * is also deleted. Pass `{ pruneIsolated: false }` to keep isolated atoms.
    * All computed properties (`charge`, `formula`, `mass`, `name`) are
    * recomputed afterwards.
-   *
    * @param {string} id - ID of the bond to remove.
-   * @param {object} [options]
-   * @param {boolean} [options.pruneIsolated=true] - When true, atoms that become
+   * @param {object} [options] - Configuration options.
+   * @param {boolean} [options.pruneIsolated] - When true, atoms that become
    *   isolated after removal are deleted. Pass false to keep them.
    */
   removeBond(id, { pruneIsolated = true } = {}) {
@@ -517,7 +511,6 @@ export class Molecule {
    *
    * `getFormula()` is called once and the result is reused for `getName()`,
    * avoiding a second full atom traversal per mutation.
-   *
    * @private
    */
   _recomputeProperties() {
@@ -531,7 +524,6 @@ export class Molecule {
   /**
    * Sets the formal charge on an atom and recomputes all molecular properties.
    * Delegates to {@link Atom#setCharge}, then calls `_recomputeProperties`.
-   *
    * @param {string} id     - Atom ID.
    * @param {number} charge - The new formal charge.
    * @returns {Atom|null} The updated atom, or `null` if the atom was not found.
@@ -551,7 +543,6 @@ export class Molecule {
 
   /**
    * Sets the explicit radical count on an atom and recomputes all molecular properties.
-   *
    * @param {string} id           - Atom ID.
    * @param {number} radicalCount - Number of unpaired electrons to store.
    * @returns {Atom|null} The updated atom, or `null` if the atom was not found.
@@ -597,9 +588,8 @@ export class Molecule {
   /**
    * Computes the formal charge of a single atom from its element identity
    * and the sum of its bond orders. Delegates to {@link Atom#computeCharge}.
-   *
    * @param {string} id - Atom ID.
-   * @returns {number}
+   * @returns {number} The computed numeric value.
    */
   computeAtomCharge(id) {
     const atom = this.atoms.get(id);
@@ -615,7 +605,6 @@ export class Molecule {
   /**
    * Tests whether the atom with the given id is part of a ring.
    * Delegates to {@link Atom#isInRing}.
-   *
    * @param {string} id - Atom ID.
    * @returns {boolean} `false` if the atom is not found.
    */
@@ -627,8 +616,7 @@ export class Molecule {
   /**
    * Computes the total formal charge of the molecule (sum of all atom charges).
    * Automatically stored in `this.properties.charge` after every atom/bond mutation.
-   *
-   * @returns {number}
+   * @returns {number} The computed numeric value.
    */
   getCharge() {
     let charge = 0;
@@ -642,8 +630,7 @@ export class Molecule {
    * Computes the molecular formula as a map of element symbol → count,
    * with keys ordered by CHNOPS convention (C, H, N, O, P, S first,
    * then remaining elements alphabetically).
-   *
-   * @returns {Object.<string, number>} e.g. `{ C: 6, H: 6 }` for benzene.
+   * @returns {Record<string, number>} e.g. `{ C: 6, H: 6 }` for benzene.
    */
   getFormula() {
     const counts = {};
@@ -660,8 +647,7 @@ export class Molecule {
    * An optional pre-computed formula object may be supplied to avoid a
    * redundant atom traversal when the caller already holds the result of
    * {@link getFormula}. When omitted, `getFormula()` is called internally.
-   *
-   * @param {Object.<string, number>} [formula] - Pre-computed formula map (CHNOPS-ordered).
+   * @param {Record<string, number>} [formula] - Pre-computed formula map (CHNOPS-ordered).
    * @returns {string} e.g. `'C6H6'` for benzene.
    */
   getName(formula) {
@@ -674,8 +660,8 @@ export class Molecule {
   /**
    * Orders an element-count map by CHNOPS convention.
    * @private
-   * @param {Object.<string, number>} counts
-   * @returns {Object.<string, number>}
+   * @param {Record<string, number>} counts - The counts value.
+   * @returns {Record<string, number>} The computed result.
    */
   static _orderByCHNOPS(counts) {
     const CHNOPS = ['C', 'H', 'N', 'O', 'P', 'S'];
@@ -699,7 +685,6 @@ export class Molecule {
    * Uses `atom.properties.protons + atom.properties.neutrons` when set by
    * {@link parseSMILES} (including isotope adjustments). Falls back to
    * standard atomic masses from the periodic table for manually-built atoms.
-   *
    * @returns {number} Molecular mass rounded to 4 decimal places.
    */
   getMass() {
@@ -726,10 +711,9 @@ export class Molecule {
    * Returns the bond connecting `atomIdA` and `atomIdB`, or `null` if none exists.
    *
    * Uses `_bondIndex` for O(1) lookup.
-   *
-   * @param {string} atomIdA
-   * @param {string} atomIdB
-   * @returns {import('./Bond.js').Bond|null}
+   * @param {string} atomIdA - The atomIdA value.
+   * @param {string} atomIdB - The atomIdB value.
+   * @returns {import('./Bond.js').Bond|null} The computed result.
    */
   getBond(atomIdA, atomIdB) {
     const key = atomIdA < atomIdB ? `${atomIdA},${atomIdB}` : `${atomIdB},${atomIdA}`;
@@ -739,7 +723,6 @@ export class Molecule {
 
   /**
    * Updates properties on an existing bond and recomputes all molecular properties.
-   *
    * @param {string} bondId - ID of the bond to update.
    * @param {object} properties - Properties to merge in (e.g. `{ order: 2 }`).
    * @returns {import('./Bond.js').Bond|null} The updated bond, or `null` if not found.
@@ -757,10 +740,9 @@ export class Molecule {
   /**
    * Returns the ordered list of atom IDs on the shortest path between two atoms,
    * or `null` if no path exists (disconnected graph).
-   *
-   * @param {string} atomIdA
-   * @param {string} atomIdB
-   * @returns {string[]|null}
+   * @param {string} atomIdA - The atomIdA value.
+   * @param {string} atomIdB - The atomIdB value.
+   * @returns {string[]|null} Array of results.
    */
   getPath(atomIdA, atomIdB) {
     if (!this.atoms.has(atomIdA) || !this.atoms.has(atomIdB)) {
@@ -806,8 +788,7 @@ export class Molecule {
    *
    * The number of rings equals the cyclomatic number E − V + C, where C is the
    * number of connected components.
-   *
-   * @returns {string[][]}
+   * @returns {string[][]} Array of results.
    */
   getRings() {
     if (this._ringsCache !== null) {
@@ -899,9 +880,8 @@ export class Molecule {
    * Atom and bond IDs are preserved; the returned molecule gets a fresh ID and
    * UUID. Bonds that cross the boundary (connect an included atom to an excluded
    * atom) are omitted.
-   *
-   * @param {string[]} atomIds
-   * @returns {Molecule}
+   * @param {string[]} atomIds - Array of atom IDs.
+   * @returns {Molecule} The resulting molecule.
    */
   getSubgraph(atomIds) {
     const idSet = new Set(atomIds);
@@ -935,8 +915,7 @@ export class Molecule {
   /**
    * Returns an array of sub-`Molecule` instances, one per connected component.
    * Disconnected structures (e.g. ionic pairs) are split into separate molecules.
-   *
-   * @returns {Molecule[]}
+   * @returns {Molecule[]} Array of results.
    */
   getComponents() {
     const visited = new Set();
@@ -975,9 +954,8 @@ export class Molecule {
 
   /**
    * Returns the first atom that satisfies the predicate, or `null` if none match.
-   *
-   * @param {function(Atom): boolean} predicate
-   * @returns {import('./Atom.js').Atom|null}
+   * @param {function(Atom): boolean} predicate - Predicate function for filtering.
+   * @returns {import('./Atom.js').Atom|null} The computed result.
    */
   findAtom(predicate) {
     for (const atom of this.atoms.values()) {
@@ -990,9 +968,8 @@ export class Molecule {
 
   /**
    * Returns the first bond that satisfies the predicate, or `null` if none match.
-   *
-   * @param {function(Bond): boolean} predicate
-   * @returns {import('./Bond.js').Bond|null}
+   * @param {function(Bond): boolean} predicate - Predicate function for filtering.
+   * @returns {import('./Bond.js').Bond|null} The computed result.
    */
   findBond(predicate) {
     for (const bond of this.bonds.values()) {
@@ -1007,8 +984,7 @@ export class Molecule {
    * Returns a new `Molecule` with all explicit hydrogen atoms (and their bonds)
    * removed. All heavy atoms and the bonds between them are preserved.
    * IDs, UUIDs, tags, and properties of retained atoms/bonds are kept intact.
-   *
-   * @returns {Molecule}
+   * @returns {Molecule} The resulting molecule.
    */
   stripHydrogens() {
     const heavyIds = [...this.atoms.keys()].filter(id => this.atoms.get(id).name !== 'H');
@@ -1019,8 +995,7 @@ export class Molecule {
    * Marks all explicit hydrogen atoms as invisible (`atom.visible = false`) without
    * removing them from the graph. The molecule structure is preserved so that
    * stereo bonds to H (wedge/dash) can still be rendered. Returns `this`.
-   *
-   * @returns {Molecule}
+   * @returns {Molecule} The resulting molecule.
    */
   hideHydrogens() {
     for (const atom of this.atoms.values()) {
@@ -1034,8 +1009,7 @@ export class Molecule {
   /**
    * Sets the formal charge of every atom to 0 and recomputes all molecular
    * properties. Returns `this` for chaining.
-   *
-   * @returns {this}
+   * @returns {this} The computed result.
    */
   neutralizeCharge() {
     for (const atom of this.atoms.values()) {
@@ -1052,8 +1026,7 @@ export class Molecule {
    * Returns a deep copy of this molecule. All atoms and bonds are duplicated
    * with their IDs, UUIDs, tags, and properties preserved. The returned
    * molecule receives a fresh auto-generated ID and UUID.
-   *
-   * @returns {Molecule}
+   * @returns {Molecule} The resulting molecule.
    */
   clone() {
     const copy = new Molecule();
@@ -1081,9 +1054,8 @@ export class Molecule {
    * Returns a new `Molecule` that contains all atoms and bonds from both this
    * molecule and `other`. The two molecules remain disconnected in the result
    * unless the caller later adds bonds between them.
-   *
-   * @param {Molecule} other
-   * @returns {Molecule}
+   * @param {Molecule} other - The other value.
+   * @returns {Molecule} The resulting molecule.
    */
   merge(other) {
     const combined = new Molecule();
@@ -1136,8 +1108,7 @@ export class Molecule {
 
   /**
    * Returns the IDs of all atoms that carry a chirality annotation (`'@'` or `'@@'`).
-   *
-   * @returns {string[]}
+   * @returns {string[]} Array of results.
    */
   getChiralCenters() {
     return [...this.atoms.values()].filter(a => a.isChiralCenter()).map(a => a.id);
@@ -1149,16 +1120,15 @@ export class Molecule {
    *
    * Uses CIP priority rules: for each sp2 atom the normalised direction of its
    * stereo-marked neighbour is corrected by flipping when that neighbour has
-   * *lower* CIP priority than the other substituent (so that the comparison
+   * lower* CIP priority than the other substituent (so that the comparison
    * always reflects the higher-priority group on each end).
    *
-   * Same corrected directions → **Z**; different → **E**.
+   * Same corrected directions → `Z`; different → `E`.
    *
    * Returns `null` when the bond is not a double bond or either sp2 end lacks a
    * directional neighbour bond.
-   *
-   * @param {string} bondId
-   * @returns {'E'|'Z'|null}
+   * @param {string} bondId - The bond ID.
+   * @returns {'E'|'Z'|null} The computed result.
    */
   getEZStereo(bondId) {
     const dbl = this.bonds.get(bondId);
@@ -1224,10 +1194,9 @@ export class Molecule {
    *
    * A thin wrapper around {@link findSubgraphMappings} that stops after the
    * first match.
-   *
-   * @param {Molecule} query
+   * @param {Molecule} query - The query structure.
    * @param {object}   [options]  See {@link findSubgraphMappings} for supported keys.
-   * @returns {boolean}
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   matchesSubgraph(query, options = {}) {
     return _vf2Matches(this, query, options);
@@ -1236,10 +1205,9 @@ export class Molecule {
   /**
    * Returns the first injective mapping from `query` atom IDs to atom IDs in
    * this molecule, or `null` if no such mapping exists.
-   *
-   * @param {Molecule} query
+   * @param {Molecule} query - The query structure.
    * @param {object}   [options]  See {@link findSubgraphMappings} for supported keys.
-   * @returns {Map<string, string>|null}
+   * @returns {Map<string, string>|null} The resulting map.
    */
   findFirstSubgraphMapping(query, options = {}) {
     return _vf2First(this, query, options);
@@ -1252,8 +1220,7 @@ export class Molecule {
    *
    * Pull values with `for…of` or `.next()` to control how many mappings are
    * enumerated.
-   *
-   * @param {Molecule} query
+   * @param {Molecule} query - The query structure.
    * @param {object}   [options]  See {@link findSubgraphMappings} for supported keys.
    * @yields {Map<string, string>}
    */
@@ -1274,8 +1241,7 @@ export class Molecule {
    *                 element group is unknown (0 / not yet resolved).
    *
    * H atoms are always assigned `'sp3'`.
-   *
-   * @returns {this}
+   * @returns {this} The computed result.
    */
   assignHybridizations() {
     for (const atom of this.atoms.values()) {
@@ -1286,10 +1252,9 @@ export class Molecule {
 
   /**
    * Returns `true` if the SMARTS pattern matches some subgraph of this molecule.
-   *
-   * @param {string} smarts
-   * @param {object} [options]
-   * @returns {boolean}
+   * @param {string} smarts - SMARTS pattern string.
+   * @param {object} [options] - Configuration options.
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   matchesSMARTS(smarts, options = {}) {
     return _smartsMatches(this, smarts, options);
@@ -1298,10 +1263,9 @@ export class Molecule {
   /**
    * Returns the first mapping from the SMARTS pattern into this molecule,
    * or `null` if no match exists.  The mapping is a `Map<queryAtomId, targetAtomId>`.
-   *
-   * @param {string} smarts
-   * @param {object} [options]
-   * @returns {Map<string, string>|null}
+   * @param {string} smarts - SMARTS pattern string.
+   * @param {object} [options] - Configuration options.
+   * @returns {Map<string, string>|null} The resulting map.
    */
   firstSMARTS(smarts, options = {}) {
     return _smartsFirst(this, smarts, options);
@@ -1310,9 +1274,8 @@ export class Molecule {
   /**
    * Generator that yields all mappings from the SMARTS pattern into this
    * molecule.  Each yielded value is a `Map<queryAtomId, targetAtomId>`.
-   *
-   * @param {string} smarts
-   * @param {object} [options]
+   * @param {string} smarts - SMARTS pattern string.
+   * @param {object} [options] - Configuration options.
    * @yields {Map<string, string>}
    */
   *findSMARTS(smarts, options = {}) {
@@ -1322,10 +1285,9 @@ export class Molecule {
   /**
    * Returns all mappings from the SMARTS pattern into this molecule as an
    * array.  Convenience wrapper around `findSMARTS`.
-   *
-   * @param {string} smarts
-   * @param {object} [options]
-   * @returns {Map<string, string>[]}
+   * @param {string} smarts - SMARTS pattern string.
+   * @param {object} [options] - Configuration options.
+   * @returns {Map<string, string>[]} Array of results.
    */
   querySMARTS(smarts, options = {}) {
     return [..._smartsFind(this, smarts, options)];
@@ -1338,8 +1300,7 @@ export class Molecule {
   /**
    * Total number of resonance states computed for this molecule.
    * Returns 1 when `generateResonanceStructures` has not been called.
-   *
-   * @returns {number}
+   * @returns {number} The computed numeric value.
    */
   get resonanceCount() {
     return this.properties.resonance?.count ?? 1;
@@ -1351,8 +1312,7 @@ export class Molecule {
    * `molecule.properties.resonance.weights`.
    *
    * Returns `[{ id: 1, weight: 100 }]` when resonance has not been generated.
-   *
-   * @returns {{ id: number, weight: number }[]}
+   * @returns {{ id: number, weight: number }[]} Array of results.
    */
   getResonanceStates() {
     const res = this.properties.resonance;
@@ -1367,7 +1327,6 @@ export class Molecule {
    * and atom properties for that state into the live `bond.properties` and
    * `atom.properties`. The renderer sees updated values without any knowledge
    * of resonance.
-   *
    * @param {number} n - 1-based state index.
    * @throws {RangeError} If `n` is out of range.
    */
@@ -1442,10 +1401,9 @@ export class Molecule {
 
 /**
  * Computes the hybridization state of a single atom based on its bonds.
- *
- * @param {Atom} atom
- * @param {Molecule} mol
- * @returns {'sp'|'sp2'|'sp3'|null}
+ * @param {Atom} atom - The atom object.
+ * @param {Molecule} mol - The molecule graph.
+ * @returns {'sp'|'sp2'|'sp3'|null} The computed result.
  */
 function _hybridizationOf(atom, mol) {
   // H is always sp3
@@ -1503,6 +1461,9 @@ function _hybridizationOf(atom, mol) {
  * Z ≤ 118, massNumber ≤ ~300, so keys stay well within safe-integer range.
  * For atoms without an explicit isotope the standard mass is used, which
  * keeps all non-labelled atoms of the same element at equal priority.
+ * @param {string} atomId - The atom ID.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number} CIP priority key encoding atomic number and mass number.
  */
 function _cipZ(atomId, mol) {
   const atom = mol.atoms.get(atomId);
@@ -1600,11 +1561,10 @@ function _compareCIPHierarchies(listA, listB) {
 /**
  * Assigns CIP priority ranks to the neighbours of `centerId`.
  * Returns a parallel array of ranks (1 = lowest). Ties receive the same rank.
- *
- * @param {string}   centerId
- * @param {string[]} neighborIds
- * @param {Molecule} mol
- * @returns {number[]}
+ * @param {string} centerId - ID of the center atom.
+ * @param {string[]} neighborIds - The neighborIds value.
+ * @param {Molecule} mol - The molecule graph.
+ * @returns {number[]} Array of results.
  */
 export function assignCIPRanks(centerId, neighborIds, mol) {
   const entries = neighborIds.map(nId => ({
@@ -1640,12 +1600,11 @@ function _permSign(fromList, toList) {
 
 /**
  * Computes the CIP R/S designation for a tetrahedral chiral center.
- *
- * @param {'@'|'@@'} chiralToken
+ * @param {'@'|'@@'} chiralToken - The chiralToken value.
  * @param {string[]} smilesNeighborIds - 4 neighbour IDs in SMILES chirality order.
- * @param {string}   centerId
- * @param {Molecule} mol
- * @returns {'R'|'S'|null}
+ * @param {string} centerId - ID of the center atom.
+ * @param {Molecule} mol - The molecule graph.
+ * @returns {'R'|'S'|null} The computed result.
  */
 export function computeRS(chiralToken, smilesNeighborIds, centerId, mol) {
   if (smilesNeighborIds.length !== 4) {

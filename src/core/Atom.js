@@ -20,16 +20,16 @@ export class Atom {
   /**
    * @param {string|null} [id]                                   - Unique identifier. Auto-generated as a numeric string when omitted or null.
    * @param {string} name                                        - Element symbol (e.g. 'C', 'N', 'O').
-   * @param {object} [properties={}]                             - Chemistry-specific atom data.
-   * @param {number}                [properties.charge=0]        - Formal charge.
-   * @param {boolean}               [properties.aromatic=false]  - Whether the atom is aromatic.
+   * @param {object} [properties]                             - Chemistry-specific atom data.
+   * @param {number}                [properties.charge]        - Formal charge.
+   * @param {boolean}               [properties.aromatic]  - Whether the atom is aromatic.
    * @param {number|undefined}      [properties.protons]         - Atomic number. Populated by `parseSMILES`; `undefined` for manually-constructed atoms.
    * @param {number|undefined}      [properties.neutrons]        - Neutron count; isotope-adjusted by `parseSMILES`; `undefined` for manually-constructed atoms.
    * @param {number|undefined}      [properties.electrons]       - Electron count. Populated by `parseSMILES`; `undefined` for manually-constructed atoms.
-   * @param {number}                [properties.group=0]         - Periodic table group (1–18), or `0` when not yet resolved.
-   * @param {number}                [properties.period=0]        - Periodic table period (1–7), or `0` when not yet resolved.
-   * @param {number}                [properties.radical=0]       - Count of unpaired electrons stored explicitly on the atom.
-   * @param {'R'|'S'|null}          [properties.chirality=null]  - CIP chirality designation: `'R'` (rectus) or `'S'` (sinister); `null` if unannotated or indeterminate.
+   * @param {number}                [properties.group]         - Periodic table group (1–18), or `0` when not yet resolved.
+   * @param {number}                [properties.period]        - Periodic table period (1–7), or `0` when not yet resolved.
+   * @param {number}                [properties.radical]       - Count of unpaired electrons stored explicitly on the atom.
+   * @param {'R'|'S'|null}          [properties.chirality]  - CIP chirality designation: `'R'` (rectus) or `'S'` (sinister); `null` if unannotated or indeterminate.
    * @param {{atomMap?: number|null}|undefined} [properties.reaction] - Reaction/template metadata used by SMIRKS or atom-mapped SMARTS.
    */
   constructor(
@@ -85,10 +85,9 @@ export class Atom {
   /**
    * Normalizes and validates an explicit radical count.
    * Accepts 0, 1, or 2 unpaired electrons.
-   *
    * @private
-   * @param {number} radical
-   * @returns {number}
+   * @param {number} radical - Radical electron count.
+   * @returns {number} The computed numeric value.
    */
   static _normalizeRadical(radical) {
     if (!Number.isInteger(radical) || radical < 0 || radical > 2) {
@@ -99,10 +98,9 @@ export class Atom {
 
   /**
    * Normalizes and validates a reaction atom-map number.
-   *
    * @private
-   * @param {number|null|undefined} atomMap
-   * @returns {number|null}
+   * @param {number|null|undefined} atomMap - Map of atom ID to atom.
+   * @returns {number|null} The computed value, or `null` if not applicable.
    */
   static _normalizeAtomMap(atomMap) {
     if (atomMap == null) {
@@ -117,8 +115,7 @@ export class Atom {
   /**
    * Returns the explicit formal charge stored on this atom.
    * Convenience accessor for `this.properties.charge`.
-   *
-   * @returns {number}
+   * @returns {number} The computed numeric value.
    */
   getCharge() {
     return this.properties.charge;
@@ -126,8 +123,7 @@ export class Atom {
 
   /**
    * Returns `true` when this atom is marked aromatic.
-   *
-   * @returns {boolean}
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   isAromatic() {
     return this.properties.aromatic ?? false;
@@ -135,8 +131,7 @@ export class Atom {
 
   /**
    * Returns the explicit radical count stored on this atom.
-   *
-   * @returns {number}
+   * @returns {number} The computed numeric value.
    */
   getRadical() {
     return this.properties.radical ?? 0;
@@ -144,8 +139,7 @@ export class Atom {
 
   /**
    * Returns the stored hybridization assignment, or `null` when unset.
-   *
-   * @returns {'sp'|'sp2'|'sp3'|null}
+   * @returns {'sp'|'sp2'|'sp3'|null} The computed result.
    */
   getHybridization() {
     return this.properties.hybridization ?? null;
@@ -153,8 +147,7 @@ export class Atom {
 
   /**
    * Returns the stored reaction atom-map number, or `null` when unset.
-   *
-   * @returns {number|null}
+   * @returns {number|null} The computed value, or `null` if not applicable.
    */
   getAtomMap() {
     return this.properties.reaction?.atomMap ?? null;
@@ -165,7 +158,6 @@ export class Atom {
    * `electrons = protons − charge`.
    * If `protons` is not yet set (manually-built atom), `electrons` is left
    * unchanged.
-   *
    * @param {number} charge - The new formal charge.
    * @returns {this} The atom instance, for chaining.
    */
@@ -182,8 +174,7 @@ export class Atom {
 
   /**
    * Sets the aromatic flag on this atom.
-   *
-   * @param {boolean} aromatic
+   * @param {boolean} aromatic - The aromatic value.
    * @returns {this} The atom instance, for chaining.
    */
   setAromatic(aromatic) {
@@ -196,7 +187,6 @@ export class Atom {
 
   /**
    * Sets the explicit radical count on this atom.
-   *
    * @param {number} radical - Number of unpaired electrons to store.
    * @returns {this} The atom instance, for chaining.
    */
@@ -207,8 +197,7 @@ export class Atom {
 
   /**
    * Sets the stored hybridization assignment on this atom.
-   *
-   * @param {'sp'|'sp2'|'sp3'|null} hybridization
+   * @param {'sp'|'sp2'|'sp3'|null} hybridization - The hybridization value.
    * @returns {this} The atom instance, for chaining.
    */
   setHybridization(hybridization) {
@@ -221,8 +210,7 @@ export class Atom {
 
   /**
    * Sets the reaction atom-map number stored on this atom.
-   *
-   * @param {number|null} atomMap
+   * @param {number|null} atomMap - Map of atom ID to atom.
    * @returns {this} The atom instance, for chaining.
    */
   setAtomMap(atomMap) {
@@ -233,8 +221,7 @@ export class Atom {
 
   /**
    * Returns `true` when the atom has one or more explicitly stored radicals.
-   *
-   * @returns {boolean}
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   isRadical() {
     return this.getRadical() > 0;
@@ -253,9 +240,8 @@ export class Atom {
    * `formal charge = totalBondOrder − effective neutral valence`
    *
    * Returns 0 when `group` is not set.
-   *
-   * @param {number} [totalBondOrder=0] - Sum of all bond orders on this atom.
-   * @returns {number}
+   * @param {number} [totalBondOrder] - Sum of all bond orders on this atom.
+   * @returns {number} The computed numeric value.
    */
   computeCharge(totalBondOrder = 0) {
     const group = this.properties.group;
@@ -288,7 +274,6 @@ export class Atom {
    * Looks up `this.name` in the periodic-table data and assigns `group`,
    * `period`, `protons`, `neutrons`, and `electrons` to `this.properties`.
    * No-ops silently if the element symbol is not found in the table.
-   *
    * @returns {this} The atom instance, for chaining.
    */
   resolveElement() {
@@ -306,9 +291,8 @@ export class Atom {
 
   /**
    * Returns the sum of all bond orders on this atom (total bond order / valence used).
-   *
-   * @param {import('./Molecule.js').Molecule} molecule
-   * @returns {number}
+   * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
+   * @returns {number} The computed numeric value.
    */
   getValence(molecule) {
     return this.bonds.reduce((sum, bondId) => {
@@ -323,9 +307,8 @@ export class Atom {
    * Uses the same group-based valence rules as `_adjustImplicitHydrogens`:
    * groups 1–2 → valence = group; groups 13–17 → valence = 18 − group.
    * Returns `true` for transition metals, noble gases, and unknown elements.
-   *
-   * @param {import('./Molecule.js').Molecule} molecule
-   * @returns {boolean}
+   * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   isSaturated(molecule) {
     const el = elements[this.name];
@@ -350,9 +333,8 @@ export class Atom {
    *
    * Counts only non-H bond order toward the neutral valence; pendant H atoms
    * already attached are not counted as implicit.
-   *
-   * @param {import('./Molecule.js').Molecule} molecule
-   * @returns {number}
+   * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
+   * @returns {number} The computed numeric value.
    */
   implicitHydrogenCount(molecule) {
     const el = elements[this.name];
@@ -373,9 +355,8 @@ export class Atom {
 
   /**
    * Returns all heavy-atom (non-hydrogen) neighbours of this atom.
-   *
-   * @param {import('./Molecule.js').Molecule} molecule
-   * @returns {Atom[]}
+   * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
+   * @returns {Atom[]} Array of results.
    */
   getHeavyNeighbors(molecule) {
     return this.bonds
@@ -391,9 +372,8 @@ export class Atom {
 
   /**
    * Returns all neighbouring `Atom` instances of this atom.
-   *
-   * @param {import('./Molecule.js').Molecule} molecule
-   * @returns {Atom[]}
+   * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
+   * @returns {Atom[]} Array of results.
    */
   getNeighbors(molecule) {
     return this.bonds
@@ -417,9 +397,8 @@ export class Atom {
    *
    * Returns 0 for transition metals, noble gases, unknown elements, or when
    * the computed electron count is negative.
-   *
-   * @param {import('./Molecule.js').Molecule} molecule
-   * @returns {number}
+   * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
+   * @returns {number} The computed numeric value.
    */
   availableLonePairs(molecule) {
     const group = this.properties.group;
@@ -442,8 +421,7 @@ export class Atom {
 
   /**
    * Returns the degree (number of bonds) of this atom.
-   *
-   * @returns {number}
+   * @returns {number} The computed numeric value.
    */
   getDegree() {
     return this.bonds.length;
@@ -452,8 +430,7 @@ export class Atom {
   /**
    * Returns `true` when this atom has exactly one bond (i.e. it is a leaf
    * node in the molecular graph).
-   *
-   * @returns {boolean}
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   isTerminal() {
     return this.bonds.length === 1;
@@ -461,9 +438,8 @@ export class Atom {
 
   /**
    * Returns all hydrogen neighbours of this atom.
-   *
-   * @param {import('./Molecule.js').Molecule} molecule
-   * @returns {Atom[]}
+   * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
+   * @returns {Atom[]} Array of results.
    */
   getHydrogenNeighbors(molecule) {
     return this.bonds
@@ -479,8 +455,7 @@ export class Atom {
 
   /**
    * Returns the CIP chirality designation stored on this atom: `'R'`, `'S'`, or `null`.
-   *
-   * @returns {'R'|'S'|null}
+   * @returns {'R'|'S'|null} The computed result.
    */
   getChirality() {
     return this.properties.chirality ?? null;
@@ -493,7 +468,6 @@ export class Atom {
    * the atom passes the full tetrahedral chiral-centre test
    * (`isChiralCenter(molecule)`).  Passing `null` to clear the designation is
    * always allowed regardless of eligibility.
-   *
    * @param {'R'|'S'|null} value    - CIP designation, or `null` to clear.
    * @param {import('./Molecule.js').Molecule} [molecule] - Host molecule used
    *   for the eligibility check.  Omit to skip the check (existing behaviour).
@@ -528,9 +502,8 @@ export class Atom {
    *
    * For best results pass a molecule where hydrogens are explicit (as returned
    * directly by `parseSMILES`).
-   *
-   * @param {import('./Molecule.js').Molecule} [molecule]
-   * @returns {boolean}
+   * @param {import('./Molecule.js').Molecule} [molecule] - The molecule graph.
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   isChiralCenter(molecule) {
     if (!molecule) {
@@ -545,9 +518,8 @@ export class Atom {
    * Uses a vertex-cut check: this atom is excluded from traversal, then a BFS
    * is run from one neighbour. If any other neighbour is reachable, the atom
    * lies on at least one cycle.
-   *
-   * @param {import('./Molecule.js').Molecule} molecule
-   * @returns {boolean}
+   * @param {import('./Molecule.js').Molecule} molecule - The molecule graph.
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   isInRing(molecule) {
     if (this.bonds.length < 2) {
@@ -613,6 +585,9 @@ export class Atom {
  * CIP priority key for an atom: Z * 1000 + round(massNumber).
  * Mirrors the identical function in Molecule.js; duplicated here to avoid a
  * circular import (Molecule.js already imports Atom.js).
+ * @param {string} atomId - The atom ID.
+ * @param {import('./Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number} The computed CIP priority key.
  */
 function _cipZ(atomId, mol) {
   const atom = mol.atoms.get(atomId);
@@ -630,6 +605,11 @@ function _cipZ(atomId, mol) {
  * Builds a CIP priority hierarchy for the substituent subtree rooted at
  * `startId`, treating `excludeId` (the chiral centre) as the boundary.
  * Multiple bonds contribute phantom duplicate atoms per the CIP rules.
+ * @param {string} startId - Root atom ID of the subtree.
+ * @param {string} excludeId - ID of the chiral center (boundary atom).
+ * @param {import('./Molecule.js').Molecule} mol - The molecule graph.
+ * @param {number} [maxDepth] - Maximum traversal depth.
+ * @returns {Array.<number[]>} CIP priority levels (arrays of Z-values per level).
  */
 function _cipHierarchy(startId, excludeId, mol, maxDepth = 10) {
   const result = [[_cipZ(startId, mol)]];
@@ -695,6 +675,9 @@ function _cipHierarchy(startId, excludeId, mol, maxDepth = 10) {
 /**
  * Returns `true` when the two CIP hierarchy arrays represent identical
  * priority subtrees (i.e. the two substituents are indistinguishable by CIP).
+ * @param {Array.<number[]>} a - First CIP hierarchy.
+ * @param {Array.<number[]>} b - Second CIP hierarchy.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _cipEqual(a, b) {
   const maxLen = Math.max(a.length, b.length);
@@ -714,6 +697,9 @@ function _cipEqual(a, b) {
 /**
  * Returns `true` when `atom` qualifies as a tetrahedral chiral centre in
  * `mol` based on graph topology and CIP priority analysis.
+ * @param {import('./Atom.js').Atom} atom - The atom object.
+ * @param {import('./Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _isTetrahedralCenter(atom, mol) {
   // Must be sp3: no aromatic flag and all bonds must be single-order.

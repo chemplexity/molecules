@@ -23,6 +23,11 @@ function _capturePreviousNodePositions(simulation) {
   );
 }
 
+/**
+ * Creates the force-scene renderer that builds and updates the D3 force-layout SVG visualization.
+ * @param {object} ctx - Structured dependency context providing d3, svg, zoom, g, plotEl, simulation, constants, state, cache, helpers, events, drag, and callbacks.
+ * @returns {object} Object with an `updateForce` method for re-rendering after molecule or layout changes.
+ */
 export function createForceSceneRenderer(ctx) {
   function updateForce(molecule, { preservePositions = false, preserveView = preservePositions, initialPatchPos = null } = {}) {
     prepareAromaticBondRendering(molecule);
@@ -101,6 +106,12 @@ export function createForceSceneRenderer(ctx) {
             delete realBond.properties.display;
           }
         }
+      }
+      // Keep a reference so the navigation flip can mutate the module-level
+      // forced-stereo Maps directly (stereoClone.__reactionPreview holds the
+      // same Map objects as the reaction-2d module-level variables).
+      if (isReactionPreviewMol && stereoClone.__reactionPreview) {
+        molecule.__reactionPreview = stereoClone.__reactionPreview;
       }
     }
     if (ctx.state.getPreserveSelectionOnNextRender()) {

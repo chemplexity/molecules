@@ -1,5 +1,11 @@
 /** @module app/bootstrap/deps/app-state-deps */
 
+/**
+ * Builds the structured dependency object for the AppStateBridge factory,
+ * mapping flat context properties into named sub-objects (documentState, viewState, overlayState).
+ * @param {object} ctx - Flat app context providing AppStateBridge-related methods and values.
+ * @returns {object} Dependency object consumed by `createAppStateBridge`.
+ */
 export function createAppStateBridgeDeps(ctx) {
   return {
     documentState: {

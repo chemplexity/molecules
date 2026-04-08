@@ -477,6 +477,11 @@ function _mapTable(mol) {
   return mapToAtomId;
 }
 
+/**
+ * Parses a SMIRKS reaction pattern string into a transform object.
+ * @param {string} smirks - The SMIRKS string to parse.
+ * @returns {object} Parsed transform containing reactant and product query molecules.
+ */
 export function parseSMIRKS(smirks) {
   if (typeof smirks !== 'string' || smirks.trim() === '') {
     throw new Error('parseSMIRKS: expected a non-empty string');

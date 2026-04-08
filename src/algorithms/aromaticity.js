@@ -12,10 +12,9 @@
  *  - O / S (lone pair into ring):                   2
  *  - B (empty p orbital):                           0
  *  - Already-marked aromatic atom (order=1.5):      1  (each contributes 1 to the 4n+2 sum)
- *
- * @param {import('../core/Atom.js').Atom} atom
+ * @param {import('../core/Atom.js').Atom} atom - The atom object.
  * @param {Set<string>} ringAtomSet  Atom IDs in the candidate ring.
- * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
  * @returns {number|null}  π electrons contributed, or null if indeterminate / disqualifies ring.
  */
 function _piElectrons(atom, ringAtomSet, mol) {
@@ -82,9 +81,8 @@ function _piElectrons(atom, ringAtomSet, mol) {
 
 /**
  * Returns true if `piCount` satisfies Hückel's rule (4n + 2, n ≥ 0).
- *
- * @param {number} piCount
- * @returns {boolean}
+ * @param {number} piCount - The piCount value.
+ * @returns {boolean} `true` if the condition holds, `false` otherwise.
  */
 function _isHuckel(piCount) {
   if (piCount < 2) {
@@ -111,9 +109,8 @@ function _isHuckel(piCount) {
  * when they want a Kekule-style depiction of an aromatic system.
  *
  * Rings containing hydrogen atoms are skipped (H is never sp2 in a ring).
- *
- * @param {import('../core/Molecule.js').Molecule} mol
- * @param {{ preserveKekule?: boolean }} [options]
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {{ preserveKekule?: boolean }} [options] - Configuration options.
  * @returns {string[][]}  Array of aromatic rings, each as an array of atom IDs.
  */
 /**
@@ -126,8 +123,7 @@ function _isHuckel(piCount) {
  *
  * The algorithm is a simplified maximum-matching identical in logic to the
  * `kekulize` function in layout/mol2d-helpers, restricted to the stale atoms.
- *
- * @param {import('../core/Molecule.js').Molecule} mol
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
  * @param {Set<string>} confirmedAromaticBondIds Bonds that belong to a genuine aromatic ring.
  */
 function _kekulizeStale(mol, confirmedAromaticBondIds) {
@@ -243,6 +239,14 @@ function _kekulizeStale(mol, confirmedAromaticBondIds) {
   }
 }
 
+/**
+ * Detects and marks aromatic atoms and bonds in a molecule using Hückel's rule.
+ * Mutates atom and bond properties in-place.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {object} [options] - Options.
+ * @param {boolean} [options.preserveKekule] - When true, existing Kekulé bond orders are preserved.
+ * @returns {string[][]} Array of aromatic rings found in the molecule.
+ */
 export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
   // Clear any atom-aromatic flags set by the SMILES parser so that only
   // rings which actually satisfy Hückel's rule end up marked aromatic.
@@ -352,9 +356,8 @@ export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
  * have been broken. Callers should ensure any aromatic bonds that need a
  * recoverable Kekule assignment already carry `localizedOrder` (for example
  * by calling `kekulize(mol)` beforehand).
- *
- * @param {import('../core/Molecule.js').Molecule} mol
- * @param {{ preserveKekule?: boolean }} [options]
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {{ preserveKekule?: boolean }} [options] - Configuration options.
  * @returns {string[][]} Array of aromatic rings after refresh.
  */
 export function refreshAromaticity(mol, { preserveKekule = true } = {}) {
