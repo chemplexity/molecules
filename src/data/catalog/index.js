@@ -7,6 +7,7 @@ import steroidsCatalog from './steroids.js';
 import nucleobasesCatalog from './nucleobases.js';
 import terpenesAndTerpenoidsCatalog from './terpenes-and-terpenoids.js';
 import psychoactiveCompoundsCatalog from './psychoactive-compounds.js';
+import vitaminsCatalog from './vitamins.js';
 
 export {
   aminoAcidsCatalog,
@@ -15,7 +16,8 @@ export {
   steroidsCatalog,
   nucleobasesCatalog,
   terpenesAndTerpenoidsCatalog,
-  psychoactiveCompoundsCatalog
+  psychoactiveCompoundsCatalog,
+  vitaminsCatalog
 };
 
 const unsortedMoleculeCatalog = [
@@ -25,7 +27,8 @@ const unsortedMoleculeCatalog = [
   steroidsCatalog,
   nucleobasesCatalog,
   terpenesAndTerpenoidsCatalog,
-  psychoactiveCompoundsCatalog
+  psychoactiveCompoundsCatalog,
+  vitaminsCatalog
 ];
 
 export const moleculeCatalog = unsortedMoleculeCatalog.slice().sort((a, b) => a.name.localeCompare(b.name));

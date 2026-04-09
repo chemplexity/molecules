@@ -406,6 +406,53 @@ export class Molecule {
   }
 
   /**
+   * Resets all Atom and Bond IDs to a normalized integer-string sequence (e.g. '0', '1', '2').
+   * This is strictly a pre-insertion normalizer to clean up messy SMIRKS namespaces
+   * (e.g. `_rxn_product__0:C2`) before inserting into the ReactionNetwork.
+   * Calling this breaks any existing external references to specific atom/bond IDs.
+   * @returns {Molecule} The current molecule.
+   */
+  resetIds() {
+    const oldToNewAtom = new Map();
+    const oldToNewBond = new Map();
+
+    const newAtoms = new Map();
+    const newBonds = new Map();
+
+    let atomCounter = 0;
+    for (const [oldId, atom] of this.atoms.entries()) {
+      const newId = String(atomCounter++);
+      oldToNewAtom.set(oldId, newId);
+      atom.id = newId;
+      newAtoms.set(newId, atom);
+    }
+
+    let bondCounter = 0;
+    for (const [oldId, bond] of this.bonds.entries()) {
+      const newId = String(bondCounter++);
+      oldToNewBond.set(oldId, newId);
+      bond.id = newId;
+      newBonds.set(newId, bond);
+      
+      // Replace references to atom IDs inside bond
+      bond.atoms = bond.atoms.map(aId => oldToNewAtom.get(aId));
+    }
+
+    // Replace references to bond IDs inside atom
+    for (const atom of newAtoms.values()) {
+      atom.bonds = atom.bonds.map(bId => oldToNewBond.get(bId));
+    }
+
+    this.atoms = newAtoms;
+    this.bonds = newBonds;
+    this._nextAtomId = atomCounter;
+    this._nextBondId = bondCounter;
+    this._rebuildBondIndex();
+
+    return this;
+  }
+
+  /**
    * Generates the next unused auto atom ID for this molecule.
    * @private
    * @returns {string} The result string.

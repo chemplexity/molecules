@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Reaction Network D3 Viewer</title>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { margin: 0; padding: 0; background-color: #0b0b0f; color: #fff; font-family: 'Inter', sans-serif; overflow: hidden; }
+        #network-container { width: 100vw; height: 100vh; position: absolute; z-index: 1;}
+        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(22, 22, 30, 0.85); backdrop-filter: blur(8px); padding: 25px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 300px; }
+        h3 { margin: 0 0 8px 0; font-size: 16px; letter-spacing: 0.5px; }
+        p { font-size: 12px; color: #8a8a9d; margin: 0 0 15px 0; line-height: 1.4; }
+        input[type="file"] { background: #1c1c24; border: 1px solid #333; padding: 10px; border-radius: 6px; width: 90%; color: #fff; cursor: pointer; }
+        
+        .node circle { stroke: #0b0b0f; stroke-width: 2px; transition: stroke 0.2s; }
+        .node:hover circle { stroke: #fff; stroke-width: 3px; }
+        .node text { pointer-events: none; font-size: 11px; fill: #a1a1aa; font-weight: 500; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
+        .link { stroke: #3f3f4e; stroke-opacity: 0.7; }
+        .link-text { fill: #8a8a9d; font-size: 9px; pointer-events: none; background: #0b0b0f;}
+    </style>
+</head>
+<body>
+
+<div id="ui">
+    <h3>Network Combinatorics Viewer</h3>
+    <p>Run your `reaction-network-test.js` script with `> output.txt` and drop it here safely!</p>
+    <input type="file" id="file-upload" />
+</div>
+
+<svg id="network-container"></svg>
+
+<script>
+    const width = window.innerWidth;
+    const height = window.innerHeight;
+    const svg = d3.select("#network-container").call(d3.zoom().on("zoom", (event) => g.attr("transform", event.transform)));
+    const g = svg.append("g");
+
+    // Pre-declare slick arrow heads
+    svg.append("defs").append("marker")
+        .attr("id", "arrow")
+        .attr("viewBox", "0 -5 10 10")
+        .attr("refX", 22) // Anchor off slightly to avoid edge clipping!
+        .attr("refY", 0)
+        .attr("markerWidth", 5)
+        .attr("markerHeight", 5)
+        .attr("orient", "auto")
+        .append("path")
+        .attr("fill", "#666")
+        .attr("d", "M0,-5L10,0L0,5");
+
+    document.getElementById('file-upload').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+            try {
+                // Slicer gracefully isolates the true JSON structural layout mathematically skipping CLI prefix logs!
+                const text = evt.target.result;
+                const dumpIndex = text.indexOf('Final Graph Export Dump:');
+                const start = text.indexOf('{', dumpIndex !== -1 ? dumpIndex : 0);
+                if (start === -1) throw new Error("No payload found!");
+                
+                const data = JSON.parse(text.substring(start));
+                renderGraph(data);
+            } catch (err) {
+                alert("Failed to confidently parse JSON schema from file.");
+                console.error(err);
+            }
+        };
+        reader.readAsText(file);
+    });
+
+    function renderGraph(data) {
+        g.selectAll("*").remove(); // Wipe previous iterations
+        
+        // Native traversal intercept to tag bidirectional topology loops dynamically
+        const linkMap = new Map();
+        data.links.forEach(l => {
+             const key1 = `${l.source.id || l.source}->${l.target.id || l.target}`;
+             const key2 = `${l.target.id || l.target}->${l.source.id || l.source}`;
+             if (linkMap.has(key2)) {
+                 l.bidirectional = true;
+                 linkMap.get(key2).bidirectional = true;
+             }
+             linkMap.set(key1, l);
+        });
+
+        // Calibrate heavy simulation physics natively
+        const simulation = d3.forceSimulation(data.nodes)
+            .force("link", d3.forceLink(data.links).id(d => d.id).distance(120))
+            .force("charge", d3.forceManyBody().strength(-400))
+            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("collide", d3.forceCollide(25));
+
+        const link = g.append("g")
+            .selectAll("g")
+            .data(data.links)
+            .enter().append("g");
+
+        const line = link.append("path")
+            .attr("class", "link")
+            .attr("stroke-width", 2)
+            .attr("fill", "none")
+            .attr("marker-end", "url(#arrow)");
+
+        const linkLabels = link.append("text")
+            .attr("class", "link-text")
+            .attr("text-anchor", "middle")
+            .attr("dy", -6)
+            .text(d => {
+                if (d.delta) return d.delta;
+                return "";
+            });
+
+        const node = g.append("g")
+            .selectAll("g")
+            .data(data.nodes)
+            .enter().append("g")
+            .attr("class", "node")
+            .call(d3.drag()
+                .on("start", (event, d) => {
+                    if (!event.active) simulation.alphaTarget(0.3).restart();
+                    d.fx = d.x; d.fy = d.y;
+                })
+                .on("drag", (event, d) => { d.fx = event.x; d.fy = event.y; })
+                .on("end", (event, d) => {
+                    if (!event.active) simulation.alphaTarget(0);
+                    d.fx = null; d.fy = null;
+                }));
+
+        node.append("circle")
+            // Distinct scalable rendering for biparite implementations organically!
+            .attr("r", d => d.type === 'reaction' ? 6 : 14)
+            .attr("fill", d => d.type === 'reaction' ? '#ff3366' : '#33ccff');
+
+        node.append("text")
+            .attr("dx", 18)
+            .attr("dy", 4)
+            .text(d => d.type === 'molecule' ? d.smiles : (d.conditions?.templateName || d.id));
+
+        simulation.on("tick", () => {
+            line.attr("d", d => {
+                if (d.bidirectional) {
+                    const dx = d.target.x - d.source.x,
+                          dy = d.target.y - d.source.y,
+                          dr = Math.sqrt(dx * dx + dy * dy);
+                    return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+                } else {
+                    return `M${d.source.x},${d.source.y}L${d.target.x},${d.target.y}`;
+                }
+            });
+
+            linkLabels.attr("x", d => {
+                let x = (d.source.x + d.target.x) / 2;
+                if (d.bidirectional) {
+                    const dx = d.target.x - d.source.x;
+                    const dy = d.target.y - d.source.y;
+                    const len = Math.hypot(dx, dy) || 1;
+                    const nx = -dy / len;
+                    x += nx * 18; // Pull perpendicularly outside the topological curve 
+                }
+                return x;
+            })
+            .attr("y", d => {
+                let y = (d.source.y + d.target.y) / 2;
+                if (d.bidirectional) {
+                    const dx = d.target.x - d.source.x;
+                    const dy = d.target.y - d.source.y;
+                    const len = Math.hypot(dx, dy) || 1;
+                    const ny = dx / len;
+                    y += ny * 18; 
+                }
+                return y;
+            });
+
+            node.attr("transform", d => `translate(${d.x},${d.y})`);
+        });
+    }
+</script>
+</body>
+</html>

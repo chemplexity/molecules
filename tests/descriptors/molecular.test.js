@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/index.js';
 import { parseSMILES } from '../../src/io/index.js';
-import { molecularFormula, molecularMass } from '../../src/descriptors/molecular.js';
+import { molecularFormula, molecularMass, computeFormulaDelta } from '../../src/descriptors/molecular.js';
 
 const EPS = 0.01; // tolerance in g/mol
 
@@ -91,5 +91,28 @@ describe('molecularMass', () => {
   it('result is rounded to 4 decimal places', () => {
     const mass = molecularMass(parseSMILES('C'));
     assert.equal(mass, Math.round(mass * 10000) / 10000);
+  });
+});
+
+describe('computeFormulaDelta', () => {
+  it('identifies simple addition', () => {
+    assert.equal(computeFormulaDelta(parseSMILES('C'), parseSMILES('CC')), '+CH2'); // CH4 -> C2H6
+  });
+
+  it('identifies simple subtraction', () => {
+    assert.equal(computeFormulaDelta(parseSMILES('CCO'), parseSMILES('CC')), '-O'); // C2H6O -> C2H6
+  });
+
+  it('handles additions and subtractions together', () => {
+    // Methane (CH4) -> Carbon dioxide (CO2)
+    assert.equal(computeFormulaDelta(parseSMILES('C'), parseSMILES('O=C=O')), '+O2 -H4');
+  });
+
+  it('returns an empty string when elementally identical', () => {
+    assert.equal(computeFormulaDelta(parseSMILES('CC'), parseSMILES('CC')), '');
+  });
+
+  it('handles empty molecules cleanly', () => {
+    assert.equal(computeFormulaDelta(parseSMILES('C'), new Molecule()), '-CH4');
   });
 });

@@ -9,6 +9,10 @@
 - Fix charge button right click functionality
 - Raise max character limit for input box to 2000
 - Fix issue with implicit hydrogen when editing atoms
+- Improve 2d layout of bridged systems
+- Add 'kind' to bond properties
+- Add common vitamins to catalog
+- Add ReactionNetwork class
 
 ## 2026-04-07
 
