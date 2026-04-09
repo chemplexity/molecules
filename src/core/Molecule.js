@@ -202,7 +202,7 @@ export class Molecule {
    * @param {string|null} [id]  - Unique bond identifier. Auto-generated when omitted or null.
    * @param {string} atomA - ID of the first atom.
    * @param {string} atomB - ID of the second atom.
-   * @param {object} [properties] - Initial bond properties (order, aromatic, …).
+   * @param {object} [properties] - Initial bond properties (order, aromatic, kind, …).
    * @param {boolean} [implicitHydrogen] - When true, implicit hydrogen counts on both atoms are recomputed after the bond is added.
    * @returns {Bond} The newly created bond.
    * @throws {Error} If either atom does not exist in the molecule.
@@ -739,8 +739,10 @@ export class Molecule {
 
   /**
    * Updates properties on an existing bond and recomputes all molecular properties.
+   * Semantic bond kinds and directional stereo are validated through the
+   * `Bond` helpers before any remaining metadata is merged in.
    * @param {string} bondId - ID of the bond to update.
-   * @param {object} properties - Properties to merge in (e.g. `{ order: 2 }`).
+   * @param {object} properties - Properties to merge in (e.g. `{ order: 2 }` or `{ kind: 'dative' }`).
    * @returns {import('./Bond.js').Bond|null} The updated bond, or `null` if not found.
    */
   updateBond(bondId, properties) {
@@ -748,7 +750,16 @@ export class Molecule {
     if (!bond) {
       return null;
     }
-    Object.assign(bond.properties, properties);
+    const nextProperties = { ...(properties ?? {}) };
+    if (Object.prototype.hasOwnProperty.call(nextProperties, 'kind')) {
+      bond.setKind(nextProperties.kind);
+      delete nextProperties.kind;
+    }
+    if (Object.prototype.hasOwnProperty.call(nextProperties, 'stereo')) {
+      bond.setStereo(nextProperties.stereo);
+      delete nextProperties.stereo;
+    }
+    Object.assign(bond.properties, nextProperties);
     this._recomputeProperties();
     return bond;
   }

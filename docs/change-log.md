@@ -8,6 +8,7 @@
 - Fix bugs with aromaticity detection
 - Fix charge button right click functionality
 - Raise max character limit for input box to 2000
+- Fix issue with implicit hydrogen when editing atoms
 
 ## 2026-04-07
 

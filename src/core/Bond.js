@@ -2,6 +2,8 @@
 
 import { randomUUID } from 'node:crypto';
 
+/** @typedef {'covalent'|'dative'|'coordinate'|'ionic'|'haptic'|'unknown'} BondKind */
+
 // ---------------------------------------------------------------------------
 // Element-set constants (module-level to avoid repeated inline allocations)
 // ---------------------------------------------------------------------------
@@ -12,10 +14,15 @@ const _CARBONYL_CENTERS = new Set(['C', 'S', 'P']);
 /** Heteroatoms that can receive a multiple bond from a carbonyl-like centre. */
 const _HETEROATOMS = new Set(['O', 'N', 'S', 'P']);
 
+/** Supported semantic bond kinds. */
+export const BOND_KINDS = Object.freeze(['covalent', 'dative', 'coordinate', 'ionic', 'haptic', 'unknown']);
+
+const _VALID_BOND_KINDS = new Set(BOND_KINDS);
+
 /**
  * Represents a bond (edge) in a molecular graph.
  *
- * Bond attributes (`order`, `aromatic`, `stereo`) live under `properties` for a
+ * Bond attributes (`order`, `aromatic`, `stereo`, `kind`) live under `properties` for a
  * consistent shape across Atom, Bond and Molecule.
  */
 export class Bond {
@@ -29,6 +36,9 @@ export class Bond {
    * @param {number} [properties.order] - Bond order. Integer localized bonds use 1/2/3/4;
    *   aromatic bonds may also use 1.5 as a resonance-averaged order.
    * @param {boolean} [properties.aromatic] - Whether the bond is aromatic.
+   * @param {BondKind} [properties.kind] - Semantic bond kind. This is intentionally
+   *   separate from `order` so coordinate and organometallic bonds can be modeled
+   *   without overloading localized covalent bond orders.
    * @param {string|null} [properties.stereo] - SMILES directional-bond marker: `'/'`
    *   or `'\\'`. `atoms[0]` is the source and `atoms[1]` the target as written in SMILES.
    *   `'/'` means traversal src→tgt goes upward; `'\\'` means downward. E/Z designation is
@@ -37,7 +47,7 @@ export class Bond {
    *   Optional renderer-facing display override metadata. Used by the 2D renderer to persist
    *   which bond should be drawn as a wedge or dash for a surviving stereocenter.
    */
-  constructor(id, atoms, { order = 1, aromatic = false, stereo = null, display = undefined } = {}) {
+  constructor(id, atoms, { order = 1, aromatic = false, kind = 'covalent', stereo = null, display = undefined } = {}) {
     /** @type {string} */
     this.id = id ?? `${++Bond._nextId}`;
     /** @type {string} Universally unique identifier, auto-generated on construction. */
@@ -46,8 +56,21 @@ export class Bond {
     this.atoms = atoms;
     /** @type {Array} Arbitrary tags for application use. */
     this.tags = [];
-    /** @type {{order: number, aromatic: boolean, stereo: string|null, display?: {as?: 'wedge'|'dash', centerId?: string, manual?: boolean}}} */
-    this.properties = { order, aromatic, stereo, ...(display !== undefined ? { display } : {}) };
+    /** @type {{order: number, aromatic: boolean, kind: BondKind, stereo: string|null, display?: {as?: 'wedge'|'dash', centerId?: string, manual?: boolean}}} */
+    this.properties = { order, aromatic, kind: Bond._normalizeKind(kind), stereo, ...(display !== undefined ? { display } : {}) };
+  }
+
+  /**
+   * Normalizes and validates a semantic bond kind.
+   * @private
+   * @param {BondKind} kind - Semantic bond kind.
+   * @returns {BondKind} The validated kind.
+   */
+  static _normalizeKind(kind) {
+    if (!_VALID_BOND_KINDS.has(kind)) {
+      throw new RangeError(`Bond kind must be one of ${BOND_KINDS.join(', ')}, got ${JSON.stringify(kind)}.`);
+    }
+    return kind;
   }
 
   /**
@@ -57,6 +80,15 @@ export class Bond {
    */
   getOrder() {
     return this.properties.order;
+  }
+
+  /**
+   * Returns the semantic bond kind.
+   * Convenience accessor for `this.properties.kind`.
+   * @returns {BondKind} The computed value.
+   */
+  getKind() {
+    return this.properties.kind ?? 'covalent';
   }
 
   /**
@@ -188,6 +220,16 @@ export class Bond {
   }
 
   /**
+   * Sets the semantic bond kind and returns `this` for chaining.
+   * @param {BondKind} kind - The new semantic bond kind.
+   * @returns {this} The computed result.
+   */
+  setKind(kind) {
+    this.properties.kind = Bond._normalizeKind(kind);
+    return this;
+  }
+
+  /**
    * Returns the directional stereo marker stored on this bond: `'/'`, `'\\'`, or `null`.
    * @returns {'/'|'\\'|null} The computed result.
    */
@@ -218,6 +260,23 @@ export class Bond {
   }
 
   /**
+   * Returns `true` when this bond is an ordinary covalent bond.
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
+   */
+  isCovalent() {
+    return this.getKind() === 'covalent';
+  }
+
+  /**
+   * Returns `true` when this bond represents a coordination-style attachment.
+   * @returns {boolean} `true` if the condition holds, `false` otherwise.
+   */
+  isCoordinateLike() {
+    const kind = this.getKind();
+    return kind === 'dative' || kind === 'coordinate' || kind === 'haptic';
+  }
+
+  /**
    * Returns `true` when this bond is rotatable by the standard cheminformatics
    * definition used by this codebase: a single, non-aromatic, non-ring bond
    * between two non-terminal heavy atoms, excluding conjugated amide-like bonds.
@@ -228,6 +287,9 @@ export class Bond {
    * @returns {boolean} `true` if the condition holds, `false` otherwise.
    */
   isRotatable(molecule) {
+    if (!this.isCovalent()) {
+      return false;
+    }
     if ((this.properties.order ?? 1) !== 1) {
       return false;
     }

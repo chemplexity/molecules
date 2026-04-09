@@ -3,7 +3,9 @@
 import { vec2, angleTo, project, rotateCoords, turnSignFromPoints, circumradius, _reflectPoint, centroid, normalizeAngle, pointInPolygon } from './coords2d/geom2d.js';
 import { SpatialGrid } from './coords2d/spatial-grid.js';
 import { _layoutCompareAtomIds, _buildLayoutNeighborCache, _layoutNeighbors } from './coords2d/neighbor-ordering.js';
-import { detectRingSystems, findSharedAtoms } from './coords2d/ring-detection.js';
+import { detectRingSystems } from './coords2d/ring-detection.js';
+import { buildBridgedRingComponents, buildRingConnections, getRingConnection } from './coords2d/ring-topology.js';
+import { pickPreferredStartRingId, placeBridgedComponentWithKK, placeSharedRingAnalytically, placeSpiroRingAnalytically } from './coords2d/ring-system-placement.js';
 import { forceFieldRefine } from './coords2d/force-field-refine.js';
 import { readExistingCoords, buildRefinementContext, measureRingSystemDeviation } from './coords2d/refinement-context.js';
 import { backboneTurnSign, collectLayoutIssues, scoreLayoutIssues } from './coords2d/refinement-issues.js';
@@ -165,348 +167,94 @@ function placeRingSystem(molecule, system, rings, bondLength, origin, coords) {
     return;
   }
 
-  // Build ring adjacency within this system
-  const ringAdj = new Map(ringIds.map(ri => [ri, []]));
-  for (let a = 0; a < ringIds.length; a++) {
-    for (let b = a + 1; b < ringIds.length; b++) {
-      const ri = ringIds[a],
-        rj = ringIds[b];
-      if (findSharedAtoms(rings[ri], rings[rj]).length >= 1) {
-        ringAdj.get(ri).push(rj);
-        ringAdj.get(rj).push(ri);
-      }
-    }
+  const { connections, ringAdj, connectionByPair } = buildRingConnections(molecule, rings, ringIds);
+  const { components: bridgedComponents, ringToComponent } = buildBridgedRingComponents(rings, ringIds, connections);
+  for (const component of bridgedComponents) {
+    component.placed = false;
+    component.kkDisabled = false;
   }
 
-  // BFS over rings; place each ring relative to the already-placed atoms
-  // of the ring it was reached from.
-  // Start from the LARGEST ring in the system so that large-ring (macrocycle)
-  // placement takes priority and smaller fused rings are arc-fitted to it.
-  const startRingId = ringIds.reduce((best, ri) => {
-    if (rings[ri].length !== rings[best].length) {
-      return rings[ri].length > rings[best].length ? ri : best;
-    }
-    const bestMin = [...rings[best]].sort((a, b) => _layoutCompareAtomIds(molecule, a, b))[0];
-    const curMin = [...rings[ri]].sort((a, b) => _layoutCompareAtomIds(molecule, a, b))[0];
-    return _layoutCompareAtomIds(molecule, curMin, bestMin) < 0 ? ri : best;
-  }, ringIds[0]);
+  const startRingId =
+    bridgedComponents.length > 0
+      ? pickPreferredStartRingId(
+          molecule,
+          bridgedComponents.reduce((best, component) => {
+            if (!best || component.atomIds.length > best.atomIds.length) {
+              return component;
+            }
+            if (component.atomIds.length === best.atomIds.length && component.ringIds.length > best.ringIds.length) {
+              return component;
+            }
+            return best;
+          }, null).ringIds,
+          rings,
+          _layoutCompareAtomIds
+        )
+      : pickPreferredStartRingId(molecule, ringIds, rings, _layoutCompareAtomIds);
   const visitedRings = new Set();
-  const queue = [startRingId];
+  const queue = [];
   let queueHead = 0;
-  visitedRings.add(startRingId);
+  const startComponent = ringToComponent.get(startRingId) ?? null;
 
-  // Place the first ring as a regular polygon (or ellipse) at origin.
-  // startAngle = 0 → flat-top hexagon (ChemDraw convention: vertices at sides, not top/bottom).
-  const firstRing = rings[startRingId];
-  placeRing(firstRing, origin.x, origin.y, bondLength, 0, coords);
+  if (startComponent && placeBridgedComponentWithKK(molecule, startComponent, rings, coords, bondLength, null, origin)) {
+    startComponent.placed = true;
+    const orderedComponentRings = [...startComponent.ringIds].sort((a, b) => {
+      if (a === startRingId) {
+        return -1;
+      }
+      if (b === startRingId) {
+        return 1;
+      }
+      return pickPreferredStartRingId(molecule, [a, b], rings, _layoutCompareAtomIds) === a ? -1 : 1;
+    });
+    for (const ringId of orderedComponentRings) {
+      visitedRings.add(ringId);
+      queue.push(ringId);
+    }
+  } else {
+    if (startComponent) {
+      startComponent.kkDisabled = true;
+    }
+    const firstRing = rings[startRingId];
+    placeRing(firstRing, origin.x, origin.y, bondLength, 0, coords);
+    visitedRings.add(startRingId);
+    queue.push(startRingId);
+  }
 
   while (queueHead < queue.length) {
     const curRingIdx = queue[queueHead++];
-    const curCenter = centroid(rings[curRingIdx], coords);
 
-    for (const nextRingIdx of ringAdj.get(curRingIdx)) {
+    for (const nextRingIdx of ringAdj.get(curRingIdx) ?? []) {
       if (visitedRings.has(nextRingIdx)) {
         continue;
       }
+      const nextComponent = ringToComponent.get(nextRingIdx);
+      if (nextComponent && !nextComponent.placed && !nextComponent.kkDisabled) {
+        if (placeBridgedComponentWithKK(molecule, nextComponent, rings, coords, bondLength, curRingIdx)) {
+          nextComponent.placed = true;
+          for (const componentRingId of nextComponent.ringIds) {
+            if (!visitedRings.has(componentRingId)) {
+              visitedRings.add(componentRingId);
+              queue.push(componentRingId);
+            }
+          }
+          continue;
+        }
+        nextComponent.kkDisabled = true;
+      }
+
+      const connection = getRingConnection(connectionByPair, curRingIdx, nextRingIdx);
+      if (!connection) {
+        continue;
+      }
+
       visitedRings.add(nextRingIdx);
       queue.push(nextRingIdx);
 
-      const nextRing = rings[nextRingIdx];
-      const n2 = nextRing.length;
-      const shared = findSharedAtoms(rings[curRingIdx], nextRing);
-
-      if (shared.length >= 2) {
-        // Fused: shared edge. Find two adjacent shared atoms in nextRing order.
-        // Determine which pair of shared atoms are adjacent in nextRing.
-        let sA = shared[0],
-          sB = shared[1];
-        // Check if sA and sB are adjacent in nextRing
-        const iA = nextRing.indexOf(sA);
-        const iB = nextRing.indexOf(sB);
-        const adjacent = Math.abs(iA - iB) === 1 || Math.abs(iA - iB) === n2 - 1;
-        if (!adjacent && shared.length > 2) {
-          // Try other pairs — find an adjacent pair
-          outer: for (let p = 0; p < shared.length; p++) {
-            for (let q = p + 1; q < shared.length; q++) {
-              const ia = nextRing.indexOf(shared[p]);
-              const ib = nextRing.indexOf(shared[q]);
-              if (Math.abs(ia - ib) === 1 || Math.abs(ia - ib) === n2 - 1) {
-                sA = shared[p];
-                sB = shared[q];
-                break outer;
-              }
-            }
-          }
-        }
-
-        const cA = coords.get(sA);
-        const cB = coords.get(sB);
-
-        // New center: place the new ring at its own inradius from the shared edge,
-        // on the opposite side from the current ring center.
-        // Using reflection would only be correct when both rings are the same size;
-        // for differently-sized fused rings (e.g. a hexagon fused to a pentagon)
-        // the new center must be at inradius(n2), not inradius(n1).
-        const midx = (cA.x + cB.x) / 2,
-          midy = (cA.y + cB.y) / 2;
-        const edx = cB.x - cA.x,
-          edy = cB.y - cA.y;
-        const elen = Math.hypot(edx, edy) || 1;
-        const px = -edy / elen,
-          py = edx / elen; // left-perp (CCW)
-        const toCur = (curCenter.x - midx) * px + (curCenter.y - midy) * py;
-        const side = toCur > 0 ? -1 : 1; // opposite side from curCenter
-        const inrad = bondLength / (2 * Math.tan(Math.PI / n2));
-        const newCenter = vec2(midx + side * px * inrad, midy + side * py * inrad);
-
-        // Over-constrained check: if the ring has ≥3 already-placed atoms
-        // (i.e. it is bordered by more than just the sA-sB edge, meaning
-        // a prior ring placed some of the "free" atoms at positions inconsistent
-        // with a regular polygon centred at newCenter), use circular arc fitting
-        // for the free atom chain instead of the regular polygon loop.
-        const prePlacedIds = nextRing.filter(id => coords.has(id));
-        let arcFitted = false;
-        if (prePlacedIds.length >= 2) {
-          // Find the contiguous free arc and its two boundary (placed) atoms.
-          const prePlacedSet = new Set(prePlacedIds);
-          let fi = -1;
-          for (let k = 0; k < n2; k++) {
-            if (!prePlacedSet.has(nextRing[k])) {
-              fi = k;
-              break;
-            }
-          }
-          if (fi >= 0) {
-            // backward walk to find the placed atom just before the free arc
-            let b1 = (fi - 1 + n2) % n2;
-            while (!prePlacedSet.has(nextRing[b1])) {
-              b1 = (b1 - 1 + n2) % n2;
-            }
-            // forward walk to find the placed atom just after the free arc
-            let b2 = fi;
-            while (!prePlacedSet.has(nextRing[(b2 + 1) % n2])) {
-              b2 = (b2 + 1) % n2;
-            }
-            b2 = (b2 + 1) % n2;
-
-            let nFree = 0;
-            for (let k = (b1 + 1) % n2; k !== b2; k = (k + 1) % n2) {
-              nFree++;
-            }
-
-            const pStart = coords.get(nextRing[b1]);
-            const pEnd = coords.get(nextRing[b2]);
-            const chord = Math.hypot(pEnd.x - pStart.x, pEnd.y - pStart.y);
-            const nBonds = nFree + 1;
-
-            if (nFree > 0 && chord > 1e-9 && chord < nBonds * bondLength - 1e-9) {
-              // Binary-search for circle radius R such that nBonds equal-length
-              // chords of bondLength span exactly the given chord P_start→P_end.
-              let rLo = bondLength / 2 + 1e-9,
-                rHi = nBonds * bondLength;
-              for (let iter = 0; iter < 64; iter++) {
-                const rMid = (rLo + rHi) / 2;
-                const sinArg = bondLength / (2 * rMid);
-                const arcChord = sinArg <= 1 ? 2 * rMid * Math.sin(nBonds * Math.asin(sinArg)) : 0;
-                if (arcChord < chord) {
-                  rLo = rMid;
-                } else {
-                  rHi = rMid;
-                }
-              }
-              const R = (rLo + rHi) / 2;
-
-              // Arc center: on the same side of chord P_start→P_end as the
-              // centroid of the already-placed atoms (concave side of the arc,
-              // so free atoms bow toward the ring exterior).
-              const mx = (pStart.x + pEnd.x) / 2,
-                my = (pStart.y + pEnd.y) / 2;
-              const cdx = pEnd.x - pStart.x,
-                cdy = pEnd.y - pStart.y;
-              const cpx = -cdy / chord,
-                cpy = cdx / chord; // left-perp
-              let acx = 0,
-                acy = 0;
-              for (const id of prePlacedIds) {
-                const p = coords.get(id);
-                acx += p.x;
-                acy += p.y;
-              }
-              acx /= prePlacedIds.length;
-              acy /= prePlacedIds.length;
-              // Use curCenter (centre of the ring already placed) as the primary
-              // signal: free atoms must bow to the OPPOSITE side from curCenter.
-              // Using the pre-placed-atom centroid is unreliable when the shared
-              // bridge has ≥3 atoms: the bridge centroid can fall on the SAME
-              // side as the desired free arc, inverting arcSide and collapsing the
-              // new ring on top of the existing one.
-              let dotPre = (curCenter.x - mx) * cpx + (curCenter.y - my) * cpy;
-              if (Math.abs(dotPre) < 1e-6) {
-                // Fallback when curCenter lies exactly on the chord midline.
-                dotPre = (acx - mx) * cpx + (acy - my) * cpy;
-              }
-              // Major arc (> π): midpoint is on the SAME side as the centre.
-              // Free atoms bow AWAY from the pre-placed arc, so the centre must
-              // be OPPOSITE to the pre-placed centroid.
-              const arcSide = dotPre >= 0 ? -1 : 1;
-              const h = Math.sqrt(Math.max(0, R * R - (chord / 2) ** 2));
-              const arcCx = mx + arcSide * cpx * h;
-              const arcCy = my + arcSide * cpy * h;
-
-              // Determine arc direction (CW vs CCW) by matching the arc-step
-              // angle α = 2·arcsin(BL/(2R)) with nBonds·α = total arc angle.
-              const angleS = Math.atan2(pStart.y - arcCy, pStart.x - arcCx);
-              const angleE = Math.atan2(pEnd.y - arcCy, pEnd.x - arcCx);
-              const alpha = 2 * Math.asin(bondLength / (2 * R));
-              let cwDelta = angleS - angleE;
-              while (cwDelta < 0) {
-                cwDelta += TWO_PI;
-              }
-              const totalArc = nBonds * alpha;
-              let arcDirMul = Math.abs(cwDelta - totalArc) <= Math.abs(TWO_PI - cwDelta - totalArc) ? -1 : 1;
-              // When h ≈ 0 (degenerate semicircle: chord = 2R so both CW and CCW
-              // arc lengths equal totalArc), the ≤ tiebreak can pick the wrong
-              // direction, placing the first free atom on the interior side (on top
-              // of an already-placed atom).  Guard: if the first free atom would land
-              // on the same side of the chord as curCenter, flip the direction.
-              {
-                const firstFreeAngle = angleS + arcDirMul * alpha;
-                const firstFreeDot = (arcCx + R * Math.cos(firstFreeAngle) - mx) * cpx + (arcCy + R * Math.sin(firstFreeAngle) - my) * cpy;
-                if (dotPre * firstFreeDot > 0) {
-                  arcDirMul = -arcDirMul;
-                }
-              }
-
-              let k2 = (b1 + 1) % n2,
-                step2 = 1;
-              while (k2 !== b2) {
-                coords.set(nextRing[k2], vec2(arcCx + R * Math.cos(angleS + step2 * arcDirMul * alpha), arcCy + R * Math.sin(angleS + step2 * arcDirMul * alpha)));
-                k2 = (k2 + 1) % n2;
-                step2++;
-              }
-
-              // Bridge-clash resolution for bridged bicyclics (e.g. bicyclo[3.1.1]):
-              // when a ring shares 3+ atoms with the parent ring, arc-fitting can
-              // place the free "bridge" atom directly on top of an already-placed atom
-              // (the arc retraces the parent ring's own circumscribed circle).
-              // Re-place the bridge atom on the perpendicular bisector of its two
-              // ring neighbours, on the side opposite curCenter.  This keeps the
-              // two incident bond lengths equal and avoids ejecting the bridge atom
-              // far outside the bicyclic core when the exact regular-polygon height
-              // is impossible because the neighbours are already too far apart.
-              for (let kc = (b1 + 1) % n2; kc !== b2; kc = (kc + 1) % n2) {
-                const freeId = nextRing[kc];
-                const freePos = coords.get(freeId);
-                if (!freePos) {
-                  continue;
-                }
-                let bridgeClash = false;
-                for (const [otherId, otherPos] of coords) {
-                  if (otherId === freeId) {
-                    continue;
-                  }
-                  if (Math.hypot(freePos.x - otherPos.x, freePos.y - otherPos.y) < bondLength * 0.4) {
-                    bridgeClash = true;
-                    break;
-                  }
-                }
-                if (!bridgeClash) {
-                  continue;
-                }
-                // Re-place at midpoint of ring-neighbours + outward direction × (3h).
-                const ki = nextRing.indexOf(freeId);
-                const nbA = coords.get(nextRing[(ki - 1 + n2) % n2]);
-                const nbB = coords.get(nextRing[(ki + 1) % n2]);
-                if (!nbA || !nbB) {
-                  continue;
-                }
-                const nbMx = (nbA.x + nbB.x) / 2,
-                  nbMy = (nbA.y + nbB.y) / 2;
-                const chordDx = nbB.x - nbA.x,
-                  chordDy = nbB.y - nbA.y;
-                const chordLen = Math.hypot(chordDx, chordDy) || 1;
-                const halfCh = chordLen / 2;
-                const perpX = -chordDy / chordLen,
-                  perpY = chordDx / chordLen;
-                const preferredSideDot = (curCenter.x - nbMx) * perpX + (curCenter.y - nbMy) * perpY;
-                const preferredSide = preferredSideDot >= 0 ? -1 : 1;
-                const exactLegH = halfCh < bondLength ? Math.sqrt(bondLength * bondLength - halfCh * halfCh) : 0;
-                const otherPlaced = [...coords.entries()].filter(
-                  ([otherId]) => otherId !== freeId && otherId !== nextRing[(ki - 1 + n2) % n2] && otherId !== nextRing[(ki + 1) % n2]
-                );
-                const candidateScore = candidate => {
-                  let minDist = Infinity;
-                  for (const [, otherPos] of otherPlaced) {
-                    minDist = Math.min(minDist, Math.hypot(candidate.x - otherPos.x, candidate.y - otherPos.y));
-                  }
-                  return minDist;
-                };
-                const heightCandidates = exactLegH > 1e-6 ? [0.35, 0.6, 0.85, 1].map(scale => exactLegH * scale) : [0.2, 0.35, 0.5, 0.65].map(scale => bondLength * scale);
-                let bestCandidate = null;
-                let bestScore = -Infinity;
-                let bestMaxBond = Infinity;
-                for (const height of heightCandidates) {
-                  for (const side of [preferredSide, -preferredSide]) {
-                    const candidate = vec2(nbMx + side * perpX * height, nbMy + side * perpY * height);
-                    const score = candidateScore(candidate);
-                    const maxBond = Math.max(Math.hypot(candidate.x - nbA.x, candidate.y - nbA.y), Math.hypot(candidate.x - nbB.x, candidate.y - nbB.y));
-                    if (score > bestScore + 1e-6 || (Math.abs(score - bestScore) <= 1e-6 && maxBond < bestMaxBond - 1e-6)) {
-                      bestCandidate = candidate;
-                      bestScore = score;
-                      bestMaxBond = maxBond;
-                    }
-                  }
-                }
-                coords.set(freeId, bestCandidate ?? vec2(nbMx, nbMy));
-              }
-
-              arcFitted = true;
-            }
-          }
-        }
-
-        if (!arcFitted) {
-          // Place un-placed atoms of nextRing around newCenter.
-          // Determine order: find sA in nextRing and step around in the direction
-          // that gives the correct bond lengths (away from curCenter).
-          const startIdx = nextRing.indexOf(sA);
-          const step = TWO_PI / n2;
-          const baseAngle = angleTo(newCenter, cA);
-          // arrayDir: which direction in the ring array steps from sA to sB.
-          const nextIdxCW = (startIdx + 1) % n2;
-          const arrayDir = nextRing[nextIdxCW] === sB ? 1 : -1;
-          // angularDir: geometric direction (CCW=+1, CW=−1) from sA to sB around newCenter.
-          // Decoupled from arrayDir because BFS ring ordering can be CW or CCW.
-          const dAng = normalizeAngle(angleTo(newCenter, cB) - angleTo(newCenter, cA));
-          const angularDir = dAng > 0 ? 1 : -1;
-
-          for (let i = 0; i < n2; i++) {
-            const idx = (((startIdx + i * arrayDir) % n2) + n2) % n2;
-            const atomId = nextRing[idx];
-            if (!coords.has(atomId)) {
-              coords.set(atomId, project(newCenter, baseAngle + i * step * angularDir, circumradius(n2, bondLength)));
-            }
-          }
-        } // end !arcFitted
-      } else if (shared.length === 1) {
-        // Spiro: one shared atom.
-        const spiroId = shared[0];
-        const spiroCoord = coords.get(spiroId);
-        // Point new ring away from curCenter.
-        const awayAngle = angleTo(curCenter, spiroCoord);
-        const R2 = circumradius(n2, bondLength);
-        const newCenter = project(spiroCoord, awayAngle, R2);
-        // Place spiro atom at angle pointing back toward spiroCoord.
-        const backAngle = awayAngle + Math.PI;
-        const startIdx = nextRing.indexOf(spiroId);
-        const step = TWO_PI / n2;
-        for (let i = 0; i < n2; i++) {
-          const idx = (startIdx + i) % n2;
-          const atomId = nextRing[idx];
-          if (!coords.has(atomId)) {
-            coords.set(atomId, project(newCenter, backAngle - i * step, R2));
-          }
-        }
+      if (connection.kind === 'spiro') {
+        placeSpiroRingAnalytically(rings, bondLength, coords, curRingIdx, nextRingIdx, connection.sharedAtomIds[0]);
+      } else {
+        placeSharedRingAnalytically(molecule, rings, bondLength, coords, curRingIdx, nextRingIdx, connection.sharedAtomIds);
       }
     }
   }

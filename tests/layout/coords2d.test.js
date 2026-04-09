@@ -17,6 +17,8 @@ import {
   syncDisplayStereo
 } from '../../src/layout/mol2d-helpers.js';
 import { refineExistingCoords } from '../../src/layout/coords2d.js';
+import { layoutBridgedComponentKK } from '../../src/layout/coords2d/kk-layout.js';
+import { buildBridgedRingComponents, buildRingConnections } from '../../src/layout/coords2d/ring-topology.js';
 import { parseINCHI } from '../../src/io/inchi.js';
 import { parseSMILES } from '../../src/io/smiles.js';
 
@@ -184,6 +186,30 @@ function heavyDistanceSignature(mol) {
   }
   distances.sort();
   return distances.join(',');
+}
+
+function minNonBondedHeavyDistance(mol, coords = null) {
+  const positions = coords ?? new Map([...mol.atoms.entries()].map(([atomId, atom]) => [atomId, atom]));
+  const heavyIds = [...mol.atoms.keys()].filter(atomId => mol.atoms.get(atomId)?.name !== 'H');
+  let minDistance = Infinity;
+  for (let i = 0; i < heavyIds.length; i++) {
+    const firstAtomId = heavyIds[i];
+    const firstPos = positions.get(firstAtomId);
+    const firstAtom = mol.atoms.get(firstAtomId);
+    for (let j = i + 1; j < heavyIds.length; j++) {
+      const secondAtomId = heavyIds[j];
+      const secondPos = positions.get(secondAtomId);
+      const isBonded = firstAtom.bonds.some(bondId => {
+        const bond = mol.bonds.get(bondId);
+        return bond && bond.atoms.includes(secondAtomId);
+      });
+      if (isBonded) {
+        continue;
+      }
+      minDistance = Math.min(minDistance, Math.hypot(secondPos.x - firstPos.x, secondPos.y - firstPos.y));
+    }
+  }
+  return minDistance;
 }
 
 function pointToSegmentDistance(p, a, b) {
@@ -588,6 +614,49 @@ describe('generateCoords — spiro bicyclic', () => {
         assert.ok(d > 0.1, `atoms ${i} and ${j} overlap (d=${d.toFixed(4)})`);
       }
     }
+  });
+});
+
+describe('ring topology classification', () => {
+  it('classifies a spiro system explicitly as spiro', () => {
+    const mol = spiro();
+    const rings = mol.getRings();
+    const { connections } = buildRingConnections(mol, rings);
+    assert.equal(connections.length, 1);
+    assert.equal(connections[0].kind, 'spiro');
+    assert.equal(connections[0].sharedAtomIds.length, 1);
+  });
+
+  it('classifies naphthalene as a fused ring connection', () => {
+    const mol = naphthalene();
+    const rings = mol.getRings();
+    const { connections } = buildRingConnections(mol, rings);
+    assert.equal(connections.length, 1);
+    assert.equal(connections[0].kind, 'fused');
+    assert.equal(connections[0].sharedAtomIds.length, 2);
+  });
+
+  it('classifies norbornane-like bicyclics as bridged', () => {
+    const mol = parseSMILES('C1CC2CCC1C2');
+    const rings = mol.getRings();
+    const { connections } = buildRingConnections(mol, rings);
+    assert.equal(connections.length, 1);
+    assert.equal(connections[0].kind, 'bridged');
+    assert.equal(connections[0].sharedAtomIds.length, 3);
+  });
+
+  it('groups adamantane rings into one bridged component', () => {
+    const mol = parseSMILES('C1C2CC3CC1CC(C2)C3');
+    const rings = mol.getRings();
+    const topology = buildRingConnections(mol, rings);
+    const { components } = buildBridgedRingComponents(
+      rings,
+      rings.map((_, index) => index),
+      topology.connections
+    );
+    assert.equal(topology.connections.every(connection => connection.kind === 'bridged'), true);
+    assert.equal(components.length, 1);
+    assert.deepEqual([...components[0].ringIds].sort((a, b) => a - b), [0, 1, 2]);
   });
 });
 
@@ -1452,6 +1521,52 @@ describe('generateCoords — compact bridged bicyclic amine', () => {
       vy = n2.y - atom.y;
     const angle = (Math.acos(Math.max(-1, Math.min(1, (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy))))) * 180) / Math.PI;
     assert.ok(angle < 175, `bridge atom ${bridgeId} remained nearly collinear: ${angle.toFixed(2)}°`);
+  });
+});
+
+describe('generateCoords — bridged KK fixtures', () => {
+  it('keeps norbornane-like bicyclics compact and overlap-free', () => {
+    const mol = parseSMILES('C1CC2CCC1C2');
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    for (const bond of heavyBonds(mol)) {
+      assert.ok(bondLengthOf(mol, bond) <= 1.5 * 1.5, `bond ${bond.id} exceeds 1.5×BL at ${bondLengthOf(mol, bond).toFixed(3)} Å`);
+    }
+    assert.ok(minNonBondedHeavyDistance(mol) >= 0.5, `expected no heavy-atom overlap, got ${minNonBondedHeavyDistance(mol).toFixed(3)} Å`);
+  });
+
+  it('keeps adamantane compact without blown-up cage bonds', () => {
+    const mol = parseSMILES('C1C2CC3CC1CC(C2)C3');
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    for (const bond of heavyBonds(mol)) {
+      assert.ok(bondLengthOf(mol, bond) <= 1.5 * 1.5, `bond ${bond.id} exceeds 1.5×BL at ${bondLengthOf(mol, bond).toFixed(3)} Å`);
+    }
+    assert.ok(minNonBondedHeavyDistance(mol) >= 0.5, `expected no heavy-atom overlap, got ${minNonBondedHeavyDistance(mol).toFixed(3)} Å`);
+  });
+
+  it('keeps an attached bridged core compact when connected to a benzene ring', () => {
+    const mol = parseSMILES('c1ccccc1C2CC3CCC2C3');
+    generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+    for (const bond of heavyBonds(mol)) {
+      assert.ok(bondLengthOf(mol, bond) <= 1.5 * 1.5, `bond ${bond.id} exceeds 1.5×BL at ${bondLengthOf(mol, bond).toFixed(3)} Å`);
+    }
+    assert.ok(minNonBondedHeavyDistance(mol) >= 0.5, `expected no heavy-atom overlap, got ${minNonBondedHeavyDistance(mol).toFixed(3)} Å`);
+  });
+});
+
+describe('layoutBridgedComponentKK', () => {
+  it('skips pathological components when maxComponentSize is exceeded', () => {
+    const mol = parseSMILES('C1CC2CCC1C2');
+    const atomIds = [...mol.atoms.keys()].filter(atomId => mol.atoms.get(atomId)?.name !== 'H');
+    const result = layoutBridgedComponentKK(mol, atomIds, {
+      bondLength: 1.5,
+      maxComponentSize: 4
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(result.skipped, true);
   });
 });
 

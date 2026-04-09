@@ -344,12 +344,14 @@ describe('Bond', () => {
     assert.deepEqual(b.tags, []);
     assert.equal(b.properties.order, 1);
     assert.equal(b.properties.aromatic, false);
+    assert.equal(b.properties.kind, 'covalent');
   });
 
   it('accepts properties via constructor', () => {
-    const b = new Bond('b0', ['a0', 'a1'], { order: 2, aromatic: true });
+    const b = new Bond('b0', ['a0', 'a1'], { order: 2, aromatic: true, kind: 'dative' });
     assert.equal(b.properties.order, 2);
     assert.equal(b.properties.aromatic, true);
+    assert.equal(b.properties.kind, 'dative');
   });
 
   it('getOrder returns bond order', () => {
@@ -380,6 +382,11 @@ describe('Bond', () => {
     assert.equal(typeof b1.uuid, 'string');
     assert.match(b1.uuid, /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
     assert.notEqual(b1.uuid, b2.uuid);
+  });
+
+  it('getKind returns the semantic bond kind', () => {
+    assert.equal(new Bond('b0', ['a0', 'a1']).getKind(), 'covalent');
+    assert.equal(new Bond('b1', ['a0', 'a1'], { kind: 'coordinate' }).getKind(), 'coordinate');
   });
 });
 
@@ -1070,6 +1077,18 @@ describe('Bond#isRotatable', () => {
     assert.equal(aromaticBond.isRotatable(mol), false);
   });
 
+  it('non-covalent bond kinds are not treated as rotatable single bonds', () => {
+    const mol = new Molecule();
+    mol.addAtom('a0', 'N');
+    mol.addAtom('a1', 'Ru');
+    mol.addAtom('a2', 'C');
+    mol.addAtom('a3', 'C');
+    mol.addBond('b0', 'a0', 'a1', { kind: 'coordinate' }, false);
+    mol.addBond('b1', 'a0', 'a2', {}, false);
+    mol.addBond('b2', 'a2', 'a3', {}, false);
+    assert.equal(mol.bonds.get('b0').isRotatable(mol), false);
+  });
+
   it('C-H bond is not rotatable', () => {
     const mol = parseSMILES('CC');
     const chBond = [...mol.bonds.values()].find(b => {
@@ -1253,6 +1272,15 @@ describe('Molecule#updateBond', () => {
     assert.equal(mol.bonds.get('b0').properties.order, 1);
     mol.updateBond('b0', { order: 2 });
     assert.equal(mol.bonds.get('b0').properties.order, 2);
+  });
+
+  it('changes bond kind through the validated bond helper', () => {
+    const mol = new Molecule();
+    mol.addAtom('a0', 'N');
+    mol.addAtom('a1', 'Ru');
+    mol.addBond('b0', 'a0', 'a1', {}, false);
+    mol.updateBond('b0', { kind: 'coordinate' });
+    assert.equal(mol.bonds.get('b0').getKind(), 'coordinate');
   });
 
   it('returns null for unknown bond id', () => {
@@ -1868,6 +1896,33 @@ describe('Bond – setAromatic', () => {
     assert.throws(() => b.setAromatic(1), /TypeError|boolean/);
     assert.throws(() => b.setAromatic('yes'), /TypeError|boolean/);
     assert.throws(() => b.setAromatic(null), /TypeError|boolean/);
+  });
+});
+
+describe('Bond – kind helpers', () => {
+  it('setKind stores the semantic bond kind and returns the bond', () => {
+    const b = new Bond('b0', ['a0', 'a1']);
+    const result = b.setKind('coordinate');
+    assert.equal(b.getKind(), 'coordinate');
+    assert.strictEqual(result, b);
+  });
+
+  it('setKind rejects unsupported bond kinds', () => {
+    const b = new Bond('b0', ['a0', 'a1']);
+    assert.throws(() => b.setKind('metal'), /RangeError|Bond kind/);
+    assert.throws(() => new Bond('b1', ['a0', 'a1'], { kind: 'metal' }), /RangeError|Bond kind/);
+  });
+
+  it('isCovalent reflects the semantic bond kind', () => {
+    assert.equal(new Bond('b0', ['a0', 'a1']).isCovalent(), true);
+    assert.equal(new Bond('b1', ['a0', 'a1'], { kind: 'dative' }).isCovalent(), false);
+  });
+
+  it('isCoordinateLike reflects coordination-style bond kinds', () => {
+    assert.equal(new Bond('b0', ['a0', 'a1'], { kind: 'dative' }).isCoordinateLike(), true);
+    assert.equal(new Bond('b1', ['a0', 'a1'], { kind: 'coordinate' }).isCoordinateLike(), true);
+    assert.equal(new Bond('b2', ['a0', 'a1'], { kind: 'haptic' }).isCoordinateLike(), true);
+    assert.equal(new Bond('b3', ['a0', 'a1'], { kind: 'ionic' }).isCoordinateLike(), false);
   });
 });
 
