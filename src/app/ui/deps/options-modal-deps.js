@@ -2,7 +2,7 @@
 
 /**
  * Builds the structured dependency object for the OptionsModal factory,
- * mapping flat dependency properties into named sub-objects (doc, dom, options, state, view, renderers).
+ * mapping flat dependency properties into named sub-objects (doc, dom, options, state, view, renderers, parsers).
  * @param {object} deps - Flat app context providing OptionsModal-related methods and values.
  * @returns {object} Dependency object consumed by `createOptionsModal`.
  */
@@ -13,6 +13,7 @@ export function createOptionsModalDeps(deps) {
       getOverlayElement: deps.dom.getOverlayElement,
       getShowValenceWarningsElement: deps.dom.getShowValenceWarningsElement,
       getShowAtomTooltipsElement: deps.dom.getShowAtomTooltipsElement,
+      get2DRendererVersionElement: deps.dom.get2DRendererVersionElement,
       get2DAtomColoringElement: deps.dom.get2DAtomColoringElement,
       get2DAtomFontSizeElement: deps.dom.get2DAtomFontSizeElement,
       getAtomNumberingFontSizeElement: deps.dom.getAtomNumberingFontSizeElement,
@@ -32,7 +33,10 @@ export function createOptionsModalDeps(deps) {
     state: {
       getMode: deps.state.getMode,
       getCurrentMol: deps.state.getCurrentMol,
-      getMol2d: deps.state.getMol2d
+      getMol2d: deps.state.getMol2d,
+      getInputMode: deps.state.getInputMode,
+      getCurrentSmiles: deps.state.getCurrentSmiles,
+      getCurrentInchi: deps.state.getCurrentInchi
     },
     view: {
       setFontSize: deps.view.setFontSize,
@@ -40,7 +44,13 @@ export function createOptionsModalDeps(deps) {
     },
     renderers: {
       draw2d: deps.renderers.draw2d,
+      render2d: deps.renderers.render2d,
+      renderMol: deps.renderers.renderMol,
       updateForce: deps.renderers.updateForce
+    },
+    parsers: {
+      parseSMILES: deps.parsers?.parseSMILES,
+      parseINCHI: deps.parsers?.parseINCHI
     }
   };
 }

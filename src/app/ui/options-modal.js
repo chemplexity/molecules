@@ -11,6 +11,7 @@ export function initOptionsModal(context) {
   const overlayEl = context.dom.getOverlayElement();
   const showValenceWarningsEl = context.dom.getShowValenceWarningsElement();
   const showAtomTooltipsEl = context.dom.getShowAtomTooltipsElement();
+  const twoDRendererVersionEl = context.dom.get2DRendererVersionElement();
   const twoDAtomColoringEl = context.dom.get2DAtomColoringElement();
   const twoDAtomFontSizeEl = context.dom.get2DAtomFontSizeElement();
   const atomNumberingFontSizeEl = context.dom.getAtomNumberingFontSizeElement();
@@ -39,6 +40,7 @@ export function initOptionsModal(context) {
   function syncForm(options = context.options.getRenderOptions()) {
     showValenceWarningsEl.checked = options.showValenceWarnings;
     showAtomTooltipsEl.checked = options.showAtomTooltips;
+    twoDRendererVersionEl.value = options.twoDRendererVersion ?? 'v1';
     twoDAtomColoringEl.checked = options.twoDAtomColoring;
     twoDAtomFontSizeEl.value = formatOptionNumber(options.twoDAtomFontSize);
     atomNumberingFontSizeEl.value = formatOptionNumber(options.atomNumberingFontSize);
@@ -56,11 +58,49 @@ export function initOptionsModal(context) {
     overlayEl.hidden = false;
   }
 
+  function rerenderWithActiveInput() {
+    const renderMol = context.renderers?.renderMol;
+    if (typeof renderMol !== 'function') {
+      return false;
+    }
+
+    const inputMode = context.state.getInputMode?.() === 'inchi' ? 'inchi' : 'smiles';
+    const candidates = inputMode === 'inchi'
+      ? [
+        { value: context.state.getCurrentInchi?.(), parser: context.parsers?.parseINCHI },
+        { value: context.state.getCurrentSmiles?.(), parser: context.parsers?.parseSMILES }
+      ]
+      : [
+        { value: context.state.getCurrentSmiles?.(), parser: context.parsers?.parseSMILES },
+        { value: context.state.getCurrentInchi?.(), parser: context.parsers?.parseINCHI }
+      ];
+
+    for (const candidate of candidates) {
+      if (typeof candidate.value !== 'string' || candidate.value.length === 0 || typeof candidate.parser !== 'function') {
+        continue;
+      }
+      try {
+        const mol = candidate.parser(candidate.value);
+        if (!mol || !(mol.atoms instanceof Map) || mol.atoms.size === 0) {
+          continue;
+        }
+        renderMol(mol, { preserveHistory: true, preserveAnalysis: true });
+        return true;
+      } catch {
+        /* fall back to direct rerender below */
+      }
+    }
+
+    return false;
+  }
+
   function apply() {
     const currentOptions = context.options.getRenderOptions();
+    const currentRendererVersion = currentOptions.twoDRendererVersion ?? 'v1';
     const nextOptions = context.options.updateRenderOptions({
       showValenceWarnings: showValenceWarningsEl.checked,
       showAtomTooltips: showAtomTooltipsEl.checked,
+      twoDRendererVersion: twoDRendererVersionEl.value === 'v2' ? 'v2' : 'v1',
       twoDAtomColoring: twoDAtomColoringEl.checked,
       twoDAtomFontSize: clampOptionInputValue(twoDAtomFontSizeEl, context.options.limits.twoDAtomFontSize, currentOptions.twoDAtomFontSize),
       atomNumberingFontSize: clampOptionInputValue(atomNumberingFontSizeEl, context.options.limits.atomNumberingFontSize, currentOptions.atomNumberingFontSize),
@@ -76,7 +116,13 @@ export function initOptionsModal(context) {
     if (context.state.getMode() === 'force' && context.state.getCurrentMol()) {
       context.renderers.updateForce(context.state.getCurrentMol(), { preservePositions: true, preserveView: true });
     } else if (context.state.getMode() === '2d' && context.state.getMol2d()) {
-      context.renderers.draw2d();
+      if (currentRendererVersion !== nextOptions.twoDRendererVersion && typeof context.renderers.render2d === 'function') {
+        if (!rerenderWithActiveInput()) {
+          context.renderers.render2d(context.state.getMol2d(), { preserveAnalysis: true });
+        }
+      } else {
+        context.renderers.draw2d();
+      }
     }
 
     syncForm(nextOptions);

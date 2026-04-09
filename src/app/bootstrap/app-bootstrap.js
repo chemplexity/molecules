@@ -264,6 +264,7 @@ export function finalizeAppBootstrap(ctx) {
         getOverlayElement: () => ctx.dom.getOptionsOverlayElement(),
         getShowValenceWarningsElement: () => ctx.dom.getShowValenceWarningsElement(),
         getShowAtomTooltipsElement: () => ctx.dom.getShowAtomTooltipsElement(),
+        get2DRendererVersionElement: () => ctx.dom.get2DRendererVersionElement(),
         get2DAtomColoringElement: () => ctx.dom.get2DAtomColoringElement(),
         get2DAtomFontSizeElement: () => ctx.dom.get2DAtomFontSizeElement(),
         getAtomNumberingFontSizeElement: () => ctx.dom.getAtomNumberingFontSizeElement(),
@@ -283,7 +284,10 @@ export function finalizeAppBootstrap(ctx) {
       state: {
         getMode: ctx.state.getMode,
         getCurrentMol: ctx.state.getCurrentMol,
-        getMol2d: ctx.state.getMol2d
+        getMol2d: ctx.state.getMol2d,
+        getInputMode: ctx.state.getInputMode,
+        getCurrentSmiles: ctx.state.getCurrentSmiles,
+        getCurrentInchi: ctx.state.getCurrentInchi
       },
       view: {
         setFontSize: value => ctx.state.setFontSize(value),
@@ -291,7 +295,13 @@ export function finalizeAppBootstrap(ctx) {
       },
       renderers: {
         draw2d: () => draw2d(),
+        render2d: (mol, options = {}) => render2d(mol, options),
+        renderMol: (mol, options = {}) => ctx.render.renderRuntime.renderMol(mol, options),
         updateForce: (mol, options = {}) => ctx.render.updateForce(mol, options)
+      },
+      parsers: {
+        parseSMILES: smiles => ctx.parsers.parseSMILES(smiles),
+        parseINCHI: inchi => ctx.parsers.parseINCHI(inchi)
       }
     })
   );

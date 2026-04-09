@@ -455,6 +455,18 @@ describe('Molecule#getEZStereo()', () => {
     assert.equal(mol.getEZStereo(dbl.id), 'Z');
   });
 
+  it('preserves directional bonds across a long conjugated polyene', () => {
+    const mol = parseSMILES(String.raw`CC\C=C/C\C=C/C\C=C/C\C=C/C\C=C/CCCC(=O)O`);
+    const directionalBonds = [...mol.bonds.values()].filter(b => b.properties.stereo != null);
+    const ezAssignments = [...mol.bonds.values()]
+      .filter(b => b.properties.order === 2)
+      .map(b => mol.getEZStereo(b.id))
+      .filter(value => value != null);
+
+    assert.equal(directionalBonds.length, 10);
+    assert.deepEqual(ezAssignments, ['Z', 'Z', 'Z', 'Z', 'Z']);
+  });
+
   it('FC=CF (no directional bonds) → null', () => {
     const mol = parseSMILES('FC=CF');
     const dbl = [...mol.bonds.values()].find(b => b.properties.order === 2);

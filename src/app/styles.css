@@ -235,7 +235,18 @@ body {
   background: #fff;
 }
 
-.option-row input[type='number']:focus {
+.option-row select {
+  width: 88px;
+  padding: 6px 8px;
+  border: 1px solid #ced8dc;
+  border-radius: 8px;
+  font-size: 13px;
+  color: #233841;
+  background: #fff;
+}
+
+.option-row input[type='number']:focus,
+.option-row select:focus {
   outline: none;
   border-color: #7db7c4;
   box-shadow: 0 0 0 3px rgba(83, 178, 200, 0.14);

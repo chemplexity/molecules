@@ -46,7 +46,7 @@ export const reactionTemplates = {
   },
   alkynePartialReduction: { name: 'Alkyne Partial Reduction', smirks: '[C:1]#[C:2]>>[C:1]=[C:2]' },
   alkyneFullReduction: { name: 'Alkyne Full Reduction', smirks: '[C:1]#[C:2]>>[C:1][C:2]' },
-  benzylicOxidation: { name: 'Benzylic Oxidation', smirks: '[c:2][CH3:1]>>[c:2][CH:1]=O' },
+  benzylicOxidation: { name: 'Benzylic Oxidation', smirks: '[c:2][CH3:1]>>[c:2][C:1]=O' },
 
   // ---------------------------------------------------------------------------
   // Substitution / functional-group interconversion
@@ -60,7 +60,7 @@ export const reactionTemplates = {
     smirks: '[C;X4:1][OH:2]>>[C:1][Cl:2]',
     excludeOverlaps: ['[C:1](=[O:2])[OH:3]', '[C:1](=[O:2])[O:3][C:4]', '[C:1](=[O:2])[N:3]']
   },
-  nitrileHydrogenationToImine: { name: 'Nitrile Hydrogenation To Imine', smirks: '[C:1]#[N:2]>>[CH:1]=[NH:2]' },
+  nitrileHydrogenationToImine: { name: 'Nitrile Hydrogenation To Imine', smirks: '[C:1]#[N:2]>>[C:1]=[N:2]' },
   etherCleavage: { name: 'Ether Cleavage', smirks: '[C;X4;!$(C=O):1][O:2][C;X4;!$(C=O):3]>>[C:1][OH:2].[C:3]O' },
 
   // ---------------------------------------------------------------------------

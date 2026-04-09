@@ -204,6 +204,9 @@ describe('finalizeAppBootstrap', () => {
         getShowAtomTooltipsElement() {
           return {};
         },
+        get2DRendererVersionElement() {
+          return {};
+        },
         get2DAtomColoringElement() {
           return {};
         },

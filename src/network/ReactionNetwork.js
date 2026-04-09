@@ -5,6 +5,7 @@ import { ReactionNode } from './ReactionNode.js';
 import { toCanonicalSMILES, parseSMILES } from '../io/index.js';
 import { applySMIRKS } from '../smirks/index.js';
 import { findSMARTS } from '../smarts/index.js';
+import { renderMolSVG } from '../layout/render2d.js';
 import { computeFormulaDelta } from '../descriptors/molecular.js';
 import { Molecule } from '../core/Molecule.js';
 
@@ -15,7 +16,6 @@ export class ReactionNetwork {
     
     /** @type {Map<string, ReactionNode>} */
     this.reactionNodes = new Map();
-    
     /** @type {Map<string, string>} map of Canonical SMILES -> NodeID */
     this._smilesIndex = new Map();
     
@@ -100,7 +100,6 @@ export class ReactionNetwork {
 
     this.reactionNodes.set(id, rxnNode);
 
-    // Link back to molecules
     for (const r of rNodes) {
       if (!r.consumedIn.includes(id)) r.consumedIn.push(id);
     }
@@ -110,16 +109,15 @@ export class ReactionNetwork {
 
     this._emit('reactionAdded', rxnNode);
 
-    // Blast out flattened projected links dynamically
     for (const reactNode of rNodes) {
       for (const prodNode of pNodes) {
         const delta = computeFormulaDelta(reactNode.molecule, prodNode.molecule);
-        this._emit('linkAdded', { 
-          source: reactNode.id, 
-          target: prodNode.id, 
+        this._emit('linkAdded', {
+          source: reactNode.id,
+          target: prodNode.id,
           reactionId: id,
           conditions: { ...conditions },
-          delta 
+          delta
         });
       }
     }
@@ -132,13 +130,13 @@ export class ReactionNetwork {
       if (fullGraph.atoms.size <= 1) return [fullGraph];
       
       const visited = new Set();
-      const components = [];
+      const componentAtomSets = [];
       
+      // BFS to find all disconnected component atom sets
       for (const atomId of fullGraph.atoms.keys()) {
           if (visited.has(atomId)) continue;
           
           const compAtomIds = new Set();
-          const compBondIds = new Set();
           const q = [atomId];
           visited.add(atomId);
           compAtomIds.add(atomId);
@@ -146,8 +144,8 @@ export class ReactionNetwork {
           while (q.length > 0) {
               const curr = q.shift();
               for (const bondId of fullGraph.atoms.get(curr).bonds) {
-                  compBondIds.add(bondId);
                   const bond = fullGraph.bonds.get(bondId);
+                  if (!bond) continue;
                   const neighbor = bond.getOtherAtom(curr);
                   if (!visited.has(neighbor)) {
                       visited.add(neighbor);
@@ -157,16 +155,23 @@ export class ReactionNetwork {
               }
           }
           
-          if (compAtomIds.size === fullGraph.atoms.size) {
-              return [fullGraph];
-          }
-          
-          const subMol = new Molecule();
-          for (const aId of compAtomIds) subMol.atoms.set(aId, fullGraph.atoms.get(aId));
-          for (const bId of compBondIds) subMol.bonds.set(bId, fullGraph.bonds.get(bId));
-          components.push(subMol);
+          componentAtomSets.push(compAtomIds);
       }
-      return components;
+      
+      // Single connected component — return as-is
+      if (componentAtomSets.length === 1) return [fullGraph];
+      
+      // For each component: clone the full graph and remove all atoms outside this component.
+      // Using clone() + removeAtom() ensures _bondIndex and all internal state stays valid.
+      return componentAtomSets.map(compAtomIds => {
+          const subMol = fullGraph.clone();
+          for (const atomId of [...subMol.atoms.keys()]) {
+              if (!compAtomIds.has(atomId)) {
+                  subMol.removeAtom(atomId);
+              }
+          }
+          return subMol;
+      });
   }
 
   /**
@@ -207,7 +212,20 @@ export class ReactionNetwork {
         
         fullProdGraph.resetIds();
         
-        const separatedComponents = this._splitDisconnectedComponents(fullProdGraph);
+        const rawComponents = this._splitDisconnectedComponents(fullProdGraph);
+
+        // Round-trip each component through canonical SMILES + re-parse to guarantee
+        // a pristine, deterministic molecule state. Fall back to raw if round-trip fails.
+        const separatedComponents = rawComponents.map(c => {
+            try {
+                const canon = toCanonicalSMILES(c);
+                if (!canon) return c;
+                return parseSMILES(canon);
+            } catch {
+                return c;
+            }
+        });
+
         const sortedCanons = separatedComponents.map(c => toCanonicalSMILES(c)).sort();
         const macroKey = sortedCanons.join(' + ');
 
@@ -429,11 +447,25 @@ export class ReactionNetwork {
     const exportData = { nodes: [], links: [] };
 
     for (const node of this.moleculeNodes.values()) {
+      // Force native offline structural coords directly into the output!
+      const renderObj = renderMolSVG(node.molecule.clone());
+      const cellW = renderObj ? renderObj.cellW : 100;
+      const cellH = renderObj ? renderObj.cellH : 100;
+
       exportData.nodes.push({
         id: node.id,
         type: 'molecule',
         molecule: node.molecule,
-        smiles: toCanonicalSMILES(node.molecule)
+        formula: (() => {
+            const f = node.molecule.getName();
+            const c = node.molecule.getCharge();
+            if (c === 0) return f;
+            return f + `<sup>${Math.abs(c) === 1 ? (c > 0 ? '+' : '-') : `${Math.abs(c)}${c > 0 ? '+' : '-'}`}</sup>`;
+        })(),
+        smiles: toCanonicalSMILES(node.molecule),
+        svg: renderObj ? `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${renderObj.cellW} ${renderObj.cellH}" width="${cellW}" height="${cellH}">${renderObj.svgContent}</svg>` : null,
+        width: cellW,
+        height: cellH
       });
     }
 

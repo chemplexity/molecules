@@ -193,6 +193,9 @@ function makeRenderer({ preserveSelectionOnNextRender = false } = {}) {
       redrawSelection: () => {
         records.push(['redrawSelection']);
       },
+      generate2dCoords: () => {
+        records.push(['generate2dCoords']);
+      },
       generateAndRefine2dCoords: () => {
         records.push(['generateAndRefine2dCoords']);
       },
@@ -265,9 +268,9 @@ describe('create2DSceneRenderer', () => {
     assert.equal(state.cx, 0);
     assert.equal(state.cy, 0);
     assert.deepEqual(
-      records.filter(entry => ['generateAndRefine2dCoords', 'setScene', 'clearSelection', 'setPreserveSelectionOnNextRender', 'updateFormula', 'updateDescriptors'].includes(entry[0]) || (entry[0] === 'call' && entry[1] === 'zoomTransform')),
+      records.filter(entry => ['generate2dCoords', 'setScene', 'clearSelection', 'setPreserveSelectionOnNextRender', 'updateFormula', 'updateDescriptors'].includes(entry[0]) || (entry[0] === 'call' && entry[1] === 'zoomTransform')),
       [
-        ['generateAndRefine2dCoords'],
+        ['generate2dCoords'],
         ['call', 'zoomTransform', { x: 0, y: 0, k: 1 }],
         ['setScene', 'mol-2d', 0, 0],
         ['clearSelection'],

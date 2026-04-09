@@ -573,7 +573,10 @@ export function create2DSceneRenderer(ctx) {
     prepareAromaticBondRendering(mol);
 
     if (!preserveGeometry) {
-      ctx.helpers.generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+      const generate2dCoords = typeof ctx.helpers.generate2dCoords === 'function'
+        ? ctx.helpers.generate2dCoords
+        : ctx.helpers.generateAndRefine2dCoords;
+      generate2dCoords(mol, { suppressH: true, bondLength: 1.5 });
     }
     ctx.helpers.alignReaction2dProductOrientation(mol);
     ctx.helpers.spreadReaction2dProductComponents(mol, 1.5);
@@ -657,8 +660,12 @@ export function create2DSceneRenderer(ctx) {
         continue;
       }
       const [ba1, ba2] = bond.getAtomObjects(mol);
-      const hAtom = ba1?.visible === false ? ba1 : ba2?.visible === false ? ba2 : null;
-      const heavyAt = hAtom ? (hAtom === ba1 ? ba2 : ba1) : null;
+      const hAtom = ba1?.visible === false && ba1.name === 'H' ? ba1 : ba2?.visible === false && ba2.name === 'H' ? ba2 : null;
+      if (hAtom) {
+        hAtom.visible = true;
+        continue;
+      }
+      const heavyAt = ba1?.visible === false ? (ba2 ?? null) : ba2?.visible === false ? (ba1 ?? null) : null;
       if (!heavyAt) {
         continue;
       }

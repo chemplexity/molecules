@@ -1,0 +1,73 @@
+/** @module geometry/ellipse */
+
+/**
+ * Returns a point on an axis-aligned ellipse.
+ * @param {{x: number, y: number}} center - Ellipse center.
+ * @param {number} semiMajor - Semi-major radius.
+ * @param {number} semiMinor - Semi-minor radius.
+ * @param {number} angle - Parameter angle in radians.
+ * @returns {{x: number, y: number}} Ellipse point.
+ */
+export function ellipsePoint(center, semiMajor, semiMinor, angle) {
+  return {
+    x: center.x + Math.cos(angle) * semiMajor,
+    y: center.y + Math.sin(angle) * semiMinor
+  };
+}
+
+/**
+ * Returns the average chord length around a regular sampling of an ellipse.
+ * @param {number} size - Number of points around the ellipse.
+ * @param {number} semiMajor - Semi-major radius.
+ * @param {number} semiMinor - Semi-minor radius.
+ * @param {number} startAngle - Start angle in radians.
+ * @returns {number} Average chord length.
+ */
+export function averageEllipseChordLength(size, semiMajor, semiMinor, startAngle) {
+  const step = (2 * Math.PI) / size;
+  let total = 0;
+  for (let index = 0; index < size; index++) {
+    const firstPoint = ellipsePoint({ x: 0, y: 0 }, semiMajor, semiMinor, startAngle + (index * step));
+    const secondPoint = ellipsePoint({ x: 0, y: 0 }, semiMajor, semiMinor, startAngle + (((index + 1) % size) * step));
+    total += Math.hypot(secondPoint.x - firstPoint.x, secondPoint.y - firstPoint.y);
+  }
+  return total / size;
+}
+
+/**
+ * Solves the ellipse scale whose average chord length matches the target bond length.
+ * @param {number} size - Number of sampled points.
+ * @param {number} bondLength - Target average chord length.
+ * @param {number} aspectRatio - Ellipse aspect ratio.
+ * @param {number} startAngle - Start angle in radians.
+ * @returns {number} Base scale value.
+ */
+export function solveEllipseScale(size, bondLength, aspectRatio, startAngle) {
+  let low = bondLength * 0.25;
+  let high = bondLength * size;
+  while (averageEllipseChordLength(size, high * aspectRatio, high / aspectRatio, startAngle) < bondLength) {
+    high *= 1.5;
+    if (high > bondLength * size * 8) {
+      break;
+    }
+  }
+  for (let iteration = 0; iteration < 32; iteration++) {
+    const mid = (low + high) * 0.5;
+    const average = averageEllipseChordLength(size, mid * aspectRatio, mid / aspectRatio, startAngle);
+    if (average < bondLength) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return high;
+}
+
+/**
+ * Returns the default macrocycle ellipse aspect ratio for a ring size.
+ * @param {number} size - Macrocycle size.
+ * @returns {number} Suggested aspect ratio.
+ */
+export function macrocycleAspectRatio(size) {
+  return Math.min(1.35, 1.12 + Math.max(0, size - 12) * 0.015);
+}

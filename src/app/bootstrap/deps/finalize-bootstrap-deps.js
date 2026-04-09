@@ -76,6 +76,7 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       hasLoadedInput: () => !!(ctx.runtimeState.currentSmiles || ctx.runtimeState.currentInchi),
       getCurrentSmiles: () => ctx.runtimeState.currentSmiles,
       getCurrentInchi: () => ctx.runtimeState.currentInchi,
+      getInputMode: () => ctx.input.getInputMode(),
       setFontSize: value => {
         ctx.runtimeState.fontSize = value;
       },

@@ -17,7 +17,12 @@ import { detectChemicalStringFormat } from '../../io/detect.js';
 import { moleculeCatalog } from '../../data/molecule-catalog.js';
 import { validateValence } from '../../validation/index.js';
 import { refreshAromaticity } from '../../algorithms/aromaticity.js';
-import { refineExistingCoords, generateAndRefine2dCoords } from '../../layout/index.js';
+import {
+  refineExistingCoords as refineExistingCoordsLegacy,
+  generateAndRefine2dCoords as generateAndRefine2dCoordsLegacy
+} from '../../layout/index.js';
+import { applyCoords as applyComputedCoords } from '../../layoutv2/apply.js';
+import { generateCoords as generateComputedCoords, refineCoords as refineComputedCoords } from '../../layoutv2/api.js';
 import * as mol2dHelpers from '../../layout/mol2d-helpers.js';
 import { updateDescriptors, updateFormula } from '../ui/descriptors.js';
 import { initUndo, takeSnapshot as _takeSnapshot, discardLastSnapshot as _discardLastSnapshot, clearHistory as _clearUndoHistory, undoAction, redoAction } from '../core/undo.js';
@@ -151,6 +156,73 @@ window._getExampleMolecules = () => exampleMolecules;
 
 const atomBBox = mol2dHelpers.atomBBox ?? atomBBoxFallback;
 
+function getSelected2dRendererVersion() {
+  return getRenderOptions().twoDRendererVersion === 'v2' ? 'v2' : 'v1';
+}
+
+function readPlacedCoords(molecule) {
+  const coords = new Map();
+  if (!molecule?.atoms) {
+    return coords;
+  }
+  for (const atom of molecule.atoms.values()) {
+    if (Number.isFinite(atom.x) && Number.isFinite(atom.y)) {
+      coords.set(atom.id, { x: atom.x, y: atom.y });
+    }
+  }
+  return coords;
+}
+
+function buildComputedLayoutOptions(options = {}) {
+  return {
+    suppressH: options.suppressH ?? true,
+    bondLength: options.bondLength ?? 1.5,
+    maxCleanupPasses: options.maxCleanupPasses ?? options.maxPasses ?? 6
+  };
+}
+
+function generateActive2dCoords(molecule, options = {}) {
+  if (getSelected2dRendererVersion() === 'v1') {
+    return generateAndRefine2dCoordsLegacy(molecule, options);
+  }
+  const result = generateComputedCoords(molecule, buildComputedLayoutOptions(options));
+  applyComputedCoords(molecule, result, {
+    clearUnplaced: true,
+    hiddenHydrogenMode: 'coincident',
+    syncStereoDisplay: true
+  });
+  return result.coords;
+}
+
+function generateAndRefineActive2dCoords(molecule, options = {}) {
+  if (getSelected2dRendererVersion() === 'v1') {
+    return generateAndRefine2dCoordsLegacy(molecule, options);
+  }
+  return generateActive2dCoords(molecule, options);
+}
+
+function refineActive2dCoords(molecule, options = {}) {
+  if (getSelected2dRendererVersion() === 'v1') {
+    return refineExistingCoordsLegacy(molecule, options);
+  }
+  const existingCoords = readPlacedCoords(molecule);
+  if (existingCoords.size === 0) {
+    return existingCoords;
+  }
+  const result = refineComputedCoords(molecule, {
+    ...buildComputedLayoutOptions(options),
+    existingCoords,
+    touchedAtoms: options.touchedAtoms,
+    touchedBonds: options.touchedBonds
+  });
+  applyComputedCoords(molecule, result, {
+    preserveExisting: true,
+    hiddenHydrogenMode: 'coincident',
+    syncStereoDisplay: true
+  });
+  return result.coords;
+}
+
 const runtimeState = createRuntimeState({
   getRenderOptions,
   validateValence
@@ -199,8 +271,9 @@ const forceHelpers = createForceHelpers({
   plotEl,
   simulation,
   viewportFitPadding: pad => _viewportFitPadding(pad),
-  generateAndRefine2dCoords,
-  alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
+    generateAndRefine2dCoords: generateAndRefineActive2dCoords,
+    generate2dCoords: generateActive2dCoords,
+    alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
   spreadReaction2dProductComponents: (mol, bondLength) => _spreadReaction2dProductComponents(mol, bondLength),
   centerReaction2dPairCoords: (mol, bondLength) => _centerReaction2dPairCoords(mol, bondLength)
 });
@@ -367,7 +440,7 @@ const forceSceneRenderer = createForceSceneRenderer(
     isHydrogenNode: node => forceHelpers.isHydrogenNode(node),
     enLabelColor: value => enLabelColor(value),
     renderReactionPreviewArrowForce: nodes => _renderReactionPreviewArrowForce(nodes),
-    generateAndRefine2dCoords: (mol, options = {}) => generateAndRefine2dCoords(mol, options),
+    generateAndRefine2dCoords: (mol, options = {}) => generateAndRefineActive2dCoords(mol, options),
     alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
     handleForceBondClick: (event, bondId, molecule) => primitiveEventHandlers.handleForceBondClick(event, bondId, molecule),
     handleForceBondDblClick: (event, atomIds) => primitiveEventHandlers.handleForceBondDblClick(event, atomIds),
@@ -442,7 +515,8 @@ const scene2DRenderer = create2DSceneRenderer(
     drawBond: (container, bond, a1, a2, mol, toSVGPt, stereoType = null) => render2DHelpers.drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType),
     redrawHighlights: () => _redraw2dHighlights(),
     redrawSelection: () => selectionOverlayManager.redraw2dSelection(),
-    generateAndRefine2dCoords: (mol, options = {}) => generateAndRefine2dCoords(mol, options),
+    generateAndRefine2dCoords: (mol, options = {}) => generateAndRefineActive2dCoords(mol, options),
+    generate2dCoords: (mol, options = {}) => generateActive2dCoords(mol, options),
     alignReaction2dProductOrientation: _alignReaction2dProductOrientation,
     spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
     centerReaction2dPairCoords: _centerReaction2dPairCoords,
@@ -635,8 +709,8 @@ const {
     spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
     centerReaction2dPairCoords: _centerReaction2dPairCoords,
     viewportFitPadding: _viewportFitPadding,
-    generateAndRefine2dCoords,
-    refineExistingCoords,
+    generateAndRefine2dCoords: generateAndRefineActive2dCoords,
+    refineExistingCoords: refineActive2dCoords,
     atomBBox,
     flipDisplayStereo,
     clearPrimitiveHover: () => _clearPrimitiveHover(),

@@ -29,7 +29,10 @@ test('cleanLayout2d rerenders from a cloned molecule with preserved history', ()
       renderMol: (mol, options) => calls.push(['renderMol', mol, options])
     },
     helpers: {
-      generateAndRefine2dCoords: (mol, options) => calls.push(['generateAndRefine2dCoords', mol, options])
+      refineExistingCoords: (mol, options) => {
+        calls.push(['refineExistingCoords', mol, options]);
+        return new Map([['a1', { x: 0, y: 0 }]]);
+      }
     },
     view: {
       setPreserveSelectionOnNextRender: value => calls.push(['preserveSelection', value])
@@ -44,13 +47,10 @@ test('cleanLayout2d rerenders from a cloned molecule with preserved history', ()
   assert.equal(sourceMol.cloneCalls, 1);
   assert.deepEqual(calls, [
     ['takeSnapshot', { clearReactionPreview: false }],
-    ['generateAndRefine2dCoords', { cloned: true }, {
+    ['refineExistingCoords', { cloned: true }, {
       suppressH: true,
       bondLength: 1.5,
-      maxPasses: 12,
-      freezeRings: true,
-      freezeChiralCenters: false,
-      allowBranchReflect: true
+      maxPasses: 12
     }],
     ['preserveSelection', true],
     ['renderMol', { cloned: true }, { preserveHistory: true, preserveAnalysis: true, preserveGeometry: true }]

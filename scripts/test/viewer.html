@@ -5,35 +5,244 @@
     <title>Reaction Network D3 Viewer</title>
     <script src="https://d3js.org/d3.v7.min.js"></script>
     <style>
-        body { margin: 0; padding: 0; background-color: #0b0b0f; color: #fff; font-family: 'Inter', sans-serif; overflow: hidden; }
-        #network-container { width: 100vw; height: 100vh; position: absolute; z-index: 1;}
-        #ui { position: absolute; top: 20px; left: 20px; z-index: 10; background: rgba(22, 22, 30, 0.85); backdrop-filter: blur(8px); padding: 25px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, 0.1); box-shadow: 0 10px 25px rgba(0,0,0,0.5); width: 300px; }
-        h3 { margin: 0 0 8px 0; font-size: 16px; letter-spacing: 0.5px; }
-        p { font-size: 12px; color: #8a8a9d; margin: 0 0 15px 0; line-height: 1.4; }
-        input[type="file"] { background: #1c1c24; border: 1px solid #333; padding: 10px; border-radius: 6px; width: 90%; color: #fff; cursor: pointer; }
-        
-        .node circle { stroke: #0b0b0f; stroke-width: 2px; transition: stroke 0.2s; }
-        .node:hover circle { stroke: #fff; stroke-width: 3px; }
-        .node text { pointer-events: none; font-size: 11px; fill: #a1a1aa; font-weight: 500; text-shadow: 0 2px 4px rgba(0,0,0,0.8); }
-        .link { stroke: #3f3f4e; stroke-opacity: 0.7; }
-        .link-text { fill: #8a8a9d; font-size: 9px; pointer-events: none; background: #0b0b0f;}
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; background-color: #f8f8fa; color: #111; font-family: 'Inter', sans-serif; overflow: hidden; }
+        #network-container { width: 100vw; height: 100vh; position: absolute; z-index: 1; background: #f8f8fa; }
+
+        /* ── Drawer ── */
+        #drawer {
+            position: fixed; top: 0; left: 0; height: 100vh;
+            width: 310px; z-index: 20;
+            display: flex; flex-direction: row;
+            transform: translateX(0);
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #drawer.collapsed { transform: translateX(-310px); }
+        #drawer-panel {
+            width: 310px; height: 100%;
+            background: rgba(255,255,255,0.97); backdrop-filter: blur(14px);
+            border-right: 1px solid rgba(0,0,0,0.07);
+            box-shadow: 4px 0 24px rgba(0,0,0,0.07);
+            padding: 28px 22px 22px;
+            overflow-y: auto;
+            display: flex; flex-direction: column;
+        }
+        #drawer-tab {
+            /* The pull tab that sticks out on the right side of the drawer */
+            position: absolute; right: -32px; top: 50%;
+            transform: translateY(-50%);
+            width: 32px; height: 64px;
+            background: rgba(255,255,255,0.97);
+            border: 1px solid rgba(0,0,0,0.07);
+            border-left: none;
+            border-radius: 0 10px 10px 0;
+            box-shadow: 4px 0 12px rgba(0,0,0,0.07);
+            cursor: pointer;
+            display: flex; align-items: center; justify-content: center;
+            user-select: none;
+            transition: background 0.2s;
+        }
+        #drawer-tab:hover { background: #f0f0f0; }
+        #drawer-tab svg { transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+        #drawer.collapsed #drawer-tab svg { transform: rotate(180deg); }
+
+        #drawer-panel h3 { margin: 0 0 4px 0; font-size: 15px; font-weight: 600; letter-spacing: 0.3px; }
+        #drawer-panel .subtitle { font-size: 11px; color: #888; margin: 0 0 20px 0; }
+        label { display: block; font-size: 11px; font-weight: 500; color: #555; margin-bottom: 4px; margin-top: 14px; }
+        label:first-of-type { margin-top: 0; }
+        input[type="text"], input[type="number"] {
+            width: 100%; padding: 8px 10px; border: 1px solid #e0e0e0;
+            border-radius: 8px; font-size: 13px; font-family: monospace;
+            background: #fafafa; color: #111; outline: none;
+            transition: border-color 0.2s;
+        }
+        input[type="text"]:focus, input[type="number"]:focus { border-color: #999; background: #fff; }
+        .row { display: flex; gap: 10px; }
+        .row > div { flex: 1; }
+        .toggle-row { display: flex; align-items: center; gap: 8px; margin-top: 14px; }
+        .toggle-row label { margin: 0; font-size: 12px; color: #444; }
+        input[type="checkbox"] { accent-color: #333; width: 14px; height: 14px; cursor: pointer; }
+        #generate-btn {
+            margin-top: 20px; width: 100%; padding: 11px;
+            background: #111; color: #fff; border: none;
+            border-radius: 8px; font-size: 13px; font-weight: 500;
+            cursor: pointer; transition: background 0.2s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        #generate-btn:hover { background: #333; }
+        #generate-btn:disabled { background: #aaa; cursor: default; }
+        #status { margin-top: 10px; font-size: 11px; color: #888; min-height: 16px; text-align: center; }
+        .spinner { display: inline-block; width: 12px; height: 12px; border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff; border-radius: 50%; animation: spin 0.7s linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .slider-row { margin-top: 14px; }
+        .slider-row .slider-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
+        .slider-row label { margin: 0; font-size: 11px; font-weight: 500; color: #555; }
+        .slider-row .slider-val { font-size: 11px; color: #888; font-variant-numeric: tabular-nums; }
+        input[type="range"] {
+            width: 100%; height: 4px; cursor: pointer;
+            accent-color: #333; background: #e0e0e0;
+            border-radius: 4px; outline: none; border: none;
+            appearance: none; -webkit-appearance: none;
+        }
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none; width: 14px; height: 14px;
+            border-radius: 50%; background: #333; cursor: pointer;
+        }
+
+        .node circle { stroke: #fff; stroke-width: 2px; transition: stroke 0.2s; }
+        .node:hover circle { stroke: #555; stroke-width: 3px; }
+        .node-label { pointer-events: none; font-size: 11px; fill: #444; font-weight: 500; }
+        .link { stroke: #bbb; stroke-opacity: 0.9; }
+        .link-text { fill: #666; font-size: 9px; pointer-events: none; }
+
+        /* ── Right info drawer ── */
+        #info-drawer {
+            position: fixed; top: 0; right: 0; height: 100vh;
+            width: 280px; z-index: 20;
+            display: flex; flex-direction: row-reverse;
+            transform: translateX(0);
+            transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        #info-drawer.collapsed { transform: translateX(280px); }
+        #info-panel {
+            width: 280px; height: 100%;
+            background: rgba(255,255,255,0.97); backdrop-filter: blur(14px);
+            border-left: 1px solid rgba(0,0,0,0.07);
+            box-shadow: -4px 0 24px rgba(0,0,0,0.07);
+            padding: 24px 18px 18px;
+            overflow-y: auto;
+            display: flex; flex-direction: column;
+        }
+        #info-drawer-tab {
+            position: absolute; left: -32px; top: 50%;
+            transform: translateY(-50%);
+            width: 32px; height: 64px;
+            background: rgba(255,255,255,0.97);
+            border: 1px solid rgba(0,0,0,0.07); border-right: none;
+            border-radius: 10px 0 0 10px;
+            box-shadow: -4px 0 12px rgba(0,0,0,0.07);
+            cursor: pointer; display: flex; align-items: center; justify-content: center;
+            user-select: none; transition: background 0.2s;
+        }
+        #info-drawer-tab:hover { background: #f0f0f0; }
+        #info-drawer-tab svg { transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1); }
+        #info-drawer.collapsed #info-drawer-tab svg { transform: rotate(180deg); }
+
+        #info-smiles-section { margin-bottom: 16px; }
+        #info-smiles-label { font-size: 10px; font-weight: 600; color: #999; text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 6px; }
+        #info-smiles {
+            font-family: monospace; font-size: 12px; color: #222;
+            background: #f3f4f6; border-radius: 7px; padding: 8px 10px;
+            word-break: break-all; min-height: 34px;
+        }
+        #info-smiles svg { width: 100%; height: auto; max-height: 160px; display: block; margin: 0 auto; overflow: visible; }
+        .info-section { margin-top: 14px; }
+        .info-section-title {
+            font-size: 10px; font-weight: 600; color: #999;
+            text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px;
+            display: flex; align-items: center; gap: 6px;
+        }
+        .info-section-title span { font-size: 10px; color: #bbb; font-weight: 400; }
+        .info-mol-item {
+            font-family: monospace; font-size: 11px; color: #444;
+            background: #fafafa; border: 1px solid #eee;
+            border-radius: 6px; padding: 5px 9px; margin-bottom: 5px;
+            cursor: default; word-break: break-all;
+        }
+        .info-mol-item svg { width: 100%; height: auto; max-height: 90px; display: block; margin: 4px auto; overflow: visible; }
+        .info-mol-item:hover { background: #f0f4ff; border-color: #93c5fd; }
+        .info-empty { font-size: 11px; color: #bbb; font-style: italic; margin: 2px 0; }
     </style>
 </head>
 <body>
 
-<div id="ui">
-    <h3>Network Combinatorics Viewer</h3>
-    <p>Run your `reaction-network-test.js` script with `> output.txt` and drop it here safely!</p>
-    <input type="file" id="file-upload" />
+<div id="drawer">
+    <div id="drawer-panel">
+        <h3>Reaction Network Viewer</h3>
+        <p class="subtitle">Requires <code>server.js</code> on port 3737.</p>
+
+        <label for="smiles-input">SMILES</label>
+        <input type="text" id="smiles-input" placeholder="e.g. CCO" value="CCO" spellcheck="false" />
+
+        <div class="row">
+            <div>
+                <label for="depth-input">Depth</label>
+                <input type="number" id="depth-input" min="1" value="5" />
+            </div>
+            <div>
+                <label for="maxnodes-input">Max Nodes</label>
+                <input type="number" id="maxnodes-input" min="1" value="300" />
+            </div>
+        </div>
+
+        <div class="toggle-row">
+            <input type="checkbox" id="flatten-input" checked />
+            <label for="flatten-input">Flatten (molecule → molecule edges)</label>
+        </div>
+
+        <button id="generate-btn">Generate Network</button>
+        <div id="status"></div>
+
+        <div class="slider-row" id="distance-row" style="display:none">
+            <div class="slider-header">
+                <label for="distance-slider">Node Distance</label>
+                <span class="slider-val" id="distance-val">0</span>
+            </div>
+            <input type="range" id="distance-slider" min="-3000" max="600" value="0" step="5" />
+        </div>
+    </div>
+
+    <!-- Pull tab -->
+    <div id="drawer-tab" title="Toggle panel">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M8 2L4 6L8 10" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    </div>
 </div>
 
 <svg id="network-container"></svg>
 
+<!-- Right info drawer -->
+<div id="info-drawer" class="collapsed">
+    <div id="info-drawer-tab" title="Toggle info panel">
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+            <path d="M4 2L8 6L4 10" stroke="#555" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+    </div>
+    <div id="info-panel">
+        <div id="info-smiles-section">
+            <div id="info-smiles-label">Hovered Molecule</div>
+            <div id="info-smiles" class="info-empty">Hover a molecule…</div>
+        </div>
+        <div class="info-section">
+            <div class="info-section-title">To <span id="info-to-count"></span></div>
+            <div id="info-to"><div class="info-empty">—</div></div>
+        </div>
+        <div class="info-section">
+            <div class="info-section-title">From <span id="info-from-count"></span></div>
+            <div id="info-from"><div class="info-empty">—</div></div>
+        </div>
+    </div>
+</div>
+
 <script>
     const width = window.innerWidth;
     const height = window.innerHeight;
-    const svg = d3.select("#network-container").call(d3.zoom().on("zoom", (event) => g.attr("transform", event.transform)));
+    const zoomBehavior = d3.zoom().on("zoom", (event) => g.attr("transform", event.transform));
+    const svg = d3.select("#network-container").call(zoomBehavior);
     const g = svg.append("g");
+
+    // Arrow-key panning
+    const PAN_STEP = 40;
+    document.addEventListener('keydown', e => {
+        if (!['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) return;
+        e.preventDefault();
+        const t = d3.zoomTransform(svg.node());
+        const dx = e.key === 'ArrowLeft' ? PAN_STEP : e.key === 'ArrowRight' ? -PAN_STEP : 0;
+        const dy = e.key === 'ArrowUp'   ? PAN_STEP : e.key === 'ArrowDown'  ? -PAN_STEP : 0;
+        svg.call(zoomBehavior.translateBy, dx / t.k, dy / t.k);
+    });
 
     // Pre-declare slick arrow heads
     svg.append("defs").append("marker")
@@ -48,27 +257,96 @@
         .attr("fill", "#666")
         .attr("d", "M0,-5L10,0L0,5");
 
-    document.getElementById('file-upload').addEventListener('change', function(e) {
-        const file = e.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = function(evt) {
-            try {
-                // Slicer gracefully isolates the true JSON structural layout mathematically skipping CLI prefix logs!
-                const text = evt.target.result;
-                const dumpIndex = text.indexOf('Final Graph Export Dump:');
-                const start = text.indexOf('{', dumpIndex !== -1 ? dumpIndex : 0);
-                if (start === -1) throw new Error("No payload found!");
-                
-                const data = JSON.parse(text.substring(start));
-                renderGraph(data);
-            } catch (err) {
-                alert("Failed to confidently parse JSON schema from file.");
-                console.error(err);
+    // ── Info drawer toggle ──
+    const infoDrawer = document.getElementById('info-drawer');
+    document.getElementById('info-drawer-tab').addEventListener('click', () => infoDrawer.classList.toggle('collapsed'));
+
+    const infoSmiles  = document.getElementById('info-smiles');
+    const infoTo      = document.getElementById('info-to');
+    const infoFrom    = document.getElementById('info-from');
+    const infoToCount = document.getElementById('info-to-count');
+    const infoFromCount = document.getElementById('info-from-count');
+
+    function updateInfoPanel(d, linksData, nodeById) {
+        if (!d) {
+            infoSmiles.textContent = 'Hover a molecule…';
+            infoSmiles.className = 'info-empty';
+            infoTo.innerHTML    = '<div class="info-empty">—</div>';
+            infoFrom.innerHTML  = '<div class="info-empty">—</div>';
+            infoToCount.textContent = '';
+            infoFromCount.textContent = '';
+            return;
+        }
+        infoSmiles.innerHTML = d.svg || d.formula || d.id;
+        infoSmiles.className = '';
+
+        const toItems   = []; // edges where source === d.id (this node points TO these)
+        const fromItems = []; // edges where target === d.id (these point FROM somewhere TO this)
+        for (const l of linksData) {
+            const sid = typeof l.source === 'object' ? l.source.id : l.source;
+            const tid = typeof l.target === 'object' ? l.target.id : l.target;
+            const formatStr = (base, delta) => delta ? `${base} <div style="color:#aaa; font-size:10px; text-align:center; border-top: 1px solid #eee; padding-top:4px; margin-top:4px; font-weight:600;">Δ ${delta}</div>` : base;
+
+            if (sid === d.id) {
+                const tgt = nodeById.get(tid);
+                if (tgt) toItems.push(formatStr(tgt.svg || tgt.formula || tgt.conditions?.templateName || tid, l.delta));
             }
+            if (tid === d.id) {
+                const src = nodeById.get(sid);
+                // l.delta here represents the change from the source to 'this' node (the target).
+                if (src) fromItems.push(formatStr(src.svg || src.formula || src.conditions?.templateName || sid, l.delta));
+            }
+        }
+        const renderList = (items, el, countEl) => {
+            countEl.textContent = items.length ? `(${items.length})` : '';
+            if (!items.length) { el.innerHTML = '<div class="info-empty">—</div>'; return; }
+            el.innerHTML = [...new Set(items)].map(s =>
+                `<div class="info-mol-item">${s}</div>`).join('');
         };
-        reader.readAsText(file);
+        renderList(toItems,   infoTo,   infoToCount);
+        renderList(fromItems, infoFrom, infoFromCount);
+    }
+
+    // ── Drawer toggle ──
+    const drawer = document.getElementById('drawer');
+    document.getElementById('drawer-tab').addEventListener('click', () => {
+        drawer.classList.toggle('collapsed');
     });
+
+    const btn = document.getElementById('generate-btn');
+    const status = document.getElementById('status');
+
+    async function generate() {
+        const smiles   = document.getElementById('smiles-input').value.trim();
+        const depth    = document.getElementById('depth-input').value;
+        const maxNodes = document.getElementById('maxnodes-input').value;
+        const flatten  = document.getElementById('flatten-input').checked;
+
+        if (!smiles) { status.textContent = 'Please enter a SMILES string.'; return; }
+
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner"></span> Generating…';
+        status.textContent = '';
+
+        const url = `http://localhost:3737/generate?smiles=${encodeURIComponent(smiles)}&depth=${depth}&flatten=${flatten}&maxNodes=${maxNodes}`;
+
+        try {
+            const res = await fetch(url);
+            if (!res.ok) { const e = await res.json(); throw new Error(e.error || res.statusText); }
+            const data = await res.json();
+            status.textContent = `${data.nodes.length} nodes · ${data.links.length} links`;
+            renderGraph(data);
+        } catch (e) {
+            status.textContent = `Error: ${e.message}`;
+            console.error(e);
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = 'Generate Network';
+        }
+    }
+
+    btn.addEventListener('click', generate);
+    document.getElementById('smiles-input').addEventListener('keydown', e => { if (e.key === 'Enter') generate(); });
 
     function renderGraph(data) {
         g.selectAll("*").remove(); // Wipe previous iterations
@@ -85,12 +363,64 @@
              linkMap.set(key1, l);
         });
 
+        const RENDER_SCALE = 0.5;
+        const pillHalfWidth = d => {
+            const name = d.conditions?.templateName || d.id || '';
+            const short = name.length > 22 ? name.slice(0, 21) : name;
+            return Math.max(short.length * 6.2 + 22, 60) / 2;
+        };
+        const nodeRadius = d => {
+            if (d.type === 'molecule' && d.width && d.height) {
+                return Math.sqrt((d.width * RENDER_SCALE / 2) ** 2 + (d.height * RENDER_SCALE / 2) ** 2) + 12;
+            }
+            if (d.type === 'reaction') {
+                return pillHalfWidth(d) + 6; // pill half-width + small margin
+            }
+            return 20;
+        };
+
+        // Pre-position nodes in a radial spiral so simulation starts spread out
+        // instead of all piling at (0,0) and needing many ticks to untangle.
+        const cx = width / 2, cy = height / 2;
+        const goldenAngle = Math.PI * (3 - Math.sqrt(5)); // ~137.5°
+        data.nodes.forEach((d, i) => {
+            const r = 60 + 35 * Math.sqrt(i);
+            const angle = i * goldenAngle;
+            d.x = cx + r * Math.cos(angle);
+            d.y = cy + r * Math.sin(angle);
+        });
+
+        const avgRadius = data.nodes.reduce((s, d) => s + nodeRadius(d), 0) / Math.max(data.nodes.length, 1);
+
         // Calibrate heavy simulation physics natively
+        let linkGap = parseInt(document.getElementById('distance-slider').value, 10);
+        const linkDistFn = d => {
+            const srcR = nodeRadius(d.source);
+            const tgtR = nodeRadius(d.target);
+            return srcR + tgtR + linkGap;
+        };
+
         const simulation = d3.forceSimulation(data.nodes)
-            .force("link", d3.forceLink(data.links).id(d => d.id).distance(120))
-            .force("charge", d3.forceManyBody().strength(-400))
-            .force("center", d3.forceCenter(width / 2, height / 2))
-            .force("collide", d3.forceCollide(25));
+            .force("link", d3.forceLink(data.links).id(d => d.id).distance(linkDistFn))
+            .force("charge", d3.forceManyBody().strength(d => -Math.pow(nodeRadius(d), 2) * 0.4))
+            .force("center", d3.forceCenter(cx, cy))
+            .force("collide", d3.forceCollide().radius(nodeRadius).strength(0.85).iterations(4))
+            .alphaDecay(0.015)
+            .velocityDecay(0.4);
+
+        // Show slider and wire it to live-update link distance
+        const distRow = document.getElementById('distance-row');
+        const distSlider = document.getElementById('distance-slider');
+        const distVal = document.getElementById('distance-val');
+        distRow.style.display = 'block';
+        distVal.textContent = linkGap;
+
+        distSlider.addEventListener('input', () => {
+            linkGap = parseInt(distSlider.value, 10);
+            distVal.textContent = linkGap;
+            simulation.force('link').distance(linkDistFn);
+            simulation.alpha(0.25).restart();
+        });
 
         const link = g.append("g")
             .selectAll("g")
@@ -128,25 +458,232 @@
                     d.fx = null; d.fy = null;
                 }));
 
-        node.append("circle")
-            // Distinct scalable rendering for biparite implementations organically!
-            .attr("r", d => d.type === 'reaction' ? 6 : 14)
-            .attr("fill", d => d.type === 'reaction' ? '#ff3366' : '#33ccff');
+        node.each(function(d) {
+            const el = d3.select(this);
+            if (d.type === 'molecule' && d.svg) {
+                el.html(d.svg);
+                
+                const svgNode = el.select('svg');
+                
+                // PAD gives charge labels / superscripts room outside the tight bounding box
+                const SCALE = 0.5;
+                const PAD = 40; // unscaled px added on each side — massive room for charge labels
+                const padW = d.width  + PAD * 2;
+                const padH = d.height + PAD * 2;
 
-        node.append("text")
-            .attr("dx", 18)
-            .attr("dy", 4)
-            .text(d => d.type === 'molecule' ? d.smiles : (d.conditions?.templateName || d.id));
+                svgNode
+                    .attr("width",   padW * SCALE)
+                    .attr("height",  padH * SCALE)
+                    .attr("x",      -(padW * SCALE) / 2)
+                    .attr("y",      -(padH * SCALE) / 2)
+                    .attr("viewBox", `-${PAD} -${PAD} ${padW} ${padH}`)
+                    .attr("overflow", "visible");
+                
+                // Formulate a beautiful rounded boundary casing exactly over the dynamic topological limits 
+                svgNode.select("rect")
+                       .attr("rx", 14)
+                       .attr("stroke", "#333")
+                       .attr("stroke-width", 3)
+                       .attr("fill", "#ffffff");
+            } else if (d.type === 'reaction') {
+                // Reaction node — pill badge showing the template name
+                const name = d.conditions?.templateName || d.id;
+                const short = name.length > 22 ? name.slice(0, 21) + '…' : name;
+                const PW = Math.max(short.length * 6.2 + 22, 60);
+                const PH = 22;
+
+                el.append("rect")
+                  .attr("x", -PW / 2).attr("y", -PH / 2)
+                  .attr("width", PW).attr("height", PH)
+                  .attr("rx", PH / 2)
+                  .attr("fill", "#fff")
+                  .attr("stroke", "#ddd")
+                  .attr("stroke-width", 1.5);
+
+                // Small colour dot on the left
+                el.append("circle")
+                  .attr("cx", -PW / 2 + 10).attr("cy", 0)
+                  .attr("r", 4)
+                  .attr("fill", "#ff6b6b");
+
+                el.append("text")
+                  .attr("x", -PW / 2 + 20).attr("y", 0)
+                  .attr("dominant-baseline", "central")
+                  .attr("font-size", "9px")
+                  .attr("font-family", "Inter, sans-serif")
+                  .attr("fill", "#444")
+                  .text(short);
+            } else {
+                // Fallback molecule node (no svg)
+                el.append("circle")
+                  .attr("r", 14)
+                  .attr("fill", "#33ccff");
+                el.append("text")
+                  .attr("class", "node-label")
+                  .attr("dx", 18).attr("dy", 4)
+                  .text(d.smiles || '');
+            }
+        });
+
+        // ── Hover interactions ──
+        // Build an adjacency lookup: nodeId → Set of link elements touching it
+        let hoveredId = null;
+        let lockedId = null;
+        let connectedIds = new Set();
+
+        // Apply node scale transforms — called from both tick (while running) and hover handlers (when stopped)
+        const applyNodeTransforms = () => node.attr('transform', d => {
+            let s = 1;
+            if (d.id === hoveredId)       s = 2.8;
+            else if (connectedIds.has(d.id)) s = 1.65;
+            return `translate(${d.x},${d.y})${s !== 1 ? ` scale(${s})` : ''}`;
+        });
+        const nodeLinks = new Map();
+        data.nodes.forEach(d => nodeLinks.set(d.id, new Set()));
+        const nodeById = new Map(data.nodes.map(d => [d.id, d]));
+
+        // We need access to the rendered link elements per datum — index by source/target id
+        const linkByDatum = [];
+        line.each(function(d) { linkByDatum.push({ el: this, d }); });
+
+        linkByDatum.forEach(({ d }) => {
+            const sid = typeof d.source === 'object' ? d.source.id : d.source;
+            const tid = typeof d.target === 'object' ? d.target.id : d.target;
+            if (nodeLinks.has(sid)) nodeLinks.get(sid).add(d);
+            if (nodeLinks.has(tid)) nodeLinks.get(tid).add(d);
+        });
+
+        function applyHighlight(d, el) {
+            hoveredId = d.id;
+
+            connectedIds = new Set();
+            const myLinks = nodeLinks.get(d.id) || new Set();
+            myLinks.forEach(ld => {
+                const sid = typeof ld.source === 'object' ? ld.source.id : ld.source;
+                const tid = typeof ld.target === 'object' ? ld.target.id : ld.target;
+                connectedIds.add(sid);
+                connectedIds.add(tid);
+            });
+            connectedIds.delete(d.id);
+
+            el.raise();
+            applyNodeTransforms();
+            updateInfoPanel(d, data.links, nodeById);
+
+            el.select('rect')
+              .transition().duration(120)
+              .attr('stroke', '#3b82f6')
+              .attr('stroke-width', 6);
+
+            line.transition().duration(120)
+              .attr('stroke', ld => {
+                  const sid = typeof ld.source === 'object' ? ld.source.id : ld.source;
+                  const tid = typeof ld.target === 'object' ? ld.target.id : ld.target;
+                  return (sid === d.id || tid === d.id) ? '#3b82f6' : '#e5e7eb';
+              })
+              .attr('stroke-width', ld => {
+                  const sid = typeof ld.source === 'object' ? ld.source.id : ld.source;
+                  const tid = typeof ld.target === 'object' ? ld.target.id : ld.target;
+                  return (sid === d.id || tid === d.id) ? 2.5 : 1;
+              })
+              .attr('stroke-opacity', ld => {
+                  const sid = typeof ld.source === 'object' ? ld.source.id : ld.source;
+                  const tid = typeof ld.target === 'object' ? ld.target.id : ld.target;
+                  return (sid === d.id || tid === d.id) ? 0.85 : 0.45;
+              });
+
+            node.each(function(nd) {
+                if (connectedIds.has(nd.id)) {
+                    d3.select(this).select('rect')
+                      .transition().duration(120)
+                      .attr('stroke', '#93c5fd')
+                      .attr('stroke-width', nd.type === 'molecule' ? 5 : 2.5);
+                }
+            });
+        }
+
+        function clearHighlight() {
+            hoveredId = null;
+            connectedIds = new Set();
+            applyNodeTransforms();
+            updateInfoPanel(null, data.links, nodeById);
+
+            node.select('rect')
+              .transition().duration(180)
+              .attr('stroke', nd => nd.type === 'molecule' ? '#333' : '#ddd')
+              .attr('stroke-width', nd => nd.type === 'molecule' ? 3 : 1.5);
+
+            line.transition().duration(180)
+              .attr('stroke', '#bbb')
+              .attr('stroke-width', 2)
+              .attr('stroke-opacity', 0.9);
+        }
+
+        // SVG background click to unlock
+        svg.on('click', (event) => {
+            if (event.target.tagName.toLowerCase() === 'svg' && lockedId) {
+                lockedId = null;
+                clearHighlight();
+            }
+        });
+
+        node.on('mouseover', function(event, d) {
+            if (d.type !== 'molecule') return;
+            if (lockedId && lockedId !== d.id) return;
+            applyHighlight(d, d3.select(this));
+        })
+        .on('mouseout', function(event, d) {
+            if (d.type !== 'molecule') return;
+            if (lockedId) return; // If anything is locked, ignore mouseout (either staying on the locked node, or we were passing over it while locked to another)
+            clearHighlight();
+        })
+        .on('click', function(event, d) {
+            if (d.type !== 'molecule') return;
+            event.stopPropagation(); // prevent SVG background click from catching it
+            
+            if (lockedId === d.id) {
+                lockedId = null; // unlock self
+                // we're still hovering, so we leave it visually highlighted! it will clear on mouseout.
+            } else {
+                if (lockedId) clearHighlight(); // flush previous lock if switching
+                lockedId = d.id;
+                applyHighlight(d, d3.select(this));
+            }
+        });
+
 
         simulation.on("tick", () => {
+            // Helper logic isolating the exact intersection perimeter computationally for variable width nodes
+            const intersectRect = (w, h, dx, dy) => {
+                if (Math.abs(dx) < 1e-6 && Math.abs(dy) < 1e-6) return { x: 0, y: 0 };
+                const s = Math.min(w / Math.abs(dx), h / Math.abs(dy));
+                return { x: dx * s, y: dy * s };
+            };
+
             line.attr("d", d => {
+                const dx = d.target.x - d.source.x;
+                const dy = d.target.y - d.source.y;
+                
+                const SCALE = 0.5;
+                const srcW = d.source.type === 'molecule' ? (d.source.width * SCALE) / 2 + 1 : 8;
+                const srcH = d.source.type === 'molecule' ? (d.source.height * SCALE) / 2 + 1 : 8;
+                // Add an explicit padding offset onto the terminal target so the arrow head draws flush!
+                const tgtW = d.target.type === 'molecule' ? (d.target.width * SCALE) / 2 + 9 : 14; 
+                const tgtH = d.target.type === 'molecule' ? (d.target.height * SCALE) / 2 + 9 : 14;
+
+                const srcShift = intersectRect(srcW, srcH, dx, dy);
+                const sX = d.source.x + srcShift.x;
+                const sY = d.source.y + srcShift.y;
+
+                const tgtShift = intersectRect(tgtW, tgtH, -dx, -dy);
+                const tX = d.target.x + tgtShift.x;
+                const tY = d.target.y + tgtShift.y;
+
                 if (d.bidirectional) {
-                    const dx = d.target.x - d.source.x,
-                          dy = d.target.y - d.source.y,
-                          dr = Math.sqrt(dx * dx + dy * dy);
-                    return `M${d.source.x},${d.source.y}A${dr},${dr} 0 0,1 ${d.target.x},${d.target.y}`;
+                    const dr = Math.sqrt(dx * dx + dy * dy);
+                    return `M${sX},${sY}A${dr},${dr} 0 0,1 ${tX},${tY}`;
                 } else {
-                    return `M${d.source.x},${d.source.y}L${d.target.x},${d.target.y}`;
+                    return `M${sX},${sY}L${tX},${tY}`;
                 }
             });
 
@@ -173,9 +710,9 @@
                 return y;
             });
 
-            node.attr("transform", d => `translate(${d.x},${d.y})`);
-        });
-    }
+            applyNodeTransforms();
+        }); // end simulation.on("tick")
+    } // end renderGraph
 </script>
 </body>
 </html>

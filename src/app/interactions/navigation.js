@@ -24,22 +24,20 @@ export function createNavigationActions(context) {
     context.history.takeSnapshot({ clearReactionPreview: false });
     const mol = context.state.documentState.getMol2d();
     const relayoutMol = mol.clone();
-    const hasStrictRelayout = typeof context.helpers.generateAndRefine2dCoords === 'function';
-    if (hasStrictRelayout) {
-      context.helpers.generateAndRefine2dCoords(relayoutMol, {
+    const hasRefinementRelayout = typeof context.helpers.refineExistingCoords === 'function';
+    const refinedCoords = hasRefinementRelayout
+      ? context.helpers.refineExistingCoords(relayoutMol, {
         suppressH: true,
         bondLength: 1.5,
-        maxPasses: 12,
-        freezeRings: true,
-        freezeChiralCenters: false,
-        allowBranchReflect: true
-      });
-    }
+        maxPasses: 12
+      })
+      : null;
+    const preserveGeometry = refinedCoords instanceof Map ? refinedCoords.size > 0 : hasRefinementRelayout;
     context.view.setPreserveSelectionOnNextRender(true);
     context.renderers.renderMol(relayoutMol, {
       preserveHistory: true,
       preserveAnalysis: true,
-      preserveGeometry: hasStrictRelayout
+      preserveGeometry
     });
     const btn = context.dom.clean2dButton;
     if (btn) {
