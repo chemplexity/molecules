@@ -42,6 +42,23 @@ async function stereoGlyphState(page) {
   }));
 }
 
+async function forceStereoOverlayCounts(page) {
+  return await page.evaluate(() => {
+    const root = document.querySelector('.svg-plot > g');
+    const stereoGroup = root?.querySelector('g.force-stereo-bonds') ?? null;
+    const wedgePolygons = Array.from(stereoGroup?.querySelectorAll('polygon') ?? []);
+    const dashLines = Array.from(stereoGroup?.querySelectorAll('line') ?? []);
+    return {
+      wedgeCount: wedgePolygons.length,
+      dashLineCount: dashLines.length
+    };
+  });
+}
+
+async function isBondDrawerOpen(page) {
+  return await page.evaluate(() => document.getElementById('draw-tools')?.classList.contains('drawer-open') ?? false);
+}
+
 async function rootTransform(page) {
   return await page.evaluate(() => document.querySelector('.svg-plot > g')?.getAttribute('transform') ?? null);
 }
@@ -86,6 +103,27 @@ async function plotGeometryWithinPlot(page, padding = 4) {
         rect.bottom <= plotRect.bottom - pad;
     });
   }, padding);
+}
+
+/**
+ * Captures the current screen-space centers of rendered force nodes and their labels.
+ * @param {import('@playwright/test').Page} page - Playwright page under test.
+ * @returns {Promise<Array<{label: string, cx: number, cy: number}>>} Force-node screen points in DOM order.
+ */
+async function forceAtomScreenPoints(page) {
+  return await page.evaluate(() => {
+    const circles = Array.from(document.querySelectorAll('circle.node'));
+    const labels = Array.from(document.querySelectorAll('text.atom-symbol'));
+    return circles.map((circle, index) => {
+      const rect = circle.getBoundingClientRect();
+      const label = labels[index]?.textContent?.trim() ?? '';
+      return {
+        label,
+        cx: rect.left + rect.width / 2,
+        cy: rect.top + rect.height / 2
+      };
+    });
+  });
 }
 
 test('input changes participate in undo/redo through the real browser UI', async ({ page }) => {
@@ -703,6 +741,37 @@ test('drawing a new force bond keeps the force scene visible', async ({ page }) 
   await expect(page.locator('circle.node')).toHaveCount(12);
   await expect(page.locator('.svg-plot > g')).toBeVisible();
   await expect(page.locator('#smiles-input')).toHaveValue(/C/);
+});
+
+test('clean in force mode re-idealizes a dragged force layout', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(page.locator('circle.node')).toHaveCount(9);
+
+  const beforeDrag = await forceAtomScreenPoints(page);
+  const carbonSource = [...beforeDrag].filter(atom => atom.label === 'C').sort((a, b) => a.cx - b.cx)[0] ?? null;
+  expect(carbonSource).toBeTruthy();
+
+  await page.mouse.move(carbonSource.cx, carbonSource.cy);
+  await page.mouse.down();
+  await page.mouse.move(carbonSource.cx + 120, carbonSource.cy + 30, { steps: 10 });
+  await page.mouse.up();
+
+  const afterDrag = await forceAtomScreenPoints(page);
+  const dragShift = Math.max(...afterDrag.map((atom, index) => Math.hypot(atom.cx - beforeDrag[index].cx, atom.cy - beforeDrag[index].cy)));
+  expect(dragShift).toBeGreaterThan(40);
+
+  await page.locator('#clean-force-btn').click();
+
+  await expect
+    .poll(async () => {
+      const afterClean = await forceAtomScreenPoints(page);
+      return Math.max(...afterClean.map((atom, index) => Math.hypot(atom.cx - afterDrag[index].cx, atom.cy - afterDrag[index].cy)));
+    })
+    .toBeGreaterThan(20);
 });
 
 test('editing a force atom updates the implicit hydrogens around the edited atom', async ({ page }) => {
@@ -1543,6 +1612,89 @@ test('bond drawer selection updates the active option, main tool icon, and colla
     .toBe(true);
 });
 
+test('bond drawer stays open while moving from the main button into the drawer hover zone', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CCO');
+
+  const drawBondButton = page.locator('#draw-bond-btn');
+  const doubleBondButton = page.locator('#draw-bond-type-double');
+
+  await drawBondButton.hover();
+  await expect(doubleBondButton).toBeVisible();
+
+  const bridgePoint = await page.evaluate(() => {
+    const drawBondButtonEl = document.getElementById('draw-bond-btn');
+    const drawerEl = document.getElementById('draw-bond-drawer');
+    if (!drawBondButtonEl || !drawerEl) {
+      return null;
+    }
+
+    const drawBondRect = drawBondButtonEl.getBoundingClientRect();
+    const drawerRect = drawerEl.getBoundingClientRect();
+    return {
+      x: drawBondRect.right + Math.min(8, Math.max(2, drawerRect.width * 0.06)),
+      y: (drawBondRect.top + drawBondRect.bottom) / 2
+    };
+  });
+
+  expect(bridgePoint).toBeTruthy();
+
+  await page.mouse.move(bridgePoint.x, bridgePoint.y);
+  await expect(doubleBondButton).toBeVisible();
+
+  await doubleBondButton.click();
+  await expect(doubleBondButton).toHaveClass(/active/);
+});
+
+test('bond drawer stays open when the pointer drifts slightly outside the visible drawer', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CCO');
+
+  const drawBondButton = page.locator('#draw-bond-btn');
+  const wedgeBondButton = page.locator('#draw-bond-type-wedge');
+
+  await drawBondButton.hover();
+  await expect(wedgeBondButton).toBeVisible();
+
+  const gracePoint = await page.evaluate(() => {
+    const drawerEl = document.getElementById('draw-bond-drawer');
+    if (!drawerEl) {
+      return null;
+    }
+
+    const drawerRect = drawerEl.getBoundingClientRect();
+    return {
+      x: drawerRect.right + 8,
+      y: drawerRect.top + drawerRect.height / 2
+    };
+  });
+
+  expect(gracePoint).toBeTruthy();
+
+  await page.mouse.move(gracePoint.x, gracePoint.y);
+  await expect(wedgeBondButton).toBeVisible();
+
+  await wedgeBondButton.hover();
+  await wedgeBondButton.click();
+  await expect(wedgeBondButton).toHaveClass(/active/);
+});
+
+test('click-opened bond drawer collapses on outside interaction', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CCO');
+
+  const drawBondButton = page.locator('#draw-bond-btn');
+
+  await drawBondButton.click();
+  await drawBondButton.click();
+
+  await expect.poll(async () => await isBondDrawerOpen(page)).toBe(true);
+
+  await page.locator('#smiles-input').click();
+
+  await expect.poll(async () => await isBondDrawerOpen(page)).toBe(false);
+});
+
 test('charge mode suppresses native contextmenu on right click in the live app', async ({ page }) => {
   await page.goto('/index.html');
   await loadSmiles(page, 'C');
@@ -1673,6 +1825,149 @@ test('placing aromatic on an existing aromatic bond is a no-op', async ({ page }
 
   await expect(page.locator('#smiles-input')).toHaveValue('c1ccccc1');
   await expect.poll(() => page.locator('#undo-btn').isDisabled()).toBe(undoWasDisabled);
+});
+
+test('selection drag can start in the blank strip beside the draw toolbar', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CCO');
+  await page.locator('#select-mode-btn').click();
+  await expect(page.locator('#select-mode-btn')).toHaveClass(/active/);
+
+  const probe = await page.evaluate(() => {
+    const drawBondButton = document.getElementById('draw-bond-btn');
+    const negativeChargeButton = document.getElementById('charge-negative-btn');
+    if (!drawBondButton || !negativeChargeButton) {
+      return null;
+    }
+
+    const drawBondRect = drawBondButton.getBoundingClientRect();
+    const negativeChargeRect = negativeChargeButton.getBoundingClientRect();
+    const x = drawBondRect.left + 120;
+    const y = (drawBondRect.top + negativeChargeRect.bottom) / 2;
+    const target = document.elementFromPoint(x, y);
+
+    return {
+      x,
+      y,
+      insideButton: !!target?.closest('button'),
+      insideDrawTools: !!target?.closest('#draw-tools')
+    };
+  });
+
+  expect(probe).toBeTruthy();
+  expect(probe.insideButton).toBeFalsy();
+  expect(probe.insideDrawTools).toBeFalsy();
+
+  await page.mouse.move(probe.x, probe.y);
+  await page.mouse.down();
+  await page.mouse.move(probe.x + 60, probe.y + 40, { steps: 6 });
+
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const rect = document.querySelector('.selection-rect');
+        if (!rect) {
+          return false;
+        }
+        return getComputedStyle(rect).display !== 'none' &&
+          Number(rect.getAttribute('width') ?? 0) > 20 &&
+          Number(rect.getAttribute('height') ?? 0) > 20;
+      })
+    )
+    .toBe(true);
+
+  await page.mouse.up();
+});
+
+test('2D cobalt wedge tip clears the source Co label', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, '[Co+3](N)(N)(N)(N)(N)N');
+
+  await expect.poll(() => page.evaluate(() => document.querySelectorAll('polygon.bond-wedge').length)).toBeGreaterThan(0);
+
+  const overlapState = await page.evaluate(() => {
+    const wedge = document.querySelector('polygon.bond-wedge');
+    const coLabel = Array.from(document.querySelectorAll('text')).find(node => (node.textContent ?? '').trim() === 'Co');
+    if (!wedge || !coLabel) {
+      return null;
+    }
+
+    const tip = (wedge.getAttribute('points') ?? '')
+      .trim()
+      .split(/\s+/)[0]
+      .split(',')
+      .map(Number);
+    const svg = wedge.ownerSVGElement;
+    const svgPoint = svg.createSVGPoint();
+    svgPoint.x = tip[0];
+    svgPoint.y = tip[1];
+    const screenPoint = svgPoint.matrixTransform(wedge.getScreenCTM());
+    const labelRect = coLabel.getBoundingClientRect();
+    const paddedRect = {
+      left: labelRect.left - 1.5,
+      right: labelRect.right + 1.5,
+      top: labelRect.top - 1.5,
+      bottom: labelRect.bottom + 1.5
+    };
+
+    return {
+      inside:
+        screenPoint.x >= paddedRect.left &&
+        screenPoint.x <= paddedRect.right &&
+        screenPoint.y >= paddedRect.top &&
+        screenPoint.y <= paddedRect.bottom
+    };
+  });
+
+  expect(overlapState).not.toBeNull();
+  expect(overlapState.inside).toBeFalsy();
+});
+
+test('renders both projected cobalt wedge and dash overlays after switching from 2D to force', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, '[Co+3](N)(N)(N)(N)(N)N');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+  await expect(page.locator('circle.node')).toHaveCount(19);
+
+  const data = await forceStereoOverlayCounts(page);
+  await expect(data.wedgeCount).toBeGreaterThan(0);
+  await expect(data.dashLineCount).toBeGreaterThan(0);
+});
+
+test('renders projected cobalt wedge and dash overlays when pasted while already in force mode', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+
+  await page.evaluate(() => {
+    const input = document.getElementById('smiles-input');
+    input.focus();
+    input.setSelectionRange(0, input.value.length);
+    const data = new DataTransfer();
+    data.setData('text/plain', '[Co+3](N)(N)(N)(N)(N)N');
+    input.dispatchEvent(new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }));
+  });
+
+  await expect(page.locator('circle.node')).toHaveCount(19);
+
+  const data = await forceStereoOverlayCounts(page);
+  await expect(data.wedgeCount).toBeGreaterThan(0);
+  await expect(data.dashLineCount).toBeGreaterThan(0);
+});
+
+test('renders projected cobalt wedge and dash overlays when loaded by Enter while already in force mode', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+  await loadSmiles(page, '[Co+3](N)(N)(N)(N)(N)N');
+  await expect(page.locator('circle.node')).toHaveCount(19);
+
+  const data = await forceStereoOverlayCounts(page);
+  await expect(data.wedgeCount).toBeGreaterThan(0);
+  await expect(data.dashLineCount).toBeGreaterThan(0);
 });
 
 test('wedge display only changes exported stereochemistry for a real chiral center', async ({ page }) => {

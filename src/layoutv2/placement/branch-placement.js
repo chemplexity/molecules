@@ -197,20 +197,16 @@ function findLayoutBond(layoutGraph, firstAtomId, secondAtomId) {
   if (!layoutGraph) {
     return null;
   }
-  for (const bond of layoutGraph.bonds.values()) {
-    if ((bond.a === firstAtomId && bond.b === secondAtomId) || (bond.a === secondAtomId && bond.b === firstAtomId)) {
-      return bond;
-    }
-  }
-  return null;
+  const key = firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
+  return layoutGraph.bondByAtomPair.get(key) ?? null;
 }
 
 function hasNonAromaticMultipleBond(layoutGraph, atomId) {
   if (!layoutGraph) {
     return false;
   }
-  for (const bond of layoutGraph.bonds.values()) {
-    if ((bond.a !== atomId && bond.b !== atomId) || bond.aromatic) {
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (bond.aromatic) {
       continue;
     }
     if ((bond.order ?? 1) >= 2) {
@@ -225,8 +221,8 @@ function isLinearCenter(layoutGraph, atomId) {
     return false;
   }
   let doubleCount = 0;
-  for (const bond of layoutGraph.bonds.values()) {
-    if ((bond.a !== atomId && bond.b !== atomId) || bond.aromatic) {
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (bond.aromatic) {
       continue;
     }
     const order = bond.order ?? 1;
@@ -246,10 +242,7 @@ function preferredRingAngles(layoutGraph, coords, anchorAtomId) {
   }
   const anchorPosition = coords.get(anchorAtomId);
   const ringAngles = [];
-  for (const ring of layoutGraph.rings) {
-    if (!ring.atomIds.includes(anchorAtomId)) {
-      continue;
-    }
+  for (const ring of layoutGraph.atomToRings.get(anchorAtomId) ?? []) {
     const placedRingPositions = ring.atomIds
       .filter(atomId => coords.has(atomId))
       .map(atomId => coords.get(atomId));
@@ -439,6 +432,25 @@ function splitDeferredHydrogenNeighbors(unplacedNeighborIds, layoutGraph) {
   };
 }
 
+/**
+ * Returns whether a branch center should skip exhaustive sibling backtracking.
+ * Large mixed/acyclic slices can explode combinatorially when every backbone
+ * center tries to recursively score whole-subtree permutations.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Set<string>} atomIdsToPlace - Slice participant IDs.
+ * @param {string[]} primaryNeighborIds - Heavy neighbors awaiting placement.
+ * @returns {boolean} True when greedy sibling placement is safer.
+ */
+function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, primaryNeighborIds) {
+  if (primaryNeighborIds.length < 2) {
+    return true;
+  }
+  const participantCount = atomIdsToPlace?.size ?? 0;
+  const heavyThreshold = layoutGraph?.options?.largeMoleculeThreshold?.heavyAtomCount ?? Number.MAX_SAFE_INTEGER;
+  const greedyBudget = Math.max(48, Math.floor(heavyThreshold * 0.5));
+  return participantCount > greedyBudget;
+}
+
 function subtreeHeavyAtomCount(adjacency, layoutGraph, coords, rootAtomId, blockedAtomId) {
   const queue = [rootAtomId];
   const visited = new Set([blockedAtomId]);
@@ -492,8 +504,8 @@ function tetrahedralSpreadPenalty(layoutGraph, coords, atomId) {
   }
 
   const neighborAngles = [];
-  for (const bond of layoutGraph.bonds.values()) {
-    if (bond.kind !== 'covalent' || bond.a !== atomId && bond.b !== atomId) {
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (bond.kind !== 'covalent') {
       continue;
     }
     if ((bond.order ?? 1) !== 1 || bond.aromatic) {
@@ -780,7 +792,7 @@ function placeChildren(adjacency, canonicalAtomRank, coords, placementState, ato
     canonicalAtomRank
   );
   const { primaryNeighborIds, deferredNeighborIds } = splitDeferredHydrogenNeighbors(unplacedNeighbors, layoutGraph);
-  if (primaryNeighborIds.length >= 2) {
+  if (primaryNeighborIds.length >= 2 && !shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, primaryNeighborIds)) {
     chooseBatchAngleAssignments(
       adjacency,
       canonicalAtomRank,

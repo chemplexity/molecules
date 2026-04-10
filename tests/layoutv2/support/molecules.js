@@ -443,6 +443,38 @@ export function makeBisLigatedOrganometallic() {
 }
 
 /**
+ * Creates a simple four-coordinate platinum complex fixture.
+ * @returns {Molecule} Pt center with two ammine and two chloride ligands.
+ */
+export function makeSquarePlanarPlatinumComplex() {
+  return parseSMILES('[Pt](Cl)(Cl)(N)N');
+}
+
+/**
+ * Creates a generic four-coordinate nickel complex fixture.
+ * @returns {Molecule} Ni center with two ammine and two chloride ligands.
+ */
+export function makeFourCoordinateNickelComplex() {
+  return parseSMILES('[Ni](Cl)(Cl)(N)N');
+}
+
+/**
+ * Creates a simple four-coordinate zinc complex fixture.
+ * @returns {Molecule} Zn center with two ammine and two chloride ligands.
+ */
+export function makeProjectedTetrahedralZincComplex() {
+  return parseSMILES('[Zn](Cl)(Cl)(N)N');
+}
+
+/**
+ * Creates a simple six-coordinate cobalt complex fixture.
+ * @returns {Molecule} Co center with six monodentate ammine ligands.
+ */
+export function makeProjectedOctahedralCobaltComplex() {
+  return parseSMILES('[Co+3](N)(N)(N)(N)(N)N');
+}
+
+/**
  * Creates a small explicit-hydrogen fixture for atom-model tests.
  * @returns {Molecule} Carbon with oxygen and explicit hydrogen.
  */
@@ -516,4 +548,14 @@ export function makeHiddenHydrogenStereocenter() {
  */
 export function makeEAlkene() {
   return parseSMILES('F/C=C/F');
+}
+
+/**
+ * Creates the large explicit-hydrogen peptide-like fixture from the bug corpus.
+ * @returns {Molecule} Large mixed peptide-like component with many visible participants.
+ */
+export function makeLargeExplicitHydrogenPeptide() {
+  return parseSMILES(
+    'CC\\C=C\\CC(=O)N[C@@H](CC1=CC=C(O)C=C1)C(=O)N[C@@H](C)C(=O)N[C@@H](CC(O)=O)C(=O)N[C@@H](C)C(=O)N[C@@H](C(C)CC)C(=O)N[C@@H](CC1=CC=CC=C1)C(=O)N[C@@H](C(C)O)C(=O)N[C@@H](CC(N)=O)C(=O)N[C@@H](CO)C(=O)N[C@@H](CC1=CC=C(O)C=C1)C(=O)N[C@@H](CCCNC(N)=N)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](C(C)C)C(=O)N[C@@H](CC(C)C)C(=O)NCC(=O)N[C@@H](CCC(N)=O)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CO)C(=O)N[C@@H](C)C(=O)N[C@@H](CCCNC(N)=N)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CC(C)C)C(=O)N[C@@H](CCC(N)=O)C(=O)N[C@@H](CC(O)=O)C(=O)N[C@@H](C(C)CC)C(=O)N[C@@H](CCSC)C(=O)N[C@@H](CO)C(=O)N[C@@H](CCCNC(N)=N)C(=O)N[C@@H](CCC(N)=O)C(=O)N[C@@H](CCC(N)=O)C(=O)NCC(=O)N[C@@H](CCC(N)=O)C(=O)N[C@@H](CO)C(=O)N[C@@H](CC(N)=O)C(=O)N[C@@H](CCC(N)=O)C(=O)N[C@@H](CCCNC(N)=N)C(=O)NCC(=O)N[C@@H](C)C(=O)N[C@@H](CCCNC(N)=N)C(=O)N[C@@H](C)C(=O)N[C@@H](CCCNC(N)=N)C(=O)N[C@@H](CC(C)C)C(N)=O'
+  );
 }

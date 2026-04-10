@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { create2DRenderHelpers } from '../../../src/app/render/2d-helpers.js';
+import { getAtomLabel, labelHalfH, labelHalfW, labelTextOffset } from '../../../src/layout/mol2d-helpers.js';
 
 class FakeSelection {
   constructor(records, nodeRef = {}) {
@@ -133,6 +134,78 @@ function makeHelpersContext({ mol = null, hCounts = new Map(), stereoMap = new M
   return { helpers, records, state, svg, zoom };
 }
 
+function shortenLine(x1, y1, x2, y2, d1, d2) {
+  const dx = x2 - x1;
+  const dy = y2 - y1;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+  return {
+    x1: x1 + ux * d1,
+    y1: y1 + uy * d1,
+    x2: x2 - ux * d2,
+    y2: y2 - uy * d2
+  };
+}
+
+function computeLabelClearance(atom, otherSVGPt, toSVGPt, hCounts, mol, fontSize = 14) {
+  const label = getAtomLabel(atom, hCounts, toSVGPt, mol);
+  if (!label) {
+    return 0;
+  }
+
+  const { x, y } = toSVGPt(atom);
+  const dx = otherSVGPt.x - x;
+  const dy = otherSVGPt.y - y;
+  const len = Math.hypot(dx, dy) || 1;
+  const cx = labelTextOffset(label, fontSize);
+  const hw = labelHalfW(label, fontSize) + 1;
+  const hh = labelHalfH(label, fontSize) + 1;
+  const dirX = dx / len;
+  const dirY = dy / len;
+  const candidates = [];
+
+  if (Math.abs(dirX) > 1e-9) {
+    candidates.push((cx + hw) / dirX, (cx - hw) / dirX);
+  }
+  if (Math.abs(dirY) > 1e-9) {
+    candidates.push(hh / dirY, -hh / dirY);
+  }
+
+  let best = Infinity;
+  for (const t of candidates) {
+    if (!(t > 0)) {
+      continue;
+    }
+    const px = dirX * t;
+    const py = dirY * t;
+    if (px < cx - hw - 1e-6 || px > cx + hw + 1e-6) {
+      continue;
+    }
+    if (py < -hh - 1e-6 || py > hh + 1e-6) {
+      continue;
+    }
+    best = Math.min(best, t);
+  }
+  return Number.isFinite(best) ? best : Math.max(hw, hh);
+}
+
+function extractLines(records) {
+  const lines = [];
+  let current = null;
+  for (const [kind, name, value] of records) {
+    if (kind === 'append' && name === 'line') {
+      current = {};
+      lines.push(current);
+      continue;
+    }
+    if (kind === 'attr' && current && (name === 'x1' || name === 'y1' || name === 'x2' || name === 'y2')) {
+      current[name] = value;
+    }
+  }
+  return lines;
+}
+
 describe('create2DRenderHelpers', () => {
   it('maps 2D molecule coordinates into SVG coordinates using the current center', () => {
     const { helpers } = makeHelpersContext({ centerX: 1, centerY: -1 });
@@ -202,6 +275,12 @@ describe('create2DRenderHelpers', () => {
 
     helpers.drawBond(container, { properties: { order: 1 } }, atomA, atomB, mol, toSVGPt, 'wedge');
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'polygon'));
+    const wedgePoints = records.find(([kind, name]) => kind === 'attr' && name === 'points')?.[2];
+    assert.ok(wedgePoints, 'expected wedge points attribute');
+    const [tipPoint] = wedgePoints.split(' ');
+    const [tipX, tipY] = tipPoint.split(',').map(Number);
+    assert.ok(tipX > 0, 'expected wedge tip to be trimmed slightly away from the source atom');
+    assert.equal(tipY, 0);
 
     const doubleRecords = [];
     const doubleContainer = new FakeSelection(doubleRecords);
@@ -210,5 +289,144 @@ describe('create2DRenderHelpers', () => {
       doubleRecords.filter(([kind, tag]) => kind === 'append' && tag === 'line').length >= 2,
       true
     );
+  });
+
+  it('moves the wedge tip clear of a labeled source atom', () => {
+    const unlabeledRecords = [];
+    const unlabeledContainer = new FakeSelection(unlabeledRecords);
+    const unlabeledSource = makeAtom('c1', 'C', 0, 0);
+    const target = makeAtom('c2', 'C', 1, 0);
+    unlabeledSource._neighbors = [target];
+    target._neighbors = [unlabeledSource];
+    const unlabeledMol = {
+      atoms: new Map([
+        [unlabeledSource.id, unlabeledSource],
+        [target.id, target]
+      ]),
+      getBond() {
+        return null;
+      }
+    };
+    const { helpers: unlabeledHelpers, state: unlabeledState } = makeHelpersContext({ mol: unlabeledMol });
+    unlabeledState.mol = unlabeledMol;
+    const toSVGPt = atom => ({ x: atom.x * 60, y: atom.y * 60 });
+    unlabeledHelpers.drawBond(unlabeledContainer, { properties: { order: 1 } }, unlabeledSource, target, unlabeledMol, toSVGPt, 'wedge');
+    const unlabeledPoints = unlabeledRecords.find(([kind, name]) => kind === 'attr' && name === 'points')?.[2];
+    assert.ok(unlabeledPoints, 'expected wedge points for unlabeled source');
+    const [unlabeledTipX] = unlabeledPoints.split(' ')[0].split(',').map(Number);
+
+    const labeledRecords = [];
+    const labeledContainer = new FakeSelection(labeledRecords);
+    const labeledSource = makeAtom('o1', 'O', 0, 0);
+    labeledSource._neighbors = [target];
+    target._neighbors = [labeledSource];
+    const labeledMol = {
+      atoms: new Map([
+        [labeledSource.id, labeledSource],
+        [target.id, target]
+      ]),
+      getBond() {
+        return null;
+      }
+    };
+    const { helpers: labeledHelpers, state: labeledState } = makeHelpersContext({ mol: labeledMol });
+    labeledState.mol = labeledMol;
+    labeledHelpers.drawBond(labeledContainer, { properties: { order: 1 } }, labeledSource, target, labeledMol, toSVGPt, 'wedge');
+    const labeledPoints = labeledRecords.find(([kind, name]) => kind === 'attr' && name === 'points')?.[2];
+    assert.ok(labeledPoints, 'expected wedge points for labeled source');
+    const [labeledTipX] = labeledPoints.split(' ')[0].split(',').map(Number);
+
+    assert.ok(labeledTipX > unlabeledTipX + 6, 'expected labeled source wedge tip to clear the source label');
+  });
+
+  it('centers diagonal double bonds on heteroatom labels using the shifted parallel line clearance', () => {
+    const records = [];
+    const container = new FakeSelection(records);
+    const carbon = makeAtom('c1', 'C', 0, 0);
+    const oxygen = makeAtom('o1', 'O', 1, 1);
+    carbon._neighbors = [oxygen];
+    oxygen._neighbors = [carbon];
+    const mol = {
+      id: 'mol-diagonal-carbonyl',
+      atoms: new Map([
+        [carbon.id, carbon],
+        [oxygen.id, oxygen]
+      ]),
+      getBond() {
+        return null;
+      }
+    };
+
+    const customContext = create2DRenderHelpers({
+      d3: {
+        zoomIdentity: makeZoomIdentity(),
+        zoomTransform: () => ({
+          applyX: value => value,
+          applyY: value => value
+        })
+      },
+      svg: new FakeSelection([]),
+      zoom: {
+        transform: function transform() {}
+      },
+      plotEl: {
+        clientWidth: 600,
+        clientHeight: 400
+      },
+      state: {
+        getMol: () => mol,
+        getHCounts: () => new Map(),
+        getCenterX: () => 0,
+        getCenterY: () => 0,
+        setDerivedState() {}
+      },
+      constants: {
+        scale: 60,
+        bondOffset2d: 7,
+        getFontSize: () => 14,
+        wedgeHalfWidth: 6,
+        wedgeDashes: 5
+      },
+      geometry: {
+        perpUnit(dx, dy) {
+          const len = Math.hypot(dx, dy) || 1;
+          return { nx: -dy / len, ny: dx / len };
+        },
+        shortenLine,
+        secondaryDir: () => 1
+      },
+      stereo: {
+        pickStereoMap: () => new Map()
+      }
+    });
+
+    const toSVGPt = atom => ({ x: atom.x * 60, y: atom.y * 60 });
+    customContext.drawBond(container, { properties: { order: 2 } }, carbon, oxygen, mol, toSVGPt, null);
+
+    const lines = extractLines(records);
+    assert.equal(lines.length, 2);
+
+    const start = toSVGPt(carbon);
+    const end = toSVGPt(oxygen);
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const len = Math.hypot(dx, dy) || 1;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const shiftedStart = { x: start.x + nx * 7, y: start.y + ny * 7 };
+    const shiftedEnd = { x: end.x + nx * 7, y: end.y + ny * 7 };
+    const expectedSecondary = shortenLine(
+      shiftedStart.x,
+      shiftedStart.y,
+      shiftedEnd.x,
+      shiftedEnd.y,
+      Math.max(computeLabelClearance(carbon, shiftedEnd, toSVGPt, new Map(), mol), 4),
+      Math.max(computeLabelClearance(oxygen, shiftedStart, toSVGPt, new Map(), mol), 4)
+    );
+
+    assert.ok(Math.abs(lines[1].x1 - expectedSecondary.x1) < 1e-6);
+    assert.ok(Math.abs(lines[1].y1 - expectedSecondary.y1) < 1e-6);
+    assert.ok(Math.abs(lines[1].x2 - expectedSecondary.x2) < 1e-6);
+    assert.ok(Math.abs(lines[1].y2 - expectedSecondary.y2) < 1e-6);
   });
 });

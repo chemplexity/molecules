@@ -69,6 +69,7 @@ describe('interaction action deps builders', () => {
     let cancelCalls = 0;
     let deleteCalls = 0;
     const selectionDeps = createSelectionActionDeps({
+      document: { id: 'doc' },
       appState: {},
       getDraw2D: () => () => {
         drawCalls += 1;
@@ -110,6 +111,7 @@ describe('interaction action deps builders', () => {
     assert.equal(drawCalls, 2);
     assert.equal(cancelCalls, 1);
     assert.equal(deleteCalls, 1);
+    assert.deepEqual(selectionDeps.document, { id: 'doc' });
     assert.equal(primitiveSelectionDeps.helpers.isAdditiveSelectionEvent({ shiftKey: true }), true);
     assert.equal(primitiveSelectionDeps.helpers.hasVisibleStereoBond(7), true);
   });

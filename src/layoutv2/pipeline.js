@@ -195,6 +195,8 @@ export function runPipeline(molecule, options = {}) {
       preservedComponentCount: placement.preservedComponentCount,
       placedFamilies: placement.placedFamilies,
       bondValidationClassCount: placement.bondValidationClasses.size,
+      displayAssignmentCount: placement.displayAssignments.length,
+      displayAssignments: placement.displayAssignments,
       policy,
       ringDependency,
       stereo,

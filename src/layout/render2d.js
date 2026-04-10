@@ -46,6 +46,7 @@ export const STROKE_W = 1.5; // px
 export const FONT_SIZE = 11; // px
 export const CELL_PAD = 22; // px padding inside each cell
 export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
+export const WEDGE_TIP_TRIM = WEDGE_HALF_W * 0.5;
 
 function renderBondOrder(bond, mode = AROMATIC_RENDER_MODE) {
   if (mode === 'localized' && (bond.properties.aromatic ?? false)) {
@@ -73,8 +74,13 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, aromaticMode = AROMATIC
       s2 = toSVG(a2);
     const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
     if (stereoType === 'wedge') {
+      const bondLength = Math.hypot(s2.x - s1.x, s2.y - s1.y) || 1;
+      const tip = {
+        x: s1.x + ((s2.x - s1.x) / bondLength) * WEDGE_TIP_TRIM,
+        y: s1.y + ((s2.y - s1.y) / bondLength) * WEDGE_TIP_TRIM
+      };
       const pts =
-        `${s1.x.toFixed(2)},${s1.y.toFixed(2)} ` +
+        `${tip.x.toFixed(2)},${tip.y.toFixed(2)} ` +
         `${(s2.x - nx * WEDGE_HALF_W).toFixed(2)},${(s2.y - ny * WEDGE_HALF_W).toFixed(2)} ` +
         `${(s2.x + nx * WEDGE_HALF_W).toFixed(2)},${(s2.y + ny * WEDGE_HALF_W).toFixed(2)}`;
       out.push(`<polygon points="${pts}" fill="#111" stroke="none"/>`);

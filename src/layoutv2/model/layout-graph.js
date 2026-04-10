@@ -20,6 +20,31 @@ function buildBondIndex(bonds) {
   return { bondedPairSet, bondByAtomPair };
 }
 
+function buildAtomBondsIndex(atoms, bonds) {
+  const bondsByAtomId = new Map();
+  for (const atomId of atoms.keys()) {
+    bondsByAtomId.set(atomId, []);
+  }
+  for (const bond of bonds.values()) {
+    bondsByAtomId.get(bond.a)?.push(bond);
+    bondsByAtomId.get(bond.b)?.push(bond);
+  }
+  return bondsByAtomId;
+}
+
+function buildAtomToRingsIndex(rings) {
+  const atomToRings = new Map();
+  for (const ring of rings) {
+    for (const atomId of ring.atomIds) {
+      if (!atomToRings.has(atomId)) {
+        atomToRings.set(atomId, []);
+      }
+      atomToRings.get(atomId).push(ring);
+    }
+  }
+  return atomToRings;
+}
+
 function deriveLayoutTraits(molecule, components, ringAnalysis, ringConnections) {
   let heavyAtomCount = 0;
   let visibleHydrogenCount = 0;
@@ -68,6 +93,8 @@ export function createLayoutGraph(molecule, options = {}) {
   const atoms = new Map([...molecule.atoms.values()].map(atom => [atom.id, createLayoutAtom(atom, molecule)]));
   const bonds = new Map([...molecule.bonds.values()].map(bond => [bond.id, createLayoutBond(bond, molecule)]));
   const { bondedPairSet, bondByAtomPair } = buildBondIndex(bonds);
+  const bondsByAtomId = buildAtomBondsIndex(atoms, bonds);
+  const atomToRings = buildAtomToRingsIndex(ringAnalysis.rings);
 
   return {
     moleculeId: molecule.id,
@@ -76,6 +103,8 @@ export function createLayoutGraph(molecule, options = {}) {
     bonds,
     bondedPairSet,
     bondByAtomPair,
+    bondsByAtomId,
+    atomToRings,
     components,
     rings: ringAnalysis.rings,
     ringSystems: ringAnalysis.ringSystems,

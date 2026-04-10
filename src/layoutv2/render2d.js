@@ -31,6 +31,7 @@ export const STROKE_W = 1.5;
 export const FONT_SIZE = 11;
 export const CELL_PAD = 22;
 export const AROMATIC_RENDER_MODE = 'localized';
+export const WEDGE_TIP_TRIM = WEDGE_HALF_W * 0.5;
 
 function renderBondOrder(bond, mode = AROMATIC_RENDER_MODE) {
   if (mode === 'localized' && (bond.properties.aromatic ?? false)) {
@@ -119,8 +120,13 @@ function bondToSVG(bond, firstAtom, secondAtom, molecule, toSVG, stereoType, aro
     const end = toSVG(secondAtom);
     const { nx, ny } = perpUnit(end.x - start.x, end.y - start.y);
     if (stereoType === 'wedge') {
+      const bondLength = Math.hypot(end.x - start.x, end.y - start.y) || 1;
+      const tip = {
+        x: start.x + ((end.x - start.x) / bondLength) * WEDGE_TIP_TRIM,
+        y: start.y + ((end.y - start.y) / bondLength) * WEDGE_TIP_TRIM
+      };
       const points =
-        `${start.x.toFixed(2)},${start.y.toFixed(2)} ` +
+        `${tip.x.toFixed(2)},${tip.y.toFixed(2)} ` +
         `${(end.x - nx * WEDGE_HALF_W).toFixed(2)},${(end.y - ny * WEDGE_HALF_W).toFixed(2)} ` +
         `${(end.x + nx * WEDGE_HALF_W).toFixed(2)},${(end.y + ny * WEDGE_HALF_W).toFixed(2)}`;
       output.push(`<polygon points="${points}" fill="#111" stroke="none"/>`);

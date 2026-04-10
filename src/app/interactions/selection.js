@@ -14,11 +14,30 @@ export function createSelectionActions(context) {
     context.dom.drawTools?.classList?.toggle?.('drawer-hover-suppressed', value);
   }
 
+  const doc = context.document ?? globalThis.document ?? null;
+
   if (context.dom.drawTools && typeof context.dom.drawTools.addEventListener === 'function' && !context.dom.drawTools.__bondDrawerHoverSuppressBound) {
     context.dom.drawTools.addEventListener('mouseleave', () => {
       setDrawBondDrawerHoverSuppressed(false);
     });
     context.dom.drawTools.__bondDrawerHoverSuppressBound = true;
+  }
+
+  if (doc && context.dom.drawTools && typeof doc.addEventListener === 'function' && !context.dom.drawTools.__bondDrawerOutsideCloseBound) {
+    doc.addEventListener(
+      'pointerdown',
+      event => {
+        if (!context.dom.drawTools?.classList?.contains?.('drawer-open')) {
+          return;
+        }
+        if (typeof event?.target?.closest === 'function' && event.target.closest('#draw-tools')) {
+          return;
+        }
+        closeDrawBondDrawer();
+      },
+      true
+    );
+    context.dom.drawTools.__bondDrawerOutsideCloseBound = true;
   }
 
   function syncDrawBondButtonIcon() {

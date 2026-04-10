@@ -113,6 +113,21 @@ describe('layoutv2/api', () => {
     assert.deepEqual(result.coords.get('c1'), { x: 11.5, y: 3 });
   });
 
+  it('refineCoords reuses a fully specified existing component when no touched hints are provided', () => {
+    const existingCoords = new Map([
+      ['a0', { x: 2, y: -1 }],
+      ['a1', { x: 3.5, y: -1 }]
+    ]);
+    const result = refineCoords(makeEthane(), {
+      existingCoords
+    });
+
+    assert.equal(result.metadata.refine, true);
+    assert.equal(result.metadata.preservedComponentCount, 1);
+    assert.deepEqual(result.coords.get('a0'), { x: 2, y: -1 });
+    assert.deepEqual(result.coords.get('a1'), { x: 3.5, y: -1 });
+  });
+
   it('keeps previously failing real-world structures from collapsing or stacking branches', () => {
     const cases = [
       {

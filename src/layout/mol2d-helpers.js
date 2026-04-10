@@ -1213,6 +1213,20 @@ function _setBondDisplayStereo(bond, type, centerId = null, manual = false) {
   }
 }
 
+/**
+ * Returns whether the given display center currently represents a true chiral
+ * stereo center handled by the wedge-selection logic.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string|null} centerId - Candidate display-center atom ID.
+ * @returns {boolean} True when the atom is a chiral center.
+ */
+function _isChiralDisplayCenter(mol, centerId) {
+  if (!centerId) {
+    return false;
+  }
+  return !!mol?.atoms?.get?.(centerId)?.getChirality?.();
+}
+
 function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
   const assignments = [];
   const forcedBondTypes = mol?.__reactionPreview?.forcedStereoBondTypes ?? null;
@@ -1241,6 +1255,7 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
     }
   }
   const storedDisplayByCenter = new Map();
+  const preservedNonChiralAssignments = [];
   const preferredBondByCenter = new Map();
   for (const bond of mol?.bonds?.values?.() ?? []) {
     const displayAs = bond.properties.display?.as ?? null;
@@ -1248,6 +1263,14 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
       continue;
     }
     const centerId = bond.properties.display?.centerId ?? stereoBondCenterIdForRender(mol, bond.id);
+    if (!_isChiralDisplayCenter(mol, centerId)) {
+      preservedNonChiralAssignments.push({
+        bondId: bond.id,
+        type: displayAs,
+        centerId
+      });
+      continue;
+    }
     if (!centerId || preferredBondByCenter.has(centerId)) {
       continue;
     }
@@ -1260,6 +1283,9 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
   }
   for (const [bondId] of previousStereoMap ?? new Map()) {
     const centerId = stereoBondCenterIdForRender(mol, bondId);
+    if (!_isChiralDisplayCenter(mol, centerId)) {
+      continue;
+    }
     if (!centerId || preferredBondByCenter.has(centerId)) {
       continue;
     }
@@ -1310,6 +1336,14 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
     if (storedBond && storedBond.atoms.includes(centerId)) {
       assignments.push({ bondId: stored.bondId, type: stored.type, centerId });
     }
+  }
+  const assignedBondIds = new Set(assignments.map(({ bondId }) => bondId));
+  for (const assignment of preservedNonChiralAssignments) {
+    if (assignedBondIds.has(assignment.bondId)) {
+      continue;
+    }
+    assignments.push(assignment);
+    assignedBondIds.add(assignment.bondId);
   }
   return assignments;
 }

@@ -1,7 +1,14 @@
 /** @module audit/invariants */
 
 import { computeBounds } from '../geometry/bounds.js';
-import { BRIDGED_VALIDATION, PLANAR_VALIDATION } from '../templates/library.js';
+import { BRIDGED_VALIDATION } from '../templates/library.js';
+
+const AUDIT_PLANAR_VALIDATION = Object.freeze({
+  minBondLengthFactor: 0.95,
+  maxBondLengthFactor: 1.05,
+  maxMeanDeviation: 0.05,
+  maxSevereOverlapCount: 0
+});
 
 function pairKey(firstAtomId, secondAtomId) {
   return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
@@ -13,15 +20,39 @@ function pairKey(firstAtomId, secondAtomId) {
  * @returns {{minBondLengthFactor: number, maxBondLengthFactor: number, maxMeanDeviation: number, maxSevereOverlapCount: number}} Validation settings.
  */
 function validationSettingsForClass(validationClass) {
-  return validationClass === 'bridged' ? BRIDGED_VALIDATION : PLANAR_VALIDATION;
+  return validationClass === 'bridged' ? BRIDGED_VALIDATION : AUDIT_PLANAR_VALIDATION;
 }
 
+/**
+ * Returns whether a bond should contribute to layout bond-length audit stats.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} bond - Bond descriptor.
+ * @returns {boolean} True when the bond is a visible heavy-atom covalent bond.
+ */
+function isAuditableBond(layoutGraph, bond) {
+  if (!bond || bond.kind !== 'covalent') {
+    return false;
+  }
+  const firstAtom = layoutGraph.atoms.get(bond.a);
+  const secondAtom = layoutGraph.atoms.get(bond.b);
+  if (!firstAtom || !secondAtom) {
+    return false;
+  }
+  return firstAtom.element !== 'H' && secondAtom.element !== 'H';
+}
+
+/**
+ * Returns whether the atom participates in visible-audit geometry.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom identifier.
+ * @returns {boolean} True when the atom should count in visible geometry checks.
+ */
 function isVisibleLayoutAtom(layoutGraph, atomId) {
   const atom = layoutGraph.atoms.get(atomId);
   if (!atom) {
     return false;
   }
-  if (layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible) {
+  if (layoutGraph.options.suppressH && atom.element === 'H') {
     return false;
   }
   return true;
@@ -56,11 +87,8 @@ function collectNonbondedPairs(layoutGraph, coords, includePair) {
 
 function visibleCovalentBonds(layoutGraph, coords, atomId) {
   const bonds = [];
-  for (const bond of layoutGraph.bonds.values()) {
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
     if (bond.kind !== 'covalent') {
-      continue;
-    }
-    if (bond.a !== atomId && bond.b !== atomId) {
       continue;
     }
     const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
@@ -112,6 +140,9 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
   const bondValidationClasses = options.bondValidationClasses ?? new Map();
 
   for (const bond of layoutGraph.bonds.values()) {
+    if (!isAuditableBond(layoutGraph, bond)) {
+      continue;
+    }
     const firstPosition = coords.get(bond.a);
     const secondPosition = coords.get(bond.b);
     if (!firstPosition || !secondPosition) {
@@ -251,6 +282,96 @@ export function detectCollapsedMacrocycles(layoutGraph, coords, bondLength) {
     }
   }
   return collapsedRingIds;
+}
+
+/**
+ * Computes the trigonal + tetrahedral angular distortion penalty at a single atom.
+ * Accepts an optional override map so callers can evaluate a hypothetical neighbor position
+ * without mutating the coordinate map.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map (not mutated).
+ * @param {string} atomId - Atom to evaluate.
+ * @param {Map<string, {x: number, y: number}>|null} overridePositions - Positions that override coords for specific atoms.
+ * @returns {number} Distortion penalty for the atom.
+ */
+export function computeAtomDistortionCost(layoutGraph, coords, atomId, overridePositions) {
+  if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
+    return 0;
+  }
+  const getPos = id => overridePositions?.get(id) ?? coords.get(id);
+  const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
+  let cost = 0;
+
+  if (covalentBonds.length === 3) {
+    const multipleBondCount = covalentBonds.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
+    if (multipleBondCount === 1) {
+      const atomPosition = getPos(atomId);
+      if (atomPosition) {
+        const neighborAngles = covalentBonds.map(({ neighborAtomId }) => {
+          const neighborPosition = getPos(neighborAtomId);
+          return Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x);
+        });
+        const separations = sortedAngularSeparations(neighborAngles);
+        const idealSeparation = (Math.PI * 2) / 3;
+        cost += separations.reduce((sum, separation) => sum + ((separation - idealSeparation) ** 2), 0) * 20;
+      }
+    }
+  } else if (covalentBonds.length === 4) {
+    const heavyBonds = covalentBonds.filter(({ neighborAtomId }) => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+    if (heavyBonds.length === 4 && heavyBonds.every(({ bond }) => !bond.aromatic && (bond.order ?? 1) === 1)) {
+      const atomPosition = getPos(atomId);
+      if (atomPosition) {
+        const neighborAngles = heavyBonds.map(({ neighborAtomId }) => {
+          const neighborPosition = getPos(neighborAtomId);
+          return Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x);
+        });
+        const separations = sortedAngularSeparations(neighborAngles);
+        const idealSeparation = Math.PI / 2;
+        cost += separations.reduce((sum, separation) => sum + ((separation - idealSeparation) ** 2), 0) * 20;
+      }
+    }
+  }
+
+  return cost;
+}
+
+/**
+ * Computes the overlap penalty contributed by a subtree of atoms against all non-subtree atoms.
+ * Used by the local cleanup pass to evaluate rotation candidates in O(k·n) instead of O(n²).
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map (not mutated).
+ * @param {string[]} subtreeAtomIds - Atom IDs in the moving subtree.
+ * @param {Map<string, {x: number, y: number}>|null} overridePositions - Override positions for the subtree atoms, or null to use coords.
+ * @param {number} bondLength - Target bond length.
+ * @returns {number} Overlap penalty for the subtree.
+ */
+export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, overridePositions, bondLength) {
+  const subtreeSet = new Set(subtreeAtomIds);
+  const threshold = bondLength * 0.55;
+  let cost = 0;
+  for (const subtreeAtomId of subtreeAtomIds) {
+    if (!isVisibleLayoutAtom(layoutGraph, subtreeAtomId)) {
+      continue;
+    }
+    const pos = overridePositions?.get(subtreeAtomId) ?? coords.get(subtreeAtomId);
+    if (!pos) {
+      continue;
+    }
+    for (const [atomId, otherPos] of coords) {
+      if (subtreeSet.has(atomId) || !isVisibleLayoutAtom(layoutGraph, atomId)) {
+        continue;
+      }
+      if (layoutGraph.bondedPairSet.has(pairKey(subtreeAtomId, atomId))) {
+        continue;
+      }
+      const d = Math.hypot(otherPos.x - pos.x, otherPos.y - pos.y);
+      if (d < threshold) {
+        const deficit = threshold - d;
+        cost += deficit * deficit * 100;
+      }
+    }
+  }
+  return cost;
 }
 
 /**

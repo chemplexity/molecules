@@ -42,25 +42,32 @@ export function buildRefinementContext(layoutGraph) {
 
 /**
  * Returns whether a component should keep its existing coordinates unchanged.
- * This only applies when touched hints exist and the component does not
- * participate in the edited region.
+ * This applies both to untouched components during partial relayout and to
+ * cleanup-only refinement runs where every participant atom already has an
+ * existing coordinate.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{atomIds: string[]}} component - Component descriptor.
  * @param {{enabled: boolean, hasTouchedHints: boolean, touchedAtomIds: Set<string>}} refinementContext - Refinement context.
  * @returns {boolean} True when the component can be preserved verbatim.
  */
 export function canPreserveComponentPlacement(layoutGraph, component, refinementContext) {
-  if (!refinementContext.enabled || !refinementContext.hasTouchedHints) {
+  if (!refinementContext.enabled) {
     return false;
   }
   const participantAtomIds = componentParticipantAtomIds(layoutGraph, component);
   if (participantAtomIds.length === 0) {
     return false;
   }
+  if (!participantAtomIds.every(atomId => layoutGraph.options.existingCoords.has(atomId))) {
+    return false;
+  }
+  if (!refinementContext.hasTouchedHints) {
+    return true;
+  }
   if (participantAtomIds.some(atomId => refinementContext.touchedAtomIds.has(atomId))) {
     return false;
   }
-  return participantAtomIds.every(atomId => layoutGraph.options.existingCoords.has(atomId));
+  return true;
 }
 
 /**

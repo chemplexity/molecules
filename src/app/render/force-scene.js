@@ -5,6 +5,204 @@ import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, com
 import { getBondEnOverlayData } from './bond-en-polarity.js';
 import { atomNumberingLabelDistance, getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationAngle } from './atom-numbering.js';
 
+/**
+ * Removes an automatically assigned display hint from a bond while preserving
+ * any manual display choice.
+ * @param {object} bond - Bond-like object whose display hint may be cleared.
+ * @returns {void}
+ */
+function clearAutoDisplayStereo(bond) {
+  if (!bond?.properties?.display || bond.properties.display.manual === true) {
+    return;
+  }
+  delete bond.properties.display.as;
+  delete bond.properties.display.centerId;
+  delete bond.properties.display.manual;
+  if (Object.keys(bond.properties.display).length === 0) {
+    delete bond.properties.display;
+  }
+}
+
+/**
+ * Copies automatically generated display hints from a seeded clone back onto
+ * the live force-mode molecule, clearing stale auto hints that disappeared.
+ * @param {object} seededMolecule - Clone populated with fresh display hints.
+ * @param {object} molecule - Live molecule shown in force mode.
+ * @returns {void}
+ */
+function copyAutoDisplayStereoFromSeed(seededMolecule, molecule) {
+  for (const [bondId, seededBond] of seededMolecule.bonds) {
+    const realBond = molecule.bonds.get(bondId);
+    if (!realBond || realBond.properties.display?.manual === true) {
+      continue;
+    }
+    if (seededBond.properties.display?.as) {
+      realBond.properties.display = { ...seededBond.properties.display };
+      continue;
+    }
+    clearAutoDisplayStereo(realBond);
+  }
+}
+
+/**
+ * Returns whether a bond-like object should count as covalent for force-mode
+ * projected organometallic seeding.
+ * @param {object} bond - Bond-like object to inspect.
+ * @returns {boolean} True when the bond kind resolves to `covalent`.
+ */
+function isCovalentBondLike(bond) {
+  if (!bond || typeof bond !== 'object') {
+    return false;
+  }
+  const kind = typeof bond.getKind === 'function' ? bond.getKind() : (bond.kind ?? bond.properties?.kind ?? 'covalent');
+  return kind === 'covalent';
+}
+
+/**
+ * Returns whether the molecule contains a transition-metal center whose
+ * coordination count could produce projected wedge/dash display hints.
+ * @param {object} molecule - Molecule-like graph to inspect.
+ * @returns {boolean} True when a projected organometallic seed is worthwhile.
+ */
+function hasProjectedOrganometallicDisplayCandidate(molecule) {
+  for (const atom of molecule?.atoms?.values?.() ?? []) {
+    const group = atom?.properties?.group ?? 0;
+    if (group < 3 || group > 12) {
+      continue;
+    }
+    let covalentBondCount = 0;
+    for (const bondId of atom.bonds ?? []) {
+      const bond = molecule.bonds.get(bondId);
+      if (isCovalentBondLike(bond)) {
+        covalentBondCount++;
+      }
+    }
+    if (covalentBondCount === 4 || covalentBondCount === 6) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Counts renderer-facing wedge/dash assignments currently attached to one
+ * projected coordination center.
+ * @param {object} molecule - Molecule-like graph to inspect.
+ * @param {string} centerId - Candidate metal-center atom ID.
+ * @returns {number} Number of wedge/dash assignments anchored on the center.
+ */
+function countProjectedDisplayAssignments(molecule, centerId) {
+  let count = 0;
+  for (const bond of molecule?.bonds?.values?.() ?? []) {
+    const displayAs = bond?.properties?.display?.as ?? null;
+    if ((displayAs === 'wedge' || displayAs === 'dash') && bond.properties.display?.centerId === centerId) {
+      count++;
+    }
+  }
+  return count;
+}
+
+/**
+ * Returns whether the molecule has a supported projected organometallic center
+ * whose current display hints are missing one side of the projection.
+ * @param {object} molecule - Molecule-like graph to inspect.
+ * @returns {boolean} True when force-mode seeding should repair the display hints.
+ */
+function hasIncompleteProjectedOrganometallicDisplay(molecule) {
+  for (const atom of molecule?.atoms?.values?.() ?? []) {
+    const group = atom?.properties?.group ?? 0;
+    if (group < 3 || group > 12) {
+      continue;
+    }
+    let covalentBondCount = 0;
+    for (const bondId of atom.bonds ?? []) {
+      const bond = molecule.bonds.get(bondId);
+      if (isCovalentBondLike(bond)) {
+        covalentBondCount++;
+      }
+    }
+    if ((covalentBondCount === 4 || covalentBondCount === 6) && countProjectedDisplayAssignments(molecule, atom.id) < 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Repositions hidden hydrogens on a seeded clone so tetrahedral stereo syncing
+ * can use a real local direction instead of coincident parent coordinates.
+ * @param {object} molecule - Seeded clone containing computed 2D coordinates.
+ * @param {number} bondLength - Display bond length used for the seed layout.
+ * @returns {void}
+ */
+function placeHiddenHydrogensForForceStereoSeed(molecule, bondLength) {
+  for (const [, atom] of molecule.atoms) {
+    if (atom.name !== 'H' || atom.visible !== false) {
+      continue;
+    }
+    const nbrs = atom.getNeighbors(molecule);
+    if (nbrs.length !== 1) {
+      continue;
+    }
+    const parent = nbrs[0];
+    if (!parent.getChirality() || parent.x == null) {
+      continue;
+    }
+    const others = parent.getNeighbors(molecule).filter(neighbor => neighbor.id !== atom.id);
+    let sumX = 0;
+    let sumY = 0;
+    let count = 0;
+    for (const neighbor of others) {
+      if (neighbor.x != null) {
+        sumX += neighbor.x - parent.x;
+        sumY += neighbor.y - parent.y;
+        count++;
+      }
+    }
+    const angle = count > 0 ? Math.atan2(-sumY, -sumX) : 0;
+    atom.x = parent.x + Math.cos(angle) * (bondLength * 0.75);
+    atom.y = parent.y + Math.sin(angle) * (bondLength * 0.75);
+  }
+}
+
+/**
+ * Seeds missing automatic wedge/dash display hints from a temporary 2D layout
+ * so force mode can render stereo and projected organometallic cues on first
+ * load without requiring a manual 2D round-trip.
+ * @param {object} ctx - Force-scene dependency context.
+ * @param {object} molecule - Live molecule shown in force mode.
+ * @param {boolean} isReactionPreviewMol - Whether the molecule is a reaction-preview clone.
+ * @returns {void}
+ */
+function seedForceAutoDisplayStereo(ctx, molecule, isReactionPreviewMol) {
+  const hasDisplayStereo = [...molecule.bonds.values()].some(bond => bond.properties.display?.as);
+  const hasChiralCenters = (molecule.getChiralCenters?.()?.length ?? 0) > 0;
+  const needsProjectedOrganometallicSeed =
+    hasProjectedOrganometallicDisplayCandidate(molecule) && hasIncompleteProjectedOrganometallicDisplay(molecule);
+  const shouldSeed = (!hasDisplayStereo && hasChiralCenters)
+    || needsProjectedOrganometallicSeed
+    || (isReactionPreviewMol && hasChiralCenters);
+  if (!shouldSeed) {
+    return;
+  }
+
+  const seededMolecule = molecule.clone();
+  seededMolecule.hideHydrogens();
+  ctx.helpers.generateAndRefine2dCoords(seededMolecule, { suppressH: true, bondLength: 1.5 });
+  ctx.helpers.alignReaction2dProductOrientation(seededMolecule);
+
+  if (hasChiralCenters) {
+    placeHiddenHydrogensForForceStereoSeed(seededMolecule, 1.5);
+    syncDisplayStereo(seededMolecule);
+  }
+
+  copyAutoDisplayStereoFromSeed(seededMolecule, molecule);
+
+  if (isReactionPreviewMol && seededMolecule.__reactionPreview) {
+    molecule.__reactionPreview = seededMolecule.__reactionPreview;
+  }
+}
+
 function _capturePreviousNodePositions(simulation) {
   return new Map(
     simulation.nodes().map(node => [
@@ -29,7 +227,20 @@ function _capturePreviousNodePositions(simulation) {
  * @returns {object} Object with an `updateForce` method for re-rendering after molecule or layout changes.
  */
 export function createForceSceneRenderer(ctx) {
-  function updateForce(molecule, { preservePositions = false, preserveView = preservePositions, initialPatchPos = null } = {}) {
+  /**
+   * Rebuilds the force scene for the provided molecule, optionally preserving prior positions or seeding from a custom anchor layout.
+   * @param {object} molecule - Molecule to render in force mode.
+   * @param {object} [options] - Optional force-render controls.
+   * @param {boolean} [options.preservePositions] - When true, reuses the prior node positions and velocities where possible.
+   * @param {boolean} [options.preserveView] - When true, preserves the current zoom transform.
+   * @param {Map<string, {x: number, y: number}>|null} [options.anchorLayout] - Optional precomputed heavy-atom anchors keyed by atom id.
+   * @param {Map<string, {x: number, y: number}>|null} [options.initialPatchPos] - Optional initial patch positions applied before the first restarted tick.
+   * @returns {void}
+   */
+  function updateForce(
+    molecule,
+    { preservePositions = false, preserveView = preservePositions, anchorLayout = null, initialPatchPos = null } = {}
+  ) {
     prepareAromaticBondRendering(molecule);
     const { showLonePairs } = getRenderOptions();
     const valenceWarningMap = ctx.helpers.valenceWarningMapFor(molecule);
@@ -40,80 +251,10 @@ export function createForceSceneRenderer(ctx) {
     const previousNodePositions = preservePositions ? _capturePreviousNodePositions(ctx.simulation) : null;
     const previousZoomTransform = preserveView ? ctx.d3.zoomTransform(ctx.svg.node()) : null;
 
-    const anchorLayout = ctx.helpers.buildForceAnchorLayout(molecule);
+    const resolvedAnchorLayout = anchorLayout ?? ctx.helpers.buildForceAnchorLayout(molecule);
 
-    // Mirror the 2D render flow to seed stereo bond assignments on the real molecule.
-    // Runs on initial load (no stereo set yet) AND whenever a reaction preview is active
-    // (product bonds need stereo assignments; sp2 product bonds from oxidation etc. must
-    // have stale auto-stereo cleared).  Matches scene-2d.js step-for-step:
-    //   1. hideHydrogens() on clone  — marks H as visible=false so safeV() in
-    //      stereoBondTypeForCenter uses the inferred position, not the zero-displacement
-    //      coords that suppressH writes.
-    //   2. generateAndRefine2dCoords({ suppressH:true }) — heavy-atom layout + H at parent.
-    //   3. alignReaction2dProductOrientation — sets forced stereo maps in __reactionPreview,
-    //      restores reactant reference coords, relays product atoms.
-    //   4. H placement loop (condition: visible===false, same as scene-2d.js) — overwrites
-    //      the H-at-parent coords with a geometrically valid angle so CIP winding is correct.
-    //   5. syncDisplayStereo — forced maps → correct centerId; unforced centers use real H pos.
-    //   6. Copy-back: set display from clone; clear stale auto-stereo on real bonds the clone
-    //      did not assign (e.g. sp2 product after oxidation).
-    const hasDisplayStereo = [...molecule.bonds.values()].some(b => b.properties.display?.as);
     const isReactionPreviewMol = [...molecule.atoms.keys()].some(id => typeof id === 'string' && id.includes(':'));
-    if ((!hasDisplayStereo || isReactionPreviewMol) && (molecule.getChiralCenters?.()?.length ?? 0) > 0) {
-      const stereoClone = molecule.clone();
-      stereoClone.hideHydrogens();
-      ctx.helpers.generateAndRefine2dCoords(stereoClone, { suppressH: true, bondLength: 1.5 });
-      ctx.helpers.alignReaction2dProductOrientation(stereoClone);
-      for (const [, atom] of stereoClone.atoms) {
-        if (atom.name !== 'H' || atom.visible !== false) {
-          continue;
-        }
-        const nbrs = atom.getNeighbors(stereoClone);
-        if (nbrs.length !== 1) {
-          continue;
-        }
-        const parent = nbrs[0];
-        if (!parent.getChirality() || parent.x == null) {
-          continue;
-        }
-        const others = parent.getNeighbors(stereoClone).filter(n => n.id !== atom.id);
-        let sumX = 0,
-          sumY = 0,
-          cnt = 0;
-        for (const nb of others) {
-          if (nb.x != null) {
-            sumX += nb.x - parent.x;
-            sumY += nb.y - parent.y;
-            cnt++;
-          }
-        }
-        const angle = cnt > 0 ? Math.atan2(-sumY, -sumX) : 0;
-        atom.x = parent.x + Math.cos(angle) * (1.5 * 0.75);
-        atom.y = parent.y + Math.sin(angle) * (1.5 * 0.75);
-      }
-      syncDisplayStereo(stereoClone);
-      for (const [bondId, seedBond] of stereoClone.bonds) {
-        const realBond = molecule.bonds.get(bondId);
-        if (!realBond) {
-          continue;
-        }
-        if (seedBond.properties.display?.as) {
-          realBond.properties.display = { ...seedBond.properties.display };
-        } else if (realBond.properties.display?.as && !realBond.properties.display?.manual) {
-          delete realBond.properties.display.as;
-          delete realBond.properties.display.centerId;
-          if (Object.keys(realBond.properties.display).length === 0) {
-            delete realBond.properties.display;
-          }
-        }
-      }
-      // Keep a reference so the navigation flip can mutate the module-level
-      // forced-stereo Maps directly (stereoClone.__reactionPreview holds the
-      // same Map objects as the reaction-2d module-level variables).
-      if (isReactionPreviewMol && stereoClone.__reactionPreview) {
-        molecule.__reactionPreview = stereoClone.__reactionPreview;
-      }
-    }
+    seedForceAutoDisplayStereo(ctx, molecule, isReactionPreviewMol);
     if (ctx.state.getPreserveSelectionOnNextRender()) {
       ctx.state.syncSelectionToMolecule(molecule);
     } else {
@@ -225,8 +366,10 @@ export function createForceSceneRenderer(ctx) {
 
     // Stereo bond display (wedge / dash) — pre-create elements positioned in tick
     const stereoBondLayer = ctx.g.append('g').attr('class', 'force-stereo-bonds').style('pointer-events', 'none');
-    const FORCE_WEDGE_HW = 5;
-    const FORCE_DASH_COUNT = 6;
+    const FORCE_STEREO_SCALE = getRenderOptions().forceBondThicknessMultiplier;
+    const FORCE_WEDGE_HW = 5 * FORCE_STEREO_SCALE;
+    const FORCE_DASH_COUNT = 5;
+    const FORCE_DASH_STROKE = 1.2 * FORCE_STEREO_SCALE;
     const forceStereoBondInfo = [];
     for (const link of graph.links) {
       const bond = molecule.bonds.get(link.id);
@@ -241,7 +384,7 @@ export function createForceSceneRenderer(ctx) {
       } else {
         const lines = [];
         for (let i = 0; i < FORCE_DASH_COUNT; i++) {
-          lines.push(stereoBondLayer.append('line').attr('stroke', '#111').attr('stroke-width', 1.2).attr('stroke-linecap', 'round').attr('pointer-events', 'none'));
+          lines.push(stereoBondLayer.append('line').attr('stroke', '#111').attr('stroke-width', FORCE_DASH_STROKE).attr('stroke-linecap', 'round').attr('pointer-events', 'none'));
         }
         forceStereoBondInfo.push({ type: 'dash', elements: lines, centerId, link });
       }
@@ -256,9 +399,9 @@ export function createForceSceneRenderer(ctx) {
         const tgt = centerId === link.source.id ? link.target : link.source;
         const dx = tgt.x - src.x;
         const dy = tgt.y - src.y;
-        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-        const nx = -dy / len;
-        const ny = dx / len;
+        const length = Math.sqrt(dx * dx + dy * dy) || 1;
+        const nx = -dy / length;
+        const ny = dx / length;
         if (info.type === 'wedge') {
           info.element.attr(
             'points',
@@ -469,7 +612,7 @@ export function createForceSceneRenderer(ctx) {
       });
     }
 
-    ctx.helpers.seedForceNodePositions(graph, molecule, anchorLayout, {
+    ctx.helpers.seedForceNodePositions(graph, molecule, resolvedAnchorLayout, {
       previousNodePositions
     });
 

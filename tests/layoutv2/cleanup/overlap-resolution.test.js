@@ -6,6 +6,40 @@ import { resolveOverlaps } from '../../../src/layoutv2/cleanup/overlap-resolutio
 import { makeDisconnectedEthanes } from '../support/molecules.js';
 
 describe('layoutv2/cleanup/overlap-resolution', () => {
+  it('moves the more disposable atom without stretching the less movable partner', () => {
+    const graph = {
+      options: { bondLength: 1.5, preserveFixed: true },
+      fixedCoords: new Map(),
+      atoms: new Map([
+        ['anchor', { id: 'anchor', element: 'C', heavyDegree: 3 }],
+        ['leaf', { id: 'leaf', element: 'C', heavyDegree: 1 }],
+        ['core', { id: 'core', element: 'C', heavyDegree: 3 }]
+      ]),
+      bondedPairSet: new Set(['anchor:leaf']),
+      bondsByAtomId: new Map([
+        ['anchor', [{ a: 'anchor', b: 'leaf', kind: 'covalent' }]],
+        ['leaf', [{ a: 'anchor', b: 'leaf', kind: 'covalent' }]],
+        ['core', []]
+      ])
+    };
+    const inputCoords = new Map([
+      ['anchor', { x: -1.5, y: 0 }],
+      ['leaf', { x: 0, y: 0 }],
+      ['core', { x: 0.1, y: 0 }]
+    ]);
+
+    const result = resolveOverlaps(graph, inputCoords, { bondLength: 1.5 });
+    const anchorPosition = result.coords.get('anchor');
+    const leafPosition = result.coords.get('leaf');
+    const originalDistance = Math.hypot(inputCoords.get('leaf').x - inputCoords.get('core').x, inputCoords.get('leaf').y - inputCoords.get('core').y);
+    const resolvedDistance = Math.hypot(leafPosition.x - result.coords.get('core').x, leafPosition.y - result.coords.get('core').y);
+
+    assert.ok(result.moves > 0);
+    assert.equal(result.coords.get('core').x, 0.1);
+    assert.ok(resolvedDistance > originalDistance);
+    assert.ok(Math.abs(Math.hypot(leafPosition.x - anchorPosition.x, leafPosition.y - anchorPosition.y) - 1.5) < 1e-9);
+  });
+
   it('nudges severe overlaps apart before local cleanup', () => {
     const graph = createLayoutGraph(makeDisconnectedEthanes());
     const result = resolveOverlaps(graph, new Map([

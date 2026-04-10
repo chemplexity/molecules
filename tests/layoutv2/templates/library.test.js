@@ -22,16 +22,19 @@ describe('layoutv2/templates/library', () => {
       'quinazoline',
       'quinoxaline',
       'acridine',
+      'porphine',
       'steroid-core-unsaturated',
       'steroid-core-saturated',
       'pyrene',
       'fluorene',
+      'indanone',
       'indane',
       'tetralin',
       'anthracene',
       'chromane',
       'isochromane',
       'phthalazine',
+      'cinnoline',
       'naphthalene',
       'pyridine',
       'pyrimidine',
@@ -161,6 +164,12 @@ describe('layoutv2/templates/library', () => {
     assert.equal(acridine.bondCount, 16);
     assert.equal(acridine.ringCount, 3);
 
+    const porphine = getTemplateById('porphine');
+    assert.equal(porphine.family, 'macrocycle');
+    assert.equal(porphine.atomCount, 24);
+    assert.equal(porphine.bondCount, 28);
+    assert.equal(porphine.ringCount, 5);
+
     const anthracene = getTemplateById('anthracene');
     assert.equal(anthracene.family, 'fused');
     assert.equal(anthracene.atomCount, 14);
@@ -178,6 +187,13 @@ describe('layoutv2/templates/library', () => {
     assert.equal(fluorene.atomCount, 13);
     assert.equal(fluorene.bondCount, 15);
     assert.equal(fluorene.ringCount, 3);
+
+    const indanone = getTemplateById('indanone');
+    assert.equal(indanone.family, 'fused');
+    assert.equal(indanone.atomCount, 9);
+    assert.equal(indanone.bondCount, 10);
+    assert.equal(indanone.ringCount, 2);
+    assert.equal(indanone.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'a0');
 
     const steroidUnsaturated = getTemplateById('steroid-core-unsaturated');
     assert.equal(steroidUnsaturated.family, 'fused');
@@ -214,6 +230,12 @@ describe('layoutv2/templates/library', () => {
     assert.equal(isochromane.atomCount, 10);
     assert.equal(isochromane.bondCount, 11);
     assert.equal(isochromane.ringCount, 2);
+
+    const cinnoline = getTemplateById('cinnoline');
+    assert.equal(cinnoline.family, 'fused');
+    assert.equal(cinnoline.atomCount, 10);
+    assert.equal(cinnoline.bondCount, 11);
+    assert.equal(cinnoline.ringCount, 2);
   });
 
   it('stores normalized xy geometry for each active template', () => {

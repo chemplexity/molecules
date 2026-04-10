@@ -24,7 +24,7 @@ function isLargeComponent(layoutGraph, component) {
  * Lays out one connected component through the best available family path.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} component - Connected-component descriptor.
- * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, placementMode?: string|null, bondValidationClasses: Map<string, 'planar'|'bridged'>}} Component placement result.
+ * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, placementMode?: string|null, bondValidationClasses: Map<string, 'planar'|'bridged'>, displayAssignments?: Array<{bondId: string, type: 'wedge'|'dash', centerId: string}>}} Component placement result.
  */
 function layoutComponent(layoutGraph, component) {
   if (isLargeComponent(layoutGraph, component)) {
@@ -40,7 +40,8 @@ function layoutComponent(layoutGraph, component) {
         atomIds: participantAtomIds,
         coords: largeMolecule.coords,
         placementMode: largeMolecule.placementMode,
-        bondValidationClasses: largeMolecule.bondValidationClasses
+        bondValidationClasses: largeMolecule.bondValidationClasses,
+        displayAssignments: []
       };
     }
   }
@@ -70,7 +71,8 @@ function layoutComponent(layoutGraph, component) {
       atomIds: familyPlacement.atomIds,
       coords: new Map(),
       placementMode: null,
-      bondValidationClasses: new Map()
+      bondValidationClasses: new Map(),
+      displayAssignments: []
     };
   }
 
@@ -80,7 +82,8 @@ function layoutComponent(layoutGraph, component) {
     atomIds: familyPlacement.atomIds,
     coords: organometallic.coords,
     placementMode: organometallic.placementMode,
-    bondValidationClasses: assignBondValidationClass(layoutGraph, familyPlacement.atomIds, 'planar')
+    bondValidationClasses: assignBondValidationClass(layoutGraph, familyPlacement.atomIds, 'planar'),
+    displayAssignments: organometallic.displayAssignments
   };
 }
 
@@ -89,11 +92,12 @@ function layoutComponent(layoutGraph, component) {
  * coordinate frame.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} [policy] - Standards-policy bundle.
- * @returns {{coords: Map<string, {x: number, y: number}>, placedComponentCount: number, unplacedComponentCount: number, preservedComponentCount: number, placedFamilies: string[], bondValidationClasses: Map<string, 'planar'|'bridged'>}} Placement summary.
+ * @returns {{coords: Map<string, {x: number, y: number}>, placedComponentCount: number, unplacedComponentCount: number, preservedComponentCount: number, placedFamilies: string[], bondValidationClasses: Map<string, 'planar'|'bridged'>, displayAssignments: Array<{bondId: string, type: 'wedge'|'dash', centerId: string}>}} Placement summary.
  */
 export function layoutSupportedComponents(layoutGraph, policy = {}) {
   const componentPlacements = [];
   const bondValidationClasses = new Map();
+  const displayAssignments = [];
   const placedFamilies = [];
   let placedComponentCount = 0;
   let unplacedComponentCount = 0;
@@ -141,8 +145,9 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
       role: component.role
     });
     placedComponentCount++;
-    placedFamilies.push(placement.family);
-    mergeBondValidationClasses(bondValidationClasses, placement.bondValidationClasses, { overwrite: false });
+      placedFamilies.push(placement.family);
+      mergeBondValidationClasses(bondValidationClasses, placement.bondValidationClasses, { overwrite: false });
+      displayAssignments.push(...(placement.displayAssignments ?? []));
   }
 
   return {
@@ -151,6 +156,7 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
     unplacedComponentCount,
     preservedComponentCount,
     placedFamilies,
-    bondValidationClasses
+    bondValidationClasses,
+    displayAssignments
   };
 }

@@ -42,6 +42,13 @@ describe('layoutv2/templates/placement', () => {
     assert.equal(indazoleCoords.size, 9);
     assert.ok(Math.abs(distance(indazoleCoords.get('N5'), indazoleCoords.get('N7')) - indazoleGraph.options.bondLength) < 1e-6);
 
+    const cinnolineGraph = createLayoutGraph(parseSMILES('c1ccc2cnncc2c1'));
+    const cinnolineCoords = placeTemplateCoords(cinnolineGraph, 'cinnoline', cinnolineGraph.ringSystems[0].atomIds, cinnolineGraph.options.bondLength);
+    assert.equal(cinnolineCoords.size, 10);
+    assert.ok(Math.abs(cinnolineCoords.get('N6').x - cinnolineCoords.get('N7').x) < 1e-6);
+    assert.ok(cinnolineCoords.get('N6').x > cinnolineCoords.get('C4').x);
+    assert.ok(cinnolineCoords.get('N7').x > cinnolineCoords.get('C4').x);
+
     const benzotriazoleGraph = createLayoutGraph(parseSMILES('c1ccc2[nH]nnc2c1'));
     const benzotriazoleCoords = placeTemplateCoords(
       benzotriazoleGraph,
@@ -140,6 +147,13 @@ describe('layoutv2/templates/placement', () => {
   });
 
   it('places partially saturated fused templates with the expected conventional orientation', () => {
+    const indanoneGraph = createLayoutGraph(parseSMILES('O=C1CCc2ccccc21'));
+    const indanoneCoords = placeTemplateCoords(indanoneGraph, 'indanone', indanoneGraph.ringSystems[0].atomIds, indanoneGraph.options.bondLength);
+    assert.equal(indanoneCoords.size, 9);
+    assert.ok(Math.abs(indanoneCoords.get('C5').x - indanoneCoords.get('C10').x) < 1e-6);
+    assert.ok(indanoneCoords.get('C2').x > indanoneCoords.get('C5').x);
+    assert.ok(indanoneCoords.get('C2').y > 0);
+
     const indaneGraph = createLayoutGraph(parseSMILES('c1ccc2CCCc2c1'));
     const indaneCoords = placeTemplateCoords(indaneGraph, 'indane', indaneGraph.ringSystems[0].atomIds, indaneGraph.options.bondLength);
     assert.equal(indaneCoords.size, 9);
@@ -172,6 +186,41 @@ describe('layoutv2/templates/placement', () => {
     assert.ok(Math.abs(isochromaneCoords.get('C4').x - isochromaneCoords.get('C9').x) < 1e-6);
     assert.ok(isochromaneCoords.get('O6').x > isochromaneCoords.get('C4').x);
     assert.ok(isochromaneCoords.get('C2').x < isochromaneCoords.get('C4').x);
+  });
+
+  it('places the porphine macrocycle template as a square-like porphyrin core', () => {
+    const porphineGraph = createLayoutGraph(parseSMILES('C1=CC2=CC3=CC=C(N3)C=C4C=CC(=N4)C=C5C=CC(=N5)C=C1N2'));
+    const porphineCoords = placeTemplateCoords(porphineGraph, 'porphine', porphineGraph.ringSystems[0].atomIds, porphineGraph.options.bondLength);
+    assert.equal(porphineCoords.size, 24);
+
+    const xs = [...porphineCoords.values()].map(position => position.x);
+    const ys = [...porphineCoords.values()].map(position => position.y);
+    assert.ok(Math.abs((Math.max(...xs) - Math.min(...xs)) - (Math.max(...ys) - Math.min(...ys))) < 1e-6);
+
+    assert.ok(porphineCoords.get('C10').x < 0 && porphineCoords.get('C10').y > 0);
+    assert.ok(porphineCoords.get('C16').x > 0 && porphineCoords.get('C16').y > 0);
+    assert.ok(porphineCoords.get('C22').x > 0 && porphineCoords.get('C22').y < 0);
+    assert.ok(porphineCoords.get('C4').x < 0 && porphineCoords.get('C4').y < 0);
+
+    assert.ok(Math.abs(porphineCoords.get('N15').x) < 1e-6);
+    assert.ok(Math.abs(porphineCoords.get('N21').y) < 1e-6);
+    assert.ok(Math.abs(porphineCoords.get('N24').x) < 1e-6);
+    assert.ok(Math.abs(porphineCoords.get('N9').y) < 1e-6);
+
+    const center = { x: 0, y: 0 };
+    const innerNitrogenDistance = Math.max(
+      distance(porphineCoords.get('N9'), center),
+      distance(porphineCoords.get('N15'), center),
+      distance(porphineCoords.get('N21'), center),
+      distance(porphineCoords.get('N24'), center)
+    );
+    const outerBetaDistance = Math.min(
+      distance(porphineCoords.get('C7'), center),
+      distance(porphineCoords.get('C13'), center),
+      distance(porphineCoords.get('C19'), center),
+      distance(porphineCoords.get('C1'), center)
+    );
+    assert.ok(innerNitrogenDistance < outerBetaDistance);
   });
 
   it('places isolated aromatic heterocycle templates with the requested bond length', () => {

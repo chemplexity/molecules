@@ -353,6 +353,17 @@ function createFluoreneTemplate() {
 }
 
 /**
+ * Creates a porphine macrocycle template for the porphyrin core.
+ * @returns {Molecule} Porphine scaffold template molecule.
+ */
+function createPorphineTemplate() {
+  return createRingSystemTemplateFromSmiles(
+    'porphine',
+    'C1=CC2=CC3=CC=C(N3)C=C4C=CC(=N4)C=C5C=CC(=N5)C=C1N2'
+  );
+}
+
+/**
  * Creates an unsaturated steroid nucleus template shared by testosterone-like cores.
  * @returns {Molecule} Unsaturated steroid scaffold template molecule.
  */
@@ -471,6 +482,14 @@ function createQuinoxalineTemplate() {
 
 function createPhthalazineTemplate() {
   return createFusedAromaticPerimeterTemplate('phthalazine', ['C', 'C', 'C', 'C', 'C', 'C', 'C', 'N', 'N', 'C'], 4, 9);
+}
+
+/**
+ * Creates a cinnoline fused aromatic bicyclic template.
+ * @returns {Molecule} Cinnoline scaffold template molecule.
+ */
+function createCinnolineTemplate() {
+  return createFusedAromaticPerimeterTemplate('cinnoline', ['C', 'C', 'C', 'C', 'C', 'C', 'N', 'N', 'C', 'C'], 4, 9);
 }
 
 function createNaphthaleneTemplate() {
@@ -661,7 +680,7 @@ function createFuranGeometry() {
 }
 
 function createThiopheneGeometry() {
-  return createRegularAromaticCycleGeometry(['a0', 'a1', 'a2', 'a3', 'a4']);
+  return freezeCoordEntries(centeredEntries(placeRegularPolygon(['a0', 'a1', 'a2', 'a3', 'a4'], { x: 0, y: 0 }, 1, -Math.PI / 2)));
 }
 
 function createImidazoleGeometry() {
@@ -878,6 +897,39 @@ function createFluoreneGeometry() {
 }
 
 /**
+ * Creates a square-like porphine core with meso bridge carbons at the corners.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createPorphineGeometry() {
+  return createCenteredFrozenGeometry([
+    ['N15', { x: 0, y: 0.7493491916479602 }],
+    ['C14', { x: 0.8090169943749473, y: 1.3371344439404333 }],
+    ['C13', { x: 0.5, y: 2.2881909602355868 }],
+    ['C12', { x: -0.5, y: 2.2881909602355868 }],
+    ['C11', { x: -0.8090169943749473, y: 1.3371344439404331 }],
+    ['N21', { x: 0.7493491916479602, y: 0 }],
+    ['C20', { x: 1.3371344439404331, y: -0.8090169943749473 }],
+    ['C19', { x: 2.2881909602355868, y: -0.5 }],
+    ['C18', { x: 2.2881909602355868, y: 0.5 }],
+    ['C17', { x: 1.3371344439404333, y: 0.8090169943749475 }],
+    ['N24', { x: 0, y: -0.7493491916479602 }],
+    ['C23', { x: 0.8090169943749473, y: -1.3371344439404333 }],
+    ['C1', { x: 0.5, y: -2.2881909602355868 }],
+    ['C2', { x: -0.5, y: -2.2881909602355868 }],
+    ['C3', { x: -0.8090169943749473, y: -1.3371344439404331 }],
+    ['N9', { x: -0.7493491916479602, y: 0 }],
+    ['C8', { x: -1.3371344439404333, y: 0.8090169943749473 }],
+    ['C7', { x: -2.2881909602355868, y: 0.5 }],
+    ['C6', { x: -2.2881909602355868, y: -0.5 }],
+    ['C5', { x: -1.3371344439404333, y: -0.8090169943749473 }],
+    ['C10', { x: -1.7290276913828766, y: 1.7290276913828768 }],
+    ['C16', { x: 1.7290276913828766, y: 1.729027691382877 }],
+    ['C22', { x: 1.7290276913828768, y: -1.7290276913828766 }],
+    ['C4', { x: -1.7290276913828766, y: -1.7290276913828768 }]
+  ]);
+}
+
+/**
  * Creates normalized coordinates for the unsaturated steroid nucleus with the D ring on the right.
  * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
  */
@@ -954,6 +1006,14 @@ function createQuinoxalineGeometry() {
 }
 
 function createPhthalazineGeometry() {
+  return createSixSixFusedGeometry();
+}
+
+/**
+ * Creates normalized coordinates for cinnoline with the diazine ring on the right.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createCinnolineGeometry() {
   return createSixSixFusedGeometry();
 }
 
@@ -1066,7 +1126,35 @@ function geometrySpec(kind, normalizedCoords, validation) {
   });
 }
 
-function createTemplate(id, family, priority, molecule, geometry) {
+/**
+ * Freezes optional match-context metadata for a template descriptor.
+ * @param {object|null|undefined} matchContext - Match-context descriptor.
+ * @returns {object|null} Frozen match-context descriptor or `null`.
+ */
+function freezeMatchContext(matchContext) {
+  if (!matchContext) {
+    return null;
+  }
+
+  return Object.freeze({
+    exocyclicNeighbors: Object.freeze(
+      (matchContext.exocyclicNeighbors ?? []).map(constraint => Object.freeze({ ...constraint }))
+    )
+  });
+}
+
+/**
+ * Creates one frozen scaffold-template descriptor.
+ * @param {string} id - Template identifier.
+ * @param {string} family - Template family.
+ * @param {number} priority - Match priority.
+ * @param {Molecule} molecule - Template molecule graph.
+ * @param {object|null} geometry - Optional normalized geometry spec.
+ * @param {object} [options] - Additional template options.
+ * @param {object|null} [options.matchContext] - Optional match-context metadata.
+ * @returns {object} Frozen template descriptor.
+ */
+function createTemplate(id, family, priority, molecule, geometry, options = {}) {
   const normalizedCoords = geometry?.normalizedCoords ?? null;
   return Object.freeze({
     id,
@@ -1080,6 +1168,7 @@ function createTemplate(id, family, priority, molecule, geometry) {
     hasGeometry: Array.isArray(normalizedCoords),
     normalizedCoords,
     geometryValidation: geometry?.validation ?? null,
+    matchContext: freezeMatchContext(options.matchContext),
     createCoords: normalizedCoords ? bondLength => scaleCoordEntries(normalizedCoords, bondLength) : null
   });
 }
@@ -1241,6 +1330,13 @@ const TEMPLATE_LIBRARY = Object.freeze(
       geometrySpec('normalized-xy', createAcridineGeometry(), PLANAR_VALIDATION)
     ),
     createTemplate(
+      'porphine',
+      'macrocycle',
+      40.985,
+      createPorphineTemplate(),
+      geometrySpec('normalized-xy', createPorphineGeometry(), PLANAR_VALIDATION)
+    ),
+    createTemplate(
       'steroid-core-unsaturated',
       'fused',
       40.97,
@@ -1269,6 +1365,27 @@ const TEMPLATE_LIBRARY = Object.freeze(
       geometrySpec('normalized-xy', createFluoreneGeometry(), PLANAR_VALIDATION)
     ),
     createTemplate(
+      'indanone',
+      'fused',
+      40.91,
+      createIndaneTemplate(),
+      geometrySpec('normalized-xy', createIndaneGeometry(), PLANAR_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            {
+              templateAtomId: 'a0',
+              element: 'O',
+              bondOrder: 2,
+              neighborDegree: 1,
+              minCount: 1,
+              maxCount: 1
+            }
+          ]
+        }
+      }
+    ),
+    createTemplate(
       'anthracene',
       'fused',
       40.75,
@@ -1281,6 +1398,13 @@ const TEMPLATE_LIBRARY = Object.freeze(
       40.5,
       createPhthalazineTemplate(),
       geometrySpec('normalized-xy', createPhthalazineGeometry(), PLANAR_VALIDATION)
+    ),
+    createTemplate(
+      'cinnoline',
+      'fused',
+      40.49,
+      createCinnolineTemplate(),
+      geometrySpec('normalized-xy', createCinnolineGeometry(), PLANAR_VALIDATION)
     ),
     createTemplate(
       'naphthalene',

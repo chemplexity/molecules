@@ -33,6 +33,36 @@ function setDisplayStereo(bond, type, centerId = null, manual = false) {
   }
 }
 
+/**
+ * Collects all renderer-facing wedge/dash assignments from a layout result.
+ * Stereo assignments are computed if missing; extra display assignments are
+ * appended without overriding explicit stereochemical wedges on the same bond.
+ * @param {object} molecule - Target molecule graph.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object|null} result - Optional layout result.
+ * @returns {Array<{bondId: string, type: 'wedge'|'dash', centerId?: string, manual?: boolean}>} Display assignments.
+ */
+function collectDisplayAssignments(molecule, coords, result) {
+  const layoutGraph = result?.layoutGraph ?? createLayoutGraph(molecule);
+  const stereoAssignments = Array.isArray(result?.metadata?.stereo?.assignments)
+    ? result.metadata.stereo.assignments
+    : pickWedgeAssignments(layoutGraph, coords).assignments;
+  const extraAssignments = Array.isArray(result?.metadata?.displayAssignments)
+    ? result.metadata.displayAssignments
+    : [];
+  const assignments = [...stereoAssignments];
+  const assignedBondIds = new Set(assignments.map(({ bondId }) => bondId));
+
+  for (const assignment of extraAssignments) {
+    if (assignedBondIds.has(assignment.bondId)) {
+      continue;
+    }
+    assignments.push(assignment);
+  }
+
+  return assignments;
+}
+
 function resolveCoordsInput(coordsOrResult) {
   if (coordsOrResult instanceof Map) {
     return {
@@ -105,10 +135,7 @@ function applyHiddenHydrogenMode(molecule, coords, hiddenHydrogenMode, preserveE
 }
 
 function syncAppliedStereoDisplay(molecule, coords, result) {
-  const layoutGraph = result?.layoutGraph ?? createLayoutGraph(molecule);
-  const assignments = Array.isArray(result?.metadata?.stereo?.assignments)
-    ? result.metadata.stereo.assignments
-    : pickWedgeAssignments(layoutGraph, coords).assignments;
+  const assignments = collectDisplayAssignments(molecule, coords, result);
 
   for (const bond of molecule.bonds.values()) {
     clearAutoDisplayStereo(bond);

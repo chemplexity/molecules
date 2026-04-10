@@ -18,6 +18,13 @@ export function create2DRenderHelpers(ctx) {
     };
   }
 
+  /**
+   * Computes how far a bond segment should be trimmed to clear the rendered atom label box.
+   * @param {object} atom - Atom whose label clearance is being measured.
+   * @param {{x: number, y: number}} otherSVGPt - Opposite endpoint of the segment in SVG coordinates.
+   * @param {function(object): {x: number, y: number}} toSVGPt - Atom-to-SVG projection function.
+   * @returns {number} Clearance distance in SVG pixels.
+   */
   function labelClearance(atom, otherSVGPt, toSVGPt) {
     const label = getAtomLabel(atom, ctx.state.getHCounts(), toSVGPt, ctx.state.getMol());
     if (!label) {
@@ -80,24 +87,51 @@ export function create2DRenderHelpers(ctx) {
     return Number.isFinite(best) ? best : Math.max(hw, hh);
   }
 
+  /**
+   * Shortens a bond segment using label clearance measured along that exact segment.
+   * @param {object} atom1 - Bond start atom.
+   * @param {object} atom2 - Bond end atom.
+   * @param {{x: number, y: number}} start - Segment start point in SVG coordinates.
+   * @param {{x: number, y: number}} end - Segment end point in SVG coordinates.
+   * @param {function(object): {x: number, y: number}} toSVGPt - Atom-to-SVG projection function.
+   * @param {number} [minimumClearance] - Minimum trim to apply at each endpoint.
+   * @returns {{x1: number, y1: number, x2: number, y2: number}} Shortened segment.
+   */
+  function shortenBondLineWithLabelClearance(atom1, atom2, start, end, toSVGPt, minimumClearance = 0) {
+    const c1 = Math.max(labelClearance(atom1, end, toSVGPt), minimumClearance);
+    const c2 = Math.max(labelClearance(atom2, start, toSVGPt), minimumClearance);
+    return ctx.geometry.shortenLine(start.x, start.y, end.x, end.y, c1, c2);
+  }
+
   function drawBond(container, bond, atom1, atom2, mol, toSVGPt, stereoType = null) {
     if (stereoType === 'wedge' || stereoType === 'dash') {
-      const start = toSVGPt(atom1);
+      const startOriginal = toSVGPt(atom1);
       const endOriginal = toSVGPt(atom2);
-      const { nx, ny } = ctx.geometry.perpUnit(endOriginal.x - start.x, endOriginal.y - start.y);
-      const c2 = labelClearance(atom2, start, toSVGPt);
-      const bondLength = Math.sqrt((endOriginal.x - start.x) ** 2 + (endOriginal.y - start.y) ** 2) || 1;
-      const end = {
-        x: endOriginal.x - ((endOriginal.x - start.x) / bondLength) * c2,
-        y: endOriginal.y - ((endOriginal.y - start.y) / bondLength) * c2
+      const { nx, ny } = ctx.geometry.perpUnit(endOriginal.x - startOriginal.x, endOriginal.y - startOriginal.y);
+      const c1 = labelClearance(atom1, endOriginal, toSVGPt);
+      const c2 = labelClearance(atom2, startOriginal, toSVGPt);
+      const bondLength = Math.sqrt((endOriginal.x - startOriginal.x) ** 2 + (endOriginal.y - startOriginal.y) ** 2) || 1;
+      const start = {
+        x: startOriginal.x + ((endOriginal.x - startOriginal.x) / bondLength) * c1,
+        y: startOriginal.y + ((endOriginal.y - startOriginal.y) / bondLength) * c1
       };
+      const end = {
+        x: endOriginal.x - ((endOriginal.x - startOriginal.x) / bondLength) * c2,
+        y: endOriginal.y - ((endOriginal.y - startOriginal.y) / bondLength) * c2
+      };
+      const drawableLength = Math.sqrt((end.x - start.x) ** 2 + (end.y - start.y) ** 2) || 1;
       if (stereoType === 'wedge') {
+        const sourceTrim = Math.min(ctx.constants.wedgeHalfWidth * 0.5, Math.max(0.8, drawableLength * 0.35));
+        const tip = {
+          x: start.x + ((end.x - start.x) / drawableLength) * sourceTrim,
+          y: start.y + ((end.y - start.y) / drawableLength) * sourceTrim
+        };
         container
           .append('polygon')
           .attr('class', 'bond bond-wedge')
           .attr(
             'points',
-            `${start.x},${start.y} ` +
+            `${tip.x},${tip.y} ` +
               `${end.x - nx * ctx.constants.wedgeHalfWidth},${end.y - ny * ctx.constants.wedgeHalfWidth} ` +
               `${end.x + nx * ctx.constants.wedgeHalfWidth},${end.y + ny * ctx.constants.wedgeHalfWidth}`
           )
@@ -127,44 +161,56 @@ export function create2DRenderHelpers(ctx) {
     const order = renderBondOrder(bond);
     const start = toSVGPt(atom1);
     const end = toSVGPt(atom2);
-    const c1 = labelClearance(atom1, end, toSVGPt);
-    const c2 = labelClearance(atom2, start, toSVGPt);
     const dx = end.x - start.x;
     const dy = end.y - start.y;
     const { nx, ny } = ctx.geometry.perpUnit(dx, dy);
 
     if (order === 1) {
-      const line = ctx.geometry.shortenLine(start.x, start.y, end.x, end.y, c1, c2);
+      const line = shortenBondLineWithLabelClearance(atom1, atom2, start, end, toSVGPt);
       addLine(container, line.x1, line.y1, line.x2, line.y2);
     } else if (order === 2) {
       const dir = ctx.geometry.secondaryDir(atom1, atom2, mol, toSVGPt);
-      const primary = ctx.geometry.shortenLine(start.x, start.y, end.x, end.y, c1, c2);
+      const primary = shortenBondLineWithLabelClearance(atom1, atom2, start, end, toSVGPt);
       addLine(container, primary.x1, primary.y1, primary.x2, primary.y2);
       const ox = nx * ctx.constants.bondOffset2d * dir;
       const oy = ny * ctx.constants.bondOffset2d * dir;
-      const secondary = ctx.geometry.shortenLine(start.x + ox, start.y + oy, end.x + ox, end.y + oy, Math.max(c1, 4), Math.max(c2, 4));
+      const secondary = shortenBondLineWithLabelClearance(
+        atom1,
+        atom2,
+        { x: start.x + ox, y: start.y + oy },
+        { x: end.x + ox, y: end.y + oy },
+        toSVGPt,
+        4
+      );
       addLine(container, secondary.x1, secondary.y1, secondary.x2, secondary.y2);
     } else if (order === 3) {
       for (const d of [-ctx.constants.bondOffset2d, 0, ctx.constants.bondOffset2d]) {
         const ox = nx * d;
         const oy = ny * d;
-        const tripleLine = ctx.geometry.shortenLine(
-          start.x + ox,
-          start.y + oy,
-          end.x + ox,
-          end.y + oy,
-          d !== 0 ? Math.max(c1, 4) : c1,
-          d !== 0 ? Math.max(c2, 4) : c2
+        const tripleLine = shortenBondLineWithLabelClearance(
+          atom1,
+          atom2,
+          { x: start.x + ox, y: start.y + oy },
+          { x: end.x + ox, y: end.y + oy },
+          toSVGPt,
+          d !== 0 ? 4 : 0
         );
         addLine(container, tripleLine.x1, tripleLine.y1, tripleLine.x2, tripleLine.y2);
       }
     } else if (order === 1.5) {
       const dir = ctx.geometry.secondaryDir(atom1, atom2, mol, toSVGPt);
-      const primary = ctx.geometry.shortenLine(start.x, start.y, end.x, end.y, c1, c2);
+      const primary = shortenBondLineWithLabelClearance(atom1, atom2, start, end, toSVGPt);
       addLine(container, primary.x1, primary.y1, primary.x2, primary.y2);
       const ox = nx * ctx.constants.bondOffset2d * dir;
       const oy = ny * ctx.constants.bondOffset2d * dir;
-      const dashed = ctx.geometry.shortenLine(start.x + ox, start.y + oy, end.x + ox, end.y + oy, Math.max(c1, 5), Math.max(c2, 5));
+      const dashed = shortenBondLineWithLabelClearance(
+        atom1,
+        atom2,
+        { x: start.x + ox, y: start.y + oy },
+        { x: end.x + ox, y: end.y + oy },
+        toSVGPt,
+        5
+      );
       addLine(container, dashed.x1, dashed.y1, dashed.x2, dashed.y2, 'bond-dashed');
     }
   }

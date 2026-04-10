@@ -23,6 +23,119 @@ function nonSharedPath(atomIds, firstSharedAtomId, secondSharedAtomId) {
 }
 
 /**
+ * Returns whether the fused ring-adjacency graph contains a cycle.
+ * @param {object[]} rings - Ring descriptors.
+ * @param {Map<number, number[]>} ringAdj - Ring adjacency map.
+ * @returns {boolean} True when the fused system has a re-entrant fused cycle.
+ */
+function hasFusedAdjacencyCycle(rings, ringAdj) {
+  const visited = new Set();
+
+  function visit(ringId, parentRingId) {
+    visited.add(ringId);
+    for (const neighborRingId of ringAdj.get(ringId) ?? []) {
+      if (neighborRingId === parentRingId) {
+        continue;
+      }
+      if (visited.has(neighborRingId)) {
+        return true;
+      }
+      if (visit(neighborRingId, ringId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  for (const ring of rings) {
+    if (visited.has(ring.id)) {
+      continue;
+    }
+    if (visit(ring.id, null)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Relaxes cyclic constructed fused layouts so multiply shared junction atoms
+ * satisfy all of their in-system bond-length constraints simultaneously.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} ringAtomIds - Atom IDs in the fused system.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Current coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} [options] - Relaxation options.
+ * @param {number} [options.iterations] - Maximum relaxation passes.
+ * @param {number} [options.damping] - Per-pass damping factor.
+ * @returns {Map<string, {x: number, y: number}>} Relaxed coordinates.
+ */
+function relaxConstructedFusedCoords(layoutGraph, ringAtomIds, inputCoords, bondLength, options = {}) {
+  const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  const ringAtomIdSet = new Set(ringAtomIds);
+  const iterations = options.iterations ?? 25;
+  const damping = options.damping ?? 0.5;
+
+  for (let iteration = 0; iteration < iterations; iteration++) {
+    const nextPositions = new Map();
+    for (const atomId of ringAtomIds) {
+      const atom = layoutGraph.atoms.get(atomId);
+      const currentPosition = coords.get(atomId);
+      if (!atom || atom.element === 'H' || !currentPosition) {
+        continue;
+      }
+
+      const targets = [];
+      for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+        if (!bond || bond.kind !== 'covalent') {
+          continue;
+        }
+        const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+        if (!ringAtomIdSet.has(neighborAtomId)) {
+          continue;
+        }
+        const neighborPosition = coords.get(neighborAtomId);
+        if (!neighborPosition) {
+          continue;
+        }
+        let dx = currentPosition.x - neighborPosition.x;
+        let dy = currentPosition.y - neighborPosition.y;
+        const magnitude = Math.hypot(dx, dy);
+        if (magnitude <= 1e-12) {
+          continue;
+        }
+        dx /= magnitude;
+        dy /= magnitude;
+        targets.push({
+          x: neighborPosition.x + (dx * bondLength),
+          y: neighborPosition.y + (dy * bondLength)
+        });
+      }
+
+      if (targets.length === 0) {
+        continue;
+      }
+      const averageTarget = targets.reduce((sum, position) => ({
+        x: sum.x + position.x,
+        y: sum.y + position.y
+      }), { x: 0, y: 0 });
+      averageTarget.x /= targets.length;
+      averageTarget.y /= targets.length;
+      nextPositions.set(atomId, {
+        x: (currentPosition.x * (1 - damping)) + (averageTarget.x * damping),
+        y: (currentPosition.y * (1 - damping)) + (averageTarget.y * damping)
+      });
+    }
+
+    for (const [atomId, position] of nextPositions) {
+      coords.set(atomId, position);
+    }
+  }
+
+  return coords;
+}
+
+/**
  * Places a fused ring system by growing regular polygons across shared edges.
  * @param {object[]} rings - Ring descriptors in the target fused system.
  * @param {Map<number, number[]>} ringAdj - Ring adjacency map.
@@ -115,7 +228,19 @@ export function layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLeng
     }
   }
 
-  const orientedCoords = orientCoordsHorizontally(coords, computeFusedAxis(ringCenters));
+  let orientedCoords = orientCoordsHorizontally(coords, computeFusedAxis(ringCenters));
+  if (options.layoutGraph && hasFusedAdjacencyCycle(rings, ringAdj)) {
+    const relaxedCoords = relaxConstructedFusedCoords(
+      options.layoutGraph,
+      templateAtomIds,
+      orientedCoords,
+      bondLength
+    );
+    orientedCoords = orientCoordsHorizontally(
+      relaxedCoords,
+      computeFusedAxis(rebuildRingCenters(rings, relaxedCoords))
+    );
+  }
   return {
     coords: orientedCoords,
     ringCenters: rebuildRingCenters(rings, orientedCoords),

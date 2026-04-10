@@ -2517,6 +2517,26 @@ describe('pickStereoWedges', () => {
     assert.deepEqual(bond.properties.display, { as: 'dash', manual: true });
   });
 
+  it('preserves projected organometallic wedge and dash assignments on a non-chiral metal center', () => {
+    const mol = parseSMILES('[Co+3](N)(N)(N)(N)(N)N');
+    const coordinationBonds = [...mol.bonds.values()].filter(bond => bond.atoms.includes('Co1'));
+
+    coordinationBonds[0].properties.display = { as: 'wedge', centerId: 'Co1' };
+    coordinationBonds[1].properties.display = { as: 'dash', centerId: 'Co1' };
+
+    const preserved = [...syncDisplayStereo(mol)].sort((firstEntry, secondEntry) => firstEntry[0].localeCompare(secondEntry[0]));
+
+    assert.deepEqual(
+      preserved,
+      [
+        [coordinationBonds[0].id, 'wedge'],
+        [coordinationBonds[1].id, 'dash']
+      ].sort((firstEntry, secondEntry) => firstEntry[0].localeCompare(secondEntry[0]))
+    );
+    assert.deepEqual(coordinationBonds[0].properties.display, { as: 'wedge', centerId: 'Co1' });
+    assert.deepEqual(coordinationBonds[1].properties.display, { as: 'dash', centerId: 'Co1' });
+  });
+
   it('can update the stored R/S assignment to satisfy an explicit displayed wedge or dash choice', () => {
     const mol = parseSMILES('C[C@](F)(CC)CCC');
     generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });

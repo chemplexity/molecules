@@ -1,7 +1,7 @@
 /** @module templates/placement */
 
-import { findFirstSubgraphMapping } from '../../algorithms/vf2.js';
 import { getTemplateById, getTemplateCoords } from './library.js';
+import { findTemplateMapping } from './match.js';
 
 /**
  * Places a matched scaffold template onto the target atom IDs.
@@ -23,8 +23,7 @@ export function placeTemplateCoords(layoutGraph, templateId, atomIds, bondLength
   if (!templateCoords) {
     return null;
   }
-  const target = layoutGraph.sourceMolecule.getSubgraph(atomIds);
-  const mapping = findFirstSubgraphMapping(target, template.molecule, { limit: 1 });
+  const mapping = findTemplateMapping(layoutGraph, atomIds, template);
   if (!mapping) {
     return null;
   }

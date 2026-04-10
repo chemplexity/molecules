@@ -481,4 +481,146 @@ describe('createSelectionActions', () => {
     assert.equal(buttons.pan.classList.contains('active'), false);
     assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'draw2d']);
   });
+
+  it('closes a click-opened bond drawer on outside pointer interaction', () => {
+    let pointerDownHandler = null;
+    const drawTools = makeButton();
+    const actions = createSelectionActions({
+      document: {
+        addEventListener(type, handler) {
+          if (type === 'pointerdown') {
+            pointerDownHandler = handler;
+          }
+        }
+      },
+      state: {
+        viewState: {
+          getMode: () => '2d'
+        },
+        documentState: {
+          getMol2d: () => ({ id: 'mol' })
+        },
+        overlayState: {
+          getSelectMode: () => false,
+          setSelectMode() {},
+          getDrawBondMode: () => true,
+          setDrawBondMode() {},
+          getEraseMode: () => false,
+          setEraseMode() {},
+          getChargeTool: () => null,
+          setChargeTool() {},
+          getDrawBondElement: () => 'C',
+          setDrawBondElement() {},
+          getDrawBondType: () => 'single',
+          setDrawBondType() {},
+          getSelectedAtomIds: () => new Set(),
+          getSelectedBondIds: () => new Set(),
+          setErasePainting() {}
+        }
+      },
+      renderers: {
+        draw2d() {},
+        applyForceSelection() {}
+      },
+      view: {
+        clearPrimitiveHover() {}
+      },
+      drawBond: {
+        cancelDrawBond() {}
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: makeButton(),
+        selectButton: makeButton(),
+        drawBondButton: makeButton(),
+        drawTools,
+        eraseButton: makeButton(),
+        getChargeToolButton: () => null,
+        getElementButton: () => null,
+        getBondDrawTypeButton: () => null
+      }
+    });
+
+    actions.openDrawBondDrawer();
+    pointerDownHandler({
+      target: {
+        closest: () => null
+      }
+    });
+
+    assert.equal(drawTools.classList.contains('drawer-open'), false);
+  });
+
+  it('keeps a click-opened bond drawer open while the pointer interaction stays inside draw tools', () => {
+    let pointerDownHandler = null;
+    const drawTools = makeButton();
+    const actions = createSelectionActions({
+      document: {
+        addEventListener(type, handler) {
+          if (type === 'pointerdown') {
+            pointerDownHandler = handler;
+          }
+        }
+      },
+      state: {
+        viewState: {
+          getMode: () => '2d'
+        },
+        documentState: {
+          getMol2d: () => ({ id: 'mol' })
+        },
+        overlayState: {
+          getSelectMode: () => false,
+          setSelectMode() {},
+          getDrawBondMode: () => true,
+          setDrawBondMode() {},
+          getEraseMode: () => false,
+          setEraseMode() {},
+          getChargeTool: () => null,
+          setChargeTool() {},
+          getDrawBondElement: () => 'C',
+          setDrawBondElement() {},
+          getDrawBondType: () => 'single',
+          setDrawBondType() {},
+          getSelectedAtomIds: () => new Set(),
+          getSelectedBondIds: () => new Set(),
+          setErasePainting() {}
+        }
+      },
+      renderers: {
+        draw2d() {},
+        applyForceSelection() {}
+      },
+      view: {
+        clearPrimitiveHover() {}
+      },
+      drawBond: {
+        cancelDrawBond() {}
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: makeButton(),
+        selectButton: makeButton(),
+        drawBondButton: makeButton(),
+        drawTools,
+        eraseButton: makeButton(),
+        getChargeToolButton: () => null,
+        getElementButton: () => null,
+        getBondDrawTypeButton: () => null
+      }
+    });
+
+    actions.openDrawBondDrawer();
+    pointerDownHandler({
+      target: {
+        closest: selector => (selector === '#draw-tools' ? {} : null)
+      }
+    });
+
+    assert.equal(drawTools.classList.contains('drawer-open'), true);
+  });
 });

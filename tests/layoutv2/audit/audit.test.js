@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { parseSMILES } from '../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { auditLayout } from '../../../src/layoutv2/audit/audit.js';
 import { inspectEZStereo } from '../../../src/layoutv2/stereo/ez.js';
@@ -62,7 +63,24 @@ describe('layoutv2/audit/audit', () => {
       bondValidationClasses: new Map([['b0', 'bridged']])
     });
 
+    assert.equal(planarAudit.ok, false);
+    assert.equal(bridgedAudit.ok, true);
     assert.equal(planarAudit.bondLengthFailureCount, 1);
     assert.equal(bridgedAudit.bondLengthFailureCount, 0);
+  });
+
+  it('ignores explicit hydrogen bond stretches in bond-length audit stats', () => {
+    const graph = createLayoutGraph(parseSMILES('N'));
+    const coords = new Map([
+      ['N1', { x: 0, y: 0 }],
+      ['H2', { x: 3, y: 0 }],
+      ['H3', { x: 0, y: 3 }],
+      ['H4', { x: -3, y: 0 }]
+    ]);
+
+    const audit = auditLayout(graph, coords);
+
+    assert.equal(audit.ok, true);
+    assert.equal(audit.bondLengthFailureCount, 0);
   });
 });

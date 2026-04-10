@@ -141,6 +141,16 @@ describe('layoutv2/pipeline', () => {
     assert.equal(result.coords.size, 12);
   });
 
+  it('keeps suppressed-h simple rings audit-clean when explicit hydrogens overlap only off-screen', () => {
+    const result = runPipeline(parseSMILES('C1CCCCC1'), {
+      suppressH: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
   it('treats macrocycles with substituents as mixed but still places them completely', () => {
     const result = runPipeline(makeMacrocycleWithSubstituent());
     assert.equal(result.metadata.primaryFamily, 'macrocycle');
@@ -148,6 +158,32 @@ describe('layoutv2/pipeline', () => {
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.placedComponentCount, 1);
     assert.equal(result.coords.size, 13);
+  });
+
+  it('uses the porphine macrocycle template to avoid collapsed porphyrin-core layouts', () => {
+    const result = runPipeline(parseSMILES('C1=CC2=CC3=CC=C(N3)C=C4C=CC(=N4)C=C5C=CC(=N5)C=C1N2'));
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.deepEqual(result.metadata.placedFamilies, ['macrocycle']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.collapsedMacrocycleCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+  });
+
+  it('keeps medium and large simple macrocycles within bond-length audit tolerance', () => {
+    const mediumResult = runPipeline(parseSMILES('C1CCCCCCCCCCCCCCO1'), {
+      suppressH: true
+    });
+    const largeResult = runPipeline(parseSMILES('C1CCCCCCCCCCCCCCCCCCCCCCC1'), {
+      suppressH: true
+    });
+
+    assert.equal(mediumResult.metadata.primaryFamily, 'macrocycle');
+    assert.equal(mediumResult.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(mediumResult.metadata.audit.ok, true);
+    assert.equal(largeResult.metadata.primaryFamily, 'macrocycle');
+    assert.equal(largeResult.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(largeResult.metadata.audit.ok, true);
   });
 
   it('routes large components through block partitioning and stitching', () => {
@@ -189,6 +225,29 @@ describe('layoutv2/pipeline', () => {
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps steroid mixed layouts audit-clean without stretching the fused scaffold during overlap cleanup', () => {
+    const result = runPipeline(parseSMILES('CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC'), {
+      suppressH: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('relaxes cyclic fused mixed scaffolds so re-entrant fused edges do not overstretch aromatic bonds', () => {
+    const result = runPipeline(parseSMILES('CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C'), {
+      suppressH: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'fused');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });
 });

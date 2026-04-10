@@ -1,11 +1,12 @@
 /** @module families/acyclic */
 
-import { add, fromAngle } from '../geometry/vec2.js';
+import { add, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { placeRemainingBranches } from '../placement/branch-placement.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 
 const ZIGZAG_STEP_ANGLE = Math.PI / 6;
+const TRIGONAL_TARGET_ANGLE = (2 * Math.PI) / 3;
 const STEP_ANGLE_EPSILON = 1e-9;
 
 /**
@@ -92,6 +93,127 @@ function findConjugatedBackboneCenters(layoutGraph, backbone) {
   }
 
   return conjugatedCenterIds;
+}
+
+/**
+ * Normalizes an angle into the signed `(-pi, pi]` range.
+ * @param {number} angle - Input angle in radians.
+ * @returns {number} Wrapped signed angle.
+ */
+function normalizeSignedAngle(angle) {
+  let wrappedAngle = angle;
+  while (wrappedAngle > Math.PI) {
+    wrappedAngle -= 2 * Math.PI;
+  }
+  while (wrappedAngle <= -Math.PI) {
+    wrappedAngle += 2 * Math.PI;
+  }
+  return wrappedAngle;
+}
+
+/**
+ * Collects the atoms on one side of a bond without crossing the blocked atom.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} startAtomId - Atom ID at the traversed side of the bond.
+ * @param {string} blockedAtomId - Atom ID acting as the traversal boundary.
+ * @returns {Set<string>} Atom IDs reachable from `startAtomId`.
+ */
+function collectSideAtomIds(layoutGraph, startAtomId, blockedAtomId) {
+  const sideAtomIds = new Set();
+  if (!layoutGraph) {
+    return sideAtomIds;
+  }
+
+  const queue = [startAtomId];
+  const seen = new Set([blockedAtomId]);
+  let queueHead = 0;
+  while (queueHead < queue.length) {
+    const atomId = queue[queueHead++];
+    if (seen.has(atomId)) {
+      continue;
+    }
+    seen.add(atomId);
+    sideAtomIds.add(atomId);
+
+    const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    for (const neighborAtom of atom.getNeighbors(layoutGraph.sourceMolecule)) {
+      if (neighborAtom && !seen.has(neighborAtom.id)) {
+        queue.push(neighborAtom.id);
+      }
+    }
+  }
+
+  return sideAtomIds;
+}
+
+/**
+ * Returns whether a backbone center should read as a strict trigonal turn in an
+ * acyclic depiction.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string|null|undefined} previousAtomId - Previous backbone atom ID.
+ * @param {string|null|undefined} atomId - Center backbone atom ID.
+ * @param {string|null|undefined} nextAtomId - Next backbone atom ID.
+ * @returns {boolean} True when the center should be normalized to 120 degrees.
+ */
+function isTrigonalBackboneCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
+  return !isLinearCentre(layoutGraph, previousAtomId, atomId, nextAtomId) && hasSp2Bond(layoutGraph, atomId);
+}
+
+/**
+ * Rotates downstream acyclic backbone suffixes so strict trigonal centers land
+ * at ideal 120-degree bond angles while preserving the current turn sign.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string[]} backbone - Backbone atom IDs in placement order.
+ * @returns {Map<string, {x: number, y: number}>} Coordinate map with normalized trigonal turns.
+ */
+function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
+  if (!layoutGraph || backbone.length < 3) {
+    return coords;
+  }
+
+  let previousTurnSign = 0;
+  for (let index = 1; index < backbone.length - 1; index++) {
+    const previousAtomId = backbone[index - 1];
+    const centerAtomId = backbone[index];
+    const nextAtomId = backbone[index + 1];
+    if (!isTrigonalBackboneCentre(layoutGraph, previousAtomId, centerAtomId, nextAtomId)) {
+      continue;
+    }
+
+    const centerPosition = coords.get(centerAtomId);
+    const previousPosition = coords.get(previousAtomId);
+    const nextPosition = coords.get(nextAtomId);
+    if (!centerPosition || !previousPosition || !nextPosition) {
+      continue;
+    }
+
+    const previousDirection = Math.atan2(previousPosition.y - centerPosition.y, previousPosition.x - centerPosition.x);
+    const nextDirection = Math.atan2(nextPosition.y - centerPosition.y, nextPosition.x - centerPosition.x);
+    const currentTurn = normalizeSignedAngle(nextDirection - previousDirection);
+    const currentTurnSign = Math.sign(currentTurn) || previousTurnSign || (index % 2 === 1 ? -1 : 1);
+    const targetTurn = currentTurnSign * TRIGONAL_TARGET_ANGLE;
+    const rotationAngle = targetTurn - currentTurn;
+    if (Math.abs(rotationAngle) <= 1e-6) {
+      previousTurnSign = currentTurnSign;
+      continue;
+    }
+
+    const movedAtomIds = collectSideAtomIds(layoutGraph, nextAtomId, centerAtomId);
+    for (const atomId of movedAtomIds) {
+      const position = coords.get(atomId);
+      if (!position) {
+        continue;
+      }
+      coords.set(atomId, add(centerPosition, rotate(sub(position, centerPosition), rotationAngle)));
+    }
+    previousTurnSign = currentTurnSign;
+  }
+
+  return coords;
 }
 
 function isPreferredBackboneEndpoint(layoutGraph, adjacency, atomId, atomIdsToPlace) {
@@ -236,7 +358,10 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
   }
 
   placeRemainingBranches(adjacency, canonicalAtomRank, coords, atomIdsToPlace, backbone, bondLength, layoutGraph);
-  return layoutGraph
-    ? enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords
-    : coords;
+  if (!layoutGraph) {
+    return coords;
+  }
+
+  const stereoEnforced = enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords;
+  return normalizeBackboneTrigonalAngles(layoutGraph, stereoEnforced, backbone);
 }

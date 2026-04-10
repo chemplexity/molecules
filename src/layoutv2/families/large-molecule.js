@@ -12,6 +12,19 @@ function countHeavyAtoms(layoutGraph, atomIds) {
   return atomIds.filter(atomId => layoutGraph.sourceMolecule.atoms.get(atomId)?.name !== 'H').length;
 }
 
+/**
+ * Counts the visible participant atoms that still contribute to block layout cost.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Candidate atom IDs.
+ * @returns {number} Visible participant atom count.
+ */
+function countParticipantAtoms(layoutGraph, atomIds) {
+  return atomIds.filter(atomId => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
+  }).length;
+}
+
 function countRingSystems(layoutGraph, atomIds) {
   const atomIdSet = new Set(atomIds);
   return layoutGraph.ringSystems.filter(ringSystem => ringSystem.atomIds.every(atomId => atomIdSet.has(atomId))).length;
@@ -60,6 +73,14 @@ function splitBlockAtomIds(layoutGraph, atomIds, blockedBondId) {
   return [leftAtomIds, rightAtomIds];
 }
 
+/**
+ * Chooses the best cut bond for a large block using heavy, ring, and visible
+ * participant balance so explicit-H-rich peptide fragments keep splitting.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Candidate block atom IDs.
+ * @param {{heavyAtomCount: number, ringSystemCount: number}} threshold - Large-molecule thresholds.
+ * @returns {{bond: object, leftAtomIds: string[], rightAtomIds: string[], score: number}|null} Best cut candidate.
+ */
 function selectBestCut(layoutGraph, atomIds, threshold) {
   const atomIdSet = new Set(atomIds);
   const candidates = [];
@@ -78,10 +99,16 @@ function selectBestCut(layoutGraph, atomIds, threshold) {
     if (leftHeavyCount < 3 || rightHeavyCount < 3) {
       continue;
     }
+    const leftParticipantCount = countParticipantAtoms(layoutGraph, leftAtomIds);
+    const rightParticipantCount = countParticipantAtoms(layoutGraph, rightAtomIds);
     const leftRingSystems = countRingSystems(layoutGraph, leftAtomIds);
     const rightRingSystems = countRingSystems(layoutGraph, rightAtomIds);
-    const oversizePenalty = Math.max(0, leftHeavyCount - threshold.heavyAtomCount) + Math.max(0, rightHeavyCount - threshold.heavyAtomCount);
-    const balancePenalty = Math.abs(leftHeavyCount - rightHeavyCount);
+    const participantThreshold = threshold.heavyAtomCount;
+    const oversizePenalty = Math.max(0, leftHeavyCount - threshold.heavyAtomCount)
+      + Math.max(0, rightHeavyCount - threshold.heavyAtomCount)
+      + Math.max(0, leftParticipantCount - participantThreshold)
+      + Math.max(0, rightParticipantCount - participantThreshold);
+    const balancePenalty = Math.abs(leftParticipantCount - rightParticipantCount);
     const ringBonus = leftRingSystems > 0 && rightRingSystems > 0 ? 100 : 0;
     const score = ringBonus - (oversizePenalty * 10) - balancePenalty;
     candidates.push({
@@ -102,18 +129,36 @@ function selectBestCut(layoutGraph, atomIds, threshold) {
   return candidates[0] ?? null;
 }
 
+/**
+ * Creates a balanced large-molecule block descriptor.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Block atom IDs.
+ * @param {string} id - Synthetic block ID.
+ * @returns {{id: string, atomIds: string[], canonicalSignature: string, heavyAtomCount: number, participantCount: number, ringSystemCount: number}} Block descriptor.
+ */
 function createBlock(layoutGraph, atomIds, id) {
   const sortedAtomIds = [...atomIds].sort((firstAtomId, secondAtomId) => compareCanonicalAtomIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));
   const slice = createAtomSlice(layoutGraph, sortedAtomIds, id);
   return {
     ...slice,
     heavyAtomCount: countHeavyAtoms(layoutGraph, sortedAtomIds),
+    participantCount: countParticipantAtoms(layoutGraph, sortedAtomIds),
     ringSystemCount: countRingSystems(layoutGraph, sortedAtomIds)
   };
 }
 
+/**
+ * Returns whether a large block still needs to be partitioned further.
+ * @param {{heavyAtomCount: number, participantCount: number, ringSystemCount: number}} block - Block descriptor.
+ * @param {{heavyAtomCount: number, ringSystemCount: number}} threshold - Large-molecule thresholds.
+ * @returns {boolean} True when the block is still oversized.
+ */
 function isOversized(block, threshold) {
-  return block.heavyAtomCount > threshold.heavyAtomCount || block.ringSystemCount > threshold.ringSystemCount;
+  return (
+    block.heavyAtomCount > threshold.heavyAtomCount
+    || block.participantCount > threshold.heavyAtomCount
+    || block.ringSystemCount > threshold.ringSystemCount
+  );
 }
 
 function partitionBlocks(layoutGraph, component, threshold) {

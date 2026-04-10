@@ -1,5 +1,73 @@
 /** @module app/interactions/navigation */
 
+import { FORCE_LAYOUT_BOND_LENGTH } from '../render/force-helpers.js';
+
+const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
+
+/**
+ * Seeds molecule atom coordinates from the live force-simulation node positions.
+ * @param {object} molecule - Molecule clone that will receive temporary 2D coordinates.
+ * @param {Array<object>} nodes - Force-simulation nodes with finite `x`/`y` positions.
+ * @param {number} [bondLength] - Target 2D bond length used to normalize force pixels.
+ * @returns {Map<string, {x: number, y: number}>} Centered 2D coordinates keyed by atom id.
+ */
+function seedMoleculeFromForcePositions(molecule, nodes, bondLength = DEFAULT_LAYOUT_BOND_LENGTH) {
+  const placedCoords = new Map();
+  if (!molecule?.atoms || !Array.isArray(nodes) || nodes.length === 0) {
+    return placedCoords;
+  }
+
+  const finiteNodes = nodes.filter(node => Number.isFinite(node?.x) && Number.isFinite(node?.y) && molecule.atoms.has(node.id));
+  if (finiteNodes.length === 0) {
+    return placedCoords;
+  }
+
+  let cx = 0;
+  let cy = 0;
+  for (const node of finiteNodes) {
+    cx += node.x;
+    cy += node.y;
+  }
+  cx /= finiteNodes.length;
+  cy /= finiteNodes.length;
+
+  const scale = bondLength / FORCE_LAYOUT_BOND_LENGTH;
+  for (const node of finiteNodes) {
+    const atom = molecule.atoms.get(node.id);
+    const x = (node.x - cx) * scale;
+    const y = (cy - node.y) * scale;
+    atom.x = x;
+    atom.y = y;
+    placedCoords.set(node.id, { x, y });
+  }
+
+  return placedCoords;
+}
+
+/**
+ * Builds a force anchor-layout map from the currently placed molecule coordinates.
+ * @param {object} molecule - Molecule whose placed coordinates should anchor force layout.
+ * @returns {Map<string, {x: number, y: number}>} Non-hydrogen anchor coordinates keyed by atom id.
+ */
+function buildForceAnchorLayoutFromPlacedCoords(molecule) {
+  const anchorLayout = new Map();
+  if (!molecule?.atoms) {
+    return anchorLayout;
+  }
+
+  for (const [id, atom] of molecule.atoms) {
+    if (atom.name === 'H' || atom.visible === false) {
+      continue;
+    }
+    if (!Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+      continue;
+    }
+    anchorLayout.set(id, { x: atom.x, y: atom.y });
+  }
+
+  return anchorLayout;
+}
+
 /**
  * Creates navigation action handlers for mode toggling, layout cleaning, rotation, and flipping in both 2D and force-layout modes.
  * @param {object} context - Dependency context providing state, history, view, renderers, dom, simulation, force, helpers, overlays, parsers, and actions.
@@ -54,7 +122,24 @@ export function createNavigationActions(context) {
       return;
     }
     context.history.takeSnapshot({ clearReactionPreview: false });
-    context.renderers.updateForce(context.state.documentState.getCurrentMol());
+    const mol = context.state.documentState.getCurrentMol();
+    const relayoutMol = mol.clone();
+    seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), DEFAULT_LAYOUT_BOND_LENGTH);
+    if (typeof context.helpers.refineExistingCoords === 'function') {
+      context.helpers.refineExistingCoords(relayoutMol, {
+        suppressH: true,
+        bondLength: DEFAULT_LAYOUT_BOND_LENGTH,
+        maxPasses: 12
+      });
+    }
+    const forceAnchorLayout = buildForceAnchorLayoutFromPlacedCoords(relayoutMol);
+    context.view.setPreserveSelectionOnNextRender(true);
+    context.renderers.renderMol(relayoutMol, {
+      preserveHistory: true,
+      preserveAnalysis: true,
+      preserveView: true,
+      forceAnchorLayout: forceAnchorLayout.size > 0 ? forceAnchorLayout : null
+    });
     const btn = context.dom.cleanForceButton;
     if (btn) {
       btn.textContent = '✓';

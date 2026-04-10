@@ -2,7 +2,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { applyCoords } from '../../src/layoutv2/apply.js';
 import { generateCoords, refineCoords } from '../../src/layoutv2/api.js';
-import { makeEthane, makeHiddenHydrogenStereocenter } from './support/molecules.js';
+import {
+  makeEthane,
+  makeHiddenHydrogenStereocenter,
+  makeProjectedOctahedralCobaltComplex,
+  makeProjectedTetrahedralZincComplex
+} from './support/molecules.js';
 
 describe('layoutv2/apply', () => {
   it('applies a full layout result onto molecule atom coordinates', () => {
@@ -89,5 +94,47 @@ describe('layoutv2/apply', () => {
     const bond = molecule.bonds.get(bondId);
     assert.ok(bond.properties.display);
     assert.equal(bond.properties.display.centerId, 'c0');
+  });
+
+  it('can sync renderer-facing projected metal wedge and dash assignments from a layout result', () => {
+    const molecule = makeProjectedTetrahedralZincComplex();
+    const result = generateCoords(molecule, { suppressH: true });
+    const summary = applyCoords(molecule, result, {
+      syncStereoDisplay: true
+    });
+    const projectedAssignments = [...summary.stereoMap.entries()]
+      .filter(([, type]) => type === 'wedge' || type === 'dash');
+
+    assert.equal(result.metadata.displayAssignmentCount, 2);
+    assert.equal(projectedAssignments.length, 2);
+    assert.deepEqual(
+      projectedAssignments.map(([, type]) => type).sort(),
+      ['dash', 'wedge']
+    );
+    for (const [bondId] of projectedAssignments) {
+      const bond = molecule.bonds.get(bondId);
+      assert.equal(bond.properties.display.centerId, 'Zn1');
+    }
+  });
+
+  it('can sync renderer-facing projected octahedral metal wedge and dash assignments from a layout result', () => {
+    const molecule = makeProjectedOctahedralCobaltComplex();
+    const result = generateCoords(molecule, { suppressH: true });
+    const summary = applyCoords(molecule, result, {
+      syncStereoDisplay: true
+    });
+    const projectedAssignments = [...summary.stereoMap.entries()]
+      .filter(([, type]) => type === 'wedge' || type === 'dash');
+
+    assert.equal(result.metadata.displayAssignmentCount, 2);
+    assert.equal(projectedAssignments.length, 2);
+    assert.deepEqual(
+      projectedAssignments.map(([, type]) => type).sort(),
+      ['dash', 'wedge']
+    );
+    for (const [bondId] of projectedAssignments) {
+      const bond = molecule.bonds.get(bondId);
+      assert.equal(bond.properties.display.centerId, 'Co1');
+    }
   });
 });

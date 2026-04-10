@@ -5,6 +5,7 @@ import { parseSMILES } from '../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { runLocalCleanup } from '../../../src/layoutv2/cleanup/local-rotation.js';
 import { measureLayoutCost } from '../../../src/layoutv2/audit/invariants.js';
+import { generateCoords, refineCoords } from '../../../src/layoutv2/api.js';
 
 function makeBranchedFixture() {
   const molecule = new Molecule();
@@ -14,6 +15,50 @@ function makeBranchedFixture() {
   molecule.addBond('b0', 'a0', 'a1', {}, false);
   molecule.addBond('b1', 'a1', 'a2', {}, false);
   return molecule;
+}
+
+/**
+ * Computes the dot product between a ring anchor's inward centroid vector and
+ * its substituent vector.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Ring-anchor atom id.
+ * @param {string} substituentAtomId - Substituent atom id.
+ * @returns {number} Signed inwardness score; positive means toward the ring interior.
+ */
+function ringInteriorDot(layoutGraph, coords, anchorAtomId, substituentAtomId) {
+  const anchorPosition = coords.get(anchorAtomId);
+  const substituentPosition = coords.get(substituentAtomId);
+  const anchorRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
+  if (!anchorPosition || !substituentPosition || anchorRings.length === 0) {
+    return 0;
+  }
+
+  let inwardX = 0;
+  let inwardY = 0;
+  for (const ring of anchorRings) {
+    let centroidX = 0;
+    let centroidY = 0;
+    let countedAtoms = 0;
+    for (const ringAtomId of ring.atomIds) {
+      const ringPosition = coords.get(ringAtomId);
+      if (!ringPosition) {
+        continue;
+      }
+      centroidX += ringPosition.x;
+      centroidY += ringPosition.y;
+      countedAtoms++;
+    }
+    if (countedAtoms === 0) {
+      continue;
+    }
+    inwardX += (centroidX / countedAtoms) - anchorPosition.x;
+    inwardY += (centroidY / countedAtoms) - anchorPosition.y;
+  }
+
+  const rootX = substituentPosition.x - anchorPosition.x;
+  const rootY = substituentPosition.y - anchorPosition.y;
+  return inwardX * rootX + inwardY * rootY;
 }
 
 describe('layoutv2/cleanup/local-rotation', () => {
@@ -73,5 +118,27 @@ describe('layoutv2/cleanup/local-rotation', () => {
     assert.ok(after < before);
     assert.ok(result.passes > 0);
     assert.notDeepEqual(result.coords.get('C7'), coords.get('C7'));
+  });
+
+  it('does not flip fused-ring bridgehead substituents inward during cleanup-only refinement', () => {
+    const smiles = 'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1';
+    const initial = generateCoords(parseSMILES(smiles), { suppressH: true });
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const result = runLocalCleanup(graph, new Map(initial.coords), { maxPasses: 6, bondLength: 1.5 });
+
+    assert.ok(ringInteriorDot(graph, initial.coords, 'C18', 'C28') <= 0);
+    assert.ok(ringInteriorDot(graph, result.coords, 'C18', 'C28') <= 0);
+  });
+
+  it('keeps the steroid bridgehead substituent outside the fused ring after refineCoords', () => {
+    const smiles = 'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1';
+    const initial = generateCoords(parseSMILES(smiles), { suppressH: true });
+    const refined = refineCoords(parseSMILES(smiles), {
+      suppressH: true,
+      existingCoords: new Map(initial.coords)
+    });
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+
+    assert.ok(ringInteriorDot(graph, refined.coords, 'C18', 'C28') <= 0);
   });
 });

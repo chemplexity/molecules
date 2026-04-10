@@ -1,5 +1,15 @@
 # Change Log
 
+## 2026-04-10
+
+- Fixes and optimizations to new 2D layout algorithm
+- Fixed issue with region of window being unable to use select tool
+- Fix how bond line drawer tool stays open
+- Fix layout-v2 clean/refine flipping steroid ring substituents inward
+- Speed up layout-v2 rendering for very large explicit-H peptide-like molecules
+- Fix force-mode clean to refine the live layout
+- Fix layout-v2 trans alkene and diene bond angles to strict trigonal geometry
+
 ## 2026-04-09
 
 - Add prototype version of the 2D layout algorithm

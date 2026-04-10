@@ -79,6 +79,7 @@ export function createNavigationActionDeps(ctx) {
  */
 export function createSelectionActionDeps(ctx) {
   return {
+    document: ctx.document ?? null,
     state: ctx.appState,
     renderers: {
       draw2d: () => ctx.getDraw2D()(),

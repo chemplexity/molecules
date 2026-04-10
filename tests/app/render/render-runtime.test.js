@@ -94,15 +94,16 @@ describe('createRenderRuntime', () => {
   it('routes force renders through the shared policy layer', () => {
     const { runtime, calls } = makeRuntime({ mode: 'force' });
     const mol = { id: 'mol-force' };
+    const forceAnchorLayout = new Map([['a1', { x: 0, y: 0 }]]);
 
-    runtime.renderMol(mol, { preserveHistory: true, preserveView: true });
+    runtime.renderMol(mol, { preserveHistory: true, preserveView: true, forceAnchorLayout });
 
     assert.deepEqual(calls, [
       ['clearHighlights'],
       ['setCurrentMol', mol],
       ['resetOrientation'],
       ['kekulize', mol],
-      ['updateForce', mol, { preserveView: true }],
+      ['updateForce', mol, { preserveView: true, anchorLayout: forceAnchorLayout }],
       ['updateFormula', mol],
       ['updateDescriptors', mol],
       [

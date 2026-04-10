@@ -93,6 +93,114 @@ test('cleanLayout2d is a no-op outside 2d mode', () => {
   assert.equal(called, false);
 });
 
+test('cleanLayoutForce refines the live force geometry and rerenders with anchored force coords', () => {
+  const cloneAtoms = new Map([
+    ['a1', { id: 'a1', name: 'C', x: null, y: null }],
+    ['a2', { id: 'a2', name: 'O', x: null, y: null }],
+    ['h1', { id: 'h1', name: 'H', x: null, y: null }]
+  ]);
+  const sourceMol = {
+    cloneCalls: 0,
+    clone() {
+      this.cloneCalls += 1;
+      return {
+        cloned: true,
+        atoms: cloneAtoms
+      };
+    }
+  };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot: options => calls.push(['takeSnapshot', options])
+    },
+    simulation: {
+      nodes: () => [
+        { id: 'a1', x: 100, y: 100 },
+        { id: 'a2', x: 141, y: 100 },
+        { id: 'h1', x: 120.5, y: 100 }
+      ]
+    },
+    helpers: {
+      refineExistingCoords: (mol, options) => {
+        calls.push([
+          'refineExistingCoords',
+          [...mol.atoms.entries()].map(([id, atom]) => [id, { x: atom.x, y: atom.y }]),
+          options
+        ]);
+        mol.atoms.get('a1').x = 0;
+        mol.atoms.get('a1').y = 0;
+        mol.atoms.get('a2').x = 1.5;
+        mol.atoms.get('a2').y = 0;
+        return new Map([
+          ['a1', { x: 0, y: 0 }],
+          ['a2', { x: 1.5, y: 0 }]
+        ]);
+      }
+    },
+    renderers: {
+      renderMol: (mol, options) => {
+        calls.push([
+          'renderMol',
+          mol,
+          {
+            ...options,
+            forceAnchorLayout: options.forceAnchorLayout ? [...options.forceAnchorLayout.entries()] : options.forceAnchorLayout
+          }
+        ]);
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender: value => calls.push(['preserveSelection', value])
+    },
+    dom: {
+      cleanForceButton: null
+    }
+  });
+
+  actions.cleanLayoutForce();
+
+  assert.equal(sourceMol.cloneCalls, 1);
+  assert.deepEqual(calls, [
+    ['takeSnapshot', { clearReactionPreview: false }],
+    [
+      'refineExistingCoords',
+      [
+        ['a1', { x: -0.75, y: 0 }],
+        ['a2', { x: 0.75, y: 0 }],
+        ['h1', { x: 0, y: 0 }]
+      ],
+      {
+        suppressH: true,
+        bondLength: 1.5,
+        maxPasses: 12
+      }
+    ],
+    ['preserveSelection', true],
+    [
+      'renderMol',
+      { cloned: true, atoms: cloneAtoms },
+      {
+        preserveHistory: true,
+        preserveAnalysis: true,
+        preserveView: true,
+        forceAnchorLayout: [
+          ['a1', { x: 0, y: 0 }],
+          ['a2', { x: 1.5, y: 0 }]
+        ]
+      }
+    ]
+  ]);
+});
+
 test('force flip refits the viewport when a reaction preview is active', () => {
   const nodes = [
     { id: 'a1', x: 10, y: 20, vx: 0, vy: 0 },

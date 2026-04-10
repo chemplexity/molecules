@@ -79,12 +79,37 @@ describe('layoutv2/model/scaffold-plan', () => {
     assert.equal(saturatedPlan.mixedMode, true);
   });
 
+  it('prefers the indanone fused template when exocyclic ketone context is present', () => {
+    const graph = createLayoutGraph(parseSMILES('O=C1CCc2ccccc21'));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'fused');
+    assert.equal(plan.rootScaffold.templateId, 'indanone');
+    assert.equal(plan.mixedMode, true);
+    assert.deepEqual(plan.nonRingAtomIds, ['O1']);
+  });
+
   it('uses the fluorene fused template for the corpus fluorene SMILES spelling', () => {
     const graph = createLayoutGraph(parseSMILES('c1ccc2c(c1)Cc1ccccc1-2'));
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(graph.ringSystems.length, 1);
     assert.equal(plan.rootScaffold.family, 'fused');
     assert.equal(plan.rootScaffold.templateId, 'fluorene');
+    assert.equal(plan.mixedMode, false);
+  });
+
+  it('uses the cinnoline fused template for the missing diazine isomer', () => {
+    const graph = createLayoutGraph(parseSMILES('c1ccc2cnncc2c1'));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'fused');
+    assert.equal(plan.rootScaffold.templateId, 'cinnoline');
+    assert.equal(plan.mixedMode, false);
+  });
+
+  it('promotes the porphine core from a bridged heuristic to the macrocycle template family', () => {
+    const graph = createLayoutGraph(parseSMILES('C1=CC2=CC3=CC=C(N3)C=C4C=CC(=N4)C=C5C=CC(=N5)C=C1N2'));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'macrocycle');
+    assert.equal(plan.rootScaffold.templateId, 'porphine');
     assert.equal(plan.mixedMode, false);
   });
 

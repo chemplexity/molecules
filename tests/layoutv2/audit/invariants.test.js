@@ -1,8 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../../src/core/index.js';
+import { parseSMILES } from '../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { detectCollapsedMacrocycles, findSevereOverlaps, measureBondLengthDeviation, measureLayoutCost, measureTrigonalDistortion } from '../../../src/layoutv2/audit/invariants.js';
+import { runPipeline } from '../../../src/layoutv2/pipeline.js';
 import { makeMacrocycle } from '../support/molecules.js';
 
 describe('layoutv2/audit/invariants', () => {
@@ -22,6 +24,12 @@ describe('layoutv2/audit/invariants', () => {
     assert.equal(overlaps.length, 1);
     assert.equal(overlaps[0].firstAtomId, 'a0');
     assert.equal(overlaps[0].secondAtomId, 'a2');
+  });
+
+  it('ignores hydrogen-only overlaps when suppressH is enabled', () => {
+    const result = runPipeline(parseSMILES('C1CCCCC1'), { suppressH: true });
+    const overlaps = findSevereOverlaps(result.layoutGraph, result.coords, result.layoutGraph.options.bondLength);
+    assert.equal(overlaps.length, 0);
   });
 
   it('measures bond-length deviation and macrocycle collapse', () => {

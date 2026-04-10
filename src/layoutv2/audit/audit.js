@@ -26,7 +26,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
     ((stereo?.chiralCenterCount ?? 0) > 0 && (stereo?.unassignedCenterCount ?? 0) > 0);
   const bridgedReadabilityFailure = false;
   const ok = overlaps.length === 0
-    && bondDeviation.maxDeviation <= bondLength * 0.5
+    && bondDeviation.failingBondCount === 0
     && collapsedMacrocycles.length === 0
     && !stereoContradiction
     && !bridgedReadabilityFailure;

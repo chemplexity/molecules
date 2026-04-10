@@ -24,9 +24,18 @@ export function createRenderRuntime(deps) {
    * @param {boolean} [options.preserveGeometry] - When true, retains the existing 2D coordinates.
    * @param {boolean} [options.preserveView] - When true, does not reset the viewport transform.
    * @param {boolean} [options.preserveAnalysis] - When true, keeps existing analysis highlights.
+   * @param {Map<string, {x: number, y: number}>|null} [options.forceAnchorLayout] - Optional force-anchor layout override keyed by atom id.
    */
   function renderMol(mol, options = {}) {
-    const { recomputeResonance = true, refreshResonancePanel = true, preserveHistory = false, preserveGeometry = false, preserveView = false, preserveAnalysis = false } = options;
+    const {
+      recomputeResonance = true,
+      refreshResonancePanel = true,
+      preserveHistory = false,
+      preserveGeometry = false,
+      preserveView = false,
+      preserveAnalysis = false,
+      forceAnchorLayout = null
+    } = options;
 
     if (!preserveAnalysis) {
       deps.highlights.clear();
@@ -44,7 +53,7 @@ export function createRenderRuntime(deps) {
     deps.chemistry.kekulize(mol);
 
     if (deps.state.getMode() === 'force') {
-      updateForce(mol, { preserveView });
+      updateForce(mol, { preserveView, anchorLayout: forceAnchorLayout });
       if (!preserveAnalysis) {
         deps.analysis.updateFormula(mol);
         deps.analysis.updateDescriptors(mol);

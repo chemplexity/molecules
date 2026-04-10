@@ -61,6 +61,37 @@ function bondOrderBetween(layoutGraph, firstAtomId, secondAtomId) {
   return 1;
 }
 
+/**
+ * Returns the backbone turn sign at a path center from placed coordinates.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} previousAtomId - Previous atom ID.
+ * @param {string} centerAtomId - Center atom ID.
+ * @param {string} nextAtomId - Next atom ID.
+ * @returns {number} Signed turn direction (`-1`, `0`, `1`).
+ */
+function backboneTurnSign(coords, previousAtomId, centerAtomId, nextAtomId) {
+  const incoming = sub(coords.get(previousAtomId), coords.get(centerAtomId));
+  const outgoing = sub(coords.get(nextAtomId), coords.get(centerAtomId));
+  const cross = incoming.x * outgoing.y - incoming.y * outgoing.x;
+  return Math.sign(cross);
+}
+
+/**
+ * Returns the backbone bond angle at a path center in degrees.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} previousAtomId - Previous atom ID.
+ * @param {string} centerAtomId - Center atom ID.
+ * @param {string} nextAtomId - Next atom ID.
+ * @returns {number} Bond angle in degrees.
+ */
+function backboneAngle(coords, previousAtomId, centerAtomId, nextAtomId) {
+  const incoming = sub(coords.get(previousAtomId), coords.get(centerAtomId));
+  const outgoing = sub(coords.get(nextAtomId), coords.get(centerAtomId));
+  const denominator = Math.hypot(incoming.x, incoming.y) * Math.hypot(outgoing.x, outgoing.y) || 1;
+  const cosine = Math.max(-1, Math.min(1, ((incoming.x * outgoing.x) + (incoming.y * outgoing.y)) / denominator));
+  return Math.acos(cosine) * (180 / Math.PI);
+}
+
 describe('layoutv2/families/acyclic', () => {
   it('lays out an acyclic chain on a zigzag backbone', () => {
     const molecule = makeChain(4);
@@ -119,23 +150,22 @@ describe('layoutv2/families/acyclic', () => {
     }
   });
 
-  it('keeps conjugated diene backbones bending in one overall direction', () => {
+  it('keeps conjugated diene backbones at trigonal angles with a transoid default turn pattern', () => {
     const graph = createLayoutGraph(parseSMILES('C=CC=C'), { suppressH: true });
     const atomIdsToPlace = new Set(graph.components[0].atomIds.filter(atomId => graph.atoms.get(atomId)?.element !== 'H'));
     const adjacency = buildAdjacency(graph, atomIdsToPlace);
     const path = linearBackbonePath(adjacency);
     const coords = layoutAcyclicFamily(adjacency, atomIdsToPlace, graph.canonicalAtomRank, graph.options.bondLength, { layoutGraph: graph });
-    const firstDeltaY = coords.get(path[1]).y - coords.get(path[0]).y;
-    const secondDeltaY = coords.get(path[2]).y - coords.get(path[1]).y;
-    const thirdDeltaY = coords.get(path[3]).y - coords.get(path[2]).y;
+    const firstTurn = backboneTurnSign(coords, path[0], path[1], path[2]);
+    const secondTurn = backboneTurnSign(coords, path[1], path[2], path[3]);
+    const firstAngle = backboneAngle(coords, path[0], path[1], path[2]);
+    const secondAngle = backboneAngle(coords, path[1], path[2], path[3]);
 
-    assert.ok(Math.abs(firstDeltaY) > 0.1);
-    assert.ok(Math.abs(secondDeltaY) < 0.1);
-    assert.ok(Math.abs(thirdDeltaY) > 0.1);
-    assert.ok(
-      Math.sign(firstDeltaY) === Math.sign(thirdDeltaY),
-      'expected the diene backbone to keep bending to the same side through the conjugated segment'
-    );
+    assert.ok(Math.abs(firstAngle - 120) < 1e-6);
+    assert.ok(Math.abs(secondAngle - 120) < 1e-6);
+    assert.notEqual(firstTurn, 0);
+    assert.notEqual(secondTurn, 0);
+    assert.equal(firstTurn, -secondTurn, 'expected the default diene depiction to alternate turn direction across the conjugated segment');
   });
 
   it('keeps sulfone oxygens off the main carbon-sulfur-carbon axis', () => {
@@ -166,6 +196,25 @@ describe('layoutv2/families/acyclic', () => {
 
       assert.ok(alkeneBond);
       assert.equal(actualAlkeneStereo(result.layoutGraph, result.coords, alkeneBond), testCase.expectedStereo);
+    }
+  });
+
+  it('keeps configured E and Z alkenes at trigonal 120-degree bond angles', () => {
+    const cases = [
+      { smiles: 'C/C=C/C', expectedStereo: 'E' },
+      { smiles: 'C/C=C\\C', expectedStereo: 'Z' }
+    ];
+
+    for (const testCase of cases) {
+      const result = runPipeline(parseSMILES(testCase.smiles), { suppressH: true });
+      const alkeneBond = [...result.layoutGraph.bonds.values()].find(bond => bond.order === 2);
+      const adjacency = buildAdjacency(result.layoutGraph, new Set(result.layoutGraph.components[0].atomIds.filter(atomId => result.layoutGraph.atoms.get(atomId)?.element !== 'H')));
+      const path = linearBackbonePath(adjacency);
+
+      assert.ok(alkeneBond);
+      assert.equal(actualAlkeneStereo(result.layoutGraph, result.coords, alkeneBond), testCase.expectedStereo);
+      assert.ok(Math.abs(backboneAngle(result.coords, path[0], path[1], path[2]) - 120) < 1e-6);
+      assert.ok(Math.abs(backboneAngle(result.coords, path[1], path[2], path[3]) - 120) < 1e-6);
     }
   });
 });

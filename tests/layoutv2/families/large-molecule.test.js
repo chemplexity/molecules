@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { layoutLargeMoleculeFamily } from '../../../src/layoutv2/families/large-molecule.js';
 import { layoutAtomSlice } from '../../../src/layoutv2/placement/atom-slice.js';
-import { makeLargePolyaryl } from '../support/molecules.js';
+import { makeLargeExplicitHydrogenPeptide, makeLargePolyaryl } from '../support/molecules.js';
 
 describe('layoutv2/families/large-molecule', () => {
   it('partitions and stitches a multi-block organic component', () => {
@@ -79,4 +79,18 @@ describe('layoutv2/families/large-molecule', () => {
     assert.ok(result.coords.has('e0'));
     assert.equal(typeof result.repulsionMoveCount, 'number');
   });
+
+  it('keeps splitting explicit-h large blocks until mixed slices stay manageable', () => {
+    const graph = createLayoutGraph(makeLargeExplicitHydrogenPeptide(), {
+      suppressH: true
+    });
+    const start = Date.now();
+    const result = layoutLargeMoleculeFamily(graph, graph.components[0], graph.options.bondLength);
+
+    assert.equal(result.placementMode, 'block-stitched');
+    assert.equal(result.rootFallbackUsed, false);
+    assert.ok(result.blockCount > 4);
+    assert.equal(result.coords.size > 0, true);
+    assert.ok(Date.now() - start < 15000);
+  }, 20000);
 });

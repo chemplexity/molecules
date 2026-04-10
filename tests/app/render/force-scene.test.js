@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { parseSMILES } from '../../../src/io/smiles.js';
 import { createForceSceneRenderer } from '../../../src/app/render/force-scene.js';
 
 class FakeSelection {
@@ -152,7 +153,14 @@ function makeSimulation(records) {
   };
 }
 
-function makeRenderer({ preserveSelectionOnNextRender = false, hasHighlights = false, hasSelection = false, preserveView = false } = {}) {
+function makeRenderer({
+  preserveSelectionOnNextRender = false,
+  hasHighlights = false,
+  hasSelection = false,
+  preserveView = false,
+  generateAndRefine2dCoords = () => {},
+  alignReaction2dProductOrientation = () => {}
+} = {}) {
   const records = [];
   const nodeRef = { id: 'svg-node' };
   const svg = new FakeSelection(records, nodeRef);
@@ -233,10 +241,13 @@ function makeRenderer({ preserveSelectionOnNextRender = false, hasHighlights = f
     },
     helpers: {
       valenceWarningMapFor: () => new Map(),
-      buildForceAnchorLayout: () => null,
+      buildForceAnchorLayout: () => {
+        records.push(['buildForceAnchorLayout']);
+        return null;
+      },
       convertMolecule: () => ({ nodes: [], links: [] }),
-      seedForceNodePositions: () => {
-        records.push(['seedForceNodePositions']);
+      seedForceNodePositions: (_graph, _molecule, anchorLayout) => {
+        records.push(['seedForceNodePositions', anchorLayout]);
       },
       forceLinkDistance: () => 30,
       forceAnchorRadius: () => ({ kind: 'anchor' }),
@@ -252,6 +263,12 @@ function makeRenderer({ preserveSelectionOnNextRender = false, hasHighlights = f
       enLabelColor: () => '#000',
       renderReactionPreviewArrowForce: () => {
         records.push(['renderReactionPreviewArrowForce']);
+      },
+      generateAndRefine2dCoords: mol => {
+        generateAndRefine2dCoords(mol);
+      },
+      alignReaction2dProductOrientation: mol => {
+        alignReaction2dProductOrientation(mol);
       }
     },
     events: {
@@ -284,6 +301,59 @@ function makeRenderer({ preserveSelectionOnNextRender = false, hasHighlights = f
   });
 
   return { renderer, records };
+}
+
+/**
+ * Creates a minimal six-coordinate cobalt complex for force-render tests.
+ * @returns {object} Molecule-like object with clone, atoms, and bonds.
+ */
+function makeOctahedralForceSeedMolecule() {
+  const bondIds = ['b1', 'b2', 'b3', 'b4', 'b5', 'b6'];
+
+  function buildAtoms() {
+    return new Map([
+      ['Co1', { id: 'Co1', name: 'Co', properties: { group: 9 }, bonds: [...bondIds] }],
+      ['N1', { id: 'N1', name: 'N', properties: {}, bonds: ['b1'] }],
+      ['N2', { id: 'N2', name: 'N', properties: {}, bonds: ['b2'] }],
+      ['N3', { id: 'N3', name: 'N', properties: {}, bonds: ['b3'] }],
+      ['N4', { id: 'N4', name: 'N', properties: {}, bonds: ['b4'] }],
+      ['N5', { id: 'N5', name: 'N', properties: {}, bonds: ['b5'] }],
+      ['N6', { id: 'N6', name: 'N', properties: {}, bonds: ['b6'] }]
+    ]);
+  }
+
+  function buildBonds() {
+    return new Map([
+      ['b1', { id: 'b1', kind: 'covalent', properties: {}, atoms: ['Co1', 'N1'] }],
+      ['b2', { id: 'b2', kind: 'covalent', properties: {}, atoms: ['Co1', 'N2'] }],
+      ['b3', { id: 'b3', kind: 'covalent', properties: {}, atoms: ['Co1', 'N3'] }],
+      ['b4', { id: 'b4', kind: 'covalent', properties: {}, atoms: ['Co1', 'N4'] }],
+      ['b5', { id: 'b5', kind: 'covalent', properties: {}, atoms: ['Co1', 'N5'] }],
+      ['b6', { id: 'b6', kind: 'covalent', properties: {}, atoms: ['Co1', 'N6'] }]
+    ]);
+  }
+
+  return {
+    id: 'octahedral-force-seed',
+    atoms: buildAtoms(),
+    bonds: buildBonds(),
+    getChiralCenters() {
+      return [];
+    },
+    hideHydrogens() {},
+    clone() {
+      return {
+        id: 'octahedral-force-seed-clone',
+        atoms: buildAtoms(),
+        bonds: buildBonds(),
+        getChiralCenters() {
+          return [];
+        },
+        hideHydrogens() {},
+        clone: this.clone
+      };
+    }
+  };
 }
 
 describe('createForceSceneRenderer', () => {
@@ -361,5 +431,72 @@ describe('createForceSceneRenderer', () => {
     assert.ok(alphaIndex < restartIndex);
     assert.deepEqual(records[patchIndex], ['patchForceNodePositions', patchPos, { alpha: 0, restart: false }]);
     assert.deepEqual(records[reseatIndex], ['reseatHydrogensAroundPatched', patchPos, { resetVelocity: true }]);
+  });
+
+  it('honors a provided force anchor layout instead of regenerating one', () => {
+    const { renderer, records } = makeRenderer();
+    const anchorLayout = new Map([['a1', { x: 0, y: 0 }]]);
+
+    renderer.updateForce({ id: 'mol-anchor', atoms: new Map(), bonds: new Map() }, {
+      preserveView: true,
+      anchorLayout
+    });
+
+    assert.deepEqual(
+      records.find(entry => entry[0] === 'seedForceNodePositions'),
+      ['seedForceNodePositions', anchorLayout]
+    );
+    assert.equal(records.some(entry => entry[0] === 'buildForceAnchorLayout'), false);
+  });
+
+  it('seeds missing projected organometallic display hints on the first force render', () => {
+    const molecule = makeOctahedralForceSeedMolecule();
+    const { renderer } = makeRenderer({
+      generateAndRefine2dCoords: seededMol => {
+        seededMol.bonds.get('b1').properties.display = { as: 'wedge', centerId: 'Co1' };
+        seededMol.bonds.get('b2').properties.display = { as: 'dash', centerId: 'Co1' };
+      }
+    });
+
+    renderer.updateForce(molecule, { preserveView: false });
+
+    assert.deepEqual(molecule.bonds.get('b1').properties.display, { as: 'wedge', centerId: 'Co1' });
+    assert.deepEqual(molecule.bonds.get('b2').properties.display, { as: 'dash', centerId: 'Co1' });
+    assert.equal(molecule.bonds.get('b3').properties.display, undefined);
+  });
+
+  it('repairs incomplete projected organometallic display hints instead of keeping a lone wedge', () => {
+    const molecule = makeOctahedralForceSeedMolecule();
+    molecule.bonds.get('b1').properties.display = { as: 'wedge', centerId: 'Co1' };
+    const { renderer } = makeRenderer({
+      generateAndRefine2dCoords: seededMol => {
+        seededMol.bonds.get('b1').properties.display = { as: 'wedge', centerId: 'Co1' };
+        seededMol.bonds.get('b2').properties.display = { as: 'dash', centerId: 'Co1' };
+      }
+    });
+
+    renderer.updateForce(molecule, { preserveView: false });
+
+    assert.deepEqual(molecule.bonds.get('b1').properties.display, { as: 'wedge', centerId: 'Co1' });
+    assert.deepEqual(molecule.bonds.get('b2').properties.display, { as: 'dash', centerId: 'Co1' });
+  });
+
+  it('seeds projected organometallic display hints for real parsed bonds that expose kind via properties', () => {
+    const molecule = parseSMILES('[Co+3](N)(N)(N)(N)(N)N');
+    const { renderer } = makeRenderer({
+      generateAndRefine2dCoords: seededMol => {
+        const coordinationBonds = [...seededMol.bonds.values()].filter(bond => bond.atoms.includes('Co1') && !bond.atoms.some(atomId => atomId.startsWith('H')));
+        coordinationBonds[0].properties.display = { as: 'wedge', centerId: 'Co1' };
+        coordinationBonds[1].properties.display = { as: 'dash', centerId: 'Co1' };
+      }
+    });
+
+    renderer.updateForce(molecule, { preserveView: false });
+
+    const displayAssignments = [...molecule.bonds.values()]
+      .filter(bond => bond.properties.display?.as === 'wedge' || bond.properties.display?.as === 'dash')
+      .map(bond => bond.properties.display.as)
+      .sort();
+    assert.deepEqual(displayAssignments, ['dash', 'wedge']);
   });
 });

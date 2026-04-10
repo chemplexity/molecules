@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
-import { findTemplateMatch } from '../../../src/layoutv2/templates/match.js';
+import { findTemplateMatch, findTemplateMatchIgnoringFamily } from '../../../src/layoutv2/templates/match.js';
 import { makeAdamantane, makeBicyclo222, makeCyclohexane, makeMethylbenzene, makeNaphthylbenzene, makeNorbornane, makeSpiro } from '../support/molecules.js';
 
 function countInternalBonds(layoutGraph, atomIds) {
@@ -153,9 +153,17 @@ describe('layoutv2/templates/match', () => {
     const phthalazineGraph = createLayoutGraph(parseSMILES('c1ccc2nnccc2c1'));
     const phthalazineMatch = findTemplateMatch(phthalazineGraph, buildRingCandidate(phthalazineGraph, phthalazineGraph.ringSystems[0], 'fused'));
     assert.equal(phthalazineMatch.id, 'phthalazine');
+
+    const cinnolineGraph = createLayoutGraph(parseSMILES('c1ccc2cnncc2c1'));
+    const cinnolineMatch = findTemplateMatch(cinnolineGraph, buildRingCandidate(cinnolineGraph, cinnolineGraph.ringSystems[0], 'fused'));
+    assert.equal(cinnolineMatch.id, 'cinnoline');
   });
 
   it('matches common partially saturated fused scaffolds too', () => {
+    const indanoneGraph = createLayoutGraph(parseSMILES('O=C1CCc2ccccc21'));
+    const indanoneMatch = findTemplateMatch(indanoneGraph, buildRingCandidate(indanoneGraph, indanoneGraph.ringSystems[0], 'fused'));
+    assert.equal(indanoneMatch.id, 'indanone');
+
     const indaneGraph = createLayoutGraph(parseSMILES('c1ccc2CCCc2c1'));
     const indaneMatch = findTemplateMatch(indaneGraph, buildRingCandidate(indaneGraph, indaneGraph.ringSystems[0], 'fused'));
     assert.equal(indaneMatch.id, 'indane');
@@ -191,5 +199,15 @@ describe('layoutv2/templates/match', () => {
     const adamantaneGraph = createLayoutGraph(makeAdamantane());
     const adamantaneMatch = findTemplateMatch(adamantaneGraph, buildRingCandidate(adamantaneGraph, adamantaneGraph.ringSystems[0], 'bridged'));
     assert.equal(adamantaneMatch.id, 'adamantane');
+  });
+
+  it('matches the porphyrin core as a macrocycle template and can promote it over a bridged heuristic', () => {
+    const graph = createLayoutGraph(parseSMILES('C1=CC2=CC3=CC=C(N3)C=C4C=CC(=N4)C=C5C=CC(=N5)C=C1N2'));
+    const strictMacrocycleMatch = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'macrocycle'));
+    assert.equal(strictMacrocycleMatch.id, 'porphine');
+
+    const promotedMatch = findTemplateMatchIgnoringFamily(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(promotedMatch.id, 'porphine');
+    assert.equal(promotedMatch.family, 'macrocycle');
   });
 });

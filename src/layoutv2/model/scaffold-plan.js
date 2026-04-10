@@ -61,11 +61,11 @@ function resolveCandidateFamily(layoutGraph, candidate) {
  */
 export function classifyRingSystemFamily(layoutGraph, ringSystem) {
   const connections = ringSystemConnections(layoutGraph, ringSystem);
-  if (connections.some(connection => connection.kind === 'bridged')) {
-    return 'bridged';
-  }
   if (layoutGraph.rings.some(ring => ringSystem.ringIds.includes(ring.id) && ring.size >= 12)) {
     return 'macrocycle';
+  }
+  if (connections.some(connection => connection.kind === 'bridged')) {
+    return 'bridged';
   }
   if (connections.some(connection => connection.kind === 'fused')) {
     return 'fused';

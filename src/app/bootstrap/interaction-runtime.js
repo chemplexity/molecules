@@ -108,6 +108,7 @@ export function initializeInteractionRuntime(ctx, options = {}) {
 
   const selectionActions = factories.createSelectionActions(
     depBuilders.createSelectionActionDeps({
+      document: ctx.document,
       appState: ctx.appState,
       getDraw2D: () => ctx.getDraw2D(),
       applyForceSelection: () => ctx.applyForceSelection(),
