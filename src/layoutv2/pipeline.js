@@ -17,6 +17,7 @@ import { pickWedgeAssignments } from './stereo/wedge-selection.js';
 import { inspectRingDependency } from './topology/ring-dependency.js';
 import { exceedsLargeMoleculeThreshold } from './topology/large-blocks.js';
 import { findMacrocycleRings } from './topology/macrocycles.js';
+import { buildScaffoldPlan } from './model/scaffold-plan.js';
 
 function buildInitialCoordsMap(options) {
   const coords = new Map();
@@ -53,14 +54,19 @@ export function classifyFamily(layoutGraph) {
     primaryFamily = 'organometallic';
   } else if (hasMacrocycle) {
     primaryFamily = 'macrocycle';
-  } else if (layoutGraph.ringConnections.some(connection => connection.kind === 'bridged')) {
-    primaryFamily = 'bridged';
-  } else if (layoutGraph.ringConnections.some(connection => connection.kind === 'spiro')) {
-    primaryFamily = 'spiro';
-  } else if (layoutGraph.ringSystems.some(system => system.ringIds.length > 1)) {
-    primaryFamily = 'fused';
   } else if (layoutGraph.rings.length > 0) {
-    primaryFamily = 'isolated-ring';
+    const principalComponent = layoutGraph.components[0] ?? null;
+    if (principalComponent) {
+      primaryFamily = buildScaffoldPlan(layoutGraph, principalComponent).rootScaffold.family;
+    } else if (layoutGraph.ringConnections.some(connection => connection.kind === 'bridged')) {
+      primaryFamily = 'bridged';
+    } else if (layoutGraph.ringConnections.some(connection => connection.kind === 'spiro')) {
+      primaryFamily = 'spiro';
+    } else if (layoutGraph.ringSystems.some(system => system.ringIds.length > 1)) {
+      primaryFamily = 'fused';
+    } else {
+      primaryFamily = 'isolated-ring';
+    }
   }
 
   return {
@@ -107,9 +113,10 @@ export function runPipeline(molecule, options = {}) {
     : { coords: cleanupPass.coords, nudges: 0 };
   const symmetryTidy = placement.placedComponentCount > 0
     ? tidySymmetry(labelClearance.coords, {
-      epsilon: normalizedOptions.bondLength * 0.01
+      epsilon: normalizedOptions.bondLength * 0.01,
+      layoutGraph
     })
-    : { coords: labelClearance.coords, snappedCount: 0 };
+    : { coords: labelClearance.coords, snappedCount: 0, junctionSnapCount: 0 };
   const stereoCleanup = placement.placedComponentCount > 0
     ? enforceAcyclicEZStereo(layoutGraph, symmetryTidy.coords, {
       bondLength: normalizedOptions.bondLength
@@ -122,6 +129,7 @@ export function runPipeline(molecule, options = {}) {
     overlapMoves: overlapResolution.moves,
     labelNudges: labelClearance.nudges,
     symmetrySnaps: symmetryTidy.snappedCount,
+    junctionSnaps: symmetryTidy.junctionSnapCount,
     stereoReflections: stereoCleanup.reflections
   };
   for (const [atomId, position] of cleanup.coords) {
@@ -152,6 +160,7 @@ export function runPipeline(molecule, options = {}) {
   };
   const audit = auditLayout(layoutGraph, coords, {
     bondLength: normalizedOptions.bondLength,
+    bondValidationClasses: placement.bondValidationClasses,
     stereo
   });
   const qualityReport = createQualityReport({
@@ -185,6 +194,7 @@ export function runPipeline(molecule, options = {}) {
       unplacedComponentCount: placement.unplacedComponentCount,
       preservedComponentCount: placement.preservedComponentCount,
       placedFamilies: placement.placedFamilies,
+      bondValidationClassCount: placement.bondValidationClasses.size,
       policy,
       ringDependency,
       stereo,
@@ -193,6 +203,7 @@ export function runPipeline(molecule, options = {}) {
       cleanupOverlapMoves: cleanup.overlapMoves,
       cleanupLabelNudges: cleanup.labelNudges,
       cleanupSymmetrySnaps: cleanup.symmetrySnaps,
+      cleanupJunctionSnaps: cleanup.junctionSnaps,
       cleanupStereoReflections: cleanup.stereoReflections,
       audit,
       qualityReport

@@ -1,9 +1,11 @@
 /** @module families/large-molecule */
 
-import { angleOf, centroid, sub } from '../geometry/vec2.js';
+import { angleOf, centroid, normalize, sub } from '../geometry/vec2.js';
+import { computeBounds, translateCoords } from '../geometry/bounds.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { chooseAttachmentAngle } from '../placement/substituents.js';
 import { refineStitchedBlock } from '../placement/block-stitching.js';
+import { assignBondValidationClass, mergeBondValidationClasses } from '../placement/bond-validation.js';
 import { buildSliceAdjacency, createAtomSlice, layoutAtomSlice } from '../placement/atom-slice.js';
 
 function countHeavyAtoms(layoutGraph, atomIds) {
@@ -178,21 +180,185 @@ function buildBlockAdjacency(blocks, cutBonds) {
 }
 
 /**
+ * Returns the visible participant atom IDs for large-molecule placement.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Candidate atom IDs.
+ * @returns {string[]} Visible participant atom IDs.
+ */
+function participantAtomIdsFor(layoutGraph, atomIds) {
+  return atomIds.filter(atomId => {
+    const atom = layoutGraph.atoms.get(atomId);
+    return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
+  });
+}
+
+/**
+ * Returns a breadth-first traversal order rooted at the requested attachment atom.
+ * @param {Map<string, string[]>} adjacency - Slice adjacency map.
+ * @param {string[]} atomIds - Traversal atom IDs.
+ * @param {string|null} startAtomId - Preferred traversal root.
+ * @returns {string[]} BFS traversal order.
+ */
+function breadthFirstOrder(adjacency, atomIds, startAtomId) {
+  const remainingAtomIds = atomIds.filter(Boolean);
+  if (remainingAtomIds.length === 0) {
+    return [];
+  }
+
+  const atomIdSet = new Set(remainingAtomIds);
+  const visited = new Set();
+  const order = [];
+  const seeds = [];
+  if (startAtomId && atomIdSet.has(startAtomId)) {
+    seeds.push(startAtomId);
+  }
+  for (const atomId of remainingAtomIds) {
+    if (!seeds.includes(atomId)) {
+      seeds.push(atomId);
+    }
+  }
+
+  for (const seedAtomId of seeds) {
+    if (visited.has(seedAtomId)) {
+      continue;
+    }
+    const queue = [seedAtomId];
+    visited.add(seedAtomId);
+    let queueHead = 0;
+
+    while (queueHead < queue.length) {
+      const atomId = queue[queueHead++];
+      order.push(atomId);
+      for (const neighborAtomId of adjacency.get(atomId) ?? []) {
+        if (!atomIdSet.has(neighborAtomId) || visited.has(neighborAtomId)) {
+          continue;
+        }
+        visited.add(neighborAtomId);
+        queue.push(neighborAtomId);
+      }
+    }
+  }
+
+  return order;
+}
+
+/**
+ * Places a block on a simple horizontal line using BFS connectivity order.
+ * @param {Map<string, string[]>} adjacency - Slice adjacency map.
+ * @param {string[]} atomIds - Block atom IDs.
+ * @param {string|null} startAtomId - Preferred BFS root / attachment atom.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Linear fallback coordinates.
+ */
+function layoutLinearFallbackCoords(adjacency, atomIds, startAtomId, bondLength) {
+  const order = breadthFirstOrder(adjacency, atomIds, startAtomId);
+  const coords = new Map();
+  for (let index = 0; index < order.length; index++) {
+    coords.set(order[index], { x: index * bondLength, y: 0 });
+  }
+  return coords;
+}
+
+/**
+ * Returns the overlap distances between two block bounding boxes.
+ * @param {{minX: number, maxX: number, minY: number, maxY: number}|null} firstBounds - First bounds.
+ * @param {{minX: number, maxX: number, minY: number, maxY: number}|null} secondBounds - Second bounds.
+ * @returns {{overlapX: number, overlapY: number}} Overlap distances; non-positive means no overlap.
+ */
+function measureBlockOverlap(firstBounds, secondBounds) {
+  if (!firstBounds || !secondBounds) {
+    return { overlapX: 0, overlapY: 0 };
+  }
+  return {
+    overlapX: Math.min(firstBounds.maxX, secondBounds.maxX) - Math.max(firstBounds.minX, secondBounds.minX),
+    overlapY: Math.min(firstBounds.maxY, secondBounds.maxY) - Math.max(firstBounds.minY, secondBounds.minY)
+  };
+}
+
+/**
+ * Returns a rigid translation direction that pushes one block away from another.
+ * @param {{centerX: number, centerY: number}} movableBounds - Bounds for the movable block.
+ * @param {{centerX: number, centerY: number}} fixedBounds - Bounds for the fixed block.
+ * @returns {{x: number, y: number}} Unit translation direction.
+ */
+function overlapPushDirection(movableBounds, fixedBounds) {
+  const direction = normalize({
+    x: movableBounds.centerX - fixedBounds.centerX,
+    y: movableBounds.centerY - fixedBounds.centerY
+  });
+  if (Math.hypot(direction.x, direction.y) <= 1e-12) {
+    return { x: 1, y: 0 };
+  }
+  return direction;
+}
+
+/**
+ * Applies one rigid-body repulsion pass to overlapping large-molecule blocks.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Current coordinate map.
+ * @param {Map<string, string[]>} blockAtomIdsById - Placed block atom IDs by block ID.
+ * @param {string} rootBlockId - Fixed root block ID.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{coords: Map<string, {x: number, y: number}>, repulsionMoveCount: number}} Repelled coordinates and move count.
+ */
+function repelOverlappingBlocks(inputCoords, blockAtomIdsById, rootBlockId, bondLength) {
+  let coords = new Map(inputCoords);
+  let repulsionMoveCount = 0;
+  const blockIds = [...blockAtomIdsById.keys()];
+
+  for (let pass = 0; pass < 8; pass++) {
+    let movedThisPass = false;
+    for (let firstIndex = 0; firstIndex < blockIds.length; firstIndex++) {
+      for (let secondIndex = firstIndex + 1; secondIndex < blockIds.length; secondIndex++) {
+        const firstBlockId = blockIds[firstIndex];
+        const secondBlockId = blockIds[secondIndex];
+        const firstAtomIds = blockAtomIdsById.get(firstBlockId) ?? [];
+        const secondAtomIds = blockAtomIdsById.get(secondBlockId) ?? [];
+        const firstBounds = computeBounds(coords, firstAtomIds);
+        const secondBounds = computeBounds(coords, secondAtomIds);
+        const { overlapX, overlapY } = measureBlockOverlap(firstBounds, secondBounds);
+        if (overlapX <= 0 || overlapY <= 0) {
+          continue;
+        }
+
+        const movableBlockId = firstBlockId === rootBlockId ? secondBlockId : firstBlockId;
+        const fixedBlockId = movableBlockId === firstBlockId ? secondBlockId : firstBlockId;
+        const movableAtomIds = blockAtomIdsById.get(movableBlockId) ?? [];
+        const movableBounds = movableBlockId === firstBlockId ? firstBounds : secondBounds;
+        const fixedBounds = fixedBlockId === firstBlockId ? firstBounds : secondBounds;
+        const direction = overlapPushDirection(movableBounds, fixedBounds);
+        const shift = Math.max(overlapX, overlapY) + (bondLength * 0.25);
+
+        coords = translateCoords(coords, movableAtomIds, direction.x * shift, direction.y * shift);
+        repulsionMoveCount++;
+        movedThisPass = true;
+      }
+    }
+    if (!movedThisPass) {
+      break;
+    }
+  }
+
+  return { coords, repulsionMoveCount };
+}
+
+/**
  * Lays out a large connected component by partitioning it into balanced blocks,
  * placing each block with the organic slice engine, then rigidly stitching
  * child blocks onto a root block through their cut bonds.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} component - Connected-component descriptor.
  * @param {number} bondLength - Target bond length.
- * @returns {{coords: Map<string, {x: number, y: number}>, placementMode: string, blockCount: number, refinedStitchCount: number}|null} Placement result.
+ * @param {{sliceLayouter?: (layoutGraph: object, block: {id: string, atomIds: string[], canonicalSignature?: string}, bondLength: number) => {family?: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses?: Map<string, 'planar'|'bridged'>}}} [options] - Optional family overrides for testing or fallback control.
+ * @returns {{coords: Map<string, {x: number, y: number}>, placementMode: string, blockCount: number, refinedStitchCount: number, linearFallbackCount: number, rootFallbackUsed: boolean, repulsionMoveCount: number, bondValidationClasses: Map<string, 'planar'|'bridged'>}|null} Placement result.
  */
-export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength) {
+export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, options = {}) {
   const threshold = layoutGraph.options.largeMoleculeThreshold;
   const { blocks, cutBonds } = partitionBlocks(layoutGraph, component, threshold);
   if (blocks.length <= 1) {
     return null;
   }
 
+  const sliceLayouter = options.sliceLayouter ?? layoutAtomSlice;
   const blockById = new Map(blocks.map(block => [block.id, block]));
   const blockAdjacency = buildBlockAdjacency(blocks, cutBonds);
   const rootBlock = chooseRootBlock(blocks);
@@ -200,20 +366,34 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength) {
     return null;
   }
 
-  const rootLayout = layoutAtomSlice(layoutGraph, rootBlock, bondLength);
+  const participantAtomIds = participantAtomIdsFor(layoutGraph, component.atomIds);
+  const participantAtomIdSet = new Set(participantAtomIds);
+  const fullAdjacency = buildSliceAdjacency(layoutGraph, participantAtomIds);
+  const rootLayout = sliceLayouter(layoutGraph, rootBlock, bondLength);
   if (!rootLayout.supported) {
-    return null;
+    const rootStartAtomId = rootBlock.atomIds.find(atomId => participantAtomIdSet.has(atomId)) ?? participantAtomIds[0] ?? null;
+    return {
+      coords: layoutLinearFallbackCoords(fullAdjacency, participantAtomIds, rootStartAtomId, bondLength),
+      placementMode: 'block-linear-fallback',
+      blockCount: blocks.length,
+      refinedStitchCount: 0,
+      linearFallbackCount: 1,
+      rootFallbackUsed: true,
+      repulsionMoveCount: 0,
+      bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar')
+    };
   }
 
-  const fullAdjacency = buildSliceAdjacency(layoutGraph, component.atomIds);
-  const participantAtomIds = new Set(component.atomIds.filter(atomId => {
-    const atom = layoutGraph.atoms.get(atomId);
-    return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
-  }));
   const coords = new Map(rootLayout.coords);
+  const bondValidationClasses = new Map();
+  const placedBlockAtomIds = new Map([
+    [rootBlock.id, rootBlock.atomIds.filter(atomId => participantAtomIdSet.has(atomId))]
+  ]);
+  mergeBondValidationClasses(bondValidationClasses, rootLayout.bondValidationClasses);
   const placedBlockIds = new Set([rootBlock.id]);
   const queue = [rootBlock.id];
   let refinedStitchCount = 0;
+  let linearFallbackCount = 0;
 
   while (queue.length > 0) {
     const currentBlockId = queue.shift();
@@ -231,18 +411,26 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength) {
       const parentContainsFirst = parentBlock.atomIds.includes(cutBond.firstAtomId);
       const parentAtomId = parentContainsFirst ? cutBond.firstAtomId : cutBond.secondAtomId;
       const childAtomId = parentContainsFirst ? cutBond.secondAtomId : cutBond.firstAtomId;
-      const childLayout = layoutAtomSlice(layoutGraph, childBlock, bondLength);
-      if (!childLayout.supported) {
-        return null;
-      }
-
       const parentPosition = coords.get(parentAtomId);
       const placedCentroid = centroid([...coords.values()]);
       const preferredAngle = angleOf(sub(parentPosition, placedCentroid));
-      const attachmentAngle = chooseAttachmentAngle(fullAdjacency, coords, parentAtomId, participantAtomIds, preferredAngle, layoutGraph);
+      const attachmentAngle = chooseAttachmentAngle(fullAdjacency, coords, parentAtomId, participantAtomIdSet, preferredAngle, layoutGraph);
+      const childParticipantAtomIds = childBlock.atomIds.filter(atomId => participantAtomIdSet.has(atomId));
+      const childLayout = sliceLayouter(layoutGraph, childBlock, bondLength);
+      const childCoords = childLayout.supported
+        ? childLayout.coords
+        : layoutLinearFallbackCoords(
+          buildSliceAdjacency(layoutGraph, childParticipantAtomIds),
+          childParticipantAtomIds,
+          childAtomId,
+          bondLength
+        );
+      if (!childLayout.supported) {
+        linearFallbackCount++;
+      }
       const refinedChild = refineStitchedBlock(
-        childLayout.coords,
-        childBlock.atomIds,
+        childCoords,
+        childParticipantAtomIds,
         childAtomId,
         parentPosition,
         attachmentAngle,
@@ -257,15 +445,26 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength) {
       for (const [atomId, position] of transformedChild) {
         coords.set(atomId, position);
       }
+      if (childLayout.supported) {
+        mergeBondValidationClasses(bondValidationClasses, childLayout.bondValidationClasses);
+      } else {
+        assignBondValidationClass(layoutGraph, childParticipantAtomIds, 'planar', bondValidationClasses, { overwrite: false });
+      }
+      placedBlockAtomIds.set(childBlock.id, childParticipantAtomIds);
       placedBlockIds.add(childBlock.id);
       queue.push(childBlock.id);
     }
   }
 
+  const repulsion = repelOverlappingBlocks(coords, placedBlockAtomIds, rootBlock.id, bondLength);
   return {
-    coords,
+    coords: repulsion.coords,
     placementMode: 'block-stitched',
     blockCount: blocks.length,
-    refinedStitchCount
+    refinedStitchCount,
+    linearFallbackCount,
+    rootFallbackUsed: false,
+    repulsionMoveCount: repulsion.repulsionMoveCount,
+    bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses, { overwrite: false })
   };
 }

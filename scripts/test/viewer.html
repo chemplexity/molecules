@@ -289,19 +289,25 @@
 
             if (sid === d.id) {
                 const tgt = nodeById.get(tid);
-                if (tgt) toItems.push(formatStr(tgt.svg || tgt.formula || tgt.conditions?.templateName || tid, l.delta));
+                if (tgt) toItems.push({ id: tid, html: formatStr(tgt.svg || tgt.formula || tgt.conditions?.templateName || tid, l.delta) });
             }
             if (tid === d.id) {
                 const src = nodeById.get(sid);
                 // l.delta here represents the change from the source to 'this' node (the target).
-                if (src) fromItems.push(formatStr(src.svg || src.formula || src.conditions?.templateName || sid, l.delta));
+                if (src) fromItems.push({ id: sid, html: formatStr(src.svg || src.formula || src.conditions?.templateName || sid, l.delta) });
             }
         }
         const renderList = (items, el, countEl) => {
-            countEl.textContent = items.length ? `(${items.length})` : '';
-            if (!items.length) { el.innerHTML = '<div class="info-empty">—</div>'; return; }
-            el.innerHTML = [...new Set(items)].map(s =>
-                `<div class="info-mol-item">${s}</div>`).join('');
+            const unique = [];
+            const seen = new Set();
+            for (const item of items) {
+                if (!seen.has(item.html)) { seen.add(item.html); unique.push(item); }
+            }
+            countEl.textContent = unique.length ? `(${unique.length})` : '';
+            if (!unique.length) { el.innerHTML = '<div class="info-empty">—</div>'; return; }
+            el.innerHTML = unique.map(u => 
+                `<div class="info-mol-item clickable-mol" data-id="${u.id}" style="cursor:pointer;" title="Click to focus">${u.html}</div>`
+            ).join('');
         };
         renderList(toItems,   infoTo,   infoToCount);
         renderList(fromItems, infoFrom, infoFromCount);
@@ -529,12 +535,13 @@
         // Build an adjacency lookup: nodeId → Set of link elements touching it
         let hoveredId = null;
         let lockedId = null;
+        let tempHoverId = null;
         let connectedIds = new Set();
 
         // Apply node scale transforms — called from both tick (while running) and hover handlers (when stopped)
         const applyNodeTransforms = () => node.attr('transform', d => {
             let s = 1;
-            if (d.id === hoveredId)       s = 2.8;
+            if (d.id === hoveredId || d.id === tempHoverId) s = 2.8;
             else if (connectedIds.has(d.id)) s = 1.65;
             return `translate(${d.x},${d.y})${s !== 1 ? ` scale(${s})` : ''}`;
         });
@@ -624,6 +631,72 @@
             if (event.target.tagName.toLowerCase() === 'svg' && lockedId) {
                 lockedId = null;
                 clearHighlight();
+            }
+        });
+
+        const infoDrawer = document.getElementById('info-drawer');
+
+        infoDrawer.addEventListener('mouseover', (e) => {
+            const item = e.target.closest('.info-mol-item');
+            if (!item) return;
+            const targetId = item.getAttribute('data-id');
+            const targetData = nodeById.get(targetId);
+            if (!targetData || targetData.type !== 'molecule') return;
+            
+            tempHoverId = targetId;
+            applyNodeTransforms();
+
+            const graphNodeEl = node.filter(nd => nd.id === targetId).node();
+            if (graphNodeEl) {
+                d3.select(graphNodeEl).select('rect')
+                    .transition().duration(120)
+                    .attr('stroke', '#10b981')
+                    .attr('stroke-width', 6);
+                d3.select(graphNodeEl).raise();
+            }
+        });
+
+        infoDrawer.addEventListener('mouseout', (e) => {
+            const item = e.target.closest('.info-mol-item');
+            if (!item) return;
+            const targetId = item.getAttribute('data-id');
+            
+            tempHoverId = null;
+            applyNodeTransforms();
+            
+            const graphNodeEl = node.filter(nd => nd.id === targetId).node();
+            if (graphNodeEl) {
+                const isLocked = (lockedId === targetId);
+                const isConnected = connectedIds.has(targetId);
+                d3.select(graphNodeEl).select('rect')
+                    .transition().duration(120)
+                    .attr('stroke', isLocked ? '#3b82f6' : (isConnected ? '#93c5fd' : '#333'))
+                    .attr('stroke-width', isLocked ? 6 : (isConnected ? 5 : 3));
+            }
+        });
+
+        // Delegate drawer clicks to act like node clicks and pan the camera
+        infoDrawer.addEventListener('click', (e) => {
+            const item = e.target.closest('.info-mol-item');
+            if (!item) return;
+            const targetId = item.getAttribute('data-id');
+            const targetData = nodeById.get(targetId);
+            if (!targetData || targetData.type !== 'molecule') return;
+
+            const graphNodeEl = node.filter(nd => nd.id === targetId).node();
+            if (graphNodeEl) {
+                if (lockedId) clearHighlight();
+                lockedId = targetId;
+                applyHighlight(targetData, d3.select(graphNodeEl));
+                
+                // Pan smoothly to focus the selected node in the center of the screen
+                const currentScale = d3.zoomTransform(svg.node()).k;
+                const newT = d3.zoomIdentity
+                  .translate(width / 2, height / 2)
+                  .scale(currentScale)
+                  .translate(-targetData.x, -targetData.y);
+                  
+                svg.transition().duration(400).call(zoomBehavior.transform, newT);
             }
         });
 

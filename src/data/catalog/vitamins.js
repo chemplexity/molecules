@@ -3,7 +3,8 @@
 const vitaminsCatalog = {
   id: 'vitamins',
   name: 'Vitamins',
-  description: 'Essential organic micronutrients required in small amounts for normal physiological function, spanning fat-soluble (A, D, E, K) and water-soluble (B-complex, C) classes.',
+  description:
+    'Essential organic micronutrients required in small amounts for normal physiological function, spanning fat-soluble (A, D, E, K) and water-soluble (B-complex, C) classes.',
   tags: ['vitamins', 'micronutrients', 'biomolecules', 'cofactors'],
   molecules: [
     {
@@ -74,7 +75,8 @@ const vitaminsCatalog = {
       id: 'folic-acid',
       name: 'Folic Acid',
       smiles: 'C1=CC(=CC=C1C(=O)NC(CCC(=O)O)C(=O)O)NCC2=CN=C3NC(=O)C(=N3)N=C2',
-      inchi: 'InChI=1S/C19H19N7O6/c20-19-25-15-14(17(30)26-19)23-11(8-22-15)7-21-10-3-1-9(2-4-10)16(29)24-12(18(31)32)5-6-13(27)28/h1-4,8,12,21H,5-7H2,(H,24,29)(H,27,28)(H,31,32)(H3,20,22,25,26,30)',
+      inchi:
+        'InChI=1S/C19H19N7O6/c20-19-25-15-14(17(30)26-19)23-11(8-22-15)7-21-10-3-1-9(2-4-10)16(29)24-12(18(31)32)5-6-13(27)28/h1-4,8,12,21H,5-7H2,(H,24,29)(H,27,28)(H,31,32)(H3,20,22,25,26,30)',
       tags: ['vitamin', 'water-soluble', 'vitamin-b', 'vitamin-b9', 'pterin', 'cofactor', 'folate'],
       aliases: ['Vitamin B9', 'folate', 'pteroylglutamic acid', 'vitamin Bc']
     },

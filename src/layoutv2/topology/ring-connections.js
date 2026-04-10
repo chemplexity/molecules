@@ -3,6 +3,11 @@
 import { createRingConnection, ringConnectionKey } from '../model/ring-connection.js';
 import { findSharedAtoms } from './ring-analysis.js';
 
+/**
+ * Builds a molecule-wide neighbor map for ring-connection classification.
+ * @param {object} molecule - Molecule-like graph.
+ * @returns {Map<string, Set<string>>} Neighbor map keyed by atom ID.
+ */
 function buildNeighborMap(molecule) {
   const neighborMap = new Map();
   for (const [atomId, atom] of molecule.atoms) {
@@ -17,6 +22,124 @@ function buildNeighborMap(molecule) {
     neighborMap.set(atomId, neighbors);
   }
   return neighborMap;
+}
+
+/**
+ * Returns a stable atom-pair key for an undirected bond.
+ * @param {string} firstAtomId - First atom ID.
+ * @param {string} secondAtomId - Second atom ID.
+ * @returns {string} Stable undirected pair key.
+ */
+function bondKey(firstAtomId, secondAtomId) {
+  return firstAtomId < secondAtomId
+    ? `${firstAtomId}:${secondAtomId}`
+    : `${secondAtomId}:${firstAtomId}`;
+}
+
+/**
+ * Looks up a ring descriptor by ID.
+ * @param {object[]} rings - Ring descriptors.
+ * @param {number} ringId - Ring ID.
+ * @returns {object|null} Matching ring or null.
+ */
+function getRingById(rings, ringId) {
+  return rings.find(ring => ring.id === ringId) ?? null;
+}
+
+/**
+ * Returns whether two atoms are adjacent in a cyclic ring descriptor.
+ * @param {string[]} ringAtomIds - Ordered ring atom IDs.
+ * @param {string} firstAtomId - First atom ID.
+ * @param {string} secondAtomId - Second atom ID.
+ * @returns {boolean} True when the atoms form a ring edge.
+ */
+function areAdjacentInRing(ringAtomIds, firstAtomId, secondAtomId) {
+  const atomCount = ringAtomIds.length;
+  for (let index = 0; index < atomCount; index++) {
+    const atomId = ringAtomIds[index];
+    const nextAtomId = ringAtomIds[(index + 1) % atomCount];
+    if ((atomId === firstAtomId && nextAtomId === secondAtomId) || (atomId === secondAtomId && nextAtomId === firstAtomId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns the internal atoms of the longer ring arc between two ring atoms.
+ * @param {string[]} ringAtomIds - Ordered ring atom IDs.
+ * @param {string} startAtomId - Start atom ID.
+ * @param {string} endAtomId - End atom ID.
+ * @returns {string[]} Internal atom IDs for the nonshared ring arc.
+ */
+function longRingArcInternalAtomIds(ringAtomIds, startAtomId, endAtomId) {
+  const atomCount = ringAtomIds.length;
+  const startIndex = ringAtomIds.indexOf(startAtomId);
+  const endIndex = ringAtomIds.indexOf(endAtomId);
+  if (startIndex < 0 || endIndex < 0) {
+    return [];
+  }
+  const forward = [];
+  let cursor = startIndex;
+  do {
+    cursor = (cursor + 1) % atomCount;
+    const atomId = ringAtomIds[cursor];
+    if (atomId === endAtomId) {
+      break;
+    }
+    forward.push(atomId);
+  } while (cursor !== endIndex);
+  const backward = [];
+  cursor = startIndex;
+  do {
+    cursor = (cursor - 1 + atomCount) % atomCount;
+    const atomId = ringAtomIds[cursor];
+    if (atomId === endAtomId) {
+      break;
+    }
+    backward.push(atomId);
+  } while (cursor !== endIndex);
+  if (forward.length === 0) {
+    return backward;
+  }
+  if (backward.length === 0) {
+    return forward;
+  }
+  return forward.length >= backward.length ? forward : backward;
+}
+
+/**
+ * Returns whether a path exists between two shared atoms outside the two ring arcs.
+ * @param {string} startAtomId - First shared atom ID.
+ * @param {string} endAtomId - Second shared atom ID.
+ * @param {Set<string>} excludedAtomIds - Ring-arc atoms to exclude.
+ * @param {string} excludedBondKey - Shared-bond key to exclude.
+ * @param {Map<string, Set<string>>} neighborMap - Precomputed molecule neighbor map.
+ * @returns {boolean} True when an extra bridge path exists.
+ */
+function hasBridgePathOutsideRingAtoms(startAtomId, endAtomId, excludedAtomIds, excludedBondKey, neighborMap) {
+  const visited = new Set([startAtomId]);
+  const queue = [startAtomId];
+  let queueHead = 0;
+
+  while (queueHead < queue.length) {
+    const atomId = queue[queueHead++];
+    for (const neighborAtomId of neighborMap.get(atomId) ?? []) {
+      if (bondKey(atomId, neighborAtomId) === excludedBondKey) {
+        continue;
+      }
+      if (neighborAtomId === endAtomId) {
+        return true;
+      }
+      if (excludedAtomIds.has(neighborAtomId) || visited.has(neighborAtomId)) {
+        continue;
+      }
+      visited.add(neighborAtomId);
+      queue.push(neighborAtomId);
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -55,21 +178,27 @@ export function isBridgedConnection(molecule, rings, firstRingId, secondRingId, 
     return false;
   }
   const [firstSharedAtomId, secondSharedAtomId] = sharedAtomIds;
-  const firstNeighbors = neighborMap.get(firstSharedAtomId) ?? new Set();
-  const secondNeighbors = neighborMap.get(secondSharedAtomId) ?? new Set();
-  const firstRingAtoms = new Set(rings[firstRingId].atomIds);
-  const secondRingAtoms = new Set(rings[secondRingId].atomIds);
-
-  for (const neighborId of firstNeighbors) {
-    if (neighborId === secondSharedAtomId || !secondNeighbors.has(neighborId)) {
-      continue;
-    }
-    if (firstRingAtoms.has(neighborId) || secondRingAtoms.has(neighborId)) {
-      return true;
-    }
+  const firstRing = getRingById(rings, firstRingId);
+  const secondRing = getRingById(rings, secondRingId);
+  if (!firstRing || !secondRing) {
+    return false;
   }
-
-  return false;
+  const firstRingSharesBond = areAdjacentInRing(firstRing.atomIds, firstSharedAtomId, secondSharedAtomId);
+  const secondRingSharesBond = areAdjacentInRing(secondRing.atomIds, firstSharedAtomId, secondSharedAtomId);
+  if (!firstRingSharesBond || !secondRingSharesBond) {
+    return true;
+  }
+  const excludedAtomIds = new Set([
+    ...longRingArcInternalAtomIds(firstRing.atomIds, firstSharedAtomId, secondSharedAtomId),
+    ...longRingArcInternalAtomIds(secondRing.atomIds, firstSharedAtomId, secondSharedAtomId)
+  ]);
+  return hasBridgePathOutsideRingAtoms(
+    firstSharedAtomId,
+    secondSharedAtomId,
+    excludedAtomIds,
+    bondKey(firstSharedAtomId, secondSharedAtomId),
+    neighborMap
+  );
 }
 
 /**

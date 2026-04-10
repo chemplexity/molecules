@@ -17,4 +17,13 @@ describe('layoutv2/geometry/ellipse', () => {
 
     assert.ok(Math.abs(average - 1.5) < 1e-3);
   });
+
+  it('uses a stepped aspect-ratio calibration for larger macrocycles', () => {
+    assert.equal(macrocycleAspectRatio(12), 1.0);
+    assert.equal(macrocycleAspectRatio(16), 1.15);
+    assert.equal(macrocycleAspectRatio(20), 1.30);
+    assert.equal(macrocycleAspectRatio(26), 1.50);
+    assert.equal(macrocycleAspectRatio(40), 1.71);
+    assert.equal(macrocycleAspectRatio(60), 1.80);
+  });
 });

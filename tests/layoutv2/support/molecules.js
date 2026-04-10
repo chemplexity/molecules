@@ -376,8 +376,8 @@ export function makeBicyclo222() {
 }
 
 /**
- * Creates an adamantane-like cage fixture.
- * @returns {Molecule} Cage-like bridged tricyclic system.
+ * Creates an adamantane cage fixture.
+ * @returns {Molecule} Bridged tricyclic adamantane scaffold.
  */
 export function makeAdamantane() {
   const molecule = new Molecule();
@@ -385,20 +385,17 @@ export function makeAdamantane() {
     molecule.addAtom(`a${index}`, 'C');
   }
   molecule.addBond('b0', 'a0', 'a1', {}, false);
-  molecule.addBond('b1', 'a1', 'a2', {}, false);
-  molecule.addBond('b2', 'a2', 'a3', {}, false);
-  molecule.addBond('b3', 'a3', 'a0', {}, false);
-  molecule.addBond('b4', 'a0', 'a4', {}, false);
-  molecule.addBond('b5', 'a1', 'a5', {}, false);
-  molecule.addBond('b6', 'a2', 'a6', {}, false);
-  molecule.addBond('b7', 'a3', 'a7', {}, false);
-  molecule.addBond('b8', 'a4', 'a8', {}, false);
-  molecule.addBond('b9', 'a5', 'a8', {}, false);
-  molecule.addBond('b10', 'a5', 'a9', {}, false);
-  molecule.addBond('b11', 'a6', 'a9', {}, false);
-  molecule.addBond('b12', 'a6', 'a8', {}, false);
-  molecule.addBond('b13', 'a7', 'a9', {}, false);
-  molecule.addBond('b14', 'a7', 'a4', {}, false);
+  molecule.addBond('b1', 'a0', 'a5', {}, false);
+  molecule.addBond('b2', 'a1', 'a2', {}, false);
+  molecule.addBond('b3', 'a1', 'a8', {}, false);
+  molecule.addBond('b4', 'a2', 'a3', {}, false);
+  molecule.addBond('b5', 'a3', 'a4', {}, false);
+  molecule.addBond('b6', 'a3', 'a9', {}, false);
+  molecule.addBond('b7', 'a4', 'a5', {}, false);
+  molecule.addBond('b8', 'a5', 'a6', {}, false);
+  molecule.addBond('b9', 'a6', 'a7', {}, false);
+  molecule.addBond('b10', 'a7', 'a8', {}, false);
+  molecule.addBond('b11', 'a7', 'a9', {}, false);
   return molecule;
 }
 

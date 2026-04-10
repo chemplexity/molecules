@@ -6,6 +6,7 @@ import {
   orientCoordsHorizontally,
   rebuildRingCenters
 } from '../../../src/layoutv2/scaffold/orientation.js';
+import { computeBounds } from '../../../src/layoutv2/geometry/bounds.js';
 
 describe('layoutv2/scaffold/orientation', () => {
   it('computes a principal fused axis and rotates it horizontal', () => {
@@ -30,5 +31,19 @@ describe('layoutv2/scaffold/orientation', () => {
       ['a1', { x: 1, y: 0 }]
     ]));
     assert.deepEqual(centers.get(1), { x: 0, y: 0 });
+  });
+
+  it('applies a quarter-turn guard when the oriented layout is taller than wide', () => {
+    const coords = new Map([
+      ['a0', { x: -0.5, y: -3 }],
+      ['a1', { x: 0.5, y: -3 }],
+      ['a2', { x: -0.5, y: 3 }],
+      ['a3', { x: 0.5, y: 3 }]
+    ]);
+    const rotated = orientCoordsHorizontally(coords, 0);
+    const bounds = computeBounds(rotated, [...rotated.keys()]);
+
+    assert.ok(bounds);
+    assert.ok(bounds.width >= bounds.height);
   });
 });

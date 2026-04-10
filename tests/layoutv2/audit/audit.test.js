@@ -49,4 +49,20 @@ describe('layoutv2/audit/audit', () => {
     assert.equal(audit.ok, false);
     assert.equal(audit.stereoContradiction, true);
   });
+
+  it('reports per-bond bridged validation classes in bond-length audit stats', () => {
+    const graph = createLayoutGraph(makeEthane());
+    const coords = new Map([
+      ['a0', { x: 0, y: 0 }],
+      ['a1', { x: 1.8, y: 0 }]
+    ]);
+
+    const planarAudit = auditLayout(graph, coords);
+    const bridgedAudit = auditLayout(graph, coords, {
+      bondValidationClasses: new Map([['b0', 'bridged']])
+    });
+
+    assert.equal(planarAudit.bondLengthFailureCount, 1);
+    assert.equal(bridgedAudit.bondLengthFailureCount, 0);
+  });
 });

@@ -2,7 +2,6 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { ReactionNetwork } from '../../src/network/ReactionNetwork.js';
 import { parseSMILES, toCanonicalSMILES } from '../../src/io/index.js';
-import { Molecule } from '../../src/core/Molecule.js';
 
 describe('ReactionNetwork', () => {
 
@@ -34,7 +33,7 @@ describe('ReactionNetwork', () => {
             assert.deepEqual(data.conditions, { enzyme: 'Magic' });
         });
         
-        network.on('reactionAdded', (data) => {
+        network.on('reactionAdded', (_data) => {
             rxnCounter++;
         });
 

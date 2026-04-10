@@ -81,6 +81,40 @@ function recenterFreePositions(positions, atomIds, pinnedAtomIds, targetCenter) 
 }
 
 /**
+ * Solves a damped 2x2 Newton step for a single Kamada-Kawai node update.
+ * @param {number} dxx - Hessian xx term.
+ * @param {number} dxy - Hessian xy term.
+ * @param {number} dyy - Hessian yy term.
+ * @param {number} gradientX - Energy gradient x component.
+ * @param {number} gradientY - Energy gradient y component.
+ * @returns {{moveX: number, moveY: number}} The proposed step.
+ */
+function solveDampedNewtonStep(dxx, dxy, dyy, gradientX, gradientY) {
+  const hessianScale = Math.abs(dxx) + Math.abs(dyy) + Math.abs(dxy) + 1e-10;
+  let lambda = Math.max(1e-10, hessianScale * 1e-4);
+
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const dampedDxx = dxx + lambda;
+    const dampedDyy = dyy + lambda;
+    const det = dampedDxx * dampedDyy - dxy * dxy;
+    if (Number.isFinite(det) && Math.abs(det) > 1e-12) {
+      const moveX = (-dampedDyy * gradientX + dxy * gradientY) / det;
+      const moveY = (dxy * gradientX - dampedDxx * gradientY) / det;
+      if (Number.isFinite(moveX) && Number.isFinite(moveY)) {
+        return { moveX, moveY };
+      }
+    }
+    lambda *= 10;
+  }
+
+  const fallbackScale = Math.max(hessianScale, 1e-6);
+  return {
+    moveX: -gradientX / fallbackScale,
+    moveY: -gradientY / fallbackScale
+  };
+}
+
+/**
  * Returns whether a Kamada-Kawai coordinate set clears basic validity gates.
  * @param {object} molecule - Molecule-like graph.
  * @param {string[]} atomIds - Atom IDs included in the layout.
@@ -165,7 +199,7 @@ export function layoutKamadaKawai(
     pinnedAtomIds = [],
     center = vec(0, 0),
     bondLength = 1.5,
-    maxComponentSize = 32,
+    maxComponentSize = 64,
     threshold = 0.1,
     innerThreshold = 0.1,
     maxIterations = 20000,
@@ -291,16 +325,7 @@ export function layoutKamadaKawai(
       dyy = 0.1;
     }
 
-    const det = dxx * dyy - dxy * dxy;
-    let moveX;
-    let moveY;
-    if (Math.abs(det) < 1e-6) {
-      moveX = -energyX[index] * 0.1;
-      moveY = -energyY[index] * 0.1;
-    } else {
-      moveX = (-dyy * energyX[index] + dxy * energyY[index]) / det;
-      moveY = (dxy * energyX[index] - dxx * energyY[index]) / det;
-    }
+    let { moveX, moveY } = solveDampedNewtonStep(dxx, dxy, dyy, energyX[index], energyY[index]);
 
     const step = Math.hypot(moveX, moveY);
     if (step > bondLength) {

@@ -69,5 +69,17 @@ export function solveEllipseScale(size, bondLength, aspectRatio, startAngle) {
  * @returns {number} Suggested aspect ratio.
  */
 export function macrocycleAspectRatio(size) {
-  return Math.min(1.35, 1.12 + Math.max(0, size - 12) * 0.015);
+  if (size <= 12) {
+    return 1.0;
+  }
+  if (size <= 16) {
+    return 1.15;
+  }
+  if (size <= 20) {
+    return 1.30;
+  }
+  if (size <= 26) {
+    return 1.50;
+  }
+  return Math.min(1.80, 1.50 + ((size - 26) * 0.015));
 }

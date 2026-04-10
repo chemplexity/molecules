@@ -3,6 +3,7 @@
 import { alignCoordsToFixed } from '../geometry/transforms.js';
 import { layoutLargeMoleculeFamily } from '../families/large-molecule.js';
 import { layoutOrganometallicFamily } from '../families/organometallic.js';
+import { assignBondValidationClass, mergeBondValidationClasses } from './bond-validation.js';
 import { layoutAtomSlice } from './atom-slice.js';
 import { packComponentPlacements } from './fragment-packing.js';
 import {
@@ -19,6 +20,12 @@ function isLargeComponent(layoutGraph, component) {
   return heavyAtomCount > threshold.heavyAtomCount || ringSystemCount > threshold.ringSystemCount;
 }
 
+/**
+ * Lays out one connected component through the best available family path.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} component - Connected-component descriptor.
+ * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, placementMode?: string|null, bondValidationClasses: Map<string, 'planar'|'bridged'>}} Component placement result.
+ */
 function layoutComponent(layoutGraph, component) {
   if (isLargeComponent(layoutGraph, component)) {
     const largeMolecule = layoutLargeMoleculeFamily(layoutGraph, component, layoutGraph.options.bondLength);
@@ -31,7 +38,9 @@ function layoutComponent(layoutGraph, component) {
         family: 'large-molecule',
         supported: true,
         atomIds: participantAtomIds,
-        coords: largeMolecule.coords
+        coords: largeMolecule.coords,
+        placementMode: largeMolecule.placementMode,
+        bondValidationClasses: largeMolecule.bondValidationClasses
       };
     }
   }
@@ -59,7 +68,9 @@ function layoutComponent(layoutGraph, component) {
       family: 'organometallic',
       supported: false,
       atomIds: familyPlacement.atomIds,
-      coords: new Map()
+      coords: new Map(),
+      placementMode: null,
+      bondValidationClasses: new Map()
     };
   }
 
@@ -67,7 +78,9 @@ function layoutComponent(layoutGraph, component) {
     family: 'organometallic',
     supported: true,
     atomIds: familyPlacement.atomIds,
-    coords: organometallic.coords
+    coords: organometallic.coords,
+    placementMode: organometallic.placementMode,
+    bondValidationClasses: assignBondValidationClass(layoutGraph, familyPlacement.atomIds, 'planar')
   };
 }
 
@@ -76,10 +89,11 @@ function layoutComponent(layoutGraph, component) {
  * coordinate frame.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} [policy] - Standards-policy bundle.
- * @returns {{coords: Map<string, {x: number, y: number}>, placedComponentCount: number, unplacedComponentCount: number, preservedComponentCount: number, placedFamilies: string[]}} Placement summary.
+ * @returns {{coords: Map<string, {x: number, y: number}>, placedComponentCount: number, unplacedComponentCount: number, preservedComponentCount: number, placedFamilies: string[], bondValidationClasses: Map<string, 'planar'|'bridged'>}} Placement summary.
  */
 export function layoutSupportedComponents(layoutGraph, policy = {}) {
   const componentPlacements = [];
+  const bondValidationClasses = new Map();
   const placedFamilies = [];
   let placedComponentCount = 0;
   let unplacedComponentCount = 0;
@@ -99,6 +113,7 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
       placedComponentCount++;
       preservedComponentCount++;
       placedFamilies.push('preserved');
+      assignBondValidationClass(layoutGraph, component.atomIds, 'planar', bondValidationClasses, { overwrite: false });
       continue;
     }
 
@@ -127,6 +142,7 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
     });
     placedComponentCount++;
     placedFamilies.push(placement.family);
+    mergeBondValidationClasses(bondValidationClasses, placement.bondValidationClasses, { overwrite: false });
   }
 
   return {
@@ -134,6 +150,7 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
     placedComponentCount,
     unplacedComponentCount,
     preservedComponentCount,
-    placedFamilies
+    placedFamilies,
+    bondValidationClasses
   };
 }

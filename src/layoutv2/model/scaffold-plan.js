@@ -1,7 +1,7 @@
 /** @module model/scaffold-plan */
 
 import { compareFallbackScaffolds } from '../scaffold/fallback-scaffold.js';
-import { findTemplateMatch } from '../scaffold/template-match.js';
+import { findTemplateMatch, findTemplateMatchIgnoringFamily } from '../scaffold/template-match.js';
 
 function ringSystemConnections(layoutGraph, ringSystem) {
   const ringIdSet = new Set(ringSystem.ringIds);
@@ -17,6 +17,40 @@ function countInternalBonds(layoutGraph, atomIds) {
     }
   }
   return count;
+}
+
+/**
+ * Resolves the final family and template match for a ring-system candidate.
+ * When the heuristic family label misses a known exact template, the template
+ * family wins so later placement can use the correct dedicated family path.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} candidate - Ring-system candidate.
+ * @returns {{family: string, templateMatch: object|null, templateId: string|null}} Resolved family data.
+ */
+function resolveCandidateFamily(layoutGraph, candidate) {
+  const strictMatch = findTemplateMatch(layoutGraph, candidate);
+  if (strictMatch) {
+    return {
+      family: candidate.family,
+      templateMatch: strictMatch,
+      templateId: strictMatch.id
+    };
+  }
+
+  const fallbackMatch = findTemplateMatchIgnoringFamily(layoutGraph, candidate);
+  if (fallbackMatch) {
+    return {
+      family: fallbackMatch.family,
+      templateMatch: fallbackMatch,
+      templateId: fallbackMatch.id
+    };
+  }
+
+  return {
+    family: candidate.family,
+    templateMatch: null,
+    templateId: null
+  };
 }
 
 /**
@@ -47,12 +81,12 @@ function buildRingSystemCandidates(layoutGraph, component) {
   return layoutGraph.ringSystems
     .filter(ringSystem => ringSystem.atomIds.every(atomId => componentAtomIdSet.has(atomId)))
     .map(ringSystem => {
-      const family = classifyRingSystemFamily(layoutGraph, ringSystem);
+      const classifiedFamily = classifyRingSystemFamily(layoutGraph, ringSystem);
       const aromaticRingCount = ringSystem.ringIds.filter(ringId => layoutGraph.rings.find(ring => ring.id === ringId)?.aromatic).length;
       const candidate = {
         id: `ring-system:${ringSystem.id}`,
         type: 'ring-system',
-        family,
+        family: classifiedFamily,
         atomIds: [...ringSystem.atomIds],
         ringIds: [...ringSystem.ringIds],
         atomCount: ringSystem.atomIds.length,
@@ -61,11 +95,12 @@ function buildRingSystemCandidates(layoutGraph, component) {
         aromaticRingCount,
         signature: ringSystem.signature
       };
-      const templateMatch = findTemplateMatch(layoutGraph, candidate);
+      const resolved = resolveCandidateFamily(layoutGraph, candidate);
       return {
         ...candidate,
-        templateMatch,
-        templateId: templateMatch?.id ?? null
+        family: resolved.family,
+        templateMatch: resolved.templateMatch,
+        templateId: resolved.templateId
       };
     })
     .sort(compareFallbackScaffolds);
@@ -98,8 +133,13 @@ export function buildScaffoldPlan(layoutGraph, component) {
   const ringSystemCandidates = buildRingSystemCandidates(layoutGraph, component);
   const candidates = ringSystemCandidates.length > 0 ? ringSystemCandidates : [buildAcyclicCandidate(component)];
   const rootScaffold = candidates[0];
-  const rootAtomIdSet = new Set(rootScaffold.atomIds);
-  const nonRingAtomIds = component.atomIds.filter(atomId => !layoutGraph.ringSystems.some(ringSystem => ringSystem.atomIds.includes(atomId)));
+  const nonRingAtomIds = component.atomIds.filter(atomId => {
+    const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
+    if (!atom || atom.name === 'H') {
+      return false;
+    }
+    return !layoutGraph.ringSystems.some(ringSystem => ringSystem.atomIds.includes(atomId));
+  });
   const placementSequence = [
     {
       kind: 'root-scaffold',
@@ -121,7 +161,7 @@ export function buildScaffoldPlan(layoutGraph, component) {
       }))
   ];
 
-  if (nonRingAtomIds.length > 0) {
+  if (rootScaffold.type !== 'acyclic' && nonRingAtomIds.length > 0) {
     placementSequence.push({
       kind: 'chains',
       candidateId: 'chains',
@@ -137,7 +177,7 @@ export function buildScaffoldPlan(layoutGraph, component) {
     candidates,
     rootScaffold,
     nonRingAtomIds,
-    mixedMode: candidates.length > 1 || component.atomIds.some(atomId => !rootAtomIdSet.has(atomId)),
+    mixedMode: rootScaffold.type !== 'acyclic' && (candidates.length > 1 || nonRingAtomIds.length > 0),
     placementSequence
   };
 }

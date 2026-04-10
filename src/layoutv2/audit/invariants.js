@@ -1,9 +1,19 @@
 /** @module audit/invariants */
 
 import { computeBounds } from '../geometry/bounds.js';
+import { BRIDGED_VALIDATION, PLANAR_VALIDATION } from '../templates/library.js';
 
 function pairKey(firstAtomId, secondAtomId) {
   return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
+}
+
+/**
+ * Returns the bond-validation settings for the requested validation class.
+ * @param {'planar'|'bridged'|undefined} validationClass - Bond validation class.
+ * @returns {{minBondLengthFactor: number, maxBondLengthFactor: number, maxMeanDeviation: number, maxSevereOverlapCount: number}} Validation settings.
+ */
+function validationSettingsForClass(validationClass) {
+  return validationClass === 'bridged' ? BRIDGED_VALIDATION : PLANAR_VALIDATION;
 }
 
 function isVisibleLayoutAtom(layoutGraph, atomId) {
@@ -91,12 +101,15 @@ export function findSevereOverlaps(layoutGraph, coords, bondLength) {
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {number} bondLength - Target bond length.
- * @returns {{sampleCount: number, maxDeviation: number, meanDeviation: number}} Bond-length statistics.
+ * @param {{bondValidationClasses?: Map<string, 'planar'|'bridged'>}} [options] - Bond-validation options.
+ * @returns {{sampleCount: number, maxDeviation: number, meanDeviation: number, failingBondCount: number}} Bond-length statistics.
  */
-export function measureBondLengthDeviation(layoutGraph, coords, bondLength) {
+export function measureBondLengthDeviation(layoutGraph, coords, bondLength, options = {}) {
   let sampleCount = 0;
   let totalDeviation = 0;
   let maxDeviation = 0;
+  let failingBondCount = 0;
+  const bondValidationClasses = options.bondValidationClasses ?? new Map();
 
   for (const bond of layoutGraph.bonds.values()) {
     const firstPosition = coords.get(bond.a);
@@ -106,15 +119,24 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength) {
     }
     const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
     const deviation = Math.abs(distance - bondLength);
+    const validationSettings = validationSettingsForClass(bondValidationClasses.get(bond.id));
+    const allowedDeviation = bondLength * Math.max(
+      Math.abs(1 - validationSettings.minBondLengthFactor),
+      Math.abs(validationSettings.maxBondLengthFactor - 1)
+    );
     sampleCount++;
     totalDeviation += deviation;
     maxDeviation = Math.max(maxDeviation, deviation);
+    if (deviation > allowedDeviation) {
+      failingBondCount++;
+    }
   }
 
   return {
     sampleCount,
     maxDeviation,
-    meanDeviation: sampleCount === 0 ? 0 : totalDeviation / sampleCount
+    meanDeviation: sampleCount === 0 ? 0 : totalDeviation / sampleCount,
+    failingBondCount
   };
 }
 
@@ -143,6 +165,51 @@ export function measureTrigonalDistortion(layoutGraph, coords) {
     if (multipleBondCount !== 1) {
       continue;
     }
+    const atomPosition = coords.get(atomId);
+    const neighborAngles = covalentBonds.map(({ neighborAtomId }) => {
+      const neighborPosition = coords.get(neighborAtomId);
+      return Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x);
+    });
+    const separations = sortedAngularSeparations(neighborAngles);
+    const deviation = separations.reduce((sum, separation) => sum + ((separation - idealSeparation) ** 2), 0);
+    centerCount++;
+    totalDeviation += deviation;
+    maxDeviation = Math.max(maxDeviation, deviation);
+  }
+
+  return {
+    centerCount,
+    totalDeviation,
+    maxDeviation
+  };
+}
+
+/**
+ * Measures angular distortion at visible saturated four-coordinate heavy centers
+ * that should remain roughly tetrahedral in a publication-style 2D depiction.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {{centerCount: number, totalDeviation: number, maxDeviation: number}} Tetrahedral distortion statistics.
+ */
+export function measureTetrahedralDistortion(layoutGraph, coords) {
+  let centerCount = 0;
+  let totalDeviation = 0;
+  let maxDeviation = 0;
+  const idealSeparation = Math.PI / 2;
+
+  for (const atomId of coords.keys()) {
+    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId)
+      .filter(({ neighborAtomId }) => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+    if (covalentBonds.length !== 4) {
+      continue;
+    }
+    if (covalentBonds.some(({ bond }) => bond.aromatic || (bond.order ?? 1) !== 1)) {
+      continue;
+    }
+
     const atomPosition = coords.get(atomId);
     const neighborAngles = covalentBonds.map(({ neighborAtomId }) => {
       const neighborPosition = coords.get(neighborAtomId);
@@ -198,6 +265,7 @@ export function measureLayoutCost(layoutGraph, coords, bondLength) {
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength);
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const trigonalDistortion = measureTrigonalDistortion(layoutGraph, coords);
+  const tetrahedralDistortion = measureTetrahedralDistortion(layoutGraph, coords);
 
   let overlapPenalty = 0;
   for (const overlap of overlaps) {
@@ -208,5 +276,6 @@ export function measureLayoutCost(layoutGraph, coords, bondLength) {
   const bondPenalty = bondDeviation.meanDeviation * 10 + bondDeviation.maxDeviation * 5;
   const macrocyclePenalty = collapsedMacrocycles.length * 1000;
   const trigonalPenalty = trigonalDistortion.totalDeviation * 20;
-  return overlapPenalty + bondPenalty + macrocyclePenalty + trigonalPenalty;
+  const tetrahedralPenalty = tetrahedralDistortion.totalDeviation * 20;
+  return overlapPenalty + bondPenalty + macrocyclePenalty + trigonalPenalty + tetrahedralPenalty;
 }

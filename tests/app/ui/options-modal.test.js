@@ -24,6 +24,99 @@ function makeButton() {
 }
 
 describe('initOptionsModal', () => {
+  it('falls back to v2 when the current renderer version is missing', () => {
+    const overlayEl = {
+      hidden: true,
+      listeners: new Map(),
+      addEventListener(type, handler) {
+        this.listeners.set(type, handler);
+      }
+    };
+    const showValenceWarningsEl = makeCheckbox();
+    const showAtomTooltipsEl = makeCheckbox();
+    const twoDRendererVersionEl = makeInput();
+    const twoDAtomColoringEl = makeCheckbox();
+    const twoDAtomFontSizeEl = makeInput();
+    const atomNumberingFontSizeEl = makeInput();
+    const twoDBondThicknessEl = makeInput();
+    const forceAtomSizeEl = makeInput();
+    const forceBondThicknessEl = makeInput();
+    const resetBtnEl = makeButton();
+    const cancelBtnEl = makeButton();
+    const applyBtnEl = makeButton();
+
+    const modal = initOptionsModal({
+      doc: {
+        addEventListener() {}
+      },
+      dom: {
+        getOverlayElement: () => overlayEl,
+        getShowValenceWarningsElement: () => showValenceWarningsEl,
+        getShowAtomTooltipsElement: () => showAtomTooltipsEl,
+        get2DRendererVersionElement: () => twoDRendererVersionEl,
+        get2DAtomColoringElement: () => twoDAtomColoringEl,
+        get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
+        getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
+        get2DBondThicknessElement: () => twoDBondThicknessEl,
+        getForceAtomSizeElement: () => forceAtomSizeEl,
+        getForceBondThicknessElement: () => forceBondThicknessEl,
+        getResetButtonElement: () => resetBtnEl,
+        getCancelButtonElement: () => cancelBtnEl,
+        getApplyButtonElement: () => applyBtnEl
+      },
+      options: {
+        limits: {
+          twoDAtomFontSize: { min: 10, max: 24 },
+          atomNumberingFontSize: { min: 8, max: 24 },
+          twoDBondThickness: { min: 0.8, max: 4 },
+          forceAtomSizeMultiplier: { min: 0.5, max: 2.5 },
+          forceBondThicknessMultiplier: { min: 0.5, max: 2.5 }
+        },
+        getRenderOptions: () => ({
+          showValenceWarnings: true,
+          showAtomTooltips: true,
+          twoDAtomColoring: true,
+          twoDAtomFontSize: 14,
+          atomNumberingFontSize: 10,
+          twoDBondThickness: 1.6,
+          forceAtomSizeMultiplier: 1,
+          forceBondThicknessMultiplier: 1
+        }),
+        getDefaultRenderOptions: () => ({
+          showValenceWarnings: true,
+          showAtomTooltips: true,
+          twoDRendererVersion: 'v2',
+          twoDAtomColoring: true,
+          twoDAtomFontSize: 14,
+          atomNumberingFontSize: 10,
+          twoDBondThickness: 1.6,
+          forceAtomSizeMultiplier: 1,
+          forceBondThicknessMultiplier: 1
+        }),
+        updateRenderOptions: nextOptions => nextOptions
+      },
+      state: {
+        getMode: () => '2d',
+        getCurrentMol: () => null,
+        getMol2d: () => null
+      },
+      view: {
+        setFontSize() {},
+        hideTooltip() {}
+      },
+      renderers: {
+        draw2d() {},
+        render2d() {},
+        renderMol() {},
+        updateForce() {}
+      },
+      parsers: {}
+    });
+
+    modal.open();
+    assert.equal(twoDRendererVersionEl.value, 'v2');
+  });
+
   it('opens with current option values and applies updated options through the active renderer', () => {
     const calls = [];
     const overlayEl = {

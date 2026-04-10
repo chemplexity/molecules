@@ -154,6 +154,126 @@ function _isHuckel(piCount) {
 }
 
 /**
+ * Returns localized bond orders for a selected aromatic bond set using the same
+ * maximum-matching logic as renderer-side Kekule localization.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {Set<string>} aromaticBondIds - Aromatic bond ids to localize.
+ * @returns {Map<string, number>} Bond id to localized order (1 or 2).
+ */
+function _localizedAromaticBondOrders(mol, aromaticBondIds) {
+  const aromaticBonds = [...aromaticBondIds]
+    .map(bondId => mol.bonds.get(bondId))
+    .filter(Boolean);
+  if (aromaticBonds.length === 0) {
+    return new Map();
+  }
+  if (aromaticBonds.every(bond => Number.isInteger(bond.properties.localizedOrder))) {
+    return new Map(aromaticBonds.map(bond => [bond.id, bond.properties.localizedOrder]));
+  }
+
+  const sigmaValence = {
+    B: 3,
+    C: 4,
+    N: 3,
+    O: 2,
+    F: 1,
+    Si: 4,
+    P: 3,
+    S: 2,
+    Cl: 1,
+    As: 3,
+    Se: 2,
+    Br: 1,
+    Te: 2,
+    I: 1
+  };
+
+  const aromaticAtomIds = new Set();
+  for (const bond of aromaticBonds) {
+    aromaticAtomIds.add(bond.atoms[0]);
+    aromaticAtomIds.add(bond.atoms[1]);
+  }
+
+  const sigmaBondOrder = new Map();
+  for (const atomId of aromaticAtomIds) {
+    sigmaBondOrder.set(atomId, 0);
+  }
+  for (const bond of mol.bonds.values()) {
+    const contribution = bond.properties.aromatic ? 1 : (bond.properties.order ?? 1);
+    for (const atomId of bond.atoms) {
+      if (sigmaBondOrder.has(atomId)) {
+        sigmaBondOrder.set(atomId, sigmaBondOrder.get(atomId) + contribution);
+      }
+    }
+  }
+
+  const canHaveDouble = new Set();
+  for (const atomId of aromaticAtomIds) {
+    const atom = mol.atoms.get(atomId);
+    const neutralBase = sigmaValence[atom.name] ?? 4;
+    const adjustedBase = Math.max(0, neutralBase + (atom.getCharge?.() ?? 0));
+    if (adjustedBase - sigmaBondOrder.get(atomId) >= 1) {
+      canHaveDouble.add(atomId);
+    }
+  }
+
+  const adjacency = new Map();
+  for (const atomId of canHaveDouble) {
+    adjacency.set(atomId, []);
+  }
+  for (const bond of aromaticBonds) {
+    const [firstAtomId, secondAtomId] = bond.atoms;
+    if (canHaveDouble.has(firstAtomId) && canHaveDouble.has(secondAtomId)) {
+      adjacency.get(firstAtomId).push({ bondId: bond.id, otherId: secondAtomId });
+      adjacency.get(secondAtomId).push({ bondId: bond.id, otherId: firstAtomId });
+    }
+  }
+
+  const mate = new Map();
+  const matchedBond = new Map();
+  for (const atomId of canHaveDouble) {
+    mate.set(atomId, null);
+  }
+
+  function tryAugment(startAtomId) {
+    const visited = new Set([startAtomId]);
+    function dfs(atomId) {
+      for (const { bondId, otherId } of adjacency.get(atomId)) {
+        if (visited.has(otherId)) {
+          continue;
+        }
+        visited.add(otherId);
+        const mateOfOther = mate.get(otherId);
+        if (mateOfOther === null || dfs(mateOfOther)) {
+          mate.set(atomId, otherId);
+          mate.set(otherId, atomId);
+          matchedBond.set(atomId, bondId);
+          matchedBond.set(otherId, bondId);
+          return true;
+        }
+      }
+      return false;
+    }
+    return dfs(startAtomId);
+  }
+
+  for (const atomId of canHaveDouble) {
+    if (mate.get(atomId) === null) {
+      tryAugment(atomId);
+    }
+  }
+
+  const doubleBondIds = new Set();
+  for (const [atomId, bondId] of matchedBond) {
+    if (mate.get(atomId) !== null) {
+      doubleBondIds.add(bondId);
+    }
+  }
+
+  return new Map(aromaticBonds.map(bond => [bond.id, doubleBondIds.has(bond.id) ? 2 : 1]));
+}
+
+/**
  * Assigns `localizedOrder` (1 or 2) to bonds that are currently flagged
  * aromatic but do NOT belong to any confirmed aromatic ring.  This covers
  * cases where the SMILES parser used lowercase atoms for a ring which Hückel
@@ -169,6 +289,7 @@ function _isHuckel(piCount) {
 function _kekulizeStale(mol, confirmedAromaticBondIds) {
   // Neutral σ-frame valence for common aromatic elements.
   const SIGMA_VAL = { B: 3, C: 4, N: 3, O: 2, F: 1, Si: 4, P: 3, S: 2, Cl: 1, As: 3, Se: 2, Br: 1, Te: 2, I: 1 };
+  const confirmedLocalizedOrders = _localizedAromaticBondOrders(mol, confirmedAromaticBondIds);
 
   const staleBondIds = new Set();
   const staleAtomIds = new Set();
@@ -194,7 +315,7 @@ function _kekulizeStale(mol, confirmedAromaticBondIds) {
     const [a, b] = bond.atoms;
     let contrib;
     if (staleBondIds.has(bond.id) || confirmedAromaticBondIds.has(bond.id)) {
-      contrib = 1;
+      contrib = staleBondIds.has(bond.id) ? 1 : (confirmedLocalizedOrders.get(bond.id) ?? 1);
     } else {
       contrib = bond.properties.order ?? 1;
     }

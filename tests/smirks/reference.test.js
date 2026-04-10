@@ -295,6 +295,23 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(toSMILES(product), '[O-]c1ccccc1');
   });
 
+  it('dielsAlder converts butadiene and ethylene into cyclohexene (intermolecular)', () => {
+    const product = applySMIRKS(parseSMILES('C=CC=C.C=C'), reactionTemplates.dielsAlder.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'C1C=CCCC1');
+  });
+
+  it('dielsAlder closes nona-1,3,8-triene into a bicyclo[4.3.0]non-2-ene (intramolecular)', () => {
+    const product = applySMIRKS(parseSMILES('C=CC=CCCCC=C'), reactionTemplates.dielsAlder.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'C1C=CC2CCCC2C1');
+  });
+
+  it('dielsAlder returns null when no isolated dienophile is present', () => {
+    const product = applySMIRKS(parseSMILES('C=CC=C'), reactionTemplates.dielsAlder.smirks);
+    assert.equal(product, null);
+  });
+
   it('phenolateProtonation protonates phenolate cleanly', () => {
     const product = applySMIRKS(parseSMILES('[O-]c1ccccc1'), reactionTemplates.phenolateProtonation.smirks);
     assert.ok(product);

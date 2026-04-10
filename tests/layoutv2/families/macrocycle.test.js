@@ -14,6 +14,16 @@ describe('layoutv2/families/macrocycle', () => {
     assert.equal(result.ringCenters.size, 1);
 
     const bounds = computeBounds(result.coords, graph.rings[0].atomIds);
-    assert.ok(bounds.width > bounds.height);
+    assert.ok(bounds.width > 0);
+    assert.ok(bounds.height > 0);
+    assert.ok(Math.abs(bounds.width - bounds.height) < 0.25);
+  });
+
+  it('uses a more elongated oval for larger macrocycles', () => {
+    const graph = createLayoutGraph(makeMacrocycle(24));
+    const result = layoutMacrocycleFamily(graph.rings, graph.options.bondLength);
+    const bounds = computeBounds(result.coords, graph.rings[0].atomIds);
+
+    assert.ok(bounds.width / bounds.height > 1.4);
   });
 });

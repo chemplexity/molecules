@@ -3,7 +3,7 @@
 import { getRingAtomIds } from './topology/ring-analysis.js';
 
 export const CPK = {
-  H: '#FFFFFF',
+  H: '#333333',
   He: '#D9FFFF',
   Li: '#7D828A',
   Be: '#70757D',
@@ -521,17 +521,7 @@ function occupiedNeighborAngles(atom, molecule, pointForAtom) {
  * @param {number} [options.dotSpacing] - Distance between dots in a pair.
  * @returns {Array<{x: number, y: number}>} Dot positions.
  */
-export function computeLonePairDotPositions(
-  atom,
-  molecule,
-  {
-    pointForAtom,
-    label = null,
-    fontSize = 14,
-    offsetFromBoundary = 6,
-    dotSpacing = 4.2
-  } = {}
-) {
+export function computeLonePairDotPositions(atom, molecule, { pointForAtom, label = null, fontSize = 14, offsetFromBoundary = 6, dotSpacing = 4.2 } = {}) {
   if (!atom || !molecule || typeof pointForAtom !== 'function') {
     return [];
   }
@@ -591,22 +581,8 @@ export function computeChargeBadgePlacement(
   }
 
   const center = pointForAtom(atom);
-  const occupiedAngles = [
-    ...occupiedNeighborAngles(atom, molecule, pointForAtom),
-    ...labelOccupiedAngles(label),
-    ...extraOccupiedAngles
-  ];
-  const candidates = [
-    preferredAngle,
-    -Math.PI / 4,
-    Math.PI / 4,
-    -3 * Math.PI / 4,
-    3 * Math.PI / 4,
-    -Math.PI / 2,
-    Math.PI / 2,
-    0,
-    Math.PI
-  ].map(normalizeAngle);
+  const occupiedAngles = [...occupiedNeighborAngles(atom, molecule, pointForAtom), ...labelOccupiedAngles(label), ...extraOccupiedAngles];
+  const candidates = [preferredAngle, -Math.PI / 4, Math.PI / 4, (-3 * Math.PI) / 4, (3 * Math.PI) / 4, -Math.PI / 2, Math.PI / 2, 0, Math.PI].map(normalizeAngle);
 
   let bestAngle = candidates[0];
   let bestScore = -1;

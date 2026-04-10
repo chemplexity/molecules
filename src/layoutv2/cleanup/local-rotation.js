@@ -3,7 +3,7 @@
 import { add, angleOf, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { measureLayoutCost } from '../audit/invariants.js';
 
-const DISCRETE_ROTATION_ANGLES = Array.from({ length: 12 }, (_, index) => (index * Math.PI) / 6);
+const DISCRETE_ROTATION_ANGLES = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12);
 
 function buildPlacedAdjacency(layoutGraph, coords) {
   const adjacency = new Map();

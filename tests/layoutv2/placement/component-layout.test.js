@@ -22,6 +22,7 @@ describe('layoutv2/placement/component-layout', () => {
     assert.equal(result.unplacedComponentCount, 0);
     assert.ok(result.coords.has('a6'));
     assert.deepEqual(result.placedFamilies, ['mixed']);
+    assert.ok([...result.bondValidationClasses.values()].every(validationClass => validationClass === 'planar'));
   });
 
   it('lays out a mixed component with chain-linked ring systems', () => {
@@ -82,6 +83,7 @@ describe('layoutv2/placement/component-layout', () => {
     assert.equal(result.unplacedComponentCount, 0);
     assert.equal(result.coords.size, 7);
     assert.deepEqual(result.placedFamilies, ['bridged']);
+    assert.ok([...result.bondValidationClasses.values()].every(validationClass => validationClass === 'bridged'));
   });
 
   it('lays out a bridged component through the KK fallback when no template exists', () => {
@@ -91,6 +93,7 @@ describe('layoutv2/placement/component-layout', () => {
     assert.equal(result.unplacedComponentCount, 0);
     assert.equal(result.coords.size, 6);
     assert.deepEqual(result.placedFamilies, ['bridged']);
+    assert.ok([...result.bondValidationClasses.values()].every(validationClass => validationClass === 'bridged'));
   });
 
   it('preserves untouched disconnected components exactly during refinement placement', () => {

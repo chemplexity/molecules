@@ -2,6 +2,7 @@
 
 import { angleOf, centroid, fromAngle, sub, add } from '../geometry/vec2.js';
 import { transformAttachedBlock } from '../placement/linkers.js';
+import { assignBondValidationClass, resolvePlacementValidationClass } from '../placement/bond-validation.js';
 import { chooseAttachmentAngle, placeRemainingBranches } from '../placement/substituents.js';
 import { layoutAcyclicFamily } from './acyclic.js';
 import { layoutBridgedFamily } from './bridged.js';
@@ -42,25 +43,60 @@ function ringSystemAdjacency(layoutGraph, ringSystem) {
   return { rings, ringAdj, ringConnectionByPair };
 }
 
+/**
+ * Lays out one ring system inside a mixed scaffold and resolves its audit class.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} ringSystem - Ring-system descriptor.
+ * @param {number} bondLength - Target bond length.
+ * @param {string|null} [templateId] - Matched template ID.
+ * @returns {{family: string, validationClass: 'planar'|'bridged', coords: Map<string, {x: number, y: number}>, ringCenters: Map<number, {x: number, y: number}>, placementMode: string}|null} Ring-system layout result.
+ */
 function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null) {
   const family = classifyRingSystemFamily(layoutGraph, ringSystem);
   const { rings, ringAdj, ringConnectionByPair } = ringSystemAdjacency(layoutGraph, ringSystem);
   if (family === 'isolated-ring') {
-    return { family, ...layoutIsolatedRingFamily(rings[0], bondLength, { layoutGraph, templateId }) };
+    const result = layoutIsolatedRingFamily(rings[0], bondLength, { layoutGraph, templateId });
+    return {
+      family,
+      validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
+      ...result
+    };
   }
   if (family === 'macrocycle') {
     const result = layoutMacrocycleFamily(rings, bondLength, { layoutGraph, templateId });
-    return result ? { family, ...result } : null;
+    return result
+      ? {
+        family,
+        validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
+        ...result
+      }
+      : null;
   }
   if (family === 'bridged') {
     const result = layoutBridgedFamily(rings, bondLength, { layoutGraph, templateId });
-    return result ? { family, ...result } : null;
+    return result
+      ? {
+        family,
+        validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
+        ...result
+      }
+      : null;
   }
   if (family === 'fused') {
-    return { family, ...layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId }) };
+    const result = layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId });
+    return {
+      family,
+      validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
+      ...result
+    };
   }
   if (family === 'spiro') {
-    return { family, ...layoutSpiroFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId }) };
+    const result = layoutSpiroFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId });
+    return {
+      family,
+      validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
+      ...result
+    };
   }
   return null;
 }
@@ -101,7 +137,7 @@ function findAttachmentBond(layoutGraph, ringSystem, placedAtomIds) {
  * @param {Map<string, string[]>} adjacency - Component adjacency map.
  * @param {object} scaffoldPlan - Scaffold plan.
  * @param {number} bondLength - Target bond length.
- * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>}} Mixed placement result.
+ * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses: Map<string, 'planar'|'bridged'>}} Mixed placement result.
  */
 export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPlan, bondLength) {
   const participantAtomIds = new Set(component.atomIds.filter(atomId => {
@@ -110,6 +146,7 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
   }));
   const coords = new Map();
   const placedAtomIds = new Set();
+  const bondValidationClasses = new Map();
   const root = scaffoldPlan.rootScaffold;
 
   if (root.type === 'acyclic') {
@@ -122,7 +159,8 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
       family: 'mixed',
       supported: true,
       atomIds: [...participantAtomIds],
-      coords
+      coords,
+      bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses)
     };
   }
 
@@ -133,15 +171,19 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
       family: 'mixed',
       supported: false,
       atomIds: [...participantAtomIds],
-      coords
+      coords,
+      bondValidationClasses
     };
   }
   for (const [atomId, position] of rootLayout.coords) {
     coords.set(atomId, position);
     placedAtomIds.add(atomId);
   }
+  assignBondValidationClass(layoutGraph, rootRingSystem.atomIds, rootLayout.validationClass, bondValidationClasses);
 
-  const nonRingAtomIds = new Set(scaffoldPlan.nonRingAtomIds.filter(atomId => participantAtomIds.has(atomId)));
+  const nonRingAtomIds = new Set(
+    [...participantAtomIds].filter(atomId => !layoutGraph.ringSystems.some(ringSystem => ringSystem.atomIds.includes(atomId)))
+  );
   const pendingRingSystems = scaffoldPlan.placementSequence
     .filter(entry => entry.kind === 'ring-system' && entry.candidateId !== root.id)
     .map(entry => {
@@ -184,6 +226,7 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
         coords.set(atomId, position);
         placedAtomIds.add(atomId);
       }
+      assignBondValidationClass(layoutGraph, pendingRingSystem.ringSystem.atomIds, blockLayout.validationClass, bondValidationClasses);
       pendingRingSystems.splice(index, 1);
       index--;
       progressed = true;
@@ -202,6 +245,7 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
     family: 'mixed',
     supported,
     atomIds: [...participantAtomIds],
-    coords
+    coords,
+    bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses, { overwrite: false })
   };
 }

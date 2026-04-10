@@ -9,8 +9,8 @@ export class ReactionNode {
    * @param {string} id - Unique ID.
    * @param {string[]} reactants - Array of reactant moleculeNodeIds.
    * @param {string[]} products - Array of product moleculeNodeIds.
-   * @param {object} [conditions={}] - Reaction metadata.
-   * @param {boolean} [reversible=false] - Whether the reaction is in equilibrium.
+   * @param {object} [conditions] - Reaction metadata. Defaults to an empty object.
+   * @param {boolean} [reversible] - Whether the reaction is in equilibrium. Defaults to `false`.
    */
   constructor(id, reactants, products, conditions = {}, reversible = false) {
     this.id = id;

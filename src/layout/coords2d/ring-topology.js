@@ -23,14 +23,34 @@ function ringConnectionKey(firstRingId, secondRingId) {
   return firstRingId < secondRingId ? `${firstRingId}:${secondRingId}` : `${secondRingId}:${firstRingId}`;
 }
 
+/**
+ * Returns whether a ring connection is spiro.
+ * @param {string[]} sharedAtomIds - Shared atom IDs.
+ * @returns {boolean} True when the connection is spiro.
+ */
 export function isSpiroConnection(sharedAtomIds) {
   return sharedAtomIds.length === 1;
 }
 
+/**
+ * Returns whether a ring connection is fused.
+ * @param {string[]} sharedAtomIds - Shared atom IDs.
+ * @returns {boolean} True when the connection is fused.
+ */
 export function isFusedConnection(sharedAtomIds) {
   return sharedAtomIds.length === 2;
 }
 
+/**
+ * Returns whether a ring connection is bridged.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {Array<Array<string>>} rings - Ring atom lists.
+ * @param {number} ringA - First ring index.
+ * @param {number} ringB - Second ring index.
+ * @param {string[]} sharedAtomIds - Shared atom IDs.
+ * @param {Map<string, Set<string>>} [neighborMap] - Optional precomputed neighbor map.
+ * @returns {boolean} True when the connection is bridged.
+ */
 export function isBridgedConnection(molecule, rings, ringA, ringB, sharedAtomIds, neighborMap = buildNeighborMap(molecule)) {
   if (sharedAtomIds.length > 2) {
     return true;
@@ -57,6 +77,16 @@ export function isBridgedConnection(molecule, rings, ringA, ringB, sharedAtomIds
   return false;
 }
 
+/**
+ * Classifies the connection kind between two rings.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {Array<Array<string>>} rings - Ring atom lists.
+ * @param {number} ringA - First ring index.
+ * @param {number} ringB - Second ring index.
+ * @param {string[]} [sharedAtomIds] - Optional shared atom IDs.
+ * @param {Map<string, Set<string>>} [neighborMap] - Optional precomputed neighbor map.
+ * @returns {'bridged'|'spiro'|'fused'|null} Connection kind.
+ */
 export function classifyRingConnection(molecule, rings, ringA, ringB, sharedAtomIds = findSharedAtoms(rings[ringA], rings[ringB]), neighborMap = buildNeighborMap(molecule)) {
   if (isBridgedConnection(molecule, rings, ringA, ringB, sharedAtomIds, neighborMap)) {
     return 'bridged';
@@ -70,6 +100,13 @@ export function classifyRingConnection(molecule, rings, ringA, ringB, sharedAtom
   return null;
 }
 
+/**
+ * Builds explicit ring-connection descriptors for a ring set.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {Array<Array<string>>} rings - Ring atom lists.
+ * @param {number[]|null} [ringIds] - Optional scoped ring IDs. Defaults to all rings.
+ * @returns {{connections: object[], ringAdj: Map<number, number[]>, connectionByPair: Map<string, object>}} Ring connections.
+ */
 export function buildRingConnections(molecule, rings, ringIds = null) {
   const scopedRingIds = ringIds ? [...ringIds] : rings.map((_, index) => index);
   const neighborMap = buildNeighborMap(molecule);
@@ -109,10 +146,24 @@ export function buildRingConnections(molecule, rings, ringIds = null) {
   };
 }
 
+/**
+ * Looks up a connection descriptor for a ring pair.
+ * @param {Map<string, object>} connectionByPair - Pair-keyed connection map.
+ * @param {number} firstRingId - First ring index.
+ * @param {number} secondRingId - Second ring index.
+ * @returns {object|null} Matching connection or null.
+ */
 export function getRingConnection(connectionByPair, firstRingId, secondRingId) {
   return connectionByPair.get(ringConnectionKey(firstRingId, secondRingId)) ?? null;
 }
 
+/**
+ * Groups rings connected by bridged connections into bridged components.
+ * @param {Array<Array<string>>} rings - Ring atom lists.
+ * @param {number[]} ringIds - Scoped ring IDs.
+ * @param {object[]} connections - Ring connection descriptors.
+ * @returns {{components: {ringIds: number[], atomIds: string[]}[], ringToComponent: Map<number, {ringIds: number[], atomIds: string[]}>}} Bridged component summary.
+ */
 export function buildBridgedRingComponents(rings, ringIds, connections) {
   const scopedRingIds = [...ringIds];
   const bridgedAdj = new Map(scopedRingIds.map(ringId => [ringId, []]));

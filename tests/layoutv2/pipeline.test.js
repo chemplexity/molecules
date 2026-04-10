@@ -106,6 +106,33 @@ describe('layoutv2/pipeline', () => {
     assert.equal(result.coords.size, 6);
   });
 
+  it('routes exact cubane cage matches through the bridged template path', () => {
+    const result = runPipeline(parseSMILES('C12C3C4C1C5C4C3C25'));
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, false);
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.deepEqual(result.metadata.placedFamilies, ['bridged']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+  });
+
+  it('snaps constructed fused junction bonds onto an axis for anthracene-like systems', () => {
+    const result = runPipeline(parseSMILES('c1ccc2cc3ccccc3cc2c1'));
+    const fusedConnections = result.layoutGraph.ringConnections.filter(connection => connection.kind === 'fused');
+
+    assert.equal(result.metadata.primaryFamily, 'fused');
+    assert.equal(typeof result.metadata.cleanupJunctionSnaps, 'number');
+    for (const connection of fusedConnections) {
+      const [firstAtomId, secondAtomId] = connection.sharedAtomIds;
+      const firstPosition = result.coords.get(firstAtomId);
+      const secondPosition = result.coords.get(secondAtomId);
+      assert.ok(
+        Math.abs(firstPosition.x - secondPosition.x) < 1e-6
+        || Math.abs(firstPosition.y - secondPosition.y) < 1e-6
+      );
+    }
+  });
+
   it('advances macrocycles to coordinates-ready through the ellipse placer', () => {
     const result = runPipeline(makeMacrocycle());
     assert.equal(result.metadata.primaryFamily, 'macrocycle');

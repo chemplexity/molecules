@@ -19,7 +19,8 @@ export function createQualityReport(input) {
       improvement: input.cleanup.improvement ?? 0,
       overlapMoves: input.cleanup.overlapMoves ?? 0,
       labelNudges: input.cleanup.labelNudges ?? 0,
-      symmetrySnaps: input.cleanup.symmetrySnaps ?? 0
+      symmetrySnaps: input.cleanup.symmetrySnaps ?? 0,
+      junctionSnaps: input.cleanup.junctionSnaps ?? 0
     },
     stereo: input.stereo,
     ringDependency: input.ringDependency,

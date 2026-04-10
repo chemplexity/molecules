@@ -77,6 +77,14 @@ function recenterFreePositions(positions, atomIds, pinnedAtomIds, targetCenter) 
   }
 }
 
+/**
+ * Returns whether a Kamada-Kawai layout clears basic validity gates.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {string[]} atomIds - Atom IDs included in the layout.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when the layout is acceptable.
+ */
 export function evaluateKamadaKawaiLayout(molecule, atomIds, coords, bondLength) {
   const atomIdSet = new Set(atomIds);
   for (const atomId of atomIds) {
@@ -127,6 +135,23 @@ export function evaluateKamadaKawaiLayout(molecule, atomIds, coords, bondLength)
   return true;
 }
 
+/**
+ * Lays out a bridged component using a Kamada-Kawai relaxation.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {string[]} atomIds - Atom IDs to place.
+ * @param {object} [options] - Layout options.
+ * @param {Map<string, {x: number, y: number}>} [options.coords] - Seed coordinates.
+ * @param {string[]} [options.pinnedAtomIds] - Atom IDs to keep fixed.
+ * @param {{x: number, y: number}} [options.center] - Target layout center.
+ * @param {number} [options.bondLength] - Target bond length.
+ * @param {number} [options.maxComponentSize] - Size cutoff.
+ * @param {number} [options.threshold] - Outer convergence threshold.
+ * @param {number} [options.innerThreshold] - Inner convergence threshold.
+ * @param {number} [options.maxIterations] - Outer iteration cap.
+ * @param {number} [options.maxInnerIterations] - Inner iteration cap.
+ * @param {number} [options.maxEnergy] - Starting energy bound.
+ * @returns {{coords: Map<string, {x: number, y: number}>, converged: boolean, energy: number, ok: boolean, skipped?: boolean}} KK layout result.
+ */
 export function layoutBridgedComponentKK(
   molecule,
   atomIds,
@@ -255,7 +280,6 @@ export function layoutBridgedComponentKK(
       const dx = ux - vx;
       const dy = uy - vy;
       const distSq = dx * dx + dy * dy || 1e-9;
-      const dist = Math.sqrt(distSq);
       const denom = Math.pow(distSq, 1.5);
       const target = targetLength[index][i];
       const spring = springStrength[index][i];

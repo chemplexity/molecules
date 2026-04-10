@@ -6,7 +6,15 @@ import { placeRemainingBranches } from '../placement/branch-placement.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 
 const ZIGZAG_STEP_ANGLE = Math.PI / 6;
+const STEP_ANGLE_EPSILON = 1e-9;
 
+/**
+ * Returns the bond order between two atoms in the layout graph.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} firstAtomId - First atom ID.
+ * @param {string} secondAtomId - Second atom ID.
+ * @returns {number} Bond order or `1` when no explicit bond is found.
+ */
 function bondOrderBetween(layoutGraph, firstAtomId, secondAtomId) {
   if (!layoutGraph) {
     return 1;
@@ -17,6 +25,73 @@ function bondOrderBetween(layoutGraph, firstAtomId, secondAtomId) {
     }
   }
   return 1;
+}
+
+/**
+ * Returns whether a backbone center should preserve the incoming direction
+ * instead of flipping the zigzag sign.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string|null|undefined} previousAtomId - Previous backbone atom ID.
+ * @param {string|null|undefined} atomId - Current backbone atom ID.
+ * @param {string|null|undefined} nextAtomId - Next backbone atom ID.
+ * @returns {boolean} True when the center is linear.
+ */
+function isLinearCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
+  if (!layoutGraph || previousAtomId == null || atomId == null || nextAtomId == null) {
+    return false;
+  }
+  const previousBondOrder = bondOrderBetween(layoutGraph, previousAtomId, atomId);
+  const nextBondOrder = bondOrderBetween(layoutGraph, atomId, nextAtomId);
+  return previousBondOrder >= 3 || nextBondOrder >= 3 || (previousBondOrder >= 2 && nextBondOrder >= 2);
+}
+
+/**
+ * Returns whether an atom participates in any sp2-like bond.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom ID.
+ * @returns {boolean} True when the atom has a double or aromatic bond.
+ */
+function hasSp2Bond(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return false;
+  }
+  for (const bond of layoutGraph.bonds.values()) {
+    if (bond.a !== atomId && bond.b !== atomId) {
+      continue;
+    }
+    if (bond.aromatic || (bond.order ?? 1) >= 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Identifies backbone centers whose zigzag sign should stay constant through a
+ * conjugated sp2 segment.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string[]} backbone - Backbone atom IDs in placement order.
+ * @returns {Set<string>} Backbone atom IDs that should preserve the incoming turn.
+ */
+function findConjugatedBackboneCenters(layoutGraph, backbone) {
+  const conjugatedCenterIds = new Set();
+  if (!layoutGraph || backbone.length < 3) {
+    return conjugatedCenterIds;
+  }
+
+  const sp2BackboneAtomIds = backbone.filter(atomId => hasSp2Bond(layoutGraph, atomId));
+  const sp2BackboneSet = new Set(sp2BackboneAtomIds);
+  for (let index = 1; index < backbone.length - 1; index++) {
+    const atomId = backbone[index];
+    if (!sp2BackboneSet.has(atomId)) {
+      continue;
+    }
+    if (sp2BackboneSet.has(backbone[index - 1]) || sp2BackboneSet.has(backbone[index + 1])) {
+      conjugatedCenterIds.add(atomId);
+    }
+  }
+
+  return conjugatedCenterIds;
 }
 
 function isPreferredBackboneEndpoint(layoutGraph, adjacency, atomId, atomIdsToPlace) {
@@ -119,6 +194,7 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
   }
 
   const backbone = longestBackbonePath(adjacency, canonicalAtomRank, atomIdsToPlace, layoutGraph);
+  const conjugatedCenterIds = findConjugatedBackboneCenters(layoutGraph, backbone);
   if (backbone.length === 2) {
     coords.set(backbone[0], { x: 0, y: 0 });
     coords.set(backbone[1], { x: bondLength, y: 0 });
@@ -130,16 +206,24 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
 
   coords.set(backbone[0], { x: 0, y: 0 });
   let previousStepAngle = ZIGZAG_STEP_ANGLE;
+  let conjugatedStepSign = Math.sign(previousStepAngle) || 1;
   for (let index = 1; index < backbone.length; index++) {
     let stepAngle = index % 2 === 1 ? ZIGZAG_STEP_ANGLE : -ZIGZAG_STEP_ANGLE;
-    if (index > 1) {
-      const previousBondOrder = bondOrderBetween(layoutGraph, backbone[index - 2], backbone[index - 1]);
-      const nextBondOrder = bondOrderBetween(layoutGraph, backbone[index - 1], backbone[index]);
-      if (previousBondOrder >= 3 || nextBondOrder >= 3) {
-        stepAngle = previousStepAngle;
+    const currentCenterAtomId = backbone[index - 1];
+    if (index > 1 && isLinearCentre(layoutGraph, backbone[index - 2], currentCenterAtomId, backbone[index])) {
+      stepAngle = previousStepAngle;
+    } else if (conjugatedCenterIds.has(currentCenterAtomId)) {
+      if (Math.abs(previousStepAngle) <= STEP_ANGLE_EPSILON) {
+        stepAngle = conjugatedStepSign * ZIGZAG_STEP_ANGLE;
+      } else {
+        conjugatedStepSign = Math.sign(previousStepAngle) || conjugatedStepSign || 1;
+        stepAngle = 0;
       }
     }
     coords.set(backbone[index], add(coords.get(backbone[index - 1]), fromAngle(stepAngle, bondLength)));
+    if (Math.abs(stepAngle) > STEP_ANGLE_EPSILON) {
+      conjugatedStepSign = Math.sign(stepAngle) || conjugatedStepSign || 1;
+    }
     previousStepAngle = stepAngle;
   }
 

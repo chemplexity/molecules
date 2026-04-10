@@ -1,5 +1,6 @@
 /** @module scaffold/orientation */
 
+import { computeBounds } from '../geometry/bounds.js';
 import { centroid, rotate, sub } from '../geometry/vec2.js';
 
 function covarianceAxis(points) {
@@ -21,6 +22,27 @@ function covarianceAxis(points) {
     return 0;
   }
   return 0.5 * Math.atan2(2 * sxy, sxx - syy);
+}
+
+/**
+ * Rotates centered coordinates by a quarter turn when the oriented result is
+ * taller than wide.
+ * @param {Map<string, {x: number, y: number}>} coords - Centered coordinate map.
+ * @returns {Map<string, {x: number, y: number}>} Landscape-oriented coordinates.
+ */
+function ensureLandscapeAspect(coords) {
+  const bounds = computeBounds(coords, [...coords.keys()]);
+  if (!bounds || bounds.height <= bounds.width) {
+    return coords;
+  }
+
+  const rotated = new Map();
+  for (const [atomId, position] of coords) {
+    rotated.set(atomId, {
+      ...rotate(position, Math.PI / 2)
+    });
+  }
+  return rotated;
 }
 
 /**
@@ -46,7 +68,7 @@ export function orientCoordsHorizontally(coords, axisAngle) {
       ...rotate(sub(position, center), -axisAngle)
     });
   }
-  return rotated;
+  return ensureLandscapeAspect(rotated);
 }
 
 /**

@@ -41,10 +41,18 @@ export function computeFormulaDelta(moleculeA, moleculeB) {
 
   // Use Hill-like sorting: C, then H, then alphabetical
   const sortKeys = (a, b) => {
-    if (a === 'C' && b !== 'C') return -1;
-    if (b === 'C' && a !== 'C') return 1;
-    if (a === 'H' && b !== 'H') return -1;
-    if (b === 'H' && a !== 'H') return 1;
+    if (a === 'C' && b !== 'C') {
+      return -1;
+    }
+    if (b === 'C' && a !== 'C') {
+      return 1;
+    }
+    if (a === 'H' && b !== 'H') {
+      return -1;
+    }
+    if (b === 'H' && a !== 'H') {
+      return 1;
+    }
     return a.localeCompare(b);
   };
 
@@ -55,13 +63,21 @@ export function computeFormulaDelta(moleculeA, moleculeB) {
 
   for (const el of keys) {
     const diff = delta[el];
-    if (diff > 0) adds.push(`${el}${diff > 1 ? diff : ''}`);
-    if (diff < 0) subs.push(`${el}${Math.abs(diff) > 1 ? Math.abs(diff) : ''}`);
+    if (diff > 0) {
+      adds.push(`${el}${diff > 1 ? diff : ''}`);
+    }
+    if (diff < 0) {
+      subs.push(`${el}${Math.abs(diff) > 1 ? Math.abs(diff) : ''}`);
+    }
   }
 
   const parts = [];
-  if (adds.length > 0) parts.push(`+${adds.join('')}`);
-  if (subs.length > 0) parts.push(`-${subs.join('')}`);
+  if (adds.length > 0) {
+    parts.push(`+${adds.join('')}`);
+  }
+  if (subs.length > 0) {
+    parts.push(`-${subs.join('')}`);
+  }
 
   return parts.join(' ');
 }

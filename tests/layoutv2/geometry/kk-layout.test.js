@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { layoutKamadaKawai, isKamadaKawaiLayoutAcceptable } from '../../../src/layoutv2/geometry/kk-layout.js';
+import { parseSMILES } from '../../../src/io/smiles.js';
 import { makeUnmatchedBridgedCage } from '../support/molecules.js';
 
 describe('layoutv2/geometry/kk-layout', () => {
@@ -17,5 +18,20 @@ describe('layoutv2/geometry/kk-layout', () => {
     const molecule = makeUnmatchedBridgedCage();
     const coords = new Map([...molecule.atoms.keys()].map(atomId => [atomId, { x: 0, y: 0 }]));
     assert.equal(isKamadaKawaiLayoutAcceptable(molecule, [...molecule.atoms.keys()], coords, 1.5), false);
+  });
+
+  it('does not skip moderately large components under the default size cutoff', () => {
+    const molecule = parseSMILES(`C1${'C'.repeat(31)}C1`);
+    const atomIds = [...molecule.atoms.values()]
+      .filter(atom => atom.name !== 'H')
+      .map(atom => atom.id);
+    const result = layoutKamadaKawai(molecule, atomIds, {
+      bondLength: 1.5,
+      maxIterations: 250,
+      maxInnerIterations: 12
+    });
+
+    assert.equal(result.skipped, false);
+    assert.equal(result.coords.size, atomIds.length);
   });
 });

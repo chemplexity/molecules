@@ -2,6 +2,7 @@
 
 import { chooseScaffoldPlan } from '../scaffold/choose-scaffold.js';
 import { buildCanonicalComponentSignature } from '../topology/canonical-order.js';
+import { assignBondValidationClass, resolvePlacementValidationClass } from './bond-validation.js';
 import { layoutMixedFamily } from '../families/mixed.js';
 import { layoutAcyclicFamily } from '../families/acyclic.js';
 import { layoutBridgedFamily } from '../families/bridged.js';
@@ -143,7 +144,7 @@ export function classifyAtomSliceFamily(layoutGraph, atomIds, sliceRings, sliceC
  * @param {number} bondLength - Target bond length.
  * @param {object} [options] - Slice layout options.
  * @param {Map<string, string[]>} [options.adjacency] - Optional prebuilt adjacency.
- * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>}} Slice placement result.
+ * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, placementMode?: string|null, templateId?: string|null, bondValidationClasses: Map<string, 'planar'|'bridged'>}} Slice placement result.
  */
 export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}) {
   const participantAtomIds = new Set(component.atomIds.filter(atomId => isParticipantAtom(layoutGraph, atomId)));
@@ -151,13 +152,16 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
   const adjacency = options.adjacency ?? buildSliceAdjacency(layoutGraph, participantAtomIds);
   const sliceRings = ringsForAtomSlice(layoutGraph, participantAtomIds);
   const sliceConnections = ringConnectionsForSlice(layoutGraph, sliceRings.map(ring => ring.id));
-  const family = classifyAtomSliceFamily(layoutGraph, atomIds, sliceRings, sliceConnections);
+  const heuristicFamily = classifyAtomSliceFamily(layoutGraph, atomIds, sliceRings, sliceConnections);
   const sliceComponent = {
     id: component.id,
     atomIds,
     canonicalSignature: component.canonicalSignature ?? buildCanonicalComponentSignature(atomIds, layoutGraph.canonicalAtomRank, layoutGraph.sourceMolecule)
   };
   const scaffoldPlan = chooseScaffoldPlan(layoutGraph, sliceComponent);
+  const family = heuristicFamily === 'organometallic'
+    ? heuristicFamily
+    : scaffoldPlan.rootScaffold.family;
 
   if (scaffoldPlan.mixedMode) {
     return layoutMixedFamily(layoutGraph, sliceComponent, adjacency, scaffoldPlan, bondLength);
@@ -209,15 +213,28 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
       family,
       supported: false,
       atomIds,
-      coords: new Map()
+      coords: new Map(),
+      placementMode: null,
+      templateId: scaffoldPlan.rootScaffold.templateId ?? null,
+      bondValidationClasses: new Map()
     };
   }
 
   placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, result.coords, participantAtomIds, [...result.coords.keys()], bondLength, layoutGraph);
+  const placementMode = result.placementMode ?? 'constructed';
+  const templateId = scaffoldPlan.rootScaffold.templateId ?? null;
+  const bondValidationClasses = result.bondValidationClasses ?? assignBondValidationClass(
+    layoutGraph,
+    atomIds,
+    resolvePlacementValidationClass(family, placementMode, templateId)
+  );
   return {
     family,
     supported: true,
     atomIds,
-    coords: result.coords
+    coords: result.coords,
+    placementMode,
+    templateId,
+    bondValidationClasses
   };
 }

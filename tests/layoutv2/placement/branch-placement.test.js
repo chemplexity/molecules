@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { placeRemainingBranches } from '../../../src/layoutv2/placement/branch-placement.js';
+import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { computeCanonicalAtomRanks } from '../../../src/layoutv2/topology/canonical-order.js';
 import { makeChain } from '../support/molecules.js';
 
@@ -45,5 +46,30 @@ describe('layoutv2/placement/branch-placement', () => {
     placeRemainingBranches(adjacency, computeCanonicalAtomRanks(molecule), coords, new Set(['a0', 'a1', 'a2']), ['a0', 'a1'], 1.5);
 
     assert.deepEqual(coords.get('a2'), { x: 3, y: 0 });
+  });
+
+  it('uses the seeded placement CoM to steer continuation away from fixed refinement anchors', () => {
+    const molecule = makeChain(3);
+    molecule.addAtom('x0', 'C');
+    molecule.addAtom('x1', 'C');
+    const graph = createLayoutGraph(molecule, {
+      fixedCoords: new Map([
+        ['x0', { x: 1.5, y: 3 }]
+      ])
+    });
+    const adjacency = new Map([
+      ['a0', ['a1']],
+      ['a1', ['a0', 'a2']],
+      ['a2', ['a1']]
+    ]);
+    const coords = new Map([
+      ['a0', { x: 0, y: 0 }],
+      ['a1', { x: 1.5, y: 0 }],
+      ['x1', { x: 6, y: 0 }]
+    ]);
+
+    placeRemainingBranches(adjacency, graph.canonicalAtomRank, coords, new Set(['a0', 'a1', 'a2']), ['a0', 'a1'], 1.5, graph);
+
+    assert.ok(coords.get('a2').y < 0, 'expected continuation to bend away from the fixed CoM anchor above the chain');
   });
 });

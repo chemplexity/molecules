@@ -157,7 +157,7 @@ window._getExampleMolecules = () => exampleMolecules;
 const atomBBox = mol2dHelpers.atomBBox ?? atomBBoxFallback;
 
 function getSelected2dRendererVersion() {
-  return getRenderOptions().twoDRendererVersion === 'v2' ? 'v2' : 'v1';
+  return getRenderOptions().twoDRendererVersion === 'v1' ? 'v1' : 'v2';
 }
 
 function readPlacedCoords(molecule) {

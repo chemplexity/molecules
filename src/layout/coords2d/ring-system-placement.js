@@ -6,6 +6,14 @@ import { forceFieldRefine } from './force-field-refine.js';
 
 const TWO_PI = 2 * Math.PI;
 
+/**
+ * Picks a deterministic starting ring for ring-system placement.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {number[]} ringIds - Ring IDs in the system.
+ * @param {Array<Array<string>>} rings - Ring atom lists.
+ * @param {(molecule: object, firstAtomId: string, secondAtomId: string) => number} compareAtomIds - Atom ordering helper.
+ * @returns {number} Preferred starting ring ID.
+ */
 export function pickPreferredStartRingId(molecule, ringIds, rings, compareAtomIds) {
   return ringIds.reduce((bestRingId, ringId) => {
     if (rings[ringId].length !== rings[bestRingId].length) {
@@ -17,6 +25,17 @@ export function pickPreferredStartRingId(molecule, ringIds, rings, compareAtomId
   }, ringIds[0]);
 }
 
+/**
+ * Places a ring that shares multiple atoms with an already placed ring.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {Array<Array<string>>} rings - Ring atom lists.
+ * @param {number} bondLength - Target bond length.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {number} curRingIdx - Index of the already placed ring.
+ * @param {number} nextRingIdx - Index of the ring being placed.
+ * @param {string[]} sharedAtomIds - Shared atom IDs between the rings.
+ * @returns {void}
+ */
 export function placeSharedRingAnalytically(molecule, rings, bondLength, coords, curRingIdx, nextRingIdx, sharedAtomIds) {
   const nextRing = rings[nextRingIdx];
   const n2 = nextRing.length;
@@ -234,6 +253,16 @@ export function placeSharedRingAnalytically(molecule, rings, bondLength, coords,
   }
 }
 
+/**
+ * Places a ring that shares a single spiro atom with an already placed ring.
+ * @param {Array<Array<string>>} rings - Ring atom lists.
+ * @param {number} bondLength - Target bond length.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {number} curRingIdx - Index of the already placed ring.
+ * @param {number} nextRingIdx - Index of the ring being placed.
+ * @param {string} sharedAtomId - Shared spiro atom ID.
+ * @returns {void}
+ */
 export function placeSpiroRingAnalytically(rings, bondLength, coords, curRingIdx, nextRingIdx, sharedAtomId) {
   const nextRing = rings[nextRingIdx];
   const n2 = nextRing.length;
@@ -254,6 +283,17 @@ export function placeSpiroRingAnalytically(rings, bondLength, coords, curRingIdx
   }
 }
 
+/**
+ * Places a bridged component with a KK seed and local refinement.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {{atomIds: string[]}} component - Bridged component descriptor.
+ * @param {Array<Array<string>>} rings - Ring atom lists.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {number|null} [anchorRingId] - Optional anchor ring index. Defaults to `null`.
+ * @param {{x: number, y: number}} [origin] - Preferred origin for unanchored placement. Defaults to `vec2(0, 0)`.
+ * @returns {boolean} True when placement succeeds.
+ */
 export function placeBridgedComponentWithKK(molecule, component, rings, coords, bondLength, anchorRingId = null, origin = vec2(0, 0)) {
   const pinnedAtomIds = component.atomIds.filter(atomId => coords.has(atomId));
   let center = origin;

@@ -9,6 +9,8 @@ const CHAIN_CONTINUATION_OFFSET = Math.PI / 3;
 const CENTERED_NEIGHBOR_EPSILON = 1e-6;
 const DEG60 = Math.PI / 3;
 const DEG120 = (2 * Math.PI) / 3;
+const ANGLE_SCORE_TIEBREAK_RATIO = 0.05;
+const MAX_BRANCH_RECURSION_DEPTH = 120;
 
 function neighborOrder(neighbors, canonicalAtomRank) {
   return [...neighbors].sort((firstAtomId, secondAtomId) => compareCanonicalAtomIds(firstAtomId, secondAtomId, canonicalAtomRank));
@@ -33,6 +35,128 @@ function scoreCandidateAngle(candidateAngle, occupiedAngles, preferredAngles) {
     ? 0
     : Math.min(...preferredAngles.map(preferredAngle => angularDifference(candidateAngle, preferredAngle)));
   return (minSeparation * 100) - preferredPenalty;
+}
+
+/**
+ * Returns whether an atom should contribute to the running placement CoM.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom ID.
+ * @returns {boolean} True when the atom should be tracked.
+ */
+function shouldTrackPlacementAtom(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return true;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  return Boolean(atom) && atom.visible !== false;
+}
+
+/**
+ * Creates the running CoM state used during recursive branch placement.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @returns {{sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}} Placement state.
+ */
+function seedPlacementState(layoutGraph, coords) {
+  const trackedPositions = new Map();
+  let sumX = 0;
+  let sumY = 0;
+  let count = 0;
+
+  const seedPosition = (atomId, position) => {
+    if (!position || trackedPositions.has(atomId) || !shouldTrackPlacementAtom(layoutGraph, atomId)) {
+      return;
+    }
+    trackedPositions.set(atomId, { ...position });
+    sumX += position.x;
+    sumY += position.y;
+    count++;
+  };
+
+  for (const [atomId, position] of coords) {
+    seedPosition(atomId, position);
+  }
+  for (const [atomId, position] of layoutGraph?.fixedCoords ?? []) {
+    seedPosition(atomId, position);
+  }
+
+  return {
+    sumX,
+    sumY,
+    count,
+    trackedPositions
+  };
+}
+
+/**
+ * Clones the mutable placement CoM state for branch-placement backtracking.
+ * @param {{sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}} placementState - Placement state.
+ * @returns {{sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}} Cloned state.
+ */
+function clonePlacementState(placementState) {
+  return {
+    sumX: placementState.sumX,
+    sumY: placementState.sumY,
+    count: placementState.count,
+    trackedPositions: new Map([...placementState.trackedPositions.entries()].map(([atomId, position]) => [atomId, { ...position }]))
+  };
+}
+
+/**
+ * Overwrites a placement state with a chosen backtracked candidate state.
+ * @param {{sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}} targetState - State to mutate.
+ * @param {{sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}} sourceState - Winning state.
+ * @returns {void}
+ */
+function copyPlacementState(targetState, sourceState) {
+  targetState.sumX = sourceState.sumX;
+  targetState.sumY = sourceState.sumY;
+  targetState.count = sourceState.count;
+  targetState.trackedPositions = new Map([...sourceState.trackedPositions.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+}
+
+/**
+ * Records a newly placed atom position in both the coordinate map and CoM state.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map to update.
+ * @param {{sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}} placementState - Mutable placement state.
+ * @param {string} atomId - Atom ID.
+ * @param {{x: number, y: number}} position - New atom position.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @returns {void}
+ */
+function setPlacedPosition(coords, placementState, atomId, position, layoutGraph) {
+  coords.set(atomId, { ...position });
+  if (!shouldTrackPlacementAtom(layoutGraph, atomId)) {
+    placementState.trackedPositions.delete(atomId);
+    return;
+  }
+
+  const previousPosition = placementState.trackedPositions.get(atomId);
+  if (previousPosition) {
+    placementState.sumX -= previousPosition.x;
+    placementState.sumY -= previousPosition.y;
+  } else {
+    placementState.count++;
+  }
+
+  placementState.trackedPositions.set(atomId, { ...position });
+  placementState.sumX += position.x;
+  placementState.sumY += position.y;
+}
+
+/**
+ * Returns the distance from a candidate position to the current placement CoM.
+ * @param {{sumX: number, sumY: number, count: number}} placementState - Placement state.
+ * @param {{x: number, y: number}} candidatePosition - Candidate atom position.
+ * @returns {number} Distance from the current CoM.
+ */
+function centerDistanceScore(placementState, candidatePosition) {
+  if (!placementState || placementState.count <= 0) {
+    return 0;
+  }
+  const centerX = placementState.sumX / placementState.count;
+  const centerY = placementState.sumY / placementState.count;
+  return Math.hypot(candidatePosition.x - centerX, candidatePosition.y - centerY);
 }
 
 function chooseBranchAngle(occupiedAngles, preferredAngles = []) {
@@ -172,15 +296,26 @@ function pickBestCandidateAngle(candidates, bondLength) {
     ? candidates.filter(candidate => candidate.clearanceScore >= (bondLength * 0.55))
     : candidates;
   const candidatesToConsider = safeCandidates.length > 0 ? safeCandidates : candidates;
+  const bestAngleScore = Math.max(...candidatesToConsider.map(candidate => candidate.angleScore));
+  const scoreTolerance = Math.max(Math.abs(bestAngleScore) * ANGLE_SCORE_TIEBREAK_RATIO, 1e-9);
+  const nearBestCandidates = candidatesToConsider.filter(candidate => candidate.angleScore >= (bestAngleScore - scoreTolerance));
 
-  let bestCandidate = candidatesToConsider[0];
-  for (let index = 1; index < candidatesToConsider.length; index++) {
-    const candidate = candidatesToConsider[index];
-    if (candidate.angleScore > bestCandidate.angleScore) {
+  let bestCandidate = nearBestCandidates[0];
+  for (let index = 1; index < nearBestCandidates.length; index++) {
+    const candidate = nearBestCandidates[index];
+    if (candidate.centerDistanceScore > bestCandidate.centerDistanceScore) {
       bestCandidate = candidate;
       continue;
     }
-    if (candidate.angleScore === bestCandidate.angleScore && candidate.clearanceScore > bestCandidate.clearanceScore) {
+    if (candidate.centerDistanceScore === bestCandidate.centerDistanceScore && candidate.clearanceScore > bestCandidate.clearanceScore) {
+      bestCandidate = candidate;
+      continue;
+    }
+    if (
+      candidate.centerDistanceScore === bestCandidate.centerDistanceScore &&
+      candidate.clearanceScore === bestCandidate.clearanceScore &&
+      candidate.angleScore > bestCandidate.angleScore
+    ) {
       bestCandidate = candidate;
     }
   }
@@ -188,15 +323,16 @@ function pickBestCandidateAngle(candidates, bondLength) {
   return bestCandidate.angle;
 }
 
-function evaluateAngleCandidates(candidateAngles, occupiedAngles, preferredAngles, anchorPosition, bondLength, coords, excludedAtomIds) {
+function evaluateAngleCandidates(candidateAngles, occupiedAngles, preferredAngles, anchorPosition, bondLength, coords, excludedAtomIds, placementState) {
   return candidateAngles.map(candidateAngle => ({
     angle: candidateAngle,
     angleScore: scoreCandidateAngle(candidateAngle, occupiedAngles, preferredAngles),
-    clearanceScore: candidateClearanceScore(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds)
+    clearanceScore: candidateClearanceScore(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds),
+    centerDistanceScore: centerDistanceScore(placementState, add(anchorPosition, fromAngle(candidateAngle, bondLength)))
   }));
 }
 
-function chooseContinuationAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, excludedAtomIds) {
+function chooseContinuationAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, excludedAtomIds, placementState) {
   const preferredCandidateAngles = preferredDiscreteAngles(preferredAngles);
   if (preferredCandidateAngles.length > 0) {
     const preferredCandidates = evaluateAngleCandidates(
@@ -206,7 +342,8 @@ function chooseContinuationAngle(anchorPosition, bondLength, coords, occupiedAng
       anchorPosition,
       bondLength,
       coords,
-      excludedAtomIds
+      excludedAtomIds,
+      placementState
     );
     const safePreferredCandidates = preferredCandidates.filter(candidate => candidate.clearanceScore >= (bondLength * 0.55));
     if (safePreferredCandidates.length > 0) {
@@ -222,7 +359,8 @@ function chooseContinuationAngle(anchorPosition, bondLength, coords, occupiedAng
       anchorPosition,
       bondLength,
       coords,
-      excludedAtomIds
+      excludedAtomIds,
+      placementState
     ),
     bondLength
   );
@@ -399,15 +537,17 @@ function chooseBatchAngleAssignments(
   adjacency,
   canonicalAtomRank,
   coords,
+  placementState,
   atomIdsToPlace,
   anchorAtomId,
   parentAtomId,
   unplacedNeighborIds,
   bondLength,
-  layoutGraph = null
+  layoutGraph = null,
+  depth = 0
 ) {
   const anchorPosition = coords.get(anchorAtomId);
-  if (!anchorPosition || unplacedNeighborIds.length === 0) {
+  if (!anchorPosition || unplacedNeighborIds.length === 0 || depth > MAX_BRANCH_RECURSION_DEPTH) {
     return [];
   }
 
@@ -451,6 +591,7 @@ function chooseBatchAngleAssignments(
   for (const angleSet of angleSets) {
     for (const permutation of childPermutations) {
       const tempCoords = new Map([...coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+      const tempPlacementState = clonePlacementState(placementState);
       const assignedPlacements = angleSet.map((angle, index) => ({
         childAtomId: permutation[index].childAtomId,
         angle,
@@ -458,7 +599,13 @@ function chooseBatchAngleAssignments(
       }));
 
       for (const placement of assignedPlacements) {
-        tempCoords.set(placement.childAtomId, add(anchorPosition, fromAngle(placement.angle, bondLength)));
+        setPlacedPosition(
+          tempCoords,
+          tempPlacementState,
+          placement.childAtomId,
+          add(anchorPosition, fromAngle(placement.angle, bondLength)),
+          layoutGraph
+        );
       }
 
       const recursionOrder = [...assignedPlacements].sort((firstPlacement, secondPlacement) => {
@@ -472,11 +619,13 @@ function chooseBatchAngleAssignments(
           adjacency,
           canonicalAtomRank,
           tempCoords,
+          tempPlacementState,
           atomIdsToPlace,
           placement.childAtomId,
           anchorAtomId,
           bondLength,
-          layoutGraph
+          layoutGraph,
+          depth + 1
         );
       }
 
@@ -484,7 +633,8 @@ function chooseBatchAngleAssignments(
       if (!bestPlacement || cost < bestPlacement.cost) {
         bestPlacement = {
           cost,
-          coords: tempCoords
+          coords: tempCoords,
+          placementState: tempPlacementState
         };
       }
     }
@@ -499,6 +649,7 @@ function chooseBatchAngleAssignments(
       coords.set(atomId, bestPlacement.coords.get(atomId));
     }
   }
+  copyPlacementState(placementState, bestPlacement.placementState);
 
   return unplacedNeighborIds.map(childAtomId => ({
     childAtomId,
@@ -570,15 +721,17 @@ function placeNeighborSequence(
   adjacency,
   canonicalAtomRank,
   coords,
+  placementState,
   atomIdsToPlace,
   anchorAtomId,
   parentAtomId,
   bondLength,
   neighborAtomIds,
-  layoutGraph = null
+  layoutGraph = null,
+  depth = 0
 ) {
   const anchorPosition = coords.get(anchorAtomId);
-  if (!anchorPosition || neighborAtomIds.length === 0) {
+  if (!anchorPosition || neighborAtomIds.length === 0 || depth > MAX_BRANCH_RECURSION_DEPTH) {
     return;
   }
 
@@ -595,7 +748,8 @@ function placeNeighborSequence(
         coords,
         occupiedAngles,
         preferredAngles,
-        excludedAtomIds
+        excludedAtomIds,
+        placementState
       )
       : pickBestCandidateAngle(
         evaluateAngleCandidates(
@@ -605,19 +759,20 @@ function placeNeighborSequence(
           anchorPosition,
           bondLength,
           coords,
-          excludedAtomIds
+          excludedAtomIds,
+          placementState
         ),
         bondLength
       );
-    coords.set(childAtomId, add(anchorPosition, fromAngle(chosenAngle, bondLength)));
+    setPlacedPosition(coords, placementState, childAtomId, add(anchorPosition, fromAngle(chosenAngle, bondLength)), layoutGraph);
     occupiedAngles = occupiedAngles.concat([chosenAngle]);
-    placeChildren(adjacency, canonicalAtomRank, coords, atomIdsToPlace, childAtomId, anchorAtomId, bondLength, layoutGraph);
+    placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, childAtomId, anchorAtomId, bondLength, layoutGraph, depth + 1);
   }
 }
 
-function placeChildren(adjacency, canonicalAtomRank, coords, atomIdsToPlace, anchorAtomId, parentAtomId, bondLength, layoutGraph = null) {
+function placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, anchorAtomId, parentAtomId, bondLength, layoutGraph = null, depth = 0) {
   const anchorPosition = coords.get(anchorAtomId);
-  if (!anchorPosition) {
+  if (!anchorPosition || depth > MAX_BRANCH_RECURSION_DEPTH) {
     return;
   }
   const unplacedNeighbors = neighborOrder(
@@ -630,24 +785,28 @@ function placeChildren(adjacency, canonicalAtomRank, coords, atomIdsToPlace, anc
       adjacency,
       canonicalAtomRank,
       coords,
+      placementState,
       atomIdsToPlace,
       anchorAtomId,
       parentAtomId,
       primaryNeighborIds,
       bondLength,
-      layoutGraph
+      layoutGraph,
+      depth
     );
   } else {
     placeNeighborSequence(
       adjacency,
       canonicalAtomRank,
       coords,
+      placementState,
       atomIdsToPlace,
       anchorAtomId,
       parentAtomId,
       bondLength,
       primaryNeighborIds,
-      layoutGraph
+      layoutGraph,
+      depth
     );
   }
   if (deferredNeighborIds.length > 0) {
@@ -655,12 +814,14 @@ function placeChildren(adjacency, canonicalAtomRank, coords, atomIdsToPlace, anc
       adjacency,
       canonicalAtomRank,
       coords,
+      placementState,
       atomIdsToPlace,
       anchorAtomId,
       parentAtomId,
       bondLength,
       deferredNeighborIds,
-      layoutGraph
+      layoutGraph,
+      depth
     );
   }
 }
@@ -675,15 +836,20 @@ function placeChildren(adjacency, canonicalAtomRank, coords, atomIdsToPlace, anc
  * @param {string[]} seedAtomIds - Already placed atom IDs.
  * @param {number} bondLength - Target bond length.
  * @param {object|null} [layoutGraph] - Layout graph shell.
+ * @param {number} [depth] - Recursive depth guard for pathological graphs.
  * @returns {Map<string, {x: number, y: number}>} Updated coordinate map.
  */
-export function placeRemainingBranches(adjacency, canonicalAtomRank, coords, atomIdsToPlace, seedAtomIds, bondLength, layoutGraph = null) {
+export function placeRemainingBranches(adjacency, canonicalAtomRank, coords, atomIdsToPlace, seedAtomIds, bondLength, layoutGraph = null, depth = 0) {
+  if (depth > MAX_BRANCH_RECURSION_DEPTH) {
+    return coords;
+  }
+  const placementState = seedPlacementState(layoutGraph, coords);
   const orderedSeedAtomIds = neighborOrder(seedAtomIds.filter(atomId => coords.has(atomId)), canonicalAtomRank);
   for (const seedAtomId of orderedSeedAtomIds) {
     const placedNeighbors = (adjacency.get(seedAtomId) ?? []).filter(neighborAtomId => coords.has(neighborAtomId) && atomIdsToPlace.has(neighborAtomId));
     const orderedPlacedNeighbors = neighborOrder(placedNeighbors, canonicalAtomRank);
     const parentAtomId = orderedPlacedNeighbors.length === 1 ? orderedPlacedNeighbors[0] : null;
-    placeChildren(adjacency, canonicalAtomRank, coords, atomIdsToPlace, seedAtomId, parentAtomId, bondLength, layoutGraph);
+    placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, seedAtomId, parentAtomId, bondLength, layoutGraph, depth);
   }
   return coords;
 }

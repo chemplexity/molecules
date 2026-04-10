@@ -25,8 +25,7 @@ export const reactionTemplates = {
 
   alcoholOxidation: {
     name: 'Alcohol Oxidation',
-    smirks: '[C;X4;H1,H2:1][OH:2]>>[C:1]=[O:2]',
-    excludeOverlaps: ['[C:1](=[O:2])[OH:3]', '[C:1](=[O:2])[O:3][C:4]', '[C:1](=[O:2])[N:3]']
+    smirks: '[C;X4;H1,H2:1][OH:2]>>[C:1]=[O:2]'
   },
   aldehydeOxidation: {
     name: 'Aldehyde Oxidation',
@@ -57,8 +56,7 @@ export const reactionTemplates = {
   arylHalideHydrolysis: { name: 'Aryl Halide Hydrolysis', smirks: '[c:1][Cl,Br,I:2]>>[c:1][OH:2]' },
   alcoholHalogenation: {
     name: 'Alcohol Halogenation',
-    smirks: '[C;X4:1][OH:2]>>[C:1][Cl:2]',
-    excludeOverlaps: ['[C:1](=[O:2])[OH:3]', '[C:1](=[O:2])[O:3][C:4]', '[C:1](=[O:2])[N:3]']
+    smirks: '[C;X4:1][OH:2]>>[C:1][Cl:2]'
   },
   nitrileHydrogenationToImine: { name: 'Nitrile Hydrogenation To Imine', smirks: '[C:1]#[N:2]>>[C:1]=[N:2]' },
   etherCleavage: { name: 'Ether Cleavage', smirks: '[C;X4;!$(C=O):1][O:2][C;X4;!$(C=O):3]>>[C:1][OH:2].[C:3]O' },
@@ -119,5 +117,14 @@ export const reactionTemplates = {
   ammoniumDeprotonation: { name: 'Ammonium Deprotonation', smirks: '[N+;!H0:1]>>[N+0:1]' },
   phenolDeprotonation: { name: 'Phenol Deprotonation', smirks: '[c:1][OH:2]>>[c:1][OH0-:2]' },
   phenolateProtonation: { name: 'Phenolate Protonation', smirks: '[c:1][OH0-:2]>>[c:1][OH+0:2]' },
-  nitroReduction: { name: 'Nitro Reduction', smirks: '[N+:1](=[O:2])[O-:3]>>[N+0:1].[OH2+0:2].[OH2+0:3]' }
+  nitroReduction: { name: 'Nitro Reduction', smirks: '[N+:1](=[O:2])[O-:3]>>[N+0:1]' },
+
+  // ---------------------------------------------------------------------------
+  // Cycloadditions
+  // ---------------------------------------------------------------------------
+
+  dielsAlder: {
+    name: 'Diels-Alder [4+2]',
+    smirks: '[C:1]=[C:2][C:3]=[C:4].[C:5]=[C:6]>>[C:1]1[C:2]=[C:3][C:4][C:5][C:6]1'
+  }
 };

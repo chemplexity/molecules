@@ -40,7 +40,7 @@ export function initOptionsModal(context) {
   function syncForm(options = context.options.getRenderOptions()) {
     showValenceWarningsEl.checked = options.showValenceWarnings;
     showAtomTooltipsEl.checked = options.showAtomTooltips;
-    twoDRendererVersionEl.value = options.twoDRendererVersion ?? 'v1';
+    twoDRendererVersionEl.value = options.twoDRendererVersion ?? 'v2';
     twoDAtomColoringEl.checked = options.twoDAtomColoring;
     twoDAtomFontSizeEl.value = formatOptionNumber(options.twoDAtomFontSize);
     atomNumberingFontSizeEl.value = formatOptionNumber(options.atomNumberingFontSize);
@@ -96,11 +96,11 @@ export function initOptionsModal(context) {
 
   function apply() {
     const currentOptions = context.options.getRenderOptions();
-    const currentRendererVersion = currentOptions.twoDRendererVersion ?? 'v1';
+    const currentRendererVersion = currentOptions.twoDRendererVersion ?? 'v2';
     const nextOptions = context.options.updateRenderOptions({
       showValenceWarnings: showValenceWarningsEl.checked,
       showAtomTooltips: showAtomTooltipsEl.checked,
-      twoDRendererVersion: twoDRendererVersionEl.value === 'v2' ? 'v2' : 'v1',
+      twoDRendererVersion: twoDRendererVersionEl.value === 'v1' ? 'v1' : 'v2',
       twoDAtomColoring: twoDAtomColoringEl.checked,
       twoDAtomFontSize: clampOptionInputValue(twoDAtomFontSizeEl, context.options.limits.twoDAtomFontSize, currentOptions.twoDAtomFontSize),
       atomNumberingFontSize: clampOptionInputValue(atomNumberingFontSizeEl, context.options.limits.atomNumberingFontSize, currentOptions.atomNumberingFontSize),

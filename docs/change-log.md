@@ -1,5 +1,12 @@
 # Change Log
 
+## 2026-04-09
+
+- Add prototype version of the 2D layout algorithm
+- Add Diels-Alder [4+2] to SMIRKS reference
+- Improvements to reaction network demo
+- Fixes and improvements to new 2D layout algorithm
+
 ## 2026-04-08
 
 - Fix bugs with new charge state buttons

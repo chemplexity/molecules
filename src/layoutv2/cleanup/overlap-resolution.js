@@ -30,12 +30,13 @@ function movePreference(layoutGraph, atomId) {
  * @param {object} [options] - Overlap-resolution options.
  * @param {number} [options.bondLength] - Target bond length.
  * @param {number} [options.maxPasses] - Maximum overlap passes.
+ * @param {number} [options.thresholdFactor] - Overlap target as a bond-length multiple, clamped to the audit severe-overlap floor.
  * @returns {{coords: Map<string, {x: number, y: number}>, moves: number}} Updated coordinates and move count.
  */
 export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
-  const maxPasses = options.maxPasses ?? 2;
-  const threshold = bondLength * 0.55;
+  const maxPasses = options.maxPasses ?? 5;
+  const threshold = bondLength * Math.max(options.thresholdFactor ?? 0.45, 0.55);
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   let moves = 0;
 

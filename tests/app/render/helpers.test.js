@@ -12,9 +12,9 @@ afterEach(() => {
 });
 
 describe('app/render/helpers', () => {
-  it('defaults the 2d renderer version to v1', () => {
-    assert.equal(getDefaultRenderOptions().twoDRendererVersion, 'v1');
-    assert.equal(getRenderOptions().twoDRendererVersion, 'v1');
+  it('defaults the 2d renderer version to v2', () => {
+    assert.equal(getDefaultRenderOptions().twoDRendererVersion, 'v2');
+    assert.equal(getRenderOptions().twoDRendererVersion, 'v2');
   });
 
   it('accepts only supported 2d renderer versions', () => {

@@ -9,13 +9,16 @@ import { detectCollapsedMacrocycles, findSevereOverlaps, measureBondLengthDeviat
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {object} [options] - Audit options.
  * @param {number} [options.bondLength] - Target bond length.
+ * @param {Map<string, 'planar'|'bridged'>} [options.bondValidationClasses] - Per-bond validation classes.
  * @param {object} [options.stereo] - Stereo summary produced by the stereo phase.
- * @returns {{ok: boolean, severeOverlapCount: number, maxBondLengthDeviation: number, meanBondLengthDeviation: number, collapsedMacrocycleCount: number, stereoContradiction: boolean, bridgedReadabilityFailure: boolean}} Audit summary.
+ * @returns {{ok: boolean, severeOverlapCount: number, maxBondLengthDeviation: number, meanBondLengthDeviation: number, bondLengthFailureCount: number, collapsedMacrocycleCount: number, stereoContradiction: boolean, bridgedReadabilityFailure: boolean}} Audit summary.
  */
 export function auditLayout(layoutGraph, coords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
-  const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength);
+  const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength, {
+    bondValidationClasses: options.bondValidationClasses
+  });
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const stereo = options.stereo ?? null;
   const stereoContradiction =
@@ -39,6 +42,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
     severeOverlapCount: overlaps.length,
     maxBondLengthDeviation: bondDeviation.maxDeviation,
     meanBondLengthDeviation: bondDeviation.meanDeviation,
+    bondLengthFailureCount: bondDeviation.failingBondCount,
     collapsedMacrocycleCount: collapsedMacrocycles.length,
     stereoContradiction,
     bridgedReadabilityFailure,

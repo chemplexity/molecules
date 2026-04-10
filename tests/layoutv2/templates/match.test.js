@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { parseSMILES } from '../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { findTemplateMatch } from '../../../src/layoutv2/templates/match.js';
 import { makeAdamantane, makeBicyclo222, makeCyclohexane, makeMethylbenzene, makeNaphthylbenzene, makeNorbornane, makeSpiro } from '../support/molecules.js';
@@ -53,6 +54,125 @@ describe('layoutv2/templates/match', () => {
     assert.equal(spiroMatch.id, 'spiro-5-5');
   });
 
+  it('matches common isolated aromatic heterocycles too', () => {
+    const pyridineGraph = createLayoutGraph(parseSMILES('c1ccncc1'));
+    const pyridineMatch = findTemplateMatch(pyridineGraph, buildRingCandidate(pyridineGraph, pyridineGraph.ringSystems[0], 'isolated-ring'));
+    assert.equal(pyridineMatch.id, 'pyridine');
+
+    const triazineGraph = createLayoutGraph(parseSMILES('n1ncncc1'));
+    const triazineMatch = findTemplateMatch(triazineGraph, buildRingCandidate(triazineGraph, triazineGraph.ringSystems[0], 'isolated-ring'));
+    assert.equal(triazineMatch.id, 'triazine-1-2-4');
+
+    const thiopheneGraph = createLayoutGraph(parseSMILES('c1ccsc1'));
+    const thiopheneMatch = findTemplateMatch(thiopheneGraph, buildRingCandidate(thiopheneGraph, thiopheneGraph.ringSystems[0], 'isolated-ring'));
+    assert.equal(thiopheneMatch.id, 'thiophene');
+
+    const thiazoleGraph = createLayoutGraph(parseSMILES('s1cncc1'));
+    const thiazoleMatch = findTemplateMatch(thiazoleGraph, buildRingCandidate(thiazoleGraph, thiazoleGraph.ringSystems[0], 'isolated-ring'));
+    assert.equal(thiazoleMatch.id, 'thiazole');
+
+    const imidazoleGraph = createLayoutGraph(parseSMILES('[nH]1cncc1'));
+    const imidazoleMatch = findTemplateMatch(imidazoleGraph, buildRingCandidate(imidazoleGraph, imidazoleGraph.ringSystems[0], 'isolated-ring'));
+    assert.equal(imidazoleMatch.id, 'imidazole');
+
+    const triazoleGraph = createLayoutGraph(parseSMILES('n1nc[nH]c1'));
+    const triazoleMatch = findTemplateMatch(triazoleGraph, buildRingCandidate(triazoleGraph, triazoleGraph.ringSystems[0], 'isolated-ring'));
+    assert.equal(triazoleMatch.id, 'triazole-1-2-4');
+  });
+
+  it('matches common fused heterobicycles too', () => {
+    const quinolineGraph = createLayoutGraph(parseSMILES('c1ccc2ncccc2c1'));
+    const quinolineMatch = findTemplateMatch(quinolineGraph, buildRingCandidate(quinolineGraph, quinolineGraph.ringSystems[0], 'fused'));
+    assert.equal(quinolineMatch.id, 'quinoline');
+
+    const isoquinolineGraph = createLayoutGraph(parseSMILES('c1ccc2cnccc2c1'));
+    const isoquinolineMatch = findTemplateMatch(isoquinolineGraph, buildRingCandidate(isoquinolineGraph, isoquinolineGraph.ringSystems[0], 'fused'));
+    assert.equal(isoquinolineMatch.id, 'isoquinoline');
+
+    const indoleGraph = createLayoutGraph(parseSMILES('c1ccc2[nH]ccc2c1'));
+    const indoleMatch = findTemplateMatch(indoleGraph, buildRingCandidate(indoleGraph, indoleGraph.ringSystems[0], 'fused'));
+    assert.equal(indoleMatch.id, 'indole');
+
+    const benzimidazoleGraph = createLayoutGraph(parseSMILES('c1ccc2[nH]cnc2c1'));
+    const benzimidazoleMatch = findTemplateMatch(benzimidazoleGraph, buildRingCandidate(benzimidazoleGraph, benzimidazoleGraph.ringSystems[0], 'fused'));
+    assert.equal(benzimidazoleMatch.id, 'benzimidazole');
+
+    const indazoleGraph = createLayoutGraph(parseSMILES('c1ccc2[nH]ncc2c1'));
+    const indazoleMatch = findTemplateMatch(indazoleGraph, buildRingCandidate(indazoleGraph, indazoleGraph.ringSystems[0], 'fused'));
+    assert.equal(indazoleMatch.id, 'indazole');
+
+    const benzotriazoleGraph = createLayoutGraph(parseSMILES('c1ccc2[nH]nnc2c1'));
+    const benzotriazoleMatch = findTemplateMatch(
+      benzotriazoleGraph,
+      buildRingCandidate(benzotriazoleGraph, benzotriazoleGraph.ringSystems[0], 'fused')
+    );
+    assert.equal(benzotriazoleMatch.id, 'benzotriazole');
+
+    const purineGraph = createLayoutGraph(parseSMILES('c1ncc2[nH]cnc2n1'));
+    const purineMatch = findTemplateMatch(purineGraph, buildRingCandidate(purineGraph, purineGraph.ringSystems[0], 'fused'));
+    assert.equal(purineMatch.id, 'purine');
+
+    const quinazolineGraph = createLayoutGraph(parseSMILES('c1ccc2ncncc2c1'));
+    const quinazolineMatch = findTemplateMatch(quinazolineGraph, buildRingCandidate(quinazolineGraph, quinazolineGraph.ringSystems[0], 'fused'));
+    assert.equal(quinazolineMatch.id, 'quinazoline');
+
+    const quinoxalineGraph = createLayoutGraph(parseSMILES('c1ccc2nccnc2c1'));
+    const quinoxalineMatch = findTemplateMatch(quinoxalineGraph, buildRingCandidate(quinoxalineGraph, quinoxalineGraph.ringSystems[0], 'fused'));
+    assert.equal(quinoxalineMatch.id, 'quinoxaline');
+
+    const acridineGraph = createLayoutGraph(parseSMILES('c1ccc2nc3ccccc3cc2c1'));
+    const acridineMatch = findTemplateMatch(acridineGraph, buildRingCandidate(acridineGraph, acridineGraph.ringSystems[0], 'fused'));
+    assert.equal(acridineMatch.id, 'acridine');
+
+    const anthraceneGraph = createLayoutGraph(parseSMILES('c1ccc2cc3ccccc3cc2c1'));
+    const anthraceneMatch = findTemplateMatch(anthraceneGraph, buildRingCandidate(anthraceneGraph, anthraceneGraph.ringSystems[0], 'fused'));
+    assert.equal(anthraceneMatch.id, 'anthracene');
+
+    const pyreneGraph = createLayoutGraph(parseSMILES('c1cc2ccc3cccc4ccc(c1)c2c34'));
+    const pyreneMatch = findTemplateMatch(pyreneGraph, buildRingCandidate(pyreneGraph, pyreneGraph.ringSystems[0], 'fused'));
+    assert.equal(pyreneMatch.id, 'pyrene');
+
+    const fluoreneGraph = createLayoutGraph(parseSMILES('c1ccc2c(c1)Cc1ccccc1-2'));
+    const fluoreneMatch = findTemplateMatch(fluoreneGraph, buildRingCandidate(fluoreneGraph, fluoreneGraph.ringSystems[0], 'fused'));
+    assert.equal(fluoreneMatch.id, 'fluorene');
+
+    const testosteroneGraph = createLayoutGraph(parseSMILES('C[C@]12CC[C@H]3[C@@H](CC=C4C[C@@H](O)CC[C@]34C)[C@@H]1CC[C@@H]2=O'));
+    const testosteroneMatch = findTemplateMatch(testosteroneGraph, buildRingCandidate(testosteroneGraph, testosteroneGraph.ringSystems[0], 'fused'));
+    assert.equal(testosteroneMatch.id, 'steroid-core-unsaturated');
+
+    const cholesterolGraph = createLayoutGraph(
+      parseSMILES('C[C@H](CCCC(C)C)[C@H]1CC[C@@H]2[C@@]1(CC[C@H]3[C@H]2CC=C4[C@@]3(CC[C@@H](C4)O)C)C')
+    );
+    const cholesterolMatch = findTemplateMatch(cholesterolGraph, buildRingCandidate(cholesterolGraph, cholesterolGraph.ringSystems[0], 'fused'));
+    assert.equal(cholesterolMatch.id, 'steroid-core-unsaturated');
+
+    const steroidTestGraph = createLayoutGraph(parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O'));
+    const steroidTestMatch = findTemplateMatch(steroidTestGraph, buildRingCandidate(steroidTestGraph, steroidTestGraph.ringSystems[0], 'fused'));
+    assert.equal(steroidTestMatch.id, 'steroid-core-saturated');
+
+    const phthalazineGraph = createLayoutGraph(parseSMILES('c1ccc2nnccc2c1'));
+    const phthalazineMatch = findTemplateMatch(phthalazineGraph, buildRingCandidate(phthalazineGraph, phthalazineGraph.ringSystems[0], 'fused'));
+    assert.equal(phthalazineMatch.id, 'phthalazine');
+  });
+
+  it('matches common partially saturated fused scaffolds too', () => {
+    const indaneGraph = createLayoutGraph(parseSMILES('c1ccc2CCCc2c1'));
+    const indaneMatch = findTemplateMatch(indaneGraph, buildRingCandidate(indaneGraph, indaneGraph.ringSystems[0], 'fused'));
+    assert.equal(indaneMatch.id, 'indane');
+
+    const tetralinGraph = createLayoutGraph(parseSMILES('c1ccc2CCCCc2c1'));
+    const tetralinMatch = findTemplateMatch(tetralinGraph, buildRingCandidate(tetralinGraph, tetralinGraph.ringSystems[0], 'fused'));
+    assert.equal(tetralinMatch.id, 'tetralin');
+
+    const chromaneGraph = createLayoutGraph(parseSMILES('c1ccc2OCCCc2c1'));
+    const chromaneMatch = findTemplateMatch(chromaneGraph, buildRingCandidate(chromaneGraph, chromaneGraph.ringSystems[0], 'fused'));
+    assert.equal(chromaneMatch.id, 'chromane');
+
+    const isochromaneGraph = createLayoutGraph(parseSMILES('c1ccc2COCCc2c1'));
+    const isochromaneMatch = findTemplateMatch(isochromaneGraph, buildRingCandidate(isochromaneGraph, isochromaneGraph.ringSystems[0], 'fused'));
+    assert.equal(isochromaneMatch.id, 'isochromane');
+  });
+
   it('matches a bridged norbornane-like scaffold too', () => {
     const graph = createLayoutGraph(makeNorbornane());
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
@@ -63,6 +183,10 @@ describe('layoutv2/templates/match', () => {
     const bicycloGraph = createLayoutGraph(makeBicyclo222());
     const bicycloMatch = findTemplateMatch(bicycloGraph, buildRingCandidate(bicycloGraph, bicycloGraph.ringSystems[0], 'bridged'));
     assert.equal(bicycloMatch.id, 'bicyclo-2-2-2');
+
+    const cubaneGraph = createLayoutGraph(parseSMILES('C12C3C4C1C5C4C3C25'));
+    const cubaneMatch = findTemplateMatch(cubaneGraph, buildRingCandidate(cubaneGraph, cubaneGraph.ringSystems[0], 'bridged'));
+    assert.equal(cubaneMatch.id, 'cubane');
 
     const adamantaneGraph = createLayoutGraph(makeAdamantane());
     const adamantaneMatch = findTemplateMatch(adamantaneGraph, buildRingCandidate(adamantaneGraph, adamantaneGraph.ringSystems[0], 'bridged'));

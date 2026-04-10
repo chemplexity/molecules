@@ -362,6 +362,20 @@ describe('parseSMILES — SMILES spec fixes', () => {
   it('C1=CCCCC1 canonical cyclohexene: C6H10', () => {
     assert.deepEqual(formula(parseSMILES('C1=CCCCC1')), { C: 6, H: 10 });
   });
+
+  it('parses explicit single-bond aromatic ring closure suffixes in fluorene-style SMILES', () => {
+    const mol = parseSMILES('c1ccc2c(c1)Cc1ccccc1-2');
+    assert.deepEqual(formula(mol), { C: 13, H: 10 });
+    const ringSizes = mol.getRings().map(ring => ring.length).sort((firstSize, secondSize) => firstSize - secondSize);
+    assert.deepEqual(ringSizes, [5, 6, 6]);
+    const bridgeBond = [...mol.bonds.values()].find(bond => {
+      const atomIds = [...bond.atoms].sort();
+      return atomIds[0] === 'C13' && atomIds[1] === 'C4';
+    });
+    assert.ok(bridgeBond, 'expected the fluorene bridge bond to be present');
+    assert.equal(bridgeBond.properties.order, 1);
+    assert.equal(bridgeBond.properties.aromatic ?? false, false);
+  });
 });
 
 // ---------------------------------------------------------------------------

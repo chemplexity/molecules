@@ -20,7 +20,7 @@ const DEFAULT_RENDER_OPTIONS = Object.freeze({
   showValenceWarnings: true,
   showAtomTooltips: true,
   showLonePairs: false,
-  twoDRendererVersion: 'v1',
+  twoDRendererVersion: 'v2',
   twoDAtomColoring: true,
   twoDAtomFontSize: 14,
   atomNumberingFontSize: 10,

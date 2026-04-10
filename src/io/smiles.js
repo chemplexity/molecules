@@ -350,6 +350,90 @@ function normalizeSmilesSeparators(input) {
 }
 
 /**
+ * Returns the standalone ring-closure token term that begins at the given input
+ * position, or null when the input there is not an uncovered ring closure.
+ * @param {string} input - Normalized SMILES source.
+ * @param {number} index - Character position to inspect.
+ * @returns {string|null} Ring token term or null.
+ */
+function matchStandaloneRingClosure(input, index) {
+  const current = input[index];
+  const next = input[index + 1] ?? '';
+  const nextNext = input[index + 2] ?? '';
+  const nextThird = input[index + 3] ?? '';
+  const hasTwoDigitPercent = next === '%' && /\d/.test(nextNext) && /\d/.test(nextThird);
+
+  if (/\d/.test(current)) {
+    return current;
+  }
+  if (current === '%' && /\d/.test(next) && /\d/.test(nextNext)) {
+    return input.slice(index, index + 3);
+  }
+  if (!'-=#$:/\\'.includes(current)) {
+    return null;
+  }
+  if (/\d/.test(next)) {
+    return input.slice(index, index + 2);
+  }
+  if (hasTwoDigitPercent) {
+    return input.slice(index, index + 4);
+  }
+  return null;
+}
+
+/**
+ * Emits synthetic ring tokens for uncovered standalone ring closures such as
+ * `%11`, `-2`, or `:%10` that follow an atom or an earlier ring closure.
+ * @param {string} input - Normalized SMILES source.
+ * @param {object[]} tokens - Token list to extend in place.
+ * @param {Set<number>} inBracket - Character positions inside bracket atoms.
+ * @returns {void}
+ */
+function emitStandaloneRingClosureTokens(input, tokens, inBracket) {
+  const coveredPositions = new Set();
+  for (const token of tokens) {
+    for (let position = token.index; position < token.index + token.term.length; position++) {
+      coveredPositions.add(position);
+    }
+  }
+
+  const additions = [];
+  for (let index = 0; index < input.length; index++) {
+    if (inBracket.has(index) || coveredPositions.has(index)) {
+      continue;
+    }
+    const term = matchStandaloneRingClosure(input, index);
+    if (!term) {
+      continue;
+    }
+    let overlapsCoveredSpan = false;
+    for (let position = index; position < index + term.length; position++) {
+      if (inBracket.has(position) || coveredPositions.has(position)) {
+        overlapsCoveredSpan = true;
+        break;
+      }
+    }
+    if (overlapsCoveredSpan) {
+      continue;
+    }
+    additions.push({
+      index,
+      type: 'bond',
+      term,
+      tag: 'ring'
+    });
+    for (let position = index; position < index + term.length; position++) {
+      coveredPositions.add(position);
+    }
+  }
+
+  if (additions.length > 0) {
+    tokens.push(...additions);
+    tokens.sort((firstToken, secondToken) => firstToken.index - secondToken.index);
+  }
+}
+
+/**
  * Parses a SMILES string into an array of tokens using the v1 grammar.
  * @param {string} input - SMILES string.
  * @param {object[]} [tokens] - Pre-existing token array to append to.
@@ -505,54 +589,8 @@ export function tokenize(input, tokens = []) {
         t.bracket = true;
       }
     }
-  }
 
-  // The grammar ring regex can only match one ring closure per token because it
-  // requires a leading atom character.  Two cases produce uncaptured %XX closures:
-  //
-  //   1. Back-to-back %XX on the same atom: [C@]%10%11, [C@H]%11%12
-  //      The first %XX is captured inside the bracket term; the second %XX
-  //      immediately follows and has no atom letter.
-  //
-  //   2. A plain-digit ring closure immediately followed by a %XX closure:
-  //      c7%11 — the regex captures "c7" (ring 7) and leaves "%11" uncovered.
-  //
-  // In both cases the uncovered %XX token later looks like a multi-digit ring
-  // number, the split loop finds no matching partner, and incorrectly splits the
-  // digits into single-digit phantom ring tokens, creating a self-loop.
-  //
-  // Fix: after all grammar matches are collected, walk every ring token and emit
-  // a synthetic bond token for every %XX sequence that immediately follows the
-  // token's span in the input.  Must run BEFORE the split loop.
-  {
-    // Also emit synthetic tokens for any %XX that appears right after a closing
-    // bracket ] followed immediately by %XX (bracket ring closures like [C@H]%10%11
-    // where the first %10 was captured in the bracket term but %11 was not).
-    const coveredPositions = new Set(tokens.map(t => t.index));
-    const toAdd = [];
-
-    for (const t of tokens) {
-      if (t.tag !== 'ring') {
-        continue;
-      }
-      let pos = t.index + t.term.length;
-      while (pos + 2 <= input.length && input[pos] === '%' && /\d/.test(input[pos + 1]) && /\d/.test(input[pos + 2])) {
-        if (!coveredPositions.has(pos)) {
-          coveredPositions.add(pos);
-          toAdd.push({
-            index: pos,
-            type: 'bond',
-            term: input.slice(pos, pos + 3),
-            tag: 'ring'
-          });
-        }
-        pos += 3;
-      }
-    }
-    if (toAdd.length > 0) {
-      tokens.push(...toAdd);
-      tokens.sort((a, b) => a.index - b.index);
-    }
+    emitStandaloneRingClosureTokens(input, tokens, inBracket);
   }
 
   for (let i = 0; i < tokens.length; i++) {

@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { parseSMILES } from '../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { buildScaffoldPlan, classifyRingSystemFamily } from '../../../src/layoutv2/model/scaffold-plan.js';
 import { makeAdamantane, makeChain, makeCyclohexane, makeMethylbenzene, makeNaphthylbenzene, makeNorbornane } from '../support/molecules.js';
@@ -53,6 +54,38 @@ describe('layoutv2/model/scaffold-plan', () => {
     assert.equal(plan.rootScaffold.family, 'bridged');
     assert.equal(plan.rootScaffold.templateId, 'adamantane');
     assert.equal(plan.rootScaffold.atomCount, 10);
+  });
+
+  it('promotes exact cage-template matches over a misleading fused heuristic family', () => {
+    const graph = createLayoutGraph(parseSMILES('C12C3C4C1C5C4C3C25'));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'cubane');
+    assert.equal(plan.mixedMode, false);
+    assert.deepEqual(plan.nonRingAtomIds, []);
+  });
+
+  it('records steroid-core templates for mixed fused steroid scaffolds', () => {
+    const testosteroneGraph = createLayoutGraph(parseSMILES('C[C@]12CC[C@H]3[C@@H](CC=C4C[C@@H](O)CC[C@]34C)[C@@H]1CC[C@@H]2=O'));
+    const testosteronePlan = buildScaffoldPlan(testosteroneGraph, testosteroneGraph.components[0]);
+    assert.equal(testosteronePlan.rootScaffold.family, 'fused');
+    assert.equal(testosteronePlan.rootScaffold.templateId, 'steroid-core-unsaturated');
+    assert.equal(testosteronePlan.mixedMode, true);
+
+    const saturatedGraph = createLayoutGraph(parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O'));
+    const saturatedPlan = buildScaffoldPlan(saturatedGraph, saturatedGraph.components[0]);
+    assert.equal(saturatedPlan.rootScaffold.family, 'fused');
+    assert.equal(saturatedPlan.rootScaffold.templateId, 'steroid-core-saturated');
+    assert.equal(saturatedPlan.mixedMode, true);
+  });
+
+  it('uses the fluorene fused template for the corpus fluorene SMILES spelling', () => {
+    const graph = createLayoutGraph(parseSMILES('c1ccc2c(c1)Cc1ccccc1-2'));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(graph.ringSystems.length, 1);
+    assert.equal(plan.rootScaffold.family, 'fused');
+    assert.equal(plan.rootScaffold.templateId, 'fluorene');
+    assert.equal(plan.mixedMode, false);
   });
 
   it('falls back to an acyclic scaffold when the component is ring-free', () => {
