@@ -53,6 +53,35 @@ function countHeavyAtoms(layoutGraph, atomIds, coords) {
   return count;
 }
 
+/**
+ * Measures the maximum pairwise heavy-atom span in a coordinate set.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {number} Maximum squared heavy-atom distance.
+ */
+function measureHeavyAtomSpan(layoutGraph, coords) {
+  const heavyPositions = [];
+  for (const [atomId, position] of coords) {
+    if (layoutGraph.atoms.get(atomId)?.element === 'H') {
+      continue;
+    }
+    heavyPositions.push(position);
+  }
+
+  let maxDistanceSquared = 0;
+  for (let firstIndex = 0; firstIndex < heavyPositions.length; firstIndex++) {
+    const firstPosition = heavyPositions[firstIndex];
+    for (let secondIndex = firstIndex + 1; secondIndex < heavyPositions.length; secondIndex++) {
+      const secondPosition = heavyPositions[secondIndex];
+      const dx = secondPosition.x - firstPosition.x;
+      const dy = secondPosition.y - firstPosition.y;
+      maxDistanceSquared = Math.max(maxDistanceSquared, (dx * dx) + (dy * dy));
+    }
+  }
+
+  return maxDistanceSquared;
+}
+
 function reflectPointAcrossLine(position, firstPoint, secondPoint) {
   const dx = secondPoint.x - firstPoint.x;
   const dy = secondPoint.y - firstPoint.y;
@@ -104,7 +133,8 @@ function countMatchedStereo(layoutGraph, coords, stereoBonds) {
 /**
  * Enforces acyclic E/Z alkene geometry by reflecting one side of a mismatched
  * double bond across its bond axis. Candidate reflections are ranked by total
- * matched alkene-stereo count, then layout cost, then moved heavy-atom count.
+ * matched alkene-stereo count, then heavy-atom span, then layout cost, then
+ * moved heavy-atom count.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
  * @param {object} [options] - Enforcement options.
@@ -159,6 +189,7 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
         const candidate = {
           coords: candidateCoords,
           matchedStereoCount: countMatchedStereo(layoutGraph, candidateCoords, stereoBonds),
+          heavyAtomSpan: measureHeavyAtomSpan(layoutGraph, candidateCoords),
           layoutCost: measureLayoutCost(layoutGraph, candidateCoords, bondLength),
           heavyAtomCount: countHeavyAtoms(layoutGraph, sideAtomIds, candidateCoords)
         };
@@ -166,8 +197,13 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
         if (
           !bestCandidate ||
           candidate.matchedStereoCount > bestCandidate.matchedStereoCount ||
-          (candidate.matchedStereoCount === bestCandidate.matchedStereoCount && candidate.layoutCost < bestCandidate.layoutCost - 1e-6) ||
           (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
+            candidate.heavyAtomSpan > bestCandidate.heavyAtomSpan + 1e-6) ||
+          (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
+            Math.abs(candidate.heavyAtomSpan - bestCandidate.heavyAtomSpan) <= 1e-6 &&
+            candidate.layoutCost < bestCandidate.layoutCost - 1e-6) ||
+          (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
+            Math.abs(candidate.heavyAtomSpan - bestCandidate.heavyAtomSpan) <= 1e-6 &&
             Math.abs(candidate.layoutCost - bestCandidate.layoutCost) <= 1e-6 &&
             candidate.heavyAtomCount < bestCandidate.heavyAtomCount)
         ) {

@@ -15,6 +15,58 @@ import {
   stereoBondCenterIdForRender,
   atomBBox
 } from '../../layout/mol2d-helpers.js';
+import { synthesizeHydrogenPosition } from '../../layoutv2/stereo/wedge-geometry.js';
+
+/**
+ * Returns the placed incident ring polygons for one atom.
+ * @param {object} molecule - Molecule graph.
+ * @param {string} atomId - Atom id.
+ * @returns {Array<Array<{x: number, y: number}>>} Incident ring polygons.
+ */
+function incidentRingPolygonsForAtom(molecule, atomId) {
+  return molecule.getRings()
+    .filter(ringAtomIds => ringAtomIds.includes(atomId))
+    .map(ringAtomIds => ringAtomIds
+      .map(ringAtomId => molecule.atoms.get(ringAtomId))
+      .filter(atom => atom && atom.x != null && atom.y != null)
+      .map(atom => ({ x: atom.x, y: atom.y })))
+    .filter(polygon => polygon.length >= 3);
+}
+
+/**
+ * Projects hidden stereo hydrogens into drawable positions around their chiral parent atoms.
+ * @param {object} molecule - Molecule graph.
+ * @param {number} bondLength - Reference hidden-hydrogen bond length.
+ * @returns {void}
+ */
+function projectHiddenStereoHydrogens(molecule, bondLength) {
+  for (const [, atom] of molecule.atoms) {
+    if (atom.name !== 'H' || atom.visible !== false) {
+      continue;
+    }
+    const neighbors = atom.getNeighbors(molecule);
+    if (neighbors.length !== 1) {
+      continue;
+    }
+    const parent = neighbors[0];
+    if (!parent.getChirality()) {
+      continue;
+    }
+    const knownPositions = parent.getNeighbors(molecule)
+      .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null)
+      .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
+    const projectedPosition = synthesizeHydrogenPosition(
+      { x: parent.x, y: parent.y },
+      knownPositions,
+      bondLength,
+      {
+        incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id)
+      }
+    );
+    atom.x = projectedPosition.x;
+    atom.y = projectedPosition.y;
+  }
+}
 
 function _compute2dFitTransform(ctx, atoms) {
   const { minX, maxX, minY, maxY } = atomBBox(atoms);
@@ -582,34 +634,7 @@ export function create2DSceneRenderer(ctx) {
     ctx.helpers.spreadReaction2dProductComponents(mol, 1.5);
     ctx.helpers.centerReaction2dPairCoords(mol, 1.5);
 
-    for (const [, atom] of mol.atoms) {
-      if (atom.name !== 'H' || atom.visible !== false) {
-        continue;
-      }
-      const nbrs = atom.getNeighbors(mol);
-      if (nbrs.length !== 1) {
-        continue;
-      }
-      const parent = nbrs[0];
-      if (!parent.getChirality()) {
-        continue;
-      }
-      const others = parent.getNeighbors(mol).filter(n => n.id !== atom.id);
-      let sumX = 0;
-      let sumY = 0;
-      let cnt = 0;
-      for (const nb of others) {
-        if (nb.x != null) {
-          sumX += nb.x - parent.x;
-          sumY += nb.y - parent.y;
-          cnt++;
-        }
-      }
-      const angle = cnt > 0 ? Math.atan2(-sumY, -sumX) : 0;
-      const hLen = 1.5 * 0.75;
-      atom.x = parent.x + Math.cos(angle) * hLen;
-      atom.y = parent.y + Math.sin(angle) * hLen;
-    }
+    projectHiddenStereoHydrogens(mol, 1.5 * 0.75);
 
     const { rotationDeg, flipH, flipV } = ctx.view.getOrientation();
     if (rotationDeg !== 0 || flipH || flipV) {

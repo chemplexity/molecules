@@ -5,6 +5,7 @@ import {
   minimumSectorAngle,
   synthesizeHydrogenPosition
 } from '../../../src/layoutv2/stereo/wedge-geometry.js';
+import { pointInPolygon } from '../../../src/layoutv2/geometry/polygon.js';
 
 describe('layoutv2/stereo/wedge-geometry', () => {
   it('synthesizes a hidden-hydrogen position opposite known substituents', () => {
@@ -19,5 +20,32 @@ describe('layoutv2/stereo/wedge-geometry', () => {
       [{ x: 0, y: 1 }, { x: -1, y: 0 }]
     );
     assert.ok(sector > 1);
+  });
+
+  it('keeps synthesized hidden hydrogens out of incident ring faces when possible', () => {
+    const position = synthesizeHydrogenPosition(
+      { x: 0, y: 0 },
+      [
+        { x: 1, y: 0 },
+        { x: -0.4, y: 0.9 },
+        { x: -0.4, y: -0.9 }
+      ],
+      1.2,
+      {
+        incidentRingPolygons: [[
+          { x: -0.8, y: -0.7 },
+          { x: 0.9, y: -0.4 },
+          { x: 0.9, y: 0.4 },
+          { x: -0.8, y: 0.7 }
+        ]]
+      }
+    );
+
+    assert.equal(pointInPolygon(position, [
+      { x: -0.8, y: -0.7 },
+      { x: 0.9, y: -0.4 },
+      { x: 0.9, y: 0.4 },
+      { x: -0.8, y: 0.7 }
+    ]), false);
   });
 });

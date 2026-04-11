@@ -43,3 +43,33 @@ export function placeRegularPolygon(atomIds, center, edgeLength, startAngle = Ma
   }
   return coords;
 }
+
+/**
+ * Returns whether a point lies strictly inside a polygon.
+ * @param {{x: number, y: number}} point - Candidate point.
+ * @param {{x: number, y: number}[]} polygon - Polygon vertices in order.
+ * @returns {boolean} True when the point is strictly inside the polygon.
+ */
+export function pointInPolygon(point, polygon) {
+  if (!point || polygon.length < 3) {
+    return false;
+  }
+
+  let inside = false;
+  for (let firstIndex = 0, secondIndex = polygon.length - 1; firstIndex < polygon.length; secondIndex = firstIndex++) {
+    const firstVertex = polygon[firstIndex];
+    const secondVertex = polygon[secondIndex];
+    const crossesScanline = (firstVertex.y > point.y) !== (secondVertex.y > point.y);
+    if (!crossesScanline) {
+      continue;
+    }
+    const intersectionX =
+      (((secondVertex.x - firstVertex.x) * (point.y - firstVertex.y)) / ((secondVertex.y - firstVertex.y) || 1e-12))
+      + firstVertex.x;
+    if (point.x < intersectionX) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}

@@ -1,7 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { parseSMILES } from '../../../src/io/smiles.js';
 import { create2DSceneRenderer } from '../../../src/app/render/scene-2d.js';
+import { pointInPolygon } from '../../../src/layoutv2/geometry/polygon.js';
+import { applyCoords } from '../../../src/layoutv2/apply.js';
+import { generateCoords } from '../../../src/layoutv2/api.js';
 
 class FakeSelection {
   constructor(records, nodeRef = {}) {
@@ -90,7 +94,7 @@ function makeAtom(id, x, y) {
   };
 }
 
-function makeRenderer({ preserveSelectionOnNextRender = false } = {}) {
+function makeRenderer({ preserveSelectionOnNextRender = false, helperOverrides = {} } = {}) {
   const records = [];
   const nodeRef = { id: 'svg-node' };
   const svg = new FakeSelection(records, nodeRef);
@@ -207,7 +211,8 @@ function makeRenderer({ preserveSelectionOnNextRender = false } = {}) {
       },
       viewportFitPadding: pad => ({ left: pad, right: pad, top: pad, bottom: pad }),
       hasReactionPreview: () => false,
-      enLabelColor: () => '#000'
+      enLabelColor: () => '#000',
+      ...helperOverrides
     },
     events: {
       handle2dBondClick: () => {},
@@ -307,5 +312,46 @@ describe('create2DSceneRenderer', () => {
         ['call', 'zoomTransform', { x: 0, y: 0, k: 1 }]
       ]
     );
+  });
+
+  it('keeps projected hidden stereo hydrogens out of incident ring faces after 2D rendering', () => {
+    const { renderer } = makeRenderer({
+      helperOverrides: {
+        generate2dCoords: (mol, options = {}) => {
+          const result = generateCoords(mol, options);
+          applyCoords(mol, result, {
+            clearUnplaced: true,
+            hiddenHydrogenMode: 'coincident',
+            syncStereoDisplay: true
+          });
+          return result.coords;
+        }
+      }
+    });
+    const mol = parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O');
+
+    renderer.render2d(mol);
+
+    for (const atom of mol.atoms.values()) {
+      if (atom.name !== 'H' || atom.x == null || atom.y == null) {
+        continue;
+      }
+      const parent = atom.getNeighbors(mol).find(neighbor => neighbor && neighbor.x != null && neighbor.y != null);
+      if (!parent?.getChirality?.()) {
+        continue;
+      }
+      const incidentRingPolygons = mol.getRings()
+        .filter(ringAtomIds => ringAtomIds.includes(parent.id))
+        .map(ringAtomIds => ringAtomIds
+          .map(atomId => mol.atoms.get(atomId))
+          .filter(ringAtom => ringAtom && ringAtom.x != null && ringAtom.y != null)
+          .map(ringAtom => ({ x: ringAtom.x, y: ringAtom.y })))
+        .filter(polygon => polygon.length >= 3);
+      assert.equal(
+        incidentRingPolygons.some(polygon => pointInPolygon({ x: atom.x, y: atom.y }, polygon)),
+        false,
+        `expected projected hidden hydrogen on ${parent.id} to stay outside incident ring faces`
+      );
+    }
   });
 });

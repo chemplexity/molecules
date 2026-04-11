@@ -35,6 +35,7 @@ import {
   kekulize,
   atomBBox
 } from './mol2d-helpers.js';
+import { synthesizeHydrogenPosition } from '../layoutv2/stereo/wedge-geometry.js';
 import { Resvg } from '@resvg/resvg-js';
 
 // ---------------------------------------------------------------------------
@@ -47,6 +48,57 @@ export const FONT_SIZE = 11; // px
 export const CELL_PAD = 22; // px padding inside each cell
 export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
 export const WEDGE_TIP_TRIM = WEDGE_HALF_W * 0.5;
+
+/**
+ * Returns the placed incident ring polygons for one atom.
+ * @param {import('../core/Molecule.js').Molecule} mol - Molecule graph.
+ * @param {string} atomId - Atom id.
+ * @returns {Array<Array<{x: number, y: number}>>} Incident ring polygons.
+ */
+function incidentRingPolygonsForAtom(mol, atomId) {
+  return mol.getRings()
+    .filter(ringAtomIds => ringAtomIds.includes(atomId))
+    .map(ringAtomIds => ringAtomIds
+      .map(ringAtomId => mol.atoms.get(ringAtomId))
+      .filter(atom => atom && atom.x != null && atom.y != null)
+      .map(atom => ({ x: atom.x, y: atom.y })))
+    .filter(polygon => polygon.length >= 3);
+}
+
+/**
+ * Projects hidden stereo hydrogens into drawable positions around their chiral parent atoms.
+ * @param {import('../core/Molecule.js').Molecule} mol - Molecule graph.
+ * @param {number} bondLength - Reference hidden-hydrogen bond length.
+ * @returns {void}
+ */
+function projectHiddenStereoHydrogens(mol, bondLength) {
+  for (const [, atom] of mol.atoms) {
+    if (atom.name !== 'H' || atom.visible !== false) {
+      continue;
+    }
+    const neighbors = atom.getNeighbors(mol);
+    if (neighbors.length !== 1) {
+      continue;
+    }
+    const parent = neighbors[0];
+    if (!parent.getChirality()) {
+      continue;
+    }
+    const knownPositions = parent.getNeighbors(mol)
+      .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null)
+      .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
+    const projectedPosition = synthesizeHydrogenPosition(
+      { x: parent.x, y: parent.y },
+      knownPositions,
+      bondLength,
+      {
+        incidentRingPolygons: incidentRingPolygonsForAtom(mol, parent.id)
+      }
+    );
+    atom.x = projectedPosition.x;
+    atom.y = projectedPosition.y;
+  }
+}
 
 function renderBondOrder(bond, mode = AROMATIC_RENDER_MODE) {
   if (mode === 'localized' && (bond.properties.aromatic ?? false)) {
@@ -185,34 +237,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
     return null;
   }
 
-  // Give chiral H atoms a real position so their stereo bond can be drawn.
-  for (const [, atom] of mol.atoms) {
-    if (atom.name !== 'H' || atom.visible !== false) {
-      continue;
-    }
-    const nbrs = atom.getNeighbors(mol);
-    if (nbrs.length !== 1) {
-      continue;
-    }
-    const parent = nbrs[0];
-    if (!parent.getChirality()) {
-      continue;
-    }
-    const others = parent.getNeighbors(mol).filter(n => n.id !== atom.id);
-    let sumX = 0,
-      sumY = 0,
-      cnt = 0;
-    for (const nb of others) {
-      if (nb.x != null) {
-        sumX += nb.x - parent.x;
-        sumY += nb.y - parent.y;
-        cnt++;
-      }
-    }
-    const angle = cnt > 0 ? Math.atan2(-sumY, -sumX) : 0;
-    atom.x = parent.x + Math.cos(angle) * 1.5 * 0.75;
-    atom.y = parent.y + Math.sin(angle) * 1.5 * 0.75;
-  }
+  projectHiddenStereoHydrogens(mol, 1.5 * 0.75);
 
   const stereoMap = pickStereoWedges(mol);
 

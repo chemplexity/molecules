@@ -1,6 +1,7 @@
 /** @module cleanup/local-rotation */
 
 import { add, angleOf, fromAngle, rotate, sub } from '../geometry/vec2.js';
+import { pointInPolygon } from '../geometry/polygon.js';
 import { computeAtomDistortionCost, computeSubtreeOverlapCost } from '../audit/invariants.js';
 
 const DISCRETE_ROTATION_ANGLES = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12);
@@ -124,6 +125,25 @@ function computeRingInteriorVector(layoutGraph, coords, anchorAtomId) {
 }
 
 /**
+ * Returns the number of incident ring polygons containing a candidate branch root.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Anchor atom id.
+ * @param {{x: number, y: number}} position - Candidate branch-root position.
+ * @returns {number} Number of incident ring faces containing the position.
+ */
+function containingIncidentRingCount(layoutGraph, coords, anchorAtomId, position) {
+  let containingRingCount = 0;
+  for (const ring of layoutGraph.atomToRings.get(anchorAtomId) ?? []) {
+    const polygon = ring.atomIds.map(ringAtomId => coords.get(ringAtomId)).filter(Boolean);
+    if (polygon.length >= 3 && pointInPolygon(position, polygon)) {
+      containingRingCount++;
+    }
+  }
+  return containingRingCount;
+}
+
+/**
  * Returns whether a cleanup candidate would flip a ring substituent from the
  * outside of the ring system toward the ring interior.
  * @param {object} layoutGraph - Layout graph shell.
@@ -135,6 +155,10 @@ function computeRingInteriorVector(layoutGraph, coords, anchorAtomId) {
  * @returns {boolean} True when the candidate flips an outward substituent inward.
  */
 function flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, currentRootPosition, candidateRootPosition, tolerance) {
+  if (containingIncidentRingCount(layoutGraph, coords, anchorAtomId, candidateRootPosition)
+    > containingIncidentRingCount(layoutGraph, coords, anchorAtomId, currentRootPosition)) {
+    return true;
+  }
   const anchorPosition = coords.get(anchorAtomId);
   const inwardVector = computeRingInteriorVector(layoutGraph, coords, anchorAtomId);
   if (!anchorPosition || !inwardVector) {

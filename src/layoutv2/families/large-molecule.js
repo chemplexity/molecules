@@ -459,7 +459,15 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
       const parentPosition = coords.get(parentAtomId);
       const placedCentroid = centroid([...coords.values()]);
       const preferredAngle = angleOf(sub(parentPosition, placedCentroid));
-      const attachmentAngle = chooseAttachmentAngle(fullAdjacency, coords, parentAtomId, participantAtomIdSet, preferredAngle, layoutGraph);
+      const attachmentAngle = chooseAttachmentAngle(
+        fullAdjacency,
+        coords,
+        parentAtomId,
+        participantAtomIdSet,
+        preferredAngle,
+        layoutGraph,
+        childAtomId
+      );
       const childParticipantAtomIds = childBlock.atomIds.filter(atomId => participantAtomIdSet.has(atomId));
       const childLayout = sliceLayouter(layoutGraph, childBlock, bondLength);
       const childCoords = childLayout.supported

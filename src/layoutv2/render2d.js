@@ -6,6 +6,8 @@ import { parseSMILES } from '../io/smiles.js';
 import { parseINCHI } from '../io/inchi.js';
 import { applyCoords } from './apply.js';
 import { generateCoords } from './api.js';
+import { getRingAtomIds } from './topology/ring-analysis.js';
+import { synthesizeHydrogenPosition } from './stereo/wedge-geometry.js';
 import {
   atomBBox,
   atomColor,
@@ -81,6 +83,28 @@ function resolveLayoutSource(molecule, layoutResult, coords, layoutOptions) {
   };
 }
 
+/**
+ * Returns the currently placed incident ring polygons for one atom.
+ * @param {object} molecule - Molecule graph.
+ * @param {string} atomId - Atom id.
+ * @returns {Array<Array<{x: number, y: number}>>} Incident ring polygons.
+ */
+function incidentRingPolygonsForAtom(molecule, atomId) {
+  return getRingAtomIds(molecule)
+    .filter(ringAtomIds => ringAtomIds.includes(atomId))
+    .map(ringAtomIds => ringAtomIds
+      .map(ringAtomId => molecule.atoms.get(ringAtomId))
+      .filter(atom => atom && atom.x != null && atom.y != null)
+      .map(atom => ({ x: atom.x, y: atom.y })))
+    .filter(polygon => polygon.length >= 3);
+}
+
+/**
+ * Projects hidden stereo hydrogens into drawable positions around their chiral parent atoms.
+ * @param {object} molecule - Molecule graph.
+ * @param {number} bondLength - Reference bond length.
+ * @returns {void}
+ */
 function projectHiddenStereoHydrogens(molecule, bondLength) {
   for (const atom of molecule.atoms.values()) {
     if (atom.name !== 'H' || atom.visible !== false) {
@@ -94,21 +118,19 @@ function projectHiddenStereoHydrogens(molecule, bondLength) {
     if (!parent.getChirality()) {
       continue;
     }
-    const others = parent.getNeighbors(molecule).filter(neighbor => neighbor.id !== atom.id);
-    let sumX = 0;
-    let sumY = 0;
-    let count = 0;
-    for (const neighbor of others) {
-      if (neighbor.x == null || neighbor.y == null || parent.x == null || parent.y == null) {
-        continue;
+    const knownPositions = parent.getNeighbors(molecule)
+      .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null)
+      .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
+    const projectedPosition = synthesizeHydrogenPosition(
+      { x: parent.x, y: parent.y },
+      knownPositions,
+      bondLength * 0.75,
+      {
+        incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id)
       }
-      sumX += neighbor.x - parent.x;
-      sumY += neighbor.y - parent.y;
-      count++;
-    }
-    const angle = count > 0 ? Math.atan2(-sumY, -sumX) : 0;
-    atom.x = parent.x + Math.cos(angle) * bondLength * 0.75;
-    atom.y = parent.y + Math.sin(angle) * bondLength * 0.75;
+    );
+    atom.x = projectedPosition.x;
+    atom.y = projectedPosition.y;
   }
 }
 

@@ -59,6 +59,54 @@ function hasFusedAdjacencyCycle(rings, ringAdj) {
 }
 
 /**
+ * Fits an ideal regular-polygon target for one placed ring.
+ * @param {object} ring - Ring descriptor.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>|null} Ideal target positions, or null when incomplete.
+ */
+function fitRegularRingTargets(ring, coords, bondLength) {
+  const positions = ring.atomIds.map(atomId => coords.get(atomId));
+  if (positions.some(position => !position)) {
+    return null;
+  }
+
+  const center = centroid(positions);
+  const step = (2 * Math.PI) / ring.atomIds.length;
+  const radius = rootRadiusForSize(ring.atomIds.length, bondLength);
+  const actualAngles = positions.map(position => angleOf(sub(position, center)));
+  let bestTargets = null;
+  let bestError = Number.POSITIVE_INFINITY;
+
+  for (const direction of [1, -1]) {
+    const offsetVector = actualAngles.reduce((sum, angle, index) => {
+      const offset = angle - (direction * index * step);
+      return {
+        x: sum.x + Math.cos(offset),
+        y: sum.y + Math.sin(offset)
+      };
+    }, { x: 0, y: 0 });
+    const baseAngle = Math.atan2(offsetVector.y, offsetVector.x);
+    const targets = new Map();
+    let error = 0;
+
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const target = add(center, fromAngle(baseAngle + (direction * index * step), radius));
+      const actual = positions[index];
+      error += ((target.x - actual.x) ** 2) + ((target.y - actual.y) ** 2);
+      targets.set(ring.atomIds[index], target);
+    }
+
+    if (error < bestError) {
+      bestError = error;
+      bestTargets = targets;
+    }
+  }
+
+  return bestTargets;
+}
+
+/**
  * Relaxes cyclic constructed fused layouts so multiply shared junction atoms
  * satisfy all of their in-system bond-length constraints simultaneously.
  * @param {object} layoutGraph - Layout graph shell.
@@ -129,6 +177,60 @@ function relaxConstructedFusedCoords(layoutGraph, ringAtomIds, inputCoords, bond
 
     for (const [atomId, position] of nextPositions) {
       coords.set(atomId, position);
+    }
+  }
+
+  return coords;
+}
+
+/**
+ * Regularizes cyclic fused systems toward ideal constituent ring polygons while
+ * preserving the overall constructed fused topology.
+ * @param {object[]} rings - Ring descriptors in the fused system.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Current coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} [options] - Regularization options.
+ * @param {number} [options.iterations] - Maximum regularization passes.
+ * @param {number} [options.damping] - Per-pass damping factor.
+ * @returns {Map<string, {x: number, y: number}>} Regularized coordinates.
+ */
+function regularizeConstructedFusedCoords(rings, inputCoords, bondLength, options = {}) {
+  const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  const iterations = options.iterations ?? 12;
+  const damping = options.damping ?? 0.35;
+
+  for (let iteration = 0; iteration < iterations; iteration++) {
+    const targetSums = new Map();
+    const targetCounts = new Map();
+
+    for (const ring of rings) {
+      const targets = fitRegularRingTargets(ring, coords, bondLength);
+      if (!targets) {
+        continue;
+      }
+      for (const [atomId, position] of targets) {
+        const sum = targetSums.get(atomId) ?? { x: 0, y: 0 };
+        sum.x += position.x;
+        sum.y += position.y;
+        targetSums.set(atomId, sum);
+        targetCounts.set(atomId, (targetCounts.get(atomId) ?? 0) + 1);
+      }
+    }
+
+    for (const [atomId, sum] of targetSums) {
+      const count = targetCounts.get(atomId) ?? 0;
+      const current = coords.get(atomId);
+      if (!current || count <= 0) {
+        continue;
+      }
+      const target = {
+        x: sum.x / count,
+        y: sum.y / count
+      };
+      coords.set(atomId, {
+        x: (current.x * (1 - damping)) + (target.x * damping),
+        y: (current.y * (1 - damping)) + (target.y * damping)
+      });
     }
   }
 
@@ -236,9 +338,10 @@ export function layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLeng
       orientedCoords,
       bondLength
     );
+    const regularizedCoords = regularizeConstructedFusedCoords(rings, relaxedCoords, bondLength);
     orientedCoords = orientCoordsHorizontally(
-      relaxedCoords,
-      computeFusedAxis(rebuildRingCenters(rings, relaxedCoords))
+      regularizedCoords,
+      computeFusedAxis(rebuildRingCenters(rings, regularizedCoords))
     );
   }
   return {

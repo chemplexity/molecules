@@ -1,6 +1,7 @@
 /** @module families/acyclic */
 
 import { add, fromAngle, rotate, sub } from '../geometry/vec2.js';
+import { actualAlkeneStereo } from '../stereo/ez.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { placeRemainingBranches } from '../placement/branch-placement.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
@@ -150,6 +151,81 @@ function collectSideAtomIds(layoutGraph, startAtomId, blockedAtomId) {
 }
 
 /**
+ * Collects explicitly configured acyclic alkene stereo bonds in the current layout graph.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @returns {object[]} Stereo-tracked acyclic double bonds.
+ */
+function acyclicStereoBonds(layoutGraph) {
+  if (!layoutGraph) {
+    return [];
+  }
+
+  const ringAtomIds = new Set();
+  for (const ring of layoutGraph.rings ?? []) {
+    for (const atomId of ring.atomIds) {
+      ringAtomIds.add(atomId);
+    }
+  }
+
+  return [...layoutGraph.bonds.values()].filter(bond =>
+    bond.kind === 'covalent' &&
+    !bond.aromatic &&
+    (bond.order ?? 1) === 2 &&
+    !ringAtomIds.has(bond.a) &&
+    !ringAtomIds.has(bond.b) &&
+    (layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null) != null
+  );
+}
+
+/**
+ * Counts how many tracked acyclic alkene stereo bonds match their target configuration.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object[]} stereoBonds - Stereo-tracked acyclic double bonds.
+ * @returns {number} Matched stereo-bond count.
+ */
+function countMatchedStereo(layoutGraph, coords, stereoBonds) {
+  if (!layoutGraph) {
+    return 0;
+  }
+
+  let matchedBondCount = 0;
+  for (const bond of stereoBonds) {
+    const targetStereo = layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null;
+    if (targetStereo && actualAlkeneStereo(layoutGraph, coords, bond) === targetStereo) {
+      matchedBondCount++;
+    }
+  }
+  return matchedBondCount;
+}
+
+/**
+ * Measures the current maximum span across the chosen backbone path.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string[]} backbone - Backbone atom IDs in placement order.
+ * @returns {number} Maximum squared backbone-atom distance.
+ */
+function measureBackboneSpan(coords, backbone) {
+  let maxDistanceSquared = 0;
+  for (let firstIndex = 0; firstIndex < backbone.length; firstIndex++) {
+    const firstPosition = coords.get(backbone[firstIndex]);
+    if (!firstPosition) {
+      continue;
+    }
+    for (let secondIndex = firstIndex + 1; secondIndex < backbone.length; secondIndex++) {
+      const secondPosition = coords.get(backbone[secondIndex]);
+      if (!secondPosition) {
+        continue;
+      }
+      const dx = secondPosition.x - firstPosition.x;
+      const dy = secondPosition.y - firstPosition.y;
+      maxDistanceSquared = Math.max(maxDistanceSquared, (dx * dx) + (dy * dy));
+    }
+  }
+  return maxDistanceSquared;
+}
+
+/**
  * Returns whether a backbone center should read as a strict trigonal turn in an
  * acyclic depiction.
  * @param {object|null} layoutGraph - Layout graph shell.
@@ -175,6 +251,16 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
     return coords;
   }
 
+  const stereoBonds = acyclicStereoBonds(layoutGraph);
+  const idealBackboneSpan = Math.max(0, (backbone.length - 1) * layoutGraph.options.bondLength);
+  if (
+    stereoBonds.length >= 3 &&
+    idealBackboneSpan > 0 &&
+    (measureBackboneSpan(coords, backbone) / (idealBackboneSpan * idealBackboneSpan)) >= 0.7
+  ) {
+    return coords;
+  }
+
   let previousTurnSign = 0;
   for (let index = 1; index < backbone.length - 1; index++) {
     const previousAtomId = backbone[index - 1];
@@ -195,22 +281,53 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
     const nextDirection = Math.atan2(nextPosition.y - centerPosition.y, nextPosition.x - centerPosition.x);
     const currentTurn = normalizeSignedAngle(nextDirection - previousDirection);
     const currentTurnSign = Math.sign(currentTurn) || previousTurnSign || (index % 2 === 1 ? -1 : 1);
-    const targetTurn = currentTurnSign * TRIGONAL_TARGET_ANGLE;
-    const rotationAngle = targetTurn - currentTurn;
-    if (Math.abs(rotationAngle) <= 1e-6) {
-      previousTurnSign = currentTurnSign;
-      continue;
+    const movedAtomIds = collectSideAtomIds(layoutGraph, nextAtomId, centerAtomId);
+    const candidateTurnSigns = stereoBonds.length > 0 ? [currentTurnSign, -currentTurnSign] : [currentTurnSign];
+    let bestCandidate = null;
+
+    for (const candidateTurnSign of candidateTurnSigns) {
+      const targetTurn = candidateTurnSign * TRIGONAL_TARGET_ANGLE;
+      const rotationAngle = targetTurn - currentTurn;
+      const candidateCoords = new Map([...coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+      if (Math.abs(rotationAngle) > 1e-6) {
+        for (const atomId of movedAtomIds) {
+          const position = candidateCoords.get(atomId);
+          if (!position) {
+            continue;
+          }
+          candidateCoords.set(atomId, add(centerPosition, rotate(sub(position, centerPosition), rotationAngle)));
+        }
+      }
+
+      const candidate = {
+        coords: candidateCoords,
+        turnSign: candidateTurnSign,
+        matchedStereoCount: countMatchedStereo(layoutGraph, candidateCoords, stereoBonds),
+        backboneSpan: measureBackboneSpan(candidateCoords, backbone),
+        rotationMagnitude: Math.abs(rotationAngle)
+      };
+
+      if (
+        !bestCandidate ||
+        candidate.matchedStereoCount > bestCandidate.matchedStereoCount ||
+        (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
+          candidate.backboneSpan > bestCandidate.backboneSpan + 1e-6) ||
+        (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
+          Math.abs(candidate.backboneSpan - bestCandidate.backboneSpan) <= 1e-6 &&
+          candidate.rotationMagnitude < bestCandidate.rotationMagnitude - 1e-6)
+      ) {
+        bestCandidate = candidate;
+      }
     }
 
-    const movedAtomIds = collectSideAtomIds(layoutGraph, nextAtomId, centerAtomId);
-    for (const atomId of movedAtomIds) {
-      const position = coords.get(atomId);
-      if (!position) {
-        continue;
-      }
-      coords.set(atomId, add(centerPosition, rotate(sub(position, centerPosition), rotationAngle)));
+    if (!bestCandidate) {
+      continue;
     }
-    previousTurnSign = currentTurnSign;
+    coords.clear();
+    for (const [atomId, position] of bestCandidate.coords) {
+      coords.set(atomId, position);
+    }
+    previousTurnSign = bestCandidate.turnSign;
   }
 
   return coords;

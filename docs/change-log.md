@@ -2,6 +2,9 @@
 
 ## 2026-04-10
 
+- Fix hypervalent sulfur 2D geometry to use a cross-like layout
+- Fix layout-v2 fused-ring substituents and hidden-H wedges going inside ring faces
+- Fix cyclic fused ring regularity in layout-v2
 - Fixes and optimizations to new 2D layout algorithm
 - Fixed issue with region of window being unable to use select tool
 - Fix how bond line drawer tool stays open

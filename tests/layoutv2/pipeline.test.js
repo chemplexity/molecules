@@ -13,6 +13,32 @@ import {
   makeUnmatchedBridgedCage
 } from './support/molecules.js';
 
+/**
+ * Returns the interior angles for an ordered ring path.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string[]} atomIds - Ordered ring atom IDs.
+ * @returns {number[]} Interior angles in degrees.
+ */
+function ringAngles(coords, atomIds) {
+  return atomIds.map((atomId, index) => {
+    const previous = coords.get(atomIds[(index - 1 + atomIds.length) % atomIds.length]);
+    const current = coords.get(atomId);
+    const next = coords.get(atomIds[(index + 1) % atomIds.length]);
+    const firstVector = {
+      x: previous.x - current.x,
+      y: previous.y - current.y
+    };
+    const secondVector = {
+      x: next.x - current.x,
+      y: next.y - current.y
+    };
+    const dot = (firstVector.x * secondVector.x) + (firstVector.y * secondVector.y);
+    const firstMagnitude = Math.hypot(firstVector.x, firstVector.y);
+    const secondMagnitude = Math.hypot(secondVector.x, secondVector.y);
+    return Math.acos(Math.max(-1, Math.min(1, dot / (firstMagnitude * secondMagnitude)))) * (180 / Math.PI);
+  });
+}
+
 describe('layoutv2/pipeline', () => {
   it('classifies primary families across the milestone-1 family boundary', () => {
     assert.deepEqual(classifyFamily({
@@ -243,11 +269,15 @@ describe('layoutv2/pipeline', () => {
     const result = runPipeline(parseSMILES('CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C'), {
       suppressH: true
     });
+    const aromaticSixRing = ['C17', 'C18', 'C19', 'C20', 'C21', 'C16'];
+    const aromaticAngles = ringAngles(result.coords, aromaticSixRing);
 
     assert.equal(result.metadata.primaryFamily, 'fused');
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.ok, true);
+    assert.ok(Math.max(...aromaticAngles) - Math.min(...aromaticAngles) < 12);
   });
+
 });

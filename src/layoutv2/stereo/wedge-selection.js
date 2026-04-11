@@ -23,6 +23,26 @@ function findComponentAtomIds(layoutGraph, atomId) {
   return layoutGraph.components.find(component => component.atomIds.includes(atomId))?.atomIds ?? [atomId];
 }
 
+/**
+ * Returns the placed incident ring polygons for a stereocenter.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerId - Stereocenter atom id.
+ * @returns {Array<Array<{x: number, y: number}>>} Incident ring polygons.
+ */
+function incidentRingPolygons(layoutGraph, coords, centerId) {
+  return (layoutGraph.atomToRings.get(centerId) ?? [])
+    .map(ring => ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
+    .filter(polygon => polygon.length >= 3);
+}
+
+/**
+ * Builds ranked stereocenter neighbor entries, synthesizing a hidden hydrogen position when needed.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerId - Stereocenter atom id.
+ * @returns {{center: object, centerPosition: {x: number, y: number}, entries: Array<object>}|null} Prepared center entries, or null when the center is unsuitable.
+ */
 function buildCenterEntries(layoutGraph, coords, centerId) {
   const molecule = layoutGraph.sourceMolecule;
   const center = molecule.atoms.get(centerId);
@@ -50,6 +70,7 @@ function buildCenterEntries(layoutGraph, coords, centerId) {
   }
 
   const knownPositions = entries.filter(entry => entry.position).map(entry => entry.position);
+  const ringPolygons = incidentRingPolygons(layoutGraph, coords, centerId);
   for (const entry of entries) {
     if (entry.position) {
       continue;
@@ -57,7 +78,9 @@ function buildCenterEntries(layoutGraph, coords, centerId) {
     if (entry.atom.name !== 'H') {
       return null;
     }
-    entry.position = synthesizeHydrogenPosition(centerPosition, knownPositions, layoutGraph.options.bondLength);
+    entry.position = synthesizeHydrogenPosition(centerPosition, knownPositions, layoutGraph.options.bondLength, {
+      incidentRingPolygons: ringPolygons
+    });
   }
 
   return { center, centerPosition, entries };

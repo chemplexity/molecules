@@ -217,4 +217,29 @@ describe('layoutv2/families/acyclic', () => {
       assert.ok(Math.abs(backboneAngle(result.coords, path[1], path[2], path[3]) - 120) < 1e-6);
     }
   });
+
+  it('keeps long explicitly stereo polyenes extended instead of curling them into a compact spiral', () => {
+    const graph = createLayoutGraph(parseSMILES('CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O'), {
+      suppressH: true
+    });
+    const atomIdsToPlace = new Set(graph.components[0].atomIds.filter(atomId => graph.atoms.get(atomId)?.element !== 'H'));
+    const coords = layoutAcyclicFamily(
+      buildAdjacency(graph, atomIdsToPlace),
+      atomIdsToPlace,
+      graph.canonicalAtomRank,
+      graph.options.bondLength,
+      { layoutGraph: graph }
+    );
+    const xValues = [...coords.values()].map(position => position.x);
+    const yValues = [...coords.values()].map(position => position.y);
+    const width = Math.max(...xValues) - Math.min(...xValues);
+    const height = Math.max(...yValues) - Math.min(...yValues);
+    const stereoChecks = [...graph.bonds.values()]
+      .filter(bond => (bond.order ?? 1) === 2 && graph.sourceMolecule.getEZStereo?.(bond.id))
+      .map(bond => actualAlkeneStereo(graph, coords, bond));
+
+    assert.ok(width > height * 6, `expected an extended polyene layout, got width ${width.toFixed(3)} and height ${height.toFixed(3)}`);
+    assert.ok(height < 4, `expected the long fatty-acid polyene to stay fairly shallow, got height ${height.toFixed(3)}`);
+    assert.ok(stereoChecks.every(stereo => stereo === 'Z'));
+  });
 });

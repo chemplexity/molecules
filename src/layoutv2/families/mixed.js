@@ -1,9 +1,10 @@
 /** @module families/mixed */
 
-import { angleOf, centroid, fromAngle, sub, add } from '../geometry/vec2.js';
+import { angleOf, centroid, fromAngle, sub, add, rotate } from '../geometry/vec2.js';
 import { transformAttachedBlock } from '../placement/linkers.js';
 import { assignBondValidationClass, resolvePlacementValidationClass } from '../placement/bond-validation.js';
 import { chooseAttachmentAngle, placeRemainingBranches } from '../placement/substituents.js';
+import { measureLayoutCost } from '../audit/invariants.js';
 import { layoutAcyclicFamily } from './acyclic.js';
 import { layoutBridgedFamily } from './bridged.js';
 import { layoutFusedFamily } from './fused.js';
@@ -129,6 +130,132 @@ function findAttachmentBond(layoutGraph, ringSystem, placedAtomIds) {
 }
 
 /**
+ * Scores an attached-block orientation by placing the block plus the remaining
+ * heavy non-ring branches into a temporary mixed-layout snapshot.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {Map<string, number>} canonicalAtomRank - Canonical atom-rank map.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Set<string>} primaryNonRingAtomIds - Heavy non-ring atom IDs.
+ * @param {Iterable<string>} placedAtomIds - Already placed atom IDs.
+ * @param {Map<string, {x: number, y: number}>} transformedCoords - Candidate attached-block coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @returns {number} Candidate layout cost.
+ */
+function scoreAttachedBlockOrientation(
+  adjacency,
+  canonicalAtomRank,
+  coords,
+  primaryNonRingAtomIds,
+  placedAtomIds,
+  transformedCoords,
+  bondLength,
+  layoutGraph
+) {
+  const candidateCoords = new Map([...coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  const candidateSeedAtomIds = new Set(placedAtomIds);
+
+  for (const [atomId, position] of transformedCoords) {
+    candidateCoords.set(atomId, { ...position });
+    candidateSeedAtomIds.add(atomId);
+  }
+
+  placeRemainingBranches(
+    adjacency,
+    canonicalAtomRank,
+    candidateCoords,
+    primaryNonRingAtomIds,
+    [...candidateSeedAtomIds],
+    bondLength,
+    layoutGraph
+  );
+  return measureLayoutCost(layoutGraph, candidateCoords, bondLength);
+}
+
+/**
+ * Splits non-ring participant atoms into heavy atoms and explicit hydrogens.
+ * Mixed layouts attach pending ring systems after the initial branch-growth
+ * pass, so explicit hydrogens should wait until those heavier attachments are
+ * resolved to avoid claiming trigonal alkene slots too early.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Iterable<string>} atomIds - Atom IDs to classify.
+ * @returns {{primaryAtomIds: Set<string>, deferredHydrogenAtomIds: Set<string>}} Classified non-ring atom IDs.
+ */
+function splitDeferredMixedHydrogens(layoutGraph, atomIds) {
+  const primaryAtomIds = new Set();
+  const deferredHydrogenAtomIds = new Set();
+
+  for (const atomId of atomIds) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (atom?.element === 'H') {
+      deferredHydrogenAtomIds.add(atomId);
+      continue;
+    }
+    primaryAtomIds.add(atomId);
+  }
+
+  return { primaryAtomIds, deferredHydrogenAtomIds };
+}
+
+/**
+ * Rotates a monosubstituted benzene root so its outgoing heavy substituent
+ * axis is horizontal before mixed branch growth begins.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} ringSystem - Root ring-system descriptor.
+ * @param {Map<string, {x: number, y: number}>} coords - Root ring coordinates.
+ * @param {Set<string>} participantAtomIds - Visible component atom IDs.
+ * @returns {Map<string, {x: number, y: number}>} Possibly rotated root coordinates.
+ */
+function orientSingleAttachmentBenzeneRoot(layoutGraph, ringSystem, coords, participantAtomIds) {
+  const rootRings = layoutGraph.rings.filter(ring => ringSystem.ringIds.includes(ring.id));
+  if (rootRings.length !== 1) {
+    return coords;
+  }
+
+  const [ring] = rootRings;
+  if (!ring.aromatic || ring.atomIds.length !== 6 || !ring.atomIds.every(atomId => layoutGraph.atoms.get(atomId)?.element === 'C')) {
+    return coords;
+  }
+
+  const ringAtomIdSet = new Set(ring.atomIds);
+  const heavyAttachmentAnchors = ring.atomIds.filter(atomId => {
+    const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
+    if (!atom) {
+      return false;
+    }
+    return atom.getNeighbors(layoutGraph.sourceMolecule).some(neighborAtom => neighborAtom
+      && neighborAtom.name !== 'H'
+      && participantAtomIds.has(neighborAtom.id)
+      && !ringAtomIdSet.has(neighborAtom.id));
+  });
+
+  if (heavyAttachmentAnchors.length !== 1) {
+    return coords;
+  }
+
+  const anchorAtomId = heavyAttachmentAnchors[0];
+  const ringCenter = centroid([...coords.values()]);
+  const anchorPosition = coords.get(anchorAtomId);
+  const anchorVector = anchorPosition ? sub(anchorPosition, ringCenter) : null;
+  if (!anchorVector || Math.hypot(anchorVector.x, anchorVector.y) <= 1e-6) {
+    return coords;
+  }
+
+  const currentAngle = angleOf(anchorVector);
+  const targetAngle = anchorVector.x >= 0 ? 0 : Math.PI;
+  const rotationAngle = targetAngle - currentAngle;
+  if (Math.abs(rotationAngle) <= 1e-6) {
+    return coords;
+  }
+
+  const rotatedCoords = new Map();
+  for (const [atomId, position] of coords) {
+    rotatedCoords.set(atomId, add(ringCenter, rotate(sub(position, ringCenter), rotationAngle)));
+  }
+  return rotatedCoords;
+}
+
+/**
  * Places a mixed component by selecting a root scaffold, growing acyclic
  * connectors from it, and attaching secondary ring systems once they become
  * reachable from the placed region.
@@ -175,7 +302,13 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
       bondValidationClasses
     };
   }
-  for (const [atomId, position] of rootLayout.coords) {
+  const rootCoords = orientSingleAttachmentBenzeneRoot(
+    layoutGraph,
+    rootRingSystem,
+    rootLayout.coords,
+    participantAtomIds
+  );
+  for (const [atomId, position] of rootCoords) {
     coords.set(atomId, position);
     placedAtomIds.add(atomId);
   }
@@ -184,6 +317,10 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
   const nonRingAtomIds = new Set(
     [...participantAtomIds].filter(atomId => !layoutGraph.ringSystems.some(ringSystem => ringSystem.atomIds.includes(atomId)))
   );
+  const {
+    primaryAtomIds: primaryNonRingAtomIds,
+    deferredHydrogenAtomIds
+  } = splitDeferredMixedHydrogens(layoutGraph, nonRingAtomIds);
   const pendingRingSystems = scaffoldPlan.placementSequence
     .filter(entry => entry.kind === 'ring-system' && entry.candidateId !== root.id)
     .map(entry => {
@@ -196,8 +333,8 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
   while (progressed) {
     progressed = false;
     const sizeBeforeBranches = coords.size;
-    placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, coords, nonRingAtomIds, [...placedAtomIds], bondLength, layoutGraph);
-    for (const atomId of nonRingAtomIds) {
+    placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, coords, primaryNonRingAtomIds, [...placedAtomIds], bondLength, layoutGraph);
+    for (const atomId of primaryNonRingAtomIds) {
       if (coords.has(atomId)) {
         placedAtomIds.add(atomId);
       }
@@ -219,9 +356,39 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
       const parentPosition = coords.get(attachment.parentAtomId);
       const placedCentroid = centroid([...placedAtomIds].map(atomId => coords.get(atomId)).filter(Boolean));
       const preferredAngle = angleOf(sub(parentPosition, placedCentroid));
-      const attachmentAngle = chooseAttachmentAngle(adjacency, coords, attachment.parentAtomId, participantAtomIds, preferredAngle, layoutGraph);
+      const attachmentAngle = chooseAttachmentAngle(
+        adjacency,
+        coords,
+        attachment.parentAtomId,
+        participantAtomIds,
+        preferredAngle,
+        layoutGraph,
+        attachment.attachmentAtomId
+      );
       const targetPosition = add(parentPosition, fromAngle(attachmentAngle, bondLength));
-      const transformedCoords = transformAttachedBlock(blockLayout.coords, attachment.attachmentAtomId, targetPosition, attachmentAngle);
+      const normalCoords = transformAttachedBlock(blockLayout.coords, attachment.attachmentAtomId, targetPosition, attachmentAngle);
+      const mirroredCoords = transformAttachedBlock(blockLayout.coords, attachment.attachmentAtomId, targetPosition, attachmentAngle, { mirror: true });
+      const normalCost = scoreAttachedBlockOrientation(
+        adjacency,
+        layoutGraph.canonicalAtomRank,
+        coords,
+        primaryNonRingAtomIds,
+        placedAtomIds,
+        normalCoords,
+        bondLength,
+        layoutGraph
+      );
+      const mirroredCost = scoreAttachedBlockOrientation(
+        adjacency,
+        layoutGraph.canonicalAtomRank,
+        coords,
+        primaryNonRingAtomIds,
+        placedAtomIds,
+        mirroredCoords,
+        bondLength,
+        layoutGraph
+      );
+      const transformedCoords = mirroredCost < normalCost ? mirroredCoords : normalCoords;
       for (const [atomId, position] of transformedCoords) {
         coords.set(atomId, position);
         placedAtomIds.add(atomId);
@@ -233,7 +400,15 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
     }
   }
 
-  placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, coords, nonRingAtomIds, [...placedAtomIds], bondLength, layoutGraph);
+  placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, coords, primaryNonRingAtomIds, [...placedAtomIds], bondLength, layoutGraph);
+  for (const atomId of primaryNonRingAtomIds) {
+    if (coords.has(atomId)) {
+      placedAtomIds.add(atomId);
+    }
+  }
+  if (deferredHydrogenAtomIds.size > 0) {
+    placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, coords, deferredHydrogenAtomIds, [...placedAtomIds], bondLength, layoutGraph);
+  }
   for (const atomId of nonRingAtomIds) {
     if (coords.has(atomId)) {
       placedAtomIds.add(atomId);

@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import {
   apothemForRegularPolygon,
   circumradiusForRegularPolygon,
-  placeRegularPolygon
+  placeRegularPolygon,
+  pointInPolygon
 } from '../../../src/layoutv2/geometry/polygon.js';
 import { distance } from '../../../src/layoutv2/geometry/vec2.js';
 
@@ -19,5 +20,17 @@ describe('layoutv2/geometry/polygon', () => {
     assert.equal(coords.size, 6);
     assert.ok(Math.abs(distance(coords.get('a0'), coords.get('a1')) - 1.5) < 1e-6);
     assert.ok(Math.abs(distance(coords.get('a2'), coords.get('a3')) - 1.5) < 1e-6);
+  });
+
+  it('detects whether a point lies inside a polygon', () => {
+    const polygon = [
+      { x: -1, y: -1 },
+      { x: 1, y: -1 },
+      { x: 1, y: 1 },
+      { x: -1, y: 1 }
+    ];
+
+    assert.equal(pointInPolygon({ x: 0, y: 0 }, polygon), true);
+    assert.equal(pointInPolygon({ x: 2, y: 0 }, polygon), false);
   });
 });
