@@ -1,5 +1,6 @@
 /** @module cleanup/symmetry-tidy */
 
+import { ANGLE_EPSILON, DISTANCE_EPSILON } from '../constants.js';
 import { computeBounds } from '../geometry/bounds.js';
 import { angleOf, angularDifference, centroid, rotate, sub } from '../geometry/vec2.js';
 
@@ -75,7 +76,7 @@ function axisDeviation(firstPosition, secondPosition) {
  * @returns {Map<string, {x: number, y: number}>} Rotated coordinate map.
  */
 function rotateComponent(coords, atomIds, rotationAngle) {
-  if (Math.abs(rotationAngle) <= 1e-12) {
+  if (Math.abs(rotationAngle) <= ANGLE_EPSILON) {
     return coords;
   }
 
@@ -170,12 +171,12 @@ function snapRingJunctions(inputCoords, layoutGraph) {
     let bestCoords = coords;
 
     for (const rotationAngle of candidateJunctionRotations(coords, target.junctionPairs)) {
-      if (Math.abs(rotationAngle) <= 1e-9) {
+      if (Math.abs(rotationAngle) <= ANGLE_EPSILON) {
         continue;
       }
       const candidateCoords = rotateComponent(coords, target.atomIds, rotationAngle);
       const candidateScore = scoreJunctionAlignment(candidateCoords, target);
-      if (candidateScore + 1e-9 < bestScore) {
+      if (candidateScore + ANGLE_EPSILON < bestScore) {
         bestScore = candidateScore;
         bestCoords = candidateCoords;
       }
@@ -202,7 +203,7 @@ function snapRingJunctions(inputCoords, layoutGraph) {
  * @returns {{coords: Map<string, {x: number, y: number}>, snappedCount: number, junctionSnapCount: number}} Tidied coordinates and snap counts.
  */
 export function tidySymmetry(inputCoords, options = {}) {
-  const epsilon = options.epsilon ?? 1e-6;
+  const epsilon = options.epsilon ?? DISTANCE_EPSILON;
   const junctionSnap = snapRingJunctions(inputCoords, options.layoutGraph);
   const coords = new Map();
   let snappedCount = 0;

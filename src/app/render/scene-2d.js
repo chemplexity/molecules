@@ -37,9 +37,10 @@ function incidentRingPolygonsForAtom(molecule, atomId) {
  * Projects hidden stereo hydrogens into drawable positions around their chiral parent atoms.
  * @param {object} molecule - Molecule graph.
  * @param {number} bondLength - Reference hidden-hydrogen bond length.
- * @returns {void}
+ * @returns {Map<string, {x: number, y: number}>} Projected hidden-hydrogen coordinates keyed by atom id.
  */
 function projectHiddenStereoHydrogens(molecule, bondLength) {
+  const projectedCoords = new Map();
   for (const [, atom] of molecule.atoms) {
     if (atom.name !== 'H' || atom.visible !== false) {
       continue;
@@ -63,9 +64,9 @@ function projectHiddenStereoHydrogens(molecule, bondLength) {
         incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id)
       }
     );
-    atom.x = projectedPosition.x;
-    atom.y = projectedPosition.y;
+    projectedCoords.set(atom.id, projectedPosition);
   }
+  return projectedCoords;
 }
 
 function _compute2dFitTransform(ctx, atoms) {
@@ -93,6 +94,7 @@ function _compute2dFitTransform(ctx, atoms) {
  */
 export function create2DSceneRenderer(ctx) {
   const DRAW_MODE_ATOM_HIT_PAD = 6;
+  let projectedHiddenStereoCoords = new Map();
 
   function draw2d() {
     const mol = ctx.state.getMol();
@@ -100,7 +102,22 @@ export function create2DSceneRenderer(ctx) {
       return;
     }
     const hCounts = ctx.state.getHCounts();
-    const toSVGPt = ctx.helpers.toSVGPt;
+    const toSVGPt = atom => {
+      const projectedPosition = projectedHiddenStereoCoords.get(atom.id);
+      if (projectedPosition) {
+        return ctx.helpers.toSVGPt(projectedPosition);
+      }
+      if (atom.x != null && atom.y != null) {
+        return ctx.helpers.toSVGPt(atom);
+      }
+      if (atom.name === 'H' && atom.visible === false) {
+        const [parent] = atom.getNeighbors(mol);
+        if (parent?.x != null && parent?.y != null) {
+          return ctx.helpers.toSVGPt(parent);
+        }
+      }
+      return ctx.helpers.toSVGPt(atom);
+    };
     const { showLonePairs } = getRenderOptions();
     const fontSize = ctx.constants.getFontSize();
     const valenceWarningMap = ctx.helpers.valenceWarningMapFor(mol);
@@ -111,7 +128,19 @@ export function create2DSceneRenderer(ctx) {
     const bondInfos = [];
     for (const bond of mol.bonds.values()) {
       const [a1, a2] = bond.getAtomObjects(mol);
-      if (!a1 || !a2 || a1.x == null || a2.x == null) {
+      const firstPosition = a1
+        ? (projectedHiddenStereoCoords.get(a1.id)
+          ?? (a1.x != null && a1.y != null
+            ? a1
+            : (a1.name === 'H' && a1.visible === false ? a1.getNeighbors(mol)[0] ?? null : null)))
+        : null;
+      const secondPosition = a2
+        ? (projectedHiddenStereoCoords.get(a2.id)
+          ?? (a2.x != null && a2.y != null
+            ? a2
+            : (a2.name === 'H' && a2.visible === false ? a2.getNeighbors(mol)[0] ?? null : null)))
+        : null;
+      if (!firstPosition || !secondPosition) {
         continue;
       }
       const isHBond = a1.visible === false || a2.visible === false;
@@ -634,8 +663,6 @@ export function create2DSceneRenderer(ctx) {
     ctx.helpers.spreadReaction2dProductComponents(mol, 1.5);
     ctx.helpers.centerReaction2dPairCoords(mol, 1.5);
 
-    projectHiddenStereoHydrogens(mol, 1.5 * 0.75);
-
     const { rotationDeg, flipH, flipV } = ctx.view.getOrientation();
     if (rotationDeg !== 0 || flipH || flipV) {
       const allAtoms = [...mol.atoms.values()].filter(a => a.x != null);
@@ -669,6 +696,8 @@ export function create2DSceneRenderer(ctx) {
         }
       }
     }
+
+    projectedHiddenStereoCoords = projectHiddenStereoHydrogens(mol, 1.5 * 0.75);
 
     const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
     if (atoms.length === 0) {

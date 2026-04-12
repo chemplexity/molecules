@@ -120,6 +120,47 @@ describe('layoutv2/cleanup/local-rotation', () => {
     assert.notDeepEqual(result.coords.get('C7'), coords.get('C7'));
   });
 
+  it('can jointly fan apart geminal neopentane methyl groups from a symmetric clump', () => {
+    const graph = createLayoutGraph(parseSMILES('CC(C)(C)C'), { suppressH: true });
+    const coords = new Map([
+      ['C2', { x: 0, y: 0 }],
+      ['C1', { x: -1.5, y: 0 }],
+      ['C3', { x: 1.2, y: 0.2 }],
+      ['C4', { x: 1.2, y: -0.2 }],
+      ['C5', { x: 1.5, y: 0 }]
+    ]);
+    const before = measureLayoutCost(graph, coords, 1.5);
+    const result = runLocalCleanup(graph, coords, { maxPasses: 8, bondLength: 1.5 });
+    const after = measureLayoutCost(graph, result.coords, 1.5);
+
+    assert.ok(after < before);
+    assert.ok(result.passes > 0);
+    assert.notDeepEqual(result.coords.get('C3'), coords.get('C3'));
+    assert.notDeepEqual(result.coords.get('C4'), coords.get('C4'));
+  });
+
+  it('can jointly rotate geminal cyclohexane methyls outward from the ring interior', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1(C)CCCCC1'), { suppressH: true });
+    const coords = new Map([
+      ['C2', { x: 0, y: 0 }],
+      ['C4', { x: 1.5, y: 0 }],
+      ['C5', { x: 2.25, y: -1.299038105676658 }],
+      ['C6', { x: 3.75, y: -1.299038105676658 }],
+      ['C7', { x: 4.5, y: 0 }],
+      ['C8', { x: 3.75, y: 1.299038105676658 }],
+      ['C1', { x: 1.3, y: 0.25 }],
+      ['C3', { x: 1.3, y: -0.25 }]
+    ]);
+    const before = measureLayoutCost(graph, coords, 1.5);
+    const result = runLocalCleanup(graph, coords, { maxPasses: 8, bondLength: 1.5 });
+    const after = measureLayoutCost(graph, result.coords, 1.5);
+
+    assert.ok(after < before);
+    assert.ok(result.passes > 0);
+    assert.ok(ringInteriorDot(graph, result.coords, 'C2', 'C1') <= 0);
+    assert.ok(ringInteriorDot(graph, result.coords, 'C2', 'C3') <= 0);
+  });
+
   it('does not flip fused-ring bridgehead substituents inward during cleanup-only refinement', () => {
     const smiles = 'CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1';
     const initial = generateCoords(parseSMILES(smiles), { suppressH: true });

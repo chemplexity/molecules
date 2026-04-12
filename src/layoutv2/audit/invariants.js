@@ -1,6 +1,8 @@
 /** @module audit/invariants */
 
+import { collectLabelBoxes, findLabelOverlaps } from '../geometry/label-box.js';
 import { computeBounds } from '../geometry/bounds.js';
+import { AtomGrid } from '../geometry/atom-grid.js';
 import { BRIDGED_VALIDATION } from '../templates/library.js';
 
 const AUDIT_PLANAR_VALIDATION = Object.freeze({
@@ -58,7 +60,39 @@ function isVisibleLayoutAtom(layoutGraph, atomId) {
   return true;
 }
 
-function collectNonbondedPairs(layoutGraph, coords, includePair) {
+function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null, queryRadius = 0) {
+  if (atomGrid) {
+    const seenPairs = new Set();
+    const pairs = [];
+
+    for (const [firstAtomId, firstPosition] of coords) {
+      if (!isVisibleLayoutAtom(layoutGraph, firstAtomId)) {
+        continue;
+      }
+      const nearbyAtomIds = atomGrid.queryRadius(firstPosition, queryRadius);
+      for (const secondAtomId of nearbyAtomIds) {
+        if (secondAtomId === firstAtomId || !isVisibleLayoutAtom(layoutGraph, secondAtomId)) {
+          continue;
+        }
+        const key = pairKey(firstAtomId, secondAtomId);
+        if (seenPairs.has(key) || layoutGraph.bondedPairSet.has(key)) {
+          continue;
+        }
+        const secondPosition = coords.get(secondAtomId);
+        if (!secondPosition) {
+          continue;
+        }
+        const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
+        if (includePair(firstAtomId, secondAtomId, distance)) {
+          pairs.push({ firstAtomId, secondAtomId, distance });
+        }
+        seenPairs.add(key);
+      }
+    }
+
+    return pairs;
+  }
+
   const atomIds = [...coords.keys()];
   const bondedPairs = layoutGraph.bondedPairSet;
   const pairs = [];
@@ -83,6 +117,24 @@ function collectNonbondedPairs(layoutGraph, coords, includePair) {
   }
 
   return pairs;
+}
+
+/**
+ * Builds a spatial atom grid from the current placed coordinates.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {AtomGrid} Spatial atom grid.
+ */
+export function buildAtomGrid(layoutGraph, coords, bondLength) {
+  const atomGrid = new AtomGrid(bondLength);
+  for (const [atomId, position] of coords) {
+    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    atomGrid.insert(atomId, position);
+  }
+  return atomGrid;
 }
 
 function visibleCovalentBonds(layoutGraph, coords, atomId) {
@@ -117,11 +169,14 @@ function sortedAngularSeparations(angles) {
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {number} bondLength - Target bond length.
+ * @param {object} [options] - Overlap-query options.
+ * @param {AtomGrid|null} [options.atomGrid] - Optional reused spatial grid.
  * @returns {Array<{firstAtomId: string, secondAtomId: string, distance: number}>} Severe overlaps.
  */
-export function findSevereOverlaps(layoutGraph, coords, bondLength) {
+export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}) {
   const threshold = bondLength * 0.55;
-  return collectNonbondedPairs(layoutGraph, coords, (_firstAtomId, _secondAtomId, distance) => distance < threshold);
+  const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength);
+  return collectNonbondedPairs(layoutGraph, coords, (_firstAtomId, _secondAtomId, distance) => distance < threshold, atomGrid, threshold);
 }
 
 /**
@@ -343,11 +398,14 @@ export function computeAtomDistortionCost(layoutGraph, coords, atomId, overrideP
  * @param {string[]} subtreeAtomIds - Atom IDs in the moving subtree.
  * @param {Map<string, {x: number, y: number}>|null} overridePositions - Override positions for the subtree atoms, or null to use coords.
  * @param {number} bondLength - Target bond length.
+ * @param {object} [options] - Cost options.
+ * @param {AtomGrid|null} [options.atomGrid] - Optional reused spatial grid built from coords.
  * @returns {number} Overlap penalty for the subtree.
  */
-export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, overridePositions, bondLength) {
+export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, overridePositions, bondLength, options = {}) {
   const subtreeSet = new Set(subtreeAtomIds);
   const threshold = bondLength * 0.55;
+  const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength);
   let cost = 0;
   for (const subtreeAtomId of subtreeAtomIds) {
     if (!isVisibleLayoutAtom(layoutGraph, subtreeAtomId)) {
@@ -357,11 +415,16 @@ export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, o
     if (!pos) {
       continue;
     }
-    for (const [atomId, otherPos] of coords) {
+    const nearbyAtomIds = atomGrid.queryRadius(pos, threshold);
+    for (const atomId of nearbyAtomIds) {
       if (subtreeSet.has(atomId) || !isVisibleLayoutAtom(layoutGraph, atomId)) {
         continue;
       }
       if (layoutGraph.bondedPairSet.has(pairKey(subtreeAtomId, atomId))) {
+        continue;
+      }
+      const otherPos = coords.get(atomId);
+      if (!otherPos) {
         continue;
       }
       const d = Math.hypot(otherPos.x - pos.x, otherPos.y - pos.y);
@@ -375,16 +438,58 @@ export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, o
 }
 
 /**
- * Computes the current cleanup/audit cost for a coordinate set.
+ * Measures overlapping atom-label boxes using the shared cleanup/render width model.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {number} bondLength - Target bond length.
- * @returns {number} Aggregate layout cost.
+ * @param {object} [options] - Label-overlap options.
+ * @param {object|null} [options.labelMetrics] - Optional renderer-supplied label metrics.
+ * @returns {{pairCount: number, totalPenalty: number, maxPenalty: number}} Label-overlap statistics.
  */
-export function measureLayoutCost(layoutGraph, coords, bondLength) {
-  const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
+export function measureLabelOverlap(layoutGraph, coords, bondLength, options = {}) {
+  const labelBoxes = collectLabelBoxes(layoutGraph, coords, bondLength, {
+    labelMetrics: options.labelMetrics
+  });
+  const overlaps = findLabelOverlaps(layoutGraph, coords, bondLength, {
+    labelMetrics: options.labelMetrics,
+    labelBoxes
+  });
+  let totalPenalty = 0;
+  let maxPenalty = 0;
+
+  for (const overlap of overlaps) {
+    const penalty = overlap.overlapX + overlap.overlapY;
+    totalPenalty += penalty;
+    maxPenalty = Math.max(maxPenalty, penalty);
+  }
+
+  return {
+    pairCount: overlaps.length,
+    totalPenalty,
+    maxPenalty
+  };
+}
+
+/**
+ * Computes the current cleanup/audit state for a coordinate set.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} [options] - State-measurement options.
+ * @param {Array<{firstAtomId: string, secondAtomId: string, distance: number}>} [options.overlaps] - Optional precomputed severe overlaps.
+ * @param {AtomGrid|null} [options.atomGrid] - Optional reused spatial grid for overlap lookup.
+ * @param {object|null} [options.labelMetrics] - Optional renderer-supplied label metrics.
+ * @returns {{overlaps: Array<{firstAtomId: string, secondAtomId: string, distance: number}>, overlapCount: number, overlapPenalty: number, bondDeviation: {sampleCount: number, maxDeviation: number, meanDeviation: number, failingBondCount: number}, collapsedMacrocycles: number[], labelOverlap: {pairCount: number, totalPenalty: number, maxPenalty: number}, trigonalDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, tetrahedralDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, cost: number}} Aggregate layout state.
+ */
+export function measureLayoutState(layoutGraph, coords, bondLength, options = {}) {
+  const overlaps = options.overlaps ?? findSevereOverlaps(layoutGraph, coords, bondLength, {
+    atomGrid: options.atomGrid
+  });
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength);
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
+  const labelOverlap = measureLabelOverlap(layoutGraph, coords, bondLength, {
+    labelMetrics: options.labelMetrics ?? layoutGraph.options.labelMetrics
+  });
   const trigonalDistortion = measureTrigonalDistortion(layoutGraph, coords);
   const tetrahedralDistortion = measureTetrahedralDistortion(layoutGraph, coords);
 
@@ -396,7 +501,29 @@ export function measureLayoutCost(layoutGraph, coords, bondLength) {
 
   const bondPenalty = bondDeviation.meanDeviation * 10 + bondDeviation.maxDeviation * 5;
   const macrocyclePenalty = collapsedMacrocycles.length * 1000;
+  const labelPenalty = labelOverlap.totalPenalty * 10;
   const trigonalPenalty = trigonalDistortion.totalDeviation * 20;
   const tetrahedralPenalty = tetrahedralDistortion.totalDeviation * 20;
-  return overlapPenalty + bondPenalty + macrocyclePenalty + trigonalPenalty + tetrahedralPenalty;
+  return {
+    overlaps,
+    overlapCount: overlaps.length,
+    overlapPenalty,
+    bondDeviation,
+    collapsedMacrocycles,
+    labelOverlap,
+    trigonalDistortion,
+    tetrahedralDistortion,
+    cost: overlapPenalty + bondPenalty + macrocyclePenalty + labelPenalty + trigonalPenalty + tetrahedralPenalty
+  };
+}
+
+/**
+ * Computes the current cleanup/audit cost for a coordinate set.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {number} Aggregate layout cost.
+ */
+export function measureLayoutCost(layoutGraph, coords, bondLength) {
+  return measureLayoutState(layoutGraph, coords, bondLength).cost;
 }

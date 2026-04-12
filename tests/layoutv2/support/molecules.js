@@ -87,6 +87,22 @@ export function makeMacrocycleWithSubstituent(size = 12) {
 }
 
 /**
+ * Creates a macrocycle with alternating methyl substituents.
+ * @param {number} [size] - Ring size.
+ * @returns {Molecule} Macrocycle with alternating exocyclic carbons.
+ */
+export function makeAlternatingMethylMacrocycle(size = 12) {
+  const molecule = makeMacrocycle(size);
+  let substituentIndex = 0;
+  for (let ringIndex = 0; ringIndex < size; ringIndex += 2) {
+    const atomId = `m${substituentIndex++}`;
+    molecule.addAtom(atomId, 'C');
+    molecule.addBond(`mb${ringIndex}`, `a${ringIndex}`, atomId, {}, false);
+  }
+  return molecule;
+}
+
+/**
  * Creates a benzene fixture.
  * @returns {Molecule} Aromatic six-membered ring.
  */

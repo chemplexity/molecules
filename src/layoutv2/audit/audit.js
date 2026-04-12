@@ -1,7 +1,7 @@
 /** @module audit/audit */
 
 import { recommendFallback } from './fallback.js';
-import { detectCollapsedMacrocycles, findSevereOverlaps, measureBondLengthDeviation } from './invariants.js';
+import { detectCollapsedMacrocycles, findSevereOverlaps, measureBondLengthDeviation, measureLabelOverlap } from './invariants.js';
 
 /**
  * Audits a laid-out coordinate set against the current layout safety checks.
@@ -11,11 +11,14 @@ import { detectCollapsedMacrocycles, findSevereOverlaps, measureBondLengthDeviat
  * @param {number} [options.bondLength] - Target bond length.
  * @param {Map<string, 'planar'|'bridged'>} [options.bondValidationClasses] - Per-bond validation classes.
  * @param {object} [options.stereo] - Stereo summary produced by the stereo phase.
- * @returns {{ok: boolean, severeOverlapCount: number, maxBondLengthDeviation: number, meanBondLengthDeviation: number, bondLengthFailureCount: number, collapsedMacrocycleCount: number, stereoContradiction: boolean, bridgedReadabilityFailure: boolean}} Audit summary.
+ * @returns {{ok: boolean, severeOverlapCount: number, labelOverlapCount: number, maxBondLengthDeviation: number, meanBondLengthDeviation: number, bondLengthFailureCount: number, collapsedMacrocycleCount: number, stereoContradiction: boolean, bridgedReadabilityFailure: boolean}} Audit summary.
  */
 export function auditLayout(layoutGraph, coords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
+  const labelOverlap = measureLabelOverlap(layoutGraph, coords, bondLength, {
+    labelMetrics: layoutGraph.options.labelMetrics
+  });
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength, {
     bondValidationClasses: options.bondValidationClasses
   });
@@ -40,6 +43,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
   return {
     ok,
     severeOverlapCount: overlaps.length,
+    labelOverlapCount: labelOverlap.pairCount,
     maxBondLengthDeviation: bondDeviation.maxDeviation,
     meanBondLengthDeviation: bondDeviation.meanDeviation,
     bondLengthFailureCount: bondDeviation.failingBondCount,

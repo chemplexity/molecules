@@ -16,6 +16,28 @@ export const DEFAULT_LARGE_MOLECULE_THRESHOLD = Object.freeze({
   blockCount: 16
 });
 
+/** Epsilon for distance comparisons at layout scale. */
+export const DISTANCE_EPSILON = 1e-6;
+
+/** Epsilon for angle comparisons in radians. */
+export const ANGLE_EPSILON = 1e-9;
+
+/** Epsilon for general cleanup-improvement comparisons. */
+export const IMPROVEMENT_EPSILON = 1e-6;
+
+/** Epsilon for numerical-stability guards such as determinants and zero-length vectors. */
+export const NUMERIC_EPSILON = 1e-12;
+
+/** Default cleanup-improvement threshold. */
+export const CLEANUP_EPSILON = 1e-3;
+
+/** Character-count width multipliers for multi-character atom labels. */
+export const LABEL_WIDTH_FACTORS = new Map([
+  [1, 1.0],
+  [2, 1.6],
+  [3, 2.1]
+]);
+
 /** Supported depiction profiles. */
 export const LAYOUT_PROFILES = Object.freeze([
   'organic-publication',

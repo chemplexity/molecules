@@ -2,8 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../src/io/smiles.js';
+import { applyCoords } from '../../src/layoutv2/apply.js';
 import { generateCoords } from '../../src/layoutv2/api.js';
-import { pointInPolygon } from '../../src/layoutv2/geometry/polygon.js';
 import { renderMolSVG, renderMolSVGFromSMILES } from '../../src/layoutv2/render2d.js';
 
 describe('layoutv2/render2d', () => {
@@ -57,31 +57,31 @@ describe('layoutv2/render2d', () => {
     assert.match(rendered.svgContent, /<rect /);
   });
 
-  it('projects hidden-hydrogen stereo bonds outside incident fused-ring faces', () => {
+  it('does not mutate hidden stereo hydrogen coordinates while rendering', () => {
     const molecule = parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O');
-    const rendered = renderMolSVG(molecule);
+    const layoutResult = generateCoords(molecule);
+    applyCoords(molecule, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+    molecule.hideHydrogens();
+    const before = [...molecule.atoms.values()]
+      .filter(atom => atom.name === 'H')
+      .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
+    const firstRender = renderMolSVG(molecule, { layoutResult });
+    const afterFirstRender = [...molecule.atoms.values()]
+      .filter(atom => atom.name === 'H')
+      .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
+    const secondRender = renderMolSVG(molecule, { layoutResult });
+    const afterSecondRender = [...molecule.atoms.values()]
+      .filter(atom => atom.name === 'H')
+      .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
 
-    assert.ok(rendered, 'expected SVG render output');
-
-    for (const atom of molecule.atoms.values()) {
-      if (atom.name !== 'H' || atom.visible !== false || atom.x == null || atom.y == null) {
-        continue;
-      }
-      const parent = atom.getNeighbors(molecule).find(neighbor => neighbor && neighbor.x != null && neighbor.y != null);
-      if (!parent?.getChirality?.()) {
-        continue;
-      }
-      const incidentRingPolygons = molecule.getRings()
-        .filter(ringAtomIds => ringAtomIds.includes(parent.id))
-        .map(ringAtomIds => ringAtomIds.map(atomId => molecule.atoms.get(atomId)).map(ringAtom => ({
-          x: ringAtom.x,
-          y: ringAtom.y
-        })));
-      assert.equal(
-        incidentRingPolygons.some(polygon => pointInPolygon({ x: atom.x, y: atom.y }, polygon)),
-        false,
-        `expected hidden hydrogen on ${parent.id} to project outside incident ring faces`
-      );
-    }
+    assert.ok(firstRender, 'expected first SVG render output');
+    assert.ok(secondRender, 'expected second SVG render output');
+    assert.deepEqual(afterFirstRender, before);
+    assert.deepEqual(afterSecondRender, before);
+    assert.equal(secondRender.svgContent, firstRender.svgContent);
   });
 });

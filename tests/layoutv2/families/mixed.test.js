@@ -89,6 +89,21 @@ function sortedNeighborSeparations(adjacency, coords, atomId) {
   return separations.sort((firstSeparation, secondSeparation) => firstSeparation - secondSeparation);
 }
 
+/**
+ * Returns the smaller bond angle at a center atom between two neighbors.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Center atom ID.
+ * @param {string} firstNeighborAtomId - First neighbor atom ID.
+ * @param {string} secondNeighborAtomId - Second neighbor atom ID.
+ * @returns {number} Smaller bond angle in radians.
+ */
+function bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighborAtomId) {
+  const centerPosition = coords.get(centerAtomId);
+  const firstAngle = angleOf(sub(coords.get(firstNeighborAtomId), centerPosition));
+  const secondAngle = angleOf(sub(coords.get(secondNeighborAtomId), centerPosition));
+  return angularDifference(firstAngle, secondAngle);
+}
+
 describe('layoutv2/families/mixed', () => {
   it('lays out a ring scaffold plus acyclic substituent through the mixed orchestrator', () => {
     const graph = createLayoutGraph(makeMethylbenzene());
@@ -396,10 +411,15 @@ describe('layoutv2/families/mixed', () => {
     const component = graph.components[0];
     const plan = buildScaffoldPlan(graph, component);
     const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const firstRingCenter = centroid(['a0', 'a1', 'a2', 'a3', 'a4', 'a5'].map(atomId => result.coords.get(atomId)));
+    const secondRingCenter = centroid(['b0', 'b1', 'b2', 'b3', 'b4', 'b5'].map(atomId => result.coords.get(atomId)));
+    const linkerAxis = angleOf(sub(result.coords.get('b0'), result.coords.get('a0')));
+    const centerAxis = angleOf(sub(secondRingCenter, firstRingCenter));
     assert.equal(result.supported, true);
     assert.equal(result.coords.size, 12);
     assert.ok(result.coords.has('a0'));
     assert.ok(result.coords.has('b0'));
+    assert.ok(angularDifference(linkerAxis, centerAxis) < 0.15, 'expected directly linked phenyl rings to share a straight centroid axis');
   });
 
   it('lays out a chain-linked second ring system after the connector becomes reachable', () => {
@@ -407,11 +427,29 @@ describe('layoutv2/families/mixed', () => {
     const component = graph.components[0];
     const plan = buildScaffoldPlan(graph, component);
     const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const firstAngle = bondAngleAtAtom(result.coords, 'c0', 'a0', 'c1');
+    const secondAngle = bondAngleAtAtom(result.coords, 'c1', 'c0', 'b0');
     assert.equal(result.supported, true);
     assert.equal(result.coords.size, 14);
     assert.ok(result.coords.has('c0'));
     assert.ok(result.coords.has('c1'));
     assert.ok(result.coords.has('b0'));
+    assert.ok(Math.abs(firstAngle - ((2 * Math.PI) / 3)) < 0.2, `expected first bibenzyl linker angle near 120 degrees, got ${(firstAngle * 180 / Math.PI).toFixed(2)}`);
+    assert.ok(Math.abs(secondAngle - ((2 * Math.PI) / 3)) < 0.2, `expected second bibenzyl linker angle near 120 degrees, got ${(secondAngle * 180 / Math.PI).toFixed(2)}`);
+  });
+
+  it('lays out a methylene-linked second ring with a standard 120-degree linker angle', () => {
+    const graph = createLayoutGraph(parseSMILES('c1ccccc1Cc1ccccc1'), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const linkerAtomId = 'C7';
+    const firstRingAttachmentAtomId = 'C6';
+    const secondRingAttachmentAtomId = 'C8';
+    const linkerAngle = bondAngleAtAtom(result.coords, linkerAtomId, firstRingAttachmentAtomId, secondRingAttachmentAtomId);
+
+    assert.equal(result.supported, true);
+    assert.ok(Math.abs(linkerAngle - ((2 * Math.PI) / 3)) < 0.2, `expected diphenylmethane linker angle near 120 degrees, got ${(linkerAngle * 180 / Math.PI).toFixed(2)}`);
   });
 
   it('lays out a macrocycle root scaffold plus substituent through the mixed orchestrator', () => {

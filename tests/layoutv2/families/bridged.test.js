@@ -23,6 +23,27 @@ describe('layoutv2/families/bridged', () => {
     assert.ok(Math.abs(result.coords.get('a1').y) < 1e-6);
   });
 
+  it('uses mirrored existing coordinates to preserve the projected fallback orientation', () => {
+    const baseGraph = createLayoutGraph(makeUnmatchedBridgedCage());
+    const baseResult = layoutBridgedFamily(baseGraph.rings, baseGraph.options.bondLength, {
+      layoutGraph: baseGraph,
+      templateId: null
+    });
+    const mirroredExistingCoords = new Map(
+      [...baseResult.coords.entries()].map(([atomId, position]) => [atomId, { x: position.x, y: -position.y }])
+    );
+    const seededGraph = createLayoutGraph(makeUnmatchedBridgedCage(), {
+      existingCoords: mirroredExistingCoords
+    });
+    const seededResult = layoutBridgedFamily(seededGraph.rings, seededGraph.options.bondLength, {
+      layoutGraph: seededGraph,
+      templateId: null
+    });
+
+    assert.equal(Math.sign(seededResult.coords.get('a4').y), Math.sign(mirroredExistingCoords.get('a4').y));
+    assert.equal(Math.sign(seededResult.coords.get('a5').y), Math.sign(mirroredExistingCoords.get('a5').y));
+  });
+
   it('places larger bridged cages from their templates too', () => {
     const bicycloGraph = createLayoutGraph(makeBicyclo222());
     const bicycloResult = layoutBridgedFamily(bicycloGraph.rings, bicycloGraph.options.bondLength, { layoutGraph: bicycloGraph, templateId: 'bicyclo-2-2-2' });

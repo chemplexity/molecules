@@ -5,16 +5,20 @@ import { resolvePolicy } from '../../../src/layoutv2/standards/profile-policy.js
 describe('layoutv2/standards/profile-policy', () => {
   it('returns profile-specific policy adjustments', () => {
     assert.equal(resolvePolicy('macrocycle').macrocycleMode, 'ellipse');
+    assert.deepEqual(resolvePolicy('macrocycle').postCleanupHooks, ['ring-perimeter-correction']);
+    assert.deepEqual(resolvePolicy('organometallic').postCleanupHooks, ['ligand-angle-tidy']);
     assert.equal(resolvePolicy('reaction-fragment').orientationBias, 'reaction-flow');
     assert.equal(resolvePolicy('large-molecule').fragmentPackingMode, 'principal-auto');
   });
 
   it('applies trait-driven fragment and organometallic overrides', () => {
     const policy = resolvePolicy('organic-publication', {
+      primaryFamily: 'macrocycle',
       containsMetal: true,
       hasDisconnectedComponents: true,
       principalIsTall: true
     });
+    assert.deepEqual(policy.postCleanupHooks.sort(), ['ligand-angle-tidy', 'ring-perimeter-correction']);
     assert.equal(policy.organometallicMode, 'ligand-first');
     assert.equal(policy.fragmentPackingMode, 'principal-below');
   });

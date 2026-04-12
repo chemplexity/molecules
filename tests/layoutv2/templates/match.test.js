@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
+import { getTemplateById } from '../../../src/layoutv2/templates/library.js';
 import { findTemplateMatch, findTemplateMatchIgnoringFamily } from '../../../src/layoutv2/templates/match.js';
 import { makeAdamantane, makeBicyclo222, makeCyclohexane, makeMethylbenzene, makeNaphthylbenzene, makeNorbornane, makeSpiro } from '../support/molecules.js';
 
@@ -97,6 +98,13 @@ describe('layoutv2/templates/match', () => {
     const benzimidazoleMatch = findTemplateMatch(benzimidazoleGraph, buildRingCandidate(benzimidazoleGraph, benzimidazoleGraph.ringSystems[0], 'fused'));
     assert.equal(benzimidazoleMatch.id, 'benzimidazole');
 
+    const benzimidazoliumGraph = createLayoutGraph(parseSMILES('c1ccc2[nH+]cnc2c1'));
+    const benzimidazoliumMatch = findTemplateMatch(
+      benzimidazoliumGraph,
+      buildRingCandidate(benzimidazoliumGraph, benzimidazoliumGraph.ringSystems[0], 'fused')
+    );
+    assert.equal(benzimidazoliumMatch.id, 'benzimidazolium');
+
     const indazoleGraph = createLayoutGraph(parseSMILES('c1ccc2[nH]ncc2c1'));
     const indazoleMatch = findTemplateMatch(indazoleGraph, buildRingCandidate(indazoleGraph, indazoleGraph.ringSystems[0], 'fused'));
     assert.equal(indazoleMatch.id, 'indazole');
@@ -157,6 +165,45 @@ describe('layoutv2/templates/match', () => {
     const cinnolineGraph = createLayoutGraph(parseSMILES('c1ccc2cnncc2c1'));
     const cinnolineMatch = findTemplateMatch(cinnolineGraph, buildRingCandidate(cinnolineGraph, cinnolineGraph.ringSystems[0], 'fused'));
     assert.equal(cinnolineMatch.id, 'cinnoline');
+  });
+
+  it('uses mapped-atom context to choose between otherwise identical template graphs', () => {
+    const graph = createLayoutGraph(parseSMILES('c1ccc2[nH+]cnc2c1'));
+    const candidate = buildRingCandidate(graph, graph.ringSystems[0], 'fused');
+    const baseTemplate = getTemplateById('benzimidazolium');
+    const templates = [
+      Object.freeze({
+        ...baseTemplate,
+        id: 'benzimidazolium-wrong-context',
+        matchContext: Object.freeze({
+          exocyclicNeighbors: Object.freeze([]),
+          mappedAtoms: Object.freeze([
+            Object.freeze({
+              templateAtomId: 'a7',
+              charge: 0,
+              aromatic: true
+            })
+          ])
+        })
+      }),
+      Object.freeze({
+        ...baseTemplate,
+        id: 'benzimidazolium-right-context',
+        matchContext: Object.freeze({
+          exocyclicNeighbors: Object.freeze([]),
+          mappedAtoms: Object.freeze([
+            Object.freeze({
+              templateAtomId: 'a7',
+              charge: 1,
+              aromatic: false
+            })
+          ])
+        })
+      })
+    ];
+
+    const match = findTemplateMatch(graph, candidate, templates);
+    assert.equal(match.id, 'benzimidazolium-right-context');
   });
 
   it('matches common partially saturated fused scaffolds too', () => {

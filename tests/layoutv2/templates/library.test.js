@@ -14,6 +14,7 @@ describe('layoutv2/templates/library', () => {
       'isoquinoline',
       'indole',
       'benzimidazole',
+      'benzimidazolium',
       'benzoxazole',
       'benzothiazole',
       'indazole',
@@ -133,6 +134,14 @@ describe('layoutv2/templates/library', () => {
     assert.equal(indole.atomCount, 9);
     assert.equal(indole.bondCount, 10);
     assert.equal(indole.ringCount, 2);
+
+    const benzimidazolium = getTemplateById('benzimidazolium');
+    assert.equal(benzimidazolium.family, 'fused');
+    assert.equal(benzimidazolium.atomCount, 9);
+    assert.equal(benzimidazolium.bondCount, 10);
+    assert.equal(benzimidazolium.ringCount, 2);
+    assert.equal(benzimidazolium.matchContext?.mappedAtoms?.[0]?.templateAtomId, 'a7');
+    assert.equal(benzimidazolium.matchContext?.mappedAtoms?.[0]?.charge, 1);
 
     const quinazoline = getTemplateById('quinazoline');
     assert.equal(quinazoline.family, 'fused');

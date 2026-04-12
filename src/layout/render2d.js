@@ -69,9 +69,10 @@ function incidentRingPolygonsForAtom(mol, atomId) {
  * Projects hidden stereo hydrogens into drawable positions around their chiral parent atoms.
  * @param {import('../core/Molecule.js').Molecule} mol - Molecule graph.
  * @param {number} bondLength - Reference hidden-hydrogen bond length.
- * @returns {void}
+ * @returns {Map<string, {x: number, y: number}>} Projected hidden-hydrogen coordinates keyed by atom id.
  */
 function projectHiddenStereoHydrogens(mol, bondLength) {
+  const projectedCoords = new Map();
   for (const [, atom] of mol.atoms) {
     if (atom.name !== 'H' || atom.visible !== false) {
       continue;
@@ -95,9 +96,36 @@ function projectHiddenStereoHydrogens(mol, bondLength) {
         incidentRingPolygons: incidentRingPolygonsForAtom(mol, parent.id)
       }
     );
-    atom.x = projectedPosition.x;
-    atom.y = projectedPosition.y;
+    projectedCoords.set(atom.id, projectedPosition);
   }
+  return projectedCoords;
+}
+
+/**
+ * Returns the coordinate that should be rendered for the atom.
+ * @param {object} atom - Atom descriptor.
+ * @param {Map<string, {x: number, y: number}>} projectedCoords - Projected hidden-hydrogen coordinate overrides.
+ * @param {import('../core/Molecule.js').Molecule} mol - Molecule graph.
+ * @returns {{x: number, y: number}|null} Render position, or null when unavailable.
+ */
+function renderPosition(atom, projectedCoords, mol) {
+  if (!atom) {
+    return null;
+  }
+  const projectedPosition = projectedCoords.get(atom.id);
+  if (projectedPosition) {
+    return projectedPosition;
+  }
+  if (atom.x == null || atom.y == null) {
+    if (atom.name === 'H' && atom.visible === false) {
+      const [parent] = atom.getNeighbors(mol);
+      if (parent?.x != null && parent?.y != null) {
+        return { x: parent.x, y: parent.y };
+      }
+    }
+    return null;
+  }
+  return { x: atom.x, y: atom.y };
 }
 
 function renderBondOrder(bond, mode = AROMATIC_RENDER_MODE) {
@@ -237,7 +265,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
     return null;
   }
 
-  projectHiddenStereoHydrogens(mol, 1.5 * 0.75);
+  const projectedCoords = projectHiddenStereoHydrogens(mol, 1.5 * 0.75);
 
   const stereoMap = pickStereoWedges(mol);
 
@@ -254,17 +282,20 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
   const cellW = Math.max(molW + CELL_PAD * 2, 90);
   const cellH = Math.max(molH + CELL_PAD * 2, 80);
 
-  const toSVG = a => ({
-    x: cellW / 2 + (a.x - cx) * SCALE,
-    y: cellH / 2 - (a.y - cy) * SCALE // negate y: mol coords are y-up, SVG is y-down
-  });
+  const toSVG = atom => {
+    const position = renderPosition(atom, projectedCoords, mol);
+    return {
+      x: cellW / 2 + (position.x - cx) * SCALE,
+      y: cellH / 2 - (position.y - cy) * SCALE // negate y: mol coords are y-up, SVG is y-down
+    };
+  };
 
   const lines = [];
 
   // Bonds — skip hidden-H bonds unless they carry a stereo bond.
   for (const bond of mol.bonds.values()) {
     const [a1, a2] = bond.getAtomObjects(mol);
-    if (!a1 || !a2 || a1.x == null || a2.x == null) {
+    if (!renderPosition(a1, projectedCoords, mol) || !renderPosition(a2, projectedCoords, mol)) {
       continue;
     }
     const isHBond = a1.visible === false || a2.visible === false;

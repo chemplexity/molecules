@@ -6,9 +6,10 @@ import { createLayoutGraph } from './model/layout-graph.js';
 import { resolvePolicy } from './standards/profile-policy.js';
 import { layoutSupportedComponents } from './placement/component-layout.js';
 import { applyLabelClearance } from './cleanup/label-clearance.js';
-import { runLocalCleanup } from './cleanup/local-rotation.js';
-import { resolveOverlaps } from './cleanup/overlap-resolution.js';
+import { runLigandAngleTidy } from './cleanup/ligand-angle-tidy.js';
+import { runRingPerimeterCorrection } from './cleanup/ring-perimeter-correction.js';
 import { tidySymmetry } from './cleanup/symmetry-tidy.js';
+import { runUnifiedCleanup } from './cleanup/unified-cleanup.js';
 import { auditLayout } from './audit/audit.js';
 import { createQualityReport } from './model/quality-report.js';
 import { inspectEZStereo } from './stereo/ez.js';
@@ -19,6 +20,135 @@ import { exceedsLargeMoleculeThreshold } from './topology/large-blocks.js';
 import { findMacrocycleRings } from './topology/macrocycles.js';
 import { buildScaffoldPlan } from './model/scaffold-plan.js';
 
+/**
+ * Returns the atom count for a molecule-like input when it can be determined.
+ * @param {object|null|undefined} molecule - Molecule-like value.
+ * @returns {number|null} Atom count, or null when the value is not molecule-like.
+ */
+function moleculeAtomCount(molecule) {
+  if (!molecule || typeof molecule !== 'object') {
+    return null;
+  }
+  if (Number.isInteger(molecule.atomCount)) {
+    return molecule.atomCount;
+  }
+  if (molecule.atoms instanceof Map) {
+    return molecule.atoms.size;
+  }
+  return null;
+}
+
+/**
+ * Returns whether the input is missing or has no atoms to lay out.
+ * @param {object|null|undefined} molecule - Molecule-like value.
+ * @returns {boolean} True when the pipeline should short-circuit.
+ */
+function isEmptyLayoutInput(molecule) {
+  const atomCount = moleculeAtomCount(molecule);
+  return atomCount == null || atomCount === 0;
+}
+
+/**
+ * Builds the stable empty/invalid pipeline result used for guarded API entry.
+ * @param {object|null|undefined} molecule - Original molecule input.
+ * @param {object} normalizedOptions - Normalized layout options.
+ * @param {string} profile - Resolved profile name.
+ * @param {'empty-molecule'|'invalid-molecule'} reason - Guard reason.
+ * @returns {object} Empty pipeline result.
+ */
+function createEmptyPipelineResult(molecule, normalizedOptions, profile, reason) {
+  const policy = resolvePolicy(profile, {});
+  const ringDependency = {
+    ok: true,
+    requiresDedicatedRingEngine: false,
+    suspiciousSystemCount: 0,
+    systems: [],
+    rings: [],
+    connections: []
+  };
+  const stereo = {
+    ezCheckedBondCount: 0,
+    ezResolvedBondCount: 0,
+    ezViolationCount: 0,
+    ezChecks: [],
+    chiralCenterCount: 0,
+    assignedCenterCount: 0,
+    unassignedCenterCount: 0,
+    assignments: [],
+    missingCenterIds: []
+  };
+  const cleanup = {
+    passes: 0,
+    improvement: 0,
+    overlapMoves: 0,
+    labelNudges: 0,
+    symmetrySnaps: 0,
+    junctionSnaps: 0,
+    stereoReflections: 0,
+    postHookNudges: 0
+  };
+  const audit = {
+    ok: false,
+    severeOverlapCount: 0,
+    labelOverlapCount: 0,
+    maxBondLengthDeviation: 0,
+    meanBondLengthDeviation: 0,
+    bondLengthFailureCount: 0,
+    collapsedMacrocycleCount: 0,
+    stereoContradiction: false,
+    bridgedReadabilityFailure: false,
+    fallback: {
+      recommended: false,
+      mode: null,
+      reasons: []
+    },
+    reason
+  };
+
+  return {
+    molecule: molecule ?? null,
+    coords: new Map(),
+    layoutGraph: null,
+    metadata: {
+      stage: 'unsupported',
+      profile,
+      primaryFamily: 'empty',
+      mixedMode: false,
+      componentCount: 0,
+      ringCount: 0,
+      ringSystemCount: 0,
+      fixedAtomCount: normalizedOptions.fixedCoords.size,
+      existingCoordCount: normalizedOptions.existingCoords.size,
+      placedComponentCount: 0,
+      unplacedComponentCount: 0,
+      preservedComponentCount: 0,
+      placedFamilies: [],
+      bondValidationClassCount: 0,
+      displayAssignmentCount: 0,
+      displayAssignments: [],
+      policy,
+      ringDependency,
+      stereo,
+      cleanupPasses: cleanup.passes,
+      cleanupImprovement: cleanup.improvement,
+      cleanupOverlapMoves: cleanup.overlapMoves,
+      cleanupLabelNudges: cleanup.labelNudges,
+      cleanupSymmetrySnaps: cleanup.symmetrySnaps,
+      cleanupJunctionSnaps: cleanup.junctionSnaps,
+      cleanupStereoReflections: cleanup.stereoReflections,
+      cleanupPostHookNudges: cleanup.postHookNudges,
+      audit,
+      qualityReport: createQualityReport({
+        audit,
+        cleanup,
+        stereo,
+        ringDependency,
+        policy
+      })
+    }
+  };
+}
+
 function buildInitialCoordsMap(options) {
   const coords = new Map();
   for (const [atomId, position] of options.existingCoords) {
@@ -28,6 +158,40 @@ function buildInitialCoordsMap(options) {
     coords.set(atomId, { ...position });
   }
   return coords;
+}
+
+/**
+ * Applies the configured post-cleanup hook list to the current coordinates.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
+ * @param {object} policy - Resolved policy bundle.
+ * @param {object} options - Hook options.
+ * @param {number} options.bondLength - Target bond length.
+ * @returns {{coords: Map<string, {x: number, y: number}>, hookNudges: number}} Hook-adjusted coordinates and total hook nudges.
+ */
+function runPostCleanupHooks(layoutGraph, inputCoords, policy, options) {
+  const hookRunners = new Map([
+    ['ring-perimeter-correction', coords => runRingPerimeterCorrection(layoutGraph, coords, {
+      bondLength: options.bondLength
+    })],
+    ['ligand-angle-tidy', coords => runLigandAngleTidy(layoutGraph, coords, {
+      bondLength: options.bondLength
+    })]
+  ]);
+  let coords = inputCoords;
+  let hookNudges = 0;
+
+  for (const hookName of policy.postCleanupHooks ?? []) {
+    const runHook = hookRunners.get(hookName);
+    if (!runHook) {
+      continue;
+    }
+    const result = runHook(coords);
+    coords = result.coords;
+    hookNudges += result.nudges ?? 0;
+  }
+
+  return { coords, hookNudges };
 }
 
 /**
@@ -85,8 +249,17 @@ export function classifyFamily(layoutGraph) {
  */
 export function runPipeline(molecule, options = {}) {
   const normalizedOptions = normalizeOptions(options);
-  const layoutGraph = createLayoutGraph(molecule, normalizedOptions);
   const profile = resolveProfile(normalizedOptions.profile);
+  if (isEmptyLayoutInput(molecule)) {
+    const atomCount = moleculeAtomCount(molecule);
+    return createEmptyPipelineResult(
+      molecule,
+      normalizedOptions,
+      profile,
+      atomCount === 0 ? 'empty-molecule' : 'invalid-molecule'
+    );
+  }
+  const layoutGraph = createLayoutGraph(molecule, normalizedOptions);
   const familySummary = classifyFamily(layoutGraph);
   const policy = resolvePolicy(profile, {
     ...layoutGraph.traits,
@@ -94,17 +267,13 @@ export function runPipeline(molecule, options = {}) {
   });
   const coords = buildInitialCoordsMap(normalizedOptions);
   const placement = layoutSupportedComponents(layoutGraph, policy);
-  const overlapResolution = placement.placedComponentCount > 0
-    ? resolveOverlaps(layoutGraph, placement.coords, {
-      bondLength: normalizedOptions.bondLength
-    })
-    : { coords: placement.coords, moves: 0 };
   const cleanupPass = placement.placedComponentCount > 0
-    ? runLocalCleanup(layoutGraph, overlapResolution.coords, {
+    ? runUnifiedCleanup(layoutGraph, placement.coords, {
       maxPasses: normalizedOptions.maxCleanupPasses,
+      epsilon: normalizedOptions.bondLength * 0.001,
       bondLength: normalizedOptions.bondLength
     })
-    : { coords: overlapResolution.coords, passes: 0, improvement: 0 };
+    : { coords: placement.coords, passes: 0, improvement: 0, overlapMoves: 0 };
   const labelClearance = placement.placedComponentCount > 0
     ? applyLabelClearance(layoutGraph, cleanupPass.coords, {
       bondLength: normalizedOptions.bondLength,
@@ -122,15 +291,21 @@ export function runPipeline(molecule, options = {}) {
       bondLength: normalizedOptions.bondLength
     })
     : { coords: symmetryTidy.coords, reflections: 0 };
+  const postCleanup = placement.placedComponentCount > 0
+    ? runPostCleanupHooks(layoutGraph, stereoCleanup.coords, policy, {
+      bondLength: normalizedOptions.bondLength
+    })
+    : { coords: stereoCleanup.coords, hookNudges: 0 };
   const cleanup = {
-    coords: stereoCleanup.coords,
+    coords: postCleanup.coords,
     passes: cleanupPass.passes,
     improvement: cleanupPass.improvement,
-    overlapMoves: overlapResolution.moves,
+    overlapMoves: cleanupPass.overlapMoves,
     labelNudges: labelClearance.nudges,
     symmetrySnaps: symmetryTidy.snappedCount,
     junctionSnaps: symmetryTidy.junctionSnapCount,
-    stereoReflections: stereoCleanup.reflections
+    stereoReflections: stereoCleanup.reflections,
+    postHookNudges: postCleanup.hookNudges
   };
   for (const [atomId, position] of cleanup.coords) {
     coords.set(atomId, position);
@@ -207,6 +382,7 @@ export function runPipeline(molecule, options = {}) {
       cleanupSymmetrySnaps: cleanup.symmetrySnaps,
       cleanupJunctionSnaps: cleanup.junctionSnaps,
       cleanupStereoReflections: cleanup.stereoReflections,
+      cleanupPostHookNudges: cleanup.postHookNudges,
       audit,
       qualityReport
     }

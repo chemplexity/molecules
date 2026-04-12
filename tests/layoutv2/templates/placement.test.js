@@ -32,6 +32,17 @@ describe('layoutv2/templates/placement', () => {
     assert.equal(indoleCoords.size, 9);
     assert.ok(Math.abs(distance(indoleCoords.get('C2'), indoleCoords.get('C3')) - indoleGraph.options.bondLength) < 1e-6);
 
+    const benzimidazoliumGraph = createLayoutGraph(parseSMILES('c1ccc2[nH+]cnc2c1'));
+    const benzimidazoliumCoords = placeTemplateCoords(
+      benzimidazoliumGraph,
+      'benzimidazolium',
+      benzimidazoliumGraph.ringSystems[0].atomIds,
+      benzimidazoliumGraph.options.bondLength
+    );
+    assert.equal(benzimidazoliumCoords.size, 9);
+    assert.ok(Math.abs(distance(benzimidazoliumCoords.get('N5'), benzimidazoliumCoords.get('C7')) - benzimidazoliumGraph.options.bondLength) < 1e-6);
+    assert.ok(Math.abs(distance(benzimidazoliumCoords.get('N8'), benzimidazoliumCoords.get('C9')) - benzimidazoliumGraph.options.bondLength) < 1e-6);
+
     const quinazolineGraph = createLayoutGraph(parseSMILES('c1ccc2ncncc2c1'));
     const quinazolineCoords = placeTemplateCoords(quinazolineGraph, 'quinazoline', quinazolineGraph.ringSystems[0].atomIds, quinazolineGraph.options.bondLength);
     assert.equal(quinazolineCoords.size, 10);

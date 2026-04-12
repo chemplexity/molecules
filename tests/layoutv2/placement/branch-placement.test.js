@@ -1,10 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../../src/core/index.js';
+import { computeMacrocycleAngularBudgets, layoutMacrocycleFamily } from '../../../src/layoutv2/families/macrocycle.js';
 import { placeRemainingBranches } from '../../../src/layoutv2/placement/branch-placement.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { computeCanonicalAtomRanks } from '../../../src/layoutv2/topology/canonical-order.js';
-import { makeChain, makeDimethylSulfone } from '../support/molecules.js';
+import { angleOf, angularDifference } from '../../../src/layoutv2/geometry/vec2.js';
+import { makeChain, makeDimethylSulfone, makeMacrocycle, makeMacrocycleWithSubstituent } from '../support/molecules.js';
 
 describe('layoutv2/placement/branch-placement', () => {
   it('places remaining branch atoms away from an existing backbone', () => {
@@ -171,5 +173,147 @@ describe('layoutv2/placement/branch-placement', () => {
     assert.equal(oxoSeparation, 180);
     assert.ok([90, 270].includes(firstOxoAngle));
     assert.ok([90, 270].includes(secondOxoAngle));
+  });
+
+  it('honors an anchor angular budget when placing a macrocycle substituent', () => {
+    const graph = createLayoutGraph(makeMacrocycleWithSubstituent(), { suppressH: true });
+    const ringLayout = layoutMacrocycleFamily(graph.rings, graph.options.bondLength);
+    const adjacency = new Map(graph.components[0].atomIds.map(atomId => [atomId, []]));
+    for (const bond of graph.bonds.values()) {
+      if (!adjacency.has(bond.a) || !adjacency.has(bond.b)) {
+        continue;
+      }
+      adjacency.get(bond.a).push(bond.b);
+      adjacency.get(bond.b).push(bond.a);
+    }
+    const coords = new Map(ringLayout.coords);
+    const branchConstraints = {
+      angularBudgets: computeMacrocycleAngularBudgets(
+        graph.rings,
+        ringLayout.coords,
+        graph,
+        new Set(graph.components[0].atomIds)
+      )
+    };
+
+    placeRemainingBranches(
+      adjacency,
+      graph.canonicalAtomRank,
+      coords,
+      new Set(graph.components[0].atomIds),
+      graph.rings[0].atomIds,
+      graph.options.bondLength,
+      graph,
+      branchConstraints
+    );
+    const budget = branchConstraints.angularBudgets.get('a0');
+    const placedAngle = angleOf({
+      x: coords.get('a12').x - coords.get('a0').x,
+      y: coords.get('a12').y - coords.get('a0').y
+    });
+    const offset = Math.atan2(
+      Math.sin(placedAngle - budget.centerAngle),
+      Math.cos(placedAngle - budget.centerAngle)
+    );
+
+    assert.ok(budget, 'expected a computed macrocycle angular budget for a0');
+    assert.ok(offset >= (budget.minOffset - 1e-6), 'expected substituent angle to stay above the macrocycle budget floor');
+    assert.ok(offset <= (budget.maxOffset + 1e-6), 'expected substituent angle to stay below the macrocycle budget ceiling');
+  });
+
+  it('uses macrocycle preferred budget angles so adjacent dense substituents do not collapse onto one discrete ray', () => {
+    const denseMolecule = makeMacrocycle();
+    denseMolecule.addAtom('x0', 'C');
+    denseMolecule.addAtom('x1', 'C');
+    denseMolecule.addBond('x0b', 'a0', 'x0', {}, false);
+    denseMolecule.addBond('x1b', 'a1', 'x1', {}, false);
+    const graph = createLayoutGraph(denseMolecule, { suppressH: true });
+    const ringLayout = layoutMacrocycleFamily(graph.rings, graph.options.bondLength);
+    const adjacency = new Map(graph.components[0].atomIds.map(atomId => [atomId, []]));
+    for (const bond of graph.bonds.values()) {
+      if (!adjacency.has(bond.a) || !adjacency.has(bond.b)) {
+        continue;
+      }
+      adjacency.get(bond.a).push(bond.b);
+      adjacency.get(bond.b).push(bond.a);
+    }
+    const coords = new Map(ringLayout.coords);
+    const branchConstraints = {
+      angularBudgets: computeMacrocycleAngularBudgets(
+        graph.rings,
+        ringLayout.coords,
+        graph,
+        new Set(graph.components[0].atomIds)
+      )
+    };
+
+    placeRemainingBranches(
+      adjacency,
+      graph.canonicalAtomRank,
+      coords,
+      new Set(graph.components[0].atomIds),
+      graph.rings[0].atomIds,
+      graph.options.bondLength,
+      graph,
+      branchConstraints
+    );
+
+    const firstBudget = branchConstraints.angularBudgets.get('a0');
+    const secondBudget = branchConstraints.angularBudgets.get('a1');
+    const firstAngle = angleOf({
+      x: coords.get('x0').x - coords.get('a0').x,
+      y: coords.get('x0').y - coords.get('a0').y
+    });
+    const secondAngle = angleOf({
+      x: coords.get('x1').x - coords.get('a1').x,
+      y: coords.get('x1').y - coords.get('a1').y
+    });
+
+    assert.ok(angularDifference(firstAngle, firstBudget.preferredAngle) < 0.2, 'expected a0 substituent to follow its preferred dense-site macrocycle angle');
+    assert.ok(angularDifference(secondAngle, secondBudget.preferredAngle) < 0.2, 'expected a1 substituent to follow its preferred dense-site macrocycle angle');
+    assert.ok(angularDifference(firstAngle, secondAngle) > 0.3, 'expected adjacent dense macrocycle substituents to diverge instead of sharing one discrete ray');
+  });
+
+  it('keeps large budget-constrained macrocycle branch centers placeable without exhaustive sibling search', () => {
+    const molecule = makeMacrocycle();
+    molecule.addAtom('x0', 'C');
+    molecule.addAtom('x1', 'C');
+    molecule.addBond('x0b', 'a0', 'x0', {}, false);
+    molecule.addBond('x1b', 'a0', 'x1', {}, false);
+    for (let index = 0; index < 12; index++) {
+      molecule.addAtom(`t${index}`, 'C');
+      molecule.addBond(`tb${index}`, index === 0 ? 'a6' : `t${index - 1}`, `t${index}`, {}, false);
+    }
+
+    const graph = createLayoutGraph(molecule, { suppressH: true });
+    const ringLayout = layoutMacrocycleFamily(graph.rings, graph.options.bondLength);
+    const adjacency = new Map(graph.components[0].atomIds.map(atomId => [atomId, []]));
+    for (const bond of graph.bonds.values()) {
+      if (!adjacency.has(bond.a) || !adjacency.has(bond.b)) {
+        continue;
+      }
+      adjacency.get(bond.a).push(bond.b);
+      adjacency.get(bond.b).push(bond.a);
+    }
+    const coords = new Map(ringLayout.coords);
+    const participantAtomIds = new Set(graph.components[0].atomIds);
+    const branchConstraints = {
+      angularBudgets: computeMacrocycleAngularBudgets(graph.rings, ringLayout.coords, graph, participantAtomIds)
+    };
+
+    placeRemainingBranches(
+      adjacency,
+      graph.canonicalAtomRank,
+      coords,
+      participantAtomIds,
+      graph.rings[0].atomIds,
+      graph.options.bondLength,
+      graph,
+      branchConstraints
+    );
+
+    assert.equal(coords.has('x0'), true);
+    assert.equal(coords.has('x1'), true);
+    assert.notDeepEqual(coords.get('x0'), coords.get('x1'));
   });
 });

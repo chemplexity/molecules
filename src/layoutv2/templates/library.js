@@ -269,6 +269,41 @@ function createBenzimidazoleTemplate() {
   return createFusedAromaticPerimeterTemplate('benzimidazole', ['N', 'C', 'C', 'C', 'C', 'C', 'C', 'N', 'C'], 1, 6);
 }
 
+/**
+ * Creates the protonated benzimidazolium fused template with localized imidazolium bonds.
+ * @returns {Molecule} Protonated benzimidazolium template molecule.
+ */
+function createBenzimidazoliumTemplate() {
+  return createFusedPerimeterTemplate(
+    'benzimidazolium',
+    [
+      { element: 'N' },
+      { element: 'C', properties: { aromatic: true } },
+      { element: 'C', properties: { aromatic: true } },
+      { element: 'C', properties: { aromatic: true } },
+      { element: 'C', properties: { aromatic: true } },
+      { element: 'C', properties: { aromatic: true } },
+      { element: 'C', properties: { aromatic: true } },
+      { element: 'N', properties: { charge: 1 } },
+      { element: 'C' }
+    ],
+    [
+      { order: 1 },
+      { aromatic: true },
+      { aromatic: true },
+      { aromatic: true },
+      { aromatic: true },
+      { aromatic: true },
+      { order: 1 },
+      { order: 2 },
+      { order: 1 }
+    ],
+    1,
+    6,
+    { aromatic: true }
+  );
+}
+
 function createBenzoxazoleTemplate() {
   return createFusedAromaticPerimeterTemplate('benzoxazole', ['O', 'C', 'C', 'C', 'C', 'C', 'C', 'N', 'C'], 1, 6);
 }
@@ -1139,6 +1174,9 @@ function freezeMatchContext(matchContext) {
   return Object.freeze({
     exocyclicNeighbors: Object.freeze(
       (matchContext.exocyclicNeighbors ?? []).map(constraint => Object.freeze({ ...constraint }))
+    ),
+    mappedAtoms: Object.freeze(
+      (matchContext.mappedAtoms ?? []).map(constraint => Object.freeze({ ...constraint }))
     )
   });
 }
@@ -1244,6 +1282,24 @@ const TEMPLATE_LIBRARY = Object.freeze(
       46,
       createBenzimidazoleTemplate(),
       geometrySpec('normalized-xy', createBenzimidazoleGeometry(), PLANAR_VALIDATION)
+    ),
+    createTemplate(
+      'benzimidazolium',
+      'fused',
+      45.9,
+      createBenzimidazoliumTemplate(),
+      geometrySpec('normalized-xy', createBenzimidazoleGeometry(), PLANAR_VALIDATION),
+      {
+        matchContext: {
+          mappedAtoms: [
+            {
+              templateAtomId: 'a7',
+              charge: 1,
+              aromatic: false
+            }
+          ]
+        }
+      }
     ),
     createTemplate(
       'benzoxazole',

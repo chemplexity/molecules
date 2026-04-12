@@ -83,4 +83,17 @@ describe('layoutv2/audit/audit', () => {
     assert.equal(audit.ok, true);
     assert.equal(audit.bondLengthFailureCount, 0);
   });
+
+  it('reports overlapping multi-character labels in audit metadata', () => {
+    const graph = createLayoutGraph(parseSMILES('Cl.Br'), { suppressH: true });
+    const coords = new Map([
+      ['Cl1', { x: 0, y: 0 }],
+      ['Br2', { x: 0.9, y: 0 }]
+    ]);
+
+    const audit = auditLayout(graph, coords);
+
+    assert.equal(audit.ok, true);
+    assert.equal(audit.labelOverlapCount, 1);
+  });
 });

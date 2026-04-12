@@ -1,8 +1,9 @@
 /** @module cleanup/local-rotation */
 
+import { CLEANUP_EPSILON, DISTANCE_EPSILON } from '../constants.js';
 import { add, angleOf, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { pointInPolygon } from '../geometry/polygon.js';
-import { computeAtomDistortionCost, computeSubtreeOverlapCost } from '../audit/invariants.js';
+import { buildAtomGrid, computeAtomDistortionCost, computeSubtreeOverlapCost } from '../audit/invariants.js';
 
 const DISCRETE_ROTATION_ANGLES = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12);
 
@@ -80,6 +81,40 @@ function movableTerminalSubtrees(layoutGraph, coords) {
 }
 
 /**
+ * Returns geminal subtree pairs that share the same rotation anchor.
+ * @param {Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>} terminalSubtrees - Individual movable terminal subtrees.
+ * @returns {Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>} Geminal subtree pairs.
+ */
+function geminalSubtreePairs(terminalSubtrees) {
+  const subtreesByAnchor = new Map();
+  for (const subtree of terminalSubtrees) {
+    const anchorSubtrees = subtreesByAnchor.get(subtree.anchorAtomId) ?? [];
+    anchorSubtrees.push(subtree);
+    subtreesByAnchor.set(subtree.anchorAtomId, anchorSubtrees);
+  }
+
+  const pairs = [];
+  for (const [anchorAtomId, anchorSubtrees] of subtreesByAnchor) {
+    if (anchorSubtrees.length < 2) {
+      continue;
+    }
+    for (let firstIndex = 0; firstIndex < anchorSubtrees.length - 1; firstIndex++) {
+      for (let secondIndex = firstIndex + 1; secondIndex < anchorSubtrees.length; secondIndex++) {
+        const firstSubtree = anchorSubtrees[firstIndex];
+        const secondSubtree = anchorSubtrees[secondIndex];
+        pairs.push({
+          anchorAtomId,
+          firstSubtree,
+          secondSubtree,
+          subtreeAtomIds: [...new Set([...firstSubtree.subtreeAtomIds, ...secondSubtree.subtreeAtomIds])]
+        });
+      }
+    }
+  }
+  return pairs;
+}
+
+/**
  * Computes the approximate inward ring-core vector for a ring anchor by summing
  * the vectors from the anchor to the centroids of each incident ring.
  * @param {object} layoutGraph - Layout graph shell.
@@ -118,7 +153,7 @@ function computeRingInteriorVector(layoutGraph, coords, anchorAtomId) {
     countedRings++;
   }
 
-  if (countedRings === 0 || Math.hypot(inwardX, inwardY) <= 1e-6) {
+  if (countedRings === 0 || Math.hypot(inwardX, inwardY) <= DISTANCE_EPSILON) {
     return null;
   }
   return { x: inwardX, y: inwardY };
@@ -185,17 +220,19 @@ function flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, currentRo
  */
 export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
   const maxPasses = options.maxPasses ?? layoutGraph.options.maxCleanupPasses;
-  const epsilon = options.epsilon ?? 1e-3;
+  const epsilon = options.epsilon ?? CLEANUP_EPSILON;
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   let totalImprovement = 0;
   let passes = 0;
   const terminalSubtrees = movableTerminalSubtrees(layoutGraph, coords);
+  const geminalPairs = geminalSubtreePairs(terminalSubtrees);
 
   while (passes < maxPasses) {
     passes++;
     let bestMove = null;
     const inwardFlipTolerance = bondLength * bondLength * 0.02;
+    const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
 
     for (const { atomId, anchorAtomId, subtreeAtomIds } of terminalSubtrees) {
       const anchorPosition = coords.get(anchorAtomId);
@@ -208,7 +245,7 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
 
       // Compute base costs for this subtree (O(k·n)). Used to evaluate each rotation
       // candidate cheaply without a full O(n²) measureLayoutCost call.
-      const baseOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, null, bondLength);
+      const baseOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, null, bondLength, { atomGrid });
       const baseAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, anchorAtomId, null);
 
       for (const angle of DISCRETE_ROTATION_ANGLES) {
@@ -232,7 +269,7 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         }
 
         // Improvement = overlap delta + anchor distortion delta (all O(k·n), no full O(n²) call).
-        const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength);
+        const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, { atomGrid });
         const newAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, anchorAtomId, newPositions);
         const improvement = (baseOverlapCost - newOverlapCost) + (baseAnchorDistortion - newAnchorDistortion);
         if (improvement > epsilon && (!bestMove || improvement > bestMove.improvement)) {
@@ -240,6 +277,71 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
             positions: [...newPositions.entries()],
             improvement
           };
+        }
+      }
+    }
+
+    if (!bestMove) {
+      for (const { anchorAtomId, firstSubtree, secondSubtree, subtreeAtomIds } of geminalPairs) {
+        const anchorPosition = coords.get(anchorAtomId);
+        const firstRootPosition = coords.get(firstSubtree.atomId);
+        const secondRootPosition = coords.get(secondSubtree.atomId);
+        if (!anchorPosition || !firstRootPosition || !secondRootPosition) {
+          continue;
+        }
+
+        const firstCurrentAngle = angleOf(sub(firstRootPosition, anchorPosition));
+        const firstCurrentRadius = Math.hypot(firstRootPosition.x - anchorPosition.x, firstRootPosition.y - anchorPosition.y) || bondLength;
+        const secondCurrentRadius = Math.hypot(secondRootPosition.x - anchorPosition.x, secondRootPosition.y - anchorPosition.y) || bondLength;
+        const baseOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, null, bondLength, { atomGrid });
+        const baseAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, anchorAtomId, null);
+
+        for (const angle of DISCRETE_ROTATION_ANGLES) {
+          const rotation = angle - firstCurrentAngle;
+          const rotatedFirstRoot = add(anchorPosition, fromAngle(angle, firstCurrentRadius));
+          const rotatedSecondRoot = add(anchorPosition, fromAngle(angleOf(sub(secondRootPosition, anchorPosition)) + rotation, secondCurrentRadius));
+          if (
+            flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, firstRootPosition, rotatedFirstRoot, inwardFlipTolerance)
+            || flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, secondRootPosition, rotatedSecondRoot, inwardFlipTolerance)
+          ) {
+            continue;
+          }
+
+          const newPositions = new Map([
+            [firstSubtree.atomId, rotatedFirstRoot],
+            [secondSubtree.atomId, rotatedSecondRoot]
+          ]);
+
+          for (const subtreeAtomId of firstSubtree.subtreeAtomIds) {
+            if (subtreeAtomId === firstSubtree.atomId) {
+              continue;
+            }
+            const subtreePosition = coords.get(subtreeAtomId);
+            if (!subtreePosition) {
+              continue;
+            }
+            newPositions.set(subtreeAtomId, add(rotatedFirstRoot, rotate(sub(subtreePosition, firstRootPosition), rotation)));
+          }
+          for (const subtreeAtomId of secondSubtree.subtreeAtomIds) {
+            if (subtreeAtomId === secondSubtree.atomId) {
+              continue;
+            }
+            const subtreePosition = coords.get(subtreeAtomId);
+            if (!subtreePosition) {
+              continue;
+            }
+            newPositions.set(subtreeAtomId, add(rotatedSecondRoot, rotate(sub(subtreePosition, secondRootPosition), rotation)));
+          }
+
+          const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, { atomGrid });
+          const newAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, anchorAtomId, newPositions);
+          const improvement = (baseOverlapCost - newOverlapCost) + (baseAnchorDistortion - newAnchorDistortion);
+          if (improvement > epsilon && (!bestMove || improvement > bestMove.improvement)) {
+            bestMove = {
+              positions: [...newPositions.entries()],
+              improvement
+            };
+          }
         }
       }
     }

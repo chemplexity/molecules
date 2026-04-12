@@ -6,6 +6,33 @@ import { projectBridgePaths } from './bridge-projection.js';
 import { placeTemplateCoords } from '../scaffold/template-placement.js';
 
 /**
+ * Builds the KK seed map and fixed pin list for a bridged component from the
+ * current refinement/fixed-coordinate context.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Bridged component atom IDs.
+ * @returns {{coords: Map<string, {x: number, y: number}>, pinnedAtomIds: string[]}} Seed coordinates and pinned atom IDs.
+ */
+function bridgedKamadaKawaiSeeds(layoutGraph, atomIds) {
+  const coords = new Map();
+  const pinnedAtomIds = [];
+
+  for (const atomId of atomIds) {
+    const fixedPosition = layoutGraph.fixedCoords.get(atomId);
+    if (fixedPosition) {
+      coords.set(atomId, { ...fixedPosition });
+      pinnedAtomIds.push(atomId);
+      continue;
+    }
+    const existingPosition = layoutGraph.options.existingCoords.get(atomId);
+    if (existingPosition) {
+      coords.set(atomId, { ...existingPosition });
+    }
+  }
+
+  return { coords, pinnedAtomIds };
+}
+
+/**
  * Places a bridged or caged ring system using matched template coordinates
  * when available, then falls back to a Kamada-Kawai seed for unmatched cases.
  * @param {object[]} rings - Ring descriptors in the bridged system.
@@ -31,8 +58,11 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
     };
   }
 
+  const kkSeeds = bridgedKamadaKawaiSeeds(options.layoutGraph, atomIds);
   const kkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {
-    bondLength
+    bondLength,
+    coords: kkSeeds.coords,
+    pinnedAtomIds: kkSeeds.pinnedAtomIds
   });
   if (!kkResult.ok) {
     return null;

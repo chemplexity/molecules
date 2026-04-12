@@ -40,6 +40,162 @@ function collectSideAtoms(layoutGraph, startAtomId, blockedAtomId) {
   return sideAtomIds;
 }
 
+/**
+ * Returns the smallest qualifying ring that contains both alkene atoms.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} bond - Layout bond descriptor.
+ * @returns {object|null} Smallest qualifying ring descriptor, or null.
+ */
+function smallestQualifyingStereoRing(layoutGraph, bond) {
+  let bestRing = null;
+  for (const ring of layoutGraph.rings ?? []) {
+    if (ring.size < 8) {
+      continue;
+    }
+    if (!ring.atomIds.includes(bond.a) || !ring.atomIds.includes(bond.b)) {
+      continue;
+    }
+    if (!bestRing || ring.size < bestRing.size) {
+      bestRing = ring;
+    }
+  }
+  return bestRing;
+}
+
+/**
+ * Builds a ring-only adjacency map with the alkene bond removed.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} ring - Ring descriptor.
+ * @param {object} bond - Alkene bond descriptor.
+ * @returns {Map<string, string[]>} Ring adjacency without the alkene bond.
+ */
+function buildCutRingAdjacency(layoutGraph, ring, bond) {
+  const ringAtomIdSet = new Set(ring.atomIds);
+  const adjacency = new Map(ring.atomIds.map(atomId => [atomId, []]));
+  for (const ringAtomId of ring.atomIds) {
+    for (const ringBond of layoutGraph.bondsByAtomId.get(ringAtomId) ?? []) {
+      if (!ringBond || ringBond.kind !== 'covalent' || ringBond.inRing !== true) {
+        continue;
+      }
+      const neighborAtomId = ringBond.a === ringAtomId ? ringBond.b : ringBond.a;
+      if (!ringAtomIdSet.has(neighborAtomId)) {
+        continue;
+      }
+      if (
+        (ringBond.a === bond.a && ringBond.b === bond.b)
+        || (ringBond.a === bond.b && ringBond.b === bond.a)
+      ) {
+        continue;
+      }
+      adjacency.get(ringAtomId)?.push(neighborAtomId);
+    }
+  }
+  return adjacency;
+}
+
+/**
+ * Computes shortest-path distances from one ring atom through a cut ring graph.
+ * @param {Map<string, string[]>} adjacency - Ring adjacency without the alkene bond.
+ * @param {string} startAtomId - Starting ring atom id.
+ * @returns {Map<string, number>} Distance by atom id.
+ */
+function cutRingDistances(adjacency, startAtomId) {
+  const distances = new Map([[startAtomId, 0]]);
+  const queue = [startAtomId];
+  let queueIndex = 0;
+
+  while (queueIndex < queue.length) {
+    const atomId = queue[queueIndex++];
+    const nextDistance = (distances.get(atomId) ?? 0) + 1;
+    for (const neighborAtomId of adjacency.get(atomId) ?? []) {
+      if (distances.has(neighborAtomId)) {
+        continue;
+      }
+      distances.set(neighborAtomId, nextDistance);
+      queue.push(neighborAtomId);
+    }
+  }
+
+  return distances;
+}
+
+/**
+ * Expands one ring side into the full movable side including attached substituents.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Set<string>} seedAtomIds - Ring atoms assigned to one side.
+ * @param {Set<string>} blockedAtomIds - Ring atoms that must remain on the opposite side.
+ * @returns {Set<string>} Movable side atoms including attached non-ring substituents.
+ */
+function expandRingSideAtoms(layoutGraph, seedAtomIds, blockedAtomIds) {
+  const sideAtomIds = new Set();
+  const queue = [...seedAtomIds];
+
+  while (queue.length > 0) {
+    const atomId = queue.shift();
+    if (sideAtomIds.has(atomId) || blockedAtomIds.has(atomId)) {
+      continue;
+    }
+    sideAtomIds.add(atomId);
+
+    const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    for (const neighborAtom of atom.getNeighbors(layoutGraph.sourceMolecule)) {
+      if (!neighborAtom || sideAtomIds.has(neighborAtom.id) || blockedAtomIds.has(neighborAtom.id)) {
+        continue;
+      }
+      queue.push(neighborAtom.id);
+    }
+  }
+
+  return sideAtomIds;
+}
+
+/**
+ * Returns candidate movable sides for a medium/large cyclic alkene.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} bond - Alkene bond descriptor.
+ * @returns {Array<Set<string>>} Candidate movable atom sets ordered from smaller to larger.
+ */
+function collectRingReflectionSides(layoutGraph, bond) {
+  const ring = smallestQualifyingStereoRing(layoutGraph, bond);
+  if (!ring) {
+    return [];
+  }
+
+  const adjacency = buildCutRingAdjacency(layoutGraph, ring, bond);
+  const firstDistances = cutRingDistances(adjacency, bond.a);
+  const secondDistances = cutRingDistances(adjacency, bond.b);
+  const firstSeedAtomIds = new Set([bond.a]);
+  const secondSeedAtomIds = new Set([bond.b]);
+
+  for (const atomId of ring.atomIds) {
+    if (atomId === bond.a || atomId === bond.b) {
+      continue;
+    }
+    const firstDistance = firstDistances.get(atomId) ?? Infinity;
+    const secondDistance = secondDistances.get(atomId) ?? Infinity;
+    if (firstDistance < secondDistance) {
+      firstSeedAtomIds.add(atomId);
+    } else if (secondDistance < firstDistance) {
+      secondSeedAtomIds.add(atomId);
+    }
+  }
+
+  const ringAtomIdSet = new Set(ring.atomIds);
+  const firstBlockedAtomIds = new Set([...ringAtomIdSet].filter(atomId => !firstSeedAtomIds.has(atomId)));
+  const secondBlockedAtomIds = new Set([...ringAtomIdSet].filter(atomId => !secondSeedAtomIds.has(atomId)));
+  const candidates = [
+    expandRingSideAtoms(layoutGraph, firstSeedAtomIds, firstBlockedAtomIds),
+    expandRingSideAtoms(layoutGraph, secondSeedAtomIds, secondBlockedAtomIds)
+  ]
+    .filter(sideAtomIds => sideAtomIds.size > 0)
+    .sort((firstSideAtomIds, secondSideAtomIds) => firstSideAtomIds.size - secondSideAtomIds.size);
+
+  return candidates;
+}
+
 function countHeavyAtoms(layoutGraph, atomIds, coords) {
   let count = 0;
   for (const atomId of atomIds) {
@@ -131,10 +287,11 @@ function countMatchedStereo(layoutGraph, coords, stereoBonds) {
 }
 
 /**
- * Enforces acyclic E/Z alkene geometry by reflecting one side of a mismatched
- * double bond across its bond axis. Candidate reflections are ranked by total
- * matched alkene-stereo count, then heavy-atom span, then layout cost, then
- * moved heavy-atom count.
+ * Enforces alkene E/Z geometry by reflecting one side of a mismatched
+ * double bond across its bond axis. For medium/large cyclic alkenes, the
+ * movable side is derived from the cut ring path and its attached substituents.
+ * Candidate reflections are ranked by total matched alkene-stereo count, then
+ * heavy-atom span, then layout cost, then moved heavy-atom count.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
  * @param {object} [options] - Enforcement options.
@@ -149,8 +306,10 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
     bond.kind === 'covalent' &&
     !bond.aromatic &&
     (bond.order ?? 1) === 2 &&
-    !ringAtomIds.has(bond.a) &&
-    !ringAtomIds.has(bond.b) &&
+    (
+      (!ringAtomIds.has(bond.a) && !ringAtomIds.has(bond.b))
+      || smallestQualifyingStereoRing(layoutGraph, bond)
+    ) &&
     (layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null) != null
   );
 
@@ -170,8 +329,12 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
         continue;
       }
 
+      const sideCandidates = bond.inRing
+        ? collectRingReflectionSides(layoutGraph, bond)
+        : [collectSideAtoms(layoutGraph, bond.a, bond.b), collectSideAtoms(layoutGraph, bond.b, bond.a)];
+
       let bestCandidate = null;
-      for (const sideAtomIds of [collectSideAtoms(layoutGraph, bond.a, bond.b), collectSideAtoms(layoutGraph, bond.b, bond.a)]) {
+      for (const sideAtomIds of sideCandidates) {
         const reflectedSide = reflectSideCoords(coords, sideAtomIds, bond.a, bond.b);
         if (!reflectedSide || reflectedSide.size === 0) {
           continue;

@@ -1,12 +1,21 @@
 /** @module families/large-molecule */
 
-import { angleOf, centroid, normalize, sub } from '../geometry/vec2.js';
+import { add, angleOf, centroid, normalize, rotate, sub } from '../geometry/vec2.js';
 import { computeBounds, translateCoords } from '../geometry/bounds.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { chooseAttachmentAngle } from '../placement/substituents.js';
 import { refineStitchedBlock } from '../placement/block-stitching.js';
 import { assignBondValidationClass, mergeBondValidationClasses } from '../placement/bond-validation.js';
 import { buildSliceAdjacency, createAtomSlice, layoutAtomSlice } from '../placement/atom-slice.js';
+
+const PACKING_ROTATION_ANGLES = Object.freeze([
+  -Math.PI / 2,
+  -Math.PI / 3,
+  -Math.PI / 6,
+  Math.PI / 6,
+  Math.PI / 3,
+  Math.PI / 2
+]);
 
 function countHeavyAtoms(layoutGraph, atomIds) {
   return atomIds.filter(atomId => layoutGraph.sourceMolecule.atoms.get(atomId)?.name !== 'H').length;
@@ -338,6 +347,153 @@ function overlapPushDirection(movableBounds, fixedBounds) {
 }
 
 /**
+ * Returns the total bounding-box area for a coordinate map.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @returns {number} Bounding-box area.
+ */
+function layoutBoundsArea(coords) {
+  const bounds = computeBounds(coords, [...coords.keys()]);
+  if (!bounds) {
+    return 0;
+  }
+  return bounds.width * bounds.height;
+}
+
+/**
+ * Returns the summed overlap penalty across placed large-molecule blocks.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Map<string, string[]>} blockAtomIdsById - Placed block atom IDs by block ID.
+ * @returns {number} Block-overlap penalty area.
+ */
+function totalBlockOverlapPenalty(coords, blockAtomIdsById) {
+  const blockIds = [...blockAtomIdsById.keys()];
+  let penalty = 0;
+
+  for (let firstIndex = 0; firstIndex < blockIds.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < blockIds.length; secondIndex++) {
+      const firstBounds = computeBounds(coords, blockAtomIdsById.get(blockIds[firstIndex]) ?? []);
+      const secondBounds = computeBounds(coords, blockAtomIdsById.get(blockIds[secondIndex]) ?? []);
+      const { overlapX, overlapY } = measureBlockOverlap(firstBounds, secondBounds);
+      if (overlapX > 0 && overlapY > 0) {
+        penalty += overlapX * overlapY;
+      }
+    }
+  }
+
+  return penalty;
+}
+
+/**
+ * Returns the current global packing cost for block-compaction decisions.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Map<string, string[]>} blockAtomIdsById - Placed block atom IDs by block ID.
+ * @param {number} bondLength - Target bond length.
+ * @returns {number} Packing cost.
+ */
+function layoutPackingCost(coords, blockAtomIdsById, bondLength) {
+  return layoutBoundsArea(coords) + (totalBlockOverlapPenalty(coords, blockAtomIdsById) * bondLength * 100);
+}
+
+/**
+ * Collects descendant block IDs for one stitched block subtree.
+ * @param {string} rootBlockId - Root block ID of the subtree.
+ * @param {Map<string, string[]>} childBlocksByParentId - Child block IDs by parent block ID.
+ * @returns {string[]} Block IDs in the subtree.
+ */
+function collectBlockSubtreeIds(rootBlockId, childBlocksByParentId) {
+  const subtreeBlockIds = [];
+  const stack = [rootBlockId];
+
+  while (stack.length > 0) {
+    const blockId = stack.pop();
+    subtreeBlockIds.push(blockId);
+    for (const childBlockId of childBlocksByParentId.get(blockId) ?? []) {
+      stack.push(childBlockId);
+    }
+  }
+
+  return subtreeBlockIds;
+}
+
+/**
+ * Rotates a stitched block subtree rigidly around its parent attachment atom.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Current coordinate map.
+ * @param {string[]} subtreeAtomIds - Atom IDs in the rotating subtree.
+ * @param {string} anchorAtomId - Fixed parent attachment atom ID.
+ * @param {number} angle - Rotation angle in radians.
+ * @returns {Map<string, {x: number, y: number}>} Rotated coordinate map.
+ */
+function rotateBlockSubtree(inputCoords, subtreeAtomIds, anchorAtomId, angle) {
+  const anchorPosition = inputCoords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return inputCoords;
+  }
+
+  const coords = new Map(inputCoords);
+  for (const atomId of subtreeAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    coords.set(atomId, add(anchorPosition, rotate(sub(position, anchorPosition), angle)));
+  }
+  return coords;
+}
+
+/**
+ * Compacts a stitched block layout by rotating child subtrees around their
+ * parent attachment atoms when doing so lowers the global packing cost.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Current coordinate map.
+ * @param {Map<string, string[]>} blockAtomIdsById - Placed block atom IDs by block ID.
+ * @param {Map<string, string[]>} childBlocksByParentId - Child block IDs by parent block ID.
+ * @param {Map<string, string>} attachmentAtomByBlockId - Parent attachment atom ID by child block ID.
+ * @param {string} rootBlockId - Fixed root block ID.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{coords: Map<string, {x: number, y: number}>, rotationMoveCount: number}} Compacted coordinates and accepted rotation count.
+ */
+function compactBlockRotations(
+  inputCoords,
+  blockAtomIdsById,
+  childBlocksByParentId,
+  attachmentAtomByBlockId,
+  rootBlockId,
+  bondLength
+) {
+  let coords = new Map(inputCoords);
+  let rotationMoveCount = 0;
+  const candidateBlockIds = [...blockAtomIdsById.keys()].filter(blockId => blockId !== rootBlockId);
+
+  for (const blockId of candidateBlockIds) {
+    const anchorAtomId = attachmentAtomByBlockId.get(blockId);
+    if (!anchorAtomId) {
+      continue;
+    }
+
+    const subtreeBlockIds = collectBlockSubtreeIds(blockId, childBlocksByParentId);
+    const subtreeAtomIds = subtreeBlockIds.flatMap(subtreeBlockId => blockAtomIdsById.get(subtreeBlockId) ?? []);
+    const baseCost = layoutPackingCost(coords, blockAtomIdsById, bondLength);
+    let bestCoords = null;
+    let bestCost = baseCost;
+
+    for (const angle of PACKING_ROTATION_ANGLES) {
+      const rotatedCoords = rotateBlockSubtree(coords, subtreeAtomIds, anchorAtomId, angle);
+      const rotatedCost = layoutPackingCost(rotatedCoords, blockAtomIdsById, bondLength);
+      if (rotatedCost + 1e-6 < bestCost) {
+        bestCoords = rotatedCoords;
+        bestCost = rotatedCost;
+      }
+    }
+
+    if (bestCoords) {
+      coords = bestCoords;
+      rotationMoveCount++;
+    }
+  }
+
+  return { coords, rotationMoveCount };
+}
+
+/**
  * Applies one rigid-body repulsion pass to overlapping large-molecule blocks.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Current coordinate map.
  * @param {Map<string, string[]>} blockAtomIdsById - Placed block atom IDs by block ID.
@@ -394,7 +550,8 @@ function repelOverlappingBlocks(inputCoords, blockAtomIdsById, rootBlockId, bond
  * @param {object} component - Connected-component descriptor.
  * @param {number} bondLength - Target bond length.
  * @param {{sliceLayouter?: (layoutGraph: object, block: {id: string, atomIds: string[], canonicalSignature?: string}, bondLength: number) => {family?: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses?: Map<string, 'planar'|'bridged'>}}} [options] - Optional family overrides for testing or fallback control.
- * @returns {{coords: Map<string, {x: number, y: number}>, placementMode: string, blockCount: number, refinedStitchCount: number, linearFallbackCount: number, rootFallbackUsed: boolean, repulsionMoveCount: number, bondValidationClasses: Map<string, 'planar'|'bridged'>}|null} Placement result.
+ * @param {boolean} [options.disableRotationPacking] - Disables rigid subtree rotation packing for test comparisons.
+ * @returns {{coords: Map<string, {x: number, y: number}>, placementMode: string, blockCount: number, refinedStitchCount: number, linearFallbackCount: number, rootFallbackUsed: boolean, repulsionMoveCount: number, rotationMoveCount: number, bondValidationClasses: Map<string, 'planar'|'bridged'>}|null} Placement result.
  */
 export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, options = {}) {
   const threshold = layoutGraph.options.largeMoleculeThreshold;
@@ -425,6 +582,7 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
       linearFallbackCount: 1,
       rootFallbackUsed: true,
       repulsionMoveCount: 0,
+      rotationMoveCount: 0,
       bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar')
     };
   }
@@ -436,6 +594,8 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
   ]);
   mergeBondValidationClasses(bondValidationClasses, rootLayout.bondValidationClasses);
   const placedBlockIds = new Set([rootBlock.id]);
+  const childBlocksByParentId = new Map();
+  const attachmentAtomByBlockId = new Map();
   const queue = [rootBlock.id];
   let refinedStitchCount = 0;
   let linearFallbackCount = 0;
@@ -503,6 +663,10 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
       } else {
         assignBondValidationClass(layoutGraph, childParticipantAtomIds, 'planar', bondValidationClasses, { overwrite: false });
       }
+      const childBlocks = childBlocksByParentId.get(parentBlock.id) ?? [];
+      childBlocks.push(childBlock.id);
+      childBlocksByParentId.set(parentBlock.id, childBlocks);
+      attachmentAtomByBlockId.set(childBlock.id, parentAtomId);
       placedBlockAtomIds.set(childBlock.id, childParticipantAtomIds);
       placedBlockIds.add(childBlock.id);
       queue.push(childBlock.id);
@@ -510,14 +674,25 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
   }
 
   const repulsion = repelOverlappingBlocks(coords, placedBlockAtomIds, rootBlock.id, bondLength);
+  const packed = options.disableRotationPacking
+    ? { coords: repulsion.coords, rotationMoveCount: 0 }
+    : compactBlockRotations(
+      repulsion.coords,
+      placedBlockAtomIds,
+      childBlocksByParentId,
+      attachmentAtomByBlockId,
+      rootBlock.id,
+      bondLength
+    );
   return {
-    coords: repulsion.coords,
+    coords: packed.coords,
     placementMode: 'block-stitched',
     blockCount: blocks.length,
     refinedStitchCount,
     linearFallbackCount,
     rootFallbackUsed: false,
     repulsionMoveCount: repulsion.repulsionMoveCount,
+    rotationMoveCount: packed.rotationMoveCount,
     bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses, { overwrite: false })
   };
 }

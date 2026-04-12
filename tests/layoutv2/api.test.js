@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { generateCoords, refineCoords } from '../../src/layoutv2/api.js';
+import { Molecule } from '../../src/core/Molecule.js';
 import { parseSMILES } from '../../src/io/smiles.js';
 import { makeDisconnectedEthanes, makeEthane } from './support/molecules.js';
 
@@ -84,6 +85,26 @@ function signedTriangleArea(coords, firstAtomId, secondAtomId, thirdAtomId) {
 }
 
 describe('layoutv2/api', () => {
+  it('gracefully returns an unsupported result for null and atom-less molecules', () => {
+    const emptyMolecule = new Molecule();
+    const nullResult = generateCoords(null);
+    const emptyResult = generateCoords(emptyMolecule);
+
+    assert.equal(nullResult.metadata.stage, 'unsupported');
+    assert.equal(nullResult.metadata.primaryFamily, 'empty');
+    assert.equal(nullResult.metadata.audit.ok, false);
+    assert.equal(nullResult.metadata.audit.reason, 'invalid-molecule');
+    assert.equal(nullResult.coords.size, 0);
+    assert.equal(nullResult.layoutGraph, null);
+
+    assert.equal(emptyResult.metadata.stage, 'unsupported');
+    assert.equal(emptyResult.metadata.primaryFamily, 'empty');
+    assert.equal(emptyResult.metadata.audit.ok, false);
+    assert.equal(emptyResult.metadata.audit.reason, 'empty-molecule');
+    assert.equal(emptyResult.coords.size, 0);
+    assert.equal(emptyResult.layoutGraph, null);
+  });
+
   it('generateCoords returns coordinates for supported simple families', () => {
     const result = generateCoords(makeEthane());
     assert.equal(result.metadata.stage, 'coordinates-ready');

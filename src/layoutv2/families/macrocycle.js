@@ -41,6 +41,186 @@ function nonSharedPath(atomIds, firstSharedAtomId, secondSharedAtomId) {
 }
 
 /**
+ * Normalizes an angle into the signed `(-pi, pi]` range.
+ * @param {number} angle - Input angle in radians.
+ * @returns {number} Wrapped signed angle.
+ */
+function normalizeSignedAngle(angle) {
+  let wrappedAngle = angle;
+  while (wrappedAngle > Math.PI) {
+    wrappedAngle -= 2 * Math.PI;
+  }
+  while (wrappedAngle <= -Math.PI) {
+    wrappedAngle += 2 * Math.PI;
+  }
+  return wrappedAngle;
+}
+
+/**
+ * Returns whether a ring atom carries a visible heavy non-ring substituent.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Ring atom ID.
+ * @param {Set<string>} participantAtomIds - Visible component atom IDs.
+ * @param {Set<string>} ringAtomIds - Ring atom IDs.
+ * @returns {boolean} True when the ring atom has a visible heavy exocyclic branch.
+ */
+function hasVisibleHeavyBranch(layoutGraph, atomId, participantAtomIds, ringAtomIds) {
+  const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
+  if (!atom) {
+    return false;
+  }
+  return atom.getNeighbors(layoutGraph.sourceMolecule).some(neighborAtom => neighborAtom
+    && neighborAtom.name !== 'H'
+    && participantAtomIds.has(neighborAtom.id)
+    && !ringAtomIds.has(neighborAtom.id));
+}
+
+/**
+ * Groups consecutive branch-bearing macrocycle atoms into cyclic runs.
+ * @param {string[]} ringAtomIds - Macrocycle ring atom IDs in perimeter order.
+ * @param {Set<string>} branchBearingAtomIds - Branch-bearing ring atom IDs.
+ * @returns {string[][]} Consecutive branch-bearing runs in ring order.
+ */
+function branchBearingRuns(ringAtomIds, branchBearingAtomIds) {
+  if (branchBearingAtomIds.size === 0) {
+    return [];
+  }
+
+  const ringSize = ringAtomIds.length;
+  const startIndex = ringAtomIds.findIndex((atomId, index) => branchBearingAtomIds.has(atomId)
+    && !branchBearingAtomIds.has(ringAtomIds[(index - 1 + ringSize) % ringSize]));
+  const orderedStartIndex = startIndex >= 0 ? startIndex : ringAtomIds.findIndex(atomId => branchBearingAtomIds.has(atomId));
+  if (orderedStartIndex < 0) {
+    return [];
+  }
+
+  const runs = [];
+  let currentRun = [];
+  for (let offset = 0; offset < ringSize; offset++) {
+    const atomId = ringAtomIds[(orderedStartIndex + offset) % ringSize];
+    if (branchBearingAtomIds.has(atomId)) {
+      currentRun.push(atomId);
+      continue;
+    }
+    if (currentRun.length > 0) {
+      runs.push(currentRun);
+      currentRun = [];
+    }
+  }
+  if (currentRun.length > 0) {
+    runs.push(currentRun);
+  }
+
+  return runs;
+}
+
+/**
+ * Chooses the preferred side of the outward macrocycle budget for each branch-bearing atom.
+ * Dense consecutive branch runs alternate preferred sides so adjacent substituents do not collapse onto the same exterior ray.
+ * @param {string[]} ringAtomIds - Macrocycle ring atom IDs in perimeter order.
+ * @param {Set<string>} branchBearingAtomIds - Branch-bearing ring atom IDs.
+ * @returns {Map<string, 'previous'|'next'|null>} Preferred budget side per branch-bearing atom.
+ */
+function preferredBudgetSides(ringAtomIds, branchBearingAtomIds) {
+  const sideByAtomId = new Map();
+  const runs = branchBearingRuns(ringAtomIds, branchBearingAtomIds);
+  const ringSize = ringAtomIds.length;
+
+  for (const run of runs) {
+    if (run.length === 1) {
+      const atomId = run[0];
+      const atomIndex = ringAtomIds.indexOf(atomId);
+      const previousAtomId = ringAtomIds[(atomIndex - 1 + ringSize) % ringSize];
+      const nextAtomId = ringAtomIds[(atomIndex + 1) % ringSize];
+      const previousHasBranch = branchBearingAtomIds.has(previousAtomId);
+      const nextHasBranch = branchBearingAtomIds.has(nextAtomId);
+      if (previousHasBranch && !nextHasBranch) {
+        sideByAtomId.set(atomId, 'next');
+      } else if (nextHasBranch && !previousHasBranch) {
+        sideByAtomId.set(atomId, 'previous');
+      } else {
+        sideByAtomId.set(atomId, null);
+      }
+      continue;
+    }
+
+    for (let index = 0; index < run.length; index++) {
+      sideByAtomId.set(run[index], index % 2 === 0 ? 'previous' : 'next');
+    }
+  }
+
+  return sideByAtomId;
+}
+
+/**
+ * Computes outward branch-angle budgets for atoms on the primary macrocycle ring.
+ * Each budget is the exterior arc centered on the ring-outward direction, with
+ * dense adjacent branch sites shrinking the available side of the arc and
+ * contributing a side preference when adjacent substituents should fan apart.
+ * @param {object[]} rings - Ring descriptors in the macrocycle system.
+ * @param {Map<string, {x: number, y: number}>} coords - Placed ring coordinates.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Set<string>} participantAtomIds - Visible component atom IDs.
+ * @returns {Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>} Macrocycle branch-angle budgets by anchor atom ID.
+ */
+export function computeMacrocycleAngularBudgets(rings, coords, layoutGraph, participantAtomIds) {
+  const primaryRing = [...rings].sort((firstRing, secondRing) => secondRing.size - firstRing.size || firstRing.id - secondRing.id)[0];
+  if (!primaryRing || primaryRing.size < 12) {
+    return new Map();
+  }
+
+  const ringPositions = primaryRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
+  if (ringPositions.length !== primaryRing.atomIds.length) {
+    return new Map();
+  }
+
+  const ringCenter = centroid(ringPositions);
+  const ringAtomIds = new Set(primaryRing.atomIds);
+  const budgets = new Map();
+  const branchBearingAtomIds = new Set(primaryRing.atomIds.filter(atomId =>
+    hasVisibleHeavyBranch(layoutGraph, atomId, participantAtomIds, ringAtomIds)
+  ));
+  const preferredSides = preferredBudgetSides(primaryRing.atomIds, branchBearingAtomIds);
+
+  for (let index = 0; index < primaryRing.atomIds.length; index++) {
+    const atomId = primaryRing.atomIds[index];
+    if (!branchBearingAtomIds.has(atomId)) {
+      continue;
+    }
+    const atomPosition = coords.get(atomId);
+    const previousAtomId = primaryRing.atomIds[(index - 1 + primaryRing.atomIds.length) % primaryRing.atomIds.length];
+    const nextAtomId = primaryRing.atomIds[(index + 1) % primaryRing.atomIds.length];
+    const previousAngle = angleOf(sub(coords.get(previousAtomId), atomPosition));
+    const nextAngle = angleOf(sub(coords.get(nextAtomId), atomPosition));
+    const outwardAngle = angleOf(sub(atomPosition, ringCenter));
+    let previousBoundaryOffset = normalizeSignedAngle(previousAngle - outwardAngle) / 2;
+    let nextBoundaryOffset = normalizeSignedAngle(nextAngle - outwardAngle) / 2;
+
+    if (branchBearingAtomIds.has(previousAtomId)) {
+      previousBoundaryOffset *= 0.5;
+    }
+    if (branchBearingAtomIds.has(nextAtomId)) {
+      nextBoundaryOffset *= 0.5;
+    }
+    const preferredSide = preferredSides.get(atomId) ?? null;
+    const preferredOffset = preferredSide === 'previous'
+      ? previousBoundaryOffset / 2
+      : preferredSide === 'next'
+        ? nextBoundaryOffset / 2
+        : 0;
+
+    budgets.set(atomId, {
+      centerAngle: outwardAngle,
+      minOffset: Math.min(previousBoundaryOffset, nextBoundaryOffset),
+      maxOffset: Math.max(previousBoundaryOffset, nextBoundaryOffset),
+      preferredAngle: wrapAngle(outwardAngle + preferredOffset)
+    });
+  }
+
+  return budgets;
+}
+
+/**
  * Computes the circumcenter of three points.
  * @param {{x: number, y: number}} p0 - First point.
  * @param {{x: number, y: number}} p1 - Second point.

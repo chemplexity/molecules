@@ -1,13 +1,22 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { Molecule } from '../../../src/core/index.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { findSevereOverlaps } from '../../../src/layoutv2/audit/invariants.js';
 import { applyLabelClearance } from '../../../src/layoutv2/cleanup/label-clearance.js';
+import { findLabelOverlaps } from '../../../src/layoutv2/geometry/label-box.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { makeChain } from '../support/molecules.js';
 
 describe('layoutv2/cleanup/label-clearance', () => {
+  /**
+   * Sums the scalar overlap penalty across label-overlap records.
+   * @param {Array<{overlapX: number, overlapY: number}>} overlaps - Label-overlap records.
+   * @returns {number} Total overlap penalty.
+   */
+  const totalLabelPenalty = overlaps => overlaps.reduce((sum, overlap) => sum + overlap.overlapX + overlap.overlapY, 0);
+
   it('nudges overlapping labeled terminal atoms when estimated boxes collide', () => {
     const molecule = makeChain(2, 'O');
     const graph = createLayoutGraph(molecule, {
@@ -54,5 +63,88 @@ describe('layoutv2/cleanup/label-clearance', () => {
     });
 
     assert.equal(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length, 0);
+  });
+
+  it('clears overlapping multi-character halogen labels', () => {
+    const molecule = new Molecule();
+    molecule.addAtom('Cl1', 'Cl');
+    molecule.addAtom('Br2', 'Br');
+    const graph = createLayoutGraph(molecule, { suppressH: true });
+    const overlappingCoords = new Map([
+      ['Cl1', { x: 0, y: 0 }],
+      ['Br2', { x: 0.9, y: 0 }]
+    ]);
+
+    const before = findLabelOverlaps(graph, overlappingCoords, graph.options.bondLength);
+    assert.equal(before.length, 1);
+
+    const cleared = applyLabelClearance(graph, overlappingCoords, {
+      bondLength: graph.options.bondLength,
+      labelMetrics: graph.options.labelMetrics
+    });
+
+    const after = findLabelOverlaps(graph, cleared.coords, graph.options.bondLength);
+    assert.equal(after.length, 0);
+    assert.ok(cleared.nudges >= 1);
+  });
+
+  it('clears overlapping chlorine labels in a terminal dihalide fragment', () => {
+    const graph = createLayoutGraph(parseSMILES('Cl.Cl'), { suppressH: true });
+    const overlappingCoords = new Map([
+      ['Cl1', { x: 0, y: 0 }],
+      ['Cl2', { x: 0.9, y: 0 }]
+    ]);
+
+    const before = findLabelOverlaps(graph, overlappingCoords, graph.options.bondLength);
+    assert.equal(before.length, 1);
+
+    const cleared = applyLabelClearance(graph, overlappingCoords, {
+      bondLength: graph.options.bondLength,
+      labelMetrics: graph.options.labelMetrics
+    });
+
+    const after = findLabelOverlaps(graph, cleared.coords, graph.options.bondLength);
+    assert.equal(after.length, 0);
+    assert.ok(cleared.nudges >= 1);
+    assert.ok(totalLabelPenalty(after) < totalLabelPenalty(before));
+  });
+
+  it('rejects a label nudge that would worsen the attached heavy-bond deviation', () => {
+    const molecule = new Molecule();
+    molecule.addAtom('C1', 'C');
+    molecule.addAtom('O2', 'O');
+    molecule.addAtom('Cl3', 'Cl');
+    molecule.addBond('b0', 'C1', 'O2', {}, false);
+    const graph = createLayoutGraph(molecule, { suppressH: true });
+    const overlappingCoords = new Map([
+      ['C1', { x: 0, y: 0 }],
+      ['Cl3', { x: 1.4, y: 0 }],
+      ['O2', { x: 1.5, y: 0 }]
+    ]);
+
+    const result = applyLabelClearance(graph, overlappingCoords, {
+      bondLength: graph.options.bondLength,
+      labelMetrics: graph.options.labelMetrics
+    });
+
+    assert.equal(result.nudges, 0);
+    assert.deepEqual(result.coords.get('O2'), overlappingCoords.get('O2'));
+  });
+
+  it('returns early when no collected labels overlap', () => {
+    const graph = createLayoutGraph(parseSMILES('CCO'), { suppressH: true });
+    const coords = new Map([
+      ['C1', { x: 0, y: 0 }],
+      ['C2', { x: 1.5, y: 0 }],
+      ['O3', { x: 3, y: 0 }]
+    ]);
+
+    const result = applyLabelClearance(graph, coords, {
+      bondLength: graph.options.bondLength,
+      labelMetrics: graph.options.labelMetrics
+    });
+
+    assert.equal(result.nudges, 0);
+    assert.deepEqual([...result.coords.entries()], [...coords.entries()]);
   });
 });

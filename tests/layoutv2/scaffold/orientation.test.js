@@ -25,6 +25,18 @@ describe('layoutv2/scaffold/orientation', () => {
     assert.ok(Math.abs(rotated.get('a0').y - rotated.get('a1').y) < 1e-6);
   });
 
+  it('handles a near-square covariance matrix without snapping to the zero-axis fallback', () => {
+    const ringCenters = new Map([
+      [0, { x: -1.01, y: -0.99 }],
+      [1, { x: 0.99, y: 1.01 }],
+      [2, { x: -0.99, y: -1.01 }],
+      [3, { x: 1.01, y: 0.99 }]
+    ]);
+
+    const axis = computeFusedAxis(ringCenters);
+    assert.ok(Math.abs(axis - (Math.PI / 4)) < 0.1);
+  });
+
   it('rebuilds ring centers from rotated coordinates', () => {
     const centers = rebuildRingCenters([{ id: 1, atomIds: ['a0', 'a1'] }], new Map([
       ['a0', { x: -1, y: 0 }],

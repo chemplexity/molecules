@@ -1,5 +1,9 @@
 /** @module geometry/kk-layout */
 
+import {
+  DISTANCE_EPSILON,
+  NUMERIC_EPSILON
+} from '../constants.js';
 import { circumradiusForRegularPolygon } from './polygon.js';
 import { centroid, vec } from './vec2.js';
 
@@ -45,20 +49,54 @@ function buildDistanceMatrix(atomIds, adjacency) {
   return matrix;
 }
 
+/**
+ * Returns whether a seed coordinate is finite and usable.
+ * @param {{x: number, y: number}|undefined} position - Candidate seed position.
+ * @returns {boolean} True when the position can seed KK placement.
+ */
+function hasFinitePosition(position) {
+  return !!position && Number.isFinite(position.x) && Number.isFinite(position.y);
+}
+
+/**
+ * Builds an initial KK coordinate set from fixed atoms, seeded existing coords,
+ * and a circular fallback for any unseeded atoms.
+ * @param {string[]} atomIds - Atom IDs included in the layout.
+ * @param {Map<string, {x: number, y: number}>} coords - Seed/fixed coordinate map.
+ * @param {Set<string>} pinnedAtomIds - Atom IDs that should remain fixed.
+ * @param {{x: number, y: number}} center - Target layout center.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{positions: Array<{x: number, y: number}>, seededAtomIds: Set<string>}} Initial positions and seeded-atom ids.
+ */
 function initializePositions(atomIds, coords, pinnedAtomIds, center, bondLength) {
   const count = atomIds.length;
   const radius = circumradiusForRegularPolygon(Math.max(count, 3), bondLength);
   const step = (2 * Math.PI) / Math.max(count, 1);
-  return atomIds.map((atomId, index) => {
+  const seededAtomIds = new Set();
+  const seededPoints = [];
+
+  for (const atomId of atomIds) {
+    const seededPosition = coords.get(atomId);
+    if (hasFinitePosition(seededPosition)) {
+      seededPoints.push(seededPosition);
+    }
+  }
+  const fallbackCenter = seededPoints.length > 0 ? centroid(seededPoints) : center;
+  const positions = atomIds.map((atomId, index) => {
+    const seededPosition = coords.get(atomId);
     if (pinnedAtomIds.has(atomId)) {
-      const pinned = coords.get(atomId);
-      return { x: pinned.x, y: pinned.y };
+      return { x: seededPosition.x, y: seededPosition.y };
+    }
+    if (hasFinitePosition(seededPosition)) {
+      seededAtomIds.add(atomId);
+      return { x: seededPosition.x, y: seededPosition.y };
     }
     return {
-      x: center.x + Math.cos(index * step) * radius,
-      y: center.y + Math.sin(index * step) * radius
+      x: fallbackCenter.x + Math.cos(index * step) * radius,
+      y: fallbackCenter.y + Math.sin(index * step) * radius
     };
   });
+  return { positions, seededAtomIds };
 }
 
 function recenterFreePositions(positions, atomIds, pinnedAtomIds, targetCenter) {
@@ -90,14 +128,14 @@ function recenterFreePositions(positions, atomIds, pinnedAtomIds, targetCenter) 
  * @returns {{moveX: number, moveY: number}} The proposed step.
  */
 function solveDampedNewtonStep(dxx, dxy, dyy, gradientX, gradientY) {
-  const hessianScale = Math.abs(dxx) + Math.abs(dyy) + Math.abs(dxy) + 1e-10;
-  let lambda = Math.max(1e-10, hessianScale * 1e-4);
+  const hessianScale = Math.abs(dxx) + Math.abs(dyy) + Math.abs(dxy) + NUMERIC_EPSILON;
+  let lambda = Math.max(NUMERIC_EPSILON, hessianScale * 1e-4);
 
   for (let attempt = 0; attempt < 8; attempt++) {
     const dampedDxx = dxx + lambda;
     const dampedDyy = dyy + lambda;
     const det = dampedDxx * dampedDyy - dxy * dxy;
-    if (Number.isFinite(det) && Math.abs(det) > 1e-12) {
+    if (Number.isFinite(det) && Math.abs(det) > NUMERIC_EPSILON) {
       const moveX = (-dampedDyy * gradientX + dxy * gradientY) / det;
       const moveY = (dxy * gradientX - dampedDxx * gradientY) / det;
       if (Number.isFinite(moveX) && Number.isFinite(moveY)) {
@@ -107,7 +145,7 @@ function solveDampedNewtonStep(dxx, dxy, dyy, gradientX, gradientY) {
     lambda *= 10;
   }
 
-  const fallbackScale = Math.max(hessianScale, 1e-6);
+  const fallbackScale = Math.max(hessianScale, DISTANCE_EPSILON);
   return {
     moveX: -gradientX / fallbackScale,
     moveY: -gradientY / fallbackScale
@@ -230,10 +268,11 @@ export function layoutKamadaKawai(
   }
 
   const count = atomIds.length;
-  const positions = initializePositions(atomIds, coords, pinnedAtomIdSet, center, bondLength);
-  if (pinnedAtomIdSet.size === 0) {
+  const { positions, seededAtomIds } = initializePositions(atomIds, coords, pinnedAtomIdSet, center, bondLength);
+  if (pinnedAtomIdSet.size === 0 && seededAtomIds.size === 0) {
     recenterFreePositions(positions, atomIds, pinnedAtomIdSet, center);
   }
+  const effectiveMaxIterations = seededAtomIds.size > 0 ? Math.min(maxIterations, 5000) : maxIterations;
 
   const targetLength = Array.from({ length: count }, () => Array(count).fill(0));
   const springStrength = Array.from({ length: count }, () => Array(count).fill(0));
@@ -261,7 +300,7 @@ export function layoutKamadaKawai(
       const other = positions[otherIndex];
       const dx = origin.x - other.x;
       const dy = origin.y - other.y;
-      const edgeLength = Math.hypot(dx, dy) || 1e-9;
+      const edgeLength = Math.max(Math.hypot(dx, dy), DISTANCE_EPSILON);
       const factor = springStrength[index][otherIndex] * (1 - targetLength[index][otherIndex] / edgeLength);
       sumX += factor * dx;
       sumY += factor * dy;
@@ -309,7 +348,7 @@ export function layoutKamadaKawai(
       const other = positions[otherIndex];
       const dx = origin.x - other.x;
       const dy = origin.y - other.y;
-      const distSq = dx * dx + dy * dy || 1e-9;
+      const distSq = Math.max(dx * dx + dy * dy, DISTANCE_EPSILON * DISTANCE_EPSILON);
       const denom = Math.pow(distSq, 1.5);
       const target = targetLength[index][otherIndex];
       const spring = springStrength[index][otherIndex];
@@ -318,10 +357,10 @@ export function layoutKamadaKawai(
       dxy += spring * ((target * dx * dy) / denom);
     }
 
-    if (Math.abs(dxx) < 1e-6) {
+    if (Math.abs(dxx) < DISTANCE_EPSILON) {
       dxx = 0.1;
     }
-    if (Math.abs(dyy) < 1e-6) {
+    if (Math.abs(dyy) < DISTANCE_EPSILON) {
       dyy = 0.1;
     }
 
@@ -343,7 +382,7 @@ export function layoutKamadaKawai(
 
   let currentEnergy = Infinity;
   let iteration = 0;
-  while (iteration < maxIterations) {
+  while (iteration < effectiveMaxIterations) {
     iteration++;
     const { index, energy } = highestEnergyNode();
     currentEnergy = energy;

@@ -13,7 +13,8 @@ describe('layoutv2/standards/defaults', () => {
       labelClearanceMode: 'estimate',
       stereoPriority: 'readability',
       fragmentPackingMode: 'principal-right',
-      organometallicMode: 'ligand-first'
+      organometallicMode: 'ligand-first',
+      postCleanupHooks: []
     });
   });
 

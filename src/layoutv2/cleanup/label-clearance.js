@@ -1,41 +1,17 @@
 /** @module cleanup/label-clearance */
 
-import { findSevereOverlaps, measureLayoutCost } from '../audit/invariants.js';
+import { CLEANUP_EPSILON } from '../constants.js';
+import { collectLabelBoxes, labelBoxesOverlap } from '../geometry/label-box.js';
+import { measureLayoutState } from '../audit/invariants.js';
 import { centroid } from '../geometry/vec2.js';
 
-function atomLabelText(atom) {
-  if (!atom) {
-    return '';
-  }
-  const charge = atom.charge ?? 0;
-  const chargeText = charge === 0
-    ? ''
-    : charge > 0
-      ? `+${charge === 1 ? '' : charge}`
-      : `${charge === -1 ? '-' : String(charge)}`;
-  if (atom.element === 'C' && charge === 0 && atom.visible !== true) {
-    return '';
-  }
-  return `${atom.element}${chargeText}`;
-}
-
-function estimateHalfSize(labelText, bondLength, labelMetrics = null) {
-  if (!labelText) {
-    return null;
-  }
-  const charWidth = labelMetrics?.averageCharWidth ?? (bondLength * 0.22);
-  const textHeight = labelMetrics?.textHeight ?? (bondLength * 0.32);
-  return {
-    halfWidth: Math.max(charWidth, labelText.length * charWidth * 0.5),
-    halfHeight: textHeight * 0.5
-  };
-}
-
-function boxesOverlap(firstBox, secondBox, padding) {
-  return Math.abs(firstBox.x - secondBox.x) < (firstBox.halfWidth + secondBox.halfWidth + padding)
-    && Math.abs(firstBox.y - secondBox.y) < (firstBox.halfHeight + secondBox.halfHeight + padding);
-}
-
+/**
+ * Computes a scalar penalty for the overlap between two axis-aligned label boxes.
+ * @param {{x: number, y: number, halfWidth: number, halfHeight: number}} firstBox - First label box.
+ * @param {{x: number, y: number, halfWidth: number, halfHeight: number}} secondBox - Second label box.
+ * @param {number} padding - Extra label padding.
+ * @returns {number} Positive overlap penalty, or zero when the boxes do not overlap.
+ */
 function overlapPenalty(firstBox, secondBox, padding) {
   const overlapX = (firstBox.halfWidth + secondBox.halfWidth + padding) - Math.abs(firstBox.x - secondBox.x);
   const overlapY = (firstBox.halfHeight + secondBox.halfHeight + padding) - Math.abs(firstBox.y - secondBox.y);
@@ -43,6 +19,53 @@ function overlapPenalty(firstBox, secondBox, padding) {
     return 0;
   }
   return overlapX + overlapY;
+}
+
+/**
+ * Measures the worst heavy-atom bond-length deviation attached to a moved atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} atomId - Atom whose attached heavy-atom bonds are inspected.
+ * @param {{x: number, y: number}} position - Candidate position for the atom.
+ * @param {number} bondLength - Target bond length.
+ * @returns {number} Maximum attached heavy-atom bond-length deviation.
+ */
+function attachedHeavyBondDeviation(layoutGraph, coords, atomId, position, bondLength) {
+  let maxDeviation = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborPosition) {
+      continue;
+    }
+    const distance = Math.hypot(neighborPosition.x - position.x, neighborPosition.y - position.y);
+    maxDeviation = Math.max(maxDeviation, Math.abs(distance - bondLength));
+  }
+  return maxDeviation;
+}
+
+/**
+ * Returns whether any collected label boxes currently overlap.
+ * @param {Array<{x: number, y: number, halfWidth: number, halfHeight: number}>} labels - Collected label boxes.
+ * @param {number} padding - Extra label padding.
+ * @returns {boolean} True when at least one pair of labels overlaps.
+ */
+function hasAnyLabelOverlap(labels, padding) {
+  for (let firstIndex = 0; firstIndex < labels.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < labels.length; secondIndex++) {
+      if (labelBoxesOverlap(labels[firstIndex], labels[secondIndex], padding)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -58,35 +81,23 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const labelMetrics = options.labelMetrics ?? layoutGraph.options.labelMetrics ?? null;
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
-  const center = centroid([...coords.values()]);
   const padding = bondLength * 0.08;
-  let currentSevereOverlapCount = findSevereOverlaps(layoutGraph, coords, bondLength).length;
-  let currentLayoutCost = measureLayoutCost(layoutGraph, coords, bondLength);
-  let nudges = 0;
+  const labels = collectLabelBoxes(layoutGraph, coords, bondLength, { labelMetrics });
+  if (labels.length < 2 || !hasAnyLabelOverlap(labels, padding)) {
+    return { coords, nudges: 0 };
+  }
 
-  const labels = [...coords.keys()]
-    .map(atomId => {
-      const atom = layoutGraph.atoms.get(atomId);
-      const labelText = atomLabelText(atom);
-      const size = estimateHalfSize(labelText, bondLength, labelMetrics);
-      if (!size) {
-        return null;
-      }
-      const position = coords.get(atomId);
-      return {
-        atomId,
-        x: position.x,
-        y: position.y,
-        ...size
-      };
-    })
-    .filter(Boolean);
+  const center = centroid([...coords.values()]);
+  let { overlapCount: currentSevereOverlapCount, cost: currentLayoutCost } = measureLayoutState(layoutGraph, coords, bondLength, {
+    labelMetrics
+  });
+  let nudges = 0;
 
   for (let firstIndex = 0; firstIndex < labels.length; firstIndex++) {
     for (let secondIndex = firstIndex + 1; secondIndex < labels.length; secondIndex++) {
       const firstLabel = labels[firstIndex];
       const secondLabel = labels[secondIndex];
-      if (!boxesOverlap(firstLabel, secondLabel, padding)) {
+      if (!labelBoxesOverlap(firstLabel, secondLabel, padding)) {
         continue;
       }
 
@@ -95,6 +106,13 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
         continue;
       }
       const position = coords.get(secondLabel.atomId);
+      const currentBondDeviation = attachedHeavyBondDeviation(
+        layoutGraph,
+        coords,
+        secondLabel.atomId,
+        position,
+        bondLength
+      );
       const dx = position.x - center.x;
       const dy = position.y - center.y;
       const length = Math.hypot(dx, dy) || 1;
@@ -112,15 +130,24 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
       if (candidatePenalty >= currentPenalty) {
         continue;
       }
+      const candidateBondDeviation = attachedHeavyBondDeviation(
+        layoutGraph,
+        coords,
+        secondLabel.atomId,
+        candidatePosition,
+        bondLength
+      );
+      if (candidateBondDeviation > currentBondDeviation + CLEANUP_EPSILON) {
+        continue;
+      }
 
       const candidateCoords = new Map([...coords.entries()].map(([atomId, candidate]) => [atomId, { ...candidate }]));
       candidateCoords.set(secondLabel.atomId, candidatePosition);
-      const candidateSevereOverlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
-      if (candidateSevereOverlapCount > currentSevereOverlapCount) {
+      const candidateState = measureLayoutState(layoutGraph, candidateCoords, bondLength, { labelMetrics });
+      if (candidateState.overlapCount > currentSevereOverlapCount) {
         continue;
       }
-      const candidateLayoutCost = measureLayoutCost(layoutGraph, candidateCoords, bondLength);
-      if (candidateLayoutCost > currentLayoutCost + 1e-6) {
+      if (candidateState.cost > currentLayoutCost + CLEANUP_EPSILON) {
         continue;
       }
 
@@ -128,8 +155,8 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
       position.y = candidatePosition.y;
       secondLabel.x = candidatePosition.x;
       secondLabel.y = candidatePosition.y;
-      currentSevereOverlapCount = candidateSevereOverlapCount;
-      currentLayoutCost = candidateLayoutCost;
+      currentSevereOverlapCount = candidateState.overlapCount;
+      currentLayoutCost = candidateState.cost;
       nudges++;
     }
   }

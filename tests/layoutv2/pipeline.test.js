@@ -1,8 +1,10 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { Molecule } from '../../src/core/Molecule.js';
 import { parseSMILES } from '../../src/io/smiles.js';
 import { classifyFamily, runPipeline } from '../../src/layoutv2/pipeline.js';
 import {
+  makeAlternatingMethylMacrocycle,
   makeDisconnectedEthanes,
   makeLargePolyaryl,
   makeMacrocycle,
@@ -40,6 +42,24 @@ function ringAngles(coords, atomIds) {
 }
 
 describe('layoutv2/pipeline', () => {
+  it('short-circuits invalid and atom-less inputs with a stable unsupported result', () => {
+    const emptyMolecule = new Molecule();
+    const invalidResult = runPipeline(null);
+    const emptyResult = runPipeline(emptyMolecule);
+
+    assert.equal(invalidResult.metadata.stage, 'unsupported');
+    assert.equal(invalidResult.metadata.audit.reason, 'invalid-molecule');
+    assert.equal(invalidResult.metadata.fixedAtomCount, 0);
+    assert.equal(invalidResult.metadata.existingCoordCount, 0);
+    assert.equal(invalidResult.layoutGraph, null);
+
+    assert.equal(emptyResult.metadata.stage, 'unsupported');
+    assert.equal(emptyResult.metadata.audit.reason, 'empty-molecule');
+    assert.equal(emptyResult.metadata.primaryFamily, 'empty');
+    assert.deepEqual(emptyResult.metadata.placedFamilies, []);
+    assert.equal(emptyResult.layoutGraph, null);
+  });
+
   it('classifies primary families across the milestone-1 family boundary', () => {
     assert.deepEqual(classifyFamily({
       options: { largeMoleculeThreshold: { heavyAtomCount: 100, ringSystemCount: 10, blockCount: 16 } },
@@ -165,6 +185,15 @@ describe('layoutv2/pipeline', () => {
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.placedComponentCount, 1);
     assert.equal(result.coords.size, 12);
+    assert.deepEqual(result.metadata.policy.postCleanupHooks, ['ring-perimeter-correction']);
+  });
+
+  it('records organometallic post-cleanup hooks in the resolved policy metadata', () => {
+    const result = runPipeline(makeOrganometallic());
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.deepEqual(result.metadata.policy.postCleanupHooks, ['ligand-angle-tidy']);
+    assert.equal(typeof result.metadata.cleanupPostHookNudges, 'number');
   });
 
   it('keeps suppressed-h simple rings audit-clean when explicit hydrogens overlap only off-screen', () => {
@@ -184,6 +213,17 @@ describe('layoutv2/pipeline', () => {
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.placedComponentCount, 1);
     assert.equal(result.coords.size, 13);
+  });
+
+  it('keeps alternating macrocycle substituents outward and audit-clean', () => {
+    const result = runPipeline(makeAlternatingMethylMacrocycle(), {
+      suppressH: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
   });
 
   it('uses the porphine macrocycle template to avoid collapsed porphyrin-core layouts', () => {
@@ -210,6 +250,17 @@ describe('layoutv2/pipeline', () => {
     assert.equal(largeResult.metadata.primaryFamily, 'macrocycle');
     assert.equal(largeResult.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(largeResult.metadata.audit.ok, true);
+  });
+
+  it('keeps erythromycin-class macrolides audit-clean after macrocycle cleanup', () => {
+    const result = runPipeline(parseSMILES('CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O'), {
+      suppressH: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
   });
 
   it('routes large components through block partitioning and stitching', () => {

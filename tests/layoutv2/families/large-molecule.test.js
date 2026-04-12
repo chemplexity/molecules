@@ -2,8 +2,19 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { layoutLargeMoleculeFamily } from '../../../src/layoutv2/families/large-molecule.js';
+import { computeBounds } from '../../../src/layoutv2/geometry/bounds.js';
 import { layoutAtomSlice } from '../../../src/layoutv2/placement/atom-slice.js';
 import { makeLargeExplicitHydrogenPeptide, makeLargePolyaryl } from '../support/molecules.js';
+
+/**
+ * Returns the area of the current placed coordinate bounds.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {number} Bounding-box area.
+ */
+function boundsArea(coords) {
+  const bounds = computeBounds(coords, [...coords.keys()]);
+  return bounds ? bounds.width * bounds.height : 0;
+}
 
 describe('layoutv2/families/large-molecule', () => {
   it('partitions and stitches a multi-block organic component', () => {
@@ -93,4 +104,23 @@ describe('layoutv2/families/large-molecule', () => {
     assert.equal(result.coords.size > 0, true);
     assert.ok(Date.now() - start < 15000);
   }, 20000);
+
+  it('rotates stitched child subtrees when doing so compacts the packed block layout', () => {
+    const graph = createLayoutGraph(makeLargePolyaryl(), {
+      largeMoleculeThreshold: {
+        heavyAtomCount: 12,
+        ringSystemCount: 2,
+        blockCount: 16
+      }
+    });
+    const withoutRotationPacking = layoutLargeMoleculeFamily(graph, graph.components[0], graph.options.bondLength, {
+      disableRotationPacking: true
+    });
+    const withRotationPacking = layoutLargeMoleculeFamily(graph, graph.components[0], graph.options.bondLength);
+
+    assert.equal(withoutRotationPacking.placementMode, 'block-stitched');
+    assert.equal(withRotationPacking.placementMode, 'block-stitched');
+    assert.ok(withRotationPacking.rotationMoveCount >= 1);
+    assert.ok(boundsArea(withRotationPacking.coords) < boundsArea(withoutRotationPacking.coords));
+  });
 });

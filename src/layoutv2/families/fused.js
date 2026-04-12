@@ -59,6 +59,326 @@ function hasFusedAdjacencyCycle(rings, ringAdj) {
 }
 
 /**
+ * Returns the ideal center-to-center distance for two fused rings that share an edge.
+ * @param {number} firstRingSize - First ring size.
+ * @param {number} secondRingSize - Second ring size.
+ * @param {number} bondLength - Target bond length.
+ * @returns {number} Ideal fused-ring center separation.
+ */
+function fusedCenterDistance(firstRingSize, secondRingSize, bondLength) {
+  return apothemForRegularPolygon(firstRingSize, bondLength) + apothemForRegularPolygon(secondRingSize, bondLength);
+}
+
+/**
+ * Selects the central ring for a pericondensed fused system.
+ * @param {object[]} rings - Ring descriptors.
+ * @param {Map<number, number[]>} ringAdj - Ring adjacency map.
+ * @returns {object} Central ring descriptor.
+ */
+function selectPericondensedCentralRing(rings, ringAdj) {
+  return [...rings].sort((firstRing, secondRing) => {
+    const degreeDelta = (ringAdj.get(secondRing.id)?.length ?? 0) - (ringAdj.get(firstRing.id)?.length ?? 0);
+    if (degreeDelta !== 0) {
+      return degreeDelta;
+    }
+    if (firstRing.size !== secondRing.size) {
+      return firstRing.size - secondRing.size;
+    }
+    return firstRing.id - secondRing.id;
+  })[0];
+}
+
+/**
+ * Returns the next pericondensed shell ring to place.
+ * @param {object[]} rings - Ring descriptors.
+ * @param {Map<number, number[]>} ringAdj - Ring adjacency map.
+ * @param {Set<number>} placedRingIds - Already placed ring IDs.
+ * @returns {object|null} Next ring to place or null.
+ */
+function nextPericondensedShellRing(rings, ringAdj, placedRingIds) {
+  const pendingRings = rings.filter(ring => !placedRingIds.has(ring.id));
+  if (pendingRings.length === 0) {
+    return null;
+  }
+  return pendingRings.sort((firstRing, secondRing) => {
+    const firstPlacedNeighbors = (ringAdj.get(firstRing.id) ?? []).filter(neighborRingId => placedRingIds.has(neighborRingId)).length;
+    const secondPlacedNeighbors = (ringAdj.get(secondRing.id) ?? []).filter(neighborRingId => placedRingIds.has(neighborRingId)).length;
+    if (secondPlacedNeighbors !== firstPlacedNeighbors) {
+      return secondPlacedNeighbors - firstPlacedNeighbors;
+    }
+    if ((ringAdj.get(secondRing.id)?.length ?? 0) !== (ringAdj.get(firstRing.id)?.length ?? 0)) {
+      return (ringAdj.get(secondRing.id)?.length ?? 0) - (ringAdj.get(firstRing.id)?.length ?? 0);
+    }
+    if (firstRing.size !== secondRing.size) {
+      return firstRing.size - secondRing.size;
+    }
+    return firstRing.id - secondRing.id;
+  })[0];
+}
+
+/**
+ * Estimates a neighboring fused-ring center from one already placed shared edge.
+ * @param {object} currentRing - Already placed ring descriptor.
+ * @param {object} neighborRing - Neighbor ring descriptor.
+ * @param {{sharedAtomIds: string[]}} connection - Fused connection descriptor.
+ * @param {Map<number, {x: number, y: number}>} ringCenters - Ring-center map.
+ * @param {Map<string, {x: number, y: number}>} coords - Current atom coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{x: number, y: number}|null} Estimated neighbor center.
+ */
+function estimateNeighborCenter(currentRing, neighborRing, connection, ringCenters, coords, bondLength) {
+  const currentCenter = ringCenters.get(currentRing.id);
+  const [firstSharedAtomId, secondSharedAtomId] = connection.sharedAtomIds;
+  const firstPosition = coords.get(firstSharedAtomId);
+  const secondPosition = coords.get(secondSharedAtomId);
+  if (!currentCenter || !firstPosition || !secondPosition) {
+    return null;
+  }
+
+  const edgeMidpoint = midpoint(firstPosition, secondPosition);
+  const edgeDirection = normalize(sub(secondPosition, firstPosition));
+  let normal = normalize(perpLeft(edgeDirection));
+  if (distance(add(edgeMidpoint, normal), currentCenter) < distance(add(edgeMidpoint, scale(normal, -1)), currentCenter)) {
+    normal = scale(normal, -1);
+  }
+  return add(edgeMidpoint, scale(normal, fusedCenterDistance(currentRing.atomIds.length, neighborRing.atomIds.length, bondLength)));
+}
+
+/**
+ * Places one pericondensed shell ring from the currently available shared edge geometry.
+ * @param {object} neighborRing - Ring descriptor being placed.
+ * @param {{sharedAtomIds: string[]}} connection - Fused connection descriptor.
+ * @param {{x: number, y: number}} neighborCenter - Chosen neighbor-ring center.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable atom coordinate map.
+ * @returns {void}
+ */
+function placePericondensedShellRing(neighborRing, connection, neighborCenter, coords) {
+  const [firstSharedAtomId, secondSharedAtomId] = connection.sharedAtomIds;
+  const firstPosition = coords.get(firstSharedAtomId);
+  const secondPosition = coords.get(secondSharedAtomId);
+  if (!firstPosition || !secondPosition) {
+    return;
+  }
+
+  const path = nonSharedPath(neighborRing.atomIds, firstSharedAtomId, secondSharedAtomId);
+  const angleA = angleOf(sub(firstPosition, neighborCenter));
+  const angleB = angleOf(sub(secondPosition, neighborCenter));
+  const shortDelta = wrapAngle(angleB - angleA);
+  const stepSign = shortDelta >= 0 ? -1 : 1;
+  const step = stepSign * ((2 * Math.PI) / neighborRing.atomIds.length);
+  const radius = rootRadiusForSize(neighborRing.atomIds.length, distance(firstPosition, secondPosition));
+
+  coords.set(firstSharedAtomId, firstPosition);
+  coords.set(secondSharedAtomId, secondPosition);
+  for (let index = 1; index < path.length - 1; index++) {
+    coords.set(path[index], add(neighborCenter, fromAngle(angleA + (index * step), radius)));
+  }
+}
+
+/**
+ * Relaxes pericondensed ring centers toward ideal fused center distances.
+ * @param {object[]} rings - Ring descriptors.
+ * @param {Map<number, number[]>} ringAdj - Ring adjacency map.
+ * @param {Map<number, {x: number, y: number}>} inputRingCenters - Current ring centers.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} [options] - Relaxation options.
+ * @param {number} [options.iterations] - Maximum relaxation passes.
+ * @param {number} [options.damping] - Per-pass damping factor.
+ * @returns {Map<number, {x: number, y: number}>} Relaxed ring-center map.
+ */
+function relaxPericondensedRingCenters(rings, ringAdj, inputRingCenters, bondLength, options = {}) {
+  const ringById = new Map(rings.map(ring => [ring.id, ring]));
+  const ringCenters = new Map([...inputRingCenters.entries()].map(([ringId, center]) => [ringId, { ...center }]));
+  const iterations = options.iterations ?? 30;
+  const damping = options.damping ?? 0.4;
+
+  for (let iteration = 0; iteration < iterations; iteration++) {
+    const nextCenters = new Map();
+    for (const ring of rings) {
+      const currentCenter = ringCenters.get(ring.id);
+      if (!currentCenter) {
+        continue;
+      }
+
+      const targets = [];
+      for (const neighborRingId of ringAdj.get(ring.id) ?? []) {
+        const neighborCenter = ringCenters.get(neighborRingId);
+        const neighborRing = ringById.get(neighborRingId);
+        if (!neighborCenter || !neighborRing) {
+          continue;
+        }
+        let direction = sub(currentCenter, neighborCenter);
+        if (Math.hypot(direction.x, direction.y) <= 1e-9) {
+          direction = fromAngle((2 * Math.PI * (ring.id + 1)) / Math.max(rings.length, 3), 1);
+        }
+        direction = normalize(direction);
+        targets.push(add(
+          neighborCenter,
+          scale(direction, fusedCenterDistance(ring.atomIds.length, neighborRing.atomIds.length, bondLength))
+        ));
+      }
+
+      if (targets.length === 0) {
+        continue;
+      }
+
+      const averageTarget = centroid(targets);
+      nextCenters.set(ring.id, {
+        x: (currentCenter.x * (1 - damping)) + (averageTarget.x * damping),
+        y: (currentCenter.y * (1 - damping)) + (averageTarget.y * damping)
+      });
+    }
+
+    for (const [ringId, center] of nextCenters) {
+      ringCenters.set(ringId, center);
+    }
+  }
+
+  return ringCenters;
+}
+
+/**
+ * Rebuilds pericondensed atom coordinates from relaxed ring centers by averaging
+ * ideal regular-polygon target positions for each incident ring.
+ * @param {object[]} rings - Ring descriptors.
+ * @param {Map<number, {x: number, y: number}>} ringCenters - Ring-center map.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Current atom coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Reconstructed atom coordinates.
+ */
+function redistributePericondensedAtoms(rings, ringCenters, inputCoords, bondLength) {
+  const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  const targetSums = new Map();
+  const targetCounts = new Map();
+
+  for (const ring of rings) {
+    const ringCenter = ringCenters.get(ring.id);
+    if (!ringCenter) {
+      continue;
+    }
+    const radius = rootRadiusForSize(ring.atomIds.length, bondLength);
+    const currentAngles = ring.atomIds.map(atomId => {
+      const position = coords.get(atomId);
+      return position ? angleOf(sub(position, ringCenter)) : 0;
+    });
+    const step = (2 * Math.PI) / ring.atomIds.length;
+    let bestTargets = null;
+    let bestError = Number.POSITIVE_INFINITY;
+
+    for (const direction of [1, -1]) {
+      const offsetVector = currentAngles.reduce((sum, angle, index) => {
+        const offset = angle - (direction * index * step);
+        return {
+          x: sum.x + Math.cos(offset),
+          y: sum.y + Math.sin(offset)
+        };
+      }, { x: 0, y: 0 });
+      const baseAngle = Math.atan2(offsetVector.y, offsetVector.x);
+      const targets = ring.atomIds.map((atomId, index) => {
+        const target = add(ringCenter, fromAngle(baseAngle + (direction * index * step), radius));
+        const actual = coords.get(atomId);
+        const error = actual ? ((target.x - actual.x) ** 2) + ((target.y - actual.y) ** 2) : 0;
+        return { atomId, target, error };
+      });
+      const totalError = targets.reduce((sum, target) => sum + target.error, 0);
+      if (totalError < bestError) {
+        bestError = totalError;
+        bestTargets = targets;
+      }
+    }
+
+    for (const { atomId, target } of bestTargets ?? []) {
+      const sum = targetSums.get(atomId) ?? { x: 0, y: 0 };
+      sum.x += target.x;
+      sum.y += target.y;
+      targetSums.set(atomId, sum);
+      targetCounts.set(atomId, (targetCounts.get(atomId) ?? 0) + 1);
+    }
+  }
+
+  for (const [atomId, sum] of targetSums) {
+    const count = targetCounts.get(atomId) ?? 0;
+    if (count > 0) {
+      coords.set(atomId, {
+        x: sum.x / count,
+        y: sum.y / count
+      });
+    }
+  }
+
+  return coords;
+}
+
+/**
+ * Places a cyclic fused adjacency system by growing rings shell-by-shell from
+ * a central ring, then relaxing ring centers and rebuilding ideal polygons.
+ * @param {object[]} rings - Ring descriptors in the fused system.
+ * @param {Map<number, number[]>} ringAdj - Ring adjacency map.
+ * @param {Map<string, object>} ringConnectionByPair - Pair-keyed ring connection map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{coords: Map<string, {x: number, y: number}>, ringCenters: Map<number, {x: number, y: number}>, placementMode: string}} Placement result.
+ */
+function layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLength) {
+  const coords = new Map();
+  const ringCenters = new Map();
+  const ringById = new Map(rings.map(ring => [ring.id, ring]));
+  const rootRing = selectPericondensedCentralRing(rings, ringAdj);
+  const rootStep = (2 * Math.PI) / rootRing.atomIds.length;
+  const rootRadius = rootRadiusForSize(rootRing.atomIds.length, bondLength);
+
+  for (let index = 0; index < rootRing.atomIds.length; index++) {
+    coords.set(rootRing.atomIds[index], fromAngle(Math.PI / 2 + (index * rootStep), rootRadius));
+  }
+  ringCenters.set(rootRing.id, { x: 0, y: 0 });
+
+  const placedRingIds = new Set([rootRing.id]);
+  while (placedRingIds.size < rings.length) {
+    const nextRing = nextPericondensedShellRing(rings, ringAdj, placedRingIds);
+    if (!nextRing) {
+      break;
+    }
+    const placedNeighbors = (ringAdj.get(nextRing.id) ?? [])
+      .filter(neighborRingId => placedRingIds.has(neighborRingId))
+      .map(neighborRingId => ({
+        ring: ringById.get(neighborRingId),
+        connection: ringConnectionByPair.get(
+          nextRing.id < neighborRingId ? `${nextRing.id}:${neighborRingId}` : `${neighborRingId}:${nextRing.id}`
+        )
+      }))
+      .filter(({ ring, connection }) => ring && connection);
+
+    const centerCandidates = placedNeighbors
+      .map(({ ring, connection }) => estimateNeighborCenter(ring, nextRing, connection, ringCenters, coords, bondLength))
+      .filter(Boolean);
+    if (centerCandidates.length === 0) {
+      break;
+    }
+
+    const nextCenter = centroid(centerCandidates);
+    ringCenters.set(nextRing.id, nextCenter);
+    placePericondensedShellRing(nextRing, placedNeighbors[0].connection, nextCenter, coords);
+    placedRingIds.add(nextRing.id);
+  }
+
+  const relaxedRingCenters = relaxPericondensedRingCenters(rings, ringAdj, ringCenters, bondLength);
+  const reconstructedCoords = redistributePericondensedAtoms(rings, relaxedRingCenters, coords, bondLength);
+  const regularizedCoords = regularizeConstructedFusedCoords(rings, reconstructedCoords, bondLength, {
+    iterations: 18,
+    damping: 0.45
+  });
+  const orientedCoords = orientCoordsHorizontally(
+    regularizedCoords,
+    computeFusedAxis(rebuildRingCenters(rings, regularizedCoords))
+  );
+
+  return {
+    coords: orientedCoords,
+    ringCenters: rebuildRingCenters(rings, orientedCoords),
+    placementMode: 'pericondensed'
+  };
+}
+
+/**
  * Fits an ideal regular-polygon target for one placed ring.
  * @param {object} ring - Ring descriptor.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
@@ -269,6 +589,9 @@ export function layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLeng
       placementMode: 'template'
     };
   }
+  if (hasFusedAdjacencyCycle(rings, ringAdj)) {
+    return layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLength);
+  }
 
   const rootRing = rings[0];
   const rootStep = (2 * Math.PI) / rootRing.atomIds.length;
@@ -332,17 +655,9 @@ export function layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLeng
 
   let orientedCoords = orientCoordsHorizontally(coords, computeFusedAxis(ringCenters));
   if (options.layoutGraph && hasFusedAdjacencyCycle(rings, ringAdj)) {
-    const relaxedCoords = relaxConstructedFusedCoords(
-      options.layoutGraph,
-      templateAtomIds,
-      orientedCoords,
-      bondLength
-    );
+    const relaxedCoords = relaxConstructedFusedCoords(options.layoutGraph, templateAtomIds, orientedCoords, bondLength);
     const regularizedCoords = regularizeConstructedFusedCoords(rings, relaxedCoords, bondLength);
-    orientedCoords = orientCoordsHorizontally(
-      regularizedCoords,
-      computeFusedAxis(rebuildRingCenters(rings, regularizedCoords))
-    );
+    orientedCoords = orientCoordsHorizontally(regularizedCoords, computeFusedAxis(rebuildRingCenters(rings, regularizedCoords)));
   }
   return {
     coords: orientedCoords,

@@ -15,6 +15,22 @@ const ANGLE_SCORE_TIEBREAK_RATIO = 0.05;
 const MAX_BRANCH_RECURSION_DEPTH = 120;
 const CROSS_LIKE_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
 
+/**
+ * Normalizes an angle into the signed `(-pi, pi]` range.
+ * @param {number} angle - Input angle in radians.
+ * @returns {number} Wrapped signed angle.
+ */
+function normalizeSignedAngle(angle) {
+  let wrappedAngle = angle;
+  while (wrappedAngle > Math.PI) {
+    wrappedAngle -= 2 * Math.PI;
+  }
+  while (wrappedAngle <= -Math.PI) {
+    wrappedAngle += 2 * Math.PI;
+  }
+  return wrappedAngle;
+}
+
 function neighborOrder(neighbors, canonicalAtomRank) {
   return [...neighbors].sort((firstAtomId, secondAtomId) => compareCanonicalAtomIds(firstAtomId, secondAtomId, canonicalAtomRank));
 }
@@ -38,6 +54,68 @@ function scoreCandidateAngle(candidateAngle, occupiedAngles, preferredAngles) {
     ? 0
     : Math.min(...preferredAngles.map(preferredAngle => angularDifference(candidateAngle, preferredAngle)));
   return (minSeparation * 100) - preferredPenalty;
+}
+
+/**
+ * Filters candidate angles through an optional anchor-specific angular budget.
+ * @param {number[]} candidateAngles - Candidate angles in radians.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} branchConstraints - Optional branch constraints.
+ * @returns {number[]} Candidate angles that satisfy the budget, or the original set when unconstrained.
+ */
+function filterAnglesByBudget(candidateAngles, anchorAtomId, branchConstraints) {
+  const budget = branchConstraints?.angularBudgets?.get(anchorAtomId);
+  if (!budget) {
+    return candidateAngles;
+  }
+  const filteredAngles = candidateAngles.filter(candidateAngle => {
+    const offset = normalizeSignedAngle(candidateAngle - budget.centerAngle);
+    return offset >= (budget.minOffset - 1e-9) && offset <= (budget.maxOffset + 1e-9);
+  });
+  return filteredAngles.length > 0 ? filteredAngles : candidateAngles;
+}
+
+/**
+ * Returns any explicit preferred angle carried by an anchor-specific branch budget.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} branchConstraints - Optional branch constraints.
+ * @returns {number[]} Preferred budget-derived angles.
+ */
+function budgetPreferredAngles(anchorAtomId, branchConstraints) {
+  const budget = branchConstraints?.angularBudgets?.get(anchorAtomId);
+  if (!budget) {
+    return [];
+  }
+  return [budget.preferredAngle ?? budget.centerAngle];
+}
+
+/**
+ * Appends extra candidate angles while avoiding near-duplicate directions.
+ * @param {number[]} baseAngles - Existing candidate angles.
+ * @param {number[]} extraAngles - Extra candidate angles to append.
+ * @returns {number[]} Deduplicated candidate angles.
+ */
+function mergeCandidateAngles(baseAngles, extraAngles) {
+  const mergedAngles = [...baseAngles];
+  for (const extraAngle of extraAngles) {
+    if (!mergedAngles.some(candidateAngle => angularDifference(candidateAngle, extraAngle) <= 1e-9)) {
+      mergedAngles.push(extraAngle);
+    }
+  }
+  return mergedAngles;
+}
+
+/**
+ * Resolves the preferred-angle set for an anchor, letting macrocycle budget
+ * preferences override the generic ring-outward fallback when present.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {number[]} fallbackPreferredAngles - Existing preferred angles.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} branchConstraints - Optional branch constraints.
+ * @returns {number[]} Preferred angles to score against.
+ */
+function resolvedPreferredAngles(anchorAtomId, fallbackPreferredAngles, branchConstraints) {
+  const budgetAngles = budgetPreferredAngles(anchorAtomId, branchConstraints);
+  return budgetAngles.length > 0 ? budgetAngles : fallbackPreferredAngles;
 }
 
 /**
@@ -162,19 +240,6 @@ function centerDistanceScore(placementState, candidatePosition) {
   return Math.hypot(candidatePosition.x - centerX, candidatePosition.y - centerY);
 }
 
-function chooseBranchAngle(occupiedAngles, preferredAngles = []) {
-  let bestAngle = DISCRETE_BRANCH_ANGLES[0];
-  let bestScore = Number.NEGATIVE_INFINITY;
-  for (const candidateAngle of DISCRETE_BRANCH_ANGLES) {
-    const score = scoreCandidateAngle(candidateAngle, occupiedAngles, preferredAngles);
-    if (score > bestScore) {
-      bestScore = score;
-      bestAngle = candidateAngle;
-    }
-  }
-  return bestAngle;
-}
-
 /**
  * Chooses the best discrete angle from the preferred candidates only.
  * Attachment placement sometimes needs to preserve trigonal or ring-derived
@@ -185,7 +250,7 @@ function chooseBranchAngle(occupiedAngles, preferredAngles = []) {
  * @returns {number|null} Winning preferred angle, or `null` when none exist.
  */
 function choosePreferredDiscreteAngle(occupiedAngles, preferredAngles = []) {
-  const candidateAngles = preferredDiscreteAngles(preferredAngles);
+  const candidateAngles = mergeCandidateAngles(preferredDiscreteAngles(preferredAngles), preferredAngles);
   if (candidateAngles.length === 0) {
     return null;
   }
@@ -211,7 +276,7 @@ function choosePreferredDiscreteAngle(occupiedAngles, preferredAngles = []) {
  * @returns {boolean} True when a preferred discrete angle is acceptably separated.
  */
 function hasSafePreferredDiscreteAngle(occupiedAngles, preferredAngles = []) {
-  const candidateAngles = preferredDiscreteAngles(preferredAngles);
+  const candidateAngles = mergeCandidateAngles(preferredDiscreteAngles(preferredAngles), preferredAngles);
   if (candidateAngles.length === 0) {
     return false;
   }
@@ -589,12 +654,23 @@ function evaluateAngleCandidates(
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
  * @param {number[]} occupiedAngles - Occupied neighbor angles.
  * @param {number[]} preferredAngles - Preferred continuation angles.
+ * @param {number[]} candidateAngles - Candidate continuation angles after applying any optional budget.
  * @param {Set<string>} excludedAtomIds - Atoms to ignore during clearance scoring.
  * @param {{sumX: number, sumY: number, count: number}} placementState - Running placement CoM state.
  * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
  * @returns {number} Chosen continuation angle in radians.
  */
-function chooseContinuationAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, excludedAtomIds, placementState, ringPolygons = []) {
+function chooseContinuationAngle(
+  anchorPosition,
+  bondLength,
+  coords,
+  occupiedAngles,
+  preferredAngles,
+  candidateAngles,
+  excludedAtomIds,
+  placementState,
+  ringPolygons = []
+) {
   const preferredCandidateAngles = preferredDiscreteAngles(preferredAngles);
   if (preferredCandidateAngles.length > 0) {
     const preferredCandidates = evaluateAngleCandidates(
@@ -626,7 +702,7 @@ function chooseContinuationAngle(anchorPosition, bondLength, coords, occupiedAng
 
   return pickBestCandidateAngle(
     evaluateAngleCandidates(
-      DISCRETE_BRANCH_ANGLES,
+      candidateAngles,
       occupiedAngles,
       preferredAngles,
       anchorPosition,
@@ -773,16 +849,24 @@ function isRingAnchor(layoutGraph, atomId) {
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {Set<string>} atomIdsToPlace - Slice participant IDs.
  * @param {string[]} primaryNeighborIds - Heavy neighbors awaiting placement.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints.
  * @returns {boolean} True when greedy sibling placement is safer.
  */
-function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, primaryNeighborIds) {
+function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, primaryNeighborIds, branchConstraints = null) {
   if (primaryNeighborIds.length < 2) {
     return true;
   }
   const participantCount = atomIdsToPlace?.size ?? 0;
   const heavyThreshold = layoutGraph?.options?.largeMoleculeThreshold?.heavyAtomCount ?? Number.MAX_SAFE_INTEGER;
+  const hasMacrocycleBudgets = (branchConstraints?.angularBudgets?.size ?? 0) > 0;
   const greedyBudget = Math.max(48, Math.floor(heavyThreshold * 0.5));
-  return participantCount > greedyBudget;
+  if (participantCount > greedyBudget) {
+    return true;
+  }
+  if (hasMacrocycleBudgets && participantCount > Math.max(24, Math.floor(greedyBudget * 0.5))) {
+    return true;
+  }
+  return false;
 }
 
 function subtreeHeavyAtomCount(adjacency, layoutGraph, coords, rootAtomId, blockedAtomId) {
@@ -929,6 +1013,7 @@ function chooseBatchAngleAssignments(
   unplacedNeighborIds,
   bondLength,
   layoutGraph = null,
+  branchConstraints = null,
   depth = 0
 ) {
   const anchorPosition = coords.get(anchorAtomId);
@@ -967,7 +1052,8 @@ function chooseBatchAngleAssignments(
   const angleSets = [
     ...crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
     ...fallbackAngleSets
-  ];
+  ].map(angleSet => filterAnglesByBudget(angleSet, anchorAtomId, branchConstraints))
+    .filter(angleSet => angleSet.length === unplacedNeighborIds.length);
 
   const childDescriptors = unplacedNeighborIds.map(childAtomId => ({
     childAtomId,
@@ -1014,6 +1100,7 @@ function chooseBatchAngleAssignments(
           anchorAtomId,
           bondLength,
           layoutGraph,
+          branchConstraints,
           depth + 1
         );
       }
@@ -1056,9 +1143,19 @@ function chooseBatchAngleAssignments(
  * @param {number|null} [preferredAngle] - Preferred angle in radians.
  * @param {object|null} [layoutGraph] - Layout graph shell.
  * @param {string|null} [attachedAtomId] - Unplaced atom being attached to the anchor.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
  * @returns {number} Chosen attachment angle.
  */
-export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsToPlace, preferredAngle = null, layoutGraph = null, attachedAtomId = null) {
+export function chooseAttachmentAngle(
+  adjacency,
+  coords,
+  anchorAtomId,
+  atomIdsToPlace,
+  preferredAngle = null,
+  layoutGraph = null,
+  attachedAtomId = null,
+  branchConstraints = null
+) {
   const occupiedAngles = occupiedNeighborAngles(adjacency, coords, anchorAtomId, atomIdsToPlace);
   if (attachedAtomId) {
     const placedNeighborIds = neighborOrder(
@@ -1075,15 +1172,43 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
       attachedAtomId,
       layoutGraph
     );
-    const preferredContinuationAngle = choosePreferredDiscreteAngle(occupiedAngles, continuationAngles);
-    if (preferredContinuationAngle != null && hasSafePreferredDiscreteAngle(occupiedAngles, continuationAngles)) {
+    const constrainedContinuationAngles = mergeCandidateAngles(
+      filterAnglesByBudget(continuationAngles, anchorAtomId, branchConstraints),
+      budgetPreferredAngles(anchorAtomId, branchConstraints)
+    );
+    const preferredContinuationAngle = choosePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles);
+    if (preferredContinuationAngle != null && hasSafePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles)) {
       return preferredContinuationAngle;
     }
   }
 
-  const preferredAngles = preferredAngle == null ? [] : [preferredAngle];
-  preferredAngles.push(...preferredRingAngles(layoutGraph, coords, anchorAtomId));
-  return chooseBranchAngle(occupiedAngles, preferredAngles);
+  const preferredAngles = resolvedPreferredAngles(
+    anchorAtomId,
+    [
+      ...(preferredAngle == null ? [] : [preferredAngle]),
+      ...preferredRingAngles(layoutGraph, coords, anchorAtomId)
+    ],
+    branchConstraints
+  );
+  const constrainedCandidateAngles = mergeCandidateAngles(
+    filterAnglesByBudget(DISCRETE_BRANCH_ANGLES, anchorAtomId, branchConstraints),
+    budgetPreferredAngles(anchorAtomId, branchConstraints)
+  );
+  return pickBestCandidateAngle(
+    evaluateAngleCandidates(
+      constrainedCandidateAngles,
+      occupiedAngles,
+      preferredAngles,
+      coords.get(anchorAtomId),
+      1,
+      coords,
+      new Set([anchorAtomId]),
+      null,
+      incidentRingPolygons(layoutGraph, coords, anchorAtomId)
+    ),
+    1,
+    false
+  );
 }
 
 function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsToPlace, parentAtomId, childAtomId, layoutGraph = null) {
@@ -1144,6 +1269,7 @@ function placeNeighborSequence(
   bondLength,
   neighborAtomIds,
   layoutGraph = null,
+  branchConstraints = null,
   depth = 0
 ) {
   const anchorPosition = coords.get(anchorAtomId);
@@ -1159,14 +1285,24 @@ function placeNeighborSequence(
     const preferredAngles = preferredBranchAngles(adjacency, coords, anchorAtomId, atomIdsToPlace, parentAtomId, childAtomId, layoutGraph);
     const excludedAtomIds = new Set([anchorAtomId, ...currentPlacedNeighborIds]);
     const childIsHydrogen = isHydrogenAtom(layoutGraph, childAtomId);
-    const scoringPreferredAngles = childIsHydrogen ? [] : preferredAngles;
+    const scoringPreferredAngles = childIsHydrogen
+      ? []
+      : resolvedPreferredAngles(anchorAtomId, preferredAngles, branchConstraints);
+    const constrainedPreferredAngles = mergeCandidateAngles(
+      filterAnglesByBudget(scoringPreferredAngles, anchorAtomId, branchConstraints),
+      childIsHydrogen ? [] : budgetPreferredAngles(anchorAtomId, branchConstraints)
+    );
+    const constrainedFallbackAngles = mergeCandidateAngles(
+      filterAnglesByBudget(DISCRETE_BRANCH_ANGLES, anchorAtomId, branchConstraints),
+      budgetPreferredAngles(anchorAtomId, branchConstraints)
+    );
     const shouldHonorPreferredAngle = preferredAngles.length > 0
       && !childIsHydrogen
       && (currentPlacedNeighborIds.length === 1 || isRingAnchor(layoutGraph, anchorAtomId));
     const fallbackCandidates = evaluateAngleCandidates(
-      DISCRETE_BRANCH_ANGLES,
+      constrainedFallbackAngles,
       occupiedAngles,
-      scoringPreferredAngles,
+      constrainedPreferredAngles,
       anchorPosition,
       bondLength,
       coords,
@@ -1180,7 +1316,8 @@ function placeNeighborSequence(
         bondLength,
         coords,
         occupiedAngles,
-        scoringPreferredAngles,
+        constrainedPreferredAngles,
+        constrainedFallbackAngles,
         excludedAtomIds,
         placementState,
         ringPolygons
@@ -1192,11 +1329,23 @@ function placeNeighborSequence(
       );
     setPlacedPosition(coords, placementState, childAtomId, add(anchorPosition, fromAngle(chosenAngle, bondLength)), layoutGraph);
     occupiedAngles = occupiedAngles.concat([chosenAngle]);
-    placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, childAtomId, anchorAtomId, bondLength, layoutGraph, depth + 1);
+    placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, childAtomId, anchorAtomId, bondLength, layoutGraph, branchConstraints, depth + 1);
   }
 }
 
-function placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, anchorAtomId, parentAtomId, bondLength, layoutGraph = null, depth = 0) {
+function placeChildren(
+  adjacency,
+  canonicalAtomRank,
+  coords,
+  placementState,
+  atomIdsToPlace,
+  anchorAtomId,
+  parentAtomId,
+  bondLength,
+  layoutGraph = null,
+  branchConstraints = null,
+  depth = 0
+) {
   const anchorPosition = coords.get(anchorAtomId);
   if (!anchorPosition || depth > MAX_BRANCH_RECURSION_DEPTH) {
     return;
@@ -1206,7 +1355,7 @@ function placeChildren(adjacency, canonicalAtomRank, coords, placementState, ato
     canonicalAtomRank
   );
   const { primaryNeighborIds, deferredNeighborIds } = splitDeferredHydrogenNeighbors(unplacedNeighbors, layoutGraph);
-  if (primaryNeighborIds.length >= 2 && !shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, primaryNeighborIds)) {
+  if (primaryNeighborIds.length >= 2 && !shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, primaryNeighborIds, branchConstraints)) {
     chooseBatchAngleAssignments(
       adjacency,
       canonicalAtomRank,
@@ -1218,6 +1367,7 @@ function placeChildren(adjacency, canonicalAtomRank, coords, placementState, ato
       primaryNeighborIds,
       bondLength,
       layoutGraph,
+      branchConstraints,
       depth
     );
   } else {
@@ -1232,6 +1382,7 @@ function placeChildren(adjacency, canonicalAtomRank, coords, placementState, ato
       bondLength,
       primaryNeighborIds,
       layoutGraph,
+      branchConstraints,
       depth
     );
   }
@@ -1247,6 +1398,7 @@ function placeChildren(adjacency, canonicalAtomRank, coords, placementState, ato
       bondLength,
       deferredNeighborIds,
       layoutGraph,
+      branchConstraints,
       depth
     );
   }
@@ -1262,10 +1414,21 @@ function placeChildren(adjacency, canonicalAtomRank, coords, placementState, ato
  * @param {string[]} seedAtomIds - Already placed atom IDs.
  * @param {number} bondLength - Target bond length.
  * @param {object|null} [layoutGraph] - Layout graph shell.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
  * @param {number} [depth] - Recursive depth guard for pathological graphs.
  * @returns {Map<string, {x: number, y: number}>} Updated coordinate map.
  */
-export function placeRemainingBranches(adjacency, canonicalAtomRank, coords, atomIdsToPlace, seedAtomIds, bondLength, layoutGraph = null, depth = 0) {
+export function placeRemainingBranches(
+  adjacency,
+  canonicalAtomRank,
+  coords,
+  atomIdsToPlace,
+  seedAtomIds,
+  bondLength,
+  layoutGraph = null,
+  branchConstraints = null,
+  depth = 0
+) {
   if (depth > MAX_BRANCH_RECURSION_DEPTH) {
     return coords;
   }
@@ -1275,7 +1438,7 @@ export function placeRemainingBranches(adjacency, canonicalAtomRank, coords, ato
     const placedNeighbors = (adjacency.get(seedAtomId) ?? []).filter(neighborAtomId => coords.has(neighborAtomId) && atomIdsToPlace.has(neighborAtomId));
     const orderedPlacedNeighbors = neighborOrder(placedNeighbors, canonicalAtomRank);
     const parentAtomId = orderedPlacedNeighbors.length === 1 ? orderedPlacedNeighbors[0] : null;
-    placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, seedAtomId, parentAtomId, bondLength, layoutGraph, depth);
+    placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, seedAtomId, parentAtomId, bondLength, layoutGraph, branchConstraints, depth);
   }
   return coords;
 }

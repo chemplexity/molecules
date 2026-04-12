@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-04-12
+
+- Add major `layoutv2` follow-up performance work across overlap cleanup, unified cleanup, and label clearance for macrocycle/macrolide-heavy cases
+- Add medium-ring cyclic `E/Z` enforcement, unified cleanup orchestration, profile-driven post-cleanup hooks, and pericondensed fused-ring layout support
+- Add benchmark coverage and broader `layoutv2` regression coverage while deferring the SVG snapshot approach during active algorithm development
+
 ## 2026-04-11
 
 - Fix layout-v2 clean so acyclic sketches snap back to exact ideal angles
