@@ -108,7 +108,7 @@ async function plotGeometryWithinPlot(page, padding = 4) {
 /**
  * Captures the current screen-space centers of rendered force nodes and their labels.
  * @param {import('@playwright/test').Page} page - Playwright page under test.
- * @returns {Promise<Array<{label: string, cx: number, cy: number}>>} Force-node screen points in DOM order.
+ * @returns {Promise<Array<{id: string, label: string, cx: number, cy: number}>>} Force-node screen points in DOM order.
  */
 async function forceAtomScreenPoints(page) {
   return await page.evaluate(() => {
@@ -118,12 +118,32 @@ async function forceAtomScreenPoints(page) {
       const rect = circle.getBoundingClientRect();
       const label = labels[index]?.textContent?.trim() ?? '';
       return {
+        id: String(circle.__data__?.id ?? ''),
         label,
         cx: rect.left + rect.width / 2,
         cy: rect.top + rect.height / 2
       };
     });
   });
+}
+
+/**
+ * Computes the signed area of the triangle formed by the three requested force nodes.
+ * @param {Array<{id: string, cx: number, cy: number}>} points - Force-node screen points keyed by atom id.
+ * @param {string} firstId - First atom id.
+ * @param {string} secondId - Second atom id.
+ * @param {string} thirdId - Third atom id.
+ * @returns {number} Signed screen-space triangle area.
+ */
+function signedTriangleArea(points, firstId, secondId, thirdId) {
+  const pointById = new Map(points.map(point => [point.id, point]));
+  const first = pointById.get(firstId);
+  const second = pointById.get(secondId);
+  const third = pointById.get(thirdId);
+  if (!first || !second || !third) {
+    throw new Error(`Missing force-node triangle point(s): ${firstId}, ${secondId}, ${thirdId}`);
+  }
+  return ((second.cx - first.cx) * (third.cy - first.cy)) - ((second.cy - first.cy) * (third.cx - first.cx));
 }
 
 test('input changes participate in undo/redo through the real browser UI', async ({ page }) => {
@@ -772,6 +792,37 @@ test('clean in force mode re-idealizes a dragged force layout', async ({ page })
       return Math.max(...afterClean.map((atom, index) => Math.hypot(atom.cx - afterDrag[index].cx, atom.cy - afterDrag[index].cy)));
     })
     .toBeGreaterThan(20);
+});
+
+test('clean in force mode preserves the current handedness of a dragged acyclic layout', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCO');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+  await expect(page.locator('circle.node')).toHaveCount(9);
+
+  const beforeDrag = await forceAtomScreenPoints(page);
+  const oxygen = beforeDrag.find(atom => atom.id === 'O3');
+  expect(oxygen).toBeTruthy();
+
+  await page.mouse.move(oxygen.cx, oxygen.cy);
+  await page.mouse.down();
+  await page.mouse.move(oxygen.cx, oxygen.cy + 90, { steps: 10 });
+  await page.mouse.up();
+
+  const afterDrag = await forceAtomScreenPoints(page);
+  const dragArea = signedTriangleArea(afterDrag, 'C1', 'C2', 'O3');
+  expect(Math.abs(dragArea)).toBeGreaterThan(100);
+
+  await page.locator('#clean-force-btn').click();
+
+  await expect
+    .poll(async () => {
+      const afterClean = await forceAtomScreenPoints(page);
+      return Math.sign(signedTriangleArea(afterClean, 'C1', 'C2', 'O3'));
+    })
+    .toBe(Math.sign(dragArea));
 });
 
 test('editing a force atom updates the implicit hydrogens around the edited atom', async ({ page }) => {

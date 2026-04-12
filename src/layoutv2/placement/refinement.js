@@ -7,6 +7,24 @@ function componentParticipantAtomIds(layoutGraph, component) {
 }
 
 /**
+ * Returns whether the component contains any ring atom.
+ * Cleanup-only refinement is more conservative for ring scaffolds because
+ * rerouting a fully placed ring system can degrade an otherwise good layout.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{atomIds: string[]}} component - Component descriptor.
+ * @returns {boolean} True when the component contains at least one ring atom.
+ */
+function componentContainsRingAtom(layoutGraph, component) {
+  const componentAtomIds = new Set(component.atomIds);
+  for (const ring of layoutGraph.rings ?? []) {
+    if (ring.atomIds.some(atomId => componentAtomIds.has(atomId))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Builds the touched-atom set implied by the current refinement hints.
  * Touched bonds contribute both endpoint atoms.
  * @param {object} layoutGraph - Layout graph shell.
@@ -44,7 +62,8 @@ export function buildRefinementContext(layoutGraph) {
  * Returns whether a component should keep its existing coordinates unchanged.
  * This applies both to untouched components during partial relayout and to
  * cleanup-only refinement runs where every participant atom already has an
- * existing coordinate.
+ * existing coordinate and the component is ring-bearing enough that a full
+ * relayout is riskier than preserving the current geometry.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{atomIds: string[]}} component - Component descriptor.
  * @param {{enabled: boolean, hasTouchedHints: boolean, touchedAtomIds: Set<string>}} refinementContext - Refinement context.
@@ -62,7 +81,7 @@ export function canPreserveComponentPlacement(layoutGraph, component, refinement
     return false;
   }
   if (!refinementContext.hasTouchedHints) {
-    return true;
+    return componentContainsRingAtom(layoutGraph, component);
   }
   if (participantAtomIds.some(atomId => refinementContext.touchedAtomIds.has(atomId))) {
     return false;

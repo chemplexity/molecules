@@ -1,5 +1,9 @@
 # Change Log
 
+## 2026-04-11
+
+- Fix layout-v2 clean so acyclic sketches snap back to exact ideal angles
+
 ## 2026-04-10
 
 - Fix hypervalent sulfur 2D geometry to use a cross-like layout

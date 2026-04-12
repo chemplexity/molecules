@@ -45,6 +45,21 @@ describe('layoutv2/placement/refinement', () => {
     });
   });
 
+  it('does not preserve a fully specified acyclic component during cleanup-only refinement', () => {
+    const graph = createLayoutGraph(makeDisconnectedEthanes(), {
+      existingCoords: new Map([
+        ['a0', { x: 0, y: 0 }],
+        ['a1', { x: 1.5, y: 0 }],
+        ['c0', { x: 10, y: 0 }],
+        ['c1', { x: 11.5, y: 0 }]
+      ])
+    });
+    const refinementContext = buildRefinementContext(graph);
+    const component = graph.components.find(candidate => candidate.atomIds.includes('a0'));
+
+    assert.equal(canPreserveComponentPlacement(graph, component, refinementContext), false);
+  });
+
   it('anchors touched-component relayout to untouched existing atoms', () => {
     const graph = createLayoutGraph(makeDisconnectedEthanes(), {
       fixedCoords: new Map([['a0', { x: 0, y: 0 }]]),

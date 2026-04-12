@@ -73,6 +73,16 @@ function assertApproxTetrahedralSpread(coords, centerAtomId, neighborAtomIds, to
   }
 }
 
+function signedTriangleArea(coords, firstAtomId, secondAtomId, thirdAtomId) {
+  const first = coords.get(firstAtomId);
+  const second = coords.get(secondAtomId);
+  const third = coords.get(thirdAtomId);
+  assert.ok(first);
+  assert.ok(second);
+  assert.ok(third);
+  return ((second.x - first.x) * (third.y - first.y)) - ((second.y - first.y) * (third.x - first.x));
+}
+
 describe('layoutv2/api', () => {
   it('generateCoords returns coordinates for supported simple families', () => {
     const result = generateCoords(makeEthane());
@@ -113,19 +123,41 @@ describe('layoutv2/api', () => {
     assert.deepEqual(result.coords.get('c1'), { x: 11.5, y: 3 });
   });
 
-  it('refineCoords reuses a fully specified existing component when no touched hints are provided', () => {
-    const existingCoords = new Map([
-      ['a0', { x: 2, y: -1 }],
-      ['a1', { x: 3.5, y: -1 }]
-    ]);
-    const result = refineCoords(makeEthane(), {
-      existingCoords
+  it('refineCoords re-idealizes a fully specified acyclic component when no touched hints are provided', () => {
+    const seed = generateCoords(parseSMILES('CC(C)C'), { suppressH: true });
+    const existingCoords = new Map(
+      [...seed.coords.entries()].map(([atomId, position]) => [
+        atomId,
+        atomId === 'C3'
+          ? { x: position.x + 0.18, y: position.y + 0.09 }
+          : { ...position }
+      ])
+    );
+    const result = refineCoords(parseSMILES('CC(C)C'), {
+      existingCoords,
+      suppressH: true
     });
 
     assert.equal(result.metadata.refine, true);
-    assert.equal(result.metadata.preservedComponentCount, 1);
-    assert.deepEqual(result.coords.get('a0'), { x: 2, y: -1 });
-    assert.deepEqual(result.coords.get('a1'), { x: 3.5, y: -1 });
+    assert.equal(result.metadata.preservedComponentCount, 0);
+    assertApproxTrigonal(result.coords, 'C2', ['C1', 'C3', 'C4'], 1e-6);
+  });
+
+  it('refineCoords keeps the existing handedness of an unconstrained acyclic bend', () => {
+    const seed = generateCoords(parseSMILES('CCO'), { suppressH: true });
+    const existingCoords = new Map(
+      [...seed.coords.entries()].map(([atomId, position]) => [
+        atomId,
+        atomId === 'O3' ? { x: position.x, y: -position.y } : { ...position }
+      ])
+    );
+    const existingArea = signedTriangleArea(existingCoords, 'C1', 'C2', 'O3');
+    const result = refineCoords(parseSMILES('CCO'), {
+      existingCoords,
+      suppressH: true
+    });
+
+    assert.equal(Math.sign(signedTriangleArea(result.coords, 'C1', 'C2', 'O3')), Math.sign(existingArea));
   });
 
   it('keeps previously failing real-world structures from collapsing or stacking branches', () => {
