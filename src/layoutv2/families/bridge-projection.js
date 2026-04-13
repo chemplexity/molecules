@@ -1,6 +1,7 @@
 /** @module families/bridge-projection */
 
 import { angleOf, distance, rotate, sub } from '../geometry/vec2.js';
+import { BRIDGE_PROJECTION_FACTORS } from '../constants.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { pickBridgeheads } from '../topology/bridgeheads.js';
 
@@ -188,14 +189,29 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
     sideUsage.set(side, layer + 1);
 
     if (internalCount === 1) {
-      const clampedX = clamp(meanSeedX, (-headDistance / 2) + (bondLength * 0.35), (headDistance / 2) - (bondLength * 0.35));
-      const y = side * bondLength * (0.9 + layer * 0.45);
+      const clampedX = clamp(
+        meanSeedX,
+        (-headDistance / 2) + (bondLength * BRIDGE_PROJECTION_FACTORS.singleAtomClampMarginFactor),
+        (headDistance / 2) - (bondLength * BRIDGE_PROJECTION_FACTORS.singleAtomClampMarginFactor)
+      );
+      const y = side * bondLength * (
+        BRIDGE_PROJECTION_FACTORS.singleAtomBaseHeightFactor
+        + (layer * BRIDGE_PROJECTION_FACTORS.layerSpacingFactor)
+      );
       coords.set(internalAtomIds[0], { x: clampedX, y });
       continue;
     }
 
-    const xBias = clamp((meanSeedX - midpointX) * 0.3, -bondLength * 0.5, bondLength * 0.5);
-    const amplitude = side * bondLength * (0.95 + (internalCount - 1) * 0.3 + layer * 0.45);
+    const xBias = clamp(
+      (meanSeedX - midpointX) * BRIDGE_PROJECTION_FACTORS.meanSeedBiasFactor,
+      -bondLength * BRIDGE_PROJECTION_FACTORS.meanSeedBiasClampFactor,
+      bondLength * BRIDGE_PROJECTION_FACTORS.meanSeedBiasClampFactor
+    );
+    const amplitude = side * bondLength * (
+      BRIDGE_PROJECTION_FACTORS.pathArcBaseAmplitudeFactor
+      + ((internalCount - 1) * BRIDGE_PROJECTION_FACTORS.meanSeedBiasFactor)
+      + (layer * BRIDGE_PROJECTION_FACTORS.layerSpacingFactor)
+    );
     const controlPoint = {
       x: midpointX + xBias,
       y: amplitude

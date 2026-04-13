@@ -6,6 +6,31 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
+test('app boot does not hit unsupported module URLs', async ({ page }) => {
+  const failedRequests = [];
+  const consoleErrors = [];
+  page.on('requestfailed', request => {
+    failedRequests.push({
+      url: request.url(),
+      errorText: request.failure()?.errorText ?? ''
+    });
+  });
+  page.on('console', message => {
+    if (message.type() === 'error') {
+      consoleErrors.push(message.text());
+    }
+  });
+
+  await page.goto('/index.html');
+  await expect(page.locator('#smiles-input')).toBeVisible();
+
+  const unsupportedRequests = failedRequests.filter(request => request.url.startsWith('node:'));
+  const unsupportedConsoleErrors = consoleErrors.filter(message => /unsupported url|node:perf_hooks/i.test(message));
+
+  expect(unsupportedRequests).toEqual([]);
+  expect(unsupportedConsoleErrors).toEqual([]);
+});
+
 async function loadSmiles(page, smiles) {
   const input = page.locator('#smiles-input');
   await input.fill(smiles);
@@ -350,6 +375,97 @@ test('undo preserves localized aromatic rendering for rotated aza-aromatic ring 
       }))
     )
     .toEqual({ dashed: 0 });
+});
+
+test('undo preserves hidden stereo hydrogen rendering after loading a random molecule', async ({ page }) => {
+  await page.goto('/index.html');
+
+  const smiles = 'C1C[C@H]2[C@@H](C1)C=C[C@H]2O';
+  await loadSmiles(page, smiles);
+
+  const atomTransforms = async atomIds =>
+    await page.evaluate(ids => Object.fromEntries(
+      ids.map(id => [id, document.querySelector(`g[data-atom-id="${id}"]`)?.getAttribute('transform') ?? null])
+    ), atomIds);
+
+  const stereoSignature = async () =>
+    await page.evaluate(() => ({
+      wedges: Array.from(document.querySelectorAll('polygon.bond-wedge')).map(element => element.getAttribute('points')),
+      hashes: Array.from(document.querySelectorAll('line.bond-hash')).map(element => [
+        element.getAttribute('x1'),
+        element.getAttribute('y1'),
+        element.getAttribute('x2'),
+        element.getAttribute('y2')
+      ])
+    }));
+
+  const before = await stereoSignature();
+  expect(before.wedges.length + before.hashes.length).toBeGreaterThan(0);
+  const beforeTransforms = await atomTransforms(['C3', 'H4', 'C5', 'H6']);
+  expect(beforeTransforms.H4).not.toEqual(beforeTransforms.C3);
+  expect(beforeTransforms.H6).not.toEqual(beforeTransforms.C5);
+
+  await page.evaluate(() => window.pickRandomMolecule());
+  await page.locator('#undo-btn').click();
+
+  const after = await stereoSignature();
+  const afterTransforms = await atomTransforms(['C3', 'H4', 'C5', 'H6']);
+  expect(after).toEqual(before);
+  expect(afterTransforms).toEqual(beforeTransforms);
+  await expect(page.locator('#smiles-input')).toHaveValue(smiles);
+});
+
+test('renders stereo hydrogens away from their parent carbons on initial 2d load', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+
+  const transforms = await page.evaluate(() => ({
+    C3: document.querySelector('g[data-atom-id="C3"]')?.getAttribute('transform') ?? null,
+    H4: document.querySelector('g[data-atom-id="H4"]')?.getAttribute('transform') ?? null,
+    C5: document.querySelector('g[data-atom-id="C5"]')?.getAttribute('transform') ?? null,
+    H6: document.querySelector('g[data-atom-id="H6"]')?.getAttribute('transform') ?? null
+  }));
+
+  expect(transforms.H4).not.toEqual(transforms.C3);
+  expect(transforms.H6).not.toEqual(transforms.C5);
+});
+
+test('dragging a projected stereo hydrogen follows the mouse in real time', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+
+  const hydrogenHit = page.locator('g[data-atom-id="H4"] .atom-hit');
+  await expect(hydrogenHit).toHaveCount(1);
+
+  const startBox = await hydrogenHit.boundingBox();
+  expect(startBox).toBeTruthy();
+
+  const startX = startBox.x + startBox.width / 2;
+  const startY = startBox.y + startBox.height / 2;
+  const targetX = startX + 64;
+  const targetY = startY - 42;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(targetX, targetY, { steps: 10 });
+
+  const duringBox = await hydrogenHit.boundingBox();
+  expect(duringBox).toBeTruthy();
+  const duringCenterX = duringBox.x + duringBox.width / 2;
+  const duringCenterY = duringBox.y + duringBox.height / 2;
+  expect(Math.abs(duringCenterX - targetX)).toBeLessThan(18);
+  expect(Math.abs(duringCenterY - targetY)).toBeLessThan(18);
+
+  await page.mouse.up();
+
+  const afterBox = await hydrogenHit.boundingBox();
+  expect(afterBox).toBeTruthy();
+  const afterCenterX = afterBox.x + afterBox.width / 2;
+  const afterCenterY = afterBox.y + afterBox.height / 2;
+  expect(Math.abs(afterCenterX - targetX)).toBeLessThan(18);
+  expect(Math.abs(afterCenterY - targetY)).toBeLessThan(18);
 });
 
 test('undo restores selection mode and selected atoms as part of the app session', async ({ page }) => {

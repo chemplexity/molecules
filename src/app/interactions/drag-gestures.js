@@ -3,7 +3,8 @@
 /**
  * Creates drag gesture action factories for force-layout atoms, force-layout bonds, 2D bonds, and 2D atoms.
  * @param {object} context - Dependency context providing d3, state, history, selection, force, molecule, view accessors.
- * @returns {object} Object with `createForceAtomDrag`, `createForceBondDrag`, `create2dBondDrag`, and `create2dAtomDrag`.
+ * @returns {object} Object with `createForceAtomDrag`, `createForceBondDrag`, `create2dBondDrag`,
+ * and `create2dAtomDrag`.
  */
 export function createDragGestureActions(context) {
   function takePendingSnapshot(state) {

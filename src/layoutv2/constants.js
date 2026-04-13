@@ -31,6 +31,55 @@ export const NUMERIC_EPSILON = 1e-12;
 /** Default cleanup-improvement threshold. */
 export const CLEANUP_EPSILON = 1e-3;
 
+/** Severe-overlap threshold as a fraction of target bond length. */
+export const SEVERE_OVERLAP_FACTOR = 0.55;
+
+/** Minimum candidate clearance accepted by branch placement. */
+export const BRANCH_CLEARANCE_FLOOR_FACTOR = SEVERE_OVERLAP_FACTOR;
+
+/** Label-box padding as a fraction of target bond length. */
+export const LABEL_CLEARANCE_PADDING_FACTOR = 0.08;
+
+/** Outward label nudge distance as a fraction of target bond length. */
+export const LABEL_CLEARANCE_NUDGE_FACTOR = 0.2;
+
+/** Maximum macrocycle perimeter drift tolerated before correction. */
+export const RING_PERIMETER_MAX_DEVIATION_FACTOR = 0.15;
+
+/** Audit bond validation used for ordinary planar placed bonds. */
+export const AUDIT_PLANAR_VALIDATION = Object.freeze({
+  minBondLengthFactor: 0.95,
+  maxBondLengthFactor: 1.05,
+  maxMeanDeviation: 0.05,
+  maxSevereOverlapCount: 0
+});
+
+/** Template geometry validation used for standard planar scaffold templates. */
+export const TEMPLATE_PLANAR_VALIDATION = Object.freeze({
+  minBondLengthFactor: 0.98,
+  maxBondLengthFactor: 1.02,
+  maxMeanDeviation: 0.02,
+  maxSevereOverlapCount: 0
+});
+
+/** Shared relaxed validation used for bridged template and audit geometry. */
+export const BRIDGED_VALIDATION = Object.freeze({
+  minBondLengthFactor: 0.7,
+  maxBondLengthFactor: 1.4,
+  maxMeanDeviation: 0.35,
+  maxSevereOverlapCount: 0
+});
+
+/** Publication-style projection tuning for bridged fallback geometry. */
+export const BRIDGE_PROJECTION_FACTORS = Object.freeze({
+  singleAtomClampMarginFactor: 0.35,
+  layerSpacingFactor: 0.45,
+  singleAtomBaseHeightFactor: 0.9,
+  pathArcBaseAmplitudeFactor: 0.95,
+  meanSeedBiasFactor: 0.3,
+  meanSeedBiasClampFactor: 0.5
+});
+
 /** Character-count width multipliers for multi-character atom labels. */
 export const LABEL_WIDTH_FACTORS = new Map([
   [1, 1.0],

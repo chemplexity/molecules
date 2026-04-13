@@ -73,3 +73,13 @@ export function pointInPolygon(point, polygon) {
 
   return inside;
 }
+
+/**
+ * Counts how many polygons contain the requested point.
+ * @param {Array<Array<{x: number, y: number}>>} polygons - Candidate polygons.
+ * @param {{x: number, y: number}} point - Candidate point.
+ * @returns {number} Number of containing polygons.
+ */
+export function countPointInPolygons(polygons, point) {
+  return polygons.reduce((count, polygon) => count + (pointInPolygon(point, polygon) ? 1 : 0), 0);
+}

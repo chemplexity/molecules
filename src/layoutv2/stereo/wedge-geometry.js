@@ -1,17 +1,7 @@
 /** @module stereo/wedge-geometry */
 
 import { add, angleOf, angularDifference, fromAngle, length, normalize, scale, sub } from '../geometry/vec2.js';
-import { pointInPolygon } from '../geometry/polygon.js';
-
-/**
- * Counts how many incident ring polygons contain a candidate point.
- * @param {Array<Array<{x: number, y: number}>>} incidentRingPolygons - Incident ring polygons.
- * @param {{x: number, y: number}} position - Candidate point.
- * @returns {number} Number of containing polygons.
- */
-function containingIncidentRingCount(incidentRingPolygons, position) {
-  return incidentRingPolygons.reduce((count, polygon) => count + (pointInPolygon(position, polygon) ? 1 : 0), 0);
-}
+import { countPointInPolygons } from '../geometry/polygon.js';
 
 /**
  * Returns the bisector angles of the angular gaps around a stereocenter.
@@ -71,14 +61,14 @@ export function synthesizeHydrogenPosition(centerPosition, knownPositions, bondL
   const radius = radiusSum / knownPositions.length;
   const baseAngle = angleOf(direction);
   const basePosition = add(centerPosition, scale(direction, radius));
-  if (incidentRingPolygons.length === 0 || containingIncidentRingCount(incidentRingPolygons, basePosition) === 0) {
+  if (incidentRingPolygons.length === 0 || countPointInPolygons(incidentRingPolygons, basePosition) === 0) {
     return basePosition;
   }
 
   let bestCandidate = null;
   for (const candidateAngle of [baseAngle, ...gapBisectorAngles(centerPosition, knownPositions)]) {
     const candidatePosition = add(centerPosition, fromAngle(candidateAngle, radius));
-    const containingRingCount = containingIncidentRingCount(incidentRingPolygons, candidatePosition);
+    const containingRingCount = countPointInPolygons(incidentRingPolygons, candidatePosition);
     const sector = minimumSectorAngle(centerPosition, candidatePosition, knownPositions);
     const deviation = angularDifference(candidateAngle, baseAngle);
     if (!bestCandidate) {

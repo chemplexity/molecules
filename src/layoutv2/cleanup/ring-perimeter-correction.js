@@ -1,6 +1,7 @@
 /** @module cleanup/ring-perimeter-correction */
 
 import { ellipsePerimeterPoints, macrocycleAspectRatio, solveEllipseScale } from '../geometry/ellipse.js';
+import { RING_PERIMETER_MAX_DEVIATION_FACTOR } from '../constants.js';
 import { angleOf, centroid, distance, sub } from '../geometry/vec2.js';
 
 /**
@@ -52,7 +53,7 @@ function idealMacrocyclePerimeter(ring, coords, bondLength) {
 export function runRingPerimeterCorrection(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const maxIterations = options.maxIterations ?? 2;
-  const maxDeviation = bondLength * 0.15;
+  const maxDeviation = bondLength * RING_PERIMETER_MAX_DEVIATION_FACTOR;
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   let nudges = 0;
   let iterations = 0;

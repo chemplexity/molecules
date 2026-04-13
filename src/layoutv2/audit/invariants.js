@@ -3,14 +3,11 @@
 import { collectLabelBoxes, findLabelOverlaps } from '../geometry/label-box.js';
 import { computeBounds } from '../geometry/bounds.js';
 import { AtomGrid } from '../geometry/atom-grid.js';
-import { BRIDGED_VALIDATION } from '../templates/library.js';
-
-const AUDIT_PLANAR_VALIDATION = Object.freeze({
-  minBondLengthFactor: 0.95,
-  maxBondLengthFactor: 1.05,
-  maxMeanDeviation: 0.05,
-  maxSevereOverlapCount: 0
-});
+import {
+  AUDIT_PLANAR_VALIDATION,
+  BRIDGED_VALIDATION,
+  SEVERE_OVERLAP_FACTOR
+} from '../constants.js';
 
 function pairKey(firstAtomId, secondAtomId) {
   return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
@@ -174,7 +171,7 @@ function sortedAngularSeparations(angles) {
  * @returns {Array<{firstAtomId: string, secondAtomId: string, distance: number}>} Severe overlaps.
  */
 export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}) {
-  const threshold = bondLength * 0.55;
+  const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
   const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength);
   return collectNonbondedPairs(layoutGraph, coords, (_firstAtomId, _secondAtomId, distance) => distance < threshold, atomGrid, threshold);
 }
@@ -404,7 +401,7 @@ export function computeAtomDistortionCost(layoutGraph, coords, atomId, overrideP
  */
 export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, overridePositions, bondLength, options = {}) {
   const subtreeSet = new Set(subtreeAtomIds);
-  const threshold = bondLength * 0.55;
+  const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
   const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength);
   let cost = 0;
   for (const subtreeAtomId of subtreeAtomIds) {
@@ -495,7 +492,7 @@ export function measureLayoutState(layoutGraph, coords, bondLength, options = {}
 
   let overlapPenalty = 0;
   for (const overlap of overlaps) {
-    const deficit = (bondLength * 0.55) - overlap.distance;
+    const deficit = (bondLength * SEVERE_OVERLAP_FACTOR) - overlap.distance;
     overlapPenalty += deficit * deficit * 100;
   }
 

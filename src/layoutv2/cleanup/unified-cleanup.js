@@ -1,6 +1,6 @@
 /** @module cleanup/unified-cleanup */
 
-import { measureLayoutState } from '../audit/invariants.js';
+import { buildAtomGrid, measureLayoutState } from '../audit/invariants.js';
 import { CLEANUP_EPSILON } from '../constants.js';
 import { runLocalCleanup } from './local-rotation.js';
 import { collectRigidPendantRingSubtrees, resolveOverlaps } from './overlap-resolution.js';
@@ -69,6 +69,44 @@ function shouldSkipRotationProbe(visibleAtomCount, baseOverlapCount, bestCandida
 }
 
 /**
+ * Returns whether the atom should be tracked in the visible-geometry atom grid.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom identifier.
+ * @returns {boolean} True when the atom is visible and should be tracked.
+ */
+function shouldTrackVisibleAtom(layoutGraph, atomId) {
+  return layoutGraph.atoms.get(atomId)?.visible === true;
+}
+
+/**
+ * Applies moved atom positions onto the live unified-cleanup grid in place.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {import('../geometry/atom-grid.js').AtomGrid} atomGrid - Working atom grid.
+ * @param {Map<string, {x: number, y: number}>} previousCoords - Coordinates before the accepted move.
+ * @param {Map<string, {x: number, y: number}>} nextCoords - Coordinates after the accepted move.
+ * @returns {void}
+ */
+function updateAtomGridForAcceptedMove(layoutGraph, atomGrid, previousCoords, nextCoords) {
+  for (const [atomId, nextPosition] of nextCoords) {
+    if (!shouldTrackVisibleAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    const previousPosition = previousCoords.get(atomId);
+    if (
+      previousPosition
+      && previousPosition.x === nextPosition.x
+      && previousPosition.y === nextPosition.y
+    ) {
+      continue;
+    }
+    if (previousPosition) {
+      atomGrid.remove(atomId, previousPosition);
+    }
+    atomGrid.insert(atomId, nextPosition);
+  }
+}
+
+/**
  * Runs a unified cleanup loop that evaluates one-step overlap nudges and one-step
  * local rotations from the same coordinate state, then accepts the stronger move.
  * @param {object} layoutGraph - Layout graph shell.
@@ -86,6 +124,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
   const visibleAtomCount = [...layoutGraph.atoms.values()].filter(atom => atom.visible).length;
   let rigidSubtreesByAtomId = null;
   let coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
   let passes = 0;
   let totalImprovement = 0;
   let overlapMoves = 0;
@@ -122,7 +161,8 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
       const rotationCandidate = runLocalCleanup(layoutGraph, coords, {
         maxPasses: 1,
         epsilon,
-        bondLength
+        bondLength,
+        baseAtomGrid: atomGrid
       });
       if (rotationCandidate.passes > 0) {
         const scoredRotationCandidate = {
@@ -144,6 +184,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
       break;
     }
 
+    updateAtomGridForAcceptedMove(layoutGraph, atomGrid, coords, bestCandidate.coords);
     coords = new Map([...bestCandidate.coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
     passes++;
     overlapMoves += bestCandidate.overlapMoves;

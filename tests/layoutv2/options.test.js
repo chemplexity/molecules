@@ -12,6 +12,7 @@ describe('layoutv2/options', () => {
     assert.equal(options.existingCoords instanceof Map, true);
     assert.equal(options.fixedCoords.size, 0);
     assert.equal(options.existingCoords.size, 0);
+    assert.equal(options.timing, false);
     assert.equal(options.touchedAtoms, null);
     assert.equal(options.touchedBonds, null);
   });
@@ -69,6 +70,7 @@ describe('layoutv2/options', () => {
     assert.throws(() => normalizeOptions({ fixedCoords: { a0: { x: 0, y: 0 } } }), TypeError);
     assert.throws(() => normalizeOptions({ existingCoords: new Map([['a0', { x: Infinity, y: 1 }]]) }), TypeError);
     assert.throws(() => normalizeOptions({ touchedAtoms: ['a0'] }), TypeError);
+    assert.throws(() => normalizeOptions({ timing: 'yes' }), TypeError);
     assert.throws(() => normalizeLargeMoleculeThreshold({ heavyAtomCount: 0 }), RangeError);
   });
 });

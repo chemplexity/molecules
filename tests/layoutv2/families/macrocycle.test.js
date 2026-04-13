@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../src/io/smiles.js';
+import { findSevereOverlaps, measureBondLengthDeviation } from '../../../src/layoutv2/audit/invariants.js';
+import { AUDIT_PLANAR_VALIDATION } from '../../../src/layoutv2/constants.js';
 import { computeMacrocycleAngularBudgets, layoutMacrocycleFamily } from '../../../src/layoutv2/families/macrocycle.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { computeBounds } from '../../../src/layoutv2/geometry/bounds.js';
@@ -22,6 +24,18 @@ function normalizeSignedAngle(angle) {
   return wrappedAngle;
 }
 
+/**
+ * Asserts that a macrocycle-family placement stays within planar validation tolerances.
+ * @param {object} graph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Macrocycle placement coordinates.
+ * @returns {void}
+ */
+function assertMacrocycleLayoutQuality(graph, coords) {
+  const bondStats = measureBondLengthDeviation(graph, coords, graph.options.bondLength);
+  assert.equal(findSevereOverlaps(graph, coords, graph.options.bondLength).length, 0);
+  assert.ok(bondStats.failingBondCount <= AUDIT_PLANAR_VALIDATION.maxSevereOverlapCount);
+}
+
 describe('layoutv2/families/macrocycle', () => {
   it('lays out a simple macrocycle on an ellipse with full coordinates', () => {
     const graph = createLayoutGraph(makeMacrocycle());
@@ -34,6 +48,7 @@ describe('layoutv2/families/macrocycle', () => {
     assert.ok(bounds.width > 0);
     assert.ok(bounds.height > 0);
     assert.ok(Math.abs(bounds.width - bounds.height) < 0.25);
+    assertMacrocycleLayoutQuality(graph, result.coords);
   });
 
   it('uses a more elongated oval for larger macrocycles', () => {
@@ -42,6 +57,7 @@ describe('layoutv2/families/macrocycle', () => {
     const bounds = computeBounds(result.coords, graph.rings[0].atomIds);
 
     assert.ok(bounds.width / bounds.height > 1.4);
+    assertMacrocycleLayoutQuality(graph, result.coords);
   });
 
   it('uses template geometry when a matched macrocycle template is available', () => {
@@ -56,6 +72,23 @@ describe('layoutv2/families/macrocycle', () => {
     assert.equal(result.ringCenters.size, 5);
     const bounds = computeBounds(result.coords, graph.ringSystems[0].atomIds);
     assert.ok(Math.abs(bounds.width - bounds.height) < 1e-6);
+    assertMacrocycleLayoutQuality(graph, result.coords);
+  });
+
+  it('keeps a minimum-size macrocycle within bond-length tolerance and free of severe overlaps', () => {
+    const graph = createLayoutGraph(makeMacrocycle(12));
+    const result = layoutMacrocycleFamily(graph.rings, graph.options.bondLength);
+
+    assert.equal(result.coords.size, 12);
+    assertMacrocycleLayoutQuality(graph, result.coords);
+  });
+
+  it('keeps the primary macrocycle ring clean when exocyclic branches are present', () => {
+    const graph = createLayoutGraph(makeMacrocycleWithSubstituent(), { suppressH: true });
+    const result = layoutMacrocycleFamily(graph.rings, graph.options.bondLength);
+
+    assert.equal(result.coords.size, graph.rings[0].atomIds.length);
+    assertMacrocycleLayoutQuality(graph, result.coords);
   });
 
   it('computes outward angular budgets for branch-bearing macrocycle atoms and shrinks dense adjacent sites', () => {

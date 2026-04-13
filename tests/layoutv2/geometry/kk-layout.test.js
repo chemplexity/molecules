@@ -43,6 +43,21 @@ describe('layoutv2/geometry/kk-layout', () => {
     assert.equal(result.coords.size, atomIds.length);
   });
 
+  it('skips disconnected components because the KK distance matrix remains non-finite', () => {
+    const molecule = parseSMILES('CC.CC');
+    const atomIds = [...molecule.atoms.values()]
+      .filter(atom => atom.name !== 'H')
+      .map(atom => atom.id);
+    const result = layoutKamadaKawai(molecule, atomIds, {
+      bondLength: 1.5,
+      maxIterations: 50,
+      maxInnerIterations: 10
+    });
+
+    assert.equal(result.skipped, true);
+    assert.equal(result.ok, false);
+  });
+
   it('uses seeded existing coordinates instead of restarting from the circular fallback', () => {
     const molecule = makeUnmatchedBridgedCage();
     const atomIds = [...molecule.atoms.keys()];
@@ -67,5 +82,49 @@ describe('layoutv2/geometry/kk-layout', () => {
       averageDisplacement(seededRestart.coords, convergedSeed.coords, atomIds)
       < averageDisplacement(coldRestart.coords, convergedSeed.coords, atomIds)
     );
+  });
+
+  it('keeps pinned seed coordinates exact while laying out the remaining cage atoms', () => {
+    const molecule = makeUnmatchedBridgedCage();
+    const atomIds = [...molecule.atoms.keys()];
+    const pinnedCoords = new Map([
+      ['a0', { x: -2, y: 0 }],
+      ['a1', { x: 2, y: 0 }]
+    ]);
+    const result = layoutKamadaKawai(molecule, atomIds, {
+      bondLength: 1.5,
+      coords: pinnedCoords,
+      pinnedAtomIds: ['a0', 'a1'],
+      maxIterations: 500,
+      maxInnerIterations: 20
+    });
+
+    assert.deepEqual(result.coords.get('a0'), pinnedCoords.get('a0'));
+    assert.deepEqual(result.coords.get('a1'), pinnedCoords.get('a1'));
+    assert.equal(result.coords.size, atomIds.length);
+    assert.equal(result.skipped, false);
+  });
+
+  it('matches the legacy full-gradient refresh path when exact incremental updates are enabled', () => {
+    const molecule = makeUnmatchedBridgedCage();
+    const atomIds = [...molecule.atoms.keys()];
+    const fullRefresh = layoutKamadaKawai(molecule, atomIds, {
+      bondLength: 1.5,
+      maxIterations: 250,
+      maxInnerIterations: 12,
+      incrementalEnergyUpdates: false
+    });
+    const incrementalRefresh = layoutKamadaKawai(molecule, atomIds, {
+      bondLength: 1.5,
+      maxIterations: 250,
+      maxInnerIterations: 12,
+      incrementalEnergyUpdates: true
+    });
+
+    assert.equal(incrementalRefresh.skipped, fullRefresh.skipped);
+    assert.equal(incrementalRefresh.converged, fullRefresh.converged);
+    assert.equal(incrementalRefresh.ok, fullRefresh.ok);
+    assert.ok(Math.abs(incrementalRefresh.energy - fullRefresh.energy) < 1e-9);
+    assert.ok(averageDisplacement(incrementalRefresh.coords, fullRefresh.coords, atomIds) < 1e-9);
   });
 });

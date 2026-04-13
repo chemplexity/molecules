@@ -592,17 +592,15 @@ function getPendingRingLayout(cache, layoutGraph, pendingRingSystem, bondLength)
 }
 
 /**
- * Places a mixed component by selecting a root scaffold, growing acyclic
- * connectors from it, and attaching secondary ring systems once they become
- * reachable from the placed region.
+ * Initializes the root scaffold and shared mutable state for mixed-family placement.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} component - Connected-component descriptor.
  * @param {Map<string, string[]>} adjacency - Component adjacency map.
  * @param {object} scaffoldPlan - Scaffold plan.
  * @param {number} bondLength - Target bond length.
- * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses: Map<string, 'planar'|'bridged'>}} Mixed placement result.
+ * @returns {{finalResult?: {family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses: Map<string, 'planar'|'bridged'>}, state?: object}} Initialization result.
  */
-export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPlan, bondLength) {
+function initializeRootScaffold(layoutGraph, component, adjacency, scaffoldPlan, bondLength) {
   const participantAtomIds = new Set(component.atomIds.filter(atomId => {
     const atom = layoutGraph.atoms.get(atomId);
     return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
@@ -616,16 +614,14 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
 
   if (root.type === 'acyclic') {
     const acyclicCoords = layoutAcyclicFamily(adjacency, participantAtomIds, layoutGraph.canonicalAtomRank, bondLength, { layoutGraph });
-    for (const [atomId, position] of acyclicCoords) {
-      coords.set(atomId, position);
-      placedAtomIds.add(atomId);
-    }
     return {
-      family: 'mixed',
-      supported: true,
-      atomIds: [...participantAtomIds],
-      coords,
-      bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses)
+      finalResult: {
+        family: 'mixed',
+        supported: true,
+        atomIds: [...participantAtomIds],
+        coords: acyclicCoords,
+        bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses)
+      }
     };
   }
 
@@ -633,11 +629,13 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
   const rootLayout = rootRingSystem ? layoutRingSystem(layoutGraph, rootRingSystem, bondLength, root.templateId ?? null) : null;
   if (!rootLayout) {
     return {
-      family: 'mixed',
-      supported: false,
-      atomIds: [...participantAtomIds],
-      coords,
-      bondValidationClasses
+      finalResult: {
+        family: 'mixed',
+        supported: false,
+        atomIds: [...participantAtomIds],
+        coords,
+        bondValidationClasses
+      }
     };
   }
   const rootCoords = orientSingleAttachmentBenzeneRoot(
@@ -678,6 +676,49 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
       return ringSystem ? { ringSystem, templateId: entry.templateId ?? null } : null;
     })
     .filter(Boolean);
+
+  return {
+    state: {
+      participantAtomIds,
+      coords,
+      placedAtomIds,
+      bondValidationClasses,
+      atomToRingSystemId,
+      ringSystemById,
+      placedRingSystemIds,
+      macrocycleBranchConstraints,
+      nonRingAtomIds,
+      primaryNonRingAtomIds,
+      deferredHydrogenAtomIds,
+      pendingRingLayoutCache,
+      pendingRingSystems
+    }
+  };
+}
+
+/**
+ * Attaches pending ring systems and grows primary non-ring branches until no
+ * further mixed-family progress is possible.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} state - Mutable mixed-family placement state.
+ * @returns {void}
+ */
+function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
+  const {
+    participantAtomIds,
+    coords,
+    placedAtomIds,
+    bondValidationClasses,
+    atomToRingSystemId,
+    ringSystemById,
+    placedRingSystemIds,
+    macrocycleBranchConstraints,
+    primaryNonRingAtomIds,
+    pendingRingLayoutCache,
+    pendingRingSystems
+  } = state;
 
   let progressed = true;
   while (progressed) {
@@ -838,8 +879,10 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
           bestAttachedBlock = candidate.transformedCoords;
         }
       }
-      const transformedCoords = bestAttachedBlock;
-      for (const [atomId, position] of transformedCoords) {
+      if (!bestAttachedBlock) {
+        continue;
+      }
+      for (const [atomId, position] of bestAttachedBlock) {
         coords.set(atomId, position);
         placedAtomIds.add(atomId);
       }
@@ -850,6 +893,28 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
       progressed = true;
     }
   }
+}
+
+/**
+ * Finalizes mixed-family placement by placing remaining non-ring atoms and
+ * returning the assembled mixed-family result.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} state - Mutable mixed-family placement state.
+ * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses: Map<string, 'planar'|'bridged'>}} Final mixed placement result.
+ */
+function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
+  const {
+    participantAtomIds,
+    coords,
+    placedAtomIds,
+    bondValidationClasses,
+    macrocycleBranchConstraints,
+    nonRingAtomIds,
+    primaryNonRingAtomIds,
+    deferredHydrogenAtomIds
+  } = state;
 
   placeRemainingBranches(
     adjacency,
@@ -892,4 +957,25 @@ export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPla
     coords,
     bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses, { overwrite: false })
   };
+}
+
+/**
+ * Places a mixed component by selecting a root scaffold, growing acyclic
+ * connectors from it, and attaching secondary ring systems once they become
+ * reachable from the placed region.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} component - Connected-component descriptor.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {object} scaffoldPlan - Scaffold plan.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses: Map<string, 'planar'|'bridged'>}} Mixed placement result.
+ */
+export function layoutMixedFamily(layoutGraph, component, adjacency, scaffoldPlan, bondLength) {
+  const initialization = initializeRootScaffold(layoutGraph, component, adjacency, scaffoldPlan, bondLength);
+  if (initialization.finalResult) {
+    return initialization.finalResult;
+  }
+
+  attachPendingRingSystems(layoutGraph, adjacency, bondLength, initialization.state);
+  return finalizeMixedPlacement(layoutGraph, adjacency, bondLength, initialization.state);
 }

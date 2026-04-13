@@ -1,8 +1,9 @@
 /** @module placement/branch-placement */
 
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, length, perpLeft, sub } from '../geometry/vec2.js';
-import { pointInPolygon } from '../geometry/polygon.js';
+import { countPointInPolygons } from '../geometry/polygon.js';
 import { measureLayoutCost } from '../audit/invariants.js';
+import { BRANCH_CLEARANCE_FLOOR_FACTOR } from '../constants.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 
 const DISCRETE_BRANCH_ANGLES = Array.from({ length: 12 }, (_, index) => (index * Math.PI) / 6);
@@ -384,7 +385,7 @@ function isTerminalMultipleBondHetero(layoutGraph, centerAtomId, bond) {
  * @param {string} atomId - Candidate center atom ID.
  * @returns {{singleNeighborIds: string[], multipleNeighborIds: string[]}|null} Cross-like center descriptor or `null`.
  */
-function describeCrossLikeHypervalentCenter(layoutGraph, atomId) {
+export function describeCrossLikeHypervalentCenter(layoutGraph, atomId) {
   if (!layoutGraph) {
     return null;
   }
@@ -507,6 +508,34 @@ function candidateClearanceScore(anchorPosition, candidateAngle, bondLength, coo
 }
 
 /**
+ * Returns whether a candidate position clears the branch safety floor.
+ * This is a fast rejection screen only; exact clearance scoring is still used
+ * later for finalist tie-breaking.
+ * @param {{x: number, y: number}} anchorPosition - Anchor position.
+ * @param {number} candidateAngle - Candidate angle in radians.
+ * @param {number} bondLength - Target bond length.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Set<string>} excludedAtomIds - Atoms to ignore when checking safety.
+ * @returns {boolean} True when the candidate clears the branch safety floor.
+ */
+function isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds) {
+  const clearanceFloor = bondLength * BRANCH_CLEARANCE_FLOOR_FACTOR;
+  const clearanceFloorSq = clearanceFloor * clearanceFloor;
+  const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, bondLength));
+  for (const [atomId, position] of coords) {
+    if (excludedAtomIds.has(atomId)) {
+      continue;
+    }
+    const dx = candidatePosition.x - position.x;
+    const dy = candidatePosition.y - position.y;
+    if ((dx * dx) + (dy * dy) < clearanceFloorSq) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Returns the exterior trigonal bisector for a center with two placed neighbors.
  * This is used for exocyclic alkene attachments where the third substituent
  * should land opposite the centroid of the already placed substituent pair.
@@ -557,29 +586,20 @@ function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
 }
 
 /**
- * Counts how many incident ring polygons contain a candidate attachment position.
- * @param {Array<Array<{x: number, y: number}>>} ringPolygons - Incident ring polygons.
- * @param {{x: number, y: number}} position - Candidate attachment position.
- * @returns {number} Number of incident ring faces containing the point.
- */
-function containingIncidentRingCount(ringPolygons, position) {
-  return ringPolygons.reduce((count, polygon) => count + (pointInPolygon(position, polygon) ? 1 : 0), 0);
-}
-
-/**
  * Chooses the best branch angle from pre-scored candidate directions.
  * @param {Array<{angle: number, angleScore: number, clearanceScore: number, centerDistanceScore: number, insideRingCount?: number, minSeparation?: number}>} candidates - Candidate descriptors.
  * @param {number} bondLength - Target bond length.
  * @param {boolean} [preferClearance] - Whether to prefer candidates that satisfy the standard clearance floor.
+ * @param {{anchorPosition: {x: number, y: number}, coords: Map<string, {x: number, y: number}>, excludedAtomIds: Set<string>}|null} [clearanceContext] - Lazy exact-clearance context.
  * @returns {number} Winning angle in radians.
  */
-function pickBestCandidateAngle(candidates, bondLength, preferClearance = true) {
+function pickBestCandidateAngle(candidates, bondLength, preferClearance = true, clearanceContext = null) {
   if (candidates.length === 0) {
     return DISCRETE_BRANCH_ANGLES[0];
   }
 
   const safeCandidates = preferClearance && bondLength > 0
-    ? candidates.filter(candidate => candidate.clearanceScore >= (bondLength * 0.55))
+    ? candidates.filter(candidate => candidate.isSafe !== false)
     : candidates;
   const clearanceCandidates = safeCandidates.length > 0 ? safeCandidates : candidates;
   const minimumInsideRingCount = Math.min(...clearanceCandidates.map(candidate => candidate.insideRingCount ?? 0));
@@ -587,6 +607,19 @@ function pickBestCandidateAngle(candidates, bondLength, preferClearance = true) 
   const bestAngleScore = Math.max(...candidatesToConsider.map(candidate => candidate.angleScore));
   const scoreTolerance = Math.max(Math.abs(bestAngleScore) * ANGLE_SCORE_TIEBREAK_RATIO, 1e-9);
   const nearBestCandidates = candidatesToConsider.filter(candidate => candidate.angleScore >= (bestAngleScore - scoreTolerance));
+  if (clearanceContext) {
+    for (const candidate of nearBestCandidates) {
+      if (!Number.isFinite(candidate.clearanceScore)) {
+        candidate.clearanceScore = candidateClearanceScore(
+          clearanceContext.anchorPosition,
+          candidate.angle,
+          bondLength,
+          clearanceContext.coords,
+          clearanceContext.excludedAtomIds
+        );
+      }
+    }
+  }
 
   let bestCandidate = nearBestCandidates[0];
   for (let index = 1; index < nearBestCandidates.length; index++) {
@@ -622,7 +655,7 @@ function pickBestCandidateAngle(candidates, bondLength, preferClearance = true) 
  * @param {Set<string>} excludedAtomIds - Atoms to ignore when scoring clearance.
  * @param {{sumX: number, sumY: number, count: number}} placementState - Running placement CoM state.
  * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
- * @returns {Array<{angle: number, angleScore: number, clearanceScore: number, centerDistanceScore: number, insideRingCount: number, minSeparation: number}>} Scored candidates.
+ * @returns {Array<{angle: number, angleScore: number, clearanceScore: number|null, centerDistanceScore: number, insideRingCount: number, minSeparation: number, isSafe: boolean}>} Scored candidates.
  */
 function evaluateAngleCandidates(
   candidateAngles,
@@ -635,16 +668,20 @@ function evaluateAngleCandidates(
   placementState,
   ringPolygons = []
 ) {
-  return candidateAngles.map(candidateAngle => ({
-    minSeparation: occupiedAngles.length === 0
-      ? Math.PI
-      : Math.min(...occupiedAngles.map(occupiedAngle => angularDifference(candidateAngle, occupiedAngle))),
-    angle: candidateAngle,
-    angleScore: scoreCandidateAngle(candidateAngle, occupiedAngles, preferredAngles),
-    clearanceScore: candidateClearanceScore(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds),
-    centerDistanceScore: centerDistanceScore(placementState, add(anchorPosition, fromAngle(candidateAngle, bondLength))),
-    insideRingCount: containingIncidentRingCount(ringPolygons, add(anchorPosition, fromAngle(candidateAngle, bondLength)))
-  }));
+  return candidateAngles.map(candidateAngle => {
+    const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, bondLength));
+    return {
+      minSeparation: occupiedAngles.length === 0
+        ? Math.PI
+        : Math.min(...occupiedAngles.map(occupiedAngle => angularDifference(candidateAngle, occupiedAngle))),
+      angle: candidateAngle,
+      angleScore: scoreCandidateAngle(candidateAngle, occupiedAngles, preferredAngles),
+      clearanceScore: null,
+      centerDistanceScore: centerDistanceScore(placementState, candidatePosition),
+      insideRingCount: countPointInPolygons(ringPolygons, candidatePosition),
+      isSafe: isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds)
+    };
+  });
 }
 
 /**
@@ -671,6 +708,11 @@ function chooseContinuationAngle(
   placementState,
   ringPolygons = []
 ) {
+  const clearanceContext = {
+    anchorPosition,
+    coords,
+    excludedAtomIds
+  };
   const preferredCandidateAngles = preferredDiscreteAngles(preferredAngles);
   if (preferredCandidateAngles.length > 0) {
     const preferredCandidates = evaluateAngleCandidates(
@@ -684,7 +726,9 @@ function chooseContinuationAngle(
       placementState,
       ringPolygons
     );
-    const safePreferredCandidates = preferredCandidates.filter(candidate => candidate.clearanceScore >= (bondLength * 0.55));
+    const safePreferredCandidates = preferredCandidates.filter(
+      candidate => candidate.isSafe !== false
+    );
     const bestPreferredInsideRingCount = safePreferredCandidates.length > 0
       ? Math.min(...safePreferredCandidates.map(candidate => candidate.insideRingCount ?? 0))
       : Number.POSITIVE_INFINITY;
@@ -696,7 +740,7 @@ function chooseContinuationAngle(
       && bestPreferredInsideRingCount === 0
       && bestPreferredSeparation >= (Math.PI / 6)
     ) {
-      return pickBestCandidateAngle(safePreferredCandidates, bondLength, true);
+      return pickBestCandidateAngle(safePreferredCandidates, bondLength, true, clearanceContext);
     }
   }
 
@@ -713,7 +757,8 @@ function chooseContinuationAngle(
       ringPolygons
     ),
     bondLength,
-    true
+    true,
+    clearanceContext
   );
 }
 
@@ -812,14 +857,25 @@ function isHydrogenAtom(layoutGraph, atomId) {
   return layoutGraph?.atoms.get(atomId)?.element === 'H';
 }
 
-function splitDeferredHydrogenNeighbors(unplacedNeighborIds, layoutGraph) {
+function isDeferredLeafNeighbor(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  if (!atom) {
+    return false;
+  }
+  if (atom.element === 'H') {
+    return true;
+  }
+  return ['F', 'Cl', 'Br', 'I'].includes(atom.element) && atom.heavyDegree === 1;
+}
+
+function splitDeferredLeafNeighbors(unplacedNeighborIds, layoutGraph) {
   if (!layoutGraph) {
     return {
       primaryNeighborIds: unplacedNeighborIds,
       deferredNeighborIds: []
     };
   }
-  const primaryNeighborIds = unplacedNeighborIds.filter(neighborAtomId => !isHydrogenAtom(layoutGraph, neighborAtomId));
+  const primaryNeighborIds = unplacedNeighborIds.filter(neighborAtomId => !isDeferredLeafNeighbor(layoutGraph, neighborAtomId));
   if (primaryNeighborIds.length === 0) {
     return {
       primaryNeighborIds: unplacedNeighborIds,
@@ -828,7 +884,7 @@ function splitDeferredHydrogenNeighbors(unplacedNeighborIds, layoutGraph) {
   }
   return {
     primaryNeighborIds,
-    deferredNeighborIds: unplacedNeighborIds.filter(neighborAtomId => isHydrogenAtom(layoutGraph, neighborAtomId))
+    deferredNeighborIds: unplacedNeighborIds.filter(neighborAtomId => isDeferredLeafNeighbor(layoutGraph, neighborAtomId))
   };
 }
 
@@ -1002,25 +1058,27 @@ function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId) {
     + (crossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * 20);
 }
 
-function chooseBatchAngleAssignments(
+/**
+ * Builds candidate child-angle sets for one multi-child branch placement step.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string|null} parentAtomId - Already placed parent atom ID.
+ * @param {string[]} unplacedNeighborIds - Immediate unplaced child atom IDs.
+ * @param {object|null} [layoutGraph] - Layout graph shell.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
+ * @returns {number[][]} Candidate angle sets sized to the requested child count.
+ */
+function buildCandidateAngleSets(
   adjacency,
-  canonicalAtomRank,
   coords,
-  placementState,
-  atomIdsToPlace,
   anchorAtomId,
   parentAtomId,
   unplacedNeighborIds,
-  bondLength,
   layoutGraph = null,
-  branchConstraints = null,
-  depth = 0
+  branchConstraints = null
 ) {
   const anchorPosition = coords.get(anchorAtomId);
-  if (!anchorPosition || unplacedNeighborIds.length === 0 || depth > MAX_BRANCH_RECURSION_DEPTH) {
-    return [];
-  }
-
   const currentPlacedNeighborIds = placedNeighborIds(adjacency, coords, anchorAtomId);
   const ringAngles = preferredRingAngles(layoutGraph, coords, anchorAtomId);
   const fromRing = ringAngles.length > 0;
@@ -1049,18 +1107,47 @@ function chooseBatchAngleAssignments(
       unplacedNeighborIds.length
     )]
     : [computeLegacyChildAngles(unplacedNeighborIds.length, outAngle, fromRing, incomingAngle, isLinear)];
-  const angleSets = [
+
+  return [
     ...crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
     ...fallbackAngleSets
   ].map(angleSet => filterAnglesByBudget(angleSet, anchorAtomId, branchConstraints))
     .filter(angleSet => angleSet.length === unplacedNeighborIds.length);
+}
 
-  const childDescriptors = unplacedNeighborIds.map(childAtomId => ({
-    childAtomId,
-    subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
-  }));
+/**
+ * Evaluates candidate child-order and angle permutations for one branching step.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {Map<string, number>} canonicalAtomRank - Canonical atom-rank map.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {{sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}} placementState - Running placement CoM state.
+ * @param {Set<string>} atomIdsToPlace - Eligible atom IDs for recursive placement.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {number} bondLength - Target bond length.
+ * @param {object|null} [layoutGraph] - Layout graph shell.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
+ * @param {number} [depth] - Recursive depth counter.
+ * @param {{x: number, y: number}} anchorPosition - Anchor position.
+ * @param {number[][]} angleSets - Candidate angle sets.
+ * @param {Array<{childAtomId: string, subtreeSize: number}>} childDescriptors - Child descriptors to permute.
+ * @returns {{cost: number, coords: Map<string, {x: number, y: number}>, placementState: {sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}}|null} Best evaluated placement snapshot.
+ */
+function evaluateAnglePermutations(
+  adjacency,
+  canonicalAtomRank,
+  coords,
+  placementState,
+  atomIdsToPlace,
+  anchorAtomId,
+  bondLength,
+  layoutGraph,
+  branchConstraints,
+  depth,
+  anchorPosition,
+  angleSets,
+  childDescriptors
+) {
   const childPermutations = permutations(childDescriptors);
-
   let bestPlacement = null;
 
   for (const angleSet of angleSets) {
@@ -1115,6 +1202,57 @@ function chooseBatchAngleAssignments(
       }
     }
   }
+
+  return bestPlacement;
+}
+
+function chooseBatchAngleAssignments(
+  adjacency,
+  canonicalAtomRank,
+  coords,
+  placementState,
+  atomIdsToPlace,
+  anchorAtomId,
+  parentAtomId,
+  unplacedNeighborIds,
+  bondLength,
+  layoutGraph = null,
+  branchConstraints = null,
+  depth = 0
+) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition || unplacedNeighborIds.length === 0 || depth > MAX_BRANCH_RECURSION_DEPTH) {
+    return [];
+  }
+
+  const angleSets = buildCandidateAngleSets(
+    adjacency,
+    coords,
+    anchorAtomId,
+    parentAtomId,
+    unplacedNeighborIds,
+    layoutGraph,
+    branchConstraints
+  );
+  const childDescriptors = unplacedNeighborIds.map(childAtomId => ({
+    childAtomId,
+    subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
+  }));
+  const bestPlacement = evaluateAnglePermutations(
+    adjacency,
+    canonicalAtomRank,
+    coords,
+    placementState,
+    atomIdsToPlace,
+    anchorAtomId,
+    bondLength,
+    layoutGraph,
+    branchConstraints,
+    depth,
+    anchorPosition,
+    angleSets,
+    childDescriptors
+  );
 
   if (!bestPlacement) {
     return [];
@@ -1207,7 +1345,12 @@ export function chooseAttachmentAngle(
       incidentRingPolygons(layoutGraph, coords, anchorAtomId)
     ),
     1,
-    false
+    false,
+    {
+      anchorPosition: coords.get(anchorAtomId),
+      coords,
+      excludedAtomIds: new Set([anchorAtomId])
+    }
   );
 }
 
@@ -1325,7 +1468,12 @@ function placeNeighborSequence(
       : pickBestCandidateAngle(
         fallbackCandidates,
         bondLength,
-        !childIsHydrogen
+        !childIsHydrogen,
+        {
+          anchorPosition,
+          coords,
+          excludedAtomIds
+        }
       );
     setPlacedPosition(coords, placementState, childAtomId, add(anchorPosition, fromAngle(chosenAngle, bondLength)), layoutGraph);
     occupiedAngles = occupiedAngles.concat([chosenAngle]);
@@ -1354,7 +1502,7 @@ function placeChildren(
     (adjacency.get(anchorAtomId) ?? []).filter(neighborAtomId => atomIdsToPlace.has(neighborAtomId) && !coords.has(neighborAtomId)),
     canonicalAtomRank
   );
-  const { primaryNeighborIds, deferredNeighborIds } = splitDeferredHydrogenNeighbors(unplacedNeighbors, layoutGraph);
+  const { primaryNeighborIds, deferredNeighborIds } = splitDeferredLeafNeighbors(unplacedNeighbors, layoutGraph);
   if (primaryNeighborIds.length >= 2 && !shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, primaryNeighborIds, branchConstraints)) {
     chooseBatchAngleAssignments(
       adjacency,

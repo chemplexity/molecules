@@ -21,6 +21,17 @@ import { findMacrocycleRings } from './topology/macrocycles.js';
 import { buildScaffoldPlan } from './model/scaffold-plan.js';
 
 /**
+ * Returns the current high-resolution time when available, with a Date fallback
+ * for runtimes that do not expose the Performance API.
+ * @returns {number} Current time in milliseconds.
+ */
+function nowMs() {
+  return typeof globalThis.performance?.now === 'function'
+    ? globalThis.performance.now()
+    : Date.now();
+}
+
+/**
  * Returns the atom count for a molecule-like input when it can be determined.
  * @param {object|null|undefined} molecule - Molecule-like value.
  * @returns {number|null} Atom count, or null when the value is not molecule-like.
@@ -161,6 +172,26 @@ function buildInitialCoordsMap(options) {
 }
 
 /**
+ * Returns a timing accumulator when enabled.
+ * @param {boolean} enabled - Whether timing should be recorded.
+ * @returns {{enabled: boolean, startTime: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null} Timing accumulator.
+ */
+function createTimingState(enabled) {
+  if (!enabled) {
+    return null;
+  }
+  return {
+    enabled: true,
+    startTime: nowMs(),
+    placementMs: 0,
+    cleanupMs: 0,
+    labelClearanceMs: 0,
+    stereoMs: 0,
+    auditMs: 0
+  };
+}
+
+/**
  * Applies the configured post-cleanup hook list to the current coordinates.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
@@ -192,6 +223,213 @@ function runPostCleanupHooks(layoutGraph, inputCoords, policy, options) {
   }
 
   return { coords, hookNudges };
+}
+
+/**
+ * Runs the cleanup-oriented pipeline stages after initial component placement.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} placement - Placement result.
+ * @param {object} policy - Resolved policy bundle.
+ * @param {object} normalizedOptions - Normalized pipeline options.
+ * @param {{enabled: boolean, startTime: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null} [timingState] - Optional timing accumulator.
+ * @returns {{coords: Map<string, {x: number, y: number}>, passes: number, improvement: number, overlapMoves: number, labelNudges: number, symmetrySnaps: number, junctionSnaps: number, stereoReflections: number, postHookNudges: number}} Cleanup summary.
+ */
+function runCleanupPhase(layoutGraph, placement, policy, normalizedOptions, timingState = null) {
+  if (placement.placedComponentCount === 0) {
+    return {
+      coords: placement.coords,
+      passes: 0,
+      improvement: 0,
+      overlapMoves: 0,
+      labelNudges: 0,
+      symmetrySnaps: 0,
+      junctionSnaps: 0,
+      stereoReflections: 0,
+      postHookNudges: 0
+    };
+  }
+
+  const cleanupStart = timingState ? nowMs() : 0;
+  const cleanupPass = runUnifiedCleanup(layoutGraph, placement.coords, {
+    maxPasses: normalizedOptions.maxCleanupPasses,
+    epsilon: normalizedOptions.bondLength * 0.001,
+    bondLength: normalizedOptions.bondLength
+  });
+  const labelClearanceStart = timingState ? nowMs() : 0;
+  const labelClearance = applyLabelClearance(layoutGraph, cleanupPass.coords, {
+    bondLength: normalizedOptions.bondLength,
+    labelMetrics: normalizedOptions.labelMetrics
+  });
+  if (timingState) {
+    timingState.labelClearanceMs = nowMs() - labelClearanceStart;
+  }
+  const symmetryTidy = tidySymmetry(labelClearance.coords, {
+    epsilon: normalizedOptions.bondLength * 0.01,
+    layoutGraph
+  });
+  const stereoCleanup = enforceAcyclicEZStereo(layoutGraph, symmetryTidy.coords, {
+    bondLength: normalizedOptions.bondLength
+  });
+  const postCleanup = runPostCleanupHooks(layoutGraph, stereoCleanup.coords, policy, {
+    bondLength: normalizedOptions.bondLength
+  });
+  if (timingState) {
+    timingState.cleanupMs = nowMs() - cleanupStart;
+  }
+
+  return {
+    coords: postCleanup.coords,
+    passes: cleanupPass.passes,
+    improvement: cleanupPass.improvement,
+    overlapMoves: cleanupPass.overlapMoves,
+    labelNudges: labelClearance.nudges,
+    symmetrySnaps: symmetryTidy.snappedCount,
+    junctionSnaps: symmetryTidy.junctionSnapCount,
+    stereoReflections: stereoCleanup.reflections,
+    postHookNudges: postCleanup.hookNudges
+  };
+}
+
+/**
+ * Builds stereo metadata after cleanup-adjusted coordinates are finalized.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Finalized coordinates.
+ * @param {{enabled: boolean, startTime: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null} [timingState] - Optional timing accumulator.
+ * @returns {{ringDependency: object, stereo: object}} Stereo and ring-dependency metadata.
+ */
+function runStereoPhase(molecule, layoutGraph, coords, timingState = null) {
+  const stereoStart = timingState ? nowMs() : 0;
+  const ez = inspectEZStereo(layoutGraph, coords);
+  const wedges = pickWedgeAssignments(layoutGraph, coords);
+  const ringDependency = layoutGraph.rings.length > 0
+    ? inspectRingDependency(molecule)
+    : {
+      ok: true,
+      requiresDedicatedRingEngine: false,
+      suspiciousSystemCount: 0,
+      systems: [],
+      rings: [],
+      connections: []
+    };
+  const stereo = {
+    ezCheckedBondCount: ez.checkedBondCount,
+    ezResolvedBondCount: ez.resolvedBondCount,
+    ezViolationCount: ez.violationCount,
+    ezChecks: ez.checks,
+    chiralCenterCount: wedges.chiralCenterCount,
+    assignedCenterCount: wedges.assignedCenterCount,
+    unassignedCenterCount: wedges.unassignedCenterCount,
+    assignments: wedges.assignments,
+    missingCenterIds: wedges.missingCenterIds
+  };
+  if (timingState) {
+    timingState.stereoMs = nowMs() - stereoStart;
+  }
+
+  return { ringDependency, stereo };
+}
+
+/**
+ * Builds the final pipeline return object and metadata envelope.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {Map<string, {x: number, y: number}>} coords - Finalized coordinates.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} normalizedOptions - Normalized pipeline options.
+ * @param {string} profile - Resolved profile name.
+ * @param {{primaryFamily: string, mixedMode: boolean}} familySummary - Family classification.
+ * @param {object} policy - Resolved policy bundle.
+ * @param {object} placement - Placement result.
+ * @param {object} cleanup - Cleanup summary.
+ * @param {object} ringDependency - Ring dependency metadata.
+ * @param {object} stereo - Stereo metadata.
+ * @param {{enabled: boolean, startTime: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null} [timingState] - Optional timing accumulator.
+ * @returns {object} Final pipeline result.
+ */
+function buildPipelineResult(
+  molecule,
+  coords,
+  layoutGraph,
+  normalizedOptions,
+  profile,
+  familySummary,
+  policy,
+  placement,
+  cleanup,
+  ringDependency,
+  stereo,
+  timingState = null
+) {
+  const auditStart = timingState ? nowMs() : 0;
+  const audit = auditLayout(layoutGraph, coords, {
+    bondLength: normalizedOptions.bondLength,
+    bondValidationClasses: placement.bondValidationClasses,
+    stereo
+  });
+  if (timingState) {
+    timingState.auditMs = nowMs() - auditStart;
+  }
+  const qualityReport = createQualityReport({
+    audit,
+    cleanup,
+    stereo,
+    ringDependency,
+    policy
+  });
+  const stage = placement.placedComponentCount === 0
+    ? 'topology-ready'
+    : placement.unplacedComponentCount === 0
+      ? 'coordinates-ready'
+      : 'partial-coordinates';
+
+  return {
+    molecule,
+    coords,
+    layoutGraph,
+    metadata: {
+      stage,
+      profile,
+      primaryFamily: familySummary.primaryFamily,
+      mixedMode: familySummary.mixedMode,
+      componentCount: layoutGraph.components.length,
+      ringCount: layoutGraph.rings.length,
+      ringSystemCount: layoutGraph.ringSystems.length,
+      fixedAtomCount: normalizedOptions.fixedCoords.size,
+      existingCoordCount: normalizedOptions.existingCoords.size,
+      placedComponentCount: placement.placedComponentCount,
+      unplacedComponentCount: placement.unplacedComponentCount,
+      preservedComponentCount: placement.preservedComponentCount,
+      placedFamilies: placement.placedFamilies,
+      bondValidationClassCount: placement.bondValidationClasses.size,
+      displayAssignmentCount: placement.displayAssignments.length,
+      displayAssignments: placement.displayAssignments,
+      policy,
+      ringDependency,
+      stereo,
+      cleanupPasses: cleanup.passes,
+      cleanupImprovement: cleanup.improvement,
+      cleanupOverlapMoves: cleanup.overlapMoves,
+      cleanupLabelNudges: cleanup.labelNudges,
+      cleanupSymmetrySnaps: cleanup.symmetrySnaps,
+      cleanupJunctionSnaps: cleanup.junctionSnaps,
+      cleanupStereoReflections: cleanup.stereoReflections,
+      cleanupPostHookNudges: cleanup.postHookNudges,
+      audit,
+      qualityReport,
+      ...(timingState
+        ? {
+          timing: {
+            totalMs: nowMs() - timingState.startTime,
+            placementMs: timingState.placementMs,
+            cleanupMs: timingState.cleanupMs,
+            labelClearanceMs: timingState.labelClearanceMs,
+            stereoMs: timingState.stereoMs,
+            auditMs: timingState.auditMs
+          }
+        }
+        : {})
+    }
+  };
 }
 
 /**
@@ -249,6 +487,7 @@ export function classifyFamily(layoutGraph) {
  */
 export function runPipeline(molecule, options = {}) {
   const normalizedOptions = normalizeOptions(options);
+  const timingState = createTimingState(normalizedOptions.timing);
   const profile = resolveProfile(normalizedOptions.profile);
   if (isEmptyLayoutInput(molecule)) {
     const atomCount = moleculeAtomCount(molecule);
@@ -266,125 +505,28 @@ export function runPipeline(molecule, options = {}) {
     ...familySummary
   });
   const coords = buildInitialCoordsMap(normalizedOptions);
+  const placementStart = timingState ? nowMs() : 0;
   const placement = layoutSupportedComponents(layoutGraph, policy);
-  const cleanupPass = placement.placedComponentCount > 0
-    ? runUnifiedCleanup(layoutGraph, placement.coords, {
-      maxPasses: normalizedOptions.maxCleanupPasses,
-      epsilon: normalizedOptions.bondLength * 0.001,
-      bondLength: normalizedOptions.bondLength
-    })
-    : { coords: placement.coords, passes: 0, improvement: 0, overlapMoves: 0 };
-  const labelClearance = placement.placedComponentCount > 0
-    ? applyLabelClearance(layoutGraph, cleanupPass.coords, {
-      bondLength: normalizedOptions.bondLength,
-      labelMetrics: normalizedOptions.labelMetrics
-    })
-    : { coords: cleanupPass.coords, nudges: 0 };
-  const symmetryTidy = placement.placedComponentCount > 0
-    ? tidySymmetry(labelClearance.coords, {
-      epsilon: normalizedOptions.bondLength * 0.01,
-      layoutGraph
-    })
-    : { coords: labelClearance.coords, snappedCount: 0, junctionSnapCount: 0 };
-  const stereoCleanup = placement.placedComponentCount > 0
-    ? enforceAcyclicEZStereo(layoutGraph, symmetryTidy.coords, {
-      bondLength: normalizedOptions.bondLength
-    })
-    : { coords: symmetryTidy.coords, reflections: 0 };
-  const postCleanup = placement.placedComponentCount > 0
-    ? runPostCleanupHooks(layoutGraph, stereoCleanup.coords, policy, {
-      bondLength: normalizedOptions.bondLength
-    })
-    : { coords: stereoCleanup.coords, hookNudges: 0 };
-  const cleanup = {
-    coords: postCleanup.coords,
-    passes: cleanupPass.passes,
-    improvement: cleanupPass.improvement,
-    overlapMoves: cleanupPass.overlapMoves,
-    labelNudges: labelClearance.nudges,
-    symmetrySnaps: symmetryTidy.snappedCount,
-    junctionSnaps: symmetryTidy.junctionSnapCount,
-    stereoReflections: stereoCleanup.reflections,
-    postHookNudges: postCleanup.hookNudges
-  };
+  if (timingState) {
+    timingState.placementMs = nowMs() - placementStart;
+  }
+  const cleanup = runCleanupPhase(layoutGraph, placement, policy, normalizedOptions, timingState);
   for (const [atomId, position] of cleanup.coords) {
     coords.set(atomId, position);
   }
-  const ez = inspectEZStereo(layoutGraph, coords);
-  const wedges = pickWedgeAssignments(layoutGraph, coords);
-  const ringDependency = layoutGraph.rings.length > 0
-    ? inspectRingDependency(molecule)
-    : {
-      ok: true,
-      requiresDedicatedRingEngine: false,
-      suspiciousSystemCount: 0,
-      systems: [],
-      rings: [],
-      connections: []
-    };
-  const stereo = {
-    ezCheckedBondCount: ez.checkedBondCount,
-    ezResolvedBondCount: ez.resolvedBondCount,
-    ezViolationCount: ez.violationCount,
-    ezChecks: ez.checks,
-    chiralCenterCount: wedges.chiralCenterCount,
-    assignedCenterCount: wedges.assignedCenterCount,
-    unassignedCenterCount: wedges.unassignedCenterCount,
-    assignments: wedges.assignments,
-    missingCenterIds: wedges.missingCenterIds
-  };
-  const audit = auditLayout(layoutGraph, coords, {
-    bondLength: normalizedOptions.bondLength,
-    bondValidationClasses: placement.bondValidationClasses,
-    stereo
-  });
-  const qualityReport = createQualityReport({
-    audit,
-    cleanup,
-    stereo,
-    ringDependency,
-    policy
-  });
-  const stage = placement.placedComponentCount === 0
-    ? 'topology-ready'
-    : placement.unplacedComponentCount === 0
-      ? 'coordinates-ready'
-      : 'partial-coordinates';
-
-  return {
+  const { ringDependency, stereo } = runStereoPhase(molecule, layoutGraph, coords, timingState);
+  return buildPipelineResult(
     molecule,
     coords,
     layoutGraph,
-    metadata: {
-      stage,
-      profile,
-      primaryFamily: familySummary.primaryFamily,
-      mixedMode: familySummary.mixedMode,
-      componentCount: layoutGraph.components.length,
-      ringCount: layoutGraph.rings.length,
-      ringSystemCount: layoutGraph.ringSystems.length,
-      fixedAtomCount: normalizedOptions.fixedCoords.size,
-      existingCoordCount: normalizedOptions.existingCoords.size,
-      placedComponentCount: placement.placedComponentCount,
-      unplacedComponentCount: placement.unplacedComponentCount,
-      preservedComponentCount: placement.preservedComponentCount,
-      placedFamilies: placement.placedFamilies,
-      bondValidationClassCount: placement.bondValidationClasses.size,
-      displayAssignmentCount: placement.displayAssignments.length,
-      displayAssignments: placement.displayAssignments,
-      policy,
-      ringDependency,
-      stereo,
-      cleanupPasses: cleanup.passes,
-      cleanupImprovement: cleanup.improvement,
-      cleanupOverlapMoves: cleanup.overlapMoves,
-      cleanupLabelNudges: cleanup.labelNudges,
-      cleanupSymmetrySnaps: cleanup.symmetrySnaps,
-      cleanupJunctionSnaps: cleanup.junctionSnaps,
-      cleanupStereoReflections: cleanup.stereoReflections,
-      cleanupPostHookNudges: cleanup.postHookNudges,
-      audit,
-      qualityReport
-    }
-  };
+    normalizedOptions,
+    profile,
+    familySummary,
+    policy,
+    placement,
+    cleanup,
+    ringDependency,
+    stereo,
+    timingState
+  );
 }

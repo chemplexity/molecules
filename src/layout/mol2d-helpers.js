@@ -300,8 +300,8 @@ export function chargeBadgeMetrics(chargeLabel, fontSize) {
 
 /**
  * Returns the display label for an atom in 2D skeletal notation, or null
- * for unlabelled carbons.  The H-count subscript is placed left or right
- * of the element symbol based on the average neighbour direction.
+ * for unlabelled carbons. The H-count fragment is placed left or right of the
+ * element symbol based on the average neighbour direction.
  * @param {import('../core/Atom.js').Atom} atom - The atom object.
  * @param {Map<string,number>} hCounts - atom id → implicit-H count
  * @param {(atom: import('../core/Atom.js').Atom) => {x: number, y: number}} toSVG - Converts an atom to `{x, y}` in SVG space.

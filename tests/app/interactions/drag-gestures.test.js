@@ -270,4 +270,5 @@ describe('createDragGestureActions', () => {
     );
     assert.deepEqual(calls.at(-1), ['draw']);
   });
+
 });

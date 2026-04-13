@@ -5,7 +5,7 @@ import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { runPipeline } from '../../../src/layoutv2/pipeline.js';
 import { actualAlkeneStereo } from '../../../src/layoutv2/stereo/ez.js';
 import { computeCanonicalAtomRanks } from '../../../src/layoutv2/topology/canonical-order.js';
-import { distance, sub } from '../../../src/layoutv2/geometry/vec2.js';
+import { angleOf, angularDifference, distance, sub } from '../../../src/layoutv2/geometry/vec2.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { makeBut2Yne, makeChain, makeDimethylSulfone } from '../support/molecules.js';
 
@@ -182,6 +182,41 @@ describe('layoutv2/families/acyclic', () => {
 
     assert.ok(firstAlignment < 0.8);
     assert.ok(secondAlignment < 0.8);
+  });
+
+  it('keeps sulfate sulfur in a cross-like arrangement', () => {
+    const graph = createLayoutGraph(parseSMILES('[O-]S(=O)(=O)[O-]'));
+    const atomIdsToPlace = new Set(graph.components[0].atomIds);
+    const coords = layoutAcyclicFamily(buildAdjacency(graph, atomIdsToPlace), atomIdsToPlace, graph.canonicalAtomRank, graph.options.bondLength, { layoutGraph: graph });
+    const sulfurId = [...graph.atoms.values()].find(atom => atom.element === 'S')?.id;
+    const sulfurPosition = sulfurId ? coords.get(sulfurId) : null;
+    const singleAngles = [];
+    const multipleAngles = [];
+
+    assert.ok(sulfurId);
+    assert.ok(sulfurPosition);
+
+    for (const bond of graph.bondsByAtomId.get(sulfurId) ?? []) {
+      const neighborAtomId = bond.a === sulfurId ? bond.b : bond.a;
+      const neighborPosition = coords.get(neighborAtomId);
+      assert.ok(neighborPosition);
+      const angle = angleOf(sub(neighborPosition, sulfurPosition));
+      if ((bond.order ?? 1) === 1) {
+        singleAngles.push(angle);
+      } else {
+        multipleAngles.push(angle);
+      }
+    }
+
+    assert.equal(singleAngles.length, 2);
+    assert.equal(multipleAngles.length, 2);
+    assert.ok(Math.abs(angularDifference(singleAngles[0], singleAngles[1]) - Math.PI) < 1e-6);
+    assert.ok(Math.abs(angularDifference(multipleAngles[0], multipleAngles[1]) - Math.PI) < 1e-6);
+    for (const singleAngle of singleAngles) {
+      for (const multipleAngle of multipleAngles) {
+        assert.ok(Math.abs(angularDifference(singleAngle, multipleAngle) - (Math.PI / 2)) < 1e-6);
+      }
+    }
   });
 
   it('enforces configured E/Z stereo for final acyclic pipeline output', () => {

@@ -3,7 +3,7 @@
 import { add, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { actualAlkeneStereo } from '../stereo/ez.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
-import { placeRemainingBranches } from '../placement/branch-placement.js';
+import { describeCrossLikeHypervalentCenter, placeRemainingBranches } from '../placement/branch-placement.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 
 const ZIGZAG_STEP_ANGLE = Math.PI / 6;
@@ -44,7 +44,14 @@ function isLinearCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
   }
   const previousBondOrder = bondOrderBetween(layoutGraph, previousAtomId, atomId);
   const nextBondOrder = bondOrderBetween(layoutGraph, atomId, nextAtomId);
-  return previousBondOrder >= 3 || nextBondOrder >= 3 || (previousBondOrder >= 2 && nextBondOrder >= 2);
+  if (previousBondOrder >= 3 || nextBondOrder >= 3 || (previousBondOrder >= 2 && nextBondOrder >= 2)) {
+    return true;
+  }
+
+  const crossLikeCenter = describeCrossLikeHypervalentCenter(layoutGraph, atomId);
+  return crossLikeCenter != null
+    && crossLikeCenter.singleNeighborIds.includes(previousAtomId)
+    && crossLikeCenter.singleNeighborIds.includes(nextAtomId);
 }
 
 /**

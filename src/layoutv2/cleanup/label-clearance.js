@@ -1,6 +1,10 @@
 /** @module cleanup/label-clearance */
 
-import { CLEANUP_EPSILON } from '../constants.js';
+import {
+  CLEANUP_EPSILON,
+  LABEL_CLEARANCE_NUDGE_FACTOR,
+  LABEL_CLEARANCE_PADDING_FACTOR
+} from '../constants.js';
 import { collectLabelBoxes, labelBoxesOverlap } from '../geometry/label-box.js';
 import { measureLayoutState } from '../audit/invariants.js';
 import { centroid } from '../geometry/vec2.js';
@@ -81,7 +85,7 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const labelMetrics = options.labelMetrics ?? layoutGraph.options.labelMetrics ?? null;
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
-  const padding = bondLength * 0.08;
+  const padding = bondLength * LABEL_CLEARANCE_PADDING_FACTOR;
   const labels = collectLabelBoxes(layoutGraph, coords, bondLength, { labelMetrics });
   if (labels.length < 2 || !hasAnyLabelOverlap(labels, padding)) {
     return { coords, nudges: 0 };
@@ -117,8 +121,8 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
       const dy = position.y - center.y;
       const length = Math.hypot(dx, dy) || 1;
       const candidatePosition = {
-        x: position.x + ((dx / length) * bondLength * 0.2),
-        y: position.y + ((dy / length) * bondLength * 0.2)
+        x: position.x + ((dx / length) * bondLength * LABEL_CLEARANCE_NUDGE_FACTOR),
+        y: position.y + ((dy / length) * bondLength * LABEL_CLEARANCE_NUDGE_FACTOR)
       };
       const currentPenalty = overlapPenalty(firstLabel, secondLabel, padding);
       const candidateLabel = {

@@ -1,6 +1,7 @@
 /** @module placement/bond-validation */
 
-import { BRIDGED_VALIDATION, getTemplateById } from '../templates/library.js';
+import { BRIDGED_VALIDATION } from '../constants.js';
+import { getTemplateById } from '../templates/library.js';
 
 /**
  * Returns whether a bond lies fully inside the requested atom set.

@@ -4,7 +4,7 @@ import { Molecule } from '../../../src/core/index.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { runLocalCleanup } from '../../../src/layoutv2/cleanup/local-rotation.js';
-import { measureLayoutCost } from '../../../src/layoutv2/audit/invariants.js';
+import { buildAtomGrid, measureLayoutCost } from '../../../src/layoutv2/audit/invariants.js';
 import { generateCoords, refineCoords } from '../../../src/layoutv2/api.js';
 
 function makeBranchedFixture() {
@@ -181,5 +181,27 @@ describe('layoutv2/cleanup/local-rotation', () => {
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
 
     assert.ok(ringInteriorDot(graph, refined.coords, 'C18', 'C28') <= 0);
+  });
+
+  it('accepts a reusable base atom grid without changing the chosen cleanup result', () => {
+    const graph = createLayoutGraph(parseSMILES('CC(C)(C)C'), { suppressH: true });
+    const coords = new Map([
+      ['C2', { x: 0, y: 0 }],
+      ['C1', { x: -1.5, y: 0 }],
+      ['C3', { x: 1.2, y: 0.2 }],
+      ['C4', { x: 1.2, y: -0.2 }],
+      ['C5', { x: 1.5, y: 0 }]
+    ]);
+    const bondLength = 1.5;
+    const rebuiltResult = runLocalCleanup(graph, coords, { maxPasses: 2, bondLength });
+    const reusedGridResult = runLocalCleanup(graph, coords, {
+      maxPasses: 2,
+      bondLength,
+      baseAtomGrid: buildAtomGrid(graph, coords, bondLength)
+    });
+
+    assert.deepEqual([...reusedGridResult.coords.entries()], [...rebuiltResult.coords.entries()]);
+    assert.equal(reusedGridResult.passes, rebuiltResult.passes);
+    assert.equal(reusedGridResult.improvement, rebuiltResult.improvement);
   });
 });

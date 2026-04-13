@@ -44,4 +44,20 @@ describe('layoutv2/geometry/vec2', () => {
     assert.ok(Math.abs(wrapAngle(3 * Math.PI) - Math.PI) < 1e-9);
     assert.ok(Math.abs(angularDifference(Math.PI / 6, (11 * Math.PI) / 6) - (Math.PI / 3)) < 1e-9);
   });
+
+  it('handles zero-length normalization and exact angle-wrap boundaries stably', () => {
+    assert.deepEqual(normalize({ x: 1e-20, y: -1e-20 }), { x: 0, y: 0 });
+    assert.equal(wrapAngle(-Math.PI), Math.PI);
+    assert.equal(wrapAngle(Math.PI), Math.PI);
+    assert.equal(wrapAngle(3 * Math.PI), Math.PI);
+  });
+
+  it('keeps angularDifference symmetric across wrap boundaries', () => {
+    const firstAngle = Math.PI / 6;
+    const secondAngle = (11 * Math.PI) / 6;
+
+    assert.ok(Math.abs(angularDifference(firstAngle, secondAngle) - angularDifference(secondAngle, firstAngle)) < 1e-12);
+    assert.equal(angularDifference(Math.PI, -Math.PI), 0);
+    assert.equal(angularDifference(0, 0), 0);
+  });
 });

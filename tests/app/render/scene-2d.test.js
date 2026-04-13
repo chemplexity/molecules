@@ -5,6 +5,7 @@ import { parseSMILES } from '../../../src/io/smiles.js';
 import { create2DSceneRenderer } from '../../../src/app/render/scene-2d.js';
 import { applyCoords } from '../../../src/layoutv2/apply.js';
 import { generateCoords } from '../../../src/layoutv2/api.js';
+import { syncDisplayStereo } from '../../../src/layout/mol2d-helpers.js';
 
 class FakeSelection {
   constructor(records, nodeRef = {}) {
@@ -252,6 +253,79 @@ function makeRenderer({ preserveSelectionOnNextRender = false, helperOverrides =
   return { renderer, records, state };
 }
 
+function createStereoHydrogenOffsetRecorder() {
+  const offsets = [];
+  return {
+    offsets,
+    helperOverrides: {
+      drawBond: (_container, _bond, atom1, atom2, mol, toSVGPt, stereoType) => {
+        if (!stereoType) {
+          return;
+        }
+        const hydrogen = atom1?.name === 'H' ? atom1 : atom2?.name === 'H' ? atom2 : null;
+        if (!hydrogen) {
+          return;
+        }
+        const parent = hydrogen.getNeighbors(mol).find(neighbor => neighbor.name !== 'H') ?? null;
+        if (!parent) {
+          return;
+        }
+        const hydrogenPoint = toSVGPt(hydrogen);
+        const parentPoint = toSVGPt(parent);
+        offsets.push({
+          hydrogenId: hydrogen.id,
+          offset: Math.hypot(hydrogenPoint.x - parentPoint.x, hydrogenPoint.y - parentPoint.y)
+        });
+      }
+    }
+  };
+}
+
+function buildStereoHydrogenRenderState(smiles) {
+  const mol = parseSMILES(smiles);
+  const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+  applyCoords(mol, layoutResult, {
+    clearUnplaced: true,
+    hiddenHydrogenMode: 'coincident',
+    syncStereoDisplay: true
+  });
+  const hCounts = new Map();
+  for (const atom of mol.atoms.values()) {
+    if (atom.name === 'H') {
+      continue;
+    }
+    const count = atom.getNeighbors(mol).filter(neighbor => neighbor.name === 'H').length;
+    if (count > 0) {
+      hCounts.set(atom.id, count);
+    }
+  }
+  mol.hideHydrogens();
+  const stereoMap = syncDisplayStereo(mol);
+  for (const [bondId] of stereoMap) {
+    const bond = mol.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    const [atom1, atom2] = bond.getAtomObjects(mol);
+    const hydrogen = atom1?.visible === false && atom1.name === 'H' ? atom1 : atom2?.visible === false && atom2.name === 'H' ? atom2 : null;
+    if (hydrogen) {
+      hydrogen.visible = true;
+      continue;
+    }
+    const heavyAtom = atom1?.visible === false ? (atom2 ?? null) : atom2?.visible === false ? (atom1 ?? null) : null;
+    if (!heavyAtom) {
+      continue;
+    }
+    const nextCount = (hCounts.get(heavyAtom.id) ?? 0) - 1;
+    if (nextCount <= 0) {
+      hCounts.delete(heavyAtom.id);
+    } else {
+      hCounts.set(heavyAtom.id, nextCount);
+    }
+  }
+  return { mol, hCounts, stereoMap };
+}
+
 describe('create2DSceneRenderer', () => {
   it('renders a 2D scene, updates state, and clears selection by default', () => {
     const { renderer, records, state } = makeRenderer();
@@ -338,5 +412,58 @@ describe('create2DSceneRenderer', () => {
 
     assert.deepEqual(afterFirstRender, before);
     assert.deepEqual(afterSecondRender, before);
+  });
+
+  it('projects visible stereo hydrogens away from coincident parent atoms during render2d', () => {
+    const recorder = createStereoHydrogenOffsetRecorder();
+    const { renderer } = makeRenderer({ helperOverrides: recorder.helperOverrides });
+    const mol = parseSMILES('C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+    const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    applyCoords(mol, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+
+    renderer.render2d(mol, { preserveGeometry: true });
+
+    assert.ok(recorder.offsets.length > 0, 'expected stereo hydrogen bonds to be drawn');
+    assert.ok(recorder.offsets.every(({ offset }) => offset > 1e-6), 'expected rendered stereo hydrogens to be projected away from their parent atoms');
+  });
+
+  it('reprojects hidden stereo hydrogens when draw2d restores a different molecule', () => {
+    const recorder = createStereoHydrogenOffsetRecorder();
+    const { renderer, state } = makeRenderer({ helperOverrides: recorder.helperOverrides });
+    const restoredState = buildStereoHydrogenRenderState('C1C[C@H]2[C@@H](C1)C=C[C@H]2O');
+    const stereoHydrogenBondIds = [...restoredState.stereoMap.keys()].filter(bondId => {
+      const bond = restoredState.mol.bonds.get(bondId);
+      if (!bond) {
+        return false;
+      }
+      const [atom1, atom2] = bond.getAtomObjects(restoredState.mol);
+      return atom1?.name === 'H' || atom2?.name === 'H';
+    });
+    assert.ok(stereoHydrogenBondIds.length > 0, 'expected fixture to contain stereo hydrogen bonds');
+
+    const secondMol = parseSMILES('CCO');
+    const secondLayout = generateCoords(secondMol, { suppressH: true, bondLength: 1.5 });
+    applyCoords(secondMol, secondLayout, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+    secondMol.hideHydrogens();
+    renderer.render2d(secondMol, { preserveGeometry: true });
+
+    recorder.offsets.length = 0;
+    state.mol = restoredState.mol;
+    state.hCounts = restoredState.hCounts;
+    state.stereoMap = restoredState.stereoMap;
+    state.cx = 0;
+    state.cy = 0;
+    renderer.draw2d();
+
+    assert.ok(recorder.offsets.length > 0, 'expected stereo hydrogen bonds to be redrawn');
+    assert.ok(recorder.offsets.every(({ offset }) => offset > 1e-6), 'expected restored stereo hydrogens to remain projected away from their parent atoms');
   });
 });

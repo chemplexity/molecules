@@ -239,4 +239,17 @@ describe('layoutv2/api', () => {
       assert.equal(check.ok, true);
     }
   });
+
+  it('lays out a previously crashing fused-plus-spiro macrolide scaffold', () => {
+    const molecule = parseSMILES(String.raw`COC[C@H]1O[C@@H](O[C@@H]2OC[C@@H]3O[C@@]4(OC[C@@H](OC(=O)c5c(C)cc(O)cc5O)[C@@H]6OCO[C@@H]46)O[C@H]3[C@H]2OCCN=[N+]=[N-])[C@@H](OC)[C@@H](O)[C@@H]1O[C@@H]7O[C@H](C)[C@H](OC)[C@H](O[C@@H]8O[C@H](C)[C@H]9O[C@]%10(C[C@@H](O)[C@H](O[C@H]%11C[C@@H](O[C@H]%12C[C@@](C)([C@@H](OC)[C@H](C)O%12)[N+](=O)[O-])[C@H](OC(=O)c%13c(C)c(Cl)c(O)c(Cl)c%13OC)[C@@H](C)O%11)[C@@H](C)O%10)O[C@]9(C)[C@@H]8O)[C@@]7(C)O`);
+    const result = generateCoords(molecule, { suppressH: true });
+    const visibleAtomCount = [...result.layoutGraph.atoms.values()].filter(atom =>
+      !(result.layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible)
+    ).length;
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.placedComponentCount, 1);
+    assert.equal(result.metadata.unplacedComponentCount, 0);
+    assert.equal(result.coords.size, visibleAtomCount);
+  });
 });

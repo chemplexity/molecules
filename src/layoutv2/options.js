@@ -79,6 +79,10 @@ export function normalizeOptions(options = {}) {
   if (!Number.isInteger(maxCleanupPasses) || maxCleanupPasses < 0) {
     throw new RangeError(`maxCleanupPasses must be a non-negative integer, got ${JSON.stringify(maxCleanupPasses)}.`);
   }
+  const timing = options.timing ?? false;
+  if (typeof timing !== 'boolean') {
+    throw new TypeError(`timing must be a boolean, got ${JSON.stringify(timing)}.`);
+  }
   return {
     bondLength,
     suppressH: options.suppressH ?? true,
@@ -89,6 +93,7 @@ export function normalizeOptions(options = {}) {
     profile: resolveProfile(options.profile),
     largeMoleculeThreshold: normalizeLargeMoleculeThreshold(options.largeMoleculeThreshold),
     maxCleanupPasses,
+    timing,
     touchedAtoms: cloneStringSet(options.touchedAtoms, 'touchedAtoms'),
     touchedBonds: cloneStringSet(options.touchedBonds, 'touchedBonds')
   };

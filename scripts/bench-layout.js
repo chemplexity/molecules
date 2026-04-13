@@ -23,6 +23,7 @@ import { generateCoords } from '../src/layoutv2/api.js';
 
 const BENCHMARK_RUNS = 5;
 const ASSERT_TARGETS = process.env.PERF_ASSERT === '1';
+const SHOW_BREAKDOWN = process.argv.includes('--breakdown');
 
 /**
  * Creates a linear alkane-like chain molecule.
@@ -87,17 +88,36 @@ function trimmedMedian(timings) {
 }
 
 /**
+ * Returns the median timing object after discarding the fastest and slowest total runs.
+ * @param {Array<{totalMs: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}>} timingRuns - Raw timing runs.
+ * @returns {{totalMs: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null} Trimmed-median timing object.
+ */
+function trimmedMedianTiming(timingRuns) {
+  if (timingRuns.length === 0) {
+    return null;
+  }
+  const sorted = [...timingRuns].sort((firstRun, secondRun) => firstRun.totalMs - secondRun.totalMs);
+  const trimmed = sorted.length > 2 ? sorted.slice(1, -1) : sorted;
+  const medianIndex = Math.floor(trimmed.length / 2);
+  return trimmed[medianIndex] ?? null;
+}
+
+/**
  * Benchmarks one molecule factory by running layout several times.
  * @param {{name: string, targetMs: number, createMolecule: () => Molecule}} benchmark - Benchmark descriptor.
- * @returns {{name: string, targetMs: number, timings: number[], medianMs: number, passed: boolean}} Benchmark result.
+ * @returns {{name: string, targetMs: number, timings: number[], medianMs: number, passed: boolean, timingBreakdown: {totalMs: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null}} Benchmark result.
  */
 function runBenchmark(benchmark) {
   const timings = [];
+  const timingRuns = [];
   for (let runIndex = 0; runIndex < BENCHMARK_RUNS; runIndex++) {
     const molecule = benchmark.createMolecule();
     const startTime = performance.now();
-    generateCoords(molecule, { suppressH: true });
+    const result = generateCoords(molecule, { suppressH: true, timing: SHOW_BREAKDOWN });
     timings.push(performance.now() - startTime);
+    if (SHOW_BREAKDOWN && result.metadata.timing) {
+      timingRuns.push(result.metadata.timing);
+    }
   }
 
   const medianMs = trimmedMedian(timings);
@@ -106,7 +126,8 @@ function runBenchmark(benchmark) {
     targetMs: benchmark.targetMs,
     timings,
     medianMs,
-    passed: medianMs <= benchmark.targetMs
+    passed: medianMs <= benchmark.targetMs,
+    timingBreakdown: SHOW_BREAKDOWN ? trimmedMedianTiming(timingRuns) : null
   };
 }
 
@@ -118,7 +139,10 @@ function runBenchmark(benchmark) {
 function formatBenchmarkResult(result) {
   const status = result.passed ? 'PASS' : 'FAIL';
   const timings = result.timings.map(value => value.toFixed(2)).join(', ');
-  return `${status}  ${result.name.padEnd(24)} median=${result.medianMs.toFixed(2)}ms  target<${result.targetMs}ms  runs=[${timings}]`;
+  const breakdown = result.timingBreakdown
+    ? `\n      breakdown placement=${result.timingBreakdown.placementMs.toFixed(2)} cleanup=${result.timingBreakdown.cleanupMs.toFixed(2)} label=${result.timingBreakdown.labelClearanceMs.toFixed(2)} stereo=${result.timingBreakdown.stereoMs.toFixed(2)} audit=${result.timingBreakdown.auditMs.toFixed(2)} total=${result.timingBreakdown.totalMs.toFixed(2)}`
+    : '';
+  return `${status}  ${result.name.padEnd(24)} median=${result.medianMs.toFixed(2)}ms  target<${result.targetMs}ms  runs=[${timings}]${breakdown}`;
 }
 
 const BENCHMARKS = Object.freeze([
@@ -146,6 +170,21 @@ const BENCHMARKS = Object.freeze([
     name: 'Erythromycin',
     targetMs: 30,
     createMolecule: () => parseSMILES('CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O')
+  },
+  {
+    name: 'Naphthalene',
+    targetMs: 3,
+    createMolecule: () => parseSMILES('c1ccc2ccccc2c1')
+  },
+  {
+    name: 'Caffeine',
+    targetMs: 5,
+    createMolecule: () => parseSMILES('Cn1c(=O)c2c(ncn2C)n(C)c1=O')
+  },
+  {
+    name: 'Ibuprofen',
+    targetMs: 8,
+    createMolecule: () => parseSMILES('CC(C)Cc1ccc(cc1)[C@@H](C)C(=O)O')
   }
 ]);
 

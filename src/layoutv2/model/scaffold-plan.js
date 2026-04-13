@@ -64,13 +64,20 @@ export function classifyRingSystemFamily(layoutGraph, ringSystem) {
   if (layoutGraph.rings.some(ring => ringSystem.ringIds.includes(ring.id) && ring.size >= 12)) {
     return 'macrocycle';
   }
-  if (connections.some(connection => connection.kind === 'bridged')) {
+  const connectionKinds = new Set(connections.map(connection => connection.kind).filter(Boolean));
+  if (connectionKinds.has('bridged')) {
     return 'bridged';
   }
-  if (connections.some(connection => connection.kind === 'fused')) {
+  // Hybrid ring systems such as fused-plus-spiro scaffolds do not fit the
+  // dedicated planar fused/spiro placers, so route them through the more
+  // general bridged/KK fallback family instead of returning a partial layout.
+  if (connectionKinds.size > 1) {
+    return 'bridged';
+  }
+  if (connectionKinds.has('fused')) {
     return 'fused';
   }
-  if (connections.some(connection => connection.kind === 'spiro')) {
+  if (connectionKinds.has('spiro')) {
     return 'spiro';
   }
   return 'isolated-ring';

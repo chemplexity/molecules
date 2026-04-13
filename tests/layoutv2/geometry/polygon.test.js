@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   apothemForRegularPolygon,
+  countPointInPolygons,
   circumradiusForRegularPolygon,
   placeRegularPolygon,
   pointInPolygon
@@ -32,5 +33,69 @@ describe('layoutv2/geometry/polygon', () => {
 
     assert.equal(pointInPolygon({ x: 0, y: 0 }, polygon), true);
     assert.equal(pointInPolygon({ x: 2, y: 0 }, polygon), false);
+  });
+
+  it('counts how many polygons contain the requested point', () => {
+    const polygons = [
+      [
+        { x: -2, y: -2 },
+        { x: 2, y: -2 },
+        { x: 2, y: 2 },
+        { x: -2, y: 2 }
+      ],
+      [
+        { x: -1, y: -1 },
+        { x: 1, y: -1 },
+        { x: 1, y: 1 },
+        { x: -1, y: 1 }
+      ],
+      [
+        { x: 3, y: 3 },
+        { x: 4, y: 3 },
+        { x: 4, y: 4 },
+        { x: 3, y: 4 }
+      ]
+    ];
+
+    assert.equal(countPointInPolygons(polygons, { x: 0, y: 0 }), 2);
+    assert.equal(countPointInPolygons(polygons, { x: 3.5, y: 3.5 }), 1);
+    assert.equal(countPointInPolygons(polygons, { x: 10, y: 10 }), 0);
+  });
+
+  it('returns false for degenerate polygons and keeps edge handling stable', () => {
+    const square = [
+      { x: -1, y: -1 },
+      { x: 1, y: -1 },
+      { x: 1, y: 1 },
+      { x: -1, y: 1 }
+    ];
+    const degenerate = [
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 2, y: 0 }
+    ];
+
+    assert.equal(pointInPolygon({ x: 0, y: 0 }, degenerate), false);
+    assert.equal(pointInPolygon({ x: -1, y: 0 }, square), true);
+    assert.equal(pointInPolygon({ x: 1, y: 0 }, square), false);
+    assert.equal(pointInPolygon({ x: 1, y: 1 }, square), false);
+  });
+
+  it('ignores degenerate polygons when counting containment hits', () => {
+    const polygons = [
+      [
+        { x: -2, y: -2 },
+        { x: 2, y: -2 },
+        { x: 2, y: 2 },
+        { x: -2, y: 2 }
+      ],
+      [
+        { x: 0, y: 0 },
+        { x: 1, y: 0 },
+        { x: 2, y: 0 }
+      ]
+    ];
+
+    assert.equal(countPointInPolygons(polygons, { x: 0, y: 0 }), 1);
   });
 });

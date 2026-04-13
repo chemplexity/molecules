@@ -4,6 +4,7 @@ import { CLEANUP_EPSILON, DISTANCE_EPSILON } from '../constants.js';
 import { add, angleOf, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { buildAtomGrid, computeAtomDistortionCost, computeSubtreeOverlapCost } from '../audit/invariants.js';
+import { collectCutSubtree } from './subtree-utils.js';
 
 const DISCRETE_ROTATION_ANGLES = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12);
 
@@ -22,6 +23,12 @@ function buildPlacedAdjacency(layoutGraph, coords) {
   return adjacency;
 }
 
+/**
+ * Collects movable terminal subtrees from the currently placed covalent graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @returns {Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>} Rotatable terminal subtrees.
+ */
 function movableTerminalSubtrees(layoutGraph, coords) {
   const adjacency = buildPlacedAdjacency(layoutGraph, coords);
   const result = [];
@@ -40,8 +47,11 @@ function movableTerminalSubtrees(layoutGraph, coords) {
     if (!bond || bond.inRing || bond.order > 2) {
       continue;
     }
-    const subtreeAtomIds = [atomId, ...neighbors.filter(neighborAtomId => neighborAtomId !== anchorAtomId)];
-    result.push({ atomId, anchorAtomId, subtreeAtomIds });
+    result.push({
+      atomId,
+      anchorAtomId,
+      subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId))
+    });
   }
   for (const [atomId, neighbors] of adjacency) {
     const atom = layoutGraph.atoms.get(atomId);
@@ -75,7 +85,11 @@ function movableTerminalSubtrees(layoutGraph, coords) {
     if (!branchRootAtom || branchRootAtom.heavyDegree !== 1) {
       continue;
     }
-    result.push({ atomId, anchorAtomId, subtreeAtomIds: [atomId, branchRootAtomId] });
+    result.push({
+      atomId,
+      anchorAtomId,
+      subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId))
+    });
   }
   return result;
 }
@@ -208,6 +222,37 @@ function flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, currentRo
 }
 
 /**
+ * Returns whether the atom should be tracked in the visible-geometry atom grid.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom identifier.
+ * @returns {boolean} True when the atom is visible and should be tracked.
+ */
+function shouldTrackVisibleAtom(layoutGraph, atomId) {
+  return layoutGraph.atoms.get(atomId)?.visible === true;
+}
+
+/**
+ * Applies moved atom positions onto the working atom grid in place.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {import('../geometry/atom-grid.js').AtomGrid} atomGrid - Working atom grid.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map before mutation.
+ * @param {Array<[string, {x: number, y: number}]>} movedPositions - Accepted moved positions.
+ * @returns {void}
+ */
+function updateAtomGridForMove(layoutGraph, atomGrid, coords, movedPositions) {
+  for (const [atomId, nextPosition] of movedPositions) {
+    if (!shouldTrackVisibleAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    const previousPosition = coords.get(atomId);
+    if (previousPosition) {
+      atomGrid.remove(atomId, previousPosition);
+    }
+    atomGrid.insert(atomId, nextPosition);
+  }
+}
+
+/**
  * Runs a conservative local cleanup pass by rotating leaf atoms around their
  * anchors when doing so lowers the global layout cost.
  * @param {object} layoutGraph - Layout graph shell.
@@ -216,6 +261,7 @@ function flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, currentRo
  * @param {number} [options.maxPasses] - Maximum cleanup passes.
  * @param {number} [options.epsilon] - Minimum accepted improvement.
  * @param {number} [options.bondLength] - Target bond length.
+ * @param {import('../geometry/atom-grid.js').AtomGrid} [options.baseAtomGrid] - Optional reusable base atom grid.
  * @returns {{coords: Map<string, {x: number, y: number}>, passes: number, improvement: number}} Cleanup result.
  */
 export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
@@ -227,12 +273,12 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
   let passes = 0;
   const terminalSubtrees = movableTerminalSubtrees(layoutGraph, coords);
   const geminalPairs = geminalSubtreePairs(terminalSubtrees);
+  const atomGrid = options.baseAtomGrid?.clone() ?? buildAtomGrid(layoutGraph, coords, bondLength);
 
   while (passes < maxPasses) {
     passes++;
     let bestMove = null;
     const inwardFlipTolerance = bondLength * bondLength * 0.02;
-    const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
 
     for (const { atomId, anchorAtomId, subtreeAtomIds } of terminalSubtrees) {
       const anchorPosition = coords.get(anchorAtomId);
@@ -351,6 +397,7 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
       break;
     }
 
+    updateAtomGridForMove(layoutGraph, atomGrid, coords, bestMove.positions);
     for (const [atomId, position] of bestMove.positions) {
       coords.set(atomId, position);
     }

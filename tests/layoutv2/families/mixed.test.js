@@ -150,6 +150,20 @@ describe('layoutv2/families/mixed', () => {
     assert.ok(Math.abs(chainCross) > 0.2);
   });
 
+  it('lays out fused mixed scaffolds with long perfluoroalkyl tails without stalling branch placement', () => {
+    const graph = createLayoutGraph(parseSMILES('FC(F)(F)c1cc(nc2N=CN(Cc3cn(CCC(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)C(F)(F)F)nn3)C(=O)c12)c4ccccc4'), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const start = Date.now();
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const elapsed = Date.now() - start;
+
+    assert.equal(result.family, 'mixed');
+    assert.equal(result.supported, true);
+    assert.equal(result.coords.size, component.atomIds.length);
+    assert.ok(elapsed < 10000, `expected the mixed layout to finish comfortably under 10s, got ${elapsed}ms`);
+  });
+
   it('keeps an ethynyl substituent pointing outward and linear from the ring', () => {
     const graph = createLayoutGraph(makePhenylacetylene());
     const component = graph.components[0];

@@ -29,4 +29,14 @@ describe('layoutv2/geometry/atom-grid', () => {
     assert.deepEqual(atomGrid.queryRadius({ x: 0, y: 0 }, 1).sort(), ['a0']);
     assert.deepEqual(clone.queryRadius({ x: 0, y: 0 }, 1).sort(), ['a0', 'a1']);
   });
+
+  it('keeps atoms exactly on cell boundaries queryable from adjacent neighborhoods', () => {
+    const atomGrid = new AtomGrid(1.5);
+    atomGrid.insert('a0', { x: 1.5, y: 0 });
+    atomGrid.insert('a1', { x: -1.5, y: 0 });
+
+    assert.ok(atomGrid.queryRadius({ x: 1.49, y: 0 }, 0.2).includes('a0'));
+    assert.ok(atomGrid.queryRadius({ x: -1.49, y: 0 }, 0.2).includes('a1'));
+    assert.ok(atomGrid.queryRadius({ x: 1.5, y: 0 }, 0.2).includes('a0'));
+  });
 });

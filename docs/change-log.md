@@ -2,6 +2,26 @@
 
 ## 2026-04-12
 
+- Fix 2D stereo-hydrogen atom drags to start from the projected visible position and follow the mouse live
+- Fix 2D undo restoring stale hidden stereo hydrogen positions after loading a different molecule
+- Fix layout of sulfate compounds
+- Fix `layoutv2` mixed-layout freezes on long fluorinated sidechains by deferring terminal halogen leaves until the carbon backbone continuation is placed
+- Reuse a live `layoutv2` AtomGrid across unified-cleanup passes and clone it for local-rotation probes instead of rebuilding from scratch
+- Expand `layoutv2` layout benchmarks with naphthalene, caffeine, and ibuprofen plus a `--breakdown` mode that reports per-phase timing
+- Expand `layoutv2` geometry and family edge-case coverage for fused, bridged, macrocycle, polygon, vector, and KK fallback/pinning behavior
+- Split the `layoutv2` scaffold template library into separate builder, data, and public facade modules without changing the public API
+- Add opt-in `layoutv2` pipeline timing metadata for placement, cleanup, label clearance, stereo, audit, and total runtime
+- Add a fast branch-placement safety screen that skips exact clearance scoring for obviously blocked candidate angles while preserving exact finalist tie-breaking
+- Speed up `layoutv2` Kamada-Kawai relaxation by replacing full per-move gradient refreshes with exact incremental updates and add an equivalence regression against the legacy path
+- Fix browser app boot by removing the Node-only `node:perf_hooks` import from `layoutv2` pipeline timing and add a Playwright regression for unsupported module URLs on load
+- Add a `docs/agent/scripts/data` SMILES catalog with one parser-safe representative string for every current `layoutv2` scaffold template
+- Refactor `layoutv2` pipeline orchestration into separate cleanup, stereo, and result-assembly helpers without changing behavior
+- Convert `layoutv2` Kamada-Kawai matrix storage from nested JS arrays to flat typed arrays and add a disconnected-graph regression
+- Refactor `layoutv2` batch branch-angle assignment into smaller candidate-set and permutation-evaluation helpers without changing placement behavior
+- Refactor `layoutv2` mixed-family placement into smaller root-init, ring-attachment, and finalization helpers without changing behavior
+- Extract shared polygon-containment counting into `layoutv2` geometry utilities and reuse it across branch placement and wedge geometry
+- Extract shared `layoutv2` cleanup cut-subtree traversal into a reusable helper module and reuse it in overlap cleanup and local rotation
+- Centralize `layoutv2` validation presets and remaining policy-like geometry thresholds in shared constants as part of the refactor/optimization sprint
 - Add major `layoutv2` follow-up performance work across overlap cleanup, unified cleanup, and label clearance for macrocycle/macrolide-heavy cases
 - Add medium-ring cyclic `E/Z` enforcement, unified cleanup orchestration, profile-driven post-cleanup hooks, and pericondensed fused-ring layout support
 - Add benchmark coverage and broader `layoutv2` regression coverage while deferring the SVG snapshot approach during active algorithm development

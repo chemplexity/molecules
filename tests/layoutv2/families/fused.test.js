@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../src/io/smiles.js';
+import { findSevereOverlaps, measureBondLengthDeviation } from '../../../src/layoutv2/audit/invariants.js';
+import { AUDIT_PLANAR_VALIDATION } from '../../../src/layoutv2/constants.js';
 import { createLayoutGraph } from '../../../src/layoutv2/model/layout-graph.js';
 import { layoutFusedFamily } from '../../../src/layoutv2/families/fused.js';
 import { distance } from '../../../src/layoutv2/geometry/vec2.js';
@@ -26,6 +28,22 @@ function fusedTopology(graph) {
     ringConnectionByPair.set(key, connection);
   }
   return { ringAdj, ringConnectionByPair };
+}
+
+/**
+ * Asserts that a fused-family placement stays within planar validation tolerances.
+ * @param {object} graph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Fused placement coordinates.
+ * @returns {void}
+ */
+function assertPlanarLayoutQuality(graph, coords) {
+  const bondStats = measureBondLengthDeviation(graph, coords, graph.options.bondLength);
+  assert.equal(findSevereOverlaps(graph, coords, graph.options.bondLength).length, 0);
+  assert.ok(bondStats.failingBondCount <= AUDIT_PLANAR_VALIDATION.maxSevereOverlapCount);
+  assert.ok(bondStats.maxDeviation <= graph.options.bondLength * Math.max(
+    Math.abs(1 - AUDIT_PLANAR_VALIDATION.minBondLengthFactor),
+    Math.abs(AUDIT_PLANAR_VALIDATION.maxBondLengthFactor - 1)
+  ));
 }
 
 describe('layoutv2/families/fused', () => {
@@ -75,5 +93,29 @@ describe('layoutv2/families/fused', () => {
     assert.equal(result.placementMode, 'pericondensed');
     assert.ok(centralRadius < graph.options.bondLength * 0.2);
     assert.ok(maxOuterDeviation < graph.options.bondLength * 0.15);
+  });
+
+  it('keeps linear anthracene-like fused systems horizontally oriented and audit-clean', () => {
+    const graph = createLayoutGraph(parseSMILES('c1ccc2cc3ccccc3cc2c1'));
+    const { ringAdj, ringConnectionByPair } = fusedTopology(graph);
+    const result = layoutFusedFamily(graph.rings, ringAdj, ringConnectionByPair, graph.options.bondLength, { layoutGraph: graph });
+    const centers = [...result.ringCenters.values()];
+    const ySpread = Math.max(...centers.map(center => center.y)) - Math.min(...centers.map(center => center.y));
+
+    assert.equal(result.coords.size, graph.ringSystems[0].atomIds.length);
+    assert.ok(ySpread < graph.options.bondLength * 0.2);
+    assertPlanarLayoutQuality(graph, result.coords);
+  });
+
+  it('keeps angular phenanthrene-like fused systems non-collinear and audit-clean', () => {
+    const graph = createLayoutGraph(parseSMILES('c1ccc2c(c1)ccc1ccccc12'));
+    const { ringAdj, ringConnectionByPair } = fusedTopology(graph);
+    const result = layoutFusedFamily(graph.rings, ringAdj, ringConnectionByPair, graph.options.bondLength, { layoutGraph: graph });
+    const centers = [...result.ringCenters.values()];
+    const ySpread = Math.max(...centers.map(center => center.y)) - Math.min(...centers.map(center => center.y));
+
+    assert.equal(result.coords.size, graph.ringSystems[0].atomIds.length);
+    assert.ok(ySpread > graph.options.bondLength * 0.3);
+    assertPlanarLayoutQuality(graph, result.coords);
   });
 });

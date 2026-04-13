@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../src/core/Molecule.js';
 import { parseSMILES } from '../../src/io/smiles.js';
+import { angleOf, angularDifference, sub } from '../../src/layoutv2/geometry/vec2.js';
 import { classifyFamily, runPipeline } from '../../src/layoutv2/pipeline.js';
 import {
   makeAlternatingMethylMacrocycle,
@@ -136,6 +137,26 @@ describe('layoutv2/pipeline', () => {
     assert.equal(typeof result.metadata.audit.ok, 'boolean');
   });
 
+  it('records per-phase timing metadata when explicitly enabled', () => {
+    const result = runPipeline(makeOrganometallic(), {
+      timing: true
+    });
+
+    assert.ok(result.metadata.timing);
+    assert.equal(typeof result.metadata.timing.totalMs, 'number');
+    assert.equal(typeof result.metadata.timing.placementMs, 'number');
+    assert.equal(typeof result.metadata.timing.cleanupMs, 'number');
+    assert.equal(typeof result.metadata.timing.labelClearanceMs, 'number');
+    assert.equal(typeof result.metadata.timing.stereoMs, 'number');
+    assert.equal(typeof result.metadata.timing.auditMs, 'number');
+    assert.ok(result.metadata.timing.totalMs >= 0);
+    assert.ok(result.metadata.timing.placementMs >= 0);
+    assert.ok(result.metadata.timing.cleanupMs >= 0);
+    assert.ok(result.metadata.timing.labelClearanceMs >= 0);
+    assert.ok(result.metadata.timing.stereoMs >= 0);
+    assert.ok(result.metadata.timing.auditMs >= 0);
+  });
+
   it('advances bridged molecules to coordinates-ready when a template exists', () => {
     const result = runPipeline(makeNorbornane());
     assert.equal(result.metadata.primaryFamily, 'bridged');
@@ -194,6 +215,42 @@ describe('layoutv2/pipeline', () => {
     assert.equal(result.metadata.primaryFamily, 'organometallic');
     assert.deepEqual(result.metadata.policy.postCleanupHooks, ['ligand-angle-tidy']);
     assert.equal(typeof result.metadata.cleanupPostHookNudges, 'number');
+  });
+
+  it('keeps sulfate counter-ions as a cross-like sulfur arrangement in organometallic inputs', () => {
+    const result = runPipeline(parseSMILES('[Cu+2].[O-]S(=O)(=O)[O-]'), {
+      suppressH: true
+    });
+    const sulfurId = [...result.layoutGraph.atoms.values()].find(atom => atom.element === 'S')?.id;
+    const sulfurPosition = sulfurId ? result.coords.get(sulfurId) : null;
+    const singleAngles = [];
+    const multipleAngles = [];
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(sulfurId);
+    assert.ok(sulfurPosition);
+
+    for (const bond of result.layoutGraph.bondsByAtomId.get(sulfurId) ?? []) {
+      const neighborAtomId = bond.a === sulfurId ? bond.b : bond.a;
+      const neighborPosition = result.coords.get(neighborAtomId);
+      assert.ok(neighborPosition);
+      const angle = angleOf(sub(neighborPosition, sulfurPosition));
+      if ((bond.order ?? 1) === 1) {
+        singleAngles.push(angle);
+      } else {
+        multipleAngles.push(angle);
+      }
+    }
+
+    assert.equal(singleAngles.length, 2);
+    assert.equal(multipleAngles.length, 2);
+    assert.ok(Math.abs(angularDifference(singleAngles[0], singleAngles[1]) - Math.PI) < 1e-6);
+    assert.ok(Math.abs(angularDifference(multipleAngles[0], multipleAngles[1]) - Math.PI) < 1e-6);
+    for (const singleAngle of singleAngles) {
+      for (const multipleAngle of multipleAngles) {
+        assert.ok(Math.abs(angularDifference(singleAngle, multipleAngle) - (Math.PI / 2)) < 1e-6);
+      }
+    }
   });
 
   it('keeps suppressed-h simple rings audit-clean when explicit hydrogens overlap only off-screen', () => {

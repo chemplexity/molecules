@@ -21,13 +21,39 @@ function buildRestrictedAdjacency(molecule, atomIds) {
   return adjacency;
 }
 
+/**
+ * Returns the flat-array index for a square matrix entry.
+ * @param {number} rowIndex - Matrix row.
+ * @param {number} columnIndex - Matrix column.
+ * @param {number} count - Matrix width.
+ * @returns {number} Flat-array index.
+ */
+function matrixIndex(rowIndex, columnIndex, count) {
+  return (rowIndex * count) + columnIndex;
+}
+
+/**
+ * Returns whether every distance-matrix entry is finite.
+ * @param {Float64Array} matrix - Flat distance matrix.
+ * @returns {boolean} True when all entries are finite.
+ */
+function hasFiniteMatrixEntries(matrix) {
+  for (let index = 0; index < matrix.length; index++) {
+    if (!Number.isFinite(matrix[index])) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function buildDistanceMatrix(atomIds, adjacency) {
   const count = atomIds.length;
   const indexOf = new Map(atomIds.map((atomId, index) => [atomId, index]));
-  const matrix = Array.from({ length: count }, () => Array(count).fill(Infinity));
+  const matrix = new Float64Array(count * count);
+  matrix.fill(Infinity);
 
   for (let rowIndex = 0; rowIndex < count; rowIndex++) {
-    matrix[rowIndex][rowIndex] = 0;
+    matrix[matrixIndex(rowIndex, rowIndex, count)] = 0;
     const startAtomId = atomIds[rowIndex];
     const queue = [startAtomId];
     let queueHead = 0;
@@ -37,10 +63,11 @@ function buildDistanceMatrix(atomIds, adjacency) {
       const currentIndex = indexOf.get(currentAtomId);
       for (const nextAtomId of adjacency.get(currentAtomId) ?? []) {
         const nextIndex = indexOf.get(nextAtomId);
-        if (matrix[rowIndex][nextIndex] !== Infinity) {
+        const nextMatrixIndex = matrixIndex(rowIndex, nextIndex, count);
+        if (matrix[nextMatrixIndex] !== Infinity) {
           continue;
         }
-        matrix[rowIndex][nextIndex] = matrix[rowIndex][currentIndex] + 1;
+        matrix[nextMatrixIndex] = matrix[matrixIndex(rowIndex, currentIndex, count)] + 1;
         queue.push(nextAtomId);
       }
     }
@@ -56,6 +83,25 @@ function buildDistanceMatrix(atomIds, adjacency) {
  */
 function hasFinitePosition(position) {
   return !!position && Number.isFinite(position.x) && Number.isFinite(position.y);
+}
+
+/**
+ * Computes the Kamada-Kawai gradient contribution on one node from one spring pair.
+ * @param {{x: number, y: number}} origin - Node whose gradient is being evaluated.
+ * @param {{x: number, y: number}} other - Other node in the spring pair.
+ * @param {number} spring - Spring strength for the pair.
+ * @param {number} target - Target pair length.
+ * @returns {{x: number, y: number}} Gradient contribution vector.
+ */
+function pairGradientContribution(origin, other, spring, target) {
+  const dx = origin.x - other.x;
+  const dy = origin.y - other.y;
+  const edgeLength = Math.max(Math.hypot(dx, dy), DISTANCE_EPSILON);
+  const factor = spring * (1 - target / edgeLength);
+  return {
+    x: factor * dx,
+    y: factor * dy
+  };
 }
 
 /**
@@ -227,6 +273,7 @@ export function isKamadaKawaiLayoutAcceptable(molecule, atomIds, coords, bondLen
  * @param {number} [options.innerThreshold] - Inner convergence threshold.
  * @param {number} [options.maxIterations] - Outer iteration cap.
  * @param {number} [options.maxInnerIterations] - Inner iteration cap.
+ * @param {boolean} [options.incrementalEnergyUpdates] - Whether to update KK gradients incrementally after a node move.
  * @returns {{coords: Map<string, {x: number, y: number}>, converged: boolean, energy: number, ok: boolean, skipped: boolean}} KK layout result.
  */
 export function layoutKamadaKawai(
@@ -241,7 +288,8 @@ export function layoutKamadaKawai(
     threshold = 0.1,
     innerThreshold = 0.1,
     maxIterations = 20000,
-    maxInnerIterations = 50
+    maxInnerIterations = 50,
+    incrementalEnergyUpdates = true
   } = {}
 ) {
   if (atomIds.length > maxComponentSize) {
@@ -257,7 +305,7 @@ export function layoutKamadaKawai(
   const pinnedAtomIdSet = new Set(pinnedAtomIds);
   const adjacency = buildRestrictedAdjacency(molecule, atomIds);
   const distanceMatrix = buildDistanceMatrix(atomIds, adjacency);
-  if (distanceMatrix.some(row => row.some(value => !Number.isFinite(value)))) {
+  if (!hasFiniteMatrixEntries(distanceMatrix)) {
     return {
       coords: new Map(coords),
       converged: false,
@@ -274,18 +322,20 @@ export function layoutKamadaKawai(
   }
   const effectiveMaxIterations = seededAtomIds.size > 0 ? Math.min(maxIterations, 5000) : maxIterations;
 
-  const targetLength = Array.from({ length: count }, () => Array(count).fill(0));
-  const springStrength = Array.from({ length: count }, () => Array(count).fill(0));
+  const targetLength = new Float64Array(count * count);
+  const springStrength = new Float64Array(count * count);
   const energyX = new Float64Array(count);
   const energyY = new Float64Array(count);
 
   for (let firstIndex = 0; firstIndex < count; firstIndex++) {
     for (let secondIndex = 0; secondIndex < count; secondIndex++) {
-      if (firstIndex === secondIndex || distanceMatrix[firstIndex][secondIndex] === 0) {
+      const entryIndex = matrixIndex(firstIndex, secondIndex, count);
+      const pathDistance = distanceMatrix[entryIndex];
+      if (firstIndex === secondIndex || pathDistance === 0) {
         continue;
       }
-      targetLength[firstIndex][secondIndex] = bondLength * distanceMatrix[firstIndex][secondIndex];
-      springStrength[firstIndex][secondIndex] = bondLength / (distanceMatrix[firstIndex][secondIndex] * distanceMatrix[firstIndex][secondIndex]);
+      targetLength[entryIndex] = bondLength * pathDistance;
+      springStrength[entryIndex] = bondLength / (pathDistance * pathDistance);
     }
   }
 
@@ -294,16 +344,18 @@ export function layoutKamadaKawai(
     let sumY = 0;
     const origin = positions[index];
     for (let otherIndex = 0; otherIndex < count; otherIndex++) {
-      if (index === otherIndex || springStrength[index][otherIndex] === 0) {
+      const entryIndex = matrixIndex(index, otherIndex, count);
+      if (index === otherIndex || springStrength[entryIndex] === 0) {
         continue;
       }
-      const other = positions[otherIndex];
-      const dx = origin.x - other.x;
-      const dy = origin.y - other.y;
-      const edgeLength = Math.max(Math.hypot(dx, dy), DISTANCE_EPSILON);
-      const factor = springStrength[index][otherIndex] * (1 - targetLength[index][otherIndex] / edgeLength);
-      sumX += factor * dx;
-      sumY += factor * dy;
+      const contribution = pairGradientContribution(
+        origin,
+        positions[otherIndex],
+        springStrength[entryIndex],
+        targetLength[entryIndex]
+      );
+      sumX += contribution.x;
+      sumY += contribution.y;
     }
     energyX[index] = sumX;
     energyY[index] = sumY;
@@ -340,9 +392,11 @@ export function layoutKamadaKawai(
     let dyy = 0;
     let dxy = 0;
     const origin = positions[index];
+    const previousPosition = { x: origin.x, y: origin.y };
 
     for (let otherIndex = 0; otherIndex < count; otherIndex++) {
-      if (index === otherIndex || springStrength[index][otherIndex] === 0) {
+      const entryIndex = matrixIndex(index, otherIndex, count);
+      if (index === otherIndex || springStrength[entryIndex] === 0) {
         continue;
       }
       const other = positions[otherIndex];
@@ -350,8 +404,8 @@ export function layoutKamadaKawai(
       const dy = origin.y - other.y;
       const distSq = Math.max(dx * dx + dy * dy, DISTANCE_EPSILON * DISTANCE_EPSILON);
       const denom = Math.pow(distSq, 1.5);
-      const target = targetLength[index][otherIndex];
-      const spring = springStrength[index][otherIndex];
+      const target = targetLength[entryIndex];
+      const spring = springStrength[entryIndex];
       dxx += spring * (1 - (target * dy * dy) / denom);
       dyy += spring * (1 - (target * dx * dx) / denom);
       dxy += spring * ((target * dx * dy) / denom);
@@ -375,7 +429,33 @@ export function layoutKamadaKawai(
 
     positions[index].x += moveX;
     positions[index].y += moveY;
-    updateAllEnergy();
+    if (!incrementalEnergyUpdates) {
+      updateAllEnergy();
+      return;
+    }
+
+    updateEnergy(index);
+    for (let otherIndex = 0; otherIndex < count; otherIndex++) {
+      const entryIndex = matrixIndex(otherIndex, index, count);
+      if (index === otherIndex || springStrength[entryIndex] === 0) {
+        continue;
+      }
+      const other = positions[otherIndex];
+      const oldContribution = pairGradientContribution(
+        other,
+        previousPosition,
+        springStrength[entryIndex],
+        targetLength[entryIndex]
+      );
+      const newContribution = pairGradientContribution(
+        other,
+        positions[index],
+        springStrength[entryIndex],
+        targetLength[entryIndex]
+      );
+      energyX[otherIndex] += newContribution.x - oldContribution.x;
+      energyY[otherIndex] += newContribution.y - oldContribution.y;
+    }
   }
 
   updateAllEnergy();

@@ -51,6 +51,51 @@ describe('layoutv2/placement/branch-placement', () => {
     assert.deepEqual(coords.get('a2'), { x: 3, y: 0 });
   });
 
+  it('places the carbon continuation before terminal fluorine leaves on fluorinated chains', () => {
+    const molecule = new Molecule();
+    molecule.addAtom('a0', 'C');
+    molecule.addAtom('a1', 'C');
+    molecule.addAtom('a2', 'C');
+    molecule.addAtom('a3', 'C');
+    molecule.addAtom('f0', 'F');
+    molecule.addAtom('f1', 'F');
+    molecule.addBond('b0', 'a0', 'a1', {}, false);
+    molecule.addBond('b1', 'a1', 'a2', {}, false);
+    molecule.addBond('b2', 'a2', 'a3', {}, false);
+    molecule.addBond('b3', 'a2', 'f0', {}, false);
+    molecule.addBond('b4', 'a2', 'f1', {}, false);
+    const graph = createLayoutGraph(molecule, { suppressH: true });
+    const adjacency = new Map([
+      ['a0', ['a1']],
+      ['a1', ['a0', 'a2']],
+      ['a2', ['a1', 'a3', 'f0', 'f1']],
+      ['a3', ['a2']],
+      ['f0', ['a2']],
+      ['f1', ['a2']]
+    ]);
+    const coords = new Map([
+      ['a0', { x: 0, y: 0 }],
+      ['a1', { x: 1.5, y: 0 }],
+      ['a2', { x: 2.25, y: 1.299038105676658 }]
+    ]);
+
+    placeRemainingBranches(
+      adjacency,
+      graph.canonicalAtomRank,
+      coords,
+      new Set(['a0', 'a1', 'a2', 'a3', 'f0', 'f1']),
+      ['a0', 'a1', 'a2'],
+      1.5,
+      graph
+    );
+
+    const anchorPosition = coords.get('a2');
+
+    assert.ok(Math.abs(coords.get('a3').y - anchorPosition.y) < 1e-6);
+    assert.ok(coords.get('f0').y > anchorPosition.y);
+    assert.ok(coords.get('f1').y > anchorPosition.y);
+  });
+
   it('uses the seeded placement CoM to steer continuation away from fixed refinement anchors', () => {
     const molecule = makeChain(3);
     molecule.addAtom('x0', 'C');
