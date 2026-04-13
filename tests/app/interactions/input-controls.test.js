@@ -133,4 +133,100 @@ describe('createInputControls', () => {
     assert.equal(inputEl.value, 'CCC');
     assert.deepEqual(calls, ['CCC', 'preventDefault']);
   });
+
+  it('cycles through the random molecule pool before repeating entries', () => {
+    const inputEl = createElement();
+    const collectionSelectEl = createElement();
+    const examplesEl = createElement();
+    const records = [];
+    const originalRandom = Math.random;
+
+    Math.random = () => 0;
+
+    try {
+      const controls = createInputControls({
+        data: {
+          exampleMolecules: [],
+          randomMolecule: [
+            { smiles: 'A' },
+            { smiles: 'B' },
+            { smiles: 'C' }
+          ],
+          moleculeCatalog: []
+        },
+        state: {
+          getInputMode: () => 'smiles'
+        },
+        dom: {
+          getInputElement: () => inputEl,
+          getCollectionSelectElement: () => collectionSelectEl,
+          getExamplesElement: () => examplesEl
+        },
+        actions: {
+          parseInput: value => {
+            records.push(value);
+          },
+          parseInputWithAutoFormat: () => {}
+        }
+      });
+
+      controls.pickRandomMolecule();
+      controls.pickRandomMolecule();
+      controls.pickRandomMolecule();
+      controls.pickRandomMolecule();
+
+      assert.equal(new Set(records.slice(0, 3)).size, 3);
+      assert.equal(records[3], records[0]);
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
+
+  it('uses the InChI-capable random pool without repeating entries before it is exhausted', () => {
+    const inputEl = createElement();
+    const collectionSelectEl = createElement();
+    const examplesEl = createElement();
+    const records = [];
+    const originalRandom = Math.random;
+
+    Math.random = () => 0;
+
+    try {
+      const controls = createInputControls({
+        data: {
+          exampleMolecules: [],
+          randomMolecule: [
+            { smiles: 'A' },
+            { smiles: 'B', inchi: 'InChI=1S/B' },
+            { smiles: 'C', inchi: 'InChI=1S/C' }
+          ],
+          moleculeCatalog: []
+        },
+        state: {
+          getInputMode: () => 'inchi'
+        },
+        dom: {
+          getInputElement: () => inputEl,
+          getCollectionSelectElement: () => collectionSelectEl,
+          getExamplesElement: () => examplesEl
+        },
+        actions: {
+          parseInput: value => {
+            records.push(value);
+          },
+          parseInputWithAutoFormat: () => {}
+        }
+      });
+
+      controls.pickRandomMolecule();
+      controls.pickRandomMolecule();
+      controls.pickRandomMolecule();
+
+      assert.deepEqual(new Set(records.slice(0, 2)).size, 2);
+      assert.deepEqual(records[2], records[0]);
+      assert.ok(records.every(value => value.startsWith('InChI=1S/')));
+    } finally {
+      Math.random = originalRandom;
+    }
+  });
 });

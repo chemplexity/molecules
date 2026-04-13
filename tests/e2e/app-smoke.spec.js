@@ -244,6 +244,23 @@ test('undo restores pasted SMILES correctly after auto-switching out of InChI mo
   await expect(input).toHaveValue('CCC');
 });
 
+test('random molecule selection avoids revisiting recent entries before exhausting the current shuffled run', async ({ page }) => {
+  await page.goto('/index.html');
+
+  const picks = await page.evaluate(() => {
+    Math.random = () => 0;
+    const input = document.getElementById('smiles-input');
+    const values = [];
+    for (let index = 0; index < 4; index++) {
+      window.pickRandomMolecule();
+      values.push(input?.value ?? '');
+    }
+    return values;
+  });
+
+  expect(new Set(picks).size).toBe(4);
+});
+
 test('undo after pasting SMILES in InChI mode restores the prior InChI-backed molecule text', async ({ page }) => {
   await page.goto('/index.html');
 

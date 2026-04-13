@@ -7,6 +7,7 @@ describe('finalizeAppBootstrap', () => {
   it('wires charge-tool state into plot interactions and the app shell', () => {
     const records = [];
     let capturedPlotInteractionDeps = null;
+    let capturedGestureInteractionDeps = null;
     let capturedAppShellDeps = null;
 
     const ctx = {
@@ -42,7 +43,9 @@ describe('finalizeAppBootstrap', () => {
         initAtomNumberingPanel() {},
         initNavigationInteractions() {},
         initKeyboardInteractions() {},
-        initGestureInteractions() {},
+        initGestureInteractions(deps) {
+          capturedGestureInteractionDeps = deps;
+        },
         initOptionsModal() {
           return { open() {} };
         },
@@ -141,7 +144,10 @@ describe('finalizeAppBootstrap', () => {
         },
         highlight2DRenderer: {},
         scene2DRenderer: {
-          fitCurrent2dView() {}
+          fitCurrent2dView() {},
+          toSVGPt(atom) {
+            return atom;
+          }
         },
         zoomTransformHelpers: {},
         renderRuntime: {
@@ -202,9 +208,6 @@ describe('finalizeAppBootstrap', () => {
           return {};
         },
         getShowAtomTooltipsElement() {
-          return {};
-        },
-        get2DRendererVersionElement() {
           return {};
         },
         get2DAtomColoringElement() {
@@ -336,6 +339,7 @@ describe('finalizeAppBootstrap', () => {
     finalizeAppBootstrap(ctx);
 
     assert.equal(capturedPlotInteractionDeps.state.getChargeTool(), 'positive');
+    assert.deepEqual(capturedGestureInteractionDeps.helpers.toSelectionSVGPt2d({ x: 4, y: 5 }), { x: 4, y: 5 });
     capturedAppShellDeps.selection.setChargeTool('negative');
     assert.deepEqual(records, [['setChargeTool', 'negative']]);
   });

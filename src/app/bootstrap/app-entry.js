@@ -17,12 +17,8 @@ import { detectChemicalStringFormat } from '../../io/detect.js';
 import { moleculeCatalog } from '../../data/molecule-catalog.js';
 import { validateValence } from '../../validation/index.js';
 import { refreshAromaticity } from '../../algorithms/aromaticity.js';
-import {
-  refineExistingCoords as refineExistingCoordsLegacy,
-  generateAndRefine2dCoords as generateAndRefine2dCoordsLegacy
-} from '../../layout/index.js';
-import { applyCoords as applyComputedCoords } from '../../layoutv2/apply.js';
-import { generateCoords as generateComputedCoords, refineCoords as refineComputedCoords } from '../../layoutv2/api.js';
+import { applyCoords as applyComputedCoords } from '../../layout/engine/apply.js';
+import { generateCoords as generateComputedCoords, refineCoords as refineComputedCoords } from '../../layout/engine/api.js';
 import * as mol2dHelpers from '../../layout/mol2d-helpers.js';
 import { updateDescriptors, updateFormula } from '../ui/descriptors.js';
 import { initUndo, takeSnapshot as _takeSnapshot, discardLastSnapshot as _discardLastSnapshot, clearHistory as _clearUndoHistory, undoAction, redoAction } from '../core/undo.js';
@@ -156,10 +152,6 @@ window._getExampleMolecules = () => exampleMolecules;
 
 const atomBBox = mol2dHelpers.atomBBox ?? atomBBoxFallback;
 
-function getSelected2dRendererVersion() {
-  return getRenderOptions().twoDRendererVersion === 'v1' ? 'v1' : 'v2';
-}
-
 function readPlacedCoords(molecule, options = {}) {
   const coords = new Map();
   if (!molecule?.atoms) {
@@ -186,9 +178,6 @@ function buildComputedLayoutOptions(options = {}) {
 }
 
 function generateActive2dCoords(molecule, options = {}) {
-  if (getSelected2dRendererVersion() === 'v1') {
-    return generateAndRefine2dCoordsLegacy(molecule, options);
-  }
   const result = generateComputedCoords(molecule, buildComputedLayoutOptions(options));
   applyComputedCoords(molecule, result, {
     clearUnplaced: true,
@@ -199,16 +188,10 @@ function generateActive2dCoords(molecule, options = {}) {
 }
 
 function generateAndRefineActive2dCoords(molecule, options = {}) {
-  if (getSelected2dRendererVersion() === 'v1') {
-    return generateAndRefine2dCoordsLegacy(molecule, options);
-  }
   return generateActive2dCoords(molecule, options);
 }
 
 function refineActive2dCoords(molecule, options = {}) {
-  if (getSelected2dRendererVersion() === 'v1') {
-    return refineExistingCoordsLegacy(molecule, options);
-  }
   const layoutOptions = buildComputedLayoutOptions(options);
   if (layoutOptions.suppressH) {
     molecule.hideHydrogens();
@@ -571,7 +554,7 @@ const selectionOverlayManager = createSelectionOverlayManager(
     getMol2D: () => runtimeState.mol2d,
     getHCounts: () => runtimeState.hCounts2d,
     getStereoMap: () => runtimeState.stereoMap2d,
-    toSVGPt: atom => render2DHelpers.toSVGPt2d(atom),
+    toSVGPt: atom => scene2DRenderer.toSVGPt(atom),
     getGraphSelection: () => g,
     applyForceSelection: () => applyForceSelection(),
     getFontSize: () => runtimeState.fontSize

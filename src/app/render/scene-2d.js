@@ -15,7 +15,7 @@ import {
   stereoBondCenterIdForRender,
   atomBBox
 } from '../../layout/mol2d-helpers.js';
-import { synthesizeHydrogenPosition } from '../../layoutv2/stereo/wedge-geometry.js';
+import { synthesizeHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
 
 /**
  * Returns the placed incident ring polygons for one atom.
@@ -101,14 +101,63 @@ function _compute2dFitTransform(ctx, atoms) {
 }
 
 /**
- * Creates the 2D scene renderer, providing `draw2d`, `render2d`, and `fitCurrent2dView` for the active SVG canvas.
+ * Creates the 2D scene renderer, providing `draw2d`, `render2d`, `fitCurrent2dView`, and a projected-aware `toSVGPt` helper for the active SVG canvas.
  * @param {object} ctx - Context providing `state`, `helpers`, `constants`, `view`, `overlay`, `drag`, `events`, `zoom`, `svg`, `g`, `d3`, `cache`, `selection`, and `analysis`.
- * @returns {object} Object with `draw2d`, `render2d`, and `fitCurrent2dView` functions.
+ * @returns {object} Object with `draw2d`, `render2d`, `fitCurrent2dView`, and `toSVGPt` functions.
  */
 export function create2DSceneRenderer(ctx) {
   const DRAW_MODE_ATOM_HIT_PAD = 6;
   let projectedHiddenStereoCoords = new Map();
   const HIDDEN_STEREO_BOND_LENGTH = 1.5 * 0.75;
+
+  function shouldUseProjectedStereoHydrogenPosition(atom, molecule = ctx.state.getMol(), stereoMap = ctx.state.getStereoMap()) {
+    if (!atom || atom.name !== 'H' || !molecule) {
+      return false;
+    }
+    const projectedPosition = projectedHiddenStereoCoords.get(atom.id);
+    if (!projectedPosition) {
+      return false;
+    }
+    const [parent] = atom.getNeighbors(molecule);
+    if (!parent) {
+      return false;
+    }
+    const bond = molecule.getBond(atom.id, parent.id);
+    const hasCoincidentCoords = atom.x != null
+      && atom.y != null
+      && parent.x != null
+      && parent.y != null
+      && Math.abs(atom.x - parent.x) <= 1e-6
+      && Math.abs(atom.y - parent.y) <= 1e-6;
+    return atom.visible === false
+      || (!!bond && ((stereoMap && stereoMap.has(bond.id)) || bond.properties?.display?.as) && hasCoincidentCoords);
+  }
+
+  /**
+   * Converts an atom to its current 2D SVG point, honoring projected stereo-hydrogen positions when active.
+   * @param {object} atom - Atom whose current rendered point should be returned.
+   * @param {object|null} [molecule] - Molecule containing the atom.
+   * @param {Map<string, string>|null} [stereoMap] - Current display stereo map.
+   * @returns {{x: number, y: number}} Current rendered SVG point for the atom.
+   */
+  function toSVGPt(atom, molecule = ctx.state.getMol(), stereoMap = ctx.state.getStereoMap()) {
+    const projectedPosition = shouldUseProjectedStereoHydrogenPosition(atom, molecule, stereoMap)
+      ? projectedHiddenStereoCoords.get(atom.id)
+      : null;
+    if (projectedPosition) {
+      return ctx.helpers.toSVGPt(projectedPosition);
+    }
+    if (atom.x != null && atom.y != null) {
+      return ctx.helpers.toSVGPt(atom);
+    }
+    if (atom.name === 'H' && atom.visible === false && molecule) {
+      const [parent] = atom.getNeighbors(molecule);
+      if (parent?.x != null && parent?.y != null) {
+        return ctx.helpers.toSVGPt(parent);
+      }
+    }
+    return ctx.helpers.toSVGPt(atom);
+  }
 
   function draw2d() {
     const mol = ctx.state.getMol();
@@ -118,48 +167,6 @@ export function create2DSceneRenderer(ctx) {
     const stereoMap = ctx.state.getStereoMap();
     projectedHiddenStereoCoords = projectHiddenStereoHydrogens(mol, HIDDEN_STEREO_BOND_LENGTH, stereoMap);
     const hCounts = ctx.state.getHCounts();
-
-    const shouldUseProjectedStereoHydrogenPosition = atom => {
-      if (!atom || atom.name !== 'H') {
-        return false;
-      }
-      const projectedPosition = projectedHiddenStereoCoords.get(atom.id);
-      if (!projectedPosition) {
-        return false;
-      }
-      const [parent] = atom.getNeighbors(mol);
-      if (!parent) {
-        return false;
-      }
-      const bond = mol.getBond(atom.id, parent.id);
-      const hasCoincidentCoords = atom.x != null
-        && atom.y != null
-        && parent.x != null
-        && parent.y != null
-        && Math.abs(atom.x - parent.x) <= 1e-6
-        && Math.abs(atom.y - parent.y) <= 1e-6;
-      return atom.visible === false
-        || (!!bond && ((stereoMap && stereoMap.has(bond.id)) || bond.properties?.display?.as) && hasCoincidentCoords);
-    };
-
-    const toSVGPt = atom => {
-      const projectedPosition = shouldUseProjectedStereoHydrogenPosition(atom)
-        ? projectedHiddenStereoCoords.get(atom.id)
-        : null;
-      if (projectedPosition) {
-        return ctx.helpers.toSVGPt(projectedPosition);
-      }
-      if (atom.x != null && atom.y != null) {
-        return ctx.helpers.toSVGPt(atom);
-      }
-      if (atom.name === 'H' && atom.visible === false) {
-        const [parent] = atom.getNeighbors(mol);
-        if (parent?.x != null && parent?.y != null) {
-          return ctx.helpers.toSVGPt(parent);
-        }
-      }
-      return ctx.helpers.toSVGPt(atom);
-    };
     const { showLonePairs } = getRenderOptions();
     const fontSize = ctx.constants.getFontSize();
     const valenceWarningMap = ctx.helpers.valenceWarningMapFor(mol);
@@ -815,6 +822,7 @@ export function create2DSceneRenderer(ctx) {
   return {
     draw2d,
     render2d,
-    fitCurrent2dView
+    fitCurrent2dView,
+    toSVGPt
   };
 }

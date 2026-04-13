@@ -12,14 +12,16 @@ afterEach(() => {
 });
 
 describe('app/render/helpers', () => {
-  it('defaults the 2d renderer version to v2', () => {
-    assert.equal(getDefaultRenderOptions().twoDRendererVersion, 'v2');
-    assert.equal(getRenderOptions().twoDRendererVersion, 'v2');
+  it('defaults 2d render styling without a renderer version toggle', () => {
+    assert.equal(getDefaultRenderOptions().twoDAtomFontSize, 14);
+    assert.equal(getRenderOptions().twoDAtomFontSize, 14);
+    assert.equal('legacy2dRendererToggle' in getDefaultRenderOptions(), false);
   });
 
-  it('accepts only supported 2d renderer versions', () => {
-    assert.equal(updateRenderOptions({ twoDRendererVersion: 'v2' }).twoDRendererVersion, 'v2');
-    assert.equal(updateRenderOptions({ twoDRendererVersion: 'invalid' }).twoDRendererVersion, 'v2');
-    assert.equal(updateRenderOptions({ twoDRendererVersion: 'v1' }).twoDRendererVersion, 'v1');
+  it('ignores unknown render options', () => {
+    const updated = updateRenderOptions({ legacy2dRendererToggle: 'v1', twoDAtomFontSize: 18 });
+
+    assert.equal(updated.twoDAtomFontSize, 18);
+    assert.equal('legacy2dRendererToggle' in updated, false);
   });
 });

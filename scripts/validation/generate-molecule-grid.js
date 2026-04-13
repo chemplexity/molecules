@@ -2,6 +2,8 @@
  * Generate composite PNG images of all molecules in the shared example-molecules
  * list, rendered as 2D skeletal structures in a 10-column grid.
  *
+ * Uses the current layout engine renderer (src/layout/engine/render2d.js).
+ *
  * Produces two output files:
  *   - YYYYmmdd_molecules_test_grid_smiles.png  (rendered from SMILES)
  *   - YYYYmmdd_molecules_test_grid_inchi.png   (rendered from InChI; null entries skipped)
@@ -12,7 +14,7 @@
 import { writeFileSync, existsSync } from 'fs';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { renderMolSVGFromSMILES, renderMolSVGFromINCHI, buildCompositeSVG, svgToPng } from '../../src/layout/render2d.js';
+import { renderMolSVGFromSMILES, renderMolSVGFromINCHI, buildCompositeSVG, svgToPng } from '../../src/layout/engine/render2d.js';
 import { randomMolecule } from '../../examples/example-molecules.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

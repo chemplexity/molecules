@@ -15,6 +15,7 @@ export function isAdditiveSelectionEvent(event) {
  */
 export function initGestureInteractions(context) {
   const { svg, g, doc = document } = context;
+  const toSelectionSVGPt2d = atom => (context.helpers.toSelectionSVGPt2d ?? context.helpers.toSVGPt2d)(atom);
 
   const selectionRect = svg
     .append('rect')
@@ -136,7 +137,7 @@ export function initGestureInteractions(context) {
     const mol2d = context.state.documentState.getMol2d();
     const atoms = [...mol2d.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
     for (const atom of atoms) {
-      const { x: gX, y: gY } = context.helpers.toSVGPt2d(atom);
+      const { x: gX, y: gY } = toSelectionSVGPt2d(atom);
       const sx = transform.applyX(gX);
       const sy = transform.applyY(gY);
       if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {

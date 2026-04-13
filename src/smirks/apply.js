@@ -2,7 +2,7 @@
 
 import { refreshAromaticity } from '../algorithms/aromaticity.js';
 import { kekulize } from '../layout/mol2d-helpers.js';
-import { generateCoords } from '../layout/coords2d.js';
+import { generateCoords } from '../layout/index.js';
 import { _findSMARTSParsed } from '../smarts/search.js';
 import { parseSMIRKS } from './parser.js';
 

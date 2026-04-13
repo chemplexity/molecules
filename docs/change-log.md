@@ -2,6 +2,8 @@
 
 ## 2026-04-12
 
+- Fix selection of explicit hydrogen
+- Migrate new 2D layout algorithm to layout folder and remove old engine.
 - Fix 2D stereo-hydrogen atom drags to start from the projected visible position and follow the mouse live
 - Fix 2D clean preserving manually dragged stereo-hydrogen positions instead of snapping them back to their projected defaults
 - Make 2D clean feed touched-bond refinement hints into the existing-coordinate relayout path so badly stretched groups such as dragged carbonyls snap back cleanly without bypassing refinement

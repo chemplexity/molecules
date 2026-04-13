@@ -121,6 +121,7 @@ function makeBaseContext(overrides = {}) {
     },
     helpers: {
       toSVGPt2d: atom => atom,
+      toSelectionSVGPt2d: atom => atom,
       getDatum: element => element.__datum ?? null
     },
     simulation: {
@@ -267,5 +268,50 @@ describe('initGestureInteractions', () => {
     assert.deepEqual(calls, []);
     assert.deepEqual([...selectedAtomIds], []);
     assert.deepEqual([...selectedBondIds], []);
+  });
+
+  it('selects a projected stereo hydrogen when its rendered point falls inside the drag box', () => {
+    const hydrogen = { id: 'h1', x: 10, y: 10, visible: true, name: 'H' };
+    const carbon = { id: 'c1', x: 10, y: 10, visible: true, name: 'C' };
+    const mol = {
+      atoms: new Map([
+        ['h1', hydrogen],
+        ['c1', carbon]
+      ]),
+      bonds: new Map()
+    };
+    const overlayCalls = [];
+    const { context, svg, listeners, selectedAtomIds, state } = makeBaseContext({
+      renderers: {
+        applySelectionOverlay() {
+          overlayCalls.push('applySelectionOverlay');
+        }
+      },
+      helpers: {
+        toSVGPt2d: atom => ({ x: atom.x, y: atom.y }),
+        toSelectionSVGPt2d: atom => atom.id === 'h1' ? { x: 90, y: 90 } : { x: atom.x, y: atom.y },
+        getDatum: element => element.__datum ?? null
+      }
+    });
+    context.state.documentState.getMol2d = () => mol;
+    state.setSelectMode(true);
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.selection')({
+      button: 0,
+      clientX: 80,
+      clientY: 80,
+      target: { closest: () => null },
+      preventDefault() {}
+    });
+    listeners.get('mouseup')({
+      button: 0,
+      clientX: 100,
+      clientY: 100
+    });
+
+    assert.deepEqual([...selectedAtomIds], ['h1']);
+    assert.deepEqual(overlayCalls, ['applySelectionOverlay']);
   });
 });

@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { create2DSceneRenderer } from '../../../src/app/render/scene-2d.js';
-import { applyCoords } from '../../../src/layoutv2/apply.js';
-import { generateCoords } from '../../../src/layoutv2/api.js';
+import { applyCoords } from '../../../src/layout/engine/apply.js';
+import { generateCoords } from '../../../src/layout/engine/api.js';
 import { syncDisplayStereo } from '../../../src/layout/mol2d-helpers.js';
 
 class FakeSelection {
@@ -465,5 +465,28 @@ describe('create2DSceneRenderer', () => {
 
     assert.ok(recorder.offsets.length > 0, 'expected stereo hydrogen bonds to be redrawn');
     assert.ok(recorder.offsets.every(({ offset }) => offset > 1e-6), 'expected restored stereo hydrogens to remain projected away from their parent atoms');
+  });
+
+  it('returns projected SVG points for visible stereo hydrogens', () => {
+    const { renderer } = makeRenderer();
+    const mol = parseSMILES('C1C[C@H]2[C@@H](C1)C=C[C@H]2C');
+    const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    applyCoords(mol, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+
+    renderer.render2d(mol, { preserveGeometry: true });
+
+    const hydrogen = [...mol.atoms.values()].find(atom => atom.name === 'H' && atom.visible !== false);
+    assert.ok(hydrogen, 'expected a visible stereo hydrogen');
+    const [parent] = hydrogen.getNeighbors(mol);
+    assert.ok(parent, 'expected stereo hydrogen to have a parent atom');
+
+    const hydrogenPoint = renderer.toSVGPt(hydrogen);
+    const parentPoint = renderer.toSVGPt(parent);
+
+    assert.ok(Math.hypot(hydrogenPoint.x - parentPoint.x, hydrogenPoint.y - parentPoint.y) > 1e-6, 'expected projected hydrogen SVG point to differ from the parent atom point');
   });
 });

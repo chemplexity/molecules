@@ -23,18 +23,23 @@ function makeButton() {
   };
 }
 
+function makeOverlay() {
+  return {
+    hidden: true,
+    listeners: new Map(),
+    addEventListener(type, handler) {
+      this.listeners.set(type, handler);
+    }
+  };
+}
+
 describe('initOptionsModal', () => {
-  it('falls back to v2 when the current renderer version is missing', () => {
-    const overlayEl = {
-      hidden: true,
-      listeners: new Map(),
-      addEventListener(type, handler) {
-        this.listeners.set(type, handler);
-      }
-    };
+  it('opens with current values and applies updated 2d options through draw2d', () => {
+    const calls = [];
+    const overlayEl = makeOverlay();
+    const docListeners = new Map();
     const showValenceWarningsEl = makeCheckbox();
     const showAtomTooltipsEl = makeCheckbox();
-    const twoDRendererVersionEl = makeInput();
     const twoDAtomColoringEl = makeCheckbox();
     const twoDAtomFontSizeEl = makeInput();
     const atomNumberingFontSizeEl = makeInput();
@@ -44,93 +49,9 @@ describe('initOptionsModal', () => {
     const resetBtnEl = makeButton();
     const cancelBtnEl = makeButton();
     const applyBtnEl = makeButton();
-
-    const modal = initOptionsModal({
-      doc: {
-        addEventListener() {}
-      },
-      dom: {
-        getOverlayElement: () => overlayEl,
-        getShowValenceWarningsElement: () => showValenceWarningsEl,
-        getShowAtomTooltipsElement: () => showAtomTooltipsEl,
-        get2DRendererVersionElement: () => twoDRendererVersionEl,
-        get2DAtomColoringElement: () => twoDAtomColoringEl,
-        get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
-        getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
-        get2DBondThicknessElement: () => twoDBondThicknessEl,
-        getForceAtomSizeElement: () => forceAtomSizeEl,
-        getForceBondThicknessElement: () => forceBondThicknessEl,
-        getResetButtonElement: () => resetBtnEl,
-        getCancelButtonElement: () => cancelBtnEl,
-        getApplyButtonElement: () => applyBtnEl
-      },
-      options: {
-        limits: {
-          twoDAtomFontSize: { min: 10, max: 24 },
-          atomNumberingFontSize: { min: 8, max: 24 },
-          twoDBondThickness: { min: 0.8, max: 4 },
-          forceAtomSizeMultiplier: { min: 0.5, max: 2.5 },
-          forceBondThicknessMultiplier: { min: 0.5, max: 2.5 }
-        },
-        getRenderOptions: () => ({
-          showValenceWarnings: true,
-          showAtomTooltips: true,
-          twoDAtomColoring: true,
-          twoDAtomFontSize: 14,
-          atomNumberingFontSize: 10,
-          twoDBondThickness: 1.6,
-          forceAtomSizeMultiplier: 1,
-          forceBondThicknessMultiplier: 1
-        }),
-        getDefaultRenderOptions: () => ({
-          showValenceWarnings: true,
-          showAtomTooltips: true,
-          twoDRendererVersion: 'v2',
-          twoDAtomColoring: true,
-          twoDAtomFontSize: 14,
-          atomNumberingFontSize: 10,
-          twoDBondThickness: 1.6,
-          forceAtomSizeMultiplier: 1,
-          forceBondThicknessMultiplier: 1
-        }),
-        updateRenderOptions: nextOptions => nextOptions
-      },
-      state: {
-        getMode: () => '2d',
-        getCurrentMol: () => null,
-        getMol2d: () => null
-      },
-      view: {
-        setFontSize() {},
-        hideTooltip() {}
-      },
-      renderers: {
-        draw2d() {},
-        render2d() {},
-        renderMol() {},
-        updateForce() {}
-      },
-      parsers: {}
-    });
-
-    modal.open();
-    assert.equal(twoDRendererVersionEl.value, 'v2');
-  });
-
-  it('opens with current option values and applies updated options through the active renderer', () => {
-    const calls = [];
-    const overlayEl = {
-      hidden: true,
-      listeners: new Map(),
-      addEventListener(type, handler) {
-        this.listeners.set(type, handler);
-      }
-    };
-    const docListeners = new Map();
     const currentOptions = {
       showValenceWarnings: true,
       showAtomTooltips: true,
-      twoDRendererVersion: 'v1',
       twoDAtomColoring: true,
       twoDAtomFontSize: 14,
       atomNumberingFontSize: 10,
@@ -144,19 +65,6 @@ describe('initOptionsModal', () => {
       atomNumberingFontSize: 12
     };
 
-    const showValenceWarningsEl = makeCheckbox();
-    const showAtomTooltipsEl = makeCheckbox();
-    const twoDRendererVersionEl = makeInput();
-    const twoDAtomColoringEl = makeCheckbox();
-    const twoDAtomFontSizeEl = makeInput();
-    const atomNumberingFontSizeEl = makeInput();
-    const twoDBondThicknessEl = makeInput();
-    const forceAtomSizeEl = makeInput();
-    const forceBondThicknessEl = makeInput();
-    const resetBtnEl = makeButton();
-    const cancelBtnEl = makeButton();
-    const applyBtnEl = makeButton();
-
     const modal = initOptionsModal({
       doc: {
         addEventListener(type, handler) {
@@ -167,7 +75,6 @@ describe('initOptionsModal', () => {
         getOverlayElement: () => overlayEl,
         getShowValenceWarningsElement: () => showValenceWarningsEl,
         getShowAtomTooltipsElement: () => showAtomTooltipsEl,
-        get2DRendererVersionElement: () => twoDRendererVersionEl,
         get2DAtomColoringElement: () => twoDAtomColoringEl,
         get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
         getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
@@ -196,10 +103,7 @@ describe('initOptionsModal', () => {
       state: {
         getMode: () => '2d',
         getCurrentMol: () => null,
-        getMol2d: () => ({ id: 'mol2d' }),
-        getInputMode: () => 'smiles',
-        getCurrentSmiles: () => 'CCO',
-        getCurrentInchi: () => null
+        getMol2d: () => ({ id: 'mol2d' })
       },
       view: {
         setFontSize: value => calls.push(['setFontSize', value]),
@@ -207,21 +111,17 @@ describe('initOptionsModal', () => {
       },
       renderers: {
         draw2d: () => calls.push(['draw2d']),
-        render2d: (...args) => calls.push(['render2d', ...args]),
-        renderMol: (...args) => calls.push(['renderMol', ...args]),
-        updateForce: (...args) => calls.push(['updateForce', ...args])
+        render2d() {},
+        renderMol() {},
+        updateForce() {}
       },
-      parsers: {
-        parseSMILES: value => ({ id: `parsed:${value}`, atoms: new Map([['a1', {}]]) }),
-        parseINCHI: value => ({ id: `parsed:${value}`, atoms: new Map([['a1', {}]]) })
-      }
+      parsers: {}
     });
 
     modal.open();
     assert.equal(overlayEl.hidden, false);
     assert.equal(showValenceWarningsEl.checked, true);
     assert.equal(showAtomTooltipsEl.checked, true);
-    assert.equal(twoDRendererVersionEl.value, 'v1');
     assert.equal(twoDAtomFontSizeEl.value, '14');
     assert.equal(atomNumberingFontSizeEl.value, '10');
 
@@ -241,7 +141,6 @@ describe('initOptionsModal', () => {
         {
           showValenceWarnings: true,
           showAtomTooltips: false,
-          twoDRendererVersion: 'v1',
           twoDAtomColoring: true,
           twoDAtomFontSize: 24,
           atomNumberingFontSize: 24,
@@ -268,33 +167,23 @@ describe('initOptionsModal', () => {
     assert.equal(overlayEl.hidden, true);
   });
 
-  it('rerenders through the active input format when the 2d renderer version changes', () => {
+  it('applies updated force-layout options through updateForce', () => {
     const calls = [];
-    const overlayEl = {
-      hidden: true,
-      listeners: new Map(),
-      addEventListener(type, handler) {
-        this.listeners.set(type, handler);
-      }
-    };
-    const showValenceWarningsEl = makeCheckbox();
-    const showAtomTooltipsEl = makeCheckbox();
-    const twoDRendererVersionEl = makeInput();
-    const twoDAtomColoringEl = makeCheckbox();
-    const twoDAtomFontSizeEl = makeInput();
-    const atomNumberingFontSizeEl = makeInput();
-    const twoDBondThicknessEl = makeInput();
-    const forceAtomSizeEl = makeInput();
-    const forceBondThicknessEl = makeInput();
-    const resetBtnEl = makeButton();
-    const cancelBtnEl = makeButton();
+    const overlayEl = makeOverlay();
+    const showValenceWarningsEl = makeCheckbox(true);
+    const showAtomTooltipsEl = makeCheckbox(true);
+    const twoDAtomColoringEl = makeCheckbox(true);
+    const twoDAtomFontSizeEl = makeInput('14');
+    const atomNumberingFontSizeEl = makeInput('10');
+    const twoDBondThicknessEl = makeInput('1.6');
+    const forceAtomSizeEl = makeInput('2.8');
+    const forceBondThicknessEl = makeInput('0.4');
     const applyBtnEl = makeButton();
-    const mol2d = { id: 'mol2d' };
-    const reparsedMol = { id: 'parsed-inchi', atoms: new Map([['a1', {}]]) };
+    const noopButton = makeButton();
+    const currentMol = { id: 'force-mol' };
     const currentOptions = {
       showValenceWarnings: true,
       showAtomTooltips: true,
-      twoDRendererVersion: 'v1',
       twoDAtomColoring: true,
       twoDAtomFontSize: 14,
       atomNumberingFontSize: 10,
@@ -311,15 +200,14 @@ describe('initOptionsModal', () => {
         getOverlayElement: () => overlayEl,
         getShowValenceWarningsElement: () => showValenceWarningsEl,
         getShowAtomTooltipsElement: () => showAtomTooltipsEl,
-        get2DRendererVersionElement: () => twoDRendererVersionEl,
         get2DAtomColoringElement: () => twoDAtomColoringEl,
         get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
         getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
         get2DBondThicknessElement: () => twoDBondThicknessEl,
         getForceAtomSizeElement: () => forceAtomSizeEl,
         getForceBondThicknessElement: () => forceBondThicknessEl,
-        getResetButtonElement: () => resetBtnEl,
-        getCancelButtonElement: () => cancelBtnEl,
+        getResetButtonElement: () => noopButton,
+        getCancelButtonElement: () => noopButton,
         getApplyButtonElement: () => applyBtnEl
       },
       options: {
@@ -332,144 +220,51 @@ describe('initOptionsModal', () => {
         },
         getRenderOptions: () => currentOptions,
         getDefaultRenderOptions: () => currentOptions,
-        updateRenderOptions: nextOptions => ({ ...currentOptions, ...nextOptions })
+        updateRenderOptions: nextOptions => {
+          calls.push(['updateRenderOptions', nextOptions]);
+          return { ...currentOptions, ...nextOptions };
+        }
       },
       state: {
-        getMode: () => '2d',
-        getCurrentMol: () => null,
-        getMol2d: () => mol2d,
-        getInputMode: () => 'inchi',
-        getCurrentSmiles: () => 'fallback-smiles',
-        getCurrentInchi: () => 'InChI=1S/test'
+        getMode: () => 'force',
+        getCurrentMol: () => currentMol,
+        getMol2d: () => null
       },
       view: {
         setFontSize: value => calls.push(['setFontSize', value]),
-        hideTooltip: () => calls.push(['hideTooltip'])
+        hideTooltip() {}
       },
       renderers: {
-        draw2d: () => calls.push(['draw2d']),
-        render2d: (...args) => calls.push(['render2d', ...args]),
-        renderMol: (...args) => calls.push(['renderMol', ...args]),
+        draw2d() {},
+        render2d() {},
+        renderMol() {},
         updateForce: (...args) => calls.push(['updateForce', ...args])
       },
-      parsers: {
-        parseSMILES: value => ({ id: `parsed:${value}`, atoms: new Map([['a1', {}]]) }),
-        parseINCHI: value => {
-          calls.push(['parseINCHI', value]);
-          return reparsedMol;
-        }
-      }
+      parsers: {}
     });
 
     modal.open();
-    twoDRendererVersionEl.value = 'v2';
+    forceAtomSizeEl.value = '2.8';
+    forceBondThicknessEl.value = '0.4';
+
     applyBtnEl.trigger('click');
 
     assert.deepEqual(calls, [
-      ['setFontSize', 14],
-      ['parseINCHI', 'InChI=1S/test'],
-      ['renderMol', reparsedMol, { preserveHistory: true, preserveAnalysis: true }]
-    ]);
-  });
-
-  it('falls back to rerendering the current 2D molecule when reparsing is unavailable', () => {
-    const calls = [];
-    const overlayEl = {
-      hidden: true,
-      listeners: new Map(),
-      addEventListener(type, handler) {
-        this.listeners.set(type, handler);
-      }
-    };
-    const showValenceWarningsEl = makeCheckbox();
-    const showAtomTooltipsEl = makeCheckbox();
-    const twoDRendererVersionEl = makeInput();
-    const twoDAtomColoringEl = makeCheckbox();
-    const twoDAtomFontSizeEl = makeInput();
-    const atomNumberingFontSizeEl = makeInput();
-    const twoDBondThicknessEl = makeInput();
-    const forceAtomSizeEl = makeInput();
-    const forceBondThicknessEl = makeInput();
-    const resetBtnEl = makeButton();
-    const cancelBtnEl = makeButton();
-    const applyBtnEl = makeButton();
-    const mol2d = { id: 'mol2d' };
-    const currentOptions = {
-      showValenceWarnings: true,
-      showAtomTooltips: true,
-      twoDRendererVersion: 'v1',
-      twoDAtomColoring: true,
-      twoDAtomFontSize: 14,
-      atomNumberingFontSize: 10,
-      twoDBondThickness: 1.6,
-      forceAtomSizeMultiplier: 1,
-      forceBondThicknessMultiplier: 1
-    };
-
-    const modal = initOptionsModal({
-      doc: {
-        addEventListener() {}
-      },
-      dom: {
-        getOverlayElement: () => overlayEl,
-        getShowValenceWarningsElement: () => showValenceWarningsEl,
-        getShowAtomTooltipsElement: () => showAtomTooltipsEl,
-        get2DRendererVersionElement: () => twoDRendererVersionEl,
-        get2DAtomColoringElement: () => twoDAtomColoringEl,
-        get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
-        getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
-        get2DBondThicknessElement: () => twoDBondThicknessEl,
-        getForceAtomSizeElement: () => forceAtomSizeEl,
-        getForceBondThicknessElement: () => forceBondThicknessEl,
-        getResetButtonElement: () => resetBtnEl,
-        getCancelButtonElement: () => cancelBtnEl,
-        getApplyButtonElement: () => applyBtnEl
-      },
-      options: {
-        limits: {
-          twoDAtomFontSize: { min: 10, max: 24 },
-          atomNumberingFontSize: { min: 8, max: 24 },
-          twoDBondThickness: { min: 0.8, max: 4 },
-          forceAtomSizeMultiplier: { min: 0.5, max: 2.5 },
-          forceBondThicknessMultiplier: { min: 0.5, max: 2.5 }
-        },
-        getRenderOptions: () => currentOptions,
-        getDefaultRenderOptions: () => currentOptions,
-        updateRenderOptions: nextOptions => ({ ...currentOptions, ...nextOptions })
-      },
-      state: {
-        getMode: () => '2d',
-        getCurrentMol: () => null,
-        getMol2d: () => mol2d,
-        getInputMode: () => 'inchi',
-        getCurrentSmiles: () => null,
-        getCurrentInchi: () => ''
-      },
-      view: {
-        setFontSize: value => calls.push(['setFontSize', value]),
-        hideTooltip: () => calls.push(['hideTooltip'])
-      },
-      renderers: {
-        draw2d: () => calls.push(['draw2d']),
-        render2d: (...args) => calls.push(['render2d', ...args]),
-        renderMol: (...args) => calls.push(['renderMol', ...args]),
-        updateForce: (...args) => calls.push(['updateForce', ...args])
-      },
-      parsers: {
-        parseSMILES: value => ({ id: `parsed:${value}`, atoms: new Map([['a1', {}]]) }),
-        parseINCHI: () => {
-          throw new Error('parse failed');
+      [
+        'updateRenderOptions',
+        {
+          showValenceWarnings: true,
+          showAtomTooltips: true,
+          twoDAtomColoring: true,
+          twoDAtomFontSize: 14,
+          atomNumberingFontSize: 10,
+          twoDBondThickness: 1.6,
+          forceAtomSizeMultiplier: 2.5,
+          forceBondThicknessMultiplier: 0.5
         }
-      }
-    });
-
-    modal.open();
-    twoDRendererVersionEl.value = 'v2';
-    applyBtnEl.trigger('click');
-
-    assert.deepEqual(calls, [
+      ],
       ['setFontSize', 14],
-      ['render2d', mol2d, { preserveAnalysis: true }]
+      ['updateForce', currentMol, { preservePositions: true, preserveView: true }]
     ]);
   });
 });

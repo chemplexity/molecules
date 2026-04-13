@@ -53,7 +53,6 @@ describe('dom-elements bootstrap helpers', () => {
       'options-overlay': createElement(),
       'options-show-valence-warnings': createElement(),
       'options-show-atom-tooltips': createElement(),
-      'options-2d-renderer-version': createElement(),
       'options-2d-atom-coloring': createElement(),
       'options-2d-atom-font-size': createElement(),
       'options-atom-numbering-font-size': createElement(),
@@ -100,7 +99,6 @@ describe('dom-elements bootstrap helpers', () => {
     assert.equal(dom.getElementButtonElement('C'), elements['elem-btn-C']);
     assert.equal(dom.getPositiveChargeButtonElement(), elements['charge-positive-btn']);
     assert.equal(dom.getNegativeChargeButtonElement(), elements['charge-negative-btn']);
-    assert.equal(dom.get2DRendererVersionElement(), elements['options-2d-renderer-version']);
   });
 
   it('clears the summary fields through shared helpers', () => {
@@ -136,7 +134,6 @@ describe('dom-elements bootstrap helpers', () => {
       'options-overlay': createElement(),
       'options-show-valence-warnings': createElement(),
       'options-show-atom-tooltips': createElement(),
-      'options-2d-renderer-version': createElement(),
       'options-2d-atom-coloring': createElement(),
       'options-2d-atom-font-size': createElement(),
       'options-atom-numbering-font-size': createElement(),

@@ -35,7 +35,7 @@ import {
   kekulize,
   atomBBox
 } from './mol2d-helpers.js';
-import { synthesizeHydrogenPosition } from '../layoutv2/stereo/wedge-geometry.js';
+import { synthesizeHydrogenPosition } from './engine/stereo/wedge-geometry.js';
 import { Resvg } from '@resvg/resvg-js';
 
 // ---------------------------------------------------------------------------

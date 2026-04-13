@@ -13,7 +13,6 @@ export function createOptionsModalDeps(deps) {
       getOverlayElement: deps.dom.getOverlayElement,
       getShowValenceWarningsElement: deps.dom.getShowValenceWarningsElement,
       getShowAtomTooltipsElement: deps.dom.getShowAtomTooltipsElement,
-      get2DRendererVersionElement: deps.dom.get2DRendererVersionElement,
       get2DAtomColoringElement: deps.dom.get2DAtomColoringElement,
       get2DAtomFontSizeElement: deps.dom.get2DAtomFontSizeElement,
       getAtomNumberingFontSizeElement: deps.dom.getAtomNumberingFontSizeElement,

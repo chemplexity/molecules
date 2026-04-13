@@ -243,6 +243,7 @@ export function finalizeAppBootstrap(ctx) {
     },
     helpers: {
       toSVGPt2d: atom => ctx.render.render2DHelpers.toSVGPt2d(atom),
+      toSelectionSVGPt2d: atom => ctx.render.scene2DRenderer.toSVGPt?.(atom) ?? ctx.render.render2DHelpers.toSVGPt2d(atom),
       getDatum: element => ctx.helpers.getDatum(element)
     },
     simulation: ctx.dom.simulation,
@@ -264,7 +265,6 @@ export function finalizeAppBootstrap(ctx) {
         getOverlayElement: () => ctx.dom.getOptionsOverlayElement(),
         getShowValenceWarningsElement: () => ctx.dom.getShowValenceWarningsElement(),
         getShowAtomTooltipsElement: () => ctx.dom.getShowAtomTooltipsElement(),
-        get2DRendererVersionElement: () => ctx.dom.get2DRendererVersionElement(),
         get2DAtomColoringElement: () => ctx.dom.get2DAtomColoringElement(),
         get2DAtomFontSizeElement: () => ctx.dom.get2DAtomFontSizeElement(),
         getAtomNumberingFontSizeElement: () => ctx.dom.getAtomNumberingFontSizeElement(),

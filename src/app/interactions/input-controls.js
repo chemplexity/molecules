@@ -18,9 +18,21 @@ export function createInputControls(deps) {
     }))
   );
   const collectionEntriesById = new Map(collectionEntries.map(entry => [entry.id, entry]));
+  const randomMoleculePools = {
+    smiles: deps.data.randomMolecule,
+    inchi: deps.data.randomMolecule.filter(molecule => molecule.inchi)
+  };
+  const randomSelectionStateByMode = new Map([
+    ['smiles', { bag: [], recentKeys: [] }],
+    ['inchi', { bag: [], recentKeys: [] }]
+  ]);
 
   function selectedCollectionEntry() {
     return collectionEntriesById.get(deps.dom.getCollectionSelectElement().value) ?? null;
+  }
+
+  function currentRandomPoolMode() {
+    return deps.state.getInputMode() === 'inchi' ? 'inchi' : 'smiles';
   }
 
   function collectionValueForMode(entry, fmt = deps.state.getInputMode()) {
@@ -28,6 +40,62 @@ export function createInputControls(deps) {
       return '';
     }
     return fmt === 'inchi' ? entry.inchi : entry.smiles;
+  }
+
+  function randomPoolForMode(inputMode) {
+    return randomMoleculePools[inputMode];
+  }
+
+  function randomKeyForMolecule(molecule, inputMode) {
+    return inputMode === 'inchi'
+      ? molecule.inchi ?? molecule.smiles ?? ''
+      : molecule.smiles ?? molecule.inchi ?? '';
+  }
+
+  function recentRandomLimit(poolLength) {
+    if (poolLength <= 1) {
+      return 0;
+    }
+    return Math.min(poolLength - 1, 24, Math.max(3, Math.ceil(Math.sqrt(poolLength))));
+  }
+
+  function createShuffledIndexBag(poolLength) {
+    const indices = Array.from({ length: poolLength }, (_, index) => index);
+    for (let index = indices.length - 1; index > 0; index--) {
+      const swapIndex = Math.floor(Math.random() * (index + 1));
+      [indices[index], indices[swapIndex]] = [indices[swapIndex], indices[index]];
+    }
+    return indices;
+  }
+
+  function recordRandomSelection(state, molecule, inputMode, poolLength) {
+    const recentLimit = recentRandomLimit(poolLength);
+    if (recentLimit === 0) {
+      state.recentKeys.length = 0;
+      return;
+    }
+    state.recentKeys.push(randomKeyForMolecule(molecule, inputMode));
+    if (state.recentKeys.length > recentLimit) {
+      state.recentKeys.splice(0, state.recentKeys.length - recentLimit);
+    }
+  }
+
+  function nextRandomMolecule(inputMode) {
+    const pool = randomPoolForMode(inputMode);
+    if (pool.length === 0) {
+      return null;
+    }
+    const state = randomSelectionStateByMode.get(inputMode);
+    if (state.bag.length === 0) {
+      state.bag = createShuffledIndexBag(pool.length);
+    }
+    const recentKeys = new Set(state.recentKeys);
+    const preferredBagIndex = state.bag.findIndex(index => !recentKeys.has(randomKeyForMolecule(pool[index], inputMode)));
+    const bagIndex = preferredBagIndex === -1 ? 0 : preferredBagIndex;
+    const [poolIndex] = state.bag.splice(bagIndex, 1);
+    const molecule = pool[poolIndex];
+    recordRandomSelection(state, molecule, inputMode, pool.length);
+    return molecule;
   }
 
   function populateCollectionPicker() {
@@ -68,14 +136,11 @@ export function createInputControls(deps) {
   }
 
   function pickRandomMolecule() {
-    const inputMode = deps.state.getInputMode();
-    const pool = inputMode === 'inchi'
-      ? deps.data.randomMolecule.filter(molecule => molecule.inchi)
-      : deps.data.randomMolecule;
-    if (pool.length === 0) {
+    const inputMode = currentRandomPoolMode();
+    const molecule = nextRandomMolecule(inputMode);
+    if (!molecule) {
       return;
     }
-    const molecule = pool[Math.floor(Math.random() * pool.length)];
     deps.actions.parseInput(inputMode === 'inchi' ? molecule.inchi : molecule.smiles);
   }
 

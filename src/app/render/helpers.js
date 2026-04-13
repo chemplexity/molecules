@@ -8,7 +8,6 @@ import { atomColor as baseAtomColor, kekulize } from '../../layout/mol2d-helpers
 export const BOND_MULT = 3;
 export const BOND_OFFSET = 2;
 export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
-export const TWO_D_RENDERER_VERSIONS = Object.freeze(['v1', 'v2']);
 export const RENDER_OPTION_LIMITS = Object.freeze({
   twoDAtomFontSize: { min: 10, max: 24, step: 1 },
   atomNumberingFontSize: { min: 8, max: 24, step: 1 },
@@ -20,7 +19,6 @@ const DEFAULT_RENDER_OPTIONS = Object.freeze({
   showValenceWarnings: true,
   showAtomTooltips: true,
   showLonePairs: false,
-  twoDRendererVersion: 'v2',
   twoDAtomColoring: true,
   twoDAtomFontSize: 14,
   atomNumberingFontSize: 10,
@@ -79,9 +77,6 @@ export function updateRenderOptions(nextOptions = {}) {
   }
   if (typeof nextOptions.showLonePairs === 'boolean') {
     merged.showLonePairs = nextOptions.showLonePairs;
-  }
-  if (typeof nextOptions.twoDRendererVersion === 'string' && TWO_D_RENDERER_VERSIONS.includes(nextOptions.twoDRendererVersion)) {
-    merged.twoDRendererVersion = nextOptions.twoDRendererVersion;
   }
   if (typeof nextOptions.twoDAtomColoring === 'boolean') {
     merged.twoDAtomColoring = nextOptions.twoDAtomColoring;

@@ -1,5 +1,5 @@
 /**
- * layoutv2 performance benchmarks.
+ * layout/engine performance benchmarks.
  *
  * Expected median targets with `suppressH: true`:
  * - 50-atom linear chain: < 5ms
@@ -19,7 +19,7 @@ import { performance } from 'node:perf_hooks';
 
 import { Molecule } from '../src/core/index.js';
 import { parseSMILES } from '../src/io/smiles.js';
-import { generateCoords } from '../src/layoutv2/api.js';
+import { generateCoords } from '../src/layout/engine/api.js';
 
 const BENCHMARK_RUNS = 5;
 const ASSERT_TARGETS = process.env.PERF_ASSERT === '1';

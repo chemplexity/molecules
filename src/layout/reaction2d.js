@@ -1,8 +1,7 @@
 import { Molecule } from '../core/Molecule.js';
 import { applySMIRKS } from '../smirks/index.js';
 import { generateAndRefine2dCoords } from './index.js';
-import { levelCoords } from './coords2d.js';
-import { normalizeOrientation, shouldPreferFinalLandscapeOrientation } from './coords2d/orientation.js';
+import { levelCoords, normalizeOrientation, shouldPreferFinalLandscapeOrientation } from './engine/orientation.js';
 import { applyDisplayedStereoToCenter, pickStereoWedges } from './mol2d-helpers.js';
 
 // ---------------------------------------------------------------------------

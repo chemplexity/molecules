@@ -123,7 +123,7 @@ function makeManager(options = {}) {
     view2D: {
       getHCounts: () => new Map(),
       getStereoMap: () => options.stereoMap ?? null,
-      toSVGPt: atom => ({ x: atom.x, y: atom.y })
+      toSVGPt: atom => options.toSVGPt?.(atom) ?? ({ x: atom.x, y: atom.y })
     },
     view: {
       getGraphSelection: () => new FakeSelection(records)
@@ -338,6 +338,25 @@ describe('createSelectionOverlayManager', () => {
     assert.ok(records.some(([kind, tag]) => kind === 'insert' && tag === 'g'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'line'));
     assert.ok(records.some(([kind, tag]) => kind === 'append' && tag === 'circle'));
+  });
+
+  it('uses the projected 2D SVG point for stereo-hydrogen atom highlights', () => {
+    const hydrogen = makeAtom('h1', { x: 10, y: 10, name: 'H' });
+    const mol = {
+      atoms: new Map([['h1', hydrogen]]),
+      bonds: new Map()
+    };
+    const { manager, records } = makeManager({
+      mode: '2d',
+      mol2D: mol,
+      selectedAtomIds: new Set(['h1']),
+      toSVGPt: atom => atom.id === 'h1' ? { x: 90, y: 25 } : { x: atom.x, y: atom.y }
+    });
+
+    manager.redraw2dSelection();
+
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'cx' && value === 90));
+    assert.ok(records.some(([kind, name, value]) => kind === 'attr' && name === 'cy' && value === 25));
   });
 
   it('renders the extracted force selection layer for selected atoms and bonds', () => {

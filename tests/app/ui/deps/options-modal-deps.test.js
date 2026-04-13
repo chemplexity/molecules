@@ -11,7 +11,6 @@ describe('createOptionsModalDeps', () => {
         getOverlayElement: () => 'overlay',
         getShowValenceWarningsElement: () => 'valence',
         getShowAtomTooltipsElement: () => 'tooltips',
-        get2DRendererVersionElement: () => 'rendererVersion',
         get2DAtomColoringElement: () => 'atomColoring',
         get2DAtomFontSizeElement: () => 'fontSize',
         getAtomNumberingFontSizeElement: () => 'atomNumberingFontSize',
@@ -54,7 +53,6 @@ describe('createOptionsModalDeps', () => {
 
     assert.equal(deps.doc.id, 'doc');
     assert.equal(deps.dom.getOverlayElement(), 'overlay');
-    assert.equal(deps.dom.get2DRendererVersionElement(), 'rendererVersion');
     assert.equal(deps.dom.getAtomNumberingFontSizeElement(), 'atomNumberingFontSize');
     assert.equal(deps.options.getRenderOptions(), 'renderOptions');
     assert.deepEqual(deps.options.updateRenderOptions('x'), { next: 'x' });
