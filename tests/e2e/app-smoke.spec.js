@@ -468,6 +468,99 @@ test('dragging a projected stereo hydrogen follows the mouse in real time', asyn
   expect(Math.abs(afterCenterY - targetY)).toBeLessThan(18);
 });
 
+test('cleaning 2d after dragging a projected stereo hydrogen restores its default position', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+
+  const hydrogenHit = page.locator('g[data-atom-id="H4"] .atom-hit');
+  await expect(hydrogenHit).toHaveCount(1);
+
+  const getTransform = async atomId => await page.evaluate(id => document.querySelector(`g[data-atom-id="${id}"]`)?.getAttribute('transform') ?? null, atomId);
+  const initialTransform = await getTransform('H4');
+  expect(initialTransform).not.toBeNull();
+
+  const startBox = await hydrogenHit.boundingBox();
+  expect(startBox).toBeTruthy();
+
+  const startX = startBox.x + startBox.width / 2;
+  const startY = startBox.y + startBox.height / 2;
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(startX + 64, startY - 42, { steps: 10 });
+  await page.mouse.up();
+
+  await expect.poll(async () => await getTransform('H4')).not.toEqual(initialTransform);
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect.poll(async () => await getTransform('H4')).toEqual(initialTransform);
+});
+
+test('cleaning 2d after dragging a carbonyl restores reasonable local carbonyl geometry', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+
+  const getAtomCenters = async atomIds => await page.evaluate(ids => Object.fromEntries(
+    ids.map(id => {
+      const rect = document.querySelector(`g[data-atom-id="${id}"] .atom-hit`)?.getBoundingClientRect();
+      return [id, rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null];
+    })
+  ), atomIds);
+  const carbonylMetrics = centers => {
+    const dist = (first, second) => Math.hypot(first.x - second.x, first.y - second.y);
+    const angle = (center, first, second) => {
+      const v1x = first.x - center.x;
+      const v1y = first.y - center.y;
+      const v2x = second.x - center.x;
+      const v2y = second.y - center.y;
+      const dot = v1x * v2x + v1y * v2y;
+      const mag = Math.hypot(v1x, v1y) * Math.hypot(v2x, v2y) || 1;
+      return Math.acos(Math.min(1, Math.max(-1, dot / mag))) * (180 / Math.PI);
+    };
+    return {
+      C10C12: dist(centers.C10, centers.C12),
+      C12O13: dist(centers.C12, centers.O13),
+      C12O14: dist(centers.C12, centers.O14),
+      O13C12O14: angle(centers.C12, centers.O13, centers.O14)
+    };
+  };
+
+  const atomIds = ['C10', 'C12', 'O13', 'O14'];
+  const initialCenters = await getAtomCenters(atomIds);
+  const initialMetrics = carbonylMetrics(initialCenters);
+  expect(initialCenters.O13).not.toBeNull();
+
+  const oxygenHit = page.locator('g[data-atom-id="O13"] .atom-hit');
+  const startBox = await oxygenHit.boundingBox();
+  expect(startBox).toBeTruthy();
+
+  const startX = startBox.x + startBox.width / 2;
+  const startY = startBox.y + startBox.height / 2;
+  const targetX = startX + 110;
+  const targetY = startY + 75;
+
+  await page.mouse.move(startX, startY);
+  await page.mouse.down();
+  await page.mouse.move(targetX, targetY, { steps: 12 });
+  await page.mouse.up();
+
+  const draggedCenters = await getAtomCenters(atomIds);
+  expect(Math.hypot(draggedCenters.O13.x - initialCenters.O13.x, draggedCenters.O13.y - initialCenters.O13.y)).toBeGreaterThan(40);
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect.poll(async () => {
+    const cleanedMetrics = carbonylMetrics(await getAtomCenters(atomIds));
+    return (
+      Math.abs(cleanedMetrics.O13C12O14 - initialMetrics.O13C12O14) < 1 &&
+      Math.abs(cleanedMetrics.C10C12 - cleanedMetrics.C12O13) < 1.5 &&
+      Math.abs(cleanedMetrics.C12O13 - cleanedMetrics.C12O14) < 1.5
+    );
+  }).toBe(true);
+});
+
 test('undo restores selection mode and selected atoms as part of the app session', async ({ page }) => {
   await page.goto('/index.html');
 

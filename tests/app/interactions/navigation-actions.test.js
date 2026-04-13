@@ -4,11 +4,20 @@ import assert from 'node:assert/strict';
 import { createNavigationActions } from '../../../src/app/interactions/navigation.js';
 
 test('cleanLayout2d rerenders from a cloned molecule with preserved history', () => {
+  const clonedMol = {
+    atoms: new Map([
+      ['a1', { id: 'a1', name: 'C', x: 0, y: 0 }],
+      ['a2', { id: 'a2', name: 'O', x: 2.2, y: 0 }]
+    ]),
+    bonds: new Map([
+      ['b1', { id: 'b1', atoms: ['a1', 'a2'] }]
+    ])
+  };
   const sourceMol = {
     cloneCalls: 0,
     clone() {
       this.cloneCalls += 1;
-      return { cloned: true };
+      return clonedMol;
     }
   };
 
@@ -30,7 +39,15 @@ test('cleanLayout2d rerenders from a cloned molecule with preserved history', ()
     },
     helpers: {
       refineExistingCoords: (mol, options) => {
-        calls.push(['refineExistingCoords', mol, options]);
+        calls.push([
+          'refineExistingCoords',
+          mol,
+          {
+            ...options,
+            touchedAtoms: options.touchedAtoms ? [...options.touchedAtoms].sort() : options.touchedAtoms,
+            touchedBonds: options.touchedBonds ? [...options.touchedBonds].sort() : options.touchedBonds
+          }
+        ]);
         return new Map([['a1', { x: 0, y: 0 }]]);
       }
     },
@@ -47,13 +64,15 @@ test('cleanLayout2d rerenders from a cloned molecule with preserved history', ()
   assert.equal(sourceMol.cloneCalls, 1);
   assert.deepEqual(calls, [
     ['takeSnapshot', { clearReactionPreview: false }],
-    ['refineExistingCoords', { cloned: true }, {
+    ['refineExistingCoords', clonedMol, {
       suppressH: true,
       bondLength: 1.5,
-      maxPasses: 12
+      maxPasses: 12,
+      touchedAtoms: ['a1', 'a2'],
+      touchedBonds: ['b1']
     }],
     ['preserveSelection', true],
-    ['renderMol', { cloned: true }, { preserveHistory: true, preserveAnalysis: true, preserveGeometry: true }]
+    ['renderMol', clonedMol, { preserveHistory: true, preserveAnalysis: true, preserveGeometry: true }]
   ]);
 });
 

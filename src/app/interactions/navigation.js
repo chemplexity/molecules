@@ -3,6 +3,7 @@
 import { FORCE_LAYOUT_BOND_LENGTH } from '../render/force-helpers.js';
 
 const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
+const CLEAN_2D_BOND_LENGTH_TOLERANCE = 0.18;
 
 /**
  * Seeds molecule atom coordinates from the live force-simulation node positions.
@@ -69,6 +70,54 @@ function buildForceAnchorLayoutFromPlacedCoords(molecule) {
 }
 
 /**
+ * Detects obviously distorted local bonds so 2D clean can relayout just the
+ * damaged patch instead of preserving the entire existing component geometry.
+ * @param {object} molecule - Molecule whose current placed coordinates are inspected.
+ * @param {object} [options] - Detection options.
+ * @param {number} [options.bondLength] - Expected bond length for the active 2D layout.
+ * @param {number} [options.tolerance] - Relative bond-length deviation threshold.
+ * @returns {{touchedAtoms: Set<string>, touchedBonds: Set<string>}} Refinement hints.
+ */
+function derive2dCleanRefinementHints(
+  molecule,
+  {
+    bondLength = DEFAULT_LAYOUT_BOND_LENGTH,
+    tolerance = CLEAN_2D_BOND_LENGTH_TOLERANCE
+  } = {}
+) {
+  const touchedAtoms = new Set();
+  const touchedBonds = new Set();
+  if (!molecule?.atoms || !molecule?.bonds) {
+    return { touchedAtoms, touchedBonds };
+  }
+
+  const maxDeviation = bondLength * tolerance;
+  for (const bond of molecule.bonds.values()) {
+    const [firstId, secondId] = bond.atoms ?? [];
+    const firstAtom = molecule.atoms.get(firstId);
+    const secondAtom = molecule.atoms.get(secondId);
+    if (!firstAtom || !secondAtom) {
+      continue;
+    }
+    if (
+      !Number.isFinite(firstAtom.x) || !Number.isFinite(firstAtom.y) ||
+      !Number.isFinite(secondAtom.x) || !Number.isFinite(secondAtom.y)
+    ) {
+      continue;
+    }
+    const length = Math.hypot(firstAtom.x - secondAtom.x, firstAtom.y - secondAtom.y);
+    if (!Number.isFinite(length) || Math.abs(length - bondLength) <= maxDeviation) {
+      continue;
+    }
+    touchedBonds.add(bond.id);
+    touchedAtoms.add(firstAtom.id);
+    touchedAtoms.add(secondAtom.id);
+  }
+
+  return { touchedAtoms, touchedBonds };
+}
+
+/**
  * Creates navigation action handlers for mode toggling, layout cleaning, rotation, and flipping in both 2D and force-layout modes.
  * @param {object} context - Dependency context providing state, history, view, renderers, dom, simulation, force, helpers, overlays, parsers, and actions.
  * @returns {object} Object with `cleanLayout2d`, `cleanLayoutForce`, `toggleMode`, `startRotate`, `stopRotate`, and `flip`.
@@ -93,11 +142,16 @@ export function createNavigationActions(context) {
     const mol = context.state.documentState.getMol2d();
     const relayoutMol = mol.clone();
     const hasRefinementRelayout = typeof context.helpers.refineExistingCoords === 'function';
+    const refinementHints = derive2dCleanRefinementHints(relayoutMol, {
+      bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+    });
     const refinedCoords = hasRefinementRelayout
       ? context.helpers.refineExistingCoords(relayoutMol, {
         suppressH: true,
-        bondLength: 1.5,
-        maxPasses: 12
+        bondLength: DEFAULT_LAYOUT_BOND_LENGTH,
+        maxPasses: 12,
+        touchedAtoms: refinementHints.touchedAtoms,
+        touchedBonds: refinementHints.touchedBonds
       })
       : null;
     const preserveGeometry = refinedCoords instanceof Map ? refinedCoords.size > 0 : hasRefinementRelayout;

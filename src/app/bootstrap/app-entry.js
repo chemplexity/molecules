@@ -160,12 +160,16 @@ function getSelected2dRendererVersion() {
   return getRenderOptions().twoDRendererVersion === 'v1' ? 'v1' : 'v2';
 }
 
-function readPlacedCoords(molecule) {
+function readPlacedCoords(molecule, options = {}) {
   const coords = new Map();
   if (!molecule?.atoms) {
     return coords;
   }
+  const suppressH = options.suppressH ?? false;
   for (const atom of molecule.atoms.values()) {
+    if (suppressH && atom.name === 'H') {
+      continue;
+    }
     if (Number.isFinite(atom.x) && Number.isFinite(atom.y)) {
       coords.set(atom.id, { x: atom.x, y: atom.y });
     }
@@ -205,12 +209,16 @@ function refineActive2dCoords(molecule, options = {}) {
   if (getSelected2dRendererVersion() === 'v1') {
     return refineExistingCoordsLegacy(molecule, options);
   }
-  const existingCoords = readPlacedCoords(molecule);
+  const layoutOptions = buildComputedLayoutOptions(options);
+  if (layoutOptions.suppressH) {
+    molecule.hideHydrogens();
+  }
+  const existingCoords = readPlacedCoords(molecule, { suppressH: layoutOptions.suppressH });
   if (existingCoords.size === 0) {
     return existingCoords;
   }
   const result = refineComputedCoords(molecule, {
-    ...buildComputedLayoutOptions(options),
+    ...layoutOptions,
     existingCoords,
     touchedAtoms: options.touchedAtoms,
     touchedBonds: options.touchedBonds
