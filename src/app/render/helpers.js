@@ -11,6 +11,8 @@ export const AROMATIC_RENDER_MODE = 'localized'; // 'localized' | 'delocalized'
 export const RENDER_OPTION_LIMITS = Object.freeze({
   twoDAtomFontSize: { min: 10, max: 24, step: 1 },
   atomNumberingFontSize: { min: 8, max: 24, step: 1 },
+  bondEnFontSize: { min: 8, max: 24, step: 1 },
+  bondLengthFontSize: { min: 8, max: 24, step: 1 },
   twoDBondThickness: { min: 0.8, max: 4, step: 0.1 },
   forceAtomSizeMultiplier: { min: 0.5, max: 2.5, step: 0.1 },
   forceBondThicknessMultiplier: { min: 0.5, max: 2.5, step: 0.1 }
@@ -22,6 +24,8 @@ const DEFAULT_RENDER_OPTIONS = Object.freeze({
   twoDAtomColoring: true,
   twoDAtomFontSize: 14,
   atomNumberingFontSize: 10,
+  bondEnFontSize: 10,
+  bondLengthFontSize: 10,
   twoDBondThickness: 1.6,
   forceAtomSizeMultiplier: 1,
   forceBondThicknessMultiplier: 1
@@ -91,6 +95,18 @@ export function updateRenderOptions(nextOptions = {}) {
     const clamped = _clampOptionValue(Number(nextOptions.atomNumberingFontSize), RENDER_OPTION_LIMITS.atomNumberingFontSize);
     if (clamped !== null) {
       merged.atomNumberingFontSize = Math.round(clamped);
+    }
+  }
+  if (nextOptions.bondEnFontSize !== undefined) {
+    const clamped = _clampOptionValue(Number(nextOptions.bondEnFontSize), RENDER_OPTION_LIMITS.bondEnFontSize);
+    if (clamped !== null) {
+      merged.bondEnFontSize = Math.round(clamped);
+    }
+  }
+  if (nextOptions.bondLengthFontSize !== undefined) {
+    const clamped = _clampOptionValue(Number(nextOptions.bondLengthFontSize), RENDER_OPTION_LIMITS.bondLengthFontSize);
+    if (clamped !== null) {
+      merged.bondLengthFontSize = Math.round(clamped);
     }
   }
   if (nextOptions.twoDBondThickness !== undefined) {
@@ -309,9 +325,6 @@ export function atomTooltipHtml(atom, _mol, valenceWarning = null, layout = '2d'
   let rows = '';
   if (p.protons != null) {
     rows += row('Atomic #', p.protons);
-  }
-  if (p.electrons != null) {
-    rows += row('Electrons', p.electrons);
   }
   rows += row('Bonds', degree);
   if (charge !== 0) {

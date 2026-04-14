@@ -115,6 +115,12 @@ describe('tokenize', () => {
     assert.equal(atomTokens.length, 2);
     assert.equal(dotTokens.length, 1);
   });
+
+  it('does not misread bracket hydrogens as ring closures in platinum ammine complexes', () => {
+    const { tokens } = tokenize('[NH3][Pt]([NH3])(Cl)Cl');
+    const ringTokens = tokens.filter(t => t.tag === 'ring');
+    assert.equal(ringTokens.length, 0);
+  });
 });
 
 describe('decode', () => {
@@ -219,6 +225,21 @@ describe('parseSMILES — structure', () => {
     const stereoHydrogens = [...mol.atoms.values()].filter(atom => atom.name === 'H' && atom.visible === false);
     assert.ok(stereoHydrogens.length >= 2);
     assert.ok(stereoHydrogens.every(atom => atom.bonds.length === 1));
+  });
+
+  it('does not create a bogus N-N bond in [NH3][Pt]([NH3])(Cl)Cl', () => {
+    const mol = parseSMILES('[NH3][Pt]([NH3])(Cl)Cl');
+    const heavyBondPairs = [...mol.bonds.values()]
+      .map(bond => bond.atoms.map(id => mol.atoms.get(id)))
+      .filter(atoms => atoms.every(atom => atom.name !== 'H'))
+      .map(atoms =>
+        atoms
+          .map(atom => atom.name)
+          .sort()
+          .join('-')
+      )
+      .sort();
+    assert.deepEqual(heavyBondPairs, ['Cl-Pt', 'Cl-Pt', 'N-Pt', 'N-Pt']);
   });
 });
 

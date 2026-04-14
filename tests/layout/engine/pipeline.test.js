@@ -197,7 +197,9 @@ describe('layout/engine/pipeline', () => {
 
   it('avoids catastrophic bridge projection on dense mixed bridged cages', () => {
     const result = runPipeline(
-      parseSMILES('COC(=O)C1=C2Nc3ccccc3[C@@]24CCN5[C@@H]6O[C@]78[C@H]9C[C@]%10%11CCO[C@H]%10CCN%12CC[C@]7([C@H]%11%12)c%13cccc(OC)c%13N8C[C@]6(C9)[C@@H]%14OCC[C@]%14(C1)[C@@H]45'),
+      parseSMILES(
+        'COC(=O)C1=C2Nc3ccccc3[C@@]24CCN5[C@@H]6O[C@]78[C@H]9C[C@]%10%11CCO[C@H]%10CCN%12CC[C@]7([C@H]%11%12)c%13cccc(OC)c%13N8C[C@]6(C9)[C@@H]%14OCC[C@]%14(C1)[C@@H]45'
+      ),
       { suppressH: true }
     );
 
@@ -249,6 +251,155 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.primaryFamily, 'organometallic');
     assert.deepEqual(result.metadata.policy.postCleanupHooks, ['ligand-angle-tidy']);
     assert.equal(typeof result.metadata.cleanupPostHookNudges, 'number');
+  });
+
+  it('keeps projected octahedral metal ligands on angled upper-dash and lower-wedge pairs after cleanup', () => {
+    const result = runPipeline(parseSMILES('[Rh+3](N)(N)(N)(N)(N)N'), { suppressH: true });
+    const metal = result.coords.get('Rh1');
+    const projectedBondIds = new Set(result.metadata.displayAssignments.map(assignment => assignment.bondId));
+    const dashBondIds = new Set(result.metadata.displayAssignments.filter(assignment => assignment.type === 'dash').map(assignment => assignment.bondId));
+    const wedgeBondIds = new Set(result.metadata.displayAssignments.filter(assignment => assignment.type === 'wedge').map(assignment => assignment.bondId));
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(projectedBondIds.size, 4);
+
+    for (const bond of result.molecule.bonds.values()) {
+      if (!projectedBondIds.has(bond.id)) {
+        continue;
+      }
+      const ligandAtomId = bond.atoms[0] === 'Rh1' ? bond.atoms[1] : bond.atoms[0];
+      const ligand = result.coords.get(ligandAtomId);
+      const dx = ligand.x - metal.x;
+      const dy = ligand.y - metal.y;
+
+      assert.ok(Math.abs(dx) > 1e-6, 'expected projected octahedral ligand to stay off the vertical axis');
+      assert.ok(Math.abs(dy) > 1e-6, 'expected projected octahedral ligand to stay off the horizontal axis');
+      assert.ok(Math.abs(dx) > Math.abs(dy), 'expected projected octahedral ligand to lean outward more than upward/downward');
+      if (dashBondIds.has(bond.id)) {
+        assert.ok(dy > 0, 'expected dash ligands to remain on the upper pair');
+      }
+      if (wedgeBondIds.has(bond.id)) {
+        assert.ok(dy < 0, 'expected wedge ligands to remain on the lower pair');
+      }
+    }
+  });
+
+  it('keeps supported three-coordinate copper centers on an explicit trigonal-planar spread after cleanup', () => {
+    const result = runPipeline(parseSMILES('[Cu](Cl)(Cl)Cl'), { suppressH: true });
+    const metal = result.coords.get('Cu1');
+    const angles = [...result.molecule.bonds.values()]
+      .filter(bond => bond.atoms.includes('Cu1'))
+      .map(bond => {
+        const ligandAtomId = bond.atoms[0] === 'Cu1' ? bond.atoms[1] : bond.atoms[0];
+        const ligand = result.coords.get(ligandAtomId);
+        return Math.atan2(ligand.y - metal.y, ligand.x - metal.x);
+      })
+      .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+    const wrappedAngles = [...angles, angles[0] + Math.PI * 2];
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.displayAssignments.length, 0);
+    for (let index = 0; index < angles.length; index++) {
+      assert.ok(Math.abs(wrappedAngles[index + 1] - wrappedAngles[index] - (2 * Math.PI) / 3) < 1e-6);
+    }
+  });
+
+  it('keeps projected trigonal-bipyramidal iron ligands on a left projected pair after cleanup', () => {
+    const result = runPipeline(parseSMILES('[Fe](Cl)(Cl)(Cl)(Cl)Cl'), { suppressH: true });
+    const metal = result.coords.get('Fe1');
+    const projectedBondIds = new Set(result.metadata.displayAssignments.map(assignment => assignment.bondId));
+    const dashBondIds = new Set(result.metadata.displayAssignments.filter(assignment => assignment.type === 'dash').map(assignment => assignment.bondId));
+    const wedgeBondIds = new Set(result.metadata.displayAssignments.filter(assignment => assignment.type === 'wedge').map(assignment => assignment.bondId));
+    const projectedOffsets = [];
+    const planarOffsets = [];
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(projectedBondIds.size, 2);
+
+    for (const bond of result.molecule.bonds.values()) {
+      if (!bond.atoms.includes('Fe1')) {
+        continue;
+      }
+      const ligandAtomId = bond.atoms[0] === 'Fe1' ? bond.atoms[1] : bond.atoms[0];
+      const ligand = result.coords.get(ligandAtomId);
+      const dx = ligand.x - metal.x;
+      const dy = ligand.y - metal.y;
+
+      if (projectedBondIds.has(bond.id)) {
+        projectedOffsets.push({ bondId: bond.id, dx, dy });
+        assert.ok(dx < 0);
+        assert.ok(Math.abs(dx) > 1e-6);
+        assert.ok(Math.abs(dy) > 1e-6);
+        if (dashBondIds.has(bond.id)) {
+          assert.ok(dy > 0);
+        }
+        if (wedgeBondIds.has(bond.id)) {
+          assert.ok(dy < 0);
+        }
+      } else {
+        planarOffsets.push({ dx, dy });
+      }
+    }
+
+    assert.equal(projectedOffsets.length, 2);
+    assert.equal(planarOffsets.length, 3);
+
+    const axialOffsets = planarOffsets.filter(offset => Math.abs(offset.dy) > 1e-6);
+    const equatorialOffsets = planarOffsets.filter(offset => Math.abs(offset.dy) <= 1e-6);
+
+    assert.equal(axialOffsets.length, 2);
+    assert.equal(equatorialOffsets.length, 1);
+    assert.ok(axialOffsets.every(offset => Math.abs(offset.dx) < 0.1));
+    assert.ok(Math.abs(axialOffsets[0].dy + axialOffsets[1].dy) < 1e-6);
+    assert.ok(equatorialOffsets[0].dx > 0);
+  });
+
+  it('keeps a supported square-pyramidal rhodium center on the octahedral front/back projection without the bottom ligand', () => {
+    const result = runPipeline(parseSMILES('[Rh](Cl)(Cl)(Cl)(Cl)Cl'), { suppressH: true });
+    const metal = result.coords.get('Rh1');
+    const projectedBondIds = new Set(result.metadata.displayAssignments.map(assignment => assignment.bondId));
+    const dashBondIds = new Set(result.metadata.displayAssignments.filter(assignment => assignment.type === 'dash').map(assignment => assignment.bondId));
+    const wedgeBondIds = new Set(result.metadata.displayAssignments.filter(assignment => assignment.type === 'wedge').map(assignment => assignment.bondId));
+    let planarLigandCount = 0;
+    let upperDashCount = 0;
+    let lowerWedgeCount = 0;
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(projectedBondIds.size, 4);
+    assert.equal(dashBondIds.size, 2);
+    assert.equal(wedgeBondIds.size, 2);
+
+    for (const bond of result.molecule.bonds.values()) {
+      if (!bond.atoms.includes('Rh1')) {
+        continue;
+      }
+      const ligandAtomId = bond.atoms[0] === 'Rh1' ? bond.atoms[1] : bond.atoms[0];
+      const ligand = result.coords.get(ligandAtomId);
+      const dx = ligand.x - metal.x;
+      const dy = ligand.y - metal.y;
+
+      if (projectedBondIds.has(bond.id)) {
+        assert.ok(Math.abs(dx) > 1e-6);
+        assert.ok(Math.abs(dy) > 1e-6);
+        assert.ok(Math.abs(dx) > Math.abs(dy));
+        if (dashBondIds.has(bond.id)) {
+          assert.ok(dy > 0);
+          upperDashCount++;
+        }
+        if (wedgeBondIds.has(bond.id)) {
+          assert.ok(dy < 0);
+          lowerWedgeCount++;
+        }
+      } else {
+        planarLigandCount++;
+        assert.ok(Math.abs(dx) < 1e-6);
+        assert.ok(dy > 0);
+      }
+    }
+
+    assert.equal(upperDashCount, 2);
+    assert.equal(lowerWedgeCount, 2);
+    assert.equal(planarLigandCount, 1);
   });
 
   it('keeps sulfate counter-ions as a cross-like sulfur arrangement in organometallic inputs', () => {
@@ -308,12 +459,10 @@ describe('layout/engine/pipeline', () => {
 
     const metalX = componentCenterX(metalComponent);
     const ligandXs = ligandComponents.map(componentCenterX).sort((firstValue, secondValue) => firstValue - secondValue);
-    const heavyPositions = [...result.coords.entries()]
-      .filter(([atomId]) => result.layoutGraph.atoms.get(atomId)?.element !== 'H')
-      .map(([, position]) => position);
+    const heavyPositions = [...result.coords.entries()].filter(([atomId]) => result.layoutGraph.atoms.get(atomId)?.element !== 'H').map(([, position]) => position);
     const maxX = Math.max(...heavyPositions.map(position => position.x));
     const minX = Math.min(...heavyPositions.map(position => position.x));
-    const centeredError = Math.abs(metalX - ((minX + maxX) / 2));
+    const centeredError = Math.abs(metalX - (minX + maxX) / 2);
 
     assert.ok(ligandXs[0] < metalX && metalX < ligandXs[1]);
     assert.ok(centeredError < 0.8, `expected disconnected salt bounds to stay visibly centered on the metal hub, got error ${centeredError}`);

@@ -137,6 +137,10 @@ describe('validateValence — valid molecules', () => {
     assert.deepEqual(validateValence(parseSMILES('[CH3-]')), []);
   });
 
+  it('ammine platinum complexes do not flag neutral donor nitrogens as over-bonded', () => {
+    assert.deepEqual(validateValence(parseSMILES('[NH3][Pt]([NH3])(Cl)Cl')), []);
+  });
+
   it('methyl radical is valid when the radical count is explicit', () => {
     const mol = buildWithNBonds('C', 3, { radical: 1 });
     assert.equal(centerWarnings(mol).length, 0);

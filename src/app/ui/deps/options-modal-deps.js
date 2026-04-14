@@ -16,6 +16,8 @@ export function createOptionsModalDeps(deps) {
       get2DAtomColoringElement: deps.dom.get2DAtomColoringElement,
       get2DAtomFontSizeElement: deps.dom.get2DAtomFontSizeElement,
       getAtomNumberingFontSizeElement: deps.dom.getAtomNumberingFontSizeElement,
+      getBondEnFontSizeElement: deps.dom.getBondEnFontSizeElement,
+      getBondLengthFontSizeElement: deps.dom.getBondLengthFontSizeElement,
       get2DBondThicknessElement: deps.dom.get2DBondThicknessElement,
       getForceAtomSizeElement: deps.dom.getForceAtomSizeElement,
       getForceBondThicknessElement: deps.dom.getForceBondThicknessElement,

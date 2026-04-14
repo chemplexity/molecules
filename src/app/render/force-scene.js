@@ -2,8 +2,11 @@
 
 import { getRenderOptions, atomColor, strokeColor, singleBondWidth, prepareAromaticBondRendering, atomRadius, xOffset, yOffset, PI_STROKE, ARO_STROKE } from './helpers.js';
 import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, computeLonePairDotPositions, secondaryDir, syncDisplayStereo } from '../../layout/mol2d-helpers.js';
-import { getBondEnOverlayData } from './bond-en-polarity.js';
+import { getBondEnOverlayData } from './bond-en-overlay.js';
+import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydrogenBondOverlayPlacement, pickBondOverlayLabelPlacement } from './bond-overlay-placement.js';
+import { getBondLengthsOverlayData } from './bond-lengths-overlay.js';
 import { atomNumberingLabelDistance, getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationAngle } from './atom-numbering.js';
+import { organometallicGeometryKind, organometallicProjectedDisplayAssignmentCount } from '../../layout/engine/families/organometallic-geometry.js';
 
 /**
  * Removes an automatically assigned display hint from a bond while preserving
@@ -77,7 +80,7 @@ function hasProjectedOrganometallicDisplayCandidate(molecule) {
         covalentBondCount++;
       }
     }
-    if (covalentBondCount === 4 || covalentBondCount === 6) {
+    if (expectedProjectedDisplayAssignmentCount(atom, covalentBondCount) > 0) {
       return true;
     }
   }
@@ -103,6 +106,18 @@ function countProjectedDisplayAssignments(molecule, centerId) {
 }
 
 /**
+ * Returns the expected number of projected wedge/dash assignments for one
+ * coordination center based on its current supported publication geometry.
+ * @param {object} atom - Candidate metal-center atom.
+ * @param {number} covalentBondCount - Number of covalent ligands on the center.
+ * @returns {number} Expected projected assignment count.
+ */
+function expectedProjectedDisplayAssignmentCount(atom, covalentBondCount) {
+  const geometryKind = organometallicGeometryKind(atom?.name ?? '', covalentBondCount);
+  return organometallicProjectedDisplayAssignmentCount(geometryKind);
+}
+
+/**
  * Returns whether the molecule has a supported projected organometallic center
  * whose current display hints are missing one side of the projection.
  * @param {object} molecule - Molecule-like graph to inspect.
@@ -121,7 +136,8 @@ function hasIncompleteProjectedOrganometallicDisplay(molecule) {
         covalentBondCount++;
       }
     }
-    if ((covalentBondCount === 4 || covalentBondCount === 6) && countProjectedDisplayAssignments(molecule, atom.id) < 2) {
+    const expectedProjectedAssignments = expectedProjectedDisplayAssignmentCount(atom, covalentBondCount);
+    if (expectedProjectedAssignments > 0 && countProjectedDisplayAssignments(molecule, atom.id) < expectedProjectedAssignments) {
       return true;
     }
   }
@@ -527,6 +543,18 @@ export function createForceSceneRenderer(ctx) {
       return null;
     };
 
+    function _seedForceOverlayPlacedBoxes() {
+      return graph.nodes.map(node => {
+        const atomFontSize = node.name.length > 1 ? 7 : 9;
+        return {
+          cx: node.x,
+          cy: node.y,
+          hw: (String(node.name).length * atomFontSize * 0.62) / 2 + 2,
+          hh: atomFontSize * 0.7
+        };
+      });
+    }
+
     function _forceLonePairDotsForAtom(atom) {
       if (!showLonePairs || atom.name === 'H') {
         return [];
@@ -638,7 +666,7 @@ export function createForceSceneRenderer(ctx) {
     let forceBondEnLabels = null;
     if (forceEnData) {
       const enLayer = ctx.g.append('g').attr('class', 'force-bond-en').style('pointer-events', 'none');
-      const labelData = forceEnData.map(({ bondId, label, t }) => ({ link: forceLinkById.get(bondId), label, t })).filter(d => d.link);
+      const labelData = forceEnData.map(({ bondId, label, t }) => ({ link: forceLinkById.get(bondId), bond: molecule.bonds.get(bondId), label, t })).filter(d => d.link && d.bond);
       forceBondEnLabels = enLayer
         .selectAll('text.force-bond-en-label')
         .data(labelData)
@@ -647,7 +675,7 @@ export function createForceSceneRenderer(ctx) {
         .attr('class', 'force-bond-en-label')
         .attr('text-anchor', 'middle')
         .attr('dominant-baseline', 'central')
-        .attr('font-size', `${getRenderOptions().atomNumberingFontSize}px`)
+        .attr('font-size', `${getRenderOptions().bondEnFontSize}px`)
         .attr('pointer-events', 'none')
         .attr('fill', d => ctx.helpers.enLabelColor(d.t))
         .text(d => d.label);
@@ -657,16 +685,157 @@ export function createForceSceneRenderer(ctx) {
       if (!forceBondEnLabels) {
         return;
       }
+      const fontSize = getRenderOptions().bondEnFontSize;
+      const bondOffset = ctx.constants.bondOffset ?? 2;
+      const blockerSegments = forceBondEnLabels.data().flatMap(d => {
+        const start = { x: d.link.source.x, y: d.link.source.y };
+        const end = { x: d.link.target.x, y: d.link.target.y };
+        const atomA = molecule.atoms.get(d.link.source.id);
+        const atomB = molecule.atoms.get(d.link.target.id);
+        const preferredSide = d.link.order === 2 || d.link.order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
+        return buildBondOverlayBlockerSegments({
+          start,
+          end,
+          bond: d.bond,
+          order: d.link.order,
+          stereoType: d.bond.properties.display?.as ?? null,
+          preferredSide,
+          bondOffset,
+          wedgeHalfWidth: 5,
+          wedgeDashes: 6
+        });
+      });
+      const placed = _seedForceOverlayPlacedBoxes();
       forceBondEnLabels.attr('transform', d => {
-        const dx = d.link.target.x - d.link.source.x;
-        const dy = d.link.target.y - d.link.source.y;
-        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-        const x = (d.link.source.x + d.link.target.x) / 2 + (-dy / len) * 13;
-        const y = (d.link.source.y + d.link.target.y) / 2 + (dx / len) * 13;
-        return `translate(${x},${y})`;
+        const start = { x: d.link.source.x, y: d.link.source.y };
+        const end = { x: d.link.target.x, y: d.link.target.y };
+        const atomA = molecule.atoms.get(d.link.source.id);
+        const atomB = molecule.atoms.get(d.link.target.id);
+        const hydrogenNode = atomA?.name === 'H' || atomA?.name === 'D' ? d.link.source : atomB?.name === 'H' || atomB?.name === 'D' ? d.link.target : null;
+        const otherNode = hydrogenNode === d.link.source ? d.link.target : d.link.source;
+        if (hydrogenNode && otherNode) {
+          const placement = pickHydrogenBondOverlayPlacement({
+            hydrogenPoint: { x: hydrogenNode.x, y: hydrogenNode.y },
+            otherPoint: { x: otherNode.x, y: otherNode.y },
+            label: d.label,
+            fontSize,
+            hydrogenRadius: atomRadius(hydrogenNode.protons, 'force'),
+            placedBoxes: placed
+          });
+          placed.push(placement);
+          return `translate(${placement.cx},${placement.cy})`;
+        }
+        const preferredSide = d.link.order === 2 || d.link.order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
+        const placement = pickBondOverlayLabelPlacement({
+          start,
+          end,
+          label: d.label,
+          fontSize,
+          preferredSide,
+          placedBoxes: placed,
+          blockerSegments,
+          baseOffset: defaultBondOverlayBaseOffset({
+            bond: d.bond,
+            order: d.link.order,
+            stereoType: d.bond.properties.display?.as ?? null,
+            fontSize,
+            bondOffset,
+            wedgeHalfWidth: 5
+          })
+        });
+        placed.push(placement);
+        return `translate(${placement.cx},${placement.cy})`;
       });
     }
     _updateForceBondEnLabels();
+
+    const forceBondLengthsData = getBondLengthsOverlayData(molecule);
+    let forceBondLengthLabels = null;
+    if (forceBondLengthsData) {
+      const blLayer = ctx.g.append('g').attr('class', 'force-bond-lengths').style('pointer-events', 'none');
+      const blLabelData = forceBondLengthsData
+        .map(({ bondId, label }) => ({ link: forceLinkById.get(bondId), bond: molecule.bonds.get(bondId), label }))
+        .filter(d => d.link && d.bond);
+      forceBondLengthLabels = blLayer
+        .selectAll('text.force-bond-length-label')
+        .data(blLabelData)
+        .enter()
+        .append('text')
+        .attr('class', 'force-bond-length-label')
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'central')
+        .attr('font-size', `${getRenderOptions().bondLengthFontSize}px`)
+        .attr('pointer-events', 'none')
+        .attr('fill', '#000')
+        .text(d => d.label);
+    }
+    function _updateForceBondLengthLabels() {
+      if (!forceBondLengthLabels) {
+        return;
+      }
+      const fontSize = getRenderOptions().bondLengthFontSize;
+      const bondOffset = ctx.constants.bondOffset ?? 2;
+      const blockerSegments = forceBondLengthLabels.data().flatMap(d => {
+        const start = { x: d.link.source.x, y: d.link.source.y };
+        const end = { x: d.link.target.x, y: d.link.target.y };
+        const atomA = molecule.atoms.get(d.link.source.id);
+        const atomB = molecule.atoms.get(d.link.target.id);
+        const preferredSide = d.link.order === 2 || d.link.order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
+        return buildBondOverlayBlockerSegments({
+          start,
+          end,
+          bond: d.bond,
+          order: d.link.order,
+          stereoType: d.bond.properties.display?.as ?? null,
+          preferredSide,
+          bondOffset,
+          wedgeHalfWidth: 5,
+          wedgeDashes: 6
+        });
+      });
+      const placed = _seedForceOverlayPlacedBoxes();
+      forceBondLengthLabels.attr('transform', d => {
+        const start = { x: d.link.source.x, y: d.link.source.y };
+        const end = { x: d.link.target.x, y: d.link.target.y };
+        const atomA = molecule.atoms.get(d.link.source.id);
+        const atomB = molecule.atoms.get(d.link.target.id);
+        const hydrogenNode = atomA?.name === 'H' || atomA?.name === 'D' ? d.link.source : atomB?.name === 'H' || atomB?.name === 'D' ? d.link.target : null;
+        const otherNode = hydrogenNode === d.link.source ? d.link.target : d.link.source;
+        if (hydrogenNode && otherNode) {
+          const placement = pickHydrogenBondOverlayPlacement({
+            hydrogenPoint: { x: hydrogenNode.x, y: hydrogenNode.y },
+            otherPoint: { x: otherNode.x, y: otherNode.y },
+            label: d.label,
+            fontSize,
+            hydrogenRadius: atomRadius(hydrogenNode.protons, 'force'),
+            placedBoxes: placed
+          });
+          placed.push(placement);
+          return `translate(${placement.cx},${placement.cy})`;
+        }
+        const preferredSide = d.link.order === 2 || d.link.order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
+        const placement = pickBondOverlayLabelPlacement({
+          start,
+          end,
+          label: d.label,
+          fontSize,
+          preferredSide,
+          placedBoxes: placed,
+          blockerSegments,
+          baseOffset: defaultBondOverlayBaseOffset({
+            bond: d.bond,
+            order: d.link.order,
+            stereoType: d.bond.properties.display?.as ?? null,
+            fontSize,
+            bondOffset,
+            wedgeHalfWidth: 5
+          })
+        });
+        placed.push(placement);
+        return `translate(${placement.cx},${placement.cy})`;
+      });
+    }
+    _updateForceBondLengthLabels();
 
     const forceNumberMap = getAtomNumberMap(molecule);
     const forceNodeById2 = new Map(graph.nodes.map(node => [node.id, node]));
@@ -805,6 +974,7 @@ export function createForceSceneRenderer(ctx) {
       _updateForceLonePairs();
       _updateForceChargeLabels();
       _updateForceBondEnLabels();
+      _updateForceBondLengthLabels();
       _updateForceAtomNumberLabels();
       _updateForceStereoDisplay();
 

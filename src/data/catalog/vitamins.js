@@ -75,8 +75,7 @@ const vitaminsCatalog = {
       id: 'folic-acid',
       name: 'Folic Acid',
       smiles: 'C1=CC(=CC=C1C(=O)NC(CCC(=O)O)C(=O)O)NCC2=CN=C3NC(=O)C(=N3)N=C2',
-      inchi:
-        'InChI=1S/C19H18N6O6/c1(2-12(26)27)11(15(29)30)23-16(18(7)6-8-19(9-7)22-5-10(4)3-20-13-14(25-17(21-4)24-13)28)31/h3-4,6-9,11,22-23,25,27,30H,1-2,5H2',
+      inchi: 'InChI=1S/C19H18N6O6/c1(2-12(26)27)11(15(29)30)23-16(18(7)6-8-19(9-7)22-5-10(4)3-20-13-14(25-17(21-4)24-13)28)31/h3-4,6-9,11,22-23,25,27,30H,1-2,5H2',
       tags: ['vitamin', 'water-soluble', 'vitamin-b', 'vitamin-b9', 'pterin', 'cofactor', 'folate'],
       aliases: ['Vitamin B9', 'folate', 'pteroylglutamic acid', 'vitamin Bc']
     },

@@ -298,7 +298,10 @@ describe('perceiveAromaticity — fused aza ligands coordinated to a transition 
   it('keeps both fused aza rings aromatic when a pyrrolic nitrogen is substituted', () => {
     const mol = parseSMILES('N1C=NC2=C1N=CN2[C@H]3C[C@H](O)[C@@H](CO)O3');
     const rings = perceiveAromaticity(mol);
-    assert.deepEqual(rings.map(ring => ring.length).sort((a, b) => a - b), [5, 5]);
+    assert.deepEqual(
+      rings.map(ring => ring.length).sort((a, b) => a - b),
+      [5, 5]
+    );
     assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'N' && atom.properties.aromatic).length, 4);
     assert.equal([...mol.bonds.values()].filter(bond => bond.properties.aromatic).length, 9);
   });

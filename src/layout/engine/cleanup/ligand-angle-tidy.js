@@ -2,10 +2,7 @@
 
 import { add, angleOf, distance, fromAngle, sub } from '../geometry/vec2.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
-
-const SQUARE_PLANAR_ELEMENTS = new Set(['Pd', 'Pt']);
-const TETRAHEDRAL_ELEMENTS = new Set(['Zn', 'Cd', 'Hg']);
-const OCTAHEDRAL_ELEMENTS = new Set(['Co', 'Rh', 'Ir', 'Ru', 'Os']);
+import { organometallicArrangementSpecs, organometallicGeometryKind } from '../families/organometallic-geometry.js';
 
 /**
  * Returns whether the requested atom is a supported visible metal center.
@@ -51,19 +48,12 @@ function directLigandAtomIds(layoutGraph, metalAtomId, coords) {
  */
 function idealLigandAngles(layoutGraph, metalAtomId, ligandCount) {
   const element = layoutGraph.sourceMolecule.atoms.get(metalAtomId)?.name ?? '';
-  if (ligandCount === 2) {
-    return [0, Math.PI];
+  const geometryKind = organometallicGeometryKind(element, ligandCount);
+  const specs = organometallicArrangementSpecs(geometryKind, ligandCount);
+  if (specs.length !== ligandCount || geometryKind === 'generic') {
+    return [];
   }
-  if (ligandCount === 4 && SQUARE_PLANAR_ELEMENTS.has(element)) {
-    return [Math.PI / 2, 0, -Math.PI / 2, Math.PI];
-  }
-  if (ligandCount === 4 && TETRAHEDRAL_ELEMENTS.has(element)) {
-    return [(2 * Math.PI) / 3, Math.PI / 3, -Math.PI / 6, (-5 * Math.PI) / 6];
-  }
-  if (ligandCount === 6 && OCTAHEDRAL_ELEMENTS.has(element)) {
-    return [Math.PI / 2, 0, -Math.PI / 2, Math.PI, Math.PI / 4, (-3 * Math.PI) / 4];
-  }
-  return [];
+  return specs.map(spec => spec.angle);
 }
 
 /**

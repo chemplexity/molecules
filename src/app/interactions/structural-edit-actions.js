@@ -51,11 +51,7 @@ function getProjected2dStereoHydrogenReplacementPosition(molecule, atomId, bondL
   }
 
   const bond = molecule.getBond(atom.id, parent.id);
-  const hasCoincidentCoords =
-    Number.isFinite(atom.x) &&
-    Number.isFinite(atom.y) &&
-    Math.abs(atom.x - parent.x) <= 1e-6 &&
-    Math.abs(atom.y - parent.y) <= 1e-6;
+  const hasCoincidentCoords = Number.isFinite(atom.x) && Number.isFinite(atom.y) && Math.abs(atom.x - parent.x) <= 1e-6 && Math.abs(atom.y - parent.y) <= 1e-6;
   const hasDisplayedStereo = bond?.properties?.display?.as === 'wedge' || bond?.properties?.display?.as === 'dash';
   if (atom.visible !== false && !hasDisplayedStereo) {
     return null;
@@ -268,11 +264,7 @@ function applyExplicitBondDrawType(bond, drawBondType) {
 }
 
 function shouldClearDisplayedStereoBond(bond, drawBondType) {
-  return (
-    drawBondType === 'single' &&
-    (bond?.properties?.order ?? 1) === 1 &&
-    (bond?.properties?.display?.as === 'wedge' || bond?.properties?.display?.as === 'dash')
-  );
+  return drawBondType === 'single' && (bond?.properties?.order ?? 1) === 1 && (bond?.properties?.display?.as === 'wedge' || bond?.properties?.display?.as === 'dash');
 }
 
 function resolveChargeToolNextValue(currentCharge, chargeTool, explicitNextCharge = null, decrement = false) {
@@ -426,10 +418,7 @@ export function createStructuralEditActions(context) {
           const resolvedPreferredCenterId = resolveStoredPreferredCenterId(bond, preferredCenterId);
           if (mode === 'force') {
             const [atom1, atom2] = bond.getAtomObjects(mol);
-            if (
-              (atom1?.name === 'H' || atom2?.name === 'H') &&
-              !isForceEditableHydrogenStereoBond(mol, bond, drawBondType, resolvedPreferredCenterId)
-            ) {
+            if ((atom1?.name === 'H' || atom2?.name === 'H') && !isForceEditableHydrogenStereoBond(mol, bond, drawBondType, resolvedPreferredCenterId)) {
               return false;
             }
           }
@@ -452,10 +441,7 @@ export function createStructuralEditActions(context) {
         if (mode === 'force') {
           const [atom1, atom2] = bond.getAtomObjects(mol);
           const resolvedPreferredCenterId = resolveStoredPreferredCenterId(bond, preferredCenterId);
-          if (
-            (atom1?.name === 'H' || atom2?.name === 'H') &&
-            !isForceEditableHydrogenStereoBond(mol, bond, drawBondType, resolvedPreferredCenterId)
-          ) {
+          if ((atom1?.name === 'H' || atom2?.name === 'H') && !isForceEditableHydrogenStereoBond(mol, bond, drawBondType, resolvedPreferredCenterId)) {
             return { cancelled: true };
           }
         }

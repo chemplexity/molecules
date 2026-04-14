@@ -606,10 +606,8 @@ function _chooseReactionPreviewForceBaseArrow(
     if (!arrow) {
       continue;
     }
-    const startInsideReactant =
-      arrow.start.x >= reactant.minX && arrow.start.x <= reactant.maxX && arrow.start.y >= reactant.minY && arrow.start.y <= reactant.maxY;
-    const endInsideProduct =
-      arrow.end.x >= product.minX && arrow.end.x <= product.maxX && arrow.end.y >= product.minY && arrow.end.y <= product.maxY;
+    const startInsideReactant = arrow.start.x >= reactant.minX && arrow.start.x <= reactant.maxX && arrow.start.y >= reactant.minY && arrow.start.y <= reactant.maxY;
+    const endInsideProduct = arrow.end.x >= product.minX && arrow.end.x <= product.maxX && arrow.end.y >= product.minY && arrow.end.y <= product.maxY;
     if (startInsideReactant || endInsideProduct) {
       continue;
     }

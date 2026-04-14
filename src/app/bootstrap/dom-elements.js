@@ -38,6 +38,8 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const atomColoring2d = document.getElementById('options-2d-atom-coloring');
   const atomFontSize2d = document.getElementById('options-2d-atom-font-size');
   const atomNumberingFontSize = document.getElementById('options-atom-numbering-font-size');
+  const bondEnFontSize = document.getElementById('options-bond-en-font-size');
+  const bondLengthFontSize = document.getElementById('options-bond-length-font-size');
   const bondThickness2d = document.getElementById('options-2d-bond-thickness');
   const forceAtomSize = document.getElementById('options-force-atom-size');
   const forceBondThickness = document.getElementById('options-force-bond-thickness');
@@ -105,6 +107,8 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
     get2DAtomColoringElement: () => atomColoring2d,
     get2DAtomFontSizeElement: () => atomFontSize2d,
     getAtomNumberingFontSizeElement: () => atomNumberingFontSize,
+    getBondEnFontSizeElement: () => bondEnFontSize,
+    getBondLengthFontSizeElement: () => bondLengthFontSize,
     get2DBondThicknessElement: () => bondThickness2d,
     getForceAtomSizeElement: () => forceAtomSize,
     getForceBondThicknessElement: () => forceBondThickness,

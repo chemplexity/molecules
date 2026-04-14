@@ -223,6 +223,7 @@
               <table id="resonance-table">
                 <tbody id="resonance-body"></tbody>
                 <tbody id="bond-en-body"></tbody>
+                <tbody id="bond-lengths-body"></tbody>
                 <tbody id="atom-numbering-body"></tbody>
               </table>
             </div>
@@ -288,9 +289,17 @@
           <section class="options-section">
             <h3>Other</h3>
             <div class="options-subsection">
-              <h4>Atom Numbering</h4>
+              <h4>Font Size</h4>
+              <label class="option-row" for="options-bond-en-font-size">
+                <span>Bond Electronegativity</span>
+                <input id="options-bond-en-font-size" type="number" min="8" max="24" step="1" />
+              </label>
+              <label class="option-row" for="options-bond-length-font-size">
+                <span>Bond Lengths</span>
+                <input id="options-bond-length-font-size" type="number" min="8" max="24" step="1" />
+              </label>
               <label class="option-row" for="options-atom-numbering-font-size">
-                <span>Font Size</span>
+                <span>Atom Numbering</span>
                 <input id="options-atom-numbering-font-size" type="number" min="8" max="24" step="1" />
               </label>
             </div>

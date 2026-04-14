@@ -462,16 +462,21 @@ describe('createForceSceneRenderer', () => {
     const molecule = makeOctahedralForceSeedMolecule();
     const { renderer } = makeRenderer({
       generateAndRefine2dCoords: seededMol => {
-        seededMol.bonds.get('b1').properties.display = { as: 'wedge', centerId: 'Co1' };
-        seededMol.bonds.get('b2').properties.display = { as: 'dash', centerId: 'Co1' };
+        seededMol.bonds.get('b1').properties.display = { as: 'dash', centerId: 'Co1' };
+        seededMol.bonds.get('b2').properties.display = { as: 'wedge', centerId: 'Co1' };
+        seededMol.bonds.get('b4').properties.display = { as: 'wedge', centerId: 'Co1' };
+        seededMol.bonds.get('b5').properties.display = { as: 'dash', centerId: 'Co1' };
       }
     });
 
     renderer.updateForce(molecule, { preserveView: false });
 
-    assert.deepEqual(molecule.bonds.get('b1').properties.display, { as: 'wedge', centerId: 'Co1' });
-    assert.deepEqual(molecule.bonds.get('b2').properties.display, { as: 'dash', centerId: 'Co1' });
+    assert.deepEqual(molecule.bonds.get('b1').properties.display, { as: 'dash', centerId: 'Co1' });
+    assert.deepEqual(molecule.bonds.get('b2').properties.display, { as: 'wedge', centerId: 'Co1' });
     assert.equal(molecule.bonds.get('b3').properties.display, undefined);
+    assert.deepEqual(molecule.bonds.get('b4').properties.display, { as: 'wedge', centerId: 'Co1' });
+    assert.deepEqual(molecule.bonds.get('b5').properties.display, { as: 'dash', centerId: 'Co1' });
+    assert.equal(molecule.bonds.get('b6').properties.display, undefined);
   });
 
   it('repairs incomplete projected organometallic display hints instead of keeping a lone wedge', () => {
@@ -479,15 +484,19 @@ describe('createForceSceneRenderer', () => {
     molecule.bonds.get('b1').properties.display = { as: 'wedge', centerId: 'Co1' };
     const { renderer } = makeRenderer({
       generateAndRefine2dCoords: seededMol => {
-        seededMol.bonds.get('b1').properties.display = { as: 'wedge', centerId: 'Co1' };
-        seededMol.bonds.get('b2').properties.display = { as: 'dash', centerId: 'Co1' };
+        seededMol.bonds.get('b1').properties.display = { as: 'dash', centerId: 'Co1' };
+        seededMol.bonds.get('b2').properties.display = { as: 'wedge', centerId: 'Co1' };
+        seededMol.bonds.get('b4').properties.display = { as: 'wedge', centerId: 'Co1' };
+        seededMol.bonds.get('b5').properties.display = { as: 'dash', centerId: 'Co1' };
       }
     });
 
     renderer.updateForce(molecule, { preserveView: false });
 
-    assert.deepEqual(molecule.bonds.get('b1').properties.display, { as: 'wedge', centerId: 'Co1' });
-    assert.deepEqual(molecule.bonds.get('b2').properties.display, { as: 'dash', centerId: 'Co1' });
+    assert.deepEqual(molecule.bonds.get('b1').properties.display, { as: 'dash', centerId: 'Co1' });
+    assert.deepEqual(molecule.bonds.get('b2').properties.display, { as: 'wedge', centerId: 'Co1' });
+    assert.deepEqual(molecule.bonds.get('b4').properties.display, { as: 'wedge', centerId: 'Co1' });
+    assert.deepEqual(molecule.bonds.get('b5').properties.display, { as: 'dash', centerId: 'Co1' });
   });
 
   it('seeds projected organometallic display hints for real parsed bonds that expose kind via properties', () => {
@@ -495,8 +504,29 @@ describe('createForceSceneRenderer', () => {
     const { renderer } = makeRenderer({
       generateAndRefine2dCoords: seededMol => {
         const coordinationBonds = [...seededMol.bonds.values()].filter(bond => bond.atoms.includes('Co1') && !bond.atoms.some(atomId => atomId.startsWith('H')));
-        coordinationBonds[0].properties.display = { as: 'wedge', centerId: 'Co1' };
-        coordinationBonds[1].properties.display = { as: 'dash', centerId: 'Co1' };
+        coordinationBonds[0].properties.display = { as: 'dash', centerId: 'Co1' };
+        coordinationBonds[1].properties.display = { as: 'wedge', centerId: 'Co1' };
+        coordinationBonds[3].properties.display = { as: 'wedge', centerId: 'Co1' };
+        coordinationBonds[4].properties.display = { as: 'dash', centerId: 'Co1' };
+      }
+    });
+
+    renderer.updateForce(molecule, { preserveView: false });
+
+    const displayAssignments = [...molecule.bonds.values()]
+      .filter(bond => bond.properties.display?.as === 'wedge' || bond.properties.display?.as === 'dash')
+      .map(bond => bond.properties.display.as)
+      .sort();
+    assert.deepEqual(displayAssignments, ['dash', 'dash', 'wedge', 'wedge']);
+  });
+
+  it('seeds projected trigonal-bipyramidal display hints for five-coordinate iron centers in force mode', () => {
+    const molecule = parseSMILES('[Fe](Cl)(Cl)(Cl)(Cl)Cl');
+    const { renderer } = makeRenderer({
+      generateAndRefine2dCoords: seededMol => {
+        const coordinationBonds = [...seededMol.bonds.values()].filter(bond => bond.atoms.includes('Fe1') && !bond.atoms.some(atomId => atomId.startsWith('H')));
+        coordinationBonds[3].properties.display = { as: 'dash', centerId: 'Fe1' };
+        coordinationBonds[4].properties.display = { as: 'wedge', centerId: 'Fe1' };
       }
     });
 
@@ -507,5 +537,26 @@ describe('createForceSceneRenderer', () => {
       .map(bond => bond.properties.display.as)
       .sort();
     assert.deepEqual(displayAssignments, ['dash', 'wedge']);
+  });
+
+  it('seeds projected square-pyramidal display hints for five-coordinate rhodium centers in force mode', () => {
+    const molecule = parseSMILES('[Rh](Cl)(Cl)(Cl)(Cl)Cl');
+    const { renderer } = makeRenderer({
+      generateAndRefine2dCoords: seededMol => {
+        const coordinationBonds = [...seededMol.bonds.values()].filter(bond => bond.atoms.includes('Rh1') && !bond.atoms.some(atomId => atomId.startsWith('H')));
+        coordinationBonds[1].properties.display = { as: 'dash', centerId: 'Rh1' };
+        coordinationBonds[2].properties.display = { as: 'wedge', centerId: 'Rh1' };
+        coordinationBonds[3].properties.display = { as: 'wedge', centerId: 'Rh1' };
+        coordinationBonds[4].properties.display = { as: 'dash', centerId: 'Rh1' };
+      }
+    });
+
+    renderer.updateForce(molecule, { preserveView: false });
+
+    const displayAssignments = [...molecule.bonds.values()]
+      .filter(bond => bond.properties.display?.as === 'wedge' || bond.properties.display?.as === 'dash')
+      .map(bond => bond.properties.display.as)
+      .sort();
+    assert.deepEqual(displayAssignments, ['dash', 'dash', 'wedge', 'wedge']);
   });
 });

@@ -1,9 +1,10 @@
-/** @module app/render/bond-en-polarity */
+/** @module app/render/bond-en-overlay */
 
 import { bondElectronegativityDifference } from '../../descriptors/physicochemical.js';
+import { getBondEnActive, refreshBondLengthsPanel, registerBondEnPanelUpdater, setBondEnActive, setBondLengthsActive } from './bond-overlay-state.js';
+export { getBondEnActive } from './bond-overlay-state.js';
 
 let ctx = {};
-let _bondEnActive = false;
 
 /**
  * Initializes the bond-EN panel renderer with the app context it needs to
@@ -17,18 +18,11 @@ let _bondEnActive = false;
  */
 export function initBondEnPanel(context) {
   ctx = context;
+  registerBondEnPanelUpdater(updateBondEnPanel);
 }
 
 function _currentDisplayedMol() {
   return ctx.mode === 'force' ? (ctx.currentMol ?? null) : (ctx._mol2d ?? null);
-}
-
-/**
- * Returns whether the bond electronegativity overlay is currently active.
- * @returns {boolean} True if the bond-EN overlay is active.
- */
-export function getBondEnActive() {
-  return _bondEnActive;
 }
 
 /**
@@ -39,7 +33,7 @@ export function getBondEnActive() {
  * @returns {Array<{bondId: string, label: string, t: number}>|null} Per-bond polarity entries, or null when inactive.
  */
 export function getBondEnOverlayData(mol) {
-  if (!_bondEnActive || !mol) {
+  if (!getBondEnActive() || !mol) {
     return null;
   }
   const entries = [];
@@ -69,7 +63,7 @@ export function getBondEnOverlayData(mol) {
  * Clears the bond-EN panel UI state and deactivates the overlay.
  */
 export function clearBondEnPanel() {
-  _bondEnActive = false;
+  setBondEnActive(false);
   const tbody = document.getElementById('bond-en-body');
   if (tbody) {
     tbody.innerHTML = '';
@@ -98,14 +92,14 @@ export function updateBondEnPanel(mol) {
   const tr = document.createElement('tr');
   tr.classList.add('resonance-clickable');
   tr.title = 'Pauling electronegativity difference (Δχ) per bond. ' + 'Values reflect atomic electronegativity only and are independent of bond order.';
-  if (_bondEnActive) {
+  if (getBondEnActive()) {
     tr.classList.add('resonance-active');
   }
 
   const nameCell = document.createElement('td');
   const countCell = document.createElement('td');
   countCell.className = 'reaction-count';
-  countCell.textContent = _bondEnActive ? 'On' : 'Off';
+  countCell.textContent = getBondEnActive() ? 'On' : 'Off';
 
   const name = document.createElement('div');
   name.className = 'reaction-name';
@@ -117,9 +111,16 @@ export function updateBondEnPanel(mol) {
 
   tr.addEventListener('click', event => {
     event.stopPropagation();
-    _bondEnActive = !_bondEnActive;
+    const nextActive = !getBondEnActive();
+    setBondEnActive(nextActive);
+    if (nextActive) {
+      setBondLengthsActive(false);
+    }
     const displayedMol = _currentDisplayedMol() ?? mol;
     updateBondEnPanel(displayedMol);
+    if (nextActive) {
+      refreshBondLengthsPanel(displayedMol);
+    }
     _redraw(displayedMol);
   });
 

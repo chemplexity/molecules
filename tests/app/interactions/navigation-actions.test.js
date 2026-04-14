@@ -614,12 +614,7 @@ test('cleanLayoutForce reapplies reaction-preview orientation before anchoring t
 
   actions.cleanLayoutForce();
 
-  assert.deepEqual(calls, [
-    ['align', previewMeta],
-    ['spread', 1.5],
-    ['center', 1.5],
-    ['render']
-  ]);
+  assert.deepEqual(calls, [['align', previewMeta], ['spread', 1.5], ['center', 1.5], ['render']]);
 });
 
 test('force flip refits the viewport when a reaction preview is active', () => {

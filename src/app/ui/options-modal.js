@@ -14,6 +14,8 @@ export function initOptionsModal(context) {
   const twoDAtomColoringEl = context.dom.get2DAtomColoringElement();
   const twoDAtomFontSizeEl = context.dom.get2DAtomFontSizeElement();
   const atomNumberingFontSizeEl = context.dom.getAtomNumberingFontSizeElement();
+  const bondEnFontSizeEl = context.dom.getBondEnFontSizeElement();
+  const bondLengthFontSizeEl = context.dom.getBondLengthFontSizeElement();
   const twoDBondThicknessEl = context.dom.get2DBondThicknessElement();
   const forceAtomSizeEl = context.dom.getForceAtomSizeElement();
   const forceBondThicknessEl = context.dom.getForceBondThicknessElement();
@@ -42,6 +44,8 @@ export function initOptionsModal(context) {
     twoDAtomColoringEl.checked = options.twoDAtomColoring;
     twoDAtomFontSizeEl.value = formatOptionNumber(options.twoDAtomFontSize);
     atomNumberingFontSizeEl.value = formatOptionNumber(options.atomNumberingFontSize);
+    bondEnFontSizeEl.value = formatOptionNumber(options.bondEnFontSize);
+    bondLengthFontSizeEl.value = formatOptionNumber(options.bondLengthFontSize);
     twoDBondThicknessEl.value = formatOptionNumber(options.twoDBondThickness);
     forceAtomSizeEl.value = formatOptionNumber(options.forceAtomSizeMultiplier);
     forceBondThicknessEl.value = formatOptionNumber(options.forceBondThicknessMultiplier);
@@ -64,6 +68,8 @@ export function initOptionsModal(context) {
       twoDAtomColoring: twoDAtomColoringEl.checked,
       twoDAtomFontSize: clampOptionInputValue(twoDAtomFontSizeEl, context.options.limits.twoDAtomFontSize, currentOptions.twoDAtomFontSize),
       atomNumberingFontSize: clampOptionInputValue(atomNumberingFontSizeEl, context.options.limits.atomNumberingFontSize, currentOptions.atomNumberingFontSize),
+      bondEnFontSize: clampOptionInputValue(bondEnFontSizeEl, context.options.limits.bondEnFontSize, currentOptions.bondEnFontSize),
+      bondLengthFontSize: clampOptionInputValue(bondLengthFontSizeEl, context.options.limits.bondLengthFontSize, currentOptions.bondLengthFontSize),
       twoDBondThickness: clampOptionInputValue(twoDBondThicknessEl, context.options.limits.twoDBondThickness, currentOptions.twoDBondThickness),
       forceAtomSizeMultiplier: clampOptionInputValue(forceAtomSizeEl, context.options.limits.forceAtomSizeMultiplier, currentOptions.forceAtomSizeMultiplier),
       forceBondThicknessMultiplier: clampOptionInputValue(forceBondThicknessEl, context.options.limits.forceBondThicknessMultiplier, currentOptions.forceBondThicknessMultiplier)

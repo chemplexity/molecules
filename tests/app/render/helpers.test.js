@@ -10,7 +10,9 @@ afterEach(() => {
 describe('app/render/helpers', () => {
   it('defaults 2d render styling without a renderer version toggle', () => {
     assert.equal(getDefaultRenderOptions().twoDAtomFontSize, 14);
+    assert.equal(getDefaultRenderOptions().bondEnFontSize, 10);
     assert.equal(getRenderOptions().twoDAtomFontSize, 14);
+    assert.equal(getRenderOptions().bondEnFontSize, 10);
     assert.equal('legacy2dRendererToggle' in getDefaultRenderOptions(), false);
   });
 

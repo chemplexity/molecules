@@ -198,6 +198,8 @@ export function createAppRuntimeDeps(ctx) {
       clearResonancePanelState: () => ctx.clearResonancePanelState(),
       updateBondEnPanel: mol => ctx.updateBondEnPanel(mol),
       clearBondEnPanel: () => ctx.clearBondEnPanel(),
+      updateBondLengthsPanel: mol => ctx.updateBondLengthsPanel(mol),
+      clearBondLengthsPanel: () => ctx.clearBondLengthsPanel(),
       updateAtomNumberingPanel: mol => ctx.updateAtomNumberingPanel(mol),
       clearAtomNumberingPanel: () => ctx.clearAtomNumberingPanel(),
       captureReactionPreviewSnapshot: () => ctx.captureReactionPreviewSnapshot(),

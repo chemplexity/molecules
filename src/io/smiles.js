@@ -588,6 +588,49 @@ export function tokenize(input, tokens = []) {
       }
     }
 
+    // Real bracket ring closures are anchored to the primary bracket atom
+    // itself (e.g. `[C@H]1`, `[N+]5`). Matches that start on later bracket
+    // atoms, such as the explicit `H3` inside `[NH3]`, are just bracket-H text
+    // being misread as a ring token and must not survive to decoding.
+    const bracketSpans = [];
+    let bracketStart = -1;
+    depth = 0;
+    for (let i = 0; i < input.length; i++) {
+      if (input[i] === '[') {
+        if (depth === 0) {
+          bracketStart = i;
+        }
+        depth++;
+      } else if (input[i] === ']' && depth > 0) {
+        depth--;
+        if (depth === 0 && bracketStart !== -1) {
+          bracketSpans.push({ start: bracketStart, end: i });
+          bracketStart = -1;
+        }
+      }
+    }
+    const ringTokensToRemove = new Set();
+    for (const span of bracketSpans) {
+      const bracketAtoms = tokens.filter(token => token.type === 'atom' && token.bracket && token.index > span.start && token.index < span.end).sort((a, b) => a.index - b.index);
+      if (bracketAtoms.length === 0) {
+        continue;
+      }
+      const primaryAtomIndex = bracketAtoms[0].index;
+      for (const token of tokens) {
+        if (token.tag !== 'ring') {
+          continue;
+        }
+        if (token.index > span.start && token.index < span.end && token.index !== primaryAtomIndex) {
+          ringTokensToRemove.add(token);
+        }
+      }
+    }
+    for (let i = tokens.length - 1; i >= 0; i--) {
+      if (ringTokensToRemove.has(tokens[i])) {
+        tokens.splice(i, 1);
+      }
+    }
+
     emitStandaloneRingClosureTokens(input, tokens, inBracket);
   }
 

@@ -358,6 +358,10 @@
         g.selectAll("*").remove(); // Wipe previous iterations
         
         // Native traversal intercept to tag bidirectional topology loops dynamically
+        // and compute degree (connections) for each node to scale drawing radius.
+        const nodeById = new Map(data.nodes.map(d => [d.id, d]));
+        data.nodes.forEach(d => d.degree = 0);
+        
         const linkMap = new Map();
         data.links.forEach(l => {
              const key1 = `${l.source.id || l.source}->${l.target.id || l.target}`;
@@ -367,9 +371,19 @@
                  linkMap.get(key2).bidirectional = true;
              }
              linkMap.set(key1, l);
+             
+             const sNode = nodeById.get(l.source.id || l.source);
+             const tNode = nodeById.get(l.target.id || l.target);
+             if (sNode) sNode.degree++;
+             if (tNode) tNode.degree++;
         });
 
         const RENDER_SCALE = 0.5;
+        const nodeScale = d => {
+            if (d.type !== 'molecule') return 1;
+            const deg = d.degree || 1;
+            return 1 + Math.max(0, Math.log10(deg)) * 0.4;
+        };
         const pillHalfWidth = d => {
             const name = d.conditions?.templateName || d.id || '';
             const short = name.length > 22 ? name.slice(0, 21) : name;
@@ -377,7 +391,8 @@
         };
         const nodeRadius = d => {
             if (d.type === 'molecule' && d.width && d.height) {
-                return Math.sqrt((d.width * RENDER_SCALE / 2) ** 2 + (d.height * RENDER_SCALE / 2) ** 2) + 12;
+                const ns = nodeScale(d);
+                return Math.sqrt((d.width * RENDER_SCALE * ns / 2) ** 2 + (d.height * RENDER_SCALE * ns / 2) ** 2) + 12;
             }
             if (d.type === 'reaction') {
                 return pillHalfWidth(d) + 6; // pill half-width + small margin
@@ -472,7 +487,8 @@
                 const svgNode = el.select('svg');
                 
                 // PAD gives charge labels / superscripts room outside the tight bounding box
-                const SCALE = 0.5;
+                const ns = nodeScale(d);
+                const SCALE = 0.5 * ns;
                 const PAD = 40; // unscaled px added on each side — massive room for charge labels
                 const padW = d.width  + PAD * 2;
                 const padH = d.height + PAD * 2;

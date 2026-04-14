@@ -3,10 +3,7 @@
 import { add, angleOf, centroid, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { buildSliceAdjacency, createAtomSlice, layoutAtomSlice } from '../placement/atom-slice.js';
-
-const SQUARE_PLANAR_ELEMENTS = new Set(['Pd', 'Pt']);
-const TETRAHEDRAL_ELEMENTS = new Set(['Zn', 'Cd', 'Hg']);
-const OCTAHEDRAL_ELEMENTS = new Set(['Co', 'Rh', 'Ir', 'Ru', 'Os']);
+import { organometallicArrangementSpecs, organometallicGeometryKind } from './organometallic-geometry.js';
 
 function isMetalAtom(layoutGraph, atomId) {
   const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
@@ -53,90 +50,17 @@ function connectedFragments(adjacency, orderedAtomIds) {
 }
 
 /**
- * Returns the generic equal-angle arrangement used for uncertain coordination.
- * Four-coordinate fallback uses a diagonal diamond so it does not imply
- * square-planar geometry for metals like Ni where the true arrangement is
- * not safely derivable from coordination count alone.
- * @param {number} count - Number of ligand fragments around the metal.
- * @returns {Array<{angle: number, displayType: ('wedge'|'dash'|null)}>} Placement specs.
- */
-function genericArrangementSpecs(count) {
-  if (count <= 0) {
-    return [];
-  }
-  if (count === 1) {
-    return [{ angle: 0, displayType: null }];
-  }
-  if (count === 2) {
-    return [
-      { angle: 0, displayType: null },
-      { angle: Math.PI, displayType: null }
-    ];
-  }
-  if (count === 4) {
-    return [
-      { angle: Math.PI / 4, displayType: null },
-      { angle: -Math.PI / 4, displayType: null },
-      { angle: (-3 * Math.PI) / 4, displayType: null },
-      { angle: (3 * Math.PI) / 4, displayType: null }
-    ];
-  }
-  const step = (2 * Math.PI) / count;
-  return Array.from({ length: count }, (_, index) => ({
-    angle: Math.PI / 2 - index * step,
-    displayType: null
-  }));
-}
-
-/**
- * Returns whether a metal center safely implies square-planar coordination.
- * @param {object} layoutGraph - Layout graph shell.
- * @param {string} metalAtomId - Metal atom ID.
- * @param {number} ligandCount - Number of attached ligand fragments.
- * @returns {boolean} True when the center should use square-planar placement.
- */
-function supportsSquarePlanarArrangement(layoutGraph, metalAtomId, ligandCount) {
-  if (ligandCount !== 4) {
-    return false;
-  }
-  const atom = layoutGraph.sourceMolecule.atoms.get(metalAtomId);
-  return SQUARE_PLANAR_ELEMENTS.has(atom?.name ?? '');
-}
-
-/**
- * Returns whether a metal center safely implies projected tetrahedral coordination.
- * @param {object} layoutGraph - Layout graph shell.
- * @param {string} metalAtomId - Metal atom ID.
- * @param {number} ligandCount - Number of attached ligand fragments.
- * @returns {boolean} True when the center should use a projected tetrahedral view.
- */
-function supportsProjectedTetrahedralArrangement(layoutGraph, metalAtomId, ligandCount) {
-  if (ligandCount !== 4) {
-    return false;
-  }
-  const atom = layoutGraph.sourceMolecule.atoms.get(metalAtomId);
-  return TETRAHEDRAL_ELEMENTS.has(atom?.name ?? '');
-}
-
-/**
- * Returns whether a metal center safely implies a projected octahedral view.
- * This is intentionally limited to common six-coordinate metals and simple
- * monodentate ligand sets so the projection does not overclaim geometry for
- * ambiguous or highly chelating coordination environments.
+ * Returns the supported publication-style geometry for one metal center and its ligand records.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string} metalAtomId - Metal atom ID.
  * @param {object[]} records - Ligand-fragment records attached to the metal.
- * @returns {boolean} True when the center should use a projected octahedral view.
+ * @returns {ReturnType<typeof organometallicGeometryKind>} Geometry kind.
  */
-function supportsProjectedOctahedralArrangement(layoutGraph, metalAtomId, records) {
-  if (records.length !== 6) {
-    return false;
-  }
-  if (!records.every(record => record.anchorAtomIds.length === 1)) {
-    return false;
-  }
-  const atom = layoutGraph.sourceMolecule.atoms.get(metalAtomId);
-  return OCTAHEDRAL_ELEMENTS.has(atom?.name ?? '');
+function coordinationGeometryKind(layoutGraph, metalAtomId, records) {
+  const element = layoutGraph.sourceMolecule.atoms.get(metalAtomId)?.name ?? '';
+  return organometallicGeometryKind(element, records.length, {
+    allLigandsMonodentate: records.every(record => record.anchorAtomIds.length === 1)
+  });
 }
 
 /**
@@ -147,40 +71,8 @@ function supportsProjectedOctahedralArrangement(layoutGraph, metalAtomId, record
  * @returns {Array<{angle: number, displayType: ('wedge'|'dash'|null)}>} Placement specs.
  */
 function arrangementSpecs(layoutGraph, metalAtomId, records) {
-  const ligandCount = records.length;
-  if (ligandCount === 2) {
-    return [
-      { angle: 0, displayType: null },
-      { angle: Math.PI, displayType: null }
-    ];
-  }
-  if (supportsSquarePlanarArrangement(layoutGraph, metalAtomId, ligandCount)) {
-    return [
-      { angle: Math.PI / 2, displayType: null },
-      { angle: 0, displayType: null },
-      { angle: -Math.PI / 2, displayType: null },
-      { angle: Math.PI, displayType: null }
-    ];
-  }
-  if (supportsProjectedTetrahedralArrangement(layoutGraph, metalAtomId, ligandCount)) {
-    return [
-      { angle: (2 * Math.PI) / 3, displayType: null },
-      { angle: Math.PI / 3, displayType: null },
-      { angle: -Math.PI / 6, displayType: 'wedge' },
-      { angle: (-5 * Math.PI) / 6, displayType: 'dash' }
-    ];
-  }
-  if (supportsProjectedOctahedralArrangement(layoutGraph, metalAtomId, records)) {
-    return [
-      { angle: Math.PI / 2, displayType: null },
-      { angle: 0, displayType: null },
-      { angle: -Math.PI / 2, displayType: null },
-      { angle: Math.PI, displayType: null },
-      { angle: Math.PI / 4, displayType: 'wedge' },
-      { angle: (-3 * Math.PI) / 4, displayType: 'dash' }
-    ];
-  }
-  return genericArrangementSpecs(ligandCount);
+  const geometryKind = coordinationGeometryKind(layoutGraph, metalAtomId, records);
+  return organometallicArrangementSpecs(geometryKind, records.length);
 }
 
 /**
@@ -358,6 +250,11 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
   }
 
   for (const metalAtomId of metalAtomIds) {
+    const records = groupedByMetal.get(metalAtomId) ?? [];
+    const geometryKind = coordinationGeometryKind(layoutGraph, metalAtomId, records);
+    if (geometryKind === 'projected-trigonal-bipyramidal') {
+      continue;
+    }
     const bondedLigandPositions = [];
     const metalAtom = layoutGraph.sourceMolecule.atoms.get(metalAtomId);
     for (const bondId of metalAtom?.bonds ?? []) {

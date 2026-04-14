@@ -7,6 +7,7 @@ import { applySMIRKS } from '../smirks/index.js';
 import { findSMARTS } from '../smarts/index.js';
 import { renderMolSVG } from '../layout/render2d.js';
 import { computeFormulaDelta } from '../descriptors/molecular.js';
+import { extractMurckoScaffold } from '../algorithms/scaffold.js';
 
 /**
  * Stores molecules and reactions in a bipartite reaction network.
@@ -487,9 +488,13 @@ export class ReactionNetwork {
    * Exports the network as `{ nodes, links }`.
    * @param {object} [options] - Export options.
    * @param {boolean} [options.flatten] - Whether to collapse reactions into direct molecule links.
+   * @param {boolean} [options.scaffold] - When true, computes the Murcko scaffold for every
+   *   molecule node and attaches it as `node.scaffold` (canonical SMILES of the stripped core,
+   *   or `null` for fully acyclic molecules). Adds one `extractMurckoScaffold` call per molecule
+   *   node — safe for networks up to ~500 nodes; consider disabling for very large graphs.
    * @returns {{nodes: object[], links: object[]}} Exported graph payload.
    */
-  exportDirectedGraph({ flatten = false } = {}) {
+  exportDirectedGraph({ flatten = false, scaffold = false } = {}) {
     const exportData = { nodes: [], links: [] };
 
     for (const node of this.moleculeNodes.values()) {
@@ -497,7 +502,7 @@ export class ReactionNetwork {
       const cellWidth = renderObject ? renderObject.cellW : 100;
       const cellHeight = renderObject ? renderObject.cellH : 100;
 
-      exportData.nodes.push({
+      const nodeData = {
         id: node.id,
         type: 'molecule',
         molecule: node.molecule,
@@ -515,7 +520,14 @@ export class ReactionNetwork {
           : null,
         width: cellWidth,
         height: cellHeight
-      });
+      };
+
+      if (scaffold) {
+        const scaffoldMol = extractMurckoScaffold(node.molecule);
+        nodeData.scaffold = scaffoldMol.atoms.size > 0 ? toCanonicalSMILES(scaffoldMol) || null : null;
+      }
+
+      exportData.nodes.push(nodeData);
     }
 
     if (!flatten) {

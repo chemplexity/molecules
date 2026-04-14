@@ -109,6 +109,12 @@ function shiftedCommonValences(symbol, el, charge, radical) {
  * Bond orders are floored before summing so that fractional aromatic bond
  * orders stored by the SMILES parser (1.5) are treated as sigma bonds (1)
  * for non-aromatic atoms that border aromatic rings.
+ *
+ * For main-group atoms adjacent to transition metals, validation accepts
+ * either the ordinary bond-order sum or a donor-adjusted sum that ignores the
+ * transition-metal links. This prevents neutral donor ligands such as `[NH3]`
+ * from being treated as over-bonded while still allowing encodings where the
+ * metal-ligand bond does need to count toward the ligand atom's valence.
  * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph.
  * @returns {Array<{
  *   atomId:    string,
@@ -175,20 +181,35 @@ export function validateValence(molecule) {
 
     // Sum bond orders using Math.floor so fractional aromatic bond orders
     // (1.5, stored by the SMILES parser) become sigma-bond counts (1).
+    // For atoms adjacent to transition metals we keep both the ordinary total
+    // and a donor-adjusted total that omits metal links, then accept either.
     let totalBO = 0;
+    let donorAdjustedBO = 0;
     for (const bondId of atom.bonds) {
       const bond = molecule.bonds.get(bondId);
       if (!bond) {
         continue;
       }
-      totalBO += Math.floor(bond.properties.order ?? 1);
+      const bondOrder = Math.floor(bond.properties.order ?? 1);
+      totalBO += bondOrder;
+      const otherAtomId = bond.getOtherAtom(atomId);
+      const otherAtom = otherAtomId ? molecule.atoms.get(otherAtomId) : null;
+      const otherElement = otherAtom ? elements[otherAtom.name] : null;
+      const otherIsTransitionMetal = otherElement && otherElement.group >= 3 && otherElement.group <= 12;
+      if (!otherIsTransitionMetal) {
+        donorAdjustedBO += bondOrder;
+      }
     }
 
-    if (!allowed.includes(totalBO)) {
+    const acceptedBondOrders = totalBO === donorAdjustedBO ? [totalBO] : [totalBO, donorAdjustedBO];
+    const hasValidBondOrder = acceptedBondOrders.some(bondOrder => allowed.includes(bondOrder));
+
+    if (!hasValidBondOrder) {
       const chargeStr = charge > 0 ? `+${charge}` : `${charge}`;
       const radicalStr = radical > 0 ? `, radical ${radical}` : '';
       const allowedStr = allowed.length ? allowed.join(', ') : 'none';
-      const reason = `Bond order ${totalBO} is not valid for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed: ${allowedStr})`;
+      const bondOrderSummary = totalBO === donorAdjustedBO ? `${totalBO}` : `${totalBO} (or ${donorAdjustedBO} excluding transition-metal bonds)`;
+      const reason = `Bond order ${bondOrderSummary} is not valid for ${atom.name} with charge ${chargeStr}${radicalStr} (allowed: ${allowedStr})`;
       warnings.push({
         atomId,
         element: atom.name,

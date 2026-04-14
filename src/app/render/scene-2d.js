@@ -1,7 +1,9 @@
 /** @module app/render/scene-2d */
 
 import { getRenderOptions, atomColor, renderAtomLabel, renderLonePairDots, renderBondOrder, prepareAromaticBondRendering } from './helpers.js';
-import { getBondEnOverlayData } from './bond-en-polarity.js';
+import { getBondEnOverlayData } from './bond-en-overlay.js';
+import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydrogenBondOverlayPlacement, pickBondOverlayLabelPlacement } from './bond-overlay-placement.js';
+import { getBondLengthsOverlayData } from './bond-lengths-overlay.js';
 import { atomNumberingLabelDistance, getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationAngle } from './atom-numbering.js';
 import {
   labelHalfW,
@@ -223,6 +225,29 @@ export function create2DSceneRenderer(ctx) {
       }
     }
 
+    function _pick2dHydrogenBondOverlayPlacement(atomA, atomB, label, overlayFontSize, placedBoxes) {
+      const hydrogenAtom = atomA?.name === 'H' || atomA?.name === 'D' ? atomA : atomB?.name === 'H' || atomB?.name === 'D' ? atomB : null;
+      if (!hydrogenAtom) {
+        return null;
+      }
+      const otherAtom = hydrogenAtom === atomA ? atomB : atomA;
+      if (!otherAtom) {
+        return null;
+      }
+      const hydrogenPoint = toSVGPt(hydrogenAtom);
+      const otherPoint = toSVGPt(otherAtom);
+      const hydrogenLabel = getAtomLabel(hydrogenAtom, hCounts, toSVGPt, mol) ?? hydrogenAtom.name;
+      const hydrogenRadius = Math.max(labelHalfW(hydrogenLabel, overlayFontSize) + 2, labelHalfH(hydrogenLabel, overlayFontSize) + 2);
+      return pickHydrogenBondOverlayPlacement({
+        hydrogenPoint,
+        otherPoint,
+        label,
+        fontSize: overlayFontSize,
+        hydrogenRadius,
+        placedBoxes
+      });
+    }
+
     function _redraw2dBondEnOverlay() {
       ctx.g.select('g.bond-en-overlay').remove();
       const overlayData = getBondEnOverlayData(mol);
@@ -231,19 +256,34 @@ export function create2DSceneRenderer(ctx) {
       }
       const enLayer = ctx.g.append('g').attr('class', 'bond-en-overlay').style('pointer-events', 'none');
       const bondInfoMap = new Map(bondInfos.map(bi => [bi.bond.id, bi]));
-      const EN_FS = 12;
-      const EN_CHW = EN_FS * 0.62;
-      const EN_CHH = EN_FS * 1.2;
-      const EN_PAD = 3;
-      const EN_BASE = 15;
+      const EN_FS = getRenderOptions().bondEnFontSize;
+      const bondOffset = ctx.constants.bondOffset2d ?? 7;
+      const wedgeHalfWidth = ctx.constants.wedgeHalfWidth ?? 6;
+      const wedgeDashes = ctx.constants.wedgeDashes ?? 6;
+      const blockerSegments = bondInfos.flatMap(bi => {
+        const stereoType = (stereoMap ? stereoMap.get(bi.bond.id) : null) ?? bi.bond.properties?.display?.as ?? null;
+        const start = toSVGPt(bi.a1);
+        const end = toSVGPt(bi.a2);
+        const preferredSide = renderBondOrder(bi.bond) === 2 || renderBondOrder(bi.bond) === 1.5 ? ctx.helpers.secondaryDir(bi.a1, bi.a2, mol, toSVGPt) : 1;
+        return buildBondOverlayBlockerSegments({
+          start,
+          end,
+          bond: bi.bond,
+          stereoType,
+          preferredSide,
+          bondOffset,
+          wedgeHalfWidth,
+          wedgeDashes
+        });
+      });
       const placed = [];
-      function _enOverlaps(cx, cy, hw, hh) {
-        for (const p of placed) {
-          if (Math.abs(cx - p.cx) < hw + p.hw + EN_PAD && Math.abs(cy - p.cy) < hh + p.hh + EN_PAD) {
-            return true;
-          }
+      for (const atom of atoms) {
+        const label = getAtomLabel(atom, hCounts, toSVGPt, mol);
+        if (!label) {
+          continue;
         }
-        return false;
+        const { x, y } = toSVGPt(atom);
+        placed.push({ cx: x, cy: y, hw: labelHalfW(label, fontSize) + 4, hh: fontSize * 0.7 });
       }
       for (const { bondId, label, t } of overlayData) {
         const bi = bondInfoMap.get(bondId);
@@ -252,33 +292,28 @@ export function create2DSceneRenderer(ctx) {
         }
         const p1 = toSVGPt(bi.a1);
         const p2 = toSVGPt(bi.a2);
-        const mx = (p1.x + p2.x) / 2;
-        const my = (p1.y + p2.y) / 2;
-        const dx = p2.x - p1.x;
-        const dy = p2.y - p1.y;
-        const len = Math.sqrt(dx * dx + dy * dy) || 1;
-        const nx = -dy / len;
-        const ny = dx / len;
-        const hw = (label.length * EN_CHW) / 2;
-        const hh = EN_CHH / 2;
-        let pref = 1;
-        const order = renderBondOrder(bi.bond);
-        if (order >= 2 || order === 1.5) {
-          pref = -ctx.helpers.secondaryDir(bi.a1, bi.a2, mol, toSVGPt);
-        }
-        const offsets = [EN_BASE * pref, EN_BASE * -pref, EN_BASE * 2 * pref, EN_BASE * 2 * -pref, EN_BASE * 3 * pref, EN_BASE * 3 * -pref];
-        let cx = mx + nx * EN_BASE * pref;
-        let cy = my + ny * EN_BASE * pref;
-        for (const off of offsets) {
-          const tx = mx + nx * off;
-          const ty = my + ny * off;
-          if (!_enOverlaps(tx, ty, hw, hh)) {
-            cx = tx;
-            cy = ty;
-            break;
-          }
-        }
-        placed.push({ cx, cy, hw, hh });
+        const stereoType = (stereoMap ? stereoMap.get(bi.bond.id) : null) ?? bi.bond.properties?.display?.as ?? null;
+        const pref = renderBondOrder(bi.bond) >= 2 || renderBondOrder(bi.bond) === 1.5 ? -ctx.helpers.secondaryDir(bi.a1, bi.a2, mol, toSVGPt) : 1;
+        const placement =
+          _pick2dHydrogenBondOverlayPlacement(bi.a1, bi.a2, label, EN_FS, placed) ??
+          pickBondOverlayLabelPlacement({
+            start: p1,
+            end: p2,
+            label,
+            fontSize: EN_FS,
+            preferredSide: pref,
+            placedBoxes: placed,
+            blockerSegments,
+            baseOffset: defaultBondOverlayBaseOffset({
+              bond: bi.bond,
+              stereoType,
+              fontSize: EN_FS,
+              bondOffset,
+              wedgeHalfWidth
+            })
+          });
+        const { cx, cy } = placement;
+        placed.push(placement);
         enLayer
           .append('text')
           .attr('x', cx)
@@ -287,6 +322,87 @@ export function create2DSceneRenderer(ctx) {
           .attr('dominant-baseline', 'central')
           .attr('font-size', `${EN_FS}px`)
           .attr('fill', ctx.helpers.enLabelColor(t))
+          .text(label);
+      }
+    }
+
+    function _redraw2dBondLengthsOverlay() {
+      ctx.g.select('g.bond-lengths-overlay').remove();
+      const overlayData = getBondLengthsOverlayData(mol);
+      if (!overlayData) {
+        return;
+      }
+      const blLayer = ctx.g.append('g').attr('class', 'bond-lengths-overlay').style('pointer-events', 'none');
+      const bondInfoMap = new Map(bondInfos.map(bi => [bi.bond.id, bi]));
+      const BL_FS = getRenderOptions().bondLengthFontSize;
+      const bondOffset = ctx.constants.bondOffset2d ?? 7;
+      const wedgeHalfWidth = ctx.constants.wedgeHalfWidth ?? 6;
+      const wedgeDashes = ctx.constants.wedgeDashes ?? 6;
+      const blockerSegments = bondInfos.flatMap(bi => {
+        const stereoType = (stereoMap ? stereoMap.get(bi.bond.id) : null) ?? bi.bond.properties?.display?.as ?? null;
+        const start = toSVGPt(bi.a1);
+        const end = toSVGPt(bi.a2);
+        const preferredSide = renderBondOrder(bi.bond) === 2 || renderBondOrder(bi.bond) === 1.5 ? ctx.helpers.secondaryDir(bi.a1, bi.a2, mol, toSVGPt) : 1;
+        return buildBondOverlayBlockerSegments({
+          start,
+          end,
+          bond: bi.bond,
+          stereoType,
+          preferredSide,
+          bondOffset,
+          wedgeHalfWidth,
+          wedgeDashes
+        });
+      });
+
+      // Pre-seed placed boxes with visible atom labels so the label avoids them.
+      const placed = [];
+      for (const atom of atoms) {
+        const label = getAtomLabel(atom, hCounts, toSVGPt, mol);
+        if (!label) {
+          continue;
+        }
+        const { x, y } = toSVGPt(atom);
+        placed.push({ cx: x, cy: y, hw: labelHalfW(label, fontSize) + 4, hh: fontSize * 0.7 });
+      }
+
+      for (const { bondId, label } of overlayData) {
+        const bi = bondInfoMap.get(bondId);
+        if (!bi) {
+          continue;
+        }
+        const p1 = toSVGPt(bi.a1);
+        const p2 = toSVGPt(bi.a2);
+        const stereoType = (stereoMap ? stereoMap.get(bi.bond.id) : null) ?? bi.bond.properties?.display?.as ?? null;
+        const pref = -ctx.helpers.secondaryDir(bi.a1, bi.a2, mol, toSVGPt);
+        const placement =
+          _pick2dHydrogenBondOverlayPlacement(bi.a1, bi.a2, label, BL_FS, placed) ??
+          pickBondOverlayLabelPlacement({
+            start: p1,
+            end: p2,
+            label,
+            fontSize: BL_FS,
+            preferredSide: pref,
+            placedBoxes: placed,
+            blockerSegments,
+            baseOffset: defaultBondOverlayBaseOffset({
+              bond: bi.bond,
+              stereoType,
+              fontSize: BL_FS,
+              bondOffset,
+              wedgeHalfWidth
+            })
+          });
+        const { cx, cy } = placement;
+        placed.push(placement);
+        blLayer
+          .append('text')
+          .attr('x', cx)
+          .attr('y', cy)
+          .attr('text-anchor', 'middle')
+          .attr('dominant-baseline', 'central')
+          .attr('font-size', `${BL_FS}px`)
+          .attr('fill', '#000')
           .text(label);
       }
     }
@@ -369,6 +485,7 @@ export function create2DSceneRenderer(ctx) {
       _redraw2dValenceWarnings();
       _draw2dLonePairs();
       _redraw2dBondEnOverlay();
+      _redraw2dBondLengthsOverlay();
       _redraw2dAtomNumberingOverlay();
     }
 
@@ -585,6 +702,7 @@ export function create2DSceneRenderer(ctx) {
     }
 
     _redraw2dBondEnOverlay();
+    _redraw2dBondLengthsOverlay();
     _redraw2dAtomNumberingOverlay();
   }
 

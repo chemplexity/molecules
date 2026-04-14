@@ -31,6 +31,8 @@ export function createAppRuntime(deps) {
     clearResonancePanelState: deps.overlays.clearResonancePanelState,
     updateBondEnPanel: deps.overlays.updateBondEnPanel,
     clearBondEnPanel: deps.overlays.clearBondEnPanel,
+    updateBondLengthsPanel: deps.overlays.updateBondLengthsPanel,
+    clearBondLengthsPanel: deps.overlays.clearBondLengthsPanel,
     updateAtomNumberingPanel: deps.overlays.updateAtomNumberingPanel,
     clearAtomNumberingPanel: deps.overlays.clearAtomNumberingPanel,
     hasReactionPreview: deps.overlays.hasReactionPreview,

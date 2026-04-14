@@ -30,4 +30,11 @@ describe('atomTooltipHtml', () => {
     assert.match(html, /Bond order 5 is not valid/);
     assert.match(html, /allowed: 0, 2, 4/);
   });
+
+  it('does not include an electrons row', () => {
+    const atom = new Atom('a0', 'O');
+    const html = atomTooltipHtml(atom, null, null);
+    assert.match(html, /Bonds/);
+    assert.doesNotMatch(html, /Electrons/);
+  });
 });

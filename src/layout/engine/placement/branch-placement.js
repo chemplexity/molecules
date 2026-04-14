@@ -1429,16 +1429,7 @@ function placeNeighborSequence(
     const shouldHonorPreferredAngle = preferredAngles.length > 0 && !childIsHydrogen && (currentPlacedNeighborIds.length === 1 || isRingAnchor(layoutGraph, anchorAtomId));
     const exactPreferredAngle =
       shouldHonorPreferredAngle && isTerminalRingHeteroSubstituent(layoutGraph, anchorAtomId, childAtomId)
-        ? chooseExactPreferredAngle(
-            anchorPosition,
-            bondLength,
-            coords,
-            occupiedAngles,
-            constrainedPreferredAngles,
-            excludedAtomIds,
-            placementState,
-            ringPolygons
-          )
+        ? chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, constrainedPreferredAngles, excludedAtomIds, placementState, ringPolygons)
         : null;
     const fallbackCandidates = evaluateAngleCandidates(
       constrainedFallbackAngles,
@@ -1455,16 +1446,16 @@ function placeNeighborSequence(
       exactPreferredAngle ??
       (shouldHonorPreferredAngle
         ? chooseContinuationAngle(
-          anchorPosition,
-          bondLength,
-          coords,
-          occupiedAngles,
-          constrainedPreferredAngles,
-          constrainedFallbackAngles,
-          excludedAtomIds,
-          placementState,
-          ringPolygons
-        )
+            anchorPosition,
+            bondLength,
+            coords,
+            occupiedAngles,
+            constrainedPreferredAngles,
+            constrainedFallbackAngles,
+            excludedAtomIds,
+            placementState,
+            ringPolygons
+          )
         : pickBestCandidateAngle(fallbackCandidates, bondLength, !childIsHydrogen, {
             anchorPosition,
             coords,

@@ -43,6 +43,8 @@ describe('initOptionsModal', () => {
     const twoDAtomColoringEl = makeCheckbox();
     const twoDAtomFontSizeEl = makeInput();
     const atomNumberingFontSizeEl = makeInput();
+    const bondEnFontSizeEl = makeInput();
+    const bondLengthFontSizeEl = makeInput();
     const twoDBondThicknessEl = makeInput();
     const forceAtomSizeEl = makeInput();
     const forceBondThicknessEl = makeInput();
@@ -55,6 +57,8 @@ describe('initOptionsModal', () => {
       twoDAtomColoring: true,
       twoDAtomFontSize: 14,
       atomNumberingFontSize: 10,
+      bondEnFontSize: 10,
+      bondLengthFontSize: 10,
       twoDBondThickness: 1.6,
       forceAtomSizeMultiplier: 1,
       forceBondThicknessMultiplier: 1
@@ -62,7 +66,9 @@ describe('initOptionsModal', () => {
     const defaultOptions = {
       ...currentOptions,
       twoDAtomFontSize: 18,
-      atomNumberingFontSize: 12
+      atomNumberingFontSize: 12,
+      bondEnFontSize: 11,
+      bondLengthFontSize: 12
     };
 
     const modal = initOptionsModal({
@@ -78,6 +84,8 @@ describe('initOptionsModal', () => {
         get2DAtomColoringElement: () => twoDAtomColoringEl,
         get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
         getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
+        getBondEnFontSizeElement: () => bondEnFontSizeEl,
+        getBondLengthFontSizeElement: () => bondLengthFontSizeEl,
         get2DBondThicknessElement: () => twoDBondThicknessEl,
         getForceAtomSizeElement: () => forceAtomSizeEl,
         getForceBondThicknessElement: () => forceBondThicknessEl,
@@ -89,6 +97,8 @@ describe('initOptionsModal', () => {
         limits: {
           twoDAtomFontSize: { min: 10, max: 24 },
           atomNumberingFontSize: { min: 8, max: 24 },
+          bondEnFontSize: { min: 8, max: 24 },
+          bondLengthFontSize: { min: 8, max: 24 },
           twoDBondThickness: { min: 0.8, max: 4 },
           forceAtomSizeMultiplier: { min: 0.5, max: 2.5 },
           forceBondThicknessMultiplier: { min: 0.5, max: 2.5 }
@@ -124,14 +134,20 @@ describe('initOptionsModal', () => {
     assert.equal(showAtomTooltipsEl.checked, true);
     assert.equal(twoDAtomFontSizeEl.value, '14');
     assert.equal(atomNumberingFontSizeEl.value, '10');
+    assert.equal(bondEnFontSizeEl.value, '10');
+    assert.equal(bondLengthFontSizeEl.value, '10');
 
     resetBtnEl.trigger('click');
     assert.equal(twoDAtomFontSizeEl.value, '18');
     assert.equal(atomNumberingFontSizeEl.value, '12');
+    assert.equal(bondEnFontSizeEl.value, '11');
+    assert.equal(bondLengthFontSizeEl.value, '12');
 
     showAtomTooltipsEl.checked = false;
     twoDAtomFontSizeEl.value = '30';
     atomNumberingFontSizeEl.value = '30';
+    bondEnFontSizeEl.value = '30';
+    bondLengthFontSizeEl.value = '30';
     applyBtnEl.trigger('click');
 
     assert.equal(overlayEl.hidden, true);
@@ -144,6 +160,8 @@ describe('initOptionsModal', () => {
           twoDAtomColoring: true,
           twoDAtomFontSize: 24,
           atomNumberingFontSize: 24,
+          bondEnFontSize: 24,
+          bondLengthFontSize: 24,
           twoDBondThickness: 1.6,
           forceAtomSizeMultiplier: 1,
           forceBondThicknessMultiplier: 1
@@ -175,6 +193,8 @@ describe('initOptionsModal', () => {
     const twoDAtomColoringEl = makeCheckbox(true);
     const twoDAtomFontSizeEl = makeInput('14');
     const atomNumberingFontSizeEl = makeInput('10');
+    const bondEnFontSizeEl = makeInput('10');
+    const bondLengthFontSizeEl = makeInput('10');
     const twoDBondThicknessEl = makeInput('1.6');
     const forceAtomSizeEl = makeInput('2.8');
     const forceBondThicknessEl = makeInput('0.4');
@@ -187,6 +207,8 @@ describe('initOptionsModal', () => {
       twoDAtomColoring: true,
       twoDAtomFontSize: 14,
       atomNumberingFontSize: 10,
+      bondEnFontSize: 10,
+      bondLengthFontSize: 10,
       twoDBondThickness: 1.6,
       forceAtomSizeMultiplier: 1,
       forceBondThicknessMultiplier: 1
@@ -203,6 +225,8 @@ describe('initOptionsModal', () => {
         get2DAtomColoringElement: () => twoDAtomColoringEl,
         get2DAtomFontSizeElement: () => twoDAtomFontSizeEl,
         getAtomNumberingFontSizeElement: () => atomNumberingFontSizeEl,
+        getBondEnFontSizeElement: () => bondEnFontSizeEl,
+        getBondLengthFontSizeElement: () => bondLengthFontSizeEl,
         get2DBondThicknessElement: () => twoDBondThicknessEl,
         getForceAtomSizeElement: () => forceAtomSizeEl,
         getForceBondThicknessElement: () => forceBondThicknessEl,
@@ -214,6 +238,8 @@ describe('initOptionsModal', () => {
         limits: {
           twoDAtomFontSize: { min: 10, max: 24 },
           atomNumberingFontSize: { min: 8, max: 24 },
+          bondEnFontSize: { min: 8, max: 24 },
+          bondLengthFontSize: { min: 8, max: 24 },
           twoDBondThickness: { min: 0.8, max: 4 },
           forceAtomSizeMultiplier: { min: 0.5, max: 2.5 },
           forceBondThicknessMultiplier: { min: 0.5, max: 2.5 }
@@ -258,6 +284,8 @@ describe('initOptionsModal', () => {
           twoDAtomColoring: true,
           twoDAtomFontSize: 14,
           atomNumberingFontSize: 10,
+          bondEnFontSize: 10,
+          bondLengthFontSize: 10,
           twoDBondThickness: 1.6,
           forceAtomSizeMultiplier: 2.5,
           forceBondThicknessMultiplier: 0.5

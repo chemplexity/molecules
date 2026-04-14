@@ -59,10 +59,7 @@ describe('layout/engine/families/bridge-projection', () => {
     assert.ok(Math.abs(orientedSeed.coords.get(bridgeheadAtomIds[0]).y) < 1e-6);
     assert.ok(Math.abs(orientedSeed.coords.get(bridgeheadAtomIds[1]).y) < 1e-6);
 
-    const bridgeBondLength = Math.hypot(
-      orientedSeed.coords.get('N17').x - orientedSeed.coords.get('C58').x,
-      orientedSeed.coords.get('N17').y - orientedSeed.coords.get('C58').y
-    );
+    const bridgeBondLength = Math.hypot(orientedSeed.coords.get('N17').x - orientedSeed.coords.get('C58').x, orientedSeed.coords.get('N17').y - orientedSeed.coords.get('C58').y);
     assert.ok(bridgeBondLength < graph.options.bondLength * 3);
   });
 });

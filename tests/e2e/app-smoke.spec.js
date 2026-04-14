@@ -752,9 +752,7 @@ test('clicking a displayed 2D stereochemical hydrogen with carbon, oxygen, or su
     expect(separation).not.toBeNull();
     expect(separation).toBeGreaterThan(10);
     if (drawElement !== 'C') {
-      await expect
-        .poll(async () => await page.locator('g[data-atom-id="H4"]').evaluate(node => node.textContent?.trim() ?? ''))
-        .toContain(drawElement);
+      await expect.poll(async () => await page.locator('g[data-atom-id="H4"]').evaluate(node => node.textContent?.trim() ?? '')).toContain(drawElement);
     }
     await expect(page.locator('circle.valence-warning')).toHaveCount(0);
   }
@@ -931,11 +929,12 @@ test('cleaning cocaine twice in 2d stays on the same cleaned layout', async ({ p
 test('dense bridged alkaloids do not render with catastrophic stretched bonds in 2d', async ({ page }) => {
   await page.goto('/index.html');
 
-  await loadSmiles(page, 'COC(=O)C1=C2Nc3ccccc3[C@@]24CCN5[C@@H]6O[C@]78[C@H]9C[C@]%10%11CCO[C@H]%10CCN%12CC[C@]7([C@H]%11%12)c%13cccc(OC)c%13N8C[C@]6(C9)[C@@H]%14OCC[C@]%14(C1)[C@@H]45');
+  await loadSmiles(
+    page,
+    'COC(=O)C1=C2Nc3ccccc3[C@@]24CCN5[C@@H]6O[C@]78[C@H]9C[C@]%10%11CCO[C@H]%10CCN%12CC[C@]7([C@H]%11%12)c%13cccc(OC)c%13N8C[C@]6(C9)[C@@H]%14OCC[C@]%14(C1)[C@@H]45'
+  );
 
-  await expect
-    .poll(async () => await page.locator('g[data-atom-id] .atom-hit').count())
-    .toBeGreaterThan(45);
+  await expect.poll(async () => await page.locator('g[data-atom-id] .atom-hit').count()).toBeGreaterThan(45);
 
   const bondMetrics = await page.evaluate(() => {
     const lengths = Array.from(document.querySelectorAll('line.bond-hit'))
@@ -2683,7 +2682,7 @@ test('renders both projected cobalt wedge and dash overlays after switching from
   await expect(page.locator('circle.node')).toHaveCount(19);
 
   const data = await forceStereoOverlayCounts(page);
-  await expect(data.wedgeCount).toBeGreaterThan(0);
+  await expect(data.wedgeCount).toBeGreaterThan(1);
   await expect(data.dashLineCount).toBeGreaterThan(0);
 });
 
@@ -2705,7 +2704,7 @@ test('renders projected cobalt wedge and dash overlays when pasted while already
   await expect(page.locator('circle.node')).toHaveCount(19);
 
   const data = await forceStereoOverlayCounts(page);
-  await expect(data.wedgeCount).toBeGreaterThan(0);
+  await expect(data.wedgeCount).toBeGreaterThan(1);
   await expect(data.dashLineCount).toBeGreaterThan(0);
 });
 
@@ -2718,7 +2717,7 @@ test('renders projected cobalt wedge and dash overlays when loaded by Enter whil
   await expect(page.locator('circle.node')).toHaveCount(19);
 
   const data = await forceStereoOverlayCounts(page);
-  await expect(data.wedgeCount).toBeGreaterThan(0);
+  await expect(data.wedgeCount).toBeGreaterThan(1);
   await expect(data.dashLineCount).toBeGreaterThan(0);
 });
 

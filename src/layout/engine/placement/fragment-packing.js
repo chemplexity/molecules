@@ -87,16 +87,12 @@ function compareIonicHubCandidates(firstPlacement, secondPlacement) {
 
 function resolvePrincipalFragment(componentPlacements) {
   const anchoredPrincipal =
-    componentPlacements.find(placement => placement.role === 'principal' && placement.anchored)
-    ?? componentPlacements.find(placement => placement.anchored)
-    ?? null;
+    componentPlacements.find(placement => placement.role === 'principal' && placement.anchored) ?? componentPlacements.find(placement => placement.anchored) ?? null;
   if (anchoredPrincipal) {
     return anchoredPrincipal;
   }
 
-  const ionicHub = [...componentPlacements]
-    .filter(placement => isIonicHubCandidate(placement, componentPlacements))
-    .sort(compareIonicHubCandidates)[0] ?? null;
+  const ionicHub = [...componentPlacements].filter(placement => isIonicHubCandidate(placement, componentPlacements)).sort(compareIonicHubCandidates)[0] ?? null;
   if (ionicHub) {
     return ionicHub;
   }
@@ -254,12 +250,7 @@ export function packComponentPlacements(componentPlacements, bondLength, policy 
     auxiliaryFragments.push({ placement, bounds });
   }
 
-  if (
-    principalFragment
-    && !principalFragment.anchored
-    && auxiliaryFragments.length >= 2
-    && isIonicHubCandidate(principalFragment, fragmentPlans)
-  ) {
+  if (principalFragment && !principalFragment.anchored && auxiliaryFragments.length >= 2 && isIonicHubCandidate(principalFragment, fragmentPlans)) {
     packed.clear();
     const principalBounds = computeBounds(principalFragment.coords, principalFragment.atomIds);
     if (principalBounds) {

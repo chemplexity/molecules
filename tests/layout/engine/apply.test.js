@@ -121,9 +121,9 @@ describe('layout/engine/apply', () => {
     });
     const projectedAssignments = [...summary.stereoMap.entries()].filter(([, type]) => type === 'wedge' || type === 'dash');
 
-    assert.equal(result.metadata.displayAssignmentCount, 2);
-    assert.equal(projectedAssignments.length, 2);
-    assert.deepEqual(projectedAssignments.map(([, type]) => type).sort(), ['dash', 'wedge']);
+    assert.equal(result.metadata.displayAssignmentCount, 4);
+    assert.equal(projectedAssignments.length, 4);
+    assert.deepEqual(projectedAssignments.map(([, type]) => type).sort(), ['dash', 'dash', 'wedge', 'wedge']);
     for (const [bondId] of projectedAssignments) {
       const bond = molecule.bonds.get(bondId);
       assert.equal(bond.properties.display.centerId, 'Co1');

@@ -2,12 +2,23 @@
 
 ## 2026-04-13
 
+- Add bond length labels
 - Fix edit stereochemistry of explict hydrogen
 - Fix force layout clean mode
 - Add more bridged templates
 - Add a dedicated oxabicyclo[3.1.1]heptane bridged-ring template so `C1OC2CC(C1)C2` renders in a compact oxygen-bridge cage projection instead of the generic fallback
 - Add a dedicated quinuclidine bridged-ring template so `C1CN2CCC1CC2` renders in a compact medicinal-chemistry cage projection instead of the generic fallback
 - Make safe terminal single-bond hetero substituents on ring atoms use the exact local outward angle instead of snapping to the generic discrete branch lattice
+- Swap the projected tetrahedral organometallic wedge/dash pair so the wedge no longer sits on the top-right ligand in Zn/Cd/Hg four-coordinate views
+- Rework projected octahedral organometallic display to use four diagonal stereobonds with upper dashes and lower wedges plus axial top/bottom ligands, matching the more standard cobalt-complex projection style
+- Retune projected octahedral organometallic coordinates so the dash and wedge pairs sit on a shallower left/right fan instead of a hexagon-like diagonal, making the front/back projection read more clearly
+- Fix projected octahedral organometallic cleanup so the final pipeline preserves the angled upper-dash and lower-wedge pairs instead of snapping two projected ligands onto horizontal bonds
+- Add explicit organometallic support for trigonal-planar three-coordinate Cu/Ag/Au centers plus projected trigonal-bipyramidal Fe/Co/Ni and projected square-pyramidal Rh/Ir/Ru/Os/Pd/Pt five-coordinate centers, including force-mode display-hint seeding and cleanup preservation
+- Retune projected trigonal-bipyramidal and square-pyramidal organometallic geometry so trigonal-bipyramidal axial ligands stay vertical while square-pyramidal reuses the octahedral front/back projection without the bottom ligand
+- Keep projected trigonal-bipyramidal metals from being recentered off their vertical axis after placement and soften the projected wedge/dash pair to a less exaggerated angle
+- Pull projected trigonal-bipyramidal wedge/dash ligands closer to the horizontal axis so the front/back pair reads less steeply
+- Make bond-length text overlays avoid rendered bond strokes more intelligently so they stop sitting on triple bonds, dashed stereo bonds, and crowded bridged overlaps
+- Make bond electronegativity overlays use the same blocker-aware placement rules as bond lengths, including force-mode X-H placement away from the bond midpoint
 - Fix dense bridged alkaloid layouts by capping bridge-path projection so complex cages stay on the KK seed instead of exploding into stretched bonds
 - Restrict bridged bond tidy to mixed bridged systems so compact bridged cages no longer get unexpectedly reshaped by the dense-cage cleanup pass
 - Fix aromatic O/S cation counting so pyrylium and thiopyrylium rings stay aromatic after perception

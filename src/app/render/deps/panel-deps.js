@@ -48,6 +48,28 @@ export function createResonancePanelDeps(deps) {
 }
 
 /**
+ * Builds the structured dependency object for the BondLengthsPanel factory,
+ * mapping flat dependency properties into a panel dependency object (mode, currentMol, _mol2d, draw2d, updateForce).
+ * @param {object} deps - Flat app context providing BondLengthsPanel-related methods and values.
+ * @returns {object} Dependency object consumed by `initBondLengthsPanel`.
+ */
+export function createBondLengthsPanelDeps(deps) {
+  return {
+    get mode() {
+      return deps.state.getMode();
+    },
+    get currentMol() {
+      return deps.state.getCurrentMol();
+    },
+    get _mol2d() {
+      return deps.state.getMol2d();
+    },
+    draw2d: deps.renderers.draw2d,
+    updateForce: deps.renderers.updateForce
+  };
+}
+
+/**
  * Builds the structured dependency object for the AtomNumberingPanel factory,
  * mapping flat dependency properties into a panel dependency object (mode, currentMol, _mol2d, draw2d, updateForce, getRenderOptions, updateRenderOptions, reaction preview accessors).
  * @param {object} deps - Flat app context providing AtomNumberingPanel-related methods and values.

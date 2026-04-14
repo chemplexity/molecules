@@ -34,7 +34,7 @@ const psychoactiveCompoundsCatalog = {
       id: 'caffeine',
       name: 'Caffeine',
       smiles: 'CN1C=NC2=C1C(=O)N(C(=O)N2C)C',
-      inchi: 'InChI=1S/C8H10N4O2/c1-10(5)4-9-6-5-7(12(3)8(11(6)2)14)13/h4H,1-3H3',
+      inchi: 'InChI=1S/C8H10N4O2/c1-10(6)5(7-8(9-4-12(7)3)11(2)6-14)13/h4H,1-3H3',
       tags: ['stimulant', 'xanthine', 'alkaloid'],
       aliases: ['1,3,7-trimethylxanthine', 'guaranine']
     },

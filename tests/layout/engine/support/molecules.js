@@ -483,6 +483,30 @@ export function makeProjectedTetrahedralZincComplex() {
 }
 
 /**
+ * Creates a simple three-coordinate copper complex fixture.
+ * @returns {Molecule} Cu center with three monodentate chloride ligands.
+ */
+export function makeTrigonalPlanarCopperComplex() {
+  return parseSMILES('[Cu](Cl)(Cl)Cl');
+}
+
+/**
+ * Creates a simple five-coordinate iron complex fixture.
+ * @returns {Molecule} Fe center with five monodentate chloride ligands.
+ */
+export function makeProjectedTrigonalBipyramidalIronComplex() {
+  return parseSMILES('[Fe](Cl)(Cl)(Cl)(Cl)Cl');
+}
+
+/**
+ * Creates a simple five-coordinate rhodium complex fixture.
+ * @returns {Molecule} Rh center with five monodentate chloride ligands.
+ */
+export function makeProjectedSquarePyramidalRhodiumComplex() {
+  return parseSMILES('[Rh](Cl)(Cl)(Cl)(Cl)Cl');
+}
+
+/**
  * Creates a simple six-coordinate cobalt complex fixture.
  * @returns {Molecule} Co center with six monodentate ammine ligands.
  */

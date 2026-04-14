@@ -89,9 +89,7 @@ function _isSubstitutedPyrrolicLikeNitrogen(atom, ringBonds, ringAtomSet, mol) {
         return false;
       }
       const otherId = neighborBond.getOtherAtom(neighbor.id);
-      return ringAtomSet.has(otherId)
-        ? _hasPiOrder(neighborBond)
-        : _hasFusedExocyclicRingPiBond(neighbor, ringAtomSet, mol);
+      return ringAtomSet.has(otherId) ? _hasPiOrder(neighborBond) : _hasFusedExocyclicRingPiBond(neighbor, ringAtomSet, mol);
     });
   });
 }

@@ -104,9 +104,10 @@ import {
   prepareResonanceUndoSnapshot,
   restoreResonanceViewSnapshot
 } from '../render/resonance.js';
-import { initBondEnPanel, updateBondEnPanel, clearBondEnPanel } from '../render/bond-en-polarity.js';
+import { initBondEnPanel, updateBondEnPanel, clearBondEnPanel } from '../render/bond-en-overlay.js';
+import { initBondLengthsPanel, updateBondLengthsPanel, clearBondLengthsPanel } from '../render/bond-lengths-overlay.js';
 import { initAtomNumberingPanel, updateAtomNumberingPanel, clearAtomNumberingPanel } from '../render/atom-numbering.js';
-import { createBondEnPanelDeps, createResonancePanelDeps, createAtomNumberingPanelDeps } from '../render/deps/panel-deps.js';
+import { createBondEnPanelDeps, createBondLengthsPanelDeps, createResonancePanelDeps, createAtomNumberingPanelDeps } from '../render/deps/panel-deps.js';
 import { createForceSceneRenderer } from '../render/force-scene.js';
 import { createForceViewportStateHelpers } from '../render/force-viewport-state.js';
 import {
@@ -1012,6 +1013,8 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     clearResonancePanelState: () => clearResonancePanelState(),
     updateBondEnPanel: mol => updateBondEnPanel(mol),
     clearBondEnPanel: () => clearBondEnPanel(),
+    updateBondLengthsPanel: mol => updateBondLengthsPanel(mol),
+    clearBondLengthsPanel: () => clearBondLengthsPanel(),
     updateAtomNumberingPanel: mol => updateAtomNumberingPanel(mol),
     clearAtomNumberingPanel: () => clearAtomNumberingPanel(),
     getReactionPreviewReactantAtomIds: () => _getReactionPreviewReactantAtomIds(),
@@ -1057,6 +1060,7 @@ finalizeAppBootstrap(
     createReaction2dDeps,
     createResonancePanelDeps,
     createBondEnPanelDeps,
+    createBondLengthsPanelDeps,
     createAtomNumberingPanelDeps,
     createOptionsModalDeps,
     createPhyschemPanelDeps,
@@ -1067,6 +1071,7 @@ finalizeAppBootstrap(
     initReaction2d,
     initResonancePanel,
     initBondEnPanel,
+    initBondLengthsPanel,
     initAtomNumberingPanel,
     initNavigationInteractions,
     initKeyboardInteractions,

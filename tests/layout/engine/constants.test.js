@@ -19,8 +19,10 @@ import {
   LABEL_WIDTH_FACTORS,
   LAYOUT_PROFILES,
   NUMERIC_EPSILON,
+  OCTAHEDRAL_PROJECTED_EQUATOR_ANGLE,
   RING_PERIMETER_MAX_DEVIATION_FACTOR,
   SEVERE_OVERLAP_FACTOR,
+  TRIGONAL_BIPYRAMIDAL_EQUATOR_ANGLE,
   TEMPLATE_PLANAR_VALIDATION
 } from '../../../src/layout/engine/constants.js';
 
@@ -69,6 +71,8 @@ describe('layout/engine/constants', () => {
       meanSeedBiasFactor: 0.3,
       meanSeedBiasClampFactor: 0.5
     });
+    assert.equal(OCTAHEDRAL_PROJECTED_EQUATOR_ANGLE, Math.PI / 6);
+    assert.equal(TRIGONAL_BIPYRAMIDAL_EQUATOR_ANGLE, Math.PI / 6);
     assert.deepEqual(DEFAULT_LARGE_MOLECULE_THRESHOLD, {
       heavyAtomCount: 120,
       ringSystemCount: 10,

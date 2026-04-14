@@ -81,6 +81,12 @@ export const BRIDGE_PROJECTION_FACTORS = Object.freeze({
   meanSeedBiasClampFactor: 0.5
 });
 
+/** Diagonal angle used for projected octahedral front/back ligand pairs. */
+export const OCTAHEDRAL_PROJECTED_EQUATOR_ANGLE = Math.PI / 6;
+
+/** Lateral angle used for projected trigonal-bipyramidal equatorial ligands. */
+export const TRIGONAL_BIPYRAMIDAL_EQUATOR_ANGLE = Math.PI / 6;
+
 /** Character-count width multipliers for multi-character atom labels. */
 export const LABEL_WIDTH_FACTORS = new Map([
   [1, 1.0],

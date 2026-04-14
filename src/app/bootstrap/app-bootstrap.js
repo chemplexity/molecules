@@ -160,6 +160,20 @@ export function finalizeAppBootstrap(ctx) {
     })
   );
 
+  ctx.factories.initBondLengthsPanel(
+    ctx.factories.createBondLengthsPanelDeps({
+      state: {
+        getMode: ctx.state.getMode,
+        getCurrentMol: ctx.state.getCurrentMol,
+        getMol2d: ctx.state.getMol2d
+      },
+      renderers: {
+        draw2d: () => draw2d(),
+        updateForce: ctx.render.renderRuntime.updateForce
+      }
+    })
+  );
+
   ctx.factories.initAtomNumberingPanel(
     ctx.factories.createAtomNumberingPanelDeps({
       state: {
@@ -268,6 +282,8 @@ export function finalizeAppBootstrap(ctx) {
         get2DAtomColoringElement: () => ctx.dom.get2DAtomColoringElement(),
         get2DAtomFontSizeElement: () => ctx.dom.get2DAtomFontSizeElement(),
         getAtomNumberingFontSizeElement: () => ctx.dom.getAtomNumberingFontSizeElement(),
+        getBondEnFontSizeElement: () => ctx.dom.getBondEnFontSizeElement(),
+        getBondLengthFontSizeElement: () => ctx.dom.getBondLengthFontSizeElement(),
         get2DBondThicknessElement: () => ctx.dom.get2DBondThicknessElement(),
         getForceAtomSizeElement: () => ctx.dom.getForceAtomSizeElement(),
         getForceBondThicknessElement: () => ctx.dom.getForceBondThicknessElement(),
