@@ -28,16 +28,14 @@ function sampleEllipsePerimeter(size, semiMajor, semiMinor, startAngle) {
   const sampledPoints = [];
   const cumulativeLengths = [0];
   for (let index = 0; index <= sampleCount; index++) {
-    const angle = startAngle + ((index / sampleCount) * Math.PI * 2);
+    const angle = startAngle + (index / sampleCount) * Math.PI * 2;
     sampledPoints.push(ellipsePoint({ x: 0, y: 0 }, semiMajor, semiMinor, angle));
     if (index === 0) {
       continue;
     }
     const firstPoint = sampledPoints[index - 1];
     const secondPoint = sampledPoints[index];
-    cumulativeLengths.push(
-      cumulativeLengths[index - 1] + Math.hypot(secondPoint.x - firstPoint.x, secondPoint.y - firstPoint.y)
-    );
+    cumulativeLengths.push(cumulativeLengths[index - 1] + Math.hypot(secondPoint.x - firstPoint.x, secondPoint.y - firstPoint.y));
   }
 
   const perimeter = cumulativeLengths[cumulativeLengths.length - 1];
@@ -57,8 +55,8 @@ function sampleEllipsePerimeter(size, semiMajor, semiMinor, startAngle) {
     const firstPoint = sampledPoints[segmentIndex - 1];
     const secondPoint = sampledPoints[segmentIndex];
     points.push({
-      x: firstPoint.x + ((secondPoint.x - firstPoint.x) * fraction),
-      y: firstPoint.y + ((secondPoint.y - firstPoint.y) * fraction)
+      x: firstPoint.x + (secondPoint.x - firstPoint.x) * fraction,
+      y: firstPoint.y + (secondPoint.y - firstPoint.y) * fraction
     });
   }
 
@@ -126,12 +124,12 @@ export function macrocycleAspectRatio(size) {
     return 1.15;
   }
   if (size <= 20) {
-    return 1.30;
+    return 1.3;
   }
   if (size <= 26) {
-    return 1.50;
+    return 1.5;
   }
-  return Math.min(1.80, 1.50 + ((size - 26) * 0.015));
+  return Math.min(1.8, 1.5 + (size - 26) * 0.015);
 }
 
 /**

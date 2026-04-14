@@ -69,10 +69,9 @@ function hasVisibleHeavyBranch(layoutGraph, atomId, participantAtomIds, ringAtom
   if (!atom) {
     return false;
   }
-  return atom.getNeighbors(layoutGraph.sourceMolecule).some(neighborAtom => neighborAtom
-    && neighborAtom.name !== 'H'
-    && participantAtomIds.has(neighborAtom.id)
-    && !ringAtomIds.has(neighborAtom.id));
+  return atom
+    .getNeighbors(layoutGraph.sourceMolecule)
+    .some(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && participantAtomIds.has(neighborAtom.id) && !ringAtomIds.has(neighborAtom.id));
 }
 
 /**
@@ -87,8 +86,7 @@ function branchBearingRuns(ringAtomIds, branchBearingAtomIds) {
   }
 
   const ringSize = ringAtomIds.length;
-  const startIndex = ringAtomIds.findIndex((atomId, index) => branchBearingAtomIds.has(atomId)
-    && !branchBearingAtomIds.has(ringAtomIds[(index - 1 + ringSize) % ringSize]));
+  const startIndex = ringAtomIds.findIndex((atomId, index) => branchBearingAtomIds.has(atomId) && !branchBearingAtomIds.has(ringAtomIds[(index - 1 + ringSize) % ringSize]));
   const orderedStartIndex = startIndex >= 0 ? startIndex : ringAtomIds.findIndex(atomId => branchBearingAtomIds.has(atomId));
   if (orderedStartIndex < 0) {
     return [];
@@ -177,9 +175,7 @@ export function computeMacrocycleAngularBudgets(rings, coords, layoutGraph, part
   const ringCenter = centroid(ringPositions);
   const ringAtomIds = new Set(primaryRing.atomIds);
   const budgets = new Map();
-  const branchBearingAtomIds = new Set(primaryRing.atomIds.filter(atomId =>
-    hasVisibleHeavyBranch(layoutGraph, atomId, participantAtomIds, ringAtomIds)
-  ));
+  const branchBearingAtomIds = new Set(primaryRing.atomIds.filter(atomId => hasVisibleHeavyBranch(layoutGraph, atomId, participantAtomIds, ringAtomIds)));
   const preferredSides = preferredBudgetSides(primaryRing.atomIds, branchBearingAtomIds);
 
   for (let index = 0; index < primaryRing.atomIds.length; index++) {
@@ -203,11 +199,7 @@ export function computeMacrocycleAngularBudgets(rings, coords, layoutGraph, part
       nextBoundaryOffset *= 0.5;
     }
     const preferredSide = preferredSides.get(atomId) ?? null;
-    const preferredOffset = preferredSide === 'previous'
-      ? previousBoundaryOffset / 2
-      : preferredSide === 'next'
-        ? nextBoundaryOffset / 2
-        : 0;
+    const preferredOffset = preferredSide === 'previous' ? previousBoundaryOffset / 2 : preferredSide === 'next' ? nextBoundaryOffset / 2 : 0;
 
     budgets.set(atomId, {
       centerAngle: outwardAngle,
@@ -256,9 +248,7 @@ function circumcenterOf3(p0, p1, p2) {
 function growFusedRingsFromMacrocycle(rings, primaryRing, coords, bondLength, layoutGraph) {
   const ringById = new Map(rings.map(ring => [ring.id, ring]));
   const systemRingIds = new Set(rings.map(ring => ring.id));
-  const systemConnections = layoutGraph.ringConnections.filter(
-    conn => systemRingIds.has(conn.firstRingId) && systemRingIds.has(conn.secondRingId)
-  );
+  const systemConnections = layoutGraph.ringConnections.filter(conn => systemRingIds.has(conn.firstRingId) && systemRingIds.has(conn.secondRingId));
 
   const ringAdj = new Map(rings.map(ring => [ring.id, []]));
   const connectionByPair = new Map();
@@ -330,7 +320,7 @@ function growFusedRingsFromMacrocycle(rings, primaryRing, coords, bondLength, la
 
       for (let index = 1; index < path.length - 1; index++) {
         if (!coords.has(path[index])) {
-          coords.set(path[index], add(neighborCenter, fromAngle(angleA + (index * step), radius)));
+          coords.set(path[index], add(neighborCenter, fromAngle(angleA + index * step, radius)));
         }
       }
 

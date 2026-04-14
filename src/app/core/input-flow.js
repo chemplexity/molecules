@@ -12,8 +12,8 @@ export function createInputFlowManager(deps) {
     deps.history.takeSnapshot({
       clearReactionPreview: false,
       documentState: {
-        currentSmiles: (prevInputMode === 'smiles' ? visibleInputValue : deps.state.getCurrentSmiles() ?? currentMolSmiles) || null,
-        currentInchi: (prevInputMode === 'inchi' ? visibleInputValue : deps.state.getCurrentInchi() ?? currentMolInchi) || null,
+        currentSmiles: (prevInputMode === 'smiles' ? visibleInputValue : (deps.state.getCurrentSmiles() ?? currentMolSmiles)) || null,
+        currentInchi: (prevInputMode === 'inchi' ? visibleInputValue : (deps.state.getCurrentInchi() ?? currentMolInchi)) || null,
         inputMode: prevInputMode ?? deps.state.getInputMode(),
         inputValue: visibleInputValue ?? ''
       }
@@ -179,9 +179,7 @@ export function createInputFlowManager(deps) {
 
     const detectedFormat = deps.parsers.detectChemicalStringFormat(value);
     const parseFormat = detectedFormat ?? deps.state.getInputMode();
-    const previousSnapshot = detectedFormat && detectedFormat !== deps.state.getInputMode()
-      ? capturePreviousSnapshot()
-      : null;
+    const previousSnapshot = detectedFormat && detectedFormat !== deps.state.getInputMode() ? capturePreviousSnapshot() : null;
 
     if (detectedFormat && detectedFormat !== deps.state.getInputMode()) {
       setInputFormat(detectedFormat, {

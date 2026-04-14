@@ -114,7 +114,10 @@ describe('create2DHighlightRenderer', () => {
 
     assert.ok(records.some(([kind, selector]) => kind === 'select' && selector === 'g.atom-highlights'));
     assert.ok(records.some(([kind]) => kind === 'remove'));
-    assert.equal(records.some(([kind]) => kind === 'insert'), false);
+    assert.equal(
+      records.some(([kind]) => kind === 'insert'),
+      false
+    );
   });
 
   it('renders highlighted atoms and bonds into the extracted 2D highlight layer', () => {
@@ -132,7 +135,12 @@ describe('create2DHighlightRenderer', () => {
       bonds: new Map([['b1', bond]])
     };
 
-    _setHighlight([new Map([['a1', 'a1'], ['a2', 'a2']])]);
+    _setHighlight([
+      new Map([
+        ['a1', 'a1'],
+        ['a2', 'a2']
+      ])
+    ]);
 
     const renderer = create2DHighlightRenderer({
       view: {
@@ -164,7 +172,12 @@ describe('create2DHighlightRenderer', () => {
       { id: 'a2', x: 40, y: 10, protons: 6 }
     ];
     const links = [{ id: 'b1', source: nodes[0], target: nodes[1] }];
-    _setHighlight([new Map([['a1', 'a1'], ['a2', 'a2']])]);
+    _setHighlight([
+      new Map([
+        ['a1', 'a1'],
+        ['a2', 'a2']
+      ])
+    ]);
 
     const renderer = createForceHighlightRenderer({
       view: {

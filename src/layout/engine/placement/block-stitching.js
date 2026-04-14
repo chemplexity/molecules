@@ -2,15 +2,7 @@
 
 import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../geometry/vec2.js';
 
-const STITCH_REFINEMENT_OFFSETS = Object.freeze([
-  0,
-  Math.PI / 12,
-  -Math.PI / 12,
-  Math.PI / 6,
-  -Math.PI / 6,
-  Math.PI / 4,
-  -Math.PI / 4
-]);
+const STITCH_REFINEMENT_OFFSETS = Object.freeze([0, Math.PI / 12, -Math.PI / 12, Math.PI / 6, -Math.PI / 6, Math.PI / 4, -Math.PI / 4]);
 
 /**
  * Rigidly rotates and translates a child block so its attachment atom lands at
@@ -23,14 +15,7 @@ const STITCH_REFINEMENT_OFFSETS = Object.freeze([
  * @param {number} bondLength - Target bond length.
  * @returns {Map<string, {x: number, y: number}>} Transformed child coordinates.
  */
-export function stitchChildBlock(
-  childCoords,
-  childAtomIds,
-  childAttachmentAtomId,
-  parentAttachmentPosition,
-  targetAngle,
-  bondLength
-) {
+export function stitchChildBlock(childCoords, childAtomIds, childAttachmentAtomId, parentAttachmentPosition, targetAngle, bondLength) {
   const childAttachment = childCoords.get(childAttachmentAtomId);
   if (!childAttachment) {
     return new Map(childCoords);
@@ -91,24 +76,9 @@ function scoreStitchedChild(transformedChild, childAtomIds, placedCoords, target
  * @param {Map<string, {x: number, y: number}>} placedCoords - Coordinates already committed in the parent frame.
  * @returns {{coords: Map<string, {x: number, y: number}>, angle: number}} Refined stitched coordinates and chosen angle.
  */
-export function refineStitchedBlock(
-  childCoords,
-  childAtomIds,
-  childAttachmentAtomId,
-  parentAttachmentPosition,
-  targetAngle,
-  bondLength,
-  placedCoords
-) {
+export function refineStitchedBlock(childCoords, childAtomIds, childAttachmentAtomId, parentAttachmentPosition, targetAngle, bondLength, placedCoords) {
   let bestAngle = targetAngle;
-  let bestCoords = stitchChildBlock(
-    childCoords,
-    childAtomIds,
-    childAttachmentAtomId,
-    parentAttachmentPosition,
-    targetAngle,
-    bondLength
-  );
+  let bestCoords = stitchChildBlock(childCoords, childAtomIds, childAttachmentAtomId, parentAttachmentPosition, targetAngle, bondLength);
   let bestScore = scoreStitchedChild(bestCoords, childAtomIds, placedCoords, targetAngle, targetAngle, bondLength);
 
   for (const offset of STITCH_REFINEMENT_OFFSETS) {
@@ -116,14 +86,7 @@ export function refineStitchedBlock(
       continue;
     }
     const testedAngle = targetAngle + offset;
-    const testedCoords = stitchChildBlock(
-      childCoords,
-      childAtomIds,
-      childAttachmentAtomId,
-      parentAttachmentPosition,
-      testedAngle,
-      bondLength
-    );
+    const testedCoords = stitchChildBlock(childCoords, childAtomIds, childAttachmentAtomId, parentAttachmentPosition, testedAngle, bondLength);
     const testedScore = scoreStitchedChild(testedCoords, childAtomIds, placedCoords, targetAngle, testedAngle, bondLength);
     if (testedScore < bestScore) {
       bestScore = testedScore;

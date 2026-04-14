@@ -47,9 +47,7 @@ export function createInputControls(deps) {
   }
 
   function randomKeyForMolecule(molecule, inputMode) {
-    return inputMode === 'inchi'
-      ? molecule.inchi ?? molecule.smiles ?? ''
-      : molecule.smiles ?? molecule.inchi ?? '';
+    return inputMode === 'inchi' ? (molecule.inchi ?? molecule.smiles ?? '') : (molecule.smiles ?? molecule.inchi ?? '');
   }
 
   function recentRandomLimit(poolLength) {

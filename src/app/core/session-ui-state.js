@@ -107,9 +107,7 @@ export function createSessionUiStateBridge(deps) {
   }
 
   function restoreInteractionState(snapshot) {
-    const restoredChargeTool =
-      snapshot.chargeTool ??
-      (snapshot.toolMode === 'charge-positive' ? 'positive' : snapshot.toolMode === 'charge-negative' ? 'negative' : null);
+    const restoredChargeTool = snapshot.chargeTool ?? (snapshot.toolMode === 'charge-positive' ? 'positive' : snapshot.toolMode === 'charge-negative' ? 'negative' : null);
     deps.setSelectedAtomIds(new Set(snapshot.selectedAtomIds ?? []));
     deps.setSelectedBondIds(new Set(snapshot.selectedBondIds ?? []));
     deps.clearHoveredAtomIds();

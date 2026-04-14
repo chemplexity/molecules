@@ -28,9 +28,6 @@ describe('layout/engine/scaffold/template-placement', () => {
     const expectedNitrogen = expectedCoords.get('a0');
     assert.ok(placedNitrogen);
     assert.ok(expectedNitrogen);
-    assert.ok(Math.hypot(
-      placedNitrogen.x - expectedNitrogen.x,
-      placedNitrogen.y - expectedNitrogen.y
-    ) < graph.options.bondLength * 0.01);
+    assert.ok(Math.hypot(placedNitrogen.x - expectedNitrogen.x, placedNitrogen.y - expectedNitrogen.y) < graph.options.bondLength * 0.01);
   });
 });

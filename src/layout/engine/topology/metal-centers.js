@@ -23,7 +23,5 @@ export function isMetalAtom(atom) {
  * @returns {string[]} Metal-center atom ids.
  */
 export function findMetalCenterIds(molecule) {
-  return [...molecule.atoms.values()]
-    .filter(atom => isMetalAtom(atom))
-    .map(atom => atom.id);
+  return [...molecule.atoms.values()].filter(atom => isMetalAtom(atom)).map(atom => atom.id);
 }

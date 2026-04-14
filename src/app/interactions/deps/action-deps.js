@@ -262,7 +262,8 @@ export function createDrawBondPreviewActionDeps(ctx) {
       atomColor: ctx.atomColor,
       strokeColor: ctx.strokeColor,
       singleBondWidth: ctx.singleBondWidth,
-      labelHalfW: ctx.labelHalfW
+      labelHalfW: ctx.labelHalfW,
+      toSelectionSVGPt2d: atom => ctx.toSelectionSVGPt2d?.(atom) ?? null
     }
   };
 }

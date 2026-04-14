@@ -5,12 +5,12 @@ import { Molecule } from '../../src/core/Molecule.js';
 describe('Molecule.resetIds', () => {
   it('normalizes atom and bond string IDs to an integer sequence', () => {
     const mol = new Molecule();
-    
+
     // Add atoms with messy namespace IDs typical of SMIRKS transformations
     mol.addAtom('_rxn_product__0:C1', 'C');
     mol.addAtom('_rxn_product__0:O2', 'O');
     mol.addAtom('_rxn_product__0:H3', 'H');
-    
+
     // Add bonds with messy namespace IDs
     mol.addBond('weird_bond_1', '_rxn_product__0:C1', '_rxn_product__0:O2', {}, false);
     mol.addBond('weird_bond_2', '_rxn_product__0:O2', '_rxn_product__0:H3', {}, false);
@@ -26,12 +26,12 @@ describe('Molecule.resetIds', () => {
     const c = mol.atoms.get('0');
     const o = mol.atoms.get('1');
     const h = mol.atoms.get('2');
-    
+
     // Ensure ids on the objects themselves are updated
     assert.equal(c.id, '0');
     assert.equal(o.id, '1');
     assert.equal(h.id, '2');
-    
+
     // Ensure atom.bonds references are updated
     assert.deepEqual(c.bonds, ['0']);
     assert.deepEqual(o.bonds.sort(), ['0', '1']);
@@ -49,7 +49,7 @@ describe('Molecule.resetIds', () => {
     // Ensure next generator IDs are properly advanced
     assert.equal(mol._nextAtomId, 3);
     assert.equal(mol._nextBondId, 2);
-    
+
     // Ensure the internal index rebuilt its keys
     assert.equal(mol._bondIndex.get('0,1'), '0');
     assert.equal(mol._bondIndex.get('1,2'), '1');

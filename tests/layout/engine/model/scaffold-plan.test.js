@@ -15,7 +15,12 @@ describe('layout/engine/model/scaffold-plan', () => {
   });
 
   it('routes fused-plus-spiro ring systems through the bridged fallback family', () => {
-    const graph = createLayoutGraph(parseSMILES(String.raw`COC[C@H]1O[C@@H](O[C@@H]2OC[C@@H]3O[C@@]4(OC[C@@H](OC(=O)c5c(C)cc(O)cc5O)[C@@H]6OCO[C@@H]46)O[C@H]3[C@H]2OCCN=[N+]=[N-])[C@@H](OC)[C@@H](O)[C@@H]1O[C@@H]7O[C@H](C)[C@H](OC)[C@H](O[C@@H]8O[C@H](C)[C@H]9O[C@]%10(C[C@@H](O)[C@H](O[C@H]%11C[C@@H](O[C@H]%12C[C@@](C)([C@@H](OC)[C@H](C)O%12)[N+](=O)[O-])[C@H](OC(=O)c%13c(C)c(Cl)c(O)c(Cl)c%13OC)[C@@H](C)O%11)[C@@H](C)O%10)O[C@]9(C)[C@@H]8O)[C@@]7(C)O`), { suppressH: true });
+    const graph = createLayoutGraph(
+      parseSMILES(
+        String.raw`COC[C@H]1O[C@@H](O[C@@H]2OC[C@@H]3O[C@@]4(OC[C@@H](OC(=O)c5c(C)cc(O)cc5O)[C@@H]6OCO[C@@H]46)O[C@H]3[C@H]2OCCN=[N+]=[N-])[C@@H](OC)[C@@H](O)[C@@H]1O[C@@H]7O[C@H](C)[C@H](OC)[C@H](O[C@@H]8O[C@H](C)[C@H]9O[C@]%10(C[C@@H](O)[C@H](O[C@H]%11C[C@@H](O[C@H]%12C[C@@](C)([C@@H](OC)[C@H](C)O%12)[N+](=O)[O-])[C@H](OC(=O)c%13c(C)c(Cl)c(O)c(Cl)c%13OC)[C@@H](C)O%11)[C@@H](C)O%10)O[C@]9(C)[C@@H]8O)[C@@]7(C)O`
+      ),
+      { suppressH: true }
+    );
     const hybridRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.includes(1) && ringSystem.ringIds.includes(6) && ringSystem.ringIds.includes(12));
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     const pendingHybrid = plan.placementSequence.find(entry => entry.candidateId === `ring-system:${hybridRingSystem?.id}`);
@@ -32,7 +37,10 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.rootScaffold.family, 'isolated-ring');
     assert.equal(plan.rootScaffold.templateId, 'benzene');
     assert.equal(plan.mixedMode, true);
-    assert.deepEqual(plan.placementSequence.map(entry => entry.kind), ['root-scaffold', 'chains']);
+    assert.deepEqual(
+      plan.placementSequence.map(entry => entry.kind),
+      ['root-scaffold', 'chains']
+    );
     assert.deepEqual(plan.nonRingAtomIds, ['a6']);
   });
 
@@ -57,6 +65,30 @@ describe('layout/engine/model/scaffold-plan', () => {
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(plan.rootScaffold.family, 'bridged');
     assert.equal(plan.rootScaffold.templateId, 'norbornane');
+  });
+
+  it('uses the tropane template for cocaine-like bridged mixed scaffolds', () => {
+    const graph = createLayoutGraph(parseSMILES('CN1C2CCC1C(C(OC)=O)C(OC(c3ccccc3)=O)C2'));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'tropane');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the quinuclidine template for aza-bicyclo[2.2.2]octane cages', () => {
+    const graph = createLayoutGraph(parseSMILES('C1CN2CCC1CC2'));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'quinuclidine');
+    assert.equal(plan.mixedMode, false);
+  });
+
+  it('uses the oxabicyclo[3.1.1]heptane template for bridged oxygen cages', () => {
+    const graph = createLayoutGraph(parseSMILES('C1OC2CC(C1)C2'));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'oxabicyclo-3-1-1');
+    assert.equal(plan.mixedMode, false);
   });
 
   it('prefers the larger cage template when the bridged scaffold itself is larger', () => {

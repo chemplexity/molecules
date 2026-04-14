@@ -107,20 +107,10 @@ function makeDeps() {
         calls.push(['restoreReactionPreviewSnapshot', snapshot]);
       },
       restore2dState(displayMol, snap) {
-        calls.push([
-          'restore2dState',
-          displayMol.properties,
-          snap.mode,
-          [...displayMol.bonds.values()].map(bond => ({ id: bond.id, properties: { ...bond.properties } }))
-        ]);
+        calls.push(['restore2dState', displayMol.properties, snap.mode, [...displayMol.bonds.values()].map(bond => ({ id: bond.id, properties: { ...bond.properties } }))]);
       },
       restoreForceState(displayMol, snap) {
-        calls.push([
-          'restoreForceState',
-          displayMol.properties,
-          snap.mode,
-          [...displayMol.bonds.values()].map(bond => ({ id: bond.id, properties: { ...bond.properties } }))
-        ]);
+        calls.push(['restoreForceState', displayMol.properties, snap.mode, [...displayMol.bonds.values()].map(bond => ({ id: bond.id, properties: { ...bond.properties } }))]);
       },
       updateFormula(mol) {
         calls.push(['updateFormula', mol.properties]);

@@ -24,6 +24,9 @@ describe('layout/engine/topology/components', () => {
       { id: 2, heavyAtomCount: 1, netCharge: 0, atomIds: ['a2'] },
       { id: 3, heavyAtomCount: 4, netCharge: 0, atomIds: ['a3'] }
     ]);
-    assert.deepEqual(components.map(component => component.role), ['principal', 'counter-ion', 'solvent-like', 'spectator']);
+    assert.deepEqual(
+      components.map(component => component.role),
+      ['principal', 'counter-ion', 'solvent-like', 'spectator']
+    );
   });
 });

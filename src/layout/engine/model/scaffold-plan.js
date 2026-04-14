@@ -156,16 +156,14 @@ export function buildScaffoldPlan(layoutGraph, component) {
       atomIds: [...rootScaffold.atomIds],
       ringIds: [...rootScaffold.ringIds]
     },
-    ...candidates
-      .slice(1)
-      .map(candidate => ({
-        kind: candidate.type === 'ring-system' ? 'ring-system' : 'acyclic',
-        candidateId: candidate.id,
-        family: candidate.family,
-        templateId: candidate.templateId ?? null,
-        atomIds: [...candidate.atomIds],
-        ringIds: [...candidate.ringIds]
-      }))
+    ...candidates.slice(1).map(candidate => ({
+      kind: candidate.type === 'ring-system' ? 'ring-system' : 'acyclic',
+      candidateId: candidate.id,
+      family: candidate.family,
+      templateId: candidate.templateId ?? null,
+      atomIds: [...candidate.atomIds],
+      ringIds: [...candidate.ringIds]
+    }))
   ];
 
   if (rootScaffold.type !== 'acyclic' && nonRingAtomIds.length > 0) {

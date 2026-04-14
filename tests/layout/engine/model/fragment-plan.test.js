@@ -12,7 +12,10 @@ describe('layout/engine/model/fragment-plan', () => {
       coords,
       anchored: true,
       role: 'principal',
-      anchorPreference: 'principal-right'
+      anchorPreference: 'principal-right',
+      heavyAtomCount: 6,
+      netCharge: -1,
+      containsMetal: false
     });
 
     coords.get('a0').x = 99;
@@ -20,6 +23,9 @@ describe('layout/engine/model/fragment-plan', () => {
     assert.equal(plan.anchored, true);
     assert.equal(plan.role, 'principal');
     assert.equal(plan.anchorPreference, 'principal-right');
+    assert.equal(plan.heavyAtomCount, 6);
+    assert.equal(plan.netCharge, -1);
+    assert.equal(plan.containsMetal, false);
     assert.deepEqual(plan.coords.get('a0'), { x: 1, y: 2 });
   });
 });

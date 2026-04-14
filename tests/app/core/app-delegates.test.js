@@ -112,11 +112,7 @@ describe('createAppDelegates', () => {
     assert.deepEqual(delegates.parseAndRender('CCO'), ['parseAndRenderSmiles', 'CCO']);
     assert.deepEqual(delegates.parseAndRenderInchi('InChI=1S/CH4/h1H4'), ['parseAndRenderInchi', 'InChI=1S/CH4/h1H4']);
 
-    assert.deepEqual(records, [
-      ['handle2dPrimitiveClick', 'event', [1], [2]],
-      ['handleForceComponentDblClick', 'event2', [3]],
-      ['clear2dDerivedState']
-    ]);
+    assert.deepEqual(records, [['handle2dPrimitiveClick', 'event', [1], [2]], ['handleForceComponentDblClick', 'event2', [3]], ['clear2dDerivedState']]);
   });
 
   it('creates the active molecule in force mode when needed', () => {

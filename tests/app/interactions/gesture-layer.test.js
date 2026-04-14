@@ -289,7 +289,7 @@ describe('initGestureInteractions', () => {
       },
       helpers: {
         toSVGPt2d: atom => ({ x: atom.x, y: atom.y }),
-        toSelectionSVGPt2d: atom => atom.id === 'h1' ? { x: 90, y: 90 } : { x: atom.x, y: atom.y },
+        toSelectionSVGPt2d: atom => (atom.id === 'h1' ? { x: 90, y: 90 } : { x: atom.x, y: atom.y }),
         getDatum: element => element.__datum ?? null
       }
     });

@@ -228,9 +228,6 @@ describe('createRenderRuntime', () => {
     runtime.draw2d();
     runtime.updateForce(mol, { preservePositions: true, preserveView: true });
 
-    assert.deepEqual(calls, [
-      ['draw2d'],
-      ['updateForce', mol, { preservePositions: true, preserveView: true }]
-    ]);
+    assert.deepEqual(calls, [['draw2d'], ['updateForce', mol, { preservePositions: true, preserveView: true }]]);
   });
 });

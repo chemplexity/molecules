@@ -60,12 +60,7 @@ function isBetterCandidate(bestCandidate, candidate, epsilon) {
  * @returns {boolean} True when the rotation probe can be skipped for this pass.
  */
 function shouldSkipRotationProbe(visibleAtomCount, baseOverlapCount, bestCandidate) {
-  return (
-    visibleAtomCount >= LARGE_COMPONENT_OVERLAP_PRIORITY_ATOM_COUNT
-    && baseOverlapCount > 0
-    && !!bestCandidate
-    && bestCandidate.overlapReduction > 0
-  );
+  return visibleAtomCount >= LARGE_COMPONENT_OVERLAP_PRIORITY_ATOM_COUNT && baseOverlapCount > 0 && !!bestCandidate && bestCandidate.overlapReduction > 0;
 }
 
 /**
@@ -92,11 +87,7 @@ function updateAtomGridForAcceptedMove(layoutGraph, atomGrid, previousCoords, ne
       continue;
     }
     const previousPosition = previousCoords.get(atomId);
-    if (
-      previousPosition
-      && previousPosition.x === nextPosition.x
-      && previousPosition.y === nextPosition.y
-    ) {
+    if (previousPosition && previousPosition.x === nextPosition.x && previousPosition.y === nextPosition.y) {
       continue;
     }
     if (previousPosition) {
@@ -148,10 +139,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
           ...scoreCandidate(layoutGraph, baseCost, baseOverlapCount, overlapCandidate.coords, bondLength),
           overlapMoves: overlapCandidate.moves
         };
-        if (
-          scoredOverlapCandidate.overlapReduction > 0
-          || scoredOverlapCandidate.improvement > epsilon
-        ) {
+        if (scoredOverlapCandidate.overlapReduction > 0 || scoredOverlapCandidate.improvement > epsilon) {
           bestCandidate = scoredOverlapCandidate;
         }
       }
@@ -169,10 +157,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
           ...scoreCandidate(layoutGraph, baseCost, baseOverlapCount, rotationCandidate.coords, bondLength),
           overlapMoves: 0
         };
-        if (
-          scoredRotationCandidate.overlapReduction > 0
-          || scoredRotationCandidate.improvement > epsilon
-        ) {
+        if (scoredRotationCandidate.overlapReduction > 0 || scoredRotationCandidate.improvement > epsilon) {
           if (isBetterCandidate(bestCandidate, scoredRotationCandidate, epsilon)) {
             bestCandidate = scoredRotationCandidate;
           }

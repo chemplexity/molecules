@@ -46,10 +46,14 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
 
   it('nudges severe overlaps apart before local cleanup', () => {
     const graph = createLayoutGraph(makeDisconnectedEthanes());
-    const result = resolveOverlaps(graph, new Map([
-      ['a0', { x: 0, y: 0 }],
-      ['c0', { x: 0.1, y: 0 }]
-    ]), { bondLength: graph.options.bondLength });
+    const result = resolveOverlaps(
+      graph,
+      new Map([
+        ['a0', { x: 0, y: 0 }],
+        ['c0', { x: 0.1, y: 0 }]
+      ]),
+      { bondLength: graph.options.bondLength }
+    );
     assert.ok(result.moves > 0);
     assert.ok(result.coords.get('c0').x > 0.1);
   });
@@ -104,11 +108,13 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
 
     assert.ok(result.moves > 0);
     assert.ok(leafPosition.y > 0, 'expected the leaf to pivot toward the safer side away from the blocker');
-    assert.ok(Math.hypot(leafPosition.x - blockerPosition.x, leafPosition.y - blockerPosition.y) >= (1.5 * 0.55));
+    assert.ok(Math.hypot(leafPosition.x - blockerPosition.x, leafPosition.y - blockerPosition.y) >= 1.5 * 0.55);
   });
 
   it('rotates singly attached sugar rings as rigid subtrees instead of stretching them apart', () => {
-    const molecule = parseSMILES('CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O');
+    const molecule = parseSMILES(
+      'CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O'
+    );
     const graph = createLayoutGraph(molecule, { suppressH: true });
     const placement = layoutSupportedComponents(graph);
     const cleanup = runLocalCleanup(graph, placement.coords, { bondLength: graph.options.bondLength });
@@ -122,7 +128,9 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
   });
 
   it('accepts cached rigid pendant-ring descriptors without changing the resolved layout', () => {
-    const molecule = parseSMILES('CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O');
+    const molecule = parseSMILES(
+      'CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O'
+    );
     const graph = createLayoutGraph(molecule, { suppressH: true });
     const placement = layoutSupportedComponents(graph);
     const cleanup = runLocalCleanup(graph, placement.coords, { bondLength: graph.options.bondLength });

@@ -123,7 +123,7 @@ function makeManager(options = {}) {
     view2D: {
       getHCounts: () => new Map(),
       getStereoMap: () => options.stereoMap ?? null,
-      toSVGPt: atom => options.toSVGPt?.(atom) ?? ({ x: atom.x, y: atom.y })
+      toSVGPt: atom => options.toSVGPt?.(atom) ?? { x: atom.x, y: atom.y }
     },
     view: {
       getGraphSelection: () => new FakeSelection(records)
@@ -350,7 +350,7 @@ describe('createSelectionOverlayManager', () => {
       mode: '2d',
       mol2D: mol,
       selectedAtomIds: new Set(['h1']),
-      toSVGPt: atom => atom.id === 'h1' ? { x: 90, y: 25 } : { x: atom.x, y: atom.y }
+      toSVGPt: atom => (atom.id === 'h1' ? { x: 90, y: 25 } : { x: atom.x, y: atom.y })
     });
 
     manager.redraw2dSelection();

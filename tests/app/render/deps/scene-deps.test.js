@@ -127,10 +127,7 @@ describe('scene deps builders', () => {
     assert.equal(deps.callbacks.hasHighlights(), true);
     deps.events.handleForceAtomContextMenu();
     deps.callbacks.applyForceSelection();
-    assert.deepEqual(records, [
-      ['atomContext'],
-      ['applySelection']
-    ]);
+    assert.deepEqual(records, [['atomContext'], ['applySelection']]);
   });
 
   it('builds 2d scene, selection overlay, and force selection deps', () => {
@@ -236,10 +233,6 @@ describe('scene deps builders', () => {
     assert.deepEqual(forceSelection.selection.getRenderableSelectionIds(), { atomIds: [1], bondIds: [2] });
     forceSelection.cache.setSelectionLines('L');
     forceSelection.cache.setSelectionCircles('C');
-    assert.deepEqual(records.slice(-3), [
-      ['atomContext'],
-      ['selectionLines', 'L'],
-      ['selectionCircles', 'C']
-    ]);
+    assert.deepEqual(records.slice(-3), [['atomContext'], ['selectionLines', 'L'], ['selectionCircles', 'C']]);
   });
 });

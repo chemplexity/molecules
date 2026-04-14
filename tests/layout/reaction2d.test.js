@@ -270,6 +270,18 @@ test('force reaction arrow keeps its previous lane when the new lane is only mar
   assert.equal(arrow.offset, -10, 'expected previous arrow lane to be kept when still nearly as clear');
 });
 
+test('force reaction arrow retries with tighter padding when rotated preview boxes get temporarily close', () => {
+  const reactant = { minX: -40, maxX: -20, minY: -30, maxY: -10, cx: -30, cy: -20 };
+  const product = { minX: 10, maxX: 30, minY: 10, maxY: 30, cx: 20, cy: 20 };
+
+  const arrow = _chooseReactionPreviewForceArrow(reactant, product, [], {
+    pad: 16
+  });
+
+  assert.ok(arrow, 'expected force reaction arrow fallback to keep the arrow visible');
+  assert.ok(Math.hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y) >= 12, 'expected fallback arrow to remain long enough to draw clearly');
+});
+
 test('reaction preview erase targets ignore product-side atoms and bonds', () => {
   const sourceMol = parseSMILES('CCO');
   const smirks = reactionTemplates.alcoholDehydration.smirks;
@@ -793,9 +805,7 @@ test('reaction preview preserves exact stereobond choices on both sides for unto
     .sort((a, b) => a.bondId.localeCompare(b.bondId));
   assert.deepEqual(
     productStereoBonds,
-    sourceStereoBonds
-      .map(({ bondId, type }) => ({ bondId: `__rxn_product__0:${bondId}`, type }))
-      .sort((a, b) => a.bondId.localeCompare(b.bondId)),
+    sourceStereoBonds.map(({ bondId, type }) => ({ bondId: `__rxn_product__0:${bondId}`, type })).sort((a, b) => a.bondId.localeCompare(b.bondId)),
     'expected untouched product stereobond choices to match the reactant-side display'
   );
 });

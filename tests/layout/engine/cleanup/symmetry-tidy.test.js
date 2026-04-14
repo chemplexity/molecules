@@ -9,10 +9,13 @@ import { centroid, rotate, sub } from '../../../../src/layout/engine/geometry/ve
 
 describe('layout/engine/cleanup/symmetry-tidy', () => {
   it('snaps tiny near-axis noise back to exact zero', () => {
-    const result = tidySymmetry(new Map([
-      ['a0', { x: 1e-7, y: -1e-7 }],
-      ['a1', { x: 1, y: 2 }]
-    ]), { epsilon: 1e-6 });
+    const result = tidySymmetry(
+      new Map([
+        ['a0', { x: 1e-7, y: -1e-7 }],
+        ['a1', { x: 1, y: 2 }]
+      ]),
+      { epsilon: 1e-6 }
+    );
     assert.deepEqual(result.coords.get('a0'), { x: 0, y: 0 });
     assert.ok(result.snappedCount >= 2);
   });
@@ -41,9 +44,6 @@ describe('layout/engine/cleanup/symmetry-tidy', () => {
     const secondPosition = result.coords.get(secondAtomId);
 
     assert.equal(result.junctionSnapCount, 1);
-    assert.ok(
-      Math.abs(firstPosition.x - secondPosition.x) < 1e-6
-      || Math.abs(firstPosition.y - secondPosition.y) < 1e-6
-    );
+    assert.ok(Math.abs(firstPosition.x - secondPosition.x) < 1e-6 || Math.abs(firstPosition.y - secondPosition.y) < 1e-6);
   });
 });

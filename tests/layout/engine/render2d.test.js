@@ -66,17 +66,11 @@ describe('layout/engine/render2d', () => {
       syncStereoDisplay: true
     });
     molecule.hideHydrogens();
-    const before = [...molecule.atoms.values()]
-      .filter(atom => atom.name === 'H')
-      .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
+    const before = [...molecule.atoms.values()].filter(atom => atom.name === 'H').map(atom => [atom.id, { x: atom.x, y: atom.y }]);
     const firstRender = renderMolSVG(molecule, { layoutResult });
-    const afterFirstRender = [...molecule.atoms.values()]
-      .filter(atom => atom.name === 'H')
-      .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
+    const afterFirstRender = [...molecule.atoms.values()].filter(atom => atom.name === 'H').map(atom => [atom.id, { x: atom.x, y: atom.y }]);
     const secondRender = renderMolSVG(molecule, { layoutResult });
-    const afterSecondRender = [...molecule.atoms.values()]
-      .filter(atom => atom.name === 'H')
-      .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
+    const afterSecondRender = [...molecule.atoms.values()].filter(atom => atom.name === 'H').map(atom => [atom.id, { x: atom.x, y: atom.y }]);
 
     assert.ok(firstRender, 'expected first SVG render output');
     assert.ok(secondRender, 'expected second SVG render output');

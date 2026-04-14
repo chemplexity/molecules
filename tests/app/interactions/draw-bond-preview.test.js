@@ -147,7 +147,8 @@ function makeActions(overrides = {}) {
       atomColor: element => `fill-${element}`,
       strokeColor: element => `stroke-${element}`,
       singleBondWidth: () => '3',
-      labelHalfW: label => label.length * 5
+      labelHalfW: label => label.length * 5,
+      toSelectionSVGPt2d: atom => overrides.toSelectionSVGPt2d?.(atom) ?? null
     }
   });
 
@@ -180,6 +181,25 @@ describe('createDrawBondPreviewActions', () => {
     });
     assert.equal(g.select('g.draw-bond-preview').empty(), false);
     assert.equal(g.select('text.draw-bond-dest-label').empty(), false);
+  });
+
+  it('starts a 2D preview from the projected rendered point when available', () => {
+    const atom = { id: 'H4', x: 1, y: 2, visible: false, name: 'H' };
+    const { actions, getDrawBondState } = makeActions({
+      atomById: atomId => (atomId === 'H4' ? atom : null),
+      toSelectionSVGPt2d: currentAtom => (currentAtom?.id === 'H4' ? { x: 412, y: 156 } : null)
+    });
+
+    actions.start('H4', 10, 20);
+
+    assert.deepEqual(getDrawBondState(), {
+      atomId: 'H4',
+      ox: 412,
+      oy: 156,
+      ex: 412,
+      ey: 156,
+      dragged: false
+    });
   });
 
   it('updates a 2D preview and snaps to a nearby atom', () => {

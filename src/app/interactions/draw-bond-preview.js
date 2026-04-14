@@ -157,9 +157,15 @@ export function createDrawBondPreviewActions(context) {
       if (!atom || atom.x == null) {
         return;
       }
-      const { width, height } = context.plot.getSize();
-      ox = width / 2 + (atom.x - context.view2D.getCenterX()) * context.constants.scale;
-      oy = height / 2 - (atom.y - context.view2D.getCenterY()) * context.constants.scale;
+      const projectedPoint = context.helpers.toSelectionSVGPt2d?.(atom) ?? null;
+      if (projectedPoint && Number.isFinite(projectedPoint.x) && Number.isFinite(projectedPoint.y)) {
+        ox = projectedPoint.x;
+        oy = projectedPoint.y;
+      } else {
+        const { width, height } = context.plot.getSize();
+        ox = width / 2 + (atom.x - context.view2D.getCenterX()) * context.constants.scale;
+        oy = height / 2 - (atom.y - context.view2D.getCenterY()) * context.constants.scale;
+      }
     }
 
     const ex = ox;

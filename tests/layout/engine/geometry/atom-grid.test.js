@@ -10,10 +10,7 @@ describe('layout/engine/geometry/atom-grid', () => {
     atomGrid.insert('a1', { x: 0.8, y: 0.1 });
     atomGrid.insert('a2', { x: 4, y: 4 });
 
-    assert.deepEqual(
-      atomGrid.queryRadius({ x: 0.2, y: 0.1 }, 0.9).sort(),
-      ['a0', 'a1']
-    );
+    assert.deepEqual(atomGrid.queryRadius({ x: 0.2, y: 0.1 }, 0.9).sort(), ['a0', 'a1']);
 
     atomGrid.remove('a1', { x: 0.8, y: 0.1 });
     assert.deepEqual(atomGrid.queryRadius({ x: 0.2, y: 0.1 }, 0.9), ['a0']);

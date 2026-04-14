@@ -121,9 +121,36 @@ describe('initPhyschemPanel', () => {
     assert.deepEqual(calls.slice(0, 5), [
       ['setPersistentHighlightFallback', 'physchem', false],
       ['fallbackResult', false],
-      ['setHighlight', [new Map([['a1', 'a1'], ['a2', 'a2']])], { style: 'physchem' }],
-      ['setHighlight', [new Map([['a1', 'a1'], ['a2', 'a2']])], { style: 'physchem' }],
-      ['setHighlight', [new Map([['a1', 'a1'], ['a2', 'a2']])], { style: 'physchem' }]
+      [
+        'setHighlight',
+        [
+          new Map([
+            ['a1', 'a1'],
+            ['a2', 'a2']
+          ])
+        ],
+        { style: 'physchem' }
+      ],
+      [
+        'setHighlight',
+        [
+          new Map([
+            ['a1', 'a1'],
+            ['a2', 'a2']
+          ])
+        ],
+        { style: 'physchem' }
+      ],
+      [
+        'setHighlight',
+        [
+          new Map([
+            ['a1', 'a1'],
+            ['a2', 'a2']
+          ])
+        ],
+        { style: 'physchem' }
+      ]
     ]);
   });
 });

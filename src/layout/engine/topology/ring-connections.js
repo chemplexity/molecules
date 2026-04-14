@@ -31,9 +31,7 @@ function buildNeighborMap(molecule) {
  * @returns {string} Stable undirected pair key.
  */
 function bondKey(firstAtomId, secondAtomId) {
-  return firstAtomId < secondAtomId
-    ? `${firstAtomId}:${secondAtomId}`
-    : `${secondAtomId}:${firstAtomId}`;
+  return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
 }
 
 /**
@@ -192,13 +190,7 @@ export function isBridgedConnection(molecule, rings, firstRingId, secondRingId, 
     ...longRingArcInternalAtomIds(firstRing.atomIds, firstSharedAtomId, secondSharedAtomId),
     ...longRingArcInternalAtomIds(secondRing.atomIds, firstSharedAtomId, secondSharedAtomId)
   ]);
-  return hasBridgePathOutsideRingAtoms(
-    firstSharedAtomId,
-    secondSharedAtomId,
-    excludedAtomIds,
-    bondKey(firstSharedAtomId, secondSharedAtomId),
-    neighborMap
-  );
+  return hasBridgePathOutsideRingAtoms(firstSharedAtomId, secondSharedAtomId, excludedAtomIds, bondKey(firstSharedAtomId, secondSharedAtomId), neighborMap);
 }
 
 /**
@@ -255,13 +247,7 @@ export function buildRingConnections(molecule, rings) {
       if (!kind) {
         continue;
       }
-      const connection = createRingConnection(
-        connections.length,
-        firstRing.id,
-        secondRing.id,
-        sharedAtomIds,
-        kind
-      );
+      const connection = createRingConnection(connections.length, firstRing.id, secondRing.id, sharedAtomIds, kind);
       connections.push(connection);
       ringAdj.get(firstRing.id)?.push(secondRing.id);
       ringAdj.get(secondRing.id)?.push(firstRing.id);

@@ -162,8 +162,8 @@ function computeRingInteriorVector(layoutGraph, coords, anchorAtomId) {
     if (countedAtoms === 0) {
       continue;
     }
-    inwardX += (centroidX / countedAtoms) - anchorPosition.x;
-    inwardY += (centroidY / countedAtoms) - anchorPosition.y;
+    inwardX += centroidX / countedAtoms - anchorPosition.x;
+    inwardY += centroidY / countedAtoms - anchorPosition.y;
     countedRings++;
   }
 
@@ -204,8 +204,7 @@ function containingIncidentRingCount(layoutGraph, coords, anchorAtomId, position
  * @returns {boolean} True when the candidate flips an outward substituent inward.
  */
 function flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, currentRootPosition, candidateRootPosition, tolerance) {
-  if (containingIncidentRingCount(layoutGraph, coords, anchorAtomId, candidateRootPosition)
-    > containingIncidentRingCount(layoutGraph, coords, anchorAtomId, currentRootPosition)) {
+  if (containingIncidentRingCount(layoutGraph, coords, anchorAtomId, candidateRootPosition) > containingIncidentRingCount(layoutGraph, coords, anchorAtomId, currentRootPosition)) {
     return true;
   }
   const anchorPosition = coords.get(anchorAtomId);
@@ -317,7 +316,7 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         // Improvement = overlap delta + anchor distortion delta (all O(k·n), no full O(n²) call).
         const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, { atomGrid });
         const newAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, anchorAtomId, newPositions);
-        const improvement = (baseOverlapCost - newOverlapCost) + (baseAnchorDistortion - newAnchorDistortion);
+        const improvement = baseOverlapCost - newOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
         if (improvement > epsilon && (!bestMove || improvement > bestMove.improvement)) {
           bestMove = {
             positions: [...newPositions.entries()],
@@ -347,8 +346,8 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
           const rotatedFirstRoot = add(anchorPosition, fromAngle(angle, firstCurrentRadius));
           const rotatedSecondRoot = add(anchorPosition, fromAngle(angleOf(sub(secondRootPosition, anchorPosition)) + rotation, secondCurrentRadius));
           if (
-            flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, firstRootPosition, rotatedFirstRoot, inwardFlipTolerance)
-            || flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, secondRootPosition, rotatedSecondRoot, inwardFlipTolerance)
+            flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, firstRootPosition, rotatedFirstRoot, inwardFlipTolerance) ||
+            flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, secondRootPosition, rotatedSecondRoot, inwardFlipTolerance)
           ) {
             continue;
           }
@@ -381,7 +380,7 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
 
           const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, { atomGrid });
           const newAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, anchorAtomId, newPositions);
-          const improvement = (baseOverlapCost - newOverlapCost) + (baseAnchorDistortion - newAnchorDistortion);
+          const improvement = baseOverlapCost - newOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
           if (improvement > epsilon && (!bestMove || improvement > bestMove.improvement)) {
             bestMove = {
               positions: [...newPositions.entries()],

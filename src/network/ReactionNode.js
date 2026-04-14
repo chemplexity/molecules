@@ -17,12 +17,12 @@ export class ReactionNode {
     this.reactants = [...reactants];
     this.products = [...products];
     this.reversible = reversible;
-    
+
     // Enforce that conditions is an Object to guarantee clean serialization
     if (typeof conditions !== 'object' || conditions === null || Array.isArray(conditions)) {
       throw new TypeError('Reaction conditions must be an object schema.');
     }
-    
+
     this.conditions = { ...conditions };
   }
 }

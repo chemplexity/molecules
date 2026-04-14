@@ -11,17 +11,9 @@ import { angleOf, centroid, distance, sub } from '../geometry/vec2.js';
  * @returns {object[]} Eligible macrocycle rings sorted largest-first.
  */
 function eligibleMacrocycleRings(layoutGraph, coords) {
-  const simpleMacrocycleRingIds = new Set(
-    layoutGraph.ringSystems
-      .filter(ringSystem => ringSystem.ringIds.length === 1)
-      .flatMap(ringSystem => ringSystem.ringIds)
-  );
+  const simpleMacrocycleRingIds = new Set(layoutGraph.ringSystems.filter(ringSystem => ringSystem.ringIds.length === 1).flatMap(ringSystem => ringSystem.ringIds));
   return [...layoutGraph.rings]
-    .filter(ring =>
-      ring.size >= 12
-      && simpleMacrocycleRingIds.has(ring.id)
-      && ring.atomIds.every(atomId => coords.has(atomId))
-    )
+    .filter(ring => ring.size >= 12 && simpleMacrocycleRingIds.has(ring.id) && ring.atomIds.every(atomId => coords.has(atomId)))
     .sort((firstRing, secondRing) => secondRing.size - firstRing.size || firstRing.id - secondRing.id);
 }
 
@@ -71,8 +63,8 @@ export function runRingPerimeterCorrection(layoutGraph, inputCoords, options = {
           continue;
         }
         coords.set(atomId, {
-          x: currentPosition.x + ((idealPosition.x - currentPosition.x) * 0.5),
-          y: currentPosition.y + ((idealPosition.y - currentPosition.y) * 0.5)
+          x: currentPosition.x + (idealPosition.x - currentPosition.x) * 0.5,
+          y: currentPosition.y + (idealPosition.y - currentPosition.y) * 0.5
         });
         nudges++;
         moved = true;

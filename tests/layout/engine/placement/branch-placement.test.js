@@ -79,15 +79,7 @@ describe('layout/engine/placement/branch-placement', () => {
       ['a2', { x: 2.25, y: 1.299038105676658 }]
     ]);
 
-    placeRemainingBranches(
-      adjacency,
-      graph.canonicalAtomRank,
-      coords,
-      new Set(['a0', 'a1', 'a2', 'a3', 'f0', 'f1']),
-      ['a0', 'a1', 'a2'],
-      1.5,
-      graph
-    );
+    placeRemainingBranches(adjacency, graph.canonicalAtomRank, coords, new Set(['a0', 'a1', 'a2', 'a3', 'f0', 'f1']), ['a0', 'a1', 'a2'], 1.5, graph);
 
     const anchorPosition = coords.get('a2');
 
@@ -101,9 +93,7 @@ describe('layout/engine/placement/branch-placement', () => {
     molecule.addAtom('x0', 'C');
     molecule.addAtom('x1', 'C');
     const graph = createLayoutGraph(molecule, {
-      fixedCoords: new Map([
-        ['x0', { x: 1.5, y: 3 }]
-      ])
+      fixedCoords: new Map([['x0', { x: 1.5, y: 3 }]])
     });
     const adjacency = new Map([
       ['a0', ['a1']],
@@ -179,10 +169,7 @@ describe('layout/engine/placement/branch-placement', () => {
     const nitrogenAngle = ((Math.atan2(coords.get('n0').y - sulfurPosition.y, coords.get('n0').x - sulfurPosition.x) * 180) / Math.PI + 360) % 360;
     const firstOxoAngle = ((Math.atan2(coords.get('o0').y - sulfurPosition.y, coords.get('o0').x - sulfurPosition.x) * 180) / Math.PI + 360) % 360;
     const secondOxoAngle = ((Math.atan2(coords.get('o1').y - sulfurPosition.y, coords.get('o1').x - sulfurPosition.x) * 180) / Math.PI + 360) % 360;
-    const oxoSeparation = Math.min(
-      Math.abs(firstOxoAngle - secondOxoAngle),
-      360 - Math.abs(firstOxoAngle - secondOxoAngle)
-    );
+    const oxoSeparation = Math.min(Math.abs(firstOxoAngle - secondOxoAngle), 360 - Math.abs(firstOxoAngle - secondOxoAngle));
 
     assert.ok(Math.abs(nitrogenAngle) < 1e-6 || Math.abs(nitrogenAngle - 360) < 1e-6);
     assert.equal(oxoSeparation, 180);
@@ -210,10 +197,7 @@ describe('layout/engine/placement/branch-placement', () => {
     const sulfurPosition = coords.get('s0');
     const firstOxoAngle = ((Math.atan2(coords.get('o0').y - sulfurPosition.y, coords.get('o0').x - sulfurPosition.x) * 180) / Math.PI + 360) % 360;
     const secondOxoAngle = ((Math.atan2(coords.get('o1').y - sulfurPosition.y, coords.get('o1').x - sulfurPosition.x) * 180) / Math.PI + 360) % 360;
-    const oxoSeparation = Math.min(
-      Math.abs(firstOxoAngle - secondOxoAngle),
-      360 - Math.abs(firstOxoAngle - secondOxoAngle)
-    );
+    const oxoSeparation = Math.min(Math.abs(firstOxoAngle - secondOxoAngle), 360 - Math.abs(firstOxoAngle - secondOxoAngle));
 
     assert.equal(oxoSeparation, 180);
     assert.ok([90, 270].includes(firstOxoAngle));
@@ -233,12 +217,7 @@ describe('layout/engine/placement/branch-placement', () => {
     }
     const coords = new Map(ringLayout.coords);
     const branchConstraints = {
-      angularBudgets: computeMacrocycleAngularBudgets(
-        graph.rings,
-        ringLayout.coords,
-        graph,
-        new Set(graph.components[0].atomIds)
-      )
+      angularBudgets: computeMacrocycleAngularBudgets(graph.rings, ringLayout.coords, graph, new Set(graph.components[0].atomIds))
     };
 
     placeRemainingBranches(
@@ -256,14 +235,11 @@ describe('layout/engine/placement/branch-placement', () => {
       x: coords.get('a12').x - coords.get('a0').x,
       y: coords.get('a12').y - coords.get('a0').y
     });
-    const offset = Math.atan2(
-      Math.sin(placedAngle - budget.centerAngle),
-      Math.cos(placedAngle - budget.centerAngle)
-    );
+    const offset = Math.atan2(Math.sin(placedAngle - budget.centerAngle), Math.cos(placedAngle - budget.centerAngle));
 
     assert.ok(budget, 'expected a computed macrocycle angular budget for a0');
-    assert.ok(offset >= (budget.minOffset - 1e-6), 'expected substituent angle to stay above the macrocycle budget floor');
-    assert.ok(offset <= (budget.maxOffset + 1e-6), 'expected substituent angle to stay below the macrocycle budget ceiling');
+    assert.ok(offset >= budget.minOffset - 1e-6, 'expected substituent angle to stay above the macrocycle budget floor');
+    assert.ok(offset <= budget.maxOffset + 1e-6, 'expected substituent angle to stay below the macrocycle budget ceiling');
   });
 
   it('uses macrocycle preferred budget angles so adjacent dense substituents do not collapse onto one discrete ray', () => {
@@ -284,12 +260,7 @@ describe('layout/engine/placement/branch-placement', () => {
     }
     const coords = new Map(ringLayout.coords);
     const branchConstraints = {
-      angularBudgets: computeMacrocycleAngularBudgets(
-        graph.rings,
-        ringLayout.coords,
-        graph,
-        new Set(graph.components[0].atomIds)
-      )
+      angularBudgets: computeMacrocycleAngularBudgets(graph.rings, ringLayout.coords, graph, new Set(graph.components[0].atomIds))
     };
 
     placeRemainingBranches(
@@ -346,16 +317,7 @@ describe('layout/engine/placement/branch-placement', () => {
       angularBudgets: computeMacrocycleAngularBudgets(graph.rings, ringLayout.coords, graph, participantAtomIds)
     };
 
-    placeRemainingBranches(
-      adjacency,
-      graph.canonicalAtomRank,
-      coords,
-      participantAtomIds,
-      graph.rings[0].atomIds,
-      graph.options.bondLength,
-      graph,
-      branchConstraints
-    );
+    placeRemainingBranches(adjacency, graph.canonicalAtomRank, coords, participantAtomIds, graph.rings[0].atomIds, graph.options.bondLength, graph, branchConstraints);
 
     assert.equal(coords.has('x0'), true);
     assert.equal(coords.has('x1'), true);

@@ -23,8 +23,8 @@ function templateValidationClass(templateId) {
   if (!template?.geometryValidation) {
     return 'planar';
   }
-  return template.geometryValidation.maxBondLengthFactor === BRIDGED_VALIDATION.maxBondLengthFactor
-    && template.geometryValidation.minBondLengthFactor === BRIDGED_VALIDATION.minBondLengthFactor
+  return template.geometryValidation.maxBondLengthFactor === BRIDGED_VALIDATION.maxBondLengthFactor &&
+    template.geometryValidation.minBondLengthFactor === BRIDGED_VALIDATION.minBondLengthFactor
     ? 'bridged'
     : 'planar';
 }

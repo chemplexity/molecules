@@ -23,9 +23,7 @@ function maxPerimeterDeviation(ring, coords, bondLength) {
   const baseScale = solveEllipseScale(ring.size, bondLength, aspectRatio, startAngle);
   const idealPoints = ellipsePerimeterPoints(center, ring.atomIds.length, baseScale * aspectRatio, baseScale / aspectRatio, startAngle);
 
-  return ring.atomIds.reduce((maxDeviation, atomId, index) => (
-    Math.max(maxDeviation, distance(coords.get(atomId), idealPoints[index]))
-  ), 0);
+  return ring.atomIds.reduce((maxDeviation, atomId, index) => Math.max(maxDeviation, distance(coords.get(atomId), idealPoints[index])), 0);
 }
 
 describe('layout/engine/cleanup/ring-perimeter-correction', () => {
@@ -49,9 +47,6 @@ describe('layout/engine/cleanup/ring-perimeter-correction', () => {
     });
 
     assert.ok(corrected.nudges >= 1);
-    assert.ok(
-      maxPerimeterDeviation(ring, corrected.coords, graph.options.bondLength)
-      < maxPerimeterDeviation(ring, distortedCoords, graph.options.bondLength)
-    );
+    assert.ok(maxPerimeterDeviation(ring, corrected.coords, graph.options.bondLength) < maxPerimeterDeviation(ring, distortedCoords, graph.options.bondLength));
   });
 });

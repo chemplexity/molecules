@@ -346,7 +346,11 @@ describe('create2DSceneRenderer', () => {
     assert.equal(state.cx, 0);
     assert.equal(state.cy, 0);
     assert.deepEqual(
-      records.filter(entry => ['generate2dCoords', 'setScene', 'clearSelection', 'setPreserveSelectionOnNextRender', 'updateFormula', 'updateDescriptors'].includes(entry[0]) || (entry[0] === 'call' && entry[1] === 'zoomTransform')),
+      records.filter(
+        entry =>
+          ['generate2dCoords', 'setScene', 'clearSelection', 'setPreserveSelectionOnNextRender', 'updateFormula', 'updateDescriptors'].includes(entry[0]) ||
+          (entry[0] === 'call' && entry[1] === 'zoomTransform')
+      ),
       [
         ['generate2dCoords'],
         ['call', 'zoomTransform', { x: 0, y: 0, k: 1 }],
@@ -397,18 +401,12 @@ describe('create2DSceneRenderer', () => {
       syncStereoDisplay: true
     });
     mol.hideHydrogens();
-    const before = [...mol.atoms.values()]
-      .filter(atom => atom.name === 'H')
-      .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
+    const before = [...mol.atoms.values()].filter(atom => atom.name === 'H').map(atom => [atom.id, { x: atom.x, y: atom.y }]);
 
     renderer.render2d(mol, { preserveGeometry: true });
-    const afterFirstRender = [...mol.atoms.values()]
-      .filter(atom => atom.name === 'H')
-      .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
+    const afterFirstRender = [...mol.atoms.values()].filter(atom => atom.name === 'H').map(atom => [atom.id, { x: atom.x, y: atom.y }]);
     renderer.render2d(mol, { preserveGeometry: true });
-    const afterSecondRender = [...mol.atoms.values()]
-      .filter(atom => atom.name === 'H')
-      .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
+    const afterSecondRender = [...mol.atoms.values()].filter(atom => atom.name === 'H').map(atom => [atom.id, { x: atom.x, y: atom.y }]);
 
     assert.deepEqual(afterFirstRender, before);
     assert.deepEqual(afterSecondRender, before);
@@ -428,7 +426,10 @@ describe('create2DSceneRenderer', () => {
     renderer.render2d(mol, { preserveGeometry: true });
 
     assert.ok(recorder.offsets.length > 0, 'expected stereo hydrogen bonds to be drawn');
-    assert.ok(recorder.offsets.every(({ offset }) => offset > 1e-6), 'expected rendered stereo hydrogens to be projected away from their parent atoms');
+    assert.ok(
+      recorder.offsets.every(({ offset }) => offset > 1e-6),
+      'expected rendered stereo hydrogens to be projected away from their parent atoms'
+    );
   });
 
   it('reprojects hidden stereo hydrogens when draw2d restores a different molecule', () => {
@@ -464,7 +465,10 @@ describe('create2DSceneRenderer', () => {
     renderer.draw2d();
 
     assert.ok(recorder.offsets.length > 0, 'expected stereo hydrogen bonds to be redrawn');
-    assert.ok(recorder.offsets.every(({ offset }) => offset > 1e-6), 'expected restored stereo hydrogens to remain projected away from their parent atoms');
+    assert.ok(
+      recorder.offsets.every(({ offset }) => offset > 1e-6),
+      'expected restored stereo hydrogens to remain projected away from their parent atoms'
+    );
   });
 
   it('returns projected SVG points for visible stereo hydrogens', () => {

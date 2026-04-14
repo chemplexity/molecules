@@ -205,7 +205,8 @@ export function initializeInteractionRuntime(ctx, options = {}) {
       atomColor: ctx.atomColor,
       strokeColor: ctx.strokeColor,
       singleBondWidth: ctx.singleBondWidth,
-      labelHalfW: ctx.labelHalfW
+      labelHalfW: ctx.labelHalfW,
+      toSelectionSVGPt2d: atom => ctx.toSelectionSVGPt2d?.(atom) ?? null
     })
   );
 

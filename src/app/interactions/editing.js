@@ -3,6 +3,51 @@
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
 
 /**
+ * Returns whether a hydrogen endpoint should be pruned when its selected bond
+ * is deleted instead of being left behind as a standalone displayed fragment.
+ * This keeps auto-shown stereo hydrogens from surviving as isolated atoms with
+ * valence warnings after the user erases just the bond glyph.
+ * @param {object|null|undefined} atom - Candidate bond-end atom.
+ * @param {object|null|undefined} bond - Bond scheduled for deletion.
+ * @param {Set<string>} deletedAtomIds - Atom ids already queued for deletion.
+ * @returns {boolean} True when the hydrogen should be removed after bond deletion.
+ */
+function shouldPruneDeletedBondHydrogen(atom, bond, deletedAtomIds) {
+  if (!atom || atom.name !== 'H' || deletedAtomIds.has(atom.id)) {
+    return false;
+  }
+  if ((atom.bonds?.length ?? 0) !== 1) {
+    return false;
+  }
+  const displayAs = bond?.properties?.display?.as ?? null;
+  return atom.visible === true || displayAs === 'wedge' || displayAs === 'dash';
+}
+
+/**
+ * Collects displayed hydrogens that should disappear along with deleted bonds.
+ * @param {object} mol - Molecule being edited.
+ * @param {Iterable<string>} deletedBondIds - Bond ids scheduled for deletion.
+ * @param {Set<string>} deletedAtomIds - Atom ids already queued for deletion.
+ * @returns {Set<string>} Hydrogen atom ids to prune after bond deletion.
+ */
+function collectDeletedBondHydrogenPruneIds(mol, deletedBondIds, deletedAtomIds) {
+  const hydrogenIds = new Set();
+  for (const bondId of deletedBondIds) {
+    const bond = mol.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    for (const atomId of bond.atoms ?? []) {
+      const atom = mol.atoms.get(atomId);
+      if (shouldPruneDeletedBondHydrogen(atom, bond, deletedAtomIds)) {
+        hydrogenIds.add(atom.id);
+      }
+    }
+  }
+  return hydrogenIds;
+}
+
+/**
  * Creates editing action handlers for deleting atoms/bonds and erasing items in both 2D and force-layout modes.
  * @param {object} context - Dependency context providing state, view, view2D, actions, policies, chemistry, force, overlays, and dom.
  * @returns {object} Object with `deleteSelection`, `deleteTargets`, and `eraseItem`.
@@ -14,9 +59,7 @@ export function createEditingActions(context) {
   }
 
   function deleteTargets(atomIds, bondIds, options = {}) {
-    const {
-      transient = false
-    } = options;
+    const { transient = false } = options;
     const selectedAtomIds = context.state.overlayState.getSelectedAtomIds();
     const selectedBondIds = context.state.overlayState.getSelectedBondIds();
     const targetAtomIds = transient ? new Set(atomIds) : new Set(selectedAtomIds);
@@ -44,6 +87,7 @@ export function createEditingActions(context) {
         const deletedAtomIds = new Set(targetAtomIds);
         const deletedBondIds = new Set(targetBondIds);
         const affectedHeavyIds = new Set();
+        const prunableHydrogenIds = collectDeletedBondHydrogenPruneIds(mol, deletedBondIds, deletedAtomIds);
 
         for (const id of deletedAtomIds) {
           const atom = mol.atoms.get(id);
@@ -90,6 +134,12 @@ export function createEditingActions(context) {
         for (const id of deletedBondIds) {
           if (mol.bonds.has(id)) {
             mol.removeBond(id, { pruneIsolated: false });
+          }
+        }
+        for (const hydrogenId of prunableHydrogenIds) {
+          const hydrogen = mol.atoms.get(hydrogenId);
+          if (hydrogen?.name === 'H' && (hydrogen.bonds?.length ?? 0) === 0) {
+            mol.removeAtom(hydrogenId);
           }
         }
 

@@ -22,9 +22,7 @@ function fusedTopology(graph) {
     }
     ringAdj.get(connection.firstRingId)?.push(connection.secondRingId);
     ringAdj.get(connection.secondRingId)?.push(connection.firstRingId);
-    const key = connection.firstRingId < connection.secondRingId
-      ? `${connection.firstRingId}:${connection.secondRingId}`
-      : `${connection.secondRingId}:${connection.firstRingId}`;
+    const key = connection.firstRingId < connection.secondRingId ? `${connection.firstRingId}:${connection.secondRingId}` : `${connection.secondRingId}:${connection.firstRingId}`;
     ringConnectionByPair.set(key, connection);
   }
   return { ringAdj, ringConnectionByPair };
@@ -40,10 +38,10 @@ function assertPlanarLayoutQuality(graph, coords) {
   const bondStats = measureBondLengthDeviation(graph, coords, graph.options.bondLength);
   assert.equal(findSevereOverlaps(graph, coords, graph.options.bondLength).length, 0);
   assert.ok(bondStats.failingBondCount <= AUDIT_PLANAR_VALIDATION.maxSevereOverlapCount);
-  assert.ok(bondStats.maxDeviation <= graph.options.bondLength * Math.max(
-    Math.abs(1 - AUDIT_PLANAR_VALIDATION.minBondLengthFactor),
-    Math.abs(AUDIT_PLANAR_VALIDATION.maxBondLengthFactor - 1)
-  ));
+  assert.ok(
+    bondStats.maxDeviation <=
+      graph.options.bondLength * Math.max(Math.abs(1 - AUDIT_PLANAR_VALIDATION.minBondLengthFactor), Math.abs(AUDIT_PLANAR_VALIDATION.maxBondLengthFactor - 1))
+  );
 }
 
 describe('layout/engine/families/fused', () => {
@@ -56,12 +54,17 @@ describe('layout/engine/families/fused', () => {
       [0, [1]],
       [1, [0]]
     ]);
-    const ringConnectionByPair = new Map([['0:1', {
-      firstRingId: 0,
-      secondRingId: 1,
-      sharedAtomIds: ['a4', 'a5'],
-      kind: 'fused'
-    }]]);
+    const ringConnectionByPair = new Map([
+      [
+        '0:1',
+        {
+          firstRingId: 0,
+          secondRingId: 1,
+          sharedAtomIds: ['a4', 'a5'],
+          kind: 'fused'
+        }
+      ]
+    ]);
     const result = layoutFusedFamily(rings, ringAdj, ringConnectionByPair, 1.5);
     assert.equal(result.coords.size, 10);
     assert.ok(Math.abs(distance(result.coords.get('a4'), result.coords.get('a5')) - 1.5) < 1e-6);
@@ -79,16 +82,11 @@ describe('layout/engine/families/fused', () => {
     const graph = createLayoutGraph(parseSMILES('c1cc2ccc3ccc4ccc5ccc6ccc1c1c2c3c4c5c61'));
     const { ringAdj, ringConnectionByPair } = fusedTopology(graph);
     const result = layoutFusedFamily(graph.rings, ringAdj, ringConnectionByPair, graph.options.bondLength, { layoutGraph: graph });
-    const sortedCenters = [...result.ringCenters.values()]
-      .map(center => Math.hypot(center.x, center.y))
-      .sort((firstValue, secondValue) => firstValue - secondValue);
+    const sortedCenters = [...result.ringCenters.values()].map(center => Math.hypot(center.x, center.y)).sort((firstValue, secondValue) => firstValue - secondValue);
     const centralRadius = sortedCenters[0];
     const outerRadii = sortedCenters.slice(1);
     const outerMean = outerRadii.reduce((sum, radius) => sum + radius, 0) / outerRadii.length;
-    const maxOuterDeviation = outerRadii.reduce(
-      (maxDeviation, radius) => Math.max(maxDeviation, Math.abs(radius - outerMean)),
-      0
-    );
+    const maxOuterDeviation = outerRadii.reduce((maxDeviation, radius) => Math.max(maxDeviation, Math.abs(radius - outerMean)), 0);
 
     assert.equal(result.placementMode, 'pericondensed');
     assert.ok(centralRadius < graph.options.bondLength * 0.2);

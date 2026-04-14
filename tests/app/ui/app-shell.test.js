@@ -254,7 +254,14 @@ describe('initAppShell', () => {
     const shell = initAppShell({
       win,
       dom: {
-        getPlotElement: () => ({ classList: { toggle() {}, contains() { return false; } } }),
+        getPlotElement: () => ({
+          classList: {
+            toggle() {},
+            contains() {
+              return false;
+            }
+          }
+        }),
         getLabelToggleElement: () => ({ classList: { toggle() {} } })
       },
       history: { undo() {}, redo() {} },
@@ -315,7 +322,14 @@ describe('initAppShell', () => {
         }
       },
       dom: {
-        getPlotElement: () => ({ classList: { toggle() {}, contains() { return false; } } }),
+        getPlotElement: () => ({
+          classList: {
+            toggle() {},
+            contains() {
+              return false;
+            }
+          }
+        }),
         getLabelToggleElement: () => ({ classList: { toggle() {} } })
       },
       history: { undo() {}, redo() {} },

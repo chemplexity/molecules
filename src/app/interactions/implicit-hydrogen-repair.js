@@ -3,7 +3,11 @@
 import { validateValence } from '../../validation/index.js';
 
 function collectWarningAtomIds(mol, targetIds) {
-  return new Set(validateValence(mol).filter(warning => targetIds.has(warning.atomId)).map(warning => warning.atomId));
+  return new Set(
+    validateValence(mol)
+      .filter(warning => targetIds.has(warning.atomId))
+      .map(warning => warning.atomId)
+  );
 }
 
 /**

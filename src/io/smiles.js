@@ -460,9 +460,7 @@ export function tokenize(input, tokens = []) {
   // `[Co-3]568`). Those interior matches are not real ring closures and can
   // steal partners from later legitimate tokens.
   {
-    const propertySpans = tokens
-      .filter(t => t.type === 'property')
-      .map(t => ({ start: t.index, end: t.index + t.term.length }));
+    const propertySpans = tokens.filter(t => t.type === 'property').map(t => ({ start: t.index, end: t.index + t.term.length }));
     if (propertySpans.length > 0) {
       for (let i = tokens.length - 1; i >= 0; i--) {
         if (tokens[i].tag !== 'ring') {
@@ -808,11 +806,7 @@ export function decode(tokens) {
       const bondIndex = keys.all.indexOf(bondID);
       const previousKey = bondIndex > 0 ? keys.all[bondIndex - 1] : null;
       const previousIsBranchClose = previousKey != null && bonds[previousKey]?.value === ')';
-      let sourceAtom = atoms[
-        previousIsBranchClose
-          ? previousBondSourceAtom(bondID, keys.all, atoms, bonds)
-          : previousBondSourceAtom(bondID, keys.all, atoms)
-      ];
+      let sourceAtom = atoms[previousIsBranchClose ? previousBondSourceAtom(bondID, keys.all, atoms, bonds) : previousBondSourceAtom(bondID, keys.all, atoms)];
       let targetAtom = atoms[nextAtom(bondID, keys.all, atoms)];
       let sourceIndex = 0;
       let targetIndex = 0;
@@ -991,10 +985,7 @@ export function decode(tokens) {
             case ')':
               if (keysAfter.length > 0) {
                 const immediateNextBond = bonds[keysAfter[0]];
-                if (
-                  immediateNextBond &&
-                  ['-', '=', '#', '$', ':', '/', '\\', '.'].includes(immediateNextBond.value)
-                ) {
+                if (immediateNextBond && ['-', '=', '#', '$', ':', '/', '\\', '.'].includes(immediateNextBond.value)) {
                   break;
                 }
               }

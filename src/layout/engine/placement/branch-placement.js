@@ -48,13 +48,10 @@ function occupiedNeighborAngles(adjacency, coords, anchorAtomId, _atomIdsToPlace
 }
 
 function scoreCandidateAngle(candidateAngle, occupiedAngles, preferredAngles) {
-  const minSeparation = occupiedAngles.length === 0
-    ? Math.PI
-    : Math.min(...occupiedAngles.map(occupiedAngle => angularDifference(candidateAngle, occupiedAngle)));
-  const preferredPenalty = !preferredAngles || preferredAngles.length === 0
-    ? 0
-    : Math.min(...preferredAngles.map(preferredAngle => angularDifference(candidateAngle, preferredAngle)));
-  return (minSeparation * 100) - preferredPenalty;
+  const minSeparation = occupiedAngles.length === 0 ? Math.PI : Math.min(...occupiedAngles.map(occupiedAngle => angularDifference(candidateAngle, occupiedAngle)));
+  const preferredPenalty =
+    !preferredAngles || preferredAngles.length === 0 ? 0 : Math.min(...preferredAngles.map(preferredAngle => angularDifference(candidateAngle, preferredAngle)));
+  return minSeparation * 100 - preferredPenalty;
 }
 
 /**
@@ -71,7 +68,7 @@ function filterAnglesByBudget(candidateAngles, anchorAtomId, branchConstraints) 
   }
   const filteredAngles = candidateAngles.filter(candidateAngle => {
     const offset = normalizeSignedAngle(candidateAngle - budget.centerAngle);
-    return offset >= (budget.minOffset - 1e-9) && offset <= (budget.maxOffset + 1e-9);
+    return offset >= budget.minOffset - 1e-9 && offset <= budget.maxOffset + 1e-9;
   });
   return filteredAngles.length > 0 ? filteredAngles : candidateAngles;
 }
@@ -286,7 +283,7 @@ function hasSafePreferredDiscreteAngle(occupiedAngles, preferredAngles = []) {
       return true;
     }
     const minSeparation = Math.min(...occupiedAngles.map(occupiedAngle => angularDifference(candidateAngle, occupiedAngle)));
-    return minSeparation >= (Math.PI / 6);
+    return minSeparation >= Math.PI / 6;
   });
 }
 
@@ -378,6 +375,42 @@ function isTerminalMultipleBondHetero(layoutGraph, centerAtomId, bond) {
 }
 
 /**
+ * Returns whether a child is a terminal single-bond hetero substituent on a non-aromatic ring atom.
+ * These substituents can safely prefer the exact ring-outward angle instead of
+ * snapping to the generic discrete branch lattice when the exact direction is already clear.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string|null} childAtomId - Candidate child atom ID.
+ * @returns {boolean} True when the child qualifies for exact ring-outward placement.
+ */
+function isTerminalRingHeteroSubstituent(layoutGraph, anchorAtomId, childAtomId) {
+  if (!layoutGraph || !childAtomId) {
+    return false;
+  }
+  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
+    return false;
+  }
+
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (!anchorAtom || !childAtom || anchorAtom.aromatic || childAtom.aromatic) {
+    return false;
+  }
+  if (childAtom.element === 'H' || childAtom.element === 'C') {
+    return false;
+  }
+  if ((layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0) {
+    return false;
+  }
+
+  const bond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
+  if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+    return false;
+  }
+  return childAtom.heavyDegree === 1;
+}
+
+/**
  * Describes a cross-like hypervalent main-group center when one is present.
  * These centers conventionally read as a 2D cross with single bonds opposite
  * each other and terminal multiple-bond hetero substituents perpendicular.
@@ -442,9 +475,7 @@ function preferredRingSystemAngle(layoutGraph, coords, anchorAtomId) {
   if (!ringSystem) {
     return null;
   }
-  const placedRingSystemPositions = ringSystem.atomIds
-    .filter(atomId => coords.has(atomId))
-    .map(atomId => coords.get(atomId));
+  const placedRingSystemPositions = ringSystem.atomIds.filter(atomId => coords.has(atomId)).map(atomId => coords.get(atomId));
   if (placedRingSystemPositions.length < 3) {
     return null;
   }
@@ -470,9 +501,7 @@ function preferredRingAngles(layoutGraph, coords, anchorAtomId) {
   }
   const ringAngles = [];
   for (const ring of anchorRings) {
-    const placedRingPositions = ring.atomIds
-      .filter(atomId => coords.has(atomId))
-      .map(atomId => coords.get(atomId));
+    const placedRingPositions = ring.atomIds.filter(atomId => coords.has(atomId)).map(atomId => coords.get(atomId));
     if (placedRingPositions.length < 3) {
       continue;
     }
@@ -528,7 +557,7 @@ function isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, exc
     }
     const dx = candidatePosition.x - position.x;
     const dy = candidatePosition.y - position.y;
-    if ((dx * dx) + (dy * dy) < clearanceFloorSq) {
+    if (dx * dx + dy * dy < clearanceFloorSq) {
       return false;
     }
   }
@@ -580,9 +609,7 @@ function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
   if (!layoutGraph || !coords.has(anchorAtomId)) {
     return [];
   }
-  return (layoutGraph.atomToRings.get(anchorAtomId) ?? [])
-    .map(ring => ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
-    .filter(polygon => polygon.length >= 3);
+  return (layoutGraph.atomToRings.get(anchorAtomId) ?? []).map(ring => ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean)).filter(polygon => polygon.length >= 3);
 }
 
 /**
@@ -598,25 +625,17 @@ function pickBestCandidateAngle(candidates, bondLength, preferClearance = true, 
     return DISCRETE_BRANCH_ANGLES[0];
   }
 
-  const safeCandidates = preferClearance && bondLength > 0
-    ? candidates.filter(candidate => candidate.isSafe !== false)
-    : candidates;
+  const safeCandidates = preferClearance && bondLength > 0 ? candidates.filter(candidate => candidate.isSafe !== false) : candidates;
   const clearanceCandidates = safeCandidates.length > 0 ? safeCandidates : candidates;
   const minimumInsideRingCount = Math.min(...clearanceCandidates.map(candidate => candidate.insideRingCount ?? 0));
   const candidatesToConsider = clearanceCandidates.filter(candidate => (candidate.insideRingCount ?? 0) === minimumInsideRingCount);
   const bestAngleScore = Math.max(...candidatesToConsider.map(candidate => candidate.angleScore));
   const scoreTolerance = Math.max(Math.abs(bestAngleScore) * ANGLE_SCORE_TIEBREAK_RATIO, 1e-9);
-  const nearBestCandidates = candidatesToConsider.filter(candidate => candidate.angleScore >= (bestAngleScore - scoreTolerance));
+  const nearBestCandidates = candidatesToConsider.filter(candidate => candidate.angleScore >= bestAngleScore - scoreTolerance);
   if (clearanceContext) {
     for (const candidate of nearBestCandidates) {
       if (!Number.isFinite(candidate.clearanceScore)) {
-        candidate.clearanceScore = candidateClearanceScore(
-          clearanceContext.anchorPosition,
-          candidate.angle,
-          bondLength,
-          clearanceContext.coords,
-          clearanceContext.excludedAtomIds
-        );
+        candidate.clearanceScore = candidateClearanceScore(clearanceContext.anchorPosition, candidate.angle, bondLength, clearanceContext.coords, clearanceContext.excludedAtomIds);
       }
     }
   }
@@ -657,23 +676,11 @@ function pickBestCandidateAngle(candidates, bondLength, preferClearance = true, 
  * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
  * @returns {Array<{angle: number, angleScore: number, clearanceScore: number|null, centerDistanceScore: number, insideRingCount: number, minSeparation: number, isSafe: boolean}>} Scored candidates.
  */
-function evaluateAngleCandidates(
-  candidateAngles,
-  occupiedAngles,
-  preferredAngles,
-  anchorPosition,
-  bondLength,
-  coords,
-  excludedAtomIds,
-  placementState,
-  ringPolygons = []
-) {
+function evaluateAngleCandidates(candidateAngles, occupiedAngles, preferredAngles, anchorPosition, bondLength, coords, excludedAtomIds, placementState, ringPolygons = []) {
   return candidateAngles.map(candidateAngle => {
     const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, bondLength));
     return {
-      minSeparation: occupiedAngles.length === 0
-        ? Math.PI
-        : Math.min(...occupiedAngles.map(occupiedAngle => angularDifference(candidateAngle, occupiedAngle))),
+      minSeparation: occupiedAngles.length === 0 ? Math.PI : Math.min(...occupiedAngles.map(occupiedAngle => angularDifference(candidateAngle, occupiedAngle))),
       angle: candidateAngle,
       angleScore: scoreCandidateAngle(candidateAngle, occupiedAngles, preferredAngles),
       clearanceScore: null,
@@ -697,17 +704,7 @@ function evaluateAngleCandidates(
  * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
  * @returns {number} Chosen continuation angle in radians.
  */
-function chooseContinuationAngle(
-  anchorPosition,
-  bondLength,
-  coords,
-  occupiedAngles,
-  preferredAngles,
-  candidateAngles,
-  excludedAtomIds,
-  placementState,
-  ringPolygons = []
-) {
+function chooseContinuationAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, candidateAngles, excludedAtomIds, placementState, ringPolygons = []) {
   const clearanceContext = {
     anchorPosition,
     coords,
@@ -726,40 +723,71 @@ function chooseContinuationAngle(
       placementState,
       ringPolygons
     );
-    const safePreferredCandidates = preferredCandidates.filter(
-      candidate => candidate.isSafe !== false
-    );
-    const bestPreferredInsideRingCount = safePreferredCandidates.length > 0
-      ? Math.min(...safePreferredCandidates.map(candidate => candidate.insideRingCount ?? 0))
-      : Number.POSITIVE_INFINITY;
-    const bestPreferredSeparation = safePreferredCandidates.length > 0
-      ? Math.max(...safePreferredCandidates.map(candidate => candidate.minSeparation ?? 0))
-      : 0;
-    if (
-      safePreferredCandidates.length > 0
-      && bestPreferredInsideRingCount === 0
-      && bestPreferredSeparation >= (Math.PI / 6)
-    ) {
+    const safePreferredCandidates = preferredCandidates.filter(candidate => candidate.isSafe !== false);
+    const bestPreferredInsideRingCount =
+      safePreferredCandidates.length > 0 ? Math.min(...safePreferredCandidates.map(candidate => candidate.insideRingCount ?? 0)) : Number.POSITIVE_INFINITY;
+    const bestPreferredSeparation = safePreferredCandidates.length > 0 ? Math.max(...safePreferredCandidates.map(candidate => candidate.minSeparation ?? 0)) : 0;
+    if (safePreferredCandidates.length > 0 && bestPreferredInsideRingCount === 0 && bestPreferredSeparation >= Math.PI / 6) {
       return pickBestCandidateAngle(safePreferredCandidates, bondLength, true, clearanceContext);
     }
   }
 
   return pickBestCandidateAngle(
-    evaluateAngleCandidates(
-      candidateAngles,
-      occupiedAngles,
-      preferredAngles,
-      anchorPosition,
-      bondLength,
-      coords,
-      excludedAtomIds,
-      placementState,
-      ringPolygons
-    ),
+    evaluateAngleCandidates(candidateAngles, occupiedAngles, preferredAngles, anchorPosition, bondLength, coords, excludedAtomIds, placementState, ringPolygons),
     bondLength,
     true,
     clearanceContext
   );
+}
+
+/**
+ * Chooses the exact preferred angle when it is already safe and outside any incident ring face.
+ * This is used for terminal hetero substituents on ring atoms so simple `OH`/`NH2`-like
+ * attachments can follow the true local outward direction instead of snapping to the
+ * discrete branch lattice.
+ * @param {{x: number, y: number}} anchorPosition - Anchor position.
+ * @param {number} bondLength - Target bond length.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {number[]} occupiedAngles - Occupied neighbor angles.
+ * @param {number[]} preferredAngles - Preferred exact continuation angles.
+ * @param {Set<string>} excludedAtomIds - Atoms to ignore during clearance scoring.
+ * @param {{sumX: number, sumY: number, count: number}|null} placementState - Running placement CoM state.
+ * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
+ * @returns {number|null} Safe exact preferred angle, or `null` when it should not be forced.
+ */
+function chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, excludedAtomIds, placementState, ringPolygons = []) {
+  const exactPreferredAngles = mergeCandidateAngles([], preferredAngles.filter(Number.isFinite));
+  if (exactPreferredAngles.length === 0) {
+    return null;
+  }
+
+  const clearanceContext = {
+    anchorPosition,
+    coords,
+    excludedAtomIds
+  };
+  const exactCandidates = evaluateAngleCandidates(
+    exactPreferredAngles,
+    occupiedAngles,
+    preferredAngles,
+    anchorPosition,
+    bondLength,
+    coords,
+    excludedAtomIds,
+    placementState,
+    ringPolygons
+  );
+  const safeExactCandidates = exactCandidates.filter(candidate => candidate.isSafe !== false);
+  if (safeExactCandidates.length === 0) {
+    return null;
+  }
+
+  const bestInsideRingCount = Math.min(...safeExactCandidates.map(candidate => candidate.insideRingCount ?? 0));
+  const bestSeparation = Math.max(...safeExactCandidates.map(candidate => candidate.minSeparation ?? 0));
+  if (bestInsideRingCount !== 0 || bestSeparation < Math.PI / 6) {
+    return null;
+  }
+  return pickBestCandidateAngle(safeExactCandidates, bondLength, true, clearanceContext);
 }
 
 function computeLegacyChildAngles(childCount, outAngle, fromRing, incomingAngle, isLinear) {
@@ -784,7 +812,7 @@ function computeLegacyChildAngles(childCount, outAngle, fromRing, incomingAngle,
   }
   const spread = (Math.PI * 4) / 3;
   const step = spread / Math.max(childCount - 1, 1);
-  return Array.from({ length: childCount }, (_, index) => outAngle - (spread / 2) + (index * step));
+  return Array.from({ length: childCount }, (_, index) => outAngle - spread / 2 + index * step);
 }
 
 /**
@@ -836,7 +864,7 @@ function largestGapAngles(fixedAngles, childCount) {
   }
 
   let gapStart = sortedAngles[sortedAngles.length - 1];
-  let gapSize = sortedAngles[0] - sortedAngles[sortedAngles.length - 1] + (Math.PI * 2);
+  let gapSize = sortedAngles[0] - sortedAngles[sortedAngles.length - 1] + Math.PI * 2;
   for (let index = 0; index < sortedAngles.length - 1; index++) {
     const gap = sortedAngles[index + 1] - sortedAngles[index];
     if (gap > gapSize) {
@@ -846,7 +874,7 @@ function largestGapAngles(fixedAngles, childCount) {
   }
 
   const step = gapSize / (childCount + 1);
-  return Array.from({ length: childCount }, (_, index) => gapStart + (step * (index + 1)));
+  return Array.from({ length: childCount }, (_, index) => gapStart + step * (index + 1));
 }
 
 function placedNeighborIds(adjacency, coords, anchorAtomId) {
@@ -1008,10 +1036,10 @@ function tetrahedralSpreadPenalty(layoutGraph, coords, atomId) {
     const currentAngle = sortedAngles[index];
     const nextAngle = sortedAngles[(index + 1) % sortedAngles.length];
     const rawGap = nextAngle - currentAngle;
-    separations.push(rawGap > 0 ? rawGap : rawGap + (Math.PI * 2));
+    separations.push(rawGap > 0 ? rawGap : rawGap + Math.PI * 2);
   }
 
-  return separations.reduce((sum, separation) => sum + ((separation - (Math.PI / 2)) ** 2), 0);
+  return separations.reduce((sum, separation) => sum + (separation - Math.PI / 2) ** 2, 0);
 }
 
 /**
@@ -1053,9 +1081,7 @@ function crossLikeHypervalentPenalty(layoutGraph, coords, atomId) {
 
 function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId) {
   const layoutCost = layoutGraph ? measureLayoutCost(layoutGraph, coords, bondLength) : 0;
-  return layoutCost
-    + (tetrahedralSpreadPenalty(layoutGraph, coords, anchorAtomId) * 20)
-    + (crossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * 20);
+  return layoutCost + tetrahedralSpreadPenalty(layoutGraph, coords, anchorAtomId) * 20 + crossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * 20;
 }
 
 /**
@@ -1069,49 +1095,34 @@ function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId) {
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
  * @returns {number[][]} Candidate angle sets sized to the requested child count.
  */
-function buildCandidateAngleSets(
-  adjacency,
-  coords,
-  anchorAtomId,
-  parentAtomId,
-  unplacedNeighborIds,
-  layoutGraph = null,
-  branchConstraints = null
-) {
+function buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, unplacedNeighborIds, layoutGraph = null, branchConstraints = null) {
   const anchorPosition = coords.get(anchorAtomId);
   const currentPlacedNeighborIds = placedNeighborIds(adjacency, coords, anchorAtomId);
   const ringAngles = preferredRingAngles(layoutGraph, coords, anchorAtomId);
   const fromRing = ringAngles.length > 0;
-  const incomingAngle = parentAtomId && coords.has(parentAtomId)
-    ? angleOf(sub(coords.get(parentAtomId), anchorPosition))
-    : ringAngles[0] == null
-      ? 0
-      : ringAngles[0] + Math.PI;
-  const outAngle = ringAngles[0] ?? (incomingAngle + Math.PI);
+  const incomingAngle = parentAtomId && coords.has(parentAtomId) ? angleOf(sub(coords.get(parentAtomId), anchorPosition)) : ringAngles[0] == null ? 0 : ringAngles[0] + Math.PI;
+  const outAngle = ringAngles[0] ?? incomingAngle + Math.PI;
   const hasMultipleBond = hasNonAromaticMultipleBond(layoutGraph, anchorAtomId);
   const isLinear = isLinearCenter(layoutGraph, anchorAtomId);
 
   const shouldUseGapStrategy =
     !fromRing &&
     currentPlacedNeighborIds.length > 0 &&
-    (
-      currentPlacedNeighborIds.length >= 2 ||
+    (currentPlacedNeighborIds.length >= 2 ||
       (!isLinear && unplacedNeighborIds.length >= 2 && (!hasMultipleBond || unplacedNeighborIds.length <= 2)) ||
-      (unplacedNeighborIds.length === 1 && currentPlacedNeighborIds.length >= 2)
-    );
+      (unplacedNeighborIds.length === 1 && currentPlacedNeighborIds.length >= 2));
 
   const fallbackAngleSets = shouldUseGapStrategy
-    ? [largestGapAngles(
-      currentPlacedNeighborIds
-        .map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition))),
-      unplacedNeighborIds.length
-    )]
+    ? [
+        largestGapAngles(
+          currentPlacedNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition))),
+          unplacedNeighborIds.length
+        )
+      ]
     : [computeLegacyChildAngles(unplacedNeighborIds.length, outAngle, fromRing, incomingAngle, isLinear)];
 
-  return [
-    ...crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
-    ...fallbackAngleSets
-  ].map(angleSet => filterAnglesByBudget(angleSet, anchorAtomId, branchConstraints))
+  return [...crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph), ...fallbackAngleSets]
+    .map(angleSet => filterAnglesByBudget(angleSet, anchorAtomId, branchConstraints))
     .filter(angleSet => angleSet.length === unplacedNeighborIds.length);
 }
 
@@ -1161,13 +1172,7 @@ function evaluateAnglePermutations(
       }));
 
       for (const placement of assignedPlacements) {
-        setPlacedPosition(
-          tempCoords,
-          tempPlacementState,
-          placement.childAtomId,
-          add(anchorPosition, fromAngle(placement.angle, bondLength)),
-          layoutGraph
-        );
+        setPlacedPosition(tempCoords, tempPlacementState, placement.childAtomId, add(anchorPosition, fromAngle(placement.angle, bondLength)), layoutGraph);
       }
 
       const recursionOrder = [...assignedPlacements].sort((firstPlacement, secondPlacement) => {
@@ -1225,15 +1230,7 @@ function chooseBatchAngleAssignments(
     return [];
   }
 
-  const angleSets = buildCandidateAngleSets(
-    adjacency,
-    coords,
-    anchorAtomId,
-    parentAtomId,
-    unplacedNeighborIds,
-    layoutGraph,
-    branchConstraints
-  );
+  const angleSets = buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, unplacedNeighborIds, layoutGraph, branchConstraints);
   const childDescriptors = unplacedNeighborIds.map(childAtomId => ({
     childAtomId,
     subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
@@ -1284,16 +1281,7 @@ function chooseBatchAngleAssignments(
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
  * @returns {number} Chosen attachment angle.
  */
-export function chooseAttachmentAngle(
-  adjacency,
-  coords,
-  anchorAtomId,
-  atomIdsToPlace,
-  preferredAngle = null,
-  layoutGraph = null,
-  attachedAtomId = null,
-  branchConstraints = null
-) {
+export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsToPlace, preferredAngle = null, layoutGraph = null, attachedAtomId = null, branchConstraints = null) {
   const occupiedAngles = occupiedNeighborAngles(adjacency, coords, anchorAtomId, atomIdsToPlace);
   if (attachedAtomId) {
     const placedNeighborIds = neighborOrder(
@@ -1301,19 +1289,26 @@ export function chooseAttachmentAngle(
       layoutGraph?.canonicalAtomRank ?? new Map()
     );
     const parentAtomId = placedNeighborIds.length === 1 ? placedNeighborIds[0] : null;
-    const continuationAngles = preferredBranchAngles(
-      adjacency,
-      coords,
-      anchorAtomId,
-      atomIdsToPlace,
-      parentAtomId,
-      attachedAtomId,
-      layoutGraph
-    );
+    const continuationAngles = preferredBranchAngles(adjacency, coords, anchorAtomId, atomIdsToPlace, parentAtomId, attachedAtomId, layoutGraph);
     const constrainedContinuationAngles = mergeCandidateAngles(
       filterAnglesByBudget(continuationAngles, anchorAtomId, branchConstraints),
       budgetPreferredAngles(anchorAtomId, branchConstraints)
     );
+    if (isTerminalRingHeteroSubstituent(layoutGraph, anchorAtomId, attachedAtomId)) {
+      const exactPreferredAngle = chooseExactPreferredAngle(
+        coords.get(anchorAtomId),
+        1,
+        coords,
+        occupiedAngles,
+        constrainedContinuationAngles,
+        new Set([anchorAtomId]),
+        null,
+        incidentRingPolygons(layoutGraph, coords, anchorAtomId)
+      );
+      if (exactPreferredAngle != null) {
+        return exactPreferredAngle;
+      }
+    }
     const preferredContinuationAngle = choosePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles);
     if (preferredContinuationAngle != null && hasSafePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles)) {
       return preferredContinuationAngle;
@@ -1322,10 +1317,7 @@ export function chooseAttachmentAngle(
 
   const preferredAngles = resolvedPreferredAngles(
     anchorAtomId,
-    [
-      ...(preferredAngle == null ? [] : [preferredAngle]),
-      ...preferredRingAngles(layoutGraph, coords, anchorAtomId)
-    ],
+    [...(preferredAngle == null ? [] : [preferredAngle]), ...preferredRingAngles(layoutGraph, coords, anchorAtomId)],
     branchConstraints
   );
   const constrainedCandidateAngles = mergeCandidateAngles(
@@ -1395,10 +1387,7 @@ function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsToPlace,
   if (prefersLinearContinuation(layoutGraph, anchorAtomId, resolvedParentAtomId, childAtomId)) {
     return [forwardAngle];
   }
-  return [
-    forwardAngle + CHAIN_CONTINUATION_OFFSET,
-    forwardAngle - CHAIN_CONTINUATION_OFFSET
-  ];
+  return [forwardAngle + CHAIN_CONTINUATION_OFFSET, forwardAngle - CHAIN_CONTINUATION_OFFSET];
 }
 
 function placeNeighborSequence(
@@ -1428,9 +1417,7 @@ function placeNeighborSequence(
     const preferredAngles = preferredBranchAngles(adjacency, coords, anchorAtomId, atomIdsToPlace, parentAtomId, childAtomId, layoutGraph);
     const excludedAtomIds = new Set([anchorAtomId, ...currentPlacedNeighborIds]);
     const childIsHydrogen = isHydrogenAtom(layoutGraph, childAtomId);
-    const scoringPreferredAngles = childIsHydrogen
-      ? []
-      : resolvedPreferredAngles(anchorAtomId, preferredAngles, branchConstraints);
+    const scoringPreferredAngles = childIsHydrogen ? [] : resolvedPreferredAngles(anchorAtomId, preferredAngles, branchConstraints);
     const constrainedPreferredAngles = mergeCandidateAngles(
       filterAnglesByBudget(scoringPreferredAngles, anchorAtomId, branchConstraints),
       childIsHydrogen ? [] : budgetPreferredAngles(anchorAtomId, branchConstraints)
@@ -1439,9 +1426,20 @@ function placeNeighborSequence(
       filterAnglesByBudget(DISCRETE_BRANCH_ANGLES, anchorAtomId, branchConstraints),
       budgetPreferredAngles(anchorAtomId, branchConstraints)
     );
-    const shouldHonorPreferredAngle = preferredAngles.length > 0
-      && !childIsHydrogen
-      && (currentPlacedNeighborIds.length === 1 || isRingAnchor(layoutGraph, anchorAtomId));
+    const shouldHonorPreferredAngle = preferredAngles.length > 0 && !childIsHydrogen && (currentPlacedNeighborIds.length === 1 || isRingAnchor(layoutGraph, anchorAtomId));
+    const exactPreferredAngle =
+      shouldHonorPreferredAngle && isTerminalRingHeteroSubstituent(layoutGraph, anchorAtomId, childAtomId)
+        ? chooseExactPreferredAngle(
+            anchorPosition,
+            bondLength,
+            coords,
+            occupiedAngles,
+            constrainedPreferredAngles,
+            excludedAtomIds,
+            placementState,
+            ringPolygons
+          )
+        : null;
     const fallbackCandidates = evaluateAngleCandidates(
       constrainedFallbackAngles,
       occupiedAngles,
@@ -1453,28 +1451,25 @@ function placeNeighborSequence(
       placementState,
       ringPolygons
     );
-    const chosenAngle = shouldHonorPreferredAngle
-      ? chooseContinuationAngle(
-        anchorPosition,
-        bondLength,
-        coords,
-        occupiedAngles,
-        constrainedPreferredAngles,
-        constrainedFallbackAngles,
-        excludedAtomIds,
-        placementState,
-        ringPolygons
-      )
-      : pickBestCandidateAngle(
-        fallbackCandidates,
-        bondLength,
-        !childIsHydrogen,
-        {
+    const chosenAngle =
+      exactPreferredAngle ??
+      (shouldHonorPreferredAngle
+        ? chooseContinuationAngle(
           anchorPosition,
+          bondLength,
           coords,
-          excludedAtomIds
-        }
-      );
+          occupiedAngles,
+          constrainedPreferredAngles,
+          constrainedFallbackAngles,
+          excludedAtomIds,
+          placementState,
+          ringPolygons
+        )
+        : pickBestCandidateAngle(fallbackCandidates, bondLength, !childIsHydrogen, {
+            anchorPosition,
+            coords,
+            excludedAtomIds
+          }));
     setPlacedPosition(coords, placementState, childAtomId, add(anchorPosition, fromAngle(chosenAngle, bondLength)), layoutGraph);
     occupiedAngles = occupiedAngles.concat([chosenAngle]);
     placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, childAtomId, anchorAtomId, bondLength, layoutGraph, branchConstraints, depth + 1);
@@ -1566,22 +1561,15 @@ function placeChildren(
  * @param {number} [depth] - Recursive depth guard for pathological graphs.
  * @returns {Map<string, {x: number, y: number}>} Updated coordinate map.
  */
-export function placeRemainingBranches(
-  adjacency,
-  canonicalAtomRank,
-  coords,
-  atomIdsToPlace,
-  seedAtomIds,
-  bondLength,
-  layoutGraph = null,
-  branchConstraints = null,
-  depth = 0
-) {
+export function placeRemainingBranches(adjacency, canonicalAtomRank, coords, atomIdsToPlace, seedAtomIds, bondLength, layoutGraph = null, branchConstraints = null, depth = 0) {
   if (depth > MAX_BRANCH_RECURSION_DEPTH) {
     return coords;
   }
   const placementState = seedPlacementState(layoutGraph, coords);
-  const orderedSeedAtomIds = neighborOrder(seedAtomIds.filter(atomId => coords.has(atomId)), canonicalAtomRank);
+  const orderedSeedAtomIds = neighborOrder(
+    seedAtomIds.filter(atomId => coords.has(atomId)),
+    canonicalAtomRank
+  );
   for (const seedAtomId of orderedSeedAtomIds) {
     const placedNeighbors = (adjacency.get(seedAtomId) ?? []).filter(neighborAtomId => coords.has(neighborAtomId) && atomIdsToPlace.has(neighborAtomId));
     const orderedPlacedNeighbors = neighborOrder(placedNeighbors, canonicalAtomRank);

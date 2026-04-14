@@ -181,7 +181,8 @@ describe('interaction action deps builders', () => {
       atomColor: () => '#000',
       strokeColor: () => '#111',
       singleBondWidth: () => 1,
-      labelHalfW: () => 3
+      labelHalfW: () => 3,
+      toSelectionSVGPt2d: atom => ({ x: atom?.id ?? 'x', y: 0 })
     });
     const commitDeps = createDrawBondCommitActionDeps({
       getMode: () => 'force',
@@ -238,6 +239,7 @@ describe('interaction action deps builders', () => {
     ]);
     assert.equal(editingDeps.force.getSimulation().id, 'sim');
     assert.equal(dragDeps.selection.getSelectedDragAtomIds().length, 2);
+    assert.deepEqual(previewDeps.helpers.toSelectionSVGPt2d({ id: 7 }), { x: 7, y: 0 });
     assert.equal(previewDeps.constants.forceBondLength, 30);
     assert.equal(commitDeps.constants.forceScale, 25);
   });

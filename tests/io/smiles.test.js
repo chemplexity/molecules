@@ -73,10 +73,7 @@ describe('parseSMILES', () => {
     assert.equal(validateValence(mol).length, 0);
     assert.equal(mol.getComponents().length, 1);
     assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'Os').length, 1);
-    assert.equal(
-      [...mol.bonds.values()].filter(bond => bond.properties.order === 1.5 && bond.properties.aromatic !== true).length,
-      0
-    );
+    assert.equal([...mol.bonds.values()].filter(bond => bond.properties.order === 1.5 && bond.properties.aromatic !== true).length, 0);
     assert.ok(
       [...mol.bonds.values()].some(
         bond =>
@@ -366,7 +363,10 @@ describe('parseSMILES — SMILES spec fixes', () => {
   it('parses explicit single-bond aromatic ring closure suffixes in fluorene-style SMILES', () => {
     const mol = parseSMILES('c1ccc2c(c1)Cc1ccccc1-2');
     assert.deepEqual(formula(mol), { C: 13, H: 10 });
-    const ringSizes = mol.getRings().map(ring => ring.length).sort((firstSize, secondSize) => firstSize - secondSize);
+    const ringSizes = mol
+      .getRings()
+      .map(ring => ring.length)
+      .sort((firstSize, secondSize) => firstSize - secondSize);
     assert.deepEqual(ringSizes, [5, 6, 6]);
     const bridgeBond = [...mol.bonds.values()].find(bond => {
       const atomIds = [...bond.atoms].sort();

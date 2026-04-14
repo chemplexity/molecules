@@ -1,9 +1,6 @@
 /** @module geometry/kk-layout */
 
-import {
-  DISTANCE_EPSILON,
-  NUMERIC_EPSILON
-} from '../constants.js';
+import { DISTANCE_EPSILON, NUMERIC_EPSILON } from '../constants.js';
 import { circumradiusForRegularPolygon } from './polygon.js';
 import { centroid, vec } from './vec2.js';
 
@@ -29,7 +26,7 @@ function buildRestrictedAdjacency(molecule, atomIds) {
  * @returns {number} Flat-array index.
  */
 function matrixIndex(rowIndex, columnIndex, count) {
-  return (rowIndex * count) + columnIndex;
+  return rowIndex * count + columnIndex;
 }
 
 /**
@@ -146,9 +143,7 @@ function initializePositions(atomIds, coords, pinnedAtomIds, center, bondLength)
 }
 
 function recenterFreePositions(positions, atomIds, pinnedAtomIds, targetCenter) {
-  const freePoints = atomIds
-    .map((atomId, index) => (pinnedAtomIds.has(atomId) ? null : positions[index]))
-    .filter(Boolean);
+  const freePoints = atomIds.map((atomId, index) => (pinnedAtomIds.has(atomId) ? null : positions[index])).filter(Boolean);
   if (freePoints.length === 0) {
     return;
   }
@@ -348,12 +343,7 @@ export function layoutKamadaKawai(
       if (index === otherIndex || springStrength[entryIndex] === 0) {
         continue;
       }
-      const contribution = pairGradientContribution(
-        origin,
-        positions[otherIndex],
-        springStrength[entryIndex],
-        targetLength[entryIndex]
-      );
+      const contribution = pairGradientContribution(origin, positions[otherIndex], springStrength[entryIndex], targetLength[entryIndex]);
       sumX += contribution.x;
       sumY += contribution.y;
     }
@@ -441,18 +431,8 @@ export function layoutKamadaKawai(
         continue;
       }
       const other = positions[otherIndex];
-      const oldContribution = pairGradientContribution(
-        other,
-        previousPosition,
-        springStrength[entryIndex],
-        targetLength[entryIndex]
-      );
-      const newContribution = pairGradientContribution(
-        other,
-        positions[index],
-        springStrength[entryIndex],
-        targetLength[entryIndex]
-      );
+      const oldContribution = pairGradientContribution(other, previousPosition, springStrength[entryIndex], targetLength[entryIndex]);
+      const newContribution = pairGradientContribution(other, positions[index], springStrength[entryIndex], targetLength[entryIndex]);
       energyX[otherIndex] += newContribution.x - oldContribution.x;
       energyY[otherIndex] += newContribution.y - oldContribution.y;
     }

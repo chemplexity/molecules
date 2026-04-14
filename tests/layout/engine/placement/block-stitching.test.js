@@ -25,15 +25,7 @@ describe('layout/engine/placement/block-stitching', () => {
       ['p1', { x: 0, y: 3.1 }]
     ]);
 
-    const refined = refineStitchedBlock(
-      childCoords,
-      ['c0', 'c1'],
-      'c0',
-      { x: 0, y: 0 },
-      Math.PI / 2,
-      1.5,
-      placedCoords
-    );
+    const refined = refineStitchedBlock(childCoords, ['c0', 'c1'], 'c0', { x: 0, y: 0 }, Math.PI / 2, 1.5, placedCoords);
 
     assert.notEqual(refined.angle, Math.PI / 2);
     assert.ok(Math.abs(refined.coords.get('c1').x) > 1e-3);

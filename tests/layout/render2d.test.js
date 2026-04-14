@@ -61,17 +61,11 @@ test('renderMolSVG does not mutate hidden stereo hydrogen coordinates while rend
     atom.y = parent?.y ?? null;
   }
 
-  const before = [...mol.atoms.values()]
-    .filter(atom => atom.name === 'H' && atom.visible === false)
-    .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
+  const before = [...mol.atoms.values()].filter(atom => atom.name === 'H' && atom.visible === false).map(atom => [atom.id, { x: atom.x, y: atom.y }]);
   const firstRender = renderMolSVG(mol);
-  const afterFirstRender = [...mol.atoms.values()]
-    .filter(atom => atom.name === 'H' && atom.visible === false)
-    .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
+  const afterFirstRender = [...mol.atoms.values()].filter(atom => atom.name === 'H' && atom.visible === false).map(atom => [atom.id, { x: atom.x, y: atom.y }]);
   const secondRender = renderMolSVG(mol);
-  const afterSecondRender = [...mol.atoms.values()]
-    .filter(atom => atom.name === 'H' && atom.visible === false)
-    .map(atom => [atom.id, { x: atom.x, y: atom.y }]);
+  const afterSecondRender = [...mol.atoms.values()].filter(atom => atom.name === 'H' && atom.visible === false).map(atom => [atom.id, { x: atom.x, y: atom.y }]);
 
   assert.ok(firstRender, 'expected first SVG render output');
   assert.ok(secondRender, 'expected second SVG render output');

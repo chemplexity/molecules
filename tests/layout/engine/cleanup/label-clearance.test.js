@@ -25,13 +25,17 @@ describe('layout/engine/cleanup/label-clearance', () => {
         textHeight: 0.8
       }
     });
-    const result = applyLabelClearance(graph, new Map([
-      ['a0', { x: 0, y: 0 }],
-      ['a1', { x: 0.1, y: 0 }]
-    ]), {
-      bondLength: graph.options.bondLength,
-      labelMetrics: graph.options.labelMetrics
-    });
+    const result = applyLabelClearance(
+      graph,
+      new Map([
+        ['a0', { x: 0, y: 0 }],
+        ['a1', { x: 0.1, y: 0 }]
+      ]),
+      {
+        bondLength: graph.options.bondLength,
+        labelMetrics: graph.options.labelMetrics
+      }
+    );
 
     assert.ok(result.nudges >= 1);
   });

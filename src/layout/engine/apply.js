@@ -44,12 +44,8 @@ function setDisplayStereo(bond, type, centerId = null, manual = false) {
  */
 function collectDisplayAssignments(molecule, coords, result) {
   const layoutGraph = result?.layoutGraph ?? createLayoutGraph(molecule);
-  const stereoAssignments = Array.isArray(result?.metadata?.stereo?.assignments)
-    ? result.metadata.stereo.assignments
-    : pickWedgeAssignments(layoutGraph, coords).assignments;
-  const extraAssignments = Array.isArray(result?.metadata?.displayAssignments)
-    ? result.metadata.displayAssignments
-    : [];
+  const stereoAssignments = Array.isArray(result?.metadata?.stereo?.assignments) ? result.metadata.stereo.assignments : pickWedgeAssignments(layoutGraph, coords).assignments;
+  const extraAssignments = Array.isArray(result?.metadata?.displayAssignments) ? result.metadata.displayAssignments : [];
   const assignments = [...stereoAssignments];
   const assignedBondIds = new Set(assignments.map(({ bondId }) => bondId));
 
@@ -201,13 +197,7 @@ export function applyCoords(molecule, coordsOrResult, options = {}) {
     }
   }
 
-  const hiddenHydrogenSummary = applyHiddenHydrogenMode(
-    molecule,
-    coords,
-    resolved.hiddenHydrogenMode,
-    resolved.preserveExisting,
-    resolved.clearUnplaced
-  );
+  const hiddenHydrogenSummary = applyHiddenHydrogenMode(molecule, coords, resolved.hiddenHydrogenMode, resolved.preserveExisting, resolved.clearUnplaced);
   appliedAtomCount += hiddenHydrogenSummary.appliedCount;
   preservedAtomCount += hiddenHydrogenSummary.preservedCount;
   clearedAtomCount += hiddenHydrogenSummary.clearedCount;

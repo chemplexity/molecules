@@ -5,11 +5,13 @@ import { parseSMILES } from '../../../../src/io/smiles.js';
 import { makeUnmatchedBridgedCage } from '../support/molecules.js';
 
 function averageDisplacement(firstCoords, secondCoords, atomIds) {
-  return atomIds.reduce((sum, atomId) => {
-    const first = firstCoords.get(atomId);
-    const second = secondCoords.get(atomId);
-    return sum + Math.hypot(first.x - second.x, first.y - second.y);
-  }, 0) / Math.max(atomIds.length, 1);
+  return (
+    atomIds.reduce((sum, atomId) => {
+      const first = firstCoords.get(atomId);
+      const second = secondCoords.get(atomId);
+      return sum + Math.hypot(first.x - second.x, first.y - second.y);
+    }, 0) / Math.max(atomIds.length, 1)
+  );
 }
 
 describe('layout/engine/geometry/kk-layout', () => {
@@ -30,9 +32,7 @@ describe('layout/engine/geometry/kk-layout', () => {
 
   it('does not skip moderately large components under the default size cutoff', () => {
     const molecule = parseSMILES(`C1${'C'.repeat(31)}C1`);
-    const atomIds = [...molecule.atoms.values()]
-      .filter(atom => atom.name !== 'H')
-      .map(atom => atom.id);
+    const atomIds = [...molecule.atoms.values()].filter(atom => atom.name !== 'H').map(atom => atom.id);
     const result = layoutKamadaKawai(molecule, atomIds, {
       bondLength: 1.5,
       maxIterations: 250,
@@ -45,9 +45,7 @@ describe('layout/engine/geometry/kk-layout', () => {
 
   it('skips disconnected components because the KK distance matrix remains non-finite', () => {
     const molecule = parseSMILES('CC.CC');
-    const atomIds = [...molecule.atoms.values()]
-      .filter(atom => atom.name !== 'H')
-      .map(atom => atom.id);
+    const atomIds = [...molecule.atoms.values()].filter(atom => atom.name !== 'H').map(atom => atom.id);
     const result = layoutKamadaKawai(molecule, atomIds, {
       bondLength: 1.5,
       maxIterations: 50,
@@ -78,10 +76,7 @@ describe('layout/engine/geometry/kk-layout', () => {
       maxInnerIterations: 1
     });
 
-    assert.ok(
-      averageDisplacement(seededRestart.coords, convergedSeed.coords, atomIds)
-      < averageDisplacement(coldRestart.coords, convergedSeed.coords, atomIds)
-    );
+    assert.ok(averageDisplacement(seededRestart.coords, convergedSeed.coords, atomIds) < averageDisplacement(coldRestart.coords, convergedSeed.coords, atomIds));
   });
 
   it('keeps pinned seed coordinates exact while laying out the remaining cage atoms', () => {

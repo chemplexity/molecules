@@ -286,7 +286,10 @@ export class Molecule {
       if (other?.name === 'H' && other.bonds.length === 1) {
         pendantHIds.push(otherId);
       } else {
-        nonHBondOrder += bond.properties.order ?? 1;
+        // Aromatic bonds contribute one sigma-order step toward the implicit-H
+        // target; counting the raw 1.5 order would incorrectly strip pendant
+        // hydrogens from pyrrole-like centers.
+        nonHBondOrder += Math.floor(bond.properties.order ?? 1);
       }
     }
 
@@ -433,7 +436,7 @@ export class Molecule {
       oldToNewBond.set(oldId, newId);
       bond.id = newId;
       newBonds.set(newId, bond);
-      
+
       // Replace references to atom IDs inside bond
       bond.atoms = bond.atoms.map(aId => oldToNewAtom.get(aId));
     }

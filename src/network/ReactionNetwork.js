@@ -261,11 +261,7 @@ export class ReactionNetwork {
 
     const createdNodes = [];
     for (const componentArray of uniqueProducts.values()) {
-      const reactionNode = this.addReaction(
-        reactants,
-        componentArray,
-        { ...baseConditions, smirks_template }
-      );
+      const reactionNode = this.addReaction(reactants, componentArray, { ...baseConditions, smirks_template });
       createdNodes.push(reactionNode);
     }
 
@@ -511,11 +507,7 @@ export class ReactionNetwork {
           if (charge === 0) {
             return formula;
           }
-          return `${formula}<sup>${
-            Math.abs(charge) === 1
-              ? (charge > 0 ? '+' : '-')
-              : `${Math.abs(charge)}${charge > 0 ? '+' : '-'}`
-          }</sup>`;
+          return `${formula}<sup>${Math.abs(charge) === 1 ? (charge > 0 ? '+' : '-') : `${Math.abs(charge)}${charge > 0 ? '+' : '-'}`}</sup>`;
         })(),
         smiles: toCanonicalSMILES(node.molecule),
         svg: renderObject
@@ -570,19 +562,25 @@ export class ReactionNetwork {
 
   toJSON() {
     return {
-      moleculeNodes: Array.from(this.moleculeNodes.entries()).map(([key, value]) => [key, {
-        id: value.id,
-        smiles: toCanonicalSMILES(value.molecule),
-        consumedIn: value.consumedIn,
-        producedBy: value.producedBy
-      }]),
-      reactionNodes: Array.from(this.reactionNodes.entries()).map(([key, value]) => [key, {
-        id: value.id,
-        reactants: value.reactants,
-        products: value.products,
-        conditions: value.conditions,
-        reversible: value.reversible
-      }]),
+      moleculeNodes: Array.from(this.moleculeNodes.entries()).map(([key, value]) => [
+        key,
+        {
+          id: value.id,
+          smiles: toCanonicalSMILES(value.molecule),
+          consumedIn: value.consumedIn,
+          producedBy: value.producedBy
+        }
+      ]),
+      reactionNodes: Array.from(this.reactionNodes.entries()).map(([key, value]) => [
+        key,
+        {
+          id: value.id,
+          reactants: value.reactants,
+          products: value.products,
+          conditions: value.conditions,
+          reversible: value.reversible
+        }
+      ]),
       _moleculeCounter: this._moleculeCounter,
       _reactionCounter: this._reactionCounter
     };

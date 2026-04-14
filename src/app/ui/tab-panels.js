@@ -23,14 +23,10 @@ function initTabGroup(buttons, panelsByTab) {
  */
 export function initTabPanels({ doc = document } = {}) {
   const descButtons = [...doc.querySelectorAll('.desc-tab')];
-  const descPanels = new Map(
-    [...doc.querySelectorAll('.desc-tab-panel')].map(panel => [panel.id.replace(/^tab-/, ''), panel])
-  );
+  const descPanels = new Map([...doc.querySelectorAll('.desc-tab-panel')].map(panel => [panel.id.replace(/^tab-/, ''), panel]));
   initTabGroup(descButtons, descPanels);
 
   const smartsButtons = [...doc.querySelectorAll('.smarts-tab')];
-  const smartsPanels = new Map(
-    [...doc.querySelectorAll('.smarts-tab-panel')].map(panel => [panel.id.replace(/^tab-/, ''), panel])
-  );
+  const smartsPanels = new Map([...doc.querySelectorAll('.smarts-tab-panel')].map(panel => [panel.id.replace(/^tab-/, ''), panel]));
   initTabGroup(smartsButtons, smartsPanels);
 }

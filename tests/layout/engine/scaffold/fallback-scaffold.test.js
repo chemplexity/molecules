@@ -1,10 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  candidateTemplatePriority,
-  compareFallbackScaffolds
-} from '../../../../src/layout/engine/scaffold/fallback-scaffold.js';
+import { candidateTemplatePriority, compareFallbackScaffolds } from '../../../../src/layout/engine/scaffold/fallback-scaffold.js';
 
 describe('layout/engine/scaffold/fallback-scaffold', () => {
   it('prefers larger and more template-backed candidates deterministically', () => {

@@ -6,6 +6,67 @@ const DEFAULT_LAYOUT_BOND_LENGTH = 1.5;
 const CLEAN_2D_BOND_LENGTH_TOLERANCE = 0.18;
 
 /**
+ * Preserves reaction-preview metadata on a working molecule clone so clean and
+ * refinement flows keep preview-specific layout and display state intact.
+ * @param {object} sourceMol - Source molecule that may carry preview metadata.
+ * @param {object} targetMol - Working clone that will be refined and rendered.
+ * @returns {void}
+ */
+function preserveReactionPreviewMetadata(sourceMol, targetMol) {
+  if (!sourceMol?.__reactionPreview || !targetMol) {
+    return;
+  }
+  targetMol.__reactionPreview = sourceMol.__reactionPreview;
+}
+
+/**
+ * Expands a local heavy-atom patch around a stretched bond endpoint.
+ * A two-hop neighborhood gives refinement enough context to relax attached
+ * substituents without forcing a full-component relayout.
+ * @param {object} molecule - Molecule containing the distorted local patch.
+ * @param {object} atom - Seed atom for the touched-neighborhood expansion.
+ * @param {Set<string>} touchedAtoms - Accumulator for touched atom ids.
+ * @param {Set<string>} touchedBonds - Accumulator for touched bond ids.
+ * @param {number} [maxDepth] - Maximum heavy-atom bond distance to include.
+ * @returns {void}
+ */
+function addTouchedHeavyNeighborhood(molecule, atom, touchedAtoms, touchedBonds, maxDepth = 2) {
+  if (!atom || atom.name === 'H' || atom.visible === false) {
+    return;
+  }
+
+  const visitedAtoms = new Set([atom.id]);
+  const queue = [{ atom, depth: 0 }];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current?.atom || current.atom.name === 'H' || current.atom.visible === false) {
+      continue;
+    }
+    touchedAtoms.add(current.atom.id);
+    if (current.depth >= maxDepth) {
+      continue;
+    }
+    for (const bond of molecule.bonds.values()) {
+      if (!bond.atoms?.includes(current.atom.id)) {
+        continue;
+      }
+      const neighborId = bond.atoms[0] === current.atom.id ? bond.atoms[1] : bond.atoms[0];
+      const neighbor = molecule.atoms.get(neighborId);
+      if (!neighbor || neighbor.name === 'H' || neighbor.visible === false) {
+        continue;
+      }
+      touchedBonds.add(bond.id);
+      touchedAtoms.add(neighbor.id);
+      if (visitedAtoms.has(neighbor.id)) {
+        continue;
+      }
+      visitedAtoms.add(neighbor.id);
+      queue.push({ atom: neighbor, depth: current.depth + 1 });
+    }
+  }
+}
+
+/**
  * Seeds molecule atom coordinates from the live force-simulation node positions.
  * @param {object} molecule - Molecule clone that will receive temporary 2D coordinates.
  * @param {Array<object>} nodes - Force-simulation nodes with finite `x`/`y` positions.
@@ -70,21 +131,18 @@ function buildForceAnchorLayoutFromPlacedCoords(molecule) {
 }
 
 /**
- * Detects obviously distorted local bonds so 2D clean can relayout just the
- * damaged patch instead of preserving the entire existing component geometry.
+ * Detects obviously distorted local bonds so clean actions can relayout just
+ * the damaged patch instead of preserving the entire existing component
+ * geometry. Ring scaffolds often contain intentionally shortened projected
+ * bonds, so compressed-bond detection is limited to non-ring bonds while
+ * overstretch detection still applies everywhere.
  * @param {object} molecule - Molecule whose current placed coordinates are inspected.
  * @param {object} [options] - Detection options.
  * @param {number} [options.bondLength] - Expected bond length for the active 2D layout.
  * @param {number} [options.tolerance] - Relative bond-length deviation threshold.
  * @returns {{touchedAtoms: Set<string>, touchedBonds: Set<string>}} Refinement hints.
  */
-function derive2dCleanRefinementHints(
-  molecule,
-  {
-    bondLength = DEFAULT_LAYOUT_BOND_LENGTH,
-    tolerance = CLEAN_2D_BOND_LENGTH_TOLERANCE
-  } = {}
-) {
+function derive2dCleanRefinementHints(molecule, { bondLength = DEFAULT_LAYOUT_BOND_LENGTH, tolerance = CLEAN_2D_BOND_LENGTH_TOLERANCE } = {}) {
   const touchedAtoms = new Set();
   const touchedBonds = new Set();
   if (!molecule?.atoms || !molecule?.bonds) {
@@ -99,22 +157,46 @@ function derive2dCleanRefinementHints(
     if (!firstAtom || !secondAtom) {
       continue;
     }
-    if (
-      !Number.isFinite(firstAtom.x) || !Number.isFinite(firstAtom.y) ||
-      !Number.isFinite(secondAtom.x) || !Number.isFinite(secondAtom.y)
-    ) {
+    if (firstAtom.name === 'H' || secondAtom.name === 'H') {
+      continue;
+    }
+    if (firstAtom.visible === false || secondAtom.visible === false) {
+      continue;
+    }
+    if (!Number.isFinite(firstAtom.x) || !Number.isFinite(firstAtom.y) || !Number.isFinite(secondAtom.x) || !Number.isFinite(secondAtom.y)) {
       continue;
     }
     const length = Math.hypot(firstAtom.x - secondAtom.x, firstAtom.y - secondAtom.y);
-    if (!Number.isFinite(length) || Math.abs(length - bondLength) <= maxDeviation) {
+    const bondIsInRing = typeof bond.isInRing === 'function' ? bond.isInRing(molecule) : false;
+    const isOverstretched = length > bondLength + maxDeviation;
+    const isCompressedNonRing = !bondIsInRing && length < bondLength - maxDeviation;
+    if (!Number.isFinite(length) || (!isOverstretched && !isCompressedNonRing)) {
       continue;
     }
     touchedBonds.add(bond.id);
-    touchedAtoms.add(firstAtom.id);
-    touchedAtoms.add(secondAtom.id);
+    addTouchedHeavyNeighborhood(molecule, firstAtom, touchedAtoms, touchedBonds);
+    addTouchedHeavyNeighborhood(molecule, secondAtom, touchedAtoms, touchedBonds);
   }
 
   return { touchedAtoms, touchedBonds };
+}
+
+/**
+ * Re-applies reaction-preview pair orientation after a force-clean refinement.
+ * Force mode seeds from live node positions, so without this pass a cleaned
+ * reaction preview can keep or amplify a mirrored component arrangement instead
+ * of returning to the canonical reactant-left/product-right layout.
+ * @param {object} molecule - Working molecule clone being cleaned.
+ * @param {object} overlays - Overlay helpers that know how to arrange previews.
+ * @returns {void}
+ */
+function reapplyReactionPreviewForceLayout(molecule, overlays) {
+  if (!molecule?.__reactionPreview?.mappedAtomPairs?.length || !overlays) {
+    return;
+  }
+  overlays.alignReaction2dProductOrientation?.(molecule);
+  overlays.spreadReaction2dProductComponents?.(molecule, DEFAULT_LAYOUT_BOND_LENGTH);
+  overlays.centerReaction2dPairCoords?.(molecule, DEFAULT_LAYOUT_BOND_LENGTH);
 }
 
 /**
@@ -141,18 +223,19 @@ export function createNavigationActions(context) {
     context.history.takeSnapshot({ clearReactionPreview: false });
     const mol = context.state.documentState.getMol2d();
     const relayoutMol = mol.clone();
+    preserveReactionPreviewMetadata(mol, relayoutMol);
     const hasRefinementRelayout = typeof context.helpers.refineExistingCoords === 'function';
     const refinementHints = derive2dCleanRefinementHints(relayoutMol, {
       bondLength: DEFAULT_LAYOUT_BOND_LENGTH
     });
     const refinedCoords = hasRefinementRelayout
       ? context.helpers.refineExistingCoords(relayoutMol, {
-        suppressH: true,
-        bondLength: DEFAULT_LAYOUT_BOND_LENGTH,
-        maxPasses: 12,
-        touchedAtoms: refinementHints.touchedAtoms,
-        touchedBonds: refinementHints.touchedBonds
-      })
+          suppressH: true,
+          bondLength: DEFAULT_LAYOUT_BOND_LENGTH,
+          maxPasses: 12,
+          touchedAtoms: refinementHints.touchedAtoms,
+          touchedBonds: refinementHints.touchedBonds
+        })
       : null;
     const preserveGeometry = refinedCoords instanceof Map ? refinedCoords.size > 0 : hasRefinementRelayout;
     context.view.setPreserveSelectionOnNextRender(true);
@@ -178,14 +261,21 @@ export function createNavigationActions(context) {
     context.history.takeSnapshot({ clearReactionPreview: false });
     const mol = context.state.documentState.getCurrentMol();
     const relayoutMol = mol.clone();
+    preserveReactionPreviewMetadata(mol, relayoutMol);
     seedMoleculeFromForcePositions(relayoutMol, context.simulation.nodes?.(), DEFAULT_LAYOUT_BOND_LENGTH);
+    const refinementHints = derive2dCleanRefinementHints(relayoutMol, {
+      bondLength: DEFAULT_LAYOUT_BOND_LENGTH
+    });
     if (typeof context.helpers.refineExistingCoords === 'function') {
       context.helpers.refineExistingCoords(relayoutMol, {
         suppressH: true,
         bondLength: DEFAULT_LAYOUT_BOND_LENGTH,
-        maxPasses: 12
+        maxPasses: 12,
+        touchedAtoms: refinementHints.touchedAtoms,
+        touchedBonds: refinementHints.touchedBonds
       });
     }
+    reapplyReactionPreviewForceLayout(relayoutMol, context.overlays);
     const forceAnchorLayout = buildForceAnchorLayoutFromPlacedCoords(relayoutMol);
     context.view.setPreserveSelectionOnNextRender(true);
     context.renderers.renderMol(relayoutMol, {

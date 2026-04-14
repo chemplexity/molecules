@@ -132,6 +132,30 @@ describe('perceiveAromaticity — heteroaromatics', () => {
     const rings = perceiveAromaticity(mol);
     assert.equal(rings.length, 1);
   });
+
+  it('1-methylimidazole Cn1cncc1 stays aromatic when the pyrrolic hydrogen is replaced', () => {
+    const mol = parseSMILES('Cn1cncc1');
+    const rings = perceiveAromaticity(mol);
+    assert.equal(rings.length, 1);
+    assert.equal(rings[0].length, 5);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name !== 'H' && atom.properties.aromatic).length, 5);
+  });
+
+  it('pyrylium [O+]1=CC=CC=C1 stays aromatic after reparsing aromatic ring bonds', () => {
+    const mol = parseSMILES('[O+]1=CC=CC=C1');
+    const rings = perceiveAromaticity(mol);
+    assert.equal(rings.length, 1);
+    const ringBondCount = [...mol.bonds.values()].filter(bond => bond.properties.aromatic === true).length;
+    assert.equal(ringBondCount, 6);
+  });
+
+  it('thiopyrylium [S+]1=CC=CC=C1 stays aromatic after reparsing aromatic ring bonds', () => {
+    const mol = parseSMILES('[S+]1=CC=CC=C1');
+    const rings = perceiveAromaticity(mol);
+    assert.equal(rings.length, 1);
+    const ringBondCount = [...mol.bonds.values()].filter(bond => bond.properties.aromatic === true).length;
+    assert.equal(ringBondCount, 6);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -269,5 +293,13 @@ describe('perceiveAromaticity — fused aza ligands coordinated to a transition 
     }
 
     assert.equal(mol.atoms.get('Ru36')?.properties.aromatic ?? false, false);
+  });
+
+  it('keeps both fused aza rings aromatic when a pyrrolic nitrogen is substituted', () => {
+    const mol = parseSMILES('N1C=NC2=C1N=CN2[C@H]3C[C@H](O)[C@@H](CO)O3');
+    const rings = perceiveAromaticity(mol);
+    assert.deepEqual(rings.map(ring => ring.length).sort((a, b) => a - b), [5, 5]);
+    assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'N' && atom.properties.aromatic).length, 4);
+    assert.equal([...mol.bonds.values()].filter(bond => bond.properties.aromatic).length, 9);
   });
 });

@@ -36,12 +36,7 @@ export function transformAttachedBlock(coords, attachmentAtomId, targetPosition,
     const shifted = sub(position, currentAttachment);
     const rotated = rotate(shifted, rotation);
     const placedPosition = add(targetPosition, rotated);
-    transformed.set(
-      atomId,
-      options.mirror && atomId !== attachmentAtomId
-        ? mirrorAcrossAxis(placedPosition, targetPosition, targetAngle)
-        : placedPosition
-    );
+    transformed.set(atomId, options.mirror && atomId !== attachmentAtomId ? mirrorAcrossAxis(placedPosition, targetPosition, targetAngle) : placedPosition);
   }
   return transformed;
 }

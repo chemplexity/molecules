@@ -66,9 +66,7 @@ export function getConnectedComponents(molecule, canonicalAtomRank = new Map()) 
       if (!atom) {
         continue;
       }
-      const neighborIds = atom.bonds
-        .map(bondId => molecule.bonds.get(bondId)?.getOtherAtom(currentAtomId))
-        .filter(Boolean);
+      const neighborIds = atom.bonds.map(bondId => molecule.bonds.get(bondId)?.getOtherAtom(currentAtomId)).filter(Boolean);
       for (const neighborId of neighborIds) {
         if (!visited.has(neighborId)) {
           queue.push(neighborId);

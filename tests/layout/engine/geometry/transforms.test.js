@@ -26,10 +26,14 @@ describe('layout/engine/geometry/transforms', () => {
       ['a0', { x: 0, y: 0 }],
       ['a1', { x: 1, y: 0 }]
     ]);
-    const result = alignCoordsToFixed(coords, ['a0', 'a1'], new Map([
-      ['a0', { x: 1, y: 1 }],
-      ['a1', { x: 1, y: 3 }]
-    ]));
+    const result = alignCoordsToFixed(
+      coords,
+      ['a0', 'a1'],
+      new Map([
+        ['a0', { x: 1, y: 1 }],
+        ['a1', { x: 1, y: 3 }]
+      ])
+    );
     assert.ok(Math.abs(result.coords.get('a0').x - 1) < 1e-9);
     assert.ok(Math.abs(result.coords.get('a0').y - 1) < 1e-9);
     assert.ok(Math.abs(result.coords.get('a1').x - 1) < 1e-9);
@@ -42,11 +46,15 @@ describe('layout/engine/geometry/transforms', () => {
       ['a1', { x: 1, y: 0 }],
       ['a2', { x: 2, y: 1 }]
     ]);
-    const result = alignCoordsToFixed(coords, ['a0', 'a1', 'a2'], new Map([
-      ['a0', { x: 10, y: 0 }],
-      ['a1', { x: 11, y: 0 }],
-      ['a2', { x: 12, y: -1 }]
-    ]));
+    const result = alignCoordsToFixed(
+      coords,
+      ['a0', 'a1', 'a2'],
+      new Map([
+        ['a0', { x: 10, y: 0 }],
+        ['a1', { x: 11, y: 0 }],
+        ['a2', { x: 12, y: -1 }]
+      ])
+    );
 
     assert.ok(Math.abs(result.coords.get('a2').x - 12) < 1e-9);
     assert.ok(Math.abs(result.coords.get('a2').y + 1) < 1e-9);

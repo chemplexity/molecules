@@ -516,20 +516,16 @@ describe('generateResonanceStructures — development regressions', () => {
     assert.equal(sawRingChargeSeparatedState, true);
   });
 
-  it(
-    'does not explode on Ru-bound fused aza systems when independent permutations are disabled',
-    { timeout: 1000 },
-    () => {
-      const mol = parseSMILES('C1=CC2=C3C=C(CCCCCCCCC(=O)N[C@H]4[C@H]5C[C@@H]6C[C@@H](C[C@H]4C6)C5)C=CN3[Ru++]34(N5C=CC=CC5=C5C=CC=CN35)(N3C=CC=CC3=C3C=CC=CN43)N2C=C1');
-      assert.doesNotThrow(() => {
-        generateResonanceStructures(mol, {
-          includeChargeSeparatedStates: true,
-          includeIndependentComponentPermutations: false
-        });
+  it('does not explode on Ru-bound fused aza systems when independent permutations are disabled', { timeout: 1000 }, () => {
+    const mol = parseSMILES('C1=CC2=C3C=C(CCCCCCCCC(=O)N[C@H]4[C@H]5C[C@@H]6C[C@@H](C[C@H]4C6)C5)C=CN3[Ru++]34(N5C=CC=CC5=C5C=CC=CN35)(N3C=CC=CC3=C3C=CC=CN43)N2C=C1');
+    assert.doesNotThrow(() => {
+      generateResonanceStructures(mol, {
+        includeChargeSeparatedStates: true,
+        includeIndependentComponentPermutations: false
       });
-      assert.ok(mol.resonanceCount >= 1);
-    }
-  );
+    });
+    assert.ok(mol.resonanceCount >= 1);
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -538,8 +534,9 @@ describe('generateResonanceStructures — development regressions', () => {
 
 describe('generateResonanceStructures — allyl radical', () => {
   it('finds 2 states: radical migrates from one terminal C to the other', () => {
-    // [CH2]=C[CH2•]
-    const mol = parseSMILES('[CH2]=C[CH2]');
+    // Start from linear prop-1-ene with an explicit terminal CH2 so the
+    // allylic radical can be assigned onto the single-bond terminal carbon.
+    const mol = parseSMILES('C=C[CH2]');
     const carbons = [...mol.atoms.values()].filter(a => a.name === 'C');
     const ccBondIdsFor = atom => atom.bonds.filter(id => mol.atoms.get(mol.bonds.get(id)?.getOtherAtom(atom.id))?.name === 'C');
     const terminals = carbons.filter(a => ccBondIdsFor(a).length === 1);
@@ -580,10 +577,7 @@ describe('generateResonanceStructures — allyl radical', () => {
       }
     }
 
-    assert.deepEqual(
-      [...observedTerminalRadicals].sort(),
-      terminals.map(atom => atom.id).sort()
-    );
+    assert.deepEqual([...observedTerminalRadicals].sort(), terminals.map(atom => atom.id).sort());
   });
 });
 

@@ -5,10 +5,15 @@ import { transformAttachedBlock } from '../../../../src/layout/engine/placement/
 
 describe('layout/engine/placement/linkers', () => {
   it('rigidly transforms an attached block to a requested target position and angle', () => {
-    const transformed = transformAttachedBlock(new Map([
-      ['a0', { x: 0, y: 0 }],
-      ['a1', { x: 1, y: 0 }]
-    ]), 'a0', { x: 4, y: 0 }, Math.PI / 2);
+    const transformed = transformAttachedBlock(
+      new Map([
+        ['a0', { x: 0, y: 0 }],
+        ['a1', { x: 1, y: 0 }]
+      ]),
+      'a0',
+      { x: 4, y: 0 },
+      Math.PI / 2
+    );
 
     assert.deepEqual(transformed.get('a0'), { x: 4, y: 0 });
     assert.ok(Math.abs(transformed.get('a1').x - 4) < 1e-6);

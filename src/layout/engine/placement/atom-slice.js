@@ -151,7 +151,10 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
   const atomIds = [...participantAtomIds];
   const adjacency = options.adjacency ?? buildSliceAdjacency(layoutGraph, participantAtomIds);
   const sliceRings = ringsForAtomSlice(layoutGraph, participantAtomIds);
-  const sliceConnections = ringConnectionsForSlice(layoutGraph, sliceRings.map(ring => ring.id));
+  const sliceConnections = ringConnectionsForSlice(
+    layoutGraph,
+    sliceRings.map(ring => ring.id)
+  );
   const heuristicFamily = classifyAtomSliceFamily(layoutGraph, atomIds, sliceRings, sliceConnections);
   const sliceComponent = {
     id: component.id,
@@ -159,9 +162,7 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
     canonicalSignature: component.canonicalSignature ?? buildCanonicalComponentSignature(atomIds, layoutGraph.canonicalAtomRank, layoutGraph.sourceMolecule)
   };
   const scaffoldPlan = chooseScaffoldPlan(layoutGraph, sliceComponent);
-  const family = heuristicFamily === 'organometallic'
-    ? heuristicFamily
-    : scaffoldPlan.rootScaffold.family;
+  const family = heuristicFamily === 'organometallic' ? heuristicFamily : scaffoldPlan.rootScaffold.family;
 
   if (scaffoldPlan.mixedMode) {
     return layoutMixedFamily(layoutGraph, sliceComponent, adjacency, scaffoldPlan, bondLength);
@@ -185,9 +186,8 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
       }
       ringAdj.get(connection.firstRingId)?.push(connection.secondRingId);
       ringAdj.get(connection.secondRingId)?.push(connection.firstRingId);
-      const key = connection.firstRingId < connection.secondRingId
-        ? `${connection.firstRingId}:${connection.secondRingId}`
-        : `${connection.secondRingId}:${connection.firstRingId}`;
+      const key =
+        connection.firstRingId < connection.secondRingId ? `${connection.firstRingId}:${connection.secondRingId}` : `${connection.secondRingId}:${connection.firstRingId}`;
       ringConnectionByPair.set(key, connection);
     }
     result = layoutFusedFamily(sliceRings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId: scaffoldPlan.rootScaffold.templateId ?? null });
@@ -200,9 +200,8 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
       }
       ringAdj.get(connection.firstRingId)?.push(connection.secondRingId);
       ringAdj.get(connection.secondRingId)?.push(connection.firstRingId);
-      const key = connection.firstRingId < connection.secondRingId
-        ? `${connection.firstRingId}:${connection.secondRingId}`
-        : `${connection.secondRingId}:${connection.firstRingId}`;
+      const key =
+        connection.firstRingId < connection.secondRingId ? `${connection.firstRingId}:${connection.secondRingId}` : `${connection.secondRingId}:${connection.firstRingId}`;
       ringConnectionByPair.set(key, connection);
     }
     result = layoutSpiroFamily(sliceRings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId: scaffoldPlan.rootScaffold.templateId ?? null });
@@ -223,11 +222,7 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
   placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, result.coords, participantAtomIds, [...result.coords.keys()], bondLength, layoutGraph);
   const placementMode = result.placementMode ?? 'constructed';
   const templateId = scaffoldPlan.rootScaffold.templateId ?? null;
-  const bondValidationClasses = result.bondValidationClasses ?? assignBondValidationClass(
-    layoutGraph,
-    atomIds,
-    resolvePlacementValidationClass(family, placementMode, templateId)
-  );
+  const bondValidationClasses = result.bondValidationClasses ?? assignBondValidationClass(layoutGraph, atomIds, resolvePlacementValidationClass(family, placementMode, templateId));
   return {
     family,
     supported: true,

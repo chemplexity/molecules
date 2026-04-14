@@ -39,10 +39,16 @@ describe('layout/engine/geometry/vec2', () => {
     assert.ok(Math.abs(rotated.x) < 1e-9);
     assert.ok(Math.abs(rotated.y - 1) < 1e-9);
     assert.deepEqual(perpLeft({ x: 2, y: 3 }), { x: -3, y: 2 });
-    assert.deepEqual(centroid([{ x: 0, y: 0 }, { x: 2, y: 2 }]), { x: 1, y: 1 });
-    assert.ok(Math.abs(angleOf(fromAngle(Math.PI / 3, 2)) - (Math.PI / 3)) < 1e-9);
+    assert.deepEqual(
+      centroid([
+        { x: 0, y: 0 },
+        { x: 2, y: 2 }
+      ]),
+      { x: 1, y: 1 }
+    );
+    assert.ok(Math.abs(angleOf(fromAngle(Math.PI / 3, 2)) - Math.PI / 3) < 1e-9);
     assert.ok(Math.abs(wrapAngle(3 * Math.PI) - Math.PI) < 1e-9);
-    assert.ok(Math.abs(angularDifference(Math.PI / 6, (11 * Math.PI) / 6) - (Math.PI / 3)) < 1e-9);
+    assert.ok(Math.abs(angularDifference(Math.PI / 6, (11 * Math.PI) / 6) - Math.PI / 3) < 1e-9);
   });
 
   it('handles zero-length normalization and exact angle-wrap boundaries stably', () => {

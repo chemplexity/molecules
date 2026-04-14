@@ -56,12 +56,15 @@ export const WEDGE_TIP_TRIM = WEDGE_HALF_W * 0.5;
  * @returns {Array<Array<{x: number, y: number}>>} Incident ring polygons.
  */
 function incidentRingPolygonsForAtom(mol, atomId) {
-  return mol.getRings()
+  return mol
+    .getRings()
     .filter(ringAtomIds => ringAtomIds.includes(atomId))
-    .map(ringAtomIds => ringAtomIds
-      .map(ringAtomId => mol.atoms.get(ringAtomId))
-      .filter(atom => atom && atom.x != null && atom.y != null)
-      .map(atom => ({ x: atom.x, y: atom.y })))
+    .map(ringAtomIds =>
+      ringAtomIds
+        .map(ringAtomId => mol.atoms.get(ringAtomId))
+        .filter(atom => atom && atom.x != null && atom.y != null)
+        .map(atom => ({ x: atom.x, y: atom.y }))
+    )
     .filter(polygon => polygon.length >= 3);
 }
 
@@ -85,17 +88,13 @@ function projectHiddenStereoHydrogens(mol, bondLength) {
     if (!parent.getChirality()) {
       continue;
     }
-    const knownPositions = parent.getNeighbors(mol)
+    const knownPositions = parent
+      .getNeighbors(mol)
       .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null)
       .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
-    const projectedPosition = synthesizeHydrogenPosition(
-      { x: parent.x, y: parent.y },
-      knownPositions,
-      bondLength,
-      {
-        incidentRingPolygons: incidentRingPolygonsForAtom(mol, parent.id)
-      }
-    );
+    const projectedPosition = synthesizeHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength, {
+      incidentRingPolygons: incidentRingPolygonsForAtom(mol, parent.id)
+    });
     projectedCoords.set(atom.id, projectedPosition);
   }
   return projectedCoords;

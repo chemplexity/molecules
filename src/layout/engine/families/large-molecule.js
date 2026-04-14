@@ -8,14 +8,7 @@ import { refineStitchedBlock } from '../placement/block-stitching.js';
 import { assignBondValidationClass, mergeBondValidationClasses } from '../placement/bond-validation.js';
 import { buildSliceAdjacency, createAtomSlice, layoutAtomSlice } from '../placement/atom-slice.js';
 
-const PACKING_ROTATION_ANGLES = Object.freeze([
-  -Math.PI / 2,
-  -Math.PI / 3,
-  -Math.PI / 6,
-  Math.PI / 6,
-  Math.PI / 3,
-  Math.PI / 2
-]);
+const PACKING_ROTATION_ANGLES = Object.freeze([-Math.PI / 2, -Math.PI / 3, -Math.PI / 6, Math.PI / 6, Math.PI / 3, Math.PI / 2]);
 
 function countHeavyAtoms(layoutGraph, atomIds) {
   return atomIds.filter(atomId => layoutGraph.sourceMolecule.atoms.get(atomId)?.name !== 'H').length;
@@ -113,13 +106,14 @@ function selectBestCut(layoutGraph, atomIds, threshold) {
     const leftRingSystems = countRingSystems(layoutGraph, leftAtomIds);
     const rightRingSystems = countRingSystems(layoutGraph, rightAtomIds);
     const participantThreshold = threshold.heavyAtomCount;
-    const oversizePenalty = Math.max(0, leftHeavyCount - threshold.heavyAtomCount)
-      + Math.max(0, rightHeavyCount - threshold.heavyAtomCount)
-      + Math.max(0, leftParticipantCount - participantThreshold)
-      + Math.max(0, rightParticipantCount - participantThreshold);
+    const oversizePenalty =
+      Math.max(0, leftHeavyCount - threshold.heavyAtomCount) +
+      Math.max(0, rightHeavyCount - threshold.heavyAtomCount) +
+      Math.max(0, leftParticipantCount - participantThreshold) +
+      Math.max(0, rightParticipantCount - participantThreshold);
     const balancePenalty = Math.abs(leftParticipantCount - rightParticipantCount);
     const ringBonus = leftRingSystems > 0 && rightRingSystems > 0 ? 100 : 0;
-    const score = ringBonus - (oversizePenalty * 10) - balancePenalty;
+    const score = ringBonus - oversizePenalty * 10 - balancePenalty;
     candidates.push({
       bond,
       leftAtomIds,
@@ -163,11 +157,7 @@ function createBlock(layoutGraph, atomIds, id) {
  * @returns {boolean} True when the block is still oversized.
  */
 function isOversized(block, threshold) {
-  return (
-    block.heavyAtomCount > threshold.heavyAtomCount
-    || block.participantCount > threshold.heavyAtomCount
-    || block.ringSystemCount > threshold.ringSystemCount
-  );
+  return block.heavyAtomCount > threshold.heavyAtomCount || block.participantCount > threshold.heavyAtomCount || block.ringSystemCount > threshold.ringSystemCount;
 }
 
 function partitionBlocks(layoutGraph, component, threshold) {
@@ -208,15 +198,17 @@ function partitionBlocks(layoutGraph, component, threshold) {
 }
 
 function chooseRootBlock(blocks) {
-  return [...blocks].sort((firstBlock, secondBlock) => {
-    if (secondBlock.ringSystemCount !== firstBlock.ringSystemCount) {
-      return secondBlock.ringSystemCount - firstBlock.ringSystemCount;
-    }
-    if (secondBlock.heavyAtomCount !== firstBlock.heavyAtomCount) {
-      return secondBlock.heavyAtomCount - firstBlock.heavyAtomCount;
-    }
-    return firstBlock.canonicalSignature.localeCompare(secondBlock.canonicalSignature, 'en', { numeric: true });
-  })[0] ?? null;
+  return (
+    [...blocks].sort((firstBlock, secondBlock) => {
+      if (secondBlock.ringSystemCount !== firstBlock.ringSystemCount) {
+        return secondBlock.ringSystemCount - firstBlock.ringSystemCount;
+      }
+      if (secondBlock.heavyAtomCount !== firstBlock.heavyAtomCount) {
+        return secondBlock.heavyAtomCount - firstBlock.heavyAtomCount;
+      }
+      return firstBlock.canonicalSignature.localeCompare(secondBlock.canonicalSignature, 'en', { numeric: true });
+    })[0] ?? null
+  );
 }
 
 function buildBlockAdjacency(blocks, cutBonds) {
@@ -391,7 +383,7 @@ function totalBlockOverlapPenalty(coords, blockAtomIdsById) {
  * @returns {number} Packing cost.
  */
 function layoutPackingCost(coords, blockAtomIdsById, bondLength) {
-  return layoutBoundsArea(coords) + (totalBlockOverlapPenalty(coords, blockAtomIdsById) * bondLength * 100);
+  return layoutBoundsArea(coords) + totalBlockOverlapPenalty(coords, blockAtomIdsById) * bondLength * 100;
 }
 
 /**
@@ -451,14 +443,7 @@ function rotateBlockSubtree(inputCoords, subtreeAtomIds, anchorAtomId, angle) {
  * @param {number} bondLength - Target bond length.
  * @returns {{coords: Map<string, {x: number, y: number}>, rotationMoveCount: number}} Compacted coordinates and accepted rotation count.
  */
-function compactBlockRotations(
-  inputCoords,
-  blockAtomIdsById,
-  childBlocksByParentId,
-  attachmentAtomByBlockId,
-  rootBlockId,
-  bondLength
-) {
+function compactBlockRotations(inputCoords, blockAtomIdsById, childBlocksByParentId, attachmentAtomByBlockId, rootBlockId, bondLength) {
   let coords = new Map(inputCoords);
   let rotationMoveCount = 0;
   const candidateBlockIds = [...blockAtomIdsById.keys()].filter(blockId => blockId !== rootBlockId);
@@ -527,7 +512,7 @@ function repelOverlappingBlocks(inputCoords, blockAtomIdsById, rootBlockId, bond
         const movableBounds = movableBlockId === firstBlockId ? firstBounds : secondBounds;
         const fixedBounds = fixedBlockId === firstBlockId ? firstBounds : secondBounds;
         const direction = overlapPushDirection(movableBounds, fixedBounds);
-        const shift = Math.max(overlapX, overlapY) + (bondLength * 0.25);
+        const shift = Math.max(overlapX, overlapY) + bondLength * 0.25;
 
         coords = translateCoords(coords, movableAtomIds, direction.x * shift, direction.y * shift);
         repulsionMoveCount++;
@@ -589,9 +574,7 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
 
   const coords = new Map(rootLayout.coords);
   const bondValidationClasses = new Map();
-  const placedBlockAtomIds = new Map([
-    [rootBlock.id, rootBlock.atomIds.filter(atomId => participantAtomIdSet.has(atomId))]
-  ]);
+  const placedBlockAtomIds = new Map([[rootBlock.id, rootBlock.atomIds.filter(atomId => participantAtomIdSet.has(atomId))]]);
   mergeBondValidationClasses(bondValidationClasses, rootLayout.bondValidationClasses);
   const placedBlockIds = new Set([rootBlock.id]);
   const childBlocksByParentId = new Map();
@@ -619,37 +602,16 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
       const parentPosition = coords.get(parentAtomId);
       const placedCentroid = centroid([...coords.values()]);
       const preferredAngle = angleOf(sub(parentPosition, placedCentroid));
-      const attachmentAngle = chooseAttachmentAngle(
-        fullAdjacency,
-        coords,
-        parentAtomId,
-        participantAtomIdSet,
-        preferredAngle,
-        layoutGraph,
-        childAtomId
-      );
+      const attachmentAngle = chooseAttachmentAngle(fullAdjacency, coords, parentAtomId, participantAtomIdSet, preferredAngle, layoutGraph, childAtomId);
       const childParticipantAtomIds = childBlock.atomIds.filter(atomId => participantAtomIdSet.has(atomId));
       const childLayout = sliceLayouter(layoutGraph, childBlock, bondLength);
       const childCoords = childLayout.supported
         ? childLayout.coords
-        : layoutLinearFallbackCoords(
-          buildSliceAdjacency(layoutGraph, childParticipantAtomIds),
-          childParticipantAtomIds,
-          childAtomId,
-          bondLength
-        );
+        : layoutLinearFallbackCoords(buildSliceAdjacency(layoutGraph, childParticipantAtomIds), childParticipantAtomIds, childAtomId, bondLength);
       if (!childLayout.supported) {
         linearFallbackCount++;
       }
-      const refinedChild = refineStitchedBlock(
-        childCoords,
-        childParticipantAtomIds,
-        childAtomId,
-        parentPosition,
-        attachmentAngle,
-        bondLength,
-        coords
-      );
+      const refinedChild = refineStitchedBlock(childCoords, childParticipantAtomIds, childAtomId, parentPosition, attachmentAngle, bondLength, coords);
       const transformedChild = refinedChild.coords;
       if (Math.abs(refinedChild.angle - attachmentAngle) > 1e-6) {
         refinedStitchCount++;
@@ -676,14 +638,7 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
   const repulsion = repelOverlappingBlocks(coords, placedBlockAtomIds, rootBlock.id, bondLength);
   const packed = options.disableRotationPacking
     ? { coords: repulsion.coords, rotationMoveCount: 0 }
-    : compactBlockRotations(
-      repulsion.coords,
-      placedBlockAtomIds,
-      childBlocksByParentId,
-      attachmentAtomByBlockId,
-      rootBlock.id,
-      bondLength
-    );
+    : compactBlockRotations(repulsion.coords, placedBlockAtomIds, childBlocksByParentId, attachmentAtomByBlockId, rootBlock.id, bondLength);
   return {
     coords: packed.coords,
     placementMode: 'block-stitched',

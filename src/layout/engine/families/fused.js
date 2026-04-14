@@ -171,7 +171,7 @@ function placePericondensedShellRing(neighborRing, connection, neighborCenter, c
   coords.set(firstSharedAtomId, firstPosition);
   coords.set(secondSharedAtomId, secondPosition);
   for (let index = 1; index < path.length - 1; index++) {
-    coords.set(path[index], add(neighborCenter, fromAngle(angleA + (index * step), radius)));
+    coords.set(path[index], add(neighborCenter, fromAngle(angleA + index * step, radius)));
   }
 }
 
@@ -212,10 +212,7 @@ function relaxPericondensedRingCenters(rings, ringAdj, inputRingCenters, bondLen
           direction = fromAngle((2 * Math.PI * (ring.id + 1)) / Math.max(rings.length, 3), 1);
         }
         direction = normalize(direction);
-        targets.push(add(
-          neighborCenter,
-          scale(direction, fusedCenterDistance(ring.atomIds.length, neighborRing.atomIds.length, bondLength))
-        ));
+        targets.push(add(neighborCenter, scale(direction, fusedCenterDistance(ring.atomIds.length, neighborRing.atomIds.length, bondLength))));
       }
 
       if (targets.length === 0) {
@@ -224,8 +221,8 @@ function relaxPericondensedRingCenters(rings, ringAdj, inputRingCenters, bondLen
 
       const averageTarget = centroid(targets);
       nextCenters.set(ring.id, {
-        x: (currentCenter.x * (1 - damping)) + (averageTarget.x * damping),
-        y: (currentCenter.y * (1 - damping)) + (averageTarget.y * damping)
+        x: currentCenter.x * (1 - damping) + averageTarget.x * damping,
+        y: currentCenter.y * (1 - damping) + averageTarget.y * damping
       });
     }
 
@@ -266,18 +263,21 @@ function redistributePericondensedAtoms(rings, ringCenters, inputCoords, bondLen
     let bestError = Number.POSITIVE_INFINITY;
 
     for (const direction of [1, -1]) {
-      const offsetVector = currentAngles.reduce((sum, angle, index) => {
-        const offset = angle - (direction * index * step);
-        return {
-          x: sum.x + Math.cos(offset),
-          y: sum.y + Math.sin(offset)
-        };
-      }, { x: 0, y: 0 });
+      const offsetVector = currentAngles.reduce(
+        (sum, angle, index) => {
+          const offset = angle - direction * index * step;
+          return {
+            x: sum.x + Math.cos(offset),
+            y: sum.y + Math.sin(offset)
+          };
+        },
+        { x: 0, y: 0 }
+      );
       const baseAngle = Math.atan2(offsetVector.y, offsetVector.x);
       const targets = ring.atomIds.map((atomId, index) => {
-        const target = add(ringCenter, fromAngle(baseAngle + (direction * index * step), radius));
+        const target = add(ringCenter, fromAngle(baseAngle + direction * index * step, radius));
         const actual = coords.get(atomId);
-        const error = actual ? ((target.x - actual.x) ** 2) + ((target.y - actual.y) ** 2) : 0;
+        const error = actual ? (target.x - actual.x) ** 2 + (target.y - actual.y) ** 2 : 0;
         return { atomId, target, error };
       });
       const totalError = targets.reduce((sum, target) => sum + target.error, 0);
@@ -327,7 +327,7 @@ function layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLen
   const rootRadius = rootRadiusForSize(rootRing.atomIds.length, bondLength);
 
   for (let index = 0; index < rootRing.atomIds.length; index++) {
-    coords.set(rootRing.atomIds[index], fromAngle(Math.PI / 2 + (index * rootStep), rootRadius));
+    coords.set(rootRing.atomIds[index], fromAngle(Math.PI / 2 + index * rootStep, rootRadius));
   }
   ringCenters.set(rootRing.id, { x: 0, y: 0 });
 
@@ -341,15 +341,11 @@ function layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLen
       .filter(neighborRingId => placedRingIds.has(neighborRingId))
       .map(neighborRingId => ({
         ring: ringById.get(neighborRingId),
-        connection: ringConnectionByPair.get(
-          nextRing.id < neighborRingId ? `${nextRing.id}:${neighborRingId}` : `${neighborRingId}:${nextRing.id}`
-        )
+        connection: ringConnectionByPair.get(nextRing.id < neighborRingId ? `${nextRing.id}:${neighborRingId}` : `${neighborRingId}:${nextRing.id}`)
       }))
       .filter(({ ring, connection }) => ring && connection);
 
-    const centerCandidates = placedNeighbors
-      .map(({ ring, connection }) => estimateNeighborCenter(ring, nextRing, connection, ringCenters, coords, bondLength))
-      .filter(Boolean);
+    const centerCandidates = placedNeighbors.map(({ ring, connection }) => estimateNeighborCenter(ring, nextRing, connection, ringCenters, coords, bondLength)).filter(Boolean);
     if (centerCandidates.length === 0) {
       break;
     }
@@ -366,10 +362,7 @@ function layoutPericondensedSystem(rings, ringAdj, ringConnectionByPair, bondLen
     iterations: 18,
     damping: 0.45
   });
-  const orientedCoords = orientCoordsHorizontally(
-    regularizedCoords,
-    computeFusedAxis(rebuildRingCenters(rings, regularizedCoords))
-  );
+  const orientedCoords = orientCoordsHorizontally(regularizedCoords, computeFusedAxis(rebuildRingCenters(rings, regularizedCoords)));
 
   return {
     coords: orientedCoords,
@@ -399,21 +392,24 @@ function fitRegularRingTargets(ring, coords, bondLength) {
   let bestError = Number.POSITIVE_INFINITY;
 
   for (const direction of [1, -1]) {
-    const offsetVector = actualAngles.reduce((sum, angle, index) => {
-      const offset = angle - (direction * index * step);
-      return {
-        x: sum.x + Math.cos(offset),
-        y: sum.y + Math.sin(offset)
-      };
-    }, { x: 0, y: 0 });
+    const offsetVector = actualAngles.reduce(
+      (sum, angle, index) => {
+        const offset = angle - direction * index * step;
+        return {
+          x: sum.x + Math.cos(offset),
+          y: sum.y + Math.sin(offset)
+        };
+      },
+      { x: 0, y: 0 }
+    );
     const baseAngle = Math.atan2(offsetVector.y, offsetVector.x);
     const targets = new Map();
     let error = 0;
 
     for (let index = 0; index < ring.atomIds.length; index++) {
-      const target = add(center, fromAngle(baseAngle + (direction * index * step), radius));
+      const target = add(center, fromAngle(baseAngle + direction * index * step, radius));
       const actual = positions[index];
-      error += ((target.x - actual.x) ** 2) + ((target.y - actual.y) ** 2);
+      error += (target.x - actual.x) ** 2 + (target.y - actual.y) ** 2;
       targets.set(ring.atomIds[index], target);
     }
 
@@ -475,23 +471,26 @@ function relaxConstructedFusedCoords(layoutGraph, ringAtomIds, inputCoords, bond
         dx /= magnitude;
         dy /= magnitude;
         targets.push({
-          x: neighborPosition.x + (dx * bondLength),
-          y: neighborPosition.y + (dy * bondLength)
+          x: neighborPosition.x + dx * bondLength,
+          y: neighborPosition.y + dy * bondLength
         });
       }
 
       if (targets.length === 0) {
         continue;
       }
-      const averageTarget = targets.reduce((sum, position) => ({
-        x: sum.x + position.x,
-        y: sum.y + position.y
-      }), { x: 0, y: 0 });
+      const averageTarget = targets.reduce(
+        (sum, position) => ({
+          x: sum.x + position.x,
+          y: sum.y + position.y
+        }),
+        { x: 0, y: 0 }
+      );
       averageTarget.x /= targets.length;
       averageTarget.y /= targets.length;
       nextPositions.set(atomId, {
-        x: (currentPosition.x * (1 - damping)) + (averageTarget.x * damping),
-        y: (currentPosition.y * (1 - damping)) + (averageTarget.y * damping)
+        x: currentPosition.x * (1 - damping) + averageTarget.x * damping,
+        y: currentPosition.y * (1 - damping) + averageTarget.y * damping
       });
     }
 
@@ -548,8 +547,8 @@ function regularizeConstructedFusedCoords(rings, inputCoords, bondLength, option
         y: sum.y / count
       };
       coords.set(atomId, {
-        x: (current.x * (1 - damping)) + (target.x * damping),
-        y: (current.y * (1 - damping)) + (target.y * damping)
+        x: current.x * (1 - damping) + target.x * damping,
+        y: current.y * (1 - damping) + target.y * damping
       });
     }
   }
@@ -597,7 +596,7 @@ export function layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLeng
   const rootStep = (2 * Math.PI) / rootRing.atomIds.length;
   const rootRadius = bondLength / (2 * Math.sin(Math.PI / rootRing.atomIds.length));
   for (let index = 0; index < rootRing.atomIds.length; index++) {
-    coords.set(rootRing.atomIds[index], add({ x: 0, y: 0 }, fromAngle(Math.PI / 2 + (index * rootStep), rootRadius)));
+    coords.set(rootRing.atomIds[index], add({ x: 0, y: 0 }, fromAngle(Math.PI / 2 + index * rootStep, rootRadius)));
   }
   ringCenters.set(rootRing.id, centroid(rootRing.atomIds.map(atomId => coords.get(atomId))));
 
@@ -645,7 +644,7 @@ export function layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLeng
       coords.set(firstSharedAtomId, firstPosition);
       coords.set(secondSharedAtomId, secondPosition);
       for (let index = 1; index < path.length - 1; index++) {
-        coords.set(path[index], add(neighborCenter, fromAngle(angleA + (index * step), rootRadiusForSize(neighborRing.atomIds.length, bondLength))));
+        coords.set(path[index], add(neighborCenter, fromAngle(angleA + index * step, rootRadiusForSize(neighborRing.atomIds.length, bondLength))));
       }
 
       placedRingIds.add(neighborRing.id);

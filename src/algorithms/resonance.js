@@ -1632,23 +1632,12 @@ function _captureCanonicalComponentState(molecule, atomIds, bondIds) {
   };
 }
 
-function _enumerateRawStatesForComponent(
-  molecule,
-  component,
-  {
-    maxContributors,
-    maxCharge,
-    includeChargeSeparatedStates
-  }
-) {
+function _enumerateRawStatesForComponent(molecule, component, { maxContributors, maxCharge, includeChargeSeparatedStates }) {
   const { atomIds, bondIds } = component;
   const { fixedBondIds, candidateBondIds } = _classifyBonds(molecule, bondIds);
   const candidates = [...candidateBondIds];
   const enumerationBudget = _enumerationBudget(maxContributors);
-  const {
-    canonicalAtomCharges,
-    canonicalAbsoluteChargeMagnitude
-  } = _captureCanonicalComponentState(molecule, atomIds, bondIds);
+  const { canonicalAtomCharges, canonicalAbsoluteChargeMagnitude } = _captureCanonicalComponentState(molecule, atomIds, bondIds);
 
   const pairedStates = _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, enumerationBudget, maxCharge);
   const seen = new Set(pairedStates.map(s => _stateKey(s.bondOrders, s.atomCharges, s.atomRadicals)));
@@ -1683,18 +1672,17 @@ function _mergeComponentStateIntoCanonical(componentState, canonicalState) {
   };
 }
 
-function _enumerateIndependentComponentStates(
-  molecule,
-  components,
-  canonicalState,
-  canonicalComponentState,
-  atomIds,
-  bondIds,
-  options
-) {
+function _enumerateIndependentComponentStates(molecule, components, canonicalState, canonicalComponentState, atomIds, bondIds, options) {
   const rawStates = [];
   const seenResolvedKeys = new Set([
-    _resolvedStateKey(canonicalState, canonicalComponentState.canonicalBondOrders, canonicalComponentState.canonicalAtomCharges, canonicalComponentState.canonicalAtomRadicals, atomIds, bondIds)
+    _resolvedStateKey(
+      canonicalState,
+      canonicalComponentState.canonicalBondOrders,
+      canonicalComponentState.canonicalAtomCharges,
+      canonicalComponentState.canonicalAtomRadicals,
+      atomIds,
+      bondIds
+    )
   ]);
 
   for (const component of components) {
@@ -1925,19 +1913,11 @@ export function generateResonanceStructures(molecule, options = {}) {
 
   let allRawStates;
   if (!includeIndependentComponentPermutations && components.length > 1) {
-    allRawStates = _enumerateIndependentComponentStates(
-      molecule,
-      components,
-      canonicalState,
-      canonicalComponentState,
-      atomIds,
-      bondIds,
-      {
-        maxContributors,
-        maxCharge,
-        includeChargeSeparatedStates
-      }
-    );
+    allRawStates = _enumerateIndependentComponentStates(molecule, components, canonicalState, canonicalComponentState, atomIds, bondIds, {
+      maxContributors,
+      maxCharge,
+      includeChargeSeparatedStates
+    });
   } else {
     const enumerationBudget = _enumerationBudget(maxContributors);
     const pairedStates = _enumerateMatchings(molecule, atomIds, candidates, fixedBondIds, enumerationBudget, maxCharge);
@@ -1949,13 +1929,15 @@ export function generateResonanceStructures(molecule, options = {}) {
   allRawStates = allRawStates
     .filter(state => includeChargeSeparatedStates || _matchesCanonicalAtomCharges(state, canonicalComponentState.canonicalAtomCharges, atomIds))
     .filter(
-      state => includeIndependentComponentPermutations || _changedComponentCount(
-        state,
-        canonicalComponentState.canonicalBondOrders,
-        canonicalComponentState.canonicalAtomCharges,
-        canonicalComponentState.canonicalAtomRadicals,
-        components
-      ) <= 1
+      state =>
+        includeIndependentComponentPermutations ||
+        _changedComponentCount(
+          state,
+          canonicalComponentState.canonicalBondOrders,
+          canonicalComponentState.canonicalAtomCharges,
+          canonicalComponentState.canonicalAtomRadicals,
+          components
+        ) <= 1
     )
     .filter(state => _isSingleChargeShiftState(state, atomIds, canonicalComponentState.canonicalAbsoluteChargeMagnitude))
     .slice(0, maxContributors);

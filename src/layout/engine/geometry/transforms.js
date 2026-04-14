@@ -23,7 +23,7 @@ function reflectAcrossLine(point, lineFirst, lineSecond) {
 
   const unitAxis = { x: axis.x / axisLength, y: axis.y / axisLength };
   const offset = sub(point, lineFirst);
-  const parallel = (offset.x * unitAxis.x) + (offset.y * unitAxis.y);
+  const parallel = offset.x * unitAxis.x + offset.y * unitAxis.y;
   const parallelVector = { x: unitAxis.x * parallel, y: unitAxis.y * parallel };
   const perpendicularVector = sub(offset, parallelVector);
   return add(lineFirst, sub(parallelVector, perpendicularVector));
@@ -79,7 +79,7 @@ function fixedResidualScore(transformedCoords, fixedAtomIds, fixedCoords) {
     }
     const dx = transformed.x - target.x;
     const dy = transformed.y - target.y;
-    residual += (dx * dx) + (dy * dy);
+    residual += dx * dx + dy * dy;
   }
   return residual;
 }
@@ -109,7 +109,7 @@ function chooseAnchorPair(fixedAtomIds, fixedCoords) {
       }
       const dx = secondPosition.x - firstPosition.x;
       const dy = secondPosition.y - firstPosition.y;
-      const distanceSquared = (dx * dx) + (dy * dy);
+      const distanceSquared = dx * dx + dy * dy;
       if (distanceSquared > bestDistanceSquared) {
         bestDistanceSquared = distanceSquared;
         bestPair = [firstAtomId, secondAtomId];

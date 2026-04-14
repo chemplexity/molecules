@@ -31,8 +31,8 @@ function clamp(value, minValue, maxValue) {
 function quadraticPoint(firstPoint, controlPoint, secondPoint, t) {
   const oneMinusT = 1 - t;
   return {
-    x: (oneMinusT * oneMinusT * firstPoint.x) + (2 * oneMinusT * t * controlPoint.x) + (t * t * secondPoint.x),
-    y: (oneMinusT * oneMinusT * firstPoint.y) + (2 * oneMinusT * t * controlPoint.y) + (t * t * secondPoint.y)
+    x: oneMinusT * oneMinusT * firstPoint.x + 2 * oneMinusT * t * controlPoint.x + t * t * secondPoint.x,
+    y: oneMinusT * oneMinusT * firstPoint.y + 2 * oneMinusT * t * controlPoint.y + t * t * secondPoint.y
   };
 }
 
@@ -41,22 +41,28 @@ function quadraticPoint(firstPoint, controlPoint, secondPoint, t) {
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string[]} atomIds - Bridged component atom IDs.
  * @param {[string, string]} bridgeheadAtomIds - Chosen bridgehead pair.
+ * @param {object} [options] - Enumeration options.
+ * @param {number} [options.maxPathCount] - Maximum number of paths to collect before stopping.
  * @returns {string[][]} Canonically ordered simple paths.
  */
-export function enumerateBridgePaths(layoutGraph, atomIds, bridgeheadAtomIds) {
+export function enumerateBridgePaths(layoutGraph, atomIds, bridgeheadAtomIds, options = {}) {
   const [startAtomId, endAtomId] = bridgeheadAtomIds;
   const adjacency = buildAdjacency(layoutGraph, atomIds);
   const paths = [];
   const seenSignatures = new Set();
+  const maxPathCount = Number.isFinite(options.maxPathCount) ? Math.max(1, Math.trunc(options.maxPathCount)) : Number.POSITIVE_INFINITY;
 
   function dfs(atomId, visited, path) {
+    if (paths.length >= maxPathCount) {
+      return true;
+    }
     if (atomId === endAtomId) {
       const signature = path.join('>');
       if (!seenSignatures.has(signature)) {
         seenSignatures.add(signature);
         paths.push([...path]);
       }
-      return;
+      return paths.length >= maxPathCount;
     }
     for (const neighborAtomId of adjacency.get(atomId) ?? []) {
       if (visited.has(neighborAtomId)) {
@@ -64,10 +70,14 @@ export function enumerateBridgePaths(layoutGraph, atomIds, bridgeheadAtomIds) {
       }
       visited.add(neighborAtomId);
       path.push(neighborAtomId);
-      dfs(neighborAtomId, visited, path);
+      const shouldStop = dfs(neighborAtomId, visited, path);
       path.pop();
       visited.delete(neighborAtomId);
+      if (shouldStop) {
+        return true;
+      }
     }
+    return false;
   }
 
   dfs(startAtomId, new Set([startAtomId]), [startAtomId]);
@@ -136,8 +146,18 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
 
   const oriented = orientBridgedSeed(seedCoords, bridgeheadAtomIds);
   const coords = new Map(oriented.coords);
-  const paths = enumerateBridgePaths(layoutGraph, atomIds, bridgeheadAtomIds);
+  const maxProjectedPathCount = BRIDGE_PROJECTION_FACTORS.maxProjectedPathCount;
+  const paths = enumerateBridgePaths(layoutGraph, atomIds, bridgeheadAtomIds, {
+    maxPathCount: maxProjectedPathCount + 1
+  });
   if (paths.length <= 1) {
+    return {
+      coords,
+      bridgeheadAtomIds,
+      pathCount: paths.length
+    };
+  }
+  if (paths.length > maxProjectedPathCount) {
     return {
       coords,
       bridgeheadAtomIds,
@@ -179,7 +199,7 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
 
     const meanSeedY = internalAtomIds.reduce((sum, atomId) => sum + (oriented.coords.get(atomId)?.y ?? 0), 0) / internalCount;
     const meanSeedX = internalAtomIds.reduce((sum, atomId) => sum + (oriented.coords.get(atomId)?.x ?? 0), 0) / internalCount;
-    let preferredSide = meanSeedY > 1e-6 ? 1 : meanSeedY < -1e-6 ? -1 : (pathIndex % 2 === 0 ? 1 : -1);
+    let preferredSide = meanSeedY > 1e-6 ? 1 : meanSeedY < -1e-6 ? -1 : pathIndex % 2 === 0 ? 1 : -1;
     const oppositeSide = preferredSide === 1 ? -1 : 1;
     if ((sideUsage.get(preferredSide) ?? 0) > (sideUsage.get(oppositeSide) ?? 0) + 1) {
       preferredSide = oppositeSide;
@@ -191,13 +211,10 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
     if (internalCount === 1) {
       const clampedX = clamp(
         meanSeedX,
-        (-headDistance / 2) + (bondLength * BRIDGE_PROJECTION_FACTORS.singleAtomClampMarginFactor),
-        (headDistance / 2) - (bondLength * BRIDGE_PROJECTION_FACTORS.singleAtomClampMarginFactor)
+        -headDistance / 2 + bondLength * BRIDGE_PROJECTION_FACTORS.singleAtomClampMarginFactor,
+        headDistance / 2 - bondLength * BRIDGE_PROJECTION_FACTORS.singleAtomClampMarginFactor
       );
-      const y = side * bondLength * (
-        BRIDGE_PROJECTION_FACTORS.singleAtomBaseHeightFactor
-        + (layer * BRIDGE_PROJECTION_FACTORS.layerSpacingFactor)
-      );
+      const y = side * bondLength * (BRIDGE_PROJECTION_FACTORS.singleAtomBaseHeightFactor + layer * BRIDGE_PROJECTION_FACTORS.layerSpacingFactor);
       coords.set(internalAtomIds[0], { x: clampedX, y });
       continue;
     }
@@ -207,11 +224,12 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
       -bondLength * BRIDGE_PROJECTION_FACTORS.meanSeedBiasClampFactor,
       bondLength * BRIDGE_PROJECTION_FACTORS.meanSeedBiasClampFactor
     );
-    const amplitude = side * bondLength * (
-      BRIDGE_PROJECTION_FACTORS.pathArcBaseAmplitudeFactor
-      + ((internalCount - 1) * BRIDGE_PROJECTION_FACTORS.meanSeedBiasFactor)
-      + (layer * BRIDGE_PROJECTION_FACTORS.layerSpacingFactor)
-    );
+    const amplitude =
+      side *
+      bondLength *
+      (BRIDGE_PROJECTION_FACTORS.pathArcBaseAmplitudeFactor +
+        (internalCount - 1) * BRIDGE_PROJECTION_FACTORS.meanSeedBiasFactor +
+        layer * BRIDGE_PROJECTION_FACTORS.layerSpacingFactor);
     const controlPoint = {
       x: midpointX + xBias,
       y: amplitude

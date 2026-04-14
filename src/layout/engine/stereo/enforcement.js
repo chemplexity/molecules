@@ -81,10 +81,7 @@ function buildCutRingAdjacency(layoutGraph, ring, bond) {
       if (!ringAtomIdSet.has(neighborAtomId)) {
         continue;
       }
-      if (
-        (ringBond.a === bond.a && ringBond.b === bond.b)
-        || (ringBond.a === bond.b && ringBond.b === bond.a)
-      ) {
+      if ((ringBond.a === bond.a && ringBond.b === bond.b) || (ringBond.a === bond.b && ringBond.b === bond.a)) {
         continue;
       }
       adjacency.get(ringAtomId)?.push(neighborAtomId);
@@ -186,10 +183,7 @@ function collectRingReflectionSides(layoutGraph, bond) {
   const ringAtomIdSet = new Set(ring.atomIds);
   const firstBlockedAtomIds = new Set([...ringAtomIdSet].filter(atomId => !firstSeedAtomIds.has(atomId)));
   const secondBlockedAtomIds = new Set([...ringAtomIdSet].filter(atomId => !secondSeedAtomIds.has(atomId)));
-  const candidates = [
-    expandRingSideAtoms(layoutGraph, firstSeedAtomIds, firstBlockedAtomIds),
-    expandRingSideAtoms(layoutGraph, secondSeedAtomIds, secondBlockedAtomIds)
-  ]
+  const candidates = [expandRingSideAtoms(layoutGraph, firstSeedAtomIds, firstBlockedAtomIds), expandRingSideAtoms(layoutGraph, secondSeedAtomIds, secondBlockedAtomIds)]
     .filter(sideAtomIds => sideAtomIds.size > 0)
     .sort((firstSideAtomIds, secondSideAtomIds) => firstSideAtomIds.size - secondSideAtomIds.size);
 
@@ -231,7 +225,7 @@ function measureHeavyAtomSpan(layoutGraph, coords) {
       const secondPosition = heavyPositions[secondIndex];
       const dx = secondPosition.x - firstPosition.x;
       const dy = secondPosition.y - firstPosition.y;
-      maxDistanceSquared = Math.max(maxDistanceSquared, (dx * dx) + (dy * dy));
+      maxDistanceSquared = Math.max(maxDistanceSquared, dx * dx + dy * dy);
     }
   }
 
@@ -241,19 +235,19 @@ function measureHeavyAtomSpan(layoutGraph, coords) {
 function reflectPointAcrossLine(position, firstPoint, secondPoint) {
   const dx = secondPoint.x - firstPoint.x;
   const dy = secondPoint.y - firstPoint.y;
-  const lengthSquared = (dx * dx) + (dy * dy);
+  const lengthSquared = dx * dx + dy * dy;
   if (lengthSquared < 1e-12) {
     return { ...position };
   }
 
-  const projectionScale = (((position.x - firstPoint.x) * dx) + ((position.y - firstPoint.y) * dy)) / lengthSquared;
+  const projectionScale = ((position.x - firstPoint.x) * dx + (position.y - firstPoint.y) * dy) / lengthSquared;
   const projection = {
-    x: firstPoint.x + (projectionScale * dx),
-    y: firstPoint.y + (projectionScale * dy)
+    x: firstPoint.x + projectionScale * dx,
+    y: firstPoint.y + projectionScale * dy
   };
   return {
-    x: (2 * projection.x) - position.x,
-    y: (2 * projection.y) - position.y
+    x: 2 * projection.x - position.x,
+    y: 2 * projection.y - position.y
   };
 }
 
@@ -302,15 +296,13 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   let coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   const ringAtomIds = ringAtomIdSet(layoutGraph);
-  const stereoBonds = [...layoutGraph.bonds.values()].filter(bond =>
-    bond.kind === 'covalent' &&
-    !bond.aromatic &&
-    (bond.order ?? 1) === 2 &&
-    (
-      (!ringAtomIds.has(bond.a) && !ringAtomIds.has(bond.b))
-      || smallestQualifyingStereoRing(layoutGraph, bond)
-    ) &&
-    (layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null) != null
+  const stereoBonds = [...layoutGraph.bonds.values()].filter(
+    bond =>
+      bond.kind === 'covalent' &&
+      !bond.aromatic &&
+      (bond.order ?? 1) === 2 &&
+      ((!ringAtomIds.has(bond.a) && !ringAtomIds.has(bond.b)) || smallestQualifyingStereoRing(layoutGraph, bond)) &&
+      (layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null) != null
   );
 
   if (stereoBonds.length === 0) {
@@ -360,8 +352,7 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
         if (
           !bestCandidate ||
           candidate.matchedStereoCount > bestCandidate.matchedStereoCount ||
-          (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
-            candidate.heavyAtomSpan > bestCandidate.heavyAtomSpan + 1e-6) ||
+          (candidate.matchedStereoCount === bestCandidate.matchedStereoCount && candidate.heavyAtomSpan > bestCandidate.heavyAtomSpan + 1e-6) ||
           (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
             Math.abs(candidate.heavyAtomSpan - bestCandidate.heavyAtomSpan) <= 1e-6 &&
             candidate.layoutCost < bestCandidate.layoutCost - 1e-6) ||

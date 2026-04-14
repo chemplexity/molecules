@@ -412,10 +412,13 @@ describe('createForceSceneRenderer', () => {
     const { renderer, records } = makeRenderer();
     const patchPos = new Map([['a1', { x: 120, y: 140 }]]);
 
-    renderer.updateForce({ id: 'mol-patch', atoms: new Map(), bonds: new Map() }, {
-      preservePositions: true,
-      initialPatchPos: patchPos
-    });
+    renderer.updateForce(
+      { id: 'mol-patch', atoms: new Map(), bonds: new Map() },
+      {
+        preservePositions: true,
+        initialPatchPos: patchPos
+      }
+    );
 
     const patchIndex = records.findIndex(entry => entry[0] === 'patchForceNodePositions');
     const reseatIndex = records.findIndex(entry => entry[0] === 'reseatHydrogensAroundPatched');
@@ -437,16 +440,22 @@ describe('createForceSceneRenderer', () => {
     const { renderer, records } = makeRenderer();
     const anchorLayout = new Map([['a1', { x: 0, y: 0 }]]);
 
-    renderer.updateForce({ id: 'mol-anchor', atoms: new Map(), bonds: new Map() }, {
-      preserveView: true,
-      anchorLayout
-    });
+    renderer.updateForce(
+      { id: 'mol-anchor', atoms: new Map(), bonds: new Map() },
+      {
+        preserveView: true,
+        anchorLayout
+      }
+    );
 
     assert.deepEqual(
       records.find(entry => entry[0] === 'seedForceNodePositions'),
       ['seedForceNodePositions', anchorLayout]
     );
-    assert.equal(records.some(entry => entry[0] === 'buildForceAnchorLayout'), false);
+    assert.equal(
+      records.some(entry => entry[0] === 'buildForceAnchorLayout'),
+      false
+    );
   });
 
   it('seeds missing projected organometallic display hints on the first force render', () => {

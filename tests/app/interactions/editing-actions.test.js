@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../../../src/app/core/editor-actions.js';
 import { createEditingActions } from '../../../src/app/interactions/editing.js';
+import { parseSMILES } from '../../../src/io/smiles.js';
 
 function makeContext(overrides = {}) {
   const selectedAtomIds = new Set(overrides.selectedAtomIds ?? []);
@@ -215,5 +216,36 @@ describe('createEditingActions', () => {
     assert.deepEqual([...selectedBondIds], []);
     assert.equal(calls[0][0], 'refreshSelectionOverlay');
     assert.equal(calls[1][0], 'performStructuralEdit');
+  });
+
+  it('prunes a displayed stereo hydrogen when deleting its bond', () => {
+    const mol = parseSMILES('C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+    const hydrogen = [...mol.atoms.values()].find(atom => atom.name === 'H' && atom.bonds.length === 1 && atom.visible === false);
+    assert.ok(hydrogen, 'expected an explicit stereo hydrogen');
+    const hydrogenBondId = hydrogen.bonds[0];
+    assert.ok(hydrogenBondId, 'expected the stereo hydrogen to have one bond');
+    const parentId = hydrogen.getNeighbors(mol).find(atom => atom.name !== 'H')?.id ?? null;
+    assert.ok(parentId, 'expected the stereo hydrogen to have a heavy-atom parent');
+    hydrogen.visible = true;
+    mol.bonds.get(hydrogenBondId).properties.display = { as: 'wedge', centerId: parentId };
+
+    const { actions } = makeContext({
+      selectedBondIds: [hydrogenBondId],
+      performStructuralEdit: (_kind, _options, mutate) => {
+        mutate({ mol, mode: '2d' });
+        return { performed: true };
+      }
+    });
+
+    const result = actions.deleteSelection();
+
+    assert.deepEqual(result, { performed: true });
+    assert.equal(mol.bonds.has(hydrogenBondId), false);
+    assert.equal(mol.atoms.has(hydrogen.id), false);
+    assert.ok(mol.atoms.has(parentId), 'expected the heavy-atom parent to remain');
+    assert.equal(
+      [...mol.atoms.values()].some(atom => atom.name === 'H' && atom.visible === true && atom.bonds.length === 0),
+      false
+    );
   });
 });

@@ -579,6 +579,168 @@ describe('createStructuralEditActions', () => {
     });
   });
 
+  it('allows force-mode dash edits on displayed stereochemical hydrogen bonds', () => {
+    const mol = parseSMILES('C[C@H](F)Cl');
+    const center = [...mol.atoms.values()].find(atom => atom.name === 'C' && typeof atom.getChirality === 'function' && atom.getChirality());
+    const hydrogen = [...mol.atoms.values()].find(atom => atom.name === 'H' && atom.bonds.length === 1);
+    const bond = mol.bonds.get(hydrogen.bonds[0]);
+    bond.properties.display = { as: 'wedge', centerId: center.id };
+
+    let mutateCalled = false;
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const preflightResult = options.preflight({ mol, mode: 'force', reactionEdit: null });
+            assert.equal(preflightResult, true);
+            mutateCalled = true;
+            return mutate({ mol, mode: 'force', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.promoteBondOrder(bond.id, {
+      drawBondType: 'dash',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(mutateCalled, true);
+    assert.deepEqual(bond.properties.display, {
+      as: 'dash',
+      centerId: center.id,
+      manual: true
+    });
+  });
+
+  it('allows force-mode single edits to clear auto-shown stereochemical hydrogen bonds', () => {
+    const mol = parseSMILES('C[C@H](F)Cl');
+    const center = [...mol.atoms.values()].find(atom => atom.name === 'C' && typeof atom.getChirality === 'function' && atom.getChirality());
+    const hydrogen = [...mol.atoms.values()].find(atom => atom.name === 'H' && atom.bonds.length === 1);
+    const bond = mol.bonds.get(hydrogen.bonds[0]);
+    bond.properties.display = { as: 'dash', centerId: center.id };
+
+    let mutateCalled = false;
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const preflightResult = options.preflight({ mol, mode: 'force', reactionEdit: null });
+            assert.equal(preflightResult, true);
+            mutateCalled = true;
+            return mutate({ mol, mode: 'force', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    actions.promoteBondOrder(bond.id, {
+      drawBondType: 'single',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(mutateCalled, true);
+    assert.equal(bond.properties.order, 1);
+    assert.equal(bond.properties.display, undefined);
+    assert.equal(center.getChirality(), null);
+  });
+
+  it('treats incompatible bond orders on displayed 2D stereochemical hydrogen bonds as a no-op', () => {
+    const mol = parseSMILES('C[C@H](F)Cl');
+    const center = [...mol.atoms.values()].find(atom => atom.name === 'C' && typeof atom.getChirality === 'function' && atom.getChirality());
+    const hydrogen = [...mol.atoms.values()].find(atom => atom.name === 'H' && atom.bonds.length === 1);
+    const bond = mol.bonds.get(hydrogen.bonds[0]);
+    bond.properties.display = { as: 'wedge', centerId: center.id };
+
+    for (const drawBondType of ['double', 'triple', 'aromatic']) {
+      let mutateCalled = false;
+      const { context } = makeBaseContext({
+        context: {
+          controller: {
+            performStructuralEdit(_kind, options, mutate) {
+              const preflightResult = options.preflight({ mol, mode: '2d', reactionEdit: null });
+              if (preflightResult === false) {
+                return { cancelled: true };
+              }
+              mutateCalled = true;
+              return mutate({ mol, mode: '2d', reactionEdit: null });
+            }
+          }
+        }
+      });
+      const actions = createStructuralEditActions(context);
+
+      const result = actions.promoteBondOrder(bond.id, {
+        drawBondType,
+        skipReactionPreviewPrep: true,
+        skipResonancePrep: true,
+        skipSnapshot: true,
+        zoomSnapshot: 'zoom-snapshot'
+      });
+
+      assert.equal(result.cancelled, true);
+      assert.equal(mutateCalled, false);
+      assert.equal(bond.properties.order, 1);
+      assert.deepEqual(bond.properties.display, {
+        as: 'wedge',
+        centerId: center.id
+      });
+      assert.match(center.getChirality(), /^[RS]$/);
+    }
+  });
+
+  it('keeps non-stereochemical force hydrogen bonds blocked for wedge and dash edits', () => {
+    const atom1 = makeAtom('a1', 'C');
+    const atom2 = makeAtom('a2', 'H');
+    const bond = makeBond('b1', 'a1', 'a2', { order: 1 });
+    const mol = {
+      atoms: new Map([
+        ['a1', atom1],
+        ['a2', atom2]
+      ]),
+      bonds: new Map(),
+      clearStereoAnnotations() {},
+      repairImplicitHydrogens() {}
+    };
+    attachBond(mol, bond);
+
+    let mutateCalled = false;
+    const { context } = makeBaseContext({
+      context: {
+        controller: {
+          performStructuralEdit(_kind, options, mutate) {
+            const preflightResult = options.preflight({ mol, mode: 'force', reactionEdit: null });
+            if (preflightResult === false) {
+              return { cancelled: true };
+            }
+            mutateCalled = true;
+            return mutate({ mol, mode: 'force', reactionEdit: null });
+          }
+        }
+      }
+    });
+    const actions = createStructuralEditActions(context);
+
+    const result = actions.promoteBondOrder('b1', {
+      drawBondType: 'dash',
+      skipReactionPreviewPrep: true,
+      skipResonancePrep: true,
+      skipSnapshot: true,
+      zoomSnapshot: 'zoom-snapshot'
+    });
+
+    assert.equal(result.cancelled, true);
+    assert.equal(mutateCalled, false);
+  });
+
   it('changes atom elements through the extracted structural-edit action', () => {
     const atom = makeAtom('a1', 'C');
     const mol = {
@@ -616,6 +778,45 @@ describe('createStructuralEditActions', () => {
     assert.equal(result.clearSelection, true);
     assert.equal(result.suppressPrimitiveHover, true);
     assert.equal(result.clearPrimitiveHover, true);
+  });
+
+  it('projects replaced 2D stereochemical hydrogens away from the parent atom before changing the element', () => {
+    for (const newElement of ['C', 'O', 'S']) {
+      const mol = parseSMILES('C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+      generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+
+      const hydrogen = mol.atoms.get('H4');
+      const parent = mol.atoms.get('C3');
+      assert.ok(hydrogen, 'expected explicit stereochemical hydrogen H4');
+      assert.ok(parent, 'expected attached stereocenter C3');
+      assert.equal(hydrogen.name, 'H');
+      assert.equal(hydrogen.visible, false);
+      assert.equal(hydrogen.x, parent.x);
+      assert.equal(hydrogen.y, parent.y);
+
+      const { context } = makeBaseContext({
+        activeMol: mol,
+        context: {
+          controller: {
+            performStructuralEdit(_kind, _options, mutate) {
+              return mutate({ mol, mode: '2d', reactionEdit: { atomId: hydrogen.id } });
+            }
+          }
+        }
+      });
+      const actions = createStructuralEditActions(context);
+
+      actions.changeAtomElements([hydrogen.id], newElement, { zoomSnapshot: 'zoom-snapshot' });
+
+      const replaced = mol.atoms.get(hydrogen.id);
+      assert.equal(replaced?.name, newElement);
+      assert.equal(replaced?.visible, true);
+      assert.ok(Number.isFinite(replaced?.x) && Number.isFinite(replaced?.y), 'expected replacement atom to have placed 2D coords');
+      assert.ok(
+        Math.hypot(replaced.x - parent.x, replaced.y - parent.y) > 1,
+        `expected replacement atom ${newElement} to be moved off the parent atom instead of staying coincident`
+      );
+    }
   });
 
   it('seeds force atom edits from the edited atom position before the first redraw', () => {
@@ -853,7 +1054,10 @@ describe('createStructuralEditActions', () => {
     });
 
     assert.equal(mol.atoms.get(oxygenId)?.getCharge?.() ?? mol.atoms.get(oxygenId)?.properties?.charge, -1);
-    assert.equal(validateValence(mol).some(warning => warning.atomId === oxygenId), false);
+    assert.equal(
+      validateValence(mol).some(warning => warning.atomId === oxygenId),
+      false
+    );
     assert.equal(mol.atomCount, originalAtomCount - 1);
     assert.equal(mol.bondCount, originalBondCount - 1);
   });
@@ -881,7 +1085,10 @@ describe('createStructuralEditActions', () => {
     });
 
     assert.equal(mol.atoms.get(carbonId)?.getCharge?.() ?? mol.atoms.get(carbonId)?.properties?.charge, 1);
-    assert.equal(validateValence(mol).some(warning => warning.atomId === carbonId), false);
+    assert.equal(
+      validateValence(mol).some(warning => warning.atomId === carbonId),
+      false
+    );
     assert.equal(mol.atomCount, originalAtomCount - 1);
     assert.equal(mol.bondCount, originalBondCount - 1);
   });
@@ -909,7 +1116,10 @@ describe('createStructuralEditActions', () => {
     });
 
     assert.equal(mol.atoms.get(oxygenId)?.getCharge?.() ?? mol.atoms.get(oxygenId)?.properties?.charge, 2);
-    assert.equal(validateValence(mol).some(warning => warning.atomId === oxygenId), true);
+    assert.equal(
+      validateValence(mol).some(warning => warning.atomId === oxygenId),
+      true
+    );
     assert.equal(mol.atomCount, originalAtomCount);
     assert.equal(mol.bondCount, originalBondCount);
   });
@@ -937,7 +1147,10 @@ describe('createStructuralEditActions', () => {
     });
 
     assert.equal(mol.atoms.get(nitrogenId)?.getCharge?.() ?? mol.atoms.get(nitrogenId)?.properties?.charge, 2);
-    assert.equal(validateValence(mol).some(warning => warning.atomId === nitrogenId), true);
+    assert.equal(
+      validateValence(mol).some(warning => warning.atomId === nitrogenId),
+      true
+    );
     assert.equal(mol.atomCount, originalAtomCount);
     assert.equal(mol.bondCount, originalBondCount);
   });
@@ -948,12 +1161,18 @@ describe('repairImplicitHydrogensWhenValenceImproves', () => {
     const mol = parseSMILES('[CH3]');
     const carbonId = [...mol.atoms.values()].find(atom => atom.name === 'C')?.id;
 
-    assert.equal(validateValence(mol).some(warning => warning.atomId === carbonId), true);
+    assert.equal(
+      validateValence(mol).some(warning => warning.atomId === carbonId),
+      true
+    );
 
     const repaired = repairImplicitHydrogensWhenValenceImproves(mol, [carbonId]);
 
     assert.equal(repaired, true);
-    assert.equal(validateValence(mol).some(warning => warning.atomId === carbonId), false);
+    assert.equal(
+      validateValence(mol).some(warning => warning.atomId === carbonId),
+      false
+    );
   });
 
   it('leaves implicit hydrogens unchanged when there is no local valence warning to fix', () => {

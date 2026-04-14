@@ -49,9 +49,7 @@ function isLinearCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
   }
 
   const crossLikeCenter = describeCrossLikeHypervalentCenter(layoutGraph, atomId);
-  return crossLikeCenter != null
-    && crossLikeCenter.singleNeighborIds.includes(previousAtomId)
-    && crossLikeCenter.singleNeighborIds.includes(nextAtomId);
+  return crossLikeCenter != null && crossLikeCenter.singleNeighborIds.includes(previousAtomId) && crossLikeCenter.singleNeighborIds.includes(nextAtomId);
 }
 
 /**
@@ -174,13 +172,14 @@ function acyclicStereoBonds(layoutGraph) {
     }
   }
 
-  return [...layoutGraph.bonds.values()].filter(bond =>
-    bond.kind === 'covalent' &&
-    !bond.aromatic &&
-    (bond.order ?? 1) === 2 &&
-    !ringAtomIds.has(bond.a) &&
-    !ringAtomIds.has(bond.b) &&
-    (layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null) != null
+  return [...layoutGraph.bonds.values()].filter(
+    bond =>
+      bond.kind === 'covalent' &&
+      !bond.aromatic &&
+      (bond.order ?? 1) === 2 &&
+      !ringAtomIds.has(bond.a) &&
+      !ringAtomIds.has(bond.b) &&
+      (layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null) != null
   );
 }
 
@@ -226,7 +225,7 @@ function measureBackboneSpan(coords, backbone) {
       }
       const dx = secondPosition.x - firstPosition.x;
       const dy = secondPosition.y - firstPosition.y;
-      maxDistanceSquared = Math.max(maxDistanceSquared, (dx * dx) + (dy * dy));
+      maxDistanceSquared = Math.max(maxDistanceSquared, dx * dx + dy * dy);
     }
   }
   return maxDistanceSquared;
@@ -260,11 +259,7 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
 
   const stereoBonds = acyclicStereoBonds(layoutGraph);
   const idealBackboneSpan = Math.max(0, (backbone.length - 1) * layoutGraph.options.bondLength);
-  if (
-    stereoBonds.length >= 3 &&
-    idealBackboneSpan > 0 &&
-    (measureBackboneSpan(coords, backbone) / (idealBackboneSpan * idealBackboneSpan)) >= 0.7
-  ) {
+  if (stereoBonds.length >= 3 && idealBackboneSpan > 0 && measureBackboneSpan(coords, backbone) / (idealBackboneSpan * idealBackboneSpan) >= 0.7) {
     return coords;
   }
 
@@ -317,8 +312,7 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
       if (
         !bestCandidate ||
         candidate.matchedStereoCount > bestCandidate.matchedStereoCount ||
-        (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
-          candidate.backboneSpan > bestCandidate.backboneSpan + 1e-6) ||
+        (candidate.matchedStereoCount === bestCandidate.matchedStereoCount && candidate.backboneSpan > bestCandidate.backboneSpan + 1e-6) ||
         (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
           Math.abs(candidate.backboneSpan - bestCandidate.backboneSpan) <= 1e-6 &&
           candidate.rotationMagnitude < bestCandidate.rotationMagnitude - 1e-6)
@@ -381,8 +375,7 @@ function breadthFirstFarthest(adjacency, canonicalAtomRank, startAtomId, atomIds
       if (
         farthestPreferredAtomId == null ||
         currentDistance > distance.get(farthestPreferredAtomId) ||
-        (currentDistance === distance.get(farthestPreferredAtomId) &&
-          compareCanonicalAtomIds(atomId, farthestPreferredAtomId, canonicalAtomRank) < 0)
+        (currentDistance === distance.get(farthestPreferredAtomId) && compareCanonicalAtomIds(atomId, farthestPreferredAtomId, canonicalAtomRank) < 0)
       ) {
         farthestPreferredAtomId = atomId;
       }
@@ -403,8 +396,9 @@ function breadthFirstFarthest(adjacency, canonicalAtomRank, startAtomId, atomIds
 
 function longestBackbonePath(adjacency, canonicalAtomRank, atomIdsToPlace, layoutGraph = null) {
   const preferredSeedAtomIds = [...atomIdsToPlace].filter(atomId => isPreferredBackboneEndpoint(layoutGraph, adjacency, atomId, atomIdsToPlace));
-  const seedAtomId = (preferredSeedAtomIds.length > 0 ? preferredSeedAtomIds : [...atomIdsToPlace])
-    .sort((firstAtomId, secondAtomId) => compareCanonicalAtomIds(firstAtomId, secondAtomId, canonicalAtomRank))[0];
+  const seedAtomId = (preferredSeedAtomIds.length > 0 ? preferredSeedAtomIds : [...atomIdsToPlace]).sort((firstAtomId, secondAtomId) =>
+    compareCanonicalAtomIds(firstAtomId, secondAtomId, canonicalAtomRank)
+  )[0];
   const firstPass = breadthFirstFarthest(adjacency, canonicalAtomRank, seedAtomId, atomIdsToPlace, layoutGraph);
   const secondPass = breadthFirstFarthest(adjacency, canonicalAtomRank, firstPass.farthestAtomId, atomIdsToPlace, layoutGraph);
   const path = [];
@@ -445,9 +439,7 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
     coords.set(backbone[0], { x: 0, y: 0 });
     coords.set(backbone[1], { x: bondLength, y: 0 });
     placeRemainingBranches(adjacency, canonicalAtomRank, coords, atomIdsToPlace, backbone, bondLength, layoutGraph);
-    return layoutGraph
-      ? enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords
-      : coords;
+    return layoutGraph ? enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords : coords;
   }
 
   coords.set(backbone[0], { x: 0, y: 0 });

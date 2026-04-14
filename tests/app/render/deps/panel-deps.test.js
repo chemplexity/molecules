@@ -25,10 +25,7 @@ describe('createBondEnPanelDeps', () => {
     deps.draw2d();
     deps.updateForce('mol', { preserveView: true });
 
-    assert.deepEqual(records, [
-      ['draw2d'],
-      ['updateForce', 'mol', { preserveView: true }]
-    ]);
+    assert.deepEqual(records, [['draw2d'], ['updateForce', 'mol', { preserveView: true }]]);
   });
 });
 
@@ -105,9 +102,6 @@ describe('createAtomNumberingPanelDeps', () => {
     deps.draw2d();
     deps.updateRenderOptions({ showLonePairs: true });
 
-    assert.deepEqual(records, [
-      ['draw2d'],
-      ['updateRenderOptions', { showLonePairs: true }]
-    ]);
+    assert.deepEqual(records, [['draw2d'], ['updateRenderOptions', { showLonePairs: true }]]);
   });
 });

@@ -52,8 +52,8 @@ function ringInteriorDot(layoutGraph, coords, anchorAtomId, substituentAtomId) {
     if (countedAtoms === 0) {
       continue;
     }
-    inwardX += (centroidX / countedAtoms) - anchorPosition.x;
-    inwardY += (centroidY / countedAtoms) - anchorPosition.y;
+    inwardX += centroidX / countedAtoms - anchorPosition.x;
+    inwardY += centroidY / countedAtoms - anchorPosition.y;
   }
 
   const rootX = substituentPosition.x - anchorPosition.x;

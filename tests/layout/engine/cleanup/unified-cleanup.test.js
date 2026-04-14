@@ -56,7 +56,8 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
   });
 
   it('prioritizes overlap-reducing cleanup moves first on large crowded macrocycles', () => {
-    const smiles = 'CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O';
+    const smiles =
+      'CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O';
     const graph = createLayoutGraph(parseSMILES(smiles), normalizeOptions({ suppressH: true }));
     const policy = resolvePolicy(resolveProfile(graph.options.profile), graph.traits);
     const placement = layoutSupportedComponents(graph, policy);

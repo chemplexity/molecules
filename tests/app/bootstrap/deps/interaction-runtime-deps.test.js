@@ -110,6 +110,7 @@ describe('interaction-runtime dependency builder', () => {
       get2DAtoms: () => [],
       get2DCenterX: () => 0,
       get2DCenterY: () => 0,
+      toSelectionSVGPt2d: atom => ({ x: atom?.id ?? 'missing', y: 5 }),
       forceBondLength: 25,
       strokeWidth: 2,
       fontSize: 16,
@@ -170,5 +171,6 @@ describe('interaction-runtime dependency builder', () => {
     assert.deepEqual(deps.getSelectedDragAtomIds('mol'), new Set([1]));
     assert.equal(deps.getActiveMolecule(), 'active-mol');
     assert.equal(deps.ensureActiveMolecule(), 'ensured-mol');
+    assert.deepEqual(deps.toSelectionSVGPt2d({ id: 'H4' }), { x: 'H4', y: 5 });
   });
 });

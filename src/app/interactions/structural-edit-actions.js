@@ -3,8 +3,100 @@
 import { ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../core/editor-actions.js';
 import { applyDisplayedStereoToCenter, getPreferredBondDisplayCenterId } from '../../layout/mol2d-helpers.js';
 import { repairImplicitHydrogensWhenValenceImproves } from './implicit-hydrogen-repair.js';
+import { synthesizeHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
 
 const FORCE_RESEAT_HYDROGEN_DISTANCE = 25;
+const DEFAULT_2D_BOND_LENGTH = 1.5;
+
+/**
+ * Returns ring polygons incident to one atom using already-placed 2D coords.
+ * @param {import('../../core/Molecule.js').Molecule} molecule - Molecule graph.
+ * @param {string} atomId - Atom id whose incident ring polygons are requested.
+ * @returns {Array<Array<{x: number, y: number}>>} Incident ring polygons.
+ */
+function incidentRingPolygonsForAtom(molecule, atomId) {
+  return molecule
+    .getRings()
+    .filter(ringAtomIds => ringAtomIds.includes(atomId))
+    .map(ringAtomIds =>
+      ringAtomIds
+        .map(ringAtomId => molecule.atoms.get(ringAtomId))
+        .filter(atom => atom && Number.isFinite(atom.x) && Number.isFinite(atom.y))
+        .map(atom => ({ x: atom.x, y: atom.y }))
+    )
+    .filter(polygon => polygon.length >= 3);
+}
+
+/**
+ * Returns a replacement coordinate for a displayed or hidden stereochemical
+ * hydrogen that is about to become a real editable atom in 2D.
+ * @param {import('../../core/Molecule.js').Molecule} molecule - Molecule graph.
+ * @param {string} atomId - Hydrogen atom id that may need a projected position.
+ * @param {number} [bondLength] - Target 2D bond length for the replacement atom.
+ * @returns {{x: number, y: number}|null} Projected replacement position, or null.
+ */
+function getProjected2dStereoHydrogenReplacementPosition(molecule, atomId, bondLength = DEFAULT_2D_BOND_LENGTH) {
+  const atom = molecule?.atoms?.get(atomId);
+  if (!atom || atom.name !== 'H') {
+    return null;
+  }
+
+  const neighbors = atom.getNeighbors(molecule);
+  if (neighbors.length !== 1) {
+    return null;
+  }
+  const parent = neighbors[0];
+  if (!parent?.getChirality?.() || !Number.isFinite(parent.x) || !Number.isFinite(parent.y)) {
+    return null;
+  }
+
+  const bond = molecule.getBond(atom.id, parent.id);
+  const hasCoincidentCoords =
+    Number.isFinite(atom.x) &&
+    Number.isFinite(atom.y) &&
+    Math.abs(atom.x - parent.x) <= 1e-6 &&
+    Math.abs(atom.y - parent.y) <= 1e-6;
+  const hasDisplayedStereo = bond?.properties?.display?.as === 'wedge' || bond?.properties?.display?.as === 'dash';
+  if (atom.visible !== false && !hasDisplayedStereo) {
+    return null;
+  }
+  if (!hasCoincidentCoords && atom.visible !== false) {
+    return null;
+  }
+
+  const knownPositions = parent
+    .getNeighbors(molecule)
+    .filter(neighbor => neighbor.id !== atom.id && Number.isFinite(neighbor.x) && Number.isFinite(neighbor.y))
+    .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
+
+  return synthesizeHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength, {
+    incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id)
+  });
+}
+
+/**
+ * Seeds projected stereochemical hydrogen replacements onto real 2D atom
+ * coordinates before the atom element changes away from hydrogen.
+ * @param {import('../../core/Molecule.js').Molecule} molecule - Molecule graph.
+ * @param {string[]} atomIds - Atom ids being edited.
+ * @param {number} [bondLength] - Target 2D bond length for projected replacements.
+ * @returns {void}
+ */
+function seed2dReplacementCoordsForProjectedHydrogens(molecule, atomIds, bondLength = DEFAULT_2D_BOND_LENGTH) {
+  for (const atomId of atomIds) {
+    const atom = molecule?.atoms?.get(atomId);
+    if (!atom || atom.name !== 'H') {
+      continue;
+    }
+    const projectedPosition = getProjected2dStereoHydrogenReplacementPosition(molecule, atomId, bondLength);
+    if (!projectedPosition) {
+      continue;
+    }
+    atom.x = projectedPosition.x;
+    atom.y = projectedPosition.y;
+    atom.visible = true;
+  }
+}
 
 function clearBondDisplayStereo(bond) {
   if (!bond?.properties?.display) {
@@ -37,11 +129,76 @@ function setBondDisplayStereo(bond, type, { centerId = null, manual = false } = 
   }
 }
 
+/**
+ * Resolves the preferred stereo-center atom id for an explicit bond-display edit.
+ * Existing display metadata acts as a stable fallback so repeated wedge/dash
+ * flips keep using the same bond origin.
+ * @param {object|null|undefined} bond - Bond-like object being edited.
+ * @param {string|null} [preferredCenterId] - Caller-provided preferred center.
+ * @returns {string|null} Preferred stereo-center atom id when available.
+ */
+function resolveStoredPreferredCenterId(bond, preferredCenterId = null) {
+  return preferredCenterId ?? bond?.properties?.display?.centerId ?? null;
+}
+
+/**
+ * Returns whether a force-mode hydrogen bond should remain editable because it
+ * represents a stereochemical hydrogen display. Ordinary force-layout H bonds
+ * stay blocked, but displayed stereo hydrogens may be flipped between wedge,
+ * dash, and plain single-bond display.
+ * @param {object} mol - Molecule containing the bond.
+ * @param {object|null|undefined} bond - Candidate bond.
+ * @param {string|null} drawBondType - Requested draw-bond type.
+ * @param {string|null} [preferredCenterId] - Preferred stereo-center hint.
+ * @returns {boolean} True when the force-mode edit should be allowed.
+ */
+function isForceEditableHydrogenStereoBond(mol, bond, drawBondType, preferredCenterId = null) {
+  if (!mol || !bond) {
+    return false;
+  }
+  const atoms = bond.getAtomObjects?.(mol) ?? [];
+  if (!atoms.some(atom => atom?.name === 'H')) {
+    return false;
+  }
+  const displayAs = bond.properties?.display?.as ?? null;
+  if (drawBondType === 'single') {
+    return displayAs === 'wedge' || displayAs === 'dash';
+  }
+  if (drawBondType !== 'wedge' && drawBondType !== 'dash') {
+    return false;
+  }
+  if (displayAs === 'wedge' || displayAs === 'dash') {
+    return true;
+  }
+  const centerId = getPreferredBondDisplayCenterId(mol, bond.id, preferredCenterId);
+  return !!centerId && !!mol.atoms.get(centerId)?.getChirality?.();
+}
+
+/**
+ * Returns whether the requested draw-bond type should be a no-op for a
+ * displayed stereochemical hydrogen bond.
+ * @param {object} mol - Molecule containing the bond.
+ * @param {object|null|undefined} bond - Candidate bond.
+ * @param {string|null} drawBondType - Requested draw-bond type.
+ * @returns {boolean} True when the edit should be blocked before mutation.
+ */
+function isIncompatibleStereoHydrogenDrawType(mol, bond, drawBondType) {
+  if (!mol || !bond || (drawBondType !== 'double' && drawBondType !== 'triple' && drawBondType !== 'aromatic')) {
+    return false;
+  }
+  const atoms = bond.getAtomObjects?.(mol) ?? [];
+  if (!atoms.some(atom => atom?.name === 'H')) {
+    return false;
+  }
+  const displayAs = bond.properties?.display?.as ?? null;
+  return displayAs === 'wedge' || displayAs === 'dash';
+}
+
 function tryApplyExplicitStereoAssignment(mol, bond, drawBondType, preferredCenterId = null) {
   if (!mol || !bond || (drawBondType !== 'wedge' && drawBondType !== 'dash')) {
     return null;
   }
-  const resolvedPreferredCenterId = getPreferredBondDisplayCenterId(mol, bond.id, preferredCenterId);
+  const resolvedPreferredCenterId = getPreferredBondDisplayCenterId(mol, bond.id, resolveStoredPreferredCenterId(bond, preferredCenterId));
   // Only attempt chirality resolution at the preferred (origin) atom to ensure
   // the wedge/dash always originates from the intended end of the bond.
   const center = mol.atoms.get(resolvedPreferredCenterId);
@@ -110,11 +267,10 @@ function applyExplicitBondDrawType(bond, drawBondType) {
   return drawBondType === 'single';
 }
 
-function shouldClearManualBondDisplay(bond, drawBondType) {
+function shouldClearDisplayedStereoBond(bond, drawBondType) {
   return (
     drawBondType === 'single' &&
     (bond?.properties?.order ?? 1) === 1 &&
-    bond?.properties?.display?.manual === true &&
     (bond?.properties?.display?.as === 'wedge' || bond?.properties?.display?.as === 'dash')
   );
 }
@@ -267,13 +423,20 @@ export function createStructuralEditActions(context) {
           if (!bond) {
             return false;
           }
+          const resolvedPreferredCenterId = resolveStoredPreferredCenterId(bond, preferredCenterId);
           if (mode === 'force') {
             const [atom1, atom2] = bond.getAtomObjects(mol);
-            if (atom1?.name === 'H' || atom2?.name === 'H') {
+            if (
+              (atom1?.name === 'H' || atom2?.name === 'H') &&
+              !isForceEditableHydrogenStereoBond(mol, bond, drawBondType, resolvedPreferredCenterId)
+            ) {
               return false;
             }
           }
-          if (isExplicitBondDrawTypeNoOp(bond, explicitDrawBondType, preferredCenterId)) {
+          if (isIncompatibleStereoHydrogenDrawType(mol, bond, drawBondType)) {
+            return false;
+          }
+          if (isExplicitBondDrawTypeNoOp(bond, explicitDrawBondType, resolvedPreferredCenterId)) {
             return false;
           }
           return true;
@@ -288,9 +451,16 @@ export function createStructuralEditActions(context) {
 
         if (mode === 'force') {
           const [atom1, atom2] = bond.getAtomObjects(mol);
-          if (atom1?.name === 'H' || atom2?.name === 'H') {
+          const resolvedPreferredCenterId = resolveStoredPreferredCenterId(bond, preferredCenterId);
+          if (
+            (atom1?.name === 'H' || atom2?.name === 'H') &&
+            !isForceEditableHydrogenStereoBond(mol, bond, drawBondType, resolvedPreferredCenterId)
+          ) {
             return { cancelled: true };
           }
+        }
+        if (isIncompatibleStereoHydrogenDrawType(mol, bond, drawBondType)) {
+          return { cancelled: true };
         }
 
         const activeBondId = bond.id;
@@ -303,7 +473,7 @@ export function createStructuralEditActions(context) {
           }
         }
 
-        if (shouldClearManualBondDisplay(bond, drawBondType)) {
+        if (shouldClearDisplayedStereoBond(bond, drawBondType)) {
           clearBondDisplayStereo(bond);
           bond.setStereo(null);
           bond.properties.order = 1;
@@ -329,7 +499,7 @@ export function createStructuralEditActions(context) {
         }
         repairImplicitHydrogensWhenValenceImproves(mol, affected);
         if (explicitDrawBondType === 'wedge' || explicitDrawBondType === 'dash') {
-          tryApplyExplicitStereoAssignment(mol, bond, explicitDrawBondType, preferredCenterId);
+          tryApplyExplicitStereoAssignment(mol, bond, explicitDrawBondType, resolveStoredPreferredCenterId(bond, preferredCenterId));
         }
 
         const forceResult =
@@ -437,6 +607,9 @@ export function createStructuralEditActions(context) {
         });
         if (toChange.length === 0) {
           return { cancelled: true };
+        }
+        if (mode === '2d' && newEl !== 'H') {
+          seed2dReplacementCoordsForProjectedHydrogens(mol, toChange);
         }
         for (const atomId of toChange) {
           mol.changeAtomElement(atomId, newEl);

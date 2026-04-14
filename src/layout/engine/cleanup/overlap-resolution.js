@@ -1,17 +1,8 @@
 /** @module cleanup/overlap-resolution */
 
-import {
-  buildAtomGrid,
-  computeAtomDistortionCost,
-  computeSubtreeOverlapCost,
-  findSevereOverlaps
-} from '../audit/invariants.js';
+import { buildAtomGrid, computeAtomDistortionCost, computeSubtreeOverlapCost, findSevereOverlaps } from '../audit/invariants.js';
 import { collectCutSubtree } from './subtree-utils.js';
-import {
-  ANGLE_EPSILON,
-  IMPROVEMENT_EPSILON,
-  NUMERIC_EPSILON
-} from '../constants.js';
+import { ANGLE_EPSILON, IMPROVEMENT_EPSILON, NUMERIC_EPSILON } from '../constants.js';
 
 const RIGID_SUBTREE_ROTATION_ANGLES = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12);
 const LARGE_RIGID_SUBTREE_COMPONENT_ATOM_COUNT = 24;
@@ -43,7 +34,10 @@ export function collectRigidPendantRingSubtrees(layoutGraph) {
       continue;
     }
 
-    for (const [anchorAtomId, rootAtomId] of [[bond.a, bond.b], [bond.b, bond.a]]) {
+    for (const [anchorAtomId, rootAtomId] of [
+      [bond.a, bond.b],
+      [bond.b, bond.a]
+    ]) {
       const subtreeAtomIds = collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId);
       if (subtreeAtomIds.has(anchorAtomId) || subtreeAtomIds.size >= totalAtomCount) {
         continue;
@@ -162,8 +156,8 @@ function rotateVector(vector, angle) {
   const cos = Math.cos(angle);
   const sin = Math.sin(angle);
   return {
-    x: (vector.x * cos) - (vector.y * sin),
-    y: (vector.x * sin) + (vector.y * cos)
+    x: vector.x * cos - vector.y * sin,
+    y: vector.x * sin + vector.y * cos
   };
 }
 
@@ -239,14 +233,7 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     y: rootPosition.y - anchorPosition.y
   };
   const currentRootAngle = Math.atan2(currentRootVector.y, currentRootVector.x);
-  const baseOverlapCost = computeSubtreeOverlapCost(
-    layoutGraph,
-    coords,
-    descriptor.subtreeAtomIds,
-    null,
-    bondLength,
-    { atomGrid }
-  );
+  const baseOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, null, bondLength, { atomGrid });
   const baseAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, null);
   let bestMove = null;
 
@@ -277,35 +264,22 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     if (!movedAtomPosition) {
       continue;
     }
-    const resolvedDistance = Math.hypot(
-      movedAtomPosition.x - opposingPosition.x,
-      movedAtomPosition.y - opposingPosition.y
-    );
+    const resolvedDistance = Math.hypot(movedAtomPosition.x - opposingPosition.x, movedAtomPosition.y - opposingPosition.y);
     if (resolvedDistance < threshold) {
       continue;
     }
 
-    const newOverlapCost = computeSubtreeOverlapCost(
-      layoutGraph,
-      coords,
-      descriptor.subtreeAtomIds,
-      newPositions,
-      bondLength,
-      { atomGrid }
-    );
+    const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, newPositions, bondLength, { atomGrid });
     const newAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, newPositions);
-    const improvement = (baseOverlapCost - newOverlapCost) + (baseAnchorDistortion - newAnchorDistortion);
+    const improvement = baseOverlapCost - newOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
     if (improvement <= IMPROVEMENT_EPSILON) {
       continue;
     }
 
     if (
-      !bestMove
-      || improvement > bestMove.improvement + IMPROVEMENT_EPSILON
-      || (
-        Math.abs(improvement - bestMove.improvement) <= IMPROVEMENT_EPSILON
-        && resolvedDistance > bestMove.resolvedDistance + IMPROVEMENT_EPSILON
-      )
+      !bestMove ||
+      improvement > bestMove.improvement + IMPROVEMENT_EPSILON ||
+      (Math.abs(improvement - bestMove.improvement) <= IMPROVEMENT_EPSILON && resolvedDistance > bestMove.resolvedDistance + IMPROVEMENT_EPSILON)
     ) {
       bestMove = {
         positions: newPositions,
@@ -358,17 +332,10 @@ function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition,
   const minimumNonbondedDistance = candidatePosition => {
     let minimumDistance = Number.POSITIVE_INFINITY;
     for (const [otherAtomId, otherPosition] of coords) {
-      if (
-        otherAtomId === atomId
-        || otherAtomId === anchorAtomId
-        || layoutGraph.bondedPairSet?.has(atomPairKey(atomId, otherAtomId))
-      ) {
+      if (otherAtomId === atomId || otherAtomId === anchorAtomId || layoutGraph.bondedPairSet?.has(atomPairKey(atomId, otherAtomId))) {
         continue;
       }
-      minimumDistance = Math.min(
-        minimumDistance,
-        Math.hypot(candidatePosition.x - otherPosition.x, candidatePosition.y - otherPosition.y)
-      );
+      minimumDistance = Math.min(minimumDistance, Math.hypot(candidatePosition.x - otherPosition.x, candidatePosition.y - otherPosition.y));
     }
     return Number.isFinite(minimumDistance) ? minimumDistance : Number.POSITIVE_INFINITY;
   };
@@ -383,10 +350,7 @@ function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition,
         x: anchorPosition.x + rotated.x,
         y: anchorPosition.y + rotated.y
       };
-      const opposingDistance = Math.hypot(
-        candidatePosition.x - opposingPosition.x,
-        candidatePosition.y - opposingPosition.y
-      );
+      const opposingDistance = Math.hypot(candidatePosition.x - opposingPosition.x, candidatePosition.y - opposingPosition.y);
       const nonbondedDistance = minimumNonbondedDistance(candidatePosition);
       const clearsThreshold = opposingDistance >= threshold;
       if (!bestCandidate) {
@@ -404,19 +368,15 @@ function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition,
           bestCandidate = { position: candidatePosition, opposingDistance, nonbondedDistance, step, clearsThreshold };
           continue;
         }
-        if (Math.abs(nonbondedDistance - bestCandidate.nonbondedDistance) <= NUMERIC_EPSILON
-          && (
-            step < bestCandidate.step - NUMERIC_EPSILON
-            || (Math.abs(step - bestCandidate.step) <= NUMERIC_EPSILON && opposingDistance > bestCandidate.opposingDistance)
-          )) {
+        if (
+          Math.abs(nonbondedDistance - bestCandidate.nonbondedDistance) <= NUMERIC_EPSILON &&
+          (step < bestCandidate.step - NUMERIC_EPSILON || (Math.abs(step - bestCandidate.step) <= NUMERIC_EPSILON && opposingDistance > bestCandidate.opposingDistance))
+        ) {
           bestCandidate = { position: candidatePosition, opposingDistance, nonbondedDistance, step, clearsThreshold };
         }
       } else if (
-        opposingDistance > bestCandidate.opposingDistance + NUMERIC_EPSILON
-        || (
-          Math.abs(opposingDistance - bestCandidate.opposingDistance) <= NUMERIC_EPSILON
-          && nonbondedDistance > bestCandidate.nonbondedDistance
-        )
+        opposingDistance > bestCandidate.opposingDistance + NUMERIC_EPSILON ||
+        (Math.abs(opposingDistance - bestCandidate.opposingDistance) <= NUMERIC_EPSILON && nonbondedDistance > bestCandidate.nonbondedDistance)
       ) {
         bestCandidate = { position: candidatePosition, opposingDistance, nonbondedDistance, step, clearsThreshold };
       }
@@ -469,17 +429,11 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
       }
       const ux = dx / distance;
       const uy = dy / distance;
-      const delta = (deficit / 2) + (bondLength * 0.02);
+      const delta = deficit / 2 + bondLength * 0.02;
 
       const firstFixed = isFixedAtom(layoutGraph, overlap.firstAtomId);
       const secondFixed = isFixedAtom(layoutGraph, overlap.secondAtomId);
-      const strategy = chooseMoveStrategy(
-        layoutGraph,
-        overlap.firstAtomId,
-        overlap.secondAtomId,
-        firstFixed,
-        secondFixed
-      );
+      const strategy = chooseMoveStrategy(layoutGraph, overlap.firstAtomId, overlap.secondAtomId, firstFixed, secondFixed);
       if (!strategy) {
         continue;
       }
@@ -522,20 +476,34 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
 
       if (strategy.mode === 'second') {
         const previousSecondPosition = { ...secondPosition };
-        const constrainedPosition = constrainSingleAtomMove(layoutGraph, coords, overlap.secondAtomId, {
-          x: secondPosition.x + (ux * delta * strategy.scale),
-          y: secondPosition.y + (uy * delta * strategy.scale)
-        }, overlap.firstAtomId, threshold);
+        const constrainedPosition = constrainSingleAtomMove(
+          layoutGraph,
+          coords,
+          overlap.secondAtomId,
+          {
+            x: secondPosition.x + ux * delta * strategy.scale,
+            y: secondPosition.y + uy * delta * strategy.scale
+          },
+          overlap.firstAtomId,
+          threshold
+        );
         secondPosition.x = constrainedPosition.x;
         secondPosition.y = constrainedPosition.y;
         atomGrid.remove(overlap.secondAtomId, previousSecondPosition);
         atomGrid.insert(overlap.secondAtomId, secondPosition);
       } else if (strategy.mode === 'first') {
         const previousFirstPosition = { ...firstPosition };
-        const constrainedPosition = constrainSingleAtomMove(layoutGraph, coords, overlap.firstAtomId, {
-          x: firstPosition.x - (ux * delta * strategy.scale),
-          y: firstPosition.y - (uy * delta * strategy.scale)
-        }, overlap.secondAtomId, threshold);
+        const constrainedPosition = constrainSingleAtomMove(
+          layoutGraph,
+          coords,
+          overlap.firstAtomId,
+          {
+            x: firstPosition.x - ux * delta * strategy.scale,
+            y: firstPosition.y - uy * delta * strategy.scale
+          },
+          overlap.secondAtomId,
+          threshold
+        );
         firstPosition.x = constrainedPosition.x;
         firstPosition.y = constrainedPosition.y;
         atomGrid.remove(overlap.firstAtomId, previousFirstPosition);

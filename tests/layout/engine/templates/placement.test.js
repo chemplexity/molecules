@@ -61,12 +61,7 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(cinnolineCoords.get('N7').x > cinnolineCoords.get('C4').x);
 
     const benzotriazoleGraph = createLayoutGraph(parseSMILES('c1ccc2[nH]nnc2c1'));
-    const benzotriazoleCoords = placeTemplateCoords(
-      benzotriazoleGraph,
-      'benzotriazole',
-      benzotriazoleGraph.ringSystems[0].atomIds,
-      benzotriazoleGraph.options.bondLength
-    );
+    const benzotriazoleCoords = placeTemplateCoords(benzotriazoleGraph, 'benzotriazole', benzotriazoleGraph.ringSystems[0].atomIds, benzotriazoleGraph.options.bondLength);
     assert.equal(benzotriazoleCoords.size, 9);
     assert.ok(Math.abs(distance(benzotriazoleCoords.get('N7'), benzotriazoleCoords.get('N8')) - benzotriazoleGraph.options.bondLength) < 1e-6);
 
@@ -83,7 +78,7 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.abs(acridineCoords.get('C6').x - acridineCoords.get('C11').x) < 1e-6);
     const acridineXs = [...acridineCoords.values()].map(position => position.x);
     const acridineYs = [...acridineCoords.values()].map(position => position.y);
-    assert.ok((Math.max(...acridineXs) - Math.min(...acridineXs)) > (Math.max(...acridineYs) - Math.min(...acridineYs)));
+    assert.ok(Math.max(...acridineXs) - Math.min(...acridineXs) > Math.max(...acridineYs) - Math.min(...acridineYs));
 
     const anthraceneGraph = createLayoutGraph(parseSMILES('c1ccc2cc3ccccc3cc2c1'));
     const anthraceneCoords = placeTemplateCoords(anthraceneGraph, 'anthracene', anthraceneGraph.ringSystems[0].atomIds, anthraceneGraph.options.bondLength);
@@ -92,14 +87,14 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.abs(anthraceneCoords.get('C6').x - anthraceneCoords.get('C11').x) < 1e-6);
     const anthraceneXs = [...anthraceneCoords.values()].map(position => position.x);
     const anthraceneYs = [...anthraceneCoords.values()].map(position => position.y);
-    assert.ok((Math.max(...anthraceneXs) - Math.min(...anthraceneXs)) > (Math.max(...anthraceneYs) - Math.min(...anthraceneYs)));
+    assert.ok(Math.max(...anthraceneXs) - Math.min(...anthraceneXs) > Math.max(...anthraceneYs) - Math.min(...anthraceneYs));
 
     const pyreneGraph = createLayoutGraph(parseSMILES('c1cc2ccc3cccc4ccc(c1)c2c34'));
     const pyreneCoords = placeTemplateCoords(pyreneGraph, 'pyrene', pyreneGraph.ringSystems[0].atomIds, pyreneGraph.options.bondLength);
     assert.equal(pyreneCoords.size, 16);
     const pyreneXs = [...pyreneCoords.values()].map(position => position.x);
     const pyreneYs = [...pyreneCoords.values()].map(position => position.y);
-    assert.ok((Math.max(...pyreneXs) - Math.min(...pyreneXs)) > (Math.max(...pyreneYs) - Math.min(...pyreneYs)));
+    assert.ok(Math.max(...pyreneXs) - Math.min(...pyreneXs) > Math.max(...pyreneYs) - Math.min(...pyreneYs));
     assert.ok(Math.abs(Math.max(...pyreneXs) + Math.min(...pyreneXs)) < 1e-6);
     assert.ok(Math.abs(Math.max(...pyreneYs) + Math.min(...pyreneYs)) < 1e-6);
     assert.equal(new Set(pyreneXs.map(value => Number(value.toFixed(6)))).size, 6);
@@ -110,7 +105,7 @@ describe('layout/engine/templates/placement', () => {
     assert.equal(fluoreneCoords.size, 13);
     const fluoreneXs = [...fluoreneCoords.values()].map(position => position.x);
     const fluoreneYs = [...fluoreneCoords.values()].map(position => position.y);
-    assert.ok((Math.max(...fluoreneXs) - Math.min(...fluoreneXs)) > (Math.max(...fluoreneYs) - Math.min(...fluoreneYs)));
+    assert.ok(Math.max(...fluoreneXs) - Math.min(...fluoreneXs) > Math.max(...fluoreneYs) - Math.min(...fluoreneYs));
     assert.ok(Math.abs(fluoreneCoords.get('C1').x + fluoreneCoords.get('C10').x) < 1e-6);
     assert.ok(Math.abs(fluoreneCoords.get('C4').x + fluoreneCoords.get('C13').x) < 1e-6);
     assert.equal(
@@ -119,41 +114,23 @@ describe('layout/engine/templates/placement', () => {
     );
 
     const testosteroneGraph = createLayoutGraph(parseSMILES('C[C@]12CC[C@H]3[C@@H](CC=C4C[C@@H](O)CC[C@]34C)[C@@H]1CC[C@@H]2=O'));
-    const testosteroneCoords = placeTemplateCoords(
-      testosteroneGraph,
-      'steroid-core-unsaturated',
-      testosteroneGraph.ringSystems[0].atomIds,
-      testosteroneGraph.options.bondLength
-    );
+    const testosteroneCoords = placeTemplateCoords(testosteroneGraph, 'steroid-core-unsaturated', testosteroneGraph.ringSystems[0].atomIds, testosteroneGraph.options.bondLength);
     assert.equal(testosteroneCoords.size, 17);
     const testosteroneXs = [...testosteroneCoords.values()].map(position => position.x);
     const testosteroneYs = [...testosteroneCoords.values()].map(position => position.y);
-    assert.ok((Math.max(...testosteroneXs) - Math.min(...testosteroneXs)) > (Math.max(...testosteroneYs) - Math.min(...testosteroneYs)));
-    const testosteronePentagonMeanX = ['C20', 'C22', 'C23', 'C24', 'C2']
-      .map(atomId => testosteroneCoords.get(atomId).x)
-      .reduce((sum, value) => sum + value, 0) / 5;
-    const testosteroneHexMeanX = ['C12', 'C13', 'C16', 'C17', 'C18', 'C11']
-      .map(atomId => testosteroneCoords.get(atomId).x)
-      .reduce((sum, value) => sum + value, 0) / 6;
+    assert.ok(Math.max(...testosteroneXs) - Math.min(...testosteroneXs) > Math.max(...testosteroneYs) - Math.min(...testosteroneYs));
+    const testosteronePentagonMeanX = ['C20', 'C22', 'C23', 'C24', 'C2'].map(atomId => testosteroneCoords.get(atomId).x).reduce((sum, value) => sum + value, 0) / 5;
+    const testosteroneHexMeanX = ['C12', 'C13', 'C16', 'C17', 'C18', 'C11'].map(atomId => testosteroneCoords.get(atomId).x).reduce((sum, value) => sum + value, 0) / 6;
     assert.ok(testosteronePentagonMeanX > testosteroneHexMeanX);
 
     const steroidTestGraph = createLayoutGraph(parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O'));
-    const steroidTestCoords = placeTemplateCoords(
-      steroidTestGraph,
-      'steroid-core-saturated',
-      steroidTestGraph.ringSystems[0].atomIds,
-      steroidTestGraph.options.bondLength
-    );
+    const steroidTestCoords = placeTemplateCoords(steroidTestGraph, 'steroid-core-saturated', steroidTestGraph.ringSystems[0].atomIds, steroidTestGraph.options.bondLength);
     assert.equal(steroidTestCoords.size, 17);
     const steroidTestXs = [...steroidTestCoords.values()].map(position => position.x);
     const steroidTestYs = [...steroidTestCoords.values()].map(position => position.y);
-    assert.ok((Math.max(...steroidTestXs) - Math.min(...steroidTestXs)) > (Math.max(...steroidTestYs) - Math.min(...steroidTestYs)));
-    const steroidPentagonMeanX = ['C20', 'C22', 'C23', 'C24', 'C2']
-      .map(atomId => steroidTestCoords.get(atomId).x)
-      .reduce((sum, value) => sum + value, 0) / 5;
-    const steroidHexMeanX = ['C16', 'C17', 'C18', 'C11', 'C13', 'C14']
-      .map(atomId => steroidTestCoords.get(atomId).x)
-      .reduce((sum, value) => sum + value, 0) / 6;
+    assert.ok(Math.max(...steroidTestXs) - Math.min(...steroidTestXs) > Math.max(...steroidTestYs) - Math.min(...steroidTestYs));
+    const steroidPentagonMeanX = ['C20', 'C22', 'C23', 'C24', 'C2'].map(atomId => steroidTestCoords.get(atomId).x).reduce((sum, value) => sum + value, 0) / 5;
+    const steroidHexMeanX = ['C16', 'C17', 'C18', 'C11', 'C13', 'C14'].map(atomId => steroidTestCoords.get(atomId).x).reduce((sum, value) => sum + value, 0) / 6;
     assert.ok(steroidPentagonMeanX > steroidHexMeanX);
   });
 
@@ -187,12 +164,7 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(chromaneCoords.get('C2').x < chromaneCoords.get('C4').x);
 
     const isochromaneGraph = createLayoutGraph(parseSMILES('c1ccc2COCCc2c1'));
-    const isochromaneCoords = placeTemplateCoords(
-      isochromaneGraph,
-      'isochromane',
-      isochromaneGraph.ringSystems[0].atomIds,
-      isochromaneGraph.options.bondLength
-    );
+    const isochromaneCoords = placeTemplateCoords(isochromaneGraph, 'isochromane', isochromaneGraph.ringSystems[0].atomIds, isochromaneGraph.options.bondLength);
     assert.equal(isochromaneCoords.size, 10);
     assert.ok(Math.abs(isochromaneCoords.get('C4').x - isochromaneCoords.get('C9').x) < 1e-6);
     assert.ok(isochromaneCoords.get('O6').x > isochromaneCoords.get('C4').x);
@@ -206,7 +178,7 @@ describe('layout/engine/templates/placement', () => {
 
     const xs = [...porphineCoords.values()].map(position => position.x);
     const ys = [...porphineCoords.values()].map(position => position.y);
-    assert.ok(Math.abs((Math.max(...xs) - Math.min(...xs)) - (Math.max(...ys) - Math.min(...ys))) < 1e-6);
+    assert.ok(Math.abs(Math.max(...xs) - Math.min(...xs) - (Math.max(...ys) - Math.min(...ys))) < 1e-6);
 
     assert.ok(porphineCoords.get('C10').x < 0 && porphineCoords.get('C10').y > 0);
     assert.ok(porphineCoords.get('C16').x > 0 && porphineCoords.get('C16').y > 0);
@@ -279,6 +251,66 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('a4').x > coords.get('a0').x);
   });
 
+  it('places the tropane bridge-atom scaffold with the expected cocaine-like projection', () => {
+    const graph = createLayoutGraph(parseSMILES('N1C2CCC1CC(C2)'));
+    const coords = placeTemplateCoords(graph, 'tropane', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    assert.equal(coords.size, 8);
+    assert.ok(coords.get('N1').y > coords.get('C5').y);
+    assert.ok(coords.get('N1').y > coords.get('C2').y);
+    assert.ok(Math.abs(coords.get('N1').x - coords.get('C5').x) < 1e-6);
+    assert.ok(coords.get('C5').x < coords.get('C2').x);
+    assert.ok(coords.get('C2').x < coords.get('C8').x);
+    assert.ok(coords.get('C8').x < coords.get('C7').x);
+    assert.ok(coords.get('C4').x < coords.get('C3').x);
+    assert.ok(coords.get('C3').x < coords.get('C5').x);
+    assert.ok(coords.get('C2').y > coords.get('C8').y);
+    assert.ok(coords.get('C8').y > coords.get('C7').y);
+    assert.ok(coords.get('C7').y < coords.get('C6').y);
+    assert.ok(coords.get('C7').y < coords.get('C8').y);
+    assert.ok(coords.get('C4').y < coords.get('C3').y);
+    assert.ok(coords.get('C6').y < coords.get('C8').y);
+  });
+
+  it('places the quinuclidine aza cage with the expected compact reference projection', () => {
+    const graph = createLayoutGraph(parseSMILES('C1CN2CCC1CC2'));
+    const coords = placeTemplateCoords(graph, 'quinuclidine', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const ys = [...coords.values()].map(position => position.y);
+    assert.equal(coords.size, 8);
+    assert.equal(coords.get('C1').y, Math.max(...ys));
+    assert.ok(Math.abs(coords.get('N3').x - coords.get('C2').x) < 1e-6);
+    assert.ok(Math.abs(coords.get('C1').x - coords.get('C6').x) < 0.15);
+    assert.ok(coords.get('C2').y > coords.get('C6').y);
+    assert.ok(coords.get('N3').y < coords.get('C2').y);
+    assert.ok(coords.get('N3').y < coords.get('C6').y);
+    assert.ok(coords.get('C4').y < coords.get('N3').y);
+    assert.ok(coords.get('C8').y < coords.get('N3').y);
+    assert.ok(coords.get('C4').x < coords.get('C5').x);
+    assert.ok(coords.get('C5').x < coords.get('N3').x);
+    assert.ok(coords.get('N3').x < coords.get('C6').x);
+    assert.ok(coords.get('C6').x < coords.get('C8').x);
+    assert.ok(coords.get('C8').x < coords.get('C7').x);
+    assert.ok(coords.get('C4').y < coords.get('C5').y);
+    assert.ok(coords.get('C8').y < coords.get('C7').y);
+  });
+
+  it('places the oxabicyclo[3.1.1]heptane cage with the expected oxygen-bridge projection', () => {
+    const graph = createLayoutGraph(parseSMILES('C1OC2CC(C1)C2'));
+    const coords = placeTemplateCoords(graph, 'oxabicyclo-3-1-1', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const ys = [...coords.values()].map(position => position.y);
+    assert.equal(coords.size, 7);
+    assert.equal(coords.get('C7').y, Math.max(...ys));
+    assert.equal(coords.get('O2').y, Math.min(...ys));
+    assert.ok(coords.get('O2').x < coords.get('C3').x);
+    assert.ok(coords.get('C1').x < coords.get('O2').x);
+    assert.ok(coords.get('C6').x < coords.get('C5').x);
+    assert.ok(coords.get('C5').x < coords.get('C4').x);
+    assert.ok(coords.get('C3').x < coords.get('C4').x);
+    assert.ok(coords.get('C3').y < coords.get('C5').y);
+    assert.ok(coords.get('C4').y < coords.get('C5').y);
+    assert.ok(coords.get('C3').y < coords.get('C7').y);
+    assert.ok(coords.get('C5').y < coords.get('C7').y);
+  });
+
   it('places the larger bicyclo and adamantane cage templates too', () => {
     const bicycloGraph = createLayoutGraph(makeBicyclo222());
     const bicycloCoords = placeTemplateCoords(bicycloGraph, 'bicyclo-2-2-2', bicycloGraph.ringSystems[0].atomIds, bicycloGraph.options.bondLength);
@@ -301,7 +333,7 @@ describe('layout/engine/templates/placement', () => {
     assert.equal(cubaneFaceEdges.length, 8);
     assert.equal(cubaneConnectorEdges.length, 4);
     assert.ok(cubaneConnectorEdges.every(length => Math.abs(length - cubaneConnectorEdges[0]) < 1e-6));
-    assert.ok(cubaneConnectorEdges[0] > (cubaneGraph.options.bondLength * 0.84));
+    assert.ok(cubaneConnectorEdges[0] > cubaneGraph.options.bondLength * 0.84);
 
     const adamantaneGraph = createLayoutGraph(makeAdamantane());
     const adamantaneCoords = placeTemplateCoords(adamantaneGraph, 'adamantane', adamantaneGraph.ringSystems[0].atomIds, adamantaneGraph.options.bondLength);

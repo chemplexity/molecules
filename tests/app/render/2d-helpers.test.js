@@ -216,6 +216,12 @@ describe('create2DRenderHelpers', () => {
   it('computes hydrogen counts and stereo state through sync2dDerivedState', () => {
     const carbon = makeAtom('c1', 'C', 0, 0);
     const hydrogen = makeAtom('h1', 'H', 1, 0);
+    const bond = {
+      id: 'bond-1',
+      getAtomObjects() {
+        return [carbon, hydrogen];
+      }
+    };
     carbon._neighbors = [hydrogen];
     hydrogen._neighbors = [carbon];
     const mol = {
@@ -223,7 +229,11 @@ describe('create2DRenderHelpers', () => {
       atoms: new Map([
         [carbon.id, carbon],
         [hydrogen.id, hydrogen]
-      ])
+      ]),
+      bonds: new Map([[bond.id, bond]]),
+      hideHydrogens() {
+        hydrogen.visible = false;
+      }
     };
     const stereoMap = new Map([['bond-1', 'wedge']]);
     const { helpers, state, records } = makeHelpersContext({ mol, stereoMap });
@@ -233,7 +243,37 @@ describe('create2DRenderHelpers', () => {
     assert.ok(state.derived);
     assert.equal(state.derived.hCounts.get('c1'), 1);
     assert.equal(state.derived.stereoMap, stereoMap);
+    assert.equal(hydrogen.visible, true);
     assert.ok(records.some(([kind, molId]) => kind === 'pickStereoMap' && molId === 'mol-sync'));
+  });
+
+  it('rehides a stale visible stereo hydrogen when the derived stereo map no longer includes its bond', () => {
+    const carbon = makeAtom('c1', 'C', 0, 0);
+    const hydrogen = makeAtom('h1', 'H', 0, 0);
+    const bond = {
+      id: 'bond-1',
+      getAtomObjects() {
+        return [carbon, hydrogen];
+      }
+    };
+    carbon._neighbors = [hydrogen];
+    hydrogen._neighbors = [carbon];
+    hydrogen.visible = true;
+    const mol = {
+      id: 'mol-hide-h',
+      atoms: new Map([
+        [carbon.id, carbon],
+        [hydrogen.id, hydrogen]
+      ]),
+      bonds: new Map([[bond.id, bond]])
+    };
+    const { helpers, state } = makeHelpersContext({ mol, stereoMap: new Map() });
+
+    helpers.sync2dDerivedState(mol);
+
+    assert.ok(state.derived);
+    assert.equal(state.derived.hCounts.get('c1'), 1);
+    assert.equal(hydrogen.visible, false);
   });
 
   it('fits the 2D view when atoms fall outside the viewport', () => {
@@ -285,10 +325,7 @@ describe('create2DRenderHelpers', () => {
     const doubleRecords = [];
     const doubleContainer = new FakeSelection(doubleRecords);
     helpers.drawBond(doubleContainer, { properties: { order: 2 } }, atomA, atomB, mol, toSVGPt, null);
-    assert.equal(
-      doubleRecords.filter(([kind, tag]) => kind === 'append' && tag === 'line').length >= 2,
-      true
-    );
+    assert.equal(doubleRecords.filter(([kind, tag]) => kind === 'append' && tag === 'line').length >= 2, true);
   });
 
   it('moves the wedge tip clear of a labeled source atom', () => {

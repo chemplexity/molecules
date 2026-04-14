@@ -72,6 +72,7 @@ export const BRIDGED_VALIDATION = Object.freeze({
 
 /** Publication-style projection tuning for bridged fallback geometry. */
 export const BRIDGE_PROJECTION_FACTORS = Object.freeze({
+  maxProjectedPathCount: 12,
   singleAtomClampMarginFactor: 0.35,
   layerSpacingFactor: 0.45,
   singleAtomBaseHeightFactor: 0.9,
@@ -88,13 +89,7 @@ export const LABEL_WIDTH_FACTORS = new Map([
 ]);
 
 /** Supported depiction profiles. */
-export const LAYOUT_PROFILES = Object.freeze([
-  'organic-publication',
-  'macrocycle',
-  'organometallic',
-  'large-molecule',
-  'reaction-fragment'
-]);
+export const LAYOUT_PROFILES = Object.freeze(['organic-publication', 'macrocycle', 'organometallic', 'large-molecule', 'reaction-fragment']);
 
 /** Component roles used by fragment packing and metadata. */
 export const COMPONENT_ROLE_ORDER = Object.freeze({

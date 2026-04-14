@@ -7,14 +7,17 @@ import { makeEAlkene } from '../support/molecules.js';
 describe('layout/engine/stereo/ez', () => {
   it('accepts coordinate geometry that matches the encoded E alkene', () => {
     const graph = createLayoutGraph(makeEAlkene());
-    const summary = inspectEZStereo(graph, new Map([
-      ['F1', { x: -1, y: 1 }],
-      ['C2', { x: 0, y: 0 }],
-      ['C3', { x: 1.5, y: 0 }],
-      ['F4', { x: 2.5, y: -1 }],
-      ['H5', { x: -0.5, y: -1 }],
-      ['H6', { x: 2, y: 1 }]
-    ]));
+    const summary = inspectEZStereo(
+      graph,
+      new Map([
+        ['F1', { x: -1, y: 1 }],
+        ['C2', { x: 0, y: 0 }],
+        ['C3', { x: 1.5, y: 0 }],
+        ['F4', { x: 2.5, y: -1 }],
+        ['H5', { x: -0.5, y: -1 }],
+        ['H6', { x: 2, y: 1 }]
+      ])
+    );
 
     assert.equal(summary.checkedBondCount, 1);
     assert.equal(summary.resolvedBondCount, 1);
@@ -25,14 +28,17 @@ describe('layout/engine/stereo/ez', () => {
 
   it('flags a contradiction when coordinates imply the wrong alkene geometry', () => {
     const graph = createLayoutGraph(makeEAlkene());
-    const summary = inspectEZStereo(graph, new Map([
-      ['F1', { x: -1, y: 1 }],
-      ['C2', { x: 0, y: 0 }],
-      ['C3', { x: 1.5, y: 0 }],
-      ['F4', { x: 2.5, y: 1 }],
-      ['H5', { x: -0.5, y: -1 }],
-      ['H6', { x: 2, y: -1 }]
-    ]));
+    const summary = inspectEZStereo(
+      graph,
+      new Map([
+        ['F1', { x: -1, y: 1 }],
+        ['C2', { x: 0, y: 0 }],
+        ['C3', { x: 1.5, y: 0 }],
+        ['F4', { x: 2.5, y: 1 }],
+        ['H5', { x: -0.5, y: -1 }],
+        ['H6', { x: 2, y: -1 }]
+      ])
+    );
 
     assert.equal(summary.checkedBondCount, 1);
     assert.equal(summary.resolvedBondCount, 1);

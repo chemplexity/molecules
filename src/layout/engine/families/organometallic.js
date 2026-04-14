@@ -83,7 +83,7 @@ function genericArrangementSpecs(count) {
   }
   const step = (2 * Math.PI) / count;
   return Array.from({ length: count }, (_, index) => ({
-    angle: Math.PI / 2 - (index * step),
+    angle: Math.PI / 2 - index * step,
     displayType: null
   }));
 }
@@ -234,12 +234,18 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
     const atom = layoutGraph.atoms.get(atomId);
     return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
   });
-  const metalAtomIds = sortAtomIds(layoutGraph, participantAtomIds.filter(atomId => isMetalAtom(layoutGraph, atomId)));
+  const metalAtomIds = sortAtomIds(
+    layoutGraph,
+    participantAtomIds.filter(atomId => isMetalAtom(layoutGraph, atomId))
+  );
   if (metalAtomIds.length === 0) {
     return null;
   }
 
-  const nonMetalAtomIds = sortAtomIds(layoutGraph, participantAtomIds.filter(atomId => !isMetalAtom(layoutGraph, atomId)));
+  const nonMetalAtomIds = sortAtomIds(
+    layoutGraph,
+    participantAtomIds.filter(atomId => !isMetalAtom(layoutGraph, atomId))
+  );
   const ligandAdjacency = buildSliceAdjacency(layoutGraph, nonMetalAtomIds, {
     includeBond(bond) {
       return bond.kind === 'covalent';
@@ -248,28 +254,38 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
   const ligandFragments = connectedFragments(ligandAdjacency, nonMetalAtomIds);
   const fragmentRecords = ligandFragments.map((atomIds, index) => {
     const componentSlice = createAtomSlice(layoutGraph, atomIds, `ligand:${index}`);
-    const anchorAtomIds = sortAtomIds(layoutGraph, atomIds.filter(atomId => {
-      const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
-      return atom?.bonds.some(bondId => {
-        const bond = layoutGraph.sourceMolecule.bonds.get(bondId);
-        if (!bond) {
-          return false;
-        }
-        const otherAtomId = bond.getOtherAtom(atomId);
-        return metalAtomIds.includes(otherAtomId);
-      }) ?? false;
-    }));
-    const anchorMetalIds = sortAtomIds(layoutGraph, metalAtomIds.filter(metalAtomId => {
-      const metalAtom = layoutGraph.sourceMolecule.atoms.get(metalAtomId);
-      return metalAtom?.bonds.some(bondId => {
-        const bond = layoutGraph.sourceMolecule.bonds.get(bondId);
-        if (!bond) {
-          return false;
-        }
-        const otherAtomId = bond.getOtherAtom(metalAtomId);
-        return atomIds.includes(otherAtomId);
-      }) ?? false;
-    }));
+    const anchorAtomIds = sortAtomIds(
+      layoutGraph,
+      atomIds.filter(atomId => {
+        const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
+        return (
+          atom?.bonds.some(bondId => {
+            const bond = layoutGraph.sourceMolecule.bonds.get(bondId);
+            if (!bond) {
+              return false;
+            }
+            const otherAtomId = bond.getOtherAtom(atomId);
+            return metalAtomIds.includes(otherAtomId);
+          }) ?? false
+        );
+      })
+    );
+    const anchorMetalIds = sortAtomIds(
+      layoutGraph,
+      metalAtomIds.filter(metalAtomId => {
+        const metalAtom = layoutGraph.sourceMolecule.atoms.get(metalAtomId);
+        return (
+          metalAtom?.bonds.some(bondId => {
+            const bond = layoutGraph.sourceMolecule.bonds.get(bondId);
+            if (!bond) {
+              return false;
+            }
+            const otherAtomId = bond.getOtherAtom(metalAtomId);
+            return atomIds.includes(otherAtomId);
+          }) ?? false
+        );
+      })
+    );
     return {
       component: componentSlice,
       anchorAtomIds,

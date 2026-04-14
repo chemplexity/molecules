@@ -13,10 +13,7 @@ import { makeSpiro } from '../support/molecules.js';
  * @returns {number} Absolute doubled area.
  */
 function doubledTriangleArea(firstPoint, secondPoint, thirdPoint) {
-  return Math.abs(
-    ((secondPoint.x - firstPoint.x) * (thirdPoint.y - firstPoint.y))
-    - ((secondPoint.y - firstPoint.y) * (thirdPoint.x - firstPoint.x))
-  );
+  return Math.abs((secondPoint.x - firstPoint.x) * (thirdPoint.y - firstPoint.y) - (secondPoint.y - firstPoint.y) * (thirdPoint.x - firstPoint.x));
 }
 
 describe('layout/engine/families/spiro', () => {
@@ -29,12 +26,17 @@ describe('layout/engine/families/spiro', () => {
       [0, [1]],
       [1, [0]]
     ]);
-    const ringConnectionByPair = new Map([['0:1', {
-      firstRingId: 0,
-      secondRingId: 1,
-      sharedAtomIds: ['a4'],
-      kind: 'spiro'
-    }]]);
+    const ringConnectionByPair = new Map([
+      [
+        '0:1',
+        {
+          firstRingId: 0,
+          secondRingId: 1,
+          sharedAtomIds: ['a4'],
+          kind: 'spiro'
+        }
+      ]
+    ]);
     const result = layoutSpiroFamily(rings, ringAdj, ringConnectionByPair, 1.5);
     assert.equal(result.coords.size, 9);
     assert.equal(result.coords.has('a4'), true);
@@ -51,9 +53,8 @@ describe('layout/engine/families/spiro', () => {
       }
       ringAdj.get(connection.firstRingId)?.push(connection.secondRingId);
       ringAdj.get(connection.secondRingId)?.push(connection.firstRingId);
-      const key = connection.firstRingId < connection.secondRingId
-        ? `${connection.firstRingId}:${connection.secondRingId}`
-        : `${connection.secondRingId}:${connection.firstRingId}`;
+      const key =
+        connection.firstRingId < connection.secondRingId ? `${connection.firstRingId}:${connection.secondRingId}` : `${connection.secondRingId}:${connection.firstRingId}`;
       ringConnectionByPair.set(key, connection);
     }
     const result = layoutSpiroFamily(graph.rings, ringAdj, ringConnectionByPair, graph.options.bondLength, { layoutGraph: graph, templateId: 'spiro-5-5' });
@@ -71,9 +72,8 @@ describe('layout/engine/families/spiro', () => {
       }
       ringAdj.get(connection.firstRingId)?.push(connection.secondRingId);
       ringAdj.get(connection.secondRingId)?.push(connection.firstRingId);
-      const key = connection.firstRingId < connection.secondRingId
-        ? `${connection.firstRingId}:${connection.secondRingId}`
-        : `${connection.secondRingId}:${connection.firstRingId}`;
+      const key =
+        connection.firstRingId < connection.secondRingId ? `${connection.firstRingId}:${connection.secondRingId}` : `${connection.secondRingId}:${connection.firstRingId}`;
       ringConnectionByPair.set(key, connection);
     }
 
@@ -82,9 +82,6 @@ describe('layout/engine/families/spiro', () => {
 
     assert.equal(result.placementMode, 'constructed-path');
     assert.equal(centers.length, 3);
-    assert.ok(
-      doubledTriangleArea(centers[0], centers[1], centers[2]) > 1,
-      'expected a three-ring spiro chain to fan out rather than stay nearly collinear'
-    );
+    assert.ok(doubledTriangleArea(centers[0], centers[1], centers[2]) > 1, 'expected a three-ring spiro chain to fan out rather than stay nearly collinear');
   });
 });

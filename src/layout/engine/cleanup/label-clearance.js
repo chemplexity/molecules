@@ -1,10 +1,6 @@
 /** @module cleanup/label-clearance */
 
-import {
-  CLEANUP_EPSILON,
-  LABEL_CLEARANCE_NUDGE_FACTOR,
-  LABEL_CLEARANCE_PADDING_FACTOR
-} from '../constants.js';
+import { CLEANUP_EPSILON, LABEL_CLEARANCE_NUDGE_FACTOR, LABEL_CLEARANCE_PADDING_FACTOR } from '../constants.js';
 import { collectLabelBoxes, labelBoxesOverlap } from '../geometry/label-box.js';
 import { measureLayoutState } from '../audit/invariants.js';
 import { centroid } from '../geometry/vec2.js';
@@ -17,8 +13,8 @@ import { centroid } from '../geometry/vec2.js';
  * @returns {number} Positive overlap penalty, or zero when the boxes do not overlap.
  */
 function overlapPenalty(firstBox, secondBox, padding) {
-  const overlapX = (firstBox.halfWidth + secondBox.halfWidth + padding) - Math.abs(firstBox.x - secondBox.x);
-  const overlapY = (firstBox.halfHeight + secondBox.halfHeight + padding) - Math.abs(firstBox.y - secondBox.y);
+  const overlapX = firstBox.halfWidth + secondBox.halfWidth + padding - Math.abs(firstBox.x - secondBox.x);
+  const overlapY = firstBox.halfHeight + secondBox.halfHeight + padding - Math.abs(firstBox.y - secondBox.y);
   if (overlapX <= 0 || overlapY <= 0) {
     return 0;
   }
@@ -110,19 +106,13 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
         continue;
       }
       const position = coords.get(secondLabel.atomId);
-      const currentBondDeviation = attachedHeavyBondDeviation(
-        layoutGraph,
-        coords,
-        secondLabel.atomId,
-        position,
-        bondLength
-      );
+      const currentBondDeviation = attachedHeavyBondDeviation(layoutGraph, coords, secondLabel.atomId, position, bondLength);
       const dx = position.x - center.x;
       const dy = position.y - center.y;
       const length = Math.hypot(dx, dy) || 1;
       const candidatePosition = {
-        x: position.x + ((dx / length) * bondLength * LABEL_CLEARANCE_NUDGE_FACTOR),
-        y: position.y + ((dy / length) * bondLength * LABEL_CLEARANCE_NUDGE_FACTOR)
+        x: position.x + (dx / length) * bondLength * LABEL_CLEARANCE_NUDGE_FACTOR,
+        y: position.y + (dy / length) * bondLength * LABEL_CLEARANCE_NUDGE_FACTOR
       };
       const currentPenalty = overlapPenalty(firstLabel, secondLabel, padding);
       const candidateLabel = {
@@ -134,13 +124,7 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
       if (candidatePenalty >= currentPenalty) {
         continue;
       }
-      const candidateBondDeviation = attachedHeavyBondDeviation(
-        layoutGraph,
-        coords,
-        secondLabel.atomId,
-        candidatePosition,
-        bondLength
-      );
+      const candidateBondDeviation = attachedHeavyBondDeviation(layoutGraph, coords, secondLabel.atomId, candidatePosition, bondLength);
       if (candidateBondDeviation > currentBondDeviation + CLEANUP_EPSILON) {
         continue;
       }

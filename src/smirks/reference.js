@@ -114,10 +114,11 @@ export const reactionTemplates = {
     smirks: '[C:2][S:1](=[O:4])[C:3]>>[C:2][S:1](=[O:4])(=O)[C:3]'
   },
   amineProtonation: { name: 'Amine Protonation', smirks: '[N+0;!$([N]-[C](=O)):1]>>[N+:1]' },
+  aromaticAzaProtonation: { name: 'Aromatic Aza Protonation', smirks: '[n+0X2:1]>>[nH+:1]' },
   ammoniumDeprotonation: { name: 'Ammonium Deprotonation', smirks: '[N+;!H0:1]>>[N+0:1]' },
   phenolDeprotonation: { name: 'Phenol Deprotonation', smirks: '[c:1][OH:2]>>[c:1][OH0-:2]' },
   phenolateProtonation: { name: 'Phenolate Protonation', smirks: '[c:1][OH0-:2]>>[c:1][OH+0:2]' },
-  nitroReduction: { name: 'Nitro Reduction', smirks: '[N+:1](=[O:2])[O-:3]>>[N+0:1]' },
+  nitroReduction: { name: 'Nitro Reduction', smirks: '[N+:1](=[O:2])[O-:3]>>[N+0:1].[OH2+0:2].[OH2+0:3]' },
 
   // ---------------------------------------------------------------------------
   // Cycloadditions

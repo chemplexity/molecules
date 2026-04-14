@@ -94,12 +94,7 @@ describe('layout/engine/families/macrocycle', () => {
   it('computes outward angular budgets for branch-bearing macrocycle atoms and shrinks dense adjacent sites', () => {
     const sparseGraph = createLayoutGraph(makeMacrocycleWithSubstituent(), { suppressH: true });
     const sparseLayout = layoutMacrocycleFamily(sparseGraph.rings, sparseGraph.options.bondLength);
-    const sparseBudgets = computeMacrocycleAngularBudgets(
-      sparseGraph.rings,
-      sparseLayout.coords,
-      sparseGraph,
-      new Set(sparseGraph.components[0].atomIds)
-    );
+    const sparseBudgets = computeMacrocycleAngularBudgets(sparseGraph.rings, sparseLayout.coords, sparseGraph, new Set(sparseGraph.components[0].atomIds));
 
     const denseMolecule = makeMacrocycle();
     denseMolecule.addAtom('x0', 'C');
@@ -108,12 +103,7 @@ describe('layout/engine/families/macrocycle', () => {
     denseMolecule.addBond('x1b', 'a1', 'x1', {}, false);
     const denseGraph = createLayoutGraph(denseMolecule, { suppressH: true });
     const denseLayout = layoutMacrocycleFamily(denseGraph.rings, denseGraph.options.bondLength);
-    const denseBudgets = computeMacrocycleAngularBudgets(
-      denseGraph.rings,
-      denseLayout.coords,
-      denseGraph,
-      new Set(denseGraph.components[0].atomIds)
-    );
+    const denseBudgets = computeMacrocycleAngularBudgets(denseGraph.rings, denseLayout.coords, denseGraph, new Set(denseGraph.components[0].atomIds));
     const sparseBudget = sparseBudgets.get('a0');
     const denseBudget = denseBudgets.get('a0');
     const sparseWidth = sparseBudget.maxOffset - sparseBudget.minOffset;
@@ -134,12 +124,7 @@ describe('layout/engine/families/macrocycle', () => {
     denseMolecule.addBond('x1b', 'a1', 'x1', {}, false);
     const graph = createLayoutGraph(denseMolecule, { suppressH: true });
     const ringLayout = layoutMacrocycleFamily(graph.rings, graph.options.bondLength);
-    const budgets = computeMacrocycleAngularBudgets(
-      graph.rings,
-      ringLayout.coords,
-      graph,
-      new Set(graph.components[0].atomIds)
-    );
+    const budgets = computeMacrocycleAngularBudgets(graph.rings, ringLayout.coords, graph, new Set(graph.components[0].atomIds));
     const firstBudget = budgets.get('a0');
     const secondBudget = budgets.get('a1');
     const firstPreferredOffset = normalizeSignedAngle(firstBudget.preferredAngle - firstBudget.centerAngle);

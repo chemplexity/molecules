@@ -47,7 +47,11 @@ export function initGestureInteractions(context) {
   function updateSelectionRect(x, y) {
     const rx = Math.min(selectionStart.x, x);
     const ry = Math.min(selectionStart.y, y);
-    selectionRect.attr('x', rx).attr('y', ry).attr('width', Math.abs(x - selectionStart.x)).attr('height', Math.abs(y - selectionStart.y));
+    selectionRect
+      .attr('x', rx)
+      .attr('y', ry)
+      .attr('width', Math.abs(x - selectionStart.x))
+      .attr('height', Math.abs(y - selectionStart.y));
   }
 
   function finishSelectionDrag(event) {

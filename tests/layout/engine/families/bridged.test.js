@@ -70,9 +70,7 @@ describe('layout/engine/families/bridged', () => {
       layoutGraph: baseGraph,
       templateId: null
     });
-    const mirroredExistingCoords = new Map(
-      [...baseResult.coords.entries()].map(([atomId, position]) => [atomId, { x: position.x, y: -position.y }])
-    );
+    const mirroredExistingCoords = new Map([...baseResult.coords.entries()].map(([atomId, position]) => [atomId, { x: position.x, y: -position.y }]));
     const seededGraph = createLayoutGraph(makeUnmatchedBridgedCage(), {
       existingCoords: mirroredExistingCoords
     });

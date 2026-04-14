@@ -214,10 +214,7 @@ describe('createInputFlowManager', () => {
     manager.parseInputWithAutoFormat('InChI=1S/C2H6O/c1-2-3/h3H,2H2,1H3');
 
     assert.equal(getState().inputMode, 'inchi');
-    assert.deepEqual(
-      calls.filter(([name]) => name === 'renderMol').length,
-      1
-    );
+    assert.deepEqual(calls.filter(([name]) => name === 'renderMol').length, 1);
   });
 
   it('captures the previous InChI document state before auto-switching pasted SMILES input', () => {

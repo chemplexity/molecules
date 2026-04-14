@@ -40,7 +40,7 @@ export function createSelectionOverlayManager(ctx) {
           continue;
         }
         const isHiddenBond = atom1.visible === false || atom2.visible === false;
-        if (isHiddenBond && !(ctx.view2D.getStereoMap()?.has(bond.id))) {
+        if (isHiddenBond && !ctx.view2D.getStereoMap()?.has(bond.id)) {
           continue;
         }
         ctx.state.getHoveredBondIds().add(bondId);
@@ -134,7 +134,7 @@ export function createSelectionOverlayManager(ctx) {
         continue;
       }
       const isHiddenBond = atom1.visible === false || atom2.visible === false;
-      if (isHiddenBond && !(ctx.view2D.getStereoMap()?.has(bond.id))) {
+      if (isHiddenBond && !ctx.view2D.getStereoMap()?.has(bond.id)) {
         continue;
       }
       const point1 = toSVGPt(atom1);
@@ -239,11 +239,7 @@ export function createForceSelectionRenderer(ctx) {
     const bondSelectionRadius = ctx.constants.getBondSelectionRadius();
     const atomSelectionRadius = ctx.constants.getAtomSelectionRadius();
     const outlineWidth = ctx.constants.getOutlineWidth();
-    const selectionLayer = graphSelection
-      .insert('g', ':first-child')
-      .attr('class', 'force-selection-layer')
-      .attr('opacity', 0.45)
-      .style('pointer-events', 'none');
+    const selectionLayer = graphSelection.insert('g', ':first-child').attr('class', 'force-selection-layer').attr('opacity', 0.45).style('pointer-events', 'none');
 
     const selectedNodes = ctx.force.getNodes().filter(node => activeAtomIds.has(node.id));
     const selectedLinks = ctx.force.getLinks().filter(link => activeBondIds.has(link.id));

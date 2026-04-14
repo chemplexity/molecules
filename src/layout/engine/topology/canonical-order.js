@@ -59,9 +59,7 @@ function canonicalizeCycle(sequence) {
  * @returns {Map<string, number>} Canonical heavy-atom ranks.
  */
 export function computeCanonicalAtomRanks(molecule) {
-  const atoms = [...molecule.atoms.values()]
-    .filter(atom => atom.name !== 'H')
-    .sort((firstAtom, secondAtom) => compareIds(firstAtom.id, secondAtom.id));
+  const atoms = [...molecule.atoms.values()].filter(atom => atom.name !== 'H').sort((firstAtom, secondAtom) => compareIds(firstAtom.id, secondAtom.id));
   if (atoms.length === 0) {
     return new Map();
   }
@@ -112,7 +110,7 @@ export function computeCanonicalAtomRanks(molecule) {
         isotopeMass = observedMass;
       }
     }
-    const aromatic = typeof atom.isAromatic === 'function' && atom.isAromatic() ? 1 : (atom.properties.aromatic ? 1 : 0);
+    const aromatic = typeof atom.isAromatic === 'function' && atom.isAromatic() ? 1 : atom.properties.aromatic ? 1 : 0;
     return [atomicNumber, heavyDegree, charge, isotopeMass, hydrogenCounts[index], aromatic];
   });
 
@@ -149,9 +147,7 @@ export function computeCanonicalAtomRanks(molecule) {
     if (tiedRank == null) {
       break;
     }
-    const tiedIndexes = rank
-      .map((currentRank, index) => (currentRank === tiedRank ? index : -1))
-      .filter(index => index >= 0);
+    const tiedIndexes = rank.map((currentRank, index) => (currentRank === tiedRank ? index : -1)).filter(index => index >= 0);
     tiedIndexes.sort((firstIndex, secondIndex) => {
       const invariantCompare = lexCmp(initialInvariants[firstIndex], initialInvariants[secondIndex]);
       return invariantCompare !== 0 ? invariantCompare : compareIds(ids[firstIndex], ids[secondIndex]);

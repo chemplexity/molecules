@@ -57,6 +57,9 @@ let _reactionPreviewEntryZoomTransform = null;
 let _reactionPreviewEntryDisplayMol = null;
 let _reactionPreviewEntryMode = null;
 let _reactionPreviewEntryForceNodePositions = null;
+const _REACTION_PREVIEW_FORCE_ARROW_MIN_LENGTH = 12;
+const _REACTION_PREVIEW_FORCE_ARROW_FALLBACK_MIN_LENGTH = 8;
+const _REACTION_PREVIEW_FORCE_ARROW_PAD_FALLBACKS = [12, 8, 4, 0];
 
 function _takeReactionPreviewHistoryStep() {
   ctx.takeSnapshot?.({ clearReactionPreview: false });
@@ -577,6 +580,53 @@ function _pointToSegmentDistance(point, start, end) {
 }
 
 /**
+ * Picks a force-preview base arrow, retrying with smaller endpoint padding when
+ * rotation temporarily brings the reactant and product bounding boxes close
+ * enough that the preferred padded arrow would disappear.
+ * @param {object} reactant - Bounding geometry of the reactant group.
+ * @param {object} product - Bounding geometry of the product group.
+ * @param {number} preferredPad - Preferred endpoint padding.
+ * @param {number} minLineLength - Minimum force-arrow line length before the candidate is considered good.
+ * @param {number} fallbackMinLineLength - Minimum line length accepted as a last-resort fallback.
+ * @returns {{start: {x: number, y: number}, end: {x: number, y: number}, ux: number, uy: number}|null} Best available base arrow.
+ */
+function _chooseReactionPreviewForceBaseArrow(
+  reactant,
+  product,
+  preferredPad,
+  minLineLength = _REACTION_PREVIEW_FORCE_ARROW_MIN_LENGTH,
+  fallbackMinLineLength = _REACTION_PREVIEW_FORCE_ARROW_FALLBACK_MIN_LENGTH
+) {
+  const padCandidates = [preferredPad, ..._REACTION_PREVIEW_FORCE_ARROW_PAD_FALLBACKS.filter(candidate => candidate < preferredPad - 1e-6)];
+  let fallbackArrow = null;
+  let fallbackLength = -Infinity;
+
+  for (const pad of padCandidates) {
+    const arrow = _reaction2dArrowEndpoints(reactant, product, pad);
+    if (!arrow) {
+      continue;
+    }
+    const startInsideReactant =
+      arrow.start.x >= reactant.minX && arrow.start.x <= reactant.maxX && arrow.start.y >= reactant.minY && arrow.start.y <= reactant.maxY;
+    const endInsideProduct =
+      arrow.end.x >= product.minX && arrow.end.x <= product.maxX && arrow.end.y >= product.minY && arrow.end.y <= product.maxY;
+    if (startInsideReactant || endInsideProduct) {
+      continue;
+    }
+    const lineLength = Math.hypot(arrow.end.x - arrow.start.x, arrow.end.y - arrow.start.y);
+    if (lineLength >= minLineLength) {
+      return arrow;
+    }
+    if (lineLength >= fallbackMinLineLength && lineLength > fallbackLength + 1e-6) {
+      fallbackArrow = arrow;
+      fallbackLength = lineLength;
+    }
+  }
+
+  return fallbackArrow;
+}
+
+/**
  * Chooses the best perpendicular offset for a force-layout reaction preview arrow that maximises clearance from atoms.
  * @param {object} reactant - Bounding geometry of the reactant group.
  * @param {object} product - Bounding geometry of the product group.
@@ -587,29 +637,29 @@ function _pointToSegmentDistance(point, start, end) {
  * @param {number} [options.hydrogenRadiusScale] - Scale factor applied to hydrogen radii.
  * @param {number} [options.previousOffset] - Previous arrow offset used for sticky hysteresis.
  * @param {number} [options.stickyTolerance] - Clearance tolerance for keeping the previous offset.
+ * @param {number} [options.minLineLength] - Preferred minimum visible line length before the chooser falls back to tighter padding.
+ * @param {number} [options.fallbackMinLineLength] - Absolute minimum line length accepted as a last-resort visible arrow.
  * @returns {object|null} Arrow descriptor with start, end, unit-vector, and offset, or null when no valid arrow exists.
  */
 export function _chooseReactionPreviewForceArrow(
   reactant,
   product,
   items,
-  { pad = 16, radiusForItem = () => 0, hydrogenRadiusScale = 0.75, previousOffset = 0, stickyTolerance = 5 } = {}
+  {
+    pad = 16,
+    radiusForItem = () => 0,
+    hydrogenRadiusScale = 0.75,
+    previousOffset = 0,
+    stickyTolerance = 5,
+    minLineLength = _REACTION_PREVIEW_FORCE_ARROW_MIN_LENGTH,
+    fallbackMinLineLength = _REACTION_PREVIEW_FORCE_ARROW_FALLBACK_MIN_LENGTH
+  } = {}
 ) {
-  const arrow = _reaction2dArrowEndpoints(reactant, product, pad);
+  const arrow = _chooseReactionPreviewForceBaseArrow(reactant, product, pad, minLineLength, fallbackMinLineLength);
   if (!arrow) {
     return null;
   }
-  const startInsideReactant = arrow.start.x >= reactant.minX && arrow.start.x <= reactant.maxX && arrow.start.y >= reactant.minY && arrow.start.y <= reactant.maxY;
-  const endInsideProduct = arrow.end.x >= product.minX && arrow.end.x <= product.maxX && arrow.end.y >= product.minY && arrow.end.y <= product.maxY;
-  if (startInsideReactant || endInsideProduct) {
-    return null;
-  }
-
   const { start, end, ux, uy } = arrow;
-  const lineLength = Math.hypot(end.x - start.x, end.y - start.y);
-  if (lineLength < 14) {
-    return null;
-  }
   const px = -uy;
   const py = ux;
   const verticalSpan = Math.max(reactant.maxY - reactant.minY, product.maxY - product.minY);
@@ -1240,15 +1290,15 @@ export function _renderReactionPreviewArrowForce(nodes) {
   const x2 = arrow.end.x;
   const y2 = arrow.end.y;
   const lineLength = Math.hypot(x2 - x1, y2 - y1);
-  if (lineLength < 14) {
+  if (lineLength < _REACTION_PREVIEW_FORCE_ARROW_FALLBACK_MIN_LENGTH) {
     return;
   }
   const ux = (x2 - x1) / lineLength;
   const uy = (y2 - y1) / lineLength;
   const px = -uy;
   const py = ux;
-  const arrowHeadLength = 10;
-  const arrowHeadWidth = 6;
+  const arrowHeadLength = Math.max(7, Math.min(10, lineLength * 0.35));
+  const arrowHeadWidth = Math.max(4, Math.min(6, arrowHeadLength * 0.6));
 
   const arrowLayer = ctx.g.append('g').attr('class', 'reaction-preview-arrow').attr('pointer-events', 'none').attr('opacity', 0.8);
   arrowLayer.append('line').attr('x1', x1).attr('y1', y1).attr('x2', x2).attr('y2', y2).attr('stroke', '#444').attr('stroke-width', 2.5).attr('stroke-linecap', 'round');

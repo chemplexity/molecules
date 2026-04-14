@@ -46,6 +46,56 @@ function _isFusedPyridineLikeNitrogen(atom, ringBonds, ringAtomSet, mol) {
   });
 }
 
+/**
+ * Returns true for neutral five-member ring nitrogens whose pyrrolic hydrogen
+ * has been replaced by a non-conjugating substituent.
+ * @param {import('../core/Atom.js').Atom} atom - Candidate nitrogen atom.
+ * @param {import('../core/Bond.js').Bond[]} ringBonds - Ring bonds incident to the atom.
+ * @param {Set<string>} ringAtomSet - Atom IDs in the candidate ring.
+ * @param {import('../core/Molecule.js').Molecule} mol - Molecule graph.
+ * @returns {boolean} `true` when the N should donate two π electrons.
+ */
+function _isSubstitutedPyrrolicLikeNitrogen(atom, ringBonds, ringAtomSet, mol) {
+  if (atom.name !== 'N' || (atom.properties.charge ?? 0) !== 0 || ringAtomSet.size !== 5) {
+    return false;
+  }
+  if (ringBonds.length !== 2) {
+    return false;
+  }
+
+  const exocyclicHeavySingleBonds = atom.bonds
+    .map(bondId => mol.bonds.get(bondId))
+    .filter(bond => bond && !ringAtomSet.has(bond.getOtherAtom(atom.id)))
+    .filter(bond => {
+      const other = mol.atoms.get(bond.getOtherAtom(atom.id));
+      return other && other.name !== 'H' && !_hasPiOrder(bond);
+    });
+
+  if (exocyclicHeavySingleBonds.length === 0) {
+    return false;
+  }
+
+  // A substituted pyrrolic-like N still needs neighboring ring conjugation or
+  // fused-ring support; otherwise saturated tertiary ring amines would be
+  // incorrectly promoted to 2-electron donors.
+  return ringBonds.some(bond => {
+    const neighbor = mol.atoms.get(bond.getOtherAtom(atom.id));
+    if (!neighbor) {
+      return false;
+    }
+    return neighbor.bonds.some(neighborBondId => {
+      const neighborBond = mol.bonds.get(neighborBondId);
+      if (!neighborBond || neighborBond.id === bond.id) {
+        return false;
+      }
+      const otherId = neighborBond.getOtherAtom(neighbor.id);
+      return ringAtomSet.has(otherId)
+        ? _hasPiOrder(neighborBond)
+        : _hasFusedExocyclicRingPiBond(neighbor, ringAtomSet, mol);
+    });
+  });
+}
+
 function _aromaticRingCandidates(mol) {
   const hasTransitionMetal = [...mol.atoms.values()].some(_isTransitionMetal);
   if (!hasTransitionMetal) {
@@ -66,7 +116,7 @@ function _aromaticRingCandidates(mol) {
  *  - C+ (carbocation):                                       0
  *  - C- (carbanion):                                         2
  *  - N pyridine-like / fused aza-ring (no H):                1
- *  - N pyrrole-like  (has H, lone pair into ring):           2
+ *  - N pyrrole-like  (has H or H replaced by substituent):   2
  *  - O / S (lone pair into ring):                            2
  *  - B (empty p orbital):                                    0
  *  - Already-marked aromatic atom (order=1.5):               1
@@ -115,7 +165,7 @@ function _piElectrons(atom, ringAtomSet, mol) {
       }
       return mol.atoms.get(b.getOtherAtom(atom.id))?.name === 'H';
     });
-    if (hasH) {
+    if (hasH || _isSubstitutedPyrrolicLikeNitrogen(atom, ringBonds, ringAtomSet, mol)) {
       return 2;
     }
     // Pyridine-like: sp2, ring π bond present → contributes 1.
@@ -129,8 +179,13 @@ function _piElectrons(atom, ringAtomSet, mol) {
     // Furan/thiophene-like (no ring double bond): lone pair donated → 2 π electrons.
     // Pyrylium/thiopyrylium-like (explicit Kekulé double bond in the ring, e.g. C=[O+]):
     //   O/S acts as a pyridine-N equivalent → 1 π electron from the π bond.
-    const hasKekulePiBond = ringBonds.some(b => b.properties.order === 2);
-    return hasKekulePiBond ? 1 : 2;
+    // Lowercase SMILES-aromatic input stores those ring bonds at order 1.5, so
+    // positively charged O/S must also treat aromatic ring pi-bonds as a
+    // one-electron contribution.
+    if (charge > 0) {
+      return hasRingPiBond || hasFusedExocyclicRingPiBond ? 1 : null;
+    }
+    return 2;
   }
 
   if (el === 'B') {
@@ -161,9 +216,7 @@ function _isHuckel(piCount) {
  * @returns {Map<string, number>} Bond id to localized order (1 or 2).
  */
 function _localizedAromaticBondOrders(mol, aromaticBondIds) {
-  const aromaticBonds = [...aromaticBondIds]
-    .map(bondId => mol.bonds.get(bondId))
-    .filter(Boolean);
+  const aromaticBonds = [...aromaticBondIds].map(bondId => mol.bonds.get(bondId)).filter(Boolean);
   if (aromaticBonds.length === 0) {
     return new Map();
   }

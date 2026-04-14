@@ -208,12 +208,7 @@ export function createPrimitiveSelectionActions(context) {
   }
 
   function handleForcePrimitiveClick(event, atomIds = [], bondIds = []) {
-    if (
-      !context.state.overlayState.getSelectMode() ||
-      context.state.viewState.getMode() !== 'force' ||
-      !context.state.documentState.getCurrentMol() ||
-      event.defaultPrevented
-    ) {
+    if (!context.state.overlayState.getSelectMode() || context.state.viewState.getMode() !== 'force' || !context.state.documentState.getCurrentMol() || event.defaultPrevented) {
       return;
     }
     event.preventDefault();
@@ -222,12 +217,7 @@ export function createPrimitiveSelectionActions(context) {
   }
 
   function handleForceComponentDblClick(event, seedAtomIds) {
-    if (
-      !context.state.overlayState.getSelectMode() ||
-      context.state.viewState.getMode() !== 'force' ||
-      !context.state.documentState.getCurrentMol() ||
-      event.defaultPrevented
-    ) {
+    if (!context.state.overlayState.getSelectMode() || context.state.viewState.getMode() !== 'force' || !context.state.documentState.getCurrentMol() || event.defaultPrevented) {
       return;
     }
     event.preventDefault();

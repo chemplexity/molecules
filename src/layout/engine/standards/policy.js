@@ -38,6 +38,9 @@ export function resolvePolicy(profile, traits = {}) {
 
   if (traits.primaryFamily === 'bridged') {
     policy.bridgedMode = 'template-first';
+    if (traits.mixedMode) {
+      ensurePostCleanupHook(policy, 'bridged-bond-tidy');
+    }
   }
   if (traits.primaryFamily === 'macrocycle') {
     policy.macrocycleMode = 'ellipse';

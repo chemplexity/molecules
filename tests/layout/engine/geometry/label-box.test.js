@@ -32,9 +32,6 @@ describe('layout/engine/geometry/label-box', () => {
     const overlaps = findLabelOverlaps(graph, coords, graph.options.bondLength);
 
     assert.equal(overlaps.length, 1);
-    assert.deepEqual(
-      [overlaps[0].firstAtomId, overlaps[0].secondAtomId].sort(),
-      ['Br2', 'Cl1']
-    );
+    assert.deepEqual([overlaps[0].firstAtomId, overlaps[0].secondAtomId].sort(), ['Br2', 'Cl1']);
   });
 });

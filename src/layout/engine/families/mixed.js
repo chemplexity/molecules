@@ -37,9 +37,7 @@ function ringSystemAdjacency(layoutGraph, ringSystem) {
   for (const connection of connections) {
     ringAdj.get(connection.firstRingId)?.push(connection.secondRingId);
     ringAdj.get(connection.secondRingId)?.push(connection.firstRingId);
-    const key = connection.firstRingId < connection.secondRingId
-      ? `${connection.firstRingId}:${connection.secondRingId}`
-      : `${connection.secondRingId}:${connection.firstRingId}`;
+    const key = connection.firstRingId < connection.secondRingId ? `${connection.firstRingId}:${connection.secondRingId}` : `${connection.secondRingId}:${connection.firstRingId}`;
     ringConnectionByPair.set(key, connection);
   }
   for (const neighbors of ringAdj.values()) {
@@ -71,20 +69,20 @@ function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null
     const result = layoutMacrocycleFamily(rings, bondLength, { layoutGraph, templateId });
     return result
       ? {
-        family,
-        validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
-        ...result
-      }
+          family,
+          validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
+          ...result
+        }
       : null;
   }
   if (family === 'bridged') {
     const result = layoutBridgedFamily(rings, bondLength, { layoutGraph, templateId });
     return result
       ? {
-        family,
-        validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
-        ...result
-      }
+          family,
+          validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
+          ...result
+        }
       : null;
   }
   if (family === 'fused') {
@@ -168,14 +166,7 @@ function sortAtomIds(atomIds, canonicalAtomRank) {
  * @param {number} [maxLinkerAtoms] - Maximum internal non-ring linker atoms to consider.
  * @returns {{firstAttachmentAtomId: string, firstRingSystemId: number, chainAtomIds: string[], secondAttachmentAtomId: string}|null} Shortest linker descriptor.
  */
-function findShortestRingLinker(
-  layoutGraph,
-  pendingRingSystem,
-  placedRingSystemIds,
-  participantAtomIds,
-  atomToRingSystemId,
-  maxLinkerAtoms = MAX_RING_LINKER_ATOMS
-) {
+function findShortestRingLinker(layoutGraph, pendingRingSystem, placedRingSystemIds, participantAtomIds, atomToRingSystemId, maxLinkerAtoms = MAX_RING_LINKER_ATOMS) {
   const pendingRingAtomIds = new Set(pendingRingSystem.atomIds);
   const canonicalAtomRank = layoutGraph.canonicalAtomRank;
   const orderedPendingAttachmentIds = sortAtomIds(pendingRingSystem.atomIds, canonicalAtomRank);
@@ -187,7 +178,8 @@ function findShortestRingLinker(
     if (!atom) {
       continue;
     }
-    const orderedNeighborIds = atom.getNeighbors(layoutGraph.sourceMolecule)
+    const orderedNeighborIds = atom
+      .getNeighbors(layoutGraph.sourceMolecule)
       .filter(neighborAtom => neighborAtom && participantAtomIds.has(neighborAtom.id))
       .map(neighborAtom => neighborAtom.id)
       .sort((firstAtomId, secondAtomId) => compareCanonicalIds(firstAtomId, secondAtomId, canonicalAtomRank));
@@ -230,7 +222,8 @@ function findShortestRingLinker(
     if (!atom) {
       continue;
     }
-    const orderedNeighborIds = atom.getNeighbors(layoutGraph.sourceMolecule)
+    const orderedNeighborIds = atom
+      .getNeighbors(layoutGraph.sourceMolecule)
       .filter(neighborAtom => neighborAtom && participantAtomIds.has(neighborAtom.id))
       .map(neighborAtom => neighborAtom.id)
       .sort((firstAtomId, secondAtomId) => compareCanonicalIds(firstAtomId, secondAtomId, canonicalAtomRank));
@@ -288,7 +281,7 @@ function findShortestRingLinker(
 function linkerSegmentAngles(exitAngle, segmentCount, turnSign) {
   const segmentAngles = [];
   for (let index = 0; index < segmentCount; index++) {
-    segmentAngles.push(index % 2 === 0 ? exitAngle : exitAngle + (turnSign * LINKER_ZIGZAG_TURN_ANGLE));
+    segmentAngles.push(index % 2 === 0 ? exitAngle : exitAngle + turnSign * LINKER_ZIGZAG_TURN_ANGLE);
   }
   return segmentAngles;
 }
@@ -319,14 +312,12 @@ function bondBetweenAtomIds(layoutGraph, firstAtomId, secondAtomId) {
  * @returns {boolean} True when the linker should use the dedicated short-linker path.
  */
 function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, linker) {
-  const ringSystemIsAromatic = ringSystem => (layoutGraph.rings ?? [])
-    .filter(ring => ringSystem.ringIds.includes(ring.id))
-    .every(ring => ring.aromatic);
+  const ringSystemIsAromatic = ringSystem => (layoutGraph.rings ?? []).filter(ring => ringSystem.ringIds.includes(ring.id)).every(ring => ring.aromatic);
   if (
-    classifyRingSystemFamily(layoutGraph, firstRingSystem) !== 'isolated-ring'
-    || classifyRingSystemFamily(layoutGraph, secondRingSystem) !== 'isolated-ring'
-    || !ringSystemIsAromatic(firstRingSystem)
-    || !ringSystemIsAromatic(secondRingSystem)
+    classifyRingSystemFamily(layoutGraph, firstRingSystem) !== 'isolated-ring' ||
+    classifyRingSystemFamily(layoutGraph, secondRingSystem) !== 'isolated-ring' ||
+    !ringSystemIsAromatic(firstRingSystem) ||
+    !ringSystemIsAromatic(secondRingSystem)
   ) {
     return false;
   }
@@ -341,9 +332,7 @@ function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, l
 
   for (const chainAtomId of linker.chainAtomIds) {
     const chainAtom = layoutGraph.sourceMolecule.atoms.get(chainAtomId);
-    const heavyNeighborCount = chainAtom?.getNeighbors(layoutGraph.sourceMolecule)
-      .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H')
-      .length ?? 0;
+    const heavyNeighborCount = chainAtom?.getNeighbors(layoutGraph.sourceMolecule).filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H').length ?? 0;
     if (heavyNeighborCount !== 2) {
       return false;
     }
@@ -377,13 +366,7 @@ function buildRingLinkerCandidate(coords, firstRingSystem, linker, blockCoords, 
     }
   }
 
-  const transformedRingCoords = transformAttachedBlock(
-    blockCoords,
-    linker.secondAttachmentAtomId,
-    currentPosition,
-    segmentAngles[segmentAngles.length - 1],
-    { mirror }
-  );
+  const transformedRingCoords = transformAttachedBlock(blockCoords, linker.secondAttachmentAtomId, currentPosition, segmentAngles[segmentAngles.length - 1], { mirror });
   for (const [atomId, position] of transformedRingCoords) {
     candidateCoords.set(atomId, position);
   }
@@ -423,16 +406,7 @@ function scoreAttachedBlockOrientation(
     candidateSeedAtomIds.add(atomId);
   }
 
-  placeRemainingBranches(
-    adjacency,
-    canonicalAtomRank,
-    candidateCoords,
-    primaryNonRingAtomIds,
-    [...candidateSeedAtomIds],
-    bondLength,
-    layoutGraph,
-    branchConstraints
-  );
+  placeRemainingBranches(adjacency, canonicalAtomRank, candidateCoords, primaryNonRingAtomIds, [...candidateSeedAtomIds], bondLength, layoutGraph, branchConstraints);
   return measureLayoutCost(layoutGraph, candidateCoords, bondLength);
 }
 
@@ -475,16 +449,13 @@ function selectAttachedBlockCandidates(candidates, coords, bondLength, layoutGra
     ...candidate,
     ...preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph)
   }));
-  scoredCandidates.sort((firstCandidate, secondCandidate) =>
-    firstCandidate.overlapCount - secondCandidate.overlapCount
-      || firstCandidate.cost - secondCandidate.cost
-  );
+  scoredCandidates.sort((firstCandidate, secondCandidate) => firstCandidate.overlapCount - secondCandidate.overlapCount || firstCandidate.cost - secondCandidate.cost);
 
   const [bestCandidate, secondCandidate] = scoredCandidates;
   if (!secondCandidate) {
     return [bestCandidate];
   }
-  if (secondCandidate.overlapCount > bestCandidate.overlapCount || (secondCandidate.cost - bestCandidate.cost) > (bondLength * 0.25)) {
+  if (secondCandidate.overlapCount > bestCandidate.overlapCount || secondCandidate.cost - bestCandidate.cost > bondLength * 0.25) {
     return [bestCandidate];
   }
   return scoredCandidates.slice(0, Math.min(2, scoredCandidates.length));
@@ -541,10 +512,9 @@ function orientSingleAttachmentBenzeneRoot(layoutGraph, ringSystem, coords, part
     if (!atom) {
       return false;
     }
-    return atom.getNeighbors(layoutGraph.sourceMolecule).some(neighborAtom => neighborAtom
-      && neighborAtom.name !== 'H'
-      && participantAtomIds.has(neighborAtom.id)
-      && !ringAtomIdSet.has(neighborAtom.id));
+    return atom
+      .getNeighbors(layoutGraph.sourceMolecule)
+      .some(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && participantAtomIds.has(neighborAtom.id) && !ringAtomIdSet.has(neighborAtom.id));
   });
 
   if (heavyAttachmentAnchors.length !== 1) {
@@ -583,10 +553,7 @@ function orientSingleAttachmentBenzeneRoot(layoutGraph, ringSystem, coords, part
  */
 function getPendingRingLayout(cache, layoutGraph, pendingRingSystem, bondLength) {
   if (!cache.has(pendingRingSystem.ringSystem.id)) {
-    cache.set(
-      pendingRingSystem.ringSystem.id,
-      layoutRingSystem(layoutGraph, pendingRingSystem.ringSystem, bondLength, pendingRingSystem.templateId)
-    );
+    cache.set(pendingRingSystem.ringSystem.id, layoutRingSystem(layoutGraph, pendingRingSystem.ringSystem, bondLength, pendingRingSystem.templateId));
   }
   return cache.get(pendingRingSystem.ringSystem.id) ?? null;
 }
@@ -601,10 +568,12 @@ function getPendingRingLayout(cache, layoutGraph, pendingRingSystem, bondLength)
  * @returns {{finalResult?: {family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses: Map<string, 'planar'|'bridged'>}, state?: object}} Initialization result.
  */
 function initializeRootScaffold(layoutGraph, component, adjacency, scaffoldPlan, bondLength) {
-  const participantAtomIds = new Set(component.atomIds.filter(atomId => {
-    const atom = layoutGraph.atoms.get(atomId);
-    return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
-  }));
+  const participantAtomIds = new Set(
+    component.atomIds.filter(atomId => {
+      const atom = layoutGraph.atoms.get(atomId);
+      return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
+    })
+  );
   const coords = new Map();
   const placedAtomIds = new Set();
   const bondValidationClasses = new Map();
@@ -638,36 +607,27 @@ function initializeRootScaffold(layoutGraph, component, adjacency, scaffoldPlan,
       }
     };
   }
-  const rootCoords = orientSingleAttachmentBenzeneRoot(
-    layoutGraph,
-    rootRingSystem,
-    rootLayout.coords,
-    participantAtomIds
-  );
+  const rootCoords = orientSingleAttachmentBenzeneRoot(layoutGraph, rootRingSystem, rootLayout.coords, participantAtomIds);
   for (const [atomId, position] of rootCoords) {
     coords.set(atomId, position);
     placedAtomIds.add(atomId);
   }
   const placedRingSystemIds = new Set([rootRingSystem.id]);
   assignBondValidationClass(layoutGraph, rootRingSystem.atomIds, rootLayout.validationClass, bondValidationClasses);
-  const macrocycleBranchConstraints = rootLayout.family === 'macrocycle'
-    ? {
-      angularBudgets: computeMacrocycleAngularBudgets(
-        layoutGraph.rings.filter(ring => rootRingSystem.ringIds.includes(ring.id)),
-        coords,
-        layoutGraph,
-        participantAtomIds
-      )
-    }
-    : null;
+  const macrocycleBranchConstraints =
+    rootLayout.family === 'macrocycle'
+      ? {
+          angularBudgets: computeMacrocycleAngularBudgets(
+            layoutGraph.rings.filter(ring => rootRingSystem.ringIds.includes(ring.id)),
+            coords,
+            layoutGraph,
+            participantAtomIds
+          )
+        }
+      : null;
 
-  const nonRingAtomIds = new Set(
-    [...participantAtomIds].filter(atomId => !layoutGraph.ringSystems.some(ringSystem => ringSystem.atomIds.includes(atomId)))
-  );
-  const {
-    primaryAtomIds: primaryNonRingAtomIds,
-    deferredHydrogenAtomIds
-  } = splitDeferredMixedHydrogens(layoutGraph, nonRingAtomIds);
+  const nonRingAtomIds = new Set([...participantAtomIds].filter(atomId => !layoutGraph.ringSystems.some(ringSystem => ringSystem.atomIds.includes(atomId))));
+  const { primaryAtomIds: primaryNonRingAtomIds, deferredHydrogenAtomIds } = splitDeferredMixedHydrogens(layoutGraph, nonRingAtomIds);
   const pendingRingLayoutCache = new Map();
   const pendingRingSystems = scaffoldPlan.placementSequence
     .filter(entry => entry.kind === 'ring-system' && entry.candidateId !== root.id)
@@ -725,23 +685,13 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
     progressed = false;
     for (let index = 0; index < pendingRingSystems.length; index++) {
       const pendingRingSystem = pendingRingSystems[index];
-      const linker = findShortestRingLinker(
-        layoutGraph,
-        pendingRingSystem.ringSystem,
-        placedRingSystemIds,
-        participantAtomIds,
-        atomToRingSystemId
-      );
+      const linker = findShortestRingLinker(layoutGraph, pendingRingSystem.ringSystem, placedRingSystemIds, participantAtomIds, atomToRingSystemId);
       if (!linker || linker.chainAtomIds.some(atomId => coords.has(atomId))) {
         continue;
       }
       const firstRingSystem = ringSystemById.get(linker.firstRingSystemId);
       const blockLayout = getPendingRingLayout(pendingRingLayoutCache, layoutGraph, pendingRingSystem, bondLength);
-      if (
-        !firstRingSystem
-        || !blockLayout
-        || !isSupportedRingLinker(layoutGraph, firstRingSystem, pendingRingSystem.ringSystem, linker)
-      ) {
+      if (!firstRingSystem || !blockLayout || !isSupportedRingLinker(layoutGraph, firstRingSystem, pendingRingSystem.ringSystem, linker)) {
         continue;
       }
 
@@ -752,15 +702,7 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
       for (const turnSign of turnSigns) {
         for (const mirror of [false, true]) {
           rawCandidates.push({
-            transformedCoords: buildRingLinkerCandidate(
-              coords,
-              firstRingSystem,
-              linker,
-              blockLayout.coords,
-              bondLength,
-              turnSign,
-              mirror
-            )
+            transformedCoords: buildRingLinkerCandidate(coords, firstRingSystem, linker, blockLayout.coords, bondLength, turnSign, mirror)
           });
         }
       }
@@ -798,16 +740,7 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
     }
 
     const sizeBeforeBranches = coords.size;
-    placeRemainingBranches(
-      adjacency,
-      layoutGraph.canonicalAtomRank,
-      coords,
-      primaryNonRingAtomIds,
-      [...placedAtomIds],
-      bondLength,
-      layoutGraph,
-      macrocycleBranchConstraints
-    );
+    placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, coords, primaryNonRingAtomIds, [...placedAtomIds], bondLength, layoutGraph, macrocycleBranchConstraints);
     for (const atomId of primaryNonRingAtomIds) {
       if (coords.has(atomId)) {
         placedAtomIds.add(atomId);
@@ -847,13 +780,7 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
             transformedCoords: transformAttachedBlock(blockLayout.coords, attachment.attachmentAtomId, targetPosition, attachmentAngle)
           },
           {
-            transformedCoords: transformAttachedBlock(
-              blockLayout.coords,
-              attachment.attachmentAtomId,
-              targetPosition,
-              attachmentAngle,
-              { mirror: true }
-            )
+            transformedCoords: transformAttachedBlock(blockLayout.coords, attachment.attachmentAtomId, targetPosition, attachmentAngle, { mirror: true })
           }
         ],
         coords,
@@ -905,43 +832,16 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
  * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses: Map<string, 'planar'|'bridged'>}} Final mixed placement result.
  */
 function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
-  const {
-    participantAtomIds,
-    coords,
-    placedAtomIds,
-    bondValidationClasses,
-    macrocycleBranchConstraints,
-    nonRingAtomIds,
-    primaryNonRingAtomIds,
-    deferredHydrogenAtomIds
-  } = state;
+  const { participantAtomIds, coords, placedAtomIds, bondValidationClasses, macrocycleBranchConstraints, nonRingAtomIds, primaryNonRingAtomIds, deferredHydrogenAtomIds } = state;
 
-  placeRemainingBranches(
-    adjacency,
-    layoutGraph.canonicalAtomRank,
-    coords,
-    primaryNonRingAtomIds,
-    [...placedAtomIds],
-    bondLength,
-    layoutGraph,
-    macrocycleBranchConstraints
-  );
+  placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, coords, primaryNonRingAtomIds, [...placedAtomIds], bondLength, layoutGraph, macrocycleBranchConstraints);
   for (const atomId of primaryNonRingAtomIds) {
     if (coords.has(atomId)) {
       placedAtomIds.add(atomId);
     }
   }
   if (deferredHydrogenAtomIds.size > 0) {
-    placeRemainingBranches(
-      adjacency,
-      layoutGraph.canonicalAtomRank,
-      coords,
-      deferredHydrogenAtomIds,
-      [...placedAtomIds],
-      bondLength,
-      layoutGraph,
-      macrocycleBranchConstraints
-    );
+    placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, coords, deferredHydrogenAtomIds, [...placedAtomIds], bondLength, layoutGraph, macrocycleBranchConstraints);
   }
   for (const atomId of nonRingAtomIds) {
     if (coords.has(atomId)) {

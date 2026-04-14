@@ -258,17 +258,13 @@ describe('createPrimitiveEventHandlers', () => {
     setChargeTool('negative');
     const handlers = createPrimitiveEventHandlers(context);
 
-    handlers.handleForceBondMouseOver(
-      { clientX: 5, clientY: 6 },
-      'b1',
-      {
-        bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'] }]]),
-        atoms: new Map([
-          ['a1', { id: 'a1', name: 'C' }],
-          ['a2', { id: 'a2', name: 'O' }]
-        ])
-      }
-    );
+    handlers.handleForceBondMouseOver({ clientX: 5, clientY: 6 }, 'b1', {
+      bonds: new Map([['b1', { id: 'b1', atoms: ['a1', 'a2'] }]]),
+      atoms: new Map([
+        ['a1', { id: 'a1', name: 'C' }],
+        ['a2', { id: 'a2', name: 'O' }]
+      ])
+    });
 
     assert.deepEqual(calls, []);
   });

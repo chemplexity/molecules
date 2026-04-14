@@ -92,10 +92,12 @@ function resolveLayoutSource(molecule, layoutResult, coords, layoutOptions) {
 function incidentRingPolygonsForAtom(molecule, atomId) {
   return getRingAtomIds(molecule)
     .filter(ringAtomIds => ringAtomIds.includes(atomId))
-    .map(ringAtomIds => ringAtomIds
-      .map(ringAtomId => molecule.atoms.get(ringAtomId))
-      .filter(atom => atom && atom.x != null && atom.y != null)
-      .map(atom => ({ x: atom.x, y: atom.y })))
+    .map(ringAtomIds =>
+      ringAtomIds
+        .map(ringAtomId => molecule.atoms.get(ringAtomId))
+        .filter(atom => atom && atom.x != null && atom.y != null)
+        .map(atom => ({ x: atom.x, y: atom.y }))
+    )
     .filter(polygon => polygon.length >= 3);
 }
 
@@ -119,17 +121,13 @@ function projectHiddenStereoHydrogens(molecule, bondLength) {
     if (!parent.getChirality()) {
       continue;
     }
-    const knownPositions = parent.getNeighbors(molecule)
+    const knownPositions = parent
+      .getNeighbors(molecule)
       .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null)
       .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
-    const projectedPosition = synthesizeHydrogenPosition(
-      { x: parent.x, y: parent.y },
-      knownPositions,
-      bondLength * 0.75,
-      {
-        incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id)
-      }
-    );
+    const projectedPosition = synthesizeHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength * 0.75, {
+      incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id)
+    });
     projectedCoords.set(atom.id, projectedPosition);
   }
   return projectedCoords;
@@ -250,15 +248,7 @@ function bondToSVG(bond, firstAtom, secondAtom, molecule, toSVG, stereoType, aro
  */
 export function renderMolSVG(
   molecule,
-  {
-    showChiralLabels = false,
-    showLonePairs = false,
-    aromaticMode = AROMATIC_RENDER_MODE,
-    layoutResult = null,
-    coords = null,
-    layoutOptions = {},
-    applyOptions = {}
-  } = {}
+  { showChiralLabels = false, showLonePairs = false, aromaticMode = AROMATIC_RENDER_MODE, layoutResult = null, coords = null, layoutOptions = {}, applyOptions = {} } = {}
 ) {
   if (!molecule || molecule.atoms.size === 0) {
     return null;
@@ -507,10 +497,7 @@ export function buildCompositeSVG(cells, cols) {
 
   const totalW = colX[cols - 1] + colWidths[cols - 1];
   const totalH = rowY[rows - 1] + rowHeights[rows - 1];
-  const parts = [
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}">`,
-    `<rect width="${totalW}" height="${totalH}" fill="white"/>`
-  ];
+  const parts = [`<svg xmlns="http://www.w3.org/2000/svg" width="${totalW}" height="${totalH}">`, `<rect width="${totalW}" height="${totalH}" fill="white"/>`];
 
   for (let col = 1; col < cols; col++) {
     parts.push(`<line x1="${colX[col]}" y1="0" x2="${colX[col]}" y2="${totalH}" stroke="#e0e0e0" stroke-width="1"/>`);

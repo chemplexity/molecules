@@ -147,11 +147,7 @@ describe('createInputControls', () => {
       const controls = createInputControls({
         data: {
           exampleMolecules: [],
-          randomMolecule: [
-            { smiles: 'A' },
-            { smiles: 'B' },
-            { smiles: 'C' }
-          ],
+          randomMolecule: [{ smiles: 'A' }, { smiles: 'B' }, { smiles: 'C' }],
           moleculeCatalog: []
         },
         state: {
@@ -195,11 +191,7 @@ describe('createInputControls', () => {
       const controls = createInputControls({
         data: {
           exampleMolecules: [],
-          randomMolecule: [
-            { smiles: 'A' },
-            { smiles: 'B', inchi: 'InChI=1S/B' },
-            { smiles: 'C', inchi: 'InChI=1S/C' }
-          ],
+          randomMolecule: [{ smiles: 'A' }, { smiles: 'B', inchi: 'InChI=1S/B' }, { smiles: 'C', inchi: 'InChI=1S/C' }],
           moleculeCatalog: []
         },
         state: {

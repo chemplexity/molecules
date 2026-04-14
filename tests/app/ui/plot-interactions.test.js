@@ -205,6 +205,91 @@ describe('initPlotInteractions', () => {
     assert.equal(result, false);
   });
 
+  it('suppresses the native context menu inside the plot even without a charge tool', () => {
+    let contextMenuHandler = null;
+    let mouseDownHandler = null;
+    const plotEl = {
+      addEventListener(type, handler) {
+        if (type === 'contextmenu') {
+          contextMenuHandler = handler;
+        }
+        if (type === 'mousedown') {
+          mouseDownHandler = handler;
+        }
+      }
+    };
+
+    initPlotInteractions({
+      plotEl,
+      window: {
+        addEventListener() {}
+      },
+      document: {
+        addEventListener() {},
+        elementsFromPoint() {
+          return [];
+        }
+      },
+      state: {
+        getSelectMode: () => false,
+        getDrawBondMode: () => false,
+        hasDrawBondState: () => false,
+        getEraseMode: () => false,
+        getChargeTool: () => null,
+        isRenderableMode: () => true,
+        getActiveMolecule: () => null,
+        getTooltipMode: () => '2d'
+      },
+      options: {
+        getShowAtomTooltips: () => true
+      },
+      analysis: {
+        getActiveValenceWarningMap: () => new Map()
+      },
+      tooltipState: {
+        getSelectionValenceTooltipAtomId: () => null,
+        setSelectionValenceTooltipAtomId() {}
+      },
+      tooltip: makeTooltip([]),
+      helpers: {
+        getNodeDatum: () => null
+      },
+      molecule: {
+        getAtomById: () => null
+      },
+      formatters: {
+        atomTooltipHtml: () => ''
+      }
+    });
+
+    let prevented = false;
+    contextMenuHandler({
+      preventDefault() {
+        prevented = true;
+      }
+    });
+    assert.equal(prevented, true);
+
+    prevented = false;
+    mouseDownHandler({
+      button: 2,
+      ctrlKey: false,
+      preventDefault() {
+        prevented = true;
+      }
+    });
+    assert.equal(prevented, true);
+
+    prevented = false;
+    const result = plotEl.oncontextmenu({
+      preventDefault() {
+        prevented = true;
+      }
+    });
+    assert.equal(prevented, true);
+    assert.equal(result, false);
+  });
+
   it('suppresses secondary mousedown in charge mode before the browser menu opens', () => {
     let documentMouseDownHandler = null;
     const plotEl = {
@@ -542,10 +627,7 @@ describe('initPlotInteractions', () => {
 
     mousemoveHandler({ clientX: 1, clientY: 2 });
 
-    assert.deepEqual(records, [
-      ['setSelectionTooltipAtomId', null],
-      ['hide']
-    ]);
+    assert.deepEqual(records, [['setSelectionTooltipAtomId', null], ['hide']]);
   });
 
   it('does not show valence tooltips while charge mode is active', () => {

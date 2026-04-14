@@ -127,11 +127,7 @@ describe('createDragGestureActions', () => {
         ]
       ]
     );
-    assert.deepEqual(simCalls, [
-      ['alphaTarget', 0.3],
-      ['restart'],
-      ['alphaTarget', 0]
-    ]);
+    assert.deepEqual(simCalls, [['alphaTarget', 0.3], ['restart'], ['alphaTarget', 0]]);
     assert.equal(node.anchorX, 9);
     assert.equal(node.anchorY, 16);
     assert.equal(node.fx, null);
@@ -180,22 +176,15 @@ describe('createDragGestureActions', () => {
     end.call(element, { active: false });
 
     assert.equal(stopped, true);
-    assert.deepEqual(
-      contextCalls.slice(0, 5),
-      [
-        ['getSelectedDragAtomIds', { id: 'mol-2' }, [], ['b1']],
-        ['setAutoFitEnabled', false],
-        ['disableKeepInView'],
-        ['hideTooltip'],
-        ['setElementCursor', 'bond-hit-1', 'grabbing']
-      ]
-    );
-    assert.deepEqual(contextCalls.at(-1), ['setElementCursor', 'bond-hit-1', 'grab']);
-    assert.deepEqual(simCalls, [
-      ['alphaTarget', 0.3],
-      ['restart'],
-      ['alphaTarget', 0]
+    assert.deepEqual(contextCalls.slice(0, 5), [
+      ['getSelectedDragAtomIds', { id: 'mol-2' }, [], ['b1']],
+      ['setAutoFitEnabled', false],
+      ['disableKeepInView'],
+      ['hideTooltip'],
+      ['setElementCursor', 'bond-hit-1', 'grabbing']
     ]);
+    assert.deepEqual(contextCalls.at(-1), ['setElementCursor', 'bond-hit-1', 'grab']);
+    assert.deepEqual(simCalls, [['alphaTarget', 0.3], ['restart'], ['alphaTarget', 0]]);
   });
 
   it('takes a 2D drag snapshot once and redraws drag targets before final draw', () => {
@@ -232,16 +221,13 @@ describe('createDragGestureActions', () => {
     const element = {};
     let stopped = false;
 
-    start.call(
-      element,
-      {
-        sourceEvent: {
-          stopPropagation() {
-            stopped = true;
-          }
+    start.call(element, {
+      sourceEvent: {
+        stopPropagation() {
+          stopped = true;
         }
       }
-    );
+    });
     drag.call(element, { sourceEvent: {} });
     drag.call(element, { sourceEvent: {} });
     end.call(element, {});
@@ -270,5 +256,4 @@ describe('createDragGestureActions', () => {
     );
     assert.deepEqual(calls.at(-1), ['draw']);
   });
-
 });

@@ -97,7 +97,7 @@ function candidateSpiroRingCoords(ring, sharedAtomId, sharedPosition, center, si
   const radius = circumradiusForRegularPolygon(orderedAtomIds.length, bondLength);
   const coords = new Map([[sharedAtomId, sharedPosition]]);
   for (let index = 1; index < orderedAtomIds.length; index++) {
-    coords.set(orderedAtomIds[index], add(center, fromAngle(startAngle + (index * step), radius)));
+    coords.set(orderedAtomIds[index], add(center, fromAngle(startAngle + index * step, radius)));
   }
   return coords;
 }
@@ -145,9 +145,7 @@ function scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLengt
     const firstAtomId = atomIds[firstIndex];
     for (let secondIndex = firstIndex + 1; secondIndex < atomIds.length; secondIndex++) {
       const secondAtomId = atomIds[secondIndex];
-      const key = firstAtomId < secondAtomId
-        ? `${firstAtomId}:${secondAtomId}`
-        : `${secondAtomId}:${firstAtomId}`;
+      const key = firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
       if (layoutGraph.bondedPairSet.has(key)) {
         continue;
       }
@@ -168,7 +166,7 @@ function scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLengt
     }
     const firstVector = sub(currentCenter, previousCenter);
     const secondVector = sub(nextCenter, currentCenter);
-    centerBend += Math.abs((firstVector.x * secondVector.y) - (firstVector.y * secondVector.x));
+    centerBend += Math.abs(firstVector.x * secondVector.y - firstVector.y * secondVector.x);
   }
 
   return {
@@ -217,9 +215,7 @@ function searchSpiroPathPlacements(layoutGraph, ringById, ringOrder, ringConnect
 
   const previousRingId = ringOrder[index - 1];
   const currentRingId = ringOrder[index];
-  const connectionKey = previousRingId < currentRingId
-    ? `${previousRingId}:${currentRingId}`
-    : `${currentRingId}:${previousRingId}`;
+  const connectionKey = previousRingId < currentRingId ? `${previousRingId}:${currentRingId}` : `${currentRingId}:${previousRingId}`;
   const connection = ringConnectionByPair.get(connectionKey);
   const currentRing = ringById.get(currentRingId);
   const sharedAtomId = connection?.sharedAtomIds?.[0];
@@ -240,7 +236,7 @@ function searchSpiroPathPlacements(layoutGraph, ringById, ringOrder, ringConnect
 
   for (const offset of [Math.PI / 4, Math.PI / 3]) {
     for (const direction of [1, -1]) {
-      const centerAngle = outwardAngle + (direction * offset);
+      const centerAngle = outwardAngle + direction * offset;
       const center = add(sharedPosition, fromAngle(centerAngle, radius));
       for (const sign of [1, -1]) {
         const candidateCoords = candidateSpiroRingCoords(currentRing, sharedAtomId, sharedPosition, center, sign, bondLength);
@@ -250,16 +246,7 @@ function searchSpiroPathPlacements(layoutGraph, ringById, ringOrder, ringConnect
         }
         const nextRingCenters = new Map(ringCenters);
         nextRingCenters.set(currentRingId, center);
-        const candidatePlacement = searchSpiroPathPlacements(
-          layoutGraph,
-          ringById,
-          ringOrder,
-          ringConnectionByPair,
-          bondLength,
-          nextCoords,
-          nextRingCenters,
-          index + 1
-        );
+        const candidatePlacement = searchSpiroPathPlacements(layoutGraph, ringById, ringOrder, ringConnectionByPair, bondLength, nextCoords, nextRingCenters, index + 1);
         if (!bestPlacement || isBetterSpiroScore(candidatePlacement.score, bestPlacement.score)) {
           bestPlacement = candidatePlacement;
         }
@@ -267,11 +254,13 @@ function searchSpiroPathPlacements(layoutGraph, ringById, ringOrder, ringConnect
     }
   }
 
-  return bestPlacement ?? {
-    coords,
-    ringCenters,
-    score: scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLength)
-  };
+  return (
+    bestPlacement ?? {
+      coords,
+      ringCenters,
+      score: scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLength)
+    }
+  );
 }
 
 /**
@@ -295,16 +284,7 @@ function layoutSpiroPath(layoutGraph, rings, ringOrder, ringConnectionByPair, bo
     coords.set(atomId, position);
   }
   ringCenters.set(rootRing.id, centroid(rootRing.atomIds.map(atomId => coords.get(atomId))));
-  const placement = searchSpiroPathPlacements(
-    layoutGraph,
-    ringById,
-    ringOrder,
-    ringConnectionByPair,
-    bondLength,
-    coords,
-    ringCenters,
-    1
-  );
+  const placement = searchSpiroPathPlacements(layoutGraph, ringById, ringOrder, ringConnectionByPair, bondLength, coords, ringCenters, 1);
 
   return { coords: placement.coords, ringCenters: placement.ringCenters, placementMode: 'constructed-path' };
 }

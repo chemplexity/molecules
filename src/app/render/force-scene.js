@@ -177,11 +177,8 @@ function placeHiddenHydrogensForForceStereoSeed(molecule, bondLength) {
 function seedForceAutoDisplayStereo(ctx, molecule, isReactionPreviewMol) {
   const hasDisplayStereo = [...molecule.bonds.values()].some(bond => bond.properties.display?.as);
   const hasChiralCenters = (molecule.getChiralCenters?.()?.length ?? 0) > 0;
-  const needsProjectedOrganometallicSeed =
-    hasProjectedOrganometallicDisplayCandidate(molecule) && hasIncompleteProjectedOrganometallicDisplay(molecule);
-  const shouldSeed = (!hasDisplayStereo && hasChiralCenters)
-    || needsProjectedOrganometallicSeed
-    || (isReactionPreviewMol && hasChiralCenters);
+  const needsProjectedOrganometallicSeed = hasProjectedOrganometallicDisplayCandidate(molecule) && hasIncompleteProjectedOrganometallicDisplay(molecule);
+  const shouldSeed = (!hasDisplayStereo && hasChiralCenters) || needsProjectedOrganometallicSeed || (isReactionPreviewMol && hasChiralCenters);
   if (!shouldSeed) {
     return;
   }
@@ -237,10 +234,7 @@ export function createForceSceneRenderer(ctx) {
    * @param {Map<string, {x: number, y: number}>|null} [options.initialPatchPos] - Optional initial patch positions applied before the first restarted tick.
    * @returns {void}
    */
-  function updateForce(
-    molecule,
-    { preservePositions = false, preserveView = preservePositions, anchorLayout = null, initialPatchPos = null } = {}
-  ) {
+  function updateForce(molecule, { preservePositions = false, preserveView = preservePositions, anchorLayout = null, initialPatchPos = null } = {}) {
     prepareAromaticBondRendering(molecule);
     const { showLonePairs } = getRenderOptions();
     const valenceWarningMap = ctx.helpers.valenceWarningMapFor(molecule);

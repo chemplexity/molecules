@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { applySMIRKS, parseSMILES, parseSMIRKS, reactionTemplates, toSMILES } from '../../src/index.js';
+import { applySMIRKS, findSMARTS, parseSMILES, parseSMIRKS, reactionTemplates, toSMILES } from '../../src/index.js';
 
 function sortDotSmiles(smiles) {
   return smiles.split('.').sort().join('.');
@@ -276,6 +276,23 @@ describe('reactionTemplates — example applications', () => {
     const product = applySMIRKS(parseSMILES('NC(CC1=CNC=N1)C(O)=O'), reactionTemplates.amineProtonation.smirks);
     assert.ok(product);
     assert.match(toSMILES(product), /\[NH3\+\]/);
+  });
+
+  it('aromaticAzaProtonation protonates pyridine-like aromatic nitrogens', () => {
+    const product = applySMIRKS(parseSMILES('c1ccncc1'), reactionTemplates.aromaticAzaProtonation.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'c1cc[nH+]cc1');
+  });
+
+  it('aromaticAzaProtonation skips substituted pyrrolic nitrogens but still finds the imine-like site', () => {
+    const product = applySMIRKS(parseSMILES('Cn1cncc1'), reactionTemplates.aromaticAzaProtonation.smirks);
+    assert.ok(product);
+    assert.equal(toSMILES(product), 'Cn1cc[nH+]c1');
+  });
+
+  it('fused aza nucleosides expose aromatic aza protonation sites after aromaticity perception', () => {
+    const matches = [...findSMARTS(parseSMILES('N1C=NC2=C1N=CN2[C@H]3C[C@H](O)[C@@H](CO)O3'), '[n+0X2:1]')];
+    assert.equal(matches.length, 2);
   });
 
   it('ammoniumDeprotonation deprotonates an ammonium center', () => {

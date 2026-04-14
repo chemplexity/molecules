@@ -22,9 +22,7 @@ export function createBootstrapDom({ document, plotEl, inputEl, collectionSelect
   const drawBondButton = document.getElementById('draw-bond-btn');
   const positiveChargeButton = document.getElementById('charge-positive-btn');
   const negativeChargeButton = document.getElementById('charge-negative-btn');
-  const bondDrawTypeButtons = new Map(
-    [...document.querySelectorAll('[data-bond-draw-type]')].map(button => [button.dataset.bondDrawType, button])
-  );
+  const bondDrawTypeButtons = new Map([...document.querySelectorAll('[data-bond-draw-type]')].map(button => [button.dataset.bondDrawType, button]));
   const eraseButton = document.getElementById('erase-btn');
   const molecularFormula = document.getElementById('molecularFormula');
   const molecularWeight = document.getElementById('molecularWeight');

@@ -127,6 +127,7 @@ export function createInteractionRuntimeDeps(ctx) {
     get2DAtoms: () => ctx.get2DAtoms(),
     get2DCenterX: () => ctx.get2DCenterX(),
     get2DCenterY: () => ctx.get2DCenterY(),
+    toSelectionSVGPt2d: atom => ctx.toSelectionSVGPt2d?.(atom) ?? null,
     forceBondLength: ctx.forceBondLength,
     bondOffset2d: ctx.bondOffset2d,
     strokeWidth: ctx.strokeWidth,

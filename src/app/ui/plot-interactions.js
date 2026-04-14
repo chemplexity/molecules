@@ -22,13 +22,34 @@ export function initPlotInteractions(deps) {
     event.stopImmediatePropagation?.();
   }
 
-  function installLegacySecondarySuppressors(target) {
+  /**
+   * Suppresses the native browser secondary-click menu inside the molecule
+   * viewport while still allowing target-level handlers to observe the event.
+   * Charge mode keeps its stronger propagation stop so right-click decrement
+   * behavior remains deterministic.
+   * @param {Event} event - Pointer or context-menu event from the plot.
+   * @returns {void}
+   */
+  function suppressPlotSecondaryEvent(event) {
+    event.preventDefault();
+    if (isChargeModeActive()) {
+      event.stopPropagation?.();
+      event.stopImmediatePropagation?.();
+    }
+  }
+
+  function installLegacySecondarySuppressors(target, { suppressWithinPlot = false } = {}) {
     if (!target) {
       return;
     }
 
     const previousMouseDown = target.onmousedown;
     target.onmousedown = event => {
+      const isPlotSecondaryMouseDown = suppressWithinPlot && event?.button === 2;
+      if (isPlotSecondaryMouseDown) {
+        suppressPlotSecondaryEvent(event);
+        return false;
+      }
       if (isChargeModeActive() && (event?.button === 2 || event?.ctrlKey)) {
         suppressChargeModeSecondaryEvent(event);
         return false;
@@ -41,6 +62,10 @@ export function initPlotInteractions(deps) {
 
     const previousContextMenu = target.oncontextmenu;
     target.oncontextmenu = event => {
+      if (suppressWithinPlot) {
+        suppressPlotSecondaryEvent(event);
+        return false;
+      }
       if (isChargeModeActive()) {
         suppressChargeModeSecondaryEvent(event);
         return false;
@@ -57,13 +82,17 @@ export function initPlotInteractions(deps) {
   });
 
   deps.plotEl.addEventListener('mousedown', event => {
-    if (event.button === 2 || event.ctrlKey) {
+    if (event.button === 2) {
+      suppressPlotSecondaryEvent(event);
+      return;
+    }
+    if (event.ctrlKey) {
       suppressChargeModeSecondaryEvent(event);
     }
   });
 
   deps.plotEl.addEventListener('contextmenu', event => {
-    suppressChargeModeSecondaryEvent(event);
+    suppressPlotSecondaryEvent(event);
   });
 
   deps.document.addEventListener(
@@ -116,13 +145,10 @@ export function initPlotInteractions(deps) {
   installLegacySecondarySuppressors(deps.document);
   installLegacySecondarySuppressors(docEl);
   installLegacySecondarySuppressors(bodyEl);
-  installLegacySecondarySuppressors(deps.plotEl);
+  installLegacySecondarySuppressors(deps.plotEl, { suppressWithinPlot: true });
 
   deps.document.addEventListener('mousemove', event => {
-    const warningHoverMode =
-      deps.state.getSelectMode() ||
-      (deps.state.getDrawBondMode() && !deps.state.hasDrawBondState()) ||
-      deps.state.getEraseMode();
+    const warningHoverMode = deps.state.getSelectMode() || (deps.state.getDrawBondMode() && !deps.state.hasDrawBondState()) || deps.state.getEraseMode();
     if (!warningHoverMode || !deps.state.isRenderableMode()) {
       if (deps.tooltipState.getSelectionValenceTooltipAtomId() !== null) {
         deps.tooltipState.setSelectionValenceTooltipAtomId(null);
@@ -156,7 +182,7 @@ export function initPlotInteractions(deps) {
       }
     }
 
-    const valenceWarning = atomId ? deps.analysis.getActiveValenceWarningMap().get(atomId) ?? null : null;
+    const valenceWarning = atomId ? (deps.analysis.getActiveValenceWarningMap().get(atomId) ?? null) : null;
     const atom = atomId ? deps.molecule.getAtomById(atomId, mol) : null;
     if (!atom || !valenceWarning) {
       if (deps.tooltipState.getSelectionValenceTooltipAtomId() !== null) {

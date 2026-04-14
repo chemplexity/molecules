@@ -1,9 +1,35 @@
 # Change Log
 
+## 2026-04-13
+
+- Fix edit stereochemistry of explict hydrogen
+- Fix force layout clean mode
+- Add more bridged templates
+- Add a dedicated oxabicyclo[3.1.1]heptane bridged-ring template so `C1OC2CC(C1)C2` renders in a compact oxygen-bridge cage projection instead of the generic fallback
+- Add a dedicated quinuclidine bridged-ring template so `C1CN2CCC1CC2` renders in a compact medicinal-chemistry cage projection instead of the generic fallback
+- Make safe terminal single-bond hetero substituents on ring atoms use the exact local outward angle instead of snapping to the generic discrete branch lattice
+- Fix dense bridged alkaloid layouts by capping bridge-path projection so complex cages stay on the KK seed instead of exploding into stretched bonds
+- Restrict bridged bond tidy to mixed bridged systems so compact bridged cages no longer get unexpectedly reshaped by the dense-cage cleanup pass
+- Fix aromatic O/S cation counting so pyrylium and thiopyrylium rings stay aromatic after perception
+- Fix implicit-hydrogen repair stripping pyrrole-like hydrogens when aromatic bonds are stored as order 1.5
+- Stabilize 2D clean on bridged and locally distorted structures by ignoring hidden-H false positives, tolerating compressed ring bonds, and widening local refinement hints
+- Fix 2D dash-to-line edits on stereochemical hydrogens so draw-only updates hide stale stereo Hs instead of leaving them stranded on the parent carbon
+- Make `double`, `triple`, and `aromatic` tools a true no-op on displayed 2D stereochemical hydrogen bonds instead of collapsing them to plain single bonds
+- Fix force-mode single-bond edits on stereochemical hydrogens so wedge/dash `C-H` bonds can be cleared back to plain single bonds
+- Preserve reaction-preview metadata through 2D and force clean clones so cleaning an active preview does not drop preview-specific product display state
+- Fix force-mode reaction-preview clean so imine-hydrolysis and similar previews keep the product on the right instead of reanchoring a mirrored reactant/product arrangement
+- Keep force-mode reaction-preview arrows visible while rotating by shrinking the force arrow padding gracefully instead of dropping the arrow when reactant and product boxes swing temporarily close together
+- Suppress the native browser context menu anywhere inside the molecule plot instead of only during charge-mode right-click flows
+- Fix 2D element changes on displayed stereochemical hydrogens so carbon, oxygen, and sulfur replacements no longer collapse onto the parent stereocenter when clicked in draw-bond mode
+- Fix 2D draw-bond preview starts on displayed stereochemical hydrogens so the first click frame no longer jumps back to the parent carbon before the replacement render
+- Fix fused aza aromaticity for substituted pyrrolic nitrogens so N-substituted five-member heteroaromatics stay aromatic and expose aromatic aza protonation sites correctly
+- Tighten disconnected-fragment packing and let small charged metal hubs center multi-component salts so counter-ions no longer chain off to one side with excessive gaps
+
 ## 2026-04-12
 
 - Fix selection of explicit hydrogen
 - Migrate new 2D layout algorithm to layout folder and remove old engine.
+- Rework the tropane/cocaine bridged-ring template so cocaine-like scaffolds render with a cleaner cage projection instead of the earlier distorted crossed shape
 - Fix 2D stereo-hydrogen atom drags to start from the projected visible position and follow the mouse live
 - Fix 2D clean preserving manually dragged stereo-hydrogen positions instead of snapping them back to their projected defaults
 - Make 2D clean feed touched-bond refinement hints into the existing-coordinate relayout path so badly stretched groups such as dragged carbonyls snap back cleanly without bypassing refinement

@@ -1,13 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  createEditorActions,
-  ReactionPreviewPolicy,
-  ResonancePolicy,
-  SnapshotPolicy,
-  ViewportPolicy
-} from '../../../src/app/core/editor-actions.js';
+import { createEditorActions, ReactionPreviewPolicy, ResonancePolicy, SnapshotPolicy, ViewportPolicy } from '../../../src/app/core/editor-actions.js';
 
 function makeDeps({ mode = '2d', hasReactionPreview = false } = {}) {
   const calls = [];

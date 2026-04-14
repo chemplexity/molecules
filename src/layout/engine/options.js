@@ -1,10 +1,6 @@
 /** @module options */
 
-import {
-  DEFAULT_BOND_LENGTH,
-  DEFAULT_LARGE_MOLECULE_THRESHOLD,
-  DEFAULT_MAX_CLEANUP_PASSES
-} from './constants.js';
+import { DEFAULT_BOND_LENGTH, DEFAULT_LARGE_MOLECULE_THRESHOLD, DEFAULT_MAX_CLEANUP_PASSES } from './constants.js';
 import { resolveProfile } from './profile.js';
 
 function cloneCoordsMap(value, optionName) {

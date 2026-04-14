@@ -8,9 +8,5 @@
  * @returns {boolean} True when the threshold is exceeded.
  */
 export function exceedsLargeMoleculeThreshold(traits, threshold, componentCount) {
-  return (
-    traits.heavyAtomCount > threshold.heavyAtomCount ||
-    traits.ringSystemCount > threshold.ringSystemCount ||
-    componentCount > threshold.blockCount
-  );
+  return traits.heavyAtomCount > threshold.heavyAtomCount || traits.ringSystemCount > threshold.ringSystemCount || componentCount > threshold.blockCount;
 }

@@ -40,9 +40,6 @@ describe('createReaction2dDeps', () => {
     deps.draw2d();
     deps.restoreZoomTransform({ x: 0, y: 0, k: 1 });
 
-    assert.deepEqual(records, [
-      ['draw2d'],
-      ['restoreZoomTransform', { x: 0, y: 0, k: 1 }]
-    ]);
+    assert.deepEqual(records, [['draw2d'], ['restoreZoomTransform', { x: 0, y: 0, k: 1 }]]);
   });
 });

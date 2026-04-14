@@ -9,12 +9,18 @@ describe('layout/engine/model/layout-bond', () => {
     const molecule = new Molecule();
     molecule.addAtom('a0', 'C');
     molecule.addAtom('a1', 'N');
-    const bond = molecule.addBond('b0', 'a0', 'a1', {
-      order: 2,
-      stereo: '/',
-      kind: 'coordinate',
-      display: { as: 'wedge', centerId: 'a0', manual: true }
-    }, false);
+    const bond = molecule.addBond(
+      'b0',
+      'a0',
+      'a1',
+      {
+        order: 2,
+        stereo: '/',
+        kind: 'coordinate',
+        display: { as: 'wedge', centerId: 'a0', manual: true }
+      },
+      false
+    );
     const layoutBond = createLayoutBond(bond, molecule);
     assert.equal(layoutBond.id, 'b0');
     assert.equal(layoutBond.a, 'a0');

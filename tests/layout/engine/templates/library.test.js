@@ -8,7 +8,10 @@ describe('layout/engine/templates/library', () => {
     assert.deepEqual(templateIds, [
       'adamantane',
       'bicyclo-2-2-2',
+      'quinuclidine',
+      'tropane',
       'cubane',
+      'oxabicyclo-3-1-1',
       'norbornane',
       'quinoline',
       'isoquinoline',
@@ -75,11 +78,29 @@ describe('layout/engine/templates/library', () => {
     assert.equal(bicyclo222.bondCount, 9);
     assert.equal(bicyclo222.ringCount, 2);
 
+    const quinuclidine = getTemplateById('quinuclidine');
+    assert.equal(quinuclidine.family, 'bridged');
+    assert.equal(quinuclidine.atomCount, 8);
+    assert.equal(quinuclidine.bondCount, 9);
+    assert.equal(quinuclidine.ringCount, 2);
+
+    const tropane = getTemplateById('tropane');
+    assert.equal(tropane.family, 'bridged');
+    assert.equal(tropane.atomCount, 8);
+    assert.equal(tropane.bondCount, 9);
+    assert.equal(tropane.ringCount, 2);
+
     const cubane = getTemplateById('cubane');
     assert.equal(cubane.family, 'bridged');
     assert.equal(cubane.atomCount, 8);
     assert.equal(cubane.bondCount, 12);
     assert.equal(cubane.ringCount, 5);
+
+    const oxabicyclo311 = getTemplateById('oxabicyclo-3-1-1');
+    assert.equal(oxabicyclo311.family, 'bridged');
+    assert.equal(oxabicyclo311.atomCount, 7);
+    assert.equal(oxabicyclo311.bondCount, 8);
+    assert.equal(oxabicyclo311.ringCount, 2);
 
     const norbornane = getTemplateById('norbornane');
     assert.equal(norbornane.family, 'bridged');

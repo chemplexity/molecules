@@ -70,9 +70,13 @@ export function forceLinkDistance(link) {
   const target = typeof link.target === 'object' ? link.target : null;
   let distance = isHydrogenNode(source) || isHydrogenNode(target) ? FORCE_LAYOUT_H_BOND_LENGTH : FORCE_LAYOUT_BOND_LENGTH;
 
-  if (link.order === 3) {distance *= FORCE_LAYOUT_MULTIPLE_BOND_FACTOR * 0.92;}
-  else if (link.order === 2) {distance *= FORCE_LAYOUT_MULTIPLE_BOND_FACTOR;}
-  else if (link.order === 1.5) {distance *= FORCE_LAYOUT_AROMATIC_BOND_FACTOR;}
+  if (link.order === 3) {
+    distance *= FORCE_LAYOUT_MULTIPLE_BOND_FACTOR * 0.92;
+  } else if (link.order === 2) {
+    distance *= FORCE_LAYOUT_MULTIPLE_BOND_FACTOR;
+  } else if (link.order === 1.5) {
+    distance *= FORCE_LAYOUT_AROMATIC_BOND_FACTOR;
+  }
 
   return distance;
 }
@@ -89,14 +93,22 @@ export function createForceAnchorRadiusForce(radius = FORCE_LAYOUT_HEAVY_ANCHOR_
   const hardStrength = Math.max(0, strength - softStrength);
   function force(alpha) {
     for (const node of nodes) {
-      if (isHydrogenNode(node)) {continue;}
-      if (!Number.isFinite(node.anchorX) || !Number.isFinite(node.anchorY)) {continue;}
-      if (node.fx != null || node.fy != null) {continue;}
+      if (isHydrogenNode(node)) {
+        continue;
+      }
+      if (!Number.isFinite(node.anchorX) || !Number.isFinite(node.anchorY)) {
+        continue;
+      }
+      if (node.fx != null || node.fy != null) {
+        continue;
+      }
       const dx = node.x - node.anchorX;
       const dy = node.y - node.anchorY;
       const dist = Math.hypot(dx, dy);
       const inv = 1 / dist;
-      if (!(dist > 1e-6)) {continue;}
+      if (!(dist > 1e-6)) {
+        continue;
+      }
       const pull = (dist * softStrength + Math.max(0, dist - radius) * hardStrength) * alpha;
       node.vx -= dx * inv * pull;
       node.vy -= dy * inv * pull;
@@ -121,14 +133,20 @@ export function createForceHydrogenRepulsionForce(maxDistance = FORCE_LAYOUT_HH_
     const hydrogens = nodes.filter(node => isHydrogenNode(node) && node.fx == null && node.fy == null);
     for (let i = 0; i < hydrogens.length; i++) {
       const a = hydrogens[i];
-      if (!Number.isFinite(a.x) || !Number.isFinite(a.y)) {continue;}
+      if (!Number.isFinite(a.x) || !Number.isFinite(a.y)) {
+        continue;
+      }
       for (let j = i + 1; j < hydrogens.length; j++) {
         const b = hydrogens[j];
-        if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) {continue;}
+        if (!Number.isFinite(b.x) || !Number.isFinite(b.y)) {
+          continue;
+        }
         let dx = b.x - a.x;
         let dy = b.y - a.y;
         let distSq = dx * dx + dy * dy;
-        if (distSq >= maxDistanceSq) {continue;}
+        if (distSq >= maxDistanceSq) {
+          continue;
+        }
         if (distSq < 1e-6) {
           dx = 1e-3;
           dy = 0;
@@ -168,12 +186,16 @@ export function zoomTransformsDiffer(a, b, epsilon = 0.001) {
 
 function normalizeAngle(theta) {
   let angle = theta % (Math.PI * 2);
-  if (angle < 0) {angle += Math.PI * 2;}
+  if (angle < 0) {
+    angle += Math.PI * 2;
+  }
   return angle;
 }
 
 function chooseOpenAngles(occupiedAngles, count) {
-  if (count <= 0) {return [];}
+  if (count <= 0) {
+    return [];
+  }
   if (!occupiedAngles.length) {
     return Array.from({ length: count }, (_, index) => (Math.PI * 2 * index) / count);
   }
@@ -210,16 +232,24 @@ function chooseOpenAngles(occupiedAngles, count) {
  * @param {Array<object>} [options.nodes] - Full node array, required when link source/target are indices rather than objects.
  */
 export function placeHydrogensAroundParent(parentNode, hydrogens, links, { distance = FORCE_LAYOUT_H_BOND_LENGTH, excludeIds = null, nodes = null } = {}) {
-  if (!parentNode || !Number.isFinite(parentNode.x) || !Number.isFinite(parentNode.y) || hydrogens.length === 0) {return;}
+  if (!parentNode || !Number.isFinite(parentNode.x) || !Number.isFinite(parentNode.y) || hydrogens.length === 0) {
+    return;
+  }
   const excluded = excludeIds ?? new Set();
   const occupiedAngles = [];
   for (const link of links) {
     const source = typeof link.source === 'object' ? link.source : Array.isArray(nodes) ? nodes[link.source] : null;
     const target = typeof link.target === 'object' ? link.target : Array.isArray(nodes) ? nodes[link.target] : null;
-    if (source !== parentNode && target !== parentNode) {continue;}
+    if (source !== parentNode && target !== parentNode) {
+      continue;
+    }
     const other = source === parentNode ? target : source;
-    if (!other || excluded.has(other.id)) {continue;}
-    if (!Number.isFinite(other.x) || !Number.isFinite(other.y)) {continue;}
+    if (!other || excluded.has(other.id)) {
+      continue;
+    }
+    if (!Number.isFinite(other.x) || !Number.isFinite(other.y)) {
+      continue;
+    }
     occupiedAngles.push(Math.atan2(other.y - parentNode.y, other.x - parentNode.x));
   }
   const angles = chooseOpenAngles(occupiedAngles, hydrogens.length);
@@ -239,17 +269,27 @@ export function placeHydrogensAroundParent(parentNode, hydrogens, links, { dista
  */
 export function createForceHelpers(context) {
   function forceFitTransform(nodes, pad = FORCE_LAYOUT_FIT_PAD, { hydrogenRadiusScale = 1, scaleMultiplier = 1, maxScale = 30 } = {}) {
-    if (!nodes?.length) {return null;}
+    if (!nodes?.length) {
+      return null;
+    }
     let minX = Infinity;
     let maxX = -Infinity;
     let minY = Infinity;
     let maxY = -Infinity;
     for (const node of nodes) {
       const r = atomRadius(node.protons) * (isHydrogenNode(node) ? hydrogenRadiusScale : 1);
-      if (node.x - r < minX) {minX = node.x - r;}
-      if (node.x + r > maxX) {maxX = node.x + r;}
-      if (node.y - r < minY) {minY = node.y - r;}
-      if (node.y + r > maxY) {maxY = node.y + r;}
+      if (node.x - r < minX) {
+        minX = node.x - r;
+      }
+      if (node.x + r > maxX) {
+        maxX = node.x + r;
+      }
+      if (node.y - r < minY) {
+        minY = node.y - r;
+      }
+      if (node.y + r > maxY) {
+        maxY = node.y + r;
+      }
     }
     const width = context.plotEl.clientWidth || 600;
     const height = context.plotEl.clientHeight || 400;
@@ -279,8 +319,12 @@ export function createForceHelpers(context) {
     context.centerReaction2dPairCoords(seedMol, 1.5);
     const anchors = new Map();
     for (const [id, atom] of seedMol.atoms) {
-      if (atom.name === 'H' || atom.visible === false) {continue;}
-      if (!Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {continue;}
+      if (atom.name === 'H' || atom.visible === false) {
+        continue;
+      }
+      if (!Number.isFinite(atom.x) || !Number.isFinite(atom.y)) {
+        continue;
+      }
       anchors.set(id, { x: atom.x, y: atom.y });
     }
     return anchors;
@@ -304,7 +348,9 @@ export function createForceHelpers(context) {
 
       for (const [id, pos] of anchorLayout) {
         const node = idToNode.get(id);
-        if (!node) {continue;}
+        if (!node) {
+          continue;
+        }
         node.anchorX = width / 2 + (pos.x - cx2d) * (FORCE_LAYOUT_BOND_LENGTH / 1.5);
         node.anchorY = height / 2 - (pos.y - cy2d) * (FORCE_LAYOUT_BOND_LENGTH / 1.5);
         node.x = node.anchorX;
@@ -317,10 +363,14 @@ export function createForceHelpers(context) {
       const source = graph.nodes[bond.source];
       const target = graph.nodes[bond.target];
       if (isHydrogenNode(source) && !isHydrogenNode(target)) {
-        if (!hydrogenGroups.has(target.id)) {hydrogenGroups.set(target.id, []);}
+        if (!hydrogenGroups.has(target.id)) {
+          hydrogenGroups.set(target.id, []);
+        }
         hydrogenGroups.get(target.id).push(source);
       } else if (isHydrogenNode(target) && !isHydrogenNode(source)) {
-        if (!hydrogenGroups.has(source.id)) {hydrogenGroups.set(source.id, []);}
+        if (!hydrogenGroups.has(source.id)) {
+          hydrogenGroups.set(source.id, []);
+        }
         hydrogenGroups.get(source.id).push(target);
       }
     }
@@ -337,7 +387,9 @@ export function createForceHelpers(context) {
     if (previousNodePositions) {
       for (const node of graph.nodes) {
         const previous = previousNodePositions.get(node.id);
-        if (!previous) {continue;}
+        if (!previous) {
+          continue;
+        }
         node.x = previous.x;
         node.y = previous.y;
         node.vx = previous.vx;
@@ -376,12 +428,20 @@ export function createForceHelpers(context) {
   }
 
   function patchForceNodePositions(patchPos, { setAnchors = true, alpha = 0.18, restart = true } = {}) {
-    if (!patchPos?.size) {return;}
+    if (!patchPos?.size) {
+      return;
+    }
     for (const node of context.simulation.nodes()) {
       const pos = patchPos.get(node.id);
-      if (!pos) {continue;}
-      if (Number.isFinite(pos.x)) {node.x = pos.x;}
-      if (Number.isFinite(pos.y)) {node.y = pos.y;}
+      if (!pos) {
+        continue;
+      }
+      if (Number.isFinite(pos.x)) {
+        node.x = pos.x;
+      }
+      if (Number.isFinite(pos.y)) {
+        node.y = pos.y;
+      }
       node.vx = 0;
       node.vy = 0;
       if (setAnchors && !isHydrogenNode(node) && Number.isFinite(node.x) && Number.isFinite(node.y)) {
@@ -395,13 +455,17 @@ export function createForceHelpers(context) {
   }
 
   function reseatHydrogensAroundPatched(patchPos, { resetVelocity = true } = {}) {
-    if (!patchPos?.size) {return;}
+    if (!patchPos?.size) {
+      return;
+    }
     const allNodes = context.simulation.nodes();
     const allLinks = context.simulation.force('link').links();
     const nodeById = new Map(allNodes.map(node => [node.id, node]));
     for (const [parentId] of patchPos) {
       const parentNode = nodeById.get(parentId);
-      if (!parentNode || !Number.isFinite(parentNode.x)) {continue;}
+      if (!parentNode || !Number.isFinite(parentNode.x)) {
+        continue;
+      }
       const hChildren = allLinks
         .map(link => (link.source?.id === parentId && isHydrogenNode(link.target) ? link.target : link.target?.id === parentId && isHydrogenNode(link.source) ? link.source : null))
         .filter(Boolean);

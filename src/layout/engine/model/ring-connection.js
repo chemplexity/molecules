@@ -7,9 +7,7 @@
  * @returns {string} Pair key.
  */
 export function ringConnectionKey(firstRingId, secondRingId) {
-  return firstRingId < secondRingId
-    ? `${firstRingId}:${secondRingId}`
-    : `${secondRingId}:${firstRingId}`;
+  return firstRingId < secondRingId ? `${firstRingId}:${secondRingId}` : `${secondRingId}:${firstRingId}`;
 }
 
 /**

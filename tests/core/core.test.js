@@ -328,9 +328,7 @@ describe('Molecule cloning', () => {
     const mol = parseSMILES('C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN');
     const clone = mol.clone();
 
-    const aromaticOrders = [...clone.bonds.values()]
-      .filter(bond => bond.properties.aromatic)
-      .map(bond => bond.properties.localizedOrder);
+    const aromaticOrders = [...clone.bonds.values()].filter(bond => bond.properties.aromatic).map(bond => bond.properties.localizedOrder);
     assert.ok(aromaticOrders.length > 0);
     assert.ok(aromaticOrders.every(order => order === 1 || order === 2));
   });
@@ -957,6 +955,27 @@ describe('Molecule', () => {
     assert.equal(oxygen.getHydrogenNeighbors(mol).length, 1);
   });
 
+  it('repairImplicitHydrogens preserves a pyrrole-like hydrogen when aromatic bonds are stored as order 1.5', () => {
+    const mol = new Molecule();
+    const nitrogen = mol.addAtom('n0', 'N');
+    const carbonA = mol.addAtom('c1', 'C');
+    const carbonB = mol.addAtom('c2', 'C');
+    const hydrogen = mol.addAtom('h0', 'H');
+
+    nitrogen.resolveElement();
+    carbonA.resolveElement();
+    carbonB.resolveElement();
+    hydrogen.resolveElement();
+
+    mol.addBond('b0', 'n0', 'c1', { order: 1.5, aromatic: true }, false);
+    mol.addBond('b1', 'n0', 'c2', { order: 1.5, aromatic: true }, false);
+    mol.addBond('b2', 'n0', 'h0', { order: 1 }, false);
+
+    mol.repairImplicitHydrogens(['n0']);
+
+    assert.equal(nitrogen.getHydrogenNeighbors(mol).length, 1);
+  });
+
   it('clearStereoAnnotations removes local atom and bond stereo metadata', () => {
     const chiralMol = parseSMILES('C[C@@H](F)Cl');
     const center = [...chiralMol.atoms.values()].find(atom => atom.properties.chirality);
@@ -1207,9 +1226,7 @@ describe('Atom#implicitHydrogenCount', () => {
 
   it('changeAtomElement rebalances inherited carbon hydrogens when a terminal carbon becomes sulfur', () => {
     const mol = parseSMILES('CC');
-    const terminalCarbon = [...mol.atoms.values()].find(
-      atom => atom.name === 'C' && atom.getHeavyNeighbors(mol).length === 1 && atom.getHydrogenNeighbors(mol).length === 3
-    );
+    const terminalCarbon = [...mol.atoms.values()].find(atom => atom.name === 'C' && atom.getHeavyNeighbors(mol).length === 1 && atom.getHydrogenNeighbors(mol).length === 3);
     assert.ok(terminalCarbon);
 
     mol.changeAtomElement(terminalCarbon.id, 'S');

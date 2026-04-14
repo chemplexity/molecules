@@ -31,9 +31,7 @@ function findComponentAtomIds(layoutGraph, atomId) {
  * @returns {Array<Array<{x: number, y: number}>>} Incident ring polygons.
  */
 function incidentRingPolygons(layoutGraph, coords, centerId) {
-  return (layoutGraph.atomToRings.get(centerId) ?? [])
-    .map(ring => ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
-    .filter(polygon => polygon.length >= 3);
+  return (layoutGraph.atomToRings.get(centerId) ?? []).map(ring => ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean)).filter(polygon => polygon.length >= 3);
 }
 
 /**
@@ -58,12 +56,14 @@ function buildCenterEntries(layoutGraph, coords, centerId) {
 
   const neighborIds = neighbors.map(neighbor => neighbor.id);
   const ranks = assignCIPRanks(centerId, neighborIds, molecule);
-  const entries = neighbors.map((neighbor, index) => ({
-    atom: neighbor,
-    rank: ranks[index] ?? 0,
-    bond: findBondBetween(molecule, centerId, neighbor.id),
-    position: coords.get(neighbor.id) ?? null
-  })).filter(entry => entry.bond);
+  const entries = neighbors
+    .map((neighbor, index) => ({
+      atom: neighbor,
+      rank: ranks[index] ?? 0,
+      bond: findBondBetween(molecule, centerId, neighbor.id),
+      position: coords.get(neighbor.id) ?? null
+    }))
+    .filter(entry => entry.bond);
 
   if (entries.length !== 4) {
     return null;
@@ -147,12 +147,8 @@ function resolveStereoTypeForCenter(layoutGraph, coords, centerId, preferredBond
     return null;
   }
 
-  const otherEntries = entryData.entries
-    .filter(entry => entry !== chosenEntry)
-    .sort((firstEntry, secondEntry) => secondEntry.rank - firstEntry.rank);
-  const heavyOtherVectors = otherEntries
-    .filter(entry => !(entry.atom.name === 'H' && entry.atom.visible === false))
-    .map(entry => sub(entry.position, entryData.centerPosition));
+  const otherEntries = entryData.entries.filter(entry => entry !== chosenEntry).sort((firstEntry, secondEntry) => secondEntry.rank - firstEntry.rank);
+  const heavyOtherVectors = otherEntries.filter(entry => !(entry.atom.name === 'H' && entry.atom.visible === false)).map(entry => sub(entry.position, entryData.centerPosition));
   const safeVector = entry => {
     if (entry.atom.name === 'H' && entry.atom.visible === false && heavyOtherVectors.length === 2) {
       const x = -(heavyOtherVectors[0].x + heavyOtherVectors[1].x);
@@ -165,7 +161,8 @@ function resolveStereoTypeForCenter(layoutGraph, coords, centerId, preferredBond
 
   const [firstVector, secondVector, thirdVector] = otherEntries.map(safeVector);
   const signedArea =
-    (firstVector.x * secondVector.y - firstVector.y * secondVector.x) +
+    firstVector.x * secondVector.y -
+    firstVector.y * secondVector.x +
     (secondVector.x * thirdVector.y - secondVector.y * thirdVector.x) +
     (thirdVector.x * firstVector.y - thirdVector.y * firstVector.x);
   const lowerCount = entryData.entries.filter(entry => entry.rank < chosenEntry.rank).length;
@@ -247,10 +244,11 @@ export function pickWedgeAssignments(layoutGraph, coords) {
       continue;
     }
 
-    const storedBondId = viableCandidates.find(entry => {
-      const displayHint = entry.bond.properties.display ?? null;
-      return displayHint && (displayHint.as === 'wedge' || displayHint.as === 'dash') && (displayHint.centerId == null || displayHint.centerId === centerId);
-    })?.bond.id ?? null;
+    const storedBondId =
+      viableCandidates.find(entry => {
+        const displayHint = entry.bond.properties.display ?? null;
+        return displayHint && (displayHint.as === 'wedge' || displayHint.as === 'dash') && (displayHint.centerId == null || displayHint.centerId === centerId);
+      })?.bond.id ?? null;
 
     viableCandidates.sort((firstEntry, secondEntry) => {
       const firstPreferred = firstEntry.bond.id === storedBondId ? 1 : 0;
@@ -292,9 +290,7 @@ export function pickWedgeAssignments(layoutGraph, coords) {
       }
 
       const neighborComparison = compareCanonicalAtomIds(firstEntry.atom.id, secondEntry.atom.id, layoutGraph.canonicalAtomRank);
-      return neighborComparison !== 0
-        ? neighborComparison
-        : String(firstEntry.bond.id).localeCompare(String(secondEntry.bond.id), 'en', { numeric: true });
+      return neighborComparison !== 0 ? neighborComparison : String(firstEntry.bond.id).localeCompare(String(secondEntry.bond.id), 'en', { numeric: true });
     });
 
     const resolved = resolveStereoTypeForCenter(layoutGraph, coords, centerId, viableCandidates[0].bond.id);

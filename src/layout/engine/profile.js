@@ -11,7 +11,7 @@ export function resolveProfile(profile = DEFAULT_PROFILE) {
   if (profile == null) {
     return DEFAULT_PROFILE;
   }
-  if (typeof profile !== "string" || !LAYOUT_PROFILES.includes(profile)) {
+  if (typeof profile !== 'string' || !LAYOUT_PROFILES.includes(profile)) {
     throw new RangeError(`layout profile must be one of ${LAYOUT_PROFILES.join(', ')}, got ${JSON.stringify(profile)}.`);
   }
   return profile;

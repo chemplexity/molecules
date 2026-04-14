@@ -11,9 +11,7 @@ import { runPipeline } from '../../../src/layout/engine/pipeline.js';
  * @returns {string[]} Heavy-atom ids.
  */
 function heavyAtomIds(result) {
-  return [...result.layoutGraph.atoms.values()]
-    .filter(atom => atom.element !== 'H')
-    .map(atom => atom.id);
+  return [...result.layoutGraph.atoms.values()].filter(atom => atom.element !== 'H').map(atom => atom.id);
 }
 
 /**
@@ -32,10 +30,13 @@ function heavyBounds(result) {
  * @returns {{x: number, y: number}} Subset centroid.
  */
 function subsetCentroid(coords, atomIds) {
-  const total = atomIds.reduce((sum, atomId) => ({
-    x: sum.x + coords.get(atomId).x,
-    y: sum.y + coords.get(atomId).y
-  }), { x: 0, y: 0 });
+  const total = atomIds.reduce(
+    (sum, atomId) => ({
+      x: sum.x + coords.get(atomId).x,
+      y: sum.y + coords.get(atomId).y
+    }),
+    { x: 0, y: 0 }
+  );
   return {
     x: total.x / atomIds.length,
     y: total.y / atomIds.length
@@ -192,6 +193,43 @@ describe('layout/engine/visual-orientation', () => {
     assert.ok(bicyclo222.coords.get('C6').x < bicyclo222.coords.get('C1').x);
     assert.ok(bicyclo222.coords.get('C7').y < bicyclo222.coords.get('C6').y);
     assert.ok(bicyclo222.coords.get('C1').y < bicyclo222.coords.get('C6').y);
+
+    const quinuclidine = runPipeline(parseSMILES('C1CN2CCC1CC2'), { suppressH: true });
+    const quinuclidineHeavyAtoms = heavyAtomIds(quinuclidine);
+    assert.equal(quinuclidine.coords.get('C1').y, maxY(quinuclidine.coords, quinuclidineHeavyAtoms));
+    assert.ok(Math.abs(quinuclidine.coords.get('N3').x - quinuclidine.coords.get('C2').x) < 1e-6);
+    assert.ok(Math.abs(quinuclidine.coords.get('C1').x - quinuclidine.coords.get('C6').x) < 0.15);
+    assert.ok(quinuclidine.coords.get('N3').y < quinuclidine.coords.get('C2').y);
+    assert.ok(quinuclidine.coords.get('N3').y < quinuclidine.coords.get('C6').y);
+    assert.ok(quinuclidine.coords.get('C4').y < quinuclidine.coords.get('N3').y);
+    assert.ok(quinuclidine.coords.get('C8').y < quinuclidine.coords.get('N3').y);
+    assert.ok(quinuclidine.coords.get('C4').x < quinuclidine.coords.get('C5').x);
+    assert.ok(quinuclidine.coords.get('C5').x < quinuclidine.coords.get('N3').x);
+    assert.ok(quinuclidine.coords.get('N3').x < quinuclidine.coords.get('C6').x);
+    assert.ok(quinuclidine.coords.get('C6').x < quinuclidine.coords.get('C8').x);
+    assert.ok(quinuclidine.coords.get('C8').x < quinuclidine.coords.get('C7').x);
+
+    const oxabicyclo311 = runPipeline(parseSMILES('C1OC2CC(C1)C2'), { suppressH: true });
+    const oxabicycloHeavyAtoms = heavyAtomIds(oxabicyclo311);
+    assert.equal(oxabicyclo311.coords.get('C7').y, maxY(oxabicyclo311.coords, oxabicycloHeavyAtoms));
+    assert.equal(oxabicyclo311.coords.get('O2').y, minY(oxabicyclo311.coords, oxabicycloHeavyAtoms));
+    assert.ok(oxabicyclo311.coords.get('C1').x < oxabicyclo311.coords.get('O2').x);
+    assert.ok(oxabicyclo311.coords.get('O2').x < oxabicyclo311.coords.get('C3').x);
+    assert.ok(oxabicyclo311.coords.get('C6').x < oxabicyclo311.coords.get('C5').x);
+    assert.ok(oxabicyclo311.coords.get('C5').x < oxabicyclo311.coords.get('C4').x);
+    assert.ok(oxabicyclo311.coords.get('C3').y < oxabicyclo311.coords.get('C5').y);
+    assert.ok(oxabicyclo311.coords.get('C4').y < oxabicyclo311.coords.get('C5').y);
+    assert.ok(oxabicyclo311.coords.get('C5').y < oxabicyclo311.coords.get('C7').y);
+
+    const tropane = runPipeline(parseSMILES('N1C2CCC1CC(C2)'), { suppressH: true });
+    assert.equal(tropane.coords.get('N1').y, maxY(tropane.coords, heavyAtomIds(tropane)));
+    assert.equal(tropane.coords.get('C7').y, minY(tropane.coords, heavyAtomIds(tropane)));
+    assert.ok(Math.abs(tropane.coords.get('N1').x - tropane.coords.get('C5').x) < 1e-6);
+    assert.ok(tropane.coords.get('C4').x < tropane.coords.get('C3').x);
+    assert.ok(tropane.coords.get('C3').x < tropane.coords.get('C5').x);
+    assert.ok(tropane.coords.get('C5').x < tropane.coords.get('C2').x);
+    assert.ok(tropane.coords.get('C2').x < tropane.coords.get('C8').x);
+    assert.ok(tropane.coords.get('C8').x < tropane.coords.get('C7').x);
 
     const cubane = runPipeline(parseSMILES('C12C3C4C1C5C4C3C25'), { suppressH: true });
     assertVerticalBond(cubane.coords, 'C1', 'C2');

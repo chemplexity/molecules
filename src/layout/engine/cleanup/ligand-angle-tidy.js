@@ -39,9 +39,7 @@ function directLigandAtomIds(layoutGraph, metalAtomId, coords) {
     }
     ligandAtomIds.push(ligandAtomId);
   }
-  return ligandAtomIds.sort((firstAtomId, secondAtomId) =>
-    compareCanonicalAtomIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank)
-  );
+  return ligandAtomIds.sort((firstAtomId, secondAtomId) => compareCanonicalAtomIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));
 }
 
 /**
@@ -76,7 +74,7 @@ function idealLigandAngles(layoutGraph, metalAtomId, ligandCount) {
  */
 function angularDistance(firstAngle, secondAngle) {
   const rawDelta = Math.abs(firstAngle - secondAngle) % (Math.PI * 2);
-  return Math.min(rawDelta, (Math.PI * 2) - rawDelta);
+  return Math.min(rawDelta, Math.PI * 2 - rawDelta);
 }
 
 /**
@@ -112,12 +110,7 @@ function assignIdealAngles(currentAngles, idealAngles) {
       }
       used.add(idealIndex);
       assignment[index] = idealIndex;
-      search(
-        index + 1,
-        used,
-        assignment,
-        cost + (angularDistance(currentAngles[index], idealAngles[idealIndex]) ** 2)
-      );
+      search(index + 1, used, assignment, cost + angularDistance(currentAngles[index], idealAngles[idealIndex]) ** 2);
       used.delete(idealIndex);
     }
   }

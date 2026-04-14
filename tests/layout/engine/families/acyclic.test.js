@@ -88,7 +88,7 @@ function backboneAngle(coords, previousAtomId, centerAtomId, nextAtomId) {
   const incoming = sub(coords.get(previousAtomId), coords.get(centerAtomId));
   const outgoing = sub(coords.get(nextAtomId), coords.get(centerAtomId));
   const denominator = Math.hypot(incoming.x, incoming.y) * Math.hypot(outgoing.x, outgoing.y) || 1;
-  const cosine = Math.max(-1, Math.min(1, ((incoming.x * outgoing.x) + (incoming.y * outgoing.y)) / denominator));
+  const cosine = Math.max(-1, Math.min(1, (incoming.x * outgoing.x + incoming.y * outgoing.y) / denominator));
   return Math.acos(cosine) * (180 / Math.PI);
 }
 
@@ -214,7 +214,7 @@ describe('layout/engine/families/acyclic', () => {
     assert.ok(Math.abs(angularDifference(multipleAngles[0], multipleAngles[1]) - Math.PI) < 1e-6);
     for (const singleAngle of singleAngles) {
       for (const multipleAngle of multipleAngles) {
-        assert.ok(Math.abs(angularDifference(singleAngle, multipleAngle) - (Math.PI / 2)) < 1e-6);
+        assert.ok(Math.abs(angularDifference(singleAngle, multipleAngle) - Math.PI / 2) < 1e-6);
       }
     }
   });
@@ -243,7 +243,10 @@ describe('layout/engine/families/acyclic', () => {
     for (const testCase of cases) {
       const result = runPipeline(parseSMILES(testCase.smiles), { suppressH: true });
       const alkeneBond = [...result.layoutGraph.bonds.values()].find(bond => bond.order === 2);
-      const adjacency = buildAdjacency(result.layoutGraph, new Set(result.layoutGraph.components[0].atomIds.filter(atomId => result.layoutGraph.atoms.get(atomId)?.element !== 'H')));
+      const adjacency = buildAdjacency(
+        result.layoutGraph,
+        new Set(result.layoutGraph.components[0].atomIds.filter(atomId => result.layoutGraph.atoms.get(atomId)?.element !== 'H'))
+      );
       const path = linearBackbonePath(adjacency);
 
       assert.ok(alkeneBond);
@@ -258,13 +261,7 @@ describe('layout/engine/families/acyclic', () => {
       suppressH: true
     });
     const atomIdsToPlace = new Set(graph.components[0].atomIds.filter(atomId => graph.atoms.get(atomId)?.element !== 'H'));
-    const coords = layoutAcyclicFamily(
-      buildAdjacency(graph, atomIdsToPlace),
-      atomIdsToPlace,
-      graph.canonicalAtomRank,
-      graph.options.bondLength,
-      { layoutGraph: graph }
-    );
+    const coords = layoutAcyclicFamily(buildAdjacency(graph, atomIdsToPlace), atomIdsToPlace, graph.canonicalAtomRank, graph.options.bondLength, { layoutGraph: graph });
     const xValues = [...coords.values()].map(position => position.x);
     const yValues = [...coords.values()].map(position => position.y);
     const width = Math.max(...xValues) - Math.min(...xValues);

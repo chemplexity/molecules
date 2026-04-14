@@ -8,7 +8,9 @@ function compareStrings(firstValue, secondValue) {
 }
 
 function templateCompatible(template, candidate) {
-  return template.family === candidate.family && template.atomCount === candidate.atomCount && template.bondCount === candidate.bondCount && template.ringCount === candidate.ringCount;
+  return (
+    template.family === candidate.family && template.atomCount === candidate.atomCount && template.bondCount === candidate.bondCount && template.ringCount === candidate.ringCount
+  );
 }
 
 /**
@@ -139,8 +141,10 @@ function templateMatchesContext(layoutGraph, atomIds, template, mapping) {
   }
 
   const candidateAtomIdSet = new Set(atomIds);
-  return exocyclicNeighbors.every(constraint => matchesExocyclicNeighborConstraint(layoutGraph, candidateAtomIdSet, mapping, constraint))
-    && mappedAtoms.every(constraint => matchesMappedAtomConstraint(layoutGraph, mapping, constraint));
+  return (
+    exocyclicNeighbors.every(constraint => matchesExocyclicNeighborConstraint(layoutGraph, candidateAtomIdSet, mapping, constraint)) &&
+    mappedAtoms.every(constraint => matchesMappedAtomConstraint(layoutGraph, mapping, constraint))
+  );
 }
 
 /**

@@ -12,7 +12,7 @@ import { distance } from '../../../../src/layout/engine/geometry/vec2.js';
 describe('layout/engine/geometry/polygon', () => {
   it('computes regular-polygon radii from edge length', () => {
     assert.ok(Math.abs(circumradiusForRegularPolygon(6, 1.5) - 1.5) < 1e-9);
-    assert.ok(Math.abs(apothemForRegularPolygon(6, 1.5) - (1.5 * Math.cos(Math.PI / 6))) < 1e-9);
+    assert.ok(Math.abs(apothemForRegularPolygon(6, 1.5) - 1.5 * Math.cos(Math.PI / 6)) < 1e-9);
     assert.throws(() => circumradiusForRegularPolygon(2, 1.5), RangeError);
   });
 

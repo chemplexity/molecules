@@ -153,10 +153,7 @@ describe('layout/engine/audit/invariants', () => {
 
     assert.equal(overlapStats.pairCount, 1);
     assert.ok(overlapStats.totalPenalty > 0);
-    assert.ok(
-      measureLayoutCost(graph, overlappingCoords, graph.options.bondLength)
-      > measureLayoutCost(graph, separatedCoords, graph.options.bondLength)
-    );
+    assert.ok(measureLayoutCost(graph, overlappingCoords, graph.options.bondLength) > measureLayoutCost(graph, separatedCoords, graph.options.bondLength));
   });
 
   it('returns a combined layout state consistent with separate overlap and cost measurements', () => {

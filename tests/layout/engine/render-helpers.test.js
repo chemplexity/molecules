@@ -33,9 +33,7 @@ describe('layout/engine/render-helpers', () => {
     assert.equal(bridgeBond.properties.order, 1);
     assert.equal(bridgeBond.properties.aromatic ?? false, false);
 
-    const localizedDoubleCount = [...molecule.bonds.values()].filter(
-      bond => (bond.properties.aromatic ?? false) && bond.properties.localizedOrder === 2
-    ).length;
+    const localizedDoubleCount = [...molecule.bonds.values()].filter(bond => (bond.properties.aromatic ?? false) && bond.properties.localizedOrder === 2).length;
     assert.equal(localizedDoubleCount, 6);
   });
 });

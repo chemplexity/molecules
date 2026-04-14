@@ -35,7 +35,7 @@ function ringAngles(coords, atomIds) {
       x: next.x - current.x,
       y: next.y - current.y
     };
-    const dot = (firstVector.x * secondVector.x) + (firstVector.y * secondVector.y);
+    const dot = firstVector.x * secondVector.x + firstVector.y * secondVector.y;
     const firstMagnitude = Math.hypot(firstVector.x, firstVector.y);
     const secondMagnitude = Math.hypot(secondVector.x, secondVector.y);
     return Math.acos(Math.max(-1, Math.min(1, dot / (firstMagnitude * secondMagnitude)))) * (180 / Math.PI);
@@ -62,48 +62,60 @@ describe('layout/engine/pipeline', () => {
   });
 
   it('classifies primary families across the milestone-1 family boundary', () => {
-    assert.deepEqual(classifyFamily({
-      options: { largeMoleculeThreshold: { heavyAtomCount: 100, ringSystemCount: 10, blockCount: 16 } },
-      traits: { heavyAtomCount: 2, containsMetal: false, ringSystemCount: 0 },
-      components: [{}],
-      rings: [],
-      ringSystems: [],
-      ringConnections: [],
-      atoms: new Map([
-        ['a0', { id: 'a0', element: 'C' }],
-        ['a1', { id: 'a1', element: 'C' }]
-      ])
-    }), { primaryFamily: 'acyclic', mixedMode: false });
+    assert.deepEqual(
+      classifyFamily({
+        options: { largeMoleculeThreshold: { heavyAtomCount: 100, ringSystemCount: 10, blockCount: 16 } },
+        traits: { heavyAtomCount: 2, containsMetal: false, ringSystemCount: 0 },
+        components: [{}],
+        rings: [],
+        ringSystems: [],
+        ringConnections: [],
+        atoms: new Map([
+          ['a0', { id: 'a0', element: 'C' }],
+          ['a1', { id: 'a1', element: 'C' }]
+        ])
+      }),
+      { primaryFamily: 'acyclic', mixedMode: false }
+    );
 
-    assert.equal(classifyFamily({
-      options: { largeMoleculeThreshold: { heavyAtomCount: 100, ringSystemCount: 10, blockCount: 16 } },
-      traits: { heavyAtomCount: 2, containsMetal: true, ringSystemCount: 0 },
-      components: [{}],
-      rings: [],
-      ringSystems: [],
-      ringConnections: [],
-      atoms: new Map()
-    }).primaryFamily, 'organometallic');
+    assert.equal(
+      classifyFamily({
+        options: { largeMoleculeThreshold: { heavyAtomCount: 100, ringSystemCount: 10, blockCount: 16 } },
+        traits: { heavyAtomCount: 2, containsMetal: true, ringSystemCount: 0 },
+        components: [{}],
+        rings: [],
+        ringSystems: [],
+        ringConnections: [],
+        atoms: new Map()
+      }).primaryFamily,
+      'organometallic'
+    );
 
-    assert.equal(classifyFamily({
-      options: { largeMoleculeThreshold: { heavyAtomCount: 100, ringSystemCount: 10, blockCount: 16 } },
-      traits: { heavyAtomCount: 12, containsMetal: false, ringSystemCount: 1 },
-      components: [{}],
-      rings: [{ atomIds: ['a0'], size: 12 }],
-      ringSystems: [{ ringIds: [0] }],
-      ringConnections: [],
-      atoms: new Map([['a0', { id: 'a0', element: 'C' }]])
-    }).primaryFamily, 'macrocycle');
+    assert.equal(
+      classifyFamily({
+        options: { largeMoleculeThreshold: { heavyAtomCount: 100, ringSystemCount: 10, blockCount: 16 } },
+        traits: { heavyAtomCount: 12, containsMetal: false, ringSystemCount: 1 },
+        components: [{}],
+        rings: [{ atomIds: ['a0'], size: 12 }],
+        ringSystems: [{ ringIds: [0] }],
+        ringConnections: [],
+        atoms: new Map([['a0', { id: 'a0', element: 'C' }]])
+      }).primaryFamily,
+      'macrocycle'
+    );
 
-    assert.equal(classifyFamily({
-      options: { largeMoleculeThreshold: { heavyAtomCount: 5, ringSystemCount: 10, blockCount: 16 } },
-      traits: { heavyAtomCount: 6, containsMetal: false, ringSystemCount: 0 },
-      components: [{}],
-      rings: [],
-      ringSystems: [],
-      ringConnections: [],
-      atoms: new Map()
-    }).primaryFamily, 'large-molecule');
+    assert.equal(
+      classifyFamily({
+        options: { largeMoleculeThreshold: { heavyAtomCount: 5, ringSystemCount: 10, blockCount: 16 } },
+        traits: { heavyAtomCount: 6, containsMetal: false, ringSystemCount: 0 },
+        components: [{}],
+        rings: [],
+        ringSystems: [],
+        ringConnections: [],
+        atoms: new Map()
+      }).primaryFamily,
+      'large-molecule'
+    );
   });
 
   it('marks mixed mode when a ring scaffold carries non-ring heavy atoms', () => {
@@ -173,6 +185,31 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.coords.size, 6);
   });
 
+  it('keeps compact bridged cages off the dense-cage tidy hook', () => {
+    const result = runPipeline(parseSMILES('C1(CC2(CC3(CC1CC(C2)C3)))'), { suppressH: true });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, false);
+    assert.equal(result.metadata.cleanupPostHookNudges, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.ok(result.metadata.audit.bondLengthFailureCount > 0);
+  });
+
+  it('avoids catastrophic bridge projection on dense mixed bridged cages', () => {
+    const result = runPipeline(
+      parseSMILES('COC(=O)C1=C2Nc3ccccc3[C@@]24CCN5[C@@H]6O[C@]78[C@H]9C[C@]%10%11CCO[C@H]%10CCN%12CC[C@]7([C@H]%11%12)c%13cccc(OC)c%13N8C[C@]6(C9)[C@@H]%14OCC[C@]%14(C1)[C@@H]45'),
+      { suppressH: true }
+    );
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.7);
+    assert.ok(result.metadata.cleanupPostHookNudges > 0);
+  });
+
   it('routes exact cubane cage matches through the bridged template path', () => {
     const result = runPipeline(parseSMILES('C12C3C4C1C5C4C3C25'));
     assert.equal(result.metadata.primaryFamily, 'bridged');
@@ -193,10 +230,7 @@ describe('layout/engine/pipeline', () => {
       const [firstAtomId, secondAtomId] = connection.sharedAtomIds;
       const firstPosition = result.coords.get(firstAtomId);
       const secondPosition = result.coords.get(secondAtomId);
-      assert.ok(
-        Math.abs(firstPosition.x - secondPosition.x) < 1e-6
-        || Math.abs(firstPosition.y - secondPosition.y) < 1e-6
-      );
+      assert.ok(Math.abs(firstPosition.x - secondPosition.x) < 1e-6 || Math.abs(firstPosition.y - secondPosition.y) < 1e-6);
     }
   });
 
@@ -248,9 +282,42 @@ describe('layout/engine/pipeline', () => {
     assert.ok(Math.abs(angularDifference(multipleAngles[0], multipleAngles[1]) - Math.PI) < 1e-6);
     for (const singleAngle of singleAngles) {
       for (const multipleAngle of multipleAngles) {
-        assert.ok(Math.abs(angularDifference(singleAngle, multipleAngle) - (Math.PI / 2)) < 1e-6);
+        assert.ok(Math.abs(angularDifference(singleAngle, multipleAngle) - Math.PI / 2) < 1e-6);
       }
     }
+  });
+
+  it('centers multi-anion organometallic salts around the metal hub instead of chaining every fragment to one side', () => {
+    const result = runPipeline(parseSMILES('[Fe+2].[O-]C(=O)C1=CC=CC=C1.[O-]C(=O)C2=CC=CC=C2'), {
+      suppressH: true
+    });
+
+    const components = result.layoutGraph.components;
+    const metalComponent = components.find(component => component.atomIds.some(atomId => result.layoutGraph.atoms.get(atomId)?.element === 'Fe'));
+    const ligandComponents = components.filter(component => component !== metalComponent);
+
+    function componentCenterX(component) {
+      const heavyAtomIds = component.atomIds.filter(atomId => result.layoutGraph.atoms.get(atomId)?.element !== 'H');
+      const xs = heavyAtomIds.map(atomId => result.coords.get(atomId).x);
+      return (Math.min(...xs) + Math.max(...xs)) / 2;
+    }
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(metalComponent);
+    assert.equal(ligandComponents.length, 2);
+
+    const metalX = componentCenterX(metalComponent);
+    const ligandXs = ligandComponents.map(componentCenterX).sort((firstValue, secondValue) => firstValue - secondValue);
+    const heavyPositions = [...result.coords.entries()]
+      .filter(([atomId]) => result.layoutGraph.atoms.get(atomId)?.element !== 'H')
+      .map(([, position]) => position);
+    const maxX = Math.max(...heavyPositions.map(position => position.x));
+    const minX = Math.min(...heavyPositions.map(position => position.x));
+    const centeredError = Math.abs(metalX - ((minX + maxX) / 2));
+
+    assert.ok(ligandXs[0] < metalX && metalX < ligandXs[1]);
+    assert.ok(centeredError < 0.8, `expected disconnected salt bounds to stay visibly centered on the metal hub, got error ${centeredError}`);
+    assert.ok(maxX - minX < 18.1, `expected disconnected salt packing width < 18.1, got ${maxX - minX}`);
   });
 
   it('keeps suppressed-h simple rings audit-clean when explicit hydrogens overlap only off-screen', () => {
@@ -310,9 +377,14 @@ describe('layout/engine/pipeline', () => {
   });
 
   it('keeps erythromycin-class macrolides audit-clean after macrocycle cleanup', () => {
-    const result = runPipeline(parseSMILES('CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O'), {
-      suppressH: true
-    });
+    const result = runPipeline(
+      parseSMILES(
+        'CC[C@@H]1[C@@]([C@@H]([C@H](C(=O)[C@@H](C[C@@]([C@@H]([C@H]([C@@H]([C@H](C(=O)O1)C)O[C@H]2C[C@@]([C@H]([C@@H](O2)C)O)(C)OC)C)O[C@H]3[C@@H]([C@H](C[C@H](O3)C)N(C)C)O)(C)O)C)C)O)(C)O'
+      ),
+      {
+        suppressH: true
+      }
+    );
 
     assert.equal(result.metadata.primaryFamily, 'macrocycle');
     assert.equal(result.metadata.audit.ok, true);
@@ -387,5 +459,4 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
     assert.ok(Math.max(...aromaticAngles) - Math.min(...aromaticAngles) < 12);
   });
-
 });

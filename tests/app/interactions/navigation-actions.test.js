@@ -7,10 +7,12 @@ test('cleanLayout2d rerenders from a cloned molecule with preserved history', ()
   const clonedMol = {
     atoms: new Map([
       ['a1', { id: 'a1', name: 'C', x: 0, y: 0 }],
-      ['a2', { id: 'a2', name: 'O', x: 2.2, y: 0 }]
+      ['a2', { id: 'a2', name: 'O', x: 2.2, y: 0 }],
+      ['h1', { id: 'h1', name: 'H', x: 0, y: 0, visible: false }]
     ]),
     bonds: new Map([
-      ['b1', { id: 'b1', atoms: ['a1', 'a2'] }]
+      ['b1', { id: 'b1', atoms: ['a1', 'a2'] }],
+      ['b2', { id: 'b2', atoms: ['a1', 'h1'] }]
     ])
   };
   const sourceMol = {
@@ -64,15 +66,275 @@ test('cleanLayout2d rerenders from a cloned molecule with preserved history', ()
   assert.equal(sourceMol.cloneCalls, 1);
   assert.deepEqual(calls, [
     ['takeSnapshot', { clearReactionPreview: false }],
-    ['refineExistingCoords', clonedMol, {
-      suppressH: true,
-      bondLength: 1.5,
-      maxPasses: 12,
-      touchedAtoms: ['a1', 'a2'],
-      touchedBonds: ['b1']
-    }],
+    [
+      'refineExistingCoords',
+      clonedMol,
+      {
+        suppressH: true,
+        bondLength: 1.5,
+        maxPasses: 12,
+        touchedAtoms: ['a1', 'a2'],
+        touchedBonds: ['b1']
+      }
+    ],
     ['preserveSelection', true],
     ['renderMol', clonedMol, { preserveHistory: true, preserveAnalysis: true, preserveGeometry: true }]
+  ]);
+});
+
+test('cleanLayout2d preserves reaction-preview metadata on the working clone', () => {
+  const previewMeta = {
+    forcedStereoBondTypes: new Map([['b1', 'wedge']]),
+    forcedStereoBondCenters: new Map([['b1', 'a1']])
+  };
+  const clonedMol = {
+    atoms: new Map(),
+    bonds: new Map()
+  };
+  const sourceMol = {
+    __reactionPreview: previewMeta,
+    clone() {
+      return clonedMol;
+    }
+  };
+
+  const seen = {
+    refinePreview: null,
+    renderPreview: null
+  };
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d'
+      },
+      documentState: {
+        getMol2d: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    renderers: {
+      renderMol: mol => {
+        seen.renderPreview = mol.__reactionPreview ?? null;
+      }
+    },
+    helpers: {
+      refineExistingCoords: mol => {
+        seen.refinePreview = mol.__reactionPreview ?? null;
+        return new Map();
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      clean2dButton: null
+    }
+  });
+
+  actions.cleanLayout2d();
+
+  assert.equal(seen.refinePreview, previewMeta);
+  assert.equal(seen.renderPreview, previewMeta);
+  assert.equal(clonedMol.__reactionPreview, previewMeta);
+});
+
+test('cleanLayout2d ignores hidden hydrogen bonds when deriving refinement hints', () => {
+  const clonedMol = {
+    atoms: new Map([
+      ['a1', { id: 'a1', name: 'C', x: 0, y: 0, visible: true }],
+      ['a2', { id: 'a2', name: 'C', x: 1.5, y: 0, visible: true }],
+      ['h1', { id: 'h1', name: 'H', x: 0, y: 0, visible: false }]
+    ]),
+    bonds: new Map([
+      ['b1', { id: 'b1', atoms: ['a1', 'a2'] }],
+      ['b2', { id: 'b2', atoms: ['a1', 'h1'] }]
+    ])
+  };
+  const sourceMol = {
+    clone() {
+      return clonedMol;
+    }
+  };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d'
+      },
+      documentState: {
+        getMol2d: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    renderers: {
+      renderMol() {}
+    },
+    helpers: {
+      refineExistingCoords: (_mol, options) => {
+        calls.push({
+          touchedAtoms: options.touchedAtoms ? [...options.touchedAtoms].sort() : null,
+          touchedBonds: options.touchedBonds ? [...options.touchedBonds].sort() : null
+        });
+        return new Map();
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      clean2dButton: null
+    }
+  });
+
+  actions.cleanLayout2d();
+
+  assert.deepEqual(calls, [
+    {
+      touchedAtoms: [],
+      touchedBonds: []
+    }
+  ]);
+});
+
+test('cleanLayout2d expands stretched heavy-bond hints through the attached local heavy neighborhood', () => {
+  const clonedMol = {
+    atoms: new Map([
+      ['a1', { id: 'a1', name: 'C', x: 0, y: 0, visible: true }],
+      ['a2', { id: 'a2', name: 'C', x: 1.5, y: 0, visible: true }],
+      ['a3', { id: 'a3', name: 'C', x: 3, y: 0, visible: true }],
+      ['a4', { id: 'a4', name: 'O', x: 5.5, y: 0, visible: true }],
+      ['a5', { id: 'a5', name: 'O', x: 3, y: 1.5, visible: true }]
+    ]),
+    bonds: new Map([
+      ['b1', { id: 'b1', atoms: ['a1', 'a2'] }],
+      ['b2', { id: 'b2', atoms: ['a2', 'a3'] }],
+      ['b3', { id: 'b3', atoms: ['a3', 'a4'] }],
+      ['b4', { id: 'b4', atoms: ['a3', 'a5'] }]
+    ])
+  };
+  const sourceMol = {
+    clone() {
+      return clonedMol;
+    }
+  };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d'
+      },
+      documentState: {
+        getMol2d: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    renderers: {
+      renderMol() {}
+    },
+    helpers: {
+      refineExistingCoords: (_mol, options) => {
+        calls.push({
+          touchedAtoms: options.touchedAtoms ? [...options.touchedAtoms].sort() : null,
+          touchedBonds: options.touchedBonds ? [...options.touchedBonds].sort() : null
+        });
+        return new Map();
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      clean2dButton: null
+    }
+  });
+
+  actions.cleanLayout2d();
+
+  assert.deepEqual(calls, [
+    {
+      touchedAtoms: ['a1', 'a2', 'a3', 'a4', 'a5'],
+      touchedBonds: ['b1', 'b2', 'b3', 'b4']
+    }
+  ]);
+});
+
+test('cleanLayout2d treats compressed non-ring heavy bonds as locally distorted', () => {
+  const clonedMol = {
+    atoms: new Map([
+      ['a1', { id: 'a1', name: 'C', x: 0, y: 0, visible: true }],
+      ['a2', { id: 'a2', name: 'C', x: 1.5, y: 0, visible: true }],
+      ['a3', { id: 'a3', name: 'O', x: 2.2, y: 0, visible: true }]
+    ]),
+    bonds: new Map([
+      [
+        'b1',
+        {
+          id: 'b1',
+          atoms: ['a1', 'a2'],
+          isInRing: () => false
+        }
+      ],
+      [
+        'b2',
+        {
+          id: 'b2',
+          atoms: ['a2', 'a3'],
+          isInRing: () => false
+        }
+      ]
+    ])
+  };
+  const sourceMol = {
+    clone() {
+      return clonedMol;
+    }
+  };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => '2d'
+      },
+      documentState: {
+        getMol2d: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    renderers: {
+      renderMol() {}
+    },
+    helpers: {
+      refineExistingCoords: (_mol, options) => {
+        calls.push({
+          touchedAtoms: options.touchedAtoms ? [...options.touchedAtoms].sort() : null,
+          touchedBonds: options.touchedBonds ? [...options.touchedBonds].sort() : null
+        });
+        return new Map();
+      }
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      clean2dButton: null
+    }
+  });
+
+  actions.cleanLayout2d();
+
+  assert.deepEqual(calls, [
+    {
+      touchedAtoms: ['a1', 'a2', 'a3'],
+      touchedBonds: ['b1', 'b2']
+    }
   ]);
 });
 
@@ -112,7 +374,7 @@ test('cleanLayout2d is a no-op outside 2d mode', () => {
   assert.equal(called, false);
 });
 
-test('cleanLayoutForce refines the live force geometry and rerenders with anchored force coords', () => {
+test('cleanLayoutForce refines the live force geometry with local damage hints and rerenders with anchored force coords', () => {
   const cloneAtoms = new Map([
     ['a1', { id: 'a1', name: 'C', x: null, y: null }],
     ['a2', { id: 'a2', name: 'O', x: null, y: null }],
@@ -153,7 +415,11 @@ test('cleanLayoutForce refines the live force geometry and rerenders with anchor
         calls.push([
           'refineExistingCoords',
           [...mol.atoms.entries()].map(([id, atom]) => [id, { x: atom.x, y: atom.y }]),
-          options
+          {
+            ...options,
+            touchedAtoms: options.touchedAtoms ? [...options.touchedAtoms].sort() : options.touchedAtoms,
+            touchedBonds: options.touchedBonds ? [...options.touchedBonds].sort() : options.touchedBonds
+          }
         ]);
         mol.atoms.get('a1').x = 0;
         mol.atoms.get('a1').y = 0;
@@ -200,7 +466,9 @@ test('cleanLayoutForce refines the live force geometry and rerenders with anchor
       {
         suppressH: true,
         bondLength: 1.5,
-        maxPasses: 12
+        maxPasses: 12,
+        touchedAtoms: [],
+        touchedBonds: []
       }
     ],
     ['preserveSelection', true],
@@ -217,6 +485,140 @@ test('cleanLayoutForce refines the live force geometry and rerenders with anchor
         ]
       }
     ]
+  ]);
+});
+
+test('cleanLayoutForce derives local refinement hints from distorted force geometry', () => {
+  const cloneAtoms = new Map([
+    ['a1', { id: 'a1', name: 'C', x: null, y: null, visible: true }],
+    ['a2', { id: 'a2', name: 'C', x: null, y: null, visible: true }],
+    ['a3', { id: 'a3', name: 'O', x: null, y: null, visible: true }]
+  ]);
+  const cloneBonds = new Map([
+    ['b1', { id: 'b1', atoms: ['a1', 'a2'], isInRing: () => false }],
+    ['b2', { id: 'b2', atoms: ['a2', 'a3'], isInRing: () => false }]
+  ]);
+  const sourceMol = {
+    clone() {
+      return {
+        cloned: true,
+        atoms: cloneAtoms,
+        bonds: cloneBonds
+      };
+    }
+  };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    simulation: {
+      nodes: () => [
+        { id: 'a1', x: 100, y: 100 },
+        { id: 'a2', x: 141, y: 100 },
+        { id: 'a3', x: 210, y: 100 }
+      ]
+    },
+    helpers: {
+      refineExistingCoords: (_mol, options) => {
+        calls.push({
+          touchedAtoms: options.touchedAtoms ? [...options.touchedAtoms].sort() : null,
+          touchedBonds: options.touchedBonds ? [...options.touchedBonds].sort() : null
+        });
+        return new Map();
+      }
+    },
+    renderers: {
+      renderMol() {}
+    },
+    view: {
+      setPreserveSelectionOnNextRender() {}
+    },
+    dom: {
+      cleanForceButton: null
+    }
+  });
+
+  actions.cleanLayoutForce();
+
+  assert.deepEqual(calls, [
+    {
+      touchedAtoms: ['a1', 'a2', 'a3'],
+      touchedBonds: ['b1', 'b2']
+    }
+  ]);
+});
+
+test('cleanLayoutForce reapplies reaction-preview orientation before anchoring the cleaned force layout', () => {
+  const previewMeta = {
+    mappedAtomPairs: [['a1', '__rxn_product__0:a1']]
+  };
+  const cloneAtoms = new Map([
+    ['a1', { id: 'a1', name: 'C', x: null, y: null }],
+    ['__rxn_product__0:a1', { id: '__rxn_product__0:a1', name: 'C', x: null, y: null }]
+  ]);
+  const sourceMol = {
+    __reactionPreview: previewMeta,
+    clone() {
+      return {
+        atoms: cloneAtoms,
+        bonds: new Map()
+      };
+    }
+  };
+  const calls = [];
+  const actions = createNavigationActions({
+    state: {
+      viewState: {
+        getMode: () => 'force'
+      },
+      documentState: {
+        getCurrentMol: () => sourceMol
+      }
+    },
+    history: {
+      takeSnapshot() {}
+    },
+    simulation: {
+      nodes: () => [
+        { id: 'a1', x: 100, y: 100 },
+        { id: '__rxn_product__0:a1', x: 141, y: 100 }
+      ]
+    },
+    helpers: {
+      refineExistingCoords: () => new Map()
+    },
+    overlays: {
+      alignReaction2dProductOrientation: mol => calls.push(['align', mol.__reactionPreview]),
+      spreadReaction2dProductComponents: (_mol, bondLength) => calls.push(['spread', bondLength]),
+      centerReaction2dPairCoords: (_mol, bondLength) => calls.push(['center', bondLength])
+    },
+    renderers: {
+      renderMol: () => calls.push(['render'])
+    },
+    view: {
+      setPreserveSelectionOnNextRender: () => {}
+    },
+    dom: {
+      cleanForceButton: null
+    }
+  });
+
+  actions.cleanLayoutForce();
+
+  assert.deepEqual(calls, [
+    ['align', previewMeta],
+    ['spread', 1.5],
+    ['center', 1.5],
+    ['render']
   ]);
 });
 
@@ -273,10 +675,14 @@ test('force flip refits the viewport when a reaction preview is active', () => {
 
   assert.deepEqual(calls, [
     ['takeSnapshot', { clearReactionPreview: false }],
-    ['patchForceNodePositions', [
-      ['a1', { x: 40, y: 20 }],
-      ['a2', { x: 10, y: 20 }]
-    ], { setAnchors: true, alpha: 0 }],
+    [
+      'patchForceNodePositions',
+      [
+        ['a1', { x: 40, y: 20 }],
+        ['a2', { x: 10, y: 20 }]
+      ],
+      { setAnchors: true, alpha: 0 }
+    ],
     ['updateForce', {}, { preservePositions: true, preserveView: true }],
     ['forceFitTransform', ['a1', 'a2'], 40, { scaleMultiplier: 1.3 }],
     ['zoomTransformsDiffer', fitTransform, { x: 0, y: 0, k: 1 }],
@@ -332,5 +738,8 @@ test('force flip preserves the current viewport when no reaction preview is acti
 
   actions.flip('h');
 
-  assert.equal(calls.some(([name]) => name === 'forceFitTransform' || name === 'setZoomTransform'), false);
+  assert.equal(
+    calls.some(([name]) => name === 'forceFitTransform' || name === 'setZoomTransform'),
+    false
+  );
 });

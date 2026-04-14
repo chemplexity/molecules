@@ -7,12 +7,15 @@ import { makeHiddenHydrogenStereocenter } from '../support/molecules.js';
 describe('layout/engine/stereo/wedge-selection', () => {
   it('assigns a heavy-atom wedge bond even when one substituent is a hidden hydrogen', () => {
     const graph = createLayoutGraph(makeHiddenHydrogenStereocenter());
-    const summary = pickWedgeAssignments(graph, new Map([
-      ['c0', { x: 0, y: 0 }],
-      ['f0', { x: 1.4, y: 0.1 }],
-      ['cl0', { x: -0.6, y: 1.2 }],
-      ['br0', { x: -1.1, y: -0.8 }]
-    ]));
+    const summary = pickWedgeAssignments(
+      graph,
+      new Map([
+        ['c0', { x: 0, y: 0 }],
+        ['f0', { x: 1.4, y: 0.1 }],
+        ['cl0', { x: -0.6, y: 1.2 }],
+        ['br0', { x: -1.1, y: -0.8 }]
+      ])
+    );
 
     assert.equal(summary.chiralCenterCount, 1);
     assert.equal(summary.assignedCenterCount, 1);
@@ -27,19 +30,24 @@ describe('layout/engine/stereo/wedge-selection', () => {
     const molecule = makeHiddenHydrogenStereocenter();
     molecule.bonds.get('b1').properties.display = { as: 'dash', centerId: 'c0', manual: true };
     const graph = createLayoutGraph(molecule);
-    const summary = pickWedgeAssignments(graph, new Map([
-      ['c0', { x: 0, y: 0 }],
-      ['f0', { x: 1.4, y: 0.1 }],
-      ['cl0', { x: -0.6, y: 1.2 }],
-      ['br0', { x: -1.1, y: -0.8 }]
-    ]));
+    const summary = pickWedgeAssignments(
+      graph,
+      new Map([
+        ['c0', { x: 0, y: 0 }],
+        ['f0', { x: 1.4, y: 0.1 }],
+        ['cl0', { x: -0.6, y: 1.2 }],
+        ['br0', { x: -1.1, y: -0.8 }]
+      ])
+    );
 
     assert.equal(summary.assignedCenterCount, 1);
-    assert.deepEqual(summary.assignments, [{
-      bondId: 'b1',
-      type: 'dash',
-      centerId: 'c0',
-      manual: true
-    }]);
+    assert.deepEqual(summary.assignments, [
+      {
+        bondId: 'b1',
+        type: 'dash',
+        centerId: 'c0',
+        manual: true
+      }
+    ]);
   });
 });

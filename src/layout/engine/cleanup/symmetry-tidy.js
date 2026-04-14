@@ -60,12 +60,7 @@ function collectJunctionTargets(layoutGraph) {
  */
 function axisDeviation(firstPosition, secondPosition) {
   const bondAngle = angleOf(sub(secondPosition, firstPosition));
-  return Math.min(
-    angularDifference(bondAngle, 0),
-    angularDifference(bondAngle, Math.PI / 2),
-    angularDifference(bondAngle, Math.PI),
-    angularDifference(bondAngle, -Math.PI / 2)
-  );
+  return Math.min(angularDifference(bondAngle, 0), angularDifference(bondAngle, Math.PI / 2), angularDifference(bondAngle, Math.PI), angularDifference(bondAngle, -Math.PI / 2));
 }
 
 /**

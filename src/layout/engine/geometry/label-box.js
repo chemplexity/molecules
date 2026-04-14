@@ -15,11 +15,7 @@ export function atomLabelText(atom) {
     return '';
   }
   const charge = atom.charge ?? 0;
-  const chargeText = charge === 0
-    ? ''
-    : charge > 0
-      ? `+${charge === 1 ? '' : charge}`
-      : `${charge === -1 ? '-' : String(charge)}`;
+  const chargeText = charge === 0 ? '' : charge > 0 ? `+${charge === 1 ? '' : charge}` : `${charge === -1 ? '-' : String(charge)}`;
   if (atom.element === 'C' && charge === 0 && (atom.heavyDegree ?? 0) > 0) {
     return '';
   }
@@ -32,7 +28,7 @@ export function atomLabelText(atom) {
  * @returns {number} Width multiplier relative to a one-character label.
  */
 export function labelWidthFactor(characterCount) {
-  return LABEL_WIDTH_FACTORS.get(characterCount) ?? (1 + (Math.max(0, characterCount - 1) * 0.55));
+  return LABEL_WIDTH_FACTORS.get(characterCount) ?? 1 + Math.max(0, characterCount - 1) * 0.55;
 }
 
 /**
@@ -46,8 +42,8 @@ export function estimateLabelHalfSize(labelText, bondLength, labelMetrics = null
   if (!labelText) {
     return null;
   }
-  const averageCharWidth = labelMetrics?.averageCharWidth ?? (bondLength * 0.22);
-  const textHeight = labelMetrics?.textHeight ?? (bondLength * 0.32);
+  const averageCharWidth = labelMetrics?.averageCharWidth ?? bondLength * 0.22;
+  const textHeight = labelMetrics?.textHeight ?? bondLength * 0.32;
   return {
     halfWidth: averageCharWidth * labelWidthFactor(labelText.length),
     halfHeight: textHeight * 0.5
@@ -94,8 +90,10 @@ export function collectLabelBoxes(layoutGraph, coords, bondLength, options = {})
  * @returns {boolean} True when the boxes overlap.
  */
 export function labelBoxesOverlap(firstBox, secondBox, padding) {
-  return Math.abs(firstBox.x - secondBox.x) < (firstBox.halfWidth + secondBox.halfWidth + padding)
-    && Math.abs(firstBox.y - secondBox.y) < (firstBox.halfHeight + secondBox.halfHeight + padding);
+  return (
+    Math.abs(firstBox.x - secondBox.x) < firstBox.halfWidth + secondBox.halfWidth + padding &&
+    Math.abs(firstBox.y - secondBox.y) < firstBox.halfHeight + secondBox.halfHeight + padding
+  );
 }
 
 /**
@@ -110,10 +108,12 @@ export function labelBoxesOverlap(firstBox, secondBox, padding) {
  * @returns {Array<{firstAtomId: string, secondAtomId: string, overlapX: number, overlapY: number}>} Overlapping label pairs.
  */
 export function findLabelOverlaps(layoutGraph, coords, bondLength, options = {}) {
-  const padding = options.padding ?? (bondLength * 0.08);
-  const labelBoxes = options.labelBoxes ?? collectLabelBoxes(layoutGraph, coords, bondLength, {
-    labelMetrics: options.labelMetrics
-  });
+  const padding = options.padding ?? bondLength * 0.08;
+  const labelBoxes =
+    options.labelBoxes ??
+    collectLabelBoxes(layoutGraph, coords, bondLength, {
+      labelMetrics: options.labelMetrics
+    });
   const overlaps = [];
 
   for (let firstIndex = 0; firstIndex < labelBoxes.length; firstIndex++) {
@@ -126,8 +126,8 @@ export function findLabelOverlaps(layoutGraph, coords, bondLength, options = {})
       overlaps.push({
         firstAtomId: firstBox.atomId,
         secondAtomId: secondBox.atomId,
-        overlapX: (firstBox.halfWidth + secondBox.halfWidth + padding) - Math.abs(firstBox.x - secondBox.x),
-        overlapY: (firstBox.halfHeight + secondBox.halfHeight + padding) - Math.abs(firstBox.y - secondBox.y)
+        overlapX: firstBox.halfWidth + secondBox.halfWidth + padding - Math.abs(firstBox.x - secondBox.x),
+        overlapY: firstBox.halfHeight + secondBox.halfHeight + padding - Math.abs(firstBox.y - secondBox.y)
       });
     }
   }

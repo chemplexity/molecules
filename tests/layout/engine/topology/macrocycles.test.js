@@ -15,6 +15,9 @@ describe('layout/engine/topology/macrocycles', () => {
       { id: 1, size: 12 },
       { id: 2, size: 14 }
     ]);
-    assert.deepEqual(result.map(ring => ring.id), [1, 2]);
+    assert.deepEqual(
+      result.map(ring => ring.id),
+      [1, 2]
+    );
   });
 });

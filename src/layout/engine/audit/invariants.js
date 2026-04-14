@@ -3,11 +3,7 @@
 import { collectLabelBoxes, findLabelOverlaps } from '../geometry/label-box.js';
 import { computeBounds } from '../geometry/bounds.js';
 import { AtomGrid } from '../geometry/atom-grid.js';
-import {
-  AUDIT_PLANAR_VALIDATION,
-  BRIDGED_VALIDATION,
-  SEVERE_OVERLAP_FACTOR
-} from '../constants.js';
+import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 function pairKey(firstAtomId, secondAtomId) {
   return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
@@ -156,7 +152,7 @@ function sortedAngularSeparations(angles) {
     const currentAngle = sortedAngles[index];
     const nextAngle = sortedAngles[(index + 1) % sortedAngles.length];
     const rawSeparation = nextAngle - currentAngle;
-    separations.push(rawSeparation > 0 ? rawSeparation : rawSeparation + (Math.PI * 2));
+    separations.push(rawSeparation > 0 ? rawSeparation : rawSeparation + Math.PI * 2);
   }
   return separations;
 }
@@ -203,10 +199,7 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
     const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
     const deviation = Math.abs(distance - bondLength);
     const validationSettings = validationSettingsForClass(bondValidationClasses.get(bond.id));
-    const allowedDeviation = bondLength * Math.max(
-      Math.abs(1 - validationSettings.minBondLengthFactor),
-      Math.abs(validationSettings.maxBondLengthFactor - 1)
-    );
+    const allowedDeviation = bondLength * Math.max(Math.abs(1 - validationSettings.minBondLengthFactor), Math.abs(validationSettings.maxBondLengthFactor - 1));
     sampleCount++;
     totalDeviation += deviation;
     maxDeviation = Math.max(maxDeviation, deviation);
@@ -254,7 +247,7 @@ export function measureTrigonalDistortion(layoutGraph, coords) {
       return Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x);
     });
     const separations = sortedAngularSeparations(neighborAngles);
-    const deviation = separations.reduce((sum, separation) => sum + ((separation - idealSeparation) ** 2), 0);
+    const deviation = separations.reduce((sum, separation) => sum + (separation - idealSeparation) ** 2, 0);
     centerCount++;
     totalDeviation += deviation;
     maxDeviation = Math.max(maxDeviation, deviation);
@@ -284,8 +277,7 @@ export function measureTetrahedralDistortion(layoutGraph, coords) {
     if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
       continue;
     }
-    const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId)
-      .filter(({ neighborAtomId }) => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+    const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId).filter(({ neighborAtomId }) => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
     if (covalentBonds.length !== 4) {
       continue;
     }
@@ -299,7 +291,7 @@ export function measureTetrahedralDistortion(layoutGraph, coords) {
       return Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x);
     });
     const separations = sortedAngularSeparations(neighborAngles);
-    const deviation = separations.reduce((sum, separation) => sum + ((separation - idealSeparation) ** 2), 0);
+    const deviation = separations.reduce((sum, separation) => sum + (separation - idealSeparation) ** 2, 0);
     centerCount++;
     totalDeviation += deviation;
     maxDeviation = Math.max(maxDeviation, deviation);
@@ -365,7 +357,7 @@ export function computeAtomDistortionCost(layoutGraph, coords, atomId, overrideP
         });
         const separations = sortedAngularSeparations(neighborAngles);
         const idealSeparation = (Math.PI * 2) / 3;
-        cost += separations.reduce((sum, separation) => sum + ((separation - idealSeparation) ** 2), 0) * 20;
+        cost += separations.reduce((sum, separation) => sum + (separation - idealSeparation) ** 2, 0) * 20;
       }
     }
   } else if (covalentBonds.length === 4) {
@@ -379,7 +371,7 @@ export function computeAtomDistortionCost(layoutGraph, coords, atomId, overrideP
         });
         const separations = sortedAngularSeparations(neighborAngles);
         const idealSeparation = Math.PI / 2;
-        cost += separations.reduce((sum, separation) => sum + ((separation - idealSeparation) ** 2), 0) * 20;
+        cost += separations.reduce((sum, separation) => sum + (separation - idealSeparation) ** 2, 0) * 20;
       }
     }
   }
@@ -479,9 +471,11 @@ export function measureLabelOverlap(layoutGraph, coords, bondLength, options = {
  * @returns {{overlaps: Array<{firstAtomId: string, secondAtomId: string, distance: number}>, overlapCount: number, overlapPenalty: number, bondDeviation: {sampleCount: number, maxDeviation: number, meanDeviation: number, failingBondCount: number}, collapsedMacrocycles: number[], labelOverlap: {pairCount: number, totalPenalty: number, maxPenalty: number}, trigonalDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, tetrahedralDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, cost: number}} Aggregate layout state.
  */
 export function measureLayoutState(layoutGraph, coords, bondLength, options = {}) {
-  const overlaps = options.overlaps ?? findSevereOverlaps(layoutGraph, coords, bondLength, {
-    atomGrid: options.atomGrid
-  });
+  const overlaps =
+    options.overlaps ??
+    findSevereOverlaps(layoutGraph, coords, bondLength, {
+      atomGrid: options.atomGrid
+    });
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength);
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const labelOverlap = measureLabelOverlap(layoutGraph, coords, bondLength, {
@@ -492,7 +486,7 @@ export function measureLayoutState(layoutGraph, coords, bondLength, options = {}
 
   let overlapPenalty = 0;
   for (const overlap of overlaps) {
-    const deficit = (bondLength * SEVERE_OVERLAP_FACTOR) - overlap.distance;
+    const deficit = bondLength * SEVERE_OVERLAP_FACTOR - overlap.distance;
     overlapPenalty += deficit * deficit * 100;
   }
 

@@ -6,18 +6,27 @@ import { layoutOrganometallicFamily } from '../families/organometallic.js';
 import { assignBondValidationClass, mergeBondValidationClasses } from './bond-validation.js';
 import { layoutAtomSlice } from './atom-slice.js';
 import { packComponentPlacements } from './fragment-packing.js';
-import {
-  buildComponentFixedCoords,
-  buildRefinementContext,
-  canPreserveComponentPlacement,
-  preserveComponentPlacement
-} from './refinement.js';
+import { buildComponentFixedCoords, buildRefinementContext, canPreserveComponentPlacement, preserveComponentPlacement } from './refinement.js';
 
 function isLargeComponent(layoutGraph, component) {
   const threshold = layoutGraph.options.largeMoleculeThreshold;
   const heavyAtomCount = component.atomIds.filter(atomId => layoutGraph.sourceMolecule.atoms.get(atomId)?.name !== 'H').length;
   const ringSystemCount = layoutGraph.ringSystems.filter(ringSystem => ringSystem.atomIds.every(atomId => component.atomIds.includes(atomId))).length;
   return heavyAtomCount > threshold.heavyAtomCount || ringSystemCount > threshold.ringSystemCount;
+}
+
+/**
+ * Returns whether a component contains a transition-metal atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} component - Connected-component descriptor.
+ * @returns {boolean} `true` when the component contains a transition metal.
+ */
+function componentContainsMetal(layoutGraph, component) {
+  return component.atomIds.some(atomId => {
+    const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
+    const group = atom?.properties?.group ?? 0;
+    return atom?.name !== 'H' && group >= 3 && group <= 12;
+  });
 }
 
 /**
@@ -112,7 +121,10 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
         atomIds: preserved.atomIds,
         coords: preserved.coords,
         anchored: true,
-        role: component.role
+        role: component.role,
+        heavyAtomCount: component.heavyAtomCount,
+        netCharge: component.netCharge,
+        containsMetal: componentContainsMetal(layoutGraph, component)
       });
       placedComponentCount++;
       preservedComponentCount++;
@@ -123,9 +135,9 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
 
     const componentGraph = refinementContext.enabled
       ? {
-        ...layoutGraph,
-        fixedCoords: buildComponentFixedCoords(layoutGraph, component, refinementContext)
-      }
+          ...layoutGraph,
+          fixedCoords: buildComponentFixedCoords(layoutGraph, component, refinementContext)
+        }
       : layoutGraph;
     const placement = layoutComponent(componentGraph, component);
     if (!placement.supported) {
@@ -133,21 +145,25 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
       continue;
     }
 
-    const aligned = layoutGraph.options.preserveFixed === false
-      ? { coords: placement.coords, anchored: false }
-      : alignCoordsToFixed(placement.coords, placement.atomIds, componentGraph.fixedCoords);
+    const aligned =
+      layoutGraph.options.preserveFixed === false
+        ? { coords: placement.coords, anchored: false }
+        : alignCoordsToFixed(placement.coords, placement.atomIds, componentGraph.fixedCoords);
 
     componentPlacements.push({
       componentId: component.id,
       atomIds: placement.atomIds,
       coords: aligned.coords,
       anchored: aligned.anchored,
-      role: component.role
+      role: component.role,
+      heavyAtomCount: component.heavyAtomCount,
+      netCharge: component.netCharge,
+      containsMetal: componentContainsMetal(layoutGraph, component)
     });
     placedComponentCount++;
-      placedFamilies.push(placement.family);
-      mergeBondValidationClasses(bondValidationClasses, placement.bondValidationClasses, { overwrite: false });
-      displayAssignments.push(...(placement.displayAssignments ?? []));
+    placedFamilies.push(placement.family);
+    mergeBondValidationClasses(bondValidationClasses, placement.bondValidationClasses, { overwrite: false });
+    displayAssignments.push(...(placement.displayAssignments ?? []));
   }
 
   return {

@@ -39,7 +39,7 @@ export function placeRegularPolygon(atomIds, center, edgeLength, startAngle = Ma
   const step = (2 * Math.PI) / atomIds.length;
   const coords = new Map();
   for (let index = 0; index < atomIds.length; index++) {
-    coords.set(atomIds[index], add(center, fromAngle(startAngle + (index * step), radius)));
+    coords.set(atomIds[index], add(center, fromAngle(startAngle + index * step, radius)));
   }
   return coords;
 }
@@ -59,13 +59,11 @@ export function pointInPolygon(point, polygon) {
   for (let firstIndex = 0, secondIndex = polygon.length - 1; firstIndex < polygon.length; secondIndex = firstIndex++) {
     const firstVertex = polygon[firstIndex];
     const secondVertex = polygon[secondIndex];
-    const crossesScanline = (firstVertex.y > point.y) !== (secondVertex.y > point.y);
+    const crossesScanline = firstVertex.y > point.y !== secondVertex.y > point.y;
     if (!crossesScanline) {
       continue;
     }
-    const intersectionX =
-      (((secondVertex.x - firstVertex.x) * (point.y - firstVertex.y)) / ((secondVertex.y - firstVertex.y) || 1e-12))
-      + firstVertex.x;
+    const intersectionX = ((secondVertex.x - firstVertex.x) * (point.y - firstVertex.y)) / (secondVertex.y - firstVertex.y || 1e-12) + firstVertex.x;
     if (point.x < intersectionX) {
       inside = !inside;
     }

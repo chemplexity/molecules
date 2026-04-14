@@ -80,10 +80,6 @@ describe('createInputFlowDeps', () => {
     deps.examples.render();
     deps.force.clearIfActive();
 
-    assert.deepEqual(records, [
-      ['setInputFormatButtons', 'inchi'],
-      ['renderExamples'],
-      ['clearForceIfActive']
-    ]);
+    assert.deepEqual(records, [['setInputFormatButtons', 'inchi'], ['renderExamples'], ['clearForceIfActive']]);
   });
 });

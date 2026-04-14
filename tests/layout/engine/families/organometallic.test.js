@@ -46,8 +46,8 @@ describe('layout/engine/families/organometallic', () => {
       assert.ok(Math.abs(vector.x) < 1e-6 || Math.abs(vector.y) < 1e-6);
     }
 
-    const ammineDot = (vectors[0].x * vectors[1].x) + (vectors[0].y * vectors[1].y);
-    const chlorideDot = (vectors[2].x * vectors[3].x) + (vectors[2].y * vectors[3].y);
+    const ammineDot = vectors[0].x * vectors[1].x + vectors[0].y * vectors[1].y;
+    const chlorideDot = vectors[2].x * vectors[3].x + vectors[2].y * vectors[3].y;
     assert.ok(Math.abs(ammineDot) < 1e-6);
     assert.ok(Math.abs(chlorideDot) < 1e-6);
   });
@@ -75,10 +75,7 @@ describe('layout/engine/families/organometallic', () => {
 
     assert.ok(result.coords.size >= 5);
     assert.equal(result.displayAssignments.length, 2);
-    assert.deepEqual(
-      [...new Set(result.displayAssignments.map(assignment => assignment.type))].sort(),
-      ['dash', 'wedge']
-    );
+    assert.deepEqual([...new Set(result.displayAssignments.map(assignment => assignment.type))].sort(), ['dash', 'wedge']);
     for (const assignment of result.displayAssignments) {
       assert.equal(assignment.centerId, 'Zn1');
       const bond = graph.sourceMolecule.bonds.get(assignment.bondId);
@@ -97,10 +94,7 @@ describe('layout/engine/families/organometallic', () => {
 
     assert.ok(result.coords.size >= 7);
     assert.equal(result.displayAssignments.length, 2);
-    assert.deepEqual(
-      [...new Set(result.displayAssignments.map(assignment => assignment.type))].sort(),
-      ['dash', 'wedge']
-    );
+    assert.deepEqual([...new Set(result.displayAssignments.map(assignment => assignment.type))].sort(), ['dash', 'wedge']);
 
     for (const bond of graph.sourceMolecule.bonds.values()) {
       if (!bond.atoms.includes('Co1')) {

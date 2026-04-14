@@ -6,12 +6,7 @@ import { parseSMILES } from '../../../src/io/smiles.js';
 import { makeDisconnectedEthanes, makeEthane } from './support/molecules.js';
 
 function minNonBondedDistance(molecule, coords) {
-  const bondedPairs = new Set(
-    [...molecule.bonds.values()].flatMap(bond => [
-      `${bond.atoms[0]}:${bond.atoms[1]}`,
-      `${bond.atoms[1]}:${bond.atoms[0]}`
-    ])
-  );
+  const bondedPairs = new Set([...molecule.bonds.values()].flatMap(bond => [`${bond.atoms[0]}:${bond.atoms[1]}`, `${bond.atoms[1]}:${bond.atoms[0]}`]));
   const entries = [...coords.entries()].filter(([atomId]) => molecule.atoms.get(atomId)?.name !== 'H');
   let minDistance = Number.POSITIVE_INFINITY;
 
@@ -22,10 +17,7 @@ function minNonBondedDistance(molecule, coords) {
       if (bondedPairs.has(`${firstAtomId}:${secondAtomId}`)) {
         continue;
       }
-      minDistance = Math.min(
-        minDistance,
-        Math.hypot(firstPosition.x - secondPosition.x, firstPosition.y - secondPosition.y)
-      );
+      minDistance = Math.min(minDistance, Math.hypot(firstPosition.x - secondPosition.x, firstPosition.y - secondPosition.y));
     }
   }
 
@@ -41,7 +33,7 @@ function sortedAngleSeparations(centerPosition, neighborPositions) {
     const currentAngle = angles[index];
     const nextAngle = angles[(index + 1) % angles.length];
     const rawSeparation = nextAngle - currentAngle;
-    separations.push(rawSeparation > 0 ? rawSeparation : rawSeparation + (Math.PI * 2));
+    separations.push(rawSeparation > 0 ? rawSeparation : rawSeparation + Math.PI * 2);
   }
   return separations;
 }
@@ -81,7 +73,7 @@ function signedTriangleArea(coords, firstAtomId, secondAtomId, thirdAtomId) {
   assert.ok(first);
   assert.ok(second);
   assert.ok(third);
-  return ((second.x - first.x) * (third.y - first.y)) - ((second.y - first.y) * (third.x - first.x));
+  return (second.x - first.x) * (third.y - first.y) - (second.y - first.y) * (third.x - first.x);
 }
 
 describe('layout/engine/api', () => {
@@ -147,12 +139,7 @@ describe('layout/engine/api', () => {
   it('refineCoords re-idealizes a fully specified acyclic component when no touched hints are provided', () => {
     const seed = generateCoords(parseSMILES('CC(C)C'), { suppressH: true });
     const existingCoords = new Map(
-      [...seed.coords.entries()].map(([atomId, position]) => [
-        atomId,
-        atomId === 'C3'
-          ? { x: position.x + 0.18, y: position.y + 0.09 }
-          : { ...position }
-      ])
+      [...seed.coords.entries()].map(([atomId, position]) => [atomId, atomId === 'C3' ? { x: position.x + 0.18, y: position.y + 0.09 } : { ...position }])
     );
     const result = refineCoords(parseSMILES('CC(C)C'), {
       existingCoords,
@@ -166,12 +153,7 @@ describe('layout/engine/api', () => {
 
   it('refineCoords keeps the existing handedness of an unconstrained acyclic bend', () => {
     const seed = generateCoords(parseSMILES('CCO'), { suppressH: true });
-    const existingCoords = new Map(
-      [...seed.coords.entries()].map(([atomId, position]) => [
-        atomId,
-        atomId === 'O3' ? { x: position.x, y: -position.y } : { ...position }
-      ])
-    );
+    const existingCoords = new Map([...seed.coords.entries()].map(([atomId, position]) => [atomId, atomId === 'O3' ? { x: position.x, y: -position.y } : { ...position }]));
     const existingArea = signedTriangleArea(existingCoords, 'C1', 'C2', 'O3');
     const result = refineCoords(parseSMILES('CCO'), {
       existingCoords,
@@ -241,11 +223,11 @@ describe('layout/engine/api', () => {
   });
 
   it('lays out a previously crashing fused-plus-spiro macrolide scaffold', () => {
-    const molecule = parseSMILES(String.raw`COC[C@H]1O[C@@H](O[C@@H]2OC[C@@H]3O[C@@]4(OC[C@@H](OC(=O)c5c(C)cc(O)cc5O)[C@@H]6OCO[C@@H]46)O[C@H]3[C@H]2OCCN=[N+]=[N-])[C@@H](OC)[C@@H](O)[C@@H]1O[C@@H]7O[C@H](C)[C@H](OC)[C@H](O[C@@H]8O[C@H](C)[C@H]9O[C@]%10(C[C@@H](O)[C@H](O[C@H]%11C[C@@H](O[C@H]%12C[C@@](C)([C@@H](OC)[C@H](C)O%12)[N+](=O)[O-])[C@H](OC(=O)c%13c(C)c(Cl)c(O)c(Cl)c%13OC)[C@@H](C)O%11)[C@@H](C)O%10)O[C@]9(C)[C@@H]8O)[C@@]7(C)O`);
+    const molecule = parseSMILES(
+      String.raw`COC[C@H]1O[C@@H](O[C@@H]2OC[C@@H]3O[C@@]4(OC[C@@H](OC(=O)c5c(C)cc(O)cc5O)[C@@H]6OCO[C@@H]46)O[C@H]3[C@H]2OCCN=[N+]=[N-])[C@@H](OC)[C@@H](O)[C@@H]1O[C@@H]7O[C@H](C)[C@H](OC)[C@H](O[C@@H]8O[C@H](C)[C@H]9O[C@]%10(C[C@@H](O)[C@H](O[C@H]%11C[C@@H](O[C@H]%12C[C@@](C)([C@@H](OC)[C@H](C)O%12)[N+](=O)[O-])[C@H](OC(=O)c%13c(C)c(Cl)c(O)c(Cl)c%13OC)[C@@H](C)O%11)[C@@H](C)O%10)O[C@]9(C)[C@@H]8O)[C@@]7(C)O`
+    );
     const result = generateCoords(molecule, { suppressH: true });
-    const visibleAtomCount = [...result.layoutGraph.atoms.values()].filter(atom =>
-      !(result.layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible)
-    ).length;
+    const visibleAtomCount = [...result.layoutGraph.atoms.values()].filter(atom => !(result.layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible)).length;
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.placedComponentCount, 1);

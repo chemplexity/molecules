@@ -262,9 +262,9 @@ const forceHelpers = createForceHelpers({
   plotEl,
   simulation,
   viewportFitPadding: pad => _viewportFitPadding(pad),
-    generateAndRefine2dCoords: generateAndRefineActive2dCoords,
-    generate2dCoords: generateActive2dCoords,
-    alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
+  generateAndRefine2dCoords: generateAndRefineActive2dCoords,
+  generate2dCoords: generateActive2dCoords,
+  alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
   spreadReaction2dProductComponents: (mol, bondLength) => _spreadReaction2dProductComponents(mol, bondLength),
   centerReaction2dPairCoords: (mol, bondLength) => _centerReaction2dPairCoords(mol, bondLength)
 });
@@ -826,6 +826,7 @@ const {
     get2DAtoms: () => (runtimeState.mol2d ? [...runtimeState.mol2d.atoms.values()] : []),
     get2DCenterX: () => runtimeState.cx2d,
     get2DCenterY: () => runtimeState.cy2d,
+    toSelectionSVGPt2d: atom => scene2DRenderer.toSVGPt?.(atom) ?? render2DHelpers.toSVGPt2d(atom),
     forceBondLength: FORCE_LAYOUT_BOND_LENGTH,
     strokeWidth: STROKE_W,
     fontSize: runtimeState.fontSize,

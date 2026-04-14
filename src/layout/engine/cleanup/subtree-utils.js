@@ -18,10 +18,7 @@ export function collectCutSubtree(layoutGraph, startAtomId, blockedAtomId) {
         continue;
       }
       const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
-      if (
-        (atomId === startAtomId && neighborAtomId === blockedAtomId)
-        || (atomId === blockedAtomId && neighborAtomId === startAtomId)
-      ) {
+      if ((atomId === startAtomId && neighborAtomId === blockedAtomId) || (atomId === blockedAtomId && neighborAtomId === startAtomId)) {
         continue;
       }
       if (subtreeAtomIds.has(neighborAtomId)) {

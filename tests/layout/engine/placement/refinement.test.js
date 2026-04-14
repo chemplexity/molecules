@@ -75,8 +75,9 @@ describe('layout/engine/placement/refinement', () => {
     const touchedComponent = graph.components.find(component => component.atomIds.includes('a0'));
     const fixedCoords = buildComponentFixedCoords(graph, touchedComponent, refinementContext);
 
-    assert.deepEqual([...fixedCoords.entries()].sort(([firstId], [secondId]) => firstId.localeCompare(secondId)), [
-      ['a0', { x: 0, y: 0 }]
-    ]);
+    assert.deepEqual(
+      [...fixedCoords.entries()].sort(([firstId], [secondId]) => firstId.localeCompare(secondId)),
+      [['a0', { x: 0, y: 0 }]]
+    );
   });
 });

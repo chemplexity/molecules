@@ -9,6 +9,62 @@ import { labelHalfW, labelHalfH, labelTextOffset, getAtomLabel } from '../../lay
  * @returns {object} Object with `toSVGPt2d`, `drawBond`, `zoomToFitIf2d`, and `sync2dDerivedState`.
  */
 export function create2DRenderHelpers(ctx) {
+  /**
+   * Hides all hydrogens in the current 2D molecule without requiring a full
+   * coordinate regeneration pass.
+   * @param {object|null|undefined} mol - Molecule whose hydrogen visibility should be reset.
+   * @returns {void}
+   */
+  function hideHydrogensFor2dSync(mol) {
+    if (!mol) {
+      return;
+    }
+    if (typeof mol.hideHydrogens === 'function') {
+      mol.hideHydrogens();
+      return;
+    }
+    for (const atom of mol.atoms?.values?.() ?? []) {
+      if (atom?.name === 'H') {
+        atom.visible = false;
+      }
+    }
+  }
+
+  /**
+   * Reapplies renderer-facing stereo-hydrogen visibility after a local 2D edit.
+   * This keeps draw-only updates in sync with the same hydrogen-display policy
+   * used by the full `render2d()` path.
+   * @param {object|null|undefined} mol - Molecule being synchronized.
+   * @param {Map<string, number>} hCounts - Heavy-atom hydrogen counts used for labels.
+   * @param {Map<string, string>|null|undefined} stereoMap - Current stereo display map.
+   * @returns {void}
+   */
+  function syncStereoHydrogenVisibility(mol, hCounts, stereoMap) {
+    hideHydrogensFor2dSync(mol);
+    for (const [bondId] of stereoMap ?? new Map()) {
+      const bond = mol?.bonds?.get?.(bondId) ?? null;
+      if (!bond || typeof bond.getAtomObjects !== 'function') {
+        continue;
+      }
+      const [atom1, atom2] = bond.getAtomObjects(mol);
+      const hydrogen = atom1?.visible === false && atom1.name === 'H' ? atom1 : atom2?.visible === false && atom2.name === 'H' ? atom2 : null;
+      if (hydrogen) {
+        hydrogen.visible = true;
+        continue;
+      }
+      const heavyAtom = atom1?.visible === false ? (atom2 ?? null) : atom2?.visible === false ? (atom1 ?? null) : null;
+      if (!heavyAtom) {
+        continue;
+      }
+      const remainingCount = (hCounts.get(heavyAtom.id) ?? 0) - 1;
+      if (remainingCount <= 0) {
+        hCounts.delete(heavyAtom.id);
+      } else {
+        hCounts.set(heavyAtom.id, remainingCount);
+      }
+    }
+  }
+
   function toSVGPt2d(atom) {
     const width = ctx.plotEl.clientWidth || 600;
     const height = ctx.plotEl.clientHeight || 400;
@@ -174,27 +230,13 @@ export function create2DRenderHelpers(ctx) {
       addLine(container, primary.x1, primary.y1, primary.x2, primary.y2);
       const ox = nx * ctx.constants.bondOffset2d * dir;
       const oy = ny * ctx.constants.bondOffset2d * dir;
-      const secondary = shortenBondLineWithLabelClearance(
-        atom1,
-        atom2,
-        { x: start.x + ox, y: start.y + oy },
-        { x: end.x + ox, y: end.y + oy },
-        toSVGPt,
-        4
-      );
+      const secondary = shortenBondLineWithLabelClearance(atom1, atom2, { x: start.x + ox, y: start.y + oy }, { x: end.x + ox, y: end.y + oy }, toSVGPt, 4);
       addLine(container, secondary.x1, secondary.y1, secondary.x2, secondary.y2);
     } else if (order === 3) {
       for (const d of [-ctx.constants.bondOffset2d, 0, ctx.constants.bondOffset2d]) {
         const ox = nx * d;
         const oy = ny * d;
-        const tripleLine = shortenBondLineWithLabelClearance(
-          atom1,
-          atom2,
-          { x: start.x + ox, y: start.y + oy },
-          { x: end.x + ox, y: end.y + oy },
-          toSVGPt,
-          d !== 0 ? 4 : 0
-        );
+        const tripleLine = shortenBondLineWithLabelClearance(atom1, atom2, { x: start.x + ox, y: start.y + oy }, { x: end.x + ox, y: end.y + oy }, toSVGPt, d !== 0 ? 4 : 0);
         addLine(container, tripleLine.x1, tripleLine.y1, tripleLine.x2, tripleLine.y2);
       }
     } else if (order === 1.5) {
@@ -203,14 +245,7 @@ export function create2DRenderHelpers(ctx) {
       addLine(container, primary.x1, primary.y1, primary.x2, primary.y2);
       const ox = nx * ctx.constants.bondOffset2d * dir;
       const oy = ny * ctx.constants.bondOffset2d * dir;
-      const dashed = shortenBondLineWithLabelClearance(
-        atom1,
-        atom2,
-        { x: start.x + ox, y: start.y + oy },
-        { x: end.x + ox, y: end.y + oy },
-        toSVGPt,
-        5
-      );
+      const dashed = shortenBondLineWithLabelClearance(atom1, atom2, { x: start.x + ox, y: start.y + oy }, { x: end.x + ox, y: end.y + oy }, toSVGPt, 5);
       addLine(container, dashed.x1, dashed.y1, dashed.x2, dashed.y2, 'bond-dashed');
     }
   }
@@ -240,10 +275,18 @@ export function create2DRenderHelpers(ctx) {
       if (sx < pad || sx > width - pad || sy < pad || sy > height - pad) {
         anyOut = true;
       }
-      if (gX < minGX) {minGX = gX;}
-      if (gX > maxGX) {maxGX = gX;}
-      if (gY < minGY) {minGY = gY;}
-      if (gY > maxGY) {maxGY = gY;}
+      if (gX < minGX) {
+        minGX = gX;
+      }
+      if (gX > maxGX) {
+        maxGX = gX;
+      }
+      if (gY < minGY) {
+        minGY = gY;
+      }
+      if (gY > maxGY) {
+        maxGY = gY;
+      }
     }
     if (!anyOut) {
       return;
@@ -268,6 +311,7 @@ export function create2DRenderHelpers(ctx) {
       }
     }
     const stereoMap = ctx.stereo.pickStereoMap(mol);
+    syncStereoHydrogenVisibility(mol, hCounts, stereoMap);
     ctx.state.setDerivedState({ hCounts, stereoMap });
   }
 

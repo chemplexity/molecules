@@ -210,15 +210,7 @@ describe('createSessionRuntimeBridge', () => {
 
     bridge.clearForceState();
 
-    assert.deepEqual(calls, [
-      ['clearGraph'],
-      ['stop'],
-      ['setAutoFitEnabled', false],
-      ['disableKeepInView'],
-      ['scene.clear'],
-      ['cache.reset'],
-      ['clearValenceWarnings']
-    ]);
+    assert.deepEqual(calls, [['clearGraph'], ['stop'], ['setAutoFitEnabled', false], ['disableKeepInView'], ['scene.clear'], ['cache.reset'], ['clearValenceWarnings']]);
   });
 
   it('restores 2D snapshot state and redraws when 2D is active', () => {
@@ -240,10 +232,7 @@ describe('createSessionRuntimeBridge', () => {
     assert.equal(getCy2d(), 9);
     assert.deepEqual([...getHCounts2d()], [['a1', 1]]);
     assert.deepEqual([...getStereoMap2d()], [['b1', 'dash']]);
-    assert.deepEqual(calls, [
-      ['draw2d'],
-      ['restoreZoomTransform', { x: 4, y: 5, k: 1.25 }]
-    ]);
+    assert.deepEqual(calls, [['draw2d'], ['restoreZoomTransform', { x: 4, y: 5, k: 1.25 }]]);
   });
 
   it('restores force snapshot state and node positions when force is active', () => {

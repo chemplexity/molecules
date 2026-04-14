@@ -10,9 +10,7 @@ import { countPointInPolygons } from '../geometry/polygon.js';
  * @returns {number[]} Gap-bisector angles in radians.
  */
 function gapBisectorAngles(centerPosition, knownPositions) {
-  const knownAngles = knownPositions
-    .map(position => angleOf(sub(position, centerPosition)))
-    .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  const knownAngles = knownPositions.map(position => angleOf(sub(position, centerPosition))).sort((firstAngle, secondAngle) => firstAngle - secondAngle);
   if (knownAngles.length === 0) {
     return [];
   }
@@ -20,8 +18,8 @@ function gapBisectorAngles(centerPosition, knownPositions) {
   const bisectorAngles = [];
   for (let index = 0; index < knownAngles.length; index++) {
     const firstAngle = knownAngles[index];
-    const secondAngle = index === knownAngles.length - 1 ? knownAngles[0] + (Math.PI * 2) : knownAngles[index + 1];
-    bisectorAngles.push(firstAngle + ((secondAngle - firstAngle) / 2));
+    const secondAngle = index === knownAngles.length - 1 ? knownAngles[0] + Math.PI * 2 : knownAngles[index + 1];
+    bisectorAngles.push(firstAngle + (secondAngle - firstAngle) / 2);
   }
   return bisectorAngles;
 }
@@ -81,8 +79,7 @@ export function synthesizeHydrogenPosition(centerPosition, knownPositions, bondL
       }
       continue;
     }
-    if (sector > bestCandidate.sector + 1e-6
-      || (Math.abs(sector - bestCandidate.sector) <= 1e-6 && deviation < bestCandidate.deviation)) {
+    if (sector > bestCandidate.sector + 1e-6 || (Math.abs(sector - bestCandidate.sector) <= 1e-6 && deviation < bestCandidate.deviation)) {
       bestCandidate = { position: candidatePosition, containingRingCount, sector, deviation };
     }
   }

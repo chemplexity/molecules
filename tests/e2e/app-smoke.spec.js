@@ -101,10 +101,7 @@ async function forceNodesWithinPlot(page, padding = 4) {
     }
     return nodes.every(node => {
       const rect = node.getBoundingClientRect();
-      return rect.left >= plotRect.left + pad &&
-        rect.top >= plotRect.top + pad &&
-        rect.right <= plotRect.right - pad &&
-        rect.bottom <= plotRect.bottom - pad;
+      return rect.left >= plotRect.left + pad && rect.top >= plotRect.top + pad && rect.right <= plotRect.right - pad && rect.bottom <= plotRect.bottom - pad;
     });
   }, padding);
 }
@@ -122,10 +119,7 @@ async function plotGeometryWithinPlot(page, padding = 4) {
     }
     return geometry.every(node => {
       const rect = node.getBoundingClientRect();
-      return rect.left >= plotRect.left + pad &&
-        rect.top >= plotRect.top + pad &&
-        rect.right <= plotRect.right - pad &&
-        rect.bottom <= plotRect.bottom - pad;
+      return rect.left >= plotRect.left + pad && rect.top >= plotRect.top + pad && rect.right <= plotRect.right - pad && rect.bottom <= plotRect.bottom - pad;
     });
   }, padding);
 }
@@ -153,6 +147,33 @@ async function forceAtomScreenPoints(page) {
 }
 
 /**
+ * Computes the screen-space horizontal separation between reaction-preview
+ * reactant and product force nodes.
+ * @param {import('@playwright/test').Page} page - Playwright page under test.
+ * @returns {Promise<number>} Product-centroid x minus reactant-centroid x.
+ */
+async function forceReactionPreviewHorizontalDelta(page) {
+  return await page.evaluate(() => {
+    const circles = Array.from(document.querySelectorAll('circle.node'));
+    const points = circles.map(circle => {
+      const rect = circle.getBoundingClientRect();
+      return {
+        id: String(circle.__data__?.id ?? ''),
+        cx: rect.left + rect.width / 2
+      };
+    });
+    const reactant = points.filter(point => !point.id.startsWith('__rxn_product__'));
+    const product = points.filter(point => point.id.startsWith('__rxn_product__'));
+    if (reactant.length === 0 || product.length === 0) {
+      return 0;
+    }
+    const reactantCx = reactant.reduce((sum, point) => sum + point.cx, 0) / reactant.length;
+    const productCx = product.reduce((sum, point) => sum + point.cx, 0) / product.length;
+    return productCx - reactantCx;
+  });
+}
+
+/**
  * Computes the signed area of the triangle formed by the three requested force nodes.
  * @param {Array<{id: string, cx: number, cy: number}>} points - Force-node screen points keyed by atom id.
  * @param {string} firstId - First atom id.
@@ -168,7 +189,7 @@ function signedTriangleArea(points, firstId, secondId, thirdId) {
   if (!first || !second || !third) {
     throw new Error(`Missing force-node triangle point(s): ${firstId}, ${secondId}, ${thirdId}`);
   }
-  return ((second.cx - first.cx) * (third.cy - first.cy)) - ((second.cy - first.cy) * (third.cx - first.cx));
+  return (second.cx - first.cx) * (third.cy - first.cy) - (second.cy - first.cy) * (third.cx - first.cx);
 }
 
 test('input changes participate in undo/redo through the real browser UI', async ({ page }) => {
@@ -401,9 +422,7 @@ test('undo preserves hidden stereo hydrogen rendering after loading a random mol
   await loadSmiles(page, smiles);
 
   const atomTransforms = async atomIds =>
-    await page.evaluate(ids => Object.fromEntries(
-      ids.map(id => [id, document.querySelector(`g[data-atom-id="${id}"]`)?.getAttribute('transform') ?? null])
-    ), atomIds);
+    await page.evaluate(ids => Object.fromEntries(ids.map(id => [id, document.querySelector(`g[data-atom-id="${id}"]`)?.getAttribute('transform') ?? null])), atomIds);
 
   const stereoSignature = async () =>
     await page.evaluate(() => ({
@@ -514,17 +533,296 @@ test('cleaning 2d after dragging a projected stereo hydrogen restores its defaul
   await expect.poll(async () => await getTransform('H4')).toEqual(initialTransform);
 });
 
+test('deleting a displayed stereo hydrogen bond also removes the hydrogen in 2d', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+  await page.locator('#draw-bond-btn').click();
+
+  await expect(page.locator('g[data-atom-id="H4"] .atom-hit')).toHaveCount(1);
+
+  const hydrogenBondId = await page.evaluate(() => {
+    const hydrogenGroup = document.querySelector('g[data-atom-id="H4"]');
+    if (!hydrogenGroup) {
+      return null;
+    }
+    const transform = hydrogenGroup.getAttribute('transform') ?? '';
+    const match = transform.match(/translate\(([-\d.]+),([-\d.]+)\)/);
+    if (!match) {
+      return null;
+    }
+    const hx = Number(match[1]);
+    const hy = Number(match[2]);
+    let closestBondId = null;
+    let closestDistance = Infinity;
+    for (const group of document.querySelectorAll('g[data-bond-id]')) {
+      const hit = group.querySelector('line.bond-hit');
+      if (!hit) {
+        continue;
+      }
+      const x1 = Number(hit.getAttribute('x1') ?? NaN);
+      const y1 = Number(hit.getAttribute('y1') ?? NaN);
+      const x2 = Number(hit.getAttribute('x2') ?? NaN);
+      const y2 = Number(hit.getAttribute('y2') ?? NaN);
+      const distance = Math.min(Math.hypot(x1 - hx, y1 - hy), Math.hypot(x2 - hx, y2 - hy));
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestBondId = group.getAttribute('data-bond-id');
+      }
+    }
+    return closestDistance <= 12 ? closestBondId : null;
+  });
+
+  expect(hydrogenBondId).toBeTruthy();
+
+  const hydrogenBondHit = page.locator(`g[data-bond-id="${hydrogenBondId}"] .bond-hit`);
+  const bondBox = await hydrogenBondHit.boundingBox();
+  expect(bondBox).toBeTruthy();
+  await page.mouse.move(bondBox.x + bondBox.width / 2, bondBox.y + bondBox.height / 2);
+  await page.keyboard.press('Delete');
+
+  await expect(page.locator('g[data-atom-id="H4"]')).toHaveCount(0);
+  await expect(page.locator('circle.valence-warning')).toHaveCount(0);
+});
+
+test('changing a dashed stereochemical hydrogen bond back to a single bond hides the hydrogen in 2d', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+  await page.locator('#draw-bond-btn').click();
+
+  await expect(page.locator('g[data-atom-id="H4"] .atom-hit')).toHaveCount(1);
+
+  const hydrogenBondId = await page.evaluate(() => {
+    const hydrogenGroup = document.querySelector('g[data-atom-id="H4"]');
+    if (!hydrogenGroup) {
+      return null;
+    }
+    const transform = hydrogenGroup.getAttribute('transform') ?? '';
+    const match = transform.match(/translate\(([-\d.]+),([-\d.]+)\)/);
+    if (!match) {
+      return null;
+    }
+    const hx = Number(match[1]);
+    const hy = Number(match[2]);
+    let closestBondId = null;
+    let closestDistance = Infinity;
+    for (const group of document.querySelectorAll('g[data-bond-id]')) {
+      const hit = group.querySelector('line.bond-hit');
+      if (!hit) {
+        continue;
+      }
+      const x1 = Number(hit.getAttribute('x1') ?? NaN);
+      const y1 = Number(hit.getAttribute('y1') ?? NaN);
+      const x2 = Number(hit.getAttribute('x2') ?? NaN);
+      const y2 = Number(hit.getAttribute('y2') ?? NaN);
+      const distance = Math.min(Math.hypot(x1 - hx, y1 - hy), Math.hypot(x2 - hx, y2 - hy));
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestBondId = group.getAttribute('data-bond-id');
+      }
+    }
+    return closestDistance <= 12 ? closestBondId : null;
+  });
+
+  expect(hydrogenBondId).toBeTruthy();
+
+  const hydrogenBondHit = page.locator(`g[data-bond-id="${hydrogenBondId}"] .bond-hit`);
+  const clickHydrogenBond = async () => {
+    const bondBox = await hydrogenBondHit.boundingBox();
+    expect(bondBox).toBeTruthy();
+    await page.mouse.click(bondBox.x + bondBox.width / 2, bondBox.y + bondBox.height / 2);
+  };
+
+  await page.locator('#draw-bond-type-dash').click();
+  await clickHydrogenBond();
+  await expect.poll(async () => await page.locator(`g[data-bond-id="${hydrogenBondId}"] line.bond-hash`).count()).toBeGreaterThan(0);
+
+  await page.locator('#draw-bond-btn').click();
+  await page.locator('#draw-bond-type-single').click();
+  await clickHydrogenBond();
+
+  await expect(page.locator('g[data-atom-id="H4"]')).toHaveCount(0);
+  await expect(page.locator('circle.valence-warning')).toHaveCount(0);
+});
+
+test('incompatible bond orders on a displayed 2D stereochemical hydrogen are a no-op', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+  await page.locator('#draw-bond-btn').click();
+
+  await expect(page.locator('g[data-atom-id="H4"] .atom-hit')).toHaveCount(1);
+
+  const hydrogenBondId = await page.evaluate(() => {
+    const hydrogenGroup = document.querySelector('g[data-atom-id="H4"]');
+    if (!hydrogenGroup) {
+      return null;
+    }
+    const transform = hydrogenGroup.getAttribute('transform') ?? '';
+    const match = transform.match(/translate\(([-\d.]+),([-\d.]+)\)/);
+    if (!match) {
+      return null;
+    }
+    const hx = Number(match[1]);
+    const hy = Number(match[2]);
+    let closestBondId = null;
+    let closestDistance = Infinity;
+    for (const group of document.querySelectorAll('g[data-bond-id]')) {
+      const hit = group.querySelector('line.bond-hit');
+      if (!hit) {
+        continue;
+      }
+      const x1 = Number(hit.getAttribute('x1') ?? NaN);
+      const y1 = Number(hit.getAttribute('y1') ?? NaN);
+      const x2 = Number(hit.getAttribute('x2') ?? NaN);
+      const y2 = Number(hit.getAttribute('y2') ?? NaN);
+      const distance = Math.min(Math.hypot(x1 - hx, y1 - hy), Math.hypot(x2 - hx, y2 - hy));
+      if (distance < closestDistance) {
+        closestDistance = distance;
+        closestBondId = group.getAttribute('data-bond-id');
+      }
+    }
+    return closestDistance <= 12 ? closestBondId : null;
+  });
+
+  expect(hydrogenBondId).toBeTruthy();
+
+  const hydrogenBondHit = page.locator(`g[data-bond-id="${hydrogenBondId}"] .bond-hit`);
+  const clickHydrogenBond = async () => {
+    const bondBox = await hydrogenBondHit.boundingBox();
+    expect(bondBox).toBeTruthy();
+    await page.mouse.click(bondBox.x + bondBox.width / 2, bondBox.y + bondBox.height / 2);
+  };
+
+  const captureState = async () =>
+    await page.evaluate(() => ({
+      smiles: window._getMolSmiles?.() ?? null,
+      wedgeCount: document.querySelectorAll('polygon.bond-wedge').length,
+      hashCount: document.querySelectorAll('line.bond-hash').length,
+      hydrogenCount: document.querySelectorAll('g[data-atom-id="H4"]').length
+    }));
+
+  const before = await captureState();
+
+  for (const drawBondType of ['double', 'triple', 'aromatic']) {
+    await page.locator('#draw-bond-btn').click();
+    await page.locator(`#draw-bond-type-${drawBondType}`).click();
+    await clickHydrogenBond();
+    await expect.poll(captureState).toEqual(before);
+  }
+});
+
+test('clicking a displayed 2D stereochemical hydrogen with carbon, oxygen, or sulfur draw elements keeps the replacement atom off the parent carbon', async ({ page }) => {
+  for (const drawElement of ['C', 'O', 'S']) {
+    await page.goto('/index.html');
+
+    await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+    await page.locator('#draw-bond-btn').click();
+    if (drawElement !== 'C') {
+      await page.locator(`#elem-btn-${drawElement}`).click();
+      await page.locator('#draw-bond-btn').click();
+    }
+
+    const hydrogenHit = page.locator('g[data-atom-id="H4"] .atom-hit');
+    await expect(hydrogenHit).toHaveCount(1);
+    await hydrogenHit.click();
+
+    const separation = await page.evaluate(() => {
+      const atomCenter = atomId => {
+        const group = document.querySelector(`g[data-atom-id="${atomId}"]`);
+        if (!group) {
+          return null;
+        }
+        const hit = group.querySelector('.atom-hit');
+        const rect = hit?.getBoundingClientRect?.() ?? group.getBoundingClientRect();
+        return {
+          x: rect.left + rect.width / 2,
+          y: rect.top + rect.height / 2
+        };
+      };
+      const replacement = atomCenter('H4');
+      const parent = atomCenter('C3');
+      if (!replacement || !parent) {
+        return null;
+      }
+      return Math.hypot(replacement.x - parent.x, replacement.y - parent.y);
+    });
+
+    expect(separation).not.toBeNull();
+    expect(separation).toBeGreaterThan(10);
+    if (drawElement !== 'C') {
+      await expect
+        .poll(async () => await page.locator('g[data-atom-id="H4"]').evaluate(node => node.textContent?.trim() ?? ''))
+        .toContain(drawElement);
+    }
+    await expect(page.locator('circle.valence-warning')).toHaveCount(0);
+  }
+});
+
+test('2D draw-bond preview on a displayed stereochemical hydrogen starts at the rendered hydrogen position', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+  await page.locator('#draw-bond-btn').click();
+
+  const hydrogenHit = page.locator('g[data-atom-id="H4"] .atom-hit');
+  await expect(hydrogenHit).toHaveCount(1);
+  const renderedHydrogenPoint = await page.evaluate(() => {
+    const hydrogenGroup = document.querySelector('g[data-atom-id="H4"]');
+    const transform = hydrogenGroup?.getAttribute('transform') ?? '';
+    const match = transform.match(/translate\(([-\d.]+),([-\d.]+)\)/);
+    if (!match) {
+      return null;
+    }
+    return {
+      x: Number(match[1]),
+      y: Number(match[2])
+    };
+  });
+  expect(renderedHydrogenPoint).toBeTruthy();
+
+  const hydrogenBox = await hydrogenHit.boundingBox();
+  expect(hydrogenBox).toBeTruthy();
+  const hx = hydrogenBox.x + hydrogenBox.width / 2;
+  const hy = hydrogenBox.y + hydrogenBox.height / 2;
+
+  await page.mouse.move(hx, hy);
+  await page.mouse.down();
+
+  const previewStart = await page.evaluate(() => {
+    const segment = document.querySelector('g.draw-bond-preview line.draw-bond-preview-segment');
+    if (!segment) {
+      return null;
+    }
+    return {
+      x: Number(segment.getAttribute('x1') ?? NaN),
+      y: Number(segment.getAttribute('y1') ?? NaN)
+    };
+  });
+
+  expect(previewStart).toBeTruthy();
+  expect(Math.hypot(previewStart.x - renderedHydrogenPoint.x, previewStart.y - renderedHydrogenPoint.y)).toBeLessThan(3);
+
+  await page.mouse.up();
+});
+
 test('cleaning 2d after dragging a carbonyl restores reasonable local carbonyl geometry', async ({ page }) => {
   await page.goto('/index.html');
 
   await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
 
-  const getAtomCenters = async atomIds => await page.evaluate(ids => Object.fromEntries(
-    ids.map(id => {
-      const rect = document.querySelector(`g[data-atom-id="${id}"] .atom-hit`)?.getBoundingClientRect();
-      return [id, rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null];
-    })
-  ), atomIds);
+  const getAtomCenters = async atomIds =>
+    await page.evaluate(
+      ids =>
+        Object.fromEntries(
+          ids.map(id => {
+            const rect = document.querySelector(`g[data-atom-id="${id}"] .atom-hit`)?.getBoundingClientRect();
+            return [id, rect ? { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 } : null];
+          })
+        ),
+      atomIds
+    );
   const carbonylMetrics = centers => {
     const dist = (first, second) => Math.hypot(first.x - second.x, first.y - second.y);
     const angle = (center, first, second) => {
@@ -568,14 +866,97 @@ test('cleaning 2d after dragging a carbonyl restores reasonable local carbonyl g
 
   await page.locator('#clean-2d-btn').click();
 
-  await expect.poll(async () => {
-    const cleanedMetrics = carbonylMetrics(await getAtomCenters(atomIds));
-    return (
-      Math.abs(cleanedMetrics.O13C12O14 - initialMetrics.O13C12O14) < 1 &&
-      Math.abs(cleanedMetrics.C10C12 - cleanedMetrics.C12O13) < 1.5 &&
-      Math.abs(cleanedMetrics.C12O13 - cleanedMetrics.C12O14) < 1.5
+  await expect
+    .poll(async () => {
+      const cleanedMetrics = carbonylMetrics(await getAtomCenters(atomIds));
+      return (
+        Math.abs(cleanedMetrics.O13C12O14 - initialMetrics.O13C12O14) < 1 &&
+        Math.abs(cleanedMetrics.C10C12 - cleanedMetrics.C12O13) < 1.5 &&
+        Math.abs(cleanedMetrics.C12O13 - cleanedMetrics.C12O14) < 1.5
+      );
+    })
+    .toBe(true);
+});
+
+test('cleaning cocaine twice in 2d stays on the same cleaned layout', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CN1C2CCC1C(C(OC)=O)C(OC(c3ccccc3)=O)C2');
+
+  const atomCenters = async () =>
+    await page.evaluate(() =>
+      Object.fromEntries(
+        Array.from(document.querySelectorAll('g[data-atom-id] .atom-hit'))
+          .map(element => {
+            const atomId = element.parentElement?.getAttribute('data-atom-id') ?? '';
+            const rect = element.getBoundingClientRect();
+            return [
+              atomId,
+              {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2
+              }
+            ];
+          })
+          .filter(([atomId]) => !!atomId && !atomId.startsWith('H'))
+      )
     );
-  }).toBe(true);
+
+  await page.locator('#clean-2d-btn').click();
+  const firstCleanCenters = await atomCenters();
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect
+    .poll(async () => {
+      const secondCleanCenters = await atomCenters();
+      const atomIds = Object.keys(firstCleanCenters);
+      if (atomIds.length === 0 || atomIds.length !== Object.keys(secondCleanCenters).length) {
+        return Number.POSITIVE_INFINITY;
+      }
+      let maxDrift = 0;
+      for (const atomId of atomIds) {
+        const first = firstCleanCenters[atomId];
+        const second = secondCleanCenters[atomId];
+        if (!first || !second) {
+          return Number.POSITIVE_INFINITY;
+        }
+        maxDrift = Math.max(maxDrift, Math.hypot(first.x - second.x, first.y - second.y));
+      }
+      return maxDrift;
+    })
+    .toBeLessThan(1);
+});
+
+test('dense bridged alkaloids do not render with catastrophic stretched bonds in 2d', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'COC(=O)C1=C2Nc3ccccc3[C@@]24CCN5[C@@H]6O[C@]78[C@H]9C[C@]%10%11CCO[C@H]%10CCN%12CC[C@]7([C@H]%11%12)c%13cccc(OC)c%13N8C[C@]6(C9)[C@@H]%14OCC[C@]%14(C1)[C@@H]45');
+
+  await expect
+    .poll(async () => await page.locator('g[data-atom-id] .atom-hit').count())
+    .toBeGreaterThan(45);
+
+  const bondMetrics = await page.evaluate(() => {
+    const lengths = Array.from(document.querySelectorAll('line.bond-hit'))
+      .map(line => {
+        const x1 = Number(line.getAttribute('x1') ?? NaN);
+        const y1 = Number(line.getAttribute('y1') ?? NaN);
+        const x2 = Number(line.getAttribute('x2') ?? NaN);
+        const y2 = Number(line.getAttribute('y2') ?? NaN);
+        return Math.hypot(x2 - x1, y2 - y1);
+      })
+      .filter(length => Number.isFinite(length) && length > 0);
+    return {
+      count: lengths.length,
+      min: Math.min(...lengths),
+      max: Math.max(...lengths)
+    };
+  });
+
+  expect(bondMetrics.count).toBeGreaterThan(50);
+  expect(bondMetrics.max / bondMetrics.min).toBeLessThan(3.5);
+  expect(await plotGeometryWithinPlot(page)).toBe(true);
 });
 
 test('undo restores selection mode and selected atoms as part of the app session', async ({ page }) => {
@@ -1123,6 +1504,31 @@ test('reaction preview can be entered and toggled back off from the reactions ta
   await expect(dehydrationRow).not.toHaveClass(/reaction-active/);
 });
 
+test('cleaning a 2d carboxylic-acid deprotonation preview preserves the displayed product layout', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'O=C(O)C1=C2C=CCC2C=C1');
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const deprotonationRow = page.locator('#reaction-body tr').filter({ hasText: 'Carboxylic Acid Deprotonation' }).first();
+
+  await expect(deprotonationRow).toBeVisible();
+  await deprotonationRow.click();
+  await expect(deprotonationRow).toHaveClass(/reaction-active/);
+
+  const beforeSignature = await bondSignature(page);
+  const beforeTexts = await page.evaluate(() => [...document.querySelectorAll('#plot text')].map(el => el.textContent));
+
+  await page.locator('#clean-2d-btn').click();
+  await expect(deprotonationRow).toHaveClass(/reaction-active/);
+
+  const afterSignature = await bondSignature(page);
+  const afterTexts = await page.evaluate(() => [...document.querySelectorAll('#plot text')].map(el => el.textContent));
+
+  expect(afterSignature).toEqual(beforeSignature);
+  expect(afterTexts).toEqual(beforeTexts);
+});
+
 test('reaction preview ignores a disconnected 2d draw after it has been undone', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -1515,6 +1921,57 @@ test('reaction preview entry refits force zoom', async ({ page }) => {
   await expect.poll(async () => rootTransform(page)).not.toBe(beforePreview);
 });
 
+test('clean in force mode preserves the imine-hydrolysis product on the right side of the reaction preview', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'N1C=NC2=C1N=CN2[C@H]3C[C@H](O)[C@@H](CO)O3');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const hydrolysisRow = page.locator('#reaction-body tr').filter({ hasText: 'Imine Hydrolysis' }).first();
+  await expect(hydrolysisRow).toBeVisible();
+  await hydrolysisRow.click();
+  await expect(hydrolysisRow).toHaveClass(/reaction-active/);
+
+  const beforeDelta = await forceReactionPreviewHorizontalDelta(page);
+  expect(beforeDelta).toBeGreaterThan(20);
+
+  await page.locator('#clean-force-btn').click();
+  await expect(hydrolysisRow).toHaveClass(/reaction-active/);
+  await expect.poll(async () => forceReactionPreviewHorizontalDelta(page)).toBeGreaterThan(20);
+});
+
+test('force-mode reaction preview rotation keeps the reaction arrow visible', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'O=C(O)C1=C2C=CCC2C=C1');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toHaveText('⬡ 2D Structure');
+
+  await page.getByRole('button', { name: 'Reactions' }).click();
+  const hydrogenationRow = page.locator('#reaction-body tr').filter({ hasText: 'Alkene Hydrogenation' }).first();
+  await expect(hydrogenationRow).toBeVisible();
+  await hydrogenationRow.click();
+  await expect(hydrogenationRow).toHaveClass(/reaction-active/);
+  await expect(page.locator('g.reaction-preview-arrow')).toHaveCount(1);
+
+  const rotateButton = page.locator('#force-rotate-cw');
+  const box = await rotateButton.boundingBox();
+  expect(box).not.toBeNull();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+
+  let minArrowCount = Infinity;
+  for (let i = 0; i < 25; i++) {
+    await page.waitForTimeout(80);
+    minArrowCount = Math.min(minArrowCount, await page.locator('g.reaction-preview-arrow').count());
+  }
+  await page.mouse.up();
+
+  expect(minArrowCount).toBe(1);
+});
+
 test('undoing a force-mode molecule change still allows switching back to a visible 2d structure', async ({ page }) => {
   await page.goto('/index.html');
 
@@ -1880,10 +2337,7 @@ test('bond drawer selection updates the active option, main tool icon, and colla
       page.evaluate(() => {
         const mainButton = document.getElementById('draw-bond-btn');
         const selectedButton = document.getElementById('draw-bond-type-double');
-        return (
-          (mainButton?.innerHTML ?? '') === (selectedButton?.innerHTML ?? '') &&
-          !(document.getElementById('draw-tools')?.classList.contains('drawer-open') ?? true)
-        );
+        return (mainButton?.innerHTML ?? '') === (selectedButton?.innerHTML ?? '') && !(document.getElementById('draw-tools')?.classList.contains('drawer-open') ?? true);
       })
     )
     .toBe(true);
@@ -1983,16 +2437,47 @@ test('charge mode suppresses native contextmenu on right click in the live app',
   await atomHit.click({ button: 'right' });
 
   await expect.poll(() => page.evaluate(() => window._getMolSmiles?.() ?? null)).toBe('[CH3-]');
-  await expect.poll(() => page.evaluate(() => ({
-    bodyHandler: typeof document.body?.oncontextmenu,
-    docElHandler: typeof document.documentElement?.oncontextmenu,
-    docHandler: typeof document.oncontextmenu,
-    windowHandler: typeof window.oncontextmenu
-  }))).toMatchObject({
-    bodyHandler: 'function',
-    docElHandler: 'function',
-    docHandler: 'function',
-    windowHandler: 'function'
+  await expect
+    .poll(() =>
+      page.evaluate(() => ({
+        bodyHandler: typeof document.body?.oncontextmenu,
+        docElHandler: typeof document.documentElement?.oncontextmenu,
+        docHandler: typeof document.oncontextmenu,
+        windowHandler: typeof window.oncontextmenu
+      }))
+    )
+    .toMatchObject({
+      bodyHandler: 'function',
+      docElHandler: 'function',
+      docHandler: 'function',
+      windowHandler: 'function'
+    });
+});
+
+test('the molecule plot suppresses native contextmenu even outside charge mode', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'CCO');
+
+  const suppression = await page.evaluate(() => {
+    const plot = document.getElementById('plot');
+    if (!plot) {
+      return null;
+    }
+    const event = new MouseEvent('contextmenu', {
+      bubbles: true,
+      cancelable: true,
+      button: 2
+    });
+    const dispatchResult = plot.dispatchEvent(event);
+    return {
+      defaultPrevented: event.defaultPrevented,
+      dispatchResult
+    };
+  });
+
+  expect(suppression).toEqual({
+    defaultPrevented: true,
+    dispatchResult: false
   });
 });
 
@@ -2146,9 +2631,7 @@ test('selection drag can start in the blank strip beside the draw toolbar', asyn
         if (!rect) {
           return false;
         }
-        return getComputedStyle(rect).display !== 'none' &&
-          Number(rect.getAttribute('width') ?? 0) > 20 &&
-          Number(rect.getAttribute('height') ?? 0) > 20;
+        return getComputedStyle(rect).display !== 'none' && Number(rect.getAttribute('width') ?? 0) > 20 && Number(rect.getAttribute('height') ?? 0) > 20;
       })
     )
     .toBe(true);
@@ -2169,11 +2652,7 @@ test('2D cobalt wedge tip clears the source Co label', async ({ page }) => {
       return null;
     }
 
-    const tip = (wedge.getAttribute('points') ?? '')
-      .trim()
-      .split(/\s+/)[0]
-      .split(',')
-      .map(Number);
+    const tip = (wedge.getAttribute('points') ?? '').trim().split(/\s+/)[0].split(',').map(Number);
     const svg = wedge.ownerSVGElement;
     const svgPoint = svg.createSVGPoint();
     svgPoint.x = tip[0];
@@ -2188,11 +2667,7 @@ test('2D cobalt wedge tip clears the source Co label', async ({ page }) => {
     };
 
     return {
-      inside:
-        screenPoint.x >= paddedRect.left &&
-        screenPoint.x <= paddedRect.right &&
-        screenPoint.y >= paddedRect.top &&
-        screenPoint.y <= paddedRect.bottom
+      inside: screenPoint.x >= paddedRect.left && screenPoint.x <= paddedRect.right && screenPoint.y >= paddedRect.top && screenPoint.y <= paddedRect.bottom
     };
   });
 
@@ -2245,6 +2720,132 @@ test('renders projected cobalt wedge and dash overlays when loaded by Enter whil
   const data = await forceStereoOverlayCounts(page);
   await expect(data.wedgeCount).toBeGreaterThan(0);
   await expect(data.dashLineCount).toBeGreaterThan(0);
+});
+
+test('force mode can flip a stereochemical hydrogen bond between wedge and dash', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'C[C@H](F)Cl');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+  await page.locator('#draw-bond-btn').click();
+
+  const before = await forceStereoOverlayCounts(page);
+  expect(before.wedgeCount + before.dashLineCount).toBeGreaterThan(0);
+  const beforeSmiles = await page.evaluate(() => window._getMolSmiles?.() ?? null);
+  expect(beforeSmiles).toContain('@');
+
+  if (before.wedgeCount > 0) {
+    await page.locator('#draw-bond-type-dash').click();
+  } else {
+    await page.locator('#draw-bond-type-wedge').click();
+  }
+
+  const hydrogenBondBox = await page.evaluate(() => {
+    const circles = Array.from(document.querySelectorAll('circle.node'));
+    const labels = Array.from(document.querySelectorAll('text.atom-symbol'));
+    const hydrogenIndex = labels.findIndex(label => (label.textContent ?? '').trim() === 'H');
+    if (hydrogenIndex < 0) {
+      return null;
+    }
+    const hydrogenRect = circles[hydrogenIndex]?.getBoundingClientRect?.();
+    if (!hydrogenRect) {
+      return null;
+    }
+    const hx = hydrogenRect.left + hydrogenRect.width / 2;
+    const hy = hydrogenRect.top + hydrogenRect.height / 2;
+    let best = null;
+    let bestDistance = Infinity;
+    for (const target of document.querySelectorAll('line.bond-hover-target')) {
+      const rect = target.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const distance = Math.hypot(cx - hx, cy - hy);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = {
+          x: cx,
+          y: cy
+        };
+      }
+    }
+    return best;
+  });
+
+  expect(hydrogenBondBox).toBeTruthy();
+  await page.mouse.click(hydrogenBondBox.x, hydrogenBondBox.y);
+
+  if (before.wedgeCount > 0) {
+    await expect
+      .poll(async () => {
+        const after = await forceStereoOverlayCounts(page);
+        return after.wedgeCount === 0 && after.dashLineCount > 0;
+      })
+      .toBe(true);
+  } else {
+    await expect
+      .poll(async () => {
+        const after = await forceStereoOverlayCounts(page);
+        return after.wedgeCount > 0 && after.dashLineCount === 0;
+      })
+      .toBe(true);
+  }
+
+  await expect.poll(() => page.evaluate(() => window._getMolSmiles?.() ?? null)).not.toBe(beforeSmiles);
+});
+
+test('force mode can clear a stereochemical hydrogen bond back to a single line', async ({ page }) => {
+  await page.goto('/index.html');
+  await loadSmiles(page, 'C[C@H](F)Cl');
+  await page.locator('#toggle-btn').click();
+  await expect(page.locator('#toggle-btn')).toContainText('2D');
+
+  const before = await forceStereoOverlayCounts(page);
+  expect(before.wedgeCount + before.dashLineCount).toBeGreaterThan(0);
+
+  const hydrogenBondBox = await page.evaluate(() => {
+    const circles = Array.from(document.querySelectorAll('circle.node'));
+    const labels = Array.from(document.querySelectorAll('text.atom-symbol'));
+    const hydrogenIndex = labels.findIndex(label => (label.textContent ?? '').trim() === 'H');
+    if (hydrogenIndex < 0) {
+      return null;
+    }
+    const hydrogenRect = circles[hydrogenIndex]?.getBoundingClientRect?.();
+    if (!hydrogenRect) {
+      return null;
+    }
+    const hx = hydrogenRect.left + hydrogenRect.width / 2;
+    const hy = hydrogenRect.top + hydrogenRect.height / 2;
+    let best = null;
+    let bestDistance = Infinity;
+    for (const target of document.querySelectorAll('line.bond-hover-target')) {
+      const rect = target.getBoundingClientRect();
+      const cx = rect.left + rect.width / 2;
+      const cy = rect.top + rect.height / 2;
+      const distance = Math.hypot(cx - hx, cy - hy);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = {
+          x: cx,
+          y: cy
+        };
+      }
+    }
+    return best;
+  });
+
+  expect(hydrogenBondBox).toBeTruthy();
+
+  await page.locator('#draw-bond-btn').click();
+  await page.locator('#draw-bond-type-single').click();
+  await page.mouse.click(hydrogenBondBox.x, hydrogenBondBox.y);
+
+  await expect
+    .poll(async () => {
+      const after = await forceStereoOverlayCounts(page);
+      return after.wedgeCount === 0 && after.dashLineCount === 0;
+    })
+    .toBe(true);
+  await expect.poll(() => page.evaluate(() => window._getMolSmiles?.() ?? null)).not.toContain('@');
 });
 
 test('wedge display only changes exported stereochemistry for a real chiral center', async ({ page }) => {

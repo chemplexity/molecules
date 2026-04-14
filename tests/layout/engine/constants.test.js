@@ -61,6 +61,7 @@ describe('layout/engine/constants', () => {
       maxSevereOverlapCount: 0
     });
     assert.deepEqual(BRIDGE_PROJECTION_FACTORS, {
+      maxProjectedPathCount: 12,
       singleAtomClampMarginFactor: 0.35,
       layerSpacingFactor: 0.45,
       singleAtomBaseHeightFactor: 0.9,
@@ -73,13 +74,7 @@ describe('layout/engine/constants', () => {
       ringSystemCount: 10,
       blockCount: 16
     });
-    assert.deepEqual(LAYOUT_PROFILES, [
-      'organic-publication',
-      'macrocycle',
-      'organometallic',
-      'large-molecule',
-      'reaction-fragment'
-    ]);
+    assert.deepEqual(LAYOUT_PROFILES, ['organic-publication', 'macrocycle', 'organometallic', 'large-molecule', 'reaction-fragment']);
   });
 
   it('freezes the exported defaults and role orderings', () => {

@@ -232,16 +232,7 @@ describe('interaction runtime bootstrap', () => {
       { factories, depBuilders }
     );
 
-    assert.deepEqual(created, [
-      'navigation',
-      'selection',
-      'editing',
-      'drag',
-      'preview',
-      'commit',
-      'primitive-selection',
-      'primitive-events'
-    ]);
+    assert.deepEqual(created, ['navigation', 'selection', 'editing', 'drag', 'preview', 'commit', 'primitive-selection', 'primitive-events']);
     assert.equal(runtime.selectionActions.deps.getEditingActions().kind, 'editing');
     assert.equal(runtime.selectionActions.deps.getDrawBondPreviewActions().kind, 'preview');
     assert.equal(runtime.drawBondCommitActions.deps.cancelPreview(), 'cancelled');

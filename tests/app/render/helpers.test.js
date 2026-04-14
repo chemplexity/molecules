@@ -1,11 +1,7 @@
 import { afterEach, describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  getDefaultRenderOptions,
-  getRenderOptions,
-  updateRenderOptions
-} from '../../../src/app/render/helpers.js';
+import { getDefaultRenderOptions, getRenderOptions, updateRenderOptions } from '../../../src/app/render/helpers.js';
 
 afterEach(() => {
   updateRenderOptions(getDefaultRenderOptions());

@@ -59,9 +59,6 @@ describe('createUndoManager', () => {
     const manager = createUndoManager({ getDocument: () => null });
     manager.initUndo(makeContext('ctx', []));
 
-    assert.throws(
-      () => manager.takeSnapshot({ snapshot: { id: 'snap' } }),
-      /takeSnapshot cannot clear reaction preview when an explicit snapshot is provided/
-    );
+    assert.throws(() => manager.takeSnapshot({ snapshot: { id: 'snap' } }), /takeSnapshot cannot clear reaction preview when an explicit snapshot is provided/);
   });
 });

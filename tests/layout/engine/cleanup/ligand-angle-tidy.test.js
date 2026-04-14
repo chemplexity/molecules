@@ -32,10 +32,12 @@ describe('layout/engine/cleanup/ligand-angle-tidy', () => {
     const metalPosition = distortedCoords.get('Pt1');
     const ligandPosition = distortedCoords.get(ligandAtomId);
     const ligandDistance = distance(metalPosition, ligandPosition);
-    const distortedAngle = angleOf({
-      x: ligandPosition.x - metalPosition.x,
-      y: ligandPosition.y - metalPosition.y
-    }) + (Math.PI / 9);
+    const distortedAngle =
+      angleOf({
+        x: ligandPosition.x - metalPosition.x,
+        y: ligandPosition.y - metalPosition.y
+      }) +
+      Math.PI / 9;
 
     distortedCoords.set(ligandAtomId, {
       x: metalPosition.x + fromAngle(distortedAngle, ligandDistance).x,

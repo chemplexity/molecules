@@ -6,6 +6,7 @@ import { createLayoutGraph } from './model/layout-graph.js';
 import { resolvePolicy } from './standards/profile-policy.js';
 import { layoutSupportedComponents } from './placement/component-layout.js';
 import { applyLabelClearance } from './cleanup/label-clearance.js';
+import { runBridgedBondTidy } from './cleanup/bridged-bond-tidy.js';
 import { runLigandAngleTidy } from './cleanup/ligand-angle-tidy.js';
 import { runRingPerimeterCorrection } from './cleanup/ring-perimeter-correction.js';
 import { tidySymmetry } from './cleanup/symmetry-tidy.js';
@@ -26,9 +27,7 @@ import { buildScaffoldPlan } from './model/scaffold-plan.js';
  * @returns {number} Current time in milliseconds.
  */
 function nowMs() {
-  return typeof globalThis.performance?.now === 'function'
-    ? globalThis.performance.now()
-    : Date.now();
+  return typeof globalThis.performance?.now === 'function' ? globalThis.performance.now() : Date.now();
 }
 
 /**
@@ -202,12 +201,27 @@ function createTimingState(enabled) {
  */
 function runPostCleanupHooks(layoutGraph, inputCoords, policy, options) {
   const hookRunners = new Map([
-    ['ring-perimeter-correction', coords => runRingPerimeterCorrection(layoutGraph, coords, {
-      bondLength: options.bondLength
-    })],
-    ['ligand-angle-tidy', coords => runLigandAngleTidy(layoutGraph, coords, {
-      bondLength: options.bondLength
-    })]
+    [
+      'ring-perimeter-correction',
+      coords =>
+        runRingPerimeterCorrection(layoutGraph, coords, {
+          bondLength: options.bondLength
+        })
+    ],
+    [
+      'bridged-bond-tidy',
+      coords =>
+        runBridgedBondTidy(layoutGraph, coords, {
+          bondLength: options.bondLength
+        })
+    ],
+    [
+      'ligand-angle-tidy',
+      coords =>
+        runLigandAngleTidy(layoutGraph, coords, {
+          bondLength: options.bondLength
+        })
+    ]
   ]);
   let coords = inputCoords;
   let hookNudges = 0;
@@ -273,15 +287,28 @@ function runCleanupPhase(layoutGraph, placement, policy, normalizedOptions, timi
   const postCleanup = runPostCleanupHooks(layoutGraph, stereoCleanup.coords, policy, {
     bondLength: normalizedOptions.bondLength
   });
+  const postHookCleanup =
+    postCleanup.hookNudges > 0
+      ? runUnifiedCleanup(layoutGraph, postCleanup.coords, {
+          maxPasses: 1,
+          epsilon: normalizedOptions.bondLength * 0.001,
+          bondLength: normalizedOptions.bondLength
+        })
+      : {
+          coords: postCleanup.coords,
+          passes: 0,
+          improvement: 0,
+          overlapMoves: 0
+        };
   if (timingState) {
     timingState.cleanupMs = nowMs() - cleanupStart;
   }
 
   return {
-    coords: postCleanup.coords,
-    passes: cleanupPass.passes,
-    improvement: cleanupPass.improvement,
-    overlapMoves: cleanupPass.overlapMoves,
+    coords: postHookCleanup.coords,
+    passes: cleanupPass.passes + postHookCleanup.passes,
+    improvement: cleanupPass.improvement + postHookCleanup.improvement,
+    overlapMoves: cleanupPass.overlapMoves + postHookCleanup.overlapMoves,
     labelNudges: labelClearance.nudges,
     symmetrySnaps: symmetryTidy.snappedCount,
     junctionSnaps: symmetryTidy.junctionSnapCount,
@@ -302,16 +329,17 @@ function runStereoPhase(molecule, layoutGraph, coords, timingState = null) {
   const stereoStart = timingState ? nowMs() : 0;
   const ez = inspectEZStereo(layoutGraph, coords);
   const wedges = pickWedgeAssignments(layoutGraph, coords);
-  const ringDependency = layoutGraph.rings.length > 0
-    ? inspectRingDependency(molecule)
-    : {
-      ok: true,
-      requiresDedicatedRingEngine: false,
-      suspiciousSystemCount: 0,
-      systems: [],
-      rings: [],
-      connections: []
-    };
+  const ringDependency =
+    layoutGraph.rings.length > 0
+      ? inspectRingDependency(molecule)
+      : {
+          ok: true,
+          requiresDedicatedRingEngine: false,
+          suspiciousSystemCount: 0,
+          systems: [],
+          rings: [],
+          connections: []
+        };
   const stereo = {
     ezCheckedBondCount: ez.checkedBondCount,
     ezResolvedBondCount: ez.resolvedBondCount,
@@ -346,20 +374,7 @@ function runStereoPhase(molecule, layoutGraph, coords, timingState = null) {
  * @param {{enabled: boolean, startTime: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null} [timingState] - Optional timing accumulator.
  * @returns {object} Final pipeline result.
  */
-function buildPipelineResult(
-  molecule,
-  coords,
-  layoutGraph,
-  normalizedOptions,
-  profile,
-  familySummary,
-  policy,
-  placement,
-  cleanup,
-  ringDependency,
-  stereo,
-  timingState = null
-) {
+function buildPipelineResult(molecule, coords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState = null) {
   const auditStart = timingState ? nowMs() : 0;
   const audit = auditLayout(layoutGraph, coords, {
     bondLength: normalizedOptions.bondLength,
@@ -376,11 +391,7 @@ function buildPipelineResult(
     ringDependency,
     policy
   });
-  const stage = placement.placedComponentCount === 0
-    ? 'topology-ready'
-    : placement.unplacedComponentCount === 0
-      ? 'coordinates-ready'
-      : 'partial-coordinates';
+  const stage = placement.placedComponentCount === 0 ? 'topology-ready' : placement.unplacedComponentCount === 0 ? 'coordinates-ready' : 'partial-coordinates';
 
   return {
     molecule,
@@ -418,15 +429,15 @@ function buildPipelineResult(
       qualityReport,
       ...(timingState
         ? {
-          timing: {
-            totalMs: nowMs() - timingState.startTime,
-            placementMs: timingState.placementMs,
-            cleanupMs: timingState.cleanupMs,
-            labelClearanceMs: timingState.labelClearanceMs,
-            stereoMs: timingState.stereoMs,
-            auditMs: timingState.auditMs
+            timing: {
+              totalMs: nowMs() - timingState.startTime,
+              placementMs: timingState.placementMs,
+              cleanupMs: timingState.cleanupMs,
+              labelClearanceMs: timingState.labelClearanceMs,
+              stereoMs: timingState.stereoMs,
+              auditMs: timingState.auditMs
+            }
           }
-        }
         : {})
     }
   };
@@ -491,12 +502,7 @@ export function runPipeline(molecule, options = {}) {
   const profile = resolveProfile(normalizedOptions.profile);
   if (isEmptyLayoutInput(molecule)) {
     const atomCount = moleculeAtomCount(molecule);
-    return createEmptyPipelineResult(
-      molecule,
-      normalizedOptions,
-      profile,
-      atomCount === 0 ? 'empty-molecule' : 'invalid-molecule'
-    );
+    return createEmptyPipelineResult(molecule, normalizedOptions, profile, atomCount === 0 ? 'empty-molecule' : 'invalid-molecule');
   }
   const layoutGraph = createLayoutGraph(molecule, normalizedOptions);
   const familySummary = classifyFamily(layoutGraph);
@@ -515,18 +521,5 @@ export function runPipeline(molecule, options = {}) {
     coords.set(atomId, position);
   }
   const { ringDependency, stereo } = runStereoPhase(molecule, layoutGraph, coords, timingState);
-  return buildPipelineResult(
-    molecule,
-    coords,
-    layoutGraph,
-    normalizedOptions,
-    profile,
-    familySummary,
-    policy,
-    placement,
-    cleanup,
-    ringDependency,
-    stereo,
-    timingState
-  );
+  return buildPipelineResult(molecule, coords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState);
 }

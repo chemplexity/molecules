@@ -91,8 +91,8 @@ export function validateTemplateGeometry(template, bondLength = 1.5) {
   const maxSevereOverlapCount = validation.maxSevereOverlapCount ?? Infinity;
 
   const coverageOk = summary.coordCount === summary.atomCount && summary.missingAtomIds.length === 0 && summary.extraCoordIds.length === 0;
-  const minBondOk = Number.isFinite(summary.minBondLength) && summary.minBondLength >= (bondLength * minBondLengthFactor);
-  const maxBondOk = Number.isFinite(summary.maxBondLength) && summary.maxBondLength <= (bondLength * maxBondLengthFactor);
+  const minBondOk = Number.isFinite(summary.minBondLength) && summary.minBondLength >= bondLength * minBondLengthFactor;
+  const maxBondOk = Number.isFinite(summary.maxBondLength) && summary.maxBondLength <= bondLength * maxBondLengthFactor;
   const meanDeviationOk = Number.isFinite(summary.meanBondLengthDeviation) && summary.meanBondLengthDeviation <= maxMeanDeviation;
   const overlapOk = summary.severeOverlapCount <= maxSevereOverlapCount;
 

@@ -1,11 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  computeFusedAxis,
-  orientCoordsHorizontally,
-  rebuildRingCenters
-} from '../../../../src/layout/engine/scaffold/orientation.js';
+import { computeFusedAxis, orientCoordsHorizontally, rebuildRingCenters } from '../../../../src/layout/engine/scaffold/orientation.js';
 import { computeBounds } from '../../../../src/layout/engine/geometry/bounds.js';
 
 describe('layout/engine/scaffold/orientation', () => {
@@ -15,7 +11,7 @@ describe('layout/engine/scaffold/orientation', () => {
       [1, { x: 1, y: 1 }]
     ]);
     const axis = computeFusedAxis(ringCenters);
-    assert.ok(Math.abs(axis - (Math.PI / 4)) < 0.1);
+    assert.ok(Math.abs(axis - Math.PI / 4) < 0.1);
 
     const coords = new Map([
       ['a0', { x: -1, y: -1 }],
@@ -34,14 +30,17 @@ describe('layout/engine/scaffold/orientation', () => {
     ]);
 
     const axis = computeFusedAxis(ringCenters);
-    assert.ok(Math.abs(axis - (Math.PI / 4)) < 0.1);
+    assert.ok(Math.abs(axis - Math.PI / 4) < 0.1);
   });
 
   it('rebuilds ring centers from rotated coordinates', () => {
-    const centers = rebuildRingCenters([{ id: 1, atomIds: ['a0', 'a1'] }], new Map([
-      ['a0', { x: -1, y: 0 }],
-      ['a1', { x: 1, y: 0 }]
-    ]));
+    const centers = rebuildRingCenters(
+      [{ id: 1, atomIds: ['a0', 'a1'] }],
+      new Map([
+        ['a0', { x: -1, y: 0 }],
+        ['a1', { x: 1, y: 0 }]
+      ])
+    );
     assert.deepEqual(centers.get(1), { x: 0, y: 0 });
   });
 
