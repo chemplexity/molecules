@@ -64,7 +64,7 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
     coords: kkSeeds.coords,
     pinnedAtomIds: kkSeeds.pinnedAtomIds
   });
-  if (!kkResult.ok) {
+  if (kkResult.coords.size === 0) {
     return null;
   }
 

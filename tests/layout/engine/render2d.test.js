@@ -57,6 +57,28 @@ describe('layout/engine/render2d', () => {
     assert.match(rendered.svgContent, /<rect /);
   });
 
+  it('renders rough bridged fallback layouts instead of dropping the molecule entirely', () => {
+    const smiles = 'OCC[C@H]1C[C@H](O)[C@@H](O)[C@@]2(Cc3ccccc3CCO2)O1';
+    const layoutResult = generateCoords(parseSMILES(smiles));
+    const rendered = renderMolSVGFromSMILES(smiles);
+
+    assert.equal(layoutResult.metadata.stage, 'coordinates-ready');
+    assert.ok(rendered, 'expected a rough bridged fallback render');
+    assert.match(rendered.svgContent, /<line /);
+  });
+
+  it('renders partial mixed-family layouts when a secondary ring system cannot be fully placed', () => {
+    const smiles =
+      'CC[C@H](C)[C@@H]1O[C@]2(CC[C@@H]1C)C[C@H]3C[C@H](C\\C=C(/C)\\[C@@H](O[C@H]4C[C@H](OC)[C@H](O[C@H]5C[C@H](OC)[C@H](O)[C@H](C)O5)[C@H](C)O4)[C@@H](C)\\C=C\\C=C6CO[C@@H]7[C@@H](O)C(=C[C@H](C(=O)O3)[C@@]67O)C)O2';
+    const layoutResult = generateCoords(parseSMILES(smiles), { suppressH: true });
+    const rendered = renderMolSVGFromSMILES(smiles);
+
+    assert.equal(layoutResult.metadata.stage, 'partial-coordinates');
+    assert.ok(layoutResult.coords.size > 0, 'expected partial coordinates to be preserved');
+    assert.ok(rendered, 'expected a partial render instead of null');
+    assert.match(rendered.svgContent, /<line /);
+  });
+
   it('does not mutate hidden stereo hydrogen coordinates while rendering', () => {
     const molecule = parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O');
     const layoutResult = generateCoords(molecule);

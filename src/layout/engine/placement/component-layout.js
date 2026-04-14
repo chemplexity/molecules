@@ -141,6 +141,24 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
       : layoutGraph;
     const placement = layoutComponent(componentGraph, component);
     if (!placement.supported) {
+      if (placement.coords.size > 0) {
+        componentPlacements.push({
+          componentId: component.id,
+          atomIds: placement.atomIds,
+          coords: placement.coords,
+          anchored: false,
+          role: component.role,
+          heavyAtomCount: component.heavyAtomCount,
+          netCharge: component.netCharge,
+          containsMetal: componentContainsMetal(layoutGraph, component)
+        });
+        placedComponentCount++;
+        unplacedComponentCount++;
+        placedFamilies.push(placement.family);
+        mergeBondValidationClasses(bondValidationClasses, placement.bondValidationClasses, { overwrite: false });
+        displayAssignments.push(...(placement.displayAssignments ?? []));
+        continue;
+      }
       unplacedComponentCount++;
       continue;
     }
