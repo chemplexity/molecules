@@ -17,7 +17,7 @@ import { inspectEZStereo } from './stereo/ez.js';
 import { enforceAcyclicEZStereo } from './stereo/enforcement.js';
 import { pickWedgeAssignments } from './stereo/wedge-selection.js';
 import { inspectRingDependency } from './topology/ring-dependency.js';
-import { exceedsLargeMoleculeThreshold } from './topology/large-blocks.js';
+import { exceedsLargeComponentThreshold, exceedsLargeMoleculeThreshold } from './topology/large-blocks.js';
 import { findMacrocycleRings } from './topology/macrocycles.js';
 import { buildScaffoldPlan } from './model/scaffold-plan.js';
 
@@ -457,7 +457,9 @@ export function classifyFamily(layoutGraph) {
     }
   }
   const hasNonRingHeavyAtoms = [...layoutGraph.atoms.values()].some(atom => atom.element !== 'H' && !ringAtomIds.has(atom.id));
-  const exceedsLargeThreshold = exceedsLargeMoleculeThreshold(layoutGraph.traits, threshold, layoutGraph.components.length);
+  const exceedsLargeThreshold =
+    exceedsLargeMoleculeThreshold(layoutGraph.traits, threshold, layoutGraph.components.length)
+    || layoutGraph.components.some(component => exceedsLargeComponentThreshold(layoutGraph, component));
   const hasMacrocycle = findMacrocycleRings(layoutGraph.rings).length > 0;
 
   let primaryFamily = 'acyclic';

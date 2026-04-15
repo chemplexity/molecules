@@ -5,6 +5,31 @@ import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { projectBridgePaths } from './bridge-projection.js';
 import { placeTemplateCoords } from '../scaffold/template-placement.js';
 
+const BRIDGED_KK_THRESHOLD = 0.2;
+const BRIDGED_KK_MAX_ITERATIONS = 1000;
+const BRIDGED_KK_MAX_INNER_ITERATIONS = 20;
+const BRIDGED_FAST_KK_ATOM_LIMIT = 24;
+
+/**
+ * Returns tuned KK options for small unmatched bridged systems.
+ * Larger dense cages already converge quickly with the default solver tolerances,
+ * while some smaller mixed bridged systems spend a long time failing to reach
+ * the stricter default thresholds.
+ * @param {string[]} atomIds - Bridged-system atom IDs.
+ * @returns {object} Optional KK overrides.
+ */
+function bridgedKamadaKawaiOptions(atomIds) {
+  if (atomIds.length > BRIDGED_FAST_KK_ATOM_LIMIT) {
+    return {};
+  }
+  return {
+    threshold: BRIDGED_KK_THRESHOLD,
+    innerThreshold: BRIDGED_KK_THRESHOLD,
+    maxIterations: BRIDGED_KK_MAX_ITERATIONS,
+    maxInnerIterations: BRIDGED_KK_MAX_INNER_ITERATIONS
+  };
+}
+
 /**
  * Builds the KK seed map and fixed pin list for a bridged component from the
  * current refinement/fixed-coordinate context.
@@ -62,7 +87,8 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
   const kkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {
     bondLength,
     coords: kkSeeds.coords,
-    pinnedAtomIds: kkSeeds.pinnedAtomIds
+    pinnedAtomIds: kkSeeds.pinnedAtomIds,
+    ...bridgedKamadaKawaiOptions(atomIds)
   });
   if (kkResult.coords.size === 0) {
     return null;

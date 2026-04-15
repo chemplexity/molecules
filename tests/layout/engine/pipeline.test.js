@@ -556,6 +556,22 @@ describe('layout/engine/pipeline', () => {
     assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
   });
 
+  it('routes chain-heavy peptide-like mixed components through the large-molecule path', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'CCNC(=O)[C@@H]1CCCN1C(=O)[C@H](CCCN=C(N)N)NC(=O)[C@H](CC(C)C)NC(=O)[C@@H](CC(C)C)N(C)C(=O)[C@H](Cc2ccc(O)cc2)NC(=O)[C@H](CO)NC(=O)[C@H](Cc3c[nH]c4ccccc34)NC(=O)[C@H](Cc5c[nH]cn5)NC(=O)[C@@H]6CCC(=O)N6'
+      ),
+      {
+        suppressH: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+  });
+
   it('reports preserved disconnected components during refinement-aware pipeline runs', () => {
     const result = runPipeline(makeDisconnectedEthanes(), {
       existingCoords: new Map([

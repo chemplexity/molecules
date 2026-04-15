@@ -4,15 +4,13 @@ import { alignCoordsToFixed } from '../geometry/transforms.js';
 import { layoutLargeMoleculeFamily } from '../families/large-molecule.js';
 import { layoutOrganometallicFamily } from '../families/organometallic.js';
 import { assignBondValidationClass, mergeBondValidationClasses } from './bond-validation.js';
+import { exceedsLargeComponentThreshold } from '../topology/large-blocks.js';
 import { layoutAtomSlice } from './atom-slice.js';
 import { packComponentPlacements } from './fragment-packing.js';
 import { buildComponentFixedCoords, buildRefinementContext, canPreserveComponentPlacement, preserveComponentPlacement } from './refinement.js';
 
 function isLargeComponent(layoutGraph, component) {
-  const threshold = layoutGraph.options.largeMoleculeThreshold;
-  const heavyAtomCount = component.atomIds.filter(atomId => layoutGraph.sourceMolecule.atoms.get(atomId)?.name !== 'H').length;
-  const ringSystemCount = layoutGraph.ringSystems.filter(ringSystem => ringSystem.atomIds.every(atomId => component.atomIds.includes(atomId))).length;
-  return heavyAtomCount > threshold.heavyAtomCount || ringSystemCount > threshold.ringSystemCount;
+  return exceedsLargeComponentThreshold(layoutGraph, component);
 }
 
 /**
