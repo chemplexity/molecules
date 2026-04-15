@@ -177,7 +177,7 @@ function clonePlacementState(placementState) {
     sumX: placementState.sumX,
     sumY: placementState.sumY,
     count: placementState.count,
-    trackedPositions: new Map([...placementState.trackedPositions.entries()].map(([atomId, position]) => [atomId, { ...position }]))
+    trackedPositions: new Map(placementState.trackedPositions)
   };
 }
 
@@ -191,7 +191,7 @@ function copyPlacementState(targetState, sourceState) {
   targetState.sumX = sourceState.sumX;
   targetState.sumY = sourceState.sumY;
   targetState.count = sourceState.count;
-  targetState.trackedPositions = new Map([...sourceState.trackedPositions.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  targetState.trackedPositions = new Map(sourceState.trackedPositions);
 }
 
 /**
@@ -1254,7 +1254,7 @@ function evaluateAnglePermutations(
 
   for (const angleSet of angleSets) {
     for (const permutation of childPermutations) {
-      const tempCoords = new Map([...coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+      const tempCoords = new Map(coords);
       const tempPlacementState = clonePlacementState(placementState);
       const assignedPlacements = angleSet.map((angle, index) => ({
         childAtomId: permutation[index].childAtomId,

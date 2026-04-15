@@ -139,21 +139,24 @@ export function buildAtomGrid(layoutGraph, coords, bondLength) {
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {number} bondLength - Target bond length.
  * @param {Iterable<string>} focusAtomIds - Atoms whose local neighborhood should be rescored.
+ * @param {{atomGrid?: AtomGrid|null}} [options] - Optional reused spatial grid built from coords.
  * @returns {number} Focused exploratory placement cost.
  */
-export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds) {
+export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds, options = {}) {
   const uniqueFocusAtomIds = [...new Set(focusAtomIds)].filter(atomId => coords.has(atomId) && isVisibleLayoutAtom(layoutGraph, atomId));
   if (uniqueFocusAtomIds.length === 0) {
     return 0;
   }
 
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
+  const atomGrid = options.atomGrid ?? (coords.size >= 32 ? buildAtomGrid(layoutGraph, coords, bondLength) : null);
   const seenPairs = new Set();
   let overlapPenalty = 0;
 
   for (const firstAtomId of uniqueFocusAtomIds) {
     const firstPosition = coords.get(firstAtomId);
-    for (const [secondAtomId, secondPosition] of coords) {
+    const candidateAtomIds = atomGrid ? atomGrid.queryRadius(firstPosition, threshold) : coords.keys();
+    for (const secondAtomId of candidateAtomIds) {
       if (secondAtomId === firstAtomId || !isVisibleLayoutAtom(layoutGraph, secondAtomId)) {
         continue;
       }
@@ -162,6 +165,10 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
         continue;
       }
       seenPairs.add(key);
+      const secondPosition = coords.get(secondAtomId);
+      if (!secondPosition) {
+        continue;
+      }
       const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
       if (distance >= threshold) {
         continue;

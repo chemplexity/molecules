@@ -9,6 +9,7 @@ import {
   detectCollapsedMacrocycles,
   findSevereOverlaps,
   measureBondLengthDeviation,
+  measureFocusedPlacementCost,
   measureLabelOverlap,
   measureLayoutState,
   measureLayoutCost,
@@ -89,6 +90,22 @@ describe('layout/engine/audit/invariants', () => {
 
     assert.equal(viaGrid, direct);
     assert.ok(queryCount > 0);
+  });
+
+  it('returns the same focused placement cost when backed by a spatial atom grid', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('C[C@](O)(CC(O)=O)CC(=O)SCCNC(=O)CCNC(=O)[C@H](O)C(C)(C)COP(O)(=O)OP(O)(=O)OC[C@H]1O[C@H]([C@H](O)[C@@H]1OP(O)(O)=O)N1C=NC2=C(N)N=CN=C12'),
+      { suppressH: true }
+    );
+    const result = runPipeline(graph.sourceMolecule, { suppressH: true });
+    const focusAtomIds = [...result.coords.keys()].slice(-18);
+
+    const direct = measureFocusedPlacementCost(graph, result.coords, graph.options.bondLength, focusAtomIds);
+    const viaGrid = measureFocusedPlacementCost(graph, result.coords, graph.options.bondLength, focusAtomIds, {
+      atomGrid: buildAtomGrid(graph, result.coords, graph.options.bondLength)
+    });
+
+    assert.equal(viaGrid, direct);
   });
 
   it('ignores hydrogen-only overlaps when suppressH is enabled', () => {
