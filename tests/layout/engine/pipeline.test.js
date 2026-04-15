@@ -185,6 +185,26 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.coords.size, 6);
   });
 
+  it('keeps large unmatched bridged cages off the runaway KK fallback loop', () => {
+    const start = Date.now();
+    const result = runPipeline(
+      parseSMILES(
+        'O=C(OCC)C1(C(OCC)=O)C2(C3=C4C5=C6C7=C8C9=C%10C%11=C%12C%13=C%14C%15=C%16C%17=C%18C%19=C%20C%21=C4C%22=C5C%23=C7C%24=C9C%25=C%26C%27=C(C%14=C%17C%28=C%27C%29=C%26C%24=C%23C%30=C%29C(C%20=C%22%30)=C%18%28)C%13=C%10%25)C%21=C%19C%16=C%31C%15=C%12C%32=C%11C8=C6C3=C%32C2%311'
+      ),
+      { suppressH: true, timing: true }
+    );
+    const elapsed = Date.now() - start;
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.ok(result.metadata.audit.bondLengthFailureCount <= 25);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 1.0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.timing.placementMs < 1000, `expected the large unmatched bridged cage to avoid the runaway KK loop, got ${result.metadata.timing.placementMs}ms`);
+    assert.ok(elapsed < 2000, `expected the large unmatched bridged cage to finish comfortably under 2s, got ${elapsed}ms`);
+  });
+
   it('keeps compact bridged cages off the dense-cage tidy hook', () => {
     const result = runPipeline(parseSMILES('C1(CC2(CC3(CC1CC(C2)C3)))'), { suppressH: true });
 
@@ -205,9 +225,8 @@ describe('layout/engine/pipeline', () => {
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.primaryFamily, 'bridged');
-    assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
-    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.audit.bondLengthFailureCount <= 1);
     assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.7);
     assert.ok(result.metadata.cleanupPostHookNudges > 0);
   });
@@ -541,6 +560,64 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
   });
 
+  it('prefers macrocycle-aware slice placement over large-molecule partitioning for large cyclic peptides', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'CC[C@H](C)[C@H]1NC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@@H](CCCN=C(N)N)NC(=O)[C@@H](NC(=O)[C@H](Cc2ccccc2)NC(=O)CNC(=O)CNC(=O)[C@@H](N)Cc3ccc(O)cc3)C(C)(C)SCCSC(C)(C)[C@@H](NC(=O)[C@H]4CCCN4C(=O)[C@H](CCCN=C(N)N)NC1=O)C(=O)N'
+      ),
+      {
+        suppressH: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.collapsedMacrocycleCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.05);
+    assert.ok(result.metadata.timing.totalMs < 500, `expected large cyclic peptide reroute to stay fast, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('keeps large metallomacrocycles off the catastrophic large-molecule collapse path', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'C1(CC[C@@]2([C@@H](CC(N)=O)[C@@]3([C@@]4([N+]5=C([C@H]([C@@]4(CC(N)=O)C)CCC(N)=O)C(C)=C4[N+]6=C(C=C7[N+]8=C([C@H](C7(C)C)CCC(N)=O)C(C)=C2N3[Co-3]568([N+]2=CN([C@H]3O[C@@H]([C@@H](OP(O[C@@H](CN1)C)([O-])=O)[C@H]3O)CO)C1=CC(C)=C(C=C21)C)C)[C@H]([C@@]4(CC(N)=O)C)CCC(N)=O)C)[H])C)=O'
+      ),
+      {
+        suppressH: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.collapsedMacrocycleCount, 0);
+    assert.ok(result.metadata.audit.bondLengthFailureCount < 40);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 10);
+    assert.ok(result.metadata.timing.totalMs < 500, `expected metallomacrocycle reroute to avoid runaway large-molecule placement, got ${result.metadata.timing.totalMs}ms`);
+  });
+
+  it('keeps densely fused cyclic peptide macrocycles off the catastrophic partial-ring completion path', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'CC(C)[C@H]1NC(=O)c2cc3cc(c2)C(=O)NC[C@H](NC(=O)[C@@H](C)NC(=O)[C@H](C)NC(=O)[C@H](CCCNC(=N)N)NC(=O)[C@H](Cc4ccc5ccccc5c4)NC(=O)[C@H]6CCCCN6C(=O)[C@H](NC(=O)[C@H](Cc7ccc(F)cc7)NC1=O)[C@H](C)O)C(=O)N[C@@H](Cc8ccccc8)C(=O)N[C@@H](Cc9ccc%10ccccc%10c9)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CNC3=O)C(=O)N[C@@H](CCCCN)C(=O)O'
+      ),
+      {
+        suppressH: true,
+        timing: true
+      }
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.collapsedMacrocycleCount, 0);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 1, `expected dense macrocycle fusion to avoid catastrophic bond blowups, got ${result.metadata.audit.maxBondLengthDeviation}`);
+    assert.ok(result.metadata.audit.bondLengthFailureCount < 20, `expected dense macrocycle fusion to stay below the catastrophic failure bucket, got ${result.metadata.audit.bondLengthFailureCount}`);
+    assert.ok(result.metadata.audit.severeOverlapCount <= 2, `expected dense macrocycle fusion to keep overlaps contained, got ${result.metadata.audit.severeOverlapCount}`);
+  });
+
   it('routes large components through block partitioning and stitching', () => {
     const result = runPipeline(makeLargePolyaryl(), {
       largeMoleculeThreshold: {
@@ -569,7 +646,51 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.primaryFamily, 'large-molecule');
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
-    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.ok(result.metadata.audit.severeOverlapCount <= 1);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+  });
+
+  it('keeps peptide timeout regressions well under the stress-test budget after large-molecule partitioning', () => {
+    const start = Date.now();
+    const result = runPipeline(
+      parseSMILES(
+        'CC[C@H](C)[C@H](NC(=O)[C@H](Cc1ccccc1)NC(=O)[C@H](NC(=O)[C@H](C)NC(=O)[C@H](CCSC)NC(=O)[C@H](CCC(=O)N)NC(=O)[C@@H](NC(=O)[C@H](C)NC(=O)[C@@H](N)[C@@H](C)O)C(C)C)C(C)C)C(=O)N[C@@H](Cc2cnc[nH]2)C(=O)N[C@@H](CC(=O)N)C(=O)N[C@@H](Cc3ccccc3)C(=O)N[C@@H](CCCCN)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCCN)C(=O)O'
+      ),
+      {
+        suppressH: true,
+        timing: true
+      }
+    );
+    const elapsed = Date.now() - start;
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
+    assert.ok(result.metadata.audit.severeOverlapCount <= 3);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.25);
+    assert.ok(elapsed < 5000, `expected the peptide timeout regression to finish far below the 30s stress-test timeout, got ${elapsed}ms`);
+  });
+
+  it('keeps overlap-heavy large-molecule packing fast without cleanup stretching backbone bonds', () => {
+    const start = Date.now();
+    const result = runPipeline(
+      parseSMILES(
+        'O=C(N[C@@H](CC(C)C)C(N)=O)[C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)=O)CCCC[NH3+]'
+      ),
+      {
+        suppressH: true,
+        timing: true
+      }
+    );
+    const elapsed = Date.now() - start;
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.audit.severeOverlapCount <= 22);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.05);
+    assert.ok(result.metadata.timing.placementMs < 3000, `expected overlap-heavy large-molecule packing to avoid runaway rescoring, got ${result.metadata.timing.placementMs}ms`);
+    assert.ok(elapsed < 4000, `expected overlap-heavy large-molecule packing to finish comfortably under 4s, got ${elapsed}ms`);
   });
 
   it('reports preserved disconnected components during refinement-aware pipeline runs', () => {

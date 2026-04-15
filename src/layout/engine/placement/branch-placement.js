@@ -2,8 +2,8 @@
 
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, length, perpLeft, sub } from '../geometry/vec2.js';
 import { countPointInPolygons } from '../geometry/polygon.js';
-import { measureLayoutCost } from '../audit/invariants.js';
-import { BRANCH_CLEARANCE_FLOOR_FACTOR } from '../constants.js';
+import { measureFocusedPlacementCost, measureLayoutCost } from '../audit/invariants.js';
+import { BRANCH_CLEARANCE_FLOOR_FACTOR, BRANCH_COMPLEXITY_LIMITS } from '../constants.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 
 const DISCRETE_BRANCH_ANGLES = Array.from({ length: 12 }, (_, index) => (index * Math.PI) / 6);
@@ -932,11 +932,13 @@ function isRingAnchor(layoutGraph, atomId) {
  * center tries to recursively score whole-subtree permutations.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {Set<string>} atomIdsToPlace - Slice participant IDs.
+ * @param {string} anchorAtomId - Center atom ID being evaluated.
  * @param {string[]} primaryNeighborIds - Heavy neighbors awaiting placement.
+ * @param {Array<{childAtomId: string, subtreeSize: number}>} [childDescriptors] - Child subtree descriptors.
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints.
  * @returns {boolean} True when greedy sibling placement is safer.
  */
-function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, primaryNeighborIds, branchConstraints = null) {
+function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anchorAtomId, primaryNeighborIds, childDescriptors = [], branchConstraints = null) {
   if (primaryNeighborIds.length < 2) {
     return true;
   }
@@ -944,10 +946,23 @@ function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, primaryNeig
   const heavyThreshold = layoutGraph?.options?.largeMoleculeThreshold?.heavyAtomCount ?? Number.MAX_SAFE_INTEGER;
   const hasMacrocycleBudgets = (branchConstraints?.angularBudgets?.size ?? 0) > 0;
   const greedyBudget = Math.max(48, Math.floor(heavyThreshold * 0.5));
+  const totalSubtreeSize = childDescriptors.reduce((sum, descriptor) => sum + descriptor.subtreeSize, 0);
+  const maxSubtreeSize = childDescriptors.reduce((max, descriptor) => Math.max(max, descriptor.subtreeSize), 0);
+  const largeSubtreeCount = childDescriptors.filter(
+    descriptor => descriptor.subtreeSize >= BRANCH_COMPLEXITY_LIMITS.subtreeFloor
+  ).length;
   if (participantCount > greedyBudget) {
     return true;
   }
   if (hasMacrocycleBudgets && participantCount > Math.max(24, Math.floor(greedyBudget * 0.5))) {
+    return true;
+  }
+  if (
+    !isRingAnchor(layoutGraph, anchorAtomId)
+    &&
+    primaryNeighborIds.length >= 4
+    && (maxSubtreeSize >= 12 || totalSubtreeSize >= 24 || largeSubtreeCount >= 3)
+  ) {
     return true;
   }
   return false;
@@ -981,19 +996,89 @@ function subtreeHeavyAtomCount(adjacency, layoutGraph, coords, rootAtomId, block
   return count;
 }
 
-function permutations(items) {
+function permutations(items, maxPermutations = Number.MAX_SAFE_INTEGER) {
   if (items.length <= 1) {
     return [items];
   }
   const result = [];
-  for (let index = 0; index < items.length; index++) {
-    const head = items[index];
-    const tail = items.slice(0, index).concat(items.slice(index + 1));
-    for (const permutation of permutations(tail)) {
-      result.push([head, ...permutation]);
+  const recurse = (prefix, remainingItems) => {
+    if (result.length >= maxPermutations) {
+      return;
+    }
+    if (remainingItems.length === 0) {
+      result.push(prefix);
+      return;
+    }
+    for (let index = 0; index < remainingItems.length; index++) {
+      recurse(prefix.concat([remainingItems[index]]), remainingItems.slice(0, index).concat(remainingItems.slice(index + 1)));
+      if (result.length >= maxPermutations) {
+        return;
+      }
+    }
+  };
+  recurse([], items);
+  return result;
+}
+
+function orderChildDescriptors(childDescriptors, canonicalAtomRank) {
+  return [...childDescriptors].sort((firstDescriptor, secondDescriptor) => {
+    if (secondDescriptor.subtreeSize !== firstDescriptor.subtreeSize) {
+      return secondDescriptor.subtreeSize - firstDescriptor.subtreeSize;
+    }
+    return compareCanonicalAtomIds(firstDescriptor.childAtomId, secondDescriptor.childAtomId, canonicalAtomRank);
+  });
+}
+
+function branchPermutationBudget(layoutGraph, anchorAtomId, childDescriptors, branchConstraints = null) {
+  if (childDescriptors.length <= 2) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  if (isRingAnchor(layoutGraph, anchorAtomId) && (branchConstraints?.angularBudgets?.size ?? 0) === 0) {
+    return Number.MAX_SAFE_INTEGER;
+  }
+  const totalSubtreeSize = childDescriptors.reduce((sum, descriptor) => sum + descriptor.subtreeSize, 0);
+  const maxSubtreeSize = childDescriptors.reduce((max, descriptor) => Math.max(max, descriptor.subtreeSize), 0);
+  const largeSubtreeCount = childDescriptors.filter(
+    descriptor => descriptor.subtreeSize >= BRANCH_COMPLEXITY_LIMITS.subtreeFloor
+  ).length;
+
+  if ((branchConstraints?.angularBudgets?.size ?? 0) > 0 && childDescriptors.length >= 3) {
+    return BRANCH_COMPLEXITY_LIMITS.highMaxPermutations;
+  }
+  if (childDescriptors.length >= 4) {
+    if (maxSubtreeSize >= 12 || totalSubtreeSize >= 24 || largeSubtreeCount >= 3) {
+      return BRANCH_COMPLEXITY_LIMITS.extremeMaxPermutations;
+    }
+    if (maxSubtreeSize >= 8 || totalSubtreeSize >= 16 || largeSubtreeCount >= 2) {
+      return BRANCH_COMPLEXITY_LIMITS.highMaxPermutations;
     }
   }
-  return result;
+  if (childDescriptors.length === 3) {
+    if (maxSubtreeSize >= 12 || totalSubtreeSize >= 18) {
+      return BRANCH_COMPLEXITY_LIMITS.highMaxPermutations;
+    }
+    if (maxSubtreeSize >= 8 || totalSubtreeSize >= 12) {
+      return BRANCH_COMPLEXITY_LIMITS.mediumMaxPermutations;
+    }
+  }
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function collectNewlyPlacedAtomIds(baseCoords, candidateCoords) {
+  const newlyPlacedAtomIds = [];
+  for (const atomId of candidateCoords.keys()) {
+    if (!baseCoords.has(atomId)) {
+      newlyPlacedAtomIds.push(atomId);
+    }
+  }
+  return newlyPlacedAtomIds;
+}
+
+function shouldUseFocusedArrangementCost(layoutGraph, coords, focusAtomIds = []) {
+  if (!layoutGraph || focusAtomIds.length === 0) {
+    return false;
+  }
+  return coords.size >= 24 || focusAtomIds.length >= 8;
 }
 
 function tetrahedralSpreadPenalty(layoutGraph, coords, atomId) {
@@ -1079,8 +1164,13 @@ function crossLikeHypervalentPenalty(layoutGraph, coords, atomId) {
   return penalty;
 }
 
-function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId) {
-  const layoutCost = layoutGraph ? measureLayoutCost(layoutGraph, coords, bondLength) : 0;
+function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAtomIds = []) {
+  const layoutCost =
+    !layoutGraph
+      ? 0
+      : shouldUseFocusedArrangementCost(layoutGraph, coords, focusAtomIds)
+        ? measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds)
+        : measureLayoutCost(layoutGraph, coords, bondLength);
   return layoutCost + tetrahedralSpreadPenalty(layoutGraph, coords, anchorAtomId) * 20 + crossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * 20;
 }
 
@@ -1158,7 +1248,8 @@ function evaluateAnglePermutations(
   angleSets,
   childDescriptors
 ) {
-  const childPermutations = permutations(childDescriptors);
+  const orderedChildDescriptors = orderChildDescriptors(childDescriptors, canonicalAtomRank);
+  const childPermutations = permutations(orderedChildDescriptors, branchPermutationBudget(layoutGraph, anchorAtomId, orderedChildDescriptors, branchConstraints));
   let bestPlacement = null;
 
   for (const angleSet of angleSets) {
@@ -1197,7 +1288,7 @@ function evaluateAnglePermutations(
         );
       }
 
-      const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId);
+      const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, collectNewlyPlacedAtomIds(coords, tempCoords));
       if (!bestPlacement || cost < bestPlacement.cost) {
         bestPlacement = {
           cost,
@@ -1223,7 +1314,8 @@ function chooseBatchAngleAssignments(
   bondLength,
   layoutGraph = null,
   branchConstraints = null,
-  depth = 0
+  depth = 0,
+  childDescriptors = null
 ) {
   const anchorPosition = coords.get(anchorAtomId);
   if (!anchorPosition || unplacedNeighborIds.length === 0 || depth > MAX_BRANCH_RECURSION_DEPTH) {
@@ -1231,7 +1323,7 @@ function chooseBatchAngleAssignments(
   }
 
   const angleSets = buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, unplacedNeighborIds, layoutGraph, branchConstraints);
-  const childDescriptors = unplacedNeighborIds.map(childAtomId => ({
+  const resolvedChildDescriptors = childDescriptors ?? unplacedNeighborIds.map(childAtomId => ({
     childAtomId,
     subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
   }));
@@ -1248,7 +1340,7 @@ function chooseBatchAngleAssignments(
     depth,
     anchorPosition,
     angleSets,
-    childDescriptors
+    resolvedChildDescriptors
   );
 
   if (!bestPlacement) {
@@ -1489,7 +1581,11 @@ function placeChildren(
     canonicalAtomRank
   );
   const { primaryNeighborIds, deferredNeighborIds } = splitDeferredLeafNeighbors(unplacedNeighbors, layoutGraph);
-  if (primaryNeighborIds.length >= 2 && !shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, primaryNeighborIds, branchConstraints)) {
+  const childDescriptors = primaryNeighborIds.map(childAtomId => ({
+    childAtomId,
+    subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
+  }));
+  if (primaryNeighborIds.length >= 2 && !shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anchorAtomId, primaryNeighborIds, childDescriptors, branchConstraints)) {
     chooseBatchAngleAssignments(
       adjacency,
       canonicalAtomRank,
@@ -1502,7 +1598,8 @@ function placeChildren(
       bondLength,
       layoutGraph,
       branchConstraints,
-      depth
+      depth,
+      childDescriptors
     );
   } else {
     placeNeighborSequence(

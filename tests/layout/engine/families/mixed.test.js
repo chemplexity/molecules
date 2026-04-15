@@ -169,6 +169,40 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(elapsed < 10000, `expected the mixed layout to finish comfortably under 10s, got ${elapsed}ms`);
   });
 
+  it('lays out nucleotide-like fused mixed scaffolds without timing out in branch placement', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('C[C@](O)(CC(O)=O)CC(=O)SCCNC(=O)CCNC(=O)[C@H](O)C(C)(C)COP(O)(=O)OP(O)(=O)OC[C@H]1O[C@H]([C@H](O)[C@@H]1OP(O)(O)=O)N1C=NC2=C(N)N=CN=C12'),
+      { suppressH: true }
+    );
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const start = Date.now();
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const elapsed = Date.now() - start;
+
+    assert.equal(result.family, 'mixed');
+    assert.equal(result.supported, true);
+    assert.equal(result.coords.size, result.atomIds.length);
+    assert.ok(elapsed < 4000, `expected the mixed nucleotide layout to stay comfortably below the stress-test budget, got ${elapsed}ms`);
+  });
+
+  it('lays out peptide-like isolated-ring mixed scaffolds without stalling local branch scoring', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('CC(C)C[C@H](NC(=O)[C@@H](NC(=O)[C@H](Cc1ccccc1)NC(=O)C)[C@@H](C)O)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](C)C(=O)N[C@@H](CC(=O)O)C(=O)N[C@@H](Cc2ccccc2)C(=O)O'),
+      { suppressH: true }
+    );
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const start = Date.now();
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const elapsed = Date.now() - start;
+
+    assert.equal(result.family, 'mixed');
+    assert.equal(result.supported, true);
+    assert.equal(result.coords.size, result.atomIds.length);
+    assert.ok(elapsed < 4500, `expected the mixed peptide layout to stay below the exploratory branch-search budget, got ${elapsed}ms`);
+  });
+
   it('keeps an ethynyl substituent pointing outward and linear from the ring', () => {
     const graph = createLayoutGraph(makePhenylacetylene());
     const component = graph.components[0];

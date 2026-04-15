@@ -7,6 +7,11 @@ import { ANGLE_EPSILON, IMPROVEMENT_EPSILON, NUMERIC_EPSILON } from '../constant
 const RIGID_SUBTREE_ROTATION_ANGLES = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12);
 const LARGE_RIGID_SUBTREE_COMPONENT_ATOM_COUNT = 24;
 const LARGE_RIGID_SUBTREE_SIZE = 6;
+const MAX_RIGID_DESCRIPTOR_OPTIONS_PER_ATOM = 4;
+
+function protectsLargeMoleculeBackbone(options) {
+  return options.protectLargeMoleculeBackbone === true;
+}
 
 function isFixedAtom(layoutGraph, atomId) {
   return layoutGraph.options.preserveFixed !== false && layoutGraph.fixedCoords.has(atomId);
@@ -70,6 +75,62 @@ export function collectRigidPendantRingSubtrees(layoutGraph) {
   return descriptorsByAtomId;
 }
 
+function rigidDescriptorKey(descriptor) {
+  return `${descriptor.anchorAtomId}|${descriptor.rootAtomId}|${descriptor.subtreeAtomIds.join(',')}`;
+}
+
+function rigidDescriptorsFromValue(value) {
+  if (!value) {
+    return [];
+  }
+  return Array.isArray(value) ? value : [value];
+}
+
+/**
+ * Merges cleanup rigid-subtree descriptor maps. Values may be single
+ * descriptors or arrays of descriptors per atom ID.
+ * @param {...Map<string, {anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}|Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>} descriptorMaps - Descriptor maps to merge.
+ * @returns {Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>} Merged descriptor map.
+ */
+export function mergeRigidSubtreesByAtomId(...descriptorMaps) {
+  const merged = new Map();
+
+  for (const descriptorMap of descriptorMaps) {
+    if (!(descriptorMap instanceof Map) || descriptorMap.size === 0) {
+      continue;
+    }
+
+    for (const [atomId, descriptorValue] of descriptorMap) {
+      const nextDescriptors = merged.get(atomId) ?? [];
+      const seenDescriptorKeys = new Set(nextDescriptors.map(rigidDescriptorKey));
+      for (const descriptor of rigidDescriptorsFromValue(descriptorValue)) {
+        const key = rigidDescriptorKey(descriptor);
+        if (seenDescriptorKeys.has(key)) {
+          continue;
+        }
+        nextDescriptors.push(descriptor);
+        seenDescriptorKeys.add(key);
+      }
+      nextDescriptors.sort((firstDescriptor, secondDescriptor) => {
+        if (firstDescriptor.subtreeAtomIds.length !== secondDescriptor.subtreeAtomIds.length) {
+          return firstDescriptor.subtreeAtomIds.length - secondDescriptor.subtreeAtomIds.length;
+        }
+        if (firstDescriptor.rootAtomId !== secondDescriptor.rootAtomId) {
+          return firstDescriptor.rootAtomId.localeCompare(secondDescriptor.rootAtomId, 'en', { numeric: true });
+        }
+        return firstDescriptor.anchorAtomId.localeCompare(secondDescriptor.anchorAtomId, 'en', { numeric: true });
+      });
+      merged.set(atomId, nextDescriptors);
+    }
+  }
+
+  return merged;
+}
+
+function rigidDescriptorsForAtom(rigidSubtreesByAtomId, atomId) {
+  return rigidDescriptorsFromValue(rigidSubtreesByAtomId?.get(atomId)).slice(0, MAX_RIGID_DESCRIPTOR_OPTIONS_PER_ATOM);
+}
+
 /**
  * Scores how disposable an atom is during overlap cleanup.
  * @param {object} layoutGraph - Layout graph shell.
@@ -122,6 +183,55 @@ function chooseMoveStrategy(layoutGraph, firstAtomId, secondAtomId, firstFixed, 
     return { mode: 'second', scale: 2 };
   }
   return { mode: 'both', scale: 1 };
+}
+
+function atomTouchesRing(layoutGraph, atomId) {
+  return (layoutGraph.bondsByAtomId?.get(atomId) ?? []).some(bond => bond?.inRing === true);
+}
+
+function canMoveAtomIndividually(layoutGraph, atomId, options = {}) {
+  if (!protectsLargeMoleculeBackbone(options)) {
+    return true;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom) {
+    return false;
+  }
+  if (atom.element === 'H') {
+    return true;
+  }
+  if (atomTouchesRing(layoutGraph, atomId)) {
+    return false;
+  }
+  return (atom.heavyDegree ?? 0) <= 1;
+}
+
+function restrictMoveStrategy(layoutGraph, strategy, firstAtomId, secondAtomId, options = {}) {
+  if (!strategy || !protectsLargeMoleculeBackbone(options)) {
+    return strategy;
+  }
+  const firstSafe = canMoveAtomIndividually(layoutGraph, firstAtomId, options);
+  const secondSafe = canMoveAtomIndividually(layoutGraph, secondAtomId, options);
+
+  if (strategy.mode === 'both') {
+    if (firstSafe && secondSafe) {
+      return strategy;
+    }
+    if (firstSafe) {
+      return { mode: 'first', scale: 2 };
+    }
+    if (secondSafe) {
+      return { mode: 'second', scale: 2 };
+    }
+    return null;
+  }
+  if (strategy.mode === 'first') {
+    return firstSafe ? strategy : (secondSafe ? { mode: 'second', scale: 2 } : null);
+  }
+  if (strategy.mode === 'second') {
+    return secondSafe ? strategy : (firstSafe ? { mode: 'first', scale: 2 } : null);
+  }
+  return strategy;
 }
 
 /**
@@ -292,6 +402,39 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   return bestMove;
 }
 
+function bestRigidSubtreeMoveForAtom(layoutGraph, coords, atomGrid, rigidSubtreesByAtomId, movingAtomId, opposingAtomId, bondLength, threshold, visibleAtomCount) {
+  let bestMove = null;
+
+  for (const descriptor of rigidDescriptorsForAtom(rigidSubtreesByAtomId, movingAtomId)) {
+    const candidateMove = bestRigidSubtreeMove(
+      layoutGraph,
+      coords,
+      atomGrid,
+      descriptor,
+      movingAtomId,
+      opposingAtomId,
+      bondLength,
+      threshold,
+      visibleAtomCount
+    );
+    if (!candidateMove) {
+      continue;
+    }
+    if (
+      !bestMove
+      || candidateMove.improvement > bestMove.improvement + IMPROVEMENT_EPSILON
+      || (
+        Math.abs(candidateMove.improvement - bestMove.improvement) <= IMPROVEMENT_EPSILON
+        && candidateMove.resolvedDistance > bestMove.resolvedDistance + IMPROVEMENT_EPSILON
+      )
+    ) {
+      bestMove = candidateMove;
+    }
+  }
+
+  return bestMove;
+}
+
 /**
  * Keeps singly anchored substituents on their original bond-length circle during nudges.
  * @param {object} layoutGraph - Layout graph shell.
@@ -433,27 +576,33 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
 
       const firstFixed = isFixedAtom(layoutGraph, overlap.firstAtomId);
       const secondFixed = isFixedAtom(layoutGraph, overlap.secondAtomId);
-      const strategy = chooseMoveStrategy(layoutGraph, overlap.firstAtomId, overlap.secondAtomId, firstFixed, secondFixed);
+      const strategy = restrictMoveStrategy(
+        layoutGraph,
+        chooseMoveStrategy(layoutGraph, overlap.firstAtomId, overlap.secondAtomId, firstFixed, secondFixed),
+        overlap.firstAtomId,
+        overlap.secondAtomId,
+        options
+      );
       if (!strategy) {
         continue;
       }
 
-      const firstRigidMove = bestRigidSubtreeMove(
+      const firstRigidMove = bestRigidSubtreeMoveForAtom(
         layoutGraph,
         coords,
         atomGrid,
-        rigidSubtreesByAtomId.get(overlap.firstAtomId),
+        rigidSubtreesByAtomId,
         overlap.firstAtomId,
         overlap.secondAtomId,
         bondLength,
         threshold,
         visibleAtomCount
       );
-      const secondRigidMove = bestRigidSubtreeMove(
+      const secondRigidMove = bestRigidSubtreeMoveForAtom(
         layoutGraph,
         coords,
         atomGrid,
-        rigidSubtreesByAtomId.get(overlap.secondAtomId),
+        rigidSubtreesByAtomId,
         overlap.secondAtomId,
         overlap.firstAtomId,
         bondLength,

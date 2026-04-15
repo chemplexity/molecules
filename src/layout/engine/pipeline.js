@@ -264,10 +264,16 @@ function runCleanupPhase(layoutGraph, placement, policy, normalizedOptions, timi
   }
 
   const cleanupStart = timingState ? nowMs() : 0;
+  const cleanupMaxPasses =
+    placement.placedFamilies.every(family => family === 'large-molecule')
+      ? Math.min(normalizedOptions.maxCleanupPasses, 3)
+      : normalizedOptions.maxCleanupPasses;
   const cleanupPass = runUnifiedCleanup(layoutGraph, placement.coords, {
-    maxPasses: normalizedOptions.maxCleanupPasses,
+    maxPasses: cleanupMaxPasses,
     epsilon: normalizedOptions.bondLength * 0.001,
-    bondLength: normalizedOptions.bondLength
+    bondLength: normalizedOptions.bondLength,
+    protectLargeMoleculeBackbone: placement.placedFamilies.includes('large-molecule'),
+    cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId
   });
   const labelClearanceStart = timingState ? nowMs() : 0;
   const labelClearance = applyLabelClearance(layoutGraph, cleanupPass.coords, {
@@ -292,7 +298,9 @@ function runCleanupPhase(layoutGraph, placement, policy, normalizedOptions, timi
       ? runUnifiedCleanup(layoutGraph, postCleanup.coords, {
           maxPasses: 1,
           epsilon: normalizedOptions.bondLength * 0.001,
-          bondLength: normalizedOptions.bondLength
+          bondLength: normalizedOptions.bondLength,
+          protectLargeMoleculeBackbone: placement.placedFamilies.includes('large-molecule'),
+          cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId
         })
       : {
           coords: postCleanup.coords,
@@ -463,12 +471,12 @@ export function classifyFamily(layoutGraph) {
   const hasMacrocycle = findMacrocycleRings(layoutGraph.rings).length > 0;
 
   let primaryFamily = 'acyclic';
-  if (exceedsLargeThreshold) {
-    primaryFamily = 'large-molecule';
-  } else if (layoutGraph.traits.containsMetal) {
+  if (layoutGraph.traits.containsMetal) {
     primaryFamily = 'organometallic';
   } else if (hasMacrocycle) {
     primaryFamily = 'macrocycle';
+  } else if (exceedsLargeThreshold) {
+    primaryFamily = 'large-molecule';
   } else if (layoutGraph.rings.length > 0) {
     const principalComponent = layoutGraph.components[0] ?? null;
     if (principalComponent) {

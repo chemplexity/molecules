@@ -5,7 +5,7 @@ import { computeBounds } from '../geometry/bounds.js';
 import { transformAttachedBlock } from '../placement/linkers.js';
 import { assignBondValidationClass, resolvePlacementValidationClass } from '../placement/bond-validation.js';
 import { chooseAttachmentAngle, placeRemainingBranches } from '../placement/substituents.js';
-import { findSevereOverlaps, measureLayoutCost } from '../audit/invariants.js';
+import { findSevereOverlaps, measureFocusedPlacementCost, measureLayoutCost } from '../audit/invariants.js';
 import { layoutAcyclicFamily } from './acyclic.js';
 import { layoutBridgedFamily } from './bridged.js';
 import { layoutFusedFamily } from './fused.js';
@@ -407,6 +407,10 @@ function scoreAttachedBlockOrientation(
   }
 
   placeRemainingBranches(adjacency, canonicalAtomRank, candidateCoords, primaryNonRingAtomIds, [...candidateSeedAtomIds], bondLength, layoutGraph, branchConstraints);
+  const changedAtomIds = [...candidateCoords.keys()].filter(atomId => !coords.has(atomId));
+  if (changedAtomIds.length >= 12) {
+    return measureFocusedPlacementCost(layoutGraph, candidateCoords, bondLength, changedAtomIds);
+  }
   return measureLayoutCost(layoutGraph, candidateCoords, bondLength);
 }
 

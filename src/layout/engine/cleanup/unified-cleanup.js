@@ -1,29 +1,28 @@
 /** @module cleanup/unified-cleanup */
 
 import { buildAtomGrid, measureLayoutState } from '../audit/invariants.js';
-import { CLEANUP_EPSILON } from '../constants.js';
+import { CLEANUP_EPSILON, UNIFIED_CLEANUP_LIMITS } from '../constants.js';
 import { runLocalCleanup } from './local-rotation.js';
-import { collectRigidPendantRingSubtrees, resolveOverlaps } from './overlap-resolution.js';
-
-const LARGE_COMPONENT_OVERLAP_PRIORITY_ATOM_COUNT = 24;
+import { collectRigidPendantRingSubtrees, mergeRigidSubtreesByAtomId, resolveOverlaps } from './overlap-resolution.js';
 
 /**
  * Scores a one-step cleanup candidate against the current coordinates.
  * @param {object} layoutGraph - Layout graph shell.
- * @param {number} baseCost - Current layout cost.
- * @param {number} baseOverlapCount - Current severe-overlap count.
+ * @param {object} baseState - Current measured layout state.
  * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate coordinate map.
  * @param {number} bondLength - Target bond length.
- * @returns {{coords: Map<string, {x: number, y: number}>, overlapCount: number, cost: number, improvement: number, overlapReduction: number}} Candidate score.
+ * @returns {{coords: Map<string, {x: number, y: number}>, overlapCount: number, cost: number, improvement: number, overlapReduction: number, bondLengthFailureCount: number, candidateState: object}} Candidate score.
  */
-function scoreCandidate(layoutGraph, baseCost, baseOverlapCount, candidateCoords, bondLength) {
+function scoreCandidate(layoutGraph, baseState, candidateCoords, bondLength) {
   const candidateState = measureLayoutState(layoutGraph, candidateCoords, bondLength);
   return {
     coords: candidateCoords,
     overlapCount: candidateState.overlapCount,
     cost: candidateState.cost,
-    improvement: baseCost - candidateState.cost,
-    overlapReduction: baseOverlapCount - candidateState.overlapCount
+    improvement: baseState.cost - candidateState.cost,
+    overlapReduction: baseState.overlapCount - candidateState.overlapCount,
+    bondLengthFailureCount: candidateState.bondDeviation.failingBondCount,
+    candidateState
   };
 }
 
@@ -32,11 +31,16 @@ function scoreCandidate(layoutGraph, baseCost, baseOverlapCount, candidateCoords
  * @param {object|null} bestCandidate - Best candidate so far.
  * @param {object} candidate - Candidate score.
  * @param {number} epsilon - Minimum meaningful improvement threshold.
+ * @param {object} [options] - Ranking options.
+ * @param {boolean} [options.protectLargeMoleculeBackbone] - Whether cleanup should preserve large-molecule bond integrity.
  * @returns {boolean} True when the candidate should replace the current best one.
  */
-function isBetterCandidate(bestCandidate, candidate, epsilon) {
+function isBetterCandidate(bestCandidate, candidate, epsilon, options = {}) {
   if (!bestCandidate) {
     return true;
+  }
+  if (options.protectLargeMoleculeBackbone && candidate.bondLengthFailureCount !== bestCandidate.bondLengthFailureCount) {
+    return candidate.bondLengthFailureCount < bestCandidate.bondLengthFailureCount;
   }
   if (candidate.overlapCount !== bestCandidate.overlapCount) {
     return candidate.overlapCount < bestCandidate.overlapCount;
@@ -57,10 +61,39 @@ function isBetterCandidate(bestCandidate, candidate, epsilon) {
  * @param {number} visibleAtomCount - Visible laid-out atom count.
  * @param {number} baseOverlapCount - Severe-overlap count before the pass.
  * @param {object|null} bestCandidate - Best overlap candidate so far.
+ * @param {object} [options] - Probe-selection options.
+ * @param {boolean} [options.protectLargeMoleculeBackbone] - Whether cleanup should always keep local-rotation options available for large-molecule cases.
  * @returns {boolean} True when the rotation probe can be skipped for this pass.
  */
-function shouldSkipRotationProbe(visibleAtomCount, baseOverlapCount, bestCandidate) {
-  return visibleAtomCount >= LARGE_COMPONENT_OVERLAP_PRIORITY_ATOM_COUNT && baseOverlapCount > 0 && !!bestCandidate && bestCandidate.overlapReduction > 0;
+function shouldSkipRotationProbe(visibleAtomCount, baseOverlapCount, bestCandidate, options = {}) {
+  if (options.protectLargeMoleculeBackbone) {
+    return false;
+  }
+  return visibleAtomCount >= UNIFIED_CLEANUP_LIMITS.overlapPriorityAtomCount
+    && baseOverlapCount > 0
+    && !!bestCandidate
+    && bestCandidate.overlapReduction > 0;
+}
+
+function protectLargeMoleculeBackbone(options = {}) {
+  return options.protectLargeMoleculeBackbone === true;
+}
+
+function shouldAcceptCandidate(baseState, candidate, epsilon, options = {}) {
+  if (!(candidate.overlapReduction > 0 || candidate.improvement > epsilon)) {
+    return false;
+  }
+  if (protectLargeMoleculeBackbone(options) && candidate.overlapCount > baseState.overlapCount) {
+    return false;
+  }
+  if (
+    protectLargeMoleculeBackbone(options)
+    && baseState.bondDeviation.failingBondCount === 0
+    && candidate.bondLengthFailureCount > 0
+  ) {
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -106,6 +139,7 @@ function updateAtomGridForAcceptedMove(layoutGraph, atomGrid, previousCoords, ne
  * @param {number} [options.maxPasses] - Maximum accepted cleanup passes.
  * @param {number} [options.epsilon] - Minimum accepted improvement.
  * @param {number} [options.bondLength] - Target bond length.
+ * @param {Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>} [options.cleanupRigidSubtreesByAtomId] - Optional extra rigid-subtree descriptors keyed by atom ID.
  * @returns {{coords: Map<string, {x: number, y: number}>, passes: number, improvement: number, overlapMoves: number}} Cleanup result.
  */
 export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
@@ -113,7 +147,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
   const epsilon = options.epsilon ?? CLEANUP_EPSILON;
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const visibleAtomCount = [...layoutGraph.atoms.values()].filter(atom => atom.visible).length;
-  let rigidSubtreesByAtomId = null;
+  let pendantRigidSubtreesByAtomId = null;
   let coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
   let passes = 0;
@@ -123,29 +157,34 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
   while (passes < maxPasses) {
     const baseState = measureLayoutState(layoutGraph, coords, bondLength);
     const baseOverlapCount = baseState.overlapCount;
-    const baseCost = baseState.cost;
     let bestCandidate = null;
 
     if (baseOverlapCount > 0) {
-      rigidSubtreesByAtomId ??= collectRigidPendantRingSubtrees(layoutGraph);
+      pendantRigidSubtreesByAtomId ??= collectRigidPendantRingSubtrees(layoutGraph);
+      const rigidSubtreesByAtomId =
+        protectLargeMoleculeBackbone(options)
+        && baseOverlapCount >= UNIFIED_CLEANUP_LIMITS.largeMoleculeBlockAwareOverlapFloor
+          ? mergeRigidSubtreesByAtomId(pendantRigidSubtreesByAtomId, options.cleanupRigidSubtreesByAtomId)
+          : pendantRigidSubtreesByAtomId;
       const overlapCandidate = resolveOverlaps(layoutGraph, coords, {
         bondLength,
         maxPasses: 1,
         rigidSubtreesByAtomId,
-        visibleAtomCount
+        visibleAtomCount,
+        protectLargeMoleculeBackbone: protectLargeMoleculeBackbone(options)
       });
       if (overlapCandidate.moves > 0) {
         const scoredOverlapCandidate = {
-          ...scoreCandidate(layoutGraph, baseCost, baseOverlapCount, overlapCandidate.coords, bondLength),
+          ...scoreCandidate(layoutGraph, baseState, overlapCandidate.coords, bondLength),
           overlapMoves: overlapCandidate.moves
         };
-        if (scoredOverlapCandidate.overlapReduction > 0 || scoredOverlapCandidate.improvement > epsilon) {
+        if (shouldAcceptCandidate(baseState, scoredOverlapCandidate, epsilon, options)) {
           bestCandidate = scoredOverlapCandidate;
         }
       }
     }
 
-    if (!shouldSkipRotationProbe(visibleAtomCount, baseOverlapCount, bestCandidate)) {
+    if (!shouldSkipRotationProbe(visibleAtomCount, baseOverlapCount, bestCandidate, options)) {
       const rotationCandidate = runLocalCleanup(layoutGraph, coords, {
         maxPasses: 1,
         epsilon,
@@ -154,11 +193,11 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
       });
       if (rotationCandidate.passes > 0) {
         const scoredRotationCandidate = {
-          ...scoreCandidate(layoutGraph, baseCost, baseOverlapCount, rotationCandidate.coords, bondLength),
+          ...scoreCandidate(layoutGraph, baseState, rotationCandidate.coords, bondLength),
           overlapMoves: 0
         };
-        if (scoredRotationCandidate.overlapReduction > 0 || scoredRotationCandidate.improvement > epsilon) {
-          if (isBetterCandidate(bestCandidate, scoredRotationCandidate, epsilon)) {
+        if (shouldAcceptCandidate(baseState, scoredRotationCandidate, epsilon, options)) {
+          if (isBetterCandidate(bestCandidate, scoredRotationCandidate, epsilon, options)) {
             bestCandidate = scoredRotationCandidate;
           }
         }

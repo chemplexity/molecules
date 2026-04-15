@@ -130,6 +130,73 @@ export function buildAtomGrid(layoutGraph, coords, bondLength) {
   return atomGrid;
 }
 
+/**
+ * Computes a lightweight exploratory placement cost focused on a subset of
+ * atoms. This is intentionally cheaper than the full audit cost and is meant
+ * only for internal branch/orientation search where unchanged distant geometry
+ * does not affect the choice being evaluated.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {Iterable<string>} focusAtomIds - Atoms whose local neighborhood should be rescored.
+ * @returns {number} Focused exploratory placement cost.
+ */
+export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds) {
+  const uniqueFocusAtomIds = [...new Set(focusAtomIds)].filter(atomId => coords.has(atomId) && isVisibleLayoutAtom(layoutGraph, atomId));
+  if (uniqueFocusAtomIds.length === 0) {
+    return 0;
+  }
+
+  const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
+  const seenPairs = new Set();
+  let overlapPenalty = 0;
+
+  for (const firstAtomId of uniqueFocusAtomIds) {
+    const firstPosition = coords.get(firstAtomId);
+    for (const [secondAtomId, secondPosition] of coords) {
+      if (secondAtomId === firstAtomId || !isVisibleLayoutAtom(layoutGraph, secondAtomId)) {
+        continue;
+      }
+      const key = pairKey(firstAtomId, secondAtomId);
+      if (seenPairs.has(key) || layoutGraph.bondedPairSet.has(key)) {
+        continue;
+      }
+      seenPairs.add(key);
+      const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
+      if (distance >= threshold) {
+        continue;
+      }
+      const deficit = threshold - distance;
+      overlapPenalty += deficit * deficit * 100;
+    }
+  }
+
+  const seenBonds = new Set();
+  let totalDeviation = 0;
+  let maxDeviation = 0;
+  let sampleCount = 0;
+
+  for (const atomId of uniqueFocusAtomIds) {
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!isAuditableBond(layoutGraph, bond) || seenBonds.has(bond.id)) {
+        continue;
+      }
+      seenBonds.add(bond.id);
+      const firstPosition = coords.get(bond.a);
+      const secondPosition = coords.get(bond.b);
+      if (!firstPosition || !secondPosition) {
+        continue;
+      }
+      const deviation = Math.abs(Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y) - bondLength);
+      totalDeviation += deviation;
+      maxDeviation = Math.max(maxDeviation, deviation);
+      sampleCount++;
+    }
+  }
+
+  return overlapPenalty + (sampleCount === 0 ? 0 : (totalDeviation / sampleCount) * 10 + maxDeviation * 5);
+}
+
 function visibleCovalentBonds(layoutGraph, coords, atomId) {
   const bonds = [];
   for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {

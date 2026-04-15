@@ -1,5 +1,24 @@
 # Change Log
 
+## 2026-04-15
+
+- Fix catastrophic fused-macrocycle ring completion blowups by switching near-complete shared-ring completion to a regular-polygon best-fit instead of a fragile circumcenter fit
+- Keep large cyclic peptides and metallomacrocycles on the macrocycle-aware mixed path when it audits better than the large-molecule partitioner
+- Speed up unmatched bridged cages by extending the bridged KK budget tuning to medium and large template-miss systems
+- Speed up large-molecule packing by caching subtree/block overlap rescoring and tightening overlap-resolution bookkeeping
+- Make large-molecule cleanup preserve backbone bonds by blocking unsafe single-atom nudges and adding block-aware stitched-subtree cleanup moves
+- Centralize new unified-cleanup, bridged-KK, and branch-complexity tuning knobs in shared `layoutv2` constants
+- Add regressions for dense macrocycle, bridged cage, mixed nucleotide/peptide, and overlap-heavy large-molecule stress cases
+
+## 2026-04-14
+
+- Investigate `smilesDatabase` stress-test outliers and document a concrete `layoutv2` runtime review and implementation plan
+- Route chain-heavy peptide-like mixed components through the large-molecule path earlier so small ring cores with huge non-ring bodies stop timing out
+- Cap mixed-family sibling permutation search by local branch complexity so nucleotide-like and peptide-like sidechains stop stalling branch placement
+- Switch large attached-block exploratory scoring to a focused local cost so mixed-family orientation search stops rescanning whole crowded layouts
+- Start improving large-molecule block splitting and stitched packing for explicit-H-rich peptide blocks and overlap-heavy packed layouts
+- Expand pipeline and family regressions around the slowest `smilesDatabase` stress-test offenders so the new performance fixes stay locked in
+
 ## 2026-04-13
 
 - Add bond length labels

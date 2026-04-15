@@ -1,6 +1,6 @@
 /** @module families/macrocycle */
 
-import { add, angleOf, centroid, distance, fromAngle, midpoint, normalize, perpLeft, scale, sub, vec, wrapAngle } from '../geometry/vec2.js';
+import { add, angleOf, centroid, distance, fromAngle, midpoint, normalize, perpLeft, rotate, scale, sub, vec, wrapAngle } from '../geometry/vec2.js';
 import { apothemForRegularPolygon } from '../geometry/polygon.js';
 import { ellipsePerimeterPoints, macrocycleAspectRatio, solveEllipseScale } from '../geometry/ellipse.js';
 import { placeTemplateCoords } from '../templates/placement.js';
@@ -237,6 +237,70 @@ function circumcenterOf3(p0, p1, p2) {
 }
 
 /**
+ * Fits a fixed-radius regular polygon to the already placed atoms of a ring and
+ * returns predicted coordinates for every atom in ring order.
+ * This is more stable than a raw circumcenter fit when only 1-2 atoms remain
+ * unplaced or when overlapping macrocycles have already distorted the shared anchors.
+ * @param {object} ring - Ring descriptor.
+ * @param {Map<string, {x: number, y: number}>} coords - Existing atom coordinates.
+ * @param {number} radius - Target circumradius for the ring.
+ * @returns {{predicted: Map<string, {x: number, y: number}>, score: number}|null} Best-fit prediction or null when insufficient anchors exist.
+ */
+function fitRegularPolygonToPlacedAtoms(ring, coords, radius) {
+  const placed = ring.atomIds.flatMap((atomId, index) => {
+    const point = coords.get(atomId);
+    return point ? [{ atomId, index, point }] : [];
+  });
+  if (placed.length < 3) {
+    return null;
+  }
+
+  const observedCentroid = centroid(placed.map(entry => entry.point));
+  let best = null;
+  const angleStep = (2 * Math.PI) / ring.atomIds.length;
+
+  for (const rotationSign of [1, -1]) {
+    const templateEntries = placed.map(entry => ({
+      ...entry,
+      templatePoint: fromAngle(rotationSign * entry.index * angleStep, radius)
+    }));
+    const templateCentroid = centroid(templateEntries.map(entry => entry.templatePoint));
+    let dot = 0;
+    let cross = 0;
+    for (const entry of templateEntries) {
+      const templateOffset = sub(entry.templatePoint, templateCentroid);
+      const observedOffset = sub(entry.point, observedCentroid);
+      dot += templateOffset.x * observedOffset.x + templateOffset.y * observedOffset.y;
+      cross += templateOffset.x * observedOffset.y - templateOffset.y * observedOffset.x;
+    }
+
+    const rotation = Math.atan2(cross, dot);
+    const predicted = new Map();
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const templatePoint = fromAngle(rotationSign * index * angleStep, radius);
+      predicted.set(
+        ring.atomIds[index],
+        add(observedCentroid, rotate(sub(templatePoint, templateCentroid), rotation))
+      );
+    }
+
+    let score = 0;
+    for (const entry of placed) {
+      const guess = predicted.get(entry.atomId);
+      const dx = guess.x - entry.point.x;
+      const dy = guess.y - entry.point.y;
+      score += dx * dx + dy * dy;
+    }
+
+    if (!best || score < best.score) {
+      best = { predicted, score };
+    }
+  }
+
+  return best;
+}
+
+/**
  * Grows secondary fused rings outward from a macrocycle using shared-edge projection.
  * Handles connections with exactly 2 shared atoms using the same algorithm as layoutFusedFamily.
  * @param {object[]} rings - All ring descriptors in the ring system.
@@ -331,8 +395,9 @@ function growFusedRingsFromMacrocycle(rings, primaryRing, coords, bondLength, la
 }
 
 /**
- * Completes any ring that has at least 3 placed atoms by fitting a circumscribed
- * circle and placing unplaced atoms at the expected angular positions.
+ * Completes any ring that has at least 3 placed atoms by fitting a fixed-radius
+ * regular polygon to the anchors and placing the remaining atoms at the expected
+ * angular positions. Falls back to a circumcenter estimate for lightly anchored rings.
  * Iterates until no further progress is made.
  * @param {object[]} rings - All ring descriptors in the ring system.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map to extend (mutated in place).
@@ -363,8 +428,19 @@ function growRemainingRingAtoms(rings, coords, bondLength) {
       }
 
       const radius = bondLength / (2 * Math.sin(Math.PI / n));
-      const step = (2 * Math.PI) / n;
 
+      if (unplacedIds.length <= 2 || placedIds.length >= 4) {
+        const fitted = fitRegularPolygonToPlacedAtoms(ring, coords, radius);
+        if (fitted) {
+          for (const atomId of unplacedIds) {
+            coords.set(atomId, fitted.predicted.get(atomId));
+            progressed = true;
+          }
+          continue;
+        }
+      }
+
+      const step = (2 * Math.PI) / n;
       const firstPlacedIdx = ring.atomIds.findIndex(id => coords.has(id));
       const firstAngle = angleOf(sub(coords.get(ring.atomIds[firstPlacedIdx]), center));
 
@@ -382,12 +458,9 @@ function growRemainingRingAtoms(rings, coords, bondLength) {
         break;
       }
 
-      for (let i = 0; i < n; i++) {
-        const atomId = ring.atomIds[i];
-        if (coords.has(atomId)) {
-          continue;
-        }
-        const offset = i - firstPlacedIdx;
+      for (const atomId of unplacedIds) {
+        const index = ring.atomIds.indexOf(atomId);
+        const offset = index - firstPlacedIdx;
         coords.set(atomId, add(center, fromAngle(wrapAngle(firstAngle + rotSign * offset * step), radius)));
         progressed = true;
       }
@@ -433,9 +506,9 @@ export function layoutMacrocycleFamily(rings, bondLength, options = {}) {
   }
 
   if (rings.length > 1 && options.layoutGraph) {
-    // Alternate fused-edge projection (2-atom connections) and circumcircle fitting (3+ shared atoms)
-    // until no further progress. A second fused pass catches rings reachable only after circumcircle
-    // filling has placed their bridging neighbors.
+    // Alternate fused-edge projection (2-atom connections) and partial-ring completion (3+ shared atoms)
+    // until no further progress. A second fused pass catches rings reachable only after regular-polygon
+    // completion has placed their bridging neighbors.
     let prevSize;
     do {
       prevSize = coords.size;

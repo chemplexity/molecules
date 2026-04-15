@@ -91,6 +91,24 @@ describe('layout/engine/families/macrocycle', () => {
     assertMacrocycleLayoutQuality(graph, result.coords);
   });
 
+  it('avoids catastrophic ring-completion blowups for nearly fully shared fused macrocycle rings', () => {
+    const graph = createLayoutGraph(
+      parseSMILES(
+        'CC(C)[C@H]1NC(=O)c2cc3cc(c2)C(=O)NC[C@H](NC(=O)[C@@H](C)NC(=O)[C@H](C)NC(=O)[C@H](CCCNC(=N)N)NC(=O)[C@H](Cc4ccc5ccccc5c4)NC(=O)[C@H]6CCCCN6C(=O)[C@H](NC(=O)[C@H](Cc7ccc(F)cc7)NC1=O)[C@H](C)O)C(=O)N[C@@H](Cc8ccccc8)C(=O)N[C@@H](Cc9ccc%10ccccc%10c9)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CCCNC(=N)N)C(=O)N[C@@H](CNC3=O)C(=O)N[C@@H](CCCCN)C(=O)O'
+      ),
+      { suppressH: true }
+    );
+    const rings = graph.ringSystems[0].ringIds.map(id => graph.rings.find(ring => ring.id === id));
+    const result = layoutMacrocycleFamily(rings, graph.options.bondLength, { layoutGraph: graph });
+    const bondStats = measureBondLengthDeviation(graph, result.coords, graph.options.bondLength);
+
+    assert.equal(result.placementMode, 'ellipse');
+    assert.ok(result.coords.has('C10'));
+    assert.ok(Number.isFinite(result.coords.get('C10').x));
+    assert.ok(Number.isFinite(result.coords.get('C10').y));
+    assert.ok(bondStats.maxDeviation < 1, `expected fused macrocycle completion to avoid catastrophic bond blowups, got ${bondStats.maxDeviation}`);
+  });
+
   it('computes outward angular budgets for branch-bearing macrocycle atoms and shrinks dense adjacent sites', () => {
     const sparseGraph = createLayoutGraph(makeMacrocycleWithSubstituent(), { suppressH: true });
     const sparseLayout = layoutMacrocycleFamily(sparseGraph.rings, sparseGraph.options.bondLength);

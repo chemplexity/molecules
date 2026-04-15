@@ -31,6 +31,12 @@ export const NUMERIC_EPSILON = 1e-12;
 /** Default cleanup-improvement threshold. */
 export const CLEANUP_EPSILON = 1e-3;
 
+/** Tunable thresholds used by the unified cleanup arbitration loop. */
+export const UNIFIED_CLEANUP_LIMITS = Object.freeze({
+  overlapPriorityAtomCount: 24,
+  largeMoleculeBlockAwareOverlapFloor: 4
+});
+
 /** Severe-overlap threshold as a fraction of target bond length. */
 export const SEVERE_OVERLAP_FACTOR = 0.55;
 
@@ -70,6 +76,18 @@ export const BRIDGED_VALIDATION = Object.freeze({
   maxSevereOverlapCount: 0
 });
 
+/** Tuned Kamada-Kawai budgets for unmatched bridged/caged systems. */
+export const BRIDGED_KK_LIMITS = Object.freeze({
+  threshold: 0.2,
+  baseMaxIterations: 1000,
+  baseMaxInnerIterations: 20,
+  fastAtomLimit: 24,
+  mediumAtomLimit: 40,
+  mediumMaxIterations: 1500,
+  largeMaxIterations: 2500,
+  largeMaxInnerIterations: 24
+});
+
 /** Publication-style projection tuning for bridged fallback geometry. */
 export const BRIDGE_PROJECTION_FACTORS = Object.freeze({
   maxProjectedPathCount: 12,
@@ -103,4 +121,12 @@ export const COMPONENT_ROLE_ORDER = Object.freeze({
   'counter-ion': 1,
   spectator: 2,
   'solvent-like': 3
+});
+
+/** Heuristics that cap permutation search in complex branch placement. */
+export const BRANCH_COMPLEXITY_LIMITS = Object.freeze({
+  subtreeFloor: 4,
+  mediumMaxPermutations: 6,
+  highMaxPermutations: 3,
+  extremeMaxPermutations: 2
 });

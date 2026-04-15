@@ -74,6 +74,8 @@ describe('layout/engine/placement/component-layout', () => {
     assert.equal(result.unplacedComponentCount, 0);
     assert.equal(result.coords.size, 34);
     assert.deepEqual(result.placedFamilies, ['large-molecule']);
+    assert.ok(result.cleanupRigidSubtreesByAtomId instanceof Map);
+    assert.ok(result.cleanupRigidSubtreesByAtomId.size > 0);
   });
 
   it('lays out a supported bridged component when a template is available', () => {

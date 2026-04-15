@@ -1,32 +1,41 @@
 /** @module families/bridged */
 
+import { BRIDGED_KK_LIMITS } from '../constants.js';
 import { centroid } from '../geometry/vec2.js';
 import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { projectBridgePaths } from './bridge-projection.js';
 import { placeTemplateCoords } from '../scaffold/template-placement.js';
 
-const BRIDGED_KK_THRESHOLD = 0.2;
-const BRIDGED_KK_MAX_ITERATIONS = 1000;
-const BRIDGED_KK_MAX_INNER_ITERATIONS = 20;
-const BRIDGED_FAST_KK_ATOM_LIMIT = 24;
-
 /**
  * Returns tuned KK options for small unmatched bridged systems.
- * Larger dense cages already converge quickly with the default solver tolerances,
- * while some smaller mixed bridged systems spend a long time failing to reach
- * the stricter default thresholds.
+ * Unmatched bridged cages often produce acceptable projected layouts well before
+ * the generic KK default threshold of `0.1`, so let larger systems stop once
+ * they reach the same practical bridged target already used by smaller cages.
  * @param {string[]} atomIds - Bridged-system atom IDs.
  * @returns {object} Optional KK overrides.
  */
 function bridgedKamadaKawaiOptions(atomIds) {
-  if (atomIds.length > BRIDGED_FAST_KK_ATOM_LIMIT) {
-    return {};
+  if (atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit) {
+    return {
+      threshold: BRIDGED_KK_LIMITS.threshold,
+      innerThreshold: BRIDGED_KK_LIMITS.threshold,
+      maxIterations: BRIDGED_KK_LIMITS.baseMaxIterations,
+      maxInnerIterations: BRIDGED_KK_LIMITS.baseMaxInnerIterations
+    };
+  }
+  if (atomIds.length <= BRIDGED_KK_LIMITS.mediumAtomLimit) {
+    return {
+      threshold: BRIDGED_KK_LIMITS.threshold,
+      innerThreshold: BRIDGED_KK_LIMITS.threshold,
+      maxIterations: BRIDGED_KK_LIMITS.mediumMaxIterations,
+      maxInnerIterations: BRIDGED_KK_LIMITS.baseMaxInnerIterations
+    };
   }
   return {
-    threshold: BRIDGED_KK_THRESHOLD,
-    innerThreshold: BRIDGED_KK_THRESHOLD,
-    maxIterations: BRIDGED_KK_MAX_ITERATIONS,
-    maxInnerIterations: BRIDGED_KK_MAX_INNER_ITERATIONS
+    threshold: BRIDGED_KK_LIMITS.threshold,
+    innerThreshold: BRIDGED_KK_LIMITS.threshold,
+    maxIterations: BRIDGED_KK_LIMITS.largeMaxIterations,
+    maxInnerIterations: BRIDGED_KK_LIMITS.largeMaxInnerIterations
   };
 }
 

@@ -1,7 +1,7 @@
 /** @module families/large-molecule */
 
 import { add, angleOf, centroid, normalize, rotate, sub } from '../geometry/vec2.js';
-import { computeBounds, translateCoords } from '../geometry/bounds.js';
+import { computeBounds } from '../geometry/bounds.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { chooseAttachmentAngle } from '../placement/substituents.js';
 import { refineStitchedBlock } from '../placement/block-stitching.js';
@@ -9,6 +9,24 @@ import { assignBondValidationClass, mergeBondValidationClasses } from '../placem
 import { buildSliceAdjacency, createAtomSlice, layoutAtomSlice } from '../placement/atom-slice.js';
 
 const PACKING_ROTATION_ANGLES = Object.freeze([-Math.PI / 2, -Math.PI / 3, -Math.PI / 6, Math.PI / 6, Math.PI / 3, Math.PI / 2]);
+const OVERLAP_RESOLUTION_ROTATION_ANGLES = Object.freeze([
+  -Math.PI,
+  -Math.PI * 0.75,
+  -Math.PI * (2 / 3),
+  -Math.PI / 2,
+  -Math.PI / 3,
+  -Math.PI / 4,
+  -Math.PI / 6,
+  -Math.PI / 12,
+  Math.PI / 12,
+  Math.PI / 6,
+  Math.PI / 4,
+  Math.PI / 3,
+  Math.PI / 2,
+  Math.PI * (2 / 3),
+  Math.PI * 0.75,
+  Math.PI
+]);
 
 function countHeavyAtoms(layoutGraph, atomIds) {
   return atomIds.filter(atomId => layoutGraph.sourceMolecule.atoms.get(atomId)?.name !== 'H').length;
@@ -25,6 +43,10 @@ function countParticipantAtoms(layoutGraph, atomIds) {
     const atom = layoutGraph.atoms.get(atomId);
     return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
   }).length;
+}
+
+function participantThresholdFor(threshold) {
+  return Math.max(48, Math.floor(threshold.heavyAtomCount * 0.8));
 }
 
 function countRingSystems(layoutGraph, atomIds) {
@@ -105,7 +127,7 @@ function selectBestCut(layoutGraph, atomIds, threshold) {
     const rightParticipantCount = countParticipantAtoms(layoutGraph, rightAtomIds);
     const leftRingSystems = countRingSystems(layoutGraph, leftAtomIds);
     const rightRingSystems = countRingSystems(layoutGraph, rightAtomIds);
-    const participantThreshold = threshold.heavyAtomCount;
+    const participantThreshold = participantThresholdFor(threshold);
     const oversizePenalty =
       Math.max(0, leftHeavyCount - threshold.heavyAtomCount) +
       Math.max(0, rightHeavyCount - threshold.heavyAtomCount) +
@@ -157,7 +179,11 @@ function createBlock(layoutGraph, atomIds, id) {
  * @returns {boolean} True when the block is still oversized.
  */
 function isOversized(block, threshold) {
-  return block.heavyAtomCount > threshold.heavyAtomCount || block.participantCount > threshold.heavyAtomCount || block.ringSystemCount > threshold.ringSystemCount;
+  return (
+    block.heavyAtomCount > threshold.heavyAtomCount
+    || block.participantCount > participantThresholdFor(threshold)
+    || block.ringSystemCount > threshold.ringSystemCount
+  );
 }
 
 function partitionBlocks(layoutGraph, component, threshold) {
@@ -213,14 +239,20 @@ function chooseRootBlock(blocks) {
 
 function buildBlockAdjacency(blocks, cutBonds) {
   const adjacency = new Map(blocks.map(block => [block.id, []]));
+  const blockIdByAtomId = new Map();
+  for (const block of blocks) {
+    for (const atomId of block.atomIds) {
+      blockIdByAtomId.set(atomId, block.id);
+    }
+  }
   for (const cutBond of cutBonds) {
-    const firstBlock = blocks.find(block => block.atomIds.includes(cutBond.firstAtomId));
-    const secondBlock = blocks.find(block => block.atomIds.includes(cutBond.secondAtomId));
-    if (!firstBlock || !secondBlock || firstBlock.id === secondBlock.id) {
+    const firstBlockId = blockIdByAtomId.get(cutBond.firstAtomId);
+    const secondBlockId = blockIdByAtomId.get(cutBond.secondAtomId);
+    if (!firstBlockId || !secondBlockId || firstBlockId === secondBlockId) {
       continue;
     }
-    adjacency.get(firstBlock.id)?.push({ neighborBlockId: secondBlock.id, cutBond });
-    adjacency.get(secondBlock.id)?.push({ neighborBlockId: firstBlock.id, cutBond });
+    adjacency.get(firstBlockId)?.push({ neighborBlockId: secondBlockId, cutBond });
+    adjacency.get(secondBlockId)?.push({ neighborBlockId: firstBlockId, cutBond });
   }
   return adjacency;
 }
@@ -338,73 +370,218 @@ function overlapPushDirection(movableBounds, fixedBounds) {
   return direction;
 }
 
-/**
- * Returns the total bounding-box area for a coordinate map.
- * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
- * @returns {number} Bounding-box area.
- */
-function layoutBoundsArea(coords) {
-  const bounds = computeBounds(coords, [...coords.keys()]);
-  if (!bounds) {
-    return 0;
-  }
-  return bounds.width * bounds.height;
+function blockOverlapPenalty(firstBounds, secondBounds) {
+  const { overlapX, overlapY } = measureBlockOverlap(firstBounds, secondBounds);
+  return overlapX > 0 && overlapY > 0 ? overlapX * overlapY : 0;
 }
 
-/**
- * Returns the summed overlap penalty across placed large-molecule blocks.
- * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
- * @param {Map<string, string[]>} blockAtomIdsById - Placed block atom IDs by block ID.
- * @returns {number} Block-overlap penalty area.
- */
-function totalBlockOverlapPenalty(coords, blockAtomIdsById) {
-  const blockIds = [...blockAtomIdsById.keys()];
-  let penalty = 0;
+function blockBoundsArea(boundsByBlockId) {
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
 
-  for (let firstIndex = 0; firstIndex < blockIds.length; firstIndex++) {
-    for (let secondIndex = firstIndex + 1; secondIndex < blockIds.length; secondIndex++) {
-      const firstBounds = computeBounds(coords, blockAtomIdsById.get(blockIds[firstIndex]) ?? []);
-      const secondBounds = computeBounds(coords, blockAtomIdsById.get(blockIds[secondIndex]) ?? []);
-      const { overlapX, overlapY } = measureBlockOverlap(firstBounds, secondBounds);
-      if (overlapX > 0 && overlapY > 0) {
-        penalty += overlapX * overlapY;
-      }
+  for (const bounds of boundsByBlockId.values()) {
+    if (!bounds) {
+      continue;
     }
+    minX = Math.min(minX, bounds.minX);
+    maxX = Math.max(maxX, bounds.maxX);
+    minY = Math.min(minY, bounds.minY);
+    maxY = Math.max(maxY, bounds.maxY);
   }
 
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+    return 0;
+  }
+  return (maxX - minX) * (maxY - minY);
+}
+
+function totalBlockOverlapPenalty(blockIds, boundsByBlockId) {
+  let penalty = 0;
+  for (let firstIndex = 0; firstIndex < blockIds.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < blockIds.length; secondIndex++) {
+      penalty += blockOverlapPenalty(boundsByBlockId.get(blockIds[firstIndex]), boundsByBlockId.get(blockIds[secondIndex]));
+    }
+  }
   return penalty;
 }
 
-/**
- * Returns the current global packing cost for block-compaction decisions.
- * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
- * @param {Map<string, string[]>} blockAtomIdsById - Placed block atom IDs by block ID.
- * @param {number} bondLength - Target bond length.
- * @returns {number} Packing cost.
- */
-function layoutPackingCost(coords, blockAtomIdsById, bondLength) {
-  return layoutBoundsArea(coords) + totalBlockOverlapPenalty(coords, blockAtomIdsById) * bondLength * 100;
+function trackedBlockOverlapPenalty(blockIds, boundsByBlockId, trackedBlockIdSet, overrideBoundsByBlockId = null) {
+  let penalty = 0;
+  for (let firstIndex = 0; firstIndex < blockIds.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < blockIds.length; secondIndex++) {
+      const firstBlockId = blockIds[firstIndex];
+      const secondBlockId = blockIds[secondIndex];
+      if (!trackedBlockIdSet.has(firstBlockId) && !trackedBlockIdSet.has(secondBlockId)) {
+        continue;
+      }
+      penalty += blockOverlapPenalty(
+        overrideBoundsByBlockId?.get(firstBlockId) ?? boundsByBlockId.get(firstBlockId),
+        overrideBoundsByBlockId?.get(secondBlockId) ?? boundsByBlockId.get(secondBlockId)
+      );
+    }
+  }
+  return penalty;
+}
+
+function buildPackingState(coords, blockAtomIdsById) {
+  const blockIds = [...blockAtomIdsById.keys()];
+  const boundsByBlockId = new Map();
+  for (const blockId of blockIds) {
+    boundsByBlockId.set(blockId, computeBounds(coords, blockAtomIdsById.get(blockId) ?? []));
+  }
+  return {
+    coords,
+    blockIds,
+    boundsByBlockId,
+    area: blockBoundsArea(boundsByBlockId),
+    overlapPenalty: totalBlockOverlapPenalty(blockIds, boundsByBlockId)
+  };
+}
+
+function updatePackingState(packingState, coords, affectedBlockIds, blockAtomIdsById) {
+  const affectedBlockIdSet = new Set(affectedBlockIds);
+  if (affectedBlockIdSet.size === 0) {
+    return {
+      ...packingState,
+      coords
+    };
+  }
+
+  const affectedBoundsByBlockId = new Map();
+  for (const blockId of affectedBlockIds) {
+    affectedBoundsByBlockId.set(blockId, computeBounds(coords, blockAtomIdsById.get(blockId) ?? []));
+  }
+  const nextBoundsByBlockId = new Map(packingState.boundsByBlockId);
+  for (const [blockId, bounds] of affectedBoundsByBlockId) {
+    nextBoundsByBlockId.set(blockId, bounds);
+  }
+
+  const currentAffectedPenalty = trackedBlockOverlapPenalty(
+    packingState.blockIds,
+    packingState.boundsByBlockId,
+    affectedBlockIdSet
+  );
+  const nextAffectedPenalty = trackedBlockOverlapPenalty(
+    packingState.blockIds,
+    packingState.boundsByBlockId,
+    affectedBlockIdSet,
+    affectedBoundsByBlockId
+  );
+
+  return {
+    coords,
+    blockIds: packingState.blockIds,
+    boundsByBlockId: nextBoundsByBlockId,
+    area: blockBoundsArea(nextBoundsByBlockId),
+    overlapPenalty: packingState.overlapPenalty - currentAffectedPenalty + nextAffectedPenalty
+  };
+}
+
+function packingCostForState(packingState, bondLength, overlapPenaltyMultiplier) {
+  return packingState.area + packingState.overlapPenalty * bondLength * overlapPenaltyMultiplier;
+}
+
+function buildBlockSubtreeMaps(blockAtomIdsById, childBlocksByParentId) {
+  const subtreeBlockIdsByBlockId = new Map();
+  const subtreeAtomIdsByBlockId = new Map();
+
+  function visit(blockId) {
+    if (subtreeBlockIdsByBlockId.has(blockId)) {
+      return;
+    }
+
+    const subtreeBlockIds = [blockId];
+    const subtreeAtomIds = [...(blockAtomIdsById.get(blockId) ?? [])];
+    for (const childBlockId of childBlocksByParentId.get(blockId) ?? []) {
+      visit(childBlockId);
+      subtreeBlockIds.push(...(subtreeBlockIdsByBlockId.get(childBlockId) ?? []));
+      subtreeAtomIds.push(...(subtreeAtomIdsByBlockId.get(childBlockId) ?? []));
+    }
+    subtreeBlockIdsByBlockId.set(blockId, subtreeBlockIds);
+    subtreeAtomIdsByBlockId.set(blockId, subtreeAtomIds);
+  }
+
+  for (const blockId of blockAtomIdsById.keys()) {
+    visit(blockId);
+  }
+
+  return { subtreeBlockIdsByBlockId, subtreeAtomIdsByBlockId };
 }
 
 /**
- * Collects descendant block IDs for one stitched block subtree.
- * @param {string} rootBlockId - Root block ID of the subtree.
+ * Builds rigid subtree cleanup descriptors for non-root stitched blocks so
+ * overlap cleanup can rotate whole large-molecule subtrees instead of nudging
+ * individual backbone atoms.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, string[]>} blockAtomIdsById - Placed block atom IDs by block ID.
  * @param {Map<string, string[]>} childBlocksByParentId - Child block IDs by parent block ID.
- * @returns {string[]} Block IDs in the subtree.
+ * @param {Map<string, string>} attachmentAtomByBlockId - Parent attachment atom ID by child block ID.
+ * @param {Map<string, string>} rootAtomByBlockId - Child attachment atom ID by child block ID.
+ * @returns {Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>} Cleanup descriptors keyed by member atom ID.
  */
-function collectBlockSubtreeIds(rootBlockId, childBlocksByParentId) {
-  const subtreeBlockIds = [];
-  const stack = [rootBlockId];
+function buildCleanupRigidSubtreesByAtomId(layoutGraph, blockAtomIdsById, childBlocksByParentId, attachmentAtomByBlockId, rootAtomByBlockId) {
+  const descriptorsByAtomId = new Map();
+  const totalPlacedAtomCount = [...blockAtomIdsById.values()].reduce((sum, atomIds) => sum + atomIds.length, 0);
+  const { subtreeAtomIdsByBlockId } = buildBlockSubtreeMaps(blockAtomIdsById, childBlocksByParentId);
 
-  while (stack.length > 0) {
-    const blockId = stack.pop();
-    subtreeBlockIds.push(blockId);
-    for (const childBlockId of childBlocksByParentId.get(blockId) ?? []) {
-      stack.push(childBlockId);
+  for (const [blockId, anchorAtomId] of attachmentAtomByBlockId) {
+    const rootAtomId = rootAtomByBlockId.get(blockId);
+    const subtreeAtomIds = subtreeAtomIdsByBlockId.get(blockId) ?? [];
+    if (!anchorAtomId || !rootAtomId || subtreeAtomIds.length === 0 || subtreeAtomIds.length >= totalPlacedAtomCount) {
+      continue;
+    }
+    if (subtreeAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId))) {
+      continue;
+    }
+
+    const descriptor = {
+      anchorAtomId,
+      rootAtomId,
+      subtreeAtomIds: [...subtreeAtomIds]
+    };
+
+    for (const atomId of descriptor.subtreeAtomIds) {
+      const descriptors = descriptorsByAtomId.get(atomId) ?? [];
+      descriptors.push(descriptor);
+      descriptorsByAtomId.set(atomId, descriptors);
     }
   }
 
-  return subtreeBlockIds;
+  for (const descriptors of descriptorsByAtomId.values()) {
+    descriptors.sort((firstDescriptor, secondDescriptor) => {
+      if (firstDescriptor.subtreeAtomIds.length !== secondDescriptor.subtreeAtomIds.length) {
+        return firstDescriptor.subtreeAtomIds.length - secondDescriptor.subtreeAtomIds.length;
+      }
+      if (firstDescriptor.rootAtomId !== secondDescriptor.rootAtomId) {
+        return firstDescriptor.rootAtomId.localeCompare(secondDescriptor.rootAtomId, 'en', { numeric: true });
+      }
+      return firstDescriptor.anchorAtomId.localeCompare(secondDescriptor.anchorAtomId, 'en', { numeric: true });
+    });
+  }
+
+  return descriptorsByAtomId;
+}
+
+function buildBlockDepthMap(rootBlockId, childBlocksByParentId) {
+  const depthByBlockId = new Map([[rootBlockId, 0]]);
+  const queue = [rootBlockId];
+  let queueHead = 0;
+
+  while (queueHead < queue.length) {
+    const blockId = queue[queueHead++];
+    const depth = depthByBlockId.get(blockId) ?? 0;
+    for (const childBlockId of childBlocksByParentId.get(blockId) ?? []) {
+      if (depthByBlockId.has(childBlockId)) {
+        continue;
+      }
+      depthByBlockId.set(childBlockId, depth + 1);
+      queue.push(childBlockId);
+    }
+  }
+
+  return depthByBlockId;
 }
 
 /**
@@ -432,6 +609,55 @@ function rotateBlockSubtree(inputCoords, subtreeAtomIds, anchorAtomId, angle) {
   return coords;
 }
 
+function chooseMovableBlockId(firstBlockId, secondBlockId, rootBlockId, blockAtomIdsById, depthByBlockId) {
+  if (firstBlockId === rootBlockId) {
+    return secondBlockId;
+  }
+  if (secondBlockId === rootBlockId) {
+    return firstBlockId;
+  }
+
+  const firstDepth = depthByBlockId.get(firstBlockId) ?? 0;
+  const secondDepth = depthByBlockId.get(secondBlockId) ?? 0;
+  if (firstDepth !== secondDepth) {
+    return firstDepth > secondDepth ? firstBlockId : secondBlockId;
+  }
+
+  const firstSize = (blockAtomIdsById.get(firstBlockId) ?? []).length;
+  const secondSize = (blockAtomIdsById.get(secondBlockId) ?? []).length;
+  if (firstSize !== secondSize) {
+    return firstSize < secondSize ? firstBlockId : secondBlockId;
+  }
+
+  return firstBlockId;
+}
+
+function orderedOverlapRotationAngles(movableBounds, fixedBounds, anchorPosition) {
+  if (!movableBounds || !fixedBounds || !anchorPosition) {
+    return [...OVERLAP_RESOLUTION_ROTATION_ANGLES];
+  }
+
+  const pushDirection = overlapPushDirection(movableBounds, fixedBounds);
+  const currentVector = {
+    x: movableBounds.centerX - anchorPosition.x,
+    y: movableBounds.centerY - anchorPosition.y
+  };
+  const cross = currentVector.x * pushDirection.y - currentVector.y * pushDirection.x;
+  if (Math.abs(cross) <= 1e-9) {
+    return [...OVERLAP_RESOLUTION_ROTATION_ANGLES];
+  }
+
+  const preferredSign = cross > 0 ? 1 : -1;
+  return [...OVERLAP_RESOLUTION_ROTATION_ANGLES].sort((firstAngle, secondAngle) => {
+    const firstPenalty = Math.sign(firstAngle) === preferredSign ? 0 : 1;
+    const secondPenalty = Math.sign(secondAngle) === preferredSign ? 0 : 1;
+    if (firstPenalty !== secondPenalty) {
+      return firstPenalty - secondPenalty;
+    }
+    return Math.abs(firstAngle) - Math.abs(secondAngle);
+  });
+}
+
 /**
  * Compacts a stitched block layout by rotating child subtrees around their
  * parent attachment atoms when doing so lowers the global packing cost.
@@ -444,52 +670,66 @@ function rotateBlockSubtree(inputCoords, subtreeAtomIds, anchorAtomId, angle) {
  * @returns {{coords: Map<string, {x: number, y: number}>, rotationMoveCount: number}} Compacted coordinates and accepted rotation count.
  */
 function compactBlockRotations(inputCoords, blockAtomIdsById, childBlocksByParentId, attachmentAtomByBlockId, rootBlockId, bondLength) {
-  let coords = new Map(inputCoords);
+  let packingState = buildPackingState(new Map(inputCoords), blockAtomIdsById);
   let rotationMoveCount = 0;
-  const candidateBlockIds = [...blockAtomIdsById.keys()].filter(blockId => blockId !== rootBlockId);
+  const candidateBlockIds = packingState.blockIds.filter(blockId => blockId !== rootBlockId);
+  const { subtreeBlockIdsByBlockId, subtreeAtomIdsByBlockId } = buildBlockSubtreeMaps(blockAtomIdsById, childBlocksByParentId);
 
-  for (const blockId of candidateBlockIds) {
-    const anchorAtomId = attachmentAtomByBlockId.get(blockId);
-    if (!anchorAtomId) {
-      continue;
-    }
+  for (let pass = 0; pass < 6; pass++) {
+    let movedThisPass = false;
+    for (const blockId of candidateBlockIds) {
+      const anchorAtomId = attachmentAtomByBlockId.get(blockId);
+      if (!anchorAtomId) {
+        continue;
+      }
 
-    const subtreeBlockIds = collectBlockSubtreeIds(blockId, childBlocksByParentId);
-    const subtreeAtomIds = subtreeBlockIds.flatMap(subtreeBlockId => blockAtomIdsById.get(subtreeBlockId) ?? []);
-    const baseCost = layoutPackingCost(coords, blockAtomIdsById, bondLength);
-    let bestCoords = null;
-    let bestCost = baseCost;
+      const subtreeBlockIds = subtreeBlockIdsByBlockId.get(blockId) ?? [blockId];
+      const subtreeAtomIds = subtreeAtomIdsByBlockId.get(blockId) ?? [];
+      const baseCost = packingCostForState(packingState, bondLength, 100);
+      let bestState = null;
+      let bestCost = baseCost;
 
-    for (const angle of PACKING_ROTATION_ANGLES) {
-      const rotatedCoords = rotateBlockSubtree(coords, subtreeAtomIds, anchorAtomId, angle);
-      const rotatedCost = layoutPackingCost(rotatedCoords, blockAtomIdsById, bondLength);
-      if (rotatedCost + 1e-6 < bestCost) {
-        bestCoords = rotatedCoords;
-        bestCost = rotatedCost;
+      for (const angle of PACKING_ROTATION_ANGLES) {
+        const rotatedCoords = rotateBlockSubtree(packingState.coords, subtreeAtomIds, anchorAtomId, angle);
+        const rotatedState = updatePackingState(packingState, rotatedCoords, subtreeBlockIds, blockAtomIdsById);
+        const rotatedCost = packingCostForState(rotatedState, bondLength, 100);
+        if (rotatedCost + 1e-6 < bestCost) {
+          bestState = rotatedState;
+          bestCost = rotatedCost;
+        }
+      }
+
+      if (bestState) {
+        packingState = bestState;
+        rotationMoveCount++;
+        movedThisPass = true;
       }
     }
-
-    if (bestCoords) {
-      coords = bestCoords;
-      rotationMoveCount++;
+    if (!movedThisPass) {
+      break;
     }
   }
 
-  return { coords, rotationMoveCount };
+  return { coords: packingState.coords, rotationMoveCount };
 }
 
 /**
- * Applies one rigid-body repulsion pass to overlapping large-molecule blocks.
+ * Resolves overlapping stitched blocks by rotating non-root subtrees around
+ * their attachment anchors so stitched cut bonds keep their target lengths.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Current coordinate map.
  * @param {Map<string, string[]>} blockAtomIdsById - Placed block atom IDs by block ID.
+ * @param {Map<string, string[]>} childBlocksByParentId - Child block IDs by parent block ID.
+ * @param {Map<string, string>} attachmentAtomByBlockId - Parent attachment atom ID by child block ID.
  * @param {string} rootBlockId - Fixed root block ID.
  * @param {number} bondLength - Target bond length.
- * @returns {{coords: Map<string, {x: number, y: number}>, repulsionMoveCount: number}} Repelled coordinates and move count.
+ * @returns {{coords: Map<string, {x: number, y: number}>, repulsionMoveCount: number}} Updated coordinates and accepted overlap-resolution move count.
  */
-function repelOverlappingBlocks(inputCoords, blockAtomIdsById, rootBlockId, bondLength) {
-  let coords = new Map(inputCoords);
+function repelOverlappingBlocks(inputCoords, blockAtomIdsById, childBlocksByParentId, attachmentAtomByBlockId, rootBlockId, bondLength) {
+  let packingState = buildPackingState(new Map(inputCoords), blockAtomIdsById);
   let repulsionMoveCount = 0;
-  const blockIds = [...blockAtomIdsById.keys()];
+  const blockIds = packingState.blockIds;
+  const depthByBlockId = buildBlockDepthMap(rootBlockId, childBlocksByParentId);
+  const { subtreeBlockIdsByBlockId, subtreeAtomIdsByBlockId } = buildBlockSubtreeMaps(blockAtomIdsById, childBlocksByParentId);
 
   for (let pass = 0; pass < 8; pass++) {
     let movedThisPass = false;
@@ -497,24 +737,54 @@ function repelOverlappingBlocks(inputCoords, blockAtomIdsById, rootBlockId, bond
       for (let secondIndex = firstIndex + 1; secondIndex < blockIds.length; secondIndex++) {
         const firstBlockId = blockIds[firstIndex];
         const secondBlockId = blockIds[secondIndex];
-        const firstAtomIds = blockAtomIdsById.get(firstBlockId) ?? [];
-        const secondAtomIds = blockAtomIdsById.get(secondBlockId) ?? [];
-        const firstBounds = computeBounds(coords, firstAtomIds);
-        const secondBounds = computeBounds(coords, secondAtomIds);
+        const firstBounds = packingState.boundsByBlockId.get(firstBlockId);
+        const secondBounds = packingState.boundsByBlockId.get(secondBlockId);
         const { overlapX, overlapY } = measureBlockOverlap(firstBounds, secondBounds);
         if (overlapX <= 0 || overlapY <= 0) {
           continue;
         }
 
-        const movableBlockId = firstBlockId === rootBlockId ? secondBlockId : firstBlockId;
-        const fixedBlockId = movableBlockId === firstBlockId ? secondBlockId : firstBlockId;
-        const movableAtomIds = blockAtomIdsById.get(movableBlockId) ?? [];
-        const movableBounds = movableBlockId === firstBlockId ? firstBounds : secondBounds;
-        const fixedBounds = fixedBlockId === firstBlockId ? firstBounds : secondBounds;
-        const direction = overlapPushDirection(movableBounds, fixedBounds);
-        const shift = Math.max(overlapX, overlapY) + bondLength * 0.25;
+        const baseCost = packingCostForState(packingState, bondLength, 200);
+        const basePairOverlap = overlapX * overlapY;
+        let bestState = null;
+        let bestCost = baseCost;
+        let bestPairOverlap = basePairOverlap;
 
-        coords = translateCoords(coords, movableAtomIds, direction.x * shift, direction.y * shift);
+        const preferredMovableBlockId = chooseMovableBlockId(firstBlockId, secondBlockId, rootBlockId, blockAtomIdsById, depthByBlockId);
+        const movableBlockIds = [preferredMovableBlockId, preferredMovableBlockId === firstBlockId ? secondBlockId : firstBlockId]
+          .filter((blockId, index, list) => blockId !== rootBlockId && list.indexOf(blockId) === index && attachmentAtomByBlockId.has(blockId));
+
+        for (const movableBlockId of movableBlockIds) {
+          const fixedBlockId = movableBlockId === firstBlockId ? secondBlockId : firstBlockId;
+          const movableBounds = movableBlockId === firstBlockId ? firstBounds : secondBounds;
+          const fixedBounds = fixedBlockId === firstBlockId ? firstBounds : secondBounds;
+          const anchorAtomId = attachmentAtomByBlockId.get(movableBlockId);
+          const subtreeBlockIds = subtreeBlockIdsByBlockId.get(movableBlockId) ?? [movableBlockId];
+          const subtreeAtomIds = subtreeAtomIdsByBlockId.get(movableBlockId) ?? [];
+
+          for (const angle of orderedOverlapRotationAngles(movableBounds, fixedBounds, packingState.coords.get(anchorAtomId))) {
+            const rotatedCoords = rotateBlockSubtree(packingState.coords, subtreeAtomIds, anchorAtomId, angle);
+            const rotatedState = updatePackingState(packingState, rotatedCoords, subtreeBlockIds, blockAtomIdsById);
+            const rotatedFirstBounds = rotatedState.boundsByBlockId.get(firstBlockId);
+            const rotatedSecondBounds = rotatedState.boundsByBlockId.get(secondBlockId);
+            const { overlapX: rotatedOverlapX, overlapY: rotatedOverlapY } = measureBlockOverlap(rotatedFirstBounds, rotatedSecondBounds);
+            const rotatedPairOverlap = rotatedOverlapX > 0 && rotatedOverlapY > 0 ? rotatedOverlapX * rotatedOverlapY : 0;
+            const rotatedCost = packingCostForState(rotatedState, bondLength, 200);
+            if (
+              rotatedPairOverlap + 1e-6 < bestPairOverlap
+              || (rotatedPairOverlap <= bestPairOverlap + 1e-6 && rotatedCost + 1e-6 < bestCost)
+            ) {
+              bestState = rotatedState;
+              bestCost = rotatedCost;
+              bestPairOverlap = rotatedPairOverlap;
+            }
+          }
+        }
+
+        if (!bestState) {
+          continue;
+        }
+        packingState = bestState;
         repulsionMoveCount++;
         movedThisPass = true;
       }
@@ -524,7 +794,7 @@ function repelOverlappingBlocks(inputCoords, blockAtomIdsById, rootBlockId, bond
     }
   }
 
-  return { coords, repulsionMoveCount };
+  return { coords: packingState.coords, repulsionMoveCount };
 }
 
 /**
@@ -536,7 +806,7 @@ function repelOverlappingBlocks(inputCoords, blockAtomIdsById, rootBlockId, bond
  * @param {number} bondLength - Target bond length.
  * @param {{sliceLayouter?: (layoutGraph: object, block: {id: string, atomIds: string[], canonicalSignature?: string}, bondLength: number) => {family?: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses?: Map<string, 'planar'|'bridged'>}}} [options] - Optional family overrides for testing or fallback control.
  * @param {boolean} [options.disableRotationPacking] - Disables rigid subtree rotation packing for test comparisons.
- * @returns {{coords: Map<string, {x: number, y: number}>, placementMode: string, blockCount: number, refinedStitchCount: number, linearFallbackCount: number, rootFallbackUsed: boolean, repulsionMoveCount: number, rotationMoveCount: number, bondValidationClasses: Map<string, 'planar'|'bridged'>}|null} Placement result.
+ * @returns {{coords: Map<string, {x: number, y: number}>, placementMode: string, blockCount: number, refinedStitchCount: number, linearFallbackCount: number, rootFallbackUsed: boolean, repulsionMoveCount: number, rotationMoveCount: number, bondValidationClasses: Map<string, 'planar'|'bridged'>, cleanupRigidSubtreesByAtomId?: Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>}|null} Placement result.
  */
 export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, options = {}) {
   const threshold = layoutGraph.options.largeMoleculeThreshold;
@@ -568,7 +838,8 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
       rootFallbackUsed: true,
       repulsionMoveCount: 0,
       rotationMoveCount: 0,
-      bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar')
+      bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar'),
+      cleanupRigidSubtreesByAtomId: new Map()
     };
   }
 
@@ -579,6 +850,7 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
   const placedBlockIds = new Set([rootBlock.id]);
   const childBlocksByParentId = new Map();
   const attachmentAtomByBlockId = new Map();
+  const rootAtomByBlockId = new Map();
   const queue = [rootBlock.id];
   let refinedStitchCount = 0;
   let linearFallbackCount = 0;
@@ -629,13 +901,21 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
       childBlocks.push(childBlock.id);
       childBlocksByParentId.set(parentBlock.id, childBlocks);
       attachmentAtomByBlockId.set(childBlock.id, parentAtomId);
+      rootAtomByBlockId.set(childBlock.id, childAtomId);
       placedBlockAtomIds.set(childBlock.id, childParticipantAtomIds);
       placedBlockIds.add(childBlock.id);
       queue.push(childBlock.id);
     }
   }
 
-  const repulsion = repelOverlappingBlocks(coords, placedBlockAtomIds, rootBlock.id, bondLength);
+  const cleanupRigidSubtreesByAtomId = buildCleanupRigidSubtreesByAtomId(
+    layoutGraph,
+    placedBlockAtomIds,
+    childBlocksByParentId,
+    attachmentAtomByBlockId,
+    rootAtomByBlockId
+  );
+  const repulsion = repelOverlappingBlocks(coords, placedBlockAtomIds, childBlocksByParentId, attachmentAtomByBlockId, rootBlock.id, bondLength);
   const packed = options.disableRotationPacking
     ? { coords: repulsion.coords, rotationMoveCount: 0 }
     : compactBlockRotations(repulsion.coords, placedBlockAtomIds, childBlocksByParentId, attachmentAtomByBlockId, rootBlock.id, bondLength);
@@ -648,6 +928,7 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
     rootFallbackUsed: false,
     repulsionMoveCount: repulsion.repulsionMoveCount,
     rotationMoveCount: packed.rotationMoveCount,
-    bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses, { overwrite: false })
+    bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses, { overwrite: false }),
+    cleanupRigidSubtreesByAtomId
   };
 }

@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
+import { measureBondLengthDeviation } from '../../../../src/layout/engine/audit/invariants.js';
 import { layoutLargeMoleculeFamily } from '../../../../src/layout/engine/families/large-molecule.js';
 import { computeBounds } from '../../../../src/layout/engine/geometry/bounds.js';
 import { layoutAtomSlice } from '../../../../src/layout/engine/placement/atom-slice.js';
@@ -97,11 +98,15 @@ describe('layout/engine/families/large-molecule', () => {
     });
     const start = Date.now();
     const result = layoutLargeMoleculeFamily(graph, graph.components[0], graph.options.bondLength);
+    const bondDeviation = measureBondLengthDeviation(graph, result.coords, graph.options.bondLength, {
+      bondValidationClasses: result.bondValidationClasses
+    });
 
     assert.equal(result.placementMode, 'block-stitched');
     assert.equal(result.rootFallbackUsed, false);
     assert.ok(result.blockCount > 4);
     assert.equal(result.coords.size > 0, true);
+    assert.equal(bondDeviation.failingBondCount, 0);
     assert.ok(Date.now() - start < 15000);
   }, 20000);
 
