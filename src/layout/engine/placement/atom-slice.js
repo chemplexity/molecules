@@ -1,12 +1,19 @@
 /** @module placement/atom-slice */
 
+import { auditLayout } from '../audit/audit.js';
 import { chooseScaffoldPlan } from '../scaffold/choose-scaffold.js';
 import { buildCanonicalComponentSignature } from '../topology/canonical-order.js';
 import { assignBondValidationClass, resolvePlacementValidationClass } from './bond-validation.js';
 import { layoutMixedFamily } from '../families/mixed.js';
 import { layoutAcyclicFamily } from '../families/acyclic.js';
 import { layoutBridgedFamily } from '../families/bridged.js';
-import { layoutFusedFamily } from '../families/fused.js';
+import {
+  isBetterBridgedRescueForFusedSystem,
+  layoutFusedCageKamadaKawai,
+  layoutFusedFamily,
+  shouldShortCircuitToFusedCageKk,
+  shouldTryBridgedRescueForFusedSystem
+} from '../families/fused.js';
 import { layoutIsolatedRingFamily } from '../families/isolated-ring.js';
 import { layoutMacrocycleFamily } from '../families/macrocycle.js';
 import { layoutSpiroFamily } from '../families/spiro.js';
@@ -105,10 +112,11 @@ export function ringConnectionsForSlice(layoutGraph, ringIds) {
  * @param {string[]} atomIds - Slice atom IDs.
  * @param {object[]} sliceRings - Ring descriptors in the slice.
  * @param {object[]} sliceConnections - Ring-connection descriptors in the slice.
+ * @param {{ignoreMetals?: boolean}} [options] - Classification options.
  * @returns {string} Slice family.
  */
-export function classifyAtomSliceFamily(layoutGraph, atomIds, sliceRings, sliceConnections) {
-  const hasMetal = atomIds.some(atomId => {
+export function classifyAtomSliceFamily(layoutGraph, atomIds, sliceRings, sliceConnections, options = {}) {
+  const hasMetal = !options.ignoreMetals && atomIds.some(atomId => {
     const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
     if (!atom || atom.name === 'H') {
       return false;
@@ -137,6 +145,18 @@ export function classifyAtomSliceFamily(layoutGraph, atomIds, sliceRings, sliceC
   return 'acyclic';
 }
 
+function auditSlicePlacement(layoutGraph, atomIds, family, placement, bondLength, templateId = null) {
+  if (!placement || placement.coords.size === 0) {
+    return null;
+  }
+  const validationClass = resolvePlacementValidationClass(family, placement.placementMode ?? 'constructed', templateId);
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, atomIds, validationClass);
+  return auditLayout(layoutGraph, placement.coords, {
+    bondLength,
+    bondValidationClasses
+  });
+}
+
 /**
  * Lays out a supported atom slice using the current family placers.
  * @param {object} layoutGraph - Layout graph shell.
@@ -155,16 +175,18 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
     layoutGraph,
     sliceRings.map(ring => ring.id)
   );
-  const heuristicFamily = classifyAtomSliceFamily(layoutGraph, atomIds, sliceRings, sliceConnections);
+  const heuristicFamily = classifyAtomSliceFamily(layoutGraph, atomIds, sliceRings, sliceConnections, {
+    ignoreMetals: options.ignoreMetalsForFamily ?? false
+  });
   const sliceComponent = {
     id: component.id,
     atomIds,
     canonicalSignature: component.canonicalSignature ?? buildCanonicalComponentSignature(atomIds, layoutGraph.canonicalAtomRank, layoutGraph.sourceMolecule)
   };
   const scaffoldPlan = chooseScaffoldPlan(layoutGraph, sliceComponent);
-  const family = heuristicFamily === 'organometallic' ? heuristicFamily : scaffoldPlan.rootScaffold.family;
+  const family = options.forceFamily ?? (heuristicFamily === 'organometallic' ? heuristicFamily : scaffoldPlan.rootScaffold.family);
 
-  if (scaffoldPlan.mixedMode) {
+  if (scaffoldPlan.mixedMode && !options.forceFamily) {
     return layoutMixedFamily(layoutGraph, sliceComponent, adjacency, scaffoldPlan, bondLength);
   }
 
@@ -190,7 +212,31 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
         connection.firstRingId < connection.secondRingId ? `${connection.firstRingId}:${connection.secondRingId}` : `${connection.secondRingId}:${connection.firstRingId}`;
       ringConnectionByPair.set(key, connection);
     }
-    result = layoutFusedFamily(sliceRings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId: scaffoldPlan.rootScaffold.templateId ?? null });
+    const templateId = scaffoldPlan.rootScaffold.templateId ?? null;
+    if (shouldShortCircuitToFusedCageKk(atomIds.length, sliceRings.length, templateId)) {
+      result = layoutFusedCageKamadaKawai(sliceRings, bondLength, { layoutGraph, templateId })
+        ?? layoutFusedFamily(sliceRings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId });
+    } else {
+      result = layoutFusedFamily(sliceRings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId });
+      let bestResult = result;
+      let bestAudit = auditSlicePlacement(layoutGraph, atomIds, family, result, bondLength, templateId);
+      if (shouldTryBridgedRescueForFusedSystem(atomIds.length, sliceRings.length, templateId, bestAudit)) {
+      const bridgedResult = layoutBridgedFamily(sliceRings, bondLength, { layoutGraph, templateId });
+      const bridgedAudit = auditSlicePlacement(layoutGraph, atomIds, family, bridgedResult, bondLength, templateId);
+      if (isBetterBridgedRescueForFusedSystem(bridgedAudit, bestAudit)) {
+        bestResult = bridgedResult;
+        bestAudit = bridgedAudit;
+      }
+
+        const cageKkResult = layoutFusedCageKamadaKawai(sliceRings, bondLength, { layoutGraph, templateId });
+      const cageKkAudit = auditSlicePlacement(layoutGraph, atomIds, family, cageKkResult, bondLength, templateId);
+      if (isBetterBridgedRescueForFusedSystem(cageKkAudit, bestAudit)) {
+        bestResult = cageKkResult;
+        bestAudit = cageKkAudit;
+      }
+      }
+      result = bestResult;
+    }
   } else if (family === 'spiro') {
     const ringAdj = new Map(sliceRings.map(ring => [ring.id, []]));
     const ringConnectionByPair = new Map();

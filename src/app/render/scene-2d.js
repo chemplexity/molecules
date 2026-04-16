@@ -9,6 +9,7 @@ import {
   labelHalfW,
   labelHalfH,
   labelTextOffset,
+  ringLabelOffset,
   formatChargeLabel,
   computeChargeBadgePlacement,
   getAtomLabel,
@@ -611,14 +612,14 @@ export function create2DSceneRenderer(ctx) {
         continue;
       }
       const hh = labelHalfH(label, fontSize);
-      const dx = labelTextOffset(label, fontSize);
+      const { dx, dy } = ringLabelOffset(atom, mol, toSVGPt, label, fontSize);
       const { x, y } = toSVGPt(atom);
       bgLayer
         .append('rect')
         .attr('class', 'atom-bg')
         .attr('data-atom-id', atom.id)
         .attr('x', x + dx - hw)
-        .attr('y', y - hh)
+        .attr('y', y + dy - hh)
         .attr('width', hw * 2)
         .attr('height', hh * 2)
         .attr('rx', 2);
@@ -630,7 +631,7 @@ export function create2DSceneRenderer(ctx) {
       const symbol = atom.name;
       const charge = atom.getCharge();
       const label = getAtomLabel(atom, hCounts, toSVGPt, mol);
-      const labelDx = labelTextOffset(label, fontSize);
+      const { dx: labelDx, dy: labelDy } = ringLabelOffset(atom, mol, toSVGPt, label, fontSize);
 
       const hitGroup = labelLayer.append('g').attr('data-atom-id', atom.id).attr('transform', `translate(${x},${y})`);
 
@@ -642,7 +643,7 @@ export function create2DSceneRenderer(ctx) {
       _bind2dAtomEvents(atomHit, atom);
 
       if (label) {
-        renderAtomLabel(hitGroup, label, symbol === 'H' ? '#333333' : atomColor(symbol, '2d'), labelDx, fontSize);
+        renderAtomLabel(hitGroup, label, symbol === 'H' ? '#333333' : atomColor(symbol, '2d'), labelDx, labelDy, fontSize);
         if (charge !== 0) {
           const sign = formatChargeLabel(charge);
           const lonePairDots = _get2dLonePairDots(atom, label);

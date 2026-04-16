@@ -18,7 +18,7 @@ import {
   kekulize,
   labelHalfH,
   labelHalfW,
-  labelTextOffset,
+  ringLabelOffset,
   perpUnit,
   secondaryDir,
   shortenLine,
@@ -160,13 +160,65 @@ function renderPosition(atom, projectedCoords, molecule) {
   return { x: atom.x, y: atom.y };
 }
 
-function bondToSVG(bond, firstAtom, secondAtom, molecule, toSVG, stereoType, aromaticMode = AROMATIC_RENDER_MODE) {
+function labelClearance(atom, otherSVGPt, molecule, toSVG, hCounts) {
+  const label = getAtomLabel(atom, hCounts, toSVG, molecule);
+  if (!label) {
+    return 0;
+  }
+  const center = toSVG(atom);
+  const dx = otherSVGPt.x - center.x;
+  const dy = otherSVGPt.y - center.y;
+  const length = Math.hypot(dx, dy) || 1;
+  const { dx: cx, dy: cy } = ringLabelOffset(atom, molecule, toSVG, label, FONT_SIZE);
+  const hw = labelHalfW(label, FONT_SIZE) + 1;
+  const hh = labelHalfH(label, FONT_SIZE) + 1;
+  const dirX = dx / length;
+  const dirY = dy / length;
+  const candidates = [];
+
+  if (Math.abs(dirX) > 1e-9) {
+    candidates.push((cx + hw) / dirX);
+    candidates.push((cx - hw) / dirX);
+  }
+  if (Math.abs(dirY) > 1e-9) {
+    candidates.push((cy + hh) / dirY);
+    candidates.push((cy - hh) / dirY);
+  }
+
+  let best = Infinity;
+  for (const t of candidates) {
+    if (!(t > 0)) {
+      continue;
+    }
+    const px = dirX * t;
+    const py = dirY * t;
+    if (px < cx - hw - 1e-6 || px > cx + hw + 1e-6) {
+      continue;
+    }
+    if (py < cy - hh - 1e-6 || py > cy + hh + 1e-6) {
+      continue;
+    }
+    best = Math.min(best, t);
+  }
+  return Number.isFinite(best) ? best : Math.max(hw, hh);
+}
+
+function shortenBondLineWithLabelClearance(atom1, atom2, start, end, molecule, toSVG, hCounts, minimumClearance = 0) {
+  const c1 = Math.max(labelClearance(atom1, end, molecule, toSVG, hCounts), minimumClearance);
+  const c2 = Math.max(labelClearance(atom2, start, molecule, toSVG, hCounts), minimumClearance);
+  return shortenLine(start.x, start.y, end.x, end.y, c1, c2);
+}
+
+function bondToSVG(bond, firstAtom, secondAtom, molecule, toSVG, stereoType, hCounts, aromaticMode = AROMATIC_RENDER_MODE) {
   const output = [];
 
   if (stereoType === 'wedge' || stereoType === 'dash') {
-    const start = toSVG(firstAtom);
-    const end = toSVG(secondAtom);
-    const { nx, ny } = perpUnit(end.x - start.x, end.y - start.y);
+    const startOriginal = toSVG(firstAtom);
+    const endOriginal = toSVG(secondAtom);
+    const { nx, ny } = perpUnit(endOriginal.x - startOriginal.x, endOriginal.y - startOriginal.y);
+    const trimmed = shortenBondLineWithLabelClearance(firstAtom, secondAtom, startOriginal, endOriginal, molecule, toSVG, hCounts);
+    const start = { x: trimmed.x1, y: trimmed.y1 };
+    const end = { x: trimmed.x2, y: trimmed.y2 };
     if (stereoType === 'wedge') {
       const bondLength = Math.hypot(end.x - start.x, end.y - start.y) || 1;
       const tip = {
@@ -206,27 +258,57 @@ function bondToSVG(bond, firstAtom, secondAtom, molecule, toSVG, stereoType, aro
     ` stroke="#222" stroke-width="${STROKE_W}"${dashed ? ' stroke-dasharray="3,3"' : ''}/>`;
 
   if (order === 1) {
-    output.push(lineElement(start.x, start.y, end.x, end.y, false));
+    const trimmed = shortenBondLineWithLabelClearance(firstAtom, secondAtom, start, end, molecule, toSVG, hCounts);
+    output.push(lineElement(trimmed.x1, trimmed.y1, trimmed.x2, trimmed.y2, false));
   } else if (order === 2) {
     const direction = secondaryDir(firstAtom, secondAtom, molecule, toSVG);
-    output.push(lineElement(start.x, start.y, end.x, end.y, false));
+    const primary = shortenBondLineWithLabelClearance(firstAtom, secondAtom, start, end, molecule, toSVG, hCounts);
+    output.push(lineElement(primary.x1, primary.y1, primary.x2, primary.y2, false));
     const ox = nx * BOND_OFF * direction;
     const oy = ny * BOND_OFF * direction;
-    const shifted = shortenLine(start.x + ox, start.y + oy, end.x + ox, end.y + oy, 4, 4);
+    const shifted = shortenBondLineWithLabelClearance(
+      firstAtom,
+      secondAtom,
+      { x: start.x + ox, y: start.y + oy },
+      { x: end.x + ox, y: end.y + oy },
+      molecule,
+      toSVG,
+      hCounts,
+      4
+    );
     output.push(lineElement(shifted.x1, shifted.y1, shifted.x2, shifted.y2, false));
   } else if (order === 3) {
     for (const distance of [-BOND_OFF, 0, BOND_OFF]) {
       const ox = nx * distance;
       const oy = ny * distance;
-      const shifted = shortenLine(start.x + ox, start.y + oy, end.x + ox, end.y + oy, distance !== 0 ? 4 : 0, distance !== 0 ? 4 : 0);
+      const shifted = shortenBondLineWithLabelClearance(
+        firstAtom,
+        secondAtom,
+        { x: start.x + ox, y: start.y + oy },
+        { x: end.x + ox, y: end.y + oy },
+        molecule,
+        toSVG,
+        hCounts,
+        distance !== 0 ? 4 : 0
+      );
       output.push(lineElement(shifted.x1, shifted.y1, shifted.x2, shifted.y2, false));
     }
   } else if (order === 1.5) {
     const direction = secondaryDir(firstAtom, secondAtom, molecule, toSVG);
-    output.push(lineElement(start.x, start.y, end.x, end.y, false));
+    const primary = shortenBondLineWithLabelClearance(firstAtom, secondAtom, start, end, molecule, toSVG, hCounts);
+    output.push(lineElement(primary.x1, primary.y1, primary.x2, primary.y2, false));
     const ox = nx * BOND_OFF * direction;
     const oy = ny * BOND_OFF * direction;
-    const shifted = shortenLine(start.x + ox, start.y + oy, end.x + ox, end.y + oy, 5, 5);
+    const shifted = shortenBondLineWithLabelClearance(
+      firstAtom,
+      secondAtom,
+      { x: start.x + ox, y: start.y + oy },
+      { x: end.x + ox, y: end.y + oy },
+      molecule,
+      toSVG,
+      hCounts,
+      5
+    );
     output.push(lineElement(shifted.x1, shifted.y1, shifted.x2, shifted.y2, true));
   }
 
@@ -326,7 +408,7 @@ export function renderMolSVG(
         renderSecond = firstAtom;
       }
     }
-    bondElements.push(...bondToSVG(bond, renderFirst, renderSecond, molecule, toSVG, stereoType, aromaticMode));
+    bondElements.push(...bondToSVG(bond, renderFirst, renderSecond, molecule, toSVG, stereoType, hCounts, aromaticMode));
   }
 
   for (const [bondId] of stereoMap) {
@@ -386,10 +468,10 @@ export function renderMolSVG(
     const color = atomColor(atom.name);
     const halfWidth = labelHalfW(label, FONT_SIZE);
     const halfHeight = labelHalfH(label, FONT_SIZE);
-    const dx = labelTextOffset(label, FONT_SIZE);
+    const { dx, dy } = ringLabelOffset(atom, molecule, toSVG, label, FONT_SIZE);
 
     labelElements.push(
-      `<rect x="${(x + dx - halfWidth).toFixed(2)}" y="${(y - halfHeight).toFixed(2)}" width="${(halfWidth * 2).toFixed(2)}" height="${(halfHeight * 2).toFixed(2)}" fill="white" rx="2"/>`
+      `<rect x="${(x + dx - halfWidth).toFixed(2)}" y="${(y + dy - halfHeight).toFixed(2)}" width="${(halfWidth * 2).toFixed(2)}" height="${(halfHeight * 2).toFixed(2)}" fill="white" rx="2"/>`
     );
 
     let textContent = '';
@@ -429,7 +511,7 @@ export function renderMolSVG(
     }
 
     labelElements.push(
-      `<text x="${(x + dx).toFixed(2)}" y="${y.toFixed(2)}" font-family="sans-serif" font-size="${FONT_SIZE}" fill="${color}" text-anchor="middle" dominant-baseline="central">${textContent}</text>${chargeMarkup}`
+      `<text x="${(x + dx).toFixed(2)}" y="${(y + dy).toFixed(2)}" font-family="sans-serif" font-size="${FONT_SIZE}" fill="${color}" text-anchor="middle" dominant-baseline="central">${textContent}</text>${chargeMarkup}`
     );
 
     if (showLonePairs) {

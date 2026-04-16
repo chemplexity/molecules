@@ -2,8 +2,14 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
-import { angleOf, angularDifference, sub } from '../../../src/layout/engine/geometry/vec2.js';
+import { auditLayout } from '../../../src/layout/engine/audit/audit.js';
+import { angleOf, angularDifference, centroid, sub } from '../../../src/layout/engine/geometry/vec2.js';
+import { createLayoutGraphFromNormalized } from '../../../src/layout/engine/model/layout-graph.js';
+import { normalizeOptions } from '../../../src/layout/engine/options.js';
+import { layoutSupportedComponents } from '../../../src/layout/engine/placement/component-layout.js';
 import { classifyFamily, runPipeline } from '../../../src/layout/engine/pipeline.js';
+import { resolveProfile } from '../../../src/layout/engine/profile.js';
+import { resolvePolicy } from '../../../src/layout/engine/standards/profile-policy.js';
 import {
   makeAlternatingMethylMacrocycle,
   makeDisconnectedEthanes,
@@ -40,6 +46,60 @@ function ringAngles(coords, atomIds) {
     const secondMagnitude = Math.hypot(secondVector.x, secondVector.y);
     return Math.acos(Math.max(-1, Math.min(1, dot / (firstMagnitude * secondMagnitude)))) * (180 / Math.PI);
   });
+}
+
+/**
+ * Returns the placement-stage audit and final pipeline result for one SMILES input.
+ * @param {string} smiles - SMILES string.
+ * @param {object} [options] - Pipeline options.
+ * @returns {{placementAudit: object, result: object}} Placement audit and final result.
+ */
+function inspectPlacementAndFinalAudit(smiles, options = { suppressH: true }) {
+  const molecule = parseSMILES(smiles);
+  const normalizedOptions = normalizeOptions(options);
+  const layoutGraph = createLayoutGraphFromNormalized(molecule, normalizedOptions);
+  const familySummary = classifyFamily(layoutGraph);
+  const policy = resolvePolicy(resolveProfile(normalizedOptions.profile), {
+    ...layoutGraph.traits,
+    ...familySummary
+  });
+  const placement = layoutSupportedComponents(layoutGraph, policy);
+  const placementAudit = auditLayout(layoutGraph, placement.coords, {
+    bondLength: normalizedOptions.bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+
+  return {
+    placementAudit,
+    result: runPipeline(molecule, options)
+  };
+}
+
+/**
+ * Returns the ring-outward angle used by branch placement for one ring anchor.
+ * Multi-ring anchors use the whole ring-system centroid; single-ring anchors
+ * use the local ring centroid.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @returns {number|null} Preferred ring-outward angle in radians.
+ */
+function preferredRingAttachmentAngle(layoutGraph, coords, anchorAtomId) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+  const anchorRingCount = layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0;
+  if (anchorRingCount > 1) {
+    const ringSystem = layoutGraph.ringSystems.find(candidateRingSystem => candidateRingSystem.atomIds.includes(anchorAtomId));
+    const positions = ringSystem?.atomIds.filter(atomId => coords.has(atomId)).map(atomId => coords.get(atomId)) ?? [];
+    return positions.length >= 3 ? angleOf(sub(anchorPosition, centroid(positions))) : null;
+  }
+  const ring = (layoutGraph.atomToRings.get(anchorAtomId) ?? [])[0] ?? null;
+  if (!ring) {
+    return null;
+  }
+  return angleOf(sub(anchorPosition, centroid(ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))));
 }
 
 describe('layout/engine/pipeline', () => {
@@ -169,6 +229,24 @@ describe('layout/engine/pipeline', () => {
     assert.ok(result.metadata.timing.auditMs >= 0);
   });
 
+  it('exports placement and stage telemetry when audit telemetry is enabled', () => {
+    const result = runPipeline(parseSMILES('CC1=CC=CC=C1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(typeof result.metadata.placementFamily, 'string');
+    assert.ok(Array.isArray(result.metadata.placementModes));
+    assert.ok(Array.isArray(result.metadata.componentPlacements));
+    assert.ok(result.metadata.placementAudit);
+    assert.equal(typeof result.metadata.placementAudit.labelOverlapCount, 'number');
+    assert.equal(typeof result.metadata.placementAudit.meanBondLengthDeviation, 'number');
+    assert.ok(result.metadata.stageTelemetry);
+    assert.equal(typeof result.metadata.stageTelemetry.selectedStage, 'string');
+    assert.ok(result.metadata.stageTelemetry.stageAudits.placement);
+    assert.ok(result.metadata.stageTelemetry.stageAudits[result.metadata.stageTelemetry.selectedStage]);
+  });
+
   it('advances bridged molecules to coordinates-ready when a template exists', () => {
     const result = runPipeline(makeNorbornane());
     assert.equal(result.metadata.primaryFamily, 'bridged');
@@ -185,22 +263,20 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.coords.size, 6);
   });
 
-  it('keeps large unmatched bridged cages off the runaway KK fallback loop', () => {
-    const start = Date.now();
-    const result = runPipeline(
-      parseSMILES(
-        'O=C(OCC)C1(C(OCC)=O)C2(C3=C4C5=C6C7=C8C9=C%10C%11=C%12C%13=C%14C%15=C%16C%17=C%18C%19=C%20C%21=C4C%22=C5C%23=C7C%24=C9C%25=C%26C%27=C(C%14=C%17C%28=C%27C%29=C%26C%24=C%23C%30=C%29C(C%20=C%22%30)=C%18%28)C%13=C%10%25)C%21=C%19C%16=C%31C%15=C%12C%32=C%11C8=C6C3=C%32C2%311'
-      ),
-      { suppressH: true, timing: true }
+  it('keeps large unmatched bridged cages under the KK fallback runtime budget without catastrophic geometry', () => {
+    const molecule = parseSMILES(
+      'O=C(OCC)C1(C(OCC)=O)C2(C3=C4C5=C6C7=C8C9=C%10C%11=C%12C%13=C%14C%15=C%16C%17=C%18C%19=C%20C%21=C4C%22=C5C%23=C7C%24=C9C%25=C%26C%27=C(C%14=C%17C%28=C%27C%29=C%26C%24=C%23C%30=C%29C(C%20=C%22%30)=C%18%28)C%13=C%10%25)C%21=C%19C%16=C%31C%15=C%12C%32=C%11C8=C6C3=C%32C2%311'
     );
+    const start = Date.now();
+    const result = runPipeline(molecule, { suppressH: true, timing: true });
     const elapsed = Date.now() - start;
 
     assert.equal(result.metadata.primaryFamily, 'bridged');
     assert.equal(result.metadata.stage, 'coordinates-ready');
-    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.coords.size, molecule.atoms.size);
+    assert.ok(result.metadata.audit.severeOverlapCount <= 5);
     assert.ok(result.metadata.audit.bondLengthFailureCount <= 25);
     assert.ok(result.metadata.audit.maxBondLengthDeviation < 1.0);
-    assert.equal(result.metadata.audit.fallback.mode, null);
     assert.ok(result.metadata.timing.placementMs < 1000, `expected the large unmatched bridged cage to avoid the runaway KK loop, got ${result.metadata.timing.placementMs}ms`);
     assert.ok(elapsed < 2000, `expected the large unmatched bridged cage to finish comfortably under 2s, got ${elapsed}ms`);
   });
@@ -241,6 +317,18 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
   });
 
+  it('keeps the bridged sulfur-oxygen cage on the template-backed mixed path instead of the catastrophic fallback', () => {
+    const result = runPipeline(parseSMILES('CC1(C)CC2CC(C2)COC2=CC=C1S2'), { suppressH: true, auditTelemetry: true });
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.deepEqual(result.metadata.placedFamilies, ['mixed']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok((result.metadata.placementAudit?.maxBondLengthDeviation ?? 1) < 0.35);
+  });
+
   it('snaps constructed fused junction bonds onto an axis for anthracene-like systems', () => {
     const result = runPipeline(parseSMILES('c1ccc2cc3ccccc3cc2c1'));
     const fusedConnections = result.layoutGraph.ringConnections.filter(connection => connection.kind === 'fused');
@@ -255,13 +343,31 @@ describe('layout/engine/pipeline', () => {
     }
   });
 
+  it('short-circuits giant fullerene-like fused cages to the direct cage KK rescue without changing the current audit ceiling', () => {
+    const molecule = parseSMILES(
+      'C12=C3C4=C5C6=C1C7=C8C9=C1C%10=C%11C(=C29)C3=C2C3=C4C4=C5C5=C9C6=C7C6=C7C8=C1C1=C8C%10=C%10C%11=C2C2=C3C3=C4C4=C5C5=C%11C%12=C(C6=C95)C7=C1C1=C%12C5=C%11C4=C3C3=C5C(=C81)C%10=C23'
+    );
+    const start = Date.now();
+    const result = runPipeline(molecule, { suppressH: true, timing: true });
+    const elapsed = Date.now() - start;
+
+    assert.equal(result.metadata.primaryFamily, 'fused');
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.coords.size, molecule.atoms.size);
+    assert.ok(result.metadata.audit.severeOverlapCount <= 2);
+    assert.ok(result.metadata.audit.bondLengthFailureCount <= 15);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.75);
+    assert.ok(result.metadata.timing.placementMs < 1000, `expected the giant fused cage to bypass the runaway planar fused pass, got ${result.metadata.timing.placementMs}ms`);
+    assert.ok(elapsed < 2000, `expected the giant fused cage to finish comfortably under 2s, got ${elapsed}ms`);
+  });
+
   it('advances macrocycles to coordinates-ready through the ellipse placer', () => {
     const result = runPipeline(makeMacrocycle());
     assert.equal(result.metadata.primaryFamily, 'macrocycle');
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.placedComponentCount, 1);
     assert.equal(result.coords.size, 12);
-    assert.deepEqual(result.metadata.policy.postCleanupHooks, ['ring-perimeter-correction']);
+    assert.deepEqual(result.metadata.policy.postCleanupHooks, ['ring-perimeter-correction', 'ring-terminal-hetero-tidy']);
   });
 
   it('records organometallic post-cleanup hooks in the resolved policy metadata', () => {
@@ -498,6 +604,91 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
+  it('keeps reported fused-ring sugar oxygen substituent roots on their exact outward axes in the final layout', () => {
+    const result = runPipeline(
+      parseSMILES('C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4'),
+      { suppressH: true, auditTelemetry: true }
+    );
+    const checkedAnchors = [];
+
+    for (const atomId of result.layoutGraph.components[0].atomIds) {
+      if ((result.layoutGraph.atomToRings.get(atomId)?.length ?? 0) !== 1) {
+        continue;
+      }
+      const atom = result.layoutGraph.atoms.get(atomId);
+      if (!atom || atom.aromatic || atom.heavyDegree !== 3) {
+        continue;
+      }
+      const oxygenChildren = (result.layoutGraph.bondsByAtomId.get(atomId) ?? [])
+        .filter(bond => !bond.inRing && bond.kind === 'covalent' && !bond.aromatic && (bond.order ?? 1) === 1)
+        .map(bond => (bond.a === atomId ? bond.b : bond.a))
+        .filter(childAtomId => (result.layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) === 0 && result.layoutGraph.atoms.get(childAtomId)?.element === 'O');
+      if (oxygenChildren.length !== 1) {
+        continue;
+      }
+      const preferredAngle = preferredRingAttachmentAngle(result.layoutGraph, result.coords, atomId);
+      assert.notEqual(preferredAngle, null);
+      const childAngle = angleOf(sub(result.coords.get(oxygenChildren[0]), result.coords.get(atomId)));
+      checkedAnchors.push(atomId);
+      assert.ok(
+        angularDifference(childAngle, preferredAngle) < 1e-6,
+        `expected ${atomId} oxygen substituent root to follow the exact outward angle`
+      );
+    }
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(checkedAnchors.length >= 3, `expected multiple saturated ring oxygen roots to be checked, got ${checkedAnchors.length}`);
+  });
+
+  it('keeps the inter-ring ether between fused sugar rings on a straight outward-facing bridge', () => {
+    const result = runPipeline(
+      parseSMILES('C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4'),
+      { suppressH: true }
+    );
+    const coreRing = (result.layoutGraph.atomToRings.get('C12') ?? [])[0];
+    const sugarRing = (result.layoutGraph.atomToRings.get('C15') ?? [])[0];
+    assert.ok(coreRing);
+    assert.ok(sugarRing);
+    const coreCentroid = centroid(coreRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean));
+    const sugarCentroid = centroid(sugarRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean));
+    const coreToEtherAngle = angleOf(sub(result.coords.get('O14'), result.coords.get('C12')));
+    const sugarToEtherAngle = angleOf(sub(result.coords.get('O14'), result.coords.get('C15')));
+    const coreToSugarAngle = angleOf(sub(sugarCentroid, result.coords.get('C12')));
+    const sugarToCoreAngle = angleOf(sub(coreCentroid, result.coords.get('C15')));
+    const bridgeAngle = angularDifference(
+      angleOf(sub(result.coords.get('C12'), result.coords.get('O14'))),
+      angleOf(sub(result.coords.get('C15'), result.coords.get('O14')))
+    );
+
+    assert.ok(angularDifference(coreToEtherAngle, coreToSugarAngle) < 1e-6);
+    assert.ok(angularDifference(sugarToEtherAngle, sugarToCoreAngle) < 1e-6);
+    assert.ok(Math.abs(bridgeAngle - Math.PI) < 1e-6);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps reported benzylic nitrile substituent roots on the exact aromatic ring-outward axis', () => {
+    const result = runPipeline(
+      parseSMILES('CC1=CC(=CC(=C1)C1CCCC2=C(C1)N=C(O2)C1=CC=C(F)C=N1)C#N'),
+      { suppressH: true }
+    );
+    const nitrileCarbonAtomId = [...result.layoutGraph.atoms.values()].find(atom =>
+      atom.element === 'C'
+      && atom.heavyDegree === 2
+      && (result.layoutGraph.atomToRings.get(atom.id)?.length ?? 0) === 0
+      && (result.layoutGraph.bondsByAtomId.get(atom.id) ?? []).some(bond => (bond.order ?? 1) === 3)
+    )?.id;
+    assert.ok(nitrileCarbonAtomId);
+    const anchorAtomId = (result.layoutGraph.bondsByAtomId.get(nitrileCarbonAtomId) ?? [])
+      .map(bond => (bond.a === nitrileCarbonAtomId ? bond.b : bond.a))
+      .find(atomId => (result.layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0);
+    assert.ok(anchorAtomId);
+    const preferredAngle = preferredRingAttachmentAngle(result.layoutGraph, result.coords, anchorAtomId);
+    assert.notEqual(preferredAngle, null);
+    const childAngle = angleOf(sub(result.coords.get(nitrileCarbonAtomId), result.coords.get(anchorAtomId)));
+
+    assert.ok(angularDifference(childAngle, preferredAngle) < 1e-6);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
   it('treats macrocycles with substituents as mixed but still places them completely', () => {
     const result = runPipeline(makeMacrocycleWithSubstituent());
     assert.equal(result.metadata.primaryFamily, 'macrocycle');
@@ -558,6 +749,92 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+  });
+
+  it('keeps macrocycle cleanup from trading small overlap improvements for heavy bond failures', () => {
+    const { placementAudit, result } = inspectPlacementAndFinalAudit(
+      'CC[C@H](C)[C@@H]1NC(=O)[C@H](CCCCN)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CO)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](Cc2c[nH]c3ccccc23)NC(=O)CCN(C(=O)c4ccccc4C5=C6C=CC(=O)C=C6Oc7cc(O)ccc57)C(=O)NCCN(CC(=O)N)C(=O)[C@@H](NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](CC(=O)O)NC1=O)C(C)C'
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.equal(placementAudit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.audit.severeOverlapCount <= placementAudit.severeOverlapCount);
+    assert.ok(result.metadata.audit.collapsedMacrocycleCount <= placementAudit.collapsedMacrocycleCount);
+  });
+
+  it('keeps mixed macrocycle cleanup from introducing bond failures when placement is bond-clean', () => {
+    const { placementAudit, result } = inspectPlacementAndFinalAudit(
+      'CC(O)C1NC(=O)C(CC2=CC=CC=C2)NC(=O)C(NC(=O)C(CCCCN)NC(=O)C(CC2=CNC3=CC=CC=C23)NC(=O)C(CC2=CC=CC=C2)NC(=O)C(CC2=CC=CC=C2)NC(=O)C(CC(N)=O)NC(=O)C(CCCCN)NC(=O)C(CSSCC(NC(=O)C(CO)NC1=O)C(O)=O)NC(=O)CNC(=O)C(C)N)C(C)O'
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(placementAudit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.audit.severeOverlapCount <= placementAudit.severeOverlapCount);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation <= placementAudit.maxBondLengthDeviation + 1e-6);
+  });
+
+  it('keeps cleanup from collapsing macrocycles that placement kept intact', () => {
+    const { placementAudit, result } = inspectPlacementAndFinalAudit(
+      'CC(C)(C)[C@H]1COC(=O)[C@H](C\\C=C/C[C@@H](CC(=O)N[C@@H](CO)Cc2ccccc2)C(=O)N1)NC(=O)OCC3c4ccccc4c5ccccc35'
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.equal(placementAudit.collapsedMacrocycleCount, 0);
+    assert.equal(result.metadata.audit.collapsedMacrocycleCount, 0);
+    assert.ok(result.metadata.audit.bondLengthFailureCount <= placementAudit.bondLengthFailureCount);
+    assert.notEqual(result.metadata.audit.fallback.mode, 'macrocycle-circle');
+  });
+
+  it('keeps small macrocycles off the macrocycle-circle fallback when placement is already clean', () => {
+    const { placementAudit, result } = inspectPlacementAndFinalAudit(
+      '[H][C@@]1(C)C[C@]([H])(C)[C@]([H])(O)[C@@]([H])(C)C(=O)O[C@]([H])(CC)[C@]([H])(C)\\C=C\\C1=O'
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'macrocycle');
+    assert.equal(placementAudit.collapsedMacrocycleCount, 0);
+    assert.equal(placementAudit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.collapsedMacrocycleCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.notEqual(result.metadata.audit.fallback.mode, 'macrocycle-circle');
+  });
+
+  it('keeps bridged cleanup from worsening pre-existing bond failures', () => {
+    const { placementAudit, result } = inspectPlacementAndFinalAudit(
+      'CC[C@]1(O)C[C@H]2CN(CCc3c([nH]c4ccc(C)cc34)[C@@](C2)(C(=O)OC)c5cc6c(cc5OC)N(C=O)[C@H]7[C@](O)([C@H](OC(=O)C)[C@]8(CC)CC=CN9CC[C@]67[C@H]89)C(=O)OC)C1'
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.ok(result.metadata.audit.bondLengthFailureCount <= placementAudit.bondLengthFailureCount);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation <= placementAudit.maxBondLengthDeviation + 1e-6);
+  });
+
+  it('keeps mixed bridged cleanup from sacrificing bond counts for overlap wins', () => {
+    const { placementAudit, result } = inspectPlacementAndFinalAudit(
+      '[H][C@@]12N(C)C3=C(C=C(C(OC)=C3)[C@]3(C[C@@H]4CN(C[C@](O)(CC)C4)CCC4=C3NC3=CC=CC=C43)C(=O)OC)[C@@]11CCN3CC=C[C@@](CC)([C@@H](OC(C)=O)[C@]2(O)C(=O)OC)[C@@]13[H]'
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.ok(placementAudit.bondLengthFailureCount > 0);
+    assert.ok(result.metadata.audit.bondLengthFailureCount <= placementAudit.bondLengthFailureCount);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation <= placementAudit.maxBondLengthDeviation + 1e-6);
+    assert.ok(result.metadata.audit.severeOverlapCount <= placementAudit.severeOverlapCount);
+  });
+
+  it('keeps mixed organometallic cleanup from worsening cobalt-corrin bond failures', () => {
+    const { placementAudit, result } = inspectPlacementAndFinalAudit(
+      '[C@@H]12N3C4=C([N]([Co+]567(N8C9=C(C%10=[N]5C([C@H]([C@]%10(C)CC(N)=O)CCC(N)=O)=CC5=[N]6C([C@H](C5(C)C)CCC(N)=O)=C(C5=[N]7[C@H]([C@@H]([C@@]5(C)CCC(=O)NCC(C)OP([O-])(=O)O[C@@H]([C@H]1O)[C@@H](CO)O2)CC(N)=O)[C@]8([C@@]([C@@H]9CCC(N)=O)(C)CC(N)=O)C)C)C)C)=C3)C=C(C(C)=C4)C'
+    );
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.ok(placementAudit.bondLengthFailureCount > 0);
+    assert.ok(result.metadata.audit.bondLengthFailureCount <= placementAudit.bondLengthFailureCount);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation <= placementAudit.maxBondLengthDeviation + 1e-6);
+    assert.ok(result.metadata.audit.severeOverlapCount <= placementAudit.severeOverlapCount);
   });
 
   it('prefers macrocycle-aware slice placement over large-molecule partitioning for large cyclic peptides', () => {

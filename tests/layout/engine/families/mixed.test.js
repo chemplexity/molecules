@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/index.js';
+import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { buildScaffoldPlan } from '../../../../src/layout/engine/model/scaffold-plan.js';
@@ -220,6 +221,69 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(elapsed < 3500, `expected the mixed peptide outlier to stay below the local branch-search budget, got ${elapsed}ms`);
   });
 
+  it('rescues compact bridged mixed roots with a fused fallback when the KK placement is bond-dirty', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('OC(=O)[C@@]12CC3CC(C1)[C@H](Oc4ccc(cc4)C(=O)NCCNC(=O)c5ccc(cc5)c6ccccc6)C(C3)C2'),
+      { suppressH: true }
+    );
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: result.bondValidationClasses
+    });
+
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(result.family, 'mixed');
+    assert.equal(result.supported, true);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < 0.35);
+  });
+
+  it('rescues fused-plus-spiro bridged hybrids by laying out fused blocks before spiro attachment', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('COC(=O)c1cc2c([nH]1)C(=O)C=C3N(C[C@H]4C[C@@]234)C(=O)c5cc6c([nH]5)C(=O)C=C7N(C[C@H]8C[C@@]678)C(=O)OC(C)(C)C'),
+      { suppressH: true }
+    );
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: result.bondValidationClasses
+    });
+
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(result.family, 'mixed');
+    assert.equal(result.supported, true);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < 1e-6);
+  });
+
+  it('rescues bridged-plus-fused hybrids by aligning fused blocks across the bridged shared-atom set', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('CC12CC1CC1=CC(CCC(C)(C)C2)=CS1'),
+      { suppressH: true }
+    );
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: result.bondValidationClasses
+    });
+
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(result.family, 'mixed');
+    assert.equal(result.supported, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.ok(audit.bondLengthFailureCount <= 5);
+    assert.ok(audit.maxBondLengthDeviation < 0.3);
+  });
+
   it('keeps an ethynyl substituent pointing outward and linear from the ring', () => {
     const graph = createLayoutGraph(makePhenylacetylene());
     const component = graph.components[0];
@@ -283,6 +347,45 @@ describe('layout/engine/families/mixed', () => {
 
     assert.equal(result.supported, true);
     assert.ok(outwardDot > 0.5);
+  });
+
+  it('places the reported sulfur-ring fused methyl substituents on the exact local outward axis', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1=CSC2=C1C1=C(CNCC(=O)C1)C=C2C'), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const checkedAnchors = [];
+
+    for (const atomId of component.atomIds) {
+      if ((graph.atomToRings.get(atomId)?.length ?? 0) === 0) {
+        continue;
+      }
+      const atom = graph.sourceMolecule.atoms.get(atomId);
+      const terminalCarbonLeafChildren = atom
+        ?.getNeighbors(graph.sourceMolecule)
+        .filter(neighborAtom =>
+          neighborAtom
+          && neighborAtom.name === 'C'
+          && (graph.atomToRings.get(neighborAtom.id)?.length ?? 0) === 0
+          && (graph.atoms.get(neighborAtom.id)?.heavyDegree ?? 0) === 1
+        )
+        .map(neighborAtom => neighborAtom.id) ?? [];
+      if (terminalCarbonLeafChildren.length !== 1) {
+        continue;
+      }
+
+      const childAngle = angleOf(sub(result.coords.get(terminalCarbonLeafChildren[0]), result.coords.get(atomId)));
+      const bestLocalDeviation = Math.min(
+        ...graph.rings
+          .filter(ring => ring.atomIds.includes(atomId))
+          .map(ring => angularDifference(childAngle, angleOf(sub(result.coords.get(atomId), centroid(ring.atomIds.map(ringAtomId => result.coords.get(ringAtomId)))))))
+      );
+      checkedAnchors.push({ atomId, bestLocalDeviation });
+      assert.ok(bestLocalDeviation < 1e-6, `expected ${atomId} terminal methyl to follow the exact local outward angle, got ${bestLocalDeviation.toFixed(6)} rad`);
+    }
+
+    assert.equal(result.supported, true);
+    assert.equal(checkedAnchors.length, 2, `expected two sulfur-ring methyl anchors, checked ${checkedAnchors.length}`);
   });
 
   it('keeps a heavy ring substituent on the outward axis even when the anchor also carries an explicit hydrogen', () => {
@@ -504,6 +607,28 @@ describe('layout/engine/families/mixed', () => {
 
     assert.equal(result.supported, true);
     assert.ok(Math.abs(linkerAngle - (2 * Math.PI) / 3) < 0.2, `expected diphenylmethane linker angle near 120 degrees, got ${((linkerAngle * 180) / Math.PI).toFixed(2)}`);
+  });
+
+  it('keeps asymmetric fused-heteroaryl benzyl linkers on the standard 120-degree zigzag instead of pinching them to 60 degrees', () => {
+    const graph = createLayoutGraph(parseSMILES('[H][C@@](CC)(CO)NC1=NC2=C(C=NN2C(NCC2=CC=CC=C2)=N1)C(C)C'), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const fusedAttachmentRing = (graph.atomToRings.get('C15') ?? [])[0];
+    const fusedAttachmentOutwardAngle = angleOf(sub(
+      result.coords.get('C15'),
+      centroid(fusedAttachmentRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))
+    ));
+    const fusedExitAngle = angleOf(sub(result.coords.get('N16'), result.coords.get('C15')));
+    const firstLinkerAngle = bondAngleAtAtom(result.coords, 'N16', 'C15', 'C17');
+    const benzylicLinkerAngle = bondAngleAtAtom(result.coords, 'C17', 'N16', 'C18');
+    const ringAttachmentAngle = bondAngleAtAtom(result.coords, 'C18', 'C17', 'C19');
+
+    assert.equal(result.supported, true);
+    assert.ok(angularDifference(fusedExitAngle, fusedAttachmentOutwardAngle) < 1e-6, 'expected fused heteroaryl linker root to follow the local ring outward axis');
+    assert.ok(Math.abs(firstLinkerAngle - (2 * Math.PI) / 3) < 0.05, `expected fused-root linker angle near 120 degrees, got ${((firstLinkerAngle * 180) / Math.PI).toFixed(2)}`);
+    assert.ok(Math.abs(benzylicLinkerAngle - (2 * Math.PI) / 3) < 0.05, `expected benzylic linker angle near 120 degrees, got ${((benzylicLinkerAngle * 180) / Math.PI).toFixed(2)}`);
+    assert.ok(Math.abs(ringAttachmentAngle - (2 * Math.PI) / 3) < 0.05, `expected aromatic attachment angle near 120 degrees, got ${((ringAttachmentAngle * 180) / Math.PI).toFixed(2)}`);
   });
 
   it('lays out a macrocycle root scaffold plus substituent through the mixed orchestrator', () => {

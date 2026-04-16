@@ -194,6 +194,18 @@ describe('layout/engine/visual-orientation', () => {
     assert.ok(bicyclo222.coords.get('C7').y < bicyclo222.coords.get('C6').y);
     assert.ok(bicyclo222.coords.get('C1').y < bicyclo222.coords.get('C6').y);
 
+    const oxabicyclo222 = runPipeline(parseSMILES('C12CCC(CO1)CC2'), { suppressH: true });
+    const oxabicyclo222HeavyAtoms = heavyAtomIds(oxabicyclo222);
+    assert.equal(oxabicyclo222.coords.get('C8').y, maxY(oxabicyclo222.coords, oxabicyclo222HeavyAtoms));
+    assert.ok(oxabicyclo222.coords.get('C3').x < oxabicyclo222.coords.get('C2').x);
+    assert.ok(oxabicyclo222.coords.get('C2').x < oxabicyclo222.coords.get('C1').x);
+    assert.ok(oxabicyclo222.coords.get('C1').x < oxabicyclo222.coords.get('O6').x);
+    assert.ok(oxabicyclo222.coords.get('C4').x < oxabicyclo222.coords.get('C5').x);
+    assert.ok(oxabicyclo222.coords.get('C5').x < oxabicyclo222.coords.get('O6').x);
+    assert.ok(oxabicyclo222.coords.get('C5').y < oxabicyclo222.coords.get('O6').y);
+    assert.ok(oxabicyclo222.coords.get('C4').y < oxabicyclo222.coords.get('C7').y);
+    assert.ok(oxabicyclo222.coords.get('C1').y < oxabicyclo222.coords.get('C8').y);
+
     const quinuclidine = runPipeline(parseSMILES('C1CN2CCC1CC2'), { suppressH: true });
     const quinuclidineHeavyAtoms = heavyAtomIds(quinuclidine);
     assert.equal(quinuclidine.coords.get('C1').y, maxY(quinuclidine.coords, quinuclidineHeavyAtoms));

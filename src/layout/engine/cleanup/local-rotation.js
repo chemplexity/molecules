@@ -129,6 +129,22 @@ function geminalSubtreePairs(terminalSubtrees) {
 }
 
 /**
+ * Computes reusable rotatable subtree descriptors for local cleanup.
+ * The topology of these subtrees depends on connectivity and placed atom
+ * presence, not on the later rotation candidate chosen within one cleanup loop.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @returns {{terminalSubtrees: Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>, geminalPairs: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>}} Reusable local-rotation descriptors.
+ */
+export function computeRotatableSubtrees(layoutGraph, coords) {
+  const terminalSubtrees = movableTerminalSubtrees(layoutGraph, coords);
+  return {
+    terminalSubtrees,
+    geminalPairs: geminalSubtreePairs(terminalSubtrees)
+  };
+}
+
+/**
  * Computes the approximate inward ring-core vector for a ring anchor by summing
  * the vectors from the anchor to the centroids of each incident ring.
  * @param {object} layoutGraph - Layout graph shell.
@@ -252,6 +268,16 @@ function updateAtomGridForMove(layoutGraph, atomGrid, coords, movedPositions) {
 }
 
 /**
+ * Returns whether the movable descriptor would rotate any frozen atom.
+ * @param {{subtreeAtomIds: string[]}} descriptor - Rotation descriptor.
+ * @param {Set<string>} frozenAtomIds - Frozen atom ids.
+ * @returns {boolean} True when the descriptor must be skipped.
+ */
+function touchesFrozenAtoms(descriptor, frozenAtomIds) {
+  return descriptor.subtreeAtomIds.some(atomId => frozenAtomIds.has(atomId));
+}
+
+/**
  * Runs a conservative local cleanup pass by rotating leaf atoms around their
  * anchors when doing so lowers the global layout cost.
  * @param {object} layoutGraph - Layout graph shell.
@@ -261,6 +287,9 @@ function updateAtomGridForMove(layoutGraph, atomGrid, coords, movedPositions) {
  * @param {number} [options.epsilon] - Minimum accepted improvement.
  * @param {number} [options.bondLength] - Target bond length.
  * @param {import('../geometry/atom-grid.js').AtomGrid} [options.baseAtomGrid] - Optional reusable base atom grid.
+ * @param {Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>} [options.baseTerminalSubtrees] - Optional reusable terminal-subtree descriptors.
+ * @param {Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>} [options.baseGeminalPairs] - Optional reusable geminal-subtree descriptors.
+ * @param {Set<string>|null} [options.frozenAtomIds] - Atom ids that cleanup must not move.
  * @returns {{coords: Map<string, {x: number, y: number}>, passes: number, improvement: number}} Cleanup result.
  */
 export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
@@ -270,8 +299,22 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   let totalImprovement = 0;
   let passes = 0;
-  const terminalSubtrees = movableTerminalSubtrees(layoutGraph, coords);
-  const geminalPairs = geminalSubtreePairs(terminalSubtrees);
+  const rotatableSubtrees =
+    options.baseTerminalSubtrees && options.baseGeminalPairs
+      ? {
+          terminalSubtrees: options.baseTerminalSubtrees,
+          geminalPairs: options.baseGeminalPairs
+        }
+      : computeRotatableSubtrees(layoutGraph, coords);
+  const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
+  const terminalSubtrees =
+    frozenAtomIds
+      ? rotatableSubtrees.terminalSubtrees.filter(subtree => !touchesFrozenAtoms(subtree, frozenAtomIds))
+      : rotatableSubtrees.terminalSubtrees;
+  const geminalPairs =
+    frozenAtomIds
+      ? rotatableSubtrees.geminalPairs.filter(pair => !touchesFrozenAtoms(pair, frozenAtomIds))
+      : rotatableSubtrees.geminalPairs;
   const atomGrid = options.baseAtomGrid?.clone() ?? buildAtomGrid(layoutGraph, coords, bondLength);
 
   while (passes < maxPasses) {

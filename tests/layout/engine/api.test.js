@@ -136,6 +136,28 @@ describe('layout/engine/api', () => {
     assert.deepEqual(result.coords.get('c1'), { x: 11.5, y: 3 });
   });
 
+  it('refineCoords keeps preserved disconnected components fixed during cleanup', () => {
+    const existingCoords = new Map([
+      ['a0', { x: 0, y: 0 }],
+      ['a1', { x: 1.5, y: 0 }],
+      ['c0', { x: 0.2, y: 0 }],
+      ['c1', { x: 1.7, y: 0 }]
+    ]);
+    const result = refineCoords(makeDisconnectedEthanes(), {
+      existingCoords,
+      fixedCoords: new Map([
+        ['a0', { x: 0, y: 0 }],
+        ['a1', { x: 1.5, y: 0 }]
+      ]),
+      touchedAtoms: new Set(['a0'])
+    });
+
+    assert.equal(result.metadata.refine, true);
+    assert.equal(result.metadata.preservedComponentCount, 1);
+    assert.deepEqual(result.coords.get('c0'), existingCoords.get('c0'));
+    assert.deepEqual(result.coords.get('c1'), existingCoords.get('c1'));
+  });
+
   it('refineCoords re-idealizes a fully specified acyclic component when no touched hints are provided', () => {
     const seed = generateCoords(parseSMILES('CC(C)C'), { suppressH: true });
     const existingCoords = new Map(

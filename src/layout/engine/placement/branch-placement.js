@@ -2,7 +2,7 @@
 
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, length, perpLeft, sub } from '../geometry/vec2.js';
 import { countPointInPolygons } from '../geometry/polygon.js';
-import { measureFocusedPlacementCost, measureLayoutCost } from '../audit/invariants.js';
+import { buildAtomGrid, measureFocusedPlacementCost, measureLayoutCost } from '../audit/invariants.js';
 import { BRANCH_CLEARANCE_FLOOR_FACTOR, BRANCH_COMPLEXITY_LIMITS } from '../constants.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 
@@ -12,6 +12,8 @@ const CENTERED_NEIGHBOR_EPSILON = 1e-6;
 const DEG90 = Math.PI / 2;
 const DEG60 = Math.PI / 3;
 const DEG120 = (2 * Math.PI) / 3;
+const DEG30 = Math.PI / 6;
+const DEG15 = Math.PI / 12;
 const ANGLE_SCORE_TIEBREAK_RATIO = 0.05;
 const MAX_BRANCH_RECURSION_DEPTH = 120;
 const CROSS_LIKE_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
@@ -243,12 +245,25 @@ function centerDistanceScore(placementState, candidatePosition) {
  * Attachment placement sometimes needs to preserve trigonal or ring-derived
  * continuation geometry rather than falling back to a wider but chemically
  * wrong direction from the full candidate set.
- * @param {number[]} occupiedAngles - Occupied neighbor angles.
  * @param {number[]} preferredAngles - Preferred angles in radians.
+ * @param {boolean} [allowFinePreferredAngles] - Whether to add finer offsets around preferred angles.
  * @returns {number|null} Winning preferred angle, or `null` when none exist.
  */
-function choosePreferredDiscreteAngle(occupiedAngles, preferredAngles = []) {
+function buildPreferredCandidateAngles(preferredAngles = [], allowFinePreferredAngles = false) {
   const candidateAngles = mergeCandidateAngles(preferredDiscreteAngles(preferredAngles), preferredAngles);
+  if (!allowFinePreferredAngles) {
+    return candidateAngles;
+  }
+  return mergeCandidateAngles(candidateAngles, preferredAngles.flatMap(preferredAngle => [
+    preferredAngle - DEG30,
+    preferredAngle - DEG15,
+    preferredAngle + DEG15,
+    preferredAngle + DEG30
+  ]));
+}
+
+function choosePreferredDiscreteAngle(occupiedAngles, preferredAngles = [], allowFinePreferredAngles = false) {
+  const candidateAngles = buildPreferredCandidateAngles(preferredAngles, allowFinePreferredAngles);
   if (candidateAngles.length === 0) {
     return null;
   }
@@ -271,10 +286,11 @@ function choosePreferredDiscreteAngle(occupiedAngles, preferredAngles = []) {
  * enough to be honored without forcing an obviously crowded attachment slot.
  * @param {number[]} occupiedAngles - Occupied neighbor angles.
  * @param {number[]} preferredAngles - Preferred angles in radians.
+ * @param {boolean} [allowFinePreferredAngles] - Whether to add finer offsets around preferred angles.
  * @returns {boolean} True when a preferred discrete angle is acceptably separated.
  */
-function hasSafePreferredDiscreteAngle(occupiedAngles, preferredAngles = []) {
-  const candidateAngles = mergeCandidateAngles(preferredDiscreteAngles(preferredAngles), preferredAngles);
+function hasSafePreferredDiscreteAngle(occupiedAngles, preferredAngles = [], allowFinePreferredAngles = false) {
+  const candidateAngles = buildPreferredCandidateAngles(preferredAngles, allowFinePreferredAngles);
   if (candidateAngles.length === 0) {
     return false;
   }
@@ -375,15 +391,16 @@ function isTerminalMultipleBondHetero(layoutGraph, centerAtomId, bond) {
 }
 
 /**
- * Returns whether a child is a terminal single-bond hetero substituent on a non-aromatic ring atom.
- * These substituents can safely prefer the exact ring-outward angle instead of
- * snapping to the generic discrete branch lattice when the exact direction is already clear.
+ * Returns whether a child is a single-bond exocyclic heavy substituent root on
+ * a ring atom. These substituent roots can safely prefer the exact
+ * ring-outward angle instead of snapping to the generic discrete branch
+ * lattice when the outward direction is already clear.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} anchorAtomId - Anchor atom ID.
  * @param {string|null} childAtomId - Candidate child atom ID.
  * @returns {boolean} True when the child qualifies for exact ring-outward placement.
  */
-function isTerminalRingHeteroSubstituent(layoutGraph, anchorAtomId, childAtomId) {
+function isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId) {
   if (!layoutGraph || !childAtomId) {
     return false;
   }
@@ -393,10 +410,7 @@ function isTerminalRingHeteroSubstituent(layoutGraph, anchorAtomId, childAtomId)
 
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
   const childAtom = layoutGraph.atoms.get(childAtomId);
-  if (!anchorAtom || !childAtom || anchorAtom.aromatic || childAtom.aromatic) {
-    return false;
-  }
-  if (childAtom.element === 'H' || childAtom.element === 'C') {
+  if (!anchorAtom || !childAtom || childAtom.aromatic || childAtom.element === 'H') {
     return false;
   }
   if ((layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0) {
@@ -407,7 +421,7 @@ function isTerminalRingHeteroSubstituent(layoutGraph, anchorAtomId, childAtomId)
   if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
     return false;
   }
-  return childAtom.heavyDegree === 1;
+  return true;
 }
 
 /**
@@ -702,15 +716,27 @@ function evaluateAngleCandidates(candidateAngles, occupiedAngles, preferredAngle
  * @param {Set<string>} excludedAtomIds - Atoms to ignore during clearance scoring.
  * @param {{sumX: number, sumY: number, count: number}} placementState - Running placement CoM state.
  * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
+ * @param {boolean} [allowFinePreferredAngles] - Whether to add finer offsets around preferred angles.
  * @returns {number} Chosen continuation angle in radians.
  */
-function chooseContinuationAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, candidateAngles, excludedAtomIds, placementState, ringPolygons = []) {
+function chooseContinuationAngle(
+  anchorPosition,
+  bondLength,
+  coords,
+  occupiedAngles,
+  preferredAngles,
+  candidateAngles,
+  excludedAtomIds,
+  placementState,
+  ringPolygons = [],
+  allowFinePreferredAngles = false
+) {
   const clearanceContext = {
     anchorPosition,
     coords,
     excludedAtomIds
   };
-  const preferredCandidateAngles = preferredDiscreteAngles(preferredAngles);
+  const preferredCandidateAngles = buildPreferredCandidateAngles(preferredAngles, allowFinePreferredAngles);
   if (preferredCandidateAngles.length > 0) {
     const preferredCandidates = evaluateAngleCandidates(
       preferredCandidateAngles,
@@ -733,7 +759,17 @@ function chooseContinuationAngle(anchorPosition, bondLength, coords, occupiedAng
   }
 
   return pickBestCandidateAngle(
-    evaluateAngleCandidates(candidateAngles, occupiedAngles, preferredAngles, anchorPosition, bondLength, coords, excludedAtomIds, placementState, ringPolygons),
+    evaluateAngleCandidates(
+      mergeCandidateAngles(candidateAngles, preferredCandidateAngles),
+      occupiedAngles,
+      preferredAngles,
+      anchorPosition,
+      bondLength,
+      coords,
+      excludedAtomIds,
+      placementState,
+      ringPolygons
+    ),
     bondLength,
     true,
     clearanceContext
@@ -1074,6 +1110,38 @@ function collectNewlyPlacedAtomIds(baseCoords, candidateCoords) {
   return newlyPlacedAtomIds;
 }
 
+function shouldTrackFocusedPlacementAtom(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return false;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom) {
+    return false;
+  }
+  if (layoutGraph.options.suppressH && atom.element === 'H') {
+    return false;
+  }
+  return true;
+}
+
+function buildCandidateArrangementAtomGrid(layoutGraph, baseAtomGrid, candidateCoords, newlyPlacedAtomIds) {
+  if (!layoutGraph || !baseAtomGrid) {
+    return null;
+  }
+  const candidateAtomGrid = baseAtomGrid.clone();
+  for (const atomId of newlyPlacedAtomIds) {
+    if (!shouldTrackFocusedPlacementAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    const position = candidateCoords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateAtomGrid.insert(atomId, position);
+  }
+  return candidateAtomGrid;
+}
+
 function shouldUseFocusedArrangementCost(layoutGraph, coords, focusAtomIds = []) {
   if (!layoutGraph || focusAtomIds.length === 0) {
     return false;
@@ -1164,12 +1232,12 @@ function crossLikeHypervalentPenalty(layoutGraph, coords, atomId) {
   return penalty;
 }
 
-function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAtomIds = []) {
+function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAtomIds = [], atomGrid = null) {
   const layoutCost =
     !layoutGraph
       ? 0
       : shouldUseFocusedArrangementCost(layoutGraph, coords, focusAtomIds)
-        ? measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds)
+        ? measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds, { atomGrid })
         : measureLayoutCost(layoutGraph, coords, bondLength);
   return layoutCost + tetrahedralSpreadPenalty(layoutGraph, coords, anchorAtomId) * 20 + crossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * 20;
 }
@@ -1231,6 +1299,7 @@ function buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, 
  * @param {{x: number, y: number}} anchorPosition - Anchor position.
  * @param {number[][]} angleSets - Candidate angle sets.
  * @param {Array<{childAtomId: string, subtreeSize: number}>} childDescriptors - Child descriptors to permute.
+ * @param {import('../geometry/atom-grid.js').AtomGrid|null} [baseAtomGrid] - Optional spatial grid for the currently placed coords.
  * @returns {{cost: number, coords: Map<string, {x: number, y: number}>, placementState: {sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}}|null} Best evaluated placement snapshot.
  */
 function evaluateAnglePermutations(
@@ -1246,7 +1315,8 @@ function evaluateAnglePermutations(
   depth,
   anchorPosition,
   angleSets,
-  childDescriptors
+  childDescriptors,
+  baseAtomGrid = null
 ) {
   const orderedChildDescriptors = orderChildDescriptors(childDescriptors, canonicalAtomRank);
   const childPermutations = permutations(orderedChildDescriptors, branchPermutationBudget(layoutGraph, anchorAtomId, orderedChildDescriptors, branchConstraints));
@@ -1288,7 +1358,9 @@ function evaluateAnglePermutations(
         );
       }
 
-      const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, collectNewlyPlacedAtomIds(coords, tempCoords));
+      const newlyPlacedAtomIds = collectNewlyPlacedAtomIds(coords, tempCoords);
+      const candidateAtomGrid = buildCandidateArrangementAtomGrid(layoutGraph, baseAtomGrid, tempCoords, newlyPlacedAtomIds);
+      const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, newlyPlacedAtomIds, candidateAtomGrid);
       if (!bestPlacement || cost < bestPlacement.cost) {
         bestPlacement = {
           cost,
@@ -1323,6 +1395,7 @@ function chooseBatchAngleAssignments(
   }
 
   const angleSets = buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, unplacedNeighborIds, layoutGraph, branchConstraints);
+  const baseAtomGrid = layoutGraph ? buildAtomGrid(layoutGraph, coords, bondLength) : null;
   const resolvedChildDescriptors = childDescriptors ?? unplacedNeighborIds.map(childAtomId => ({
     childAtomId,
     subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
@@ -1340,7 +1413,8 @@ function chooseBatchAngleAssignments(
     depth,
     anchorPosition,
     angleSets,
-    resolvedChildDescriptors
+    resolvedChildDescriptors,
+    baseAtomGrid
   );
 
   if (!bestPlacement) {
@@ -1376,6 +1450,7 @@ function chooseBatchAngleAssignments(
 export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsToPlace, preferredAngle = null, layoutGraph = null, attachedAtomId = null, branchConstraints = null) {
   const occupiedAngles = occupiedNeighborAngles(adjacency, coords, anchorAtomId, atomIdsToPlace);
   if (attachedAtomId) {
+    const allowFinePreferredAngles = isRingAnchor(layoutGraph, anchorAtomId);
     const placedNeighborIds = neighborOrder(
       (adjacency.get(anchorAtomId) ?? []).filter(neighborAtomId => coords.has(neighborAtomId) && atomIdsToPlace.has(neighborAtomId)),
       layoutGraph?.canonicalAtomRank ?? new Map()
@@ -1386,7 +1461,7 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
       filterAnglesByBudget(continuationAngles, anchorAtomId, branchConstraints),
       budgetPreferredAngles(anchorAtomId, branchConstraints)
     );
-    if (isTerminalRingHeteroSubstituent(layoutGraph, anchorAtomId, attachedAtomId)) {
+    if (isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, attachedAtomId)) {
       const exactPreferredAngle = chooseExactPreferredAngle(
         coords.get(anchorAtomId),
         1,
@@ -1401,8 +1476,8 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
         return exactPreferredAngle;
       }
     }
-    const preferredContinuationAngle = choosePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles);
-    if (preferredContinuationAngle != null && hasSafePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles)) {
+    const preferredContinuationAngle = choosePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles, allowFinePreferredAngles);
+    if (preferredContinuationAngle != null && hasSafePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles, allowFinePreferredAngles)) {
       return preferredContinuationAngle;
     }
   }
@@ -1506,6 +1581,7 @@ function placeNeighborSequence(
 
   for (const childAtomId of neighborAtomIds) {
     const currentPlacedNeighborIds = placedNeighborIds(adjacency, coords, anchorAtomId);
+    const childBond = childAtomId ? findLayoutBond(layoutGraph, anchorAtomId, childAtomId) : null;
     const preferredAngles = preferredBranchAngles(adjacency, coords, anchorAtomId, atomIdsToPlace, parentAtomId, childAtomId, layoutGraph);
     const excludedAtomIds = new Set([anchorAtomId, ...currentPlacedNeighborIds]);
     const childIsHydrogen = isHydrogenAtom(layoutGraph, childAtomId);
@@ -1519,8 +1595,14 @@ function placeNeighborSequence(
       budgetPreferredAngles(anchorAtomId, branchConstraints)
     );
     const shouldHonorPreferredAngle = preferredAngles.length > 0 && !childIsHydrogen && (currentPlacedNeighborIds.length === 1 || isRingAnchor(layoutGraph, anchorAtomId));
+    const allowFinePreferredAngles = shouldHonorPreferredAngle && isRingAnchor(layoutGraph, anchorAtomId);
+    const shouldForceExactTrigonalAngle =
+      preferredAngles.length > 0
+      && !childIsHydrogen
+      && childBond != null
+      && isTerminalMultipleBondHetero(layoutGraph, anchorAtomId, childBond);
     const exactPreferredAngle =
-      shouldHonorPreferredAngle && isTerminalRingHeteroSubstituent(layoutGraph, anchorAtomId, childAtomId)
+      ((shouldHonorPreferredAngle && isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)) || shouldForceExactTrigonalAngle)
         ? chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, constrainedPreferredAngles, excludedAtomIds, placementState, ringPolygons)
         : null;
     const fallbackCandidates = evaluateAngleCandidates(
@@ -1546,7 +1628,8 @@ function placeNeighborSequence(
             constrainedFallbackAngles,
             excludedAtomIds,
             placementState,
-            ringPolygons
+            ringPolygons,
+            allowFinePreferredAngles
           )
         : pickBestCandidateAngle(fallbackCandidates, bondLength, !childIsHydrogen, {
             anchorPosition,

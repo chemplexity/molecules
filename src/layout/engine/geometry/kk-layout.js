@@ -127,7 +127,7 @@ function initializePositions(atomIds, coords, pinnedAtomIds, center, bondLength)
   const fallbackCenter = seededPoints.length > 0 ? centroid(seededPoints) : center;
   const positions = atomIds.map((atomId, index) => {
     const seededPosition = coords.get(atomId);
-    if (pinnedAtomIds.has(atomId)) {
+    if (pinnedAtomIds.has(atomId) && seededPosition != null) {
       return { x: seededPosition.x, y: seededPosition.y };
     }
     if (hasFinitePosition(seededPosition)) {

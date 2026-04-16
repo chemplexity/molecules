@@ -354,14 +354,16 @@ export function atomTooltipHtml(atom, _mol, valenceWarning = null, layout = '2d'
  * @param {string} label - Atom label string, potentially containing digits (e.g. `'NH2'`).
  * @param {string} color - CSS color for the label text.
  * @param {number} [xOffset] - Horizontal offset from the atom center in pixels.
+ * @param {number} [yOffset] - Vertical offset from the atom center in pixels.
  * @param {number} [fontSize] - Font size in pixels.
  */
-export function renderAtomLabel(group, label, color, xOffset = 0, fontSize = DEFAULT_RENDER_OPTIONS.twoDAtomFontSize) {
+export function renderAtomLabel(group, label, color, xOffset = 0, yOffset = 0, fontSize = DEFAULT_RENDER_OPTIONS.twoDAtomFontSize) {
   const textEl = group
     .append('text')
     .attr('class', 'atom-label')
     .attr('fill', color)
     .attr('x', xOffset)
+    .attr('y', yOffset)
     .style('font-size', `${fontSize}px`)
     .attr('pointer-events', 'none')
     .attr('text-anchor', 'middle');

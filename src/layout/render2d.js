@@ -25,7 +25,7 @@ import {
   secondaryDir,
   labelHalfW,
   labelHalfH,
-  labelTextOffset,
+  ringLabelOffset,
   formatChargeLabel,
   computeChargeBadgePlacement,
   getAtomLabel,
@@ -141,16 +141,68 @@ function escapeXml(s) {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function labelClearance(atom, otherSVGPt, mol, toSVG, hCounts) {
+  const label = getAtomLabel(atom, hCounts, toSVG, mol);
+  if (!label) {
+    return 0;
+  }
+  const center = toSVG(atom);
+  const dx = otherSVGPt.x - center.x;
+  const dy = otherSVGPt.y - center.y;
+  const len = Math.sqrt(dx * dx + dy * dy) || 1;
+  const { dx: cx, dy: cy } = ringLabelOffset(atom, mol, toSVG, label, FONT_SIZE);
+  const hw = labelHalfW(label, FONT_SIZE) + 1;
+  const hh = labelHalfH(label, FONT_SIZE) + 1;
+  const dirX = dx / len;
+  const dirY = dy / len;
+  const candidates = [];
+
+  if (Math.abs(dirX) > 1e-9) {
+    candidates.push((cx + hw) / dirX);
+    candidates.push((cx - hw) / dirX);
+  }
+  if (Math.abs(dirY) > 1e-9) {
+    candidates.push((cy + hh) / dirY);
+    candidates.push((cy - hh) / dirY);
+  }
+
+  let best = Infinity;
+  for (const t of candidates) {
+    if (!(t > 0)) {
+      continue;
+    }
+    const px = dirX * t;
+    const py = dirY * t;
+    if (px < cx - hw - 1e-6 || px > cx + hw + 1e-6) {
+      continue;
+    }
+    if (py < cy - hh - 1e-6 || py > cy + hh + 1e-6) {
+      continue;
+    }
+    best = Math.min(best, t);
+  }
+  return Number.isFinite(best) ? best : Math.max(hw, hh);
+}
+
+function shortenBondLineWithLabelClearance(atom1, atom2, start, end, mol, toSVG, hCounts, minimumClearance = 0) {
+  const c1 = Math.max(labelClearance(atom1, end, mol, toSVG, hCounts), minimumClearance);
+  const c2 = Math.max(labelClearance(atom2, start, mol, toSVG, hCounts), minimumClearance);
+  return shortenLine(start.x, start.y, end.x, end.y, c1, c2);
+}
+
 // ---------------------------------------------------------------------------
 // Bond SVG rendering — returns an array of SVG element strings.
 // For stereo bonds a1 is the chiral centre (pointed tip).
 // ---------------------------------------------------------------------------
-function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, aromaticMode = AROMATIC_RENDER_MODE) {
+function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, hCounts, aromaticMode = AROMATIC_RENDER_MODE) {
   const out = [];
 
   if (stereoType === 'wedge' || stereoType === 'dash') {
-    const s1 = toSVG(a1),
-      s2 = toSVG(a2);
+    const s1Raw = toSVG(a1),
+      s2Raw = toSVG(a2);
+    const trimmed = shortenBondLineWithLabelClearance(a1, a2, s1Raw, s2Raw, mol, toSVG, hCounts);
+    const s1 = { x: trimmed.x1, y: trimmed.y1 },
+      s2 = { x: trimmed.x2, y: trimmed.y2 };
     const { nx, ny } = perpUnit(s2.x - s1.x, s2.y - s1.y);
     if (stereoType === 'wedge') {
       const bondLength = Math.hypot(s2.x - s1.x, s2.y - s1.y) || 1;
@@ -191,27 +243,30 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, aromaticMode = AROMATIC
     ` stroke="#222" stroke-width="${STROKE_W}"${dash ? ' stroke-dasharray="3,3"' : ''}/>`;
 
   if (order === 1) {
-    out.push(lineEl(s1.x, s1.y, s2.x, s2.y, false));
+    const line = shortenBondLineWithLabelClearance(a1, a2, s1, s2, mol, toSVG, hCounts);
+    out.push(lineEl(line.x1, line.y1, line.x2, line.y2, false));
   } else if (order === 2) {
     const dir = secondaryDir(a1, a2, mol, toSVG);
-    out.push(lineEl(s1.x, s1.y, s2.x, s2.y, false));
+    const primary = shortenBondLineWithLabelClearance(a1, a2, s1, s2, mol, toSVG, hCounts);
+    out.push(lineEl(primary.x1, primary.y1, primary.x2, primary.y2, false));
     const ox = nx * BOND_OFF * dir,
       oy = ny * BOND_OFF * dir;
-    const l2 = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 4, 4);
+    const l2 = shortenBondLineWithLabelClearance(a1, a2, { x: s1.x + ox, y: s1.y + oy }, { x: s2.x + ox, y: s2.y + oy }, mol, toSVG, hCounts, 4);
     out.push(lineEl(l2.x1, l2.y1, l2.x2, l2.y2, false));
   } else if (order === 3) {
     for (const d of [-BOND_OFF, 0, BOND_OFF]) {
       const ox = nx * d,
         oy = ny * d;
-      const lt = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, d !== 0 ? 4 : 0, d !== 0 ? 4 : 0);
+      const lt = shortenBondLineWithLabelClearance(a1, a2, { x: s1.x + ox, y: s1.y + oy }, { x: s2.x + ox, y: s2.y + oy }, mol, toSVG, hCounts, d !== 0 ? 4 : 0);
       out.push(lineEl(lt.x1, lt.y1, lt.x2, lt.y2, false));
     }
   } else if (order === 1.5) {
     const dir = secondaryDir(a1, a2, mol, toSVG);
-    out.push(lineEl(s1.x, s1.y, s2.x, s2.y, false));
+    const primary = shortenBondLineWithLabelClearance(a1, a2, s1, s2, mol, toSVG, hCounts);
+    out.push(lineEl(primary.x1, primary.y1, primary.x2, primary.y2, false));
     const ox = nx * BOND_OFF * dir,
       oy = ny * BOND_OFF * dir;
-    const ld = shortenLine(s1.x + ox, s1.y + oy, s2.x + ox, s2.y + oy, 5, 5);
+    const ld = shortenBondLineWithLabelClearance(a1, a2, { x: s1.x + ox, y: s1.y + oy }, { x: s2.x + ox, y: s2.y + oy }, mol, toSVG, hCounts, 5);
     out.push(lineEl(ld.x1, ld.y1, ld.x2, ld.y2, true));
   }
 
@@ -312,7 +367,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
         sa2 = a1;
       }
     }
-    lines.push(...bondToSVG(bond, sa1, sa2, mol, toSVG, stereoType, aromaticMode));
+    lines.push(...bondToSVG(bond, sa1, sa2, mol, toSVG, stereoType, hCounts, aromaticMode));
   }
 
   // Decrement hCount for any H shown via a stereo bond.
@@ -364,9 +419,9 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
     const color = atomColor(atom.name);
     const hw = labelHalfW(label, FONT_SIZE);
     const hh = labelHalfH(label, FONT_SIZE);
-    const dx = labelTextOffset(label, FONT_SIZE);
+    const { dx, dy } = ringLabelOffset(atom, mol, toSVG, label, FONT_SIZE);
 
-    labelEls.push(`<rect x="${(x + dx - hw).toFixed(2)}" y="${(y - hh).toFixed(2)}" width="${(hw * 2).toFixed(2)}" height="${(hh * 2).toFixed(2)}" fill="white" rx="2"/>`);
+    labelEls.push(`<rect x="${(x + dx - hw).toFixed(2)}" y="${(y + dy - hh).toFixed(2)}" width="${(hw * 2).toFixed(2)}" height="${(hh * 2).toFixed(2)}" fill="white" rx="2"/>`);
 
     let textContent = '';
     let i = 0;
@@ -406,7 +461,7 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
     }
 
     labelEls.push(
-      `<text x="${(x + dx).toFixed(2)}" y="${y.toFixed(2)}" font-family="sans-serif" font-size="${FONT_SIZE}" fill="${color}" text-anchor="middle" dominant-baseline="central">${textContent}</text>${chargeSup}`
+      `<text x="${(x + dx).toFixed(2)}" y="${(y + dy).toFixed(2)}" font-family="sans-serif" font-size="${FONT_SIZE}" fill="${color}" text-anchor="middle" dominant-baseline="central">${textContent}</text>${chargeSup}`
     );
 
     if (showLonePairs) {

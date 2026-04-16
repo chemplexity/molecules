@@ -10,6 +10,7 @@ import {
   findSevereOverlaps,
   measureBondLengthDeviation,
   measureFocusedPlacementCost,
+  measureOverlapState,
   measureLabelOverlap,
   measureLayoutState,
   measureLayoutCost,
@@ -185,5 +186,21 @@ describe('layout/engine/audit/invariants', () => {
     assert.equal(layoutState.overlapCount, findSevereOverlaps(graph, coords, graph.options.bondLength).length);
     assert.equal(layoutState.cost, measureLayoutCost(graph, coords, graph.options.bondLength));
     assert.equal(layoutState.overlaps.length, layoutState.overlapCount);
+  });
+
+  it('returns an overlap-focused state that skips label and angular penalties', () => {
+    const graph = createLayoutGraph(parseSMILES('Cl.Br'), { suppressH: true });
+    const coords = new Map([
+      ['Cl1', { x: 0, y: 0 }],
+      ['Br2', { x: 0.9, y: 0 }]
+    ]);
+
+    const overlapState = measureOverlapState(graph, coords, graph.options.bondLength);
+    const fullState = measureLayoutState(graph, coords, graph.options.bondLength);
+
+    assert.equal(overlapState.overlapCount, fullState.overlapCount);
+    assert.equal(overlapState.bondDeviation.failingBondCount, fullState.bondDeviation.failingBondCount);
+    assert.equal(overlapState.cost, overlapState.overlapPenalty);
+    assert.ok(fullState.cost > overlapState.cost);
   });
 });

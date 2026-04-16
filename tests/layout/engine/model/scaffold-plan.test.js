@@ -83,12 +83,28 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, false);
   });
 
+  it('uses the oxabicyclo[2.2.2]octane template for bridged oxygen bicyclo cages', () => {
+    const graph = createLayoutGraph(parseSMILES('C12CCC(CO1)CC2'));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'oxabicyclo-2-2-2');
+    assert.equal(plan.mixedMode, false);
+  });
+
   it('uses the oxabicyclo[3.1.1]heptane template for bridged oxygen cages', () => {
     const graph = createLayoutGraph(parseSMILES('C1OC2CC(C1)C2'));
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(plan.rootScaffold.family, 'bridged');
     assert.equal(plan.rootScaffold.templateId, 'oxabicyclo-3-1-1');
     assert.equal(plan.mixedMode, false);
+  });
+
+  it('uses the benzoxathiobicyclo template for bridged sulfur-oxygen mixed cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1(C)CC2CC(C2)COC2=CC=C1S2'));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'benzoxathiobicyclo-core');
+    assert.equal(plan.mixedMode, true);
   });
 
   it('prefers the larger cage template when the bridged scaffold itself is larger', () => {

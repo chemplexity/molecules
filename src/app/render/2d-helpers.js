@@ -1,7 +1,7 @@
 /** @module app/render/2d-helpers */
 
 import { renderBondOrder, addLine } from './helpers.js';
-import { labelHalfW, labelHalfH, labelTextOffset, getAtomLabel } from '../../layout/mol2d-helpers.js';
+import { labelHalfW, labelHalfH, ringLabelOffset, getAtomLabel } from '../../layout/mol2d-helpers.js';
 
 /**
  * Creates 2D render helper functions for SVG point conversion, bond drawing, viewport fitting, and derived state synchronization.
@@ -108,7 +108,9 @@ export function create2DRenderHelpers(ctx) {
         return (bond?.properties.order ?? 1) >= 2;
       });
     const useElementAnchorBox = isCarbonylAdjacentHydroxyl;
-    const cx = useElementAnchorBox ? 0 : labelTextOffset(label, ctx.constants.getFontSize());
+    const offset = ringLabelOffset(atom, ctx.state.getMol(), toSVGPt, label, ctx.constants.getFontSize());
+    const cx = useElementAnchorBox ? 0 : offset.dx;
+    const cy = useElementAnchorBox ? 0 : offset.dy;
     const hw = useElementAnchorBox ? (ctx.constants.getFontSize() * 0.38 * elementLabel.length + 4) / 2 + 7 : labelHalfW(label, ctx.constants.getFontSize()) + 1;
     const hh = labelHalfH(label, ctx.constants.getFontSize()) + 1;
     const dirX = dx / len;
@@ -121,8 +123,8 @@ export function create2DRenderHelpers(ctx) {
     }
     const tyCandidates = [];
     if (Math.abs(dirY) > 1e-9) {
-      tyCandidates.push(hh / dirY);
-      tyCandidates.push(-hh / dirY);
+      tyCandidates.push((cy + hh) / dirY);
+      tyCandidates.push((cy - hh) / dirY);
     }
 
     let best = Infinity;
@@ -135,7 +137,7 @@ export function create2DRenderHelpers(ctx) {
       if (px < cx - hw - 1e-6 || px > cx + hw + 1e-6) {
         continue;
       }
-      if (py < -hh - 1e-6 || py > hh + 1e-6) {
+      if (py < cy - hh - 1e-6 || py > cy + hh + 1e-6) {
         continue;
       }
       best = Math.min(best, t);

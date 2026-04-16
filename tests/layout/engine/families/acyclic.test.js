@@ -256,6 +256,36 @@ describe('layout/engine/families/acyclic', () => {
     }
   });
 
+  it('keeps terminal carboxyl carbonyl centers at trigonal-planar 120-degree geometry', () => {
+    const result = runPipeline(parseSMILES('OC(=O)\\C=C/C(=O)O'), { suppressH: true });
+    const molecule = result.layoutGraph.sourceMolecule;
+
+    function angle(firstAtomId, centerAtomId, secondAtomId) {
+      const first = result.coords.get(firstAtomId);
+      const center = result.coords.get(centerAtomId);
+      const second = result.coords.get(secondAtomId);
+      const firstVector = { x: first.x - center.x, y: first.y - center.y };
+      const secondVector = { x: second.x - center.x, y: second.y - center.y };
+      const denominator = Math.hypot(firstVector.x, firstVector.y) * Math.hypot(secondVector.x, secondVector.y) || 1;
+      const cosine = Math.max(-1, Math.min(1, (firstVector.x * secondVector.x + firstVector.y * secondVector.y) / denominator));
+      return Math.acos(cosine) * (180 / Math.PI);
+    }
+
+    for (const carbonylCarbonId of ['C2', 'C6']) {
+      const carbonylCarbon = molecule.atoms.get(carbonylCarbonId);
+      const heavyNeighborIds = carbonylCarbon.getNeighbors(molecule).filter(atom => atom.name !== 'H').map(atom => atom.id);
+      assert.equal(heavyNeighborIds.length, 3);
+      for (let firstIndex = 0; firstIndex < heavyNeighborIds.length; firstIndex++) {
+        for (let secondIndex = firstIndex + 1; secondIndex < heavyNeighborIds.length; secondIndex++) {
+          assert.ok(
+            Math.abs(angle(heavyNeighborIds[firstIndex], carbonylCarbonId, heavyNeighborIds[secondIndex]) - 120) < 1e-6,
+            `expected ${carbonylCarbonId} to stay trigonal-planar`
+          );
+        }
+      }
+    }
+  });
+
   it('keeps long explicitly stereo polyenes extended instead of curling them into a compact spiral', () => {
     const graph = createLayoutGraph(parseSMILES('CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O'), {
       suppressH: true

@@ -2,17 +2,26 @@
 
 import { angleOf, centroid, fromAngle, sub, add, rotate } from '../geometry/vec2.js';
 import { computeBounds } from '../geometry/bounds.js';
+import { alignCoordsToFixed } from '../geometry/transforms.js';
 import { transformAttachedBlock } from '../placement/linkers.js';
+import { auditLayout } from '../audit/audit.js';
 import { assignBondValidationClass, resolvePlacementValidationClass } from '../placement/bond-validation.js';
 import { chooseAttachmentAngle, placeRemainingBranches } from '../placement/substituents.js';
 import { findSevereOverlaps, measureFocusedPlacementCost, measureLayoutCost } from '../audit/invariants.js';
 import { layoutAcyclicFamily } from './acyclic.js';
 import { layoutBridgedFamily } from './bridged.js';
-import { layoutFusedFamily } from './fused.js';
+import {
+  isBetterBridgedRescueForFusedSystem,
+  layoutFusedCageKamadaKawai,
+  layoutFusedFamily,
+  shouldShortCircuitToFusedCageKk,
+  shouldTryBridgedRescueForFusedSystem
+} from './fused.js';
 import { layoutIsolatedRingFamily } from './isolated-ring.js';
 import { computeMacrocycleAngularBudgets, layoutMacrocycleFamily } from './macrocycle.js';
 import { layoutSpiroFamily } from './spiro.js';
 import { classifyRingSystemFamily } from '../model/scaffold-plan.js';
+import { IMPROVEMENT_EPSILON, RING_SYSTEM_RESCUE_LIMITS } from '../constants.js';
 
 const LINKER_ZIGZAG_TURN_ANGLE = Math.PI / 3;
 const MAX_RING_LINKER_ATOMS = 3;
@@ -46,6 +55,440 @@ function ringSystemAdjacency(layoutGraph, ringSystem) {
   return { rings, ringAdj, ringConnectionByPair };
 }
 
+function ringSystemConnectionKinds(layoutGraph, ringSystem) {
+  const { connections } = ringSystemDescriptors(layoutGraph, ringSystem);
+  return new Set(connections.map(connection => connection.kind).filter(Boolean));
+}
+
+function buildFusedRingBlocks(rings, ringAdj, ringConnectionByPair) {
+  const ringById = new Map(rings.map(ring => [ring.id, ring]));
+  const visitedRingIds = new Set();
+  const blocks = [];
+
+  for (const ring of rings) {
+    if (visitedRingIds.has(ring.id)) {
+      continue;
+    }
+    const blockRingIds = [];
+    const stack = [ring.id];
+    visitedRingIds.add(ring.id);
+
+    while (stack.length > 0) {
+      const currentRingId = stack.pop();
+      blockRingIds.push(currentRingId);
+      for (const neighborRingId of ringAdj.get(currentRingId) ?? []) {
+        const key = currentRingId < neighborRingId ? `${currentRingId}:${neighborRingId}` : `${neighborRingId}:${currentRingId}`;
+        if (ringConnectionByPair.get(key)?.kind !== 'fused' || visitedRingIds.has(neighborRingId)) {
+          continue;
+        }
+        visitedRingIds.add(neighborRingId);
+        stack.push(neighborRingId);
+      }
+    }
+
+    blockRingIds.sort((firstRingId, secondRingId) => firstRingId - secondRingId);
+    const blockRingIdSet = new Set(blockRingIds);
+    const blockRings = blockRingIds.map(ringId => ringById.get(ringId)).filter(Boolean);
+    const blockRingAdj = new Map(blockRingIds.map(ringId => [ringId, []]));
+    const blockRingConnectionByPair = new Map();
+    for (const ringId of blockRingIds) {
+      for (const neighborRingId of ringAdj.get(ringId) ?? []) {
+        const key = ringId < neighborRingId ? `${ringId}:${neighborRingId}` : `${neighborRingId}:${ringId}`;
+        const connection = ringConnectionByPair.get(key);
+        if (connection?.kind !== 'fused' || !blockRingIdSet.has(neighborRingId)) {
+          continue;
+        }
+        blockRingAdj.get(ringId)?.push(neighborRingId);
+        blockRingConnectionByPair.set(key, connection);
+      }
+    }
+    for (const neighbors of blockRingAdj.values()) {
+      neighbors.sort((firstRingId, secondRingId) => firstRingId - secondRingId);
+    }
+
+    blocks.push({
+      id: blocks.length,
+      ringIds: blockRingIds,
+      rings: blockRings,
+      ringAdj: blockRingAdj,
+      ringConnectionByPair: blockRingConnectionByPair,
+      atomIds: [...new Set(blockRings.flatMap(blockRing => blockRing.atomIds))]
+    });
+  }
+
+  return blocks;
+}
+
+function compareCoordMapsDeterministically(firstCoords, secondCoords, canonicalAtomRank) {
+  const atomIds = [...new Set([...firstCoords.keys(), ...secondCoords.keys()])]
+    .sort((firstAtomId, secondAtomId) => compareCanonicalIds(firstAtomId, secondAtomId, canonicalAtomRank));
+  for (const atomId of atomIds) {
+    const firstPosition = firstCoords.get(atomId);
+    const secondPosition = secondCoords.get(atomId);
+    if (!firstPosition && !secondPosition) {
+      continue;
+    }
+    if (!firstPosition) {
+      return 1;
+    }
+    if (!secondPosition) {
+      return -1;
+    }
+    const roundedFirstX = Math.round(firstPosition.x * 1e6);
+    const roundedSecondX = Math.round(secondPosition.x * 1e6);
+    if (roundedFirstX !== roundedSecondX) {
+      return roundedFirstX - roundedSecondX;
+    }
+    const roundedFirstY = Math.round(firstPosition.y * 1e6);
+    const roundedSecondY = Math.round(secondPosition.y * 1e6);
+    if (roundedFirstY !== roundedSecondY) {
+      return roundedFirstY - roundedSecondY;
+    }
+  }
+  return 0;
+}
+
+function buildHybridBlockGraph(blocks, ringConnectionByPair) {
+  const blockByRingId = new Map();
+  for (const block of blocks) {
+    for (const ringId of block.ringIds) {
+      blockByRingId.set(ringId, block.id);
+    }
+  }
+
+  const blockAdj = new Map(blocks.map(block => [block.id, []]));
+  const blockConnectionByPair = new Map();
+  for (const connection of ringConnectionByPair.values()) {
+    if (!connection || connection.kind === 'fused') {
+      continue;
+    }
+    const firstBlockId = blockByRingId.get(connection.firstRingId);
+    const secondBlockId = blockByRingId.get(connection.secondRingId);
+    if (firstBlockId == null || secondBlockId == null || firstBlockId === secondBlockId) {
+      continue;
+    }
+    const key = firstBlockId < secondBlockId ? `${firstBlockId}:${secondBlockId}` : `${secondBlockId}:${firstBlockId}`;
+    if (blockConnectionByPair.has(key)) {
+      return null;
+    }
+    blockAdj.get(firstBlockId)?.push(secondBlockId);
+    blockAdj.get(secondBlockId)?.push(firstBlockId);
+    blockConnectionByPair.set(key, connection);
+  }
+  for (const neighbors of blockAdj.values()) {
+    neighbors.sort((firstBlockId, secondBlockId) => firstBlockId - secondBlockId);
+  }
+
+  return { blockAdj, blockConnectionByPair, blockByRingId };
+}
+
+function scoreHybridBlockPlacement(layoutGraph, candidateCoords, placedCoords, sharedAtomIds, bondLength) {
+  const sharedAtomIdSet = new Set(sharedAtomIds);
+  let severeOverlapCount = 0;
+  let minDistance = Infinity;
+  const threshold = bondLength * 0.55;
+
+  for (const [candidateAtomId, candidatePosition] of candidateCoords) {
+    if (sharedAtomIdSet.has(candidateAtomId)) {
+      continue;
+    }
+    for (const [placedAtomId, placedPosition] of placedCoords) {
+      if (sharedAtomIdSet.has(placedAtomId)) {
+        continue;
+      }
+      const key = candidateAtomId < placedAtomId ? `${candidateAtomId}:${placedAtomId}` : `${placedAtomId}:${candidateAtomId}`;
+      if (layoutGraph.bondedPairSet.has(key)) {
+        continue;
+      }
+      const distanceBetween = Math.hypot(candidatePosition.x - placedPosition.x, candidatePosition.y - placedPosition.y);
+      minDistance = Math.min(minDistance, distanceBetween);
+      if (distanceBetween < threshold) {
+        severeOverlapCount++;
+      }
+    }
+  }
+
+  return {
+    severeOverlapCount,
+    minDistance: Number.isFinite(minDistance) ? minDistance : Infinity
+  };
+}
+
+function isBetterHybridBlockScore(candidateScore, incumbentScore) {
+  if (!candidateScore) {
+    return false;
+  }
+  if (!incumbentScore) {
+    return true;
+  }
+  if (candidateScore.severeOverlapCount !== incumbentScore.severeOverlapCount) {
+    return candidateScore.severeOverlapCount < incumbentScore.severeOverlapCount;
+  }
+  return candidateScore.minDistance > incumbentScore.minDistance;
+}
+
+function placeHybridSpiroBlock(layoutGraph, placedCoords, placedBlock, childBlock, childLayout, blockConnection, blockByRingId, bondLength) {
+  const sharedAtomId = blockConnection.sharedAtomIds?.[0] ?? null;
+  if (!sharedAtomId) {
+    return null;
+  }
+
+  const parentRingId = blockByRingId.get(blockConnection.firstRingId) === placedBlock.id
+    ? blockConnection.firstRingId
+    : blockConnection.secondRingId;
+  const parentRing = placedBlock.rings.find(ring => ring.id === parentRingId) ?? null;
+  if (!parentRing) {
+    return null;
+  }
+
+  const sharedPosition = placedCoords.get(sharedAtomId);
+  const parentRingPositions = parentRing.atomIds.map(atomId => placedCoords.get(atomId)).filter(Boolean);
+  if (!sharedPosition || parentRingPositions.length !== parentRing.atomIds.length) {
+    return null;
+  }
+
+  const baseAngle = angleOf(sub(sharedPosition, centroid(parentRingPositions)));
+  const offsets = [0, Math.PI / 6, Math.PI / 4];
+  let bestCandidate = null;
+
+  for (const offset of offsets) {
+    for (const direction of [1, -1]) {
+      const targetAngle = baseAngle + direction * offset;
+      for (const mirror of [false, true]) {
+        const transformedCoords = transformAttachedBlock(
+          childLayout.coords,
+          sharedAtomId,
+          sharedPosition,
+          targetAngle,
+          { mirror }
+        );
+        const score = scoreHybridBlockPlacement(layoutGraph, transformedCoords, placedCoords, [sharedAtomId], bondLength);
+        if (!bestCandidate || isBetterHybridBlockScore(score, bestCandidate.score)) {
+          bestCandidate = {
+            coords: transformedCoords,
+            score
+          };
+        }
+      }
+    }
+  }
+
+  return bestCandidate;
+}
+
+function placeHybridBridgedBlock(layoutGraph, placedCoords, childBlock, childLayout, blockConnection, bondLength) {
+  const sharedAtomIds = (blockConnection.sharedAtomIds ?? []).filter(atomId => placedCoords.has(atomId) && childLayout.coords.has(atomId));
+  if (sharedAtomIds.length < 2) {
+    return null;
+  }
+
+  const fixedCoords = new Map(sharedAtomIds.map(atomId => [atomId, placedCoords.get(atomId)]));
+  const aligned = alignCoordsToFixed(childLayout.coords, childBlock.atomIds, fixedCoords);
+  return {
+    coords: aligned.coords,
+    score: scoreHybridBlockPlacement(layoutGraph, aligned.coords, placedCoords, sharedAtomIds, bondLength)
+  };
+}
+
+function layoutFusedConnectedHybridRingSystem(layoutGraph, rings, ringAdj, ringConnectionByPair, bondLength) {
+  const blocks = buildFusedRingBlocks(rings, ringAdj, ringConnectionByPair);
+  if (blocks.length === 0) {
+    return null;
+  }
+
+  if (blocks.length === 1) {
+    return layoutFusedFamily(rings, blocks[0].ringAdj, blocks[0].ringConnectionByPair, bondLength, { layoutGraph, templateId: null });
+  }
+
+  const blockGraph = buildHybridBlockGraph(blocks, ringConnectionByPair);
+  if (!blockGraph || blockGraph.blockConnectionByPair.size !== blocks.length - 1) {
+    return null;
+  }
+
+  const visitedBlockIds = new Set();
+  const traversalQueue = [];
+  const rootBlock = [...blocks].sort((firstBlock, secondBlock) => {
+    if (secondBlock.atomIds.length !== firstBlock.atomIds.length) {
+      return secondBlock.atomIds.length - firstBlock.atomIds.length;
+    }
+    return secondBlock.ringIds.length - firstBlock.ringIds.length;
+  })[0];
+  const rootLayout = layoutFusedFamily(rootBlock.rings, rootBlock.ringAdj, rootBlock.ringConnectionByPair, bondLength, {
+    layoutGraph,
+    templateId: null
+  });
+  if (!rootLayout || rootLayout.coords.size !== rootBlock.atomIds.length) {
+    return null;
+  }
+
+  const coords = new Map(rootLayout.coords);
+  const ringCenters = new Map();
+  for (const ring of rootBlock.rings) {
+    ringCenters.set(ring.id, centroid(ring.atomIds.map(atomId => coords.get(atomId))));
+  }
+  visitedBlockIds.add(rootBlock.id);
+  traversalQueue.push(rootBlock.id);
+
+  while (traversalQueue.length > 0) {
+    const currentBlockId = traversalQueue.shift();
+    const currentBlock = blocks.find(block => block.id === currentBlockId) ?? null;
+    if (!currentBlock) {
+      return null;
+    }
+
+    for (const neighborBlockId of blockGraph.blockAdj.get(currentBlockId) ?? []) {
+      if (visitedBlockIds.has(neighborBlockId)) {
+        continue;
+      }
+      const neighborBlock = blocks.find(block => block.id === neighborBlockId) ?? null;
+      if (!neighborBlock) {
+        return null;
+      }
+      const connectionKey = currentBlockId < neighborBlockId ? `${currentBlockId}:${neighborBlockId}` : `${neighborBlockId}:${currentBlockId}`;
+      const blockConnection = blockGraph.blockConnectionByPair.get(connectionKey);
+      const neighborLayout = layoutFusedFamily(
+        neighborBlock.rings,
+        neighborBlock.ringAdj,
+        neighborBlock.ringConnectionByPair,
+        bondLength,
+        { layoutGraph, templateId: null }
+      );
+      if (!blockConnection || !neighborLayout || neighborLayout.coords.size !== neighborBlock.atomIds.length) {
+        return null;
+      }
+
+      let placedCandidate = null;
+      if (blockConnection.kind === 'spiro') {
+        placedCandidate = placeHybridSpiroBlock(
+          layoutGraph,
+          coords,
+          currentBlock,
+          neighborBlock,
+          neighborLayout,
+          blockConnection,
+          blockGraph.blockByRingId,
+          bondLength
+        );
+      } else if (blockConnection.kind === 'bridged') {
+        placedCandidate = placeHybridBridgedBlock(
+          layoutGraph,
+          coords,
+          neighborBlock,
+          neighborLayout,
+          blockConnection,
+          bondLength
+        );
+      }
+      if (!placedCandidate) {
+        return null;
+      }
+
+      for (const [atomId, position] of placedCandidate.coords) {
+        coords.set(atomId, position);
+      }
+      for (const ring of neighborBlock.rings) {
+        ringCenters.set(ring.id, centroid(ring.atomIds.map(atomId => coords.get(atomId))));
+      }
+
+      visitedBlockIds.add(neighborBlockId);
+      traversalQueue.push(neighborBlockId);
+    }
+  }
+
+  const atomIds = new Set(rings.flatMap(ring => ring.atomIds));
+  if (coords.size !== atomIds.size) {
+    return null;
+  }
+
+  return {
+    coords,
+    ringCenters,
+    placementMode: 'constructed'
+  };
+}
+
+function wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, result, templateId = null) {
+  if (!result) {
+    return null;
+  }
+  return {
+    family,
+    validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
+    ...result
+  };
+}
+
+function auditRingSystemPlacement(layoutGraph, ringSystem, placement, bondLength) {
+  if (!placement || placement.coords.size !== ringSystem.atomIds.length) {
+    return null;
+  }
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, ringSystem.atomIds, placement.validationClass);
+  return auditLayout(layoutGraph, placement.coords, {
+    bondLength,
+    bondValidationClasses
+  });
+}
+
+function isBetterRingSystemPlacement(candidatePlacement, incumbentPlacement, candidateAudit, incumbentAudit) {
+  if (!candidatePlacement || !candidateAudit) {
+    return false;
+  }
+  if (!incumbentPlacement || !incumbentAudit) {
+    return true;
+  }
+  if (candidateAudit.severeOverlapCount !== incumbentAudit.severeOverlapCount) {
+    return candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount;
+  }
+  if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
+    return candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount;
+  }
+  if (Math.abs(candidateAudit.maxBondLengthDeviation - incumbentAudit.maxBondLengthDeviation) > 1e-9) {
+    return candidateAudit.maxBondLengthDeviation < incumbentAudit.maxBondLengthDeviation;
+  }
+  return candidatePlacement.placementMode !== incumbentPlacement.placementMode;
+}
+
+function isBetterBondFirstRingSystemPlacement(candidatePlacement, incumbentPlacement, candidateAudit, incumbentAudit) {
+  if (!candidatePlacement || !candidateAudit) {
+    return false;
+  }
+  if (!incumbentPlacement || !incumbentAudit) {
+    return true;
+  }
+  if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
+    return candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount;
+  }
+  if (Math.abs(candidateAudit.maxBondLengthDeviation - incumbentAudit.maxBondLengthDeviation) > 1e-9) {
+    return candidateAudit.maxBondLengthDeviation < incumbentAudit.maxBondLengthDeviation;
+  }
+  if (candidateAudit.severeOverlapCount !== incumbentAudit.severeOverlapCount) {
+    return candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount;
+  }
+  return candidatePlacement.placementMode !== incumbentPlacement.placementMode;
+}
+
+function shouldTryCompactBridgedRingSystemRescue(ringSystem, templateId, audit) {
+  if (templateId || !audit) {
+    return false;
+  }
+  return (
+    ringSystem.atomIds.length <= RING_SYSTEM_RESCUE_LIMITS.compactBridgedAtomCount
+    && ringSystem.ringIds.length <= RING_SYSTEM_RESCUE_LIMITS.compactBridgedRingCount
+    && (audit.severeOverlapCount > 0 || audit.bondLengthFailureCount > 0)
+  );
+}
+
+function shouldTryBridgedRingSystemRescue(ringSystem, templateId, audit) {
+  if (templateId || !audit) {
+    return false;
+  }
+  return (
+    ringSystem.atomIds.length >= RING_SYSTEM_RESCUE_LIMITS.bridgedTemplateMissAtomCount
+    && ringSystem.ringIds.length >= RING_SYSTEM_RESCUE_LIMITS.bridgedTemplateMissRingCount
+    && (audit.severeOverlapCount > 0 || audit.bondLengthFailureCount > 0)
+  );
+}
+
 /**
  * Lays out one ring system inside a mixed scaffold and resolves its audit class.
  * @param {object} layoutGraph - Layout graph shell.
@@ -58,48 +501,106 @@ function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null
   const family = classifyRingSystemFamily(layoutGraph, ringSystem);
   const { rings, ringAdj, ringConnectionByPair } = ringSystemAdjacency(layoutGraph, ringSystem);
   if (family === 'isolated-ring') {
-    const result = layoutIsolatedRingFamily(rings[0], bondLength, { layoutGraph, templateId });
-    return {
-      family,
-      validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
-      ...result
-    };
+    return wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutIsolatedRingFamily(rings[0], bondLength, { layoutGraph, templateId }), templateId);
   }
   if (family === 'macrocycle') {
-    const result = layoutMacrocycleFamily(rings, bondLength, { layoutGraph, templateId });
-    return result
-      ? {
-          family,
-          validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
-          ...result
-        }
-      : null;
+    return wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutMacrocycleFamily(rings, bondLength, { layoutGraph, templateId }), templateId);
   }
   if (family === 'bridged') {
-    const result = layoutBridgedFamily(rings, bondLength, { layoutGraph, templateId });
-    return result
-      ? {
-          family,
-          validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
-          ...result
-        }
-      : null;
+    const connectionKinds = ringSystemConnectionKinds(layoutGraph, ringSystem);
+    let bestPlacement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutBridgedFamily(rings, bondLength, { layoutGraph, templateId }), templateId);
+    let bestAudit = auditRingSystemPlacement(layoutGraph, ringSystem, bestPlacement, bondLength);
+
+    if (connectionKinds.has('fused') && (connectionKinds.has('spiro') || connectionKinds.has('bridged'))) {
+      const hybridRescuePlacement = wrapRingSystemPlacementResult(
+        layoutGraph,
+        ringSystem,
+        family,
+        layoutFusedConnectedHybridRingSystem(layoutGraph, rings, ringAdj, ringConnectionByPair, bondLength),
+        templateId
+      );
+      const hybridRescueAudit = auditRingSystemPlacement(layoutGraph, ringSystem, hybridRescuePlacement, bondLength);
+      if (isBetterBondFirstRingSystemPlacement(hybridRescuePlacement, bestPlacement, hybridRescueAudit, bestAudit)) {
+        bestPlacement = hybridRescuePlacement;
+        bestAudit = hybridRescueAudit;
+      }
+    }
+
+    if (shouldTryCompactBridgedRingSystemRescue(ringSystem, templateId, bestAudit)) {
+      const fusedRescuePlacement = wrapRingSystemPlacementResult(
+        layoutGraph,
+        ringSystem,
+        family,
+        layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId }),
+        templateId
+      );
+      const fusedRescueAudit = auditRingSystemPlacement(layoutGraph, ringSystem, fusedRescuePlacement, bondLength);
+      if (isBetterBondFirstRingSystemPlacement(fusedRescuePlacement, bestPlacement, fusedRescueAudit, bestAudit)) {
+        bestPlacement = fusedRescuePlacement;
+        bestAudit = fusedRescueAudit;
+      }
+    }
+
+    if (!shouldTryBridgedRingSystemRescue(ringSystem, templateId, bestAudit)) {
+      return bestPlacement;
+    }
+
+    const spiroRescuePlacement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutSpiroFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId }), templateId);
+    const spiroRescueAudit = auditRingSystemPlacement(layoutGraph, ringSystem, spiroRescuePlacement, bondLength);
+    return isBetterRingSystemPlacement(spiroRescuePlacement, bestPlacement, spiroRescueAudit, bestAudit)
+      ? spiroRescuePlacement
+      : bestPlacement;
   }
   if (family === 'fused') {
-    const result = layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId });
-    return {
+    if (shouldShortCircuitToFusedCageKk(ringSystem.atomIds.length, ringSystem.ringIds.length, templateId)) {
+      return wrapRingSystemPlacementResult(
+        layoutGraph,
+        ringSystem,
+        family,
+        layoutFusedCageKamadaKawai(rings, bondLength, { layoutGraph, templateId })
+          ?? layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId }),
+        templateId
+      );
+    }
+
+    let bestPlacement = wrapRingSystemPlacementResult(
+      layoutGraph,
+      ringSystem,
       family,
-      validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
-      ...result
-    };
+      layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId }),
+      templateId
+    );
+    let bestAudit = auditRingSystemPlacement(layoutGraph, ringSystem, bestPlacement, bondLength);
+    if (shouldTryBridgedRescueForFusedSystem(ringSystem.atomIds.length, ringSystem.ringIds.length, templateId, bestAudit)) {
+      const bridgedRescuePlacement = wrapRingSystemPlacementResult(
+        layoutGraph,
+        ringSystem,
+        family,
+        layoutBridgedFamily(rings, bondLength, { layoutGraph, templateId }),
+        templateId
+      );
+      const bridgedRescueAudit = auditRingSystemPlacement(layoutGraph, ringSystem, bridgedRescuePlacement, bondLength);
+      if (isBetterBridgedRescueForFusedSystem(bridgedRescueAudit, bestAudit)) {
+        bestPlacement = bridgedRescuePlacement;
+        bestAudit = bridgedRescueAudit;
+      }
+
+      const cageKkPlacement = wrapRingSystemPlacementResult(
+        layoutGraph,
+        ringSystem,
+        family,
+        layoutFusedCageKamadaKawai(rings, bondLength, { layoutGraph, templateId }),
+        templateId
+      );
+      const cageKkAudit = auditRingSystemPlacement(layoutGraph, ringSystem, cageKkPlacement, bondLength);
+      if (isBetterBridgedRescueForFusedSystem(cageKkAudit, bestAudit)) {
+        bestPlacement = cageKkPlacement;
+      }
+    }
+    return bestPlacement;
   }
   if (family === 'spiro') {
-    const result = layoutSpiroFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId });
-    return {
-      family,
-      validationClass: resolvePlacementValidationClass(family, result.placementMode, templateId),
-      ...result
-    };
+    return wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutSpiroFamily(rings, ringAdj, ringConnectionByPair, bondLength, { layoutGraph, templateId }), templateId);
   }
   return null;
 }
@@ -132,21 +633,6 @@ function findAttachmentBond(layoutGraph, ringSystem, placedAtomIds) {
 }
 
 /**
- * Builds a lookup from atom ID to owning ring-system ID.
- * @param {object} layoutGraph - Layout graph shell.
- * @returns {Map<string, number>} Atom-to-ring-system lookup.
- */
-function buildAtomToRingSystemIdMap(layoutGraph) {
-  const atomToRingSystemId = new Map();
-  for (const ringSystem of layoutGraph.ringSystems) {
-    for (const atomId of ringSystem.atomIds) {
-      atomToRingSystemId.set(atomId, ringSystem.id);
-    }
-  }
-  return atomToRingSystemId;
-}
-
-/**
  * Returns ring-system atom IDs in canonical order.
  * @param {Iterable<string>} atomIds - Atom IDs to sort.
  * @param {Map<string, number>} canonicalAtomRank - Canonical atom-rank map.
@@ -171,6 +657,7 @@ function findShortestRingLinker(layoutGraph, pendingRingSystem, placedRingSystem
   const canonicalAtomRank = layoutGraph.canonicalAtomRank;
   const orderedPendingAttachmentIds = sortAtomIds(pendingRingSystem.atomIds, canonicalAtomRank);
   const queue = [];
+  let queueHead = 0;
   const visited = new Map();
 
   for (const secondAttachmentAtomId of orderedPendingAttachmentIds) {
@@ -216,8 +703,8 @@ function findShortestRingLinker(layoutGraph, pendingRingSystem, placedRingSystem
     }
   }
 
-  while (queue.length > 0) {
-    const current = queue.shift();
+  while (queueHead < queue.length) {
+    const current = queue[queueHead++];
     const atom = layoutGraph.sourceMolecule.atoms.get(current.atomId);
     if (!atom) {
       continue;
@@ -238,7 +725,7 @@ function findShortestRingLinker(layoutGraph, pendingRingSystem, placedRingSystem
           return {
             firstAttachmentAtomId: neighborAtomId,
             firstRingSystemId: neighborRingSystemId,
-            chainAtomIds: current.chainAtomIds,
+            chainAtomIds: [...current.chainAtomIds].reverse(),
             secondAttachmentAtomId: current.secondAttachmentAtomId
           };
         }
@@ -294,12 +781,34 @@ function linkerSegmentAngles(exitAngle, segmentCount, turnSign) {
  * @returns {object|null} Matching bond or `null`.
  */
 function bondBetweenAtomIds(layoutGraph, firstAtomId, secondAtomId) {
-  for (const bond of layoutGraph.bonds.values()) {
-    if ((bond.a === firstAtomId && bond.b === secondAtomId) || (bond.a === secondAtomId && bond.b === firstAtomId)) {
-      return bond;
+  const key = firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
+  return layoutGraph.bondByAtomPair.get(key) ?? null;
+}
+
+/**
+ * Returns the preferred outward exit angle for a ring-system attachment atom.
+ * Single-ring perimeter atoms should follow their local ring outward axis,
+ * while fused/shared atoms fall back to the whole ring-system centroid.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {object} ringSystem - Ring-system descriptor.
+ * @param {string} attachmentAtomId - Attachment atom ID.
+ * @returns {number|null} Preferred outward exit angle in radians.
+ */
+function preferredRingLinkerExitAngle(layoutGraph, coords, ringSystem, attachmentAtomId) {
+  const attachmentPosition = coords.get(attachmentAtomId);
+  if (!attachmentPosition) {
+    return null;
+  }
+  const attachmentRings = layoutGraph.atomToRings.get(attachmentAtomId) ?? [];
+  if (attachmentRings.length === 1) {
+    const ringPositions = attachmentRings[0].atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
+    if (ringPositions.length >= 3) {
+      return angleOf(sub(attachmentPosition, centroid(ringPositions)));
     }
   }
-  return null;
+  const ringSystemPositions = ringSystem.atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
+  return ringSystemPositions.length >= 3 ? angleOf(sub(attachmentPosition, centroid(ringSystemPositions))) : null;
 }
 
 /**
@@ -313,11 +822,20 @@ function bondBetweenAtomIds(layoutGraph, firstAtomId, secondAtomId) {
  */
 function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, linker) {
   const ringSystemIsAromatic = ringSystem => (layoutGraph.rings ?? []).filter(ring => ringSystem.ringIds.includes(ring.id)).every(ring => ring.aromatic);
+  const ringSystemSupportsShortLinkerRoot = (ringSystem, { allowFused = false } = {}) => {
+    const family = classifyRingSystemFamily(layoutGraph, ringSystem);
+    if (family === 'isolated-ring') {
+      return ringSystemIsAromatic(ringSystem);
+    }
+    if (!allowFused || family !== 'fused' || !ringSystemIsAromatic(ringSystem)) {
+      return false;
+    }
+    const connectionKinds = ringSystemConnectionKinds(layoutGraph, ringSystem);
+    return connectionKinds.size > 0 && [...connectionKinds].every(kind => kind === 'fused');
+  };
   if (
-    classifyRingSystemFamily(layoutGraph, firstRingSystem) !== 'isolated-ring' ||
-    classifyRingSystemFamily(layoutGraph, secondRingSystem) !== 'isolated-ring' ||
-    !ringSystemIsAromatic(firstRingSystem) ||
-    !ringSystemIsAromatic(secondRingSystem)
+    !ringSystemSupportsShortLinkerRoot(firstRingSystem, { allowFused: true }) ||
+    !ringSystemSupportsShortLinkerRoot(secondRingSystem)
   ) {
     return false;
   }
@@ -342,6 +860,7 @@ function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, l
 
 /**
  * Builds candidate coordinates for a short ring-to-ring linker plus the attached ring system.
+ * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
  * @param {object} firstRingSystem - Already placed ring-system descriptor.
  * @param {object} linker - Linker descriptor.
@@ -351,11 +870,12 @@ function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, l
  * @param {boolean} mirror - Whether to mirror the attached ring block.
  * @returns {Map<string, {x: number, y: number}>} Candidate linker plus ring coordinates.
  */
-function buildRingLinkerCandidate(coords, firstRingSystem, linker, blockCoords, bondLength, turnSign, mirror) {
+function buildRingLinkerCandidate(layoutGraph, coords, firstRingSystem, linker, blockCoords, bondLength, turnSign, mirror) {
   const firstAttachmentPosition = coords.get(linker.firstAttachmentAtomId);
-  const firstRingCenter = centroid(firstRingSystem.atomIds.map(atomId => coords.get(atomId)).filter(Boolean));
-  const exitAngle = angleOf(sub(firstAttachmentPosition, firstRingCenter));
-  const segmentAngles = linkerSegmentAngles(exitAngle, linker.chainAtomIds.length + 1, turnSign);
+  const exitAngle = preferredRingLinkerExitAngle(layoutGraph, coords, firstRingSystem, linker.firstAttachmentAtomId);
+  const fallbackRingCenter = centroid(firstRingSystem.atomIds.map(atomId => coords.get(atomId)).filter(Boolean));
+  const resolvedExitAngle = exitAngle ?? angleOf(sub(firstAttachmentPosition, fallbackRingCenter));
+  const segmentAngles = linkerSegmentAngles(resolvedExitAngle, linker.chainAtomIds.length + 1, turnSign);
   const candidateCoords = new Map();
   let currentPosition = firstAttachmentPosition;
 
@@ -453,7 +973,19 @@ function selectAttachedBlockCandidates(candidates, coords, bondLength, layoutGra
     ...candidate,
     ...preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph)
   }));
-  scoredCandidates.sort((firstCandidate, secondCandidate) => firstCandidate.overlapCount - secondCandidate.overlapCount || firstCandidate.cost - secondCandidate.cost);
+  scoredCandidates.sort((firstCandidate, secondCandidate) => {
+    if (firstCandidate.overlapCount !== secondCandidate.overlapCount) {
+      return firstCandidate.overlapCount - secondCandidate.overlapCount;
+    }
+    if (Math.abs(firstCandidate.cost - secondCandidate.cost) > IMPROVEMENT_EPSILON) {
+      return firstCandidate.cost - secondCandidate.cost;
+    }
+    return compareCoordMapsDeterministically(
+      firstCandidate.transformedCoords,
+      secondCandidate.transformedCoords,
+      layoutGraph.canonicalAtomRank
+    );
+  });
 
   const [bestCandidate, secondCandidate] = scoredCandidates;
   if (!secondCandidate) {
@@ -581,7 +1113,7 @@ function initializeRootScaffold(layoutGraph, component, adjacency, scaffoldPlan,
   const coords = new Map();
   const placedAtomIds = new Set();
   const bondValidationClasses = new Map();
-  const atomToRingSystemId = buildAtomToRingSystemIdMap(layoutGraph);
+  const atomToRingSystemId = layoutGraph.atomToRingSystemId;
   const ringSystemById = new Map(layoutGraph.ringSystems.map(ringSystem => [ringSystem.id, ringSystem]));
   const root = scaffoldPlan.rootScaffold;
 
@@ -680,22 +1212,24 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
     placedRingSystemIds,
     macrocycleBranchConstraints,
     primaryNonRingAtomIds,
-    pendingRingLayoutCache,
-    pendingRingSystems
+    pendingRingLayoutCache
   } = state;
+  let pendingRingSystems = [...state.pendingRingSystems];
 
   let progressed = true;
   while (progressed) {
     progressed = false;
-    for (let index = 0; index < pendingRingSystems.length; index++) {
-      const pendingRingSystem = pendingRingSystems[index];
+    const remainingAfterLinkers = [];
+    for (const pendingRingSystem of pendingRingSystems) {
       const linker = findShortestRingLinker(layoutGraph, pendingRingSystem.ringSystem, placedRingSystemIds, participantAtomIds, atomToRingSystemId);
       if (!linker || linker.chainAtomIds.some(atomId => coords.has(atomId))) {
+        remainingAfterLinkers.push(pendingRingSystem);
         continue;
       }
       const firstRingSystem = ringSystemById.get(linker.firstRingSystemId);
       const blockLayout = getPendingRingLayout(pendingRingLayoutCache, layoutGraph, pendingRingSystem, bondLength);
       if (!firstRingSystem || !blockLayout || !isSupportedRingLinker(layoutGraph, firstRingSystem, pendingRingSystem.ringSystem, linker)) {
+        remainingAfterLinkers.push(pendingRingSystem);
         continue;
       }
 
@@ -706,7 +1240,7 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
       for (const turnSign of turnSigns) {
         for (const mirror of [false, true]) {
           rawCandidates.push({
-            transformedCoords: buildRingLinkerCandidate(coords, firstRingSystem, linker, blockLayout.coords, bondLength, turnSign, mirror)
+            transformedCoords: buildRingLinkerCandidate(layoutGraph, coords, firstRingSystem, linker, blockLayout.coords, bondLength, turnSign, mirror)
           });
         }
       }
@@ -722,13 +1256,26 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
           layoutGraph,
           macrocycleBranchConstraints
         );
-        if (candidateCost < bestCandidateCost) {
-          bestCandidateCost = candidateCost;
-          bestCandidateCoords = candidate.transformedCoords;
-        }
+      if (
+        candidateCost < bestCandidateCost - IMPROVEMENT_EPSILON
+        || (
+          Math.abs(candidateCost - bestCandidateCost) <= IMPROVEMENT_EPSILON
+          && bestCandidateCoords
+          && compareCoordMapsDeterministically(
+            candidate.transformedCoords,
+            bestCandidateCoords,
+            layoutGraph.canonicalAtomRank
+          ) < 0
+        )
+        || bestCandidateCoords == null
+      ) {
+        bestCandidateCost = candidateCost;
+        bestCandidateCoords = candidate.transformedCoords;
+      }
       }
 
       if (!bestCandidateCoords) {
+        remainingAfterLinkers.push(pendingRingSystem);
         continue;
       }
 
@@ -738,10 +1285,9 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
       }
       placedRingSystemIds.add(pendingRingSystem.ringSystem.id);
       assignBondValidationClass(layoutGraph, pendingRingSystem.ringSystem.atomIds, blockLayout.validationClass, bondValidationClasses);
-      pendingRingSystems.splice(index, 1);
-      index--;
       progressed = true;
     }
+    pendingRingSystems = remainingAfterLinkers;
 
     const sizeBeforeBranches = coords.size;
     placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, coords, primaryNonRingAtomIds, [...placedAtomIds], bondLength, layoutGraph, macrocycleBranchConstraints);
@@ -754,14 +1300,16 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
       progressed = true;
     }
 
-    for (let index = 0; index < pendingRingSystems.length; index++) {
-      const pendingRingSystem = pendingRingSystems[index];
+    const remainingAfterAttachments = [];
+    for (const pendingRingSystem of pendingRingSystems) {
       const attachment = findAttachmentBond(layoutGraph, pendingRingSystem.ringSystem, placedAtomIds);
       if (!attachment) {
+        remainingAfterAttachments.push(pendingRingSystem);
         continue;
       }
       const blockLayout = getPendingRingLayout(pendingRingLayoutCache, layoutGraph, pendingRingSystem, bondLength);
       if (!blockLayout) {
+        remainingAfterAttachments.push(pendingRingSystem);
         continue;
       }
       const parentPosition = coords.get(attachment.parentAtomId);
@@ -805,12 +1353,25 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
           layoutGraph,
           macrocycleBranchConstraints
         );
-        if (candidateCost < bestAttachedBlockCost) {
+        if (
+          candidateCost < bestAttachedBlockCost - IMPROVEMENT_EPSILON
+          || (
+            Math.abs(candidateCost - bestAttachedBlockCost) <= IMPROVEMENT_EPSILON
+            && bestAttachedBlock
+            && compareCoordMapsDeterministically(
+              candidate.transformedCoords,
+              bestAttachedBlock,
+              layoutGraph.canonicalAtomRank
+            ) < 0
+          )
+          || bestAttachedBlock == null
+        ) {
           bestAttachedBlockCost = candidateCost;
           bestAttachedBlock = candidate.transformedCoords;
         }
       }
       if (!bestAttachedBlock) {
+        remainingAfterAttachments.push(pendingRingSystem);
         continue;
       }
       for (const [atomId, position] of bestAttachedBlock) {
@@ -819,11 +1380,12 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
       }
       placedRingSystemIds.add(pendingRingSystem.ringSystem.id);
       assignBondValidationClass(layoutGraph, pendingRingSystem.ringSystem.atomIds, blockLayout.validationClass, bondValidationClasses);
-      pendingRingSystems.splice(index, 1);
-      index--;
       progressed = true;
     }
+    pendingRingSystems = remainingAfterAttachments;
   }
+
+  state.pendingRingSystems = pendingRingSystems;
 }
 
 /**
@@ -843,6 +1405,9 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
     if (coords.has(atomId)) {
       placedAtomIds.add(atomId);
     }
+  }
+  if ((state.pendingRingSystems?.length ?? 0) > 0) {
+    attachPendingRingSystems(layoutGraph, adjacency, bondLength, state);
   }
   if (deferredHydrogenAtomIds.size > 0) {
     placeRemainingBranches(adjacency, layoutGraph.canonicalAtomRank, coords, deferredHydrogenAtomIds, [...placedAtomIds], bondLength, layoutGraph, macrocycleBranchConstraints);

@@ -235,6 +235,10 @@ describe('layout/engine/templates/match', () => {
     const bicycloMatch = findTemplateMatch(bicycloGraph, buildRingCandidate(bicycloGraph, bicycloGraph.ringSystems[0], 'bridged'));
     assert.equal(bicycloMatch.id, 'bicyclo-2-2-2');
 
+    const oxabicyclo222Graph = createLayoutGraph(parseSMILES('C12CCC(CO1)CC2'));
+    const oxabicyclo222Match = findTemplateMatch(oxabicyclo222Graph, buildRingCandidate(oxabicyclo222Graph, oxabicyclo222Graph.ringSystems[0], 'bridged'));
+    assert.equal(oxabicyclo222Match.id, 'oxabicyclo-2-2-2');
+
     const quinuclidineGraph = createLayoutGraph(parseSMILES('C1CN2CCC1CC2'));
     const quinuclidineMatch = findTemplateMatch(quinuclidineGraph, buildRingCandidate(quinuclidineGraph, quinuclidineGraph.ringSystems[0], 'bridged'));
     assert.equal(quinuclidineMatch.id, 'quinuclidine');
@@ -260,6 +264,12 @@ describe('layout/engine/templates/match', () => {
     const graph = createLayoutGraph(parseSMILES('C1OC2CC(C1)C2'));
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
     assert.equal(match.id, 'oxabicyclo-3-1-1');
+  });
+
+  it('matches the bridged benzoxathiobicyclo cage scaffold too', () => {
+    const graph = createLayoutGraph(parseSMILES('C1CC2CC(C2)COC2=CC=C1S2'));
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'benzoxathiobicyclo-core');
   });
 
   it('matches the porphyrin core as a macrocycle template and can promote it over a bridged heuristic', () => {

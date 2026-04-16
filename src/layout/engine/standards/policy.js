@@ -27,6 +27,7 @@ export function resolvePolicy(profile, traits = {}) {
   if (profile === 'macrocycle') {
     policy.macrocycleMode = 'ellipse';
     ensurePostCleanupHook(policy, 'ring-perimeter-correction');
+    ensurePostCleanupHook(policy, 'ring-terminal-hetero-tidy');
   } else if (profile === 'organometallic') {
     policy.organometallicMode = 'ligand-first';
     ensurePostCleanupHook(policy, 'ligand-angle-tidy');
@@ -45,10 +46,17 @@ export function resolvePolicy(profile, traits = {}) {
   if (traits.primaryFamily === 'macrocycle') {
     policy.macrocycleMode = 'ellipse';
     ensurePostCleanupHook(policy, 'ring-perimeter-correction');
+    ensurePostCleanupHook(policy, 'ring-terminal-hetero-tidy');
+  }
+  if ((traits.ringCount ?? 0) > 0 && traits.primaryFamily !== 'macrocycle') {
+    ensurePostCleanupHook(policy, 'ring-substituent-tidy');
   }
   if (traits.containsMetal) {
     policy.organometallicMode = 'ligand-first';
     ensurePostCleanupHook(policy, 'ligand-angle-tidy');
+  }
+  if (traits.containsOrthogonalHypervalentCenter) {
+    ensurePostCleanupHook(policy, 'hypervalent-angle-tidy');
   }
   if (traits.hasDisconnectedComponents) {
     policy.fragmentPackingMode = traits.principalIsTall ? 'principal-below' : 'principal-right';

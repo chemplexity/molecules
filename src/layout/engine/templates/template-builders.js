@@ -579,6 +579,15 @@ function createBicyclo222Template() {
 }
 
 /**
+ * Creates the oxabicyclo[2.2.2]octane scaffold graph used by bridged
+ * oxygen-containing cage systems like `C12CCC(CO1)CC2`.
+ * @returns {Molecule} Oxabicyclo[2.2.2]octane scaffold template molecule.
+ */
+function createOxabicyclo222Template() {
+  return createHeavyTemplateFromSmiles('oxabicyclo-2-2-2', 'C12CCC(CO1)CC2');
+}
+
+/**
  * Creates the quinuclidine scaffold graph used by aza-bicyclo[2.2.2]octane cages.
  * @returns {Molecule} Quinuclidine scaffold template molecule.
  */
@@ -593,6 +602,15 @@ function createQuinuclidineTemplate() {
  */
 function createOxabicyclo311Template() {
   return createHeavyTemplateFromSmiles('oxabicyclo-3-1-1', 'C1OC2CC(C1)C2');
+}
+
+/**
+ * Creates the benzoxathiobicyclo scaffold graph used by bridged benzothiophene
+ * cages like `CC1(C)CC2CC(C2)COC2=CC=C1S2`.
+ * @returns {Molecule} Benzoxathiobicyclo scaffold template molecule.
+ */
+function createBenzoxathiobicycloCoreTemplate() {
+  return createHeavyTemplateFromSmiles('benzoxathiobicyclo-core', 'C1CC2CC(C2)COC2=CC=C1S2');
 }
 
 /**
@@ -1113,6 +1131,25 @@ function createBicyclo222Geometry() {
 }
 
 /**
+ * Creates a conventional oxabicyclo[2.2.2]octane projection with the oxygen
+ * on the right-hand bridge, the carbon-only bridge spread to the left, and
+ * the third bridge rising to the top apex like the supplied reference sketch.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createOxabicyclo222Geometry() {
+  return createCenteredFrozenGeometry([
+    ['C1', { x: 0.25, y: 0.1 }],
+    ['C4', { x: -0.2, y: -0.55 }],
+    ['C2', { x: -0.95, y: -0.05 }],
+    ['C3', { x: -1.35, y: -1.0 }],
+    ['O6', { x: 1.4, y: -0.05 }],
+    ['C5', { x: 1.0, y: -1.0 }],
+    ['C8', { x: 0.25, y: 1.1 }],
+    ['C7', { x: -0.45, y: 0.5 }]
+  ]);
+}
+
+/**
  * Creates a conventional quinuclidine projection with the bridgehead nitrogen
  * low in the cage, a short vertical upper bridge, and the two side bridges
  * fanning left and right like the reference medicinal-chemistry depictions.
@@ -1146,6 +1183,31 @@ function createOxabicyclo311Geometry() {
     ['C5', { x: 0.52, y: 0.28 }],
     ['C4', { x: 1.32, y: -0.04 }],
     ['C7', { x: 0.08, y: 0.92 }]
+  ]);
+}
+
+/**
+ * Creates a conventional bridged benzoxathiobicyclo projection matching the
+ * supplied medicinal-chemistry sketch: gem-dimethyl-bearing junction on the
+ * left, the cyclobutane bridge on the upper right, and the benzothiophene-like
+ * sulfur/oxygen ring below the main span.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createBenzoxathiobicycloCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C1', { x: -1.638, y: 0.195 }],
+    ['C2', { x: -0.78, y: 0.858 }],
+    ['C3', { x: 0.351, y: 0.741 }],
+    ['C4', { x: 0.351, y: -0.195 }],
+    ['C5', { x: 1.209, y: -0.117 }],
+    ['C6', { x: 1.287, y: 0.78 }],
+    ['C7', { x: 1.833, y: -1.092 }],
+    ['O8', { x: 1.053, y: -1.521 }],
+    ['C9', { x: 0.156, y: -1.482 }],
+    ['C10', { x: -0.741, y: -1.911 }],
+    ['C11', { x: -1.638, y: -1.076 }],
+    ['C12', { x: -1.03, y: -0.234 }],
+    ['S13', { x: 0.0, y: -0.507 }]
   ]);
 }
 
@@ -1269,10 +1331,18 @@ export function buildTemplateLibrary() {
   return [
     createTemplate('adamantane', 'bridged', 70, createAdamantaneTemplate(), geometrySpec('normalized-xy', createAdamantaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('bicyclo-2-2-2', 'bridged', 60, createBicyclo222Template(), geometrySpec('normalized-xy', createBicyclo222Geometry(), BRIDGED_VALIDATION)),
+    createTemplate('oxabicyclo-2-2-2', 'bridged', 59, createOxabicyclo222Template(), geometrySpec('normalized-xy', createOxabicyclo222Geometry(), BRIDGED_VALIDATION)),
     createTemplate('quinuclidine', 'bridged', 58, createQuinuclidineTemplate(), geometrySpec('normalized-xy', createQuinuclidineGeometry(), BRIDGED_VALIDATION)),
     createTemplate('tropane', 'bridged', 57, createTropaneTemplate(), geometrySpec('normalized-xy', createTropaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('cubane', 'bridged', 55, createCubaneTemplate(), geometrySpec('normalized-xy', createCubaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('oxabicyclo-3-1-1', 'bridged', 54, createOxabicyclo311Template(), geometrySpec('normalized-xy', createOxabicyclo311Geometry(), OXABICYCLO311_VALIDATION)),
+    createTemplate(
+      'benzoxathiobicyclo-core',
+      'bridged',
+      53,
+      createBenzoxathiobicycloCoreTemplate(),
+      geometrySpec('normalized-xy', createBenzoxathiobicycloCoreGeometry(), BRIDGED_VALIDATION)
+    ),
     createTemplate('norbornane', 'bridged', 50, createNorbornaneTemplate(), geometrySpec('normalized-xy', createNorbornaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('quinoline', 'fused', 49, createQuinolineTemplate(), geometrySpec('normalized-xy', createQuinolineGeometry(), PLANAR_VALIDATION)),
     createTemplate('isoquinoline', 'fused', 48, createIsoquinolineTemplate(), geometrySpec('normalized-xy', createIsoquinolineGeometry(), PLANAR_VALIDATION)),

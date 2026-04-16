@@ -1,5 +1,6 @@
 /** @module families/macrocycle */
 
+import { auditLayout } from '../audit/audit.js';
 import { add, angleOf, centroid, distance, fromAngle, midpoint, normalize, perpLeft, rotate, scale, sub, vec, wrapAngle } from '../geometry/vec2.js';
 import { apothemForRegularPolygon } from '../geometry/polygon.js';
 import { ellipsePerimeterPoints, macrocycleAspectRatio, solveEllipseScale } from '../geometry/ellipse.js';
@@ -300,6 +301,137 @@ function fitRegularPolygonToPlacedAtoms(ring, coords, radius) {
   return best;
 }
 
+function contiguousPlacedRunIndices(ring, coords) {
+  const placedMask = ring.atomIds.map(atomId => coords.has(atomId));
+  const runs = [];
+  let currentRun = [];
+
+  for (let index = 0; index < ring.atomIds.length; index++) {
+    if (placedMask[index]) {
+      currentRun.push(index);
+      continue;
+    }
+    if (currentRun.length > 0) {
+      runs.push(currentRun);
+      currentRun = [];
+    }
+  }
+
+  if (currentRun.length > 0) {
+    if (runs.length > 0 && placedMask[0]) {
+      runs[0] = [...currentRun, ...runs[0]];
+    } else {
+      runs.push(currentRun);
+    }
+  }
+
+  return runs.length === 1 ? runs[0] : null;
+}
+
+function solveArcStepAngle(chordLength, segmentCount, bondLength) {
+  let low = 1e-6;
+  let high = Math.PI - 1e-6;
+  for (let iteration = 0; iteration < 80; iteration++) {
+    const mid = (low + high) / 2;
+    const estimate = bondLength * Math.sin((segmentCount * mid) / 2) / Math.sin(mid / 2);
+    if (estimate > chordLength) {
+      low = mid;
+    } else {
+      high = mid;
+    }
+  }
+  return (low + high) / 2;
+}
+
+function fitMacrocycleArcToPlacedRun(ring, coords, bondLength) {
+  if (ring.size < 12) {
+    return null;
+  }
+
+  const placedRun = contiguousPlacedRunIndices(ring, coords);
+  if (!placedRun || placedRun.length < 3 || placedRun.length >= ring.atomIds.length - 2) {
+    return null;
+  }
+
+  const startIndex = placedRun[placedRun.length - 1];
+  const endIndex = placedRun[0];
+  const missingIndices = [];
+  let index = (startIndex + 1) % ring.atomIds.length;
+  while (index !== endIndex) {
+    missingIndices.push(index);
+    index = (index + 1) % ring.atomIds.length;
+  }
+  if (missingIndices.length < 4) {
+    return null;
+  }
+
+  const startPosition = coords.get(ring.atomIds[startIndex]);
+  const endPosition = coords.get(ring.atomIds[endIndex]);
+  if (!startPosition || !endPosition) {
+    return null;
+  }
+
+  const chordLength = distance(startPosition, endPosition);
+  const segmentCount = missingIndices.length + 1;
+  const stepAngle = solveArcStepAngle(chordLength, segmentCount, bondLength);
+  const radius = bondLength / (2 * Math.sin(stepAngle / 2));
+  const mid = scale(add(startPosition, endPosition), 0.5);
+  let normal = normalize(perpLeft(sub(endPosition, startPosition)));
+  const placedCentroid = centroid(placedRun.map(placedIndex => coords.get(ring.atomIds[placedIndex])));
+  if (distance(add(mid, normal), placedCentroid) < distance(add(mid, scale(normal, -1)), placedCentroid)) {
+    normal = scale(normal, -1);
+  }
+
+  const height = Math.sqrt(Math.max(0, radius * radius - (chordLength * chordLength) / 4));
+  const center = add(mid, scale(normal, height));
+  const startAngle = angleOf(sub(startPosition, center));
+  const endAngle = angleOf(sub(endPosition, center));
+
+  let best = null;
+  for (const rotationSign of [1, -1]) {
+    const predicted = new Map();
+    for (let offset = 0; offset < missingIndices.length; offset++) {
+      const atomAngle = wrapAngle(startAngle + rotationSign * stepAngle * (offset + 1));
+      predicted.set(ring.atomIds[missingIndices[offset]], add(center, fromAngle(atomAngle, radius)));
+    }
+    const finalAngle = wrapAngle(startAngle + rotationSign * stepAngle * segmentCount);
+    const endpointError = Math.abs(wrapAngle(finalAngle - endAngle));
+    if (!best || endpointError < best.endpointError) {
+      best = { predicted, endpointError };
+    }
+  }
+
+  return best;
+}
+
+function scoreRingCompletionCandidate(layoutGraph, coords, predictedCoords, bondLength) {
+  const candidateCoords = new Map(coords);
+  for (const [atomId, position] of predictedCoords) {
+    candidateCoords.set(atomId, position);
+  }
+  const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+  return {
+    predictedCoords,
+    audit
+  };
+}
+
+function isBetterRingCompletionCandidate(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  }
+  if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
+    return candidate.audit.bondLengthFailureCount < incumbent.audit.bondLengthFailureCount;
+  }
+  if (Math.abs(candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation) > 1e-9) {
+    return candidate.audit.maxBondLengthDeviation < incumbent.audit.maxBondLengthDeviation;
+  }
+  return false;
+}
+
 /**
  * Grows secondary fused rings outward from a macrocycle using shared-edge projection.
  * Handles connections with exactly 2 shared atoms using the same algorithm as layoutFusedFamily.
@@ -402,8 +534,9 @@ function growFusedRingsFromMacrocycle(rings, primaryRing, coords, bondLength, la
  * @param {object[]} rings - All ring descriptors in the ring system.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map to extend (mutated in place).
  * @param {number} bondLength - Target bond length.
+ * @param {object|null} [layoutGraph] - Layout graph shell for candidate scoring.
  */
-function growRemainingRingAtoms(rings, coords, bondLength) {
+function growRemainingRingAtoms(rings, coords, bondLength, layoutGraph = null) {
   let progressed = true;
   while (progressed) {
     progressed = false;
@@ -432,8 +565,18 @@ function growRemainingRingAtoms(rings, coords, bondLength) {
       if (unplacedIds.length <= 2 || placedIds.length >= 4) {
         const fitted = fitRegularPolygonToPlacedAtoms(ring, coords, radius);
         if (fitted) {
+          let selectedCandidate = layoutGraph
+            ? scoreRingCompletionCandidate(layoutGraph, coords, fitted.predicted, bondLength)
+            : { predictedCoords: fitted.predicted };
+          const arcFit = layoutGraph ? fitMacrocycleArcToPlacedRun(ring, coords, bondLength) : null;
+          if (arcFit?.predicted) {
+            const arcCandidate = scoreRingCompletionCandidate(layoutGraph, coords, arcFit.predicted, bondLength);
+            if (isBetterRingCompletionCandidate(arcCandidate, selectedCandidate)) {
+              selectedCandidate = arcCandidate;
+            }
+          }
           for (const atomId of unplacedIds) {
-            coords.set(atomId, fitted.predicted.get(atomId));
+            coords.set(atomId, selectedCandidate.predictedCoords.get(atomId));
             progressed = true;
           }
           continue;
@@ -469,6 +612,92 @@ function growRemainingRingAtoms(rings, coords, bondLength) {
 }
 
 /**
+ * Builds the initial macrocycle ellipse seed for one candidate geometry.
+ * @param {object} primaryRing - Primary macrocycle ring descriptor.
+ * @param {{x: number, y: number}} center - Requested placement center.
+ * @param {number} semiMajor - Semi-major ellipse radius.
+ * @param {number} semiMinor - Semi-minor ellipse radius.
+ * @param {number} startAngle - Perimeter start angle in radians.
+ * @returns {Map<string, {x: number, y: number}>} Seed coordinates for the primary ring.
+ */
+function seedMacrocycleEllipse(primaryRing, center, semiMajor, semiMinor, startAngle) {
+  const coords = new Map();
+  const perimeterPoints = ellipsePerimeterPoints(center, primaryRing.atomIds.length, semiMajor, semiMinor, startAngle);
+  for (let index = 0; index < primaryRing.atomIds.length; index++) {
+    coords.set(primaryRing.atomIds[index], perimeterPoints[index]);
+  }
+  return coords;
+}
+
+/**
+ * Completes the rings reachable from one macrocycle ellipse seed.
+ * @param {object[]} rings - Ring descriptors in the macrocycle system.
+ * @param {object} primaryRing - Primary macrocycle ring descriptor.
+ * @param {Map<string, {x: number, y: number}>} seedCoords - Initial primary-ring coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @returns {Map<string, {x: number, y: number}>} Completed ring coordinates.
+ */
+function completeMacrocycleSeed(rings, primaryRing, seedCoords, bondLength, layoutGraph) {
+  const coords = new Map(seedCoords);
+  if (rings.length <= 1 || !layoutGraph) {
+    return coords;
+  }
+
+  let prevSize;
+  do {
+    prevSize = coords.size;
+    growFusedRingsFromMacrocycle(rings, primaryRing, coords, bondLength, layoutGraph);
+    growRemainingRingAtoms(rings, coords, bondLength, layoutGraph);
+  } while (coords.size > prevSize);
+
+  return coords;
+}
+
+/**
+ * Returns whether one macrocycle seed candidate is better than another.
+ * @param {{audit: object, candidatePenalty: number}} candidate - Candidate descriptor.
+ * @param {{audit: object, candidatePenalty: number}|null} incumbent - Incumbent descriptor.
+ * @returns {boolean} True when the candidate is preferred.
+ */
+function isBetterMacrocycleSeed(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  }
+  if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
+    return candidate.audit.bondLengthFailureCount < incumbent.audit.bondLengthFailureCount;
+  }
+  if (Math.abs(candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation) > 1e-9) {
+    return candidate.audit.maxBondLengthDeviation < incumbent.audit.maxBondLengthDeviation;
+  }
+  return candidate.candidatePenalty < incumbent.candidatePenalty;
+}
+
+/**
+ * Generates the seed candidates to try for one macrocycle system.
+ * Dense multi-ring macrocycles can be sensitive to where the perimeter starts
+ * along the ellipse and to how aggressively the ellipse stretches.
+ * @param {object} primaryRing - Primary macrocycle ring descriptor.
+ * @param {number} aspectRatio - Baseline macrocycle aspect ratio.
+ * @returns {Array<{startAngle: number, aspectRatio: number, candidatePenalty: number}>} Seed candidates.
+ */
+function macrocycleSeedCandidates(primaryRing, aspectRatio) {
+  const baseStartAngle = Math.PI / 2;
+  const halfStep = Math.PI / primaryRing.atomIds.length;
+  const expandedAspectRatio = Math.min(aspectRatio + 0.12, 2.05);
+  return [
+    { startAngle: baseStartAngle, aspectRatio, candidatePenalty: 0 },
+    { startAngle: baseStartAngle + halfStep, aspectRatio, candidatePenalty: 1 },
+    { startAngle: baseStartAngle - halfStep, aspectRatio, candidatePenalty: 2 },
+    { startAngle: baseStartAngle, aspectRatio: expandedAspectRatio, candidatePenalty: 3 },
+    { startAngle: baseStartAngle + halfStep, aspectRatio: expandedAspectRatio, candidatePenalty: 4 }
+  ];
+}
+
+/**
  * Places a macrocycle on a horizontally stretched ellipse with bond lengths
  * scaled to the target average edge length.
  * @param {object[]} rings - Ring descriptors in the macrocycle system.
@@ -493,29 +722,34 @@ export function layoutMacrocycleFamily(rings, bondLength, options = {}) {
   }
 
   const center = options.center ?? vec(0, 0);
-  const startAngle = Math.PI / 2;
   const aspectRatio = macrocycleAspectRatio(primaryRing.size);
-  const baseScale = solveEllipseScale(primaryRing.size, bondLength, aspectRatio, startAngle);
-  const semiMajor = baseScale * aspectRatio;
-  const semiMinor = baseScale / aspectRatio;
-  const coords = new Map();
-  const perimeterPoints = ellipsePerimeterPoints(center, primaryRing.atomIds.length, semiMajor, semiMinor, startAngle);
+  let bestSeed = null;
 
-  for (let index = 0; index < primaryRing.atomIds.length; index++) {
-    coords.set(primaryRing.atomIds[index], perimeterPoints[index]);
+  for (const candidate of macrocycleSeedCandidates(primaryRing, aspectRatio)) {
+    if (!options.layoutGraph && candidate.candidatePenalty > 0) {
+      continue;
+    }
+    const baseScale = solveEllipseScale(primaryRing.size, bondLength, candidate.aspectRatio, candidate.startAngle);
+    const seedCoords = seedMacrocycleEllipse(
+      primaryRing,
+      center,
+      baseScale * candidate.aspectRatio,
+      baseScale / candidate.aspectRatio,
+      candidate.startAngle
+    );
+    const coords = completeMacrocycleSeed(rings, primaryRing, seedCoords, bondLength, options.layoutGraph ?? null);
+    const audit = options.layoutGraph ? auditLayout(options.layoutGraph, coords, { bondLength }) : { severeOverlapCount: 0, bondLengthFailureCount: 0, maxBondLengthDeviation: 0 };
+    const scoredCandidate = {
+      coords,
+      audit,
+      candidatePenalty: candidate.candidatePenalty
+    };
+    if (isBetterMacrocycleSeed(scoredCandidate, bestSeed)) {
+      bestSeed = scoredCandidate;
+    }
   }
 
-  if (rings.length > 1 && options.layoutGraph) {
-    // Alternate fused-edge projection (2-atom connections) and partial-ring completion (3+ shared atoms)
-    // until no further progress. A second fused pass catches rings reachable only after regular-polygon
-    // completion has placed their bridging neighbors.
-    let prevSize;
-    do {
-      prevSize = coords.size;
-      growFusedRingsFromMacrocycle(rings, primaryRing, coords, bondLength, options.layoutGraph);
-      growRemainingRingAtoms(rings, coords, bondLength);
-    } while (coords.size > prevSize);
-  }
+  const coords = bestSeed?.coords ?? seedMacrocycleEllipse(primaryRing, center, 0, 0, Math.PI / 2);
 
   return {
     coords,

@@ -293,6 +293,24 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('C8').y < coords.get('C7').y);
   });
 
+  it('places the oxabicyclo[2.2.2]octane cage with the expected oxygen-right projection', () => {
+    const graph = createLayoutGraph(parseSMILES('C12CCC(CO1)CC2'));
+    const coords = placeTemplateCoords(graph, 'oxabicyclo-2-2-2', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const ys = [...coords.values()].map(position => position.y);
+    assert.equal(coords.size, 8);
+    assert.equal(coords.get('C8').y, Math.max(...ys));
+    assert.ok(coords.get('O6').x > coords.get('C1').x);
+    assert.ok(coords.get('C1').x > coords.get('C2').x);
+    assert.ok(coords.get('C2').x > coords.get('C3').x);
+    assert.ok(coords.get('C4').x < coords.get('C5').x);
+    assert.ok(coords.get('C5').x < coords.get('O6').x);
+    assert.ok(coords.get('C7').x < coords.get('C1').x);
+    assert.ok(coords.get('C3').y < coords.get('C2').y);
+    assert.ok(coords.get('C5').y < coords.get('O6').y);
+    assert.ok(coords.get('C4').y < coords.get('C7').y);
+    assert.ok(coords.get('C1').y < coords.get('C8').y);
+  });
+
   it('places the oxabicyclo[3.1.1]heptane cage with the expected oxygen-bridge projection', () => {
     const graph = createLayoutGraph(parseSMILES('C1OC2CC(C1)C2'));
     const coords = placeTemplateCoords(graph, 'oxabicyclo-3-1-1', graph.ringSystems[0].atomIds, graph.options.bondLength);
@@ -309,6 +327,21 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('C4').y < coords.get('C5').y);
     assert.ok(coords.get('C3').y < coords.get('C7').y);
     assert.ok(coords.get('C5').y < coords.get('C7').y);
+  });
+
+  it('places the benzoxathiobicyclo cage with the sulfur-oxygen ring below the bridged span', () => {
+    const graph = createLayoutGraph(parseSMILES('C1CC2CC(C2)COC2=CC=C1S2'));
+    const coords = placeTemplateCoords(graph, 'benzoxathiobicyclo-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    assert.equal(coords.size, 13);
+    assert.ok(coords.get('C1').x < coords.get('C2').x);
+    assert.ok(coords.get('C2').x < coords.get('C6').x);
+    assert.ok(coords.get('C6').x < coords.get('C7').x);
+    assert.ok(coords.get('C7').y > coords.get('O8').y);
+    assert.ok(coords.get('O8').x > coords.get('C9').x);
+    assert.ok(coords.get('S13').y > coords.get('C9').y);
+    assert.ok(coords.get('C10').y < coords.get('C9').y);
+    assert.ok(coords.get('C11').x < coords.get('C9').x);
+    assert.ok(coords.get('C12').x < coords.get('S13').x);
   });
 
   it('places the larger bicyclo and adamantane cage templates too', () => {

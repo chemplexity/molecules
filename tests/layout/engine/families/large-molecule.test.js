@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { parseSMILES } from '../../../../src/io/index.js';
+import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { measureBondLengthDeviation } from '../../../../src/layout/engine/audit/invariants.js';
 import { layoutLargeMoleculeFamily } from '../../../../src/layout/engine/families/large-molecule.js';
@@ -127,5 +129,34 @@ describe('layout/engine/families/large-molecule', () => {
     assert.equal(withRotationPacking.placementMode, 'block-stitched');
     assert.ok(withRotationPacking.rotationMoveCount >= 1);
     assert.ok(boundsArea(withRotationPacking.coords) < boundsArea(withoutRotationPacking.coords));
+  });
+
+  it('tries one alternate root for overlap-heavy bond-clean stitched placements without regressing the audit', () => {
+    const graph = createLayoutGraph(
+      parseSMILES(
+        'O=C(N[C@@H](CC(C)C)C(N)=O)[C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H](NC([C@H](CCCCNC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)NC([C@H](CC(C)C)NC([C@@H]([NH3+])CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)=O)CCCC[NH3+])=O)=O)=O)CCCC[NH3+]'
+      ),
+      { suppressH: true }
+    );
+    const baseline = layoutLargeMoleculeFamily(graph, graph.components[0], graph.options.bondLength, {
+      disableAlternateRootRetry: true
+    });
+    const retried = layoutLargeMoleculeFamily(graph, graph.components[0], graph.options.bondLength, {
+      forceAlternateRootRetry: true
+    });
+    const baselineAudit = auditLayout(graph, baseline.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: baseline.bondValidationClasses
+    });
+    const retriedAudit = auditLayout(graph, retried.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: retried.bondValidationClasses
+    });
+
+    assert.equal(baselineAudit.bondLengthFailureCount, 0);
+    assert.ok(baselineAudit.severeOverlapCount >= 4);
+    assert.equal(retried.rootRetryAttemptCount, 1);
+    assert.equal(retriedAudit.bondLengthFailureCount, 0);
+    assert.ok(retriedAudit.severeOverlapCount <= baselineAudit.severeOverlapCount);
   });
 });

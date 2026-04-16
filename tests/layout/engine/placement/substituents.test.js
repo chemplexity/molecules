@@ -6,6 +6,37 @@ import { angularDifference } from '../../../../src/layout/engine/geometry/vec2.j
 
 import { chooseAttachmentAngle, placeRemainingBranches } from '../../../../src/layout/engine/placement/substituents.js';
 
+function buildAdjacency(layoutGraph) {
+  const adjacency = new Map([...layoutGraph.atoms.keys()].map(atomId => [atomId, []]));
+  for (const bond of layoutGraph.bonds.values()) {
+    adjacency.get(bond.a)?.push(bond.b);
+    adjacency.get(bond.b)?.push(bond.a);
+  }
+  return adjacency;
+}
+
+function regularHexagonCoords(atomIds, radius = 1.5) {
+  const coords = new Map();
+  atomIds.forEach((atomId, index) => {
+    const angle = (Math.PI / 3) * index;
+    coords.set(atomId, {
+      x: Math.cos(angle) * radius,
+      y: Math.sin(angle) * radius
+    });
+  });
+  return coords;
+}
+
+function exactRingOutwardAngle(graph, coords, anchorAtomId) {
+  const ring = graph.rings.find(candidateRing => candidateRing.atomIds.includes(anchorAtomId));
+  assert.ok(ring, `expected a placed ring containing ${anchorAtomId}`);
+  const ringCenter = {
+    x: ring.atomIds.reduce((sum, atomId) => sum + coords.get(atomId).x, 0) / ring.atomIds.length,
+    y: ring.atomIds.reduce((sum, atomId) => sum + coords.get(atomId).y, 0) / ring.atomIds.length
+  };
+  return Math.atan2(coords.get(anchorAtomId).y - ringCenter.y, coords.get(anchorAtomId).x - ringCenter.x);
+}
+
 describe('layout/engine/placement/substituents', () => {
   it('chooses an outward attachment angle and places remaining branch atoms', () => {
     const adjacency = new Map([
@@ -81,6 +112,46 @@ describe('layout/engine/placement/substituents', () => {
     assert.ok(
       angularDifference(angle, exactOutwardAngle) < 1e-6,
       `expected exact ring-outward angle, got ${((angle * 180) / Math.PI).toFixed(2)}° vs ${((exactOutwardAngle * 180) / Math.PI).toFixed(2)}°`
+    );
+  });
+
+  it('uses the exact local ring-outward angle for safe ether substituent roots', () => {
+    const graph = createLayoutGraph(parseSMILES('COc1ccccc1'), { suppressH: true });
+    const adjacency = buildAdjacency(graph);
+    const coords = regularHexagonCoords(graph.rings[0].atomIds);
+    const oxygenAtomId = [...graph.atoms.values()].find(atom => atom.element === 'O' && (graph.atomToRings.get(atom.id)?.length ?? 0) === 0)?.id;
+    assert.ok(oxygenAtomId);
+    const oxygenNeighbors = (adjacency.get(oxygenAtomId) ?? []);
+    const anchorAtomId = oxygenNeighbors.find(atomId => (graph.atomToRings.get(atomId)?.length ?? 0) > 0);
+    assert.ok(anchorAtomId);
+    const angle = chooseAttachmentAngle(adjacency, coords, anchorAtomId, new Set(adjacency.keys()), null, graph, oxygenAtomId);
+    const exactOutwardAngle = exactRingOutwardAngle(graph, coords, anchorAtomId);
+
+    assert.ok(
+      angularDifference(angle, exactOutwardAngle) < 1e-6,
+      `expected ether root to follow the exact ring-outward angle, got ${((angle * 180) / Math.PI).toFixed(2)}° vs ${((exactOutwardAngle * 180) / Math.PI).toFixed(2)}°`
+    );
+  });
+
+  it('uses the exact local ring-outward angle for safe benzylic nitrile roots', () => {
+    const graph = createLayoutGraph(parseSMILES('N#Cc1ccccc1'), { suppressH: true });
+    const adjacency = buildAdjacency(graph);
+    const coords = regularHexagonCoords(graph.rings[0].atomIds);
+    const nitrileCarbonAtomId = [...graph.atoms.values()].find(atom =>
+      atom.element === 'C'
+      && (graph.atomToRings.get(atom.id)?.length ?? 0) === 0
+      && atom.heavyDegree === 2
+      && (adjacency.get(atom.id) ?? []).some(neighborAtomId => graph.atoms.get(neighborAtomId)?.element === 'N')
+    )?.id;
+    assert.ok(nitrileCarbonAtomId);
+    const anchorAtomId = (adjacency.get(nitrileCarbonAtomId) ?? []).find(atomId => (graph.atomToRings.get(atomId)?.length ?? 0) > 0);
+    assert.ok(anchorAtomId);
+    const angle = chooseAttachmentAngle(adjacency, coords, anchorAtomId, new Set(adjacency.keys()), null, graph, nitrileCarbonAtomId);
+    const exactOutwardAngle = exactRingOutwardAngle(graph, coords, anchorAtomId);
+
+    assert.ok(
+      angularDifference(angle, exactOutwardAngle) < 1e-6,
+      `expected nitrile root to follow the exact ring-outward angle, got ${((angle * 180) / Math.PI).toFixed(2)}° vs ${((exactOutwardAngle * 180) / Math.PI).toFixed(2)}°`
     );
   });
 });

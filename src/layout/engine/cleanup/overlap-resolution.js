@@ -13,8 +13,16 @@ function protectsLargeMoleculeBackbone(options) {
   return options.protectLargeMoleculeBackbone === true;
 }
 
-function isFixedAtom(layoutGraph, atomId) {
-  return layoutGraph.options.preserveFixed !== false && layoutGraph.fixedCoords.has(atomId);
+/**
+ * Returns whether overlap cleanup should treat the atom as immovable.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom identifier.
+ * @param {object} [options] - Cleanup options.
+ * @param {Set<string>|null} [options.frozenAtomIds] - Refinement-preserved atoms that cleanup must not move.
+ * @returns {boolean} True when the atom must stay fixed during cleanup.
+ */
+function isFixedAtom(layoutGraph, atomId, options = {}) {
+  return (layoutGraph.options.preserveFixed !== false && layoutGraph.fixedCoords.has(atomId)) || options.frozenAtomIds?.has(atomId) === true;
 }
 
 function atomPairKey(firstAtomId, secondAtomId) {
@@ -125,6 +133,38 @@ export function mergeRigidSubtreesByAtomId(...descriptorMaps) {
   }
 
   return merged;
+}
+
+/**
+ * Returns whether a rigid-subtree descriptor touches any frozen atom.
+ * @param {{subtreeAtomIds: string[]}} descriptor - Rigid-subtree descriptor.
+ * @param {Set<string>} frozenAtomIds - Frozen atom ids.
+ * @returns {boolean} True when the descriptor would move a frozen atom.
+ */
+function descriptorTouchesFrozenAtoms(descriptor, frozenAtomIds) {
+  return descriptor.subtreeAtomIds.some(atomId => frozenAtomIds.has(atomId));
+}
+
+/**
+ * Removes rigid-subtree cleanup descriptors that would move frozen atoms.
+ * @param {Map<string, {anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}|Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>} descriptorsByAtomId - Descriptor map.
+ * @param {Set<string>} frozenAtomIds - Frozen atom ids.
+ * @returns {Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>} Filtered descriptor map.
+ */
+function filterFrozenRigidSubtrees(descriptorsByAtomId, frozenAtomIds) {
+  const filtered = new Map();
+  if (!(descriptorsByAtomId instanceof Map) || descriptorsByAtomId.size === 0) {
+    return filtered;
+  }
+
+  for (const [atomId, descriptorValue] of descriptorsByAtomId) {
+    const activeDescriptors = rigidDescriptorsFromValue(descriptorValue).filter(descriptor => !descriptorTouchesFrozenAtoms(descriptor, frozenAtomIds));
+    if (activeDescriptors.length > 0) {
+      filtered.set(atomId, activeDescriptors);
+    }
+  }
+
+  return filtered;
 }
 
 function rigidDescriptorsForAtom(rigidSubtreesByAtomId, atomId) {
@@ -271,6 +311,22 @@ function rotateVector(vector, angle) {
   };
 }
 
+function localNonbondedClearance(layoutGraph, coords, atomId, position, searchRadius, atomGrid) {
+  let minimumDistance = searchRadius;
+  const candidateAtomIds = atomGrid ? atomGrid.queryRadius(position, searchRadius) : coords.keys();
+  for (const otherAtomId of candidateAtomIds) {
+    if (otherAtomId === atomId || layoutGraph.bondedPairSet?.has(atomPairKey(atomId, otherAtomId))) {
+      continue;
+    }
+    const otherPosition = coords.get(otherAtomId);
+    if (!otherPosition) {
+      continue;
+    }
+    minimumDistance = Math.min(minimumDistance, Math.hypot(position.x - otherPosition.x, position.y - otherPosition.y));
+  }
+  return minimumDistance;
+}
+
 /**
  * Applies a rigid subtree move and updates the atom grid in place.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
@@ -343,6 +399,10 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     y: rootPosition.y - anchorPosition.y
   };
   const currentRootAngle = Math.atan2(currentRootVector.y, currentRootVector.x);
+  const subtreeIsSingleAtom = descriptor.subtreeAtomIds.length === 1;
+  const baseLocalClearance = subtreeIsSingleAtom
+    ? localNonbondedClearance(layoutGraph, coords, movingAtomId, movingPosition, threshold * 2, atomGrid)
+    : 0;
   const baseOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, null, bondLength, { atomGrid });
   const baseAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, null);
   let bestMove = null;
@@ -381,7 +441,13 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
 
     const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, newPositions, bondLength, { atomGrid });
     const newAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, newPositions);
-    const improvement = baseOverlapCost - newOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
+    let improvement = baseOverlapCost - newOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
+    if (improvement <= IMPROVEMENT_EPSILON && subtreeIsSingleAtom && newOverlapCost <= baseOverlapCost + IMPROVEMENT_EPSILON) {
+      const candidateLocalClearance = localNonbondedClearance(layoutGraph, coords, movingAtomId, movedAtomPosition, threshold * 2, atomGrid);
+      if (candidateLocalClearance > baseLocalClearance + IMPROVEMENT_EPSILON) {
+        improvement = candidateLocalClearance - baseLocalClearance;
+      }
+    }
     if (improvement <= IMPROVEMENT_EPSILON) {
       continue;
     }
@@ -443,9 +509,10 @@ function bestRigidSubtreeMoveForAtom(layoutGraph, coords, atomGrid, rigidSubtree
  * @param {{x: number, y: number}} tentativePosition - Tentative moved position.
  * @param {string} opposingAtomId - Atom that triggered the overlap.
  * @param {number} threshold - Target nonbonded separation.
+ * @param {import('../geometry/atom-grid.js').AtomGrid|null} [atomGrid] - Optional spatial atom grid built from coords.
  * @returns {{x: number, y: number}} Constrained moved position.
  */
-function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition, opposingAtomId, threshold) {
+function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition, opposingAtomId, threshold, atomGrid = null) {
   const anchorAtomId = singleHeavyAnchorAtomId(layoutGraph, atomId);
   if (!anchorAtomId) {
     return tentativePosition;
@@ -474,8 +541,13 @@ function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition,
   }
   const minimumNonbondedDistance = candidatePosition => {
     let minimumDistance = Number.POSITIVE_INFINITY;
-    for (const [otherAtomId, otherPosition] of coords) {
+    const candidateAtomIds = atomGrid ? atomGrid.queryRadius(candidatePosition, threshold * 2) : coords.keys();
+    for (const otherAtomId of candidateAtomIds) {
       if (otherAtomId === atomId || otherAtomId === anchorAtomId || layoutGraph.bondedPairSet?.has(atomPairKey(atomId, otherAtomId))) {
+        continue;
+      }
+      const otherPosition = coords.get(otherAtomId);
+      if (!otherPosition) {
         continue;
       }
       minimumDistance = Math.min(minimumDistance, Math.hypot(candidatePosition.x - otherPosition.x, candidatePosition.y - otherPosition.y));
@@ -545,7 +617,12 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
   const threshold = bondLength * Math.max(options.thresholdFactor ?? 0.45, 0.55);
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
-  const rigidSubtreesByAtomId = options.rigidSubtreesByAtomId ?? collectRigidPendantRingSubtrees(layoutGraph);
+  const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
+  const rawRigidSubtreesByAtomId = options.rigidSubtreesByAtomId ?? collectRigidPendantRingSubtrees(layoutGraph);
+  const rigidSubtreesByAtomId =
+    frozenAtomIds
+      ? filterFrozenRigidSubtrees(rawRigidSubtreesByAtomId, frozenAtomIds)
+      : rawRigidSubtreesByAtomId;
   const visibleAtomCount = options.visibleAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.visible).length;
   let moves = 0;
 
@@ -574,8 +651,8 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
       const uy = dy / distance;
       const delta = deficit / 2 + bondLength * 0.02;
 
-      const firstFixed = isFixedAtom(layoutGraph, overlap.firstAtomId);
-      const secondFixed = isFixedAtom(layoutGraph, overlap.secondAtomId);
+      const firstFixed = isFixedAtom(layoutGraph, overlap.firstAtomId, options);
+      const secondFixed = isFixedAtom(layoutGraph, overlap.secondAtomId, options);
       const strategy = restrictMoveStrategy(
         layoutGraph,
         chooseMoveStrategy(layoutGraph, overlap.firstAtomId, overlap.secondAtomId, firstFixed, secondFixed),
@@ -634,7 +711,8 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
             y: secondPosition.y + uy * delta * strategy.scale
           },
           overlap.firstAtomId,
-          threshold
+          threshold,
+          atomGrid
         );
         secondPosition.x = constrainedPosition.x;
         secondPosition.y = constrainedPosition.y;
@@ -651,7 +729,8 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
             y: firstPosition.y - uy * delta * strategy.scale
           },
           overlap.secondAtomId,
-          threshold
+          threshold,
+          atomGrid
         );
         firstPosition.x = constrainedPosition.x;
         firstPosition.y = constrainedPosition.y;

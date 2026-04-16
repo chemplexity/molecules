@@ -262,6 +262,183 @@ export function labelTextOffset(label, fontSize) {
   return 0;
 }
 
+function rayDistanceToShiftedBox(angle, centerX, centerY, halfWidth, halfHeight) {
+  if (halfWidth <= 0 || halfHeight <= 0) {
+    return 0;
+  }
+
+  const dirX = Math.cos(angle);
+  const dirY = Math.sin(angle);
+  const candidates = [];
+  const minX = centerX - halfWidth;
+  const maxX = centerX + halfWidth;
+  const minY = centerY - halfHeight;
+  const maxY = centerY + halfHeight;
+
+  if (Math.abs(dirX) > 1e-8) {
+    for (const edgeX of [minX, maxX]) {
+      const t = edgeX / dirX;
+      if (t < 0) {
+        continue;
+      }
+      const hitY = dirY * t;
+      if (hitY >= minY - 1e-6 && hitY <= maxY + 1e-6) {
+        candidates.push(t);
+      }
+    }
+  }
+  if (Math.abs(dirY) > 1e-8) {
+    for (const edgeY of [minY, maxY]) {
+      const t = edgeY / dirY;
+      if (t < 0) {
+        continue;
+      }
+      const hitX = dirX * t;
+      if (hitX >= minX - 1e-6 && hitX <= maxX + 1e-6) {
+        candidates.push(t);
+      }
+    }
+  }
+
+  return candidates.length > 0 ? Math.min(...candidates) : 0;
+}
+
+function raySegmentIntersectionDistance(origin, direction, start, end) {
+  const segmentX = end.x - start.x;
+  const segmentY = end.y - start.y;
+  const cross = direction.x * segmentY - direction.y * segmentX;
+  if (Math.abs(cross) <= 1e-8) {
+    return null;
+  }
+  const offsetX = start.x - origin.x;
+  const offsetY = start.y - origin.y;
+  const t = (offsetX * segmentY - offsetY * segmentX) / cross;
+  const u = (offsetX * direction.y - offsetY * direction.x) / cross;
+  if (t <= 1e-6 || u < -1e-6 || u > 1 + 1e-6) {
+    return null;
+  }
+  return t;
+}
+
+function inwardRingFaceDepth(atomPoint, inwardDirection, ringPolygons) {
+  let best = Infinity;
+  for (const polygon of ringPolygons) {
+    for (let index = 0; index < polygon.length; index++) {
+      const start = polygon[index];
+      const end = polygon[(index + 1) % polygon.length];
+      const distance = raySegmentIntersectionDistance(atomPoint, inwardDirection, start, end);
+      if (distance != null) {
+        best = Math.min(best, distance);
+      }
+    }
+  }
+  return Number.isFinite(best) ? best : null;
+}
+
+/**
+ * Nudges visible ring hetero-atom labels outward from the average centroid of
+ * their incident ring polygons so fused sulfur/oxygen/nitrogen labels do not
+ * read as buried inside the ring.
+ * @param {import('../core/Atom.js').Atom} atom - Atom descriptor.
+ * @param {import('../core/Molecule.js').Molecule} mol - Molecule graph.
+ * @param {(atom: import('../core/Atom.js').Atom) => {x: number, y: number}} pointForAtom - Atom-to-screen mapper.
+ * @param {string|null} label - Atom label string.
+ * @param {number} fontSize - Label font size in pixels.
+ * @returns {{dx: number, dy: number}} Label anchor offset.
+ */
+export function ringLabelOffset(atom, mol, pointForAtom, label, fontSize) {
+  const baseDx = labelTextOffset(label, fontSize);
+  if (!label || !atom || atom.name === 'C') {
+    return { dx: baseDx, dy: 0 };
+  }
+
+  let dx = baseDx;
+  let dy = 0;
+  const heavyNeighbors = atom
+    .getNeighbors(mol)
+    .filter(neighbor => neighbor && neighbor.name !== 'H' && neighbor.x != null && neighbor.y != null);
+  if (heavyNeighbors.length === 1) {
+    const anchor = heavyNeighbors[0];
+    const anchorBond = mol.getBond?.(atom.id, anchor.id)
+      ?? [...(mol.bonds?.values() ?? [])].find(bond => bond.atoms.includes(atom.id) && bond.atoms.includes(anchor.id))
+      ?? null;
+    const bondOrder = anchorBond?.properties?.localizedOrder ?? anchorBond?.properties?.order ?? 1;
+    if (bondOrder >= 2) {
+      const atomPoint = pointForAtom(atom);
+      const anchorPoint = pointForAtom(anchor);
+      const vx = atomPoint.x - anchorPoint.x;
+      const vy = atomPoint.y - anchorPoint.y;
+      const length = vecLen(vx, vy);
+      const nudge = Math.min(8, fontSize * 0.55);
+      dx += (vx / length) * nudge;
+      dy += (vy / length) * nudge;
+    }
+  }
+
+  const incidentRingCentroids = mol
+    .getRings()
+    .filter(ringAtomIds => ringAtomIds.includes(atom.id))
+    .map(ringAtomIds =>
+      ringAtomIds
+        .map(atomId => mol.atoms.get(atomId))
+        .filter(Boolean)
+        .map(ringAtom => pointForAtom(ringAtom))
+        .filter(Boolean)
+    )
+    .filter(points => points.length >= 3)
+    .map(points => ({
+      x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+      y: points.reduce((sum, point) => sum + point.y, 0) / points.length
+    }));
+
+  if (incidentRingCentroids.length === 0) {
+    return { dx, dy };
+  }
+
+  const atomPoint = pointForAtom(atom);
+  const ringPolygons = mol
+    .getRings()
+    .filter(ringAtomIds => ringAtomIds.includes(atom.id))
+    .map(ringAtomIds =>
+      ringAtomIds
+        .map(atomId => mol.atoms.get(atomId))
+        .filter(Boolean)
+        .map(ringAtom => pointForAtom(ringAtom))
+        .filter(Boolean)
+    )
+    .filter(points => points.length >= 3);
+  const centroid = {
+    x: incidentRingCentroids.reduce((sum, point) => sum + point.x, 0) / incidentRingCentroids.length,
+    y: incidentRingCentroids.reduce((sum, point) => sum + point.y, 0) / incidentRingCentroids.length
+  };
+  const vx = atomPoint.x - centroid.x;
+  const vy = atomPoint.y - centroid.y;
+  const length = vecLen(vx, vy);
+  const inwardDirection = { x: -vx / length, y: -vy / length };
+  const inwardAngle = Math.atan2(inwardDirection.y, inwardDirection.x);
+  const inwardLabelExtent = rayDistanceToShiftedBox(
+    inwardAngle,
+    dx,
+    dy,
+    labelHalfW(label, fontSize),
+    labelHalfH(label, fontSize)
+  );
+  const faceDepth = inwardRingFaceDepth(atomPoint, inwardDirection, ringPolygons);
+  if (faceDepth == null) {
+    return { dx, dy };
+  }
+  const allowedInwardExtent = faceDepth * 0.58;
+  const neededNudge = inwardLabelExtent - allowedInwardExtent;
+  if (neededNudge <= 0.25) {
+    return { dx, dy };
+  }
+  const nudge = Math.min(Math.min(9, fontSize * 0.65), neededNudge);
+  return {
+    dx: dx + (vx / length) * nudge,
+    dy: dy + (vy / length) * nudge
+  };
+}
+
 /**
  * Formats a formal charge integer as a display string suitable for rendering
  * in a charge badge.

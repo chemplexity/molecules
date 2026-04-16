@@ -100,4 +100,29 @@ describe('layout/engine/render2d', () => {
     assert.deepEqual(afterSecondRender, before);
     assert.equal(secondRender.svgContent, firstRender.svgContent);
   });
+
+  it('trims bond endpoints so visible nitrogen labels are not stroked through', () => {
+    const rendered = renderMolSVGFromSMILES('CCN(CC)C(=O)C1CN(C2CC3=CNC4=CC=CC(=C34)C2=C1)C');
+
+    assert.ok(rendered, 'expected SVG render output');
+
+    const textMatches = [...rendered.svgContent.matchAll(/<text x="([0-9.-]+)" y="([0-9.-]+)"[^>]*><tspan>N<\/tspan><\/text>/g)];
+    const lineMatches = [...rendered.svgContent.matchAll(/<line x1="([0-9.-]+)" y1="([0-9.-]+)" x2="([0-9.-]+)" y2="([0-9.-]+)"/g)];
+
+    assert.ok(textMatches.length > 0, 'expected at least one visible N label');
+    assert.ok(lineMatches.length > 0, 'expected line segments in the rendered SVG');
+
+    for (const [, xText, yText] of textMatches) {
+      const tx = Number.parseFloat(xText);
+      const ty = Number.parseFloat(yText);
+      const hasEndpointAtCenter = lineMatches.some(([, x1, y1, x2, y2]) => {
+        const endpoints = [
+          [Number.parseFloat(x1), Number.parseFloat(y1)],
+          [Number.parseFloat(x2), Number.parseFloat(y2)]
+        ];
+        return endpoints.some(([x, y]) => Math.abs(x - tx) < 0.05 && Math.abs(y - ty) < 0.05);
+      });
+      assert.equal(hasEndpointAtCenter, false, `expected no bond endpoint to terminate at visible N label center ${tx},${ty}`);
+    }
+  });
 });

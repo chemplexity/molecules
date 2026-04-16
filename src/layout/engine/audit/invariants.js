@@ -3,7 +3,9 @@
 import { collectLabelBoxes, findLabelOverlaps } from '../geometry/label-box.js';
 import { computeBounds } from '../geometry/bounds.js';
 import { AtomGrid } from '../geometry/atom-grid.js';
-import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, SEVERE_OVERLAP_FACTOR } from '../constants.js';
+import { pointInPolygon } from '../geometry/polygon.js';
+import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
+import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 function pairKey(firstAtomId, secondAtomId) {
   return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
@@ -219,6 +221,150 @@ function visibleCovalentBonds(layoutGraph, coords, atomId) {
   return bonds;
 }
 
+/**
+ * Returns whether a ring anchor participates in a planar-looking ring bond
+ * pattern where an outward substituent direction is a meaningful readability
+ * target.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Candidate ring anchor atom id.
+ * @returns {boolean} True when the anchor should use outward-direction checks.
+ */
+export function supportsRingSubstituentOutwardReadability(layoutGraph, anchorAtomId) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (!anchorAtom || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
+    return false;
+  }
+  if (anchorAtom.aromatic === true) {
+    return true;
+  }
+  for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+    if (bond.kind !== 'covalent' || !bond.inRing) {
+      continue;
+    }
+    if (bond.aromatic || (bond.order ?? 1) >= 2) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function ringSystemAtomIds(layoutGraph, ringSystemId) {
+  return layoutGraph.ringSystems.find(ringSystem => ringSystem.id === ringSystemId)?.atomIds ?? [];
+}
+
+function incidentRingPolygons(layoutGraph, coords, atomId) {
+  return (layoutGraph.atomToRings.get(atomId) ?? [])
+    .map(ring => ring.atomIds.map(ringAtomId => coords.get(ringAtomId)).filter(Boolean))
+    .filter(polygon => polygon.length >= 3);
+}
+
+function evaluateRingSubstituentSide(layoutGraph, coords, anchorAtomId, representativeAtomIds, ringPolygons, maxOutwardDeviation) {
+  const representativePosition = ringSubstituentRepresentativePosition(coords, representativeAtomIds);
+  if (!representativePosition) {
+    return {
+      insideIncidentRing: false,
+      outwardAxisFailure: false
+    };
+  }
+
+  const insideIncidentRing = ringPolygons.some(polygon => pointInPolygon(representativePosition, polygon));
+  if (insideIncidentRing) {
+    return {
+      insideIncidentRing: true,
+      outwardAxisFailure: false
+    };
+  }
+
+  if (!supportsRingSubstituentOutwardReadability(layoutGraph, anchorAtomId)) {
+    return {
+      insideIncidentRing: false,
+      outwardAxisFailure: false
+    };
+  }
+
+  const outwardDeviation = bestRingOutwardDeviation(layoutGraph, coords, anchorAtomId, representativePosition);
+  return {
+    insideIncidentRing: false,
+    outwardAxisFailure: outwardDeviation != null && outwardDeviation > maxOutwardDeviation
+  };
+}
+
+/**
+ * Collects exocyclic ring substituent children that should participate in
+ * ring-substituent readability checks. This includes ordinary non-ring heavy
+ * substituents and single-bond attached ring systems.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Candidate ring anchor atom id.
+ * @returns {Array<{childAtomId: string, representativeAtomIds: string[]}>} Readability candidates.
+ */
+export function collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId) {
+  const anchorAtom = layoutGraph.sourceMolecule.atoms.get(anchorAtomId);
+  if (!anchorAtom || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
+    return [];
+  }
+
+  const anchorRingSystemId = layoutGraph.atomToRingSystemId.get(anchorAtomId);
+  const candidates = [];
+  for (const neighborAtom of anchorAtom.getNeighbors(layoutGraph.sourceMolecule)) {
+    if (!neighborAtom || neighborAtom.name === 'H' || !coords.has(neighborAtom.id)) {
+      continue;
+    }
+
+    const pairId = pairKey(anchorAtomId, neighborAtom.id);
+    const bond = layoutGraph.bondByAtomPair.get(pairId);
+    if (!bond || bond.kind !== 'covalent' || bond.inRing || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+
+    const childRingCount = layoutGraph.atomToRings.get(neighborAtom.id)?.length ?? 0;
+    if (childRingCount === 0) {
+      candidates.push({
+        childAtomId: neighborAtom.id,
+        representativeAtomIds: [neighborAtom.id]
+      });
+      continue;
+    }
+
+    const childRingSystemId = layoutGraph.atomToRingSystemId.get(neighborAtom.id);
+    if (childRingSystemId == null || childRingSystemId === anchorRingSystemId) {
+      continue;
+    }
+    const representativeAtomIds = ringSystemAtomIds(layoutGraph, childRingSystemId).filter(atomId => coords.has(atomId));
+    if (representativeAtomIds.length === 0) {
+      continue;
+    }
+    candidates.push({
+      childAtomId: neighborAtom.id,
+      representativeAtomIds
+    });
+  }
+
+  return candidates;
+}
+
+/**
+ * Computes the representative point used for ring-substituent readability
+ * scoring. Single-atom substituents use their atom position; attached ring
+ * systems use the centroid of the attached ring-system atoms.
+ * @param {Map<string, {x: number, y: number}>} coords - Base coordinate map.
+ * @param {string[]} representativeAtomIds - Atom ids describing the substituent direction.
+ * @param {Map<string, {x: number, y: number}>|null} [overridePositions] - Optional override positions.
+ * @returns {{x: number, y: number}|null} Representative position, or null when unavailable.
+ */
+export function ringSubstituentRepresentativePosition(coords, representativeAtomIds, overridePositions = null) {
+  if (!Array.isArray(representativeAtomIds) || representativeAtomIds.length === 0) {
+    return null;
+  }
+  const positions = representativeAtomIds
+    .map(atomId => overridePositions?.get(atomId) ?? coords.get(atomId))
+    .filter(Boolean);
+  if (positions.length === 0) {
+    return null;
+  }
+  return positions.length === 1 ? positions[0] : centroid(positions);
+}
+
 function sortedAngularSeparations(angles) {
   const sortedAngles = [...angles].sort((firstAngle, secondAngle) => firstAngle - secondAngle);
   const separations = [];
@@ -229,6 +375,112 @@ function sortedAngularSeparations(angles) {
     separations.push(rawSeparation > 0 ? rawSeparation : rawSeparation + Math.PI * 2);
   }
   return separations;
+}
+
+function bestRingOutwardDeviation(layoutGraph, coords, anchorAtomId, representativePosition) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition || !representativePosition) {
+    return null;
+  }
+
+  const childAngle = angleOf(sub(representativePosition, anchorPosition));
+  let bestDeviation = Number.POSITIVE_INFINITY;
+  for (const ring of layoutGraph.atomToRings.get(anchorAtomId) ?? []) {
+    const ringPositions = ring.atomIds.map(ringAtomId => coords.get(ringAtomId)).filter(Boolean);
+    if (ringPositions.length < 3) {
+      continue;
+    }
+    const outwardAngle = angleOf(sub(anchorPosition, centroid(ringPositions)));
+    bestDeviation = Math.min(bestDeviation, angularDifference(childAngle, outwardAngle));
+  }
+
+  return Number.isFinite(bestDeviation) ? bestDeviation : null;
+}
+
+/**
+ * Measures whether ring-bound heavy substituents stay outside incident ring
+ * faces and reasonably close to a local ring-outward direction.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{maxOutwardDeviation?: number}} [options] - Readability options.
+ * @returns {{failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number}} Readability summary.
+ */
+export function measureRingSubstituentReadability(layoutGraph, coords, options = {}) {
+  const maxOutwardDeviation = options.maxOutwardDeviation ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxOutwardDeviation;
+  let failingSubstituentCount = 0;
+  let inwardSubstituentCount = 0;
+  let outwardAxisFailureCount = 0;
+  const seenPairs = new Set();
+
+  for (const anchorAtomId of coords.keys()) {
+    if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0 || !isVisibleLayoutAtom(layoutGraph, anchorAtomId)) {
+      continue;
+    }
+
+    const substituentChildren = collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId);
+    if (substituentChildren.length === 0) {
+      continue;
+    }
+
+    const ringPolygons = incidentRingPolygons(layoutGraph, coords, anchorAtomId);
+    for (const childDescriptor of substituentChildren) {
+      const childAtomId = childDescriptor.childAtomId;
+      const pairId = pairKey(anchorAtomId, childAtomId);
+      if (seenPairs.has(pairId)) {
+        continue;
+      }
+      seenPairs.add(pairId);
+
+      const forwardSide = evaluateRingSubstituentSide(
+        layoutGraph,
+        coords,
+        anchorAtomId,
+        childDescriptor.representativeAtomIds,
+        ringPolygons,
+        maxOutwardDeviation
+      );
+      if (forwardSide.insideIncidentRing) {
+        failingSubstituentCount++;
+        inwardSubstituentCount++;
+      } else if (forwardSide.outwardAxisFailure) {
+        failingSubstituentCount++;
+        outwardAxisFailureCount++;
+      }
+
+      if (childDescriptor.representativeAtomIds.length <= 1) {
+        continue;
+      }
+      const anchorRingSystemId = layoutGraph.atomToRingSystemId.get(anchorAtomId);
+      if (anchorRingSystemId == null) {
+        continue;
+      }
+      const reverseRepresentativeAtomIds = ringSystemAtomIds(layoutGraph, anchorRingSystemId).filter(atomId => coords.has(atomId));
+      if (reverseRepresentativeAtomIds.length === 0) {
+        continue;
+      }
+      const reverseSide = evaluateRingSubstituentSide(
+        layoutGraph,
+        coords,
+        childAtomId,
+        reverseRepresentativeAtomIds,
+        incidentRingPolygons(layoutGraph, coords, childAtomId),
+        maxOutwardDeviation
+      );
+      if (reverseSide.insideIncidentRing) {
+        failingSubstituentCount++;
+        inwardSubstituentCount++;
+      } else if (reverseSide.outwardAxisFailure) {
+        failingSubstituentCount++;
+        outwardAxisFailureCount++;
+      }
+    }
+  }
+
+  return {
+    failingSubstituentCount,
+    inwardSubstituentCount,
+    outwardAxisFailureCount
+  };
 }
 
 /**
@@ -259,6 +511,8 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
   let totalDeviation = 0;
   let maxDeviation = 0;
   let failingBondCount = 0;
+  let mildFailingBondCount = 0;
+  let severeFailingBondCount = 0;
   const bondValidationClasses = options.bondValidationClasses ?? new Map();
 
   for (const bond of layoutGraph.bonds.values()) {
@@ -279,6 +533,11 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
     maxDeviation = Math.max(maxDeviation, deviation);
     if (deviation > allowedDeviation) {
       failingBondCount++;
+      if (deviation > allowedDeviation * 2) {
+        severeFailingBondCount++;
+      } else {
+        mildFailingBondCount++;
+      }
     }
   }
 
@@ -286,7 +545,9 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
     sampleCount,
     maxDeviation,
     meanDeviation: sampleCount === 0 ? 0 : totalDeviation / sampleCount,
-    failingBondCount
+    failingBondCount,
+    mildFailingBondCount,
+    severeFailingBondCount
   };
 }
 
@@ -579,6 +840,42 @@ export function measureLayoutState(layoutGraph, coords, bondLength, options = {}
     trigonalDistortion,
     tetrahedralDistortion,
     cost: overlapPenalty + bondPenalty + macrocyclePenalty + labelPenalty + trigonalPenalty + tetrahedralPenalty
+  };
+}
+
+/**
+ * Computes a reduced cleanup state focused on overlaps and bond-length drift.
+ * This is meant for inner-loop cleanup prescoring where label/macrocycle and
+ * angular distortion penalties are too expensive to evaluate for every probe.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} [options] - State-measurement options.
+ * @param {Array<{firstAtomId: string, secondAtomId: string, distance: number}>} [options.overlaps] - Optional precomputed severe overlaps.
+ * @param {AtomGrid|null} [options.atomGrid] - Optional reused spatial grid for overlap lookup.
+ * @returns {{overlaps: Array<{firstAtomId: string, secondAtomId: string, distance: number}>, overlapCount: number, overlapPenalty: number, bondDeviation: {sampleCount: number, maxDeviation: number, meanDeviation: number, failingBondCount: number}, cost: number}} Reduced overlap-focused layout state.
+ */
+export function measureOverlapState(layoutGraph, coords, bondLength, options = {}) {
+  const overlaps =
+    options.overlaps ??
+    findSevereOverlaps(layoutGraph, coords, bondLength, {
+      atomGrid: options.atomGrid
+    });
+  const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength);
+
+  let overlapPenalty = 0;
+  for (const overlap of overlaps) {
+    const deficit = bondLength * SEVERE_OVERLAP_FACTOR - overlap.distance;
+    overlapPenalty += deficit * deficit * 100;
+  }
+
+  const bondPenalty = bondDeviation.meanDeviation * 10 + bondDeviation.maxDeviation * 5;
+  return {
+    overlaps,
+    overlapCount: overlaps.length,
+    overlapPenalty,
+    bondDeviation,
+    cost: overlapPenalty + bondPenalty
   };
 }
 

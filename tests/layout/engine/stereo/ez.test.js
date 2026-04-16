@@ -1,6 +1,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
+import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { inspectEZStereo } from '../../../../src/layout/engine/stereo/ez.js';
 import { makeEAlkene } from '../support/molecules.js';
 
@@ -45,5 +47,22 @@ describe('layout/engine/stereo/ez', () => {
     assert.equal(summary.violationCount, 1);
     assert.equal(summary.checks[0].actual, 'Z');
     assert.equal(summary.checks[0].ok, false);
+  });
+
+  it('tracks unsupported annotated ring double bonds without counting them as contradictions', () => {
+    const graph = createLayoutGraph(parseSMILES('C1CC/C=C/CC1'), { suppressH: true, bondLength: 1.5 });
+    const coords = runPipeline(parseSMILES('C1CC/C=C\\CC1'), { suppressH: true }).coords;
+    const summary = inspectEZStereo(
+      graph,
+      coords
+    );
+
+    assert.equal(summary.checkedBondCount, 1);
+    assert.equal(summary.supportedCheckCount, 0);
+    assert.equal(summary.unsupportedCheckCount, 1);
+    assert.equal(summary.violationCount, 0);
+    assert.equal(summary.checks[0].actual, 'Z');
+    assert.equal(summary.checks[0].supported, false);
+    assert.equal(summary.checks[0].ok, true);
   });
 });

@@ -2,6 +2,9 @@
 
 import { add, angleOf, centroid, normalize, rotate, sub } from '../geometry/vec2.js';
 import { computeBounds } from '../geometry/bounds.js';
+import { buildAtomGrid, computeSubtreeOverlapCost } from '../audit/invariants.js';
+import { auditLayout } from '../audit/audit.js';
+import { LARGE_MOLECULE_LAYOUT_LIMITS } from '../constants.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { chooseAttachmentAngle } from '../placement/substituents.js';
 import { refineStitchedBlock } from '../placement/block-stitching.js';
@@ -108,40 +111,47 @@ function splitBlockAtomIds(layoutGraph, atomIds, blockedBondId) {
 function selectBestCut(layoutGraph, atomIds, threshold) {
   const atomIdSet = new Set(atomIds);
   const candidates = [];
+  const visitedBondIds = new Set();
 
-  for (const bond of layoutGraph.bonds.values()) {
-    if (!isCuttableBond(layoutGraph, bond, atomIdSet)) {
-      continue;
+  for (const atomId of atomIds) {
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (visitedBondIds.has(bond.id)) {
+        continue;
+      }
+      visitedBondIds.add(bond.id);
+      if (!isCuttableBond(layoutGraph, bond, atomIdSet)) {
+        continue;
+      }
+      const split = splitBlockAtomIds(layoutGraph, atomIds, bond.id);
+      if (!split) {
+        continue;
+      }
+      const [leftAtomIds, rightAtomIds] = split;
+      const leftHeavyCount = countHeavyAtoms(layoutGraph, leftAtomIds);
+      const rightHeavyCount = countHeavyAtoms(layoutGraph, rightAtomIds);
+      if (leftHeavyCount < 3 || rightHeavyCount < 3) {
+        continue;
+      }
+      const leftParticipantCount = countParticipantAtoms(layoutGraph, leftAtomIds);
+      const rightParticipantCount = countParticipantAtoms(layoutGraph, rightAtomIds);
+      const leftRingSystems = countRingSystems(layoutGraph, leftAtomIds);
+      const rightRingSystems = countRingSystems(layoutGraph, rightAtomIds);
+      const participantThreshold = participantThresholdFor(threshold);
+      const oversizePenalty =
+        Math.max(0, leftHeavyCount - threshold.heavyAtomCount) +
+        Math.max(0, rightHeavyCount - threshold.heavyAtomCount) +
+        Math.max(0, leftParticipantCount - participantThreshold) +
+        Math.max(0, rightParticipantCount - participantThreshold);
+      const balancePenalty = Math.abs(leftParticipantCount - rightParticipantCount);
+      const ringBonus = leftRingSystems > 0 && rightRingSystems > 0 ? 100 : 0;
+      const score = ringBonus - oversizePenalty * 10 - balancePenalty;
+      candidates.push({
+        bond,
+        leftAtomIds,
+        rightAtomIds,
+        score
+      });
     }
-    const split = splitBlockAtomIds(layoutGraph, atomIds, bond.id);
-    if (!split) {
-      continue;
-    }
-    const [leftAtomIds, rightAtomIds] = split;
-    const leftHeavyCount = countHeavyAtoms(layoutGraph, leftAtomIds);
-    const rightHeavyCount = countHeavyAtoms(layoutGraph, rightAtomIds);
-    if (leftHeavyCount < 3 || rightHeavyCount < 3) {
-      continue;
-    }
-    const leftParticipantCount = countParticipantAtoms(layoutGraph, leftAtomIds);
-    const rightParticipantCount = countParticipantAtoms(layoutGraph, rightAtomIds);
-    const leftRingSystems = countRingSystems(layoutGraph, leftAtomIds);
-    const rightRingSystems = countRingSystems(layoutGraph, rightAtomIds);
-    const participantThreshold = participantThresholdFor(threshold);
-    const oversizePenalty =
-      Math.max(0, leftHeavyCount - threshold.heavyAtomCount) +
-      Math.max(0, rightHeavyCount - threshold.heavyAtomCount) +
-      Math.max(0, leftParticipantCount - participantThreshold) +
-      Math.max(0, rightParticipantCount - participantThreshold);
-    const balancePenalty = Math.abs(leftParticipantCount - rightParticipantCount);
-    const ringBonus = leftRingSystems > 0 && rightRingSystems > 0 ? 100 : 0;
-    const score = ringBonus - oversizePenalty * 10 - balancePenalty;
-    candidates.push({
-      bond,
-      leftAtomIds,
-      rightAtomIds,
-      score
-    });
   }
 
   candidates.sort((firstCandidate, secondCandidate) => {
@@ -223,18 +233,16 @@ function partitionBlocks(layoutGraph, component, threshold) {
   return { blocks, cutBonds };
 }
 
-function chooseRootBlock(blocks) {
-  return (
-    [...blocks].sort((firstBlock, secondBlock) => {
-      if (secondBlock.ringSystemCount !== firstBlock.ringSystemCount) {
-        return secondBlock.ringSystemCount - firstBlock.ringSystemCount;
-      }
-      if (secondBlock.heavyAtomCount !== firstBlock.heavyAtomCount) {
-        return secondBlock.heavyAtomCount - firstBlock.heavyAtomCount;
-      }
-      return firstBlock.canonicalSignature.localeCompare(secondBlock.canonicalSignature, 'en', { numeric: true });
-    })[0] ?? null
-  );
+function rankRootBlocks(blocks) {
+  return [...blocks].sort((firstBlock, secondBlock) => {
+    if (secondBlock.ringSystemCount !== firstBlock.ringSystemCount) {
+      return secondBlock.ringSystemCount - firstBlock.ringSystemCount;
+    }
+    if (secondBlock.heavyAtomCount !== firstBlock.heavyAtomCount) {
+      return secondBlock.heavyAtomCount - firstBlock.heavyAtomCount;
+    }
+    return firstBlock.canonicalSignature.localeCompare(secondBlock.canonicalSignature, 'en', { numeric: true });
+  });
 }
 
 function buildBlockAdjacency(blocks, cutBonds) {
@@ -286,13 +294,16 @@ function breadthFirstOrder(adjacency, atomIds, startAtomId) {
   const atomIdSet = new Set(remainingAtomIds);
   const visited = new Set();
   const order = [];
+  const seedSet = new Set();
   const seeds = [];
   if (startAtomId && atomIdSet.has(startAtomId)) {
     seeds.push(startAtomId);
+    seedSet.add(startAtomId);
   }
   for (const atomId of remainingAtomIds) {
-    if (!seeds.includes(atomId)) {
+    if (!seedSet.has(atomId)) {
       seeds.push(atomId);
+      seedSet.add(atomId);
     }
   }
 
@@ -425,22 +436,75 @@ function trackedBlockOverlapPenalty(blockIds, boundsByBlockId, trackedBlockIdSet
   return penalty;
 }
 
-function buildPackingState(coords, blockAtomIdsById) {
+function isVisiblePackingAtom(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom) {
+    return false;
+  }
+  if (layoutGraph.options.suppressH && atom.element === 'H') {
+    return false;
+  }
+  return true;
+}
+
+function atomIdsForBlocks(blockAtomIdsById, blockIds) {
+  const atomIds = [];
+  for (const blockId of blockIds) {
+    atomIds.push(...(blockAtomIdsById.get(blockId) ?? []));
+  }
+  return atomIds;
+}
+
+function totalAtomClashPenalty(layoutGraph, coords, blockAtomIdsById, bondLength, atomGrid) {
+  let penalty = 0;
+  for (const atomIds of blockAtomIdsById.values()) {
+    penalty += computeSubtreeOverlapCost(layoutGraph, coords, atomIds, null, bondLength, { atomGrid });
+  }
+  return penalty / 2;
+}
+
+function updateAtomGridForMovedAtoms(layoutGraph, atomGrid, previousCoords, nextCoords, movedAtomIds) {
+  const nextAtomGrid = atomGrid.clone();
+  for (const atomId of movedAtomIds) {
+    if (!isVisiblePackingAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    const previousPosition = previousCoords.get(atomId);
+    if (previousPosition) {
+      nextAtomGrid.remove(atomId, previousPosition);
+    }
+  }
+  for (const atomId of movedAtomIds) {
+    if (!isVisiblePackingAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    const nextPosition = nextCoords.get(atomId);
+    if (nextPosition) {
+      nextAtomGrid.insert(atomId, nextPosition);
+    }
+  }
+  return nextAtomGrid;
+}
+
+function buildPackingState(layoutGraph, coords, blockAtomIdsById, bondLength, options = {}) {
   const blockIds = [...blockAtomIdsById.keys()];
   const boundsByBlockId = new Map();
   for (const blockId of blockIds) {
     boundsByBlockId.set(blockId, computeBounds(coords, blockAtomIdsById.get(blockId) ?? []));
   }
+  const atomGrid = options.includeAtomClashPenalty ? buildAtomGrid(layoutGraph, coords, bondLength) : null;
   return {
     coords,
     blockIds,
     boundsByBlockId,
     area: blockBoundsArea(boundsByBlockId),
-    overlapPenalty: totalBlockOverlapPenalty(blockIds, boundsByBlockId)
+    overlapPenalty: totalBlockOverlapPenalty(blockIds, boundsByBlockId),
+    atomGrid,
+    atomClashPenalty: atomGrid ? totalAtomClashPenalty(layoutGraph, coords, blockAtomIdsById, bondLength, atomGrid) : 0
   };
 }
 
-function updatePackingState(packingState, coords, affectedBlockIds, blockAtomIdsById) {
+function updatePackingState(layoutGraph, packingState, coords, affectedBlockIds, blockAtomIdsById, bondLength) {
   const affectedBlockIdSet = new Set(affectedBlockIds);
   if (affectedBlockIdSet.size === 0) {
     return {
@@ -469,18 +533,34 @@ function updatePackingState(packingState, coords, affectedBlockIds, blockAtomIds
     affectedBlockIdSet,
     affectedBoundsByBlockId
   );
+  let nextAtomGrid = packingState.atomGrid;
+  let nextAtomClashPenalty = packingState.atomClashPenalty;
+
+  if (packingState.atomGrid) {
+    const affectedAtomIds = atomIdsForBlocks(blockAtomIdsById, affectedBlockIds);
+    nextAtomGrid = updateAtomGridForMovedAtoms(layoutGraph, packingState.atomGrid, packingState.coords, coords, affectedAtomIds);
+    const currentAffectedAtomClashPenalty = computeSubtreeOverlapCost(layoutGraph, packingState.coords, affectedAtomIds, null, bondLength, {
+      atomGrid: packingState.atomGrid
+    });
+    const nextAffectedAtomClashPenalty = computeSubtreeOverlapCost(layoutGraph, coords, affectedAtomIds, null, bondLength, {
+      atomGrid: nextAtomGrid
+    });
+    nextAtomClashPenalty = packingState.atomClashPenalty - currentAffectedAtomClashPenalty + nextAffectedAtomClashPenalty;
+  }
 
   return {
     coords,
     blockIds: packingState.blockIds,
     boundsByBlockId: nextBoundsByBlockId,
     area: blockBoundsArea(nextBoundsByBlockId),
-    overlapPenalty: packingState.overlapPenalty - currentAffectedPenalty + nextAffectedPenalty
+    overlapPenalty: packingState.overlapPenalty - currentAffectedPenalty + nextAffectedPenalty,
+    atomGrid: nextAtomGrid,
+    atomClashPenalty: nextAtomClashPenalty
   };
 }
 
 function packingCostForState(packingState, bondLength, overlapPenaltyMultiplier) {
-  return packingState.area + packingState.overlapPenalty * bondLength * overlapPenaltyMultiplier;
+  return packingState.area + packingState.overlapPenalty * bondLength * overlapPenaltyMultiplier + packingState.atomClashPenalty * (overlapPenaltyMultiplier / 50);
 }
 
 function buildBlockSubtreeMaps(blockAtomIdsById, childBlocksByParentId) {
@@ -658,9 +738,54 @@ function orderedOverlapRotationAngles(movableBounds, fixedBounds, anchorPosition
   });
 }
 
+function auditLargeMoleculePlacement(layoutGraph, placement, bondLength) {
+  return auditLayout(layoutGraph, placement.coords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+}
+
+function isBetterLargeMoleculePlacement(candidateAudit, incumbentAudit) {
+  if (!candidateAudit) {
+    return false;
+  }
+  if (!incumbentAudit) {
+    return true;
+  }
+  if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
+    return candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount;
+  }
+  if (candidateAudit.severeOverlapCount !== incumbentAudit.severeOverlapCount) {
+    return candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount;
+  }
+  if (Math.abs(candidateAudit.maxBondLengthDeviation - incumbentAudit.maxBondLengthDeviation) > 1e-6) {
+    return candidateAudit.maxBondLengthDeviation < incumbentAudit.maxBondLengthDeviation;
+  }
+  return false;
+}
+
+function shouldRetryWithAlternateRoot(placement, placementAudit, rankedRootBlocks, options) {
+  if (options.forceAlternateRootRetry) {
+    return Boolean(placement && placementAudit && rankedRootBlocks.length >= 2);
+  }
+  if (options.disableAlternateRootRetry) {
+    return false;
+  }
+  if (!placement || !placementAudit || rankedRootBlocks.length < 2) {
+    return false;
+  }
+  return (
+    placement.blockCount >= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryBlockCountFloor
+    && placement.repulsionMoveCount <= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryRepulsionMoveCeiling
+    && placementAudit.bondLengthFailureCount === 0
+    && placementAudit.severeOverlapCount >= LARGE_MOLECULE_LAYOUT_LIMITS.rootRetryOverlapFloor
+  );
+}
+
 /**
  * Compacts a stitched block layout by rotating child subtrees around their
  * parent attachment atoms when doing so lowers the global packing cost.
+ * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Current coordinate map.
  * @param {Map<string, string[]>} blockAtomIdsById - Placed block atom IDs by block ID.
  * @param {Map<string, string[]>} childBlocksByParentId - Child block IDs by parent block ID.
@@ -669,8 +794,10 @@ function orderedOverlapRotationAngles(movableBounds, fixedBounds, anchorPosition
  * @param {number} bondLength - Target bond length.
  * @returns {{coords: Map<string, {x: number, y: number}>, rotationMoveCount: number}} Compacted coordinates and accepted rotation count.
  */
-function compactBlockRotations(inputCoords, blockAtomIdsById, childBlocksByParentId, attachmentAtomByBlockId, rootBlockId, bondLength) {
-  let packingState = buildPackingState(new Map(inputCoords), blockAtomIdsById);
+function compactBlockRotations(layoutGraph, inputCoords, blockAtomIdsById, childBlocksByParentId, attachmentAtomByBlockId, rootBlockId, bondLength) {
+  let packingState = buildPackingState(layoutGraph, new Map(inputCoords), blockAtomIdsById, bondLength, {
+    includeAtomClashPenalty: true
+  });
   let rotationMoveCount = 0;
   const candidateBlockIds = packingState.blockIds.filter(blockId => blockId !== rootBlockId);
   const { subtreeBlockIdsByBlockId, subtreeAtomIdsByBlockId } = buildBlockSubtreeMaps(blockAtomIdsById, childBlocksByParentId);
@@ -691,7 +818,7 @@ function compactBlockRotations(inputCoords, blockAtomIdsById, childBlocksByParen
 
       for (const angle of PACKING_ROTATION_ANGLES) {
         const rotatedCoords = rotateBlockSubtree(packingState.coords, subtreeAtomIds, anchorAtomId, angle);
-        const rotatedState = updatePackingState(packingState, rotatedCoords, subtreeBlockIds, blockAtomIdsById);
+        const rotatedState = updatePackingState(layoutGraph, packingState, rotatedCoords, subtreeBlockIds, blockAtomIdsById, bondLength);
         const rotatedCost = packingCostForState(rotatedState, bondLength, 100);
         if (rotatedCost + 1e-6 < bestCost) {
           bestState = rotatedState;
@@ -716,6 +843,7 @@ function compactBlockRotations(inputCoords, blockAtomIdsById, childBlocksByParen
 /**
  * Resolves overlapping stitched blocks by rotating non-root subtrees around
  * their attachment anchors so stitched cut bonds keep their target lengths.
+ * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Current coordinate map.
  * @param {Map<string, string[]>} blockAtomIdsById - Placed block atom IDs by block ID.
  * @param {Map<string, string[]>} childBlocksByParentId - Child block IDs by parent block ID.
@@ -724,8 +852,8 @@ function compactBlockRotations(inputCoords, blockAtomIdsById, childBlocksByParen
  * @param {number} bondLength - Target bond length.
  * @returns {{coords: Map<string, {x: number, y: number}>, repulsionMoveCount: number}} Updated coordinates and accepted overlap-resolution move count.
  */
-function repelOverlappingBlocks(inputCoords, blockAtomIdsById, childBlocksByParentId, attachmentAtomByBlockId, rootBlockId, bondLength) {
-  let packingState = buildPackingState(new Map(inputCoords), blockAtomIdsById);
+function repelOverlappingBlocks(layoutGraph, inputCoords, blockAtomIdsById, childBlocksByParentId, attachmentAtomByBlockId, rootBlockId, bondLength) {
+  let packingState = buildPackingState(layoutGraph, new Map(inputCoords), blockAtomIdsById, bondLength);
   let repulsionMoveCount = 0;
   const blockIds = packingState.blockIds;
   const depthByBlockId = buildBlockDepthMap(rootBlockId, childBlocksByParentId);
@@ -764,7 +892,7 @@ function repelOverlappingBlocks(inputCoords, blockAtomIdsById, childBlocksByPare
 
           for (const angle of orderedOverlapRotationAngles(movableBounds, fixedBounds, packingState.coords.get(anchorAtomId))) {
             const rotatedCoords = rotateBlockSubtree(packingState.coords, subtreeAtomIds, anchorAtomId, angle);
-            const rotatedState = updatePackingState(packingState, rotatedCoords, subtreeBlockIds, blockAtomIdsById);
+            const rotatedState = updatePackingState(layoutGraph, packingState, rotatedCoords, subtreeBlockIds, blockAtomIdsById, bondLength);
             const rotatedFirstBounds = rotatedState.boundsByBlockId.get(firstBlockId);
             const rotatedSecondBounds = rotatedState.boundsByBlockId.get(secondBlockId);
             const { overlapX: rotatedOverlapX, overlapY: rotatedOverlapY } = measureBlockOverlap(rotatedFirstBounds, rotatedSecondBounds);
@@ -806,7 +934,10 @@ function repelOverlappingBlocks(inputCoords, blockAtomIdsById, childBlocksByPare
  * @param {number} bondLength - Target bond length.
  * @param {{sliceLayouter?: (layoutGraph: object, block: {id: string, atomIds: string[], canonicalSignature?: string}, bondLength: number) => {family?: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, bondValidationClasses?: Map<string, 'planar'|'bridged'>}}} [options] - Optional family overrides for testing or fallback control.
  * @param {boolean} [options.disableRotationPacking] - Disables rigid subtree rotation packing for test comparisons.
- * @returns {{coords: Map<string, {x: number, y: number}>, placementMode: string, blockCount: number, refinedStitchCount: number, linearFallbackCount: number, rootFallbackUsed: boolean, repulsionMoveCount: number, rotationMoveCount: number, bondValidationClasses: Map<string, 'planar'|'bridged'>, cleanupRigidSubtreesByAtomId?: Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>}|null} Placement result.
+ * @param {boolean} [options.disableAlternateRootRetry] - Disables the alternate-root retry for overlap-heavy bond-clean placements.
+ * @param {boolean} [options.forceAlternateRootRetry] - Forces one alternate-root retry for test coverage.
+ * @param {{id: string, atomIds: string[], canonicalSignature: string, heavyAtomCount: number, participantCount: number, ringSystemCount: number}|null} [options.rootBlock] - Optional explicit root block override.
+ * @returns {{coords: Map<string, {x: number, y: number}>, placementMode: string, blockCount: number, refinedStitchCount: number, linearFallbackCount: number, rootFallbackUsed: boolean, repulsionMoveCount: number, rotationMoveCount: number, rootBlockId: string, rootRetryAttemptCount: number, rootRetryUsed: boolean, bondValidationClasses: Map<string, 'planar'|'bridged'>, cleanupRigidSubtreesByAtomId?: Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>}|null} Placement result.
  */
 export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, options = {}) {
   const threshold = layoutGraph.options.largeMoleculeThreshold;
@@ -818,7 +949,8 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
   const sliceLayouter = options.sliceLayouter ?? layoutAtomSlice;
   const blockById = new Map(blocks.map(block => [block.id, block]));
   const blockAdjacency = buildBlockAdjacency(blocks, cutBonds);
-  const rootBlock = chooseRootBlock(blocks);
+  const rankedRootBlocks = rankRootBlocks(blocks);
+  const rootBlock = options.rootBlock ?? rankedRootBlocks[0] ?? null;
   if (!rootBlock) {
     return null;
   }
@@ -838,6 +970,9 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
       rootFallbackUsed: true,
       repulsionMoveCount: 0,
       rotationMoveCount: 0,
+      rootBlockId: rootBlock.id,
+      rootRetryAttemptCount: 0,
+      rootRetryUsed: false,
       bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar'),
       cleanupRigidSubtreesByAtomId: new Map()
     };
@@ -915,11 +1050,11 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
     attachmentAtomByBlockId,
     rootAtomByBlockId
   );
-  const repulsion = repelOverlappingBlocks(coords, placedBlockAtomIds, childBlocksByParentId, attachmentAtomByBlockId, rootBlock.id, bondLength);
+  const repulsion = repelOverlappingBlocks(layoutGraph, coords, placedBlockAtomIds, childBlocksByParentId, attachmentAtomByBlockId, rootBlock.id, bondLength);
   const packed = options.disableRotationPacking
     ? { coords: repulsion.coords, rotationMoveCount: 0 }
-    : compactBlockRotations(repulsion.coords, placedBlockAtomIds, childBlocksByParentId, attachmentAtomByBlockId, rootBlock.id, bondLength);
-  return {
+    : compactBlockRotations(layoutGraph, repulsion.coords, placedBlockAtomIds, childBlocksByParentId, attachmentAtomByBlockId, rootBlock.id, bondLength);
+  const primaryPlacement = {
     coords: packed.coords,
     placementMode: 'block-stitched',
     blockCount: blocks.length,
@@ -928,7 +1063,42 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
     rootFallbackUsed: false,
     repulsionMoveCount: repulsion.repulsionMoveCount,
     rotationMoveCount: packed.rotationMoveCount,
+    rootBlockId: rootBlock.id,
+    rootRetryAttemptCount: 0,
+    rootRetryUsed: false,
     bondValidationClasses: assignBondValidationClass(layoutGraph, participantAtomIds, 'planar', bondValidationClasses, { overwrite: false }),
     cleanupRigidSubtreesByAtomId
+  };
+
+  if (options.rootBlock || !shouldRetryWithAlternateRoot(primaryPlacement, auditLargeMoleculePlacement(layoutGraph, primaryPlacement, bondLength), rankedRootBlocks, options)) {
+    return primaryPlacement;
+  }
+
+  let bestPlacement = primaryPlacement;
+  let bestAudit = auditLargeMoleculePlacement(layoutGraph, primaryPlacement, bondLength);
+  let rootRetryAttemptCount = 0;
+  const alternateRootBlocks = rankedRootBlocks.slice(1, 1 + LARGE_MOLECULE_LAYOUT_LIMITS.maxAlternateRootCandidates);
+
+  for (const alternateRootBlock of alternateRootBlocks) {
+    rootRetryAttemptCount++;
+    const alternatePlacement = layoutLargeMoleculeFamily(layoutGraph, component, bondLength, {
+      ...options,
+      disableAlternateRootRetry: true,
+      rootBlock: alternateRootBlock
+    });
+    if (!alternatePlacement) {
+      continue;
+    }
+    const alternateAudit = auditLargeMoleculePlacement(layoutGraph, alternatePlacement, bondLength);
+    if (isBetterLargeMoleculePlacement(alternateAudit, bestAudit)) {
+      bestPlacement = alternatePlacement;
+      bestAudit = alternateAudit;
+    }
+  }
+
+  return {
+    ...bestPlacement,
+    rootRetryAttemptCount,
+    rootRetryUsed: bestPlacement.rootBlockId !== primaryPlacement.rootBlockId
   };
 }

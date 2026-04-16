@@ -5,9 +5,9 @@ function escapeForInlineJs(value) {
 }
 
 /**
- * Creates the input controls that manage the molecule catalog picker, example links, random molecule selection, and SMILES/InChI input field bindings.
+ * Creates the input controls that manage the molecule catalog picker, example links, random molecule selection, debug stress selection, and SMILES/InChI input field bindings.
  * @param {object} deps - Dependency object providing data, state, dom, and actions.
- * @returns {object} Object with `bind`, `renderExamples`, `pickRandomMolecule`, `getCollectionInputValue`, and `syncCollectionPickerForInputValue`.
+ * @returns {object} Object with `bind`, `renderExamples`, `pickRandomMolecule`, `pickDebugMolecule`, `getCollectionInputValue`, and `syncCollectionPickerForInputValue`.
  */
 export function createInputControls(deps) {
   const collectionEntries = deps.data.moleculeCatalog.flatMap(collection =>
@@ -26,6 +26,8 @@ export function createInputControls(deps) {
     ['smiles', { bag: [], recentKeys: [] }],
     ['inchi', { bag: [], recentKeys: [] }]
   ]);
+  const debugStressPool = Array.isArray(deps.data.stressTestMolecules) ? deps.data.stressTestMolecules : [];
+  const debugSelectionState = { bag: [], recentKeys: [] };
 
   function selectedCollectionEntry() {
     return collectionEntriesById.get(deps.dom.getCollectionSelectElement().value) ?? null;
@@ -66,34 +68,36 @@ export function createInputControls(deps) {
     return indices;
   }
 
-  function recordRandomSelection(state, molecule, inputMode, poolLength) {
-    const recentLimit = recentRandomLimit(poolLength);
-    if (recentLimit === 0) {
-      state.recentKeys.length = 0;
-      return;
-    }
-    state.recentKeys.push(randomKeyForMolecule(molecule, inputMode));
-    if (state.recentKeys.length > recentLimit) {
-      state.recentKeys.splice(0, state.recentKeys.length - recentLimit);
-    }
-  }
-
-  function nextRandomMolecule(inputMode) {
-    const pool = randomPoolForMode(inputMode);
+  function nextRandomItem(pool, state, itemKey) {
     if (pool.length === 0) {
       return null;
     }
-    const state = randomSelectionStateByMode.get(inputMode);
     if (state.bag.length === 0) {
       state.bag = createShuffledIndexBag(pool.length);
     }
     const recentKeys = new Set(state.recentKeys);
-    const preferredBagIndex = state.bag.findIndex(index => !recentKeys.has(randomKeyForMolecule(pool[index], inputMode)));
+    const preferredBagIndex = state.bag.findIndex(index => !recentKeys.has(itemKey(pool[index])));
     const bagIndex = preferredBagIndex === -1 ? 0 : preferredBagIndex;
     const [poolIndex] = state.bag.splice(bagIndex, 1);
-    const molecule = pool[poolIndex];
-    recordRandomSelection(state, molecule, inputMode, pool.length);
-    return molecule;
+    const item = pool[poolIndex];
+    state.recentKeys.push(itemKey(item));
+    const recentLimit = recentRandomLimit(pool.length);
+    if (recentLimit === 0) {
+      state.recentKeys.length = 0;
+    } else if (state.recentKeys.length > recentLimit) {
+      state.recentKeys.splice(0, state.recentKeys.length - recentLimit);
+    }
+    return item;
+  }
+
+  function nextRandomMolecule(inputMode) {
+    const pool = randomPoolForMode(inputMode);
+    const state = randomSelectionStateByMode.get(inputMode);
+    return nextRandomItem(pool, state, molecule => randomKeyForMolecule(molecule, inputMode));
+  }
+
+  function nextDebugMolecule() {
+    return nextRandomItem(debugStressPool, debugSelectionState, smiles => String(smiles ?? ''));
   }
 
   function populateCollectionPicker() {
@@ -130,7 +134,7 @@ export function createInputControls(deps) {
         return `<a href="#" onclick="parseInput('${escapeForInlineJs(value)}'); return false">${molecule.name}</a>`;
       })
       .join(', ');
-    deps.dom.getExamplesElement().innerHTML = `<i>examples:&nbsp;</i>${links}, <a href="#" onclick="pickRandomMolecule(); return false">random</a>`;
+    deps.dom.getExamplesElement().innerHTML = `<i>examples:&nbsp;</i>${links}, <a href="#" onclick="pickRandomMolecule(); return false">random</a>, <a href="#" onclick="pickDebugMolecule(); return false">debug</a>`;
   }
 
   function pickRandomMolecule() {
@@ -140,6 +144,16 @@ export function createInputControls(deps) {
       return;
     }
     deps.actions.parseInput(inputMode === 'inchi' ? molecule.inchi : molecule.smiles);
+  }
+
+  function pickDebugMolecule() {
+    const smiles = nextDebugMolecule();
+    if (!smiles) {
+      return;
+    }
+    deps.dom.getInputElement().value = smiles;
+    syncCollectionPickerForInputValue(smiles);
+    deps.actions.parseInputWithAutoFormat(smiles);
   }
 
   function handleCollectionChange() {
@@ -193,6 +207,7 @@ export function createInputControls(deps) {
     bind,
     renderExamples,
     pickRandomMolecule,
+    pickDebugMolecule,
     getCollectionInputValue,
     syncCollectionPickerForInputValue
   };

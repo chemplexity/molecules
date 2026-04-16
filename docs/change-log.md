@@ -1,5 +1,16 @@
 # Change Log
 
+## 2026-04-16
+
+- Let a final ring-substituent touchup preserve exact outward ring-root and inter-ring ether bridge angles, so fused sugar oxygens and linked ring systems stay perfectly aligned without disturbing broader cleanup-stage selection
+- Fix asymmetric short aromatic ring-linker placement from fused aromatic roots by keeping the linker atoms in first-to-second attachment order and using the local attachment-ring outward axis for the fused root, so benzyl chains leave nitrogen-heavy fused rings cleanly and keep the intended 120-degree zigzag instead of collapsing or canting off the ring
+- Let terminal methyl and other heavy leaf ring substituents follow the exact local outward axis instead of snapping to a nearby discrete branch angle
+- Add a bond-first chooser on giant fused cage KK placements so fullerene-like outliers can compare raw cage coordinates against ring-regularized variants instead of committing to a single cage shape
+- Add a multi-metal organometallic framework rescue that lays out simple monatomic-ligand metal clusters through the metal-only topology family first and then reattaches bridging ligands
+- Short-circuit giant dense no-template fused cages directly to the existing atom-graph Kamada-Kawai cage rescue so fullerene-like outliers keep their current geometry ceiling without spending seconds in the planar fused placer first
+- Add a polyoxometalate organometallic rescue that infers a metal-only framework from bridging oxo atoms and then places terminal and bridging oxygens off that framework
+- Let large mixed cobalt corrins and similar metal-centered fused/bridged ring systems promote forced fused/bridged slice placement over the default mixed path when the audit is clearly better
+
 ## 2026-04-15
 
 - Fix catastrophic fused-macrocycle ring completion blowups by switching near-complete shared-ring completion to a regular-polygon best-fit instead of a fragile circumcenter fit
@@ -9,6 +20,33 @@
 - Make large-molecule cleanup preserve backbone bonds by blocking unsafe single-atom nudges and adding block-aware stitched-subtree cleanup moves
 - Centralize new unified-cleanup, bridged-KK, and branch-complexity tuning knobs in shared `layout` constants
 - Add regressions for dense macrocycle, bridged cage, mixed nucleotide/peptide, and overlap-heavy large-molecule stress cases
+- Complete the low-risk mixed/large-molecule implementation-plan micro-optimizations: de-queue mixed BFS with a head index, replace mixed bond endpoint scans with `bondByAtomPair`, replace in-loop pending-ring splices with per-pass rebuilds, switch large-molecule cut selection to `bondsByAtomId`, and remove O(n²) seed construction in `breadthFirstOrder`
+- Precompute `atomToRingSystemId` and `ringAtomIds` in the layout graph, cache macrocycle detection once per component-layout pass, and let `runPipeline` reuse already-normalized options when building the layout graph
+- Hoist local-cleanup rotatable subtree discovery out of repeated unified-cleanup one-pass probes and add reusable-subtree regressions
+- Finish the remaining `layout-engine` AtomGrid plumbing by reusing the live overlap-resolution grid in `constrainSingleAtomMove` and passing reusable batch-level grids into focused branch-placement arrangement scoring
+- Add two-stage unified-cleanup candidate scoring so overlap and rotation probes prescreen with `measureOverlapState` before only the surviving winner pays for a full `measureLayoutState`
+- Freeze preserved disconnected refinement components through both cleanup passes so overlap nudges, rigid-subtree moves, and local rotations cannot drift untouched fragments away from their existing coordinates
+- Start the audit-remediation cleanup safety pass by making macrocycle, bridged, fused, organometallic, and large-molecule cleanups bond-protected and by selecting the safest audited stage among placement, cleanup, and post-hook cleanup instead of always trusting the last cleanup snapshot
+- Add protected-family rigid cleanup descriptors for macrocycle sidechains, fused/bridged ring substituents, and organometallic ligands so overlap cleanup can try rigid family-scoped moves before falling back to generic atom nudges
+- Tighten protected cleanup stage selection so mixed bridged cases no longer pay an extra bond-failure count just to shave overlaps, while pure compact bridged cages can still take the harmless overlap-cleanup win
+- Add corpus-derived pipeline regressions for mixed macrocycle, mixed bridged, and mixed organometallic cleanup safety cases from the latest audit-failure set
+- Lock in the `macrocycle-circle` cleanup fix with explicit corpus regressions and mark the macrocycle-collapse task as partially landed because the known collapse cases are now clean on current code
+- Add a macrocycle post-cleanup `ring-terminal-hetero-tidy` hook plus terminal carbonyl rigid descriptors so dense fused peptide macrocycles can rotate crowded ring carbonyl oxygens off the scaffold without stretching bonds
+- Harden bridged mixed-family rescue scaffolding so large template-miss rescue gates use real ring-system sizes and reject partial rescue placements instead of mistaking incomplete spiro layouts for clean wins
+- Extend audit fallback reporting to surface bond-length-failure reasons and assign a non-null fallback recommendation for bond-only dirty cases
+- Start the large-molecule overlap-remediation track by adding atom-clash-aware stitched-subtree compaction scoring that reuses the shared `AtomGrid` overlap machinery without regressing the overlap-heavy runtime budget
+- Add a first conservative alternate-root retry for denser large-molecule stitched layouts, while keeping giant overlap-heavy cases off the retry path so the pipeline runtime budgets stay green
+- Add a dedicated `audit-corpus` regression harness with one real representative for each major audit-failure bucket
+- Fix stereo-only exocyclic `E/Z` audit failures by adding a local trigonal branch-rotation rescue ahead of blunt whole-side reflection
+- Fix stereo-only implicit-hydrogen chiral-center failures by letting wedge selection synthesize a hidden-H stereocenter entry when only three explicit neighbors are present
+- Stop counting unsupported annotated `R/S` centers as unassigned stereo contradictions and track them separately in stereo metadata
+- Stop counting unsupported ring-bound annotated `E/Z` bonds as hard stereo contradictions and surface them separately in stereo metadata
+- Add a final stereo-stage chooser after cleanup so supported stereo rescues can survive late cleanup/touchup decisions instead of being overwritten by the last geometry-only stage
+- Add a stereo-protected late touchup cleanup probe that freezes supported annotated `E/Z` atom quartets
+- Add a compact bridged-root rescue in mixed placement that tries a fused-family construction for small bond-dirty bridged hybrids before falling back to KK projection
+- Add a fused-plus-spiro bridged-hybrid rescue that lays out fused-connected ring blocks first and then attaches the remaining block graph across spiro joints
+- Extend the fused-block bridged-hybrid rescue to support bridged shared-atom attachments as well as spiro joints
+- Let large no-template high-ring-count fused cages compete against the bridged rescue path too
 
 ## 2026-04-14
 

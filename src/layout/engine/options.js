@@ -79,6 +79,10 @@ export function normalizeOptions(options = {}) {
   if (typeof timing !== 'boolean') {
     throw new TypeError(`timing must be a boolean, got ${JSON.stringify(timing)}.`);
   }
+  const auditTelemetry = options.auditTelemetry ?? false;
+  if (typeof auditTelemetry !== 'boolean') {
+    throw new TypeError(`auditTelemetry must be a boolean, got ${JSON.stringify(auditTelemetry)}.`);
+  }
   return {
     bondLength,
     suppressH: options.suppressH ?? true,
@@ -90,6 +94,7 @@ export function normalizeOptions(options = {}) {
     largeMoleculeThreshold: normalizeLargeMoleculeThreshold(options.largeMoleculeThreshold),
     maxCleanupPasses,
     timing,
+    auditTelemetry,
     touchedAtoms: cloneStringSet(options.touchedAtoms, 'touchedAtoms'),
     touchedBonds: cloneStringSet(options.touchedBonds, 'touchedBonds')
   };

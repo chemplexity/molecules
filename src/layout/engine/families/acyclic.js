@@ -1,6 +1,6 @@
 /** @module families/acyclic */
 
-import { add, fromAngle, rotate, sub } from '../geometry/vec2.js';
+import { add, angleOf, centroid, fromAngle, length, rotate, sub } from '../geometry/vec2.js';
 import { actualAlkeneStereo } from '../stereo/ez.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { describeCrossLikeHypervalentCenter, placeRemainingBranches } from '../placement/branch-placement.js';
@@ -334,6 +334,66 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
   return coords;
 }
 
+function isTerminalMultipleBondHeteroNeighbor(layoutGraph, centerAtomId, bond) {
+  if (!layoutGraph || !bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+    return false;
+  }
+  const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+  const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+  return !!neighborAtom && neighborAtom.element !== 'H' && neighborAtom.element !== 'C' && neighborAtom.heavyDegree === 1;
+}
+
+function realignTerminalMultipleBondHeteros(layoutGraph, coords, bondLength) {
+  if (!layoutGraph) {
+    return coords;
+  }
+
+  for (const atom of layoutGraph.atoms.values()) {
+    if (!coords.has(atom.id) || atom.element === 'H') {
+      continue;
+    }
+    const heavyBonds = (layoutGraph.bondsByAtomId.get(atom.id) ?? []).filter(bond => {
+      if (bond.kind !== 'covalent') {
+        return false;
+      }
+      const neighborAtomId = bond.a === atom.id ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H' && coords.has(neighborAtomId);
+    });
+    if (heavyBonds.length !== 3) {
+      continue;
+    }
+
+    const terminalMultipleBondHeteroBonds = heavyBonds.filter(bond => isTerminalMultipleBondHeteroNeighbor(layoutGraph, atom.id, bond));
+    if (terminalMultipleBondHeteroBonds.length !== 1) {
+      continue;
+    }
+
+    const heteroBond = terminalMultipleBondHeteroBonds[0];
+    const heteroAtomId = heteroBond.a === atom.id ? heteroBond.b : heteroBond.a;
+    const otherNeighborIds = heavyBonds
+      .map(bond => (bond.a === atom.id ? bond.b : bond.a))
+      .filter(neighborAtomId => neighborAtomId !== heteroAtomId);
+    if (otherNeighborIds.length !== 2) {
+      continue;
+    }
+
+    const centerPosition = coords.get(atom.id);
+    const otherPositions = otherNeighborIds.map(neighborAtomId => coords.get(neighborAtomId)).filter(Boolean);
+    if (otherPositions.length !== 2) {
+      continue;
+    }
+    const outwardVector = sub(centerPosition, centroid(otherPositions));
+    if (length(outwardVector) <= STEP_ANGLE_EPSILON) {
+      continue;
+    }
+
+    coords.set(heteroAtomId, add(centerPosition, fromAngle(angleOf(outwardVector), bondLength)));
+  }
+
+  return coords;
+}
+
 function isPreferredBackboneEndpoint(layoutGraph, adjacency, atomId, atomIdsToPlace) {
   if (!layoutGraph) {
     return true;
@@ -479,5 +539,6 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
   }
 
   const stereoEnforced = enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords;
-  return normalizeBackboneTrigonalAngles(layoutGraph, stereoEnforced, backbone);
+  const trigonalNormalized = normalizeBackboneTrigonalAngles(layoutGraph, stereoEnforced, backbone);
+  return realignTerminalMultipleBondHeteros(layoutGraph, trigonalNormalized, bondLength);
 }

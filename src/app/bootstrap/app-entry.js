@@ -146,6 +146,9 @@ window.renderExamples = () => {
 window.pickRandomMolecule = () => {
   window._pickRandomMolecule?.();
 };
+window.pickDebugMolecule = () => {
+  window._pickDebugMolecule?.();
+};
 window.parseInput = value => {
   window._parseInput?.(value);
 };

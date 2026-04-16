@@ -4,7 +4,14 @@ import { parseSMILES } from '../../../../src/io/smiles.js';
 import { findSevereOverlaps, measureBondLengthDeviation } from '../../../../src/layout/engine/audit/invariants.js';
 import { AUDIT_PLANAR_VALIDATION } from '../../../../src/layout/engine/constants.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
-import { layoutFusedFamily } from '../../../../src/layout/engine/families/fused.js';
+import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
+import { assignBondValidationClass } from '../../../../src/layout/engine/placement/bond-validation.js';
+import {
+  layoutFusedCageKamadaKawai,
+  layoutFusedFamily,
+  shouldShortCircuitToFusedCageKk,
+  shouldTryBridgedRescueForFusedSystem
+} from '../../../../src/layout/engine/families/fused.js';
 import { distance } from '../../../../src/layout/engine/geometry/vec2.js';
 import { makeNaphthalene } from '../support/molecules.js';
 
@@ -91,6 +98,50 @@ describe('layout/engine/families/fused', () => {
     assert.equal(result.placementMode, 'pericondensed');
     assert.ok(centralRadius < graph.options.bondLength * 0.2);
     assert.ok(maxOuterDeviation < graph.options.bondLength * 0.15);
+  });
+
+  it('tries bridged rescue heuristics for large high-ring-count fused cages even when they are not compact', () => {
+    assert.equal(
+      shouldTryBridgedRescueForFusedSystem(40, 11, null, { bondLengthFailureCount: 29 }),
+      true
+    );
+    assert.equal(
+      shouldTryBridgedRescueForFusedSystem(40, 11, 'template-id', { bondLengthFailureCount: 29 }),
+      false
+    );
+    assert.equal(
+      shouldTryBridgedRescueForFusedSystem(40, 11, null, { bondLengthFailureCount: 0 }),
+      false
+    );
+  });
+
+  it('short-circuits only giant dense no-template fused cages to the cage KK path', () => {
+    assert.equal(shouldShortCircuitToFusedCageKk(60, 31, null), true);
+    assert.equal(shouldShortCircuitToFusedCageKk(20, 12, null), false);
+    assert.equal(shouldShortCircuitToFusedCageKk(60, 31, 'template-id'), false);
+  });
+
+  it('can lay out giant fullerene-like fused cages through the atom-level cage KK rescue', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('C12=C3C4=C5C6=C1C7=C8C9=C1C%10=C%11C(=C29)C3=C2C3=C4C4=C5C5=C9C6=C7C6=C7C8=C1C1=C8C%10=C%10C%11=C2C2=C3C3=C4C4=C5C5=C%11C%12=C(C6=C95)C7=C1C1=C%12C5=C%11C4=C3C3=C5C(=C81)C%10=C23'),
+      { suppressH: true }
+    );
+    const result = layoutFusedCageKamadaKawai(graph.rings, graph.options.bondLength, { layoutGraph: graph });
+    const bondValidationClasses = assignBondValidationClass(
+      graph,
+      graph.ringSystems[0].atomIds,
+      'bridged'
+    );
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses
+    });
+
+    assert.ok(result);
+    assert.equal(result.placementMode, 'kamada-kawai-cage');
+    assert.equal(result.coords.size, graph.ringSystems[0].atomIds.length);
+    assert.ok(audit.bondLengthFailureCount <= 15);
+    assert.ok(audit.maxBondLengthDeviation < 0.75);
   });
 
   it('keeps linear anthracene-like fused systems horizontally oriented and audit-clean', () => {

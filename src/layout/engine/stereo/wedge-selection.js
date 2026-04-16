@@ -35,7 +35,10 @@ function incidentRingPolygons(layoutGraph, coords, centerId) {
 }
 
 /**
- * Builds ranked stereocenter neighbor entries, synthesizing a hidden hydrogen position when needed.
+ * Builds ranked stereocenter neighbor entries, synthesizing a hidden hydrogen
+ * position when needed. Handles both explicit hidden hydrogens already present
+ * in the molecular graph and implicit-hydrogen stereocenters that only expose
+ * three explicit neighbors.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {string} centerId - Stereocenter atom id.
@@ -50,7 +53,9 @@ function buildCenterEntries(layoutGraph, coords, centerId) {
   }
 
   const neighbors = center.getNeighbors(molecule).filter(Boolean);
-  if (neighbors.length !== 4) {
+  const implicitHydrogenCount = center.implicitHydrogenCount(molecule);
+  const hasImplicitHydrogen = neighbors.length === 3 && implicitHydrogenCount === 1;
+  if (neighbors.length !== 4 && !hasImplicitHydrogen) {
     return null;
   }
 
@@ -64,6 +69,31 @@ function buildCenterEntries(layoutGraph, coords, centerId) {
       position: coords.get(neighbor.id) ?? null
     }))
     .filter(entry => entry.bond);
+
+  if (hasImplicitHydrogen) {
+    entries.push({
+      atom: {
+        id: `implicit-h:${centerId}`,
+        name: 'H',
+        visible: false
+      },
+      rank: 0,
+      bond: {
+        id: `implicit-h:${centerId}`,
+        properties: {},
+        getKind() {
+          return 'covalent';
+        },
+        getOrder() {
+          return 1;
+        },
+        isInRing() {
+          return false;
+        }
+      },
+      position: null
+    });
+  }
 
   if (entries.length !== 4) {
     return null;
@@ -182,14 +212,26 @@ function resolveStereoTypeForCenter(layoutGraph, coords, centerId, preferredBond
  * Picks wedge/dash display assignments for all currently placed stereocenters.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
- * @returns {{chiralCenterCount: number, assignedCenterCount: number, unassignedCenterCount: number, assignments: Array<{bondId: string, type: 'wedge'|'dash', centerId: string, manual?: boolean}>, missingCenterIds: string[]}} Wedge-selection summary.
+ * @returns {{annotatedCenterCount: number, chiralCenterCount: number, assignedCenterCount: number, unassignedCenterCount: number, unsupportedCenterCount: number, assignments: Array<{bondId: string, type: 'wedge'|'dash', centerId: string, manual?: boolean}>, missingCenterIds: string[], unsupportedCenterIds: string[]}} Wedge-selection summary.
  */
 export function pickWedgeAssignments(layoutGraph, coords) {
   const molecule = layoutGraph.sourceMolecule;
-  const centerIds = molecule
+  const annotatedCenterIds = molecule
     .getChiralCenters()
     .filter(centerId => coords.has(centerId))
     .sort((firstCenterId, secondCenterId) => compareCanonicalAtomIds(firstCenterId, secondCenterId, layoutGraph.canonicalAtomRank));
+  const preparedCenterEntriesById = new Map();
+  const centerIds = [];
+  const unsupportedCenterIds = [];
+  for (const centerId of annotatedCenterIds) {
+    const preparedEntries = buildCenterEntries(layoutGraph, coords, centerId);
+    if (!preparedEntries) {
+      unsupportedCenterIds.push(centerId);
+      continue;
+    }
+    preparedCenterEntriesById.set(centerId, preparedEntries);
+    centerIds.push(centerId);
+  }
   const assignments = [];
   const missingCenterIds = [];
 
@@ -204,7 +246,7 @@ export function pickWedgeAssignments(layoutGraph, coords) {
     const componentAtomIds = findComponentAtomIds(layoutGraph, centerId);
     const componentPoints = componentAtomIds.map(atomId => coords.get(atomId)).filter(Boolean);
     const componentCenter = centroid(componentPoints);
-    const rawEntries = buildCenterEntries(layoutGraph, coords, centerId);
+    const rawEntries = preparedCenterEntriesById.get(centerId) ?? buildCenterEntries(layoutGraph, coords, centerId);
     if (!rawEntries) {
       missingCenterIds.push(centerId);
       continue;
@@ -302,10 +344,13 @@ export function pickWedgeAssignments(layoutGraph, coords) {
   }
 
   return {
+    annotatedCenterCount: annotatedCenterIds.length,
     chiralCenterCount: centerIds.length,
     assignedCenterCount: assignments.length,
     unassignedCenterCount: Math.max(0, centerIds.length - assignments.length),
+    unsupportedCenterCount: unsupportedCenterIds.length,
     assignments,
-    missingCenterIds
+    missingCenterIds,
+    unsupportedCenterIds
   };
 }

@@ -1,5 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { parseSMILES } from '../../../../src/io/smiles.js';
+import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { layoutOrganometallicFamily } from '../../../../src/layout/engine/families/organometallic.js';
 import {
@@ -270,5 +272,58 @@ describe('layout/engine/families/organometallic', () => {
     assert.equal(upperDashCount, 2);
     assert.equal(lowerWedgeCount, 2);
     assert.equal(planarLigandCount, 2);
+  });
+
+  it('rescues multi-metal halide clusters by laying out the metal framework before placing bridging ligands', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('[Ta]12([Ta]3([Br])[Ta]([Ta]([Br])([Br])[Ta]1([Br])([Br])[Ta]([Br])([Br])3([Br])[Br])([Br])[Br])([Br])[Br]2'),
+      { suppressH: true }
+    );
+    const result = layoutOrganometallicFamily(graph, graph.components[0], graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: result.bondValidationClasses
+    });
+
+    assert.equal(result.placementMode, 'metal-framework-rescue');
+    assert.equal(result.displayAssignments.length, 0);
+    assert.ok(audit.bondLengthFailureCount <= 2);
+    assert.ok(audit.maxBondLengthDeviation < 0.5);
+  });
+
+  it('rescues polyoxometalate cages by laying out an inferred metal framework before placing oxo bridges', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('[O-][V](=O)[O+]([V](=O)O[V](=O)(=O)O[V](=O)(=O)[O+]([V]([O-])=O)[V](=O)(=O)=O)[V](=O)(=O)=O'),
+      { suppressH: true }
+    );
+    const result = layoutOrganometallicFamily(graph, graph.components[0], graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: result.bondValidationClasses
+    });
+
+    assert.equal(result.placementMode, 'polyoxo-framework-rescue');
+    assert.equal(result.displayAssignments.length, 0);
+    assert.ok(audit.severeOverlapCount <= 5);
+    assert.ok(audit.bondLengthFailureCount <= 3);
+    assert.ok(audit.maxBondLengthDeviation < 0.8);
+  });
+
+  it('keeps cyclic polyoxovanadates on the dedicated polyoxo rescue instead of the direct metal-framework path', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('[O-][V]1(=O)O[V]([O-])(=O)O[V]([O-])(=O)O[V]([O-])(=O)O1'),
+      { suppressH: true }
+    );
+    const result = layoutOrganometallicFamily(graph, graph.components[0], graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: result.bondValidationClasses
+    });
+
+    assert.equal(result.placementMode, 'polyoxo-framework-rescue');
+    assert.equal(result.displayAssignments.length, 0);
+    assert.ok(audit.severeOverlapCount <= 6);
+    assert.ok(audit.bondLengthFailureCount <= 2);
+    assert.ok(audit.maxBondLengthDeviation < 0.7);
   });
 });

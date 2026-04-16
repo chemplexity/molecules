@@ -1,9 +1,222 @@
 /** @module families/fused */
 
+import { BRIDGED_KK_LIMITS, FUSED_RESCUE_LIMITS } from '../constants.js';
+import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { apothemForRegularPolygon } from '../geometry/polygon.js';
 import { add, angleOf, centroid, distance, fromAngle, midpoint, normalize, perpLeft, scale, sub, wrapAngle } from '../geometry/vec2.js';
 import { computeFusedAxis, orientCoordsHorizontally, rebuildRingCenters } from '../scaffold/orientation.js';
 import { placeTemplateCoords } from '../scaffold/template-placement.js';
+import { auditLayout } from '../audit/audit.js';
+import { assignBondValidationClass } from '../placement/bond-validation.js';
+
+/**
+ * Returns whether a fused system should try the bridged/KK rescue path.
+ * Dense fused cages and compact high-ring-count cages often behave more like
+ * non-planar polyhedra than planar fused polycycles, so let them compete
+ * against the bridged fallback when the planar fused placement is bond-dirty.
+ * @param {number} atomCount - Fused-system atom count.
+ * @param {number} ringCount - Fused-system ring count.
+ * @param {string|null} templateId - Matched template ID.
+ * @param {object|null} audit - Fused placement audit.
+ * @returns {boolean} True when a bridged rescue should be attempted.
+ */
+export function shouldTryBridgedRescueForFusedSystem(atomCount, ringCount, templateId, audit) {
+  if (templateId || !audit || audit.bondLengthFailureCount <= 0) {
+    return false;
+  }
+  return (
+    (atomCount <= FUSED_RESCUE_LIMITS.compactCageMaxAtomCount && ringCount >= FUSED_RESCUE_LIMITS.compactCageMinRingCount)
+    || ringCount >= FUSED_RESCUE_LIMITS.largeCageMinRingCount
+    || ringCount >= Math.ceil(atomCount / 2)
+  );
+}
+
+/**
+ * Returns whether a giant dense fused cage should skip the planar fused pass
+ * and go directly to the atom-graph cage KK construction.
+ * @param {number} atomCount - Fused-system atom count.
+ * @param {number} ringCount - Fused-system ring count.
+ * @param {string|null} templateId - Matched template ID.
+ * @returns {boolean} True when the giant cage should use direct KK first.
+ */
+export function shouldShortCircuitToFusedCageKk(atomCount, ringCount, templateId) {
+  if (templateId) {
+    return false;
+  }
+  return (
+    atomCount >= FUSED_RESCUE_LIMITS.giantCageMinAtomCount
+    && ringCount >= FUSED_RESCUE_LIMITS.giantCageMinRingCount
+    && ringCount >= Math.ceil(atomCount / 2)
+  );
+}
+
+/**
+ * Returns whether a bridged rescue placement should replace the fused result.
+ * The rescue is bond-first but still refuses candidates that introduce a large
+ * overlap spike over the incumbent fused placement.
+ * @param {object|null} candidateAudit - Bridged rescue audit.
+ * @param {object|null} incumbentAudit - Fused placement audit.
+ * @returns {boolean} True when the rescue should win.
+ */
+export function isBetterBridgedRescueForFusedSystem(candidateAudit, incumbentAudit) {
+  if (!candidateAudit || !incumbentAudit) {
+    return false;
+  }
+  if (
+    candidateAudit.severeOverlapCount
+    > incumbentAudit.severeOverlapCount + FUSED_RESCUE_LIMITS.maxRescueOverlapPenalty
+  ) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
+    return candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount;
+  }
+  if (Math.abs(candidateAudit.maxBondLengthDeviation - incumbentAudit.maxBondLengthDeviation) > 1e-9) {
+    return candidateAudit.maxBondLengthDeviation < incumbentAudit.maxBondLengthDeviation;
+  }
+  return candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount;
+}
+
+function fusedKamadaKawaiSeeds(layoutGraph, atomIds) {
+  const coords = new Map();
+  const pinnedAtomIds = [];
+  if (!layoutGraph) {
+    return { coords, pinnedAtomIds };
+  }
+
+  for (const atomId of atomIds) {
+    const fixedPosition = layoutGraph.fixedCoords.get(atomId);
+    if (fixedPosition) {
+      coords.set(atomId, { ...fixedPosition });
+      pinnedAtomIds.push(atomId);
+      continue;
+    }
+    const existingPosition = layoutGraph.options.existingCoords.get(atomId);
+    if (existingPosition) {
+      coords.set(atomId, { ...existingPosition });
+    }
+  }
+
+  return { coords, pinnedAtomIds };
+}
+
+function scaleCoordsAboutCentroid(inputCoords, scaleFactor) {
+  if (Math.abs(scaleFactor - 1) <= 1e-9) {
+    return new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  }
+  const center = centroid([...inputCoords.values()]);
+  const coords = new Map();
+  for (const [atomId, position] of inputCoords) {
+    coords.set(atomId, {
+      x: center.x + (position.x - center.x) * scaleFactor,
+      y: center.y + (position.y - center.y) * scaleFactor
+    });
+  }
+  return coords;
+}
+
+function auditFusedCageCandidate(layoutGraph, atomIds, coords, bondLength) {
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, atomIds, 'bridged');
+  return auditLayout(layoutGraph, coords, {
+    bondLength,
+    bondValidationClasses
+  });
+}
+
+function isBetterFusedCageCandidate(candidateAudit, incumbentAudit) {
+  if (!candidateAudit) {
+    return false;
+  }
+  if (!incumbentAudit) {
+    return true;
+  }
+  const bondImprovement = incumbentAudit.bondLengthFailureCount - candidateAudit.bondLengthFailureCount;
+  if (bondImprovement > 0) {
+    const allowedOverlapIncrease =
+      bondImprovement >= 24 ? 16
+        : bondImprovement >= 12 ? 10
+          : 4;
+    if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount + allowedOverlapIncrease) {
+      return false;
+    }
+    return true;
+  }
+  if (candidateAudit.severeOverlapCount !== incumbentAudit.severeOverlapCount) {
+    return candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount;
+  }
+  if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
+    return candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount;
+  }
+  return candidateAudit.maxBondLengthDeviation < incumbentAudit.maxBondLengthDeviation;
+}
+
+/**
+ * Places a giant fused cage directly on the atom graph with Kamada-Kawai
+ * instead of assuming a planar fused-ring scaffold.
+ * @param {object[]} rings - Ring descriptors in the fused system.
+ * @param {number} bondLength - Target bond length.
+ * @param {{layoutGraph?: object}} [options] - Placement options.
+ * @returns {{coords: Map<string, {x: number, y: number}>, ringCenters: Map<number, {x: number, y: number}>, placementMode: string}|null} Placement result.
+ */
+export function layoutFusedCageKamadaKawai(rings, bondLength, options = {}) {
+  if (rings.length === 0 || !options.layoutGraph) {
+    return null;
+  }
+
+  const atomIdSet = new Set(rings.flatMap(ring => ring.atomIds));
+  const atomIds = [...options.layoutGraph.atoms.keys()].filter(atomId => atomIdSet.has(atomId));
+  const kkSeeds = fusedKamadaKawaiSeeds(options.layoutGraph, atomIds);
+  const kkResult = layoutKamadaKawai(options.layoutGraph.sourceMolecule, atomIds, {
+    bondLength,
+    coords: kkSeeds.coords,
+    pinnedAtomIds: kkSeeds.pinnedAtomIds,
+    maxComponentSize: FUSED_RESCUE_LIMITS.kkMaxComponentSize,
+    threshold: BRIDGED_KK_LIMITS.threshold,
+    innerThreshold: BRIDGED_KK_LIMITS.threshold,
+    maxIterations: BRIDGED_KK_LIMITS.largeMaxIterations,
+    maxInnerIterations: BRIDGED_KK_LIMITS.largeMaxInnerIterations
+  });
+  if (kkResult.coords.size !== atomIds.length) {
+    return null;
+  }
+
+  let bestCoords = orientCoordsHorizontally(
+    kkResult.coords,
+    computeFusedAxis(rebuildRingCenters(rings, kkResult.coords))
+  );
+  let bestAudit = auditFusedCageCandidate(options.layoutGraph, atomIds, bestCoords, bondLength);
+
+  const relaxedCoords = relaxConstructedFusedCoords(options.layoutGraph, atomIds, kkResult.coords, bondLength, {
+    iterations: 30,
+    damping: 0.5
+  });
+  const regularizedCoords = regularizeConstructedFusedCoords(rings, relaxedCoords, bondLength, {
+    iterations: 18,
+    damping: 0.45
+  });
+  for (const scaleFactor of [1, 1.05, 1.1]) {
+    const scaledCoords = scaleCoordsAboutCentroid(regularizedCoords, scaleFactor);
+    const orientedCoords = orientCoordsHorizontally(
+      scaledCoords,
+      computeFusedAxis(rebuildRingCenters(rings, scaledCoords))
+    );
+    const candidateAudit = auditFusedCageCandidate(options.layoutGraph, atomIds, orientedCoords, bondLength);
+    if (isBetterFusedCageCandidate(candidateAudit, bestAudit)) {
+      bestCoords = orientedCoords;
+      bestAudit = candidateAudit;
+    }
+  }
+
+  const ringCenters = new Map();
+  for (const ring of rings) {
+    ringCenters.set(ring.id, centroid(ring.atomIds.map(atomId => bestCoords.get(atomId))));
+  }
+  return {
+    coords: bestCoords,
+    ringCenters,
+    placementMode: 'kamada-kawai-cage'
+  };
+}
 
 function traversePath(atomIds, startAtomId, endAtomId, step) {
   const count = atomIds.length;

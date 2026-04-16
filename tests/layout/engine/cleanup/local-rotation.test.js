@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { Molecule } from '../../../../src/core/index.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
-import { runLocalCleanup } from '../../../../src/layout/engine/cleanup/local-rotation.js';
+import { computeRotatableSubtrees, runLocalCleanup } from '../../../../src/layout/engine/cleanup/local-rotation.js';
 import { buildAtomGrid, measureLayoutCost } from '../../../../src/layout/engine/audit/invariants.js';
 import { generateCoords, refineCoords } from '../../../../src/layout/engine/api.js';
 
@@ -203,5 +203,28 @@ describe('layout/engine/cleanup/local-rotation', () => {
     assert.deepEqual([...reusedGridResult.coords.entries()], [...rebuiltResult.coords.entries()]);
     assert.equal(reusedGridResult.passes, rebuiltResult.passes);
     assert.equal(reusedGridResult.improvement, rebuiltResult.improvement);
+  });
+
+  it('accepts reusable rotatable subtree descriptors without changing the chosen cleanup result', () => {
+    const graph = createLayoutGraph(parseSMILES('CC(C)(C)C'), { suppressH: true });
+    const coords = new Map([
+      ['C2', { x: 0, y: 0 }],
+      ['C1', { x: -1.5, y: 0 }],
+      ['C3', { x: 1.2, y: 0.2 }],
+      ['C4', { x: 1.2, y: -0.2 }],
+      ['C5', { x: 1.5, y: 0 }]
+    ]);
+    const rebuiltResult = runLocalCleanup(graph, coords, { maxPasses: 2, bondLength: 1.5 });
+    const reusable = computeRotatableSubtrees(graph, coords);
+    const reusedResult = runLocalCleanup(graph, coords, {
+      maxPasses: 2,
+      bondLength: 1.5,
+      baseTerminalSubtrees: reusable.terminalSubtrees,
+      baseGeminalPairs: reusable.geminalPairs
+    });
+
+    assert.deepEqual([...reusedResult.coords.entries()], [...rebuiltResult.coords.entries()]);
+    assert.equal(reusedResult.passes, rebuiltResult.passes);
+    assert.equal(reusedResult.improvement, rebuiltResult.improvement);
   });
 });

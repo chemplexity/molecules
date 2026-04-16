@@ -319,8 +319,9 @@
       var inputMode = 'smiles';
     </script>
 
-    <!-- Load shared molecule list; sets window.randomMolecule for the picker below. -->
+    <!-- Load shared molecule lists; each module also exposes a browser global for the picker UI. -->
     <script type="module" src="examples/example-molecules.js"></script>
+    <script type="module" src="examples/stress-test-molecules.js"></script>
 
     <script type="module" src="./src/app/bootstrap/app-entry.js"></script>
   </body>
