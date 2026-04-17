@@ -1267,7 +1267,7 @@ function buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, 
     !fromRing &&
     currentPlacedNeighborIds.length > 0 &&
     (currentPlacedNeighborIds.length >= 2 ||
-      (!isLinear && unplacedNeighborIds.length >= 2 && (!hasMultipleBond || unplacedNeighborIds.length <= 2)) ||
+      (!isLinear && !hasMultipleBond && unplacedNeighborIds.length >= 2) ||
       (unplacedNeighborIds.length === 1 && currentPlacedNeighborIds.length >= 2));
 
   const fallbackAngleSets = shouldUseGapStrategy

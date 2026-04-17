@@ -281,6 +281,21 @@ function createStereoHydrogenOffsetRecorder() {
   };
 }
 
+function latestZoomTransform(records) {
+  const entry = [...records].reverse().find(record => record[0] === 'call' && record[1] === 'zoomTransform');
+  return entry?.[2] ?? null;
+}
+
+function applyZoomTransform(point, transform) {
+  if (!transform) {
+    return point;
+  }
+  return {
+    x: transform.x + point.x * transform.k,
+    y: transform.y + point.y * transform.k
+  };
+}
+
 function buildStereoHydrogenRenderState(smiles) {
   const mol = parseSMILES(smiles);
   const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
@@ -492,5 +507,31 @@ describe('create2DSceneRenderer', () => {
     const parentPoint = renderer.toSVGPt(parent);
 
     assert.ok(Math.hypot(hydrogenPoint.x - parentPoint.x, hydrogenPoint.y - parentPoint.y) > 1e-6, 'expected projected hydrogen SVG point to differ from the parent atom point');
+  });
+
+  it('fits projected explicit stereo hydrogens into the 2D viewport', () => {
+    const { renderer, records } = makeRenderer();
+    const mol = parseSMILES('[H][C@]12CS[C@]([H])(CCCCC(O)=O)[C@@]1([H])NC(=O)N2');
+    const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    applyCoords(mol, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+
+    renderer.render2d(mol, { preserveGeometry: true });
+    renderer.fitCurrent2dView();
+
+    const transform = latestZoomTransform(records);
+    assert.ok(transform, 'expected a zoom-to-fit transform');
+
+    const stereoHydrogens = [...mol.atoms.values()].filter(atom => atom.name === 'H' && atom.visible !== false);
+    assert.ok(stereoHydrogens.length > 0, 'expected visible explicit stereo hydrogens');
+
+    for (const hydrogen of stereoHydrogens) {
+      const screenPoint = applyZoomTransform(renderer.toSVGPt(hydrogen), transform);
+      assert.ok(screenPoint.x >= 0 && screenPoint.x <= 600, `expected ${hydrogen.id} to stay inside the fitted viewport horizontally`);
+      assert.ok(screenPoint.y >= 0 && screenPoint.y <= 400, `expected ${hydrogen.id} to stay inside the fitted viewport vertically`);
+    }
   });
 });

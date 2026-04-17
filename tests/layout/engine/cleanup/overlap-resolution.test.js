@@ -6,6 +6,7 @@ import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-gr
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { collectRigidPendantRingSubtrees, resolveOverlaps } from '../../../../src/layout/engine/cleanup/overlap-resolution.js';
 import { runLocalCleanup } from '../../../../src/layout/engine/cleanup/local-rotation.js';
+import { add, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { layoutSupportedComponents } from '../../../../src/layout/engine/placement/component-layout.js';
 import { makeDisconnectedEthanes } from '../support/molecules.js';
 
@@ -118,10 +119,24 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     const graph = createLayoutGraph(molecule, { suppressH: true });
     const placement = layoutSupportedComponents(graph);
     const cleanup = runLocalCleanup(graph, placement.coords, { bondLength: graph.options.bondLength });
+    const rigidDescriptor = [...new Map(
+      [...collectRigidPendantRingSubtrees(graph).values()].map(descriptor => [`${descriptor.anchorAtomId}|${descriptor.rootAtomId}|${descriptor.subtreeAtomIds.join(',')}`, descriptor])
+    ).values()].find(descriptor => descriptor.anchorAtomId === 'C20' && descriptor.rootAtomId === 'O28');
+    assert.ok(rigidDescriptor);
 
-    const result = resolveOverlaps(graph, cleanup.coords, { bondLength: graph.options.bondLength });
+    const perturbedCoords = new Map([...cleanup.coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+    const anchorPosition = perturbedCoords.get(rigidDescriptor.anchorAtomId);
+    const movableAtomIds = rigidDescriptor.subtreeAtomIds.filter(atomId => perturbedCoords.has(atomId));
+    for (const atomId of movableAtomIds) {
+      const currentPosition = perturbedCoords.get(atomId);
+      perturbedCoords.set(atomId, add(anchorPosition, rotate(sub(currentPosition, anchorPosition), (2 * Math.PI) / 3)));
+    }
+
+    const beforeAudit = auditLayout(graph, perturbedCoords, { bondLength: graph.options.bondLength });
+    const result = resolveOverlaps(graph, perturbedCoords, { bondLength: graph.options.bondLength });
     const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
 
+    assert.ok(beforeAudit.severeOverlapCount > 0);
     assert.equal(audit.severeOverlapCount, 0);
     assert.equal(audit.bondLengthFailureCount, 0);
     assert.ok(result.moves > 0);

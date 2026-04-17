@@ -401,6 +401,9 @@ function isPreferredFinalStereoStage(candidate, incumbent, options = {}) {
   if (!incumbent) {
     return true;
   }
+  if (incumbent.audit.bondLengthFailureCount === 0 && candidate.audit.bondLengthFailureCount > 0) {
+    return false;
+  }
   if (candidate.audit.ok !== incumbent.audit.ok) {
     return candidate.audit.ok;
   }
@@ -670,14 +673,23 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
   }
   coords = preferredStage.coords;
   selectedGeometryStage = preferredStage.name;
+  const selectedGeometryStereoStage = {
+    name: 'selectedGeometryStereo',
+    ...auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, normalizedOptions.bondLength)
+  };
+  stageEntries.push({ name: selectedGeometryStereoStage.name, audit: selectedGeometryStereoStage.audit });
   const finalStereoCleanup = enforceAcyclicEZStereo(layoutGraph, coords, {
     bondLength: normalizedOptions.bondLength
   });
-  let finalStereoStage = {
+  const stereoCleanupStage = {
     name: 'stereoCleanup',
     ...auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, finalStereoCleanup.coords, placement, normalizedOptions.bondLength)
   };
-  stageEntries.push({ name: finalStereoStage.name, audit: finalStereoStage.audit });
+  stageEntries.push({ name: stereoCleanupStage.name, audit: stereoCleanupStage.audit });
+  let finalStereoStage = selectedGeometryStereoStage;
+  if (isPreferredFinalStereoStage(stereoCleanupStage, finalStereoStage)) {
+    finalStereoStage = stereoCleanupStage;
+  }
   const totalStereoRescueCount = stereoCleanup.reflections + finalStereoCleanup.reflections;
   const stereoProtectedTouchupFrozenAtomIds = mergeFrozenAtomIds(
     placement.frozenAtomIds,
@@ -1051,7 +1063,8 @@ export function runPipeline(molecule, options = {}) {
     const atomCount = moleculeAtomCount(molecule);
     return createEmptyPipelineResult(molecule, normalizedOptions, profile, atomCount === 0 ? 'empty-molecule' : 'invalid-molecule');
   }
-  const layoutGraph = createLayoutGraphFromNormalized(molecule, normalizedOptions);
+  const workingMolecule = typeof molecule?.clone === 'function' ? molecule.clone() : molecule;
+  const layoutGraph = createLayoutGraphFromNormalized(workingMolecule, normalizedOptions);
   const familySummary = classifyFamily(layoutGraph);
   const policy = resolvePolicy(profile, {
     ...layoutGraph.traits,
@@ -1067,6 +1080,6 @@ export function runPipeline(molecule, options = {}) {
   for (const [atomId, position] of cleanup.coords) {
     coords.set(atomId, position);
   }
-  const { ringDependency, stereo } = runStereoPhase(molecule, layoutGraph, coords, timingState);
+  const { ringDependency, stereo } = runStereoPhase(workingMolecule, layoutGraph, coords, timingState);
   return buildPipelineResult(molecule, coords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState);
 }

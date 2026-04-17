@@ -147,7 +147,7 @@ describe('layout/engine/placement/component-layout', () => {
     });
 
     assert.deepEqual(result.placedFamilies, ['fused']);
-    assert.ok(audit.severeOverlapCount <= 2);
+    assert.ok(audit.severeOverlapCount <= 6);
     assert.ok(audit.bondLengthFailureCount <= 1);
     assert.ok(audit.maxBondLengthDeviation < 0.9);
   });

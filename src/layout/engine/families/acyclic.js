@@ -343,6 +343,135 @@ function isTerminalMultipleBondHeteroNeighbor(layoutGraph, centerAtomId, bond) {
   return !!neighborAtom && neighborAtom.element !== 'H' && neighborAtom.element !== 'C' && neighborAtom.heavyDegree === 1;
 }
 
+function isTerminalLinearMultipleBondRoot(layoutGraph, centerAtomId, bond) {
+  if (!layoutGraph || !bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+    return false;
+  }
+  const rootAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  if (!rootAtom || rootAtom.element === 'H' || rootAtom.aromatic || rootAtom.heavyDegree !== 2) {
+    return false;
+  }
+
+  const continuationBonds = (layoutGraph.bondsByAtomId.get(rootAtomId) ?? []).filter(candidateBond => {
+    if (candidateBond === bond || candidateBond.kind !== 'covalent' || candidateBond.aromatic) {
+      return false;
+    }
+    const neighborAtomId = candidateBond.a === rootAtomId ? candidateBond.b : candidateBond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return !!neighborAtom && neighborAtom.element !== 'H';
+  });
+  if (continuationBonds.length !== 1) {
+    return false;
+  }
+
+  const continuationBond = continuationBonds[0];
+  if ((continuationBond.order ?? 1) < 2) {
+    return false;
+  }
+  const terminalAtomId = continuationBond.a === rootAtomId ? continuationBond.b : continuationBond.a;
+  const terminalAtom = layoutGraph.atoms.get(terminalAtomId);
+  return !!terminalAtom && terminalAtom.element !== 'H' && terminalAtom.heavyDegree === 1;
+}
+
+function rotateSubtreeAroundCenter(coords, movedAtomIds, centerPosition, rotationAngle) {
+  if (Math.abs(rotationAngle) <= 1e-6) {
+    return;
+  }
+  for (const atomId of movedAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    coords.set(atomId, add(centerPosition, rotate(sub(position, centerPosition), rotationAngle)));
+  }
+}
+
+function realignTrigonalLinearSubstituentRoots(layoutGraph, coords) {
+  if (!layoutGraph) {
+    return coords;
+  }
+
+  for (const atom of layoutGraph.atoms.values()) {
+    if (!coords.has(atom.id) || atom.element === 'H') {
+      continue;
+    }
+    const heavyBonds = (layoutGraph.bondsByAtomId.get(atom.id) ?? []).filter(bond => {
+      if (bond.kind !== 'covalent') {
+        return false;
+      }
+      const neighborAtomId = bond.a === atom.id ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H' && coords.has(neighborAtomId);
+    });
+    if (heavyBonds.length !== 3) {
+      continue;
+    }
+
+    const primaryBond = heavyBonds.find(bond => !bond.aromatic && (bond.order ?? 1) >= 2) ?? null;
+    if (!primaryBond) {
+      continue;
+    }
+    const rootBonds = heavyBonds.filter(bond => bond !== primaryBond && isTerminalLinearMultipleBondRoot(layoutGraph, atom.id, bond));
+    if (rootBonds.length === 0) {
+      continue;
+    }
+
+    const centerPosition = coords.get(atom.id);
+    const primaryAtomId = primaryBond.a === atom.id ? primaryBond.b : primaryBond.a;
+    const primaryPosition = coords.get(primaryAtomId);
+    if (!centerPosition || !primaryPosition) {
+      continue;
+    }
+    const baseAngle = angleOf(sub(primaryPosition, centerPosition));
+    const assignments = rootBonds.map(bond => {
+      const rootAtomId = bond.a === atom.id ? bond.b : bond.a;
+      const rootPosition = coords.get(rootAtomId);
+      if (!rootPosition) {
+        return null;
+      }
+      return {
+        rootAtomId,
+        currentAngle: angleOf(sub(rootPosition, centerPosition)),
+        movedAtomIds: collectSideAtomIds(layoutGraph, rootAtomId, atom.id)
+      };
+    }).filter(Boolean);
+    if (assignments.length === 0) {
+      continue;
+    }
+
+    let targetAngles;
+    if (assignments.length === 1) {
+      const signedOffset = normalizeSignedAngle(assignments[0].currentAngle - baseAngle);
+      targetAngles = [baseAngle + (signedOffset >= 0 ? TRIGONAL_TARGET_ANGLE : -TRIGONAL_TARGET_ANGLE)];
+    } else {
+      const positiveTarget = baseAngle + TRIGONAL_TARGET_ANGLE;
+      const negativeTarget = baseAngle - TRIGONAL_TARGET_ANGLE;
+      const directCost =
+        Math.abs(normalizeSignedAngle(assignments[0].currentAngle - positiveTarget))
+        + Math.abs(normalizeSignedAngle(assignments[1].currentAngle - negativeTarget));
+      const swappedCost =
+        Math.abs(normalizeSignedAngle(assignments[0].currentAngle - negativeTarget))
+        + Math.abs(normalizeSignedAngle(assignments[1].currentAngle - positiveTarget));
+      targetAngles = directCost <= swappedCost
+        ? [positiveTarget, negativeTarget]
+        : [negativeTarget, positiveTarget];
+    }
+
+    for (let index = 0; index < assignments.length; index++) {
+      const assignment = assignments[index];
+      rotateSubtreeAroundCenter(
+        coords,
+        assignment.movedAtomIds,
+        centerPosition,
+        normalizeSignedAngle(targetAngles[index] - assignment.currentAngle)
+      );
+    }
+  }
+
+  return coords;
+}
+
 function realignTerminalMultipleBondHeteros(layoutGraph, coords, bondLength) {
   if (!layoutGraph) {
     return coords;
@@ -540,5 +669,6 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
 
   const stereoEnforced = enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords;
   const trigonalNormalized = normalizeBackboneTrigonalAngles(layoutGraph, stereoEnforced, backbone);
-  return realignTerminalMultipleBondHeteros(layoutGraph, trigonalNormalized, bondLength);
+  const linearRootsRealigned = realignTrigonalLinearSubstituentRoots(layoutGraph, trigonalNormalized);
+  return realignTerminalMultipleBondHeteros(layoutGraph, linearRootsRealigned, bondLength);
 }

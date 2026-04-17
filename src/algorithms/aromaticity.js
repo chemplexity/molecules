@@ -207,6 +207,72 @@ function _isHuckel(piCount) {
 }
 
 /**
+ * Returns true if the ring can satisfy Hückel's rule by treating some neutral
+ * N atoms as pyrrole-like (2 π electrons) instead of pyridine-like (1 π electron).
+ *
+ * This covers the case where SMILES-aromatic notation (bond order 1.5) is used
+ * for a 5-membered ring containing nitrogen atoms that have no explicit H and no
+ * exocyclic bonds.  `_piElectrons` assigns them 1 electron (pyridine-like) because
+ * `hasRingPiBond` is true for 1.5-order bonds, but for Hückel aromaticity one of
+ * them may need to donate its lone pair (2 electrons, pyrrole-like).
+ *
+ * Ambiguous N atoms are those that satisfy all of:
+ *  - element N, formal charge 0
+ *  - every bond is a ring bond (no H, no exocyclic substituents)
+ *  - every ring bond is already flagged as having pi character (order 1.5 or aromatic)
+ *
+ * The fallback is not triggered when any N in the ring carries an explicit H
+ * (regardless of charge).  A H-bearing N — whether pyrrole-like `[nH]` or
+ * protonated `[nH+]` — already has its lone-pair contribution fully determined
+ * by `_piElectrons`; promoting an additional N to 2-electron donor would
+ * double-count the lone pair and incorrectly inflate the π count.
+ * @param {string[]} ring - Atom IDs of the candidate ring.
+ * @param {Set<string>} ringAtomSet - Same atom IDs as a Set (for fast membership tests).
+ * @param {number} piTotal - Current total π electron count from the standard assignment.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {boolean} `true` when a valid Hückel assignment exists after reassignment.
+ */
+function _canSatisfyHuckelWithAmbiguousN(ring, ringAtomSet, piTotal, mol) {
+  let ambiguousCount = 0;
+  for (const atomId of ring) {
+    const atom = mol.atoms.get(atomId);
+    if (!atom) {
+      return false;
+    }
+    if (atom.name !== 'N') {
+      continue;
+    }
+    // If any N in the ring has an explicit H, the lone-pair donor role is
+    // already occupied (or disrupted, e.g. [nH+]) — do not promote.
+    const hasH = atom.bonds.some(bId => {
+      const b = mol.bonds.get(bId);
+      return b && mol.atoms.get(b.getOtherAtom(atomId))?.name === 'H';
+    });
+    if (hasH) {
+      return false;
+    }
+    // Ambiguous: neutral N whose every bond is an aromatic ring bond.
+    if ((atom.properties.charge ?? 0) === 0) {
+      const ringBonds = atom.bonds.map(bId => mol.bonds.get(bId)).filter(b => b && ringAtomSet.has(b.getOtherAtom(atomId)));
+      if (atom.bonds.length === ringBonds.length && ringBonds.every(_hasPiOrder)) {
+        ambiguousCount++;
+      }
+    }
+  }
+  if (ambiguousCount === 0) {
+    return false;
+  }
+  // Each reassigned N contributes 1 extra electron (1 → 2).
+  // Try subsets of size 1, 2, …, ambiguousCount.
+  for (let extra = 1; extra <= ambiguousCount; extra++) {
+    if (_isHuckel(piTotal + extra)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Returns localized bond orders for a selected aromatic bond set using the same
  * maximum-matching logic as renderer-side Kekule localization.
  * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
@@ -526,7 +592,13 @@ export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
       }
 
       if (!valid || !_isHuckel(piTotal)) {
-        continue;
+        // Fallback: neutral N atoms with only aromatic ring bonds and no H/substituents
+        // are ambiguous — _piElectrons assigns them 1 (pyridine-like) because ring bonds
+        // are already flagged as pi-order, but they may need to donate 2 electrons
+        // (pyrrole-like) for Hückel aromaticity.  Try reassigning them.
+        if (!valid || !_canSatisfyHuckelWithAmbiguousN(ring, ringAtomSet, piTotal, mol)) {
+          continue;
+        }
       }
 
       done[ri] = true;

@@ -352,6 +352,8 @@ export function ringLabelOffset(atom, mol, pointForAtom, label, fontSize) {
     return { dx: baseDx, dy: 0 };
   }
 
+  const rings = typeof mol?.getRings === 'function' ? mol.getRings() : [];
+
   let dx = baseDx;
   let dy = 0;
   const heavyNeighbors = atom
@@ -375,8 +377,7 @@ export function ringLabelOffset(atom, mol, pointForAtom, label, fontSize) {
     }
   }
 
-  const incidentRingCentroids = mol
-    .getRings()
+  const incidentRingCentroids = rings
     .filter(ringAtomIds => ringAtomIds.includes(atom.id))
     .map(ringAtomIds =>
       ringAtomIds
@@ -396,8 +397,7 @@ export function ringLabelOffset(atom, mol, pointForAtom, label, fontSize) {
   }
 
   const atomPoint = pointForAtom(atom);
-  const ringPolygons = mol
-    .getRings()
+  const ringPolygons = rings
     .filter(ringAtomIds => ringAtomIds.includes(atom.id))
     .map(ringAtomIds =>
       ringAtomIds

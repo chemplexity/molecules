@@ -98,6 +98,33 @@ function _compute2dFitTransform(ctx, atoms) {
 }
 
 /**
+ * Returns the coordinate set that should drive 2D viewport fitting.
+ * Visible explicit stereo hydrogens are fit against their projected render
+ * positions so coincident helper coordinates cannot leave them off-screen.
+ * @param {object} molecule - Molecule currently shown in 2D.
+ * @param {Map<string, {x: number, y: number}>} projectedCoords - Projected stereo-hydrogen positions.
+ * @returns {Array<{x: number, y: number}>} Coordinate points to include in the fit box.
+ */
+function fitPointsFor2dView(molecule, projectedCoords = new Map()) {
+  const points = [];
+  for (const atom of molecule?.atoms?.values?.() ?? []) {
+    if (atom?.visible === false) {
+      continue;
+    }
+    const projectedPosition = projectedCoords.get(atom.id);
+    if (projectedPosition) {
+      points.push(projectedPosition);
+      continue;
+    }
+    if (atom?.x == null || atom?.y == null) {
+      continue;
+    }
+    points.push(atom);
+  }
+  return points;
+}
+
+/**
  * Creates the 2D scene renderer, providing `draw2d`, `render2d`, `fitCurrent2dView`, and a projected-aware `toSVGPt` helper for the active SVG canvas.
  * @param {object} ctx - Context providing `state`, `helpers`, `constants`, `view`, `overlay`, `drag`, `events`, `zoom`, `svg`, `g`, `d3`, `cache`, `selection`, and `analysis`.
  * @returns {object} Object with `draw2d`, `render2d`, `fitCurrent2dView`, and `toSVGPt` functions.
@@ -849,14 +876,6 @@ export function create2DSceneRenderer(ctx) {
       }
     }
 
-    const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
-    if (atoms.length === 0) {
-      return;
-    }
-
-    const { cx, cy } = atomBBox(atoms);
-    ctx.svg.call(ctx.zoom.transform, _compute2dFitTransform(ctx, atoms));
-
     const stereoMap = syncDisplayStereo(mol);
     for (const [bondId] of stereoMap) {
       const bond = mol.bonds.get(bondId);
@@ -881,6 +900,15 @@ export function create2DSceneRenderer(ctx) {
       }
     }
 
+    const projectedFitCoords = projectHiddenStereoHydrogens(mol, HIDDEN_STEREO_BOND_LENGTH, stereoMap);
+    const fitPoints = fitPointsFor2dView(mol, projectedFitCoords);
+    if (fitPoints.length === 0) {
+      return;
+    }
+
+    const { cx, cy } = atomBBox(fitPoints);
+    ctx.svg.call(ctx.zoom.transform, _compute2dFitTransform(ctx, fitPoints));
+
     ctx.state.setScene({ mol, hCounts, cx, cy, stereoMap });
     if (ctx.state.getPreserveSelectionOnNextRender()) {
       ctx.selection.syncSelectionToMolecule(mol);
@@ -903,13 +931,15 @@ export function create2DSceneRenderer(ctx) {
     if (!mol) {
       return;
     }
-    const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
-    if (atoms.length === 0) {
+    const stereoMap = ctx.state.getStereoMap();
+    const projectedFitCoords = projectHiddenStereoHydrogens(mol, HIDDEN_STEREO_BOND_LENGTH, stereoMap);
+    const fitPoints = fitPointsFor2dView(mol, projectedFitCoords);
+    if (fitPoints.length === 0) {
       return;
     }
-    const { cx, cy } = atomBBox(atoms);
+    const { cx, cy } = atomBBox(fitPoints);
     ctx.state.setCenter(cx, cy);
-    ctx.svg.call(ctx.zoom.transform, _compute2dFitTransform(ctx, atoms));
+    ctx.svg.call(ctx.zoom.transform, _compute2dFitTransform(ctx, fitPoints));
   }
 
   return {

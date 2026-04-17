@@ -2,6 +2,9 @@
 
 ## 2026-04-16
 
+- Rotate pendant ring systems through 12 discrete angles around the linker attachment bond when no default orientation is overlap-free, resolving NH-linker clashes with ortho-substituted rings
+- Fix spurious valence warning for N in 5-membered aromatic rings like `Cc1cncn1` by detecting ambiguous ring nitrogens (neutral, no H, no exocyclic bonds, all aromatic ring bonds) during Hückel perception and allowing two or more such atoms to be reassigned as pyrrole-like donors when their standard pyridine-like assignment fails Hückel's rule
+- Extend the same ambiguous-N fallback to rings with a single such nitrogen when no other N in the ring carries an explicit H, fixing false valence warnings for fused 5+6 heteroaromatics like `c1cnc2ccccc12`
 - Let a final ring-substituent touchup preserve exact outward ring-root and inter-ring ether bridge angles, so fused sugar oxygens and linked ring systems stay perfectly aligned without disturbing broader cleanup-stage selection
 - Fix asymmetric short aromatic ring-linker placement from fused aromatic roots by keeping the linker atoms in first-to-second attachment order and using the local attachment-ring outward axis for the fused root, so benzyl chains leave nitrogen-heavy fused rings cleanly and keep the intended 120-degree zigzag instead of collapsing or canting off the ring
 - Let terminal methyl and other heavy leaf ring substituents follow the exact local outward axis instead of snapping to a nearby discrete branch angle

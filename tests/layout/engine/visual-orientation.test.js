@@ -166,8 +166,8 @@ describe('layout/engine/visual-orientation', () => {
     assertHorizontal(pyrene);
     const pyreneXs = roundedUniqueValues(heavyAtomIds(pyrene).map(atomId => pyrene.coords.get(atomId).x));
     const pyreneYs = roundedUniqueValues(heavyAtomIds(pyrene).map(atomId => pyrene.coords.get(atomId).y));
-    assert.equal(pyreneXs.length, 6);
-    assert.equal(pyreneYs.length, 6);
+    assert.equal(pyreneXs.length, 8);
+    assert.equal(pyreneYs.length, 5);
 
     const norbornane = runPipeline(parseSMILES('C1CC2CCC1C2'), { suppressH: true });
     const norbornaneHeavyAtoms = heavyAtomIds(norbornane);

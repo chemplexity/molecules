@@ -76,6 +76,22 @@ describe('validateValence — valid molecules', () => {
     assert.deepEqual(validateValence(parseSMILES('c1ccncc1')), []);
   });
 
+  it('2-methylimidazole Cc1cncn1 produces no warnings', () => {
+    assert.deepEqual(validateValence(parseSMILES('Cc1cncn1')), []);
+  });
+
+  it('imidazole c1cn[nH]c1 produces no warnings', () => {
+    assert.deepEqual(validateValence(parseSMILES('c1cn[nH]c1')), []);
+  });
+
+  it('fused 5+6 ring with single unsubstituted ring-N produces no warnings', () => {
+    // The n in c1cnc2ccccc12 is the sole ambiguous N in the 5-membered ring (no H,
+    // no exocyclic bonds); it should be promoted to pyrrole-like (2π) to satisfy
+    // Hückel and be marked aromatic, preventing a false valence warning.
+    const smiles = 'NC(=O)[C@@H](Cc1cnc2ccccc12)NC(=O)[C@@H](CCCC1=CC=CC=C1)C[P@@](O)(=O)[C@@H](CC1=CC=CC=C1)NC(=O)OCC1=CC=CC=C1';
+    assert.deepEqual(validateValence(parseSMILES(smiles)), []);
+  });
+
   it('ammonium [NH4+] produces no warnings', () => {
     assert.deepEqual(validateValence(parseSMILES('[NH4+]')), []);
   });

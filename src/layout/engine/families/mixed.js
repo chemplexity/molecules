@@ -25,6 +25,7 @@ import { IMPROVEMENT_EPSILON, RING_SYSTEM_RESCUE_LIMITS } from '../constants.js'
 
 const LINKER_ZIGZAG_TURN_ANGLE = Math.PI / 3;
 const MAX_RING_LINKER_ATOMS = 3;
+const RING_ROTATION_OFFSETS = Array.from({ length: 12 }, (_, i) => (i * Math.PI * 2) / 12);
 
 function compareCanonicalIds(firstAtomId, secondAtomId, canonicalAtomRank) {
   const firstRank = canonicalAtomRank.get(firstAtomId) ?? Number.MAX_SAFE_INTEGER;
@@ -868,9 +869,10 @@ function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, l
  * @param {number} bondLength - Target bond length.
  * @param {number} turnSign - Zigzag turn sign (`-1` or `1`).
  * @param {boolean} mirror - Whether to mirror the attached ring block.
+ * @param {number} [ringRotationOffset=0] - Additional rotation offset (radians) applied to the ring block around the attachment bond.
  * @returns {Map<string, {x: number, y: number}>} Candidate linker plus ring coordinates.
  */
-function buildRingLinkerCandidate(layoutGraph, coords, firstRingSystem, linker, blockCoords, bondLength, turnSign, mirror) {
+function buildRingLinkerCandidate(layoutGraph, coords, firstRingSystem, linker, blockCoords, bondLength, turnSign, mirror, ringRotationOffset = 0) {
   const firstAttachmentPosition = coords.get(linker.firstAttachmentAtomId);
   const exitAngle = preferredRingLinkerExitAngle(layoutGraph, coords, firstRingSystem, linker.firstAttachmentAtomId);
   const fallbackRingCenter = centroid(firstRingSystem.atomIds.map(atomId => coords.get(atomId)).filter(Boolean));
@@ -886,7 +888,7 @@ function buildRingLinkerCandidate(layoutGraph, coords, firstRingSystem, linker, 
     }
   }
 
-  const transformedRingCoords = transformAttachedBlock(blockCoords, linker.secondAttachmentAtomId, currentPosition, segmentAngles[segmentAngles.length - 1], { mirror });
+  const transformedRingCoords = transformAttachedBlock(blockCoords, linker.secondAttachmentAtomId, currentPosition, segmentAngles[segmentAngles.length - 1] + ringRotationOffset, { mirror });
   for (const [atomId, position] of transformedRingCoords) {
     candidateCoords.set(atomId, position);
   }
@@ -1237,11 +1239,26 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
       let bestCandidateCoords = null;
       let bestCandidateCost = Number.POSITIVE_INFINITY;
       const rawCandidates = [];
+      const allowExpandedRingLinkerRotations =
+        (layoutGraph.traits.heavyAtomCount ?? 0) <= 60
+        && pendingRingSystem.ringSystem.atomIds.length <= 18;
       for (const turnSign of turnSigns) {
         for (const mirror of [false, true]) {
           rawCandidates.push({
             transformedCoords: buildRingLinkerCandidate(layoutGraph, coords, firstRingSystem, linker, blockLayout.coords, bondLength, turnSign, mirror)
           });
+        }
+      }
+      const defaultOverlapFree = rawCandidates.some(candidate => preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph).overlapCount === 0);
+      if (!defaultOverlapFree && allowExpandedRingLinkerRotations) {
+        for (const turnSign of turnSigns) {
+          for (const mirror of [false, true]) {
+            for (const ringRotationOffset of RING_ROTATION_OFFSETS) {
+              rawCandidates.push({
+                transformedCoords: buildRingLinkerCandidate(layoutGraph, coords, firstRingSystem, linker, blockLayout.coords, bondLength, turnSign, mirror, ringRotationOffset)
+              });
+            }
+          }
         }
       }
       for (const candidate of selectAttachedBlockCandidates(rawCandidates, coords, bondLength, layoutGraph)) {
