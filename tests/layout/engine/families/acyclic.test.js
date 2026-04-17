@@ -92,6 +92,22 @@ function backboneAngle(coords, previousAtomId, centerAtomId, nextAtomId) {
   return Math.acos(cosine) * (180 / Math.PI);
 }
 
+/**
+ * Returns the bond angle at a center atom in degrees.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} firstAtomId - First atom ID.
+ * @param {string} centerAtomId - Center atom ID.
+ * @param {string} secondAtomId - Second atom ID.
+ * @returns {number} Bond angle in degrees.
+ */
+function bondAngle(coords, firstAtomId, centerAtomId, secondAtomId) {
+  const firstVector = sub(coords.get(firstAtomId), coords.get(centerAtomId));
+  const secondVector = sub(coords.get(secondAtomId), coords.get(centerAtomId));
+  const denominator = Math.hypot(firstVector.x, firstVector.y) * Math.hypot(secondVector.x, secondVector.y) || 1;
+  const cosine = Math.max(-1, Math.min(1, (firstVector.x * secondVector.x + firstVector.y * secondVector.y) / denominator));
+  return Math.acos(cosine) * (180 / Math.PI);
+}
+
 describe('layout/engine/families/acyclic', () => {
   it('lays out an acyclic chain on a zigzag backbone', () => {
     const molecule = makeChain(4);
@@ -284,6 +300,14 @@ describe('layout/engine/families/acyclic', () => {
         }
       }
     }
+  });
+
+  it('keeps terminal alkene carbon leaves on exact trigonal-planar angles when attached to an acyclic backbone', () => {
+    const result = runPipeline(parseSMILES('CCCC(=C)C(=O)OOOC(=O)C(=C)CCC'), { suppressH: true });
+
+    assert.ok(Math.abs(bondAngle(result.coords, 'C11', 'C13', 'C14') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C14', 'C13', 'C15') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C11', 'C13', 'C15') - 120) < 1e-6);
   });
 
   it('keeps long explicitly stereo polyenes extended instead of curling them into a compact spiral', () => {

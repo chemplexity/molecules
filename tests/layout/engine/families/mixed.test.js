@@ -108,6 +108,12 @@ function bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighb
   return angularDifference(firstAngle, secondAngle);
 }
 
+function sharedRingCount(layoutGraph, firstAtomId, secondAtomId) {
+  const firstRings = layoutGraph.atomToRings.get(firstAtomId) ?? [];
+  const secondRings = layoutGraph.atomToRings.get(secondAtomId) ?? [];
+  return secondRings.filter(ring => firstRings.includes(ring)).length;
+}
+
 describe('layout/engine/families/mixed', () => {
   it('lays out a ring scaffold plus acyclic substituent through the mixed orchestrator', () => {
     const graph = createLayoutGraph(makeMethylbenzene());
@@ -335,6 +341,17 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(horizontalDeviation < 0.2, `expected the benzene substituent bond to read nearly horizontal, got ${horizontalDeviation.toFixed(3)} rad`);
   });
 
+  it('keeps reported ester alkoxy oxygens on the strict 120-degree continuation angle', () => {
+    const graph = createLayoutGraph(parseSMILES('COC(=O)C1=NC=C(S1)C(C)=O'), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const alkoxyAngle = bondAngleAtAtom(result.coords, 'O2', 'C1', 'C3');
+
+    assert.equal(result.supported, true);
+    assert.ok(Math.abs(alkoxyAngle - (2 * Math.PI) / 3) < 0.05, `expected ester alkoxy angle near 120 degrees, got ${((alkoxyAngle * 180) / Math.PI).toFixed(2)}`);
+  });
+
   it('keeps a fused-ring methyl substituent outside the ring system', () => {
     const graph = createLayoutGraph(makeMethylnaphthalene());
     const component = graph.components[0];
@@ -386,6 +403,52 @@ describe('layout/engine/families/mixed', () => {
 
     assert.equal(result.supported, true);
     assert.equal(checkedAnchors.length, 2, `expected two sulfur-ring methyl anchors, checked ${checkedAnchors.length}`);
+  });
+
+  it('spreads crowded saturated ring branches through the exterior gap instead of pinching them against ring bonds', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1C(C)C(N)(C(C)OC(C)=O)C(N)C1O'), { suppressH: true });
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, adjacency, plan, graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
+    const ringAtomSet = new Set(graph.ringSystems[0]?.atomIds ?? []);
+    const crowdedRingAtomId = component.atomIds.find(atomId => {
+      if (!ringAtomSet.has(atomId)) {
+        return false;
+      }
+      const neighbors = graph.sourceMolecule.atoms.get(atomId)?.getNeighbors(graph.sourceMolecule).filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H') ?? [];
+      const ringNeighborCount = neighbors.filter(neighborAtom => ringAtomSet.has(neighborAtom.id)).length;
+      const exocyclicHeavyCount = neighbors.filter(neighborAtom => !ringAtomSet.has(neighborAtom.id)).length;
+      return ringNeighborCount === 2 && exocyclicHeavyCount === 2;
+    });
+
+    assert.equal(result.supported, true);
+    assert.ok(crowdedRingAtomId, 'expected a saturated ring atom with two exocyclic heavy branches');
+    assert.equal(audit.severeOverlapCount, 0);
+
+    const separations = sortedNeighborSeparations(adjacency, result.coords, crowdedRingAtomId);
+    assert.equal(separations.length, 4, `expected four placed heavy-neighbor separations at ${crowdedRingAtomId}`);
+    assert.ok(separations[0] > 1.3, `expected ${crowdedRingAtomId} to avoid pinched branch gaps, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`);
+    assert.ok(separations[3] < 2.1, `expected ${crowdedRingAtomId} to avoid a giant exterior branch gap, got maximum separation ${((separations[3] * 180) / Math.PI).toFixed(2)} degrees`);
+  });
+
+  it('rotates a crowded nitrile-bearing quaternary branch into a clean tetrahedral slot so the nitrile stays linear', () => {
+    const graph = createLayoutGraph(parseSMILES('CC(CC1CC(N)C(=N)NC1=N)C(C)(N)C#N'), { suppressH: true });
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, adjacency, plan, graph.options.bondLength);
+    const separations = sortedNeighborSeparations(adjacency, result.coords, 'C13');
+    const nitrileAngle = bondAngleAtAtom(result.coords, 'C16', 'C13', 'N17');
+
+    assert.equal(result.supported, true);
+    assert.equal(separations.length, 4, 'expected the quaternary nitrile center to place four heavy neighbors');
+    assert.ok(
+      separations.every(separation => Math.abs(separation - (Math.PI / 2)) < 0.05),
+      `expected the quaternary center to use clean tetrahedral-like quadrants, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+    assert.ok(Math.abs(nitrileAngle - Math.PI) < 1e-6, `expected the nitrile branch to stay linear, got ${((nitrileAngle * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
   it('keeps a heavy ring substituent on the outward axis even when the anchor also carries an explicit hydrogen', () => {
@@ -522,6 +585,31 @@ describe('layout/engine/families/mixed', () => {
     assert.deepEqual(inwardRingSubstituents(secondGraph, secondResult.coords), []);
   });
 
+  it('keeps safe fused-junction substituents on the exact continuation of the shared junction bond', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4'),
+      { suppressH: true }
+    );
+    const component = graph.components[0];
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), buildScaffoldPlan(graph, component), graph.options.bondLength);
+    const anchorAtomId = 'C7';
+    const heavyChildAtomId = 'O8';
+    const ringNeighborIds = graph.sourceMolecule.atoms.get(anchorAtomId)
+      .getNeighbors(graph.sourceMolecule)
+      .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== heavyChildAtomId && (graph.atomToRings.get(neighborAtom.id)?.length ?? 0) > 0)
+      .map(neighborAtom => neighborAtom.id);
+    const sharedJunctionNeighborId = ringNeighborIds.find(neighborAtomId => sharedRingCount(graph, anchorAtomId, neighborAtomId) > 1);
+    const straightJunctionAngle = angleOf(sub(result.coords.get(anchorAtomId), result.coords.get(sharedJunctionNeighborId)));
+    const substituentAngle = angleOf(sub(result.coords.get(heavyChildAtomId), result.coords.get(anchorAtomId)));
+
+    assert.equal(ringNeighborIds.length, 3);
+    assert.equal(sharedJunctionNeighborId, 'C31');
+    assert.ok(
+      angularDifference(substituentAngle, straightJunctionAngle) < 1e-6,
+      `expected fused-junction substituent to continue straight off the shared junction bond, got ${angularDifference(substituentAngle, straightJunctionAngle).toFixed(6)} rad`
+    );
+  });
+
   it('avoids stacking a pending ring attachment onto an occupied preferred angle at a crowded quaternary center', () => {
     const graph = createLayoutGraph(parseSMILES('C1=CC=C(C=C1)C2(C3CC3)C(=O)NC(=O)N2'), { suppressH: true });
     const component = graph.components[0];
@@ -629,6 +717,39 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(firstLinkerAngle - (2 * Math.PI) / 3) < 0.05, `expected fused-root linker angle near 120 degrees, got ${((firstLinkerAngle * 180) / Math.PI).toFixed(2)}`);
     assert.ok(Math.abs(benzylicLinkerAngle - (2 * Math.PI) / 3) < 0.05, `expected benzylic linker angle near 120 degrees, got ${((benzylicLinkerAngle * 180) / Math.PI).toFixed(2)}`);
     assert.ok(Math.abs(ringAttachmentAngle - (2 * Math.PI) / 3) < 0.05, `expected aromatic attachment angle near 120 degrees, got ${((ringAttachmentAngle * 180) / Math.PI).toFixed(2)}`);
+  });
+
+  it('rotates directly attached ring blocks around the parent bond when that clears multiple outward-axis failures at once', () => {
+    const graph = createLayoutGraph(parseSMILES('CCN(C1CCC(CC1)[NH+](C)CC1=CC=CC(OCCOC)=C1)C1=CC(Cl)=CC(C(=O)NCC2=C(C)NC(C)=CC2=O)=C1C'), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength, bondValidationClasses: result.bondValidationClasses });
+    const attachmentRing = (graph.atomToRings.get('C25') ?? [])[0];
+    const chlorineRing = (graph.atomToRings.get('C27') ?? [])[0];
+    const methylRing = (graph.atomToRings.get('C44') ?? [])[0];
+    const attachmentOutwardAngle = angleOf(sub(
+      result.coords.get('C25'),
+      centroid(attachmentRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))
+    ));
+    const chlorineOutwardAngle = angleOf(sub(
+      result.coords.get('C27'),
+      centroid(chlorineRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))
+    ));
+    const methylOutwardAngle = angleOf(sub(
+      result.coords.get('C44'),
+      centroid(methylRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))
+    ));
+    const attachmentDeviation = angularDifference(attachmentOutwardAngle, angleOf(sub(result.coords.get('N3'), result.coords.get('C25'))));
+    const chlorineDeviation = angularDifference(chlorineOutwardAngle, angleOf(sub(result.coords.get('Cl28'), result.coords.get('C27'))));
+    const methylDeviation = angularDifference(methylOutwardAngle, angleOf(sub(result.coords.get('C45'), result.coords.get('C44'))));
+
+    assert.equal(result.supported, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.ok(attachmentDeviation < 1e-6, `expected the attached-ring root bond to follow the local outward axis, got ${attachmentDeviation.toFixed(6)} rad`);
+    assert.ok(chlorineDeviation < 1e-6, `expected the chlorine substituent to follow the local outward axis, got ${chlorineDeviation.toFixed(6)} rad`);
+    assert.ok(methylDeviation < 1e-6, `expected the nearby methyl substituent to follow the local outward axis, got ${methylDeviation.toFixed(6)} rad`);
   });
 
   it('lays out a macrocycle root scaffold plus substituent through the mixed orchestrator', () => {

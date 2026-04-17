@@ -1,5 +1,5 @@
 /**
- * Deduplicated SMILES strings copied from docs/agent/scripts/data/smilesDatabase.js.
+ * Large list of SMILES strings
  */
 export const stressTestMolecules = [
   'CC(C)O[P@](O)(=O)OC[C@@H](N)C(O)=O',

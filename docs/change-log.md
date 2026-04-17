@@ -2,6 +2,17 @@
 
 ## 2026-04-16
 
+- Keep safe fused-junction substituents on the exact continuation of the shared junction bond instead of a centroid-biased direction
+- Auto-orient fresh chiral layouts with heavy-atom stereobonds so ring-junction stereo bonds avoid awkward diagonal page angles without rotating stereo-hydrogen cases
+- Break mixed attached-ring orientation ties by total residual ring-substituent outward deviation so exact aryl substituent angles win over merely acceptable poses
+- Let mixed direct-attached ring blocks search discrete parent-bond rotations so crowded multi-substituted rings can clear multiple outward-angle failures without creating overlaps
+- Re-snap terminal alkene and carbonyl leaves after acyclic backbone normalization so conjugated trigonal centers stay exact
+- Make crowded branch-rotation scoring prefer slots that preserve exact downstream linear and trigonal geometry
+- Re-run hypervalent angle tidy after overlap-clearing ring-substituent rotations so linked sugar phosphates stay both separated and cross-like
+- Let ring-substituent tidy rotate linked phosphate branches around their linker oxygens so sugar phosphates stop piling terminal oxygens on top of each other
+- Snap visible stereochemical hydrogens to exact cardinal axes when that stays essentially as open as the best free-angle projection
+- Keep simple acyclic ester and ether oxygens on their exact safe 120-degree continuation angles instead of canting them off-angle
+- Let crowded saturated ring carbons with two exocyclic heavy branches spread those branches through the ring exterior gap instead of pinching them against ring bonds
 - Rotate pendant ring systems through 12 discrete angles around the linker attachment bond when no default orientation is overlap-free, resolving NH-linker clashes with ortho-substituted rings
 - Fix spurious valence warning for N in 5-membered aromatic rings like `Cc1cncn1` by detecting ambiguous ring nitrogens (neutral, no H, no exocyclic bonds, all aromatic ring bonds) during Hückel perception and allowing two or more such atoms to be reassigned as pyrrole-like donors when their standard pyridine-like assignment fails Hückel's rule
 - Extend the same ambiguous-N fallback to rings with a single such nitrogen when no other N in the ring carries an explicit H, fixing false valence warnings for fused 5+6 heteroaromatics like `c1cnc2ccccc12`

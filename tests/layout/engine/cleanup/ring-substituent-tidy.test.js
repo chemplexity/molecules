@@ -5,8 +5,12 @@ import { parseSMILES } from '../../../../src/io/smiles.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { runRingSubstituentTidy } from '../../../../src/layout/engine/cleanup/ring-substituent-tidy.js';
 import { add, centroid, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
-import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
-import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
+import { createLayoutGraph, createLayoutGraphFromNormalized } from '../../../../src/layout/engine/model/layout-graph.js';
+import { normalizeOptions } from '../../../../src/layout/engine/options.js';
+import { layoutSupportedComponents } from '../../../../src/layout/engine/placement/component-layout.js';
+import { classifyFamily, runPipeline } from '../../../../src/layout/engine/pipeline.js';
+import { resolveProfile } from '../../../../src/layout/engine/profile.js';
+import { resolvePolicy } from '../../../../src/layout/engine/standards/profile-policy.js';
 
 describe('layout/engine/cleanup/ring-substituent-tidy', () => {
   it('rotates tangential anisole methoxy substituents back toward an outward ring direction', () => {
@@ -69,6 +73,37 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
     assert.ok(tidied.nudges > 0);
     assert.equal(afterAudit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(afterAudit.bondLengthFailureCount, 0);
+  });
+
+  it('rotates linked phosphate subtrees around their linker oxygens to clear severe sugar-ring clashes', () => {
+    const smiles = 'O[C@H]1[C@H](OP(O)(O)=O)[C@H](OP(O)(O)=O)[C@@H](OP(O)(O)=O)[C@@H](OP(O)(O)=O)[C@@H]1OP(O)(O)=O';
+    const normalizedOptions = normalizeOptions({ suppressH: true });
+    const graph = createLayoutGraphFromNormalized(parseSMILES(smiles), normalizedOptions);
+    const familySummary = classifyFamily(graph);
+    const policy = resolvePolicy(resolveProfile(normalizedOptions.profile), {
+      ...graph.traits,
+      ...familySummary
+    });
+    const placement = layoutSupportedComponents(graph, policy);
+    const beforeAudit = auditLayout(graph, placement.coords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+
+    const tidied = runRingSubstituentTidy(graph, placement.coords, {
+      bondLength: normalizedOptions.bondLength,
+      frozenAtomIds: placement.frozenAtomIds
+    });
+    const afterAudit = auditLayout(graph, tidied.coords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+
+    assert.equal(beforeAudit.severeOverlapCount, 4);
+    assert.ok(tidied.nudges > 0);
+    assert.equal(afterAudit.severeOverlapCount, 0);
+    assert.equal(afterAudit.bondLengthFailureCount, 0);
+    assert.equal(afterAudit.ok, true);
   });
 
   it('keeps later post-hook cleanup from worsening a borderline ring-substituent readability case', () => {

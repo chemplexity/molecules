@@ -7,7 +7,7 @@ import { transformAttachedBlock } from '../placement/linkers.js';
 import { auditLayout } from '../audit/audit.js';
 import { assignBondValidationClass, resolvePlacementValidationClass } from '../placement/bond-validation.js';
 import { chooseAttachmentAngle, placeRemainingBranches } from '../placement/substituents.js';
-import { findSevereOverlaps, measureFocusedPlacementCost, measureLayoutCost } from '../audit/invariants.js';
+import { findSevereOverlaps, measureFocusedPlacementCost, measureLayoutCost, measureRingSubstituentReadability } from '../audit/invariants.js';
 import { layoutAcyclicFamily } from './acyclic.js';
 import { layoutBridgedFamily } from './bridged.js';
 import {
@@ -26,6 +26,8 @@ import { IMPROVEMENT_EPSILON, RING_SYSTEM_RESCUE_LIMITS } from '../constants.js'
 const LINKER_ZIGZAG_TURN_ANGLE = Math.PI / 3;
 const MAX_RING_LINKER_ATOMS = 3;
 const RING_ROTATION_OFFSETS = Array.from({ length: 12 }, (_, i) => (i * Math.PI * 2) / 12);
+const ATTACHED_BLOCK_OUTWARD_READABILITY_PENALTY = 120;
+const ATTACHED_BLOCK_INWARD_READABILITY_PENALTY = 360;
 
 function compareCanonicalIds(firstAtomId, secondAtomId, canonicalAtomRank) {
   const firstRank = canonicalAtomRank.get(firstAtomId) ?? Number.MAX_SAFE_INTEGER;
@@ -869,7 +871,7 @@ function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, l
  * @param {number} bondLength - Target bond length.
  * @param {number} turnSign - Zigzag turn sign (`-1` or `1`).
  * @param {boolean} mirror - Whether to mirror the attached ring block.
- * @param {number} [ringRotationOffset=0] - Additional rotation offset (radians) applied to the ring block around the attachment bond.
+ * @param {number} [ringRotationOffset] - Additional rotation offset (radians) applied to the ring block around the attachment bond.
  * @returns {Map<string, {x: number, y: number}>} Candidate linker plus ring coordinates.
  */
 function buildRingLinkerCandidate(layoutGraph, coords, firstRingSystem, linker, blockCoords, bondLength, turnSign, mirror, ringRotationOffset = 0) {
@@ -907,7 +909,7 @@ function buildRingLinkerCandidate(layoutGraph, coords, firstRingSystem, linker, 
  * @param {number} bondLength - Target bond length.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
- * @returns {number} Candidate layout cost.
+ * @returns {{layoutCost: number, totalCost: number, overlapCount: number, presentationPenalty: number, readability: {failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}}} Candidate layout score.
  */
 function scoreAttachedBlockOrientation(
   adjacency,
@@ -929,11 +931,99 @@ function scoreAttachedBlockOrientation(
   }
 
   placeRemainingBranches(adjacency, canonicalAtomRank, candidateCoords, primaryNonRingAtomIds, [...candidateSeedAtomIds], bondLength, layoutGraph, branchConstraints);
+  const readability = measureRingSubstituentReadability(layoutGraph, candidateCoords);
+  const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
   const changedAtomIds = [...candidateCoords.keys()].filter(atomId => !coords.has(atomId));
-  if (changedAtomIds.length >= 12) {
-    return measureFocusedPlacementCost(layoutGraph, candidateCoords, bondLength, changedAtomIds);
+  const layoutCost =
+    changedAtomIds.length >= 12
+      ? measureFocusedPlacementCost(layoutGraph, candidateCoords, bondLength, changedAtomIds)
+      : measureLayoutCost(layoutGraph, candidateCoords, bondLength);
+  const readabilityPenalty =
+    readability.outwardAxisFailureCount * ATTACHED_BLOCK_OUTWARD_READABILITY_PENALTY
+    + readability.inwardSubstituentCount * ATTACHED_BLOCK_INWARD_READABILITY_PENALTY;
+  return {
+    layoutCost,
+    totalCost: layoutCost + readabilityPenalty,
+    overlapCount,
+    presentationPenalty: readability.totalOutwardDeviation ?? 0,
+    readability
+  };
+}
+
+/**
+ * Selects the best fully scored attached-block orientation from a candidate set.
+ * @param {Array<{transformedCoords: Map<string, {x: number, y: number}>}>} candidates - Candidate attached-block orientations.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {Map<string, number>} canonicalAtomRank - Canonical atom-rank map.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Set<string>} primaryNonRingAtomIds - Heavy non-ring atom IDs.
+ * @param {Iterable<string>} placedAtomIds - Already placed atom IDs.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
+ * @returns {{transformedCoords: Map<string, {x: number, y: number}>, score: {layoutCost: number, totalCost: number, overlapCount: number, presentationPenalty: number, readability: {failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}}}|null} Best scored candidate.
+ */
+function pickBestAttachedBlockOrientation(
+  candidates,
+  adjacency,
+  canonicalAtomRank,
+  coords,
+  primaryNonRingAtomIds,
+  placedAtomIds,
+  bondLength,
+  layoutGraph,
+  branchConstraints = null
+) {
+  let bestCandidate = null;
+  let bestScore = null;
+
+  for (const candidate of candidates) {
+    const candidateScore = scoreAttachedBlockOrientation(
+      adjacency,
+      canonicalAtomRank,
+      coords,
+      primaryNonRingAtomIds,
+      placedAtomIds,
+      candidate.transformedCoords,
+      bondLength,
+      layoutGraph,
+      branchConstraints
+    );
+    if (
+      bestScore == null
+      || candidateScore.overlapCount < bestScore.overlapCount
+      || (
+        candidateScore.overlapCount === bestScore.overlapCount
+        && candidateScore.readability.failingSubstituentCount < bestScore.readability.failingSubstituentCount
+      )
+      || (
+        candidateScore.overlapCount === bestScore.overlapCount
+        && candidateScore.readability.failingSubstituentCount === bestScore.readability.failingSubstituentCount
+        && candidateScore.presentationPenalty < bestScore.presentationPenalty - IMPROVEMENT_EPSILON
+      )
+      || (
+        candidateScore.overlapCount === bestScore.overlapCount
+        && Math.abs(candidateScore.presentationPenalty - bestScore.presentationPenalty) <= IMPROVEMENT_EPSILON
+        && candidateScore.totalCost < bestScore.totalCost - IMPROVEMENT_EPSILON
+      )
+      || (
+        candidateScore.overlapCount === bestScore.overlapCount
+        && Math.abs(candidateScore.presentationPenalty - bestScore.presentationPenalty) <= IMPROVEMENT_EPSILON
+        && Math.abs(candidateScore.totalCost - bestScore.totalCost) <= IMPROVEMENT_EPSILON
+        && bestCandidate
+        && compareCoordMapsDeterministically(
+          candidate.transformedCoords,
+          bestCandidate.transformedCoords,
+          layoutGraph.canonicalAtomRank
+        ) < 0
+      )
+    ) {
+      bestCandidate = candidate;
+      bestScore = candidateScore;
+    }
   }
-  return measureLayoutCost(layoutGraph, candidateCoords, bondLength);
+
+  return bestCandidate && bestScore ? { transformedCoords: bestCandidate.transformedCoords, score: bestScore } : null;
 }
 
 /**
@@ -1237,7 +1327,6 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
 
       const turnSigns = linker.chainAtomIds.length === 0 ? [1] : [-1, 1];
       let bestCandidateCoords = null;
-      let bestCandidateCost = Number.POSITIVE_INFINITY;
       const rawCandidates = [];
       const allowExpandedRingLinkerRotations =
         (layoutGraph.traits.heavyAtomCount ?? 0) <= 60
@@ -1261,35 +1350,18 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
           }
         }
       }
-      for (const candidate of selectAttachedBlockCandidates(rawCandidates, coords, bondLength, layoutGraph)) {
-        const candidateCost = scoreAttachedBlockOrientation(
-          adjacency,
-          layoutGraph.canonicalAtomRank,
-          coords,
-          primaryNonRingAtomIds,
-          placedAtomIds,
-          candidate.transformedCoords,
-          bondLength,
-          layoutGraph,
-          macrocycleBranchConstraints
-        );
-      if (
-        candidateCost < bestCandidateCost - IMPROVEMENT_EPSILON
-        || (
-          Math.abs(candidateCost - bestCandidateCost) <= IMPROVEMENT_EPSILON
-          && bestCandidateCoords
-          && compareCoordMapsDeterministically(
-            candidate.transformedCoords,
-            bestCandidateCoords,
-            layoutGraph.canonicalAtomRank
-          ) < 0
-        )
-        || bestCandidateCoords == null
-      ) {
-        bestCandidateCost = candidateCost;
-        bestCandidateCoords = candidate.transformedCoords;
-      }
-      }
+      const bestCandidate = pickBestAttachedBlockOrientation(
+        selectAttachedBlockCandidates(rawCandidates, coords, bondLength, layoutGraph),
+        adjacency,
+        layoutGraph.canonicalAtomRank,
+        coords,
+        primaryNonRingAtomIds,
+        placedAtomIds,
+        bondLength,
+        layoutGraph,
+        macrocycleBranchConstraints
+      );
+      bestCandidateCoords = bestCandidate?.transformedCoords ?? null;
 
       if (!bestCandidateCoords) {
         remainingAfterLinkers.push(pendingRingSystem);
@@ -1342,51 +1414,62 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
         attachment.attachmentAtomId,
         macrocycleBranchConstraints
       );
-      const targetPosition = add(parentPosition, fromAngle(attachmentAngle, bondLength));
-      const candidateOrientations = selectAttachedBlockCandidates(
-        [
-          {
-            transformedCoords: transformAttachedBlock(blockLayout.coords, attachment.attachmentAtomId, targetPosition, attachmentAngle)
-          },
-          {
-            transformedCoords: transformAttachedBlock(blockLayout.coords, attachment.attachmentAtomId, targetPosition, attachmentAngle, { mirror: true })
-          }
-        ],
+      const buildDirectAttachmentCandidate = (resolvedAttachmentAngle, mirror, ringRotationOffset = 0) => {
+        const resolvedTargetPosition = add(parentPosition, fromAngle(resolvedAttachmentAngle, bondLength));
+        return {
+          transformedCoords: transformAttachedBlock(
+            blockLayout.coords,
+            attachment.attachmentAtomId,
+            resolvedTargetPosition,
+            resolvedAttachmentAngle + ringRotationOffset,
+            { mirror }
+          )
+        };
+      };
+      const rawAttachedBlockCandidates = [
+        buildDirectAttachmentCandidate(attachmentAngle, false),
+        buildDirectAttachmentCandidate(attachmentAngle, true)
+      ];
+      let bestAttachedBlockCandidate = pickBestAttachedBlockOrientation(
+        selectAttachedBlockCandidates(rawAttachedBlockCandidates, coords, bondLength, layoutGraph),
+        adjacency,
+        layoutGraph.canonicalAtomRank,
         coords,
+        primaryNonRingAtomIds,
+        placedAtomIds,
         bondLength,
-        layoutGraph
+        layoutGraph,
+        macrocycleBranchConstraints
       );
-      let bestAttachedBlock = null;
-      let bestAttachedBlockCost = Number.POSITIVE_INFINITY;
-      for (const candidate of candidateOrientations) {
-        const candidateCost = scoreAttachedBlockOrientation(
+      const allowExpandedDirectAttachmentRotations =
+        (layoutGraph.traits.heavyAtomCount ?? 0) <= 60
+        && pendingRingSystem.ringSystem.atomIds.length <= 18;
+      if (
+        allowExpandedDirectAttachmentRotations
+        && (bestAttachedBlockCandidate?.score.readability.failingSubstituentCount ?? 0) > 0
+      ) {
+        const expandedCandidates = [...rawAttachedBlockCandidates];
+        for (const mirror of [false, true]) {
+          for (const attachmentAngleOffset of RING_ROTATION_OFFSETS) {
+            if (Math.abs(attachmentAngleOffset) <= IMPROVEMENT_EPSILON) {
+              continue;
+            }
+            expandedCandidates.push(buildDirectAttachmentCandidate(attachmentAngle + attachmentAngleOffset, mirror));
+          }
+        }
+        bestAttachedBlockCandidate = pickBestAttachedBlockOrientation(
+          expandedCandidates,
           adjacency,
           layoutGraph.canonicalAtomRank,
           coords,
           primaryNonRingAtomIds,
           placedAtomIds,
-          candidate.transformedCoords,
           bondLength,
           layoutGraph,
           macrocycleBranchConstraints
         );
-        if (
-          candidateCost < bestAttachedBlockCost - IMPROVEMENT_EPSILON
-          || (
-            Math.abs(candidateCost - bestAttachedBlockCost) <= IMPROVEMENT_EPSILON
-            && bestAttachedBlock
-            && compareCoordMapsDeterministically(
-              candidate.transformedCoords,
-              bestAttachedBlock,
-              layoutGraph.canonicalAtomRank
-            ) < 0
-          )
-          || bestAttachedBlock == null
-        ) {
-          bestAttachedBlockCost = candidateCost;
-          bestAttachedBlock = candidate.transformedCoords;
-        }
       }
+      const bestAttachedBlock = bestAttachedBlockCandidate?.transformedCoords ?? null;
       if (!bestAttachedBlock) {
         remainingAfterAttachments.push(pendingRingSystem);
         continue;

@@ -509,6 +509,30 @@ describe('create2DSceneRenderer', () => {
     assert.ok(Math.hypot(hydrogenPoint.x - parentPoint.x, hydrogenPoint.y - parentPoint.y) > 1e-6, 'expected projected hydrogen SVG point to differ from the parent atom point');
   });
 
+  it('keeps the reported thio-sugar stereo hydrogens on exact vertical projections', () => {
+    const { renderer } = makeRenderer();
+    const mol = parseSMILES('CC1=N[C@H]2[C@H](O[C@@H](CO)[C@H](O)[C@H]2O)S1');
+    const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    applyCoords(mol, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+
+    renderer.render2d(mol, { preserveGeometry: true });
+
+    const stereoHydrogens = [...mol.atoms.values()].filter(atom => atom.name === 'H' && atom.visible !== false);
+    assert.ok(stereoHydrogens.length > 0, 'expected visible stereo hydrogens');
+    for (const hydrogen of stereoHydrogens) {
+      const [parent] = hydrogen.getNeighbors(mol);
+      assert.ok(parent, `expected ${hydrogen.id} to have a heavy-atom parent`);
+      const hydrogenPoint = renderer.toSVGPt(hydrogen);
+      const parentPoint = renderer.toSVGPt(parent);
+      assert.ok(Math.abs(hydrogenPoint.x - parentPoint.x) <= 1e-6, `expected ${hydrogen.id} to stay on the parent vertical axis`);
+      assert.ok(Math.abs(hydrogenPoint.y - parentPoint.y) > 1e-6, `expected ${hydrogen.id} to project away from ${parent.id}`);
+    }
+  });
+
   it('fits projected explicit stereo hydrogens into the 2D viewport', () => {
     const { renderer, records } = makeRenderer();
     const mol = parseSMILES('[H][C@]12CS[C@]([H])(CCCCC(O)=O)[C@@]1([H])NC(=O)N2');

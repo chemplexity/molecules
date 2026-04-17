@@ -139,6 +139,34 @@ describe('layout/engine/placement/branch-placement', () => {
     assert.ok(Math.abs(coords.get('a3').y) < 1e-6);
   });
 
+  it('snaps terminal alkene carbon leaves to the exact safe trigonal bisector even when it is off the 30-degree lattice', () => {
+    const molecule = new Molecule();
+    molecule.addAtom('a0', 'C');
+    molecule.addAtom('a1', 'C');
+    molecule.addAtom('a2', 'C');
+    molecule.addAtom('a3', 'C');
+    molecule.addBond('b0', 'a0', 'a1', {}, false);
+    molecule.addBond('b1', 'a1', 'a2', {}, false);
+    molecule.addBond('b2', 'a1', 'a3', { order: 2 }, false);
+    const graph = createLayoutGraph(molecule, { suppressH: true });
+    const adjacency = new Map([
+      ['a0', ['a1']],
+      ['a1', ['a0', 'a2', 'a3']],
+      ['a2', ['a1']],
+      ['a3', ['a1']]
+    ]);
+    const coords = new Map([
+      ['a1', { x: 0, y: 0 }],
+      ['a0', { x: 1.299038105676658, y: -0.75 }],
+      ['a2', { x: -1.299038105676658, y: -0.75 }]
+    ]);
+
+    placeRemainingBranches(adjacency, graph.canonicalAtomRank, coords, new Set(['a0', 'a1', 'a2', 'a3']), ['a0', 'a1', 'a2'], 1.5, graph);
+
+    assert.ok(Math.abs(coords.get('a3').x) < 1e-6);
+    assert.ok(Math.abs(coords.get('a3').y - 1.5) < 1e-6);
+  });
+
   it('prefers a cross-like spread for hypervalent sulfur centers with one placed single bond', () => {
     const molecule = new Molecule();
     molecule.addAtom('c0', 'C');

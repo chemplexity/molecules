@@ -16,7 +16,9 @@ const DEG30 = Math.PI / 6;
 const DEG15 = Math.PI / 12;
 const ANGLE_SCORE_TIEBREAK_RATIO = 0.05;
 const MAX_BRANCH_RECURSION_DEPTH = 120;
+const ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT = 20;
 const CROSS_LIKE_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
+const STRICT_ACYCLIC_CONTINUATION_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
 
 /**
  * Normalizes an angle into the signed `(-pi, pi]` range.
@@ -103,6 +105,48 @@ function mergeCandidateAngles(baseAngles, extraAngles) {
     }
   }
   return mergedAngles;
+}
+
+/**
+ * Returns the bisector of the largest open angular gap between occupied bonds.
+ * When multiple gaps tie, the bisector closest to an optional preferred angle wins.
+ * @param {number[]} occupiedAngles - Occupied bond angles in radians.
+ * @param {number|null} preferredAngle - Optional tie-break angle in radians.
+ * @returns {number|null} Largest-gap bisector in radians, or null when unsupported.
+ */
+function largestAngularGapBisector(occupiedAngles, preferredAngle = null) {
+  if (occupiedAngles.length === 0) {
+    return null;
+  }
+  const sortedAngles = [...occupiedAngles]
+    .map(normalizeSignedAngle)
+    .sort((firstAngle, secondAngle) => firstAngle - secondAngle)
+    .filter((angle, index, angles) => index === 0 || angularDifference(angle, angles[index - 1]) > 1e-9);
+
+  if (sortedAngles.length === 0) {
+    return null;
+  }
+
+  let bestBisector = null;
+  let bestGap = -Infinity;
+  let bestPenalty = Infinity;
+  for (let index = 0; index < sortedAngles.length; index++) {
+    const gapStart = sortedAngles[index];
+    const nextIndex = (index + 1) % sortedAngles.length;
+    let gapEnd = sortedAngles[nextIndex];
+    if (nextIndex === 0) {
+      gapEnd += 2 * Math.PI;
+    }
+    const gap = gapEnd - gapStart;
+    const bisector = normalizeSignedAngle(gapStart + gap / 2);
+    const preferredPenalty = preferredAngle == null ? 0 : angularDifference(bisector, preferredAngle);
+    if (gap > bestGap + 1e-9 || (Math.abs(gap - bestGap) <= 1e-9 && preferredPenalty < bestPenalty - 1e-9)) {
+      bestGap = gap;
+      bestPenalty = preferredPenalty;
+      bestBisector = bisector;
+    }
+  }
+  return bestBisector;
 }
 
 /**
@@ -368,13 +412,13 @@ function isLinearCenter(layoutGraph, atomId) {
 }
 
 /**
- * Returns whether a multiple-bond neighbor is a terminal hetero substituent.
+ * Returns whether a multiple-bond neighbor is a terminal heavy substituent leaf.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} centerAtomId - Central atom ID.
  * @param {object} bond - Incident bond descriptor.
- * @returns {boolean} True when the neighbor is a terminal hetero atom.
+ * @returns {boolean} True when the neighbor is a terminal heavy leaf.
  */
-function isTerminalMultipleBondHetero(layoutGraph, centerAtomId, bond) {
+function isTerminalMultipleBondLeaf(layoutGraph, centerAtomId, bond) {
   if (!layoutGraph || !bond || bond.kind !== 'covalent' || bond.aromatic) {
     return false;
   }
@@ -384,10 +428,25 @@ function isTerminalMultipleBondHetero(layoutGraph, centerAtomId, bond) {
 
   const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
   const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-  if (!neighborAtom || neighborAtom.element === 'H' || neighborAtom.element === 'C') {
+  if (!neighborAtom || neighborAtom.element === 'H') {
     return false;
   }
   return neighborAtom.heavyDegree === 1;
+}
+
+/**
+ * Returns whether a multiple-bond neighbor is a terminal hetero substituent.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Central atom ID.
+ * @param {object} bond - Incident bond descriptor.
+ * @returns {boolean} True when the neighbor is a terminal hetero atom.
+ */
+function isTerminalMultipleBondHetero(layoutGraph, centerAtomId, bond) {
+  if (!isTerminalMultipleBondLeaf(layoutGraph, centerAtomId, bond)) {
+    return false;
+  }
+  const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+  return layoutGraph.atoms.get(neighborAtomId)?.element !== 'C';
 }
 
 /**
@@ -421,6 +480,44 @@ function isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childA
   if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
     return false;
   }
+  return true;
+}
+
+/**
+ * Returns whether a simple acyclic divalent hetero center should preserve the
+ * exact preferred continuation angle for its remaining heavy child instead of
+ * letting nearby center-of-mass scoring cant the bond off that ideal slot.
+ * This keeps esters and ethers from drifting away from their intended clean
+ * 120-degree depiction when the exact continuation is already safe.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string|null} parentAtomId - Already placed parent atom ID.
+ * @param {string|null} childAtomId - Candidate child atom ID.
+ * @returns {boolean} True when the anchor should honor the exact continuation.
+ */
+function isExactAcyclicHeteroContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId) {
+  if (!layoutGraph || !parentAtomId || !childAtomId) {
+    return false;
+  }
+  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0) {
+    return false;
+  }
+
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (!anchorAtom || anchorAtom.aromatic || anchorAtom.heavyDegree !== 2 || !STRICT_ACYCLIC_CONTINUATION_HETERO_ELEMENTS.has(anchorAtom.element)) {
+    return false;
+  }
+
+  for (const neighborAtomId of [parentAtomId, childAtomId]) {
+    if (!neighborAtomId) {
+      return false;
+    }
+    const bond = findLayoutBond(layoutGraph, anchorAtomId, neighborAtomId);
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return false;
+    }
+  }
+
   return true;
 }
 
@@ -499,6 +596,52 @@ function preferredRingSystemAngle(layoutGraph, coords, anchorAtomId) {
     return null;
   }
   return angleOf(outwardVector);
+}
+
+/**
+ * Returns the exterior junction-gap angle for a fused or bridged ring anchor
+ * that already has three placed ring neighbors and is placing an exocyclic
+ * child. When one shared junction bond dominates the fusion, the exact
+ * continuation opposite that bond wins if it keeps safe clearance; otherwise
+ * the preferred exit direction falls back to the bisector of the widest open
+ * gap between the already-placed ring bonds.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string[]} placedNeighborIds - Currently placed neighbor IDs.
+ * @param {string|null} childAtomId - Candidate child atom ID.
+ * @returns {number|null} Preferred junction-gap angle in radians, or null when unsupported.
+ */
+function preferredRingJunctionGapAngle(layoutGraph, coords, anchorAtomId, placedNeighborIds, childAtomId) {
+  if (!layoutGraph || !coords.has(anchorAtomId) || !childAtomId) {
+    return null;
+  }
+  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0 || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0) {
+    return null;
+  }
+
+  const ringNeighborIds = placedNeighborIds.filter(neighborAtomId => (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0);
+  if (ringNeighborIds.length < 3 || ringNeighborIds.length !== placedNeighborIds.length) {
+    return null;
+  }
+  const ringNeighborAngles = ringNeighborIds
+    .map(neighborAtomId => coords.get(neighborAtomId))
+    .filter(Boolean)
+    .map(neighborPosition => angleOf(sub(neighborPosition, coords.get(anchorAtomId))));
+  const anchorRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
+  const sharedJunctionNeighborIds = ringNeighborIds.filter(neighborAtomId => {
+    const neighborRings = layoutGraph.atomToRings.get(neighborAtomId) ?? [];
+    return neighborRings.filter(ring => anchorRings.includes(ring)).length > 1;
+  });
+  if (sharedJunctionNeighborIds.length === 1 && coords.has(sharedJunctionNeighborIds[0])) {
+    const sharedNeighborAngle = angleOf(sub(coords.get(sharedJunctionNeighborIds[0]), coords.get(anchorAtomId)));
+    const straightJunctionAngle = normalizeSignedAngle(sharedNeighborAngle + Math.PI);
+    const straightJunctionClearance = Math.min(...ringNeighborAngles.map(occupiedAngle => angularDifference(straightJunctionAngle, occupiedAngle)));
+    if (straightJunctionClearance >= DEG60 - 1e-6) {
+      return straightJunctionAngle;
+    }
+  }
+  return largestAngularGapBisector(ringNeighborAngles, preferredRingSystemAngle(layoutGraph, coords, anchorAtomId));
 }
 
 function preferredRingAngles(layoutGraph, coords, anchorAtomId) {
@@ -778,9 +921,10 @@ function chooseContinuationAngle(
 
 /**
  * Chooses the exact preferred angle when it is already safe and outside any incident ring face.
- * This is used for terminal hetero substituents on ring atoms so simple `OH`/`NH2`-like
- * attachments can follow the true local outward direction instead of snapping to the
- * discrete branch lattice.
+ * This is used for cases where the exact preferred direction is chemically
+ * meaningful, such as ring-outward leaf substituents and terminal multiple-bond
+ * leaves on trigonal centers, so they can follow the true idealized direction
+ * instead of snapping to the discrete branch lattice.
  * @param {{x: number, y: number}} anchorPosition - Anchor position.
  * @param {number} bondLength - Target bond length.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
@@ -911,6 +1055,40 @@ function largestGapAngles(fixedAngles, childCount) {
 
   const step = gapSize / (childCount + 1);
   return Array.from({ length: childCount }, (_, index) => gapStart + step * (index + 1));
+}
+
+/**
+ * Returns whether a crowded ring anchor should also try distributing multiple
+ * exocyclic children through the full exterior gap between its placed ring
+ * bonds instead of only the legacy outward-fan candidate.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string[]} currentPlacedNeighborIds - Already placed neighbor IDs.
+ * @param {string[]} unplacedNeighborIds - Unplaced child IDs.
+ * @returns {boolean} True when an exterior-gap spread candidate is warranted.
+ */
+function shouldTryRingExteriorGapSpread(layoutGraph, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds) {
+  if (!layoutGraph || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
+    return false;
+  }
+  if (currentPlacedNeighborIds.length !== 2 || unplacedNeighborIds.length < 2) {
+    return false;
+  }
+  if (!currentPlacedNeighborIds.every(neighborAtomId => (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0)) {
+    return false;
+  }
+
+  for (const neighborAtomId of [...currentPlacedNeighborIds, ...unplacedNeighborIds]) {
+    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0 && !currentPlacedNeighborIds.includes(neighborAtomId)) {
+      return false;
+    }
+    const bond = findLayoutBond(layoutGraph, anchorAtomId, neighborAtomId);
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 function placedNeighborIds(adjacency, coords, anchorAtomId) {
@@ -1196,6 +1374,123 @@ function tetrahedralSpreadPenalty(layoutGraph, coords, atomId) {
 }
 
 /**
+ * Returns the angular distortion penalty for a linear center.
+ * This lets upstream branch-permutation scoring favor parent-center rotations
+ * that preserve downstream `sp` geometries such as nitriles and alkynes.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} atomId - Candidate linear-center atom ID.
+ * @returns {number} Linear-center angular distortion penalty.
+ */
+function linearCenterPenalty(layoutGraph, coords, atomId) {
+  if (!layoutGraph || !isLinearCenter(layoutGraph, atomId)) {
+    return 0;
+  }
+
+  const atomPosition = coords.get(atomId);
+  if (!atomPosition) {
+    return 0;
+  }
+
+  const neighborAngles = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+    neighborAngles.push(angleOf(sub(neighborPosition, atomPosition)));
+  }
+
+  if (neighborAngles.length !== 2) {
+    return 0;
+  }
+  return (angularDifference(neighborAngles[0], neighborAngles[1]) - Math.PI) ** 2;
+}
+
+/**
+ * Returns the angular distortion penalty for a visible trigonal center.
+ * This keeps parent-center rotation search from accepting a compact but
+ * chemically sloppy orientation when a clean 120-degree arrangement is
+ * already available for an attached unsaturated branch.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} atomId - Candidate trigonal-center atom ID.
+ * @returns {number} Trigonal angular distortion penalty.
+ */
+function trigonalCenterPenalty(layoutGraph, coords, atomId) {
+  if (!layoutGraph) {
+    return 0;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  const atomPosition = coords.get(atomId);
+  if (!atom || atom.element === 'H' || !atomPosition) {
+    return 0;
+  }
+
+  const visibleCovalentNeighbors = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+    visibleCovalentNeighbors.push({ bond, neighborPosition });
+  }
+
+  if (visibleCovalentNeighbors.length !== 3) {
+    return 0;
+  }
+  if (visibleCovalentNeighbors.filter(({ bond }) => (bond.order ?? 1) >= 2).length !== 1) {
+    return 0;
+  }
+
+  const sortedAngles = visibleCovalentNeighbors
+    .map(({ neighborPosition }) => angleOf(sub(neighborPosition, atomPosition)))
+    .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  const separations = [];
+  for (let index = 0; index < sortedAngles.length; index++) {
+    const currentAngle = sortedAngles[index];
+    const nextAngle = sortedAngles[(index + 1) % sortedAngles.length];
+    const rawGap = nextAngle - currentAngle;
+    separations.push(rawGap > 0 ? rawGap : rawGap + Math.PI * 2);
+  }
+
+  return separations.reduce((sum, separation) => sum + (separation - DEG120) ** 2, 0);
+}
+
+/**
+ * Returns the idealized angular-geometry penalty for a focused arrangement.
+ * Parent-center branch search uses this to prefer rotations that keep newly
+ * placed downstream groups on exact linear/trigonal depictions when available.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Branch anchor atom ID.
+ * @param {string[]} [focusAtomIds] - Newly placed atom IDs to score.
+ * @returns {number} Total ideal-geometry penalty.
+ */
+function arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds = []) {
+  if (!layoutGraph) {
+    return 0;
+  }
+
+  let penalty = 0;
+  for (const atomId of new Set([anchorAtomId, ...focusAtomIds])) {
+    penalty += linearCenterPenalty(layoutGraph, coords, atomId);
+    penalty += trigonalCenterPenalty(layoutGraph, coords, atomId);
+  }
+  return penalty;
+}
+
+/**
  * Returns the angular distortion penalty for a cross-like hypervalent center.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
@@ -1239,7 +1534,10 @@ function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAto
       : shouldUseFocusedArrangementCost(layoutGraph, coords, focusAtomIds)
         ? measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds, { atomGrid })
         : measureLayoutCost(layoutGraph, coords, bondLength);
-  return layoutCost + tetrahedralSpreadPenalty(layoutGraph, coords, anchorAtomId) * 20 + crossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * 20;
+  return layoutCost
+    + tetrahedralSpreadPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT
+    + crossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT
+    + arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT;
 }
 
 /**
@@ -1256,6 +1554,7 @@ function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAto
 function buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, unplacedNeighborIds, layoutGraph = null, branchConstraints = null) {
   const anchorPosition = coords.get(anchorAtomId);
   const currentPlacedNeighborIds = placedNeighborIds(adjacency, coords, anchorAtomId);
+  const currentPlacedNeighborAngles = currentPlacedNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition)));
   const ringAngles = preferredRingAngles(layoutGraph, coords, anchorAtomId);
   const fromRing = ringAngles.length > 0;
   const incomingAngle = parentAtomId && coords.has(parentAtomId) ? angleOf(sub(coords.get(parentAtomId), anchorPosition)) : ringAngles[0] == null ? 0 : ringAngles[0] + Math.PI;
@@ -1272,14 +1571,16 @@ function buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, 
 
   const fallbackAngleSets = shouldUseGapStrategy
     ? [
-        largestGapAngles(
-          currentPlacedNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition))),
-          unplacedNeighborIds.length
-        )
+        largestGapAngles(currentPlacedNeighborAngles, unplacedNeighborIds.length)
       ]
     : [computeLegacyChildAngles(unplacedNeighborIds.length, outAngle, fromRing, incomingAngle, isLinear)];
 
-  return [...crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph), ...fallbackAngleSets]
+  const ringExteriorGapAngleSets =
+    shouldTryRingExteriorGapSpread(layoutGraph, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds) && !hasMultipleBond && !isLinear
+      ? [largestGapAngles(currentPlacedNeighborAngles, unplacedNeighborIds.length)]
+      : [];
+
+  return [...crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph), ...ringExteriorGapAngleSets, ...fallbackAngleSets]
     .map(angleSet => filterAnglesByBudget(angleSet, anchorAtomId, branchConstraints))
     .filter(angleSet => angleSet.length === unplacedNeighborIds.length);
 }
@@ -1461,7 +1762,10 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
       filterAnglesByBudget(continuationAngles, anchorAtomId, branchConstraints),
       budgetPreferredAngles(anchorAtomId, branchConstraints)
     );
-    if (isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, attachedAtomId)) {
+    if (
+      isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, attachedAtomId)
+      || isExactAcyclicHeteroContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, attachedAtomId)
+    ) {
       const exactPreferredAngle = chooseExactPreferredAngle(
         coords.get(anchorAtomId),
         1,
@@ -1519,6 +1823,10 @@ function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsToPlace,
     return [];
   }
   const placedNeighborIds = (adjacency.get(anchorAtomId) ?? []).filter(neighborAtomId => coords.has(neighborAtomId));
+  const ringJunctionGapAngle = preferredRingJunctionGapAngle(layoutGraph, coords, anchorAtomId, placedNeighborIds, childAtomId);
+  if (ringJunctionGapAngle != null) {
+    return [ringJunctionGapAngle];
+  }
   const childBond = childAtomId ? findLayoutBond(layoutGraph, anchorAtomId, childAtomId) : null;
   if (placedNeighborIds.length === 2 && childBond && !childBond.aromatic && (childBond.order ?? 1) >= 2) {
     const trigonalBisectorAngle = preferredTrigonalBisectorAngle(coords, anchorAtomId, placedNeighborIds);
@@ -1600,9 +1908,12 @@ function placeNeighborSequence(
       preferredAngles.length > 0
       && !childIsHydrogen
       && childBond != null
-      && isTerminalMultipleBondHetero(layoutGraph, anchorAtomId, childBond);
+      && isTerminalMultipleBondLeaf(layoutGraph, anchorAtomId, childBond);
+    const shouldForceExactAcyclicHeteroAngle =
+      shouldHonorPreferredAngle
+      && isExactAcyclicHeteroContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId);
     const exactPreferredAngle =
-      ((shouldHonorPreferredAngle && isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)) || shouldForceExactTrigonalAngle)
+      ((shouldHonorPreferredAngle && isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)) || shouldForceExactTrigonalAngle || shouldForceExactAcyclicHeteroAngle)
         ? chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, constrainedPreferredAngles, excludedAtomIds, placementState, ringPolygons)
         : null;
     const fallbackCandidates = evaluateAngleCandidates(

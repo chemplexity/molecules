@@ -181,6 +181,11 @@
             <label for="flatten-input">Flatten (molecule → molecule edges)</label>
         </div>
 
+        <div class="toggle-row">
+            <input type="checkbox" id="scaffolds-input" />
+            <label for="scaffolds-input">View Scaffold Network</label>
+        </div>
+
         <button id="generate-btn">Generate Network</button>
         <div id="status"></div>
 
@@ -327,6 +332,7 @@
         const depth    = document.getElementById('depth-input').value;
         const maxNodes = document.getElementById('maxnodes-input').value;
         const flatten  = document.getElementById('flatten-input').checked;
+        const scaffolds = document.getElementById('scaffolds-input').checked;
 
         if (!smiles) { status.textContent = 'Please enter a SMILES string.'; return; }
 
@@ -334,7 +340,7 @@
         btn.innerHTML = '<span class="spinner"></span> Generating…';
         status.textContent = '';
 
-        const url = `http://localhost:3737/generate?smiles=${encodeURIComponent(smiles)}&depth=${depth}&flatten=${flatten}&maxNodes=${maxNodes}`;
+        const url = `http://localhost:3737/generate?smiles=${encodeURIComponent(smiles)}&depth=${depth}&flatten=${flatten}&maxNodes=${maxNodes}&scaffolds=${scaffolds}`;
 
         try {
             const res = await fetch(url);
@@ -380,6 +386,7 @@
 
         const RENDER_SCALE = 0.5;
         const nodeScale = d => {
+            if (d.type === 'scaffold') return 2.2;
             if (d.type !== 'molecule') return 1;
             const deg = d.degree || 1;
             return 1 + Math.max(0, Math.log10(deg)) * 0.4;
@@ -390,9 +397,9 @@
             return Math.max(short.length * 6.2 + 22, 60) / 2;
         };
         const nodeRadius = d => {
-            if (d.type === 'molecule' && d.width && d.height) {
+            if ((d.type === 'molecule' || d.type === 'scaffold') && d.width && d.height) {
                 const ns = nodeScale(d);
-                return Math.sqrt((d.width * RENDER_SCALE * ns / 2) ** 2 + (d.height * RENDER_SCALE * ns / 2) ** 2) + 12;
+                return Math.sqrt((d.width * RENDER_SCALE * ns / 2) ** 2 + (d.height * RENDER_SCALE * ns / 2) ** 2) + (d.type === 'scaffold' ? 24 : 12);
             }
             if (d.type === 'reaction') {
                 return pillHalfWidth(d) + 6; // pill half-width + small margin
@@ -449,10 +456,12 @@
             .enter().append("g");
 
         const line = link.append("path")
-            .attr("class", "link")
-            .attr("stroke-width", 2)
+            .attr("class", d => d.edgeType === 'membership' ? "link membership" : "link")
+            .attr("stroke-width", d => d.edgeType === 'membership' ? 1.5 : 2)
+            .attr("stroke-dasharray", d => d.edgeType === 'membership' ? "5,5" : null)
+            .attr("stroke", d => d.edgeType === 'membership' ? "#c084fc" : "#bbb")
             .attr("fill", "none")
-            .attr("marker-end", "url(#arrow)");
+            .attr("marker-end", d => d.edgeType === 'membership' ? null : "url(#arrow)");
 
         const linkLabels = link.append("text")
             .attr("class", "link-text")
@@ -481,7 +490,7 @@
 
         node.each(function(d) {
             const el = d3.select(this);
-            if (d.type === 'molecule' && d.svg) {
+            if ((d.type === 'molecule' || d.type === 'scaffold') && d.svg) {
                 el.html(d.svg);
                 
                 const svgNode = el.select('svg');
@@ -504,9 +513,10 @@
                 // Formulate a beautiful rounded boundary casing exactly over the dynamic topological limits 
                 svgNode.select("rect")
                        .attr("rx", 14)
-                       .attr("stroke", "#333")
-                       .attr("stroke-width", 3)
-                       .attr("fill", "#ffffff");
+                       .attr("stroke", d.type === 'scaffold' ? "#a855f7" : "#333")
+                       .attr("stroke-width", d.type === 'scaffold' ? 3.5 : 3)
+                       .attr("stroke-dasharray", d.type === 'scaffold' ? "6,3" : null)
+                       .attr("fill", d.type === 'scaffold' ? "#faf5ff" : "#ffffff");
             } else if (d.type === 'reaction') {
                 // Reaction node — pill badge showing the template name
                 const name = d.conditions?.templateName || d.id;
@@ -557,13 +567,12 @@
         // Apply node scale transforms — called from both tick (while running) and hover handlers (when stopped)
         const applyNodeTransforms = () => node.attr('transform', d => {
             let s = 1;
-            if (d.id === hoveredId || d.id === tempHoverId) s = 2.8;
-            else if (connectedIds.has(d.id)) s = 1.65;
+            if (d.id === hoveredId || d.id === tempHoverId) s = d.type === 'scaffold' ? 1.2 : 2.8;
+            else if (connectedIds.has(d.id)) s = d.type === 'scaffold' ? 1.05 : 1.65;
             return `translate(${d.x},${d.y})${s !== 1 ? ` scale(${s})` : ''}`;
         });
         const nodeLinks = new Map();
         data.nodes.forEach(d => nodeLinks.set(d.id, new Set()));
-        const nodeById = new Map(data.nodes.map(d => [d.id, d]));
 
         // We need access to the rendered link elements per datum — index by source/target id
         const linkByDatum = [];
@@ -602,25 +611,28 @@
               .attr('stroke', ld => {
                   const sid = typeof ld.source === 'object' ? ld.source.id : ld.source;
                   const tid = typeof ld.target === 'object' ? ld.target.id : ld.target;
-                  return (sid === d.id || tid === d.id) ? '#3b82f6' : '#e5e7eb';
+                  if (sid === d.id || tid === d.id) {
+                      return ld.edgeType === 'membership' ? '#a855f7' : '#3b82f6';
+                  }
+                  return ld.edgeType === 'membership' ? '#f3e8ff' : '#e5e7eb';
               })
               .attr('stroke-width', ld => {
                   const sid = typeof ld.source === 'object' ? ld.source.id : ld.source;
                   const tid = typeof ld.target === 'object' ? ld.target.id : ld.target;
-                  return (sid === d.id || tid === d.id) ? 2.5 : 1;
+                  return (sid === d.id || tid === d.id) ? (ld.edgeType === 'membership' ? 3 : 2.5) : 1;
               })
               .attr('stroke-opacity', ld => {
                   const sid = typeof ld.source === 'object' ? ld.source.id : ld.source;
                   const tid = typeof ld.target === 'object' ? ld.target.id : ld.target;
-                  return (sid === d.id || tid === d.id) ? 0.85 : 0.45;
+                  return (sid === d.id || tid === d.id) ? (ld.edgeType === 'membership' ? 1 : 0.85) : 0.45;
               });
 
             node.each(function(nd) {
                 if (connectedIds.has(nd.id)) {
                     d3.select(this).select('rect')
                       .transition().duration(120)
-                      .attr('stroke', '#93c5fd')
-                      .attr('stroke-width', nd.type === 'molecule' ? 5 : 2.5);
+                      .attr('stroke', nd.type === 'scaffold' ? '#d8b4fe' : '#93c5fd')
+                      .attr('stroke-width', (nd.type === 'molecule' || nd.type === 'scaffold') ? 5 : 2.5);
                 }
             });
         }
@@ -633,12 +645,12 @@
 
             node.select('rect')
               .transition().duration(180)
-              .attr('stroke', nd => nd.type === 'molecule' ? '#333' : '#ddd')
-              .attr('stroke-width', nd => nd.type === 'molecule' ? 3 : 1.5);
+              .attr('stroke', nd => nd.type === 'scaffold' ? '#a855f7' : (nd.type === 'molecule' ? '#333' : '#ddd'))
+              .attr('stroke-width', nd => nd.type === 'scaffold' ? 3.5 : (nd.type === 'molecule' ? 3 : 1.5));
 
             line.transition().duration(180)
-              .attr('stroke', '#bbb')
-              .attr('stroke-width', 2)
+              .attr('stroke', ld => ld.edgeType === 'membership' ? '#c084fc' : '#bbb')
+              .attr('stroke-width', ld => ld.edgeType === 'membership' ? 1.5 : 2)
               .attr('stroke-opacity', 0.9);
         }
 
@@ -717,17 +729,17 @@
         });
 
         node.on('mouseover', function(event, d) {
-            if (d.type !== 'molecule') return;
+            if (d.type !== 'molecule' && d.type !== 'scaffold') return;
             if (lockedId && lockedId !== d.id) return;
             applyHighlight(d, d3.select(this));
         })
         .on('mouseout', function(event, d) {
-            if (d.type !== 'molecule') return;
+            if (d.type !== 'molecule' && d.type !== 'scaffold') return;
             if (lockedId) return; // If anything is locked, ignore mouseout (either staying on the locked node, or we were passing over it while locked to another)
             clearHighlight();
         })
         .on('click', function(event, d) {
-            if (d.type !== 'molecule') return;
+            if (d.type !== 'molecule' && d.type !== 'scaffold') return;
             event.stopPropagation(); // prevent SVG background click from catching it
             
             if (lockedId === d.id) {

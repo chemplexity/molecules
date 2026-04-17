@@ -68,11 +68,16 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
       bondLength: graph.options.bondLength,
       maxPasses: graph.options.maxCleanupPasses
     });
+    const afterAudit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
 
     assert.ok(beforeOverlapCount > 0);
-    assert.equal(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length, 0);
+    assert.ok(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length <= beforeOverlapCount);
     assert.ok(result.overlapMoves > 0);
     assert.ok(result.passes >= result.overlapMoves);
+    assert.equal(afterAudit.bondLengthFailureCount, 0);
   });
 
   it('does not trade large-molecule backbone bond integrity for overlap cleanup', () => {

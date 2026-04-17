@@ -7,7 +7,7 @@ import { resolvePolicy } from './standards/profile-policy.js';
 import { layoutSupportedComponents } from './placement/component-layout.js';
 import { applyLabelClearance } from './cleanup/label-clearance.js';
 import { runBridgedBondTidy } from './cleanup/bridged-bond-tidy.js';
-import { runHypervalentAngleTidy } from './cleanup/hypervalent-angle-tidy.js';
+import { measureOrthogonalHypervalentDeviation, runHypervalentAngleTidy } from './cleanup/hypervalent-angle-tidy.js';
 import { runLigandAngleTidy } from './cleanup/ligand-angle-tidy.js';
 import { runRingPerimeterCorrection } from './cleanup/ring-perimeter-correction.js';
 import { measureRingSubstituentPresentationPenalty, runRingSubstituentTidy } from './cleanup/ring-substituent-tidy.js';
@@ -24,6 +24,7 @@ import { exceedsLargeComponentThreshold, exceedsLargeMoleculeThreshold } from '.
 import { findMacrocycleRings } from './topology/macrocycles.js';
 import { buildScaffoldPlan } from './model/scaffold-plan.js';
 import { PROTECTED_CLEANUP_STAGE_LIMITS } from './constants.js';
+import { levelCoords, normalizeOrientation } from './orientation.js';
 
 /**
  * Returns the current high-resolution time when available, with a Date fallback
@@ -235,6 +236,69 @@ function buildInitialCoordsMap(options) {
   return coords;
 }
 
+function isRingJunctionStereoAssignment(layoutGraph, assignment) {
+  const molecule = layoutGraph?.sourceMolecule ?? null;
+  const bond = layoutGraph?.bonds.get(assignment?.bondId) ?? null;
+  const centerId = assignment?.centerId ?? null;
+  if (!molecule || !bond || !centerId) {
+    return false;
+  }
+
+  const otherAtomId = bond.a === centerId ? bond.b : (bond.b === centerId ? bond.a : null);
+  if (!otherAtomId || layoutGraph.atoms.get(otherAtomId)?.element === 'H') {
+    return false;
+  }
+
+  const centerAtom = molecule.atoms.get(centerId);
+  if (!centerAtom) {
+    return false;
+  }
+
+  const ringNeighborCount = centerAtom
+    .getNeighbors(molecule)
+    .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && (layoutGraph.atomToRings.get(neighborAtom.id)?.length ?? 0) > 0)
+    .length;
+  return ringNeighborCount >= 3;
+}
+
+/**
+ * Returns whether the pipeline should auto-orient the final generated pose.
+ * Existing or fixed coordinates preserve the user's frame, so only fresh
+ * stereochemical ring-junction layouts get the whole-molecule orientation
+ * pass. This avoids rotating ordinary side-chain stereocenters away from the
+ * canonical heterocycle and zigzag orientations they already had before the
+ * ring-junction display pass was added.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {object} normalizedOptions - Normalized pipeline options.
+ * @returns {boolean} True when the final coordinates should be auto-oriented.
+ */
+function shouldAutoOrientFinalCoords(layoutGraph, coords, normalizedOptions) {
+  if (normalizedOptions.fixedCoords.size > 0 || normalizedOptions.existingCoords.size > 0) {
+    return false;
+  }
+  const molecule = layoutGraph?.sourceMolecule ?? null;
+  if (!(typeof molecule?.getChiralCenters === 'function' && molecule.getChiralCenters().length > 0)) {
+    return false;
+  }
+  return pickWedgeAssignments(layoutGraph, coords).assignments.some(assignment => isRingJunctionStereoAssignment(layoutGraph, assignment));
+}
+
+/**
+ * Applies the final display-orientation pass to generated coordinates.
+ * This is a whole-molecule rotation only, so it preserves local geometry while
+ * improving page orientation for visible stereobonds.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
+ * @param {object} molecule - Molecule-like graph.
+ * @returns {Map<string, {x: number, y: number}>} Oriented coordinate map.
+ */
+function orientFinalCoords(inputCoords, molecule) {
+  const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  normalizeOrientation(coords, molecule);
+  levelCoords(coords, molecule);
+  return coords;
+}
+
 /**
  * Returns a timing accumulator when enabled.
  * @param {boolean} enabled - Whether timing should be recorded.
@@ -359,10 +423,10 @@ function auditCleanupStage(layoutGraph, coords, placement, bondLength) {
  * outcomes are otherwise identical.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
- * @returns {number} Ring-substituent presentation penalty.
+ * @returns {number} Ring-substituent plus hypervalent-angle presentation penalty.
  */
 function measureCleanupStagePresentationPenalty(layoutGraph, coords) {
-  return measureRingSubstituentPresentationPenalty(layoutGraph, coords);
+  return measureRingSubstituentPresentationPenalty(layoutGraph, coords) + measureOrthogonalHypervalentDeviation(layoutGraph, coords);
 }
 
 /**
@@ -801,7 +865,7 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
         )
       };
       stageEntries.push({ name: finalHypervalentStage.name, audit: finalHypervalentStage.audit });
-      if (isPreferredFinalStereoStage(finalHypervalentStage, finalStereoStage)) {
+      if (isPreferredFinalStereoStage(finalHypervalentStage, finalStereoStage, { allowPresentationTieBreak: true })) {
         finalStereoStage = finalHypervalentStage;
         acceptedFinalHypervalentTouchup = finalHypervalentTouchup;
       }
@@ -834,6 +898,56 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
       }
     }
   }
+  let acceptedFinalRingTerminalHeteroTouchup = {
+    coords: finalStereoStage.coords,
+    nudges: 0
+  };
+  if (policy.postCleanupHooks?.includes('ring-terminal-hetero-tidy')) {
+    const finalRingTerminalHeteroTouchup = runRingTerminalHeteroTidy(layoutGraph, finalStereoStage.coords, {
+      bondLength: normalizedOptions.bondLength
+    });
+    if (finalRingTerminalHeteroTouchup.nudges > 0) {
+      const finalRingTerminalHeteroStage = {
+        name: 'finalRingTerminalHeteroTouchup',
+        ...auditFinalStereoStage(
+          layoutGraph.sourceMolecule,
+          layoutGraph,
+          finalRingTerminalHeteroTouchup.coords,
+          placement,
+          normalizedOptions.bondLength
+        )
+      };
+      stageEntries.push({ name: finalRingTerminalHeteroStage.name, audit: finalRingTerminalHeteroStage.audit });
+      if (isPreferredFinalStereoStage(finalRingTerminalHeteroStage, finalStereoStage)) {
+        finalStereoStage = finalRingTerminalHeteroStage;
+        acceptedFinalRingTerminalHeteroTouchup = finalRingTerminalHeteroTouchup;
+      }
+    }
+  }
+  let acceptedFinalPostRingHypervalentTouchup = {
+    coords: finalStereoStage.coords,
+    nudges: 0
+  };
+  if (policy.postCleanupHooks?.includes('hypervalent-angle-tidy')) {
+    const finalPostRingHypervalentTouchup = runHypervalentAngleTidy(layoutGraph, finalStereoStage.coords);
+    if (finalPostRingHypervalentTouchup.nudges > 0) {
+      const finalPostRingHypervalentStage = {
+        name: 'finalPostRingHypervalentTouchup',
+        ...auditFinalStereoStage(
+          layoutGraph.sourceMolecule,
+          layoutGraph,
+          finalPostRingHypervalentTouchup.coords,
+          placement,
+          normalizedOptions.bondLength
+        )
+      };
+      stageEntries.push({ name: finalPostRingHypervalentStage.name, audit: finalPostRingHypervalentStage.audit });
+      if (isPreferredFinalStereoStage(finalPostRingHypervalentStage, finalStereoStage, { allowPresentationTieBreak: true })) {
+        finalStereoStage = finalPostRingHypervalentStage;
+        acceptedFinalPostRingHypervalentTouchup = finalPostRingHypervalentTouchup;
+      }
+    }
+  }
   coords = finalStereoStage.coords;
   if (timingState) {
     timingState.cleanupMs = nowMs() - cleanupStart;
@@ -851,7 +965,9 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
     postHookNudges:
       postCleanup.hookNudges
       + (acceptedFinalHypervalentTouchup.nudges ?? 0)
-      + (acceptedFinalRingSubstituentTouchup.nudges ?? 0),
+      + (acceptedFinalRingSubstituentTouchup.nudges ?? 0)
+      + (acceptedFinalRingTerminalHeteroTouchup.nudges ?? 0)
+      + (acceptedFinalPostRingHypervalentTouchup.nudges ?? 0),
     ...(includeStageTelemetry
       ? {
           placementAudit: placementStage.audit,
@@ -1080,6 +1196,22 @@ export function runPipeline(molecule, options = {}) {
   for (const [atomId, position] of cleanup.coords) {
     coords.set(atomId, position);
   }
-  const { ringDependency, stereo } = runStereoPhase(workingMolecule, layoutGraph, coords, timingState);
-  return buildPipelineResult(molecule, coords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState);
+  const finalCoords = shouldAutoOrientFinalCoords(layoutGraph, coords, normalizedOptions)
+    ? orientFinalCoords(coords, workingMolecule)
+    : coords;
+  const { ringDependency, stereo } = runStereoPhase(workingMolecule, layoutGraph, finalCoords, timingState);
+  return buildPipelineResult(
+    molecule,
+    finalCoords,
+    layoutGraph,
+    normalizedOptions,
+    profile,
+    familySummary,
+    policy,
+    placement,
+    cleanup,
+    ringDependency,
+    stereo,
+    timingState
+  );
 }

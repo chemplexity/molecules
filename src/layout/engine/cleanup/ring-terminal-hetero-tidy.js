@@ -2,10 +2,11 @@
 
 import { buildAtomGrid } from '../audit/invariants.js';
 import { countPointInPolygons } from '../geometry/polygon.js';
-import { add, angleOf, angularDifference, distance, fromAngle, sub } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub } from '../geometry/vec2.js';
 
 const TIDY_ROTATION_ANGLES = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12);
 const TIDY_IMPROVEMENT_EPSILON = 1e-6;
+const SINGLE_BOND_TERMINAL_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
 
 function atomPairKey(firstAtomId, secondAtomId) {
   return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
@@ -18,6 +19,15 @@ function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
   return (layoutGraph.atomToRings.get(anchorAtomId) ?? [])
     .map(ring => ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
     .filter(polygon => polygon.length >= 3);
+}
+
+function outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return [];
+  }
+  return incidentRingPolygons(layoutGraph, coords, anchorAtomId)
+    .map(polygon => angleOf(sub(anchorPosition, centroid(polygon))));
 }
 
 function localNonbondedClearance(layoutGraph, coords, atomGrid, atomId, position, searchRadius) {
@@ -52,12 +62,12 @@ function localSevereOverlapCount(layoutGraph, coords, atomGrid, atomId, position
   return overlapCount;
 }
 
-function terminalRingMultipleBondHeteros(layoutGraph, coords) {
+function terminalRingHeteros(layoutGraph, coords) {
   const descriptors = [];
   const seenPairs = new Set();
 
   for (const bond of layoutGraph.bonds?.values?.() ?? []) {
-    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic) {
       continue;
     }
 
@@ -76,6 +86,13 @@ function terminalRingMultipleBondHeteros(layoutGraph, coords) {
       if (!coords.has(anchorAtomId) || !coords.has(heteroAtomId) || (heteroAtom.heavyDegree ?? 0) !== 1) {
         continue;
       }
+      const bondOrder = bond.order ?? 1;
+      const prefersOutwardGeometry =
+        bondOrder === 1
+        && SINGLE_BOND_TERMINAL_HETERO_ELEMENTS.has(heteroAtom.element);
+      if (!prefersOutwardGeometry && bondOrder < 2) {
+        continue;
+      }
 
       const pairKey = atomPairKey(anchorAtomId, heteroAtomId);
       if (seenPairs.has(pairKey)) {
@@ -84,7 +101,9 @@ function terminalRingMultipleBondHeteros(layoutGraph, coords) {
       seenPairs.add(pairKey);
       descriptors.push({
         anchorAtomId,
-        heteroAtomId
+        heteroAtomId,
+        prefersOutwardGeometry,
+        outwardAngles: prefersOutwardGeometry ? outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId) : []
       });
     }
   }
@@ -101,6 +120,12 @@ function isBetterTidyCandidate(candidate, incumbent) {
   }
   if (candidate.insideRingCount !== incumbent.insideRingCount) {
     return candidate.insideRingCount < incumbent.insideRingCount;
+  }
+  if (
+    candidate.prefersOutwardGeometry
+    && Math.abs(candidate.outwardDeviation - incumbent.outwardDeviation) > TIDY_IMPROVEMENT_EPSILON
+  ) {
+    return candidate.outwardDeviation < incumbent.outwardDeviation;
   }
   if (candidate.clearance > incumbent.clearance + TIDY_IMPROVEMENT_EPSILON) {
     return true;
@@ -128,7 +153,7 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
   const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
   let nudges = 0;
 
-  for (const descriptor of terminalRingMultipleBondHeteros(layoutGraph, coords)) {
+  for (const descriptor of terminalRingHeteros(layoutGraph, coords)) {
     const anchorPosition = coords.get(descriptor.anchorAtomId);
     const currentPosition = coords.get(descriptor.heteroAtomId);
     if (!anchorPosition || !currentPosition) {
@@ -147,17 +172,25 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
       insideRingCount: countPointInPolygons(ringPolygons, currentPosition),
       overlapCount: localSevereOverlapCount(layoutGraph, coords, atomGrid, descriptor.heteroAtomId, currentPosition, threshold),
       clearance: localNonbondedClearance(layoutGraph, coords, atomGrid, descriptor.heteroAtomId, currentPosition, searchRadius),
+      prefersOutwardGeometry: descriptor.prefersOutwardGeometry,
+      outwardDeviation: descriptor.prefersOutwardGeometry
+        ? Math.min(...descriptor.outwardAngles.map(outwardAngle => angularDifference(outwardAngle, currentAngle)))
+        : 0,
       angleDelta: 0
     };
     let bestCandidate = currentCandidate;
-
-    for (const candidateAngle of TIDY_ROTATION_ANGLES) {
+    const candidateAngles = new Set([...TIDY_ROTATION_ANGLES, ...descriptor.outwardAngles]);
+    for (const candidateAngle of candidateAngles) {
       const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, radius));
       const candidate = {
         position: candidatePosition,
         insideRingCount: countPointInPolygons(ringPolygons, candidatePosition),
         overlapCount: localSevereOverlapCount(layoutGraph, coords, atomGrid, descriptor.heteroAtomId, candidatePosition, threshold),
         clearance: localNonbondedClearance(layoutGraph, coords, atomGrid, descriptor.heteroAtomId, candidatePosition, searchRadius),
+        prefersOutwardGeometry: descriptor.prefersOutwardGeometry,
+        outwardDeviation: descriptor.prefersOutwardGeometry
+          ? Math.min(...descriptor.outwardAngles.map(outwardAngle => angularDifference(outwardAngle, candidateAngle)))
+          : 0,
         angleDelta: angularDifference(candidateAngle, currentAngle)
       };
       if (isBetterTidyCandidate(candidate, bestCandidate)) {
@@ -168,7 +201,10 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
     const improvesOverlapCount = bestCandidate.overlapCount < currentCandidate.overlapCount;
     const improvesInsideRing = bestCandidate.insideRingCount < currentCandidate.insideRingCount;
     const improvesClearance = bestCandidate.clearance > currentCandidate.clearance + TIDY_IMPROVEMENT_EPSILON;
-    if (!improvesInsideRing && !improvesOverlapCount && !improvesClearance) {
+    const improvesOutwardGeometry =
+      descriptor.prefersOutwardGeometry
+      && bestCandidate.outwardDeviation < currentCandidate.outwardDeviation - TIDY_IMPROVEMENT_EPSILON;
+    if (!improvesInsideRing && !improvesOverlapCount && !improvesClearance && !improvesOutwardGeometry) {
       continue;
     }
 

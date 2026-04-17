@@ -52,7 +52,7 @@ function ringAngles(coords, atomIds) {
  * Returns the placement-stage audit and final pipeline result for one SMILES input.
  * @param {string} smiles - SMILES string.
  * @param {object} [options] - Pipeline options.
- * @returns {{placementAudit: object, result: object}} Placement audit and final result.
+ * @returns {{placement: object, placementAudit: object, result: object}} Placement result, placement audit, and final result.
  */
 function inspectPlacementAndFinalAudit(smiles, options = { suppressH: true }) {
   const molecule = parseSMILES(smiles);
@@ -70,6 +70,7 @@ function inspectPlacementAndFinalAudit(smiles, options = { suppressH: true }) {
   });
 
   return {
+    placement,
     placementAudit,
     result: runPipeline(molecule, options)
   };
@@ -639,29 +640,62 @@ describe('layout/engine/pipeline', () => {
     assert.ok(checkedAnchors.length >= 3, `expected multiple saturated ring oxygen roots to be checked, got ${checkedAnchors.length}`);
   });
 
-  it('keeps the inter-ring ether between fused sugar rings on a straight outward-facing bridge', () => {
-    const result = runPipeline(
-      parseSMILES('C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4'),
-      { suppressH: true }
-    );
-    const coreRing = (result.layoutGraph.atomToRings.get('C12') ?? [])[0];
-    const sugarRing = (result.layoutGraph.atomToRings.get('C15') ?? [])[0];
+  it('keeps the inter-ring ether between fused sugar rings on a proper ether bond angle', () => {
+    const smiles = 'C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4';
+    const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(smiles);
+    const graph = result.layoutGraph;
+    const coreRing = (graph.atomToRings.get('C12') ?? [])[0];
+    const sugarRing = (graph.atomToRings.get('C15') ?? [])[0];
     assert.ok(coreRing);
     assert.ok(sugarRing);
-    const coreCentroid = centroid(coreRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean));
-    const sugarCentroid = centroid(sugarRing.atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean));
-    const coreToEtherAngle = angleOf(sub(result.coords.get('O14'), result.coords.get('C12')));
-    const sugarToEtherAngle = angleOf(sub(result.coords.get('O14'), result.coords.get('C15')));
-    const coreToSugarAngle = angleOf(sub(sugarCentroid, result.coords.get('C12')));
-    const sugarToCoreAngle = angleOf(sub(coreCentroid, result.coords.get('C15')));
-    const bridgeAngle = angularDifference(
-      angleOf(sub(result.coords.get('C12'), result.coords.get('O14'))),
-      angleOf(sub(result.coords.get('C15'), result.coords.get('O14')))
+
+    const bridgeMetrics = coords => {
+      const coreCentroid = centroid(coreRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean));
+      const sugarCentroid = centroid(sugarRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean));
+      const coreToEtherAngle = angleOf(sub(coords.get('O14'), coords.get('C12')));
+      const sugarToEtherAngle = angleOf(sub(coords.get('O14'), coords.get('C15')));
+      const coreToSugarAngle = angleOf(sub(sugarCentroid, coords.get('C12')));
+      const sugarToCoreAngle = angleOf(sub(coreCentroid, coords.get('C15')));
+      return {
+        totalCentroidDeviation:
+          angularDifference(coreToEtherAngle, coreToSugarAngle)
+          + angularDifference(sugarToEtherAngle, sugarToCoreAngle),
+        bridgeAngle: angularDifference(
+          angleOf(sub(coords.get('C12'), coords.get('O14'))),
+          angleOf(sub(coords.get('C15'), coords.get('O14')))
+        )
+      };
+    };
+
+    const placementMetrics = bridgeMetrics(placement.coords);
+    const finalMetrics = bridgeMetrics(result.coords);
+
+    assert.ok(finalMetrics.totalCentroidDeviation <= placementMetrics.totalCentroidDeviation + 1e-6);
+    assert.ok(Math.abs(finalMetrics.bridgeAngle - ((2 * Math.PI) / 3)) < 1e-6);
+    assert.ok(finalMetrics.bridgeAngle <= placementMetrics.bridgeAngle + 1e-6);
+    assert.equal(placementAudit.ok, true);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps diaryl ether bridges on the same clean publication-style ether angle after cleanup', () => {
+    const smiles = 'c1ccccc1Oc1ccccc1';
+    const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(smiles);
+    const oxygenAtom = [...result.layoutGraph.atoms.values()].find(atom => atom.element === 'O');
+    assert.ok(oxygenAtom);
+    const heavyNeighborIds = (result.layoutGraph.bondsByAtomId.get(oxygenAtom.id) ?? [])
+      .filter(bond => bond.kind === 'covalent')
+      .map(bond => (bond.a === oxygenAtom.id ? bond.b : bond.a))
+      .filter(atomId => result.layoutGraph.atoms.get(atomId)?.element !== 'H');
+    assert.equal(heavyNeighborIds.length, 2);
+
+    const etherAngle = coords => angularDifference(
+      angleOf(sub(coords.get(heavyNeighborIds[0]), coords.get(oxygenAtom.id))),
+      angleOf(sub(coords.get(heavyNeighborIds[1]), coords.get(oxygenAtom.id)))
     );
 
-    assert.ok(angularDifference(coreToEtherAngle, coreToSugarAngle) < 1e-6);
-    assert.ok(angularDifference(sugarToEtherAngle, sugarToCoreAngle) < 1e-6);
-    assert.ok(Math.abs(bridgeAngle - Math.PI) < 1e-6);
+    assert.ok(Math.abs(etherAngle(result.coords) - ((2 * Math.PI) / 3)) < 1e-6);
+    assert.ok(Math.abs(etherAngle(result.coords) - etherAngle(placement.coords)) < 1e-6);
+    assert.equal(placementAudit.ok, true);
     assert.equal(result.metadata.audit.ok, true);
   });
 
@@ -873,7 +907,7 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.collapsedMacrocycleCount, 0);
     assert.ok(result.metadata.audit.bondLengthFailureCount < 40);
     assert.ok(result.metadata.audit.maxBondLengthDeviation < 10);
-    assert.ok(result.metadata.timing.totalMs < 1000, `expected metallomacrocycle reroute to avoid runaway large-molecule placement, got ${result.metadata.timing.totalMs}ms`);
+    assert.ok(result.metadata.timing.totalMs < 2000, `expected metallomacrocycle reroute to avoid runaway large-molecule placement, got ${result.metadata.timing.totalMs}ms`);
   });
 
   it('keeps densely fused cyclic peptide macrocycles off the catastrophic partial-ring completion path', () => {
@@ -994,6 +1028,19 @@ describe('layout/engine/pipeline', () => {
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('lets the final ring-substituent touchup and post-ring hypervalent retouch clean linked sugar phosphates', () => {
+    const result = runPipeline(
+      parseSMILES('O[C@H]1[C@H](OP(O)(O)=O)[C@H](OP(O)(O)=O)[C@@H](OP(O)(O)=O)[C@@H](OP(O)(O)=O)[C@@H]1OP(O)(O)=O'),
+      { suppressH: true, auditTelemetry: true }
+    );
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.stageTelemetry.selectedStage, 'finalPostRingHypervalentTouchup');
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });
 

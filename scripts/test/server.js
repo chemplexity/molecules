@@ -10,13 +10,13 @@
  */
 
 import http from 'http';
-import { ReactionNetwork } from '../../src/network/index.js';
+import { ReactionNetwork, ScaffoldNetwork } from '../../src/network/index.js';
 import { parseSMILES, toCanonicalSMILES } from '../../src/io/index.js';
 import { reactionTemplates } from '../../src/smirks/index.js';
 
 const PORT = 3737;
 
-function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes) {
+function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds) {
     const network = new ReactionNetwork();
     const processedSmiles = new Set();
     const attemptedReactions = new Set();
@@ -99,6 +99,11 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes) {
     if (dupeCount === 0) console.log('  No duplicates detected.');
     console.log(`  Total nodes: ${network.moleculeNodes.size}, unique SMILES: ${seenSmiles.size}\n`);
 
+    if (scaffolds) {
+        const scafNet = new ScaffoldNetwork(network); // autoSync runs sync immediately
+        return scafNet.exportHierarchicalGraph(network.exportDirectedGraph({ flatten }));
+    }
+
     return network.exportDirectedGraph({ flatten });
 }
 
@@ -124,11 +129,12 @@ const server = http.createServer((req, res) => {
     const depth = parseInt(url.searchParams.get('depth') || '3', 10);
     const flatten = url.searchParams.get('flatten') === 'true';
     const maxNodes = parseInt(url.searchParams.get('maxNodes') || '100', 10);
+    const scaffolds = url.searchParams.get('scaffolds') === 'true';
 
-    console.log(`[→] Generating: smiles=${smiles} depth=${depth} flatten=${flatten} maxNodes=${maxNodes}`);
+    console.log(`[→] Generating: smiles=${smiles} depth=${depth} flatten=${flatten} maxNodes=${maxNodes} scaffolds=${scaffolds}`);
 
     try {
-        const data = generateNetwork(smiles, depth, flatten, maxNodes);
+        const data = generateNetwork(smiles, depth, flatten, maxNodes, scaffolds);
         console.log(`[✓] Done: ${data.nodes.length} nodes, ${data.links.length} links`);
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(data));

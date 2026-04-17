@@ -1,6 +1,6 @@
 /** @module cleanup/hypervalent-angle-tidy */
 
-import { add, angleOf, angularDifference, distance, fromAngle, sub } from '../geometry/vec2.js';
+import { add, angleOf, distance, fromAngle, sub } from '../geometry/vec2.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 
@@ -249,6 +249,13 @@ function fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds) {
   return null;
 }
 
+/**
+ * Measures how far supported hypervalent centers deviate from the nearest
+ * orthogonal cross-like presentation without mutating coordinates.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {number} Total squared angular deviation across supported centers.
+ */
 export function measureOrthogonalHypervalentDeviation(layoutGraph, coords) {
   let totalDeviation = 0;
 
@@ -272,6 +279,13 @@ export function measureOrthogonalHypervalentDeviation(layoutGraph, coords) {
   return totalDeviation;
 }
 
+/**
+ * Nudges supported hypervalent centers back toward orthogonal presentation
+ * while preserving bond lengths by rigidly rotating movable terminal ligands.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
+ * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Adjusted coordinates and move count.
+ */
 export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   const centerAtomIds = [...coords.keys()].sort((firstAtomId, secondAtomId) => compareCanonicalAtomIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));

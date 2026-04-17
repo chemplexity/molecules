@@ -263,7 +263,8 @@ function evaluateRingSubstituentSide(layoutGraph, coords, anchorAtomId, represen
   if (!representativePosition) {
     return {
       insideIncidentRing: false,
-      outwardAxisFailure: false
+      outwardAxisFailure: false,
+      outwardDeviation: null
     };
   }
 
@@ -271,21 +272,24 @@ function evaluateRingSubstituentSide(layoutGraph, coords, anchorAtomId, represen
   if (insideIncidentRing) {
     return {
       insideIncidentRing: true,
-      outwardAxisFailure: false
+      outwardAxisFailure: false,
+      outwardDeviation: null
     };
   }
 
   if (!supportsRingSubstituentOutwardReadability(layoutGraph, anchorAtomId)) {
     return {
       insideIncidentRing: false,
-      outwardAxisFailure: false
+      outwardAxisFailure: false,
+      outwardDeviation: null
     };
   }
 
   const outwardDeviation = bestRingOutwardDeviation(layoutGraph, coords, anchorAtomId, representativePosition);
   return {
     insideIncidentRing: false,
-    outwardAxisFailure: outwardDeviation != null && outwardDeviation > maxOutwardDeviation
+    outwardAxisFailure: outwardDeviation != null && outwardDeviation > maxOutwardDeviation,
+    outwardDeviation
   };
 }
 
@@ -403,13 +407,15 @@ function bestRingOutwardDeviation(layoutGraph, coords, anchorAtomId, representat
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {{maxOutwardDeviation?: number}} [options] - Readability options.
- * @returns {{failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number}} Readability summary.
+ * @returns {{failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}} Readability summary.
  */
 export function measureRingSubstituentReadability(layoutGraph, coords, options = {}) {
   const maxOutwardDeviation = options.maxOutwardDeviation ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxOutwardDeviation;
   let failingSubstituentCount = 0;
   let inwardSubstituentCount = 0;
   let outwardAxisFailureCount = 0;
+  let totalOutwardDeviation = 0;
+  let maxObservedOutwardDeviation = 0;
   const seenPairs = new Set();
 
   for (const anchorAtomId of coords.keys()) {
@@ -446,6 +452,10 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
         failingSubstituentCount++;
         outwardAxisFailureCount++;
       }
+      if (Number.isFinite(forwardSide.outwardDeviation)) {
+        totalOutwardDeviation += forwardSide.outwardDeviation;
+        maxObservedOutwardDeviation = Math.max(maxObservedOutwardDeviation, forwardSide.outwardDeviation);
+      }
 
       if (childDescriptor.representativeAtomIds.length <= 1) {
         continue;
@@ -473,13 +483,19 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
         failingSubstituentCount++;
         outwardAxisFailureCount++;
       }
+      if (Number.isFinite(reverseSide.outwardDeviation)) {
+        totalOutwardDeviation += reverseSide.outwardDeviation;
+        maxObservedOutwardDeviation = Math.max(maxObservedOutwardDeviation, reverseSide.outwardDeviation);
+      }
     }
   }
 
   return {
     failingSubstituentCount,
     inwardSubstituentCount,
-    outwardAxisFailureCount
+    outwardAxisFailureCount,
+    totalOutwardDeviation,
+    maxOutwardDeviation: maxObservedOutwardDeviation
   };
 }
 

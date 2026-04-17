@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { computeBounds } from '../../../src/layout/engine/geometry/bounds.js';
+import { angleOf, angularDifference, sub } from '../../../src/layout/engine/geometry/vec2.js';
 import { runPipeline } from '../../../src/layout/engine/pipeline.js';
+import { pickWedgeAssignments } from '../../../src/layout/engine/stereo/wedge-selection.js';
 
 /**
  * Returns heavy-atom ids from a pipeline result.
@@ -70,6 +72,12 @@ function minY(coords, atomIds) {
  */
 function roundedUniqueValues(values) {
   return [...new Set(values.map(value => Number(value.toFixed(6))))].sort((firstValue, secondValue) => firstValue - secondValue);
+}
+
+function sharedRingCount(layoutGraph, firstAtomId, secondAtomId) {
+  const firstRings = layoutGraph.atomToRings.get(firstAtomId) ?? [];
+  const secondRings = layoutGraph.atomToRings.get(secondAtomId) ?? [];
+  return secondRings.filter(ring => firstRings.includes(ring)).length;
 }
 
 /**
@@ -255,5 +263,38 @@ describe('layout/engine/visual-orientation', () => {
     const cubaneYs = roundedUniqueValues(heavyAtomIds(cubane).map(atomId => cubane.coords.get(atomId).y));
     assert.equal(cubaneXs.length, 4);
     assert.equal(cubaneYs.length, 4);
+  });
+
+  it('keeps safe fused-junction stereobonds on the exact continuation of the shared junction bond', () => {
+    const fusedSugar = runPipeline(
+      parseSMILES('C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4'),
+      { suppressH: true }
+    );
+    const c7Assignment = pickWedgeAssignments(fusedSugar.layoutGraph, fusedSugar.coords).assignments.find(assignment => assignment.centerId === 'C7');
+    const ringNeighborIds = fusedSugar.layoutGraph.sourceMolecule.atoms.get('C7')
+      .getNeighbors(fusedSugar.layoutGraph.sourceMolecule)
+      .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== 'O8' && (fusedSugar.layoutGraph.atomToRings.get(neighborAtom.id)?.length ?? 0) > 0)
+      .map(neighborAtom => neighborAtom.id);
+    const sharedJunctionNeighborId = ringNeighborIds.find(neighborAtomId => sharedRingCount(fusedSugar.layoutGraph, 'C7', neighborAtomId) > 1);
+    const straightJunctionAngle = angleOf(sub(fusedSugar.coords.get('C7'), fusedSugar.coords.get(sharedJunctionNeighborId)));
+    const substituentAngle = angleOf(sub(fusedSugar.coords.get('O8'), fusedSugar.coords.get('C7')));
+
+    assert.equal(c7Assignment?.bondId, '5');
+    assert.equal(c7Assignment?.type, 'wedge');
+    assert.equal(ringNeighborIds.length, 3);
+    assert.equal(sharedJunctionNeighborId, 'C31');
+    assert.ok(angularDifference(substituentAngle, straightJunctionAngle) < 1e-6);
+  });
+
+  it('does not globally rotate non-junction heavy-atom stereocenters away from the canonical heterocycle frame', () => {
+    const histidineLike = runPipeline(parseSMILES('C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN'), { suppressH: true });
+    const imidazoleLikeRing = ['C1', 'C2', 'N3', 'C4', 'N5'];
+    const c11Assignment = pickWedgeAssignments(histidineLike.layoutGraph, histidineLike.coords).assignments.find(assignment => assignment.centerId === 'C11');
+
+    assert.equal(c11Assignment?.bondId, '9');
+    assert.equal(c11Assignment?.type, 'wedge');
+    assert.equal(histidineLike.coords.get('N5').y, maxY(histidineLike.coords, imidazoleLikeRing));
+    assert.ok(Math.abs(histidineLike.coords.get('C1').y - histidineLike.coords.get('C4').y) < 1e-6);
+    assert.ok(Math.abs(histidineLike.coords.get('C2').y - histidineLike.coords.get('N3').y) < 1e-6);
   });
 });

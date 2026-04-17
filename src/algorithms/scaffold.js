@@ -66,6 +66,47 @@ function _normalizeScaffoldHydrogens(scaffold) {
 }
 
 /**
+ * Extracts the maximum spanning backbone (longest path) of an acyclic molecule.
+ * Used as a fallback when Murcko scaffold derivation completely dissolves an acyclic structure.
+ * @private
+ * @param {import('../core/Molecule.js').Molecule} molecule - The input acyclic molecule.
+ * @returns {import('../core/Molecule.js').Molecule} The acyclic backbone.
+ */
+function _extractAcyclicBackbone(molecule) {
+  const backbone = molecule.clone();
+  
+  // 1. Remove all explicit hydrogens
+  for (const [atomId, atom] of [...backbone.atoms.entries()]) {
+    if (atom.name === 'H') {
+      backbone.removeAtom(atomId);
+    }
+  }
+
+  // 2. Iteratively prune terminal NON-CARBON atoms to remove decorators (like =O, -Cl)
+  // but cleanly retain carbon branching.
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const [atomId, atom] of [...backbone.atoms.entries()]) {
+      if (backbone.atoms.size > 1 && backbone.getDegree(atomId) <= 1 && atom.name !== 'C') {
+        backbone.removeAtom(atomId);
+        changed = true;
+      }
+    }
+  }
+
+  // 3. Strip all double/triple bonds to normalize the topological carbon skeleton
+  for (const bond of backbone.bonds.values()) {
+    bond.properties.order = 1;
+    bond.properties.aromatic = false;
+  }
+
+  _normalizeScaffoldHydrogens(backbone);
+  backbone.resetIds();
+  return backbone;
+}
+
+/**
  * Extracts the Murcko Scaffold from a given molecule by iteratively
  * removing terminal atoms (degree <= 1) until only rings and linker
  * chains remain. Acyclic molecules will be reduced to an empty graph.
@@ -85,6 +126,11 @@ export function extractMurckoScaffold(molecule) {
         changed = true;
       }
     }
+  }
+
+  // Intercept pure acyclic destruction to map an explicit backbone
+  if (scaffold.atoms.size === 0 && molecule.atoms.size > 0) {
+    return _extractAcyclicBackbone(molecule);
   }
 
   // Restore serializer-compatible hidden hydrogens so canonical SMILES for the

@@ -66,7 +66,8 @@ function getProjected2dStereoHydrogenReplacementPosition(molecule, atomId, bondL
     .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
 
   return synthesizeHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength, {
-    incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id)
+    incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id),
+    preferCardinalAxes: true
   });
 }
 

@@ -56,4 +56,20 @@ describe('layout/engine/stereo/wedge-geometry', () => {
       false
     );
   });
+
+  it('snaps display hydrogens to exact cardinal axes when that stays nearly as open', () => {
+    const unit = angleDegrees => ({
+      x: Math.cos((angleDegrees * Math.PI) / 180),
+      y: Math.sin((angleDegrees * Math.PI) / 180)
+    });
+    const position = synthesizeHydrogenPosition(
+      { x: 0, y: 0 },
+      [unit(150), unit(18), unit(-90)],
+      1.5,
+      { preferCardinalAxes: true }
+    );
+
+    assert.ok(Math.abs(position.x) <= 1e-6, 'expected the snapped display hydrogen to stay on the vertical axis');
+    assert.ok(position.y > 1, 'expected the snapped display hydrogen to project upward');
+  });
 });

@@ -334,13 +334,20 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
   return coords;
 }
 
-function isTerminalMultipleBondHeteroNeighbor(layoutGraph, centerAtomId, bond) {
+/**
+ * Returns whether a multiple-bond neighbor is a terminal heavy-atom leaf.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Candidate trigonal center atom ID.
+ * @param {object} bond - Incident bond descriptor.
+ * @returns {boolean} True when the neighbor is a terminal multiple-bond leaf.
+ */
+function isTerminalMultipleBondLeafNeighbor(layoutGraph, centerAtomId, bond) {
   if (!layoutGraph || !bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
     return false;
   }
   const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
   const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-  return !!neighborAtom && neighborAtom.element !== 'H' && neighborAtom.element !== 'C' && neighborAtom.heavyDegree === 1;
+  return !!neighborAtom && neighborAtom.element !== 'H' && neighborAtom.heavyDegree === 1;
 }
 
 function isTerminalLinearMultipleBondRoot(layoutGraph, centerAtomId, bond) {
@@ -472,7 +479,17 @@ function realignTrigonalLinearSubstituentRoots(layoutGraph, coords) {
   return coords;
 }
 
-function realignTerminalMultipleBondHeteros(layoutGraph, coords, bondLength) {
+/**
+ * Re-snaps terminal multiple-bond leaves on trigonal centers to the exact
+ * outward bisector after backbone normalization has rotated one side of the
+ * conjugated system. This keeps carbonyl oxygens and terminal alkene carbons
+ * on ideal 120-degree depictions instead of leaving them slightly canted.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Updated coordinate map.
+ */
+function realignTerminalMultipleBondLeaves(layoutGraph, coords, bondLength) {
   if (!layoutGraph) {
     return coords;
   }
@@ -493,16 +510,16 @@ function realignTerminalMultipleBondHeteros(layoutGraph, coords, bondLength) {
       continue;
     }
 
-    const terminalMultipleBondHeteroBonds = heavyBonds.filter(bond => isTerminalMultipleBondHeteroNeighbor(layoutGraph, atom.id, bond));
-    if (terminalMultipleBondHeteroBonds.length !== 1) {
+    const terminalMultipleBondLeafBonds = heavyBonds.filter(bond => isTerminalMultipleBondLeafNeighbor(layoutGraph, atom.id, bond));
+    if (terminalMultipleBondLeafBonds.length !== 1) {
       continue;
     }
 
-    const heteroBond = terminalMultipleBondHeteroBonds[0];
-    const heteroAtomId = heteroBond.a === atom.id ? heteroBond.b : heteroBond.a;
+    const leafBond = terminalMultipleBondLeafBonds[0];
+    const leafAtomId = leafBond.a === atom.id ? leafBond.b : leafBond.a;
     const otherNeighborIds = heavyBonds
       .map(bond => (bond.a === atom.id ? bond.b : bond.a))
-      .filter(neighborAtomId => neighborAtomId !== heteroAtomId);
+      .filter(neighborAtomId => neighborAtomId !== leafAtomId);
     if (otherNeighborIds.length !== 2) {
       continue;
     }
@@ -517,7 +534,7 @@ function realignTerminalMultipleBondHeteros(layoutGraph, coords, bondLength) {
       continue;
     }
 
-    coords.set(heteroAtomId, add(centerPosition, fromAngle(angleOf(outwardVector), bondLength)));
+    coords.set(leafAtomId, add(centerPosition, fromAngle(angleOf(outwardVector), bondLength)));
   }
 
   return coords;
@@ -670,5 +687,5 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
   const stereoEnforced = enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords;
   const trigonalNormalized = normalizeBackboneTrigonalAngles(layoutGraph, stereoEnforced, backbone);
   const linearRootsRealigned = realignTrigonalLinearSubstituentRoots(layoutGraph, trigonalNormalized);
-  return realignTerminalMultipleBondHeteros(layoutGraph, linearRootsRealigned, bondLength);
+  return realignTerminalMultipleBondLeaves(layoutGraph, linearRootsRealigned, bondLength);
 }
