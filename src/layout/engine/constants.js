@@ -34,13 +34,18 @@ export const CLEANUP_EPSILON = 1e-3;
 /** Tunable thresholds used by the unified cleanup arbitration loop. */
 export const UNIFIED_CLEANUP_LIMITS = Object.freeze({
   overlapPriorityAtomCount: 24,
-  largeMoleculeBlockAwareOverlapFloor: 4
+  largeMoleculeBlockAwareOverlapFloor: 4,
+  smallLayoutRotationProbeAtomCount: 32,
+  smallLayoutRotationProbeOverlapCount: 2,
+  smallLayoutRotationProbeMaxPasses: 3
 });
 
 /** Tunable tolerances for protected-family cleanup stage selection. */
 export const PROTECTED_CLEANUP_STAGE_LIMITS = Object.freeze({
   maxBondFailureIncreaseForOverlapWin: 1,
-  maxBondDeviationIncrease: 1e-6
+  maxBondDeviationIncrease: 1e-6,
+  maxFusedMixedBondDeviationForOverlapWin: 0.06,
+  maxFusedMixedMeanDeviationForOverlapWin: 0.01
 });
 
 /** Heuristics for protected-family rigid cleanup subtree descriptors. */

@@ -5,14 +5,14 @@
  * Returns the exported D3 graph JSON.
  * 
  * Usage:
- *   node scripts/test/server.js
- *   Then open scripts/test/viewer.html in a browser.
+ *   node scripts/test/reaction-network-demo/server.js
+ *   Then open scripts/test/reaction-network-demo/viewer.html in a browser.
  */
 
 import http from 'http';
-import { ReactionNetwork, ScaffoldNetwork } from '../../src/network/index.js';
-import { parseSMILES, toCanonicalSMILES } from '../../src/io/index.js';
-import { reactionTemplates } from '../../src/smirks/index.js';
+import { ReactionNetwork, ScaffoldNetwork } from '../../../src/network/index.js';
+import { parseSMILES, toCanonicalSMILES } from '../../../src/io/index.js';
+import { reactionTemplates } from '../../../src/smirks/index.js';
 
 const PORT = 3737;
 
@@ -147,5 +147,5 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
     console.log(`Reaction Network Server running at http://localhost:${PORT}`);
-    console.log(`Open scripts/test/viewer.html in your browser.`);
+    console.log(`Open scripts/test/reaction-network-demo/viewer.html in your browser.`);
 });

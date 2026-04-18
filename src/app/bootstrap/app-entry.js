@@ -6,6 +6,7 @@ import { createAppRuntimeDeps } from './deps/app-runtime-deps.js';
 import { DRAW_ELEM_PROTONS, createInteractionRuntimeDeps } from './deps/interaction-runtime-deps.js';
 import { createBootstrapDom } from './dom-elements.js';
 import { exampleMolecules } from './example-molecules.js';
+import { bugMolecules } from '../../../examples/bug-molecules.js';
 import { initializeInteractionRuntime } from './interaction-runtime.js';
 import { atomBBoxFallback, enLabelColor, initForceSimulation, initPlotBootstrap } from './plot-bootstrap.js';
 import { initializeRuntimeBridges } from './runtime-bridges.js';
@@ -148,6 +149,9 @@ window.pickRandomMolecule = () => {
 };
 window.pickDebugMolecule = () => {
   window._pickDebugMolecule?.();
+};
+window.pickBugVerificationMolecule = () => {
+  window._pickBugVerificationMolecule?.();
 };
 window.parseInput = value => {
   window._parseInput?.(value);
@@ -1052,6 +1056,7 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     refreshAromaticity,
     navigationActions,
     exampleMolecules,
+    bugMolecules,
     moleculeCatalog,
     forceBondLength: FORCE_LAYOUT_BOND_LENGTH
   })

@@ -1,7 +1,7 @@
 /**
  * Large list of SMILES strings
  */
-export const stressTestMolecules = [
+export const exampleMoleculeComplex = [
   'CC(C)O[P@](O)(=O)OC[C@@H](N)C(O)=O',
   'COC(=O)COc1ccc2c(c1)c(NC(=O)N3C[C@](C)(F)C[C@H]3C(=O)NCc4cccc(Cl)c4F)cn2C(=O)N',
   'CSc1ccc(CC2=C(N(C)N(C)C2=O)C(F)(F)F)cc1',
@@ -36153,5 +36153,5 @@ export const stressTestMolecules = [
 
 // Expose as a global when loaded in the browser as a module script.
 if (typeof window !== 'undefined') {
-  window.stressTestMolecules = stressTestMolecules;
+  window.exampleMoleculeComplex = exampleMoleculeComplex;
 }

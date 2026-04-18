@@ -254,12 +254,17 @@ function fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds) {
  * orthogonal cross-like presentation without mutating coordinates.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{focusAtomIds?: Set<string>|null}} [options] - Optional local scoring focus.
  * @returns {number} Total squared angular deviation across supported centers.
  */
-export function measureOrthogonalHypervalentDeviation(layoutGraph, coords) {
+export function measureOrthogonalHypervalentDeviation(layoutGraph, coords, options = {}) {
+  const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
   let totalDeviation = 0;
 
   for (const atomId of coords.keys()) {
+    if (focusAtomIds && !focusAtomIds.has(atomId)) {
+      continue;
+    }
     const descriptor = describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords);
     if (!descriptor) {
       continue;

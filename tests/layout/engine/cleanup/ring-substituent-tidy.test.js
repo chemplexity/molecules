@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { runRingSubstituentTidy } from '../../../../src/layout/engine/cleanup/ring-substituent-tidy.js';
-import { add, centroid, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { createLayoutGraph, createLayoutGraphFromNormalized } from '../../../../src/layout/engine/model/layout-graph.js';
 import { normalizeOptions } from '../../../../src/layout/engine/options.js';
 import { layoutSupportedComponents } from '../../../../src/layout/engine/placement/component-layout.js';
@@ -111,16 +111,54 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
       parseSMILES('Cc1cc(NC(=O)CCSc2nc(cc(n2)C(F)(F)F)c3occc3)n(n1)c4ccccc4'),
       { suppressH: true, auditTelemetry: true }
     );
+    const postCleanupAudit = result.metadata.stageTelemetry.stageAudits.postCleanup;
 
-    assert.ok(result.metadata.stageTelemetry.stageAudits.postCleanup.ringSubstituentReadabilityFailureCount > 0);
-    assert.notEqual(result.metadata.stageTelemetry.selectedGeometryStage, 'postCleanup');
-    assert.notEqual(result.metadata.stageTelemetry.selectedGeometryStage, 'postHookCleanup');
     assert.ok(
       result.metadata.audit.ringSubstituentReadabilityFailureCount
-      <= result.metadata.stageTelemetry.stageAudits.postCleanup.ringSubstituentReadabilityFailureCount
+      <= postCleanupAudit.ringSubstituentReadabilityFailureCount
     );
+    assert.ok(result.metadata.audit.severeOverlapCount <= postCleanupAudit.severeOverlapCount);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
+  });
+
+  it('re-snaps lone terminal multiple-bond leaves on ring trigonal centers to the exact outward angle', () => {
+    const smiles = 'O=C1CCCCC1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const result = runPipeline(parseSMILES(smiles), { suppressH: true });
+    const coords = new Map([...result.coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+    const leafBond = [...graph.bonds.values()].find(bond => {
+      if (bond.kind !== 'covalent' || bond.inRing || (bond.order ?? 1) < 2) {
+        return false;
+      }
+      const firstRingCount = graph.atomToRings.get(bond.a)?.length ?? 0;
+      const secondRingCount = graph.atomToRings.get(bond.b)?.length ?? 0;
+      return firstRingCount !== secondRingCount
+        && graph.atoms.get(bond.a)?.element !== 'H'
+        && graph.atoms.get(bond.b)?.element !== 'H';
+    });
+    assert.ok(leafBond);
+    const anchorAtomId = (graph.atomToRings.get(leafBond.a)?.length ?? 0) > 0 ? leafBond.a : leafBond.b;
+    const leafAtomId = leafBond.a === anchorAtomId ? leafBond.b : leafBond.a;
+    const anchorPosition = coords.get(anchorAtomId);
+    const ring = (graph.atomToRings.get(anchorAtomId) ?? [])[0];
+    const preferredAngle = angleOf(sub(anchorPosition, centroid(ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))));
+    const badAngle = preferredAngle + (Math.PI / 3);
+    coords.set(leafAtomId, add(anchorPosition, fromAngle(badAngle, graph.options.bondLength)));
+
+    const beforeDeviation = angularDifference(angleOf(sub(coords.get(leafAtomId), anchorPosition)), preferredAngle);
+    const tidied = runRingSubstituentTidy(graph, coords, { bondLength: graph.options.bondLength });
+    const afterDeviation = angularDifference(
+      angleOf(sub(tidied.coords.get(leafAtomId), tidied.coords.get(anchorAtomId))),
+      preferredAngle
+    );
+    const afterAudit = auditLayout(graph, tidied.coords, { bondLength: graph.options.bondLength });
+
+    assert.ok(beforeDeviation > 0.5, `expected the seeded terminal leaf to start off-angle, got ${beforeDeviation.toFixed(6)} rad`);
+    assert.ok(tidied.nudges > 0);
+    assert.ok(afterDeviation < 1e-6, `expected the terminal leaf to return to the exact outward angle, got ${afterDeviation.toFixed(6)} rad`);
+    assert.equal(afterAudit.bondLengthFailureCount, 0);
+    assert.equal(afterAudit.ok, true);
   });
 
   it('cleans the representative multi-methoxy fused-ring readability case in the full pipeline', () => {

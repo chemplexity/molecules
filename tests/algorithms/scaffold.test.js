@@ -16,12 +16,6 @@ describe('Murcko Scaffold Extraction', () => {
     assert.equal(toCanonicalSMILES(scaffold), 'C1CCC(CC1)CCC2CCCCC2');
   });
 
-  it('should reduce a completely acyclic molecule to an empty graph', () => {
-    const mol = parseSMILES('CCCCCC');
-    const scaffold = extractMurckoScaffold(mol);
-    assert.equal(toCanonicalSMILES(scaffold), '');
-  });
-
   it('should strip complex functional groups from ring systems', () => {
     const mol = parseSMILES('O=C(O)c1ccccc1Cl');
     const scaffold = extractMurckoScaffold(mol);

@@ -5,9 +5,9 @@ function escapeForInlineJs(value) {
 }
 
 /**
- * Creates the input controls that manage the molecule catalog picker, example links, random molecule selection, debug stress selection, and SMILES/InChI input field bindings.
+ * Creates the input controls that manage the molecule catalog picker, example links, random molecule selection, bug-verification selection, debug stress selection, and SMILES/InChI input field bindings.
  * @param {object} deps - Dependency object providing data, state, dom, and actions.
- * @returns {object} Object with `bind`, `renderExamples`, `pickRandomMolecule`, `pickDebugMolecule`, `getCollectionInputValue`, and `syncCollectionPickerForInputValue`.
+ * @returns {object} Object with `bind`, `renderExamples`, `pickRandomMolecule`, `pickBugVerificationMolecule`, `pickDebugMolecule`, `getCollectionInputValue`, and `syncCollectionPickerForInputValue`.
  */
 export function createInputControls(deps) {
   const collectionEntries = deps.data.moleculeCatalog.flatMap(collection =>
@@ -26,8 +26,10 @@ export function createInputControls(deps) {
     ['smiles', { bag: [], recentKeys: [] }],
     ['inchi', { bag: [], recentKeys: [] }]
   ]);
-  const debugStressPool = Array.isArray(deps.data.stressTestMolecules) ? deps.data.stressTestMolecules : [];
+  const debugStressPool = Array.isArray(deps.data.randomMoleculeComplex) ? deps.data.randomMoleculeComplex : [];
   const debugSelectionState = { bag: [], recentKeys: [] };
+  const bugVerificationPool = Array.isArray(deps.data.bugMolecules) ? deps.data.bugMolecules : [];
+  const bugVerificationSelectionState = { bag: [], recentKeys: [] };
 
   function selectedCollectionEntry() {
     return collectionEntriesById.get(deps.dom.getCollectionSelectElement().value) ?? null;
@@ -100,6 +102,10 @@ export function createInputControls(deps) {
     return nextRandomItem(debugStressPool, debugSelectionState, smiles => String(smiles ?? ''));
   }
 
+  function nextBugVerificationMolecule() {
+    return nextRandomItem(bugVerificationPool, bugVerificationSelectionState, smiles => String(smiles ?? ''));
+  }
+
   function populateCollectionPicker() {
     const options = ['<option value="">Molecule Catalog...</option>'];
     for (const collection of deps.data.moleculeCatalog) {
@@ -134,7 +140,7 @@ export function createInputControls(deps) {
         return `<a href="#" onclick="parseInput('${escapeForInlineJs(value)}'); return false">${molecule.name}</a>`;
       })
       .join(', ');
-    deps.dom.getExamplesElement().innerHTML = `<i>examples:&nbsp;</i>${links}, <a href="#" onclick="pickRandomMolecule(); return false">random</a>, <a href="#" onclick="pickDebugMolecule(); return false">debug</a>`;
+    deps.dom.getExamplesElement().innerHTML = `<i>examples:&nbsp;</i>${links}, <a href="#" onclick="pickRandomMolecule(); return false">random (simple)</a>, <a href="#" onclick="pickDebugMolecule(); return false">random (complex)</a>, <a href="#" onclick="pickBugVerificationMolecule(); return false">bug verification</a>`;
   }
 
   function pickRandomMolecule() {
@@ -148,6 +154,16 @@ export function createInputControls(deps) {
 
   function pickDebugMolecule() {
     const smiles = nextDebugMolecule();
+    if (!smiles) {
+      return;
+    }
+    deps.dom.getInputElement().value = smiles;
+    syncCollectionPickerForInputValue(smiles);
+    deps.actions.parseInputWithAutoFormat(smiles);
+  }
+
+  function pickBugVerificationMolecule() {
+    const smiles = nextBugVerificationMolecule();
     if (!smiles) {
       return;
     }
@@ -207,6 +223,7 @@ export function createInputControls(deps) {
     bind,
     renderExamples,
     pickRandomMolecule,
+    pickBugVerificationMolecule,
     pickDebugMolecule,
     getCollectionInputValue,
     syncCollectionPickerForInputValue

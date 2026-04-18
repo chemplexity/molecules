@@ -11,23 +11,16 @@ import { refineStitchedBlock } from '../placement/block-stitching.js';
 import { assignBondValidationClass, mergeBondValidationClasses } from '../placement/bond-validation.js';
 import { buildSliceAdjacency, createAtomSlice, layoutAtomSlice } from '../placement/atom-slice.js';
 
-const PACKING_ROTATION_ANGLES = Object.freeze([-Math.PI / 2, -Math.PI / 3, -Math.PI / 6, Math.PI / 6, Math.PI / 3, Math.PI / 2]);
-const OVERLAP_RESOLUTION_ROTATION_ANGLES = Object.freeze([
-  -Math.PI,
-  -Math.PI * 0.75,
-  -Math.PI * (2 / 3),
+const PACKING_ROTATION_ANGLES = Object.freeze([
   -Math.PI / 2,
   -Math.PI / 3,
-  -Math.PI / 4,
   -Math.PI / 6,
-  -Math.PI / 12,
-  Math.PI / 12,
   Math.PI / 6,
-  Math.PI / 4,
   Math.PI / 3,
-  Math.PI / 2,
-  Math.PI * (2 / 3),
-  Math.PI * 0.75,
+  Math.PI / 2
+]);
+const OVERLAP_RESOLUTION_ROTATION_ANGLES = Object.freeze([
+  ...PACKING_ROTATION_ANGLES,
   Math.PI
 ]);
 

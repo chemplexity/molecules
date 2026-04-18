@@ -4,7 +4,18 @@ import { buildAtomGrid } from '../audit/invariants.js';
 import { countPointInPolygons } from '../geometry/polygon.js';
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub } from '../geometry/vec2.js';
 
-const TIDY_ROTATION_ANGLES = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12);
+const TIDY_ROTATION_ANGLES = Object.freeze([
+  0,
+  Math.PI / 6,
+  -Math.PI / 6,
+  Math.PI / 3,
+  -Math.PI / 3,
+  Math.PI / 2,
+  -Math.PI / 2,
+  (2 * Math.PI) / 3,
+  -(2 * Math.PI) / 3,
+  Math.PI
+]);
 const TIDY_IMPROVEMENT_EPSILON = 1e-6;
 const SINGLE_BOND_TERMINAL_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
 
@@ -179,7 +190,8 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
       angleDelta: 0
     };
     let bestCandidate = currentCandidate;
-    const candidateAngles = new Set([...TIDY_ROTATION_ANGLES, ...descriptor.outwardAngles]);
+    const candidateAngles = new Set(TIDY_ROTATION_ANGLES);
+    for (const angle of descriptor.outwardAngles) { candidateAngles.add(angle); }
     for (const candidateAngle of candidateAngles) {
       const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, radius));
       const candidate = {

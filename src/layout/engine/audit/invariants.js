@@ -11,6 +11,79 @@ function pairKey(firstAtomId, secondAtomId) {
   return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
 }
 
+const SUBTREE_BOND_CROWDING_FACTOR = 0.5;
+const SUBTREE_BOND_CROWDING_WEIGHT = 25;
+const IDEAL_DIVALENT_CONTINUATION_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
+
+function distancePointToSegment(point, firstPoint, secondPoint) {
+  const deltaX = secondPoint.x - firstPoint.x;
+  const deltaY = secondPoint.y - firstPoint.y;
+  const spanSquared = deltaX * deltaX + deltaY * deltaY;
+  if (spanSquared <= 1e-12) {
+    return Math.hypot(point.x - firstPoint.x, point.y - firstPoint.y);
+  }
+  const projection = ((point.x - firstPoint.x) * deltaX + (point.y - firstPoint.y) * deltaY) / spanSquared;
+  const clampedProjection = Math.max(0, Math.min(1, projection));
+  const closestPoint = {
+    x: firstPoint.x + deltaX * clampedProjection,
+    y: firstPoint.y + deltaY * clampedProjection
+  };
+  return Math.hypot(point.x - closestPoint.x, point.y - closestPoint.y);
+}
+
+function pointOnSegment(point, firstPoint, secondPoint) {
+  return point.x >= Math.min(firstPoint.x, secondPoint.x) - 1e-9
+    && point.x <= Math.max(firstPoint.x, secondPoint.x) + 1e-9
+    && point.y >= Math.min(firstPoint.y, secondPoint.y) - 1e-9
+    && point.y <= Math.max(firstPoint.y, secondPoint.y) + 1e-9;
+}
+
+function orientation(firstPoint, secondPoint, thirdPoint) {
+  const determinant =
+    (secondPoint.x - firstPoint.x) * (thirdPoint.y - firstPoint.y)
+    - (secondPoint.y - firstPoint.y) * (thirdPoint.x - firstPoint.x);
+  if (Math.abs(determinant) <= 1e-12) {
+    return 0;
+  }
+  return determinant > 0 ? 1 : -1;
+}
+
+function segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd) {
+  const firstOrientationA = orientation(firstStart, firstEnd, secondStart);
+  const firstOrientationB = orientation(firstStart, firstEnd, secondEnd);
+  const secondOrientationA = orientation(secondStart, secondEnd, firstStart);
+  const secondOrientationB = orientation(secondStart, secondEnd, firstEnd);
+
+  if (firstOrientationA !== firstOrientationB && secondOrientationA !== secondOrientationB) {
+    return true;
+  }
+  if (firstOrientationA === 0 && pointOnSegment(secondStart, firstStart, firstEnd)) {
+    return true;
+  }
+  if (firstOrientationB === 0 && pointOnSegment(secondEnd, firstStart, firstEnd)) {
+    return true;
+  }
+  if (secondOrientationA === 0 && pointOnSegment(firstStart, secondStart, secondEnd)) {
+    return true;
+  }
+  if (secondOrientationB === 0 && pointOnSegment(firstEnd, secondStart, secondEnd)) {
+    return true;
+  }
+  return false;
+}
+
+function distanceBetweenSegments(firstStart, firstEnd, secondStart, secondEnd) {
+  if (segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd)) {
+    return 0;
+  }
+  return Math.min(
+    distancePointToSegment(firstStart, secondStart, secondEnd),
+    distancePointToSegment(firstEnd, secondStart, secondEnd),
+    distancePointToSegment(secondStart, firstStart, firstEnd),
+    distancePointToSegment(secondEnd, firstStart, firstEnd)
+  );
+}
+
 /**
  * Returns the bond-validation settings for the requested validation class.
  * @param {'planar'|'bridged'|undefined} validationClass - Bond validation class.
@@ -133,6 +206,57 @@ export function buildAtomGrid(layoutGraph, coords, bondLength) {
 }
 
 /**
+ * Builds reusable membership and bond partitions for subtree-overlap scoring.
+ * This lets callers reuse the same subtree/bond classification across many
+ * candidate evaluations instead of rescanning the full bond list each time.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} subtreeAtomIds - Atom IDs in the moving subtree.
+ * @param {object} [options] - Context options.
+ * @param {boolean} [options.includeBondCrowding] - Whether to also partition auditable bonds.
+ * @returns {{subtreeSet: Set<string>, visibleSubtreeAtomIds: string[], subtreeBonds?: object[], externalBonds?: object[]}} Reusable subtree-overlap context.
+ */
+export function buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, options = {}) {
+  const subtreeSet = new Set(subtreeAtomIds);
+  const seenVisibleAtomIds = new Set();
+  const visibleSubtreeAtomIds = [];
+  for (const atomId of subtreeAtomIds) {
+    if (!seenVisibleAtomIds.has(atomId) && isVisibleLayoutAtom(layoutGraph, atomId)) {
+      seenVisibleAtomIds.add(atomId);
+      visibleSubtreeAtomIds.push(atomId);
+    }
+  }
+
+  if (options.includeBondCrowding !== true) {
+    return {
+      subtreeSet,
+      visibleSubtreeAtomIds
+    };
+  }
+
+  const subtreeBonds = [];
+  const externalBonds = [];
+  for (const bond of layoutGraph.bonds.values()) {
+    if (!isAuditableBond(layoutGraph, bond)) {
+      continue;
+    }
+    const firstInSubtree = subtreeSet.has(bond.a);
+    const secondInSubtree = subtreeSet.has(bond.b);
+    if (!firstInSubtree && !secondInSubtree) {
+      externalBonds.push(bond);
+      continue;
+    }
+    subtreeBonds.push(bond);
+  }
+
+  return {
+    subtreeSet,
+    visibleSubtreeAtomIds,
+    subtreeBonds,
+    externalBonds
+  };
+}
+
+/**
  * Computes a lightweight exploratory placement cost focused on a subset of
  * atoms. This is intentionally cheaper than the full audit cost and is meant
  * only for internal branch/orientation search where unchanged distant geometry
@@ -145,7 +269,14 @@ export function buildAtomGrid(layoutGraph, coords, bondLength) {
  * @returns {number} Focused exploratory placement cost.
  */
 export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds, options = {}) {
-  const uniqueFocusAtomIds = [...new Set(focusAtomIds)].filter(atomId => coords.has(atomId) && isVisibleLayoutAtom(layoutGraph, atomId));
+  const seen = new Set();
+  const uniqueFocusAtomIds = [];
+  for (const atomId of focusAtomIds) {
+    if (!seen.has(atomId) && coords.has(atomId) && isVisibleLayoutAtom(layoutGraph, atomId)) {
+      seen.add(atomId);
+      uniqueFocusAtomIds.push(atomId);
+    }
+  }
   if (uniqueFocusAtomIds.length === 0) {
     return 0;
   }
@@ -248,8 +379,8 @@ export function supportsRingSubstituentOutwardReadability(layoutGraph, anchorAto
   return false;
 }
 
-function ringSystemAtomIds(layoutGraph, ringSystemId) {
-  return layoutGraph.ringSystems.find(ringSystem => ringSystem.id === ringSystemId)?.atomIds ?? [];
+function ringSystemAtomIds(layoutGraph, ringSystemId, ringSystemById = null) {
+  return (ringSystemById ? ringSystemById.get(ringSystemId) : layoutGraph.ringSystems.find(ringSystem => ringSystem.id === ringSystemId))?.atomIds ?? [];
 }
 
 function incidentRingPolygons(layoutGraph, coords, atomId) {
@@ -300,9 +431,10 @@ function evaluateRingSubstituentSide(layoutGraph, coords, anchorAtomId, represen
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {string} anchorAtomId - Candidate ring anchor atom id.
+ * @param {Map<number, object>|null} [ringSystemById] - Optional cached ring-system lookup.
  * @returns {Array<{childAtomId: string, representativeAtomIds: string[]}>} Readability candidates.
  */
-export function collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId) {
+export function collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId, ringSystemById = null) {
   const anchorAtom = layoutGraph.sourceMolecule.atoms.get(anchorAtomId);
   if (!anchorAtom || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
     return [];
@@ -334,7 +466,7 @@ export function collectReadableRingSubstituentChildren(layoutGraph, coords, anch
     if (childRingSystemId == null || childRingSystemId === anchorRingSystemId) {
       continue;
     }
-    const representativeAtomIds = ringSystemAtomIds(layoutGraph, childRingSystemId).filter(atomId => coords.has(atomId));
+    const representativeAtomIds = ringSystemAtomIds(layoutGraph, childRingSystemId, ringSystemById).filter(atomId => coords.has(atomId));
     if (representativeAtomIds.length === 0) {
       continue;
     }
@@ -406,11 +538,13 @@ function bestRingOutwardDeviation(layoutGraph, coords, anchorAtomId, representat
  * faces and reasonably close to a local ring-outward direction.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
- * @param {{maxOutwardDeviation?: number}} [options] - Readability options.
+ * @param {{maxOutwardDeviation?: number, focusAtomIds?: Set<string>|null}} [options] - Readability options.
  * @returns {{failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}} Readability summary.
  */
 export function measureRingSubstituentReadability(layoutGraph, coords, options = {}) {
   const maxOutwardDeviation = options.maxOutwardDeviation ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxOutwardDeviation;
+  const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
+  const ringSystemById = new Map(layoutGraph.ringSystems.map(rs => [rs.id, rs]));
   let failingSubstituentCount = 0;
   let inwardSubstituentCount = 0;
   let outwardAxisFailureCount = 0;
@@ -419,11 +553,14 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
   const seenPairs = new Set();
 
   for (const anchorAtomId of coords.keys()) {
+    if (focusAtomIds && !focusAtomIds.has(anchorAtomId)) {
+      continue;
+    }
     if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0 || !isVisibleLayoutAtom(layoutGraph, anchorAtomId)) {
       continue;
     }
 
-    const substituentChildren = collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId);
+    const substituentChildren = collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId, ringSystemById);
     if (substituentChildren.length === 0) {
       continue;
     }
@@ -464,7 +601,7 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
       if (anchorRingSystemId == null) {
         continue;
       }
-      const reverseRepresentativeAtomIds = ringSystemAtomIds(layoutGraph, anchorRingSystemId).filter(atomId => coords.has(atomId));
+      const reverseRepresentativeAtomIds = ringSystemAtomIds(layoutGraph, anchorRingSystemId, ringSystemById).filter(atomId => coords.has(atomId));
       if (reverseRepresentativeAtomIds.length === 0) {
         continue;
       }
@@ -695,9 +832,37 @@ export function computeAtomDistortionCost(layoutGraph, coords, atomId, overrideP
   }
   const getPos = id => overridePositions?.get(id) ?? coords.get(id);
   const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
+  const atom = layoutGraph.atoms.get(atomId);
   let cost = 0;
 
-  if (covalentBonds.length === 3) {
+  if (covalentBonds.length === 2) {
+    if (
+      atom
+      && !atom.aromatic
+      && IDEAL_DIVALENT_CONTINUATION_HETERO_ELEMENTS.has(atom.element)
+      && (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) === 0
+    ) {
+      const heavySingleBonds = covalentBonds.filter(({ bond, neighborAtomId }) => {
+        const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+        return neighborAtom && neighborAtom.element !== 'H' && !bond.aromatic && (bond.order ?? 1) === 1;
+      });
+      if (heavySingleBonds.length === 2) {
+        const atomPosition = getPos(atomId);
+        if (atomPosition) {
+          const [firstBond, secondBond] = heavySingleBonds;
+          const firstNeighborPosition = getPos(firstBond.neighborAtomId);
+          const secondNeighborPosition = getPos(secondBond.neighborAtomId);
+          if (firstNeighborPosition && secondNeighborPosition) {
+            const bondAngle = angularDifference(
+              Math.atan2(firstNeighborPosition.y - atomPosition.y, firstNeighborPosition.x - atomPosition.x),
+              Math.atan2(secondNeighborPosition.y - atomPosition.y, secondNeighborPosition.x - atomPosition.x)
+            );
+            cost += (bondAngle - ((2 * Math.PI) / 3)) ** 2 * 20;
+          }
+        }
+      }
+    }
+  } else if (covalentBonds.length === 3) {
     const multipleBondCount = covalentBonds.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
     if (multipleBondCount === 1) {
       const atomPosition = getPos(atomId);
@@ -740,37 +905,79 @@ export function computeAtomDistortionCost(layoutGraph, coords, atomId, overrideP
  * @param {number} bondLength - Target bond length.
  * @param {object} [options] - Cost options.
  * @param {AtomGrid|null} [options.atomGrid] - Optional reused spatial grid built from coords.
+ * @param {boolean} [options.includeAtomOverlaps] - Whether to score nonbonded atom overlaps.
+ * @param {boolean} [options.includeBondCrowding] - Whether to add nonadjacent bond-segment crowding penalties.
+ * @param {{subtreeSet: Set<string>, visibleSubtreeAtomIds: string[], subtreeBonds?: object[], externalBonds?: object[]}|null} [options.subtreeContext] - Optional reusable subtree-overlap context.
  * @returns {number} Overlap penalty for the subtree.
  */
 export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, overridePositions, bondLength, options = {}) {
-  const subtreeSet = new Set(subtreeAtomIds);
+  const includeAtomOverlaps = options.includeAtomOverlaps !== false;
+  const subtreeContext =
+    options.subtreeContext
+    ?? buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, {
+      includeBondCrowding: options.includeBondCrowding === true
+    });
+  const subtreeSet = subtreeContext.subtreeSet;
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
-  const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength);
   let cost = 0;
-  for (const subtreeAtomId of subtreeAtomIds) {
-    if (!isVisibleLayoutAtom(layoutGraph, subtreeAtomId)) {
-      continue;
+  if (includeAtomOverlaps) {
+    const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength);
+    for (const subtreeAtomId of subtreeContext.visibleSubtreeAtomIds) {
+      const pos = overridePositions?.get(subtreeAtomId) ?? coords.get(subtreeAtomId);
+      if (!pos) {
+        continue;
+      }
+      const nearbyAtomIds = atomGrid.queryRadius(pos, threshold);
+      for (const atomId of nearbyAtomIds) {
+        if (subtreeSet.has(atomId) || !isVisibleLayoutAtom(layoutGraph, atomId)) {
+          continue;
+        }
+        if (layoutGraph.bondedPairSet.has(pairKey(subtreeAtomId, atomId))) {
+          continue;
+        }
+        const otherPos = coords.get(atomId);
+        if (!otherPos) {
+          continue;
+        }
+        const d = Math.hypot(otherPos.x - pos.x, otherPos.y - pos.y);
+        if (d < threshold) {
+          const deficit = threshold - d;
+          cost += deficit * deficit * 100;
+        }
+      }
     }
-    const pos = overridePositions?.get(subtreeAtomId) ?? coords.get(subtreeAtomId);
-    if (!pos) {
-      continue;
-    }
-    const nearbyAtomIds = atomGrid.queryRadius(pos, threshold);
-    for (const atomId of nearbyAtomIds) {
-      if (subtreeSet.has(atomId) || !isVisibleLayoutAtom(layoutGraph, atomId)) {
+  }
+
+  if (options.includeBondCrowding === true) {
+    const bondCrowdingThreshold = bondLength * SUBTREE_BOND_CROWDING_FACTOR;
+    const subtreeBonds = subtreeContext.subtreeBonds ?? [];
+    const externalBonds = subtreeContext.externalBonds ?? [];
+
+    for (const bond of subtreeBonds) {
+      const firstPosition = overridePositions?.get(bond.a) ?? coords.get(bond.a);
+      const secondPosition = overridePositions?.get(bond.b) ?? coords.get(bond.b);
+      if (!firstPosition || !secondPosition) {
         continue;
       }
-      if (layoutGraph.bondedPairSet.has(pairKey(subtreeAtomId, atomId))) {
-        continue;
-      }
-      const otherPos = coords.get(atomId);
-      if (!otherPos) {
-        continue;
-      }
-      const d = Math.hypot(otherPos.x - pos.x, otherPos.y - pos.y);
-      if (d < threshold) {
-        const deficit = threshold - d;
-        cost += deficit * deficit * 100;
+      for (const externalBond of externalBonds) {
+        if (bond.a === externalBond.a || bond.a === externalBond.b || bond.b === externalBond.a || bond.b === externalBond.b) {
+          continue;
+        }
+        const externalFirstPosition = coords.get(externalBond.a);
+        const externalSecondPosition = coords.get(externalBond.b);
+        if (!externalFirstPosition || !externalSecondPosition) {
+          continue;
+        }
+        const distance = distanceBetweenSegments(
+          firstPosition,
+          secondPosition,
+          externalFirstPosition,
+          externalSecondPosition
+        );
+        if (distance < bondCrowdingThreshold) {
+          const deficit = bondCrowdingThreshold - distance;
+          cost += deficit * deficit * SUBTREE_BOND_CROWDING_WEIGHT;
+        }
       }
     }
   }

@@ -1,13 +1,37 @@
 /** @module cleanup/overlap-resolution */
 
 import { buildAtomGrid, computeAtomDistortionCost, computeSubtreeOverlapCost, findSevereOverlaps } from '../audit/invariants.js';
+import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { ANGLE_EPSILON, IMPROVEMENT_EPSILON, NUMERIC_EPSILON } from '../constants.js';
 
-const RIGID_SUBTREE_ROTATION_ANGLES = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12);
+const RIGID_SUBTREE_ROTATION_ANGLES = Object.freeze([
+  0,
+  Math.PI / 6,
+  -Math.PI / 6,
+  Math.PI / 3,
+  -Math.PI / 3,
+  Math.PI / 2,
+  -Math.PI / 2,
+  (2 * Math.PI) / 3,
+  -(2 * Math.PI) / 3,
+  Math.PI
+]);
+const COARSE_RIGID_SUBTREE_ROTATION_ANGLES = Object.freeze([
+  0,
+  Math.PI / 3,
+  -Math.PI / 3,
+  Math.PI / 2,
+  -Math.PI / 2,
+  (2 * Math.PI) / 3,
+  -(2 * Math.PI) / 3,
+  Math.PI
+]);
 const LARGE_RIGID_SUBTREE_COMPONENT_ATOM_COUNT = 24;
 const LARGE_RIGID_SUBTREE_SIZE = 6;
 const MAX_RIGID_DESCRIPTOR_OPTIONS_PER_ATOM = 4;
+const COMPACT_RING_ANCHORED_RIGID_SUBTREE_MAX_HEAVY_ATOMS = 6;
+const COMPACT_RING_ANCHORED_RIGID_SUBTREE_MAX_ATOMS = 10;
 
 function protectsLargeMoleculeBackbone(options) {
   return options.protectLargeMoleculeBackbone === true;
@@ -30,9 +54,155 @@ function atomPairKey(firstAtomId, secondAtomId) {
 }
 
 /**
- * Collects the small singly attached ring subtrees that can be moved rigidly during overlap cleanup.
+ * Returns the heavy-atom count for one rigid cleanup subtree.
  * @param {object} layoutGraph - Layout graph shell.
- * @returns {Map<string, {anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>} Rigid-subtree descriptor by member atom ID.
+ * @param {string[]} subtreeAtomIds - Candidate subtree atom ids.
+ * @returns {number} Heavy-atom count within the subtree.
+ */
+function subtreeHeavyAtomCount(layoutGraph, subtreeAtomIds) {
+  return subtreeAtomIds.filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H').length;
+}
+
+/**
+ * Returns whether a small non-ring subtree rooted on a ring atom should also be
+ * treated as a rigid overlap-cleanup unit. Compact acyl/carboxyl and similar
+ * ring substituents can often resolve a clash locally, which is usually better
+ * than swinging an entire attached ring block through a chemically sensitive
+ * linker just because that larger rigid move happened to be available.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Anchor atom id.
+ * @param {string[]} subtreeAtomIds - Candidate subtree atom ids.
+ * @param {number} heavyAtomCount - Heavy-atom count in the subtree.
+ * @returns {boolean} True when the subtree should be offered as a rigid move.
+ */
+function isCompactRingAnchoredRigidSubtree(layoutGraph, anchorAtomId, subtreeAtomIds, heavyAtomCount) {
+  if ((layoutGraph.atomToRings?.get(anchorAtomId)?.length ?? 0) === 0) {
+    return false;
+  }
+  if (heavyAtomCount < 2 || heavyAtomCount > COMPACT_RING_ANCHORED_RIGID_SUBTREE_MAX_HEAVY_ATOMS) {
+    return false;
+  }
+  if (subtreeAtomIds.length > COMPACT_RING_ANCHORED_RIGID_SUBTREE_MAX_ATOMS) {
+    return false;
+  }
+  return subtreeAtomIds.every(atomId => (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) === 0);
+}
+
+/**
+ * Returns whether one rigid descriptor is a compact non-ring substituent rooted
+ * directly on a ring atom, such as a carboxyl or acyl branch on an aromatic
+ * ring. When several rigid rotations clear the same clash equally well, these
+ * descriptors should prefer the exact local ring-outward direction instead of
+ * merely maximizing separation from the overlapping atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{anchorAtomId: string, subtreeAtomIds: string[]}} descriptor - Rigid-subtree descriptor.
+ * @returns {boolean} True when the descriptor should preserve exact ring-root presentation.
+ */
+function isCompactRingAnchoredRigidDescriptor(layoutGraph, descriptor) {
+  return isCompactRingAnchoredRigidSubtree(
+    layoutGraph,
+    descriptor.anchorAtomId,
+    descriptor.subtreeAtomIds,
+    subtreeHeavyAtomCount(layoutGraph, descriptor.subtreeAtomIds)
+  );
+}
+
+/**
+ * Measures how far a rigid subtree root deviates from the local ring-outward
+ * direction of its anchor. Lower values are better.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {{anchorAtomId: string, rootAtomId: string}} descriptor - Rigid-subtree descriptor.
+ * @param {Map<string, {x: number, y: number}>|null} [overridePositions] - Optional candidate positions.
+ * @returns {number} Minimum outward-deviation angle in radians.
+ */
+function compactRingAnchoredRootOutwardDeviation(layoutGraph, coords, descriptor, overridePositions = null) {
+  const anchorPosition = overridePositions?.get(descriptor.anchorAtomId) ?? coords.get(descriptor.anchorAtomId);
+  const rootPosition = overridePositions?.get(descriptor.rootAtomId) ?? coords.get(descriptor.rootAtomId);
+  if (!anchorPosition || !rootPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const rootAngle = angleOf(sub(rootPosition, anchorPosition));
+  let bestDeviation = Number.POSITIVE_INFINITY;
+  for (const ring of layoutGraph.atomToRings?.get(descriptor.anchorAtomId) ?? []) {
+    const ringPositions = ring.atomIds.map(atomId => overridePositions?.get(atomId) ?? coords.get(atomId)).filter(Boolean);
+    if (ringPositions.length < 3) {
+      continue;
+    }
+    const outwardAngle = angleOf(sub(anchorPosition, centroid(ringPositions)));
+    bestDeviation = Math.min(bestDeviation, angularDifference(rootAngle, outwardAngle));
+  }
+  return bestDeviation;
+}
+
+/**
+ * Returns whether one rigid cleanup move should beat another.
+ * Overlap gain stays primary, then local presentation, then subtree size so
+ * equally effective fixes prefer the smaller less-disruptive branch.
+ * @param {object|null} incumbent - Current best rigid move.
+ * @param {object} candidate - Candidate rigid move.
+ * @returns {boolean} True when the candidate should replace the incumbent.
+ */
+function isBetterRigidMove(incumbent, candidate) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.improvement > incumbent.improvement + IMPROVEMENT_EPSILON) {
+    return true;
+  }
+  if (Math.abs(candidate.improvement - incumbent.improvement) > IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  if (candidate.ringRootDeviation < incumbent.ringRootDeviation - IMPROVEMENT_EPSILON) {
+    return true;
+  }
+  if (Math.abs(candidate.ringRootDeviation - incumbent.ringRootDeviation) > IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  const candidateTotalRingRootDeviation = candidate.totalRingRootDeviation ?? candidate.ringRootDeviation;
+  const incumbentTotalRingRootDeviation = incumbent.totalRingRootDeviation ?? incumbent.ringRootDeviation;
+  if (candidateTotalRingRootDeviation < incumbentTotalRingRootDeviation - IMPROVEMENT_EPSILON) {
+    return true;
+  }
+  if (Math.abs(candidateTotalRingRootDeviation - incumbentTotalRingRootDeviation) > IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  if (candidate.subtreeHeavyAtomCount !== incumbent.subtreeHeavyAtomCount) {
+    return candidate.subtreeHeavyAtomCount < incumbent.subtreeHeavyAtomCount;
+  }
+  if (candidate.subtreeAtomCount !== incumbent.subtreeAtomCount) {
+    return candidate.subtreeAtomCount < incumbent.subtreeAtomCount;
+  }
+  return candidate.resolvedDistance > incumbent.resolvedDistance + IMPROVEMENT_EPSILON;
+}
+
+/**
+ * Returns whether a candidate rigid-subtree descriptor should replace the
+ * current descriptor for the same member atom.
+ * @param {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}} candidate - Candidate descriptor.
+ * @param {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}|undefined} incumbent - Existing descriptor.
+ * @returns {boolean} True when the candidate is the better local move.
+ */
+function shouldReplaceRigidDescriptor(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.subtreeAtomIds.length !== incumbent.subtreeAtomIds.length) {
+    return candidate.subtreeAtomIds.length < incumbent.subtreeAtomIds.length;
+  }
+  if (candidate.rootAtomId !== incumbent.rootAtomId) {
+    return candidate.rootAtomId.localeCompare(incumbent.rootAtomId, 'en', { numeric: true }) < 0;
+  }
+  return candidate.anchorAtomId.localeCompare(incumbent.anchorAtomId, 'en', { numeric: true }) < 0;
+}
+
+/**
+ * Collects the rigid cleanup subtrees that can be moved as one unit during
+ * overlap repair. The default set includes singly attached ring blocks plus
+ * compact non-ring substituents rooted on ring atoms.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @returns {Map<string, {anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>} Preferred rigid-subtree descriptor by member atom ID.
  */
 export function collectRigidPendantRingSubtrees(layoutGraph) {
   const descriptorsByAtomId = new Map();
@@ -55,25 +225,35 @@ export function collectRigidPendantRingSubtrees(layoutGraph) {
       if (subtreeAtomIds.has(anchorAtomId) || subtreeAtomIds.size >= totalAtomCount) {
         continue;
       }
-      const heavyAtomCount = [...subtreeAtomIds].filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H').length;
-      if (heavyAtomCount === 0 || heavyAtomCount > 14) {
+      const descriptorAtomIds = [...subtreeAtomIds];
+      const heavyAtomCount = subtreeHeavyAtomCount(layoutGraph, descriptorAtomIds);
+      const includesRingAtoms = descriptorAtomIds.some(atomId => ringAtomIds.has(atomId));
+      const includesCompactRingAnchoredSubtree =
+        !includesRingAtoms
+        && isCompactRingAnchoredRigidSubtree(layoutGraph, anchorAtomId, descriptorAtomIds, heavyAtomCount);
+      if (heavyAtomCount === 0) {
         continue;
       }
-      if (![...subtreeAtomIds].some(atomId => ringAtomIds.has(atomId))) {
+      if (!includesRingAtoms && !includesCompactRingAnchoredSubtree) {
         continue;
       }
-      if ([...subtreeAtomIds].some(atomId => layoutGraph.fixedCoords.has(atomId))) {
+      if (includesRingAtoms && heavyAtomCount > 14) {
+        continue;
+      }
+      let hasFixed = false;
+      for (const id of subtreeAtomIds) { if (layoutGraph.fixedCoords.has(id)) { hasFixed = true; break; } }
+      if (hasFixed) {
         continue;
       }
 
       const descriptor = {
         anchorAtomId,
         rootAtomId,
-        subtreeAtomIds: [...subtreeAtomIds]
+        subtreeAtomIds: descriptorAtomIds
       };
       for (const atomId of descriptor.subtreeAtomIds) {
         const existingDescriptor = descriptorsByAtomId.get(atomId);
-        if (!existingDescriptor || descriptor.subtreeAtomIds.length < existingDescriptor.subtreeAtomIds.length) {
+        if (shouldReplaceRigidDescriptor(descriptor, existingDescriptor)) {
           descriptorsByAtomId.set(atomId, descriptor);
         }
       }
@@ -110,7 +290,8 @@ export function mergeRigidSubtreesByAtomId(...descriptorMaps) {
 
     for (const [atomId, descriptorValue] of descriptorMap) {
       const nextDescriptors = merged.get(atomId) ?? [];
-      const seenDescriptorKeys = new Set(nextDescriptors.map(rigidDescriptorKey));
+      const seenDescriptorKeys = new Set();
+      for (const d of nextDescriptors) { seenDescriptorKeys.add(rigidDescriptorKey(d)); }
       for (const descriptor of rigidDescriptorsFromValue(descriptorValue)) {
         const key = rigidDescriptorKey(descriptor);
         if (seenDescriptorKeys.has(key)) {
@@ -311,6 +492,26 @@ function rotateVector(vector, angle) {
   };
 }
 
+function reflectPointAcrossLine(point, lineStart, lineEnd) {
+  const dx = lineEnd.x - lineStart.x;
+  const dy = lineEnd.y - lineStart.y;
+  const lengthSquared = dx * dx + dy * dy;
+  if (lengthSquared <= NUMERIC_EPSILON) {
+    return { ...point };
+  }
+  const projection =
+    ((point.x - lineStart.x) * dx + (point.y - lineStart.y) * dy)
+    / lengthSquared;
+  const projectedPoint = {
+    x: lineStart.x + dx * projection,
+    y: lineStart.y + dy * projection
+  };
+  return {
+    x: (2 * projectedPoint.x) - point.x,
+    y: (2 * projectedPoint.y) - point.y
+  };
+}
+
 function localNonbondedClearance(layoutGraph, coords, atomId, position, searchRadius, atomGrid) {
   let minimumDistance = searchRadius;
   const candidateAtomIds = atomGrid ? atomGrid.queryRadius(position, searchRadius) : coords.keys();
@@ -325,6 +526,47 @@ function localNonbondedClearance(layoutGraph, coords, atomId, position, searchRa
     minimumDistance = Math.min(minimumDistance, Math.hypot(position.x - otherPosition.x, position.y - otherPosition.y));
   }
   return minimumDistance;
+}
+
+function rigidDescriptorPositions(coords, descriptor, rotation) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+  const newPositions = new Map();
+  for (const subtreeAtomId of descriptor.subtreeAtomIds) {
+    const subtreePosition = coords.get(subtreeAtomId);
+    if (!subtreePosition) {
+      continue;
+    }
+    const relativeVector = {
+      x: subtreePosition.x - anchorPosition.x,
+      y: subtreePosition.y - anchorPosition.y
+    };
+    const rotatedVector = rotateVector(relativeVector, rotation);
+    newPositions.set(subtreeAtomId, {
+      x: anchorPosition.x + rotatedVector.x,
+      y: anchorPosition.y + rotatedVector.y
+    });
+  }
+  return newPositions;
+}
+
+function reflectedRigidDescriptorPositions(coords, descriptor) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  if (!anchorPosition || !rootPosition) {
+    return null;
+  }
+  const newPositions = new Map();
+  for (const subtreeAtomId of descriptor.subtreeAtomIds) {
+    const subtreePosition = coords.get(subtreeAtomId);
+    if (!subtreePosition) {
+      continue;
+    }
+    newPositions.set(subtreeAtomId, reflectPointAcrossLine(subtreePosition, anchorPosition, rootPosition));
+  }
+  return newPositions;
 }
 
 /**
@@ -360,12 +602,7 @@ function rigidSubtreeCandidateAngles(subtreeSize, visibleAtomCount) {
     return RIGID_SUBTREE_ROTATION_ANGLES;
   }
 
-  const coarseAngles = RIGID_SUBTREE_ROTATION_ANGLES.filter((_, index) => index % 2 === 0);
-  const refineAngles = new Set();
-  for (const coarseAngle of coarseAngles) {
-    refineAngles.add(coarseAngle);
-  }
-  return [...refineAngles];
+  return COARSE_RIGID_SUBTREE_ROTATION_ANGLES;
 }
 
 /**
@@ -405,43 +642,28 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     : 0;
   const baseOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, null, bondLength, { atomGrid });
   const baseAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, null);
+  const exactRingRootDescriptor = isCompactRingAnchoredRigidDescriptor(layoutGraph, descriptor);
   let bestMove = null;
 
-  for (const candidateAngle of rigidSubtreeCandidateAngles(descriptor.subtreeAtomIds.length, visibleAtomCount)) {
-    const rotation = candidateAngle - currentRootAngle;
-    if (Math.abs(rotation) <= ANGLE_EPSILON) {
-      continue;
+  const evaluateCandidatePositions = newPositions => {
+    if (!newPositions) {
+      return;
     }
-
-    const newPositions = new Map();
-    for (const subtreeAtomId of descriptor.subtreeAtomIds) {
-      const subtreePosition = coords.get(subtreeAtomId);
-      if (!subtreePosition) {
-        continue;
-      }
-      const relativeVector = {
-        x: subtreePosition.x - anchorPosition.x,
-        y: subtreePosition.y - anchorPosition.y
-      };
-      const rotatedVector = rotateVector(relativeVector, rotation);
-      newPositions.set(subtreeAtomId, {
-        x: anchorPosition.x + rotatedVector.x,
-        y: anchorPosition.y + rotatedVector.y
-      });
-    }
-
     const movedAtomPosition = newPositions.get(movingAtomId);
     if (!movedAtomPosition) {
-      continue;
+      return;
     }
     const resolvedDistance = Math.hypot(movedAtomPosition.x - opposingPosition.x, movedAtomPosition.y - opposingPosition.y);
     if (resolvedDistance < threshold) {
-      continue;
+      return;
     }
 
     const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, newPositions, bondLength, { atomGrid });
     const newAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, newPositions);
     let improvement = baseOverlapCost - newOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
+    const ringRootDeviation = exactRingRootDescriptor
+      ? compactRingAnchoredRootOutwardDeviation(layoutGraph, coords, descriptor, newPositions)
+      : Number.POSITIVE_INFINITY;
     if (improvement <= IMPROVEMENT_EPSILON && subtreeIsSingleAtom && newOverlapCost <= baseOverlapCost + IMPROVEMENT_EPSILON) {
       const candidateLocalClearance = localNonbondedClearance(layoutGraph, coords, movingAtomId, movedAtomPosition, threshold * 2, atomGrid);
       if (candidateLocalClearance > baseLocalClearance + IMPROVEMENT_EPSILON) {
@@ -449,20 +671,33 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
       }
     }
     if (improvement <= IMPROVEMENT_EPSILON) {
-      continue;
+      return;
     }
 
-    if (
-      !bestMove ||
-      improvement > bestMove.improvement + IMPROVEMENT_EPSILON ||
-      (Math.abs(improvement - bestMove.improvement) <= IMPROVEMENT_EPSILON && resolvedDistance > bestMove.resolvedDistance + IMPROVEMENT_EPSILON)
-    ) {
-      bestMove = {
-        positions: newPositions,
-        improvement,
-        resolvedDistance
-      };
+    const candidateMove = {
+      positions: newPositions,
+      improvement,
+      resolvedDistance,
+      ringRootDeviation,
+      totalRingRootDeviation: ringRootDeviation,
+      subtreeAtomCount: descriptor.subtreeAtomIds.length,
+      subtreeHeavyAtomCount: subtreeHeavyAtomCount(layoutGraph, descriptor.subtreeAtomIds)
+    };
+    if (isBetterRigidMove(bestMove, candidateMove)) {
+      bestMove = candidateMove;
     }
+  };
+
+  if (exactRingRootDescriptor) {
+    evaluateCandidatePositions(reflectedRigidDescriptorPositions(coords, descriptor));
+  }
+
+  for (const candidateAngle of rigidSubtreeCandidateAngles(descriptor.subtreeAtomIds.length, visibleAtomCount)) {
+    const rotation = candidateAngle - currentRootAngle;
+    if (Math.abs(rotation) <= ANGLE_EPSILON) {
+      continue;
+    }
+    evaluateCandidatePositions(rigidDescriptorPositions(coords, descriptor, rotation));
   }
 
   return bestMove;
@@ -486,14 +721,7 @@ function bestRigidSubtreeMoveForAtom(layoutGraph, coords, atomGrid, rigidSubtree
     if (!candidateMove) {
       continue;
     }
-    if (
-      !bestMove
-      || candidateMove.improvement > bestMove.improvement + IMPROVEMENT_EPSILON
-      || (
-        Math.abs(candidateMove.improvement - bestMove.improvement) <= IMPROVEMENT_EPSILON
-        && candidateMove.resolvedDistance > bestMove.resolvedDistance + IMPROVEMENT_EPSILON
-      )
-    ) {
+    if (isBetterRigidMove(bestMove, candidateMove)) {
       bestMove = candidateMove;
     }
   }
@@ -623,7 +851,11 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
     frozenAtomIds
       ? filterFrozenRigidSubtrees(rawRigidSubtreesByAtomId, frozenAtomIds)
       : rawRigidSubtreesByAtomId;
-  const visibleAtomCount = options.visibleAtomCount ?? [...layoutGraph.atoms.values()].filter(atom => atom.visible).length;
+  let visibleAtomCount = options.visibleAtomCount;
+  if (visibleAtomCount == null) {
+    visibleAtomCount = 0;
+    for (const atom of layoutGraph.atoms.values()) { if (atom.visible) { visibleAtomCount++; } }
+  }
   let moves = 0;
 
   for (let pass = 0; pass < maxPasses; pass++) {
@@ -686,13 +918,12 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
         threshold,
         visibleAtomCount
       );
-      const rigidMove = !firstRigidMove
-        ? secondRigidMove
-        : !secondRigidMove
-          ? firstRigidMove
-          : firstRigidMove.improvement >= secondRigidMove.improvement
-            ? firstRigidMove
-            : secondRigidMove;
+      let rigidMove = null;
+      for (const candidateMove of [firstRigidMove, secondRigidMove]) {
+        if (candidateMove && isBetterRigidMove(rigidMove, candidateMove)) {
+          rigidMove = candidateMove;
+        }
+      }
       if (rigidMove) {
         applyRigidSubtreeMove(coords, atomGrid, rigidMove.positions);
         moves++;

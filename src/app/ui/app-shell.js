@@ -62,6 +62,7 @@ export function initAppShell(context) {
   bindGlobal(win, '_setInputFormat', (fmt, options = {}) => context.input.setInputFormat(fmt, options));
   bindGlobal(win, '_renderExamples', () => context.input.renderExamples());
   bindGlobal(win, '_pickRandomMolecule', () => context.input.pickRandomMolecule());
+  bindGlobal(win, '_pickBugVerificationMolecule', () => context.input.pickBugVerificationMolecule());
   bindGlobal(win, '_pickDebugMolecule', () => context.input.pickDebugMolecule());
   bindGlobal(win, '_getMolSmiles', () => serializeCurrentMol(context.input.getCanonicalMol, context.input.toSmiles));
   bindGlobal(win, '_getMolInchi', () => serializeCurrentMol(context.input.getCanonicalMol, context.input.toInchi));

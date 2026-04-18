@@ -1,12 +1,32 @@
 /** @module cleanup/local-rotation */
 
 import { CLEANUP_EPSILON, DISTANCE_EPSILON } from '../constants.js';
-import { add, angleOf, fromAngle, rotate, sub } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { pointInPolygon } from '../geometry/polygon.js';
-import { buildAtomGrid, computeAtomDistortionCost, computeSubtreeOverlapCost } from '../audit/invariants.js';
+import { buildAtomGrid, buildSubtreeOverlapContext, computeAtomDistortionCost, computeSubtreeOverlapCost } from '../audit/invariants.js';
 import { collectCutSubtree } from './subtree-utils.js';
 
-const DISCRETE_ROTATION_ANGLES = Array.from({ length: 24 }, (_, index) => (index * Math.PI) / 12);
+const DISCRETE_ROTATION_ANGLES = Object.freeze([
+  0,
+  Math.PI / 12,
+  -Math.PI / 12,
+  Math.PI / 6,
+  -Math.PI / 6,
+  Math.PI / 3,
+  -Math.PI / 3,
+  Math.PI / 2,
+  -Math.PI / 2,
+  (2 * Math.PI) / 3,
+  -(2 * Math.PI) / 3,
+  Math.PI
+]);
+const LOCAL_TRIGONAL_HETERO_DISTORTION_WEIGHT = 5;
+const MAX_SIBLING_SWAP_SUBTREE_ATOMS = 18;
+const MAX_LOCAL_TRIGONAL_HETERO_LAYOUT_ATOMS = 48;
+const MAX_SIBLING_SWAP_LAYOUT_ATOMS = 48;
+const LOCAL_ROTATION_BOND_CROWDING_FINALISTS = 2;
+const EXACT_ROTATION_ANGLE_EPSILON = 1e-6;
+const IDEAL_LEAF_LINEAR_NEIGHBOR_TOLERANCE = Math.PI / 12;
 
 function buildPlacedAdjacency(layoutGraph, coords) {
   const adjacency = new Map();
@@ -21,6 +41,150 @@ function buildPlacedAdjacency(layoutGraph, coords) {
     adjacency.get(bond.b)?.push(bond.a);
   }
   return adjacency;
+}
+
+function singleBondDescriptor(layoutGraph, firstAtomId, secondAtomId) {
+  const pairKey = firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
+  const bond = layoutGraph.bondByAtomPair.get(pairKey);
+  if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+    return null;
+  }
+  return bond;
+}
+
+function terminalMultipleBondLeafBond(layoutGraph, anchorAtomId, rootAtomId) {
+  const pairKey = anchorAtomId < rootAtomId ? `${anchorAtomId}:${rootAtomId}` : `${rootAtomId}:${anchorAtomId}`;
+  const bond = layoutGraph.bondByAtomPair.get(pairKey);
+  if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+    return null;
+  }
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  if (!rootAtom || rootAtom.element === 'H' || rootAtom.aromatic || rootAtom.heavyDegree !== 1) {
+    return null;
+  }
+  return bond;
+}
+
+/**
+ * Returns the exact ideal angle for a terminal subtree root attached to a
+ * visible trigonal center with one multiple bond. This keeps carbonyl oxygens
+ * and the matching terminal single-bond substituents on the true trigonal
+ * bisector of the other two fixed heavy neighbors instead of approximating
+ * them with the generic cleanup rotation lattice.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Trigonal center atom id.
+ * @param {string} rootAtomId - Terminal subtree-root atom id.
+ * @returns {number|null} Exact ideal angle in radians, or null when unsupported.
+ */
+function exactIdealTrigonalTerminalAngle(layoutGraph, coords, anchorAtomId, rootAtomId) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+  const visibleHeavyBonds = (layoutGraph.bondsByAtomId.get(anchorAtomId) ?? [])
+    .filter(bond => {
+      if (bond.kind !== 'covalent') {
+        return false;
+      }
+      const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H' && coords.has(neighborAtomId);
+    });
+  if (visibleHeavyBonds.length !== 3) {
+    return null;
+  }
+  const multipleBondCount = visibleHeavyBonds.filter(bond => !bond.aromatic && (bond.order ?? 1) >= 2).length;
+  if (multipleBondCount !== 1) {
+    return null;
+  }
+  const rootBond = visibleHeavyBonds.find(bond => (bond.a === anchorAtomId ? bond.b : bond.a) === rootAtomId) ?? null;
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  if (!rootBond || !rootAtom || rootAtom.element === 'H' || rootAtom.aromatic) {
+    return null;
+  }
+
+  if ((rootBond.order ?? 1) >= 2 && !terminalMultipleBondLeafBond(layoutGraph, anchorAtomId, rootAtomId)) {
+    return null;
+  }
+
+  const otherNeighborPositions = visibleHeavyBonds
+    .map(bond => (bond.a === anchorAtomId ? bond.b : bond.a))
+    .filter(neighborAtomId => neighborAtomId !== rootAtomId)
+    .map(neighborAtomId => coords.get(neighborAtomId))
+    .filter(Boolean);
+  if (otherNeighborPositions.length !== 2) {
+    return null;
+  }
+  const otherNeighborAngles = otherNeighborPositions.map(position => angleOf(sub(position, anchorPosition)));
+  if (Math.abs(angularDifference(otherNeighborAngles[0], otherNeighborAngles[1]) - Math.PI) <= IDEAL_LEAF_LINEAR_NEIGHBOR_TOLERANCE) {
+    return null;
+  }
+
+  const outwardVector = sub(anchorPosition, centroid(otherNeighborPositions));
+  if (Math.hypot(outwardVector.x, outwardVector.y) <= DISTANCE_EPSILON) {
+    return null;
+  }
+  return angleOf(outwardVector);
+}
+
+function preferredRotationAngles(layoutGraph, coords, anchorAtomId, rootAtomId) {
+  const candidateAngles = [];
+  const exactIdealAngle = exactIdealTrigonalTerminalAngle(layoutGraph, coords, anchorAtomId, rootAtomId);
+  if (Number.isFinite(exactIdealAngle)) {
+    candidateAngles.push(exactIdealAngle);
+  }
+  for (const angle of DISCRETE_ROTATION_ANGLES) {
+    if (candidateAngles.some(existingAngle => angularDifference(existingAngle, angle) <= EXACT_ROTATION_ANGLE_EPSILON)) {
+      continue;
+    }
+    candidateAngles.push(angle);
+  }
+  return candidateAngles;
+}
+
+/**
+ * Returns whether a short saturated terminal subtree can rotate as one unit
+ * around a single bond. This covers ordinary alkyl-like roots such as
+ * `-CH2CH3` or `-CH2SiH3`, which should be rotatable even though the root is
+ * not itself a heavy-atom leaf.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate subtree-root atom id.
+ * @param {string[]} heavyNeighborIds - Heavy neighbors currently placed.
+ * @returns {{anchorAtomId: string}|null} Rotation descriptor or `null`.
+ */
+function saturatedTerminalSubtreeDescriptor(layoutGraph, atomId, heavyNeighborIds) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || atom.aromatic || atom.heavyDegree !== 2) {
+    return null;
+  }
+  if ((layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0 || heavyNeighborIds.length !== 2) {
+    return null;
+  }
+
+  for (const anchorAtomId of heavyNeighborIds) {
+    const terminalLeafAtomId = heavyNeighborIds.find(neighborAtomId => neighborAtomId !== anchorAtomId) ?? null;
+    const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+    const terminalLeafAtom = terminalLeafAtomId ? layoutGraph.atoms.get(terminalLeafAtomId) : null;
+    if (
+      !anchorAtomId
+      || !terminalLeafAtomId
+      || !anchorAtom
+      || !terminalLeafAtom
+      || anchorAtom.element === 'H'
+      || terminalLeafAtom.element === 'H'
+      || terminalLeafAtom.aromatic
+      || terminalLeafAtom.heavyDegree !== 1
+      || (layoutGraph.atomToRings.get(terminalLeafAtomId)?.length ?? 0) > 0
+      || !singleBondDescriptor(layoutGraph, atomId, anchorAtomId)
+      || !singleBondDescriptor(layoutGraph, atomId, terminalLeafAtomId)
+    ) {
+      continue;
+    }
+    return { anchorAtomId };
+  }
+
+  return null;
 }
 
 /**
@@ -91,6 +255,18 @@ function movableTerminalSubtrees(layoutGraph, coords) {
       subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId))
     });
   }
+  for (const [atomId, neighbors] of adjacency) {
+    const heavyNeighbors = neighbors.filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+    const descriptor = saturatedTerminalSubtreeDescriptor(layoutGraph, atomId, heavyNeighbors);
+    if (!descriptor) {
+      continue;
+    }
+    result.push({
+      atomId,
+      anchorAtomId: descriptor.anchorAtomId,
+      subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, descriptor.anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId))
+    });
+  }
   return result;
 }
 
@@ -116,11 +292,59 @@ function geminalSubtreePairs(terminalSubtrees) {
       for (let secondIndex = firstIndex + 1; secondIndex < anchorSubtrees.length; secondIndex++) {
         const firstSubtree = anchorSubtrees[firstIndex];
         const secondSubtree = anchorSubtrees[secondIndex];
+        const seenSubtreeIds = new Set(firstSubtree.subtreeAtomIds);
+        const subtreeAtomIds = [...firstSubtree.subtreeAtomIds];
+        for (const id of secondSubtree.subtreeAtomIds) { if (!seenSubtreeIds.has(id)) { subtreeAtomIds.push(id); } }
+        pairs.push({ anchorAtomId, firstSubtree, secondSubtree, subtreeAtomIds });
+      }
+    }
+  }
+  return pairs;
+}
+
+/**
+ * Returns subtree pairs that can be improved by swapping their occupied root
+ * slots around the same anchor atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>} terminalSubtrees - Individual movable terminal subtrees.
+ * @returns {Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>} Swappable sibling-subtree pairs.
+ */
+function siblingSwapPairs(layoutGraph, coords, terminalSubtrees) {
+  if (coords.size > MAX_SIBLING_SWAP_LAYOUT_ATOMS) {
+    return [];
+  }
+  const subtreesByAnchor = new Map();
+  for (const subtree of terminalSubtrees) {
+    const anchorSubtrees = subtreesByAnchor.get(subtree.anchorAtomId) ?? [];
+    anchorSubtrees.push(subtree);
+    subtreesByAnchor.set(subtree.anchorAtomId, anchorSubtrees);
+  }
+
+  const pairs = [];
+  for (const [anchorAtomId, anchorSubtrees] of subtreesByAnchor) {
+    const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+    if (!anchorAtom || anchorAtom.element === 'H' || anchorAtom.heavyDegree < 4) {
+      continue;
+    }
+    if (anchorSubtrees.length < 2) {
+      continue;
+    }
+    for (let firstIndex = 0; firstIndex < anchorSubtrees.length - 1; firstIndex++) {
+      for (let secondIndex = firstIndex + 1; secondIndex < anchorSubtrees.length; secondIndex++) {
+        const firstSubtree = anchorSubtrees[firstIndex];
+        const secondSubtree = anchorSubtrees[secondIndex];
+        const seenSwapIds = new Set(firstSubtree.subtreeAtomIds);
+        const subtreeAtomIds = [...firstSubtree.subtreeAtomIds];
+        for (const id of secondSubtree.subtreeAtomIds) { if (!seenSwapIds.has(id)) { subtreeAtomIds.push(id); } }
+        if (subtreeAtomIds.length > MAX_SIBLING_SWAP_SUBTREE_ATOMS) {
+          continue;
+        }
         pairs.push({
           anchorAtomId,
           firstSubtree,
           secondSubtree,
-          subtreeAtomIds: [...new Set([...firstSubtree.subtreeAtomIds, ...secondSubtree.subtreeAtomIds])]
+          subtreeAtomIds
         });
       }
     }
@@ -134,14 +358,152 @@ function geminalSubtreePairs(terminalSubtrees) {
  * presence, not on the later rotation candidate chosen within one cleanup loop.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
- * @returns {{terminalSubtrees: Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>, geminalPairs: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>}} Reusable local-rotation descriptors.
+ * @returns {{terminalSubtrees: Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>, siblingSwaps: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>, geminalPairs: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>}} Reusable local-rotation descriptors.
  */
 export function computeRotatableSubtrees(layoutGraph, coords) {
   const terminalSubtrees = movableTerminalSubtrees(layoutGraph, coords);
   return {
     terminalSubtrees,
+    siblingSwaps: siblingSwapPairs(layoutGraph, coords, terminalSubtrees),
     geminalPairs: geminalSubtreePairs(terminalSubtrees)
   };
+}
+
+/**
+ * Collects the overlap atoms plus their immediate covalent neighbors so local
+ * cleanup can focus on descriptors that can plausibly affect the current clash.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Array<{firstAtomId: string, secondAtomId: string}>} overlapPairs - Severe overlaps from the current coordinates.
+ * @returns {Set<string>} Atom IDs relevant to the current overlap probe.
+ */
+function overlapRelevantAtomIds(layoutGraph, overlapPairs) {
+  const relevantAtomIds = new Set();
+  for (const overlap of overlapPairs) {
+    for (const atomId of [overlap.firstAtomId, overlap.secondAtomId]) {
+      relevantAtomIds.add(atomId);
+      for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+        if (bond.kind !== 'covalent') {
+          continue;
+        }
+        relevantAtomIds.add(bond.a === atomId ? bond.b : bond.a);
+      }
+    }
+  }
+  return relevantAtomIds;
+}
+
+/**
+ * Returns whether a cleanup descriptor can plausibly influence one of the
+ * currently overlapping atoms.
+ * @param {{anchorAtomId: string, subtreeAtomIds: string[]}} descriptor - Rotation descriptor.
+ * @param {Set<string>} relevantAtomIds - Atom IDs near the current overlaps.
+ * @returns {boolean} True when the descriptor should be kept for this probe.
+ */
+function descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds) {
+  if (relevantAtomIds.has(descriptor.anchorAtomId)) {
+    return true;
+  }
+  return descriptor.subtreeAtomIds.some(atomId => relevantAtomIds.has(atomId));
+}
+
+/**
+ * Narrows reusable rotation descriptors to those that can affect the current
+ * overlap set. When no overlaps are provided, all descriptors remain eligible.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{terminalSubtrees: Array<object>, siblingSwaps: Array<object>, geminalPairs: Array<object>}} descriptors - Reusable rotation descriptors.
+ * @param {Array<{firstAtomId: string, secondAtomId: string}>|null|undefined} overlapPairs - Severe overlaps from the current coordinates.
+ * @returns {{terminalSubtrees: Array<object>, siblingSwaps: Array<object>, geminalPairs: Array<object>}} Filtered descriptors.
+ */
+function filterDescriptorsByOverlap(layoutGraph, descriptors, overlapPairs) {
+  if (!Array.isArray(overlapPairs) || overlapPairs.length === 0) {
+    return descriptors;
+  }
+  const relevantAtomIds = overlapRelevantAtomIds(layoutGraph, overlapPairs);
+  return {
+    terminalSubtrees: descriptors.terminalSubtrees.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds)),
+    siblingSwaps: descriptors.siblingSwaps.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds)),
+    geminalPairs: descriptors.geminalPairs.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds))
+  };
+}
+
+function filterDescriptorsByFocus(descriptors, focusAtomIds) {
+  if (!(focusAtomIds instanceof Set) || focusAtomIds.size === 0) {
+    return descriptors;
+  }
+  return {
+    terminalSubtrees: descriptors.terminalSubtrees.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds)),
+    siblingSwaps: descriptors.siblingSwaps.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds)),
+    geminalPairs: descriptors.geminalPairs.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds))
+  };
+}
+
+/**
+ * Inserts one approximate local-cleanup move into a small finalist list sorted
+ * by descending cheap improvement.
+ * @param {Array<{positions: Map<string, {x: number, y: number}>, approximateImprovement: number, atomOverlapCost: number, anchorDistortion: number}>} finalists - Finalist buffer.
+ * @param {{positions: Map<string, {x: number, y: number}>, approximateImprovement: number, atomOverlapCost: number, anchorDistortion: number}|null} candidate - Candidate move.
+ * @returns {void}
+ */
+function recordFinalist(finalists, candidate) {
+  if (!candidate) {
+    return;
+  }
+  let inserted = false;
+  for (let index = 0; index < finalists.length; index++) {
+    if (candidate.approximateImprovement > finalists[index].approximateImprovement) {
+      finalists.splice(index, 0, candidate);
+      inserted = true;
+      break;
+    }
+  }
+  if (!inserted) {
+    finalists.push(candidate);
+  }
+  if (finalists.length > LOCAL_ROTATION_BOND_CROWDING_FINALISTS) {
+    finalists.length = LOCAL_ROTATION_BOND_CROWDING_FINALISTS;
+  }
+}
+
+/**
+ * Re-scores a small set of approximate local-cleanup finalists with bond
+ * crowding enabled and returns the best surviving full move.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string[]} subtreeAtomIds - Atoms moved by the descriptor.
+ * @param {Array<{positions: Map<string, {x: number, y: number}>, approximateImprovement: number}>} finalists - Approximate finalists to refine.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} subtreeContext - Reusable subtree-overlap context.
+ * @param {number} epsilon - Minimum accepted improvement.
+ * @returns {{positions: Map<string, {x: number, y: number}>, improvement: number}|null} Best fully scored move.
+ */
+function finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon) {
+  if (finalists.length === 0) {
+    return null;
+  }
+
+  const baseBondCrowdingCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, null, bondLength, {
+    includeAtomOverlaps: false,
+    includeBondCrowding: true,
+    subtreeContext
+  });
+
+  let bestMove = null;
+  for (const finalist of finalists) {
+    const candidateBondCrowdingCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, finalist.positions, bondLength, {
+      includeAtomOverlaps: false,
+      includeBondCrowding: true,
+      subtreeContext
+    });
+    const improvement = finalist.approximateImprovement + (baseBondCrowdingCost - candidateBondCrowdingCost);
+    if (improvement > epsilon && (!bestMove || improvement > bestMove.improvement)) {
+      bestMove = {
+        positions: finalist.positions,
+        improvement
+      };
+    }
+  }
+
+  return bestMove;
 }
 
 /**
@@ -278,6 +640,87 @@ function touchesFrozenAtoms(descriptor, frozenAtomIds) {
 }
 
 /**
+ * Returns the distortion penalty for a non-ring three-coordinate hetero center
+ * that should still read as roughly trigonal in 2D cleanup.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} atomId - Candidate anchor atom ID.
+ * @param {Map<string, {x: number, y: number}>|null} overridePositions - Candidate moved positions.
+ * @returns {number} Trigonal hetero-center distortion penalty.
+ */
+function localTrigonalHeteroDistortionCost(layoutGraph, coords, atomId, overridePositions) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || atom.element === 'C' || atom.aromatic) {
+    return 0;
+  }
+  if ((layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) {
+    return 0;
+  }
+
+  const atomPosition = overridePositions?.get(atomId) ?? coords.get(atomId);
+  if (!atomPosition) {
+    return 0;
+  }
+
+  const neighborAngles = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return 0;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = overridePositions?.get(neighborAtomId) ?? coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+    neighborAngles.push(angleOf(sub(neighborPosition, atomPosition)));
+  }
+
+  if (neighborAngles.length !== 3) {
+    return 0;
+  }
+
+  const sortedAngles = [...neighborAngles].sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  let cost = 0;
+  for (let index = 0; index < sortedAngles.length; index++) {
+    const currentAngle = sortedAngles[index];
+    const nextAngle = sortedAngles[(index + 1) % sortedAngles.length];
+    const rawGap = nextAngle - currentAngle;
+    const separation = rawGap > 0 ? rawGap : rawGap + Math.PI * 2;
+    cost += (separation - ((Math.PI * 2) / 3)) ** 2;
+  }
+  return cost * LOCAL_TRIGONAL_HETERO_DISTORTION_WEIGHT;
+}
+
+/**
+ * Applies one rigid subtree rotation into a candidate move buffer.
+ * @param {Map<string, {x: number, y: number}>} newPositions - Candidate moved positions.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} rootAtomId - Subtree root atom ID.
+ * @param {{x: number, y: number}} nextRootPosition - Candidate root position.
+ * @param {number} rotation - Rotation delta in radians.
+ * @param {string[]} subtreeAtomIds - Subtree atom IDs.
+ * @returns {void}
+ */
+function appendRotatedSubtreePositions(newPositions, coords, rootAtomId, nextRootPosition, rotation, subtreeAtomIds) {
+  newPositions.set(rootAtomId, nextRootPosition);
+  const rootPosition = coords.get(rootAtomId);
+  if (!rootPosition) {
+    return;
+  }
+  for (const subtreeAtomId of subtreeAtomIds) {
+    if (subtreeAtomId === rootAtomId) {
+      continue;
+    }
+    const subtreePosition = coords.get(subtreeAtomId);
+    if (!subtreePosition) {
+      continue;
+    }
+    newPositions.set(subtreeAtomId, add(nextRootPosition, rotate(sub(subtreePosition, rootPosition), rotation)));
+  }
+}
+
+/**
  * Runs a conservative local cleanup pass by rotating leaf atoms around their
  * anchors when doing so lowers the global layout cost.
  * @param {object} layoutGraph - Layout graph shell.
@@ -288,7 +731,10 @@ function touchesFrozenAtoms(descriptor, frozenAtomIds) {
  * @param {number} [options.bondLength] - Target bond length.
  * @param {import('../geometry/atom-grid.js').AtomGrid} [options.baseAtomGrid] - Optional reusable base atom grid.
  * @param {Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>} [options.baseTerminalSubtrees] - Optional reusable terminal-subtree descriptors.
+ * @param {Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>} [options.baseSiblingSwaps] - Optional reusable sibling-swap descriptors.
  * @param {Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>} [options.baseGeminalPairs] - Optional reusable geminal-subtree descriptors.
+ * @param {Array<{firstAtomId: string, secondAtomId: string, distance: number}>} [options.overlapPairs] - Optional current severe overlaps used to focus a one-step probe.
+ * @param {Set<string>|null} [options.focusAtomIds] - Optional nearby atom ids used to narrow the local cleanup probe.
  * @param {Set<string>|null} [options.frozenAtomIds] - Atom ids that cleanup must not move.
  * @returns {{coords: Map<string, {x: number, y: number}>, passes: number, improvement: number}} Cleanup result.
  */
@@ -301,8 +747,9 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
   let passes = 0;
   const rotatableSubtrees =
     options.baseTerminalSubtrees && options.baseGeminalPairs
-      ? {
+        ? {
           terminalSubtrees: options.baseTerminalSubtrees,
+          siblingSwaps: options.baseSiblingSwaps ?? siblingSwapPairs(layoutGraph, coords, options.baseTerminalSubtrees),
           geminalPairs: options.baseGeminalPairs
         }
       : computeRotatableSubtrees(layoutGraph, coords);
@@ -311,18 +758,35 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
     frozenAtomIds
       ? rotatableSubtrees.terminalSubtrees.filter(subtree => !touchesFrozenAtoms(subtree, frozenAtomIds))
       : rotatableSubtrees.terminalSubtrees;
+  const siblingSwaps =
+    frozenAtomIds
+      ? rotatableSubtrees.siblingSwaps.filter(pair => !touchesFrozenAtoms(pair, frozenAtomIds))
+      : rotatableSubtrees.siblingSwaps;
   const geminalPairs =
     frozenAtomIds
       ? rotatableSubtrees.geminalPairs.filter(pair => !touchesFrozenAtoms(pair, frozenAtomIds))
       : rotatableSubtrees.geminalPairs;
+  const overlapEligibleDescriptors = filterDescriptorsByOverlap(layoutGraph, {
+    terminalSubtrees,
+    siblingSwaps,
+    geminalPairs
+  }, options.overlapPairs);
+  const eligibleDescriptors = filterDescriptorsByFocus(overlapEligibleDescriptors, options.focusAtomIds);
   const atomGrid = options.baseAtomGrid?.clone() ?? buildAtomGrid(layoutGraph, coords, bondLength);
+  const includeLocalTrigonalHeteroDistortion = coords.size <= MAX_LOCAL_TRIGONAL_HETERO_LAYOUT_ATOMS;
+  const scoreAnchorDistortion = includeLocalTrigonalHeteroDistortion
+    ? (atomId, overridePositions) => {
+        return computeAtomDistortionCost(layoutGraph, coords, atomId, overridePositions)
+          + localTrigonalHeteroDistortionCost(layoutGraph, coords, atomId, overridePositions);
+      }
+    : (atomId, overridePositions) => computeAtomDistortionCost(layoutGraph, coords, atomId, overridePositions);
 
   while (passes < maxPasses) {
     passes++;
     let bestMove = null;
     const inwardFlipTolerance = bondLength * bondLength * 0.02;
 
-    for (const { atomId, anchorAtomId, subtreeAtomIds } of terminalSubtrees) {
+    for (const { atomId, anchorAtomId, subtreeAtomIds } of eligibleDescriptors.terminalSubtrees) {
       const anchorPosition = coords.get(anchorAtomId);
       const rootPosition = coords.get(atomId);
       if (!anchorPosition || !rootPosition) {
@@ -330,13 +794,17 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
       }
       const currentAngle = angleOf(sub(rootPosition, anchorPosition));
       const currentRadius = Math.hypot(rootPosition.x - anchorPosition.x, rootPosition.y - anchorPosition.y) || bondLength;
+      const subtreeContext = buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, {
+        includeBondCrowding: true
+      });
+      const baseAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, null, bondLength, {
+        atomGrid,
+        subtreeContext
+      });
+      const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
+      const finalists = [];
 
-      // Compute base costs for this subtree (O(k·n)). Used to evaluate each rotation
-      // candidate cheaply without a full O(n²) measureLayoutCost call.
-      const baseOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, null, bondLength, { atomGrid });
-      const baseAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, anchorAtomId, null);
-
-      for (const angle of DISCRETE_ROTATION_ANGLES) {
+      for (const angle of preferredRotationAngles(layoutGraph, coords, anchorAtomId, atomId)) {
         const rotatedRoot = add(anchorPosition, fromAngle(angle, currentRadius));
         const rotation = angle - currentAngle;
         if (flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, rootPosition, rotatedRoot, inwardFlipTolerance)) {
@@ -344,93 +812,128 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         }
 
         // Build new positions for the subtree without copying the whole coords map.
-        const newPositions = new Map([[atomId, rotatedRoot]]);
-        for (const subtreeAtomId of subtreeAtomIds) {
-          if (subtreeAtomId === atomId) {
-            continue;
-          }
-          const subtreePosition = coords.get(subtreeAtomId);
-          if (!subtreePosition) {
-            continue;
-          }
-          newPositions.set(subtreeAtomId, add(rotatedRoot, rotate(sub(subtreePosition, rootPosition), rotation)));
-        }
+        const newPositions = new Map();
+        appendRotatedSubtreePositions(newPositions, coords, atomId, rotatedRoot, rotation, subtreeAtomIds);
 
-        // Improvement = overlap delta + anchor distortion delta (all O(k·n), no full O(n²) call).
-        const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, { atomGrid });
-        const newAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, anchorAtomId, newPositions);
-        const improvement = baseOverlapCost - newOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
-        if (improvement > epsilon && (!bestMove || improvement > bestMove.improvement)) {
-          bestMove = {
-            positions: [...newPositions.entries()],
-            improvement
-          };
-        }
+        const newAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, {
+          atomGrid,
+          subtreeContext
+        });
+        const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
+        const approximateImprovement = baseAtomOverlapCost - newAtomOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
+        recordFinalist(finalists, {
+          positions: newPositions,
+          approximateImprovement,
+          atomOverlapCost: newAtomOverlapCost,
+          anchorDistortion: newAnchorDistortion
+        });
+      }
+
+      const refinedMove = finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon);
+      if (refinedMove && (!bestMove || refinedMove.improvement > bestMove.improvement)) {
+        bestMove = refinedMove;
       }
     }
 
-    if (!bestMove) {
-      for (const { anchorAtomId, firstSubtree, secondSubtree, subtreeAtomIds } of geminalPairs) {
-        const anchorPosition = coords.get(anchorAtomId);
-        const firstRootPosition = coords.get(firstSubtree.atomId);
-        const secondRootPosition = coords.get(secondSubtree.atomId);
-        if (!anchorPosition || !firstRootPosition || !secondRootPosition) {
+    for (const { anchorAtomId, firstSubtree, secondSubtree, subtreeAtomIds } of eligibleDescriptors.siblingSwaps) {
+      const anchorPosition = coords.get(anchorAtomId);
+      const firstRootPosition = coords.get(firstSubtree.atomId);
+      const secondRootPosition = coords.get(secondSubtree.atomId);
+      if (!anchorPosition || !firstRootPosition || !secondRootPosition) {
+        continue;
+      }
+
+      const subtreeContext = buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, {
+        includeBondCrowding: true
+      });
+      const baseAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, null, bondLength, {
+        atomGrid,
+        subtreeContext
+      });
+      const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
+      if (
+        flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, firstRootPosition, secondRootPosition, inwardFlipTolerance)
+        || flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, secondRootPosition, firstRootPosition, inwardFlipTolerance)
+      ) {
+        continue;
+      }
+
+      const firstRotation = angleOf(sub(secondRootPosition, anchorPosition)) - angleOf(sub(firstRootPosition, anchorPosition));
+      const secondRotation = angleOf(sub(firstRootPosition, anchorPosition)) - angleOf(sub(secondRootPosition, anchorPosition));
+      const newPositions = new Map();
+      appendRotatedSubtreePositions(newPositions, coords, firstSubtree.atomId, secondRootPosition, firstRotation, firstSubtree.subtreeAtomIds);
+      appendRotatedSubtreePositions(newPositions, coords, secondSubtree.atomId, firstRootPosition, secondRotation, secondSubtree.subtreeAtomIds);
+
+      const newAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, {
+        atomGrid,
+        subtreeContext
+      });
+      const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
+      const approximateImprovement = baseAtomOverlapCost - newAtomOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
+      const refinedMove = finalizeBestMove(layoutGraph, coords, subtreeAtomIds, [{
+        positions: newPositions,
+        approximateImprovement,
+        atomOverlapCost: newAtomOverlapCost,
+        anchorDistortion: newAnchorDistortion
+      }], bondLength, subtreeContext, epsilon);
+      if (refinedMove && (!bestMove || refinedMove.improvement > bestMove.improvement)) {
+        bestMove = refinedMove;
+      }
+    }
+
+    for (const { anchorAtomId, firstSubtree, secondSubtree, subtreeAtomIds } of eligibleDescriptors.geminalPairs) {
+      const anchorPosition = coords.get(anchorAtomId);
+      const firstRootPosition = coords.get(firstSubtree.atomId);
+      const secondRootPosition = coords.get(secondSubtree.atomId);
+      if (!anchorPosition || !firstRootPosition || !secondRootPosition) {
+        continue;
+      }
+
+      const firstCurrentAngle = angleOf(sub(firstRootPosition, anchorPosition));
+      const firstCurrentRadius = Math.hypot(firstRootPosition.x - anchorPosition.x, firstRootPosition.y - anchorPosition.y) || bondLength;
+      const secondCurrentRadius = Math.hypot(secondRootPosition.x - anchorPosition.x, secondRootPosition.y - anchorPosition.y) || bondLength;
+      const subtreeContext = buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, {
+        includeBondCrowding: true
+      });
+      const baseAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, null, bondLength, {
+        atomGrid,
+        subtreeContext
+      });
+      const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
+      const finalists = [];
+
+      for (const angle of DISCRETE_ROTATION_ANGLES) {
+        const rotation = angle - firstCurrentAngle;
+        const rotatedFirstRoot = add(anchorPosition, fromAngle(angle, firstCurrentRadius));
+        const rotatedSecondRoot = add(anchorPosition, fromAngle(angleOf(sub(secondRootPosition, anchorPosition)) + rotation, secondCurrentRadius));
+        if (
+          flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, firstRootPosition, rotatedFirstRoot, inwardFlipTolerance) ||
+          flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, secondRootPosition, rotatedSecondRoot, inwardFlipTolerance)
+        ) {
           continue;
         }
 
-        const firstCurrentAngle = angleOf(sub(firstRootPosition, anchorPosition));
-        const firstCurrentRadius = Math.hypot(firstRootPosition.x - anchorPosition.x, firstRootPosition.y - anchorPosition.y) || bondLength;
-        const secondCurrentRadius = Math.hypot(secondRootPosition.x - anchorPosition.x, secondRootPosition.y - anchorPosition.y) || bondLength;
-        const baseOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, null, bondLength, { atomGrid });
-        const baseAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, anchorAtomId, null);
+        const newPositions = new Map();
+        appendRotatedSubtreePositions(newPositions, coords, firstSubtree.atomId, rotatedFirstRoot, rotation, firstSubtree.subtreeAtomIds);
+        appendRotatedSubtreePositions(newPositions, coords, secondSubtree.atomId, rotatedSecondRoot, rotation, secondSubtree.subtreeAtomIds);
 
-        for (const angle of DISCRETE_ROTATION_ANGLES) {
-          const rotation = angle - firstCurrentAngle;
-          const rotatedFirstRoot = add(anchorPosition, fromAngle(angle, firstCurrentRadius));
-          const rotatedSecondRoot = add(anchorPosition, fromAngle(angleOf(sub(secondRootPosition, anchorPosition)) + rotation, secondCurrentRadius));
-          if (
-            flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, firstRootPosition, rotatedFirstRoot, inwardFlipTolerance) ||
-            flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, secondRootPosition, rotatedSecondRoot, inwardFlipTolerance)
-          ) {
-            continue;
-          }
+        const newAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, {
+          atomGrid,
+          subtreeContext
+        });
+        const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
+        const approximateImprovement = baseAtomOverlapCost - newAtomOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
+        recordFinalist(finalists, {
+          positions: newPositions,
+          approximateImprovement,
+          atomOverlapCost: newAtomOverlapCost,
+          anchorDistortion: newAnchorDistortion
+        });
+      }
 
-          const newPositions = new Map([
-            [firstSubtree.atomId, rotatedFirstRoot],
-            [secondSubtree.atomId, rotatedSecondRoot]
-          ]);
-
-          for (const subtreeAtomId of firstSubtree.subtreeAtomIds) {
-            if (subtreeAtomId === firstSubtree.atomId) {
-              continue;
-            }
-            const subtreePosition = coords.get(subtreeAtomId);
-            if (!subtreePosition) {
-              continue;
-            }
-            newPositions.set(subtreeAtomId, add(rotatedFirstRoot, rotate(sub(subtreePosition, firstRootPosition), rotation)));
-          }
-          for (const subtreeAtomId of secondSubtree.subtreeAtomIds) {
-            if (subtreeAtomId === secondSubtree.atomId) {
-              continue;
-            }
-            const subtreePosition = coords.get(subtreeAtomId);
-            if (!subtreePosition) {
-              continue;
-            }
-            newPositions.set(subtreeAtomId, add(rotatedSecondRoot, rotate(sub(subtreePosition, secondRootPosition), rotation)));
-          }
-
-          const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, { atomGrid });
-          const newAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, anchorAtomId, newPositions);
-          const improvement = baseOverlapCost - newOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
-          if (improvement > epsilon && (!bestMove || improvement > bestMove.improvement)) {
-            bestMove = {
-              positions: [...newPositions.entries()],
-              improvement
-            };
-          }
-        }
+      const refinedMove = finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon);
+      if (refinedMove && (!bestMove || refinedMove.improvement > bestMove.improvement)) {
+        bestMove = refinedMove;
       }
     }
 

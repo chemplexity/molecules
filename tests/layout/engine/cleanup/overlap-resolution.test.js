@@ -6,9 +6,28 @@ import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-gr
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { collectRigidPendantRingSubtrees, resolveOverlaps } from '../../../../src/layout/engine/cleanup/overlap-resolution.js';
 import { runLocalCleanup } from '../../../../src/layout/engine/cleanup/local-rotation.js';
-import { add, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { layoutSupportedComponents } from '../../../../src/layout/engine/placement/component-layout.js';
 import { makeDisconnectedEthanes } from '../support/molecules.js';
+
+function bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighborAtomId) {
+  const centerPosition = coords.get(centerAtomId);
+  const firstAngle = angleOf(sub(coords.get(firstNeighborAtomId), centerPosition));
+  const secondAngle = angleOf(sub(coords.get(secondNeighborAtomId), centerPosition));
+  return angularDifference(firstAngle, secondAngle);
+}
+
+function preferredRingAttachmentAngle(layoutGraph, coords, anchorAtomId) {
+  const anchorPosition = coords.get(anchorAtomId);
+  for (const ring of layoutGraph.atomToRings?.get(anchorAtomId) ?? []) {
+    const ringPositions = ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
+    if (ringPositions.length < 3) {
+      continue;
+    }
+    return angleOf(sub(anchorPosition, centroid(ringPositions)));
+  }
+  return null;
+}
 
 describe('layout/engine/cleanup/overlap-resolution', () => {
   it('moves the more disposable atom without stretching the less movable partner', () => {
@@ -161,5 +180,37 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
 
     assert.deepEqual([...cached.coords.entries()], [...direct.coords.entries()]);
     assert.equal(cached.moves, direct.moves);
+  });
+
+  it('flips the compact aryl ester subtree across its bond axis to clear ortho acid clashes without softening either ring root', () => {
+    const graph = createLayoutGraph(parseSMILES('CC(=O)OC1=C(C=CC(=C1)C(F)(F)F)C(O)=O'), {
+      suppressH: true
+    });
+    const placement = layoutSupportedComponents(graph);
+    const rigidDescriptor = collectRigidPendantRingSubtrees(graph).get('C1');
+    assert.ok(rigidDescriptor);
+    assert.equal(rigidDescriptor.anchorAtomId, 'C5');
+    assert.equal(rigidDescriptor.rootAtomId, 'O4');
+    assert.deepEqual(
+      [...rigidDescriptor.subtreeAtomIds].filter(atomId => graph.atoms.get(atomId)?.element !== 'H').sort(),
+      ['C1', 'C2', 'O3', 'O4']
+    );
+
+    const result = resolveOverlaps(graph, placement.coords, { bondLength: graph.options.bondLength });
+    const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
+    const esterAngle = bondAngleAtAtom(result.coords, 'O4', 'C2', 'C5');
+    const acidRingAngle = bondAngleAtAtom(result.coords, 'C6', 'C5', 'C15');
+    const esterRootPreferredAngle = preferredRingAttachmentAngle(graph, result.coords, 'C5');
+    const esterRootAngle = angleOf(sub(result.coords.get('O4'), result.coords.get('C5')));
+    const acidRootPreferredAngle = preferredRingAttachmentAngle(graph, result.coords, 'C6');
+    const acidRootAngle = angleOf(sub(result.coords.get('C15'), result.coords.get('C6')));
+
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.ok(Math.abs(esterAngle - ((2 * Math.PI) / 3)) < 1e-6);
+    assert.ok(Math.abs(acidRingAngle - ((2 * Math.PI) / 3)) < 1e-6);
+    assert.notEqual(esterRootPreferredAngle, null);
+    assert.ok(angularDifference(esterRootAngle, esterRootPreferredAngle) < 1e-6);
+    assert.notEqual(acidRootPreferredAngle, null);
+    assert.ok(angularDifference(acidRootAngle, acidRootPreferredAngle) < 1e-6);
   });
 });

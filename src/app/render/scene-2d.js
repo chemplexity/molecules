@@ -154,6 +154,35 @@ export function create2DSceneRenderer(ctx) {
   }
 
   /**
+   * Seeds projected visible stereo hydrogens onto real 2D coordinates before a
+   * manual drag starts so neighboring edits cannot silently reproject them.
+   * Hidden stereochemical hydrogens stay virtual and continue to render from
+   * their parent atoms until they are explicitly shown.
+   * @param {object|null} [molecule] - Molecule containing the stereo hydrogens.
+   * @param {Map<string, string>|null} [stereoMap] - Current display stereo map.
+   * @returns {Set<string>} Atom ids whose real coordinates were materialized.
+   */
+  function materializeProjectedVisibleStereoHydrogens(molecule = ctx.state.getMol(), stereoMap = ctx.state.getStereoMap()) {
+    const materializedAtomIds = new Set();
+    if (!molecule) {
+      return materializedAtomIds;
+    }
+    for (const [atomId, projectedPosition] of projectedHiddenStereoCoords) {
+      const atom = molecule.atoms.get(atomId);
+      if (!atom || atom.visible === false) {
+        continue;
+      }
+      if (!shouldUseProjectedStereoHydrogenPosition(atom, molecule, stereoMap)) {
+        continue;
+      }
+      atom.x = projectedPosition.x;
+      atom.y = projectedPosition.y;
+      materializedAtomIds.add(atomId);
+    }
+    return materializedAtomIds;
+  }
+
+  /**
    * Converts an atom to its current 2D SVG point, honoring projected stereo-hydrogen positions when active.
    * @param {object} atom - Atom whose current rendered point should be returned.
    * @param {object|null} [molecule] - Molecule containing the atom.
@@ -437,6 +466,7 @@ export function create2DSceneRenderer(ctx) {
     }
 
     function _capture2dDragState(event, atomIds = [], bondIds = []) {
+      materializeProjectedVisibleStereoHydrogens(mol, stereoMap);
       const [pX, pY] = ctx.d3.pointer(event.sourceEvent, ctx.g.node());
       const selectedDragAtomIds = ctx.helpers.getSelectedDragAtomIds(mol, atomIds, bondIds);
       const movedAtomIds = selectedDragAtomIds ? new Set(selectedDragAtomIds) : new Set(atomIds);

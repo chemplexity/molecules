@@ -138,4 +138,34 @@ describe('layout/engine/placement/fragment-packing', () => {
     assert.ok(packed.get('a0').x > 0);
     assert.ok(packed.get('b1').x < 0);
   });
+
+  it('does not overcount a principal fragment offset when packing a detached spectator to the right', () => {
+    const packed = packComponentPlacements(
+      [
+        {
+          componentId: 'principal',
+          atomIds: ['a0', 'a1'],
+          coords: new Map([
+            ['a0', { x: -8, y: 0 }],
+            ['a1', { x: 2, y: 0 }]
+          ]),
+          anchored: false,
+          role: 'principal'
+        },
+        {
+          componentId: 'spectator',
+          atomIds: ['b0'],
+          coords: new Map([['b0', { x: 0, y: 0 }]]),
+          anchored: false,
+          role: 'solvent-like'
+        }
+      ],
+      1.5,
+      { fragmentPackingMode: 'principal-right' }
+    );
+
+    assert.deepEqual(packed.get('a0'), { x: 0, y: 0 });
+    assert.deepEqual(packed.get('a1'), { x: 10, y: 0 });
+    assert.deepEqual(packed.get('b0'), { x: 13, y: 0 });
+  });
 });

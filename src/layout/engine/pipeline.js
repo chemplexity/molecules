@@ -9,12 +9,15 @@ import { applyLabelClearance } from './cleanup/label-clearance.js';
 import { runBridgedBondTidy } from './cleanup/bridged-bond-tidy.js';
 import { measureOrthogonalHypervalentDeviation, runHypervalentAngleTidy } from './cleanup/hypervalent-angle-tidy.js';
 import { runLigandAngleTidy } from './cleanup/ligand-angle-tidy.js';
+import { runLocalCleanup } from './cleanup/local-rotation.js';
 import { runRingPerimeterCorrection } from './cleanup/ring-perimeter-correction.js';
 import { measureRingSubstituentPresentationPenalty, runRingSubstituentTidy } from './cleanup/ring-substituent-tidy.js';
 import { runRingTerminalHeteroTidy } from './cleanup/ring-terminal-hetero-tidy.js';
+import { collectCutSubtree } from './cleanup/subtree-utils.js';
 import { tidySymmetry } from './cleanup/symmetry-tidy.js';
 import { runUnifiedCleanup } from './cleanup/unified-cleanup.js';
 import { auditLayout } from './audit/audit.js';
+import { findSevereOverlaps, measureLayoutCost } from './audit/invariants.js';
 import { createQualityReport } from './model/quality-report.js';
 import { collectProtectedEZAtomIds, inspectEZStereo } from './stereo/ez.js';
 import { enforceAcyclicEZStereo } from './stereo/enforcement.js';
@@ -23,8 +26,21 @@ import { inspectRingDependency } from './topology/ring-dependency.js';
 import { exceedsLargeComponentThreshold, exceedsLargeMoleculeThreshold } from './topology/large-blocks.js';
 import { findMacrocycleRings } from './topology/macrocycles.js';
 import { buildScaffoldPlan } from './model/scaffold-plan.js';
+import { packComponentPlacements } from './placement/fragment-packing.js';
+import { measureSmallRingExteriorGapSpreadPenalty } from './placement/branch-placement.js';
 import { PROTECTED_CLEANUP_STAGE_LIMITS } from './constants.js';
+import { add, rotate, sub } from './geometry/vec2.js';
 import { levelCoords, normalizeOrientation } from './orientation.js';
+
+const ATTACHED_RING_ROTATION_TIDY_ANGLES = [
+  Math.PI / 6,
+  -Math.PI / 6,
+  Math.PI / 3,
+  -Math.PI / 3,
+  (2 * Math.PI) / 3,
+  -(2 * Math.PI) / 3,
+  Math.PI
+];
 
 /**
  * Returns the current high-resolution time when available, with a Date fallback
@@ -33,6 +49,61 @@ import { levelCoords, normalizeOrientation } from './orientation.js';
  */
 function nowMs() {
   return typeof globalThis.performance?.now === 'function' ? globalThis.performance.now() : Date.now();
+}
+
+function getSmallRingExteriorPenaltyAtomIds(layoutGraph) {
+  if (!layoutGraph) {
+    return [];
+  }
+  if (Array.isArray(layoutGraph._smallRingExteriorPenaltyAtomIds)) {
+    return layoutGraph._smallRingExteriorPenaltyAtomIds;
+  }
+
+  const atomIds = [];
+  for (const [atomId, atom] of layoutGraph.atoms ?? []) {
+    if (!atom || atom.element === 'H' || atom.aromatic || atom.heavyDegree !== 4) {
+      continue;
+    }
+    const anchorRings = layoutGraph.atomToRings.get(atomId) ?? [];
+    if (anchorRings.length !== 1) {
+      continue;
+    }
+    const ringSize = anchorRings[0]?.atomIds?.length ?? 0;
+    if (ringSize < 3 || ringSize > 4) {
+      continue;
+    }
+    atomIds.push(atomId);
+  }
+  layoutGraph._smallRingExteriorPenaltyAtomIds = atomIds;
+  return atomIds;
+}
+
+function expandFocusAtomIds(layoutGraph, atomIds, depth = 1) {
+  const expandedAtomIds = new Set(atomIds);
+  let frontierAtomIds = new Set(atomIds);
+
+  for (let level = 0; level < depth; level++) {
+    const nextFrontierAtomIds = new Set();
+    for (const atomId of frontierAtomIds) {
+      for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+        if (!bond || bond.kind !== 'covalent') {
+          continue;
+        }
+        const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+        if (expandedAtomIds.has(neighborAtomId)) {
+          continue;
+        }
+        expandedAtomIds.add(neighborAtomId);
+        nextFrontierAtomIds.add(neighborAtomId);
+      }
+    }
+    frontierAtomIds = nextFrontierAtomIds;
+    if (frontierAtomIds.size === 0) {
+      break;
+    }
+  }
+
+  return expandedAtomIds;
 }
 
 /**
@@ -236,6 +307,41 @@ function buildInitialCoordsMap(options) {
   return coords;
 }
 
+function repackFinalDisconnectedComponents(layoutGraph, coords, placement, policy, bondLength) {
+  if ((layoutGraph.components?.length ?? 0) <= 1) {
+    return coords;
+  }
+
+  const placementDetailsById = new Map((placement.componentPlacements ?? []).map(detail => [detail.componentId, detail]));
+  const componentPlacements = [];
+  for (const component of layoutGraph.components ?? []) {
+    const atomIds = component.atomIds.filter(atomId => coords.has(atomId));
+    if (atomIds.length === 0) {
+      continue;
+    }
+    const detail = placementDetailsById.get(component.id) ?? null;
+    componentPlacements.push({
+      componentId: component.id,
+      atomIds,
+      coords: new Map(atomIds.map(atomId => [atomId, { ...coords.get(atomId) }])),
+      anchored: detail?.anchored === true,
+      role: component.role,
+      heavyAtomCount: component.heavyAtomCount ?? detail?.heavyAtomCount ?? 0,
+      netCharge: component.netCharge ?? 0,
+      containsMetal: detail?.containsMetal === true
+    });
+  }
+
+  if (componentPlacements.length <= 1) {
+    return coords;
+  }
+
+  return packComponentPlacements(componentPlacements, bondLength, {
+    ...policy,
+    fragmentPackingMode: 'principal-right'
+  });
+}
+
 function isRingJunctionStereoAssignment(layoutGraph, assignment) {
   const molecule = layoutGraph?.sourceMolecule ?? null;
   const bond = layoutGraph?.bonds.get(assignment?.bondId) ?? null;
@@ -419,14 +525,229 @@ function auditCleanupStage(layoutGraph, coords, placement, bondLength) {
 }
 
 /**
+ * Measures the total small-ring exterior-gap presentation penalty across the
+ * current coordinate map.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {Set<string>|null} [focusAtomIds] - Optional local scoring focus.
+ * @returns {number} Total small-ring exterior-gap penalty.
+ */
+function measureTotalSmallRingExteriorGapPenalty(layoutGraph, coords, focusAtomIds = null) {
+  const focusSet = focusAtomIds instanceof Set && focusAtomIds.size > 0 ? focusAtomIds : null;
+  let penalty = 0;
+  for (const atomId of getSmallRingExteriorPenaltyAtomIds(layoutGraph)) {
+    if (!coords.has(atomId) || (focusSet && !focusSet.has(atomId))) {
+      continue;
+    }
+    penalty += measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, atomId);
+  }
+  return penalty;
+}
+
+/**
  * Measures a presentation-only tie-breaker for cleanup stages whose audit
  * outcomes are otherwise identical.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {{focusAtomIds?: Set<string>|null, includeSmallRingExteriorPenalty?: boolean}} [options] - Optional local scoring focus.
  * @returns {number} Ring-substituent plus hypervalent-angle presentation penalty.
  */
-function measureCleanupStagePresentationPenalty(layoutGraph, coords) {
-  return measureRingSubstituentPresentationPenalty(layoutGraph, coords) + measureOrthogonalHypervalentDeviation(layoutGraph, coords);
+function measureCleanupStagePresentationPenalty(layoutGraph, coords, options = {}) {
+  const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
+  const includeSmallRingExteriorPenalty = options.includeSmallRingExteriorPenalty !== false;
+  return (
+    measureRingSubstituentPresentationPenalty(layoutGraph, coords, { focusAtomIds })
+    + measureOrthogonalHypervalentDeviation(layoutGraph, coords, { focusAtomIds })
+    + (includeSmallRingExteriorPenalty ? measureTotalSmallRingExteriorGapPenalty(layoutGraph, coords, focusAtomIds) : 0)
+  );
+}
+
+function rigidDescriptorKey(descriptor) {
+  return `${descriptor.anchorAtomId}|${descriptor.rootAtomId}|${descriptor.subtreeAtomIds.join(',')}`;
+}
+
+/**
+ * Collects the movable singly attached ring-containing subtrees that can be
+ * rotated late around their exocyclic attachment bonds to improve local
+ * presentation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Set<string>|null} [frozenAtomIds] - Atoms that cleanup must not move.
+ * @returns {Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>} Unique movable descriptors.
+ */
+function collectMovableAttachedRingDescriptors(layoutGraph, coords, frozenAtomIds = null) {
+  const uniqueDescriptors = new Map();
+  const ringAtomIds = new Set();
+  for (const ring of layoutGraph.rings ?? []) { for (const atomId of ring.atomIds) { ringAtomIds.add(atomId); } }
+
+  for (const bond of layoutGraph.bonds?.values?.() ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.inRing || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+
+    for (const [anchorAtomId, rootAtomId] of [
+      [bond.a, bond.b],
+      [bond.b, bond.a]
+    ]) {
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
+      if (subtreeAtomIds.length === 0 || subtreeAtomIds.length >= coords.size) {
+        continue;
+      }
+      const heavyAtomCount = subtreeAtomIds.reduce(
+        (count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1),
+        0
+      );
+      if (
+        heavyAtomCount === 0
+        || heavyAtomCount > 18
+        || !subtreeAtomIds.some(atomId => ringAtomIds.has(atomId))
+        || subtreeAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId))
+        || (frozenAtomIds && subtreeAtomIds.some(atomId => frozenAtomIds.has(atomId)))
+      ) {
+        continue;
+      }
+
+      const descriptor = {
+        anchorAtomId,
+        rootAtomId,
+        subtreeAtomIds
+      };
+      uniqueDescriptors.set(rigidDescriptorKey(descriptor), descriptor);
+    }
+  }
+  return [...uniqueDescriptors.values()];
+}
+
+/**
+ * Rotates a rigid attached ring subtree around its exocyclic attachment bond.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
+ * @param {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}} descriptor - Rigid subtree descriptor.
+ * @param {number} rotation - Rotation delta in radians.
+ * @returns {Map<string, {x: number, y: number}>|null} Rotated coordinates, or null when unavailable.
+ */
+function buildAttachedRingRotationCandidate(inputCoords, descriptor, rotation) {
+  const anchorPosition = inputCoords.get(descriptor.anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+  const rotatedCoords = new Map();
+  for (const [atomId, position] of inputCoords) { rotatedCoords.set(atomId, { x: position.x, y: position.y }); }
+  for (const atomId of descriptor.subtreeAtomIds) {
+    const position = inputCoords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    rotatedCoords.set(atomId, add(anchorPosition, rotate(sub(position, anchorPosition), rotation)));
+  }
+  return rotatedCoords;
+}
+
+/**
+ * Rotates singly attached ring blocks around their exocyclic attachment bonds
+ * when doing so lowers the final presentation penalty without introducing new
+ * severe overlaps. Each rigid rotation is immediately followed by
+ * `ring-substituent-tidy` so exact carbonyl and imine leaves can snap into the
+ * space opened by the ring-block move.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
+ * @param {object} [options] - Touchup options.
+ * @param {number} [options.bondLength] - Target bond length.
+ * @param {Set<string>|null} [options.frozenAtomIds] - Atoms that cleanup must not move.
+ * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Touchup result.
+ */
+function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
+  if ((layoutGraph.traits.heavyAtomCount ?? 0) > 60) {
+    return { coords: inputCoords, nudges: 0 };
+  }
+
+  const descriptors = collectMovableAttachedRingDescriptors(layoutGraph, inputCoords, frozenAtomIds);
+  if (descriptors.length === 0) {
+    return { coords: inputCoords, nudges: 0 };
+  }
+
+  const baseOverlapCount = findSevereOverlaps(layoutGraph, inputCoords, bondLength).length;
+  let bestCandidate = null;
+
+  for (const descriptor of descriptors) {
+    const focusAtomIds = expandFocusAtomIds(
+      layoutGraph,
+      new Set([descriptor.anchorAtomId, descriptor.rootAtomId, ...descriptor.subtreeAtomIds])
+    );
+    const basePresentationPenalty = measureCleanupStagePresentationPenalty(layoutGraph, inputCoords, {
+      focusAtomIds,
+      includeSmallRingExteriorPenalty: false
+    });
+    const baseSmallRingExteriorPenalty = measureTotalSmallRingExteriorGapPenalty(layoutGraph, inputCoords, focusAtomIds);
+    for (const rotation of ATTACHED_RING_ROTATION_TIDY_ANGLES) {
+      if (Math.abs(rotation) <= 1e-9) {
+        continue;
+      }
+      const rotatedCoords = buildAttachedRingRotationCandidate(inputCoords, descriptor, rotation);
+      if (!rotatedCoords) {
+        continue;
+      }
+      const ringSubstituentTouchup = runRingSubstituentTidy(layoutGraph, rotatedCoords, {
+        bondLength,
+        frozenAtomIds,
+        focusAtomIds
+      });
+      const localLeafTouchup = runLocalCleanup(layoutGraph, ringSubstituentTouchup.coords, {
+        maxPasses: 2,
+        epsilon: bondLength * 0.001,
+        bondLength,
+        frozenAtomIds,
+        focusAtomIds
+      });
+      const candidateCoords = localLeafTouchup.coords;
+      const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
+      if (overlapCount > baseOverlapCount) {
+        continue;
+      }
+      const smallRingExteriorPenalty = measureTotalSmallRingExteriorGapPenalty(layoutGraph, candidateCoords, focusAtomIds);
+      if (smallRingExteriorPenalty > baseSmallRingExteriorPenalty + 1e-6) {
+        continue;
+      }
+      const presentationPenalty = measureCleanupStagePresentationPenalty(layoutGraph, candidateCoords, {
+        focusAtomIds,
+        includeSmallRingExteriorPenalty: false
+      });
+      if (presentationPenalty >= basePresentationPenalty - 1e-6) {
+        continue;
+      }
+      const presentationImprovement = basePresentationPenalty - presentationPenalty;
+      const layoutCost = measureLayoutCost(layoutGraph, candidateCoords, bondLength);
+      if (
+        !bestCandidate
+        || overlapCount < bestCandidate.overlapCount
+        || (
+          overlapCount === bestCandidate.overlapCount
+          && presentationImprovement > bestCandidate.presentationImprovement + 1e-6
+        )
+        || (
+          overlapCount === bestCandidate.overlapCount
+          && Math.abs(presentationImprovement - bestCandidate.presentationImprovement) <= 1e-6
+          && layoutCost < bestCandidate.layoutCost - 1e-6
+        )
+      ) {
+        bestCandidate = {
+          coords: candidateCoords,
+          nudges: ringSubstituentTouchup.nudges + localLeafTouchup.passes + 1,
+          overlapCount,
+          presentationImprovement,
+          layoutCost
+        };
+      }
+    }
+  }
+
+  return bestCandidate
+    ? {
+        coords: bestCandidate.coords,
+        nudges: bestCandidate.nudges
+      }
+    : { coords: inputCoords, nudges: 0 };
 }
 
 /**
@@ -514,9 +835,67 @@ function mergeFrozenAtomIds(baseFrozenAtomIds, extraFrozenAtomIds) {
 }
 
 /**
+ * Returns whether a mixed fused cleanup candidate should beat the protected
+ * incumbent by removing all severe overlaps without introducing any new audit
+ * failures and while staying within a modest bond-drift window.
+ * @param {{primaryFamily: string, mixedMode: boolean}} familySummary - Family classification.
+ * @param {{coords: Map<string, {x: number, y: number}>, audit: object}} candidate - Candidate stage.
+ * @param {{coords: Map<string, {x: number, y: number}>, audit: object}} incumbent - Current best stage.
+ * @returns {boolean} True when the overlap-clean fused mixed candidate is safe to prefer.
+ */
+function shouldPreferFusedMixedOverlapCleanupStage(familySummary, candidate, incumbent) {
+  if (familySummary.primaryFamily !== 'fused' || familySummary.mixedMode === false) {
+    return false;
+  }
+  if (incumbent.audit.severeOverlapCount === 0 || candidate.audit.severeOverlapCount !== 0) {
+    return false;
+  }
+  if (candidate.audit.ok !== true || candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
+    return false;
+  }
+  if (candidate.audit.labelOverlapCount > incumbent.audit.labelOverlapCount) {
+    return false;
+  }
+  return (
+    candidate.audit.maxBondLengthDeviation <= PROTECTED_CLEANUP_STAGE_LIMITS.maxFusedMixedBondDeviationForOverlapWin
+    && candidate.audit.meanBondLengthDeviation <= PROTECTED_CLEANUP_STAGE_LIMITS.maxFusedMixedMeanDeviationForOverlapWin
+  );
+}
+
+/**
+ * Returns whether a cleanup candidate should beat the incumbent by removing
+ * severe overlaps without adding any new outward-axis ring-substituent misses.
+ * A small inward-only readability tradeoff is still visible, but protected
+ * families should not keep a clearly dirtier overlap state just to avoid that.
+ * @param {{audit: object}} candidate - Candidate stage.
+ * @param {{audit: object}} incumbent - Current best stage.
+ * @returns {boolean} True when the overlap win is worth preferring.
+ */
+function shouldPreferOverlapWinOverAddedInwardReadability(candidate, incumbent) {
+  if (!incumbent || candidate.audit.severeOverlapCount >= incumbent.audit.severeOverlapCount) {
+    return false;
+  }
+  if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
+    return false;
+  }
+  if (candidate.audit.maxBondLengthDeviation > incumbent.audit.maxBondLengthDeviation + 1e-9) {
+    return false;
+  }
+  if (candidate.audit.outwardAxisRingSubstituentFailureCount !== incumbent.audit.outwardAxisRingSubstituentFailureCount) {
+    return false;
+  }
+  if (candidate.audit.labelOverlapCount > incumbent.audit.labelOverlapCount) {
+    return false;
+  }
+  return candidate.audit.inwardRingSubstituentCount <= incumbent.audit.inwardRingSubstituentCount + 1;
+}
+
+/**
  * Returns whether one cleanup-stage candidate should replace the current
  * protected-family incumbent. Bond integrity and macrocycle stability outrank
- * overlap reduction in this comparison.
+ * overlap reduction in this comparison, except when a mixed fused candidate
+ * cleanly removes severe overlaps without adding bond failures or excessive
+ * overall drift.
  * @param {{primaryFamily: string, mixedMode: boolean}} familySummary - Family classification.
  * @param {object} placement - Placement result.
  * @param {{coords: Map<string, {x: number, y: number}>, audit: object}} candidate - Candidate stage.
@@ -545,6 +924,12 @@ function isPreferredProtectedCleanupStage(familySummary, placement, candidate, i
     && bondFailureIncrease <= PROTECTED_CLEANUP_STAGE_LIMITS.maxBondFailureIncreaseForOverlapWin
     && bondDeviationIncrease <= PROTECTED_CLEANUP_STAGE_LIMITS.maxBondDeviationIncrease
   ) {
+    return true;
+  }
+  if (shouldPreferFusedMixedOverlapCleanupStage(familySummary, candidate, incumbent)) {
+    return true;
+  }
+  if (shouldPreferOverlapWinOverAddedInwardReadability(candidate, incumbent)) {
     return true;
   }
   if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
@@ -589,6 +974,9 @@ function isPreferredCleanupGeometryStage(candidate, incumbent) {
   }
   if (Math.abs(candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation) > 1e-9) {
     return candidate.audit.maxBondLengthDeviation < incumbent.audit.maxBondLengthDeviation;
+  }
+  if (shouldPreferOverlapWinOverAddedInwardReadability(candidate, incumbent)) {
+    return true;
   }
   if (candidate.audit.ringSubstituentReadabilityFailureCount !== incumbent.audit.ringSubstituentReadabilityFailureCount) {
     return candidate.audit.ringSubstituentReadabilityFailureCount < incumbent.audit.ringSubstituentReadabilityFailureCount;
@@ -851,6 +1239,10 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
     coords: finalStereoStage.coords,
     nudges: 0
   };
+  let acceptedFinalHypervalentRingSubstituentTouchup = {
+    coords: finalStereoStage.coords,
+    nudges: 0
+  };
   if (policy.postCleanupHooks?.includes('hypervalent-angle-tidy')) {
     const finalHypervalentTouchup = runHypervalentAngleTidy(layoutGraph, finalStereoStage.coords);
     if (finalHypervalentTouchup.nudges > 0) {
@@ -868,6 +1260,30 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
       if (isPreferredFinalStereoStage(finalHypervalentStage, finalStereoStage, { allowPresentationTieBreak: true })) {
         finalStereoStage = finalHypervalentStage;
         acceptedFinalHypervalentTouchup = finalHypervalentTouchup;
+      }
+      if (policy.postCleanupHooks?.includes('ring-substituent-tidy')) {
+        const finalHypervalentRingSubstituentTouchup = runRingSubstituentTidy(layoutGraph, finalHypervalentTouchup.coords, {
+          bondLength: normalizedOptions.bondLength,
+          frozenAtomIds: placement.frozenAtomIds
+        });
+        if (finalHypervalentRingSubstituentTouchup.nudges > 0) {
+          const finalHypervalentRingSubstituentStage = {
+            name: 'finalHypervalentRingSubstituentTouchup',
+            ...auditFinalStereoStage(
+              layoutGraph.sourceMolecule,
+              layoutGraph,
+              finalHypervalentRingSubstituentTouchup.coords,
+              placement,
+              normalizedOptions.bondLength
+            )
+          };
+          stageEntries.push({ name: finalHypervalentRingSubstituentStage.name, audit: finalHypervalentRingSubstituentStage.audit });
+          if (isPreferredFinalStereoStage(finalHypervalentRingSubstituentStage, finalStereoStage, { allowPresentationTieBreak: true })) {
+            finalStereoStage = finalHypervalentRingSubstituentStage;
+            acceptedFinalHypervalentTouchup = finalHypervalentTouchup;
+            acceptedFinalHypervalentRingSubstituentTouchup = finalHypervalentRingSubstituentTouchup;
+          }
+        }
       }
     }
   }
@@ -895,6 +1311,33 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
       if (isPreferredFinalStereoStage(finalRingSubstituentStage, finalStereoStage, { allowPresentationTieBreak: true })) {
         finalStereoStage = finalRingSubstituentStage;
         acceptedFinalRingSubstituentTouchup = finalRingSubstituentTouchup;
+      }
+    }
+  }
+  let acceptedFinalAttachedRingRotationTouchup = {
+    coords: finalStereoStage.coords,
+    nudges: 0
+  };
+  if (policy.postCleanupHooks?.includes('ring-substituent-tidy')) {
+    const finalAttachedRingRotationTouchup = runAttachedRingRotationTouchup(layoutGraph, finalStereoStage.coords, {
+      bondLength: normalizedOptions.bondLength,
+      frozenAtomIds: placement.frozenAtomIds
+    });
+    if (finalAttachedRingRotationTouchup.nudges > 0) {
+      const finalAttachedRingRotationStage = {
+        name: 'finalAttachedRingRotationTouchup',
+        ...auditFinalStereoStage(
+          layoutGraph.sourceMolecule,
+          layoutGraph,
+          finalAttachedRingRotationTouchup.coords,
+          placement,
+          normalizedOptions.bondLength
+        )
+      };
+      stageEntries.push({ name: finalAttachedRingRotationStage.name, audit: finalAttachedRingRotationStage.audit });
+      if (isPreferredFinalStereoStage(finalAttachedRingRotationStage, finalStereoStage, { allowPresentationTieBreak: true })) {
+        finalStereoStage = finalAttachedRingRotationStage;
+        acceptedFinalAttachedRingRotationTouchup = finalAttachedRingRotationTouchup;
       }
     }
   }
@@ -965,7 +1408,9 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
     postHookNudges:
       postCleanup.hookNudges
       + (acceptedFinalHypervalentTouchup.nudges ?? 0)
+      + (acceptedFinalHypervalentRingSubstituentTouchup.nudges ?? 0)
       + (acceptedFinalRingSubstituentTouchup.nudges ?? 0)
+      + (acceptedFinalAttachedRingRotationTouchup.nudges ?? 0)
       + (acceptedFinalRingTerminalHeteroTouchup.nudges ?? 0)
       + (acceptedFinalPostRingHypervalentTouchup.nudges ?? 0),
     ...(includeStageTelemetry
@@ -1196,9 +1641,16 @@ export function runPipeline(molecule, options = {}) {
   for (const [atomId, position] of cleanup.coords) {
     coords.set(atomId, position);
   }
-  const finalCoords = shouldAutoOrientFinalCoords(layoutGraph, coords, normalizedOptions)
-    ? orientFinalCoords(coords, workingMolecule)
-    : coords;
+  const repackedCoords = repackFinalDisconnectedComponents(
+    layoutGraph,
+    coords,
+    placement,
+    policy,
+    normalizedOptions.bondLength
+  );
+  const finalCoords = shouldAutoOrientFinalCoords(layoutGraph, repackedCoords, normalizedOptions)
+    ? orientFinalCoords(repackedCoords, workingMolecule)
+    : repackedCoords;
   const { ringDependency, stereo } = runStereoPhase(workingMolecule, layoutGraph, finalCoords, timingState);
   return buildPipelineResult(
     molecule,

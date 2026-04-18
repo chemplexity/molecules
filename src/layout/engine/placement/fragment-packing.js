@@ -92,7 +92,7 @@ function resolvePrincipalFragment(componentPlacements) {
     return anchoredPrincipal;
   }
 
-  const ionicHub = [...componentPlacements].filter(placement => isIonicHubCandidate(placement, componentPlacements)).sort(compareIonicHubCandidates)[0] ?? null;
+  const ionicHub = componentPlacements.filter(placement => isIonicHubCandidate(placement, componentPlacements)).sort(compareIonicHubCandidates)[0] ?? null;
   if (ionicHub) {
     return ionicHub;
   }
@@ -217,9 +217,13 @@ export function packComponentPlacements(componentPlacements, bondLength, policy 
     .filter(Boolean);
   if (anchoredBounds.length > 0) {
     if (packingMode === 'principal-below') {
-      cursorY = Math.min(...anchoredBounds.map(bounds => bounds.minY)) - gap;
+      let minY = anchoredBounds[0].minY;
+      for (let i = 1; i < anchoredBounds.length; i++) { if (anchoredBounds[i].minY < minY) { minY = anchoredBounds[i].minY; } }
+      cursorY = minY - gap;
     } else {
-      cursorX = Math.max(...anchoredBounds.map(bounds => bounds.maxX)) + gap;
+      let maxX = anchoredBounds[0].maxX;
+      for (let i = 1; i < anchoredBounds.length; i++) { if (anchoredBounds[i].maxX > maxX) { maxX = anchoredBounds[i].maxX; } }
+      cursorX = maxX + gap;
     }
   }
 
@@ -241,9 +245,9 @@ export function packComponentPlacements(componentPlacements, bondLength, policy 
       const dy = packingMode === 'principal-below' ? cursorY - bounds.maxY : -bounds.centerY;
       translateFragment(packed, placement, dx, dy);
       if (packingMode === 'principal-below') {
-        cursorY = cursorY - bounds.maxY - gap;
+        cursorY = dy + bounds.minY - gap;
       } else {
-        cursorX = cursorX - bounds.minX + bounds.width + gap;
+        cursorX = dx + bounds.maxX + gap;
       }
       continue;
     }

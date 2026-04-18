@@ -1,6 +1,6 @@
-import { ReactionNetwork } from '../../src/network/index.js';
-import { parseSMILES, toCanonicalSMILES } from '../../src/io/index.js';
-import { reactionTemplates } from '../../src/smirks/index.js';
+import { ReactionNetwork } from '../../../src/network/index.js';
+import { parseSMILES, toCanonicalSMILES } from '../../../src/io/index.js';
+import { reactionTemplates } from '../../../src/smirks/index.js';
 
 // Parse process arguments securely 
 const seedSmiles = process.argv[2] || 'C';

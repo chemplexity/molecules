@@ -1,7 +1,18 @@
 # Change Log
 
+## 2026-04-17
+
+- Let compact aryl ester cleanup flip across the anchor bond axis so ortho ester-acid clashes clear while both ring exits and both carbonyl angles stay exact
+- Tighten detached-fragment packing and add a final attached-ring rotation plus leaf-resnap touchup so salt pairs stay compact and imide carbonyls can finish exact
+- Pin displayed stereochemical hydrogens to their drawn 2D coordinates as soon as a manual drag starts so nearby edits cannot reproject them automatically
+
 ## 2026-04-16
 
+- Let mixed attached-ring scoring and ring-substituent tidy preserve exact outward terminal imine and carbonyl leaf geometry on ring trigonal centers
+- Let local cleanup swap sibling alkyl branches around crowded tetra-substituted centers and avoid collapsing nearby tertiary-amine geometry just to open methyl-bond crossings
+- Let late hypervalent phosphate cleanup compete with a follow-up linker rotation so aryl and sugar phosphate monoesters can stay both orthogonal and overlap-free
+- Keep paired heavy exits on small saturated ring carbons close to the outer continuations of the ring edges so cyclopropyl and cyclobutyl substituents stop splaying into soft angles
+- Let mixed fused cleanup keep overlap-free geometry when it clears severe clashes without introducing bond-length failures
 - Keep safe fused-junction substituents on the exact continuation of the shared junction bond instead of a centroid-biased direction
 - Auto-orient fresh chiral layouts with heavy-atom stereobonds so ring-junction stereo bonds avoid awkward diagonal page angles without rotating stereo-hydrogen cases
 - Break mixed attached-ring orientation ties by total residual ring-substituent outward deviation so exact aryl substituent angles win over merely acceptable poses

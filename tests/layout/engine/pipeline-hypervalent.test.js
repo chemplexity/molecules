@@ -76,10 +76,25 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
-    assert.equal(result.metadata.stageTelemetry.selectedStage, 'finalPostRingHypervalentTouchup');
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(phosphorusAtomIds.length, 5);
+    assertOrthogonalMonoxoPhosphates(result, phosphorusAtomIds);
+  });
+
+  it('keeps aryl phosphate monoesters orthogonal after a late overlap-clearing linker rotation', () => {
+    const result = runPipeline(parseSMILES('CC1=CC(C=O)=C(OP(O)(O)=O)C(C=O)=C1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const phosphorusAtomIds = [...result.layoutGraph.atoms.values()].filter(atom => atom.element === 'P').map(atom => atom.id);
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('ring-substituent-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(phosphorusAtomIds.length, 1);
     assertOrthogonalMonoxoPhosphates(result, phosphorusAtomIds);
   });
 });

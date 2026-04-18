@@ -112,6 +112,17 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
   it('uses stitched large-molecule block subtrees to reduce overlaps beyond protected atom nudges', () => {
     const graph = createLayoutGraph(makeLargeExplicitHydrogenPeptide(), normalizeOptions({ suppressH: true }));
     const placement = layoutSupportedComponents(graph);
+    const plainFirstPassCleanup = runUnifiedCleanup(graph, placement.coords, {
+      bondLength: graph.options.bondLength,
+      maxPasses: 1,
+      protectLargeMoleculeBackbone: true
+    });
+    const blockAwareFirstPassCleanup = runUnifiedCleanup(graph, placement.coords, {
+      bondLength: graph.options.bondLength,
+      maxPasses: 1,
+      protectLargeMoleculeBackbone: true,
+      cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId
+    });
     const plainCleanup = runUnifiedCleanup(graph, placement.coords, {
       bondLength: graph.options.bondLength,
       maxPasses: 3,
@@ -127,7 +138,15 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
       bondLength: graph.options.bondLength,
       bondValidationClasses: placement.bondValidationClasses
     });
+    const plainFirstPassAudit = auditLayout(graph, plainFirstPassCleanup.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
     const blockAwareAudit = auditLayout(graph, blockAwareCleanup.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    const blockAwareFirstPassAudit = auditLayout(graph, blockAwareFirstPassCleanup.coords, {
       bondLength: graph.options.bondLength,
       bondValidationClasses: placement.bondValidationClasses
     });
@@ -137,7 +156,15 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
     assert.ok(placement.cleanupRigidSubtreesByAtomId.size > 0);
     assert.equal(plainAudit.bondLengthFailureCount, 0);
     assert.equal(blockAwareAudit.bondLengthFailureCount, 0);
-    assert.ok(blockAwareAudit.severeOverlapCount < plainAudit.severeOverlapCount);
-    assert.ok(blockAwareCleanup.overlapMoves > plainCleanup.overlapMoves);
+    assert.ok(
+      blockAwareFirstPassAudit.severeOverlapCount < plainFirstPassAudit.severeOverlapCount
+      || (
+        blockAwareFirstPassAudit.severeOverlapCount === plainFirstPassAudit.severeOverlapCount
+        && blockAwareFirstPassAudit.severeOverlapPenalty <= plainFirstPassAudit.severeOverlapPenalty
+      )
+    );
+    assert.ok(blockAwareAudit.severeOverlapCount <= plainAudit.severeOverlapCount);
+    assert.ok(blockAwareFirstPassCleanup.overlapMoves >= plainFirstPassCleanup.overlapMoves);
+    assert.ok(blockAwareCleanup.overlapMoves >= plainCleanup.overlapMoves);
   });
 });

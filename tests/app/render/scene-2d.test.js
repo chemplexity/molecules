@@ -94,7 +94,7 @@ function makeAtom(id, x, y) {
   };
 }
 
-function makeRenderer({ preserveSelectionOnNextRender = false, helperOverrides = {} } = {}) {
+function makeRenderer({ preserveSelectionOnNextRender = false, helperOverrides = {}, dragOverrides = {} } = {}) {
   const records = [];
   const nodeRef = { id: 'svg-node' };
   const svg = new FakeSelection(records, nodeRef);
@@ -229,7 +229,8 @@ function makeRenderer({ preserveSelectionOnNextRender = false, helperOverrides =
     },
     drag: {
       create2dBondDrag: () => () => {},
-      create2dAtomDrag: () => () => {}
+      create2dAtomDrag: () => () => {},
+      ...dragOverrides
     },
     actions: {
       promoteBondOrder: () => {}
@@ -507,6 +508,48 @@ describe('create2DSceneRenderer', () => {
     const parentPoint = renderer.toSVGPt(parent);
 
     assert.ok(Math.hypot(hydrogenPoint.x - parentPoint.x, hydrogenPoint.y - parentPoint.y) > 1e-6, 'expected projected hydrogen SVG point to differ from the parent atom point');
+  });
+
+  it('pins visible stereo hydrogens to their rendered position before neighboring drags', () => {
+    const dragOptionsByAtomId = new Map();
+    const { renderer } = makeRenderer({
+      dragOverrides: {
+        create2dAtomDrag: (_molecule, atomId, options) => {
+          dragOptionsByAtomId.set(atomId, options);
+          return () => {};
+        }
+      }
+    });
+    const mol = parseSMILES('C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+    const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    applyCoords(mol, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+
+    renderer.render2d(mol, { preserveGeometry: true });
+
+    const hydrogen = [...mol.atoms.values()].find(atom => atom.name === 'H' && atom.visible !== false);
+    assert.ok(hydrogen, 'expected a visible stereo hydrogen');
+    const [parent] = hydrogen.getNeighbors(mol);
+    assert.ok(parent, 'expected stereo hydrogen to have a parent atom');
+    const movedAtom = parent.getNeighbors(mol).find(neighbor => neighbor.id !== hydrogen.id && neighbor.name !== 'H' && neighbor.visible !== false);
+    assert.ok(movedAtom, 'expected a neighboring heavy atom to drag');
+    const dragOptions = dragOptionsByAtomId.get(movedAtom.id);
+    assert.ok(dragOptions?.captureDragState, 'expected atom drag options to be registered');
+
+    const initialPoint = renderer.toSVGPt(hydrogen);
+    assert.ok(Math.abs(hydrogen.x - parent.x) <= 1e-6 && Math.abs(hydrogen.y - parent.y) <= 1e-6, 'expected the visible stereo hydrogen to start coincident with its parent');
+
+    dragOptions.captureDragState({ sourceEvent: {} }, mol, [movedAtom.id], []);
+    assert.ok(Math.hypot(hydrogen.x - parent.x, hydrogen.y - parent.y) > 1e-6, 'expected drag start to materialize the stereo hydrogen coordinates');
+
+    movedAtom.x += 0.35;
+    movedAtom.y -= 0.22;
+    const movedPoint = renderer.toSVGPt(hydrogen);
+    assert.ok(Math.abs(movedPoint.x - initialPoint.x) <= 1e-6, 'expected the stereo hydrogen x position to stay pinned during a neighboring edit');
+    assert.ok(Math.abs(movedPoint.y - initialPoint.y) <= 1e-6, 'expected the stereo hydrogen y position to stay pinned during a neighboring edit');
   });
 
   it('keeps the reported thio-sugar stereo hydrogens on exact vertical projections', () => {
