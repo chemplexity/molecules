@@ -1,11 +1,20 @@
 /** @module families/bridge-projection */
 
 import { angleOf, distance, rotate, sub } from '../geometry/vec2.js';
-import { BRIDGE_PROJECTION_FACTORS } from '../constants.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { pickBridgeheads } from '../topology/bridgeheads.js';
 
 export { pickBridgeheads } from '../topology/bridgeheads.js';
+
+export const BRIDGE_PROJECTION_FACTORS = Object.freeze({
+  maxProjectedPathCount: 12,
+  singleAtomClampMarginFactor: 0.35,
+  layerSpacingFactor: 0.45,
+  singleAtomBaseHeightFactor: 0.9,
+  pathArcBaseAmplitudeFactor: 0.95,
+  meanSeedBiasFactor: 0.3,
+  meanSeedBiasClampFactor: 0.5
+});
 
 function buildAdjacency(layoutGraph, atomIds) {
   const atomIdSet = new Set(atomIds);

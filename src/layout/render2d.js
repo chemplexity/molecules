@@ -287,9 +287,10 @@ function bondToSVG(bond, a1, a2, mol, toSVG, stereoType, hCounts, aromaticMode =
  * @param {boolean} [options.showChiralLabels] - Whether to show chiral labels.
  * @param {boolean} [options.showLonePairs] - Whether to show lone pairs.
  * @param {string} [options.aromaticMode] - Aromatic ring rendering mode.
+ * @param {boolean} [options.skipLayout] - Whether to reuse the molecule's current coordinates instead of generating a fresh layout.
  * @returns {{svgContent: string, cellW: number, cellH: number}|null} SVG fragment or null.
  */
-export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = false, aromaticMode = AROMATIC_RENDER_MODE } = {}) {
+export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = false, aromaticMode = AROMATIC_RENDER_MODE, skipLayout = false } = {}) {
   if (!mol || mol.atoms.size === 0) {
     return null;
   }
@@ -315,7 +316,9 @@ export function renderMolSVG(mol, { showChiralLabels = false, showLonePairs = fa
   }
 
   try {
-    generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5, maxPasses: 6 });
+    if (!skipLayout) {
+      generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5, maxPasses: 6 });
+    }
   } catch {
     return null;
   }

@@ -32,7 +32,7 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds) {
         const nextQueue = [];
 
         for (const { molecule, depth } of currentQueue) {
-            if (depth >= maxDepth) continue;
+            if (depth >= maxDepth) {continue;}
 
             if (network.moleculeNodes.size >= maxNodes) {
                 currentQueue = [];
@@ -40,12 +40,12 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds) {
             }
 
             const canon = toCanonicalSMILES(molecule);
-            if (processedSmiles.has(canon)) continue;
+            if (processedSmiles.has(canon)) {continue;}
             processedSmiles.add(canon);
 
             for (const template of templates) {
                 const attemptKey = `${canon}||${template.name}`;
-                if (attemptedReactions.has(attemptKey)) continue;
+                if (attemptedReactions.has(attemptKey)) {continue;}
                 attemptedReactions.add(attemptKey);
 
                 let createdReactions = [];
@@ -62,7 +62,7 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds) {
                 for (const rxn of createdReactions) {
                     for (const prodId of rxn.products) {
                         const prodMolNode = network.moleculeNodes.get(prodId);
-                        if (!prodMolNode) continue;
+                        if (!prodMolNode) {continue;}
                         const prodCanon = toCanonicalSMILES(prodMolNode.molecule);
 
                         if (!globalPrintedIds.has(prodId)) {
@@ -84,7 +84,7 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds) {
     const seenSmiles = new Map();
     for (const [id, node] of network.moleculeNodes) {
         const s = toCanonicalSMILES(node.molecule);
-        if (!seenSmiles.has(s)) seenSmiles.set(s, []);
+        if (!seenSmiles.has(s)) {seenSmiles.set(s, []);}
         seenSmiles.get(s).push(id);
     }
     let dupeCount = 0;
@@ -96,7 +96,7 @@ function generateNetwork(seedSmiles, maxDepth, flatten, maxNodes, scaffolds) {
             console.log(`  [OK]   ${ids[0]}: "${s}"`);
         }
     }
-    if (dupeCount === 0) console.log('  No duplicates detected.');
+    if (dupeCount === 0) {console.log('  No duplicates detected.');}
     console.log(`  Total nodes: ${network.moleculeNodes.size}, unique SMILES: ${seenSmiles.size}\n`);
 
     if (scaffolds) {

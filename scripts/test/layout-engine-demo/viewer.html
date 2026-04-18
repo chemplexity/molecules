@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Layout Engine Step Visualizer</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap');
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #f8f8fa; color: #111; font-family: 'Inter', sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+
+    /* ── Top bar ── */
+    #topbar {
+      padding: 14px 20px; background: rgba(255,255,255,0.97);
+      border-bottom: 1px solid rgba(0,0,0,0.07);
+      box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+      display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+      z-index: 10;
+    }
+    #topbar h2 { font-size: 13px; font-weight: 600; color: #222; white-space: nowrap; }
+    #smiles-input {
+      flex: 1; padding: 8px 12px; border: 1px solid #e0e0e0;
+      border-radius: 8px; font-size: 13px; font-family: monospace;
+      background: #fafafa; color: #111; outline: none;
+      transition: border-color 0.2s;
+    }
+    #smiles-input:focus { border-color: #999; background: #fff; }
+    #run-btn {
+      padding: 8px 18px; background: #111; color: #fff; border: none;
+      border-radius: 8px; font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: background 0.2s; white-space: nowrap;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #run-btn:hover { background: #333; }
+    #run-btn:disabled { background: #aaa; cursor: default; }
+    #random-btn {
+      padding: 8px 14px; background: #fff; color: #333; border: 1px solid #e0e0e0;
+      border-radius: 8px; font-size: 13px; font-weight: 500;
+      cursor: pointer; transition: background 0.2s, border-color 0.2s; white-space: nowrap;
+    }
+    #random-btn:hover { background: #f5f5f7; border-color: #ccc; }
+    #random-btn:disabled { opacity: 0.4; cursor: default; }
+
+    /* ── Main layout ── */
+    #main { display: flex; flex: 1; overflow: hidden; }
+
+    /* ── Left sidebar: step list ── */
+    #sidebar {
+      width: 240px; flex-shrink: 0; background: rgba(255,255,255,0.97);
+      border-right: 1px solid rgba(0,0,0,0.07);
+      overflow-y: auto; display: flex; flex-direction: column;
+    }
+    #sidebar-header {
+      padding: 12px 14px 8px; font-size: 10px; font-weight: 600;
+      color: #999; text-transform: uppercase; letter-spacing: 0.8px;
+      border-bottom: 1px solid #f0f0f0; flex-shrink: 0;
+    }
+    #step-list { flex: 1; overflow-y: auto; padding: 6px 0; }
+    .step-item {
+      display: flex; align-items: center; gap: 9px;
+      padding: 7px 14px; cursor: pointer; user-select: none;
+      transition: background 0.12s; position: relative;
+    }
+    .step-item:hover { background: #f5f5f7; }
+    .step-item.active { background: #f0f4ff; }
+    .step-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #ddd; flex-shrink: 0; transition: background 0.15s;
+    }
+    .step-item.active .step-dot { background: #3b82f6; }
+    .step-item.done .step-dot { background: #86efac; }
+    .step-label { font-size: 12px; color: #444; flex: 1; line-height: 1.3; }
+    .step-item.active .step-label { color: #1d4ed8; font-weight: 500; }
+    .step-badge {
+      font-size: 10px; color: #f97316; font-weight: 600;
+      background: #fff7ed; border-radius: 4px; padding: 1px 5px;
+      flex-shrink: 0;
+    }
+    .step-badge.zero { color: #aaa; background: #f5f5f5; }
+
+    /* ── Center: molecule viewer ── */
+    #viewer {
+      flex: 1; display: flex; flex-direction: column;
+      align-items: stretch; overflow: hidden;
+    }
+    #mol-area {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      background: #f8f8fa; position: relative; overflow: hidden;
+    }
+    #mol-svg-wrap {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; height: 100%; padding: 20px; box-sizing: border-box;
+      transition: opacity 0.15s;
+    }
+    #mol-svg-wrap.fading { opacity: 0; }
+    #mol-svg-wrap svg { max-width: 100%; max-height: 100%; width: auto; height: auto; }
+    #empty-msg {
+      font-size: 13px; color: #aaa; text-align: center; padding: 40px;
+      line-height: 1.7;
+    }
+    #moved-badge {
+      position: absolute; top: 12px; right: 12px;
+      font-size: 11px; font-weight: 600; color: #f97316;
+      background: #fff7ed; border: 1px solid #fed7aa;
+      border-radius: 6px; padding: 3px 8px;
+      opacity: 0; transition: opacity 0.2s;
+    }
+    #moved-badge.visible { opacity: 1; }
+    #moved-badge.zero { color: #aaa; background: #f5f5f5; border-color: #e5e7eb; }
+
+    /* ── Nav bar ── */
+    #nav-bar {
+      padding: 10px 20px; background: rgba(255,255,255,0.97);
+      border-top: 1px solid rgba(0,0,0,0.07);
+      display: flex; align-items: center; justify-content: center; gap: 14px;
+      flex-shrink: 0;
+    }
+    .nav-btn {
+      padding: 7px 16px; border: 1px solid #e0e0e0;
+      border-radius: 8px; font-size: 13px; font-weight: 500;
+      cursor: pointer; background: #fff; color: #333;
+      transition: background 0.15s, border-color 0.15s;
+      display: flex; align-items: center; gap: 5px;
+    }
+    .nav-btn:hover:not(:disabled) { background: #f5f5f7; border-color: #ccc; }
+    .nav-btn:disabled { opacity: 0.35; cursor: default; }
+    #step-counter { font-size: 13px; color: #888; min-width: 72px; text-align: center; font-variant-numeric: tabular-nums; }
+
+    /* ── Right panel: step info ── */
+    #info-panel {
+      width: 260px; flex-shrink: 0; background: rgba(255,255,255,0.97);
+      border-left: 1px solid rgba(0,0,0,0.07);
+      overflow-y: auto; padding: 18px 16px;
+      display: flex; flex-direction: column; gap: 14px;
+    }
+    #info-label { font-size: 15px; font-weight: 600; color: #111; line-height: 1.3; }
+    #info-desc { font-size: 12px; color: #555; line-height: 1.55; }
+    .info-section-title {
+      font-size: 10px; font-weight: 600; color: #999;
+      text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 8px;
+    }
+    #chip-grid { display: flex; flex-wrap: wrap; gap: 6px; }
+    .chip {
+      font-size: 11px; background: #f3f4f6; border-radius: 6px;
+      padding: 3px 8px; color: #444; white-space: nowrap;
+    }
+    .chip .chip-key { color: #999; }
+    #step-meta { display: flex; flex-direction: column; gap: 5px; }
+    .meta-row { display: flex; justify-content: space-between; font-size: 11px; }
+    .meta-row .meta-key { color: #aaa; }
+    .meta-row .meta-val { color: #333; font-weight: 500; font-variant-numeric: tabular-nums; }
+    #audit-ok-chip {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 11px; font-weight: 500; border-radius: 6px; padding: 3px 8px;
+    }
+    #audit-ok-chip.ok { background: #f0fdf4; color: #16a34a; }
+    #audit-ok-chip.fail { background: #fef2f2; color: #dc2626; }
+  </style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div id="topbar">
+  <h2>Layout Engine Visualizer</h2>
+  <input type="text" id="smiles-input" placeholder="Paste SMILES here…" spellcheck="false" value="Cn1cnc2c1c(=O)n(c(=O)n2C)C" />
+  <button id="random-btn">⚄ Random</button>
+  <button id="run-btn">Run</button>
+</div>
+
+<!-- Main -->
+<div id="main">
+
+  <!-- Step list sidebar -->
+  <div id="sidebar">
+    <div id="sidebar-header">Pipeline Steps</div>
+    <div id="step-list">
+      <div id="empty-list" style="padding: 16px 14px; font-size: 12px; color: #bbb;">Run a molecule to see steps.</div>
+    </div>
+  </div>
+
+  <!-- Molecule viewer + nav -->
+  <div id="viewer">
+    <div id="mol-area">
+      <div id="mol-svg-wrap">
+        <div id="empty-msg">Enter a SMILES string and press <strong>Run</strong> to visualize<br>the layout engine pipeline step by step.</div>
+      </div>
+      <div id="moved-badge"></div>
+    </div>
+    <div id="nav-bar">
+      <button class="nav-btn" id="prev-btn" disabled>← Prev</button>
+      <span id="step-counter">—</span>
+      <button class="nav-btn" id="next-btn" disabled>Next →</button>
+    </div>
+  </div>
+
+  <!-- Info panel -->
+  <div id="info-panel">
+    <div id="info-label" style="color:#bbb;">No step selected</div>
+    <div id="info-desc"></div>
+
+    <div>
+      <div class="info-section-title">Layout</div>
+      <div id="chip-grid"></div>
+    </div>
+
+    <div>
+      <div class="info-section-title">Step Data</div>
+      <div id="step-meta"></div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  let steps = [];
+  let currentIndex = -1;
+
+  const smilesInput = document.getElementById('smiles-input');
+  const runBtn = document.getElementById('run-btn');
+  const randomBtn = document.getElementById('random-btn');
+  const molSvgWrap = document.getElementById('mol-svg-wrap');
+  const emptyMsg = document.getElementById('empty-msg');
+  const stepList = document.getElementById('step-list');
+  const prevBtn = document.getElementById('prev-btn');
+  const nextBtn = document.getElementById('next-btn');
+  const stepCounter = document.getElementById('step-counter');
+  const movedBadge = document.getElementById('moved-badge');
+  const infoLabel = document.getElementById('info-label');
+  const infoDesc = document.getElementById('info-desc');
+  const chipGrid = document.getElementById('chip-grid');
+  const stepMeta = document.getElementById('step-meta');
+
+  // ── Run ──────────────────────────────────────────────────────────────────────
+
+  async function run() {
+    const smiles = smilesInput.value.trim();
+    if (!smiles) return;
+
+    runBtn.disabled = true;
+    randomBtn.disabled = true;
+    runBtn.innerHTML = '<span class="spinner"></span> Running…';
+    stepList.innerHTML = '<div style="padding:16px 14px;font-size:12px;color:#bbb;">Computing…</div>';
+
+    try {
+      const res = await fetch(`http://localhost:3738/layout?smiles=${encodeURIComponent(smiles)}`);
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error || res.statusText); }
+      const data = await res.json();
+      steps = data.steps;
+      buildStepList();
+      showStep(0);
+    } catch (e) {
+      stepList.innerHTML = `<div style="padding:16px 14px;font-size:12px;color:#e53e3e;">${e.message}</div>`;
+    } finally {
+      runBtn.disabled = false;
+      randomBtn.disabled = false;
+      runBtn.innerHTML = 'Run';
+    }
+  }
+
+  runBtn.addEventListener('click', run);
+  smilesInput.addEventListener('keydown', e => { if (e.key === 'Enter') run(); });
+
+  randomBtn.addEventListener('click', async () => {
+    randomBtn.disabled = true;
+    try {
+      const res = await fetch('http://localhost:3738/random');
+      if (!res.ok) throw new Error('Failed to fetch random molecule');
+      const { smiles } = await res.json();
+      smilesInput.value = smiles;
+      await run();
+    } catch (e) {
+      stepList.innerHTML = `<div style="padding:16px 14px;font-size:12px;color:#e53e3e;">${e.message}</div>`;
+    } finally {
+      randomBtn.disabled = false;
+    }
+  });
+
+  // ── Step list ─────────────────────────────────────────────────────────────
+
+  function buildStepList() {
+    stepList.innerHTML = '';
+    steps.forEach((step, i) => {
+      const item = document.createElement('div');
+      item.className = 'step-item';
+      item.dataset.index = i;
+      const badge = step.movedAtomCount > 0
+        ? `<span class="step-badge">${step.movedAtomCount}</span>`
+        : `<span class="step-badge zero">—</span>`;
+      item.innerHTML = `<div class="step-dot"></div><div class="step-label">${step.label}</div>${badge}`;
+      item.addEventListener('click', () => showStep(i));
+      stepList.appendChild(item);
+    });
+  }
+
+  // ── Navigate ──────────────────────────────────────────────────────────────
+
+  function showStep(index) {
+    if (index < 0 || index >= steps.length) return;
+    currentIndex = index;
+    const step = steps[index];
+
+    // Fade out → update → fade in
+    molSvgWrap.classList.add('fading');
+    setTimeout(() => {
+      updateMolView(step);
+      updateInfoPanel(step);
+      updateStepList(index);
+      updateNav();
+      molSvgWrap.classList.remove('fading');
+    }, 100);
+  }
+
+  function updateMolView(step) {
+    if (step.svg) {
+      molSvgWrap.innerHTML = step.svg;
+    } else {
+      molSvgWrap.innerHTML = '<div style="font-size:13px;color:#aaa;">No SVG available for this step.</div>';
+    }
+
+    if (step.movedAtomCount > 0) {
+      movedBadge.textContent = `${step.movedAtomCount} atom${step.movedAtomCount === 1 ? '' : 's'} moved`;
+      movedBadge.className = 'visible';
+    } else {
+      movedBadge.textContent = '0 atoms moved';
+      movedBadge.className = 'visible zero';
+    }
+  }
+
+  function updateInfoPanel(step) {
+    infoLabel.textContent = step.label;
+    infoLabel.style.color = '';
+    infoDesc.textContent = step.description;
+
+    // Layout chips
+    chipGrid.innerHTML = '';
+    const lm = step.layoutMetadata ?? {};
+    const chips = [
+      ['Family', lm.primaryFamily],
+      ['Components', lm.componentCount],
+      ['Rings', lm.ringCount],
+      ['Ring systems', lm.ringSystemCount],
+      ['Cleanup passes', lm.cleanupPasses],
+    ];
+    for (const [key, val] of chips) {
+      if (val == null) continue;
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      chip.innerHTML = `<span class="chip-key">${key}:</span> ${val}`;
+      chipGrid.appendChild(chip);
+    }
+    if (lm.placedFamilies?.length) {
+      const chip = document.createElement('div');
+      chip.className = 'chip';
+      chip.innerHTML = `<span class="chip-key">Placed:</span> ${lm.placedFamilies.join(', ')}`;
+      chipGrid.appendChild(chip);
+    }
+
+    // Audit chip
+    if (lm.audit) {
+      const auditChip = document.createElement('div');
+      auditChip.id = 'audit-ok-chip';
+      auditChip.className = lm.audit.ok ? 'ok' : 'fail';
+      const overlap = lm.audit.severeOverlapCount;
+      const dev = (lm.audit.meanBondLengthDeviation * 100).toFixed(1);
+      auditChip.textContent = lm.audit.ok
+        ? `Audit OK · ${overlap} overlaps · ${dev}% dev`
+        : `Audit FAIL · ${overlap} overlaps · ${dev}% dev`;
+      chipGrid.appendChild(auditChip);
+    }
+
+    // Step-specific metadata
+    stepMeta.innerHTML = '';
+    const sm = step.stepMetadata ?? {};
+    const metaEntries = Object.entries(sm).filter(([, v]) => v != null && v !== '');
+    if (metaEntries.length === 0) {
+      stepMeta.innerHTML = '<div style="font-size:11px;color:#bbb;font-style:italic;">No step-specific data.</div>';
+    } else {
+      for (const [key, val] of metaEntries) {
+        const row = document.createElement('div');
+        row.className = 'meta-row';
+        const valStr = typeof val === 'number' ? (Number.isInteger(val) ? val : val.toFixed(4)) : val;
+        row.innerHTML = `<span class="meta-key">${key}</span><span class="meta-val">${valStr}</span>`;
+        stepMeta.appendChild(row);
+      }
+    }
+  }
+
+  function updateStepList(activeIndex) {
+    for (const item of stepList.querySelectorAll('.step-item')) {
+      const i = parseInt(item.dataset.index, 10);
+      item.classList.toggle('active', i === activeIndex);
+      item.classList.toggle('done', i < activeIndex);
+    }
+    // Scroll active item into view
+    const activeItem = stepList.querySelector('.step-item.active');
+    if (activeItem) activeItem.scrollIntoView({ block: 'nearest' });
+  }
+
+  function updateNav() {
+    prevBtn.disabled = currentIndex <= 0;
+    nextBtn.disabled = currentIndex >= steps.length - 1;
+    stepCounter.textContent = steps.length > 0 ? `${currentIndex + 1} / ${steps.length}` : '—';
+  }
+
+  prevBtn.addEventListener('click', () => showStep(currentIndex - 1));
+  nextBtn.addEventListener('click', () => showStep(currentIndex + 1));
+
+  document.addEventListener('keydown', e => {
+    if (document.activeElement === smilesInput) return;
+    if (e.key === 'ArrowLeft') showStep(currentIndex - 1);
+    if (e.key === 'ArrowRight') showStep(currentIndex + 1);
+  });
+</script>
+</body>
+</html>

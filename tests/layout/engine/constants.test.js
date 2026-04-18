@@ -5,7 +5,6 @@ import {
   AUDIT_PLANAR_VALIDATION,
   BRANCH_CLEARANCE_FLOOR_FACTOR,
   BRIDGED_VALIDATION,
-  BRIDGE_PROJECTION_FACTORS,
   CLEANUP_EPSILON,
   COMPONENT_ROLE_ORDER,
   DEFAULT_BOND_LENGTH,
@@ -25,6 +24,7 @@ import {
   TRIGONAL_BIPYRAMIDAL_EQUATOR_ANGLE,
   TEMPLATE_PLANAR_VALIDATION
 } from '../../../src/layout/engine/constants.js';
+import { BRIDGE_PROJECTION_FACTORS } from '../../../src/layout/engine/families/bridge-projection.js';
 
 describe('layout/engine/constants', () => {
   it('exposes the expected milestone-1 defaults', () => {

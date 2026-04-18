@@ -3,6 +3,7 @@
 import { collectLabelBoxes, findLabelOverlaps } from '../geometry/label-box.js';
 import { computeBounds } from '../geometry/bounds.js';
 import { AtomGrid } from '../geometry/atom-grid.js';
+import { distancePointToSegment, segmentsIntersect } from '../geometry/segments.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
 import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
@@ -14,63 +15,6 @@ function pairKey(firstAtomId, secondAtomId) {
 const SUBTREE_BOND_CROWDING_FACTOR = 0.5;
 const SUBTREE_BOND_CROWDING_WEIGHT = 25;
 const IDEAL_DIVALENT_CONTINUATION_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
-
-function distancePointToSegment(point, firstPoint, secondPoint) {
-  const deltaX = secondPoint.x - firstPoint.x;
-  const deltaY = secondPoint.y - firstPoint.y;
-  const spanSquared = deltaX * deltaX + deltaY * deltaY;
-  if (spanSquared <= 1e-12) {
-    return Math.hypot(point.x - firstPoint.x, point.y - firstPoint.y);
-  }
-  const projection = ((point.x - firstPoint.x) * deltaX + (point.y - firstPoint.y) * deltaY) / spanSquared;
-  const clampedProjection = Math.max(0, Math.min(1, projection));
-  const closestPoint = {
-    x: firstPoint.x + deltaX * clampedProjection,
-    y: firstPoint.y + deltaY * clampedProjection
-  };
-  return Math.hypot(point.x - closestPoint.x, point.y - closestPoint.y);
-}
-
-function pointOnSegment(point, firstPoint, secondPoint) {
-  return point.x >= Math.min(firstPoint.x, secondPoint.x) - 1e-9
-    && point.x <= Math.max(firstPoint.x, secondPoint.x) + 1e-9
-    && point.y >= Math.min(firstPoint.y, secondPoint.y) - 1e-9
-    && point.y <= Math.max(firstPoint.y, secondPoint.y) + 1e-9;
-}
-
-function orientation(firstPoint, secondPoint, thirdPoint) {
-  const determinant =
-    (secondPoint.x - firstPoint.x) * (thirdPoint.y - firstPoint.y)
-    - (secondPoint.y - firstPoint.y) * (thirdPoint.x - firstPoint.x);
-  if (Math.abs(determinant) <= 1e-12) {
-    return 0;
-  }
-  return determinant > 0 ? 1 : -1;
-}
-
-function segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd) {
-  const firstOrientationA = orientation(firstStart, firstEnd, secondStart);
-  const firstOrientationB = orientation(firstStart, firstEnd, secondEnd);
-  const secondOrientationA = orientation(secondStart, secondEnd, firstStart);
-  const secondOrientationB = orientation(secondStart, secondEnd, firstEnd);
-
-  if (firstOrientationA !== firstOrientationB && secondOrientationA !== secondOrientationB) {
-    return true;
-  }
-  if (firstOrientationA === 0 && pointOnSegment(secondStart, firstStart, firstEnd)) {
-    return true;
-  }
-  if (firstOrientationB === 0 && pointOnSegment(secondEnd, firstStart, firstEnd)) {
-    return true;
-  }
-  if (secondOrientationA === 0 && pointOnSegment(firstStart, secondStart, secondEnd)) {
-    return true;
-  }
-  if (secondOrientationB === 0 && pointOnSegment(firstEnd, secondStart, secondEnd)) {
-    return true;
-  }
-  return false;
-}
 
 function distanceBetweenSegments(firstStart, firstEnd, secondStart, secondEnd) {
   if (segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd)) {

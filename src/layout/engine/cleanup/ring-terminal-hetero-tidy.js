@@ -3,6 +3,7 @@
 import { buildAtomGrid } from '../audit/invariants.js';
 import { countPointInPolygons } from '../geometry/polygon.js';
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub } from '../geometry/vec2.js';
+import { probeRigidRotation } from './rigid-rotation.js';
 
 const TIDY_ROTATION_ANGLES = Object.freeze([
   0,
@@ -189,26 +190,37 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
         : 0,
       angleDelta: 0
     };
-    let bestCandidate = currentCandidate;
     const candidateAngles = new Set(TIDY_ROTATION_ANGLES);
     for (const angle of descriptor.outwardAngles) { candidateAngles.add(angle); }
-    for (const candidateAngle of candidateAngles) {
-      const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, radius));
-      const candidate = {
-        position: candidatePosition,
-        insideRingCount: countPointInPolygons(ringPolygons, candidatePosition),
-        overlapCount: localSevereOverlapCount(layoutGraph, coords, atomGrid, descriptor.heteroAtomId, candidatePosition, threshold),
-        clearance: localNonbondedClearance(layoutGraph, coords, atomGrid, descriptor.heteroAtomId, candidatePosition, searchRadius),
-        prefersOutwardGeometry: descriptor.prefersOutwardGeometry,
-        outwardDeviation: descriptor.prefersOutwardGeometry
-          ? Math.min(...descriptor.outwardAngles.map(outwardAngle => angularDifference(outwardAngle, candidateAngle)))
-          : 0,
-        angleDelta: angularDifference(candidateAngle, currentAngle)
-      };
-      if (isBetterTidyCandidate(candidate, bestCandidate)) {
-        bestCandidate = candidate;
-      }
-    }
+    const rigidRotationProbe = probeRigidRotation(layoutGraph, coords, {
+      anchorAtomId: descriptor.anchorAtomId,
+      rootAtomId: descriptor.heteroAtomId,
+      subtreeAtomIds: [descriptor.heteroAtomId]
+    }, {
+      angles: [...candidateAngles],
+      buildPositionsFn(_coords, _rotationDescriptor, candidateAngle) {
+        return new Map([[descriptor.heteroAtomId, add(anchorPosition, fromAngle(candidateAngle, radius))]]);
+      },
+      scoreFn(_coords, overridePositions, candidateAngle) {
+        const candidatePosition = overridePositions.get(descriptor.heteroAtomId);
+        if (!candidatePosition) {
+          return null;
+        }
+        return {
+          position: candidatePosition,
+          insideRingCount: countPointInPolygons(ringPolygons, candidatePosition),
+          overlapCount: localSevereOverlapCount(layoutGraph, coords, atomGrid, descriptor.heteroAtomId, candidatePosition, threshold),
+          clearance: localNonbondedClearance(layoutGraph, coords, atomGrid, descriptor.heteroAtomId, candidatePosition, searchRadius),
+          prefersOutwardGeometry: descriptor.prefersOutwardGeometry,
+          outwardDeviation: descriptor.prefersOutwardGeometry
+            ? Math.min(...descriptor.outwardAngles.map(outwardAngle => angularDifference(outwardAngle, candidateAngle)))
+            : 0,
+          angleDelta: angularDifference(candidateAngle, currentAngle)
+        };
+      },
+      isBetterScoreFn: isBetterTidyCandidate
+    });
+    const bestCandidate = rigidRotationProbe.bestScore ?? currentCandidate;
 
     const improvesOverlapCount = bestCandidate.overlapCount < currentCandidate.overlapCount;
     const improvesInsideRing = bestCandidate.insideRingCount < currentCandidate.insideRingCount;

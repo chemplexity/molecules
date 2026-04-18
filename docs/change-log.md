@@ -5,6 +5,7 @@
 - Let compact aryl ester cleanup flip across the anchor bond axis so ortho ester-acid clashes clear while both ring exits and both carbonyl angles stay exact
 - Tighten detached-fragment packing and add a final attached-ring rotation plus leaf-resnap touchup so salt pairs stay compact and imide carbonyls can finish exact
 - Pin displayed stereochemical hydrogens to their drawn 2D coordinates as soon as a manual drag starts so nearby edits cannot reproject them automatically
+- Refactor layout engine
 
 ## 2026-04-16
 

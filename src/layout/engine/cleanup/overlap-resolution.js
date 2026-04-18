@@ -2,6 +2,8 @@
 
 import { buildAtomGrid, computeAtomDistortionCost, computeSubtreeOverlapCost, findSevereOverlaps } from '../audit/invariants.js';
 import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
+import { containsFrozenAtom } from './frozen-atoms.js';
+import { probeRigidRotation, rigidDescriptorKey, rotateRigidDescriptorPositions } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { ANGLE_EPSILON, IMPROVEMENT_EPSILON, NUMERIC_EPSILON } from '../constants.js';
 
@@ -263,10 +265,6 @@ export function collectRigidPendantRingSubtrees(layoutGraph) {
   return descriptorsByAtomId;
 }
 
-function rigidDescriptorKey(descriptor) {
-  return `${descriptor.anchorAtomId}|${descriptor.rootAtomId}|${descriptor.subtreeAtomIds.join(',')}`;
-}
-
 function rigidDescriptorsFromValue(value) {
   if (!value) {
     return [];
@@ -322,10 +320,6 @@ export function mergeRigidSubtreesByAtomId(...descriptorMaps) {
  * @param {Set<string>} frozenAtomIds - Frozen atom ids.
  * @returns {boolean} True when the descriptor would move a frozen atom.
  */
-function descriptorTouchesFrozenAtoms(descriptor, frozenAtomIds) {
-  return descriptor.subtreeAtomIds.some(atomId => frozenAtomIds.has(atomId));
-}
-
 /**
  * Removes rigid-subtree cleanup descriptors that would move frozen atoms.
  * @param {Map<string, {anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}|Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>} descriptorsByAtomId - Descriptor map.
@@ -339,7 +333,7 @@ function filterFrozenRigidSubtrees(descriptorsByAtomId, frozenAtomIds) {
   }
 
   for (const [atomId, descriptorValue] of descriptorsByAtomId) {
-    const activeDescriptors = rigidDescriptorsFromValue(descriptorValue).filter(descriptor => !descriptorTouchesFrozenAtoms(descriptor, frozenAtomIds));
+    const activeDescriptors = rigidDescriptorsFromValue(descriptorValue).filter(descriptor => !containsFrozenAtom(descriptor.subtreeAtomIds, frozenAtomIds));
     if (activeDescriptors.length > 0) {
       filtered.set(atomId, activeDescriptors);
     }
@@ -528,30 +522,6 @@ function localNonbondedClearance(layoutGraph, coords, atomId, position, searchRa
   return minimumDistance;
 }
 
-function rigidDescriptorPositions(coords, descriptor, rotation) {
-  const anchorPosition = coords.get(descriptor.anchorAtomId);
-  if (!anchorPosition) {
-    return null;
-  }
-  const newPositions = new Map();
-  for (const subtreeAtomId of descriptor.subtreeAtomIds) {
-    const subtreePosition = coords.get(subtreeAtomId);
-    if (!subtreePosition) {
-      continue;
-    }
-    const relativeVector = {
-      x: subtreePosition.x - anchorPosition.x,
-      y: subtreePosition.y - anchorPosition.y
-    };
-    const rotatedVector = rotateVector(relativeVector, rotation);
-    newPositions.set(subtreeAtomId, {
-      x: anchorPosition.x + rotatedVector.x,
-      y: anchorPosition.y + rotatedVector.y
-    });
-  }
-  return newPositions;
-}
-
 function reflectedRigidDescriptorPositions(coords, descriptor) {
   const anchorPosition = coords.get(descriptor.anchorAtomId);
   const rootPosition = coords.get(descriptor.rootAtomId);
@@ -692,12 +662,55 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     evaluateCandidatePositions(reflectedRigidDescriptorPositions(coords, descriptor));
   }
 
-  for (const candidateAngle of rigidSubtreeCandidateAngles(descriptor.subtreeAtomIds.length, visibleAtomCount)) {
-    const rotation = candidateAngle - currentRootAngle;
-    if (Math.abs(rotation) <= ANGLE_EPSILON) {
-      continue;
+  const rigidRotationProbe = probeRigidRotation(layoutGraph, coords, descriptor, {
+    angles: rigidSubtreeCandidateAngles(descriptor.subtreeAtomIds.length, visibleAtomCount).filter(candidateAngle => {
+      return Math.abs(candidateAngle - currentRootAngle) > ANGLE_EPSILON;
+    }),
+    buildPositionsFn(inputCoords, inputDescriptor, candidateAngle) {
+      return rotateRigidDescriptorPositions(inputCoords, inputDescriptor, candidateAngle - currentRootAngle);
+    },
+    scoreFn(_inputCoords, overridePositions) {
+      const movedAtomPosition = overridePositions.get(movingAtomId);
+      if (!movedAtomPosition) {
+        return null;
+      }
+      const resolvedDistance = Math.hypot(movedAtomPosition.x - opposingPosition.x, movedAtomPosition.y - opposingPosition.y);
+      if (resolvedDistance < threshold) {
+        return null;
+      }
+
+      const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, overridePositions, bondLength, { atomGrid });
+      const newAnchorDistortion = computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, overridePositions);
+      let improvement = baseOverlapCost - newOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
+      const ringRootDeviation = exactRingRootDescriptor
+        ? compactRingAnchoredRootOutwardDeviation(layoutGraph, coords, descriptor, overridePositions)
+        : Number.POSITIVE_INFINITY;
+      if (improvement <= IMPROVEMENT_EPSILON && subtreeIsSingleAtom && newOverlapCost <= baseOverlapCost + IMPROVEMENT_EPSILON) {
+        const candidateLocalClearance = localNonbondedClearance(layoutGraph, coords, movingAtomId, movedAtomPosition, threshold * 2, atomGrid);
+        if (candidateLocalClearance > baseLocalClearance + IMPROVEMENT_EPSILON) {
+          improvement = candidateLocalClearance - baseLocalClearance;
+        }
+      }
+      if (improvement <= IMPROVEMENT_EPSILON) {
+        return null;
+      }
+
+      return {
+        positions: overridePositions,
+        improvement,
+        resolvedDistance,
+        ringRootDeviation,
+        totalRingRootDeviation: ringRootDeviation,
+        subtreeAtomCount: descriptor.subtreeAtomIds.length,
+        subtreeHeavyAtomCount: subtreeHeavyAtomCount(layoutGraph, descriptor.subtreeAtomIds)
+      };
+    },
+    isBetterScoreFn(candidateMove, incumbentMove) {
+      return isBetterRigidMove(incumbentMove, candidateMove);
     }
-    evaluateCandidatePositions(rigidDescriptorPositions(coords, descriptor, rotation));
+  });
+  if (rigidRotationProbe.bestScore && isBetterRigidMove(bestMove, rigidRotationProbe.bestScore)) {
+    bestMove = rigidRotationProbe.bestScore;
   }
 
   return bestMove;

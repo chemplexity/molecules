@@ -56,6 +56,9 @@ export function generateCoords(molecule, options = {}) {
 
 /**
  * Refine existing coordinates with the engine and write the updated placement back onto the molecule.
+ * This forwards the molecule's current atom positions as `existingCoords`
+ * hints to the engine refinement entrypoint rather than selecting a separate
+ * cleanup-only pipeline.
  * @param {import('../core/Molecule.js').Molecule} molecule - The molecule graph to lay out.
  * @param {object} [options] - Layout options forwarded through the public layout API.
  * @param {boolean} [options.suppressH] - Whether to hide hydrogens before layout.

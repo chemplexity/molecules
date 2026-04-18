@@ -63,17 +63,6 @@ export const RING_SUBSTITUENT_READABILITY_LIMITS = Object.freeze({
   maxOutwardDeviation: 0.7
 });
 
-/** Tuning knobs for post-cleanup ring-substituent presentation tidy. */
-export const RING_SUBSTITUENT_TIDY_LIMITS = Object.freeze({
-  maxSubtreeHeavyAtomCount: 18,
-  maxSubtreeAtomCount: 28,
-  minCompactAreaImprovementFraction: 0.04,
-  minCompactAreaImprovementAbsolute: 4,
-  minRootAnchoredCompactAreaImprovementFraction: 0.03,
-  minRootAnchoredCompactAreaImprovementAbsolute: 3,
-  minRootAnchoredAnchorClearanceImprovement: 0.4
-});
-
 /** Minimum candidate clearance accepted by branch placement. */
 export const BRANCH_CLEARANCE_FLOOR_FACTOR = SEVERE_OVERLAP_FACTOR;
 
@@ -122,17 +111,6 @@ export const BRIDGED_KK_LIMITS = Object.freeze({
   largeMaxInnerIterations: 24
 });
 
-/** Publication-style projection tuning for bridged fallback geometry. */
-export const BRIDGE_PROJECTION_FACTORS = Object.freeze({
-  maxProjectedPathCount: 12,
-  singleAtomClampMarginFactor: 0.35,
-  layerSpacingFactor: 0.45,
-  singleAtomBaseHeightFactor: 0.9,
-  pathArcBaseAmplitudeFactor: 0.95,
-  meanSeedBiasFactor: 0.3,
-  meanSeedBiasClampFactor: 0.5
-});
-
 /** Diagonal angle used for projected octahedral front/back ligand pairs. */
 export const OCTAHEDRAL_PROJECTED_EQUATOR_ANGLE = Math.PI / 6;
 
@@ -157,39 +135,12 @@ export const COMPONENT_ROLE_ORDER = Object.freeze({
   'solvent-like': 3
 });
 
-/** Heuristics that cap permutation search in complex branch placement. */
-export const BRANCH_COMPLEXITY_LIMITS = Object.freeze({
-  subtreeFloor: 4,
-  mediumMaxPermutations: 6,
-  highMaxPermutations: 3,
-  extremeMaxPermutations: 2
-});
-
-/** Retry/tuning knobs for large-molecule stitched placement. */
-export const LARGE_MOLECULE_LAYOUT_LIMITS = Object.freeze({
-  rootRetryOverlapFloor: 4,
-  rootRetryBlockCountFloor: 6,
-  rootRetryRepulsionMoveCeiling: 64,
-  maxAlternateRootCandidates: 1
-});
-
 /** Guard rails for family-specific ring-system rescue placement. */
 export const RING_SYSTEM_RESCUE_LIMITS = Object.freeze({
   compactBridgedAtomCount: 32,
   compactBridgedRingCount: 8,
   bridgedTemplateMissAtomCount: 40,
   bridgedTemplateMissRingCount: 12
-});
-
-/** Rescue/tuning knobs for fused systems that lay out more like cages than planar polycycles. */
-export const FUSED_RESCUE_LIMITS = Object.freeze({
-  compactCageMaxAtomCount: 20,
-  compactCageMinRingCount: 6,
-  largeCageMinRingCount: 10,
-  kkMaxComponentSize: 128,
-  maxRescueOverlapPenalty: 2,
-  giantCageMinAtomCount: 48,
-  giantCageMinRingCount: 24
 });
 
 /** Rescue/tuning knobs for multi-metal organometallic cluster placement. */

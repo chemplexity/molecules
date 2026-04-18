@@ -1,6 +1,6 @@
 /** @module families/fused */
 
-import { BRIDGED_KK_LIMITS, FUSED_RESCUE_LIMITS } from '../constants.js';
+import { BRIDGED_KK_LIMITS } from '../constants.js';
 import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { apothemForRegularPolygon } from '../geometry/polygon.js';
 import { add, angleOf, centroid, distance, fromAngle, midpoint, normalize, perpLeft, scale, sub, wrapAngle } from '../geometry/vec2.js';
@@ -8,6 +8,16 @@ import { computeFusedAxis, orientCoordsHorizontally, rebuildRingCenters } from '
 import { placeTemplateCoords } from '../scaffold/template-placement.js';
 import { auditLayout } from '../audit/audit.js';
 import { assignBondValidationClass } from '../placement/bond-validation.js';
+
+const FUSED_RESCUE_LIMITS = Object.freeze({
+  compactCageMaxAtomCount: 20,
+  compactCageMinRingCount: 6,
+  largeCageMinRingCount: 10,
+  kkMaxComponentSize: 128,
+  maxRescueOverlapPenalty: 2,
+  giantCageMinAtomCount: 48,
+  giantCageMinRingCount: 24
+});
 
 /**
  * Returns whether a fused system should try the bridged/KK rescue path.

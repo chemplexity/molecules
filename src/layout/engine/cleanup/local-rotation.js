@@ -4,6 +4,8 @@ import { CLEANUP_EPSILON, DISTANCE_EPSILON } from '../constants.js';
 import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { buildAtomGrid, buildSubtreeOverlapContext, computeAtomDistortionCost, computeSubtreeOverlapCost } from '../audit/invariants.js';
+import { containsFrozenAtom } from './frozen-atoms.js';
+import { forEachRigidRotationCandidate } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
 
 const DISCRETE_ROTATION_ANGLES = Object.freeze([
@@ -630,16 +632,6 @@ function updateAtomGridForMove(layoutGraph, atomGrid, coords, movedPositions) {
 }
 
 /**
- * Returns whether the movable descriptor would rotate any frozen atom.
- * @param {{subtreeAtomIds: string[]}} descriptor - Rotation descriptor.
- * @param {Set<string>} frozenAtomIds - Frozen atom ids.
- * @returns {boolean} True when the descriptor must be skipped.
- */
-function touchesFrozenAtoms(descriptor, frozenAtomIds) {
-  return descriptor.subtreeAtomIds.some(atomId => frozenAtomIds.has(atomId));
-}
-
-/**
  * Returns the distortion penalty for a non-ring three-coordinate hetero center
  * that should still read as roughly trigonal in 2D cleanup.
  * @param {object} layoutGraph - Layout graph shell.
@@ -756,15 +748,15 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
   const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
   const terminalSubtrees =
     frozenAtomIds
-      ? rotatableSubtrees.terminalSubtrees.filter(subtree => !touchesFrozenAtoms(subtree, frozenAtomIds))
+      ? rotatableSubtrees.terminalSubtrees.filter(subtree => !containsFrozenAtom(subtree.subtreeAtomIds, frozenAtomIds))
       : rotatableSubtrees.terminalSubtrees;
   const siblingSwaps =
     frozenAtomIds
-      ? rotatableSubtrees.siblingSwaps.filter(pair => !touchesFrozenAtoms(pair, frozenAtomIds))
+      ? rotatableSubtrees.siblingSwaps.filter(pair => !containsFrozenAtom(pair.subtreeAtomIds, frozenAtomIds))
       : rotatableSubtrees.siblingSwaps;
   const geminalPairs =
     frozenAtomIds
-      ? rotatableSubtrees.geminalPairs.filter(pair => !touchesFrozenAtoms(pair, frozenAtomIds))
+      ? rotatableSubtrees.geminalPairs.filter(pair => !containsFrozenAtom(pair.subtreeAtomIds, frozenAtomIds))
       : rotatableSubtrees.geminalPairs;
   const overlapEligibleDescriptors = filterDescriptorsByOverlap(layoutGraph, {
     terminalSubtrees,
@@ -803,31 +795,37 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
       });
       const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
       const finalists = [];
-
-      for (const angle of preferredRotationAngles(layoutGraph, coords, anchorAtomId, atomId)) {
-        const rotatedRoot = add(anchorPosition, fromAngle(angle, currentRadius));
-        const rotation = angle - currentAngle;
-        if (flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, rootPosition, rotatedRoot, inwardFlipTolerance)) {
-          continue;
+      forEachRigidRotationCandidate(layoutGraph, coords, {
+        anchorAtomId,
+        rootAtomId: atomId,
+        subtreeAtomIds
+      }, {
+        angles: preferredRotationAngles(layoutGraph, coords, anchorAtomId, atomId),
+        buildPositionsFn(_coords, descriptor, angle) {
+          const rotatedRoot = add(anchorPosition, fromAngle(angle, currentRadius));
+          const rotation = angle - currentAngle;
+          if (flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, rootPosition, rotatedRoot, inwardFlipTolerance)) {
+            return null;
+          }
+          const newPositions = new Map();
+          appendRotatedSubtreePositions(newPositions, coords, descriptor.rootAtomId, rotatedRoot, rotation, descriptor.subtreeAtomIds);
+          return newPositions;
+        },
+        visitCandidate(newPositions) {
+          const newAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, {
+            atomGrid,
+            subtreeContext
+          });
+          const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
+          const approximateImprovement = baseAtomOverlapCost - newAtomOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
+          recordFinalist(finalists, {
+            positions: newPositions,
+            approximateImprovement,
+            atomOverlapCost: newAtomOverlapCost,
+            anchorDistortion: newAnchorDistortion
+          });
         }
-
-        // Build new positions for the subtree without copying the whole coords map.
-        const newPositions = new Map();
-        appendRotatedSubtreePositions(newPositions, coords, atomId, rotatedRoot, rotation, subtreeAtomIds);
-
-        const newAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, {
-          atomGrid,
-          subtreeContext
-        });
-        const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
-        const approximateImprovement = baseAtomOverlapCost - newAtomOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
-        recordFinalist(finalists, {
-          positions: newPositions,
-          approximateImprovement,
-          atomOverlapCost: newAtomOverlapCost,
-          anchorDistortion: newAnchorDistortion
-        });
-      }
+      });
 
       const refinedMove = finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon);
       if (refinedMove && (!bestMove || refinedMove.improvement > bestMove.improvement)) {

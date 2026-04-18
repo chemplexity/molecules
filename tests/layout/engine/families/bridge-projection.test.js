@@ -1,9 +1,13 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
-import { BRIDGE_PROJECTION_FACTORS } from '../../../../src/layout/engine/constants.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
-import { enumerateBridgePaths, pickBridgeheads, projectBridgePaths } from '../../../../src/layout/engine/families/bridge-projection.js';
+import {
+  BRIDGE_PROJECTION_FACTORS,
+  enumerateBridgePaths,
+  pickBridgeheads,
+  projectBridgePaths
+} from '../../../../src/layout/engine/families/bridge-projection.js';
 import { layoutKamadaKawai } from '../../../../src/layout/engine/geometry/kk-layout.js';
 import { makeNorbornane, makeUnmatchedBridgedCage } from '../support/molecules.js';
 

@@ -4,7 +4,7 @@ import { parseSMILES } from '../../../../src/io/index.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { angularDifference } from '../../../../src/layout/engine/geometry/vec2.js';
 
-import { chooseAttachmentAngle, placeRemainingBranches } from '../../../../src/layout/engine/placement/substituents.js';
+import { chooseAttachmentAngle, placeRemainingBranches } from '../../../../src/layout/engine/placement/branch-placement.js';
 
 function buildAdjacency(layoutGraph) {
   const adjacency = new Map([...layoutGraph.atoms.keys()].map(atomId => [atomId, []]));

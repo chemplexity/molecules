@@ -4,12 +4,18 @@ import { add, angleOf, centroid, normalize, rotate, sub } from '../geometry/vec2
 import { computeBounds } from '../geometry/bounds.js';
 import { buildAtomGrid, computeSubtreeOverlapCost } from '../audit/invariants.js';
 import { auditLayout } from '../audit/audit.js';
-import { LARGE_MOLECULE_LAYOUT_LIMITS } from '../constants.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
-import { chooseAttachmentAngle } from '../placement/substituents.js';
+import { chooseAttachmentAngle } from '../placement/branch-placement.js';
 import { refineStitchedBlock } from '../placement/block-stitching.js';
 import { assignBondValidationClass, mergeBondValidationClasses } from '../placement/bond-validation.js';
 import { buildSliceAdjacency, createAtomSlice, layoutAtomSlice } from '../placement/atom-slice.js';
+
+const LARGE_MOLECULE_LAYOUT_LIMITS = Object.freeze({
+  rootRetryOverlapFloor: 4,
+  rootRetryBlockCountFloor: 6,
+  rootRetryRepulsionMoveCeiling: 64,
+  maxAlternateRootCandidates: 1
+});
 
 const PACKING_ROTATION_ANGLES = Object.freeze([
   -Math.PI / 2,

@@ -17,7 +17,7 @@ import {
 import { layoutIsolatedRingFamily } from '../families/isolated-ring.js';
 import { layoutMacrocycleFamily } from '../families/macrocycle.js';
 import { layoutSpiroFamily } from '../families/spiro.js';
-import { placeRemainingBranches } from './substituents.js';
+import { placeRemainingBranches } from './branch-placement.js';
 
 /**
  * Returns whether an atom should participate in visible layout placement.

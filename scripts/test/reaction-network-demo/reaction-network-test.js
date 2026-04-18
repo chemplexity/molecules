@@ -29,13 +29,13 @@ console.log('--------------------------------------------------');
 const templates = Object.values(reactionTemplates);
 
 // Core Generation Engine
-let globalPrintedIds = new Set([currentQueue[0].molecule.id]);
+const globalPrintedIds = new Set([currentQueue[0].molecule.id]);
 
 while (currentQueue.length > 0) {
     const nextQueue = [];
 
     for (const { molecule, depth } of currentQueue) {
-        if (depth >= maxDepth) continue;
+        if (depth >= maxDepth) {continue;}
         
         // Hard cap — prevents combinatorial explosion from bidirectional template pairs
         if (network.moleculeNodes.size >= maxNodes) {
@@ -45,13 +45,13 @@ while (currentQueue.length > 0) {
         }
 
         const canon = toCanonicalSMILES(molecule);
-        if (processedSmiles.has(canon)) continue;
+        if (processedSmiles.has(canon)) {continue;}
         processedSmiles.add(canon);
         
         for (const template of templates) {
             // Skip if this exact (molecule, template) pair has already been executed
             const attemptKey = `${canon}||${template.name}`;
-            if (attemptedReactions.has(attemptKey)) continue;
+            if (attemptedReactions.has(attemptKey)) {continue;}
             attemptedReactions.add(attemptKey);
 
             let createdReactions = [];
@@ -71,7 +71,7 @@ while (currentQueue.length > 0) {
                 
                 for (const prodId of rxn.products) {
                     const prodMolNode = network.moleculeNodes.get(prodId);
-                    if (!prodMolNode) continue;
+                    if (!prodMolNode) {continue;}
                     const prodCanon = toCanonicalSMILES(prodMolNode.molecule);
                     
                     if (!globalPrintedIds.has(prodId)) {
