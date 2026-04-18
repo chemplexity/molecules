@@ -264,7 +264,7 @@ export function placeHydrogensAroundParent(parentNode, hydrogens, links, { dista
 
 /**
  * Creates a bundle of force-layout helper functions bound to the simulation and plot context.
- * @param {object} context - Context providing `simulation`, `plotEl`, `d3`, `viewportFitPadding`, `generateAndRefine2dCoords`, `alignReaction2dProductOrientation`, `spreadReaction2dProductComponents`, and `centerReaction2dPairCoords`.
+ * @param {object} context - Context providing `simulation`, `plotEl`, `d3`, `viewportFitPadding`, `generate2dCoords`, `alignReaction2dProductOrientation`, `spreadReaction2dProductComponents`, and `centerReaction2dPairCoords`.
  * @returns {object} Object with `buildForceAnchorLayout`, `convertMolecule`, `seedForceNodePositions`, `forceLinkDistance`, `forceAnchorRadius`, `forceHydrogenRepulsion`, `forceFitTransform`, `isHydrogenNode`, `zoomTransformsDiffer`, `placeHydrogensAroundParent`, `patchForceNodePositions`, and `reseatHydrogensAroundPatched`.
  */
 export function createForceHelpers(context) {
@@ -310,7 +310,7 @@ export function createForceHelpers(context) {
   function buildForceAnchorLayout(molecule) {
     const seedMol = molecule.clone();
     seedMol.hideHydrogens();
-    context.generateAndRefine2dCoords(seedMol, {
+    context.generate2dCoords(seedMol, {
       suppressH: true,
       bondLength: 1.5
     });

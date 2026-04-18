@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
-import { runRingSubstituentTidy } from '../../../../src/layout/engine/cleanup/ring-substituent-tidy.js';
+import { measureRingSubstituentPresentationPenalty, runRingSubstituentTidy } from '../../../../src/layout/engine/cleanup/ring-substituent-tidy.js';
 import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { createLayoutGraph, createLayoutGraphFromNormalized } from '../../../../src/layout/engine/model/layout-graph.js';
 import { normalizeOptions } from '../../../../src/layout/engine/options.js';
@@ -11,6 +11,34 @@ import { layoutSupportedComponents } from '../../../../src/layout/engine/placeme
 import { classifyFamily, runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { resolveProfile } from '../../../../src/layout/engine/profile.js';
 import { resolvePolicy } from '../../../../src/layout/engine/standards/profile-policy.js';
+
+function bondAngle(coords, firstAtomId, centerAtomId, secondAtomId) {
+  const first = coords.get(firstAtomId);
+  const center = coords.get(centerAtomId);
+  const second = coords.get(secondAtomId);
+  assert.ok(first);
+  assert.ok(center);
+  assert.ok(second);
+  return angularDifference(
+    angleOf(sub(first, center)),
+    angleOf(sub(second, center))
+  );
+}
+
+function ringOutwardDeviation(graph, coords, anchorAtomId, childAtomId) {
+  const anchor = coords.get(anchorAtomId);
+  const child = coords.get(childAtomId);
+  assert.ok(anchor);
+  assert.ok(child);
+  const ring = (graph.atomToRings.get(anchorAtomId) ?? [])[0];
+  assert.ok(ring);
+  const ringPositions = ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
+  assert.equal(ringPositions.length, ring.atomIds.length);
+  return angularDifference(
+    angleOf(sub(child, anchor)),
+    angleOf(sub(anchor, centroid(ringPositions)))
+  );
+}
 
 describe('layout/engine/cleanup/ring-substituent-tidy', () => {
   it('rotates tangential anisole methoxy substituents back toward an outward ring direction', () => {
@@ -120,6 +148,122 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
     assert.ok(result.metadata.audit.severeOverlapCount <= postCleanupAudit.severeOverlapCount);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
+  });
+
+  it('does not rotate an attached anisole ring into a reverse-side outward readability failure', () => {
+    const result = runPipeline(
+      parseSMILES('CCOC(=O)C1C(CC2=NC(=C(C(C2=C1O)c3ccccn3)C(=O)OCC)C)c4ccc(OC)cc4'),
+      { suppressH: true, auditTelemetry: true }
+    );
+    const postCleanupAudit = result.metadata.stageTelemetry.stageAudits.postCleanup;
+    const finalRingSubstituentAudit = result.metadata.stageTelemetry.stageAudits.finalRingSubstituentTouchup ?? null;
+
+    assert.equal(postCleanupAudit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(postCleanupAudit.outwardAxisRingSubstituentFailureCount, 0);
+    if (finalRingSubstituentAudit) {
+      assert.equal(finalRingSubstituentAudit.ringSubstituentReadabilityFailureCount, 0);
+      assert.equal(finalRingSubstituentAudit.outwardAxisRingSubstituentFailureCount, 0);
+    }
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('does not rotate already-clean linked subtrees purely for ideal outward presentation', () => {
+    const smiles = 'CC([NH3+])C1=CC=C(CC(=O)NC2CC(NC3=CC(Cl)=CC(Cl)=C23)C([O-])=O)C=C1';
+    const normalizedOptions = normalizeOptions({ suppressH: true });
+    const graph = createLayoutGraphFromNormalized(parseSMILES(smiles), normalizedOptions);
+    const familySummary = classifyFamily(graph);
+    const policy = resolvePolicy(resolveProfile(normalizedOptions.profile), {
+      ...graph.traits,
+      ...familySummary
+    });
+    const placement = layoutSupportedComponents(graph, policy);
+    const beforeAudit = auditLayout(graph, placement.coords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    const beforeAngle = bondAngle(placement.coords, 'C10', 'N12', 'C13');
+
+    const tidied = runRingSubstituentTidy(graph, placement.coords, {
+      bondLength: normalizedOptions.bondLength,
+      frozenAtomIds: placement.frozenAtomIds
+    });
+    const afterAngle = bondAngle(tidied.coords, 'C10', 'N12', 'C13');
+
+    assert.equal(beforeAudit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(beforeAudit.severeOverlapCount, 0);
+    assert.equal(tidied.nudges, 0);
+    assert.ok(Math.abs(beforeAngle - afterAngle) < 1e-6);
+  });
+
+  it('assigns a continuous soft penalty to aromatic substituents even below the hard readability cutoff', () => {
+    const smiles = 'COc1ccccc1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const result = runPipeline(parseSMILES(smiles), { suppressH: true });
+    const coords = new Map([...result.coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+    const oxygenAtomId = [...graph.atoms.values()].find(atom => atom.element === 'O' && (graph.atomToRings.get(atom.id)?.length ?? 0) === 0)?.id;
+    assert.ok(oxygenAtomId);
+    const oxygenNeighbors = (graph.bondsByAtomId.get(oxygenAtomId) ?? []).map(bond => (bond.a === oxygenAtomId ? bond.b : bond.a));
+    const anchorAtomId = oxygenNeighbors.find(atomId => (graph.atomToRings.get(atomId)?.length ?? 0) > 0);
+    const methylAtomId = oxygenNeighbors.find(atomId => atomId !== anchorAtomId);
+    assert.ok(anchorAtomId);
+    assert.ok(methylAtomId);
+
+    const anchorPosition = coords.get(anchorAtomId);
+    for (const atomId of [oxygenAtomId, methylAtomId]) {
+      coords.set(atomId, add(anchorPosition, rotate(sub(coords.get(atomId), anchorPosition), 0.35)));
+    }
+
+    const displacedAudit = auditLayout(graph, coords, { bondLength: graph.options.bondLength });
+    const displacedPenalty = measureRingSubstituentPresentationPenalty(graph, coords);
+    const tidied = runRingSubstituentTidy(graph, coords, { bondLength: graph.options.bondLength });
+    const tidiedPenalty = measureRingSubstituentPresentationPenalty(graph, tidied.coords);
+
+    assert.equal(displacedAudit.ringSubstituentReadabilityFailureCount, 0);
+    assert.ok(displacedPenalty > 0.3);
+    assert.ok(tidiedPenalty < displacedPenalty - 0.1);
+  });
+
+  it('scores attached-ring exits on non-aromatic ring anchors and keeps them outward in mixed placement', () => {
+    const smiles = 'CC1CCC(O)(C#N)C(C1)C1=NC=CS1';
+    const molecule = parseSMILES(smiles);
+    const graph = createLayoutGraph(molecule, { suppressH: true });
+    const result = runPipeline(parseSMILES(smiles), { suppressH: true });
+
+    const presentationPenalty = measureRingSubstituentPresentationPenalty(graph, result.coords);
+    const cyclohexaneDeviation = ringOutwardDeviation(graph, result.coords, 'C9', 'C11');
+    const thiazoleDeviation = ringOutwardDeviation(graph, result.coords, 'C11', 'C9');
+
+    assert.ok(presentationPenalty < 0.2);
+    assert.ok(cyclohexaneDeviation < 0.2);
+    assert.ok(thiazoleDeviation < 0.2);
+  });
+
+  it('skips late ring touchups when the incumbent layout is already ring-clean', () => {
+    const result = runPipeline(
+      parseSMILES('CC([NH3+])C1=CC=C(CC(=O)NC2CC(NC3=CC(Cl)=CC(Cl)=C23)C([O-])=O)C=C1'),
+      { suppressH: true, auditTelemetry: true }
+    );
+
+    assert.equal(result.metadata.stageTelemetry.selectedGeometryStage, 'placement');
+    assert.equal(result.metadata.stageTelemetry.selectedStage, 'selectedGeometryStereo');
+    assert.ok(!('finalRingSubstituentTouchup' in result.metadata.stageTelemetry.stageAudits));
+    assert.ok(!('finalAttachedRingRotationTouchup' in result.metadata.stageTelemetry.stageAudits));
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+  });
+
+  it('keeps aromatic attached-ring layouts on a late ring-touchup path when continuous outward-deviation penalties remain', () => {
+    const result = runPipeline(
+      parseSMILES('CC(C1=NN=C2C=CC(=NN12)C1=CC=C2N=CSC2=C1)C1=CC=C2N=CC=CC2=C1'),
+      { suppressH: true, auditTelemetry: true }
+    );
+
+    assert.notEqual(result.metadata.stageTelemetry.selectedStage, 'selectedGeometryStereo');
+    assert.ok('finalRingSubstituentTouchup' in result.metadata.stageTelemetry.stageAudits);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
   });
 
   it('re-snaps lone terminal multiple-bond leaves on ring trigonal centers to the exact outward angle', () => {

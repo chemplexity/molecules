@@ -18,7 +18,7 @@ import { exceedsLargeComponentThreshold, exceedsLargeMoleculeThreshold } from '.
 import { findMacrocycleRings } from './topology/macrocycles.js';
 import { buildScaffoldPlan } from './model/scaffold-plan.js';
 import { packComponentPlacements } from './placement/fragment-packing.js';
-import { levelCoords, normalizeOrientation } from './orientation.js';
+import { ensureLandscapeOrientation, levelCoords, normalizeOrientation } from './orientation.js';
 
 function copyCoords(coords) {
   return new Map([...coords].map(([k, v]) => [k, { x: v.x, y: v.y }]));
@@ -187,6 +187,16 @@ function shouldAutoOrientFinalCoords(layoutGraph, coords, normalizedOptions) {
   return pickWedgeAssignments(layoutGraph, coords).assignments.some(assignment => isRingJunctionStereoAssignment(layoutGraph, assignment));
 }
 
+function shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) {
+  if (!normalizedOptions.finalLandscapeOrientation) {
+    return false;
+  }
+  if (normalizedOptions.fixedCoords.size > 0 || normalizedOptions.existingCoords.size > 0) {
+    return false;
+  }
+  return policy?.orientationBias === 'horizontal';
+}
+
 /**
  * Applies the final display-orientation pass to generated coordinates.
  * This is a whole-molecule rotation only, so it preserves local geometry while
@@ -244,9 +254,10 @@ function shouldProtectCleanupBondIntegrity(familySummary, placement) {
  * @param {object} normalizedOptions - Normalized pipeline options.
  * @param {{enabled: boolean, startTime: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null} [timingState] - Optional timing accumulator.
  * @param {((label: string, description: string, coords: Map<string, {x: number, y: number}>, metrics?: object) => void)|null} [onStep] - Optional debug callback for intermediate cleanup stages.
+ * @param {((stageName: string, accepted: boolean, stageAudit: object|null, incumbentAudit: object|null) => void)|null} [onStageAcceptance] - Optional callback fired after each scored cleanup stage acceptance decision.
  * @returns {{coords: Map<string, {x: number, y: number}>, passes: number, improvement: number, overlapMoves: number, labelNudges: number, symmetrySnaps: number, junctionSnaps: number, stereoReflections: number, postHookNudges: number, placementAudit?: object|null, stageTelemetry?: object|null}} Cleanup summary.
  */
-function runCleanupPhase(layoutGraph, placement, familySummary, policy, normalizedOptions, timingState = null, onStep = null) {
+function runCleanupPhase(layoutGraph, placement, familySummary, policy, normalizedOptions, timingState = null, onStep = null, onStageAcceptance = null) {
   const includeStageTelemetry = normalizedOptions.auditTelemetry === true;
   if (placement.placedComponentCount === 0) {
     return {
@@ -290,6 +301,7 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
     timingState,
     nowMs,
     onStep,
+    onStageAcceptance,
     copyCoords
   };
   const {
@@ -529,6 +541,7 @@ export function classifyFamily(layoutGraph) {
  */
 export function runPipeline(molecule, options = {}) {
   const onStep = typeof options.debug?.onStep === 'function' ? options.debug.onStep : null;
+  const onStageAcceptance = typeof options.debug?.onStageAcceptance === 'function' ? options.debug.onStageAcceptance : null;
   const normalizedOptions = normalizeOptions(options);
   const timingState = createTimingState(normalizedOptions.timing);
   const profile = resolveProfile(normalizedOptions.profile);
@@ -555,7 +568,7 @@ export function runPipeline(molecule, options = {}) {
     ringCount: layoutGraph.rings.length,
     ringSystemCount: layoutGraph.ringSystems.length
   });
-  const cleanup = runCleanupPhase(layoutGraph, placement, familySummary, policy, normalizedOptions, timingState, onStep);
+  const cleanup = runCleanupPhase(layoutGraph, placement, familySummary, policy, normalizedOptions, timingState, onStep, onStageAcceptance);
   for (const [atomId, position] of cleanup.coords) {
     coords.set(atomId, position);
   }
@@ -564,7 +577,17 @@ export function runPipeline(molecule, options = {}) {
     onStep('Fragment Packing', 'Multiple disconnected fragments arranged into a unified 2D layout.', copyCoords(repackedCoords), { componentCount: layoutGraph.components.length });
   }
   const orientationApplied = shouldAutoOrientFinalCoords(layoutGraph, repackedCoords, normalizedOptions);
-  const finalCoords = orientationApplied ? orientFinalCoords(repackedCoords, workingMolecule) : repackedCoords;
+  let finalCoords = orientationApplied ? orientFinalCoords(repackedCoords, workingMolecule) : repackedCoords;
+  if (shouldEnsureLandscapeFinalCoords(normalizedOptions, policy)) {
+    const landscapeCoords = new Map([...finalCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+    const landscapeApplied = ensureLandscapeOrientation(landscapeCoords, workingMolecule);
+    if (landscapeApplied) {
+      finalCoords = landscapeCoords;
+    }
+    if (onStep && landscapeApplied && !orientationApplied) {
+      onStep('Final Orientation', 'Whole-molecule quarter-turn to keep the final layout in landscape orientation.', copyCoords(finalCoords), {});
+    }
+  }
   if (onStep && orientationApplied) {
     onStep('Final Orientation', 'Whole-molecule rotation for optimal page orientation of ring-junction stereocenters.', copyCoords(finalCoords), {});
   }

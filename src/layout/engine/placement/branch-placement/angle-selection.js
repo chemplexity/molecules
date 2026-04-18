@@ -415,13 +415,21 @@ export function isExactAcyclicHeteroContinuationEligible(layoutGraph, anchorAtom
   return true;
 }
 
+function isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId) {
+  if (!layoutGraph || !childAtomId) {
+    return false;
+  }
+  const descriptor = describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId);
+  return Boolean(descriptor && descriptor.exocyclicNeighborIds.includes(childAtomId));
+}
+
 /**
  * Describes a cross-like hypervalent main-group center when one is present.
  * These centers conventionally read as a 2D cross with single bonds opposite
  * each other and terminal multiple-bond hetero substituents perpendicular.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} atomId - Candidate center atom ID.
- * @returns {{singleNeighborIds: string[], multipleNeighborIds: string[]}|null} Cross-like center descriptor or `null`.
+ * @returns {{kind: 'bis-oxo'|'mono-oxo', singleNeighborIds: string[], multipleNeighborIds: string[]}|null} Cross-like center descriptor or `null`.
  */
 export function describeCrossLikeHypervalentCenter(layoutGraph, atomId) {
   if (!layoutGraph) {
@@ -455,13 +463,21 @@ export function describeCrossLikeHypervalentCenter(layoutGraph, atomId) {
     return null;
   }
 
-  if (singleNeighborIds.length !== 2 || multipleNeighborIds.length !== 2) {
-    return null;
+  if (singleNeighborIds.length === 2 && multipleNeighborIds.length === 2) {
+    return {
+      kind: 'bis-oxo',
+      singleNeighborIds,
+      multipleNeighborIds
+    };
   }
-  return {
-    singleNeighborIds,
-    multipleNeighborIds
-  };
+  if (singleNeighborIds.length === 3 && multipleNeighborIds.length === 1) {
+    return {
+      kind: 'mono-oxo',
+      singleNeighborIds,
+      multipleNeighborIds
+    };
+  }
+  return null;
 }
 
 function preferredRingSystemAngle(layoutGraph, coords, anchorAtomId) {
@@ -553,6 +569,98 @@ function prefersLinearContinuation(layoutGraph, anchorAtomId, parentAtomId, chil
   const parentBond = findLayoutBond(layoutGraph, anchorAtomId, parentAtomId);
   const childBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
   return (parentBond?.order ?? 1) >= 3 || (childBond?.order ?? 1) >= 3;
+}
+
+function crossZ(firstVector, secondVector) {
+  return firstVector.x * secondVector.y - firstVector.y * secondVector.x;
+}
+
+function isSimpleSingleBondCarbon(atom) {
+  return Boolean(atom) && atom.element === 'C' && atom.aromatic !== true;
+}
+
+function isSimpleAlkylContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId) {
+  if (!layoutGraph || !parentAtomId || !childAtomId) {
+    return false;
+  }
+  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0 || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0) {
+    return false;
+  }
+
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const parentAtom = layoutGraph.atoms.get(parentAtomId);
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (!isSimpleSingleBondCarbon(anchorAtom) || !isSimpleSingleBondCarbon(childAtom) || !parentAtom || parentAtom.element === 'H' || parentAtom.aromatic === true) {
+    return false;
+  }
+  if ((anchorAtom.heavyDegree ?? 0) < 2 || (anchorAtom.heavyDegree ?? 0) > 3) {
+    return false;
+  }
+
+  const parentBond = findLayoutBond(layoutGraph, anchorAtomId, parentAtomId);
+  const childBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
+  if (!parentBond || !childBond || parentBond.kind !== 'covalent' || childBond.kind !== 'covalent') {
+    return false;
+  }
+  if (parentBond.aromatic || childBond.aromatic || (parentBond.order ?? 1) !== 1 || (childBond.order ?? 1) !== 1) {
+    return false;
+  }
+
+  for (const atomId of [parentAtomId, anchorAtomId, childAtomId]) {
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (bond?.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function preferredAlkylTailAngles(adjacency, coords, anchorAtomId, parentAtomId, childAtomId, layoutGraph) {
+  if (!isSimpleAlkylContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId)) {
+    return [];
+  }
+
+  const anchorPosition = coords.get(anchorAtomId);
+  const parentPosition = coords.get(parentAtomId);
+  if (!anchorPosition || !parentPosition) {
+    return [];
+  }
+
+  const parentContextPositions = neighborOrder(
+    (adjacency.get(parentAtomId) ?? []).filter(neighborAtomId => {
+      if (neighborAtomId === anchorAtomId || !coords.has(neighborAtomId)) {
+        return false;
+      }
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return neighborAtom && neighborAtom.element !== 'H';
+    }),
+    layoutGraph.canonicalAtomRank ?? new Map()
+  ).map(neighborAtomId => coords.get(neighborAtomId));
+
+  if (parentContextPositions.length === 0) {
+    return [];
+  }
+
+  const referencePosition = parentContextPositions.length === 1 ? parentContextPositions[0] : centroid(parentContextPositions);
+  const previousVector = sub(parentPosition, referencePosition);
+  const incomingVector = sub(anchorPosition, parentPosition);
+  if (length(previousVector) <= CENTERED_NEIGHBOR_EPSILON || length(incomingVector) <= CENTERED_NEIGHBOR_EPSILON) {
+    return [];
+  }
+
+  const previousTurn = Math.sign(crossZ(previousVector, incomingVector));
+  if (previousTurn === 0) {
+    return [];
+  }
+
+  const forwardAngle = angleOf(incomingVector);
+  const candidateAngles = [forwardAngle + CHAIN_CONTINUATION_OFFSET, forwardAngle - CHAIN_CONTINUATION_OFFSET];
+  const alternatingAngles = candidateAngles.filter(candidateAngle => {
+    const candidateVector = fromAngle(candidateAngle, 1);
+    return Math.sign(crossZ(incomingVector, candidateVector)) === -previousTurn;
+  });
+  return alternatingAngles.length > 0 ? alternatingAngles : candidateAngles;
 }
 
 function candidateClearanceScore(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds) {
@@ -933,7 +1041,7 @@ function describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId) {
     return null;
   }
   const ring = anchorRings[0];
-  if ((ring?.atomIds?.length ?? 0) < 3 || (ring?.atomIds?.length ?? 0) > 4) {
+  if ((ring?.atomIds?.length ?? 0) < 3 || (ring?.atomIds?.length ?? 0) > 5) {
     return null;
   }
 
@@ -952,9 +1060,6 @@ function describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId) {
       ringNeighborIds.push(neighborAtomId);
       continue;
     }
-    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
-      return null;
-    }
     exocyclicNeighborIds.push(neighborAtomId);
   }
 
@@ -963,11 +1068,40 @@ function describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId) {
   }
   return {
     ringNeighborIds,
-    exocyclicNeighborIds
+    exocyclicNeighborIds,
+    ringSize: ring.atomIds.length
   };
 }
 
-function smallRingExteriorContinuationAngles(ringNeighborAngles) {
+function largerAngularGap(ringNeighborAngles) {
+  const sortedAngles = [...ringNeighborAngles].map(normalizeSignedAngle).sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  if (sortedAngles.length !== 2) {
+    return null;
+  }
+
+  const [firstAngle, secondAngle] = sortedAngles;
+  const forwardGap = secondAngle - firstAngle;
+  const wrapGap = (firstAngle + 2 * Math.PI) - secondAngle;
+  if (forwardGap >= wrapGap) {
+    return { startAngle: firstAngle, size: forwardGap };
+  }
+  return { startAngle: secondAngle, size: wrapGap };
+}
+
+export function smallRingExteriorTargetAngles(ringNeighborAngles, ringSize) {
+  if (ringNeighborAngles.length !== 2) {
+    return [];
+  }
+  if (ringSize === 5) {
+    const exteriorGap = largerAngularGap(ringNeighborAngles);
+    if (!exteriorGap) {
+      return [];
+    }
+    return [
+      normalizeSignedAngle(exteriorGap.startAngle + exteriorGap.size / 3),
+      normalizeSignedAngle(exteriorGap.startAngle + (2 * exteriorGap.size) / 3)
+    ];
+  }
   return ringNeighborAngles.map(ringNeighborAngle => normalizeSignedAngle(ringNeighborAngle + Math.PI));
 }
 
@@ -993,7 +1127,7 @@ function exactSmallRingExteriorAngleSets(layoutGraph, coords, anchorAtomId, curr
 
   const anchorPosition = coords.get(anchorAtomId);
   const ringNeighborAngles = placedRingNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition)));
-  const targetAngles = smallRingExteriorContinuationAngles(ringNeighborAngles);
+  const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, descriptor.ringSize);
   return targetAngles.length === unplacedNeighborIds.length ? [targetAngles] : [];
 }
 
@@ -1038,7 +1172,7 @@ function preferredSmallRingExteriorGapAngles(layoutGraph, coords, anchorAtomId, 
   }
 
   const ringNeighborAngles = placedRingNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), atomPosition)));
-  const targetAngles = smallRingExteriorContinuationAngles(ringNeighborAngles);
+  const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, descriptor.ringSize);
   if (targetAngles.length !== descriptor.exocyclicNeighborIds.length) {
     return [];
   }
@@ -1061,10 +1195,10 @@ function preferredSmallRingExteriorGapAngles(layoutGraph, coords, anchorAtomId, 
 
 /**
  * Returns the penalty for crowding two heavy exocyclic branches onto the same
- * side of a small saturated ring atom. Cyclopropyl and cyclobutyl quaternary
- * carbons read best when their two exocyclic heavy bonds follow the exact
- * outer continuations of the ring edges rather than leaving softened,
- * near-parallel exits off the ring vertex.
+ * side of a small non-aromatic ring atom. Three-, four-, and five-member
+ * quaternary ring centers read best when their heavy exocyclic bonds follow
+ * the exact outer continuations of the ring edges rather than leaving
+ * softened exits off the ring vertex.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {string} atomId - Candidate anchor atom ID.
@@ -1085,7 +1219,7 @@ export function measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, at
     return 0;
   }
   const smallRing = anchorRings[0];
-  if ((smallRing?.atomIds?.length ?? 0) < 3 || (smallRing?.atomIds?.length ?? 0) > 4) {
+  if ((smallRing?.atomIds?.length ?? 0) < 3 || (smallRing?.atomIds?.length ?? 0) > 5) {
     return 0;
   }
 
@@ -1096,6 +1230,7 @@ export function measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, at
 
   const ringNeighborAngles = [];
   const exocyclicAngles = [];
+  let exocyclicHeavyCount = 0;
   for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
     if (bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
       return 0;
@@ -1105,26 +1240,31 @@ export function measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, at
     if (!neighborAtom || neighborAtom.element === 'H') {
       continue;
     }
-    const neighborPosition = coords.get(neighborAtomId);
-    if (!neighborPosition) {
-      return 0;
-    }
     if (smallRing.atomIds.includes(neighborAtomId)) {
+      const neighborPosition = coords.get(neighborAtomId);
+      if (!neighborPosition) {
+        return 0;
+      }
       ringNeighborAngles.push(angleOf(sub(neighborPosition, atomPosition)));
       continue;
     }
-    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
-      return 0;
+    exocyclicHeavyCount++;
+    const neighborPosition = coords.get(neighborAtomId);
+    if (neighborPosition) {
+      exocyclicAngles.push(angleOf(sub(neighborPosition, atomPosition)));
     }
-    exocyclicAngles.push(angleOf(sub(neighborPosition, atomPosition)));
   }
 
-  if (ringNeighborAngles.length !== 2 || exocyclicAngles.length !== 2) {
+  if (ringNeighborAngles.length !== 2 || exocyclicHeavyCount !== 2) {
     return 0;
   }
 
-  const targetAngles = smallRingExteriorContinuationAngles(ringNeighborAngles);
+  const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, smallRing.atomIds.length);
   if (targetAngles.length !== 2) {
+    return 0;
+  }
+
+  if (exocyclicAngles.length !== 2) {
     return 0;
   }
 
@@ -1246,6 +1386,10 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
   if (prefersLinearContinuation(layoutGraph, anchorAtomId, resolvedParentAtomId, childAtomId)) {
     return [forwardAngle];
   }
+  const alkylTailAngles = preferredAlkylTailAngles(adjacency, coords, anchorAtomId, resolvedParentAtomId, childAtomId, layoutGraph);
+  if (alkylTailAngles.length > 0) {
+    return alkylTailAngles;
+  }
   return [forwardAngle + CHAIN_CONTINUATION_OFFSET, forwardAngle - CHAIN_CONTINUATION_OFFSET];
 }
 
@@ -1278,6 +1422,7 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
     );
     if (
       isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, attachedAtomId)
+      || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, attachedAtomId)
       || isExactAcyclicHeteroContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, attachedAtomId)
     ) {
       const exactPreferredAngle = chooseExactPreferredAngle(

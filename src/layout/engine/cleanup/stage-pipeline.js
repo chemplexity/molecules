@@ -6,13 +6,13 @@ import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 import { runHypervalentAngleTidy } from './hypervalent-angle-tidy.js';
 import { runAttachedRingRotationTouchup } from './attached-ring-rotation-tidy.js';
 import { mergeFrozenAtomIds } from './frozen-atoms.js';
+import { measureRingSubstituentPresentationPenalty, runRingSubstituentTidy } from './ring-substituent-tidy.js';
 import {
   isPreferredCleanupGeometryStage,
   isPreferredFinalStereoStage,
   isPreferredProtectedCleanupStage
 } from './stage-comparators.js';
 import { runPostCleanupHooks } from './post-cleanup-hooks.js';
-import { runRingSubstituentTidy } from './ring-substituent-tidy.js';
 import { runRingTerminalHeteroTidy } from './ring-terminal-hetero-tidy.js';
 import { tidySymmetry } from './symmetry-tidy.js';
 import { runUnifiedCleanup } from './unified-cleanup.js';
@@ -54,6 +54,20 @@ function acceptedNudgeAccumulator(stageName, additionalStageNames = []) {
   };
 }
 
+function hasOutstandingRingSubstituentCleanupNeed(stageResult) {
+  if (!stageResult) {
+    return false;
+  }
+  const audit = stageResult.audit ?? null;
+  return (
+    (audit.ringSubstituentReadabilityFailureCount ?? 0) > 0
+    || (audit.inwardRingSubstituentCount ?? 0) > 0
+    || (audit.outwardAxisRingSubstituentFailureCount ?? 0) > 0
+    || (audit.severeOverlapCount ?? 0) > 0
+    || (stageResult.presentationPenalty ?? 0) > 1e-6
+  );
+}
+
 /**
  * Builds the declarative cleanup-stage DAG used by the stage runner.
  * @param {object} context - Cleanup execution context from `pipeline.js`.
@@ -75,6 +89,10 @@ export function buildCleanupStageGraph(context) {
   const cleanupGeometryComparator = protectBondIntegrity
     ? (candidate, incumbent) => isPreferredProtectedCleanupStage(familySummary, placement, candidate, incumbent)
     : isPreferredCleanupGeometryStage;
+  const scoreGeometryStage = coords => ({
+    audit: auditCleanupStage(layoutGraph, coords, placement, bondLength),
+    presentationPenalty: measureRingSubstituentPresentationPenalty(layoutGraph, coords)
+  });
 
   return [
     {
@@ -103,11 +121,7 @@ export function buildCleanupStageGraph(context) {
         );
         return cleanupResult;
       },
-      scoreFn(coords) {
-        return {
-          audit: auditCleanupStage(layoutGraph, coords, placement, bondLength)
-        };
-      },
+      scoreFn: scoreGeometryStage,
       comparatorFn: cleanupGeometryComparator
     },
     {
@@ -172,11 +186,7 @@ export function buildCleanupStageGraph(context) {
           hookNudges: postCleanup.hookNudges
         };
       },
-      scoreFn(coords) {
-        return {
-          audit: auditCleanupStage(layoutGraph, coords, placement, bondLength)
-        };
-      },
+      scoreFn: scoreGeometryStage,
       comparatorFn: cleanupGeometryComparator
     },
     {
@@ -209,11 +219,7 @@ export function buildCleanupStageGraph(context) {
         );
         return postHookCleanup;
       },
-      scoreFn(coords) {
-        return {
-          audit: auditCleanupStage(layoutGraph, coords, placement, bondLength)
-        };
-      },
+      scoreFn: scoreGeometryStage,
       comparatorFn: cleanupGeometryComparator
     },
     {
@@ -321,7 +327,8 @@ export function buildCleanupStageGraph(context) {
       name: 'finalHypervalentRingSubstituentTouchup',
       parentStage: 'finalHypervalentTouchup',
       guard(stageResults) {
-        return hasPostCleanupHook(policy, 'ring-substituent-tidy') && stageResults.has('finalHypervalentTouchup');
+        return hasPostCleanupHook(policy, 'ring-substituent-tidy')
+          && hasOutstandingRingSubstituentCleanupNeed(stageResults.get('finalHypervalentTouchup'));
       },
       transformFn(parentCoords) {
         const result = runRingSubstituentTidy(layoutGraph, parentCoords, {
@@ -341,8 +348,9 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'finalRingSubstituentTouchup',
       parentStage: 'best',
-      guard() {
-        return hasPostCleanupHook(policy, 'ring-substituent-tidy');
+      guard(_stageResults, incumbent) {
+        return hasPostCleanupHook(policy, 'ring-substituent-tidy')
+          && hasOutstandingRingSubstituentCleanupNeed(incumbent);
       },
       transformFn(parentCoords) {
         const result = runRingSubstituentTidy(layoutGraph, parentCoords, {
@@ -362,8 +370,9 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'finalAttachedRingRotationTouchup',
       parentStage: 'best',
-      guard() {
-        return hasPostCleanupHook(policy, 'ring-substituent-tidy');
+      guard(_stageResults, incumbent) {
+        return hasPostCleanupHook(policy, 'ring-substituent-tidy')
+          && hasOutstandingRingSubstituentCleanupNeed(incumbent);
       },
       transformFn(parentCoords) {
         const result = runAttachedRingRotationTouchup(layoutGraph, parentCoords, {

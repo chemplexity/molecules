@@ -181,7 +181,8 @@ function buildComputedLayoutOptions(options = {}) {
   return {
     suppressH: options.suppressH ?? true,
     bondLength: options.bondLength ?? 1.5,
-    maxCleanupPasses: options.maxCleanupPasses ?? options.maxPasses ?? 6
+    maxCleanupPasses: options.maxCleanupPasses ?? options.maxPasses ?? 6,
+    finalLandscapeOrientation: options.finalLandscapeOrientation ?? true
   };
 }
 
@@ -193,10 +194,6 @@ function generateActive2dCoords(molecule, options = {}) {
     syncStereoDisplay: true
   });
   return result.coords;
-}
-
-function generateAndRefineActive2dCoords(molecule, options = {}) {
-  return generateActive2dCoords(molecule, options);
 }
 
 function refineActive2dCoords(molecule, options = {}) {
@@ -270,7 +267,6 @@ const forceHelpers = createForceHelpers({
   plotEl,
   simulation,
   viewportFitPadding: pad => _viewportFitPadding(pad),
-  generateAndRefine2dCoords: generateAndRefineActive2dCoords,
   generate2dCoords: generateActive2dCoords,
   alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
   spreadReaction2dProductComponents: (mol, bondLength) => _spreadReaction2dProductComponents(mol, bondLength),
@@ -439,7 +435,7 @@ const forceSceneRenderer = createForceSceneRenderer(
     isHydrogenNode: node => forceHelpers.isHydrogenNode(node),
     enLabelColor: value => enLabelColor(value),
     renderReactionPreviewArrowForce: nodes => _renderReactionPreviewArrowForce(nodes),
-    generateAndRefine2dCoords: (mol, options = {}) => generateAndRefineActive2dCoords(mol, options),
+    generate2dCoords: (mol, options = {}) => generateActive2dCoords(mol, options),
     alignReaction2dProductOrientation: mol => _alignReaction2dProductOrientation(mol),
     handleForceBondClick: (event, bondId, molecule) => primitiveEventHandlers.handleForceBondClick(event, bondId, molecule),
     handleForceBondDblClick: (event, atomIds) => primitiveEventHandlers.handleForceBondDblClick(event, atomIds),
@@ -514,7 +510,6 @@ const scene2DRenderer = create2DSceneRenderer(
     drawBond: (container, bond, a1, a2, mol, toSVGPt, stereoType = null) => render2DHelpers.drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType),
     redrawHighlights: () => _redraw2dHighlights(),
     redrawSelection: () => selectionOverlayManager.redraw2dSelection(),
-    generateAndRefine2dCoords: (mol, options = {}) => generateAndRefineActive2dCoords(mol, options),
     generate2dCoords: (mol, options = {}) => generateActive2dCoords(mol, options),
     alignReaction2dProductOrientation: _alignReaction2dProductOrientation,
     spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
@@ -708,7 +703,6 @@ const {
     spreadReaction2dProductComponents: _spreadReaction2dProductComponents,
     centerReaction2dPairCoords: _centerReaction2dPairCoords,
     viewportFitPadding: _viewportFitPadding,
-    generateAndRefine2dCoords: generateAndRefineActive2dCoords,
     refineExistingCoords: refineActive2dCoords,
     atomBBox,
     flipDisplayStereo,

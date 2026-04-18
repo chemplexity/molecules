@@ -151,6 +151,9 @@ export function isPreferredProtectedCleanupStage(familySummary, placement, candi
   if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
     return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
   }
+  if (Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
+    return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
+  }
   return false;
 }
 
@@ -190,6 +193,9 @@ export function isPreferredCleanupGeometryStage(candidate, incumbent) {
   }
   if (candidate.audit.labelOverlapCount !== incumbent.audit.labelOverlapCount) {
     return candidate.audit.labelOverlapCount < incumbent.audit.labelOverlapCount;
+  }
+  if (Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
+    return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
   }
   return false;
 }

@@ -6,7 +6,6 @@ import { compareCanonicalAtomIds } from '../../topology/canonical-order.js';
 import {
   ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT,
   BRANCH_COMPLEXITY_LIMITS,
-  DEG90,
   DEG120,
   MAX_BRANCH_RECURSION_DEPTH,
   SMALL_RING_EXTERIOR_GAP_WEIGHT,
@@ -22,6 +21,34 @@ import {
   isLinearCenter,
   measureSmallRingExteriorGapSpreadPenalty
 } from './angle-selection.js';
+
+const ORTHOGONAL_SLOT_OFFSETS = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
+const ORTHOGONAL_SLOT_PERMUTATIONS = [
+  [0, 1, 2, 3],
+  [0, 1, 3, 2],
+  [0, 2, 1, 3],
+  [0, 2, 3, 1],
+  [0, 3, 1, 2],
+  [0, 3, 2, 1],
+  [1, 0, 2, 3],
+  [1, 0, 3, 2],
+  [1, 2, 0, 3],
+  [1, 2, 3, 0],
+  [1, 3, 0, 2],
+  [1, 3, 2, 0],
+  [2, 0, 1, 3],
+  [2, 0, 3, 1],
+  [2, 1, 0, 3],
+  [2, 1, 3, 0],
+  [2, 3, 0, 1],
+  [2, 3, 1, 0],
+  [3, 0, 1, 2],
+  [3, 0, 2, 1],
+  [3, 1, 0, 2],
+  [3, 1, 2, 0],
+  [3, 2, 0, 1],
+  [3, 2, 1, 0]
+];
 
 /**
  * Returns whether a branch center should skip exhaustive sibling backtracking.
@@ -322,28 +349,34 @@ function crossLikeHypervalentPenalty(layoutGraph, coords, atomId) {
     return 0;
   }
 
-  const singleAngles = descriptor.singleNeighborIds.map(neighborAtomId => {
+  const neighborAtomIds = [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds];
+  const atomPosition = coords.get(atomId);
+  if (!atomPosition || neighborAtomIds.length !== 4) {
+    return 0;
+  }
+  const neighborAngles = neighborAtomIds.map(neighborAtomId => {
     const neighborPosition = coords.get(neighborAtomId);
-    const atomPosition = coords.get(atomId);
     return neighborPosition && atomPosition ? angleOf(sub(neighborPosition, atomPosition)) : null;
   });
-  const multipleAngles = descriptor.multipleNeighborIds.map(neighborAtomId => {
-    const neighborPosition = coords.get(neighborAtomId);
-    const atomPosition = coords.get(atomId);
-    return neighborPosition && atomPosition ? angleOf(sub(neighborPosition, atomPosition)) : null;
-  });
-  if (singleAngles[0] == null || singleAngles[1] == null || multipleAngles[0] == null || multipleAngles[1] == null) {
+  if (neighborAngles.some(angle => angle == null)) {
     return 0;
   }
 
-  let penalty = (angularDifference(singleAngles[0], singleAngles[1]) - Math.PI) ** 2;
-  penalty += (angularDifference(multipleAngles[0], multipleAngles[1]) - Math.PI) ** 2;
-  for (const singleAngle of singleAngles) {
-    for (const multipleAngle of multipleAngles) {
-      penalty += (angularDifference(singleAngle, multipleAngle) - DEG90) ** 2;
+  const candidateAlphas = neighborAngles.flatMap(angle => ORTHOGONAL_SLOT_OFFSETS.map(slotOffset => angle - slotOffset));
+  let bestPenalty = Number.POSITIVE_INFINITY;
+  for (const alpha of candidateAlphas) {
+    const targetAngles = ORTHOGONAL_SLOT_OFFSETS.map(slotOffset => alpha + slotOffset);
+    for (const permutation of ORTHOGONAL_SLOT_PERMUTATIONS) {
+      let penalty = 0;
+      for (let neighborIndex = 0; neighborIndex < neighborAngles.length; neighborIndex++) {
+        penalty += angularDifference(neighborAngles[neighborIndex], targetAngles[permutation[neighborIndex]]) ** 2;
+      }
+      if (penalty < bestPenalty) {
+        bestPenalty = penalty;
+      }
     }
   }
-  return penalty;
+  return Number.isFinite(bestPenalty) ? bestPenalty : 0;
 }
 
 function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAtomIds = [], atomGrid = null) {

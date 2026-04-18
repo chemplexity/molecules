@@ -473,6 +473,46 @@ export function shouldPreferFinalLandscapeOrientation(molecule) {
 }
 
 /**
+ * Rotates the whole coordinate map by a quarter turn when the heavy-atom
+ * bounds are taller than they are wide.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map mutated in place.
+ * @param {import('../../core/Molecule.js').Molecule} molecule - Molecule graph.
+ * @returns {boolean} True when a quarter-turn rotation was applied.
+ */
+export function ensureLandscapeOrientation(coords, molecule) {
+  const heavyAtomIds = [...coords.keys()].filter(atomId => molecule.atoms.has(atomId) && molecule.atoms.get(atomId)?.name !== 'H');
+  if (heavyAtomIds.length < 2) {
+    return false;
+  }
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  let sumX = 0;
+  let sumY = 0;
+  for (const atomId of heavyAtomIds) {
+    const point = coords.get(atomId);
+    if (!point) {
+      continue;
+    }
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+    sumX += point.x;
+    sumY += point.y;
+  }
+
+  if (!(maxY - minY > maxX - minX)) {
+    return false;
+  }
+
+  rotateCoords(coords, vec(sumX / heavyAtomIds.length, sumY / heavyAtomIds.length), Math.PI / 2);
+  return true;
+}
+
+/**
  * Rotates coordinates so bond directions snap closely to each bond's natural angular grid.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map mutated in place.
  * @param {import('../../core/Molecule.js').Molecule} molecule - Molecule graph.

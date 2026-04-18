@@ -238,6 +238,11 @@ function previousAtom(start, keys, atoms) {
 /**
  * Like previousAtom but skips over `(…)` branch groups when scanning backward.
  * Used to find the true source atom for stereo bonds that follow a branch close `)`.
+ *
+ * Ring-closure tokens (e.g. `S2`, `C@@]1`) share the same character-position key as
+ * their owning atom. The atom check is therefore performed independently of whether a
+ * bond also exists at that key, so a co-located ring-closure token never blocks the
+ * scan from returning the correct source atom.
  * @param {string} start  - key of the bond token to search backward from
  * @param {string[]} keys - ordered list of all token keys
  * @param {object}  atoms - atom map
@@ -252,23 +257,22 @@ function previousAtomSkipBranches(start, keys, atoms, bonds) {
   let i = index - 1;
   while (i >= 0) {
     const key = keys[i];
-    if (bonds[key] !== undefined) {
-      if (bonds[key].value === ')') {
-        // skip the matching (…) branch going backward
-        let depth = 1;
-        i--;
-        while (i >= 0 && depth > 0) {
-          const k = keys[i];
-          if (bonds[k]?.value === ')') {
-            depth++;
-          } else if (bonds[k]?.value === '(') {
-            depth--;
-          }
-          i--;
+    if (bonds[key]?.value === ')') {
+      // skip the matching (…) branch going backward
+      let depth = 1;
+      i--;
+      while (i >= 0 && depth > 0) {
+        const k = keys[i];
+        if (bonds[k]?.value === ')') {
+          depth++;
+        } else if (bonds[k]?.value === '(') {
+          depth--;
         }
-        continue;
+        i--;
       }
-    } else if (atoms[key] !== undefined) {
+      continue;
+    }
+    if (atoms[key] !== undefined) {
       return key;
     }
     i--;

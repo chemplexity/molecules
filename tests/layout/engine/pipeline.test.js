@@ -1333,17 +1333,24 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
-  it('keeps steroid mixed layouts audit-clean without stretching the fused scaffold during overlap cleanup', () => {
+  it('keeps steroid mixed layouts audit-clean without forcing the ester root into a large cleanup swing', () => {
     const result = runPipeline(parseSMILES('CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC'), {
       suppressH: true,
       auditTelemetry: true
     });
+    const preferredRootAngle = preferredRingAttachmentAngle(result.layoutGraph, result.coords, 'C31');
+    const actualRootAngle = angleOf(sub(result.coords.get('C32'), result.coords.get('C31')));
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.stageTelemetry?.stageAudits.placement.severeOverlapCount, 1);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.ok, true);
+    assert.notEqual(preferredRootAngle, null);
+    assert.ok(
+      angularDifference(actualRootAngle, preferredRootAngle) <= (Math.PI / 6) + 1e-6,
+      'expected the ester root to stay within 30 degrees of the local outward ring direction after cleanup'
+    );
   });
 
   it('relaxes cyclic fused mixed scaffolds so re-entrant fused edges do not overstretch aromatic bonds', () => {

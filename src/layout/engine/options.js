@@ -83,6 +83,10 @@ export function normalizeOptions(options = {}) {
   if (typeof auditTelemetry !== 'boolean') {
     throw new TypeError(`auditTelemetry must be a boolean, got ${JSON.stringify(auditTelemetry)}.`);
   }
+  const finalLandscapeOrientation = options.finalLandscapeOrientation ?? false;
+  if (typeof finalLandscapeOrientation !== 'boolean') {
+    throw new TypeError(`finalLandscapeOrientation must be a boolean, got ${JSON.stringify(finalLandscapeOrientation)}.`);
+  }
   return {
     bondLength,
     suppressH: options.suppressH ?? true,
@@ -93,6 +97,7 @@ export function normalizeOptions(options = {}) {
     profile: resolveProfile(options.profile),
     largeMoleculeThreshold: normalizeLargeMoleculeThreshold(options.largeMoleculeThreshold),
     maxCleanupPasses,
+    finalLandscapeOrientation,
     timing,
     auditTelemetry,
     touchedAtoms: cloneStringSet(options.touchedAtoms, 'touchedAtoms'),

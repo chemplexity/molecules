@@ -6,7 +6,8 @@ import { pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.j
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { buildScaffoldPlan } from '../../../../src/layout/engine/model/scaffold-plan.js';
 import { layoutMixedFamily } from '../../../../src/layout/engine/families/mixed.js';
-import { angleOf, angularDifference, centroid, sub } from '../../../../src/layout/engine/geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub } from '../../../../src/layout/engine/geometry/vec2.js';
+import { smallRingExteriorTargetAngles } from '../../../../src/layout/engine/placement/branch-placement.js';
 import {
   makeBibenzyl,
   makeBiphenyl,
@@ -158,6 +159,30 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.supported, true);
     assert.ok(outwardDot > 0.5);
     assert.ok(Math.abs(chainCross) > 0.2);
+  });
+
+  it('prefers the alkyl-tail continuation slot that extends away from the placed scaffold context', () => {
+    const graph = createLayoutGraph(parseSMILES('CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC'), {
+      suppressH: true
+    });
+    const component = graph.components[0];
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), buildScaffoldPlan(graph, component), graph.options.bondLength);
+    const anchorPosition = result.coords.get('C4');
+    const parentPosition = result.coords.get('C5');
+    const parentContextPosition = result.coords.get('C6');
+    const childPosition = result.coords.get('C2');
+    const forwardAngle = angleOf(sub(anchorPosition, parentPosition));
+    const candidatePositions = [
+      add(anchorPosition, fromAngle(forwardAngle + (Math.PI / 3), graph.options.bondLength)),
+      add(anchorPosition, fromAngle(forwardAngle - (Math.PI / 3), graph.options.bondLength))
+    ];
+    const bestExtensionDistance = Math.max(...candidatePositions.map(candidatePosition => distance(candidatePosition, parentContextPosition)));
+
+    assert.equal(result.supported, true);
+    assert.ok(
+      Math.abs(distance(childPosition, parentContextPosition) - bestExtensionDistance) < 1e-6,
+      'expected the interior alkyl-tail continuation to take the slot that extends farther away from the placed parent-side scaffold context'
+    );
   });
 
   it('lays out fused mixed scaffolds with long perfluoroalkyl tails without stalling branch placement', () => {
@@ -610,17 +635,34 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
-  it('avoids stacking a pending ring attachment onto an occupied preferred angle at a crowded quaternary center', () => {
+  it('keeps a crowded five-member-ring ring junction on the aromatic outward axis while putting the second heavy branch in the remaining exterior slot', () => {
     const graph = createLayoutGraph(parseSMILES('C1=CC=C(C=C1)C2(C3CC3)C(=O)NC(=O)N2'), { suppressH: true });
     const component = graph.components[0];
     const adjacency = buildAdjacency(graph, new Set(component.atomIds));
     const result = layoutMixedFamily(graph, component, adjacency, buildScaffoldPlan(graph, component), graph.options.bondLength);
-    const phenylAttachment = result.coords.get('C4');
-    const cyclopropylAttachment = result.coords.get('C8');
-    const separation = Math.hypot(cyclopropylAttachment.x - phenylAttachment.x, cyclopropylAttachment.y - phenylAttachment.y);
+    const centerAtomId = 'C7';
+    const centerPosition = result.coords.get(centerAtomId);
+    const aromaticAnchorAtomId = 'C4';
+    const ringNeighborAngles = ['C11', 'N16'].map(neighborAtomId =>
+      angleOf(sub(result.coords.get(neighborAtomId), centerPosition))
+    );
+    const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 5);
+    const remainingExteriorDeviation = Math.min(
+      ...targetAngles.map(targetAngle => angularDifference(angleOf(sub(result.coords.get('C8'), centerPosition)), targetAngle))
+    );
+    const benzeneCentroid = centroid(['C1', 'C2', 'C3', 'C4', 'C5', 'C6'].map(atomId => result.coords.get(atomId)));
+    const aromaticOutwardAngle = angleOf(sub(result.coords.get(aromaticAnchorAtomId), benzeneCentroid));
+    const aromaticExitAngle = angleOf(sub(result.coords.get(centerAtomId), result.coords.get(aromaticAnchorAtomId)));
 
     assert.equal(result.supported, true);
-    assert.ok(Math.abs(separation - graph.options.bondLength) < 0.05, `expected C4/C8 separation to stay near one bond length, got ${separation.toFixed(3)}`);
+    assert.ok(
+      angularDifference(aromaticExitAngle, aromaticOutwardAngle) < 1e-6,
+      `expected the aryl attachment at ${aromaticAnchorAtomId} to stay on its benzene outward axis, got deviation ${((angularDifference(aromaticExitAngle, aromaticOutwardAngle) * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(
+      remainingExteriorDeviation < 0.12,
+      `expected the second heavy branch at ${centerAtomId} to take one of the remaining five-member exterior slots, got deviation ${((remainingExteriorDeviation * 180) / Math.PI).toFixed(2)} degrees`
+    );
   });
 
   it('defers explicit hydrogens until attached ring blocks can finish an exocyclic alkene trigonal center', () => {

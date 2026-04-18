@@ -2,50 +2,36 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../src/io/smiles.js';
-import { angleOf, angularDifference, sub } from '../../../src/layout/engine/geometry/vec2.js';
+import { angleOf, sub } from '../../../src/layout/engine/geometry/vec2.js';
 import { runPipeline } from '../../../src/layout/engine/pipeline.js';
 
-/**
- * Asserts that each monoxo phosphate center in the result sits on an
- * orthogonal cross around its anchored single bond.
- * @param {object} result - Pipeline result.
- * @param {string[]} phosphorusAtomIds - Phosphorus atom ids to validate.
- * @returns {void}
- */
-function assertOrthogonalMonoxoPhosphates(result, phosphorusAtomIds) {
-  for (const phosphorusAtomId of phosphorusAtomIds) {
-    const phosphorusPosition = result.coords.get(phosphorusAtomId);
-    const singleAngles = [];
-    let multipleAngle = null;
-    let anchoredSingleAngle = null;
+function assertOrthogonalCross(result, centerAtomIds) {
+  for (const centerAtomId of centerAtomIds) {
+    const centerPosition = result.coords.get(centerAtomId);
+    const angles = [];
 
-    for (const bond of result.layoutGraph.bondsByAtomId.get(phosphorusAtomId) ?? []) {
-      const neighborAtomId = bond.a === phosphorusAtomId ? bond.b : bond.a;
+    for (const bond of result.layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+      const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
       const neighborAtom = result.layoutGraph.atoms.get(neighborAtomId);
       const neighborPosition = result.coords.get(neighborAtomId);
       assert.ok(neighborAtom);
       assert.ok(neighborPosition);
-      const angle = angleOf(sub(neighborPosition, phosphorusPosition));
-      if ((bond.order ?? 1) >= 2) {
-        multipleAngle = angle;
-      } else {
-        singleAngles.push(angle);
-        if ((neighborAtom.heavyDegree ?? 0) > 1) {
-          anchoredSingleAngle = angle;
-        }
+      if (neighborAtom.element === 'H') {
+        continue;
       }
+      angles.push(angleOf(sub(neighborPosition, centerPosition)));
     }
 
-    assert.equal(singleAngles.length, 3);
-    assert.notEqual(multipleAngle, null);
-    assert.notEqual(anchoredSingleAngle, null);
-    assert.ok(Math.abs(angularDifference(anchoredSingleAngle, multipleAngle) - Math.PI) < 1e-6);
-
-    const flankAngles = singleAngles.filter(singleAngle => singleAngle !== anchoredSingleAngle);
-    assert.equal(flankAngles.length, 2);
-    assert.ok(Math.abs(angularDifference(flankAngles[0], flankAngles[1]) - Math.PI) < 1e-6);
-    assert.ok(Math.abs(angularDifference(anchoredSingleAngle, flankAngles[0]) - Math.PI / 2) < 1e-6);
-    assert.ok(Math.abs(angularDifference(anchoredSingleAngle, flankAngles[1]) - Math.PI / 2) < 1e-6);
+    assert.equal(angles.length, 4);
+    const sortedAngles = [...angles]
+      .map(angle => ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2))
+      .sort((first, second) => first - second);
+    const deltas = sortedAngles.map(
+      (angle, index) => ((sortedAngles[(index + 1) % sortedAngles.length] - angle) + Math.PI * 2) % (Math.PI * 2)
+    );
+    for (const delta of deltas) {
+      assert.ok(Math.abs(delta - Math.PI / 2) < 1e-6);
+    }
   }
 }
 
@@ -61,7 +47,7 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
     assert.equal(result.metadata.stageTelemetry.selectedStage, 'finalHypervalentTouchup');
     assert.equal(phosphorusAtomIds.length, 2);
-    assertOrthogonalMonoxoPhosphates(result, phosphorusAtomIds);
+    assertOrthogonalCross(result, phosphorusAtomIds);
   });
 
   it('re-orthogonalizes linked sugar phosphates after the final overlap-clearing ring-substituent touchup', () => {
@@ -79,7 +65,7 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(phosphorusAtomIds.length, 5);
-    assertOrthogonalMonoxoPhosphates(result, phosphorusAtomIds);
+    assertOrthogonalCross(result, phosphorusAtomIds);
   });
 
   it('keeps aryl phosphate monoesters orthogonal after a late overlap-clearing linker rotation', () => {
@@ -95,6 +81,24 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(phosphorusAtomIds.length, 1);
-    assertOrthogonalMonoxoPhosphates(result, phosphorusAtomIds);
+    assertOrthogonalCross(result, phosphorusAtomIds);
+  });
+
+  it('keeps condensed nucleotide triphosphates on strict phosphate crosses', () => {
+    const result = runPipeline(
+      parseSMILES('NC1=NC2=C(C(C[NH3+])=CN2C2CC(OCN=[N+]=[N-])C(COP([O-])(=O)OP([O-])(=O)OP([O-])([O-])=O)O2)C(=O)N1'),
+      {
+        suppressH: true,
+        auditTelemetry: true
+      }
+    );
+    const phosphorusAtomIds = [...result.layoutGraph.atoms.values()].filter(atom => atom.element === 'P').map(atom => atom.id);
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(phosphorusAtomIds.length, 3);
+    assertOrthogonalCross(result, phosphorusAtomIds);
   });
 });

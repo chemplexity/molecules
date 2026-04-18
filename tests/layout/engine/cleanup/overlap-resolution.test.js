@@ -213,4 +213,23 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     assert.notEqual(acidRootPreferredAngle, null);
     assert.ok(angularDifference(acidRootAngle, acidRootPreferredAngle) < 1e-6);
   });
+
+  it('prefers the smallest clash-clearing rigid ester rotation before falling back to a large ring-root swing', () => {
+    const graph = createLayoutGraph(parseSMILES('CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC'), {
+      suppressH: true
+    });
+    const placement = layoutSupportedComponents(graph);
+    const result = resolveOverlaps(graph, placement.coords, { bondLength: graph.options.bondLength });
+    const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
+    const preferredRootAngle = preferredRingAttachmentAngle(graph, result.coords, 'C31');
+    const actualRootAngle = angleOf(sub(result.coords.get('C32'), result.coords.get('C31')));
+
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.notEqual(preferredRootAngle, null);
+    assert.ok(
+      angularDifference(actualRootAngle, preferredRootAngle) <= (Math.PI / 6) + 1e-6,
+      `expected cleanup to keep the ester root within 30 degrees of the local outward ring direction`
+    );
+  });
 });

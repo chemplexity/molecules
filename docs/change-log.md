@@ -1,5 +1,13 @@
 # Change Log
 
+## 2026-04-18
+
+- Fix SMILES parser misattributing the second =O of `NS2(=O)=O`-style sultam fragments to N instead of S, caused by ring-closure tokens sharing a character position with their atom token blocking the atom lookup in `previousAtomSkipBranches`
+- Let directly attached mixed-family ring blocks keep exact parent-ring outward exits and exact three-, four-, and five-member ring-edge continuation slots before falling back to coarser rescue rotations
+- Add a local zigzag-continuation preference for simple alkyl tails on mixed/ring scaffolds so pendant alkyl chains stop curling back toward the already placed scaffold context
+- Let compact ring-anchored overlap cleanup probe conservative local rigid rotations before large fallback swings so crowded steroid ester roots stay close to their ring-outward carbonyl angle
+- Let hypervalent cleanup rotate compact bridge-linked phosphate blocks and broaden cross-like placement scoring so condensed triphosphates finish on strict orthogonal crosses
+
 ## 2026-04-17
 
 - Let compact aryl ester cleanup flip across the anchor bond axis so ortho ester-acid clashes clear while both ring exits and both carbonyl angles stay exact

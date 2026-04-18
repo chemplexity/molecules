@@ -866,8 +866,7 @@ export function create2DSceneRenderer(ctx) {
     prepareAromaticBondRendering(mol);
 
     if (!preserveGeometry) {
-      const generate2dCoords = typeof ctx.helpers.generate2dCoords === 'function' ? ctx.helpers.generate2dCoords : ctx.helpers.generateAndRefine2dCoords;
-      generate2dCoords(mol, { suppressH: true, bondLength: 1.5 });
+      ctx.helpers.generate2dCoords(mol, { suppressH: true, bondLength: 1.5 });
     }
     ctx.helpers.alignReaction2dProductOrientation(mol);
     ctx.helpers.spreadReaction2dProductComponents(mol, 1.5);

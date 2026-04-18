@@ -34,7 +34,16 @@ export function runStageGraph(stages, baselineStage, context) {
       throw new Error(`Missing parent stage result for ${stage.name}: ${stage.parentStage}`);
     }
 
+    // Wrap onStep to automatically inject the current stage name into metadata.
+    const originalOnStep = context.onStep;
+    if (originalOnStep) {
+      context.onStep = (label, desc, coords, meta) => originalOnStep(label, desc, coords, { ...meta, _stageName: stage.name });
+    }
     const transformResult = stage.transformFn(parentStageResult.coords, context, stageResults, bestStage);
+    if (originalOnStep) {
+      context.onStep = originalOnStep;
+    }
+
     if (!transformResult) {
       continue;
     }
@@ -47,9 +56,7 @@ export function runStageGraph(stages, baselineStage, context) {
       throw new Error(`Stage ${stage.name} did not return coords.`);
     }
 
-    const scoredStageResult = stage.scoreFn
-      ? stage.scoreFn(stageResult.coords, stageResult, context, stageResults, bestStage)
-      : null;
+    const scoredStageResult = stage.scoreFn ? stage.scoreFn(stageResult.coords, stageResult, context, stageResults, bestStage) : null;
     if (scoredStageResult) {
       Object.assign(stageResult, scoredStageResult);
     }
@@ -59,12 +66,15 @@ export function runStageGraph(stages, baselineStage, context) {
       stageEntries.push({ name: stageResult.name, audit: stageResult.audit });
     }
 
-    if (!stage.comparatorFn || stage.comparatorFn(stageResult, bestStage, context, stageResults)) {
+    const prevBestStage = bestStage;
+    const accepted = !stage.comparatorFn || stage.comparatorFn(stageResult, bestStage, context, stageResults);
+    if (accepted) {
       bestStage = stageResult;
       if (typeof stage.accumulateSidecar === 'function') {
         accumulatedSidecars = stage.accumulateSidecar(accumulatedSidecars, stageResult, stageResults, context) ?? accumulatedSidecars;
       }
     }
+    context.onStageAcceptance?.(stage.name, accepted, stageResult.audit ?? null, prevBestStage.audit ?? null);
 
     if (stage.isGeometryPhase) {
       geometryCheckpointStage = bestStage;

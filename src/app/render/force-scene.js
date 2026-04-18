@@ -201,7 +201,7 @@ function seedForceAutoDisplayStereo(ctx, molecule, isReactionPreviewMol) {
 
   const seededMolecule = molecule.clone();
   seededMolecule.hideHydrogens();
-  ctx.helpers.generateAndRefine2dCoords(seededMolecule, { suppressH: true, bondLength: 1.5 });
+  ctx.helpers.generate2dCoords(seededMolecule, { suppressH: true, bondLength: 1.5 });
   ctx.helpers.alignReaction2dProductOrientation(seededMolecule);
 
   if (hasChiralCenters) {

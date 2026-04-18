@@ -99,7 +99,7 @@ describe('force-helpers', () => {
       plotEl: { clientWidth: 600, clientHeight: 400 },
       simulation,
       viewportFitPadding: pad => ({ left: pad, right: pad, top: pad, bottom: pad }),
-      generateAndRefine2dCoords: () => {},
+      generate2dCoords: () => {},
       alignReaction2dProductOrientation: () => {},
       spreadReaction2dProductComponents: () => {},
       centerReaction2dPairCoords: () => {}

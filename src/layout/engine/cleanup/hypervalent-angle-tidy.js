@@ -7,6 +7,8 @@ import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
 const ANGLE_THRESHOLD = Math.PI / 18;
 const FIXED_LIGAND_WEIGHT = 4;
+const BRIDGE_LINKED_HYPERVALENT_LIGAND_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
+const MAX_BRIDGE_LINKED_HYPERVALENT_SUBTREE_HEAVY_ATOMS = 8;
 
 function angularDistance(firstAngle, secondAngle) {
   const rawDelta = Math.abs(firstAngle - secondAngle) % (Math.PI * 2);
@@ -95,13 +97,62 @@ function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
   return null;
 }
 
+/**
+ * Returns a compact bridge-linked hypervalent subtree that can be rotated as a
+ * rigid block around the current center without disturbing its internal bond
+ * geometry. This enables cleanup to re-square short polyphosphate and similar
+ * chains without authorizing swings of arbitrarily large downstream fragments.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Current hypervalent center atom id.
+ * @param {string} ligandAtomId - Candidate single-bond ligand atom id.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {string[]|null} Movable subtree atom ids, or `null` when the bridge block should stay fixed.
+ */
+function movableBridgeLinkedHypervalentSubtreeAtomIds(layoutGraph, centerAtomId, ligandAtomId, coords) {
+  const ligandAtom = layoutGraph.atoms.get(ligandAtomId);
+  if (
+    !ligandAtom
+    || !coords.has(ligandAtomId)
+    || ligandAtom.heavyDegree !== 2
+    || !BRIDGE_LINKED_HYPERVALENT_LIGAND_ELEMENTS.has(ligandAtom.element)
+    || (layoutGraph.atomToRings.get(ligandAtomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+
+  const downstreamCenterIds = (layoutGraph.bondsByAtomId.get(ligandAtomId) ?? [])
+    .filter(bond => bond.kind === 'covalent' && !bond.aromatic && (bond.order ?? 1) === 1)
+    .map(bond => (bond.a === ligandAtomId ? bond.b : bond.a))
+    .filter(neighborAtomId => neighborAtomId !== centerAtomId && layoutGraph.atoms.get(neighborAtomId)?.element !== 'H' && coords.has(neighborAtomId));
+  if (downstreamCenterIds.length !== 1 || !describeOrthogonalHypervalentCenter(layoutGraph, downstreamCenterIds[0], coords)) {
+    return null;
+  }
+
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
+  let heavyAtomCount = 0;
+  for (const subtreeAtomId of subtreeAtomIds) {
+    const subtreeAtom = layoutGraph.atoms.get(subtreeAtomId);
+    if (!subtreeAtom) {
+      return null;
+    }
+    if (subtreeAtom.element !== 'H') {
+      heavyAtomCount++;
+      if (heavyAtomCount > MAX_BRIDGE_LINKED_HYPERVALENT_SUBTREE_HEAVY_ATOMS) {
+        return null;
+      }
+    }
+  }
+
+  return subtreeAtomIds;
+}
+
 function movableLigandSubtreeAtomIds(layoutGraph, centerAtomId, ligandAtomId, coords) {
   const ligandAtom = layoutGraph.atoms.get(ligandAtomId);
   if (!ligandAtom || ligandAtom.element === 'H' || !coords.has(ligandAtomId)) {
     return null;
   }
   if (ligandAtom.heavyDegree > 1) {
-    return null;
+    return movableBridgeLinkedHypervalentSubtreeAtomIds(layoutGraph, centerAtomId, ligandAtomId, coords);
   }
   const subtreeAtomIds = collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId);
   for (const subtreeAtomId of subtreeAtomIds) {
@@ -121,132 +172,64 @@ function weightedAngleCost(currentAngles, movableNeighborIds, neighborAtomId, ta
   return weight * angularDistance(currentAngles.get(neighborAtomId), targetAngle) ** 2;
 }
 
-function assignTwoNeighbors(neighborAtomIds, targetAngles, currentAngles, movableNeighborIds) {
-  const directCost =
-    weightedAngleCost(currentAngles, movableNeighborIds, neighborAtomIds[0], targetAngles[0])
-    + weightedAngleCost(currentAngles, movableNeighborIds, neighborAtomIds[1], targetAngles[1]);
-  const swappedCost =
-    weightedAngleCost(currentAngles, movableNeighborIds, neighborAtomIds[0], targetAngles[1])
-    + weightedAngleCost(currentAngles, movableNeighborIds, neighborAtomIds[1], targetAngles[0]);
-
-  if (directCost <= swappedCost) {
-    return {
-      cost: directCost,
-      assignments: new Map([
-        [neighborAtomIds[0], targetAngles[0]],
-        [neighborAtomIds[1], targetAngles[1]]
-      ])
-    };
+function fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds) {
+  const neighborAtomIds = [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds];
+  if (neighborAtomIds.length !== 4) {
+    return null;
   }
-  return {
-    cost: swappedCost,
-    assignments: new Map([
-      [neighborAtomIds[0], targetAngles[1]],
-      [neighborAtomIds[1], targetAngles[0]]
-    ])
-  };
-}
 
-function evaluateBisOxoOrientation(alpha, descriptor, currentAngles, movableNeighborIds) {
-  const normalizedAlpha = normalizeAngle(alpha);
-  const singleAssignment = assignTwoNeighbors(
-    descriptor.singleNeighborIds,
-    [normalizedAlpha, normalizeAngle(normalizedAlpha + Math.PI)],
-    currentAngles,
-    movableNeighborIds
+  const slotOffsets = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
+  const permutations = [
+    [0, 1, 2, 3],
+    [0, 1, 3, 2],
+    [0, 2, 1, 3],
+    [0, 2, 3, 1],
+    [0, 3, 1, 2],
+    [0, 3, 2, 1],
+    [1, 0, 2, 3],
+    [1, 0, 3, 2],
+    [1, 2, 0, 3],
+    [1, 2, 3, 0],
+    [1, 3, 0, 2],
+    [1, 3, 2, 0],
+    [2, 0, 1, 3],
+    [2, 0, 3, 1],
+    [2, 1, 0, 3],
+    [2, 1, 3, 0],
+    [2, 3, 0, 1],
+    [2, 3, 1, 0],
+    [3, 0, 1, 2],
+    [3, 0, 2, 1],
+    [3, 1, 0, 2],
+    [3, 1, 2, 0],
+    [3, 2, 0, 1],
+    [3, 2, 1, 0]
+  ];
+  const candidateAlphas = neighborAtomIds.flatMap(neighborAtomId =>
+    slotOffsets.map(slotOffset => currentAngles.get(neighborAtomId) - slotOffset)
   );
-  const multipleAssignment = assignTwoNeighbors(
-    descriptor.multipleNeighborIds,
-    [normalizeAngle(normalizedAlpha + Math.PI / 2), normalizeAngle(normalizedAlpha - Math.PI / 2)],
-    currentAngles,
-    movableNeighborIds
-  );
-  return {
-    cost: singleAssignment.cost + multipleAssignment.cost,
-    targetAngles: new Map([...singleAssignment.assignments, ...multipleAssignment.assignments])
-  };
-}
-
-function fitBisOxoTargets(descriptor, currentAngles, movableNeighborIds) {
-  const candidateAlphas = [];
-  for (const singleNeighborId of descriptor.singleNeighborIds) {
-    candidateAlphas.push(currentAngles.get(singleNeighborId));
-    candidateAlphas.push(currentAngles.get(singleNeighborId) - Math.PI);
-  }
-  for (const multipleNeighborId of descriptor.multipleNeighborIds) {
-    candidateAlphas.push(currentAngles.get(multipleNeighborId) - Math.PI / 2);
-    candidateAlphas.push(currentAngles.get(multipleNeighborId) + Math.PI / 2);
-  }
 
   let bestFit = null;
   for (const alpha of candidateAlphas) {
-    const candidate = evaluateBisOxoOrientation(alpha, descriptor, currentAngles, movableNeighborIds);
-    if (!bestFit || candidate.cost < bestFit.cost) {
-      bestFit = candidate;
-    }
-  }
-  return bestFit;
-}
-
-function evaluateMonoOxoOrientation(alpha, descriptor, axialSingleNeighborId, currentAngles, movableNeighborIds) {
-  const normalizedAlpha = normalizeAngle(alpha);
-  const multipleNeighborId = descriptor.multipleNeighborIds[0];
-  const flankNeighborIds = descriptor.singleNeighborIds.filter(singleNeighborId => singleNeighborId !== axialSingleNeighborId);
-  const flankAssignment = assignTwoNeighbors(
-    flankNeighborIds,
-    [normalizeAngle(normalizedAlpha + Math.PI / 2), normalizeAngle(normalizedAlpha - Math.PI / 2)],
-    currentAngles,
-    movableNeighborIds
-  );
-  const targetAngles = new Map([
-    [axialSingleNeighborId, normalizedAlpha],
-    [multipleNeighborId, normalizeAngle(normalizedAlpha + Math.PI)],
-    ...flankAssignment.assignments
-  ]);
-
-  return {
-    cost:
-      weightedAngleCost(currentAngles, movableNeighborIds, axialSingleNeighborId, targetAngles.get(axialSingleNeighborId))
-      + weightedAngleCost(currentAngles, movableNeighborIds, multipleNeighborId, targetAngles.get(multipleNeighborId))
-      + flankAssignment.cost,
-    targetAngles
-  };
-}
-
-function fitMonoOxoTargets(descriptor, currentAngles, movableNeighborIds) {
-  const multipleNeighborId = descriptor.multipleNeighborIds[0];
-  let bestFit = null;
-
-  for (const axialSingleNeighborId of descriptor.singleNeighborIds) {
-    const flankNeighborIds = descriptor.singleNeighborIds.filter(singleNeighborId => singleNeighborId !== axialSingleNeighborId);
-    const candidateAlphas = [
-      currentAngles.get(axialSingleNeighborId),
-      currentAngles.get(multipleNeighborId) - Math.PI,
-      currentAngles.get(flankNeighborIds[0]) - Math.PI / 2,
-      currentAngles.get(flankNeighborIds[0]) + Math.PI / 2,
-      currentAngles.get(flankNeighborIds[1]) - Math.PI / 2,
-      currentAngles.get(flankNeighborIds[1]) + Math.PI / 2
-    ];
-
-    for (const alpha of candidateAlphas) {
-      const candidate = evaluateMonoOxoOrientation(alpha, descriptor, axialSingleNeighborId, currentAngles, movableNeighborIds);
-      if (!bestFit || candidate.cost < bestFit.cost) {
-        bestFit = candidate;
+    const targetAngles = slotOffsets.map(slotOffset => normalizeAngle(alpha + slotOffset));
+    for (const permutation of permutations) {
+      let cost = 0;
+      const assignments = new Map();
+      for (let neighborIndex = 0; neighborIndex < neighborAtomIds.length; neighborIndex++) {
+        const neighborAtomId = neighborAtomIds[neighborIndex];
+        const targetAngle = targetAngles[permutation[neighborIndex]];
+        cost += weightedAngleCost(currentAngles, movableNeighborIds, neighborAtomId, targetAngle);
+        assignments.set(neighborAtomId, targetAngle);
+      }
+      if (!bestFit || cost < bestFit.cost) {
+        bestFit = {
+          cost,
+          targetAngles: assignments
+        };
       }
     }
   }
-
   return bestFit;
-}
-
-function fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds) {
-  if (descriptor.kind === 'bis-oxo') {
-    return fitBisOxoTargets(descriptor, currentAngles, movableNeighborIds);
-  }
-  if (descriptor.kind === 'mono-oxo') {
-    return fitMonoOxoTargets(descriptor, currentAngles, movableNeighborIds);
-  }
-  return null;
 }
 
 /**

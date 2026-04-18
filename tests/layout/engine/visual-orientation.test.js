@@ -128,6 +128,7 @@ describe('layout/engine/visual-orientation', () => {
     assertHorizontal(chromane);
     assertVerticalBond(chromane.coords, 'C5', 'C10');
     assert.ok(chromane.coords.get('O4').x > chromane.coords.get('C5').x);
+
   });
 
   it('keeps aromatic heterocycles in their expected canonical compass orientations', () => {
@@ -296,5 +297,19 @@ describe('layout/engine/visual-orientation', () => {
     assert.equal(histidineLike.coords.get('N5').y, maxY(histidineLike.coords, imidazoleLikeRing));
     assert.ok(Math.abs(histidineLike.coords.get('C1').y - histidineLike.coords.get('C4').y) < 1e-6);
     assert.ok(Math.abs(histidineLike.coords.get('C2').y - histidineLike.coords.get('N3').y) < 1e-6);
+  });
+
+  it('can apply an opt-in final landscape quarter-turn to portrait fresh layouts', () => {
+    const portraitDefault = runPipeline(parseSMILES('C1=CC=C(C=C1)C2(C3CC3)C(=O)NC(=O)N2'), { suppressH: true });
+    const landscapeOptIn = runPipeline(parseSMILES('C1=CC=C(C=C1)C2(C3CC3)C(=O)NC(=O)N2'), {
+      suppressH: true,
+      finalLandscapeOrientation: true
+    });
+
+    const defaultBounds = heavyBounds(portraitDefault);
+    const optInBounds = heavyBounds(landscapeOptIn);
+
+    assert.ok(defaultBounds.height > defaultBounds.width);
+    assert.ok(optInBounds.width > optInBounds.height);
   });
 });

@@ -1,7 +1,7 @@
 /** @module cleanup/overlap-resolution */
 
 import { buildAtomGrid, computeAtomDistortionCost, computeSubtreeOverlapCost, findSevereOverlaps } from '../audit/invariants.js';
-import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
+import { angleOf, angularDifference, centroid, sub, wrapAngle } from '../geometry/vec2.js';
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { probeRigidRotation, rigidDescriptorKey, rotateRigidDescriptorPositions } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
@@ -29,6 +29,9 @@ const COARSE_RIGID_SUBTREE_ROTATION_ANGLES = Object.freeze([
   -(2 * Math.PI) / 3,
   Math.PI
 ]);
+const EXACT_RING_ROOT_RELATIVE_ROTATION_OFFSETS = Object.freeze(
+  RIGID_SUBTREE_ROTATION_ANGLES.filter(angle => Math.abs(angle) > ANGLE_EPSILON)
+);
 const LARGE_RIGID_SUBTREE_COMPONENT_ATOM_COUNT = 24;
 const LARGE_RIGID_SUBTREE_SIZE = 6;
 const MAX_RIGID_DESCRIPTOR_OPTIONS_PER_ATOM = 4;
@@ -576,6 +579,48 @@ function rigidSubtreeCandidateAngles(subtreeSize, visibleAtomCount) {
 }
 
 /**
+ * Merges one base candidate lattice with extra exact-root-preserving rigid
+ * rotations, deduping wrapped angles in insertion order.
+ * @param {number[]} baseAngles - Base candidate angles in radians.
+ * @param {number[]} extraAngles - Additional candidate angles in radians.
+ * @returns {number[]} Deduped candidate angles.
+ */
+function mergeRigidCandidateAngles(baseAngles, extraAngles) {
+  const merged = [];
+  for (const angle of [...baseAngles, ...extraAngles]) {
+    const wrappedAngle = wrapAngle(angle);
+    if (merged.some(existingAngle => angularDifference(existingAngle, wrappedAngle) <= ANGLE_EPSILON)) {
+      continue;
+    }
+    merged.push(wrappedAngle);
+  }
+  return merged;
+}
+
+/**
+ * Returns the rigid-rotation candidates to probe for one descriptor. Compact
+ * ring-anchored rigid branches keep the global absolute lattice but also add a
+ * small set of rotations relative to the current root direction so overlap
+ * cleanup can try the least-disruptive local escape before jumping to a much
+ * larger reorientation.
+ * @param {number} subtreeSize - Number of atoms in the rigid subtree.
+ * @param {number} visibleAtomCount - Visible laid-out atom count.
+ * @param {number} currentRootAngle - Current root-bond angle in radians.
+ * @param {boolean} exactRingRootDescriptor - Whether the descriptor should preserve exact ring-root presentation when possible.
+ * @returns {number[]} Candidate root angles in radians.
+ */
+function rigidSubtreeProbeAngles(subtreeSize, visibleAtomCount, currentRootAngle, exactRingRootDescriptor) {
+  const baseAngles = rigidSubtreeCandidateAngles(subtreeSize, visibleAtomCount);
+  if (!exactRingRootDescriptor) {
+    return baseAngles;
+  }
+  return mergeRigidCandidateAngles(
+    baseAngles,
+    EXACT_RING_ROOT_RELATIVE_ROTATION_OFFSETS.map(offset => currentRootAngle + offset)
+  );
+}
+
+/**
  * Attempts to clear an overlap by rotating a singly attached ring subtree as a rigid body.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
@@ -663,7 +708,12 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   }
 
   const rigidRotationProbe = probeRigidRotation(layoutGraph, coords, descriptor, {
-    angles: rigidSubtreeCandidateAngles(descriptor.subtreeAtomIds.length, visibleAtomCount).filter(candidateAngle => {
+    angles: rigidSubtreeProbeAngles(
+      descriptor.subtreeAtomIds.length,
+      visibleAtomCount,
+      currentRootAngle,
+      exactRingRootDescriptor
+    ).filter(candidateAngle => {
       return Math.abs(candidateAngle - currentRootAngle) > ANGLE_EPSILON;
     }),
     buildPositionsFn(inputCoords, inputDescriptor, candidateAngle) {

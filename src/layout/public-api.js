@@ -7,7 +7,8 @@ function buildEngineOptions(options = {}) {
   return {
     suppressH: options.suppressH ?? true,
     bondLength: options.bondLength ?? 1.5,
-    maxCleanupPasses: options.maxCleanupPasses ?? options.maxPasses ?? 6
+    maxCleanupPasses: options.maxCleanupPasses ?? options.maxPasses ?? 6,
+    finalLandscapeOrientation: options.finalLandscapeOrientation ?? false
   };
 }
 

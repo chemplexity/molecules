@@ -35,7 +35,6 @@ export function createInteractionRuntimeDeps(ctx) {
     spreadReaction2dProductComponents: ctx.spreadReaction2dProductComponents,
     centerReaction2dPairCoords: ctx.centerReaction2dPairCoords,
     viewportFitPadding: ctx.viewportFitPadding,
-    generateAndRefine2dCoords: ctx.generateAndRefine2dCoords,
     refineExistingCoords: ctx.refineExistingCoords,
     atomBBox: ctx.atomBBox,
     flipDisplayStereo: ctx.flipDisplayStereo,

@@ -76,11 +76,11 @@ describe('layout/engine/stereo/wedge-selection', () => {
     const summary = pickWedgeAssignments(graph, result.coords);
 
     assert.equal(summary.annotatedCenterCount, 3);
-    assert.equal(summary.chiralCenterCount, 2);
-    assert.equal(summary.assignedCenterCount, 2);
+    assert.equal(summary.chiralCenterCount, 3);
+    assert.equal(summary.assignedCenterCount, 3);
     assert.equal(summary.unassignedCenterCount, 0);
-    assert.equal(summary.unsupportedCenterCount, 1);
-    assert.deepEqual(summary.unsupportedCenterIds, ['C7']);
+    assert.equal(summary.unsupportedCenterCount, 0);
+    assert.deepEqual(summary.unsupportedCenterIds, []);
     assert.deepEqual(summary.missingCenterIds, []);
   });
 });

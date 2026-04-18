@@ -134,7 +134,7 @@ export function createForceSceneRendererDeps(ctx) {
       isHydrogenNode: node => ctx.isHydrogenNode(node),
       enLabelColor: value => ctx.enLabelColor(value),
       renderReactionPreviewArrowForce: nodes => ctx.renderReactionPreviewArrowForce(nodes),
-      generateAndRefine2dCoords: (mol, options) => ctx.generateAndRefine2dCoords(mol, options),
+      generate2dCoords: (mol, options = {}) => ctx.generate2dCoords(mol, options),
       alignReaction2dProductOrientation: mol => ctx.alignReaction2dProductOrientation(mol)
     },
     events: {
@@ -211,8 +211,7 @@ export function create2DSceneRendererDeps(ctx) {
       drawBond: (container, bond, a1, a2, mol, toSVGPt, stereoType = null) => ctx.drawBond(container, bond, a1, a2, mol, toSVGPt, stereoType),
       redrawHighlights: () => ctx.redrawHighlights(),
       redrawSelection: () => ctx.redrawSelection(),
-      generate2dCoords: (mol, options = {}) => ctx.generate2dCoords?.(mol, options),
-      generateAndRefine2dCoords: (mol, options = {}) => ctx.generateAndRefine2dCoords(mol, options),
+      generate2dCoords: (mol, options = {}) => ctx.generate2dCoords(mol, options),
       alignReaction2dProductOrientation: mol => ctx.alignReaction2dProductOrientation(mol),
       spreadReaction2dProductComponents: (mol, spacing) => ctx.spreadReaction2dProductComponents(mol, spacing),
       centerReaction2dPairCoords: (mol, spacing) => ctx.centerReaction2dPairCoords(mol, spacing),
