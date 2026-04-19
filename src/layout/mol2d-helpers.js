@@ -233,7 +233,8 @@ export function labelHalfH(label, fontSize) {
   if (!label) {
     return 0;
   }
-  return fontSize * 0.58 + 2;
+  const subscriptDescent = /\d/.test(label) ? fontSize * 0.18 : 0;
+  return fontSize * 0.58 + 2 + subscriptDescent;
 }
 
 /**

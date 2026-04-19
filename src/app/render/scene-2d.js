@@ -18,7 +18,10 @@ import {
   stereoBondCenterIdForRender,
   atomBBox
 } from '../../layout/mol2d-helpers.js';
-import { synthesizeHydrogenPosition } from '../../layout/engine/stereo/wedge-geometry.js';
+import {
+  DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE,
+  synthesizeHydrogenPosition
+} from '../../layout/engine/stereo/wedge-geometry.js';
 
 /**
  * Returns the placed incident ring polygons for one atom.
@@ -63,7 +66,8 @@ function projectHiddenStereoHydrogens(molecule, bondLength, stereoMap = null) {
     const bond = molecule.getBond(atom.id, parent.id);
     const hasCoincidentCoords =
       atom.x != null && atom.y != null && parent.x != null && parent.y != null && Math.abs(atom.x - parent.x) <= 1e-6 && Math.abs(atom.y - parent.y) <= 1e-6;
-    const shouldProject = atom.visible === false || (!!bond && ((stereoMap && stereoMap.has(bond.id)) || bond.properties?.display?.as) && hasCoincidentCoords);
+    const hasDisplayedStereo = !!bond && ((stereoMap && stereoMap.has(bond.id)) || bond.properties?.display?.as);
+    const shouldProject = atom.visible === false || (hasDisplayedStereo && hasCoincidentCoords);
     if (!shouldProject) {
       continue;
     }
@@ -73,7 +77,8 @@ function projectHiddenStereoHydrogens(molecule, bondLength, stereoMap = null) {
       .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
     const projectedPosition = synthesizeHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength, {
       incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id),
-      preferCardinalAxes: true
+      preferCardinalAxes: true,
+      cardinalAxisSectorTolerance: hasDisplayedStereo ? DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE : undefined
     });
     projectedCoords.set(atom.id, projectedPosition);
   }

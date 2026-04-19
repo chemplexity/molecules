@@ -21,12 +21,8 @@ function bondOrderBetween(layoutGraph, firstAtomId, secondAtomId) {
   if (!layoutGraph) {
     return 1;
   }
-  for (const bond of layoutGraph.bonds.values()) {
-    if ((bond.a === firstAtomId && bond.b === secondAtomId) || (bond.a === secondAtomId && bond.b === firstAtomId)) {
-      return bond.order ?? 1;
-    }
-  }
-  return 1;
+  const key = firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
+  return layoutGraph.bondByAtomPair.get(key)?.order ?? 1;
 }
 
 /**
@@ -62,10 +58,7 @@ function hasSp2Bond(layoutGraph, atomId) {
   if (!layoutGraph) {
     return false;
   }
-  for (const bond of layoutGraph.bonds.values()) {
-    if (bond.a !== atomId && bond.b !== atomId) {
-      continue;
-    }
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
     if (bond.aromatic || (bond.order ?? 1) >= 2) {
       return true;
     }
@@ -284,6 +277,18 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
     const currentTurn = normalizeSignedAngle(nextDirection - previousDirection);
     const currentTurnSign = Math.sign(currentTurn) || previousTurnSign || (index % 2 === 1 ? -1 : 1);
     const movedAtomIds = collectSideAtomIds(layoutGraph, nextAtomId, centerAtomId);
+    const sideRootAtomId = (layoutGraph.bondsByAtomId.get(centerAtomId) ?? [])
+      .map(bond => (bond.a === centerAtomId ? bond.b : bond.a))
+      .find(neighborAtomId => {
+        const bondOrder = bondOrderBetween(layoutGraph, centerAtomId, neighborAtomId);
+        const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+        return neighborAtomId !== previousAtomId
+          && neighborAtomId !== nextAtomId
+          && !!neighborAtom
+          && neighborAtom.element !== 'H'
+          && bondOrder === 1
+          && coords.has(neighborAtomId);
+      }) ?? null;
     const candidateTurnSigns = stereoBonds.length > 0 ? [currentTurnSign, -currentTurnSign] : [currentTurnSign];
     let bestCandidate = null;
 
@@ -299,6 +304,16 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
           }
           candidateCoords.set(atomId, add(centerPosition, rotate(sub(position, centerPosition), rotationAngle)));
         }
+      }
+      if (sideRootAtomId && candidateCoords.has(sideRootAtomId)) {
+        const targetAngle = angleOf(sub(centerPosition, centroid([previousPosition, candidateCoords.get(nextAtomId)])));
+        const currentRootAngle = angleOf(sub(candidateCoords.get(sideRootAtomId), centerPosition));
+        rotateSubtreeAroundCenter(
+          candidateCoords,
+          collectSideAtomIds(layoutGraph, sideRootAtomId, centerAtomId),
+          centerPosition,
+          normalizeSignedAngle(targetAngle - currentRootAngle)
+        );
       }
 
       const candidate = {
@@ -478,7 +493,6 @@ function realignTrigonalLinearSubstituentRoots(layoutGraph, coords) {
 
   return coords;
 }
-
 /**
  * Re-snaps terminal multiple-bond leaves on trigonal centers to the exact
  * outward bisector after backbone normalization has rotated one side of the
@@ -540,9 +554,58 @@ function realignTerminalMultipleBondLeaves(layoutGraph, coords, bondLength) {
   return coords;
 }
 
+/**
+ * Returns whether an atom is a terminal hetero leaf attached by a single bond
+ * to a cross-like hypervalent center that continues into a larger heavy-atom
+ * backbone beyond the center.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {string} atomId - Candidate endpoint atom ID.
+ * @param {Set<string>} atomIdsToPlace - Atom IDs to place.
+ * @returns {boolean} True when the atom should not anchor the acyclic backbone.
+ */
+function isTerminalCrossLikeHypervalentLeaf(layoutGraph, adjacency, atomId, atomIdsToPlace) {
+  if (!layoutGraph) {
+    return false;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || atom.element === 'C') {
+    return false;
+  }
+  const neighbors = [...(adjacency.get(atomId) ?? [])].filter(neighborAtomId => atomIdsToPlace.has(neighborAtomId));
+  if (neighbors.length !== 1 || bondOrderBetween(layoutGraph, atomId, neighbors[0]) !== 1) {
+    return false;
+  }
+
+  const crossLikeCenter = describeCrossLikeHypervalentCenter(layoutGraph, neighbors[0]);
+  if (crossLikeCenter == null || !crossLikeCenter.singleNeighborIds.includes(atomId)) {
+    return false;
+  }
+
+  const centerNeighborIds = [...new Set([...crossLikeCenter.singleNeighborIds, ...crossLikeCenter.multipleNeighborIds])].filter(
+    neighborAtomId => neighborAtomId !== atomId && atomIdsToPlace.has(neighborAtomId)
+  );
+  return centerNeighborIds.some(neighborAtomId => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return !!neighborAtom && neighborAtom.element !== 'H' && (neighborAtom.heavyDegree ?? 0) > 1;
+  });
+}
+
+/**
+ * Returns whether an atom should be favored as a backbone endpoint during
+ * acyclic longest-path selection.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {string} atomId - Candidate endpoint atom ID.
+ * @param {Set<string>} atomIdsToPlace - Atom IDs to place.
+ * @returns {boolean} True when the atom is a preferred backbone endpoint.
+ */
 function isPreferredBackboneEndpoint(layoutGraph, adjacency, atomId, atomIdsToPlace) {
   if (!layoutGraph) {
     return true;
+  }
+  if (isTerminalCrossLikeHypervalentLeaf(layoutGraph, adjacency, atomId, atomIdsToPlace)) {
+    return false;
   }
   const atom = layoutGraph.atoms.get(atomId);
   if (!atom || atom.element !== 'O') {
@@ -639,7 +702,14 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
     return coords;
   }
 
-  const backbone = longestBackbonePath(adjacency, canonicalAtomRank, atomIdsToPlace, layoutGraph);
+  const heavyBackboneAtomIds = new Set(
+    [...atomIdsToPlace].filter(atomId => {
+      const atom = layoutGraph?.atoms.get(atomId);
+      return atom ? atom.element !== 'H' : true;
+    })
+  );
+  const backboneAtomIds = heavyBackboneAtomIds.size >= 2 ? heavyBackboneAtomIds : atomIdsToPlace;
+  const backbone = longestBackbonePath(adjacency, canonicalAtomRank, backboneAtomIds, layoutGraph);
   const conjugatedCenterIds = findConjugatedBackboneCenters(layoutGraph, backbone);
   if (backbone.length === 2) {
     coords.set(backbone[0], { x: 0, y: 0 });

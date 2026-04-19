@@ -5,6 +5,7 @@ import { countPointInPolygons } from '../geometry/polygon.js';
 
 const CARDINAL_AXIS_ANGLES = [0, Math.PI / 2, Math.PI, -Math.PI / 2];
 const CARDINAL_AXIS_SECTOR_TOLERANCE = Math.PI / 24;
+export const DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE = Math.PI / 16;
 
 /**
  * Returns the bisector angles of the angular gaps around a stereocenter.
@@ -84,16 +85,17 @@ function evaluateCandidate(centerPosition, knownPositions, radius, angle, baseAn
  * @param {number} radius - Projection distance from the center.
  * @param {number} baseAngle - Raw opposite-vector angle before any snapping.
  * @param {Array<Array<{x: number, y: number}>>} incidentRingPolygons - Incident ring polygons.
+ * @param {number} cardinalAxisSectorTolerance - Allowed sector drop when snapping to a cardinal axis.
  * @returns {{x: number, y: number}} Chosen hydrogen position.
  */
-function bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle, incidentRingPolygons) {
+function bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle, incidentRingPolygons, cardinalAxisSectorTolerance) {
   const candidates = uniqueAngles([baseAngle, ...gapBisectorAngles(centerPosition, knownPositions), ...CARDINAL_AXIS_ANGLES]).map(angle =>
     evaluateCandidate(centerPosition, knownPositions, radius, angle, baseAngle, incidentRingPolygons)
   );
   const bestContainingRingCount = Math.min(...candidates.map(candidate => candidate.containingRingCount));
   const ringSafeCandidates = candidates.filter(candidate => candidate.containingRingCount === bestContainingRingCount);
   const bestSector = Math.max(...ringSafeCandidates.map(candidate => candidate.sector));
-  const nearBestSectorCandidates = ringSafeCandidates.filter(candidate => candidate.sector >= bestSector - CARDINAL_AXIS_SECTOR_TOLERANCE);
+  const nearBestSectorCandidates = ringSafeCandidates.filter(candidate => candidate.sector >= bestSector - cardinalAxisSectorTolerance);
 
   let bestCandidate = nearBestSectorCandidates[0] ?? ringSafeCandidates[0] ?? candidates[0];
   for (const candidate of nearBestSectorCandidates) {
@@ -127,11 +129,13 @@ function bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle,
  * @param {object} [options] - Synthesis options.
  * @param {Array<Array<{x: number, y: number}>>} [options.incidentRingPolygons] - Incident ring polygons to avoid.
  * @param {boolean} [options.preferCardinalAxes] - When true, prefer exact horizontal or vertical projections when they are almost as open as the best free-angle candidate.
+ * @param {number} [options.cardinalAxisSectorTolerance] - Allowed sector drop when snapping to a cardinal axis.
  * @returns {{x: number, y: number}} Synthesized hydrogen position.
  */
 export function synthesizeHydrogenPosition(centerPosition, knownPositions, bondLength, options = {}) {
   const incidentRingPolygons = options.incidentRingPolygons ?? [];
   const preferCardinalAxes = options.preferCardinalAxes === true;
+  const cardinalAxisSectorTolerance = options.cardinalAxisSectorTolerance ?? CARDINAL_AXIS_SECTOR_TOLERANCE;
   if (knownPositions.length === 0) {
     return add(centerPosition, { x: bondLength, y: 0 });
   }
@@ -157,7 +161,7 @@ export function synthesizeHydrogenPosition(centerPosition, knownPositions, bondL
   const baseAngle = angleOf(direction);
   const basePosition = add(centerPosition, scale(direction, radius));
   if (preferCardinalAxes) {
-    return bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle, incidentRingPolygons);
+    return bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle, incidentRingPolygons, cardinalAxisSectorTolerance);
   }
   if (incidentRingPolygons.length === 0 || countPointInPolygons(incidentRingPolygons, basePosition) === 0) {
     return basePosition;

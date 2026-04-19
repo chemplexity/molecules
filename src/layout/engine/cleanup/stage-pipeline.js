@@ -195,12 +195,9 @@ export function buildCleanupStageGraph(context) {
       isGeometryPhase: true,
       transformFn(parentCoords, _inputContext, stageResults) {
         if ((stageResults.get('postCleanup')?.hookNudges ?? 0) <= 0) {
-          return {
-            coords: parentCoords,
-            passes: 0,
-            improvement: 0,
-            overlapMoves: 0
-          };
+          // No hooks made changes — coords are identical to postCleanup, skip the
+          // auditCleanupStage scoreFn since it would produce the same result.
+          return null;
         }
         const postHookCleanup = runUnifiedCleanup(layoutGraph, parentCoords, {
           maxPasses: 1,
@@ -239,9 +236,10 @@ export function buildCleanupStageGraph(context) {
       name: 'stereoCleanup',
       parentStage: 'selectedGeometryStereo',
       transformFn(parentCoords) {
-        return enforceAcyclicEZStereo(layoutGraph, parentCoords, {
-          bondLength
-        });
+        const result = enforceAcyclicEZStereo(layoutGraph, parentCoords, { bondLength });
+        // Skip audit entirely when EZ enforcement made no changes — coords are identical
+        // to selectedGeometryStereo so re-running auditFinalStereoStage would be redundant.
+        return result.reflections > 0 ? result : null;
       },
       scoreFn(coords) {
         return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);

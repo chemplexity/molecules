@@ -235,6 +235,22 @@ describe('layout/engine/families/acyclic', () => {
     }
   });
 
+  it('keeps the backbone zigzag approaching terminal phosphonate groups instead of routing through phosphonate oxygens', () => {
+    const result = runPipeline(parseSMILES('OC(=O)C[NH2+]CP(O)(O)=O'), { suppressH: true });
+    const phosphonateOxygenAngles = (result.layoutGraph.bondsByAtomId.get('P8') ?? [])
+      .map(bond => bond.a === 'P8' ? bond.b : bond.a)
+      .filter(atomId => result.layoutGraph.atoms.get(atomId)?.element === 'O')
+      .map(atomId => bondAngle(result.coords, 'C7', 'P8', atomId))
+      .sort((firstAngle, secondAngle) => secondAngle - firstAngle);
+
+    assert.ok(Math.abs(bondAngle(result.coords, 'C4', 'N5', 'C7') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'N5', 'C7', 'P8') - 120) < 1e-6);
+    assert.equal(phosphonateOxygenAngles.length, 3);
+    assert.ok(Math.abs(phosphonateOxygenAngles[0] - 180) < 1e-5);
+    assert.ok(Math.abs(phosphonateOxygenAngles[1] - 90) < 1e-5);
+    assert.ok(Math.abs(phosphonateOxygenAngles[2] - 90) < 1e-5);
+  });
+
   it('enforces configured E/Z stereo for final acyclic pipeline output', () => {
     const cases = [
       { smiles: 'F/C=C/F', expectedStereo: 'E' },
@@ -308,6 +324,15 @@ describe('layout/engine/families/acyclic', () => {
     assert.ok(Math.abs(bondAngle(result.coords, 'C11', 'C13', 'C14') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngle(result.coords, 'C14', 'C13', 'C15') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngle(result.coords, 'C11', 'C13', 'C15') - 120) < 1e-6);
+  });
+
+  it('keeps lone vinylic single-bond substituent roots on the exact trigonal slot when the backbone turn is normalized', () => {
+    const result = runPipeline(parseSMILES('CCC=C(COC)C=CC=CC'), { suppressH: true });
+
+    assert.ok(Math.abs(bondAngle(result.coords, 'C3', 'C4', 'C5') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C3', 'C4', 'C8') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C5', 'C4', 'C8') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C4', 'C5', 'O6') - 120) < 1e-6);
   });
 
   it('keeps long explicitly stereo polyenes extended instead of curling them into a compact spiral', () => {

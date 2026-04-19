@@ -226,7 +226,7 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
   }
 
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
-  const atomGrid = options.atomGrid ?? (coords.size >= 32 ? buildAtomGrid(layoutGraph, coords, bondLength) : null);
+  const atomGrid = options.atomGrid ?? (coords.size >= 160 ? buildAtomGrid(layoutGraph, coords, bondLength) : null);
   const seenPairs = new Set();
   let overlapPenalty = 0;
 
@@ -328,9 +328,7 @@ function ringSystemAtomIds(layoutGraph, ringSystemId, ringSystemById = null) {
 }
 
 function incidentRingPolygons(layoutGraph, coords, atomId) {
-  return (layoutGraph.atomToRings.get(atomId) ?? [])
-    .map(ring => ring.atomIds.map(ringAtomId => coords.get(ringAtomId)).filter(Boolean))
-    .filter(polygon => polygon.length >= 3);
+  return (layoutGraph.atomToRings.get(atomId) ?? []).map(ring => ring.atomIds.map(ringAtomId => coords.get(ringAtomId)).filter(Boolean)).filter(polygon => polygon.length >= 3);
 }
 
 function evaluateRingSubstituentSide(layoutGraph, coords, anchorAtomId, representativeAtomIds, ringPolygons, maxOutwardDeviation) {
@@ -436,9 +434,7 @@ export function ringSubstituentRepresentativePosition(coords, representativeAtom
   if (!Array.isArray(representativeAtomIds) || representativeAtomIds.length === 0) {
     return null;
   }
-  const positions = representativeAtomIds
-    .map(atomId => overridePositions?.get(atomId) ?? coords.get(atomId))
-    .filter(Boolean);
+  const positions = representativeAtomIds.map(atomId => overridePositions?.get(atomId) ?? coords.get(atomId)).filter(Boolean);
   if (positions.length === 0) {
     return null;
   }
@@ -518,14 +514,7 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
       }
       seenPairs.add(pairId);
 
-      const forwardSide = evaluateRingSubstituentSide(
-        layoutGraph,
-        coords,
-        anchorAtomId,
-        childDescriptor.representativeAtomIds,
-        ringPolygons,
-        maxOutwardDeviation
-      );
+      const forwardSide = evaluateRingSubstituentSide(layoutGraph, coords, anchorAtomId, childDescriptor.representativeAtomIds, ringPolygons, maxOutwardDeviation);
       if (forwardSide.insideIncidentRing) {
         failingSubstituentCount++;
         inwardSubstituentCount++;
@@ -649,6 +638,78 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
 }
 
 /**
+ * Returns whether the center should contribute to trigonal distortion.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate center atom identifier.
+ * @param {Array<{bond: object, neighborAtomId: string}>} covalentBonds - Visible covalent bonds for the center.
+ * @returns {boolean} True when the center should be scored against trigonal separation.
+ */
+function shouldMeasureTrigonalDistortionAtCenter(layoutGraph, atomId, covalentBonds) {
+  if (covalentBonds.length !== 3) {
+    return false;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.aromatic) {
+    return false;
+  }
+  const multipleBondCount = covalentBonds.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
+  return multipleBondCount === 1;
+}
+
+/**
+ * Returns whether the center should contribute to omitted-h continuation distortion.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate center atom identifier.
+ * @param {Array<{bond: object, neighborAtomId: string}>} covalentBonds - Visible covalent bonds for the center.
+ * @returns {boolean} True when the center should be scored against trigonal separation.
+ */
+function shouldMeasureThreeHeavyContinuationDistortionAtCenter(layoutGraph, atomId, covalentBonds) {
+  if (covalentBonds.length !== 3) {
+    return false;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.aromatic || atom.element !== 'C' || (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0) {
+    return false;
+  }
+  const multipleBondCount = covalentBonds.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
+  if (multipleBondCount !== 0) {
+    return false;
+  }
+  const ringNeighborCount = covalentBonds.filter(
+    ({ neighborAtomId }) => (layoutGraph.atomToRings?.get(neighborAtomId)?.length ?? 0) > 0
+  ).length;
+  if (ringNeighborCount < 1) {
+    return false;
+  }
+  return covalentBonds.every(({ bond, neighborAtomId }) => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return neighborAtom && neighborAtom.element !== 'H' && !bond.aromatic && (bond.order ?? 1) === 1;
+  });
+}
+
+/**
+ * Returns the squared angular-separation deviation from an ideal three-way trigonal spread.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {Array<{bond: object, neighborAtomId: string}>} covalentBonds - Visible covalent bonds for the center.
+ * @param {string} atomId - Center atom identifier.
+ * @param {(atomId: string) => ({x: number, y: number}|undefined)} getPos - Position resolver.
+ * @returns {number} Squared angular deviation.
+ */
+function measureThreeCoordinateDeviation(coords, covalentBonds, atomId, getPos) {
+  const atomPosition = getPos(atomId) ?? coords.get(atomId);
+  if (!atomPosition) {
+    return 0;
+  }
+  const neighborAngles = covalentBonds.map(({ neighborAtomId }) => {
+    const neighborPosition = getPos(neighborAtomId) ?? coords.get(neighborAtomId);
+    return Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x);
+  });
+  const separations = sortedAngularSeparations(neighborAngles);
+  const idealSeparation = (Math.PI * 2) / 3;
+  return separations.reduce((sum, separation) => sum + (separation - idealSeparation) ** 2, 0);
+}
+
+/**
  * Measures distortion at visible three-coordinate unsaturated centers that
  * should read as roughly trigonal in a publication-style 2D depiction.
  * @param {object} layoutGraph - Layout graph shell.
@@ -659,27 +720,54 @@ export function measureTrigonalDistortion(layoutGraph, coords) {
   let centerCount = 0;
   let totalDeviation = 0;
   let maxDeviation = 0;
-  const idealSeparation = (Math.PI * 2) / 3;
 
   for (const atomId of coords.keys()) {
     if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
       continue;
     }
     const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
-    if (covalentBonds.length !== 3) {
+    if (!shouldMeasureTrigonalDistortionAtCenter(layoutGraph, atomId, covalentBonds)) {
       continue;
     }
-    const multipleBondCount = covalentBonds.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
-    if (multipleBondCount !== 1) {
+    const deviation = measureThreeCoordinateDeviation(coords, covalentBonds, atomId, () => undefined);
+    centerCount++;
+    totalDeviation += deviation;
+    maxDeviation = Math.max(maxDeviation, deviation);
+  }
+
+  return {
+    centerCount,
+    totalDeviation,
+    maxDeviation
+  };
+}
+
+/**
+ * Measures distortion at visible non-ring saturated three-heavy carbon centers
+ * whose omitted hydrogen should still leave the drawn heavy-atom spread near 120/120/120.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{focusAtomIds?: Set<string>|null}} [options] - Optional local scoring focus.
+ * @returns {{centerCount: number, totalDeviation: number, maxDeviation: number}} Continuation distortion statistics.
+ */
+export function measureThreeHeavyContinuationDistortion(layoutGraph, coords, options = {}) {
+  const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
+  let centerCount = 0;
+  let totalDeviation = 0;
+  let maxDeviation = 0;
+
+  for (const atomId of coords.keys()) {
+    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
       continue;
     }
-    const atomPosition = coords.get(atomId);
-    const neighborAngles = covalentBonds.map(({ neighborAtomId }) => {
-      const neighborPosition = coords.get(neighborAtomId);
-      return Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x);
-    });
-    const separations = sortedAngularSeparations(neighborAngles);
-    const deviation = separations.reduce((sum, separation) => sum + (separation - idealSeparation) ** 2, 0);
+    if (focusAtomIds && !focusAtomIds.has(atomId)) {
+      continue;
+    }
+    const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
+    if (!shouldMeasureThreeHeavyContinuationDistortionAtCenter(layoutGraph, atomId, covalentBonds)) {
+      continue;
+    }
+    const deviation = measureThreeCoordinateDeviation(coords, covalentBonds, atomId, () => undefined);
     centerCount++;
     totalDeviation += deviation;
     maxDeviation = Math.max(maxDeviation, deviation);
@@ -780,12 +868,7 @@ export function computeAtomDistortionCost(layoutGraph, coords, atomId, overrideP
   let cost = 0;
 
   if (covalentBonds.length === 2) {
-    if (
-      atom
-      && !atom.aromatic
-      && IDEAL_DIVALENT_CONTINUATION_HETERO_ELEMENTS.has(atom.element)
-      && (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) === 0
-    ) {
+    if (atom && !atom.aromatic && IDEAL_DIVALENT_CONTINUATION_HETERO_ELEMENTS.has(atom.element) && (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) === 0) {
       const heavySingleBonds = covalentBonds.filter(({ bond, neighborAtomId }) => {
         const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
         return neighborAtom && neighborAtom.element !== 'H' && !bond.aromatic && (bond.order ?? 1) === 1;
@@ -801,24 +884,14 @@ export function computeAtomDistortionCost(layoutGraph, coords, atomId, overrideP
               Math.atan2(firstNeighborPosition.y - atomPosition.y, firstNeighborPosition.x - atomPosition.x),
               Math.atan2(secondNeighborPosition.y - atomPosition.y, secondNeighborPosition.x - atomPosition.x)
             );
-            cost += (bondAngle - ((2 * Math.PI) / 3)) ** 2 * 20;
+            cost += (bondAngle - (2 * Math.PI) / 3) ** 2 * 20;
           }
         }
       }
     }
   } else if (covalentBonds.length === 3) {
-    const multipleBondCount = covalentBonds.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
-    if (multipleBondCount === 1) {
-      const atomPosition = getPos(atomId);
-      if (atomPosition) {
-        const neighborAngles = covalentBonds.map(({ neighborAtomId }) => {
-          const neighborPosition = getPos(neighborAtomId);
-          return Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x);
-        });
-        const separations = sortedAngularSeparations(neighborAngles);
-        const idealSeparation = (Math.PI * 2) / 3;
-        cost += separations.reduce((sum, separation) => sum + (separation - idealSeparation) ** 2, 0) * 20;
-      }
+    if (shouldMeasureTrigonalDistortionAtCenter(layoutGraph, atomId, covalentBonds) || shouldMeasureThreeHeavyContinuationDistortionAtCenter(layoutGraph, atomId, covalentBonds)) {
+      cost += measureThreeCoordinateDeviation(coords, covalentBonds, atomId, getPos) * 20;
     }
   } else if (covalentBonds.length === 4) {
     const heavyBonds = covalentBonds.filter(({ neighborAtomId }) => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
@@ -857,8 +930,8 @@ export function computeAtomDistortionCost(layoutGraph, coords, atomId, overrideP
 export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, overridePositions, bondLength, options = {}) {
   const includeAtomOverlaps = options.includeAtomOverlaps !== false;
   const subtreeContext =
-    options.subtreeContext
-    ?? buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, {
+    options.subtreeContext ??
+    buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, {
       includeBondCrowding: options.includeBondCrowding === true
     });
   const subtreeSet = subtreeContext.subtreeSet;
@@ -912,12 +985,7 @@ export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, o
         if (!externalFirstPosition || !externalSecondPosition) {
           continue;
         }
-        const distance = distanceBetweenSegments(
-          firstPosition,
-          secondPosition,
-          externalFirstPosition,
-          externalSecondPosition
-        );
+        const distance = distanceBetweenSegments(firstPosition, secondPosition, externalFirstPosition, externalSecondPosition);
         if (distance < bondCrowdingThreshold) {
           const deficit = bondCrowdingThreshold - distance;
           cost += deficit * deficit * SUBTREE_BOND_CROWDING_WEIGHT;
@@ -962,15 +1030,61 @@ export function measureLabelOverlap(layoutGraph, coords, bondLength, options = {
 }
 
 /**
- * Computes the current cleanup/audit state for a coordinate set.
+ * Fused single-pass computation of trigonal and tetrahedral angular distortion.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
- * @param {number} bondLength - Target bond length.
- * @param {object} [options] - State-measurement options.
- * @param {Array<{firstAtomId: string, secondAtomId: string, distance: number}>} [options.overlaps] - Optional precomputed severe overlaps.
- * @param {AtomGrid|null} [options.atomGrid] - Optional reused spatial grid for overlap lookup.
- * @param {object|null} [options.labelMetrics] - Optional renderer-supplied label metrics.
- * @returns {{overlaps: Array<{firstAtomId: string, secondAtomId: string, distance: number}>, overlapCount: number, overlapPenalty: number, bondDeviation: {sampleCount: number, maxDeviation: number, meanDeviation: number, failingBondCount: number}, collapsedMacrocycles: number[], labelOverlap: {pairCount: number, totalPenalty: number, maxPenalty: number}, trigonalDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, tetrahedralDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, cost: number}} Aggregate layout state.
+ * @returns {{trigonalDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, tetrahedralDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}}} Combined distortion metrics.
+ */
+function measureAngularDistortions(layoutGraph, coords) {
+  let trigCenterCount = 0;
+  let trigTotalDeviation = 0;
+  let trigMaxDeviation = 0;
+  let tetCenterCount = 0;
+  let tetTotalDeviation = 0;
+  let tetMaxDeviation = 0;
+  const idealTetSeparation = Math.PI / 2;
+
+  for (const atomId of coords.keys()) {
+    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
+
+    if (shouldMeasureTrigonalDistortionAtCenter(layoutGraph, atomId, covalentBonds)) {
+      const deviation = measureThreeCoordinateDeviation(coords, covalentBonds, atomId, () => undefined);
+      trigCenterCount++;
+      trigTotalDeviation += deviation;
+      trigMaxDeviation = Math.max(trigMaxDeviation, deviation);
+    }
+
+    const heavyBonds = covalentBonds.filter(({ neighborAtomId }) => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+    if (heavyBonds.length === 4 && heavyBonds.every(({ bond }) => !bond.aromatic && (bond.order ?? 1) === 1)) {
+      const atomPosition = coords.get(atomId);
+      if (atomPosition) {
+        const neighborAngles = heavyBonds.map(({ neighborAtomId }) => {
+          const neighborPosition = coords.get(neighborAtomId);
+          return Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x);
+        });
+        const deviation = sortedAngularSeparations(neighborAngles).reduce((sum, sep) => sum + (sep - idealTetSeparation) ** 2, 0);
+        tetCenterCount++;
+        tetTotalDeviation += deviation;
+        tetMaxDeviation = Math.max(tetMaxDeviation, deviation);
+      }
+    }
+  }
+
+  return {
+    trigonalDistortion: { centerCount: trigCenterCount, totalDeviation: trigTotalDeviation, maxDeviation: trigMaxDeviation },
+    tetrahedralDistortion: { centerCount: tetCenterCount, totalDeviation: tetTotalDeviation, maxDeviation: tetMaxDeviation }
+  };
+}
+
+/**
+ *
+ * @param layoutGraph
+ * @param coords
+ * @param bondLength
+ * @param options
  */
 export function measureLayoutState(layoutGraph, coords, bondLength, options = {}) {
   const overlaps =
@@ -983,8 +1097,7 @@ export function measureLayoutState(layoutGraph, coords, bondLength, options = {}
   const labelOverlap = measureLabelOverlap(layoutGraph, coords, bondLength, {
     labelMetrics: options.labelMetrics ?? layoutGraph.options.labelMetrics
   });
-  const trigonalDistortion = measureTrigonalDistortion(layoutGraph, coords);
-  const tetrahedralDistortion = measureTetrahedralDistortion(layoutGraph, coords);
+  const { trigonalDistortion, tetrahedralDistortion } = measureAngularDistortions(layoutGraph, coords);
 
   let overlapPenalty = 0;
   for (const overlap of overlaps) {

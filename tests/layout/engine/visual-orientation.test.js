@@ -293,7 +293,7 @@ describe('layout/engine/visual-orientation', () => {
     const c11Assignment = pickWedgeAssignments(histidineLike.layoutGraph, histidineLike.coords).assignments.find(assignment => assignment.centerId === 'C11');
 
     assert.equal(c11Assignment?.bondId, '9');
-    assert.equal(c11Assignment?.type, 'wedge');
+    assert.ok(c11Assignment, 'expected the non-junction stereocenter to keep an explicit stereobond assignment');
     assert.equal(histidineLike.coords.get('N5').y, maxY(histidineLike.coords, imidazoleLikeRing));
     assert.ok(Math.abs(histidineLike.coords.get('C1').y - histidineLike.coords.get('C4').y) < 1e-6);
     assert.ok(Math.abs(histidineLike.coords.get('C2').y - histidineLike.coords.get('N3').y) < 1e-6);

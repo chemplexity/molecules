@@ -22,7 +22,7 @@ export const MAX_BRANCH_RECURSION_DEPTH = 120;
 export const ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT = 20;
 export const SMALL_RING_EXTERIOR_GAP_WEIGHT = 80;
 export const CROSS_LIKE_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
-export const STRICT_ACYCLIC_CONTINUATION_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
+export const EXACT_SIMPLE_ACYCLIC_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
 
 /**
  * Normalizes an angle into the signed `(-pi, pi]` range.

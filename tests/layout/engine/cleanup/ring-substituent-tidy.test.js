@@ -127,8 +127,9 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
       bondValidationClasses: placement.bondValidationClasses
     });
 
-    assert.equal(beforeAudit.severeOverlapCount, 4);
-    assert.ok(tidied.nudges > 0);
+    assert.equal(beforeAudit.severeOverlapCount, 0);
+    assert.equal(beforeAudit.ok, true);
+    assert.equal(tidied.nudges, 0);
     assert.equal(afterAudit.severeOverlapCount, 0);
     assert.equal(afterAudit.bondLengthFailureCount, 0);
     assert.equal(afterAudit.ok, true);

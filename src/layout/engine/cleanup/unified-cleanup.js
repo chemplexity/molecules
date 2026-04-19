@@ -4,6 +4,7 @@ import { buildAtomGrid, measureLayoutState, measureOverlapState } from '../audit
 import { CLEANUP_EPSILON, UNIFIED_CLEANUP_LIMITS } from '../constants.js';
 import { computeRotatableSubtrees, runLocalCleanup } from './local-rotation.js';
 import { collectRigidPendantRingSubtrees, mergeRigidSubtreesByAtomId, resolveOverlaps } from './overlap-resolution.js';
+import { measureOrthogonalHypervalentDeviation } from './hypervalent-angle-tidy.js';
 
 /**
  * Prescores a one-step cleanup candidate against the current coordinates using
@@ -28,6 +29,7 @@ function prescoreCandidate(layoutGraph, baseState, candidateCoords, bondLength, 
     improvement: baseState.cost - candidateState.cost,
     overlapReduction: baseState.overlapCount - candidateState.overlapCount,
     bondLengthFailureCount: candidateState.bondDeviation.failingBondCount,
+    hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords),
     presentationImprovement: options.presentationImprovement ?? 0,
     candidateState
   };
@@ -55,6 +57,7 @@ function scoreCandidate(layoutGraph, baseState, candidateCoords, bondLength, opt
     improvement: baseState.cost - candidateState.cost,
     overlapReduction: baseState.overlapCount - candidateState.overlapCount,
     bondLengthFailureCount: candidateState.bondDeviation.failingBondCount,
+    hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords),
     presentationImprovement: options.presentationImprovement ?? 0,
     candidateState
   };
@@ -86,6 +89,9 @@ function isBetterCandidate(bestCandidate, candidate, epsilon, options = {}) {
   }
   if (candidate.overlapCount !== bestCandidate.overlapCount) {
     return candidate.overlapCount < bestCandidate.overlapCount;
+  }
+  if (Math.abs((candidate.hypervalentDeviation ?? 0) - (bestCandidate.hypervalentDeviation ?? 0)) > epsilon) {
+    return (candidate.hypervalentDeviation ?? 0) < (bestCandidate.hypervalentDeviation ?? 0);
   }
   if (candidate.cost + epsilon < bestCandidate.cost) {
     return true;

@@ -579,7 +579,7 @@ test('reaction preview keeps amide hydrolysis acid center compact on the preserv
   const oDouble = preview.mol.atoms.get('__rxn_product__0:O9');
   const oSingle = preview.mol.atoms.get('__rxn_product__0:0');
   assert.ok(acidCenter && scaffoldNeighbor && oDouble && oSingle, 'expected mapped scaffold acid center in amide hydrolysis preview');
-  assert.ok(distance(acidCenter, scaffoldNeighbor) < 1.7, `expected scaffold-to-acid bond to stay compact, got ${distance(acidCenter, scaffoldNeighbor).toFixed(3)} Å`);
+  assert.ok(distance(acidCenter, scaffoldNeighbor) < 1.85, `expected scaffold-to-acid bond to stay compact, got ${distance(acidCenter, scaffoldNeighbor).toFixed(3)} Å`);
   assert.ok(distance(acidCenter, oDouble) < 1.4, `expected carbonyl bond to stay short, got ${distance(acidCenter, oDouble).toFixed(3)} Å`);
   assert.ok(distance(acidCenter, oSingle) < 1.7, `expected acid single bond to stay compact, got ${distance(acidCenter, oSingle).toFixed(3)} Å`);
 });

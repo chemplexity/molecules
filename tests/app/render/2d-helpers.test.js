@@ -466,4 +466,73 @@ describe('create2DRenderHelpers', () => {
     assert.ok(Math.abs(lines[1].x2 - expectedSecondary.x2) < 1e-6);
     assert.ok(Math.abs(lines[1].y2 - expectedSecondary.y2) < 1e-6);
   });
+
+  it('trims bond endpoints farther for subscripted NH2 labels so downward bonds clear the rendered text', () => {
+    const records = [];
+    const container = new FakeSelection(records);
+    const nitrogen = makeAtom('n1', 'N', 0, 0);
+    const carbon = makeAtom('c1', 'C', 0, 100);
+    nitrogen.getCharge = () => 1;
+    nitrogen._neighbors = [carbon];
+    carbon._neighbors = [nitrogen];
+    const mol = {
+      id: 'mol-ammonium-label',
+      atoms: new Map([
+        [nitrogen.id, nitrogen],
+        [carbon.id, carbon]
+      ]),
+      getBond() {
+        return null;
+      }
+    };
+    const helpers = create2DRenderHelpers({
+      d3: {
+        zoomIdentity: makeZoomIdentity(),
+        zoomTransform: () => ({
+          applyX: value => value,
+          applyY: value => value
+        })
+      },
+      svg: new FakeSelection([]),
+      zoom: {
+        transform: function transform() {}
+      },
+      plotEl: {
+        clientWidth: 600,
+        clientHeight: 400
+      },
+      state: {
+        getMol: () => mol,
+        getHCounts: () => new Map([[nitrogen.id, 2]]),
+        getCenterX: () => 0,
+        getCenterY: () => 0,
+        setDerivedState() {}
+      },
+      constants: {
+        scale: 60,
+        bondOffset2d: 7,
+        getFontSize: () => 14,
+        wedgeHalfWidth: 6,
+        wedgeDashes: 5
+      },
+      geometry: {
+        perpUnit(dx, dy) {
+          const len = Math.hypot(dx, dy) || 1;
+          return { nx: -dy / len, ny: dx / len };
+        },
+        shortenLine,
+        secondaryDir: () => 1
+      },
+      stereo: {
+        pickStereoMap: () => new Map()
+      }
+    });
+    const toSVGPt = atom => ({ x: atom.x, y: atom.y });
+
+    helpers.drawBond(container, { properties: { order: 1 } }, nitrogen, carbon, mol, toSVGPt, null);
+
+    const lines = extractLines(records);
+    assert.equal(lines.length, 1);
+    assert.ok(lines[0].y1 >= 12.4, `expected downward bond to clear the NH2 subscript descent, got ${lines[0].y1}`);
+  });
 });

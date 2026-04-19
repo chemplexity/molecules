@@ -7,7 +7,10 @@ import { parseINCHI } from '../../io/inchi.js';
 import { applyCoords } from './apply.js';
 import { generateCoords } from './api.js';
 import { getRingAtomIds } from './topology/ring-analysis.js';
-import { synthesizeHydrogenPosition } from './stereo/wedge-geometry.js';
+import {
+  DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE,
+  synthesizeHydrogenPosition
+} from './stereo/wedge-geometry.js';
 import {
   atomBBox,
   atomColor,
@@ -121,13 +124,15 @@ function projectHiddenStereoHydrogens(molecule, bondLength) {
     if (!parent.getChirality()) {
       continue;
     }
+    const bond = molecule.getBond(atom.id, parent.id);
     const knownPositions = parent
       .getNeighbors(molecule)
       .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null)
       .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
     const projectedPosition = synthesizeHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength * 0.75, {
       incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id),
-      preferCardinalAxes: true
+      preferCardinalAxes: true,
+      cardinalAxisSectorTolerance: bond?.properties?.display?.as ? DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE : undefined
     });
     projectedCoords.set(atom.id, projectedPosition);
   }

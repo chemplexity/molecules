@@ -14,7 +14,7 @@ import {
   DEG90,
   DEG120,
   DISCRETE_BRANCH_ANGLES,
-  STRICT_ACYCLIC_CONTINUATION_HETERO_ELEMENTS,
+  EXACT_SIMPLE_ACYCLIC_CONTINUATION_ELEMENTS,
   centerDistanceScore,
   isRingAnchor,
   neighborOrder,
@@ -345,9 +345,11 @@ function isTerminalMultipleBondHetero(layoutGraph, centerAtomId, bond) {
 
 /**
  * Returns whether a child is a single-bond exocyclic heavy substituent root on
- * a ring atom. These substituent roots can safely prefer the exact
- * ring-outward angle instead of snapping to the generic discrete branch
- * lattice when the outward direction is already clear.
+ * a ring atom that should preserve the exact ring-outward angle. This stays
+ * enabled for rigid or presentation-critical roots such as hetero atoms,
+ * carbonyl/nitrile carbons, and terminal alkyl leaves, but not for flexible
+ * alkyl-chain carbons where forcing the exact radial direction can distort the
+ * preferred chain zig-zag coming off a heteroaryl or small aromatic ring.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} anchorAtomId - Anchor atom ID.
  * @param {string|null} childAtomId - Candidate child atom ID.
@@ -374,22 +376,41 @@ export function isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId,
   if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
     return false;
   }
-  return true;
+  if (!anchorAtom.aromatic) {
+    return true;
+  }
+  if (childAtom.element !== 'C') {
+    return true;
+  }
+  if (childAtom.heavyDegree <= 1) {
+    return true;
+  }
+  for (const childBond of layoutGraph.bondsByAtomId.get(childAtomId) ?? []) {
+    if (!childBond || childBond === bond || childBond.kind !== 'covalent') {
+      continue;
+    }
+    if (!childBond.aromatic && (childBond.order ?? 1) >= 2) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
- * Returns whether a simple acyclic divalent hetero center should preserve the
- * exact preferred continuation angle for its remaining heavy child instead of
+ * Returns whether a simple acyclic divalent center should preserve the exact
+ * preferred continuation angle for its remaining heavy child instead of
  * letting nearby center-of-mass scoring cant the bond off that ideal slot.
- * This keeps esters and ethers from drifting away from their intended clean
- * 120-degree depiction when the exact continuation is already safe.
+ * This keeps safe off-grid 120-degree continuations exact for simple carbon
+ * and hetero linkers, and for divalent conjugated nitrogens such as amides,
+ * when an upstream ring or other precise placement already established the
+ * parent-bond direction.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} anchorAtomId - Anchor atom ID.
  * @param {string|null} parentAtomId - Already placed parent atom ID.
  * @param {string|null} childAtomId - Candidate child atom ID.
  * @returns {boolean} True when the anchor should honor the exact continuation.
  */
-export function isExactAcyclicHeteroContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId) {
+export function isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId) {
   if (!layoutGraph || !parentAtomId || !childAtomId) {
     return false;
   }
@@ -398,7 +419,56 @@ export function isExactAcyclicHeteroContinuationEligible(layoutGraph, anchorAtom
   }
 
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
-  if (!anchorAtom || anchorAtom.aromatic || anchorAtom.heavyDegree !== 2 || !STRICT_ACYCLIC_CONTINUATION_HETERO_ELEMENTS.has(anchorAtom.element)) {
+  if (
+    !anchorAtom
+    || anchorAtom.aromatic
+    || anchorAtom.heavyDegree !== 2
+  ) {
+    return false;
+  }
+
+  const isConjugatedTrigonalNeighbor = neighborAtomId => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtom.aromatic || neighborAtom.heavyDegree !== 3) {
+      return false;
+    }
+    let heavyVisibleBondCount = 0;
+    let nonAromaticMultipleBondCount = 0;
+    for (const bond of layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const otherAtomId = bond.a === neighborAtomId ? bond.b : bond.a;
+      const otherAtom = layoutGraph.atoms.get(otherAtomId);
+      if (!otherAtom || otherAtom.element === 'H') {
+        continue;
+      }
+      heavyVisibleBondCount++;
+      if (!bond.aromatic && (bond.order ?? 1) >= 2) {
+        nonAromaticMultipleBondCount++;
+      }
+    }
+    return heavyVisibleBondCount === 3 && nonAromaticMultipleBondCount === 1;
+  };
+
+  const exactEligibleElement =
+    EXACT_SIMPLE_ACYCLIC_CONTINUATION_ELEMENTS.has(anchorAtom.element)
+    || (
+      anchorAtom.element === 'N'
+      && (isConjugatedTrigonalNeighbor(parentAtomId) || isConjugatedTrigonalNeighbor(childAtomId))
+    );
+  if (!exactEligibleElement) {
+    return false;
+  }
+
+  const parentAtom = layoutGraph.atoms.get(parentAtomId);
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (
+    anchorAtom.element === 'O'
+    && parentAtom?.aromatic
+    && childAtom?.element === 'C'
+    && (childAtom.heavyDegree ?? 0) > 1
+  ) {
     return false;
   }
 
@@ -415,12 +485,33 @@ export function isExactAcyclicHeteroContinuationEligible(layoutGraph, anchorAtom
   return true;
 }
 
-function isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId) {
+export function isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId) {
   if (!layoutGraph || !childAtomId) {
     return false;
   }
   const descriptor = describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId);
   return Boolean(descriptor && descriptor.exocyclicNeighborIds.includes(childAtomId));
+}
+
+/**
+ * Returns whether a preferred continuation angle at a ring anchor should be
+ * promoted into the candidate set directly, rather than used only as a soft
+ * scoring preference against the discrete branch lattice.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string|null} childAtomId - Candidate child atom ID.
+ * @returns {boolean} True when the preferred angle should be tried directly.
+ */
+export function shouldPromotePreferredRingAngle(layoutGraph, anchorAtomId, childAtomId) {
+  if (!isRingAnchor(layoutGraph, anchorAtomId) || !childAtomId) {
+    return true;
+  }
+  const anchorAtom = layoutGraph?.atoms?.get(anchorAtomId);
+  if (anchorAtom && !anchorAtom.aromatic) {
+    return true;
+  }
+  return isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)
+    || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId);
 }
 
 /**
@@ -675,10 +766,27 @@ function candidateClearanceScore(anchorPosition, candidateAngle, bondLength, coo
   return Number.isFinite(minDistance) ? minDistance : 0;
 }
 
-function isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds) {
+function isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds, atomGrid = null) {
   const clearanceFloor = bondLength * BRANCH_CLEARANCE_FLOOR_FACTOR;
   const clearanceFloorSq = clearanceFloor * clearanceFloor;
   const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, bondLength));
+  if (atomGrid) {
+    for (const atomId of atomGrid.queryRadius(candidatePosition, clearanceFloor)) {
+      if (excludedAtomIds.has(atomId)) {
+        continue;
+      }
+      const position = coords.get(atomId);
+      if (!position) {
+        continue;
+      }
+      const dx = candidatePosition.x - position.x;
+      const dy = candidatePosition.y - position.y;
+      if (dx * dx + dy * dy < clearanceFloorSq) {
+        return false;
+      }
+    }
+    return true;
+  }
   for (const [atomId, position] of coords) {
     if (excludedAtomIds.has(atomId)) {
       continue;
@@ -797,7 +905,7 @@ export function pickBestCandidateAngle(candidates, bondLength, preferClearance =
  * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
  * @returns {Array<{angle: number, angleScore: number, clearanceScore: number|null, centerDistanceScore: number, insideRingCount: number, minSeparation: number, isSafe: boolean}>} Scored candidates.
  */
-export function evaluateAngleCandidates(candidateAngles, occupiedAngles, preferredAngles, anchorPosition, bondLength, coords, excludedAtomIds, placementState, ringPolygons = []) {
+export function evaluateAngleCandidates(candidateAngles, occupiedAngles, preferredAngles, anchorPosition, bondLength, coords, excludedAtomIds, placementState, ringPolygons = [], atomGrid = null) {
   return candidateAngles.map(candidateAngle => {
     const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, bondLength));
     return {
@@ -807,7 +915,7 @@ export function evaluateAngleCandidates(candidateAngles, occupiedAngles, preferr
       clearanceScore: null,
       centerDistanceScore: centerDistanceScore(placementState, candidatePosition),
       insideRingCount: countPointInPolygons(ringPolygons, candidatePosition),
-      isSafe: isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds)
+      isSafe: isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds, atomGrid)
     };
   });
 }
@@ -824,6 +932,7 @@ export function evaluateAngleCandidates(candidateAngles, occupiedAngles, preferr
  * @param {{sumX: number, sumY: number, count: number}} placementState - Running placement CoM state.
  * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
  * @param {boolean} [allowFinePreferredAngles] - Whether to add finer offsets around preferred angles.
+ * @param {boolean} [allowDirectPreferredAngle] - Whether to try the preferred angle itself as a direct candidate.
  * @returns {number} Chosen continuation angle in radians.
  */
 export function chooseContinuationAngle(
@@ -836,14 +945,16 @@ export function chooseContinuationAngle(
   excludedAtomIds,
   placementState,
   ringPolygons = [],
-  allowFinePreferredAngles = false
+  allowFinePreferredAngles = false,
+  allowDirectPreferredAngle = true,
+  atomGrid = null
 ) {
   const clearanceContext = {
     anchorPosition,
     coords,
     excludedAtomIds
   };
-  const preferredCandidateAngles = buildPreferredCandidateAngles(preferredAngles, allowFinePreferredAngles);
+  const preferredCandidateAngles = allowDirectPreferredAngle ? buildPreferredCandidateAngles(preferredAngles, allowFinePreferredAngles) : [];
   if (preferredCandidateAngles.length > 0) {
     const preferredCandidates = evaluateAngleCandidates(
       preferredCandidateAngles,
@@ -854,7 +965,8 @@ export function chooseContinuationAngle(
       coords,
       excludedAtomIds,
       placementState,
-      ringPolygons
+      ringPolygons,
+      atomGrid
     );
     const safePreferredCandidates = preferredCandidates.filter(candidate => candidate.isSafe !== false);
     let bestPreferredInsideRingCount = Number.POSITIVE_INFINITY;
@@ -884,7 +996,8 @@ export function chooseContinuationAngle(
       coords,
       excludedAtomIds,
       placementState,
-      ringPolygons
+      ringPolygons,
+      atomGrid
     ),
     bondLength,
     true,
@@ -908,7 +1021,7 @@ export function chooseContinuationAngle(
  * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
  * @returns {number|null} Safe exact preferred angle, or `null` when it should not be forced.
  */
-export function chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, excludedAtomIds, placementState, ringPolygons = []) {
+export function chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, excludedAtomIds, placementState, ringPolygons = [], atomGrid = null) {
   const exactPreferredAngles = mergeCandidateAngles([], preferredAngles.filter(Number.isFinite));
   if (exactPreferredAngles.length === 0) {
     return null;
@@ -928,7 +1041,8 @@ export function chooseExactPreferredAngle(anchorPosition, bondLength, coords, oc
     coords,
     excludedAtomIds,
     placementState,
-    ringPolygons
+    ringPolygons,
+    atomGrid
   );
   const safeExactCandidates = exactCandidates.filter(candidate => candidate.isSafe !== false);
   if (safeExactCandidates.length === 0) {
@@ -988,6 +1102,12 @@ function crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentP
   const angleSets = [];
 
   if (unplacedNeighborIds.length === 3 && unplacedSingleNeighborIds.length === 1 && unplacedMultipleNeighborIds.length === 2 && placedSingleNeighborIds.length === 1) {
+    const singleAxisAngle = angleOf(sub(coords.get(placedSingleNeighborIds[0]), anchorPosition));
+    const oppositeSingleAngle = singleAxisAngle + Math.PI;
+    angleSets.push([oppositeSingleAngle, oppositeSingleAngle + DEG90, oppositeSingleAngle - DEG90]);
+  }
+
+  if (unplacedNeighborIds.length === 3 && unplacedSingleNeighborIds.length === 2 && unplacedMultipleNeighborIds.length === 1 && placedSingleNeighborIds.length === 1) {
     const singleAxisAngle = angleOf(sub(coords.get(placedSingleNeighborIds[0]), anchorPosition));
     const oppositeSingleAngle = singleAxisAngle + Math.PI;
     angleSets.push([oppositeSingleAngle, oppositeSingleAngle + DEG90, oppositeSingleAngle - DEG90]);
@@ -1410,6 +1530,7 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
   const occupiedAngles = occupiedNeighborAngles(adjacency, coords, anchorAtomId, atomIdsToPlace);
   if (attachedAtomId) {
     const allowFinePreferredAngles = isRingAnchor(layoutGraph, anchorAtomId);
+    const allowDirectPreferredAngle = shouldPromotePreferredRingAngle(layoutGraph, anchorAtomId, attachedAtomId);
     const placedNeighborIdsList = neighborOrder(
       (adjacency.get(anchorAtomId) ?? []).filter(neighborAtomId => coords.has(neighborAtomId) && atomIdsToPlace.has(neighborAtomId)),
       layoutGraph?.canonicalAtomRank ?? new Map()
@@ -1423,7 +1544,7 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
     if (
       isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, attachedAtomId)
       || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, attachedAtomId)
-      || isExactAcyclicHeteroContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, attachedAtomId)
+      || isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, attachedAtomId)
     ) {
       const exactPreferredAngle = chooseExactPreferredAngle(
         coords.get(anchorAtomId),
@@ -1439,7 +1560,9 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
         return exactPreferredAngle;
       }
     }
-    const preferredContinuationAngle = choosePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles, allowFinePreferredAngles);
+    const preferredContinuationAngle = allowDirectPreferredAngle
+      ? choosePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles, allowFinePreferredAngles)
+      : null;
     if (preferredContinuationAngle != null && hasSafePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles, allowFinePreferredAngles)) {
       return preferredContinuationAngle;
     }

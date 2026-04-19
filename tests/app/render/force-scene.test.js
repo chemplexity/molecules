@@ -158,7 +158,7 @@ function makeRenderer({
   hasHighlights = false,
   hasSelection = false,
   preserveView = false,
-  generateAndRefine2dCoords = () => {},
+  generate2dCoords = () => {},
   alignReaction2dProductOrientation = () => {}
 } = {}) {
   const records = [];
@@ -264,8 +264,8 @@ function makeRenderer({
       renderReactionPreviewArrowForce: () => {
         records.push(['renderReactionPreviewArrowForce']);
       },
-      generateAndRefine2dCoords: mol => {
-        generateAndRefine2dCoords(mol);
+      generate2dCoords: mol => {
+        generate2dCoords(mol);
       },
       alignReaction2dProductOrientation: mol => {
         alignReaction2dProductOrientation(mol);
@@ -461,7 +461,7 @@ describe('createForceSceneRenderer', () => {
   it('seeds missing projected organometallic display hints on the first force render', () => {
     const molecule = makeOctahedralForceSeedMolecule();
     const { renderer } = makeRenderer({
-      generateAndRefine2dCoords: seededMol => {
+      generate2dCoords: seededMol => {
         seededMol.bonds.get('b1').properties.display = { as: 'dash', centerId: 'Co1' };
         seededMol.bonds.get('b2').properties.display = { as: 'wedge', centerId: 'Co1' };
         seededMol.bonds.get('b4').properties.display = { as: 'wedge', centerId: 'Co1' };
@@ -483,7 +483,7 @@ describe('createForceSceneRenderer', () => {
     const molecule = makeOctahedralForceSeedMolecule();
     molecule.bonds.get('b1').properties.display = { as: 'wedge', centerId: 'Co1' };
     const { renderer } = makeRenderer({
-      generateAndRefine2dCoords: seededMol => {
+      generate2dCoords: seededMol => {
         seededMol.bonds.get('b1').properties.display = { as: 'dash', centerId: 'Co1' };
         seededMol.bonds.get('b2').properties.display = { as: 'wedge', centerId: 'Co1' };
         seededMol.bonds.get('b4').properties.display = { as: 'wedge', centerId: 'Co1' };
@@ -502,7 +502,7 @@ describe('createForceSceneRenderer', () => {
   it('seeds projected organometallic display hints for real parsed bonds that expose kind via properties', () => {
     const molecule = parseSMILES('[Co+3](N)(N)(N)(N)(N)N');
     const { renderer } = makeRenderer({
-      generateAndRefine2dCoords: seededMol => {
+      generate2dCoords: seededMol => {
         const coordinationBonds = [...seededMol.bonds.values()].filter(bond => bond.atoms.includes('Co1') && !bond.atoms.some(atomId => atomId.startsWith('H')));
         coordinationBonds[0].properties.display = { as: 'dash', centerId: 'Co1' };
         coordinationBonds[1].properties.display = { as: 'wedge', centerId: 'Co1' };
@@ -523,7 +523,7 @@ describe('createForceSceneRenderer', () => {
   it('seeds projected trigonal-bipyramidal display hints for five-coordinate iron centers in force mode', () => {
     const molecule = parseSMILES('[Fe](Cl)(Cl)(Cl)(Cl)Cl');
     const { renderer } = makeRenderer({
-      generateAndRefine2dCoords: seededMol => {
+      generate2dCoords: seededMol => {
         const coordinationBonds = [...seededMol.bonds.values()].filter(bond => bond.atoms.includes('Fe1') && !bond.atoms.some(atomId => atomId.startsWith('H')));
         coordinationBonds[3].properties.display = { as: 'dash', centerId: 'Fe1' };
         coordinationBonds[4].properties.display = { as: 'wedge', centerId: 'Fe1' };
@@ -542,7 +542,7 @@ describe('createForceSceneRenderer', () => {
   it('seeds projected square-pyramidal display hints for five-coordinate rhodium centers in force mode', () => {
     const molecule = parseSMILES('[Rh](Cl)(Cl)(Cl)(Cl)Cl');
     const { renderer } = makeRenderer({
-      generateAndRefine2dCoords: seededMol => {
+      generate2dCoords: seededMol => {
         const coordinationBonds = [...seededMol.bonds.values()].filter(bond => bond.atoms.includes('Rh1') && !bond.atoms.some(atomId => atomId.startsWith('H')));
         coordinationBonds[1].properties.display = { as: 'dash', centerId: 'Rh1' };
         coordinationBonds[2].properties.display = { as: 'wedge', centerId: 'Rh1' };

@@ -1,20 +1,10 @@
 /** @module geometry/atom-grid */
 
-function cellKey(xIndex, yIndex) {
-  return `${xIndex},${yIndex}`;
-}
-
-/**
- * Uniform spatial grid for fast atom proximity queries.
- * @param {number} cellSize - Grid cell side length.
- * @returns {number} Normalized positive cell size.
- */
-function normalizeCellSize(cellSize) {
-  return Number.isFinite(cellSize) && cellSize > 0 ? cellSize : 1;
-}
-
 /**
  * Uniform spatial grid for fast proximity queries on placed atom coordinates.
+ *
+ * Cells are indexed by integer (xIndex, yIndex) pairs stored in a two-level
+ * Map<number, Map<number, Set<string>>> to avoid string key allocations.
  */
 export class AtomGrid {
   /**
@@ -22,8 +12,8 @@ export class AtomGrid {
    * @param {number} cellSize - Grid cell side length.
    */
   constructor(cellSize) {
-    this.cellSize = normalizeCellSize(cellSize);
-    this.cells = new Map();
+    this.cellSize = Number.isFinite(cellSize) && cellSize > 0 ? cellSize : 1;
+    this.cells = new Map(); // Map<xIndex: number, Map<yIndex: number, Set<atomId: string>>>
   }
 
   /**
@@ -45,12 +35,19 @@ export class AtomGrid {
    * @returns {void}
    */
   insert(atomId, position) {
-    const { xIndex, yIndex } = this.cellIndices(position);
-    const key = cellKey(xIndex, yIndex);
-    if (!this.cells.has(key)) {
-      this.cells.set(key, new Set());
+    const xIndex = Math.floor(position.x / this.cellSize);
+    const yIndex = Math.floor(position.y / this.cellSize);
+    let col = this.cells.get(xIndex);
+    if (!col) {
+      col = new Map();
+      this.cells.set(xIndex, col);
     }
-    this.cells.get(key).add(atomId);
+    let cell = col.get(yIndex);
+    if (!cell) {
+      cell = new Set();
+      col.set(yIndex, cell);
+    }
+    cell.add(atomId);
   }
 
   /**
@@ -60,31 +57,43 @@ export class AtomGrid {
    * @returns {void}
    */
   remove(atomId, position) {
-    const { xIndex, yIndex } = this.cellIndices(position);
-    const key = cellKey(xIndex, yIndex);
-    const cell = this.cells.get(key);
+    const xIndex = Math.floor(position.x / this.cellSize);
+    const yIndex = Math.floor(position.y / this.cellSize);
+    const col = this.cells.get(xIndex);
+    if (!col) {
+      return;
+    }
+    const cell = col.get(yIndex);
     if (!cell) {
       return;
     }
     cell.delete(atomId);
     if (cell.size === 0) {
-      this.cells.delete(key);
+      col.delete(yIndex);
+      if (col.size === 0) {
+        this.cells.delete(xIndex);
+      }
     }
   }
 
   /**
-   * Returns atom IDs within the queried radius neighborhood.
+   * Returns atom IDs within the queried radius neighborhood as a Set.
    * @param {{x: number, y: number}} position - Query position.
    * @param {number} radius - Query radius.
-   * @returns {string[]} Candidate atom IDs near the position.
+   * @returns {Set<string>} Candidate atom IDs near the position.
    */
   queryRadius(position, radius) {
-    const { xIndex, yIndex } = this.cellIndices(position);
+    const xIndex = Math.floor(position.x / this.cellSize);
+    const yIndex = Math.floor(position.y / this.cellSize);
     const cellRadius = Math.max(0, Math.ceil(radius / this.cellSize));
     const atomIds = new Set();
     for (let dx = -cellRadius; dx <= cellRadius; dx++) {
+      const col = this.cells.get(xIndex + dx);
+      if (!col) {
+        continue;
+      }
       for (let dy = -cellRadius; dy <= cellRadius; dy++) {
-        const cell = this.cells.get(cellKey(xIndex + dx, yIndex + dy));
+        const cell = col.get(yIndex + dy);
         if (!cell) {
           continue;
         }
@@ -93,7 +102,7 @@ export class AtomGrid {
         }
       }
     }
-    return [...atomIds];
+    return atomIds;
   }
 
   /**
@@ -102,8 +111,12 @@ export class AtomGrid {
    */
   clone() {
     const clone = new AtomGrid(this.cellSize);
-    for (const [key, atomIds] of this.cells) {
-      clone.cells.set(key, new Set(atomIds));
+    for (const [xIndex, col] of this.cells) {
+      const newCol = new Map();
+      for (const [yIndex, cell] of col) {
+        newCol.set(yIndex, new Set(cell));
+      }
+      clone.cells.set(xIndex, newCol);
     }
     return clone;
   }

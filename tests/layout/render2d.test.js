@@ -73,3 +73,28 @@ test('renderMolSVG does not mutate hidden stereo hydrogen coordinates while rend
   assert.deepEqual(afterSecondRender, before);
   assert.equal(secondRender.svgContent, firstRender.svgContent);
 });
+
+test('renderMolSVG trims bonds farther from subscripted NH2 labels', () => {
+  const mol = parseSMILES('C[NH2+]');
+  for (const atom of mol.atoms.values()) {
+    if (atom.name === 'N') {
+      atom.x = 0;
+      atom.y = 0;
+    }
+    if (atom.name === 'C') {
+      atom.x = 0;
+      atom.y = -1.5;
+    }
+  }
+
+  const rendered = renderMolSVG(mol, { skipLayout: true });
+  const lineMatch = rendered.svgContent.match(/<line x1="([0-9.-]+)" y1="([0-9.-]+)" x2="([0-9.-]+)" y2="([0-9.-]+)"/);
+  const textMatch = rendered.svgContent.match(/<text x="([0-9.-]+)" y="([0-9.-]+)"[^>]*><tspan>NH<\/tspan><tspan[^>]*>2<\/tspan><\/text>/);
+
+  assert.ok(lineMatch, 'expected rendered bond line');
+  assert.ok(textMatch, 'expected rendered NH2 label');
+  assert.ok(
+    Number.parseFloat(lineMatch[4]) - Number.parseFloat(textMatch[2]) >= 10.5,
+    `expected bond endpoint to clear the subscripted NH2 label, got endpoint y ${lineMatch[4]} vs text y ${textMatch[2]}`
+  );
+});

@@ -2,6 +2,13 @@
 
 ## 2026-04-18
 
+- Penalize omitted-h three-heavy saturated carbon distortions so cleanup keeps exact 120-degree side-branch geometry instead of flipping to overlap-only poses
+- Keep lone vinylic single-bond substituent roots on the exact trigonal slot during acyclic backbone normalization
+- Let directly attached mixed-family ring blocks honor exact 120-degree continuation off conjugated divalent nitrogens so amide-linked aryl attachments keep clean local amide geometry
+- Keep mixed-family direct-attached aryl candidates with cleaner local outward-readability and presentation during prescoring so exact aromatic exit angles survive pruning
+- Keep terminal phosphonate and similar hypervalent hetero leaves off the acyclic backbone so chains can zig-zag cleanly into the final P/S center
+- Reserve extra label height for subscripted atom labels so bonds stop clipping visible `NH2`/`CH3` text
+- Keep safe off-grid divalent carbon and hetero continuations on their exact zig-zag angle instead of snapping them to the branch lattice
 - Fix SMILES parser misattributing the second =O of `NS2(=O)=O`-style sultam fragments to N instead of S, caused by ring-closure tokens sharing a character position with their atom token blocking the atom lookup in `previousAtomSkipBranches`
 - Let directly attached mixed-family ring blocks keep exact parent-ring outward exits and exact three-, four-, and five-member ring-edge continuation slots before falling back to coarser rescue rotations
 - Add a local zigzag-continuation preference for simple alkyl tails on mixed/ring scaffolds so pendant alkyl chains stop curling back toward the already placed scaffold context

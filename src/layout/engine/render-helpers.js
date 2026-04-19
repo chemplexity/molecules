@@ -203,7 +203,8 @@ export function labelHalfH(label, fontSize) {
   if (!label) {
     return 0;
   }
-  return fontSize * 0.58 + 2;
+  const subscriptDescent = /\d/.test(label) ? fontSize * 0.18 : 0;
+  return fontSize * 0.58 + 2 + subscriptDescent;
 }
 
 /**
@@ -339,26 +340,6 @@ export function ringLabelOffset(atom, molecule, pointForAtom, label, fontSize) {
     }
   }
 
-  const incidentRingCentroids = getRingAtomIds(molecule)
-    .filter(ringAtomIds => ringAtomIds.includes(atom.id))
-    .map(ringAtomIds =>
-      ringAtomIds
-        .map(atomId => molecule.atoms.get(atomId))
-        .filter(Boolean)
-        .map(ringAtom => pointForAtom(ringAtom))
-        .filter(Boolean)
-    )
-    .filter(points => points.length >= 3)
-    .map(points => ({
-      x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
-      y: points.reduce((sum, point) => sum + point.y, 0) / points.length
-    }));
-
-  if (incidentRingCentroids.length === 0) {
-    return { dx, dy };
-  }
-
-  const atomPoint = pointForAtom(atom);
   const ringPolygons = getRingAtomIds(molecule)
     .filter(ringAtomIds => ringAtomIds.includes(atom.id))
     .map(ringAtomIds =>
@@ -369,6 +350,16 @@ export function ringLabelOffset(atom, molecule, pointForAtom, label, fontSize) {
         .filter(Boolean)
     )
     .filter(points => points.length >= 3);
+  const incidentRingCentroids = ringPolygons.map(points => ({
+    x: points.reduce((sum, point) => sum + point.x, 0) / points.length,
+    y: points.reduce((sum, point) => sum + point.y, 0) / points.length
+  }));
+
+  if (incidentRingCentroids.length === 0) {
+    return { dx, dy };
+  }
+
+  const atomPoint = pointForAtom(atom);
   const centroid = {
     x: incidentRingCentroids.reduce((sum, point) => sum + point.x, 0) / incidentRingCentroids.length,
     y: incidentRingCentroids.reduce((sum, point) => sum + point.y, 0) / incidentRingCentroids.length

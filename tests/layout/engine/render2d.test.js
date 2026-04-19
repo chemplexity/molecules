@@ -125,4 +125,28 @@ describe('layout/engine/render2d', () => {
       assert.equal(hasEndpointAtCenter, false, `expected no bond endpoint to terminate at visible N label center ${tx},${ty}`);
     }
   });
+
+  it('trims bonds farther from subscripted NH2 labels', () => {
+    const molecule = parseSMILES('C[NH2+]');
+    const coords = new Map();
+    for (const atom of molecule.atoms.values()) {
+      if (atom.name === 'N') {
+        coords.set(atom.id, { x: 0, y: 0 });
+      }
+      if (atom.name === 'C') {
+        coords.set(atom.id, { x: 0, y: -1.5 });
+      }
+    }
+
+    const rendered = renderMolSVG(molecule, { coords });
+    const lineMatch = rendered.svgContent.match(/<line x1="([0-9.-]+)" y1="([0-9.-]+)" x2="([0-9.-]+)" y2="([0-9.-]+)"/);
+    const textMatch = rendered.svgContent.match(/<text x="([0-9.-]+)" y="([0-9.-]+)"[^>]*><tspan>NH<\/tspan><tspan[^>]*>2<\/tspan><\/text>/);
+
+    assert.ok(lineMatch, 'expected rendered bond line');
+    assert.ok(textMatch, 'expected rendered NH2 label');
+    assert.ok(
+      Number.parseFloat(lineMatch[4]) - Number.parseFloat(textMatch[2]) >= 10.5,
+      `expected bond endpoint to clear the subscripted NH2 label, got endpoint y ${lineMatch[4]} vs text y ${textMatch[2]}`
+    );
+  });
 });

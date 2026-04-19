@@ -6,6 +6,7 @@ import { alignCoordsToFixed } from '../geometry/transforms.js';
 import { transformAttachedBlock } from '../placement/linkers.js';
 import { auditLayout } from '../audit/audit.js';
 import { measureRingSubstituentPresentationPenalty } from '../cleanup/ring-substituent-tidy.js';
+import { isExactSimpleAcyclicContinuationEligible } from '../placement/branch-placement/angle-selection.js';
 import { assignBondValidationClass, resolvePlacementValidationClass } from '../placement/bond-validation.js';
 import { chooseAttachmentAngle, measureSmallRingExteriorGapSpreadPenalty, placeRemainingBranches, smallRingExteriorTargetAngles } from '../placement/branch-placement.js';
 import { findSevereOverlaps, measureFocusedPlacementCost, measureLayoutCost, measureRingSubstituentReadability } from '../audit/invariants.js';
@@ -44,6 +45,8 @@ const DIRECT_ATTACHMENT_RING_ROTATION_OFFSETS = [
   0,
   Math.PI / 3,
   -Math.PI / 3,
+  (2 * Math.PI) / 3,
+  -(2 * Math.PI) / 3,
   Math.PI
 ];
 const DIRECT_ATTACHMENT_MIN_JUNCTION_GAP = Math.PI / 3;
@@ -1112,6 +1115,53 @@ function measureDirectAttachmentParentOutwardPenalty(layoutGraph, coords, candid
 }
 
 /**
+ * Penalizes directly attached ring candidates that pull a precise divalent
+ * linker off its ideal 120-degree continuation. This is the non-ring analogue
+ * of the ring-outward parent penalty above: amides and similar conjugated
+ * divalent linkers should keep their attached ring close to the exact
+ * continuation slot when an overlap-free pose exists.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate attachment metadata.
+ * @returns {number} Exact-continuation penalty.
+ */
+function measureDirectAttachmentExactContinuationPenalty(layoutGraph, coords, candidateMeta = null) {
+  const parentAtomId = candidateMeta?.parentAtomId ?? null;
+  const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
+  if (!parentAtomId || !attachmentAtomId || !coords.has(parentAtomId) || !coords.has(attachmentAtomId)) {
+    return 0;
+  }
+
+  const placedHeavyNeighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(parentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === parentAtomId ? bond.b : bond.a;
+    if (neighborAtomId === attachmentAtomId) {
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    placedHeavyNeighborIds.push(neighborAtomId);
+  }
+  if (placedHeavyNeighborIds.length !== 1) {
+    return 0;
+  }
+
+  const continuationParentAtomId = placedHeavyNeighborIds[0];
+  if (!isExactSimpleAcyclicContinuationEligible(layoutGraph, parentAtomId, continuationParentAtomId, attachmentAtomId)) {
+    return 0;
+  }
+
+  const parentAngle = angleOf(sub(coords.get(continuationParentAtomId), coords.get(parentAtomId)));
+  const attachmentAngle = angleOf(sub(coords.get(attachmentAtomId), coords.get(parentAtomId)));
+  return (angularDifference(parentAngle, attachmentAngle) - ((2 * Math.PI) / 3)) ** 2;
+}
+
+/**
  * Penalizes directly attached ring candidates that squeeze the new attachment
  * bond into a pinched gap around a crowded ring anchor. When four heavy bonds
  * meet at a ring junction, the directly attached ring should still preserve a
@@ -1181,7 +1231,7 @@ function measureDirectAttachmentJunctionCrowdingPenalty(layoutGraph, coords, can
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
  * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate metadata for local junction tie-breaks.
- * @returns {{layoutCost: number|null, totalCost: number|null, overlapCount: number, presentationPenalty: number, idealLeafPresentationPenalty: number, parentOutwardPenalty: number, attachmentExteriorPenalty: number, junctionCrowdingPenalty: number, smallRingExteriorPenalty: number, changedAtomIds: string[], readability: {failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}}} Candidate layout score.
+ * @returns {{layoutCost: number|null, totalCost: number|null, overlapCount: number, presentationPenalty: number, idealLeafPresentationPenalty: number, parentOutwardPenalty: number, exactContinuationPenalty: number, attachmentExteriorPenalty: number, junctionCrowdingPenalty: number, smallRingExteriorPenalty: number, changedAtomIds: string[], readability: {failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}}} Candidate layout score.
  */
 function scoreAttachedBlockOrientation(
   adjacency,
@@ -1211,6 +1261,7 @@ function scoreAttachedBlockOrientation(
   });
   const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
   const parentOutwardPenalty = measureDirectAttachmentParentOutwardPenalty(layoutGraph, candidateCoords, candidateMeta);
+  const exactContinuationPenalty = measureDirectAttachmentExactContinuationPenalty(layoutGraph, candidateCoords, candidateMeta);
   const attachmentExteriorPenalty = measureDirectAttachmentExteriorContinuationPenalty(layoutGraph, candidateCoords, candidateMeta);
   const junctionCrowdingPenalty = measureDirectAttachmentJunctionCrowdingPenalty(layoutGraph, candidateCoords, candidateMeta);
   const smallRingExteriorPenalty = [...scoringFocusAtomIds].reduce(
@@ -1230,6 +1281,7 @@ function scoreAttachedBlockOrientation(
     totalCost: null,
     overlapCount,
     parentOutwardPenalty,
+    exactContinuationPenalty,
     attachmentExteriorPenalty,
     junctionCrowdingPenalty,
     presentationPenalty: (readability.totalOutwardDeviation ?? 0) + smallRingExteriorPenalty + idealLeafPresentationPenalty,
@@ -1274,7 +1326,7 @@ function ensureAttachedBlockLayoutCost(candidateScore, candidateCoords, layoutGr
  * @param {number} bondLength - Target bond length.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
- * @returns {{transformedCoords: Map<string, {x: number, y: number}>, score: {layoutCost: number|null, totalCost: number|null, overlapCount: number, presentationPenalty: number, readability: {failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}}, meta?: object}|null} Best scored candidate.
+ * @returns {{transformedCoords: Map<string, {x: number, y: number}>, score: {layoutCost: number|null, totalCost: number|null, overlapCount: number, presentationPenalty: number, exactContinuationPenalty: number, readability: {failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}}, meta?: object}|null} Best scored candidate.
  */
 function pickBestAttachedBlockOrientation(
   candidates,
@@ -1328,6 +1380,16 @@ function pickBestAttachedBlockOrientation(
       && candidateScore.overlapCount === bestScore.overlapCount
       && candidateScore.readability.failingSubstituentCount === bestScore.readability.failingSubstituentCount
       && Math.abs(candidateScore.parentOutwardPenalty - bestScore.parentOutwardPenalty) <= IMPROVEMENT_EPSILON
+      && Math.abs(candidateScore.exactContinuationPenalty - bestScore.exactContinuationPenalty) > IMPROVEMENT_EPSILON
+    ) {
+      shouldReplaceBestCandidate = candidateScore.exactContinuationPenalty < bestScore.exactContinuationPenalty;
+    }
+    if (
+      !shouldReplaceBestCandidate
+      && candidateScore.overlapCount === bestScore.overlapCount
+      && candidateScore.readability.failingSubstituentCount === bestScore.readability.failingSubstituentCount
+      && Math.abs(candidateScore.parentOutwardPenalty - bestScore.parentOutwardPenalty) <= IMPROVEMENT_EPSILON
+      && Math.abs(candidateScore.exactContinuationPenalty - bestScore.exactContinuationPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.attachmentExteriorPenalty - bestScore.attachmentExteriorPenalty) > IMPROVEMENT_EPSILON
     ) {
       shouldReplaceBestCandidate = candidateScore.attachmentExteriorPenalty < bestScore.attachmentExteriorPenalty;
@@ -1337,6 +1399,7 @@ function pickBestAttachedBlockOrientation(
       && candidateScore.overlapCount === bestScore.overlapCount
       && candidateScore.readability.failingSubstituentCount === bestScore.readability.failingSubstituentCount
       && Math.abs(candidateScore.parentOutwardPenalty - bestScore.parentOutwardPenalty) <= IMPROVEMENT_EPSILON
+      && Math.abs(candidateScore.exactContinuationPenalty - bestScore.exactContinuationPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.attachmentExteriorPenalty - bestScore.attachmentExteriorPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.junctionCrowdingPenalty - bestScore.junctionCrowdingPenalty) > IMPROVEMENT_EPSILON
     ) {
@@ -1347,6 +1410,7 @@ function pickBestAttachedBlockOrientation(
       && candidateScore.overlapCount === bestScore.overlapCount
       && candidateScore.readability.failingSubstituentCount === bestScore.readability.failingSubstituentCount
       && Math.abs(candidateScore.parentOutwardPenalty - bestScore.parentOutwardPenalty) <= IMPROVEMENT_EPSILON
+      && Math.abs(candidateScore.exactContinuationPenalty - bestScore.exactContinuationPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.attachmentExteriorPenalty - bestScore.attachmentExteriorPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.junctionCrowdingPenalty - bestScore.junctionCrowdingPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.smallRingExteriorPenalty - bestScore.smallRingExteriorPenalty) > IMPROVEMENT_EPSILON
@@ -1358,6 +1422,7 @@ function pickBestAttachedBlockOrientation(
       && candidateScore.overlapCount === bestScore.overlapCount
       && candidateScore.readability.failingSubstituentCount === bestScore.readability.failingSubstituentCount
       && Math.abs(candidateScore.parentOutwardPenalty - bestScore.parentOutwardPenalty) <= IMPROVEMENT_EPSILON
+      && Math.abs(candidateScore.exactContinuationPenalty - bestScore.exactContinuationPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.attachmentExteriorPenalty - bestScore.attachmentExteriorPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.junctionCrowdingPenalty - bestScore.junctionCrowdingPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.smallRingExteriorPenalty - bestScore.smallRingExteriorPenalty) <= IMPROVEMENT_EPSILON
@@ -1370,6 +1435,7 @@ function pickBestAttachedBlockOrientation(
       && candidateScore.overlapCount === bestScore.overlapCount
       && candidateScore.readability.failingSubstituentCount === bestScore.readability.failingSubstituentCount
       && Math.abs(candidateScore.parentOutwardPenalty - bestScore.parentOutwardPenalty) <= IMPROVEMENT_EPSILON
+      && Math.abs(candidateScore.exactContinuationPenalty - bestScore.exactContinuationPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.attachmentExteriorPenalty - bestScore.attachmentExteriorPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.junctionCrowdingPenalty - bestScore.junctionCrowdingPenalty) <= IMPROVEMENT_EPSILON
       && Math.abs(candidateScore.smallRingExteriorPenalty - bestScore.smallRingExteriorPenalty) <= IMPROVEMENT_EPSILON
@@ -1405,22 +1471,38 @@ function pickBestAttachedBlockOrientation(
 
 /**
  * Builds a cheap local prescore for one attached-block orientation before the
- * more expensive full branch-placement scoring runs.
+ * more expensive full branch-placement scoring runs. This prescore still keeps
+ * local ring-substituent readability in view so exact aromatic/root exits are
+ * not pruned away just because a slightly worse-presented pose has a tighter
+ * bounding box.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
  * @param {Map<string, {x: number, y: number}>} transformedCoords - Candidate attached-block coordinates.
  * @param {number} bondLength - Target bond length.
  * @param {object} layoutGraph - Layout graph shell.
- * @returns {{coords: Map<string, {x: number, y: number}>, overlapCount: number, cost: number}} Prescored candidate snapshot.
+ * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate attachment metadata.
+ * @returns {{coords: Map<string, {x: number, y: number}>, overlapCount: number, failingSubstituentCount: number, exactContinuationPenalty: number, presentationPenalty: number, cost: number}} Prescored candidate snapshot.
  */
-function preScoreAttachedBlockOrientation(coords, transformedCoords, bondLength, layoutGraph) {
+function preScoreAttachedBlockOrientation(coords, transformedCoords, bondLength, layoutGraph, candidateMeta = null) {
   const candidateCoords = new Map(coords);
   for (const [atomId, position] of transformedCoords) {
     candidateCoords.set(atomId, position);
   }
+  const changedAtomIds = [...candidateCoords.keys()].filter(atomId => !coords.has(atomId));
+  const scoringFocusAtomIds = expandScoringFocusAtomIds(layoutGraph, changedAtomIds);
+  const readability = measureRingSubstituentReadability(layoutGraph, candidateCoords, {
+    focusAtomIds: scoringFocusAtomIds
+  });
   const bounds = computeBounds(candidateCoords, [...candidateCoords.keys()]);
   return {
     coords: candidateCoords,
     overlapCount: findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length,
+    failingSubstituentCount: readability.failingSubstituentCount,
+    exactContinuationPenalty: measureDirectAttachmentExactContinuationPenalty(layoutGraph, candidateCoords, candidateMeta),
+    presentationPenalty:
+      (readability.totalOutwardDeviation ?? 0)
+      + measureRingSubstituentPresentationPenalty(layoutGraph, candidateCoords, {
+        focusAtomIds: scoringFocusAtomIds
+      }),
     cost: bounds ? bounds.width + bounds.height : 0
   };
 }
@@ -1440,11 +1522,20 @@ function selectAttachedBlockCandidates(candidates, coords, bondLength, layoutGra
 
   const scoredCandidates = candidates.map(candidate => ({
     ...candidate,
-    ...preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph)
+    ...preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null)
   }));
   scoredCandidates.sort((firstCandidate, secondCandidate) => {
     if (firstCandidate.overlapCount !== secondCandidate.overlapCount) {
       return firstCandidate.overlapCount - secondCandidate.overlapCount;
+    }
+    if (firstCandidate.failingSubstituentCount !== secondCandidate.failingSubstituentCount) {
+      return firstCandidate.failingSubstituentCount - secondCandidate.failingSubstituentCount;
+    }
+    if (Math.abs(firstCandidate.exactContinuationPenalty - secondCandidate.exactContinuationPenalty) > IMPROVEMENT_EPSILON) {
+      return firstCandidate.exactContinuationPenalty - secondCandidate.exactContinuationPenalty;
+    }
+    if (Math.abs(firstCandidate.presentationPenalty - secondCandidate.presentationPenalty) > IMPROVEMENT_EPSILON) {
+      return firstCandidate.presentationPenalty - secondCandidate.presentationPenalty;
     }
     if (Math.abs(firstCandidate.cost - secondCandidate.cost) > IMPROVEMENT_EPSILON) {
       return firstCandidate.cost - secondCandidate.cost;
@@ -1750,9 +1841,9 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
       const allowExpandedRingLinkerRotations =
         (layoutGraph.traits.heavyAtomCount ?? 0) <= 60
         && pendingRingSystem.ringSystem.atomIds.length <= 18;
-        for (const turnSign of turnSigns) {
-          for (const mirror of [false, true]) {
-            rawCandidates.push({
+      for (const turnSign of turnSigns) {
+        for (const mirror of [false, true]) {
+          rawCandidates.push({
             transformedCoords: buildRingLinkerCandidate(
               layoutGraph,
               coords,
@@ -1763,10 +1854,12 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
               turnSign,
               mirror
             )
-            });
-          }
+          });
         }
-      const defaultOverlapFree = rawCandidates.some(candidate => preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph).overlapCount === 0);
+      }
+      const defaultOverlapFree = rawCandidates.some(
+        candidate => preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null).overlapCount === 0
+      );
       if (!defaultOverlapFree && allowExpandedRingLinkerRotations) {
         for (const turnSign of turnSigns) {
           for (const mirror of [false, true]) {

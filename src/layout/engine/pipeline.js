@@ -178,13 +178,17 @@ function isRingJunctionStereoAssignment(layoutGraph, assignment) {
  */
 function shouldAutoOrientFinalCoords(layoutGraph, coords, normalizedOptions) {
   if (normalizedOptions.fixedCoords.size > 0 || normalizedOptions.existingCoords.size > 0) {
-    return false;
+    return { shouldOrient: false, wedges: null };
   }
   const molecule = layoutGraph?.sourceMolecule ?? null;
   if (!(typeof molecule?.getChiralCenters === 'function' && molecule.getChiralCenters().length > 0)) {
-    return false;
+    return { shouldOrient: false, wedges: null };
   }
-  return pickWedgeAssignments(layoutGraph, coords).assignments.some(assignment => isRingJunctionStereoAssignment(layoutGraph, assignment));
+  const wedges = pickWedgeAssignments(layoutGraph, coords);
+  return {
+    shouldOrient: wedges.assignments.some(assignment => isRingJunctionStereoAssignment(layoutGraph, assignment)),
+    wedges
+  };
 }
 
 function shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) {
@@ -281,9 +285,7 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
 
   const cleanupStart = timingState ? nowMs() : 0;
   const protectBondIntegrity = shouldProtectCleanupBondIntegrity(familySummary, placement);
-  const cleanupMaxPasses = placement.placedFamilies.every(family => family === 'large-molecule')
-    ? Math.min(normalizedOptions.maxCleanupPasses, 3)
-    : normalizedOptions.maxCleanupPasses;
+  const cleanupMaxPasses = normalizedOptions.maxCleanupPasses;
   const placementStage = {
     name: 'placement',
     coords: placement.coords,
@@ -355,13 +357,13 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
  * @param {{enabled: boolean, startTime: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null} [timingState] - Optional timing accumulator.
  * @returns {{ringDependency: object, stereo: object}} Stereo and ring-dependency metadata.
  */
-function runStereoPhase(molecule, layoutGraph, coords, timingState = null) {
+function runStereoPhase(molecule, layoutGraph, coords, timingState = null, cachedWedges = null) {
   const stereoStart = timingState ? nowMs() : 0;
   const ez = inspectEZStereo(layoutGraph, coords);
-  const wedges = pickWedgeAssignments(layoutGraph, coords);
+  const wedges = cachedWedges ?? pickWedgeAssignments(layoutGraph, coords);
   const ringDependency =
     layoutGraph.rings.length > 0
-      ? inspectRingDependency(molecule)
+      ? (layoutGraph._ringDependency ??= inspectRingDependency(molecule))
       : {
           ok: true,
           requiresDedicatedRingEngine: false,
@@ -576,13 +578,15 @@ export function runPipeline(molecule, options = {}) {
   if (onStep && layoutGraph.components.length > 1) {
     onStep('Fragment Packing', 'Multiple disconnected fragments arranged into a unified 2D layout.', copyCoords(repackedCoords), { componentCount: layoutGraph.components.length });
   }
-  const orientationApplied = shouldAutoOrientFinalCoords(layoutGraph, repackedCoords, normalizedOptions);
+  const { shouldOrient: orientationApplied, wedges: preOrientWedges } = shouldAutoOrientFinalCoords(layoutGraph, repackedCoords, normalizedOptions);
   let finalCoords = orientationApplied ? orientFinalCoords(repackedCoords, workingMolecule) : repackedCoords;
+  let finalCoordsModified = orientationApplied;
   if (shouldEnsureLandscapeFinalCoords(normalizedOptions, policy)) {
     const landscapeCoords = new Map([...finalCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
     const landscapeApplied = ensureLandscapeOrientation(landscapeCoords, workingMolecule);
     if (landscapeApplied) {
       finalCoords = landscapeCoords;
+      finalCoordsModified = true;
     }
     if (onStep && landscapeApplied && !orientationApplied) {
       onStep('Final Orientation', 'Whole-molecule quarter-turn to keep the final layout in landscape orientation.', copyCoords(finalCoords), {});
@@ -592,6 +596,6 @@ export function runPipeline(molecule, options = {}) {
     onStep('Final Orientation', 'Whole-molecule rotation for optimal page orientation of ring-junction stereocenters.', copyCoords(finalCoords), {});
   }
   onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', copyCoords(finalCoords), { stage: 'complete' });
-  const { ringDependency, stereo } = runStereoPhase(workingMolecule, layoutGraph, finalCoords, timingState);
+  const { ringDependency, stereo } = runStereoPhase(workingMolecule, layoutGraph, finalCoords, timingState, finalCoordsModified ? null : preOrientWedges);
   return buildPipelineResult(molecule, finalCoords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState);
 }

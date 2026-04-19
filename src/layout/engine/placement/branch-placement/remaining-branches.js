@@ -1,6 +1,7 @@
 /** @module placement/branch-placement/remaining-branches */
 
 import { add, fromAngle } from '../../geometry/vec2.js';
+import { AtomGrid } from '../../geometry/atom-grid.js';
 import {
   DISCRETE_BRANCH_ANGLES,
   MAX_BRANCH_RECURSION_DEPTH,
@@ -21,14 +22,16 @@ import {
   filterAnglesByBudget,
   findLayoutBond,
   incidentRingPolygons,
-  isExactAcyclicHeteroContinuationEligible,
+  isExactSmallRingExteriorContinuationEligible,
+  isExactSimpleAcyclicContinuationEligible,
   isExactRingOutwardEligibleSubstituent,
   isTerminalMultipleBondLeaf,
   mergeCandidateAngles,
   occupiedNeighborAngles,
   pickBestCandidateAngle,
   preferredBranchAngles,
-  resolvedPreferredAngles
+  resolvedPreferredAngles,
+  shouldPromotePreferredRingAngle
 } from './angle-selection.js';
 import { chooseBatchAngleAssignments, shouldUseGreedyBranchPlacement } from './permutations.js';
 
@@ -51,8 +54,15 @@ function placeNeighborSequence(
     return;
   }
 
-  let occupiedAngles = occupiedNeighborAngles(adjacency, coords, anchorAtomId, atomIdsToPlace);
+  const occupiedAngles = occupiedNeighborAngles(adjacency, coords, anchorAtomId, atomIdsToPlace);
   const ringPolygons = incidentRingPolygons(layoutGraph, coords, anchorAtomId);
+
+  const atomGrid = bondLength > 0 && coords.size >= 160 ? new AtomGrid(bondLength) : null;
+  if (atomGrid) {
+    for (const [atomId, pos] of coords) {
+      atomGrid.insert(atomId, pos);
+    }
+  }
 
   for (const childAtomId of neighborAtomIds) {
     const currentPlacedNeighborIds = placedNeighborIds(adjacency, coords, anchorAtomId);
@@ -76,12 +86,18 @@ function placeNeighborSequence(
       && !childIsHydrogen
       && childBond != null
       && isTerminalMultipleBondLeaf(layoutGraph, anchorAtomId, childBond);
-    const shouldForceExactAcyclicHeteroAngle =
+    const shouldForceExactSimpleAcyclicAngle =
       shouldHonorPreferredAngle
-      && isExactAcyclicHeteroContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId);
+      && isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId);
+    const allowDirectPreferredAngle =
+      !shouldHonorPreferredAngle
+      || shouldPromotePreferredRingAngle(layoutGraph, anchorAtomId, childAtomId)
+      || shouldForceExactTrigonalAngle
+      || shouldForceExactSimpleAcyclicAngle
+      || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId);
     const exactPreferredAngle =
-      ((shouldHonorPreferredAngle && isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)) || shouldForceExactTrigonalAngle || shouldForceExactAcyclicHeteroAngle)
-        ? chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, constrainedPreferredAngles, excludedAtomIds, placementState, ringPolygons)
+      ((shouldHonorPreferredAngle && isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)) || shouldForceExactTrigonalAngle || shouldForceExactSimpleAcyclicAngle)
+        ? chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, constrainedPreferredAngles, excludedAtomIds, placementState, ringPolygons, atomGrid)
         : null;
     const fallbackCandidates = evaluateAngleCandidates(
       constrainedFallbackAngles,
@@ -92,7 +108,8 @@ function placeNeighborSequence(
       coords,
       excludedAtomIds,
       placementState,
-      ringPolygons
+      ringPolygons,
+      atomGrid
     );
     const chosenAngle =
       exactPreferredAngle ??
@@ -107,7 +124,9 @@ function placeNeighborSequence(
             excludedAtomIds,
             placementState,
             ringPolygons,
-            allowFinePreferredAngles
+            allowFinePreferredAngles,
+            allowDirectPreferredAngle,
+            atomGrid
           )
         : pickBestCandidateAngle(fallbackCandidates, bondLength, !childIsHydrogen, {
             anchorPosition,
@@ -115,7 +134,13 @@ function placeNeighborSequence(
             excludedAtomIds
           }));
     setPlacedPosition(coords, placementState, childAtomId, add(anchorPosition, fromAngle(chosenAngle, bondLength)), layoutGraph);
-    occupiedAngles = occupiedAngles.concat([chosenAngle]);
+    if (atomGrid) {
+      const childPos = coords.get(childAtomId);
+      if (childPos) {
+        atomGrid.insert(childAtomId, childPos);
+      }
+    }
+    occupiedAngles.push(chosenAngle);
     placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, childAtomId, anchorAtomId, bondLength, layoutGraph, branchConstraints, depth + 1);
   }
 }

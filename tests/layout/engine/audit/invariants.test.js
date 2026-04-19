@@ -5,6 +5,7 @@ import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import {
   buildAtomGrid,
+  computeAtomDistortionCost,
   computeSubtreeOverlapCost,
   detectCollapsedMacrocycles,
   findSevereOverlaps,
@@ -14,6 +15,7 @@ import {
   measureLabelOverlap,
   measureLayoutState,
   measureLayoutCost,
+  measureThreeHeavyContinuationDistortion,
   measureTrigonalDistortion
 } from '../../../../src/layout/engine/audit/invariants.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
@@ -154,6 +156,48 @@ describe('layout/engine/audit/invariants', () => {
     assert.equal(trigonalDistortion.centerCount, 1);
     assert.ok(distorted.totalDeviation > trigonalDistortion.totalDeviation);
     assert.ok(measureLayoutCost(graph, distortedCoords, 1.5) > measureLayoutCost(graph, trigonalCoords, 1.5));
+  });
+
+  it('penalizes distorted visible saturated three-heavy carbon continuations with an omitted hydrogen', () => {
+    const molecule = new Molecule();
+    molecule.addAtom('r0', 'C');
+    molecule.addAtom('c1', 'C');
+    molecule.addAtom('r2', 'C');
+    molecule.addAtom('c3', 'N');
+    molecule.addAtom('r4', 'C');
+    molecule.addAtom('r5', 'C');
+    molecule.addAtom('r6', 'C');
+    molecule.addAtom('r7', 'C');
+    molecule.addBond('b0', 'r0', 'r4', {}, false);
+    molecule.addBond('b1', 'r4', 'r5', {}, false);
+    molecule.addBond('b2', 'r5', 'r0', {}, false);
+    molecule.addBond('b3', 'r2', 'r6', {}, false);
+    molecule.addBond('b4', 'r6', 'r7', {}, false);
+    molecule.addBond('b5', 'r7', 'r2', {}, false);
+    molecule.addBond('b6', 'c1', 'r0', {}, false);
+    molecule.addBond('b7', 'c1', 'r2', {}, false);
+    molecule.addBond('b8', 'c1', 'c3', {}, false);
+    const graph = createLayoutGraph(molecule);
+    const trigonalCoords = new Map([
+      ['c1', { x: 0, y: 0 }],
+      ['r0', { x: 0, y: 1.5 }],
+      ['r2', { x: -1.299038105676658, y: -0.75 }],
+      ['c3', { x: 1.299038105676658, y: -0.75 }]
+    ]);
+    const distortedCoords = new Map([
+      ['c1', { x: 0, y: 0 }],
+      ['r0', { x: 0, y: -1.5 }],
+      ['r2', { x: 0, y: 1.5 }],
+      ['c3', { x: 1.299038105676658, y: -0.75 }]
+    ]);
+
+    const continuationDistortion = measureThreeHeavyContinuationDistortion(graph, trigonalCoords);
+    const distorted = measureThreeHeavyContinuationDistortion(graph, distortedCoords);
+
+    assert.equal(continuationDistortion.centerCount, 1);
+    assert.ok(Math.abs(computeAtomDistortionCost(graph, trigonalCoords, 'c1', null)) < 1e-12);
+    assert.ok(computeAtomDistortionCost(graph, distortedCoords, 'c1', null) > 0);
+    assert.ok(distorted.totalDeviation > continuationDistortion.totalDeviation);
   });
 
   it('counts overlapping multi-character labels in the layout cost model', () => {
