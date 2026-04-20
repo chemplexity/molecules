@@ -601,12 +601,110 @@ function preferredRingSystemAngle(layoutGraph, coords, anchorAtomId) {
   return angleOf(outwardVector);
 }
 
+/**
+ * Returns whether a child attached to a ring anchor is itself a ring atom from
+ * a different ring system reached through an exocyclic single bond. These
+ * attached ring blocks should inherit the same fused-junction continuation
+ * preference as ordinary heavy substituents at shared junction atoms.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {string|null} childAtomId - Candidate child atom ID.
+ * @returns {boolean} True when the child is a direct-attached foreign ring atom.
+ */
+function isDirectAttachedForeignRingChild(layoutGraph, anchorAtomId, childAtomId) {
+  if (!layoutGraph || !childAtomId) {
+    return false;
+  }
+
+  const childRingCount = layoutGraph.atomToRings.get(childAtomId)?.length ?? 0;
+  if (childRingCount === 0) {
+    return false;
+  }
+
+  const anchorRingSystemId = layoutGraph.atomToRingSystemId.get(anchorAtomId);
+  const childRingSystemId = layoutGraph.atomToRingSystemId.get(childAtomId);
+  if (anchorRingSystemId == null || childRingSystemId == null || anchorRingSystemId === childRingSystemId) {
+    return false;
+  }
+
+  const bond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
+  return Boolean(
+    bond
+    && bond.kind === 'covalent'
+    && !bond.inRing
+    && !bond.aromatic
+    && (bond.order ?? 1) === 1
+  );
+}
+
+/**
+ * Returns the exact straight-through continuation angle for a directly
+ * attached foreign ring block when a shared fused-junction bond defines a
+ * clear exterior exit. This extends the same exact-gap rule used for ordinary
+ * heavy substituents to exocyclic attached ring systems.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Ring-junction anchor atom ID.
+ * @param {string|null} childAtomId - Direct-attached foreign ring atom ID.
+ * @returns {number|null} Exact continuation angle in radians, or `null`.
+ */
+export function directAttachedForeignRingJunctionContinuationAngle(layoutGraph, coords, anchorAtomId, childAtomId) {
+  if (!layoutGraph || !coords.has(anchorAtomId) || !childAtomId) {
+    return null;
+  }
+  if (!isDirectAttachedForeignRingChild(layoutGraph, anchorAtomId, childAtomId)) {
+    return null;
+  }
+
+  const anchorPosition = coords.get(anchorAtomId);
+  const anchorRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
+  const ringNeighborIds = [];
+  const ringNeighborAngles = [];
+  for (const neighborAtom of layoutGraph.sourceMolecule.atoms.get(anchorAtomId)?.getNeighbors(layoutGraph.sourceMolecule) ?? []) {
+    if (!neighborAtom || neighborAtom.name === 'H' || neighborAtom.id === childAtomId || !coords.has(neighborAtom.id)) {
+      continue;
+    }
+    if ((layoutGraph.atomToRings.get(neighborAtom.id)?.length ?? 0) === 0) {
+      continue;
+    }
+    ringNeighborIds.push(neighborAtom.id);
+    ringNeighborAngles.push(angleOf(sub(coords.get(neighborAtom.id), anchorPosition)));
+  }
+  if (ringNeighborIds.length < 3) {
+    return null;
+  }
+
+  const sharedJunctionNeighborIds = ringNeighborIds.filter(neighborAtomId => {
+    const neighborRings = layoutGraph.atomToRings.get(neighborAtomId) ?? [];
+    return neighborRings.filter(ring => anchorRings.includes(ring)).length > 1;
+  });
+  if (sharedJunctionNeighborIds.length !== 1 || !coords.has(sharedJunctionNeighborIds[0])) {
+    return null;
+  }
+
+  const straightJunctionAngle = angleOf(sub(anchorPosition, coords.get(sharedJunctionNeighborIds[0])));
+  const straightJunctionClearance = Math.min(
+    ...ringNeighborAngles.map(occupiedAngle => angularDifference(straightJunctionAngle, occupiedAngle))
+  );
+  return straightJunctionClearance >= DEG60 - 1e-6 ? straightJunctionAngle : null;
+}
+
 function preferredRingJunctionGapAngle(layoutGraph, coords, anchorAtomId, placedNeighborIdsList, childAtomId) {
   if (!layoutGraph || !coords.has(anchorAtomId) || !childAtomId) {
     return null;
   }
-  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0 || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0) {
+  const childParticipatesInForeignAttachedRing = isDirectAttachedForeignRingChild(layoutGraph, anchorAtomId, childAtomId);
+  if (
+    (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0
+    || (
+      (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0
+      && !childParticipatesInForeignAttachedRing
+    )
+  ) {
     return null;
+  }
+  if (childParticipatesInForeignAttachedRing) {
+    return directAttachedForeignRingJunctionContinuationAngle(layoutGraph, coords, anchorAtomId, childAtomId);
   }
 
   const ringNeighborIds = placedNeighborIdsList.filter(neighborAtomId => (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0);
@@ -1765,8 +1863,15 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
       filterAnglesByBudget(continuationAngles, anchorAtomId, branchConstraints),
       budgetPreferredAngles(anchorAtomId, branchConstraints)
     );
+    const exactDirectAttachedRingJunctionAngle = directAttachedForeignRingJunctionContinuationAngle(
+      layoutGraph,
+      coords,
+      anchorAtomId,
+      attachedAtomId
+    );
     if (
-      isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, attachedAtomId)
+      exactDirectAttachedRingJunctionAngle != null
+      || isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, attachedAtomId)
       || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, attachedAtomId)
       || isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, attachedAtomId)
     ) {

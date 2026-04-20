@@ -1,6 +1,6 @@
 /** @module cleanup/attached-ring-rotation-tidy */
 
-import { findSevereOverlaps, measureLayoutCost } from '../audit/invariants.js';
+import { findSevereOverlaps, measureDirectAttachedRingJunctionContinuationDistortion, measureLayoutCost } from '../audit/invariants.js';
 import { measureCleanupStagePresentationPenalty, measureTotalSmallRingExteriorGapPenalty } from '../audit/stage-metrics.js';
 import { runLocalCleanup } from './local-rotation.js';
 import { runRingSubstituentTidy } from './ring-substituent-tidy.js';
@@ -140,6 +140,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       focusAtomIds,
       includeSmallRingExteriorPenalty: false
     });
+    const baseJunctionContinuationPenalty = measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, inputCoords, { focusAtomIds }).totalDeviation;
     const baseSmallRingExteriorPenalty = measureTotalSmallRingExteriorGapPenalty(layoutGraph, inputCoords, focusAtomIds);
     const rigidRotationProbe = probeRigidRotation(layoutGraph, inputCoords, descriptor, {
       angles: ATTACHED_RING_ROTATION_TIDY_ANGLES.filter(rotation => Math.abs(rotation) > 1e-9),
@@ -163,6 +164,10 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         if (overlapCount > baseOverlapCount) {
           return null;
         }
+        const junctionContinuationPenalty = measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, candidateCoords, { focusAtomIds }).totalDeviation;
+        if (junctionContinuationPenalty > baseJunctionContinuationPenalty + 1e-6) {
+          return null;
+        }
         const smallRingExteriorPenalty = measureTotalSmallRingExteriorGapPenalty(layoutGraph, candidateCoords, focusAtomIds);
         if (smallRingExteriorPenalty > baseSmallRingExteriorPenalty + 1e-6) {
           return null;
@@ -178,6 +183,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           coords: candidateCoords,
           nudges: ringSubstituentTouchup.nudges + localLeafTouchup.passes + 1,
           overlapCount,
+          junctionContinuationPenalty,
           presentationImprovement: basePresentationPenalty - presentationPenalty,
           layoutCost: measureLayoutCost(layoutGraph, candidateCoords, bondLength)
         };

@@ -10,6 +10,7 @@ import {
   detectCollapsedMacrocycles,
   findSevereOverlaps,
   measureBondLengthDeviation,
+  measureDirectAttachedRingJunctionContinuationDistortion,
   measureFocusedPlacementCost,
   measureOverlapState,
   measureLabelOverlap,
@@ -198,6 +199,35 @@ describe('layout/engine/audit/invariants', () => {
     assert.ok(Math.abs(computeAtomDistortionCost(graph, trigonalCoords, 'c1', null)) < 1e-12);
     assert.ok(computeAtomDistortionCost(graph, distortedCoords, 'c1', null) > 0);
     assert.ok(distorted.totalDeviation > continuationDistortion.totalDeviation);
+  });
+
+  it('penalizes direct-attached foreign ring exits that drift off a safe fused-junction continuation', () => {
+    const result = runPipeline(parseSMILES('CC1=NC=C(O1)C12CC(O)CCC1(C)CCN2'), {
+      suppressH: true
+    });
+    const exact = measureDirectAttachedRingJunctionContinuationDistortion(result.layoutGraph, result.coords);
+    const distortedCoords = new Map([...result.coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+    const anchorPosition = distortedCoords.get('C7');
+    const rotatedAtomIds = ['C1', 'C2', 'C4', 'C5', 'N3', 'O6'];
+    const rotation = Math.PI / 6;
+    const cosRotation = Math.cos(rotation);
+    const sinRotation = Math.sin(rotation);
+
+    for (const atomId of rotatedAtomIds) {
+      const position = distortedCoords.get(atomId);
+      const dx = position.x - anchorPosition.x;
+      const dy = position.y - anchorPosition.y;
+      distortedCoords.set(atomId, {
+        x: anchorPosition.x + dx * cosRotation - dy * sinRotation,
+        y: anchorPosition.y + dx * sinRotation + dy * cosRotation
+      });
+    }
+
+    const distorted = measureDirectAttachedRingJunctionContinuationDistortion(result.layoutGraph, distortedCoords);
+
+    assert.equal(exact.centerCount, 1);
+    assert.ok(exact.totalDeviation < 1e-12);
+    assert.ok(distorted.totalDeviation > 0.2, `expected a meaningful continuation penalty after a 30-degree rotation, got ${distorted.totalDeviation}`);
   });
 
   it('counts overlapping multi-character labels in the layout cost model', () => {

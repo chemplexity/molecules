@@ -6,6 +6,7 @@ import { AtomGrid } from '../geometry/atom-grid.js';
 import { distancePointToSegment, segmentsIntersect } from '../geometry/segments.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
+import { directAttachedForeignRingJunctionContinuationAngle } from '../placement/branch-placement/angle-selection.js';
 import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 function pairKey(firstAtomId, secondAtomId) {
@@ -771,6 +772,58 @@ export function measureThreeHeavyContinuationDistortion(layoutGraph, coords, opt
     centerCount++;
     totalDeviation += deviation;
     maxDeviation = Math.max(maxDeviation, deviation);
+  }
+
+  return {
+    centerCount,
+    totalDeviation,
+    maxDeviation
+  };
+}
+
+/**
+ * Measures distortion at direct-attached foreign ring exits that should stay
+ * on the exact continuation of a shared fused-junction bond when that straight
+ * exterior slot is already clear.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{focusAtomIds?: Set<string>|null}} [options] - Optional local scoring focus.
+ * @returns {{centerCount: number, totalDeviation: number, maxDeviation: number}} Continuation distortion statistics.
+ */
+export function measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, coords, options = {}) {
+  const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
+  let centerCount = 0;
+  let totalDeviation = 0;
+  let maxDeviation = 0;
+
+  for (const anchorAtomId of coords.keys()) {
+    if (!isVisibleLayoutAtom(layoutGraph, anchorAtomId) || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
+      continue;
+    }
+    const anchorAtom = layoutGraph.sourceMolecule.atoms.get(anchorAtomId);
+    if (!anchorAtom) {
+      continue;
+    }
+
+    for (const childAtom of anchorAtom.getNeighbors(layoutGraph.sourceMolecule)) {
+      const childAtomId = childAtom?.id;
+      if (!childAtomId || !coords.has(childAtomId) || !isVisibleLayoutAtom(layoutGraph, childAtomId)) {
+        continue;
+      }
+      if (focusAtomIds && !focusAtomIds.has(anchorAtomId) && !focusAtomIds.has(childAtomId)) {
+        continue;
+      }
+
+      const preferredAngle = directAttachedForeignRingJunctionContinuationAngle(layoutGraph, coords, anchorAtomId, childAtomId);
+      if (preferredAngle == null) {
+        continue;
+      }
+
+      const deviation = angularDifference(angleOf(sub(coords.get(childAtomId), coords.get(anchorAtomId))), preferredAngle) ** 2;
+      centerCount++;
+      totalDeviation += deviation;
+      maxDeviation = Math.max(maxDeviation, deviation);
+    }
   }
 
   return {

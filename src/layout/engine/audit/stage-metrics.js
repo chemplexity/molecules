@@ -1,7 +1,7 @@
 /** @module audit/stage-metrics */
 
 import { auditLayout } from './audit.js';
-import { measureThreeHeavyContinuationDistortion } from './invariants.js';
+import { measureDirectAttachedRingJunctionContinuationDistortion, measureThreeHeavyContinuationDistortion } from './invariants.js';
 import { measureSmallRingExteriorGapSpreadPenalty } from '../placement/branch-placement.js';
 import { measureOrthogonalHypervalentDeviation } from '../cleanup/hypervalent-angle-tidy.js';
 import { measureRingSubstituentPresentationPenalty } from '../cleanup/ring-substituent-tidy.js';
@@ -81,6 +81,7 @@ export function measureCleanupStagePresentationPenalty(layoutGraph, coords, opti
     measureRingSubstituentPresentationPenalty(layoutGraph, coords, { focusAtomIds })
     + measureOrthogonalHypervalentDeviation(layoutGraph, coords, { focusAtomIds })
     + measureThreeHeavyContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation
+    + measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation
     + (includeSmallRingExteriorPenalty ? measureTotalSmallRingExteriorGapPenalty(layoutGraph, coords, focusAtomIds) : 0)
   );
 }

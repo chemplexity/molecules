@@ -134,7 +134,7 @@
       .step-item {
         display: flex;
         align-items: center;
-        gap: 9px;
+        gap: 8px;
         padding: 7px 14px;
         cursor: pointer;
         user-select: none;
@@ -147,26 +147,17 @@
       .step-item.active {
         background: #f0f4ff;
       }
-      .step-dot {
-        width: 8px;
-        height: 8px;
-        border-radius: 50%;
-        background: #ddd;
+      .step-icon {
+        font-size: 11px;
+        width: 14px;
+        text-align: center;
         flex-shrink: 0;
-        transition: background 0.15s;
+        color: #ccc;
       }
-      .step-item.active .step-dot {
-        background: #3b82f6;
-      }
-      .step-item.done .step-dot {
-        background: #86efac;
-      }
-      .step-item.reverted .step-dot {
-        background: #fb923c;
-      }
-      .step-item.active.reverted .step-dot {
-        background: #f97316;
-      }
+      .step-item.done    .step-icon { color: #86efac; }
+      .step-item.reverted .step-icon { color: #fb923c; }
+      .step-item.active  .step-icon { color: #3b82f6; }
+      .step-item.active.reverted .step-icon { color: #f97316; }
       .step-label {
         font-size: 12px;
         color: #444;
@@ -176,6 +167,25 @@
       .step-item.active .step-label {
         color: #1d4ed8;
         font-weight: 500;
+      }
+      .step-item.reverted .step-label {
+        color: #9a3412;
+      }
+      .step-item.active.reverted .step-label {
+        color: #c2410c;
+        font-weight: 500;
+      }
+      .step-best-tag {
+        font-size: 9px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        color: #15803d;
+        background: #dcfce7;
+        border: 1px solid #86efac;
+        border-radius: 4px;
+        padding: 1px 5px;
+        flex-shrink: 0;
       }
       .step-badge {
         font-size: 10px;
@@ -232,6 +242,15 @@
       }
       #moved-badge.visible { opacity: 1; }
       #moved-badge.zero { color: #aaa; background: #f5f5f5; border-color: #e5e7eb; }
+      #view-mode-label {
+        position: absolute; top: 8px; left: 8px;
+        font-size: 11px; font-weight: 600;
+        border-radius: 6px; padding: 3px 8px;
+        opacity: 0; transition: opacity 0.2s;
+        pointer-events: none; z-index: 2;
+      }
+      #view-mode-label.candidate { opacity: 1; background: #fff7ed; color: #c2410c; border: 1px solid #fed7aa; }
+      #view-mode-label.incumbent { opacity: 1; background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd; }
 
       /* ── Nav bar ── */
       #nav-bar {
@@ -364,6 +383,21 @@
       }
       #outcome-chip.accepted { background: #f0fdf4; color: #16a34a; }
       #outcome-chip.reverted { background: #fff7ed; color: #c2410c; }
+      #view-toggle-btn {
+        padding: 5px 10px;
+        border: 1px solid #e0e0e0;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 500;
+        cursor: pointer;
+        background: #fff;
+        color: #555;
+        transition: background 0.15s, border-color 0.15s;
+        display: none;
+        width: 100%;
+      }
+      #view-toggle-btn:hover { background: #f5f5f7; border-color: #ccc; }
+      #view-toggle-btn.incumbent-active { background: #eff6ff; border-color: #93c5fd; color: #1d4ed8; }
       #reject-reason {
         font-size: 11px; color: #92400e; background: #fffbeb;
         border: 1px solid #fde68a; border-radius: 6px;
@@ -409,6 +443,7 @@
             <div id="empty-msg">Enter a SMILES string and press <strong>Run</strong> to visualize<br />the layout engine pipeline step by step.</div>
           </div>
           <div id="moved-badge"></div>
+          <div id="view-mode-label"></div>
         </div>
         <div id="nav-bar">
           <button class="nav-btn" id="prev-btn" disabled>← Prev</button>
@@ -422,6 +457,7 @@
         <div id="info-label" style="color: #bbb">No step selected</div>
         <div id="info-desc"></div>
         <div id="outcome-chip" style="display:none"></div>
+        <div id="view-toggle-btn">👁 View Incumbent</div>
         <div id="reject-reason" style="display:none"></div>
 
         <div>
@@ -444,6 +480,7 @@
     <script>
       let steps = [];
       let currentIndex = -1;
+      let showingIncumbent = false;
 
       const smilesInput = document.getElementById('smiles-input');
       const runBtn = document.getElementById('run-btn');
@@ -455,6 +492,8 @@
       const nextBtn = document.getElementById('next-btn');
       const stepCounter = document.getElementById('step-counter');
       const movedBadge = document.getElementById('moved-badge');
+      const viewModeLabel = document.getElementById('view-mode-label');
+      const viewToggleBtn = document.getElementById('view-toggle-btn');
       const infoLabel = document.getElementById('info-label');
       const infoDesc = document.getElementById('info-desc');
       const outcomeChip = document.getElementById('outcome-chip');
@@ -521,8 +560,11 @@
           const item = document.createElement('div');
           item.className = 'step-item' + (step.accepted === false ? ' reverted' : '');
           item.dataset.index = i;
-          const badge = step.movedAtomCount > 0 ? `<span class="step-badge">${step.movedAtomCount}</span>` : `<span class="step-badge zero">—</span>`;
-          item.innerHTML = `<div class="step-dot"></div><div class="step-label">${step.label}</div>${badge}`;
+          const icon = step.accepted === false ? '↩' : '○';
+          const badge = step.movedAtomCount > 0
+            ? `<span class="step-badge">${step.movedAtomCount}</span>`
+            : `<span class="step-badge zero">—</span>`;
+          item.innerHTML = `<div class="step-icon">${icon}</div><div class="step-label">${step.label}</div>${badge}`;
           item.addEventListener('click', () => showStep(i));
           stepList.appendChild(item);
         });
@@ -533,6 +575,7 @@
       function showStep(index) {
         if (index < 0 || index >= steps.length) return;
         currentIndex = index;
+        showingIncumbent = false;
         const step = steps[index];
 
         // Fade out → update → fade in
@@ -547,21 +590,39 @@
       }
 
       function updateMolView(step) {
-        if (step.svg) {
-          molSvgWrap.innerHTML = step.svg;
-          const svg = molSvgWrap.querySelector('svg');
-          if (svg && step.ghostData) preExpandViewBox(svg, step.ghostData);
-          wireHoverGhosts(svg, step.ghostData);
+        const svg = showingIncumbent ? step.incumbentSvg : step.svg;
+        const ghostData = showingIncumbent ? step.incumbentGhostData : step.ghostData;
+        if (svg) {
+          molSvgWrap.innerHTML = svg;
+          const svgEl = molSvgWrap.querySelector('svg');
+          if (svgEl && ghostData) preExpandViewBox(svgEl, ghostData);
+          wireHoverGhosts(svgEl, ghostData);
         } else {
           molSvgWrap.innerHTML = '<div style="font-size:13px;color:#aaa;">No SVG available for this step.</div>';
         }
 
-        if (step.movedAtomCount > 0) {
+        if (showingIncumbent) {
+          movedBadge.className = '';
+          viewModeLabel.textContent = 'Incumbent (kept)';
+          viewModeLabel.className = 'incumbent';
+        } else if (step.movedAtomCount > 0) {
           movedBadge.textContent = `${step.movedAtomCount} atom${step.movedAtomCount === 1 ? '' : 's'} moved`;
           movedBadge.className = 'visible';
+          if (step.accepted === false) {
+            viewModeLabel.textContent = 'Candidate (rejected)';
+            viewModeLabel.className = 'candidate';
+          } else {
+            viewModeLabel.className = '';
+          }
         } else {
           movedBadge.textContent = '0 atoms moved';
           movedBadge.className = 'visible zero';
+          if (step.accepted === false) {
+            viewModeLabel.textContent = 'Candidate (rejected)';
+            viewModeLabel.className = 'candidate';
+          } else {
+            viewModeLabel.className = '';
+          }
         }
       }
 
@@ -650,21 +711,29 @@
         infoLabel.style.color = '';
         infoDesc.textContent = step.description;
 
-        // Outcome chip
+        // Outcome chip + toggle
         if (step.accepted === false) {
           outcomeChip.textContent = '↩ Reverted';
           outcomeChip.className = 'reverted';
           outcomeChip.style.display = '';
           rejectReason.textContent = step.rejectReason ?? 'Did not improve over current best.';
           rejectReason.style.display = '';
+          if (step.incumbentSvg) {
+            viewToggleBtn.style.display = '';
+            viewToggleBtn.textContent = showingIncumbent ? '← Back to Candidate' : '👁 View Incumbent';
+            viewToggleBtn.className = showingIncumbent ? 'incumbent-active' : '';
+          } else {
+            viewToggleBtn.style.display = 'none';
+          }
         } else {
           outcomeChip.style.display = 'none';
           rejectReason.style.display = 'none';
+          viewToggleBtn.style.display = 'none';
         }
 
         // Score section
         scoreGrid.innerHTML = '';
-        const sa = step.stepAudit;
+        const sa = showingIncumbent ? (step.incumbentAudit ?? step.stepAudit) : step.stepAudit;
         if (!sa) {
           scoreGrid.innerHTML = '<div style="font-size:11px;color:#bbb;font-style:italic;">—</div>';
         } else {
@@ -741,11 +810,46 @@
         }
       }
 
+      function currentBestIndex(upToIndex) {
+        for (let i = upToIndex; i >= 0; i--) {
+          if (steps[i]?.accepted !== false) return i;
+        }
+        return -1;
+      }
+
       function updateStepList(activeIndex) {
+        const bestIdx = currentBestIndex(activeIndex);
         for (const item of stepList.querySelectorAll('.step-item')) {
           const i = parseInt(item.dataset.index, 10);
-          item.classList.toggle('active', i === activeIndex);
-          item.classList.toggle('done', i < activeIndex && steps[i]?.accepted !== false);
+          const isPast = i < activeIndex;
+          const isAccepted = steps[i]?.accepted !== false;
+          const isReverted = steps[i]?.accepted === false;
+          const isActive = i === activeIndex;
+          const isBest = i === bestIdx;
+
+          item.classList.toggle('active', isActive);
+          item.classList.toggle('done', isPast && isAccepted);
+
+          // Update icon
+          const iconEl = item.querySelector('.step-icon');
+          if (iconEl) {
+            if (isReverted) iconEl.textContent = '↩';
+            else if (isActive || isPast) iconEl.textContent = '✓';
+            else iconEl.textContent = '○';
+          }
+
+          // Current-best tag: add/remove as browsing changes it
+          let bestTag = item.querySelector('.step-best-tag');
+          if (isBest && !isActive) {
+            if (!bestTag) {
+              bestTag = document.createElement('div');
+              bestTag.className = 'step-best-tag';
+              bestTag.textContent = 'best';
+              item.insertBefore(bestTag, item.querySelector('.step-badge'));
+            }
+          } else if (bestTag) {
+            bestTag.remove();
+          }
         }
         // Scroll active item into view
         const activeItem = stepList.querySelector('.step-item.active');
@@ -760,6 +864,43 @@
 
       prevBtn.addEventListener('click', () => showStep(currentIndex - 1));
       nextBtn.addEventListener('click', () => showStep(currentIndex + 1));
+
+      viewToggleBtn.addEventListener('click', () => {
+        const step = steps[currentIndex];
+        if (!step || !step.incumbentSvg) return;
+        showingIncumbent = !showingIncumbent;
+        molSvgWrap.classList.add('fading');
+        setTimeout(() => {
+          updateMolView(step);
+          // Refresh score and toggle button label without rebuilding the whole panel.
+          viewToggleBtn.textContent = showingIncumbent ? '← Back to Candidate' : '👁 View Incumbent';
+          viewToggleBtn.className = showingIncumbent ? 'incumbent-active' : '';
+          scoreGrid.innerHTML = '';
+          const sa = showingIncumbent ? (step.incumbentAudit ?? step.stepAudit) : step.stepAudit;
+          if (!sa) {
+            scoreGrid.innerHTML = '<div style="font-size:11px;color:#bbb;font-style:italic;">—</div>';
+          } else {
+            const devPct = (sa.maxBondLengthDeviation ?? 0) * 100;
+            const devCls = devPct < 3 ? 's-good' : devPct < 10 ? 's-warn' : 's-bad';
+            const rows = [
+              ['ok',           sa.ok ? '✓ Pass' : '✗ Fail',              sa.ok ? 's-ok' : 's-bad'],
+              ['bond fails',   sa.bondLengthFailureCount ?? 0,             (sa.bondLengthFailureCount ?? 0) > 0 ? 's-bad' : 's-good'],
+              ['max dev',      `${devPct.toFixed(1)}%`,                    devCls],
+              ['overlaps',     sa.severeOverlapCount ?? 0,                 (sa.severeOverlapCount ?? 0) > 0 ? 's-bad' : 's-good'],
+              ['label ovlp',   sa.labelOverlapCount ?? 0,                  (sa.labelOverlapCount ?? 0) > 0 ? 's-warn' : 's-good'],
+              ['ring read.',   sa.ringSubstituentReadabilityFailureCount ?? 0, (sa.ringSubstituentReadabilityFailureCount ?? 0) > 0 ? 's-warn' : 's-good'],
+              ['inward sub.',  sa.inwardRingSubstituentCount ?? 0,         (sa.inwardRingSubstituentCount ?? 0) > 0 ? 's-warn' : 's-good'],
+            ];
+            for (const [key, val, cls] of rows) {
+              const row = document.createElement('div');
+              row.className = 'score-row';
+              row.innerHTML = `<span class="score-key">${key}</span><span class="score-val ${cls}">${val}</span>`;
+              scoreGrid.appendChild(row);
+            }
+          }
+          molSvgWrap.classList.remove('fading');
+        }, 100);
+      });
 
       document.addEventListener('keydown', e => {
         if (document.activeElement === smilesInput) return;

@@ -24,6 +24,97 @@ function rotateCoords(coords, origin, angle) {
   }
 }
 
+function deviationFromHorizontalAxis(angle) {
+  let normalized = angle % Math.PI;
+  if (normalized > Math.PI / 2) {
+    normalized -= Math.PI;
+  }
+  if (normalized <= -Math.PI / 2) {
+    normalized += Math.PI;
+  }
+  return normalized;
+}
+
+function principalAxisAngle(coords, atomIds) {
+  if (!Array.isArray(atomIds) || atomIds.length < 2) {
+    return 0;
+  }
+
+  let sumX = 0;
+  let sumY = 0;
+  for (const atomId of atomIds) {
+    const point = coords.get(atomId);
+    sumX += point.x;
+    sumY += point.y;
+  }
+  const centerX = sumX / atomIds.length;
+  const centerY = sumY / atomIds.length;
+
+  let inertiaXX = 0;
+  let inertiaYY = 0;
+  let inertiaXY = 0;
+  for (const atomId of atomIds) {
+    const point = coords.get(atomId);
+    const dx = point.x - centerX;
+    const dy = point.y - centerY;
+    inertiaXX += dy * dy;
+    inertiaYY += dx * dx;
+    inertiaXY -= dx * dy;
+  }
+
+  const angle0 = 0.5 * Math.atan2(2 * inertiaXY, inertiaXX - inertiaYY);
+  const inertia0 = inertiaXX * Math.cos(angle0) ** 2 + inertiaYY * Math.sin(angle0) ** 2 + inertiaXY * Math.sin(2 * angle0);
+  const inertia1 = inertiaXX + inertiaYY - inertia0;
+  let axis = inertia0 <= inertia1 ? angle0 : angle0 + Math.PI / 2;
+  if (axis > Math.PI / 2) {
+    axis -= Math.PI;
+  }
+  if (axis <= -Math.PI / 2) {
+    axis += Math.PI;
+  }
+  return axis;
+}
+
+function collectBondIdsAlongPath(molecule, atomIds) {
+  if (!Array.isArray(atomIds) || atomIds.length < 2) {
+    return new Set();
+  }
+
+  const bondIds = new Set();
+  for (let index = 0; index < atomIds.length - 1; index++) {
+    const bond = molecule.getBond(atomIds[index], atomIds[index + 1]);
+    if (bond) {
+      bondIds.add(bond.id);
+    }
+  }
+  return bondIds;
+}
+
+function shouldPreserveWholeMoleculeLeveling(molecule, heavyAtomIds) {
+  const rings = molecule.getRings();
+  if (rings.length < 3 || heavyAtomIds.length < 18) {
+    return false;
+  }
+
+  const ringAtomIds = new Set(rings.flat());
+  const ringHeavyCount = heavyAtomIds.reduce((count, atomId) => count + (ringAtomIds.has(atomId) ? 1 : 0), 0);
+  return ringHeavyCount / heavyAtomIds.length >= 0.5;
+}
+
+function preferredPathBondWeight(molecule, orientPath) {
+  if (!Array.isArray(orientPath) || orientPath.length < 5) {
+    return 1;
+  }
+
+  const ringAtomIds = new Set(molecule.getRings().flat());
+  const nonRingAtomCount = orientPath.reduce((count, atomId) => count + (ringAtomIds.has(atomId) ? 0 : 1), 0);
+  if (nonRingAtomCount < 5) {
+    return 1;
+  }
+
+  return 1 + Math.min(4, nonRingAtomCount - 3);
+}
+
 function compareAtomIds(molecule, ranks, firstAtomId, secondAtomId) {
   const firstAtom = molecule.atoms.get(firstAtomId);
   const secondAtom = molecule.atoms.get(secondAtomId);
@@ -223,8 +314,28 @@ function longestNonRingLandscapePath(molecule) {
   return bestPath;
 }
 
-function landscapePathMinLength(molecule) {
-  return molecule.getRings().length > 0 ? 6 : 8;
+function heavyAtomCount(molecule) {
+  let count = 0;
+  for (const atom of molecule.atoms.values()) {
+    if (atom?.name !== 'H') {
+      count++;
+    }
+  }
+  return count;
+}
+
+function landscapePathMinLength(molecule, orientPath = null) {
+  if (molecule.getRings().length === 0) {
+    return 8;
+  }
+  if (Array.isArray(orientPath) && orientPath.length >= 3) {
+    const ringAtomIds = new Set(molecule.getRings().flat());
+    const ringAtomCount = orientPath.reduce((count, atomId) => count + (ringAtomIds.has(atomId) ? 1 : 0), 0);
+    if (ringAtomCount === 0) {
+      return Math.max(3, Math.min(6, Math.ceil(heavyAtomCount(molecule) / 5)));
+    }
+  }
+  return 6;
 }
 
 function orientationPathScore(path, molecule) {
@@ -316,7 +427,7 @@ export function normalizeOrientation(coords, molecule) {
   }
 
   const orientPath = preferredLandscapeOrientationPath(molecule);
-  if (orientPath && orientPath.length >= landscapePathMinLength(molecule)) {
+  if (orientPath && orientPath.length >= landscapePathMinLength(molecule, orientPath)) {
     const start = coords.get(orientPath[0]);
     const end = coords.get(orientPath[orientPath.length - 1]);
     if (start && end) {
@@ -469,7 +580,7 @@ export function shouldPreferFinalLandscapeOrientation(molecule) {
     return true;
   }
   const orientPath = preferredLandscapeOrientationPath(molecule);
-  return Boolean(orientPath && orientPath.length >= landscapePathMinLength(molecule));
+  return Boolean(orientPath && orientPath.length >= landscapePathMinLength(molecule, orientPath));
 }
 
 /**
@@ -536,6 +647,23 @@ export function levelCoords(coords, molecule) {
     return;
   }
 
+  let preferredAxisAngle = null;
+  let preferredPathBondIds = new Set();
+  let preferredPathWeight = 1;
+  let wholeMoleculeAxisAngle = null;
+  const orientPath = preferredLandscapeOrientationPath(molecule);
+  if (orientPath && orientPath.length >= landscapePathMinLength(molecule, orientPath)) {
+    const start = coords.get(orientPath[0]);
+    const end = coords.get(orientPath[orientPath.length - 1]);
+    if (start && end) {
+      preferredAxisAngle = Math.atan2(end.y - start.y, end.x - start.x);
+      preferredPathBondIds = collectBondIdsAlongPath(molecule, orientPath);
+      preferredPathWeight = preferredPathBondWeight(molecule, orientPath);
+    }
+  } else if (shouldPreserveWholeMoleculeLeveling(molecule, heavyAtomIds)) {
+    wholeMoleculeAxisAngle = principalAxisAngle(coords, heavyAtomIds);
+  }
+
   const bondGrid = new Map();
   for (const ring of molecule.getRings()) {
     const increment = Math.PI / ring.length;
@@ -586,7 +714,11 @@ export function levelCoords(coords, molecule) {
       if (angle >= Math.PI) {
         angle -= Math.PI;
       }
-      bondData.push({ angle, increment: bondGrid.get(bondId) ?? Math.PI / 6 });
+      bondData.push({
+        angle,
+        increment: bondGrid.get(bondId) ?? Math.PI / 6,
+        preferredPath: preferredPathBondIds.has(bondId)
+      });
     }
   }
 
@@ -595,14 +727,23 @@ export function levelCoords(coords, molecule) {
   }
 
   const tiltPenalty = 1e-4;
+  const preferredAxisPenalty = 1;
+  const wholeMoleculeAxisPenalty = 2.5;
   function score(rotation) {
     let total = 0;
-    for (const { angle, increment } of bondData) {
+    for (const { angle, increment, preferredPath } of bondData) {
       let deviation = (((angle + rotation) % increment) + increment) % increment;
       if (deviation > increment / 2) {
         deviation -= increment;
       }
-      total += deviation * deviation;
+      total += (preferredPath ? preferredPathWeight : 1) * deviation * deviation;
+    }
+    if (preferredAxisAngle != null) {
+      const axisDeviation = deviationFromHorizontalAxis(preferredAxisAngle + rotation);
+      total += preferredAxisPenalty * axisDeviation * axisDeviation;
+    } else if (wholeMoleculeAxisAngle != null) {
+      const axisDeviation = deviationFromHorizontalAxis(wholeMoleculeAxisAngle + rotation);
+      total += wholeMoleculeAxisPenalty * axisDeviation * axisDeviation;
     }
     return total + tiltPenalty * rotation * rotation;
   }

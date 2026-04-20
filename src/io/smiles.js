@@ -236,6 +236,16 @@ function previousAtom(start, keys, atoms) {
 }
 
 /**
+ * Returns `true` when the atom is an auxiliary bracket hydrogen such as the
+ * helper `H` in `[C@H]`.
+ * @param {object|null|undefined} atom - Candidate v1 atom.
+ * @returns {boolean} Whether the atom should be skipped as a traversal anchor.
+ */
+function isAuxiliaryBracketHydrogen(atom) {
+  return atom?.name === 'H' && atom?.auxiliaryBracketHydrogen === true;
+}
+
+/**
  * Like previousAtom but skips over `(…)` branch groups when scanning backward.
  * Used to find the true source atom for stereo bonds that follow a branch close `)`.
  *
@@ -298,7 +308,7 @@ function previousBondSourceAtom(start, keys, atoms, bonds = null) {
   let atomKey = previous(start);
   while (atomKey !== null) {
     const atom = atoms[atomKey];
-    if (!(atom?.name === 'H' && atom?.bracketAtom)) {
+    if (!isAuxiliaryBracketHydrogen(atom)) {
       return atomKey;
     }
     atomKey = previous(atomKey);
@@ -620,6 +630,11 @@ export function tokenize(input, tokens = []) {
         continue;
       }
       const primaryAtomIndex = bracketAtoms[0].index;
+      for (const token of bracketAtoms) {
+        if (token.index !== primaryAtomIndex && token.tag === 'H') {
+          token.auxiliaryBracketHydrogen = true;
+        }
+      }
       for (const token of tokens) {
         if (token.tag !== 'ring') {
           continue;
@@ -743,6 +758,9 @@ export function decode(tokens) {
           if (tokens[i].bracket) {
             atoms[key].bracketAtom = true;
           }
+          if (tokens[i].auxiliaryBracketHydrogen) {
+            atoms[key].auxiliaryBracketHydrogen = true;
+          }
           break;
         case 'bond':
           bonds[key] = addBondV1(key, tag, term);
@@ -835,7 +853,7 @@ export function decode(tokens) {
 
     function resolveRingEndpointIndex(tokenId) {
       let atomIndex = Number(tokenId);
-      while (atomIndex >= -1 && (atoms[atomIndex] === undefined || (atoms[atomIndex].bracketAtom && atoms[atomIndex].name === 'H'))) {
+      while (atomIndex >= -1 && (atoms[atomIndex] === undefined || isAuxiliaryBracketHydrogen(atoms[atomIndex]))) {
         atomIndex -= 1;
       }
       return atomIndex >= 0 ? atomIndex : null;
@@ -1310,12 +1328,16 @@ export function decode(tokens) {
       atoms[targetID].bonds.electrons += bondOrder;
     };
 
+    const shouldSkipHydrogenTraversal = atom =>
+      atom?.name === 'H' &&
+      (isAuxiliaryBracketHydrogen(atom) || atom.bonds.atoms.some(targetID => atoms[targetID]?.name !== 'H'));
+
     for (let i = 0; i < keys.atoms.length - 1; i++) {
       let sourceAtom = atoms[keys.atoms[i]];
       const targetAtom = atoms[keys.atoms[i + 1]];
       let sourceIndex = i;
 
-      while ((sourceAtom.name === 'H' || atoms[keys.atoms[sourceIndex]] === undefined) && sourceIndex > -1) {
+      while ((shouldSkipHydrogenTraversal(sourceAtom) || atoms[keys.atoms[sourceIndex]] === undefined) && sourceIndex > -1) {
         sourceAtom = atoms[keys.atoms[sourceIndex]];
         sourceIndex -= 1;
       }

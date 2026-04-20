@@ -2,6 +2,12 @@
 
 ## 2026-04-19
 
+- Keep standalone bracket hydrogens after dot-separated counterions bonded to the following fragment instead of stranding them as free H-H pairs
+- Let short non-ring zigzag backbones still control final landscape leveling in mixed ring/chain molecules when they are the clearest readable axis
+- Stop short pendant tails from dictating final landscape orientation when a much larger ring-rich scaffold should read level instead
+- Keep large multi-ring slabs near-horizontal during the final bond-grid snap instead of letting a diagonal lattice compromise win
+- Keep long chain-dominant mixed backbones fully level instead of letting a small ring lattice tip the final pose off horizontal
+- Keep direct-attached foreign ring exits on the exact fused-junction continuation through late cleanup and full-pipeline scoring
 - Keep mixed diaryl difluoromethyl linkers from spending leaf slots before the heavier ring attachment is placed
 - Let linked diaryl-ether cleanup favor exact outward ring exits even when a fused anchor also carries a sibling one-atom leaf
 

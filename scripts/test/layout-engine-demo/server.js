@@ -114,17 +114,53 @@ function buildGhostData(mol, movedVisibleIds, prevCoords, cx, cy, cellW, cellH) 
 // Build a human-readable reason why a stage was rejected.
 function buildRejectReason(candidateAudit, incumbentAudit) {
   if (!candidateAudit || !incumbentAudit) return 'Did not improve over current best.';
-  const reasons = [];
-  const dOverlaps = (candidateAudit.severeOverlapCount ?? 0) - (incumbentAudit.severeOverlapCount ?? 0);
-  const dFail = (candidateAudit.bondLengthFailureCount ?? 0) - (incumbentAudit.bondLengthFailureCount ?? 0);
-  const dDev = (candidateAudit.meanBondLengthDeviation ?? 0) - (incumbentAudit.meanBondLengthDeviation ?? 0);
-  if (dOverlaps > 0) reasons.push(`+${dOverlaps} overlap${dOverlaps !== 1 ? 's' : ''} (was ${incumbentAudit.severeOverlapCount ?? 0})`);
-  if (dFail > 0) reasons.push(`+${dFail} bond failure${dFail !== 1 ? 's' : ''}`);
-  if (reasons.length === 0) {
-    if (dDev > 0.001) reasons.push(`bond deviation +${(dDev * 100).toFixed(1)}%`);
-    else reasons.push('Score did not improve.');
+
+  const delta = (key, fallback = 0) =>
+    (candidateAudit[key] ?? fallback) - (incumbentAudit[key] ?? fallback);
+
+  const fmt = (a, b) => `${a} → ${b}`;
+
+  const dOverlaps = delta('severeOverlapCount');
+  const dFail     = delta('bondLengthFailureCount');
+  const dDev      = delta('meanBondLengthDeviation');
+  const dRead     = delta('ringSubstituentReadabilityFailureCount');
+  const dInward   = delta('inwardRingSubstituentCount');
+  const dLabel    = delta('labelOverlapCount');
+
+  const worse = [];
+  const better = [];
+
+  if (dOverlaps > 0) worse.push(`+${dOverlaps} overlap${dOverlaps !== 1 ? 's' : ''} (${fmt(incumbentAudit.severeOverlapCount ?? 0, candidateAudit.severeOverlapCount ?? 0)})`);
+  else if (dOverlaps < 0) better.push(`overlaps ${fmt(incumbentAudit.severeOverlapCount ?? 0, candidateAudit.severeOverlapCount ?? 0)}`);
+
+  if (dFail > 0) worse.push(`+${dFail} bond failure${dFail !== 1 ? 's' : ''} (${fmt(incumbentAudit.bondLengthFailureCount ?? 0, candidateAudit.bondLengthFailureCount ?? 0)})`);
+  else if (dFail < 0) better.push(`bond fails ${fmt(incumbentAudit.bondLengthFailureCount ?? 0, candidateAudit.bondLengthFailureCount ?? 0)}`);
+
+  if (dRead > 0) worse.push(`+${dRead} ring readability failure${dRead !== 1 ? 's' : ''} (${fmt(incumbentAudit.ringSubstituentReadabilityFailureCount ?? 0, candidateAudit.ringSubstituentReadabilityFailureCount ?? 0)})`);
+  else if (dRead < 0) better.push(`ring readability ${fmt(incumbentAudit.ringSubstituentReadabilityFailureCount ?? 0, candidateAudit.ringSubstituentReadabilityFailureCount ?? 0)}`);
+
+  if (dInward > 0) worse.push(`+${dInward} inward substituent${dInward !== 1 ? 's' : ''} (${fmt(incumbentAudit.inwardRingSubstituentCount ?? 0, candidateAudit.inwardRingSubstituentCount ?? 0)})`);
+  else if (dInward < 0) better.push(`inward sub. ${fmt(incumbentAudit.inwardRingSubstituentCount ?? 0, candidateAudit.inwardRingSubstituentCount ?? 0)}`);
+
+  if (dLabel > 0) worse.push(`+${dLabel} label overlap${dLabel !== 1 ? 's' : ''} (${fmt(incumbentAudit.labelOverlapCount ?? 0, candidateAudit.labelOverlapCount ?? 0)})`);
+  else if (dLabel < 0) better.push(`label overlaps ${fmt(incumbentAudit.labelOverlapCount ?? 0, candidateAudit.labelOverlapCount ?? 0)}`);
+
+  if (worse.length === 0) {
+    if (dDev > 0.001) {
+      worse.push(`bond deviation +${(dDev * 100).toFixed(1)}% (${(incumbentAudit.meanBondLengthDeviation * 100).toFixed(1)}% → ${(candidateAudit.meanBondLengthDeviation * 100).toFixed(1)}%)`);
+    } else if (dDev < -0.001) {
+      better.push(`bond deviation ${(incumbentAudit.meanBondLengthDeviation * 100).toFixed(1)}% → ${(candidateAudit.meanBondLengthDeviation * 100).toFixed(1)}%`);
+    }
   }
-  return reasons.join(' · ');
+
+  if (worse.length === 0 && better.length === 0) {
+    return 'Layout cost did not improve (tie-break favoured incumbent).';
+  }
+  if (worse.length === 0) {
+    return `Improved (${better.join(', ')}) but layout cost did not improve overall.`;
+  }
+  const msg = worse.join(' · ');
+  return better.length > 0 ? `${msg}  (offset by: ${better.join(', ')})` : msg;
 }
 
 // Compute which atom IDs moved by more than threshold Å between two snapshots.
@@ -223,6 +259,16 @@ const server = http.createServer((req, res) => {
       const accepted = acceptance ? acceptance.accepted : true;
       const rejectReason = !accepted ? buildRejectReason(acceptance.candidateAudit, acceptance.incumbentAudit) : null;
       const stepAudit = acceptance?.candidateAudit ?? null;
+      // For reverted steps, also render the incumbent (prevCoords) so the viewer can toggle.
+      let incumbentSvg = null;
+      let incumbentGhostData = null;
+      if (!accepted && snap.prevCoords) {
+        const incumbentRendered = renderStep(mol, snap.prevCoords, null);
+        incumbentSvg = incumbentRendered?.svg ?? null;
+        incumbentGhostData = incumbentRendered?.ghostData ?? null;
+        // Restore mol to candidate coords so subsequent diffs are computed correctly.
+        renderStep(mol, snap.coords, null);
+      }
       // Strip internal fields (prefixed _) before sending to client.
       const stepMetadata = snap.stepMetadata
         ? Object.fromEntries(Object.entries(snap.stepMetadata).filter(([k]) => !k.startsWith('_')))
@@ -239,6 +285,9 @@ const server = http.createServer((req, res) => {
         accepted,
         rejectReason,
         stepAudit,
+        incumbentAudit: acceptance?.incumbentAudit ?? null,
+        incumbentSvg,
+        incumbentGhostData,
         stepMetadata,
         layoutMetadata: {
           primaryFamily: meta.primaryFamily,

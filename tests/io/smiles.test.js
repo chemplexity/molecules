@@ -90,6 +90,16 @@ describe('parseSMILES', () => {
     const mol = parseSMILES(smiles);
     assert.equal(validateValence(mol).length, 0);
   });
+
+  it('keeps dot-separated standalone bracket hydrogens attached to the following chiral fragment', () => {
+    const smiles =
+      String.raw`[Na+].[H][C@]12C[C@@H](O)[C@H](<\C=C[C@@H](O)C(C)CC#CC>)[C@@]1([H])C1=CC=CC(CCCC([O-])=O)=C1O2`;
+    const mol = parseSMILES(smiles);
+    const hydrogenOnlyBondCount = [...mol.bonds.values()].filter(bond => bond.atoms.map(id => mol.atoms.get(id)).every(atom => atom?.name === 'H')).length;
+    assert.equal(validateValence(mol).length, 0);
+    assert.equal(mol.getComponents().length, 2);
+    assert.equal(hydrogenOnlyBondCount, 0);
+  });
 });
 
 describe('tokenize', () => {

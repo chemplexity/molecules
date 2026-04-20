@@ -6,6 +6,7 @@ import { pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.j
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { buildScaffoldPlan } from '../../../../src/layout/engine/model/scaffold-plan.js';
 import { layoutMixedFamily } from '../../../../src/layout/engine/families/mixed.js';
+import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { smallRingExteriorTargetAngles } from '../../../../src/layout/engine/placement/branch-placement.js';
 import {
@@ -131,6 +132,25 @@ function sharedRingCount(layoutGraph, firstAtomId, secondAtomId) {
   const firstRings = layoutGraph.atomToRings.get(firstAtomId) ?? [];
   const secondRings = layoutGraph.atomToRings.get(secondAtomId) ?? [];
   return secondRings.filter(ring => firstRings.includes(ring)).length;
+}
+
+function directAttachedRingJunctionDeviation(layoutGraph, coords, anchorAtomId, childAtomId) {
+  const anchorRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
+  const ringNeighborIds = layoutGraph.sourceMolecule.atoms.get(anchorAtomId)
+    ?.getNeighbors(layoutGraph.sourceMolecule)
+    .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && neighborAtom.id !== childAtomId && (layoutGraph.atomToRings.get(neighborAtom.id)?.length ?? 0) > 0)
+    .map(neighborAtom => neighborAtom.id) ?? [];
+  const sharedJunctionNeighborId = ringNeighborIds.find(neighborAtomId => {
+    const neighborRings = layoutGraph.atomToRings.get(neighborAtomId) ?? [];
+    return neighborRings.filter(ring => anchorRings.includes(ring)).length > 1;
+  });
+  if (!sharedJunctionNeighborId) {
+    return null;
+  }
+
+  const straightJunctionAngle = angleOf(sub(coords.get(anchorAtomId), coords.get(sharedJunctionNeighborId)));
+  const childAngle = angleOf(sub(coords.get(childAtomId), coords.get(anchorAtomId)));
+  return angularDifference(childAngle, straightJunctionAngle);
 }
 
 describe('layout/engine/families/mixed', () => {
@@ -681,6 +701,21 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(
       angularDifference(substituentAngle, straightJunctionAngle) < 1e-6,
       `expected fused-junction substituent to continue straight off the shared junction bond, got ${angularDifference(substituentAngle, straightJunctionAngle).toFixed(6)} rad`
+    );
+  });
+
+  it('keeps direct-attached foreign ring exits on the exact fused-junction continuation through the full pipeline', () => {
+    const result = runPipeline(parseSMILES('CC1=NC=C(O1)C12CC(O)CCC1(C)CCN2'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const deviation = directAttachedRingJunctionDeviation(result.layoutGraph, result.coords, 'C7', 'C5');
+
+    assert.notEqual(deviation, null);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.ok(
+      deviation < 1e-6,
+      `expected the direct-attached oxazole exit to stay on the exact shared-junction continuation, got ${((deviation * 180) / Math.PI).toFixed(2)} degrees`
     );
   });
 
