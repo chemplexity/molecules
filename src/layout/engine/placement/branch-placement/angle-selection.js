@@ -813,6 +813,20 @@ function isSimpleAlkylContinuationEligible(layoutGraph, anchorAtomId, parentAtom
   return true;
 }
 
+/**
+ * Returns preferred zigzag continuation angles for a simple alkyl tail growing
+ * away from an already placed parent context. The alternating slot remains the
+ * primary preference, but the mirrored zigzag slot is kept as a secondary
+ * preference so crowded ring-adjacent tails do not collapse all the way to a
+ * straight continuation when only the primary zigzag direction is blocked.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Current chain atom ID.
+ * @param {string|null} parentAtomId - Already placed parent atom ID.
+ * @param {string|null} childAtomId - Child atom being placed.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @returns {number[]} Preferred tail-continuation angles in radians.
+ */
 function preferredAlkylTailAngles(adjacency, coords, anchorAtomId, parentAtomId, childAtomId, layoutGraph) {
   if (!isSimpleAlkylContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId)) {
     return [];
@@ -857,7 +871,7 @@ function preferredAlkylTailAngles(adjacency, coords, anchorAtomId, parentAtomId,
     const candidateVector = fromAngle(candidateAngle, 1);
     return Math.sign(crossZ(incomingVector, candidateVector)) === -previousTurn;
   });
-  return alternatingAngles.length > 0 ? alternatingAngles : candidateAngles;
+  return alternatingAngles.length > 0 ? mergeCandidateAngles(alternatingAngles, candidateAngles) : candidateAngles;
 }
 
 function candidateClearanceScore(anchorPosition, candidateAngle, bondLength, coords, excludedAtomIds) {

@@ -1,4 +1,7 @@
 import { test, expect } from '@playwright/test';
+import { morganRanks } from '../../src/algorithms/morgan.js';
+import { parseSMILES } from '../../src/io/smiles.js';
+import { analyzeRings } from '../../src/layout/engine/topology/ring-analysis.js';
 
 test.beforeEach(async ({ page }) => {
   page.on('pageerror', error => {
@@ -41,6 +44,68 @@ async function loadInchi(page, inchi) {
   const input = page.locator('#smiles-input');
   await input.fill(inchi);
   await input.press('Enter');
+}
+
+function dominantMultiRingBondIds(smiles) {
+  const molecule = parseSMILES(smiles);
+  const { ringSystems } = analyzeRings(molecule, morganRanks(molecule));
+  const multiRingSystems = ringSystems.filter(ringSystem => ringSystem.ringIds.length > 1);
+  if (multiRingSystems.length !== 1 || ringSystems.length > 2) {
+    return [];
+  }
+
+  const dominantAtomIdSet = new Set(multiRingSystems[0].atomIds);
+  const bondIds = [];
+  for (const bond of molecule.bonds.values()) {
+    const [firstAtomId, secondAtomId] = bond.atoms ?? [];
+    if (dominantAtomIdSet.has(firstAtomId) && dominantAtomIdSet.has(secondAtomId)) {
+      bondIds.push(String(bond.id));
+    }
+  }
+  return bondIds;
+}
+
+async function dominantBondAxisDegrees(page, bondIds) {
+  return await page.evaluate(ids => {
+    const points = [];
+    for (const bondId of ids) {
+      const line = document.querySelector(`[data-bond-id="${bondId}"] .bond-hit`);
+      if (!line) {
+        continue;
+      }
+      points.push(
+        { x: Number(line.getAttribute('x1') ?? 0), y: Number(line.getAttribute('y1') ?? 0) },
+        { x: Number(line.getAttribute('x2') ?? 0), y: Number(line.getAttribute('y2') ?? 0) }
+      );
+    }
+    if (points.length < 2) {
+      return null;
+    }
+
+    const centerX = points.reduce((sum, point) => sum + point.x, 0) / points.length;
+    const centerY = points.reduce((sum, point) => sum + point.y, 0) / points.length;
+    let inertiaXX = 0;
+    let inertiaYY = 0;
+    let inertiaXY = 0;
+    for (const point of points) {
+      const dx = point.x - centerX;
+      const dy = point.y - centerY;
+      inertiaXX += dy * dy;
+      inertiaYY += dx * dx;
+      inertiaXY -= dx * dy;
+    }
+    const angle0 = 0.5 * Math.atan2(2 * inertiaXY, inertiaXX - inertiaYY);
+    const inertia0 = inertiaXX * Math.cos(angle0) ** 2 + inertiaYY * Math.sin(angle0) ** 2 + inertiaXY * Math.sin(2 * angle0);
+    const inertia1 = inertiaXX + inertiaYY - inertia0;
+    let axis = inertia0 <= inertia1 ? angle0 : angle0 + Math.PI / 2;
+    if (axis > Math.PI / 2) {
+      axis -= Math.PI;
+    }
+    if (axis <= -Math.PI / 2) {
+      axis += Math.PI;
+    }
+    return (axis * 180) / Math.PI;
+  }, bondIds);
 }
 
 async function bondSignature(page) {
@@ -204,6 +269,19 @@ test('input changes participate in undo/redo through the real browser UI', async
 
   await page.locator('#undo-btn').click();
   await expect(input).toHaveValue('CCO');
+});
+
+test('browser 2D rendering keeps one clearly dominant multi-ring scaffold level by that scaffold axis', async ({ page }) => {
+  const smiles = 'CCCCC1=CC2=C(C=C1C(=CC1=CC=NO1)C(C)C)C(C)(C)CC2(C)C';
+  const bondIds = dominantMultiRingBondIds(smiles);
+
+  await page.goto('/index.html');
+  await loadSmiles(page, smiles);
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const axisDegrees = await dominantBondAxisDegrees(page, bondIds);
+
+  expect(Math.abs(axisDegrees ?? Infinity)).toBeLessThanOrEqual(1);
 });
 
 test('undo restores the prior InChI text after switching input format', async ({ page }) => {

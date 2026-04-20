@@ -2,6 +2,7 @@
 
 import {
   buildAtomGrid,
+  buildSubtreeOverlapContext,
   collectReadableRingSubstituentChildren,
   computeAtomDistortionCost,
   computeSubtreeOverlapCost,
@@ -621,9 +622,10 @@ function linkedRingBridgeAngleDeviation(anchorPosition, rootPosition, reverseAnc
  * @param {number} bondLength - Target bond length.
  * @param {string[]} allAtomIds - All placed atom ids.
  * @param {object[]|null} [covalentBonds] - Optional cached covalent bonds for crossing checks.
+ * @param {object|null} [subtreeContext] - Optional cached subtree-overlap context.
  * @returns {object|null} Exact outward candidate, or null when unavailable.
  */
-function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor, bondLength, allAtomIds, covalentBonds = null) {
+function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor, bondLength, allAtomIds, covalentBonds = null, subtreeContext = null) {
   if (
     descriptor.isRingSystemSubstituent
     || descriptor.rootRotatingAtomIds.length > 0
@@ -650,7 +652,7 @@ function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor,
     [descriptor.rootAtomId, add(anchorPosition, fromAngle(targetAngle, bondDistance))]
   ]);
   return {
-    ...buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, covalentBonds),
+    ...buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, covalentBonds, subtreeContext),
     angleDelta: angularDifference(angleOf(sub(rootPosition, anchorPosition)), targetAngle),
     overridePositions,
     rootAnchored: false
@@ -669,9 +671,10 @@ function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor,
  * @param {number} bondLength - Target bond length.
  * @param {string[]} allAtomIds - All placed atom ids.
  * @param {object[]|null} [covalentBonds] - Optional cached covalent bonds for crossing checks.
+ * @param {object|null} [subtreeContext] - Optional cached subtree-overlap context.
  * @returns {object|null} Best exact linked-ring candidate, or null when unavailable.
  */
-function buildExactIdealLinkedRingCandidate(layoutGraph, coords, atomGrid, descriptor, bondLength, allAtomIds, covalentBonds = null) {
+function buildExactIdealLinkedRingCandidate(layoutGraph, coords, atomGrid, descriptor, bondLength, allAtomIds, covalentBonds = null, subtreeContext = null) {
   if (
     descriptor.linkedRingAnchorAtomId == null
     || !descriptor.prefersIdealOutwardGeometry
@@ -717,7 +720,7 @@ function buildExactIdealLinkedRingCandidate(layoutGraph, coords, atomGrid, descr
         );
       }
       const candidate = {
-        ...buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, covalentBonds),
+        ...buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, covalentBonds, subtreeContext),
         angleDelta: angularDifference(currentForwardAngle, forwardOutwardAngle) + Math.abs(rotation),
         overridePositions,
         rootAnchored: false
@@ -795,7 +798,7 @@ function updateAtomGridForMove(layoutGraph, atomGrid, coords, movedPositions) {
   }
 }
 
-function buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, covalentBonds = null) {
+function buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, covalentBonds = null, subtreeContext = null) {
   const anchorPosition = coords.get(descriptor.anchorAtomId);
   const rootPosition = positionForAtom(coords, overridePositions, descriptor.rootAtomId);
   const reverseAnchorPosition = descriptor.isRingSystemSubstituent ? positionForAtom(coords, overridePositions, descriptor.reverseAnchorAtomId) : null;
@@ -886,7 +889,7 @@ function buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, override
     linkedRingAnchorAtomId: descriptor.linkedRingAnchorAtomId,
     bridgeAngleDeviation,
     crossingCount: countMovedBondCrossings(layoutGraph, coords, descriptor.subtreeAtomIds, overridePositions, covalentBonds),
-    overlapCost: computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, overridePositions, bondLength, { atomGrid }),
+    overlapCost: computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, overridePositions, bondLength, { atomGrid, subtreeContext }),
     anchorDistortion: localGeometryDistortion,
     anchorClearance: descriptor.isRingSystemSubstituent
       ? Math.min(
@@ -1147,9 +1150,11 @@ export function measureRingSubstituentPresentationPenalty(layoutGraph, coords, o
 export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const maxPasses = Math.max(1, options.maxPasses ?? 2);
+  const overridePositions = options.overridePositions ?? null;
   const coords = new Map();
   for (const [atomId, position] of inputCoords) {
-    coords.set(atomId, { x: position.x, y: position.y });
+    const start = overridePositions?.get(atomId) ?? position;
+    coords.set(atomId, { x: start.x, y: start.y });
   }
   const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
   const allAtomIds = [...coords.keys()];
@@ -1171,6 +1176,8 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
         continue;
       }
 
+      // Pre-compute once — only depends on topology, not on positions.
+      const subtreeContext = buildSubtreeOverlapContext(layoutGraph, dynamicDescriptor.subtreeAtomIds);
       const currentAngle = angleOf(sub(rootPosition, anchorPosition));
       const candidateAngles = new Set(TIDY_ROTATION_ANGLES);
       for (const angle of dynamicDescriptor.outwardAngles) { candidateAngles.add(angle); }
@@ -1183,7 +1190,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
         }
       }
       const baseCandidate = {
-        ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, null, bondLength, allAtomIds, covalentBonds),
+        ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, null, bondLength, allAtomIds, covalentBonds, subtreeContext),
         angleDelta: 0
       };
       const baseFailsReadability =
@@ -1202,7 +1209,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
       }
       let bestCandidate = null;
       let bestZeroFailureRootCandidate = null;
-      const exactIdealLeafCandidate = buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, dynamicDescriptor, bondLength, allAtomIds, covalentBonds);
+      const exactIdealLeafCandidate = buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, dynamicDescriptor, bondLength, allAtomIds, covalentBonds, subtreeContext);
       const exactIdealLinkedRingCandidate = buildExactIdealLinkedRingCandidate(
         layoutGraph,
         coords,
@@ -1210,7 +1217,8 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
         dynamicDescriptor,
         bondLength,
         allAtomIds,
-        covalentBonds
+        covalentBonds,
+        subtreeContext
       );
       const shouldUseExactIdealLeafCandidate =
         exactIdealLeafCandidate
@@ -1238,7 +1246,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
           },
           visitCandidate(overridePositions, rotation) {
             const candidate = {
-              ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, overridePositions, bondLength, allAtomIds, covalentBonds),
+              ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, overridePositions, bondLength, allAtomIds, covalentBonds, subtreeContext),
               angleDelta: Math.abs(rotation),
               overridePositions,
               rootAnchored: true
@@ -1268,7 +1276,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
           },
           visitCandidate(overridePositions, candidateAngle) {
             const candidate = {
-              ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, overridePositions, bondLength, allAtomIds, covalentBonds),
+              ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, overridePositions, bondLength, allAtomIds, covalentBonds, subtreeContext),
               angleDelta: Math.abs(candidateAngle - currentAngle),
               overridePositions,
               rootAnchored: false

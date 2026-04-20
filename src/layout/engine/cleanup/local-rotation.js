@@ -29,6 +29,7 @@ const MAX_SIBLING_SWAP_LAYOUT_ATOMS = 48;
 const LOCAL_ROTATION_BOND_CROWDING_FINALISTS = 2;
 const EXACT_ROTATION_ANGLE_EPSILON = 1e-6;
 const IDEAL_LEAF_LINEAR_NEIGHBOR_TOLERANCE = Math.PI / 12;
+const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
 
 function buildPlacedAdjacency(layoutGraph, coords) {
   const adjacency = new Map();
@@ -130,8 +131,72 @@ function exactIdealTrigonalTerminalAngle(layoutGraph, coords, anchorAtomId, root
   return angleOf(outwardVector);
 }
 
+/**
+ * Returns exact 120-degree continuation angles for simple saturated divalent
+ * anchors such as `-CH2CH3` when hydrogens are omitted. Keeping these exact
+ * zigzag slots available lets local cleanup clear crowding without letting the
+ * terminal leaf drift to an arbitrary off-angle lattice position.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Divalent anchor atom id.
+ * @param {string} rootAtomId - Rotating terminal leaf atom id.
+ * @returns {number[]} Exact ideal continuation angles in radians.
+ */
+function exactIdealDivalentContinuationAngles(layoutGraph, coords, anchorAtomId, rootAtomId) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const anchorPosition = coords.get(anchorAtomId);
+  const rootPosition = coords.get(rootAtomId);
+  if (
+    !anchorAtom
+    || !anchorPosition
+    || !rootPosition
+    || anchorAtom.aromatic
+    || !IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(anchorAtom.element)
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+  ) {
+    return [];
+  }
+
+  const visibleHeavyBonds = (layoutGraph.bondsByAtomId.get(anchorAtomId) ?? [])
+    .filter(bond => {
+      if (bond.kind !== 'covalent') {
+        return false;
+      }
+      const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H' && coords.has(neighborAtomId);
+    });
+  if (visibleHeavyBonds.length !== 2) {
+    return [];
+  }
+
+  const rootBond = visibleHeavyBonds.find(bond => (bond.a === anchorAtomId ? bond.b : bond.a) === rootAtomId) ?? null;
+  if (!rootBond || rootBond.aromatic || (rootBond.order ?? 1) !== 1) {
+    return [];
+  }
+
+  const parentBond = visibleHeavyBonds.find(bond => bond !== rootBond) ?? null;
+  const parentAtomId = parentBond ? (parentBond.a === anchorAtomId ? parentBond.b : parentBond.a) : null;
+  const parentAtom = parentAtomId ? layoutGraph.atoms.get(parentAtomId) : null;
+  const parentPosition = parentAtomId ? coords.get(parentAtomId) : null;
+  if (!parentBond || !parentAtomId || !parentAtom || !parentPosition || parentBond.aromatic || (parentBond.order ?? 1) !== 1) {
+    return [];
+  }
+
+  const parentAngle = angleOf(sub(parentPosition, anchorPosition));
+  const currentAngle = angleOf(sub(rootPosition, anchorPosition));
+  return [parentAngle + ((2 * Math.PI) / 3), parentAngle - ((2 * Math.PI) / 3)]
+    .sort((firstAngle, secondAngle) => angularDifference(firstAngle, currentAngle) - angularDifference(secondAngle, currentAngle));
+}
+
 function preferredRotationAngles(layoutGraph, coords, anchorAtomId, rootAtomId) {
   const candidateAngles = [];
+  for (const exactAngle of exactIdealDivalentContinuationAngles(layoutGraph, coords, anchorAtomId, rootAtomId)) {
+    if (candidateAngles.some(existingAngle => angularDifference(existingAngle, exactAngle) <= EXACT_ROTATION_ANGLE_EPSILON)) {
+      continue;
+    }
+    candidateAngles.push(exactAngle);
+  }
   const exactIdealAngle = exactIdealTrigonalTerminalAngle(layoutGraph, coords, anchorAtomId, rootAtomId);
   if (Number.isFinite(exactIdealAngle)) {
     candidateAngles.push(exactIdealAngle);

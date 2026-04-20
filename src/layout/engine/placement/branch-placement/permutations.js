@@ -388,15 +388,21 @@ function crossLikeHypervalentPenalty(layoutGraph, coords, atomId) {
 
   const candidateAlphas = neighborAngles.flatMap(angle => ORTHOGONAL_SLOT_OFFSETS.map(slotOffset => angle - slotOffset));
   let bestPenalty = Number.POSITIVE_INFINITY;
-  for (const alpha of candidateAlphas) {
+  outer: for (const alpha of candidateAlphas) {
     const targetAngles = ORTHOGONAL_SLOT_OFFSETS.map(slotOffset => alpha + slotOffset);
     for (const permutation of ORTHOGONAL_SLOT_PERMUTATIONS) {
       let penalty = 0;
       for (let neighborIndex = 0; neighborIndex < neighborAngles.length; neighborIndex++) {
         penalty += angularDifference(neighborAngles[neighborIndex], targetAngles[permutation[neighborIndex]]) ** 2;
+        if (penalty >= bestPenalty) {
+          break;
+        }
       }
       if (penalty < bestPenalty) {
         bestPenalty = penalty;
+        if (bestPenalty < 1e-9) {
+          break outer;
+        }
       }
     }
   }
@@ -559,7 +565,10 @@ function evaluateLocalAnglePermutations(
         );
       }
 
-      const newlyPlacedAtomIds = collectNewlyPlacedAtomIds(coords, tempCoords);
+      // The local variant places only direct children — no recursive subtree expansion —
+      // so the newly placed atoms are exactly the assigned child atoms (excluding any
+      // that were already in coords, e.g. ring atoms that were pre-placed).
+      const newlyPlacedAtomIds = assignedPlacements.map(p => p.childAtomId).filter(id => !coords.has(id));
       const candidateAtomGrid = buildCandidateArrangementAtomGrid(layoutGraph, baseAtomGrid, tempCoords, newlyPlacedAtomIds);
       const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, newlyPlacedAtomIds, candidateAtomGrid);
       if (!bestPlacement || cost < bestPlacement.cost) {

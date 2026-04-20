@@ -199,6 +199,67 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(chainCross) > 0.2);
   });
 
+  it('keeps cyclopropyl-adjacent mixed alkyl tails on a 120-degree zigzag instead of flattening them straight', () => {
+    const smiles = 'CCC1(CC1)C1(CC[NH2+]1)C(C)O';
+    const graph = createLayoutGraph(parseSMILES(smiles), {
+      suppressH: true,
+      finalLandscapeOrientation: true
+    });
+    const component = graph.components[0];
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), buildScaffoldPlan(graph, component), graph.options.bondLength);
+    const mixedBend = bondAngleAtAtom(result.coords, 'C2', 'C1', 'C3');
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      finalLandscapeOrientation: true,
+      auditTelemetry: true
+    });
+    const pipelineBend = bondAngleAtAtom(pipelineResult.coords, 'C2', 'C1', 'C3');
+
+    assert.equal(result.supported, true);
+    assert.ok(
+      Math.abs(mixedBend - ((Math.PI * 2) / 3)) < 1e-6,
+      `expected mixed placement to keep the cyclopropyl-adjacent tail at 120 degrees, got ${((mixedBend * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.ok(
+      Math.abs(pipelineBend - ((Math.PI * 2) / 3)) < 1e-6,
+      `expected the full pipeline to keep the cyclopropyl-adjacent tail at 120 degrees, got ${((pipelineBend * 180) / Math.PI).toFixed(2)} degrees`
+    );
+  });
+
+  it('keeps uncrowded propylcyclohexane tails on the primary alternating zigzag slot when both zigzag candidates are open', () => {
+    const graph = createLayoutGraph(parseSMILES('CCCC1CCCCC1'), { suppressH: true });
+    const component = graph.components[0];
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), buildScaffoldPlan(graph, component), graph.options.bondLength);
+    const anchorPosition = result.coords.get('C2');
+    const parentPosition = result.coords.get('C3');
+    const parentContextPosition = result.coords.get('C4');
+    const childPosition = result.coords.get('C1');
+    const previousVector = sub(parentPosition, parentContextPosition);
+    const incomingVector = sub(anchorPosition, parentPosition);
+    const previousTurn = Math.sign((previousVector.x * incomingVector.y) - (previousVector.y * incomingVector.x));
+    const forwardAngle = angleOf(incomingVector);
+    const candidateAngles = [forwardAngle + (Math.PI / 3), forwardAngle - (Math.PI / 3)];
+    const alternatingCandidateAngle = candidateAngles.find(candidateAngle => {
+      const candidateVector = fromAngle(candidateAngle, 1);
+      const candidateTurn = Math.sign((incomingVector.x * candidateVector.y) - (incomingVector.y * candidateVector.x));
+      return candidateTurn === -previousTurn;
+    });
+    const mirroredCandidateAngle = candidateAngles.find(candidateAngle => candidateAngle !== alternatingCandidateAngle);
+    const alternatingCandidatePosition = add(anchorPosition, fromAngle(alternatingCandidateAngle, graph.options.bondLength));
+    const mirroredCandidatePosition = add(anchorPosition, fromAngle(mirroredCandidateAngle, graph.options.bondLength));
+
+    assert.equal(result.supported, true);
+    assert.ok(
+      distance(childPosition, alternatingCandidatePosition) < 1e-6,
+      'expected the uncrowded tail to stay on the primary alternating zigzag slot when that preferred slot is already open'
+    );
+    assert.ok(
+      distance(childPosition, mirroredCandidatePosition) > 1e-3,
+      'expected the mirrored zigzag slot to stay a fallback instead of displacing the primary uncrowded zigzag preference'
+    );
+  });
+
   it('prefers the alkyl-tail continuation slot that extends away from the placed scaffold context', () => {
     const graph = createLayoutGraph(parseSMILES('CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1C(=O)OC'), {
       suppressH: true

@@ -8,7 +8,7 @@ function buildEngineOptions(options = {}) {
     suppressH: options.suppressH ?? true,
     bondLength: options.bondLength ?? 1.5,
     maxCleanupPasses: options.maxCleanupPasses ?? options.maxPasses ?? 6,
-    finalLandscapeOrientation: options.finalLandscapeOrientation ?? false
+    finalLandscapeOrientation: options.finalLandscapeOrientation ?? true
   };
 }
 
@@ -36,6 +36,7 @@ function readPlacedCoords(molecule, { suppressH = false } = {}) {
  * @param {number} [options.bondLength] - Requested target bond length in angstroms.
  * @param {number} [options.maxCleanupPasses] - Maximum cleanup passes for the engine.
  * @param {number} [options.maxPasses] - Legacy alias for `maxCleanupPasses`.
+ * @param {boolean} [options.finalLandscapeOrientation] - Whether to apply the final whole-molecule leveling pass.
  * @returns {Map<number, {x: number, y: number}>} The placed coordinates keyed by atom id.
  */
 export function generateCoords(molecule, options = {}) {
@@ -66,6 +67,7 @@ export function generateCoords(molecule, options = {}) {
  * @param {number} [options.bondLength] - Requested target bond length in angstroms.
  * @param {number} [options.maxCleanupPasses] - Maximum cleanup passes for the engine.
  * @param {number} [options.maxPasses] - Legacy alias for `maxCleanupPasses`.
+ * @param {boolean} [options.finalLandscapeOrientation] - Whether to apply the final whole-molecule leveling pass.
  * @param {Set<number>} [options.touchedAtoms] - Atom ids that should be treated as locally edited during refinement.
  * @param {Set<number>} [options.touchedBonds] - Bond ids that should be treated as locally edited during refinement.
  * @returns {Map<number, {x: number, y: number}>} The placed coordinates keyed by atom id.
@@ -103,6 +105,7 @@ export function refineExistingCoords(molecule, options = {}) {
  * @param {boolean} [options.suppressH] - Whether to suppress hydrogen display.
  * @param {number} [options.bondLength] - Configuration sub-option.
  * @param {number} [options.maxPasses] - Configuration sub-option.
+ * @param {boolean} [options.finalLandscapeOrientation] - Whether to apply the final whole-molecule leveling pass.
  * @param {boolean} [options.freezeRings] - Configuration sub-option.
  * @param {boolean} [options.freezeChiralCenters] - Configuration sub-option.
  * @param {boolean} [options.allowBranchReflect] - Configuration sub-option.
@@ -110,13 +113,22 @@ export function refineExistingCoords(molecule, options = {}) {
  */
 export function generateAndRefine2dCoords(
   mol,
-  { suppressH = true, bondLength = 1.5, maxPasses = 6, freezeRings = true, freezeChiralCenters = false, allowBranchReflect = true } = {}
+  {
+    suppressH = true,
+    bondLength = 1.5,
+    maxPasses = 6,
+    finalLandscapeOrientation = true,
+    freezeRings = true,
+    freezeChiralCenters = false,
+    allowBranchReflect = true
+  } = {}
 ) {
-  generateCoords(mol, { suppressH, bondLength });
+  generateCoords(mol, { suppressH, bondLength, finalLandscapeOrientation });
   return refineExistingCoords(mol, {
     suppressH,
     bondLength,
     maxPasses,
+    finalLandscapeOrientation,
     freezeRings,
     freezeChiralCenters,
     allowBranchReflect

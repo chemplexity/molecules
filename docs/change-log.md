@@ -1,7 +1,15 @@
 # Change Log
 
+## 2026-04-20
+
+- Keep crowded benzylic ethyl branches on exact 120-degree zigzags by adding exact saturated-continuation cleanup slots and finer rigid overlap escape rotations
+- Keep crowded cyclopropyl-adjacent mixed alkyl tails zigzagged by falling back to the mirrored preferred zigzag slot before any straight continuation
+
 ## 2026-04-19
 
+- Let one clearly dominant multi-ring scaffold define the final horizontal horizon instead of relying only on whole-molecule inertia
+- Keep already-leveled broad ring-rich slabs horizontal instead of letting the final bond-grid snap introduce a small diagonal tilt
+- Let rigid overlap cleanup probe exact omitted-h trigonal ring-exit slots so crowded alkene-linked heteroaryl blocks keep clean 120-degree geometry
 - Keep standalone bracket hydrogens after dot-separated counterions bonded to the following fragment instead of stranding them as free H-H pairs
 - Let short non-ring zigzag backbones still control final landscape leveling in mixed ring/chain molecules when they are the clearest readable axis
 - Stop short pendant tails from dictating final landscape orientation when a much larger ring-rich scaffold should read level instead

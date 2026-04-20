@@ -1,10 +1,12 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
+import { morganRanks } from '../../../src/algorithms/morgan.js';
 import { Molecule } from '../../../src/core/index.js';
 import { parseSMILES } from '../../../src/io/index.js';
 import { ensureLandscapeOrientation } from '../../../src/layout/engine/orientation.js';
 import { runPipeline } from '../../../src/layout/engine/pipeline.js';
+import { analyzeRings } from '../../../src/layout/engine/topology/ring-analysis.js';
 
 function normalizeBondAngle(angle) {
   let normalized = angle % Math.PI;
@@ -74,6 +76,19 @@ function principalAxisDegrees(coords, molecule) {
     axis += Math.PI;
   }
   return (axis * 180) / Math.PI;
+}
+
+function dominantScaffoldAxisDegrees(coords, molecule) {
+  const heavyAtomIds = [...molecule.atoms.keys()].filter(atomId => molecule.atoms.get(atomId)?.name !== 'H' && coords.has(atomId));
+  const { ringSystems } = analyzeRings(molecule, morganRanks(molecule));
+  const multiRingSystems = ringSystems.filter(ringSystem => ringSystem.ringIds.length > 1);
+  if (multiRingSystems.length !== 1 || ringSystems.length > 2) {
+    return null;
+  }
+
+  const dominantRingSystem = multiRingSystems[0];
+  const dominantAtomIds = dominantRingSystem.atomIds.filter(atomId => heavyAtomIds.includes(atomId));
+  return dominantAtomIds.length >= 2 ? principalAxisDegrees(coords, { atoms: new Map(dominantAtomIds.map(atomId => [atomId, molecule.atoms.get(atomId)])) }) : null;
 }
 
 describe('layout/engine/orientation', () => {
@@ -176,6 +191,19 @@ describe('layout/engine/orientation', () => {
     assert.ok(
       Math.abs(principalAxisDegrees(result.coords, molecule)) <= 15,
       `expected the leveled slab to stay near horizontal, got principal axis ${principalAxisDegrees(result.coords, molecule).toFixed(2)} degrees`
+    );
+  });
+
+  it('levels one clearly dominant multi-ring scaffold by that scaffold axis instead of the whole-molecule inertia axis', () => {
+    const molecule = parseSMILES('CCCCC1=CC2=C(C=C1C(=CC1=CC=NO1)C(C)C)C(C)(C)CC2(C)C');
+    const result = runPipeline(molecule, {
+      suppressH: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.ok(
+      Math.abs(dominantScaffoldAxisDegrees(result.coords, molecule) ?? Infinity) <= 1,
+      `expected the dominant fused scaffold axis to stay essentially horizontal, got ${dominantScaffoldAxisDegrees(result.coords, molecule)?.toFixed(2) ?? 'n/a'} degrees`
     );
   });
 

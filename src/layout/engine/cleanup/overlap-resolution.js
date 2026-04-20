@@ -29,9 +29,15 @@ const COARSE_RIGID_SUBTREE_ROTATION_ANGLES = Object.freeze([
   -(2 * Math.PI) / 3,
   Math.PI
 ]);
-const EXACT_RING_ROOT_RELATIVE_ROTATION_OFFSETS = Object.freeze(
-  RIGID_SUBTREE_ROTATION_ANGLES.filter(angle => Math.abs(angle) > ANGLE_EPSILON)
-);
+const EXACT_RING_ROOT_RELATIVE_ROTATION_OFFSETS = Object.freeze([
+  Math.PI / 90,
+  -(Math.PI / 90),
+  Math.PI / 60,
+  -(Math.PI / 60),
+  Math.PI / 45,
+  -(Math.PI / 45),
+  ...RIGID_SUBTREE_ROTATION_ANGLES.filter(angle => Math.abs(angle) > ANGLE_EPSILON)
+]);
 const LARGE_RIGID_SUBTREE_COMPONENT_ATOM_COUNT = 24;
 const LARGE_RIGID_SUBTREE_SIZE = 6;
 const MAX_RIGID_DESCRIPTOR_OPTIONS_PER_ATOM = 4;
@@ -49,6 +55,10 @@ const EXACT_HYPERVALENT_RELATIVE_ROTATION_OFFSETS = Object.freeze([
   -(Math.PI / 4),
   Math.PI / 3,
   -(Math.PI / 3)
+]);
+const OMITTED_H_TRIGONAL_ROOT_ANGLE_OFFSETS = Object.freeze([
+  (2 * Math.PI) / 3,
+  -(2 * Math.PI) / 3
 ]);
 
 function protectsLargeMoleculeBackbone(options) {
@@ -244,6 +254,112 @@ function compactRingAnchoredRootOutwardDeviation(layoutGraph, coords, descriptor
 }
 
 /**
+ * Returns the exact omitted-h trigonal root angles for a rigid subtree rooted
+ * on a non-ring divalent center with one multiple-bond heavy neighbor. These
+ * roots should occupy one of the two exact 120-degree slots relative to the
+ * multiple bond instead of falling back to a coarse cleanup lattice.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {{anchorAtomId: string, rootAtomId: string}} descriptor - Rigid-subtree descriptor.
+ * @param {Map<string, {x: number, y: number}>|null} [overridePositions] - Optional candidate positions.
+ * @returns {number[]} Exact root angles in radians.
+ */
+function exactOmittedHydrogenTrigonalRootAngles(layoutGraph, coords, descriptor, overridePositions = null) {
+  const anchorAtom = layoutGraph.atoms.get(descriptor.anchorAtomId);
+  const rootAtom = layoutGraph.atoms.get(descriptor.rootAtomId);
+  if (
+    !anchorAtom
+    || !rootAtom
+    || anchorAtom.element === 'H'
+    || rootAtom.element === 'H'
+    || anchorAtom.aromatic
+    || (anchorAtom.heavyDegree ?? 0) !== 2
+    || (layoutGraph.atomToRings?.get(descriptor.anchorAtomId)?.length ?? 0) > 0
+  ) {
+    return [];
+  }
+
+  const rootBond = (layoutGraph.bondsByAtomId.get(descriptor.anchorAtomId) ?? []).find(bond => {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return false;
+    }
+    const neighborAtomId = bond.a === descriptor.anchorAtomId ? bond.b : bond.a;
+    return neighborAtomId === descriptor.rootAtomId;
+  }) ?? null;
+  if (!rootBond) {
+    return [];
+  }
+
+  const multipleBondNeighbors = (layoutGraph.bondsByAtomId.get(descriptor.anchorAtomId) ?? [])
+    .filter(bond => {
+      if (!bond || bond === rootBond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+        return false;
+      }
+      const neighborAtomId = bond.a === descriptor.anchorAtomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H';
+    })
+    .map(bond => (bond.a === descriptor.anchorAtomId ? bond.b : bond.a));
+  if (multipleBondNeighbors.length !== 1) {
+    return [];
+  }
+
+  const anchorPosition = overridePositions?.get(descriptor.anchorAtomId) ?? coords.get(descriptor.anchorAtomId);
+  const multipleBondNeighborPosition = overridePositions?.get(multipleBondNeighbors[0]) ?? coords.get(multipleBondNeighbors[0]);
+  if (!anchorPosition || !multipleBondNeighborPosition) {
+    return [];
+  }
+
+  const baseAngle = angleOf(sub(multipleBondNeighborPosition, anchorPosition));
+  return mergeRigidCandidateAngles([], OMITTED_H_TRIGONAL_ROOT_ANGLE_OFFSETS.map(offset => baseAngle + offset));
+}
+
+/**
+ * Measures how far a rigid subtree root deviates from the exact omitted-h
+ * trigonal slots around its anchor. Lower values are better.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {{anchorAtomId: string, rootAtomId: string}} descriptor - Rigid-subtree descriptor.
+ * @param {Map<string, {x: number, y: number}>|null} [overridePositions] - Optional candidate positions.
+ * @returns {number} Minimum exact-slot deviation in radians.
+ */
+function omittedHydrogenTrigonalRootDeviation(layoutGraph, coords, descriptor, overridePositions = null) {
+  const exactAngles = exactOmittedHydrogenTrigonalRootAngles(layoutGraph, coords, descriptor, overridePositions);
+  if (exactAngles.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const anchorPosition = overridePositions?.get(descriptor.anchorAtomId) ?? coords.get(descriptor.anchorAtomId);
+  const rootPosition = overridePositions?.get(descriptor.rootAtomId) ?? coords.get(descriptor.rootAtomId);
+  if (!anchorPosition || !rootPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const rootAngle = angleOf(sub(rootPosition, anchorPosition));
+  return Math.min(...exactAngles.map(exactAngle => angularDifference(rootAngle, exactAngle)));
+}
+
+function preferredExactRootDeviation(move) {
+  if (Number.isFinite(move?.exactRootDeviation)) {
+    return move.exactRootDeviation;
+  }
+  if (Number.isFinite(move?.ringRootDeviation)) {
+    return move.ringRootDeviation;
+  }
+  return Number.POSITIVE_INFINITY;
+}
+
+function preferredTotalExactRootDeviation(move) {
+  if (Number.isFinite(move?.totalExactRootDeviation)) {
+    return move.totalExactRootDeviation;
+  }
+  if (Number.isFinite(move?.totalRingRootDeviation)) {
+    return move.totalRingRootDeviation;
+  }
+  return preferredExactRootDeviation(move);
+}
+
+/**
  * Returns whether one rigid cleanup move should beat another.
  * Overlap gain stays primary, then local presentation, then subtree size so
  * equally effective fixes prefer the smaller less-disruptive branch.
@@ -255,13 +371,15 @@ function isBetterRigidMove(incumbent, candidate) {
   if (!incumbent) {
     return true;
   }
-  const candidateHasExactRingRootPresentation = Number.isFinite(candidate.ringRootDeviation);
-  const incumbentHasExactRingRootPresentation = Number.isFinite(incumbent.ringRootDeviation);
-  if (candidateHasExactRingRootPresentation && incumbentHasExactRingRootPresentation) {
-    if (candidate.ringRootDeviation < incumbent.ringRootDeviation - IMPROVEMENT_EPSILON) {
+  const candidateExactRootDeviation = preferredExactRootDeviation(candidate);
+  const incumbentExactRootDeviation = preferredExactRootDeviation(incumbent);
+  const candidateHasExactRootPresentation = Number.isFinite(candidateExactRootDeviation);
+  const incumbentHasExactRootPresentation = Number.isFinite(incumbentExactRootDeviation);
+  if (candidateHasExactRootPresentation && incumbentHasExactRootPresentation) {
+    if (candidateExactRootDeviation < incumbentExactRootDeviation - IMPROVEMENT_EPSILON) {
       return true;
     }
-    if (Math.abs(candidate.ringRootDeviation - incumbent.ringRootDeviation) > IMPROVEMENT_EPSILON) {
+    if (Math.abs(candidateExactRootDeviation - incumbentExactRootDeviation) > IMPROVEMENT_EPSILON) {
       return false;
     }
   }
@@ -271,18 +389,18 @@ function isBetterRigidMove(incumbent, candidate) {
   if (Math.abs(candidate.improvement - incumbent.improvement) > IMPROVEMENT_EPSILON) {
     return false;
   }
-  if (candidate.ringRootDeviation < incumbent.ringRootDeviation - IMPROVEMENT_EPSILON) {
+  if (candidateExactRootDeviation < incumbentExactRootDeviation - IMPROVEMENT_EPSILON) {
     return true;
   }
-  if (Math.abs(candidate.ringRootDeviation - incumbent.ringRootDeviation) > IMPROVEMENT_EPSILON) {
+  if (Math.abs(candidateExactRootDeviation - incumbentExactRootDeviation) > IMPROVEMENT_EPSILON) {
     return false;
   }
-  const candidateTotalRingRootDeviation = candidate.totalRingRootDeviation ?? candidate.ringRootDeviation;
-  const incumbentTotalRingRootDeviation = incumbent.totalRingRootDeviation ?? incumbent.ringRootDeviation;
-  if (candidateTotalRingRootDeviation < incumbentTotalRingRootDeviation - IMPROVEMENT_EPSILON) {
+  const candidateTotalExactRootDeviation = preferredTotalExactRootDeviation(candidate);
+  const incumbentTotalExactRootDeviation = preferredTotalExactRootDeviation(incumbent);
+  if (candidateTotalExactRootDeviation < incumbentTotalExactRootDeviation - IMPROVEMENT_EPSILON) {
     return true;
   }
-  if (Math.abs(candidateTotalRingRootDeviation - incumbentTotalRingRootDeviation) > IMPROVEMENT_EPSILON) {
+  if (Math.abs(candidateTotalExactRootDeviation - incumbentTotalExactRootDeviation) > IMPROVEMENT_EPSILON) {
     return false;
   }
   if (candidate.subtreeHeavyAtomCount !== incumbent.subtreeHeavyAtomCount) {
@@ -331,6 +449,9 @@ export function collectRigidPendantRingSubtrees(layoutGraph) {
 
   for (const bond of layoutGraph.bonds?.values?.() ?? []) {
     if (!bond || bond.kind !== 'covalent' || bond.inRing || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    if (layoutGraph.atoms.get(bond.a)?.element === 'H' || layoutGraph.atoms.get(bond.b)?.element === 'H') {
       continue;
     }
 
@@ -723,9 +844,10 @@ function mergeRigidCandidateAngles(baseAngles, extraAngles) {
  * @param {number} currentRootAngle - Current root-bond angle in radians.
  * @param {boolean} exactRingRootDescriptor - Whether the descriptor should preserve exact ring-root presentation when possible.
  * @param {boolean} exactHypervalentDescriptor - Whether the descriptor should preserve exact hypervalent presentation when possible.
+ * @param {number[]} exactTrigonalRootAngles - Exact omitted-h trigonal root angles when available.
  * @returns {number[]} Candidate root angles in radians.
  */
-function rigidSubtreeProbeAngles(subtreeSize, visibleAtomCount, currentRootAngle, exactRingRootDescriptor, exactHypervalentDescriptor) {
+function rigidSubtreeProbeAngles(subtreeSize, visibleAtomCount, currentRootAngle, exactRingRootDescriptor, exactHypervalentDescriptor, exactTrigonalRootAngles) {
   const baseAngles = rigidSubtreeCandidateAngles(subtreeSize, visibleAtomCount);
   const extraAngles = [];
   if (exactRingRootDescriptor) {
@@ -734,6 +856,7 @@ function rigidSubtreeProbeAngles(subtreeSize, visibleAtomCount, currentRootAngle
   if (exactHypervalentDescriptor) {
     extraAngles.push(...EXACT_HYPERVALENT_RELATIVE_ROTATION_OFFSETS.map(offset => currentRootAngle + offset));
   }
+  extraAngles.push(...exactTrigonalRootAngles);
   if (extraAngles.length === 0) {
     return baseAngles;
   }
@@ -781,6 +904,7 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     ? 0
     : computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, null);
   const exactRingRootDescriptor = isCompactRingAnchoredRigidDescriptor(layoutGraph, descriptor);
+  const exactTrigonalRootAngles = exactOmittedHydrogenTrigonalRootAngles(layoutGraph, coords, descriptor);
   let bestMove = null;
 
   const evaluateCandidatePositions = newPositions => {
@@ -804,6 +928,9 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     const ringRootDeviation = exactRingRootDescriptor
       ? compactRingAnchoredRootOutwardDeviation(layoutGraph, coords, descriptor, newPositions)
       : Number.POSITIVE_INFINITY;
+    const exactRootDeviation = exactTrigonalRootAngles.length > 0
+      ? omittedHydrogenTrigonalRootDeviation(layoutGraph, coords, descriptor, newPositions)
+      : ringRootDeviation;
     if (improvement <= IMPROVEMENT_EPSILON && subtreeIsSingleAtom && newOverlapCost <= baseOverlapCost + IMPROVEMENT_EPSILON) {
       const candidateLocalClearance = localNonbondedClearance(layoutGraph, coords, movingAtomId, movedAtomPosition, threshold * 2, atomGrid);
       if (candidateLocalClearance > baseLocalClearance + IMPROVEMENT_EPSILON) {
@@ -820,6 +947,8 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
       resolvedDistance,
       ringRootDeviation,
       totalRingRootDeviation: ringRootDeviation,
+      exactRootDeviation,
+      totalExactRootDeviation: exactRootDeviation,
       subtreeAtomCount: descriptor.subtreeAtomIds.length,
       subtreeHeavyAtomCount: subtreeHeavyAtomCount(layoutGraph, descriptor.subtreeAtomIds)
     };
@@ -838,7 +967,8 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
       visibleAtomCount,
       currentRootAngle,
       exactRingRootDescriptor,
-      exactHypervalentDescriptor
+      exactHypervalentDescriptor,
+      exactTrigonalRootAngles
     ).filter(candidateAngle => {
       return Math.abs(candidateAngle - currentRootAngle) > ANGLE_EPSILON;
     }),
@@ -863,6 +993,9 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
       const ringRootDeviation = exactRingRootDescriptor
         ? compactRingAnchoredRootOutwardDeviation(layoutGraph, coords, descriptor, overridePositions)
         : Number.POSITIVE_INFINITY;
+      const exactRootDeviation = exactTrigonalRootAngles.length > 0
+        ? omittedHydrogenTrigonalRootDeviation(layoutGraph, coords, descriptor, overridePositions)
+        : ringRootDeviation;
       if (improvement <= IMPROVEMENT_EPSILON && subtreeIsSingleAtom && newOverlapCost <= baseOverlapCost + IMPROVEMENT_EPSILON) {
         const candidateLocalClearance = localNonbondedClearance(layoutGraph, coords, movingAtomId, movedAtomPosition, threshold * 2, atomGrid);
         if (candidateLocalClearance > baseLocalClearance + IMPROVEMENT_EPSILON) {
@@ -879,6 +1012,8 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
         resolvedDistance,
         ringRootDeviation,
         totalRingRootDeviation: ringRootDeviation,
+        exactRootDeviation,
+        totalExactRootDeviation: exactRootDeviation,
         subtreeAtomCount: descriptor.subtreeAtomIds.length,
         subtreeHeavyAtomCount: subtreeHeavyAtomCount(layoutGraph, descriptor.subtreeAtomIds)
       };

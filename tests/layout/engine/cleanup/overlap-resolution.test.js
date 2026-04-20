@@ -232,4 +232,31 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
       `expected cleanup to keep the ester root within 30 degrees of the local outward ring direction`
     );
   });
+
+  it('probes exact omitted-h trigonal rigid-root slots before accepting a distorted overlap fix', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('CCCCC1=CC2=C(C=C1C(=CC1=CC=NO1)C(C)C)C(C)(C)CC2(C)C'),
+      { suppressH: true }
+    );
+    const placement = layoutSupportedComponents(graph);
+    const placementAudit = auditLayout(graph, placement.coords, { bondLength: graph.options.bondLength });
+    const result = resolveOverlaps(graph, placement.coords, { bondLength: graph.options.bondLength });
+    const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
+    const trigonalAngle = bondAngleAtAtom(result.coords, 'C12', 'C11', 'C13');
+    const isopropylSpreads = [
+      bondAngleAtAtom(result.coords, 'C18', 'C11', 'C19'),
+      bondAngleAtAtom(result.coords, 'C18', 'C11', 'C20'),
+      bondAngleAtAtom(result.coords, 'C18', 'C19', 'C20')
+    ];
+
+    assert.ok(placementAudit.severeOverlapCount > 0);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.ok(Math.abs(trigonalAngle - ((2 * Math.PI) / 3)) < 1e-6);
+    for (const spread of isopropylSpreads) {
+      assert.ok(
+        Math.abs(spread - ((2 * Math.PI) / 3)) < 1e-6,
+        `expected C18 spreads near 120 degrees, got ${((spread * 180) / Math.PI).toFixed(2)}`
+      );
+    }
+  });
 });

@@ -1,6 +1,7 @@
 /** @module orientation */
 
 import { morganRanks } from '../../algorithms/morgan.js';
+import { analyzeRings } from './topology/ring-analysis.js';
 
 function vec(x, y) {
   return { x, y };
@@ -99,6 +100,85 @@ function shouldPreserveWholeMoleculeLeveling(molecule, heavyAtomIds) {
   const ringAtomIds = new Set(rings.flat());
   const ringHeavyCount = heavyAtomIds.reduce((count, atomId) => count + (ringAtomIds.has(atomId) ? 1 : 0), 0);
   return ringHeavyCount / heavyAtomIds.length >= 0.5;
+}
+
+const BROAD_SLAB_LEVEL_LOCK_AXIS_TOLERANCE = (1 * Math.PI) / 180;
+const BROAD_SLAB_LEVEL_LOCK_MAX_ROTATION = (9 * Math.PI) / 180;
+const BROAD_SLAB_LEVEL_LOCK_MIN_ASPECT_RATIO = 1.25;
+const DOMINANT_SCAFFOLD_AXIS_PENALTY = 20;
+
+/**
+ * Returns whether a broad ring-rich slab that is already normalized onto a
+ * horizontal frame should ignore a small final bond-grid compromise. These
+ * layouts read best when the overall scaffold stays perfectly level, even if a
+ * slight diagonal rotation would align a mixed five-/six-membered bond lattice
+ * a bit more closely.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string[]} heavyAtomIds - Visible heavy-atom ids.
+ * @param {number|null} wholeMoleculeAxisAngle - Current whole-molecule axis angle in radians.
+ * @param {number} candidateRotation - Candidate final rotation in radians.
+ * @returns {boolean} True when the current horizontal slab should be preserved.
+ */
+function shouldLockBroadSlabLeveling(coords, heavyAtomIds, wholeMoleculeAxisAngle, candidateRotation) {
+  if (
+    wholeMoleculeAxisAngle == null
+    || Math.abs(deviationFromHorizontalAxis(wholeMoleculeAxisAngle)) > BROAD_SLAB_LEVEL_LOCK_AXIS_TOLERANCE
+    || Math.abs(candidateRotation) > BROAD_SLAB_LEVEL_LOCK_MAX_ROTATION
+  ) {
+    return false;
+  }
+
+  let minX = Infinity;
+  let maxX = -Infinity;
+  let minY = Infinity;
+  let maxY = -Infinity;
+  for (const atomId of heavyAtomIds) {
+    const point = coords.get(atomId);
+    if (!point) {
+      continue;
+    }
+    minX = Math.min(minX, point.x);
+    maxX = Math.max(maxX, point.x);
+    minY = Math.min(minY, point.y);
+    maxY = Math.max(maxY, point.y);
+  }
+  if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
+    return false;
+  }
+
+  const width = maxX - minX;
+  const height = maxY - minY;
+  if (height <= 1e-6) {
+    return true;
+  }
+  return width / height >= BROAD_SLAB_LEVEL_LOCK_MIN_ASPECT_RATIO;
+}
+
+/**
+ * Returns the atom ids of one clearly dominant multi-ring scaffold when the
+ * molecule has a single root-like fused/bridged/spiro block plus, at most, one
+ * secondary ring system. In these cases the dominant scaffold is what readers
+ * use as the visual horizon, so the final leveler should favor its axis over
+ * the whole-molecule inertia axis.
+ * @param {import('../../core/Molecule.js').Molecule} molecule - Molecule graph.
+ * @param {string[]} heavyAtomIds - Visible heavy-atom ids.
+ * @returns {string[]|null} Dominant scaffold atom ids, or `null`.
+ */
+function dominantScaffoldAtomIds(molecule, heavyAtomIds) {
+  const { ringSystems } = analyzeRings(molecule, morganRanks(molecule));
+  const multiRingSystems = ringSystems.filter(ringSystem => ringSystem.ringIds.length > 1);
+  if (multiRingSystems.length !== 1 || ringSystems.length > 2) {
+    return null;
+  }
+
+  const dominantRingSystem = multiRingSystems[0];
+  if (dominantRingSystem.atomIds.length < Math.max(8, Math.ceil(heavyAtomIds.length * 0.25))) {
+    return null;
+  }
+
+  const heavyAtomIdSet = new Set(heavyAtomIds);
+  const visibleDominantAtomIds = dominantRingSystem.atomIds.filter(atomId => heavyAtomIdSet.has(atomId));
+  return visibleDominantAtomIds.length >= 2 ? visibleDominantAtomIds : null;
 }
 
 function preferredPathBondWeight(molecule, orientPath) {
@@ -648,6 +728,7 @@ export function levelCoords(coords, molecule) {
   }
 
   let preferredAxisAngle = null;
+  let dominantScaffoldAxisAngle = null;
   let preferredPathBondIds = new Set();
   let preferredPathWeight = 1;
   let wholeMoleculeAxisAngle = null;
@@ -660,8 +741,13 @@ export function levelCoords(coords, molecule) {
       preferredPathBondIds = collectBondIdsAlongPath(molecule, orientPath);
       preferredPathWeight = preferredPathBondWeight(molecule, orientPath);
     }
-  } else if (shouldPreserveWholeMoleculeLeveling(molecule, heavyAtomIds)) {
-    wholeMoleculeAxisAngle = principalAxisAngle(coords, heavyAtomIds);
+  } else {
+    const dominantAtomIds = dominantScaffoldAtomIds(molecule, heavyAtomIds);
+    if (dominantAtomIds) {
+      dominantScaffoldAxisAngle = principalAxisAngle(coords, dominantAtomIds);
+    } else if (shouldPreserveWholeMoleculeLeveling(molecule, heavyAtomIds)) {
+      wholeMoleculeAxisAngle = principalAxisAngle(coords, heavyAtomIds);
+    }
   }
 
   const bondGrid = new Map();
@@ -728,6 +814,7 @@ export function levelCoords(coords, molecule) {
 
   const tiltPenalty = 1e-4;
   const preferredAxisPenalty = 1;
+  const dominantScaffoldAxisPenalty = DOMINANT_SCAFFOLD_AXIS_PENALTY;
   const wholeMoleculeAxisPenalty = 2.5;
   function score(rotation) {
     let total = 0;
@@ -741,6 +828,9 @@ export function levelCoords(coords, molecule) {
     if (preferredAxisAngle != null) {
       const axisDeviation = deviationFromHorizontalAxis(preferredAxisAngle + rotation);
       total += preferredAxisPenalty * axisDeviation * axisDeviation;
+    } else if (dominantScaffoldAxisAngle != null) {
+      const axisDeviation = deviationFromHorizontalAxis(dominantScaffoldAxisAngle + rotation);
+      total += dominantScaffoldAxisPenalty * axisDeviation * axisDeviation;
     } else if (wholeMoleculeAxisAngle != null) {
       const axisDeviation = deviationFromHorizontalAxis(wholeMoleculeAxisAngle + rotation);
       total += wholeMoleculeAxisPenalty * axisDeviation * axisDeviation;
@@ -766,6 +856,10 @@ export function levelCoords(coords, molecule) {
       bestScore = rotationScore;
       bestRotation = rotation;
     }
+  }
+
+  if (shouldLockBroadSlabLeveling(coords, heavyAtomIds, dominantScaffoldAxisAngle ?? wholeMoleculeAxisAngle, bestRotation)) {
+    return;
   }
 
   if (Math.abs(bestRotation) < (0.5 * Math.PI) / 180) {

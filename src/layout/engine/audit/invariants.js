@@ -15,7 +15,7 @@ function pairKey(firstAtomId, secondAtomId) {
 
 const SUBTREE_BOND_CROWDING_FACTOR = 0.5;
 const SUBTREE_BOND_CROWDING_WEIGHT = 25;
-const IDEAL_DIVALENT_CONTINUATION_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
+const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
 
 function distanceBetweenSegments(firstStart, firstEnd, secondStart, secondEnd) {
   if (segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd)) {
@@ -658,6 +658,32 @@ function shouldMeasureTrigonalDistortionAtCenter(layoutGraph, atomId, covalentBo
 }
 
 /**
+ * Returns whether the center should contribute to divalent zigzag-continuation distortion.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate center atom identifier.
+ * @param {Array<{bond: object, neighborAtomId: string}>} covalentBonds - Visible covalent bonds for the center.
+ * @returns {boolean} True when the center should be scored against a 120-degree continuation.
+ */
+function shouldMeasureDivalentContinuationDistortionAtCenter(layoutGraph, atomId, covalentBonds) {
+  if (covalentBonds.length !== 2) {
+    return false;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  if (
+    !atom
+    || atom.aromatic
+    || !IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(atom.element)
+    || (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+  return covalentBonds.every(({ bond, neighborAtomId }) => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return neighborAtom && neighborAtom.element !== 'H' && !bond.aromatic && (bond.order ?? 1) === 1;
+  });
+}
+
+/**
  * Returns whether the center should contribute to omitted-h continuation distortion.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string} atomId - Candidate center atom identifier.
@@ -917,28 +943,21 @@ export function computeAtomDistortionCost(layoutGraph, coords, atomId, overrideP
   }
   const getPos = id => overridePositions?.get(id) ?? coords.get(id);
   const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
-  const atom = layoutGraph.atoms.get(atomId);
   let cost = 0;
 
   if (covalentBonds.length === 2) {
-    if (atom && !atom.aromatic && IDEAL_DIVALENT_CONTINUATION_HETERO_ELEMENTS.has(atom.element) && (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) === 0) {
-      const heavySingleBonds = covalentBonds.filter(({ bond, neighborAtomId }) => {
-        const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-        return neighborAtom && neighborAtom.element !== 'H' && !bond.aromatic && (bond.order ?? 1) === 1;
-      });
-      if (heavySingleBonds.length === 2) {
-        const atomPosition = getPos(atomId);
-        if (atomPosition) {
-          const [firstBond, secondBond] = heavySingleBonds;
-          const firstNeighborPosition = getPos(firstBond.neighborAtomId);
-          const secondNeighborPosition = getPos(secondBond.neighborAtomId);
-          if (firstNeighborPosition && secondNeighborPosition) {
-            const bondAngle = angularDifference(
-              Math.atan2(firstNeighborPosition.y - atomPosition.y, firstNeighborPosition.x - atomPosition.x),
-              Math.atan2(secondNeighborPosition.y - atomPosition.y, secondNeighborPosition.x - atomPosition.x)
-            );
-            cost += (bondAngle - (2 * Math.PI) / 3) ** 2 * 20;
-          }
+    if (shouldMeasureDivalentContinuationDistortionAtCenter(layoutGraph, atomId, covalentBonds)) {
+      const atomPosition = getPos(atomId);
+      if (atomPosition) {
+        const [firstBond, secondBond] = covalentBonds;
+        const firstNeighborPosition = getPos(firstBond.neighborAtomId);
+        const secondNeighborPosition = getPos(secondBond.neighborAtomId);
+        if (firstNeighborPosition && secondNeighborPosition) {
+          const bondAngle = angularDifference(
+            Math.atan2(firstNeighborPosition.y - atomPosition.y, firstNeighborPosition.x - atomPosition.x),
+            Math.atan2(secondNeighborPosition.y - atomPosition.y, secondNeighborPosition.x - atomPosition.x)
+          );
+          cost += (bondAngle - (2 * Math.PI) / 3) ** 2 * 20;
         }
       }
     }

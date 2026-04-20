@@ -1,8 +1,8 @@
 /** @module cleanup/attached-ring-rotation-tidy */
 
-import { findSevereOverlaps, measureDirectAttachedRingJunctionContinuationDistortion, measureLayoutCost } from '../audit/invariants.js';
+import { buildAtomGrid, findSevereOverlaps, measureDirectAttachedRingJunctionContinuationDistortion, measureLayoutCost } from '../audit/invariants.js';
 import { measureCleanupStagePresentationPenalty, measureTotalSmallRingExteriorGapPenalty } from '../audit/stage-metrics.js';
-import { runLocalCleanup } from './local-rotation.js';
+import { computeRotatableSubtrees, runLocalCleanup } from './local-rotation.js';
 import { runRingSubstituentTidy } from './ring-substituent-tidy.js';
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { probeRigidRotation, rigidDescriptorKey } from './rigid-rotation.js';
@@ -75,6 +75,11 @@ export function collectMovableAttachedRingDescriptors(layoutGraph, coords, froze
     if (!bond || bond.kind !== 'covalent' || bond.inRing || (bond.order ?? 1) !== 1) {
       continue;
     }
+    // Skip bonds involving hydrogen — rotating a H-rooted subtree is meaningless and
+    // H-anchored bonds with large subtrees inflate the descriptor count dramatically.
+    if (layoutGraph.atoms.get(bond.a)?.element === 'H' || layoutGraph.atoms.get(bond.b)?.element === 'H') {
+      continue;
+    }
 
     for (const [anchorAtomId, rootAtomId] of [
       [bond.a, bond.b],
@@ -128,7 +133,14 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
     return { coords: inputCoords, nudges: 0 };
   }
 
-  const baseOverlapCount = findSevereOverlaps(layoutGraph, inputCoords, bondLength).length;
+  // Pre-compute once — subtree topology depends only on connectivity and placed-atom
+  // membership, not on positions, so the same descriptors apply across all angle candidates.
+  const { terminalSubtrees, siblingSwaps, geminalPairs } = computeRotatableSubtrees(layoutGraph, inputCoords);
+
+  // Pre-build once — reused for the baseline overlap check and passed through to
+  // findSevereOverlaps so it does not rebuild the spatial index for inputCoords.
+  const baseAtomGrid = buildAtomGrid(layoutGraph, inputCoords, bondLength);
+  const baseOverlapCount = findSevereOverlaps(layoutGraph, inputCoords, bondLength, { atomGrid: baseAtomGrid }).length;
   let bestCandidate = null;
 
   for (const descriptor of descriptors) {
@@ -146,18 +158,21 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       angles: ATTACHED_RING_ROTATION_TIDY_ANGLES.filter(rotation => Math.abs(rotation) > 1e-9),
       frozenAtomIds,
       scoreFn(coords, overridePositions) {
-        const rotatedCoords = coordsWithOverrides(coords, overridePositions);
-        const ringSubstituentTouchup = runRingSubstituentTidy(layoutGraph, rotatedCoords, {
+        const ringSubstituentTouchup = runRingSubstituentTidy(layoutGraph, coords, {
           bondLength,
           frozenAtomIds,
-          focusAtomIds
+          focusAtomIds,
+          overridePositions
         });
         const localLeafTouchup = runLocalCleanup(layoutGraph, ringSubstituentTouchup.coords, {
           maxPasses: 2,
           epsilon: bondLength * 0.001,
           bondLength,
           frozenAtomIds,
-          focusAtomIds
+          focusAtomIds,
+          baseTerminalSubtrees: terminalSubtrees,
+          baseSiblingSwaps: siblingSwaps,
+          baseGeminalPairs: geminalPairs
         });
         const candidateCoords = localLeafTouchup.coords;
         const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;

@@ -1530,7 +1530,7 @@ function selectAttachedBlockCandidates(candidates, coords, bondLength, layoutGra
 
   const scoredCandidates = candidates.map(candidate => ({
     ...candidate,
-    ...preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null)
+    ...(candidate._prescore ?? preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null))
   }));
   scoredCandidates.sort((firstCandidate, secondCandidate) => {
     if (firstCandidate.overlapCount !== secondCandidate.overlapCount) {
@@ -1853,9 +1853,10 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
           });
         }
       }
-      const defaultOverlapFree = rawCandidates.some(
-        candidate => preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null).overlapCount === 0
-      );
+      for (const candidate of rawCandidates) {
+        candidate._prescore = preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null);
+      }
+      const defaultOverlapFree = rawCandidates.some(candidate => candidate._prescore.overlapCount === 0);
       if (!defaultOverlapFree && allowExpandedRingLinkerRotations) {
         for (const turnSign of turnSigns) {
           for (const mirror of [false, true]) {
