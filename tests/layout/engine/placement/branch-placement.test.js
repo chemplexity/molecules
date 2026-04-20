@@ -51,7 +51,7 @@ describe('layout/engine/placement/branch-placement', () => {
     assert.deepEqual(coords.get('a2'), { x: 3, y: 0 });
   });
 
-  it('places the carbon continuation before terminal fluorine leaves on fluorinated chains', () => {
+  it('keeps fluorinated chain centers on projected-tetrahedral quadrants', () => {
     const molecule = new Molecule();
     molecule.addAtom('a0', 'C');
     molecule.addAtom('a1', 'C');
@@ -82,10 +82,25 @@ describe('layout/engine/placement/branch-placement', () => {
     placeRemainingBranches(adjacency, graph.canonicalAtomRank, coords, new Set(['a0', 'a1', 'a2', 'a3', 'f0', 'f1']), ['a0', 'a1', 'a2'], 1.5, graph);
 
     const anchorPosition = coords.get('a2');
+    const neighborAngles = ['a1', 'a3', 'f0', 'f1']
+      .map(neighborAtomId => Math.atan2(
+        coords.get(neighborAtomId).y - anchorPosition.y,
+        coords.get(neighborAtomId).x - anchorPosition.x
+      ))
+      .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+    const separations = neighborAngles.map((currentAngle, index) => {
+      const nextAngle = neighborAngles[(index + 1) % neighborAngles.length];
+      const rawGap = nextAngle - currentAngle;
+      return rawGap > 0 ? rawGap : rawGap + (2 * Math.PI);
+    });
+    const incomingAngle = Math.atan2(coords.get('a1').y - anchorPosition.y, coords.get('a1').x - anchorPosition.x);
+    const continuationAngle = Math.atan2(coords.get('a3').y - anchorPosition.y, coords.get('a3').x - anchorPosition.x);
 
-    assert.ok(Math.abs(coords.get('a3').y - anchorPosition.y) < 1e-6);
-    assert.ok(coords.get('f0').y > anchorPosition.y);
-    assert.ok(coords.get('f1').y > anchorPosition.y);
+    assert.ok(
+      separations.every(separation => Math.abs(separation - (Math.PI / 2)) < 1e-6),
+      `expected projected-tetrahedral quadrants, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+    assert.ok(Math.abs(angularDifference(incomingAngle, continuationAngle) - (Math.PI / 2)) < 1e-6);
   });
 
   it('uses the seeded placement CoM to steer continuation away from fixed refinement anchors', () => {

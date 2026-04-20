@@ -299,7 +299,7 @@ describe('layout/engine/visual-orientation', () => {
     assert.ok(Math.abs(histidineLike.coords.get('C2').y - histidineLike.coords.get('N3').y) < 1e-6);
   });
 
-  it('can apply an opt-in final landscape quarter-turn to portrait fresh layouts', () => {
+  it('can apply an opt-in final landscape leveling pass to portrait fresh layouts', () => {
     const portraitDefault = runPipeline(parseSMILES('C1=CC=C(C=C1)C2(C3CC3)C(=O)NC(=O)N2'), { suppressH: true });
     const landscapeOptIn = runPipeline(parseSMILES('C1=CC=C(C=C1)C2(C3CC3)C(=O)NC(=O)N2'), {
       suppressH: true,

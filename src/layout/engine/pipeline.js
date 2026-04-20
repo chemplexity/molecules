@@ -355,6 +355,7 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Finalized coordinates.
  * @param {{enabled: boolean, startTime: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null} [timingState] - Optional timing accumulator.
+ * @param {object|null} [cachedWedges] - Optional precomputed wedge-selection result to reuse.
  * @returns {{ringDependency: object, stereo: object}} Stereo and ring-dependency metadata.
  */
 function runStereoPhase(molecule, layoutGraph, coords, timingState = null, cachedWedges = null) {
@@ -589,7 +590,7 @@ export function runPipeline(molecule, options = {}) {
       finalCoordsModified = true;
     }
     if (onStep && landscapeApplied && !orientationApplied) {
-      onStep('Final Orientation', 'Whole-molecule quarter-turn to keep the final layout in landscape orientation.', copyCoords(finalCoords), {});
+      onStep('Final Orientation', 'Whole-molecule landscape leveling to keep the final layout broad and exactly aligned to its preferred horizontal frame.', copyCoords(finalCoords), {});
     }
   }
   if (onStep && orientationApplied) {

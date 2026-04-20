@@ -31,9 +31,34 @@ import {
   pickBestCandidateAngle,
   preferredBranchAngles,
   resolvedPreferredAngles,
-  shouldPromotePreferredRingAngle
+  shouldPromotePreferredRingAngle,
+  supportsProjectedTetrahedralGeometry
 } from './angle-selection.js';
 import { chooseBatchAngleAssignments, shouldUseGreedyBranchPlacement } from './permutations.js';
+
+/**
+ * Returns whether an anchor still has an unplaced heavy neighbor outside the
+ * current placement slice. Mixed-family branch growth can revisit these
+ * anchors after pending ring blocks attach, so simple leaf atoms should wait
+ * instead of claiming the local slots too early.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {Set<string>} atomIdsToPlace - Atom IDs in the current placement slice.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @returns {boolean} True when the anchor has a pending out-of-slice heavy neighbor.
+ */
+function hasPendingHeavyNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace, coords, anchorAtomId, layoutGraph) {
+  if (!layoutGraph) {
+    return false;
+  }
+  return (adjacency.get(anchorAtomId) ?? []).some(neighborAtomId => {
+    if (atomIdsToPlace.has(neighborAtomId) || coords.has(neighborAtomId)) {
+      return false;
+    }
+    return layoutGraph.atoms.get(neighborAtomId)?.element !== 'H';
+  });
+}
 
 function placeNeighborSequence(
   adjacency,
@@ -79,7 +104,14 @@ function placeNeighborSequence(
       filterAnglesByBudget(DISCRETE_BRANCH_ANGLES, anchorAtomId, branchConstraints),
       budgetPreferredAngles(anchorAtomId, branchConstraints)
     );
-    const shouldHonorPreferredAngle = preferredAngles.length > 0 && !childIsHydrogen && (currentPlacedNeighborIds.length === 1 || isRingAnchor(layoutGraph, anchorAtomId));
+    const shouldHonorProjectedTetrahedralAngle =
+      preferredAngles.length > 0
+      && !childIsHydrogen
+      && supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId);
+    const shouldHonorPreferredAngle =
+      preferredAngles.length > 0
+      && !childIsHydrogen
+      && (currentPlacedNeighborIds.length === 1 || isRingAnchor(layoutGraph, anchorAtomId) || shouldHonorProjectedTetrahedralAngle);
     const allowFinePreferredAngles = shouldHonorPreferredAngle && isRingAnchor(layoutGraph, anchorAtomId);
     const shouldForceExactTrigonalAngle =
       preferredAngles.length > 0
@@ -89,14 +121,23 @@ function placeNeighborSequence(
     const shouldForceExactSimpleAcyclicAngle =
       shouldHonorPreferredAngle
       && isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId);
+    const shouldForceExactProjectedTetrahedralAngle =
+      shouldHonorProjectedTetrahedralAngle
+      && currentPlacedNeighborIds.length >= 2;
     const allowDirectPreferredAngle =
       !shouldHonorPreferredAngle
       || shouldPromotePreferredRingAngle(layoutGraph, anchorAtomId, childAtomId)
       || shouldForceExactTrigonalAngle
       || shouldForceExactSimpleAcyclicAngle
+      || shouldForceExactProjectedTetrahedralAngle
       || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId);
     const exactPreferredAngle =
-      ((shouldHonorPreferredAngle && isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)) || shouldForceExactTrigonalAngle || shouldForceExactSimpleAcyclicAngle)
+      (
+        (shouldHonorPreferredAngle && isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId))
+        || shouldForceExactTrigonalAngle
+        || shouldForceExactSimpleAcyclicAngle
+        || shouldForceExactProjectedTetrahedralAngle
+      )
         ? chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, constrainedPreferredAngles, excludedAtomIds, placementState, ringPolygons, atomGrid)
         : null;
     const fallbackCandidates = evaluateAngleCandidates(
@@ -167,6 +208,10 @@ function placeChildren(
     canonicalAtomRank
   );
   const { primaryNeighborIds, deferredNeighborIds } = splitDeferredLeafNeighbors(unplacedNeighbors, layoutGraph);
+  const shouldLeaveDeferredLeavesForLaterPass =
+    primaryNeighborIds.length === 0
+    && deferredNeighborIds.length > 0
+    && hasPendingHeavyNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace, coords, anchorAtomId, layoutGraph);
   const childDescriptors = primaryNeighborIds.map(childAtomId => ({
     childAtomId,
     subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
@@ -204,7 +249,7 @@ function placeChildren(
       depth
     );
   }
-  if (deferredNeighborIds.length > 0) {
+  if (deferredNeighborIds.length > 0 && !shouldLeaveDeferredLeavesForLaterPass) {
     placeNeighborSequence(
       adjacency,
       canonicalAtomRank,

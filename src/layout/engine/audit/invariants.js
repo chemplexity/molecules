@@ -1080,11 +1080,13 @@ function measureAngularDistortions(layoutGraph, coords) {
 }
 
 /**
- *
- * @param layoutGraph
- * @param coords
- * @param bondLength
- * @param options
+ * Measures the major layout-quality signals used by branch placement and the
+ * final pipeline audit.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {{overlaps?: object[], atomGrid?: object|null, labelMetrics?: object|null}} [options] - Optional cached overlap and label-scoring inputs.
+ * @returns {{overlaps: object[], bondDeviation: {max: number, mean: number, failureCount: number, mildFailureCount: number, severeFailureCount: number, sampleCount: number}, collapsedMacrocycles: number[], labelOverlap: {count: number}, trigonalDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, tetrahedralDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, cost: number}} Aggregated layout state metrics.
  */
 export function measureLayoutState(layoutGraph, coords, bondLength, options = {}) {
   const overlaps =

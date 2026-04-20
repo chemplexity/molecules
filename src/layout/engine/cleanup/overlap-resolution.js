@@ -722,6 +722,7 @@ function mergeRigidCandidateAngles(baseAngles, extraAngles) {
  * @param {number} visibleAtomCount - Visible laid-out atom count.
  * @param {number} currentRootAngle - Current root-bond angle in radians.
  * @param {boolean} exactRingRootDescriptor - Whether the descriptor should preserve exact ring-root presentation when possible.
+ * @param {boolean} exactHypervalentDescriptor - Whether the descriptor should preserve exact hypervalent presentation when possible.
  * @returns {number[]} Candidate root angles in radians.
  */
 function rigidSubtreeProbeAngles(subtreeSize, visibleAtomCount, currentRootAngle, exactRingRootDescriptor, exactHypervalentDescriptor) {

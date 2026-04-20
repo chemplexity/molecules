@@ -473,17 +473,26 @@ export function shouldPreferFinalLandscapeOrientation(molecule) {
 }
 
 /**
- * Rotates the whole coordinate map by a quarter turn when the heavy-atom
- * bounds are taller than they are wide.
+ * Applies the final landscape-leveling pass for a fresh layout. This first
+ * re-orients the molecule onto its preferred horizontal frame, then snaps the
+ * result onto the natural bond-angle lattice, and finally quarter-turns the
+ * leveled pose only if it still remains taller than wide.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map mutated in place.
  * @param {import('../../core/Molecule.js').Molecule} molecule - Molecule graph.
- * @returns {boolean} True when a quarter-turn rotation was applied.
+ * @returns {boolean} True when the pass changed the displayed orientation.
  */
 export function ensureLandscapeOrientation(coords, molecule) {
   const heavyAtomIds = [...coords.keys()].filter(atomId => molecule.atoms.has(atomId) && molecule.atoms.get(atomId)?.name !== 'H');
   if (heavyAtomIds.length < 2) {
     return false;
   }
+
+  const beforePositions = new Map(
+    heavyAtomIds.map(atomId => [atomId, { ...coords.get(atomId) }])
+  );
+
+  normalizeOrientation(coords, molecule);
+  levelCoords(coords, molecule);
 
   let minX = Infinity;
   let maxX = -Infinity;
@@ -504,12 +513,15 @@ export function ensureLandscapeOrientation(coords, molecule) {
     sumY += point.y;
   }
 
-  if (!(maxY - minY > maxX - minX)) {
-    return false;
+  if (maxY - minY > maxX - minX) {
+    rotateCoords(coords, vec(sumX / heavyAtomIds.length, sumY / heavyAtomIds.length), Math.PI / 2);
   }
 
-  rotateCoords(coords, vec(sumX / heavyAtomIds.length, sumY / heavyAtomIds.length), Math.PI / 2);
-  return true;
+  return heavyAtomIds.some(atomId => {
+    const before = beforePositions.get(atomId);
+    const after = coords.get(atomId);
+    return Math.abs(after.x - before.x) > 1e-6 || Math.abs(after.y - before.y) > 1e-6;
+  });
 }
 
 /**

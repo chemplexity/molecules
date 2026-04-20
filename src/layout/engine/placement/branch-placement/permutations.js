@@ -15,12 +15,7 @@ import {
   setPlacedPosition,
   subtreeHeavyAtomCount
 } from './shared.js';
-import {
-  buildCandidateAngleSets,
-  describeCrossLikeHypervalentCenter,
-  isLinearCenter,
-  measureSmallRingExteriorGapSpreadPenalty
-} from './angle-selection.js';
+import { buildCandidateAngleSets, describeCrossLikeHypervalentCenter, isLinearCenter, measureSmallRingExteriorGapSpreadPenalty } from './angle-selection.js';
 
 const ORTHOGONAL_SLOT_OFFSETS = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
 const ORTHOGONAL_SLOT_PERMUTATIONS = [
@@ -72,21 +67,14 @@ export function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anch
   const greedyBudget = Math.max(48, Math.floor(heavyThreshold * 0.5));
   const totalSubtreeSize = childDescriptors.reduce((sum, descriptor) => sum + descriptor.subtreeSize, 0);
   const maxSubtreeSize = childDescriptors.reduce((max, descriptor) => Math.max(max, descriptor.subtreeSize), 0);
-  const largeSubtreeCount = childDescriptors.filter(
-    descriptor => descriptor.subtreeSize >= BRANCH_COMPLEXITY_LIMITS.subtreeFloor
-  ).length;
+  const largeSubtreeCount = childDescriptors.filter(descriptor => descriptor.subtreeSize >= BRANCH_COMPLEXITY_LIMITS.subtreeFloor).length;
   if (participantCount > greedyBudget) {
     return true;
   }
   if (hasMacrocycleBudgets && participantCount > Math.max(24, Math.floor(greedyBudget * 0.5))) {
     return true;
   }
-  if (
-    !isRingAnchor(layoutGraph, anchorAtomId)
-    &&
-    primaryNeighborIds.length >= 4
-    && (maxSubtreeSize >= 12 || totalSubtreeSize >= 24 || largeSubtreeCount >= 3)
-  ) {
+  if (!isRingAnchor(layoutGraph, anchorAtomId) && primaryNeighborIds.length >= 4 && (maxSubtreeSize >= 12 || totalSubtreeSize >= 24 || largeSubtreeCount >= 3)) {
     return true;
   }
   return false;
@@ -134,9 +122,7 @@ function branchPermutationBudget(layoutGraph, anchorAtomId, childDescriptors, br
   }
   const totalSubtreeSize = childDescriptors.reduce((sum, descriptor) => sum + descriptor.subtreeSize, 0);
   const maxSubtreeSize = childDescriptors.reduce((max, descriptor) => Math.max(max, descriptor.subtreeSize), 0);
-  const largeSubtreeCount = childDescriptors.filter(
-    descriptor => descriptor.subtreeSize >= BRANCH_COMPLEXITY_LIMITS.subtreeFloor
-  ).length;
+  const largeSubtreeCount = childDescriptors.filter(descriptor => descriptor.subtreeSize >= BRANCH_COMPLEXITY_LIMITS.subtreeFloor).length;
 
   if ((branchConstraints?.angularBudgets?.size ?? 0) > 0 && childDescriptors.length >= 3) {
     return BRANCH_COMPLEXITY_LIMITS.highMaxPermutations;
@@ -436,17 +422,18 @@ function arrangementCrossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomI
  * @returns {number} Local readability penalty.
  */
 function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAtomIds = [], atomGrid = null) {
-  const layoutCost =
-    !layoutGraph
-      ? 0
-      : shouldUseFocusedArrangementCost(layoutGraph, coords, focusAtomIds)
-        ? measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds, { atomGrid })
-        : measureLayoutCost(layoutGraph, coords, bondLength);
-  return layoutCost
-    + tetrahedralSpreadPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT
-    + measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, anchorAtomId) * SMALL_RING_EXTERIOR_GAP_WEIGHT
-    + arrangementCrossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT
-    + arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT;
+  const layoutCost = !layoutGraph
+    ? 0
+    : shouldUseFocusedArrangementCost(layoutGraph, coords, focusAtomIds)
+      ? measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds, { atomGrid })
+      : measureLayoutCost(layoutGraph, coords, bondLength);
+  return (
+    layoutCost +
+    tetrahedralSpreadPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
+    measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, anchorAtomId) * SMALL_RING_EXTERIOR_GAP_WEIGHT +
+    arrangementCrossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
+    arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT
+  );
 }
 
 function evaluateAnglePermutations(
@@ -468,8 +455,8 @@ function evaluateAnglePermutations(
 ) {
   const orderedChildDescriptors = orderChildDescriptors(childDescriptors, canonicalAtomRank);
   const childPermutations =
-    hypervalentChildPermutations(layoutGraph, anchorAtomId, orderedChildDescriptors)
-    ?? permutations(orderedChildDescriptors, branchPermutationBudget(layoutGraph, anchorAtomId, orderedChildDescriptors, branchConstraints));
+    hypervalentChildPermutations(layoutGraph, anchorAtomId, orderedChildDescriptors) ??
+    permutations(orderedChildDescriptors, branchPermutationBudget(layoutGraph, anchorAtomId, orderedChildDescriptors, branchConstraints));
   let bestPlacement = null;
 
   for (const angleSet of angleSets) {
@@ -483,10 +470,16 @@ function evaluateAnglePermutations(
       }));
 
       for (const placement of assignedPlacements) {
-        setPlacedPosition(tempCoords, tempPlacementState, placement.childAtomId, {
-          x: anchorPosition.x + Math.cos(placement.angle) * bondLength,
-          y: anchorPosition.y + Math.sin(placement.angle) * bondLength
-        }, layoutGraph);
+        setPlacedPosition(
+          tempCoords,
+          tempPlacementState,
+          placement.childAtomId,
+          {
+            x: anchorPosition.x + Math.cos(placement.angle) * bondLength,
+            y: anchorPosition.y + Math.sin(placement.angle) * bondLength
+          },
+          layoutGraph
+        );
       }
 
       const recursionOrder = [...assignedPlacements].sort((firstPlacement, secondPlacement) => {
@@ -540,8 +533,8 @@ function evaluateLocalAnglePermutations(
 ) {
   const orderedChildDescriptors = orderChildDescriptors(childDescriptors, canonicalAtomRank);
   const childPermutations =
-    hypervalentChildPermutations(layoutGraph, anchorAtomId, orderedChildDescriptors)
-    ?? permutations(orderedChildDescriptors, branchPermutationBudget(layoutGraph, anchorAtomId, orderedChildDescriptors));
+    hypervalentChildPermutations(layoutGraph, anchorAtomId, orderedChildDescriptors) ??
+    permutations(orderedChildDescriptors, branchPermutationBudget(layoutGraph, anchorAtomId, orderedChildDescriptors));
   let bestPlacement = null;
 
   for (const angleSet of angleSets) {
@@ -554,10 +547,16 @@ function evaluateLocalAnglePermutations(
       }));
 
       for (const placement of assignedPlacements) {
-        setPlacedPosition(tempCoords, tempPlacementState, placement.childAtomId, {
-          x: anchorPosition.x + Math.cos(placement.angle) * bondLength,
-          y: anchorPosition.y + Math.sin(placement.angle) * bondLength
-        }, layoutGraph);
+        setPlacedPosition(
+          tempCoords,
+          tempPlacementState,
+          placement.childAtomId,
+          {
+            x: anchorPosition.x + Math.cos(placement.angle) * bondLength,
+            y: anchorPosition.y + Math.sin(placement.angle) * bondLength
+          },
+          layoutGraph
+        );
       }
 
       const newlyPlacedAtomIds = collectNewlyPlacedAtomIds(coords, tempCoords);
@@ -617,47 +616,44 @@ export function chooseBatchAngleAssignments(
   }
 
   const angleSets = buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, unplacedNeighborIds, layoutGraph, branchConstraints);
-  const baseAtomGrid =
-    layoutGraph && coords.size >= 160
-      ? buildAtomGrid(layoutGraph, coords, bondLength)
-      : null;
-  const resolvedChildDescriptors = childDescriptors ?? unplacedNeighborIds.map(childAtomId => ({
-    childAtomId,
-    subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
-  }));
-  const useLocalHypervalentBatch =
-    !!describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId)
-    && resolvedChildDescriptors.length >= 3;
+  const baseAtomGrid = layoutGraph && coords.size >= 160 ? buildAtomGrid(layoutGraph, coords, bondLength) : null;
+  const resolvedChildDescriptors =
+    childDescriptors ??
+    unplacedNeighborIds.map(childAtomId => ({
+      childAtomId,
+      subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
+    }));
+  const useLocalHypervalentBatch = !!describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId) && resolvedChildDescriptors.length >= 3;
   const bestPlacement = useLocalHypervalentBatch
     ? evaluateLocalAnglePermutations(
-      canonicalAtomRank,
-      coords,
-      placementState,
-      anchorAtomId,
-      bondLength,
-      layoutGraph,
-      anchorPosition,
-      angleSets,
-      resolvedChildDescriptors,
-      baseAtomGrid
-    )
+        canonicalAtomRank,
+        coords,
+        placementState,
+        anchorAtomId,
+        bondLength,
+        layoutGraph,
+        anchorPosition,
+        angleSets,
+        resolvedChildDescriptors,
+        baseAtomGrid
+      )
     : evaluateAnglePermutations(
-      adjacency,
-      canonicalAtomRank,
-      coords,
-      placementState,
-      atomIdsToPlace,
-      anchorAtomId,
-      bondLength,
-      layoutGraph,
-      branchConstraints,
-      depth,
-      anchorPosition,
-      angleSets,
-      resolvedChildDescriptors,
-      placeChildrenFn,
-      baseAtomGrid
-    );
+        adjacency,
+        canonicalAtomRank,
+        coords,
+        placementState,
+        atomIdsToPlace,
+        anchorAtomId,
+        bondLength,
+        layoutGraph,
+        branchConstraints,
+        depth,
+        anchorPosition,
+        angleSets,
+        resolvedChildDescriptors,
+        placeChildrenFn,
+        baseAtomGrid
+      );
 
   if (!bestPlacement) {
     return [];

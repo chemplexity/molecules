@@ -1,7 +1,13 @@
 # Change Log
 
+## 2026-04-19
+
+- Keep mixed diaryl difluoromethyl linkers from spending leaf slots before the heavier ring attachment is placed
+- Let linked diaryl-ether cleanup favor exact outward ring exits even when a fused anchor also carries a sibling one-atom leaf
+
 ## 2026-04-18
 
+- Keep acyclic backbone alkene continuations exact when nearby terminal methylene side leaves are re-snapped
 - Penalize omitted-h three-heavy saturated carbon distortions so cleanup keeps exact 120-degree side-branch geometry instead of flipping to overlap-only poses
 - Keep lone vinylic single-bond substituent roots on the exact trigonal slot during acyclic backbone normalization
 - Let directly attached mixed-family ring blocks honor exact 120-degree continuation off conjugated divalent nitrogens so amide-linked aryl attachments keep clean local amide geometry

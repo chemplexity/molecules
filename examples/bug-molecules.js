@@ -9,5 +9,8 @@ export const bugMolecules = [
   'OC(=O)C[NH2+]CP(O)(O)=O',
   'CC1=NC(NC2=NC=C(S2)C(=O)NC2=C(C)C=CC=C2Cl)=CC(=N1)N1CCN(CCO)CC1',
   'CCC=C(COC)C=CC=CC',
-  'CC(N)C12NC(NC(N)=O)=NC1COC2C#N'
+  'CC(N)C12NC(NC(N)=O)=NC1COC2C#N',
+  'CC(=CCCC(=C)C=C)C',
+  'Oc1ccc(cc1)C2=CC(=O)c3c(O)c(Oc4ccc(cc4)C5=CC(=O)c6c(O)cc(O)cc6O5)c(O)cc3O2',
+  'NC(=O)C1=CC=CC(=C1)C1=CC=C(NCC(F)(F)C2=CC=CC=N2)N=N1'
 ];

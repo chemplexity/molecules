@@ -1,13 +1,30 @@
 /** @module cleanup/stage-runner */
 
+/**
+ * Resolves the parent input for one stage. Parent descriptors can be a single
+ * stage name, the sentinel `best`, or an ordered fallback list when an
+ * optional upstream stage may legitimately return `null`.
+ * @param {Map<string, object>} stageResults - Materialized stage results by name.
+ * @param {{name: string, coords: Map<string, {x: number, y: number}>}} baselineStage - Baseline placement stage.
+ * @param {string|string[]|null} parentStage - Requested parent stage descriptor.
+ * @param {object} bestStage - Current incumbent stage result.
+ * @returns {object|null} Resolved parent stage result, or null when none exists.
+ */
 function resolveParentStageResult(stageResults, baselineStage, parentStage, bestStage) {
-  if (parentStage == null) {
-    return baselineStage;
+  const parentStages = Array.isArray(parentStage) ? parentStage : [parentStage];
+  for (const candidateParentStage of parentStages) {
+    if (candidateParentStage == null) {
+      return baselineStage;
+    }
+    if (candidateParentStage === 'best') {
+      return bestStage;
+    }
+    const resolvedStage = stageResults.get(candidateParentStage) ?? null;
+    if (resolvedStage) {
+      return resolvedStage;
+    }
   }
-  if (parentStage === 'best') {
-    return bestStage;
-  }
-  return stageResults.get(parentStage) ?? null;
+  return null;
 }
 
 /**
@@ -31,7 +48,8 @@ export function runStageGraph(stages, baselineStage, context) {
 
     const parentStageResult = resolveParentStageResult(stageResults, baselineStage, stage.parentStage, bestStage);
     if (!parentStageResult) {
-      throw new Error(`Missing parent stage result for ${stage.name}: ${stage.parentStage}`);
+      const parentStageLabel = Array.isArray(stage.parentStage) ? stage.parentStage.join(' -> ') : stage.parentStage;
+      throw new Error(`Missing parent stage result for ${stage.name}: ${parentStageLabel}`);
     }
 
     // Wrap onStep to automatically inject the current stage name into metadata.

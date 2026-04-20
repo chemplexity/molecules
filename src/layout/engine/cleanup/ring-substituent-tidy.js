@@ -37,6 +37,8 @@ const IDEAL_LINKED_RING_BRIDGE_ANGLE = (2 * Math.PI) / 3;
 const RING_SUBSTITUENT_TIDY_LIMITS = Object.freeze({
   maxSubtreeHeavyAtomCount: 18,
   maxSubtreeAtomCount: 28,
+  maxLinkedRingSubtreeHeavyAtomCount: 24,
+  maxLinkedRingSubtreeAtomCount: 36,
   minCompactAreaImprovementFraction: 0.04,
   minCompactAreaImprovementAbsolute: 4,
   minRootAnchoredCompactAreaImprovementFraction: 0.03,
@@ -48,16 +50,37 @@ function atomPairKey(firstAtomId, secondAtomId) {
   return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
 }
 
+function linkedRingDescriptorKey(anchorAtomId, rootAtomId, reverseAnchorAtomId) {
+  const orderedAnchorAtomIds = [anchorAtomId, reverseAnchorAtomId].sort();
+  return `linked-ring:${rootAtomId}:${orderedAnchorAtomIds[0]}:${orderedAnchorAtomIds[1]}`;
+}
+
 function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
   return (layoutGraph.atomToRings.get(anchorAtomId) ?? [])
     .map(ring => ring.atomIds.map(ringAtomId => coords.get(ringAtomId)).filter(Boolean))
     .filter(polygon => polygon.length >= 3);
 }
 
+function preferredMultiRingOutwardAngle(layoutGraph, anchorPosition, positions, anchorAtomId) {
+  if (!anchorPosition || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1 || positions.length < 3) {
+    return null;
+  }
+  return angleOf(sub(anchorPosition, centroid(positions)));
+}
+
 function outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId) {
   const anchorPosition = coords.get(anchorAtomId);
   if (!anchorPosition) {
     return [];
+  }
+  const ringSystemOutwardAngle = preferredMultiRingOutwardAngle(
+    layoutGraph,
+    anchorPosition,
+    ringSystemAtomIds(layoutGraph, anchorAtomId, coords).map(atomId => coords.get(atomId)).filter(Boolean),
+    anchorAtomId
+  );
+  if (ringSystemOutwardAngle != null) {
+    return [ringSystemOutwardAngle];
   }
   const angles = [];
   for (const polygon of incidentRingPolygons(layoutGraph, coords, anchorAtomId)) {
@@ -185,6 +208,18 @@ function outwardAnglesForAnchorWithOverrides(layoutGraph, coords, anchorAtomId, 
   if (!anchorPosition) {
     return [];
   }
+  const ringSystemAtomIdsForAnchor = ringSystemAtomIds(layoutGraph, anchorAtomId, coords);
+  const ringSystemOutwardAngle = preferredMultiRingOutwardAngle(
+    layoutGraph,
+    anchorPosition,
+    ringSystemAtomIdsForAnchor
+      .map(atomId => positionForAtom(coords, overridePositions, atomId))
+      .filter(Boolean),
+    anchorAtomId
+  );
+  if (ringSystemOutwardAngle != null) {
+    return [ringSystemOutwardAngle];
+  }
   const angles = [];
   for (const polygon of incidentRingPolygonsWithOverrides(layoutGraph, coords, anchorAtomId, overridePositions)) {
     angles.push(angleOf(sub(anchorPosition, centroid(polygon))));
@@ -254,6 +289,9 @@ function shouldReplaceTidyeableDescriptor(candidate, incumbent) {
   }
   if (!candidateLinkedRing || !incumbentLinkedRing) {
     return false;
+  }
+  if (candidate.prefersIdealOutwardGeometry !== incumbent.prefersIdealOutwardGeometry) {
+    return candidate.prefersIdealOutwardGeometry;
   }
   if (candidate.subtreeHeavyAtomCount !== incumbent.subtreeHeavyAtomCount) {
     return candidate.subtreeHeavyAtomCount < incumbent.subtreeHeavyAtomCount;
@@ -350,6 +388,26 @@ function descriptorTouchesFocusAtomIds(descriptor, focusAtomIds) {
   return false;
 }
 
+/**
+ * Returns whether a linked-ring bridge child should stay eligible for tidy
+ * even when the same anchor also carries simple one-atom leaves. This covers
+ * aryl-ether style bridges on oxygenated fused anchors where rotating the
+ * bridge subtree around the anchor can correct the inter-ring exit without
+ * moving the sibling leaves.
+ * @param {Array<{childAtomId: string, representativeAtomIds: string[]}>} substituentChildren - Readable substituent children for the anchor.
+ * @param {string[]} linkedRingChildIds - Child atom ids that lead directly into a different ring system through an ideal linker.
+ * @param {string} rootAtomId - Candidate linked-ring root atom id.
+ * @returns {boolean} True when the linked-ring bridge should remain tidiable.
+ */
+function allowsLinkedRingBridgeWithSiblingLeaves(substituentChildren, linkedRingChildIds, rootAtomId) {
+  if (substituentChildren.length <= 1 || linkedRingChildIds.length !== 1 || linkedRingChildIds[0] !== rootAtomId) {
+    return false;
+  }
+  return substituentChildren.every(
+    child => child.childAtomId === rootAtomId || child.representativeAtomIds.length === 1
+  );
+}
+
 function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAtomIds = null) {
   const descriptorsByPair = new Map();
   const ringSystemById = new Map(layoutGraph.ringSystems.map(rs => [rs.id, rs]));
@@ -381,92 +439,119 @@ function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAt
 
     const substituentChildren = collectReadableRingSubstituentChildren(layoutGraph, coords, anchorAtomId);
     const enforcesOutwardReadability = supportsRingSubstituentOutwardReadability(layoutGraph, anchorAtomId);
-    const prefersIdealOutwardGeometry =
-      substituentChildren.length === 1
-      && substituentChildren[0].representativeAtomIds.length === 1;
-    const allowsRingSystemCompaction =
-      substituentChildren.length === 1
-      && substituentChildren[0].representativeAtomIds.length > 1;
-    if (
-      substituentChildren.length !== 1
-      || (!enforcesOutwardReadability && !allowsRingSystemCompaction && !prefersIdealOutwardGeometry)
-    ) {
-      continue;
-    }
-
-    const rootAtomId = substituentChildren[0].childAtomId;
-    const linkedRingRepresentative = resolveIdealLinkedRingRepresentative(layoutGraph, coords, anchorAtomId, rootAtomId, ringSystemById);
-    const linkedSubtreeRepresentative = linkedRingRepresentative ? null : resolveIdealLinkedSubtreeRepresentative(layoutGraph, coords, anchorAtomId, rootAtomId);
-    const reverseAnchorAtomId = linkedRingRepresentative?.downstreamAnchorAtomId ?? rootAtomId;
-    const isRingSystemSubstituent = linkedRingRepresentative != null || substituentChildren[0].representativeAtomIds.length > 1;
-    const representativeAtomIds =
-      linkedRingRepresentative?.representativeAtomIds
-      ?? linkedSubtreeRepresentative?.representativeAtomIds
-      ?? substituentChildren[0].representativeAtomIds;
-    const pairId = atomPairKey(anchorAtomId, rootAtomId);
-
-    const bond = layoutGraph.bondByAtomPair.get(pairId);
-    if (!bond || bond.kind !== 'covalent' || bond.inRing || (bond.order ?? 1) !== 1) {
-      continue;
-    }
-
-    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
-    if (subtreeAtomIds.length === 0 || subtreeAtomIds.length > RING_SUBSTITUENT_TIDY_LIMITS.maxSubtreeAtomCount) {
-      continue;
-    }
-    const subtreeHeavyAtomCount = subtreeAtomIds.reduce(
-      (count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1),
-      0
+    const linkedRingRepresentativesByChildId = new Map(
+      substituentChildren.map(child => [
+        child.childAtomId,
+        resolveIdealLinkedRingRepresentative(layoutGraph, coords, anchorAtomId, child.childAtomId, ringSystemById)
+      ])
     );
-    if (subtreeHeavyAtomCount > RING_SUBSTITUENT_TIDY_LIMITS.maxSubtreeHeavyAtomCount) {
-      continue;
-    }
-    if (frozenAtomIds && containsFrozenAtom(subtreeAtomIds, frozenAtomIds)) {
-      continue;
-    }
+    const linkedRingChildIds = [...linkedRingRepresentativesByChildId.entries()]
+      .filter(([, representative]) => representative != null)
+      .map(([childAtomId]) => childAtomId);
 
-    const outwardAngles = outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId);
-    if (outwardAngles.length === 0) {
-      continue;
-    }
+    for (const substituentChild of substituentChildren) {
+      const rootAtomId = substituentChild.childAtomId;
+      const linkedRingRepresentative = linkedRingRepresentativesByChildId.get(rootAtomId) ?? null;
+      const allowSiblingLeafLinkedRingBridge = allowsLinkedRingBridgeWithSiblingLeaves(
+        substituentChildren,
+        linkedRingChildIds,
+        rootAtomId
+      );
+      if (substituentChildren.length !== 1 && !allowSiblingLeafLinkedRingBridge) {
+        continue;
+      }
 
-    const reverseRepresentativeAtomIds = isRingSystemSubstituent ? ringSystemAtomIds(layoutGraph, anchorAtomId, coords, ringSystemById) : [];
-    const descriptor = {
-      anchorAtomId,
-      rootAtomId,
-      representativeAtomIds,
-      subtreeAtomIds,
-      subtreeHeavyAtomCount,
-      anchorRingAtomIds: [...new Set((layoutGraph.atomToRings.get(anchorAtomId) ?? []).flatMap(ring => ring.atomIds))],
-      ringPolygons: incidentRingPolygons(layoutGraph, coords, anchorAtomId),
-      outwardAngles,
-      isRingSystemSubstituent,
-      enforcesOutwardReadability,
-      prefersIdealOutwardGeometry,
-      supportsRootAnchoredOverlapRepair: linkedSubtreeRepresentative != null,
-      linkedRingAnchorAtomId: linkedRingRepresentative?.downstreamAnchorAtomId ?? null,
-      reverseAnchorAtomId,
-      rootRotatingAtomIds:
-        linkedRingRepresentative
-          ? subtreeAtomIds.filter(atomId => atomId !== rootAtomId)
-          : (linkedSubtreeRepresentative?.rootRotatingAtomIds ?? []),
-      reverseRepresentativeAtomIds,
-      prefersIdealReverseOutwardGeometry: linkedRingRepresentative != null,
-      reverseAnchorRingAtomIds: isRingSystemSubstituent
-        ? [...new Set((layoutGraph.atomToRings.get(reverseAnchorAtomId) ?? []).flatMap(ring => ring.atomIds))]
-        : [],
-      reverseRingPolygons: isRingSystemSubstituent ? incidentRingPolygons(layoutGraph, coords, reverseAnchorAtomId) : [],
-      reverseOutwardAngles: isRingSystemSubstituent ? outwardAnglesForAnchor(layoutGraph, coords, reverseAnchorAtomId) : [],
-      reverseEnforcesOutwardReadability: isRingSystemSubstituent
-        ? supportsRingSubstituentOutwardReadability(layoutGraph, reverseAnchorAtomId)
-        : false
-    };
-    if (!descriptorTouchesFocusAtomIds(descriptor, focusSet)) {
-      continue;
-    }
-    const incumbent = descriptorsByPair.get(pairId);
-    if (!incumbent || shouldReplaceTidyeableDescriptor(descriptor, incumbent)) {
-      descriptorsByPair.set(pairId, descriptor);
+      const linkedSubtreeRepresentative = linkedRingRepresentative ? null : resolveIdealLinkedSubtreeRepresentative(layoutGraph, coords, anchorAtomId, rootAtomId);
+      const prefersIdealOutwardGeometry =
+        (substituentChildren.length === 1 && substituentChild.representativeAtomIds.length === 1)
+        || allowSiblingLeafLinkedRingBridge;
+      const allowsRingSystemCompaction =
+        (substituentChildren.length === 1 && substituentChild.representativeAtomIds.length > 1)
+        || allowSiblingLeafLinkedRingBridge;
+      if (!enforcesOutwardReadability && !allowsRingSystemCompaction && !prefersIdealOutwardGeometry) {
+        continue;
+      }
+
+      const reverseAnchorAtomId = linkedRingRepresentative?.downstreamAnchorAtomId ?? rootAtomId;
+      const isRingSystemSubstituent = linkedRingRepresentative != null || substituentChild.representativeAtomIds.length > 1;
+      const representativeAtomIds =
+        linkedRingRepresentative?.representativeAtomIds
+        ?? linkedSubtreeRepresentative?.representativeAtomIds
+        ?? substituentChild.representativeAtomIds;
+      const bondPairId = atomPairKey(anchorAtomId, rootAtomId);
+      const pairId = linkedRingRepresentative
+        ? linkedRingDescriptorKey(anchorAtomId, rootAtomId, reverseAnchorAtomId)
+        : bondPairId;
+
+      const bond = layoutGraph.bondByAtomPair.get(bondPairId);
+      if (!bond || bond.kind !== 'covalent' || bond.inRing || (bond.order ?? 1) !== 1) {
+        continue;
+      }
+
+      const maxSubtreeAtomCount = linkedRingRepresentative
+        ? RING_SUBSTITUENT_TIDY_LIMITS.maxLinkedRingSubtreeAtomCount
+        : RING_SUBSTITUENT_TIDY_LIMITS.maxSubtreeAtomCount;
+      const maxSubtreeHeavyAtomCount = linkedRingRepresentative
+        ? RING_SUBSTITUENT_TIDY_LIMITS.maxLinkedRingSubtreeHeavyAtomCount
+        : RING_SUBSTITUENT_TIDY_LIMITS.maxSubtreeHeavyAtomCount;
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(atomId => coords.has(atomId));
+      if (subtreeAtomIds.length === 0 || subtreeAtomIds.length > maxSubtreeAtomCount) {
+        continue;
+      }
+      const subtreeHeavyAtomCount = subtreeAtomIds.reduce(
+        (count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1),
+        0
+      );
+      if (subtreeHeavyAtomCount > maxSubtreeHeavyAtomCount) {
+        continue;
+      }
+      if (frozenAtomIds && containsFrozenAtom(subtreeAtomIds, frozenAtomIds)) {
+        continue;
+      }
+
+      const outwardAngles = outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId);
+      if (outwardAngles.length === 0) {
+        continue;
+      }
+
+      const reverseRepresentativeAtomIds = isRingSystemSubstituent ? ringSystemAtomIds(layoutGraph, anchorAtomId, coords, ringSystemById) : [];
+      const descriptor = {
+        anchorAtomId,
+        rootAtomId,
+        representativeAtomIds,
+        subtreeAtomIds,
+        subtreeHeavyAtomCount,
+        anchorRingAtomIds: [...new Set((layoutGraph.atomToRings.get(anchorAtomId) ?? []).flatMap(ring => ring.atomIds))],
+        ringPolygons: incidentRingPolygons(layoutGraph, coords, anchorAtomId),
+        outwardAngles,
+        isRingSystemSubstituent,
+        enforcesOutwardReadability,
+        prefersIdealOutwardGeometry,
+        supportsRootAnchoredOverlapRepair: linkedSubtreeRepresentative != null,
+        linkedRingAnchorAtomId: linkedRingRepresentative?.downstreamAnchorAtomId ?? null,
+        reverseAnchorAtomId,
+        rootRotatingAtomIds:
+          linkedRingRepresentative
+            ? subtreeAtomIds.filter(atomId => atomId !== rootAtomId)
+            : (linkedSubtreeRepresentative?.rootRotatingAtomIds ?? []),
+        reverseRepresentativeAtomIds,
+        prefersIdealReverseOutwardGeometry: linkedRingRepresentative != null,
+        reverseAnchorRingAtomIds: isRingSystemSubstituent
+          ? [...new Set((layoutGraph.atomToRings.get(reverseAnchorAtomId) ?? []).flatMap(ring => ring.atomIds))]
+          : [],
+        reverseRingPolygons: isRingSystemSubstituent ? incidentRingPolygons(layoutGraph, coords, reverseAnchorAtomId) : [],
+        reverseOutwardAngles: isRingSystemSubstituent ? outwardAnglesForAnchor(layoutGraph, coords, reverseAnchorAtomId) : [],
+        reverseEnforcesOutwardReadability: isRingSystemSubstituent
+          ? supportsRingSubstituentOutwardReadability(layoutGraph, reverseAnchorAtomId)
+          : false
+      };
+      if (!descriptorTouchesFocusAtomIds(descriptor, focusSet)) {
+        continue;
+      }
+      const incumbent = descriptorsByPair.get(pairId);
+      if (!incumbent || shouldReplaceTidyeableDescriptor(descriptor, incumbent)) {
+        descriptorsByPair.set(pairId, descriptor);
+      }
     }
   }
 
@@ -570,6 +655,80 @@ function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor,
     overridePositions,
     rootAnchored: false
   };
+}
+
+/**
+ * Builds an exact dual-outward candidate for ideal linked-ring bridge
+ * descriptors. It first re-snaps the linker root onto the anchor's exact
+ * outward ray, then rotates the downstream ring system around that linker so
+ * the reverse ring exit also lands on its exact outward ray.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {AtomGrid} atomGrid - Spatial grid for the current coordinates.
+ * @param {object} descriptor - Dynamic tidy descriptor.
+ * @param {number} bondLength - Target bond length.
+ * @param {string[]} allAtomIds - All placed atom ids.
+ * @param {object[]|null} [covalentBonds] - Optional cached covalent bonds for crossing checks.
+ * @returns {object|null} Best exact linked-ring candidate, or null when unavailable.
+ */
+function buildExactIdealLinkedRingCandidate(layoutGraph, coords, atomGrid, descriptor, bondLength, allAtomIds, covalentBonds = null) {
+  if (
+    descriptor.linkedRingAnchorAtomId == null
+    || !descriptor.prefersIdealOutwardGeometry
+    || !descriptor.prefersIdealReverseOutwardGeometry
+    || descriptor.outwardAngles.length === 0
+    || descriptor.reverseOutwardAngles.length === 0
+    || descriptor.rootRotatingAtomIds.length === 0
+  ) {
+    return null;
+  }
+
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  const reverseAnchorPosition = coords.get(descriptor.reverseAnchorAtomId);
+  if (!anchorPosition || !rootPosition || !reverseAnchorPosition) {
+    return null;
+  }
+
+  const bondDistance = Math.hypot(rootPosition.x - anchorPosition.x, rootPosition.y - anchorPosition.y);
+  if (bondDistance <= TIDY_ATOM_EPSILON) {
+    return null;
+  }
+
+  const currentForwardAngle = angleOf(sub(rootPosition, anchorPosition));
+  const currentReverseAngle = angleOf(sub(reverseAnchorPosition, rootPosition));
+  let bestCandidate = null;
+
+  for (const forwardOutwardAngle of descriptor.outwardAngles) {
+    const nextRootPosition = add(anchorPosition, fromAngle(forwardOutwardAngle, bondDistance));
+    for (const reverseOutwardAngle of descriptor.reverseOutwardAngles) {
+      const rotation = (reverseOutwardAngle + Math.PI) - currentReverseAngle;
+      const overridePositions = new Map([
+        [descriptor.rootAtomId, nextRootPosition]
+      ]);
+      for (const atomId of descriptor.rootRotatingAtomIds) {
+        const currentPosition = coords.get(atomId);
+        if (!currentPosition) {
+          continue;
+        }
+        overridePositions.set(
+          atomId,
+          add(nextRootPosition, rotate(sub(currentPosition, rootPosition), rotation))
+        );
+      }
+      const candidate = {
+        ...buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, covalentBonds),
+        angleDelta: angularDifference(currentForwardAngle, forwardOutwardAngle) + Math.abs(rotation),
+        overridePositions,
+        rootAnchored: false
+      };
+      if (isBetterCandidate(candidate, bestCandidate)) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  return bestCandidate;
 }
 
 function buildRootAnchoredRingSystemPositions(coords, rootAtomId, rotatingAtomIds, rotation) {
@@ -804,6 +963,14 @@ function shouldAcceptCandidate(candidate, baseCandidate, descriptor) {
   const doesNotWorsenBridgeAngle =
     descriptor.linkedRingAnchorAtomId == null
     || candidate.bridgeAngleDeviation <= baseCandidate.bridgeAngleDeviation + TIDY_ANGLE_EPSILON;
+  const improvesExactLinkedRingOutwardBalance =
+    descriptor.linkedRingAnchorAtomId != null
+    && descriptor.prefersIdealOutwardGeometry
+    && descriptor.prefersIdealReverseOutwardGeometry
+    && candidate.outwardDeviation <= TIDY_ANGLE_EPSILON
+    && candidate.outwardDeviation < baseCandidate.outwardDeviation - TIDY_ANGLE_EPSILON
+    && candidate.bridgeAngleDeviation
+      <= (baseCandidate.outwardDeviation + baseCandidate.bridgeAngleDeviation + TIDY_ANGLE_EPSILON);
   const areaImprovement = baseCandidate.boundsArea - candidate.boundsArea;
   const requiredAreaImprovement = candidate.rootAnchored
     ? Math.max(
@@ -828,6 +995,16 @@ function shouldAcceptCandidate(candidate, baseCandidate, descriptor) {
   ) {
     return true;
   }
+  if (
+    improvesExactLinkedRingOutwardBalance
+    && candidate.insideRingCount <= baseCandidate.insideRingCount
+    && candidate.outwardFailureCount <= baseCandidate.outwardFailureCount
+    && candidate.crossingCount <= baseCandidate.crossingCount
+    && doesNotWorsenOverlap
+    && doesNotWorsenDistortion
+  ) {
+    return true;
+  }
   if ((improvesInsideRing || improvesOutwardFailures || improvesOutwardDeviation || improvesBridgeAngle || improvesAnchorClearance) && doesNotWorsenOverlap && doesNotWorsenDistortion && doesNotWorsenBridgeAngle) {
     return true;
   }
@@ -843,6 +1020,7 @@ function shouldAcceptCandidate(candidate, baseCandidate, descriptor) {
   if (
     !doesNotWorsenOverlap
     || !doesNotWorsenDistortion
+    || !doesNotWorsenIdealOutwardGeometry
     || !doesNotWorsenBridgeAngle
     || candidate.crossingCount > baseCandidate.crossingCount
   ) {
@@ -912,7 +1090,6 @@ export function measureRingSubstituentPresentationPenalty(layoutGraph, coords, o
     if (Number.isFinite(reverseAromaticDeviation)) {
       totalDeviation += reverseAromaticDeviation;
     }
-
     const isIdealLeafDescriptor =
       descriptor.prefersIdealOutwardGeometry
       && !descriptor.isRingSystemSubstituent
@@ -950,10 +1127,6 @@ export function measureRingSubstituentPresentationPenalty(layoutGraph, coords, o
       const reverseDeviation = bestOutwardDeviation(reverseAnchorPosition, rootPosition, descriptor.reverseOutwardAngles);
       if (Number.isFinite(reverseDeviation) && !Number.isFinite(reverseAromaticDeviation) && !Number.isFinite(reverseAttachedRingDeviation)) {
         totalDeviation += reverseDeviation;
-      }
-      const bridgeAngleDeviation = linkedRingBridgeAngleDeviation(anchorPosition, rootPosition, reverseAnchorPosition);
-      if (Number.isFinite(bridgeAngleDeviation)) {
-        totalDeviation += bridgeAngleDeviation;
       }
     }
   }
@@ -1030,6 +1203,15 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
       let bestCandidate = null;
       let bestZeroFailureRootCandidate = null;
       const exactIdealLeafCandidate = buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, dynamicDescriptor, bondLength, allAtomIds, covalentBonds);
+      const exactIdealLinkedRingCandidate = buildExactIdealLinkedRingCandidate(
+        layoutGraph,
+        coords,
+        atomGrid,
+        dynamicDescriptor,
+        bondLength,
+        allAtomIds,
+        covalentBonds
+      );
       const shouldUseExactIdealLeafCandidate =
         exactIdealLeafCandidate
         && exactIdealLeafCandidate.insideRingCount === 0
@@ -1039,6 +1221,9 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
         && exactIdealLeafCandidate.outwardDeviation < baseCandidate.outwardDeviation - TIDY_ANGLE_EPSILON;
       if (shouldUseExactIdealLeafCandidate || (exactIdealLeafCandidate && shouldAcceptCandidate(exactIdealLeafCandidate, baseCandidate, dynamicDescriptor))) {
         bestCandidate = exactIdealLeafCandidate;
+      }
+      if (exactIdealLinkedRingCandidate && shouldAcceptCandidate(exactIdealLinkedRingCandidate, baseCandidate, dynamicDescriptor) && isBetterCandidate(exactIdealLinkedRingCandidate, bestCandidate)) {
+        bestCandidate = exactIdealLinkedRingCandidate;
       }
       if (dynamicDescriptor.rootRotatingAtomIds.length > 0) {
         forEachRigidRotationCandidate(layoutGraph, coords, dynamicDescriptor, {

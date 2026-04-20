@@ -290,6 +290,7 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
           && coords.has(neighborAtomId);
       }) ?? null;
     const candidateTurnSigns = stereoBonds.length > 0 ? [currentTurnSign, -currentTurnSign] : [currentTurnSign];
+    const sideRootAtomIds = sideRootAtomId ? collectSideAtomIds(layoutGraph, sideRootAtomId, centerAtomId) : null;
     let bestCandidate = null;
 
     for (const candidateTurnSign of candidateTurnSigns) {
@@ -305,12 +306,12 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
           candidateCoords.set(atomId, add(centerPosition, rotate(sub(position, centerPosition), rotationAngle)));
         }
       }
-      if (sideRootAtomId && candidateCoords.has(sideRootAtomId)) {
+      if (sideRootAtomId && sideRootAtomIds && candidateCoords.has(sideRootAtomId)) {
         const targetAngle = angleOf(sub(centerPosition, centroid([previousPosition, candidateCoords.get(nextAtomId)])));
         const currentRootAngle = angleOf(sub(candidateCoords.get(sideRootAtomId), centerPosition));
         rotateSubtreeAroundCenter(
           candidateCoords,
-          collectSideAtomIds(layoutGraph, sideRootAtomId, centerAtomId),
+          sideRootAtomIds,
           centerPosition,
           normalizeSignedAngle(targetAngle - currentRootAngle)
         );
@@ -409,10 +410,22 @@ function rotateSubtreeAroundCenter(coords, movedAtomIds, centerPosition, rotatio
   }
 }
 
-function realignTrigonalLinearSubstituentRoots(layoutGraph, coords) {
+/**
+ * Re-snaps non-backbone single-bond roots that continue into a terminal
+ * multiple bond so they keep the exact remaining trigonal slot after backbone
+ * normalization. Backbone continuations are intentionally skipped here so the
+ * chosen zig-zag path keeps its normalized geometry and the terminal
+ * multiple-bond leaf can be re-snapped separately.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string[]} [backbone] - Backbone atom IDs in placement order.
+ * @returns {Map<string, {x: number, y: number}>} Updated coordinate map.
+ */
+function realignTrigonalLinearSubstituentRoots(layoutGraph, coords, backbone = []) {
   if (!layoutGraph) {
     return coords;
   }
+  const backboneAtomIds = new Set(backbone);
 
   for (const atom of layoutGraph.atoms.values()) {
     if (!coords.has(atom.id) || atom.element === 'H') {
@@ -434,7 +447,13 @@ function realignTrigonalLinearSubstituentRoots(layoutGraph, coords) {
     if (!primaryBond) {
       continue;
     }
-    const rootBonds = heavyBonds.filter(bond => bond !== primaryBond && isTerminalLinearMultipleBondRoot(layoutGraph, atom.id, bond));
+    const rootBonds = heavyBonds.filter(bond => {
+      if (bond === primaryBond || !isTerminalLinearMultipleBondRoot(layoutGraph, atom.id, bond)) {
+        return false;
+      }
+      const rootAtomId = bond.a === atom.id ? bond.b : bond.a;
+      return !(backboneAtomIds.has(atom.id) && backboneAtomIds.has(rootAtomId));
+    });
     if (rootBonds.length === 0) {
       continue;
     }
@@ -756,6 +775,6 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
 
   const stereoEnforced = enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords;
   const trigonalNormalized = normalizeBackboneTrigonalAngles(layoutGraph, stereoEnforced, backbone);
-  const linearRootsRealigned = realignTrigonalLinearSubstituentRoots(layoutGraph, trigonalNormalized);
+  const linearRootsRealigned = realignTrigonalLinearSubstituentRoots(layoutGraph, trigonalNormalized, backbone);
   return realignTerminalMultipleBondLeaves(layoutGraph, linearRootsRealigned, bondLength);
 }

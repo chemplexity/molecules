@@ -784,6 +784,68 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
+  it('straightens linked diaryl-ether exits even when the fused anchor also carries a sibling oxygen leaf', () => {
+    const smiles = 'Oc1ccc(cc1)C2=CC(=O)c3c(O)c(Oc4ccc(cc4)C5=CC(=O)c6c(O)cc(O)cc6O5)c(O)cc3O2';
+    const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(smiles, {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const placementLeftPreferredAngle = preferredRingAttachmentAngle(result.layoutGraph, placement.coords, 'C15');
+    const finalLeftPreferredAngle = preferredRingAttachmentAngle(result.layoutGraph, result.coords, 'C15');
+    const finalRightPreferredAngle = preferredRingAttachmentAngle(result.layoutGraph, result.coords, 'C17');
+    const placementLeftDeviation = angularDifference(
+      angleOf(sub(placement.coords.get('O16'), placement.coords.get('C15'))),
+      placementLeftPreferredAngle
+    );
+    const finalLeftDeviation = angularDifference(
+      angleOf(sub(result.coords.get('O16'), result.coords.get('C15'))),
+      finalLeftPreferredAngle
+    );
+    const finalRightDeviation = angularDifference(
+      angleOf(sub(result.coords.get('O16'), result.coords.get('C17'))),
+      finalRightPreferredAngle
+    );
+
+    assert.ok(placementLeftDeviation > (10 * Math.PI) / 180, `expected placement to leave the fused ether exit visibly off-angle, got ${(placementLeftDeviation * 180) / Math.PI}`);
+    assert.ok(finalLeftDeviation < 1e-6, `expected final left ether exit to be exact, got ${finalLeftDeviation}`);
+    assert.ok(finalRightDeviation < 1e-6, `expected final right ether exit to stay exact, got ${finalRightDeviation}`);
+    assert.equal(placementAudit.ok, true);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps a simple phenoxy bridge and phenol leaf unchanged while the ether exits stay exact', () => {
+    const smiles = 'Oc1ccccc1Oc1ccccc1';
+    const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(smiles, {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const metrics = coords => ({
+      phenolDeviation: angularDifference(
+        angleOf(sub(coords.get('O1'), coords.get('C2'))),
+        preferredRingAttachmentAngle(result.layoutGraph, coords, 'C2')
+      ),
+      leftBridgeDeviation: angularDifference(
+        angleOf(sub(coords.get('O8'), coords.get('C7'))),
+        preferredRingAttachmentAngle(result.layoutGraph, coords, 'C7')
+      ),
+      rightBridgeDeviation: angularDifference(
+        angleOf(sub(coords.get('O8'), coords.get('C9'))),
+        preferredRingAttachmentAngle(result.layoutGraph, coords, 'C9')
+      )
+    });
+    const placementMetrics = metrics(placement.coords);
+    const finalMetrics = metrics(result.coords);
+
+    assert.ok(placementMetrics.phenolDeviation < 1e-6);
+    assert.ok(placementMetrics.leftBridgeDeviation < 1e-6);
+    assert.ok(placementMetrics.rightBridgeDeviation < 1e-6);
+    assert.ok(finalMetrics.phenolDeviation < 1e-6);
+    assert.ok(finalMetrics.leftBridgeDeviation < 1e-6);
+    assert.ok(finalMetrics.rightBridgeDeviation < 1e-6);
+    assert.equal(placementAudit.ok, true);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
   it('keeps this fused mixed cyclopropyl cation overlap-free from placement through the final stage', () => {
     const result = runPipeline(parseSMILES('CCC1(CC1)[NH2+]C1CCC2=C1OC=C2'), {
       suppressH: true,

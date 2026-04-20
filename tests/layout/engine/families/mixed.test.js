@@ -94,6 +94,24 @@ function sortedNeighborSeparations(adjacency, coords, atomId) {
   return separations.sort((firstSeparation, secondSeparation) => firstSeparation - secondSeparation);
 }
 
+function sortedHeavyNeighborSeparations(adjacency, coords, atomId, layoutGraph) {
+  const atomPosition = coords.get(atomId);
+  const neighborAngles = (adjacency.get(atomId) ?? [])
+    .filter(neighborAtomId => coords.has(neighborAtomId) && layoutGraph.atoms.get(neighborAtomId)?.element !== 'H')
+    .map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), atomPosition)))
+    .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  const separations = [];
+
+  for (let index = 0; index < neighborAngles.length; index++) {
+    const currentAngle = neighborAngles[index];
+    const nextAngle = neighborAngles[(index + 1) % neighborAngles.length];
+    const rawGap = nextAngle - currentAngle;
+    separations.push(rawGap > 0 ? rawGap : rawGap + Math.PI * 2);
+  }
+
+  return separations.sort((firstSeparation, secondSeparation) => firstSeparation - secondSeparation);
+}
+
 /**
  * Returns the smaller bond angle at a center atom between two neighbors.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
@@ -474,6 +492,37 @@ describe('layout/engine/families/mixed', () => {
       `expected the quaternary center to use clean tetrahedral-like quadrants, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
     assert.ok(Math.abs(nitrileAngle - Math.PI) < 1e-6, `expected the nitrile branch to stay linear, got ${((nitrileAngle * 180) / Math.PI).toFixed(2)} degrees`);
+  });
+
+  it('keeps diaryl difluoromethyl linkers on clean projected-tetrahedral quadrants', () => {
+    const graph = createLayoutGraph(parseSMILES('NC(=O)C1=CC=CC(=C1)C1=CC=C(NCC(F)(F)C2=CC=CC=N2)N=N1'), { suppressH: true });
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, adjacency, plan, graph.options.bondLength);
+    const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'C16', graph);
+
+    assert.equal(result.supported, true);
+    assert.equal(separations.length, 4, 'expected the difluoromethyl linker center to place four heavy neighbors');
+    assert.ok(
+      separations.every(separation => Math.abs(separation - (Math.PI / 2)) < 0.05),
+      `expected the difluoromethyl linker to use projected-tetrahedral quadrants, got ${separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+  });
+
+  it('does not force mono-fluoro benzylic linkers off their standard trigonal continuation', () => {
+    const graph = createLayoutGraph(parseSMILES('NC(=O)C1=CC=CC(=C1)C1=CC=C(NCC(F)C2=CC=CC=N2)N=N1'), { suppressH: true });
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, adjacency, plan, graph.options.bondLength);
+    const linkerAngle = bondAngleAtAtom(result.coords, 'C16', 'C15', 'C18');
+
+    assert.equal(result.supported, true);
+    assert.ok(
+      Math.abs(linkerAngle - ((2 * Math.PI) / 3)) < 0.05,
+      `expected the mono-fluoro linker to stay near a 120-degree trigonal continuation, got ${((linkerAngle * 180) / Math.PI).toFixed(2)} degrees`
+    );
   });
 
   it('keeps a heavy ring substituent on the outward axis even when the anchor also carries an explicit hydrogen', () => {

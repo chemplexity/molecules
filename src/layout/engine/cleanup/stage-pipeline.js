@@ -248,7 +248,7 @@ export function buildCleanupStageGraph(context) {
     },
     {
       name: 'stereoProtectedTouchup',
-      parentStage: 'stereoCleanup',
+      parentStage: ['stereoCleanup', 'selectedGeometryStereo'],
       guard(stageResults, incumbent) {
         return mergeFrozenAtomIds(placement.frozenAtomIds, collectProtectedEZAtomIds(layoutGraph)) != null
           && hasStereoRescueOverlaps(stageResults, incumbent);
@@ -271,7 +271,7 @@ export function buildCleanupStageGraph(context) {
     },
     {
       name: 'stereoTouchup',
-      parentStage: 'stereoCleanup',
+      parentStage: ['stereoCleanup', 'selectedGeometryStereo'],
       guard: hasStereoRescueOverlaps,
       transformFn(parentCoords) {
         return runUnifiedCleanup(layoutGraph, parentCoords, {
@@ -292,7 +292,9 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'postTouchupStereo',
       parentStage: 'stereoTouchup',
-      guard: hasStereoRescueOverlaps,
+      guard(stageResults, incumbent) {
+        return stageResults.has('stereoTouchup') && hasStereoRescueOverlaps(stageResults, incumbent);
+      },
       transformFn(parentCoords) {
         return enforceAcyclicEZStereo(layoutGraph, parentCoords, {
           bondLength

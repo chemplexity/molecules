@@ -40,6 +40,23 @@ function ringOutwardDeviation(graph, coords, anchorAtomId, childAtomId) {
   );
 }
 
+function preferredRingAttachmentAngle(graph, coords, anchorAtomId) {
+  const anchorPosition = coords.get(anchorAtomId);
+  assert.ok(anchorPosition);
+  const anchorRingCount = graph.atomToRings.get(anchorAtomId)?.length ?? 0;
+  if (anchorRingCount > 1) {
+    const ringSystem = graph.ringSystems.find(candidateRingSystem => candidateRingSystem.atomIds.includes(anchorAtomId));
+    const positions = ringSystem?.atomIds.map(atomId => coords.get(atomId)).filter(Boolean) ?? [];
+    assert.ok(positions.length >= 3);
+    return angleOf(sub(anchorPosition, centroid(positions)));
+  }
+  const ring = (graph.atomToRings.get(anchorAtomId) ?? [])[0];
+  assert.ok(ring);
+  const positions = ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
+  assert.equal(positions.length, ring.atomIds.length);
+  return angleOf(sub(anchorPosition, centroid(positions)));
+}
+
 describe('layout/engine/cleanup/ring-substituent-tidy', () => {
   it('rotates tangential anisole methoxy substituents back toward an outward ring direction', () => {
     const smiles = 'COc1ccccc1';
@@ -265,6 +282,44 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('re-snaps linked diaryl-ether exits exactly even when the fused anchor also carries a phenol leaf', () => {
+    const smiles = 'Oc1ccc(cc1)C2=CC(=O)c3c(O)c(Oc4ccc(cc4)C5=CC(=O)c6c(O)cc(O)cc6O5)c(O)cc3O2';
+    const normalizedOptions = normalizeOptions({ suppressH: true });
+    const graph = createLayoutGraphFromNormalized(parseSMILES(smiles), normalizedOptions);
+    const familySummary = classifyFamily(graph);
+    const policy = resolvePolicy(resolveProfile(normalizedOptions.profile), {
+      ...graph.traits,
+      ...familySummary
+    });
+    const placement = layoutSupportedComponents(graph, policy);
+    const beforePenalty = measureRingSubstituentPresentationPenalty(graph, placement.coords);
+
+    const tidied = runRingSubstituentTidy(graph, placement.coords, {
+      bondLength: normalizedOptions.bondLength,
+      frozenAtomIds: placement.frozenAtomIds
+    });
+    const afterPenalty = measureRingSubstituentPresentationPenalty(graph, tidied.coords);
+    const afterAudit = auditLayout(graph, tidied.coords, {
+      bondLength: normalizedOptions.bondLength,
+      bondValidationClasses: placement.bondValidationClasses
+    });
+    const leftDeviation = angularDifference(
+      angleOf(sub(tidied.coords.get('O16'), tidied.coords.get('C15'))),
+      preferredRingAttachmentAngle(graph, tidied.coords, 'C15')
+    );
+    const rightDeviation = angularDifference(
+      angleOf(sub(tidied.coords.get('O16'), tidied.coords.get('C17'))),
+      preferredRingAttachmentAngle(graph, tidied.coords, 'C17')
+    );
+
+    assert.ok(tidied.nudges > 0);
+    assert.ok(beforePenalty > 0.2, `expected the seeded placement to carry a visible linked-ring presentation penalty, got ${beforePenalty}`);
+    assert.ok(afterPenalty < beforePenalty - 0.1, `expected tidy to reduce linked-ring presentation penalty, got before=${beforePenalty} after=${afterPenalty}`);
+    assert.ok(leftDeviation < 1e-6, `expected the left diaryl-ether exit to become exact, got ${leftDeviation}`);
+    assert.ok(rightDeviation < 1e-6, `expected the right diaryl-ether exit to stay exact, got ${rightDeviation}`);
+    assert.equal(afterAudit.ok, true);
   });
 
   it('re-snaps lone terminal multiple-bond leaves on ring trigonal centers to the exact outward angle', () => {

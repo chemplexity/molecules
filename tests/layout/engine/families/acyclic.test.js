@@ -335,6 +335,23 @@ describe('layout/engine/families/acyclic', () => {
     assert.ok(Math.abs(bondAngle(result.coords, 'C4', 'C5', 'O6') - 120) < 1e-6);
   });
 
+  it('keeps backbone alkene continuations exact when a neighboring terminal methylene is present', () => {
+    const result = runPipeline(parseSMILES('CC(=CCCC(=C)C=C)C'), { suppressH: true });
+
+    assert.ok(Math.abs(bondAngle(result.coords, 'C5', 'C6', 'C7') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C5', 'C6', 'C8') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'C6', 'C8') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C6', 'C8', 'C9') - 120) < 1e-6);
+  });
+
+  it('still keeps off-backbone terminal-alkene roots on the exact trigonal slot', () => {
+    const result = runPipeline(parseSMILES('CCC(=C(C=C)CCC)CC'), { suppressH: true });
+
+    assert.ok(Math.abs(bondAngle(result.coords, 'C3', 'C4', 'C5') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C5', 'C4', 'C7') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C4', 'C5', 'C6') - 120) < 1e-6);
+  });
+
   it('keeps long explicitly stereo polyenes extended instead of curling them into a compact spiral', () => {
     const graph = createLayoutGraph(parseSMILES('CC\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/C\\C=C/CCC(=O)O'), {
       suppressH: true
