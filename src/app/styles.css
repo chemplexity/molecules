@@ -245,6 +245,10 @@ body {
   background: #fff;
 }
 
+#options-2d-color-style {
+  width: auto;
+}
+
 .option-row input[type='number']:focus,
 .option-row select:focus {
   outline: none;
@@ -765,6 +769,22 @@ div.tooltip td:first-child {
 }
 
 .reaction-nav-btn:hover {
+  background: #f0f0f0;
+  color: #333;
+}
+
+.resonance-compute-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  border: 1px solid #ccc;
+  border-radius: 3px;
+  background: #fff;
+  color: #555;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.resonance-compute-btn:hover {
   background: #f0f0f0;
   color: #333;
 }

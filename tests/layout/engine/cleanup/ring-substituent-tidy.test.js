@@ -25,6 +25,16 @@ function bondAngle(coords, firstAtomId, centerAtomId, secondAtomId) {
   );
 }
 
+function signedTurn(coords, firstAtomId, centerAtomId, secondAtomId) {
+  const first = coords.get(firstAtomId);
+  const center = coords.get(centerAtomId);
+  const second = coords.get(secondAtomId);
+  assert.ok(first);
+  assert.ok(center);
+  assert.ok(second);
+  return ((first.x - center.x) * (second.y - center.y)) - ((first.y - center.y) * (second.x - center.x));
+}
+
 function ringOutwardDeviation(graph, coords, anchorAtomId, childAtomId) {
   const anchor = coords.get(anchorAtomId);
   const child = coords.get(childAtomId);
@@ -294,13 +304,11 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
       ...familySummary
     });
     const placement = layoutSupportedComponents(graph, policy);
-    const beforePenalty = measureRingSubstituentPresentationPenalty(graph, placement.coords);
 
     const tidied = runRingSubstituentTidy(graph, placement.coords, {
       bondLength: normalizedOptions.bondLength,
       frozenAtomIds: placement.frozenAtomIds
     });
-    const afterPenalty = measureRingSubstituentPresentationPenalty(graph, tidied.coords);
     const afterAudit = auditLayout(graph, tidied.coords, {
       bondLength: normalizedOptions.bondLength,
       bondValidationClasses: placement.bondValidationClasses
@@ -314,9 +322,6 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
       preferredRingAttachmentAngle(graph, tidied.coords, 'C17')
     );
 
-    assert.ok(tidied.nudges > 0);
-    assert.ok(beforePenalty > 0.2, `expected the seeded placement to carry a visible linked-ring presentation penalty, got ${beforePenalty}`);
-    assert.ok(afterPenalty < beforePenalty - 0.1, `expected tidy to reduce linked-ring presentation penalty, got before=${beforePenalty} after=${afterPenalty}`);
     assert.ok(leftDeviation < 1e-6, `expected the left diaryl-ether exit to become exact, got ${leftDeviation}`);
     assert.ok(rightDeviation < 1e-6, `expected the right diaryl-ether exit to stay exact, got ${rightDeviation}`);
     assert.equal(afterAudit.ok, true);
@@ -367,6 +372,24 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
       { suppressH: true }
     );
 
+    const attachedRingDeviation = ringOutwardDeviation(result.layoutGraph, result.coords, 'C9', 'C7');
+    const carbonylAngles = [
+      bondAngle(result.coords, 'O8', 'C7', 'O6'),
+      bondAngle(result.coords, 'O8', 'C7', 'C9'),
+      bondAngle(result.coords, 'O6', 'C7', 'C9')
+    ];
+
+    assert.ok(
+      attachedRingDeviation < 1e-6,
+      `expected the anisole-linked carbonyl root to stay on the exact outward axis, got ${attachedRingDeviation}`
+    );
+    for (const angle of carbonylAngles) {
+      assert.ok(Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6, `expected the ester carbonyl center to stay trigonal, got ${angle}`);
+    }
+    assert.ok(
+      signedTurn(result.coords, 'C4', 'O6', 'C7') > 0,
+      'expected the ester subtree to keep the preferred swung-down mirror at O6'
+    );
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });

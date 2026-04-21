@@ -60,7 +60,8 @@ export const SEVERE_OVERLAP_FACTOR = 0.55;
 
 /** Tunable audit thresholds for ring-substituent readability checks. */
 export const RING_SUBSTITUENT_READABILITY_LIMITS = Object.freeze({
-  maxOutwardDeviation: 0.7
+  maxOutwardDeviation: 0.7,
+  maxSevereImmediateOutwardDeviation: 1.0
 });
 
 /** Minimum candidate clearance accepted by branch placement. */

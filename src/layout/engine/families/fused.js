@@ -5,6 +5,7 @@ import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { apothemForRegularPolygon } from '../geometry/polygon.js';
 import { add, angleOf, centroid, distance, fromAngle, midpoint, normalize, perpLeft, scale, sub, wrapAngle } from '../geometry/vec2.js';
 import { computeFusedAxis, orientCoordsHorizontally, rebuildRingCenters } from '../scaffold/orientation.js';
+import { nonSharedPath } from '../geometry/ring-path.js';
 import { placeTemplateCoords } from '../scaffold/template-placement.js';
 import { auditLayout } from '../audit/audit.js';
 import { assignBondValidationClass } from '../placement/bond-validation.js';
@@ -228,22 +229,6 @@ export function layoutFusedCageKamadaKawai(rings, bondLength, options = {}) {
   };
 }
 
-function traversePath(atomIds, startAtomId, endAtomId, step) {
-  const count = atomIds.length;
-  let index = atomIds.indexOf(startAtomId);
-  const result = [startAtomId];
-  while (atomIds[index] !== endAtomId) {
-    index = (index + step + count) % count;
-    result.push(atomIds[index]);
-  }
-  return result;
-}
-
-function nonSharedPath(atomIds, firstSharedAtomId, secondSharedAtomId) {
-  const forward = traversePath(atomIds, firstSharedAtomId, secondSharedAtomId, 1);
-  const backward = traversePath(atomIds, firstSharedAtomId, secondSharedAtomId, -1);
-  return forward.length >= backward.length ? forward : backward;
-}
 
 /**
  * Returns whether the fused ring-adjacency graph contains a cycle.

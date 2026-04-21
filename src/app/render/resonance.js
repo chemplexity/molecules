@@ -184,12 +184,12 @@ export function updateResonancePanel(mol, options = {}) {
     return;
   }
   if (recompute) {
-    if (mol.properties?.resonance) {
-      mol.resetResonance();
+    if (!mol.properties?.resonance) {
+      _resonanceLocked = false;
+      _activeResonanceState = 1;
+    } else {
+      _activeResonanceState = Math.max(1, Math.min(_activeResonanceState, mol.resonanceCount));
     }
-    generateResonanceStructures(mol, RESONANCE_PANEL_OPTIONS);
-    _resonanceLocked = false;
-    _activeResonanceState = 1;
   } else if (mol.properties?.resonance) {
     _activeResonanceState = Math.max(1, Math.min(_activeResonanceState, mol.resonanceCount));
   } else {
@@ -300,14 +300,48 @@ function _renderResonancePanel(mol) {
     return;
   }
 
+  tbody.innerHTML = '';
+  const tr = document.createElement('tr');
+
+  const nameCell = document.createElement('td');
+  const countCell = document.createElement('td');
+  countCell.className = 'reaction-count';
+
+  const name = document.createElement('div');
+  name.className = 'reaction-name';
+  name.textContent = 'Resonance Structures';
+  nameCell.appendChild(name);
+
+  if (!mol.properties?.resonance) {
+    const computeBtn = document.createElement('button');
+    computeBtn.type = 'button';
+    computeBtn.className = 'resonance-compute-btn';
+    computeBtn.textContent = 'Compute';
+    computeBtn.title = 'Enumerate resonance contributors';
+    computeBtn.addEventListener('mousedown', event => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    computeBtn.addEventListener('click', event => {
+      event.preventDefault();
+      event.stopPropagation();
+      generateResonanceStructures(mol, RESONANCE_PANEL_OPTIONS);
+      _resonanceLocked = false;
+      _activeResonanceState = 1;
+      _renderResonancePanel(mol);
+    });
+    countCell.appendChild(computeBtn);
+    tr.appendChild(nameCell);
+    tr.appendChild(countCell);
+    tbody.appendChild(tr);
+    return;
+  }
+
   const count = Math.max(1, mol.resonanceCount);
   const isCyclable = count > 1;
   const isActive = _resonanceLocked && isCyclable;
   const activeState = Math.max(1, Math.min(_activeResonanceState, count));
 
-  tbody.innerHTML = '';
-
-  const tr = document.createElement('tr');
   if (isActive) {
     tr.classList.add('resonance-active');
   }
@@ -315,15 +349,7 @@ function _renderResonancePanel(mol) {
     tr.classList.add('resonance-clickable');
   }
 
-  const nameCell = document.createElement('td');
-  const countCell = document.createElement('td');
-  countCell.className = 'reaction-count';
   countCell.textContent = String(count);
-
-  const name = document.createElement('div');
-  name.className = 'reaction-name';
-  name.textContent = 'Resonance Structures';
-  nameCell.appendChild(name);
 
   if (isActive) {
     const nav = document.createElement('div');

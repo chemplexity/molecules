@@ -460,6 +460,16 @@ export function formatChargeLabel(charge) {
 }
 
 /**
+ * Returns the number of heavy (non-hydrogen) neighbors of `atom` in `mol`.
+ * @param {import('../core/Atom.js').Atom} atom - The atom to query.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @returns {number} Count of immediate neighbors whose element is not `'H'`.
+ */
+export function heavyDegree(atom, mol) {
+  return atom.getNeighbors(mol).filter(n => n.name !== 'H').length;
+}
+
+/**
  * Computes the font size and circle radius for a charge badge.
  *
  * The badge radius is at least large enough to contain one character and

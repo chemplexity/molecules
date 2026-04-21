@@ -41,22 +41,21 @@ function countHorizontalRingBonds(coords, molecule) {
   return horizontalCount;
 }
 
-function principalAxisDegrees(coords, molecule) {
-  const heavyAtomIds = [...molecule.atoms.keys()].filter(atomId => molecule.atoms.get(atomId)?.name !== 'H');
+function principalAxisDegreesForAtomIds(coords, atomIds) {
   let sumX = 0;
   let sumY = 0;
-  for (const atomId of heavyAtomIds) {
+  for (const atomId of atomIds) {
     const point = coords.get(atomId);
     sumX += point.x;
     sumY += point.y;
   }
-  const centerX = sumX / heavyAtomIds.length;
-  const centerY = sumY / heavyAtomIds.length;
+  const centerX = sumX / atomIds.length;
+  const centerY = sumY / atomIds.length;
 
   let inertiaXX = 0;
   let inertiaYY = 0;
   let inertiaXY = 0;
-  for (const atomId of heavyAtomIds) {
+  for (const atomId of atomIds) {
     const point = coords.get(atomId);
     const dx = point.x - centerX;
     const dy = point.y - centerY;
@@ -88,7 +87,20 @@ function dominantScaffoldAxisDegrees(coords, molecule) {
 
   const dominantRingSystem = multiRingSystems[0];
   const dominantAtomIds = dominantRingSystem.atomIds.filter(atomId => heavyAtomIds.includes(atomId));
-  return dominantAtomIds.length >= 2 ? principalAxisDegrees(coords, { atoms: new Map(dominantAtomIds.map(atomId => [atomId, molecule.atoms.get(atomId)])) }) : null;
+  return dominantAtomIds.length >= 2 ? principalAxisDegreesForAtomIds(coords, dominantAtomIds) : null;
+}
+
+function minimumLargeMultiRingAxisDeviationDegrees(coords, molecule) {
+  const heavyAtomIds = [...molecule.atoms.keys()].filter(atomId => molecule.atoms.get(atomId)?.name !== 'H' && coords.has(atomId));
+  const heavyAtomIdSet = new Set(heavyAtomIds);
+  const minimumScaffoldSize = Math.max(8, Math.ceil(heavyAtomIds.length * 0.2));
+  const { ringSystems } = analyzeRings(molecule, morganRanks(molecule));
+  const deviations = ringSystems
+    .filter(ringSystem => ringSystem.ringIds.length > 1)
+    .map(ringSystem => ringSystem.atomIds.filter(atomId => heavyAtomIdSet.has(atomId)))
+    .filter(atomIds => atomIds.length >= minimumScaffoldSize)
+    .map(atomIds => Math.abs(principalAxisDegreesForAtomIds(coords, atomIds)));
+  return deviations.length > 0 ? Math.min(...deviations) : null;
 }
 
 describe('layout/engine/orientation', () => {
@@ -147,7 +159,7 @@ describe('layout/engine/orientation', () => {
 
     assert.equal(applied, true);
     assert.ok(
-      bondAngles.every(angle => Math.abs(angle - ((Math.PI / 6) * Math.round(angle / (Math.PI / 6)))) < 1e-6),
+      bondAngles.every(angle => Math.abs(angle - (Math.PI / 6) * Math.round(angle / (Math.PI / 6))) < 1e-6),
       `expected ring bonds to land on the 30-degree lattice, got ${bondAngles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
     );
   });
@@ -162,10 +174,7 @@ describe('layout/engine/orientation', () => {
 
     assert.notEqual(left, undefined);
     assert.notEqual(right, undefined);
-    assert.ok(
-      Math.abs(right.y - left.y) < 1e-6,
-      `expected the mixed zigzag axis to be level, got endpoint tilt ${Math.abs(right.y - left.y).toFixed(6)}`
-    );
+    assert.ok(Math.abs(right.y - left.y) < 1e-6, `expected the mixed zigzag axis to be level, got endpoint tilt ${Math.abs(right.y - left.y).toFixed(6)}`);
   });
 
   it('does not let a short tail outrank the main ring slab when leveling a large mixed scaffold', () => {
@@ -181,16 +190,22 @@ describe('layout/engine/orientation', () => {
     );
   });
 
-  it('keeps large ring-rich slabs close to horizontal instead of finishing on a diagonal compromise', () => {
-    const molecule = parseSMILES('CC1=NC(NC2=NC=C(S2)C(=O)NC2=C(C)C=CC=C2Cl)=CC(=N1)N1CCN(CCO)CC1');
-    const result = runPipeline(molecule, {
+  it('preserves an already-level linked chromone scaffold instead of re-tilting it to the whole-molecule inertia axis', () => {
+    const smiles = 'Oc1ccc(cc1)C2=CC(=O)c3c(O)c(Oc4ccc(cc4)C5=CC(=O)c6c(O)cc(O)cc6O5)c(O)cc3O2';
+    const defaultResult = runPipeline(parseSMILES(smiles), { suppressH: true });
+    const landscapeResult = runPipeline(parseSMILES(smiles), {
       suppressH: true,
       finalLandscapeOrientation: true
     });
+    const defaultDeviation = minimumLargeMultiRingAxisDeviationDegrees(defaultResult.coords, defaultResult.layoutGraph.sourceMolecule);
+    const landscapeDeviation = minimumLargeMultiRingAxisDeviationDegrees(landscapeResult.coords, landscapeResult.layoutGraph.sourceMolecule);
 
+    assert.notEqual(defaultDeviation, null);
+    assert.notEqual(landscapeDeviation, null);
+    assert.ok(landscapeDeviation <= 1, `expected at least one large multi-ring scaffold to stay level, got minimum deviation ${landscapeDeviation?.toFixed(2)} degrees`);
     assert.ok(
-      Math.abs(principalAxisDegrees(result.coords, molecule)) <= 15,
-      `expected the leveled slab to stay near horizontal, got principal axis ${principalAxisDegrees(result.coords, molecule).toFixed(2)} degrees`
+      landscapeDeviation <= defaultDeviation + 1e-6,
+      `expected opt-in landscape orientation not to worsen the best large scaffold axis, got default=${defaultDeviation?.toFixed(2)} landscape=${landscapeDeviation?.toFixed(2)}`
     );
   });
 
@@ -218,9 +233,6 @@ describe('layout/engine/orientation', () => {
 
     assert.notEqual(start, undefined);
     assert.notEqual(end, undefined);
-    assert.ok(
-      Math.abs(end.y - start.y) < 1e-6,
-      `expected the long chain backbone to stay level, got tilt ${Math.abs(end.y - start.y).toFixed(6)}`
-    );
+    assert.ok(Math.abs(end.y - start.y) < 1e-6, `expected the long chain backbone to stay level, got tilt ${Math.abs(end.y - start.y).toFixed(6)}`);
   });
 });

@@ -403,17 +403,8 @@ const forceSceneRenderer = createForceSceneRenderer(
       runtimeState.preserveSelectionOnNextRender = value;
     },
     syncSelectionToMolecule: mol => selectionStateHelpers.syncSelectionToMolecule(mol),
-    clearSelection: () => {
-      runtimeState.selectedAtomIds.clear();
-      runtimeState.selectedBondIds.clear();
-    },
-    resetCache: () => {
-      runtimeState.forceSelectionLines = null;
-      runtimeState.forceSelectionCircles = null;
-      runtimeState.forceValenceWarningCircles = null;
-      runtimeState.functionalGroupHighlightLines = null;
-      runtimeState.functionalGroupHighlightCircles = null;
-    },
+    clearSelection: () => runtimeState.clearSelection(),
+    resetCache: () => runtimeState.resetRenderCaches(),
     setValenceWarningCircles: selection => {
       runtimeState.forceValenceWarningCircles = selection;
     },
@@ -489,18 +480,9 @@ const scene2DRenderer = create2DSceneRenderer(
     setPreserveSelectionOnNextRender: value => {
       runtimeState.preserveSelectionOnNextRender = value;
     },
-    resetCache: () => {
-      runtimeState.forceSelectionLines = null;
-      runtimeState.forceSelectionCircles = null;
-      runtimeState.forceValenceWarningCircles = null;
-      runtimeState.functionalGroupHighlightLines = null;
-      runtimeState.functionalGroupHighlightCircles = null;
-    },
+    resetCache: () => runtimeState.resetRenderCaches(),
     syncSelectionToMolecule: mol => selectionStateHelpers.syncSelectionToMolecule(mol),
-    clearSelection: () => {
-      runtimeState.selectedAtomIds.clear();
-      runtimeState.selectedBondIds.clear();
-    },
+    clearSelection: () => runtimeState.clearSelection(),
     getDrawBondMode: () => runtimeState.drawBondMode,
     getDrawBondType: () => runtimeState.drawBondType,
     valenceWarningMapFor: molecule => runtimeState.valenceWarningMapFor(molecule),
@@ -856,10 +838,7 @@ const {
     updatePanels: mol => _updateAnalysisPanels(mol),
     draw2d: () => renderRuntime.draw2d(),
     updateForce: (mol, options = {}) => renderRuntime.updateForce(mol, options),
-    clearSelection: () => {
-      runtimeState.selectedAtomIds.clear();
-      runtimeState.selectedBondIds.clear();
-    },
+    clearSelection: () => runtimeState.clearSelection(),
     changeAtomElements: (atomIds, newEl, options = {}) => _changeAtomElements(atomIds, newEl, options),
     changeAtomCharge: (atomId, options = {}) => _changeAtomCharge(atomId, options),
     promoteBondOrder: (bondId, options = {}) => _promoteBondOrder(bondId, options),
@@ -949,10 +928,7 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     setDrawBondType: value => {
       runtimeState.drawBondType = value;
     },
-    clearSelection: () => {
-      runtimeState.selectedAtomIds.clear();
-      runtimeState.selectedBondIds.clear();
-    },
+    clearSelection: () => runtimeState.clearSelection(),
     clearHovered: () => {
       runtimeState.hoveredAtomIds.clear();
       runtimeState.hoveredBondIds.clear();
@@ -993,13 +969,7 @@ const { inputFlowManager, inputControls } = initializeAppRuntime(
     g,
     getDraw2D: () => draw2d,
     forceSceneRenderer,
-    resetForceRenderCaches: () => {
-      runtimeState.forceSelectionLines = null;
-      runtimeState.forceSelectionCircles = null;
-      runtimeState.forceValenceWarningCircles = null;
-      runtimeState.functionalGroupHighlightLines = null;
-      runtimeState.functionalGroupHighlightCircles = null;
-    },
+    resetForceRenderCaches: () => runtimeState.resetRenderCaches(),
     syncInputField: mol => _syncInputField(mol),
     captureAppSnapshot: options => _captureAppSnapshot(options),
     restoreSnapshot: snap => _restoreSnapshot(snap),

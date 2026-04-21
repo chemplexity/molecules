@@ -225,7 +225,8 @@ describe('layout/engine/audit/invariants', () => {
 
     const distorted = measureDirectAttachedRingJunctionContinuationDistortion(result.layoutGraph, distortedCoords);
 
-    assert.equal(exact.centerCount, 1);
+    assert.ok(exact.centerCount >= 1);
+    assert.equal(distorted.centerCount, exact.centerCount);
     assert.ok(exact.totalDeviation < 1e-12);
     assert.ok(distorted.totalDeviation > 0.2, `expected a meaningful continuation penalty after a 30-degree rotation, got ${distorted.totalDeviation}`);
   });

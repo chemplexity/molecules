@@ -46,6 +46,133 @@ async function loadInchi(page, inchi) {
   await input.press('Enter');
 }
 
+async function atomBondAngleDegrees(page, centerAtomId, firstNeighborAtomId, secondNeighborAtomId) {
+  return await page.evaluate(({ centerAtomId: centerId, firstNeighborAtomId: firstId, secondNeighborAtomId: secondId }) => {
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.]+),([-0-9.]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const center = parseTranslate(document.querySelector(`g[data-atom-id="${centerId}"]`)?.getAttribute('transform'));
+    const first = parseTranslate(document.querySelector(`g[data-atom-id="${firstId}"]`)?.getAttribute('transform'));
+    const second = parseTranslate(document.querySelector(`g[data-atom-id="${secondId}"]`)?.getAttribute('transform'));
+    if (!center || !first || !second) {
+      return null;
+    }
+    const firstDx = first.x - center.x;
+    const firstDy = first.y - center.y;
+    const secondDx = second.x - center.x;
+    const secondDy = second.y - center.y;
+    const denominator = Math.hypot(firstDx, firstDy) * Math.hypot(secondDx, secondDy);
+    if (!(denominator > 0)) {
+      return null;
+    }
+    const cosine = Math.max(-1, Math.min(1, ((firstDx * secondDx) + (firstDy * secondDy)) / denominator));
+    return (Math.acos(cosine) * 180) / Math.PI;
+  }, { centerAtomId, firstNeighborAtomId, secondNeighborAtomId });
+}
+
+async function bondDirectionDegrees(page, firstAtomId, secondAtomId) {
+  return await page.evaluate(({ firstAtomId: firstId, secondAtomId: secondId }) => {
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.]+),([-0-9.]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const first = parseTranslate(document.querySelector(`g[data-atom-id="${firstId}"]`)?.getAttribute('transform'));
+    const second = parseTranslate(document.querySelector(`g[data-atom-id="${secondId}"]`)?.getAttribute('transform'));
+    if (!first || !second) {
+      return null;
+    }
+    return (Math.atan2(second.y - first.y, second.x - first.x) * 180) / Math.PI;
+  }, { firstAtomId, secondAtomId });
+}
+
+async function signedTurn(page, firstAtomId, centerAtomId, secondAtomId) {
+  return await page.evaluate(({ firstAtomId: firstId, centerAtomId: centerId, secondAtomId: secondId }) => {
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.]+),([-0-9.]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const first = parseTranslate(document.querySelector(`g[data-atom-id="${firstId}"]`)?.getAttribute('transform'));
+    const center = parseTranslate(document.querySelector(`g[data-atom-id="${centerId}"]`)?.getAttribute('transform'));
+    const second = parseTranslate(document.querySelector(`g[data-atom-id="${secondId}"]`)?.getAttribute('transform'));
+    if (!first || !center || !second) {
+      return null;
+    }
+    return ((first.x - center.x) * (second.y - center.y)) - ((first.y - center.y) * (second.x - center.x));
+  }, { firstAtomId, centerAtomId, secondAtomId });
+}
+
+test('loading and cleaning the benzamide bug molecule keeps the aryl amide exit on the exact trigonal slot', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCC1=CC=CC(CC)=C1NC(=O)C1=C(C)N(CC(C)C)C(C)=C(Br)C1=O');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const initialAngle = await atomBondAngleDegrees(page, 'N11', 'C10', 'C12');
+  expect(initialAngle).not.toBeNull();
+  expect(Math.abs(initialAngle - 120)).toBeLessThan(1e-6);
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect
+    .poll(async () => {
+      const cleanedAngle = await atomBondAngleDegrees(page, 'N11', 'C10', 'C12');
+      return cleanedAngle == null ? null : Math.abs(cleanedAngle - 120);
+    })
+    .toBeLessThan(1e-6);
+});
+
+test('loading the simple chloro ketone bug molecule keeps the chlorine on the exact downward slot', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC(=O)C(Cl)CC(C(C)C)C=C');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const chlorineDirection = await bondDirectionDegrees(page, 'C4', 'Cl5');
+  expect(chlorineDirection).not.toBeNull();
+  expect(Math.abs(chlorineDirection - 90)).toBeLessThan(1e-6);
+});
+
+test('loading and cleaning the anisole ester bug molecule keeps the C7 carbonyl center exact in the browser render', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, '[H][C@]12C[C@@H](OC(=O)C3=CC(OC)=C(OC)C(OC)=C3)[C@H](OC)[C@@H](C(=O)OC)[C@@]1([H])C[C@@]1([H])N(CCC3=C1NC1=C3C=CC(OC)=C1)C2');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  for (const [firstNeighborAtomId, secondNeighborAtomId] of [
+    ['O8', 'O6'],
+    ['O8', 'C9'],
+    ['O6', 'C9']
+  ]) {
+    const initialAngle = await atomBondAngleDegrees(page, 'C7', firstNeighborAtomId, secondNeighborAtomId);
+    expect(initialAngle).not.toBeNull();
+    expect(Math.abs(initialAngle - 120)).toBeLessThan(1e-6);
+  }
+  const initialTurn = await signedTurn(page, 'C4', 'O6', 'C7');
+  expect(initialTurn).not.toBeNull();
+  expect(initialTurn).toBeLessThan(0);
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect
+    .poll(async () => {
+      const angles = await Promise.all([
+        atomBondAngleDegrees(page, 'C7', 'O8', 'O6'),
+        atomBondAngleDegrees(page, 'C7', 'O8', 'C9'),
+        atomBondAngleDegrees(page, 'C7', 'O6', 'C9')
+      ]);
+      if (angles.some(angle => angle == null)) {
+        return null;
+      }
+      return Math.max(...angles.map(angle => Math.abs(angle - 120)));
+    })
+    .toBeLessThan(1e-6);
+
+  await expect
+    .poll(async () => signedTurn(page, 'C4', 'O6', 'C7'))
+    .toBeLessThan(0);
+});
+
 function dominantMultiRingBondIds(smiles) {
   const molecule = parseSMILES(smiles);
   const { ringSystems } = analyzeRings(molecule, morganRanks(molecule));

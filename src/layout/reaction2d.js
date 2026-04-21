@@ -2168,6 +2168,8 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     }
     if (!mappedRingMembershipChanged) {
       restoreMappedReaction2dRingScaffoldCoords(mol, componentAtomIds);
+      finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
+      finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
     }
     preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds);
 

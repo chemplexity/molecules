@@ -41,7 +41,7 @@ function bondKey(firstAtomId, secondAtomId) {
  * @returns {object|null} Matching ring or null.
  */
 function getRingById(rings, ringId) {
-  return rings.find(ring => ring.id === ringId) ?? null;
+  return rings[ringId] ?? null;
 }
 
 /**

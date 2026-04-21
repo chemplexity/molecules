@@ -71,5 +71,18 @@ export function createRuntimeState({ getRenderOptions, validateValence }) {
     runtimeState.selectionValenceTooltipAtomId = null;
   };
 
+  runtimeState.clearSelection = () => {
+    runtimeState.selectedAtomIds.clear();
+    runtimeState.selectedBondIds.clear();
+  };
+
+  runtimeState.resetRenderCaches = () => {
+    runtimeState.forceSelectionLines = null;
+    runtimeState.forceSelectionCircles = null;
+    runtimeState.forceValenceWarningCircles = null;
+    runtimeState.functionalGroupHighlightLines = null;
+    runtimeState.functionalGroupHighlightCircles = null;
+  };
+
   return runtimeState;
 }

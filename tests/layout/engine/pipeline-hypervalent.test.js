@@ -45,7 +45,9 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
-    assert.ok(['selectedGeometryStereo', 'finalHypervalentTouchup'].includes(result.metadata.stageTelemetry.selectedStage));
+    assert.ok(
+      ['selectedGeometryStereo', 'finalHypervalentTouchup', 'finalAttachedRingRotationTouchup'].includes(result.metadata.stageTelemetry.selectedStage)
+    );
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(phosphorusAtomIds.length, 2);

@@ -14,6 +14,7 @@ import { computeBounds } from '../geometry/bounds.js';
 import { distancePointToSegment, segmentsProperlyIntersect } from '../geometry/segments.js';
 import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { RING_SUBSTITUENT_READABILITY_LIMITS } from '../constants.js';
+import { measureAttachedCarbonylPresentationPenalty } from './attached-carbonyl-presentation.js';
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { forEachRigidRotationCandidate, rotateRigidDescriptorPositions } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
@@ -193,7 +194,6 @@ function resolveIdealLinkedSubtreeRepresentative(layoutGraph, coords, anchorAtom
     rootRotatingAtomIds
   };
 }
-
 function positionForAtom(coords, overridePositions, atomId) {
   return overridePositions?.get(atomId) ?? coords.get(atomId) ?? null;
 }
@@ -628,8 +628,8 @@ function linkedRingBridgeAngleDeviation(anchorPosition, rootPosition, reverseAnc
 function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor, bondLength, allAtomIds, covalentBonds = null, subtreeContext = null) {
   if (
     descriptor.isRingSystemSubstituent
-    || descriptor.rootRotatingAtomIds.length > 0
     || !descriptor.prefersIdealOutwardGeometry
+    || descriptor.rootRotatingAtomIds.length > 0
     || descriptor.subtreeAtomIds.length !== 1
     || descriptor.outwardAngles.length !== 1
   ) {
@@ -1134,6 +1134,7 @@ export function measureRingSubstituentPresentationPenalty(layoutGraph, coords, o
     }
   }
 
+  totalDeviation += measureAttachedCarbonylPresentationPenalty(layoutGraph, coords, { focusAtomIds });
   return totalDeviation;
 }
 

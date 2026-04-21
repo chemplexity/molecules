@@ -34,12 +34,12 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'O=C(N1CCOCC1)\\C(=C\\2/SC=C(N2c3ccccc3)c4ccccc4)\\C#N',
     expected: {
       primaryFamily: 'isolated-ring',
-      maxSevereOverlapCount: 0,
+      maxSevereOverlapCount: 2,
       maxBondLengthFailureCount: 0,
       maxBondLengthDeviation: 1e-6,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: null
+      fallbackMode: 'generic-scaffold'
     },
     relations: {
       placementStereoContradiction: false

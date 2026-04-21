@@ -2,6 +2,7 @@
 
 import { morganRanks } from '../../algorithms/morgan.js';
 import { analyzeRings } from './topology/ring-analysis.js';
+import { computeBounds } from './geometry/bounds.js';
 
 function vec(x, y) {
   return { x, y };
@@ -36,46 +37,6 @@ function deviationFromHorizontalAxis(angle) {
   return normalized;
 }
 
-function principalAxisAngle(coords, atomIds) {
-  if (!Array.isArray(atomIds) || atomIds.length < 2) {
-    return 0;
-  }
-
-  let sumX = 0;
-  let sumY = 0;
-  for (const atomId of atomIds) {
-    const point = coords.get(atomId);
-    sumX += point.x;
-    sumY += point.y;
-  }
-  const centerX = sumX / atomIds.length;
-  const centerY = sumY / atomIds.length;
-
-  let inertiaXX = 0;
-  let inertiaYY = 0;
-  let inertiaXY = 0;
-  for (const atomId of atomIds) {
-    const point = coords.get(atomId);
-    const dx = point.x - centerX;
-    const dy = point.y - centerY;
-    inertiaXX += dy * dy;
-    inertiaYY += dx * dx;
-    inertiaXY -= dx * dy;
-  }
-
-  const angle0 = 0.5 * Math.atan2(2 * inertiaXY, inertiaXX - inertiaYY);
-  const inertia0 = inertiaXX * Math.cos(angle0) ** 2 + inertiaYY * Math.sin(angle0) ** 2 + inertiaXY * Math.sin(2 * angle0);
-  const inertia1 = inertiaXX + inertiaYY - inertia0;
-  let axis = inertia0 <= inertia1 ? angle0 : angle0 + Math.PI / 2;
-  if (axis > Math.PI / 2) {
-    axis -= Math.PI;
-  }
-  if (axis <= -Math.PI / 2) {
-    axis += Math.PI;
-  }
-  return axis;
-}
-
 function collectBondIdsAlongPath(molecule, atomIds) {
   if (!Array.isArray(atomIds) || atomIds.length < 2) {
     return new Set();
@@ -102,83 +63,45 @@ function shouldPreserveWholeMoleculeLeveling(molecule, heavyAtomIds) {
   return ringHeavyCount / heavyAtomIds.length >= 0.5;
 }
 
-const BROAD_SLAB_LEVEL_LOCK_AXIS_TOLERANCE = (1 * Math.PI) / 180;
-const BROAD_SLAB_LEVEL_LOCK_MAX_ROTATION = (9 * Math.PI) / 180;
 const BROAD_SLAB_LEVEL_LOCK_MIN_ASPECT_RATIO = 1.25;
-const DOMINANT_SCAFFOLD_AXIS_PENALTY = 20;
+const EXISTING_LANDSCAPE_SCAFFOLD_MIN_SHARE = 0.2;
 
 /**
- * Returns whether a broad ring-rich slab that is already normalized onto a
- * horizontal frame should ignore a small final bond-grid compromise. These
- * layouts read best when the overall scaffold stays perfectly level, even if a
- * slight diagonal rotation would align a mixed five-/six-membered bond lattice
- * a bit more closely.
+ * Returns whether an already-landscape broad slab contains a sizeable
+ * multi-ring scaffold that is already level and should not be rotated.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
- * @param {string[]} heavyAtomIds - Visible heavy-atom ids.
- * @param {number|null} wholeMoleculeAxisAngle - Current whole-molecule axis angle in radians.
- * @param {number} candidateRotation - Candidate final rotation in radians.
- * @returns {boolean} True when the current horizontal slab should be preserved.
- */
-function shouldLockBroadSlabLeveling(coords, heavyAtomIds, wholeMoleculeAxisAngle, candidateRotation) {
-  if (
-    wholeMoleculeAxisAngle == null
-    || Math.abs(deviationFromHorizontalAxis(wholeMoleculeAxisAngle)) > BROAD_SLAB_LEVEL_LOCK_AXIS_TOLERANCE
-    || Math.abs(candidateRotation) > BROAD_SLAB_LEVEL_LOCK_MAX_ROTATION
-  ) {
-    return false;
-  }
-
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const atomId of heavyAtomIds) {
-    const point = coords.get(atomId);
-    if (!point) {
-      continue;
-    }
-    minX = Math.min(minX, point.x);
-    maxX = Math.max(maxX, point.x);
-    minY = Math.min(minY, point.y);
-    maxY = Math.max(maxY, point.y);
-  }
-  if (!Number.isFinite(minX) || !Number.isFinite(minY)) {
-    return false;
-  }
-
-  const width = maxX - minX;
-  const height = maxY - minY;
-  if (height <= 1e-6) {
-    return true;
-  }
-  return width / height >= BROAD_SLAB_LEVEL_LOCK_MIN_ASPECT_RATIO;
-}
-
-/**
- * Returns the atom ids of one clearly dominant multi-ring scaffold when the
- * molecule has a single root-like fused/bridged/spiro block plus, at most, one
- * secondary ring system. In these cases the dominant scaffold is what readers
- * use as the visual horizon, so the final leveler should favor its axis over
- * the whole-molecule inertia axis.
  * @param {import('../../core/Molecule.js').Molecule} molecule - Molecule graph.
  * @param {string[]} heavyAtomIds - Visible heavy-atom ids.
- * @returns {string[]|null} Dominant scaffold atom ids, or `null`.
+ * @returns {boolean} True when the current landscape scaffold should be preserved.
  */
-function dominantScaffoldAtomIds(molecule, heavyAtomIds) {
-  const { ringSystems } = analyzeRings(molecule, morganRanks(molecule));
-  const multiRingSystems = ringSystems.filter(ringSystem => ringSystem.ringIds.length > 1);
-  if (multiRingSystems.length !== 1 || ringSystems.length > 2) {
-    return null;
+function shouldPreserveExistingLandscapeScaffold(coords, molecule, heavyAtomIds) {
+  if (!shouldPreserveWholeMoleculeLeveling(molecule, heavyAtomIds)) {
+    return false;
   }
 
-  const dominantRingSystem = multiRingSystems[0];
-  if (dominantRingSystem.atomIds.length < Math.max(8, Math.ceil(heavyAtomIds.length * 0.25))) {
-    return null;
+  const bounds = computeBounds(coords, heavyAtomIds);
+  if (!bounds) {
+    return false;
+  }
+  const { width, height } = bounds;
+  if (height > width / BROAD_SLAB_LEVEL_LOCK_MIN_ASPECT_RATIO) {
+    return false;
   }
 
+  const minimumScaffoldSize = Math.max(8, Math.ceil(heavyAtomIds.length * EXISTING_LANDSCAPE_SCAFFOLD_MIN_SHARE));
   const heavyAtomIdSet = new Set(heavyAtomIds);
-  const visibleDominantAtomIds = dominantRingSystem.atomIds.filter(atomId => heavyAtomIdSet.has(atomId));
-  return visibleDominantAtomIds.length >= 2 ? visibleDominantAtomIds : null;
+  const { ringSystems } = analyzeRings(molecule, morganRanks(molecule));
+  return ringSystems.some(ringSystem => {
+    if (ringSystem.ringIds.length < 2) {
+      return false;
+    }
+    const visibleAtomIds = ringSystem.atomIds.filter(atomId => heavyAtomIdSet.has(atomId) && coords.has(atomId));
+    if (visibleAtomIds.length < minimumScaffoldSize) {
+      return false;
+    }
+    const ringBounds = computeBounds(coords, visibleAtomIds);
+    return ringBounds != null && ringBounds.width >= ringBounds.height;
+  });
 }
 
 function preferredPathBondWeight(molecule, orientPath) {
@@ -505,6 +428,9 @@ export function normalizeOrientation(coords, molecule) {
   if (heavyAtomIds.length < 2) {
     return;
   }
+  if (shouldPreserveExistingLandscapeScaffold(coords, molecule, heavyAtomIds)) {
+    return;
+  }
 
   const orientPath = preferredLandscapeOrientationPath(molecule);
   if (orientPath && orientPath.length >= landscapePathMinLength(molecule, orientPath)) {
@@ -532,29 +458,8 @@ export function normalizeOrientation(coords, molecule) {
       }
       const centerX = sumX / heavyAtomIds.length;
       const centerY = sumY / heavyAtomIds.length;
-      let minX = Infinity;
-      let maxX = -Infinity;
-      let minY = Infinity;
-      let maxY = -Infinity;
-      for (const atomId of heavyAtomIds) {
-        const point = coords.get(atomId);
-        if (!point) {
-          continue;
-        }
-        if (point.x < minX) {
-          minX = point.x;
-        }
-        if (point.x > maxX) {
-          maxX = point.x;
-        }
-        if (point.y < minY) {
-          minY = point.y;
-        }
-        if (point.y > maxY) {
-          maxY = point.y;
-        }
-      }
-      if (maxY - minY > maxX - minX) {
+      const pathBounds = computeBounds(coords, heavyAtomIds);
+      if (pathBounds && pathBounds.height > pathBounds.width) {
         rotateCoords(coords, vec(centerX, centerY), Math.PI / 2);
       }
       return;
@@ -571,63 +476,8 @@ export function normalizeOrientation(coords, molecule) {
   const centerX = sumX / heavyAtomIds.length;
   const centerY = sumY / heavyAtomIds.length;
 
-  let inertiaXX = 0;
-  let inertiaYY = 0;
-  let inertiaXY = 0;
-  for (const atomId of heavyAtomIds) {
-    const point = coords.get(atomId);
-    const dx = point.x - centerX;
-    const dy = point.y - centerY;
-    inertiaXX += dy * dy;
-    inertiaYY += dx * dx;
-    inertiaXY -= dx * dy;
-  }
-
-  const angle0 = 0.5 * Math.atan2(2 * inertiaXY, inertiaXX - inertiaYY);
-  const inertia0 = inertiaXX * Math.cos(angle0) ** 2 + inertiaYY * Math.sin(angle0) ** 2 + inertiaXY * Math.sin(2 * angle0);
-  const inertia1 = inertiaXX + inertiaYY - inertia0;
-  let elongationAxis = inertia0 <= inertia1 ? angle0 : angle0 + Math.PI / 2;
-  if (elongationAxis > Math.PI / 2) {
-    elongationAxis -= Math.PI;
-  }
-  if (elongationAxis <= -Math.PI / 2) {
-    elongationAxis += Math.PI;
-  }
-
-  if (Math.abs(elongationAxis) > 1e-6) {
-    const entries = [...coords.entries()];
-    const cosA = Math.cos(-elongationAxis);
-    const sinA = Math.sin(-elongationAxis);
-    for (const [atomId, position] of entries) {
-      const dx = position.x - centerX;
-      const dy = position.y - centerY;
-      coords.set(atomId, vec(centerX + dx * cosA - dy * sinA, centerY + dx * sinA + dy * cosA));
-    }
-  }
-
-  let minX = Infinity;
-  let maxX = -Infinity;
-  let minY = Infinity;
-  let maxY = -Infinity;
-  for (const atomId of heavyAtomIds) {
-    const point = coords.get(atomId);
-    if (!point) {
-      continue;
-    }
-    if (point.x < minX) {
-      minX = point.x;
-    }
-    if (point.x > maxX) {
-      maxX = point.x;
-    }
-    if (point.y < minY) {
-      minY = point.y;
-    }
-    if (point.y > maxY) {
-      maxY = point.y;
-    }
-  }
-  if (maxY - minY > maxX - minX) {
+  const fallbackBounds = computeBounds(coords, heavyAtomIds);
+  if (fallbackBounds && fallbackBounds.height > fallbackBounds.width) {
     rotateCoords(coords, vec(centerX, centerY), Math.PI / 2);
   }
 
@@ -678,9 +528,7 @@ export function ensureLandscapeOrientation(coords, molecule) {
     return false;
   }
 
-  const beforePositions = new Map(
-    heavyAtomIds.map(atomId => [atomId, { ...coords.get(atomId) }])
-  );
+  const beforePositions = new Map(heavyAtomIds.map(atomId => [atomId, { ...coords.get(atomId) }]));
 
   normalizeOrientation(coords, molecule);
   levelCoords(coords, molecule);
@@ -726,12 +574,13 @@ export function levelCoords(coords, molecule) {
   if (heavyAtomIds.length < 2) {
     return;
   }
+  if (shouldPreserveExistingLandscapeScaffold(coords, molecule, heavyAtomIds)) {
+    return;
+  }
 
   let preferredAxisAngle = null;
-  let dominantScaffoldAxisAngle = null;
   let preferredPathBondIds = new Set();
   let preferredPathWeight = 1;
-  let wholeMoleculeAxisAngle = null;
   const orientPath = preferredLandscapeOrientationPath(molecule);
   if (orientPath && orientPath.length >= landscapePathMinLength(molecule, orientPath)) {
     const start = coords.get(orientPath[0]);
@@ -740,13 +589,6 @@ export function levelCoords(coords, molecule) {
       preferredAxisAngle = Math.atan2(end.y - start.y, end.x - start.x);
       preferredPathBondIds = collectBondIdsAlongPath(molecule, orientPath);
       preferredPathWeight = preferredPathBondWeight(molecule, orientPath);
-    }
-  } else {
-    const dominantAtomIds = dominantScaffoldAtomIds(molecule, heavyAtomIds);
-    if (dominantAtomIds) {
-      dominantScaffoldAxisAngle = principalAxisAngle(coords, dominantAtomIds);
-    } else if (shouldPreserveWholeMoleculeLeveling(molecule, heavyAtomIds)) {
-      wholeMoleculeAxisAngle = principalAxisAngle(coords, heavyAtomIds);
     }
   }
 
@@ -814,8 +656,6 @@ export function levelCoords(coords, molecule) {
 
   const tiltPenalty = 1e-4;
   const preferredAxisPenalty = 1;
-  const dominantScaffoldAxisPenalty = DOMINANT_SCAFFOLD_AXIS_PENALTY;
-  const wholeMoleculeAxisPenalty = 2.5;
   function score(rotation) {
     let total = 0;
     for (const { angle, increment, preferredPath } of bondData) {
@@ -828,12 +668,6 @@ export function levelCoords(coords, molecule) {
     if (preferredAxisAngle != null) {
       const axisDeviation = deviationFromHorizontalAxis(preferredAxisAngle + rotation);
       total += preferredAxisPenalty * axisDeviation * axisDeviation;
-    } else if (dominantScaffoldAxisAngle != null) {
-      const axisDeviation = deviationFromHorizontalAxis(dominantScaffoldAxisAngle + rotation);
-      total += dominantScaffoldAxisPenalty * axisDeviation * axisDeviation;
-    } else if (wholeMoleculeAxisAngle != null) {
-      const axisDeviation = deviationFromHorizontalAxis(wholeMoleculeAxisAngle + rotation);
-      total += wholeMoleculeAxisPenalty * axisDeviation * axisDeviation;
     }
     return total + tiltPenalty * rotation * rotation;
   }
@@ -856,10 +690,6 @@ export function levelCoords(coords, molecule) {
       bestScore = rotationScore;
       bestRotation = rotation;
     }
-  }
-
-  if (shouldLockBroadSlabLeveling(coords, heavyAtomIds, dominantScaffoldAxisAngle ?? wholeMoleculeAxisAngle, bestRotation)) {
-    return;
   }
 
   if (Math.abs(bestRotation) < (0.5 * Math.PI) / 180) {

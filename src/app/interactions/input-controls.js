@@ -29,7 +29,7 @@ export function createInputControls(deps) {
   const debugStressPool = Array.isArray(deps.data.randomMoleculeComplex) ? deps.data.randomMoleculeComplex : [];
   const debugSelectionState = { bag: [], recentKeys: [] };
   const bugVerificationPool = Array.isArray(deps.data.bugMolecules) ? deps.data.bugMolecules : [];
-  const bugVerificationSelectionState = { bag: [], recentKeys: [] };
+  let bugVerificationIndex = 0;
 
   function selectedCollectionEntry() {
     return collectionEntriesById.get(deps.dom.getCollectionSelectElement().value) ?? null;
@@ -103,7 +103,12 @@ export function createInputControls(deps) {
   }
 
   function nextBugVerificationMolecule() {
-    return nextRandomItem(bugVerificationPool, bugVerificationSelectionState, smiles => String(smiles ?? ''));
+    if (bugVerificationPool.length === 0) {
+      return null;
+    }
+    const smiles = bugVerificationPool[bugVerificationIndex];
+    bugVerificationIndex = (bugVerificationIndex + 1) % bugVerificationPool.length;
+    return smiles;
   }
 
   function populateCollectionPicker() {

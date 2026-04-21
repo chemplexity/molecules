@@ -19,10 +19,7 @@ import { findMacrocycleRings } from './topology/macrocycles.js';
 import { buildScaffoldPlan } from './model/scaffold-plan.js';
 import { packComponentPlacements } from './placement/fragment-packing.js';
 import { ensureLandscapeOrientation, levelCoords, normalizeOrientation } from './orientation.js';
-
-function copyCoords(coords) {
-  return new Map([...coords].map(([k, v]) => [k, { x: v.x, y: v.y }]));
-}
+import { cloneCoords } from './geometry/transforms.js';
 
 /**
  * Returns the current high-resolution time when available, with a Date fallback
@@ -174,7 +171,7 @@ function isRingJunctionStereoAssignment(layoutGraph, assignment) {
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
  * @param {object} normalizedOptions - Normalized pipeline options.
- * @returns {boolean} True when the final coordinates should be auto-oriented.
+ * @returns {{shouldOrient: boolean, wedges: object|null}} Orientation result.
  */
 function shouldAutoOrientFinalCoords(layoutGraph, coords, normalizedOptions) {
   if (normalizedOptions.fixedCoords.size > 0 || normalizedOptions.existingCoords.size > 0) {
@@ -210,7 +207,7 @@ function shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) {
  * @returns {Map<string, {x: number, y: number}>} Oriented coordinate map.
  */
 function orientFinalCoords(inputCoords, molecule) {
-  const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  const coords = cloneCoords(inputCoords);
   normalizeOrientation(coords, molecule);
   levelCoords(coords, molecule);
   return coords;
@@ -304,7 +301,7 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
     nowMs,
     onStep,
     onStageAcceptance,
-    copyCoords
+    copyCoords: cloneCoords
   };
   const {
     bestStage,
@@ -565,7 +562,7 @@ export function runPipeline(molecule, options = {}) {
   if (timingState) {
     timingState.placementMs = nowMs() - placementStart;
   }
-  onStep?.('Initial Placement', `Raw skeleton from the ${familySummary.primaryFamily} layout family, before any cleanup.`, copyCoords(placement.coords), {
+  onStep?.('Initial Placement', `Raw skeleton from the ${familySummary.primaryFamily} layout family, before any cleanup.`, cloneCoords(placement.coords), {
     primaryFamily: familySummary.primaryFamily,
     componentCount: layoutGraph.components.length,
     ringCount: layoutGraph.rings.length,
@@ -577,26 +574,29 @@ export function runPipeline(molecule, options = {}) {
   }
   const repackedCoords = repackFinalDisconnectedComponents(layoutGraph, coords, placement, policy, normalizedOptions.bondLength);
   if (onStep && layoutGraph.components.length > 1) {
-    onStep('Fragment Packing', 'Multiple disconnected fragments arranged into a unified 2D layout.', copyCoords(repackedCoords), { componentCount: layoutGraph.components.length });
+    onStep('Fragment Packing', 'Multiple disconnected fragments arranged into a unified 2D layout.', cloneCoords(repackedCoords), { componentCount: layoutGraph.components.length });
   }
   const { shouldOrient: orientationApplied, wedges: preOrientWedges } = shouldAutoOrientFinalCoords(layoutGraph, repackedCoords, normalizedOptions);
   let finalCoords = orientationApplied ? orientFinalCoords(repackedCoords, workingMolecule) : repackedCoords;
   let finalCoordsModified = orientationApplied;
   if (shouldEnsureLandscapeFinalCoords(normalizedOptions, policy)) {
-    const landscapeCoords = new Map([...finalCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+    const landscapeCoords = cloneCoords(finalCoords);
     const landscapeApplied = ensureLandscapeOrientation(landscapeCoords, workingMolecule);
     if (landscapeApplied) {
       finalCoords = landscapeCoords;
       finalCoordsModified = true;
     }
     if (onStep && landscapeApplied && !orientationApplied) {
-      onStep('Final Orientation', 'Whole-molecule landscape leveling to keep the final layout broad and exactly aligned to its preferred horizontal frame.', copyCoords(finalCoords), {});
+      onStep('Final Orientation', 'Whole-molecule landscape leveling to keep the final layout broad and exactly aligned to its preferred horizontal frame.', cloneCoords(finalCoords), {});
     }
   }
   if (onStep && orientationApplied) {
-    onStep('Final Orientation', 'Whole-molecule rotation for optimal page orientation of ring-junction stereocenters.', copyCoords(finalCoords), {});
+    onStep('Final Orientation', 'Whole-molecule rotation for optimal page orientation of ring-junction stereocenters.', cloneCoords(finalCoords), {});
   }
-  onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', copyCoords(finalCoords), { stage: 'complete' });
+  if (finalCoordsModified) {
+    finalCoords = repackFinalDisconnectedComponents(layoutGraph, finalCoords, placement, policy, normalizedOptions.bondLength);
+  }
+  onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', cloneCoords(finalCoords), { stage: 'complete' });
   const { ringDependency, stereo } = runStereoPhase(workingMolecule, layoutGraph, finalCoords, timingState, finalCoordsModified ? null : preOrientWedges);
   return buildPipelineResult(molecule, finalCoords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState);
 }

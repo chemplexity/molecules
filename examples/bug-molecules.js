@@ -16,5 +16,9 @@ export const bugMolecules = [
   'CC1=NC=C(O1)C12CC(O)CCC1(C)CCN2',
   'CCCCC1=CC2=C(C=C1C(=CC1=CC=NO1)C(C)C)C(C)(C)CC2(C)C',
   'CCC1(CC1)C1(CC[NH2+]1)C(C)O',
-  'CCC1=CC=CC(CC)=C1NC(=O)C1=C(C)N(CC(C)C)C(C)=C(Br)C1=O'
+  'CCC1=CC=CC(CC)=C1NC(=O)C1=C(C)N(CC(C)C)C(C)=C(Br)C1=O',
+  'CCC(C)(O)CC[C@@H]1[C@H]2Cc3ccc(O)cc3[C@@]1(C)CCN2C.CS(=O)(=O)O',
+  'Cc1[nH]c2ccccc2c1\\C=C\\c3c[nH]c4ccccc34',
+  'CN(C)S(=O)(=O)C1=CC=C2NC(=O)\\C(=C/C3=CC4=C(CCCC4)N3)C2=C1',
+  'COc1cc([C@H](CC=C(C)C)OC(=O)c2ccccn2)c(OC)c3\\C(=N\\O)\\C=C\\C(=N/O)\\c13'
 ];

@@ -98,8 +98,8 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       scene2DRenderer: ctx.scene2DRenderer,
       zoomTransformHelpers: ctx.zoomTransformHelpers,
       renderRuntime: ctx.renderRuntime,
-      applyForceHighlights: () => ctx.applyForceHighlights(),
-      refreshSelectionOverlay: () => ctx.refreshSelectionOverlay(),
+      applyForceHighlights: ctx.applyForceHighlights,
+      refreshSelectionOverlay: ctx.refreshSelectionOverlay,
       applySelectionOverlay: () => (ctx.runtimeState.mode === 'force' ? ctx.applyForceSelection() : ctx.selectionOverlayManager.redraw2dSelection()),
       updateForce: (mol, options = {}) => ctx.forceSceneRenderer.updateForce(mol, options)
     },
@@ -107,19 +107,19 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       syncDisplayStereo: ctx.syncDisplayStereo
     },
     overlays: {
-      clearReactionPreviewState: () => ctx.clearReactionPreviewState(),
-      restoreReactionPreviewSource: options => ctx.restoreReactionPreviewSource(options),
-      reapplyActiveReactionPreview: () => ctx.reapplyActiveReactionPreview(),
-      hasReactionPreview: () => ctx.hasReactionPreview(),
-      isReactionPreviewEditableAtomId: id => ctx.isReactionPreviewEditableAtomId(id),
-      getReactionPreviewSourceMol: () => ctx.getReactionPreviewSourceMol(),
-      getReactionPreviewMappedAtomPairs: () => ctx.getReactionPreviewMappedAtomPairs(),
-      getReactionPreviewReactantAtomIds: () => ctx.getReactionPreviewReactantAtomIds()
+      clearReactionPreviewState: ctx.clearReactionPreviewState,
+      restoreReactionPreviewSource: ctx.restoreReactionPreviewSource,
+      reapplyActiveReactionPreview: ctx.reapplyActiveReactionPreview,
+      hasReactionPreview: ctx.hasReactionPreview,
+      isReactionPreviewEditableAtomId: ctx.isReactionPreviewEditableAtomId,
+      getReactionPreviewSourceMol: ctx.getReactionPreviewSourceMol,
+      getReactionPreviewMappedAtomPairs: ctx.getReactionPreviewMappedAtomPairs,
+      getReactionPreviewReactantAtomIds: ctx.getReactionPreviewReactantAtomIds
     },
     history: {
-      takeSnapshot: options => ctx.takeSnapshot(options),
-      undoAction: () => ctx.undoAction(),
-      redoAction: () => ctx.redoAction()
+      takeSnapshot: ctx.takeSnapshot,
+      undoAction: ctx.undoAction,
+      redoAction: ctx.redoAction
     },
     dom: {
       d3: ctx.d3,
@@ -134,8 +134,8 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       setInputValue: value => ctx.domElements.setInputValue(value)
     },
     view: {
-      clearPrimitiveHover: () => ctx.clearPrimitiveHover(),
-      showPrimitiveHover: (atomIds = [], bondIds = []) => ctx.showPrimitiveHover(atomIds, bondIds),
+      clearPrimitiveHover: ctx.clearPrimitiveHover,
+      showPrimitiveHover: ctx.showPrimitiveHover,
       getZoomTransform: () => ctx.d3.zoomTransform(ctx.svg.node()),
       setZoomTransform: transform => ctx.svg.call(ctx.zoom.transform, transform),
       makeZoomIdentity: (x, y, k) => ctx.d3.zoomIdentity.translate(x, y).scale(k),
@@ -172,16 +172,16 @@ export function createFinalizeAppBootstrapDeps(ctx) {
       updatePanels: (mol, options = {}) => ctx.updateAnalysisPanels(mol, options)
     },
     highlights: {
-      prepare2dExportHighlightState: () => ctx.prepare2dExportHighlightState(),
-      setHighlight: (mappings, options = {}) => ctx.setHighlight(mappings, options),
-      restorePersistentHighlight: () => ctx.restorePersistentHighlight(),
-      setPersistentHighlightFallback: (fn, options) => ctx.setPersistentHighlightFallback(fn, options)
+      prepare2dExportHighlightState: ctx.prepare2dExportHighlightState,
+      setHighlight: ctx.setHighlight,
+      restorePersistentHighlight: ctx.restorePersistentHighlight,
+      setPersistentHighlightFallback: ctx.setPersistentHighlightFallback
     },
     options: {
       renderOptionLimits: ctx.renderOptionLimits,
-      getRenderOptions: () => ctx.getRenderOptions(),
-      getDefaultRenderOptions: () => ctx.getDefaultRenderOptions(),
-      updateRenderOptions: nextOptions => ctx.updateRenderOptions(nextOptions)
+      getRenderOptions: ctx.getRenderOptions,
+      getDefaultRenderOptions: ctx.getDefaultRenderOptions,
+      updateRenderOptions: ctx.updateRenderOptions
     },
     input: {
       inputControls: ctx.inputControls,

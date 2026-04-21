@@ -1,7 +1,7 @@
 /** @module app/render/2d-helpers */
 
-import { renderBondOrder, addLine } from './helpers.js';
-import { labelHalfW, labelHalfH, ringLabelOffset, getAtomLabel } from '../../layout/mol2d-helpers.js';
+import { renderBondOrder, addLine, bondAtomColor } from './helpers.js';
+import { labelHalfW, labelHalfH, ringLabelOffset, getAtomLabel, heavyDegree } from '../../layout/mol2d-helpers.js';
 
 /**
  * Creates 2D render helper functions for SVG point conversion, bond drawing, viewport fitting, and derived state synchronization.
@@ -223,32 +223,77 @@ export function create2DRenderHelpers(ctx) {
     const dy = end.y - start.y;
     const { nx, ny } = ctx.geometry.perpUnit(dx, dy);
 
+    // Half-bond coloring: RDKit-style — split at the geometric midpoint of the
+    // full atom-to-atom bond (between atom centers), then clamp to the drawn
+    // segment. This means a labeled atom (N, O…) contributes a visually shorter
+    // colored section (~30–40% of the visible bond) because label clearance trims
+    // only its end, matching what RDKit renders.
+    const colorA = bondAtomColor(atom1.name);
+    const colorB = bondAtomColor(atom2.name);
+    const needsHalfColor = colorA !== colorB;
+
+    // Midpoint of the full atom-center-to-atom-center bond in SVG space.
+    const geomMidX = (start.x + end.x) / 2;
+    const geomMidY = (start.y + end.y) / 2;
+
+    function addColoredLine(group, x1, y1, x2, y2, extraClass) {
+      if (!needsHalfColor) {
+        return addLine(group, x1, y1, x2, y2, extraClass).style('stroke', colorA);
+      }
+      // Project the geometric midpoint onto this (possibly offset) segment by
+      // finding the closest point along the segment direction, then clamp it
+      // so it stays within [start, end] of the drawn portion.
+      const segDx = x2 - x1;
+      const segDy = y2 - y1;
+      const segLen2 = segDx * segDx + segDy * segDy || 1;
+      const t = Math.max(0, Math.min(1, ((geomMidX - x1) * segDx + (geomMidY - y1) * segDy) / segLen2));
+      const mx = x1 + t * segDx;
+      const my = y1 + t * segDy;
+      addLine(group, x1, y1, mx, my, extraClass).style('stroke', colorA);
+      addLine(group, mx, my, x2, y2, extraClass).style('stroke', colorB);
+    }
+
     if (order === 1) {
       const line = shortenBondLineWithLabelClearance(atom1, atom2, start, end, toSVGPt);
-      addLine(container, line.x1, line.y1, line.x2, line.y2);
+      addColoredLine(container, line.x1, line.y1, line.x2, line.y2);
     } else if (order === 2) {
-      const dir = ctx.geometry.secondaryDir(atom1, atom2, mol, toSVGPt);
-      const primary = shortenBondLineWithLabelClearance(atom1, atom2, start, end, toSVGPt);
-      addLine(container, primary.x1, primary.y1, primary.x2, primary.y2);
-      const ox = nx * ctx.constants.bondOffset2d * dir;
-      const oy = ny * ctx.constants.bondOffset2d * dir;
-      const secondary = shortenBondLineWithLabelClearance(atom1, atom2, { x: start.x + ox, y: start.y + oy }, { x: end.x + ox, y: end.y + oy }, toSVGPt, 4);
-      addLine(container, secondary.x1, secondary.y1, secondary.x2, secondary.y2);
+      // When either atom is terminal (only one heavy-atom neighbor), use a
+      // symmetric/centered double bond: both lines equidistant from the bond
+      // axis (±½ offset). This visually centers the atom label (O, N, …)
+      // between both bond lines, matching ChemDraw / RDKit behavior.
+      // In-chain and ring double bonds keep the existing ring-biased style.
+      const hasTerm = heavyDegree(atom1, mol) === 1 || heavyDegree(atom2, mol) === 1;
+      if (hasTerm) {
+        const halfOx = nx * ctx.constants.bondOffset2d / 2;
+        const halfOy = ny * ctx.constants.bondOffset2d / 2;
+        const posLine = shortenBondLineWithLabelClearance(atom1, atom2, { x: start.x + halfOx, y: start.y + halfOy }, { x: end.x + halfOx, y: end.y + halfOy }, toSVGPt);
+        addColoredLine(container, posLine.x1, posLine.y1, posLine.x2, posLine.y2);
+        const negLine = shortenBondLineWithLabelClearance(atom1, atom2, { x: start.x - halfOx, y: start.y - halfOy }, { x: end.x - halfOx, y: end.y - halfOy }, toSVGPt);
+        addColoredLine(container, negLine.x1, negLine.y1, negLine.x2, negLine.y2);
+      } else {
+        const dir = ctx.geometry.secondaryDir(atom1, atom2, mol, toSVGPt);
+        const primary = shortenBondLineWithLabelClearance(atom1, atom2, start, end, toSVGPt);
+        addColoredLine(container, primary.x1, primary.y1, primary.x2, primary.y2);
+        const ox = nx * ctx.constants.bondOffset2d * dir;
+        const oy = ny * ctx.constants.bondOffset2d * dir;
+        const secondary = shortenBondLineWithLabelClearance(atom1, atom2, { x: start.x + ox, y: start.y + oy }, { x: end.x + ox, y: end.y + oy }, toSVGPt, 4);
+        addColoredLine(container, secondary.x1, secondary.y1, secondary.x2, secondary.y2);
+      }
     } else if (order === 3) {
       for (const d of [-ctx.constants.bondOffset2d, 0, ctx.constants.bondOffset2d]) {
         const ox = nx * d;
         const oy = ny * d;
         const tripleLine = shortenBondLineWithLabelClearance(atom1, atom2, { x: start.x + ox, y: start.y + oy }, { x: end.x + ox, y: end.y + oy }, toSVGPt, d !== 0 ? 4 : 0);
-        addLine(container, tripleLine.x1, tripleLine.y1, tripleLine.x2, tripleLine.y2);
+        addColoredLine(container, tripleLine.x1, tripleLine.y1, tripleLine.x2, tripleLine.y2);
       }
     } else if (order === 1.5) {
       const dir = ctx.geometry.secondaryDir(atom1, atom2, mol, toSVGPt);
       const primary = shortenBondLineWithLabelClearance(atom1, atom2, start, end, toSVGPt);
-      addLine(container, primary.x1, primary.y1, primary.x2, primary.y2);
+      addColoredLine(container, primary.x1, primary.y1, primary.x2, primary.y2);
       const ox = nx * ctx.constants.bondOffset2d * dir;
       const oy = ny * ctx.constants.bondOffset2d * dir;
       const dashed = shortenBondLineWithLabelClearance(atom1, atom2, { x: start.x + ox, y: start.y + oy }, { x: end.x + ox, y: end.y + oy }, toSVGPt, 5);
-      addLine(container, dashed.x1, dashed.y1, dashed.x2, dashed.y2, 'bond-dashed');
+      addColoredLine(container, dashed.x1, dashed.y1, dashed.x2, dashed.y2, 'bond-dashed');
     }
   }
 

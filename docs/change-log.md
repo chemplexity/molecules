@@ -2,6 +2,10 @@
 
 ## 2026-04-20
 
+- Fix alignment of hetero atom labels with double bonds
+- Add style options for coloring atoms and bonds
+- Keep fused indole alkene roots on exact off-lattice trigonal slots while direct-attached mixed ring blocks align by the attachment atom's local outward axis
+- Keep bridgehead methyl leaves on saturated fused-ring local outward axes instead of forcing them onto the shared-junction straight-through slot
 - Keep crowded benzylic ethyl branches on exact 120-degree zigzags by adding exact saturated-continuation cleanup slots and finer rigid overlap escape rotations
 - Keep crowded cyclopropyl-adjacent mixed alkyl tails zigzagged by falling back to the mirrored preferred zigzag slot before any straight continuation
 

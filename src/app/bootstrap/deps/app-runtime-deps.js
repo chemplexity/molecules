@@ -13,10 +13,8 @@ export function createAppRuntimeDeps(ctx) {
     window: ctx.window,
     runtimeState: ctx.runtimeState,
     input: {
-      getInputMode: () => ctx.getInputMode(),
-      setInputMode: value => {
-        ctx.setInputMode(value);
-      },
+      getInputMode: ctx.getInputMode,
+      setInputMode: ctx.setInputMode,
       getInputValue: () => ctx.inputEl.value
     },
     dom: {
@@ -35,78 +33,44 @@ export function createAppRuntimeDeps(ctx) {
       appState: ctx.appState
     },
     selection: {
-      getSelectedAtomIds: () => ctx.getSelectedAtomIds(),
-      getSelectedBondIds: () => ctx.getSelectedBondIds(),
-      setSelectedAtomIds: value => {
-        ctx.setSelectedAtomIds(value);
-      },
-      setSelectedBondIds: value => {
-        ctx.setSelectedBondIds(value);
-      },
-      getSelectMode: () => ctx.getSelectMode(),
-      setSelectMode: value => {
-        ctx.setSelectMode(value);
-      },
-      getDrawBondMode: () => ctx.getDrawBondMode(),
-      setDrawBondMode: value => {
-        ctx.setDrawBondMode(value);
-      },
-      getEraseMode: () => ctx.getEraseMode(),
-      setEraseMode: value => {
-        ctx.setEraseMode(value);
-      },
+      getSelectedAtomIds: ctx.getSelectedAtomIds,
+      getSelectedBondIds: ctx.getSelectedBondIds,
+      setSelectedAtomIds: ctx.setSelectedAtomIds,
+      setSelectedBondIds: ctx.setSelectedBondIds,
+      getSelectMode: ctx.getSelectMode,
+      setSelectMode: ctx.setSelectMode,
+      getDrawBondMode: ctx.getDrawBondMode,
+      setDrawBondMode: ctx.setDrawBondMode,
+      getEraseMode: ctx.getEraseMode,
+      setEraseMode: ctx.setEraseMode,
       getChargeTool: () => ctx.getChargeTool?.() ?? null,
-      setChargeTool: value => {
-        ctx.setChargeTool?.(value ?? null);
-      },
-      getDrawBondElement: () => ctx.getDrawBondElement(),
-      setDrawBondElement: value => {
-        ctx.setDrawBondElement(value);
-      },
-      getDrawBondType: () => ctx.getDrawBondType(),
-      setDrawBondType: value => {
-        ctx.setDrawBondType(value);
-      },
-      clearSelection: () => {
-        ctx.clearSelection();
-      },
-      clearHovered: () => {
-        ctx.clearHovered();
-      },
-      clearHoveredAtomIds: () => ctx.clearHoveredAtomIds(),
-      clearHoveredBondIds: () => ctx.clearHoveredBondIds(),
-      setSelectionModifierActive: value => {
-        ctx.setSelectionModifierActive(value);
-      },
-      setErasePainting: value => {
-        ctx.setErasePainting(value);
-      },
-      syncToolButtonsFromState: () => ctx.syncToolButtonsFromState(),
-      refreshSelectionOverlay: () => ctx.refreshSelectionOverlay()
+      setChargeTool: value => { ctx.setChargeTool?.(value ?? null); },
+      getDrawBondElement: ctx.getDrawBondElement,
+      setDrawBondElement: ctx.setDrawBondElement,
+      getDrawBondType: ctx.getDrawBondType,
+      setDrawBondType: ctx.setDrawBondType,
+      clearSelection: () => ctx.runtimeState.clearSelection(),
+      clearHovered: ctx.clearHovered,
+      clearHoveredAtomIds: ctx.clearHoveredAtomIds,
+      clearHoveredBondIds: ctx.clearHoveredBondIds,
+      setSelectionModifierActive: ctx.setSelectionModifierActive,
+      setErasePainting: ctx.setErasePainting,
+      syncToolButtonsFromState: ctx.syncToolButtonsFromState,
+      refreshSelectionOverlay: ctx.refreshSelectionOverlay
     },
     drawBond: {
-      setDrawBondState: value => {
-        ctx.setDrawBondState(value);
-      },
-      setDrawBondHoverSuppressed: value => {
-        ctx.setDrawBondHoverSuppressed(value);
-      },
-      clearArtifacts: () => ctx.clearDrawBondArtifacts()
+      setDrawBondState: ctx.setDrawBondState,
+      setDrawBondHoverSuppressed: ctx.setDrawBondHoverSuppressed,
+      clearArtifacts: ctx.clearDrawBondArtifacts
     },
     force: {
-      getAutoFitEnabled: () => ctx.getForceAutoFitEnabled(),
-      setAutoFitEnabled: value => {
-        ctx.setForceAutoFitEnabled(value);
-      },
-      getKeepInView: () => ctx.getForceKeepInView(),
-      setKeepInView: value => {
-        ctx.setForceKeepInView(value);
-      },
-      getKeepInViewTicks: () => ctx.getForceKeepInViewTicks(),
-      setKeepInViewTicks: value => {
-        ctx.setForceKeepInViewTicks(value);
-      },
-      disableKeepInView: () => ctx.disableForceKeepInView(),
+      getAutoFitEnabled: ctx.getForceAutoFitEnabled,
+      setAutoFitEnabled: ctx.setForceAutoFitEnabled,
+      getKeepInView: ctx.getForceKeepInView,
+      setKeepInView: ctx.setForceKeepInView,
+      getKeepInViewTicks: ctx.getForceKeepInViewTicks,
+      setKeepInViewTicks: ctx.setForceKeepInViewTicks,
+      disableKeepInView: ctx.disableForceKeepInView,
       getNodePositions: () =>
         ctx.simulation.nodes().map(node => ({
           id: node.id,
@@ -164,14 +128,12 @@ export function createAppRuntimeDeps(ctx) {
       updateForce: (mol, options = {}) => ctx.forceSceneRenderer.updateForce(mol, options)
     },
     cache: {
-      reset: () => {
-        ctx.resetForceRenderCaches();
-      }
+      reset: () => ctx.runtimeState.resetRenderCaches()
     },
     runtime: {
-      syncInputField: mol => ctx.syncInputField(mol),
-      captureAppSnapshot: options => ctx.captureAppSnapshot(options),
-      restoreSnapshot: snap => ctx.restoreSnapshot(snap)
+      syncInputField: ctx.syncInputField,
+      captureAppSnapshot: ctx.captureAppSnapshot,
+      restoreSnapshot: ctx.restoreSnapshot
     },
     renderers: {
       inputFlow: ctx.inputFlowRenderers,
@@ -226,15 +188,15 @@ export function createAppRuntimeDeps(ctx) {
       restorePersistentHighlight: () => ctx.restorePersistentHighlight()
     },
     history: {
-      takeSnapshot: options => ctx.takeSnapshot(options)
+      takeSnapshot: ctx.takeSnapshot
     },
     view: {
-      updateModeChrome: nextMode => ctx.updateModeChrome(nextMode),
-      restoreZoomTransformSnapshot: snapshot => ctx.restoreZoomTransformSnapshot(snapshot),
-      captureZoomTransformSnapshot: () => ctx.captureZoomTransformSnapshot(),
+      updateModeChrome: ctx.updateModeChrome,
+      restoreZoomTransformSnapshot: ctx.restoreZoomTransformSnapshot,
+      captureZoomTransformSnapshot: ctx.captureZoomTransformSnapshot,
       restoreZoomTransform: snapshot => ctx.zoomTransformHelpers.restoreZoomTransformSnapshot(snapshot),
-      captureZoomTransform: () => ctx.zoomTransformHelpers.captureZoomTransformSnapshot(),
-      zoomToFitIf2d: () => ctx.zoomToFitIf2d(),
+      captureZoomTransform: ctx.zoomTransformHelpers.captureZoomTransformSnapshot,
+      zoomToFitIf2d: ctx.zoomToFitIf2d,
       hideTooltip: () => {
         ctx.tooltip.interrupt().style('opacity', 0);
       }

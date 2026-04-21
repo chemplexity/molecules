@@ -560,6 +560,16 @@ test('reaction preview keeps lactam hydrolysis acid geometry locally trigonal', 
     return Math.min(worst, angle);
   }, Infinity);
   assert.ok(worstAngle > 100, `expected acid O-C-O angle to stay open, got ${worstAngle.toFixed(1)}°`);
+  const worstCarbonylLeg = acidCenters.reduce((worst, atom) => {
+    const oDouble = atom.getNeighbors(preview.mol).find(nb => nb.name === 'O' && (preview.mol.getBond(atom.id, nb.id)?.properties.order ?? 1) >= 2);
+    const oSingle = atom.getNeighbors(preview.mol).find(nb => nb.name === 'O' && (preview.mol.getBond(atom.id, nb.id)?.properties.order ?? 1) === 1);
+    const carbonNeighbor = atom.getNeighbors(preview.mol).find(nb => nb.name === 'C');
+    if (!oDouble || !oSingle || !carbonNeighbor) {
+      return worst;
+    }
+    return Math.min(worst, angleDeg(carbonNeighbor, atom, oDouble), angleDeg(carbonNeighbor, atom, oSingle));
+  }, Infinity);
+  assert.ok(worstCarbonylLeg > 100, `expected ring-to-acid trigonal legs to stay open, got ${worstCarbonylLeg.toFixed(1)}°`);
 });
 
 test('reaction preview keeps amide hydrolysis acid center compact on the preserved scaffold', () => {

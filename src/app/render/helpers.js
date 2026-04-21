@@ -21,7 +21,7 @@ const DEFAULT_RENDER_OPTIONS = Object.freeze({
   showValenceWarnings: true,
   showAtomTooltips: true,
   showLonePairs: false,
-  twoDAtomColoring: true,
+  twoDColorStyle: 'color-atoms',
   twoDAtomFontSize: 14,
   atomNumberingFontSize: 10,
   bondEnFontSize: 10,
@@ -82,8 +82,8 @@ export function updateRenderOptions(nextOptions = {}) {
   if (typeof nextOptions.showLonePairs === 'boolean') {
     merged.showLonePairs = nextOptions.showLonePairs;
   }
-  if (typeof nextOptions.twoDAtomColoring === 'boolean') {
-    merged.twoDAtomColoring = nextOptions.twoDAtomColoring;
+  if (typeof nextOptions.twoDColorStyle === 'string' && ['bw', 'color-atoms', 'color-atoms-bonds'].includes(nextOptions.twoDColorStyle)) {
+    merged.twoDColorStyle = nextOptions.twoDColorStyle;
   }
   if (nextOptions.twoDAtomFontSize !== undefined) {
     const clamped = _clampOptionValue(Number(nextOptions.twoDAtomFontSize), RENDER_OPTION_LIMITS.twoDAtomFontSize);
@@ -164,10 +164,25 @@ export function getHighlightStyleVariant(styleName = 'default', index = 0) {
  * @returns {string} CSS color string.
  */
 export function atomColor(sym, layout = '2d') {
-  if (layout === '2d' && !_renderOptions.twoDAtomColoring) {
+  if (layout === '2d' && _renderOptions.twoDColorStyle === 'bw') {
     return '#333333';
   }
   return baseAtomColor(sym);
+}
+
+/**
+ * Returns the color for one half of a bond connected to the given atom, respecting the current 2D color-style setting.
+ * When color style is 'color-atoms-bonds', returns the atom's CPK color; otherwise returns the standard bond color (#111).
+ * @param {string} sym - Element symbol (e.g. `'C'`, `'N'`).
+ * @returns {string} CSS color string.
+ */
+export function bondAtomColor(sym) {
+  if (_renderOptions.twoDColorStyle === 'color-atoms-bonds') {
+    const color = baseAtomColor(sym);
+    // Carbon is #111 in CPK — keep bonds solid black for C to avoid grey bonds
+    return (color === '#111111' || color === '#333333' || sym === 'C') ? '#111' : color;
+  }
+  return '#111';
 }
 
 /**

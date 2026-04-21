@@ -9,6 +9,7 @@ import { rigidDescriptorKey } from '../cleanup/rigid-rotation.js';
 import { assignBondValidationClass, mergeBondValidationClasses } from './bond-validation.js';
 import { exceedsLargeComponentThreshold } from '../topology/large-blocks.js';
 import { findMacrocycleRings } from '../topology/macrocycles.js';
+import { isMetalAtom } from '../topology/metal-centers.js';
 import { layoutAtomSlice } from './atom-slice.js';
 import { packComponentPlacements } from './fragment-packing.js';
 import { buildComponentFixedCoords, buildRefinementContext, canPreserveComponentPlacement, preserveComponentPlacement } from './refinement.js';
@@ -29,11 +30,7 @@ function componentContainsMacrocycle(macrocycleRings, component) {
  * @returns {boolean} `true` when the component contains a transition metal.
  */
 function componentContainsMetal(layoutGraph, component) {
-  return component.atomIds.some(atomId => {
-    const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
-    const group = atom?.properties?.group ?? 0;
-    return atom?.name !== 'H' && group >= 3 && group <= 12;
-  });
+  return component.atomIds.some(atomId => isMetalAtom(layoutGraph.sourceMolecule.atoms.get(atomId)));
 }
 
 function mergeCleanupRigidSubtreesByAtomId(target, source) {
@@ -82,9 +79,7 @@ function componentMacrocycleAtomIds(macrocycleRings, component) {
 function componentMetalAtomIds(layoutGraph, component) {
   const metalAtomIds = new Set();
   for (const atomId of component.atomIds) {
-    const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
-    const group = atom?.properties?.group ?? 0;
-    if (atom?.name !== 'H' && group >= 3 && group <= 12) {
+    if (isMetalAtom(layoutGraph.sourceMolecule.atoms.get(atomId))) {
       metalAtomIds.add(atomId);
     }
   }
@@ -487,22 +482,6 @@ function layoutComponent(layoutGraph, component, macrocycleRings = []) {
     if (preferredPlacement) {
       return preferredPlacement;
     }
-    if (largeMolecule) {
-      const participantAtomIds = component.atomIds.filter(atomId => {
-        const atom = layoutGraph.atoms.get(atomId);
-        return atom && !(layoutGraph.options.suppressH && atom.element === 'H' && !atom.visible);
-      });
-      return {
-        family: 'large-molecule',
-        supported: true,
-        atomIds: participantAtomIds,
-        coords: largeMolecule.coords,
-        placementMode: largeMolecule.placementMode,
-        bondValidationClasses: largeMolecule.bondValidationClasses,
-        displayAssignments: [],
-        cleanupRigidSubtreesByAtomId: largeMolecule.cleanupRigidSubtreesByAtomId
-      };
-    }
   }
 
   let familyPlacement = withProtectedCleanupRigidSubtrees(
@@ -511,18 +490,7 @@ function layoutComponent(layoutGraph, component, macrocycleRings = []) {
     layoutAtomSlice(layoutGraph, component, layoutGraph.options.bondLength),
     macrocycleRings
   );
-  const metalAtoms = component.atomIds.filter(atomId => {
-    const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
-    if (!atom || atom.name === 'H') {
-      return false;
-    }
-    const group = atom.properties.group ?? 0;
-    return group >= 3 && group <= 12;
-  });
-  if (metalAtoms.length === 0) {
-    if (familyPlacement.supported) {
-      return familyPlacement;
-    }
+  if (!componentContainsMetal(layoutGraph, component)) {
     return familyPlacement;
   }
 
@@ -567,6 +535,22 @@ function layoutComponent(layoutGraph, component, macrocycleRings = []) {
     : familyPlacement;
 }
 
+function buildComponentPlacementDetail(component, family, placementMode, supported, placed, preserved, anchored, atomCount, containsMetal) {
+  return {
+    componentId: component.id,
+    role: component.role,
+    family,
+    placementMode: placementMode ?? null,
+    supported,
+    placed,
+    preserved,
+    anchored,
+    atomCount,
+    heavyAtomCount: component.heavyAtomCount,
+    containsMetal
+  };
+}
+
 /**
  * Lays out all currently supported components and packs them into a single
  * coordinate frame.
@@ -589,6 +573,7 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
   const refinementContext = buildRefinementContext(layoutGraph);
 
   for (const component of layoutGraph.components) {
+    const containsMetal = componentContainsMetal(layoutGraph, component);
     if (canPreserveComponentPlacement(layoutGraph, component, refinementContext)) {
       const preserved = preserveComponentPlacement(layoutGraph, component);
       componentPlacements.push({
@@ -599,24 +584,12 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
         role: component.role,
         heavyAtomCount: component.heavyAtomCount,
         netCharge: component.netCharge,
-        containsMetal: componentContainsMetal(layoutGraph, component)
+        containsMetal
       });
       placedComponentCount++;
       preservedComponentCount++;
       placedFamilies.push('preserved');
-      componentPlacementDetails.push({
-        componentId: component.id,
-        role: component.role,
-        family: 'preserved',
-        placementMode: 'preserved',
-        supported: true,
-        placed: true,
-        preserved: true,
-        anchored: true,
-        atomCount: preserved.atomIds.length,
-        heavyAtomCount: component.heavyAtomCount,
-        containsMetal: componentContainsMetal(layoutGraph, component)
-      });
+      componentPlacementDetails.push(buildComponentPlacementDetail(component, 'preserved', 'preserved', true, true, true, true, preserved.atomIds.length, containsMetal));
       for (const atomId of preserved.atomIds) {
         frozenAtomIds.add(atomId);
       }
@@ -632,7 +605,7 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
       : layoutGraph;
     let placement = layoutComponent(componentGraph, component, macrocycleRings);
     placement = rescueLargeComponentSlicePlacement(componentGraph, component, placement, macrocycleRings);
-    if (componentContainsMetal(componentGraph, component)) {
+    if (containsMetal) {
       placement = rescueMixedMetalRingPlacement(componentGraph, component, placement, macrocycleRings);
     }
     if (!placement.supported) {
@@ -645,42 +618,18 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
           role: component.role,
           heavyAtomCount: component.heavyAtomCount,
           netCharge: component.netCharge,
-          containsMetal: componentContainsMetal(layoutGraph, component)
+          containsMetal
         });
         placedComponentCount++;
         unplacedComponentCount++;
         placedFamilies.push(placement.family);
-        componentPlacementDetails.push({
-          componentId: component.id,
-          role: component.role,
-          family: placement.family,
-          placementMode: placement.placementMode ?? null,
-          supported: false,
-          placed: true,
-          preserved: false,
-          anchored: false,
-          atomCount: placement.atomIds.length,
-          heavyAtomCount: component.heavyAtomCount,
-          containsMetal: componentContainsMetal(layoutGraph, component)
-        });
+        componentPlacementDetails.push(buildComponentPlacementDetail(component, placement.family, placement.placementMode, false, true, false, false, placement.atomIds.length, containsMetal));
         mergeBondValidationClasses(bondValidationClasses, placement.bondValidationClasses, { overwrite: false });
         displayAssignments.push(...(placement.displayAssignments ?? []));
         mergeCleanupRigidSubtreesByAtomId(cleanupRigidSubtreesByAtomId, placement.cleanupRigidSubtreesByAtomId);
         continue;
       }
-      componentPlacementDetails.push({
-        componentId: component.id,
-        role: component.role,
-        family: placement.family,
-        placementMode: placement.placementMode ?? null,
-        supported: false,
-        placed: false,
-        preserved: false,
-        anchored: false,
-        atomCount: placement.atomIds.length,
-        heavyAtomCount: component.heavyAtomCount,
-        containsMetal: componentContainsMetal(layoutGraph, component)
-      });
+      componentPlacementDetails.push(buildComponentPlacementDetail(component, placement.family, placement.placementMode, false, false, false, false, placement.atomIds.length, containsMetal));
       unplacedComponentCount++;
       continue;
     }
@@ -698,23 +647,11 @@ export function layoutSupportedComponents(layoutGraph, policy = {}) {
       role: component.role,
       heavyAtomCount: component.heavyAtomCount,
       netCharge: component.netCharge,
-      containsMetal: componentContainsMetal(layoutGraph, component)
+      containsMetal
     });
     placedComponentCount++;
     placedFamilies.push(placement.family);
-    componentPlacementDetails.push({
-      componentId: component.id,
-      role: component.role,
-      family: placement.family,
-      placementMode: placement.placementMode ?? null,
-      supported: true,
-      placed: true,
-      preserved: false,
-      anchored: aligned.anchored,
-      atomCount: placement.atomIds.length,
-      heavyAtomCount: component.heavyAtomCount,
-      containsMetal: componentContainsMetal(layoutGraph, component)
-    });
+    componentPlacementDetails.push(buildComponentPlacementDetail(component, placement.family, placement.placementMode, true, true, false, aligned.anchored, placement.atomIds.length, containsMetal));
     mergeBondValidationClasses(bondValidationClasses, placement.bondValidationClasses, { overwrite: false });
     displayAssignments.push(...(placement.displayAssignments ?? []));
     mergeCleanupRigidSubtreesByAtomId(cleanupRigidSubtreesByAtomId, placement.cleanupRigidSubtreesByAtomId);

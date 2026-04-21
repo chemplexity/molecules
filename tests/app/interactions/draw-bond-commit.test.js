@@ -365,6 +365,33 @@ describe('createDrawBondCommitActions', () => {
     ]);
   });
 
+  it('keeps a dragged 2d bond endpoint on the previewed release position instead of re-snapping it', () => {
+    const srcAtom = makeAtom('a1', 'C');
+    srcAtom.x = 0;
+    srcAtom.y = 0;
+    const mol = makeEditableMol(srcAtom);
+    const { actions } = makeActions({
+      activeMol: mol,
+      drawBondElement: 'C',
+      initialDrawBondState: {
+        atomId: 'a1',
+        ox: 300,
+        oy: 200,
+        ex: 360,
+        ey: 140,
+        snapAtomId: null,
+        dragged: true
+      }
+    });
+
+    actions.commit();
+
+    const newAtom = mol.atoms.get('a2');
+    assert.ok(newAtom);
+    assert.equal(newAtom.x, 1.5);
+    assert.equal(newAtom.y, 1.5);
+  });
+
   it('stores manual wedge display metadata when auto-placing a new wedge bond', () => {
     const srcAtom = makeAtom('a1', 'C');
     srcAtom.x = 0;

@@ -23,6 +23,7 @@ import {
   findLayoutBond,
   incidentRingPolygons,
   isExactSmallRingExteriorContinuationEligible,
+  isExactRingTrigonalBisectorEligible,
   isExactSimpleAcyclicContinuationEligible,
   isExactRingOutwardEligibleSubstituent,
   isTerminalMultipleBondLeaf,
@@ -118,6 +119,10 @@ function placeNeighborSequence(
       && !childIsHydrogen
       && childBond != null
       && isTerminalMultipleBondLeaf(layoutGraph, anchorAtomId, childBond);
+    const shouldForceExactRingTrigonalBisectorAngle =
+      preferredAngles.length > 0
+      && !childIsHydrogen
+      && isExactRingTrigonalBisectorEligible(layoutGraph, anchorAtomId, childAtomId);
     const shouldForceExactSimpleAcyclicAngle =
       shouldHonorPreferredAngle
       && isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId);
@@ -128,6 +133,7 @@ function placeNeighborSequence(
       !shouldHonorPreferredAngle
       || shouldPromotePreferredRingAngle(layoutGraph, anchorAtomId, childAtomId)
       || shouldForceExactTrigonalAngle
+      || shouldForceExactRingTrigonalBisectorAngle
       || shouldForceExactSimpleAcyclicAngle
       || shouldForceExactProjectedTetrahedralAngle
       || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId);
@@ -135,6 +141,7 @@ function placeNeighborSequence(
       (
         (shouldHonorPreferredAngle && isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId))
         || shouldForceExactTrigonalAngle
+        || shouldForceExactRingTrigonalBisectorAngle
         || shouldForceExactSimpleAcyclicAngle
         || shouldForceExactProjectedTetrahedralAngle
       )

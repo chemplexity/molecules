@@ -54,7 +54,7 @@ describe('initOptionsModal', () => {
     const currentOptions = {
       showValenceWarnings: true,
       showAtomTooltips: true,
-      twoDAtomColoring: true,
+      twoDColorStyle: 'color-atoms',
       twoDAtomFontSize: 14,
       atomNumberingFontSize: 10,
       bondEnFontSize: 10,
@@ -157,7 +157,7 @@ describe('initOptionsModal', () => {
         {
           showValenceWarnings: true,
           showAtomTooltips: false,
-          twoDAtomColoring: true,
+          twoDColorStyle: 'color-atoms',
           twoDAtomFontSize: 24,
           atomNumberingFontSize: 24,
           bondEnFontSize: 24,
@@ -204,7 +204,7 @@ describe('initOptionsModal', () => {
     const currentOptions = {
       showValenceWarnings: true,
       showAtomTooltips: true,
-      twoDAtomColoring: true,
+      twoDColorStyle: 'color-atoms',
       twoDAtomFontSize: 14,
       atomNumberingFontSize: 10,
       bondEnFontSize: 10,
@@ -281,7 +281,7 @@ describe('initOptionsModal', () => {
         {
           showValenceWarnings: true,
           showAtomTooltips: true,
-          twoDAtomColoring: true,
+          twoDColorStyle: 'color-atoms',
           twoDAtomFontSize: 14,
           atomNumberingFontSize: 10,
           bondEnFontSize: 10,

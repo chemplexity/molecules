@@ -376,7 +376,7 @@ describe('create2DRenderHelpers', () => {
     assert.ok(labeledTipX > unlabeledTipX + 6, 'expected labeled source wedge tip to clear the source label');
   });
 
-  it('centers diagonal double bonds on heteroatom labels using the shifted parallel line clearance', () => {
+  it('centers terminal diagonal double bonds on heteroatom labels using symmetric half-offset clearance', () => {
     const records = [];
     const container = new FakeSelection(records);
     const carbon = makeAtom('c1', 'C', 0, 0);
@@ -450,21 +450,31 @@ describe('create2DRenderHelpers', () => {
     const len = Math.hypot(dx, dy) || 1;
     const nx = -dy / len;
     const ny = dx / len;
-    const shiftedStart = { x: start.x + nx * 7, y: start.y + ny * 7 };
-    const shiftedEnd = { x: end.x + nx * 7, y: end.y + ny * 7 };
-    const expectedSecondary = shortenLine(
-      shiftedStart.x,
-      shiftedStart.y,
-      shiftedEnd.x,
-      shiftedEnd.y,
-      Math.max(computeLabelClearance(carbon, shiftedEnd, toSVGPt, new Map(), mol), 4),
-      Math.max(computeLabelClearance(oxygen, shiftedStart, toSVGPt, new Map(), mol), 4)
-    );
+    const halfOffset = 7 / 2;
+    const expectedLines = [1, -1].map(sign => {
+      const shiftedStart = { x: start.x + nx * halfOffset * sign, y: start.y + ny * halfOffset * sign };
+      const shiftedEnd = { x: end.x + nx * halfOffset * sign, y: end.y + ny * halfOffset * sign };
+      return shortenLine(
+        shiftedStart.x,
+        shiftedStart.y,
+        shiftedEnd.x,
+        shiftedEnd.y,
+        computeLabelClearance(carbon, shiftedEnd, toSVGPt, new Map(), mol),
+        computeLabelClearance(oxygen, shiftedStart, toSVGPt, new Map(), mol)
+      );
+    });
 
-    assert.ok(Math.abs(lines[1].x1 - expectedSecondary.x1) < 1e-6);
-    assert.ok(Math.abs(lines[1].y1 - expectedSecondary.y1) < 1e-6);
-    assert.ok(Math.abs(lines[1].x2 - expectedSecondary.x2) < 1e-6);
-    assert.ok(Math.abs(lines[1].y2 - expectedSecondary.y2) < 1e-6);
+    for (const expectedLine of expectedLines) {
+      assert.ok(
+        lines.some(line =>
+          Math.abs(line.x1 - expectedLine.x1) < 1e-6 &&
+          Math.abs(line.y1 - expectedLine.y1) < 1e-6 &&
+          Math.abs(line.x2 - expectedLine.x2) < 1e-6 &&
+          Math.abs(line.y2 - expectedLine.y2) < 1e-6
+        ),
+        `expected a centered double-bond segment matching ${JSON.stringify(expectedLine)}`
+      );
+    }
   });
 
   it('trims bond endpoints farther for subscripted NH2 labels so downward bonds clear the rendered text', () => {

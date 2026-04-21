@@ -6,7 +6,7 @@ import { AtomGrid } from '../geometry/atom-grid.js';
 import { distancePointToSegment, segmentsIntersect } from '../geometry/segments.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
-import { directAttachedForeignRingJunctionContinuationAngle } from '../placement/branch-placement/angle-selection.js';
+import { preferredSharedJunctionContinuationAngle } from '../placement/branch-placement/angle-selection.js';
 import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 function pairKey(firstAtomId, secondAtomId) {
@@ -16,6 +16,30 @@ function pairKey(firstAtomId, secondAtomId) {
 const SUBTREE_BOND_CROWDING_FACTOR = 0.5;
 const SUBTREE_BOND_CROWDING_WEIGHT = 25;
 const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
+
+function isConjugatedTrigonalHeavyNeighbor(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || atom.aromatic || atom.heavyDegree !== 3) {
+    return false;
+  }
+  let heavyVisibleBondCount = 0;
+  let nonAromaticMultipleBondCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    heavyVisibleBondCount++;
+    if (!bond.aromatic && (bond.order ?? 1) >= 2) {
+      nonAromaticMultipleBondCount++;
+    }
+  }
+  return heavyVisibleBondCount === 3 && nonAromaticMultipleBondCount === 1;
+}
 
 function distanceBetweenSegments(firstStart, firstEnd, secondStart, secondEnd) {
   if (segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd)) {
@@ -328,6 +352,115 @@ function ringSystemAtomIds(layoutGraph, ringSystemId, ringSystemById = null) {
   return (ringSystemById ? ringSystemById.get(ringSystemId) : layoutGraph.ringSystems.find(ringSystem => ringSystem.id === ringSystemId))?.atomIds ?? [];
 }
 
+/**
+ * Returns whether a nominal non-ring "substituent" actually reconnects into
+ * the same ring system as the anchor through another path. Those bridge-like
+ * linkers are part of the scaffold, not ordinary ring substituents, so the
+ * local outward-axis readability check should not treat them like pendant
+ * leaves.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Candidate ring anchor atom id.
+ * @param {string} childAtomId - Candidate non-ring child atom id.
+ * @returns {boolean} True when the child reconnects into the anchor ring system.
+ */
+function reconnectsToAnchorRingSystem(layoutGraph, coords, anchorAtomId, childAtomId) {
+  const anchorRingSystemId = layoutGraph.atomToRingSystemId.get(anchorAtomId);
+  if (anchorRingSystemId == null) {
+    return false;
+  }
+
+  const visitedAtomIds = new Set([anchorAtomId]);
+  const queue = [childAtomId];
+  while (queue.length > 0) {
+    const atomId = queue.shift();
+    if (visitedAtomIds.has(atomId)) {
+      continue;
+    }
+    visitedAtomIds.add(atomId);
+
+    if (atomId !== childAtomId && layoutGraph.atomToRingSystemId.get(atomId) === anchorRingSystemId) {
+      return true;
+    }
+
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId) || visitedAtomIds.has(neighborAtomId)) {
+        continue;
+      }
+      queue.push(neighborAtomId);
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Returns the downstream ring-system representative for a non-ring linker
+ * child when that child ultimately leads into exactly one distinct ring
+ * system. In those cases the overall linked ring is the visually meaningful
+ * direction, not the first linker atom itself.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Candidate ring anchor atom id.
+ * @param {string} childAtomId - Candidate non-ring child atom id.
+ * @param {Map<number, object>|null} [ringSystemById] - Optional cached ring-system lookup.
+ * @returns {{representativeAtomIds: string[]}|null} Downstream ring representative, or `null`.
+ */
+function resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorAtomId, childAtomId, ringSystemById = null) {
+  const anchorRingSystemId = layoutGraph.atomToRingSystemId.get(anchorAtomId);
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (
+    anchorRingSystemId == null
+    || !childAtom
+    || (
+      ['N', 'O', 'S', 'Se'].includes(childAtom.element)
+      && childAtom.aromatic !== true
+      && childAtom.heavyDegree === 2
+    )
+  ) {
+    return null;
+  }
+
+  const visitedAtomIds = new Set([anchorAtomId]);
+  const queue = [childAtomId];
+  const reachableRingSystemIds = new Set();
+  while (queue.length > 0) {
+    const atomId = queue.shift();
+    if (visitedAtomIds.has(atomId)) {
+      continue;
+    }
+    visitedAtomIds.add(atomId);
+
+    const ringSystemId = layoutGraph.atomToRingSystemId.get(atomId);
+    if (ringSystemId != null && ringSystemId !== anchorRingSystemId) {
+      reachableRingSystemIds.add(ringSystemId);
+    }
+
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId) || visitedAtomIds.has(neighborAtomId)) {
+        continue;
+      }
+      queue.push(neighborAtomId);
+    }
+  }
+
+  if (reachableRingSystemIds.size !== 1) {
+    return null;
+  }
+  const representativeAtomIds = ringSystemAtomIds(layoutGraph, [...reachableRingSystemIds][0], ringSystemById).filter(atomId => coords.has(atomId));
+  return representativeAtomIds.length > 0 ? { representativeAtomIds } : null;
+}
+
 function incidentRingPolygons(layoutGraph, coords, atomId) {
   return (layoutGraph.atomToRings.get(atomId) ?? []).map(ring => ring.atomIds.map(ringAtomId => coords.get(ringAtomId)).filter(Boolean)).filter(polygon => polygon.length >= 3);
 }
@@ -398,6 +531,17 @@ export function collectReadableRingSubstituentChildren(layoutGraph, coords, anch
 
     const childRingCount = layoutGraph.atomToRings.get(neighborAtom.id)?.length ?? 0;
     if (childRingCount === 0) {
+      const linkedRingRepresentative = resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorAtomId, neighborAtom.id, ringSystemById);
+      if (linkedRingRepresentative) {
+        candidates.push({
+          childAtomId: neighborAtom.id,
+          representativeAtomIds: linkedRingRepresentative.representativeAtomIds
+        });
+        continue;
+      }
+      if (reconnectsToAnchorRingSystem(layoutGraph, coords, anchorAtomId, neighborAtom.id)) {
+        continue;
+      }
       candidates.push({
         childAtomId: neighborAtom.id,
         representativeAtomIds: [neighborAtom.id]
@@ -474,16 +618,22 @@ function bestRingOutwardDeviation(layoutGraph, coords, anchorAtomId, representat
   return Number.isFinite(bestDeviation) ? bestDeviation : null;
 }
 
+function immediateRingSubstituentOutwardDeviation(layoutGraph, coords, anchorAtomId, childAtomId) {
+  return bestRingOutwardDeviation(layoutGraph, coords, anchorAtomId, coords.get(childAtomId) ?? null);
+}
+
 /**
  * Measures whether ring-bound heavy substituents stay outside incident ring
  * faces and reasonably close to a local ring-outward direction.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
- * @param {{maxOutwardDeviation?: number, focusAtomIds?: Set<string>|null}} [options] - Readability options.
+ * @param {{maxOutwardDeviation?: number, maxSevereImmediateOutwardDeviation?: number, focusAtomIds?: Set<string>|null}} [options] - Readability options.
  * @returns {{failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}} Readability summary.
  */
 export function measureRingSubstituentReadability(layoutGraph, coords, options = {}) {
   const maxOutwardDeviation = options.maxOutwardDeviation ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxOutwardDeviation;
+  const maxSevereImmediateOutwardDeviation =
+    options.maxSevereImmediateOutwardDeviation ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxSevereImmediateOutwardDeviation;
   const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
   const ringSystemById = new Map(layoutGraph.ringSystems.map(rs => [rs.id, rs]));
   let failingSubstituentCount = 0;
@@ -509,6 +659,7 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
     const ringPolygons = incidentRingPolygons(layoutGraph, coords, anchorAtomId);
     for (const childDescriptor of substituentChildren) {
       const childAtomId = childDescriptor.childAtomId;
+      const childAtom = layoutGraph.atoms.get(childAtomId);
       const pairId = pairKey(anchorAtomId, childAtomId);
       if (seenPairs.has(pairId)) {
         continue;
@@ -516,16 +667,29 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
       seenPairs.add(pairId);
 
       const forwardSide = evaluateRingSubstituentSide(layoutGraph, coords, anchorAtomId, childDescriptor.representativeAtomIds, ringPolygons, maxOutwardDeviation);
+      const requiresSevereImmediateOutwardCheck =
+        childDescriptor.representativeAtomIds.length > 1
+        || (childAtom != null && childAtom.element !== 'C' && childAtom.element !== 'H');
+      const severeImmediateOutwardDeviation =
+        requiresSevereImmediateOutwardCheck
+          ? immediateRingSubstituentOutwardDeviation(layoutGraph, coords, anchorAtomId, childAtomId)
+          : null;
+      const severeImmediateOutwardFailure =
+        severeImmediateOutwardDeviation != null && severeImmediateOutwardDeviation > maxSevereImmediateOutwardDeviation;
       if (forwardSide.insideIncidentRing) {
         failingSubstituentCount++;
         inwardSubstituentCount++;
-      } else if (forwardSide.outwardAxisFailure) {
+      } else if (forwardSide.outwardAxisFailure || severeImmediateOutwardFailure) {
         failingSubstituentCount++;
         outwardAxisFailureCount++;
       }
       if (Number.isFinite(forwardSide.outwardDeviation)) {
         totalOutwardDeviation += forwardSide.outwardDeviation;
         maxObservedOutwardDeviation = Math.max(maxObservedOutwardDeviation, forwardSide.outwardDeviation);
+      }
+      if (Number.isFinite(severeImmediateOutwardDeviation)) {
+        totalOutwardDeviation += severeImmediateOutwardDeviation;
+        maxObservedOutwardDeviation = Math.max(maxObservedOutwardDeviation, severeImmediateOutwardDeviation);
       }
 
       if (childDescriptor.representativeAtomIds.length <= 1) {
@@ -672,9 +836,17 @@ function shouldMeasureDivalentContinuationDistortionAtCenter(layoutGraph, atomId
   if (
     !atom
     || atom.aromatic
-    || !IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(atom.element)
     || (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0
   ) {
+    return false;
+  }
+  const isExactDivalentElement =
+    IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(atom.element)
+    || (
+      atom.element === 'N'
+      && covalentBonds.some(({ neighborAtomId }) => isConjugatedTrigonalHeavyNeighbor(layoutGraph, neighborAtomId))
+    );
+  if (!isExactDivalentElement) {
     return false;
   }
   return covalentBonds.every(({ bond, neighborAtomId }) => {
@@ -741,15 +913,20 @@ function measureThreeCoordinateDeviation(coords, covalentBonds, atomId, getPos) 
  * should read as roughly trigonal in a publication-style 2D depiction.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{focusAtomIds?: Set<string>|null}} [options] - Optional local scoring focus.
  * @returns {{centerCount: number, totalDeviation: number, maxDeviation: number}} Trigonal distortion statistics.
  */
-export function measureTrigonalDistortion(layoutGraph, coords) {
+export function measureTrigonalDistortion(layoutGraph, coords, options = {}) {
+  const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
   let centerCount = 0;
   let totalDeviation = 0;
   let maxDeviation = 0;
 
   for (const atomId of coords.keys()) {
     if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    if (focusAtomIds && !focusAtomIds.has(atomId)) {
       continue;
     }
     const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
@@ -808,9 +985,10 @@ export function measureThreeHeavyContinuationDistortion(layoutGraph, coords, opt
 }
 
 /**
- * Measures distortion at direct-attached foreign ring exits that should stay
- * on the exact continuation of a shared fused-junction bond when that straight
- * exterior slot is already clear.
+ * Measures distortion at shared-junction exits that should stay on the exact
+ * continuation of the shared junction bond when that straight exterior slot is
+ * already clear. This covers both direct-attached foreign ring blocks and
+ * exocyclic non-ring branches that inherit the same shared-junction rule.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {{focusAtomIds?: Set<string>|null}} [options] - Optional local scoring focus.
@@ -840,7 +1018,7 @@ export function measureDirectAttachedRingJunctionContinuationDistortion(layoutGr
         continue;
       }
 
-      const preferredAngle = directAttachedForeignRingJunctionContinuationAngle(layoutGraph, coords, anchorAtomId, childAtomId);
+      const preferredAngle = preferredSharedJunctionContinuationAngle(layoutGraph, coords, anchorAtomId, childAtomId);
       if (preferredAngle == null) {
         continue;
       }

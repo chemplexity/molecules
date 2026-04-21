@@ -136,7 +136,7 @@ export function analyzeRings(molecule, canonicalAtomRank = new Map()) {
       }
       return compareStrings(firstSystem.signature, secondSystem.signature);
     })
-    .map((system, index) => createRingSystem(system, adaptedRings, canonicalAtomRank, index));
+    .map((system, index) => ({ ...system, id: index }));
 
   return {
     rings: adaptedRings,

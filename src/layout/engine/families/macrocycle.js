@@ -6,6 +6,7 @@ import { apothemForRegularPolygon } from '../geometry/polygon.js';
 import { ellipsePerimeterPoints, macrocycleAspectRatio, solveEllipseScale } from '../geometry/ellipse.js';
 import { placeTemplateCoords } from '../templates/placement.js';
 import { ringConnectionKey } from '../model/ring-connection.js';
+import { nonSharedPath } from '../geometry/ring-path.js';
 
 /**
  * Rebuilds ring centers from already placed ring coordinates.
@@ -24,22 +25,6 @@ function buildRingCentersFromCoords(rings, coords) {
   return ringCenters;
 }
 
-function traversePath(atomIds, startAtomId, endAtomId, step) {
-  const count = atomIds.length;
-  let index = atomIds.indexOf(startAtomId);
-  const result = [startAtomId];
-  while (atomIds[index] !== endAtomId) {
-    index = (index + step + count) % count;
-    result.push(atomIds[index]);
-  }
-  return result;
-}
-
-function nonSharedPath(atomIds, firstSharedAtomId, secondSharedAtomId) {
-  const forward = traversePath(atomIds, firstSharedAtomId, secondSharedAtomId, 1);
-  const backward = traversePath(atomIds, firstSharedAtomId, secondSharedAtomId, -1);
-  return forward.length >= backward.length ? forward : backward;
-}
 
 /**
  * Normalizes an angle into the signed `(-pi, pi]` range.

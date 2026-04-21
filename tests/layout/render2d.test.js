@@ -57,6 +57,32 @@ function dominantScaffoldAxisDegrees(molecule) {
   return scaffoldOnlyMolecule.atoms.size >= 2 ? principalAxisDegrees(scaffoldOnlyMolecule) : null;
 }
 
+function atomBounds(atoms) {
+  if (atoms.length === 0) {
+    return null;
+  }
+  let minX = atoms[0].x;
+  let maxX = atoms[0].x;
+  let minY = atoms[0].y;
+  let maxY = atoms[0].y;
+  for (let i = 1; i < atoms.length; i++) {
+    const atom = atoms[i];
+    if (atom.x < minX) {
+      minX = atom.x;
+    }
+    if (atom.x > maxX) {
+      maxX = atom.x;
+    }
+    if (atom.y < minY) {
+      minY = atom.y;
+    }
+    if (atom.y > maxY) {
+      maxY = atom.y;
+    }
+  }
+  return { minX, maxX, minY, maxY };
+}
+
 test('renderMolSVG omits lone-pair circles by default', () => {
   const mol = parseSMILES('CO');
   const rendered = renderMolSVG(mol);
@@ -134,6 +160,26 @@ test('generateAndRefine2dCoords levels one clearly dominant multi-ring scaffold 
     Math.abs(dominantScaffoldAxisDegrees(mol) ?? Infinity) <= 1,
     `expected the public layout path to keep the dominant fused scaffold level, got ${dominantScaffoldAxisDegrees(mol)?.toFixed(2) ?? 'n/a'} degrees`
   );
+});
+
+test('generateAndRefine2dCoords keeps detached HCl fragments beside the oriented principal scaffold', () => {
+  const mol = parseSMILES('Cl.CC(=O)c1ccc(OCC(O)CN2CCN(CCN3C(=O)c4cccc5cccc(C3=O)c45)CC2)cc1');
+
+  generateAndRefine2dCoords(mol, { suppressH: true, bondLength: 1.5, maxPasses: 6, finalLandscapeOrientation: true });
+
+  const chloride = mol.atoms.get('Cl1');
+  const principalAtoms = [...mol.atoms.values()].filter(
+    atom => atom.id !== 'Cl1' && atom.name !== 'H' && Number.isFinite(atom.x) && Number.isFinite(atom.y)
+  );
+  const principalBounds = atomBounds(principalAtoms);
+
+  assert.ok(chloride && Number.isFinite(chloride.x) && Number.isFinite(chloride.y), 'expected detached chloride coordinates');
+  assert.ok(principalBounds, 'expected principal-fragment bounds');
+  const horizontalClearance = Math.max(principalBounds.minX - chloride.x, chloride.x - principalBounds.maxX);
+  const verticalOvershoot = Math.max(principalBounds.minY - chloride.y, chloride.y - principalBounds.maxY, 0);
+
+  assert.ok(horizontalClearance >= 2.25, `expected detached chloride to stay beside the scaffold, got horizontal clearance ${horizontalClearance}`);
+  assert.ok(verticalOvershoot <= 0.75, `expected detached chloride to avoid drifting above or below the scaffold, got vertical overshoot ${verticalOvershoot}`);
 });
 
 test('renderMolSVG trims bonds farther from subscripted NH2 labels', () => {

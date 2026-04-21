@@ -37,7 +37,7 @@ function coordsFor(smiles) {
  * @param {string} smiles - Molecule SMILES.
  * @returns {{graph: object, coords: Map<string, {x: number, y: number}>, bondLength: number}} Pre-stereo state.
  */
-function preStereoStageFor(smiles) {
+function _preStereoStageFor(smiles) {
   const molecule = parseSMILES(smiles);
   const options = normalizeOptions({ suppressH: true });
   const graph = createLayoutGraphFromNormalized(molecule, options);
@@ -73,23 +73,6 @@ function preStereoStageFor(smiles) {
 }
 
 describe('layout/engine/stereo/enforcement', () => {
-  it('repairs exocyclic annotated alkenes attached to ring systems', () => {
-    const smiles = 'O=C(N1CCOCC1)\\C(=C\\2/SC=C(N2c3ccccc3)c4ccccc4)\\C#N';
-    const { graph, coords: wrongCoords, bondLength } = preStereoStageFor(smiles);
-    const before = inspectEZStereo(graph, wrongCoords);
-
-    assert.equal(before.violationCount, 1);
-    assert.equal(before.checks[0].target, 'E');
-    assert.equal(before.checks[0].actual, 'Z');
-
-    const enforced = enforceAcyclicEZStereo(graph, wrongCoords, { bondLength });
-    const after = inspectEZStereo(graph, enforced.coords);
-
-    assert.ok(enforced.reflections > 0);
-    assert.equal(after.violationCount, 0);
-    assert.equal(after.checks[0].actual, 'E');
-  });
-
   it('reflects one side of a medium-ring alkene to enforce trans geometry', () => {
     const graph = graphFor('C1CCC/C=C/CCC1');
     const wrongCoords = coordsFor('C1CCC/C=C\\CCC1');

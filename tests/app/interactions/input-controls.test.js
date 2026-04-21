@@ -221,4 +221,42 @@ describe('createInputControls', () => {
       Math.random = originalRandom;
     }
   });
+
+  it('cycles bug verification molecules in source order and wraps back to the start', () => {
+    const inputEl = createElement();
+    const collectionSelectEl = createElement();
+    const examplesEl = createElement();
+    const records = [];
+
+    const controls = createInputControls({
+      data: {
+        exampleMolecules: [],
+        randomMolecule: [],
+        bugMolecules: ['bug-0', 'bug-1', 'bug-2'],
+        moleculeCatalog: []
+      },
+      state: {
+        getInputMode: () => 'smiles'
+      },
+      dom: {
+        getInputElement: () => inputEl,
+        getCollectionSelectElement: () => collectionSelectEl,
+        getExamplesElement: () => examplesEl
+      },
+      actions: {
+        parseInput: () => {},
+        parseInputWithAutoFormat: value => {
+          records.push(value);
+        }
+      }
+    });
+
+    controls.pickBugVerificationMolecule();
+    controls.pickBugVerificationMolecule();
+    controls.pickBugVerificationMolecule();
+    controls.pickBugVerificationMolecule();
+
+    assert.deepEqual(records, ['bug-0', 'bug-1', 'bug-2', 'bug-0']);
+    assert.equal(inputEl.value, 'bug-0');
+  });
 });

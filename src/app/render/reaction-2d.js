@@ -133,14 +133,12 @@ export function _plotOverlayFitPadding(basePad = 40) {
 }
 
 /**
- * Returns the per-side viewport fit padding, delegating to `_plotOverlayFitPadding`.
+ * Returns the per-side viewport fit padding needed to avoid overlap with
+ * visible UI overlays. Alias for `_plotOverlayFitPadding`.
  * @param {number} [basePad] - Base padding in pixels (defaults to 40).
  * @returns {{left: number, right: number, top: number, bottom: number}} Per-side padding values in pixels.
  */
-export function _viewportFitPadding(basePad = 40) {
-  const pads = _plotOverlayFitPadding(basePad);
-  return pads;
-}
+export const _viewportFitPadding = _plotOverlayFitPadding;
 
 /**
  * Resets all reaction preview state variables to their initial empty values.

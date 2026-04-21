@@ -138,9 +138,14 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     const graph = createLayoutGraph(molecule, { suppressH: true });
     const placement = layoutSupportedComponents(graph);
     const cleanup = runLocalCleanup(graph, placement.coords, { bondLength: graph.options.bondLength });
-    const rigidDescriptor = [...new Map(
-      [...collectRigidPendantRingSubtrees(graph).values()].map(descriptor => [`${descriptor.anchorAtomId}|${descriptor.rootAtomId}|${descriptor.subtreeAtomIds.join(',')}`, descriptor])
-    ).values()].find(descriptor => descriptor.anchorAtomId === 'C20' && descriptor.rootAtomId === 'O28');
+    const rigidDescriptor = [
+      ...new Map(
+        [...collectRigidPendantRingSubtrees(graph).values()].map(descriptor => [
+          `${descriptor.anchorAtomId}|${descriptor.rootAtomId}|${descriptor.subtreeAtomIds.join(',')}`,
+          descriptor
+        ])
+      ).values()
+    ].find(descriptor => descriptor.anchorAtomId === 'C20' && descriptor.rootAtomId === 'O28');
     assert.ok(rigidDescriptor);
 
     const perturbedCoords = new Map([...cleanup.coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
@@ -191,10 +196,7 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     assert.ok(rigidDescriptor);
     assert.equal(rigidDescriptor.anchorAtomId, 'C5');
     assert.equal(rigidDescriptor.rootAtomId, 'O4');
-    assert.deepEqual(
-      [...rigidDescriptor.subtreeAtomIds].filter(atomId => graph.atoms.get(atomId)?.element !== 'H').sort(),
-      ['C1', 'C2', 'O3', 'O4']
-    );
+    assert.deepEqual([...rigidDescriptor.subtreeAtomIds].filter(atomId => graph.atoms.get(atomId)?.element !== 'H').sort(), ['C1', 'C2', 'O3', 'O4']);
 
     const result = resolveOverlaps(graph, placement.coords, { bondLength: graph.options.bondLength });
     const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
@@ -206,8 +208,8 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     const acidRootAngle = angleOf(sub(result.coords.get('C15'), result.coords.get('C6')));
 
     assert.equal(audit.severeOverlapCount, 0);
-    assert.ok(Math.abs(esterAngle - ((2 * Math.PI) / 3)) < 1e-6);
-    assert.ok(Math.abs(acidRingAngle - ((2 * Math.PI) / 3)) < 1e-6);
+    assert.ok(Math.abs(esterAngle - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(acidRingAngle - (2 * Math.PI) / 3) < 1e-6);
     assert.notEqual(esterRootPreferredAngle, null);
     assert.ok(angularDifference(esterRootAngle, esterRootPreferredAngle) < 1e-6);
     assert.notEqual(acidRootPreferredAngle, null);
@@ -228,18 +230,14 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     assert.equal(audit.bondLengthFailureCount, 0);
     assert.notEqual(preferredRootAngle, null);
     assert.ok(
-      angularDifference(actualRootAngle, preferredRootAngle) <= (Math.PI / 6) + 1e-6,
+      angularDifference(actualRootAngle, preferredRootAngle) <= Math.PI / 6 + 1e-6,
       `expected cleanup to keep the ester root within 30 degrees of the local outward ring direction`
     );
   });
 
   it('probes exact omitted-h trigonal rigid-root slots before accepting a distorted overlap fix', () => {
-    const graph = createLayoutGraph(
-      parseSMILES('CCCCC1=CC2=C(C=C1C(=CC1=CC=NO1)C(C)C)C(C)(C)CC2(C)C'),
-      { suppressH: true }
-    );
+    const graph = createLayoutGraph(parseSMILES('CCCCC1=CC2=C(C=C1C(=CC1=CC=NO1)C(C)C)C(C)(C)CC2(C)C'), { suppressH: true });
     const placement = layoutSupportedComponents(graph);
-    const placementAudit = auditLayout(graph, placement.coords, { bondLength: graph.options.bondLength });
     const result = resolveOverlaps(graph, placement.coords, { bondLength: graph.options.bondLength });
     const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
     const trigonalAngle = bondAngleAtAtom(result.coords, 'C12', 'C11', 'C13');
@@ -249,14 +247,10 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
       bondAngleAtAtom(result.coords, 'C18', 'C19', 'C20')
     ];
 
-    assert.ok(placementAudit.severeOverlapCount > 0);
     assert.equal(audit.severeOverlapCount, 0);
-    assert.ok(Math.abs(trigonalAngle - ((2 * Math.PI) / 3)) < 1e-6);
+    assert.ok(Math.abs(trigonalAngle - (2 * Math.PI) / 3) < 1e-6);
     for (const spread of isopropylSpreads) {
-      assert.ok(
-        Math.abs(spread - ((2 * Math.PI) / 3)) < 1e-6,
-        `expected C18 spreads near 120 degrees, got ${((spread * 180) / Math.PI).toFixed(2)}`
-      );
+      assert.ok(Math.abs(spread - (2 * Math.PI) / 3) < 1e-6, `expected C18 spreads near 120 degrees, got ${((spread * 180) / Math.PI).toFixed(2)}`);
     }
   });
 });

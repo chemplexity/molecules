@@ -667,12 +667,8 @@ export function createDrawBondCommitActions(context) {
       _applyBondDrawType(mol, newBond, drawBondType, resolvedAtomId);
       affected = new Set([resolvedAtomId, snapAtomId]);
     } else {
-      const rawAngle = Math.atan2(ey - oy, ex - ox);
-      const snapStep = Math.PI / 6;
-      const snapped = Math.round(rawAngle / snapStep) * snapStep;
-      const bondLength = 1.5;
-      const newMolX = srcAtom.x + Math.cos(snapped) * bondLength;
-      const newMolY = srcAtom.y - Math.sin(snapped) * bondLength;
+      const newMolX = context.view2D.getCenterX() + (ex - plotWidth / 2) / context.constants.scale;
+      const newMolY = context.view2D.getCenterY() - (ey - plotHeight / 2) / context.constants.scale;
 
       const srcHydrogen = srcAtom.getNeighbors(mol).find(neighbor => neighbor.name === 'H');
       if (srcHydrogen) {

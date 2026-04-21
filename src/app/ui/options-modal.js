@@ -41,7 +41,7 @@ export function initOptionsModal(context) {
   function syncForm(options = context.options.getRenderOptions()) {
     showValenceWarningsEl.checked = options.showValenceWarnings;
     showAtomTooltipsEl.checked = options.showAtomTooltips;
-    twoDAtomColoringEl.checked = options.twoDAtomColoring;
+    twoDAtomColoringEl.value = options.twoDColorStyle ?? 'color-atoms';
     twoDAtomFontSizeEl.value = formatOptionNumber(options.twoDAtomFontSize);
     atomNumberingFontSizeEl.value = formatOptionNumber(options.atomNumberingFontSize);
     bondEnFontSizeEl.value = formatOptionNumber(options.bondEnFontSize);
@@ -65,7 +65,7 @@ export function initOptionsModal(context) {
     const nextOptions = context.options.updateRenderOptions({
       showValenceWarnings: showValenceWarningsEl.checked,
       showAtomTooltips: showAtomTooltipsEl.checked,
-      twoDAtomColoring: twoDAtomColoringEl.checked,
+      twoDColorStyle: twoDAtomColoringEl.value,
       twoDAtomFontSize: clampOptionInputValue(twoDAtomFontSizeEl, context.options.limits.twoDAtomFontSize, currentOptions.twoDAtomFontSize),
       atomNumberingFontSize: clampOptionInputValue(atomNumberingFontSizeEl, context.options.limits.atomNumberingFontSize, currentOptions.atomNumberingFontSize),
       bondEnFontSize: clampOptionInputValue(bondEnFontSizeEl, context.options.limits.bondEnFontSize, currentOptions.bondEnFontSize),

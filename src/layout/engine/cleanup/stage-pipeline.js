@@ -86,6 +86,14 @@ export function buildCleanupStageGraph(context) {
   } = context;
   const bondLength = normalizedOptions.bondLength;
   const protectLargeMoleculeBackbone = placement.placedFamilies.includes('large-molecule');
+  const baseCleanupOptions = {
+    epsilon: bondLength * 0.001,
+    bondLength,
+    protectLargeMoleculeBackbone,
+    cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId
+  };
+  const auditFinalStereo = coords => auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
+  const auditFinalStereoWithTieBreak = (candidate, incumbent) => isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true });
   const cleanupGeometryComparator = protectBondIntegrity
     ? (candidate, incumbent) => isPreferredProtectedCleanupStage(familySummary, placement, candidate, incumbent)
     : isPreferredCleanupGeometryStage;
@@ -101,12 +109,9 @@ export function buildCleanupStageGraph(context) {
       isGeometryPhase: true,
       transformFn(parentCoords) {
         const cleanupResult = runUnifiedCleanup(layoutGraph, parentCoords, {
+          ...baseCleanupOptions,
           maxPasses: cleanupMaxPasses,
-          epsilon: bondLength * 0.001,
-          bondLength,
-          protectLargeMoleculeBackbone,
           protectBondIntegrity,
-          cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId,
           frozenAtomIds: placement.frozenAtomIds
         });
         context.onStep?.(
@@ -200,12 +205,9 @@ export function buildCleanupStageGraph(context) {
           return null;
         }
         const postHookCleanup = runUnifiedCleanup(layoutGraph, parentCoords, {
+          ...baseCleanupOptions,
           maxPasses: 1,
-          epsilon: bondLength * 0.001,
-          bondLength,
-          protectLargeMoleculeBackbone,
           protectBondIntegrity,
-          cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId,
           frozenAtomIds: placement.frozenAtomIds
         });
         context.onStep?.(
@@ -225,9 +227,7 @@ export function buildCleanupStageGraph(context) {
       transformFn(parentCoords) {
         return { coords: parentCoords };
       },
-      scoreFn(coords) {
-        return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
-      },
+      scoreFn: auditFinalStereo,
       comparatorFn() {
         return true;
       }
@@ -241,9 +241,7 @@ export function buildCleanupStageGraph(context) {
         // to selectedGeometryStereo so re-running auditFinalStereoStage would be redundant.
         return result.reflections > 0 ? result : null;
       },
-      scoreFn(coords) {
-        return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
-      },
+      scoreFn: auditFinalStereo,
       comparatorFn: isPreferredFinalStereoStage
     },
     {
@@ -255,18 +253,13 @@ export function buildCleanupStageGraph(context) {
       },
       transformFn(parentCoords) {
         return runUnifiedCleanup(layoutGraph, parentCoords, {
+          ...baseCleanupOptions,
           maxPasses: 1,
-          epsilon: bondLength * 0.001,
-          bondLength,
-          protectLargeMoleculeBackbone,
           protectBondIntegrity: true,
-          cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId,
           frozenAtomIds: mergeFrozenAtomIds(placement.frozenAtomIds, collectProtectedEZAtomIds(layoutGraph))
         });
       },
-      scoreFn(coords) {
-        return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
-      },
+      scoreFn: auditFinalStereo,
       comparatorFn: isPreferredFinalStereoStage
     },
     {
@@ -275,18 +268,13 @@ export function buildCleanupStageGraph(context) {
       guard: hasStereoRescueOverlaps,
       transformFn(parentCoords) {
         return runUnifiedCleanup(layoutGraph, parentCoords, {
+          ...baseCleanupOptions,
           maxPasses: 1,
-          epsilon: bondLength * 0.001,
-          bondLength,
-          protectLargeMoleculeBackbone,
           protectBondIntegrity: true,
-          cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId,
           frozenAtomIds: placement.frozenAtomIds
         });
       },
-      scoreFn(coords) {
-        return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
-      },
+      scoreFn: auditFinalStereo,
       comparatorFn: isPreferredFinalStereoStage
     },
     {
@@ -300,9 +288,7 @@ export function buildCleanupStageGraph(context) {
           bondLength
         });
       },
-      scoreFn(coords) {
-        return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
-      },
+      scoreFn: auditFinalStereo,
       comparatorFn: isPreferredFinalStereoStage
     },
     {
@@ -315,12 +301,8 @@ export function buildCleanupStageGraph(context) {
         const result = runHypervalentAngleTidy(layoutGraph, parentCoords);
         return result.nudges > 0 ? result : null;
       },
-      scoreFn(coords) {
-        return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
-      },
-      comparatorFn(candidate, incumbent) {
-        return isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true });
-      },
+      scoreFn: auditFinalStereo,
+      comparatorFn: auditFinalStereoWithTieBreak,
       accumulateSidecar: acceptedNudgeAccumulator('finalHypervalentTouchup')
     },
     {
@@ -337,12 +319,8 @@ export function buildCleanupStageGraph(context) {
         });
         return result.nudges > 0 ? result : null;
       },
-      scoreFn(coords) {
-        return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
-      },
-      comparatorFn(candidate, incumbent) {
-        return isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true });
-      },
+      scoreFn: auditFinalStereo,
+      comparatorFn: auditFinalStereoWithTieBreak,
       accumulateSidecar: acceptedNudgeAccumulator('finalHypervalentRingSubstituentTouchup', ['finalHypervalentTouchup'])
     },
     {
@@ -359,12 +337,8 @@ export function buildCleanupStageGraph(context) {
         });
         return result.nudges > 0 ? result : null;
       },
-      scoreFn(coords) {
-        return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
-      },
-      comparatorFn(candidate, incumbent) {
-        return isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true });
-      },
+      scoreFn: auditFinalStereo,
+      comparatorFn: auditFinalStereoWithTieBreak,
       accumulateSidecar: acceptedNudgeAccumulator('finalRingSubstituentTouchup')
     },
     {
@@ -377,16 +351,14 @@ export function buildCleanupStageGraph(context) {
       transformFn(parentCoords) {
         const result = runAttachedRingRotationTouchup(layoutGraph, parentCoords, {
           bondLength,
-          frozenAtomIds: placement.frozenAtomIds
+          frozenAtomIds: placement.frozenAtomIds,
+          cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId,
+          protectLargeMoleculeBackbone
         });
         return result.nudges > 0 ? result : null;
       },
-      scoreFn(coords) {
-        return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
-      },
-      comparatorFn(candidate, incumbent) {
-        return isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true });
-      },
+      scoreFn: auditFinalStereo,
+      comparatorFn: auditFinalStereoWithTieBreak,
       accumulateSidecar: acceptedNudgeAccumulator('finalAttachedRingRotationTouchup')
     },
     {
@@ -401,9 +373,7 @@ export function buildCleanupStageGraph(context) {
         });
         return result.nudges > 0 ? result : null;
       },
-      scoreFn(coords) {
-        return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
-      },
+      scoreFn: auditFinalStereo,
       comparatorFn: isPreferredFinalStereoStage,
       accumulateSidecar: acceptedNudgeAccumulator('finalRingTerminalHeteroTouchup')
     },
@@ -417,12 +387,8 @@ export function buildCleanupStageGraph(context) {
         const result = runHypervalentAngleTidy(layoutGraph, parentCoords);
         return result.nudges > 0 ? result : null;
       },
-      scoreFn(coords) {
-        return auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
-      },
-      comparatorFn(candidate, incumbent) {
-        return isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true });
-      },
+      scoreFn: auditFinalStereo,
+      comparatorFn: auditFinalStereoWithTieBreak,
       accumulateSidecar: acceptedNudgeAccumulator('finalPostRingHypervalentTouchup')
     }
   ];

@@ -262,9 +262,13 @@
           </section>
           <section class="options-section">
             <h3>2D Layout</h3>
-            <label class="option-row option-toggle" for="options-2d-atom-coloring" title="Color atoms by element type (CPK colors). Uncheck for black and white rendering.">
-              <span>Atom Coloring</span>
-              <input id="options-2d-atom-coloring" type="checkbox" checked />
+            <label class="option-row" for="options-2d-color-style" title="Color style for 2D structure rendering.">
+              <span>Style</span>
+              <select id="options-2d-color-style">
+                <option value="bw">Black &amp; White</option>
+                <option value="color-atoms" selected>Color Atoms</option>
+                <option value="color-atoms-bonds">Color Atoms &amp; Bonds</option>
+              </select>
             </label>
             <label class="option-row" for="options-2d-atom-font-size">
               <span>Atom Font Size</span>

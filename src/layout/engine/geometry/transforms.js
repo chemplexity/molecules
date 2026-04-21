@@ -129,6 +129,15 @@ function chooseAnchorPair(fixedAtomIds, fixedCoords) {
  * @param {Map<string, {x: number, y: number}>} fixedCoords - Fixed-coordinate map.
  * @returns {{coords: Map<string, {x: number, y: number}>, anchored: boolean}} Aligned coordinates and anchor flag.
  */
+/**
+ * Returns a deep-copy coordinate map with each position object cloned.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {Map<string, {x: number, y: number}>} Cloned coordinate map.
+ */
+export function cloneCoords(coords) {
+  return new Map([...coords].map(([k, v]) => [k, { x: v.x, y: v.y }]));
+}
+
 export function alignCoordsToFixed(coords, atomIds, fixedCoords) {
   const fixedAtomIds = atomIds.filter(atomId => fixedCoords.has(atomId) && coords.has(atomId));
   if (fixedAtomIds.length === 0) {
