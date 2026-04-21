@@ -151,7 +151,6 @@ function expandFocusAtomIds(layoutGraph, atomIds, depth = 1) {
 
   return expandedAtomIds;
 }
-
 function readabilityTupleImproves(candidate, baseline) {
   const candidateFailures = candidate?.failingSubstituentCount ?? 0;
   const baselineFailures = baseline?.failingSubstituentCount ?? 0;
@@ -366,12 +365,12 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
 
   for (let pass = 0; pass < maxPasses; pass++) {
     const descriptors = collectMovableAttachedRingDescriptors(layoutGraph, currentCoords, frozenAtomIds);
+    const baseAtomGrid = buildAtomGrid(layoutGraph, currentCoords, bondLength);
     if (descriptors.length === 0) {
       break;
     }
 
     const { terminalSubtrees, siblingSwaps, geminalPairs } = computeRotatableSubtrees(layoutGraph, currentCoords);
-    const baseAtomGrid = buildAtomGrid(layoutGraph, currentCoords, bondLength);
     const baseOverlapCount = findSevereOverlaps(layoutGraph, currentCoords, bondLength, { atomGrid: baseAtomGrid }).length;
     const baseGlobalReadability = measureRingSubstituentReadability(layoutGraph, currentCoords);
     let bestCandidate = null;

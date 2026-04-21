@@ -228,36 +228,61 @@ function outwardAnglesForAnchorWithOverrides(layoutGraph, coords, anchorAtomId, 
   return angles;
 }
 
-function countMovedBondCrossings(layoutGraph, coords, subtreeAtomIds, overridePositions, covalentBonds = null) {
-  const movedAtomIds = new Set(subtreeAtomIds);
-  const bonds = covalentBonds ?? [...layoutGraph.bonds.values()].filter(bond => bond.kind === 'covalent');
+function countMovedBondCrossings(layoutGraph, coords, subtreeAtomIds, overridePositions, bondIntersectionContext = null) {
   let crossingCount = 0;
 
-  for (let firstIndex = 0; firstIndex < bonds.length; firstIndex++) {
-    const firstBond = bonds[firstIndex];
-    const firstMoved = movedAtomIds.has(firstBond.a) || movedAtomIds.has(firstBond.b);
-    if (!firstMoved) {
-      continue;
+  if (!bondIntersectionContext) {
+    const movedAtomIds = new Set(subtreeAtomIds);
+    const bonds = [...layoutGraph.bonds.values()].filter(bond => bond.kind === 'covalent');
+    for (let firstIndex = 0; firstIndex < bonds.length; firstIndex++) {
+      const firstBond = bonds[firstIndex];
+      const firstMoved = movedAtomIds.has(firstBond.a) || movedAtomIds.has(firstBond.b);
+      if (!firstMoved) {
+        continue;
+      }
+      const firstStart = positionForAtom(coords, overridePositions, firstBond.a);
+      const firstEnd = positionForAtom(coords, overridePositions, firstBond.b);
+      if (!firstStart || !firstEnd) {
+        continue;
+      }
+      for (let secondIndex = firstIndex + 1; secondIndex < bonds.length; secondIndex++) {
+        const secondBond = bonds[secondIndex];
+        if (firstBond.a === secondBond.a || firstBond.a === secondBond.b || firstBond.b === secondBond.a || firstBond.b === secondBond.b) {
+          continue;
+        }
+        const secondStart = positionForAtom(coords, overridePositions, secondBond.a);
+        const secondEnd = positionForAtom(coords, overridePositions, secondBond.b);
+        if (!secondStart || !secondEnd) {
+          continue;
+        }
+        if (segmentsProperlyIntersect(firstStart, firstEnd, secondStart, secondEnd)) {
+          crossingCount++;
+        }
+      }
     }
+    return crossingCount;
+  }
+
+  const { movingBonds, staticSegments } = bondIntersectionContext;
+  for (let firstIndex = 0; firstIndex < movingBonds.length; firstIndex++) {
+    const firstBond = movingBonds[firstIndex];
     const firstStart = positionForAtom(coords, overridePositions, firstBond.a);
     const firstEnd = positionForAtom(coords, overridePositions, firstBond.b);
-    if (!firstStart || !firstEnd) {
-      continue;
-    }
+    if (!firstStart || !firstEnd) continue;
 
-    for (let secondIndex = firstIndex + 1; secondIndex < bonds.length; secondIndex++) {
-      const secondBond = bonds[secondIndex];
-      if (firstBond.a === secondBond.a || firstBond.a === secondBond.b || firstBond.b === secondBond.a || firstBond.b === secondBond.b) {
-        continue;
-      }
+    for (let secondIndex = firstIndex + 1; secondIndex < movingBonds.length; secondIndex++) {
+      const secondBond = movingBonds[secondIndex];
+      if (firstBond.a === secondBond.a || firstBond.a === secondBond.b || firstBond.b === secondBond.a || firstBond.b === secondBond.b) continue;
       const secondStart = positionForAtom(coords, overridePositions, secondBond.a);
       const secondEnd = positionForAtom(coords, overridePositions, secondBond.b);
-      if (!secondStart || !secondEnd) {
-        continue;
-      }
-      if (segmentsProperlyIntersect(firstStart, firstEnd, secondStart, secondEnd)) {
-        crossingCount++;
-      }
+      if (!secondStart || !secondEnd) continue;
+      if (segmentsProperlyIntersect(firstStart, firstEnd, secondStart, secondEnd)) crossingCount++;
+    }
+
+    for (let i = 0; i < staticSegments.length; i++) {
+      const staticSeg = staticSegments[i];
+      if (firstBond.a === staticSeg.aAtomId || firstBond.a === staticSeg.bAtomId || firstBond.b === staticSeg.aAtomId || firstBond.b === staticSeg.bAtomId) continue;
+      if (segmentsProperlyIntersect(firstStart, firstEnd, staticSeg.start, staticSeg.end)) crossingCount++;
     }
   }
 
@@ -625,7 +650,7 @@ function linkedRingBridgeAngleDeviation(anchorPosition, rootPosition, reverseAnc
  * @param {object|null} [subtreeContext] - Optional cached subtree-overlap context.
  * @returns {object|null} Exact outward candidate, or null when unavailable.
  */
-function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor, bondLength, allAtomIds, covalentBonds = null, subtreeContext = null) {
+function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor, bondLength, allAtomIds, bondIntersectionContext = null, subtreeContext = null) {
   if (
     descriptor.isRingSystemSubstituent
     || !descriptor.prefersIdealOutwardGeometry
@@ -652,7 +677,7 @@ function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor,
     [descriptor.rootAtomId, add(anchorPosition, fromAngle(targetAngle, bondDistance))]
   ]);
   return {
-    ...buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, covalentBonds, subtreeContext),
+    ...buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, bondIntersectionContext, subtreeContext),
     angleDelta: angularDifference(angleOf(sub(rootPosition, anchorPosition)), targetAngle),
     overridePositions,
     rootAnchored: false
@@ -674,7 +699,7 @@ function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor,
  * @param {object|null} [subtreeContext] - Optional cached subtree-overlap context.
  * @returns {object|null} Best exact linked-ring candidate, or null when unavailable.
  */
-function buildExactIdealLinkedRingCandidate(layoutGraph, coords, atomGrid, descriptor, bondLength, allAtomIds, covalentBonds = null, subtreeContext = null) {
+function buildExactIdealLinkedRingCandidate(layoutGraph, coords, atomGrid, descriptor, bondLength, allAtomIds, bondIntersectionContext = null, subtreeContext = null) {
   if (
     descriptor.linkedRingAnchorAtomId == null
     || !descriptor.prefersIdealOutwardGeometry
@@ -720,7 +745,7 @@ function buildExactIdealLinkedRingCandidate(layoutGraph, coords, atomGrid, descr
         );
       }
       const candidate = {
-        ...buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, covalentBonds, subtreeContext),
+        ...buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, bondIntersectionContext, subtreeContext),
         angleDelta: angularDifference(currentForwardAngle, forwardOutwardAngle) + Math.abs(rotation),
         overridePositions,
         rootAnchored: false
@@ -798,7 +823,7 @@ function updateAtomGridForMove(layoutGraph, atomGrid, coords, movedPositions) {
   }
 }
 
-function buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, covalentBonds = null, subtreeContext = null) {
+function buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, bondIntersectionContext = null, subtreeContext = null) {
   const anchorPosition = coords.get(descriptor.anchorAtomId);
   const rootPosition = positionForAtom(coords, overridePositions, descriptor.rootAtomId);
   const reverseAnchorPosition = descriptor.isRingSystemSubstituent ? positionForAtom(coords, overridePositions, descriptor.reverseAnchorAtomId) : null;
@@ -888,7 +913,7 @@ function buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, override
     isRingSystemSubstituent: descriptor.isRingSystemSubstituent,
     linkedRingAnchorAtomId: descriptor.linkedRingAnchorAtomId,
     bridgeAngleDeviation,
-    crossingCount: countMovedBondCrossings(layoutGraph, coords, descriptor.subtreeAtomIds, overridePositions, covalentBonds),
+    crossingCount: countMovedBondCrossings(layoutGraph, coords, descriptor.subtreeAtomIds, overridePositions, bondIntersectionContext),
     overlapCost: computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, overridePositions, bondLength, { atomGrid, subtreeContext }),
     anchorDistortion: localGeometryDistortion,
     anchorClearance: descriptor.isRingSystemSubstituent
@@ -1190,8 +1215,25 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
           candidateAngles.add(currentAngle + relativeRotation);
         }
       }
+      const movedAtomIdsForCrossing = new Set(dynamicDescriptor.representativeAtomIds);
+      const movingBonds = [];
+      const staticSegments = [];
+      for (let i = 0; i < covalentBonds.length; i++) {
+        const bond = covalentBonds[i];
+        if (movedAtomIdsForCrossing.has(bond.a) || movedAtomIdsForCrossing.has(bond.b)) {
+          movingBonds.push(bond);
+        } else {
+          const start = coords.get(bond.a);
+          const end = coords.get(bond.b);
+          if (start && end) {
+            staticSegments.push({ aAtomId: bond.a, bAtomId: bond.b, start, end });
+          }
+        }
+      }
+      const bondIntersectionContext = { movingBonds, staticSegments };
+
       const baseCandidate = {
-        ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, null, bondLength, allAtomIds, covalentBonds, subtreeContext),
+        ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, null, bondLength, allAtomIds, bondIntersectionContext, subtreeContext),
         angleDelta: 0
       };
       const baseFailsReadability =
@@ -1210,7 +1252,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
       }
       let bestCandidate = null;
       let bestZeroFailureRootCandidate = null;
-      const exactIdealLeafCandidate = buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, dynamicDescriptor, bondLength, allAtomIds, covalentBonds, subtreeContext);
+      const exactIdealLeafCandidate = buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, dynamicDescriptor, bondLength, allAtomIds, bondIntersectionContext, subtreeContext);
       const exactIdealLinkedRingCandidate = buildExactIdealLinkedRingCandidate(
         layoutGraph,
         coords,
@@ -1218,7 +1260,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
         dynamicDescriptor,
         bondLength,
         allAtomIds,
-        covalentBonds,
+        bondIntersectionContext,
         subtreeContext
       );
       const shouldUseExactIdealLeafCandidate =
@@ -1247,7 +1289,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
           },
           visitCandidate(overridePositions, rotation) {
             const candidate = {
-              ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, overridePositions, bondLength, allAtomIds, covalentBonds, subtreeContext),
+              ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, overridePositions, bondLength, allAtomIds, bondIntersectionContext, subtreeContext),
               angleDelta: Math.abs(rotation),
               overridePositions,
               rootAnchored: true
@@ -1277,7 +1319,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
           },
           visitCandidate(overridePositions, candidateAngle) {
             const candidate = {
-              ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, overridePositions, bondLength, allAtomIds, covalentBonds, subtreeContext),
+              ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, overridePositions, bondLength, allAtomIds, bondIntersectionContext, subtreeContext),
               angleDelta: Math.abs(candidateAngle - currentAngle),
               overridePositions,
               rootAnchored: false

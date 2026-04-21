@@ -37,6 +37,7 @@ const DIRECT_ATTACHMENT_RING_ROTATION_OFFSETS = [0, Math.PI / 3, -Math.PI / 3, (
 const DIRECT_ATTACHMENT_MIN_JUNCTION_GAP = Math.PI / 3;
 const ATTACHED_BLOCK_OUTWARD_READABILITY_PENALTY = 120;
 const ATTACHED_BLOCK_INWARD_READABILITY_PENALTY = 360;
+const EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT = 50;
 const SHARED_JUNCTION_LOCAL_OUTWARD_SPREAD_LIMIT = Math.PI / 6;
 const SHARED_JUNCTION_STRAIGHT_CLEARANCE_LIMIT = Math.PI / 3;
 
@@ -971,6 +972,9 @@ function preferredRingLinkerExitAngle(layoutGraph, coords, ringSystem, attachmen
  * @returns {number|null} Local outward angle in radians.
  */
 function detachedRingLinkerExitAngle(layoutGraph, ringSystem, coords, attachmentAtomId) {
+  if ((layoutGraph.traits.heavyAtomCount ?? 0) > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT) {
+    return null;
+  }
   const attachmentPosition = coords.get(attachmentAtomId);
   if (!attachmentPosition) {
     return null;
@@ -1308,6 +1312,9 @@ function measureDirectAttachmentExactContinuationPenalty(layoutGraph, coords, ca
 function measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, coords, candidateMeta = null) {
   const parentAtomId = candidateMeta?.parentAtomId ?? null;
   const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
+  if ((layoutGraph.traits.heavyAtomCount ?? 0) > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT) {
+    return 0;
+  }
   if (!parentAtomId || !attachmentAtomId || !coords.has(parentAtomId) || !coords.has(attachmentAtomId)) {
     return 0;
   }
@@ -1381,6 +1388,9 @@ function measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, coords, can
 }
 
 function isDirectAttachmentTrigonalBisectorSensitive(layoutGraph, coords, parentAtomId, attachmentAtomId) {
+  if ((layoutGraph.traits.heavyAtomCount ?? 0) > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT) {
+    return false;
+  }
   if (!parentAtomId || !attachmentAtomId || !coords.has(parentAtomId)) {
     return false;
   }
@@ -1537,7 +1547,8 @@ function scoreAttachedBlockOrientation(
     (sum, atomId) => sum + (candidateCoords.has(atomId) ? measureSmallRingExteriorGapSpreadPenalty(layoutGraph, candidateCoords, atomId) : 0),
     0
   );
-  const shouldScoreIdealLeafPresentation = changedAtomIds.length <= 12 && (layoutGraph.traits.heavyAtomCount ?? 0) <= 60;
+  const shouldScoreIdealLeafPresentation =
+    changedAtomIds.length <= 12 && (layoutGraph.traits.heavyAtomCount ?? 0) <= EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT;
   const idealLeafPresentationPenalty = shouldScoreIdealLeafPresentation
     ? measureRingSubstituentPresentationPenalty(layoutGraph, candidateCoords, {
         focusAtomIds: scoringFocusAtomIds
@@ -2154,7 +2165,8 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
       const turnSigns = linker.chainAtomIds.length === 0 ? [1] : [-1, 1];
       let bestCandidateCoords = null;
       const rawCandidates = [];
-      const allowExpandedRingLinkerRotations = (layoutGraph.traits.heavyAtomCount ?? 0) <= 60 && pendingRingSystem.ringSystem.atomIds.length <= 18;
+      const allowExpandedRingLinkerRotations =
+        (layoutGraph.traits.heavyAtomCount ?? 0) <= EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT && pendingRingSystem.ringSystem.atomIds.length <= 18;
       for (const turnSign of turnSigns) {
         for (const mirror of [false, true]) {
           rawCandidates.push({
@@ -2322,15 +2334,19 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
         layoutGraph,
         macrocycleBranchConstraints
       );
-      const allowExpandedDirectAttachmentRotations = (layoutGraph.traits.heavyAtomCount ?? 0) <= 60 && pendingRingSystem.ringSystem.atomIds.length <= 18;
+      const allowExpandedDirectAttachmentRotations =
+        (layoutGraph.traits.heavyAtomCount ?? 0) <= EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT && pendingRingSystem.ringSystem.atomIds.length <= 18;
       const smallRingExteriorDirectAttachmentDescriptor = describeDirectAttachmentExteriorContinuationAnchor(layoutGraph, attachment.parentAtomId);
       const exactSmallRingExteriorDirectAttachment = smallRingExteriorDirectAttachmentDescriptor?.exocyclicNeighborIds.includes(attachment.attachmentAtomId) ?? false;
       const exactLeafSensitiveDirectAttachment = ringSystemHasExactLeafSensitiveTrigonalCenter(layoutGraph, pendingRingSystem.ringSystem);
       const lockDirectAttachmentAngle = isDirectAttachmentTrigonalBisectorSensitive(layoutGraph, coords, attachment.parentAtomId, attachment.attachmentAtomId);
       const idealLeafExpansionThreshold = exactLeafSensitiveDirectAttachment ? 0.2 : 0.5;
+      const shouldExpandForSensitiveOverlap =
+        (bestAttachedBlockCandidate?.score.overlapCount ?? 0) > 0 &&
+        (exactLeafSensitiveDirectAttachment || lockDirectAttachmentAngle || exactSmallRingExteriorDirectAttachment);
       if (
         allowExpandedDirectAttachmentRotations &&
-        ((bestAttachedBlockCandidate?.score.overlapCount ?? 0) > 0 ||
+        (shouldExpandForSensitiveOverlap ||
           (bestAttachedBlockCandidate?.score.readability.failingSubstituentCount ?? 0) > 0 ||
           (bestAttachedBlockCandidate?.score.fusedJunctionContinuationPenalty ?? 0) > IMPROVEMENT_EPSILON ||
           (bestAttachedBlockCandidate?.score.parentOutwardPenalty ?? 0) > IMPROVEMENT_EPSILON ||

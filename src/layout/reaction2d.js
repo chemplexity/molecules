@@ -1,7 +1,7 @@
 import { Molecule } from '../core/Molecule.js';
 import { applySMIRKS } from '../smirks/index.js';
 import { generateAndRefine2dCoords } from './index.js';
-import { levelCoords, normalizeOrientation, shouldPreferFinalLandscapeOrientation } from './engine/orientation.js';
+import { ensureLandscapeOrientation, findPreferredBackbonePath, shouldPreferFinalLandscapeOrientation } from './engine/orientation.js';
 import { applyDisplayedStereoToCenter, pickStereoWedges } from './mol2d-helpers.js';
 
 // ---------------------------------------------------------------------------
@@ -1790,14 +1790,18 @@ function finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bon
 
     let best = null;
     for (const layout of layouts) {
-      let score = 0;
       const placed = [];
       for (const { info, angle } of layout) {
         const x = center.x + Math.cos(angle) * info.targetLength;
         const y = center.y + Math.sin(angle) * info.targetLength;
         placed.push({ info, x, y });
-        score += (x - info.atom.x) ** 2 + (y - info.atom.y) ** 2;
       }
+      const score = reaction2dCandidateLayoutScore(
+        mol,
+        componentAtomIds,
+        placed.map(({ info, x, y }) => ({ atom: info.atom, x, y })),
+        bondLength
+      );
       if (!best || score < best.score) {
         best = { score, placed };
       }
@@ -1841,7 +1845,7 @@ function finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLeng
         targetLength: scaledReaction2dBondLength(bond?.properties.order ?? 1, bondLength)
       };
     });
-    if (!infos.some(info => info.order >= 2)) {
+    if (!infos.some(info => info.order >= 2 && info.atom.name === 'O')) {
       continue;
     }
 
@@ -1857,9 +1861,16 @@ function finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLeng
         [baseAngle + (2 * Math.PI) / 3, baseAngle - (2 * Math.PI) / 3],
         [baseAngle - (2 * Math.PI) / 3, baseAngle + (2 * Math.PI) / 3]
       ];
-      let best = null;
+      let best = {
+        score: reaction2dCandidateLayoutScore(
+          mol,
+          componentAtomIds,
+          moving.map(info => ({ atom: info.atom, x: info.atom.x, y: info.atom.y })),
+          bondLength
+        ),
+        placed: moving.map(info => ({ info, x: info.atom.x, y: info.atom.y }))
+      };
       for (const angles of candidateLayouts) {
-        let score = 0;
         const placed = [];
         for (let i = 0; i < moving.length; i++) {
           const info = moving[i];
@@ -1867,9 +1878,14 @@ function finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLeng
           const x = center.x + Math.cos(angle) * info.targetLength;
           const y = center.y + Math.sin(angle) * info.targetLength;
           placed.push({ info, x, y });
-          score += (x - info.atom.x) ** 2 + (y - info.atom.y) ** 2;
         }
-        if (!best || score < best.score) {
+        const score = reaction2dCandidateLayoutScore(
+          mol,
+          componentAtomIds,
+          placed.map(({ info, x, y }) => ({ atom: info.atom, x, y })),
+          bondLength
+        );
+        if (score < best.score) {
           best = { score, placed };
         }
       }
@@ -1898,8 +1914,26 @@ function finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLeng
       }
       const vlen = Math.hypot(vx, vy);
       if (vlen >= 1e-6) {
-        moving[0].atom.x = center.x + (vx / vlen) * moving[0].targetLength;
-        moving[0].atom.y = center.y + (vy / vlen) * moving[0].targetLength;
+        const candidate = {
+          x: center.x + (vx / vlen) * moving[0].targetLength,
+          y: center.y + (vy / vlen) * moving[0].targetLength
+        };
+        const currentScore = reaction2dCandidateLayoutScore(
+          mol,
+          componentAtomIds,
+          [{ atom: moving[0].atom, x: moving[0].atom.x, y: moving[0].atom.y }],
+          bondLength
+        );
+        const candidateScore = reaction2dCandidateLayoutScore(
+          mol,
+          componentAtomIds,
+          [{ atom: moving[0].atom, x: candidate.x, y: candidate.y }],
+          bondLength
+        );
+        if (candidateScore <= currentScore) {
+          moving[0].atom.x = candidate.x;
+          moving[0].atom.y = candidate.y;
+        }
       }
     }
   }
@@ -1991,6 +2025,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
 
   for (const componentAtomIds of previewState.productComponentAtomIdSets ?? []) {
     relayoutReaction2dComponentInIsolation(mol, componentAtomIds, bondLength);
+    const isolatedSnapshot = snapshotReaction2dCoords(mol, componentAtomIds);
     const pairs = previewState.mappedAtomPairs
       .filter(([, productId]) => componentAtomIds.has(productId))
       .map(([reactantId, productId]) => [mol.atoms.get(reactantId), mol.atoms.get(productId)])
@@ -2168,9 +2203,9 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     }
     if (!mappedRingMembershipChanged) {
       restoreMappedReaction2dRingScaffoldCoords(mol, componentAtomIds);
-      finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
-      finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
     }
+    finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
+    finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
     preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds);
 
     // Ring-opening reactions (e.g. ether cleavage) produce an acyclic chain
@@ -2195,16 +2230,27 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
           checkMol.addBond(bond.id, aId, bId, {}, false);
         }
       }
-      if (shouldPreferFinalLandscapeOrientation(checkMol)) {
-        const componentCoords = new Map();
-        for (const atomId of componentAtomIds) {
-          const atom = mol.atoms.get(atomId);
-          if (atom?.x != null) {
-            componentCoords.set(atomId, { x: atom.x, y: atom.y });
-          }
+      const preferredBackbone = findPreferredBackbonePath(checkMol);
+      const shouldForceRingOpeningLandscape =
+        shouldPreferFinalLandscapeOrientation(checkMol)
+        || (checkMol.getRings().length === 0 && (preferredBackbone?.path.length ?? 0) >= 4);
+      if (shouldForceRingOpeningLandscape) {
+        const useIsolatedRingOpeningLayout = checkMol.getRings().length === 0 && (preferredBackbone?.path.length ?? 0) >= 4;
+        const componentCoords = useIsolatedRingOpeningLayout
+          ? new Map(isolatedSnapshot)
+          : (() => {
+              const coords = new Map();
+              for (const atomId of componentAtomIds) {
+                const atom = mol.atoms.get(atomId);
+                if (atom?.x != null) {
+                  coords.set(atomId, { x: atom.x, y: atom.y });
+                }
+              }
+              return coords;
+            })();
+        if (!useIsolatedRingOpeningLayout) {
+          ensureLandscapeOrientation(componentCoords, checkMol);
         }
-        normalizeOrientation(componentCoords, checkMol);
-        levelCoords(componentCoords, checkMol);
         for (const [atomId, pos] of componentCoords) {
           const atom = mol.atoms.get(atomId);
           if (atom) {

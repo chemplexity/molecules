@@ -1,8 +1,8 @@
 /** @module cleanup/label-clearance */
 
-import { CLEANUP_EPSILON, LABEL_CLEARANCE_NUDGE_FACTOR, LABEL_CLEARANCE_PADDING_FACTOR } from '../constants.js';
+import { CLEANUP_EPSILON, LABEL_CLEARANCE_NUDGE_FACTOR, LABEL_CLEARANCE_PADDING_FACTOR, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 import { collectLabelBoxes, labelBoxesOverlap } from '../geometry/label-box.js';
-import { measureLayoutState } from '../audit/invariants.js';
+import { buildAtomGrid } from '../audit/invariants.js';
 import { centroid } from '../geometry/vec2.js';
 
 /**
@@ -88,9 +88,8 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
   }
 
   const center = centroid([...coords.values()]);
-  let { overlapCount: currentSevereOverlapCount, cost: currentLayoutCost } = measureLayoutState(layoutGraph, coords, bondLength, {
-    labelMetrics
-  });
+  const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
+  const overlapDistanceThreshold = bondLength * SEVERE_OVERLAP_FACTOR;
   let nudges = 0;
 
   for (let firstIndex = 0; firstIndex < labels.length; firstIndex++) {
@@ -129,22 +128,38 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
         continue;
       }
 
-      const candidateCoords = new Map([...coords.entries()].map(([atomId, candidate]) => [atomId, { ...candidate }]));
-      candidateCoords.set(secondLabel.atomId, candidatePosition);
-      const candidateState = measureLayoutState(layoutGraph, candidateCoords, bondLength, { labelMetrics });
-      if (candidateState.overlapCount > currentSevereOverlapCount) {
-        continue;
+      const localOverlaps = atomGrid.queryRadius(candidatePosition, overlapDistanceThreshold);
+      let introducedSevereOverlap = false;
+      for (const otherAtomId of localOverlaps) {
+        if (otherAtomId === secondLabel.atomId) continue;
+        const otherAtom = layoutGraph.atoms.get(otherAtomId);
+        if (!otherAtom || (layoutGraph.options.suppressH && otherAtom.element === 'H')) {
+          continue;
+        }
+        const pairId = secondLabel.atomId < otherAtomId ? `${secondLabel.atomId}:${otherAtomId}` : `${otherAtomId}:${secondLabel.atomId}`;
+        if (layoutGraph.bondedPairSet.has(pairId)) {
+          continue;
+        }
+        const otherPosition = coords.get(otherAtomId);
+        if (!otherPosition) continue;
+        const dist = Math.hypot(otherPosition.x - candidatePosition.x, otherPosition.y - candidatePosition.y);
+        if (dist < overlapDistanceThreshold) {
+          introducedSevereOverlap = true;
+          break;
+        }
       }
-      if (candidateState.cost > currentLayoutCost + CLEANUP_EPSILON) {
+
+      if (introducedSevereOverlap) {
         continue;
       }
 
+      atomGrid.remove(secondLabel.atomId, position);
       position.x = candidatePosition.x;
       position.y = candidatePosition.y;
+      atomGrid.insert(secondLabel.atomId, position);
+      
       secondLabel.x = candidatePosition.x;
       secondLabel.y = candidatePosition.y;
-      currentSevereOverlapCount = candidateState.overlapCount;
-      currentLayoutCost = candidateState.cost;
       nudges++;
     }
   }

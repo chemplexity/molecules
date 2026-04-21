@@ -225,9 +225,10 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
   let passes = 0;
   let totalImprovement = 0;
   let overlapMoves = 0;
+  let baseLayoutState = null;
 
   while (passes < maxPasses) {
-    const baseOverlapState = measureOverlapState(layoutGraph, coords, bondLength, {
+    const baseOverlapState = baseLayoutState ?? measureOverlapState(layoutGraph, coords, bondLength, {
       atomGrid
     });
     const baseOverlapCount = baseOverlapState.overlapCount;
@@ -246,7 +247,8 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
         rigidSubtreesByAtomId,
         visibleAtomCount,
         protectLargeMoleculeBackbone: protectLargeMoleculeBackbone(options),
-        frozenAtomIds
+        frozenAtomIds,
+        baseAtomGrid: atomGrid
       });
       if (overlapCandidate.moves > 0) {
         const prescoredOverlapCandidate = {
@@ -294,7 +296,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
       break;
     }
 
-    const baseState = measureLayoutState(layoutGraph, coords, bondLength, {
+    const baseState = baseLayoutState ?? measureLayoutState(layoutGraph, coords, bondLength, {
       overlaps: baseOverlapState.overlaps
     });
     const bestCandidate = {
@@ -314,6 +316,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
     passes++;
     overlapMoves += bestCandidate.overlapMoves;
     totalImprovement += Math.max(bestCandidate.improvement, 0);
+    baseLayoutState = bestCandidate.candidateState;
   }
 
   return {
