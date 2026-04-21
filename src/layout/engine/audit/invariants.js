@@ -1187,29 +1187,61 @@ export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, o
   const subtreeSet = subtreeContext.subtreeSet;
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
   let cost = 0;
+
+  let minX = Number.POSITIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const subtreeAtomId of subtreeContext.visibleSubtreeAtomIds) {
+    const pos = overridePositions?.get(subtreeAtomId) ?? coords.get(subtreeAtomId);
+    if (!pos) {
+      continue;
+    }
+    if (pos.x < minX) minX = pos.x;
+    if (pos.y < minY) minY = pos.y;
+    if (pos.x > maxX) maxX = pos.x;
+    if (pos.y > maxY) maxY = pos.y;
+  }
+
+  if (minX === Number.POSITIVE_INFINITY) {
+    return 0;
+  }
+
+  const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength);
+
   if (includeAtomOverlaps) {
-    const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength);
-    for (const subtreeAtomId of subtreeContext.visibleSubtreeAtomIds) {
-      const pos = overridePositions?.get(subtreeAtomId) ?? coords.get(subtreeAtomId);
-      if (!pos) {
-        continue;
+    const bboxCandidateIds = atomGrid.queryBoundingBox(minX - threshold, minY - threshold, maxX + threshold, maxY + threshold);
+    let hasExternalCandidates = false;
+    for (const candidateId of bboxCandidateIds) {
+      if (!subtreeSet.has(candidateId) && isVisibleLayoutAtom(layoutGraph, candidateId)) {
+        hasExternalCandidates = true;
+        break;
       }
-      const nearbyAtomIds = atomGrid.queryRadius(pos, threshold);
-      for (const atomId of nearbyAtomIds) {
-        if (subtreeSet.has(atomId) || !isVisibleLayoutAtom(layoutGraph, atomId)) {
+    }
+
+    if (hasExternalCandidates) {
+      for (const subtreeAtomId of subtreeContext.visibleSubtreeAtomIds) {
+        const pos = overridePositions?.get(subtreeAtomId) ?? coords.get(subtreeAtomId);
+        if (!pos) {
           continue;
         }
-        if (layoutGraph.bondedPairSet.has(pairKey(subtreeAtomId, atomId))) {
-          continue;
-        }
-        const otherPos = coords.get(atomId);
-        if (!otherPos) {
-          continue;
-        }
-        const d = Math.hypot(otherPos.x - pos.x, otherPos.y - pos.y);
-        if (d < threshold) {
-          const deficit = threshold - d;
-          cost += deficit * deficit * 100;
+        const nearbyAtomIds = atomGrid.queryRadius(pos, threshold);
+        for (const atomId of nearbyAtomIds) {
+          if (subtreeSet.has(atomId) || !isVisibleLayoutAtom(layoutGraph, atomId)) {
+            continue;
+          }
+          if (layoutGraph.bondedPairSet.has(pairKey(subtreeAtomId, atomId))) {
+            continue;
+          }
+          const otherPos = coords.get(atomId);
+          if (!otherPos) {
+            continue;
+          }
+          const d = Math.hypot(otherPos.x - pos.x, otherPos.y - pos.y);
+          if (d < threshold) {
+            const deficit = threshold - d;
+            cost += deficit * deficit * 100;
+          }
         }
       }
     }

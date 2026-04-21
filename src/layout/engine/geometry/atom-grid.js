@@ -106,6 +106,38 @@ export class AtomGrid {
   }
 
   /**
+   * Returns atom IDs within the queried bounding box as a Set.
+   * @param {number} minX - Minimum X coordinate.
+   * @param {number} minY - Minimum Y coordinate.
+   * @param {number} maxX - Maximum X coordinate.
+   * @param {number} maxY - Maximum Y coordinate.
+   * @returns {Set<string>} Candidate atom IDs within the bounding box cells.
+   */
+  queryBoundingBox(minX, minY, maxX, maxY) {
+    const minXIndex = Math.floor(minX / this.cellSize);
+    const minYIndex = Math.floor(minY / this.cellSize);
+    const maxXIndex = Math.floor(maxX / this.cellSize);
+    const maxYIndex = Math.floor(maxY / this.cellSize);
+    const atomIds = new Set();
+    for (let xIndex = minXIndex; xIndex <= maxXIndex; xIndex++) {
+      const col = this.cells.get(xIndex);
+      if (!col) {
+        continue;
+      }
+      for (let yIndex = minYIndex; yIndex <= maxYIndex; yIndex++) {
+        const cell = col.get(yIndex);
+        if (!cell) {
+          continue;
+        }
+        for (const atomId of cell) {
+          atomIds.add(atomId);
+        }
+      }
+    }
+    return atomIds;
+  }
+
+  /**
    * Returns a deep copy of the grid.
    * @returns {AtomGrid} Cloned grid.
    */
