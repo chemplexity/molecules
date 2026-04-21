@@ -13,7 +13,7 @@ export function traversePath(atomIds, startAtomId, endAtomId, step) {
   const count = atomIds.length;
   let index = atomIds.indexOf(startAtomId);
   const result = [startAtomId];
-  while (atomIds[index] !== endAtomId) {
+  while (atomIds[index] !== endAtomId && result.length <= count) {
     index = (index + step + count) % count;
     result.push(atomIds[index]);
   }

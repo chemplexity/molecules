@@ -861,7 +861,7 @@ export function layoutFusedFamily(rings, ringAdj, ringConnectionByPair, bondLeng
   }
 
   let orientedCoords = orientCoordsHorizontally(coords, computeFusedAxis(ringCenters));
-  if (options.layoutGraph && hasFusedAdjacencyCycle(rings, ringAdj)) {
+  if (options.layoutGraph) {
     const relaxedCoords = relaxConstructedFusedCoords(options.layoutGraph, templateAtomIds, orientedCoords, bondLength);
     const regularizedCoords = regularizeConstructedFusedCoords(rings, relaxedCoords, bondLength);
     orientedCoords = orientCoordsHorizontally(regularizedCoords, computeFusedAxis(rebuildRingCenters(rings, regularizedCoords)));

@@ -142,25 +142,27 @@ export function measureAttachedCarbonylSubtreeClearance(layoutGraph, coords, des
     return null;
   }
 
-  let minimumDistance = Infinity;
-  for (const subtreeAtomId of subtreeHeavyAtomIds) {
-    const subtreePosition = coords.get(subtreeAtomId);
-    if (!subtreePosition) {
+  let minSq = Infinity;
+  for (let i = 0; i < subtreeHeavyAtomIds.length; i++) {
+    const p1 = coords.get(subtreeHeavyAtomIds[i]);
+    if (!p1) {
       continue;
     }
-    for (const scaffoldAtomId of scaffoldHeavyAtomIds) {
-      const scaffoldPosition = coords.get(scaffoldAtomId);
-      if (!scaffoldPosition) {
+    for (let j = 0; j < scaffoldHeavyAtomIds.length; j++) {
+      const p2 = coords.get(scaffoldHeavyAtomIds[j]);
+      if (!p2) {
         continue;
       }
-      minimumDistance = Math.min(
-        minimumDistance,
-        Math.hypot(subtreePosition.x - scaffoldPosition.x, subtreePosition.y - scaffoldPosition.y)
-      );
+      const dx = p1.x - p2.x;
+      const dy = p1.y - p2.y;
+      const distSq = dx * dx + dy * dy;
+      if (distSq < minSq) {
+        minSq = distSq;
+      }
     }
   }
 
-  return Number.isFinite(minimumDistance) ? minimumDistance : null;
+  return minSq < Infinity ? Math.sqrt(minSq) : null;
 }
 
 /**
