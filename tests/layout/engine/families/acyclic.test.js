@@ -251,6 +251,16 @@ describe('layout/engine/families/acyclic', () => {
     assert.ok(Math.abs(phosphonateOxygenAngles[2] - 90) < 1e-5);
   });
 
+  it('places deferred halogens before hydrogens so visible trigonal slots stay exact', () => {
+    const graph = createLayoutGraph(parseSMILES('CC(=O)C(Cl)CC(C(C)C)C=C'), { suppressH: true });
+    const atomIdsToPlace = new Set(graph.components[0].atomIds);
+    const coords = layoutAcyclicFamily(buildAdjacency(graph, atomIdsToPlace), atomIdsToPlace, graph.canonicalAtomRank, graph.options.bondLength, { layoutGraph: graph });
+
+    assert.ok(Math.abs(bondAngle(coords, 'C2', 'C4', 'Cl5') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(coords, 'Cl5', 'C4', 'C6') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(coords, 'C2', 'C4', 'C6') - 120) < 1e-6);
+  });
+
   it('enforces configured E/Z stereo for final acyclic pipeline output', () => {
     const cases = [
       { smiles: 'F/C=C/F', expectedStereo: 'E' },

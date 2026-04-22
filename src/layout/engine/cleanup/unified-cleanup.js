@@ -236,28 +236,40 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
 
     if (baseOverlapCount > 0) {
       pendantRigidSubtreesByAtomId ??= collectRigidPendantRingSubtrees(layoutGraph);
-      const rigidSubtreesByAtomId =
+      const rigidSubtreeDescriptorMaps = [pendantRigidSubtreesByAtomId];
+      if (
         protectLargeMoleculeBackbone(options)
         && baseOverlapCount >= UNIFIED_CLEANUP_LIMITS.largeMoleculeBlockAwareOverlapFloor
-          ? mergeRigidSubtreesByAtomId(pendantRigidSubtreesByAtomId, options.cleanupRigidSubtreesByAtomId)
-          : pendantRigidSubtreesByAtomId;
-      const overlapCandidate = resolveOverlaps(layoutGraph, coords, {
-        bondLength,
-        maxPasses: 1,
-        rigidSubtreesByAtomId,
-        visibleAtomCount,
-        protectLargeMoleculeBackbone: protectLargeMoleculeBackbone(options),
-        frozenAtomIds,
-        baseAtomGrid: atomGrid
-      });
-      if (overlapCandidate.moves > 0) {
+        && options.cleanupRigidSubtreesByAtomId instanceof Map
+        && options.cleanupRigidSubtreesByAtomId.size > 0
+      ) {
+        rigidSubtreeDescriptorMaps.push(
+          mergeRigidSubtreesByAtomId(pendantRigidSubtreesByAtomId, options.cleanupRigidSubtreesByAtomId)
+        );
+      }
+
+      for (const rigidSubtreesByAtomId of rigidSubtreeDescriptorMaps) {
+        const overlapCandidate = resolveOverlaps(layoutGraph, coords, {
+          bondLength,
+          maxPasses: 1,
+          rigidSubtreesByAtomId,
+          visibleAtomCount,
+          protectLargeMoleculeBackbone: protectLargeMoleculeBackbone(options),
+          frozenAtomIds,
+          baseAtomGrid: atomGrid
+        });
+        if (overlapCandidate.moves <= 0) {
+          continue;
+        }
         const prescoredOverlapCandidate = {
           ...prescoreCandidate(layoutGraph, baseOverlapState, overlapCandidate.coords, bondLength, {
             presentationImprovement: 0
           }),
           overlapMoves: overlapCandidate.moves
         };
-        bestPrescoredCandidate = prescoredOverlapCandidate;
+        if (isBetterCandidate(bestPrescoredCandidate, prescoredOverlapCandidate, epsilon, options)) {
+          bestPrescoredCandidate = prescoredOverlapCandidate;
+        }
       }
     }
 

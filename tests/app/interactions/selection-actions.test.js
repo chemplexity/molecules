@@ -231,6 +231,84 @@ describe('createSelectionActions', () => {
     assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'draw2d']);
   });
 
+  it('handleDrawBondButtonClick returns to pan mode when draw bond mode is already active', () => {
+    let drawBondMode = true;
+    const calls = [];
+    const buttons = {
+      pan: makeButton(),
+      select: makeButton(),
+      draw: makeButton(),
+      erase: makeButton()
+    };
+    buttons.draw.classList.add('active');
+
+    const actions = createSelectionActions({
+      state: {
+        viewState: {
+          getMode: () => '2d'
+        },
+        documentState: {
+          getMol2d: () => ({ id: 'mol' })
+        },
+        overlayState: {
+          getSelectMode: () => false,
+          setSelectMode() {},
+          getDrawBondMode: () => drawBondMode,
+          setDrawBondMode: value => {
+            drawBondMode = value;
+          },
+          getEraseMode: () => false,
+          setEraseMode() {},
+          getChargeTool: () => null,
+          setChargeTool() {},
+          getDrawBondElement: () => 'C',
+          setDrawBondElement() {},
+          getDrawBondType: () => 'single',
+          setDrawBondType() {},
+          getSelectedAtomIds: () => new Set(),
+          getSelectedBondIds: () => new Set(),
+          setErasePainting() {}
+        }
+      },
+      renderers: {
+        draw2d() {
+          calls.push('draw2d');
+        },
+        applyForceSelection() {}
+      },
+      view: {
+        clearPrimitiveHover() {
+          calls.push('clearPrimitiveHover');
+        }
+      },
+      drawBond: {
+        cancelDrawBond() {
+          calls.push('cancelDrawBond');
+        }
+      },
+      actions: {
+        deleteSelection() {}
+      },
+      dom: {
+        panButton: buttons.pan,
+        selectButton: buttons.select,
+        drawBondButton: buttons.draw,
+        drawTools: makeButton(),
+        eraseButton: buttons.erase,
+        getChargeToolButton: () => null,
+        getElementButton: () => null,
+        getBondDrawTypeButton: () => null
+      }
+    });
+
+    actions.handleDrawBondButtonClick();
+
+    assert.equal(drawBondMode, false);
+    assert.equal(buttons.pan.classList.contains('active'), true);
+    assert.equal(buttons.draw.classList.contains('active'), false);
+    assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'draw2d']);
+  });
+
   it('setDrawElement activates draw-bond mode when needed', () => {
     let drawBondMode = false;
     let chargeTool = null;
@@ -482,7 +560,7 @@ describe('createSelectionActions', () => {
     assert.deepEqual(calls, ['cancelDrawBond', 'clearPrimitiveHover', 'draw2d']);
   });
 
-  it('closes a click-opened bond drawer on outside pointer interaction', () => {
+  it('closes an opened bond drawer on outside pointer interaction', () => {
     let pointerDownHandler = null;
     const drawTools = makeButton();
     const actions = createSelectionActions({
@@ -553,7 +631,7 @@ describe('createSelectionActions', () => {
     assert.equal(drawTools.classList.contains('drawer-open'), false);
   });
 
-  it('keeps a click-opened bond drawer open while the pointer interaction stays inside draw tools', () => {
+  it('keeps an opened bond drawer open while the pointer interaction stays inside draw tools', () => {
     let pointerDownHandler = null;
     const drawTools = makeButton();
     const actions = createSelectionActions({

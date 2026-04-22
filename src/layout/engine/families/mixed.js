@@ -1,19 +1,28 @@
 /** @module families/mixed */
 
-import { angleOf, angularDifference, centroid, fromAngle, sub, add, rotate } from '../geometry/vec2.js';
+import { angleOf, angularDifference, centroid, fromAngle, sub, add, rotate, wrapAngle } from '../geometry/vec2.js';
 import { computeBounds } from '../geometry/bounds.js';
-import { alignCoordsToFixed } from '../geometry/transforms.js';
+import { alignCoordsToFixed, reflectAcrossLine } from '../geometry/transforms.js';
+import { nonSharedPath } from '../geometry/ring-path.js';
 import { transformAttachedBlock } from '../placement/linkers.js';
 import { auditLayout } from '../audit/audit.js';
 import { measureRingSubstituentPresentationPenalty } from '../cleanup/presentation/ring-substituent.js';
 import {
   directAttachedForeignRingJunctionContinuationAngle,
+  findLayoutBond,
+  isExactSmallRingExteriorContinuationEligible,
   isExactRingTrigonalBisectorEligible,
   isExactSimpleAcyclicContinuationEligible
 } from '../placement/branch-placement/angle-selection.js';
 import { assignBondValidationClass, resolvePlacementValidationClass } from '../placement/bond-validation.js';
 import { chooseAttachmentAngle, measureSmallRingExteriorGapSpreadPenalty, placeRemainingBranches, smallRingExteriorTargetAngles } from '../placement/branch-placement.js';
-import { findSevereOverlaps, measureFocusedPlacementCost, measureLayoutCost, measureRingSubstituentReadability } from '../audit/invariants.js';
+import {
+  findSevereOverlaps,
+  measureFocusedPlacementCost,
+  measureLayoutCost,
+  measureRingSubstituentReadability,
+  measureThreeHeavyContinuationDistortion
+} from '../audit/invariants.js';
 import { layoutAcyclicFamily } from './acyclic.js';
 import { layoutBridgedFamily } from './bridged.js';
 import {
@@ -30,10 +39,13 @@ import { classifyRingSystemFamily } from '../model/scaffold-plan.js';
 import { IMPROVEMENT_EPSILON, RING_SYSTEM_RESCUE_LIMITS } from '../constants.js';
 
 const LINKER_ZIGZAG_TURN_ANGLE = Math.PI / 3;
+const EXACT_TRIGONAL_CONTINUATION_ANGLE = (2 * Math.PI) / 3;
 const MAX_RING_LINKER_ATOMS = 3;
 const LINKED_RING_ROTATION_OFFSETS = [Math.PI / 3, -Math.PI / 3, (2 * Math.PI) / 3, -(2 * Math.PI) / 3, Math.PI];
 const DIRECT_ATTACHMENT_ROTATION_OFFSETS = [0, Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3];
 const DIRECT_ATTACHMENT_RING_ROTATION_OFFSETS = [0, Math.PI / 3, -Math.PI / 3, (2 * Math.PI) / 3, -(2 * Math.PI) / 3, Math.PI];
+const DIRECT_ATTACHMENT_FINE_ANGLE_OFFSETS = [Math.PI / 12, -(Math.PI / 12)];
+const DIRECT_ATTACHMENT_LOCAL_REFINEMENT_RING_ROTATION_OFFSETS = [0, Math.PI / 12, -(Math.PI / 12), Math.PI / 6, -(Math.PI / 6)];
 const DIRECT_ATTACHMENT_MIN_JUNCTION_GAP = Math.PI / 3;
 const ATTACHED_BLOCK_OUTWARD_READABILITY_PENALTY = 120;
 const ATTACHED_BLOCK_INWARD_READABILITY_PENALTY = 360;
@@ -88,6 +100,69 @@ function incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId) {
     }
     return [angleOf(sub(anchorPosition, centroid(placedRingPositions)))];
   });
+}
+
+function largestAngularGapBisector(occupiedAngles) {
+  const sortedAngles = [...occupiedAngles]
+    .map(wrapAngle)
+    .sort((firstAngle, secondAngle) => firstAngle - secondAngle)
+    .filter((angle, index, angles) => index === 0 || angularDifference(angle, angles[index - 1]) > 1e-9);
+  if (sortedAngles.length === 0) {
+    return null;
+  }
+
+  let bestBisector = null;
+  let bestGap = -Infinity;
+  for (let index = 0; index < sortedAngles.length; index++) {
+    const gapStart = sortedAngles[index];
+    let gapEnd = sortedAngles[(index + 1) % sortedAngles.length];
+    if (index + 1 === sortedAngles.length) {
+      gapEnd += Math.PI * 2;
+    }
+    const gap = gapEnd - gapStart;
+    if (gap > bestGap + 1e-9) {
+      bestGap = gap;
+      bestBisector = wrapAngle(gapStart + gap / 2);
+    }
+  }
+  return bestBisector;
+}
+
+function directAttachmentLocalOutwardAngles(layoutGraph, coords, anchorAtomId, otherAtomId = null) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return [];
+  }
+
+  const outwardAngles = [];
+  for (const ring of layoutGraph.atomToRings.get(anchorAtomId) ?? []) {
+    if (otherAtomId && ring.atomIds.includes(otherAtomId)) {
+      continue;
+    }
+
+    const ringNeighborAngles = [];
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      if (neighborAtomId === otherAtomId || !ring.atomIds.includes(neighborAtomId) || !coords.has(neighborAtomId)) {
+        continue;
+      }
+      ringNeighborAngles.push(angleOf(sub(coords.get(neighborAtomId), anchorPosition)));
+    }
+    if (ringNeighborAngles.length !== 2) {
+      continue;
+    }
+
+    const outwardAngle = largestAngularGapBisector(ringNeighborAngles);
+    if (outwardAngle == null || outwardAngles.some(existingAngle => angularDifference(existingAngle, outwardAngle) <= 1e-9)) {
+      continue;
+    }
+    outwardAngles.push(outwardAngle);
+  }
+
+  return outwardAngles;
 }
 
 function meanAngle(angles) {
@@ -438,7 +513,108 @@ function placeHybridSpiroBlock(layoutGraph, placedCoords, placedBlock, childBloc
   return bestCandidate;
 }
 
-function placeHybridBridgedBlock(layoutGraph, placedCoords, childBlock, childLayout, blockConnection, bondLength) {
+/**
+ * Returns the two terminal atoms for one contiguous shared ring boundary segment.
+ * @param {string[]} atomIds - Ordered cyclic ring atom IDs.
+ * @param {string[]} sharedAtomIds - Shared ring-boundary atom IDs.
+ * @returns {[string, string]|null} Segment endpoints or `null` when the shared boundary is not one contiguous segment.
+ */
+function sharedBoundarySegmentEndpoints(atomIds, sharedAtomIds) {
+  const sharedAtomIdSet = new Set(sharedAtomIds);
+  const sharedIndices = atomIds
+    .map((atomId, index) => (sharedAtomIdSet.has(atomId) ? index : -1))
+    .filter(index => index >= 0);
+  if (sharedIndices.length < 2) {
+    return null;
+  }
+
+  const sharedIndexSet = new Set(sharedIndices);
+  const segmentEndpoints = [];
+  for (const index of sharedIndices) {
+    const previousShared = sharedIndexSet.has((index - 1 + atomIds.length) % atomIds.length);
+    const nextShared = sharedIndexSet.has((index + 1) % atomIds.length);
+    if (previousShared === nextShared) {
+      continue;
+    }
+    segmentEndpoints.push(atomIds[index]);
+  }
+
+  return segmentEndpoints.length === 2 ? [segmentEndpoints[0], segmentEndpoints[1]] : null;
+}
+
+/**
+ * Builds an exact mirrored-path candidate for a single child ring that shares a
+ * contiguous multi-atom bridge with an already placed parent ring.
+ * Reflecting the parent ring's non-shared arc across the shared endpoints keeps
+ * all bridge atoms fixed while avoiding the collapsed regular-ring overlay that
+ * a rigid single-ring alignment can otherwise produce.
+ * @param {object} placedCoords - Already placed ring-block coordinates.
+ * @param {object} placedBlock - Block that is already fixed in the hybrid layout.
+ * @param {object} childBlock - Single-ring child block being attached.
+ * @param {{sharedAtomIds?: string[], firstRingId: number, secondRingId: number}} blockConnection - Hybrid block connection descriptor.
+ * @param {Map<number, number>} blockByRingId - Ring-to-block ownership map.
+ * @returns {Map<string, {x: number, y: number}>|null} Mirrored child-ring coordinates or `null` when the topology is not eligible.
+ */
+function buildMirroredSingleRingBridgedCandidate(placedCoords, placedBlock, childBlock, blockConnection, blockByRingId) {
+  if (childBlock.rings.length !== 1 || (blockConnection.sharedAtomIds?.length ?? 0) < 3) {
+    return null;
+  }
+
+  const parentRingId = blockByRingId.get(blockConnection.firstRingId) === placedBlock.id ? blockConnection.firstRingId : blockConnection.secondRingId;
+  const childRingId = parentRingId === blockConnection.firstRingId ? blockConnection.secondRingId : blockConnection.firstRingId;
+  const parentRing = placedBlock.rings.find(ring => ring.id === parentRingId) ?? null;
+  const childRing = childBlock.rings.find(ring => ring.id === childRingId) ?? null;
+  if (!parentRing || !childRing) {
+    return null;
+  }
+
+  const segmentEndpoints = sharedBoundarySegmentEndpoints(childRing.atomIds, blockConnection.sharedAtomIds ?? []);
+  if (!segmentEndpoints) {
+    return null;
+  }
+  const [firstSharedAtomId, secondSharedAtomId] = segmentEndpoints;
+  if (!placedCoords.has(firstSharedAtomId) || !placedCoords.has(secondSharedAtomId)) {
+    return null;
+  }
+
+  const parentPath = nonSharedPath(parentRing.atomIds, firstSharedAtomId, secondSharedAtomId);
+  const childPath = nonSharedPath(childRing.atomIds, firstSharedAtomId, secondSharedAtomId);
+  const sharedAtomIdSet = new Set(blockConnection.sharedAtomIds ?? []);
+  if (
+    parentPath.length !== childPath.length
+    || childPath.length !== 4
+    || parentPath.slice(1, -1).some(atomId => sharedAtomIdSet.has(atomId))
+    || childPath.slice(1, -1).some(atomId => sharedAtomIdSet.has(atomId))
+  ) {
+    return null;
+  }
+
+  const firstSharedPosition = placedCoords.get(firstSharedAtomId);
+  const secondSharedPosition = placedCoords.get(secondSharedAtomId);
+  const mirroredCoords = new Map();
+  for (const atomId of blockConnection.sharedAtomIds ?? []) {
+    const position = placedCoords.get(atomId);
+    if (!position) {
+      return null;
+    }
+    mirroredCoords.set(atomId, position);
+  }
+
+  for (let index = 1; index < childPath.length - 1; index++) {
+    const parentPathPosition = placedCoords.get(parentPath[index]);
+    if (!parentPathPosition) {
+      return null;
+    }
+    mirroredCoords.set(
+      childPath[index],
+      reflectAcrossLine(parentPathPosition, firstSharedPosition, secondSharedPosition)
+    );
+  }
+
+  return mirroredCoords.size === childBlock.atomIds.length ? mirroredCoords : null;
+}
+
+function placeHybridBridgedBlock(layoutGraph, placedCoords, placedBlock, childBlock, childLayout, blockConnection, blockByRingId, bondLength) {
   const sharedAtomIds = (blockConnection.sharedAtomIds ?? []).filter(atomId => placedCoords.has(atomId) && childLayout.coords.has(atomId));
   if (sharedAtomIds.length < 2) {
     return null;
@@ -446,10 +622,25 @@ function placeHybridBridgedBlock(layoutGraph, placedCoords, childBlock, childLay
 
   const fixedCoords = new Map(sharedAtomIds.map(atomId => [atomId, placedCoords.get(atomId)]));
   const aligned = alignCoordsToFixed(childLayout.coords, childBlock.atomIds, fixedCoords);
-  return {
+  let bestCandidate = {
     coords: aligned.coords,
     score: scoreHybridBlockPlacement(layoutGraph, aligned.coords, placedCoords, sharedAtomIds, bondLength)
   };
+
+  if (bestCandidate.score.severeOverlapCount > 0) {
+    const mirroredCoords = buildMirroredSingleRingBridgedCandidate(placedCoords, placedBlock, childBlock, blockConnection, blockByRingId);
+    if (mirroredCoords) {
+      const mirroredCandidate = {
+        coords: mirroredCoords,
+        score: scoreHybridBlockPlacement(layoutGraph, mirroredCoords, placedCoords, sharedAtomIds, bondLength)
+      };
+      if (isBetterHybridBlockScore(mirroredCandidate.score, bestCandidate.score)) {
+        bestCandidate = mirroredCandidate;
+      }
+    }
+  }
+
+  return bestCandidate;
 }
 
 function layoutFusedConnectedHybridRingSystem(layoutGraph, rings, ringAdj, ringConnectionByPair, bondLength) {
@@ -517,7 +708,7 @@ function layoutFusedConnectedHybridRingSystem(layoutGraph, rings, ringAdj, ringC
       if (blockConnection.kind === 'spiro') {
         placedCandidate = placeHybridSpiroBlock(layoutGraph, coords, currentBlock, neighborBlock, neighborLayout, blockConnection, blockGraph.blockByRingId, bondLength);
       } else if (blockConnection.kind === 'bridged') {
-        placedCandidate = placeHybridBridgedBlock(layoutGraph, coords, neighborBlock, neighborLayout, blockConnection, bondLength);
+        placedCandidate = placeHybridBridgedBlock(layoutGraph, coords, currentBlock, neighborBlock, neighborLayout, blockConnection, blockGraph.blockByRingId, bondLength);
       }
       if (!placedCandidate) {
         return null;
@@ -748,9 +939,42 @@ function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null
   return null;
 }
 
+/**
+ * Scores one pending-ring attachment candidate. When a rigid pending ring can
+ * dock through multiple already placed neighbors, prefer the anchor that does
+ * not consume a stricter local ring-exit geometry that branch placement could
+ * still realize later, such as exocyclic trigonal alkene roots or small-ring
+ * exterior continuations.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} attachmentAtomId - Pending ring-system atom ID.
+ * @param {string} parentAtomId - Already placed neighbor atom ID.
+ * @returns {{sensitiveAttachmentPenalty: number, parentIsRingPenalty: number, attachmentRank: number, parentRank: number}} Attachment priority tuple.
+ */
+function pendingRingAttachmentPriority(layoutGraph, attachmentAtomId, parentAtomId) {
+  const sensitiveAttachmentPenalty =
+    (isExactRingTrigonalBisectorEligible(layoutGraph, attachmentAtomId, parentAtomId) ? 1 : 0)
+    + (isExactSmallRingExteriorContinuationEligible(layoutGraph, attachmentAtomId, parentAtomId) ? 1 : 0);
+  const parentIsRingPenalty = (layoutGraph.atomToRings.get(parentAtomId)?.length ?? 0) > 0 ? 0 : 1;
+  return {
+    sensitiveAttachmentPenalty,
+    parentIsRingPenalty,
+    attachmentRank: layoutGraph.canonicalAtomRank.get(attachmentAtomId) ?? Number.MAX_SAFE_INTEGER,
+    parentRank: layoutGraph.canonicalAtomRank.get(parentAtomId) ?? Number.MAX_SAFE_INTEGER
+  };
+}
+
+/**
+ * Chooses the placed-parent bond used to dock a pending ring system onto the
+ * current mixed-family layout.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} ringSystem - Pending ring-system descriptor.
+ * @param {Set<string>} placedAtomIds - Already placed atom IDs.
+ * @returns {{attachmentAtomId: string, parentAtomId: string}|null} Selected attachment bond or `null`.
+ */
 function findAttachmentBond(layoutGraph, ringSystem, placedAtomIds) {
   const ringAtomIdSet = new Set(ringSystem.atomIds);
   const orderedAtomIds = [...ringSystem.atomIds].sort((firstAtomId, secondAtomId) => compareCanonicalIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));
+  const candidates = [];
   for (const atomId of orderedAtomIds) {
     const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
     if (!atom) {
@@ -766,13 +990,28 @@ function findAttachmentBond(layoutGraph, ringSystem, placedAtomIds) {
       if (ringAtomIdSet.has(otherAtomId) || !placedAtomIds.has(otherAtomId)) {
         continue;
       }
-      return {
+      candidates.push({
         attachmentAtomId: atomId,
         parentAtomId: otherAtomId
-      };
+      });
     }
   }
-  return null;
+  if (candidates.length === 0) {
+    return null;
+  }
+  candidates.sort((firstCandidate, secondCandidate) => {
+    const firstPriority = pendingRingAttachmentPriority(layoutGraph, firstCandidate.attachmentAtomId, firstCandidate.parentAtomId);
+    const secondPriority = pendingRingAttachmentPriority(layoutGraph, secondCandidate.attachmentAtomId, secondCandidate.parentAtomId);
+    return (
+      firstPriority.sensitiveAttachmentPenalty - secondPriority.sensitiveAttachmentPenalty
+      || firstPriority.parentIsRingPenalty - secondPriority.parentIsRingPenalty
+      || firstPriority.attachmentRank - secondPriority.attachmentRank
+      || firstPriority.parentRank - secondPriority.parentRank
+      || compareCanonicalIds(firstCandidate.attachmentAtomId, secondCandidate.attachmentAtomId, layoutGraph.canonicalAtomRank)
+      || compareCanonicalIds(firstCandidate.parentAtomId, secondCandidate.parentAtomId, layoutGraph.canonicalAtomRank)
+    );
+  });
+  return candidates[0];
 }
 
 /**
@@ -1123,6 +1362,63 @@ function exactDirectAttachmentRingRotationOffsets(layoutGraph, blockCoords, atta
   return rotationOffsets;
 }
 
+function exactDirectAttachmentParentOutwardRotationOffsets(layoutGraph, blockCoords, attachmentAtomId, detachedExitAngle) {
+  if (!blockCoords.get(attachmentAtomId) || detachedExitAngle == null) {
+    return [];
+  }
+
+  const rotationOffsets = [];
+  for (const outwardAngle of directAttachmentLocalOutwardAngles(layoutGraph, blockCoords, attachmentAtomId)) {
+    const offset = normalizeRotationOffset(Math.PI + detachedExitAngle - outwardAngle);
+    if (!rotationOffsets.some(candidateOffset => angularDifference(candidateOffset, offset) <= 1e-9)) {
+      rotationOffsets.push(offset);
+    }
+  }
+  return rotationOffsets;
+}
+
+/**
+ * Returns exact ring-rotation offsets that center a direct-attached parent bond
+ * on the strict trigonal-bisector exit defined by the attached block itself.
+ * This gives exocyclic alkene roots and similar ring trigonal centers one
+ * precise rescue pose instead of relying only on the coarse default rotation
+ * menu.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} blockCoords - Detached attached-block coordinates.
+ * @param {string} attachmentAtomId - Attached-block root atom ID.
+ * @param {string} parentAtomId - Already placed parent atom ID.
+ * @param {number} outwardAlignmentOffset - Base outward-axis alignment offset.
+ * @returns {number[]} Exact ring-rotation offsets in radians.
+ */
+function exactDirectAttachmentTrigonalBisectorRotationOffsets(layoutGraph, blockCoords, attachmentAtomId, parentAtomId, outwardAlignmentOffset) {
+  const attachmentPosition = blockCoords.get(attachmentAtomId);
+  if (!attachmentPosition) {
+    return [];
+  }
+  if (!directAttachmentTrigonalBisectorSensitivityAtAnchor(layoutGraph, blockCoords, attachmentAtomId, parentAtomId).strict) {
+    return [];
+  }
+
+  const neighborPositions = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(attachmentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === attachmentAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtomId === parentAtomId || !blockCoords.has(neighborAtomId)) {
+      continue;
+    }
+    neighborPositions.push(blockCoords.get(neighborAtomId));
+  }
+  if (neighborPositions.length !== 2) {
+    return [];
+  }
+
+  const idealParentAngle = angleOf(sub(attachmentPosition, centroid(neighborPositions)));
+  return [normalizeRotationOffset(Math.PI - outwardAlignmentOffset - idealParentAngle)];
+}
+
 function measureDirectAttachmentExteriorContinuationPenalty(layoutGraph, coords, candidateMeta = null) {
   const parentAtomId = candidateMeta?.parentAtomId ?? null;
   const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
@@ -1175,7 +1471,12 @@ function measureDirectAttachmentParentOutwardPenalty(layoutGraph, coords, candid
     }
 
     const anchorPosition = coords.get(anchorAtomId);
-    const outwardAngles = incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId);
+    const outwardAngles = [
+      ...directAttachmentLocalOutwardAngles(layoutGraph, coords, anchorAtomId, otherAtomId),
+      ...incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId)
+    ].filter((outwardAngle, index, angles) =>
+      angles.findIndex(existingAngle => angularDifference(existingAngle, outwardAngle) <= 1e-9) === index
+    );
     if (outwardAngles.length === 0) {
       return 0;
     }
@@ -1258,17 +1559,145 @@ function measureDirectAttachmentExactContinuationPenalty(layoutGraph, coords, ca
   return (angularDifference(parentAngle, attachmentAngle) - (2 * Math.PI) / 3) ** 2;
 }
 
-function isTrigonalBisectorEligibleAtAnchor(layoutGraph, coords, anchorAtomId, otherAtomId) {
+/**
+ * Returns whether a direct-attached ring candidate should prioritise the
+ * parent-side exact continuation ahead of a perfect child ring-outward exit.
+ * Benzylic and similar methylene linkers read poorly when they flatten toward
+ * 150 degrees just to keep the attached ring root exact.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate attachment metadata.
+ * @returns {boolean} True when the parent linker continuation should outrank child-root outward tie-breaks.
+ */
+function shouldPrioritizeDirectAttachmentExactContinuation(layoutGraph, candidateMeta = null) {
+  return directAttachmentContinuationParentAtomId(layoutGraph, candidateMeta) != null;
+}
+
+/**
+ * Returns the already placed heavy neighbor that defines the parent-side exact
+ * continuation for a direct-attached ring candidate, or `null` when no such
+ * continuation applies.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate attachment metadata.
+ * @returns {string|null} Continuation parent atom ID.
+ */
+function directAttachmentContinuationParentAtomId(layoutGraph, candidateMeta = null) {
+  const parentAtomId = candidateMeta?.parentAtomId ?? null;
+  const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
+  if (!parentAtomId || !attachmentAtomId) {
+    return null;
+  }
+
+  const parentAtom = layoutGraph.atoms.get(parentAtomId);
+  if (
+    !parentAtom
+    || parentAtom.element !== 'C'
+    || parentAtom.aromatic
+    || parentAtom.heavyDegree !== 2
+    || (layoutGraph.atomToRings.get(parentAtomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+
+  const placedHeavyNeighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(parentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === parentAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    placedHeavyNeighborIds.push(neighborAtomId);
+  }
+  if (placedHeavyNeighborIds.length !== 2) {
+    return null;
+  }
+
+  const continuationParentAtomId = placedHeavyNeighborIds.find(neighborAtomId => neighborAtomId !== attachmentAtomId) ?? null;
+  if (!continuationParentAtomId) {
+    return null;
+  }
+
+  return isExactSimpleAcyclicContinuationEligible(layoutGraph, parentAtomId, continuationParentAtomId, attachmentAtomId)
+    ? continuationParentAtomId
+    : null;
+}
+
+function exactDirectAttachmentContinuationAngles(layoutGraph, coords, candidateMeta = null) {
+  const parentAtomId = candidateMeta?.parentAtomId ?? null;
+  const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
+  const continuationParentAtomId = directAttachmentContinuationParentAtomId(layoutGraph, candidateMeta);
+  if (!parentAtomId || !attachmentAtomId || !continuationParentAtomId) {
+    return [];
+  }
+  if (!coords.has(parentAtomId) || !coords.has(continuationParentAtomId)) {
+    return [];
+  }
+
+  const parentAtom = layoutGraph.atoms.get(parentAtomId);
+  if (
+    !parentAtom
+    || parentAtom.element !== 'C'
+    || parentAtom.aromatic
+    || parentAtom.heavyDegree !== 2
+    || parentAtom.degree !== 3
+  ) {
+    return [];
+  }
+
+  const continuationBond = findLayoutBond(layoutGraph, parentAtomId, continuationParentAtomId);
+  const attachmentBond = findLayoutBond(layoutGraph, parentAtomId, attachmentAtomId);
+  if (
+    !continuationBond
+    || !attachmentBond
+    || continuationBond.kind !== 'covalent'
+    || attachmentBond.kind !== 'covalent'
+    || continuationBond.aromatic
+    || attachmentBond.aromatic
+  ) {
+    return [];
+  }
+
+  const continuationOrder = continuationBond.order ?? 1;
+  const attachmentOrder = attachmentBond.order ?? 1;
+  if (!(
+    (continuationOrder === 1 && attachmentOrder >= 2)
+    || (continuationOrder >= 2 && attachmentOrder === 1)
+  )) {
+    return [];
+  }
+
+  const parentPosition = coords.get(parentAtomId);
+  const continuationAngle = angleOf(sub(coords.get(continuationParentAtomId), parentPosition));
+  return [
+    continuationAngle + EXACT_TRIGONAL_CONTINUATION_ANGLE,
+    continuationAngle - EXACT_TRIGONAL_CONTINUATION_ANGLE
+  ];
+}
+
+/**
+ * Returns whether an anchor participates in a direct-attachment trigonal-bisector
+ * preference, and whether that preference is strict or may bend slightly to
+ * recover a cleaner attached-ring presentation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {string} anchorAtomId - Potential trigonal-bisector anchor atom ID.
+ * @param {string} otherAtomId - Attached-block atom on the opposite side of the bond.
+ * @returns {{eligible: boolean, strict: boolean, omittedHydrogen: boolean}} Sensitivity summary.
+ */
+function directAttachmentTrigonalBisectorSensitivityAtAnchor(layoutGraph, coords, anchorAtomId, otherAtomId) {
   if (!coords.has(anchorAtomId)) {
-    return false;
+    return { eligible: false, strict: false, omittedHydrogen: false };
   }
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
   if (!anchorAtom || anchorAtom.aromatic || anchorAtom.heavyDegree !== 3) {
-    return false;
+    return { eligible: false, strict: false, omittedHydrogen: false };
   }
   const anchorRingCount = layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0;
   if (anchorRingCount > 0) {
-    return isExactRingTrigonalBisectorEligible(layoutGraph, anchorAtomId, otherAtomId);
+    const strict = isExactRingTrigonalBisectorEligible(layoutGraph, anchorAtomId, otherAtomId);
+    return { eligible: strict, strict, omittedHydrogen: false };
   }
   let nonAromaticMultipleBondCount = 0;
   let ringNeighborCount = 0;
@@ -1292,10 +1721,38 @@ function isTrigonalBisectorEligibleAtAnchor(layoutGraph, coords, anchorAtomId, o
       qualifyingNeighborCount++;
     }
   }
-  if (nonAromaticMultipleBondCount === 1 && qualifyingNeighborCount === 2) {
-    return true;
+  const strict = nonAromaticMultipleBondCount === 1 && qualifyingNeighborCount === 2;
+  const omittedHydrogen =
+    anchorAtom.degree === 4
+    && ringNeighborCount >= 1
+    && nonAromaticMultipleBondCount === 0
+    && qualifyingNeighborCount === 2;
+  return {
+    eligible: strict || omittedHydrogen,
+    strict,
+    omittedHydrogen
+  };
+}
+
+function isTrigonalBisectorEligibleAtAnchor(layoutGraph, coords, anchorAtomId, otherAtomId) {
+  return directAttachmentTrigonalBisectorSensitivityAtAnchor(layoutGraph, coords, anchorAtomId, otherAtomId).eligible;
+}
+
+function summarizeDirectAttachmentTrigonalBisectorSensitivity(layoutGraph, coords, parentAtomId, attachmentAtomId) {
+  if ((layoutGraph.traits.heavyAtomCount ?? 0) > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT) {
+    return { eligible: false, strict: false, omittedHydrogen: false };
   }
-  return anchorAtom.degree === 4 && ringNeighborCount >= 1 && nonAromaticMultipleBondCount === 0 && qualifyingNeighborCount === 2;
+  const parentSensitivity = !parentAtomId || !attachmentAtomId || !coords.has(parentAtomId)
+    ? { eligible: false, strict: false, omittedHydrogen: false }
+    : directAttachmentTrigonalBisectorSensitivityAtAnchor(layoutGraph, coords, parentAtomId, attachmentAtomId);
+  const attachmentSensitivity = !parentAtomId || !attachmentAtomId || !coords.has(attachmentAtomId)
+    ? { eligible: false, strict: false, omittedHydrogen: false }
+    : directAttachmentTrigonalBisectorSensitivityAtAnchor(layoutGraph, coords, attachmentAtomId, parentAtomId);
+  return {
+    eligible: parentSensitivity.eligible || attachmentSensitivity.eligible,
+    strict: parentSensitivity.strict || attachmentSensitivity.strict,
+    omittedHydrogen: parentSensitivity.omittedHydrogen || attachmentSensitivity.omittedHydrogen
+  };
 }
 
 function measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, coords, candidateMeta = null) {
@@ -1336,17 +1793,500 @@ function measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, coords, can
   return computePenaltyAtAnchor(parentAtomId, attachmentAtomId) + computePenaltyAtAnchor(attachmentAtomId, parentAtomId);
 }
 
-function isDirectAttachmentTrigonalBisectorSensitive(layoutGraph, coords, parentAtomId, attachmentAtomId) {
-  if ((layoutGraph.traits.heavyAtomCount ?? 0) > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT) {
+/**
+ * Builds a small local refinement menu around an already selected direct-attached
+ * ring-block pose. This lets omitted-h trigonal parents give back a small amount
+ * of exact bisector alignment when that recovers a cleaner ring exit without
+ * reopening overlaps.
+ * @param {Map<string, {x: number, y: number}>} transformedCoords - Selected attached-block coordinates.
+ * @param {{x: number, y: number}} parentPosition - Fixed parent atom position.
+ * @param {string} attachmentAtomId - Attached-block root atom ID.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Array<{attachmentAngleOffset: number, ringRotationOffset: number, transformedCoords: Map<string, {x: number, y: number}>}>} Local refinement candidates.
+ */
+function buildLocalDirectAttachmentRefinementCandidates(transformedCoords, parentPosition, attachmentAtomId, bondLength) {
+  const attachmentPosition = transformedCoords.get(attachmentAtomId);
+  if (!attachmentPosition || !parentPosition) {
+    return [];
+  }
+
+  const baseAttachmentAngle = angleOf(sub(attachmentPosition, parentPosition));
+  const candidates = [];
+  for (const attachmentAngleOffset of DIRECT_ATTACHMENT_FINE_ANGLE_OFFSETS) {
+    const targetAttachmentPosition = add(parentPosition, fromAngle(baseAttachmentAngle + attachmentAngleOffset, bondLength));
+    for (const ringRotationOffset of DIRECT_ATTACHMENT_LOCAL_REFINEMENT_RING_ROTATION_OFFSETS) {
+      const nextCoords = new Map();
+      for (const [atomId, position] of transformedCoords) {
+        if (atomId === attachmentAtomId) {
+          nextCoords.set(atomId, targetAttachmentPosition);
+          continue;
+        }
+        const shiftedPosition = sub(position, attachmentPosition);
+        nextCoords.set(
+          atomId,
+          add(targetAttachmentPosition, rotate(shiftedPosition, attachmentAngleOffset + ringRotationOffset))
+        );
+      }
+      candidates.push({
+        attachmentAngleOffset,
+        ringRotationOffset,
+        transformedCoords: nextCoords
+      });
+    }
+  }
+  return candidates;
+}
+
+function collectCovalentSubtreeAtomIds(layoutGraph, rootAtomId, blockedAtomId) {
+  const visitedAtomIds = new Set([blockedAtomId]);
+  const pendingAtomIds = [rootAtomId];
+  const subtreeAtomIds = [];
+
+  while (pendingAtomIds.length > 0) {
+    const atomId = pendingAtomIds.pop();
+    if (visitedAtomIds.has(atomId)) {
+      continue;
+    }
+    visitedAtomIds.add(atomId);
+    subtreeAtomIds.push(atomId);
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (!visitedAtomIds.has(neighborAtomId)) {
+        pendingAtomIds.push(neighborAtomId);
+      }
+    }
+  }
+
+  return subtreeAtomIds;
+}
+
+function isExactVisibleTrigonalContinuationEligible(layoutGraph, anchorAtomId, continuationParentAtomId, childAtomId) {
+  if (!isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtomId, continuationParentAtomId, childAtomId)) {
     return false;
   }
-  if (!parentAtomId || !attachmentAtomId || !coords.has(parentAtomId)) {
+
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (
+    !anchorAtom
+    || anchorAtom.element !== 'C'
+    || anchorAtom.aromatic
+    || anchorAtom.heavyDegree !== 2
+    || anchorAtom.degree !== 3
+  ) {
     return false;
   }
+
+  const continuationBond = findLayoutBond(layoutGraph, anchorAtomId, continuationParentAtomId);
+  const childBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
+  if (
+    !continuationBond
+    || !childBond
+    || continuationBond.kind !== 'covalent'
+    || childBond.kind !== 'covalent'
+    || continuationBond.aromatic
+    || childBond.aromatic
+  ) {
+    return false;
+  }
+
+  const continuationOrder = continuationBond.order ?? 1;
+  const childOrder = childBond.order ?? 1;
   return (
-    isTrigonalBisectorEligibleAtAnchor(layoutGraph, coords, parentAtomId, attachmentAtomId) ||
-    isTrigonalBisectorEligibleAtAnchor(layoutGraph, coords, attachmentAtomId, parentAtomId)
+    (continuationOrder === 1 && childOrder >= 2)
+    || (continuationOrder >= 2 && childOrder === 1)
   );
+}
+
+function buildExactVisibleTrigonalContinuationCandidates(layoutGraph, coords, anchorAtomId, continuationParentAtomId, childAtomId) {
+  if (
+    !coords.has(anchorAtomId)
+    || !coords.has(continuationParentAtomId)
+    || !coords.has(childAtomId)
+    || !isExactVisibleTrigonalContinuationEligible(layoutGraph, anchorAtomId, continuationParentAtomId, childAtomId)
+  ) {
+    return [];
+  }
+
+  const subtreeAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, childAtomId, anchorAtomId)
+    .filter(atomId => atomId !== anchorAtomId && coords.has(atomId));
+  if (subtreeAtomIds.length === 0) {
+    return [];
+  }
+
+  const anchorPosition = coords.get(anchorAtomId);
+  const currentChildAngle = angleOf(sub(coords.get(childAtomId), anchorPosition));
+  const continuationAngle = angleOf(sub(coords.get(continuationParentAtomId), anchorPosition));
+  const targetChildAngles = [
+    continuationAngle + EXACT_TRIGONAL_CONTINUATION_ANGLE,
+    continuationAngle - EXACT_TRIGONAL_CONTINUATION_ANGLE
+  ];
+
+  return targetChildAngles.flatMap(targetChildAngle => {
+    const rotationAngle = wrapAngle(targetChildAngle - currentChildAngle);
+    if (Math.abs(rotationAngle) <= 1e-9) {
+      return [];
+    }
+    const transformedCoords = new Map();
+    for (const atomId of subtreeAtomIds) {
+      transformedCoords.set(atomId, add(anchorPosition, rotate(sub(coords.get(atomId), anchorPosition), rotationAngle)));
+    }
+    return [{
+      transformedCoords,
+      meta: {
+        attachmentAtomId: childAtomId,
+        parentAtomId: anchorAtomId,
+        exactVisibleTrigonalContinuation: true,
+        targetChildAngle
+      }
+    }];
+  });
+}
+
+function snapExactVisibleTrigonalContinuations(layoutGraph, coords, participantAtomIds, bondLength) {
+  const anchorAtomIds = [...participantAtomIds]
+    .filter(atomId => coords.has(atomId))
+    .sort((firstAtomId, secondAtomId) => compareCanonicalIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));
+
+  for (const anchorAtomId of anchorAtomIds) {
+    const heavyNeighborIds = [];
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
+        continue;
+      }
+      heavyNeighborIds.push(neighborAtomId);
+    }
+    if (heavyNeighborIds.length !== 2) {
+      continue;
+    }
+
+    let bestCoords = coords;
+    let bestScore = null;
+    for (const [continuationParentAtomId, childAtomId] of [
+      [heavyNeighborIds[0], heavyNeighborIds[1]],
+      [heavyNeighborIds[1], heavyNeighborIds[0]]
+    ]) {
+      if (!isExactVisibleTrigonalContinuationEligible(layoutGraph, anchorAtomId, continuationParentAtomId, childAtomId)) {
+        continue;
+      }
+      const candidateMeta = {
+        attachmentAtomId: childAtomId,
+        parentAtomId: anchorAtomId
+      };
+      const baseScore = measureAttachedBlockCandidateState(coords, coords, bondLength, layoutGraph, candidateMeta);
+      if (baseScore.exactContinuationPenalty <= IMPROVEMENT_EPSILON) {
+        continue;
+      }
+      if (!bestScore) {
+        bestScore = baseScore;
+      }
+
+      const candidates = buildExactVisibleTrigonalContinuationCandidates(
+        layoutGraph,
+        coords,
+        anchorAtomId,
+        continuationParentAtomId,
+        childAtomId
+      );
+      for (const candidate of candidates) {
+        const candidateCoords = new Map(coords);
+        for (const [atomId, position] of candidate.transformedCoords) {
+          candidateCoords.set(atomId, position);
+        }
+        const candidateScore = measureAttachedBlockCandidateState(coords, candidateCoords, bondLength, layoutGraph, candidate.meta);
+        let shouldReplaceBestCandidate =
+          candidateScore.overlapCount === bestScore.overlapCount
+          && candidateScore.readability.failingSubstituentCount === bestScore.readability.failingSubstituentCount
+          && candidateScore.exactContinuationPenalty <= IMPROVEMENT_EPSILON
+          && bestScore.exactContinuationPenalty > IMPROVEMENT_EPSILON;
+        const comparison = compareAttachedBlockScores(candidateScore, bestScore);
+        if (!shouldReplaceBestCandidate) {
+          shouldReplaceBestCandidate = comparison < 0;
+        }
+        if (!shouldReplaceBestCandidate && comparison === 0) {
+          ensureAttachedBlockLayoutCost(candidateScore, candidateCoords, layoutGraph, bondLength);
+          ensureAttachedBlockLayoutCost(bestScore, bestCoords, layoutGraph, bondLength);
+          if (candidateScore.totalCost < bestScore.totalCost - IMPROVEMENT_EPSILON) {
+            shouldReplaceBestCandidate = true;
+          } else if (
+            Math.abs(candidateScore.totalCost - bestScore.totalCost) <= IMPROVEMENT_EPSILON
+            && compareCoordMapsDeterministically(candidateCoords, bestCoords, layoutGraph.canonicalAtomRank) < 0
+          ) {
+            shouldReplaceBestCandidate = true;
+          }
+        }
+        if (shouldReplaceBestCandidate) {
+          bestCoords = candidateCoords;
+          bestScore = candidateScore;
+        }
+      }
+    }
+
+    if (bestCoords !== coords) {
+      coords.clear();
+      for (const [atomId, position] of bestCoords) {
+        coords.set(atomId, position);
+      }
+    }
+  }
+}
+
+/**
+ * Builds exact-continuation rescue candidates for direct-attached ring blocks
+ * whose benzylic-style parent linker is already placed but too flat. The
+ * parent atom and the whole attached block move together around the already
+ * placed continuation parent so the linker can recover its exact 120-degree
+ * bend without sacrificing the child block's internal orientation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Map<string, {x: number, y: number}>} transformedCoords - Current attached-block coordinates.
+ * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate attachment metadata.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Array<{transformedCoords: Map<string, {x: number, y: number}>, meta: object}>} Parent-linker rescue candidates.
+ */
+function buildDirectAttachmentExactContinuationRescueCandidates(layoutGraph, coords, transformedCoords, candidateMeta = null, bondLength) {
+  const parentAtomId = candidateMeta?.parentAtomId ?? null;
+  const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
+  const continuationParentAtomId = directAttachmentContinuationParentAtomId(layoutGraph, candidateMeta);
+  if (!parentAtomId || !attachmentAtomId || !continuationParentAtomId || !coords.has(parentAtomId) || !coords.has(continuationParentAtomId)) {
+    return [];
+  }
+
+  const attachmentPosition = transformedCoords.get(attachmentAtomId) ?? coords.get(attachmentAtomId);
+  if (!attachmentPosition) {
+    return [];
+  }
+
+  const continuationParentPosition = coords.get(continuationParentAtomId);
+  const parentPosition = coords.get(parentAtomId);
+  const attachmentAngle = angleOf(sub(attachmentPosition, parentPosition));
+  const subtreeAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, parentAtomId, continuationParentAtomId)
+    .filter(atomId => atomId === parentAtomId || transformedCoords.has(atomId) || coords.has(atomId));
+  if (subtreeAtomIds.length === 0) {
+    return [];
+  }
+
+  const rescueCandidates = [];
+  for (const targetParentAngle of [attachmentAngle - LINKER_ZIGZAG_TURN_ANGLE, attachmentAngle + LINKER_ZIGZAG_TURN_ANGLE]) {
+    const targetParentPosition = add(continuationParentPosition, fromAngle(targetParentAngle, bondLength));
+    const delta = sub(targetParentPosition, parentPosition);
+    if (Math.hypot(delta.x, delta.y) <= IMPROVEMENT_EPSILON) {
+      continue;
+    }
+
+    const nextCoords = new Map();
+    for (const atomId of subtreeAtomIds) {
+      const currentPosition = transformedCoords.get(atomId) ?? coords.get(atomId);
+      if (!currentPosition) {
+        continue;
+      }
+      nextCoords.set(atomId, add(currentPosition, delta));
+    }
+    rescueCandidates.push({
+      transformedCoords: nextCoords,
+      meta: {
+        ...candidateMeta,
+        exactContinuationRescue: true,
+        targetParentAngle
+      }
+    });
+  }
+
+  return rescueCandidates;
+}
+
+/**
+ * Builds exact child-side trigonal-bisector rescue poses for one direct-attached
+ * ring block by rotating the attached block around its fixed root atom. This
+ * is narrower than the general rotation search and is only used after the main
+ * candidate search still leaves a strict ring trigonal exit visibly skewed.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Map<string, {x: number, y: number}>} transformedCoords - Current attached-block coordinates.
+ * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate metadata.
+ * @returns {Array<{transformedCoords: Map<string, {x: number, y: number}>, meta: object}>} Exact trigonal rescue candidates.
+ */
+function buildDirectAttachmentExactTrigonalBisectorRescueCandidates(layoutGraph, coords, transformedCoords, candidateMeta = null) {
+  const parentAtomId = candidateMeta?.parentAtomId ?? null;
+  const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
+  if (!parentAtomId || !attachmentAtomId || !coords.has(parentAtomId) || !transformedCoords.has(attachmentAtomId)) {
+    return [];
+  }
+
+  const candidateCoords = new Map(coords);
+  for (const [atomId, position] of transformedCoords) {
+    candidateCoords.set(atomId, position);
+  }
+  if (!directAttachmentTrigonalBisectorSensitivityAtAnchor(layoutGraph, candidateCoords, attachmentAtomId, parentAtomId).strict) {
+    return [];
+  }
+
+  const attachmentPosition = candidateCoords.get(attachmentAtomId);
+  const internalNeighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(attachmentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === attachmentAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtomId === parentAtomId || !candidateCoords.has(neighborAtomId)) {
+      continue;
+    }
+    internalNeighborIds.push(neighborAtomId);
+  }
+  if (internalNeighborIds.length !== 2) {
+    return [];
+  }
+
+  const idealParentAngle = angleOf(sub(
+    attachmentPosition,
+    centroid(internalNeighborIds.map(neighborAtomId => candidateCoords.get(neighborAtomId)))
+  ));
+  const currentParentAngle = angleOf(sub(candidateCoords.get(parentAtomId), attachmentPosition));
+  const rotationAngle = wrapAngle(currentParentAngle - idealParentAngle);
+  if (Math.abs(rotationAngle) <= 1e-9) {
+    return [];
+  }
+
+  const rotatedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, attachmentAtomId, parentAtomId)
+    .filter(atomId => atomId === attachmentAtomId || transformedCoords.has(atomId));
+  if (rotatedAtomIds.length === 0) {
+    return [];
+  }
+
+  const nextCoords = new Map(transformedCoords);
+  for (const atomId of rotatedAtomIds) {
+    if (atomId === attachmentAtomId) {
+      nextCoords.set(atomId, attachmentPosition);
+      continue;
+    }
+    const currentPosition = transformedCoords.get(atomId);
+    if (!currentPosition) {
+      continue;
+    }
+    nextCoords.set(
+      atomId,
+      add(attachmentPosition, rotate(sub(currentPosition, attachmentPosition), rotationAngle))
+    );
+  }
+
+  return [{
+    transformedCoords: nextCoords,
+    meta: {
+      ...candidateMeta,
+      exactTrigonalBisectorRescue: true,
+      rotationAngle
+    }
+  }];
+}
+
+function reflectPointAcrossAxis(point, origin, axisUnit) {
+  const relativePoint = sub(point, origin);
+  const projectedLength = relativePoint.x * axisUnit.x + relativePoint.y * axisUnit.y;
+  const projectedPoint = {
+    x: axisUnit.x * projectedLength,
+    y: axisUnit.y * projectedLength
+  };
+  const perpendicularPoint = {
+    x: relativePoint.x - projectedPoint.x,
+    y: relativePoint.y - projectedPoint.y
+  };
+  return {
+    x: origin.x + projectedPoint.x - perpendicularPoint.x,
+    y: origin.y + projectedPoint.y - perpendicularPoint.y
+  };
+}
+
+function buildMirroredParentSideSubtreeCandidates(layoutGraph, coords, transformedCoords, candidateMeta = null) {
+  const parentAtomId = candidateMeta?.parentAtomId ?? null;
+  const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
+  if (!parentAtomId || !attachmentAtomId) {
+    return [];
+  }
+
+  const candidateCoords = new Map(coords);
+  for (const [atomId, position] of transformedCoords) {
+    candidateCoords.set(atomId, position);
+  }
+
+  const candidates = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(parentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const anchorAtomId = bond.a === parentAtomId ? bond.b : bond.a;
+    const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+    if (
+      !anchorAtom
+      || anchorAtom.element === 'H'
+      || anchorAtomId === attachmentAtomId
+      || anchorAtom.chirality
+      || !candidateCoords.has(anchorAtomId)
+    ) {
+      continue;
+    }
+
+    for (const anchorBond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!anchorBond || anchorBond.kind !== 'covalent') {
+        continue;
+      }
+      const rootAtomId = anchorBond.a === anchorAtomId ? anchorBond.b : anchorBond.a;
+      const rootAtom = layoutGraph.atoms.get(rootAtomId);
+      if (
+        !rootAtom
+        || rootAtom.element === 'H'
+        || rootAtomId === parentAtomId
+        || rootAtom.chirality
+        || !candidateCoords.has(rootAtomId)
+      ) {
+        continue;
+      }
+
+      const subtreeAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, rootAtomId, anchorAtomId);
+      if (subtreeAtomIds.some(atomId => layoutGraph.atoms.get(atomId)?.chirality)) {
+        continue;
+      }
+      const placedSubtreeAtomIds = subtreeAtomIds.filter(atomId => candidateCoords.has(atomId));
+      if (placedSubtreeAtomIds.length === 0) {
+        continue;
+      }
+
+      const axisVector = sub(candidateCoords.get(rootAtomId), candidateCoords.get(anchorAtomId));
+      const axisLength = Math.hypot(axisVector.x, axisVector.y);
+      if (axisLength <= IMPROVEMENT_EPSILON) {
+        continue;
+      }
+      const axisUnit = {
+        x: axisVector.x / axisLength,
+        y: axisVector.y / axisLength
+      };
+
+      const mirroredCoords = new Map(transformedCoords);
+      for (const atomId of placedSubtreeAtomIds) {
+        mirroredCoords.set(
+          atomId,
+          reflectPointAcrossAxis(candidateCoords.get(atomId), candidateCoords.get(anchorAtomId), axisUnit)
+        );
+      }
+      candidates.push({
+        transformedCoords: mirroredCoords,
+        meta: {
+          ...candidateMeta,
+          mirroredParentSubtreeAnchorAtomId: anchorAtomId,
+          mirroredParentSubtreeRootAtomId: rootAtomId
+        }
+      });
+    }
+  }
+
+  return candidates;
 }
 
 /**
@@ -1406,16 +2346,37 @@ function measureDirectAttachmentJunctionCrowdingPenalty(layoutGraph, coords, can
 }
 
 function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLength, layoutGraph, candidateMeta = null) {
-  const changedAtomIds = [...candidateCoords.keys()].filter(atomId => !baseCoords.has(atomId));
+  const changedAtomIds = [...candidateCoords.keys()].filter(atomId => {
+    if (!baseCoords.has(atomId)) {
+      return true;
+    }
+    const basePosition = baseCoords.get(atomId);
+    const candidatePosition = candidateCoords.get(atomId);
+    return Math.hypot(candidatePosition.x - basePosition.x, candidatePosition.y - basePosition.y) > 1e-9;
+  });
   const scoringFocusAtomIds = expandScoringFocusAtomIds(layoutGraph, changedAtomIds);
   const readability = measureRingSubstituentReadability(layoutGraph, candidateCoords, {
     focusAtomIds: scoringFocusAtomIds
   });
   const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
   const fusedJunctionContinuationPenalty = measureDirectAttachmentFusedJunctionContinuationPenalty(layoutGraph, candidateCoords, candidateMeta);
-  const parentOutwardPenalty = measureDirectAttachmentParentOutwardPenalty(layoutGraph, candidateCoords, candidateMeta);
   const exactContinuationPenalty = measureDirectAttachmentExactContinuationPenalty(layoutGraph, candidateCoords, candidateMeta);
+  const parentOutwardPenalty = measureDirectAttachmentParentOutwardPenalty(layoutGraph, candidateCoords, candidateMeta);
   const trigonalBisectorPenalty = measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, candidateCoords, candidateMeta);
+  const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, candidateCoords, {
+    focusAtomIds: scoringFocusAtomIds
+  }).totalDeviation;
+  const omittedHydrogenDirectAttachmentCompromisePenalty = candidateMeta?.parentAtomId && candidateMeta?.attachmentAtomId
+    ? (() => {
+        const sensitivity = summarizeDirectAttachmentTrigonalBisectorSensitivity(
+          layoutGraph,
+          candidateCoords,
+          candidateMeta.parentAtomId,
+          candidateMeta.attachmentAtomId
+        );
+        return sensitivity.omittedHydrogen ? omittedHydrogenTrigonalPenalty + parentOutwardPenalty : 0;
+      })()
+    : 0;
   const attachmentExteriorPenalty = measureDirectAttachmentExteriorContinuationPenalty(layoutGraph, candidateCoords, candidateMeta);
   const junctionCrowdingPenalty = measureDirectAttachmentJunctionCrowdingPenalty(layoutGraph, candidateCoords, candidateMeta);
   const smallRingExteriorPenalty = [...scoringFocusAtomIds].reduce(
@@ -1436,6 +2397,8 @@ function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLen
     parentOutwardPenalty,
     exactContinuationPenalty,
     trigonalBisectorPenalty,
+    omittedHydrogenTrigonalPenalty,
+    omittedHydrogenDirectAttachmentCompromisePenalty,
     attachmentExteriorPenalty,
     junctionCrowdingPenalty,
     presentationPenalty: (readability.totalOutwardDeviation ?? 0) + smallRingExteriorPenalty + idealLeafPresentationPenalty,
@@ -1522,7 +2485,7 @@ function attachedBlockFullScoringBeamLimit(coords, primaryNonRingAtomIds, candid
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
  * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate metadata for local junction tie-breaks.
  * @param {{prescore?: {coords: Map<string, {x: number, y: number}>}, placementContext?: object|null}} [options] - Optional scoring reuse state.
- * @returns {{layoutCost: number|null, totalCost: number|null, overlapCount: number, presentationPenalty: number, idealLeafPresentationPenalty: number, fusedJunctionContinuationPenalty: number, parentOutwardPenalty: number, exactContinuationPenalty: number, trigonalBisectorPenalty: number, attachmentExteriorPenalty: number, junctionCrowdingPenalty: number, smallRingExteriorPenalty: number, changedAtomIds: string[], readability: {failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}}} Candidate layout score.
+ * @returns {{layoutCost: number|null, totalCost: number|null, overlapCount: number, presentationPenalty: number, idealLeafPresentationPenalty: number, fusedJunctionContinuationPenalty: number, parentOutwardPenalty: number, exactContinuationPenalty: number, trigonalBisectorPenalty: number, omittedHydrogenTrigonalPenalty: number, omittedHydrogenDirectAttachmentCompromisePenalty: number, attachmentExteriorPenalty: number, junctionCrowdingPenalty: number, smallRingExteriorPenalty: number, changedAtomIds: string[], readability: {failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}}} Candidate layout score.
  */
 function scoreAttachedBlockOrientation(
   adjacency,
@@ -1608,6 +2571,72 @@ function compareAttachedBlockScores(cand, inc) {
   return 0;
 }
 
+function compareOmittedHydrogenDirectAttachmentRefinementScores(cand, inc) {
+  if (cand.overlapCount !== inc.overlapCount) {
+    return cand.overlapCount - inc.overlapCount;
+  }
+  if (cand.readability.failingSubstituentCount !== inc.readability.failingSubstituentCount) {
+    return cand.readability.failingSubstituentCount - inc.readability.failingSubstituentCount;
+  }
+  for (const key of ['fusedJunctionContinuationPenalty', 'parentOutwardPenalty', 'exactContinuationPenalty', 'trigonalBisectorPenalty', 'attachmentExteriorPenalty', 'junctionCrowdingPenalty']) {
+    if (Math.abs(cand[key] - inc[key]) > IMPROVEMENT_EPSILON) {
+      return cand[key] - inc[key];
+    }
+  }
+  if (Math.abs(cand.omittedHydrogenDirectAttachmentCompromisePenalty - inc.omittedHydrogenDirectAttachmentCompromisePenalty) > IMPROVEMENT_EPSILON) {
+    return cand.omittedHydrogenDirectAttachmentCompromisePenalty - inc.omittedHydrogenDirectAttachmentCompromisePenalty;
+  }
+  if (Math.abs(cand.presentationPenalty - inc.presentationPenalty) > IMPROVEMENT_EPSILON) {
+    return cand.presentationPenalty - inc.presentationPenalty;
+  }
+  return 0;
+}
+
+/**
+ * Compares exact trigonal-bisector rescue scores. Strict exact ring exits are
+ * allowed to beat an incumbent that is already overlapping when they only cost
+ * one extra transient overlap and otherwise materially improve the local
+ * geometry.
+ * @param {object} cand - Candidate rescue score.
+ * @param {object} inc - Incumbent score.
+ * @returns {number} Negative when the candidate wins, positive when it loses.
+ */
+function compareExactTrigonalBisectorRescueScores(cand, inc) {
+  const candidateIsExact =
+    cand.trigonalBisectorPenalty <= IMPROVEMENT_EPSILON
+    && cand.parentOutwardPenalty <= IMPROVEMENT_EPSILON;
+  const incumbentIsExact =
+    inc.trigonalBisectorPenalty <= IMPROVEMENT_EPSILON
+    && inc.parentOutwardPenalty <= IMPROVEMENT_EPSILON;
+  if (
+    candidateIsExact
+    && !incumbentIsExact
+    && inc.overlapCount > 0
+    && cand.overlapCount <= Math.min(inc.overlapCount + 1, 2)
+    && cand.readability.failingSubstituentCount <= inc.readability.failingSubstituentCount
+    && cand.fusedJunctionContinuationPenalty <= inc.fusedJunctionContinuationPenalty + IMPROVEMENT_EPSILON
+    && cand.exactContinuationPenalty <= inc.exactContinuationPenalty + IMPROVEMENT_EPSILON
+    && cand.attachmentExteriorPenalty <= inc.attachmentExteriorPenalty + IMPROVEMENT_EPSILON
+    && cand.junctionCrowdingPenalty <= inc.junctionCrowdingPenalty + IMPROVEMENT_EPSILON
+  ) {
+    return -1;
+  }
+  if (
+    !candidateIsExact
+    && incumbentIsExact
+    && cand.overlapCount > 0
+    && inc.overlapCount <= Math.min(cand.overlapCount + 1, 2)
+    && inc.readability.failingSubstituentCount <= cand.readability.failingSubstituentCount
+    && inc.fusedJunctionContinuationPenalty <= cand.fusedJunctionContinuationPenalty + IMPROVEMENT_EPSILON
+    && inc.exactContinuationPenalty <= cand.exactContinuationPenalty + IMPROVEMENT_EPSILON
+    && inc.attachmentExteriorPenalty <= cand.attachmentExteriorPenalty + IMPROVEMENT_EPSILON
+    && inc.junctionCrowdingPenalty <= cand.junctionCrowdingPenalty + IMPROVEMENT_EPSILON
+  ) {
+    return 1;
+  }
+  return compareAttachedBlockScores(cand, inc);
+}
+
 /**
  * Selects the best fully scored attached-block orientation from a candidate set.
  * @param {Array<{transformedCoords: Map<string, {x: number, y: number}>}>} candidates - Candidate attached-block orientations.
@@ -1620,7 +2649,7 @@ function compareAttachedBlockScores(cand, inc) {
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
  * @param {{forceFullScoring?: boolean, placementContext?: object|null}} [options] - Optional finalist-beam overrides and reusable branch-placement context.
- * @returns {{transformedCoords: Map<string, {x: number, y: number}>, score: {layoutCost: number|null, totalCost: number|null, overlapCount: number, presentationPenalty: number, exactContinuationPenalty: number, readability: {failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}}, meta?: object}|null} Best scored candidate.
+ * @returns {{transformedCoords: Map<string, {x: number, y: number}>, score: {layoutCost: number|null, totalCost: number|null, overlapCount: number, presentationPenalty: number, exactContinuationPenalty: number, omittedHydrogenTrigonalPenalty: number, omittedHydrogenDirectAttachmentCompromisePenalty: number, readability: {failingSubstituentCount: number, inwardSubstituentCount: number, outwardAxisFailureCount: number, totalOutwardDeviation: number, maxOutwardDeviation: number}}, meta?: object}|null} Best scored candidate.
  */
 function pickBestAttachedBlockOrientation(
   candidates,
@@ -1745,7 +2774,7 @@ function pickBestAttachedBlockOrientation(
  * @param {number} bondLength - Target bond length.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate attachment metadata.
- * @returns {{coords: Map<string, {x: number, y: number}>, overlapCount: number, failingSubstituentCount: number, fusedJunctionContinuationPenalty: number, exactContinuationPenalty: number, trigonalBisectorPenalty: number, presentationPenalty: number, cost: number}} Prescored candidate snapshot.
+ * @returns {{coords: Map<string, {x: number, y: number}>, overlapCount: number, failingSubstituentCount: number, fusedJunctionContinuationPenalty: number, exactContinuationPenalty: number, trigonalBisectorPenalty: number, omittedHydrogenTrigonalPenalty: number, omittedHydrogenDirectAttachmentCompromisePenalty: number, presentationPenalty: number, cost: number}} Prescored candidate snapshot.
  */
 function preScoreAttachedBlockOrientation(coords, transformedCoords, bondLength, layoutGraph, candidateMeta = null) {
   const candidateCoords = new Map(coords);
@@ -2227,13 +3256,6 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
         remainingAfterAttachments.push(pendingRingSystem);
         continue;
       }
-      const exactDirectAttachmentOffsets = exactDirectAttachmentRingRotationOffsets(layoutGraph, blockLayout.coords, attachment.attachmentAtomId);
-      const directAttachmentRingRotationOffsets = [...DIRECT_ATTACHMENT_RING_ROTATION_OFFSETS];
-      for (const rotationOffset of exactDirectAttachmentOffsets) {
-        if (!directAttachmentRingRotationOffsets.some(candidateOffset => angularDifference(candidateOffset, rotationOffset) <= 1e-9)) {
-          directAttachmentRingRotationOffsets.push(rotationOffset);
-        }
-      }
       const parentPosition = coords.get(attachment.parentAtomId);
       const placedPositions = [];
       for (const atomId of placedAtomIds) {
@@ -2268,6 +3290,28 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
         { checkHeavyAtomLimit: true }
       );
       const outwardAlignmentOffset = detachedExitAngle == null ? 0 : detachedCentroidAngle - detachedExitAngle;
+      const directAttachmentRingRotationOffsets = [...DIRECT_ATTACHMENT_RING_ROTATION_OFFSETS];
+      const exactDirectAttachmentOffsets = [
+        ...exactDirectAttachmentRingRotationOffsets(layoutGraph, blockLayout.coords, attachment.attachmentAtomId),
+        ...exactDirectAttachmentTrigonalBisectorRotationOffsets(
+          layoutGraph,
+          blockLayout.coords,
+          attachment.attachmentAtomId,
+          attachment.parentAtomId,
+          outwardAlignmentOffset
+        ),
+        ...exactDirectAttachmentParentOutwardRotationOffsets(
+          layoutGraph,
+          blockLayout.coords,
+          attachment.attachmentAtomId,
+          detachedExitAngle
+        )
+      ];
+      for (const rotationOffset of exactDirectAttachmentOffsets) {
+        if (!directAttachmentRingRotationOffsets.some(candidateOffset => angularDifference(candidateOffset, rotationOffset) <= 1e-9)) {
+          directAttachmentRingRotationOffsets.push(rotationOffset);
+        }
+      }
       const buildDirectAttachmentCandidate = (resolvedAttachmentAngle, mirror, ringRotationOffset = 0) => {
         const resolvedTargetPosition = add(parentPosition, fromAngle(resolvedAttachmentAngle, bondLength));
         return {
@@ -2289,7 +3333,24 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
           }
         };
       };
+      const exactContinuationAttachmentAngles = exactDirectAttachmentContinuationAngles(
+        layoutGraph,
+        coords,
+        {
+          attachmentAtomId: attachment.attachmentAtomId,
+          parentAtomId: attachment.parentAtomId
+        }
+      );
       const rawAttachedBlockCandidates = [buildDirectAttachmentCandidate(attachmentAngle, false), buildDirectAttachmentCandidate(attachmentAngle, true)];
+      for (const exactAttachmentAngle of exactContinuationAttachmentAngles) {
+        if (rawAttachedBlockCandidates.some(candidate => angularDifference(candidate.meta?.attachmentAngle ?? 0, exactAttachmentAngle) <= 1e-9)) {
+          continue;
+        }
+        rawAttachedBlockCandidates.push(
+          buildDirectAttachmentCandidate(exactAttachmentAngle, false),
+          buildDirectAttachmentCandidate(exactAttachmentAngle, true)
+        );
+      }
       let bestAttachedBlockCandidate = pickBestAttachedBlockOrientation(
         selectAttachedBlockCandidates(rawAttachedBlockCandidates, coords, bondLength, layoutGraph),
         adjacency,
@@ -2311,26 +3372,52 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
       const smallRingExteriorDirectAttachmentDescriptor = describeDirectAttachmentExteriorContinuationAnchor(layoutGraph, attachment.parentAtomId);
       const exactSmallRingExteriorDirectAttachment = smallRingExteriorDirectAttachmentDescriptor?.exocyclicNeighborIds.includes(attachment.attachmentAtomId) ?? false;
       const exactLeafSensitiveDirectAttachment = ringSystemHasExactLeafSensitiveTrigonalCenter(layoutGraph, pendingRingSystem.ringSystem);
-      const lockDirectAttachmentAngle = isDirectAttachmentTrigonalBisectorSensitive(layoutGraph, coords, attachment.parentAtomId, attachment.attachmentAtomId);
+      const directAttachmentTrigonalSensitivity = summarizeDirectAttachmentTrigonalBisectorSensitivity(
+        layoutGraph,
+        coords,
+        attachment.parentAtomId,
+        attachment.attachmentAtomId
+      );
+      const lockDirectAttachmentAngle = directAttachmentTrigonalSensitivity.strict || directAttachmentTrigonalSensitivity.omittedHydrogen;
+      const allowOmittedHydrogenDirectAttachmentCompromise =
+        directAttachmentTrigonalSensitivity.omittedHydrogen &&
+        !layoutGraph.atoms.get(attachment.parentAtomId)?.chirality &&
+        !layoutGraph.atoms.get(attachment.attachmentAtomId)?.chirality &&
+        (
+          (bestAttachedBlockCandidate?.score.readability.failingSubstituentCount ?? 0) > 0 ||
+          (bestAttachedBlockCandidate?.score.parentOutwardPenalty ?? 0) > IMPROVEMENT_EPSILON
+        );
       const idealLeafExpansionThreshold = exactLeafSensitiveDirectAttachment ? 0.2 : 0.5;
       const shouldExpandForSensitiveOverlap =
         (bestAttachedBlockCandidate?.score.overlapCount ?? 0) > 0 &&
-        (exactLeafSensitiveDirectAttachment || lockDirectAttachmentAngle || exactSmallRingExteriorDirectAttachment);
+        (exactLeafSensitiveDirectAttachment || directAttachmentTrigonalSensitivity.eligible || exactSmallRingExteriorDirectAttachment);
       if (
         allowExpandedDirectAttachmentRotations &&
         (shouldExpandForSensitiveOverlap ||
           (bestAttachedBlockCandidate?.score.readability.failingSubstituentCount ?? 0) > 0 ||
           (bestAttachedBlockCandidate?.score.fusedJunctionContinuationPenalty ?? 0) > IMPROVEMENT_EPSILON ||
           (bestAttachedBlockCandidate?.score.parentOutwardPenalty ?? 0) > IMPROVEMENT_EPSILON ||
+          (bestAttachedBlockCandidate?.score.trigonalBisectorPenalty ?? 0) > IMPROVEMENT_EPSILON ||
           (bestAttachedBlockCandidate?.score.attachmentExteriorPenalty ?? 0) > IMPROVEMENT_EPSILON ||
           (bestAttachedBlockCandidate?.score.idealLeafPresentationPenalty ?? 0) > idealLeafExpansionThreshold ||
           (bestAttachedBlockCandidate?.score.junctionCrowdingPenalty ?? 0) > IMPROVEMENT_EPSILON ||
           (bestAttachedBlockCandidate?.score.smallRingExteriorPenalty ?? 0) > IMPROVEMENT_EPSILON)
       ) {
+        const allowLockedOmittedHydrogenAngleExpansion =
+          directAttachmentTrigonalSensitivity.omittedHydrogen &&
+          !layoutGraph.atoms.get(attachment.parentAtomId)?.chirality &&
+          !layoutGraph.atoms.get(attachment.attachmentAtomId)?.chirality &&
+          (bestAttachedBlockCandidate?.score.parentOutwardPenalty ?? 0) > IMPROVEMENT_EPSILON &&
+          (layoutGraph.atomToRings.get(attachment.attachmentAtomId)?.length ?? 0) > 0;
+        const directAttachmentAngleOffsets =
+          lockDirectAttachmentAngle && !allowLockedOmittedHydrogenAngleExpansion
+            ? [0]
+            : DIRECT_ATTACHMENT_ROTATION_OFFSETS;
+        const expandedRingRotationOffsets = [...directAttachmentRingRotationOffsets];
         const expandedCandidates = [...rawAttachedBlockCandidates];
         for (const mirror of [false, true]) {
-          for (const attachmentAngleOffset of lockDirectAttachmentAngle ? [0] : DIRECT_ATTACHMENT_ROTATION_OFFSETS) {
-            for (const ringRotationOffset of directAttachmentRingRotationOffsets) {
+          for (const attachmentAngleOffset of directAttachmentAngleOffsets) {
+            for (const ringRotationOffset of expandedRingRotationOffsets) {
               if (Math.abs(attachmentAngleOffset) <= IMPROVEMENT_EPSILON && Math.abs(ringRotationOffset) <= IMPROVEMENT_EPSILON) {
                 continue;
               }
@@ -2338,14 +3425,43 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
             }
           }
         }
+        for (const exactAttachmentAngle of exactContinuationAttachmentAngles) {
+          for (const mirror of [false, true]) {
+            for (const ringRotationOffset of expandedRingRotationOffsets) {
+              if (
+                Math.abs(ringRotationOffset) <= IMPROVEMENT_EPSILON
+                && rawAttachedBlockCandidates.some(candidate => (
+                  candidate.meta?.mirror === mirror
+                  && angularDifference(candidate.meta?.attachmentAngle ?? 0, exactAttachmentAngle) <= 1e-9
+                ))
+              ) {
+                continue;
+              }
+              expandedCandidates.push(buildDirectAttachmentCandidate(exactAttachmentAngle, mirror, ringRotationOffset));
+            }
+          }
+        }
+        const shouldProbeMirroredParentSubtrees =
+          directAttachmentTrigonalSensitivity.omittedHydrogen &&
+          !layoutGraph.atoms.get(attachment.parentAtomId)?.chirality &&
+          !layoutGraph.atoms.get(attachment.attachmentAtomId)?.chirality;
+        const candidatePool = shouldProbeMirroredParentSubtrees
+          ? [
+              ...expandedCandidates,
+              ...expandedCandidates.flatMap(candidate =>
+                buildMirroredParentSideSubtreeCandidates(layoutGraph, coords, candidate.transformedCoords, candidate.meta ?? null)
+              )
+            ]
+          : expandedCandidates;
         const shouldScoreAllExpandedDirectAttachmentCandidates =
           (bestAttachedBlockCandidate?.score.overlapCount ?? 0) > 0 ||
           (bestAttachedBlockCandidate?.score.readability.failingSubstituentCount ?? 0) > 0 ||
           (bestAttachedBlockCandidate?.score.parentOutwardPenalty ?? 0) > IMPROVEMENT_EPSILON ||
+          (bestAttachedBlockCandidate?.score.trigonalBisectorPenalty ?? 0) > IMPROVEMENT_EPSILON ||
           (bestAttachedBlockCandidate?.score.attachmentExteriorPenalty ?? 0) > IMPROVEMENT_EPSILON ||
           exactSmallRingExteriorDirectAttachment;
         bestAttachedBlockCandidate = pickBestAttachedBlockOrientation(
-          shouldScoreAllExpandedDirectAttachmentCandidates ? expandedCandidates : selectAttachedBlockCandidates(expandedCandidates, coords, bondLength, layoutGraph),
+          shouldScoreAllExpandedDirectAttachmentCandidates ? candidatePool : selectAttachedBlockCandidates(candidatePool, coords, bondLength, layoutGraph),
           adjacency,
           layoutGraph.canonicalAtomRank,
           coords,
@@ -2361,6 +3477,184 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
             disableBeamReduction: state.mixedOptions?.conservativeAttachmentScoring === true
           }
         );
+      }
+      if (
+        allowOmittedHydrogenDirectAttachmentCompromise &&
+        bestAttachedBlockCandidate?.transformedCoords &&
+        (
+          (bestAttachedBlockCandidate?.score.readability.failingSubstituentCount ?? 0) > 0 ||
+          (bestAttachedBlockCandidate?.score.omittedHydrogenTrigonalPenalty ?? 0) > 0.2 ||
+          (bestAttachedBlockCandidate?.score.parentOutwardPenalty ?? 0) > IMPROVEMENT_EPSILON
+        )
+      ) {
+        const localRefinementCandidates = buildLocalDirectAttachmentRefinementCandidates(
+          bestAttachedBlockCandidate.transformedCoords,
+          parentPosition,
+          attachment.attachmentAtomId,
+          bondLength
+        );
+        if (localRefinementCandidates.length > 0) {
+          let refinedBestCandidate = bestAttachedBlockCandidate;
+          let refinedBestScore = bestAttachedBlockCandidate.score;
+          for (const candidate of localRefinementCandidates) {
+            const candidateMeta = {
+              attachmentAtomId: attachment.attachmentAtomId,
+              parentAtomId: attachment.parentAtomId,
+              attachmentAngleOffset: candidate.attachmentAngleOffset,
+              ringRotationOffset: candidate.ringRotationOffset,
+              localRefinement: true
+            };
+            const candidateScore = scoreAttachedBlockOrientation(
+              adjacency,
+              layoutGraph.canonicalAtomRank,
+              coords,
+              primaryNonRingAtomIds,
+              placedAtomIds,
+              candidate.transformedCoords,
+              bondLength,
+              layoutGraph,
+              macrocycleBranchConstraints,
+              candidateMeta,
+              {
+                placementContext: state.branchPlacementContext
+              }
+            );
+            const comparison = compareOmittedHydrogenDirectAttachmentRefinementScores(candidateScore, refinedBestScore);
+            if (comparison < 0) {
+              refinedBestCandidate = {
+                transformedCoords: candidate.transformedCoords,
+                meta: candidateMeta,
+                score: candidateScore
+              };
+              refinedBestScore = candidateScore;
+              continue;
+            }
+            if (comparison === 0) {
+              ensureAttachedBlockLayoutCost(candidateScore, candidate.transformedCoords, layoutGraph, bondLength);
+              ensureAttachedBlockLayoutCost(refinedBestScore, refinedBestCandidate.transformedCoords, layoutGraph, bondLength);
+              if (candidateScore.totalCost < refinedBestScore.totalCost - IMPROVEMENT_EPSILON) {
+                refinedBestCandidate = {
+                  transformedCoords: candidate.transformedCoords,
+                  meta: candidateMeta,
+                  score: candidateScore
+                };
+                refinedBestScore = candidateScore;
+              }
+            }
+          }
+          if (refinedBestCandidate) {
+            bestAttachedBlockCandidate = refinedBestCandidate;
+          }
+        }
+      }
+      if (
+        bestAttachedBlockCandidate?.transformedCoords
+        && (bestAttachedBlockCandidate?.score.trigonalBisectorPenalty ?? 0) > IMPROVEMENT_EPSILON
+      ) {
+        const exactTrigonalBisectorRescueCandidates = buildDirectAttachmentExactTrigonalBisectorRescueCandidates(
+          layoutGraph,
+          coords,
+          bestAttachedBlockCandidate.transformedCoords,
+          bestAttachedBlockCandidate.meta ?? {
+            attachmentAtomId: attachment.attachmentAtomId,
+            parentAtomId: attachment.parentAtomId
+          }
+        );
+        if (exactTrigonalBisectorRescueCandidates.length > 0) {
+          let rescueBestCandidate = bestAttachedBlockCandidate;
+          let rescueBestScore = bestAttachedBlockCandidate.score;
+          for (const candidate of exactTrigonalBisectorRescueCandidates) {
+            const candidateScore = scoreAttachedBlockOrientation(
+              adjacency,
+              layoutGraph.canonicalAtomRank,
+              coords,
+              primaryNonRingAtomIds,
+              placedAtomIds,
+              candidate.transformedCoords,
+              bondLength,
+              layoutGraph,
+              macrocycleBranchConstraints,
+              candidate.meta ?? null,
+              {
+                placementContext: state.branchPlacementContext
+              }
+            );
+            const comparison = compareExactTrigonalBisectorRescueScores(candidateScore, rescueBestScore);
+            if (comparison < 0) {
+              rescueBestCandidate = {
+                transformedCoords: candidate.transformedCoords,
+                meta: candidate.meta ?? null,
+                score: candidateScore
+              };
+              rescueBestScore = candidateScore;
+              continue;
+            }
+            if (comparison === 0 && rescueBestCandidate) {
+              ensureAttachedBlockLayoutCost(candidateScore, candidate.transformedCoords, layoutGraph, bondLength);
+              ensureAttachedBlockLayoutCost(rescueBestScore, rescueBestCandidate.transformedCoords, layoutGraph, bondLength);
+              if (candidateScore.totalCost < rescueBestScore.totalCost - IMPROVEMENT_EPSILON) {
+                rescueBestCandidate = {
+                  transformedCoords: candidate.transformedCoords,
+                  meta: candidate.meta ?? null,
+                  score: candidateScore
+                };
+                rescueBestScore = candidateScore;
+              }
+            }
+          }
+          if (rescueBestCandidate) {
+            bestAttachedBlockCandidate = rescueBestCandidate;
+          }
+        }
+      }
+      if (
+        bestAttachedBlockCandidate?.transformedCoords
+        && shouldPrioritizeDirectAttachmentExactContinuation(layoutGraph, bestAttachedBlockCandidate.meta ?? {
+          attachmentAtomId: attachment.attachmentAtomId,
+          parentAtomId: attachment.parentAtomId
+        })
+        && (bestAttachedBlockCandidate?.score.exactContinuationPenalty ?? 0) > IMPROVEMENT_EPSILON
+      ) {
+        const exactContinuationRescueCandidates = buildDirectAttachmentExactContinuationRescueCandidates(
+          layoutGraph,
+          coords,
+          bestAttachedBlockCandidate.transformedCoords,
+          bestAttachedBlockCandidate.meta ?? {
+            attachmentAtomId: attachment.attachmentAtomId,
+            parentAtomId: attachment.parentAtomId
+          },
+          bondLength
+        );
+        if (exactContinuationRescueCandidates.length > 0) {
+          const rescueBestCandidate = pickBestAttachedBlockOrientation(
+            [
+              {
+                transformedCoords: bestAttachedBlockCandidate.transformedCoords,
+                meta: bestAttachedBlockCandidate.meta ?? {
+                  attachmentAtomId: attachment.attachmentAtomId,
+                  parentAtomId: attachment.parentAtomId
+                }
+              },
+              ...exactContinuationRescueCandidates
+            ],
+            adjacency,
+            layoutGraph.canonicalAtomRank,
+            coords,
+            primaryNonRingAtomIds,
+            placedAtomIds,
+            bondLength,
+            layoutGraph,
+            macrocycleBranchConstraints,
+            {
+              forceFullScoring: true,
+              disableBeamReduction: true,
+              placementContext: state.branchPlacementContext
+            }
+          );
+          if (rescueBestCandidate) {
+            bestAttachedBlockCandidate = rescueBestCandidate;
+          }
+        }
       }
       const bestAttachedBlock = bestAttachedBlockCandidate?.transformedCoords ?? null;
       if (!bestAttachedBlock) {
@@ -2398,6 +3692,8 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
   if ((state.pendingRingSystems?.length ?? 0) > 0) {
     attachPendingRingSystems(layoutGraph, adjacency, bondLength, state);
   }
+  snapExactVisibleTrigonalContinuations(layoutGraph, coords, participantAtomIds, bondLength);
+  markMixedBranchPlacementContextDirty(state);
   snapExactSharedJunctionTerminalLeaves(layoutGraph, coords, bondLength);
   markMixedBranchPlacementContextDirty(state);
   if (deferredHydrogenAtomIds.size > 0) {

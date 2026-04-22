@@ -14,7 +14,7 @@ function transformPoint(point, origin, targetOrigin, rotation, uniformScale) {
  * @param {{x: number, y: number}} lineSecond - Second point on the mirror line.
  * @returns {{x: number, y: number}} Reflected point.
  */
-function reflectAcrossLine(point, lineFirst, lineSecond) {
+export function reflectAcrossLine(point, lineFirst, lineSecond) {
   const axis = sub(lineSecond, lineFirst);
   const axisLength = Math.hypot(axis.x, axis.y);
   if (axisLength <= 1e-12) {
@@ -120,6 +120,15 @@ function chooseAnchorPair(fixedAtomIds, fixedCoords) {
 }
 
 /**
+ * Returns a deep-copy coordinate map with each position object cloned.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {Map<string, {x: number, y: number}>} Cloned coordinate map.
+ */
+export function cloneCoords(coords) {
+  return new Map([...coords].map(([k, v]) => [k, { x: v.x, y: v.y }]));
+}
+
+/**
  * Aligns a component's coordinates to one or two fixed atoms when available.
  * For one fixed atom, a pure translation is applied. For two or more fixed
  * atoms, the component receives a uniform scale, rotation, and translation
@@ -129,15 +138,6 @@ function chooseAnchorPair(fixedAtomIds, fixedCoords) {
  * @param {Map<string, {x: number, y: number}>} fixedCoords - Fixed-coordinate map.
  * @returns {{coords: Map<string, {x: number, y: number}>, anchored: boolean}} Aligned coordinates and anchor flag.
  */
-/**
- * Returns a deep-copy coordinate map with each position object cloned.
- * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
- * @returns {Map<string, {x: number, y: number}>} Cloned coordinate map.
- */
-export function cloneCoords(coords) {
-  return new Map([...coords].map(([k, v]) => [k, { x: v.x, y: v.y }]));
-}
-
 export function alignCoordsToFixed(coords, atomIds, fixedCoords) {
   const fixedAtomIds = atomIds.filter(atomId => fixedCoords.has(atomId) && coords.has(atomId));
   if (fixedAtomIds.length === 0) {

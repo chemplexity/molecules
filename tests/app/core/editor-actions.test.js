@@ -34,6 +34,9 @@ function makeDeps({ mode = '2d', hasReactionPreview = false } = {}) {
           },
           enableForceKeepInView() {
             calls.push(['enableForceKeepInView']);
+          },
+          restoreZoomTransformSnapshot(snapshot) {
+            calls.push(['restoreZoomTransformSnapshot', snapshot]);
           }
         }
       },
@@ -103,6 +106,9 @@ function makeDeps({ mode = '2d', hasReactionPreview = false } = {}) {
         },
         enableForceKeepInView() {
           calls.push(['enableForceKeepInView']);
+        },
+        restoreZoomTransformSnapshot(snapshot) {
+          calls.push(['restoreZoomTransformSnapshot', snapshot]);
         }
       }
     }
@@ -208,6 +214,42 @@ describe('createEditorActions', () => {
       ['updateForce', mol, { preservePositions: true, preserveView: true }],
       ['afterRender', 'aux'],
       ['enableForceKeepInView']
+    ]);
+  });
+
+  it('restores the saved force zoom after a reaction-preview edit re-renders in force mode', () => {
+    const { deps, calls, mol } = makeDeps({ mode: 'force' });
+    deps.overlays.prepareReactionPreviewBondEditTarget = payload => {
+      calls.push(['prepareReactionPreviewBondEditTarget', payload]);
+      return {
+        bondId: 'bond-2',
+        restored: true,
+        entryZoomTransform: { x: 9, y: 8, k: 1.25 }
+      };
+    };
+    const actions = createEditorActions(deps);
+
+    const result = actions.performStructuralEdit(
+      'promote-bond-order',
+      {
+        overlayPolicy: ReactionPreviewPolicy.prepareBondTarget,
+        reactionPreviewPayload: 'bond-1',
+        resonancePolicy: ResonancePolicy.preserve,
+        snapshotPolicy: SnapshotPolicy.skip,
+        viewportPolicy: ViewportPolicy.restoreEdit
+      },
+      () => ({
+        updateAnalysis: false
+      })
+    );
+
+    assert.equal(result.performed, true);
+    assert.deepEqual(calls, [
+      ['prepareReactionPreviewBondEditTarget', 'bond-1'],
+      ['setActiveMolecule', mol],
+      ['syncInputField', mol],
+      ['updateForce', mol, { preservePositions: true, preserveView: true }],
+      ['restoreZoomTransformSnapshot', { x: 9, y: 8, k: 1.25 }]
     ]);
   });
 

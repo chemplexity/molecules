@@ -52,6 +52,7 @@ export function createAppStateBridgeDeps(ctx) {
         ctx.runtimeState.cy2d = value;
       },
       captureZoomTransform: () => (ctx.runtimeState.mode === '2d' ? ctx.captureZoomTransformSnapshot() : null),
+      restoreZoomTransformSnapshot: snapshot => ctx.restoreZoomTransformSnapshot(snapshot),
       restore2dEditViewport: (zoomSnapshot, options) => ctx.restore2dEditViewport(zoomSnapshot, options),
       sync2dDerivedState: mol => ctx.render2DHelpers.sync2dDerivedState(mol),
       syncStereoMap2d: mol => {

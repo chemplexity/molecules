@@ -1,7 +1,22 @@
 # Change Log
 
+## 2026-04-22
+
+- Keep strict exocyclic alkene exits on attached five-member rings centered between the two ring bonds, even when the mixed-family attachment search must trade a small transient overlap to avoid a visibly skewed pose
+- Keep direct-attached chlorophenyl ring roots exactly symmetric at the attachment atom while overlap cleanup preserves conjugated amide nitrogens on their exact 120-degree continuation
+- Fan geminal difluoro leaves on saturated six-member ring atoms across the open exterior gap instead of pinching one fluorine onto a ring-edge continuation
+- Keep computed resonance contributors when leaving reaction preview through the resonance row, while preserving the pre-preview 2D display geometry and preview-history molecule metadata
+- Widen the circular draw-tool hit targets so near-edge clicks on the draw-bond button still activate the tool and preserve drawer alignment
+- Make the main draw-bond button toggle back to pan mode on a second click, matching the charge tool buttons while keeping the bond drawer available on hover
+- Mirror collapsed two-atom bridged child-ring arcs across their shared endpoints so mixed fused/bridged layouts keep clean outward exits without atom-on-atom overlays
+- Add a deterministic mixed-family exact-continuation snap for directly attached ring blocks, so JavaScriptCore/WebKit cannot leave fused-indole alkene roots flattened at `150°` when the exact `120°` continuation is available
+
 ## 2026-04-21
 
+- Keep mixed fused-heteroaryl benzyl linkers on an exact 120-degree methylene bend by letting direct-attached ring rescue move the whole linker-plus-ring cluster around the already placed parent
+- Place deferred hydrogens after heavier deferred leaves and relax exact omitted-h trigonal slot clearance slightly, so suppressed-h heavy substituents like `C(Cl)` branches can keep exact visible `120/120/120` spreads without losing their ideal slot to hidden hydrogens
+- Preserve exact visible `120/120/120` heavy-atom spreads for hidden-hydrogen browser/app layouts by regenerating suppressed-h coordinates from a hydrogen-visible engine clone before writing the hidden-h result back
+- Let omitted-h direct-attached mixed ring searches reopen a narrow local angle search and mirror upstream pendant subtrees when needed, so benzylic phenyl exits and their adjacent hidden-h trigonal parents can both land exactly while visible methyl centers stay exact
 - Keep three-visible-bond stereocenters with a hidden hydrogen on a true trigonal 120/120/120 spread when their heavy-atom layout should read as omitted-h continuation rather than tetrahedral projection
 - Score mixed-family direct-attached ring blocks from the ring-anchor side as well, so isolated cyclohexyl and similar saturated ring attachments snap to their exact local outward exit instead of settling on tangential poses
 - Let hypervalent angle cleanup rotate compact non-ring ligand subtrees, so phosphoramidate and phosphate-ester phosphorus centers can settle onto exact orthogonal crosses without introducing new overlaps

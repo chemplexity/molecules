@@ -29,6 +29,7 @@ export function createAppStateBridge(deps) {
       setCx2d: deps.viewState.setCx2d,
       setCy2d: deps.viewState.setCy2d,
       captureZoomTransform: deps.viewState.captureZoomTransform,
+      restoreZoomTransformSnapshot: deps.viewState.restoreZoomTransformSnapshot,
       restore2dEditViewport: deps.viewState.restore2dEditViewport,
       sync2dDerivedState: deps.viewState.sync2dDerivedState,
       syncStereoMap2d: deps.viewState.syncStereoMap2d,

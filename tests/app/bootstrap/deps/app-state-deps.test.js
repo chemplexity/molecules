@@ -20,10 +20,14 @@ describe('app-state dependency builder', () => {
     };
     let primitiveHoverSuppressed = false;
     let drawBondHoverSuppressed = false;
+    const restoredZoomSnapshots = [];
 
     const deps = createAppStateBridgeDeps({
       runtimeState,
       captureZoomTransformSnapshot: () => ({ k: 1 }),
+      restoreZoomTransformSnapshot: snapshot => {
+        restoredZoomSnapshots.push(snapshot);
+      },
       restore2dEditViewport() {},
       render2DHelpers: { sync2dDerivedState() {} },
       pickStereoWedgesPreserving2dChoice: () => new Map([['a', 'wedge']]),
@@ -71,7 +75,9 @@ describe('app-state dependency builder', () => {
 
     deps.viewState.setPrimitiveHoverSuppressed(true);
     deps.viewState.setDrawBondHoverSuppressed(true);
+    deps.viewState.restoreZoomTransformSnapshot({ x: 9, y: 10, k: 2 });
     assert.equal(primitiveHoverSuppressed, true);
     assert.equal(drawBondHoverSuppressed, true);
+    assert.deepEqual(restoredZoomSnapshots, [{ x: 9, y: 10, k: 2 }]);
   });
 });

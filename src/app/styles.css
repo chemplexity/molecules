@@ -1131,6 +1131,7 @@ div.tooltip td:first-child {
 }
 
 #draw-tools {
+  --draw-tool-button-size: 36px;
   position: absolute;
   top: 10px;
   left: 10px;
@@ -1149,8 +1150,8 @@ div.tooltip td:first-child {
 }
 
 #draw-tools button {
-  width: 32px;
-  height: 32px;
+  width: var(--draw-tool-button-size);
+  height: var(--draw-tool-button-size);
   border: 1px solid #ccc;
   border-radius: 50%;
   background: #fff;
@@ -1193,7 +1194,7 @@ div.tooltip td:first-child {
 
 #draw-bond-drawer {
   position: absolute;
-  left: 32px;
+  left: var(--draw-tool-button-size);
   top: -10px;
   display: flex;
   align-items: center;

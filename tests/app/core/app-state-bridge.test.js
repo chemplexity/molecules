@@ -70,6 +70,9 @@ describe('createAppStateBridge', () => {
           records.push(['setCy2d', value]);
         },
         captureZoomTransform: () => ({ x: 1, y: 2, k: 3 }),
+        restoreZoomTransformSnapshot: snapshot => {
+          records.push(['restoreZoomTransformSnapshot', snapshot]);
+        },
         restore2dEditViewport: (snapshot, options) => {
           records.push(['restore2dEditViewport', snapshot, options]);
         },
@@ -153,12 +156,14 @@ describe('createAppStateBridge', () => {
     assert.equal(bridge.overlayState.getChargeTool(), 'positive');
     assert.equal(bridge.overlayState.getDrawBondElement(), 'N');
     assert.equal(bridge.overlayState.getDrawBondType(), 'double');
+    bridge.viewState.restoreZoomTransformSnapshot({ x: 7, y: 8, k: 0.5 });
     bridge.viewState.restore2dEditViewport('zoom', { zoomToFit: true });
     bridge.overlayState.setChargeTool('negative');
     bridge.overlayState.setDrawBondElement('O');
     bridge.overlayState.setDrawBondType('triple');
 
     assert.deepEqual(records, [
+      ['restoreZoomTransformSnapshot', { x: 7, y: 8, k: 0.5 }],
       ['restore2dEditViewport', 'zoom', { zoomToFit: true }],
       ['setChargeTool', 'negative'],
       ['setDrawBondElement', 'O'],

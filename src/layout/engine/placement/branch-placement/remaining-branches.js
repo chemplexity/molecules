@@ -32,6 +32,7 @@ import {
   pickBestCandidateAngle,
   preferredBranchAngles,
   resolvedPreferredAngles,
+  shouldPreferOmittedHydrogenTrigonalBisector,
   shouldPromotePreferredRingAngle,
   supportsProjectedTetrahedralGeometry
 } from './angle-selection.js';
@@ -151,10 +152,23 @@ function placeNeighborSequence(
       preferredAngles.length > 0
       && !childIsHydrogen
       && supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId);
+    const shouldHonorOmittedHydrogenTrigonalAngle =
+      preferredAngles.length > 0
+      && !childIsHydrogen
+      && currentPlacedNeighborIds.length === 2
+      && childBond != null
+      && !childBond.aromatic
+      && (childBond.order ?? 1) === 1
+      && shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId);
     const shouldHonorPreferredAngle =
       preferredAngles.length > 0
       && !childIsHydrogen
-      && (currentPlacedNeighborIds.length === 1 || isRingAnchor(layoutGraph, anchorAtomId) || shouldHonorProjectedTetrahedralAngle);
+      && (
+        currentPlacedNeighborIds.length === 1
+        || isRingAnchor(layoutGraph, anchorAtomId)
+        || shouldHonorProjectedTetrahedralAngle
+        || shouldHonorOmittedHydrogenTrigonalAngle
+      );
     const allowFinePreferredAngles = shouldHonorPreferredAngle && isRingAnchor(layoutGraph, anchorAtomId);
     const shouldForceExactTrigonalAngle =
       preferredAngles.length > 0
@@ -168,6 +182,8 @@ function placeNeighborSequence(
     const shouldForceExactSimpleAcyclicAngle =
       shouldHonorPreferredAngle
       && isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId);
+    const shouldForceExactOmittedHydrogenTrigonalAngle =
+      shouldHonorOmittedHydrogenTrigonalAngle;
     const shouldForceExactProjectedTetrahedralAngle =
       shouldHonorProjectedTetrahedralAngle
       && currentPlacedNeighborIds.length >= 2;
@@ -177,6 +193,7 @@ function placeNeighborSequence(
       || shouldForceExactTrigonalAngle
       || shouldForceExactRingTrigonalBisectorAngle
       || shouldForceExactSimpleAcyclicAngle
+      || shouldForceExactOmittedHydrogenTrigonalAngle
       || shouldForceExactProjectedTetrahedralAngle
       || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId);
     const exactPreferredAngle =
@@ -185,9 +202,21 @@ function placeNeighborSequence(
         || shouldForceExactTrigonalAngle
         || shouldForceExactRingTrigonalBisectorAngle
         || shouldForceExactSimpleAcyclicAngle
+        || shouldForceExactOmittedHydrogenTrigonalAngle
         || shouldForceExactProjectedTetrahedralAngle
       )
-        ? chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, constrainedPreferredAngles, excludedAtomIds, placementState, ringPolygons, atomGrid)
+        ? chooseExactPreferredAngle(
+            anchorPosition,
+            bondLength,
+            coords,
+            occupiedAngles,
+            constrainedPreferredAngles,
+            excludedAtomIds,
+            placementState,
+            ringPolygons,
+            atomGrid,
+            shouldForceExactOmittedHydrogenTrigonalAngle ? { clearanceFloorFactor: 0.5 } : {}
+          )
         : null;
     const fallbackCandidates = evaluateAngleCandidates(
       constrainedFallbackAngles,
@@ -258,6 +287,8 @@ function placeChildren(
     canonicalAtomRank
   );
   const { primaryNeighborIds, deferredNeighborIds } = splitDeferredLeafNeighbors(unplacedNeighbors, layoutGraph);
+  const deferredHeavyNeighborIds = deferredNeighborIds.filter(neighborAtomId => !isHydrogenAtom(layoutGraph, neighborAtomId));
+  const deferredHydrogenNeighborIds = deferredNeighborIds.filter(neighborAtomId => isHydrogenAtom(layoutGraph, neighborAtomId));
   const shouldLeaveDeferredLeavesForLaterPass =
     primaryNeighborIds.length === 0
     && deferredNeighborIds.length > 0
@@ -301,7 +332,7 @@ function placeChildren(
       placementContext
     );
   }
-  if (deferredNeighborIds.length > 0 && !shouldLeaveDeferredLeavesForLaterPass) {
+  if (deferredHeavyNeighborIds.length > 0 && !shouldLeaveDeferredLeavesForLaterPass) {
     placeNeighborSequence(
       adjacency,
       canonicalAtomRank,
@@ -311,7 +342,24 @@ function placeChildren(
       anchorAtomId,
       parentAtomId,
       bondLength,
-      deferredNeighborIds,
+      deferredHeavyNeighborIds,
+      layoutGraph,
+      branchConstraints,
+      depth,
+      placementContext
+    );
+  }
+  if (deferredHydrogenNeighborIds.length > 0 && !shouldLeaveDeferredLeavesForLaterPass) {
+    placeNeighborSequence(
+      adjacency,
+      canonicalAtomRank,
+      coords,
+      placementState,
+      atomIdsToPlace,
+      anchorAtomId,
+      parentAtomId,
+      bondLength,
+      deferredHydrogenNeighborIds,
       layoutGraph,
       branchConstraints,
       depth,

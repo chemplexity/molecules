@@ -24,6 +24,7 @@ export function initializeRuntimeBridges(deps) {
     createAppStateBridgeDeps({
       runtimeState: deps.runtimeState,
       captureZoomTransformSnapshot: () => deps.captureZoomTransformSnapshot(),
+      restoreZoomTransformSnapshot: snapshot => deps.restoreZoomTransformSnapshot(snapshot),
       restore2dEditViewport: (zoomSnapshot, options) => deps.restore2dEditViewport(zoomSnapshot, options),
       render2DHelpers: deps.render2DHelpers,
       pickStereoWedgesPreserving2dChoice: mol => deps.pickStereoWedgesPreserving2dChoice(mol),

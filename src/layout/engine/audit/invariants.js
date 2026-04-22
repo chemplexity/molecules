@@ -940,10 +940,7 @@ function shouldMeasureThreeHeavyContinuationDistortionAtCenter(layoutGraph, atom
   if (multipleBondCount !== 0) {
     return false;
   }
-  const ringNeighborCount = covalentBonds.filter(
-    ({ neighborAtomId }) => (layoutGraph.atomToRings?.get(neighborAtomId)?.length ?? 0) > 0
-  ).length;
-  if (ringNeighborCount < 1) {
+  if (layoutGraph.options.suppressH !== true) {
     return false;
   }
   return covalentBonds.every(({ bond, neighborAtomId }) => {

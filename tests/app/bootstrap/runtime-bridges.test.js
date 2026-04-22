@@ -63,6 +63,7 @@ describe('runtime bridge bootstrap', () => {
     let simulationStopped = false;
     let drew = false;
     let rendered = false;
+    const restoredZoomSnapshots = [];
 
     const bridges = initializeRuntimeBridges({
       runtimeState,
@@ -81,7 +82,9 @@ describe('runtime bridge bootstrap', () => {
         }
       },
       captureZoomTransformSnapshot: () => ({ k: 2 }),
-      restoreZoomTransformSnapshot() {},
+      restoreZoomTransformSnapshot(snapshot) {
+        restoredZoomSnapshots.push(snapshot);
+      },
       restore2dEditViewport() {},
       pickStereoWedgesPreserving2dChoice: () => new Map(),
       clearPrimitiveHover() {},
@@ -129,8 +132,10 @@ describe('runtime bridge bootstrap', () => {
 
     bridges.appState.documentState.setActiveMolecule('next');
     assert.equal(runtimeState.mol2d, 'next');
+    bridges.appState.viewState.restoreZoomTransformSnapshot({ x: 4, y: 5, k: 0.75 });
     bridges.appState.overlayState.setChargeTool('positive');
     assert.equal(bridges.appState.overlayState.getChargeTool(), 'positive');
+    assert.deepEqual(restoredZoomSnapshots, [{ x: 4, y: 5, k: 0.75 }]);
 
     bridges.renderRuntime.draw2d();
     bridges.renderRuntime.renderMol('mol');

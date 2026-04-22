@@ -1223,6 +1223,8 @@ function isCandidateSafe(anchorPosition, candidateAngle, bondLength, coords, exc
   return true;
 }
 
+const OMITTED_HYDROGEN_EXACT_CLEARANCE_FACTOR = 0.5;
+
 function preferredTrigonalBisectorAngle(coords, anchorAtomId, placedNeighborIdsList) {
   if (placedNeighborIdsList.length !== 2 || !coords.has(anchorAtomId)) {
     return null;
@@ -1248,7 +1250,14 @@ function preferredTrigonalBisectorAngle(coords, anchorAtomId, placedNeighborIdsL
   return angleOf(outwardVector);
 }
 
-function shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId) {
+/**
+ * Returns whether a hidden-hydrogen saturated carbon should keep its visible
+ * three-heavy spread on the exact trigonal bisector.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Candidate center atom ID.
+ * @returns {boolean} True when the center should prefer an omitted-H trigonal bisector.
+ */
+export function shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId) {
   if (!layoutGraph) {
     return false;
   }
@@ -1258,6 +1267,7 @@ function shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId) 
     !atom
     || atom.element !== 'C'
     || atom.aromatic
+    || layoutGraph.options.suppressH !== true
     || atom.heavyDegree !== 3
     || atom.degree !== 4
     || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
@@ -1265,7 +1275,6 @@ function shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId) 
     return false;
   }
 
-  let ringNeighborCount = 0;
   for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
     if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
       return false;
@@ -1275,12 +1284,8 @@ function shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId) 
     if (!neighborAtom || neighborAtom.element === 'H') {
       continue;
     }
-    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
-      ringNeighborCount++;
-    }
   }
-
-  return ringNeighborCount >= 1;
+  return true;
 }
 
 /**
@@ -1498,9 +1503,10 @@ export function chooseContinuationAngle(
  * @param {{sumX: number, sumY: number, count: number}|null} placementState - Running placement CoM state.
  * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
  * @param {object|null} [atomGrid] - Optional spatial grid used for clearance checks.
+ * @param {{clearanceFloorFactor?: number, minimumSeparation?: number}} [options] - Optional exact-angle safety overrides.
  * @returns {number|null} Safe exact preferred angle, or `null` when it should not be forced.
  */
-export function chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, excludedAtomIds, placementState, ringPolygons = [], atomGrid = null) {
+export function chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, excludedAtomIds, placementState, ringPolygons = [], atomGrid = null, options = {}) {
   const exactPreferredAngles = mergeCandidateAngles([], preferredAngles.filter(Number.isFinite));
   if (exactPreferredAngles.length === 0) {
     return null;
@@ -1523,7 +1529,13 @@ export function chooseExactPreferredAngle(anchorPosition, bondLength, coords, oc
     ringPolygons,
     atomGrid
   );
-  const safeExactCandidates = exactCandidates.filter(candidate => candidate.isSafe !== false);
+  const clearanceFloor = bondLength * (options.clearanceFloorFactor ?? BRANCH_CLEARANCE_FLOOR_FACTOR);
+  const safeExactCandidates = exactCandidates.filter(candidate => {
+    if (!Number.isFinite(candidate.clearanceScore)) {
+      candidate.clearanceScore = candidateClearanceScore(anchorPosition, candidate.angle, bondLength, coords, excludedAtomIds);
+    }
+    return candidate.clearanceScore >= clearanceFloor - 1e-9;
+  });
   if (safeExactCandidates.length === 0) {
     return null;
   }
@@ -1536,7 +1548,7 @@ export function chooseExactPreferredAngle(anchorPosition, bondLength, coords, oc
     const s = safeExactCandidates[i].minSeparation ?? 0;
     if (s > bestSeparation) { bestSeparation = s; }
   }
-  if (bestInsideRingCount !== 0 || bestSeparation < Math.PI / 6) {
+  if (bestInsideRingCount !== 0 || bestSeparation < (options.minimumSeparation ?? (Math.PI / 6))) {
     return null;
   }
   return pickBestCandidateAngle(safeExactCandidates, bondLength, true, clearanceContext);
@@ -1832,7 +1844,7 @@ function describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId) {
     return null;
   }
   const ring = anchorRings[0];
-  if ((ring?.atomIds?.length ?? 0) < 3 || (ring?.atomIds?.length ?? 0) > 5) {
+  if ((ring?.atomIds?.length ?? 0) < 3 || (ring?.atomIds?.length ?? 0) > 6) {
     return null;
   }
 
@@ -1880,8 +1892,12 @@ function largerAngularGap(ringNeighborAngles) {
 }
 
 /**
- * Returns the ideal exocyclic target angles for a small saturated ring atom
- * that carries two heavy external branches.
+ * Returns the ideal exocyclic target angles for a saturated ring atom that
+ * carries two heavy external branches. Three- and four-membered rings read
+ * best when the exocyclic bonds continue the ring edges exactly, while
+ * five- and six-membered rings read better when the two exterior branches fan
+ * symmetrically across the open side of the ring instead of pinching onto a
+ * single ring-edge continuation.
  * @param {number[]} ringNeighborAngles - Already placed ring-bond angles at the anchor.
  * @param {number} ringSize - Ring size for the anchor's incident ring.
  * @returns {number[]} Target exterior angles in radians.
@@ -1890,7 +1906,7 @@ export function smallRingExteriorTargetAngles(ringNeighborAngles, ringSize) {
   if (ringNeighborAngles.length !== 2) {
     return [];
   }
-  if (ringSize === 5) {
+  if (ringSize >= 5) {
     const exteriorGap = largerAngularGap(ringNeighborAngles);
     if (!exteriorGap) {
       return [];
@@ -1993,10 +2009,12 @@ function preferredSmallRingExteriorGapAngles(layoutGraph, coords, anchorAtomId, 
 
 /**
  * Returns the penalty for crowding two heavy exocyclic branches onto the same
- * side of a small non-aromatic ring atom. Three-, four-, and five-member
- * quaternary ring centers read best when their heavy exocyclic bonds follow
- * the exact outer continuations of the ring edges rather than leaving
- * softened exits off the ring vertex.
+ * side of a small non-aromatic ring atom. Three- and four-member quaternary
+ * ring centers read best when their heavy exocyclic bonds follow the exact
+ * outer continuations of the ring edges, while five- and six-member
+ * quaternary ring centers read better when those exocyclic bonds fan across
+ * the ring's open exterior gap instead of pinching into a single edge
+ * continuation.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {string} atomId - Candidate anchor atom ID.
@@ -2017,7 +2035,7 @@ export function measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, at
     return 0;
   }
   const smallRing = anchorRings[0];
-  if ((smallRing?.atomIds?.length ?? 0) < 3 || (smallRing?.atomIds?.length ?? 0) > 5) {
+  if ((smallRing?.atomIds?.length ?? 0) < 3 || (smallRing?.atomIds?.length ?? 0) > 6) {
     return 0;
   }
 
@@ -2238,6 +2256,7 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
       layoutGraph?.canonicalAtomRank ?? new Map()
     );
     const parentAtomId = placedNeighborIdsList.length === 1 ? placedNeighborIdsList[0] : null;
+    const childBond = findLayoutBond(layoutGraph, anchorAtomId, attachedAtomId);
     const continuationAngles = preferredBranchAngles(adjacency, coords, anchorAtomId, atomIdsToPlace, parentAtomId, attachedAtomId, layoutGraph);
     const constrainedContinuationAngles = mergeCandidateAngles(
       filterAnglesByBudget(continuationAngles, anchorAtomId, branchConstraints),
@@ -2249,8 +2268,15 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
       anchorAtomId,
       attachedAtomId
     );
+    const exactOmittedHydrogenTrigonalAngle =
+      placedNeighborIdsList.length === 2
+      && childBond
+      && !childBond.aromatic
+      && (childBond.order ?? 1) === 1
+      && shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId);
     if (
       exactDirectAttachedRingJunctionAngle != null
+      || exactOmittedHydrogenTrigonalAngle
       || isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, attachedAtomId)
       || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, attachedAtomId)
       || isExactRingTrigonalBisectorEligible(layoutGraph, anchorAtomId, attachedAtomId)
@@ -2264,7 +2290,9 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
         constrainedContinuationAngles,
         new Set([anchorAtomId]),
         null,
-        incidentRingPolygons(layoutGraph, coords, anchorAtomId)
+        incidentRingPolygons(layoutGraph, coords, anchorAtomId),
+        null,
+        exactOmittedHydrogenTrigonalAngle ? { clearanceFloorFactor: OMITTED_HYDROGEN_EXACT_CLEARANCE_FACTOR } : {}
       );
       if (exactPreferredAngle != null) {
         return exactPreferredAngle;

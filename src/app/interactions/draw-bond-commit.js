@@ -444,8 +444,9 @@ export function createDrawBondCommitActions(context) {
     const zoomSnapshot = mode === '2d' ? context.view.captureZoomTransform() : null;
     let { atomId, snapAtomId } = drawBondState;
     const { ox, oy, ex, ey, dragged } = drawBondState;
+    const dragDistance = Math.hypot(ex - ox, ey - oy);
 
-    if (!dragged || Math.hypot(ex - ox, ey - oy) < 30) {
+    if (!dragged || (snapAtomId === null && dragDistance < 30)) {
       clearPreviewState();
 
       if (atomId !== null) {

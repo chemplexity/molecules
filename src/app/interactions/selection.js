@@ -312,11 +312,7 @@ export function createSelectionActions(context) {
   }
 
   function handleDrawBondButtonClick() {
-    if (!context.state.overlayState.getDrawBondMode()) {
-      toggleDrawBondMode();
-      return;
-    }
-    toggleDrawBondDrawer();
+    toggleDrawBondMode();
   }
 
   return {

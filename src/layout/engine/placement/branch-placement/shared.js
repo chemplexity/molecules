@@ -212,12 +212,6 @@ export function splitDeferredLeafNeighbors(unplacedNeighborIds, layoutGraph) {
     };
   }
   const primaryNeighborIds = unplacedNeighborIds.filter(neighborAtomId => !isDeferredLeafNeighbor(layoutGraph, neighborAtomId));
-  if (primaryNeighborIds.length === 0) {
-    return {
-      primaryNeighborIds: unplacedNeighborIds,
-      deferredNeighborIds: []
-    };
-  }
   return {
     primaryNeighborIds,
     deferredNeighborIds: unplacedNeighborIds.filter(neighborAtomId => isDeferredLeafNeighbor(layoutGraph, neighborAtomId))

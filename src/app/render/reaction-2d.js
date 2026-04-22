@@ -192,7 +192,13 @@ function _serializeSnapshotMol(mol) {
       properties: JSON.parse(JSON.stringify(bond.properties))
     });
   }
-  return { atoms, bonds };
+  return {
+    atoms,
+    bonds,
+    name: mol.name ?? '',
+    tags: JSON.parse(JSON.stringify(mol.tags ?? [])),
+    moleculeProperties: JSON.parse(JSON.stringify(mol.properties ?? {}))
+  };
 }
 
 function _deserializeSnapshotMol(data) {
@@ -213,7 +219,41 @@ function _deserializeSnapshotMol(data) {
     mol.addBond(bd.id, bd.atoms[0], bd.atoms[1], { ...bd.properties }, false);
     Object.assign(mol.bonds.get(bd.id).properties, bd.properties);
   }
+  mol.name = data.name ?? mol.name;
+  mol.tags = JSON.parse(JSON.stringify(data.tags ?? []));
+  if (data.moleculeProperties) {
+    mol.properties = JSON.parse(JSON.stringify(data.moleculeProperties));
+  }
   return mol;
+}
+
+function _cloneEntryDisplayWithSourceState() {
+  if (!_reactionPreviewSourceMol) {
+    return null;
+  }
+  if (!_reactionPreviewEntryDisplayMol) {
+    return _reactionPreviewSourceMol.clone();
+  }
+  const restored = _reactionPreviewSourceMol.clone();
+  for (const [atomId, entryAtom] of _reactionPreviewEntryDisplayMol.atoms) {
+    const atom = restored.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    atom.x = entryAtom.x;
+    atom.y = entryAtom.y;
+    atom.z = entryAtom.z;
+    atom.visible = entryAtom.visible;
+    atom.tags = JSON.parse(JSON.stringify(entryAtom.tags ?? []));
+  }
+  for (const [bondId, entryBond] of _reactionPreviewEntryDisplayMol.bonds) {
+    const bond = restored.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    bond.tags = JSON.parse(JSON.stringify(entryBond.tags ?? []));
+  }
+  return restored;
 }
 
 /**
@@ -350,7 +390,7 @@ export function _restoreReactionPreviewSource({ restoreEntryZoom = false, restor
   }
   const canRestoreEntryState = !!_reactionPreviewEntryMode && _reactionPreviewEntryMode === ctx.mode;
   const shouldRestoreEntryDisplay = restoreEntryDisplay && canRestoreEntryState && !!_reactionPreviewEntryDisplayMol;
-  const sourceMol = shouldRestoreEntryDisplay ? _reactionPreviewEntryDisplayMol.clone() : _reactionPreviewSourceMol.clone();
+  const sourceMol = shouldRestoreEntryDisplay ? _cloneEntryDisplayWithSourceState() : _reactionPreviewSourceMol.clone();
   const entryZoomTransform = _reactionPreviewEntryZoomTransform ? { ..._reactionPreviewEntryZoomTransform } : null;
   const entryForceNodePositions = canRestoreEntryState && ctx.mode === 'force' && _reactionPreviewEntryForceNodePositions ? new Map(_reactionPreviewEntryForceNodePositions) : null;
   _clearReactionPreviewState();

@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
+import { buildScaffoldPlan } from '../../../../src/layout/engine/model/scaffold-plan.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { collectRigidPendantRingSubtrees, resolveOverlaps } from '../../../../src/layout/engine/cleanup/overlap-resolution.js';
 import { runLocalCleanup } from '../../../../src/layout/engine/cleanup/local-rotation.js';
 import { add, angleOf, angularDifference, centroid, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
+import { layoutMixedFamily } from '../../../../src/layout/engine/families/mixed.js';
 import { layoutSupportedComponents } from '../../../../src/layout/engine/placement/component-layout.js';
 import { makeDisconnectedEthanes } from '../support/molecules.js';
 
@@ -27,6 +29,18 @@ function preferredRingAttachmentAngle(layoutGraph, coords, anchorAtomId) {
     return angleOf(sub(anchorPosition, centroid(ringPositions)));
   }
   return null;
+}
+
+function buildAdjacency(layoutGraph, atomIds) {
+  const adjacency = new Map([...atomIds].map(atomId => [atomId, []]));
+  for (const bond of layoutGraph.bonds.values()) {
+    if (!atomIds.has(bond.a) || !atomIds.has(bond.b)) {
+      continue;
+    }
+    adjacency.get(bond.a).push(bond.b);
+    adjacency.get(bond.b).push(bond.a);
+  }
+  return adjacency;
 }
 
 describe('layout/engine/cleanup/overlap-resolution', () => {
@@ -76,6 +90,22 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     );
     assert.ok(result.moves > 0);
     assert.ok(result.coords.get('c0').x > 0.1);
+  });
+
+  it('keeps conjugated divalent nitrogens on their exact 120-degree continuation while clearing overlaps', () => {
+    const smiles = 'CC\\C(=C/1\\N=C(OC1=O)c2ccc(Cl)cc2Cl)\\N3CCC[C@H]3C(=O)N[C@@H](<Cc4ccc(O)cc4>)C(=O)N';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const mixedResult = layoutMixedFamily(graph, component, adjacency, buildScaffoldPlan(graph, component), graph.options.bondLength);
+
+    const result = resolveOverlaps(graph, mixedResult.coords, { bondLength: graph.options.bondLength });
+    const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
+    const amideAngle = bondAngleAtAtom(result.coords, 'N26', 'C24', 'C27');
+
+    assert.ok(result.moves > 0);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.ok(Math.abs(amideAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected N26 to stay at 120 degrees, got ${((amideAngle * 180) / Math.PI).toFixed(2)}`);
   });
 
   it('honors larger configured overlap targets above the audit floor', () => {

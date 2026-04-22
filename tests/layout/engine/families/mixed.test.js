@@ -657,6 +657,61 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('fans six-member-ring geminal difluoro substituents across the ring exterior gap', () => {
+    const smiles = 'NC(=O)C1=CC=C(NC2CCCC(F)(F)C2[NH3+])N=C1NC1=CC=CN=C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, adjacency, plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), { suppressH: true });
+
+    const exteriorGapMetrics = coords => {
+      const centerAtomId = 'C13';
+      const centerPosition = coords.get(centerAtomId);
+      const ringNeighborAngles = ['C12', 'C16'].map(atomId => angleOf(sub(coords.get(atomId), centerPosition)));
+      const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 6);
+      const exocyclicAngles = ['F14', 'F15'].map(atomId => angleOf(sub(coords.get(atomId), centerPosition)));
+      const alignedDeviation = [
+        angularDifference(exocyclicAngles[0], targetAngles[0]),
+        angularDifference(exocyclicAngles[1], targetAngles[1])
+      ];
+      const swappedDeviation = [
+        angularDifference(exocyclicAngles[0], targetAngles[1]),
+        angularDifference(exocyclicAngles[1], targetAngles[0])
+      ];
+      const chosenDeviation = alignedDeviation.reduce((sum, deviation) => sum + deviation, 0)
+        <= swappedDeviation.reduce((sum, deviation) => sum + deviation, 0)
+        ? alignedDeviation
+        : swappedDeviation;
+      return {
+        separations: sortedNeighborSeparations(adjacency, coords, centerAtomId),
+        maxTargetDeviation: Math.max(...chosenDeviation)
+      };
+    };
+
+    const mixedMetrics = exteriorGapMetrics(mixedResult.coords);
+    const pipelineMetrics = exteriorGapMetrics(pipelineResult.coords);
+
+    assert.equal(mixedResult.supported, true);
+    assert.ok(
+      mixedMetrics.separations[0] > 1.3,
+      `expected the mixed layout to avoid pinched 60-degree difluoro gaps, got minimum separation ${((mixedMetrics.separations[0] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(
+      mixedMetrics.maxTargetDeviation < 1e-6,
+      `expected the mixed layout to place the geminal difluoros on the exact six-member exterior-gap targets, got max deviation ${((mixedMetrics.maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(
+      pipelineMetrics.separations[0] > 1.3,
+      `expected the full pipeline to avoid pinched 60-degree difluoro gaps, got minimum separation ${((pipelineMetrics.separations[0] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(
+      pipelineMetrics.maxTargetDeviation < 1e-6,
+      `expected the full pipeline to place the geminal difluoros on the exact six-member exterior-gap targets, got max deviation ${((pipelineMetrics.maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
+    );
+  });
+
   it('does not force mono-fluoro benzylic linkers off their standard trigonal continuation', () => {
     const graph = createLayoutGraph(parseSMILES('NC(=O)C1=CC=CC(=C1)C1=CC=C(NCC(F)C2=CC=CC=N2)N=N1'), { suppressH: true });
     const component = graph.components[0];
@@ -852,6 +907,37 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('keeps three-shared-atom bridged single-ring hybrids from collapsing their two-atom child arc onto the parent block', () => {
+    const smiles = 'CN1C=C2C(=N1)C1OC2(C)CC1C(O)CC#N';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const mixedResult = layoutMixedFamily(graph, component, adjacency, buildScaffoldPlan(graph, component), graph.options.bondLength);
+    const mixedAudit = auditLayout(graph, mixedResult.coords, { bondLength: graph.options.bondLength });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const mixedDeviation = bestLocalRingDeviation(graph, mixedResult.coords, 'C12', 'C13');
+    const pipelineDeviation = bestLocalRingDeviation(pipelineResult.layoutGraph, pipelineResult.coords, 'C12', 'C13');
+    const mixedArcGap = distance(mixedResult.coords.get('C4'), mixedResult.coords.get('C11'));
+    const pipelineArcGap = distance(pipelineResult.coords.get('C4'), pipelineResult.coords.get('C11'));
+
+    assert.equal(mixedResult.supported, true);
+    assert.equal(mixedAudit.severeOverlapCount, 0);
+    assert.ok(mixedArcGap > 2, `expected the mixed bridged child arc to stay separated from the parent block, got ${mixedArcGap.toFixed(3)}`);
+    assert.ok(
+      mixedDeviation < 1e-6,
+      `expected the mixed bridged child-ring substituent to follow the exact local outward axis, got ${mixedDeviation.toFixed(6)} rad`
+    );
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.ok(pipelineArcGap > 2, `expected the full pipeline bridged child arc to stay separated from the parent block, got ${pipelineArcGap.toFixed(3)}`);
+    assert.ok(
+      pipelineDeviation < 1e-6,
+      `expected the full pipeline bridged child-ring substituent to follow the exact local outward axis, got ${pipelineDeviation.toFixed(6)} rad`
+    );
+  });
+
   it('keeps a crowded five-member-ring ring junction on the aromatic outward axis while putting the second heavy branch in the remaining exterior slot', () => {
     const graph = createLayoutGraph(parseSMILES('C1=CC=C(C=C1)C2(C3CC3)C(=O)NC(=O)N2'), { suppressH: true });
     const component = graph.components[0];
@@ -946,6 +1032,39 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.supported, true);
     assert.ok(Math.abs(leftAttachmentAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected C6 to stay exact, got ${((leftAttachmentAngle * 180) / Math.PI).toFixed(2)} degrees`);
     assert.ok(Math.abs(rightAttachmentAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected C9 to stay exact, got ${((rightAttachmentAngle * 180) / Math.PI).toFixed(2)} degrees`);
+  });
+
+  it('keeps an exocyclic alkene exit centered between the two ring bonds when a pending attached ring would otherwise skew it to one side', () => {
+    const smiles = 'CC\\C(=C/1\\N=C(OC1=O)c2ccc(Cl)cc2Cl)\\N3CCC[C@H]3C(=O)N[C@@H](<Cc4ccc(O)cc4>)C(=O)N';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const mixedResult = layoutMixedFamily(graph, component, adjacency, buildScaffoldPlan(graph, component), graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), { suppressH: true, auditTelemetry: true });
+
+    for (const [label, coords] of [['mixed', mixedResult.coords], ['pipeline', pipelineResult.coords]]) {
+      const firstAngle = bondAngleAtAtom(coords, 'C4', 'C8', 'C3');
+      const secondAngle = bondAngleAtAtom(coords, 'C4', 'N5', 'C3');
+      const firstAttachmentAngle = bondAngleAtAtom(coords, 'C10', 'C11', 'C6');
+      const secondAttachmentAngle = bondAngleAtAtom(coords, 'C10', 'C16', 'C6');
+      const amideAngle = bondAngleAtAtom(coords, 'N26', 'C24', 'C27');
+      assert.ok(
+        Math.abs(firstAngle - secondAngle) < 1e-6,
+        `expected the ${label} alkene exit to stay centered between the C4 ring bonds, got ${((firstAngle * 180) / Math.PI).toFixed(2)} and ${((secondAngle * 180) / Math.PI).toFixed(2)} degrees`
+      );
+      assert.ok(
+        Math.abs(firstAttachmentAngle - secondAttachmentAngle) < 1e-6,
+        `expected the ${label} chlorophenyl attachment at C10 to stay symmetric, got ${((firstAttachmentAngle * 180) / Math.PI).toFixed(2)} and ${((secondAttachmentAngle * 180) / Math.PI).toFixed(2)} degrees`
+      );
+      assert.ok(
+        Math.abs(amideAngle - ((2 * Math.PI) / 3)) < 1e-6,
+        `expected the ${label} amide-side N26 angle to stay at 120 degrees, got ${((amideAngle * 180) / Math.PI).toFixed(2)} degrees`
+      );
+    }
+
+    assert.equal(mixedResult.supported, true);
+    assert.equal(pipelineResult.metadata.audit.severeOverlapCount, 0);
+    assert.equal(pipelineResult.metadata.audit.ok, true);
   });
 
   it('lays out directly attached ring systems in deterministic sequence', () => {
@@ -1068,6 +1187,144 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(mixedResult.supported, true);
     assertTrigonalCenter(mixedResult.coords, 'mixed layout');
     assertTrigonalCenter(pipelineResult.coords, 'pipeline layout');
+  });
+
+  it('keeps benzylic attached phenyl exits exact while preserving the visible hidden-h methyl spreads', () => {
+    const smiles = 'CC(COC1=CC=CC=C1)NC(C)C(O)C1=CC=C(O)C=C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), { suppressH: true });
+    const attachedPhenylRing = (graph.atomToRings.get('C16') ?? [])[0];
+
+    const assertBalancedAttachment = (coords, label) => {
+      const outwardAngle = angleOf(sub(
+        coords.get('C16'),
+        centroid(attachedPhenylRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
+      ));
+      const exitAngle = angleOf(sub(coords.get('C14'), coords.get('C16')));
+      const leftMethylFirstAngle = bondAngleAtAtom(coords, 'C2', 'C1', 'N11');
+      const leftMethylSecondAngle = bondAngleAtAtom(coords, 'C2', 'C1', 'C3');
+      const leftMethylThirdAngle = bondAngleAtAtom(coords, 'C2', 'N11', 'C3');
+      const amineMethylFirstAngle = bondAngleAtAtom(coords, 'C12', 'C13', 'N11');
+      const amineMethylSecondAngle = bondAngleAtAtom(coords, 'C12', 'C13', 'C14');
+      const amineMethylThirdAngle = bondAngleAtAtom(coords, 'C12', 'N11', 'C14');
+      const alcoholFirstAngle = bondAngleAtAtom(coords, 'C14', 'C12', 'O15');
+      const alcoholSecondAngle = bondAngleAtAtom(coords, 'C14', 'C12', 'C16');
+      const alcoholThirdAngle = bondAngleAtAtom(coords, 'C14', 'O15', 'C16');
+
+      assert.ok(
+        angularDifference(outwardAngle, exitAngle) < 1e-6,
+        `expected ${label} attached phenyl exit to stay on the exact local aromatic outward axis, got ${((angularDifference(outwardAngle, exitAngle) * 180) / Math.PI).toFixed(2)}`
+      );
+      for (const [name, angle] of [
+        ['C1-C2-N11', leftMethylFirstAngle],
+        ['C1-C2-C3', leftMethylSecondAngle],
+        ['N11-C2-C3', leftMethylThirdAngle],
+        ['C13-C12-N11', amineMethylFirstAngle],
+        ['C13-C12-C14', amineMethylSecondAngle],
+        ['N11-C12-C14', amineMethylThirdAngle]
+      ]) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+      for (const [name, angle] of [
+        ['C12-C14-O15', alcoholFirstAngle],
+        ['C12-C14-C16', alcoholSecondAngle],
+        ['O15-C14-C16', alcoholThirdAngle]
+      ]) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertBalancedAttachment(mixedResult.coords, 'mixed layout');
+    assertBalancedAttachment(pipelineResult.coords, 'pipeline layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+  });
+
+  it('keeps reported thio, benzyl, and linked-pyridyl ring exits exact through mixed placement and the full pipeline', () => {
+    const smiles = 'CSC1=NN2C(=O)C=C(N=C2N1Cc3cccc(Cl)c3Cl)c4ccncc4';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const thioRing = (graph.atomToRings.get('C3') ?? [])[0];
+    const dichlorophenylRing = (graph.atomToRings.get('C14') ?? [])[0];
+    const pyridylRing = (graph.atomToRings.get('C22') ?? [])[0];
+
+    const assertExactExits = (coords, label) => {
+      const thioOutwardAngle = angleOf(sub(
+        coords.get('C3'),
+        centroid(thioRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
+      ));
+      const dichlorophenylOutwardAngle = angleOf(sub(
+        coords.get('C14'),
+        centroid(dichlorophenylRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
+      ));
+      const pyridylOutwardAngle = angleOf(sub(
+        coords.get('C22'),
+        centroid(pyridylRing.atomIds.map(atomId => coords.get(atomId)).filter(Boolean))
+      ));
+      const thioDeviation = angularDifference(thioOutwardAngle, angleOf(sub(coords.get('S2'), coords.get('C3'))));
+      const dichlorophenylDeviation = angularDifference(dichlorophenylOutwardAngle, angleOf(sub(coords.get('C13'), coords.get('C14'))));
+      const pyridylDeviation = angularDifference(pyridylOutwardAngle, angleOf(sub(coords.get('C9'), coords.get('C22'))));
+      const benzylFirstAngle = bondAngleAtAtom(coords, 'C14', 'C13', 'C15');
+      const benzylSecondAngle = bondAngleAtAtom(coords, 'C14', 'C13', 'C20');
+      const benzylThirdAngle = bondAngleAtAtom(coords, 'C14', 'C15', 'C20');
+      const benzylicLinkerAngle = bondAngleAtAtom(coords, 'C13', 'N12', 'C14');
+      const pyridylFirstAngle = bondAngleAtAtom(coords, 'C22', 'C9', 'C23');
+      const pyridylSecondAngle = bondAngleAtAtom(coords, 'C22', 'C9', 'C27');
+      const pyridylThirdAngle = bondAngleAtAtom(coords, 'C22', 'C23', 'C27');
+      const fusedPyridylFirstAngle = bondAngleAtAtom(coords, 'C9', 'C8', 'C22');
+      const fusedPyridylSecondAngle = bondAngleAtAtom(coords, 'C9', 'N10', 'C22');
+
+      assert.ok(
+        thioDeviation < 1e-6,
+        `expected ${label} thio exit to stay on the exact fused-ring outward axis, got ${((thioDeviation * 180) / Math.PI).toFixed(2)}`
+      );
+      assert.ok(
+        dichlorophenylDeviation < 1e-6,
+        `expected ${label} benzylic dichlorophenyl exit to stay on the exact aromatic outward axis, got ${((dichlorophenylDeviation * 180) / Math.PI).toFixed(2)}`
+      );
+      assert.ok(
+        pyridylDeviation < 1e-6,
+        `expected ${label} linked pyridyl root to stay on the exact aromatic outward axis, got ${((pyridylDeviation * 180) / Math.PI).toFixed(2)}`
+      );
+      for (const [name, angle] of [
+        ['N12-C13-C14', benzylicLinkerAngle],
+        ['C13-C14-C15', benzylFirstAngle],
+        ['C13-C14-C20', benzylSecondAngle],
+        ['C15-C14-C20', benzylThirdAngle],
+        ['C9-C22-C23', pyridylFirstAngle],
+        ['C9-C22-C27', pyridylSecondAngle],
+        ['C23-C22-C27', pyridylThirdAngle],
+        ['C8-C9-C22', fusedPyridylFirstAngle],
+        ['N10-C9-C22', fusedPyridylSecondAngle]
+      ]) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertExactExits(mixedResult.coords, 'mixed layout');
+    assertExactExits(pipelineResult.coords, 'pipeline layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
   });
 
   it('rotates directly attached ring blocks around the parent bond when that clears multiple outward-axis failures at once', () => {

@@ -242,7 +242,7 @@ describe('createDrawBondCommitActions', () => {
     assert.deepEqual(calls.snapshots, []);
   });
 
-  it('restores the prior reaction preview on a hydrogen snap no-op', () => {
+  it('restores the prior reaction preview on a short hydrogen snap no-op', () => {
     const srcAtom = makeAtom('a1', 'C');
     const hydrogen = makeAtom('h1', 'H');
     const mol = {
@@ -257,7 +257,7 @@ describe('createDrawBondCommitActions', () => {
         atomId: 'a1',
         ox: 0,
         oy: 0,
-        ex: 60,
+        ex: 20,
         ey: 0,
         snapAtomId: 'h1',
         dragged: true
