@@ -1,4 +1,4 @@
-/** @module cleanup/attached-ring-rotation-tidy */
+/** @module cleanup/presentation/attached-ring-fallback */
 
 import {
   buildAtomGrid,
@@ -7,17 +7,18 @@ import {
   measureLayoutCost,
   measureRingSubstituentReadability,
   measureTrigonalDistortion
-} from '../audit/invariants.js';
-import { add, angleOf, angularDifference, centroid, rotate, sub } from '../geometry/vec2.js';
-import { isExactSimpleAcyclicContinuationEligible } from '../placement/branch-placement/angle-selection.js';
-import { measureCleanupStagePresentationPenalty, measureTotalSmallRingExteriorGapPenalty } from '../audit/stage-metrics.js';
-import { computeRotatableSubtrees, runLocalCleanup } from './local-rotation.js';
-import { runRingSubstituentTidy } from './ring-substituent-tidy.js';
-import { measureAttachedCarbonylSubtreeClearance, supportsAttachedCarbonylPresentationPreference } from './attached-carbonyl-presentation.js';
-import { containsFrozenAtom } from './frozen-atoms.js';
-import { probeRigidRotation, rigidDescriptorKey } from './rigid-rotation.js';
-import { collectCutSubtree } from './subtree-utils.js';
-import { runUnifiedCleanup } from './unified-cleanup.js';
+} from '../../audit/invariants.js';
+import { add, angleOf, angularDifference, centroid, rotate, sub } from '../../geometry/vec2.js';
+import { isExactSimpleAcyclicContinuationEligible } from '../../placement/branch-placement/angle-selection.js';
+import { measureCleanupStagePresentationPenalty, measureTotalSmallRingExteriorGapPenalty } from '../../audit/stage-metrics.js';
+import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
+import { computeRotatableSubtrees, runLocalCleanup } from '../local-rotation.js';
+import { runRingSubstituentTidy } from './ring-substituent.js';
+import { measureAttachedCarbonylSubtreeClearance, supportsAttachedCarbonylPresentationPreference } from './attached-carbonyl.js';
+import { containsFrozenAtom } from '../frozen-atoms.js';
+import { rigidDescriptorKey, rotateRigidDescriptorPositions } from '../rigid-rotation.js';
+import { collectCutSubtree } from '../subtree-utils.js';
+import { runUnifiedCleanup } from '../unified-cleanup.js';
 
 const ATTACHED_RING_ROTATION_TIDY_ANGLES = [
   Math.PI / 6,
@@ -253,6 +254,7 @@ function measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, coords, des
   }
 
   let nonAromaticMultipleBondCount = 0;
+  let ringNeighborCount = 0;
   const otherHeavyNeighborIds = [];
   for (const bond of layoutGraph.bondsByAtomId.get(parentAtomId) ?? []) {
     if (!bond || bond.kind !== 'covalent') {
@@ -266,12 +268,17 @@ function measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, coords, des
     if (!bond.aromatic && (bond.order ?? 1) >= 2) {
       nonAromaticMultipleBondCount++;
     }
+    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+      ringNeighborCount++;
+    }
     if (neighborAtomId !== attachmentAtomId && coords.has(neighborAtomId)) {
       otherHeavyNeighborIds.push(neighborAtomId);
     }
   }
 
-  if (nonAromaticMultipleBondCount !== 1 || otherHeavyNeighborIds.length !== 2) {
+  const supportsHiddenHydrogenTrigonalSpread =
+    anchorAtom.degree === 4 && ringNeighborCount >= 1 && nonAromaticMultipleBondCount === 0;
+  if ((!supportsHiddenHydrogenTrigonalSpread && nonAromaticMultipleBondCount !== 1) || otherHeavyNeighborIds.length !== 2) {
     return 0;
   }
 
@@ -505,118 +512,97 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         }
         return bestScore;
       };
-      const rigidRotationProbe = probeRigidRotation(layoutGraph, currentCoords, descriptor, {
-        angles: ATTACHED_RING_ROTATION_TIDY_ANGLES.filter(rotation => Math.abs(rotation) > 1e-9),
-        frozenAtomIds,
-        scoreFn(_coords, overridePositions) {
-          return scoreCandidate(overridePositions);
-        },
-        isBetterScoreFn(candidate, incumbent) {
-          return (
-            overlapCountWins(candidate, incumbent)
-            || exactContinuationWins(candidate, incumbent)
-            || trigonalBisectorWins(candidate, incumbent)
-            || trigonalDistortionWins(candidate, incumbent)
-            || readabilityFailureWins(candidate, incumbent)
-            || inwardReadabilityWins(candidate, incumbent)
-            || outwardReadabilityWins(candidate, incumbent)
-            || globalReadabilityFailureWins(candidate, incumbent)
-            || globalInwardReadabilityWins(candidate, incumbent)
-            || globalOutwardReadabilityWins(candidate, incumbent)
-            || outwardDeviationWins(candidate, incumbent)
-            || subtreeClearanceWins(candidate, incumbent)
-            || presentationWins(candidate, incumbent)
-            || layoutCostWins(candidate, incumbent)
-          );
-        }
-      });
-      if (rigidRotationProbe.bestScore && isBetterAttachedRingCandidate(rigidRotationProbe.bestScore, bestCandidate)) {
-        bestCandidate = rigidRotationProbe.bestScore;
-      }
-      if (supportsRootAnchoredAttachedRingRotation(layoutGraph, descriptor)) {
-        const rootAnchoredDescriptor = {
-          ...descriptor,
-          subtreeAtomIds: descriptor.subtreeAtomIds.filter(atomId => atomId !== descriptor.rootAtomId)
-        };
-        const rootAnchoredProbe = probeRigidRotation(layoutGraph, currentCoords, rootAnchoredDescriptor, {
-          angles: ATTACHED_RING_ROTATION_TIDY_ANGLES.filter(rotation => Math.abs(rotation) > 1e-9),
-          frozenAtomIds,
-          buildPositionsFn(coords, _descriptor, rotation) {
-            return rotateAttachedRingAroundRoot(coords, descriptor, rotation);
-          },
-          scoreFn(_coords, overridePositions) {
-            return scoreCandidate(overridePositions);
-          },
-          isBetterScoreFn(candidate, incumbent) {
-            return (
-              overlapCountWins(candidate, incumbent)
-              || exactContinuationWins(candidate, incumbent)
-              || trigonalBisectorWins(candidate, incumbent)
-              || trigonalDistortionWins(candidate, incumbent)
-              || readabilityFailureWins(candidate, incumbent)
-              || inwardReadabilityWins(candidate, incumbent)
-              || outwardReadabilityWins(candidate, incumbent)
-              || globalReadabilityFailureWins(candidate, incumbent)
-              || globalInwardReadabilityWins(candidate, incumbent)
-              || globalOutwardReadabilityWins(candidate, incumbent)
-              || outwardDeviationWins(candidate, incumbent)
-              || subtreeClearanceWins(candidate, incumbent)
-              || presentationWins(candidate, incumbent)
-              || layoutCostWins(candidate, incumbent)
-            );
-          }
-        });
-        if (rootAnchoredProbe.bestScore && isBetterAttachedRingCandidate(rootAnchoredProbe.bestScore, bestCandidate)) {
-          bestCandidate = rootAnchoredProbe.bestScore;
-        }
-      }
       const attachedCarbonylRingChildren = collectAttachedCarbonylRingChildDescriptors(layoutGraph, currentCoords, descriptor);
-      if (attachedCarbonylRingChildren.length > 0) {
-        const compositeRotations = [0, ...ATTACHED_RING_ROTATION_TIDY_ANGLES];
-        for (const childDescriptor of attachedCarbonylRingChildren) {
-          for (const anchorRotation of compositeRotations) {
-            for (const ringRotation of compositeRotations) {
-              if (Math.abs(anchorRotation) <= 1e-9 && Math.abs(ringRotation) <= 1e-9) {
+      const attachedRingSearch = visitPresentationDescriptorCandidates(layoutGraph, currentCoords, descriptor, {
+        context: {
+          focusAtomIds,
+          attachedCarbonylRingChildren,
+          terminalSubtrees,
+          siblingSwaps,
+          geminalPairs
+        },
+        generateSeeds(inputDescriptor, searchContext) {
+          const seeds = ATTACHED_RING_ROTATION_TIDY_ANGLES
+            .filter(rotation => Math.abs(rotation) > 1e-9)
+            .map(rotation => ({ kind: 'rigid', rotation }));
+          if (supportsRootAnchoredAttachedRingRotation(layoutGraph, inputDescriptor)) {
+            for (const rotation of ATTACHED_RING_ROTATION_TIDY_ANGLES) {
+              if (Math.abs(rotation) <= 1e-9) {
                 continue;
               }
-              let candidateCoords = currentCoords;
-              if (Math.abs(anchorRotation) > 1e-9) {
-                candidateCoords = applyRigidRotationToCoords(candidateCoords, descriptor.subtreeAtomIds, descriptor.anchorAtomId, anchorRotation);
-              }
-              if (Math.abs(ringRotation) > 1e-9) {
-                candidateCoords = applyRigidRotationToCoords(
-                  candidateCoords,
-                  childDescriptor.subtreeAtomIds,
-                  childDescriptor.ringAnchorAtomId,
-                  ringRotation
-                );
-              }
-              const overridePositions = new Map();
-              for (const atomId of descriptor.subtreeAtomIds) {
-                if (atomId === descriptor.anchorAtomId) {
-                  continue;
+              seeds.push({ kind: 'root-anchored', rotation });
+            }
+          }
+          if (searchContext.attachedCarbonylRingChildren.length > 0) {
+            const compositeRotations = [0, ...ATTACHED_RING_ROTATION_TIDY_ANGLES];
+            for (const childDescriptor of searchContext.attachedCarbonylRingChildren) {
+              for (const anchorRotation of compositeRotations) {
+                for (const ringRotation of compositeRotations) {
+                  if (Math.abs(anchorRotation) <= 1e-9 && Math.abs(ringRotation) <= 1e-9) {
+                    continue;
+                  }
+                  seeds.push({
+                    kind: 'composite',
+                    childDescriptor,
+                    anchorRotation,
+                    ringRotation
+                  });
                 }
-                const position = candidateCoords.get(atomId);
-                if (position) {
-                  overridePositions.set(atomId, position);
-                }
-              }
-              for (const atomId of childDescriptor.subtreeAtomIds) {
-                if (atomId === childDescriptor.ringAnchorAtomId) {
-                  continue;
-                }
-                const position = candidateCoords.get(atomId);
-                if (position) {
-                  overridePositions.set(atomId, position);
-                }
-              }
-              const compositeScore = scoreCandidate(overridePositions);
-              if (compositeScore && isBetterAttachedRingCandidate(compositeScore, bestCandidate)) {
-                bestCandidate = compositeScore;
               }
             }
           }
-        }
+          return seeds;
+        },
+        materializeOverrides(inputCoords, inputDescriptor, seed) {
+          if (seed.kind === 'rigid') {
+            return rotateRigidDescriptorPositions(inputCoords, inputDescriptor, seed.rotation);
+          }
+          if (seed.kind === 'root-anchored') {
+            return rotateAttachedRingAroundRoot(inputCoords, inputDescriptor, seed.rotation);
+          }
+          if (seed.kind !== 'composite') {
+            return null;
+          }
+          let candidateCoords = inputCoords;
+          if (Math.abs(seed.anchorRotation) > 1e-9) {
+            candidateCoords = applyRigidRotationToCoords(candidateCoords, inputDescriptor.subtreeAtomIds, inputDescriptor.anchorAtomId, seed.anchorRotation);
+          }
+          if (Math.abs(seed.ringRotation) > 1e-9) {
+            candidateCoords = applyRigidRotationToCoords(
+              candidateCoords,
+              seed.childDescriptor.subtreeAtomIds,
+              seed.childDescriptor.ringAnchorAtomId,
+              seed.ringRotation
+            );
+          }
+          const overridePositions = new Map();
+          for (const atomId of inputDescriptor.subtreeAtomIds) {
+            if (atomId === inputDescriptor.anchorAtomId) {
+              continue;
+            }
+            const position = candidateCoords.get(atomId);
+            if (position) {
+              overridePositions.set(atomId, position);
+            }
+          }
+          for (const atomId of seed.childDescriptor.subtreeAtomIds) {
+            if (atomId === seed.childDescriptor.ringAnchorAtomId) {
+              continue;
+            }
+            const position = candidateCoords.get(atomId);
+            if (position) {
+              overridePositions.set(atomId, position);
+            }
+          }
+          return overridePositions;
+        },
+        scoreSeed(_descriptor, _candidateCoords, _seed, _searchContext, overridePositions) {
+          return scoreCandidate(overridePositions);
+        },
+        isBetterScore: isBetterAttachedRingCandidate
+      });
+      if (attachedRingSearch.bestFinalCandidate && isBetterAttachedRingCandidate(attachedRingSearch.bestFinalCandidate.score, bestCandidate)) {
+        bestCandidate = attachedRingSearch.bestFinalCandidate.score;
       }
     }
 

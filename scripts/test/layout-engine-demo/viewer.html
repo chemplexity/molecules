@@ -175,6 +175,13 @@
         color: #c2410c;
         font-weight: 500;
       }
+      .step-time {
+        font-size: 10px;
+        color: #999;
+        font-weight: 400;
+        margin-top: 1px;
+        font-variant-numeric: tabular-nums;
+      }
       .step-best-tag {
         font-size: 9px;
         font-weight: 700;
@@ -561,10 +568,11 @@
           item.className = 'step-item' + (step.accepted === false ? ' reverted' : '');
           item.dataset.index = i;
           const icon = step.accepted === false ? '↩' : '○';
+          const timeHtml = step.stepTimeMs != null ? `<div class="step-time">${step.stepTimeMs.toFixed(1)}ms</div>` : '';
           const badge = step.movedAtomCount > 0
             ? `<span class="step-badge">${step.movedAtomCount}</span>`
             : `<span class="step-badge zero">—</span>`;
-          item.innerHTML = `<div class="step-icon">${icon}</div><div class="step-label">${step.label}</div>${badge}`;
+          item.innerHTML = `<div class="step-icon">${icon}</div><div class="step-label"><div>${step.label}</div>${timeHtml}</div>${badge}`;
           item.addEventListener('click', () => showStep(i));
           stepList.appendChild(item);
         });
@@ -709,7 +717,7 @@
       function updateInfoPanel(step) {
         infoLabel.textContent = step.label;
         infoLabel.style.color = '';
-        infoDesc.textContent = step.description;
+        infoDesc.textContent = step.description + (step.stepTimeMs != null ? ` (${step.stepTimeMs.toFixed(1)}ms)` : '');
 
         // Outcome chip + toggle
         if (step.accepted === false) {

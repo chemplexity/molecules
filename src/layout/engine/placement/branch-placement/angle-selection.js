@@ -168,15 +168,22 @@ export function resolvedPreferredAngles(anchorAtomId, fallbackPreferredAngles, b
  * continuation geometry rather than falling back to a wider but chemically
  * wrong direction from the full candidate set.
  * @param {number[]} preferredAngles - Preferred angles in radians.
- * @param {boolean} [allowFinePreferredAngles] - Whether to add finer offsets around preferred angles.
- * @returns {number|null} Winning preferred angle, or `null` when none exist.
+ * @returns {number[]} Exact and snapped preferred angles.
  */
-function buildPreferredCandidateAngles(preferredAngles = [], allowFinePreferredAngles = false) {
-  const candidateAngles = mergeCandidateAngles(preferredDiscreteAngles(preferredAngles), preferredAngles);
-  if (!allowFinePreferredAngles) {
-    return candidateAngles;
-  }
-  return mergeCandidateAngles(candidateAngles, preferredAngles.flatMap(preferredAngle => [
+function buildPreferredCandidateAngles(preferredAngles = []) {
+  return mergeCandidateAngles(preferredDiscreteAngles(preferredAngles), preferredAngles);
+}
+
+/**
+ * Returns the finer rescue offsets around preferred angles.
+ * These are intentionally separated from the primary candidate pool so branch
+ * placement can exhaust the coarse/exact angles before exploring off-lattice
+ * rescue directions.
+ * @param {number[]} preferredAngles - Preferred angles in radians.
+ * @returns {number[]} Fine-grained rescue angles.
+ */
+function buildFinePreferredCandidateAngles(preferredAngles = []) {
+  return mergeCandidateAngles([], preferredAngles.flatMap(preferredAngle => [
     preferredAngle - DEG30,
     preferredAngle - DEG15,
     preferredAngle + DEG15,
@@ -184,8 +191,41 @@ function buildPreferredCandidateAngles(preferredAngles = [], allowFinePreferredA
   ]));
 }
 
-function choosePreferredDiscreteAngle(occupiedAngles, preferredAngles = [], allowFinePreferredAngles = false) {
-  const candidateAngles = buildPreferredCandidateAngles(preferredAngles, allowFinePreferredAngles);
+function hasSafeCandidate(candidates) {
+  return candidates.some(candidate => candidate.isSafe !== false);
+}
+
+function hasSafePreferredAngleInList(occupiedAngles, candidateAngles) {
+  if (candidateAngles.length === 0) {
+    return false;
+  }
+  return candidateAngles.some(candidateAngle => {
+    if (occupiedAngles.length === 0) {
+      return true;
+    }
+    let minSeparation = Infinity;
+    for (const occ of occupiedAngles) {
+      const d = angularDifference(candidateAngle, occ);
+      if (d < minSeparation) { minSeparation = d; }
+    }
+    return minSeparation >= Math.PI / 6;
+  });
+}
+
+function buildResolvedPreferredCandidateAngles(occupiedAngles, preferredAngles = [], allowFinePreferredAngles = false) {
+  const primaryCandidateAngles = buildPreferredCandidateAngles(preferredAngles);
+  if (
+    !allowFinePreferredAngles
+    || primaryCandidateAngles.length === 0
+    || hasSafePreferredAngleInList(occupiedAngles, primaryCandidateAngles)
+  ) {
+    return primaryCandidateAngles;
+  }
+  return mergeCandidateAngles(primaryCandidateAngles, buildFinePreferredCandidateAngles(preferredAngles));
+}
+
+function choosePreferredCandidateAngle(occupiedAngles, preferredAngles = [], allowFinePreferredAngles = false) {
+  const candidateAngles = buildResolvedPreferredCandidateAngles(occupiedAngles, preferredAngles, allowFinePreferredAngles);
   if (candidateAngles.length === 0) {
     return null;
   }
@@ -204,29 +244,20 @@ function choosePreferredDiscreteAngle(occupiedAngles, preferredAngles = [], allo
 }
 
 /**
- * Returns whether the preferred discrete continuation candidates are clear
- * enough to be honored without forcing an obviously crowded attachment slot.
+ * Returns whether the preferred continuation candidates are clear enough to be
+ * honored without forcing an obviously crowded attachment slot. Attachment
+ * angle choice uses angular slot safety instead of point clearance because the
+ * pending ring block can still rotate after this angle is chosen.
  * @param {number[]} occupiedAngles - Occupied neighbor angles.
  * @param {number[]} preferredAngles - Preferred angles in radians.
- * @param {boolean} [allowFinePreferredAngles] - Whether to add finer offsets around preferred angles.
- * @returns {boolean} True when a preferred discrete angle is acceptably separated.
+ * @param {boolean} [allowFinePreferredAngles] - Whether to add finer offsets around preferred angles after the primary pool fails.
+ * @returns {boolean} True when a preferred candidate is acceptably separated.
  */
-function hasSafePreferredDiscreteAngle(occupiedAngles, preferredAngles = [], allowFinePreferredAngles = false) {
-  const candidateAngles = buildPreferredCandidateAngles(preferredAngles, allowFinePreferredAngles);
-  if (candidateAngles.length === 0) {
-    return false;
-  }
-  return candidateAngles.some(candidateAngle => {
-    if (occupiedAngles.length === 0) {
-      return true;
-    }
-    let minSeparation = Infinity;
-    for (const occ of occupiedAngles) {
-      const d = angularDifference(candidateAngle, occ);
-      if (d < minSeparation) { minSeparation = d; }
-    }
-    return minSeparation >= Math.PI / 6;
-  });
+function hasSafePreferredCandidateAngle(occupiedAngles, preferredAngles = [], allowFinePreferredAngles = false) {
+  return hasSafePreferredAngleInList(
+    occupiedAngles,
+    buildResolvedPreferredCandidateAngles(occupiedAngles, preferredAngles, allowFinePreferredAngles)
+  );
 }
 
 function nearestDiscreteAngle(targetAngle) {
@@ -718,6 +749,35 @@ function incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId) {
   return ringAngles;
 }
 
+function shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, coords, anchorAtomId, childAtomId) {
+  if (
+    !layoutGraph
+    || !childAtomId
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1
+    || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (!childAtom || childAtom.element !== 'C' || childAtom.aromatic === true) {
+    return false;
+  }
+
+  const childBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
+  if (
+    !childBond
+    || childBond.kind !== 'covalent'
+    || childBond.inRing
+    || childBond.aromatic
+    || (childBond.order ?? 1) !== 1
+  ) {
+    return false;
+  }
+
+  return incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId).length === 1;
+}
+
 function shouldPreferTerminalLeafLocalOutwardOverStraightJunction(layoutGraph, coords, anchorAtomId, childAtomId, straightJunctionAngle) {
   if (
     !straightJunctionAngle
@@ -725,6 +785,67 @@ function shouldPreferTerminalLeafLocalOutwardOverStraightJunction(layoutGraph, c
     || !isTerminalHeavyLeafSubstituent(layoutGraph, anchorAtomId, childAtomId)
   ) {
     return false;
+  }
+
+  const anchorPosition = coords.get(anchorAtomId);
+  const localOutwardAngles = (layoutGraph.atomToRings.get(anchorAtomId) ?? []).flatMap(ring => {
+    const placedRingPositions = ring.atomIds.filter(atomId => coords.has(atomId)).map(atomId => coords.get(atomId));
+    if (placedRingPositions.length < 3) {
+      return [];
+    }
+    const outwardVector = sub(anchorPosition, centroid(placedRingPositions));
+    return length(outwardVector) <= CENTERED_NEIGHBOR_EPSILON ? [] : [angleOf(outwardVector)];
+  });
+  if (localOutwardAngles.length < 2) {
+    return false;
+  }
+
+  let localOutwardSpread = 0;
+  for (let firstIndex = 0; firstIndex < localOutwardAngles.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < localOutwardAngles.length; secondIndex++) {
+      localOutwardSpread = Math.max(
+        localOutwardSpread,
+        angularDifference(localOutwardAngles[firstIndex], localOutwardAngles[secondIndex])
+      );
+    }
+  }
+  if (localOutwardSpread > DEG30 + 1e-6) {
+    return false;
+  }
+
+  return Math.min(...localOutwardAngles.map(angle => angularDifference(angle, straightJunctionAngle))) >= DEG30 - 1e-6;
+}
+
+function shouldPreferSimpleChainLocalOutwardOverStraightJunction(layoutGraph, coords, anchorAtomId, childAtomId, straightJunctionAngle) {
+  if (
+    (!straightJunctionAngle && straightJunctionAngle !== 0)
+    || !layoutGraph
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1
+    || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (!childAtom || childAtom.element !== 'C' || childAtom.aromatic === true || childAtom.heavyDegree !== 2) {
+    return false;
+  }
+
+  for (const bond of layoutGraph.bondsByAtomId.get(childAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === childAtomId ? bond.b : bond.a;
+    if (neighborAtomId === anchorAtomId) {
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if (bond.aromatic || (bond.order ?? 1) !== 1) {
+      return false;
+    }
   }
 
   const anchorPosition = coords.get(anchorAtomId);
@@ -918,6 +1039,9 @@ function preferredRingJunctionGapAngle(layoutGraph, coords, anchorAtomId, placed
     const straightJunctionClearance = Math.min(...ringNeighborAngles.map(occupiedAngle => angularDifference(straightJunctionAngle, occupiedAngle)));
     if (straightJunctionClearance >= DEG60 - 1e-6) {
       if (shouldPreferTerminalLeafLocalOutwardOverStraightJunction(layoutGraph, coords, anchorAtomId, childAtomId, straightJunctionAngle)) {
+        return null;
+      }
+      if (shouldPreferSimpleChainLocalOutwardOverStraightJunction(layoutGraph, coords, anchorAtomId, childAtomId, straightJunctionAngle)) {
         return null;
       }
       return straightJunctionAngle;
@@ -1124,6 +1248,41 @@ function preferredTrigonalBisectorAngle(coords, anchorAtomId, placedNeighborIdsL
   return angleOf(outwardVector);
 }
 
+function shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId) {
+  if (!layoutGraph) {
+    return false;
+  }
+
+  const atom = layoutGraph.atoms.get(anchorAtomId);
+  if (
+    !atom
+    || atom.element !== 'C'
+    || atom.aromatic
+    || atom.heavyDegree !== 3
+    || atom.degree !== 4
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  let ringNeighborCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return false;
+    }
+    const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+      ringNeighborCount++;
+    }
+  }
+
+  return ringNeighborCount >= 1;
+}
+
 /**
  * Returns the placed incident-ring polygons for a branch anchor.
  * @param {object|null} layoutGraph - Layout graph shell.
@@ -1255,7 +1414,7 @@ export function chooseContinuationAngle(
     coords,
     excludedAtomIds
   };
-  const preferredCandidateAngles = allowDirectPreferredAngle ? buildPreferredCandidateAngles(preferredAngles, allowFinePreferredAngles) : [];
+  const preferredCandidateAngles = allowDirectPreferredAngle ? buildPreferredCandidateAngles(preferredAngles) : [];
   if (preferredCandidateAngles.length > 0) {
     const preferredCandidates = evaluateAngleCandidates(
       preferredCandidateAngles,
@@ -1286,10 +1445,28 @@ export function chooseContinuationAngle(
       return pickBestCandidateAngle(safePreferredCandidates, bondLength, true, clearanceContext);
     }
   }
+  const primaryCandidates = evaluateAngleCandidates(
+    mergeCandidateAngles(candidateAngles, preferredCandidateAngles),
+    occupiedAngles,
+    preferredAngles,
+    anchorPosition,
+    bondLength,
+    coords,
+    excludedAtomIds,
+    placementState,
+    ringPolygons,
+    atomGrid
+  );
+  if (hasSafeCandidate(primaryCandidates) || !allowFinePreferredAngles || preferredCandidateAngles.length === 0) {
+    return pickBestCandidateAngle(primaryCandidates, bondLength, true, clearanceContext);
+  }
 
   return pickBestCandidateAngle(
     evaluateAngleCandidates(
-      mergeCandidateAngles(candidateAngles, preferredCandidateAngles),
+      mergeCandidateAngles(
+        mergeCandidateAngles(candidateAngles, preferredCandidateAngles),
+        buildFinePreferredCandidateAngles(preferredAngles)
+      ),
       occupiedAngles,
       preferredAngles,
       anchorPosition,
@@ -1987,13 +2164,23 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
     return smallRingExteriorAngles;
   }
   const childBond = childAtomId ? findLayoutBond(layoutGraph, anchorAtomId, childAtomId) : null;
-  if (placedNeighborIdsList.length === 2 && childBond && !childBond.aromatic && (childBond.order ?? 1) >= 2) {
+  if (
+    placedNeighborIdsList.length === 2
+    && childBond
+    && !childBond.aromatic
+    && (
+      (childBond.order ?? 1) >= 2
+      || shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId)
+    )
+  ) {
     const trigonalBisectorAngle = preferredTrigonalBisectorAngle(coords, anchorAtomId, placedNeighborIdsList);
     if (trigonalBisectorAngle != null) {
       return [trigonalBisectorAngle];
     }
   }
-  const ringAngles = preferredRingAngles(layoutGraph, coords, anchorAtomId);
+  const ringAngles = shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, coords, anchorAtomId, childAtomId)
+    ? incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId)
+    : preferredRingAngles(layoutGraph, coords, anchorAtomId);
   if (ringAngles.length > 0) {
     return ringAngles;
   }
@@ -2083,11 +2270,15 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
         return exactPreferredAngle;
       }
     }
-    const preferredContinuationAngle = allowDirectPreferredAngle
-      ? choosePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles, allowFinePreferredAngles)
-      : null;
-    if (preferredContinuationAngle != null && hasSafePreferredDiscreteAngle(occupiedAngles, constrainedContinuationAngles, allowFinePreferredAngles)) {
-      return preferredContinuationAngle;
+    if (allowDirectPreferredAngle) {
+      const preferredContinuationAngle = choosePreferredCandidateAngle(
+        occupiedAngles,
+        constrainedContinuationAngles,
+        allowFinePreferredAngles
+      );
+      if (preferredContinuationAngle != null && hasSafePreferredCandidateAngle(occupiedAngles, constrainedContinuationAngles, allowFinePreferredAngles)) {
+        return preferredContinuationAngle;
+      }
     }
   }
 

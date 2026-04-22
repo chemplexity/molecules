@@ -1,6 +1,7 @@
 /** @module model/empty-result */
 
 import { resolvePolicy } from '../standards/profile-policy.js';
+import { createEmptyCleanupTelemetry, createEmptyStageTelemetry } from '../cleanup/telemetry.js';
 import { createQualityReport } from './quality-report.js';
 
 /**
@@ -114,13 +115,8 @@ export function createEmptyPipelineResult(molecule, normalizedOptions, profile, 
             placementModes: [],
             componentPlacements: [],
             placementAudit: null,
-            stageTelemetry: {
-              selectedGeometryStage: null,
-              selectedStage: null,
-              firstDirtyStage: null,
-              finalDirtyStage: null,
-              stageAudits: {}
-            }
+            stageTelemetry: createEmptyStageTelemetry(),
+            cleanupTelemetry: createEmptyCleanupTelemetry()
           }
         : {}),
       qualityReport: createQualityReport({

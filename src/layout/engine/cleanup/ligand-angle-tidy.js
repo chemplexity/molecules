@@ -4,6 +4,8 @@ import { add, angleOf, distance, fromAngle, sub } from '../geometry/vec2.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { organometallicArrangementSpecs, organometallicGeometryKind } from '../families/organometallic-geometry.js';
 
+const ANGLE_THRESHOLD = Math.PI / 18;
+
 /**
  * Returns whether the requested atom is a supported visible metal center.
  * @param {object} layoutGraph - Layout graph shell.
@@ -110,6 +112,43 @@ function assignIdealAngles(currentAngles, idealAngles) {
 }
 
 /**
+ * Returns whether the current layout contains a simple metal center with a
+ * movable terminal ligand that materially deviates from its ideal arrangement.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{angleThreshold?: number}} [options] - Optional threshold overrides.
+ * @returns {boolean} True when the tidy should run.
+ */
+export function hasLigandAngleTidyNeed(layoutGraph, coords, options = {}) {
+  const angleThreshold = options.angleThreshold ?? ANGLE_THRESHOLD;
+
+  for (const metalAtomId of [...coords.keys()].filter(atomId => isVisibleMetalCenter(layoutGraph, atomId))) {
+    const metalPosition = coords.get(metalAtomId);
+    const ligandAtomIds = directLigandAtomIds(layoutGraph, metalAtomId, coords);
+    const idealAngles = idealLigandAngles(layoutGraph, metalAtomId, ligandAtomIds.length);
+    if (idealAngles.length !== ligandAtomIds.length || idealAngles.length === 0) {
+      continue;
+    }
+
+    const currentAngles = ligandAtomIds.map(atomId => angleOf(sub(coords.get(atomId), metalPosition)));
+    const assignment = assignIdealAngles(currentAngles, idealAngles);
+    for (let index = 0; index < ligandAtomIds.length; index++) {
+      const ligandAtomId = ligandAtomIds[index];
+      const ligandAtom = layoutGraph.atoms.get(ligandAtomId);
+      if (!ligandAtom || ligandAtom.heavyDegree > 1) {
+        continue;
+      }
+      const targetAngle = idealAngles[assignment[index]];
+      if (angularDistance(currentAngles[index], targetAngle) > angleThreshold) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Tidies simple metal-ligand angles back toward their ideal projected geometry.
  * The hook only moves direct simple ligands so it does not drag larger ligand fragments through a rigid-body transform.
  * @param {object} layoutGraph - Layout graph shell.
@@ -120,7 +159,7 @@ function assignIdealAngles(currentAngles, idealAngles) {
  */
 export function runLigandAngleTidy(layoutGraph, inputCoords, options = {}) {
   const maxIterations = options.maxIterations ?? 2;
-  const angleThreshold = Math.PI / 18;
+  const angleThreshold = options.angleThreshold ?? ANGLE_THRESHOLD;
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   let nudges = 0;
   let iterations = 0;

@@ -400,6 +400,48 @@ function reconnectsToAnchorRingSystem(layoutGraph, coords, anchorAtomId, childAt
 }
 
 /**
+ * Returns whether a non-ring child is a carbonyl-like trigonal root whose
+ * immediate bond direction should represent the substituent for readability.
+ * For these cases, promoting a farther linked ring centroid can mark otherwise
+ * exact outward carbonyl exits as failures even when the root itself is
+ * publication-clean.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Candidate ring anchor atom id.
+ * @param {string} childAtomId - Candidate non-ring child atom id.
+ * @returns {boolean} True when the immediate child should stay the representative.
+ */
+function prefersImmediateLinkedSubstituentRepresentative(layoutGraph, anchorAtomId, childAtomId) {
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (
+    !childAtom
+    || childAtom.element !== 'C'
+    || childAtom.aromatic === true
+    || childAtom.heavyDegree !== 3
+    || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  let heteroMultipleBondCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(childAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+      continue;
+    }
+    const neighborAtomId = bond.a === childAtomId ? bond.b : bond.a;
+    if (neighborAtomId === anchorAtomId) {
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtom.element === 'C') {
+      continue;
+    }
+    heteroMultipleBondCount++;
+  }
+
+  return heteroMultipleBondCount === 1;
+}
+
+/**
  * Returns the downstream ring-system representative for a non-ring linker
  * child when that child ultimately leads into exactly one distinct ring
  * system. In those cases the overall linked ring is the visually meaningful
@@ -417,9 +459,13 @@ function resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorA
   if (
     anchorRingSystemId == null
     || !childAtom
+    || prefersImmediateLinkedSubstituentRepresentative(layoutGraph, anchorAtomId, childAtomId)
+    // Do not promote a remote ring through any divalent non-aromatic linker atom.
+    // Divalent linkers (–O–, –N–, –CH₂–, –S–, etc.) introduce a free torsion between
+    // the anchor ring exit direction and the remote ring, so the far centroid is not a
+    // valid outward representative. The immediate child is used instead.
     || (
-      ['N', 'O', 'S', 'Se'].includes(childAtom.element)
-      && childAtom.aromatic !== true
+      childAtom.aromatic !== true
       && childAtom.heavyDegree === 2
     )
   ) {
@@ -427,10 +473,15 @@ function resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorA
   }
 
   const visitedAtomIds = new Set([anchorAtomId]);
-  const queue = [childAtomId];
+  // Pair each queued atom with its linker depth (number of non-ring hops traversed).
+  // Depth 0 = childAtomId itself. We only continue traversing through non-ring atoms
+  // at depth 0 (the first hop). Beyond that, every non-ring atom introduces a free
+  // torsion that decouples the far ring's orientation from the anchor exit direction,
+  // making its centroid an invalid readability representative.
+  const queue = [{ atomId: childAtomId, linkerDepth: 0 }];
   const reachableRingSystemIds = new Set();
   while (queue.length > 0) {
-    const atomId = queue.shift();
+    const { atomId, linkerDepth } = queue.shift();
     if (visitedAtomIds.has(atomId)) {
       continue;
     }
@@ -439,6 +490,9 @@ function resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorA
     const ringSystemId = layoutGraph.atomToRingSystemId.get(atomId);
     if (ringSystemId != null && ringSystemId !== anchorRingSystemId) {
       reachableRingSystemIds.add(ringSystemId);
+      // Do not expand through ring atoms — we only need to know which ring systems
+      // are reachable, not traverse their interiors.
+      continue;
     }
 
     for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
@@ -450,7 +504,19 @@ function resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorA
       if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId) || visitedAtomIds.has(neighborAtomId)) {
         continue;
       }
-      queue.push(neighborAtomId);
+      const neighborInRing = (layoutGraph.atomToRingSystemId.get(neighborAtomId) != null);
+      if (neighborInRing) {
+        // Always allow traversal into ring atoms — they are the targets.
+        queue.push({ atomId: neighborAtomId, linkerDepth });
+        continue;
+      }
+      // Non-ring neighbor: only traverse at depth 0 (first linker hop).
+      // Beyond depth 0 there is at least one free torsion, so the far ring
+      // centroid is not a valid representative for the anchor exit direction.
+      // Additionally, stop at branching sp3 centres (heavyDegree > 2) at any depth.
+      if (linkerDepth === 0 && (neighborAtom.heavyDegree ?? 0) <= 2) {
+        queue.push({ atomId: neighborAtomId, linkerDepth: linkerDepth + 1 });
+      }
     }
   }
 
@@ -1197,10 +1263,18 @@ export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, o
     if (!pos) {
       continue;
     }
-    if (pos.x < minX) minX = pos.x;
-    if (pos.y < minY) minY = pos.y;
-    if (pos.x > maxX) maxX = pos.x;
-    if (pos.y > maxY) maxY = pos.y;
+    if (pos.x < minX) {
+      minX = pos.x;
+    }
+    if (pos.y < minY) {
+      minY = pos.y;
+    }
+    if (pos.x > maxX) {
+      maxX = pos.x;
+    }
+    if (pos.y > maxY) {
+      maxY = pos.y;
+    }
   }
 
   if (minX === Number.POSITIVE_INFINITY) {
@@ -1417,6 +1491,7 @@ export function measureLayoutState(layoutGraph, coords, bondLength, options = {}
  * @param {object} [options] - State-measurement options.
  * @param {Array<{firstAtomId: string, secondAtomId: string, distance: number}>} [options.overlaps] - Optional precomputed severe overlaps.
  * @param {AtomGrid|null} [options.atomGrid] - Optional reused spatial grid for overlap lookup.
+ * @param {Map<string, 'planar'|'bridged'>} [options.bondValidationClasses] - Optional bond-validation classes.
  * @returns {{overlaps: Array<{firstAtomId: string, secondAtomId: string, distance: number}>, overlapCount: number, overlapPenalty: number, bondDeviation: {sampleCount: number, maxDeviation: number, meanDeviation: number, failingBondCount: number}, cost: number}} Reduced overlap-focused layout state.
  */
 export function measureOverlapState(layoutGraph, coords, bondLength, options = {}) {
@@ -1425,7 +1500,9 @@ export function measureOverlapState(layoutGraph, coords, bondLength, options = {
     findSevereOverlaps(layoutGraph, coords, bondLength, {
       atomGrid: options.atomGrid
     });
-  const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength);
+  const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength, {
+    bondValidationClasses: options.bondValidationClasses
+  });
 
   let overlapPenalty = 0;
   for (const overlap of overlaps) {

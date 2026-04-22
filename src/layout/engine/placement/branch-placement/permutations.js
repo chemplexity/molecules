@@ -596,11 +596,12 @@ function evaluateLocalAnglePermutations(
  * @param {string|null} parentAtomId - Already placed parent atom ID.
  * @param {string[]} unplacedNeighborIds - Child atom IDs to assign.
  * @param {number} bondLength - Target bond length.
- * @param {(adjacency: Map<string, string[]>, canonicalAtomRank: Map<string, number>, coords: Map<string, {x: number, y: number}>, placementState: {sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}, atomIdsToPlace: Set<string>, anchorAtomId: string, parentAtomId: string|null, bondLength: number, layoutGraph?: object|null, branchConstraints?: {angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null, depth?: number) => void} placeChildrenFn - Recursive child placement callback.
+ * @param {(adjacency: Map<string, string[]>, canonicalAtomRank: Map<string, number>, coords: Map<string, {x: number, y: number}>, placementState: {sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}, atomIdsToPlace: Set<string>, anchorAtomId: string, parentAtomId: string|null, bondLength: number, layoutGraph?: object|null, branchConstraints?: {angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null, depth?: number, placementContext?: object|null) => void} placeChildrenFn - Recursive child placement callback.
  * @param {object|null} [layoutGraph] - Layout graph shell.
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints.
  * @param {number} [depth] - Current recursion depth.
  * @param {Array<{childAtomId: string, subtreeSize: number}>|null} [childDescriptors] - Optional precomputed child descriptors.
+ * @param {{atomGrid?: import('../../geometry/atom-grid.js').AtomGrid|null}} [placementContext] - Optional reusable branch-placement context.
  * @returns {Array<{childAtomId: string, angle: number}>} Assigned angles for the requested children.
  */
 export function chooseBatchAngleAssignments(
@@ -617,7 +618,8 @@ export function chooseBatchAngleAssignments(
   layoutGraph = null,
   branchConstraints = null,
   depth = 0,
-  childDescriptors = null
+  childDescriptors = null,
+  placementContext = null
 ) {
   const anchorPosition = coords.get(anchorAtomId);
   if (!anchorPosition || unplacedNeighborIds.length === 0 || depth > MAX_BRANCH_RECURSION_DEPTH) {
@@ -625,7 +627,7 @@ export function chooseBatchAngleAssignments(
   }
 
   const angleSets = buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentAtomId, unplacedNeighborIds, layoutGraph, branchConstraints);
-  const baseAtomGrid = layoutGraph && coords.size >= 160 ? buildAtomGrid(layoutGraph, coords, bondLength) : null;
+  const baseAtomGrid = placementContext?.atomGrid ?? (layoutGraph && coords.size >= 160 ? buildAtomGrid(layoutGraph, coords, bondLength) : null);
   const resolvedChildDescriptors =
     childDescriptors ??
     unplacedNeighborIds.map(childAtomId => ({
@@ -697,7 +699,8 @@ export function chooseBatchAngleAssignments(
         bondLength,
         layoutGraph,
         branchConstraints,
-        depth + 1
+        depth + 1,
+        null
       );
     }
   }

@@ -130,6 +130,12 @@ function buildAcyclicCandidate(component) {
   };
 }
 
+function scaffoldPlanCacheKey(component) {
+  const atomIds = Array.isArray(component?.atomIds) ? [...component.atomIds].sort() : [];
+  const signature = component?.canonicalSignature ? `|${component.canonicalSignature}` : '';
+  return `${component?.id ?? 'component'}|${atomIds.join(',')}${signature}`;
+}
+
 /**
  * Builds a deterministic scaffold plan for a connected component.
  * @param {object} layoutGraph - Layout graph shell.
@@ -137,6 +143,12 @@ function buildAcyclicCandidate(component) {
  * @returns {object} Scaffold plan.
  */
 export function buildScaffoldPlan(layoutGraph, component) {
+  const scaffoldPlanCache = layoutGraph?.scaffoldPlanCache ?? (layoutGraph ? (layoutGraph.scaffoldPlanCache = new Map()) : null);
+  const cacheKey = scaffoldPlanCache ? scaffoldPlanCacheKey(component) : null;
+  if (scaffoldPlanCache?.has(cacheKey)) {
+    return scaffoldPlanCache.get(cacheKey);
+  }
+
   const ringSystemCandidates = buildRingSystemCandidates(layoutGraph, component);
   const candidates = ringSystemCandidates.length > 0 ? ringSystemCandidates : [buildAcyclicCandidate(component)];
   const rootScaffold = candidates[0];
@@ -177,7 +189,7 @@ export function buildScaffoldPlan(layoutGraph, component) {
     });
   }
 
-  return {
+  const scaffoldPlan = {
     componentId: component.id,
     candidates,
     rootScaffold,
@@ -185,4 +197,8 @@ export function buildScaffoldPlan(layoutGraph, component) {
     mixedMode: rootScaffold.type !== 'acyclic' && (candidates.length > 1 || nonRingAtomIds.length > 0),
     placementSequence
   };
+  if (scaffoldPlanCache) {
+    scaffoldPlanCache.set(cacheKey, scaffoldPlan);
+  }
+  return scaffoldPlan;
 }

@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../../src/io/smiles.js';
-import { tidySymmetry } from '../../../../src/layout/engine/cleanup/symmetry-tidy.js';
+import { hasSymmetryTidyNeed, tidySymmetry } from '../../../../src/layout/engine/cleanup/symmetry-tidy.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { placeTemplateCoords } from '../../../../src/layout/engine/templates/placement.js';
 import { centroid, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
@@ -45,5 +45,18 @@ describe('layout/engine/cleanup/symmetry-tidy', () => {
 
     assert.equal(result.junctionSnapCount, 1);
     assert.ok(Math.abs(firstPosition.x - secondPosition.x) < 1e-6 || Math.abs(firstPosition.y - secondPosition.y) < 1e-6);
+  });
+
+  it('reports no symmetry-tidy work when a fused junction is already axis-aligned', () => {
+    const graph = createLayoutGraph(parseSMILES('c1ccc2ccccc2c1'));
+    const placed = placeTemplateCoords(graph, 'naphthalene', graph.ringSystems[0].atomIds, graph.options.bondLength);
+
+    assert.equal(
+      hasSymmetryTidyNeed(placed, {
+        epsilon: 1e-6,
+        layoutGraph: graph
+      }),
+      false
+    );
   });
 });

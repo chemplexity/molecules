@@ -158,6 +158,30 @@ export function isPreferredProtectedCleanupStage(familySummary, placement, candi
 }
 
 /**
+ * Comparator for label-clearance/symmetry-tidy stages: accepts when label overlaps decrease
+ * or presentation penalty improves, and never penalises the bond-deviation side-effect of
+ * nudging atoms to clear element labels.
+ * @param {object} candidate - Candidate stage result.
+ * @param {object|null} incumbent - Current incumbent stage result.
+ * @returns {boolean} True when the candidate should replace the incumbent.
+ */
+export function isPreferredLabelClearanceStage(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.audit.bondLengthFailureCount > incumbent.audit.bondLengthFailureCount) {
+    return false;
+  }
+  if (candidate.audit.labelOverlapCount < incumbent.audit.labelOverlapCount) {
+    return true;
+  }
+  if (Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
+    return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
+  }
+  return false;
+}
+
+/**
  * Compares non-stereo cleanup geometry stages using the existing baseline ordering.
  * @param {object} candidate - Candidate stage result.
  * @param {object|null} incumbent - Current incumbent stage result.

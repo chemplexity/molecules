@@ -1,6 +1,7 @@
 /** @module placement/component-layout */
 
 import { auditLayout } from '../audit/audit.js';
+import { detectCollapsedMacrocycles, measureOverlapState } from '../audit/invariants.js';
 import { ORGANOMETALLIC_RESCUE_LIMITS, PROTECTED_FAMILY_RIGID_SUBTREE_LIMITS } from '../constants.js';
 import { alignCoordsToFixed } from '../geometry/transforms.js';
 import { layoutLargeMoleculeFamily } from '../families/large-molecule.js';
@@ -291,20 +292,124 @@ function placementAuditScore(layoutGraph, placement) {
   if (!placement?.supported || placement.coords.size === 0) {
     return null;
   }
-  const audit = auditLayout(layoutGraph, placement.coords, {
-    bondLength: layoutGraph.options.bondLength,
-    bondValidationClasses: placement.bondValidationClasses
-  });
-  return { placement, audit };
+  return {
+    placement,
+    pre: {
+      overlapState: measureOverlapState(layoutGraph, placement.coords, layoutGraph.options.bondLength, {
+        bondValidationClasses: placement.bondValidationClasses
+      }),
+      collapsedMacrocycleCount: detectCollapsedMacrocycles(layoutGraph, placement.coords, layoutGraph.options.bondLength).length
+    },
+    audit: null
+  };
 }
 
-function isMacrocyclePreferredPlacement(candidateScore, incumbentScore) {
+function ensurePlacementAudit(layoutGraph, placementScore) {
+  if (!placementScore || placementScore.audit) {
+    return placementScore;
+  }
+  placementScore.audit = auditLayout(layoutGraph, placementScore.placement.coords, {
+    bondLength: layoutGraph.options.bondLength,
+    bondValidationClasses: placementScore.placement.bondValidationClasses
+  });
+  return placementScore;
+}
+
+function compareMacrocyclePlacementPreScore(candidateScore, incumbentScore) {
+  if (!candidateScore) {
+    return 1;
+  }
+  if (!incumbentScore) {
+    return -1;
+  }
+  if (candidateScore.pre.collapsedMacrocycleCount !== incumbentScore.pre.collapsedMacrocycleCount) {
+    return candidateScore.pre.collapsedMacrocycleCount - incumbentScore.pre.collapsedMacrocycleCount;
+  }
+  if (candidateScore.pre.overlapState.bondDeviation.failingBondCount !== incumbentScore.pre.overlapState.bondDeviation.failingBondCount) {
+    return candidateScore.pre.overlapState.bondDeviation.failingBondCount - incumbentScore.pre.overlapState.bondDeviation.failingBondCount;
+  }
+  if (candidateScore.pre.overlapState.overlapCount !== incumbentScore.pre.overlapState.overlapCount) {
+    return candidateScore.pre.overlapState.overlapCount - incumbentScore.pre.overlapState.overlapCount;
+  }
+  if (Math.abs(candidateScore.pre.overlapState.bondDeviation.maxDeviation - incumbentScore.pre.overlapState.bondDeviation.maxDeviation) > 1e-6) {
+    return candidateScore.pre.overlapState.bondDeviation.maxDeviation - incumbentScore.pre.overlapState.bondDeviation.maxDeviation;
+  }
+  return 0;
+}
+
+function comparePlacementPreScore(candidateScore, incumbentScore) {
+  if (!candidateScore) {
+    return 1;
+  }
+  if (!incumbentScore) {
+    return -1;
+  }
+  if (candidateScore.pre.overlapState.bondDeviation.failingBondCount !== incumbentScore.pre.overlapState.bondDeviation.failingBondCount) {
+    return candidateScore.pre.overlapState.bondDeviation.failingBondCount - incumbentScore.pre.overlapState.bondDeviation.failingBondCount;
+  }
+  if (Math.abs(candidateScore.pre.overlapState.bondDeviation.maxDeviation - incumbentScore.pre.overlapState.bondDeviation.maxDeviation) > 1e-6) {
+    return candidateScore.pre.overlapState.bondDeviation.maxDeviation - incumbentScore.pre.overlapState.bondDeviation.maxDeviation;
+  }
+  if (candidateScore.pre.overlapState.overlapCount !== incumbentScore.pre.overlapState.overlapCount) {
+    return candidateScore.pre.overlapState.overlapCount - incumbentScore.pre.overlapState.overlapCount;
+  }
+  return 0;
+}
+
+function isClearlyWorseMacrocyclePlacementPreScore(candidateScore, incumbentScore) {
+  if (!candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateScore.pre.collapsedMacrocycleCount > incumbentScore.pre.collapsedMacrocycleCount) {
+    return true;
+  }
+  if (
+    candidateScore.pre.overlapState.bondDeviation.failingBondCount >
+    incumbentScore.pre.overlapState.bondDeviation.failingBondCount + 2
+  ) {
+    return true;
+  }
+  if (candidateScore.pre.overlapState.overlapCount > incumbentScore.pre.overlapState.overlapCount + 1) {
+    return true;
+  }
+  return (
+    candidateScore.pre.overlapState.bondDeviation.maxDeviation >
+    incumbentScore.pre.overlapState.bondDeviation.maxDeviation + 0.35
+  );
+}
+
+function isClearlyWorsePlacementPreScore(candidateScore, incumbentScore) {
+  if (!candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (
+    candidateScore.pre.overlapState.bondDeviation.failingBondCount >
+    incumbentScore.pre.overlapState.bondDeviation.failingBondCount + 2
+  ) {
+    return true;
+  }
+  if (candidateScore.pre.overlapState.overlapCount > incumbentScore.pre.overlapState.overlapCount + 1) {
+    return true;
+  }
+  return (
+    candidateScore.pre.overlapState.bondDeviation.maxDeviation >
+    incumbentScore.pre.overlapState.bondDeviation.maxDeviation + 0.35
+  );
+}
+
+function isMacrocyclePreferredPlacement(layoutGraph, candidateScore, incumbentScore) {
   if (!candidateScore) {
     return false;
   }
   if (!incumbentScore) {
     return true;
   }
+  const preScoreComparison = compareMacrocyclePlacementPreScore(candidateScore, incumbentScore);
+  if (preScoreComparison > 0 && isClearlyWorseMacrocyclePlacementPreScore(candidateScore, incumbentScore)) {
+    return false;
+  }
+  ensurePlacementAudit(layoutGraph, candidateScore);
+  ensurePlacementAudit(layoutGraph, incumbentScore);
   if (candidateScore.audit.collapsedMacrocycleCount !== incumbentScore.audit.collapsedMacrocycleCount) {
     return candidateScore.audit.collapsedMacrocycleCount < incumbentScore.audit.collapsedMacrocycleCount;
   }
@@ -320,13 +425,19 @@ function isMacrocyclePreferredPlacement(candidateScore, incumbentScore) {
   return candidateScore.placement.family !== 'large-molecule' && incumbentScore.placement.family === 'large-molecule';
 }
 
-function isOrganometallicPreferredPlacement(candidateScore, incumbentScore) {
+function isOrganometallicPreferredPlacement(layoutGraph, candidateScore, incumbentScore) {
   if (!candidateScore) {
     return false;
   }
   if (!incumbentScore) {
     return true;
   }
+  const preScoreComparison = comparePlacementPreScore(candidateScore, incumbentScore);
+  if (preScoreComparison > 0 && isClearlyWorsePlacementPreScore(candidateScore, incumbentScore)) {
+    return false;
+  }
+  ensurePlacementAudit(layoutGraph, candidateScore);
+  ensurePlacementAudit(layoutGraph, incumbentScore);
   if (candidateScore.audit.bondLengthFailureCount !== incumbentScore.audit.bondLengthFailureCount) {
     return candidateScore.audit.bondLengthFailureCount < incumbentScore.audit.bondLengthFailureCount;
   }
@@ -339,13 +450,15 @@ function isOrganometallicPreferredPlacement(candidateScore, incumbentScore) {
   return candidateScore.placement.family === 'organometallic' && incumbentScore.placement.family !== 'organometallic';
 }
 
-function isMetalMixedRingRescuePreferredPlacement(candidateScore, incumbentScore) {
+function isMetalMixedRingRescuePreferredPlacement(layoutGraph, candidateScore, incumbentScore) {
   if (!candidateScore) {
     return false;
   }
   if (!incumbentScore) {
     return true;
   }
+  ensurePlacementAudit(layoutGraph, candidateScore);
+  ensurePlacementAudit(layoutGraph, incumbentScore);
   if (candidateScore.audit.bondLengthFailureCount !== incumbentScore.audit.bondLengthFailureCount) {
     return candidateScore.audit.bondLengthFailureCount < incumbentScore.audit.bondLengthFailureCount;
   }
@@ -398,7 +511,7 @@ function rescueMixedMetalRingPlacement(layoutGraph, component, familyPlacement, 
       macrocycleRings
     );
     const rescueScore = placementAuditScore(layoutGraph, rescuePlacement);
-    if (isMetalMixedRingRescuePreferredPlacement(rescueScore, bestScore)) {
+    if (isMetalMixedRingRescuePreferredPlacement(layoutGraph, rescueScore, bestScore)) {
       bestPlacement = rescuePlacement;
       bestScore = rescueScore;
     }
@@ -426,6 +539,7 @@ function rescueLargeComponentSlicePlacement(layoutGraph, component, familyPlacem
   }
 
   return isMacrocyclePreferredPlacement(
+    layoutGraph,
     placementAuditScore(layoutGraph, slicePlacement),
     placementAuditScore(layoutGraph, familyPlacement)
   )
@@ -474,6 +588,7 @@ function layoutComponent(layoutGraph, component, macrocycleRings = []) {
           })()
         : null;
     const preferredPlacement = isMacrocyclePreferredPlacement(
+      layoutGraph,
       placementAuditScore(layoutGraph, slicePlacement),
       placementAuditScore(layoutGraph, largePlacement)
     )
@@ -528,6 +643,7 @@ function layoutComponent(layoutGraph, component, macrocycleRings = []) {
   }
 
   return isOrganometallicPreferredPlacement(
+    layoutGraph,
     placementAuditScore(layoutGraph, organometallicPlacement),
     placementAuditScore(layoutGraph, familyPlacement)
   )

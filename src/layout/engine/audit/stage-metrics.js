@@ -4,7 +4,7 @@ import { auditLayout } from './audit.js';
 import { measureDirectAttachedRingJunctionContinuationDistortion, measureThreeHeavyContinuationDistortion } from './invariants.js';
 import { measureSmallRingExteriorGapSpreadPenalty } from '../placement/branch-placement.js';
 import { measureOrthogonalHypervalentDeviation } from '../cleanup/hypervalent-angle-tidy.js';
-import { measureRingSubstituentPresentationPenalty } from '../cleanup/ring-substituent-tidy.js';
+import { measureRingSubstituentPresentationPenalty } from '../cleanup/presentation/ring-substituent.js';
 
 function getSmallRingExteriorPenaltyAtomIds(layoutGraph) {
   if (!layoutGraph) {

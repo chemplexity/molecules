@@ -46,7 +46,7 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
     assert.ok(
-      ['selectedGeometryStereo', 'finalHypervalentTouchup', 'finalAttachedRingRotationTouchup'].includes(result.metadata.stageTelemetry.selectedStage)
+      ['checkpoint', 'presentation', 'specialist'].includes(result.metadata.cleanupTelemetry.selectedStageCategory)
     );
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
@@ -103,6 +103,22 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(phosphorusAtomIds.length, 3);
+    assertOrthogonalCross(result, phosphorusAtomIds);
+  });
+
+  it('keeps phosphoramidate phosphorus centers on an exact cross even when alkoxy and carbon ligand subtrees must rotate together', () => {
+    const result = runPipeline(parseSMILES('CCOP(=O)(OCC)[C@@H](C)NC(=O)N(CCCl)N=O'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const phosphorusAtomIds = [...result.layoutGraph.atoms.values()].filter(atom => atom.element === 'P').map(atom => atom.id);
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.cleanupTelemetry.selectedStageCategory, 'specialist');
+    assert.equal(phosphorusAtomIds.length, 1);
     assertOrthogonalCross(result, phosphorusAtomIds);
   });
 });

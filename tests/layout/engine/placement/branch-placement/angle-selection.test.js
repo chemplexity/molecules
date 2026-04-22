@@ -3,9 +3,15 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../../src/layout/engine/model/layout-graph.js';
 import {
+  chooseContinuationAngle,
   isExactRingOutwardEligibleSubstituent,
   isExactSimpleAcyclicContinuationEligible
 } from '../../../../../src/layout/engine/placement/branch-placement/angle-selection.js';
+import { angularDifference, fromAngle } from '../../../../../src/layout/engine/geometry/vec2.js';
+
+function degrees(value) {
+  return (value * Math.PI) / 180;
+}
 
 describe('layout/engine/placement/branch-placement/angle-selection', () => {
   it('treats simple divalent carbon linkers as exact-continuation candidates', () => {
@@ -56,5 +62,61 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     assert.equal(isExactRingOutwardEligibleSubstituent(methylGraph, methylAnchorAtomId, methylAtomId), true);
 
     assert.equal(isExactRingOutwardEligibleSubstituent(saturatedRingGraph, 'C9', 'C7'), true);
+  });
+
+  it('keeps continuation search on exact and snapped angles before opening fine offsets', () => {
+    const anchorPosition = { x: 0, y: 0 };
+    const coords = new Map([
+      ['A0', anchorPosition],
+      ['N1', fromAngle(degrees(330), 1)],
+      ['N2', fromAngle(degrees(180), 1)]
+    ]);
+
+    const angle = chooseContinuationAngle(
+      anchorPosition,
+      1,
+      coords,
+      [degrees(330), degrees(180)],
+      [degrees(10)],
+      [0],
+      new Set(['A0']),
+      null,
+      [],
+      true,
+      true
+    );
+
+    assert.ok(
+      angularDifference(angle, degrees(10)) < 1e-6,
+      `expected the specific preferred angle before fine rescue, got ${((angle * 180) / Math.PI).toFixed(2)}°`
+    );
+  });
+
+  it('opens fine continuation offsets only when the specific-angle pool has no safe candidate', () => {
+    const anchorPosition = { x: 0, y: 0 };
+    const coords = new Map([
+      ['A0', anchorPosition],
+      ['N1', fromAngle(degrees(345), 1)],
+      ['N2', fromAngle(degrees(180), 1)]
+    ]);
+
+    const angle = chooseContinuationAngle(
+      anchorPosition,
+      1,
+      coords,
+      [degrees(345), degrees(180)],
+      [degrees(10)],
+      [0],
+      new Set(['A0']),
+      null,
+      [],
+      true,
+      true
+    );
+
+    assert.ok(
+      angularDifference(angle, degrees(40)) < 1e-6,
+      `expected fine preferred rescue once the specific pool is blocked, got ${((angle * 180) / Math.PI).toFixed(2)}°`
+    );
   });
 });

@@ -945,7 +945,13 @@ export function layoutLargeMoleculeFamily(layoutGraph, component, bondLength, op
     return null;
   }
 
-  const sliceLayouter = options.sliceLayouter ?? layoutAtomSlice;
+  const sliceLayouter = options.sliceLayouter ?? ((innerLayoutGraph, block, innerBondLength) => {
+    return layoutAtomSlice(innerLayoutGraph, block, innerBondLength, {
+      mixedOptions: {
+        conservativeAttachmentScoring: true
+      }
+    });
+  });
   const blockById = new Map(blocks.map(block => [block.id, block]));
   const blockAdjacency = buildBlockAdjacency(blocks, cutBonds);
   const rankedRootBlocks = rankRootBlocks(blocks);

@@ -340,9 +340,71 @@ describe('layout/engine/pipeline', () => {
     assert.equal(typeof result.metadata.placementAudit.labelOverlapCount, 'number');
     assert.equal(typeof result.metadata.placementAudit.meanBondLengthDeviation, 'number');
     assert.ok(result.metadata.stageTelemetry);
+    assert.ok(result.metadata.cleanupTelemetry);
     assert.equal(typeof result.metadata.stageTelemetry.selectedStage, 'string');
     assert.ok(result.metadata.stageTelemetry.stageAudits.placement);
     assert.ok(result.metadata.stageTelemetry.stageAudits[result.metadata.stageTelemetry.selectedStage]);
+    assert.equal(result.metadata.cleanupTelemetry.selectedStage, result.metadata.stageTelemetry.selectedStage);
+    assert.equal(result.metadata.cleanupTelemetry.selectedGeometryStage, result.metadata.stageTelemetry.selectedGeometryStage);
+    assert.equal(result.metadata.cleanupTelemetry.stages.selectedGeometryCheckpoint?.targetStage, 'selectedGeometryCheckpoint');
+    assert.equal(result.metadata.cleanupTelemetry.stages.stereoRescueCleanup?.targetStage, 'stereoRescueCleanup');
+    assert.equal(result.metadata.cleanupTelemetry.stages.stereoTouchup?.targetStage, 'stereoRescueCleanup');
+    assert.equal(result.metadata.cleanupTelemetry.stages.stereoTouchup.category, 'stereo-rescue');
+    assert.equal(result.metadata.cleanupTelemetry.stages.placement?.ran, true);
+    assert.equal(typeof result.metadata.cleanupTelemetry.stages.placement?.elapsedMs, 'number');
+    assert.equal(
+      result.metadata.cleanupTelemetry.selectedStageAlias,
+      result.metadata.cleanupTelemetry.stages[result.metadata.cleanupTelemetry.selectedStage]?.targetStage ?? null
+    );
+    assert.equal(
+      result.metadata.cleanupTelemetry.selectedStageCategory,
+      result.metadata.cleanupTelemetry.stages[result.metadata.cleanupTelemetry.selectedStage]?.category ?? null
+    );
+    assert.equal(result.metadata.cleanupTelemetry.stages[result.metadata.cleanupTelemetry.selectedStage]?.won, true);
+  });
+
+  it('skips cleanup stages when placement already passes cleanly', () => {
+    const result = runPipeline(parseSMILES('CC1=CC=CC=C1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.placementAudit.ok, true);
+    assert.equal(result.metadata.cleanupTelemetry.selectedGeometryStage, 'placement');
+    assert.equal(result.metadata.cleanupTelemetry.selectedStage, 'selectedGeometryCheckpoint');
+    assert.equal(result.metadata.cleanupTelemetry.stages.coreGeometryCleanup?.ran, false);
+    assert.equal(result.metadata.cleanupTelemetry.stages.stereoRescueCleanup?.ran, false);
+    assert.equal(result.metadata.cleanupTelemetry.stages.presentationCleanup?.ran, false);
+    assert.equal(result.metadata.cleanupTelemetry.stages.specialistCleanup?.ran, false);
+    assert.equal(result.metadata.cleanupTelemetry.stages.stabilizeAfterCleanup?.ran, false);
+  });
+
+  it('reuses the selected geometry checkpoint audit when final coords stay unchanged', () => {
+    const result = runPipeline(parseSMILES('CC1=CC=CC=C1'), {
+      suppressH: true,
+      auditTelemetry: true,
+      timing: true
+    });
+
+    assert.equal(result.metadata.cleanupTelemetry.selectedStage, 'selectedGeometryCheckpoint');
+    assert.equal(result.metadata.timing.auditMs, 0);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.stereo.ezCheckedBondCount, 0);
+    assert.equal(result.metadata.stereo.chiralCenterCount, 0);
+  });
+
+  it('keeps stageTelemetry and cleanupTelemetry audits aligned', () => {
+    const result = runPipeline(parseSMILES('COc1cc([C@H](CC=C(C)C)OC(=O)c2ccccn2)c(OC)c3\\C(=N\\O)\\C=C\\C(=N/O)\\c13'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const { cleanupTelemetry, stageTelemetry } = result.metadata;
+
+    assert.equal(cleanupTelemetry.selectedStage, stageTelemetry.selectedStage);
+    assert.equal(cleanupTelemetry.selectedGeometryStage, stageTelemetry.selectedGeometryStage);
+    for (const [stageName, audit] of Object.entries(stageTelemetry.stageAudits)) {
+      assert.deepEqual(cleanupTelemetry.stages[stageName]?.audit, audit);
+    }
   });
 
   it('advances bridged molecules to coordinates-ready when a template exists', () => {
@@ -394,11 +456,14 @@ describe('layout/engine/pipeline', () => {
       parseSMILES(
         'COC(=O)C1=C2Nc3ccccc3[C@@]24CCN5[C@@H]6O[C@]78[C@H]9C[C@]%10%11CCO[C@H]%10CCN%12CC[C@]7([C@H]%11%12)c%13cccc(OC)c%13N8C[C@]6(C9)[C@@H]%14OCC[C@]%14(C1)[C@@H]45'
       ),
-      { suppressH: true }
+      { suppressH: true, auditTelemetry: true }
     );
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.cleanupTelemetry?.selectedStageCategory, 'stabilization');
+    assert.deepEqual(result.metadata.cleanupTelemetry?.stabilizationRequests.stages, ['specialistCleanup']);
+    assert.deepEqual(result.metadata.cleanupTelemetry?.stabilizationRequests.reasons, ['specialist:bridged']);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.ok(result.metadata.audit.bondLengthFailureCount <= 1);
     assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.7);
@@ -840,7 +905,7 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.mixedMode, true);
     assert.equal(result.metadata.stageTelemetry.stageAudits.placement.severeOverlapCount, 0);
     assert.equal(result.metadata.stageTelemetry.stageAudits.placement.ok, true);
-    assert.equal(result.metadata.stageTelemetry.selectedGeometryStage, 'placement');
+    assert.equal(result.metadata.cleanupTelemetry.selectedGeometryStageCategory, 'placement');
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.ok, true);
@@ -876,8 +941,8 @@ describe('layout/engine/pipeline', () => {
 
     assert.equal(result.metadata.primaryFamily, 'acyclic');
     assert.equal(result.metadata.stageTelemetry.stageAudits.placement.severeOverlapCount, 1);
-    assert.equal(result.metadata.stageTelemetry.stageAudits.cleanup.severeOverlapCount, 0);
-    assert.equal(result.metadata.stageTelemetry.selectedGeometryStage, 'cleanup');
+    assert.equal(result.metadata.stageTelemetry.stageAudits.coreGeometryCleanup.severeOverlapCount, 0);
+    assert.equal(result.metadata.cleanupTelemetry.selectedGeometryStageCategory, 'core-geometry');
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });
@@ -896,7 +961,7 @@ describe('layout/engine/pipeline', () => {
     });
 
     assert.equal(result.metadata.stageTelemetry.stageAudits.placement.severeOverlapCount, 1);
-    assert.equal(result.metadata.stageTelemetry.selectedGeometryStage, 'cleanup');
+    assert.equal(result.metadata.cleanupTelemetry.selectedGeometryStageCategory, 'core-geometry');
     assert.ok(finalFirstClearance >= 0.95);
     assert.ok(finalSecondClearance >= 0.7);
     assert.ok(amineSeparations.every(separation => separation >= 100 && separation <= 150));
@@ -1149,7 +1214,8 @@ describe('layout/engine/pipeline', () => {
 
     assert.ok(placementAudit.ringSubstituentReadabilityFailureCount > 0);
     assert.ok(placementAudit.outwardAxisRingSubstituentFailureCount > 0);
-    assert.equal(result.metadata.stageTelemetry?.selectedStage, 'finalAttachedRingRotationTouchup');
+    assert.equal(result.metadata.cleanupTelemetry?.selectedStageCategory, 'presentation');
+    assert.equal(result.metadata.cleanupTelemetry?.presentationFallbacks.won, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
@@ -1159,6 +1225,43 @@ describe('layout/engine/pipeline', () => {
       `expected ${anchorAtomId}-${childAtomId} to end within 30 degrees of the local outward direction`
     );
     assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('does not flag exact outward carbonyl-linked ring substituents just because the downstream ring centroid bends inward', () => {
+    const result = runPipeline(parseSMILES('Cn1c2CCN(Cc2nc1C(=O)N3CCOCC3)c4ncccn4'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps saturated multi-ring bridgehead alkyl exits on their local incident-ring bisector even before late presentation cleanup', () => {
+    const result = runPipeline(parseSMILES('CNCCCC12CCC(C3=CC=CC=C13)C1=CC=CC=C21'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const anchorAtomId = 'C6';
+    const childAtomId = 'C5';
+    const leftRingAngle = bondAngleAtAtom(result.coords, anchorAtomId, 'C15', childAtomId);
+    const rightRingAngle = bondAngleAtAtom(result.coords, anchorAtomId, 'C21', childAtomId);
+    const childAngle = angleOf(sub(result.coords.get(childAtomId), result.coords.get(anchorAtomId)));
+    const localRingOutwardAngle = angleOf(sub(
+      result.coords.get(anchorAtomId),
+      centroid((result.layoutGraph.atomToRings.get(anchorAtomId) ?? [])[0].atomIds.map(atomId => result.coords.get(atomId)).filter(Boolean))
+    ));
+
+    assert.equal(result.metadata.cleanupTelemetry?.selectedStageCategory, 'checkpoint');
+    assert.ok(Math.abs(leftRingAngle - rightRingAngle) <= 1e-6, 'expected the bridgehead alkyl exit to bisect the local middle-ring angle');
+    assert.ok(
+      angularDifference(childAngle, localRingOutwardAngle) <= 1e-6,
+      `expected ${anchorAtomId}-${childAtomId} to land exactly on the local incident-ring outward angle`
+    );
   });
 
   it('keeps rigid omitted-h trigonal ring exits exact even when placement already avoids the aromatic overlap', () => {
@@ -1198,7 +1301,7 @@ describe('layout/engine/pipeline', () => {
     assert.ok(angularDifference(acidRootAngle, acidRootPreferredAngle) < 1e-6);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
-    assert.equal(result.metadata.stageTelemetry.selectedGeometryStage, 'cleanup');
+    assert.equal(result.metadata.cleanupTelemetry.selectedGeometryStageCategory, 'core-geometry');
   });
 
   it('treats macrocycles with substituents as mixed but still places them completely', () => {

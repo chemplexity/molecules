@@ -56,6 +56,29 @@ function shouldTidyBond(layoutGraph, bond, coords, bondLength) {
 }
 
 /**
+ * Returns whether the current layout contains an overstretched bridged bond
+ * that still has movable endpoints.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{bondLength?: number}} [options] - Optional bond-length override.
+ * @returns {boolean} True when the tidy should run.
+ */
+export function hasBridgedBondTidyNeed(layoutGraph, coords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+
+  for (const bond of layoutGraph.bonds.values()) {
+    if (!shouldTidyBond(layoutGraph, bond, coords, bondLength)) {
+      continue;
+    }
+    if (atomMobility(layoutGraph, bond.a) + atomMobility(layoutGraph, bond.b) > 1e-6) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+/**
  * Contracts overstretched local single bonds inside bridged ring systems without
  * rerunning full cleanup. The pass favors moving the less-connected endpoint so
  * dense cages stay readable while remaining close to the existing scaffold.

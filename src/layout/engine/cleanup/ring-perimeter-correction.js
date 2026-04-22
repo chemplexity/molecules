@@ -34,6 +34,30 @@ function idealMacrocyclePerimeter(ring, coords, bondLength) {
 }
 
 /**
+ * Returns whether the current layout contains an eligible macrocycle whose ring
+ * atoms drift materially away from the ideal ellipse perimeter.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{bondLength?: number}} [options] - Optional bond-length override.
+ * @returns {boolean} True when the tidy should run.
+ */
+export function hasRingPerimeterCorrectionNeed(layoutGraph, coords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const maxDeviation = bondLength * RING_PERIMETER_MAX_DEVIATION_FACTOR;
+
+  for (const ring of eligibleMacrocycleRings(layoutGraph, coords)) {
+    const idealPoints = idealMacrocyclePerimeter(ring, coords, bondLength);
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      if (distance(coords.get(ring.atomIds[index]), idealPoints[index]) > maxDeviation) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
  * Nudges macrocycle ring atoms back toward the ideal ellipse perimeter after cleanup.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.

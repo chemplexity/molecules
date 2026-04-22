@@ -574,6 +574,27 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(pipelineDeviation < 1e-6, `expected the full pipeline to keep the bridgehead methyl on the local outward axis, got ${pipelineDeviation.toFixed(6)} rad`);
   });
 
+  it('keeps directly attached cyclohexyl blocks on the local outward ring axis instead of leaving the attachment tangential', () => {
+    const smiles = '[H][C@@](CC1CCCCC1)(NC1=NC2=CC=CC=C2O1)C(=O)NCCNC1=CC=C(OC)C=C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const mixedResult = layoutMixedFamily(graph, component, adjacency, buildScaffoldPlan(graph, component), graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const anchorAtomId = 'C4';
+    const childAtomId = 'C3';
+    const mixedDeviation = bestLocalRingDeviation(graph, mixedResult.coords, anchorAtomId, childAtomId);
+    const pipelineDeviation = bestLocalRingDeviation(pipelineResult.layoutGraph, pipelineResult.coords, anchorAtomId, childAtomId);
+
+    assert.equal(mixedResult.supported, true);
+    assert.ok(mixedDeviation < 1e-6, `expected the cyclohexyl attachment to follow the exact local outward ring axis in mixed placement, got ${mixedDeviation.toFixed(6)} rad`);
+    assert.ok(pipelineDeviation < 1e-6, `expected the full pipeline to keep the cyclohexyl attachment on the exact local outward ring axis, got ${pipelineDeviation.toFixed(6)} rad`);
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+  });
+
   it('spreads crowded saturated ring branches through the exterior gap instead of pinching them against ring bonds', () => {
     const graph = createLayoutGraph(parseSMILES('CCC1C(C)C(N)(C(C)OC(C)=O)C(N)C1O'), { suppressH: true });
     const component = graph.components[0];
@@ -1023,6 +1044,30 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(carbonylSecondAngle - (2 * Math.PI) / 3) < 0.06, `expected C9-C11-N13 to stay near 120 degrees, got ${((carbonylSecondAngle * 180) / Math.PI).toFixed(2)}`);
     assert.ok(Math.abs(carbonylThirdAngle - (2 * Math.PI) / 3) < 0.06, `expected O12-C11-N13 to stay near 120 degrees, got ${((carbonylThirdAngle * 180) / Math.PI).toFixed(2)}`);
     assert.ok(Math.abs(amideNitrogenAngle - (2 * Math.PI) / 3) < 0.06, `expected C11-N13-C14 to stay near 120 degrees, got ${((amideNitrogenAngle * 180) / Math.PI).toFixed(2)}`);
+  });
+
+  it('keeps hidden-h tri-substituted stereocenters on a visible trigonal spread', () => {
+    const graph = createLayoutGraph(parseSMILES('[H][C@](CC)(C1=CC=CC=C1)C1=C(O)C2=C(CCCCC2)OC1=O'), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES('[H][C@](CC)(C1=CC=CC=C1)C1=C(O)C2=C(CCCCC2)OC1=O'), { suppressH: true });
+
+    const assertTrigonalCenter = (coords, label) => {
+      const firstAngle = bondAngleAtAtom(coords, 'C2', 'C3', 'C5');
+      const secondAngle = bondAngleAtAtom(coords, 'C2', 'C3', 'C11');
+      const thirdAngle = bondAngleAtAtom(coords, 'C2', 'C5', 'C11');
+      for (const [name, angle] of [['C3-C2-C5', firstAngle], ['C3-C2-C11', secondAngle], ['C5-C2-C11', thirdAngle]]) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 0.05,
+          `expected ${label} ${name} to stay near 120 degrees when the fourth substituent is a hidden hydrogen, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertTrigonalCenter(mixedResult.coords, 'mixed layout');
+    assertTrigonalCenter(pipelineResult.coords, 'pipeline layout');
   });
 
   it('rotates directly attached ring blocks around the parent bond when that clears multiple outward-axis failures at once', () => {

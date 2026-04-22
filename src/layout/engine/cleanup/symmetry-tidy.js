@@ -4,6 +4,8 @@ import { ANGLE_EPSILON, DISTANCE_EPSILON } from '../constants.js';
 import { computeBounds } from '../geometry/bounds.js';
 import { angleOf, angularDifference, centroid, rotate, sub } from '../geometry/vec2.js';
 
+const IDEMPOTENT_AXIS_EPSILON = 1e-12;
+
 /**
  * Returns the qualifying fused ring-junction pairs that should be snapped to an axis.
  * @param {object} layoutGraph - Layout graph shell.
@@ -143,6 +145,57 @@ function candidateJunctionRotations(coords, junctionPairs) {
   return [...candidateAngles];
 }
 
+function hasAxisSnapNeed(inputCoords, epsilon) {
+  for (const position of inputCoords?.values?.() ?? []) {
+    if (!position) {
+      continue;
+    }
+    if (
+      (Math.abs(position.x) > IDEMPOTENT_AXIS_EPSILON && Math.abs(position.x) <= epsilon)
+      || (Math.abs(position.y) > IDEMPOTENT_AXIS_EPSILON && Math.abs(position.y) <= epsilon)
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns whether symmetry tidy has real work to do for the current coords.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
+ * @param {object} [options] - Symmetry-tidy options.
+ * @param {number} [options.epsilon] - Snap tolerance.
+ * @param {object} [options.layoutGraph] - Optional layout graph for fused-junction snapping.
+ * @returns {boolean} True when symmetry tidy would materially change coordinates.
+ */
+export function hasSymmetryTidyNeed(inputCoords, options = {}) {
+  const epsilon = options.epsilon ?? DISTANCE_EPSILON;
+  if (hasAxisSnapNeed(inputCoords, epsilon)) {
+    return true;
+  }
+
+  const targets = collectJunctionTargets(options.layoutGraph);
+  if (targets.size === 0) {
+    return false;
+  }
+
+  for (const target of targets.values()) {
+    const currentScore = scoreJunctionAlignment(inputCoords, target);
+    for (const rotationAngle of candidateJunctionRotations(inputCoords, target.junctionPairs)) {
+      if (Math.abs(rotationAngle) <= ANGLE_EPSILON) {
+        continue;
+      }
+      const candidateCoords = rotateComponent(inputCoords, target.atomIds, rotationAngle);
+      const candidateScore = scoreJunctionAlignment(candidateCoords, target);
+      if (candidateScore + ANGLE_EPSILON < currentScore) {
+        return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 /**
  * Rotates qualifying fused components so their shared junction bonds land on an axis.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
@@ -199,6 +252,13 @@ function snapRingJunctions(inputCoords, layoutGraph) {
  */
 export function tidySymmetry(inputCoords, options = {}) {
   const epsilon = options.epsilon ?? DISTANCE_EPSILON;
+  if (!hasSymmetryTidyNeed(inputCoords, options)) {
+    return {
+      coords: inputCoords,
+      snappedCount: 0,
+      junctionSnapCount: 0
+    };
+  }
   const junctionSnap = snapRingJunctions(inputCoords, options.layoutGraph);
   const coords = new Map();
   let snappedCount = 0;

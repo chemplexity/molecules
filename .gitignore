@@ -60,6 +60,7 @@ pids
 .env
 
 # Temporary folders
+.tmp/
 tmp/
 temp/
 

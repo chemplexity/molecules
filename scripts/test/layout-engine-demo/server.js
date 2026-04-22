@@ -235,6 +235,7 @@ const server = http.createServer((req, res) => {
     const snapshots = [];
     let prevCoords = null;
     const stageAcceptance = new Map();
+    let lastStepMs = performance.now();
 
     const result = runPipeline(mol, {
       suppressH: true,
@@ -242,7 +243,10 @@ const server = http.createServer((req, res) => {
       maxCleanupPasses: 6,
       debug: {
         onStep: (label, description, coords, stepMetadata) => {
-          snapshots.push({ label, description, coords: copyCoords(coords), prevCoords: prevCoords ? copyCoords(prevCoords) : null, stepMetadata });
+          const now = performance.now();
+          const stepTimeMs = now - lastStepMs;
+          lastStepMs = now;
+          snapshots.push({ label, description, coords: copyCoords(coords), prevCoords: prevCoords ? copyCoords(prevCoords) : null, stepMetadata, stepTimeMs });
           prevCoords = coords;
         },
         onStageAcceptance: (name, accepted, cAudit, iAudit) => stageAcceptance.set(name, { accepted, candidateAudit: cAudit, incumbentAudit: iAudit })
@@ -277,6 +281,7 @@ const server = http.createServer((req, res) => {
       steps.push({
         label: snap.label,
         description: snap.description,
+        stepTimeMs: snap.stepTimeMs,
         svg: rendered.svg,
         cellW: rendered.cellW,
         cellH: rendered.cellH,

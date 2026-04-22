@@ -164,6 +164,7 @@ function auditSlicePlacement(layoutGraph, atomIds, family, placement, bondLength
  * @param {number} bondLength - Target bond length.
  * @param {object} [options] - Slice layout options.
  * @param {Map<string, string[]>} [options.adjacency] - Optional prebuilt adjacency.
+ * @param {object} [options.mixedOptions] - Optional mixed-family placement overrides.
  * @returns {{family: string, supported: boolean, atomIds: string[], coords: Map<string, {x: number, y: number}>, placementMode?: string|null, templateId?: string|null, bondValidationClasses: Map<string, 'planar'|'bridged'>}} Slice placement result.
  */
 export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}) {
@@ -187,7 +188,7 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
   const family = options.forceFamily ?? (heuristicFamily === 'organometallic' ? heuristicFamily : scaffoldPlan.rootScaffold.family);
 
   if (scaffoldPlan.mixedMode && !options.forceFamily) {
-    return layoutMixedFamily(layoutGraph, sliceComponent, adjacency, scaffoldPlan, bondLength);
+    return layoutMixedFamily(layoutGraph, sliceComponent, adjacency, scaffoldPlan, bondLength, options.mixedOptions ?? null);
   }
 
   let result = null;

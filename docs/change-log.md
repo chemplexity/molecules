@@ -1,5 +1,26 @@
 # Change Log
 
+## 2026-04-21
+
+- Keep three-visible-bond stereocenters with a hidden hydrogen on a true trigonal 120/120/120 spread when their heavy-atom layout should read as omitted-h continuation rather than tetrahedral projection
+- Score mixed-family direct-attached ring blocks from the ring-anchor side as well, so isolated cyclohexyl and similar saturated ring attachments snap to their exact local outward exit instead of settling on tangential poses
+- Let hypervalent angle cleanup rotate compact non-ring ligand subtrees, so phosphoramidate and phosphate-ester phosphorus centers can settle onto exact orthogonal crosses without introducing new overlaps
+- Prefer the local incident-ring bisector over the coarse fused-system centroid for simple alkyl exits on saturated multi-ring bridgeheads, so central-ring substituent angles stay exactly symmetric
+- Stop shared-junction continuation from forcing simple alkyl-chain exits on saturated multi-ring bridgeheads onto the wrong straight-through slot when local outward presentation is the better reading
+- Stop ring-readability audit from falsely failing exact outward carbonyl-linked substituents just because a farther downstream attached ring centroid bends past the hard outward-axis threshold
+- Split preferred branch-angle search into two phases so exact/snapped coarse angles are exhausted before `±15°`/`±30°` rescue offsets, while keeping preferred coarse continuations prioritized over generic fallback slots
+- Reuse cleanup-stage stereo and final audit metadata when a single-component layout reaches the finish line unchanged, avoiding redundant final stereo inspection and `auditLayout` work on already-correct poses
+- Skip `coreGeometryCleanup`, `stereoRescueCleanup`, and `presentationCleanup` when placement plus the geometry checkpoint already show no corresponding work, while keeping symmetry snaps active only when they would materially change the layout
+- Rename the live cleanup graph ids to `coreGeometryCleanup`, `selectedGeometryCheckpoint`, `stereoRescueCleanup`, `specialistCleanup`, and `stabilizeAfterCleanup`, and keep internal stereo follow-up wins folded back under `stereoRescueCleanup`
+- Slightly expand hybrid ring-opening reaction-preview product components that still retain rings when moderate heavy-atom crowding remains, fixing the bridged lactam-hydrolysis preview without disturbing fully acyclic ring-opening alignment
+- Remove the last cleanup-consolidation wrapper modules, drop migration-only cleanup telemetry alias fields, and retarget pipeline tests to stable cleanup categories plus presentation-fallback semantics
+- Fold `label-clearance` and `symmetry-tidy` into one always-present `presentationCleanup` stage, remove the standalone `postCleanup` graph node, and track internal attached-ring fallback escalation directly on presentation telemetry
+- Replace the late hypervalent specialist fan-out with one `finalSpecialistCleanup` orchestrator, move shared stabilization onto the late `postHookCleanup` stage, and add accepted-stage stabilization request tracking to cleanup telemetry
+- Merge late ring presentation cleanup behind a shared facade, replace the three standalone final presentation stages with one `finalPresentationTouchup`, and gate attached-ring fallback on real descriptor presence
+- Extract a shared cleanup candidate-search engine and move ring substituent, attached-ring, and ring-terminal-hetero cleanup onto it while keeping attached-ring per-seed refinement behavior stable for the later presentation-merge phase
+- Move `selectedGeometryStereo` into runner bookkeeping and collapse stereo touchup orchestration behind the shared stereo-rescue category while keeping legacy telemetry names
+- Add persistent cleanup telemetry and a corpus benchmark helper for layout-stage timing, outcome, and fallback tracking
+
 ## 2026-04-20
 
 - Fix alignment of hetero atom labels with double bonds

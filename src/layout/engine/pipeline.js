@@ -8,6 +8,12 @@ import { createEmptyPipelineResult } from './model/empty-result.js';
 import { layoutSupportedComponents } from './placement/component-layout.js';
 import { buildCleanupStageGraph } from './cleanup/stage-pipeline.js';
 import { runStageGraph } from './cleanup/stage-runner.js';
+import {
+  buildCleanupTelemetry,
+  buildStageTelemetryFromCleanupTelemetry,
+  createEmptyCleanupTelemetry,
+  createEmptyStageTelemetry
+} from './cleanup/telemetry.js';
 import { auditLayout } from './audit/audit.js';
 import { auditCleanupStage } from './audit/stage-metrics.js';
 import { createQualityReport } from './model/quality-report.js';
@@ -79,16 +85,57 @@ function buildPlacementTelemetry(placement) {
   };
 }
 
-function buildStageTelemetry(stageEntries, selectedGeometryStage, selectedStage) {
-  const stageAudits = Object.fromEntries(stageEntries.map(entry => [entry.name, entry.audit]));
-  const firstDirtyStage = stageEntries.find(entry => entry.audit?.ok === false)?.name ?? null;
+function createEmptyStereoSummary() {
   return {
-    selectedGeometryStage,
-    selectedStage,
-    firstDirtyStage,
-    finalDirtyStage: stageAudits[selectedStage]?.ok === false ? selectedStage : null,
-    stageAudits
+    ezCheckedBondCount: 0,
+    ezSupportedBondCount: 0,
+    ezUnsupportedBondCount: 0,
+    ezResolvedBondCount: 0,
+    ezViolationCount: 0,
+    ezChecks: [],
+    annotatedCenterCount: 0,
+    chiralCenterCount: 0,
+    assignedCenterCount: 0,
+    unassignedCenterCount: 0,
+    assignments: [],
+    missingCenterIds: [],
+    unsupportedCenterCount: 0,
+    unsupportedCenterIds: []
   };
+}
+
+function getRingDependencySummary(molecule, layoutGraph) {
+  return layoutGraph.rings.length > 0
+    ? (layoutGraph._ringDependency ??= inspectRingDependency(molecule))
+    : {
+        ok: true,
+        requiresDedicatedRingEngine: false,
+        suspiciousSystemCount: 0,
+        systems: [],
+        rings: [],
+        connections: []
+      };
+}
+
+function hasStereoTargets(molecule) {
+  if (!molecule || typeof molecule !== 'object') {
+    return false;
+  }
+  if (typeof molecule.getChiralCenters === 'function' && molecule.getChiralCenters().length > 0) {
+    return true;
+  }
+  if (!(molecule.bonds instanceof Map) || typeof molecule.getEZStereo !== 'function') {
+    return false;
+  }
+  for (const bond of molecule.bonds.values()) {
+    if ((bond?.properties?.order ?? 1) !== 2) {
+      continue;
+    }
+    if (molecule.getEZStereo(bond.id) != null) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function buildInitialCoordsMap(options) {
@@ -256,7 +303,7 @@ function shouldProtectCleanupBondIntegrity(familySummary, placement) {
  * @param {{enabled: boolean, startTime: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null} [timingState] - Optional timing accumulator.
  * @param {((label: string, description: string, coords: Map<string, {x: number, y: number}>, metrics?: object) => void)|null} [onStep] - Optional debug callback for intermediate cleanup stages.
  * @param {((stageName: string, accepted: boolean, stageAudit: object|null, incumbentAudit: object|null) => void)|null} [onStageAcceptance] - Optional callback fired after each scored cleanup stage acceptance decision.
- * @returns {{coords: Map<string, {x: number, y: number}>, passes: number, improvement: number, overlapMoves: number, labelNudges: number, symmetrySnaps: number, junctionSnaps: number, stereoReflections: number, postHookNudges: number, placementAudit?: object|null, stageTelemetry?: object|null}} Cleanup summary.
+ * @returns {{coords: Map<string, {x: number, y: number}>, passes: number, improvement: number, overlapMoves: number, labelNudges: number, symmetrySnaps: number, junctionSnaps: number, stereoReflections: number, postHookNudges: number, placementAudit?: object|null, stageTelemetry?: object|null, cleanupTelemetry?: object|null}} Cleanup summary.
  */
 function runCleanupPhase(layoutGraph, placement, familySummary, policy, normalizedOptions, timingState = null, onStep = null, onStageAcceptance = null) {
   const includeStageTelemetry = normalizedOptions.auditTelemetry === true;
@@ -274,7 +321,8 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
       ...(includeStageTelemetry
         ? {
             placementAudit: null,
-            stageTelemetry: buildStageTelemetry([], null, null)
+            stageTelemetry: createEmptyStageTelemetry(),
+            cleanupTelemetry: createEmptyCleanupTelemetry()
           }
         : {})
     };
@@ -296,6 +344,8 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
     normalizedOptions,
     cleanupMaxPasses,
     protectBondIntegrity,
+    hasStereoTargets: layoutGraph._hasStereoTargets === true,
+    emptyStereoSummary: layoutGraph._emptyStereoSummary,
     runStereoPhase,
     timingState,
     nowMs,
@@ -303,44 +353,97 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
     onStageAcceptance,
     copyCoords: cloneCoords
   };
+  const cleanupStagePlan = buildCleanupStageGraph(cleanupContext);
+  const geometryRunnerState = runStageGraph(cleanupStagePlan.geometryStages, placementStage, cleanupContext);
+  const selectedGeometryCheckpointStage = cleanupStagePlan.materializeSelectedGeometryCheckpoint(geometryRunnerState);
   const {
     bestStage,
     geometryCheckpointStage,
     allStageResults,
     accumulatedSidecars,
+    accumulatedStabilizationRequest,
+    stageExecutions,
     stageEntries
-  } = runStageGraph(buildCleanupStageGraph(cleanupContext), placementStage, cleanupContext);
-  const cleanupStage = allStageResults.get('cleanup') ?? { passes: 0, improvement: 0, overlapMoves: 0 };
-  const postCleanupStage = allStageResults.get('postCleanup') ?? {
+  } = runStageGraph(
+    cleanupStagePlan.stereoStages,
+    selectedGeometryCheckpointStage,
+    cleanupContext,
+    geometryRunnerState
+  );
+  const stereoRunnerState = {
+    bestStage,
+    geometryCheckpointStage,
+    allStageResults,
+    accumulatedSidecars,
+    accumulatedStabilizationRequest,
+    stageExecutions,
+    stageEntries
+  };
+  cleanupStagePlan.runStereoRescueCleanup(stereoRunnerState);
+  const finalRunnerState = runStageGraph(
+    cleanupStagePlan.finalStages,
+    selectedGeometryCheckpointStage,
+    cleanupContext,
+    stereoRunnerState
+  );
+  const stabilizationRunnerState = runStageGraph(
+    cleanupStagePlan.stabilizationStages,
+    selectedGeometryCheckpointStage,
+    {
+      ...cleanupContext,
+      stabilizationRequest: finalRunnerState.accumulatedStabilizationRequest
+    },
+    finalRunnerState
+  );
+  const finalBestStage = stabilizationRunnerState.bestStage;
+  const finalGeometryCheckpointStage = stabilizationRunnerState.geometryCheckpointStage;
+  const finalAccumulatedSidecars = stabilizationRunnerState.accumulatedSidecars;
+  const finalAccumulatedStabilizationRequest = stabilizationRunnerState.accumulatedStabilizationRequest;
+  const finalStageExecutions = stabilizationRunnerState.stageExecutions;
+  const finalStageResults = stabilizationRunnerState.allStageResults;
+  const coreGeometryCleanupStage = finalStageResults.get('coreGeometryCleanup') ?? { passes: 0, improvement: 0, overlapMoves: 0 };
+  const presentationCleanupStage = finalStageResults.get('presentationCleanup') ?? {
     labelNudges: 0,
     symmetrySnaps: 0,
     junctionSnaps: 0,
     reflections: 0,
     hookNudges: 0
   };
-  const postHookCleanupStage = allStageResults.get('postHookCleanup') ?? { passes: 0, improvement: 0, overlapMoves: 0 };
-  const stereoProtectedTouchupStage = allStageResults.get('stereoProtectedTouchup') ?? { passes: 0, improvement: 0, overlapMoves: 0 };
-  const stereoTouchupStage = allStageResults.get('stereoTouchup') ?? { passes: 0, improvement: 0, overlapMoves: 0 };
-  const stereoCleanupStage = allStageResults.get('stereoCleanup') ?? { reflections: 0 };
-  const postTouchupStereoStage = allStageResults.get('postTouchupStereo') ?? { reflections: 0 };
+  const stabilizeAfterCleanupStage = finalStageResults.get('stabilizeAfterCleanup') ?? { passes: 0, improvement: 0, overlapMoves: 0 };
+  const stereoProtectedTouchupStage = finalStageResults.get('stereoProtectedTouchup') ?? { passes: 0, improvement: 0, overlapMoves: 0 };
+  const stereoTouchupStage = finalStageResults.get('stereoTouchup') ?? { passes: 0, improvement: 0, overlapMoves: 0 };
+  const stereoRescueCleanupStage = finalStageResults.get('stereoRescueCleanup') ?? { reflections: 0 };
+  const postTouchupStereoStage = finalStageResults.get('postTouchupStereo') ?? { reflections: 0 };
   if (timingState) {
     timingState.cleanupMs = nowMs() - cleanupStart;
   }
+  const cleanupTelemetry = includeStageTelemetry
+    ? buildCleanupTelemetry(
+        finalStageExecutions,
+        finalStageResults,
+        finalGeometryCheckpointStage.name,
+        finalBestStage.name,
+        finalAccumulatedStabilizationRequest
+      )
+    : null;
 
   return {
-    coords: bestStage.coords,
-    passes: cleanupStage.passes + postHookCleanupStage.passes + stereoProtectedTouchupStage.passes + stereoTouchupStage.passes,
-    improvement: cleanupStage.improvement + postHookCleanupStage.improvement + stereoProtectedTouchupStage.improvement + stereoTouchupStage.improvement,
-    overlapMoves: cleanupStage.overlapMoves + postHookCleanupStage.overlapMoves + stereoProtectedTouchupStage.overlapMoves + stereoTouchupStage.overlapMoves,
-    labelNudges: postCleanupStage.labelNudges ?? 0,
-    symmetrySnaps: postCleanupStage.symmetrySnaps ?? 0,
-    junctionSnaps: postCleanupStage.junctionSnaps ?? 0,
-    stereoReflections: (postCleanupStage.reflections ?? 0) + (stereoCleanupStage.reflections ?? 0) + (postTouchupStereoStage.reflections ?? 0),
-    postHookNudges: (postCleanupStage.hookNudges ?? 0) + Object.values(accumulatedSidecars).reduce((total, count) => total + (count ?? 0), 0),
+    coords: finalBestStage.coords,
+    passes: coreGeometryCleanupStage.passes + stabilizeAfterCleanupStage.passes + stereoProtectedTouchupStage.passes + stereoTouchupStage.passes,
+    improvement: coreGeometryCleanupStage.improvement + stabilizeAfterCleanupStage.improvement + stereoProtectedTouchupStage.improvement + stereoTouchupStage.improvement,
+    overlapMoves: coreGeometryCleanupStage.overlapMoves + stabilizeAfterCleanupStage.overlapMoves + stereoProtectedTouchupStage.overlapMoves + stereoTouchupStage.overlapMoves,
+    labelNudges: presentationCleanupStage.labelNudges ?? 0,
+    symmetrySnaps: presentationCleanupStage.symmetrySnaps ?? 0,
+    junctionSnaps: presentationCleanupStage.junctionSnaps ?? 0,
+    stereoReflections: (presentationCleanupStage.reflections ?? 0) + (stereoRescueCleanupStage.reflections ?? 0) + (postTouchupStereoStage.reflections ?? 0),
+    postHookNudges: (presentationCleanupStage.hookNudges ?? 0) + Object.values(finalAccumulatedSidecars).reduce((total, count) => total + (count ?? 0), 0),
+    finalStageStereo: finalBestStage.stereo ?? null,
+    finalStageAudit: finalBestStage.audit ?? null,
     ...(includeStageTelemetry
       ? {
           placementAudit: placementStage.audit,
-          stageTelemetry: buildStageTelemetry(stageEntries, geometryCheckpointStage.name, bestStage.name)
+          stageTelemetry: buildStageTelemetryFromCleanupTelemetry(cleanupTelemetry),
+          cleanupTelemetry
         }
       : {})
   };
@@ -357,19 +460,18 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
  */
 function runStereoPhase(molecule, layoutGraph, coords, timingState = null, cachedWedges = null) {
   const stereoStart = timingState ? nowMs() : 0;
+  const ringDependency = getRingDependencySummary(molecule, layoutGraph);
+  if (layoutGraph._hasStereoTargets !== true) {
+    if (timingState) {
+      timingState.stereoMs = nowMs() - stereoStart;
+    }
+    return {
+      ringDependency,
+      stereo: layoutGraph._emptyStereoSummary
+    };
+  }
   const ez = inspectEZStereo(layoutGraph, coords);
   const wedges = cachedWedges ?? pickWedgeAssignments(layoutGraph, coords);
-  const ringDependency =
-    layoutGraph.rings.length > 0
-      ? (layoutGraph._ringDependency ??= inspectRingDependency(molecule))
-      : {
-          ok: true,
-          requiresDedicatedRingEngine: false,
-          suspiciousSystemCount: 0,
-          systems: [],
-          rings: [],
-          connections: []
-        };
   const stereo = {
     ezCheckedBondCount: ez.checkedBondCount,
     ezSupportedBondCount: ez.supportedCheckCount,
@@ -407,17 +509,18 @@ function runStereoPhase(molecule, layoutGraph, coords, timingState = null, cache
  * @param {object} ringDependency - Ring dependency metadata.
  * @param {object} stereo - Stereo metadata.
  * @param {{enabled: boolean, startTime: number, placementMs: number, cleanupMs: number, labelClearanceMs: number, stereoMs: number, auditMs: number}|null} [timingState] - Optional timing accumulator.
+ * @param {object|null} [cachedAudit] - Optional already-computed final audit to reuse when the final coordinates match a cleanup-scored stage.
  * @returns {object} Final pipeline result.
  */
-function buildPipelineResult(molecule, coords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState = null) {
-  const auditStart = timingState ? nowMs() : 0;
-  const audit = auditLayout(layoutGraph, coords, {
+function buildPipelineResult(molecule, coords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState = null, cachedAudit = null) {
+  const auditStart = timingState && cachedAudit == null ? nowMs() : 0;
+  const audit = cachedAudit ?? auditLayout(layoutGraph, coords, {
     bondLength: normalizedOptions.bondLength,
     bondValidationClasses: placement.bondValidationClasses,
     stereo
   });
   if (timingState) {
-    timingState.auditMs = nowMs() - auditStart;
+    timingState.auditMs = cachedAudit == null ? nowMs() - auditStart : 0;
   }
   const qualityReport = createQualityReport({
     audit,
@@ -469,7 +572,8 @@ function buildPipelineResult(molecule, coords, layoutGraph, normalizedOptions, p
             placementModes: placementTelemetry.placementModes,
             componentPlacements: placementTelemetry.componentPlacements,
             placementAudit: cleanup.placementAudit ?? null,
-            stageTelemetry: cleanup.stageTelemetry ?? buildStageTelemetry([], null, null)
+            stageTelemetry: cleanup.stageTelemetry ?? createEmptyStageTelemetry(),
+            cleanupTelemetry: cleanup.cleanupTelemetry ?? createEmptyCleanupTelemetry()
           }
         : {}),
       qualityReport,
@@ -551,6 +655,8 @@ export function runPipeline(molecule, options = {}) {
   }
   const workingMolecule = typeof molecule?.clone === 'function' ? molecule.clone() : molecule;
   const layoutGraph = createLayoutGraphFromNormalized(workingMolecule, normalizedOptions);
+  layoutGraph._hasStereoTargets = hasStereoTargets(workingMolecule);
+  layoutGraph._emptyStereoSummary = createEmptyStereoSummary();
   const familySummary = classifyFamily(layoutGraph);
   const policy = resolvePolicy(profile, {
     ...layoutGraph.traits,
@@ -597,6 +703,30 @@ export function runPipeline(molecule, options = {}) {
     finalCoords = repackFinalDisconnectedComponents(layoutGraph, finalCoords, placement, policy, normalizedOptions.bondLength);
   }
   onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', cloneCoords(finalCoords), { stage: 'complete' });
-  const { ringDependency, stereo } = runStereoPhase(workingMolecule, layoutGraph, finalCoords, timingState, finalCoordsModified ? null : preOrientWedges);
-  return buildPipelineResult(molecule, finalCoords, layoutGraph, normalizedOptions, profile, familySummary, policy, placement, cleanup, ringDependency, stereo, timingState);
+  const canReuseFinalStageStereo =
+    layoutGraph.components.length <= 1
+    && finalCoordsModified === false
+    && cleanup.finalStageAudit != null
+    && cleanup.finalStageStereo != null;
+  const { ringDependency, stereo } = canReuseFinalStageStereo
+    ? {
+        ringDependency: getRingDependencySummary(workingMolecule, layoutGraph),
+        stereo: cleanup.finalStageStereo
+      }
+    : runStereoPhase(workingMolecule, layoutGraph, finalCoords, timingState, finalCoordsModified ? null : preOrientWedges);
+  return buildPipelineResult(
+    molecule,
+    finalCoords,
+    layoutGraph,
+    normalizedOptions,
+    profile,
+    familySummary,
+    policy,
+    placement,
+    cleanup,
+    ringDependency,
+    stereo,
+    timingState,
+    canReuseFinalStageStereo ? cleanup.finalStageAudit : null
+  );
 }

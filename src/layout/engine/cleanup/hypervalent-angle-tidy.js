@@ -9,6 +9,8 @@ const ANGLE_THRESHOLD = Math.PI / 18;
 const FIXED_LIGAND_WEIGHT = 4;
 const BRIDGE_LINKED_HYPERVALENT_LIGAND_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
 const MAX_BRIDGE_LINKED_HYPERVALENT_SUBTREE_HEAVY_ATOMS = 8;
+const MAX_COMPACT_HYPERVALENT_LIGAND_SUBTREE_HEAVY_ATOMS = 12;
+const MAX_COMPACT_HYPERVALENT_LIGAND_SUBTREE_ATOMS = 24;
 
 function angularDistance(firstAngle, secondAngle) {
   const rawDelta = Math.abs(firstAngle - secondAngle) % (Math.PI * 2);
@@ -146,13 +148,53 @@ function movableBridgeLinkedHypervalentSubtreeAtomIds(layoutGraph, centerAtomId,
   return subtreeAtomIds;
 }
 
+function movableCompactHypervalentLigandSubtreeAtomIds(layoutGraph, centerAtomId, ligandAtomId, coords) {
+  const ligandAtom = layoutGraph.atoms.get(ligandAtomId);
+  if (
+    !ligandAtom
+    || ligandAtom.element === 'H'
+    || !coords.has(ligandAtomId)
+    || (layoutGraph.atomToRings.get(ligandAtomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
+  if (
+    subtreeAtomIds.length === 0
+    || subtreeAtomIds.length > MAX_COMPACT_HYPERVALENT_LIGAND_SUBTREE_ATOMS
+    || subtreeAtomIds.some(subtreeAtomId => (layoutGraph.atomToRings.get(subtreeAtomId)?.length ?? 0) > 0)
+  ) {
+    return null;
+  }
+
+  let heavyAtomCount = 0;
+  for (const subtreeAtomId of subtreeAtomIds) {
+    const subtreeAtom = layoutGraph.atoms.get(subtreeAtomId);
+    if (!subtreeAtom) {
+      return null;
+    }
+    if (subtreeAtom.element !== 'H') {
+      heavyAtomCount++;
+      if (heavyAtomCount > MAX_COMPACT_HYPERVALENT_LIGAND_SUBTREE_HEAVY_ATOMS) {
+        return null;
+      }
+    }
+  }
+
+  return heavyAtomCount > 1 ? subtreeAtomIds : null;
+}
+
 function movableLigandSubtreeAtomIds(layoutGraph, centerAtomId, ligandAtomId, coords) {
   const ligandAtom = layoutGraph.atoms.get(ligandAtomId);
   if (!ligandAtom || ligandAtom.element === 'H' || !coords.has(ligandAtomId)) {
     return null;
   }
   if (ligandAtom.heavyDegree > 1) {
-    return movableBridgeLinkedHypervalentSubtreeAtomIds(layoutGraph, centerAtomId, ligandAtomId, coords);
+    return (
+      movableBridgeLinkedHypervalentSubtreeAtomIds(layoutGraph, centerAtomId, ligandAtomId, coords)
+      ?? movableCompactHypervalentLigandSubtreeAtomIds(layoutGraph, centerAtomId, ligandAtomId, coords)
+    );
   }
   const subtreeAtomIds = collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId);
   for (const subtreeAtomId of subtreeAtomIds) {
@@ -265,6 +307,59 @@ export function measureOrthogonalHypervalentDeviation(layoutGraph, coords, optio
   }
 
   return totalDeviation;
+}
+
+/**
+ * Returns whether the current layout still contains a supported hypervalent
+ * center that can materially benefit from orthogonalization.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{angleThreshold?: number}} [options] - Optional threshold overrides.
+ * @returns {boolean} True when the tidy should run.
+ */
+export function hasHypervalentAngleTidyNeed(layoutGraph, coords, options = {}) {
+  const angleThreshold = options.angleThreshold ?? ANGLE_THRESHOLD;
+
+  for (const centerAtomId of coords.keys()) {
+    const descriptor = describeOrthogonalHypervalentCenter(layoutGraph, centerAtomId, coords);
+    if (!descriptor) {
+      continue;
+    }
+
+    const centerPosition = coords.get(centerAtomId);
+    const movableNeighborIds = new Set(
+      [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds].filter(neighborAtomId => {
+        const subtreeAtomIds = movableLigandSubtreeAtomIds(layoutGraph, centerAtomId, neighborAtomId, coords);
+        return Array.isArray(subtreeAtomIds) && subtreeAtomIds.length > 0;
+      })
+    );
+    if (movableNeighborIds.size === 0) {
+      continue;
+    }
+
+    const currentAngles = new Map(
+      [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds].map(neighborAtomId => [
+        neighborAtomId,
+        angleOf(sub(coords.get(neighborAtomId), centerPosition))
+      ])
+    );
+    const fit = fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds);
+    if (!fit) {
+      continue;
+    }
+
+    for (const neighborAtomId of movableNeighborIds) {
+      const targetAngle = fit.targetAngles.get(neighborAtomId);
+      if (targetAngle == null) {
+        continue;
+      }
+      if (angularDistance(currentAngles.get(neighborAtomId), targetAngle) > angleThreshold) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 /**

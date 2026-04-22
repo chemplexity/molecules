@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
-import { measureRingSubstituentPresentationPenalty, runRingSubstituentTidy } from '../../../../src/layout/engine/cleanup/ring-substituent-tidy.js';
+import { measureRingSubstituentPresentationPenalty, runRingSubstituentTidy } from '../../../../src/layout/engine/cleanup/presentation/ring-substituent.js';
 import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { createLayoutGraph, createLayoutGraphFromNormalized } from '../../../../src/layout/engine/model/layout-graph.js';
 import { normalizeOptions } from '../../../../src/layout/engine/options.js';
@@ -167,13 +167,13 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
       parseSMILES('Cc1cc(NC(=O)CCSc2nc(cc(n2)C(F)(F)F)c3occc3)n(n1)c4ccccc4'),
       { suppressH: true, auditTelemetry: true }
     );
-    const postCleanupAudit = result.metadata.stageTelemetry.stageAudits.postCleanup;
+    const presentationCleanupAudit = result.metadata.stageTelemetry.stageAudits.presentationCleanup;
 
     assert.ok(
       result.metadata.audit.ringSubstituentReadabilityFailureCount
-      <= postCleanupAudit.ringSubstituentReadabilityFailureCount
+      <= presentationCleanupAudit.ringSubstituentReadabilityFailureCount
     );
-    assert.ok(result.metadata.audit.severeOverlapCount <= postCleanupAudit.severeOverlapCount);
+    assert.ok(result.metadata.audit.severeOverlapCount <= presentationCleanupAudit.severeOverlapCount);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
   });
@@ -183,15 +183,10 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
       parseSMILES('CCOC(=O)C1C(CC2=NC(=C(C(C2=C1O)c3ccccn3)C(=O)OCC)C)c4ccc(OC)cc4'),
       { suppressH: true, auditTelemetry: true }
     );
-    const postCleanupAudit = result.metadata.stageTelemetry.stageAudits.postCleanup;
-    const finalRingSubstituentAudit = result.metadata.stageTelemetry.stageAudits.finalRingSubstituentTouchup ?? null;
+    const presentationCleanupAudit = result.metadata.stageTelemetry.stageAudits.presentationCleanup;
 
-    assert.equal(postCleanupAudit.ringSubstituentReadabilityFailureCount, 0);
-    assert.equal(postCleanupAudit.outwardAxisRingSubstituentFailureCount, 0);
-    if (finalRingSubstituentAudit) {
-      assert.equal(finalRingSubstituentAudit.ringSubstituentReadabilityFailureCount, 0);
-      assert.equal(finalRingSubstituentAudit.outwardAxisRingSubstituentFailureCount, 0);
-    }
+    assert.equal(presentationCleanupAudit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(presentationCleanupAudit.outwardAxisRingSubstituentFailureCount, 0);
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });
@@ -274,9 +269,9 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
     );
 
     assert.equal(result.metadata.stageTelemetry.selectedGeometryStage, 'placement');
-    assert.equal(result.metadata.stageTelemetry.selectedStage, 'selectedGeometryStereo');
-    assert.ok(!('finalRingSubstituentTouchup' in result.metadata.stageTelemetry.stageAudits));
-    assert.ok(!('finalAttachedRingRotationTouchup' in result.metadata.stageTelemetry.stageAudits));
+    assert.equal(result.metadata.stageTelemetry.selectedStage, 'selectedGeometryCheckpoint');
+    assert.equal(result.metadata.cleanupTelemetry.stages.presentationCleanup?.ran, false);
+    assert.ok(!('presentationCleanup' in result.metadata.stageTelemetry.stageAudits));
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
   });
@@ -287,8 +282,8 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
       { suppressH: true, auditTelemetry: true }
     );
 
-    assert.notEqual(result.metadata.stageTelemetry.selectedStage, 'selectedGeometryStereo');
-    assert.ok('finalRingSubstituentTouchup' in result.metadata.stageTelemetry.stageAudits);
+    assert.notEqual(result.metadata.stageTelemetry.selectedStage, 'selectedGeometryCheckpoint');
+    assert.ok('presentationCleanup' in result.metadata.stageTelemetry.stageAudits);
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);

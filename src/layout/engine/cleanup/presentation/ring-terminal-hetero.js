@@ -1,9 +1,9 @@
-/** @module cleanup/ring-terminal-hetero-tidy */
+/** @module cleanup/presentation/ring-terminal-hetero */
 
-import { buildAtomGrid } from '../audit/invariants.js';
-import { countPointInPolygons } from '../geometry/polygon.js';
-import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub } from '../geometry/vec2.js';
-import { probeRigidRotation } from './rigid-rotation.js';
+import { buildAtomGrid } from '../../audit/invariants.js';
+import { countPointInPolygons } from '../../geometry/polygon.js';
+import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub } from '../../geometry/vec2.js';
+import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
 
 const TIDY_ROTATION_ANGLES = Object.freeze([
   0,
@@ -192,16 +192,16 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
     };
     const candidateAngles = new Set(TIDY_ROTATION_ANGLES);
     for (const angle of descriptor.outwardAngles) { candidateAngles.add(angle); }
-    const rigidRotationProbe = probeRigidRotation(layoutGraph, coords, {
+    const candidateSearch = visitPresentationDescriptorCandidates(layoutGraph, coords, {
       anchorAtomId: descriptor.anchorAtomId,
       rootAtomId: descriptor.heteroAtomId,
       subtreeAtomIds: [descriptor.heteroAtomId]
     }, {
-      angles: [...candidateAngles],
-      buildPositionsFn(_coords, _rotationDescriptor, candidateAngle) {
+      generateSeeds: () => [...candidateAngles],
+      materializeOverrides(_coords, _rotationDescriptor, candidateAngle) {
         return new Map([[descriptor.heteroAtomId, add(anchorPosition, fromAngle(candidateAngle, radius))]]);
       },
-      scoreFn(_coords, overridePositions, candidateAngle) {
+      scoreSeed(_rotationDescriptor, _candidateCoords, candidateAngle, _context, overridePositions) {
         const candidatePosition = overridePositions.get(descriptor.heteroAtomId);
         if (!candidatePosition) {
           return null;
@@ -218,9 +218,9 @@ export function runRingTerminalHeteroTidy(layoutGraph, inputCoords, options = {}
           angleDelta: angularDifference(candidateAngle, currentAngle)
         };
       },
-      isBetterScoreFn: isBetterTidyCandidate
+      isBetterScore: isBetterTidyCandidate
     });
-    const bestCandidate = rigidRotationProbe.bestScore ?? currentCandidate;
+    const bestCandidate = candidateSearch.bestFinalCandidate?.score ?? currentCandidate;
 
     const improvesOverlapCount = bestCandidate.overlapCount < currentCandidate.overlapCount;
     const improvesInsideRing = bestCandidate.insideRingCount < currentCandidate.insideRingCount;

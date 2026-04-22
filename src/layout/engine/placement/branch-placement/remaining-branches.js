@@ -61,6 +61,53 @@ function hasPendingHeavyNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace,
   });
 }
 
+function buildBranchPlacementAtomGrid(layoutGraph, coords, bondLength) {
+  if (!(bondLength > 0) || coords.size < 160) {
+    return null;
+  }
+  const atomGrid = new AtomGrid(bondLength);
+  for (const [atomId, pos] of coords) {
+    atomGrid.insert(atomId, pos);
+  }
+  return atomGrid;
+}
+
+function resetBranchPlacementContext(placementContext, layoutGraph, coords, bondLength) {
+  placementContext.layoutGraph = layoutGraph;
+  placementContext.coords = coords;
+  placementContext.bondLength = bondLength;
+  placementContext.placementState = seedPlacementState(layoutGraph, coords);
+  placementContext.atomGrid = buildBranchPlacementAtomGrid(layoutGraph, coords, bondLength);
+  placementContext.ringPolygonsByAnchor = new Map();
+  placementContext.needsResync = false;
+  return placementContext;
+}
+
+function ensureBranchPlacementContext(layoutGraph, coords, bondLength, placementContext = null) {
+  const resolvedContext = placementContext ?? {};
+  if (
+    resolvedContext.layoutGraph !== layoutGraph
+    || resolvedContext.coords !== coords
+    || resolvedContext.bondLength !== bondLength
+    || !resolvedContext.placementState
+    || resolvedContext.needsResync === true
+    || (!!resolvedContext.atomGrid) !== (bondLength > 0 && coords.size >= 160)
+  ) {
+    return resetBranchPlacementContext(resolvedContext, layoutGraph, coords, bondLength);
+  }
+  return resolvedContext;
+}
+
+function incidentRingPolygonsForAnchor(layoutGraph, coords, anchorAtomId, placementContext = null) {
+  if (!placementContext) {
+    return incidentRingPolygons(layoutGraph, coords, anchorAtomId);
+  }
+  if (!placementContext.ringPolygonsByAnchor.has(anchorAtomId)) {
+    placementContext.ringPolygonsByAnchor.set(anchorAtomId, incidentRingPolygons(layoutGraph, coords, anchorAtomId));
+  }
+  return placementContext.ringPolygonsByAnchor.get(anchorAtomId);
+}
+
 function placeNeighborSequence(
   adjacency,
   canonicalAtomRank,
@@ -73,7 +120,8 @@ function placeNeighborSequence(
   neighborAtomIds,
   layoutGraph = null,
   branchConstraints = null,
-  depth = 0
+  depth = 0,
+  placementContext = null
 ) {
   const anchorPosition = coords.get(anchorAtomId);
   if (!anchorPosition || neighborAtomIds.length === 0 || depth > MAX_BRANCH_RECURSION_DEPTH) {
@@ -81,14 +129,8 @@ function placeNeighborSequence(
   }
 
   const occupiedAngles = occupiedNeighborAngles(adjacency, coords, anchorAtomId, atomIdsToPlace);
-  const ringPolygons = incidentRingPolygons(layoutGraph, coords, anchorAtomId);
-
-  const atomGrid = bondLength > 0 && coords.size >= 160 ? new AtomGrid(bondLength) : null;
-  if (atomGrid) {
-    for (const [atomId, pos] of coords) {
-      atomGrid.insert(atomId, pos);
-    }
-  }
+  const ringPolygons = incidentRingPolygonsForAnchor(layoutGraph, coords, anchorAtomId, placementContext);
+  const atomGrid = placementContext?.atomGrid ?? null;
 
   for (const childAtomId of neighborAtomIds) {
     const currentPlacedNeighborIds = placedNeighborIds(adjacency, coords, anchorAtomId);
@@ -189,7 +231,7 @@ function placeNeighborSequence(
       }
     }
     occupiedAngles.push(chosenAngle);
-    placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, childAtomId, anchorAtomId, bondLength, layoutGraph, branchConstraints, depth + 1);
+    placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, childAtomId, anchorAtomId, bondLength, layoutGraph, branchConstraints, depth + 1, placementContext);
   }
 }
 
@@ -204,7 +246,8 @@ function placeChildren(
   bondLength,
   layoutGraph = null,
   branchConstraints = null,
-  depth = 0
+  depth = 0,
+  placementContext = null
 ) {
   const anchorPosition = coords.get(anchorAtomId);
   if (!anchorPosition || depth > MAX_BRANCH_RECURSION_DEPTH) {
@@ -238,7 +281,8 @@ function placeChildren(
       layoutGraph,
       branchConstraints,
       depth,
-      childDescriptors
+      childDescriptors,
+      placementContext
     );
   } else {
     placeNeighborSequence(
@@ -253,7 +297,8 @@ function placeChildren(
       primaryNeighborIds,
       layoutGraph,
       branchConstraints,
-      depth
+      depth,
+      placementContext
     );
   }
   if (deferredNeighborIds.length > 0 && !shouldLeaveDeferredLeavesForLaterPass) {
@@ -269,7 +314,8 @@ function placeChildren(
       deferredNeighborIds,
       layoutGraph,
       branchConstraints,
-      depth
+      depth,
+      placementContext
     );
   }
 }
@@ -286,13 +332,15 @@ function placeChildren(
  * @param {object|null} [layoutGraph] - Layout graph shell.
  * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number}>}|null} [branchConstraints] - Optional branch-angle constraints keyed by anchor atom ID.
  * @param {number} [depth] - Recursive depth guard for pathological graphs.
+ * @param {{placementState?: {sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}, atomGrid?: import('../../geometry/atom-grid.js').AtomGrid|null, ringPolygonsByAnchor?: Map<string, Array<Array<{x: number, y: number}>>>, needsResync?: boolean}|null} [placementContext] - Optional reusable branch-placement context.
  * @returns {Map<string, {x: number, y: number}>} Updated coordinate map.
  */
-export function placeRemainingBranches(adjacency, canonicalAtomRank, coords, atomIdsToPlace, seedAtomIds, bondLength, layoutGraph = null, branchConstraints = null, depth = 0) {
+export function placeRemainingBranches(adjacency, canonicalAtomRank, coords, atomIdsToPlace, seedAtomIds, bondLength, layoutGraph = null, branchConstraints = null, depth = 0, placementContext = null) {
   if (depth > MAX_BRANCH_RECURSION_DEPTH) {
     return coords;
   }
-  const placementState = seedPlacementState(layoutGraph, coords);
+  const resolvedPlacementContext = ensureBranchPlacementContext(layoutGraph, coords, bondLength, placementContext);
+  const placementState = resolvedPlacementContext.placementState;
   const orderedSeedAtomIds = neighborOrder(
     seedAtomIds.filter(atomId => coords.has(atomId)),
     canonicalAtomRank
@@ -301,7 +349,7 @@ export function placeRemainingBranches(adjacency, canonicalAtomRank, coords, ato
     const placedNeighbors = (adjacency.get(seedAtomId) ?? []).filter(neighborAtomId => coords.has(neighborAtomId) && atomIdsToPlace.has(neighborAtomId));
     const orderedPlacedNeighbors = neighborOrder(placedNeighbors, canonicalAtomRank);
     const parentAtomId = orderedPlacedNeighbors.length === 1 ? orderedPlacedNeighbors[0] : null;
-    placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, seedAtomId, parentAtomId, bondLength, layoutGraph, branchConstraints, depth);
+    placeChildren(adjacency, canonicalAtomRank, coords, placementState, atomIdsToPlace, seedAtomId, parentAtomId, bondLength, layoutGraph, branchConstraints, depth, resolvedPlacementContext);
   }
   return coords;
 }

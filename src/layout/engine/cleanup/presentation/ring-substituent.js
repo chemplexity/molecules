@@ -1,4 +1,4 @@
-/** @module cleanup/ring-substituent-tidy */
+/** @module cleanup/presentation/ring-substituent */
 
 import {
   buildAtomGrid,
@@ -8,16 +8,17 @@ import {
   computeSubtreeOverlapCost,
   ringSubstituentRepresentativePosition,
   supportsRingSubstituentOutwardReadability
-} from '../audit/invariants.js';
-import { pointInPolygon } from '../geometry/polygon.js';
-import { computeBounds } from '../geometry/bounds.js';
-import { distancePointToSegment, segmentsProperlyIntersect } from '../geometry/segments.js';
-import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../geometry/vec2.js';
-import { RING_SUBSTITUENT_READABILITY_LIMITS } from '../constants.js';
-import { measureAttachedCarbonylPresentationPenalty } from './attached-carbonyl-presentation.js';
-import { containsFrozenAtom } from './frozen-atoms.js';
-import { forEachRigidRotationCandidate, rotateRigidDescriptorPositions } from './rigid-rotation.js';
-import { collectCutSubtree } from './subtree-utils.js';
+} from '../../audit/invariants.js';
+import { pointInPolygon } from '../../geometry/polygon.js';
+import { computeBounds } from '../../geometry/bounds.js';
+import { distancePointToSegment, segmentsProperlyIntersect } from '../../geometry/segments.js';
+import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../../geometry/vec2.js';
+import { RING_SUBSTITUENT_READABILITY_LIMITS } from '../../constants.js';
+import { measureAttachedCarbonylPresentationPenalty } from './attached-carbonyl.js';
+import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
+import { containsFrozenAtom } from '../frozen-atoms.js';
+import { rotateRigidDescriptorPositions } from '../rigid-rotation.js';
+import { collectCutSubtree } from '../subtree-utils.js';
 
 const TIDY_ROTATION_ANGLES = Object.freeze([
   0,
@@ -70,10 +71,53 @@ function preferredMultiRingOutwardAngle(layoutGraph, anchorPosition, positions, 
   return angleOf(sub(anchorPosition, centroid(positions)));
 }
 
-function outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId) {
+function incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId) {
   const anchorPosition = coords.get(anchorAtomId);
   if (!anchorPosition) {
     return [];
+  }
+  const angles = [];
+  for (const polygon of incidentRingPolygons(layoutGraph, coords, anchorAtomId)) {
+    const outwardAngle = angleOf(sub(anchorPosition, centroid(polygon)));
+    if (!angles.some(existingAngle => angularDifference(existingAngle, outwardAngle) <= 1e-9)) {
+      angles.push(outwardAngle);
+    }
+  }
+  return angles;
+}
+
+function shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, anchorAtomId, rootAtomId, localOutwardAngles) {
+  if (
+    !rootAtomId
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1
+    || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0
+    || localOutwardAngles.length !== 1
+  ) {
+    return false;
+  }
+
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  const bond = layoutGraph.bondByAtomPair.get(atomPairKey(anchorAtomId, rootAtomId));
+  return Boolean(
+    rootAtom
+    && rootAtom.element === 'C'
+    && rootAtom.aromatic !== true
+    && bond
+    && bond.kind === 'covalent'
+    && !bond.inRing
+    && !bond.aromatic
+    && (bond.order ?? 1) === 1
+  );
+}
+
+function outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId, rootAtomId = null) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return [];
+  }
+  const localOutwardAngles = incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId);
+  if (shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, anchorAtomId, rootAtomId, localOutwardAngles)) {
+    return localOutwardAngles;
   }
   const ringSystemOutwardAngle = preferredMultiRingOutwardAngle(
     layoutGraph,
@@ -84,11 +128,7 @@ function outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId) {
   if (ringSystemOutwardAngle != null) {
     return [ringSystemOutwardAngle];
   }
-  const angles = [];
-  for (const polygon of incidentRingPolygons(layoutGraph, coords, anchorAtomId)) {
-    angles.push(angleOf(sub(anchorPosition, centroid(polygon))));
-  }
-  return angles;
+  return localOutwardAngles;
 }
 
 function ringSystemAtomIds(layoutGraph, atomId, coords, ringSystemById = null) {
@@ -204,10 +244,29 @@ function incidentRingPolygonsWithOverrides(layoutGraph, coords, atomId, override
     .filter(polygon => polygon.length >= 3);
 }
 
-function outwardAnglesForAnchorWithOverrides(layoutGraph, coords, anchorAtomId, overridePositions = null) {
+function incidentRingOutwardAnglesWithOverrides(layoutGraph, coords, anchorAtomId, overridePositions = null) {
   const anchorPosition = positionForAtom(coords, overridePositions, anchorAtomId);
   if (!anchorPosition) {
     return [];
+  }
+  const angles = [];
+  for (const polygon of incidentRingPolygonsWithOverrides(layoutGraph, coords, anchorAtomId, overridePositions)) {
+    const outwardAngle = angleOf(sub(anchorPosition, centroid(polygon)));
+    if (!angles.some(existingAngle => angularDifference(existingAngle, outwardAngle) <= 1e-9)) {
+      angles.push(outwardAngle);
+    }
+  }
+  return angles;
+}
+
+function outwardAnglesForAnchorWithOverrides(layoutGraph, coords, anchorAtomId, overridePositions = null, rootAtomId = null) {
+  const anchorPosition = positionForAtom(coords, overridePositions, anchorAtomId);
+  if (!anchorPosition) {
+    return [];
+  }
+  const localOutwardAngles = incidentRingOutwardAnglesWithOverrides(layoutGraph, coords, anchorAtomId, overridePositions);
+  if (shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, anchorAtomId, rootAtomId, localOutwardAngles)) {
+    return localOutwardAngles;
   }
   const ringSystemAtomIdsForAnchor = ringSystemAtomIds(layoutGraph, anchorAtomId, coords);
   const ringSystemOutwardAngle = preferredMultiRingOutwardAngle(
@@ -221,11 +280,7 @@ function outwardAnglesForAnchorWithOverrides(layoutGraph, coords, anchorAtomId, 
   if (ringSystemOutwardAngle != null) {
     return [ringSystemOutwardAngle];
   }
-  const angles = [];
-  for (const polygon of incidentRingPolygonsWithOverrides(layoutGraph, coords, anchorAtomId, overridePositions)) {
-    angles.push(angleOf(sub(anchorPosition, centroid(polygon))));
-  }
-  return angles;
+  return localOutwardAngles;
 }
 
 function countMovedBondCrossings(layoutGraph, coords, subtreeAtomIds, overridePositions, bondIntersectionContext = null) {
@@ -268,21 +323,33 @@ function countMovedBondCrossings(layoutGraph, coords, subtreeAtomIds, overridePo
     const firstBond = movingBonds[firstIndex];
     const firstStart = positionForAtom(coords, overridePositions, firstBond.a);
     const firstEnd = positionForAtom(coords, overridePositions, firstBond.b);
-    if (!firstStart || !firstEnd) continue;
+    if (!firstStart || !firstEnd) {
+      continue;
+    }
 
     for (let secondIndex = firstIndex + 1; secondIndex < movingBonds.length; secondIndex++) {
       const secondBond = movingBonds[secondIndex];
-      if (firstBond.a === secondBond.a || firstBond.a === secondBond.b || firstBond.b === secondBond.a || firstBond.b === secondBond.b) continue;
+      if (firstBond.a === secondBond.a || firstBond.a === secondBond.b || firstBond.b === secondBond.a || firstBond.b === secondBond.b) {
+        continue;
+      }
       const secondStart = positionForAtom(coords, overridePositions, secondBond.a);
       const secondEnd = positionForAtom(coords, overridePositions, secondBond.b);
-      if (!secondStart || !secondEnd) continue;
-      if (segmentsProperlyIntersect(firstStart, firstEnd, secondStart, secondEnd)) crossingCount++;
+      if (!secondStart || !secondEnd) {
+        continue;
+      }
+      if (segmentsProperlyIntersect(firstStart, firstEnd, secondStart, secondEnd)) {
+        crossingCount++;
+      }
     }
 
     for (let i = 0; i < staticSegments.length; i++) {
       const staticSeg = staticSegments[i];
-      if (firstBond.a === staticSeg.aAtomId || firstBond.a === staticSeg.bAtomId || firstBond.b === staticSeg.aAtomId || firstBond.b === staticSeg.bAtomId) continue;
-      if (segmentsProperlyIntersect(firstStart, firstEnd, staticSeg.start, staticSeg.end)) crossingCount++;
+      if (firstBond.a === staticSeg.aAtomId || firstBond.a === staticSeg.bAtomId || firstBond.b === staticSeg.aAtomId || firstBond.b === staticSeg.bAtomId) {
+        continue;
+      }
+      if (segmentsProperlyIntersect(firstStart, firstEnd, staticSeg.start, staticSeg.end)) {
+        crossingCount++;
+      }
     }
   }
 
@@ -359,7 +426,7 @@ function resolveIdealTerminalMultipleBondLeafDescriptor(layoutGraph, coords, anc
     return null;
   }
 
-  const outwardAngles = outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId);
+  const outwardAngles = outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId, rootAtomId);
   if (outwardAngles.length === 0) {
     return null;
   }
@@ -535,7 +602,7 @@ function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAt
         continue;
       }
 
-      const outwardAngles = outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId);
+      const outwardAngles = outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId, rootAtomId);
       if (outwardAngles.length === 0) {
         continue;
       }
@@ -589,7 +656,7 @@ function refreshDescriptorGeometry(layoutGraph, coords, descriptor) {
     ...descriptor,
     anchorRingAtomIds: [...new Set((layoutGraph.atomToRings.get(descriptor.anchorAtomId) ?? []).flatMap(ring => ring.atomIds))],
     ringPolygons: incidentRingPolygons(layoutGraph, coords, descriptor.anchorAtomId),
-    outwardAngles: outwardAnglesForAnchor(layoutGraph, coords, descriptor.anchorAtomId),
+    outwardAngles: outwardAnglesForAnchor(layoutGraph, coords, descriptor.anchorAtomId, descriptor.rootAtomId),
     reverseAnchorRingAtomIds: descriptor.isRingSystemSubstituent
       ? [...new Set((layoutGraph.atomToRings.get(descriptor.reverseAnchorAtomId) ?? []).flatMap(ring => ring.atomIds))]
       : descriptor.reverseAnchorRingAtomIds,
@@ -646,7 +713,7 @@ function linkedRingBridgeAngleDeviation(anchorPosition, rootPosition, reverseAnc
  * @param {object} descriptor - Dynamic tidy descriptor.
  * @param {number} bondLength - Target bond length.
  * @param {string[]} allAtomIds - All placed atom ids.
- * @param {object[]|null} [covalentBonds] - Optional cached covalent bonds for crossing checks.
+ * @param {object|null} [bondIntersectionContext] - Optional cached crossing context.
  * @param {object|null} [subtreeContext] - Optional cached subtree-overlap context.
  * @returns {object|null} Exact outward candidate, or null when unavailable.
  */
@@ -695,7 +762,7 @@ function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor,
  * @param {object} descriptor - Dynamic tidy descriptor.
  * @param {number} bondLength - Target bond length.
  * @param {string[]} allAtomIds - All placed atom ids.
- * @param {object[]|null} [covalentBonds] - Optional cached covalent bonds for crossing checks.
+ * @param {object|null} [bondIntersectionContext] - Optional cached crossing context.
  * @param {object|null} [subtreeContext] - Optional cached subtree-overlap context.
  * @returns {object|null} Best exact linked-ring candidate, or null when unavailable.
  */
@@ -831,7 +898,13 @@ function buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, override
   const reverseRingPolygons = descriptor.isRingSystemSubstituent
     ? incidentRingPolygonsWithOverrides(layoutGraph, coords, descriptor.reverseAnchorAtomId, overridePositions)
     : [];
-  const forwardOutwardAngles = outwardAnglesForAnchorWithOverrides(layoutGraph, coords, descriptor.anchorAtomId, overridePositions);
+  const forwardOutwardAngles = outwardAnglesForAnchorWithOverrides(
+    layoutGraph,
+    coords,
+    descriptor.anchorAtomId,
+    overridePositions,
+    descriptor.rootAtomId
+  );
   const reverseOutwardAngles = descriptor.isRingSystemSubstituent
     ? outwardAnglesForAnchorWithOverrides(layoutGraph, coords, descriptor.reverseAnchorAtomId, overridePositions)
     : [];
@@ -1083,6 +1156,7 @@ export function measureRingSubstituentPresentationPenalty(layoutGraph, coords, o
   for (const descriptor of descriptors) {
     const anchorAtom = layoutGraph.atoms.get(descriptor.anchorAtomId);
     const rootAtom = layoutGraph.atoms.get(descriptor.rootAtomId);
+    const anchorRingCount = layoutGraph.atomToRings.get(descriptor.anchorAtomId)?.length ?? 0;
     const anchorPosition = coords.get(descriptor.anchorAtomId);
     const rootPosition = coords.get(descriptor.rootAtomId);
     const reverseAnchorPosition = descriptor.isRingSystemSubstituent ? coords.get(descriptor.reverseAnchorAtomId) : null;
@@ -1126,7 +1200,7 @@ export function measureRingSubstituentPresentationPenalty(layoutGraph, coords, o
       && descriptor.outwardAngles.length === 1
       && anchorAtom
       && !anchorAtom.aromatic
-      && anchorAtom.heavyDegree === 3;
+      && (anchorAtom.heavyDegree === 3 || anchorRingCount > 1);
     const isIdealLinkedRingDescriptor =
       descriptor.linkedRingAnchorAtomId != null
       && descriptor.prefersIdealOutwardGeometry
@@ -1277,58 +1351,101 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
         bestCandidate = exactIdealLinkedRingCandidate;
       }
       if (dynamicDescriptor.rootRotatingAtomIds.length > 0) {
-        forEachRigidRotationCandidate(layoutGraph, coords, dynamicDescriptor, {
-          angles: TIDY_ROTATION_ANGLES.filter(rotation => Math.abs(rotation) > TIDY_ANGLE_EPSILON),
-          buildPositionsFn(_coords, descriptor, rotation) {
+        const rootAnchoredSearch = visitPresentationDescriptorCandidates(layoutGraph, coords, dynamicDescriptor, {
+          context: {
+            atomGrid,
+            bondIntersectionContext,
+            subtreeContext,
+            allAtomIds,
+            baseCandidate,
+            bondLength
+          },
+          generateSeeds: () => TIDY_ROTATION_ANGLES.filter(rotation => Math.abs(rotation) > TIDY_ANGLE_EPSILON),
+          materializeOverrides(inputCoords, descriptor, rotation) {
             return buildRootAnchoredRingSystemPositions(
-              coords,
+              inputCoords,
               descriptor.rootAtomId,
               descriptor.rootRotatingAtomIds,
               rotation
             );
           },
-          visitCandidate(overridePositions, rotation) {
+          scoreSeed(descriptor, _candidateCoords, rotation, searchContext, overridePositions) {
             const candidate = {
-              ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, overridePositions, bondLength, allAtomIds, bondIntersectionContext, subtreeContext),
+              ...buildCandidateScore(
+                layoutGraph,
+                coords,
+                searchContext.atomGrid,
+                descriptor,
+                overridePositions,
+                searchContext.bondLength,
+                searchContext.allAtomIds,
+                searchContext.bondIntersectionContext,
+                searchContext.subtreeContext
+              ),
               angleDelta: Math.abs(rotation),
               overridePositions,
               rootAnchored: true
             };
-            if (!shouldAcceptCandidate(candidate, baseCandidate, dynamicDescriptor)) {
-              return;
-            }
-            if (isZeroFailureRootAnchoredRepair(candidate, baseCandidate) && isBetterCandidate(candidate, bestZeroFailureRootCandidate)) {
-              bestZeroFailureRootCandidate = candidate;
-            }
-            if (isBetterCandidate(candidate, bestCandidate)) {
-              bestCandidate = candidate;
+            return shouldAcceptCandidate(candidate, searchContext.baseCandidate, descriptor) ? candidate : null;
+          },
+          isBetterScore: isBetterCandidate,
+          onAcceptedCandidate(candidate) {
+            if (
+              isZeroFailureRootAnchoredRepair(candidate.seedScore, baseCandidate)
+              && isBetterCandidate(candidate.seedScore, bestZeroFailureRootCandidate)
+            ) {
+              bestZeroFailureRootCandidate = candidate.seedScore;
             }
           }
         });
+        if (rootAnchoredSearch.bestFinalCandidate && isBetterCandidate(rootAnchoredSearch.bestFinalCandidate.score, bestCandidate)) {
+          bestCandidate = rootAnchoredSearch.bestFinalCandidate.score;
+        }
       }
 
       if (!bestZeroFailureRootCandidate) {
-        forEachRigidRotationCandidate(layoutGraph, coords, dynamicDescriptor, {
-          angles: [...candidateAngles],
-          buildPositionsFn(inputCoords, descriptor, candidateAngle) {
+        const rigidSearch = visitPresentationDescriptorCandidates(layoutGraph, coords, dynamicDescriptor, {
+          context: {
+            atomGrid,
+            bondIntersectionContext,
+            subtreeContext,
+            allAtomIds,
+            baseCandidate,
+            bondLength,
+            currentAngle
+          },
+          generateSeeds: () => [...candidateAngles],
+          materializeOverrides(inputCoords, descriptor, candidateAngle) {
             const rotation = candidateAngle - currentAngle;
             if (Math.abs(rotation) <= TIDY_ANGLE_EPSILON) {
               return null;
             }
             return rotateRigidDescriptorPositions(inputCoords, descriptor, rotation);
           },
-          visitCandidate(overridePositions, candidateAngle) {
+          scoreSeed(descriptor, _candidateCoords, candidateAngle, searchContext, overridePositions) {
             const candidate = {
-              ...buildCandidateScore(layoutGraph, coords, atomGrid, dynamicDescriptor, overridePositions, bondLength, allAtomIds, bondIntersectionContext, subtreeContext),
-              angleDelta: Math.abs(candidateAngle - currentAngle),
+              ...buildCandidateScore(
+                layoutGraph,
+                coords,
+                searchContext.atomGrid,
+                descriptor,
+                overridePositions,
+                searchContext.bondLength,
+                searchContext.allAtomIds,
+                searchContext.bondIntersectionContext,
+                searchContext.subtreeContext
+              ),
+              angleDelta: Math.abs(candidateAngle - searchContext.currentAngle),
               overridePositions,
               rootAnchored: false
             };
-            if (shouldAcceptCandidate(candidate, baseCandidate, dynamicDescriptor) && isBetterCandidate(candidate, bestCandidate)) {
-              bestCandidate = candidate;
-            }
-          }
+            return shouldAcceptCandidate(candidate, searchContext.baseCandidate, descriptor) ? candidate : null;
+          },
+          isBetterScore: isBetterCandidate
         });
+        if (rigidSearch.bestFinalCandidate && isBetterCandidate(rigidSearch.bestFinalCandidate.score, bestCandidate)) {
+          bestCandidate = rigidSearch.bestFinalCandidate.score;
+        }
       }
 
       if (bestZeroFailureRootCandidate) {

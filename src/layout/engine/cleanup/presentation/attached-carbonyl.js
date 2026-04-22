@@ -1,6 +1,6 @@
-/** @module cleanup/attached-carbonyl-presentation */
+/** @module cleanup/presentation/attached-carbonyl */
 
-import { collectCutSubtree } from './subtree-utils.js';
+import { collectCutSubtree } from '../subtree-utils.js';
 
 /**
  * Returns whether a descriptor represents an O-linked acyclic carbonyl carrying

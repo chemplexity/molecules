@@ -664,6 +664,47 @@ function reaction2dHeavyGeometryStats(mol, componentAtomIds) {
   return { minNonbonded, maxBond };
 }
 
+function expandReaction2dCrowdedComponent(mol, componentAtomIds, bondLength = 1.5, options = {}) {
+  if (!mol || !componentAtomIds?.size) {
+    return false;
+  }
+  const targetMinNonbonded = options.targetMinNonbonded ?? bondLength * 0.55;
+  const maxScale = options.maxScale ?? 1.08;
+  const { minNonbonded } = reaction2dHeavyGeometryStats(mol, componentAtomIds);
+  if (!Number.isFinite(minNonbonded) || minNonbonded >= targetMinNonbonded) {
+    return false;
+  }
+
+  const heavyAtoms = [...componentAtomIds].map(id => mol.atoms.get(id)).filter(atom => atom && atom.name !== 'H' && atom.x != null && atom.y != null);
+  if (heavyAtoms.length < 2) {
+    return false;
+  }
+
+  const scale = Math.min(maxScale, targetMinNonbonded / Math.max(minNonbonded, 1e-6));
+  if (!(scale > 1 + 1e-6)) {
+    return false;
+  }
+
+  let cx = 0;
+  let cy = 0;
+  for (const atom of heavyAtoms) {
+    cx += atom.x;
+    cy += atom.y;
+  }
+  cx /= heavyAtoms.length;
+  cy /= heavyAtoms.length;
+
+  for (const atomId of componentAtomIds) {
+    const atom = mol.atoms.get(atomId);
+    if (!atom || atom.x == null || atom.y == null) {
+      continue;
+    }
+    atom.x = cx + (atom.x - cx) * scale;
+    atom.y = cy + (atom.y - cy) * scale;
+  }
+  return true;
+}
+
 function reaction2dMinHeavyDistanceToEdited(mol, startId, componentAtomIds) {
   if (!mol || !componentAtomIds?.has(startId)) {
     return Infinity;
@@ -2230,12 +2271,13 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
           checkMol.addBond(bond.id, aId, bId, {}, false);
         }
       }
+      const remainingRingCount = checkMol.getRings().length;
       const preferredBackbone = findPreferredBackbonePath(checkMol);
       const shouldForceRingOpeningLandscape =
         shouldPreferFinalLandscapeOrientation(checkMol)
-        || (checkMol.getRings().length === 0 && (preferredBackbone?.path.length ?? 0) >= 4);
+        || (remainingRingCount === 0 && (preferredBackbone?.path.length ?? 0) >= 4);
       if (shouldForceRingOpeningLandscape) {
-        const useIsolatedRingOpeningLayout = checkMol.getRings().length === 0 && (preferredBackbone?.path.length ?? 0) >= 4;
+        const useIsolatedRingOpeningLayout = remainingRingCount === 0 && (preferredBackbone?.path.length ?? 0) >= 4;
         const componentCoords = useIsolatedRingOpeningLayout
           ? new Map(isolatedSnapshot)
           : (() => {
@@ -2258,6 +2300,9 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
             atom.y = pos.y;
           }
         }
+      }
+      if (remainingRingCount > 0) {
+        expandReaction2dCrowdedComponent(mol, componentAtomIds, bondLength);
       }
     }
   }
