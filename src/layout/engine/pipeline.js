@@ -260,6 +260,15 @@ function orientFinalCoords(inputCoords, molecule) {
   return coords;
 }
 
+function snapTinyCoordinateNoise(coords, epsilon = 1e-12) {
+  for (const [atomId, position] of coords) {
+    coords.set(atomId, {
+      x: Math.abs(position.x) <= epsilon ? 0 : position.x,
+      y: Math.abs(position.y) <= epsilon ? 0 : position.y
+    });
+  }
+}
+
 /**
  * Returns a timing accumulator when enabled.
  * @param {boolean} enabled - Whether timing should be recorded.
@@ -702,6 +711,7 @@ export function runPipeline(molecule, options = {}) {
   if (finalCoordsModified) {
     finalCoords = repackFinalDisconnectedComponents(layoutGraph, finalCoords, placement, policy, normalizedOptions.bondLength);
   }
+  snapTinyCoordinateNoise(finalCoords);
   onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', cloneCoords(finalCoords), { stage: 'complete' });
   const canReuseFinalStageStereo =
     layoutGraph.components.length <= 1

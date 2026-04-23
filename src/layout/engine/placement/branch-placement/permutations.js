@@ -18,6 +18,7 @@ import {
 import { buildCandidateAngleSets, describeCrossLikeHypervalentCenter, isLinearCenter, measureSmallRingExteriorGapSpreadPenalty } from './angle-selection.js';
 
 const ORTHOGONAL_SLOT_OFFSETS = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
+const ARRANGEMENT_COST_TIE_EPSILON = 1e-12;
 const ORTHOGONAL_SLOT_PERMUTATIONS = [
   [0, 1, 2, 3],
   [0, 1, 3, 2],
@@ -512,7 +513,7 @@ function evaluateAnglePermutations(
 
       const newlyPlacedAtomIds = collectNewlyPlacedAtomIds(coords, tempCoords);
       const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, newlyPlacedAtomIds, null);
-      if (!bestPlacement || cost < bestPlacement.cost) {
+      if (!bestPlacement || cost < bestPlacement.cost - ARRANGEMENT_COST_TIE_EPSILON) {
         bestPlacement = {
           cost,
           coords: tempCoords,
@@ -571,7 +572,7 @@ function evaluateLocalAnglePermutations(
       const newlyPlacedAtomIds = assignedPlacements.map(p => p.childAtomId).filter(id => !coords.has(id));
       const candidateAtomGrid = buildCandidateArrangementAtomGrid(layoutGraph, baseAtomGrid, tempCoords, newlyPlacedAtomIds);
       const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, newlyPlacedAtomIds, candidateAtomGrid);
-      if (!bestPlacement || cost < bestPlacement.cost) {
+      if (!bestPlacement || cost < bestPlacement.cost - ARRANGEMENT_COST_TIE_EPSILON) {
         bestPlacement = {
           cost,
           coords: tempCoords,

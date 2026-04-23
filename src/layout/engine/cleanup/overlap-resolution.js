@@ -29,6 +29,16 @@ const COARSE_RIGID_SUBTREE_ROTATION_ANGLES = Object.freeze([
   -(2 * Math.PI) / 3,
   Math.PI
 ]);
+const RIGID_SUBTREE_REFINEMENT_OFFSETS = Object.freeze([
+  Math.PI / 36,
+  -(Math.PI / 36),
+  Math.PI / 18,
+  -(Math.PI / 18)
+]);
+const EXACT_DIVALENT_RIGID_RESCUE_OFFSETS = Object.freeze([
+  ...Array.from({ length: 11 }, (_value, index) => ((70 + index * 5) * Math.PI) / 180),
+  ...Array.from({ length: 11 }, (_value, index) => -((70 + index * 5) * Math.PI) / 180)
+]);
 const EXACT_RING_ROOT_RELATIVE_ROTATION_OFFSETS = Object.freeze([
   Math.PI / 90,
   -(Math.PI / 90),
@@ -424,6 +434,40 @@ function exactDivalentContinuationRootAngles(layoutGraph, coords, descriptor, ov
 
   const baseAngle = angleOf(sub(continuationNeighborPosition, anchorPosition));
   return mergeRigidCandidateAngles([], OMITTED_H_TRIGONAL_ROOT_ANGLE_OFFSETS.map(offset => baseAngle + offset));
+}
+
+function isExactDivalentContinuationCenter(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (
+    !atom
+    || atom.element === 'H'
+    || atom.aromatic
+    || (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  const visibleHeavySingleBondNeighborIds = (layoutGraph.bondsByAtomId.get(atomId) ?? [])
+    .filter(bond => {
+      if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+        return false;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H';
+    })
+    .map(bond => (bond.a === atomId ? bond.b : bond.a));
+  if (visibleHeavySingleBondNeighborIds.length !== 2) {
+    return false;
+  }
+
+  return (
+    IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(atom.element)
+    || (
+      atom.element === 'N'
+      && visibleHeavySingleBondNeighborIds.some(neighborAtomId => isConjugatedTrigonalHeavyNeighbor(layoutGraph, neighborAtomId))
+    )
+  );
 }
 
 function divalentContinuationRootDeviation(layoutGraph, coords, descriptor, overridePositions = null) {
@@ -999,6 +1043,9 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   const currentRootAngle = Math.atan2(currentRootVector.y, currentRootVector.x);
   const subtreeIsSingleAtom = descriptor.subtreeAtomIds.length === 1;
   const exactHypervalentDescriptor = isCompactHypervalentRigidDescriptor(layoutGraph, descriptor);
+  const preservesMovingExactDivalentGeometry =
+    descriptor.rootAtomId === movingAtomId
+    && isExactDivalentContinuationCenter(layoutGraph, movingAtomId);
   const baseLocalClearance = subtreeIsSingleAtom
     ? localNonbondedClearance(layoutGraph, coords, movingAtomId, movingPosition, threshold * 2, atomGrid)
     : 0;
@@ -1012,17 +1059,17 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   const exactPreferredRootAngles = mergeRigidCandidateAngles(exactTrigonalRootAngles, exactDivalentRootAngles);
   let bestMove = null;
 
-  const evaluateCandidatePositions = newPositions => {
+  const scoreCandidatePositions = newPositions => {
     if (!newPositions) {
-      return;
+      return null;
     }
     const movedAtomPosition = newPositions.get(movingAtomId);
     if (!movedAtomPosition) {
-      return;
+      return null;
     }
     const resolvedDistance = Math.hypot(movedAtomPosition.x - opposingPosition.x, movedAtomPosition.y - opposingPosition.y);
     if (resolvedDistance < threshold) {
-      return;
+      return null;
     }
 
     const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, newPositions, bondLength, { atomGrid });
@@ -1044,11 +1091,18 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
         improvement = candidateLocalClearance - baseLocalClearance;
       }
     }
+    if (
+      improvement <= IMPROVEMENT_EPSILON
+      && preservesMovingExactDivalentGeometry
+      && newOverlapCost <= IMPROVEMENT_EPSILON
+    ) {
+      improvement = baseOverlapCost - newOverlapCost;
+    }
     if (improvement <= IMPROVEMENT_EPSILON) {
-      return;
+      return null;
     }
 
-    const candidateMove = {
+    return {
       positions: newPositions,
       improvement,
       resolvedDistance,
@@ -1059,6 +1113,10 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
       subtreeAtomCount: descriptor.subtreeAtomIds.length,
       subtreeHeavyAtomCount: subtreeHeavyAtomCount(layoutGraph, descriptor.subtreeAtomIds)
     };
+  };
+
+  const evaluateCandidatePositions = newPositions => {
+    const candidateMove = scoreCandidatePositions(newPositions);
     if (isBetterRigidMove(bestMove, candidateMove)) {
       bestMove = candidateMove;
     }
@@ -1069,13 +1127,27 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   }
 
   const rigidRotationProbe = probeRigidRotation(layoutGraph, coords, descriptor, {
-    angles: rigidSubtreeProbeAngles(
-      descriptor.subtreeAtomIds.length,
-      visibleAtomCount,
-      currentRootAngle,
-      exactRingRootDescriptor,
-      exactHypervalentDescriptor,
-      exactPreferredRootAngles
+    angles: (
+      preservesMovingExactDivalentGeometry
+        ? mergeRigidCandidateAngles(
+            rigidSubtreeProbeAngles(
+              descriptor.subtreeAtomIds.length,
+              visibleAtomCount,
+              currentRootAngle,
+              exactRingRootDescriptor,
+              exactHypervalentDescriptor,
+              exactPreferredRootAngles
+            ),
+            EXACT_DIVALENT_RIGID_RESCUE_OFFSETS.map(offset => currentRootAngle + offset)
+          )
+        : rigidSubtreeProbeAngles(
+            descriptor.subtreeAtomIds.length,
+            visibleAtomCount,
+            currentRootAngle,
+            exactRingRootDescriptor,
+            exactHypervalentDescriptor,
+            exactPreferredRootAngles
+          )
     ).filter(candidateAngle => {
       return Math.abs(candidateAngle - currentRootAngle) > ANGLE_EPSILON;
     }),
@@ -1083,49 +1155,7 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
       return rotateRigidDescriptorPositions(inputCoords, inputDescriptor, candidateAngle - currentRootAngle);
     },
     scoreFn(_inputCoords, overridePositions) {
-      const movedAtomPosition = overridePositions.get(movingAtomId);
-      if (!movedAtomPosition) {
-        return null;
-      }
-      const resolvedDistance = Math.hypot(movedAtomPosition.x - opposingPosition.x, movedAtomPosition.y - opposingPosition.y);
-      if (resolvedDistance < threshold) {
-        return null;
-      }
-
-      const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, overridePositions, bondLength, { atomGrid });
-      const newAnchorDistortion = exactHypervalentDescriptor
-        ? 0
-        : computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, overridePositions);
-      let improvement = baseOverlapCost - newOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
-      const ringRootDeviation = exactRingRootDescriptor
-        ? compactRingAnchoredRootOutwardDeviation(layoutGraph, coords, descriptor, overridePositions)
-        : Number.POSITIVE_INFINITY;
-      const exactRootDeviation = exactTrigonalRootAngles.length > 0
-        ? omittedHydrogenTrigonalRootDeviation(layoutGraph, coords, descriptor, overridePositions)
-        : exactDivalentRootAngles.length > 0
-          ? divalentContinuationRootDeviation(layoutGraph, coords, descriptor, overridePositions)
-        : ringRootDeviation;
-      if (improvement <= IMPROVEMENT_EPSILON && subtreeIsSingleAtom && newOverlapCost <= baseOverlapCost + IMPROVEMENT_EPSILON) {
-        const candidateLocalClearance = localNonbondedClearance(layoutGraph, coords, movingAtomId, movedAtomPosition, threshold * 2, atomGrid);
-        if (candidateLocalClearance > baseLocalClearance + IMPROVEMENT_EPSILON) {
-          improvement = candidateLocalClearance - baseLocalClearance;
-        }
-      }
-      if (improvement <= IMPROVEMENT_EPSILON) {
-        return null;
-      }
-
-      return {
-        positions: overridePositions,
-        improvement,
-        resolvedDistance,
-        ringRootDeviation,
-        totalRingRootDeviation: ringRootDeviation,
-        exactRootDeviation,
-        totalExactRootDeviation: exactRootDeviation,
-        subtreeAtomCount: descriptor.subtreeAtomIds.length,
-        subtreeHeavyAtomCount: subtreeHeavyAtomCount(layoutGraph, descriptor.subtreeAtomIds)
-      };
+      return scoreCandidatePositions(overridePositions);
     },
     isBetterScoreFn(candidateMove, incumbentMove) {
       return isBetterRigidMove(incumbentMove, candidateMove);
@@ -1133,6 +1163,34 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   });
   if (rigidRotationProbe.bestScore && isBetterRigidMove(bestMove, rigidRotationProbe.bestScore)) {
     bestMove = rigidRotationProbe.bestScore;
+  }
+  if (rigidRotationProbe.bestAngle != null) {
+    const refinementAngles = mergeRigidCandidateAngles(
+      [],
+      RIGID_SUBTREE_REFINEMENT_OFFSETS.map(offset => rigidRotationProbe.bestAngle + offset)
+    ).filter(candidateAngle => {
+      return (
+        Math.abs(candidateAngle - currentRootAngle) > ANGLE_EPSILON
+        && Math.abs(candidateAngle - rigidRotationProbe.bestAngle) > ANGLE_EPSILON
+      );
+    });
+    if (refinementAngles.length > 0) {
+      const refinedProbe = probeRigidRotation(layoutGraph, coords, descriptor, {
+        angles: refinementAngles,
+        buildPositionsFn(inputCoords, inputDescriptor, candidateAngle) {
+          return rotateRigidDescriptorPositions(inputCoords, inputDescriptor, candidateAngle - currentRootAngle);
+        },
+        scoreFn(_inputCoords, overridePositions) {
+          return scoreCandidatePositions(overridePositions);
+        },
+        isBetterScoreFn(candidateMove, incumbentMove) {
+          return isBetterRigidMove(incumbentMove, candidateMove);
+        }
+      });
+      if (refinedProbe.bestScore && isBetterRigidMove(bestMove, refinedProbe.bestScore)) {
+        bestMove = refinedProbe.bestScore;
+      }
+    }
   }
 
   return bestMove;

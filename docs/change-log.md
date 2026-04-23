@@ -3,6 +3,8 @@
 ## 2026-04-22
 
 - Keep strict exocyclic alkene exits on attached five-member rings centered between the two ring bonds, even when the mixed-family attachment search must trade a small transient overlap to avoid a visibly skewed pose
+- Stabilize near-equal mixed-family branch-permutation tie handling, so Chromium and WebKit keep the same fused-aryl oxime/pyridyl layout and stereobond display without rotating unrelated layouts into new compass frames
+- Let short mixed-family ring linkers keep terminal carbonyl chain atoms in the dedicated linker path, so amide-linked non-aromatic rings preserve clean `120°` nitrogen and carbonyl geometry instead of collapsing to a sharper direct-attachment bend
 - Keep direct-attached chlorophenyl ring roots exactly symmetric at the attachment atom while overlap cleanup preserves conjugated amide nitrogens on their exact 120-degree continuation
 - Fan geminal difluoro leaves on saturated six-member ring atoms across the open exterior gap instead of pinching one fluorine onto a ring-edge continuation
 - Keep computed resonance contributors when leaving reaction preview through the resonance row, while preserving the pre-preview 2D display geometry and preview-history molecule metadata

@@ -12,7 +12,8 @@ import {
   findLayoutBond,
   isExactSmallRingExteriorContinuationEligible,
   isExactRingTrigonalBisectorEligible,
-  isExactSimpleAcyclicContinuationEligible
+  isExactSimpleAcyclicContinuationEligible,
+  isTerminalMultipleBondLeaf
 } from '../placement/branch-placement/angle-selection.js';
 import { assignBondValidationClass, resolvePlacementValidationClass } from '../placement/bond-validation.js';
 import { chooseAttachmentAngle, measureSmallRingExteriorGapSpreadPenalty, placeRemainingBranches, smallRingExteriorTargetAngles } from '../placement/branch-placement.js';
@@ -391,6 +392,128 @@ function compareCoordMapsDeterministically(firstCoords, secondCoords, canonicalA
     }
   }
   return 0;
+}
+
+function directAttachmentNeighborSignature(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom) {
+    return '';
+  }
+  return [
+    atom.element ?? '',
+    atom.aromatic === true ? 'aromatic' : 'aliphatic',
+    atom.formalCharge ?? 0
+  ].join(':');
+}
+
+function directAttachmentContinuationNeighborId(layoutGraph, coords, candidateMeta = null) {
+  const parentAtomId = candidateMeta?.parentAtomId ?? null;
+  const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
+  if (!parentAtomId || !attachmentAtomId || !coords.has(parentAtomId) || !coords.has(attachmentAtomId)) {
+    return null;
+  }
+  if ((layoutGraph.atomToRings.get(attachmentAtomId)?.length ?? 0) === 0) {
+    return null;
+  }
+
+  const attachmentPosition = coords.get(attachmentAtomId);
+  const parentAngle = angleOf(sub(coords.get(parentAtomId), attachmentPosition));
+  const internalNeighborRecords = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(attachmentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === attachmentAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtomId === parentAtomId || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    internalNeighborRecords.push({
+      atomId: neighborAtomId,
+      deviation: angularDifference(angleOf(sub(coords.get(neighborAtomId), attachmentPosition)), parentAngle)
+    });
+  }
+  if (internalNeighborRecords.length !== 2) {
+    return null;
+  }
+
+  internalNeighborRecords.sort((firstRecord, secondRecord) => (
+    firstRecord.deviation - secondRecord.deviation
+    || compareCanonicalIds(firstRecord.atomId, secondRecord.atomId, layoutGraph.canonicalAtomRank)
+  ));
+  if (Math.abs(internalNeighborRecords[0].deviation - internalNeighborRecords[1].deviation) <= 1e-6) {
+    return null;
+  }
+  return internalNeighborRecords[0].atomId;
+}
+
+function compareDirectAttachmentCanonicalContinuationPreference(layoutGraph, firstCoords, secondCoords, firstMeta = null, secondMeta = null) {
+  if (firstMeta?.parentAtomId !== secondMeta?.parentAtomId || firstMeta?.attachmentAtomId !== secondMeta?.attachmentAtomId) {
+    return 0;
+  }
+  const attachmentAtomId = firstMeta?.attachmentAtomId ?? null;
+  if (!attachmentAtomId) {
+    return 0;
+  }
+  const internalNeighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(attachmentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === attachmentAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtomId === firstMeta?.parentAtomId) {
+      continue;
+    }
+    internalNeighborIds.push(neighborAtomId);
+  }
+  if (
+    internalNeighborIds.length !== 2
+    || directAttachmentNeighborSignature(layoutGraph, internalNeighborIds[0])
+      === directAttachmentNeighborSignature(layoutGraph, internalNeighborIds[1])
+  ) {
+    return 0;
+  }
+  const firstNeighborAtomId = directAttachmentContinuationNeighborId(layoutGraph, firstCoords, firstMeta);
+  const secondNeighborAtomId = directAttachmentContinuationNeighborId(layoutGraph, secondCoords, secondMeta);
+  if (!firstNeighborAtomId || !secondNeighborAtomId || firstNeighborAtomId === secondNeighborAtomId) {
+    return 0;
+  }
+  return compareCanonicalIds(firstNeighborAtomId, secondNeighborAtomId, layoutGraph.canonicalAtomRank);
+}
+
+function measureDirectAttachmentCanonicalContinuationPenalty(layoutGraph, coords, candidateMeta = null) {
+  const continuationNeighborAtomId = directAttachmentContinuationNeighborId(layoutGraph, coords, candidateMeta);
+  if (!continuationNeighborAtomId) {
+    return 0;
+  }
+  const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
+  if (!attachmentAtomId) {
+    return 0;
+  }
+  const internalNeighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(attachmentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === attachmentAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtomId === candidateMeta?.parentAtomId || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    internalNeighborIds.push(neighborAtomId);
+  }
+  if (internalNeighborIds.length !== 2) {
+    return 0;
+  }
+  if (
+    directAttachmentNeighborSignature(layoutGraph, internalNeighborIds[0])
+    === directAttachmentNeighborSignature(layoutGraph, internalNeighborIds[1])
+  ) {
+    return 0;
+  }
+  const preferredNeighborAtomId = [...internalNeighborIds].sort((firstAtomId, secondAtomId) => compareCanonicalIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank))[0];
+  return continuationNeighborAtomId === preferredNeighborAtomId ? 0 : 1;
 }
 
 function buildHybridBlockGraph(blocks, ringConnectionByPair) {
@@ -1209,7 +1332,14 @@ function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, l
     const connectionKinds = ringSystemConnectionKinds(layoutGraph, ringSystem);
     return connectionKinds.size > 0 && [...connectionKinds].every(kind => kind === 'fused');
   };
-  if (!ringSystemSupportsShortLinkerRoot(firstRingSystem, { allowFused: true }) || !ringSystemSupportsShortLinkerRoot(secondRingSystem)) {
+  const secondRingAllowsNonAromaticIsolated =
+    classifyRingSystemFamily(layoutGraph, secondRingSystem) === 'isolated-ring'
+    && !ringSystemIsAromatic(secondRingSystem)
+    && linker.chainAtomIds.length >= 2;
+  if (
+    !ringSystemSupportsShortLinkerRoot(firstRingSystem, { allowFused: true })
+    || (!ringSystemSupportsShortLinkerRoot(secondRingSystem) && !secondRingAllowsNonAromaticIsolated)
+  ) {
     return false;
   }
 
@@ -1222,10 +1352,31 @@ function isSupportedRingLinker(layoutGraph, firstRingSystem, secondRingSystem, l
     }
   }
 
-  for (const chainAtomId of linker.chainAtomIds) {
+  const chainAtomSupportsShortLinker = (chainAtomId, previousAtomId, nextAtomId) => {
     const chainAtom = layoutGraph.sourceMolecule.atoms.get(chainAtomId);
-    const heavyNeighborCount = chainAtom?.getNeighbors(layoutGraph.sourceMolecule).filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H').length ?? 0;
-    if (heavyNeighborCount !== 2) {
+    const heavyNeighborIds = chainAtom?.getNeighbors(layoutGraph.sourceMolecule)
+      .filter(neighborAtom => neighborAtom && neighborAtom.name !== 'H')
+      .map(neighborAtom => neighborAtom.id) ?? [];
+    if (!heavyNeighborIds.includes(previousAtomId) || !heavyNeighborIds.includes(nextAtomId)) {
+      return false;
+    }
+    if (heavyNeighborIds.length === 2) {
+      return true;
+    }
+    if (heavyNeighborIds.length !== 3) {
+      return false;
+    }
+    const terminalMultipleNeighborId = heavyNeighborIds.find(
+      neighborAtomId => neighborAtomId !== previousAtomId && neighborAtomId !== nextAtomId
+    ) ?? null;
+    const terminalMultipleBond = terminalMultipleNeighborId
+      ? findLayoutBond(layoutGraph, chainAtomId, terminalMultipleNeighborId)
+      : null;
+    return isTerminalMultipleBondLeaf(layoutGraph, chainAtomId, terminalMultipleBond);
+  };
+
+  for (let index = 0; index < linker.chainAtomIds.length; index++) {
+    if (!chainAtomSupportsShortLinker(pathAtomIds[index + 1], pathAtomIds[index], pathAtomIds[index + 2])) {
       return false;
     }
   }
@@ -2161,6 +2312,8 @@ function buildDirectAttachmentExactTrigonalBisectorRescueCandidates(layoutGraph,
     return [];
   }
 
+  const rescueCandidates = [];
+
   const nextCoords = new Map(transformedCoords);
   for (const atomId of rotatedAtomIds) {
     if (atomId === attachmentAtomId) {
@@ -2176,15 +2329,41 @@ function buildDirectAttachmentExactTrigonalBisectorRescueCandidates(layoutGraph,
       add(attachmentPosition, rotate(sub(currentPosition, attachmentPosition), rotationAngle))
     );
   }
-
-  return [{
+  rescueCandidates.push({
     transformedCoords: nextCoords,
     meta: {
       ...candidateMeta,
       exactTrigonalBisectorRescue: true,
       rotationAngle
     }
-  }];
+  });
+
+  const parentSideAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, parentAtomId, attachmentAtomId)
+    .filter(atomId => atomId !== attachmentAtomId && coords.has(atomId));
+  if (parentSideAtomIds.length > 0) {
+    const parentRescueCoords = new Map(transformedCoords);
+    for (const atomId of parentSideAtomIds) {
+      const currentPosition = coords.get(atomId);
+      if (!currentPosition) {
+        continue;
+      }
+      parentRescueCoords.set(
+        atomId,
+        add(attachmentPosition, rotate(sub(currentPosition, attachmentPosition), -rotationAngle))
+      );
+    }
+    rescueCandidates.push({
+      transformedCoords: parentRescueCoords,
+      meta: {
+        ...candidateMeta,
+        exactTrigonalBisectorRescue: true,
+        parentSideRotation: true,
+        rotationAngle: -rotationAngle
+      }
+    });
+  }
+
+  return rescueCandidates;
 }
 
 function reflectPointAcrossAxis(point, origin, axisUnit) {
@@ -2363,6 +2542,7 @@ function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLen
   const exactContinuationPenalty = measureDirectAttachmentExactContinuationPenalty(layoutGraph, candidateCoords, candidateMeta);
   const parentOutwardPenalty = measureDirectAttachmentParentOutwardPenalty(layoutGraph, candidateCoords, candidateMeta);
   const trigonalBisectorPenalty = measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, candidateCoords, candidateMeta);
+  const canonicalContinuationPenalty = measureDirectAttachmentCanonicalContinuationPenalty(layoutGraph, candidateCoords, candidateMeta);
   const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, candidateCoords, {
     focusAtomIds: scoringFocusAtomIds
   }).totalDeviation;
@@ -2397,6 +2577,7 @@ function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLen
     parentOutwardPenalty,
     exactContinuationPenalty,
     trigonalBisectorPenalty,
+    canonicalContinuationPenalty,
     omittedHydrogenTrigonalPenalty,
     omittedHydrogenDirectAttachmentCompromisePenalty,
     attachmentExteriorPenalty,
@@ -2452,6 +2633,35 @@ function canAcceptAttachedBlockPrescore(bestScore, runnerUpScore, coords, primar
     runnerUpScore.presentationPenalty > bestScore.presentationPenalty + 0.2 ||
     runnerUpScore.cost > bestScore.cost + bondLength * 0.2
   );
+}
+
+function attachedBlockPrimaryScoreIsPerfect(score) {
+  if (!score) {
+    return false;
+  }
+  return (
+    score.overlapCount === 0 &&
+    score.readability.failingSubstituentCount === 0 &&
+    score.fusedJunctionContinuationPenalty <= IMPROVEMENT_EPSILON &&
+    score.parentOutwardPenalty <= IMPROVEMENT_EPSILON &&
+    score.exactContinuationPenalty <= IMPROVEMENT_EPSILON &&
+    score.trigonalBisectorPenalty <= IMPROVEMENT_EPSILON &&
+    score.attachmentExteriorPenalty <= IMPROVEMENT_EPSILON &&
+    score.junctionCrowdingPenalty <= IMPROVEMENT_EPSILON &&
+    score.presentationPenalty <= IMPROVEMENT_EPSILON
+  );
+}
+
+function canSkipRemainingAttachedBlockFinalists(bestScore, finalists, nextIndex) {
+  if (!attachedBlockPrimaryScoreIsPerfect(bestScore)) {
+    return false;
+  }
+  for (let index = nextIndex; index < finalists.length; index++) {
+    if (attachedBlockPrimaryScoreIsPerfect(finalists[index]?._prescore ?? null)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function attachedBlockFullScoringBeamLimit(coords, primaryNonRingAtomIds, candidateCount, forceFullScoring = false) {
@@ -2594,9 +2804,9 @@ function compareOmittedHydrogenDirectAttachmentRefinementScores(cand, inc) {
 
 /**
  * Compares exact trigonal-bisector rescue scores. Strict exact ring exits are
- * allowed to beat an incumbent that is already overlapping when they only cost
- * one extra transient overlap and otherwise materially improve the local
- * geometry.
+ * allowed to beat an incumbent that is already overlapping when they cost only
+ * a small number of extra transient overlaps and otherwise materially improve
+ * the local geometry.
  * @param {object} cand - Candidate rescue score.
  * @param {object} inc - Incumbent score.
  * @returns {number} Negative when the candidate wins, positive when it loses.
@@ -2612,7 +2822,7 @@ function compareExactTrigonalBisectorRescueScores(cand, inc) {
     candidateIsExact
     && !incumbentIsExact
     && inc.overlapCount > 0
-    && cand.overlapCount <= Math.min(inc.overlapCount + 1, 2)
+    && cand.overlapCount <= Math.min(inc.overlapCount + 2, 3)
     && cand.readability.failingSubstituentCount <= inc.readability.failingSubstituentCount
     && cand.fusedJunctionContinuationPenalty <= inc.fusedJunctionContinuationPenalty + IMPROVEMENT_EPSILON
     && cand.exactContinuationPenalty <= inc.exactContinuationPenalty + IMPROVEMENT_EPSILON
@@ -2625,7 +2835,7 @@ function compareExactTrigonalBisectorRescueScores(cand, inc) {
     !candidateIsExact
     && incumbentIsExact
     && cand.overlapCount > 0
-    && inc.overlapCount <= Math.min(cand.overlapCount + 1, 2)
+    && inc.overlapCount <= Math.min(cand.overlapCount + 2, 3)
     && inc.readability.failingSubstituentCount <= cand.readability.failingSubstituentCount
     && inc.fusedJunctionContinuationPenalty <= cand.fusedJunctionContinuationPenalty + IMPROVEMENT_EPSILON
     && inc.exactContinuationPenalty <= cand.exactContinuationPenalty + IMPROVEMENT_EPSILON
@@ -2690,9 +2900,11 @@ function pickBestAttachedBlockOrientation(
     };
   }
 
+  const hasMultiplePerfectPrescoredCandidates =
+    scoredCandidates.filter(candidate => attachedBlockPrimaryScoreIsPerfect(candidate._prescore ?? null)).length > 1;
   const finalists = scoredCandidates.slice(
     0,
-    options.disableBeamReduction === true
+    options.disableBeamReduction === true || hasMultiplePerfectPrescoredCandidates
       ? scoredCandidates.length
       : attachedBlockFullScoringBeamLimit(
           coords,
@@ -2704,7 +2916,8 @@ function pickBestAttachedBlockOrientation(
   let bestCandidate = null;
   let bestScore = null;
 
-  for (const candidate of finalists) {
+  for (let candidateIndex = 0; candidateIndex < finalists.length; candidateIndex++) {
+    const candidate = finalists[candidateIndex];
     const candidateScore = scoreAttachedBlockOrientation(
       adjacency,
       canonicalAtomRank,
@@ -2724,13 +2937,25 @@ function pickBestAttachedBlockOrientation(
     const cmp = bestScore == null ? -1 : compareAttachedBlockScores(candidateScore, bestScore);
     let shouldReplaceBestCandidate = cmp < 0;
     if (!shouldReplaceBestCandidate && cmp === 0 && bestCandidate) {
+      const canonicalContinuationPreference = compareDirectAttachmentCanonicalContinuationPreference(
+        layoutGraph,
+        candidate.transformedCoords,
+        bestCandidate.transformedCoords,
+        candidate.meta ?? null,
+        bestCandidate.meta ?? null
+      );
+      if (canonicalContinuationPreference < 0) {
+        shouldReplaceBestCandidate = true;
+      }
+    }
+    if (!shouldReplaceBestCandidate && cmp === 0 && bestCandidate) {
       ensureAttachedBlockLayoutCost(candidateScore, candidate.transformedCoords, layoutGraph, bondLength);
       ensureAttachedBlockLayoutCost(bestScore, bestCandidate.transformedCoords, layoutGraph, bondLength);
       if (candidateScore.totalCost < bestScore.totalCost - IMPROVEMENT_EPSILON) {
         shouldReplaceBestCandidate = true;
       } else if (
-        Math.abs(candidateScore.totalCost - bestScore.totalCost) <= IMPROVEMENT_EPSILON &&
-        compareCoordMapsDeterministically(candidate.transformedCoords, bestCandidate.transformedCoords, layoutGraph.canonicalAtomRank) < 0
+        Math.abs(candidateScore.totalCost - bestScore.totalCost) <= IMPROVEMENT_EPSILON
+        && compareCoordMapsDeterministically(candidate.transformedCoords, bestCandidate.transformedCoords, layoutGraph.canonicalAtomRank) < 0
       ) {
         shouldReplaceBestCandidate = true;
       }
@@ -2740,22 +2965,10 @@ function pickBestAttachedBlockOrientation(
       bestCandidate = candidate;
       bestScore = candidateScore;
     }
-    // Early exit: if the best score so far is already unimprovable on every primary
-    // criterion (overlaps=0, no failing substituents, all penalties ≤ ε), no subsequent
-    // candidate can win without reaching the totalCost tiebreaker — which is only a
-    // cosmetic layout-cost difference not worth the cost of additional
-    // placeRemainingBranches calls.
-    if (
-      bestScore.overlapCount === 0 &&
-      bestScore.readability.failingSubstituentCount === 0 &&
-      bestScore.fusedJunctionContinuationPenalty <= IMPROVEMENT_EPSILON &&
-      bestScore.parentOutwardPenalty <= IMPROVEMENT_EPSILON &&
-      bestScore.exactContinuationPenalty <= IMPROVEMENT_EPSILON &&
-      bestScore.trigonalBisectorPenalty <= IMPROVEMENT_EPSILON &&
-      bestScore.attachmentExteriorPenalty <= IMPROVEMENT_EPSILON &&
-      bestScore.junctionCrowdingPenalty <= IMPROVEMENT_EPSILON &&
-      bestScore.presentationPenalty <= IMPROVEMENT_EPSILON
-    ) {
+    // Keep scoring any remaining finalists whose local prescore is also
+    // "perfect", so engine-specific iteration differences cannot lock in the
+    // first such candidate before the total-cost/deterministic tiebreak runs.
+    if (canSkipRemainingAttachedBlockFinalists(bestScore, finalists, candidateIndex + 1)) {
       break;
     }
   }
@@ -2834,6 +3047,11 @@ function selectAttachedBlockCandidates(candidates, coords, bondLength, layoutGra
     }
     return compareCoordMapsDeterministically(firstCandidate.transformedCoords, secondCandidate.transformedCoords, layoutGraph.canonicalAtomRank);
   });
+
+  const perfectCandidates = scoredCandidates.filter(candidate => attachedBlockPrimaryScoreIsPerfect(candidate));
+  if (perfectCandidates.length > 1) {
+    return perfectCandidates;
+  }
 
   const [bestCandidate, secondCandidate] = scoredCandidates;
   if (!secondCandidate) {
@@ -3341,18 +3559,31 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
           parentAtomId: attachment.parentAtomId
         }
       );
-      const rawAttachedBlockCandidates = [buildDirectAttachmentCandidate(attachmentAngle, false), buildDirectAttachmentCandidate(attachmentAngle, true)];
+      const initialDirectAttachmentRingRotationOffsets = [0];
+      for (const ringRotationOffset of exactDirectAttachmentOffsets) {
+        if (!initialDirectAttachmentRingRotationOffsets.some(candidateOffset => angularDifference(candidateOffset, ringRotationOffset) <= 1e-9)) {
+          initialDirectAttachmentRingRotationOffsets.push(ringRotationOffset);
+        }
+      }
+      const rawAttachedBlockCandidates = [];
+      for (const mirror of [false, true]) {
+        for (const ringRotationOffset of initialDirectAttachmentRingRotationOffsets) {
+          rawAttachedBlockCandidates.push(buildDirectAttachmentCandidate(attachmentAngle, mirror, ringRotationOffset));
+        }
+      }
       for (const exactAttachmentAngle of exactContinuationAttachmentAngles) {
         if (rawAttachedBlockCandidates.some(candidate => angularDifference(candidate.meta?.attachmentAngle ?? 0, exactAttachmentAngle) <= 1e-9)) {
           continue;
         }
-        rawAttachedBlockCandidates.push(
-          buildDirectAttachmentCandidate(exactAttachmentAngle, false),
-          buildDirectAttachmentCandidate(exactAttachmentAngle, true)
-        );
+        for (const mirror of [false, true]) {
+          for (const ringRotationOffset of initialDirectAttachmentRingRotationOffsets) {
+            rawAttachedBlockCandidates.push(buildDirectAttachmentCandidate(exactAttachmentAngle, mirror, ringRotationOffset));
+          }
+        }
       }
+      let directAttachmentTrigonalRescueSources = selectAttachedBlockCandidates(rawAttachedBlockCandidates, coords, bondLength, layoutGraph).slice(0, 2);
       let bestAttachedBlockCandidate = pickBestAttachedBlockOrientation(
-        selectAttachedBlockCandidates(rawAttachedBlockCandidates, coords, bondLength, layoutGraph),
+        directAttachmentTrigonalRescueSources,
         adjacency,
         layoutGraph.canonicalAtomRank,
         coords,
@@ -3409,8 +3640,11 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
           !layoutGraph.atoms.get(attachment.attachmentAtomId)?.chirality &&
           (bestAttachedBlockCandidate?.score.parentOutwardPenalty ?? 0) > IMPROVEMENT_EPSILON &&
           (layoutGraph.atomToRings.get(attachment.attachmentAtomId)?.length ?? 0) > 0;
+        const allowLockedStrictTrigonalAngleExpansion =
+          directAttachmentTrigonalSensitivity.strict &&
+          (layoutGraph.atomToRings.get(attachment.attachmentAtomId)?.length ?? 0) > 0;
         const directAttachmentAngleOffsets =
-          lockDirectAttachmentAngle && !allowLockedOmittedHydrogenAngleExpansion
+          lockDirectAttachmentAngle && !allowLockedOmittedHydrogenAngleExpansion && !allowLockedStrictTrigonalAngleExpansion
             ? [0]
             : DIRECT_ATTACHMENT_ROTATION_OFFSETS;
         const expandedRingRotationOffsets = [...directAttachmentRingRotationOffsets];
@@ -3453,6 +3687,7 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
               )
             ]
           : expandedCandidates;
+        directAttachmentTrigonalRescueSources = selectAttachedBlockCandidates(candidatePool, coords, bondLength, layoutGraph).slice(0, 2);
         const shouldScoreAllExpandedDirectAttachmentCandidates =
           (bestAttachedBlockCandidate?.score.overlapCount ?? 0) > 0 ||
           (bestAttachedBlockCandidate?.score.readability.failingSubstituentCount ?? 0) > 0 ||
@@ -3551,14 +3786,41 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
         bestAttachedBlockCandidate?.transformedCoords
         && (bestAttachedBlockCandidate?.score.trigonalBisectorPenalty ?? 0) > IMPROVEMENT_EPSILON
       ) {
-        const exactTrigonalBisectorRescueCandidates = buildDirectAttachmentExactTrigonalBisectorRescueCandidates(
-          layoutGraph,
-          coords,
-          bestAttachedBlockCandidate.transformedCoords,
-          bestAttachedBlockCandidate.meta ?? {
-            attachmentAtomId: attachment.attachmentAtomId,
-            parentAtomId: attachment.parentAtomId
+        const rescueSourceCandidates = [];
+        const seenRescueSourceKeys = new Set();
+        for (const candidate of [
+          ...directAttachmentTrigonalRescueSources,
+          {
+            transformedCoords: bestAttachedBlockCandidate.transformedCoords,
+            meta: bestAttachedBlockCandidate.meta ?? {
+              attachmentAtomId: attachment.attachmentAtomId,
+              parentAtomId: attachment.parentAtomId
+            }
           }
+        ]) {
+          const sourceKey = [
+            candidate.meta?.attachmentAngle ?? 'na',
+            candidate.meta?.mirror ?? 'na',
+            candidate.meta?.ringRotationOffset ?? 'na',
+            candidate.meta?.attachmentAngleOffset ?? 'na',
+            candidate.meta?.parentSideRotation ?? 'na'
+          ].join('|');
+          if (seenRescueSourceKeys.has(sourceKey)) {
+            continue;
+          }
+          seenRescueSourceKeys.add(sourceKey);
+          rescueSourceCandidates.push(candidate);
+        }
+        const exactTrigonalBisectorRescueCandidates = rescueSourceCandidates.flatMap(candidate =>
+          buildDirectAttachmentExactTrigonalBisectorRescueCandidates(
+            layoutGraph,
+            coords,
+            candidate.transformedCoords,
+            candidate.meta ?? {
+              attachmentAtomId: attachment.attachmentAtomId,
+              parentAtomId: attachment.parentAtomId
+            }
+          )
         );
         if (exactTrigonalBisectorRescueCandidates.length > 0) {
           let rescueBestCandidate = bestAttachedBlockCandidate;
@@ -3604,6 +3866,73 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
           }
           if (rescueBestCandidate) {
             bestAttachedBlockCandidate = rescueBestCandidate;
+          }
+        }
+      }
+      if (
+        directAttachmentTrigonalSensitivity.strict
+        && bestAttachedBlockCandidate?.transformedCoords
+        && (bestAttachedBlockCandidate?.score.overlapCount ?? 0) > 0
+      ) {
+        const localRefinementCandidates = buildLocalDirectAttachmentRefinementCandidates(
+          bestAttachedBlockCandidate.transformedCoords,
+          parentPosition,
+          attachment.attachmentAtomId,
+          bondLength
+        );
+        if (localRefinementCandidates.length > 0) {
+          let refinedBestCandidate = bestAttachedBlockCandidate;
+          let refinedBestScore = bestAttachedBlockCandidate.score;
+          for (const candidate of localRefinementCandidates) {
+            const candidateMeta = {
+              ...(bestAttachedBlockCandidate.meta ?? {
+                attachmentAtomId: attachment.attachmentAtomId,
+                parentAtomId: attachment.parentAtomId
+              }),
+              attachmentAngleOffset: candidate.attachmentAngleOffset,
+              ringRotationOffset: candidate.ringRotationOffset,
+              exactTrigonalBisectorLocalRefinement: true
+            };
+            const candidateScore = scoreAttachedBlockOrientation(
+              adjacency,
+              layoutGraph.canonicalAtomRank,
+              coords,
+              primaryNonRingAtomIds,
+              placedAtomIds,
+              candidate.transformedCoords,
+              bondLength,
+              layoutGraph,
+              macrocycleBranchConstraints,
+              candidateMeta,
+              {
+                placementContext: state.branchPlacementContext
+              }
+            );
+            const comparison = compareExactTrigonalBisectorRescueScores(candidateScore, refinedBestScore);
+            if (comparison < 0) {
+              refinedBestCandidate = {
+                transformedCoords: candidate.transformedCoords,
+                meta: candidateMeta,
+                score: candidateScore
+              };
+              refinedBestScore = candidateScore;
+              continue;
+            }
+            if (comparison === 0) {
+              ensureAttachedBlockLayoutCost(candidateScore, candidate.transformedCoords, layoutGraph, bondLength);
+              ensureAttachedBlockLayoutCost(refinedBestScore, refinedBestCandidate.transformedCoords, layoutGraph, bondLength);
+              if (candidateScore.totalCost < refinedBestScore.totalCost - IMPROVEMENT_EPSILON) {
+                refinedBestCandidate = {
+                  transformedCoords: candidate.transformedCoords,
+                  meta: candidateMeta,
+                  score: candidateScore
+                };
+                refinedBestScore = candidateScore;
+              }
+            }
+          }
+          if (refinedBestCandidate) {
+            bestAttachedBlockCandidate = refinedBestCandidate;
           }
         }
       }

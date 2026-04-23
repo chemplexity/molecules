@@ -8,7 +8,7 @@ import {
   measureRingSubstituentReadability,
   measureTrigonalDistortion
 } from '../../audit/invariants.js';
-import { add, angleOf, angularDifference, centroid, rotate, sub } from '../../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, rotate, sub, wrapAngle } from '../../geometry/vec2.js';
 import { isExactSimpleAcyclicContinuationEligible } from '../../placement/branch-placement/angle-selection.js';
 import { measureCleanupStagePresentationPenalty, measureTotalSmallRingExteriorGapPenalty } from '../../audit/stage-metrics.js';
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
@@ -19,6 +19,7 @@ import { containsFrozenAtom } from '../frozen-atoms.js';
 import { rigidDescriptorKey, rotateRigidDescriptorPositions } from '../rigid-rotation.js';
 import { collectCutSubtree } from '../subtree-utils.js';
 import { runUnifiedCleanup } from '../unified-cleanup.js';
+import { reflectAcrossLine } from '../../geometry/transforms.js';
 
 const ATTACHED_RING_ROTATION_TIDY_ANGLES = [
   Math.PI / 6,
@@ -29,6 +30,80 @@ const ATTACHED_RING_ROTATION_TIDY_ANGLES = [
   -(2 * Math.PI) / 3,
   Math.PI
 ];
+
+function largestAngularGapBisector(occupiedAngles) {
+  const sortedAngles = [...occupiedAngles]
+    .map(wrapAngle)
+    .sort((firstAngle, secondAngle) => firstAngle - secondAngle)
+    .filter((angle, index, angles) => index === 0 || angularDifference(angle, angles[index - 1]) > 1e-9);
+  if (sortedAngles.length === 0) {
+    return null;
+  }
+
+  let bestBisector = null;
+  let bestGap = -Infinity;
+  for (let index = 0; index < sortedAngles.length; index++) {
+    const gapStart = sortedAngles[index];
+    let gapEnd = sortedAngles[(index + 1) % sortedAngles.length];
+    if (index + 1 === sortedAngles.length) {
+      gapEnd += Math.PI * 2;
+    }
+    const gap = gapEnd - gapStart;
+    if (gap > bestGap + 1e-9) {
+      bestGap = gap;
+      bestBisector = wrapAngle(gapStart + gap / 2);
+    }
+  }
+  return bestBisector;
+}
+
+function attachedRingRootOutwardAngles(layoutGraph, coords, rootAtomId, anchorAtomId) {
+  const rootPosition = coords.get(rootAtomId);
+  if (!rootPosition) {
+    return [];
+  }
+
+  const outwardAngles = [];
+  for (const ring of layoutGraph.atomToRings.get(rootAtomId) ?? []) {
+    if (ring.atomIds.includes(anchorAtomId)) {
+      continue;
+    }
+    const ringNeighborAngles = [];
+    for (const bond of layoutGraph.bondsByAtomId.get(rootAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === rootAtomId ? bond.b : bond.a;
+      if (neighborAtomId === anchorAtomId || !ring.atomIds.includes(neighborAtomId) || !coords.has(neighborAtomId)) {
+        continue;
+      }
+      ringNeighborAngles.push(angleOf(sub(coords.get(neighborAtomId), rootPosition)));
+    }
+    if (ringNeighborAngles.length !== 2) {
+      continue;
+    }
+    const outwardAngle = largestAngularGapBisector(ringNeighborAngles);
+    if (outwardAngle == null || outwardAngles.some(existingAngle => angularDifference(existingAngle, outwardAngle) <= 1e-9)) {
+      continue;
+    }
+    outwardAngles.push(outwardAngle);
+  }
+  return outwardAngles;
+}
+
+function measureAttachedRingRootOutwardPenalty(layoutGraph, coords, descriptor) {
+  const parentAtomId = descriptor?.anchorAtomId ?? null;
+  const rootAtomId = descriptor?.rootAtomId ?? null;
+  if (!parentAtomId || !rootAtomId || !coords.has(parentAtomId) || !coords.has(rootAtomId)) {
+    return 0;
+  }
+  const outwardAngles = attachedRingRootOutwardAngles(layoutGraph, coords, rootAtomId, parentAtomId);
+  if (outwardAngles.length === 0) {
+    return 0;
+  }
+  const parentAngle = angleOf(sub(coords.get(parentAtomId), coords.get(rootAtomId)));
+  return Math.min(...outwardAngles.map(outwardAngle => angularDifference(parentAngle, outwardAngle) ** 2));
+}
 
 function supportsRootAnchoredAttachedRingRotation(layoutGraph, descriptor) {
   const rootRingCount = layoutGraph.atomToRings.get(descriptor.rootAtomId)?.length ?? 0;
@@ -84,6 +159,77 @@ function applyRigidRotationToCoords(coords, subtreeAtomIds, pivotAtomId, rotatio
     rotatedCoords.set(atomId, add(pivotPosition, rotate(sub(currentPosition, pivotPosition), rotation)));
   }
   return rotatedCoords;
+}
+
+function reflectSubtreeAcrossBond(coords, subtreeAtomIds, lineStartAtomId, lineEndAtomId, fixedAtomIds = new Set()) {
+  const lineStartPosition = coords.get(lineStartAtomId);
+  const lineEndPosition = coords.get(lineEndAtomId);
+  if (!lineStartPosition || !lineEndPosition) {
+    return coords;
+  }
+  const reflectedCoords = new Map(coords);
+  for (const atomId of subtreeAtomIds) {
+    if (fixedAtomIds.has(atomId)) {
+      continue;
+    }
+    const currentPosition = reflectedCoords.get(atomId);
+    if (!currentPosition) {
+      continue;
+    }
+    reflectedCoords.set(atomId, reflectAcrossLine(currentPosition, lineStartPosition, lineEndPosition));
+  }
+  return reflectedCoords;
+}
+
+function compareCanonicalIds(layoutGraph, firstAtomId, secondAtomId) {
+  const firstRank = layoutGraph.canonicalAtomRank?.get(firstAtomId) ?? Number.MAX_SAFE_INTEGER;
+  const secondRank = layoutGraph.canonicalAtomRank?.get(secondAtomId) ?? Number.MAX_SAFE_INTEGER;
+  return firstRank - secondRank || String(firstAtomId).localeCompare(String(secondAtomId), 'en', { numeric: true });
+}
+
+function attachedRingLocalPoseKey(layoutGraph, coords, descriptor) {
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  if (!rootPosition || !anchorPosition) {
+    return '';
+  }
+  const anchorAngle = angleOf(sub(anchorPosition, rootPosition));
+  const atomIds = [...new Set(descriptor.subtreeAtomIds)].filter(atomId => coords.has(atomId));
+  atomIds.sort((firstAtomId, secondAtomId) => compareCanonicalIds(layoutGraph, firstAtomId, secondAtomId));
+  return atomIds.map(atomId => {
+    const alignedPosition = rotate(sub(coords.get(atomId), rootPosition), -anchorAngle);
+    return `${atomId}:${Math.round(alignedPosition.x * 1e6)}:${Math.round(alignedPosition.y * 1e6)}`;
+  }).join('|');
+}
+
+function isExactCleanAttachedRingCandidate(candidate) {
+  return (
+    candidate.overlapCount === 0
+    && candidate.exactContinuationPenalty <= 1e-6
+    && candidate.rootOutwardPenalty <= 1e-6
+    && candidate.trigonalBisectorPenalty <= 1e-6
+    && candidate.trigonalDistortionPenalty <= 1e-6
+    && candidate.failingSubstituentCount === 0
+    && candidate.inwardSubstituentCount === 0
+    && candidate.outwardAxisFailureCount === 0
+    && candidate.globalFailingSubstituentCount === 0
+    && candidate.globalInwardSubstituentCount === 0
+    && candidate.globalOutwardAxisFailureCount === 0
+    && candidate.totalOutwardDeviation <= 1e-6
+    && candidate.maxOutwardDeviation <= 1e-6
+  );
+}
+
+function shouldCanonicalizeReflectedAttachedRingTie(candidate, incumbent) {
+  return (
+    !!incumbent
+    && isExactCleanAttachedRingCandidate(candidate)
+    && isExactCleanAttachedRingCandidate(incumbent)
+    && (
+      candidate.reflectAnchor === true
+      || incumbent.reflectAnchor === true
+    )
+  );
 }
 
 function collectAttachedCarbonylRingChildDescriptors(layoutGraph, coords, descriptor) {
@@ -393,6 +539,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       });
       const baseJunctionContinuationPenalty = measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, currentCoords, { focusAtomIds }).totalDeviation;
       const baseExactContinuationPenalty = measureExactAcyclicContinuationDistortion(layoutGraph, currentCoords, focusAtomIds).totalDeviation;
+      const baseRootOutwardPenalty = measureAttachedRingRootOutwardPenalty(layoutGraph, currentCoords, descriptor);
       const baseTrigonalBisectorPenalty = measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, currentCoords, descriptor);
       const baseTrigonalDistortionPenalty = measureTrigonalDistortion(layoutGraph, currentCoords, { focusAtomIds }).totalDeviation;
       const baseSubtreeClearance = measureAttachedCarbonylSubtreeClearance(layoutGraph, currentCoords, descriptor);
@@ -403,22 +550,32 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       const buildCandidateScore = (candidateCoords, nudges) => {
         const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
         if (overlapCount > baseOverlapCount) {
+          buildCandidateScore.lastRejectReason = 'overlap-count';
           return null;
         }
         const junctionContinuationPenalty = measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, candidateCoords, { focusAtomIds }).totalDeviation;
         if (junctionContinuationPenalty > baseJunctionContinuationPenalty + 1e-6) {
+          buildCandidateScore.lastRejectReason = 'junction-continuation';
           return null;
         }
         const exactContinuationPenalty = measureExactAcyclicContinuationDistortion(layoutGraph, candidateCoords, focusAtomIds).totalDeviation;
         if (exactContinuationPenalty > baseExactContinuationPenalty + 1e-6) {
+          buildCandidateScore.lastRejectReason = 'exact-continuation';
+          return null;
+        }
+        const rootOutwardPenalty = measureAttachedRingRootOutwardPenalty(layoutGraph, candidateCoords, descriptor);
+        if (rootOutwardPenalty > baseRootOutwardPenalty + 1e-6) {
+          buildCandidateScore.lastRejectReason = 'root-outward';
           return null;
         }
         const trigonalBisectorPenalty = measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, candidateCoords, descriptor);
         if (trigonalBisectorPenalty > baseTrigonalBisectorPenalty + 1e-6) {
+          buildCandidateScore.lastRejectReason = 'trigonal-bisector';
           return null;
         }
         const trigonalDistortionPenalty = measureTrigonalDistortion(layoutGraph, candidateCoords, { focusAtomIds }).totalDeviation;
         if (trigonalDistortionPenalty > baseTrigonalDistortionPenalty + 1e-6) {
+          buildCandidateScore.lastRejectReason = 'trigonal-distortion';
           return null;
         }
         const readability = measureRingSubstituentReadability(layoutGraph, candidateCoords, {
@@ -426,11 +583,13 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         });
         const globalReadability = measureRingSubstituentReadability(layoutGraph, candidateCoords);
         if (readabilityTupleWorsens(readability, baseReadability) || readabilityTupleWorsens(globalReadability, baseGlobalReadability)) {
+          buildCandidateScore.lastRejectReason = 'readability';
           return null;
         }
         const subtreeClearance = measureAttachedCarbonylSubtreeClearance(layoutGraph, candidateCoords, descriptor);
         const smallRingExteriorPenalty = measureTotalSmallRingExteriorGapPenalty(layoutGraph, candidateCoords, focusAtomIds);
         if (smallRingExteriorPenalty > baseSmallRingExteriorPenalty + 1e-6) {
+          buildCandidateScore.lastRejectReason = 'small-ring-exterior';
           return null;
         }
         const presentationPenalty = measureCleanupStagePresentationPenalty(layoutGraph, candidateCoords, {
@@ -447,14 +606,17 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           && !readabilityTupleImproves(readability, baseReadability)
           && !attachedCarbonylSetupImprovesClearance
         ) {
+          buildCandidateScore.lastRejectReason = 'presentation';
           return null;
         }
+        buildCandidateScore.lastRejectReason = null;
         return {
           coords: candidateCoords,
           nudges,
           overlapCount,
           junctionContinuationPenalty,
           exactContinuationPenalty,
+          rootOutwardPenalty,
           trigonalBisectorPenalty,
           trigonalDistortionPenalty,
           subtreeClearance,
@@ -468,10 +630,12 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           totalOutwardDeviation: readability.totalOutwardDeviation ?? 0,
           maxOutwardDeviation: readability.maxOutwardDeviation ?? 0,
           presentationImprovement: basePresentationPenalty - presentationPenalty,
-          layoutCost: measureLayoutCost(layoutGraph, candidateCoords, bondLength)
+          layoutCost: measureLayoutCost(layoutGraph, candidateCoords, bondLength),
+          localPoseKey: attachedRingLocalPoseKey(layoutGraph, candidateCoords, descriptor)
         };
       };
-      const scoreCandidate = overridePositions => {
+      const scoreCandidate = (seedCandidateCoords, overridePositions) => {
+        let bestScore = buildCandidateScore(seedCandidateCoords, 1);
         const ringSubstituentTouchup = runRingSubstituentTidy(layoutGraph, currentCoords, {
           bondLength,
           frozenAtomIds,
@@ -488,10 +652,13 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           baseSiblingSwaps: siblingSwaps,
           baseGeminalPairs: geminalPairs
         });
-        let bestScore = buildCandidateScore(
+        const localScore = buildCandidateScore(
           localLeafTouchup.coords,
           ringSubstituentTouchup.nudges + localLeafTouchup.passes + 1
         );
+        if (localScore && isBetterAttachedRingCandidate(localScore, bestScore)) {
+          bestScore = localScore;
+        }
         const unifiedCleanup = runUnifiedCleanup(layoutGraph, ringSubstituentTouchup.coords, {
           maxPasses: 1,
           epsilon: bondLength * 0.001,
@@ -536,17 +703,20 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           if (searchContext.attachedCarbonylRingChildren.length > 0) {
             const compositeRotations = [0, ...ATTACHED_RING_ROTATION_TIDY_ANGLES];
             for (const childDescriptor of searchContext.attachedCarbonylRingChildren) {
-              for (const anchorRotation of compositeRotations) {
-                for (const ringRotation of compositeRotations) {
-                  if (Math.abs(anchorRotation) <= 1e-9 && Math.abs(ringRotation) <= 1e-9) {
-                    continue;
+              for (const reflectAnchor of [false, true]) {
+                for (const anchorRotation of compositeRotations) {
+                  for (const ringRotation of compositeRotations) {
+                    if (!reflectAnchor && Math.abs(anchorRotation) <= 1e-9 && Math.abs(ringRotation) <= 1e-9) {
+                      continue;
+                    }
+                    seeds.push({
+                      kind: 'composite',
+                      childDescriptor,
+                      reflectAnchor,
+                      anchorRotation,
+                      ringRotation
+                    });
                   }
-                  seeds.push({
-                    kind: 'composite',
-                    childDescriptor,
-                    anchorRotation,
-                    ringRotation
-                  });
                 }
               }
             }
@@ -566,6 +736,15 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           let candidateCoords = inputCoords;
           if (Math.abs(seed.anchorRotation) > 1e-9) {
             candidateCoords = applyRigidRotationToCoords(candidateCoords, inputDescriptor.subtreeAtomIds, inputDescriptor.anchorAtomId, seed.anchorRotation);
+          }
+          if (seed.reflectAnchor === true) {
+            candidateCoords = reflectSubtreeAcrossBond(
+              candidateCoords,
+              inputDescriptor.subtreeAtomIds,
+              inputDescriptor.anchorAtomId,
+              inputDescriptor.rootAtomId,
+              new Set([inputDescriptor.rootAtomId])
+            );
           }
           if (Math.abs(seed.ringRotation) > 1e-9) {
             candidateCoords = applyRigidRotationToCoords(
@@ -597,12 +776,43 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           return overridePositions;
         },
         scoreSeed(_descriptor, _candidateCoords, _seed, _searchContext, overridePositions) {
-          return scoreCandidate(overridePositions);
+          const scoredCandidate = scoreCandidate(_candidateCoords, overridePositions);
+          if (scoredCandidate) {
+            scoredCandidate.reflectAnchor = _seed?.reflectAnchor === true;
+          }
+          return scoredCandidate;
         },
-        isBetterScore: isBetterAttachedRingCandidate
+        isBetterScore(candidateScore, incumbentScore) {
+          if (shouldCanonicalizeReflectedAttachedRingTie(candidateScore, incumbentScore)) {
+            return false;
+          }
+          return isBetterAttachedRingCandidate(candidateScore, incumbentScore);
+        },
+        compareEquivalentCandidates(candidate, incumbent) {
+          if (
+            shouldCanonicalizeReflectedAttachedRingTie(candidate.seedScore, incumbent.seedScore)
+            && typeof candidate.seedScore.localPoseKey === 'string'
+            && typeof incumbent.seedScore.localPoseKey === 'string'
+          ) {
+            return candidate.seedScore.localPoseKey.localeCompare(incumbent.seedScore.localPoseKey, 'en', { numeric: true });
+          }
+          return 0;
+        },
       });
-      if (attachedRingSearch.bestFinalCandidate && isBetterAttachedRingCandidate(attachedRingSearch.bestFinalCandidate.score, bestCandidate)) {
-        bestCandidate = attachedRingSearch.bestFinalCandidate.score;
+      if (attachedRingSearch.bestFinalCandidate) {
+        const candidateScore = attachedRingSearch.bestFinalCandidate.score;
+        if (
+          !bestCandidate
+          || isBetterAttachedRingCandidate(candidateScore, bestCandidate)
+          || (
+            shouldCanonicalizeReflectedAttachedRingTie(candidateScore, bestCandidate)
+            && typeof candidateScore.localPoseKey === 'string'
+            && typeof bestCandidate.localPoseKey === 'string'
+            && candidateScore.localPoseKey.localeCompare(bestCandidate.localPoseKey, 'en', { numeric: true }) < 0
+          )
+        ) {
+          bestCandidate = candidateScore;
+        }
       }
     }
 
@@ -635,6 +845,7 @@ function readabilityFailureWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount < incumbent.failingSubstituentCount;
@@ -644,6 +855,7 @@ function inwardReadabilityWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
@@ -654,6 +866,7 @@ function outwardReadabilityWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
@@ -665,6 +878,7 @@ function globalReadabilityFailureWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
@@ -677,6 +891,7 @@ function globalInwardReadabilityWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
@@ -690,6 +905,7 @@ function globalOutwardReadabilityWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
@@ -704,6 +920,7 @@ function attachedCarbonylRootDescriptorWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
@@ -720,6 +937,7 @@ function attachedCarbonylSetupWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
@@ -739,6 +957,7 @@ function presentationWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
@@ -761,6 +980,7 @@ function layoutCostWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
@@ -784,6 +1004,7 @@ function outwardDeviationWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
@@ -801,10 +1022,18 @@ function outwardDeviationWins(candidate, incumbent) {
     );
 }
 
+function rootOutwardWins(candidate, incumbent) {
+  return !!incumbent
+    && candidate.overlapCount === incumbent.overlapCount
+    && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && candidate.rootOutwardPenalty < incumbent.rootOutwardPenalty - 1e-6;
+}
+
 function trigonalBisectorWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && candidate.trigonalBisectorPenalty < incumbent.trigonalBisectorPenalty - 1e-6;
 }
 
@@ -812,6 +1041,7 @@ function trigonalDistortionWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && candidate.trigonalDistortionPenalty < incumbent.trigonalDistortionPenalty - 1e-6;
 }
@@ -820,6 +1050,7 @@ function subtreeClearanceWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
@@ -841,6 +1072,7 @@ function isBetterAttachedRingCandidate(candidate, incumbent) {
   }
   return overlapCountWins(candidate, incumbent)
     || exactContinuationWins(candidate, incumbent)
+    || rootOutwardWins(candidate, incumbent)
     || trigonalBisectorWins(candidate, incumbent)
     || trigonalDistortionWins(candidate, incumbent)
     || readabilityFailureWins(candidate, incumbent)

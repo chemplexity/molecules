@@ -1202,7 +1202,7 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
-  it('uses the late attached-ring touchup to rotate the ester root and attached pyridyl ring into a clean row-228 pose', () => {
+  it('keeps the row-228 ester root and attached pyridyl ring clean even when placement is already sufficient', () => {
     const { placementAudit, result } = inspectPlacementAndFinalAudit(
       'COc1cc([C@H](CC=C(C)C)OC(=O)c2ccccn2)c(OC)c3\\C(=N\\O)\\C=C\\C(=N/O)\\c13',
       { suppressH: true, auditTelemetry: true }
@@ -1212,17 +1212,19 @@ describe('layout/engine/pipeline', () => {
     const preferredAngle = preferredRingAttachmentAngle(result.layoutGraph, result.coords, anchorAtomId);
     const childAngle = angleOf(sub(result.coords.get(childAtomId), result.coords.get(anchorAtomId)));
 
-    assert.ok(placementAudit.ringSubstituentReadabilityFailureCount > 0);
-    assert.ok(placementAudit.outwardAxisRingSubstituentFailureCount > 0);
-    assert.equal(result.metadata.cleanupTelemetry?.selectedStageCategory, 'presentation');
-    assert.equal(result.metadata.cleanupTelemetry?.presentationFallbacks.won, true);
+    assert.equal(placementAudit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(placementAudit.outwardAxisRingSubstituentFailureCount, 0);
+    assert.equal(placementAudit.severeOverlapCount, 0);
+    assert.equal(result.metadata.cleanupTelemetry?.stages?.presentationCleanup?.ran, true);
+    assert.equal(result.metadata.cleanupTelemetry?.presentationFallbacks.won, false);
+    assert.equal(result.metadata.stageTelemetry.selectedGeometryStage, 'placement');
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
     assert.notEqual(preferredAngle, null);
     assert.ok(
-      angularDifference(childAngle, preferredAngle) <= Math.PI / 6 + 1e-6,
-      `expected ${anchorAtomId}-${childAtomId} to end within 30 degrees of the local outward direction`
+      angularDifference(childAngle, preferredAngle) < 1e-6,
+      `expected ${anchorAtomId}-${childAtomId} to stay on the exact local outward direction`
     );
     assert.equal(result.metadata.audit.ok, true);
   });

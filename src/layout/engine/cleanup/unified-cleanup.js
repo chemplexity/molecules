@@ -6,6 +6,8 @@ import { computeRotatableSubtrees, runLocalCleanup } from './local-rotation.js';
 import { collectRigidPendantRingSubtrees, mergeRigidSubtreesByAtomId, resolveOverlaps } from './overlap-resolution.js';
 import { measureOrthogonalHypervalentDeviation } from './hypervalent-angle-tidy.js';
 
+const PROTECTED_BACKBONE_MAX_BOND_DEVIATION = 0.05;
+
 /**
  * Prescores a one-step cleanup candidate against the current coordinates using
  * only overlap and bond-length metrics.
@@ -71,6 +73,10 @@ function protectCleanupBondIntegrity(options = {}) {
   return protectLargeMoleculeBackbone(options) || options.protectBondIntegrity === true;
 }
 
+function candidateMaxBondDeviation(candidate) {
+  return candidate?.candidateState?.bondDeviation?.maxDeviation ?? Number.POSITIVE_INFINITY;
+}
+
 /**
  * Returns whether the candidate is better than the current best unified-cleanup move.
  * @param {object|null} bestCandidate - Best candidate so far.
@@ -83,6 +89,13 @@ function protectCleanupBondIntegrity(options = {}) {
 function isBetterCandidate(bestCandidate, candidate, epsilon, options = {}) {
   if (!bestCandidate) {
     return true;
+  }
+  if (protectLargeMoleculeBackbone(options)) {
+    const candidateWithinDeviationGuard = candidateMaxBondDeviation(candidate) <= PROTECTED_BACKBONE_MAX_BOND_DEVIATION + epsilon;
+    const bestWithinDeviationGuard = candidateMaxBondDeviation(bestCandidate) <= PROTECTED_BACKBONE_MAX_BOND_DEVIATION + epsilon;
+    if (candidateWithinDeviationGuard !== bestWithinDeviationGuard) {
+      return candidateWithinDeviationGuard;
+    }
   }
   if (protectCleanupBondIntegrity(options) && candidate.bondLengthFailureCount !== bestCandidate.bondLengthFailureCount) {
     return candidate.bondLengthFailureCount < bestCandidate.bondLengthFailureCount;
@@ -141,6 +154,12 @@ function shouldAcceptCandidate(baseState, candidate, epsilon, options = {}) {
     return false;
   }
   if (protectLargeMoleculeBackbone(options) && candidate.overlapCount > baseState.overlapCount) {
+    return false;
+  }
+  if (
+    protectLargeMoleculeBackbone(options)
+    && candidateMaxBondDeviation(candidate) > Math.max(PROTECTED_BACKBONE_MAX_BOND_DEVIATION, (baseState.bondDeviation?.maxDeviation ?? 0) + epsilon)
+  ) {
     return false;
   }
   if (

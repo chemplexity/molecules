@@ -72,6 +72,15 @@ function defaultIsBetterScore(candidateScore, incumbentScore) {
   return candidateScore < incumbentScore;
 }
 
+function defaultCompareEquivalentCandidates(candidate, incumbent) {
+  const candidateKey = candidate?.candidateKey ?? null;
+  const incumbentKey = incumbent?.candidateKey ?? null;
+  if (candidateKey && incumbentKey && candidateKey !== incumbentKey) {
+    return candidateKey.localeCompare(incumbentKey, 'en', { numeric: true });
+  }
+  return 0;
+}
+
 /**
  * Visits one descriptor's candidate seeds through a shared sparse-override
  * search loop. Callers keep descriptor collection and score shapes.
@@ -100,6 +109,7 @@ function defaultIsBetterScore(candidateScore, incumbentScore) {
  *     followupResults: object[]
  *   }, layoutGraph: object|null) => unknown),
  *   isBetterScore?: ((candidateScore: unknown, incumbentScore: unknown) => boolean),
+ *   compareEquivalentCandidates?: ((candidate: object, incumbent: object) => number),
  *   onAcceptedCandidate?: ((candidate: object, incumbent: object|null) => void)
  * }} [options] - Shared search hooks.
  * @returns {{
@@ -120,6 +130,10 @@ export function visitPresentationDescriptorCandidates(layoutGraph, coords, descr
     typeof options.isBetterScore === 'function'
       ? options.isBetterScore
       : defaultIsBetterScore;
+  const compareEquivalentCandidates =
+    typeof options.compareEquivalentCandidates === 'function'
+      ? options.compareEquivalentCandidates
+      : defaultCompareEquivalentCandidates;
   const seenCandidateKeys = new Set();
   let bestSeedCandidate = null;
   let bestFinalCandidate = null;
@@ -158,6 +172,7 @@ export function visitPresentationDescriptorCandidates(layoutGraph, coords, descr
     const candidate = {
       descriptor,
       seed,
+      candidateKey,
       overridePositions,
       coords: candidateCoords,
       score: seedScore,
@@ -168,7 +183,14 @@ export function visitPresentationDescriptorCandidates(layoutGraph, coords, descr
     acceptedCount++;
     options.onAcceptedCandidate?.(candidate, bestSeedCandidate);
 
-    if (!bestSeedCandidate || isBetterScore(seedScore, bestSeedCandidate.seedScore)) {
+    const seedScoreBeatsBest = bestSeedCandidate ? isBetterScore(seedScore, bestSeedCandidate.seedScore) : true;
+    const bestSeedScoreBeatsCandidate =
+      bestSeedCandidate ? isBetterScore(bestSeedCandidate.seedScore, seedScore) : false;
+    if (
+      !bestSeedCandidate
+      || seedScoreBeatsBest
+      || (!bestSeedScoreBeatsCandidate && compareEquivalentCandidates(candidate, bestSeedCandidate) < 0)
+    ) {
       bestSeedCandidate = candidate;
     }
   }

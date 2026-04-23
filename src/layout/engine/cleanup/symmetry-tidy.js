@@ -5,6 +5,7 @@ import { computeBounds } from '../geometry/bounds.js';
 import { angleOf, angularDifference, centroid, rotate, sub } from '../geometry/vec2.js';
 
 const IDEMPOTENT_AXIS_EPSILON = 1e-12;
+const LOCAL_AXIS_SNAP_ANGLE_EPSILON = Math.PI / 720;
 
 /**
  * Returns the qualifying fused ring-junction pairs that should be snapped to an axis.
@@ -96,6 +97,76 @@ function rotateComponent(coords, atomIds, rotationAngle) {
     });
   }
   return rotatedCoords;
+}
+
+function visiblePlacedHeavyNeighborIds(layoutGraph, coords, atomId) {
+  if (!layoutGraph || !coords.has(atomId)) {
+    return [];
+  }
+  return (layoutGraph.bondsByAtomId.get(atomId) ?? [])
+    .filter(bond => bond?.kind === 'covalent')
+    .map(bond => bond.a === atomId ? bond.b : bond.a)
+    .filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H' && coords.has(neighborAtomId));
+}
+
+function collectLocalAngleEntries(layoutGraph, coords, centerAtomId) {
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition) {
+    return [];
+  }
+  const neighborAtomIds = visiblePlacedHeavyNeighborIds(layoutGraph, coords, centerAtomId)
+    .sort((firstAtomId, secondAtomId) => String(firstAtomId).localeCompare(String(secondAtomId), 'en', { numeric: true }));
+  const entries = [];
+  for (let firstIndex = 0; firstIndex < neighborAtomIds.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < neighborAtomIds.length; secondIndex++) {
+      const firstNeighborAtomId = neighborAtomIds[firstIndex];
+      const secondNeighborAtomId = neighborAtomIds[secondIndex];
+      const firstAngle = angleOf(sub(coords.get(firstNeighborAtomId), centerPosition));
+      const secondAngle = angleOf(sub(coords.get(secondNeighborAtomId), centerPosition));
+      entries.push({
+        key: `${centerAtomId}:${firstNeighborAtomId}:${secondNeighborAtomId}`,
+        angle: angularDifference(firstAngle, secondAngle)
+      });
+    }
+  }
+  return entries;
+}
+
+function wouldAxisSnapDistortLocalGeometry(layoutGraph, coords, atomId, nextPosition) {
+  if (!layoutGraph) {
+    return false;
+  }
+  const currentPosition = coords.get(atomId);
+  if (!currentPosition) {
+    return false;
+  }
+
+  const focusAtomIds = new Set([atomId, ...visiblePlacedHeavyNeighborIds(layoutGraph, coords, atomId)]);
+  if (focusAtomIds.size === 0) {
+    return false;
+  }
+
+  const candidateCoords = new Map(coords);
+  candidateCoords.set(atomId, nextPosition);
+  let maxAngleChange = 0;
+  for (const focusAtomId of focusAtomIds) {
+    const baseEntries = collectLocalAngleEntries(layoutGraph, coords, focusAtomId);
+    const candidateEntries = new Map(
+      collectLocalAngleEntries(layoutGraph, candidateCoords, focusAtomId)
+        .map(entry => [entry.key, entry.angle])
+    );
+    for (const entry of baseEntries) {
+      const candidateAngle = candidateEntries.get(entry.key);
+      if (candidateAngle == null) {
+        continue;
+      }
+      maxAngleChange = Math.max(maxAngleChange, Math.abs(candidateAngle - entry.angle));
+      if (maxAngleChange > LOCAL_AXIS_SNAP_ANGLE_EPSILON) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 /**
@@ -260,18 +331,24 @@ export function tidySymmetry(inputCoords, options = {}) {
     };
   }
   const junctionSnap = snapRingJunctions(inputCoords, options.layoutGraph);
-  const coords = new Map();
+  const coords = new Map(junctionSnap.coords);
   let snappedCount = 0;
 
   for (const [atomId, position] of junctionSnap.coords) {
     const nextPosition = { ...position };
     if (Math.abs(nextPosition.x) <= epsilon) {
-      nextPosition.x = 0;
-      snappedCount++;
+      const snappedPosition = { ...nextPosition, x: 0 };
+      if (!wouldAxisSnapDistortLocalGeometry(options.layoutGraph, coords, atomId, snappedPosition)) {
+        nextPosition.x = 0;
+        snappedCount++;
+      }
     }
     if (Math.abs(nextPosition.y) <= epsilon) {
-      nextPosition.y = 0;
-      snappedCount++;
+      const snappedPosition = { ...nextPosition, y: 0 };
+      if (!wouldAxisSnapDistortLocalGeometry(options.layoutGraph, coords, atomId, snappedPosition)) {
+        nextPosition.y = 0;
+        snappedCount++;
+      }
     }
     coords.set(atomId, nextPosition);
   }

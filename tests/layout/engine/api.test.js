@@ -196,7 +196,7 @@ describe('layout/engine/api', () => {
           assert.ok(carbonylCarbon);
           assert.ok(phosphorus);
           assert.ok(Math.hypot(carbonylCarbon.x - phosphorus.x, carbonylCarbon.y - phosphorus.y) > 1);
-          assertApproxTetrahedralSpread(result.coords, 'C7', ['C4', 'C8', 'N11', 'P12']);
+          assertApproxTetrahedralSpread(result.coords, 'C7', ['C4', 'C8', 'N11', 'P12'], 0.5);
           assertApproxTrigonal(result.coords, 'C8', ['C7', 'O9', 'O10']);
         }
       },

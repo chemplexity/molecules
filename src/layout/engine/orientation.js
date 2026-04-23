@@ -433,7 +433,8 @@ export function normalizeOrientation(coords, molecule) {
   }
 
   const orientPath = preferredLandscapeOrientationPath(molecule);
-  if (orientPath && orientPath.length >= landscapePathMinLength(molecule, orientPath)) {
+  const hasPreferredLandscapeFrame = Boolean(orientPath && orientPath.length >= landscapePathMinLength(molecule, orientPath));
+  if (hasPreferredLandscapeFrame) {
     const start = coords.get(orientPath[0]);
     const end = coords.get(orientPath[orientPath.length - 1]);
     if (start && end) {
@@ -447,20 +448,6 @@ export function normalizeOrientation(coords, molecule) {
           sumY += point.y;
         }
         rotateCoords(coords, vec(sumX / heavyAtomIds.length, sumY / heavyAtomIds.length), -angle);
-      }
-
-      let sumX = 0;
-      let sumY = 0;
-      for (const atomId of heavyAtomIds) {
-        const point = coords.get(atomId);
-        sumX += point.x;
-        sumY += point.y;
-      }
-      const centerX = sumX / heavyAtomIds.length;
-      const centerY = sumY / heavyAtomIds.length;
-      const pathBounds = computeBounds(coords, heavyAtomIds);
-      if (pathBounds && pathBounds.height > pathBounds.width) {
-        rotateCoords(coords, vec(centerX, centerY), Math.PI / 2);
       }
       return;
     }
@@ -527,6 +514,8 @@ export function ensureLandscapeOrientation(coords, molecule) {
   if (heavyAtomIds.length < 2) {
     return false;
   }
+  const orientPath = preferredLandscapeOrientationPath(molecule);
+  const hasPreferredLandscapeFrame = Boolean(orientPath && orientPath.length >= landscapePathMinLength(molecule, orientPath));
 
   const beforePositions = new Map(heavyAtomIds.map(atomId => [atomId, { ...coords.get(atomId) }]));
 
@@ -552,7 +541,7 @@ export function ensureLandscapeOrientation(coords, molecule) {
     sumY += point.y;
   }
 
-  if (maxY - minY > maxX - minX) {
+  if (!hasPreferredLandscapeFrame && maxY - minY > maxX - minX) {
     rotateCoords(coords, vec(sumX / heavyAtomIds.length, sumY / heavyAtomIds.length), Math.PI / 2);
   }
 
