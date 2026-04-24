@@ -32,6 +32,7 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     const flexibleGraph = createLayoutGraph(parseSMILES('C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN'), { suppressH: true });
     const nitrileGraph = createLayoutGraph(parseSMILES('N#Cc1ccccc1'), { suppressH: true });
     const methylGraph = createLayoutGraph(parseSMILES('Cc1ccccc1'), { suppressH: true });
+    const ringConstrainedGraph = createLayoutGraph(parseSMILES('CC(N1CC(C)(C[NH3+])C1)C1=C(C)C=C(C)N1'), { suppressH: true });
     const saturatedRingGraph = createLayoutGraph(parseSMILES('CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1'), { suppressH: true });
 
     assert.equal(isExactRingOutwardEligibleSubstituent(flexibleGraph, 'C2', 'C6'), false);
@@ -61,6 +62,7 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     assert.ok(methylAnchorAtomId);
     assert.equal(isExactRingOutwardEligibleSubstituent(methylGraph, methylAnchorAtomId, methylAtomId), true);
 
+    assert.equal(isExactRingOutwardEligibleSubstituent(ringConstrainedGraph, 'C11', 'C2'), true);
     assert.equal(isExactRingOutwardEligibleSubstituent(saturatedRingGraph, 'C9', 'C7'), true);
   });
 

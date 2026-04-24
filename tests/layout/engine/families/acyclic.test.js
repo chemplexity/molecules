@@ -108,6 +108,25 @@ function bondAngle(coords, firstAtomId, centerAtomId, secondAtomId) {
   return Math.acos(cosine) * (180 / Math.PI);
 }
 
+function sortedHeavyNeighborSeparations(layoutGraph, coords, atomId) {
+  const atomPosition = coords.get(atomId);
+  const neighborAngles = (layoutGraph.bondsByAtomId.get(atomId) ?? [])
+    .map(bond => (bond.a === atomId ? bond.b : bond.a))
+    .filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H')
+    .map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), atomPosition)))
+    .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  const separations = [];
+
+  for (let index = 0; index < neighborAngles.length; index++) {
+    const currentAngle = neighborAngles[index];
+    const nextAngle = neighborAngles[(index + 1) % neighborAngles.length];
+    const rawGap = nextAngle - currentAngle;
+    separations.push((rawGap > 0 ? rawGap : rawGap + (2 * Math.PI)) * (180 / Math.PI));
+  }
+
+  return separations.sort((firstSeparation, secondSeparation) => firstSeparation - secondSeparation);
+}
+
 describe('layout/engine/families/acyclic', () => {
   it('lays out an acyclic chain on a zigzag backbone', () => {
     const molecule = makeChain(4);
@@ -139,6 +158,37 @@ describe('layout/engine/families/acyclic', () => {
 
     assert.ok(Math.abs(firstSecondCross) < 1e-6);
     assert.ok(Math.abs(secondThirdCross) < 1e-6);
+  });
+
+  it('batch-places deferred chlorosilane leaves so both silicon centers keep an even fanout', () => {
+    const graph = createLayoutGraph(parseSMILES('C[Si](Cl)(Cl)CC[Si](C)(Cl)Cl'), { suppressH: true });
+    const atomIdsToPlace = new Set(graph.components[0].atomIds);
+    const coords = layoutAcyclicFamily(
+      buildAdjacency(graph, atomIdsToPlace),
+      atomIdsToPlace,
+      graph.canonicalAtomRank,
+      graph.options.bondLength,
+      { layoutGraph: graph }
+    );
+
+    for (const siliconAtomId of ['Si2', 'Si7']) {
+      const separations = sortedHeavyNeighborSeparations(graph, coords, siliconAtomId);
+      assert.deepEqual(
+        separations.map(separation => Number(separation.toFixed(2))),
+        [80, 80, 80, 120],
+        `expected ${siliconAtomId} to spread heavy neighbors evenly across the open side, got ${separations.map(separation => separation.toFixed(2)).join(', ')} degrees`
+      );
+    }
+
+    for (const bond of graph.bonds.values()) {
+      if (!['Si2', 'Si7'].includes(bond.a) && !['Si2', 'Si7'].includes(bond.b)) {
+        continue;
+      }
+      assert.ok(
+        Math.abs(distance(coords.get(bond.a), coords.get(bond.b)) - graph.options.bondLength) < 1e-6,
+        `expected ${bond.a}-${bond.b} to keep the canonical bond length`
+      );
+    }
   });
 
   it('keeps allene and cumulene centers linear through adjacent double bonds', () => {

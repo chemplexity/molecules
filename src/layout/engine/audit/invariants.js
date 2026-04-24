@@ -6,7 +6,11 @@ import { AtomGrid } from '../geometry/atom-grid.js';
 import { distancePointToSegment, segmentsIntersect } from '../geometry/segments.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
-import { preferredSharedJunctionContinuationAngle } from '../placement/branch-placement/angle-selection.js';
+import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
+import {
+  isRingConstrainedBenzylicCarbonRoot,
+  preferredSharedJunctionContinuationAngle
+} from '../placement/branch-placement/angle-selection.js';
 import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 function pairKey(firstAtomId, secondAtomId) {
@@ -400,17 +404,20 @@ function reconnectsToAnchorRingSystem(layoutGraph, coords, anchorAtomId, childAt
 }
 
 /**
- * Returns whether a non-ring child is a carbonyl-like trigonal root whose
- * immediate bond direction should represent the substituent for readability.
- * For these cases, promoting a farther linked ring centroid can mark otherwise
- * exact outward carbonyl exits as failures even when the root itself is
- * publication-clean.
+ * Returns whether a non-ring child should keep its immediate bond direction as
+ * the substituent representative for readability. Carbonyl-like trigonal roots
+ * and ring-constrained benzylic roots can both be publication-clean at the
+ * anchor even when a farther linked-ring centroid bends inward.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string} anchorAtomId - Candidate ring anchor atom id.
  * @param {string} childAtomId - Candidate non-ring child atom id.
  * @returns {boolean} True when the immediate child should stay the representative.
  */
 function prefersImmediateLinkedSubstituentRepresentative(layoutGraph, anchorAtomId, childAtomId) {
+  if (isRingConstrainedBenzylicCarbonRoot(layoutGraph, anchorAtomId, childAtomId)) {
+    return true;
+  }
+
   const childAtom = layoutGraph.atoms.get(childAtomId);
   if (
     !childAtom
@@ -672,12 +679,7 @@ function bestRingOutwardDeviation(layoutGraph, coords, anchorAtomId, representat
 
   const childAngle = angleOf(sub(representativePosition, anchorPosition));
   let bestDeviation = Number.POSITIVE_INFINITY;
-  for (const ring of layoutGraph.atomToRings.get(anchorAtomId) ?? []) {
-    const ringPositions = ring.atomIds.map(ringAtomId => coords.get(ringAtomId)).filter(Boolean);
-    if (ringPositions.length < 3) {
-      continue;
-    }
-    const outwardAngle = angleOf(sub(anchorPosition, centroid(ringPositions)));
+  for (const outwardAngle of computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null)) {
     bestDeviation = Math.min(bestDeviation, angularDifference(childAngle, outwardAngle));
   }
 

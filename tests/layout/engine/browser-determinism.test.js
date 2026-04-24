@@ -9,6 +9,7 @@ import { chromium, webkit } from '@playwright/test';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const BROWSER_SENSITIVE_SMILES = 'COc1cc([C@H](CC=C(C)C)OC(=O)c2ccccn2)c(OC)c3\\C(=N\\O)\\C=C\\C(=N/O)\\c13';
+const BROWSER_ATTACHED_RING_RESCUE_SMILES = 'CCCOC1=C(C)C=CC=C1N1C(=S)[N-]N=C1C1=CC=C(O)C=C1O';
 
 const MIME_TYPES = new Map([
   ['.css', 'text/css; charset=utf-8'],
@@ -100,7 +101,13 @@ async function browserLayoutSignature(browserType, origin, smiles) {
         .join('|');
       return {
         coordSignature,
-        stereoSignature
+        stereoSignature,
+        audit: {
+          ok: pipeline.metadata?.audit?.ok ?? null,
+          severeOverlapCount: pipeline.metadata?.audit?.severeOverlapCount ?? null,
+          ringSubstituentReadabilityFailureCount: pipeline.metadata?.audit?.ringSubstituentReadabilityFailureCount ?? null,
+          outwardAxisRingSubstituentFailureCount: pipeline.metadata?.audit?.outwardAxisRingSubstituentFailureCount ?? null
+        }
       };
     }, smiles);
   } finally {
@@ -118,4 +125,20 @@ test('browser layout remains deterministic across chromium and webkit for mixed 
   const webkitSignature = await browserLayoutSignature(webkit, origin, BROWSER_SENSITIVE_SMILES);
 
   assert.deepStrictEqual(webkitSignature, chromiumSignature);
+});
+
+test('browser layout stays deterministic and overlap-free for the attached-ring overlap rescue', { timeout: 60_000 }, async t => {
+  const { server, origin } = await startStaticServer();
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve));
+  });
+
+  const chromiumSignature = await browserLayoutSignature(chromium, origin, BROWSER_ATTACHED_RING_RESCUE_SMILES);
+  const webkitSignature = await browserLayoutSignature(webkit, origin, BROWSER_ATTACHED_RING_RESCUE_SMILES);
+
+  assert.deepStrictEqual(webkitSignature, chromiumSignature);
+  assert.equal(chromiumSignature.audit.ok, true);
+  assert.equal(chromiumSignature.audit.severeOverlapCount, 0);
+  assert.equal(chromiumSignature.audit.ringSubstituentReadabilityFailureCount, 0);
+  assert.equal(chromiumSignature.audit.outwardAxisRingSubstituentFailureCount, 0);
 });

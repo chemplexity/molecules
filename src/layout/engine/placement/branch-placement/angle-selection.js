@@ -2,6 +2,7 @@
 
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, length, perpLeft, sub } from '../../geometry/vec2.js';
 import { countPointInPolygons } from '../../geometry/polygon.js';
+import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
 import { BRANCH_CLEARANCE_FLOOR_FACTOR } from '../../constants.js';
 import {
   ANGLE_SCORE_TIEBREAK_RATIO,
@@ -446,6 +447,9 @@ export function isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId,
   if (childAtom.heavyDegree <= 1) {
     return true;
   }
+  if (isRingConstrainedBenzylicCarbonRoot(layoutGraph, anchorAtomId, childAtomId)) {
+    return true;
+  }
   for (const childBond of layoutGraph.bondsByAtomId.get(childAtomId) ?? []) {
     if (!childBond || childBond === bond || childBond.kind !== 'covalent') {
       continue;
@@ -455,6 +459,44 @@ export function isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId,
     }
   }
   return false;
+}
+
+/**
+ * Returns whether an aromatic ring root carbon leads immediately into a second
+ * ring-constrained branch, so the root bond should keep the exact local
+ * incident-ring bisector instead of snapping to the coarse branch lattice.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {string} childAtomId - Candidate non-ring child atom ID.
+ * @returns {boolean} True when the child is a rigid benzylic ring-constrained root.
+ */
+export function isRingConstrainedBenzylicCarbonRoot(layoutGraph, anchorAtomId, childAtomId) {
+  const childAtom = layoutGraph?.atoms?.get(childAtomId);
+  if (!childAtom || childAtom.element !== 'C' || childAtom.aromatic || childAtom.heavyDegree < 2 || childAtom.heavyDegree > 3) {
+    return false;
+  }
+
+  let downstreamRingNeighborCount = 0;
+  let downstreamHeavyNeighborCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(childAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === childAtomId ? bond.b : bond.a;
+    if (neighborAtomId === anchorAtomId) {
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    downstreamHeavyNeighborCount++;
+    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+      downstreamRingNeighborCount++;
+    }
+  }
+
+  return downstreamRingNeighborCount === 1 && downstreamHeavyNeighborCount <= 2;
 }
 
 /**
@@ -726,27 +768,7 @@ function preferredRingSystemAngle(layoutGraph, coords, anchorAtomId) {
 }
 
 function incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId) {
-  if (!layoutGraph || !coords.has(anchorAtomId)) {
-    return [];
-  }
-
-  const anchorPosition = coords.get(anchorAtomId);
-  const ringAngles = [];
-  for (const ring of layoutGraph.atomToRings.get(anchorAtomId) ?? []) {
-    const placedRingPositions = ring.atomIds.filter(atomId => coords.has(atomId)).map(atomId => coords.get(atomId));
-    if (placedRingPositions.length < 3) {
-      continue;
-    }
-    const ringCenter = centroid(placedRingPositions);
-    const outwardVector = sub(anchorPosition, ringCenter);
-    if (length(outwardVector) <= CENTERED_NEIGHBOR_EPSILON) {
-      continue;
-    }
-    if (!ringAngles.some(ringAngle => angularDifference(ringAngle, angleOf(outwardVector)) <= 1e-9)) {
-      ringAngles.push(angleOf(outwardVector));
-    }
-  }
-  return ringAngles;
+  return computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null);
 }
 
 function shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, coords, anchorAtomId, childAtomId) {

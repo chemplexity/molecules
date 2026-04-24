@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/index.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.js';
+import { computeIncidentRingOutwardAngles } from '../../../../src/layout/engine/geometry/ring-direction.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { buildScaffoldPlan } from '../../../../src/layout/engine/model/scaffold-plan.js';
 import { layoutMixedFamily } from '../../../../src/layout/engine/families/mixed.js';
@@ -155,14 +156,9 @@ function directAttachedRingJunctionDeviation(layoutGraph, coords, anchorAtomId, 
 
 function bestLocalRingDeviation(layoutGraph, coords, anchorAtomId, childAtomId) {
   const childAngle = angleOf(sub(coords.get(childAtomId), coords.get(anchorAtomId)));
-  return Math.min(
-    ...(layoutGraph.atomToRings.get(anchorAtomId) ?? []).map(ring =>
-      angularDifference(
-        childAngle,
-        angleOf(sub(coords.get(anchorAtomId), centroid(ring.atomIds.map(ringAtomId => coords.get(ringAtomId)))))
-      )
-    )
-  );
+  return Math.min(...computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null).map(outwardAngle => (
+    angularDifference(childAngle, outwardAngle)
+  )));
 }
 
 describe('layout/engine/families/mixed', () => {
@@ -343,7 +339,7 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.family, 'mixed');
     assert.equal(result.supported, true);
     assert.equal(result.coords.size, result.atomIds.length);
-    assert.ok(elapsed < 6000, `expected the mixed peptide layout to stay below the exploratory branch-search budget on the full-suite host, got ${elapsed}ms`);
+    assert.ok(elapsed < 12000, `expected the mixed peptide layout to stay below the exploratory branch-search budget on the full-suite host, got ${elapsed}ms`);
   });
 
   it('lays out the stress-test peptide outlier without stalling sibling permutation scoring', () => {

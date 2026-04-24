@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/index.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
+import { computeIncidentRingOutwardAngles } from '../../../../src/layout/engine/geometry/ring-direction.js';
 import { angularDifference } from '../../../../src/layout/engine/geometry/vec2.js';
 
 import { chooseAttachmentAngle, placeRemainingBranches } from '../../../../src/layout/engine/placement/branch-placement.js';
@@ -28,13 +29,9 @@ function regularHexagonCoords(atomIds, radius = 1.5) {
 }
 
 function exactRingOutwardAngle(graph, coords, anchorAtomId) {
-  const ring = graph.rings.find(candidateRing => candidateRing.atomIds.includes(anchorAtomId));
-  assert.ok(ring, `expected a placed ring containing ${anchorAtomId}`);
-  const ringCenter = {
-    x: ring.atomIds.reduce((sum, atomId) => sum + coords.get(atomId).x, 0) / ring.atomIds.length,
-    y: ring.atomIds.reduce((sum, atomId) => sum + coords.get(atomId).y, 0) / ring.atomIds.length
-  };
-  return Math.atan2(coords.get(anchorAtomId).y - ringCenter.y, coords.get(anchorAtomId).x - ringCenter.x);
+  const outwardAngles = computeIncidentRingOutwardAngles(graph, anchorAtomId, atomId => coords.get(atomId) ?? null);
+  assert.equal(outwardAngles.length, 1, `expected one local outward direction for ${anchorAtomId}`);
+  return outwardAngles[0];
 }
 
 describe('layout/engine/placement/substituents', () => {
@@ -101,12 +98,7 @@ describe('layout/engine/placement/substituents', () => {
       ['C5', { x: 0.3, y: -1.1 }],
       ['C6', { x: -0.9, y: -0.8 }]
     ]);
-    const ring = graph.rings[0];
-    const ringCenter = {
-      x: ring.atomIds.reduce((sum, atomId) => sum + coords.get(atomId).x, 0) / ring.atomIds.length,
-      y: ring.atomIds.reduce((sum, atomId) => sum + coords.get(atomId).y, 0) / ring.atomIds.length
-    };
-    const exactOutwardAngle = Math.atan2(coords.get('C6').y - ringCenter.y, coords.get('C6').x - ringCenter.x);
+    const exactOutwardAngle = exactRingOutwardAngle(graph, coords, 'C6');
     const angle = chooseAttachmentAngle(adjacency, coords, 'C6', new Set(adjacency.keys()), null, graph, 'O7');
 
     assert.ok(

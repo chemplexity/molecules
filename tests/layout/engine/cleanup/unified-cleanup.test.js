@@ -73,10 +73,10 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
       bondValidationClasses: placement.bondValidationClasses
     });
 
-    assert.ok(beforeOverlapCount > 0);
     assert.ok(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length <= beforeOverlapCount);
     assert.ok(result.overlapMoves > 0);
     assert.ok(result.passes >= result.overlapMoves);
+    assert.equal(afterAudit.severeOverlapCount, 0);
     assert.equal(afterAudit.bondLengthFailureCount, 0);
   });
 

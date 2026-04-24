@@ -41,6 +41,9 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   if (candidate.audit.labelOverlapCount !== incumbent.audit.labelOverlapCount) {
     return candidate.audit.labelOverlapCount < incumbent.audit.labelOverlapCount;
   }
+  if (allowPresentationTieBreak && Math.abs((candidate.attachedRingPeripheralPenalty ?? 0) - (incumbent.attachedRingPeripheralPenalty ?? 0)) > 1e-9) {
+    return (candidate.attachedRingPeripheralPenalty ?? 0) < (incumbent.attachedRingPeripheralPenalty ?? 0);
+  }
   if (allowPresentationTieBreak && Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
     return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
   }

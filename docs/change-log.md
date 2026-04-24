@@ -1,5 +1,13 @@
 # Change Log
 
+## 2026-04-23
+
+- Let attached-ring presentation cleanup retouch once more after direct-attached rescued ring-root exactness work, so coupled aza/phenyl exits like `C17-C18` and `C18-C17` can both land on their exact symmetric bisectors while keeping the already-clean `C11` and `C24` geometry
+- Re-run ring-substituent presentation tidy after attached-ring rescue wins, so rescued phenyl/phenol systems keep exact peripheral exits like `C24-O25` instead of leaving the last substituent slightly canted
+- Let attached-ring presentation rescue separate upstream scaffold exits from downstream rescue-side exactness, and let genuinely cramped attached phenyl tails win exact reflected poses across the shared `C11-N12` hinge, so crowded pendant phenyl systems keep exact `C11`, `C5`, and five-member `N12` exits without curling the ether tail back into the aza ring
+- Keep ring-constrained benzylic aromatic exits on the exact local five-member-ring exterior bisector, so `CC(N1CC(C)(C[NH3+])C1)C1=C(C)C=C(C)N1` stays at a symmetric `126°/126°` exit instead of canting that branch off the ring
+- Batch deferred halogen leaves at projected-tetrahedral acyclic centers, so chlorosilanes like `C[Si](Cl)(Cl)CC[Si](C)(Cl)Cl` keep even `80/80/80/120` heavy-neighbor fanout and consistent Si-halogen bond geometry instead of skewing one chlorine into a pinched slot
+
 ## 2026-04-22
 
 - Keep strict exocyclic alkene exits on attached five-member rings centered between the two ring bonds, even when the mixed-family attachment search must trade a small transient overlap to avoid a visibly skewed pose

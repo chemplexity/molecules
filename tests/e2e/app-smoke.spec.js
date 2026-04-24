@@ -230,14 +230,14 @@ test('loading and cleaning the anisole ester bug molecule keeps the C7 carbonyl 
   await loadSmiles(page, '[H][C@]12C[C@@H](OC(=O)C3=CC(OC)=C(OC)C(OC)=C3)[C@H](OC)[C@@H](C(=O)OC)[C@@]1([H])C[C@@]1([H])N(CCC3=C1NC1=C3C=CC(OC)=C1)C2');
   await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
 
-  for (const [firstNeighborAtomId, secondNeighborAtomId] of [
-    ['O8', 'O6'],
-    ['O8', 'C9'],
-    ['O6', 'C9']
+  for (const [firstNeighborAtomId, secondNeighborAtomId, expectedAngle] of [
+    ['O8', 'O6', 90],
+    ['O8', 'C9', 90],
+    ['O6', 'C9', 180]
   ]) {
     const initialAngle = await atomBondAngleDegrees(page, 'C7', firstNeighborAtomId, secondNeighborAtomId);
     expect(initialAngle).not.toBeNull();
-    expect(Math.abs(initialAngle - 120)).toBeLessThan(1e-6);
+    expect(Math.abs(initialAngle - expectedAngle)).toBeLessThan(1e-6);
   }
   const initialTurn = await signedTurn(page, 'C4', 'O6', 'C7');
   expect(initialTurn).not.toBeNull();
@@ -247,15 +247,19 @@ test('loading and cleaning the anisole ester bug molecule keeps the C7 carbonyl 
 
   await expect
     .poll(async () => {
-      const angles = await Promise.all([
+      const angleChecks = await Promise.all([
         atomBondAngleDegrees(page, 'C7', 'O8', 'O6'),
         atomBondAngleDegrees(page, 'C7', 'O8', 'C9'),
         atomBondAngleDegrees(page, 'C7', 'O6', 'C9')
       ]);
-      if (angles.some(angle => angle == null)) {
+      if (angleChecks.some(angle => angle == null)) {
         return null;
       }
-      return Math.max(...angles.map(angle => Math.abs(angle - 120)));
+      return Math.max(
+        Math.abs(angleChecks[0] - 90),
+        Math.abs(angleChecks[1] - 90),
+        Math.abs(angleChecks[2] - 180)
+      );
     })
     .toBeLessThan(1e-6);
 
@@ -1007,7 +1011,7 @@ test('incompatible bond orders on a displayed 2D stereochemical hydrogen are a n
 
 test('clicking a displayed 2D stereochemical hydrogen with carbon, oxygen, or sulfur draw elements keeps the replacement atom off the parent carbon', async ({ page }) => {
   for (const drawElement of ['C', 'O', 'S']) {
-    await page.goto('/index.html');
+    await page.goto('/index.html', { waitUntil: 'domcontentloaded' });
 
     await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
     await page.locator('#draw-bond-btn').click();

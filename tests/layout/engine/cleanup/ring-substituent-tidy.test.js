@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { measureRingSubstituentPresentationPenalty, runRingSubstituentTidy } from '../../../../src/layout/engine/cleanup/presentation/ring-substituent.js';
+import { computeIncidentRingOutwardAngles } from '../../../../src/layout/engine/geometry/ring-direction.js';
 import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { createLayoutGraph, createLayoutGraphFromNormalized } from '../../../../src/layout/engine/model/layout-graph.js';
 import { normalizeOptions } from '../../../../src/layout/engine/options.js';
@@ -40,13 +41,11 @@ function ringOutwardDeviation(graph, coords, anchorAtomId, childAtomId) {
   const child = coords.get(childAtomId);
   assert.ok(anchor);
   assert.ok(child);
-  const ring = (graph.atomToRings.get(anchorAtomId) ?? [])[0];
-  assert.ok(ring);
-  const ringPositions = ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
-  assert.equal(ringPositions.length, ring.atomIds.length);
+  const outwardAngles = computeIncidentRingOutwardAngles(graph, anchorAtomId, atomId => coords.get(atomId) ?? null);
+  assert.ok(outwardAngles.length > 0);
   return angularDifference(
     angleOf(sub(child, anchor)),
-    angleOf(sub(anchor, centroid(ringPositions)))
+    outwardAngles[0]
   );
 }
 
@@ -60,11 +59,9 @@ function preferredRingAttachmentAngle(graph, coords, anchorAtomId) {
     assert.ok(positions.length >= 3);
     return angleOf(sub(anchorPosition, centroid(positions)));
   }
-  const ring = (graph.atomToRings.get(anchorAtomId) ?? [])[0];
-  assert.ok(ring);
-  const positions = ring.atomIds.map(atomId => coords.get(atomId)).filter(Boolean);
-  assert.equal(positions.length, ring.atomIds.length);
-  return angleOf(sub(anchorPosition, centroid(positions)));
+  const outwardAngles = computeIncidentRingOutwardAngles(graph, anchorAtomId, atomId => coords.get(atomId) ?? null);
+  assert.equal(outwardAngles.length, 1);
+  return outwardAngles[0];
 }
 
 describe('layout/engine/cleanup/ring-substituent-tidy', () => {
@@ -284,8 +281,7 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
 
     assert.ok('presentationCleanup' in result.metadata.stageTelemetry.stageAudits);
     assert.equal(result.metadata.cleanupTelemetry?.stages?.presentationCleanup?.ran, true);
-    assert.equal(result.metadata.cleanupTelemetry?.presentationFallbacks?.won, false);
-    assert.equal(result.metadata.stageTelemetry.selectedStage, 'selectedGeometryCheckpoint');
+    assert.equal(result.metadata.stageTelemetry.selectedGeometryStage, 'placement');
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);

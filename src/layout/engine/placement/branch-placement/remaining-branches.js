@@ -332,22 +332,48 @@ function placeChildren(
       placementContext
     );
   }
+  const shouldBatchDeferredHeavyLeaves =
+    deferredHeavyNeighborIds.length >= 2
+    && supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId);
   if (deferredHeavyNeighborIds.length > 0 && !shouldLeaveDeferredLeavesForLaterPass) {
-    placeNeighborSequence(
-      adjacency,
-      canonicalAtomRank,
-      coords,
-      placementState,
-      atomIdsToPlace,
-      anchorAtomId,
-      parentAtomId,
-      bondLength,
-      deferredHeavyNeighborIds,
-      layoutGraph,
-      branchConstraints,
-      depth,
-      placementContext
-    );
+    if (shouldBatchDeferredHeavyLeaves) {
+      chooseBatchAngleAssignments(
+        adjacency,
+        canonicalAtomRank,
+        coords,
+        placementState,
+        atomIdsToPlace,
+        anchorAtomId,
+        parentAtomId,
+        deferredHeavyNeighborIds,
+        bondLength,
+        placeChildren,
+        layoutGraph,
+        branchConstraints,
+        depth,
+        deferredHeavyNeighborIds.map(childAtomId => ({
+          childAtomId,
+          subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
+        })),
+        placementContext
+      );
+    } else {
+      placeNeighborSequence(
+        adjacency,
+        canonicalAtomRank,
+        coords,
+        placementState,
+        atomIdsToPlace,
+        anchorAtomId,
+        parentAtomId,
+        bondLength,
+        deferredHeavyNeighborIds,
+        layoutGraph,
+        branchConstraints,
+        depth,
+        placementContext
+      );
+    }
   }
   if (deferredHydrogenNeighborIds.length > 0 && !shouldLeaveDeferredLeavesForLaterPass) {
     placeNeighborSequence(

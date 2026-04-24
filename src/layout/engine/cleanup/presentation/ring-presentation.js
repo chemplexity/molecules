@@ -5,10 +5,12 @@ import {
 } from './attached-carbonyl.js';
 import {
   collectMovableAttachedRingDescriptors,
+  measureAttachedRingPeripheralFocusPenalty,
   runAttachedRingRotationTouchup
 } from './attached-ring-fallback.js';
 import {
   measureRingSubstituentPresentationPenalty,
+  runDirectAttachedRingSystemOutwardRetidy,
   runRingSubstituentTidy
 } from './ring-substituent.js';
 import { runRingTerminalHeteroTidy } from './ring-terminal-hetero.js';
@@ -16,18 +18,20 @@ import { runRingTerminalHeteroTidy } from './ring-terminal-hetero.js';
 const PRESENTATION_NEED_EPSILON = 1e-6;
 
 function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const attachedRingPeripheralPenalty = measureAttachedRingPeripheralFocusPenalty(layoutGraph, coords, bondLength);
   return {
     coords,
     nudges,
     steps,
     presentationPenalty: measureRingSubstituentPresentationPenalty(layoutGraph, coords),
+    attachedRingPeripheralPenalty,
     score:
-      typeof options.scoreCoordsFn === 'function'
-        ? {
-            coords,
-            ...(options.scoreCoordsFn(coords) ?? {})
-          }
-        : { coords }
+      {
+        coords,
+        attachedRingPeripheralPenalty,
+        ...(typeof options.scoreCoordsFn === 'function' ? (options.scoreCoordsFn(coords) ?? {}) : {})
+      }
   };
 }
 
@@ -87,11 +91,14 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
   }
   const audit = stageResult.audit ?? null;
   const presentationPenalty = stageResult.presentationPenalty ?? measureRingSubstituentPresentationPenalty(layoutGraph, stageResult.coords);
+  const attachedRingPeripheralPenalty = stageResult.attachedRingPeripheralPenalty
+    ?? measureAttachedRingPeripheralFocusPenalty(layoutGraph, stageResult.coords);
   return (
     (audit?.ringSubstituentReadabilityFailureCount ?? 0) > 0
     || (audit?.inwardRingSubstituentCount ?? 0) > 0
     || (audit?.outwardAxisRingSubstituentFailureCount ?? 0) > 0
     || (audit?.severeOverlapCount ?? 0) > 0
+    || attachedRingPeripheralPenalty > PRESENTATION_NEED_EPSILON
     || presentationPenalty > PRESENTATION_NEED_EPSILON
   );
 }
@@ -127,6 +134,8 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
  */
 export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {}) {
   let currentState = buildPresentationState(layoutGraph, inputCoords, 0, [], options);
+  let usedAttachedRingFallback = false;
+  let usedDirectAttachedRingRootRetidy = false;
 
   if (options.includeRingSubstituent !== false && hasOutstandingRingPresentationNeed(layoutGraph, currentState)) {
     currentState = evaluatePresentationStep(
@@ -159,10 +168,68 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     && descriptorSummary.attachedRingDescriptorCount > 0
     && hasOutstandingRingPresentationNeed(layoutGraph, currentState)
   ) {
+    const previousStepCount = currentState.steps.length;
     currentState = evaluatePresentationStep(
       layoutGraph,
       currentState,
       'attached-ring-fallback',
+      runAttachedRingRotationTouchup(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        frozenAtomIds: options.frozenAtomIds ?? null,
+        cleanupRigidSubtreesByAtomId: options.cleanupRigidSubtreesByAtomId,
+        protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true
+      }),
+      options
+    );
+    usedAttachedRingFallback = currentState.steps.length > previousStepCount;
+  }
+
+  if (
+    usedAttachedRingFallback
+    && options.includeRingSubstituent !== false
+    && hasOutstandingRingPresentationNeed(layoutGraph, currentState)
+  ) {
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'ring-substituent-retidy',
+      runRingSubstituentTidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        frozenAtomIds: options.frozenAtomIds ?? null
+      }),
+      options
+    );
+  }
+
+  if (
+    usedAttachedRingFallback
+    && hasOutstandingRingPresentationNeed(layoutGraph, currentState)
+  ) {
+    const previousStepCount = currentState.steps.length;
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'direct-attached-ring-root-retidy',
+      runDirectAttachedRingSystemOutwardRetidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        frozenAtomIds: options.frozenAtomIds ?? null
+      }),
+      options
+    );
+    usedDirectAttachedRingRootRetidy = currentState.steps.length > previousStepCount;
+  }
+
+  if (
+    usedAttachedRingFallback
+    && usedDirectAttachedRingRootRetidy
+    && options.includeAttachedRingFallback === true
+    && collectPresentationDescriptorSummary(layoutGraph, currentState.coords, options).attachedRingDescriptorCount > 0
+    && hasOutstandingRingPresentationNeed(layoutGraph, currentState)
+  ) {
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'attached-ring-fallback-retouch',
       runAttachedRingRotationTouchup(layoutGraph, currentState.coords, {
         bondLength: options.bondLength,
         frozenAtomIds: options.frozenAtomIds ?? null,
@@ -183,7 +250,7 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     steps: currentState.steps,
     attachedCarbonylDescriptorCount: finalDescriptorSummary.attachedCarbonylDescriptorCount,
     attachedRingDescriptorCount: finalDescriptorSummary.attachedRingDescriptorCount,
-    usedAttachedRingFallback: currentState.steps.some(step => step.name === 'attached-ring-fallback'),
+    usedAttachedRingFallback,
     stabilizationRequest:
       currentState.nudges > 0
         ? {
