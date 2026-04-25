@@ -5,7 +5,7 @@ import { formatChargeLabel, chargeBadgeMetrics, computeChargeBadgePlacement, com
 import { getBondEnOverlayData } from './bond-en-overlay.js';
 import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydrogenBondOverlayPlacement, pickBondOverlayLabelPlacement } from './bond-overlay-placement.js';
 import { getBondLengthsOverlayData } from './bond-lengths-overlay.js';
-import { atomNumberingLabelDistance, getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationAngle } from './atom-numbering.js';
+import { getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationPlacement } from './atom-numbering.js';
 import { organometallicGeometryKind, organometallicProjectedDisplayAssignmentCount } from '../../layout/engine/families/organometallic-geometry.js';
 
 /**
@@ -663,6 +663,7 @@ export function createForceSceneRenderer(ctx) {
 
     const forceEnData = getBondEnOverlayData(molecule);
     const forceLinkById = new Map(graph.links.map(link => [link.id, link]));
+    let forceBondEnPlacementBoxes = [];
     let forceBondEnLabels = null;
     if (forceEnData) {
       const enLayer = ctx.g.append('g').attr('class', 'force-bond-en').style('pointer-events', 'none');
@@ -683,6 +684,7 @@ export function createForceSceneRenderer(ctx) {
 
     function _updateForceBondEnLabels() {
       if (!forceBondEnLabels) {
+        forceBondEnPlacementBoxes = [];
         return;
       }
       const fontSize = getRenderOptions().bondEnFontSize;
@@ -706,6 +708,7 @@ export function createForceSceneRenderer(ctx) {
         });
       });
       const placed = _seedForceOverlayPlacedBoxes();
+      const placements = [];
       forceBondEnLabels.attr('transform', d => {
         const start = { x: d.link.source.x, y: d.link.source.y };
         const end = { x: d.link.target.x, y: d.link.target.y };
@@ -723,6 +726,7 @@ export function createForceSceneRenderer(ctx) {
             placedBoxes: placed
           });
           placed.push(placement);
+          placements.push(placement);
           return `translate(${placement.cx},${placement.cy})`;
         }
         const preferredSide = d.link.order === 2 || d.link.order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
@@ -744,12 +748,15 @@ export function createForceSceneRenderer(ctx) {
           })
         });
         placed.push(placement);
+        placements.push(placement);
         return `translate(${placement.cx},${placement.cy})`;
       });
+      forceBondEnPlacementBoxes = placements;
     }
     _updateForceBondEnLabels();
 
     const forceBondLengthsData = getBondLengthsOverlayData(molecule);
+    let forceBondLengthPlacementBoxes = [];
     let forceBondLengthLabels = null;
     if (forceBondLengthsData) {
       const blLayer = ctx.g.append('g').attr('class', 'force-bond-lengths').style('pointer-events', 'none');
@@ -771,6 +778,7 @@ export function createForceSceneRenderer(ctx) {
     }
     function _updateForceBondLengthLabels() {
       if (!forceBondLengthLabels) {
+        forceBondLengthPlacementBoxes = [];
         return;
       }
       const fontSize = getRenderOptions().bondLengthFontSize;
@@ -794,6 +802,7 @@ export function createForceSceneRenderer(ctx) {
         });
       });
       const placed = _seedForceOverlayPlacedBoxes();
+      const placements = [];
       forceBondLengthLabels.attr('transform', d => {
         const start = { x: d.link.source.x, y: d.link.source.y };
         const end = { x: d.link.target.x, y: d.link.target.y };
@@ -811,6 +820,7 @@ export function createForceSceneRenderer(ctx) {
             placedBoxes: placed
           });
           placed.push(placement);
+          placements.push(placement);
           return `translate(${placement.cx},${placement.cy})`;
         }
         const preferredSide = d.link.order === 2 || d.link.order === 1.5 ? -secondaryDir(atomA, atomB, molecule, pointForForceAtom) : 1;
@@ -832,8 +842,10 @@ export function createForceSceneRenderer(ctx) {
           })
         });
         placed.push(placement);
+        placements.push(placement);
         return `translate(${placement.cx},${placement.cy})`;
       });
+      forceBondLengthPlacementBoxes = placements;
     }
     _updateForceBondLengthLabels();
 
@@ -875,6 +887,7 @@ export function createForceSceneRenderer(ctx) {
       if (!forceAtomNumberLabels) {
         return;
       }
+      const placed = [...forceBondEnPlacementBoxes, ...forceBondLengthPlacementBoxes];
       forceAtomNumberLabels.attr('transform', d => {
         const { node, neighbors, links, label } = d;
         const blockedSectors = neighbors.map(nb => {
@@ -911,9 +924,15 @@ export function createForceSceneRenderer(ctx) {
             }
           }
         }
-        const angle = pickAtomAnnotationAngle(blockedSectors);
-        const labelDistance = atomNumberingLabelDistance(getRenderOptions().atomNumberingFontSize, label);
-        return `translate(${node.x + Math.cos(angle) * labelDistance},${node.y + Math.sin(angle) * labelDistance})`;
+        const placement = pickAtomAnnotationPlacement({
+          center: { x: node.x, y: node.y },
+          label,
+          fontSize: getRenderOptions().atomNumberingFontSize,
+          blockedSectors,
+          placedBoxes: placed
+        });
+        placed.push(placement);
+        return `translate(${placement.cx},${placement.cy})`;
       });
     }
     _updateForceAtomNumberLabels();

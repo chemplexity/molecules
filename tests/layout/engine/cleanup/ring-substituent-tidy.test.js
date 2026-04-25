@@ -216,6 +216,25 @@ describe('layout/engine/cleanup/ring-substituent-tidy', () => {
     assert.ok(Math.abs(beforeAngle - afterAngle) < 1e-6);
   });
 
+  it('leaves compact hypervalent ring branches alone once the pipeline has made the ring exit exact', () => {
+    const smiles = 'Clc1ccccc1CCNC(=O)Cn2ccc3cc(ccc23)S(=O)(=O)N4CCCCCC4';
+    const result = runPipeline(parseSMILES(smiles), { suppressH: true });
+    const beforeFirstAngle = bondAngle(result.coords, 'C20', 'C19', 'S23');
+    const beforeSecondAngle = bondAngle(result.coords, 'C18', 'C19', 'S23');
+    const tidied = runRingSubstituentTidy(result.layoutGraph, result.coords, {
+      bondLength: result.layoutGraph.options.bondLength,
+      maxPasses: 2
+    });
+    const afterFirstAngle = bondAngle(tidied.coords, 'C20', 'C19', 'S23');
+    const afterSecondAngle = bondAngle(tidied.coords, 'C18', 'C19', 'S23');
+
+    assert.ok(Math.abs(beforeFirstAngle - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(beforeSecondAngle - (2 * Math.PI) / 3) < 1e-6);
+    assert.equal(tidied.nudges, 0);
+    assert.ok(Math.abs(afterFirstAngle - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(afterSecondAngle - (2 * Math.PI) / 3) < 1e-6);
+  });
+
   it('assigns a continuous soft penalty to aromatic substituents even below the hard readability cutoff', () => {
     const smiles = 'COc1ccccc1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

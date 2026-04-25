@@ -59,6 +59,17 @@ function scoreCandidateAngle(candidateAngle, occupiedAngles, preferredAngles) {
   return minSeparation * 100 - preferredPenalty;
 }
 
+function minimumPreferredDeviation(candidateAngle, preferredAngles) {
+  let preferredDeviation = Infinity;
+  for (const preferredAngle of preferredAngles ?? []) {
+    const deviation = angularDifference(candidateAngle, preferredAngle);
+    if (deviation < preferredDeviation) {
+      preferredDeviation = deviation;
+    }
+  }
+  return preferredDeviation;
+}
+
 /**
  * Filters candidate angles through an optional anchor-specific angular budget.
  * @param {number[]} candidateAngles - Candidate angles in radians.
@@ -603,6 +614,66 @@ export function isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtom
 
   const multipleBondNeighborId = parentOrder >= 2 ? parentAtomId : childAtomId;
   return layoutGraph.atoms.get(multipleBondNeighborId)?.element === 'C';
+}
+
+/**
+ * Returns whether a visible three-heavy trigonal carbon should keep the exact
+ * local bisector for its remaining single-bond branch. This covers non-ring
+ * alkene/carbonyl-like carbons whose final visible branch can otherwise fall
+ * into an arbitrary 90/150 split once only the multiple bond is protected by
+ * the exact-angle rules.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string|null} childAtomId - Candidate child atom ID.
+ * @returns {boolean} True when the child should use the exact trigonal bisector.
+ */
+export function isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId, childAtomId) {
+  if (!layoutGraph || !childAtomId) {
+    return false;
+  }
+  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0) {
+    return false;
+  }
+
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (
+    !anchorAtom
+    || anchorAtom.element !== 'C'
+    || anchorAtom.aromatic
+    || anchorAtom.heavyDegree !== 3
+    || anchorAtom.degree !== 3
+  ) {
+    return false;
+  }
+
+  const childBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
+  if (
+    !childBond
+    || childBond.kind !== 'covalent'
+    || childBond.aromatic
+    || (childBond.order ?? 1) !== 1
+  ) {
+    return false;
+  }
+
+  let heavyVisibleBondCount = 0;
+  let nonAromaticMultipleBondCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    heavyVisibleBondCount++;
+    if (!bond.aromatic && (bond.order ?? 1) >= 2) {
+      nonAromaticMultipleBondCount++;
+    }
+  }
+
+  return heavyVisibleBondCount === 3 && nonAromaticMultipleBondCount === 1;
 }
 
 /**
@@ -1377,6 +1448,45 @@ export function pickBestCandidateAngle(candidates, bondLength, preferClearance =
   return bestCandidate.angle;
 }
 
+function pickClosestPreferredCandidateAngle(candidates, bondLength, preferredAngles, clearanceContext = null) {
+  if (candidates.length === 0) {
+    return null;
+  }
+  if (clearanceContext) {
+    for (const candidate of candidates) {
+      if (!Number.isFinite(candidate.clearanceScore)) {
+        candidate.clearanceScore = candidateClearanceScore(clearanceContext.anchorPosition, candidate.angle, bondLength, clearanceContext.coords, clearanceContext.excludedAtomIds);
+      }
+    }
+  }
+
+  let bestCandidate = candidates[0];
+  let bestPreferredDeviation = minimumPreferredDeviation(bestCandidate.angle, preferredAngles);
+  for (let index = 1; index < candidates.length; index++) {
+    const candidate = candidates[index];
+    const preferredDeviation = minimumPreferredDeviation(candidate.angle, preferredAngles);
+    if (preferredDeviation < bestPreferredDeviation - 1e-9) {
+      bestCandidate = candidate;
+      bestPreferredDeviation = preferredDeviation;
+      continue;
+    }
+    if (Math.abs(preferredDeviation - bestPreferredDeviation) > 1e-9) {
+      continue;
+    }
+    if (candidate.clearanceScore > bestCandidate.clearanceScore) {
+      bestCandidate = candidate;
+      continue;
+    }
+    if (
+      candidate.clearanceScore === bestCandidate.clearanceScore
+      && candidate.centerDistanceScore > bestCandidate.centerDistanceScore
+    ) {
+      bestCandidate = candidate;
+    }
+  }
+  return bestCandidate.angle;
+}
+
 /**
  * Scores candidate branch angles against occupied directions, placement CoM, and incident ring faces.
  * @param {number[]} candidateAngles - Candidate angles in radians.
@@ -1420,6 +1530,7 @@ export function evaluateAngleCandidates(candidateAngles, occupiedAngles, preferr
  * @param {boolean} [allowFinePreferredAngles] - Whether to add finer offsets around preferred angles.
  * @param {boolean} [allowDirectPreferredAngle] - Whether to try the preferred angle itself as a direct candidate.
  * @param {object|null} [atomGrid] - Optional spatial grid used for clearance checks.
+ * @param {boolean} [preferFinePreferredAnglesBeforeFallback] - Whether safe fine offsets around preferred angles should beat generic fallbacks.
  * @returns {number} Chosen continuation angle in radians.
  */
 export function chooseContinuationAngle(
@@ -1434,7 +1545,8 @@ export function chooseContinuationAngle(
   ringPolygons = [],
   allowFinePreferredAngles = false,
   allowDirectPreferredAngle = true,
-  atomGrid = null
+  atomGrid = null,
+  preferFinePreferredAnglesBeforeFallback = false
 ) {
   const clearanceContext = {
     anchorPosition,
@@ -1470,6 +1582,34 @@ export function chooseContinuationAngle(
     }
     if (safePreferredCandidates.length > 0 && bestPreferredInsideRingCount === 0 && bestPreferredSeparation >= Math.PI / 6) {
       return pickBestCandidateAngle(safePreferredCandidates, bondLength, true, clearanceContext);
+    }
+  }
+  if (allowFinePreferredAngles && preferFinePreferredAnglesBeforeFallback && preferredCandidateAngles.length > 0) {
+    const finePreferredCandidates = evaluateAngleCandidates(
+      buildFinePreferredCandidateAngles(preferredAngles),
+      occupiedAngles,
+      preferredAngles,
+      anchorPosition,
+      bondLength,
+      coords,
+      excludedAtomIds,
+      placementState,
+      ringPolygons,
+      atomGrid
+    );
+    const viableFinePreferredCandidates = finePreferredCandidates.filter(candidate =>
+      candidate.isSafe !== false
+      && (candidate.insideRingCount ?? 0) === 0
+      && (candidate.minSeparation ?? 0) >= Math.PI / 6
+    );
+    const finePreferredAngle = pickClosestPreferredCandidateAngle(
+      viableFinePreferredCandidates,
+      bondLength,
+      preferredAngles,
+      clearanceContext
+    );
+    if (finePreferredAngle != null) {
+      return finePreferredAngle;
     }
   }
   const primaryCandidates = evaluateAngleCandidates(
@@ -1700,6 +1840,11 @@ function compareAngleSets(firstAngleSet, secondAngleSet) {
   return firstAngleSet.length - secondAngleSet.length;
 }
 
+function isProjectedTetrahedralLeafNeighbor(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms?.get(atomId);
+  return Boolean(atom && atom.element !== 'H' && (atom.heavyDegree ?? 0) === 1);
+}
+
 /**
  * Returns projected-tetrahedral candidate angle sets for the current batch of
  * neighbors while reserving any remaining heavy slots for future placement
@@ -1727,6 +1872,9 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
     .filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
   const inBatchNeighborIds = assigningNeighborIds.filter(neighborAtomId => heavyNeighborIds.includes(neighborAtomId));
   const placedNeighborIds = currentPlacedNeighborIds.filter(neighborAtomId => heavyNeighborIds.includes(neighborAtomId) && coords.has(neighborAtomId));
+  const deferredHeavyNeighborIds = heavyNeighborIds.filter(
+    neighborAtomId => !placedNeighborIds.includes(neighborAtomId) && !inBatchNeighborIds.includes(neighborAtomId)
+  );
   const deferredHeavyNeighborCount = heavyNeighborIds.length - placedNeighborIds.length - inBatchNeighborIds.length;
   if (deferredHeavyNeighborCount < 0 || placedNeighborIds.length + inBatchNeighborIds.length + deferredHeavyNeighborCount !== 4) {
     return [];
@@ -1740,6 +1888,13 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
   if (inBatchNeighborIds.length > 1 && !isProjectedLeafBatch) {
     return [];
   }
+  const shouldReserveOppositeSlotForDeferredLeaves =
+    placedNeighborIds.length === 1
+    && inBatchNeighborIds.length === 1
+    && deferredHeavyNeighborIds.length === 2
+    && !isProjectedTetrahedralLeafNeighbor(layoutGraph, placedNeighborIds[0])
+    && !isProjectedTetrahedralLeafNeighbor(layoutGraph, inBatchNeighborIds[0])
+    && deferredHeavyNeighborIds.every(neighborAtomId => isProjectedTetrahedralLeafNeighbor(layoutGraph, neighborAtomId));
 
   const anchorPosition = coords.get(anchorAtomId);
   const placedNeighborAngles = placedNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition)));
@@ -1768,6 +1923,13 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
         .map((_, slotIndex) => slotIndex)
         .filter(slotIndex => !assignedSlotIndexes.has(slotIndex));
       for (const chosenSlotIndexes of slotIndexCombinations(freeSlotIndexes, inBatchNeighborIds.length)) {
+        if (
+          shouldReserveOppositeSlotForDeferredLeaves
+          && chosenSlotIndexes.length === 1
+          && chosenSlotIndexes[0] === ((assignment[0] + 2) % PROJECTED_TETRAHEDRAL_SLOT_OFFSETS.length)
+        ) {
+          continue;
+        }
         const angleSet = chosenSlotIndexes
           .map(slotIndex => targetAngles[slotIndex])
           .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
@@ -2204,6 +2366,12 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
     return smallRingExteriorAngles;
   }
   const childBond = childAtomId ? findLayoutBond(layoutGraph, anchorAtomId, childAtomId) : null;
+  const exactVisibleTrigonalBisectorAngle =
+    placedNeighborIdsList.length === 2
+    && childBond
+    && !childBond.aromatic
+    && (childBond.order ?? 1) === 1
+    && isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId, childAtomId);
   if (
     placedNeighborIdsList.length === 2
     && childBond
@@ -2211,6 +2379,7 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
     && (
       (childBond.order ?? 1) >= 2
       || shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId)
+      || exactVisibleTrigonalBisectorAngle
     )
   ) {
     const trigonalBisectorAngle = preferredTrigonalBisectorAngle(coords, anchorAtomId, placedNeighborIdsList);
@@ -2296,9 +2465,16 @@ export function chooseAttachmentAngle(adjacency, coords, anchorAtomId, atomIdsTo
       && !childBond.aromatic
       && (childBond.order ?? 1) === 1
       && shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId);
+    const exactVisibleTrigonalBisectorAngle =
+      placedNeighborIdsList.length === 2
+      && childBond
+      && !childBond.aromatic
+      && (childBond.order ?? 1) === 1
+      && isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId, attachedAtomId);
     if (
       exactDirectAttachedRingJunctionAngle != null
       || exactOmittedHydrogenTrigonalAngle
+      || exactVisibleTrigonalBisectorAngle
       || isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, attachedAtomId)
       || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, attachedAtomId)
       || isExactRingTrigonalBisectorEligible(layoutGraph, anchorAtomId, attachedAtomId)

@@ -561,7 +561,13 @@ function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAt
       }
 
       const reverseAnchorAtomId = linkedRingRepresentative?.downstreamAnchorAtomId ?? rootAtomId;
-      const isRingSystemSubstituent = linkedRingRepresentative != null || substituentChild.representativeAtomIds.length > 1;
+      // A downstream representative may itself be a ring (for example a sulfone
+      // or amide root that leads into a terminal piperidine), but that does not
+      // make the root bond a direct ring-to-ring attachment. Reserve the
+      // ring-system-specific cleanup path for true direct-attached or linked
+      // ring exits so ordinary rigid branches do not oscillate between mirrored
+      // poses across tidy passes.
+      const isRingSystemSubstituent = linkedRingRepresentative != null || isDirectAttachedRingSystemSubstituent;
       const representativeAtomIds =
         linkedRingRepresentative?.representativeAtomIds
         ?? linkedSubtreeRepresentative?.representativeAtomIds
@@ -1292,6 +1298,7 @@ function isBetterDirectAttachedRingRootRetidyCandidate(candidate, incumbent) {
  */
 export function measureRingSubstituentPresentationPenalty(layoutGraph, coords, options = {}) {
   const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
+  const includeLinkedRingBridgePenalty = options.includeLinkedRingBridgePenalty === true;
   const descriptors = collectTidyeableDescriptors(layoutGraph, coords, null, focusAtomIds, options);
   let totalDeviation = 0;
 
@@ -1352,6 +1359,13 @@ export function measureRingSubstituentPresentationPenalty(layoutGraph, coords, o
       && rootAtom
       && IDEAL_RING_LINKER_ELEMENTS.has(rootAtom.element)
       && rootAtom.heavyDegree === 2;
+    const linkedRingBridgeDeviation =
+      includeLinkedRingBridgePenalty && isIdealLinkedRingDescriptor
+        ? linkedRingBridgeAngleDeviation(anchorPosition, rootPosition, reverseAnchorPosition)
+        : null;
+    if (Number.isFinite(linkedRingBridgeDeviation)) {
+      totalDeviation += linkedRingBridgeDeviation;
+    }
     if (
       !isIdealLeafDescriptor
       && !isIdealLinkedRingDescriptor

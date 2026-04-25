@@ -241,6 +241,7 @@ const server = http.createServer((req, res) => {
       suppressH: true,
       bondLength: 1.5,
       maxCleanupPasses: 6,
+      finalLandscapeOrientation: true,
       debug: {
         onStep: (label, description, coords, stepMetadata) => {
           const now = performance.now();
@@ -305,7 +306,8 @@ const server = http.createServer((req, res) => {
           audit: {
             ok: meta.audit?.ok,
             severeOverlapCount: meta.audit?.severeOverlapCount ?? 0,
-            meanBondLengthDeviation: meta.audit?.meanBondLengthDeviation ?? 0
+            meanBondLengthDeviation: meta.audit?.meanBondLengthDeviation ?? 0,
+            fallback: meta.audit?.fallback ?? null
           }
         }
       });

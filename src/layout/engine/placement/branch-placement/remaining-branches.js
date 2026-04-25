@@ -21,10 +21,12 @@ import {
   evaluateAngleCandidates,
   filterAnglesByBudget,
   findLayoutBond,
+  hasNonAromaticMultipleBond,
   incidentRingPolygons,
   isExactSmallRingExteriorContinuationEligible,
   isExactRingTrigonalBisectorEligible,
   isExactSimpleAcyclicContinuationEligible,
+  isExactVisibleTrigonalBisectorEligible,
   isExactRingOutwardEligibleSubstituent,
   isTerminalMultipleBondLeaf,
   mergeCandidateAngles,
@@ -36,7 +38,9 @@ import {
   shouldPromotePreferredRingAngle,
   supportsProjectedTetrahedralGeometry
 } from './angle-selection.js';
-import { chooseBatchAngleAssignments, shouldUseGreedyBranchPlacement } from './permutations.js';
+import { chooseBatchAngleAssignments, chooseSingleBranchAngleWithLookahead, shouldUseGreedyBranchPlacement } from './permutations.js';
+
+const SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS = 64;
 
 /**
  * Returns whether an anchor still has an unplaced heavy neighbor outside the
@@ -109,6 +113,63 @@ function incidentRingPolygonsForAnchor(layoutGraph, coords, anchorAtomId, placem
   return placementContext.ringPolygonsByAnchor.get(anchorAtomId);
 }
 
+/**
+ * Returns whether the recursive single-child lookahead is bounded enough for
+ * the current placement slice. The lookahead is useful for compact
+ * carboxylate-like sidechains, but large peptide-scale slices can spend most
+ * of their runtime recursively re-placing whole downstream subtrees.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Set<string>} atomIdsToPlace - Eligible atom IDs in the current placement slice.
+ * @returns {boolean} True when single-branch lookahead may run.
+ */
+function allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace) {
+  return (
+    (layoutGraph?.traits?.heavyAtomCount ?? 0) <= SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS
+    && (atomIdsToPlace?.size ?? 0) <= SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS
+  );
+}
+
+function shouldPreferFineAlkylTailRescue(layoutGraph, anchorAtomId, parentAtomId, childAtomId, currentPlacedNeighborIds, preferredAngles) {
+  if (
+    !layoutGraph
+    || !parentAtomId
+    || !childAtomId
+    || currentPlacedNeighborIds.length !== 1
+    || preferredAngles.length < 2
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+    || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (
+    !anchorAtom
+    || !childAtom
+    || anchorAtom.element !== 'C'
+    || childAtom.element !== 'C'
+    || anchorAtom.aromatic
+    || childAtom.aromatic
+    || anchorAtom.heavyDegree !== 2
+  ) {
+    return false;
+  }
+
+  const parentBond = findLayoutBond(layoutGraph, anchorAtomId, parentAtomId);
+  const childBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
+  return (
+    !!parentBond
+    && !!childBond
+    && parentBond.kind === 'covalent'
+    && childBond.kind === 'covalent'
+    && !parentBond.aromatic
+    && !childBond.aromatic
+    && (parentBond.order ?? 1) === 1
+    && (childBond.order ?? 1) === 1
+  );
+}
+
 function placeNeighborSequence(
   adjacency,
   canonicalAtomRank,
@@ -139,6 +200,7 @@ function placeNeighborSequence(
     const preferredAngles = preferredBranchAngles(adjacency, coords, anchorAtomId, atomIdsToPlace, parentAtomId, childAtomId, layoutGraph);
     const excludedAtomIds = new Set([anchorAtomId, ...currentPlacedNeighborIds]);
     const childIsHydrogen = isHydrogenAtom(layoutGraph, childAtomId);
+    const childSubtreeSize = childIsHydrogen ? 0 : subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId);
     const scoringPreferredAngles = childIsHydrogen ? [] : resolvedPreferredAngles(anchorAtomId, preferredAngles, branchConstraints);
     const constrainedPreferredAngles = mergeCandidateAngles(
       filterAnglesByBudget(scoringPreferredAngles, anchorAtomId, branchConstraints),
@@ -160,6 +222,14 @@ function placeNeighborSequence(
       && !childBond.aromatic
       && (childBond.order ?? 1) === 1
       && shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId);
+    const shouldHonorVisibleTrigonalBisectorAngle =
+      preferredAngles.length > 0
+      && !childIsHydrogen
+      && currentPlacedNeighborIds.length === 2
+      && childBond != null
+      && !childBond.aromatic
+      && (childBond.order ?? 1) === 1
+      && isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId, childAtomId);
     const shouldHonorPreferredAngle =
       preferredAngles.length > 0
       && !childIsHydrogen
@@ -168,6 +238,7 @@ function placeNeighborSequence(
         || isRingAnchor(layoutGraph, anchorAtomId)
         || shouldHonorProjectedTetrahedralAngle
         || shouldHonorOmittedHydrogenTrigonalAngle
+        || shouldHonorVisibleTrigonalBisectorAngle
       );
     const allowFinePreferredAngles = shouldHonorPreferredAngle && isRingAnchor(layoutGraph, anchorAtomId);
     const shouldForceExactTrigonalAngle =
@@ -184,9 +255,19 @@ function placeNeighborSequence(
       && isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtomId, parentAtomId, childAtomId);
     const shouldForceExactOmittedHydrogenTrigonalAngle =
       shouldHonorOmittedHydrogenTrigonalAngle;
+    const shouldForceExactVisibleTrigonalAngle =
+      shouldHonorVisibleTrigonalBisectorAngle;
     const shouldForceExactProjectedTetrahedralAngle =
       shouldHonorProjectedTetrahedralAngle
       && currentPlacedNeighborIds.length >= 2;
+    const shouldUseFineAlkylTailRescue = shouldPreferFineAlkylTailRescue(
+      layoutGraph,
+      anchorAtomId,
+      parentAtomId,
+      childAtomId,
+      currentPlacedNeighborIds,
+      constrainedPreferredAngles
+    );
     const allowDirectPreferredAngle =
       !shouldHonorPreferredAngle
       || shouldPromotePreferredRingAngle(layoutGraph, anchorAtomId, childAtomId)
@@ -194,6 +275,7 @@ function placeNeighborSequence(
       || shouldForceExactRingTrigonalBisectorAngle
       || shouldForceExactSimpleAcyclicAngle
       || shouldForceExactOmittedHydrogenTrigonalAngle
+      || shouldForceExactVisibleTrigonalAngle
       || shouldForceExactProjectedTetrahedralAngle
       || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId);
     const exactPreferredAngle =
@@ -203,6 +285,7 @@ function placeNeighborSequence(
         || shouldForceExactRingTrigonalBisectorAngle
         || shouldForceExactSimpleAcyclicAngle
         || shouldForceExactOmittedHydrogenTrigonalAngle
+        || shouldForceExactVisibleTrigonalAngle
         || shouldForceExactProjectedTetrahedralAngle
       )
         ? chooseExactPreferredAngle(
@@ -243,15 +326,52 @@ function placeNeighborSequence(
             excludedAtomIds,
             placementState,
             ringPolygons,
-            allowFinePreferredAngles,
+            allowFinePreferredAngles || shouldUseFineAlkylTailRescue,
             allowDirectPreferredAngle,
-            atomGrid
+            atomGrid,
+            shouldUseFineAlkylTailRescue
           )
         : pickBestCandidateAngle(fallbackCandidates, bondLength, !childIsHydrogen, {
             anchorPosition,
             coords,
             excludedAtomIds
           }));
+    const shouldUseSingleBranchLookahead =
+      !childIsHydrogen
+      && allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace)
+      && childBond != null
+      && !childBond.aromatic
+      && (childBond.order ?? 1) === 1
+      && currentPlacedNeighborIds.length === 1
+      && constrainedPreferredAngles.length >= 2
+      && childSubtreeSize >= 3
+      && hasNonAromaticMultipleBond(layoutGraph, childAtomId);
+    if (shouldUseSingleBranchLookahead) {
+      const lookaheadAngle = chooseSingleBranchAngleWithLookahead(
+        adjacency,
+        canonicalAtomRank,
+        coords,
+        placementState,
+        atomIdsToPlace,
+        anchorAtomId,
+        parentAtomId,
+        childAtomId,
+        mergeCandidateAngles([chosenAngle], constrainedPreferredAngles),
+        bondLength,
+        placeChildren,
+        layoutGraph,
+        branchConstraints,
+        depth,
+        {
+          childAtomId,
+          subtreeSize: childSubtreeSize
+        }
+      );
+      if (lookaheadAngle != null) {
+        occupiedAngles.push(lookaheadAngle);
+        continue;
+      }
+    }
     setPlacedPosition(coords, placementState, childAtomId, add(anchorPosition, fromAngle(chosenAngle, bondLength)), layoutGraph);
     if (atomGrid) {
       const childPos = coords.get(childAtomId);

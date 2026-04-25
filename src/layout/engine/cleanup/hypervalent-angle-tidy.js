@@ -154,16 +154,20 @@ function movableCompactHypervalentLigandSubtreeAtomIds(layoutGraph, centerAtomId
     !ligandAtom
     || ligandAtom.element === 'H'
     || !coords.has(ligandAtomId)
-    || (layoutGraph.atomToRings.get(ligandAtomId)?.length ?? 0) > 0
   ) {
     return null;
   }
 
   const subtreeAtomIds = [...collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
+  const ringSystemIds = new Set(
+    subtreeAtomIds
+      .map(subtreeAtomId => layoutGraph.atomToRingSystemId?.get(subtreeAtomId) ?? null)
+      .filter(ringSystemId => ringSystemId != null)
+  );
   if (
     subtreeAtomIds.length === 0
     || subtreeAtomIds.length > MAX_COMPACT_HYPERVALENT_LIGAND_SUBTREE_ATOMS
-    || subtreeAtomIds.some(subtreeAtomId => (layoutGraph.atomToRings.get(subtreeAtomId)?.length ?? 0) > 0)
+    || ringSystemIds.size > 1
   ) {
     return null;
   }
@@ -214,6 +218,48 @@ function weightedAngleCost(currentAngles, movableNeighborIds, neighborAtomId, ta
   return weight * angularDistance(currentAngles.get(neighborAtomId), targetAngle) ** 2;
 }
 
+function orthogonalTargetPermutations(descriptor) {
+  if (descriptor?.kind !== 'bis-oxo') {
+    return [
+      [0, 1, 2, 3],
+      [0, 1, 3, 2],
+      [0, 2, 1, 3],
+      [0, 2, 3, 1],
+      [0, 3, 1, 2],
+      [0, 3, 2, 1],
+      [1, 0, 2, 3],
+      [1, 0, 3, 2],
+      [1, 2, 0, 3],
+      [1, 2, 3, 0],
+      [1, 3, 0, 2],
+      [1, 3, 2, 0],
+      [2, 0, 1, 3],
+      [2, 0, 3, 1],
+      [2, 1, 0, 3],
+      [2, 1, 3, 0],
+      [2, 3, 0, 1],
+      [2, 3, 1, 0],
+      [3, 0, 1, 2],
+      [3, 0, 2, 1],
+      [3, 1, 0, 2],
+      [3, 1, 2, 0],
+      [3, 2, 0, 1],
+      [3, 2, 1, 0]
+    ];
+  }
+
+  const permutations = [];
+  for (const singlePair of [[0, 2], [1, 3]]) {
+    const multiplePair = [0, 1, 2, 3].filter(slotIndex => !singlePair.includes(slotIndex));
+    for (const singleOrder of [[singlePair[0], singlePair[1]], [singlePair[1], singlePair[0]]]) {
+      for (const multipleOrder of [[multiplePair[0], multiplePair[1]], [multiplePair[1], multiplePair[0]]]) {
+        permutations.push([...singleOrder, ...multipleOrder]);
+      }
+    }
+  }
+  return permutations;
+}
+
 function fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds) {
   const neighborAtomIds = [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds];
   if (neighborAtomIds.length !== 4) {
@@ -221,32 +267,7 @@ function fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds) {
   }
 
   const slotOffsets = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
-  const permutations = [
-    [0, 1, 2, 3],
-    [0, 1, 3, 2],
-    [0, 2, 1, 3],
-    [0, 2, 3, 1],
-    [0, 3, 1, 2],
-    [0, 3, 2, 1],
-    [1, 0, 2, 3],
-    [1, 0, 3, 2],
-    [1, 2, 0, 3],
-    [1, 2, 3, 0],
-    [1, 3, 0, 2],
-    [1, 3, 2, 0],
-    [2, 0, 1, 3],
-    [2, 0, 3, 1],
-    [2, 1, 0, 3],
-    [2, 1, 3, 0],
-    [2, 3, 0, 1],
-    [2, 3, 1, 0],
-    [3, 0, 1, 2],
-    [3, 0, 2, 1],
-    [3, 1, 0, 2],
-    [3, 1, 2, 0],
-    [3, 2, 0, 1],
-    [3, 2, 1, 0]
-  ];
+  const permutations = orthogonalTargetPermutations(descriptor);
   const candidateAlphas = neighborAtomIds.flatMap(neighborAtomId =>
     slotOffsets.map(slotOffset => currentAngles.get(neighborAtomId) - slotOffset)
   );

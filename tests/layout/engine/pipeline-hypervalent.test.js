@@ -35,6 +35,24 @@ function assertOrthogonalCross(result, centerAtomIds) {
   }
 }
 
+function assertOppositePair(result, centerAtomId, firstNeighborAtomId, secondNeighborAtomId) {
+  const centerPosition = result.coords.get(centerAtomId);
+  const firstAngle = angleOf(sub(result.coords.get(firstNeighborAtomId), centerPosition));
+  const secondAngle = angleOf(sub(result.coords.get(secondNeighborAtomId), centerPosition));
+  const rawSeparation = ((Math.abs(firstAngle - secondAngle) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const separation = Math.min(rawSeparation, Math.PI * 2 - rawSeparation);
+  assert.ok(Math.abs(separation - Math.PI) < 1e-6);
+}
+
+function assertBondAngle(result, firstAtomId, centerAtomId, secondAtomId, expectedAngle) {
+  const centerPosition = result.coords.get(centerAtomId);
+  const firstAngle = angleOf(sub(result.coords.get(firstAtomId), centerPosition));
+  const secondAngle = angleOf(sub(result.coords.get(secondAtomId), centerPosition));
+  const separation = ((Math.abs(firstAngle - secondAngle) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const foldedSeparation = Math.min(separation, Math.PI * 2 - separation);
+  assert.ok(Math.abs(foldedSeparation - expectedAngle) < 1e-6);
+}
+
 describe('layout/engine/pipeline — hypervalent cleanup', () => {
   it('orthogonalizes monoxo phosphonate leaf ligands in mixed fused layouts', () => {
     const result = runPipeline(parseSMILES('OC(CC1=CC(=CC=C1)C1=CC=CC2=C1OC1=C2C=CC=C1)(P(O)(O)=O)P(O)(O)=O'), {
@@ -120,5 +138,21 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.equal(result.metadata.cleanupTelemetry.selectedStageCategory, 'specialist');
     assert.equal(phosphorusAtomIds.length, 1);
     assertOrthogonalCross(result, phosphorusAtomIds);
+  });
+
+  it('keeps bis-oxo sulfones with aryl and amine single-bond ligands on the correct opposite axis', () => {
+    const result = runPipeline(parseSMILES('Clc1ccccc1CCNC(=O)Cn2ccc3cc(ccc23)S(=O)(=O)N4CCCCCC4'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assertOppositePair(result, 'S23', 'C19', 'N26');
+    assertOppositePair(result, 'S23', 'O24', 'O25');
+    assertBondAngle(result, 'C18', 'C19', 'S23', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'C20', 'C19', 'S23', (2 * Math.PI) / 3);
   });
 });

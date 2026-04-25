@@ -1,5 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { layoutAcyclicFamily } from '../../../../src/layout/engine/families/acyclic.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
@@ -376,6 +377,24 @@ describe('layout/engine/families/acyclic', () => {
         }
       }
     }
+  });
+
+  it('looks ahead through carboxylate sidechain roots so downstream oxygens stay off existing hetero branches', () => {
+    const graph = createLayoutGraph(parseSMILES('OCC(O)C[NH+](CCN(CCS([O-])(=O)=O)CC([O-])=O)CC([O-])=O'), { suppressH: true });
+    const atomIdsToPlace = new Set(graph.components[0].atomIds);
+    const coords = layoutAcyclicFamily(
+      buildAdjacency(graph, atomIdsToPlace),
+      atomIdsToPlace,
+      graph.canonicalAtomRank,
+      graph.options.bondLength,
+      { layoutGraph: graph }
+    );
+    const audit = auditLayout(graph, coords, { bondLength: graph.options.bondLength });
+
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.ok(Math.abs(bondAngle(coords, 'N6', 'C21', 'C22') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(coords, 'C21', 'C22', 'O23') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(coords, 'C21', 'C22', 'O24') - 120) < 1e-6);
   });
 
   it('keeps terminal alkene carbon leaves on exact trigonal-planar angles when attached to an acyclic backbone', () => {

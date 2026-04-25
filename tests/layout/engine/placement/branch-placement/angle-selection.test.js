@@ -5,7 +5,8 @@ import { createLayoutGraph } from '../../../../../src/layout/engine/model/layout
 import {
   chooseContinuationAngle,
   isExactRingOutwardEligibleSubstituent,
-  isExactSimpleAcyclicContinuationEligible
+  isExactSimpleAcyclicContinuationEligible,
+  isExactVisibleTrigonalBisectorEligible
 } from '../../../../../src/layout/engine/placement/branch-placement/angle-selection.js';
 import { angularDifference, fromAngle } from '../../../../../src/layout/engine/geometry/vec2.js';
 
@@ -26,6 +27,13 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
 
     assert.equal(isExactSimpleAcyclicContinuationEligible(graph, 'N13', 'C11', 'C14'), true);
     assert.equal(isExactSimpleAcyclicContinuationEligible(graph, 'N25', 'C23', 'C26'), false);
+  });
+
+  it('treats visible non-ring trigonal carbons as exact bisector candidates for their last single-bond branch', () => {
+    const graph = createLayoutGraph(parseSMILES('CC\\C(=C/1\\N=C(OC1=O)c2ccc(Cl)cc2Cl)\\N3CCC[C@H]3C(=O)N[C@@H](<Cc4ccc(O)cc4>)C(=O)N'), { suppressH: true });
+
+    assert.equal(isExactVisibleTrigonalBisectorEligible(graph, 'C3', 'N18'), true);
+    assert.equal(isExactVisibleTrigonalBisectorEligible(graph, 'C3', 'C4'), false);
   });
 
   it('limits exact ring-outward placement to rigid carbon roots instead of flexible chain carbons', () => {

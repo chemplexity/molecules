@@ -20,6 +20,7 @@ function pairKey(firstAtomId, secondAtomId) {
 const SUBTREE_BOND_CROWDING_FACTOR = 0.5;
 const SUBTREE_BOND_CROWDING_WEIGHT = 25;
 const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
+const LINKED_RING_REPRESENTATIVE_OUTWARD_READABILITY_SLACK = Math.PI / 180;
 
 function isConjugatedTrigonalHeavyNeighbor(layoutGraph, atomId) {
   const atom = layoutGraph.atoms.get(atomId);
@@ -744,10 +745,17 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
           : null;
       const severeImmediateOutwardFailure =
         severeImmediateOutwardDeviation != null && severeImmediateOutwardDeviation > maxSevereImmediateOutwardDeviation;
+      const linkedRepresentativeOutwardFailureRelaxed =
+        childDescriptor.representativeAtomIds.length > 1
+        && severeImmediateOutwardDeviation != null
+        && severeImmediateOutwardDeviation <= 1e-6
+        && Number.isFinite(forwardSide.outwardDeviation)
+        && forwardSide.outwardDeviation <= maxOutwardDeviation + LINKED_RING_REPRESENTATIVE_OUTWARD_READABILITY_SLACK;
+      const forwardOutwardAxisFailure = forwardSide.outwardAxisFailure && !linkedRepresentativeOutwardFailureRelaxed;
       if (forwardSide.insideIncidentRing) {
         failingSubstituentCount++;
         inwardSubstituentCount++;
-      } else if (forwardSide.outwardAxisFailure || severeImmediateOutwardFailure) {
+      } else if (forwardOutwardAxisFailure || severeImmediateOutwardFailure) {
         failingSubstituentCount++;
         outwardAxisFailureCount++;
       }

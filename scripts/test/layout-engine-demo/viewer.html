@@ -797,7 +797,11 @@
           auditChip.className = lm.audit.ok ? 'ok' : 'fail';
           const overlap = lm.audit.severeOverlapCount;
           const dev = (lm.audit.meanBondLengthDeviation * 100).toFixed(1);
-          auditChip.textContent = lm.audit.ok ? `Audit OK · ${overlap} overlaps · ${dev}% dev` : `Audit FAIL · ${overlap} overlaps · ${dev}% dev`;
+          let failReason = '';
+          if (!lm.audit.ok && lm.audit.fallback?.reasons?.length) {
+            failReason = ` (${lm.audit.fallback.reasons.join(', ')})`;
+          }
+          auditChip.textContent = lm.audit.ok ? `Audit OK · ${overlap} overlaps · ${dev}% dev` : `Audit FAIL${failReason} · ${overlap} overlaps · ${dev}% dev`;
           chipGrid.appendChild(auditChip);
         }
 

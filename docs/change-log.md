@@ -1,10 +1,32 @@
 # Change Log
 
+## 2026-04-24
+
+- Lock both reported `CCNC1CN2C(C)=NC(C)C2(CCN)C1O` aminoethyl tails onto zigzag slots, including the crowded `C12-C13-C14` bend
+- Re-snap ring-attached amide carbonyl centers after mixed placement finishes attaching pending rings, but only keep the exact resnap when it does not sacrifice nearby exact ring exits, then restore any neighboring hidden-h `120°/120°/120°` center after the attached-ring overlap touchup so peptide-like `C(=O)N` junctions stay exact without bending adjacent stereocenters or anisole ethers off-axis
+- Preserve exact trigonal cleanup scoring across attached-ring focus atoms, so conjugated amide nitrogens keep their full `120°/120°/120°` spread during ring-presentation fallback
+- Keep direct-attached mixed ring blocks from bending `sp` alkynyl linkers into `120°` rescue poses when the exact linear `180°` continuation is available
+- Let acyclic sidechain branch placement look ahead through unsaturated child roots so carboxylate tails stop folding downstream oxygens back into nearby hetero branches
+- Keep force-layout atom numbers off hydrogen bond-length and electronegativity labels
+- Let exact linked-ring root rescues keep a tiny amount of extra centroid slack when the immediate ring exits are already exact, so amide-linked piperidines can land on the full `120°/120°` ring-root split instead of stopping `3°` short
+- Add a finer local attached-ring root rotation rescue step, so amide-linked piperidines can trim the remaining ring-root bisector miss from `15°` down to about `3°` without reintroducing ring-substituent readability failures
+- Let direct-attached parent trigonal rescue cover conjugated amide nitrogens, so amide-linked piperidines can keep the exact parent bisector instead of settling on a `90/120/150` spread
+- Score attached mixed-ring candidates from one linker hop farther out, so amide-bridged benzene/piperidine systems can choose the outward-readable ring rotation instead of freezing a linked ring centroid on the wrong side of the bridge
+
 ## 2026-04-23
 
-- Let attached-ring presentation cleanup retouch once more after direct-attached rescued ring-root exactness work, so coupled aza/phenyl exits like `C17-C18` and `C18-C17` can both land on their exact symmetric bisectors while keeping the already-clean `C11` and `C24` geometry
-- Re-run ring-substituent presentation tidy after attached-ring rescue wins, so rescued phenyl/phenol systems keep exact peripheral exits like `C24-O25` instead of leaving the last substituent slightly canted
-- Let attached-ring presentation rescue separate upstream scaffold exits from downstream rescue-side exactness, and let genuinely cramped attached phenyl tails win exact reflected poses across the shared `C11-N12` hinge, so crowded pendant phenyl systems keep exact `C11`, `C5`, and five-member `N12` exits without curling the ether tail back into the aza ring
+- Keep bis-oxo sulfones class-aware through branch scoring and hypervalent cleanup, and allow one compact single-ring ligand subtree to rotate as a rigid block around the center, so sulfones like `Clc1ccccc1CCNC(=O)Cn2ccc3cc(ccc23)S(=O)(=O)N4CCCCCC4` keep the aryl and amine single bonds opposite each other instead of opposing an `S=O`
+- Treat only true direct-attached or linked rings as ring-substituent cleanup ring blocks, so aromatic sulfone branches like `Clc1ccccc1CCNC(=O)Cn2ccc3cc(ccc23)S(=O)(=O)N4CCCCCC4` keep the exact aryl exit instead of oscillating between mirrored tidy poses
+- Reopen mirrored-parent-subtree search for exact carbonyl-to-aromatic direct attachments when the carbonyl is already exact but the aromatic root still misses its local ring-outward exit, so heteroaryl amides like `Fc1ccccc1N(CC(=O)NC2CCCCC2)C(=O)c3csnn3` can flip the fluorophenyl side and keep both the carbonyl and ring exits exact
+- Seed direct-attached mixed-ring candidates with exact parent-side visible trigonal angles, so amide carbonyl centers in heteroaryl attachments can keep a full `120°/120°/120°` spread instead of freezing the ring attachment into a `150°/90°` split
+- Let direct-attached ring exact-root rescue cover omitted-h saturated ring roots as well as strict trigonal cases, so amide-linked piperidines can land exactly on the local ring outward bisector instead of freezing one ring edge into a flat `180°/60°` split
+- Count ideal linked-ring bridge-angle distortion inside ring-substituent presentation scoring, so linked aryl ethers still trigger the existing cleanup pass even when both ring exits already look outward on paper
+- Let mixed projected-tetrahedral centers swap a downstream trigonal child with the opposite deferred leaf slot when that keeps overlaps clean and materially improves the child’s exact trigonal geometry, so difluoromethyl amide junctions can keep the anisole exits exact while restoring a clean `120°/120°/120°` carbonyl center
+- Retry up to three alternate ring-system roots for overlap-heavy mixed placements, break otherwise clean mixed-root ties by exact ring-exit deviation before full layout cost, and prioritize hetero ring exits like anisole ether oxygens before generic trigonal tie-breaks, so crowded multi-ring ester/lactam linkers can pick the clean ring root that keeps all exits balanced instead of locking in the first overlap-free or browser-skewed root
+- Reserve the opposite projected-tetrahedral slot for deferred heavy leaves when a single non-leaf branch is being placed first, so difluoromethyl centers keep branch-vs-leaf opposite pairings instead of opposing the two fluorines against each other
+- Let attached-ring presentation cleanup retouch once more after direct-attached rescued ring-root exactness work, so coupled aza/phenyl exits can both land on their exact symmetric bisectors while keeping the already-clean adjacent geometry
+- Re-run ring-substituent presentation tidy after attached-ring rescue wins, so rescued phenyl/phenol systems keep exact peripheral exits instead of leaving the last substituent slightly canted
+- Let attached-ring presentation rescue separate upstream scaffold exits from downstream rescue-side exactness, and let genuinely cramped attached phenyl tails win exact reflected poses across the attachment hinge, so crowded pendant phenyl systems keep exact scaffold and ring exits without curling the ether tail back into the aza ring
 - Keep ring-constrained benzylic aromatic exits on the exact local five-member-ring exterior bisector, so `CC(N1CC(C)(C[NH3+])C1)C1=C(C)C=C(C)N1` stays at a symmetric `126°/126°` exit instead of canting that branch off the ring
 - Batch deferred halogen leaves at projected-tetrahedral acyclic centers, so chlorosilanes like `C[Si](Cl)(Cl)CC[Si](C)(Cl)Cl` keep even `80/80/80/120` heavy-neighbor fanout and consistent Si-halogen bond geometry instead of skewing one chlorine into a pinched slot
 

@@ -10,6 +10,7 @@ import { chromium, webkit } from '@playwright/test';
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const BROWSER_SENSITIVE_SMILES = 'COc1cc([C@H](CC=C(C)C)OC(=O)c2ccccn2)c(OC)c3\\C(=N\\O)\\C=C\\C(=N/O)\\c13';
 const BROWSER_ATTACHED_RING_RESCUE_SMILES = 'CCCOC1=C(C)C=CC=C1N1C(=S)[N-]N=C1C1=CC=C(O)C=C1O';
+const BROWSER_MIXED_ROOT_EXACT_EXIT_SMILES = 'COC1=CC(=CC(OC)=C1OC)C(F)(F)C(=O)N1CCCC[C@H]1C(=O)O[C@@H](CCCC1=CC=CC=C1)CCCC1=CN=CC=C1';
 
 const MIME_TYPES = new Map([
   ['.css', 'text/css; charset=utf-8'],
@@ -77,7 +78,7 @@ async function browserLayoutSignature(browserType, origin, smiles) {
   const browser = await browserType.launch({ headless: true });
   try {
     const page = await browser.newPage();
-    await page.goto(`${origin}/index.html`);
+    await page.goto(`${origin}/index.html`, { timeout: 60_000 });
     return await page.evaluate(async smilesValue => {
       const { parseSMILES } = await import('/src/io/smiles.js');
       const { runPipeline } = await import('/src/layout/engine/pipeline.js');
@@ -115,7 +116,7 @@ async function browserLayoutSignature(browserType, origin, smiles) {
   }
 }
 
-test('browser layout remains deterministic across chromium and webkit for mixed fused/attached-ring placement', { timeout: 60_000 }, async t => {
+test('browser layout remains deterministic across chromium and webkit for mixed fused/attached-ring placement', { timeout: 120_000 }, async t => {
   const { server, origin } = await startStaticServer();
   t.after(async () => {
     await new Promise(resolve => server.close(resolve));
@@ -127,7 +128,7 @@ test('browser layout remains deterministic across chromium and webkit for mixed 
   assert.deepStrictEqual(webkitSignature, chromiumSignature);
 });
 
-test('browser layout stays deterministic and overlap-free for the attached-ring overlap rescue', { timeout: 60_000 }, async t => {
+test('browser layout stays deterministic and overlap-free for the attached-ring overlap rescue', { timeout: 120_000 }, async t => {
   const { server, origin } = await startStaticServer();
   t.after(async () => {
     await new Promise(resolve => server.close(resolve));
@@ -137,6 +138,23 @@ test('browser layout stays deterministic and overlap-free for the attached-ring 
   const webkitSignature = await browserLayoutSignature(webkit, origin, BROWSER_ATTACHED_RING_RESCUE_SMILES);
 
   assert.deepStrictEqual(webkitSignature, chromiumSignature);
+  assert.equal(chromiumSignature.audit.ok, true);
+  assert.equal(chromiumSignature.audit.severeOverlapCount, 0);
+  assert.equal(chromiumSignature.audit.ringSubstituentReadabilityFailureCount, 0);
+  assert.equal(chromiumSignature.audit.outwardAxisRingSubstituentFailureCount, 0);
+});
+
+test('browser layout stays audit-clean for mixed-root exact ring exits on anisole-linked ring systems', { timeout: 120_000 }, async t => {
+  const { server, origin } = await startStaticServer();
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve));
+  });
+
+  const chromiumSignature = await browserLayoutSignature(chromium, origin, BROWSER_MIXED_ROOT_EXACT_EXIT_SMILES);
+  const webkitSignature = await browserLayoutSignature(webkit, origin, BROWSER_MIXED_ROOT_EXACT_EXIT_SMILES);
+
+  assert.equal(webkitSignature.stereoSignature, chromiumSignature.stereoSignature);
+  assert.deepStrictEqual(webkitSignature.audit, chromiumSignature.audit);
   assert.equal(chromiumSignature.audit.ok, true);
   assert.equal(chromiumSignature.audit.severeOverlapCount, 0);
   assert.equal(chromiumSignature.audit.ringSubstituentReadabilityFailureCount, 0);

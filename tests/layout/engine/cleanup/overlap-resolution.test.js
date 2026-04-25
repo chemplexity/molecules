@@ -92,18 +92,20 @@ describe('layout/engine/cleanup/overlap-resolution', () => {
     assert.ok(result.coords.get('c0').x > 0.1);
   });
 
-  it('keeps conjugated divalent nitrogens on their exact 120-degree continuation while clearing overlaps', () => {
+  it('keeps conjugated divalent nitrogens on their exact 120-degree continuation without worsening an already clean mixed layout', () => {
     const smiles = 'CC\\C(=C/1\\N=C(OC1=O)c2ccc(Cl)cc2Cl)\\N3CCC[C@H]3C(=O)N[C@@H](<Cc4ccc(O)cc4>)C(=O)N';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
     const adjacency = buildAdjacency(graph, new Set(component.atomIds));
     const mixedResult = layoutMixedFamily(graph, component, adjacency, buildScaffoldPlan(graph, component), graph.options.bondLength);
 
+    const beforeAudit = auditLayout(graph, mixedResult.coords, { bondLength: graph.options.bondLength });
     const result = resolveOverlaps(graph, mixedResult.coords, { bondLength: graph.options.bondLength });
     const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
     const amideAngle = bondAngleAtAtom(result.coords, 'N26', 'C24', 'C27');
 
-    assert.ok(result.moves > 0);
+    assert.equal(beforeAudit.severeOverlapCount, 0);
+    assert.ok(audit.severeOverlapCount <= beforeAudit.severeOverlapCount);
     assert.equal(audit.severeOverlapCount, 0);
     assert.ok(Math.abs(amideAngle - ((2 * Math.PI) / 3)) < 1e-6, `expected N26 to stay at 120 degrees, got ${((amideAngle * 180) / Math.PI).toFixed(2)}`);
   });

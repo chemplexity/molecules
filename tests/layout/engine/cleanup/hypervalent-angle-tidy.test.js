@@ -23,6 +23,12 @@ function assertOrthogonalCross(angles) {
   }
 }
 
+function assertOppositePair(firstAngle, secondAngle) {
+  const separation = ((Math.abs(firstAngle - secondAngle) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+  const foldedSeparation = Math.min(separation, Math.PI * 2 - separation);
+  assert.ok(Math.abs(foldedSeparation - Math.PI) < 1e-6);
+}
+
 describe('layout/engine/cleanup/hypervalent-angle-tidy', () => {
   it('snaps monoxo phosphonate leaf ligands onto an orthogonal cross', () => {
     const graph = createLayoutGraph(parseSMILES('CP(=O)(O)O'), { suppressH: true });
@@ -46,7 +52,7 @@ describe('layout/engine/cleanup/hypervalent-angle-tidy', () => {
     assertOrthogonalCross(ligandAngles);
   });
 
-  it('treats an already orthogonal bis-oxo sulfone cross as tidy regardless of ligand-class axis assignment', () => {
+  it('re-squares a class-swapped bis-oxo sulfone cross so the single bonds end up opposite each other', () => {
     const graph = createLayoutGraph(parseSMILES('NS(=O)(=O)C'), { suppressH: true });
     const coords = new Map([
       ['N1', { x: -1.299038105676658, y: 0.75 }],
@@ -56,12 +62,18 @@ describe('layout/engine/cleanup/hypervalent-angle-tidy', () => {
       ['C5', { x: 0.75, y: 1.299038105676658 }]
     ]);
 
-    assert.ok(Math.abs(measureOrthogonalHypervalentDeviation(graph, coords)) < 1e-9);
+    assert.ok(measureOrthogonalHypervalentDeviation(graph, coords) > 0.1);
 
     const result = runHypervalentAngleTidy(graph, coords);
+    const nitrogenAngle = angleAt(result.coords, 'S2', 'N1');
+    const carbonAngle = angleAt(result.coords, 'S2', 'C5');
+    const firstOxoAngle = angleAt(result.coords, 'S2', 'O3');
+    const secondOxoAngle = angleAt(result.coords, 'S2', 'O4');
 
-    assert.equal(result.nudges, 0);
+    assert.ok(result.nudges > 0);
     assert.ok(Math.abs(measureOrthogonalHypervalentDeviation(graph, result.coords)) < 1e-9);
+    assertOppositePair(nitrogenAngle, carbonAngle);
+    assertOppositePair(firstOxoAngle, secondOxoAngle);
   });
 
   it('rotates a compact bridge-linked phosphate block to re-square a triphosphate center', () => {

@@ -24,7 +24,9 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
     coords,
     nudges,
     steps,
-    presentationPenalty: measureRingSubstituentPresentationPenalty(layoutGraph, coords),
+    presentationPenalty: measureRingSubstituentPresentationPenalty(layoutGraph, coords, {
+      includeLinkedRingBridgePenalty: true
+    }),
     attachedRingPeripheralPenalty,
     score:
       {
@@ -90,7 +92,9 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
     return false;
   }
   const audit = stageResult.audit ?? null;
-  const presentationPenalty = stageResult.presentationPenalty ?? measureRingSubstituentPresentationPenalty(layoutGraph, stageResult.coords);
+  const presentationPenalty = stageResult.presentationPenalty ?? measureRingSubstituentPresentationPenalty(layoutGraph, stageResult.coords, {
+    includeLinkedRingBridgePenalty: true
+  });
   const attachedRingPeripheralPenalty = stageResult.attachedRingPeripheralPenalty
     ?? measureAttachedRingPeripheralFocusPenalty(layoutGraph, stageResult.coords);
   return (

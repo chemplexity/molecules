@@ -159,7 +159,9 @@ export function buildCleanupStageGraph(context) {
     : isPreferredCleanupGeometryStage;
   const scoreGeometryStage = coords => ({
     audit: auditCleanupStage(layoutGraph, coords, placement, bondLength),
-    presentationPenalty: measureRingSubstituentPresentationPenalty(layoutGraph, coords)
+    presentationPenalty: measureRingSubstituentPresentationPenalty(layoutGraph, coords, {
+      includeLinkedRingBridgePenalty: true
+    })
   });
   const hasRingSubstituentHook = hasPostCleanupHook(policy, 'ring-substituent-tidy');
   const hasRingTerminalHeteroHook = hasPostCleanupHook(policy, 'ring-terminal-hetero-tidy');

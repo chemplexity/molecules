@@ -78,7 +78,10 @@ export function measureCleanupStagePresentationPenalty(layoutGraph, coords, opti
   const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
   const includeSmallRingExteriorPenalty = options.includeSmallRingExteriorPenalty !== false;
   return (
-    measureRingSubstituentPresentationPenalty(layoutGraph, coords, { focusAtomIds })
+    measureRingSubstituentPresentationPenalty(layoutGraph, coords, {
+      focusAtomIds,
+      includeLinkedRingBridgePenalty: true
+    })
     + measureOrthogonalHypervalentDeviation(layoutGraph, coords, { focusAtomIds })
     + measureThreeHeavyContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation
     + measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation

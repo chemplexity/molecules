@@ -46,6 +46,27 @@ const ORTHOGONAL_SLOT_PERMUTATIONS = [
   [3, 2, 1, 0]
 ];
 
+function bisOxoOrthogonalSlotPermutations() {
+  const permutations = [];
+  for (const singlePair of [[0, 2], [1, 3]]) {
+    const multiplePair = ORTHOGONAL_SLOT_OFFSETS
+      .map((_, slotIndex) => slotIndex)
+      .filter(slotIndex => !singlePair.includes(slotIndex));
+    for (const singleOrder of [[singlePair[0], singlePair[1]], [singlePair[1], singlePair[0]]]) {
+      for (const multipleOrder of [[multiplePair[0], multiplePair[1]], [multiplePair[1], multiplePair[0]]]) {
+        permutations.push([...singleOrder, ...multipleOrder]);
+      }
+    }
+  }
+  return permutations;
+}
+
+function orthogonalSlotPermutations(descriptor) {
+  return descriptor?.kind === 'bis-oxo'
+    ? bisOxoOrthogonalSlotPermutations()
+    : ORTHOGONAL_SLOT_PERMUTATIONS;
+}
+
 /**
  * Returns whether a branch center should skip exhaustive sibling backtracking.
  * Large mixed/acyclic slices can explode combinatorially when every backbone
@@ -179,6 +200,14 @@ function hypervalentChildPermutations(layoutGraph, anchorAtomId, orderedChildDes
     return [
       [oppositeSingleDescriptor, multipleDescriptor, orthogonalSingleDescriptor],
       [oppositeSingleDescriptor, orthogonalSingleDescriptor, multipleDescriptor]
+    ];
+  }
+
+  if (singleDescriptors.length === 1 && multipleDescriptors.length === 2) {
+    const oppositeSingleDescriptor = singleDescriptors[0];
+    return [
+      [oppositeSingleDescriptor, multipleDescriptors[0], multipleDescriptors[1]],
+      [oppositeSingleDescriptor, multipleDescriptors[1], multipleDescriptors[0]]
     ];
   }
 
@@ -388,10 +417,11 @@ function crossLikeHypervalentPenalty(layoutGraph, coords, atomId) {
   }
 
   const candidateAlphas = neighborAngles.flatMap(angle => ORTHOGONAL_SLOT_OFFSETS.map(slotOffset => angle - slotOffset));
+  const slotPermutations = orthogonalSlotPermutations(descriptor);
   let bestPenalty = Number.POSITIVE_INFINITY;
   outer: for (const alpha of candidateAlphas) {
     const targetAngles = ORTHOGONAL_SLOT_OFFSETS.map(slotOffset => alpha + slotOffset);
-    for (const permutation of ORTHOGONAL_SLOT_PERMUTATIONS) {
+    for (const permutation of slotPermutations) {
       let penalty = 0;
       for (let neighborIndex = 0; neighborIndex < neighborAngles.length; neighborIndex++) {
         penalty += angularDifference(neighborAngles[neighborIndex], targetAngles[permutation[neighborIndex]]) ** 2;
@@ -584,6 +614,98 @@ function evaluateLocalAnglePermutations(
   }
 
   return bestPlacement;
+}
+
+/**
+ * Chooses among multiple competing single-child continuation angles by
+ * recursively placing the child's subtree for each candidate and keeping the
+ * arrangement with the lowest resulting cost.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {Map<string, number>} canonicalAtomRank - Canonical rank lookup.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {{sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}} placementState - Running placement state.
+ * @param {Set<string>} atomIdsToPlace - Eligible atom IDs in the current slice.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string|null} parentAtomId - Already placed parent atom ID.
+ * @param {string} childAtomId - Child atom ID being placed.
+ * @param {number[]} candidateAngles - Candidate continuation angles to compare.
+ * @param {number} bondLength - Target bond length.
+ * @param {(adjacency: Map<string, string[]>, canonicalAtomRank: Map<string, number>, coords: Map<string, {x: number, y: number}>, placementState: {sumX: number, sumY: number, count: number, trackedPositions: Map<string, {x: number, y: number}>}, atomIdsToPlace: Set<string>, anchorAtomId: string, parentAtomId: string|null, bondLength: number, layoutGraph?: object|null, branchConstraints?: {angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null, depth?: number, placementContext?: object|null) => void} placeChildrenFn - Recursive child placement callback.
+ * @param {object|null} [layoutGraph] - Layout graph shell.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints.
+ * @param {number} [depth] - Current recursion depth.
+ * @param {{childAtomId: string, subtreeSize: number}|null} [childDescriptor] - Optional precomputed child descriptor.
+ * @returns {number|null} Chosen angle in radians, or `null` when no lookahead candidate was evaluated.
+ */
+export function chooseSingleBranchAngleWithLookahead(
+  adjacency,
+  canonicalAtomRank,
+  coords,
+  placementState,
+  atomIdsToPlace,
+  anchorAtomId,
+  parentAtomId,
+  childAtomId,
+  candidateAngles,
+  bondLength,
+  placeChildrenFn,
+  layoutGraph = null,
+  branchConstraints = null,
+  depth = 0,
+  childDescriptor = null
+) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition || !childAtomId || depth > MAX_BRANCH_RECURSION_DEPTH) {
+    return null;
+  }
+
+  const uniqueCandidateAngles = [];
+  for (const candidateAngle of candidateAngles ?? []) {
+    if (!Number.isFinite(candidateAngle)) {
+      continue;
+    }
+    if (!uniqueCandidateAngles.some(existingAngle => angularDifference(existingAngle, candidateAngle) <= 1e-9)) {
+      uniqueCandidateAngles.push(candidateAngle);
+    }
+  }
+  if (uniqueCandidateAngles.length < 2) {
+    return uniqueCandidateAngles[0] ?? null;
+  }
+
+  const resolvedChildDescriptors = [
+    childDescriptor ?? {
+      childAtomId,
+      subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
+    }
+  ];
+  const bestPlacement = evaluateAnglePermutations(
+    adjacency,
+    canonicalAtomRank,
+    coords,
+    placementState,
+    atomIdsToPlace,
+    anchorAtomId,
+    bondLength,
+    layoutGraph,
+    branchConstraints,
+    depth,
+    anchorPosition,
+    uniqueCandidateAngles.map(angle => [angle]),
+    resolvedChildDescriptors,
+    placeChildrenFn
+  );
+
+  if (!bestPlacement) {
+    return null;
+  }
+
+  for (const atomId of atomIdsToPlace) {
+    if (bestPlacement.coords.has(atomId)) {
+      coords.set(atomId, bestPlacement.coords.get(atomId));
+    }
+  }
+  copyPlacementState(placementState, bestPlacement.placementState);
+  return angleOf(sub(coords.get(childAtomId), anchorPosition));
 }
 
 /**

@@ -131,7 +131,9 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
       const localOverlaps = atomGrid.queryRadius(candidatePosition, overlapDistanceThreshold);
       let introducedSevereOverlap = false;
       for (const otherAtomId of localOverlaps) {
-        if (otherAtomId === secondLabel.atomId) continue;
+        if (otherAtomId === secondLabel.atomId) {
+          continue;
+        }
         const otherAtom = layoutGraph.atoms.get(otherAtomId);
         if (!otherAtom || (layoutGraph.options.suppressH && otherAtom.element === 'H')) {
           continue;
@@ -141,7 +143,9 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
           continue;
         }
         const otherPosition = coords.get(otherAtomId);
-        if (!otherPosition) continue;
+        if (!otherPosition) {
+          continue;
+        }
         const dist = Math.hypot(otherPosition.x - candidatePosition.x, otherPosition.y - candidatePosition.y);
         if (dist < overlapDistanceThreshold) {
           introducedSevereOverlap = true;
@@ -157,7 +161,7 @@ export function applyLabelClearance(layoutGraph, inputCoords, options = {}) {
       position.x = candidatePosition.x;
       position.y = candidatePosition.y;
       atomGrid.insert(secondLabel.atomId, position);
-      
+
       secondLabel.x = candidatePosition.x;
       secondLabel.y = candidatePosition.y;
       nudges++;

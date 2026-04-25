@@ -410,6 +410,28 @@ function rotateSubtreeAroundCenter(coords, movedAtomIds, centerPosition, rotatio
   }
 }
 
+function minimumExternalDistanceSquared(coords, movedAtomIds, excludedAtomIds) {
+  let minimumDistanceSquared = Number.POSITIVE_INFINITY;
+  for (const atomId of movedAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    for (const [otherAtomId, otherPosition] of coords) {
+      if (excludedAtomIds.has(otherAtomId)) {
+        continue;
+      }
+      const dx = otherPosition.x - position.x;
+      const dy = otherPosition.y - position.y;
+      const distanceSquared = dx * dx + dy * dy;
+      if (distanceSquared < minimumDistanceSquared) {
+        minimumDistanceSquared = distanceSquared;
+      }
+    }
+  }
+  return minimumDistanceSquared;
+}
+
 /**
  * Re-snaps non-backbone single-bond roots that continue into a terminal
  * multiple bond so they keep the exact remaining trigonal slot after backbone
@@ -449,6 +471,143 @@ function realignTrigonalLinearSubstituentRoots(layoutGraph, coords, backbone = [
     }
     const rootBonds = heavyBonds.filter(bond => {
       if (bond === primaryBond || !isTerminalLinearMultipleBondRoot(layoutGraph, atom.id, bond)) {
+        return false;
+      }
+      const rootAtomId = bond.a === atom.id ? bond.b : bond.a;
+      return !(backboneAtomIds.has(atom.id) && backboneAtomIds.has(rootAtomId));
+    });
+    if (rootBonds.length === 0) {
+      continue;
+    }
+
+    const centerPosition = coords.get(atom.id);
+    const primaryAtomId = primaryBond.a === atom.id ? primaryBond.b : primaryBond.a;
+    const primaryPosition = coords.get(primaryAtomId);
+    if (!centerPosition || !primaryPosition) {
+      continue;
+    }
+    const baseAngle = angleOf(sub(primaryPosition, centerPosition));
+    const assignments = rootBonds.map(bond => {
+      const rootAtomId = bond.a === atom.id ? bond.b : bond.a;
+      const rootPosition = coords.get(rootAtomId);
+      if (!rootPosition) {
+        return null;
+      }
+      return {
+        rootAtomId,
+        currentAngle: angleOf(sub(rootPosition, centerPosition)),
+        movedAtomIds: collectSideAtomIds(layoutGraph, rootAtomId, atom.id)
+      };
+    }).filter(Boolean);
+    if (assignments.length === 0) {
+      continue;
+    }
+
+    let targetAngles;
+    if (assignments.length === 1) {
+      const assignment = assignments[0];
+      const excludedAtomIds = new Set([atom.id, ...assignment.movedAtomIds]);
+      const candidateTargetAngles = [baseAngle + TRIGONAL_TARGET_ANGLE, baseAngle - TRIGONAL_TARGET_ANGLE].map(targetAngle => {
+        const candidateCoords = new Map([...coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+        rotateSubtreeAroundCenter(
+          candidateCoords,
+          assignment.movedAtomIds,
+          centerPosition,
+          normalizeSignedAngle(targetAngle - assignment.currentAngle)
+        );
+        return {
+          targetAngle,
+          rotationMagnitude: Math.abs(normalizeSignedAngle(targetAngle - assignment.currentAngle)),
+          minimumDistanceSquared: minimumExternalDistanceSquared(candidateCoords, assignment.movedAtomIds, excludedAtomIds)
+        };
+      });
+      candidateTargetAngles.sort((firstCandidate, secondCandidate) => {
+        if (Math.abs(firstCandidate.minimumDistanceSquared - secondCandidate.minimumDistanceSquared) > 1e-6) {
+          return secondCandidate.minimumDistanceSquared - firstCandidate.minimumDistanceSquared;
+        }
+        return firstCandidate.rotationMagnitude - secondCandidate.rotationMagnitude;
+      });
+      targetAngles = [candidateTargetAngles[0].targetAngle];
+    } else {
+      const positiveTarget = baseAngle + TRIGONAL_TARGET_ANGLE;
+      const negativeTarget = baseAngle - TRIGONAL_TARGET_ANGLE;
+      const directCost =
+        Math.abs(normalizeSignedAngle(assignments[0].currentAngle - positiveTarget))
+        + Math.abs(normalizeSignedAngle(assignments[1].currentAngle - negativeTarget));
+      const swappedCost =
+        Math.abs(normalizeSignedAngle(assignments[0].currentAngle - negativeTarget))
+        + Math.abs(normalizeSignedAngle(assignments[1].currentAngle - positiveTarget));
+      targetAngles = directCost <= swappedCost
+        ? [positiveTarget, negativeTarget]
+        : [negativeTarget, positiveTarget];
+    }
+
+    for (let index = 0; index < assignments.length; index++) {
+      const assignment = assignments[index];
+      rotateSubtreeAroundCenter(
+        coords,
+        assignment.movedAtomIds,
+        centerPosition,
+        normalizeSignedAngle(targetAngles[index] - assignment.currentAngle)
+      );
+    }
+  }
+
+  return coords;
+}
+
+/**
+ * Re-snaps visible single-bond roots on non-ring trigonal centers so the
+ * multiple bond plus the remaining visible branches land on exact 120-degree
+ * spacings after backbone normalization has finished. This preserves the
+ * chosen backbone while fixing side roots that would otherwise stay on a
+ * skewed 90/150 split.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string[]} [backbone] - Backbone atom IDs in placement order. Defaults to an empty list.
+ * @param {Iterable<string>|null} [targetAtomIds] - Optional subset of center atom IDs to realign.
+ * @returns {Map<string, {x: number, y: number}>} Updated coordinate map.
+ */
+export function realignVisibleTrigonalSingleBondRoots(layoutGraph, coords, backbone = [], targetAtomIds = null) {
+  if (!layoutGraph) {
+    return coords;
+  }
+  const backboneAtomIds = new Set(backbone);
+  const targetAtomIdSet = targetAtomIds == null ? null : new Set(targetAtomIds);
+
+  for (const atom of layoutGraph.atoms.values()) {
+    if (
+      (targetAtomIdSet != null && !targetAtomIdSet.has(atom.id))
+      || !coords.has(atom.id)
+      || atom.element === 'H'
+      || atom.element !== 'C'
+      || atom.aromatic
+      || atom.heavyDegree !== 3
+      || (layoutGraph.atomToRings.get(atom.id)?.length ?? 0) > 0
+    ) {
+      continue;
+    }
+
+    const heavyBonds = (layoutGraph.bondsByAtomId.get(atom.id) ?? []).filter(bond => {
+      if (bond.kind !== 'covalent') {
+        return false;
+      }
+      const neighborAtomId = bond.a === atom.id ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H' && coords.has(neighborAtomId);
+    });
+    if (heavyBonds.length !== 3) {
+      continue;
+    }
+
+    const primaryBonds = heavyBonds.filter(bond => !bond.aromatic && (bond.order ?? 1) >= 2);
+    if (primaryBonds.length !== 1) {
+      continue;
+    }
+
+    const primaryBond = primaryBonds[0];
+    const rootBonds = heavyBonds.filter(bond => {
+      if (bond === primaryBond || bond.aromatic || (bond.order ?? 1) !== 1) {
         return false;
       }
       const rootAtomId = bond.a === atom.id ? bond.b : bond.a;
@@ -775,6 +934,7 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
 
   const stereoEnforced = enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords;
   const trigonalNormalized = normalizeBackboneTrigonalAngles(layoutGraph, stereoEnforced, backbone);
-  const linearRootsRealigned = realignTrigonalLinearSubstituentRoots(layoutGraph, trigonalNormalized, backbone);
+  const visibleRootsRealigned = realignVisibleTrigonalSingleBondRoots(layoutGraph, trigonalNormalized, backbone);
+  const linearRootsRealigned = realignTrigonalLinearSubstituentRoots(layoutGraph, visibleRootsRealigned, backbone);
   return realignTerminalMultipleBondLeaves(layoutGraph, linearRootsRealigned, bondLength);
 }

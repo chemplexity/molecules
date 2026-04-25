@@ -10,7 +10,11 @@ import {
 } from '../../audit/invariants.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
 import { add, angleOf, angularDifference, centroid, rotate, sub, wrapAngle } from '../../geometry/vec2.js';
-import { isExactSimpleAcyclicContinuationEligible } from '../../placement/branch-placement/angle-selection.js';
+import {
+  findLayoutBond,
+  isExactSimpleAcyclicContinuationEligible,
+  isExactVisibleTrigonalBisectorEligible
+} from '../../placement/branch-placement/angle-selection.js';
 import { measureCleanupStagePresentationPenalty, measureTotalSmallRingExteriorGapPenalty } from '../../audit/stage-metrics.js';
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
 import { computeRotatableSubtrees, runLocalCleanup } from '../local-rotation.js';
@@ -47,6 +51,7 @@ const ATTACHED_RING_COUPLED_RESCUE_ANGLES = [
   -(Math.PI / 4)
 ];
 const ATTACHED_RING_PERIPHERAL_FOCUS_CLEARANCE_FACTOR = 0.75;
+const ATTACHED_RING_PARENT_CONJUGATED_HETERO_ELEMENTS = new Set(['O', 'S', 'Se', 'P']);
 
 function largestAngularGapBisector(occupiedAngles) {
   const sortedAngles = [...occupiedAngles]
@@ -417,6 +422,7 @@ function isExactCleanAttachedRingCandidate(candidate) {
   return (
     candidate.overlapCount === 0
     && candidate.exactContinuationPenalty <= 1e-6
+    && candidate.parentVisibleTrigonalPenalty <= 1e-6
     && candidate.rootOutwardPenalty <= 1e-6
     && candidate.trigonalBisectorPenalty <= 1e-6
     && candidate.trigonalDistortionPenalty <= 1e-6
@@ -647,6 +653,165 @@ function measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, coords, des
 }
 
 /**
+ * Returns whether an attached-ring descriptor should preserve an exact
+ * parent-side trigonal attachment angle at its anchor atom. This covers both
+ * visible trigonal aromatic anchors and conjugated amide-like nitrogens whose
+ * `120/120/120` spread should survive presentation cleanup.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} parentAtomId - Anchor atom on the fixed side of the attachment bond.
+ * @param {string} attachmentAtomId - Attached-ring root atom on the movable side.
+ * @returns {boolean} True when the parent anchor has an exact trigonal slot to preserve.
+ */
+function supportsExactAttachedRingParentPreferredAngle(layoutGraph, parentAtomId, attachmentAtomId) {
+  if (!parentAtomId || !attachmentAtomId) {
+    return false;
+  }
+
+  const attachmentBond = findLayoutBond(layoutGraph, parentAtomId, attachmentAtomId);
+  if (
+    !attachmentBond
+    || attachmentBond.kind !== 'covalent'
+    || attachmentBond.aromatic
+    || (attachmentBond.order ?? 1) !== 1
+  ) {
+    return false;
+  }
+
+  if (
+    layoutGraph.atoms.get(attachmentAtomId)?.aromatic
+    && isExactVisibleTrigonalBisectorEligible(layoutGraph, parentAtomId, attachmentAtomId)
+  ) {
+    return true;
+  }
+
+  const parentAtom = layoutGraph.atoms.get(parentAtomId);
+  if (
+    !parentAtom
+    || parentAtom.element !== 'N'
+    || parentAtom.aromatic
+    || parentAtom.heavyDegree !== 3
+    || parentAtom.degree !== 3
+    || (layoutGraph.atomToRings.get(parentAtomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  let otherHeavyNeighborCount = 0;
+  let conjugatedHeteroMultipleNeighborCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(parentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === parentAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtomId === attachmentAtomId) {
+      continue;
+    }
+    otherHeavyNeighborCount++;
+    if (bond.aromatic || (bond.order ?? 1) !== 1 || neighborAtom.aromatic) {
+      continue;
+    }
+    for (const neighborBond of layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []) {
+      if (!neighborBond || neighborBond.kind !== 'covalent' || neighborBond.aromatic || (neighborBond.order ?? 1) < 2) {
+        continue;
+      }
+      const heteroAtomId = neighborBond.a === neighborAtomId ? neighborBond.b : neighborBond.a;
+      if (heteroAtomId === parentAtomId) {
+        continue;
+      }
+      const heteroAtom = layoutGraph.atoms.get(heteroAtomId);
+      if (!heteroAtom || !ATTACHED_RING_PARENT_CONJUGATED_HETERO_ELEMENTS.has(heteroAtom.element)) {
+        continue;
+      }
+      conjugatedHeteroMultipleNeighborCount++;
+      break;
+    }
+  }
+
+  return otherHeavyNeighborCount === 2 && conjugatedHeteroMultipleNeighborCount === 1;
+}
+
+/**
+ * Returns the exact parent-side trigonal target angle for an attached-ring
+ * descriptor whose anchor should stay centered between its two other heavy
+ * neighbors.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {string} parentAtomId - Anchor atom on the fixed side of the attachment bond.
+ * @param {string} attachmentAtomId - Attached-ring root atom on the movable side.
+ * @returns {number|null} Exact parent-side target angle in radians, or `null`.
+ */
+function attachedRingParentPreferredAngle(layoutGraph, coords, parentAtomId, attachmentAtomId) {
+  if (!supportsExactAttachedRingParentPreferredAngle(layoutGraph, parentAtomId, attachmentAtomId) || !coords.has(parentAtomId)) {
+    return null;
+  }
+
+  const otherHeavyNeighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(parentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === parentAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtomId === attachmentAtomId || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    otherHeavyNeighborIds.push(neighborAtomId);
+  }
+  if (otherHeavyNeighborIds.length !== 2) {
+    return null;
+  }
+
+  return angleOf(sub(
+    coords.get(parentAtomId),
+    centroid(otherHeavyNeighborIds.map(neighborAtomId => coords.get(neighborAtomId)))
+  ));
+}
+
+/**
+ * Penalizes attached-ring fallback candidates that bend any exact parent-side
+ * trigonal center inside the current cleanup focus region away from its
+ * chemically preferred slot.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {Set<string>|null} [focusAtomIds] - Optional focus atoms for local scoring.
+ * @returns {number} Summed squared parent-side trigonal deviation.
+ */
+function measureAttachedRingParentVisibleTrigonalPenalty(layoutGraph, coords, focusAtomIds = null) {
+  const focusSet = focusAtomIds instanceof Set && focusAtomIds.size > 0 ? focusAtomIds : null;
+  let totalPenalty = 0;
+
+  for (const [parentAtomId, parentPosition] of coords) {
+    if (focusSet && !focusSet.has(parentAtomId)) {
+      continue;
+    }
+    const parentAtom = layoutGraph.atoms.get(parentAtomId);
+    if (!parentAtom || parentAtom.element === 'H') {
+      continue;
+    }
+
+    for (const bond of layoutGraph.bondsByAtomId.get(parentAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const attachmentAtomId = bond.a === parentAtomId ? bond.b : bond.a;
+      const attachmentAtom = layoutGraph.atoms.get(attachmentAtomId);
+      if (!attachmentAtom || attachmentAtom.element === 'H' || !coords.has(attachmentAtomId)) {
+        continue;
+      }
+      const idealAttachmentAngle = attachedRingParentPreferredAngle(layoutGraph, coords, parentAtomId, attachmentAtomId);
+      if (idealAttachmentAngle == null) {
+        continue;
+      }
+      const attachmentAngle = angleOf(sub(coords.get(attachmentAtomId), parentPosition));
+      totalPenalty += angularDifference(attachmentAngle, idealAttachmentAngle) ** 2;
+    }
+  }
+
+  return totalPenalty;
+}
+
+/**
  * Collects rigid attached-ring subtrees that can be rotated as cleanup candidates.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current placed coordinates.
@@ -813,6 +978,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       });
       const baseJunctionContinuationPenalty = measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, currentCoords, { focusAtomIds }).totalDeviation;
       const baseExactContinuationPenalty = measureExactAcyclicContinuationDistortion(layoutGraph, currentCoords, focusAtomIds).totalDeviation;
+      const baseParentVisibleTrigonalPenalty = measureAttachedRingParentVisibleTrigonalPenalty(layoutGraph, currentCoords, focusAtomIds);
       const baseRootOutwardPenalty = measureAttachedRingRootOutwardPenalty(layoutGraph, currentCoords, descriptor, focusAtomIds);
       const baseTrigonalBisectorPenalty = measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, currentCoords, descriptor);
       const baseTrigonalDistortionPenalty = measureTrigonalDistortion(layoutGraph, currentCoords, { focusAtomIds }).totalDeviation;
@@ -856,6 +1022,15 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         const improvesPeripheralFocusClearance =
           needsPeripheralFocusClearanceRescue
           && peripheralFocusClearance > basePeripheralFocusClearance + 0.25;
+        const parentVisibleTrigonalPenalty = measureAttachedRingParentVisibleTrigonalPenalty(layoutGraph, candidateCoords, focusAtomIds);
+        if (
+          parentVisibleTrigonalPenalty > baseParentVisibleTrigonalPenalty + 1e-6
+          && !reducesOverlapCount
+          && !improvesPeripheralFocusClearance
+        ) {
+          buildCandidateScore.lastRejectReason = 'parent-visible-trigonal';
+          return null;
+        }
         const rootOutwardPenalty = measureAttachedRingRootOutwardPenalty(layoutGraph, candidateCoords, descriptor, focusAtomIds);
         if (rootOutwardPenalty > baseRootOutwardPenalty + 1e-6 && !reducesOverlapCount && !improvesPeripheralFocusClearance) {
           buildCandidateScore.lastRejectReason = 'root-outward';
@@ -911,6 +1086,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           overlapCount,
           junctionContinuationPenalty,
           exactContinuationPenalty,
+          parentVisibleTrigonalPenalty,
           anchorSideOutwardPenalty: measureAttachedRingAnchorSideOutwardPenalty(layoutGraph, candidateCoords, descriptor),
           peripheralFocusClearance,
           rootOutwardPenalty,
@@ -974,6 +1150,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         if (peripheralFocusClearance <= basePeripheralFocusClearance + 0.25) {
           return null;
         }
+        const parentVisibleTrigonalPenalty = measureAttachedRingParentVisibleTrigonalPenalty(layoutGraph, candidateCoords, focusAtomIds);
         const rootOutwardPenalty = measureAttachedRingRootOutwardPenalty(layoutGraph, candidateCoords, descriptor, focusAtomIds);
         const trigonalDistortionPenalty = measureTrigonalDistortion(layoutGraph, candidateCoords, { focusAtomIds }).totalDeviation;
         const subtreeClearance = measureAttachedCarbonylSubtreeClearance(layoutGraph, candidateCoords, descriptor);
@@ -987,6 +1164,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           overlapCount,
           junctionContinuationPenalty,
           exactContinuationPenalty,
+          parentVisibleTrigonalPenalty,
           anchorSideOutwardPenalty: measureAttachedRingAnchorSideOutwardPenalty(layoutGraph, candidateCoords, descriptor),
           peripheralFocusClearance,
           rootOutwardPenalty,
@@ -1332,6 +1510,7 @@ function readabilityFailureWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1342,6 +1521,7 @@ function inwardReadabilityWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1353,6 +1533,7 @@ function outwardReadabilityWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1365,6 +1546,7 @@ function globalReadabilityFailureWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1378,6 +1560,7 @@ function globalInwardReadabilityWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1392,6 +1575,7 @@ function globalOutwardReadabilityWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1409,6 +1593,7 @@ function peripheralFocusClearanceWins(candidate, incumbent) {
     && incumbent.peripheralFocusRescueEligible === true
     && candidate.overlapCount === incumbent.overlapCount
     && candidate.exactContinuationPenalty <= incumbent.exactContinuationPenalty + 1e-6
+    && candidate.parentVisibleTrigonalPenalty <= incumbent.parentVisibleTrigonalPenalty + 1e-6
     && candidate.failingSubstituentCount === incumbent.failingSubstituentCount
     && candidate.inwardSubstituentCount === incumbent.inwardSubstituentCount
     && candidate.outwardAxisFailureCount === incumbent.outwardAxisFailureCount
@@ -1426,6 +1611,7 @@ function peripheralFocusRescuePriorityWins(candidate, incumbent) {
     && incumbent.peripheralFocusRescueEligible !== true
     && candidate.overlapCount === incumbent.overlapCount
     && candidate.exactContinuationPenalty <= incumbent.exactContinuationPenalty + 1e-6
+    && candidate.parentVisibleTrigonalPenalty <= incumbent.parentVisibleTrigonalPenalty + 1e-6
     && candidate.failingSubstituentCount <= incumbent.failingSubstituentCount
     && candidate.inwardSubstituentCount <= incumbent.inwardSubstituentCount
     && candidate.outwardAxisFailureCount <= incumbent.outwardAxisFailureCount
@@ -1444,6 +1630,7 @@ function incumbentPeripheralFocusRescueHolds(candidate, incumbent) {
     && candidate.peripheralFocusRescueEligible !== true
     && candidate.overlapCount === incumbent.overlapCount
     && candidate.exactContinuationPenalty >= incumbent.exactContinuationPenalty - 1e-6
+    && candidate.parentVisibleTrigonalPenalty >= incumbent.parentVisibleTrigonalPenalty - 1e-6
     && candidate.failingSubstituentCount >= incumbent.failingSubstituentCount
     && candidate.inwardSubstituentCount >= incumbent.inwardSubstituentCount
     && candidate.outwardAxisFailureCount >= incumbent.outwardAxisFailureCount
@@ -1460,6 +1647,7 @@ function attachedCarbonylRootDescriptorWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1477,6 +1665,7 @@ function attachedCarbonylSetupWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1497,6 +1686,7 @@ function presentationWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1520,6 +1710,7 @@ function layoutCostWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1544,6 +1735,7 @@ function outwardDeviationWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1566,6 +1758,7 @@ function rootOutwardWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && candidate.anchorSideOutwardPenalty < incumbent.anchorSideOutwardPenalty - 1e-6;
 }
 
@@ -1573,14 +1766,23 @@ function totalRootOutwardWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.anchorSideOutwardPenalty - incumbent.anchorSideOutwardPenalty) <= 1e-6
     && candidate.rootOutwardPenalty < incumbent.rootOutwardPenalty - 1e-6;
+}
+
+function parentVisibleTrigonalWins(candidate, incumbent) {
+  return !!incumbent
+    && candidate.overlapCount === incumbent.overlapCount
+    && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && candidate.parentVisibleTrigonalPenalty < incumbent.parentVisibleTrigonalPenalty - 1e-6;
 }
 
 function trigonalBisectorWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && candidate.trigonalBisectorPenalty < incumbent.trigonalBisectorPenalty - 1e-6;
 }
@@ -1589,6 +1791,7 @@ function trigonalDistortionWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && candidate.trigonalDistortionPenalty < incumbent.trigonalDistortionPenalty - 1e-6;
@@ -1598,6 +1801,7 @@ function subtreeClearanceWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) <= 1e-6
@@ -1623,6 +1827,7 @@ function isBetterAttachedRingCandidate(candidate, incumbent) {
   }
   return overlapCountWins(candidate, incumbent)
     || exactContinuationWins(candidate, incumbent)
+    || parentVisibleTrigonalWins(candidate, incumbent)
     || rootOutwardWins(candidate, incumbent)
     || totalRootOutwardWins(candidate, incumbent)
     || trigonalBisectorWins(candidate, incumbent)

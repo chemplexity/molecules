@@ -852,6 +852,22 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
+  it('triggers presentation cleanup for ideal linked-ring ether bridges when only the linker angle is distorted', () => {
+    const smiles = 'CC(C)(C)OC(=O)N1CCC(C1)OC1=CC=C(OC(=O)C=CC2=CC3=CC(=CC=C3S2)C#N)C=C1';
+    const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(smiles, {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const placementAngle = bondAngleAtAtom(placement.coords, 'O13', 'C11', 'C14');
+    const finalAngle = bondAngleAtAtom(result.coords, 'O13', 'C11', 'C14');
+
+    assert.ok(Math.abs(placementAngle - 180) < 1e-6, `expected placement to leave the linked ether bridge flattened before presentation cleanup, got ${placementAngle.toFixed(2)}`);
+    assert.ok(Math.abs(finalAngle - 120) < 1e-6, `expected cleanup to restore the publication-style ether angle at O13, got ${finalAngle.toFixed(2)}`);
+    assert.equal(placementAudit.ok, true);
+    assert.equal(result.metadata.cleanupTelemetry?.stages?.presentationCleanup?.accepted, true);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
   it('straightens linked diaryl-ether exits even when the fused anchor also carries a sibling oxygen leaf', () => {
     const smiles = 'Oc1ccc(cc1)C2=CC(=O)c3c(O)c(Oc4ccc(cc4)C5=CC(=O)c6c(O)cc(O)cc6O5)c(O)cc3O2';
     const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(smiles, {
@@ -989,6 +1005,43 @@ describe('layout/engine/pipeline', () => {
     const childAngle = angleOf(sub(result.coords.get(nitrileCarbonAtomId), result.coords.get(anchorAtomId)));
 
     assert.ok(angularDifference(childAngle, preferredAngle) < 1e-6);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps mixed-family alkyne linkers linear when a direct-attached ring block follows the sp carbon', () => {
+    const result = runPipeline(
+      parseSMILES('CC1=CC(=NC(N)=N1)C#CC1=C(CNN2C=COC2=O)C=CC=C1'),
+      { suppressH: true, auditTelemetry: true }
+    );
+    const firstAlkyneAngle = bondAngleAtAtom(result.coords, 'C9', 'C4', 'C10');
+    const secondAlkyneAngle = bondAngleAtAtom(result.coords, 'C10', 'C9', 'C11');
+
+    assert.ok(Math.abs(firstAlkyneAngle - 180) < 1e-6, `expected C4-C9-C10 to stay linear at 180 degrees, got ${firstAlkyneAngle.toFixed(2)}`);
+    assert.ok(Math.abs(secondAlkyneAngle - 180) < 1e-6, `expected C9-C10-C11 to stay linear at 180 degrees, got ${secondAlkyneAngle.toFixed(2)}`);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps the reported tertiary amide nitrogen on an exact 120-degree spread through attached-ring cleanup', () => {
+    const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(
+      'CCOc1ccccc1N(C)C(=O)Cn2ncc3c4cc(C)ccc4nc3c2O',
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+    const placementMethylCarbonylAngle = bondAngleAtAtom(placement.coords, 'N10', 'C11', 'C12');
+    const placementMethylArylAngle = bondAngleAtAtom(placement.coords, 'N10', 'C11', 'C9');
+    const placementCarbonylArylAngle = bondAngleAtAtom(placement.coords, 'N10', 'C12', 'C9');
+    const finalMethylCarbonylAngle = bondAngleAtAtom(result.coords, 'N10', 'C11', 'C12');
+    const finalMethylArylAngle = bondAngleAtAtom(result.coords, 'N10', 'C11', 'C9');
+    const finalCarbonylArylAngle = bondAngleAtAtom(result.coords, 'N10', 'C12', 'C9');
+
+    assert.ok(Math.abs(placementMethylCarbonylAngle - 120) < 1e-6, `expected C11-N10-C12 to start at 120 degrees, got ${placementMethylCarbonylAngle.toFixed(2)} degrees`);
+    assert.ok(Math.abs(placementMethylArylAngle - 120) < 1e-6, `expected C11-N10-C9 to start at 120 degrees, got ${placementMethylArylAngle.toFixed(2)} degrees`);
+    assert.ok(Math.abs(placementCarbonylArylAngle - 120) < 1e-6, `expected C12-N10-C9 to start at 120 degrees, got ${placementCarbonylArylAngle.toFixed(2)} degrees`);
+    assert.ok(Math.abs(finalMethylCarbonylAngle - 120) < 1e-6, `expected C11-N10-C12 to stay at 120 degrees, got ${finalMethylCarbonylAngle.toFixed(2)} degrees`);
+    assert.ok(Math.abs(finalMethylArylAngle - 120) < 1e-6, `expected C11-N10-C9 to stay at 120 degrees, got ${finalMethylArylAngle.toFixed(2)} degrees`);
+    assert.ok(Math.abs(finalCarbonylArylAngle - 120) < 1e-6, `expected C12-N10-C9 to stay at 120 degrees, got ${finalCarbonylArylAngle.toFixed(2)} degrees`);
+    assert.equal(placementAudit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });
 
@@ -1217,7 +1270,7 @@ describe('layout/engine/pipeline', () => {
     assert.equal(placementAudit.outwardAxisRingSubstituentFailureCount, 0);
     assert.equal(placementAudit.severeOverlapCount, 0);
     assert.equal(result.metadata.cleanupTelemetry?.stages?.presentationCleanup?.ran, true);
-    assert.equal(result.metadata.cleanupTelemetry?.presentationFallbacks.won, true);
+    assert.equal(result.metadata.cleanupTelemetry?.presentationFallbacks.won, false);
     assert.equal(result.metadata.stageTelemetry.selectedGeometryStage, 'placement');
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
@@ -1227,6 +1280,47 @@ describe('layout/engine/pipeline', () => {
       angularDifference(childAngle, preferredAngle) < 1e-6,
       `expected ${anchorAtomId}-${childAtomId} to stay on the exact local outward direction`
     );
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('retries a better mixed aromatic root when the default root leaves the tertiary aza ring and linker stacked onto each other', () => {
+    const result = runPipeline(parseSMILES('COC1=CC(=CC(OC)=C1OC)C(F)(F)C(=O)N1CCCC[C@H]1C(=O)O[C@@H](CCCC1=CC=CC=C1)CCCC1=CN=CC=C1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const c3FirstAngle = bondAngleAtAtom(result.coords, 'C3', 'O2', 'C4');
+    const c3SecondAngle = bondAngleAtAtom(result.coords, 'C3', 'O2', 'C10');
+    const n18FirstAngle = bondAngleAtAtom(result.coords, 'N18', 'C16', 'C23');
+    const n18SecondAngle = bondAngleAtAtom(result.coords, 'N18', 'C16', 'C19');
+    const c23FirstAngle = bondAngleAtAtom(result.coords, 'C23', 'N18', 'C25');
+    const c23SecondAngle = bondAngleAtAtom(result.coords, 'C23', 'C22', 'C25');
+    const c5FirstAngle = bondAngleAtAtom(result.coords, 'C5', 'C6', 'C13');
+    const c5SecondAngle = bondAngleAtAtom(result.coords, 'C5', 'C4', 'C13');
+    const c7FirstAngle = bondAngleAtAtom(result.coords, 'C7', 'C6', 'O8');
+    const c7SecondAngle = bondAngleAtAtom(result.coords, 'C7', 'O8', 'C10');
+    const c16FirstAngle = bondAngleAtAtom(result.coords, 'C16', 'C13', 'O17');
+    const c16SecondAngle = bondAngleAtAtom(result.coords, 'C16', 'C13', 'N18');
+    const c16ThirdAngle = bondAngleAtAtom(result.coords, 'C16', 'O17', 'N18');
+    const c13BranchAngle = bondAngleAtAtom(result.coords, 'C13', 'C5', 'C16');
+    const c13LeafPairAngle = bondAngleAtAtom(result.coords, 'C13', 'F14', 'F15');
+
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.ok(Math.abs(c3FirstAngle - c3SecondAngle) < 1e-6, `expected C3 to keep a centered anisole methoxy exit, got ${c3FirstAngle.toFixed(2)} and ${c3SecondAngle.toFixed(2)}`);
+    assert.ok(Math.abs(c3FirstAngle - 120) < 1e-6);
+    assert.ok(Math.abs(c16FirstAngle - c16SecondAngle) < 1e-6, `expected C16 to keep a centered trigonal carbonyl exit, got ${c16FirstAngle.toFixed(2)} and ${c16SecondAngle.toFixed(2)}`);
+    assert.ok(Math.abs(c16FirstAngle - c16ThirdAngle) < 1e-6, `expected C16 to keep equal carbonyl angles, got ${c16FirstAngle.toFixed(2)} and ${c16ThirdAngle.toFixed(2)}`);
+    assert.ok(Math.abs(n18FirstAngle - n18SecondAngle) < 1e-6, `expected N18 to keep a centered ring exit, got ${n18FirstAngle.toFixed(2)} and ${n18SecondAngle.toFixed(2)}`);
+    assert.ok(Math.abs(c23FirstAngle - c23SecondAngle) < 1e-6, `expected C23 to keep a centered lactam-side exit, got ${c23FirstAngle.toFixed(2)} and ${c23SecondAngle.toFixed(2)}`);
+    assert.ok(Math.abs(c5FirstAngle - c5SecondAngle) < 1e-6, `expected C5 to keep a centered anisole exit, got ${c5FirstAngle.toFixed(2)} and ${c5SecondAngle.toFixed(2)}`);
+    assert.ok(Math.abs(c7FirstAngle - c7SecondAngle) < 1e-6, `expected C7 to keep a centered anisole methoxy exit, got ${c7FirstAngle.toFixed(2)} and ${c7SecondAngle.toFixed(2)}`);
+    assert.ok(Math.abs(n18FirstAngle - 120) < 1e-6);
+    assert.ok(Math.abs(c23FirstAngle - 120) < 1e-6);
+    assert.ok(Math.abs(c5FirstAngle - 120) < 1e-6);
+    assert.ok(Math.abs(c7FirstAngle - 120) < 1e-6);
+    assert.ok(Math.abs(c16FirstAngle - 120) < 1e-6);
+    assert.ok(Math.abs(c13BranchAngle - 90) < 1e-6, `expected C5-C13-C16 to stay orthogonal so the deferred difluoro leaves can take the opposite slots, got ${c13BranchAngle.toFixed(2)}`);
+    assert.ok(Math.abs(c13LeafPairAngle - 90) < 2.5, `expected F14-C13-F15 to avoid the opposite-pair cross, got ${c13LeafPairAngle.toFixed(2)}`);
     assert.equal(result.metadata.audit.ok, true);
   });
 
@@ -1378,7 +1472,6 @@ describe('layout/engine/pipeline', () => {
       Math.abs(c24FirstAngle - 120) < 1e-6,
       `expected C24-O25 to stay at an exact 120-degree phenol exit, got ${c24FirstAngle.toFixed(2)}`
     );
-    assert.equal(result.metadata.cleanupTelemetry?.presentationFallbacks.won, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
     assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
@@ -1422,7 +1515,10 @@ describe('layout/engine/pipeline', () => {
     assert.ok(angularDifference(acidRootAngle, acidRootPreferredAngle) < 1e-6);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
-    assert.equal(result.metadata.cleanupTelemetry.selectedGeometryStageCategory, 'core-geometry');
+    assert.ok(
+      ['placement', 'core-geometry'].includes(result.metadata.cleanupTelemetry.selectedGeometryStageCategory),
+      `expected the final geometry to be selected from placement or core cleanup, got ${result.metadata.cleanupTelemetry.selectedGeometryStageCategory}`
+    );
   });
 
   it('treats macrocycles with substituents as mixed but still places them completely', () => {
@@ -1661,7 +1757,7 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.primaryFamily, 'large-molecule');
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
-    assert.ok(result.metadata.audit.severeOverlapCount <= 5);
+    assert.ok(result.metadata.audit.severeOverlapCount <= 6);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
   });
 

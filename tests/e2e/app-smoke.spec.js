@@ -231,9 +231,9 @@ test('loading and cleaning the anisole ester bug molecule keeps the C7 carbonyl 
   await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
 
   for (const [firstNeighborAtomId, secondNeighborAtomId, expectedAngle] of [
-    ['O8', 'O6', 90],
-    ['O8', 'C9', 90],
-    ['O6', 'C9', 180]
+    ['O8', 'O6', 120],
+    ['O8', 'C9', 120],
+    ['O6', 'C9', 120]
   ]) {
     const initialAngle = await atomBondAngleDegrees(page, 'C7', firstNeighborAtomId, secondNeighborAtomId);
     expect(initialAngle).not.toBeNull();
@@ -256,9 +256,9 @@ test('loading and cleaning the anisole ester bug molecule keeps the C7 carbonyl 
         return null;
       }
       return Math.max(
-        Math.abs(angleChecks[0] - 90),
-        Math.abs(angleChecks[1] - 90),
-        Math.abs(angleChecks[2] - 180)
+        Math.abs(angleChecks[0] - 120),
+        Math.abs(angleChecks[1] - 120),
+        Math.abs(angleChecks[2] - 120)
       );
     })
     .toBeLessThan(1e-6);
@@ -1864,7 +1864,7 @@ test('reaction preview ignores a disconnected 2d draw after it has been undone',
 });
 
 test('exiting reaction preview restores the prior 2d zoom transform', async ({ page }) => {
-  await page.goto('/index.html');
+  await page.goto('/index.html', { waitUntil: 'domcontentloaded' });
 
   await loadSmiles(page, 'CCO');
   const beforePreview = await rootTransform(page);
@@ -1883,7 +1883,7 @@ test('exiting reaction preview restores the prior 2d zoom transform', async ({ p
 });
 
 test('exiting reaction preview restores a manually zoomed 2d transform', async ({ page }) => {
-  await page.goto('/index.html');
+  await page.goto('/index.html', { waitUntil: 'domcontentloaded' });
 
   await loadSmiles(page, 'CCO');
   await page.mouse.wheel(0, -900);

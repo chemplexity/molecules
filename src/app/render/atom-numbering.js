@@ -5,6 +5,9 @@ let _atomNumberingActive = false;
 const TWO_PI = Math.PI * 2;
 const DEFAULT_NUMBERING_FALLBACK_ANGLE = -Math.PI / 4;
 const DEFAULT_NUMBERING_ANGLE_STEPS = 72;
+const DEFAULT_ANNOTATION_LABEL_WIDTH_FACTOR = 0.62;
+const DEFAULT_ANNOTATION_LABEL_HEIGHT_FACTOR = 1.2;
+const DEFAULT_ANNOTATION_BOX_PADDING = 3;
 
 function _normalizeAngle(angle) {
   let normalized = angle;
@@ -19,6 +22,28 @@ function _normalizeAngle(angle) {
 
 function _angularDistance(a, b) {
   return Math.abs(_normalizeAngle(a - b));
+}
+
+function _annotationLabelMetrics(label, fontSize) {
+  return {
+    hw: (String(label).length * fontSize * DEFAULT_ANNOTATION_LABEL_WIDTH_FACTOR) / 2,
+    hh: (fontSize * DEFAULT_ANNOTATION_LABEL_HEIGHT_FACTOR) / 2
+  };
+}
+
+function _annotationBoxOverlapsPlaced(candidate, placed) {
+  return Math.abs(candidate.cx - placed.cx) < candidate.hw + placed.hw + DEFAULT_ANNOTATION_BOX_PADDING
+    && Math.abs(candidate.cy - placed.cy) < candidate.hh + placed.hh + DEFAULT_ANNOTATION_BOX_PADDING;
+}
+
+function _countAnnotationBoxOverlaps(candidate, placedBoxes) {
+  let overlapCount = 0;
+  for (const placed of placedBoxes) {
+    if (_annotationBoxOverlapsPlaced(candidate, placed)) {
+      overlapCount++;
+    }
+  }
+  return overlapCount;
 }
 
 /**
@@ -51,6 +76,94 @@ export function pickAtomAnnotationAngle(blockedSectors = [], fallbackAngle = DEF
     }
   }
   return bestAngle;
+}
+
+/**
+ * Picks a concrete atom-annotation label placement that still prefers the
+ * clearest blocked-sector angle, but can step aside when other text labels
+ * already occupy that preferred slot.
+ * @param {object} options - Placement options.
+ * @param {{x: number, y: number}} options.center - Atom center in screen space.
+ * @param {string} options.label - Annotation text.
+ * @param {number} options.fontSize - Annotation font size in pixels.
+ * @param {Array<{angle: number, spread: number}>} [options.blockedSectors] - Angular blockers to avoid.
+ * @param {number} [options.fallbackAngle] - Preferred default angle when space is open.
+ * @param {Array<{cx: number, cy: number, hw: number, hh: number}>} [options.placedBoxes] - Existing placed label boxes to avoid.
+ * @returns {{angle: number, cx: number, cy: number, hw: number, hh: number}} Chosen label placement.
+ */
+export function pickAtomAnnotationPlacement({
+  center,
+  label,
+  fontSize,
+  blockedSectors = [],
+  fallbackAngle = DEFAULT_NUMBERING_FALLBACK_ANGLE,
+  placedBoxes = []
+}) {
+  const normalizedBlockedSectors = Array.isArray(blockedSectors) ? blockedSectors : [];
+  const normalizedPlacedBoxes = Array.isArray(placedBoxes) ? placedBoxes : [];
+  const labelDistance = atomNumberingLabelDistance(fontSize, label);
+  const { hw, hh } = _annotationLabelMetrics(label, fontSize);
+  const candidateAngles = [fallbackAngle];
+  for (let step = 0; step < DEFAULT_NUMBERING_ANGLE_STEPS; step++) {
+    candidateAngles.push(-Math.PI + (step / DEFAULT_NUMBERING_ANGLE_STEPS) * TWO_PI);
+  }
+
+  let bestPlacement = {
+    angle: fallbackAngle,
+    cx: center.x + Math.cos(fallbackAngle) * labelDistance,
+    cy: center.y + Math.sin(fallbackAngle) * labelDistance,
+    hw,
+    hh,
+    overlapCount: Infinity,
+    clearance: -Infinity,
+    fallbackDistance: Infinity
+  };
+
+  for (const angle of candidateAngles) {
+    let clearance = Infinity;
+    for (const sector of normalizedBlockedSectors) {
+      const spread = Math.max(0, sector?.spread ?? 0);
+      const separation = _angularDistance(angle, sector?.angle ?? 0) - spread;
+      clearance = Math.min(clearance, separation);
+    }
+    const fallbackDistance = _angularDistance(angle, fallbackAngle);
+    const candidate = {
+      angle,
+      cx: center.x + Math.cos(angle) * labelDistance,
+      cy: center.y + Math.sin(angle) * labelDistance,
+      hw,
+      hh
+    };
+    const overlapCount = _countAnnotationBoxOverlaps(candidate, normalizedPlacedBoxes);
+    if (
+      overlapCount < bestPlacement.overlapCount
+      || (
+        overlapCount === bestPlacement.overlapCount
+        && (
+          clearance > bestPlacement.clearance + 1e-6
+          || (
+            Math.abs(clearance - bestPlacement.clearance) <= 1e-6
+            && fallbackDistance < bestPlacement.fallbackDistance
+          )
+        )
+      )
+    ) {
+      bestPlacement = {
+        ...candidate,
+        overlapCount,
+        clearance,
+        fallbackDistance
+      };
+    }
+  }
+
+  return {
+    angle: bestPlacement.angle,
+    cx: bestPlacement.cx,
+    cy: bestPlacement.cy,
+    hw: bestPlacement.hw,
+    hh: bestPlacement.hh
+  };
 }
 
 /**
