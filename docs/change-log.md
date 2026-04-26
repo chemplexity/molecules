@@ -1,5 +1,11 @@
 # Change Log
 
+## 2026-04-25
+
+- Rotate crowded terminal ketone groups as rigid cleanup subtrees so C15-style carbonyl centers keep exact `120°/120°/120°` geometry while resolving overlaps
+- Keep N-methyl branches on planar conjugated tertiary nitrogens at exact trigonal angles
+- Place small spiro rings outward from larger parent rings so cyclobutyl and cyclopropyl exits avoid pinching into the parent scaffold
+
 ## 2026-04-24
 
 - Lock both reported `CCNC1CN2C(C)=NC(C)C2(CCN)C1O` aminoethyl tails onto zigzag slots, including the crowded `C12-C13-C14` bend

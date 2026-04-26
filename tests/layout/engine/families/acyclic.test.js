@@ -312,6 +312,32 @@ describe('layout/engine/families/acyclic', () => {
     assert.ok(Math.abs(bondAngle(coords, 'C2', 'C4', 'C6') - 120) < 1e-6);
   });
 
+  it('keeps N-methyl branches on exact trigonal slots for planar conjugated tertiary nitrogens', () => {
+    const result = runPipeline(parseSMILES('CCCC(O)CN=CN(C)C(C)C(C)=NO'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.ok(Math.abs(bondAngle(result.coords, 'C8', 'N9', 'C10') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C10', 'N9', 'C11') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C8', 'N9', 'C11') - 120) < 1e-6);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps crowded terminal ketone carbonyl angles exact after overlap cleanup', () => {
+    const result = runPipeline(parseSMILES('CC(C=O)C(O)C(C)(C(O)CO)C(C)C(C)=O'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.ok(Math.abs(bondAngle(result.coords, 'C13', 'C15', 'C16') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C13', 'C15', 'O17') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C16', 'C15', 'O17') - 120) < 1e-6);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
   it('enforces configured E/Z stereo for final acyclic pipeline output', () => {
     const cases = [
       { smiles: 'F/C=C/F', expectedStereo: 'E' },

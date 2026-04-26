@@ -417,6 +417,74 @@ function isTerminalHeavyLeafSubstituent(layoutGraph, anchorAtomId, childAtomId) 
 }
 
 /**
+ * Returns visible heavy covalent bonds around one atom.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom ID to inspect.
+ * @returns {Array<{bond: object, neighborAtomId: string}>} Visible heavy covalent bonds.
+ */
+function visibleHeavyCovalentBonds(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return [];
+  }
+  const bonds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    bonds.push({ bond, neighborAtomId });
+  }
+  return bonds;
+}
+
+/**
+ * Returns whether an atom has trigonal conjugating geometry from one
+ * non-aromatic multiple bond. Explicit hydrogens may complete the valence, so
+ * this also recognizes imine-like `CH=N` neighbors.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom ID to inspect.
+ * @returns {boolean} True when the atom has trigonal conjugating geometry.
+ */
+function isConjugatedTrigonalCenter(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || atom.aromatic || atom.degree !== 3) {
+    return false;
+  }
+  let multipleBondCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic) {
+      continue;
+    }
+    if ((bond.order ?? 1) >= 2) {
+      multipleBondCount++;
+    }
+  }
+  return multipleBondCount === 1;
+}
+
+/**
+ * Returns whether a tertiary nitrogen should be treated as planar because one
+ * of its single-bond neighbors is a conjugated trigonal center.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Nitrogen atom ID.
+ * @returns {boolean} True when the nitrogen should use trigonal branch slots.
+ */
+function isPlanarConjugatedTertiaryNitrogen(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  if (!atom || atom.element !== 'N' || atom.aromatic || atom.heavyDegree !== 3 || atom.degree !== 3) {
+    return false;
+  }
+  const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, atomId);
+  return heavyBonds.length === 3
+    && heavyBonds.every(({ bond }) => !bond.aromatic && (bond.order ?? 1) === 1)
+    && heavyBonds.some(({ neighborAtomId }) => isConjugatedTrigonalCenter(layoutGraph, neighborAtomId));
+}
+
+/**
  * Returns whether a child is a single-bond exocyclic heavy substituent root on
  * a ring atom that should preserve the exact ring-outward angle. This stays
  * enabled for rigid or presentation-critical roots such as hetero atoms,
@@ -541,35 +609,11 @@ export function isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtom
     return false;
   }
 
-  const isConjugatedTrigonalNeighbor = neighborAtomId => {
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtom.aromatic || neighborAtom.heavyDegree !== 3) {
-      return false;
-    }
-    let heavyVisibleBondCount = 0;
-    let nonAromaticMultipleBondCount = 0;
-    for (const bond of layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []) {
-      if (!bond || bond.kind !== 'covalent') {
-        continue;
-      }
-      const otherAtomId = bond.a === neighborAtomId ? bond.b : bond.a;
-      const otherAtom = layoutGraph.atoms.get(otherAtomId);
-      if (!otherAtom || otherAtom.element === 'H') {
-        continue;
-      }
-      heavyVisibleBondCount++;
-      if (!bond.aromatic && (bond.order ?? 1) >= 2) {
-        nonAromaticMultipleBondCount++;
-      }
-    }
-    return heavyVisibleBondCount === 3 && nonAromaticMultipleBondCount === 1;
-  };
-
   const exactEligibleElement =
     EXACT_SIMPLE_ACYCLIC_CONTINUATION_ELEMENTS.has(anchorAtom.element)
     || (
       anchorAtom.element === 'N'
-      && (isConjugatedTrigonalNeighbor(parentAtomId) || isConjugatedTrigonalNeighbor(childAtomId))
+      && (isConjugatedTrigonalCenter(layoutGraph, parentAtomId) || isConjugatedTrigonalCenter(layoutGraph, childAtomId))
     );
   if (!exactEligibleElement) {
     return false;
@@ -617,11 +661,10 @@ export function isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtom
 }
 
 /**
- * Returns whether a visible three-heavy trigonal carbon should keep the exact
+ * Returns whether a visible three-heavy trigonal center should keep the exact
  * local bisector for its remaining single-bond branch. This covers non-ring
- * alkene/carbonyl-like carbons whose final visible branch can otherwise fall
- * into an arbitrary 90/150 split once only the multiple bond is protected by
- * the exact-angle rules.
+ * alkene/carbonyl-like carbons and planar conjugated tertiary nitrogens whose
+ * final visible branch can otherwise fall into an arbitrary 90/150 split.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} anchorAtomId - Anchor atom ID.
  * @param {string|null} childAtomId - Candidate child atom ID.
@@ -638,7 +681,6 @@ export function isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId
   const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
   if (
     !anchorAtom
-    || anchorAtom.element !== 'C'
     || anchorAtom.aromatic
     || anchorAtom.heavyDegree !== 3
     || anchorAtom.degree !== 3
@@ -656,24 +698,13 @@ export function isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId
     return false;
   }
 
-  let heavyVisibleBondCount = 0;
-  let nonAromaticMultipleBondCount = 0;
-  for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
-    if (!bond || bond.kind !== 'covalent') {
-      continue;
-    }
-    const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H') {
-      continue;
-    }
-    heavyVisibleBondCount++;
-    if (!bond.aromatic && (bond.order ?? 1) >= 2) {
-      nonAromaticMultipleBondCount++;
-    }
+  if (anchorAtom.element === 'C') {
+    return isConjugatedTrigonalCenter(layoutGraph, anchorAtomId);
   }
-
-  return heavyVisibleBondCount === 3 && nonAromaticMultipleBondCount === 1;
+  if (anchorAtom.element === 'N') {
+    return isPlanarConjugatedTertiaryNitrogen(layoutGraph, anchorAtomId);
+  }
+  return false;
 }
 
 /**

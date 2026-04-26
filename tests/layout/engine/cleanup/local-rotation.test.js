@@ -7,6 +7,7 @@ import { computeRotatableSubtrees, runLocalCleanup } from '../../../../src/layou
 import { buildAtomGrid, findSevereOverlaps, measureLayoutCost } from '../../../../src/layout/engine/audit/invariants.js';
 import { angleOf, angularDifference, centroid, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { generateCoords, refineCoords } from '../../../../src/layout/engine/api.js';
+import { layoutSupportedComponents } from '../../../../src/layout/engine/placement/component-layout.js';
 
 function makeBranchedFixture() {
   const molecule = new Molecule();
@@ -60,6 +61,21 @@ function ringInteriorDot(layoutGraph, coords, anchorAtomId, substituentAtomId) {
   const rootX = substituentPosition.x - anchorPosition.x;
   const rootY = substituentPosition.y - anchorPosition.y;
   return inwardX * rootX + inwardY * rootY;
+}
+
+/**
+ * Returns the smaller bond angle at a center atom in degrees.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Center atom ID.
+ * @param {string} firstNeighborAtomId - First neighbor atom ID.
+ * @param {string} secondNeighborAtomId - Second neighbor atom ID.
+ * @returns {number} Bond angle in degrees.
+ */
+function bondAngleDegrees(coords, centerAtomId, firstNeighborAtomId, secondNeighborAtomId) {
+  const centerPosition = coords.get(centerAtomId);
+  const firstAngle = angleOf(sub(coords.get(firstNeighborAtomId), centerPosition));
+  const secondAngle = angleOf(sub(coords.get(secondNeighborAtomId), centerPosition));
+  return angularDifference(firstAngle, secondAngle) * (180 / Math.PI);
 }
 
 describe('layout/engine/cleanup/local-rotation', () => {
@@ -121,6 +137,28 @@ describe('layout/engine/cleanup/local-rotation', () => {
     assert.ok(result.passes > 0);
     assert.notDeepEqual(result.coords.get('C2'), coords.get('C2'));
     assert.notDeepEqual(result.coords.get('C1'), coords.get('C1'));
+  });
+
+  it('rotates terminal ketone groups as rigid subtrees without bending carbonyl leaves', () => {
+    const graph = createLayoutGraph(parseSMILES('CC(C=O)C(O)C(C)(C(O)CO)C(C)C(C)=O'), { suppressH: true });
+    const placement = layoutSupportedComponents(graph);
+    const rotatableSubtrees = computeRotatableSubtrees(graph, placement.coords);
+    const result = runLocalCleanup(graph, placement.coords, {
+      maxPasses: 3,
+      bondLength: graph.options.bondLength,
+      overlapPairs: findSevereOverlaps(graph, placement.coords, graph.options.bondLength)
+    });
+
+    assert.ok(rotatableSubtrees.terminalSubtrees.some(
+      descriptor => descriptor.atomId === 'C15'
+        && descriptor.anchorAtomId === 'C13'
+        && descriptor.subtreeAtomIds.includes('C16')
+        && descriptor.subtreeAtomIds.includes('O17')
+    ));
+    assert.equal(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length, 0);
+    assert.ok(Math.abs(bondAngleDegrees(result.coords, 'C15', 'C13', 'C16') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngleDegrees(result.coords, 'C15', 'C13', 'O17') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngleDegrees(result.coords, 'C15', 'C16', 'O17') - 120) < 1e-6);
   });
 
   it('rotates a linear terminal subgroup around a single bond when that improves trigonal readability', () => {

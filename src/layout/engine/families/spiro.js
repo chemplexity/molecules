@@ -67,6 +67,45 @@ function orderSpiroPath(rings, ringConnectionByPair) {
 }
 
 /**
+ * Returns whether path walking should own a spiro chain. When the largest ring
+ * sits inside the path rather than at an endpoint, the largest ring is usually
+ * the parent scaffold and smaller spiro rings should be placed outward from it.
+ * In that shape, endpoint-rooted path walking can pinch the small-ring exits
+ * against the parent ring.
+ * @param {object[]} rings - Ring descriptors in the target spiro system.
+ * @param {number[]} ringOrder - Candidate path order from one endpoint to the other.
+ * @param {Map<string, object>} ringConnectionByPair - Pair-keyed ring connection map.
+ * @returns {boolean} True when endpoint-rooted path placement should be used.
+ */
+function shouldUseEndpointSpiroPath(rings, ringOrder, ringConnectionByPair) {
+  if (!ringOrder || ringOrder.length < 3) {
+    return false;
+  }
+
+  const ringById = new Map(rings.map(ring => [ring.id, ring]));
+  const endpointSizes = [
+    ringById.get(ringOrder[0])?.atomIds.length ?? 0,
+    ringById.get(ringOrder[ringOrder.length - 1])?.atomIds.length ?? 0
+  ];
+  const largestEndpointSize = Math.max(...endpointSizes);
+
+  for (let index = 1; index < ringOrder.length - 1; index++) {
+    const ring = ringById.get(ringOrder[index]);
+    if (!ring || ring.atomIds.length <= largestEndpointSize) {
+      continue;
+    }
+
+    const previousConnectionKey = ringOrder[index - 1] < ring.id ? `${ringOrder[index - 1]}:${ring.id}` : `${ring.id}:${ringOrder[index - 1]}`;
+    const nextConnectionKey = ring.id < ringOrder[index + 1] ? `${ring.id}:${ringOrder[index + 1]}` : `${ringOrder[index + 1]}:${ring.id}`;
+    if (ringConnectionByPair.has(previousConnectionKey) && ringConnectionByPair.has(nextConnectionKey)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+/**
  * Rotates an atom ordering so the shared spiro atom is first.
  * @param {string[]} atomIds - Ring atom IDs in perimeter order.
  * @param {string} startAtomId - Shared atom ID to place first.
@@ -318,11 +357,14 @@ export function layoutSpiroFamily(rings, ringAdj, ringConnectionByPair, bondLeng
   }
 
   const ringOrder = options.layoutGraph ? orderSpiroPath(rings, ringConnectionByPair) : null;
-  if (ringOrder) {
+  if (ringOrder && shouldUseEndpointSpiroPath(rings, ringOrder, ringConnectionByPair)) {
     return layoutSpiroPath(options.layoutGraph, rings, ringOrder, ringConnectionByPair, bondLength);
   }
 
-  const rootRing = rings[0];
+  const rootRing = [...rings].sort((firstRing, secondRing) => {
+    const sizeDelta = secondRing.atomIds.length - firstRing.atomIds.length;
+    return sizeDelta !== 0 ? sizeDelta : firstRing.id - secondRing.id;
+  })[0];
   const rootCoords = placeRegularPolygon(rootRing.atomIds, { x: 0, y: 0 }, bondLength);
   for (const [atomId, position] of rootCoords) {
     coords.set(atomId, position);

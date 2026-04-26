@@ -4,6 +4,7 @@ import { add, angleOf, centroid, fromAngle, length, rotate, sub } from '../geome
 import { actualAlkeneStereo } from '../stereo/ez.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { describeCrossLikeHypervalentCenter, placeRemainingBranches } from '../placement/branch-placement.js';
+import { isExactVisibleTrigonalBisectorEligible } from '../placement/branch-placement/angle-selection.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 
 const ZIGZAG_STEP_ANGLE = Math.PI / 6;
@@ -671,6 +672,80 @@ export function realignVisibleTrigonalSingleBondRoots(layoutGraph, coords, backb
 
   return coords;
 }
+
+/**
+ * Re-snaps non-backbone single-bond branches on planar conjugated tertiary
+ * nitrogens to the exact remaining trigonal bisector after backbone
+ * normalization has moved neighboring conjugated segments.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string[]} [backbone] - Backbone atom IDs in placement order.
+ * @returns {Map<string, {x: number, y: number}>} Updated coordinate map.
+ */
+function realignConjugatedNitrogenSingleBondRoots(layoutGraph, coords, backbone = []) {
+  if (!layoutGraph) {
+    return coords;
+  }
+  const backboneAtomIds = new Set(backbone);
+
+  for (const atom of layoutGraph.atoms.values()) {
+    if (
+      !coords.has(atom.id)
+      || atom.element !== 'N'
+      || atom.aromatic
+      || atom.heavyDegree !== 3
+      || atom.degree !== 3
+      || (layoutGraph.atomToRings.get(atom.id)?.length ?? 0) > 0
+    ) {
+      continue;
+    }
+
+    const heavyBonds = (layoutGraph.bondsByAtomId.get(atom.id) ?? []).filter(bond => {
+      if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+        return false;
+      }
+      const neighborAtomId = bond.a === atom.id ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H' && coords.has(neighborAtomId);
+    });
+    if (heavyBonds.length !== 3) {
+      continue;
+    }
+
+    const rootBonds = heavyBonds.filter(bond => {
+      const rootAtomId = bond.a === atom.id ? bond.b : bond.a;
+      return !(backboneAtomIds.has(atom.id) && backboneAtomIds.has(rootAtomId))
+        && isExactVisibleTrigonalBisectorEligible(layoutGraph, atom.id, rootAtomId);
+    });
+    if (rootBonds.length !== 1) {
+      continue;
+    }
+
+    const rootAtomId = rootBonds[0].a === atom.id ? rootBonds[0].b : rootBonds[0].a;
+    const centerPosition = coords.get(atom.id);
+    const rootPosition = coords.get(rootAtomId);
+    const otherPositions = heavyBonds
+      .map(bond => (bond.a === atom.id ? bond.b : bond.a))
+      .filter(neighborAtomId => neighborAtomId !== rootAtomId)
+      .map(neighborAtomId => coords.get(neighborAtomId))
+      .filter(Boolean);
+    if (!centerPosition || !rootPosition || otherPositions.length !== 2) {
+      continue;
+    }
+
+    const targetAngle = angleOf(sub(centerPosition, centroid(otherPositions)));
+    const currentAngle = angleOf(sub(rootPosition, centerPosition));
+    rotateSubtreeAroundCenter(
+      coords,
+      collectSideAtomIds(layoutGraph, rootAtomId, atom.id),
+      centerPosition,
+      normalizeSignedAngle(targetAngle - currentAngle)
+    );
+  }
+
+  return coords;
+}
+
 /**
  * Re-snaps terminal multiple-bond leaves on trigonal centers to the exact
  * outward bisector after backbone normalization has rotated one side of the
@@ -935,6 +1010,7 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
   const stereoEnforced = enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords;
   const trigonalNormalized = normalizeBackboneTrigonalAngles(layoutGraph, stereoEnforced, backbone);
   const visibleRootsRealigned = realignVisibleTrigonalSingleBondRoots(layoutGraph, trigonalNormalized, backbone);
-  const linearRootsRealigned = realignTrigonalLinearSubstituentRoots(layoutGraph, visibleRootsRealigned, backbone);
+  const nitrogenRootsRealigned = realignConjugatedNitrogenSingleBondRoots(layoutGraph, visibleRootsRealigned, backbone);
+  const linearRootsRealigned = realignTrigonalLinearSubstituentRoots(layoutGraph, nitrogenRootsRealigned, backbone);
   return realignTerminalMultipleBondLeaves(layoutGraph, linearRootsRealigned, bondLength);
 }

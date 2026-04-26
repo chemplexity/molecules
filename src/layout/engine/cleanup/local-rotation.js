@@ -255,6 +255,79 @@ function saturatedTerminalSubtreeDescriptor(layoutGraph, atomId, heavyNeighborId
 }
 
 /**
+ * Returns whether an atom is a non-ring terminal heavy leaf.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate atom id.
+ * @returns {boolean} True when the atom is a terminal heavy leaf.
+ */
+function isTerminalHeavyLeaf(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  return !!atom
+    && atom.element !== 'H'
+    && !atom.aromatic
+    && atom.heavyDegree === 1
+    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0;
+}
+
+/**
+ * Returns a rigid cleanup descriptor for a terminal trigonal carbonyl/alkene
+ * group attached to a larger chain through one single bond. Moving the whole
+ * group preserves the exact local trigonal spread instead of rotating the
+ * multiple-bond leaf or terminal single-bond leaf independently.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate trigonal root atom id.
+ * @param {string[]} heavyNeighborIds - Heavy neighbors currently placed.
+ * @returns {{anchorAtomId: string}|null} Rotation descriptor or `null`.
+ */
+function terminalTrigonalSubtreeDescriptor(layoutGraph, atomId, heavyNeighborIds) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (
+    !atom
+    || atom.element !== 'C'
+    || atom.aromatic
+    || atom.heavyDegree !== 3
+    || heavyNeighborIds.length !== 3
+    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+
+  let terminalMultipleNeighborId = null;
+  const singleNeighborIds = [];
+  for (const neighborAtomId of heavyNeighborIds) {
+    const pairKey = atomId < neighborAtomId ? `${atomId}:${neighborAtomId}` : `${neighborAtomId}:${atomId}`;
+    const bond = layoutGraph.bondByAtomPair.get(pairKey);
+    if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic) {
+      return null;
+    }
+    if ((bond.order ?? 1) === 1) {
+      singleNeighborIds.push(neighborAtomId);
+      continue;
+    }
+    if ((bond.order ?? 1) >= 2 && terminalMultipleBondLeafBond(layoutGraph, atomId, neighborAtomId)) {
+      if (terminalMultipleNeighborId != null) {
+        return null;
+      }
+      terminalMultipleNeighborId = neighborAtomId;
+      continue;
+    }
+    return null;
+  }
+
+  if (terminalMultipleNeighborId == null || singleNeighborIds.length !== 2) {
+    return null;
+  }
+
+  const terminalSingleNeighborIds = singleNeighborIds.filter(neighborAtomId => isTerminalHeavyLeaf(layoutGraph, neighborAtomId));
+  const anchorNeighborIds = singleNeighborIds.filter(neighborAtomId => !isTerminalHeavyLeaf(layoutGraph, neighborAtomId));
+  if (terminalSingleNeighborIds.length !== 1 || anchorNeighborIds.length !== 1) {
+    return null;
+  }
+
+  return { anchorAtomId: anchorNeighborIds[0] };
+}
+
+/**
  * Collects movable terminal subtrees from the currently placed covalent graph.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
@@ -332,6 +405,19 @@ function movableTerminalSubtrees(layoutGraph, coords) {
       atomId,
       anchorAtomId: descriptor.anchorAtomId,
       subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, descriptor.anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId))
+    });
+  }
+  for (const [atomId, neighbors] of adjacency) {
+    const heavyNeighbors = neighbors.filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+    const descriptor = terminalTrigonalSubtreeDescriptor(layoutGraph, atomId, heavyNeighbors);
+    if (!descriptor) {
+      continue;
+    }
+    result.push({
+      atomId,
+      anchorAtomId: descriptor.anchorAtomId,
+      subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, descriptor.anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId)),
+      preferAtomOverlapClearance: true
     });
   }
   return result;
@@ -532,6 +618,25 @@ function recordFinalist(finalists, candidate) {
 }
 
 /**
+ * Chooses the stronger local cleanup move. Geometry-preserving descriptors can
+ * opt into preferring fewer severe atom-overlap penalties before softer gains.
+ * @param {object|null} incumbent - Current best move.
+ * @param {object} candidate - Candidate move.
+ * @param {number} epsilon - Numeric tie tolerance.
+ * @returns {boolean} True when the candidate should replace the incumbent.
+ */
+function isBetterLocalMove(incumbent, candidate, epsilon) {
+  if (!incumbent) {
+    return true;
+  }
+  const preferAtomOverlapCost = candidate.preferAtomOverlapCost === true || incumbent.preferAtomOverlapCost === true;
+  if (preferAtomOverlapCost && Math.abs((candidate.atomOverlapCost ?? 0) - (incumbent.atomOverlapCost ?? 0)) > epsilon) {
+    return (candidate.atomOverlapCost ?? 0) < (incumbent.atomOverlapCost ?? 0);
+  }
+  return candidate.improvement > incumbent.improvement + epsilon;
+}
+
+/**
  * Re-scores a small set of approximate local-cleanup finalists with bond
  * crowding enabled and returns the best surviving full move.
  * @param {object} layoutGraph - Layout graph shell.
@@ -541,9 +646,10 @@ function recordFinalist(finalists, candidate) {
  * @param {number} bondLength - Target bond length.
  * @param {object} subtreeContext - Reusable subtree-overlap context.
  * @param {number} epsilon - Minimum accepted improvement.
- * @returns {{positions: Map<string, {x: number, y: number}>, improvement: number}|null} Best fully scored move.
+ * @param {{preferAtomOverlapCost?: boolean}} [options] - Finalist ranking options.
+ * @returns {{positions: Map<string, {x: number, y: number}>, improvement: number, atomOverlapCost?: number, preferAtomOverlapCost?: boolean}|null} Best fully scored move.
  */
-function finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon) {
+function finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon, options = {}) {
   if (finalists.length === 0) {
     return null;
   }
@@ -562,11 +668,16 @@ function finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLe
       subtreeContext
     });
     const improvement = finalist.approximateImprovement + (baseBondCrowdingCost - candidateBondCrowdingCost);
-    if (improvement > epsilon && (!bestMove || improvement > bestMove.improvement)) {
-      bestMove = {
+    if (improvement > epsilon) {
+      const candidateMove = {
         positions: finalist.positions,
-        improvement
+        improvement,
+        atomOverlapCost: finalist.atomOverlapCost ?? 0,
+        preferAtomOverlapCost: options.preferAtomOverlapCost === true
       };
+      if (isBetterLocalMove(bestMove, candidateMove, epsilon)) {
+        bestMove = candidateMove;
+      }
     }
   }
 
@@ -843,7 +954,8 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
     let bestMove = null;
     const inwardFlipTolerance = bondLength * bondLength * 0.02;
 
-    for (const { atomId, anchorAtomId, subtreeAtomIds } of eligibleDescriptors.terminalSubtrees) {
+    for (const subtree of eligibleDescriptors.terminalSubtrees) {
+      const { atomId, anchorAtomId, subtreeAtomIds } = subtree;
       const anchorPosition = coords.get(anchorAtomId);
       const rootPosition = coords.get(atomId);
       if (!anchorPosition || !rootPosition) {
@@ -892,8 +1004,10 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         }
       });
 
-      const refinedMove = finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon);
-      if (refinedMove && (!bestMove || refinedMove.improvement > bestMove.improvement)) {
+      const refinedMove = finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon, {
+        preferAtomOverlapCost: subtree.preferAtomOverlapClearance === true
+      });
+      if (refinedMove && isBetterLocalMove(bestMove, refinedMove, epsilon)) {
         bestMove = refinedMove;
       }
     }
@@ -939,7 +1053,7 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         atomOverlapCost: newAtomOverlapCost,
         anchorDistortion: newAnchorDistortion
       }], bondLength, subtreeContext, epsilon);
-      if (refinedMove && (!bestMove || refinedMove.improvement > bestMove.improvement)) {
+      if (refinedMove && isBetterLocalMove(bestMove, refinedMove, epsilon)) {
         bestMove = refinedMove;
       }
     }
@@ -995,7 +1109,7 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
       }
 
       const refinedMove = finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon);
-      if (refinedMove && (!bestMove || refinedMove.improvement > bestMove.improvement)) {
+      if (refinedMove && isBetterLocalMove(bestMove, refinedMove, epsilon)) {
         bestMove = refinedMove;
       }
     }

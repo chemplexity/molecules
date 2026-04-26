@@ -36,6 +36,20 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     assert.equal(isExactVisibleTrigonalBisectorEligible(graph, 'C3', 'C4'), false);
   });
 
+  it('treats planar conjugated tertiary nitrogens as exact bisector candidates', () => {
+    const conjugatedGraph = createLayoutGraph(parseSMILES('CCCC(O)CN=CN(C)C(C)C(C)=NO'), { suppressH: true });
+    const saturatedGraph = createLayoutGraph(parseSMILES('CN(C)C'), { suppressH: true });
+    const saturatedNitrogenId = [...saturatedGraph.atoms.values()].find(atom => atom.element === 'N')?.id;
+    const saturatedMethylId = (saturatedGraph.bondsByAtomId.get(saturatedNitrogenId) ?? [])
+      .map(bond => bond.a === saturatedNitrogenId ? bond.b : bond.a)
+      .find(atomId => saturatedGraph.atoms.get(atomId)?.element === 'C');
+
+    assert.equal(isExactVisibleTrigonalBisectorEligible(conjugatedGraph, 'N9', 'C10'), true);
+    assert.ok(saturatedNitrogenId);
+    assert.ok(saturatedMethylId);
+    assert.equal(isExactVisibleTrigonalBisectorEligible(saturatedGraph, saturatedNitrogenId, saturatedMethylId), false);
+  });
+
   it('limits exact ring-outward placement to rigid carbon roots instead of flexible chain carbons', () => {
     const flexibleGraph = createLayoutGraph(parseSMILES('C1=C(NC=N1)CC(C(=O)N[C@@H](CCCCN)C(=O)O)NC(=O)CN'), { suppressH: true });
     const nitrileGraph = createLayoutGraph(parseSMILES('N#Cc1ccccc1'), { suppressH: true });
