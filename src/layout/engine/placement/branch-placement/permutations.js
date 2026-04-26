@@ -15,10 +15,22 @@ import {
   setPlacedPosition,
   subtreeHeavyAtomCount
 } from './shared.js';
-import { buildCandidateAngleSets, describeCrossLikeHypervalentCenter, isLinearCenter, measureSmallRingExteriorGapSpreadPenalty } from './angle-selection.js';
+import {
+  buildCandidateAngleSets,
+  describeCrossLikeHypervalentCenter,
+  isLinearCenter,
+  isTerminalMultipleBondLeaf,
+  measureSmallRingExteriorGapSpreadPenalty
+} from './angle-selection.js';
+
+const INDEX_PERMUTATIONS_2 = Object.freeze([[0, 1], [1, 0]]);
+const INDEX_PERMUTATIONS_3 = Object.freeze([
+  [0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]
+]);
 
 const ORTHOGONAL_SLOT_OFFSETS = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
 const ARRANGEMENT_COST_TIE_EPSILON = 1e-12;
+const TRIGONAL_BRANCH_CLEARANCE_ASSIGNMENT_WEIGHT = 0.25;
 const ORTHOGONAL_SLOT_PERMUTATIONS = [
   [0, 1, 2, 3],
   [0, 1, 3, 2],
@@ -103,8 +115,20 @@ export function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anch
 }
 
 function permutations(items, maxPermutations = Number.MAX_SAFE_INTEGER) {
-  if (items.length <= 1) {
+  const count = items.length;
+  if (count <= 1) {
     return [items];
+  }
+  if (count === 2) {
+    const perms = INDEX_PERMUTATIONS_2.map(indices => [items[indices[0]], items[indices[1]]]);
+    return maxPermutations >= 2 ? perms : perms.slice(0, maxPermutations);
+  }
+  if (count === 3) {
+    const perms = INDEX_PERMUTATIONS_3.map(indices => [items[indices[0]], items[indices[1]], items[indices[2]]]);
+    return maxPermutations >= 6 ? perms : perms.slice(0, maxPermutations);
+  }
+  if (count === 4 && maxPermutations >= 24) {
+    return ORTHOGONAL_SLOT_PERMUTATIONS.map(indices => [items[indices[0]], items[indices[1]], items[indices[2]], items[indices[3]]]);
   }
   const result = [];
   const recurse = (prefix, remainingItems) => {
@@ -445,6 +469,147 @@ function arrangementCrossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomI
 }
 
 /**
+ * Counts heavy atoms in the covalent subtree reached from a root across one cut bond.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} rootAtomId - Root atom on the traversed side.
+ * @param {string} blockedAtomId - Atom on the blocked side of the cut.
+ * @returns {number} Heavy atom count in the downstream subtree.
+ */
+function covalentHeavySubtreeSize(layoutGraph, rootAtomId, blockedAtomId) {
+  if (!layoutGraph) {
+    return 0;
+  }
+  const visited = new Set([blockedAtomId]);
+  const queue = [rootAtomId];
+  let heavyAtomCount = 0;
+
+  while (queue.length > 0) {
+    const atomId = queue.pop();
+    if (visited.has(atomId)) {
+      continue;
+    }
+    visited.add(atomId);
+    const atom = layoutGraph.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    if (atom.element !== 'H') {
+      heavyAtomCount++;
+    }
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (!visited.has(neighborAtomId)) {
+        queue.push(neighborAtomId);
+      }
+    }
+  }
+
+  return heavyAtomCount;
+}
+
+/**
+ * Returns the minimum visible distance from one atom to the already placed scaffold.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {string} atomId - Atom whose clearance should be measured.
+ * @param {Set<string>} excludedAtomIds - Atoms to ignore, usually the new local arrangement.
+ * @param {import('../../geometry/atom-grid.js').AtomGrid|null} [atomGrid] - Optional spatial index for proximity queries.
+ * @returns {number} Minimum distance to an already placed visible atom.
+ */
+function visibleScaffoldClearance(layoutGraph, coords, atomId, excludedAtomIds, atomGrid = null) {
+  const position = coords.get(atomId);
+  if (!layoutGraph || !position) {
+    return 0;
+  }
+
+  const candidateAtomIds = atomGrid
+    ? atomGrid.queryRadius(position, atomGrid.cellSize * 5)
+    : coords.keys();
+  let minimumDistance = Number.POSITIVE_INFINITY;
+  for (const otherAtomId of candidateAtomIds) {
+    if (excludedAtomIds.has(otherAtomId)) {
+      continue;
+    }
+    const otherAtom = layoutGraph.atoms.get(otherAtomId);
+    if (!otherAtom || otherAtom.visible === false || otherAtom.element === 'H') {
+      continue;
+    }
+    const otherPosition = coords.get(otherAtomId);
+    if (!otherPosition) {
+      continue;
+    }
+    const dx = position.x - otherPosition.x;
+    const dy = position.y - otherPosition.y;
+    minimumDistance = Math.min(minimumDistance, Math.hypot(dx, dy));
+  }
+
+  return Number.isFinite(minimumDistance) ? minimumDistance : 0;
+}
+
+/**
+ * Penalizes carbonyl-like trigonal assignments that put a larger single-bond
+ * branch into a tighter scaffold slot than a terminal multiple-bond hetero
+ * leaf. This keeps acyl and ester tails on the open side when the local
+ * 120-degree alternatives are otherwise tied by geometry cost.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {string} anchorAtomId - Trigonal anchor atom ID.
+ * @param {string[]} [focusAtomIds] - Newly placed atoms participating in the arrangement.
+ * @param {import('../../geometry/atom-grid.js').AtomGrid|null} [atomGrid] - Optional spatial index for clearance queries.
+ * @returns {number} Slot-assignment penalty; lower is better.
+ */
+function trigonalBranchClearanceAssignmentPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds = [], atomGrid = null) {
+  const anchorAtom = layoutGraph?.atoms.get(anchorAtomId);
+  if (
+    !layoutGraph
+    || !anchorAtom
+    || anchorAtom.element !== 'C'
+    || anchorAtom.aromatic
+    || anchorAtom.heavyDegree !== 3
+    || anchorAtom.degree !== 3
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+  ) {
+    return 0;
+  }
+
+  const focusAtomIdSet = new Set(focusAtomIds);
+  const terminalMultipleLeafIds = [];
+  const bulkySingleBranchIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic) {
+      return 0;
+    }
+    const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+    if (!focusAtomIdSet.has(neighborAtomId) || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if ((bond.order ?? 1) >= 2 && isTerminalMultipleBondLeaf(layoutGraph, anchorAtomId, bond) && neighborAtom.element !== 'C') {
+      terminalMultipleLeafIds.push(neighborAtomId);
+      continue;
+    }
+    if ((bond.order ?? 1) === 1 && covalentHeavySubtreeSize(layoutGraph, neighborAtomId, anchorAtomId) >= 2) {
+      bulkySingleBranchIds.push(neighborAtomId);
+    }
+  }
+
+  if (terminalMultipleLeafIds.length !== 1 || bulkySingleBranchIds.length !== 1) {
+    return 0;
+  }
+
+  const excludedAtomIds = new Set([anchorAtomId, ...focusAtomIds]);
+  const terminalClearance = visibleScaffoldClearance(layoutGraph, coords, terminalMultipleLeafIds[0], excludedAtomIds, atomGrid);
+  const branchClearance = visibleScaffoldClearance(layoutGraph, coords, bulkySingleBranchIds[0], excludedAtomIds, atomGrid);
+  return Math.max(0, terminalClearance - branchClearance) ** 2;
+}
+
+/**
  * Returns a local ring-substituent readability penalty for one arrangement
  * candidate. This lets mirrored multi-child placements around aromatic and
  * conjugated ring roots prefer the orientation that keeps existing exocyclic
@@ -469,7 +634,8 @@ function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAto
     tetrahedralSpreadPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
     measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, anchorAtomId) * SMALL_RING_EXTERIOR_GAP_WEIGHT +
     arrangementCrossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
-    arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT
+    arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
+    trigonalBranchClearanceAssignmentPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds, atomGrid) * TRIGONAL_BRANCH_CLEARANCE_ASSIGNMENT_WEIGHT
   );
 }
 

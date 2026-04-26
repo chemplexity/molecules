@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { parseSMILES } from '../../src/io/smiles.js';
+import { parseSMILES, toSMILES } from '../../src/io/smiles.js';
 import { reactionTemplates } from '../../src/smirks/reference.js';
 import { findSMARTSRaw } from '../../src/smarts/search.js';
 import { generateAndRefine2dCoords } from '../../src/layout/index.js';
@@ -675,6 +675,53 @@ test('reaction preview preserves product wedge or dash display for an untouched 
   const productBond = preview.mol.getBond(productCenterId, productOtherId);
   assert.ok(productBond, 'expected preserved product bond at untouched stereocenter');
   assert.equal(productWedges.get(productBond.id), sourceStereo[1], 'expected product wedge/dash display to match the reactant');
+});
+
+test('reaction preview keeps amine-protonation fused aza product valence-clean', () => {
+  const preview = preparePreview(
+    'C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]',
+    reactionTemplates.amineProtonation.smirks
+  );
+
+  assert.deepEqual(validateValence(preview.mol), []);
+});
+
+test('reaction preview keeps imine-hydrolysis then phenolate-protonation fused aza product valence-clean', () => {
+  const afterImineHydrolysis = preparePreview(
+    'C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]',
+    reactionTemplates.imineHydrolysis.smirks
+  );
+  assert.deepEqual(validateValence(afterImineHydrolysis.mol), []);
+
+  const productSmiles = toSMILES(afterImineHydrolysis.mol.getSubgraph([...afterImineHydrolysis.productAtomIds]));
+  const previewInput = productSmiles;
+  const afterPhenolateProtonation = preparePreview(previewInput, reactionTemplates.phenolateProtonation.smirks);
+  assert.deepEqual(validateValence(afterPhenolateProtonation.mol), []);
+});
+
+test('reaction preview keeps aromatic-aza-protonation fused aza product valence-clean', () => {
+  const preview = preparePreview(
+    'C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]',
+    reactionTemplates.aromaticAzaProtonation.smirks
+  );
+
+  assert.deepEqual(validateValence(preview.mol), []);
+});
+
+test('reaction preview reanchors product hidden stereohydrogens after alcohol oxidation', () => {
+  const preview = preparePreview(
+    'CCCN(CCC)C(=O)c1cc(C)cc(c1)C(=O)N[C@@H](Cc2cc(F)cc(F)c2)[C@H](O)[C@@H]3NCCN(Cc4ccccc4)C3=O',
+    reactionTemplates.alcoholOxidation.smirks
+  );
+
+  for (const atomId of ['__rxn_product__0:H21', '__rxn_product__0:H35']) {
+    const hydrogen = preview.mol.atoms.get(atomId);
+    assert.ok(hydrogen, `expected product stereochemical hydrogen ${atomId}`);
+    assert.equal(hydrogen.visible, false, `expected ${atomId} to remain hidden until stereo rendering makes it visible`);
+    const [parent] = hydrogen.getNeighbors(preview.mol);
+    assert.ok(parent, `expected ${atomId} to have a parent atom`);
+    assert.ok(distance(hydrogen, parent) < 1e-6, `expected ${atomId} to stay coincident with ${parent.id} before stereo projection`);
+  }
 });
 
 test('reaction preview preserves the retained sugar scaffold for ether cleavage', () => {

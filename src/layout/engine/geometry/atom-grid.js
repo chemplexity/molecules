@@ -77,16 +77,16 @@ export class AtomGrid {
   }
 
   /**
-   * Returns atom IDs within the queried radius neighborhood as a Set.
+   * Returns atom IDs within the queried radius neighborhood as an array.
    * @param {{x: number, y: number}} position - Query position.
    * @param {number} radius - Query radius.
-   * @returns {Set<string>} Candidate atom IDs near the position.
+   * @returns {string[]} Candidate atom IDs near the position.
    */
   queryRadius(position, radius) {
     const xIndex = Math.floor(position.x / this.cellSize);
     const yIndex = Math.floor(position.y / this.cellSize);
     const cellRadius = Math.max(0, Math.ceil(radius / this.cellSize));
-    const atomIds = new Set();
+    const atomIds = [];
     for (let dx = -cellRadius; dx <= cellRadius; dx++) {
       const col = this.cells.get(xIndex + dx);
       if (!col) {
@@ -98,7 +98,7 @@ export class AtomGrid {
           continue;
         }
         for (const atomId of cell) {
-          atomIds.add(atomId);
+          atomIds.push(atomId);
         }
       }
     }
@@ -106,19 +106,19 @@ export class AtomGrid {
   }
 
   /**
-   * Returns atom IDs within the queried bounding box as a Set.
+   * Returns atom IDs within the queried bounding box as an array.
    * @param {number} minX - Minimum X coordinate.
    * @param {number} minY - Minimum Y coordinate.
    * @param {number} maxX - Maximum X coordinate.
    * @param {number} maxY - Maximum Y coordinate.
-   * @returns {Set<string>} Candidate atom IDs within the bounding box cells.
+   * @returns {string[]} Candidate atom IDs within the bounding box cells.
    */
   queryBoundingBox(minX, minY, maxX, maxY) {
     const minXIndex = Math.floor(minX / this.cellSize);
     const minYIndex = Math.floor(minY / this.cellSize);
     const maxXIndex = Math.floor(maxX / this.cellSize);
     const maxYIndex = Math.floor(maxY / this.cellSize);
-    const atomIds = new Set();
+    const atomIds = [];
     for (let xIndex = minXIndex; xIndex <= maxXIndex; xIndex++) {
       const col = this.cells.get(xIndex);
       if (!col) {
@@ -130,7 +130,7 @@ export class AtomGrid {
           continue;
         }
         for (const atomId of cell) {
-          atomIds.add(atomId);
+          atomIds.push(atomId);
         }
       }
     }

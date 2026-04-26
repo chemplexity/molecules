@@ -194,14 +194,32 @@ function solveDampedNewtonStep(dxx, dxy, dyy, gradientX, gradientY) {
 }
 
 /**
+ * Builds a bonded-pair key set for all bonds within the given atom ID set.
+ * @param {object} molecule - Molecule-like graph.
+ * @param {Set<string>} atomIdSet - Atom IDs included in the layout.
+ * @returns {Set<string>} Bonded-pair keys.
+ */
+function buildBondedPairSet(molecule, atomIdSet) {
+  const bondedPairs = new Set();
+  for (const bond of molecule.bonds.values()) {
+    const [a, b] = bond.atoms;
+    if (atomIdSet.has(a) && atomIdSet.has(b)) {
+      bondedPairs.add(a < b ? `${a}:${b}` : `${b}:${a}`);
+    }
+  }
+  return bondedPairs;
+}
+
+/**
  * Returns whether a Kamada-Kawai coordinate set clears basic validity gates.
  * @param {object} molecule - Molecule-like graph.
  * @param {string[]} atomIds - Atom IDs included in the layout.
  * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
  * @param {number} bondLength - Target bond length.
+ * @param {Set<string>|null} [bondedPairs] - Optional pre-built bonded-pair key set.
  * @returns {boolean} True when the layout is acceptable.
  */
-export function isKamadaKawaiLayoutAcceptable(molecule, atomIds, coords, bondLength) {
+export function isKamadaKawaiLayoutAcceptable(molecule, atomIds, coords, bondLength, bondedPairs = null) {
   const atomIdSet = new Set(atomIds);
   for (const atomId of atomIds) {
     const position = coords.get(atomId);
@@ -228,11 +246,7 @@ export function isKamadaKawaiLayoutAcceptable(molecule, atomIds, coords, bondLen
     }
   }
 
-  const bondedPairs = new Set();
-  for (const bond of molecule.bonds.values()) {
-    const [a, b] = bond.atoms;
-    bondedPairs.add(a < b ? `${a}:${b}` : `${b}:${a}`);
-  }
+  const resolvedBondedPairs = bondedPairs ?? buildBondedPairSet(molecule, atomIdSet);
 
   const heavyAtomIds = atomIds.filter(atomId => molecule.atoms.get(atomId)?.name !== 'H');
   for (let firstIndex = 0; firstIndex < heavyAtomIds.length; firstIndex++) {
@@ -241,7 +255,7 @@ export function isKamadaKawaiLayoutAcceptable(molecule, atomIds, coords, bondLen
     for (let secondIndex = firstIndex + 1; secondIndex < heavyAtomIds.length; secondIndex++) {
       const secondAtomId = heavyAtomIds[secondIndex];
       const secondPosition = coords.get(secondAtomId);
-      const isBonded = bondedPairs.has(firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`);
+      const isBonded = resolvedBondedPairs.has(firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`);
       if (isBonded) {
         continue;
       }
@@ -298,6 +312,8 @@ export function layoutKamadaKawai(
   }
 
   const pinnedAtomIdSet = new Set(pinnedAtomIds);
+  const atomIdSet = new Set(atomIds);
+  const bondedPairs = buildBondedPairSet(molecule, atomIdSet);
   const adjacency = buildRestrictedAdjacency(molecule, atomIds);
   const distanceMatrix = buildDistanceMatrix(atomIds, adjacency);
   if (!hasFiniteMatrixEntries(distanceMatrix)) {
@@ -467,7 +483,7 @@ export function layoutKamadaKawai(
     coords: resultCoords,
     converged: Number.isFinite(currentEnergy) && currentEnergy <= threshold,
     energy: currentEnergy,
-    ok: isKamadaKawaiLayoutAcceptable(molecule, atomIds, resultCoords, bondLength),
+    ok: isKamadaKawaiLayoutAcceptable(molecule, atomIds, resultCoords, bondLength, bondedPairs),
     skipped: false
   };
 }

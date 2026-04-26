@@ -945,6 +945,89 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('keeps ring-adjacent long ester tails on the open side of the carbonyl', () => {
+    const smiles = 'OC[C@H]1O[C@@H](O[C@H]2[C@@H](O)[C@H](O)[C@@H](CO)O[C@H]2O)[C@H](O)[C@@H](O)[C@@H]1OC(=O)CCCCCC';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), buildScaffoldPlan(graph, component), graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    const assertOpenEsterTail = (coords, label) => {
+      for (const [name, angle] of [
+        ['O33-C34-O35', bondAngleAtAtom(coords, 'C34', 'O33', 'O35')],
+        ['O33-C34-C36', bondAngleAtAtom(coords, 'C34', 'O33', 'C36')],
+        ['O35-C34-C36', bondAngleAtAtom(coords, 'C34', 'O35', 'C36')]
+      ]) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+      const tailClearance = distance(coords.get('C36'), coords.get('O30'));
+      const terminalOxygenClearance = distance(coords.get('O35'), coords.get('O30'));
+      assert.ok(
+        tailClearance > terminalOxygenClearance + graph.options.bondLength,
+        `expected ${label} ester tail to take the open carbonyl slot, got tail ${tailClearance.toFixed(2)} vs oxygen ${terminalOxygenClearance.toFixed(2)}`
+      );
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertOpenEsterTail(mixedResult.coords, 'mixed layout');
+    assertOpenEsterTail(pipelineResult.coords, 'pipeline layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+  });
+
+  it('preserves terminal alkyne linearity through attached-ring fallback cleanup', () => {
+    const smiles = 'CC1CCC(CNC(C)=O)(C1C)C(C)(C)C#C';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), buildScaffoldPlan(graph, component), graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    const assertLinearAlkyne = (coords, label) => {
+      const alkyneAngle = bondAngleAtAtom(coords, 'C16', 'C13', 'C17');
+      assert.ok(
+        Math.abs(alkyneAngle - Math.PI) < 1e-6,
+        `expected ${label} C13-C16-C17 to stay linear, got ${((alkyneAngle * 180) / Math.PI).toFixed(2)} degrees`
+      );
+    };
+    const assertExteriorRingSpread = (coords, label) => {
+      const centerPosition = coords.get('C5');
+      const ringNeighborAngles = ['C4', 'C11'].map(atomId => angleOf(sub(coords.get(atomId), centerPosition)));
+      const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 5);
+      const exocyclicAngles = ['C6', 'C13'].map(atomId => angleOf(sub(coords.get(atomId), centerPosition)));
+      const alignedDeviation = [
+        angularDifference(exocyclicAngles[0], targetAngles[0]),
+        angularDifference(exocyclicAngles[1], targetAngles[1])
+      ];
+      const swappedDeviation = [
+        angularDifference(exocyclicAngles[0], targetAngles[1]),
+        angularDifference(exocyclicAngles[1], targetAngles[0])
+      ];
+      const maxExteriorDeviation = Math.min(
+        Math.max(...alignedDeviation),
+        Math.max(...swappedDeviation)
+      );
+      assert.ok(
+        maxExteriorDeviation < 1e-6,
+        `expected ${label} C5 substituents to stay on the cyclopentane exterior targets, got ${((maxExteriorDeviation * 180) / Math.PI).toFixed(2)} degrees`
+      );
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertLinearAlkyne(mixedResult.coords, 'mixed layout');
+    assertLinearAlkyne(pipelineResult.coords, 'pipeline layout');
+    assertExteriorRingSpread(mixedResult.coords, 'mixed layout');
+    assertExteriorRingSpread(pipelineResult.coords, 'pipeline layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+  });
+
   it('keeps direct-attached foreign ring exits on the exact fused-junction continuation through the full pipeline', () => {
     const result = runPipeline(parseSMILES('CC1=NC=C(O1)C12CC(O)CCC1(C)CCN2'), {
       suppressH: true,
@@ -1539,6 +1622,40 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(mixedResult.supported, true);
     assertBalancedAttachment(mixedResult.coords, 'mixed layout');
     assertBalancedAttachment(pipelineResult.coords, 'pipeline layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+  });
+
+  it('swaps direct-attached aryl roots with sibling slots when a chiral hidden-h parent would otherwise bend the ring exit', () => {
+    const smiles = 'C[C@@H](O[C@H]1OCCN(CC2=NC(=O)N(N2)P(O)(O)=O)[C@H]1C1=CC=C(F)C=C1)C1=CC(=CC(=C1)C(F)(F)F)C(F)(F)F';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    const assertExactArylExit = (coords, label) => {
+      for (const [name, angle] of [
+        ['C2-C31-C36', bondAngleAtAtom(coords, 'C31', 'C2', 'C36')],
+        ['C2-C31-C32', bondAngleAtAtom(coords, 'C31', 'C2', 'C32')],
+        ['C36-C31-C32', bondAngleAtAtom(coords, 'C31', 'C36', 'C32')],
+        ['O4-C2-C31', bondAngleAtAtom(coords, 'C2', 'O4', 'C31')],
+        ['C31-C2-C1', bondAngleAtAtom(coords, 'C2', 'C31', 'C1')],
+        ['O4-C2-C1', bondAngleAtAtom(coords, 'C2', 'O4', 'C1')]
+      ]) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertExactArylExit(mixedResult.coords, 'mixed layout');
+    assertExactArylExit(pipelineResult.coords, 'pipeline layout');
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assert.equal(pipelineResult.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
   });

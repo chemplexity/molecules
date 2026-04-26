@@ -152,7 +152,15 @@ export function buildCleanupStageGraph(context) {
     protectLargeMoleculeBackbone,
     cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId
   };
-  const auditFinalStereo = coords => auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
+  const auditFinalStereoCache = new WeakMap();
+  const auditFinalStereo = coords => {
+    if (auditFinalStereoCache.has(coords)) {
+      return auditFinalStereoCache.get(coords);
+    }
+    const result = auditFinalStereoStage(layoutGraph.sourceMolecule, layoutGraph, coords, placement, bondLength, runStereoPhase);
+    auditFinalStereoCache.set(coords, result);
+    return result;
+  };
   const auditFinalStereoWithTieBreak = (candidate, incumbent) => isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true });
   const cleanupGeometryComparator = protectBondIntegrity
     ? (candidate, incumbent) => isPreferredProtectedCleanupStage(familySummary, placement, candidate, incumbent)

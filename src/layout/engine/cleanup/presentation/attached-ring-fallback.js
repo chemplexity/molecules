@@ -13,7 +13,8 @@ import { add, angleOf, angularDifference, centroid, rotate, sub, wrapAngle } fro
 import {
   findLayoutBond,
   isExactSimpleAcyclicContinuationEligible,
-  isExactVisibleTrigonalBisectorEligible
+  isExactVisibleTrigonalBisectorEligible,
+  isLinearCenter
 } from '../../placement/branch-placement/angle-selection.js';
 import { measureCleanupStagePresentationPenalty, measureTotalSmallRingExteriorGapPenalty } from '../../audit/stage-metrics.js';
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
@@ -548,6 +549,15 @@ function readabilityTupleWorsens(candidate, baseline) {
   return candidateOutward > baselineOutward;
 }
 
+/**
+ * Measures exact acyclic continuation distortion for simple divalent centers.
+ * Trigonal alkene/carbonyl continuations target `120°`, while alkyne-like
+ * linear centers target `180°`.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {Set<string>|null} [focusAtomIds] - Optional focus atoms for local scoring.
+ * @returns {{centerCount: number, totalDeviation: number, maxDeviation: number}} Continuation distortion statistics.
+ */
 function measureExactAcyclicContinuationDistortion(layoutGraph, coords, focusAtomIds = null) {
   const focusSet = focusAtomIds instanceof Set && focusAtomIds.size > 0 ? focusAtomIds : null;
   let centerCount = 0;
@@ -587,11 +597,12 @@ function measureExactAcyclicContinuationDistortion(layoutGraph, coords, focusAto
       continue;
     }
 
+    const idealSeparation = isLinearCenter(layoutGraph, atomId) ? Math.PI : (2 * Math.PI) / 3;
     const deviation = (
       angularDifference(
         angleOf(sub(coords.get(firstNeighborAtomId), coords.get(atomId))),
         angleOf(sub(coords.get(secondNeighborAtomId), coords.get(atomId)))
-      ) - (2 * Math.PI) / 3
+      ) - idealSeparation
     ) ** 2;
     centerCount++;
     totalDeviation += deviation;

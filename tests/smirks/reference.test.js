@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { applySMIRKS, findSMARTS, parseSMILES, parseSMIRKS, reactionTemplates, toSMILES } from '../../src/index.js';
+import { applySMIRKS, findSMARTS, parseSMILES, parseSMIRKS, reactionTemplates, toSMILES, validateValence } from '../../src/index.js';
 
 function sortDotSmiles(smiles) {
   return smiles.split('.').sort().join('.');
@@ -278,6 +278,33 @@ describe('reactionTemplates — example applications', () => {
     assert.match(toSMILES(product), /\[NH3\+\]/);
   });
 
+  it('amineProtonation preserves unrelated fused aza aromaticity', () => {
+    const product = applySMIRKS(
+      parseSMILES('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]'),
+      reactionTemplates.amineProtonation.smirks
+    );
+
+    assert.ok(product);
+    assert.deepEqual(validateValence(product), []);
+    assert.equal(product.atoms.get('N17')?.properties.aromatic, true);
+    assert.equal(product.atoms.get('N25')?.properties.aromatic, true);
+  });
+
+  it('imineHydrolysis and phenolateProtonation preserve the adjacent fused aza ring', () => {
+    const afterImineHydrolysis = applySMIRKS(
+      parseSMILES('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]'),
+      reactionTemplates.imineHydrolysis.smirks
+    );
+    assert.ok(afterImineHydrolysis);
+    assert.deepEqual(validateValence(afterImineHydrolysis), []);
+
+    const afterPhenolateProtonation = applySMIRKS(afterImineHydrolysis, reactionTemplates.phenolateProtonation.smirks);
+    assert.ok(afterPhenolateProtonation);
+    assert.deepEqual(validateValence(afterPhenolateProtonation), []);
+    assert.equal(afterPhenolateProtonation.atoms.get('N17')?.properties.aromatic, true);
+    assert.equal(afterPhenolateProtonation.atoms.get('N25')?.properties.aromatic, true);
+  });
+
   it('aromaticAzaProtonation protonates pyridine-like aromatic nitrogens', () => {
     const product = applySMIRKS(parseSMILES('c1ccncc1'), reactionTemplates.aromaticAzaProtonation.smirks);
     assert.ok(product);
@@ -288,6 +315,19 @@ describe('reactionTemplates — example applications', () => {
     const product = applySMIRKS(parseSMILES('Cn1cncc1'), reactionTemplates.aromaticAzaProtonation.smirks);
     assert.ok(product);
     assert.equal(toSMILES(product), 'Cn1cc[nH+]c1');
+  });
+
+  it('aromaticAzaProtonation preserves fused aza aromaticity after protonating the aza site', () => {
+    const product = applySMIRKS(
+      parseSMILES('C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]'),
+      reactionTemplates.aromaticAzaProtonation.smirks
+    );
+
+    assert.ok(product);
+    assert.deepEqual(validateValence(product), []);
+    assert.equal(product.atoms.get('N17')?.getCharge(), 1);
+    assert.equal(product.atoms.get('N17')?.properties.aromatic, true);
+    assert.equal(product.atoms.get('N25')?.properties.aromatic, true);
   });
 
   it('fused aza nucleosides expose aromatic aza protonation sites after aromaticity perception', () => {

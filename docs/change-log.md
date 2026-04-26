@@ -1,7 +1,17 @@
 # Change Log
 
+## 2026-04-26
+
+- Preserve fused aza aromaticity through aromatic aza protonation, adjacent imine hydrolysis, phenolate protonation, and non-aromatic charge edits
+- Reanchor reaction-preview product hidden stereohydrogens and keep adjacent stereocenters from sharing one wedge/dash display bond
+- Preserve five- and six-member saturated ring exterior branch fans during presentation cleanup
+- Preserve linear alkyne continuations during attached-ring presentation cleanup
+- Prefer open-side placement for bulky ester tails at carbonyl branch choices
+- Let chiral omitted-h direct attachments swap sibling slots so aryl ring exits can stay exact without breaking the parent spread
+
 ## 2026-04-25
 
+- Rotate compact saturated side branches as rigid cleanup units so crowded ketones clear overlaps without flattening adjacent omitted-h carbon centers
 - Rotate crowded terminal ketone groups as rigid cleanup subtrees so C15-style carbonyl centers keep exact `120°/120°/120°` geometry while resolving overlaps
 - Keep N-methyl branches on planar conjugated tertiary nitrogens at exact trigonal angles
 - Place small spiro rings outward from larger parent rings so cyclobutyl and cyclopropyl exits avoid pinching into the parent scaffold

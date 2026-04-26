@@ -83,4 +83,20 @@ describe('layout/engine/stereo/wedge-selection', () => {
     assert.deepEqual(summary.unsupportedCenterIds, []);
     assert.deepEqual(summary.missingCenterIds, []);
   });
+
+  it('uses distinct display bonds for adjacent hidden-hydrogen stereocenters', () => {
+    const molecule = parseSMILES('CCCN(CCC)C(=O)c1cc(C)cc(c1)C(=O)N[C@@H](Cc2cc(F)cc(F)c2)[C@H](O)[C@@H]3NCCN(Cc4ccccc4)C3=O');
+    const result = runPipeline(molecule, { suppressH: true });
+    const summary = result.metadata.stereo;
+
+    assert.equal(summary.chiralCenterCount, 3);
+    assert.equal(summary.assignedCenterCount, 3);
+    assert.deepEqual(summary.missingCenterIds, []);
+
+    const assignedBondIds = summary.assignments.map(assignment => assignment.bondId);
+    assert.equal(new Set(assignedBondIds).size, assignedBondIds.length);
+
+    const assignmentByCenter = new Map(summary.assignments.map(assignment => [assignment.centerId, assignment]));
+    assert.notEqual(assignmentByCenter.get('C31')?.bondId, assignmentByCenter.get('C34')?.bondId);
+  });
 });

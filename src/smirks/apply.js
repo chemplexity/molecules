@@ -258,11 +258,47 @@ function _has2dCoords(mol) {
   return [...mol.atoms.values()].some(atom => Number.isFinite(atom.x) && Number.isFinite(atom.y));
 }
 
+/**
+ * Returns true when an atom currently participates in an aromatic
+ * representation that may need re-perception after a transform.
+ * @param {import('../core/Molecule.js').Molecule} mol - Molecule graph.
+ * @param {string|null|undefined} atomId - Candidate atom id.
+ * @returns {boolean} True when aromaticity should be refreshed for this atom.
+ */
+function _atomTouchesAromaticSystem(mol, atomId) {
+  const atom = atomId != null ? mol.atoms.get(atomId) : null;
+  if (!atom) {
+    return false;
+  }
+  if (atom.isAromatic()) {
+    return true;
+  }
+  return atom.bonds.some(bondId => {
+    const bond = mol.bonds.get(bondId);
+    return !!bond && (bond.properties.aromatic || bond.properties.order === 1.5);
+  });
+}
+
+/**
+ * Returns true when a bond currently participates in an aromatic
+ * representation that may need re-perception after a transform.
+ * @param {import('../core/Molecule.js').Molecule} mol - Molecule graph.
+ * @param {import('../core/Bond.js').Bond|null|undefined} bond - Candidate bond.
+ * @returns {boolean} True when aromaticity should be refreshed for this bond.
+ */
+function _bondTouchesAromaticSystem(mol, bond) {
+  if (!bond) {
+    return false;
+  }
+  return bond.properties.aromatic || bond.properties.order === 1.5 || bond.atoms.some(atomId => _atomTouchesAromaticSystem(mol, atomId));
+}
+
 function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = false } = {}) {
   const hadCoords = _has2dCoords(molecule);
   const result = molecule.clone();
   const repairSeedIds = new Set();
   const stereoDirtySeedIds = new Set();
+  let needsAromaticityRefresh = false;
   // Atoms that must have chirality cleared because a *neighbour's element* changed
   // (different element = different CIP priority = old R/S meaningless).
   // Contrast with purely topological changes (e.g. same-element O→O in ether
@@ -288,7 +324,13 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
       if (!targetAtom) {
         throw new Error(`applySMIRKS: target atom for map :${atomMap} is missing`);
       }
+      const targetWasAromatic = targetAtom.isAromatic();
+      const touchedAromaticSystem = _atomTouchesAromaticSystem(result, targetId) || pAtom.isAromatic();
       const { stateChanged, topologyChanged } = _applyTemplateAtomState(targetAtom, pAtom);
+      const preservesAromaticAtom = targetWasAromatic && pAtom.isAromatic() && !topologyChanged;
+      if (stateChanged && touchedAromaticSystem && !preservesAromaticAtom) {
+        needsAromaticityRefresh = true;
+      }
       if (stateChanged) {
         repairSeedIds.add(targetId);
       }
@@ -312,6 +354,9 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
     }
 
     const created = result.addAtom(null, pAtom.name, { aromatic: pAtom.isAromatic() });
+    if (pAtom.isAromatic()) {
+      needsAromaticityRefresh = true;
+    }
     created.resolveElement();
     created.setCharge(pAtom.getCharge());
     created.setAromatic(pAtom.isAromatic());
@@ -337,6 +382,9 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
     }
     const targetAtom = result.atoms.get(targetId);
     if (targetAtom) {
+      if (_atomTouchesAromaticSystem(result, targetId)) {
+        needsAromaticityRefresh = true;
+      }
       for (const neighbor of targetAtom.getNeighbors(result)) {
         repairSeedIds.add(neighbor.id);
         stereoDirtySeedIds.add(neighbor.id);
@@ -353,8 +401,12 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
 
     const existing = result.getBond(tA, tB);
     if (existing) {
+      const touchedAromaticSystem = _bondTouchesAromaticSystem(result, existing) || (pBond.properties.aromatic ?? false);
       const { topologyChanged, stereoChanged } = _setBondState(existing, pBond);
       if (topologyChanged) {
+        if (touchedAromaticSystem) {
+          needsAromaticityRefresh = true;
+        }
         repairSeedIds.add(tA);
         repairSeedIds.add(tB);
         stereoDirtySeedIds.add(tA);
@@ -370,6 +422,9 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
     } else {
       const newBond = result.addBond(null, tA, tB, {}, false);
       _setBondState(newBond, pBond);
+      if (_bondTouchesAromaticSystem(result, newBond) || (pBond.properties.aromatic ?? false)) {
+        needsAromaticityRefresh = true;
+      }
       repairSeedIds.add(tA);
       repairSeedIds.add(tB);
       stereoDirtySeedIds.add(tA);
@@ -404,6 +459,9 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
 
     const existing = result.getBond(tA, tB);
     if (existing) {
+      if (_bondTouchesAromaticSystem(result, existing)) {
+        needsAromaticityRefresh = true;
+      }
       _removeBondKeepAtoms(result, existing.id);
       repairSeedIds.add(tA);
       repairSeedIds.add(tB);
@@ -438,8 +496,10 @@ function _applyParsedSMIRKSMatch(molecule, transform, match, { skipCoordGen = fa
   if (stereoDirtySeedIds.size > 0) {
     result.clearStereoAnnotations(stereoDirtySeedIds);
   }
-  kekulize(result);
-  refreshAromaticity(result, { preserveKekule: true });
+  if (needsAromaticityRefresh) {
+    kekulize(result);
+    refreshAromaticity(result, { preserveKekule: true });
+  }
   if (repairSeedIds.size > 0) {
     const repairAtomIds = _affectedNeighborhood(result, repairSeedIds);
     for (const targetId of explicitHydrogenSpecs.keys()) {

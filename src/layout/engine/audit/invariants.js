@@ -369,7 +369,7 @@ function ringSystemAtomIds(layoutGraph, ringSystemId, ringSystemById = null) {
  * @param {string} childAtomId - Candidate non-ring child atom id.
  * @returns {boolean} True when the child reconnects into the anchor ring system.
  */
-function reconnectsToAnchorRingSystem(layoutGraph, coords, anchorAtomId, childAtomId) {
+function _reconnectsToAnchorRingSystemImpl(layoutGraph, coords, anchorAtomId, childAtomId) {
   const anchorRingSystemId = layoutGraph.atomToRingSystemId.get(anchorAtomId);
   if (anchorRingSystemId == null) {
     return false;
@@ -402,6 +402,17 @@ function reconnectsToAnchorRingSystem(layoutGraph, coords, anchorAtomId, childAt
   }
 
   return false;
+}
+
+function reconnectsToAnchorRingSystem(layoutGraph, coords, anchorAtomId, childAtomId) {
+  const cache = layoutGraph._reconnectsToAnchorCache ?? (layoutGraph._reconnectsToAnchorCache = new Map());
+  const cacheKey = `${anchorAtomId}:${childAtomId}`;
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey);
+  }
+  const result = _reconnectsToAnchorRingSystemImpl(layoutGraph, coords, anchorAtomId, childAtomId);
+  cache.set(cacheKey, result);
+  return result;
 }
 
 /**
@@ -461,7 +472,7 @@ function prefersImmediateLinkedSubstituentRepresentative(layoutGraph, anchorAtom
  * @param {Map<number, object>|null} [ringSystemById] - Optional cached ring-system lookup.
  * @returns {{representativeAtomIds: string[]}|null} Downstream ring representative, or `null`.
  */
-function resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorAtomId, childAtomId, ringSystemById = null) {
+function _resolveLinkedSubstituentRingRepresentativeImpl(layoutGraph, coords, anchorAtomId, childAtomId, ringSystemById = null) {
   const anchorRingSystemId = layoutGraph.atomToRingSystemId.get(anchorAtomId);
   const childAtom = layoutGraph.atoms.get(childAtomId);
   if (
@@ -533,6 +544,17 @@ function resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorA
   }
   const representativeAtomIds = ringSystemAtomIds(layoutGraph, [...reachableRingSystemIds][0], ringSystemById).filter(atomId => coords.has(atomId));
   return representativeAtomIds.length > 0 ? { representativeAtomIds } : null;
+}
+
+function resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorAtomId, childAtomId, ringSystemById = null) {
+  const cache = layoutGraph._linkedSubstituentRepCache ?? (layoutGraph._linkedSubstituentRepCache = new Map());
+  const cacheKey = `${anchorAtomId}:${childAtomId}`;
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey);
+  }
+  const result = _resolveLinkedSubstituentRingRepresentativeImpl(layoutGraph, coords, anchorAtomId, childAtomId, ringSystemById);
+  cache.set(cacheKey, result);
+  return result;
 }
 
 function incidentRingPolygons(layoutGraph, coords, atomId) {

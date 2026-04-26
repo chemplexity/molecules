@@ -1098,9 +1098,10 @@ export function computeLonePairDotPositions(
  * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
  * @param {string} centerId - ID of the stereo center atom.
  * @param {string|null} [preferredBondId] - Preferred bond ID for the stereo wedge.
- * @returns {Map<string, 'wedge'|'dash'>} The resulting map.
+ * @param {Iterable<string>|null} [excludedBondIds] - Bond IDs already used by other stereo centers.
+ * @returns {{bondId: string, type: 'wedge'|'dash', centerId: string}|null} The display assignment.
  */
-export function stereoBondTypeForCenter(mol, centerId, preferredBondId = null) {
+export function stereoBondTypeForCenter(mol, centerId, preferredBondId = null, excludedBondIds = null) {
   const center = mol.atoms.get(centerId);
   if (!center || center.x == null) {
     return null;
@@ -1137,10 +1138,16 @@ export function stereoBondTypeForCenter(mol, centerId, preferredBondId = null) {
   const visible = entries.filter(e => e.atom.visible !== false);
   const exocyclic = visible.filter(e => !e.atom.isInRing(mol));
   const exocyclicHeavy = exocyclic.filter(e => e.atom.name !== 'H');
-  const candidates = exocyclicHeavy.length > 0 ? exocyclicHeavy : exocyclic.length > 0 ? exocyclic : visible.length > 0 ? visible : entries;
+  const excluded = new Set(excludedBondIds ?? []);
+  const candidateTiers = [exocyclicHeavy, exocyclic, visible, entries].filter(tier => tier.length > 0);
+  const candidates =
+    candidateTiers.map(tier => tier.filter(entry => !excluded.has(entry.bond.id))).find(tier => tier.length > 0) ?? candidateTiers[0];
+  const hasUnexcludedCandidate = candidateTiers.some(tier => tier.some(entry => !excluded.has(entry.bond.id)));
 
   const preferred =
-    preferredBondId != null ? (candidates.find(cand => cand.bond.id === preferredBondId) ?? entries.find(entry => entry.bond.id === preferredBondId) ?? null) : null;
+    preferredBondId != null && (!excluded.has(preferredBondId) || !hasUnexcludedCandidate)
+      ? (candidates.find(cand => cand.bond.id === preferredBondId) ?? entries.find(entry => entry.bond.id === preferredBondId) ?? null)
+      : null;
 
   const chosen = preferred ?? candidates.reduce((best, cand) => (cand.rank > best.rank || (cand.rank === best.rank && cand.bond.id < best.bond.id) ? cand : best));
 
@@ -1420,6 +1427,7 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
   const forcedBondTypes = mol?.__reactionPreview?.forcedStereoBondTypes ?? null;
   const forcedBondCenters = mol?.__reactionPreview?.forcedStereoBondCenters ?? null;
   const lockedCenters = new Set();
+  const assignedBondIds = new Set();
   for (const bond of mol?.bonds?.values?.() ?? []) {
     const displayAs = bond.properties.display?.as ?? null;
     if ((displayAs !== 'wedge' && displayAs !== 'dash') || bond.properties.display?.manual !== true) {
@@ -1427,6 +1435,7 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
     }
     const centerId = bond.properties.display?.centerId ?? null;
     assignments.push({ bondId: bond.id, type: displayAs, centerId, manual: true });
+    assignedBondIds.add(bond.id);
     if (centerId) {
       lockedCenters.add(centerId);
     }
@@ -1438,6 +1447,7 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
     }
     const centerId = forcedBondCenters?.get?.(bondId) ?? bond.atoms.find(atomId => mol.atoms.get(atomId)?.getChirality?.()) ?? null;
     assignments.push({ bondId, type, centerId });
+    assignedBondIds.add(bondId);
     if (centerId) {
       lockedCenters.add(centerId);
     }
@@ -1494,13 +1504,14 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
     const stored = storedDisplayByCenter.get(centerId) ?? null;
     if (stored) {
       const storedBond = mol?.bonds?.get?.(stored.bondId) ?? null;
-      if (storedBond && storedBond.atoms.includes(centerId)) {
+      if (storedBond && storedBond.atoms.includes(centerId) && !assignedBondIds.has(stored.bondId)) {
         assignments.push(stored);
+        assignedBondIds.add(stored.bondId);
         continue;
       }
     }
     const forced = forcedByCenter?.get(centerId) ?? null;
-    const stereo = stereoBondTypeForCenter(mol, centerId, forced?.bondId ?? preferredBondByCenter.get(centerId) ?? null);
+    const stereo = stereoBondTypeForCenter(mol, centerId, forced?.bondId ?? preferredBondByCenter.get(centerId) ?? null, forced?.bondId ? null : assignedBondIds);
     if (!stereo) {
       continue;
     }
@@ -1509,6 +1520,7 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
       type: forced?.type ?? stereo.type,
       centerId
     });
+    assignedBondIds.add(stereo.bondId);
   }
   // Preserve stored assignments for centers whose chirality was cleared (not in getChiralCenters).
   // This prevents nearby auto-assigned stereo bonds from disappearing when a bond is drawn
@@ -1521,11 +1533,11 @@ function _resolveStereoDisplayAssignments(mol, previousStereoMap = null) {
       continue;
     }
     const storedBond = mol?.bonds?.get?.(stored.bondId) ?? null;
-    if (storedBond && storedBond.atoms.includes(centerId)) {
+    if (storedBond && storedBond.atoms.includes(centerId) && !assignedBondIds.has(stored.bondId)) {
       assignments.push({ bondId: stored.bondId, type: stored.type, centerId });
+      assignedBondIds.add(stored.bondId);
     }
   }
-  const assignedBondIds = new Set(assignments.map(({ bondId }) => bondId));
   for (const assignment of preservedNonChiralAssignments) {
     if (assignedBondIds.has(assignment.bondId)) {
       continue;

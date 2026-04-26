@@ -124,6 +124,23 @@ function displayConflicts(entry, centerId) {
   return displayHint.centerId != null && displayHint.centerId !== centerId;
 }
 
+/**
+ * Returns the first candidate tier with an unclaimed bond, falling back to the
+ * strongest tier when every available stereo bond is already claimed.
+ * @param {Array<Array<object>>} candidateTiers - Candidate tiers from most to least preferred.
+ * @param {Set<string>} assignedBondIds - Bond IDs already used by neighboring centers.
+ * @returns {Array<object>} Candidate entries to rank for this center.
+ */
+function selectAvailableCandidateTier(candidateTiers, assignedBondIds) {
+  for (const tier of candidateTiers) {
+    const availableEntries = tier.filter(entry => !assignedBondIds.has(entry.bond.id));
+    if (availableEntries.length > 0) {
+      return availableEntries;
+    }
+  }
+  return candidateTiers[0] ?? [];
+}
+
 function bondKind(bond) {
   return typeof bond.getKind === 'function' ? bond.getKind() : (bond.properties.kind ?? 'covalent');
 }
@@ -234,6 +251,7 @@ export function pickWedgeAssignments(layoutGraph, coords) {
   }
   const assignments = [];
   const missingCenterIds = [];
+  const assignedBondIds = new Set();
 
   for (const centerId of centerIds) {
     const center = molecule.atoms.get(centerId);
@@ -265,6 +283,7 @@ export function pickWedgeAssignments(layoutGraph, coords) {
         centerId,
         manual: true
       });
+      assignedBondIds.add(manualAssignment.bond.id);
       continue;
     }
 
@@ -278,9 +297,12 @@ export function pickWedgeAssignments(layoutGraph, coords) {
       return true;
     });
     const nonRingCandidates = candidateEntries.filter(entry => !entry.bond.isInRing(molecule));
-    const firstPassCandidates = nonRingCandidates.length > 0 ? nonRingCandidates : candidateEntries;
-    const visibleHeavyCandidates = firstPassCandidates.filter(entry => !(entry.atom.name === 'H' && entry.atom.visible === false));
-    const viableCandidates = visibleHeavyCandidates.length > 0 ? visibleHeavyCandidates : firstPassCandidates;
+    const nonRingVisibleHeavyCandidates = nonRingCandidates.filter(entry => !(entry.atom.name === 'H' && entry.atom.visible === false));
+    const visibleHeavyCandidates = candidateEntries.filter(entry => !(entry.atom.name === 'H' && entry.atom.visible === false));
+    const viableCandidates = selectAvailableCandidateTier(
+      [nonRingVisibleHeavyCandidates, nonRingCandidates, visibleHeavyCandidates, candidateEntries].filter(tier => tier.length > 0),
+      assignedBondIds
+    );
     if (viableCandidates.length === 0) {
       missingCenterIds.push(centerId);
       continue;
@@ -341,6 +363,7 @@ export function pickWedgeAssignments(layoutGraph, coords) {
       continue;
     }
     assignments.push(resolved);
+    assignedBondIds.add(resolved.bondId);
   }
 
   return {

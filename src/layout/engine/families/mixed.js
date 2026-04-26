@@ -70,6 +70,7 @@ const DIRECT_ATTACHMENT_LOCAL_ROOT_ROTATION_REFINEMENT_OFFSETS = [
   Math.PI / 15,
   -(Math.PI / 15)
 ];
+const MAX_DIRECT_ATTACHMENT_PARENT_SLOT_SWAP_ATOMS = 64;
 const DIRECT_ATTACHMENT_MIN_JUNCTION_GAP = Math.PI / 3;
 const ATTACHED_BLOCK_OUTWARD_READABILITY_PENALTY = 120;
 const ATTACHED_BLOCK_INWARD_READABILITY_PENALTY = 360;
@@ -3728,6 +3729,133 @@ function buildDirectAttachmentExactRingExitRescueCandidates(layoutGraph, coords,
 }
 
 /**
+ * Builds parent-side slot-swap candidates for a direct-attached ring whose root
+ * exit remains off the exact local ring-outward axis. The attached ring swaps
+ * with one already placed sibling around a saturated omitted-h parent, then the
+ * attached ring root is re-snapped internally; this preserves the parent's
+ * visible `120/120/120` spread while letting the ring root recover its exact
+ * exterior bisector.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Map<string, {x: number, y: number}>} transformedCoords - Current attached-block coordinates.
+ * @param {{parentAtomId?: string, attachmentAtomId?: string}|null} [candidateMeta] - Optional candidate metadata.
+ * @returns {Array<{transformedCoords: Map<string, {x: number, y: number}>, meta: object}>} Slot-swap rescue candidates.
+ */
+function buildDirectAttachmentParentSlotSwapRescueCandidates(layoutGraph, coords, transformedCoords, candidateMeta = null) {
+  const parentAtomId = candidateMeta?.parentAtomId ?? null;
+  const attachmentAtomId = candidateMeta?.attachmentAtomId ?? null;
+  if (!parentAtomId || !attachmentAtomId || !coords.has(parentAtomId) || !transformedCoords.has(attachmentAtomId)) {
+    return [];
+  }
+
+  const parentAtom = layoutGraph.atoms.get(parentAtomId);
+  const attachmentAtom = layoutGraph.atoms.get(attachmentAtomId);
+  if (
+    !parentAtom
+    || !attachmentAtom
+    || parentAtom.element !== 'C'
+    || parentAtom.aromatic
+    || parentAtom.heavyDegree !== 3
+    || parentAtom.degree !== 4
+    || (layoutGraph.atomToRings.get(parentAtomId)?.length ?? 0) > 0
+    || (layoutGraph.atomToRings.get(attachmentAtomId)?.length ?? 0) === 0
+  ) {
+    return [];
+  }
+
+  const attachmentBond = findLayoutBond(layoutGraph, parentAtomId, attachmentAtomId);
+  if (!attachmentBond || attachmentBond.kind !== 'covalent' || attachmentBond.aromatic || (attachmentBond.order ?? 1) !== 1) {
+    return [];
+  }
+
+  const parentPosition = coords.get(parentAtomId);
+  const attachmentPosition = transformedCoords.get(attachmentAtomId);
+  const siblingAtomIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(parentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return [];
+    }
+    const neighborAtomId = bond.a === parentAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || neighborAtomId === attachmentAtomId) {
+      continue;
+    }
+    if (!coords.has(neighborAtomId)) {
+      return [];
+    }
+    siblingAtomIds.push(neighborAtomId);
+  }
+  if (siblingAtomIds.length !== 2) {
+    return [];
+  }
+
+  const attachmentSubtreeAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, attachmentAtomId, parentAtomId)
+    .filter(atomId => transformedCoords.has(atomId));
+  const attachmentSubtreeAtomIdSet = new Set(attachmentSubtreeAtomIds);
+  const currentAttachmentAngle = angleOf(sub(attachmentPosition, parentPosition));
+  const rescueCandidates = [];
+
+  for (const siblingAtomId of siblingAtomIds) {
+    const siblingPosition = coords.get(siblingAtomId);
+    if (!siblingPosition) {
+      continue;
+    }
+    const siblingAngle = angleOf(sub(siblingPosition, parentPosition));
+    if (angularDifference(currentAttachmentAngle, siblingAngle) <= IMPROVEMENT_EPSILON) {
+      continue;
+    }
+
+    const siblingSubtreeAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, siblingAtomId, parentAtomId)
+      .filter(atomId => coords.has(atomId) || transformedCoords.has(atomId));
+    if (siblingSubtreeAtomIds.some(atomId => attachmentSubtreeAtomIdSet.has(atomId))) {
+      continue;
+    }
+    const movedAtomIds = new Set([...attachmentSubtreeAtomIds, ...siblingSubtreeAtomIds]);
+    if (movedAtomIds.size > MAX_DIRECT_ATTACHMENT_PARENT_SLOT_SWAP_ATOMS) {
+      continue;
+    }
+
+    const attachmentRotation = siblingAngle - currentAttachmentAngle;
+    const siblingRotation = currentAttachmentAngle - siblingAngle;
+    const nextCoords = new Map(transformedCoords);
+    for (const atomId of attachmentSubtreeAtomIds) {
+      const position = transformedCoords.get(atomId) ?? coords.get(atomId);
+      if (position) {
+        nextCoords.set(atomId, add(parentPosition, rotate(sub(position, parentPosition), attachmentRotation)));
+      }
+    }
+    for (const atomId of siblingSubtreeAtomIds) {
+      const position = transformedCoords.get(atomId) ?? coords.get(atomId);
+      if (position) {
+        nextCoords.set(atomId, add(parentPosition, rotate(sub(position, parentPosition), siblingRotation)));
+      }
+    }
+
+    const slotSwapMeta = {
+      ...candidateMeta,
+      parentSlotSwap: true,
+      parentSlotSwapRootAtomId: siblingAtomId
+    };
+    const exactRingExitCandidates = buildDirectAttachmentExactRingExitRescueCandidates(
+      layoutGraph,
+      coords,
+      nextCoords,
+      slotSwapMeta
+    );
+    if (exactRingExitCandidates.length > 0) {
+      rescueCandidates.push(...exactRingExitCandidates);
+      continue;
+    }
+    rescueCandidates.push({
+      transformedCoords: nextCoords,
+      meta: slotSwapMeta
+    });
+  }
+
+  return rescueCandidates;
+}
+
+/**
  * Builds exact parent-side visible trigonal rescue poses for one direct-attached
  * ring block by rotating the attached block around its fixed parent atom. This
  * keeps the attached ring's internal orientation intact while letting exact
@@ -5154,10 +5282,13 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
       const shouldExpandForExactAromaticRingExit =
         exactVisibleTrigonalAromaticDirectAttachment &&
         (bestAttachedBlockCandidate?.score.ringExitPenalty ?? 0) > IMPROVEMENT_EPSILON;
+      const shouldExpandForExactRingExit =
+        (bestAttachedBlockCandidate?.score.ringExitPenalty ?? 0) > IMPROVEMENT_EPSILON;
       if (
         allowExpandedDirectAttachmentRotations &&
         (shouldExpandForSensitiveOverlap ||
           shouldExpandForExactAromaticRingExit ||
+          shouldExpandForExactRingExit ||
           (bestAttachedBlockCandidate?.score.readability.failingSubstituentCount ?? 0) > 0 ||
           (bestAttachedBlockCandidate?.score.fusedJunctionContinuationPenalty ?? 0) > IMPROVEMENT_EPSILON ||
           (bestAttachedBlockCandidate?.score.parentOutwardPenalty ?? 0) > IMPROVEMENT_EPSILON ||
@@ -5226,6 +5357,7 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
           (bestAttachedBlockCandidate?.score.readability.failingSubstituentCount ?? 0) > 0 ||
           (bestAttachedBlockCandidate?.score.parentOutwardPenalty ?? 0) > IMPROVEMENT_EPSILON ||
           (bestAttachedBlockCandidate?.score.trigonalBisectorPenalty ?? 0) > IMPROVEMENT_EPSILON ||
+          (bestAttachedBlockCandidate?.score.ringExitPenalty ?? 0) > IMPROVEMENT_EPSILON ||
           (bestAttachedBlockCandidate?.score.attachmentExteriorPenalty ?? 0) > IMPROVEMENT_EPSILON ||
           exactSmallRingExteriorDirectAttachment ||
           shouldExpandForExactAromaticRingExit;
@@ -5412,6 +5544,50 @@ function attachPendingRingSystems(layoutGraph, adjacency, bondLength, state) {
               }
             }
           }
+          if (rescueBestCandidate) {
+            bestAttachedBlockCandidate = rescueBestCandidate;
+          }
+        }
+      }
+      if (
+        bestAttachedBlockCandidate?.transformedCoords
+        && (bestAttachedBlockCandidate?.score.ringExitPenalty ?? 0) > IMPROVEMENT_EPSILON
+      ) {
+        const parentSlotSwapCandidates = buildDirectAttachmentParentSlotSwapRescueCandidates(
+          layoutGraph,
+          coords,
+          bestAttachedBlockCandidate.transformedCoords,
+          bestAttachedBlockCandidate.meta ?? {
+            attachmentAtomId: attachment.attachmentAtomId,
+            parentAtomId: attachment.parentAtomId
+          }
+        );
+        if (parentSlotSwapCandidates.length > 0) {
+          const rescueBestCandidate = pickBestAttachedBlockOrientation(
+            [
+              {
+                transformedCoords: bestAttachedBlockCandidate.transformedCoords,
+                meta: bestAttachedBlockCandidate.meta ?? {
+                  attachmentAtomId: attachment.attachmentAtomId,
+                  parentAtomId: attachment.parentAtomId
+                }
+              },
+              ...parentSlotSwapCandidates
+            ],
+            adjacency,
+            layoutGraph.canonicalAtomRank,
+            coords,
+            primaryNonRingAtomIds,
+            placedAtomIds,
+            bondLength,
+            layoutGraph,
+            macrocycleBranchConstraints,
+            {
+              forceFullScoring: true,
+              disableBeamReduction: true,
+              placementContext: state.branchPlacementContext
+            }
+          );
           if (rescueBestCandidate) {
             bestAttachedBlockCandidate = rescueBestCandidate;
           }

@@ -24,6 +24,7 @@ const DISCRETE_ROTATION_ANGLES = Object.freeze([
 ]);
 const LOCAL_TRIGONAL_HETERO_DISTORTION_WEIGHT = 5;
 const MAX_SIBLING_SWAP_SUBTREE_ATOMS = 18;
+const MAX_BRANCHED_SATURATED_SUBTREE_ATOMS = 18;
 const MAX_LOCAL_TRIGONAL_HETERO_LAYOUT_ATOMS = 48;
 const MAX_SIBLING_SWAP_LAYOUT_ATOMS = 48;
 const LOCAL_ROTATION_BOND_CROWDING_FINALISTS = 2;
@@ -328,6 +329,81 @@ function terminalTrigonalSubtreeDescriptor(layoutGraph, atomId, heavyNeighborIds
 }
 
 /**
+ * Returns whether a side group can move as part of a compact saturated branch.
+ * This keeps cleanup from treating long acyclic chains as one rigid object
+ * while still allowing small methyl, alcohol, and carbonyl side groups to move
+ * with their omitted-h saturated root.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Side-group root atom id.
+ * @param {string} parentAtomId - Parent saturated-root atom id.
+ * @param {number} maxHeavyAtoms - Maximum allowed visible heavy atoms.
+ * @returns {boolean} True when the side group is compact and acyclic.
+ */
+function isCompactSaturatedSideGroup(layoutGraph, atomId, parentAtomId, maxHeavyAtoms) {
+  const subtreeAtomIds = collectCutSubtree(layoutGraph, atomId, parentAtomId);
+  let heavyAtomCount = 0;
+  for (const subtreeAtomId of subtreeAtomIds) {
+    const atom = layoutGraph.atoms.get(subtreeAtomId);
+    if (!atom) {
+      return false;
+    }
+    if ((layoutGraph.atomToRings.get(subtreeAtomId)?.length ?? 0) > 0) {
+      return false;
+    }
+    if (atom.element !== 'H') {
+      heavyAtomCount++;
+    }
+  }
+  return heavyAtomCount > 0 && heavyAtomCount <= maxHeavyAtoms;
+}
+
+/**
+ * Returns a rigid cleanup descriptor for compact saturated omitted-h branches.
+ * Rotating the whole branch around its parent can resolve a nearby clash while
+ * preserving the root's visible `120/120/120` heavy-neighbor spread and any
+ * terminal carbonyl geometry inside the branch.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate saturated branch root atom id.
+ * @param {string[]} heavyNeighborIds - Heavy neighbors currently placed.
+ * @returns {{anchorAtomId: string}|null} Rotation descriptor or `null`.
+ */
+function branchedSaturatedSubtreeDescriptor(layoutGraph, atomId, heavyNeighborIds) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (
+    !atom
+    || atom.element !== 'C'
+    || atom.aromatic
+    || atom.heavyDegree !== 3
+    || atom.degree !== 4
+    || heavyNeighborIds.length !== 3
+    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+
+  if (heavyNeighborIds.some(neighborAtomId => !singleBondDescriptor(layoutGraph, atomId, neighborAtomId))) {
+    return null;
+  }
+
+  for (const anchorAtomId of heavyNeighborIds) {
+    const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+    if (!anchorAtom || anchorAtom.element === 'H' || anchorAtom.heavyDegree <= 1) {
+      continue;
+    }
+    const sideGroupIds = heavyNeighborIds.filter(neighborAtomId => neighborAtomId !== anchorAtomId);
+    const totalSubtreeAtomCount = [...collectCutSubtree(layoutGraph, atomId, anchorAtomId)].length;
+    if (
+      totalSubtreeAtomCount <= MAX_BRANCHED_SATURATED_SUBTREE_ATOMS
+      && sideGroupIds.every(sideGroupId => isCompactSaturatedSideGroup(layoutGraph, sideGroupId, atomId, 3))
+    ) {
+      return { anchorAtomId };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Collects movable terminal subtrees from the currently placed covalent graph.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
@@ -418,6 +494,18 @@ function movableTerminalSubtrees(layoutGraph, coords) {
       anchorAtomId: descriptor.anchorAtomId,
       subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, descriptor.anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId)),
       preferAtomOverlapClearance: true
+    });
+  }
+  for (const [atomId, neighbors] of adjacency) {
+    const heavyNeighbors = neighbors.filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+    const descriptor = branchedSaturatedSubtreeDescriptor(layoutGraph, atomId, heavyNeighbors);
+    if (!descriptor) {
+      continue;
+    }
+    result.push({
+      atomId,
+      anchorAtomId: descriptor.anchorAtomId,
+      subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, descriptor.anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId))
     });
   }
   return result;

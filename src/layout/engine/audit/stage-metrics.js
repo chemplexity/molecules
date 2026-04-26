@@ -24,7 +24,7 @@ function getSmallRingExteriorPenaltyAtomIds(layoutGraph) {
       continue;
     }
     const ringSize = anchorRings[0]?.atomIds?.length ?? 0;
-    if (ringSize < 3 || ringSize > 4) {
+    if (ringSize < 3 || ringSize > 6) {
       continue;
     }
     atomIds.push(atomId);

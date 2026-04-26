@@ -155,7 +155,17 @@ describe('layout/engine/cleanup/local-rotation', () => {
         && descriptor.subtreeAtomIds.includes('C16')
         && descriptor.subtreeAtomIds.includes('O17')
     ));
+    assert.ok(rotatableSubtrees.terminalSubtrees.some(
+      descriptor => descriptor.atomId === 'C13'
+        && descriptor.anchorAtomId === 'C7'
+        && descriptor.subtreeAtomIds.includes('C14')
+        && descriptor.subtreeAtomIds.includes('C15')
+        && descriptor.subtreeAtomIds.includes('O17')
+    ));
     assert.equal(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length, 0);
+    assert.ok(Math.abs(bondAngleDegrees(result.coords, 'C13', 'C7', 'C14') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngleDegrees(result.coords, 'C13', 'C7', 'C15') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngleDegrees(result.coords, 'C13', 'C14', 'C15') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngleDegrees(result.coords, 'C15', 'C13', 'C16') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngleDegrees(result.coords, 'C15', 'C13', 'O17') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngleDegrees(result.coords, 'C15', 'C16', 'O17') - 120) < 1e-6);

@@ -1,6 +1,6 @@
 /** @module cleanup/overlap-resolution */
 
-import { buildAtomGrid, computeAtomDistortionCost, computeSubtreeOverlapCost, findSevereOverlaps } from '../audit/invariants.js';
+import { buildAtomGrid, buildSubtreeOverlapContext, computeAtomDistortionCost, computeSubtreeOverlapCost, findSevereOverlaps } from '../audit/invariants.js';
 import { angleOf, angularDifference, centroid, sub, wrapAngle } from '../geometry/vec2.js';
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { probeRigidRotation, rigidDescriptorKey, rotateRigidDescriptorPositions } from './rigid-rotation.js';
@@ -116,6 +116,15 @@ function isFixedAtom(layoutGraph, atomId, options = {}) {
 
 function atomPairKey(firstAtomId, secondAtomId) {
   return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
+}
+
+function compareAtomIdNumerically(a, b) {
+  const numA = parseInt(a, 10);
+  const numB = parseInt(b, 10);
+  if (Number.isFinite(numA) && Number.isFinite(numB)) {
+    return numA - numB;
+  }
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 /**
@@ -574,9 +583,9 @@ function shouldReplaceRigidDescriptor(candidate, incumbent) {
     return candidate.subtreeAtomIds.length < incumbent.subtreeAtomIds.length;
   }
   if (candidate.rootAtomId !== incumbent.rootAtomId) {
-    return candidate.rootAtomId.localeCompare(incumbent.rootAtomId, 'en', { numeric: true }) < 0;
+    return compareAtomIdNumerically(candidate.rootAtomId, incumbent.rootAtomId) < 0;
   }
-  return candidate.anchorAtomId.localeCompare(incumbent.anchorAtomId, 'en', { numeric: true }) < 0;
+  return compareAtomIdNumerically(candidate.anchorAtomId, incumbent.anchorAtomId) < 0;
 }
 
 /**
@@ -689,9 +698,9 @@ export function mergeRigidSubtreesByAtomId(...descriptorMaps) {
           return firstDescriptor.subtreeAtomIds.length - secondDescriptor.subtreeAtomIds.length;
         }
         if (firstDescriptor.rootAtomId !== secondDescriptor.rootAtomId) {
-          return firstDescriptor.rootAtomId.localeCompare(secondDescriptor.rootAtomId, 'en', { numeric: true });
+          return compareAtomIdNumerically(firstDescriptor.rootAtomId, secondDescriptor.rootAtomId);
         }
-        return firstDescriptor.anchorAtomId.localeCompare(secondDescriptor.anchorAtomId, 'en', { numeric: true });
+        return compareAtomIdNumerically(firstDescriptor.anchorAtomId, secondDescriptor.anchorAtomId);
       });
       merged.set(atomId, nextDescriptors);
     }
@@ -1049,7 +1058,8 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   const baseLocalClearance = subtreeIsSingleAtom
     ? localNonbondedClearance(layoutGraph, coords, movingAtomId, movingPosition, threshold * 2, atomGrid)
     : 0;
-  const baseOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, null, bondLength, { atomGrid });
+  const subtreeContext = buildSubtreeOverlapContext(layoutGraph, descriptor.subtreeAtomIds);
+  const baseOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, null, bondLength, { atomGrid, subtreeContext });
   const baseAnchorDistortion = exactHypervalentDescriptor
     ? 0
     : computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, null);
@@ -1072,7 +1082,7 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
       return null;
     }
 
-    const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, newPositions, bondLength, { atomGrid });
+    const newOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, descriptor.subtreeAtomIds, newPositions, bondLength, { atomGrid, subtreeContext });
     const newAnchorDistortion = exactHypervalentDescriptor
       ? 0
       : computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, newPositions);
@@ -1339,7 +1349,7 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
   const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
   const atomGrid = options.baseAtomGrid?.clone() ?? buildAtomGrid(layoutGraph, coords, bondLength);
   const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
-  const rawRigidSubtreesByAtomId = options.rigidSubtreesByAtomId ?? collectRigidPendantRingSubtrees(layoutGraph);
+  const rawRigidSubtreesByAtomId = options.rigidSubtreesByAtomId ?? (layoutGraph._rigidPendantSubtrees ??= collectRigidPendantRingSubtrees(layoutGraph));
   const rigidSubtreesByAtomId =
     frozenAtomIds
       ? filterFrozenRigidSubtrees(rawRigidSubtreesByAtomId, frozenAtomIds)

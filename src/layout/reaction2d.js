@@ -484,6 +484,33 @@ function restoreMappedReaction2dRingScaffoldCoords(mol, componentAtomIds) {
   }
 }
 
+/**
+ * Reanchors hidden product hydrogens after reaction-preview heavy-atom edits.
+ * Product orientation can snap or refine heavy atoms after hidden hydrogens
+ * were initially placed, so hidden H coordinates must be refreshed against the
+ * current parent atom before the renderer projects any displayed stereobonds.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @returns {void}
+ */
+function reanchorReaction2dHiddenHydrogens(mol, componentAtomIds) {
+  if (!mol || !componentAtomIds?.size) {
+    return;
+  }
+  for (const atomId of componentAtomIds) {
+    const atom = mol.atoms.get(atomId);
+    if (!atom || atom.name !== 'H' || atom.visible !== false) {
+      continue;
+    }
+    const parent = atom.getNeighbors(mol).find(neighbor => neighbor && componentAtomIds.has(neighbor.id) && Number.isFinite(neighbor.x) && Number.isFinite(neighbor.y));
+    if (!parent) {
+      continue;
+    }
+    atom.x = parent.x;
+    atom.y = parent.y;
+  }
+}
+
 function scaledReaction2dBondLength(order, bondLength = 1.5) {
   if (order >= 3) {
     return bondLength * 0.78;
@@ -2248,6 +2275,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
     finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLength);
     finalizeReaction2dTwoNeighborCarbonylCenters(mol, componentAtomIds, bondLength);
     preserveReaction2dStereoDisplay(mol, previewState, componentAtomIds);
+    reanchorReaction2dHiddenHydrogens(mol, componentAtomIds);
 
     // Ring-opening reactions (e.g. ether cleavage) produce an acyclic chain
     // from a cyclic reactant.  The best-fit rotation above aligns the product
@@ -2305,6 +2333,7 @@ export function alignReaction2dProductOrientation(mol, previewState, bondLength 
         expandReaction2dCrowdedComponent(mol, componentAtomIds, bondLength);
       }
     }
+    reanchorReaction2dHiddenHydrogens(mol, componentAtomIds);
   }
 }
 

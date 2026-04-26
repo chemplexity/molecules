@@ -332,6 +332,9 @@ describe('layout/engine/families/acyclic', () => {
       finalLandscapeOrientation: true
     });
 
+    assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'C13', 'C14') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'C13', 'C15') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C14', 'C13', 'C15') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngle(result.coords, 'C13', 'C15', 'C16') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngle(result.coords, 'C13', 'C15', 'O17') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngle(result.coords, 'C16', 'C15', 'O17') - 120) < 1e-6);
