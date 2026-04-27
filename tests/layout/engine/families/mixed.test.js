@@ -771,6 +771,30 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('rotates saturated six-member ring blocks so diaryl quaternary anchors keep open exterior angles', () => {
+    const smiles = 'ClC1=CC=C(C=C1)C1(CCNCC1)C1=CC=C(C=C1)C1=C2N=CNC2=NC=N1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      finalLandscapeOrientation: true
+    });
+    const audit = auditLayout(result.layoutGraph, result.coords, { bondLength: result.layoutGraph.options.bondLength });
+    const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'C8', graph);
+
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(separations.length, 4, 'expected C8 to keep four visible heavy-neighbor directions');
+    assert.ok(
+      separations[0] > 1.3,
+      `expected C8 to avoid a pinched diaryl/ring gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(
+      separations[3] < 2.2,
+      `expected C8 to avoid one giant compensating gap, got maximum separation ${((separations[3] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+  });
+
   it('does not force mono-fluoro benzylic linkers off their standard trigonal continuation', () => {
     const graph = createLayoutGraph(parseSMILES('NC(=O)C1=CC=CC(=C1)C1=CC=C(NCC(F)C2=CC=CC=N2)N=N1'), { suppressH: true });
     const component = graph.components[0];
@@ -1265,6 +1289,102 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(linkerAngle - (2 * Math.PI) / 3) < 0.2, `expected diphenylmethane linker angle near 120 degrees, got ${((linkerAngle * 180) / Math.PI).toFixed(2)}`);
   });
 
+  it('keeps fused lactone systems joined through a methylene linker on a standard bend', () => {
+    const smiles = 'OC1=C(CC2=C(O)C3=C(OC2=O)C=CC=C3)C(=O)OC2=C1C=CC=C2';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const pipelineWithHydrogens = runPipeline(parseSMILES(smiles), {
+      auditTelemetry: true
+    });
+    const mixedLinkerAngle = bondAngleAtAtom(mixedResult.coords, 'C4', 'C3', 'C5');
+    const pipelineLinkerAngle = bondAngleAtAtom(pipelineResult.coords, 'C4', 'C3', 'C5');
+    const assertC2HydroxyGeometry = (coords, label) => {
+      const hydroxyDeviation = bestLocalRingDeviation(graph, coords, 'C2', 'O1');
+      const firstHydroxyAngle = bondAngleAtAtom(coords, 'C2', 'C3', 'O1');
+      const secondHydroxyAngle = bondAngleAtAtom(coords, 'C2', 'C21', 'O1');
+
+      assert.ok(hydroxyDeviation < 1e-6, `expected ${label} C2-O1 to follow the exact local ring-outward angle, got ${hydroxyDeviation.toFixed(6)} rad`);
+      assert.ok(Math.abs(firstHydroxyAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} C3-C2-O1 near 120 degrees, got ${((firstHydroxyAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(secondHydroxyAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} C21-C2-O1 near 120 degrees, got ${((secondHydroxyAngle * 180) / Math.PI).toFixed(2)}`);
+    };
+    const assertC17CarbonylGeometry = (coords, label) => {
+      const firstCarbonylAngle = bondAngleAtAtom(coords, 'C17', 'C3', 'O18');
+      const secondCarbonylAngle = bondAngleAtAtom(coords, 'C17', 'O19', 'O18');
+      const ringCarbonylAngle = bondAngleAtAtom(coords, 'C17', 'C3', 'O19');
+      const neighboringCarbonylClearance = distance(coords.get('O18'), coords.get('O12'));
+
+      assert.ok(Math.abs(firstCarbonylAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} C3-C17-O18 near 120 degrees, got ${((firstCarbonylAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(secondCarbonylAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} O19-C17-O18 near 120 degrees, got ${((secondCarbonylAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(ringCarbonylAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} C3-C17-O19 near 120 degrees, got ${((ringCarbonylAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(neighboringCarbonylClearance > graph.options.bondLength * 0.8, `expected ${label} C17 carbonyl leaf to stay clear of the neighboring lactone oxygen, got ${neighboringCarbonylClearance.toFixed(3)}`);
+    };
+    const assertLinkedRingExitGeometry = (coords, label) => {
+      const firstLinkerExitAngle = bondAngleAtAtom(coords, 'C3', 'C2', 'C4');
+      const secondLinkerExitAngle = bondAngleAtAtom(coords, 'C3', 'C4', 'C17');
+      const firstRingAngle = bondAngleAtAtom(coords, 'C3', 'C2', 'C17');
+      const firstPendingExitAngle = bondAngleAtAtom(coords, 'C5', 'C4', 'C6');
+      const secondPendingExitAngle = bondAngleAtAtom(coords, 'C5', 'C4', 'C11');
+      const secondRingAngle = bondAngleAtAtom(coords, 'C5', 'C6', 'C11');
+      const maxExitDeviation = Math.max(
+        Math.abs(firstLinkerExitAngle - (2 * Math.PI) / 3),
+        Math.abs(secondLinkerExitAngle - (2 * Math.PI) / 3),
+        Math.abs(firstPendingExitAngle - (2 * Math.PI) / 3),
+        Math.abs(secondPendingExitAngle - (2 * Math.PI) / 3)
+      );
+
+      assert.ok(maxExitDeviation < 0.2, `expected ${label} C3/C5 linker exits to share the bridge distortion instead of leaving a 100/140 split, got ${((firstLinkerExitAngle * 180) / Math.PI).toFixed(2)}, ${((secondLinkerExitAngle * 180) / Math.PI).toFixed(2)}, ${((firstPendingExitAngle * 180) / Math.PI).toFixed(2)}, and ${((secondPendingExitAngle * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(Math.abs(firstRingAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} C2-C3-C17 near 120 degrees, got ${((firstRingAngle * 180) / Math.PI).toFixed(2)}`);
+      assert.ok(Math.abs(secondRingAngle - (2 * Math.PI) / 3) < 0.05, `expected ${label} C6-C5-C11 near 120 degrees, got ${((secondRingAngle * 180) / Math.PI).toFixed(2)}`);
+    };
+    const assertC4VisibleHydrogenSpread = (coords, label) => {
+      const centerPosition = coords.get('C4');
+      const neighborAngles = ['C3', 'C5', 'H27', 'H28'].map(atomId => angleOf(sub(coords.get(atomId), centerPosition)));
+      let minSeparation = Infinity;
+      let maxSeparation = 0;
+      for (let firstIndex = 0; firstIndex < neighborAngles.length; firstIndex++) {
+        for (let secondIndex = firstIndex + 1; secondIndex < neighborAngles.length; secondIndex++) {
+          const separation = angularDifference(neighborAngles[firstIndex], neighborAngles[secondIndex]);
+          minSeparation = Math.min(minSeparation, separation);
+          maxSeparation = Math.max(maxSeparation, separation);
+        }
+      }
+
+      assert.ok(minSeparation > 7 * Math.PI / 18, `expected ${label} C4 hydrogens to avoid collapsed projected-tetrahedral slots, got minimum separation ${((minSeparation * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(maxSeparation < 17 * Math.PI / 18, `expected ${label} C4 hydrogens to avoid flat projected-tetrahedral slots, got maximum separation ${((maxSeparation * 180) / Math.PI).toFixed(2)} degrees`);
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assert.ok(Math.abs(mixedLinkerAngle - (2 * Math.PI) / 3) < 0.05, `expected mixed fused-lactone linker angle near 120 degrees, got ${((mixedLinkerAngle * 180) / Math.PI).toFixed(2)}`);
+    assertC2HydroxyGeometry(mixedResult.coords, 'mixed');
+    assertC17CarbonylGeometry(mixedResult.coords, 'mixed');
+    assertLinkedRingExitGeometry(mixedResult.coords, 'mixed');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.ok(Math.abs(pipelineLinkerAngle - (2 * Math.PI) / 3) < 0.05, `expected full-pipeline fused-lactone linker angle near 120 degrees, got ${((pipelineLinkerAngle * 180) / Math.PI).toFixed(2)}`);
+    assertC2HydroxyGeometry(pipelineResult.coords, 'full-pipeline');
+    assertC17CarbonylGeometry(pipelineResult.coords, 'full-pipeline');
+    assertLinkedRingExitGeometry(pipelineResult.coords, 'full-pipeline');
+    assert.equal(pipelineWithHydrogens.metadata.audit.ok, true);
+    assert.ok(Math.abs(bondAngleAtAtom(pipelineWithHydrogens.coords, 'C4', 'C3', 'C5') - (2 * Math.PI) / 3) < 0.05, `expected visible-H full-pipeline fused-lactone linker angle near 120 degrees, got ${((bondAngleAtAtom(pipelineWithHydrogens.coords, 'C4', 'C3', 'C5') * 180) / Math.PI).toFixed(2)}`);
+    assertC4VisibleHydrogenSpread(pipelineWithHydrogens.coords, 'visible-H full-pipeline');
+  });
+
+  it('keeps fused aryl cyclobutyl methylene linkers bent instead of straight', () => {
+    const smiles = 'FC1=CC=CC(CC2C(CC3=CC=C(CC4(CCC4)NS(=O)=O)C=C23)[NH+]2CCC2)=C1';
+    const result = runPipeline(parseSMILES(smiles), {
+      auditTelemetry: true
+    });
+    const linkerAngle = bondAngleAtAtom(result.coords, 'C15', 'C14', 'C16');
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(Math.abs(linkerAngle - (2 * Math.PI) / 3) < 0.05, `expected C14-C15-C16 to keep a visible 120-degree bend, got ${((linkerAngle * 180) / Math.PI).toFixed(2)} degrees`);
+  });
+
   it('keeps asymmetric fused-heteroaryl benzyl linkers on the standard 120-degree zigzag instead of pinching them to 60 degrees', () => {
     const graph = createLayoutGraph(parseSMILES('[H][C@@](CC)(CO)NC1=NC2=C(C=NN2C(NCC2=CC=CC=C2)=N1)C(C)C'), { suppressH: true });
     const component = graph.components[0];
@@ -1738,10 +1858,15 @@ describe('layout/engine/families/mixed', () => {
   });
 
   it('rotates directly attached ring blocks around the parent bond when that clears multiple outward-axis failures at once', () => {
-    const graph = createLayoutGraph(parseSMILES('CCN(C1CCC(CC1)[NH+](C)CC1=CC=CC(OCCOC)=C1)C1=CC(Cl)=CC(C(=O)NCC2=C(C)NC(C)=CC2=O)=C1C'), { suppressH: true });
+    const smiles = 'CCN(C1CCC(CC1)[NH+](C)CC1=CC=CC(OCCOC)=C1)C1=CC(Cl)=CC(C(=O)NCC2=C(C)NC(C)=CC2=O)=C1C';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components[0];
     const plan = buildScaffoldPlan(graph, component);
     const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
     const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength, bondValidationClasses: result.bondValidationClasses });
     const attachmentRing = (graph.atomToRings.get('C25') ?? [])[0];
     const chlorineRing = (graph.atomToRings.get('C27') ?? [])[0];
@@ -1761,12 +1886,27 @@ describe('layout/engine/families/mixed', () => {
     const attachmentDeviation = angularDifference(attachmentOutwardAngle, angleOf(sub(result.coords.get('N3'), result.coords.get('C25'))));
     const chlorineDeviation = angularDifference(chlorineOutwardAngle, angleOf(sub(result.coords.get('Cl28'), result.coords.get('C27'))));
     const methylDeviation = angularDifference(methylOutwardAngle, angleOf(sub(result.coords.get('C45'), result.coords.get('C44'))));
+    const assertAnilinoNitrogenSpread = (coords, label) => {
+      for (const [name, angle] of [
+        ['C4-N3-C25', bondAngleAtAtom(coords, 'N3', 'C4', 'C25')],
+        ['C4-N3-C2', bondAngleAtAtom(coords, 'N3', 'C4', 'C2')],
+        ['C25-N3-C2', bondAngleAtAtom(coords, 'N3', 'C25', 'C2')]
+      ]) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} anilino ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+    };
 
     assert.equal(result.supported, true);
     assert.equal(audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(pipelineResult.metadata.audit.ok, true);
     assert.ok(attachmentDeviation < 1e-6, `expected the attached-ring root bond to follow the local outward axis, got ${attachmentDeviation.toFixed(6)} rad`);
     assert.ok(chlorineDeviation < 1e-6, `expected the chlorine substituent to follow the local outward axis, got ${chlorineDeviation.toFixed(6)} rad`);
     assert.ok(methylDeviation < 1e-6, `expected the nearby methyl substituent to follow the local outward axis, got ${methylDeviation.toFixed(6)} rad`);
+    assertAnilinoNitrogenSpread(result.coords, 'mixed layout');
+    assertAnilinoNitrogenSpread(pipelineResult.coords, 'pipeline layout');
   });
 
   it('retries an alternate mixed root when the default aromatic root leaves overlapping ring-linker geometry', () => {

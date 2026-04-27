@@ -38,6 +38,8 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
 
   it('treats planar conjugated tertiary nitrogens as exact bisector candidates', () => {
     const conjugatedGraph = createLayoutGraph(parseSMILES('CCCC(O)CN=CN(C)C(C)C(C)=NO'), { suppressH: true });
+    const arylConjugatedGraph = createLayoutGraph(parseSMILES('CCN(C1CCC(CC1)[NH+](C)CC1=CC=CC(OCCOC)=C1)C1=CC(Cl)=CC(C(=O)NCC2=C(C)NC(C)=CC2=O)=C1C'), { suppressH: true });
+    const sulfonylConjugatedGraph = createLayoutGraph(parseSMILES('CC(C)N(S(C)(=O)=O)S(C)(=O)=O'), { suppressH: true });
     const saturatedGraph = createLayoutGraph(parseSMILES('CN(C)C'), { suppressH: true });
     const saturatedNitrogenId = [...saturatedGraph.atoms.values()].find(atom => atom.element === 'N')?.id;
     const saturatedMethylId = (saturatedGraph.bondsByAtomId.get(saturatedNitrogenId) ?? [])
@@ -45,6 +47,8 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
       .find(atomId => saturatedGraph.atoms.get(atomId)?.element === 'C');
 
     assert.equal(isExactVisibleTrigonalBisectorEligible(conjugatedGraph, 'N9', 'C10'), true);
+    assert.equal(isExactVisibleTrigonalBisectorEligible(arylConjugatedGraph, 'N3', 'C25'), true);
+    assert.equal(isExactVisibleTrigonalBisectorEligible(sulfonylConjugatedGraph, 'N4', 'S9'), true);
     assert.ok(saturatedNitrogenId);
     assert.ok(saturatedMethylId);
     assert.equal(isExactVisibleTrigonalBisectorEligible(saturatedGraph, saturatedNitrogenId, saturatedMethylId), false);
@@ -56,6 +60,7 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     const methylGraph = createLayoutGraph(parseSMILES('Cc1ccccc1'), { suppressH: true });
     const ringConstrainedGraph = createLayoutGraph(parseSMILES('CC(N1CC(C)(C[NH3+])C1)C1=C(C)C=C(C)N1'), { suppressH: true });
     const saturatedRingGraph = createLayoutGraph(parseSMILES('CC(C)CCCC(C)C1CCC2C3C(CC=C4C3(CCC5C4CCC(C5)O)C)CC2C1'), { suppressH: true });
+    const heteroarylCarbonylMethyleneGraph = createLayoutGraph(parseSMILES('O=C(Cn1ncc2C(=O)Oc3ccccc3c12)N4CCC(CC4)N5CCCCC5'), { suppressH: true });
 
     assert.equal(isExactRingOutwardEligibleSubstituent(flexibleGraph, 'C2', 'C6'), false);
 
@@ -86,6 +91,7 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
 
     assert.equal(isExactRingOutwardEligibleSubstituent(ringConstrainedGraph, 'C11', 'C2'), true);
     assert.equal(isExactRingOutwardEligibleSubstituent(saturatedRingGraph, 'C9', 'C7'), true);
+    assert.equal(isExactRingOutwardEligibleSubstituent(heteroarylCarbonylMethyleneGraph, 'N4', 'C3'), true);
   });
 
   it('keeps continuation search on exact and snapped angles before opening fine offsets', () => {

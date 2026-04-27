@@ -18,6 +18,8 @@ import {
   budgetPreferredAngles,
   chooseContinuationAngle,
   chooseExactPreferredAngle,
+  chooseNearPreferredRescueAngle,
+  describeCrossLikeHypervalentCenter,
   evaluateAngleCandidates,
   filterAnglesByBudget,
   findLayoutBond,
@@ -41,6 +43,20 @@ import {
 import { chooseBatchAngleAssignments, chooseSingleBranchAngleWithLookahead, shouldUseGreedyBranchPlacement } from './permutations.js';
 
 const SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS = 64;
+
+function isFusedOnlyRingSystemAnchor(layoutGraph, atomId) {
+  const ringSystemId = layoutGraph?.atomToRingSystemId?.get(atomId);
+  const ringSystem = ringSystemId != null ? layoutGraph.ringSystems?.find(candidate => candidate.id === ringSystemId) : null;
+  if (!ringSystem || (ringSystem.ringIds?.length ?? 0) <= 1) {
+    return false;
+  }
+
+  const ringIds = new Set(ringSystem.ringIds);
+  const systemConnections = (layoutGraph.ringConnections ?? []).filter(connection => (
+    ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)
+  ));
+  return systemConnections.length > 0 && systemConnections.every(connection => connection.kind === 'fused');
+}
 
 /**
  * Returns whether an anchor still has an unplaced heavy neighbor outside the
@@ -260,6 +276,10 @@ function placeNeighborSequence(
     const shouldForceExactProjectedTetrahedralAngle =
       shouldHonorProjectedTetrahedralAngle
       && currentPlacedNeighborIds.length >= 2;
+    const shouldUseNearPreferredTerminalMultipleHeteroRescue =
+      shouldForceExactTrigonalAngle
+      && layoutGraph?.atoms.get(childAtomId)?.element !== 'C'
+      && isFusedOnlyRingSystemAnchor(layoutGraph, anchorAtomId);
     const shouldUseFineAlkylTailRescue = shouldPreferFineAlkylTailRescue(
       layoutGraph,
       anchorAtomId,
@@ -301,6 +321,21 @@ function placeNeighborSequence(
             shouldForceExactOmittedHydrogenTrigonalAngle ? { clearanceFloorFactor: 0.5 } : {}
           )
         : null;
+    const nearPreferredRescueAngle =
+      exactPreferredAngle == null
+      && shouldUseNearPreferredTerminalMultipleHeteroRescue
+        ? chooseNearPreferredRescueAngle(
+            anchorPosition,
+            bondLength,
+            coords,
+            occupiedAngles,
+            constrainedPreferredAngles,
+            excludedAtomIds,
+            placementState,
+            ringPolygons,
+            atomGrid
+          )
+        : null;
     const fallbackCandidates = evaluateAngleCandidates(
       constrainedFallbackAngles,
       occupiedAngles,
@@ -315,6 +350,7 @@ function placeNeighborSequence(
     );
     const chosenAngle =
       exactPreferredAngle ??
+      nearPreferredRescueAngle ??
       (shouldHonorPreferredAngle
         ? chooseContinuationAngle(
             anchorPosition,
@@ -406,7 +442,21 @@ function placeChildren(
     (adjacency.get(anchorAtomId) ?? []).filter(neighborAtomId => atomIdsToPlace.has(neighborAtomId) && !coords.has(neighborAtomId)),
     canonicalAtomRank
   );
-  const { primaryNeighborIds, deferredNeighborIds } = splitDeferredLeafNeighbors(unplacedNeighbors, layoutGraph);
+  const splitNeighbors = splitDeferredLeafNeighbors(unplacedNeighbors, layoutGraph);
+  const crossLikeCenter = describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId);
+  const primaryHypervalentHydrogenIds = crossLikeCenter
+    ? splitNeighbors.deferredNeighborIds.filter(neighborAtomId => (
+        isHydrogenAtom(layoutGraph, neighborAtomId)
+        && crossLikeCenter.singleNeighborIds.includes(neighborAtomId)
+      ))
+    : [];
+  const primaryNeighborIds = primaryHypervalentHydrogenIds.length > 0
+    ? neighborOrder([...splitNeighbors.primaryNeighborIds, ...primaryHypervalentHydrogenIds], canonicalAtomRank)
+    : splitNeighbors.primaryNeighborIds;
+  const primaryHypervalentHydrogenIdSet = new Set(primaryHypervalentHydrogenIds);
+  const deferredNeighborIds = primaryHypervalentHydrogenIds.length > 0
+    ? splitNeighbors.deferredNeighborIds.filter(neighborAtomId => !primaryHypervalentHydrogenIdSet.has(neighborAtomId))
+    : splitNeighbors.deferredNeighborIds;
   const deferredHeavyNeighborIds = deferredNeighborIds.filter(neighborAtomId => !isHydrogenAtom(layoutGraph, neighborAtomId));
   const deferredHydrogenNeighborIds = deferredNeighborIds.filter(neighborAtomId => isHydrogenAtom(layoutGraph, neighborAtomId));
   const shouldLeaveDeferredLeavesForLaterPass =

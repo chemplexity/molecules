@@ -1,16 +1,21 @@
 /** @module cleanup/hypervalent-angle-tidy */
 
 import { add, angleOf, distance, fromAngle, sub } from '../geometry/vec2.js';
+import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
 const ANGLE_THRESHOLD = Math.PI / 18;
-const FIXED_LIGAND_WEIGHT = 4;
+const FIXED_LIGAND_WEIGHT = 12;
 const BRIDGE_LINKED_HYPERVALENT_LIGAND_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
 const MAX_BRIDGE_LINKED_HYPERVALENT_SUBTREE_HEAVY_ATOMS = 8;
 const MAX_COMPACT_HYPERVALENT_LIGAND_SUBTREE_HEAVY_ATOMS = 12;
 const MAX_COMPACT_HYPERVALENT_LIGAND_SUBTREE_ATOMS = 24;
+const MAX_RING_ANCHORED_HYPERVALENT_SUBTREE_HEAVY_ATOMS = 14;
+const MAX_RING_ANCHORED_HYPERVALENT_SUBTREE_ATOMS = 28;
+const TERMINAL_HYPERVALENT_H_ANGLE_THRESHOLD = Math.PI / 180;
+const RING_ANCHORED_HYPERVALENT_ANGLE_THRESHOLD = Math.PI / 180;
 
 function angularDistance(firstAngle, secondAngle) {
   const rawDelta = Math.abs(firstAngle - secondAngle) % (Math.PI * 2);
@@ -30,7 +35,7 @@ function directLigandAtomIds(layoutGraph, centerAtomId, coords) {
   for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
     const ligandAtomId = bond.a === centerAtomId ? bond.b : bond.a;
     const ligandAtom = layoutGraph.atoms.get(ligandAtomId);
-    if (!ligandAtom || ligandAtom.element === 'H' || !coords.has(ligandAtomId)) {
+    if (!ligandAtom || !coords.has(ligandAtomId)) {
       continue;
     }
     ligandAtomIds.push(ligandAtomId);
@@ -72,7 +77,7 @@ function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
     }
     const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
     const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
+    if (!neighborAtom || !coords.has(neighborAtomId)) {
       continue;
     }
     const order = bond.order ?? 1;
@@ -191,7 +196,7 @@ function movableCompactHypervalentLigandSubtreeAtomIds(layoutGraph, centerAtomId
 
 function movableLigandSubtreeAtomIds(layoutGraph, centerAtomId, ligandAtomId, coords) {
   const ligandAtom = layoutGraph.atoms.get(ligandAtomId);
-  if (!ligandAtom || ligandAtom.element === 'H' || !coords.has(ligandAtomId)) {
+  if (!ligandAtom || !coords.has(ligandAtomId)) {
     return null;
   }
   if (ligandAtom.heavyDegree > 1) {
@@ -211,6 +216,147 @@ function movableLigandSubtreeAtomIds(layoutGraph, centerAtomId, ligandAtomId, co
     }
   }
   return [...subtreeAtomIds].filter(subtreeAtomId => coords.has(subtreeAtomId));
+}
+
+/**
+ * Returns the angular tolerance for moving one direct hypervalent ligand.
+ * Hidden hydrogens are visually small and cheap to move, so they should still
+ * snap to the exact opposing slot when browser-specific placement drifts them
+ * just inside the broader heavy-ligand tolerance.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} ligandAtomId - Direct ligand atom id.
+ * @param {number} defaultThreshold - Default angular tolerance in radians.
+ * @returns {number} Ligand-specific angular tolerance in radians.
+ */
+function ligandAngleThreshold(layoutGraph, ligandAtomId, defaultThreshold) {
+  return layoutGraph.atoms.get(ligandAtomId)?.element === 'H'
+    ? TERMINAL_HYPERVALENT_H_ANGLE_THRESHOLD
+    : defaultThreshold;
+}
+
+/**
+ * Returns a compact hypervalent-center subtree that may rotate around a ring
+ * ligand to put the center on the ligand's exact local ring-outward bisector.
+ * This is intended for sulfonyl/phosphoryl branches attached to ring nitrogens
+ * or similar anchors, while rejecting moves that would swing the principal
+ * scaffold through the hypervalent center.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {string} ringAnchorAtomId - Ring ligand atom id used as pivot.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {string[]|null} Center-side subtree atom ids, or `null` when too broad.
+ */
+function movableRingAnchoredHypervalentSubtreeAtomIds(layoutGraph, centerAtomId, ringAnchorAtomId, coords) {
+  if ((layoutGraph.atomToRings.get(ringAnchorAtomId)?.length ?? 0) === 0) {
+    return null;
+  }
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, centerAtomId, ringAnchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
+  if (
+    subtreeAtomIds.length === 0
+    || subtreeAtomIds.includes(ringAnchorAtomId)
+    || subtreeAtomIds.length > MAX_RING_ANCHORED_HYPERVALENT_SUBTREE_ATOMS
+  ) {
+    return null;
+  }
+
+  let heavyAtomCount = 0;
+  for (const subtreeAtomId of subtreeAtomIds) {
+    const subtreeAtom = layoutGraph.atoms.get(subtreeAtomId);
+    if (!subtreeAtom) {
+      return null;
+    }
+    if (subtreeAtom.element !== 'H') {
+      heavyAtomCount++;
+      if (heavyAtomCount > MAX_RING_ANCHORED_HYPERVALENT_SUBTREE_HEAVY_ATOMS) {
+        return null;
+      }
+    }
+  }
+  return subtreeAtomIds;
+}
+
+/**
+ * Rotates compact ring-anchored hypervalent branches so the hypervalent center
+ * itself sits on the ring anchor's exact outward bisector.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {object} descriptor - Orthogonal hypervalent descriptor.
+ * @returns {number} Number of accepted branch rotations.
+ */
+function alignRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor) {
+  let nudges = 0;
+  for (const ringAnchorAtomId of descriptor.singleNeighborIds) {
+    const anchorPosition = coords.get(ringAnchorAtomId);
+    const centerPosition = coords.get(centerAtomId);
+    if (!anchorPosition || !centerPosition) {
+      continue;
+    }
+    const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, ringAnchorAtomId, atomId => coords.get(atomId) ?? null);
+    if (outwardAngles.length === 0) {
+      continue;
+    }
+    const subtreeAtomIds = movableRingAnchoredHypervalentSubtreeAtomIds(layoutGraph, centerAtomId, ringAnchorAtomId, coords);
+    if (!subtreeAtomIds) {
+      continue;
+    }
+    const currentAngle = angleOf(sub(centerPosition, anchorPosition));
+    const targetAngle = outwardAngles
+      .slice()
+      .sort((firstAngle, secondAngle) => angularDistance(currentAngle, firstAngle) - angularDistance(currentAngle, secondAngle))[0];
+    if (targetAngle == null || angularDistance(currentAngle, targetAngle) <= RING_ANCHORED_HYPERVALENT_ANGLE_THRESHOLD) {
+      continue;
+    }
+    const rotation = Math.atan2(Math.sin(targetAngle - currentAngle), Math.cos(targetAngle - currentAngle));
+    for (const subtreeAtomId of subtreeAtomIds) {
+      const currentPosition = coords.get(subtreeAtomId);
+      if (!currentPosition) {
+        continue;
+      }
+      const offset = sub(currentPosition, anchorPosition);
+      const radius = distance(anchorPosition, currentPosition);
+      const absoluteAngle = angleOf(offset);
+      coords.set(subtreeAtomId, add(anchorPosition, fromAngle(absoluteAngle + rotation, radius)));
+    }
+    nudges++;
+  }
+  return nudges;
+}
+
+/**
+ * Returns whether a compact hypervalent branch attached to a ring atom is off
+ * that ring atom's local outward bisector enough to merit a rigid rotation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {object} descriptor - Orthogonal hypervalent descriptor.
+ * @param {number} angleThreshold - Angular tolerance in radians.
+ * @returns {boolean} True when a compact ring-anchored branch should be aligned.
+ */
+function hasRingAnchoredHypervalentBranchNeed(layoutGraph, coords, centerAtomId, descriptor, angleThreshold) {
+  for (const ringAnchorAtomId of descriptor.singleNeighborIds) {
+    const anchorPosition = coords.get(ringAnchorAtomId);
+    const centerPosition = coords.get(centerAtomId);
+    if (!anchorPosition || !centerPosition) {
+      continue;
+    }
+    const subtreeAtomIds = movableRingAnchoredHypervalentSubtreeAtomIds(layoutGraph, centerAtomId, ringAnchorAtomId, coords);
+    if (!subtreeAtomIds) {
+      continue;
+    }
+    const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, ringAnchorAtomId, atomId => coords.get(atomId) ?? null);
+    if (outwardAngles.length === 0) {
+      continue;
+    }
+    const currentAngle = angleOf(sub(centerPosition, anchorPosition));
+    const targetAngle = outwardAngles
+      .slice()
+      .sort((firstAngle, secondAngle) => angularDistance(currentAngle, firstAngle) - angularDistance(currentAngle, secondAngle))[0];
+    if (targetAngle != null && angularDistance(currentAngle, targetAngle) > angleThreshold) {
+      return true;
+    }
+  }
+  return false;
 }
 
 function weightedAngleCost(currentAngles, movableNeighborIds, neighborAtomId, targetAngle) {
@@ -340,6 +486,7 @@ export function measureOrthogonalHypervalentDeviation(layoutGraph, coords, optio
  */
 export function hasHypervalentAngleTidyNeed(layoutGraph, coords, options = {}) {
   const angleThreshold = options.angleThreshold ?? ANGLE_THRESHOLD;
+  const ringAnchoredAngleThreshold = options.ringAnchoredAngleThreshold ?? RING_ANCHORED_HYPERVALENT_ANGLE_THRESHOLD;
 
   for (const centerAtomId of coords.keys()) {
     const descriptor = describeOrthogonalHypervalentCenter(layoutGraph, centerAtomId, coords);
@@ -354,29 +501,30 @@ export function hasHypervalentAngleTidyNeed(layoutGraph, coords, options = {}) {
         return Array.isArray(subtreeAtomIds) && subtreeAtomIds.length > 0;
       })
     );
-    if (movableNeighborIds.size === 0) {
-      continue;
+    if (movableNeighborIds.size > 0) {
+      const currentAngles = new Map(
+        [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds].map(neighborAtomId => [
+          neighborAtomId,
+          angleOf(sub(coords.get(neighborAtomId), centerPosition))
+        ])
+      );
+      const fit = fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds);
+      if (fit) {
+        for (const neighborAtomId of movableNeighborIds) {
+          const targetAngle = fit.targetAngles.get(neighborAtomId);
+          if (targetAngle == null) {
+            continue;
+          }
+          const ligandThreshold = ligandAngleThreshold(layoutGraph, neighborAtomId, angleThreshold);
+          if (angularDistance(currentAngles.get(neighborAtomId), targetAngle) > ligandThreshold) {
+            return true;
+          }
+        }
+      }
     }
 
-    const currentAngles = new Map(
-      [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds].map(neighborAtomId => [
-        neighborAtomId,
-        angleOf(sub(coords.get(neighborAtomId), centerPosition))
-      ])
-    );
-    const fit = fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds);
-    if (!fit) {
-      continue;
-    }
-
-    for (const neighborAtomId of movableNeighborIds) {
-      const targetAngle = fit.targetAngles.get(neighborAtomId);
-      if (targetAngle == null) {
-        continue;
-      }
-      if (angularDistance(currentAngles.get(neighborAtomId), targetAngle) > angleThreshold) {
-        return true;
-      }
+    if (hasRingAnchoredHypervalentBranchNeed(layoutGraph, coords, centerAtomId, descriptor, ringAnchoredAngleThreshold)) {
+      return true;
     }
   }
 
@@ -407,42 +555,42 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
         .filter(([, subtreeAtomIds]) => Array.isArray(subtreeAtomIds) && subtreeAtomIds.length > 0)
     );
     const movableNeighborIds = new Set(movableSubtreesByNeighborId.keys());
-    if (movableSubtreesByNeighborId.size === 0) {
-      continue;
-    }
 
-    const centerPosition = coords.get(centerAtomId);
-    const currentAngles = new Map(
-      [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds].map(neighborAtomId => [
-        neighborAtomId,
-        angleOf(sub(coords.get(neighborAtomId), centerPosition))
-      ])
-    );
-    const fit = fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds);
-    if (!fit) {
-      continue;
-    }
-
-    for (const neighborAtomId of movableNeighborIds) {
-      const targetAngle = fit.targetAngles.get(neighborAtomId);
-      if (targetAngle == null || angularDistance(currentAngles.get(neighborAtomId), targetAngle) <= ANGLE_THRESHOLD) {
-        continue;
-      }
-      const currentAngle = currentAngles.get(neighborAtomId);
-      const rotation = Math.atan2(Math.sin(targetAngle - currentAngle), Math.cos(targetAngle - currentAngle));
-      const subtreeAtomIds = movableSubtreesByNeighborId.get(neighborAtomId) ?? [neighborAtomId];
-      for (const subtreeAtomId of subtreeAtomIds) {
-        const currentPosition = coords.get(subtreeAtomId);
-        if (!currentPosition) {
-          continue;
+    if (movableSubtreesByNeighborId.size > 0) {
+      const centerPosition = coords.get(centerAtomId);
+      const currentAngles = new Map(
+        [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds].map(neighborAtomId => [
+          neighborAtomId,
+          angleOf(sub(coords.get(neighborAtomId), centerPosition))
+        ])
+      );
+      const fit = fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds);
+      if (fit) {
+        for (const neighborAtomId of movableNeighborIds) {
+          const targetAngle = fit.targetAngles.get(neighborAtomId);
+          const ligandThreshold = ligandAngleThreshold(layoutGraph, neighborAtomId, ANGLE_THRESHOLD);
+          if (targetAngle == null || angularDistance(currentAngles.get(neighborAtomId), targetAngle) <= ligandThreshold) {
+            continue;
+          }
+          const currentAngle = currentAngles.get(neighborAtomId);
+          const rotation = Math.atan2(Math.sin(targetAngle - currentAngle), Math.cos(targetAngle - currentAngle));
+          const subtreeAtomIds = movableSubtreesByNeighborId.get(neighborAtomId) ?? [neighborAtomId];
+          for (const subtreeAtomId of subtreeAtomIds) {
+            const currentPosition = coords.get(subtreeAtomId);
+            if (!currentPosition) {
+              continue;
+            }
+            const offset = sub(currentPosition, centerPosition);
+            const radius = distance(centerPosition, currentPosition);
+            const absoluteAngle = angleOf(offset);
+            coords.set(subtreeAtomId, add(centerPosition, fromAngle(absoluteAngle + rotation, radius)));
+          }
+          nudges++;
         }
-        const offset = sub(currentPosition, centerPosition);
-        const radius = distance(centerPosition, currentPosition);
-        const absoluteAngle = angleOf(offset);
-        coords.set(subtreeAtomId, add(centerPosition, fromAngle(absoluteAngle + rotation, radius)));
       }
-      nudges++;
     }
+
+    nudges += alignRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor);
   }
 
   return { coords, nudges };

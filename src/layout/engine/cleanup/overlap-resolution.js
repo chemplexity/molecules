@@ -271,6 +271,26 @@ function isCompactHypervalentRigidDescriptor(layoutGraph, descriptor) {
 }
 
 /**
+ * Returns whether a rigid descriptor is an attached ring block that can be
+ * mirrored across its attachment bond without changing the root angle.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}} descriptor - Rigid-subtree descriptor.
+ * @returns {boolean} True when the descriptor contains a pendant ring block.
+ */
+function isPendantRingReflectionDescriptor(layoutGraph, descriptor) {
+  const anchorAtom = layoutGraph.atoms.get(descriptor.anchorAtomId);
+  const rootAtom = layoutGraph.atoms.get(descriptor.rootAtomId);
+  if (!anchorAtom || !rootAtom || anchorAtom.element === 'H' || rootAtom.element === 'H') {
+    return false;
+  }
+  const rootBond = layoutGraph.bondByAtomPair?.get(atomPairKey(descriptor.anchorAtomId, descriptor.rootAtomId));
+  if (!rootBond || rootBond.kind !== 'covalent' || rootBond.inRing || (rootBond.order ?? 1) !== 1) {
+    return false;
+  }
+  return descriptor.subtreeAtomIds.some(atomId => (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0);
+}
+
+/**
  * Measures how far a rigid subtree root deviates from the local ring-outward
  * direction of its anchor. Lower values are better.
  * @param {object} layoutGraph - Layout graph shell.
@@ -1132,7 +1152,7 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     }
   };
 
-  if (exactRingRootDescriptor) {
+  if (exactRingRootDescriptor || isPendantRingReflectionDescriptor(layoutGraph, descriptor)) {
     evaluateCandidatePositions(reflectedRigidDescriptorPositions(coords, descriptor));
   }
 
@@ -1285,10 +1305,17 @@ function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition,
     }
     return Number.isFinite(minimumDistance) ? minimumDistance : Number.POSITIVE_INFINITY;
   };
-  const baseStep = Math.max(tentativeShift / radius, Math.PI / 18);
+  const rawStep = tentativeShift / radius;
+  const baseStep = Math.max(rawStep, Math.PI / 18);
+  const stepMultipliers = [rawStep / baseStep, 1, 1.5, 2, 3]
+    .filter((multiplier, index, multipliers) => (
+      Number.isFinite(multiplier)
+      && multiplier > NUMERIC_EPSILON
+      && multipliers.findIndex(existingMultiplier => Math.abs(existingMultiplier - multiplier) <= NUMERIC_EPSILON) === index
+    ));
   let bestCandidate = null;
 
-  for (const multiplier of [1, 1.5, 2, 3]) {
+  for (const multiplier of stepMultipliers) {
     const step = Math.min(baseStep * multiplier, Math.PI / 2);
     for (const direction of [-1, 1]) {
       const rotated = rotateVector(currentVector, step * direction);
@@ -1310,7 +1337,12 @@ function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition,
         continue;
       }
       if (clearsThreshold) {
-        if (nonbondedDistance > bestCandidate.nonbondedDistance + NUMERIC_EPSILON) {
+        const bothSafelyClear = nonbondedDistance >= threshold && bestCandidate.nonbondedDistance >= threshold;
+        if (bothSafelyClear && step < bestCandidate.step - NUMERIC_EPSILON) {
+          bestCandidate = { position: candidatePosition, opposingDistance, nonbondedDistance, step, clearsThreshold };
+          continue;
+        }
+        if (!bothSafelyClear && nonbondedDistance > bestCandidate.nonbondedDistance + NUMERIC_EPSILON) {
           bestCandidate = { position: candidatePosition, opposingDistance, nonbondedDistance, step, clearsThreshold };
           continue;
         }

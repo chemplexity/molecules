@@ -314,4 +314,96 @@ describe('initGestureInteractions', () => {
     assert.deepEqual([...selectedAtomIds], ['h1']);
     assert.deepEqual(overlayCalls, ['applySelectionOverlay']);
   });
+
+  it('previews 2D drag-box atom and bond selection before mouseup', () => {
+    const a1 = { id: 'a1', x: 50, y: 50, visible: true, name: 'C' };
+    const a2 = { id: 'a2', x: 90, y: 90, visible: true, name: 'C' };
+    const a3 = { id: 'a3', x: 180, y: 90, visible: true, name: 'C' };
+    const b1 = { id: 'b1', atoms: ['a1', 'a2'], getAtomObjects: () => [a1, a2] };
+    const b2 = { id: 'b2', atoms: ['a2', 'a3'], getAtomObjects: () => [a2, a3] };
+    const mol = {
+      atoms: new Map([
+        ['a1', a1],
+        ['a2', a2],
+        ['a3', a3]
+      ]),
+      bonds: new Map([
+        ['b1', b1],
+        ['b2', b2]
+      ])
+    };
+    const overlayCalls = [];
+    const { context, svg, selectedAtomIds, selectedBondIds, state } = makeBaseContext({
+      renderers: {
+        applySelectionOverlay() {
+          overlayCalls.push('applySelectionOverlay');
+        }
+      }
+    });
+    context.state.documentState.getMol2d = () => mol;
+    state.setSelectMode(true);
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.selection')({
+      button: 0,
+      clientX: 40,
+      clientY: 40,
+      target: { closest: () => null },
+      preventDefault() {}
+    });
+    svg.handlers.get('mousemove.selection')({
+      clientX: 110,
+      clientY: 110
+    });
+
+    assert.deepEqual([...selectedAtomIds].sort(), ['a1', 'a2']);
+    assert.deepEqual([...selectedBondIds], ['b1']);
+    assert.deepEqual(overlayCalls, ['applySelectionOverlay']);
+
+    svg.handlers.get('mousemove.selection')({
+      clientX: 42,
+      clientY: 42
+    });
+
+    assert.deepEqual([...selectedAtomIds], []);
+    assert.deepEqual([...selectedBondIds], []);
+    assert.equal(overlayCalls.length, 2);
+  });
+
+  it('previews additive drag-box selection from the pre-drag baseline', () => {
+    const a1 = { id: 'a1', x: 50, y: 50, visible: true, name: 'C' };
+    const a2 = { id: 'a2', x: 90, y: 90, visible: true, name: 'C' };
+    const b1 = { id: 'b1', atoms: ['a1', 'a2'], getAtomObjects: () => [a1, a2] };
+    const mol = {
+      atoms: new Map([
+        ['a1', a1],
+        ['a2', a2]
+      ]),
+      bonds: new Map([['b1', b1]])
+    };
+    const { context, svg, selectedAtomIds, selectedBondIds, state } = makeBaseContext();
+    context.state.documentState.getMol2d = () => mol;
+    selectedAtomIds.add('a1');
+    selectedBondIds.add('b1');
+    state.setSelectMode(true);
+
+    initGestureInteractions(context);
+
+    svg.handlers.get('mousedown.selection')({
+      button: 0,
+      clientX: 40,
+      clientY: 40,
+      metaKey: true,
+      target: { closest: () => null },
+      preventDefault() {}
+    });
+    svg.handlers.get('mousemove.selection')({
+      clientX: 110,
+      clientY: 110
+    });
+
+    assert.deepEqual([...selectedAtomIds], ['a2']);
+    assert.deepEqual([...selectedBondIds], []);
+  });
 });

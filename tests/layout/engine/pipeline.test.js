@@ -950,6 +950,26 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
+  it('balances cyclopropyl exterior branches when one branch is an attached ring', () => {
+    const result = runPipeline(parseSMILES('CC(C)C1(CC1)C1C[NH2+]C1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const isopropylRingEdgeAngle = bondAngleAtAtom(result.coords, 'C4', 'C2', 'C6');
+    const attachedRingEdgeAngle = bondAngleAtAtom(result.coords, 'C4', 'C7', 'C5');
+
+    assert.ok(
+      Math.abs(isopropylRingEdgeAngle - attachedRingEdgeAngle) < 1e-6,
+      `expected C2-C4-C6 and C7-C4-C5 to stay equal, got ${isopropylRingEdgeAngle.toFixed(2)} and ${attachedRingEdgeAngle.toFixed(2)} degrees`
+    );
+    assert.ok(
+      Math.abs(isopropylRingEdgeAngle - 100) < 1e-6,
+      `expected the cyclopropyl exterior fan to split the open side into 100-degree gaps, got ${isopropylRingEdgeAngle.toFixed(2)} degrees`
+    );
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
   it('lets cleanup clear crowded geminal alkyl-branch overlaps on protonated acyclic centers', () => {
     const result = runPipeline(parseSMILES('CCC(CC)([NH2+]C(CC)(CC)C(C[SiH3])OC)C(C[SiH3])OC'), {
       suppressH: true,
@@ -1008,6 +1028,35 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
+  it('balances terminal chlorophenyl leaf and heteroaryl ring angles while preserving the omitted-H junction', () => {
+    const result = runPipeline(
+      parseSMILES('CC1=C(C(C2=CC=CC=C2Cl)C(C2=NN=CO2)=C(C)N1)C([O-])=O'),
+      { suppressH: true, auditTelemetry: true }
+    );
+    const firstChloroAngle = bondAngleAtAtom(result.coords, 'C10', 'C5', 'Cl11');
+    const secondChloroAngle = bondAngleAtAtom(result.coords, 'C10', 'C9', 'Cl11');
+    const firstBenzylicAngle = bondAngleAtAtom(result.coords, 'C4', 'C3', 'C5');
+    const secondBenzylicAngle = bondAngleAtAtom(result.coords, 'C4', 'C3', 'C12');
+    const thirdBenzylicAngle = bondAngleAtAtom(result.coords, 'C4', 'C5', 'C12');
+    const firstHeteroarylAngle = bondAngleAtAtom(result.coords, 'C12', 'C4', 'C13');
+    const secondHeteroarylAngle = bondAngleAtAtom(result.coords, 'C12', 'C13', 'C18');
+    const firstOxadiazoleAngle = bondAngleAtAtom(result.coords, 'C13', 'C12', 'O17');
+    const secondOxadiazoleAngle = bondAngleAtAtom(result.coords, 'C13', 'C12', 'N14');
+    const chloroMaxDeviation = Math.max(Math.abs(firstChloroAngle - 120), Math.abs(secondChloroAngle - 120));
+    const heteroarylMaxDeviation = Math.max(Math.abs(firstHeteroarylAngle - 120), Math.abs(secondHeteroarylAngle - 120));
+
+    assert.ok(chloroMaxDeviation <= 12.5 + 1e-6, `expected the chlorophenyl leaf compromise to stay within 12.5 degrees, got ${chloroMaxDeviation.toFixed(2)}`);
+    assert.ok(heteroarylMaxDeviation <= 12.5 + 1e-6, `expected the C12 heteroaryl compromise to stay within 12.5 degrees, got ${heteroarylMaxDeviation.toFixed(2)}`);
+    assert.ok(Math.abs(chloroMaxDeviation - heteroarylMaxDeviation) < 1e-6, `expected the Cl and C12 angle compromise to be shared, got ${chloroMaxDeviation.toFixed(2)} and ${heteroarylMaxDeviation.toFixed(2)}`);
+    assert.ok(Math.abs(firstBenzylicAngle - 120) < 1e-6, `expected C3-C4-C5 to stay at 120 degrees, got ${firstBenzylicAngle.toFixed(2)}`);
+    assert.ok(Math.abs(secondBenzylicAngle - 120) < 1e-6, `expected C3-C4-C12 to stay at 120 degrees, got ${secondBenzylicAngle.toFixed(2)}`);
+    assert.ok(Math.abs(thirdBenzylicAngle - 120) < 1e-6, `expected C5-C4-C12 to stay at 120 degrees, got ${thirdBenzylicAngle.toFixed(2)}`);
+    assert.ok(Math.abs(firstOxadiazoleAngle - secondOxadiazoleAngle) < 1e-6);
+    assert.equal(result.metadata.stageTelemetry.stageAudits.placement.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
   it('keeps mixed-family alkyne linkers linear when a direct-attached ring block follows the sp carbon', () => {
     const result = runPipeline(
       parseSMILES('CC1=CC(=NC(N)=N1)C#CC1=C(CNN2C=COC2=O)C=CC=C1'),
@@ -1041,6 +1090,38 @@ describe('layout/engine/pipeline', () => {
     assert.ok(Math.abs(finalMethylArylAngle - 120) < 1e-6, `expected C11-N10-C9 to stay at 120 degrees, got ${finalMethylArylAngle.toFixed(2)} degrees`);
     assert.ok(Math.abs(finalCarbonylArylAngle - 120) < 1e-6, `expected C12-N10-C9 to stay at 120 degrees, got ${finalCarbonylArylAngle.toFixed(2)} degrees`);
     assert.equal(placementAudit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('swaps planar tertiary nitrogen sibling branches to clear attached phenyl overlaps without bending the amide', () => {
+    const result = runPipeline(
+      parseSMILES('CCN(C(=O)C1=C(O)C2=C(C=CC=C2Cl)N(C)C1=O)C1=CC=CC=C1'),
+      { suppressH: true, auditTelemetry: true }
+    );
+    const nCarbonylPhenylAngle = bondAngleAtAtom(result.coords, 'N3', 'C4', 'C20');
+    const nCarbonylEthylAngle = bondAngleAtAtom(result.coords, 'N3', 'C4', 'C2');
+    const nPhenylEthylAngle = bondAngleAtAtom(result.coords, 'N3', 'C20', 'C2');
+    const carbonylNitrogenOxygenAngle = bondAngleAtAtom(result.coords, 'C4', 'N3', 'O5');
+    const carbonylNitrogenRingAngle = bondAngleAtAtom(result.coords, 'C4', 'N3', 'C6');
+    const carbonylOxygenRingAngle = bondAngleAtAtom(result.coords, 'C4', 'O5', 'C6');
+    const phenylNitrogenFirstAngle = bondAngleAtAtom(result.coords, 'C20', 'N3', 'C25');
+    const phenylNitrogenSecondAngle = bondAngleAtAtom(result.coords, 'C20', 'N3', 'C21');
+    const phenylRootAngle = bondAngleAtAtom(result.coords, 'C20', 'C25', 'C21');
+
+    for (const [label, angle] of [
+      ['C4-N3-C20', nCarbonylPhenylAngle],
+      ['C4-N3-C2', nCarbonylEthylAngle],
+      ['C20-N3-C2', nPhenylEthylAngle],
+      ['N3-C4-O5', carbonylNitrogenOxygenAngle],
+      ['N3-C4-C6', carbonylNitrogenRingAngle],
+      ['O5-C4-C6', carbonylOxygenRingAngle],
+      ['N3-C20-C25', phenylNitrogenFirstAngle],
+      ['N3-C20-C21', phenylNitrogenSecondAngle],
+      ['C25-C20-C21', phenylRootAngle]
+    ]) {
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${label} to stay at 120 degrees, got ${angle.toFixed(2)}`);
+    }
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });
@@ -1120,6 +1201,23 @@ describe('layout/engine/pipeline', () => {
     assert.ok(Math.abs(separations[0] - 108) < 1e-6);
     assert.ok(Math.abs(separations[1] - 120) < 1e-6);
     assert.ok(Math.abs(separations[2] - 132) < 1e-6);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('centers heteroaryl carbonyl-methylene substituents on the exact local ring-outward axis', () => {
+    const result = runPipeline(
+      parseSMILES('O=C(Cn1ncc2C(=O)Oc3ccccc3c12)N4CCC(CC4)N5CCCCC5'),
+      { suppressH: true, auditTelemetry: true }
+    );
+    const firstAngle = bondAngleAtAtom(result.coords, 'N4', 'C3', 'C17');
+    const secondAngle = bondAngleAtAtom(result.coords, 'N4', 'C3', 'N5');
+
+    assert.ok(
+      Math.abs(firstAngle - secondAngle) < 1e-6,
+      `expected C3-N4-C17 and C3-N4-N5 to match, got ${firstAngle.toFixed(2)} and ${secondAngle.toFixed(2)} degrees`
+    );
+    assert.ok(Math.abs(firstAngle - 126) < 1e-6, `expected N4 substituent angles to bisect the 108-degree ring angle, got ${firstAngle.toFixed(2)} degrees`);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });
 
@@ -1303,6 +1401,9 @@ describe('layout/engine/pipeline', () => {
     const c16ThirdAngle = bondAngleAtAtom(result.coords, 'C16', 'O17', 'N18');
     const c13BranchAngle = bondAngleAtAtom(result.coords, 'C13', 'C5', 'C16');
     const c13LeafPairAngle = bondAngleAtAtom(result.coords, 'C13', 'F14', 'F15');
+    const c28FirstAngle = bondAngleAtAtom(result.coords, 'C28', 'O27', 'C30');
+    const c28SecondAngle = bondAngleAtAtom(result.coords, 'C28', 'O27', 'C39');
+    const c28ThirdAngle = bondAngleAtAtom(result.coords, 'C28', 'C30', 'C39');
 
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.labelOverlapCount, 0);
@@ -1321,6 +1422,9 @@ describe('layout/engine/pipeline', () => {
     assert.ok(Math.abs(c16FirstAngle - 120) < 1e-6);
     assert.ok(Math.abs(c13BranchAngle - 90) < 1e-6, `expected C5-C13-C16 to stay orthogonal so the deferred difluoro leaves can take the opposite slots, got ${c13BranchAngle.toFixed(2)}`);
     assert.ok(Math.abs(c13LeafPairAngle - 90) < 2.5, `expected F14-C13-F15 to avoid the opposite-pair cross, got ${c13LeafPairAngle.toFixed(2)}`);
+    assert.ok(Math.abs(c28FirstAngle - 120) < 1e-6, `expected O27-C28-C30 to keep the omitted-H trigonal spread, got ${c28FirstAngle.toFixed(2)}`);
+    assert.ok(Math.abs(c28SecondAngle - 120) < 1e-6, `expected O27-C28-C39 to keep the omitted-H trigonal spread, got ${c28SecondAngle.toFixed(2)}`);
+    assert.ok(Math.abs(c28ThirdAngle - 120) < 1e-6, `expected C30-C28-C39 to keep the omitted-H trigonal spread, got ${c28ThirdAngle.toFixed(2)}`);
     assert.equal(result.metadata.audit.ok, true);
   });
 

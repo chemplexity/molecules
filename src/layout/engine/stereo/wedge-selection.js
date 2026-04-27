@@ -149,6 +149,28 @@ function bondOrder(bond) {
   return typeof bond.getOrder === 'function' ? bond.getOrder() : (bond.properties.order ?? 1);
 }
 
+/**
+ * Returns whether a candidate entry points to any hydrogen atom.
+ * @param {object} entry - Candidate stereobond entry.
+ * @returns {boolean} True when the entry atom is hydrogen.
+ */
+function isHydrogenEntry(entry) {
+  return entry?.atom?.name === 'H';
+}
+
+/**
+ * Returns whether a hydrogen entry should be treated as hidden for stereo display.
+ * The engine API may temporarily reveal hidden hydrogens during suppressed-H
+ * layout so they can receive coordinates, but wedge selection should still
+ * prefer a heavy display bond in that mode.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} entry - Candidate stereobond entry.
+ * @returns {boolean} True when the entry is a hidden/suppressed hydrogen.
+ */
+function isSuppressedHydrogenEntry(layoutGraph, entry) {
+  return isHydrogenEntry(entry) && (entry.atom.visible === false || layoutGraph.options?.suppressH === true);
+}
+
 function branchDepth(layoutGraph, startAtomId, blockedAtomId) {
   const molecule = layoutGraph.sourceMolecule;
   const queue = [{ atomId: startAtomId, depth: 0 }];
@@ -195,9 +217,9 @@ function resolveStereoTypeForCenter(layoutGraph, coords, centerId, preferredBond
   }
 
   const otherEntries = entryData.entries.filter(entry => entry !== chosenEntry).sort((firstEntry, secondEntry) => secondEntry.rank - firstEntry.rank);
-  const heavyOtherVectors = otherEntries.filter(entry => !(entry.atom.name === 'H' && entry.atom.visible === false)).map(entry => sub(entry.position, entryData.centerPosition));
+  const heavyOtherVectors = otherEntries.filter(entry => !isSuppressedHydrogenEntry(layoutGraph, entry)).map(entry => sub(entry.position, entryData.centerPosition));
   const safeVector = entry => {
-    if (entry.atom.name === 'H' && entry.atom.visible === false && heavyOtherVectors.length === 2) {
+    if (isSuppressedHydrogenEntry(layoutGraph, entry) && heavyOtherVectors.length === 2) {
       const x = -(heavyOtherVectors[0].x + heavyOtherVectors[1].x);
       const y = -(heavyOtherVectors[0].y + heavyOtherVectors[1].y);
       const unit = normalize({ x, y });
@@ -297,8 +319,8 @@ export function pickWedgeAssignments(layoutGraph, coords) {
       return true;
     });
     const nonRingCandidates = candidateEntries.filter(entry => !entry.bond.isInRing(molecule));
-    const nonRingVisibleHeavyCandidates = nonRingCandidates.filter(entry => !(entry.atom.name === 'H' && entry.atom.visible === false));
-    const visibleHeavyCandidates = candidateEntries.filter(entry => !(entry.atom.name === 'H' && entry.atom.visible === false));
+    const nonRingVisibleHeavyCandidates = nonRingCandidates.filter(entry => !isHydrogenEntry(entry));
+    const visibleHeavyCandidates = candidateEntries.filter(entry => !isHydrogenEntry(entry));
     const viableCandidates = selectAvailableCandidateTier(
       [nonRingVisibleHeavyCandidates, nonRingCandidates, visibleHeavyCandidates, candidateEntries].filter(tier => tier.length > 0),
       assignedBondIds
@@ -347,8 +369,8 @@ export function pickWedgeAssignments(layoutGraph, coords) {
         return firstDepth - secondDepth;
       }
 
-      const firstHiddenHydrogen = firstEntry.atom.name === 'H' && firstEntry.atom.visible === false;
-      const secondHiddenHydrogen = secondEntry.atom.name === 'H' && secondEntry.atom.visible === false;
+      const firstHiddenHydrogen = isSuppressedHydrogenEntry(layoutGraph, firstEntry);
+      const secondHiddenHydrogen = isSuppressedHydrogenEntry(layoutGraph, secondEntry);
       if (firstHiddenHydrogen !== secondHiddenHydrogen) {
         return firstHiddenHydrogen ? 1 : -1;
       }

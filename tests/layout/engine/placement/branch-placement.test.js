@@ -220,6 +220,42 @@ describe('layout/engine/placement/branch-placement', () => {
     assert.ok([90, 270].includes(secondOxoAngle));
   });
 
+  it('uses sulfur hydrogens as single-bond ligands for terminal sulfonyl crosses', () => {
+    const molecule = new Molecule();
+    molecule.addAtom('n0', 'N');
+    molecule.addAtom('s0', 'S');
+    molecule.addAtom('o0', 'O');
+    molecule.addAtom('o1', 'O');
+    molecule.addAtom('h0', 'H');
+    molecule.addBond('b0', 'n0', 's0', {}, false);
+    molecule.addBond('b1', 's0', 'o0', { order: 2 }, false);
+    molecule.addBond('b2', 's0', 'o1', { order: 2 }, false);
+    molecule.addBond('b3', 's0', 'h0', {}, false);
+    const graph = createLayoutGraph(molecule, { suppressH: true });
+    const adjacency = new Map([
+      ['n0', ['s0']],
+      ['s0', ['n0', 'o0', 'o1', 'h0']],
+      ['o0', ['s0']],
+      ['o1', ['s0']],
+      ['h0', ['s0']]
+    ]);
+    const coords = new Map([
+      ['n0', { x: 0, y: 0 }],
+      ['s0', { x: 1.5, y: 0 }]
+    ]);
+
+    placeRemainingBranches(adjacency, graph.canonicalAtomRank, coords, new Set(['n0', 's0', 'o0', 'o1', 'h0']), ['n0', 's0'], 1.5, graph);
+
+    const sulfurPosition = coords.get('s0');
+    const nitrogenAngle = angleOf({ x: coords.get('n0').x - sulfurPosition.x, y: coords.get('n0').y - sulfurPosition.y });
+    const hydrogenAngle = angleOf({ x: coords.get('h0').x - sulfurPosition.x, y: coords.get('h0').y - sulfurPosition.y });
+    const firstOxoAngle = angleOf({ x: coords.get('o0').x - sulfurPosition.x, y: coords.get('o0').y - sulfurPosition.y });
+    const secondOxoAngle = angleOf({ x: coords.get('o1').x - sulfurPosition.x, y: coords.get('o1').y - sulfurPosition.y });
+
+    assert.ok(Math.abs(angularDifference(nitrogenAngle, hydrogenAngle) - Math.PI) < 1e-6);
+    assert.ok(Math.abs(angularDifference(firstOxoAngle, secondOxoAngle) - Math.PI) < 1e-6);
+  });
+
   it('places sulfone oxygens perpendicular to opposing single-bond substituents', () => {
     const graph = createLayoutGraph(makeDimethylSulfone(), { suppressH: true });
     const adjacency = new Map([

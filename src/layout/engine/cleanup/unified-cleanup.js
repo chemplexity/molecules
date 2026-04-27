@@ -100,6 +100,12 @@ function isBetterCandidate(bestCandidate, candidate, epsilon, options = {}) {
   if (protectCleanupBondIntegrity(options) && candidate.bondLengthFailureCount !== bestCandidate.bondLengthFailureCount) {
     return candidate.bondLengthFailureCount < bestCandidate.bondLengthFailureCount;
   }
+  if (
+    candidate.bondLengthFailureCount !== bestCandidate.bondLengthFailureCount
+    && Math.abs(candidate.overlapCount - bestCandidate.overlapCount) <= 1
+  ) {
+    return candidate.bondLengthFailureCount < bestCandidate.bondLengthFailureCount;
+  }
   if (candidate.overlapCount !== bestCandidate.overlapCount) {
     return candidate.overlapCount < bestCandidate.overlapCount;
   }
@@ -138,6 +144,7 @@ function shouldSkipRotationProbe(visibleHeavyAtomCount, baseOverlapCount, bestCa
   return visibleHeavyAtomCount >= UNIFIED_CLEANUP_LIMITS.overlapPriorityAtomCount
     && baseOverlapCount > 0
     && !!bestCandidate
+    && bestCandidate.bondLengthFailureCount === 0
     && bestCandidate.overlapReduction > 0;
 }
 
@@ -294,8 +301,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
 
     if (!shouldSkipRotationProbe(visibleHeavyAtomCount, baseOverlapCount, bestPrescoredCandidate, options)) {
       const rotationProbeMaxPasses =
-        baseOverlapCount > 0
-        && visibleHeavyAtomCount <= UNIFIED_CLEANUP_LIMITS.smallLayoutRotationProbeAtomCount
+        visibleHeavyAtomCount <= UNIFIED_CLEANUP_LIMITS.moderateLayoutRotationProbeAtomCount
         && baseOverlapCount <= UNIFIED_CLEANUP_LIMITS.smallLayoutRotationProbeOverlapCount
           ? UNIFIED_CLEANUP_LIMITS.smallLayoutRotationProbeMaxPasses
           : 1;

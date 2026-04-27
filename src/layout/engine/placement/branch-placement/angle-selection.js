@@ -203,6 +203,18 @@ function buildFinePreferredCandidateAngles(preferredAngles = []) {
   ]));
 }
 
+function buildNearPreferredRescueCandidateAngles(preferredAngles = []) {
+  const rescueStep = DEG15 / 3;
+  const rescueOffsets = [];
+  for (let offset = rescueStep; offset <= DEG60 + 1e-9; offset += rescueStep) {
+    rescueOffsets.push(-offset, offset);
+  }
+  return mergeCandidateAngles(
+    [],
+    preferredAngles.flatMap(preferredAngle => rescueOffsets.map(offset => preferredAngle + offset))
+  );
+}
+
 function hasSafeCandidate(candidates) {
   return candidates.some(candidate => candidate.isSafe !== false);
 }
@@ -468,7 +480,8 @@ function isConjugatedTrigonalCenter(layoutGraph, atomId) {
 
 /**
  * Returns whether a tertiary nitrogen should be treated as planar because one
- * of its single-bond neighbors is a conjugated trigonal center.
+ * of its single-bond neighbors is a conjugated trigonal or sulfonyl-like
+ * hypervalent center.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} atomId - Nitrogen atom ID.
  * @returns {boolean} True when the nitrogen should use trigonal branch slots.
@@ -481,7 +494,56 @@ function isPlanarConjugatedTertiaryNitrogen(layoutGraph, atomId) {
   const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, atomId);
   return heavyBonds.length === 3
     && heavyBonds.every(({ bond }) => !bond.aromatic && (bond.order ?? 1) === 1)
-    && heavyBonds.some(({ neighborAtomId }) => isConjugatedTrigonalCenter(layoutGraph, neighborAtomId));
+    && heavyBonds.some(({ neighborAtomId }) => {
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return (
+        neighborAtom?.aromatic
+        || isConjugatedTrigonalCenter(layoutGraph, neighborAtomId)
+        || describeCrossLikeHypervalentCenter(layoutGraph, neighborAtomId)?.kind === 'bis-oxo'
+      );
+    });
+}
+
+/**
+ * Returns whether an aromatic heteroatom substituent carbon is constrained by
+ * an adjacent conjugated trigonal center. These `heteroaryl-CH2-C(=O)` roots
+ * are presentation-sensitive enough to keep the heteroaryl exit centered,
+ * unlike ordinary flexible alkyl chains.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Aromatic heteroatom anchor ID.
+ * @param {string} childAtomId - Candidate carbon substituent root ID.
+ * @param {object} anchorBond - Bond between anchor and child.
+ * @returns {boolean} True when the root should preserve exact ring-outward placement.
+ */
+function isHeteroarylConjugatedMethyleneRoot(layoutGraph, anchorAtomId, childAtomId, anchorBond) {
+  const anchorAtom = layoutGraph?.atoms.get(anchorAtomId);
+  const childAtom = layoutGraph?.atoms.get(childAtomId);
+  if (
+    !anchorAtom
+    || !childAtom
+    || !anchorAtom.aromatic
+    || anchorAtom.element === 'C'
+    || childAtom.element !== 'C'
+    || childAtom.aromatic
+    || childAtom.heavyDegree !== 2
+  ) {
+    return false;
+  }
+
+  for (const childBond of layoutGraph.bondsByAtomId.get(childAtomId) ?? []) {
+    if (!childBond || childBond === anchorBond || childBond.kind !== 'covalent') {
+      continue;
+    }
+    if (childBond.aromatic || (childBond.order ?? 1) !== 1) {
+      return false;
+    }
+    const downstreamAtomId = childBond.a === childAtomId ? childBond.b : childBond.a;
+    const downstreamAtom = layoutGraph.atoms.get(downstreamAtomId);
+    return !!downstreamAtom
+      && downstreamAtom.element !== 'H'
+      && isConjugatedTrigonalCenter(layoutGraph, downstreamAtomId);
+  }
+  return false;
 }
 
 /**
@@ -527,6 +589,9 @@ export function isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId,
     return true;
   }
   if (isRingConstrainedBenzylicCarbonRoot(layoutGraph, anchorAtomId, childAtomId)) {
+    return true;
+  }
+  if (isHeteroarylConjugatedMethyleneRoot(layoutGraph, anchorAtomId, childAtomId, bond)) {
     return true;
   }
   for (const childBond of layoutGraph.bondsByAtomId.get(childAtomId) ?? []) {
@@ -815,7 +880,7 @@ export function describeCrossLikeHypervalentCenter(layoutGraph, atomId) {
     }
     const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
     const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H') {
+    if (!neighborAtom) {
       continue;
     }
     const order = bond.order ?? 1;
@@ -900,6 +965,45 @@ function shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, coords, anchorA
   }
 
   return incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId).length === 1;
+}
+
+function ringSystemHasOnlyIsolatedOrFusedConnections(layoutGraph, anchorAtomId) {
+  const ringSystemId = layoutGraph?.atomToRingSystemId?.get(anchorAtomId);
+  const ringSystem = ringSystemId != null ? layoutGraph.ringSystems?.find(candidate => candidate.id === ringSystemId) : null;
+  if (!ringSystem) {
+    return false;
+  }
+  if ((ringSystem.ringIds?.length ?? 0) <= 1) {
+    return true;
+  }
+
+  const ringIds = new Set(ringSystem.ringIds);
+  const systemConnections = (layoutGraph.ringConnections ?? []).filter(connection => (
+    ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)
+  ));
+  return systemConnections.length > 0 && systemConnections.every(connection => connection.kind === 'fused');
+}
+
+function shouldPreferLocalRingOutwardForTerminalHeteroSubstituent(layoutGraph, anchorAtomId, childAtomId, localRingAngles) {
+  if (
+    !layoutGraph
+    || !childAtomId
+    || localRingAngles.length !== 1
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1
+    || !ringSystemHasOnlyIsolatedOrFusedConnections(layoutGraph, anchorAtomId)
+    || !isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)
+  ) {
+    return false;
+  }
+
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  return Boolean(
+    childAtom
+    && childAtom.element !== 'C'
+    && childAtom.element !== 'H'
+    && childAtom.aromatic !== true
+    && childAtom.heavyDegree <= 1
+  );
 }
 
 function shouldPreferTerminalLeafLocalOutwardOverStraightJunction(layoutGraph, coords, anchorAtomId, childAtomId, straightJunctionAngle) {
@@ -1519,6 +1623,49 @@ function pickClosestPreferredCandidateAngle(candidates, bondLength, preferredAng
 }
 
 /**
+ * Chooses the closest safe near-preferred angle when an exact publication
+ * geometry slot is blocked by an already placed atom. This is intentionally a
+ * rescue path for rigid terminal leaves, not a generic branch fallback.
+ * @param {{x: number, y: number}} anchorPosition - Anchor position.
+ * @param {number} bondLength - Target bond length.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {number[]} occupiedAngles - Occupied neighbor angles.
+ * @param {number[]} preferredAngles - Preferred exact continuation angles.
+ * @param {Set<string>} excludedAtomIds - Atoms to ignore during clearance scoring.
+ * @param {{sumX: number, sumY: number, count: number}|null} placementState - Running placement state.
+ * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
+ * @param {object|null} [atomGrid] - Optional spatial grid used for clearance checks.
+ * @returns {number|null} Closest safe near-preferred angle, or null when none is available.
+ */
+export function chooseNearPreferredRescueAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, excludedAtomIds, placementState, ringPolygons = [], atomGrid = null) {
+  const candidateAngles = buildNearPreferredRescueCandidateAngles(preferredAngles);
+  if (candidateAngles.length === 0) {
+    return null;
+  }
+  const rescueCandidates = evaluateAngleCandidates(
+    candidateAngles,
+    occupiedAngles,
+    preferredAngles,
+    anchorPosition,
+    bondLength,
+    coords,
+    excludedAtomIds,
+    placementState,
+    ringPolygons,
+    atomGrid
+  ).filter(candidate => (
+    candidate.isSafe !== false
+    && (candidate.insideRingCount ?? 0) === 0
+    && (candidate.minSeparation ?? 0) >= Math.PI / 6
+  ));
+  return pickClosestPreferredCandidateAngle(rescueCandidates, bondLength, preferredAngles, {
+    anchorPosition,
+    coords,
+    excludedAtomIds
+  });
+}
+
+/**
  * Scores candidate branch angles against occupied directions, placement CoM, and incident ring faces.
  * @param {number[]} candidateAngles - Candidate angles in radians.
  * @param {number[]} occupiedAngles - Occupied neighbor angles.
@@ -2108,11 +2255,10 @@ function largerAngularGap(ringNeighborAngles) {
 
 /**
  * Returns the ideal exocyclic target angles for a saturated ring atom that
- * carries two heavy external branches. Three- and four-membered rings read
- * best when the exocyclic bonds continue the ring edges exactly, while
- * five- and six-membered rings read better when the two exterior branches fan
- * symmetrically across the open side of the ring instead of pinching onto a
- * single ring-edge continuation.
+ * carries two heavy external branches. Three-, five-, and six-membered rings
+ * read best when the two exterior branches fan symmetrically across the open
+ * side of the ring, while four-membered rings keep the exact outer
+ * continuations of the ring edges.
  * @param {number[]} ringNeighborAngles - Already placed ring-bond angles at the anchor.
  * @param {number} ringSize - Ring size for the anchor's incident ring.
  * @returns {number[]} Target exterior angles in radians.
@@ -2121,7 +2267,7 @@ export function smallRingExteriorTargetAngles(ringNeighborAngles, ringSize) {
   if (ringNeighborAngles.length !== 2) {
     return [];
   }
-  if (ringSize >= 5) {
+  if (ringSize === 3 || ringSize >= 5) {
     const exteriorGap = largerAngularGap(ringNeighborAngles);
     if (!exteriorGap) {
       return [];
@@ -2388,13 +2534,13 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
   if (projectedTetrahedralAngles.length > 0) {
     return projectedTetrahedralAngles;
   }
-  const ringJunctionGapAngle = preferredRingJunctionGapAngle(layoutGraph, coords, anchorAtomId, placedNeighborIdsList, childAtomId);
-  if (ringJunctionGapAngle != null) {
-    return [ringJunctionGapAngle];
-  }
   const smallRingExteriorAngles = preferredSmallRingExteriorGapAngles(layoutGraph, coords, anchorAtomId, placedNeighborIdsList, childAtomId);
   if (smallRingExteriorAngles.length > 0) {
     return smallRingExteriorAngles;
+  }
+  const ringJunctionGapAngle = preferredRingJunctionGapAngle(layoutGraph, coords, anchorAtomId, placedNeighborIdsList, childAtomId);
+  if (ringJunctionGapAngle != null) {
+    return [ringJunctionGapAngle];
   }
   const childBond = childAtomId ? findLayoutBond(layoutGraph, anchorAtomId, childAtomId) : null;
   const exactVisibleTrigonalBisectorAngle =
@@ -2418,9 +2564,12 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
       return [trigonalBisectorAngle];
     }
   }
-  const ringAngles = shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, coords, anchorAtomId, childAtomId)
-    ? incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId)
-    : preferredRingAngles(layoutGraph, coords, anchorAtomId);
+  const localRingAngles = incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId);
+  const ringAngles =
+    shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, coords, anchorAtomId, childAtomId)
+    || shouldPreferLocalRingOutwardForTerminalHeteroSubstituent(layoutGraph, anchorAtomId, childAtomId, localRingAngles)
+      ? localRingAngles
+      : preferredRingAngles(layoutGraph, coords, anchorAtomId);
   if (ringAngles.length > 0) {
     return ringAngles;
   }

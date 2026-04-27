@@ -227,7 +227,9 @@ function measureBackboneSpan(coords, backbone) {
 
 /**
  * Returns whether a backbone center should read as a strict trigonal turn in an
- * acyclic depiction.
+ * acyclic depiction. Besides explicit sp2 centers, this includes planar
+ * tertiary nitrogens whose off-backbone branch is conjugated to a carbonyl,
+ * aryl, or sulfonyl-like hypervalent neighbor.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string|null|undefined} previousAtomId - Previous backbone atom ID.
  * @param {string|null|undefined} atomId - Center backbone atom ID.
@@ -235,7 +237,23 @@ function measureBackboneSpan(coords, backbone) {
  * @returns {boolean} True when the center should be normalized to 120 degrees.
  */
 function isTrigonalBackboneCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
-  return !isLinearCentre(layoutGraph, previousAtomId, atomId, nextAtomId) && hasSp2Bond(layoutGraph, atomId);
+  if (isLinearCentre(layoutGraph, previousAtomId, atomId, nextAtomId)) {
+    return false;
+  }
+  if (hasSp2Bond(layoutGraph, atomId)) {
+    return true;
+  }
+  if (!layoutGraph || previousAtomId == null || atomId == null || nextAtomId == null) {
+    return false;
+  }
+
+  return (layoutGraph.bondsByAtomId.get(atomId) ?? [])
+    .map(bond => (bond.a === atomId ? bond.b : bond.a))
+    .some(neighborAtomId => (
+      neighborAtomId !== previousAtomId
+      && neighborAtomId !== nextAtomId
+      && isExactVisibleTrigonalBisectorEligible(layoutGraph, atomId, neighborAtomId)
+    ));
 }
 
 /**

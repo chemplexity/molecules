@@ -29,6 +29,7 @@ const HOOK_STEP_META = {
   'bridged-bond-tidy': ['Bridged Bond Tidy', 'Bridged system bond angles optimized.'],
   'hypervalent-angle-tidy': ['Hypervalent Angle Tidy', 'S/P/Se/As center angles orthogonalized.'],
   'hypervalent-angle-retouch': ['Hypervalent Angle Retouch', 'Hypervalent center angles re-orthogonalized after bounded presentation rescue.'],
+  'hypervalent-angle-final-retouch': ['Hypervalent Angle Final Retouch', 'Hypervalent center angles re-orthogonalized after specialist cleanup.'],
   'ligand-angle-tidy': ['Ligand Angle Tidy', 'Metal-ligand bond angles optimized.'],
   'ring-presentation-tidy': ['Ring Presentation Tidy', 'Ring presentation cleanup merged substituent and terminal-hetero refinement.'],
   'specialist-presentation-rescue': ['Ring Presentation Rescue', 'Bounded ring-presentation revalidation inside specialist cleanup.'],

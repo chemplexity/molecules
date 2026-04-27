@@ -155,4 +155,52 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertBondAngle(result, 'C18', 'C19', 'S23', (2 * Math.PI) / 3);
     assertBondAngle(result, 'C20', 'C19', 'S23', (2 * Math.PI) / 3);
   });
+
+  it('keeps neighboring sulfonyl centers orthogonal around planar bis-sulfonamide nitrogens', () => {
+    const result = runPipeline(parseSMILES('CC(C)N(S(C)(=O)=O)S(C)(=O)=O'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assertBondAngle(result, 'C2', 'N4', 'S5', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'C2', 'N4', 'S9', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'S5', 'N4', 'S9', (2 * Math.PI) / 3);
+    assertOrthogonalCross(result, ['S5', 'S9']);
+  });
+
+  it('keeps terminal sulfonyl sulfur hydrogens opposite the amine ligand in fused layouts', () => {
+    const result = runPipeline(parseSMILES('FC1=CC=CC(CC2C(CC3=CC=C(CC4(CCC4)NS(=O)=O)C=C23)[NH+]2CCC2)=C1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assertOppositePair(result, 'S21', 'O22', 'O23');
+    assertOppositePair(result, 'S21', 'N20', 'H52');
+  });
+
+  it('keeps ring-anchored sulfonyl exits and adjacent trifluoromethyl leaves exact', () => {
+    const result = runPipeline(parseSMILES('CC(C)(O)C(=O)NNC(=O)CC1CCC2=CC(=CC=C2N1S(=O)(=O)C1=CC=C(F)C=C1)C(O)(C(F)(F)F)C(F)(F)F'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assertBondAngle(result, 'C12', 'N21', 'S22', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'C20', 'N21', 'S22', (2 * Math.PI) / 3);
+    assertOppositePair(result, 'S22', 'N21', 'C25');
+    assertOppositePair(result, 'S22', 'O23', 'O24');
+    assertBondAngle(result, 'C32', 'C34', 'F35', Math.PI / 2);
+    assertOppositePair(result, 'C34', 'F35', 'F37');
+  });
 });

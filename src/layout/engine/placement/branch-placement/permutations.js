@@ -20,7 +20,8 @@ import {
   describeCrossLikeHypervalentCenter,
   isLinearCenter,
   isTerminalMultipleBondLeaf,
-  measureSmallRingExteriorGapSpreadPenalty
+  measureSmallRingExteriorGapSpreadPenalty,
+  supportsProjectedTetrahedralGeometry
 } from './angle-selection.js';
 
 const INDEX_PERMUTATIONS_2 = Object.freeze([[0, 1], [1, 0]]);
@@ -80,6 +81,33 @@ function orthogonalSlotPermutations(descriptor) {
 }
 
 /**
+ * Returns whether a projected-tetrahedral leaf batch is small enough to score
+ * exhaustively even when the surrounding acyclic component is large. Keeping
+ * these equivalent terminal siblings together prevents greedy one-at-a-time
+ * placement from reusing a filled orthogonal slot.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Center atom ID being evaluated.
+ * @param {string[]} primaryNeighborIds - Child atom IDs awaiting placement.
+ * @param {Array<{childAtomId: string, subtreeSize: number}>} childDescriptors - Child subtree descriptors.
+ * @returns {boolean} True when the local leaf batch should bypass greedy placement.
+ */
+function isSmallProjectedTetrahedralLeafBatch(layoutGraph, anchorAtomId, primaryNeighborIds, childDescriptors) {
+  if (
+    primaryNeighborIds.length < 2
+    || primaryNeighborIds.length > 3
+    || !supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId)
+  ) {
+    return false;
+  }
+
+  return primaryNeighborIds.every(childAtomId => {
+    const atom = layoutGraph?.atoms.get(childAtomId);
+    const descriptor = childDescriptors.find(candidate => candidate.childAtomId === childAtomId);
+    return !!atom && atom.element !== 'H' && atom.heavyDegree === 1 && (descriptor?.subtreeSize ?? 0) <= 1;
+  });
+}
+
+/**
  * Returns whether a branch center should skip exhaustive sibling backtracking.
  * Large mixed/acyclic slices can explode combinatorially when every backbone
  * center tries to recursively score whole-subtree permutations.
@@ -94,6 +122,9 @@ function orthogonalSlotPermutations(descriptor) {
 export function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anchorAtomId, primaryNeighborIds, childDescriptors = [], branchConstraints = null) {
   if (primaryNeighborIds.length < 2) {
     return true;
+  }
+  if (isSmallProjectedTetrahedralLeafBatch(layoutGraph, anchorAtomId, primaryNeighborIds, childDescriptors)) {
+    return false;
   }
   const participantCount = atomIdsToPlace?.size ?? 0;
   const heavyThreshold = layoutGraph?.options?.largeMoleculeThreshold?.heavyAtomCount ?? Number.MAX_SAFE_INTEGER;

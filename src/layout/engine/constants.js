@@ -35,7 +35,7 @@ export const CLEANUP_EPSILON = 1e-3;
 export const UNIFIED_CLEANUP_LIMITS = Object.freeze({
   overlapPriorityAtomCount: 24,
   largeMoleculeBlockAwareOverlapFloor: 4,
-  smallLayoutRotationProbeAtomCount: 32,
+  moderateLayoutRotationProbeAtomCount: 64,
   smallLayoutRotationProbeOverlapCount: 2,
   smallLayoutRotationProbeMaxPasses: 3
 });

@@ -192,6 +192,28 @@ describe('layout/engine/families/acyclic', () => {
     }
   });
 
+  it('rotates compact acyclic ester and tert-butyl subtrees to clear local overlaps', () => {
+    const result = runPipeline(parseSMILES('CC(C)(C)CN(CCN(CCN(CC(=O)OC(C)(C)C)CC(=O)OC(C)(C)C)C(CCC([O-])=O)C(=O)OC(C)(C)C)CC(=O)OC(C)(C)C'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'acyclic');
+    assert.ok(result.metadata.stageTelemetry.stageAudits.placement.severeOverlapCount > 0);
+    assert.equal(result.metadata.stageTelemetry.stageAudits.coreGeometryCleanup.ok, true);
+    assert.equal(result.metadata.cleanupTelemetry.selectedGeometryStageCategory, 'core-geometry');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(distance(result.coords.get('O15'), result.coords.get('O24')) > result.layoutGraph.options.bondLength);
+    assert.ok(distance(result.coords.get('C19'), result.coords.get('C28')) > result.layoutGraph.options.bondLength);
+    assert.ok(distance(result.coords.get('C1'), result.coords.get('O44')) > result.layoutGraph.options.bondLength);
+    for (const atomId of ['C25', 'C38']) {
+      assert.ok(
+        sortedHeavyNeighborSeparations(result.layoutGraph, result.coords, atomId)[0] >= 80 - 1e-6,
+        `expected ${atomId} terminal methyls to avoid collapsed projected-tetrahedral slots`
+      );
+    }
+  });
+
   it('keeps allene and cumulene centers linear through adjacent double bonds', () => {
     const smilesCases = ['CC=C=CC', 'C=C=C=C'];
 

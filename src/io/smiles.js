@@ -149,8 +149,8 @@ export const grammar = [
     expression: /(?=[^+-])(?:[a-zA-Z]{1,2}[@]{1,2})?(?:[a-zA-Z]|[a-zA-Z]*.?[\]])[=\-#$/\\:]?[%]?\d+(?=([^+]|$))/g
   },
   { type: 'bond', term: '.', tag: 'dot', expression: /(?:[A-Z][+-]?[[])?[.]/g },
-  { type: 'property', term: '+', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[+]+[0-9]*(?=[\]])/g },
-  { type: 'property', term: '-', tag: 'charge', expression: /[a-zA-Z]{1,2}[0-9]*[-]+[0-9]*(?=[\]])/g },
+  { type: 'property', term: '+', tag: 'charge', expression: /[a-zA-Z]{1,2}(?:@{1,2})?(?:H[0-9]*)?[+]+[0-9]*(?=[\]])/g },
+  { type: 'property', term: '-', tag: 'charge', expression: /[a-zA-Z]{1,2}(?:@{1,2})?(?:H[0-9]*)?[-]+[0-9]*(?=[\]])/g },
   { type: 'property', term: 'n', tag: 'isotope', expression: /(?:[[])[0-9]+[A-Z]{1,2}(?=.?[^[]*[\]])/g },
   { type: 'property', term: 'S', tag: 'chiral', expression: /[A-Z][a-z]?[@](?![A-Z]{2}[0-9]+|[@])/g },
   { type: 'property', term: 'R', tag: 'chiral', expression: /[A-Z][a-z]?[@]{2}(?![A-Z]{2}[0-9]+)/g }
@@ -364,6 +364,56 @@ function normalizeSmilesSeparators(input) {
 }
 
 /**
+ * Validates branch and bracket delimiters before grammar tokenization. The v1
+ * tokenizer is intentionally permissive, so malformed delimiter structure must
+ * be caught before decode can build dangling bonds.
+ * @param {string} input - Normalized SMILES source.
+ * @returns {void}
+ * @throws {Error} If branch or bracket delimiters are unbalanced.
+ */
+function validateSmilesDelimiters(input) {
+  const branchStack = [];
+  const bracketStack = [];
+
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    const inBracket = bracketStack.length > 0;
+
+    if (ch === '[') {
+      bracketStack.push(i);
+      continue;
+    }
+    if (ch === ']') {
+      if (!inBracket) {
+        throw new Error(`Invalid SMILES: unmatched bracket close at position ${i}`);
+      }
+      bracketStack.pop();
+      continue;
+    }
+    if (inBracket) {
+      continue;
+    }
+    if (ch === '(') {
+      branchStack.push(i);
+      continue;
+    }
+    if (ch === ')') {
+      if (branchStack.length === 0) {
+        throw new Error(`Invalid SMILES: unmatched branch close at position ${i}`);
+      }
+      branchStack.pop();
+    }
+  }
+
+  if (bracketStack.length > 0) {
+    throw new Error(`Invalid SMILES: unclosed bracket starting at position ${bracketStack[bracketStack.length - 1]}`);
+  }
+  if (branchStack.length > 0) {
+    throw new Error(`Invalid SMILES: unclosed branch starting at position ${branchStack[branchStack.length - 1]}`);
+  }
+}
+
+/**
  * Returns the standalone ring-closure token term that begins at the given input
  * position, or null when the input there is not an uncovered ring closure.
  * @param {string} input - Normalized SMILES source.
@@ -456,6 +506,7 @@ function emitStandaloneRingClosureTokens(input, tokens, inBracket) {
  */
 export function tokenize(input, tokens = []) {
   input = normalizeSmilesSeparators(input);
+  validateSmilesDelimiters(input);
 
   for (let i = 0; i < grammar.length; i++) {
     const token = grammar[i];
@@ -766,7 +817,7 @@ export function decode(tokens) {
           bonds[key] = addBondV1(key, tag, term);
           break;
         case 'property':
-          properties[key] = { id: key, name: tag, value: term };
+          properties[`${key}:${tag}:${i}`] = { id: key, name: tag, value: term };
           break;
       }
     }
@@ -809,16 +860,16 @@ export function decode(tokens) {
   function updateAtomProps(atoms, properties, keys) {
     for (let i = 0; i < keys.properties.length; i++) {
       const propertyID = keys.properties[i];
-      const { name, value } = properties[propertyID];
+      const { id: atomPropertyID = propertyID, name, value } = properties[propertyID];
       switch (name) {
         case 'chiral':
-          if (atoms[propertyID] !== undefined) {
-            atoms[propertyID].properties.chiral = value.slice(value.indexOf('@'));
+          if (atoms[atomPropertyID] !== undefined) {
+            atoms[atomPropertyID].properties.chiral = value.slice(value.indexOf('@'));
           }
           break;
         case 'isotope': {
           const isotope = value.match(/[0-9]+/g);
-          const atomID = 1 + isotope.toString().length + parseInt(propertyID);
+          const atomID = 1 + isotope.toString().length + parseInt(atomPropertyID);
           if (isotope >= 0 && isotope < 250 && atoms[atomID] !== undefined) {
             const neutrons = isotope - atoms[atomID].protons;
             if (neutrons >= 0) {
@@ -828,17 +879,13 @@ export function decode(tokens) {
           break;
         }
         case 'charge': {
-          const sign = value.indexOf('+') !== -1 ? 1 : -1;
-          let charge = value.match(/(?:[^H])[0-9]+/g);
-          if (charge !== null && atoms[propertyID] !== undefined) {
-            charge = charge[0].substr(1);
-            atoms[propertyID].properties.charge = charge * sign;
+          const chargeToken = value.match(/([+-]+|[+-][0-9]+)$/)?.[0];
+          if (!chargeToken || atoms[atomPropertyID] === undefined) {
             break;
           }
-          charge = value.match(/([+]+|[-]+)/g);
-          if (charge !== null && atoms[propertyID] !== undefined) {
-            atoms[propertyID].properties.charge = charge[0].length * sign;
-          }
+          const sign = chargeToken[0] === '+' ? 1 : -1;
+          const magnitude = chargeToken.length > 1 && /[0-9]/.test(chargeToken[1]) ? Number(chargeToken.slice(1)) : chargeToken.length;
+          atoms[atomPropertyID].properties.charge = magnitude * sign;
           break;
         }
       }

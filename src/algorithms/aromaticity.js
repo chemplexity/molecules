@@ -391,6 +391,159 @@ function _localizedAromaticBondOrders(mol, aromaticBondIds) {
 }
 
 /**
+ * Returns the ring bond ids that close one ordered ring.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string[]} ring - Ordered ring atom ids.
+ * @returns {Set<string>} Bond ids on the ring perimeter.
+ */
+function _ringBondIds(mol, ring) {
+  const bondIds = new Set();
+  for (let index = 0; index < ring.length; index++) {
+    const bond = mol.getBond(ring[index], ring[(index + 1) % ring.length]);
+    if (bond) {
+      bondIds.add(bond.id);
+    }
+  }
+  return bondIds;
+}
+
+/**
+ * Groups SSSR rings into fused systems when they share at least one atom.
+ * @param {string[][]} rings - Ordered ring atom ids from the molecule.
+ * @returns {number[][]} Ring-index components.
+ */
+function _fusedRingComponents(rings) {
+  const components = [];
+  const visited = new Set();
+  const ringSets = rings.map(ring => new Set(ring));
+
+  for (let startIndex = 0; startIndex < rings.length; startIndex++) {
+    if (visited.has(startIndex)) {
+      continue;
+    }
+    const component = [];
+    const stack = [startIndex];
+    visited.add(startIndex);
+    while (stack.length > 0) {
+      const ringIndex = stack.pop();
+      component.push(ringIndex);
+      for (let candidateIndex = 0; candidateIndex < rings.length; candidateIndex++) {
+        if (visited.has(candidateIndex)) {
+          continue;
+        }
+        if ([...ringSets[ringIndex]].some(atomId => ringSets[candidateIndex].has(atomId))) {
+          visited.add(candidateIndex);
+          stack.push(candidateIndex);
+        }
+      }
+    }
+    components.push(component);
+  }
+
+  return components;
+}
+
+/**
+ * Returns whether a fused candidate has an exocyclic multiple bond that should
+ * keep the affected ring out of the aromatic system, such as the carbonyl in
+ * hypoxanthine-like pyrimidinones.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {Set<string>} atomIds - Ring-system atom ids.
+ * @param {Set<string>} ringBondIds - Ring-system perimeter bond ids.
+ * @returns {boolean} True when a non-ring multiple bond disqualifies the system.
+ */
+function _hasExocyclicMultipleBond(mol, atomIds, ringBondIds) {
+  for (const atomId of atomIds) {
+    const atom = mol.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    for (const bondId of atom.bonds) {
+      if (ringBondIds.has(bondId)) {
+        continue;
+      }
+      const bond = mol.bonds.get(bondId);
+      const otherId = bond?.getOtherAtom(atomId);
+      const otherAtom = otherId ? mol.atoms.get(otherId) : null;
+      if (!bond || atomIds.has(otherId) || !otherAtom || otherAtom.name === 'H') {
+        continue;
+      }
+      if (!bond.properties.aromatic && (bond.properties.order ?? 1) >= 2) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function _isSourceAromaticBond(bond) {
+  return !!bond && (bond.properties.aromatic === true || bond.properties.order === 1.5);
+}
+
+/**
+ * Promotes fused lowercase-SMILES aromatic systems that satisfy Hückel only as
+ * a fused component rather than as independent SSSR rings. This keeps purine-
+ * like all-aromatic aza systems from being stale-kekulized into a valence-hole
+ * carbon while preserving carbonyl-disrupted fused systems as non-aromatic.
+ * @param {import('../core/Molecule.js').Molecule} mol - The molecule graph.
+ * @param {string[][]} rings - SSSR rings considered by aromaticity perception.
+ * @param {Set<string>} aromaticBondIds - Bond ids already accepted as aromatic.
+ * @returns {void}
+ */
+function _promoteFusedSmilesAromaticSystems(mol, rings, aromaticBondIds) {
+  for (const component of _fusedRingComponents(rings)) {
+    if (component.length <= 1) {
+      continue;
+    }
+
+    const atomIds = new Set();
+    const ringBondIds = new Set();
+    for (const ringIndex of component) {
+      for (const atomId of rings[ringIndex]) {
+        atomIds.add(atomId);
+      }
+      for (const bondId of _ringBondIds(mol, rings[ringIndex])) {
+        ringBondIds.add(bondId);
+      }
+    }
+
+    const ringBonds = [...ringBondIds].map(bondId => mol.bonds.get(bondId)).filter(Boolean);
+    if (
+      ringBonds.length === 0
+      || ringBonds.every(bond => aromaticBondIds.has(bond.id))
+      || !ringBonds.some(bond => aromaticBondIds.has(bond.id))
+      || !ringBonds.every(_isSourceAromaticBond)
+      || _hasExocyclicMultipleBond(mol, atomIds, ringBondIds)
+    ) {
+      continue;
+    }
+
+    let piTotal = 0;
+    let valid = true;
+    for (const atomId of atomIds) {
+      const atom = mol.atoms.get(atomId);
+      const pi = atom ? _piElectrons(atom, atomIds, mol) : null;
+      if (pi == null) {
+        valid = false;
+        break;
+      }
+      piTotal += pi;
+    }
+    if (!valid || !_isHuckel(piTotal)) {
+      continue;
+    }
+
+    for (const atomId of atomIds) {
+      mol.atoms.get(atomId).properties.aromatic = true;
+    }
+    for (const bond of ringBonds) {
+      bond.setAromatic(true);
+      aromaticBondIds.add(bond.id);
+    }
+  }
+}
+
+/**
  * Assigns `localizedOrder` (1 or 2) to bonds that are currently flagged
  * aromatic but do NOT belong to any confirmed aromatic ring.  This covers
  * cases where the SMILES parser used lowercase atoms for a ring which Hückel
@@ -626,6 +779,8 @@ export function perceiveAromaticity(mol, { preserveKekule = false } = {}) {
       aromaticRings.push(ring);
     }
   }
+
+  _promoteFusedSmilesAromaticSystems(mol, rings, aromaticBondIds);
 
   // Kekulize stale bonds (aromatic-flagged bonds whose ring failed Hückel):
   // run maximum-matching to assign localizedOrder 1 or 2 before clearing the

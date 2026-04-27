@@ -32,8 +32,8 @@ describe('layout/engine/geometry/atom-grid', () => {
     atomGrid.insert('a0', { x: 1.5, y: 0 });
     atomGrid.insert('a1', { x: -1.5, y: 0 });
 
-    assert.ok(atomGrid.queryRadius({ x: 1.49, y: 0 }, 0.2).has('a0'));
-    assert.ok(atomGrid.queryRadius({ x: -1.49, y: 0 }, 0.2).has('a1'));
-    assert.ok(atomGrid.queryRadius({ x: 1.5, y: 0 }, 0.2).has('a0'));
+    assert.ok(atomGrid.queryRadius({ x: 1.49, y: 0 }, 0.2).includes('a0'));
+    assert.ok(atomGrid.queryRadius({ x: -1.49, y: 0 }, 0.2).includes('a1'));
+    assert.ok(atomGrid.queryRadius({ x: 1.5, y: 0 }, 0.2).includes('a0'));
   });
 });

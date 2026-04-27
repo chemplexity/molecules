@@ -282,6 +282,15 @@ describe('perceiveAromaticity — hypoxanthine fused ring SMILES', () => {
 });
 
 describe('perceiveAromaticity — fused aza ligands coordinated to a transition metal', () => {
+  it('marks purine-like lowercase fused aza systems aromatic as one fused component', () => {
+    const mol = parseSMILES('CCCCCCCN(CCCCCSc1[nH]cnc2ncnc12)C(=O)NC(C)C');
+    perceiveAromaticity(mol);
+
+    for (const atomId of ['C15', 'N16', 'C18', 'N19', 'C20', 'N21', 'C22', 'N23', 'C24']) {
+      assert.equal(mol.atoms.get(atomId)?.properties.aromatic, true, `${atomId} should be aromatic`);
+    }
+  });
+
   it('marks the Ru-bound fused aza-ring system aromatic without aromaticizing the metal', () => {
     const mol = parseSMILES('C1=CC2=C3C=C(CCCCCCCCC(=O)N[C@H]4[C@H]5C[C@@H]6C[C@@H](C[C@H]4C6)C5)C=CN3[Ru++]34(N5C=CC=CC5=C5C=CC=CN35)(N3C=CC=CC3=C3C=CC=CN43)N2C=C1');
     const rings = perceiveAromaticity(mol);

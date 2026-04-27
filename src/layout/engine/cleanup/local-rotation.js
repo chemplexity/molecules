@@ -7,6 +7,8 @@ import { buildAtomGrid, buildSubtreeOverlapContext, computeAtomDistortionCost, c
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { forEachRigidRotationCandidate } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
+import { measureSmallRingExteriorGapSpreadPenalty, smallRingExteriorTargetAngles } from '../placement/branch-placement.js';
+import { isExactVisibleTrigonalBisectorEligible } from '../placement/branch-placement/angle-selection.js';
 
 const DISCRETE_ROTATION_ANGLES = Object.freeze([
   0,
@@ -25,12 +27,51 @@ const DISCRETE_ROTATION_ANGLES = Object.freeze([
 const LOCAL_TRIGONAL_HETERO_DISTORTION_WEIGHT = 5;
 const MAX_SIBLING_SWAP_SUBTREE_ATOMS = 18;
 const MAX_BRANCHED_SATURATED_SUBTREE_ATOMS = 18;
+const MAX_ANCHORED_RING_BLOCK_ATOMS = 18;
 const MAX_LOCAL_TRIGONAL_HETERO_LAYOUT_ATOMS = 48;
 const MAX_SIBLING_SWAP_LAYOUT_ATOMS = 48;
 const LOCAL_ROTATION_BOND_CROWDING_FINALISTS = 2;
 const EXACT_ROTATION_ANGLE_EPSILON = 1e-6;
 const IDEAL_LEAF_LINEAR_NEIGHBOR_TOLERANCE = Math.PI / 12;
 const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
+const ANCHORED_RING_EXTERIOR_SPREAD_WEIGHT = 8;
+
+/**
+ * Normalizes an angle to the signed `(-pi, pi]` interval.
+ * @param {number} angle - Angle in radians.
+ * @returns {number} Signed normalized angle in radians.
+ */
+function normalizeSignedAngle(angle) {
+  let normalizedAngle = angle;
+  while (normalizedAngle <= -Math.PI) {
+    normalizedAngle += Math.PI * 2;
+  }
+  while (normalizedAngle > Math.PI) {
+    normalizedAngle -= Math.PI * 2;
+  }
+  return normalizedAngle;
+}
+
+/**
+ * Returns the circular mean of signed angular offsets.
+ * @param {number[]} angles - Angles in radians.
+ * @returns {number|null} Mean angle, or null when the vectors cancel.
+ */
+function meanSignedAngle(angles) {
+  if (angles.length === 0) {
+    return null;
+  }
+  let x = 0;
+  let y = 0;
+  for (const angle of angles) {
+    x += Math.cos(angle);
+    y += Math.sin(angle);
+  }
+  if (Math.hypot(x, y) <= DISTANCE_EPSILON) {
+    return null;
+  }
+  return Math.atan2(y, x);
+}
 
 function buildPlacedAdjacency(layoutGraph, coords) {
   const adjacency = new Map();
@@ -319,9 +360,12 @@ function terminalTrigonalSubtreeDescriptor(layoutGraph, atomId, heavyNeighborIds
     return null;
   }
 
-  const terminalSingleNeighborIds = singleNeighborIds.filter(neighborAtomId => isTerminalHeavyLeaf(layoutGraph, neighborAtomId));
-  const anchorNeighborIds = singleNeighborIds.filter(neighborAtomId => !isTerminalHeavyLeaf(layoutGraph, neighborAtomId));
-  if (terminalSingleNeighborIds.length !== 1 || anchorNeighborIds.length !== 1) {
+  const compactSingleNeighborIds = singleNeighborIds.filter(neighborAtomId => (
+    isTerminalHeavyLeaf(layoutGraph, neighborAtomId)
+    || isCompactAcyclicSideGroup(layoutGraph, neighborAtomId, atomId, 6)
+  ));
+  const anchorNeighborIds = singleNeighborIds.filter(neighborAtomId => !compactSingleNeighborIds.includes(neighborAtomId));
+  if (compactSingleNeighborIds.length !== 1 || anchorNeighborIds.length !== 1) {
     return null;
   }
 
@@ -340,6 +384,33 @@ function terminalTrigonalSubtreeDescriptor(layoutGraph, atomId, heavyNeighborIds
  * @returns {boolean} True when the side group is compact and acyclic.
  */
 function isCompactSaturatedSideGroup(layoutGraph, atomId, parentAtomId, maxHeavyAtoms) {
+  const subtreeAtomIds = collectCutSubtree(layoutGraph, atomId, parentAtomId);
+  let heavyAtomCount = 0;
+  for (const subtreeAtomId of subtreeAtomIds) {
+    const atom = layoutGraph.atoms.get(subtreeAtomId);
+    if (!atom) {
+      return false;
+    }
+    if ((layoutGraph.atomToRings.get(subtreeAtomId)?.length ?? 0) > 0) {
+      return false;
+    }
+    if (atom.element !== 'H') {
+      heavyAtomCount++;
+    }
+  }
+  return heavyAtomCount > 0 && heavyAtomCount <= maxHeavyAtoms;
+}
+
+/**
+ * Returns whether a side group is a compact acyclic substituent that can move
+ * with a rigid trigonal or saturated root during overlap cleanup.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Side-group root atom id.
+ * @param {string} parentAtomId - Parent root atom id.
+ * @param {number} maxHeavyAtoms - Maximum allowed visible heavy atoms.
+ * @returns {boolean} True when the side group is compact and acyclic.
+ */
+function isCompactAcyclicSideGroup(layoutGraph, atomId, parentAtomId, maxHeavyAtoms) {
   const subtreeAtomIds = collectCutSubtree(layoutGraph, atomId, parentAtomId);
   let heavyAtomCount = 0;
   for (const subtreeAtomId of subtreeAtomIds) {
@@ -401,6 +472,213 @@ function branchedSaturatedSubtreeDescriptor(layoutGraph, atomId, heavyNeighborId
   }
 
   return null;
+}
+
+/**
+ * Returns a rigid cleanup descriptor for compact quaternary saturated branches
+ * such as tert-butyl ester roots. Rotating the whole group around its parent
+ * preserves the projected four-coordinate fan while moving all terminal
+ * methyls out of nearby clashes together.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate saturated branch root atom id.
+ * @param {string[]} heavyNeighborIds - Heavy neighbors currently placed.
+ * @returns {{anchorAtomId: string}|null} Rotation descriptor or `null`.
+ */
+function quaternarySaturatedSubtreeDescriptor(layoutGraph, atomId, heavyNeighborIds) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (
+    !atom
+    || atom.element !== 'C'
+    || atom.aromatic
+    || atom.heavyDegree !== 4
+    || atom.degree !== 4
+    || heavyNeighborIds.length !== 4
+    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+
+  if (heavyNeighborIds.some(neighborAtomId => !singleBondDescriptor(layoutGraph, atomId, neighborAtomId))) {
+    return null;
+  }
+
+  for (const anchorAtomId of heavyNeighborIds) {
+    const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+    if (!anchorAtom || anchorAtom.element === 'H' || anchorAtom.heavyDegree <= 1) {
+      continue;
+    }
+    const sideGroupIds = heavyNeighborIds.filter(neighborAtomId => neighborAtomId !== anchorAtomId);
+    const totalSubtreeAtomCount = [...collectCutSubtree(layoutGraph, atomId, anchorAtomId)].length;
+    if (
+      totalSubtreeAtomCount <= MAX_BRANCHED_SATURATED_SUBTREE_ATOMS
+      && sideGroupIds.every(sideGroupId => isCompactAcyclicSideGroup(layoutGraph, sideGroupId, atomId, 3))
+    ) {
+      return { anchorAtomId };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Collects the movable side of a ring anchored at a tetra-substituted atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} ring - Incident ring descriptor.
+ * @param {string} anchorAtomId - Fixed ring anchor atom ID.
+ * @param {string[]} blockedNeighborIds - Exocyclic neighbors that must stay fixed.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @returns {string[]} Atom IDs in the movable ring block.
+ */
+function collectAnchoredRingBlockAtomIds(layoutGraph, ring, anchorAtomId, blockedNeighborIds, coords) {
+  const blockedAtomIds = new Set([anchorAtomId, ...blockedNeighborIds]);
+  const visitedAtomIds = new Set(blockedAtomIds);
+  const queue = ring.atomIds.filter(atomId => atomId !== anchorAtomId && coords.has(atomId));
+  const blockAtomIds = [];
+
+  while (queue.length > 0) {
+    const atomId = queue.pop();
+    if (visitedAtomIds.has(atomId)) {
+      continue;
+    }
+    visitedAtomIds.add(atomId);
+    blockAtomIds.push(atomId);
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (!visitedAtomIds.has(neighborAtomId) && coords.has(neighborAtomId)) {
+        queue.push(neighborAtomId);
+      }
+    }
+  }
+
+  return blockAtomIds;
+}
+
+/**
+ * Collects saturated five- and six-member ring blocks that can rotate rigidly
+ * around a tetra-substituted ring atom to recover a cleaner exterior branch fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @returns {Array<{anchorAtomId: string, ringNeighborIds: string[], exocyclicNeighborIds: string[], subtreeAtomIds: string[]}>} Anchored ring-block descriptors.
+ */
+function anchoredRingBlockExteriorSpreadDescriptors(layoutGraph, coords) {
+  const descriptors = [];
+  for (const [anchorAtomId, atom] of layoutGraph.atoms) {
+    if (!atom || atom.element === 'H' || atom.aromatic || atom.heavyDegree !== 4 || !coords.has(anchorAtomId)) {
+      continue;
+    }
+    const anchorRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
+    if (anchorRings.length !== 1) {
+      continue;
+    }
+    const ring = anchorRings[0];
+    const ringSize = ring?.atomIds?.length ?? 0;
+    if (ring?.aromatic || ringSize < 5 || ringSize > 6) {
+      continue;
+    }
+    if (ring.atomIds.some(atomId => atomId !== anchorAtomId && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) !== 1)) {
+      continue;
+    }
+
+    const ringNeighborIds = [];
+    const exocyclicNeighborIds = [];
+    let eligible = true;
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+        eligible = false;
+        break;
+      }
+      const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (!neighborAtom || neighborAtom.element === 'H') {
+        continue;
+      }
+      if (!coords.has(neighborAtomId)) {
+        eligible = false;
+        break;
+      }
+      if (ring.atomIds.includes(neighborAtomId)) {
+        ringNeighborIds.push(neighborAtomId);
+      } else {
+        exocyclicNeighborIds.push(neighborAtomId);
+      }
+    }
+    if (!eligible || ringNeighborIds.length !== 2 || exocyclicNeighborIds.length !== 2) {
+      continue;
+    }
+    if (measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, anchorAtomId) <= CLEANUP_EPSILON) {
+      continue;
+    }
+
+    const subtreeAtomIds = collectAnchoredRingBlockAtomIds(layoutGraph, ring, anchorAtomId, exocyclicNeighborIds, coords);
+    const subtreeHeavyAtomCount = subtreeAtomIds.reduce(
+      (count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1),
+      0
+    );
+    if (subtreeAtomIds.length === 0 || subtreeHeavyAtomCount > MAX_ANCHORED_RING_BLOCK_ATOMS) {
+      continue;
+    }
+    descriptors.push({
+      anchorAtomId,
+      ringNeighborIds,
+      exocyclicNeighborIds,
+      subtreeAtomIds
+    });
+  }
+  return descriptors;
+}
+
+/**
+ * Returns exact ring-block rotations that align exterior branch targets with
+ * the fixed exocyclic neighbors at a tetra-substituted ring anchor.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {{anchorAtomId: string, ringNeighborIds: string[], exocyclicNeighborIds: string[]}} descriptor - Anchored ring-block descriptor.
+ * @returns {number[]} Candidate rotation offsets in radians.
+ */
+function anchoredRingBlockExteriorSpreadRotations(layoutGraph, coords, descriptor) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  if (!anchorPosition) {
+    return [];
+  }
+  const anchorRings = layoutGraph.atomToRings.get(descriptor.anchorAtomId) ?? [];
+  const ringSize = anchorRings[0]?.atomIds?.length ?? 0;
+  const ringNeighborAngles = descriptor.ringNeighborIds
+    .map(atomId => coords.get(atomId))
+    .filter(Boolean)
+    .map(position => angleOf(sub(position, anchorPosition)));
+  const exocyclicAngles = descriptor.exocyclicNeighborIds
+    .map(atomId => coords.get(atomId))
+    .filter(Boolean)
+    .map(position => angleOf(sub(position, anchorPosition)));
+  if (ringNeighborAngles.length !== 2 || exocyclicAngles.length !== 2) {
+    return [];
+  }
+  const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, ringSize);
+  if (targetAngles.length !== 2) {
+    return [];
+  }
+
+  const rotations = [];
+  for (const targetOrder of [
+    [targetAngles[0], targetAngles[1]],
+    [targetAngles[1], targetAngles[0]]
+  ]) {
+    const rotation = meanSignedAngle([
+      normalizeSignedAngle(exocyclicAngles[0] - targetOrder[0]),
+      normalizeSignedAngle(exocyclicAngles[1] - targetOrder[1])
+    ]);
+    if (
+      rotation != null &&
+      Math.abs(rotation) > EXACT_ROTATION_ANGLE_EPSILON &&
+      !rotations.some(existingRotation => angularDifference(existingRotation, rotation) <= EXACT_ROTATION_ANGLE_EPSILON)
+    ) {
+      rotations.push(rotation);
+    }
+  }
+  return rotations;
 }
 
 /**
@@ -508,6 +786,18 @@ function movableTerminalSubtrees(layoutGraph, coords) {
       subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, descriptor.anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId))
     });
   }
+  for (const [atomId, neighbors] of adjacency) {
+    const heavyNeighbors = neighbors.filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+    const descriptor = quaternarySaturatedSubtreeDescriptor(layoutGraph, atomId, heavyNeighbors);
+    if (!descriptor) {
+      continue;
+    }
+    result.push({
+      atomId,
+      anchorAtomId: descriptor.anchorAtomId,
+      subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, descriptor.anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId))
+    });
+  }
   return result;
 }
 
@@ -544,6 +834,75 @@ function geminalSubtreePairs(terminalSubtrees) {
 }
 
 /**
+ * Collects attached ring blocks that can swap occupied trigonal slots with a
+ * sibling branch around a planar tertiary nitrogen.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @returns {Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>} Attached ring subtrees eligible only for sibling swaps.
+ */
+function planarNitrogenAttachedRingSwapSubtrees(layoutGraph, coords) {
+  const result = [];
+  const seenKeys = new Set();
+  for (const bond of layoutGraph.bonds?.values?.() ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    for (const [anchorAtomId, rootAtomId] of [[bond.a, bond.b], [bond.b, bond.a]]) {
+      const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+      const rootAtom = layoutGraph.atoms.get(rootAtomId);
+      if (
+        !anchorAtom
+        || !rootAtom
+        || anchorAtom.element !== 'N'
+        || rootAtom.element === 'H'
+        || !coords.has(anchorAtomId)
+        || !coords.has(rootAtomId)
+        || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) === 0
+        || !isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId, rootAtomId)
+      ) {
+        continue;
+      }
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
+      if (
+        subtreeAtomIds.length === 0
+        || subtreeAtomIds.includes(anchorAtomId)
+        || !subtreeAtomIds.some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0)
+      ) {
+        continue;
+      }
+      const key = `${anchorAtomId}:${rootAtomId}`;
+      if (seenKeys.has(key)) {
+        continue;
+      }
+      seenKeys.add(key);
+      result.push({
+        atomId: rootAtomId,
+        anchorAtomId,
+        subtreeAtomIds
+      });
+    }
+  }
+  return result;
+}
+
+/**
+ * Returns whether sibling subtrees may swap exact trigonal slots around a
+ * planar tertiary nitrogen anchor.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Shared anchor atom ID.
+ * @param {Array<{atomId: string}>} anchorSubtrees - Candidate sibling subtrees.
+ * @returns {boolean} True when swapping preserves a planar trigonal anchor.
+ */
+function isPlanarNitrogenSiblingSwapAnchor(layoutGraph, anchorAtomId, anchorSubtrees) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  return !!anchorAtom
+    && anchorAtom.element === 'N'
+    && anchorAtom.heavyDegree === 3
+    && anchorSubtrees.length >= 2
+    && anchorSubtrees.every(subtree => isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId, subtree.atomId));
+}
+
+/**
  * Returns subtree pairs that can be improved by swapping their occupied root
  * slots around the same anchor atom.
  * @param {object} layoutGraph - Layout graph shell.
@@ -555,17 +914,21 @@ function siblingSwapPairs(layoutGraph, coords, terminalSubtrees) {
   if (coords.size > MAX_SIBLING_SWAP_LAYOUT_ATOMS) {
     return [];
   }
+  const swapSubtrees = [...terminalSubtrees, ...planarNitrogenAttachedRingSwapSubtrees(layoutGraph, coords)];
   const subtreesByAnchor = new Map();
-  for (const subtree of terminalSubtrees) {
+  for (const subtree of swapSubtrees) {
     const anchorSubtrees = subtreesByAnchor.get(subtree.anchorAtomId) ?? [];
-    anchorSubtrees.push(subtree);
+    if (!anchorSubtrees.some(existingSubtree => existingSubtree.atomId === subtree.atomId)) {
+      anchorSubtrees.push(subtree);
+    }
     subtreesByAnchor.set(subtree.anchorAtomId, anchorSubtrees);
   }
 
   const pairs = [];
   for (const [anchorAtomId, anchorSubtrees] of subtreesByAnchor) {
     const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
-    if (!anchorAtom || anchorAtom.element === 'H' || anchorAtom.heavyDegree < 4) {
+    const isPlanarNitrogenSwap = isPlanarNitrogenSiblingSwapAnchor(layoutGraph, anchorAtomId, anchorSubtrees);
+    if (!anchorAtom || anchorAtom.element === 'H' || (anchorAtom.heavyDegree < 4 && !isPlanarNitrogenSwap)) {
       continue;
     }
     if (anchorSubtrees.length < 2) {
@@ -599,14 +962,15 @@ function siblingSwapPairs(layoutGraph, coords, terminalSubtrees) {
  * presence, not on the later rotation candidate chosen within one cleanup loop.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
- * @returns {{terminalSubtrees: Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>, siblingSwaps: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>, geminalPairs: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>}} Reusable local-rotation descriptors.
+ * @returns {{terminalSubtrees: Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>, siblingSwaps: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>, geminalPairs: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>, anchoredRingBlocks: Array<{anchorAtomId: string, ringNeighborIds: string[], exocyclicNeighborIds: string[], subtreeAtomIds: string[]}>}} Reusable local-rotation descriptors.
  */
 export function computeRotatableSubtrees(layoutGraph, coords) {
   const terminalSubtrees = movableTerminalSubtrees(layoutGraph, coords);
   return {
     terminalSubtrees,
     siblingSwaps: siblingSwapPairs(layoutGraph, coords, terminalSubtrees),
-    geminalPairs: geminalSubtreePairs(terminalSubtrees)
+    geminalPairs: geminalSubtreePairs(terminalSubtrees),
+    anchoredRingBlocks: anchoredRingBlockExteriorSpreadDescriptors(layoutGraph, coords)
   };
 }
 
@@ -651,30 +1015,38 @@ function descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds) {
  * Narrows reusable rotation descriptors to those that can affect the current
  * overlap set. When no overlaps are provided, all descriptors remain eligible.
  * @param {object} layoutGraph - Layout graph shell.
- * @param {{terminalSubtrees: Array<object>, siblingSwaps: Array<object>, geminalPairs: Array<object>}} descriptors - Reusable rotation descriptors.
+ * @param {{terminalSubtrees: Array<object>, siblingSwaps: Array<object>, geminalPairs: Array<object>, anchoredRingBlocks?: Array<object>}} descriptors - Reusable rotation descriptors.
  * @param {Array<{firstAtomId: string, secondAtomId: string}>|null|undefined} overlapPairs - Severe overlaps from the current coordinates.
- * @returns {{terminalSubtrees: Array<object>, siblingSwaps: Array<object>, geminalPairs: Array<object>}} Filtered descriptors.
+ * @returns {{terminalSubtrees: Array<object>, siblingSwaps: Array<object>, geminalPairs: Array<object>, anchoredRingBlocks: Array<object>}} Filtered descriptors.
  */
 function filterDescriptorsByOverlap(layoutGraph, descriptors, overlapPairs) {
   if (!Array.isArray(overlapPairs) || overlapPairs.length === 0) {
-    return descriptors;
+    return {
+      ...descriptors,
+      anchoredRingBlocks: descriptors.anchoredRingBlocks ?? []
+    };
   }
   const relevantAtomIds = overlapRelevantAtomIds(layoutGraph, overlapPairs);
   return {
     terminalSubtrees: descriptors.terminalSubtrees.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds)),
     siblingSwaps: descriptors.siblingSwaps.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds)),
-    geminalPairs: descriptors.geminalPairs.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds))
+    geminalPairs: descriptors.geminalPairs.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds)),
+    anchoredRingBlocks: (descriptors.anchoredRingBlocks ?? []).filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds))
   };
 }
 
 function filterDescriptorsByFocus(descriptors, focusAtomIds) {
   if (!(focusAtomIds instanceof Set) || focusAtomIds.size === 0) {
-    return descriptors;
+    return {
+      ...descriptors,
+      anchoredRingBlocks: descriptors.anchoredRingBlocks ?? []
+    };
   }
   return {
     terminalSubtrees: descriptors.terminalSubtrees.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds)),
     siblingSwaps: descriptors.siblingSwaps.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds)),
-    geminalPairs: descriptors.geminalPairs.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds))
+    geminalPairs: descriptors.geminalPairs.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds)),
+    anchoredRingBlocks: (descriptors.anchoredRingBlocks ?? []).filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds))
   };
 }
 
@@ -1006,7 +1378,8 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         ? {
           terminalSubtrees: options.baseTerminalSubtrees,
           siblingSwaps: options.baseSiblingSwaps ?? siblingSwapPairs(layoutGraph, coords, options.baseTerminalSubtrees),
-          geminalPairs: options.baseGeminalPairs
+          geminalPairs: options.baseGeminalPairs,
+          anchoredRingBlocks: anchoredRingBlockExteriorSpreadDescriptors(layoutGraph, coords)
         }
       : computeRotatableSubtrees(layoutGraph, coords);
   const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
@@ -1022,10 +1395,15 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
     frozenAtomIds
       ? rotatableSubtrees.geminalPairs.filter(pair => !containsFrozenAtom(pair.subtreeAtomIds, frozenAtomIds))
       : rotatableSubtrees.geminalPairs;
+  const anchoredRingBlocks =
+    frozenAtomIds
+      ? (rotatableSubtrees.anchoredRingBlocks ?? []).filter(descriptor => !containsFrozenAtom(descriptor.subtreeAtomIds, frozenAtomIds))
+      : (rotatableSubtrees.anchoredRingBlocks ?? []);
   const overlapEligibleDescriptors = filterDescriptorsByOverlap(layoutGraph, {
     terminalSubtrees,
     siblingSwaps,
-    geminalPairs
+    geminalPairs,
+    anchoredRingBlocks
   }, options.overlapPairs);
   const eligibleDescriptors = filterDescriptorsByFocus(overlapEligibleDescriptors, options.focusAtomIds);
   const atomGrid = options.baseAtomGrid?.clone() ?? buildAtomGrid(layoutGraph, coords, bondLength);
@@ -1188,6 +1566,71 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         });
         const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
         const approximateImprovement = baseAtomOverlapCost - newAtomOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
+        recordFinalist(finalists, {
+          positions: newPositions,
+          approximateImprovement,
+          atomOverlapCost: newAtomOverlapCost,
+          anchorDistortion: newAnchorDistortion
+        });
+      }
+
+      const refinedMove = finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon);
+      if (refinedMove && isBetterLocalMove(bestMove, refinedMove, epsilon)) {
+        bestMove = refinedMove;
+      }
+    }
+
+    for (const descriptor of eligibleDescriptors.anchoredRingBlocks) {
+      const { anchorAtomId, subtreeAtomIds } = descriptor;
+      const anchorPosition = coords.get(anchorAtomId);
+      if (!anchorPosition) {
+        continue;
+      }
+      const baseExteriorPenalty = measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, anchorAtomId);
+      if (baseExteriorPenalty <= epsilon) {
+        continue;
+      }
+
+      const subtreeContext = buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, {
+        includeBondCrowding: true
+      });
+      const baseAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, null, bondLength, {
+        atomGrid,
+        subtreeContext
+      });
+      const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
+      const finalists = [];
+
+      for (const rotation of anchoredRingBlockExteriorSpreadRotations(layoutGraph, coords, descriptor)) {
+        const newPositions = new Map();
+        for (const atomId of subtreeAtomIds) {
+          const position = coords.get(atomId);
+          if (!position) {
+            continue;
+          }
+          newPositions.set(atomId, add(anchorPosition, rotate(sub(position, anchorPosition), rotation)));
+        }
+        if (newPositions.size !== subtreeAtomIds.length) {
+          continue;
+        }
+        const candidateCoords = new Map(coords);
+        for (const [atomId, position] of newPositions) {
+          candidateCoords.set(atomId, position);
+        }
+        const candidateExteriorPenalty = measureSmallRingExteriorGapSpreadPenalty(layoutGraph, candidateCoords, anchorAtomId);
+        if (candidateExteriorPenalty >= baseExteriorPenalty - epsilon) {
+          continue;
+        }
+
+        const newAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, {
+          atomGrid,
+          subtreeContext
+        });
+        const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
+        const approximateImprovement =
+          baseAtomOverlapCost - newAtomOverlapCost
+          + (baseAnchorDistortion - newAnchorDistortion)
+          + (baseExteriorPenalty - candidateExteriorPenalty) * ANCHORED_RING_EXTERIOR_SPREAD_WEIGHT;
         recordFinalist(finalists, {
           positions: newPositions,
           approximateImprovement,

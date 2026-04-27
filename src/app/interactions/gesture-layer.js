@@ -30,6 +30,8 @@ export function initGestureInteractions(context) {
   let selectionDragging = false;
   let selectionStart = null;
   let selectionAdditive = false;
+  let selectionBaseAtomIds = new Set();
+  let selectionBaseBondIds = new Set();
   let suppressForceSelectionClearClick = false;
   let lastEraseHitElement = null;
 
@@ -54,6 +56,183 @@ export function initGestureInteractions(context) {
       .attr('height', Math.abs(y - selectionStart.y));
   }
 
+  /**
+   * Replaces the live selection sets while preserving their object identity for
+   * renderers and session-state bridges that hold references to them.
+   * @param {Iterable<string>} atomIds - Atom ids to place in the selection.
+   * @param {Iterable<string>} bondIds - Bond ids to place in the selection.
+   */
+  function replaceLiveSelection(atomIds, bondIds) {
+    const selectedAtomIds = context.state.overlayState.getSelectedAtomIds();
+    const selectedBondIds = context.state.overlayState.getSelectedBondIds();
+    selectedAtomIds.clear();
+    selectedBondIds.clear();
+    for (const atomId of atomIds) {
+      selectedAtomIds.add(atomId);
+    }
+    for (const bondId of bondIds) {
+      selectedBondIds.add(bondId);
+    }
+  }
+
+  /**
+   * Returns the viewport-space rectangle for the current selection drag.
+   * @param {number} x - Current pointer x coordinate.
+   * @param {number} y - Current pointer y coordinate.
+   * @returns {{ rx: number, ry: number, rw: number, rh: number }} Rectangle bounds.
+   */
+  function selectionDragRect(x, y) {
+    return {
+      rx: Math.min(selectionStart.x, x),
+      ry: Math.min(selectionStart.y, y),
+      rw: Math.abs(x - selectionStart.x),
+      rh: Math.abs(y - selectionStart.y)
+    };
+  }
+
+  /**
+   * Finds the atom and bond ids that fall inside a selection-drag rectangle,
+   * using the same geometry rules as final drag selection.
+   * @param {{ rx: number, ry: number, rw: number, rh: number }} box - Selection rectangle.
+   * @param {'2d'|'force'} mode - Active render mode.
+   * @returns {{ atomIds: Set<string>, bondIds: Set<string> }} Candidate ids.
+   */
+  function collectSelectionDragCandidates(box, mode) {
+    const { rx, ry, rw, rh } = box;
+    const transform = context.view.getZoomTransform();
+    const atomIds = new Set();
+    const bondIds = new Set();
+
+    if (mode === 'force') {
+      const nodes = context.simulation.nodes();
+      for (const node of nodes) {
+        const sx = transform.applyX(node.x);
+        const sy = transform.applyY(node.y);
+        if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {
+          atomIds.add(node.id);
+        }
+      }
+
+      for (const link of context.simulation.force('link').links()) {
+        if (atomIds.has(link.source.id) && atomIds.has(link.target.id)) {
+          bondIds.add(link.id);
+        }
+      }
+      return { atomIds, bondIds };
+    }
+
+    const mol2d = context.state.documentState.getMol2d();
+    const atoms = [...mol2d.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
+    for (const atom of atoms) {
+      const { x: gX, y: gY } = toSelectionSVGPt2d(atom);
+      const sx = transform.applyX(gX);
+      const sy = transform.applyY(gY);
+      if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {
+        atomIds.add(atom.id);
+      }
+    }
+
+    for (const bond of mol2d.bonds.values()) {
+      const [a1, a2] = bond.getAtomObjects(mol2d);
+      if (!a1 || !a2 || a1.visible === false || a2.visible === false) {
+        continue;
+      }
+      if (atomIds.has(a1.id) && atomIds.has(a2.id)) {
+        bondIds.add(bond.id);
+      }
+    }
+    return { atomIds, bondIds };
+  }
+
+  /**
+   * Builds the selection that should be shown or committed for the current drag.
+   * @param {{ atomIds: Set<string>, bondIds: Set<string> }} candidates - Box candidate ids.
+   * @param {'2d'|'force'} mode - Active render mode.
+   * @param {boolean} additive - Whether the drag extends/toggles the base selection.
+   * @returns {{ atomIds: Set<string>, bondIds: Set<string> }} Preview or final selection ids.
+   */
+  function computeSelectionDragResult(candidates, mode, additive) {
+    if (!additive) {
+      return {
+        atomIds: new Set(candidates.atomIds),
+        bondIds: new Set(candidates.bondIds)
+      };
+    }
+
+    const atomIds = new Set(selectionBaseAtomIds);
+    for (const atomId of candidates.atomIds) {
+      if (atomIds.has(atomId)) {
+        atomIds.delete(atomId);
+      } else {
+        atomIds.add(atomId);
+      }
+    }
+
+    const bondIds = new Set(selectionBaseBondIds);
+    let links;
+    if (mode === 'force') {
+      links = context.simulation.force('link').links().map(link => ({ id: link.id, atomIds: [link.source.id, link.target.id] }));
+    } else {
+      const mol2d = context.state.documentState.getMol2d();
+      links = [...mol2d.bonds.values()]
+        .map(bond => {
+          const [atom1, atom2] = bond.getAtomObjects(mol2d);
+          if (!atom1 || !atom2 || atom1.visible === false || atom2.visible === false) {
+            return null;
+          }
+          return { id: bond.id, atomIds: [atom1.id, atom2.id] };
+        })
+        .filter(Boolean);
+    }
+    for (const link of links) {
+      const [a1, a2] = link.atomIds;
+      if (atomIds.has(a1) && atomIds.has(a2)) {
+        bondIds.add(link.id);
+      } else if (selectionBaseBondIds.has(link.id)) {
+        bondIds.delete(link.id);
+      }
+    }
+
+    return { atomIds, bondIds };
+  }
+
+  /**
+   * Updates the visible selection overlay to match the current drag rectangle.
+   * @param {number} x - Current pointer x coordinate.
+   * @param {number} y - Current pointer y coordinate.
+   * @param {boolean} commit - Whether tiny drags should also be committed.
+   * @returns {boolean} True when a selection was previewed or committed.
+   */
+  function applySelectionDragResult(x, y, commit = false) {
+    const mode = context.state.viewState.getMode();
+    if (mode !== '2d' && mode !== 'force') {
+      return false;
+    }
+    if (mode === '2d' && !context.state.documentState.getMol2d()) {
+      return false;
+    }
+    if (mode === 'force' && !context.state.documentState.getCurrentMol()) {
+      return false;
+    }
+    const box = selectionDragRect(x, y);
+    if (!commit && box.rw < 5 && box.rh < 5) {
+      context.view.clearPrimitiveHover();
+      if (selectionAdditive) {
+        replaceLiveSelection(selectionBaseAtomIds, selectionBaseBondIds);
+      } else {
+        replaceLiveSelection([], []);
+      }
+      context.renderers.applySelectionOverlay();
+      return true;
+    }
+    const candidates = collectSelectionDragCandidates(box, mode);
+    const result = computeSelectionDragResult(candidates, mode, selectionAdditive);
+    context.view.clearPrimitiveHover();
+    replaceLiveSelection(result.atomIds, result.bondIds);
+    context.renderers.applySelectionOverlay();
+    return true;
+  }
+
   function finishSelectionDrag(event) {
     if (!selectionDragging) {
       return;
@@ -64,12 +243,21 @@ export function initGestureInteractions(context) {
 
     const mode = context.state.viewState.getMode();
     if (mode !== '2d' && mode !== 'force') {
+      selectionAdditive = false;
+      replaceLiveSelection(selectionBaseAtomIds, selectionBaseBondIds);
+      context.renderers.applySelectionOverlay();
       return;
     }
     if (mode === '2d' && !context.state.documentState.getMol2d()) {
+      selectionAdditive = false;
+      replaceLiveSelection(selectionBaseAtomIds, selectionBaseBondIds);
+      context.renderers.applySelectionOverlay();
       return;
     }
     if (mode === 'force' && !context.state.documentState.getCurrentMol()) {
+      selectionAdditive = false;
+      replaceLiveSelection(selectionBaseAtomIds, selectionBaseBondIds);
+      context.renderers.applySelectionOverlay();
       return;
     }
 
@@ -77,103 +265,25 @@ export function initGestureInteractions(context) {
     const rw = Math.abs(x - selectionStart.x);
     const rh = Math.abs(y - selectionStart.y);
     const additive = selectionAdditive;
-    selectionAdditive = false;
 
     if (rw < 5 && rh < 5) {
+      selectionAdditive = false;
       if (additive) {
+        replaceLiveSelection(selectionBaseAtomIds, selectionBaseBondIds);
         context.renderers.applySelectionOverlay();
         return;
       }
       context.view.clearPrimitiveHover();
-      context.state.overlayState.getSelectedAtomIds().clear();
-      context.state.overlayState.getSelectedBondIds().clear();
+      replaceLiveSelection([], []);
       context.renderers.applySelectionOverlay();
       return;
     }
 
-    const rx = Math.min(selectionStart.x, x);
-    const ry = Math.min(selectionStart.y, y);
-    const transform = context.view.getZoomTransform();
-    const selectedAtomIds = context.state.overlayState.getSelectedAtomIds();
-    const selectedBondIds = context.state.overlayState.getSelectedBondIds();
-
-    if (!additive) {
-      selectedAtomIds.clear();
-      selectedBondIds.clear();
-    }
-    context.view.clearPrimitiveHover();
-
+    applySelectionDragResult(x, y, true);
+    selectionAdditive = false;
     if (mode === 'force') {
-      const nodes = context.simulation.nodes();
-      for (const node of nodes) {
-        const sx = transform.applyX(node.x);
-        const sy = transform.applyY(node.y);
-        if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {
-          if (additive) {
-            if (selectedAtomIds.has(node.id)) {
-              selectedAtomIds.delete(node.id);
-            } else {
-              selectedAtomIds.add(node.id);
-            }
-          } else {
-            selectedAtomIds.add(node.id);
-          }
-        }
-      }
-
-      for (const link of context.simulation.force('link').links()) {
-        if (additive) {
-          if (selectedBondIds.has(link.id) && (!selectedAtomIds.has(link.source.id) || !selectedAtomIds.has(link.target.id))) {
-            selectedBondIds.delete(link.id);
-          } else if (selectedAtomIds.has(link.source.id) && selectedAtomIds.has(link.target.id)) {
-            selectedBondIds.add(link.id);
-          }
-        } else if (selectedAtomIds.has(link.source.id) && selectedAtomIds.has(link.target.id)) {
-          selectedBondIds.add(link.id);
-        }
-      }
-
       suppressForceSelectionClearClick = true;
-      context.renderers.applySelectionOverlay();
-      return;
     }
-
-    const mol2d = context.state.documentState.getMol2d();
-    const atoms = [...mol2d.atoms.values()].filter(atom => atom.x != null && atom.visible !== false);
-    for (const atom of atoms) {
-      const { x: gX, y: gY } = toSelectionSVGPt2d(atom);
-      const sx = transform.applyX(gX);
-      const sy = transform.applyY(gY);
-      if (sx >= rx && sx <= rx + rw && sy >= ry && sy <= ry + rh) {
-        if (additive) {
-          if (selectedAtomIds.has(atom.id)) {
-            selectedAtomIds.delete(atom.id);
-          } else {
-            selectedAtomIds.add(atom.id);
-          }
-        } else {
-          selectedAtomIds.add(atom.id);
-        }
-      }
-    }
-
-    for (const bond of mol2d.bonds.values()) {
-      const [a1, a2] = bond.getAtomObjects(mol2d);
-      if (!a1 || !a2 || a1.visible === false || a2.visible === false) {
-        continue;
-      }
-      if (additive) {
-        if (selectedBondIds.has(bond.id) && (!selectedAtomIds.has(a1.id) || !selectedAtomIds.has(a2.id))) {
-          selectedBondIds.delete(bond.id);
-        } else if (selectedAtomIds.has(a1.id) && selectedAtomIds.has(a2.id)) {
-          selectedBondIds.add(bond.id);
-        }
-      } else if (selectedAtomIds.has(a1.id) && selectedAtomIds.has(a2.id)) {
-        selectedBondIds.add(bond.id);
-      }
-    }
-
-    context.renderers.applySelectionOverlay();
   }
 
   function handleErasePaintMove(event) {
@@ -360,6 +470,8 @@ export function initGestureInteractions(context) {
     selectionDragging = true;
     selectionStart = { x, y };
     selectionAdditive = isAdditiveSelectionEvent(event);
+    selectionBaseAtomIds = new Set(context.state.overlayState.getSelectedAtomIds());
+    selectionBaseBondIds = new Set(context.state.overlayState.getSelectedBondIds());
     selectionRect.attr('x', x).attr('y', y).attr('width', 0).attr('height', 0).style('display', null);
     event.preventDefault();
   });
@@ -370,6 +482,7 @@ export function initGestureInteractions(context) {
     }
     const [x, y] = selectionEventPoint(event, true);
     updateSelectionRect(x, y);
+    applySelectionDragResult(x, y);
   });
 
   svg.on('mouseup.selection', event => {
@@ -469,6 +582,7 @@ export function initGestureInteractions(context) {
     }
     const [x, y] = selectionEventPoint(event, true);
     updateSelectionRect(x, y);
+    applySelectionDragResult(x, y);
   });
 
   doc.addEventListener('mousemove', handleErasePaintMove);

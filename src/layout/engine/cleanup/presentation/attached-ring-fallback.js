@@ -6,6 +6,8 @@ import {
   measureDirectAttachedRingJunctionContinuationDistortion,
   measureLayoutCost,
   measureRingSubstituentReadability,
+  measureTetrahedralDistortion,
+  measureThreeHeavyContinuationDistortion,
   measureTrigonalDistortion
 } from '../../audit/invariants.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
@@ -426,7 +428,9 @@ function isExactCleanAttachedRingCandidate(candidate) {
     && candidate.parentVisibleTrigonalPenalty <= 1e-6
     && candidate.rootOutwardPenalty <= 1e-6
     && candidate.trigonalBisectorPenalty <= 1e-6
+    && (candidate.omittedHydrogenTrigonalPenalty ?? 0) <= 1e-6
     && candidate.trigonalDistortionPenalty <= 1e-6
+    && (candidate.tetrahedralDistortionPenalty ?? 0) <= 1e-6
     && candidate.failingSubstituentCount === 0
     && candidate.inwardSubstituentCount === 0
     && candidate.outwardAxisFailureCount === 0
@@ -547,6 +551,16 @@ function readabilityTupleWorsens(candidate, baseline) {
   const candidateOutward = candidate?.outwardAxisFailureCount ?? 0;
   const baselineOutward = baseline?.outwardAxisFailureCount ?? 0;
   return candidateOutward > baselineOutward;
+}
+
+function measureAttachedRingTrigonalDistortion(layoutGraph, coords, options = {}) {
+  const trigonalDistortion = measureTrigonalDistortion(layoutGraph, coords, options);
+  const threeHeavyContinuationDistortion = measureThreeHeavyContinuationDistortion(layoutGraph, coords, options);
+  return {
+    centerCount: trigonalDistortion.centerCount + threeHeavyContinuationDistortion.centerCount,
+    totalDeviation: trigonalDistortion.totalDeviation + threeHeavyContinuationDistortion.totalDeviation,
+    maxDeviation: Math.max(trigonalDistortion.maxDeviation, threeHeavyContinuationDistortion.maxDeviation)
+  };
 }
 
 /**
@@ -992,7 +1006,9 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       const baseParentVisibleTrigonalPenalty = measureAttachedRingParentVisibleTrigonalPenalty(layoutGraph, currentCoords, focusAtomIds);
       const baseRootOutwardPenalty = measureAttachedRingRootOutwardPenalty(layoutGraph, currentCoords, descriptor, focusAtomIds);
       const baseTrigonalBisectorPenalty = measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, currentCoords, descriptor);
-      const baseTrigonalDistortionPenalty = measureTrigonalDistortion(layoutGraph, currentCoords, { focusAtomIds }).totalDeviation;
+      const baseOmittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, currentCoords).totalDeviation;
+      const baseTrigonalDistortionPenalty = measureAttachedRingTrigonalDistortion(layoutGraph, currentCoords, { focusAtomIds }).totalDeviation;
+      const baseTetrahedralDistortionPenalty = measureTetrahedralDistortion(layoutGraph, currentCoords).totalDeviation;
       const baseSubtreeClearance = measureAttachedCarbonylSubtreeClearance(layoutGraph, currentCoords, descriptor);
       const baseSmallRingExteriorPenalty = measureTotalSmallRingExteriorGapPenalty(layoutGraph, currentCoords, focusAtomIds);
       const baseReadability = measureRingSubstituentReadability(layoutGraph, currentCoords, {
@@ -1052,9 +1068,19 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           buildCandidateScore.lastRejectReason = 'trigonal-bisector';
           return null;
         }
-        const trigonalDistortionPenalty = measureTrigonalDistortion(layoutGraph, candidateCoords, { focusAtomIds }).totalDeviation;
+        const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, candidateCoords).totalDeviation;
+        if (omittedHydrogenTrigonalPenalty > baseOmittedHydrogenTrigonalPenalty + 1e-6 && !reducesOverlapCount && !improvesPeripheralFocusClearance) {
+          buildCandidateScore.lastRejectReason = 'omitted-hydrogen-trigonal';
+          return null;
+        }
+        const trigonalDistortionPenalty = measureAttachedRingTrigonalDistortion(layoutGraph, candidateCoords, { focusAtomIds }).totalDeviation;
         if (trigonalDistortionPenalty > baseTrigonalDistortionPenalty + 1e-6 && !reducesOverlapCount && !improvesPeripheralFocusClearance) {
           buildCandidateScore.lastRejectReason = 'trigonal-distortion';
+          return null;
+        }
+        const tetrahedralDistortionPenalty = measureTetrahedralDistortion(layoutGraph, candidateCoords).totalDeviation;
+        if (tetrahedralDistortionPenalty > baseTetrahedralDistortionPenalty + 1e-6 && !reducesOverlapCount && !improvesPeripheralFocusClearance) {
+          buildCandidateScore.lastRejectReason = 'tetrahedral-distortion';
           return null;
         }
         const readability = measureRingSubstituentReadability(layoutGraph, candidateCoords, {
@@ -1102,7 +1128,9 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           peripheralFocusClearance,
           rootOutwardPenalty,
           trigonalBisectorPenalty,
+          omittedHydrogenTrigonalPenalty,
           trigonalDistortionPenalty,
+          tetrahedralDistortionPenalty,
           subtreeClearance,
           baseSubtreeClearance,
           failingSubstituentCount: readability.failingSubstituentCount ?? 0,
@@ -1163,7 +1191,15 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         }
         const parentVisibleTrigonalPenalty = measureAttachedRingParentVisibleTrigonalPenalty(layoutGraph, candidateCoords, focusAtomIds);
         const rootOutwardPenalty = measureAttachedRingRootOutwardPenalty(layoutGraph, candidateCoords, descriptor, focusAtomIds);
-        const trigonalDistortionPenalty = measureTrigonalDistortion(layoutGraph, candidateCoords, { focusAtomIds }).totalDeviation;
+        const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, candidateCoords).totalDeviation;
+        if (omittedHydrogenTrigonalPenalty > baseOmittedHydrogenTrigonalPenalty + 1e-6) {
+          return null;
+        }
+        const trigonalDistortionPenalty = measureAttachedRingTrigonalDistortion(layoutGraph, candidateCoords, { focusAtomIds }).totalDeviation;
+        const tetrahedralDistortionPenalty = measureTetrahedralDistortion(layoutGraph, candidateCoords).totalDeviation;
+        if (tetrahedralDistortionPenalty > baseTetrahedralDistortionPenalty + 1e-6) {
+          return null;
+        }
         const subtreeClearance = measureAttachedCarbonylSubtreeClearance(layoutGraph, candidateCoords, descriptor);
         const presentationPenalty = measureCleanupStagePresentationPenalty(layoutGraph, candidateCoords, {
           focusAtomIds,
@@ -1180,7 +1216,9 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           peripheralFocusClearance,
           rootOutwardPenalty,
           trigonalBisectorPenalty,
+          omittedHydrogenTrigonalPenalty,
           trigonalDistortionPenalty,
+          tetrahedralDistortionPenalty,
           subtreeClearance,
           baseSubtreeClearance,
           failingSubstituentCount: readability.failingSubstituentCount ?? 0,
@@ -1201,6 +1239,9 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       };
       const scoreCandidate = (seedCandidateCoords, overridePositions) => {
         let bestScore = buildCandidateScore(seedCandidateCoords, 1);
+        if (bestScore && isExactCleanAttachedRingCandidate(bestScore)) {
+          return bestScore;
+        }
         const directUnifiedCleanup = runUnifiedCleanup(layoutGraph, seedCandidateCoords, {
           maxPasses: 1,
           epsilon: bondLength * 0.001,
@@ -1217,8 +1258,16 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           );
           if (directUnifiedScore && isBetterAttachedRingCandidate(directUnifiedScore, bestScore)) {
             bestScore = directUnifiedScore;
+            if (isExactCleanAttachedRingCandidate(bestScore)) {
+              return bestScore;
+            }
           }
         }
+
+        if (!bestScore) {
+          return null;
+        }
+
         const ringSubstituentTouchup = runRingSubstituentTidy(layoutGraph, currentCoords, {
           bondLength,
           frozenAtomIds,
@@ -1241,6 +1290,9 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         );
         if (localScore && isBetterAttachedRingCandidate(localScore, bestScore)) {
           bestScore = localScore;
+          if (isExactCleanAttachedRingCandidate(bestScore)) {
+            return bestScore;
+          }
         }
         const unifiedCleanup = runUnifiedCleanup(layoutGraph, ringSubstituentTouchup.coords, {
           maxPasses: 1,
@@ -1798,6 +1850,26 @@ function trigonalBisectorWins(candidate, incumbent) {
     && candidate.trigonalBisectorPenalty < incumbent.trigonalBisectorPenalty - 1e-6;
 }
 
+function omittedHydrogenTrigonalWins(candidate, incumbent) {
+  return !!incumbent
+    && candidate.overlapCount === incumbent.overlapCount
+    && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
+    && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
+    && (candidate.omittedHydrogenTrigonalPenalty ?? 0) < (incumbent.omittedHydrogenTrigonalPenalty ?? 0) - 1e-6;
+}
+
+function omittedHydrogenTrigonalHolds(candidate, incumbent) {
+  return !!incumbent
+    && candidate.overlapCount === incumbent.overlapCount
+    && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
+    && Math.abs(candidate.parentVisibleTrigonalPenalty - incumbent.parentVisibleTrigonalPenalty) <= 1e-6
+    && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
+    && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
+    && (candidate.omittedHydrogenTrigonalPenalty ?? 0) > (incumbent.omittedHydrogenTrigonalPenalty ?? 0) + 1e-6;
+}
+
 function trigonalDistortionWins(candidate, incumbent) {
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
@@ -1836,12 +1908,16 @@ function isBetterAttachedRingCandidate(candidate, incumbent) {
   if (incumbentPeripheralFocusRescueHolds(candidate, incumbent)) {
     return false;
   }
+  if (omittedHydrogenTrigonalHolds(candidate, incumbent)) {
+    return false;
+  }
   return overlapCountWins(candidate, incumbent)
     || exactContinuationWins(candidate, incumbent)
     || parentVisibleTrigonalWins(candidate, incumbent)
     || rootOutwardWins(candidate, incumbent)
     || totalRootOutwardWins(candidate, incumbent)
     || trigonalBisectorWins(candidate, incumbent)
+    || omittedHydrogenTrigonalWins(candidate, incumbent)
     || trigonalDistortionWins(candidate, incumbent)
     || readabilityFailureWins(candidate, incumbent)
     || inwardReadabilityWins(candidate, incumbent)

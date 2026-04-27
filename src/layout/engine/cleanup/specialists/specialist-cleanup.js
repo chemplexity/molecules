@@ -6,6 +6,7 @@ import {
 } from '../bridged-bond-tidy.js';
 import {
   hasHypervalentAngleTidyNeed,
+  measureOrthogonalHypervalentDeviation,
   runHypervalentAngleTidy
 } from '../hypervalent-angle-tidy.js';
 import {
@@ -108,6 +109,91 @@ function isBetterSpecialistState(candidateState, incumbentState, options) {
     return options.comparatorFn(candidateState.score, incumbentState.score);
   }
   return candidateState.nudges > incumbentState.nudges;
+}
+
+/**
+ * Returns whether a final hypervalent retouch may override presentation
+ * tie-breaks. The retouch is allowed only when it reduces orthogonal
+ * hypervalent deviation and does not worsen the externally visible audit
+ * counts that normally protect cleanup stages.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} candidateState - Candidate specialist state.
+ * @param {object} incumbentState - Current specialist state.
+ * @returns {boolean} True when the retouch is safe to accept.
+ */
+function isSafeFinalHypervalentRetouch(layoutGraph, candidateState, incumbentState) {
+  const candidateDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, candidateState.coords);
+  const incumbentDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, incumbentState.coords);
+  if (candidateDeviation >= incumbentDeviation - 1e-9) {
+    return false;
+  }
+
+  const candidateAudit = candidateState.score?.audit ?? null;
+  const incumbentAudit = incumbentState.score?.audit ?? null;
+  if (!candidateAudit || !incumbentAudit) {
+    return true;
+  }
+  if (incumbentAudit.ok === true && candidateAudit.ok !== true) {
+    return false;
+  }
+  for (const key of [
+    'bondLengthFailureCount',
+    'mildBondLengthFailureCount',
+    'severeBondLengthFailureCount',
+    'collapsedMacrocycleCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount',
+    'severeOverlapCount',
+    'labelOverlapCount'
+  ]) {
+    if ((candidateAudit[key] ?? 0) > (incumbentAudit[key] ?? 0)) {
+      return false;
+    }
+  }
+  if ((candidateAudit.stereoContradiction ?? false) && !(incumbentAudit.stereoContradiction ?? false)) {
+    return false;
+  }
+  if ((candidateAudit.bridgedReadabilityFailure ?? false) && !(incumbentAudit.bridgedReadabilityFailure ?? false)) {
+    return false;
+  }
+  return candidateAudit.maxBondLengthDeviation <= incumbentAudit.maxBondLengthDeviation + 1e-9;
+}
+
+/**
+ * Re-applies hypervalent tidy after any specialist-internal presentation rescue
+ * when the center is still measurably off its orthogonal presentation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} currentState - Current specialist state.
+ * @param {object} options - Specialist cleanup options.
+ * @returns {object} The accepted retouched state, or the original state.
+ */
+function runFinalHypervalentRetouch(layoutGraph, currentState, options) {
+  if (!hasHypervalentAngleTidyNeed(layoutGraph, currentState.coords)) {
+    return currentState;
+  }
+  const stepResult = runHypervalentAngleTidy(layoutGraph, currentState.coords);
+  if (!stepResult || !(stepResult.coords instanceof Map) || (stepResult.nudges ?? 0) <= 0) {
+    return currentState;
+  }
+
+  const candidateState = buildSpecialistState(stepResult.coords, options, {
+    nudges: currentState.nudges + (stepResult.nudges ?? 0),
+    steps: [
+      ...currentState.steps,
+      {
+        name: 'hypervalent-angle-final-retouch',
+        nudges: stepResult.nudges ?? 0
+      }
+    ],
+    specialistsRun: appendUnique(currentState.specialistsRun, 'hypervalent')
+  });
+  if (!isSafeFinalHypervalentRetouch(layoutGraph, candidateState, currentState)) {
+    return currentState;
+  }
+
+  options.onStep?.('hypervalent-angle-final-retouch', candidateState.coords, stepResult.nudges ?? 0);
+  return candidateState;
 }
 
 function evaluateSpecialistStep(currentState, stepName, specialistId, stepResult, options) {
@@ -236,6 +322,10 @@ export function runSpecialistCleanup(layoutGraph, inputCoords, policy, options =
       specialist.run(layoutGraph, rescuedState.coords, options),
       options
     );
+  }
+
+  if (hookNames.includes('hypervalent-angle-tidy')) {
+    currentState = runFinalHypervalentRetouch(layoutGraph, currentState, options);
   }
 
   return {

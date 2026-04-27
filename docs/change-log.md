@@ -2,6 +2,29 @@
 
 ## 2026-04-26
 
+- Align compact ring-anchored sulfonyl branches exactly and prefer minimal terminal-leaf overlap moves
+- Swap planar tertiary nitrogen sibling branches during cleanup so attached phenyl overlaps clear without bending amide angles
+- Balance terminal chlorophenyl leaf and heteroaryl angles while preserving omitted-H benzylic junction geometry and clearing neighboring overlaps
+- Center heteroaryl carbonyl-methylene substituents on the exact local ring-outward axis
+- Split cyclopropyl exterior branch fans evenly when one branch is an attached ring
+- Promote all-lowercase purine-like fused aza systems as fused aromatic components to avoid stale carbon valence warnings
+- Treat sulfonyl-substituted tertiary nitrogens as planar in acyclic layout so neighboring sulfones keep clean orthogonal crosses
+- Treat aryl-conjugated tertiary nitrogens as planar branch-placement centers so anilino attachments keep a clean `120°/120°/120°` spread
+- Preserve both charge and chirality properties on bracketed `N@+` and `N@@+` SMILES atoms
+- Reject malformed SMILES branch and bracket delimiters before decode so corrupted chiral inputs report parser errors instead of crashing
+- Treat hidden sulfur hydrogens as single-bond ligands for terminal sulfonyl cross geometry, so fused sulfonamide layouts keep paired `S=O` bonds opposite each other
+- Lock exact simple acyclic direct-attached ring angles during expansion so WebKit keeps fused cyclobutyl methylene linkers bent
+- Reposition visible hydrogens on one-carbon linked fused-ring methylenes after ring balancing
+- Share short methylene-linker ring-exit distortion across both fused lactone endpoints
+- Balance linked fused-lactone ring-block rotations when exact terminal hetero multiple-bond slots are contested, keeping the C3 linker exit trigonal without crowding the neighboring carbonyl
+- Keep linked fused lactone orientations in the full scoring beam when terminal hetero multiple-bond slots are contested, so both phenolic and carbonyl leaves keep exact trigonal angles
+- Rotate compact acyclic ester and tert-butyl cleanup subtrees before accepting bond-distorting overlap nudges
+- Keep fused lactone systems on bent methylene linker geometry while preserving local phenolic ring-outward angles and avoiding collapsed carbonyl leaf angles
+- Preserve omitted-H trigonal spreads during attached-ring presentation cleanup
+- Preserve projected-tetrahedral C-F/C-C spreads during attached-ring presentation cleanup
+- Prefer heavy stereobonds when hidden hydrogens are suppressed
+- Rotate saturated ring blocks around quaternary anchors to open geminal aryl angles
+- Preview atoms and bonds while dragging a selection box
 - Preserve fused aza aromaticity through aromatic aza protonation, adjacent imine hydrolysis, phenolate protonation, and non-aromatic charge edits
 - Reanchor reaction-preview product hidden stereohydrogens and keep adjacent stereocenters from sharing one wedge/dash display bond
 - Preserve five- and six-member saturated ring exterior branch fans during presentation cleanup

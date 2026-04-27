@@ -8,6 +8,7 @@ import { pointInPolygon } from '../geometry/polygon.js';
 import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import {
+  isExactVisibleTrigonalBisectorEligible,
   isRingConstrainedBenzylicCarbonRoot,
   preferredSharedJunctionContinuationAngle
 } from '../placement/branch-placement/angle-selection.js';
@@ -902,6 +903,8 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
 
 /**
  * Returns whether the center should contribute to trigonal distortion.
+ * This covers atoms with an explicit multiple bond and planar conjugated
+ * tertiary nitrogens whose branch placement already uses trigonal slots.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string} atomId - Candidate center atom identifier.
  * @param {Array<{bond: object, neighborAtomId: string}>} covalentBonds - Visible covalent bonds for the center.
@@ -916,7 +919,14 @@ function shouldMeasureTrigonalDistortionAtCenter(layoutGraph, atomId, covalentBo
     return false;
   }
   const multipleBondCount = covalentBonds.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
-  return multipleBondCount === 1;
+  if (multipleBondCount === 1) {
+    return true;
+  }
+  return covalentBonds.some(({ bond, neighborAtomId }) => (
+    !bond.aromatic
+    && (bond.order ?? 1) === 1
+    && isExactVisibleTrigonalBisectorEligible(layoutGraph, atomId, neighborAtomId)
+  ));
 }
 
 /**
@@ -965,7 +975,7 @@ function shouldMeasureThreeHeavyContinuationDistortionAtCenter(layoutGraph, atom
     return false;
   }
   const atom = layoutGraph.atoms.get(atomId);
-  if (!atom || atom.aromatic || atom.element !== 'C' || (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0) {
+  if (!atom || atom.aromatic || atom.element !== 'C') {
     return false;
   }
   const multipleBondCount = covalentBonds.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
@@ -974,6 +984,19 @@ function shouldMeasureThreeHeavyContinuationDistortionAtCenter(layoutGraph, atom
   }
   if (layoutGraph.options.suppressH !== true) {
     return false;
+  }
+  const incidentRings = layoutGraph.atomToRings?.get(atomId) ?? [];
+  if (incidentRings.length > 0) {
+    const hasSupportedRingContext = incidentRings.some(ring => {
+      if ((ring.atomIds?.length ?? 0) < 5) {
+        return false;
+      }
+      const ringNeighborCount = covalentBonds.filter(({ neighborAtomId }) => ring.atomIds.includes(neighborAtomId)).length;
+      return ringNeighborCount === 2;
+    });
+    if (!hasSupportedRingContext || atom.degree !== 4 || atom.heavyDegree !== 3) {
+      return false;
+    }
   }
   return covalentBonds.every(({ bond, neighborAtomId }) => {
     const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
@@ -1004,8 +1027,8 @@ function measureThreeCoordinateDeviation(coords, covalentBonds, atomId, getPos) 
 }
 
 /**
- * Measures distortion at visible three-coordinate unsaturated centers that
- * should read as roughly trigonal in a publication-style 2D depiction.
+ * Measures distortion at visible three-coordinate centers that should read as
+ * roughly trigonal in a publication-style 2D depiction.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {{focusAtomIds?: Set<string>|null}} [options] - Optional local scoring focus.
@@ -1042,7 +1065,7 @@ export function measureTrigonalDistortion(layoutGraph, coords, options = {}) {
 }
 
 /**
- * Measures distortion at visible non-ring saturated three-heavy carbon centers
+ * Measures distortion at visible saturated three-heavy carbon centers
  * whose omitted hydrogen should still leave the drawn heavy-atom spread near 120/120/120.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.

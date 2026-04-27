@@ -1,6 +1,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
+import { generateCoords } from '../../../../src/layout/engine/api.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { pickWedgeAssignments } from '../../../../src/layout/engine/stereo/wedge-selection.js';
@@ -67,6 +68,27 @@ describe('layout/engine/stereo/wedge-selection', () => {
     assert.equal(summary.assignments[0].centerId, 'C3');
     assert.ok(!summary.assignments[0].bondId.startsWith('implicit-h:'));
     assert.ok(summary.assignments[0].type === 'wedge' || summary.assignments[0].type === 'dash');
+  });
+
+  it('keeps API-suppressed hydrogens from becoming first-choice wedge display bonds', () => {
+    const molecule = parseSMILES('COC1=CC(=CC(OC)=C1OC)C(F)(F)C(=O)N1CCCC[C@H]1C(=O)O[C@@H](CCCC1=CC=CC=C1)CCCC1=CN=CC=C1');
+    const result = generateCoords(molecule, {
+      suppressH: true,
+      finalLandscapeOrientation: true
+    });
+    const assignmentByCenter = new Map(result.metadata.stereo.assignments.map(assignment => [assignment.centerId, assignment]));
+
+    for (const centerId of ['C23', 'C28']) {
+      const assignment = assignmentByCenter.get(centerId);
+      const bond = result.layoutGraph.sourceMolecule.bonds.get(assignment?.bondId);
+
+      assert.ok(assignment, `expected ${centerId} to receive a wedge assignment`);
+      assert.ok(bond, `expected ${centerId} wedge assignment to reference a real bond`);
+      assert.ok(
+        bond.atoms.every(atomId => result.layoutGraph.atoms.get(atomId)?.element !== 'H'),
+        `expected ${centerId} to use a heavy display bond instead of suppressed hydrogen bond ${assignment.bondId}`
+      );
+    }
   });
 
   it('does not count unsupported annotated centers as unassigned stereo failures', () => {

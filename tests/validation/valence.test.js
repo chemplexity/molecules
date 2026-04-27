@@ -92,6 +92,10 @@ describe('validateValence — valid molecules', () => {
     assert.deepEqual(validateValence(parseSMILES(smiles)), []);
   });
 
+  it('purine-like lowercase fused aza thioethers produce no carbon valence warning', () => {
+    assert.deepEqual(validateValence(parseSMILES('CCCCCCCN(CCCCCSc1[nH]cnc2ncnc12)C(=O)NC(C)C')), []);
+  });
+
   it('ammonium [NH4+] produces no warnings', () => {
     assert.deepEqual(validateValence(parseSMILES('[NH4+]')), []);
   });

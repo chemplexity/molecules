@@ -251,6 +251,19 @@ describe('parseSMILES — structure', () => {
       .sort();
     assert.deepEqual(heavyBondPairs, ['Cl-Pt', 'Cl-Pt', 'N-Pt', 'N-Pt']);
   });
+
+  it('preserves charge and chirality for bracketed N@+ and N@@+ centers', () => {
+    const smiles =
+      '[O-]S(=O)(=O)C1=CC=CC=C1.[O-]S(=O)(=O)C1=CC=CC=C1.COC1=C(OC)C=C(C[C@@H]2C3=CC(OC)=C(OC)C=C3CC[N@+]2(C)CCC(=O)OCCCCCOC(=O)CC[N@@+]2(C)CCC3=CC(OC)=C(OC)C=C3[C@H]2CC2=CC(OC)=C(OC)C=C2)C=C1';
+    const mol = parseSMILES(smiles);
+    const nitrogens = [...mol.atoms.values()].filter(atom => atom.name === 'N');
+    assert.equal(mol.properties.charge, 0);
+    assert.deepEqual(
+      nitrogens.map(atom => atom.properties.charge),
+      [1, 1]
+    );
+    assert.equal(nitrogens.filter(atom => atom.properties.chirality === 'R' || atom.properties.chirality === 'S').length, 2);
+  });
 });
 
 describe('parseSMILES — input validation', () => {
@@ -276,6 +289,16 @@ describe('parseSMILES — input validation', () => {
 
   it('throws on invalid SMILES xyz', () => {
     assert.throws(() => parseSMILES('xyz'));
+  });
+
+  it('rejects malformed chiral branch syntax without an internal parser crash', () => {
+    const smiles = '[H][C@]12CC@@HC3=CC(OC)=C(OC)C(OC)=C3)C@HC@@HOC)[C@@]1([H])C[C@@]1([H])N(CCC3=C1NC1=C3C=CC(OC)=C1)C2';
+    assert.throws(() => parseSMILES(smiles), /Invalid SMILES: unmatched branch close/);
+  });
+
+  it('rejects unclosed branch and bracket delimiters before decoding', () => {
+    assert.throws(() => parseSMILES('C(C'), /Invalid SMILES: unclosed branch/);
+    assert.throws(() => parseSMILES('[NH4+'), /Invalid SMILES: unclosed bracket/);
   });
 });
 

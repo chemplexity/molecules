@@ -84,7 +84,7 @@ function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId) {
     if (!ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element)) {
       continue;
     }
-    let heavyNeighborCount = 0;
+    let ligandCount = 0;
     let singleNeighborCount = 0;
     let terminalMultipleNeighborCount = 0;
     let valid = true;
@@ -96,15 +96,19 @@ function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId) {
       }
       const neighborAtomId = bond.a === atom.id ? bond.b : bond.a;
       const neighborAtom = atoms.get(neighborAtomId);
-      if (!neighborAtom || neighborAtom.element === 'H') {
+      if (!neighborAtom) {
         continue;
       }
 
-      heavyNeighborCount++;
+      ligandCount++;
       const order = bond.order ?? 1;
       if (order === 1) {
         singleNeighborCount++;
         continue;
+      }
+      if (neighborAtom.element === 'H') {
+        valid = false;
+        break;
       }
       if (neighborAtom.element !== 'C' && indexedHeavyDegree(atoms, bondsByAtomId, neighborAtomId) === 1) {
         terminalMultipleNeighborCount++;
@@ -116,7 +120,7 @@ function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId) {
 
     if (
       valid
-      && heavyNeighborCount === 4
+      && ligandCount === 4
       && (
         (singleNeighborCount === 2 && terminalMultipleNeighborCount === 2)
         || (singleNeighborCount === 3 && terminalMultipleNeighborCount === 1)
