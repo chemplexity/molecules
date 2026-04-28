@@ -1,6 +1,7 @@
 /** @module placement/branch-placement/remaining-branches */
 
 import { add, fromAngle } from '../../geometry/vec2.js';
+import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
 import { AtomGrid } from '../../geometry/atom-grid.js';
 import {
   DISCRETE_BRANCH_ANGLES,
@@ -16,6 +17,7 @@ import {
 } from './shared.js';
 import {
   budgetPreferredAngles,
+  chooseAttachmentAngle,
   chooseContinuationAngle,
   chooseExactPreferredAngle,
   chooseNearPreferredRescueAngle,
@@ -40,12 +42,14 @@ import {
   resolvedPreferredAngles,
   shouldPreferOmittedHydrogenTrigonalBisector,
   shouldPromotePreferredRingAngle,
+  supportsExteriorBranchSpreadRingSize,
   supportsProjectedTetrahedralGeometry
 } from './angle-selection.js';
 import { chooseBatchAngleAssignments, chooseSingleBranchAngleWithLookahead, shouldUseGreedyBranchPlacement } from './permutations.js';
 
 const SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS = 64;
 const RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE = 4;
+const EXACT_TERMINAL_RING_LEAF_SLOT_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I', 'O', 'S', 'Se']);
 
 function isFusedOnlyRingSystemAnchor(layoutGraph, atomId) {
   const ringSystemId = layoutGraph?.atomToRingSystemId?.get(atomId);
@@ -111,6 +115,14 @@ function hasPendingNonAromaticRingNeighborOutsidePlacementSlice(adjacency, atomI
   });
 }
 
+/**
+ * Returns whether a neighbor is a terminal carbon leaf joined to the anchor by
+ * an ordinary single covalent bond.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string} neighborAtomId - Candidate neighbor atom ID.
+ * @returns {boolean} True when the neighbor is a terminal carbon leaf.
+ */
 function isTerminalCarbonLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId) {
   const neighborAtom = layoutGraph?.atoms.get(neighborAtomId);
   if (!neighborAtom || neighborAtom.element !== 'C' || neighborAtom.heavyDegree !== 1) {
@@ -303,6 +315,206 @@ function branchPlacementExcludedAtomIds(layoutGraph, anchorAtomId, currentPlaced
   return excludedAtomIds;
 }
 
+/**
+ * Returns terminal hetero leaves attached to a ring atom.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {string|null} skipLeafAtomId - Optional leaf atom ID to ignore.
+ * @returns {string[]} Terminal hetero leaf atom IDs.
+ */
+function terminalRingLeafIds(layoutGraph, anchorAtomId, skipLeafAtomId) {
+  const leafAtomIds = [];
+  for (const bond of layoutGraph?.bondsByAtomId.get(anchorAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+    if (neighborAtomId === skipLeafAtomId) {
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (
+      !neighborAtom
+      || !EXACT_TERMINAL_RING_LEAF_SLOT_ELEMENTS.has(neighborAtom.element)
+      || (neighborAtom.heavyDegree ?? 0) !== 1
+      || (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+    ) {
+      continue;
+    }
+    leafAtomIds.push(neighborAtomId);
+  }
+  return leafAtomIds;
+}
+
+/**
+ * Returns exact outward slot points for existing terminal hetero leaves on
+ * ring anchors. Branch placement uses these as reserved publication-style
+ * positions even when a provisional leaf pose has bent away from the slot.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {string|null} [skipLeafAtomId] - Leaf atom ID currently being placed.
+ * @returns {Array<{x: number, y: number}>} Exact terminal ring-leaf slot points.
+ */
+function exactTerminalRingLeafSlotPoints(layoutGraph, coords, bondLength, skipLeafAtomId = null) {
+  if (!layoutGraph || !(bondLength > 0)) {
+    return [];
+  }
+
+  const slotPoints = [];
+  for (const [anchorAtomId, anchorPosition] of coords) {
+    if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0) {
+      continue;
+    }
+    const leafAtomIds = terminalRingLeafIds(layoutGraph, anchorAtomId, skipLeafAtomId);
+    if (leafAtomIds.length === 0) {
+      continue;
+    }
+    const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null);
+    for (const outwardAngle of outwardAngles) {
+      for (const leafAtomId of leafAtomIds) {
+        if (!coords.has(leafAtomId)) {
+          continue;
+        }
+        slotPoints.push(add(anchorPosition, fromAngle(outwardAngle, bondLength)));
+      }
+    }
+  }
+  return slotPoints;
+}
+
+/**
+ * Returns whether a pending ring root has enough local topology to preview its
+ * first ring-neighbor positions.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} ringRootAtomId - Pending ring-root atom ID.
+ * @returns {boolean} True when the ring root can be previewed.
+ */
+function ringRootHasPreviewableNeighbors(layoutGraph, ringRootAtomId) {
+  const ring = (layoutGraph?.atomToRings.get(ringRootAtomId) ?? [])[0];
+  if (!ring || !supportsExteriorBranchSpreadRingSize(ring.atomIds?.length ?? 0)) {
+    return false;
+  }
+  let ringNeighborCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(ringRootAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || !bond.inRing) {
+      continue;
+    }
+    const neighborAtomId = bond.a === ringRootAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (neighborAtom && neighborAtom.element !== 'H') {
+      ringNeighborCount++;
+    }
+  }
+  return ringNeighborCount >= 2;
+}
+
+/**
+ * Projects terminal hetero-leaf slots on the first neighbors of a future ring.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {{x: number, y: number}} ringRootPosition - Previewed ring-root position.
+ * @param {number} rootParentAngle - Angle from the future root back to its parent.
+ * @param {number} bondLength - Target bond length.
+ * @param {string} ringRootAtomId - Pending ring-root atom ID.
+ * @returns {Array<{x: number, y: number}>} Future terminal leaf slot points.
+ */
+function futureRingTerminalLeafSlotPoints(layoutGraph, ringRootPosition, rootParentAngle, bondLength, ringRootAtomId) {
+  const ring = (layoutGraph?.atomToRings.get(ringRootAtomId) ?? [])[0];
+  const ringAtomIds = ring?.atomIds ?? [];
+  const ringRootIndex = ringAtomIds.indexOf(ringRootAtomId);
+  if (!ring || ringRootIndex < 0 || !supportsExteriorBranchSpreadRingSize(ringAtomIds.length)) {
+    return [];
+  }
+
+  const previousRingNeighborId = ringAtomIds[(ringRootIndex - 1 + ringAtomIds.length) % ringAtomIds.length];
+  const nextRingNeighborId = ringAtomIds[(ringRootIndex + 1) % ringAtomIds.length];
+  const firstRingNeighborPosition = add(ringRootPosition, fromAngle(rootParentAngle + (2 * Math.PI) / 3, bondLength));
+  const secondRingNeighborPosition = add(ringRootPosition, fromAngle(rootParentAngle - (2 * Math.PI) / 3, bondLength));
+  const descriptors = [
+    {
+      anchorAtomId: previousRingNeighborId,
+      anchorPosition: firstRingNeighborPosition,
+      leafAngle: rootParentAngle + Math.PI / 3
+    },
+    {
+      anchorAtomId: nextRingNeighborId,
+      anchorPosition: secondRingNeighborPosition,
+      leafAngle: rootParentAngle - Math.PI / 3
+    }
+  ];
+
+  const slotPoints = [];
+  for (const descriptor of descriptors) {
+    for (const leafAtomId of terminalRingLeafIds(layoutGraph, descriptor.anchorAtomId, null)) {
+      const leafAtom = layoutGraph.atoms.get(leafAtomId);
+      if (!leafAtom || leafAtom.visible === false) {
+        continue;
+      }
+      slotPoints.push(add(descriptor.anchorPosition, fromAngle(descriptor.leafAngle, bondLength)));
+    }
+  }
+  return slotPoints;
+}
+
+/**
+ * Previews exact terminal hetero-leaf slots for ring roots that are attached
+ * to already placed atoms but have not been placed yet. This gives flexible
+ * acyclic continuations a chance to choose the open mirror slot before a later
+ * ring leaf is forced to bend.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Set<string>} atomIdsToPlace - Eligible atom IDs in the current placement slice.
+ * @param {number} bondLength - Target bond length.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} branchConstraints - Optional branch constraints.
+ * @returns {Array<{x: number, y: number}>} Future terminal ring-leaf slot points.
+ */
+function futureTerminalRingLeafSlotPoints(adjacency, layoutGraph, coords, atomIdsToPlace, bondLength, branchConstraints) {
+  if (!layoutGraph || !(bondLength > 0)) {
+    return [];
+  }
+
+  const slotPoints = [];
+  const seenRingRoots = new Set();
+  for (const [anchorAtomId, anchorPosition] of coords) {
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+        continue;
+      }
+      const ringRootAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      if (
+        coords.has(ringRootAtomId)
+        || seenRingRoots.has(ringRootAtomId)
+        || !ringRootHasPreviewableNeighbors(layoutGraph, ringRootAtomId)
+      ) {
+        continue;
+      }
+      seenRingRoots.add(ringRootAtomId);
+      const attachmentAngle = chooseAttachmentAngle(
+        adjacency,
+        coords,
+        anchorAtomId,
+        atomIdsToPlace,
+        null,
+        layoutGraph,
+        ringRootAtomId,
+        branchConstraints
+      );
+      const ringRootPosition = add(anchorPosition, fromAngle(attachmentAngle, bondLength));
+      slotPoints.push(
+        ...futureRingTerminalLeafSlotPoints(
+          layoutGraph,
+          ringRootPosition,
+          attachmentAngle + Math.PI,
+          bondLength,
+          ringRootAtomId
+        )
+      );
+    }
+  }
+  return slotPoints;
+}
+
 function placeNeighborSequence(
   adjacency,
   canonicalAtomRank,
@@ -415,6 +627,15 @@ function placeNeighborSequence(
       || shouldForceExactVisibleTrigonalAngle
       || shouldForceExactProjectedTetrahedralAngle
       || isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, childAtomId);
+    const shouldAvoidTerminalRingLeafSlots =
+      shouldForceExactSimpleAcyclicAngle
+      && (layoutGraph?.atomToRings.get(childAtomId)?.length ?? 0) === 0;
+    const exactPreferredAvoidPoints = shouldAvoidTerminalRingLeafSlots && constrainedPreferredAngles.length > 1
+      ? [
+          ...exactTerminalRingLeafSlotPoints(layoutGraph, coords, bondLength, childAtomId),
+          ...futureTerminalRingLeafSlotPoints(adjacency, layoutGraph, coords, atomIdsToPlace, bondLength, branchConstraints)
+        ]
+      : [];
     const exactPreferredAngle =
       (
         (shouldHonorPreferredAngle && isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId))
@@ -435,7 +656,10 @@ function placeNeighborSequence(
             placementState,
             ringPolygons,
             atomGrid,
-            shouldForceExactOmittedHydrogenTrigonalAngle ? { clearanceFloorFactor: 0.5 } : {}
+            {
+              ...(shouldForceExactOmittedHydrogenTrigonalAngle ? { clearanceFloorFactor: 0.5 } : {}),
+              avoidPoints: exactPreferredAvoidPoints
+            }
           )
         : null;
     const nearPreferredRescueAngle =

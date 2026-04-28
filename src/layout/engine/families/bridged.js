@@ -41,6 +41,8 @@ const AROMATIC_BRIDGED_REGULARIZATION_BLEND_FACTORS = Object.freeze([
 const FUSED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS = Object.freeze([1, -1]);
 const FUSED_CYCLOHEXANE_BRANCH_SLOT_BLOCKER_FACTOR = 0.65;
 const FUSED_CYCLOHEXANE_BRANCH_PREVIEW_OVERLAP_FACTOR = 0.55;
+const SATURATED_BRIDGED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS = Object.freeze([1, -1]);
+const SATURATED_BRIDGED_CYCLOHEXANE_MIN_SHARED_ATOMS = 3;
 
 /**
  * Returns tuned KK options for small unmatched bridged systems.
@@ -993,6 +995,54 @@ function fusedCyclohexaneShapeScore(layoutGraph, atomIds, pair, coords, bondLeng
     : maxBondDeviation * 100000 + maxAngleDeviation * 1000 + branchSlotBlockers * 10 + branchPreviewPenalty * 0.01;
 }
 
+/**
+ * Scores one ring against regular-polygon bond lengths and internal angles.
+ * @param {object} ring - Ring descriptor.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{maxBondDeviation: number, maxAngleDeviation: number, totalScore: number}|null} Regularity score, or null for incomplete coordinates.
+ */
+function regularRingShapeScore(ring, coords, bondLength) {
+  if (!ring || ring.atomIds.length < 3) {
+    return null;
+  }
+  const targetAngle = Math.PI - (2 * Math.PI) / ring.atomIds.length;
+  let maxBondDeviation = 0;
+  let maxAngleDeviation = 0;
+  let totalBondDeviation = 0;
+  let totalAngleDeviation = 0;
+
+  for (let index = 0; index < ring.atomIds.length; index++) {
+    const atomId = ring.atomIds[index];
+    const previousAtomId = ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length];
+    const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+    const atomPosition = coords.get(atomId);
+    const previousPosition = coords.get(previousAtomId);
+    const nextPosition = coords.get(nextAtomId);
+    if (!atomPosition || !previousPosition || !nextPosition) {
+      return null;
+    }
+
+    const bondDeviation = Math.abs(Math.hypot(nextPosition.x - atomPosition.x, nextPosition.y - atomPosition.y) - bondLength);
+    const angleDeviation = Math.abs(
+      angularDifference(
+        angleOf(sub(previousPosition, atomPosition)),
+        angleOf(sub(nextPosition, atomPosition))
+      ) - targetAngle
+    );
+    maxBondDeviation = Math.max(maxBondDeviation, bondDeviation);
+    maxAngleDeviation = Math.max(maxAngleDeviation, angleDeviation);
+    totalBondDeviation += bondDeviation;
+    totalAngleDeviation += angleDeviation;
+  }
+
+  return {
+    maxBondDeviation,
+    maxAngleDeviation,
+    totalScore: maxBondDeviation * 100000 + maxAngleDeviation * 1000 + totalBondDeviation + totalAngleDeviation
+  };
+}
+
 function shouldAcceptFusedCyclohexaneCoords(candidateAudit, incumbentAudit, candidateScore, incumbentScore) {
   if (!candidateAudit || !incumbentAudit || candidateScore == null || incumbentScore == null) {
     return false;
@@ -1013,6 +1063,176 @@ function shouldAcceptFusedCyclohexaneCoords(candidateAudit, incumbentAudit, cand
     return true;
   }
   return false;
+}
+
+/**
+ * Returns compact saturated six-rings that are acting as a core for another
+ * bridged ring rather than an ordinary fused edge.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @returns {object[]} Saturated six-ring core candidates.
+ */
+function saturatedBridgedCyclohexaneCoreRings(rings) {
+  return rings.filter(ring => {
+    if (ring.aromatic || ring.atomIds.length !== 6) {
+      return false;
+    }
+    return rings.some(bridgeRing => (
+      bridgeRing !== ring
+      && !bridgeRing.aromatic
+      && sharedRingAtomIds(ring, bridgeRing).length >= SATURATED_BRIDGED_CYCLOHEXANE_MIN_SHARED_ATOMS
+    ));
+  });
+}
+
+/**
+ * Adds exact circular bridge-run targets for non-core atoms in rings that share
+ * three or more atoms with the saturated six-ring core.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {object} coreRing - Six-member saturated core ring.
+ * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate coordinates to update.
+ * @param {number} bondLength - Target bond length.
+ * @param {number} heightFactor - Signed bridge arc height selector.
+ * @returns {boolean} True when at least one bridge run was placed.
+ */
+function addSaturatedBridgePathTargets(layoutGraph, rings, coreRing, candidateCoords, bondLength, heightFactor) {
+  const coreAtomIds = new Set(coreRing.atomIds);
+  let changed = false;
+
+  for (const bridgeRing of rings) {
+    if (bridgeRing === coreRing || bridgeRing.aromatic) {
+      continue;
+    }
+    const sharedAtomIds = bridgeRing.atomIds.filter(atomId => coreAtomIds.has(atomId));
+    if (sharedAtomIds.length < SATURATED_BRIDGED_CYCLOHEXANE_MIN_SHARED_ATOMS) {
+      continue;
+    }
+    const runs = cyclicExternalRuns(bridgeRing, coreAtomIds).filter(run => run.internalAtomIds.length > 0);
+    if (runs.length === 0) {
+      continue;
+    }
+    for (const run of runs) {
+      const avoidancePoint = bridgeRunAvoidancePoint(coreRing, bridgeRing, run, candidateCoords);
+      const targets = sineBridgePathTargets(candidateCoords, run, avoidancePoint, bondLength, heightFactor);
+      if (!targets) {
+        continue;
+      }
+      for (const [atomId, position] of targets) {
+        if (!layoutGraph.fixedCoords.has(atomId)) {
+          candidateCoords.set(atomId, position);
+          changed = true;
+        }
+      }
+    }
+  }
+
+  return changed;
+}
+
+/**
+ * Scores a saturated bridged-core candidate, prioritizing the six-member core
+ * while still penalizing branch-preview collisions around it.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {object} coreRing - Six-member saturated core ring.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {number|null} Candidate score, or null for incomplete coordinates.
+ */
+function saturatedBridgedCyclohexaneScore(layoutGraph, atomIds, coreRing, coords, bondLength) {
+  const ringScore = regularRingShapeScore(coreRing, coords, bondLength);
+  if (!ringScore) {
+    return null;
+  }
+  return (
+    ringScore.totalScore
+    + measureFusedCyclohexaneBranchSlotBlockers({ cyclohexaneRing: coreRing }, coords, bondLength) * 10
+    + fusedCyclohexaneBranchPreviewPenalty(layoutGraph, atomIds, coords, bondLength) * 0.01
+  );
+}
+
+/**
+ * Returns whether an exact saturated-bridged core candidate is a safer shape
+ * than the incumbent bridged fallback.
+ * @param {object|null} candidateAudit - Candidate audit summary.
+ * @param {object|null} incumbentAudit - Incumbent audit summary.
+ * @param {number|null} candidateScore - Candidate shape score.
+ * @param {number|null} incumbentScore - Incumbent shape score.
+ * @returns {boolean} True when the candidate should replace the incumbent.
+ */
+function shouldAcceptSaturatedBridgedCyclohexaneCoords(candidateAudit, incumbentAudit, candidateScore, incumbentScore) {
+  if (!candidateAudit || !incumbentAudit || candidateScore == null || incumbentScore == null) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if (candidateAudit.ok === true && incumbentAudit.ok !== true) {
+    return true;
+  }
+  if (candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount) {
+    return true;
+  }
+  return candidateScore < incumbentScore - 1e-9;
+}
+
+/**
+ * Rebuilds compact fully saturated bridged six-rings as exact regular rings
+ * and routes the non-core bridge run around that fixed core.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Regularized coordinates when accepted, otherwise the original map.
+ */
+export function regularizeSaturatedBridgedCyclohexaneCores(layoutGraph, rings, atomIds, coords, bondLength) {
+  if (rings.some(ring => ring.aromatic)) {
+    return coords;
+  }
+  const coreRings = saturatedBridgedCyclohexaneCoreRings(rings);
+  if (coreRings.length === 0 || containsMetalAtom(layoutGraph, atomIds)) {
+    return coords;
+  }
+
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+  let bestScore = Math.min(
+    ...coreRings
+      .map(coreRing => saturatedBridgedCyclohexaneScore(layoutGraph, atomIds, coreRing, coords, bondLength))
+      .filter(score => score != null)
+  );
+  if (!bestAudit || !Number.isFinite(bestScore)) {
+    return coords;
+  }
+
+  for (const coreRing of coreRings) {
+    const coreTargets = fitRegularRingTargets(coreRing, coords, bondLength);
+    if (!coreTargets) {
+      continue;
+    }
+    for (const heightFactor of SATURATED_BRIDGED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS) {
+      const candidateCoords = cloneCoords(coords);
+      for (const [atomId, position] of coreTargets) {
+        if (!layoutGraph.fixedCoords.has(atomId)) {
+          candidateCoords.set(atomId, position);
+        }
+      }
+      addSaturatedBridgePathTargets(layoutGraph, rings, coreRing, candidateCoords, bondLength, heightFactor);
+      const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+      const candidateScore = saturatedBridgedCyclohexaneScore(layoutGraph, atomIds, coreRing, candidateCoords, bondLength);
+      if (shouldAcceptSaturatedBridgedCyclohexaneCoords(candidateAudit, bestAudit, candidateScore, bestScore)) {
+        bestCoords = candidateCoords;
+        bestAudit = candidateAudit;
+        bestScore = candidateScore;
+      }
+    }
+  }
+
+  return bestCoords;
 }
 
 /**
@@ -1264,10 +1484,11 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
       bondLength
     );
     const refinedAudit = auditBridgedPlacementCandidate(options.layoutGraph, atomIds, refinedSelectedCoords, bondLength);
-    if (compareBridgedProjectionAudits(refinedAudit, selectedAudit) < 0) {
+  if (compareBridgedProjectionAudits(refinedAudit, selectedAudit) < 0) {
       selectedCoords = refinedSelectedCoords;
     }
   }
+  selectedCoords = regularizeSaturatedBridgedCyclohexaneCores(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = regularizeFusedAromaticCyclohexaneCores(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = regularizeAromaticBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
 

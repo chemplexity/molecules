@@ -2,8 +2,10 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
+import { generateCoords } from '../../../../src/layout/engine/api.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { layoutOrganometallicFamily } from '../../../../src/layout/engine/families/organometallic.js';
+import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import {
   makeBisLigatedOrganometallic,
   makeFourCoordinateNickelComplex,
@@ -15,6 +17,21 @@ import {
   makeSquarePlanarPlatinumComplex,
   makeTrigonalPlanarCopperComplex
 } from '../support/molecules.js';
+
+/**
+ * Returns the smaller angle at a center atom between two neighbors.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Center atom ID.
+ * @param {string} firstAtomId - First neighbor atom ID.
+ * @param {string} secondAtomId - Second neighbor atom ID.
+ * @returns {number} Smaller bond angle in radians.
+ */
+function bondAngleAt(coords, centerAtomId, firstAtomId, secondAtomId) {
+  return angularDifference(
+    angleOf(sub(coords.get(firstAtomId), coords.get(centerAtomId))),
+    angleOf(sub(coords.get(secondAtomId), coords.get(centerAtomId)))
+  );
+}
 
 describe('layout/engine/families/organometallic', () => {
   it('lays out a simple metal-ligand fragment through the ligand-first path', () => {
@@ -325,5 +342,41 @@ describe('layout/engine/families/organometallic', () => {
     assert.ok(audit.severeOverlapCount <= 6);
     assert.ok(audit.bondLengthFailureCount <= 2);
     assert.ok(audit.maxBondLengthDeviation < 0.7);
+  });
+
+  it('places terminal metal ligands on the exact trigonal slot of unsaturated organic anchors', () => {
+    const smiles = 'CC1=CC=C(C2CCC(CC2)C2CCC(CC=C[Re])CC2)C(F)=C1F';
+    const visibleHydrogenResult = generateCoords(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const hiddenHydrogenMolecule = parseSMILES(smiles);
+    hiddenHydrogenMolecule.hideHydrogens();
+    const hiddenHydrogenResult = generateCoords(hiddenHydrogenMolecule, {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    for (const [label, result] of [
+      ['visible-H layout', visibleHydrogenResult],
+      ['hidden-H app layout', hiddenHydrogenResult]
+    ]) {
+      assert.equal(result.metadata.primaryFamily, 'organometallic');
+      assert.equal(result.metadata.audit.ok, true);
+      assert.ok(
+        Math.abs(bondAngleAt(result.coords, 'C18', 'C17', 'Re19') - (2 * Math.PI) / 3) < 1e-6,
+        `expected ${label} C17-C18-Re19 to stay at 120 degrees`
+      );
+      assert.ok(
+        Math.abs(distance(result.coords.get('C18'), result.coords.get('Re19')) - result.layoutGraph.options.bondLength) < 1e-6,
+        `expected ${label} Re19-C18 bond length to stay normalized`
+      );
+      if (result.coords.has('H50')) {
+        assert.ok(
+          Math.abs(bondAngleAt(result.coords, 'C18', 'C17', 'H50') - (2 * Math.PI) / 3) < 1e-6,
+          `expected ${label} C17-C18-H50 to share the companion trigonal slot`
+        );
+      }
+    }
   });
 });

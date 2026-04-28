@@ -80,13 +80,19 @@ export function shouldPreferFusedMixedOverlapCleanupStage(familySummary, candida
 }
 
 /**
- * Allows a stage with fewer severe overlaps to tolerate a small inward-readability regression.
+ * Allows a stage with fewer severe overlaps to tolerate a small ring-substituent
+ * readability regression. A real atom-on-atom clash is visually worse than a
+ * single outward-axis presentation miss, and later presentation cleanup still
+ * gets a chance to polish the accepted non-overlapping geometry.
  * @param {object} candidate - Candidate stage result.
  * @param {object|null} incumbent - Current incumbent stage result.
  * @returns {boolean} True when the overlap win should override readability tie-breaks.
  */
-export function shouldPreferOverlapWinOverAddedInwardReadability(candidate, incumbent) {
+export function shouldPreferOverlapWinOverMinorReadabilityRegression(candidate, incumbent) {
   if (!incumbent || candidate.audit.severeOverlapCount >= incumbent.audit.severeOverlapCount) {
+    return false;
+  }
+  if (candidate.audit.severeOverlapCount !== 0) {
     return false;
   }
   if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
@@ -95,13 +101,14 @@ export function shouldPreferOverlapWinOverAddedInwardReadability(candidate, incu
   if (candidate.audit.maxBondLengthDeviation > incumbent.audit.maxBondLengthDeviation + 1e-9) {
     return false;
   }
-  if (candidate.audit.outwardAxisRingSubstituentFailureCount !== incumbent.audit.outwardAxisRingSubstituentFailureCount) {
-    return false;
-  }
   if (candidate.audit.labelOverlapCount > incumbent.audit.labelOverlapCount) {
     return false;
   }
-  return candidate.audit.inwardRingSubstituentCount <= incumbent.audit.inwardRingSubstituentCount + 1;
+  return (
+    candidate.audit.ringSubstituentReadabilityFailureCount <= incumbent.audit.ringSubstituentReadabilityFailureCount + 1
+    && candidate.audit.inwardRingSubstituentCount <= incumbent.audit.inwardRingSubstituentCount + 1
+    && candidate.audit.outwardAxisRingSubstituentFailureCount <= incumbent.audit.outwardAxisRingSubstituentFailureCount + 1
+  );
 }
 
 /**
@@ -139,7 +146,7 @@ export function isPreferredProtectedCleanupStage(familySummary, placement, candi
   if (shouldPreferFusedMixedOverlapCleanupStage(familySummary, candidate, incumbent)) {
     return true;
   }
-  if (shouldPreferOverlapWinOverAddedInwardReadability(candidate, incumbent)) {
+  if (shouldPreferOverlapWinOverMinorReadabilityRegression(candidate, incumbent)) {
     return true;
   }
   if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
@@ -209,7 +216,7 @@ export function isPreferredCleanupGeometryStage(candidate, incumbent) {
   if (Math.abs(candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation) > 1e-9) {
     return candidate.audit.maxBondLengthDeviation < incumbent.audit.maxBondLengthDeviation;
   }
-  if (shouldPreferOverlapWinOverAddedInwardReadability(candidate, incumbent)) {
+  if (shouldPreferOverlapWinOverMinorReadabilityRegression(candidate, incumbent)) {
     return true;
   }
   if (candidate.audit.ringSubstituentReadabilityFailureCount !== incumbent.audit.ringSubstituentReadabilityFailureCount) {

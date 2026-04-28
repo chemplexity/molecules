@@ -37,4 +37,11 @@ describe('atomTooltipHtml', () => {
     assert.match(html, /Bonds/);
     assert.doesNotMatch(html, /Electrons/);
   });
+
+  it('uses dark text for hydrogen tooltip headers', () => {
+    const atom = new Atom('h0', 'H');
+    const html = atomTooltipHtml(atom, null, null);
+    assert.match(html, /class="tt-head" style="color:#111111"/);
+    assert.doesNotMatch(html, /color:#FFFFFF/);
+  });
 });

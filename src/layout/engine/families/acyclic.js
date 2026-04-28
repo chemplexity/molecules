@@ -258,6 +258,39 @@ function isTrigonalBackboneCentre(layoutGraph, previousAtomId, atomId, nextAtomI
 }
 
 /**
+ * Returns whether a saturated carbon backbone center should keep an exact
+ * zigzag bend after neighboring conjugated centers have been normalized.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string|null|undefined} previousAtomId - Previous backbone atom ID.
+ * @param {string|null|undefined} atomId - Center backbone atom ID.
+ * @param {string|null|undefined} nextAtomId - Next backbone atom ID.
+ * @returns {boolean} True when the center should be restored to a 120-degree zigzag.
+ */
+function isSaturatedBackboneZigzagCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
+  if (!layoutGraph || previousAtomId == null || atomId == null || nextAtomId == null) {
+    return false;
+  }
+  if (isLinearCentre(layoutGraph, previousAtomId, atomId, nextAtomId) || hasSp2Bond(layoutGraph, atomId)) {
+    return false;
+  }
+
+  const atom = layoutGraph.atoms.get(atomId);
+  if (
+    !atom
+    || atom.element !== 'C'
+    || atom.aromatic
+    || atom.heavyDegree !== 2
+    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  return bondOrderBetween(layoutGraph, previousAtomId, atomId) === 1
+    && bondOrderBetween(layoutGraph, atomId, nextAtomId) === 1
+    && (hasSp2Bond(layoutGraph, previousAtomId) || hasSp2Bond(layoutGraph, nextAtomId));
+}
+
+/**
  * Rotates downstream acyclic backbone suffixes so strict trigonal centers land
  * at ideal 120-degree bond angles while preserving the current turn sign.
  * @param {object|null} layoutGraph - Layout graph shell.
@@ -335,6 +368,103 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
           centerPosition,
           normalizeSignedAngle(targetAngle - currentRootAngle)
         );
+      }
+
+      const candidate = {
+        coords: candidateCoords,
+        turnSign: candidateTurnSign,
+        matchedStereoCount: countMatchedStereo(layoutGraph, candidateCoords, stereoBonds),
+        backboneSpan: measureBackboneSpan(candidateCoords, backbone),
+        rotationMagnitude: Math.abs(rotationAngle)
+      };
+
+      if (
+        !bestCandidate ||
+        candidate.matchedStereoCount > bestCandidate.matchedStereoCount ||
+        (candidate.matchedStereoCount === bestCandidate.matchedStereoCount && candidate.backboneSpan > bestCandidate.backboneSpan + 1e-6) ||
+        (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
+          Math.abs(candidate.backboneSpan - bestCandidate.backboneSpan) <= 1e-6 &&
+          candidate.rotationMagnitude < bestCandidate.rotationMagnitude - 1e-6)
+      ) {
+        bestCandidate = candidate;
+      }
+    }
+
+    if (!bestCandidate) {
+      continue;
+    }
+    coords.clear();
+    for (const [atomId, position] of bestCandidate.coords) {
+      coords.set(atomId, position);
+    }
+    previousTurnSign = bestCandidate.turnSign;
+  }
+
+  return coords;
+}
+
+/**
+ * Rotates downstream acyclic backbone suffixes so saturated two-heavy carbon
+ * centers next to conjugated segments keep normal 120-degree zigzag bends.
+ * Trigonal normalization can otherwise leave the adjacent methylene at a
+ * visually over-straight 150-degree angle while preserving all bond lengths.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string[]} backbone - Backbone atom IDs in placement order.
+ * @returns {Map<string, {x: number, y: number}>} Coordinate map with normalized saturated bends.
+ */
+function normalizeBackboneSaturatedZigzagAngles(layoutGraph, coords, backbone) {
+  if (!layoutGraph || backbone.length < 3) {
+    return coords;
+  }
+
+  const stereoBonds = acyclicStereoBonds(layoutGraph);
+  const idealBackboneSpan = Math.max(0, (backbone.length - 1) * layoutGraph.options.bondLength);
+  if (stereoBonds.length >= 3 && idealBackboneSpan > 0 && measureBackboneSpan(coords, backbone) / (idealBackboneSpan * idealBackboneSpan) >= 0.7) {
+    return coords;
+  }
+
+  let previousTurnSign = 0;
+  for (let index = 1; index < backbone.length - 1; index++) {
+    const previousAtomId = backbone[index - 1];
+    const centerAtomId = backbone[index];
+    const nextAtomId = backbone[index + 1];
+    if (!isSaturatedBackboneZigzagCentre(layoutGraph, previousAtomId, centerAtomId, nextAtomId)) {
+      continue;
+    }
+
+    const centerPosition = coords.get(centerAtomId);
+    const previousPosition = coords.get(previousAtomId);
+    const nextPosition = coords.get(nextAtomId);
+    if (!centerPosition || !previousPosition || !nextPosition) {
+      continue;
+    }
+
+    const previousDirection = Math.atan2(previousPosition.y - centerPosition.y, previousPosition.x - centerPosition.x);
+    const nextDirection = Math.atan2(nextPosition.y - centerPosition.y, nextPosition.x - centerPosition.x);
+    const currentTurn = normalizeSignedAngle(nextDirection - previousDirection);
+    if (Math.abs(Math.abs(currentTurn) - TRIGONAL_TARGET_ANGLE) <= 1e-6) {
+      previousTurnSign = Math.sign(currentTurn) || previousTurnSign;
+      continue;
+    }
+
+    const currentTurnSign = Math.sign(currentTurn) || previousTurnSign || (index % 2 === 1 ? -1 : 1);
+    const movedAtomIds = collectSideAtomIds(layoutGraph, nextAtomId, centerAtomId);
+    const candidateTurnSigns = stereoBonds.length > 0 ? [currentTurnSign, -currentTurnSign] : [currentTurnSign];
+    let bestCandidate = null;
+
+    for (const candidateTurnSign of candidateTurnSigns) {
+      const targetTurn = candidateTurnSign * TRIGONAL_TARGET_ANGLE;
+      const rotationAngle = targetTurn - currentTurn;
+      const candidateCoords = cloneCoords(coords);
+      if (Math.abs(rotationAngle) > 1e-6) {
+        for (const atomId of movedAtomIds) {
+          const position = candidateCoords.get(atomId);
+          if (!position) {
+            continue;
+          }
+          candidateCoords.set(atomId, add(centerPosition, rotate(sub(position, centerPosition), rotationAngle)));
+        }
       }
 
       const candidate = {
@@ -1028,7 +1158,8 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
 
   const stereoEnforced = enforceAcyclicEZStereo(layoutGraph, coords, { bondLength }).coords;
   const trigonalNormalized = normalizeBackboneTrigonalAngles(layoutGraph, stereoEnforced, backbone);
-  const visibleRootsRealigned = realignVisibleTrigonalSingleBondRoots(layoutGraph, trigonalNormalized, backbone);
+  const saturatedZigzagNormalized = normalizeBackboneSaturatedZigzagAngles(layoutGraph, trigonalNormalized, backbone);
+  const visibleRootsRealigned = realignVisibleTrigonalSingleBondRoots(layoutGraph, saturatedZigzagNormalized, backbone);
   const nitrogenRootsRealigned = realignConjugatedNitrogenSingleBondRoots(layoutGraph, visibleRootsRealigned, backbone);
   const linearRootsRealigned = realignTrigonalLinearSubstituentRoots(layoutGraph, nitrogenRootsRealigned, backbone);
   return realignTerminalMultipleBondLeaves(layoutGraph, linearRootsRealigned, bondLength);

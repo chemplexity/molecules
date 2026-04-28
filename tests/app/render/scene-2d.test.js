@@ -510,6 +510,30 @@ describe('create2DSceneRenderer', () => {
     assert.ok(Math.hypot(hydrogenPoint.x - parentPoint.x, hydrogenPoint.y - parentPoint.y) > 1e-6, 'expected projected hydrogen SVG point to differ from the parent atom point');
   });
 
+  it('projects sharp bridged-ring stereo hydrogens into the open exterior sector', () => {
+    const { renderer } = makeRenderer();
+    const mol = parseSMILES('C[C@@H]1[C@@H]2Cc3ccc(O)cc3[C@@]1(C)CCN2CC=C(C)C');
+    const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    applyCoords(mol, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+
+    renderer.render2d(mol, { preserveGeometry: true });
+
+    const hydrogen = mol.atoms.get('H5');
+    assert.ok(hydrogen, 'expected the reported stereo hydrogen to exist');
+    const [parent] = hydrogen.getNeighbors(mol);
+    assert.ok(parent, 'expected the reported stereo hydrogen to have a parent atom');
+
+    const hydrogenPoint = renderer.toSVGPt(hydrogen);
+    const parentPoint = renderer.toSVGPt(parent);
+    const projectedAngle = (Math.atan2(parentPoint.y - hydrogenPoint.y, hydrogenPoint.x - parentPoint.x) * 180) / Math.PI;
+
+    assert.ok(projectedAngle > 40 && projectedAngle < 65, `expected H5 to project into the open upper-right sector, got ${projectedAngle.toFixed(1)} degrees`);
+  });
+
   it('pins visible stereo hydrogens to their rendered position before neighboring drags', () => {
     const dragOptionsByAtomId = new Map();
     const { renderer } = makeRenderer({

@@ -2,6 +2,7 @@
 
 import { add, angleOf, distance, fromAngle, sub } from '../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
+import { ringEmbeddedBisOxoSpread } from '../geometry/ring-hypervalent.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { atomPairKey, SEVERE_OVERLAP_FACTOR } from '../constants.js';
@@ -179,6 +180,126 @@ function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
     return { kind: 'mono-oxo', singleNeighborIds, multipleNeighborIds };
   }
   return null;
+}
+
+/**
+ * Returns whether a bis-oxo hypervalent center is itself a ring atom whose two
+ * single-bond ligands are the adjacent ring atoms. These centers read better
+ * when the terminal oxo leaves share the ring exterior instead of forming the
+ * default orthogonal cross through the ring interior.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {object} descriptor - Hypervalent center descriptor.
+ * @returns {boolean} True when the center should use an exterior oxo V.
+ */
+function isRingEmbeddedBisOxoCenter(layoutGraph, centerAtomId, descriptor) {
+  if (
+    descriptor?.kind !== 'bis-oxo'
+    || descriptor.singleNeighborIds.length !== 2
+    || descriptor.multipleNeighborIds.length !== 2
+  ) {
+    return false;
+  }
+
+  const incidentRings = layoutGraph.atomToRings.get(centerAtomId) ?? [];
+  return incidentRings.some(ring =>
+    descriptor.singleNeighborIds.every(neighborAtomId => ring.atomIds.includes(neighborAtomId))
+  );
+}
+
+/**
+ * Assigns two terminal oxo ligands to a pair of target angles with the least
+ * angular movement from their current positions.
+ * @param {string[]} ligandAtomIds - Two terminal oxo ligand atom ids.
+ * @param {Map<string, number>} currentAngles - Current center-relative ligand angles.
+ * @param {number[]} targetAngles - Two candidate target angles.
+ * @returns {{cost: number, targetAngles: Map<string, number>}|null} Best pair assignment.
+ */
+function fitTwoLigandTargets(ligandAtomIds, currentAngles, targetAngles) {
+  if (ligandAtomIds.length !== 2 || targetAngles.length !== 2) {
+    return null;
+  }
+
+  const assignments = [
+    [
+      [ligandAtomIds[0], targetAngles[0]],
+      [ligandAtomIds[1], targetAngles[1]]
+    ],
+    [
+      [ligandAtomIds[0], targetAngles[1]],
+      [ligandAtomIds[1], targetAngles[0]]
+    ]
+  ];
+  let bestFit = null;
+  for (const assignment of assignments) {
+    let cost = 0;
+    const assignedTargets = new Map();
+    for (const [ligandAtomId, targetAngle] of assignment) {
+      cost += angularDistance(currentAngles.get(ligandAtomId), targetAngle) ** 2;
+      assignedTargets.set(ligandAtomId, targetAngle);
+    }
+    if (!bestFit || cost < bestFit.cost) {
+      bestFit = { cost, targetAngles: assignedTargets };
+    }
+  }
+  return bestFit;
+}
+
+/**
+ * Fits the terminal oxo ligands of a ring-embedded bis-oxo center to an
+ * exterior V centered on the local ring-outward direction.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {object} descriptor - Hypervalent center descriptor.
+ * @returns {{cost: number, targetAngles: Map<string, number>}|null} Exterior-V fit, or `null`.
+ */
+function fitRingEmbeddedBisOxoTargets(layoutGraph, coords, centerAtomId, descriptor) {
+  if (!isRingEmbeddedBisOxoCenter(layoutGraph, centerAtomId, descriptor)) {
+    return null;
+  }
+
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition) {
+    return null;
+  }
+
+  const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, centerAtomId, atomId => coords.get(atomId) ?? null);
+  if (outwardAngles.length === 0) {
+    return null;
+  }
+
+  const currentAngles = new Map(
+    descriptor.multipleNeighborIds.map(neighborAtomId => [
+      neighborAtomId,
+      angleOf(sub(coords.get(neighborAtomId), centerPosition))
+    ])
+  );
+  let bestFit = null;
+  const incidentRings = (layoutGraph.atomToRings.get(centerAtomId) ?? []).filter(ring =>
+    descriptor.singleNeighborIds.every(neighborAtomId => ring.atomIds.includes(neighborAtomId))
+  );
+  for (const outwardAngle of outwardAngles) {
+    for (const ring of incidentRings) {
+      const spread = ringEmbeddedBisOxoSpread(ring.atomIds.length);
+      const targetAngles = [
+        normalizeAngle(outwardAngle - spread / 2),
+        normalizeAngle(outwardAngle + spread / 2)
+      ];
+      const fit = fitTwoLigandTargets(descriptor.multipleNeighborIds, currentAngles, targetAngles);
+      if (fit && (!bestFit || fit.cost < bestFit.cost)) {
+        bestFit = fit;
+      }
+    }
+  }
+  if (!bestFit) {
+    const targetAngles = [
+      normalizeAngle(outwardAngles[0] - ringEmbeddedBisOxoSpread(3) / 2),
+      normalizeAngle(outwardAngles[0] + ringEmbeddedBisOxoSpread(3) / 2)
+    ];
+    bestFit = fitTwoLigandTargets(descriptor.multipleNeighborIds, currentAngles, targetAngles);
+  }
+  return bestFit;
 }
 
 /**
@@ -563,6 +684,12 @@ export function measureOrthogonalHypervalentDeviation(layoutGraph, coords, optio
       continue;
     }
     const centerPosition = coords.get(atomId);
+    const ringEmbeddedFit = fitRingEmbeddedBisOxoTargets(layoutGraph, coords, atomId, descriptor);
+    if (ringEmbeddedFit) {
+      totalDeviation += ringEmbeddedFit.cost;
+      continue;
+    }
+
     const currentAngles = new Map(
       [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds].map(neighborAtomId => [
         neighborAtomId,
@@ -596,6 +723,22 @@ export function hasHypervalentAngleTidyNeed(layoutGraph, coords, options = {}) {
     }
 
     const centerPosition = coords.get(centerAtomId);
+    const ringEmbeddedFit = fitRingEmbeddedBisOxoTargets(layoutGraph, coords, centerAtomId, descriptor);
+    if (ringEmbeddedFit && centerPosition) {
+      for (const neighborAtomId of descriptor.multipleNeighborIds) {
+        const targetAngle = ringEmbeddedFit.targetAngles.get(neighborAtomId);
+        if (targetAngle == null) {
+          continue;
+        }
+        const currentAngle = angleOf(sub(coords.get(neighborAtomId), centerPosition));
+        const ligandThreshold = hypervalentLigandAngleThreshold(layoutGraph, centerAtomId, neighborAtomId, angleThreshold);
+        if (angularDistance(currentAngle, targetAngle) > ligandThreshold) {
+          return true;
+        }
+      }
+      continue;
+    }
+
     const movableNeighborIds = new Set(
       [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds].filter(neighborAtomId => {
         const subtreeAtomIds = movableLigandSubtreeAtomIds(layoutGraph, centerAtomId, neighborAtomId, coords);
@@ -656,9 +799,42 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
         .filter(([, subtreeAtomIds]) => Array.isArray(subtreeAtomIds) && subtreeAtomIds.length > 0)
     );
     const movableNeighborIds = new Set(movableSubtreesByNeighborId.keys());
+    const centerPosition = coords.get(centerAtomId);
+    const ringEmbeddedFit = fitRingEmbeddedBisOxoTargets(layoutGraph, coords, centerAtomId, descriptor);
+
+    if (ringEmbeddedFit && centerPosition) {
+      for (const neighborAtomId of descriptor.multipleNeighborIds) {
+        const subtreeAtomIds = movableSubtreesByNeighborId.get(neighborAtomId);
+        const targetAngle = ringEmbeddedFit.targetAngles.get(neighborAtomId);
+        if (!subtreeAtomIds || targetAngle == null) {
+          continue;
+        }
+        const currentAngle = angleOf(sub(coords.get(neighborAtomId), centerPosition));
+        const ligandThreshold = hypervalentLigandAngleThreshold(layoutGraph, centerAtomId, neighborAtomId, ANGLE_THRESHOLD);
+        if (angularDistance(currentAngle, targetAngle) <= ligandThreshold) {
+          continue;
+        }
+        const rotation = Math.atan2(Math.sin(targetAngle - currentAngle), Math.cos(targetAngle - currentAngle));
+        for (const subtreeAtomId of subtreeAtomIds) {
+          const currentPosition = coords.get(subtreeAtomId);
+          if (!currentPosition) {
+            continue;
+          }
+          const offset = sub(currentPosition, centerPosition);
+          const radius = distance(centerPosition, currentPosition);
+          const absoluteAngle = angleOf(offset);
+          const targetSubtreeAngle = absoluteAngle + rotation;
+          const nextPosition = subtreeAtomId === neighborAtomId
+            ? compressedTerminalMultipleLigandPosition(layoutGraph, coords, centerAtomId, neighborAtomId, targetSubtreeAngle, radius)
+            : add(centerPosition, fromAngle(targetSubtreeAngle, radius));
+          coords.set(subtreeAtomId, nextPosition);
+        }
+        nudges++;
+      }
+      continue;
+    }
 
     if (movableSubtreesByNeighborId.size > 0) {
-      const centerPosition = coords.get(centerAtomId);
       const currentAngles = new Map(
         [...descriptor.singleNeighborIds, ...descriptor.multipleNeighborIds].map(neighborAtomId => [
           neighborAtomId,

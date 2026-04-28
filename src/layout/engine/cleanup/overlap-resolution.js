@@ -5,6 +5,7 @@ import { angleOf, angularDifference, centroid, sub, wrapAngle } from '../geometr
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { probeRigidRotation, rigidDescriptorKey, rotateRigidDescriptorPositions } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
+import { describeCrossLikeHypervalentCenter } from '../placement/branch-placement/angle-selection.js';
 import { ANGLE_EPSILON, IMPROVEMENT_EPSILON, NUMERIC_EPSILON, atomPairKey } from '../constants.js';
 
 const RIGID_SUBTREE_ROTATION_ANGLES = Object.freeze([
@@ -368,6 +369,17 @@ function isCompactHypervalentRigidDescriptor(layoutGraph, descriptor) {
   );
 }
 
+function isDirectCrossLikeHypervalentLigandDescriptor(layoutGraph, descriptor) {
+  const descriptorCenter = describeCrossLikeHypervalentCenter(layoutGraph, descriptor.anchorAtomId);
+  if (!descriptorCenter) {
+    return false;
+  }
+  return (
+    descriptorCenter.singleNeighborIds.includes(descriptor.rootAtomId)
+    || descriptorCenter.multipleNeighborIds.includes(descriptor.rootAtomId)
+  );
+}
+
 function isCompactFourCoordinateTerminalRigidDescriptor(layoutGraph, descriptor) {
   return isCompactFourCoordinateTerminalRigidSubtree(
     layoutGraph,
@@ -621,6 +633,19 @@ function divalentContinuationRootDeviation(layoutGraph, coords, descriptor, over
 
   const rootAngle = angleOf(sub(rootPosition, anchorPosition));
   return Math.min(...exactAngles.map(exactAngle => angularDifference(rootAngle, exactAngle)));
+}
+
+function directHypervalentLigandRootDeviation(coords, descriptor, targetRootAngle, overridePositions = null) {
+  if (!Number.isFinite(targetRootAngle)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const anchorPosition = overridePositions?.get(descriptor.anchorAtomId) ?? coords.get(descriptor.anchorAtomId);
+  const rootPosition = overridePositions?.get(descriptor.rootAtomId) ?? coords.get(descriptor.rootAtomId);
+  if (!anchorPosition || !rootPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return angularDifference(angleOf(sub(rootPosition, anchorPosition)), targetRootAngle);
 }
 
 function preferredExactRootDeviation(move) {
@@ -1199,7 +1224,10 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   };
   const currentRootAngle = Math.atan2(currentRootVector.y, currentRootVector.x);
   const subtreeIsSingleAtom = descriptor.subtreeAtomIds.length === 1;
-  const exactHypervalentDescriptor = isCompactHypervalentRigidDescriptor(layoutGraph, descriptor);
+  const directCrossLikeHypervalentLigandDescriptor = isDirectCrossLikeHypervalentLigandDescriptor(layoutGraph, descriptor);
+  const exactHypervalentDescriptor =
+    isCompactHypervalentRigidDescriptor(layoutGraph, descriptor)
+    || directCrossLikeHypervalentLigandDescriptor;
   const compactFourCoordinateDescriptor = isCompactFourCoordinateTerminalRigidDescriptor(layoutGraph, descriptor);
   const preservesMovingExactDivalentGeometry =
     descriptor.rootAtomId === movingAtomId
@@ -1215,7 +1243,10 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   const exactRingRootDescriptor = isCompactRingAnchoredRigidDescriptor(layoutGraph, descriptor);
   const exactTrigonalRootAngles = exactOmittedHydrogenTrigonalRootAngles(layoutGraph, coords, descriptor);
   const exactDivalentRootAngles = exactDivalentContinuationRootAngles(layoutGraph, coords, descriptor);
-  const exactPreferredRootAngles = mergeRigidCandidateAngles(exactTrigonalRootAngles, exactDivalentRootAngles);
+  const exactPreferredRootAngles = mergeRigidCandidateAngles(
+    mergeRigidCandidateAngles(exactTrigonalRootAngles, exactDivalentRootAngles),
+    directCrossLikeHypervalentLigandDescriptor ? [currentRootAngle] : []
+  );
   let bestMove = null;
 
   const scoreCandidatePositions = newPositions => {
@@ -1243,7 +1274,9 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
       ? omittedHydrogenTrigonalRootDeviation(layoutGraph, coords, descriptor, newPositions)
       : exactDivalentRootAngles.length > 0
         ? divalentContinuationRootDeviation(layoutGraph, coords, descriptor, newPositions)
-      : ringRootDeviation;
+        : directCrossLikeHypervalentLigandDescriptor
+          ? directHypervalentLigandRootDeviation(coords, descriptor, currentRootAngle, newPositions)
+          : ringRootDeviation;
     if (improvement <= IMPROVEMENT_EPSILON && subtreeIsSingleAtom && newOverlapCost <= baseOverlapCost + IMPROVEMENT_EPSILON) {
       const candidateLocalClearance = localNonbondedClearance(layoutGraph, coords, movingAtomId, movedAtomPosition, threshold * 2, atomGrid);
       if (candidateLocalClearance > baseLocalClearance + IMPROVEMENT_EPSILON) {

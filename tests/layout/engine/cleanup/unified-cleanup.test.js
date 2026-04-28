@@ -6,7 +6,9 @@ import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { findSevereOverlaps, measureLayoutCost } from '../../../../src/layout/engine/audit/invariants.js';
 import { runLocalCleanup } from '../../../../src/layout/engine/cleanup/local-rotation.js';
 import { resolveOverlaps } from '../../../../src/layout/engine/cleanup/overlap-resolution.js';
+import { collectCutSubtree } from '../../../../src/layout/engine/cleanup/subtree-utils.js';
 import { runUnifiedCleanup } from '../../../../src/layout/engine/cleanup/unified-cleanup.js';
+import { add, rotate, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { normalizeOptions } from '../../../../src/layout/engine/options.js';
 import { resolveProfile } from '../../../../src/layout/engine/profile.js';
@@ -32,6 +34,35 @@ function makeGeminalCyclohexaneClump() {
       ['C3', { x: 1.3, y: -0.25 }]
     ])
   };
+}
+
+/**
+ * Rotates one side of a cut bond while preserving all bond lengths on the moved side.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Source coordinates.
+ * @param {string} anchorAtomId - Fixed atom across the cut bond.
+ * @param {string} rootAtomId - Root atom on the moved side.
+ * @param {number} angle - Rotation angle in radians.
+ * @returns {Map<string, {x: number, y: number}>} Perturbed coordinates.
+ */
+function rotateCutSubtree(layoutGraph, coords, anchorAtomId, rootAtomId, angle) {
+  const anchorPosition = coords.get(anchorAtomId);
+  const rotatedCoords = new Map();
+  for (const [atomId, position] of coords) {
+    rotatedCoords.set(atomId, { x: position.x, y: position.y });
+  }
+  if (!anchorPosition) {
+    return rotatedCoords;
+  }
+
+  for (const atomId of collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId)) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    rotatedCoords.set(atomId, add(anchorPosition, rotate(sub(position, anchorPosition), angle)));
+  }
+  return rotatedCoords;
 }
 
 describe('layout/engine/cleanup/unified-cleanup', () => {
@@ -63,8 +94,9 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
     const graph = createLayoutGraph(parseSMILES(smiles), normalizeOptions({ suppressH: true }));
     const policy = resolvePolicy(resolveProfile(graph.options.profile), graph.traits);
     const placement = layoutSupportedComponents(graph, policy);
-    const beforeOverlapCount = findSevereOverlaps(graph, placement.coords, graph.options.bondLength).length;
-    const result = runUnifiedCleanup(graph, placement.coords, {
+    const crowdedCoords = rotateCutSubtree(graph, placement.coords, 'C20', 'O28', (2 * Math.PI) / 3);
+    const beforeOverlapCount = findSevereOverlaps(graph, crowdedCoords, graph.options.bondLength).length;
+    const result = runUnifiedCleanup(graph, crowdedCoords, {
       bondLength: graph.options.bondLength,
       maxPasses: graph.options.maxCleanupPasses
     });
@@ -73,6 +105,7 @@ describe('layout/engine/cleanup/unified-cleanup', () => {
       bondValidationClasses: placement.bondValidationClasses
     });
 
+    assert.ok(beforeOverlapCount > 0);
     assert.ok(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length <= beforeOverlapCount);
     assert.ok(result.overlapMoves > 0);
     assert.ok(result.passes >= result.overlapMoves);

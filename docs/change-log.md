@@ -1,7 +1,36 @@
 # Change Log
 
+## 2026-04-28
+
+- Restore saturated small-ring exterior branch fans after mixed linker placement adds the second exocyclic branch.
+- Treat branch-local cumulated double-bond centers as linear so terminal isocyanate leaves stay opposite their parent bond.
+- Probe both simple acyclic zigzag sides for direct-attached heteroaryl roots so imidazole N exits can stay exact without upstream clashes.
+- Prefer the smallest clash-clearing rotation for direct ligands on cross-like phosphine oxide centers so WebKit keeps the phosphorus presentation cross-like.
+- Swap aryl/oxo carbonyl siblings next to cross-like phosphine oxide centers when that clears mirrored aryl branch clashes without bending ring exits.
+- Prefer cleanup stages that clear severe WebKit branch overlaps over one minor ring-substituent presentation miss.
+- Keep direct-attached ring refinements from dragging mirrored parent-side subtrees off target bond lengths.
+- Keep sibling direct-attached aryl roots on saturated-ring exterior slots.
+- Place ring-embedded sulfone oxo branches before macrocycle branch budgets can clip their exterior V slots.
+- Reserve exact ortho halogen slots while growing diaryl alcohol side chains.
+- Reserve projected slots for alcohol-bearing diaryl centers so deferred aryl roots avoid alkyl-chain overlaps.
+- Relieve compact CF3 tripod leaves so direct-attached aryl roots stay exact beside crowded saturated ring exits.
+- Snap terminal one-coordinate metal ligands onto trigonal organic anchor slots so vinyl-metal exits keep exact 120-degree angles.
+- Re-snap hetero ring-anchor substituent subtrees after mixed ring-core shifts so WebKit keeps fused imide N exits at exact 120-degree spreads.
+- Let direct-attached aryl roots make a small clearance rotation so saturated parent exterior slots stay exact beside CF3 tripods.
+- Keep pinched bridged-ring stereo hydrogens out of sharp ring wedges and render hydrogen tooltips in dark text.
+- Run attached-ring touchup for near contacts between exact terminal hetero ring leaves and neighboring rings.
+- Keep diaryl bis-CF3 centers on projected quadrants while compressing terminal CF3 fans away from aryl overlaps.
+- Preserve exact omitted-H parent spreads while flipping downstream sibling subtrees away from direct-attached phenyl rings.
+- Let crowded direct-attached phenyl roots shift chiral omitted-H parent slots so the aromatic outward axis stays exact.
+
 ## 2026-04-27
 
+- Reserve projected side slots at saturated two-ring parents so terminal leaves stay orthogonal when a later attached ring arrives
+- Keep tert-butyl roots exact while straightening neighboring direct-attached ring roots and preserving saturated parent exterior slots
+- Preserve exact saturated six-ring geometry in compact bridged systems by rerouting shared bridge runs around the regular core
+- Preserve clean aryl carboxyl and direct-attached ring-root exits during attached-ring presentation fallback, using a longer compressed hydroxyl bond when that keeps the local carbonyl angle exact
+- Restore saturated methylene zigzag bends after acyclic alkene normalization
+- Keep displayed stereochemical hydrogens out of fused-ring interior sectors
 - Defer terminal carbon leaves on planar trigonal centers until pending ring neighbors attach so amide nitrogens keep exact 120-degree spreads
 - Generalize saturated-ring exterior branch fans beyond fixed ring-size cutoffs so grown piperidine variants keep ester and aryl exits apart
 - Preserve exact 120-degree aryl-ether oxygen continuations for alkyl chains off fused rings

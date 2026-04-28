@@ -7,6 +7,7 @@ import {
   synthesizeHydrogenPosition
 } from '../../../../src/layout/engine/stereo/wedge-geometry.js';
 import { pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.js';
+import { angleOf, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 
 describe('layout/engine/stereo/wedge-geometry', () => {
   it('synthesizes a hidden-hydrogen position opposite known substituents', () => {
@@ -59,6 +60,72 @@ describe('layout/engine/stereo/wedge-geometry', () => {
       ]),
       false
     );
+  });
+
+  it('keeps displayed stereo hydrogens in exterior side sectors for fused ring stereocenters', () => {
+    const c17Position = { x: 7.58, y: 1.07 };
+    const c17HydrogenPosition = synthesizeHydrogenPosition(
+      c17Position,
+      [
+        { x: 8.96, y: -0.05 },
+        { x: 8.12, y: 2.73 },
+        { x: 6.01, y: 0.59 }
+      ],
+      1.125,
+      {
+        preferCardinalAxes: true,
+        incidentRingPolygons: [
+          [
+            { x: 8.85, y: 1.46 },
+            { x: 7.81, y: 0.15 },
+            { x: 8.96, y: -0.05 },
+            { x: 7.58, y: 1.07 },
+            { x: 8.12, y: 2.73 }
+          ],
+          [
+            { x: 6.01, y: 0.59 },
+            { x: 6.65, y: -0.73 },
+            { x: 7.81, y: 0.15 },
+            { x: 8.96, y: -0.05 },
+            { x: 7.58, y: 1.07 }
+          ]
+        ]
+      }
+    );
+    const c21Position = { x: 7.81, y: 0.15 };
+    const c21HydrogenPosition = synthesizeHydrogenPosition(
+      c21Position,
+      [
+        { x: 8.96, y: -0.05 },
+        { x: 8.85, y: 1.46 },
+        { x: 6.65, y: -0.73 }
+      ],
+      1.125,
+      {
+        preferCardinalAxes: true,
+        incidentRingPolygons: [
+          [
+            { x: 8.85, y: 1.46 },
+            { x: 7.81, y: 0.15 },
+            { x: 8.96, y: -0.05 },
+            { x: 7.58, y: 1.07 },
+            { x: 8.12, y: 2.73 }
+          ],
+          [
+            { x: 6.01, y: 0.59 },
+            { x: 6.65, y: -0.73 },
+            { x: 7.81, y: 0.15 },
+            { x: 8.96, y: -0.05 },
+            { x: 7.58, y: 1.07 }
+          ]
+        ]
+      }
+    );
+
+    const c17Angle = angleOf(sub(c17HydrogenPosition, c17Position));
+    const c21Angle = angleOf(sub(c21HydrogenPosition, c21Position));
+    assert.ok(c17Angle > 2.0 && c17Angle < 2.6, `expected the C17 hydrogen to project to the upper-left exterior side, got ${((c17Angle * 180) / Math.PI).toFixed(1)} degrees`);
+    assert.ok(c21Angle < -1.0 && c21Angle > -1.6, `expected the C21 hydrogen to project to the lower exterior side, got ${((c21Angle * 180) / Math.PI).toFixed(1)} degrees`);
   });
 
   it('snaps display hydrogens to exact cardinal axes when that stays nearly as open', () => {

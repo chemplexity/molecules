@@ -6,7 +6,8 @@ import {
   measureOrthogonalHypervalentDeviation,
   runHypervalentAngleTidy
 } from '../../../../src/layout/engine/cleanup/hypervalent-angle-tidy.js';
-import { angleOf, sub } from '../../../../src/layout/engine/geometry/vec2.js';
+import { angleOf, angularDifference, sub } from '../../../../src/layout/engine/geometry/vec2.js';
+import { computeIncidentRingOutwardAngles } from '../../../../src/layout/engine/geometry/ring-direction.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 
 function angleAt(coords, centerAtomId, ligandAtomId) {
@@ -27,6 +28,18 @@ function assertOppositePair(firstAngle, secondAngle) {
   const separation = ((Math.abs(firstAngle - secondAngle) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
   const foldedSeparation = Math.min(separation, Math.PI * 2 - separation);
   assert.ok(Math.abs(foldedSeparation - Math.PI) < 1e-6);
+}
+
+function assertExteriorOxoV(graph, coords, centerAtomId, oxoAtomIds, expectedSpread) {
+  const outwardAngles = computeIncidentRingOutwardAngles(graph, centerAtomId, atomId => coords.get(atomId) ?? null);
+  assert.equal(outwardAngles.length, 1);
+  const outwardAngle = outwardAngles[0];
+  const oxoAngles = oxoAtomIds.map(oxoAtomId => angleAt(coords, centerAtomId, oxoAtomId));
+
+  assert.ok(Math.abs(angularDifference(oxoAngles[0], oxoAngles[1]) - expectedSpread) < 1e-6);
+  for (const oxoAngle of oxoAngles) {
+    assert.ok(Math.abs(angularDifference(oxoAngle, outwardAngle) - expectedSpread / 2) < 1e-6);
+  }
 }
 
 describe('layout/engine/cleanup/hypervalent-angle-tidy', () => {
@@ -74,6 +87,44 @@ describe('layout/engine/cleanup/hypervalent-angle-tidy', () => {
     assert.ok(Math.abs(measureOrthogonalHypervalentDeviation(graph, result.coords)) < 1e-9);
     assertOppositePair(nitrogenAngle, carbonAngle);
     assertOppositePair(firstOxoAngle, secondOxoAngle);
+  });
+
+  it('keeps ring-embedded sulfone oxo ligands together in the ring exterior', () => {
+    const graph = createLayoutGraph(parseSMILES('C1CS(=O)(=O)CC1'), { suppressH: true });
+    const coords = new Map([
+      ['C1', { x: -0.75, y: -2.05 }],
+      ['C2', { x: -1.299038105676658, y: -0.75 }],
+      ['S3', { x: 0, y: 0 }],
+      ['O4', { x: 0, y: 1.5 }],
+      ['O5', { x: 0, y: -1.5 }],
+      ['C6', { x: 1.299038105676658, y: -0.75 }],
+      ['C7', { x: 0.75, y: -2.05 }]
+    ]);
+
+    assert.ok(measureOrthogonalHypervalentDeviation(graph, coords) > 0.1);
+
+    const result = runHypervalentAngleTidy(graph, coords);
+
+    assert.ok(result.nudges >= 2);
+    assert.ok(Math.abs(measureOrthogonalHypervalentDeviation(graph, result.coords)) < 1e-9);
+    assertExteriorOxoV(graph, result.coords, 'S3', ['O4', 'O5'], Math.PI / 2);
+  });
+
+  it('keeps three-member ring sulfone oxo ligands on the compact exterior V', () => {
+    const graph = createLayoutGraph(parseSMILES('C1S(=O)(=O)C1'), { suppressH: true });
+    const coords = new Map([
+      ['C1', { x: -0.75, y: -1.299038105676658 }],
+      ['S2', { x: 0, y: 0 }],
+      ['O3', { x: 0, y: 1.5 }],
+      ['O4', { x: 0, y: -1.5 }],
+      ['C5', { x: 0.75, y: -1.299038105676658 }]
+    ]);
+
+    const result = runHypervalentAngleTidy(graph, coords);
+
+    assert.ok(result.nudges >= 2);
+    assert.ok(Math.abs(measureOrthogonalHypervalentDeviation(graph, result.coords)) < 1e-9);
+    assertExteriorOxoV(graph, result.coords, 'S2', ['O3', 'O4'], Math.PI / 3);
   });
 
   it('rotates a compact bridge-linked phosphate block to re-square a triphosphate center', () => {

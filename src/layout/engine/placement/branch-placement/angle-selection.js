@@ -3,6 +3,7 @@
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, length, perpLeft, sub } from '../../geometry/vec2.js';
 import { countPointInPolygons } from '../../geometry/polygon.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
+import { ringEmbeddedBisOxoSpread } from '../../geometry/ring-hypervalent.js';
 import { BRANCH_CLEARANCE_FLOOR_FACTOR } from '../../constants.js';
 import {
   ANGLE_SCORE_TIEBREAK_RATIO,
@@ -1288,13 +1289,25 @@ function preferredRingAngles(layoutGraph, coords, anchorAtomId) {
   return ringAngles;
 }
 
+/**
+ * Returns whether a child branch should continue straight through an `sp`
+ * center. Triple bonds are always linear; cumulated double-bond centers such
+ * as isocyanates are also linear when both visible sides are multiple bonds.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Branch anchor atom ID.
+ * @param {string|null} parentAtomId - Already placed parent atom ID.
+ * @param {string|null} childAtomId - Candidate child atom ID.
+ * @returns {boolean} True when the child should be placed opposite the parent.
+ */
 function prefersLinearContinuation(layoutGraph, anchorAtomId, parentAtomId, childAtomId) {
   if (!layoutGraph || !parentAtomId || !childAtomId) {
     return false;
   }
   const parentBond = findLayoutBond(layoutGraph, anchorAtomId, parentAtomId);
   const childBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
-  return (parentBond?.order ?? 1) >= 3 || (childBond?.order ?? 1) >= 3;
+  const parentOrder = parentBond?.order ?? 1;
+  const childOrder = childBond?.order ?? 1;
+  return parentOrder >= 3 || childOrder >= 3 || (parentOrder >= 2 && childOrder >= 2 && isLinearCenter(layoutGraph, anchorAtomId));
 }
 
 function crossZ(firstVector, secondVector) {
@@ -1621,6 +1634,55 @@ function pickClosestPreferredCandidateAngle(candidates, bondLength, preferredAng
 }
 
 /**
+ * Measures how far a candidate endpoint is from the closest reserved point.
+ * @param {{x: number, y: number}} anchorPosition - Anchor position.
+ * @param {number} candidateAngle - Candidate branch angle.
+ * @param {number} bondLength - Target bond length.
+ * @param {Array<{x: number, y: number}>|undefined} avoidPoints - Reserved points to avoid.
+ * @returns {number} Minimum candidate-to-reserved-point distance.
+ */
+function candidateAvoidPointClearance(anchorPosition, candidateAngle, bondLength, avoidPoints) {
+  if (!Array.isArray(avoidPoints) || avoidPoints.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const candidatePosition = add(anchorPosition, fromAngle(candidateAngle, bondLength));
+  let minimumDistance = Number.POSITIVE_INFINITY;
+  for (const point of avoidPoints) {
+    if (!point) {
+      continue;
+    }
+    minimumDistance = Math.min(minimumDistance, distance(candidatePosition, point));
+  }
+  return minimumDistance;
+}
+
+/**
+ * Keeps the exact-angle candidates that best avoid reserved future slots.
+ * @param {Array<{angle: number, avoidPointClearance?: number}>} candidates - Candidate angle descriptors.
+ * @param {{x: number, y: number}} anchorPosition - Anchor position.
+ * @param {number} bondLength - Target bond length.
+ * @param {Array<{x: number, y: number}>|undefined} avoidPoints - Reserved points to avoid.
+ * @returns {Array<{angle: number, avoidPointClearance?: number}>} Best slot-clearing candidates.
+ */
+function filterByAvoidPointClearance(candidates, anchorPosition, bondLength, avoidPoints) {
+  if (!Array.isArray(avoidPoints) || avoidPoints.length === 0 || candidates.length <= 1) {
+    return candidates;
+  }
+
+  let bestClearance = Number.NEGATIVE_INFINITY;
+  for (const candidate of candidates) {
+    candidate.avoidPointClearance = candidateAvoidPointClearance(anchorPosition, candidate.angle, bondLength, avoidPoints);
+    if (candidate.avoidPointClearance > bestClearance) {
+      bestClearance = candidate.avoidPointClearance;
+    }
+  }
+  if (!Number.isFinite(bestClearance)) {
+    return candidates;
+  }
+  return candidates.filter(candidate => candidate.avoidPointClearance >= bestClearance - 1e-9);
+}
+
+/**
  * Chooses the closest safe near-preferred angle when an exact publication
  * geometry slot is blocked by an already placed atom. This is intentionally a
  * rescue path for rigid terminal leaves, not a generic branch fallback.
@@ -1841,7 +1903,7 @@ export function chooseContinuationAngle(
  * @param {{sumX: number, sumY: number, count: number}|null} placementState - Running placement CoM state.
  * @param {Array<Array<{x: number, y: number}>>} [ringPolygons] - Incident ring polygons.
  * @param {object|null} [atomGrid] - Optional spatial grid used for clearance checks.
- * @param {{clearanceFloorFactor?: number, minimumSeparation?: number}} [options] - Optional exact-angle safety overrides.
+ * @param {{clearanceFloorFactor?: number, minimumSeparation?: number, avoidPoints?: Array<{x: number, y: number}>}} [options] - Optional exact-angle safety overrides.
  * @returns {number|null} Safe exact preferred angle, or `null` when it should not be forced.
  */
 export function chooseExactPreferredAngle(anchorPosition, bondLength, coords, occupiedAngles, preferredAngles, excludedAtomIds, placementState, ringPolygons = [], atomGrid = null, options = {}) {
@@ -1877,19 +1939,25 @@ export function chooseExactPreferredAngle(anchorPosition, bondLength, coords, oc
   if (safeExactCandidates.length === 0) {
     return null;
   }
+  const slotClearExactCandidates = filterByAvoidPointClearance(
+    safeExactCandidates,
+    anchorPosition,
+    bondLength,
+    options.avoidPoints
+  );
 
-  let bestInsideRingCount = safeExactCandidates[0].insideRingCount ?? 0;
-  let bestSeparation = safeExactCandidates[0].minSeparation ?? 0;
-  for (let i = 1; i < safeExactCandidates.length; i++) {
-    const v = safeExactCandidates[i].insideRingCount ?? 0;
+  let bestInsideRingCount = slotClearExactCandidates[0].insideRingCount ?? 0;
+  let bestSeparation = slotClearExactCandidates[0].minSeparation ?? 0;
+  for (let i = 1; i < slotClearExactCandidates.length; i++) {
+    const v = slotClearExactCandidates[i].insideRingCount ?? 0;
     if (v < bestInsideRingCount) { bestInsideRingCount = v; }
-    const s = safeExactCandidates[i].minSeparation ?? 0;
+    const s = slotClearExactCandidates[i].minSeparation ?? 0;
     if (s > bestSeparation) { bestSeparation = s; }
   }
   if (bestInsideRingCount !== 0 || bestSeparation < (options.minimumSeparation ?? (Math.PI / 6))) {
     return null;
   }
-  return pickBestCandidateAngle(safeExactCandidates, bondLength, true, clearanceContext);
+  return pickBestCandidateAngle(slotClearExactCandidates, bondLength, true, clearanceContext);
 }
 
 function computeLegacyChildAngles(childCount, outAngle, fromRing, incomingAngle, isLinear) {
@@ -1915,6 +1983,101 @@ function computeLegacyChildAngles(childCount, outAngle, fromRing, incomingAngle,
   const spread = (Math.PI * 4) / 3;
   const step = spread / Math.max(childCount - 1, 1);
   return Array.from({ length: childCount }, (_, index) => outAngle - spread / 2 + index * step);
+}
+
+/**
+ * Returns whether a carbon branch center has three terminal hetero leaves
+ * opposite one already placed parent bond on a multi-ring parent center. These
+ * compact CF3/CCl3-like tripods can use a compressed fan when the regular
+ * largest-gap side slots collide with nearby scaffold atoms.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Candidate tripod center atom ID.
+ * @param {string|null} parentAtomId - Already placed parent atom ID.
+ * @param {string[]} unplacedNeighborIds - Candidate terminal leaf atom IDs.
+ * @returns {boolean} True when the branch is a compact terminal hetero tripod.
+ */
+function isTerminalHeteroTripod(layoutGraph, anchorAtomId, parentAtomId, unplacedNeighborIds) {
+  if (!layoutGraph || !parentAtomId || unplacedNeighborIds.length !== 3) {
+    return false;
+  }
+
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (
+    !anchorAtom ||
+    anchorAtom.element !== 'C' ||
+    anchorAtom.aromatic ||
+    (anchorAtom.heavyDegree ?? 0) !== 4 ||
+    (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  const parentBond = findLayoutBond(layoutGraph, anchorAtomId, parentAtomId);
+  if (!parentBond || parentBond.kind !== 'covalent' || parentBond.aromatic || (parentBond.order ?? 1) !== 1) {
+    return false;
+  }
+  const parentRingNeighborCount = (layoutGraph.bondsByAtomId.get(parentAtomId) ?? []).filter(bond => {
+    if (!bond || bond.kind !== 'covalent') {
+      return false;
+    }
+    const neighborAtomId = bond.a === parentAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return neighborAtomId !== anchorAtomId && neighborAtom?.element !== 'H' && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0;
+  }).length;
+  if (parentRingNeighborCount < 2) {
+    return false;
+  }
+
+  return unplacedNeighborIds.every(neighborAtomId => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const bond = findLayoutBond(layoutGraph, anchorAtomId, neighborAtomId);
+    return Boolean(
+      neighborAtom &&
+      neighborAtom.element !== 'C' &&
+      neighborAtom.element !== 'H' &&
+      neighborAtom.heavyDegree === 1 &&
+      (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0 &&
+      bond &&
+      bond.kind === 'covalent' &&
+      !bond.aromatic &&
+      (bond.order ?? 1) === 1
+    );
+  });
+}
+
+/**
+ * Returns a compressed away-from-parent candidate fan for terminal hetero
+ * tripods. The normal largest-gap square fan is still scored alongside this,
+ * so the compressed fan wins only when it improves local clearance enough.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Candidate tripod center atom ID.
+ * @param {string|null} parentAtomId - Already placed parent atom ID.
+ * @param {string[]} unplacedNeighborIds - Candidate terminal leaf atom IDs.
+ * @param {number} outAngle - Direction opposite the already placed parent.
+ * @param {number[]} [regularAngleSet] - Normal gap-strategy fan angles to test for crowding.
+ * @returns {number[][]} Candidate angle sets for the three terminal leaves.
+ */
+function terminalHeteroTripodAngleSets(layoutGraph, coords, anchorAtomId, parentAtomId, unplacedNeighborIds, outAngle, regularAngleSet = []) {
+  if (!isTerminalHeteroTripod(layoutGraph, anchorAtomId, parentAtomId, unplacedNeighborIds)) {
+    return [];
+  }
+  const anchorPosition = coords.get(anchorAtomId);
+  const parentPosition = coords.get(parentAtomId);
+  const bondLength = layoutGraph?.options?.bondLength ?? (
+    anchorPosition && parentPosition ? distance(anchorPosition, parentPosition) : 0
+  );
+  const excludedAtomIds = new Set([anchorAtomId, parentAtomId, ...unplacedNeighborIds]);
+  const regularFanIsCrowded =
+    anchorPosition &&
+    bondLength > 0 &&
+    regularAngleSet.some(angle =>
+      !isCandidateSafe(anchorPosition, angle, bondLength, coords, excludedAtomIds)
+    );
+  if (!regularFanIsCrowded) {
+    return [];
+  }
+  return [[outAngle, outAngle + DEG60, outAngle - DEG60]];
 }
 
 const PROJECTED_TETRAHEDRAL_SLOT_OFFSETS = [0, DEG90, Math.PI, Math.PI + DEG90];
@@ -1980,6 +2143,7 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
 
   let heavySingleBondCount = 0;
   let presentationCriticalLeafCount = 0;
+  let terminalHeavyLeafCount = 0;
   let attachedRingRootCount = 0;
   let hasLinearNeighbor = false;
   for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
@@ -1992,7 +2156,11 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
       continue;
     }
     heavySingleBondCount++;
-    if (neighborAtom.heavyDegree === 1) {
+    if (
+      neighborAtom.heavyDegree === 1 ||
+      isCompactProjectedTerminalSubstituent(layoutGraph, atomId, neighborAtomId)
+    ) {
+      terminalHeavyLeafCount++;
       if (!['O', 'S', 'Se'].includes(neighborAtom.element)) {
         presentationCriticalLeafCount++;
       }
@@ -2007,6 +2175,7 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
 
   return heavySingleBondCount === 4 && (
     presentationCriticalLeafCount >= 2
+    || (attachedRingRootCount >= 2 && terminalHeavyLeafCount >= 1)
     || attachedRingRootCount >= 3
     || hasLinearNeighbor
     || (hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) && presentationCriticalLeafCount > 0)
@@ -2065,16 +2234,142 @@ function compareAngleSets(firstAngleSet, secondAngleSet) {
   return firstAngleSet.length - secondAngleSet.length;
 }
 
-function isProjectedTetrahedralLeafNeighbor(layoutGraph, atomId) {
+/**
+ * Returns whether a neighbor is a compact terminal substituent root, such as a
+ * CF3 or tert-butyl carbon, that should occupy one projected-tetrahedral slot
+ * as a single bulky leaf when placed from its parent center.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Parent center atom ID.
+ * @param {string} atomId - Candidate compact substituent root ID.
+ * @returns {boolean} True when the neighbor can be treated as a terminal slot occupant.
+ */
+function isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId, atomId) {
   const atom = layoutGraph?.atoms?.get(atomId);
-  return Boolean(atom && atom.element !== 'H' && (atom.heavyDegree ?? 0) === 1);
+  if (!layoutGraph || !atom || atom.element === 'H' || atom.aromatic || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) {
+    return false;
+  }
+
+  const centerBond = findLayoutBond(layoutGraph, centerAtomId, atomId);
+  if (
+    !centerBond ||
+    centerBond.kind !== 'covalent' ||
+    centerBond.aromatic ||
+    (centerBond.order ?? 1) !== 1
+  ) {
+    return false;
+  }
+
+  let terminalHeavyLeafCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return false;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    if (neighborAtomId === centerAtomId) {
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if (neighborAtom.heavyDegree !== 1 || (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+      return false;
+    }
+    terminalHeavyLeafCount++;
+  }
+
+  return terminalHeavyLeafCount >= 2;
+}
+
+function isProjectedTetrahedralLeafNeighbor(layoutGraph, centerAtomId, atomId) {
+  const atom = layoutGraph?.atoms?.get(atomId);
+  return Boolean(
+    atom &&
+    atom.element !== 'H' &&
+    (
+      (atom.heavyDegree ?? 0) === 1 ||
+      isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId, atomId)
+    )
+  );
+}
+
+/**
+ * Returns whether a projected-tetrahedral center is placing a mixed batch of
+ * ring roots and acyclic branches. These crowded alcohol/diaryl centers need
+ * the same quarter-turn slots as terminal leaf batches, even when one acyclic
+ * branch is an extended chain rather than a terminal leaf.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Candidate center atom ID.
+ * @param {string[]} placedNeighborIds - Already placed heavy neighbors.
+ * @param {string[]} inBatchNeighborIds - Heavy neighbors being assigned now.
+ * @param {string[]} deferredHeavyNeighborIds - Heavy neighbors reserved for later.
+ * @returns {boolean} True when all remaining neighbors should use orthogonal slots.
+ */
+function isProjectedAttachedRingMixedBatch(layoutGraph, anchorAtomId, placedNeighborIds, inBatchNeighborIds, deferredHeavyNeighborIds) {
+  const anchorAtom = layoutGraph?.atoms?.get(anchorAtomId);
+  if (
+    !layoutGraph
+    || !anchorAtom
+    || anchorAtom.element !== 'C'
+    || anchorAtom.aromatic
+    || (anchorAtom.heavyDegree ?? 0) !== 4
+    || placedNeighborIds.length === 0
+    || inBatchNeighborIds.length <= 1
+    || deferredHeavyNeighborIds.length !== 0
+  ) {
+    return false;
+  }
+
+  const assignedNeighborIds = [...placedNeighborIds, ...inBatchNeighborIds];
+  const attachedRingRootCount = assignedNeighborIds.filter(
+    neighborAtomId => (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+  ).length;
+  const terminalLeafCount = assignedNeighborIds.filter(
+    neighborAtomId => isProjectedTetrahedralLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId)
+  ).length;
+  return attachedRingRootCount >= 2 && terminalLeafCount >= 1;
+}
+
+/**
+ * Returns whether a mixed projected-tetrahedral batch should leave the slot
+ * opposite an already placed ring root for a deferred attached ring. This
+ * keeps alcohol/alkyl branches from taking the future aryl pocket and forcing
+ * the aryl ring back into a 60-degree collision.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Candidate center atom ID.
+ * @param {string[]} placedNeighborIds - Already placed heavy neighbors.
+ * @param {string[]} inBatchNeighborIds - Heavy neighbors being assigned now.
+ * @param {string[]} deferredHeavyNeighborIds - Heavy neighbors reserved for later.
+ * @returns {boolean} True when the opposite projected slot should stay open.
+ */
+function shouldReserveProjectedOppositeSlotForDeferredRing(layoutGraph, anchorAtomId, placedNeighborIds, inBatchNeighborIds, deferredHeavyNeighborIds) {
+  const anchorAtom = layoutGraph?.atoms?.get(anchorAtomId);
+  if (
+    !layoutGraph
+    || !anchorAtom
+    || anchorAtom.element !== 'C'
+    || anchorAtom.aromatic
+    || (anchorAtom.heavyDegree ?? 0) !== 4
+    || placedNeighborIds.length !== 1
+    || inBatchNeighborIds.length !== 2
+    || deferredHeavyNeighborIds.length !== 1
+    || (layoutGraph.atomToRings.get(placedNeighborIds[0])?.length ?? 0) === 0
+    || (layoutGraph.atomToRings.get(deferredHeavyNeighborIds[0])?.length ?? 0) === 0
+  ) {
+    return false;
+  }
+
+  return inBatchNeighborIds.some(neighborAtomId =>
+    isProjectedTetrahedralLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId)
+  );
 }
 
 /**
  * Returns projected-tetrahedral candidate angle sets for the current batch of
  * neighbors while reserving any remaining heavy slots for future placement
  * passes. This lets mixed layouts handle centers that are only partially in
- * the current branch-growth slice, such as diaryl difluoromethyl linkers.
+ * the current branch-growth slice, such as diaryl difluoromethyl linkers and
+ * tert-butyl roots with one ring-side bond plus three terminal methyl leaves.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
  * @param {string} anchorAtomId - Candidate center atom ID.
@@ -2109,12 +2404,62 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
       ? rootProjectedTetrahedralAngleSets()
       : [];
   }
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const allInBatchNeighborsAreTerminalCarbonLeaves = inBatchNeighborIds.every(neighborAtomId => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return neighborAtom?.element === 'C' && (neighborAtom.heavyDegree ?? 0) === 1;
+  });
+  const allInBatchNeighborsAreTerminalLeaves = inBatchNeighborIds.every(neighborAtomId =>
+    isProjectedTetrahedralLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId)
+  );
+  const isProjectedThreeTerminalCarbonLeafBatch =
+    anchorAtom?.element === 'C'
+    && !anchorAtom.aromatic
+    && (anchorAtom.heavyDegree ?? 0) === 4
+    && placedNeighborIds.length === 1
+    && (layoutGraph.atomToRings?.get(placedNeighborIds[0])?.length ?? 0) > 0
+    && inBatchNeighborIds.length === 3
+    && allInBatchNeighborsAreTerminalCarbonLeaves;
+  const shouldReserveOppositeSlotForDeferredBranch =
+    anchorAtom?.element === 'C'
+    && !anchorAtom.aromatic
+    && (anchorAtom.heavyDegree ?? 0) === 4
+    && placedNeighborIds.length === 1
+    && inBatchNeighborIds.length === 2
+    && allInBatchNeighborsAreTerminalLeaves
+    && deferredHeavyNeighborIds.length === 1
+    && !isProjectedTetrahedralLeafNeighbor(layoutGraph, anchorAtomId, placedNeighborIds[0])
+    && !isProjectedTetrahedralLeafNeighbor(layoutGraph, anchorAtomId, deferredHeavyNeighborIds[0]);
+  const shouldReserveOppositeSlotForDeferredRing = shouldReserveProjectedOppositeSlotForDeferredRing(
+    layoutGraph,
+    anchorAtomId,
+    placedNeighborIds,
+    inBatchNeighborIds,
+    deferredHeavyNeighborIds
+  );
+  const isProjectedMixedAttachedRingBatch = isProjectedAttachedRingMixedBatch(
+    layoutGraph,
+    anchorAtomId,
+    placedNeighborIds,
+    inBatchNeighborIds,
+    deferredHeavyNeighborIds
+  );
   const isProjectedLeafBatch =
     inBatchNeighborIds.length > 1
-    && placedNeighborIds.length === 2
-    && deferredHeavyNeighborCount === 0
-    && inBatchNeighborIds.length === 2
-    && inBatchNeighborIds.every(neighborAtomId => (layoutGraph.atoms.get(neighborAtomId)?.heavyDegree ?? 0) === 1);
+    && (
+      deferredHeavyNeighborCount === 0
+      || shouldReserveOppositeSlotForDeferredBranch
+      || shouldReserveOppositeSlotForDeferredRing
+    )
+    && (
+      (placedNeighborIds.length === 2
+        && inBatchNeighborIds.length === 2
+        && allInBatchNeighborsAreTerminalLeaves)
+      || isProjectedThreeTerminalCarbonLeafBatch
+      || isProjectedMixedAttachedRingBatch
+      || shouldReserveOppositeSlotForDeferredRing
+      || shouldReserveOppositeSlotForDeferredBranch
+    );
   const isCrossLikeProjectedRemainingBatch =
     hasCrossLikeNeighbor
     && inBatchNeighborIds.length > 1
@@ -2127,9 +2472,9 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
     placedNeighborIds.length === 1
     && inBatchNeighborIds.length === 1
     && deferredHeavyNeighborIds.length === 2
-    && !isProjectedTetrahedralLeafNeighbor(layoutGraph, placedNeighborIds[0])
-    && !isProjectedTetrahedralLeafNeighbor(layoutGraph, inBatchNeighborIds[0])
-    && deferredHeavyNeighborIds.every(neighborAtomId => isProjectedTetrahedralLeafNeighbor(layoutGraph, neighborAtomId));
+    && !isProjectedTetrahedralLeafNeighbor(layoutGraph, anchorAtomId, placedNeighborIds[0])
+    && !isProjectedTetrahedralLeafNeighbor(layoutGraph, anchorAtomId, inBatchNeighborIds[0])
+    && deferredHeavyNeighborIds.every(neighborAtomId => isProjectedTetrahedralLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId));
 
   const anchorPosition = coords.get(anchorAtomId);
   const placedNeighborAngles = placedNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition)));
@@ -2165,6 +2510,12 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
         ) {
           continue;
         }
+        if (
+          (shouldReserveOppositeSlotForDeferredBranch || shouldReserveOppositeSlotForDeferredRing)
+          && chosenSlotIndexes.includes((assignment[0] + 2) % PROJECTED_TETRAHEDRAL_SLOT_OFFSETS.length)
+        ) {
+          continue;
+        }
         const angleSet = chosenSlotIndexes
           .map(slotIndex => targetAngles[slotIndex])
           .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
@@ -2188,6 +2539,37 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
 function preferredProjectedTetrahedralAngles(layoutGraph, coords, anchorAtomId, currentPlacedNeighborIds, childAtomId) {
   return projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, currentPlacedNeighborIds, childAtomId ? [childAtomId] : [])
     .flatMap(angleSet => angleSet);
+}
+
+function ringEmbeddedBisOxoAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph) {
+  const descriptor = describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId);
+  if (!descriptor || !coords.has(anchorAtomId)) {
+    return [];
+  }
+
+  const placedSingleNeighborIds = currentPlacedNeighborIds.filter(neighborAtomId => descriptor.singleNeighborIds.includes(neighborAtomId));
+  const unplacedMultipleNeighborIds = unplacedNeighborIds.filter(neighborAtomId => descriptor.multipleNeighborIds.includes(neighborAtomId));
+  const angleSets = [];
+  if (unplacedNeighborIds.length !== 2 || unplacedMultipleNeighborIds.length !== 2 || placedSingleNeighborIds.length !== 2) {
+    return angleSets;
+  }
+
+  const incidentRings = (layoutGraph.atomToRings.get(anchorAtomId) ?? []).filter(ring =>
+    descriptor.singleNeighborIds.every(neighborAtomId => ring.atomIds.includes(neighborAtomId))
+  );
+  const outwardAngles = incidentRings.length > 0
+    ? computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null)
+    : [];
+  for (const outwardAngle of outwardAngles) {
+    for (const ring of incidentRings) {
+      const spread = ringEmbeddedBisOxoSpread(ring.atomIds.length);
+      angleSets.push([
+        normalizeSignedAngle(outwardAngle - spread / 2),
+        normalizeSignedAngle(outwardAngle + spread / 2)
+      ]);
+    }
+  }
+  return angleSets;
 }
 
 function crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph) {
@@ -2365,6 +2747,85 @@ function exactSmallRingExteriorAngleSets(layoutGraph, coords, anchorAtomId, curr
   const ringNeighborAngles = placedRingNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition)));
   const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, descriptor.ringSize);
   return targetAngles.length === unplacedNeighborIds.length ? [targetAngles] : [];
+}
+
+/**
+ * Returns the regular-polygon interior angle at one ring vertex.
+ * @param {number} ringSize - Ring size.
+ * @returns {number} Interior angle in radians.
+ */
+function regularRingInteriorAngle(ringSize) {
+  return Math.PI - (2 * Math.PI) / ringSize;
+}
+
+/**
+ * Builds exact candidate sets for a small saturated ring root that is first
+ * grown from one exocyclic parent. The root's two ring neighbors and its other
+ * exocyclic branch must be placed together, so branch placement needs the same
+ * exterior fan it would use after the ring neighbors already existed.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Small-ring root atom ID.
+ * @param {string|null} parentAtomId - Already placed exocyclic parent atom ID.
+ * @param {string[]} unplacedNeighborIds - Candidate child atom IDs.
+ * @returns {number[][]} Candidate angle sets for the pending ring-root batch.
+ */
+function pendingSmallRingRootExteriorAngleSets(layoutGraph, coords, anchorAtomId, parentAtomId, unplacedNeighborIds) {
+  if (!layoutGraph || !coords.has(anchorAtomId) || !parentAtomId || unplacedNeighborIds.length !== 3) {
+    return [];
+  }
+
+  const descriptor = describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId);
+  if (!descriptor || !descriptor.exocyclicNeighborIds.includes(parentAtomId)) {
+    return [];
+  }
+  const otherExocyclicNeighborId = descriptor.exocyclicNeighborIds.find(neighborAtomId => neighborAtomId !== parentAtomId);
+  if (!otherExocyclicNeighborId || !unplacedNeighborIds.includes(otherExocyclicNeighborId)) {
+    return [];
+  }
+  if (!descriptor.ringNeighborIds.every(neighborAtomId => unplacedNeighborIds.includes(neighborAtomId))) {
+    return [];
+  }
+
+  const anchorPosition = coords.get(anchorAtomId);
+  const parentPosition = coords.get(parentAtomId);
+  if (!anchorPosition || !parentPosition) {
+    return [];
+  }
+
+  const parentAngle = angleOf(sub(parentPosition, anchorPosition));
+  const interiorAngle = regularRingInteriorAngle(descriptor.ringSize);
+  if (!Number.isFinite(interiorAngle) || interiorAngle <= 0) {
+    return [];
+  }
+  if (descriptor.ringSize === 4) {
+    return [
+      [
+        normalizeSignedAngle(parentAngle + Math.PI),
+        normalizeSignedAngle(parentAngle + Math.PI + interiorAngle),
+        normalizeSignedAngle(parentAngle + interiorAngle)
+      ],
+      [
+        normalizeSignedAngle(parentAngle + Math.PI),
+        normalizeSignedAngle(parentAngle + Math.PI - interiorAngle),
+        normalizeSignedAngle(parentAngle - interiorAngle)
+      ]
+    ];
+  }
+
+  const exteriorStep = ((2 * Math.PI) - interiorAngle) / 3;
+  return [
+    [
+      normalizeSignedAngle(parentAngle - exteriorStep - interiorAngle),
+      normalizeSignedAngle(parentAngle - exteriorStep),
+      normalizeSignedAngle(parentAngle + exteriorStep)
+    ],
+    [
+      normalizeSignedAngle(parentAngle + exteriorStep),
+      normalizeSignedAngle(parentAngle + exteriorStep + interiorAngle),
+      normalizeSignedAngle(parentAngle - exteriorStep)
+    ]
+  ];
 }
 
 function shouldTryRingExteriorGapSpread(layoutGraph, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds) {
@@ -2557,20 +3018,37 @@ export function buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentA
     !hasMultipleBond && !isLinear
       ? exactSmallRingExteriorAngleSets(layoutGraph, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds)
       : [];
+  const pendingSmallRingExteriorAngleSetCandidates =
+    !hasMultipleBond && !isLinear
+      ? pendingSmallRingRootExteriorAngleSets(layoutGraph, coords, anchorAtomId, parentAtomId, unplacedNeighborIds)
+      : [];
   const projectedTetrahedralAngleSetCandidates =
     !hasMultipleBond && !isLinear
       ? projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds)
       : [];
-
-  return [
+  const terminalHeteroTripodAngleSetCandidates =
+    !hasMultipleBond && !isLinear
+      ? terminalHeteroTripodAngleSets(layoutGraph, coords, anchorAtomId, parentAtomId, unplacedNeighborIds, outAngle, fallbackAngleSets[0])
+      : [];
+  const ringEmbeddedBisOxoAngleSetCandidates =
+    ringEmbeddedBisOxoAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph)
+      .filter(angleSet => angleSet.length === unplacedNeighborIds.length);
+  const budgetedAngleSetCandidates = [
     ...crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
     ...exactExteriorAngleSets,
+    ...pendingSmallRingExteriorAngleSetCandidates,
     ...projectedTetrahedralAngleSetCandidates,
+    ...terminalHeteroTripodAngleSetCandidates,
     ...ringExteriorGapAngleSets,
     ...fallbackAngleSets
-  ]
-    .map(angleSet => filterAnglesByBudget(angleSet, anchorAtomId, branchConstraints))
-    .filter(angleSet => angleSet.length === unplacedNeighborIds.length);
+  ];
+
+  return [
+    ...ringEmbeddedBisOxoAngleSetCandidates,
+    ...budgetedAngleSetCandidates
+      .map(angleSet => filterAnglesByBudget(angleSet, anchorAtomId, branchConstraints))
+      .filter(angleSet => angleSet.length === unplacedNeighborIds.length)
+  ];
 }
 
 /**

@@ -239,6 +239,18 @@ describe('layout/engine/families/acyclic', () => {
     }
   });
 
+  it('keeps terminal isocyanate branches linear when they are not on the backbone', () => {
+    const result = runPipeline(parseSMILES('CC(CN(C([O-])=O)[N+](CCCCC#C)=C=O)OC(=O)C(C)=C'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'acyclic');
+    assert.ok(Math.abs(bondAngle(result.coords, 'N8', 'C15', 'O16') - 180) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C12', 'C13', 'C14') - 180) < 1e-5);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
   it('keeps conjugated diene backbones at trigonal angles with a transoid default turn pattern', () => {
     const graph = createLayoutGraph(parseSMILES('C=CC=C'), { suppressH: true });
     const atomIdsToPlace = new Set(graph.components[0].atomIds.filter(atomId => graph.atoms.get(atomId)?.element !== 'H'));
@@ -472,6 +484,15 @@ describe('layout/engine/families/acyclic', () => {
     assert.ok(Math.abs(bondAngle(result.coords, 'C5', 'C6', 'C8') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'C6', 'C8') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngle(result.coords, 'C6', 'C8', 'C9') - 120) < 1e-6);
+  });
+
+  it('keeps saturated methylene bends next to normalized alkenes at the standard zigzag angle', () => {
+    const result = runPipeline(parseSMILES('CCOC(C)OCCC=C(C)C([O-])=O'), { suppressH: true, auditTelemetry: true });
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'C8', 'C9') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'O6', 'C7', 'C8') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C8', 'C9', 'C10') - 120) < 1e-6);
   });
 
   it('still keeps off-backbone terminal-alkene roots on the exact trigonal slot', () => {

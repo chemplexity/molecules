@@ -93,6 +93,21 @@ async function bondDirectionDegrees(page, firstAtomId, secondAtomId) {
   }, { firstAtomId, secondAtomId });
 }
 
+async function atomDistance(page, firstAtomId, secondAtomId) {
+  return await page.evaluate(({ firstAtomId: firstId, secondAtomId: secondId }) => {
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.]+),([-0-9.]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const first = parseTranslate(document.querySelector(`g[data-atom-id="${firstId}"]`)?.getAttribute('transform'));
+    const second = parseTranslate(document.querySelector(`g[data-atom-id="${secondId}"]`)?.getAttribute('transform'));
+    if (!first || !second) {
+      return null;
+    }
+    return Math.hypot(second.x - first.x, second.y - first.y);
+  }, { firstAtomId, secondAtomId });
+}
+
 async function signedTurn(page, firstAtomId, centerAtomId, secondAtomId) {
   return await page.evaluate(({ firstAtomId: firstId, centerAtomId: centerId, secondAtomId: secondId }) => {
     const parseTranslate = value => {
@@ -138,6 +153,38 @@ test('loading the simple chloro ketone bug molecule keeps the chlorine on the ex
   const chlorineDirection = await bondDirectionDegrees(page, 'C4', 'Cl5');
   expect(chlorineDirection).not.toBeNull();
   expect(Math.abs(chlorineDirection - 90)).toBeLessThan(1e-6);
+});
+
+test('loading the crowded phosphine oxide keeps mirrored aryl ethyl branches separated in the browser render', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCCCP(=O)(C(=O)C1=C(CC)C=C(CC)C=C1CC)C(=O)C1=C(CC)C=C(CC)C=C1CC');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const mirroredEthylDistance = await atomDistance(page, 'C11', 'C33');
+  const carbonylClearance = await atomDistance(page, 'C2', 'O8');
+  const firstArylEthylAngle = await atomBondAngleDegrees(page, 'C10', 'C9', 'C11');
+  const firstArylEthylMirrorAngle = await atomBondAngleDegrees(page, 'C10', 'C11', 'C13');
+  const secondArylEthylAngle = await atomBondAngleDegrees(page, 'C32', 'C23', 'C33');
+  const secondArylEthylMirrorAngle = await atomBondAngleDegrees(page, 'C32', 'C31', 'C33');
+  const phosphineOxideAxisAngle = await atomBondAngleDegrees(page, 'P5', 'O6', 'C4');
+  const phosphineArylAxisAngle = await atomBondAngleDegrees(page, 'P5', 'C7', 'C21');
+  expect(mirroredEthylDistance).not.toBeNull();
+  expect(carbonylClearance).not.toBeNull();
+  expect(firstArylEthylAngle).not.toBeNull();
+  expect(firstArylEthylMirrorAngle).not.toBeNull();
+  expect(secondArylEthylAngle).not.toBeNull();
+  expect(secondArylEthylMirrorAngle).not.toBeNull();
+  expect(phosphineOxideAxisAngle).not.toBeNull();
+  expect(phosphineArylAxisAngle).not.toBeNull();
+  expect(mirroredEthylDistance).toBeGreaterThan(60);
+  expect(carbonylClearance).toBeGreaterThan(45);
+  expect(Math.abs(firstArylEthylAngle - 120)).toBeLessThan(1e-6);
+  expect(Math.abs(firstArylEthylMirrorAngle - 120)).toBeLessThan(1e-6);
+  expect(Math.abs(secondArylEthylAngle - 120)).toBeLessThan(1e-6);
+  expect(Math.abs(secondArylEthylMirrorAngle - 120)).toBeLessThan(1e-6);
+  expect(Math.abs(phosphineOxideAxisAngle - 180)).toBeLessThan(1e-6);
+  expect(phosphineArylAxisAngle).toBeGreaterThan(160);
 });
 
 test('loading the benzylic amino-alcohol bug molecule keeps the visible trigonal centers and attached phenyl exit exact', async ({ page }) => {

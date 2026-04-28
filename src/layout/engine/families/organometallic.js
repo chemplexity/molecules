@@ -9,6 +9,8 @@ import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { buildSliceAdjacency, classifyAtomSliceFamily, createAtomSlice, layoutAtomSlice, ringConnectionsForSlice, ringsForAtomSlice } from '../placement/atom-slice.js';
 import { organometallicArrangementSpecs, organometallicGeometryKind } from './organometallic-geometry.js';
 
+const TRIGONAL_ANCHOR_ANGLE = (2 * Math.PI) / 3;
+
 function isMetalAtom(layoutGraph, atomId) {
   const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
   if (!atom || atom.name === 'H') {
@@ -238,6 +240,179 @@ function placeDoubleAnchorClusterLigands(recordGroup, anchorIds, frameworkCoords
     });
   }
   return placements;
+}
+
+/**
+ * Returns covalent layout bonds incident to an atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom ID to inspect.
+ * @returns {object[]} Covalent bond descriptors.
+ */
+function covalentBondsForAtom(layoutGraph, atomId) {
+  return (layoutGraph.bondsByAtomId.get(atomId) ?? []).filter(bond => bond?.kind === 'covalent');
+}
+
+/**
+ * Finds the one organic anchor for a terminal one-coordinate metal atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} metalAtomId - Candidate metal atom ID.
+ * @returns {{bond: object, anchorAtomId: string}|null} Anchor record, or null.
+ */
+function terminalMetalAnchor(layoutGraph, metalAtomId) {
+  const metalBonds = covalentBondsForAtom(layoutGraph, metalAtomId);
+  if (metalBonds.length !== 1) {
+    return null;
+  }
+  const bond = metalBonds[0];
+  const anchorAtomId = bond.a === metalAtomId ? bond.b : bond.a;
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (!anchorAtom || anchorAtom.element === 'H' || isMetalAtom(layoutGraph, anchorAtomId)) {
+    return null;
+  }
+  return { bond, anchorAtomId };
+}
+
+/**
+ * Returns the multiple-bond neighbor that defines a trigonal terminal-metal slot.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Organic anchor atom ID.
+ * @param {string} metalAtomId - Terminal metal atom ID.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {{bond: object, atomId: string}|null} Primary neighbor record, or null.
+ */
+function trigonalMetalAnchorPrimaryNeighbor(layoutGraph, anchorAtomId, metalAtomId, coords) {
+  const candidates = covalentBondsForAtom(layoutGraph, anchorAtomId)
+    .filter(bond => !bond.aromatic && (bond.order ?? 1) >= 2)
+    .map(bond => ({
+      bond,
+      atomId: bond.a === anchorAtomId ? bond.b : bond.a
+    }))
+    .filter(record => {
+      if (record.atomId === metalAtomId || !coords.has(record.atomId)) {
+        return false;
+      }
+      const atom = layoutGraph.atoms.get(record.atomId);
+      return !!atom && atom.element !== 'H' && !isMetalAtom(layoutGraph, record.atomId);
+    });
+  return candidates.length === 1 ? candidates[0] : null;
+}
+
+/**
+ * Returns terminal metal/H leaves that can occupy the two free trigonal slots.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Organic anchor atom ID.
+ * @param {string} metalAtomId - Terminal metal atom ID.
+ * @param {object} primaryBond - Multiple bond that fixes the trigonal axis.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {Array<{atomId: string, bond: object, priority: number}>} Targetable leaf records.
+ */
+function targetableTrigonalMetalAnchorRecords(layoutGraph, anchorAtomId, metalAtomId, primaryBond, coords) {
+  const records = [];
+  let hasBlockingHeavyNeighbor = false;
+
+  for (const bond of covalentBondsForAtom(layoutGraph, anchorAtomId)) {
+    if (bond === primaryBond) {
+      continue;
+    }
+    const atomId = bond.a === anchorAtomId ? bond.b : bond.a;
+    const atom = layoutGraph.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    if (atomId === metalAtomId) {
+      if (coords.has(atomId)) {
+        records.push({ atomId, bond, priority: 0 });
+      }
+      continue;
+    }
+    if (atom.element === 'H') {
+      if (coords.has(atomId)) {
+        records.push({ atomId, bond, priority: 1 });
+      }
+      continue;
+    }
+    hasBlockingHeavyNeighbor = true;
+  }
+
+  return hasBlockingHeavyNeighbor ? [] : records.sort((firstRecord, secondRecord) => firstRecord.priority - secondRecord.priority);
+}
+
+/**
+ * Repositions terminal one-coordinate metals on trigonal organic anchors into
+ * the exact free slot opposite a multiple bond. The organic ligand is left
+ * fixed; when an explicit hydrogen occupies the companion slot it is moved as
+ * the paired trigonal leaf so visible-H layouts stay chemically readable too.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map to mutate.
+ * @param {string[]} metalAtomIds - Ordered metal atom IDs in the component.
+ * @param {number} bondLength - Fallback bond length.
+ * @returns {boolean} True when at least one terminal metal was snapped.
+ */
+function snapTerminalMetalTrigonalAnchors(layoutGraph, coords, metalAtomIds, bondLength) {
+  let changed = false;
+
+  for (const metalAtomId of metalAtomIds) {
+    const anchorRecord = terminalMetalAnchor(layoutGraph, metalAtomId);
+    if (!anchorRecord || !coords.has(metalAtomId) || !coords.has(anchorRecord.anchorAtomId)) {
+      continue;
+    }
+
+    const primaryRecord = trigonalMetalAnchorPrimaryNeighbor(layoutGraph, anchorRecord.anchorAtomId, metalAtomId, coords);
+    if (!primaryRecord) {
+      continue;
+    }
+
+    const targetRecords = targetableTrigonalMetalAnchorRecords(
+      layoutGraph,
+      anchorRecord.anchorAtomId,
+      metalAtomId,
+      primaryRecord.bond,
+      coords
+    );
+    if (targetRecords.length === 0 || targetRecords[0].atomId !== metalAtomId || targetRecords.length > 2) {
+      continue;
+    }
+
+    const anchorPosition = coords.get(anchorRecord.anchorAtomId);
+    const primaryPosition = coords.get(primaryRecord.atomId);
+    const baseAngle = angleOf(sub(primaryPosition, anchorPosition));
+    const targetAngles = [baseAngle + TRIGONAL_ANCHOR_ANGLE, baseAngle - TRIGONAL_ANCHOR_ANGLE];
+    const assignments = targetRecords.length === 1
+      ? [{
+          record: targetRecords[0],
+          targetAngle: targetAngles.reduce((bestAngle, candidateAngle) => {
+            const currentAngle = angleOf(sub(coords.get(targetRecords[0].atomId), anchorPosition));
+            return angularDistance(candidateAngle, currentAngle) < angularDistance(bestAngle, currentAngle)
+              ? candidateAngle
+              : bestAngle;
+          }, targetAngles[0])
+        }]
+      : (() => {
+          const firstCurrentAngle = angleOf(sub(coords.get(targetRecords[0].atomId), anchorPosition));
+          const secondCurrentAngle = angleOf(sub(coords.get(targetRecords[1].atomId), anchorPosition));
+          const directCost = angularDistance(firstCurrentAngle, targetAngles[0]) + angularDistance(secondCurrentAngle, targetAngles[1]);
+          const swappedCost = angularDistance(firstCurrentAngle, targetAngles[1]) + angularDistance(secondCurrentAngle, targetAngles[0]);
+          return directCost <= swappedCost
+            ? [
+                { record: targetRecords[0], targetAngle: targetAngles[0] },
+                { record: targetRecords[1], targetAngle: targetAngles[1] }
+              ]
+            : [
+                { record: targetRecords[0], targetAngle: targetAngles[1] },
+                { record: targetRecords[1], targetAngle: targetAngles[0] }
+              ];
+        })();
+
+    for (const assignment of assignments) {
+      const currentPosition = coords.get(assignment.record.atomId);
+      const currentLength = currentPosition ? distance(currentPosition, anchorPosition) : bondLength;
+      const targetLength = currentLength > 1e-6 ? currentLength : bondLength;
+      coords.set(assignment.record.atomId, add(anchorPosition, fromAngle(assignment.targetAngle, targetLength)));
+      changed = true;
+    }
+  }
+
+  return changed;
 }
 
 function shouldTryMetalFrameworkRescue(metalAtomIds, fragmentRecords, incumbentAudit) {
@@ -635,6 +810,7 @@ function layoutLigandFirstOrganometallicPlacement(layoutGraph, participantAtomId
   for (const [metalAtomId, position] of metalCoords) {
     coords.set(metalAtomId, position);
   }
+  snapTerminalMetalTrigonalAnchors(layoutGraph, coords, metalAtomIds, bondLength);
 
   return {
     coords,

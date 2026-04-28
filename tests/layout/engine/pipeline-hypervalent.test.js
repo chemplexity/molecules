@@ -2,7 +2,8 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../src/io/smiles.js';
-import { angleOf, distance, sub } from '../../../src/layout/engine/geometry/vec2.js';
+import { angleOf, angularDifference, distance, sub } from '../../../src/layout/engine/geometry/vec2.js';
+import { computeIncidentRingOutwardAngles } from '../../../src/layout/engine/geometry/ring-direction.js';
 import { runPipeline } from '../../../src/layout/engine/pipeline.js';
 
 function assertOrthogonalCross(result, centerAtomIds) {
@@ -51,6 +52,19 @@ function assertBondAngle(result, firstAtomId, centerAtomId, secondAtomId, expect
   const separation = ((Math.abs(firstAngle - secondAngle) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
   const foldedSeparation = Math.min(separation, Math.PI * 2 - separation);
   assert.ok(Math.abs(foldedSeparation - expectedAngle) < 1e-6);
+}
+
+function assertExteriorOxoV(result, centerAtomId, oxoAtomIds, expectedSpread) {
+  const centerPosition = result.coords.get(centerAtomId);
+  const outwardAngles = computeIncidentRingOutwardAngles(result.layoutGraph, centerAtomId, atomId => result.coords.get(atomId) ?? null);
+  assert.equal(outwardAngles.length, 1);
+  const outwardAngle = outwardAngles[0];
+  const oxoAngles = oxoAtomIds.map(oxoAtomId => angleOf(sub(result.coords.get(oxoAtomId), centerPosition)));
+
+  assert.ok(Math.abs(angularDifference(oxoAngles[0], oxoAngles[1]) - expectedSpread) < 1e-6);
+  for (const oxoAngle of oxoAngles) {
+    assert.ok(Math.abs(angularDifference(oxoAngle, outwardAngle) - expectedSpread / 2) < 1e-6);
+  }
 }
 
 describe('layout/engine/pipeline — hypervalent cleanup', () => {
@@ -218,6 +232,45 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertOppositePair(result, 'C34', 'F35', 'F37');
     assertBondAngle(result, 'C32', 'C38', 'F41', Math.PI / 2);
     assertOppositePair(result, 'C38', 'F39', 'F41');
+  });
+
+  it('places ring-embedded sulfone oxo ligands together outside the ring', () => {
+    const result = runPipeline(parseSMILES('CN(C1CCS(=O)(=O)C1)C(=O)CNC(=O)c2cc3cc(Cl)ccc3[nH]2'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assertExteriorOxoV(result, 'S6', ['O7', 'O8'], Math.PI / 2);
+  });
+
+  it('places macrocycle-embedded sulfone oxo ligands before macrocycle branch budgets filter candidates', () => {
+    const result = runPipeline(parseSMILES('CN(C1CCCCCCCCCS(=O)(=O)C1)C(=O)CNC(=O)c2cc3cc(Cl)ccc3[nH]2'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assertExteriorOxoV(result, 'S13', ['O14', 'O15'], Math.PI / 2);
+  });
+
+  it('keeps longer macrocycle-embedded sulfone oxo ligands from being clipped by asymmetric budgets', () => {
+    const result = runPipeline(parseSMILES('CN(C1CCCCCCCCCCCCCS(=O)(=O)C1)C(=O)CNC(=O)c2cc3cc(Cl)ccc3[nH]2'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assertExteriorOxoV(result, 'S17', ['O18', 'O19'], Math.PI / 2);
   });
 
   it('keeps crowded acyclic sulfonic acid centers exact by compressing only the terminal oxo leaf', () => {

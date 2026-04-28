@@ -20,6 +20,8 @@ const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
 const LINKED_RING_REPRESENTATIVE_OUTWARD_READABILITY_SLACK = Math.PI / 180;
 const COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I', 'O', 'S', 'Se']);
 const COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE = Math.PI / 180;
+const COMPRESSED_TERMINAL_CARBONYL_LEAF_MIN_FACTOR = 0.4;
+const COMPRESSED_TERMINAL_CARBONYL_LEAF_CLASH_FACTOR = 0.45;
 const BRIDGED_RING_SUBSTITUENT_SLOT_SCAN_STEP = Math.PI / 36;
 const BRIDGED_RING_SUBSTITUENT_SLOT_CLEARANCE_FACTOR = 0.55;
 
@@ -121,6 +123,72 @@ function compressibleTerminalRingLeafEndpoints(layoutGraph, bond) {
 }
 
 /**
+ * Resolves a terminal hetero leaf on a compact carbonyl/carboxyl center whose
+ * ring-side geometry leaves no full-length exact trigonal slot.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} bond - Candidate bond descriptor.
+ * @returns {{centerAtomId: string, leafAtomId: string}|null} Endpoint roles, or null.
+ */
+function compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond) {
+  if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+    return null;
+  }
+
+  for (const [centerAtomId, leafAtomId] of [
+    [bond.a, bond.b],
+    [bond.b, bond.a]
+  ]) {
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    const leafAtom = layoutGraph.atoms.get(leafAtomId);
+    if (
+      !centerAtom
+      || !leafAtom
+      || centerAtom.element !== 'C'
+      || centerAtom.aromatic
+      || centerAtom.heavyDegree !== 3
+      || !COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(leafAtom.element)
+      || (leafAtom.heavyDegree ?? 0) !== 1
+      || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+      || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+    ) {
+      continue;
+    }
+
+    let ringNeighborCount = 0;
+    let terminalHeteroNeighborCount = 0;
+    let terminalMultipleHeteroNeighborCount = 0;
+    for (const neighborBond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+      if (!neighborBond || neighborBond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = neighborBond.a === centerAtomId ? neighborBond.b : neighborBond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (!neighborAtom || neighborAtom.element === 'H') {
+        continue;
+      }
+      if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+        ringNeighborCount++;
+      }
+      if (
+        neighborAtom.element !== 'C'
+        && (neighborAtom.heavyDegree ?? 0) === 1
+        && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0
+      ) {
+        terminalHeteroNeighborCount++;
+        if (!neighborBond.aromatic && (neighborBond.order ?? 1) >= 2) {
+          terminalMultipleHeteroNeighborCount++;
+        }
+      }
+    }
+    if (ringNeighborCount === 1 && terminalHeteroNeighborCount >= 2 && terminalMultipleHeteroNeighborCount >= 1) {
+      return { centerAtomId, leafAtomId };
+    }
+  }
+
+  return null;
+}
+
+/**
  * Returns whether a short terminal ring-leaf bond is an intentional exact
  * outward depiction used to avoid local overlap.
  * @param {object} layoutGraph - Layout graph shell.
@@ -149,6 +217,113 @@ function isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, dis
   const leafAngle = angleOf(sub(leafPosition, anchorPosition));
   return computeIncidentRingOutwardAngles(layoutGraph, endpoints.anchorAtomId, atomId => coords.get(atomId) ?? null)
     .some(outwardAngle => angularDifference(leafAngle, outwardAngle) <= COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE);
+}
+
+/**
+ * Returns whether a short terminal carbonyl/carboxyl leaf is intentionally
+ * compressed while preserving the exact trigonal direction.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} bond - Candidate bond descriptor.
+ * @param {number} distance - Current bond length.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when the compressed leaf should not count as a bond-length failure.
+ */
+function isAcceptedCompressedTerminalCarbonylLeafBond(layoutGraph, coords, bond, distance, bondLength) {
+  if (
+    distance >= bondLength
+    || distance < bondLength * COMPRESSED_TERMINAL_CARBONYL_LEAF_MIN_FACTOR - 1e-9
+  ) {
+    return false;
+  }
+
+  const endpoints = compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond);
+  if (!endpoints) {
+    return false;
+  }
+
+  const centerPosition = coords.get(endpoints.centerAtomId);
+  const leafPosition = coords.get(endpoints.leafAtomId);
+  if (!centerPosition || !leafPosition) {
+    return false;
+  }
+
+  const leafAngle = angleOf(sub(leafPosition, centerPosition));
+  const otherNeighborAngles = [];
+  for (const neighborBond of layoutGraph.bondsByAtomId.get(endpoints.centerAtomId) ?? []) {
+    if (!neighborBond || neighborBond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = neighborBond.a === endpoints.centerAtomId ? neighborBond.b : neighborBond.a;
+    if (neighborAtomId === endpoints.leafAtomId) {
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+    otherNeighborAngles.push(angleOf(sub(neighborPosition, centerPosition)));
+  }
+
+  return (
+    otherNeighborAngles.length === 2
+    && otherNeighborAngles.every(neighborAngle =>
+      Math.abs(angularDifference(leafAngle, neighborAngle) - (2 * Math.PI) / 3)
+        <= COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE
+    )
+  );
+}
+
+function isAcceptedCompressedLeafBond(layoutGraph, coords, bond, distance, bondLength) {
+  return (
+    isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, distance, bondLength)
+    || isAcceptedCompressedTerminalCarbonylLeafBond(layoutGraph, coords, bond, distance, bondLength)
+  );
+}
+
+function acceptedCompressedTerminalCarbonylLeafEndpointsForAtom(layoutGraph, coords, atomId, bondLength) {
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const endpoints = compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond);
+    if (!endpoints || endpoints.leafAtomId !== atomId) {
+      continue;
+    }
+    const centerPosition = coords.get(endpoints.centerAtomId);
+    const leafPosition = coords.get(endpoints.leafAtomId);
+    if (!centerPosition || !leafPosition) {
+      continue;
+    }
+    const distance = Math.hypot(leafPosition.x - centerPosition.x, leafPosition.y - centerPosition.y);
+    if (isAcceptedCompressedTerminalCarbonylLeafBond(layoutGraph, coords, bond, distance, bondLength)) {
+      return endpoints;
+    }
+  }
+  return null;
+}
+
+function isAcceptedCompressedTerminalCarbonylLeafOverlap(layoutGraph, coords, firstAtomId, secondAtomId, distance, bondLength) {
+  if (distance < bondLength * COMPRESSED_TERMINAL_CARBONYL_LEAF_CLASH_FACTOR - 1e-9) {
+    return false;
+  }
+
+  for (const [leafAtomId, otherAtomId] of [
+    [firstAtomId, secondAtomId],
+    [secondAtomId, firstAtomId]
+  ]) {
+    const endpoints = acceptedCompressedTerminalCarbonylLeafEndpointsForAtom(layoutGraph, coords, leafAtomId, bondLength);
+    if (
+      endpoints
+      && otherAtomId !== endpoints.centerAtomId
+      && (layoutGraph.atomToRings.get(otherAtomId)?.length ?? 0) > 0
+    ) {
+      return true;
+    }
+  }
+
+  return false;
 }
 
 /**
@@ -991,7 +1166,23 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
 export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}) {
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
   const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength);
-  return collectNonbondedPairs(layoutGraph, coords, (_firstAtomId, _secondAtomId, distance) => distance < threshold, atomGrid, threshold);
+  return collectNonbondedPairs(
+    layoutGraph,
+    coords,
+    (firstAtomId, secondAtomId, distance) => (
+      distance < threshold
+      && !isAcceptedCompressedTerminalCarbonylLeafOverlap(
+        layoutGraph,
+        coords,
+        firstAtomId,
+        secondAtomId,
+        distance,
+        bondLength
+      )
+    ),
+    atomGrid,
+    threshold
+  );
 }
 
 /**
@@ -1021,7 +1212,7 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
       continue;
     }
     const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
-    const deviation = isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, distance, bondLength)
+    const deviation = isAcceptedCompressedLeafBond(layoutGraph, coords, bond, distance, bondLength)
       ? 0
       : Math.abs(distance - bondLength);
     const validationSettings = validationSettingsForClass(bondValidationClasses.get(bond.id));

@@ -5,7 +5,7 @@ import { layoutBridgedFamily } from '../../../../src/layout/engine/families/brid
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { findSevereOverlaps } from '../../../../src/layout/engine/audit/invariants.js';
 import { BRIDGED_VALIDATION } from '../../../../src/layout/engine/constants.js';
-import { distance } from '../../../../src/layout/engine/geometry/vec2.js';
+import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { makeAdamantane, makeBicyclo222, makeNorbornane, makeUnmatchedBridgedCage } from '../support/molecules.js';
 
 /**
@@ -42,6 +42,24 @@ function assertBridgedLayoutQuality(graph, coords, options = {}) {
     assert.ok(bondDistance >= minBondLength);
     assert.ok(bondDistance <= maxBondLength);
   }
+}
+
+/**
+ * Returns the internal angle for one atom in a placed ring.
+ * @param {object} ring - Ring descriptor.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} atomId - Ring atom ID to inspect.
+ * @returns {number} Internal angle in radians.
+ */
+function ringInternalAngle(ring, coords, atomId) {
+  const index = ring.atomIds.indexOf(atomId);
+  const atomPosition = coords.get(atomId);
+  const previousPosition = coords.get(ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length]);
+  const nextPosition = coords.get(ring.atomIds[(index + 1) % ring.atomIds.length]);
+  return angularDifference(
+    angleOf(sub(previousPosition, atomPosition)),
+    angleOf(sub(nextPosition, atomPosition))
+  );
 }
 
 describe('layout/engine/families/bridged', () => {
@@ -103,6 +121,37 @@ describe('layout/engine/families/bridged', () => {
       distance(result.coords.get('C22'), result.coords.get('N27')) > graph.options.bondLength * 1.5,
       'expected the fused lactam bridge projection to keep C22 and N27 visually separated'
     );
+  });
+
+  it('keeps saturated bridged six-rings exact when routing a shared bridge run', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('CC12COC(C1)C(CC#N)C[NH2+]2'),
+      { suppressH: true }
+    );
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: null
+    });
+    const sixRing = rings.find(ring => !ring.aromatic && ring.atomIds.length === 6);
+    assert.ok(sixRing);
+
+    assert.equal(result.placementMode, 'projected-kamada-kawai');
+    assertBridgedLayoutQuality(graph, result.coords);
+    for (let index = 0; index < sixRing.atomIds.length; index++) {
+      const atomId = sixRing.atomIds[index];
+      const nextAtomId = sixRing.atomIds[(index + 1) % sixRing.atomIds.length];
+      assert.ok(
+        Math.abs(distance(result.coords.get(atomId), result.coords.get(nextAtomId)) - graph.options.bondLength) < 1e-6,
+        `expected ${atomId}-${nextAtomId} to keep target bond length`
+      );
+      assert.ok(
+        Math.abs(ringInternalAngle(sixRing, result.coords, atomId) - (2 * Math.PI) / 3) < 1e-6,
+        `expected ${atomId} to keep a regular six-ring angle`
+      );
+    }
   });
 
   it('places larger bridged cages from their templates too', () => {

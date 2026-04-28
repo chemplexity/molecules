@@ -15,6 +15,7 @@ import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.
 import { add, angleOf, angularDifference, centroid, rotate, sub, wrapAngle } from '../../geometry/vec2.js';
 import {
   findLayoutBond,
+  isExactRingOutwardEligibleSubstituent,
   isExactSimpleAcyclicContinuationEligible,
   isExactVisibleTrigonalBisectorEligible,
   isLinearCenter
@@ -93,6 +94,7 @@ const CROWDED_CENTER_SIBLING_ANCHOR_OFFSETS = [
   Math.PI / 15,
   -(Math.PI / 15)
 ];
+const CLEAN_DIRECT_ATTACHMENT_OUTWARD_EPSILON = Math.PI / 180;
 
 function largestAngularGapBisector(occupiedAngles) {
   const sortedAngles = [...occupiedAngles]
@@ -246,6 +248,103 @@ function measureDirectAttachmentOutwardPenalty(layoutGraph, coords, focusAtomIds
 
 function measureFocusDirectAttachmentOutwardPenalty(layoutGraph, coords, focusAtomIds = null) {
   return measureDirectAttachmentOutwardPenalty(layoutGraph, coords, focusAtomIds);
+}
+
+/**
+ * Returns the smallest deviation between a direct ring substituent and its
+ * exact outward target angles.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {string} otherAtomId - Exocyclic substituent atom ID.
+ * @returns {number|null} Smallest outward deviation in radians, or null.
+ */
+function directAttachmentOutwardDeviation(layoutGraph, coords, anchorAtomId, otherAtomId) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition || !coords.has(otherAtomId)) {
+    return null;
+  }
+
+  const outwardAngles = [
+    ...attachedRingAnchorOutwardAngles(layoutGraph, coords, anchorAtomId, otherAtomId),
+    ...computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null)
+  ].filter((outwardAngle, index, angles) =>
+    angles.findIndex(existingAngle => angularDifference(existingAngle, outwardAngle) <= 1e-9) === index
+  );
+  if (outwardAngles.length === 0) {
+    return null;
+  }
+
+  const otherAngle = angleOf(sub(coords.get(otherAtomId), anchorPosition));
+  return Math.min(...outwardAngles.map(outwardAngle => angularDifference(otherAngle, outwardAngle)));
+}
+
+/**
+ * Measures whether a candidate has pulled an already exact ring substituent
+ * away from its local outward axis inside the current attached-ring focus.
+ * Attached-ring fallback may improve a root ring pose, but it should preserve
+ * exact carboxyl, hetero, and terminal leaf exits that were clean before the
+ * candidate was tried.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} baseCoords - Baseline coordinate map.
+ * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate coordinate map.
+ * @param {Set<string>|null} [focusAtomIds] - Optional focused atoms to inspect.
+ * @returns {number} Summed outward-axis regression in radians.
+ */
+function measureCleanDirectAttachmentOutwardRegression(layoutGraph, baseCoords, candidateCoords, focusAtomIds = null) {
+  const focusSet = focusAtomIds instanceof Set && focusAtomIds.size > 0 ? focusAtomIds : null;
+  let totalRegression = 0;
+
+  for (const [anchorAtomId] of baseCoords) {
+    const anchorRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
+    if (anchorRings.length === 0 || !candidateCoords.has(anchorAtomId)) {
+      continue;
+    }
+
+    const incidentRingAtomIds = new Set(anchorRings.flatMap(ring => ring.atomIds));
+    const heavyExocyclicNeighborIds = [];
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (
+        !neighborAtom
+        || neighborAtom.element === 'H'
+        || incidentRingAtomIds.has(neighborAtomId)
+        || !baseCoords.has(neighborAtomId)
+        || !candidateCoords.has(neighborAtomId)
+      ) {
+        continue;
+      }
+      heavyExocyclicNeighborIds.push(neighborAtomId);
+    }
+    if (heavyExocyclicNeighborIds.length !== 1) {
+      continue;
+    }
+
+    const otherAtomId = heavyExocyclicNeighborIds[0];
+    if (focusSet && !focusSet.has(anchorAtomId) && !focusSet.has(otherAtomId)) {
+      continue;
+    }
+    if (!isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, otherAtomId)) {
+      continue;
+    }
+
+    const baseDeviation = directAttachmentOutwardDeviation(layoutGraph, baseCoords, anchorAtomId, otherAtomId);
+    if (baseDeviation == null || baseDeviation > CLEAN_DIRECT_ATTACHMENT_OUTWARD_EPSILON) {
+      continue;
+    }
+
+    const candidateDeviation = directAttachmentOutwardDeviation(layoutGraph, candidateCoords, anchorAtomId, otherAtomId);
+    if (candidateDeviation == null) {
+      continue;
+    }
+    totalRegression += Math.max(0, candidateDeviation - baseDeviation);
+  }
+
+  return totalRegression;
 }
 
 function collectAnchorSideFocusAtomIds(layoutGraph, descriptor, maxDepth = 3) {
@@ -1488,6 +1587,16 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           buildCandidateScore.lastRejectReason = 'exact-continuation';
           return null;
         }
+        const cleanDirectOutwardRegression = measureCleanDirectAttachmentOutwardRegression(
+          layoutGraph,
+          currentCoords,
+          candidateCoords,
+          focusAtomIds
+        );
+        if (cleanDirectOutwardRegression > 1e-6 && !reducesOverlapCount) {
+          buildCandidateScore.lastRejectReason = 'clean-direct-outward';
+          return null;
+        }
         const peripheralFocusClearance = measureAttachedRingPeripheralFocusClearance(
           layoutGraph,
           candidateCoords,
@@ -1611,6 +1720,15 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
         }
         const exactContinuationPenalty = measureExactAcyclicContinuationDistortion(layoutGraph, candidateCoords, focusAtomIds).totalDeviation;
         if (exactContinuationPenalty > baseExactContinuationPenalty + 1e-6) {
+          return null;
+        }
+        const cleanDirectOutwardRegression = measureCleanDirectAttachmentOutwardRegression(
+          layoutGraph,
+          currentCoords,
+          candidateCoords,
+          focusAtomIds
+        );
+        if (cleanDirectOutwardRegression > 1e-6) {
           return null;
         }
         const trigonalBisectorPenalty = measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, candidateCoords, descriptor);
