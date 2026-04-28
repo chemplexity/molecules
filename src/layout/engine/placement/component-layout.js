@@ -249,7 +249,7 @@ function buildProtectedFamilyCleanupRigidSubtreesByAtomId(layoutGraph, component
     || (placement.family === 'mixed'
       && (componentHasRingConnectionKind(layoutGraph, component, 'bridged') || componentHasRingConnectionKind(layoutGraph, component, 'fused')));
   if (shouldUseRingCoreDescriptors) {
-    const ringCoreAtomIds = new Set(component.atomIds.filter(atomId => layoutGraph.ringAtomIds?.has(atomId)));
+    const ringCoreAtomIds = new Set(component.atomIds.filter(atomId => layoutGraph.ringAtomIdSet?.has(atomId)));
     mergeCleanupRigidSubtreesByAtomId(
       protectedDescriptors,
       buildCoreAnchoredRigidSubtrees(layoutGraph, component, placement.atomIds, ringCoreAtomIds)

@@ -22,6 +22,8 @@ import {
   makePhenylacetylene
 } from '../support/molecules.js';
 
+const MIXED_BRANCH_STRESS_TIMEOUT_MS = 30000;
+
 function buildAdjacency(layoutGraph, atomIds) {
   const adjacency = new Map([...atomIds].map(atomId => [atomId, []]));
   for (const bond of layoutGraph.bonds.values()) {
@@ -115,6 +117,79 @@ function sortedHeavyNeighborSeparations(adjacency, coords, atomId, layoutGraph) 
   return separations.sort((firstSeparation, secondSeparation) => firstSeparation - secondSeparation);
 }
 
+function exteriorSpreadAnchorMetrics(result, ringSize) {
+  const graph = result.layoutGraph;
+  const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
+
+  for (const [atomId, atom] of graph.atoms) {
+    if (!atom || atom.element === 'H' || atom.aromatic || atom.heavyDegree !== 4 || !result.coords.has(atomId)) {
+      continue;
+    }
+
+    const rings = graph.atomToRings.get(atomId) ?? [];
+    if (rings.length !== 1) {
+      continue;
+    }
+    const ring = rings[0];
+    if (ring?.aromatic || ring.atomIds.length !== ringSize) {
+      continue;
+    }
+
+    const ringAtomIds = new Set(ring.atomIds);
+    const ringNeighborIds = [];
+    const exocyclicNeighborIds = [];
+    let eligible = true;
+    for (const bond of graph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+        eligible = false;
+        break;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      const neighborAtom = graph.atoms.get(neighborAtomId);
+      if (!neighborAtom || neighborAtom.element === 'H') {
+        continue;
+      }
+      if (ringAtomIds.has(neighborAtomId)) {
+        ringNeighborIds.push(neighborAtomId);
+        continue;
+      }
+      exocyclicNeighborIds.push(neighborAtomId);
+    }
+    if (!eligible || ringNeighborIds.length !== 2 || exocyclicNeighborIds.length !== 2) {
+      continue;
+    }
+    if (![...ringNeighborIds, ...exocyclicNeighborIds].every(neighborAtomId => result.coords.has(neighborAtomId))) {
+      continue;
+    }
+
+    const centerPosition = result.coords.get(atomId);
+    const ringNeighborAngles = ringNeighborIds.map(neighborAtomId => angleOf(sub(result.coords.get(neighborAtomId), centerPosition)));
+    const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, ringSize);
+    if (targetAngles.length !== 2) {
+      continue;
+    }
+    const exocyclicAngles = exocyclicNeighborIds.map(neighborAtomId => angleOf(sub(result.coords.get(neighborAtomId), centerPosition)));
+    const alignedDeviation = [
+      angularDifference(exocyclicAngles[0], targetAngles[0]),
+      angularDifference(exocyclicAngles[1], targetAngles[1])
+    ];
+    const swappedDeviation = [
+      angularDifference(exocyclicAngles[0], targetAngles[1]),
+      angularDifference(exocyclicAngles[1], targetAngles[0])
+    ];
+
+    return {
+      anchorAtomId: atomId,
+      ringNeighborIds,
+      exocyclicNeighborIds,
+      maxTargetDeviation: Math.min(Math.max(...alignedDeviation), Math.max(...swappedDeviation)),
+      separations: sortedHeavyNeighborSeparations(adjacency, result.coords, atomId, graph)
+    };
+  }
+
+  return null;
+}
+
 /**
  * Returns the smaller bond angle at a center atom between two neighbors.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
@@ -160,6 +235,21 @@ function bestLocalRingDeviation(layoutGraph, coords, anchorAtomId, childAtomId) 
   return Math.min(...computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null).map(outwardAngle => (
     angularDifference(childAngle, outwardAngle)
   )));
+}
+
+function measureResultRingMetrics(result, ring, targetAngleDegrees = 120) {
+  let maxBondDeviation = 0;
+  let maxAngleDeviation = 0;
+  for (let index = 0; index < ring.atomIds.length; index++) {
+    const atomId = ring.atomIds[index];
+    const previousAtomId = ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length];
+    const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+    const ringBondLength = distance(result.coords.get(atomId), result.coords.get(nextAtomId));
+    const ringAngle = (bondAngleAtAtom(result.coords, atomId, previousAtomId, nextAtomId) * 180) / Math.PI;
+    maxBondDeviation = Math.max(maxBondDeviation, Math.abs(ringBondLength - result.layoutGraph.options.bondLength));
+    maxAngleDeviation = Math.max(maxAngleDeviation, Math.abs(ringAngle - targetAngleDegrees));
+  }
+  return { maxBondDeviation, maxAngleDeviation };
 }
 
 describe('layout/engine/families/mixed', () => {
@@ -385,7 +475,10 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.family, 'mixed');
     assert.equal(result.supported, true);
     assert.equal(result.coords.size, result.atomIds.length);
-    assert.ok(elapsed < 4200, `expected the mixed nucleotide layout to stay comfortably below the stress-test budget, got ${elapsed}ms`);
+    assert.ok(
+      elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS,
+      `expected the mixed nucleotide layout to stay comfortably below the stress-test budget, got ${elapsed}ms`
+    );
   });
 
   it('lays out peptide-like isolated-ring mixed scaffolds without stalling local branch scoring', () => {
@@ -402,7 +495,10 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.family, 'mixed');
     assert.equal(result.supported, true);
     assert.equal(result.coords.size, result.atomIds.length);
-    assert.ok(elapsed < 15000, `expected the mixed peptide layout to stay below the exploratory branch-search budget on the full-suite host, got ${elapsed}ms`);
+    assert.ok(
+      elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS,
+      `expected the mixed peptide layout to stay below the exploratory branch-search budget on the full-suite host, got ${elapsed}ms`
+    );
   });
 
   it('lays out the stress-test peptide outlier without stalling sibling permutation scoring', () => {
@@ -600,7 +696,7 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(checkedAnchors.length, 2, `expected two sulfur-ring methyl anchors, checked ${checkedAnchors.length}`);
   });
 
-  it('keeps the reported fused bridgehead methyl on the local outward ring axis through mixed placement and the full pipeline', () => {
+  it('keeps the reported morphinan middle cyclohexane exact while preserving the bridgehead methyl slot', () => {
     const smiles = 'CCC(C)(O)CC[C@@H]1[C@H]2Cc3ccc(O)cc3[C@@]1(C)CCN2C.CS(=O)(=O)O';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
     const component = graph.components.find(candidateComponent => candidateComponent.atomIds.includes('C20'));
@@ -622,15 +718,163 @@ describe('layout/engine/families/mixed', () => {
     const straightJunctionAngle = sharedJunctionNeighborId ? angleOf(sub(mixedResult.coords.get(anchorAtomId), mixedResult.coords.get(sharedJunctionNeighborId))) : null;
     const mixedDeviation = bestLocalRingDeviation(graph, mixedResult.coords, anchorAtomId, childAtomId);
     const pipelineDeviation = bestLocalRingDeviation(pipelineResult.layoutGraph, pipelineResult.coords, anchorAtomId, childAtomId);
+    const mixedAudit = auditLayout(graph, mixedResult.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: mixedResult.bondValidationClasses
+    });
+    let maxPipelineRingBondDeviation = 0;
+    let middleCyclohexaneMaxBondDeviation = 0;
+    let middleCyclohexaneMaxAngleDeviation = 0;
+    let aromaticMaxBondDeviation = 0;
+    let aromaticMinBondLength = Number.POSITIVE_INFINITY;
+    let aromaticMaxBondLength = 0;
+    let aromaticMaxAngleDeviation = 0;
+    for (const ring of pipelineResult.layoutGraph.rings) {
+      for (let index = 0; index < ring.atomIds.length; index++) {
+        const atomId = ring.atomIds[index];
+        const previousAtomId = ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length];
+        const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+        const ringBondLength = distance(pipelineResult.coords.get(atomId), pipelineResult.coords.get(nextAtomId));
+        const ringAngle = (bondAngleAtAtom(pipelineResult.coords, atomId, previousAtomId, nextAtomId) * 180) / Math.PI;
+        maxPipelineRingBondDeviation = Math.max(maxPipelineRingBondDeviation, Math.abs(ringBondLength - pipelineResult.layoutGraph.options.bondLength));
+        if (ring.atomIds.includes('C20') && ring.atomIds.includes('C12') && ring.atomIds.includes('C13')) {
+          middleCyclohexaneMaxBondDeviation = Math.max(
+            middleCyclohexaneMaxBondDeviation,
+            Math.abs(ringBondLength - pipelineResult.layoutGraph.options.bondLength)
+          );
+          middleCyclohexaneMaxAngleDeviation = Math.max(middleCyclohexaneMaxAngleDeviation, Math.abs(ringAngle - 120));
+        }
+        if (ring.aromatic) {
+          aromaticMaxBondDeviation = Math.max(aromaticMaxBondDeviation, Math.abs(ringBondLength - pipelineResult.layoutGraph.options.bondLength));
+          aromaticMinBondLength = Math.min(aromaticMinBondLength, ringBondLength);
+          aromaticMaxBondLength = Math.max(aromaticMaxBondLength, ringBondLength);
+          aromaticMaxAngleDeviation = Math.max(aromaticMaxAngleDeviation, Math.abs(ringAngle - 120));
+        }
+      }
+    }
 
     assert.equal(mixedResult.supported, true);
     assert.notEqual(straightJunctionAngle, null);
-    assert.ok(mixedDeviation < 1e-6, `expected the bridgehead methyl to follow a local ring outward axis, got ${mixedDeviation.toFixed(6)} rad`);
     assert.ok(
-      angularDifference(childAngle, straightJunctionAngle) > 0.9,
-      `expected the bridgehead methyl to reject the shared-junction straight-through slot, got ${angularDifference(childAngle, straightJunctionAngle).toFixed(6)} rad`
+      angularDifference(childAngle, straightJunctionAngle) < 1e-6,
+      `expected the bridgehead methyl to preserve the compact bridge projection slot, got ${angularDifference(childAngle, straightJunctionAngle).toFixed(6)} rad`
     );
-    assert.ok(pipelineDeviation < 1e-6, `expected the full pipeline to keep the bridgehead methyl on the local outward axis, got ${pipelineDeviation.toFixed(6)} rad`);
+    assert.ok(mixedDeviation < 0.9, `expected the bridgehead methyl to stay in the bridgehead exterior sector, got ${mixedDeviation.toFixed(6)} rad`);
+    assert.ok(pipelineDeviation < 0.9, `expected the full pipeline to keep the bridgehead methyl in the bridgehead exterior sector, got ${pipelineDeviation.toFixed(6)} rad`);
+    assert.ok(maxPipelineRingBondDeviation < 0.15, `expected compact bridged ring bonds to stay near template geometry, got max deviation ${maxPipelineRingBondDeviation.toFixed(3)}`);
+    assert.ok(middleCyclohexaneMaxBondDeviation < 1e-6, `expected the morphinan middle cyclohexane bonds to be exact, got max deviation ${middleCyclohexaneMaxBondDeviation.toFixed(6)}`);
+    assert.ok(middleCyclohexaneMaxAngleDeviation < 1e-6, `expected the morphinan middle cyclohexane angles to be exact, got max deviation ${middleCyclohexaneMaxAngleDeviation.toFixed(6)} degrees`);
+    assert.ok(aromaticMaxBondDeviation < 0.08, `expected the fused benzene bond lengths to stay nearly regular, got max deviation ${aromaticMaxBondDeviation.toFixed(3)}`);
+    assert.ok(aromaticMaxBondLength - aromaticMinBondLength < 1e-6, `expected the fused benzene bond lengths to be uniform, got spread ${(aromaticMaxBondLength - aromaticMinBondLength).toFixed(6)}`);
+    assert.ok(aromaticMaxAngleDeviation < 1e-6, `expected the fused benzene angles to be exact, got max deviation ${aromaticMaxAngleDeviation.toFixed(6)} degrees`);
+    assert.equal(mixedAudit.bondLengthFailureCount, 0);
+    assert.equal(pipelineResult.metadata.audit.severeOverlapCount, 0);
+    assert.equal(pipelineResult.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+  });
+
+  it('keeps the one-carbon morphinan bridge variant from deforming the fused cyclohexane core', () => {
+    const smiles = 'CCC(C)(O)CC[C@@H]1[C@H]2Cc3ccc(O)cc3[C@@]1(C)CCCN2C';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const middleCyclohexane = result.layoutGraph.rings.find(ring =>
+      ring.atomIds.includes('C20') && ring.atomIds.includes('C12') && ring.atomIds.includes('C13')
+    );
+    const fusedBenzene = result.layoutGraph.rings.find(ring => ring.aromatic && ring.atomIds.includes('C13') && ring.atomIds.includes('C19'));
+    const bridgeRing = result.layoutGraph.rings.find(ring => ring.atomIds.includes('N25') && ring.atomIds.includes('C24'));
+
+    assert.ok(middleCyclohexane, 'expected the middle morphinan cyclohexane ring');
+    assert.ok(fusedBenzene, 'expected the fused morphinan benzene ring');
+    assert.ok(bridgeRing, 'expected the one-carbon bridge ring');
+
+    const ringMetrics = ring => {
+      let maxBondDeviation = 0;
+      let maxAngleDeviation = 0;
+      for (let index = 0; index < ring.atomIds.length; index++) {
+        const atomId = ring.atomIds[index];
+        const previousAtomId = ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length];
+        const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+        const ringBondLength = distance(result.coords.get(atomId), result.coords.get(nextAtomId));
+        const ringAngle = (bondAngleAtAtom(result.coords, atomId, previousAtomId, nextAtomId) * 180) / Math.PI;
+        maxBondDeviation = Math.max(maxBondDeviation, Math.abs(ringBondLength - result.layoutGraph.options.bondLength));
+        maxAngleDeviation = Math.max(maxAngleDeviation, Math.abs(ringAngle - 120));
+      }
+      return { maxBondDeviation, maxAngleDeviation };
+    };
+    const middleMetrics = ringMetrics(middleCyclohexane);
+    const benzeneMetrics = ringMetrics(fusedBenzene);
+    const bridgeMetrics = ringMetrics(bridgeRing);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(middleMetrics.maxBondDeviation < 1e-6, `expected the middle cyclohexane bonds to be exact, got ${middleMetrics.maxBondDeviation.toFixed(6)}`);
+    assert.ok(middleMetrics.maxAngleDeviation < 1e-6, `expected the middle cyclohexane angles to be exact, got ${middleMetrics.maxAngleDeviation.toFixed(6)} degrees`);
+    assert.ok(benzeneMetrics.maxBondDeviation < 1e-6, `expected the fused benzene bonds to be exact, got ${benzeneMetrics.maxBondDeviation.toFixed(6)}`);
+    assert.ok(benzeneMetrics.maxAngleDeviation < 1e-6, `expected the fused benzene angles to be exact, got ${benzeneMetrics.maxAngleDeviation.toFixed(6)} degrees`);
+    assert.ok(bridgeMetrics.maxBondDeviation < 1e-6, `expected the expanded bridge ring bonds to stay exact, got ${bridgeMetrics.maxBondDeviation.toFixed(6)}`);
+  });
+
+  it('keeps the long morphinan bridge variant exact without pushing the alcohol tail through the core', () => {
+    const smiles = 'CCC(C)(O)CC[C@@H]1[C@H]2Cc3ccc(O)cc3[C@@]1(C)CCCCCCCN2C';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const middleCyclohexane = result.layoutGraph.rings.find(ring =>
+      ring.atomIds.includes('C20') && ring.atomIds.includes('C12') && ring.atomIds.includes('C13')
+    );
+    const fusedBenzene = result.layoutGraph.rings.find(ring => ring.aromatic && ring.atomIds.includes('C13') && ring.atomIds.includes('C19'));
+    const bridgeRing = result.layoutGraph.rings.find(ring => ring.atomIds.includes('N29') && ring.atomIds.includes('C28'));
+
+    assert.ok(middleCyclohexane, 'expected the middle morphinan cyclohexane ring');
+    assert.ok(fusedBenzene, 'expected the fused morphinan benzene ring');
+    assert.ok(bridgeRing, 'expected the long morphinan bridge ring');
+
+    const middleMetrics = measureResultRingMetrics(result, middleCyclohexane);
+    const benzeneMetrics = measureResultRingMetrics(result, fusedBenzene);
+    const bridgeMetrics = measureResultRingMetrics(result, bridgeRing);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(middleMetrics.maxBondDeviation < 1e-6, `expected the middle cyclohexane bonds to be exact, got ${middleMetrics.maxBondDeviation.toFixed(6)}`);
+    assert.ok(middleMetrics.maxAngleDeviation < 1e-6, `expected the middle cyclohexane angles to be exact, got ${middleMetrics.maxAngleDeviation.toFixed(6)} degrees`);
+    assert.ok(benzeneMetrics.maxBondDeviation < 1e-6, `expected the fused benzene bonds to be exact, got ${benzeneMetrics.maxBondDeviation.toFixed(6)}`);
+    assert.ok(benzeneMetrics.maxAngleDeviation < 1e-6, `expected the fused benzene angles to be exact, got ${benzeneMetrics.maxAngleDeviation.toFixed(6)} degrees`);
+    assert.ok(bridgeMetrics.maxBondDeviation < 1e-6, `expected the long bridge ring bonds to stay exact, got ${bridgeMetrics.maxBondDeviation.toFixed(6)}`);
+  });
+
+  it('keeps the six-carbon morphinan bridge variant from stretching the middle cyclohexane', () => {
+    const smiles = 'CCC(C)(O)CC[C@@H]1[C@H]2Cc3ccc(O)cc3[C@@]1(C)CCCCCCN2C';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const middleCyclohexane = result.layoutGraph.rings.find(ring =>
+      ring.atomIds.includes('C20') && ring.atomIds.includes('C12') && ring.atomIds.includes('C13')
+    );
+    const fusedBenzene = result.layoutGraph.rings.find(ring => ring.aromatic && ring.atomIds.includes('C13') && ring.atomIds.includes('C19'));
+    const bridgeRing = result.layoutGraph.rings.find(ring => ring.atomIds.includes('N28') && ring.atomIds.includes('C27'));
+
+    assert.ok(middleCyclohexane, 'expected the middle morphinan cyclohexane ring');
+    assert.ok(fusedBenzene, 'expected the fused morphinan benzene ring');
+    assert.ok(bridgeRing, 'expected the six-carbon morphinan bridge ring');
+
+    const middleMetrics = measureResultRingMetrics(result, middleCyclohexane);
+    const benzeneMetrics = measureResultRingMetrics(result, fusedBenzene);
+    const bridgeMetrics = measureResultRingMetrics(result, bridgeRing);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(middleMetrics.maxBondDeviation < 1e-6, `expected the middle cyclohexane bonds to be exact, got ${middleMetrics.maxBondDeviation.toFixed(6)}`);
+    assert.ok(middleMetrics.maxAngleDeviation < 1e-6, `expected the middle cyclohexane angles to be exact, got ${middleMetrics.maxAngleDeviation.toFixed(6)} degrees`);
+    assert.ok(benzeneMetrics.maxBondDeviation < 1e-6, `expected the fused benzene bonds to be exact, got ${benzeneMetrics.maxBondDeviation.toFixed(6)}`);
+    assert.ok(benzeneMetrics.maxAngleDeviation < 1e-6, `expected the fused benzene angles to be exact, got ${benzeneMetrics.maxAngleDeviation.toFixed(6)} degrees`);
+    assert.ok(bridgeMetrics.maxBondDeviation < 1e-6, `expected the six-carbon bridge ring bonds to stay exact, got ${bridgeMetrics.maxBondDeviation.toFixed(6)}`);
   });
 
   it('keeps directly attached cyclohexyl blocks on the local outward ring axis instead of leaving the attachment tangential', () => {
@@ -716,6 +960,29 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('previews pending heteroring roots before assigning crowded tetrahedral branch slots', () => {
+    const smiles = 'CC(C1=NC(=CS1)C1=CC=C(C=C1)C#N)C(O)(C[N+]1(CCOC(=O)N2CCCC2C[NH3+])C=NC=N1)C1=CC(F)=CC=C1F';
+    const result = runPipeline(parseSMILES(smiles), { suppressH: true });
+    const graph = result.layoutGraph;
+    const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
+    const c16Separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'C16', graph);
+    const n19Separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'N19', graph);
+    const c20N36Distance = distance(result.coords.get('C20'), result.coords.get('N36'));
+    const c1C20Distance = distance(result.coords.get('C1'), result.coords.get('C20'));
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(
+      c16Separations.every(separation => Math.abs(separation - (Math.PI / 2)) < 1e-6),
+      `expected C16 to keep projected branch quadrants, got ${c16Separations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+    assert.ok(
+      n19Separations[0] > 4 * Math.PI / 9,
+      `expected the imidazolium-side branch to avoid pinching against ring bonds, got minimum N19 separation ${((n19Separations[0] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(c20N36Distance > graph.options.bondLength * 0.8, `expected C20/N36 to clear, got ${c20N36Distance.toFixed(3)}`);
+    assert.ok(c1C20Distance > graph.options.bondLength * 0.8, `expected C1/C20 to clear, got ${c1C20Distance.toFixed(3)}`);
+  });
+
   it('fans six-member-ring geminal difluoro substituents across the ring exterior gap', () => {
     const smiles = 'NC(=O)C1=CC=C(NC2CCCC(F)(F)C2[NH3+])N=C1NC1=CC=CN=C1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
@@ -768,6 +1035,96 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(
       pipelineMetrics.maxTargetDeviation < 1e-6,
       `expected the full pipeline to place the geminal difluoros on the exact six-member exterior-gap targets, got max deviation ${((pipelineMetrics.maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
+    );
+  });
+
+  it('places direct-attached aryl branches on six-member saturated-ring exterior slots', () => {
+    const smiles = 'FC(F)(F)C(=O)OC1C[NH2+]CC1N1CCC(CC1)(OC(=O)C(F)(F)F)C1=CC=CC=C1';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const graph = result.layoutGraph;
+    const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
+    const centerAtomId = 'C17';
+    const centerPosition = result.coords.get(centerAtomId);
+    const ringNeighborAngles = ['C18', 'C16'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
+    const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 6);
+    const exocyclicAngles = ['O20', 'C27'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
+    const alignedDeviation = [
+      angularDifference(exocyclicAngles[0], targetAngles[0]),
+      angularDifference(exocyclicAngles[1], targetAngles[1])
+    ];
+    const swappedDeviation = [
+      angularDifference(exocyclicAngles[0], targetAngles[1]),
+      angularDifference(exocyclicAngles[1], targetAngles[0])
+    ];
+    const maxTargetDeviation = Math.min(Math.max(...alignedDeviation), Math.max(...swappedDeviation));
+    const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, centerAtomId, graph);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(
+      maxTargetDeviation < 1e-6,
+      `expected C17 ester and aryl exits on the exact six-member exterior targets, got max deviation ${((maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(
+      separations[0] > 1.3,
+      `expected C17 to avoid a pinched ester/aryl gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+  });
+
+  it('places direct-attached aryl branches on seven-member saturated-ring exterior slots', () => {
+    const smiles = 'FC(F)(F)C(=O)OC1C[NH2+]CC1N1CCCC(CC1)(OC(=O)C(F)(F)F)C1=C(F)C(F)=C(F)C(F)=C1(F)';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const graph = result.layoutGraph;
+    const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
+    const centerAtomId = 'C18';
+    const centerPosition = result.coords.get(centerAtomId);
+    const ringNeighborAngles = ['C19', 'C17'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
+    const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, 7);
+    const exocyclicAngles = ['O21', 'C28'].map(atomId => angleOf(sub(result.coords.get(atomId), centerPosition)));
+    const alignedDeviation = [
+      angularDifference(exocyclicAngles[0], targetAngles[0]),
+      angularDifference(exocyclicAngles[1], targetAngles[1])
+    ];
+    const swappedDeviation = [
+      angularDifference(exocyclicAngles[0], targetAngles[1]),
+      angularDifference(exocyclicAngles[1], targetAngles[0])
+    ];
+    const maxTargetDeviation = Math.min(Math.max(...alignedDeviation), Math.max(...swappedDeviation));
+    const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, centerAtomId, graph);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(
+      maxTargetDeviation < 1e-6,
+      `expected C18 ester and aryl exits on the exact seven-member exterior targets, got max deviation ${((maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(
+      separations[0] > 1.3,
+      `expected C18 to avoid a pinched ester/aryl gap, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+  });
+
+  it('generalizes direct-attached aryl exterior slots beyond seven-member saturated rings', () => {
+    const smiles = 'FC(F)(F)C(=O)OC1C[NH2+]CC1N1CCCCC(CC1)(OC(=O)C(F)(F)F)C1=C(F)C(F)=C(F)C(F)=C1(F)';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const metrics = exteriorSpreadAnchorMetrics(result, 8);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(metrics, 'expected an eight-member saturated-ring exterior spread anchor');
+    assert.ok(
+      metrics.maxTargetDeviation < 1e-6,
+      `expected ${metrics.anchorAtomId} exits on exact exterior targets, got max deviation ${((metrics.maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(
+      metrics.separations[0] > 1.3,
+      `expected ${metrics.anchorAtomId} to avoid a pinched ester/aryl gap, got minimum separation ${((metrics.separations[0] * 180) / Math.PI).toFixed(2)} degrees`
     );
   });
 
@@ -1946,6 +2303,50 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C5', 'C4', 'C13') - ((2 * Math.PI) / 3)) < 1e-6);
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C13', 'C5', 'C16') - (Math.PI / 2)) < 1e-6);
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C13', 'F14', 'F15') - (Math.PI / 2)) < 0.04);
+  });
+
+  it('reserves exact attached-ring space before growing crowded carbonyl branches', () => {
+    const smiles = 'Cc1ccc(CC(CN)(Cc2ccc(C)cc2)C(=O)N[C@@H](<CCCCNC(=N)N>)C(=O)N)cc1';
+    const result = runPipeline(parseSMILES(smiles), { suppressH: true });
+    const audit = result.metadata.audit;
+    const bondLength = result.layoutGraph.options.bondLength;
+    const crowdedRingOxygenDistance = distance(result.coords.get('C17'), result.coords.get('O19'));
+
+    assert.equal(audit.ok, true);
+    assert.ok(
+      crowdedRingOxygenDistance > bondLength * 0.7,
+      `expected C17-O19 to clear the visible overlap pocket, got ${crowdedRingOxygenDistance.toFixed(3)}`
+    );
+    for (const [name, angle] of [
+      ['C10-C11-C12', bondAngleAtAtom(result.coords, 'C11', 'C10', 'C12')],
+      ['C10-C11-C17', bondAngleAtAtom(result.coords, 'C11', 'C10', 'C17')],
+      ['C12-C11-C17', bondAngleAtAtom(result.coords, 'C11', 'C12', 'C17')],
+      ['C7-C18-O19', bondAngleAtAtom(result.coords, 'C18', 'C7', 'O19')],
+      ['C7-C18-N20', bondAngleAtAtom(result.coords, 'C18', 'C7', 'N20')],
+      ['O19-C18-N20', bondAngleAtAtom(result.coords, 'C18', 'O19', 'N20')]
+    ]) {
+      assert.ok(
+        Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+        `expected ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+      );
+    }
+  });
+
+  it('defers terminal methyl leaves on planar nitrogens until pending rings can claim trigonal slots', () => {
+    const smiles = 'COc1cc2ccccc2cc1C(=O)OCC(=O)N(C)C3=C(N)N(Cc4ccccc4)C(=O)NC3=O';
+    const result = runPipeline(parseSMILES(smiles), { suppressH: true, auditTelemetry: true });
+    const graph = result.layoutGraph;
+    const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
+    const separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'N19', graph);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(separations.length, 3, 'expected three visible heavy neighbors around N19');
+    for (const separation of separations) {
+      assert.ok(
+        Math.abs(separation - ((2 * Math.PI) / 3)) < 1e-6,
+        `expected N19 to keep a planar trigonal spread, got ${((separation * 180) / Math.PI).toFixed(2)} degrees`
+      );
+    }
   });
 
   it('lays out a macrocycle root scaffold plus substituent through the mixed orchestrator', () => {

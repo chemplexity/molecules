@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { layoutBridgedFamily } from '../../../../src/layout/engine/families/bridged.js';
+import { parseSMILES } from '../../../../src/io/smiles.js';
 import { findSevereOverlaps } from '../../../../src/layout/engine/audit/invariants.js';
 import { BRIDGED_VALIDATION } from '../../../../src/layout/engine/constants.js';
 import { distance } from '../../../../src/layout/engine/geometry/vec2.js';
@@ -81,6 +82,27 @@ describe('layout/engine/families/bridged', () => {
 
     assert.equal(Math.sign(seededResult.coords.get('a4').y), Math.sign(mirroredExistingCoords.get('a4').y));
     assert.equal(Math.sign(seededResult.coords.get('a5').y), Math.sign(mirroredExistingCoords.get('a5').y));
+  });
+
+  it('keeps the KK seed when bridge projection would collapse compact fused-bridged systems', () => {
+    const graph = createLayoutGraph(
+      parseSMILES('N[C@@H](Cc1ccccc1)C(=O)N2C[C@H]3C[C@@H](C2)C4=CC=CC(=O)N4C3'),
+      { suppressH: true }
+    );
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 3);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: null
+    });
+
+    assert.equal(result.placementMode, 'projected-kamada-kawai');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assert.ok(
+      distance(result.coords.get('C22'), result.coords.get('N27')) > graph.options.bondLength * 1.5,
+      'expected the fused lactam bridge projection to keep C22 and N27 visually separated'
+    );
   });
 
   it('places larger bridged cages from their templates too', () => {

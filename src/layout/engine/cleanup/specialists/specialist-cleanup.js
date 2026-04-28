@@ -157,7 +157,10 @@ function isSafeFinalHypervalentRetouch(layoutGraph, candidateState, incumbentSta
   if ((candidateAudit.bridgedReadabilityFailure ?? false) && !(incumbentAudit.bridgedReadabilityFailure ?? false)) {
     return false;
   }
-  return candidateAudit.maxBondLengthDeviation <= incumbentAudit.maxBondLengthDeviation + 1e-9;
+  return (
+    candidateAudit.bondLengthFailureCount <= incumbentAudit.bondLengthFailureCount
+    || candidateAudit.maxBondLengthDeviation <= incumbentAudit.maxBondLengthDeviation + 1e-9
+  );
 }
 
 /**

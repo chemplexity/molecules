@@ -4,12 +4,16 @@ import { auditCleanupStage, auditFinalStereoStage, measureCleanupStagePresentati
 import { collectProtectedEZAtomIds } from '../stereo/ez.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 import { mergeFrozenAtomIds } from './frozen-atoms.js';
-import { measureRingSubstituentPresentationPenalty } from './presentation/ring-substituent.js';
+import {
+  measureAttachedRingPeripheralFocusPenalty,
+  measureAttachedRingRootOutwardPresentationPenalty
+} from './presentation/attached-ring-fallback.js';
 import { hasOutstandingRingPresentationNeed, runRingPresentationCleanup } from './presentation/ring-presentation.js';
 import {
   hasSpecialistCleanupNeed,
   runSpecialistCleanup
 } from './specialists/specialist-cleanup.js';
+import { measureOrthogonalHypervalentDeviation } from './hypervalent-angle-tidy.js';
 import {
   isPreferredCleanupGeometryStage,
   isPreferredFinalStereoStage,
@@ -163,14 +167,71 @@ export function buildCleanupStageGraph(context) {
     return result;
   };
   const auditFinalStereoWithTieBreak = (candidate, incumbent) => isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true });
+  /**
+   * Returns whether specialist cleanup kept externally visible audit counts at
+   * least as good as the incumbent stage.
+   * @param {object|null} candidateAudit - Candidate audit summary.
+   * @param {object|null} incumbentAudit - Incumbent audit summary.
+   * @returns {boolean} True when audit counts did not regress.
+   */
+  const auditCountsDoNotWorsen = (candidateAudit, incumbentAudit) => {
+    if (!candidateAudit || !incumbentAudit || (incumbentAudit.ok === true && candidateAudit.ok !== true)) {
+      return false;
+    }
+    for (const key of [
+      'bondLengthFailureCount',
+      'mildBondLengthFailureCount',
+      'severeBondLengthFailureCount',
+      'collapsedMacrocycleCount',
+      'ringSubstituentReadabilityFailureCount',
+      'inwardRingSubstituentCount',
+      'outwardAxisRingSubstituentFailureCount',
+      'severeOverlapCount',
+      'labelOverlapCount'
+    ]) {
+      if ((candidateAudit[key] ?? 0) > (incumbentAudit[key] ?? 0)) {
+        return false;
+      }
+    }
+    return !((candidateAudit.stereoContradiction ?? false) && !(incumbentAudit.stereoContradiction ?? false));
+  };
+  /**
+   * Scores specialist stages with the normal final-stereo audit plus
+   * hypervalent-angle deviation for specialist-specific tie-breaking.
+   * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+   * @returns {object} Final-stage score with hypervalent deviation.
+   */
+  const auditSpecialistStage = coords => ({
+    ...auditFinalStereo(coords),
+    hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, coords)
+  });
+  /**
+   * Compares specialist stages, allowing exact hypervalent retouches to win
+   * when they reduce sulfur/phosphorus angle deviation without audit regressions.
+   * @param {object} candidate - Candidate specialist stage score.
+   * @param {object} incumbent - Incumbent stage score.
+   * @returns {boolean} True when the candidate should replace the incumbent.
+   */
+  const specialistCleanupComparator = (candidate, incumbent) => {
+    if (auditFinalStereoWithTieBreak(candidate, incumbent)) {
+      return true;
+    }
+    return (
+      (candidate.hypervalentDeviation ?? Number.POSITIVE_INFINITY) < (incumbent?.hypervalentDeviation ?? Number.POSITIVE_INFINITY) - 1e-9
+      && auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)
+    );
+  };
   const cleanupGeometryComparator = protectBondIntegrity
     ? (candidate, incumbent) => isPreferredProtectedCleanupStage(familySummary, placement, candidate, incumbent)
     : isPreferredCleanupGeometryStage;
+  const scorePresentationTieBreakMetrics = coords => ({
+    presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords),
+    attachedRingPeripheralPenalty: measureAttachedRingPeripheralFocusPenalty(layoutGraph, coords, bondLength),
+    attachedRingRootOutwardPenalty: measureAttachedRingRootOutwardPresentationPenalty(layoutGraph, coords, placement.frozenAtomIds)
+  });
   const scoreGeometryStage = coords => ({
     audit: auditCleanupStage(layoutGraph, coords, placement, bondLength),
-    presentationPenalty: measureRingSubstituentPresentationPenalty(layoutGraph, coords, {
-      includeLinkedRingBridgePenalty: true
-    })
+    ...scorePresentationTieBreakMetrics(coords)
   });
   const hasRingSubstituentHook = hasPostCleanupHook(policy, 'ring-substituent-tidy');
   const hasRingTerminalHeteroHook = hasPostCleanupHook(policy, 'ring-terminal-hetero-tidy');
@@ -311,6 +372,9 @@ export function buildCleanupStageGraph(context) {
           hookNudges: presentationResult.nudges ?? 0,
           strategiesRun: presentationResult.strategiesRun ?? [],
           usedAttachedRingFallback: presentationResult.usedAttachedRingFallback === true,
+          presentationPenalty: presentationResult.presentationPenalty,
+          attachedRingPeripheralPenalty: presentationResult.attachedRingPeripheralPenalty,
+          attachedRingRootOutwardPenalty: presentationResult.attachedRingRootOutwardPenalty,
           stabilizationRequest:
             stabilizationReasons.size > 0
               ? {
@@ -338,8 +402,8 @@ export function buildCleanupStageGraph(context) {
           frozenAtomIds: placement.frozenAtomIds,
           cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId,
           protectLargeMoleculeBackbone,
-          scoreCoordsFn: auditFinalStereo,
-          comparatorFn: auditFinalStereoWithTieBreak,
+          scoreCoordsFn: auditSpecialistStage,
+          comparatorFn: specialistCleanupComparator,
           onStep: inputContext.onStep
             ? (stepName, coords, nudges) => {
                 const [label, description] = HOOK_STEP_META[stepName] ?? [stepName, 'Specialist cleanup step.'];
@@ -349,8 +413,8 @@ export function buildCleanupStageGraph(context) {
         });
         return result.nudges > 0 ? result : null;
       },
-      scoreFn: auditFinalStereo,
-      comparatorFn: auditFinalStereoWithTieBreak,
+      scoreFn: auditSpecialistStage,
+      comparatorFn: specialistCleanupComparator,
       accumulateSidecar: acceptedNudgeAccumulator('specialistCleanup')
     }
   ];
@@ -394,14 +458,15 @@ export function buildCleanupStageGraph(context) {
     const stageResult = context.hasStereoTargets === true
       ? {
           name: 'selectedGeometryCheckpoint',
-          ...auditFinalStereo(runnerState.bestStage.coords)
+          ...auditFinalStereo(runnerState.bestStage.coords),
+          ...scorePresentationTieBreakMetrics(runnerState.bestStage.coords)
         }
       : {
           name: 'selectedGeometryCheckpoint',
           coords: runnerState.bestStage.coords,
           stereo: context.emptyStereoSummary,
           audit: runnerState.bestStage.audit ?? null,
-          presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, runnerState.bestStage.coords)
+          ...scorePresentationTieBreakMetrics(runnerState.bestStage.coords)
         };
     const stageExecution = createStageExecutionEntry(stageResult.name, 'best', {
       ran: true,
@@ -430,106 +495,74 @@ export function buildCleanupStageGraph(context) {
       }
     }
 
+    function runSyntheticStereoStage(stageName, parentStageName, stageStart, transformResult) {
+      const stageResult = {
+        name: stageName,
+        ...transformResult,
+        ...auditFinalStereo(transformResult.coords)
+      };
+      const accepted = isPreferredFinalStereoStage(stageResult, runnerState.bestStage);
+      const stageExecution = createStageExecutionEntry(stageName, parentStageName, {
+        ran: true,
+        materialized: true,
+        accepted,
+        elapsedMs: context.nowMs() - stageStart,
+        audit: stageResult.audit ?? null
+      });
+      addSyntheticStageResult(runnerState, stageResult, stageExecution, context);
+      if (accepted) {
+        syncAggregateStageResult(
+          runnerState,
+          'stereoRescueCleanup',
+          'selectedGeometryCheckpoint',
+          stageResult,
+          stageExecution.elapsedMs
+        );
+      }
+      return stageResult;
+    }
+
     const protectedFrozenAtomIds = mergeFrozenAtomIds(placement.frozenAtomIds, collectProtectedEZAtomIds(layoutGraph));
     let stereoTouchupStageResult = null;
 
     if (protectedFrozenAtomIds != null && hasStereoRescueOverlaps(runnerState.allStageResults, runnerState.bestStage)) {
-      const stageName = 'stereoProtectedTouchup';
       const stageStart = context.nowMs();
-      const transformResult = runUnifiedCleanup(layoutGraph, parentStageResult.coords, {
-        ...baseCleanupOptions,
-        maxPasses: 1,
-        protectBondIntegrity: true,
-        frozenAtomIds: protectedFrozenAtomIds
-      });
-      const stageResult = {
-        name: stageName,
-        ...transformResult,
-        ...auditFinalStereo(transformResult.coords)
-      };
-      const accepted = isPreferredFinalStereoStage(stageResult, runnerState.bestStage);
-      const stageExecution = createStageExecutionEntry(stageName, ['stereoRescueCleanup', 'selectedGeometryCheckpoint'], {
-        ran: true,
-        materialized: true,
-        accepted,
-        elapsedMs: context.nowMs() - stageStart,
-        audit: stageResult.audit ?? null
-      });
-      addSyntheticStageResult(runnerState, stageResult, stageExecution, context);
-      if (accepted) {
-        syncAggregateStageResult(
-          runnerState,
-          'stereoRescueCleanup',
-          'selectedGeometryCheckpoint',
-          stageResult,
-          stageExecution.elapsedMs
-        );
-      }
+      runSyntheticStereoStage(
+        'stereoProtectedTouchup',
+        ['stereoRescueCleanup', 'selectedGeometryCheckpoint'],
+        stageStart,
+        runUnifiedCleanup(layoutGraph, parentStageResult.coords, {
+          ...baseCleanupOptions,
+          maxPasses: 1,
+          protectBondIntegrity: true,
+          frozenAtomIds: protectedFrozenAtomIds
+        })
+      );
     }
 
     if (hasStereoRescueOverlaps(runnerState.allStageResults, runnerState.bestStage)) {
-      const stageName = 'stereoTouchup';
       const stageStart = context.nowMs();
-      const transformResult = runUnifiedCleanup(layoutGraph, parentStageResult.coords, {
-        ...baseCleanupOptions,
-        maxPasses: 1,
-        protectBondIntegrity: true,
-        frozenAtomIds: placement.frozenAtomIds
-      });
-      stereoTouchupStageResult = {
-        name: stageName,
-        ...transformResult,
-        ...auditFinalStereo(transformResult.coords)
-      };
-      const accepted = isPreferredFinalStereoStage(stereoTouchupStageResult, runnerState.bestStage);
-      const stageExecution = createStageExecutionEntry(stageName, ['stereoRescueCleanup', 'selectedGeometryCheckpoint'], {
-        ran: true,
-        materialized: true,
-        accepted,
-        elapsedMs: context.nowMs() - stageStart,
-        audit: stereoTouchupStageResult.audit ?? null
-      });
-      addSyntheticStageResult(runnerState, stereoTouchupStageResult, stageExecution, context);
-      if (accepted) {
-        syncAggregateStageResult(
-          runnerState,
-          'stereoRescueCleanup',
-          'selectedGeometryCheckpoint',
-          stereoTouchupStageResult,
-          stageExecution.elapsedMs
-        );
-      }
+      stereoTouchupStageResult = runSyntheticStereoStage(
+        'stereoTouchup',
+        ['stereoRescueCleanup', 'selectedGeometryCheckpoint'],
+        stageStart,
+        runUnifiedCleanup(layoutGraph, parentStageResult.coords, {
+          ...baseCleanupOptions,
+          maxPasses: 1,
+          protectBondIntegrity: true,
+          frozenAtomIds: placement.frozenAtomIds
+        })
+      );
     }
 
     if (stereoTouchupStageResult && hasStereoRescueOverlaps(runnerState.allStageResults, runnerState.bestStage)) {
-      const stageName = 'postTouchupStereo';
       const stageStart = context.nowMs();
-      const transformResult = enforceAcyclicEZStereo(layoutGraph, stereoTouchupStageResult.coords, {
-        bondLength
-      });
-      const stageResult = {
-        name: stageName,
-        ...transformResult,
-        ...auditFinalStereo(transformResult.coords)
-      };
-      const accepted = isPreferredFinalStereoStage(stageResult, runnerState.bestStage);
-      const stageExecution = createStageExecutionEntry(stageName, 'stereoTouchup', {
-        ran: true,
-        materialized: true,
-        accepted,
-        elapsedMs: context.nowMs() - stageStart,
-        audit: stageResult.audit ?? null
-      });
-      addSyntheticStageResult(runnerState, stageResult, stageExecution, context);
-      if (accepted) {
-        syncAggregateStageResult(
-          runnerState,
-          'stereoRescueCleanup',
-          'selectedGeometryCheckpoint',
-          stageResult,
-          stageExecution.elapsedMs
-        );
-      }
+      runSyntheticStereoStage(
+        'postTouchupStereo',
+        'stereoTouchup',
+        stageStart,
+        enforceAcyclicEZStereo(layoutGraph, stereoTouchupStageResult.coords, { bondLength })
+      );
     }
 
     return runnerState;

@@ -614,6 +614,15 @@ function createBenzoxathiobicycloCoreTemplate() {
 }
 
 /**
+ * Creates the morphinan-style benzocyclohexane aza-bridged core found in
+ * opioid-like scaffolds such as levorphanol and related salts.
+ * @returns {Molecule} Morphinan-style ring-system template molecule.
+ */
+function createMorphinanCoreTemplate() {
+  return createHeavyTemplateFromSmiles('morphinan-core', 'C1C2Cc3ccccc3C1CCN2');
+}
+
+/**
  * Creates the tropane scaffold graph used by cocaine-like bridged alkaloids.
  * @returns {Molecule} Tropane scaffold template molecule.
  */
@@ -1212,6 +1221,30 @@ function createBenzoxathiobicycloCoreGeometry() {
 }
 
 /**
+ * Creates a morphinan-style projection with an exact fused benzene, an exact
+ * central cyclohexane, and a compact aza bridge drawn outside the saturated
+ * ring. The atom IDs match `C1C2Cc3ccccc3C1CCN2` as parsed above.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createMorphinanCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C9', { x: 0, y: -0.5 }],
+    ['C10', { x: 0.8660254037844386, y: -1 }],
+    ['C1', { x: 1.7320508075688772, y: -0.5 }],
+    ['C2', { x: 1.7320508075688772, y: 0.5 }],
+    ['C3', { x: 0.8660254037844386, y: 1 }],
+    ['C4', { x: 0, y: 0.5 }],
+    ['C5', { x: -0.8660254037844386, y: 1 }],
+    ['C6', { x: -1.7320508075688772, y: 0.5 }],
+    ['C7', { x: -1.7320508075688772, y: -0.5 }],
+    ['C8', { x: -0.8660254037844386, y: -1 }],
+    ['C11', { x: 1.3274545589330013, y: -1.7813766487939615 }],
+    ['C12', { x: 1.9762468991775517, y: -1.060478569082301 }],
+    ['N13', { x: 2.3520006876696793, y: -0.21553754832782718 }]
+  ]);
+}
+
+/**
  * Creates a conventional tropane projection matching the common cocaine-style
  * drawing: a vertical aza bridge on the left, a compact left bridge, and a
  * longer right-hand bridge that descends toward the lower-right exit vector.
@@ -1343,6 +1376,7 @@ export function buildTemplateLibrary() {
       createBenzoxathiobicycloCoreTemplate(),
       geometrySpec('normalized-xy', createBenzoxathiobicycloCoreGeometry(), BRIDGED_VALIDATION)
     ),
+    createTemplate('morphinan-core', 'bridged', 52, createMorphinanCoreTemplate(), geometrySpec('normalized-xy', createMorphinanCoreGeometry(), BRIDGED_VALIDATION)),
     createTemplate('norbornane', 'bridged', 50, createNorbornaneTemplate(), geometrySpec('normalized-xy', createNorbornaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('quinoline', 'fused', 49, createQuinolineTemplate(), geometrySpec('normalized-xy', createQuinolineGeometry(), PLANAR_VALIDATION)),
     createTemplate('isoquinoline', 'fused', 48, createIsoquinolineTemplate(), geometrySpec('normalized-xy', createIsoquinolineGeometry(), PLANAR_VALIDATION)),

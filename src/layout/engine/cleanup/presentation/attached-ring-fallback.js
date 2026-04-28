@@ -10,6 +10,7 @@ import {
   measureThreeHeavyContinuationDistortion,
   measureTrigonalDistortion
 } from '../../audit/invariants.js';
+import { auditLayout } from '../../audit/audit.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
 import { add, angleOf, angularDifference, centroid, rotate, sub, wrapAngle } from '../../geometry/vec2.js';
 import {
@@ -55,6 +56,43 @@ const ATTACHED_RING_COUPLED_RESCUE_ANGLES = [
 ];
 const ATTACHED_RING_PERIPHERAL_FOCUS_CLEARANCE_FACTOR = 0.75;
 const ATTACHED_RING_PARENT_CONJUGATED_HETERO_ELEMENTS = new Set(['O', 'S', 'Se', 'P']);
+const CROWDED_CENTER_HEAVY_ATOM_LIMIT = 60;
+const CROWDED_CENTER_MAX_RING_ROOTS = 4;
+const CROWDED_CENTER_MAX_SUBTREE_HEAVY_ATOMS = 12;
+const CROWDED_CENTER_ROOT_DEVIATION_TRIGGER = Math.PI / 6;
+const CROWDED_CENTER_SIBLING_DEVIATION_LIMIT = Math.PI / 18;
+const CROWDED_CENTER_MIN_ROOT_PENALTY_IMPROVEMENT = (Math.PI / 18) ** 2;
+const CROWDED_CENTER_MAX_TETRAHEDRAL_WORSENING = 0.25;
+const CROWDED_CENTER_PRIMARY_ANCHOR_OFFSETS = [
+  0,
+  Math.PI / 30,
+  -(Math.PI / 30),
+  Math.PI / 15,
+  -(Math.PI / 15),
+  Math.PI / 10,
+  -(Math.PI / 10),
+  Math.PI / 7.5,
+  -(Math.PI / 7.5),
+  Math.PI / 6,
+  -(Math.PI / 6),
+  Math.PI / 5,
+  -(Math.PI / 5),
+  7 * Math.PI / 30,
+  -(7 * Math.PI / 30),
+  4 * Math.PI / 15,
+  -(4 * Math.PI / 15),
+  3 * Math.PI / 10,
+  -(3 * Math.PI / 10),
+  Math.PI / 3,
+  -(Math.PI / 3)
+];
+const CROWDED_CENTER_SIBLING_ANCHOR_OFFSETS = [
+  0,
+  Math.PI / 30,
+  -(Math.PI / 30),
+  Math.PI / 15,
+  -(Math.PI / 15)
+];
 
 function largestAngularGapBisector(occupiedAngles) {
   const sortedAngles = [...occupiedAngles]
@@ -958,6 +996,416 @@ export function measureAttachedRingPeripheralFocusPenalty(layoutGraph, coords, b
 }
 
 /**
+ * Measures direct-attached ring root outward error for presentation scoring.
+ * This captures crowded non-ring centers where a ring subtree is overlap-free
+ * but visibly rotated off the ring atom's own exterior axis.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Set<string>|null} [frozenAtomIds] - Optional atoms that must not move.
+ * @returns {number} Summed squared attached-ring root outward penalty.
+ */
+export function measureAttachedRingRootOutwardPresentationPenalty(layoutGraph, coords, frozenAtomIds = null) {
+  let totalPenalty = 0;
+  for (const descriptor of collectMovableAttachedRingDescriptors(layoutGraph, coords, frozenAtomIds)) {
+    totalPenalty += measureAttachedRingRootOutwardPenalty(layoutGraph, coords, descriptor);
+  }
+  return totalPenalty;
+}
+
+/**
+ * Counts non-hydrogen atoms in a candidate subtree.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Atom IDs to inspect.
+ * @returns {number} Heavy atom count.
+ */
+function countHeavyAtoms(layoutGraph, atomIds) {
+  let heavyAtomCount = 0;
+  for (const atomId of atomIds) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (atom && atom.element !== 'H') {
+      heavyAtomCount++;
+    }
+  }
+  return heavyAtomCount;
+}
+
+/**
+ * Measures how far a direct-attached ring root is from pointing its parent
+ * bond along the ring atom's exterior bisector.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} rootAtomId - Ring root atom ID.
+ * @param {string} parentAtomId - Parent atom attached to the ring root.
+ * @returns {{deviation: number, correction: number}|null} Best outward fit, or null.
+ */
+function directAttachedRingRootOutwardFit(layoutGraph, coords, rootAtomId, parentAtomId) {
+  const rootPosition = coords.get(rootAtomId);
+  const parentPosition = coords.get(parentAtomId);
+  if (!rootPosition || !parentPosition) {
+    return null;
+  }
+
+  const parentAngle = angleOf(sub(parentPosition, rootPosition));
+  let bestFit = null;
+  for (const outwardAngle of attachedRingRootOutwardAngles(layoutGraph, coords, rootAtomId, parentAtomId)) {
+    const deviation = angularDifference(parentAngle, outwardAngle);
+    const correction = wrapAngle(parentAngle - outwardAngle);
+    if (!bestFit || deviation < bestFit.deviation) {
+      bestFit = {
+        deviation,
+        correction
+      };
+    }
+  }
+
+  return bestFit;
+}
+
+/**
+ * Scores all ring roots around a crowded center by summed outward deviation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {Array<{rootAtomId: string, centerAtomId: string}>} rootRecords - Attached ring root records.
+ * @returns {number} Summed squared root-outward penalty.
+ */
+function crowdedCenterRootPenalty(layoutGraph, coords, rootRecords) {
+  let penalty = 0;
+  for (const record of rootRecords) {
+    const fit = directAttachedRingRootOutwardFit(layoutGraph, coords, record.rootAtomId, record.centerAtomId);
+    if (fit) {
+      penalty += fit.deviation ** 2;
+    }
+  }
+  return penalty;
+}
+
+/**
+ * Finds compact non-ring centers with several directly attached movable ring
+ * blocks where one root visibly misses its own exterior axis.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {Set<string>|null} [frozenAtomIds] - Optional atoms that must not move.
+ * @returns {Array<{centerAtomId: string, rootRecords: object[]}>} Crowded center descriptors.
+ */
+function collectCrowdedAttachedRingCenterDescriptors(layoutGraph, coords, frozenAtomIds = null) {
+  if ((layoutGraph.traits.heavyAtomCount ?? 0) > CROWDED_CENTER_HEAVY_ATOM_LIMIT) {
+    return [];
+  }
+
+  const descriptors = [];
+  for (const [centerAtomId, centerPosition] of coords) {
+    if (!centerPosition) {
+      continue;
+    }
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    if (
+      !centerAtom
+      || centerAtom.element === 'H'
+      || centerAtom.aromatic
+      || centerAtom.chirality
+      || centerAtom.heavyDegree < 3
+      || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+    ) {
+      continue;
+    }
+
+    const rootRecords = [];
+    let allHeavyBondsAreSingle = true;
+    for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const rootAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+      const rootAtom = layoutGraph.atoms.get(rootAtomId);
+      if (!rootAtom || rootAtom.element === 'H') {
+        continue;
+      }
+      if (bond.aromatic || (bond.order ?? 1) !== 1) {
+        allHeavyBondsAreSingle = false;
+        break;
+      }
+      if ((layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) === 0 || rootAtom.chirality) {
+        continue;
+      }
+
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+      const subtreeHeavyAtomCount = countHeavyAtoms(layoutGraph, subtreeAtomIds);
+      if (
+        subtreeAtomIds.length === 0
+        || subtreeHeavyAtomCount === 0
+        || subtreeHeavyAtomCount > CROWDED_CENTER_MAX_SUBTREE_HEAVY_ATOMS
+        || subtreeAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId))
+        || (frozenAtomIds && containsFrozenAtom(subtreeAtomIds, frozenAtomIds))
+      ) {
+        continue;
+      }
+
+      const fit = directAttachedRingRootOutwardFit(layoutGraph, coords, rootAtomId, centerAtomId);
+      if (!fit) {
+        continue;
+      }
+      rootRecords.push({
+        centerAtomId,
+        rootAtomId,
+        subtreeAtomIds,
+        subtreeHeavyAtomCount,
+        rootOutwardDeviation: fit.deviation,
+        rootCorrection: fit.correction
+      });
+    }
+
+    if (
+      !allHeavyBondsAreSingle
+      || rootRecords.length < 3
+      || rootRecords.length > CROWDED_CENTER_MAX_RING_ROOTS
+      || !rootRecords.some(record => record.rootOutwardDeviation > CROWDED_CENTER_ROOT_DEVIATION_TRIGGER)
+    ) {
+      continue;
+    }
+
+    descriptors.push({
+      centerAtomId,
+      rootRecords
+    });
+  }
+
+  return descriptors;
+}
+
+/**
+ * Returns the center-anchor rotation offsets to try for one attached ring record.
+ * @param {{rootAtomId: string, rootOutwardDeviation: number}} record - Attached ring record.
+ * @param {string} targetRootAtomId - Root currently being repaired exactly.
+ * @returns {number[]} Candidate anchor offsets in radians.
+ */
+function crowdedCenterAnchorOffsetsForRecord(record, targetRootAtomId) {
+  if (record.rootAtomId === targetRootAtomId) {
+    return CROWDED_CENTER_PRIMARY_ANCHOR_OFFSETS;
+  }
+  return record.rootOutwardDeviation <= CROWDED_CENTER_SIBLING_DEVIATION_LIMIT
+    ? CROWDED_CENTER_SIBLING_ANCHOR_OFFSETS
+    : [0];
+}
+
+/**
+ * Builds a candidate pose by exact-rotating one ring around its root, then
+ * applying small anchor rotations around the crowded center.
+ * @param {Map<string, {x: number, y: number}>} coords - Source coordinate map.
+ * @param {{centerAtomId: string, rootRecords: object[]}} descriptor - Crowded center descriptor.
+ * @param {string} targetRootAtomId - Root to align to its exterior axis.
+ * @param {Map<string, number>} anchorOffsetsByRootAtomId - Center-anchor offset by root atom.
+ * @returns {Map<string, {x: number, y: number}>|null} Candidate coordinates.
+ */
+function buildCrowdedCenterCandidateCoords(coords, descriptor, targetRootAtomId, anchorOffsetsByRootAtomId) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  if (!centerPosition) {
+    return null;
+  }
+
+  const candidateCoords = new Map(coords);
+  for (const record of descriptor.rootRecords) {
+    const rootPosition = coords.get(record.rootAtomId);
+    if (!rootPosition) {
+      return null;
+    }
+    const rootCorrection = record.rootAtomId === targetRootAtomId ? record.rootCorrection : 0;
+    const anchorOffset = anchorOffsetsByRootAtomId.get(record.rootAtomId) ?? 0;
+    for (const atomId of record.subtreeAtomIds) {
+      const currentPosition = coords.get(atomId);
+      if (!currentPosition) {
+        continue;
+      }
+      let nextPosition = currentPosition;
+      if (atomId !== record.rootAtomId && Math.abs(rootCorrection) > 1e-9) {
+        nextPosition = add(rootPosition, rotate(sub(nextPosition, rootPosition), rootCorrection));
+      }
+      if (Math.abs(anchorOffset) > 1e-9) {
+        nextPosition = add(centerPosition, rotate(sub(nextPosition, centerPosition), anchorOffset));
+      }
+      candidateCoords.set(atomId, nextPosition);
+    }
+  }
+
+  return candidateCoords;
+}
+
+/**
+ * Visits the bounded Cartesian product of center-anchor offsets for a crowded center.
+ * @param {{rootRecords: object[]}} descriptor - Crowded center descriptor.
+ * @param {string} targetRootAtomId - Root currently being repaired exactly.
+ * @param {(offsetsByRootAtomId: Map<string, number>) => void} visitor - Candidate visitor.
+ * @returns {void}
+ */
+function visitCrowdedCenterAnchorOffsetCombinations(descriptor, targetRootAtomId, visitor) {
+  const records = descriptor.rootRecords;
+  const offsetsByRootAtomId = new Map();
+  const visitRecord = index => {
+    if (index >= records.length) {
+      visitor(offsetsByRootAtomId);
+      return;
+    }
+    const record = records[index];
+    for (const offset of crowdedCenterAnchorOffsetsForRecord(record, targetRootAtomId)) {
+      offsetsByRootAtomId.set(record.rootAtomId, offset);
+      visitRecord(index + 1);
+    }
+    offsetsByRootAtomId.delete(record.rootAtomId);
+  };
+  visitRecord(0);
+}
+
+/**
+ * Builds a candidate score compatible with the attached-ring fallback scorer.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {{centerAtomId: string, rootRecords: object[]}} descriptor - Crowded center descriptor.
+ * @param {number} bondLength - Target bond length.
+ * @param {number} rootPenalty - Precomputed root-outward penalty.
+ * @returns {object} Candidate score.
+ */
+function buildCrowdedAttachedRingCenterScore(layoutGraph, coords, descriptor, bondLength, rootPenalty) {
+  const audit = auditLayout(layoutGraph, coords, { bondLength });
+  const readability = measureRingSubstituentReadability(layoutGraph, coords);
+  const focusAtomIds = expandFocusAtomIds(
+    layoutGraph,
+    new Set([descriptor.centerAtomId, ...descriptor.rootRecords.map(record => record.rootAtomId)])
+  );
+  const trigonalDistortion = measureAttachedRingTrigonalDistortion(layoutGraph, coords, { focusAtomIds });
+  return {
+    coords,
+    nudges: 1,
+    crowdedAttachedRingCenter: true,
+    overlapCount: audit.severeOverlapCount,
+    exactContinuationPenalty: measureExactAcyclicContinuationDistortion(layoutGraph, coords, focusAtomIds).totalDeviation,
+    parentVisibleTrigonalPenalty: measureAttachedRingParentVisibleTrigonalPenalty(layoutGraph, coords, focusAtomIds),
+    anchorSideOutwardPenalty: rootPenalty,
+    rootOutwardPenalty: rootPenalty,
+    trigonalBisectorPenalty: 0,
+    omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation,
+    trigonalDistortionPenalty: trigonalDistortion.totalDeviation,
+    tetrahedralDistortionPenalty: measureTetrahedralDistortion(layoutGraph, coords).totalDeviation,
+    subtreeClearance: null,
+    failingSubstituentCount: readability.failingSubstituentCount ?? 0,
+    inwardSubstituentCount: readability.inwardSubstituentCount ?? 0,
+    outwardAxisFailureCount: readability.outwardAxisFailureCount ?? 0,
+    globalFailingSubstituentCount: readability.failingSubstituentCount ?? 0,
+    globalInwardSubstituentCount: readability.inwardSubstituentCount ?? 0,
+    globalOutwardAxisFailureCount: readability.outwardAxisFailureCount ?? 0,
+    totalOutwardDeviation: readability.totalOutwardDeviation ?? 0,
+    maxOutwardDeviation: readability.maxOutwardDeviation ?? 0,
+    presentationImprovement: 0,
+    layoutCost: measureLayoutCost(layoutGraph, coords, bondLength),
+    localPoseKey: attachedRingLocalPoseKey(layoutGraph, coords, {
+      rootAtomId: descriptor.centerAtomId,
+      anchorAtomId: descriptor.rootRecords[0]?.rootAtomId,
+      subtreeAtomIds: descriptor.rootRecords.flatMap(record => record.subtreeAtomIds)
+    }),
+    audit
+  };
+}
+
+/**
+ * Chooses between crowded-center attached-ring candidates.
+ * @param {object} candidate - Candidate score.
+ * @param {object|null} incumbent - Current best candidate score.
+ * @returns {boolean} True when candidate is preferred.
+ */
+function isBetterCrowdedAttachedRingCenterScore(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.audit.ok !== incumbent.audit.ok) {
+    return candidate.audit.ok;
+  }
+  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  }
+  if (candidate.audit.ringSubstituentReadabilityFailureCount !== incumbent.audit.ringSubstituentReadabilityFailureCount) {
+    return candidate.audit.ringSubstituentReadabilityFailureCount < incumbent.audit.ringSubstituentReadabilityFailureCount;
+  }
+  if (Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) > 1e-6) {
+    return candidate.rootOutwardPenalty < incumbent.rootOutwardPenalty;
+  }
+  if (Math.abs(candidate.tetrahedralDistortionPenalty - incumbent.tetrahedralDistortionPenalty) > 1e-6) {
+    return candidate.tetrahedralDistortionPenalty < incumbent.tetrahedralDistortionPenalty;
+  }
+  return candidate.layoutCost < incumbent.layoutCost - 1e-6;
+}
+
+/**
+ * Searches for a bounded crowded-center ring-root repair before the general
+ * attached-ring fallback tries broader local rotations.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Starting coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {Set<string>|null} [frozenAtomIds] - Optional atoms that must not move.
+ * @returns {object|null} Best accepted candidate, or null.
+ */
+function findBestCrowdedAttachedRingCenterCandidate(layoutGraph, coords, bondLength, frozenAtomIds = null) {
+  const descriptors = collectCrowdedAttachedRingCenterDescriptors(layoutGraph, coords, frozenAtomIds);
+  if (descriptors.length === 0) {
+    return null;
+  }
+
+  let bestAcceptedCandidate = null;
+  for (const descriptor of descriptors) {
+    const baseRootPenalty = crowdedCenterRootPenalty(layoutGraph, coords, descriptor.rootRecords);
+    const baseScore = buildCrowdedAttachedRingCenterScore(layoutGraph, coords, descriptor, bondLength, baseRootPenalty);
+    let bestCandidate = null;
+    for (const targetRecord of descriptor.rootRecords.filter(record => record.rootOutwardDeviation > CROWDED_CENTER_ROOT_DEVIATION_TRIGGER)) {
+      visitCrowdedCenterAnchorOffsetCombinations(descriptor, targetRecord.rootAtomId, anchorOffsetsByRootAtomId => {
+        const candidateCoords = buildCrowdedCenterCandidateCoords(
+          coords,
+          descriptor,
+          targetRecord.rootAtomId,
+          anchorOffsetsByRootAtomId
+        );
+        if (!candidateCoords) {
+          return;
+        }
+        const rootPenalty = crowdedCenterRootPenalty(layoutGraph, candidateCoords, descriptor.rootRecords);
+        if (rootPenalty >= baseRootPenalty - CROWDED_CENTER_MIN_ROOT_PENALTY_IMPROVEMENT) {
+          return;
+        }
+        const candidateScore = buildCrowdedAttachedRingCenterScore(
+          layoutGraph,
+          candidateCoords,
+          descriptor,
+          bondLength,
+          rootPenalty
+        );
+        if (
+          baseScore.audit.ok
+          && !candidateScore.audit.ok
+        ) {
+          return;
+        }
+        if (
+          candidateScore.audit.bondLengthFailureCount > baseScore.audit.bondLengthFailureCount
+          || candidateScore.audit.labelOverlapCount > baseScore.audit.labelOverlapCount
+          || candidateScore.tetrahedralDistortionPenalty > baseScore.tetrahedralDistortionPenalty + CROWDED_CENTER_MAX_TETRAHEDRAL_WORSENING
+        ) {
+          return;
+        }
+        if (isBetterCrowdedAttachedRingCenterScore(candidateScore, bestCandidate)) {
+          bestCandidate = candidateScore;
+        }
+      });
+    }
+
+    if (
+      bestCandidate
+      && bestCandidate.rootOutwardPenalty < baseScore.rootOutwardPenalty - CROWDED_CENTER_MIN_ROOT_PENALTY_IMPROVEMENT
+      && isBetterAttachedRingCandidate(bestCandidate, bestAcceptedCandidate)
+    ) {
+      bestAcceptedCandidate = bestCandidate;
+    }
+  }
+
+  return bestAcceptedCandidate;
+}
+
+/**
  * Tries rigid attached-ring rotations plus local follow-up cleanup to improve presentation.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinates.
@@ -990,7 +1438,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
     const { terminalSubtrees, siblingSwaps, geminalPairs } = computeRotatableSubtrees(layoutGraph, currentCoords);
     const baseOverlapCount = findSevereOverlaps(layoutGraph, currentCoords, bondLength, { atomGrid: baseAtomGrid }).length;
     const baseGlobalReadability = measureRingSubstituentReadability(layoutGraph, currentCoords);
-    let bestCandidate = null;
+    let bestCandidate = findBestCrowdedAttachedRingCenterCandidate(layoutGraph, currentCoords, bondLength, frozenAtomIds);
 
     for (const descriptor of descriptors) {
       const focusAtomIds = expandFocusAtomIds(
@@ -1549,6 +1997,9 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
     }
     currentCoords = bestCandidate.coords;
     totalNudges += bestCandidate.nudges;
+    if (bestCandidate.crowdedAttachedRingCenter === true) {
+      break;
+    }
   }
 
   return totalNudges > 0

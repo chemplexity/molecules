@@ -65,6 +65,64 @@ function shouldPreserveWholeMoleculeLeveling(molecule, heavyAtomIds) {
 
 const BROAD_SLAB_LEVEL_LOCK_MIN_ASPECT_RATIO = 1.25;
 const EXISTING_LANDSCAPE_SCAFFOLD_MIN_SHARE = 0.2;
+const EXISTING_LANDSCAPE_SCAFFOLD_LEVEL_TOLERANCE = Math.PI / 180;
+
+function principalAxisAngleForAtomIds(coords, atomIds) {
+  if (!Array.isArray(atomIds) || atomIds.length < 2) {
+    return null;
+  }
+
+  let sumX = 0;
+  let sumY = 0;
+  for (const atomId of atomIds) {
+    const point = coords.get(atomId);
+    if (!point) {
+      return null;
+    }
+    sumX += point.x;
+    sumY += point.y;
+  }
+  const centerX = sumX / atomIds.length;
+  const centerY = sumY / atomIds.length;
+
+  let inertiaXX = 0;
+  let inertiaYY = 0;
+  let inertiaXY = 0;
+  for (const atomId of atomIds) {
+    const point = coords.get(atomId);
+    const dx = point.x - centerX;
+    const dy = point.y - centerY;
+    inertiaXX += dy * dy;
+    inertiaYY += dx * dx;
+    inertiaXY -= dx * dy;
+  }
+
+  const angle0 = 0.5 * Math.atan2(2 * inertiaXY, inertiaXX - inertiaYY);
+  const inertia0 = inertiaXX * Math.cos(angle0) ** 2 + inertiaYY * Math.sin(angle0) ** 2 + inertiaXY * Math.sin(2 * angle0);
+  const inertia1 = inertiaXX + inertiaYY - inertia0;
+  return inertia0 <= inertia1 ? angle0 : angle0 + Math.PI / 2;
+}
+
+function largeMultiRingScaffoldAtomSets(coords, molecule, heavyAtomIds) {
+  if (!shouldPreserveWholeMoleculeLeveling(molecule, heavyAtomIds)) {
+    return [];
+  }
+  const heavyAtomIdSet = new Set(heavyAtomIds);
+  const minimumScaffoldSize = Math.max(8, Math.ceil(heavyAtomIds.length * EXISTING_LANDSCAPE_SCAFFOLD_MIN_SHARE));
+  const { ringSystems } = analyzeRings(molecule, morganRanks(molecule));
+  return ringSystems
+    .filter(ringSystem => ringSystem.ringIds.length >= 2)
+    .map(ringSystem => ringSystem.atomIds.filter(atomId => heavyAtomIdSet.has(atomId) && coords.has(atomId)))
+    .filter(atomIds => atomIds.length >= minimumScaffoldSize);
+}
+
+function minimumLargeMultiRingScaffoldDeviation(coords, molecule, heavyAtomIds) {
+  const deviations = largeMultiRingScaffoldAtomSets(coords, molecule, heavyAtomIds)
+    .map(atomIds => principalAxisAngleForAtomIds(coords, atomIds))
+    .filter(axisAngle => axisAngle != null)
+    .map(axisAngle => Math.abs(deviationFromHorizontalAxis(axisAngle)));
+  return deviations.length > 0 ? Math.min(...deviations) : null;
+}
 
 /**
  * Returns whether an already-landscape broad slab contains a sizeable
@@ -102,6 +160,56 @@ function shouldPreserveExistingLandscapeScaffold(coords, molecule, heavyAtomIds)
     const ringBounds = computeBounds(coords, visibleAtomIds);
     return ringBounds != null && ringBounds.width >= ringBounds.height;
   });
+}
+
+function rotatedSubsetCoords(coords, atomIds, origin, rotation) {
+  const rotatedCoords = new Map(coords);
+  for (const atomId of atomIds) {
+    const point = coords.get(atomId);
+    if (point) {
+      rotatedCoords.set(atomId, rotateAround(point, origin, rotation));
+    }
+  }
+  return rotatedCoords;
+}
+
+function bestLandscapeRotationPreservingLevelScaffold(coords, molecule, heavyAtomIds) {
+  const currentDeviation = minimumLargeMultiRingScaffoldDeviation(coords, molecule, heavyAtomIds);
+  if (currentDeviation == null || currentDeviation > EXISTING_LANDSCAPE_SCAFFOLD_LEVEL_TOLERANCE) {
+    return null;
+  }
+
+  let sumX = 0;
+  let sumY = 0;
+  for (const atomId of heavyAtomIds) {
+    const point = coords.get(atomId);
+    sumX += point.x;
+    sumY += point.y;
+  }
+  const origin = vec(sumX / heavyAtomIds.length, sumY / heavyAtomIds.length);
+  let best = null;
+
+  for (let step = -5; step <= 6; step++) {
+    if (step === 0) {
+      continue;
+    }
+    const rotation = (step * Math.PI) / 6;
+    const candidateCoords = rotatedSubsetCoords(coords, heavyAtomIds, origin, rotation);
+    const bounds = computeBounds(candidateCoords, heavyAtomIds);
+    if (!bounds || bounds.width < bounds.height) {
+      continue;
+    }
+    const deviation = minimumLargeMultiRingScaffoldDeviation(candidateCoords, molecule, heavyAtomIds);
+    if (deviation == null || deviation > EXISTING_LANDSCAPE_SCAFFOLD_LEVEL_TOLERANCE) {
+      continue;
+    }
+    const score = deviation * 1000 + Math.abs(rotation);
+    if (!best || score < best.score) {
+      best = { rotation, score };
+    }
+  }
+
+  return best?.rotation ?? null;
 }
 
 function preferredPathBondWeight(molecule, orientPath) {
@@ -465,7 +573,11 @@ export function normalizeOrientation(coords, molecule) {
 
   const fallbackBounds = computeBounds(coords, heavyAtomIds);
   if (fallbackBounds && fallbackBounds.height > fallbackBounds.width) {
-    rotateCoords(coords, vec(centerX, centerY), Math.PI / 2);
+    rotateCoords(
+      coords,
+      vec(centerX, centerY),
+      bestLandscapeRotationPreservingLevelScaffold(coords, molecule, heavyAtomIds) ?? Math.PI / 2
+    );
   }
 
   const rings = molecule.getRings();

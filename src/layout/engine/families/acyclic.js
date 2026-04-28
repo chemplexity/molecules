@@ -1,6 +1,7 @@
 /** @module families/acyclic */
 
 import { add, angleOf, centroid, fromAngle, length, rotate, sub } from '../geometry/vec2.js';
+import { cloneCoords } from '../geometry/transforms.js';
 import { actualAlkeneStereo } from '../stereo/ez.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { describeCrossLikeHypervalentCenter, placeRemainingBranches } from '../placement/branch-placement.js';
@@ -315,7 +316,7 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
     for (const candidateTurnSign of candidateTurnSigns) {
       const targetTurn = candidateTurnSign * TRIGONAL_TARGET_ANGLE;
       const rotationAngle = targetTurn - currentTurn;
-      const candidateCoords = new Map([...coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+      const candidateCoords = cloneCoords(coords);
       if (Math.abs(rotationAngle) > 1e-6) {
         for (const atomId of movedAtomIds) {
           const position = candidateCoords.get(atomId);
@@ -527,7 +528,7 @@ function realignTrigonalLinearSubstituentRoots(layoutGraph, coords, backbone = [
       const assignment = assignments[0];
       const excludedAtomIds = new Set([atom.id, ...assignment.movedAtomIds]);
       const candidateTargetAngles = [baseAngle + TRIGONAL_TARGET_ANGLE, baseAngle - TRIGONAL_TARGET_ANGLE].map(targetAngle => {
-        const candidateCoords = new Map([...coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+        const candidateCoords = cloneCoords(coords);
         rotateSubtreeAroundCenter(
           candidateCoords,
           assignment.movedAtomIds,

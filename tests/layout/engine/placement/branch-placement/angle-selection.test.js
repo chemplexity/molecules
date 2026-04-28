@@ -29,6 +29,12 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     assert.equal(isExactSimpleAcyclicContinuationEligible(graph, 'N25', 'C23', 'C26'), false);
   });
 
+  it('treats aryl ether oxygens as exact-continuation candidates for alkyl chains', () => {
+    const graph = createLayoutGraph(parseSMILES('CCOC1=CSC2=C1NC(OC2=O)=NCCO'), { suppressH: true });
+
+    assert.equal(isExactSimpleAcyclicContinuationEligible(graph, 'O3', 'C4', 'C2'), true);
+  });
+
   it('treats visible non-ring trigonal carbons as exact bisector candidates for their last single-bond branch', () => {
     const graph = createLayoutGraph(parseSMILES('CC\\C(=C/1\\N=C(OC1=O)c2ccc(Cl)cc2Cl)\\N3CCC[C@H]3C(=O)N[C@@H](<Cc4ccc(O)cc4>)C(=O)N'), { suppressH: true });
 

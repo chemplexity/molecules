@@ -1,13 +1,17 @@
 /** @module cleanup/local-rotation */
 
-import { CLEANUP_EPSILON, DISTANCE_EPSILON } from '../constants.js';
+import { CLEANUP_EPSILON, DISTANCE_EPSILON, atomPairKey } from '../constants.js';
 import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { buildAtomGrid, buildSubtreeOverlapContext, computeAtomDistortionCost, computeSubtreeOverlapCost } from '../audit/invariants.js';
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { forEachRigidRotationCandidate } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
-import { measureSmallRingExteriorGapSpreadPenalty, smallRingExteriorTargetAngles } from '../placement/branch-placement.js';
+import {
+  measureSmallRingExteriorGapSpreadPenalty,
+  smallRingExteriorTargetAngles,
+  supportsExteriorBranchSpreadRingSize
+} from '../placement/branch-placement.js';
 import { isExactVisibleTrigonalBisectorEligible } from '../placement/branch-placement/angle-selection.js';
 
 const DISCRETE_ROTATION_ANGLES = Object.freeze([
@@ -89,8 +93,7 @@ function buildPlacedAdjacency(layoutGraph, coords) {
 }
 
 function singleBondDescriptor(layoutGraph, firstAtomId, secondAtomId) {
-  const pairKey = firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
-  const bond = layoutGraph.bondByAtomPair.get(pairKey);
+  const bond = layoutGraph.bondByAtomPair.get(atomPairKey(firstAtomId, secondAtomId));
   if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
     return null;
   }
@@ -98,8 +101,7 @@ function singleBondDescriptor(layoutGraph, firstAtomId, secondAtomId) {
 }
 
 function terminalMultipleBondLeafBond(layoutGraph, anchorAtomId, rootAtomId) {
-  const pairKey = anchorAtomId < rootAtomId ? `${anchorAtomId}:${rootAtomId}` : `${rootAtomId}:${anchorAtomId}`;
-  const bond = layoutGraph.bondByAtomPair.get(pairKey);
+  const bond = layoutGraph.bondByAtomPair.get(atomPairKey(anchorAtomId, rootAtomId));
   if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
     return null;
   }
@@ -337,8 +339,7 @@ function terminalTrigonalSubtreeDescriptor(layoutGraph, atomId, heavyNeighborIds
   let terminalMultipleNeighborId = null;
   const singleNeighborIds = [];
   for (const neighborAtomId of heavyNeighborIds) {
-    const pairKey = atomId < neighborAtomId ? `${atomId}:${neighborAtomId}` : `${neighborAtomId}:${atomId}`;
-    const bond = layoutGraph.bondByAtomPair.get(pairKey);
+    const bond = layoutGraph.bondByAtomPair.get(atomPairKey(atomId, neighborAtomId));
     if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic) {
       return null;
     }
@@ -557,7 +558,7 @@ function collectAnchoredRingBlockAtomIds(layoutGraph, ring, anchorAtomId, blocke
 }
 
 /**
- * Collects saturated five- and six-member ring blocks that can rotate rigidly
+ * Collects saturated five-member-or-larger ring blocks that can rotate rigidly
  * around a tetra-substituted ring atom to recover a cleaner exterior branch fan.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
@@ -575,7 +576,7 @@ function anchoredRingBlockExteriorSpreadDescriptors(layoutGraph, coords) {
     }
     const ring = anchorRings[0];
     const ringSize = ring?.atomIds?.length ?? 0;
-    if (ring?.aromatic || ringSize < 5 || ringSize > 6) {
+    if (ring?.aromatic || ringSize < 5 || !supportsExteriorBranchSpreadRingSize(ringSize)) {
       continue;
     }
     if (ring.atomIds.some(atomId => atomId !== anchorAtomId && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) !== 1)) {
@@ -700,8 +701,7 @@ function movableTerminalSubtrees(layoutGraph, coords) {
       continue;
     }
     const anchorAtomId = heavyNeighbors[0];
-    const pairKey = atomId < anchorAtomId ? `${atomId}:${anchorAtomId}` : `${anchorAtomId}:${atomId}`;
-    const bond = layoutGraph.bondByAtomPair.get(pairKey);
+    const bond = layoutGraph.bondByAtomPair.get(atomPairKey(atomId, anchorAtomId));
     if (!bond || bond.inRing || bond.order > 2) {
       continue;
     }
@@ -723,8 +723,7 @@ function movableTerminalSubtrees(layoutGraph, coords) {
     let anchorAtomId = null;
     let branchRootAtomId = null;
     for (const candidateNeighborAtomId of heavyNeighbors) {
-      const pairKey = atomId < candidateNeighborAtomId ? `${atomId}:${candidateNeighborAtomId}` : `${candidateNeighborAtomId}:${atomId}`;
-      const bond = layoutGraph.bondByAtomPair.get(pairKey);
+      const bond = layoutGraph.bondByAtomPair.get(atomPairKey(atomId, candidateNeighborAtomId));
       if (!bond || bond.inRing) {
         anchorAtomId = null;
         branchRootAtomId = null;

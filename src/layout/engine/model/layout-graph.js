@@ -56,13 +56,13 @@ function buildAtomToRingSystemIdIndex(ringSystems) {
 }
 
 function buildRingAtomIds(rings) {
-  const ringAtomIds = new Set();
+  const ringAtomIdSet = new Set();
   for (const ring of rings) {
     for (const atomId of ring.atomIds) {
-      ringAtomIds.add(atomId);
+      ringAtomIdSet.add(atomId);
     }
   }
-  return ringAtomIds;
+  return ringAtomIdSet;
 }
 
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
@@ -177,7 +177,7 @@ function buildLayoutGraph(molecule, normalizedOptions) {
   const bondsByAtomId = buildAtomBondsIndex(atoms, bonds);
   const atomToRings = buildAtomToRingsIndex(ringAnalysis.rings);
   const atomToRingSystemId = buildAtomToRingSystemIdIndex(ringAnalysis.ringSystems);
-  const ringAtomIds = buildRingAtomIds(ringAnalysis.rings);
+  const ringAtomIdSet = buildRingAtomIds(ringAnalysis.rings);
 
   return {
     moleculeId: molecule.id,
@@ -189,7 +189,7 @@ function buildLayoutGraph(molecule, normalizedOptions) {
     bondsByAtomId,
     atomToRings,
     atomToRingSystemId,
-    ringAtomIds,
+    ringAtomIdSet,
     components,
     rings: ringAnalysis.rings,
     ringSystems: ringAnalysis.ringSystems,

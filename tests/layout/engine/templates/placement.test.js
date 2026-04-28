@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
-import { distance } from '../../../../src/layout/engine/geometry/vec2.js';
+import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { placeTemplateCoords } from '../../../../src/layout/engine/templates/placement.js';
 import { makeAdamantane, makeBenzene, makeBicyclo222, makeNaphthalene, makeNorbornane, makeSpiro } from '../support/molecules.js';
 
@@ -342,6 +342,29 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('C10').y < coords.get('C9').y);
     assert.ok(coords.get('C11').x < coords.get('C9').x);
     assert.ok(coords.get('C12').x < coords.get('S13').x);
+  });
+
+  it('places the morphinan core with exact benzene and middle cyclohexane rings', () => {
+    const graph = createLayoutGraph(parseSMILES('C1C2Cc3ccccc3C1CCN2'));
+    const coords = placeTemplateCoords(graph, 'morphinan-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const middleRing = ['C9', 'C10', 'C1', 'C2', 'C3', 'C4'];
+    const benzeneRing = ['C5', 'C6', 'C7', 'C8', 'C9', 'C4'];
+
+    assert.equal(coords.size, 13);
+    for (const ring of [middleRing, benzeneRing]) {
+      for (let index = 0; index < ring.length; index++) {
+        const atomId = ring[index];
+        const previousAtomId = ring[(index - 1 + ring.length) % ring.length];
+        const nextAtomId = ring[(index + 1) % ring.length];
+        const bondLength = distance(coords.get(atomId), coords.get(nextAtomId));
+        const angle = angularDifference(
+          angleOf(sub(coords.get(previousAtomId), coords.get(atomId))),
+          angleOf(sub(coords.get(nextAtomId), coords.get(atomId)))
+        );
+        assert.ok(Math.abs(bondLength - graph.options.bondLength) < 1e-6);
+        assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6);
+      }
+    }
   });
 
   it('places the larger bicyclo and adamantane cage templates too', () => {

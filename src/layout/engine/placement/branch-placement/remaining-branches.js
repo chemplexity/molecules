@@ -23,6 +23,7 @@ import {
   evaluateAngleCandidates,
   filterAnglesByBudget,
   findLayoutBond,
+  hasCrossLikeHypervalentNeighbor,
   hasNonAromaticMultipleBond,
   incidentRingPolygons,
   isExactSmallRingExteriorContinuationEligible,
@@ -31,6 +32,7 @@ import {
   isExactVisibleTrigonalBisectorEligible,
   isExactRingOutwardEligibleSubstituent,
   isTerminalMultipleBondLeaf,
+  isPlanarConjugatedTertiaryNitrogen,
   mergeCandidateAngles,
   occupiedNeighborAngles,
   pickBestCandidateAngle,
@@ -43,6 +45,7 @@ import {
 import { chooseBatchAngleAssignments, chooseSingleBranchAngleWithLookahead, shouldUseGreedyBranchPlacement } from './permutations.js';
 
 const SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS = 64;
+const RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE = 4;
 
 function isFusedOnlyRingSystemAnchor(layoutGraph, atomId) {
   const ringSystemId = layoutGraph?.atomToRingSystemId?.get(atomId);
@@ -80,6 +83,80 @@ function hasPendingHeavyNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace,
     }
     return layoutGraph.atoms.get(neighborAtomId)?.element !== 'H';
   });
+}
+
+/**
+ * Returns whether an anchor has an unplaced non-aromatic ring neighbor outside
+ * the current placement slice.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {Set<string>} atomIdsToPlace - Atom IDs in the current placement slice.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @returns {boolean} True when a pending non-aromatic ring neighbor remains.
+ */
+function hasPendingNonAromaticRingNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace, coords, anchorAtomId, layoutGraph) {
+  if (!layoutGraph) {
+    return false;
+  }
+  return (adjacency.get(anchorAtomId) ?? []).some(neighborAtomId => {
+    if (atomIdsToPlace.has(neighborAtomId) || coords.has(neighborAtomId)) {
+      return false;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      return false;
+    }
+    return (layoutGraph.atomToRings.get(neighborAtomId) ?? []).some(ring => !ring.aromatic);
+  });
+}
+
+function isTerminalCarbonLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId) {
+  const neighborAtom = layoutGraph?.atoms.get(neighborAtomId);
+  if (!neighborAtom || neighborAtom.element !== 'C' || neighborAtom.heavyDegree !== 1) {
+    return false;
+  }
+
+  const bond = findLayoutBond(layoutGraph, anchorAtomId, neighborAtomId);
+  return Boolean(
+    bond
+    && bond.kind === 'covalent'
+    && !bond.aromatic
+    && (bond.order ?? 1) === 1
+  );
+}
+
+/**
+ * Returns whether a terminal carbon leaf should wait for an out-of-slice
+ * non-aromatic ring neighbor before placement. Planar three-heavy centers need
+ * those more constrained ring roots present before a terminal methyl-like leaf
+ * can take the exact final trigonal slot; otherwise large mixed components may
+ * greedily snap the leaf to a nearby coarse angle before the pending ring
+ * arrives.
+ * @param {Map<string, string[]>} adjacency - Component adjacency map.
+ * @param {Set<string>} atomIdsToPlace - Atom IDs in the current placement slice.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string} neighborAtomId - Candidate terminal carbon leaf atom ID.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @returns {boolean} True when the leaf should be deferred for a later pass.
+ */
+function shouldDeferTerminalCarbonLeafForPendingTrigonalNeighbor(adjacency, atomIdsToPlace, coords, anchorAtomId, neighborAtomId, layoutGraph) {
+  if (
+    !layoutGraph
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+    || !isTerminalCarbonLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId)
+    || !hasPendingNonAromaticRingNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace, coords, anchorAtomId, layoutGraph)
+  ) {
+    return false;
+  }
+
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (!anchorAtom || anchorAtom.element === 'H' || anchorAtom.aromatic || anchorAtom.heavyDegree !== 3) {
+    return false;
+  }
+
+  return isPlanarConjugatedTertiaryNitrogen(layoutGraph, anchorAtomId);
 }
 
 function buildBranchPlacementAtomGrid(layoutGraph, coords, bondLength) {
@@ -145,6 +222,34 @@ function allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace) {
   );
 }
 
+function shouldUseRingAnchorSingleBranchLookahead(
+  layoutGraph,
+  anchorAtomId,
+  childAtomId,
+  childBond,
+  currentPlacedNeighborIds,
+  childSubtreeSize,
+  fallbackAngles
+) {
+  const anchorAtom = layoutGraph?.atoms.get(anchorAtomId);
+  const placedRingNeighborCount = currentPlacedNeighborIds.filter(neighborAtomId => (
+    (layoutGraph?.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+  )).length;
+  return (
+    layoutGraph
+    && isRingAnchor(layoutGraph, anchorAtomId)
+    && anchorAtom?.aromatic !== true
+    && (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) >= 2
+    && (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) === 0
+    && childBond != null
+    && !childBond.aromatic
+    && (childBond.order ?? 1) === 1
+    && placedRingNeighborCount >= 2
+    && childSubtreeSize >= RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE
+    && fallbackAngles.length >= 2
+  );
+}
+
 function shouldPreferFineAlkylTailRescue(layoutGraph, anchorAtomId, parentAtomId, childAtomId, currentPlacedNeighborIds, preferredAngles) {
   if (
     !layoutGraph
@@ -186,6 +291,18 @@ function shouldPreferFineAlkylTailRescue(layoutGraph, anchorAtomId, parentAtomId
   );
 }
 
+function branchPlacementExcludedAtomIds(layoutGraph, anchorAtomId, currentPlacedNeighborIds) {
+  const excludedAtomIds = new Set([anchorAtomId]);
+  const anchorIsRingAtom = isRingAnchor(layoutGraph, anchorAtomId);
+  for (const neighborAtomId of currentPlacedNeighborIds) {
+    if (anchorIsRingAtom && (layoutGraph?.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+      continue;
+    }
+    excludedAtomIds.add(neighborAtomId);
+  }
+  return excludedAtomIds;
+}
+
 function placeNeighborSequence(
   adjacency,
   canonicalAtomRank,
@@ -214,7 +331,7 @@ function placeNeighborSequence(
     const currentPlacedNeighborIds = placedNeighborIds(adjacency, coords, anchorAtomId);
     const childBond = childAtomId ? findLayoutBond(layoutGraph, anchorAtomId, childAtomId) : null;
     const preferredAngles = preferredBranchAngles(adjacency, coords, anchorAtomId, atomIdsToPlace, parentAtomId, childAtomId, layoutGraph);
-    const excludedAtomIds = new Set([anchorAtomId, ...currentPlacedNeighborIds]);
+    const excludedAtomIds = branchPlacementExcludedAtomIds(layoutGraph, anchorAtomId, currentPlacedNeighborIds);
     const childIsHydrogen = isHydrogenAtom(layoutGraph, childAtomId);
     const childSubtreeSize = childIsHydrogen ? 0 : subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId);
     const scoringPreferredAngles = childIsHydrogen ? [] : resolvedPreferredAngles(anchorAtomId, preferredAngles, branchConstraints);
@@ -372,17 +489,31 @@ function placeNeighborSequence(
             coords,
             excludedAtomIds
           }));
-    const shouldUseSingleBranchLookahead =
-      !childIsHydrogen
-      && allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace)
-      && childBond != null
+    const shouldUseClassicSingleBranchLookahead =
+      childBond != null
       && !childBond.aromatic
       && (childBond.order ?? 1) === 1
       && currentPlacedNeighborIds.length === 1
       && constrainedPreferredAngles.length >= 2
       && childSubtreeSize >= 3
       && hasNonAromaticMultipleBond(layoutGraph, childAtomId);
+    const shouldUseRingAnchorLookahead = shouldUseRingAnchorSingleBranchLookahead(
+      layoutGraph,
+      anchorAtomId,
+      childAtomId,
+      childBond,
+      currentPlacedNeighborIds,
+      childSubtreeSize,
+      constrainedFallbackAngles
+    );
+    const shouldUseSingleBranchLookahead =
+      !childIsHydrogen
+      && allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace)
+      && (shouldUseClassicSingleBranchLookahead || shouldUseRingAnchorLookahead);
     if (shouldUseSingleBranchLookahead) {
+      const lookaheadCandidateAngles = shouldUseRingAnchorLookahead
+        ? mergeCandidateAngles(mergeCandidateAngles([chosenAngle], constrainedPreferredAngles), constrainedFallbackAngles)
+        : mergeCandidateAngles([chosenAngle], constrainedPreferredAngles);
       const lookaheadAngle = chooseSingleBranchAngleWithLookahead(
         adjacency,
         canonicalAtomRank,
@@ -392,7 +523,7 @@ function placeNeighborSequence(
         anchorAtomId,
         parentAtomId,
         childAtomId,
-        mergeCandidateAngles([chosenAngle], constrainedPreferredAngles),
+        lookaheadCandidateAngles,
         bondLength,
         placeChildren,
         layoutGraph,
@@ -443,31 +574,50 @@ function placeChildren(
     canonicalAtomRank
   );
   const splitNeighbors = splitDeferredLeafNeighbors(unplacedNeighbors, layoutGraph);
+  const pendingTrigonalLeafNeighborIds = splitNeighbors.primaryNeighborIds.filter(neighborAtomId =>
+    shouldDeferTerminalCarbonLeafForPendingTrigonalNeighbor(adjacency, atomIdsToPlace, coords, anchorAtomId, neighborAtomId, layoutGraph)
+  );
+  const pendingTrigonalLeafNeighborIdSet = new Set(pendingTrigonalLeafNeighborIds);
+  const basePrimaryNeighborIds = splitNeighbors.primaryNeighborIds.filter(neighborAtomId => !pendingTrigonalLeafNeighborIdSet.has(neighborAtomId));
+  const baseDeferredNeighborIds = pendingTrigonalLeafNeighborIds.length > 0
+    ? neighborOrder([...splitNeighbors.deferredNeighborIds, ...pendingTrigonalLeafNeighborIds], canonicalAtomRank)
+    : splitNeighbors.deferredNeighborIds;
   const crossLikeCenter = describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId);
   const primaryHypervalentHydrogenIds = crossLikeCenter
-    ? splitNeighbors.deferredNeighborIds.filter(neighborAtomId => (
+    ? baseDeferredNeighborIds.filter(neighborAtomId => (
         isHydrogenAtom(layoutGraph, neighborAtomId)
         && crossLikeCenter.singleNeighborIds.includes(neighborAtomId)
       ))
     : [];
   const primaryNeighborIds = primaryHypervalentHydrogenIds.length > 0
-    ? neighborOrder([...splitNeighbors.primaryNeighborIds, ...primaryHypervalentHydrogenIds], canonicalAtomRank)
-    : splitNeighbors.primaryNeighborIds;
+    ? neighborOrder([...basePrimaryNeighborIds, ...primaryHypervalentHydrogenIds], canonicalAtomRank)
+    : basePrimaryNeighborIds;
   const primaryHypervalentHydrogenIdSet = new Set(primaryHypervalentHydrogenIds);
   const deferredNeighborIds = primaryHypervalentHydrogenIds.length > 0
-    ? splitNeighbors.deferredNeighborIds.filter(neighborAtomId => !primaryHypervalentHydrogenIdSet.has(neighborAtomId))
-    : splitNeighbors.deferredNeighborIds;
+    ? baseDeferredNeighborIds.filter(neighborAtomId => !primaryHypervalentHydrogenIdSet.has(neighborAtomId))
+    : baseDeferredNeighborIds;
   const deferredHeavyNeighborIds = deferredNeighborIds.filter(neighborAtomId => !isHydrogenAtom(layoutGraph, neighborAtomId));
   const deferredHydrogenNeighborIds = deferredNeighborIds.filter(neighborAtomId => isHydrogenAtom(layoutGraph, neighborAtomId));
+  const shouldPromoteDeferredHeavyLeavesForProjectedTetrahedral =
+    hasCrossLikeHypervalentNeighbor(layoutGraph, anchorAtomId)
+    && supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId)
+    && primaryNeighborIds.length > 0
+    && deferredHeavyNeighborIds.length > 0;
+  const placementPrimaryNeighborIds = shouldPromoteDeferredHeavyLeavesForProjectedTetrahedral
+    ? neighborOrder([...primaryNeighborIds, ...deferredHeavyNeighborIds], canonicalAtomRank)
+    : primaryNeighborIds;
+  const placementDeferredHeavyNeighborIds = shouldPromoteDeferredHeavyLeavesForProjectedTetrahedral
+    ? []
+    : deferredHeavyNeighborIds;
   const shouldLeaveDeferredLeavesForLaterPass =
-    primaryNeighborIds.length === 0
+    placementPrimaryNeighborIds.length === 0
     && deferredNeighborIds.length > 0
     && hasPendingHeavyNeighborOutsidePlacementSlice(adjacency, atomIdsToPlace, coords, anchorAtomId, layoutGraph);
-  const childDescriptors = primaryNeighborIds.map(childAtomId => ({
+  const childDescriptors = placementPrimaryNeighborIds.map(childAtomId => ({
     childAtomId,
     subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
   }));
-  if (primaryNeighborIds.length >= 2 && !shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anchorAtomId, primaryNeighborIds, childDescriptors, branchConstraints)) {
+  if (placementPrimaryNeighborIds.length >= 2 && !shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anchorAtomId, placementPrimaryNeighborIds, childDescriptors, branchConstraints)) {
     chooseBatchAngleAssignments(
       adjacency,
       canonicalAtomRank,
@@ -476,7 +626,7 @@ function placeChildren(
       atomIdsToPlace,
       anchorAtomId,
       parentAtomId,
-      primaryNeighborIds,
+      placementPrimaryNeighborIds,
       bondLength,
       placeChildren,
       layoutGraph,
@@ -495,7 +645,7 @@ function placeChildren(
       anchorAtomId,
       parentAtomId,
       bondLength,
-      primaryNeighborIds,
+      placementPrimaryNeighborIds,
       layoutGraph,
       branchConstraints,
       depth,
@@ -503,9 +653,9 @@ function placeChildren(
     );
   }
   const shouldBatchDeferredHeavyLeaves =
-    deferredHeavyNeighborIds.length >= 2
+    placementDeferredHeavyNeighborIds.length >= 2
     && supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId);
-  if (deferredHeavyNeighborIds.length > 0 && !shouldLeaveDeferredLeavesForLaterPass) {
+  if (placementDeferredHeavyNeighborIds.length > 0 && !shouldLeaveDeferredLeavesForLaterPass) {
     if (shouldBatchDeferredHeavyLeaves) {
       chooseBatchAngleAssignments(
         adjacency,
@@ -515,13 +665,13 @@ function placeChildren(
         atomIdsToPlace,
         anchorAtomId,
         parentAtomId,
-        deferredHeavyNeighborIds,
+        placementDeferredHeavyNeighborIds,
         bondLength,
         placeChildren,
         layoutGraph,
         branchConstraints,
         depth,
-        deferredHeavyNeighborIds.map(childAtomId => ({
+        placementDeferredHeavyNeighborIds.map(childAtomId => ({
           childAtomId,
           subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
         })),
@@ -537,7 +687,7 @@ function placeChildren(
         anchorAtomId,
         parentAtomId,
         bondLength,
-        deferredHeavyNeighborIds,
+        placementDeferredHeavyNeighborIds,
         layoutGraph,
         branchConstraints,
         depth,

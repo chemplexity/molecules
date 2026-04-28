@@ -449,7 +449,7 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.mixedMode, false);
     assert.equal(result.metadata.cleanupPostHookNudges, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
-    assert.ok(result.metadata.audit.bondLengthFailureCount > 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
   });
 
   it('avoids catastrophic bridge projection on dense mixed bridged cages', () => {
@@ -852,7 +852,21 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
-  it('triggers presentation cleanup for ideal linked-ring ether bridges when only the linker angle is distorted', () => {
+  it('keeps fused aryl-ether alkyl chains on a sharp publication-style oxygen angle', () => {
+    const result = runPipeline(parseSMILES('CCOC1=CSC2=C1NC(OC2=O)=NCCO'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const etherAngle = bondAngleAtAtom(result.coords, 'O3', 'C2', 'C4');
+
+    assert.ok(
+      Math.abs(etherAngle - 120) < 1e-6,
+      `expected C2-O3-C4 to stay at 120 degrees, got ${etherAngle.toFixed(2)}`
+    );
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps ideal linked-ring ether bridges sharp from placement through cleanup', () => {
     const smiles = 'CC(C)(C)OC(=O)N1CCC(C1)OC1=CC=C(OC(=O)C=CC2=CC3=CC(=CC=C3S2)C#N)C=C1';
     const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(smiles, {
       suppressH: true,
@@ -861,10 +875,9 @@ describe('layout/engine/pipeline', () => {
     const placementAngle = bondAngleAtAtom(placement.coords, 'O13', 'C11', 'C14');
     const finalAngle = bondAngleAtAtom(result.coords, 'O13', 'C11', 'C14');
 
-    assert.ok(Math.abs(placementAngle - 180) < 1e-6, `expected placement to leave the linked ether bridge flattened before presentation cleanup, got ${placementAngle.toFixed(2)}`);
-    assert.ok(Math.abs(finalAngle - 120) < 1e-6, `expected cleanup to restore the publication-style ether angle at O13, got ${finalAngle.toFixed(2)}`);
+    assert.ok(Math.abs(placementAngle - 120) < 1e-6, `expected placement to keep the publication-style ether angle at O13, got ${placementAngle.toFixed(2)}`);
+    assert.ok(Math.abs(finalAngle - 120) < 1e-6, `expected final layout to keep the publication-style ether angle at O13, got ${finalAngle.toFixed(2)}`);
     assert.equal(placementAudit.ok, true);
-    assert.equal(result.metadata.cleanupTelemetry?.stages?.presentationCleanup?.accepted, true);
     assert.equal(result.metadata.audit.ok, true);
   });
 
@@ -1028,7 +1041,7 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
-  it('balances terminal chlorophenyl leaf and heteroaryl ring angles while preserving the omitted-H junction', () => {
+  it('compresses a crowded terminal chlorophenyl leaf while preserving the omitted-H junction', () => {
     const result = runPipeline(
       parseSMILES('CC1=C(C(C2=CC=CC=C2Cl)C(C2=NN=CO2)=C(C)N1)C([O-])=O'),
       { suppressH: true, auditTelemetry: true }
@@ -1042,12 +1055,16 @@ describe('layout/engine/pipeline', () => {
     const secondHeteroarylAngle = bondAngleAtAtom(result.coords, 'C12', 'C13', 'C18');
     const firstOxadiazoleAngle = bondAngleAtAtom(result.coords, 'C13', 'C12', 'O17');
     const secondOxadiazoleAngle = bondAngleAtAtom(result.coords, 'C13', 'C12', 'N14');
+    const chloroBondLength = Math.hypot(
+      result.coords.get('Cl11').x - result.coords.get('C10').x,
+      result.coords.get('Cl11').y - result.coords.get('C10').y
+    );
     const chloroMaxDeviation = Math.max(Math.abs(firstChloroAngle - 120), Math.abs(secondChloroAngle - 120));
     const heteroarylMaxDeviation = Math.max(Math.abs(firstHeteroarylAngle - 120), Math.abs(secondHeteroarylAngle - 120));
 
-    assert.ok(chloroMaxDeviation <= 12.5 + 1e-6, `expected the chlorophenyl leaf compromise to stay within 12.5 degrees, got ${chloroMaxDeviation.toFixed(2)}`);
+    assert.ok(chloroMaxDeviation < 1e-6, `expected the chlorophenyl leaf to stay exact after compression, got ${chloroMaxDeviation.toFixed(2)}`);
+    assert.ok(chloroBondLength <= result.layoutGraph.options.bondLength * 0.91, `expected C10-Cl11 to compress to avoid overlap, got ${chloroBondLength.toFixed(2)}`);
     assert.ok(heteroarylMaxDeviation <= 12.5 + 1e-6, `expected the C12 heteroaryl compromise to stay within 12.5 degrees, got ${heteroarylMaxDeviation.toFixed(2)}`);
-    assert.ok(Math.abs(chloroMaxDeviation - heteroarylMaxDeviation) < 1e-6, `expected the Cl and C12 angle compromise to be shared, got ${chloroMaxDeviation.toFixed(2)} and ${heteroarylMaxDeviation.toFixed(2)}`);
     assert.ok(Math.abs(firstBenzylicAngle - 120) < 1e-6, `expected C3-C4-C5 to stay at 120 degrees, got ${firstBenzylicAngle.toFixed(2)}`);
     assert.ok(Math.abs(secondBenzylicAngle - 120) < 1e-6, `expected C3-C4-C12 to stay at 120 degrees, got ${secondBenzylicAngle.toFixed(2)}`);
     assert.ok(Math.abs(thirdBenzylicAngle - 120) < 1e-6, `expected C5-C4-C12 to stay at 120 degrees, got ${thirdBenzylicAngle.toFixed(2)}`);
@@ -1483,6 +1500,86 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
+  it('restores crowded terminal methyl ring leaves by rotating the nearby attached ring instead of bending the methyl angle', () => {
+    const result = runPipeline(parseSMILES('CCOC1CC2=CC=CC=C2C1NC1=C(C)N=C(N(CC)C1=O)C1=CN=C(C=C1C)N(C)C'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const outwardAngles = computeIncidentRingOutwardAngles(result.layoutGraph, 'C15', atomId => result.coords.get(atomId) ?? null);
+    const methylAngle = angleOf(sub(result.coords.get('C16'), result.coords.get('C15')));
+    const firstMethylAngle = bondAngleAtAtom(result.coords, 'C15', 'C14', 'C16');
+    const secondMethylAngle = bondAngleAtAtom(result.coords, 'C15', 'C16', 'N17');
+    const linkedNitrogenAngle = bondAngleAtAtom(result.coords, 'N13', 'C12', 'C14');
+
+    assert.equal(outwardAngles.length, 1);
+    assert.ok(
+      angularDifference(methylAngle, outwardAngles[0]) < 1e-6,
+      `expected C15-C16 to follow the exact local exterior bisector, got ${((angularDifference(methylAngle, outwardAngles[0]) * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(Math.abs(firstMethylAngle - 120) < 1e-6, `expected C14-C15-C16 to stay at 120 degrees, got ${firstMethylAngle.toFixed(2)}`);
+    assert.ok(Math.abs(secondMethylAngle - 120) < 1e-6, `expected C16-C15-N17 to stay at 120 degrees, got ${secondMethylAngle.toFixed(2)}`);
+    assert.ok(Math.abs(linkedNitrogenAngle - 120) < 1e-6, `expected C12-N13-C14 to stay at 120 degrees, got ${linkedNitrogenAngle.toFixed(2)}`);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps crowded quaternary ring roots from collapsing bulky aryl systems into one quadrant', () => {
+    const result = runPipeline(parseSMILES('ClC1=CC=CC=C1C(N1C=CN=C1)(C1=CC=CC=C1)C1=CC=CC=C1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const centerAtomId = 'C8';
+    const neighborAtomIds = ['N9', 'C14', 'C20', 'C7'];
+    const separations = [];
+    const c2FirstAngle = bondAngleAtAtom(result.coords, 'C2', 'C7', 'Cl1');
+    const c2SecondAngle = bondAngleAtAtom(result.coords, 'C2', 'C3', 'Cl1');
+    const c2ChlorineDistance = Math.hypot(
+      result.coords.get('Cl1').x - result.coords.get('C2').x,
+      result.coords.get('Cl1').y - result.coords.get('C2').y
+    );
+    const c20FirstAngle = bondAngleAtAtom(result.coords, 'C20', 'C8', 'C25');
+    const c20SecondAngle = bondAngleAtAtom(result.coords, 'C20', 'C8', 'C21');
+    for (let firstIndex = 0; firstIndex < neighborAtomIds.length; firstIndex++) {
+      for (let secondIndex = firstIndex + 1; secondIndex < neighborAtomIds.length; secondIndex++) {
+        separations.push(bondAngleAtAtom(result.coords, centerAtomId, neighborAtomIds[firstIndex], neighborAtomIds[secondIndex]));
+      }
+    }
+
+    assert.equal(result.metadata.stageTelemetry.stageAudits.placement.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(Math.min(...separations) >= 60 - 1e-6, `expected C8 substituent separations to stay at least 60 degrees, got ${Math.min(...separations).toFixed(2)}`);
+    assert.ok(Math.abs(c2FirstAngle - 120) < 1e-6, `expected C7-C2-Cl1 to stay at 120 degrees, got ${c2FirstAngle.toFixed(2)}`);
+    assert.ok(Math.abs(c2SecondAngle - 120) < 1e-6, `expected C3-C2-Cl1 to stay at 120 degrees, got ${c2SecondAngle.toFixed(2)}`);
+    assert.ok(c2ChlorineDistance >= result.layoutGraph.options.bondLength * 0.57, `expected C2-Cl1 to use the longest clean compressed bond, got ${c2ChlorineDistance.toFixed(2)}`);
+    assert.ok(c2ChlorineDistance <= result.layoutGraph.options.bondLength * 0.59, `expected C2-Cl1 to stay compressed enough to avoid the imidazole collision, got ${c2ChlorineDistance.toFixed(2)}`);
+    assert.ok(Math.abs(c20FirstAngle - 120) < 1e-6, `expected C8-C20-C25 to stay at 120 degrees, got ${c20FirstAngle.toFixed(2)}`);
+    assert.ok(Math.abs(c20SecondAngle - 120) < 1e-6, `expected C8-C20-C21 to stay at 120 degrees, got ${c20SecondAngle.toFixed(2)}`);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps compact fused-bridged lactam scaffolds from collapsing overlapping atom pairs', () => {
+    const result = runPipeline(parseSMILES('N[C@@H](Cc1ccccc1)C(=O)N2C[C@H]3C[C@@H](C2)C4=CC=CC(=O)N4C3'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const internalLactamSeparation = Math.hypot(
+      result.coords.get('C22').x - result.coords.get('N27').x,
+      result.coords.get('C22').y - result.coords.get('N27').y
+    );
+
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(
+      internalLactamSeparation > result.layoutGraph.options.bondLength * 1.5,
+      `expected C22 and N27 to stay visually separated, got ${internalLactamSeparation.toFixed(2)}`
+    );
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
   it('keeps the scaffold-side C11/C5 exits exact while the attached phenyl rescue clears the severe overlap', () => {
     const result = runPipeline(parseSMILES('CCCOC1=C(C)C=CC=C1N1C(=S)[N-]N=C1C1=CC=C(O)C=C1O'), {
       suppressH: true,
@@ -1750,7 +1847,7 @@ describe('layout/engine/pipeline', () => {
 
     assert.equal(result.metadata.primaryFamily, 'bridged');
     assert.equal(result.metadata.mixedMode, true);
-    assert.ok(placementAudit.bondLengthFailureCount > 0);
+    assert.ok(placementAudit.severeOverlapCount > 0);
     assert.ok(result.metadata.audit.bondLengthFailureCount <= placementAudit.bondLengthFailureCount);
     assert.ok(result.metadata.audit.maxBondLengthDeviation <= placementAudit.maxBondLengthDeviation + 1e-6);
     assert.ok(result.metadata.audit.severeOverlapCount <= placementAudit.severeOverlapCount);

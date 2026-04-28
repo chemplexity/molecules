@@ -4,18 +4,22 @@ import { add, angleOf, distance, fromAngle, sub } from '../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
+import { atomPairKey, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
 const ANGLE_THRESHOLD = Math.PI / 18;
 const FIXED_LIGAND_WEIGHT = 12;
 const BRIDGE_LINKED_HYPERVALENT_LIGAND_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
 const MAX_BRIDGE_LINKED_HYPERVALENT_SUBTREE_HEAVY_ATOMS = 8;
-const MAX_COMPACT_HYPERVALENT_LIGAND_SUBTREE_HEAVY_ATOMS = 12;
+const MAX_COMPACT_HYPERVALENT_LIGAND_SUBTREE_HEAVY_ATOMS = 14;
 const MAX_COMPACT_HYPERVALENT_LIGAND_SUBTREE_ATOMS = 24;
+const MAX_COMPACT_HYPERVALENT_LIGAND_RING_SYSTEMS = 2;
 const MAX_RING_ANCHORED_HYPERVALENT_SUBTREE_HEAVY_ATOMS = 14;
 const MAX_RING_ANCHORED_HYPERVALENT_SUBTREE_ATOMS = 28;
 const TERMINAL_HYPERVALENT_H_ANGLE_THRESHOLD = Math.PI / 180;
+const TERMINAL_HYPERVALENT_MULTIPLE_LIGAND_ANGLE_THRESHOLD = Math.PI / 180;
 const RING_ANCHORED_HYPERVALENT_ANGLE_THRESHOLD = Math.PI / 180;
+const TERMINAL_MULTIPLE_LIGAND_COMPRESSION_FACTORS = [1, 0.99, 0.98, 0.97, 0.96, 0.95];
 
 function angularDistance(firstAngle, secondAngle) {
   const rawDelta = Math.abs(firstAngle - secondAngle) % (Math.PI * 2);
@@ -28,6 +32,79 @@ function normalizeAngle(angle) {
     wrappedAngle += Math.PI * 2;
   }
   return wrappedAngle;
+}
+
+/**
+ * Returns whether an atom participates in visible overlap checks for the
+ * current layout options.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate atom id.
+ * @returns {boolean} True when the atom should be considered visible.
+ */
+function isVisibleLayoutAtom(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom) {
+    return false;
+  }
+  return !(layoutGraph.options?.suppressH === true && atom.element === 'H');
+}
+
+/**
+ * Returns whether placing one atom at a candidate position would create a
+ * severe visible non-bonded overlap.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} atomId - Moved atom id.
+ * @param {{x: number, y: number}} candidatePosition - Candidate position.
+ * @param {number} bondLength - Target layout bond length.
+ * @returns {boolean} True when the candidate position is severely crowded.
+ */
+function hasSevereOverlapAtPosition(layoutGraph, coords, atomId, candidatePosition, bondLength) {
+  const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
+  for (const [otherAtomId, otherPosition] of coords) {
+    if (
+      otherAtomId === atomId
+      || !isVisibleLayoutAtom(layoutGraph, otherAtomId)
+      || layoutGraph.bondedPairSet.has(atomPairKey(atomId, otherAtomId))
+    ) {
+      continue;
+    }
+    if (distance(candidatePosition, otherPosition) < threshold - 1e-9) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Chooses the longest terminal multiple-bond ligand position that preserves
+ * the exact hypervalent angle while clearing severe local overlap. This is
+ * reserved for terminal oxo-like leaves, where a very small display bond
+ * compression is preferable to bending the sulfur/phosphorus cross.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {string} ligandAtomId - Terminal multiple-bond ligand atom id.
+ * @param {number} targetAngle - Exact target angle in radians.
+ * @param {number} radius - Current center-to-ligand distance.
+ * @returns {{x: number, y: number}} Best ligand position.
+ */
+function compressedTerminalMultipleLigandPosition(layoutGraph, coords, centerAtomId, ligandAtomId, targetAngle, radius) {
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition || !isTerminalMultipleHypervalentLigand(layoutGraph, centerAtomId, ligandAtomId)) {
+    return centerPosition ? add(centerPosition, fromAngle(targetAngle, radius)) : { x: 0, y: 0 };
+  }
+
+  const bondLength = layoutGraph.options?.bondLength ?? radius;
+  let bestPosition = add(centerPosition, fromAngle(targetAngle, radius));
+  for (const compressionFactor of TERMINAL_MULTIPLE_LIGAND_COMPRESSION_FACTORS) {
+    const candidatePosition = add(centerPosition, fromAngle(targetAngle, radius * compressionFactor));
+    if (!hasSevereOverlapAtPosition(layoutGraph, coords, ligandAtomId, candidatePosition, bondLength)) {
+      return candidatePosition;
+    }
+    bestPosition = candidatePosition;
+  }
+  return bestPosition;
 }
 
 function directLigandAtomIds(layoutGraph, centerAtomId, coords) {
@@ -172,7 +249,7 @@ function movableCompactHypervalentLigandSubtreeAtomIds(layoutGraph, centerAtomId
   if (
     subtreeAtomIds.length === 0
     || subtreeAtomIds.length > MAX_COMPACT_HYPERVALENT_LIGAND_SUBTREE_ATOMS
-    || ringSystemIds.size > 1
+    || ringSystemIds.size > MAX_COMPACT_HYPERVALENT_LIGAND_RING_SYSTEMS
   ) {
     return null;
   }
@@ -219,19 +296,43 @@ function movableLigandSubtreeAtomIds(layoutGraph, centerAtomId, ligandAtomId, co
 }
 
 /**
- * Returns the angular tolerance for moving one direct hypervalent ligand.
- * Hidden hydrogens are visually small and cheap to move, so they should still
- * snap to the exact opposing slot when browser-specific placement drifts them
- * just inside the broader heavy-ligand tolerance.
+ * Returns whether a direct hypervalent ligand is a terminal multiple-bond
+ * hetero atom, such as one oxo ligand on a sulfone or phosphate.
  * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {string} ligandAtomId - Direct ligand atom id.
+ * @returns {boolean} True when the ligand is terminal and multiply bonded.
+ */
+function isTerminalMultipleHypervalentLigand(layoutGraph, centerAtomId, ligandAtomId) {
+  const bond = (layoutGraph.bondsByAtomId.get(centerAtomId) ?? []).find(candidateBond => {
+    if (!candidateBond || candidateBond.kind !== 'covalent') {
+      return false;
+    }
+    const neighborAtomId = candidateBond.a === centerAtomId ? candidateBond.b : candidateBond.a;
+    return neighborAtomId === ligandAtomId;
+  });
+  return isTerminalMultipleBondHetero(layoutGraph, centerAtomId, bond);
+}
+
+/**
+ * Returns the angular tolerance for moving one direct hypervalent ligand.
+ * Hidden hydrogens and terminal oxo-like ligands are cheap to move, so they
+ * should snap to the exact opposing slot instead of stopping inside the broader
+ * heavy-ligand tolerance.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Hypervalent center atom id.
  * @param {string} ligandAtomId - Direct ligand atom id.
  * @param {number} defaultThreshold - Default angular tolerance in radians.
  * @returns {number} Ligand-specific angular tolerance in radians.
  */
-function ligandAngleThreshold(layoutGraph, ligandAtomId, defaultThreshold) {
-  return layoutGraph.atoms.get(ligandAtomId)?.element === 'H'
-    ? TERMINAL_HYPERVALENT_H_ANGLE_THRESHOLD
-    : defaultThreshold;
+function hypervalentLigandAngleThreshold(layoutGraph, centerAtomId, ligandAtomId, defaultThreshold) {
+  if (layoutGraph.atoms.get(ligandAtomId)?.element === 'H') {
+    return TERMINAL_HYPERVALENT_H_ANGLE_THRESHOLD;
+  }
+  if (isTerminalMultipleHypervalentLigand(layoutGraph, centerAtomId, ligandAtomId)) {
+    return TERMINAL_HYPERVALENT_MULTIPLE_LIGAND_ANGLE_THRESHOLD;
+  }
+  return defaultThreshold;
 }
 
 /**
@@ -515,7 +616,7 @@ export function hasHypervalentAngleTidyNeed(layoutGraph, coords, options = {}) {
           if (targetAngle == null) {
             continue;
           }
-          const ligandThreshold = ligandAngleThreshold(layoutGraph, neighborAtomId, angleThreshold);
+          const ligandThreshold = hypervalentLigandAngleThreshold(layoutGraph, centerAtomId, neighborAtomId, angleThreshold);
           if (angularDistance(currentAngles.get(neighborAtomId), targetAngle) > ligandThreshold) {
             return true;
           }
@@ -568,7 +669,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
       if (fit) {
         for (const neighborAtomId of movableNeighborIds) {
           const targetAngle = fit.targetAngles.get(neighborAtomId);
-          const ligandThreshold = ligandAngleThreshold(layoutGraph, neighborAtomId, ANGLE_THRESHOLD);
+          const ligandThreshold = hypervalentLigandAngleThreshold(layoutGraph, centerAtomId, neighborAtomId, ANGLE_THRESHOLD);
           if (targetAngle == null || angularDistance(currentAngles.get(neighborAtomId), targetAngle) <= ligandThreshold) {
             continue;
           }
@@ -583,7 +684,11 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
             const offset = sub(currentPosition, centerPosition);
             const radius = distance(centerPosition, currentPosition);
             const absoluteAngle = angleOf(offset);
-            coords.set(subtreeAtomId, add(centerPosition, fromAngle(absoluteAngle + rotation, radius)));
+            const targetSubtreeAngle = absoluteAngle + rotation;
+            const nextPosition = subtreeAtomId === neighborAtomId
+              ? compressedTerminalMultipleLigandPosition(layoutGraph, coords, centerAtomId, neighborAtomId, targetSubtreeAngle, radius)
+              : add(centerPosition, fromAngle(targetSubtreeAngle, radius));
+            coords.set(subtreeAtomId, nextPosition);
           }
           nudges++;
         }

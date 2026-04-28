@@ -6,6 +6,7 @@ import {
 import {
   collectMovableAttachedRingDescriptors,
   measureAttachedRingPeripheralFocusPenalty,
+  measureAttachedRingRootOutwardPresentationPenalty,
   runAttachedRingRotationTouchup
 } from './attached-ring-fallback.js';
 import {
@@ -20,18 +21,27 @@ const PRESENTATION_NEED_EPSILON = 1e-6;
 function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const attachedRingPeripheralPenalty = measureAttachedRingPeripheralFocusPenalty(layoutGraph, coords, bondLength);
+  const attachedRingRootOutwardPenalty = measureAttachedRingRootOutwardPresentationPenalty(
+    layoutGraph,
+    coords,
+    options.frozenAtomIds ?? null
+  );
+  const presentationPenalty = measureRingSubstituentPresentationPenalty(layoutGraph, coords, {
+    includeLinkedRingBridgePenalty: true
+  });
   return {
     coords,
     nudges,
     steps,
-    presentationPenalty: measureRingSubstituentPresentationPenalty(layoutGraph, coords, {
-      includeLinkedRingBridgePenalty: true
-    }),
+    presentationPenalty,
     attachedRingPeripheralPenalty,
+    attachedRingRootOutwardPenalty,
     score:
       {
         coords,
+        presentationPenalty,
         attachedRingPeripheralPenalty,
+        attachedRingRootOutwardPenalty,
         ...(typeof options.scoreCoordsFn === 'function' ? (options.scoreCoordsFn(coords) ?? {}) : {})
       }
   };
@@ -97,12 +107,15 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
   });
   const attachedRingPeripheralPenalty = stageResult.attachedRingPeripheralPenalty
     ?? measureAttachedRingPeripheralFocusPenalty(layoutGraph, stageResult.coords);
+  const attachedRingRootOutwardPenalty = stageResult.attachedRingRootOutwardPenalty
+    ?? measureAttachedRingRootOutwardPresentationPenalty(layoutGraph, stageResult.coords);
   return (
     (audit?.ringSubstituentReadabilityFailureCount ?? 0) > 0
     || (audit?.inwardRingSubstituentCount ?? 0) > 0
     || (audit?.outwardAxisRingSubstituentFailureCount ?? 0) > 0
     || (audit?.severeOverlapCount ?? 0) > 0
     || attachedRingPeripheralPenalty > PRESENTATION_NEED_EPSILON
+    || attachedRingRootOutwardPenalty > PRESENTATION_NEED_EPSILON
     || presentationPenalty > PRESENTATION_NEED_EPSILON
   );
 }
@@ -128,6 +141,8 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
  *   nudges: number,
  *   changed: boolean,
  *   presentationPenalty: number,
+ *   attachedRingPeripheralPenalty: number,
+ *   attachedRingRootOutwardPenalty: number,
  *   strategiesRun: string[],
  *   steps: Array<{name: string, nudges: number}>,
  *   attachedCarbonylDescriptorCount: number,
@@ -250,6 +265,8 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     nudges: currentState.nudges,
     changed: currentState.nudges > 0,
     presentationPenalty: currentState.presentationPenalty,
+    attachedRingPeripheralPenalty: currentState.attachedRingPeripheralPenalty,
+    attachedRingRootOutwardPenalty: currentState.attachedRingRootOutwardPenalty,
     strategiesRun: currentState.steps.map(step => step.name),
     steps: currentState.steps,
     attachedCarbonylDescriptorCount: finalDescriptorSummary.attachedCarbonylDescriptorCount,

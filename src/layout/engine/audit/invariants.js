@@ -12,16 +12,16 @@ import {
   isRingConstrainedBenzylicCarbonRoot,
   preferredSharedJunctionContinuationAngle
 } from '../placement/branch-placement/angle-selection.js';
-import { AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
-
-function pairKey(firstAtomId, secondAtomId) {
-  return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
-}
+import { atomPairKey, AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 const SUBTREE_BOND_CROWDING_FACTOR = 0.5;
 const SUBTREE_BOND_CROWDING_WEIGHT = 25;
 const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
 const LINKED_RING_REPRESENTATIVE_OUTWARD_READABILITY_SLACK = Math.PI / 180;
+const COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I', 'O', 'S', 'Se']);
+const COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE = Math.PI / 180;
+const BRIDGED_RING_SUBSTITUENT_SLOT_SCAN_STEP = Math.PI / 36;
+const BRIDGED_RING_SUBSTITUENT_SLOT_CLEARANCE_FACTOR = 0.55;
 
 function isConjugatedTrigonalHeavyNeighbor(layoutGraph, atomId) {
   const atom = layoutGraph.atoms.get(atomId);
@@ -87,6 +87,71 @@ function isAuditableBond(layoutGraph, bond) {
 }
 
 /**
+ * Resolves a ring anchor plus terminal non-carbon leaf for a compressible
+ * publication-style leaf bond.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} bond - Candidate bond descriptor.
+ * @returns {{anchorAtomId: string, leafAtomId: string}|null} Endpoint roles, or null.
+ */
+function compressibleTerminalRingLeafEndpoints(layoutGraph, bond) {
+  if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+    return null;
+  }
+
+  for (const [anchorAtomId, leafAtomId] of [
+    [bond.a, bond.b],
+    [bond.b, bond.a]
+  ]) {
+    const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+    const leafAtom = layoutGraph.atoms.get(leafAtomId);
+    if (
+      !anchorAtom
+      || !leafAtom
+      || !COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(leafAtom.element)
+      || (leafAtom.heavyDegree ?? 0) !== 1
+      || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0
+      || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+    ) {
+      continue;
+    }
+    return { anchorAtomId, leafAtomId };
+  }
+
+  return null;
+}
+
+/**
+ * Returns whether a short terminal ring-leaf bond is an intentional exact
+ * outward depiction used to avoid local overlap.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} bond - Candidate bond descriptor.
+ * @param {number} distance - Current bond length.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when the compressed leaf should not count as a bond-length failure.
+ */
+function isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, distance, bondLength) {
+  if (distance >= bondLength || distance < bondLength * SEVERE_OVERLAP_FACTOR - 1e-9) {
+    return false;
+  }
+
+  const endpoints = compressibleTerminalRingLeafEndpoints(layoutGraph, bond);
+  if (!endpoints) {
+    return false;
+  }
+
+  const anchorPosition = coords.get(endpoints.anchorAtomId);
+  const leafPosition = coords.get(endpoints.leafAtomId);
+  if (!anchorPosition || !leafPosition) {
+    return false;
+  }
+
+  const leafAngle = angleOf(sub(leafPosition, anchorPosition));
+  return computeIncidentRingOutwardAngles(layoutGraph, endpoints.anchorAtomId, atomId => coords.get(atomId) ?? null)
+    .some(outwardAngle => angularDifference(leafAngle, outwardAngle) <= COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE);
+}
+
+/**
  * Returns whether the atom participates in visible-audit geometry.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string} atomId - Atom identifier.
@@ -117,7 +182,7 @@ function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null
         if (secondAtomId === firstAtomId || !isVisibleLayoutAtom(layoutGraph, secondAtomId)) {
           continue;
         }
-        const key = pairKey(firstAtomId, secondAtomId);
+        const key = atomPairKey(firstAtomId, secondAtomId);
         if (seenPairs.has(key) || layoutGraph.bondedPairSet.has(key)) {
           continue;
         }
@@ -148,7 +213,7 @@ function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null
     const firstPosition = coords.get(firstAtomId);
     for (let secondIndex = firstIndex + 1; secondIndex < atomIds.length; secondIndex++) {
       const secondAtomId = atomIds[secondIndex];
-      if (!isVisibleLayoutAtom(layoutGraph, secondAtomId) || bondedPairs.has(pairKey(firstAtomId, secondAtomId))) {
+      if (!isVisibleLayoutAtom(layoutGraph, secondAtomId) || bondedPairs.has(atomPairKey(firstAtomId, secondAtomId))) {
         continue;
       }
       const secondPosition = coords.get(secondAtomId);
@@ -268,7 +333,7 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
       if (secondAtomId === firstAtomId || !isVisibleLayoutAtom(layoutGraph, secondAtomId)) {
         continue;
       }
-      const key = pairKey(firstAtomId, secondAtomId);
+      const key = atomPairKey(firstAtomId, secondAtomId);
       if (seenPairs.has(key) || layoutGraph.bondedPairSet.has(key)) {
         continue;
       }
@@ -597,6 +662,79 @@ function evaluateRingSubstituentSide(layoutGraph, coords, anchorAtomId, represen
   };
 }
 
+function ringSystemHasBridgedConnection(layoutGraph, ringSystemId) {
+  if (ringSystemId == null) {
+    return false;
+  }
+  const ringSystem = layoutGraph.ringSystems.find(candidate => candidate.id === ringSystemId);
+  if (!ringSystem || (ringSystem.ringIds?.length ?? 0) <= 1) {
+    return false;
+  }
+  const ringIds = new Set(ringSystem.ringIds);
+  return (layoutGraph.ringConnections ?? []).some(connection => (
+    connection.kind === 'bridged'
+    && ringIds.has(connection.firstRingId)
+    && ringIds.has(connection.secondRingId)
+  ));
+}
+
+function hasClearExteriorRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, ringPolygons) {
+  const anchorPosition = coords.get(anchorAtomId);
+  const childPosition = coords.get(childAtomId);
+  if (!anchorPosition || !childPosition) {
+    return true;
+  }
+
+  const bondLength = Math.hypot(childPosition.x - anchorPosition.x, childPosition.y - anchorPosition.y);
+  if (!(bondLength > 0)) {
+    return true;
+  }
+
+  const ringSystemId = layoutGraph.atomToRingSystemId.get(anchorAtomId);
+  const ringSystem = ringSystemId != null ? layoutGraph.ringSystems.find(candidate => candidate.id === ringSystemId) : null;
+  const blockerAtomIds = ringSystem?.atomIds?.filter(atomId => atomId !== anchorAtomId && atomId !== childAtomId && coords.has(atomId)) ?? [];
+  if (blockerAtomIds.length === 0) {
+    return true;
+  }
+
+  const clearanceFloor = bondLength * BRIDGED_RING_SUBSTITUENT_SLOT_CLEARANCE_FACTOR;
+  for (let angle = 0; angle < 2 * Math.PI; angle += BRIDGED_RING_SUBSTITUENT_SLOT_SCAN_STEP) {
+    const candidatePosition = {
+      x: anchorPosition.x + Math.cos(angle) * bondLength,
+      y: anchorPosition.y + Math.sin(angle) * bondLength
+    };
+    if (ringPolygons.some(polygon => pointInPolygon(candidatePosition, polygon))) {
+      continue;
+    }
+    if (
+      blockerAtomIds.every(atomId => {
+        const blockerPosition = coords.get(atomId);
+        return Math.hypot(candidatePosition.x - blockerPosition.x, candidatePosition.y - blockerPosition.y) >= clearanceFloor;
+      })
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isUnavoidableBridgedRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, representativeAtomIds, ringPolygons) {
+  if (!layoutGraph || representativeAtomIds.length !== 1 || representativeAtomIds[0] !== childAtomId) {
+    return false;
+  }
+  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) < 2) {
+    return false;
+  }
+  if (!ringSystemHasBridgedConnection(layoutGraph, layoutGraph.atomToRingSystemId.get(anchorAtomId))) {
+    return false;
+  }
+  const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (!childAtom || childAtom.element !== 'C' || childAtom.aromatic === true || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0) {
+    return false;
+  }
+  return !hasClearExteriorRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, ringPolygons);
+}
+
 /**
  * Collects exocyclic ring substituent children that should participate in
  * ring-substituent readability checks. This includes ordinary non-ring heavy
@@ -620,7 +758,7 @@ export function collectReadableRingSubstituentChildren(layoutGraph, coords, anch
       continue;
     }
 
-    const pairId = pairKey(anchorAtomId, neighborAtom.id);
+    const pairId = atomPairKey(anchorAtomId, neighborAtom.id);
     const bond = layoutGraph.bondByAtomPair.get(pairId);
     if (!bond || bond.kind !== 'covalent' || bond.inRing || (bond.order ?? 1) !== 1) {
       continue;
@@ -752,7 +890,7 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
     for (const childDescriptor of substituentChildren) {
       const childAtomId = childDescriptor.childAtomId;
       const childAtom = layoutGraph.atoms.get(childAtomId);
-      const pairId = pairKey(anchorAtomId, childAtomId);
+      const pairId = atomPairKey(anchorAtomId, childAtomId);
       if (seenPairs.has(pairId)) {
         continue;
       }
@@ -775,7 +913,15 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
         && Number.isFinite(forwardSide.outwardDeviation)
         && forwardSide.outwardDeviation <= maxOutwardDeviation + LINKED_RING_REPRESENTATIVE_OUTWARD_READABILITY_SLACK;
       const forwardOutwardAxisFailure = forwardSide.outwardAxisFailure && !linkedRepresentativeOutwardFailureRelaxed;
-      if (forwardSide.insideIncidentRing) {
+      const inwardSlotIsUnavoidable = forwardSide.insideIncidentRing && isUnavoidableBridgedRingSubstituentSlot(
+        layoutGraph,
+        coords,
+        anchorAtomId,
+        childAtomId,
+        childDescriptor.representativeAtomIds,
+        ringPolygons
+      );
+      if (forwardSide.insideIncidentRing && !inwardSlotIsUnavoidable) {
         failingSubstituentCount++;
         inwardSubstituentCount++;
       } else if (forwardOutwardAxisFailure || severeImmediateOutwardFailure) {
@@ -875,7 +1021,9 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
       continue;
     }
     const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
-    const deviation = Math.abs(distance - bondLength);
+    const deviation = isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, distance, bondLength)
+      ? 0
+      : Math.abs(distance - bondLength);
     const validationSettings = validationSettingsForClass(bondValidationClasses.get(bond.id));
     const allowedDeviation = bondLength * Math.max(Math.abs(1 - validationSettings.minBondLengthFactor), Math.abs(validationSettings.maxBondLengthFactor - 1));
     sampleCount++;
@@ -1356,7 +1504,7 @@ export function computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, o
           if (subtreeSet.has(atomId) || !isVisibleLayoutAtom(layoutGraph, atomId)) {
             continue;
           }
-          if (layoutGraph.bondedPairSet.has(pairKey(subtreeAtomId, atomId))) {
+          if (layoutGraph.bondedPairSet.has(atomPairKey(subtreeAtomId, atomId))) {
             continue;
           }
           const otherPos = coords.get(atomId);

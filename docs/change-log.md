@@ -1,5 +1,29 @@
 # Change Log
 
+## 2026-04-27
+
+- Defer terminal carbon leaves on planar trigonal centers until pending ring neighbors attach so amide nitrogens keep exact 120-degree spreads
+- Generalize saturated-ring exterior branch fans beyond fixed ring-size cutoffs so grown piperidine variants keep ester and aryl exits apart
+- Preserve exact 120-degree aryl-ether oxygen continuations for alkyl chains off fused rings
+- Let direct-attached aryl blocks use six-member saturated-ring exterior slots so crowded ester/aryl ring anchors avoid pinched angles
+- Preserve crowded acyclic sulfonic acid crosses by compressing terminal oxo leaves instead of bending sulfur angles
+- Preview pending heteroring attachments during branch scoring so C16 branch slots avoid later imidazolium-side overlap
+- Reserve exact pending attached-ring space during mixed branch scoring so crowded benzyl amide carbonyls no longer grow into the later phenyl pocket
+- Prioritize exact fused-ring geometry over branch-preview tie-breakers so six-carbon morphinan bridge variants no longer stretch the middle cyclohexane
+- Let bulky ring-anchored side chains use branch lookahead so long morphinan bridge variants keep exact fused rings without routing the alcohol tail through the core
+- Keep expanded morphinan fused-bridge variants on exact benzene, middle-cyclohexane, and bridge-ring bond geometry while treating unavoidable bridged side-chain exits as audit-clean
+- Add a morphinan bridged-core template so opioid-like benzocyclohexane systems keep an exact middle cyclohexane and benzene ring while avoiding side-chain overlap
+- Regularize aromatic rings inside compact bridged scaffolds up to the audit-clean limit, preserving exact benzene angles in morphinan-like fused systems without reintroducing side-chain overlaps
+- Rerun stricter compact bridged KK seeds when relaxed bridged validation leaves visibly strained fused-bridged rings
+- Compress terminal ring-leaf bonds to the longest exact-outward audit-clean length when full-length halogens would collide with nearby scaffold atoms
+- Prefer audit-clean KK seeds over broken bridge projections for aromatic fused-bridged ring systems
+- Score direct-attached ring-root outward angles during presentation cleanup so crowded quaternary aryl centers keep exact phenyl exits
+- Preserve compact fused-bridged lactam separation and exact linked-ring nitrogen angles during presentation cleanup
+- Use projected-tetrahedral slots for crowded quaternary ring roots so attached aryl systems avoid severe overlap
+- Keep compact fused-bridged lactam scaffolds on audit-clean KK seeds when bridge projection would collapse atoms
+- Restore crowded terminal methyl ring leaves to exact exterior angles by rotating nearby attached rings
+- Let compact diaryl sulfonyl ligands rotate during hypervalent cleanup so ring sulfonamides keep exact sulfur crosses
+
 ## 2026-04-26
 
 - Align compact ring-anchored sulfonyl branches exactly and prefer minimal terminal-leaf overlap moves

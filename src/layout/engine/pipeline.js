@@ -609,8 +609,8 @@ function buildPipelineResult(molecule, coords, layoutGraph, normalizedOptions, p
  */
 export function classifyFamily(layoutGraph) {
   const threshold = layoutGraph.options.largeMoleculeThreshold;
-  const ringAtomIds = layoutGraph.ringAtomIds ?? new Set((layoutGraph.rings ?? []).flatMap(ring => ring.atomIds));
-  const hasNonRingHeavyAtoms = [...layoutGraph.atoms.values()].some(atom => atom.element !== 'H' && !ringAtomIds.has(atom.id));
+  const ringAtomIdSet = layoutGraph.ringAtomIdSet ?? new Set((layoutGraph.rings ?? []).flatMap(ring => ring.atomIds));
+  const hasNonRingHeavyAtoms = [...layoutGraph.atoms.values()].some(atom => atom.element !== 'H' && !ringAtomIdSet.has(atom.id));
   const exceedsLargeThreshold =
     exceedsLargeMoleculeThreshold(layoutGraph.traits, threshold, layoutGraph.components.length) ||
     layoutGraph.components.some(component => exceedsLargeComponentThreshold(layoutGraph, component));

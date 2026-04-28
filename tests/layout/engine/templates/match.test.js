@@ -258,6 +258,10 @@ describe('layout/engine/templates/match', () => {
     const adamantaneGraph = createLayoutGraph(makeAdamantane());
     const adamantaneMatch = findTemplateMatch(adamantaneGraph, buildRingCandidate(adamantaneGraph, adamantaneGraph.ringSystems[0], 'bridged'));
     assert.equal(adamantaneMatch.id, 'adamantane');
+
+    const morphinanGraph = createLayoutGraph(parseSMILES('C1C2Cc3ccccc3C1CCN2'));
+    const morphinanMatch = findTemplateMatch(morphinanGraph, buildRingCandidate(morphinanGraph, morphinanGraph.ringSystems[0], 'bridged'));
+    assert.equal(morphinanMatch.id, 'morphinan-core');
   });
 
   it('matches the bridged oxabicyclo[3.1.1]heptane scaffold too', () => {

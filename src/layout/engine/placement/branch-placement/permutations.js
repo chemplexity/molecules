@@ -1,6 +1,6 @@
 /** @module placement/branch-placement/permutations */
 
-import { angleOf, angularDifference, sub } from '../../geometry/vec2.js';
+import { angleOf, angularDifference, fromAngle, sub } from '../../geometry/vec2.js';
 import { buildAtomGrid, measureFocusedPlacementCost, measureLayoutCost } from '../../audit/invariants.js';
 import { compareCanonicalAtomIds } from '../../topology/canonical-order.js';
 import {
@@ -17,10 +17,13 @@ import {
 } from './shared.js';
 import {
   buildCandidateAngleSets,
+  chooseAttachmentAngle,
   describeCrossLikeHypervalentCenter,
   isLinearCenter,
   isTerminalMultipleBondLeaf,
+  smallRingExteriorTargetAngles,
   measureSmallRingExteriorGapSpreadPenalty,
+  supportsExteriorBranchSpreadRingSize,
   supportsProjectedTetrahedralGeometry
 } from './angle-selection.js';
 
@@ -32,6 +35,8 @@ const INDEX_PERMUTATIONS_3 = Object.freeze([
 const ORTHOGONAL_SLOT_OFFSETS = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
 const ARRANGEMENT_COST_TIE_EPSILON = 1e-12;
 const TRIGONAL_BRANCH_CLEARANCE_ASSIGNMENT_WEIGHT = 0.25;
+const FUTURE_ATTACHED_RING_PREVIEW_WEIGHT = 20;
+const FUTURE_ATTACHED_RING_PREVIEW_CLEARANCE_FACTOR = 0.85;
 const ORTHOGONAL_SLOT_PERMUTATIONS = [
   [0, 1, 2, 3],
   [0, 1, 3, 2],
@@ -641,6 +646,347 @@ function trigonalBranchClearanceAssignmentPenalty(layoutGraph, coords, anchorAto
 }
 
 /**
+ * Returns whether an atom should participate in arrangement preview scoring.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom ID to inspect.
+ * @returns {boolean} True for visible non-hydrogen atoms.
+ */
+function isVisibleHeavyArrangementAtom(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  return !!atom && atom.element !== 'H' && atom.visible !== false;
+}
+
+/**
+ * Returns whether an unplaced ring root has enough local ring geometry to
+ * preview before the actual ring block is attached.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} ringRootAtomId - Pending ring-root atom ID.
+ * @returns {boolean} True when the root has two drawable ring neighbors.
+ */
+function ringRootHasPreviewableRingNeighbors(layoutGraph, ringRootAtomId) {
+  const ringRootAtom = layoutGraph?.atoms.get(ringRootAtomId);
+  if (
+    !ringRootAtom
+    || (layoutGraph.atomToRings.get(ringRootAtomId)?.length ?? 0) === 0
+  ) {
+    return false;
+  }
+  const ringSystemId = layoutGraph.atomToRingSystemId?.get(ringRootAtomId);
+  const ringSystem = ringSystemId == null ? null : layoutGraph.ringSystems?.find(candidate => candidate.id === ringSystemId);
+  if ((ringSystem?.ringIds?.length ?? 0) !== 1) {
+    return false;
+  }
+
+  let ringNeighborCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(ringRootAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || !bond.inRing) {
+      continue;
+    }
+    const neighborAtomId = bond.a === ringRootAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    ringNeighborCount++;
+  }
+  return ringNeighborCount >= 2;
+}
+
+/**
+ * Returns the other exocyclic heavy neighbor on a pending small-ring root.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} ringRootAtomId - Pending ring-root atom ID.
+ * @param {string} parentAtomId - Placed parent atom that will attach the ring.
+ * @returns {string|null} Other exocyclic neighbor ID, or null when unsupported.
+ */
+function pendingSmallRingRootOtherExocyclicNeighbor(layoutGraph, ringRootAtomId, parentAtomId) {
+  const rootRings = layoutGraph?.atomToRings.get(ringRootAtomId) ?? [];
+  if (rootRings.length !== 1) {
+    return null;
+  }
+  const ring = rootRings[0];
+  if (!supportsExteriorBranchSpreadRingSize(ring?.atomIds?.length ?? 0)) {
+    return null;
+  }
+
+  const ringNeighborIds = [];
+  const exocyclicNeighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(ringRootAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return null;
+    }
+    const neighborAtomId = bond.a === ringRootAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if (ring.atomIds.includes(neighborAtomId)) {
+      ringNeighborIds.push(neighborAtomId);
+    } else {
+      exocyclicNeighborIds.push(neighborAtomId);
+    }
+  }
+
+  if (
+    ringNeighborIds.length !== 2
+    || exocyclicNeighborIds.length !== 2
+    || !exocyclicNeighborIds.includes(parentAtomId)
+  ) {
+    return null;
+  }
+  return exocyclicNeighborIds.find(neighborAtomId => neighborAtomId !== parentAtomId) ?? null;
+}
+
+/**
+ * Adds a preview point for the future exterior branch on a small pending ring
+ * root with two exocyclic heavy exits.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {{x: number, y: number}} ringRootPosition - Previewed ring-root position.
+ * @param {number} rootParentAngle - Angle from the pending root back to its placed parent.
+ * @param {number} firstRingNeighborAngle - Preview angle for one ring neighbor.
+ * @param {number} secondRingNeighborAngle - Preview angle for the other ring neighbor.
+ * @param {number} bondLength - Target bond length.
+ * @param {string} ringRootAtomId - Pending ring-root atom ID.
+ * @param {string} parentAtomId - Placed parent atom ID.
+ * @returns {Array<{x: number, y: number}>} Future exocyclic branch preview points.
+ */
+function futureRingRootExteriorBranchPreviewPoints(
+  layoutGraph,
+  ringRootPosition,
+  rootParentAngle,
+  firstRingNeighborAngle,
+  secondRingNeighborAngle,
+  bondLength,
+  ringRootAtomId,
+  parentAtomId
+) {
+  const otherExocyclicNeighborId = pendingSmallRingRootOtherExocyclicNeighbor(layoutGraph, ringRootAtomId, parentAtomId);
+  if (!otherExocyclicNeighborId) {
+    return [];
+  }
+
+  const ringSize = (layoutGraph.atomToRings.get(ringRootAtomId) ?? [])[0]?.atomIds?.length ?? 0;
+  const targetAngles = smallRingExteriorTargetAngles([firstRingNeighborAngle, secondRingNeighborAngle], ringSize);
+  if (targetAngles.length !== 2) {
+    return [];
+  }
+
+  const branchAngle = angularDifference(rootParentAngle, targetAngles[0]) <= angularDifference(rootParentAngle, targetAngles[1])
+    ? targetAngles[1]
+    : targetAngles[0];
+  return [{
+    x: ringRootPosition.x + Math.cos(branchAngle) * bondLength,
+    y: ringRootPosition.y + Math.sin(branchAngle) * bondLength
+  }];
+}
+
+/**
+ * Returns the coarse outward direction for a future ring from placed geometry.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {{x: number, y: number}} anchorPosition - Anchor atom position.
+ * @returns {number|null} Preferred outward angle in radians, or null when unavailable.
+ */
+function futureRingPreviewPreferredAngle(layoutGraph, coords, anchorPosition) {
+  let sumX = 0;
+  let sumY = 0;
+  let count = 0;
+  for (const [atomId, position] of coords) {
+    if (!isVisibleHeavyArrangementAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    sumX += position.x;
+    sumY += position.y;
+    count++;
+  }
+  if (count === 0) {
+    return null;
+  }
+  return angleOf(sub(anchorPosition, { x: sumX / count, y: sumY / count }));
+}
+
+/**
+ * Scores one preview point against the currently occupied scaffold.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {{x: number, y: number}} point - Preview point to score.
+ * @param {string[]} crowdingAtomIds - Atom IDs to compare against.
+ * @param {Set<string>} excludedAtomIds - Atoms ignored for this preview.
+ * @param {number} threshold - Soft clash distance.
+ * @returns {number} Squared soft clash penalty.
+ */
+function futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAtomIds, excludedAtomIds, threshold) {
+  let penalty = 0;
+  for (const atomId of crowdingAtomIds) {
+    if (excludedAtomIds.has(atomId) || !isVisibleHeavyArrangementAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    const distance = Math.hypot(position.x - point.x, position.y - point.y);
+    if (distance >= threshold) {
+      continue;
+    }
+    const deficit = threshold - distance;
+    penalty += deficit * deficit * 100;
+  }
+  return penalty;
+}
+
+/**
+ * Estimates the clash cost of direct-attached ring poses that will be placed
+ * after the current branch batch. Mixed placement grows non-ring branches
+ * before pending rings, so this preview keeps branch slots from claiming the
+ * pocket needed by later aromatic or small heteroring roots.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {string[]} [focusAtomIds] - Newly placed atoms participating in the arrangement.
+ * @param {Map<string, string[]>|null} [adjacency] - Component adjacency map, used to mirror later attachment-angle selection.
+ * @param {Set<string>|null} [atomIdsToPlace] - Eligible atom IDs for the current placement slice.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints.
+ * @returns {number} Future-ring clash penalty; lower is better.
+ */
+function futureAttachedRingPreviewPenalty(
+  layoutGraph,
+  coords,
+  bondLength,
+  focusAtomIds = [],
+  adjacency = null,
+  atomIdsToPlace = null,
+  branchConstraints = null
+) {
+  if (!layoutGraph || !(bondLength > 0) || focusAtomIds.length === 0) {
+    return 0;
+  }
+
+  const threshold = bondLength * FUTURE_ATTACHED_RING_PREVIEW_CLEARANCE_FACTOR;
+  const focusAtomIdSet = new Set(focusAtomIds);
+  const crowdingAtomIds = [...coords.keys()].filter(atomId => (
+    coords.has(atomId)
+    && isVisibleHeavyArrangementAtom(layoutGraph, atomId)
+  ));
+  if (crowdingAtomIds.length === 0) {
+    return 0;
+  }
+  const previewAnchorAtomIds = new Set([...focusAtomIdSet, ...coords.keys()]);
+  let totalPenalty = 0;
+
+  for (const anchorAtomId of previewAnchorAtomIds) {
+    if (!coords.has(anchorAtomId) || !isVisibleHeavyArrangementAtom(layoutGraph, anchorAtomId)) {
+      continue;
+    }
+
+    const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+    if (
+      !anchorAtom
+      || anchorAtom.element !== 'C'
+      || anchorAtom.aromatic
+      || anchorAtom.degree !== 4
+      || (anchorAtom.heavyDegree ?? 0) < 2
+    ) {
+      continue;
+    }
+
+    const placedHeavyNeighborIds = [];
+    const pendingRingNeighborIds = [];
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+        continue;
+      }
+      const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      if (!isVisibleHeavyArrangementAtom(layoutGraph, neighborAtomId)) {
+        continue;
+      }
+      if (coords.has(neighborAtomId)) {
+        placedHeavyNeighborIds.push(neighborAtomId);
+      } else if (
+        (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+        && ringRootHasPreviewableRingNeighbors(layoutGraph, neighborAtomId)
+      ) {
+        pendingRingNeighborIds.push(neighborAtomId);
+      }
+    }
+
+    if (placedHeavyNeighborIds.length === 0 || pendingRingNeighborIds.length === 0) {
+      continue;
+    }
+
+    const anchorPosition = coords.get(anchorAtomId);
+    const parentPosition = coords.get(placedHeavyNeighborIds[0]);
+    if (!anchorPosition || !parentPosition) {
+      continue;
+    }
+
+    const parentAngle = angleOf(sub(parentPosition, anchorPosition));
+    const childAngles = [parentAngle + DEG120, parentAngle - DEG120];
+    const preferredAngle = futureRingPreviewPreferredAngle(layoutGraph, coords, anchorPosition);
+    const excludedAtomIds = new Set([anchorAtomId, ...pendingRingNeighborIds]);
+
+    for (let pendingRingIndex = 0; pendingRingIndex < pendingRingNeighborIds.length; pendingRingIndex++) {
+      const pendingRingNeighborId = pendingRingNeighborIds[pendingRingIndex];
+      const selectedChildAngle =
+        adjacency && atomIdsToPlace
+          ? chooseAttachmentAngle(
+              adjacency,
+              coords,
+              anchorAtomId,
+              atomIdsToPlace,
+              preferredAngle,
+              layoutGraph,
+              pendingRingNeighborId,
+              branchConstraints
+            )
+          : preferredAngle == null
+            ? childAngles[0]
+            : childAngles.reduce((bestAngle, childAngle) => (
+                angularDifference(childAngle, preferredAngle) < angularDifference(bestAngle, preferredAngle)
+                  ? childAngle
+                  : bestAngle
+              ), childAngles[0]);
+      const ringRootPosition = {
+        x: anchorPosition.x + Math.cos(selectedChildAngle) * bondLength,
+        y: anchorPosition.y + Math.sin(selectedChildAngle) * bondLength
+      };
+      const rootParentAngle = selectedChildAngle + Math.PI;
+      const firstRingNeighborAngle = rootParentAngle + DEG120;
+      const secondRingNeighborAngle = rootParentAngle - DEG120;
+      const firstRingNeighborOffset = fromAngle(firstRingNeighborAngle, bondLength);
+      const secondRingNeighborOffset = fromAngle(secondRingNeighborAngle, bondLength);
+      const previewPoints = [
+        ringRootPosition,
+        {
+          x: ringRootPosition.x + firstRingNeighborOffset.x,
+          y: ringRootPosition.y + firstRingNeighborOffset.y
+        },
+        {
+          x: ringRootPosition.x + secondRingNeighborOffset.x,
+          y: ringRootPosition.y + secondRingNeighborOffset.y
+        },
+        ...futureRingRootExteriorBranchPreviewPoints(
+          layoutGraph,
+          ringRootPosition,
+          rootParentAngle,
+          firstRingNeighborAngle,
+          secondRingNeighborAngle,
+          bondLength,
+          pendingRingNeighborId,
+          anchorAtomId
+        )
+      ];
+      totalPenalty += previewPoints.reduce(
+        (sum, point) => sum + futureRingPreviewPenaltyForPoint(layoutGraph, coords, point, crowdingAtomIds, excludedAtomIds, threshold),
+        0
+      );
+    }
+  }
+
+  return totalPenalty;
+}
+
+/**
  * Returns a local ring-substituent readability penalty for one arrangement
  * candidate. This lets mirrored multi-child placements around aromatic and
  * conjugated ring roots prefer the orientation that keeps existing exocyclic
@@ -652,9 +998,22 @@ function trigonalBranchClearanceAssignmentPenalty(layoutGraph, coords, anchorAto
  * @param {string} anchorAtomId - Anchor atom ID whose local arrangement is being scored.
  * @param {string[]} [focusAtomIds] - Newly placed atom IDs participating in the arrangement.
  * @param {AtomGrid|null} [atomGrid] - Optional spatial index for focused scoring.
+ * @param {Map<string, string[]>|null} [adjacency] - Component adjacency map for pending attached-ring previews.
+ * @param {Set<string>|null} [atomIdsToPlace] - Eligible atom IDs for the current placement slice.
+ * @param {{angularBudgets?: Map<string, {centerAngle: number, minOffset: number, maxOffset: number, preferredAngle: number}>}|null} [branchConstraints] - Optional branch-angle constraints.
  * @returns {number} Local readability penalty.
  */
-function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAtomIds = [], atomGrid = null) {
+function arrangementCost(
+  layoutGraph,
+  coords,
+  bondLength,
+  anchorAtomId,
+  focusAtomIds = [],
+  atomGrid = null,
+  adjacency = null,
+  atomIdsToPlace = null,
+  branchConstraints = null
+) {
   const layoutCost = !layoutGraph
     ? 0
     : shouldUseFocusedArrangementCost(layoutGraph, coords, focusAtomIds)
@@ -666,7 +1025,16 @@ function arrangementCost(layoutGraph, coords, bondLength, anchorAtomId, focusAto
     measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, anchorAtomId) * SMALL_RING_EXTERIOR_GAP_WEIGHT +
     arrangementCrossLikeHypervalentPenalty(layoutGraph, coords, anchorAtomId) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
     arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds) * ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT +
-    trigonalBranchClearanceAssignmentPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds, atomGrid) * TRIGONAL_BRANCH_CLEARANCE_ASSIGNMENT_WEIGHT
+    trigonalBranchClearanceAssignmentPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds, atomGrid) * TRIGONAL_BRANCH_CLEARANCE_ASSIGNMENT_WEIGHT +
+    futureAttachedRingPreviewPenalty(
+      layoutGraph,
+      coords,
+      bondLength,
+      focusAtomIds,
+      adjacency,
+      atomIdsToPlace,
+      branchConstraints
+    ) * FUTURE_ATTACHED_RING_PREVIEW_WEIGHT
   );
 }
 
@@ -739,7 +1107,17 @@ function evaluateAnglePermutations(
       }
 
       const newlyPlacedAtomIds = collectNewlyPlacedAtomIds(coords, tempCoords);
-      const cost = arrangementCost(layoutGraph, tempCoords, bondLength, anchorAtomId, newlyPlacedAtomIds, null);
+      const cost = arrangementCost(
+        layoutGraph,
+        tempCoords,
+        bondLength,
+        anchorAtomId,
+        newlyPlacedAtomIds,
+        null,
+        adjacency,
+        atomIdsToPlace,
+        branchConstraints
+      );
       if (!bestPlacement || cost < bestPlacement.cost - ARRANGEMENT_COST_TIE_EPSILON) {
         bestPlacement = {
           cost,

@@ -14,6 +14,7 @@ describe('layout/engine/templates/library', () => {
       'cubane',
       'oxabicyclo-3-1-1',
       'benzoxathiobicyclo-core',
+      'morphinan-core',
       'norbornane',
       'quinoline',
       'isoquinoline',
@@ -115,6 +116,12 @@ describe('layout/engine/templates/library', () => {
     assert.equal(benzoxathiobicyclo.atomCount, 13);
     assert.equal(benzoxathiobicyclo.bondCount, 15);
     assert.equal(benzoxathiobicyclo.ringCount, 3);
+
+    const morphinan = getTemplateById('morphinan-core');
+    assert.equal(morphinan.family, 'bridged');
+    assert.equal(morphinan.atomCount, 13);
+    assert.equal(morphinan.bondCount, 15);
+    assert.equal(morphinan.ringCount, 3);
 
     const norbornane = getTemplateById('norbornane');
     assert.equal(norbornane.family, 'bridged');

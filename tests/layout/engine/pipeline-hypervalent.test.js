@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { parseSMILES } from '../../../src/io/smiles.js';
-import { angleOf, sub } from '../../../src/layout/engine/geometry/vec2.js';
+import { angleOf, distance, sub } from '../../../src/layout/engine/geometry/vec2.js';
 import { runPipeline } from '../../../src/layout/engine/pipeline.js';
 
 function assertOrthogonalCross(result, centerAtomIds) {
@@ -186,6 +186,20 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertOppositePair(result, 'S21', 'N20', 'H52');
   });
 
+  it('rotates compact diaryl sulfonyl ligands so ring sulfonamides keep an exact sulfur cross', () => {
+    const result = runPipeline(parseSMILES('ONC(=O)[C@H]1C[C@@H](CN1S(=O)(=O)c2ccc(Oc3ccccc3)cc2)N4CCCCC4'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assertOppositePair(result, 'S12', 'O13', 'O14');
+    assertOppositePair(result, 'S12', 'N11', 'C15');
+  });
+
   it('keeps ring-anchored sulfonyl exits and adjacent trifluoromethyl leaves exact', () => {
     const result = runPipeline(parseSMILES('CC(C)(O)C(=O)NNC(=O)CC1CCC2=CC(=CC=C2N1S(=O)(=O)C1=CC=C(F)C=C1)C(O)(C(F)(F)F)C(F)(F)F'), {
       suppressH: true,
@@ -202,5 +216,28 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertOppositePair(result, 'S22', 'O23', 'O24');
     assertBondAngle(result, 'C32', 'C34', 'F35', Math.PI / 2);
     assertOppositePair(result, 'C34', 'F35', 'F37');
+    assertBondAngle(result, 'C32', 'C38', 'F41', Math.PI / 2);
+    assertOppositePair(result, 'C38', 'F39', 'F41');
+  });
+
+  it('keeps crowded acyclic sulfonic acid centers exact by compressing only the terminal oxo leaf', () => {
+    const result = runPipeline(parseSMILES('CC(CC#N)(NCC#CS(N)(=O)=O)S(O)(=O)=O'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const compressedOxoLength = distance(result.coords.get('S14'), result.coords.get('O16'));
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.cleanupPostHookNudges, 1);
+    assertOppositePair(result, 'S14', 'C2', 'O15');
+    assertOppositePair(result, 'S14', 'O16', 'O17');
+    assertBondAngle(result, 'C2', 'S14', 'O16', Math.PI / 2);
+    assertBondAngle(result, 'C2', 'S14', 'O17', Math.PI / 2);
+    assert.ok(compressedOxoLength < result.layoutGraph.options.bondLength * 0.98);
+    assert.ok(compressedOxoLength >= result.layoutGraph.options.bondLength * 0.95);
   });
 });

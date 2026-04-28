@@ -4,25 +4,10 @@ import { buildAtomGrid } from '../../audit/invariants.js';
 import { countPointInPolygons } from '../../geometry/polygon.js';
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, sub } from '../../geometry/vec2.js';
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
-
-const TIDY_ROTATION_ANGLES = Object.freeze([
-  0,
-  Math.PI / 6,
-  -Math.PI / 6,
-  Math.PI / 3,
-  -Math.PI / 3,
-  Math.PI / 2,
-  -Math.PI / 2,
-  (2 * Math.PI) / 3,
-  -(2 * Math.PI) / 3,
-  Math.PI
-]);
+import { atomPairKey } from '../../constants.js';
+import { TIDY_ROTATION_ANGLES } from './ring-substituent.js';
 const TIDY_IMPROVEMENT_EPSILON = 1e-6;
 const SINGLE_BOND_TERMINAL_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
-
-function atomPairKey(firstAtomId, secondAtomId) {
-  return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
-}
 
 function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
   if (!coords.has(anchorAtomId)) {

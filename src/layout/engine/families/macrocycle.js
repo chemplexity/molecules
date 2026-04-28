@@ -47,17 +47,17 @@ function normalizeSignedAngle(angle) {
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string} atomId - Ring atom ID.
  * @param {Set<string>} participantAtomIds - Visible component atom IDs.
- * @param {Set<string>} ringAtomIds - Ring atom IDs.
+ * @param {Set<string>} ringAtomIdSet - Ring atom IDs.
  * @returns {boolean} True when the ring atom has a visible heavy exocyclic branch.
  */
-function hasVisibleHeavyBranch(layoutGraph, atomId, participantAtomIds, ringAtomIds) {
+function hasVisibleHeavyBranch(layoutGraph, atomId, participantAtomIds, ringAtomIdSet) {
   const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
   if (!atom) {
     return false;
   }
   return atom
     .getNeighbors(layoutGraph.sourceMolecule)
-    .some(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && participantAtomIds.has(neighborAtom.id) && !ringAtomIds.has(neighborAtom.id));
+    .some(neighborAtom => neighborAtom && neighborAtom.name !== 'H' && participantAtomIds.has(neighborAtom.id) && !ringAtomIdSet.has(neighborAtom.id));
 }
 
 /**
@@ -159,9 +159,9 @@ export function computeMacrocycleAngularBudgets(rings, coords, layoutGraph, part
   }
 
   const ringCenter = centroid(ringPositions);
-  const ringAtomIds = new Set(primaryRing.atomIds);
+  const ringAtomIdSet = new Set(primaryRing.atomIds);
   const budgets = new Map();
-  const branchBearingAtomIds = new Set(primaryRing.atomIds.filter(atomId => hasVisibleHeavyBranch(layoutGraph, atomId, participantAtomIds, ringAtomIds)));
+  const branchBearingAtomIds = new Set(primaryRing.atomIds.filter(atomId => hasVisibleHeavyBranch(layoutGraph, atomId, participantAtomIds, ringAtomIdSet)));
   const preferredSides = preferredBudgetSides(primaryRing.atomIds, branchBearingAtomIds);
 
   for (let index = 0; index < primaryRing.atomIds.length; index++) {

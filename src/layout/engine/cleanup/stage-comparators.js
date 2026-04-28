@@ -44,6 +44,9 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   if (allowPresentationTieBreak && Math.abs((candidate.attachedRingPeripheralPenalty ?? 0) - (incumbent.attachedRingPeripheralPenalty ?? 0)) > 1e-9) {
     return (candidate.attachedRingPeripheralPenalty ?? 0) < (incumbent.attachedRingPeripheralPenalty ?? 0);
   }
+  if (allowPresentationTieBreak && Math.abs((candidate.attachedRingRootOutwardPenalty ?? 0) - (incumbent.attachedRingRootOutwardPenalty ?? 0)) > 1e-9) {
+    return (candidate.attachedRingRootOutwardPenalty ?? 0) < (incumbent.attachedRingRootOutwardPenalty ?? 0);
+  }
   if (allowPresentationTieBreak && Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
     return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
   }

@@ -144,6 +144,18 @@ export const RING_SYSTEM_RESCUE_LIMITS = Object.freeze({
   bridgedTemplateMissRingCount: 12
 });
 
+/**
+ * Returns a stable, order-independent key for an unordered atom pair.
+ * @param {string} firstAtomId - First atom ID.
+ * @param {string} secondAtomId - Second atom ID.
+ * @returns {string} Canonical pair key.
+ */
+export function atomPairKey(firstAtomId, secondAtomId) {
+  return firstAtomId < secondAtomId
+    ? `${firstAtomId}:${secondAtomId}`
+    : `${secondAtomId}:${firstAtomId}`;
+}
+
 /** Rescue/tuning knobs for multi-metal organometallic cluster placement. */
 export const ORGANOMETALLIC_RESCUE_LIMITS = Object.freeze({
   frameworkMinMetalCount: 4,

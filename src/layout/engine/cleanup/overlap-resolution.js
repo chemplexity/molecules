@@ -5,7 +5,7 @@ import { angleOf, angularDifference, centroid, sub, wrapAngle } from '../geometr
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { probeRigidRotation, rigidDescriptorKey, rotateRigidDescriptorPositions } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
-import { ANGLE_EPSILON, IMPROVEMENT_EPSILON, NUMERIC_EPSILON } from '../constants.js';
+import { ANGLE_EPSILON, IMPROVEMENT_EPSILON, NUMERIC_EPSILON, atomPairKey } from '../constants.js';
 
 const RIGID_SUBTREE_ROTATION_ANGLES = Object.freeze([
   0,
@@ -56,6 +56,8 @@ const COMPACT_RING_ANCHORED_RIGID_SUBTREE_MAX_ATOMS = 10;
 const COMPACT_HYPERVALENT_RIGID_SUBTREE_ELEMENTS = new Set(['P', 'S', 'Se', 'As']);
 const COMPACT_HYPERVALENT_RIGID_SUBTREE_MAX_HEAVY_ATOMS = 8;
 const COMPACT_HYPERVALENT_RIGID_SUBTREE_MAX_ATOMS = 12;
+const COMPACT_FOUR_COORDINATE_TERMINAL_RIGID_SUBTREE_MAX_HEAVY_ATOMS = 8;
+const COMPACT_FOUR_COORDINATE_TERMINAL_RIGID_SUBTREE_MAX_ATOMS = 12;
 const EXACT_HYPERVALENT_RELATIVE_ROTATION_OFFSETS = Object.freeze([
   Math.PI / 12,
   -(Math.PI / 12),
@@ -65,6 +67,18 @@ const EXACT_HYPERVALENT_RELATIVE_ROTATION_OFFSETS = Object.freeze([
   -(Math.PI / 4),
   Math.PI / 3,
   -(Math.PI / 3)
+]);
+const COMPACT_FOUR_COORDINATE_RELATIVE_ROTATION_OFFSETS = Object.freeze([
+  Math.PI / 36,
+  -(Math.PI / 36),
+  Math.PI / 18,
+  -(Math.PI / 18),
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 9,
+  -(Math.PI / 9),
+  Math.PI / 6,
+  -(Math.PI / 6)
 ]);
 const OMITTED_H_TRIGONAL_ROOT_ANGLE_OFFSETS = Object.freeze([
   (2 * Math.PI) / 3,
@@ -112,10 +126,6 @@ function protectsLargeMoleculeBackbone(options) {
  */
 function isFixedAtom(layoutGraph, atomId, options = {}) {
   return (layoutGraph.options.preserveFixed !== false && layoutGraph.fixedCoords.has(atomId)) || options.frozenAtomIds?.has(atomId) === true;
-}
-
-function atomPairKey(firstAtomId, secondAtomId) {
-  return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
 }
 
 function compareAtomIdNumerically(a, b) {
@@ -241,6 +251,94 @@ function isCompactHypervalentRigidSubtree(layoutGraph, anchorAtomId, rootAtomId,
   return subtreeAtomIds.every(atomId => (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) === 0);
 }
 
+function isSingleAcyclicVisibleBond(layoutGraph, firstAtomId, secondAtomId) {
+  const bond = layoutGraph.bondByAtomPair?.get(atomPairKey(firstAtomId, secondAtomId));
+  return !!bond
+    && bond.kind === 'covalent'
+    && !bond.inRing
+    && !bond.aromatic
+    && (bond.order ?? 1) === 1;
+}
+
+function isCompactAcyclicRigidSideGroup(layoutGraph, atomId, parentAtomId, maxHeavyAtoms) {
+  const subtreeAtomIds = collectCutSubtree(layoutGraph, atomId, parentAtomId);
+  let heavyAtomCount = 0;
+  for (const subtreeAtomId of subtreeAtomIds) {
+    const atom = layoutGraph.atoms.get(subtreeAtomId);
+    if (!atom || (layoutGraph.atomToRings?.get(subtreeAtomId)?.length ?? 0) > 0) {
+      return false;
+    }
+    if (atom.element !== 'H') {
+      heavyAtomCount++;
+    }
+  }
+  return heavyAtomCount > 0 && heavyAtomCount <= maxHeavyAtoms;
+}
+
+/**
+ * Returns whether a compact saturated four-coordinate terminal branch should
+ * rotate as one rigid cleanup unit around its parent bond. CF3/t-Bu-like
+ * groups need this when only one terminal leaf overlaps: moving the whole
+ * group preserves the projected 90/180 fan at the root instead of bending one
+ * leaf away from an otherwise clean center.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Anchor atom id.
+ * @param {string} rootAtomId - Root atom id of the candidate subtree.
+ * @param {string[]} subtreeAtomIds - Candidate subtree atom ids.
+ * @param {number} heavyAtomCount - Heavy-atom count in the subtree.
+ * @returns {boolean} True when the subtree should be offered as a rigid move.
+ */
+function isCompactFourCoordinateTerminalRigidSubtree(layoutGraph, anchorAtomId, rootAtomId, subtreeAtomIds, heavyAtomCount) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  if (
+    !anchorAtom
+    || !rootAtom
+    || anchorAtom.element === 'H'
+    || rootAtom.element !== 'C'
+    || rootAtom.aromatic
+    || rootAtom.heavyDegree !== 4
+    || rootAtom.degree !== 4
+    || anchorAtom.heavyDegree <= 1
+    || (layoutGraph.atomToRings?.get(anchorAtomId)?.length ?? 0) > 0
+    || (layoutGraph.atomToRings?.get(rootAtomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+  if (heavyAtomCount < 4 || heavyAtomCount > COMPACT_FOUR_COORDINATE_TERMINAL_RIGID_SUBTREE_MAX_HEAVY_ATOMS) {
+    return false;
+  }
+  if (subtreeAtomIds.length > COMPACT_FOUR_COORDINATE_TERMINAL_RIGID_SUBTREE_MAX_ATOMS) {
+    return false;
+  }
+  if (!isSingleAcyclicVisibleBond(layoutGraph, anchorAtomId, rootAtomId)) {
+    return false;
+  }
+  if (subtreeAtomIds.some(atomId => (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0)) {
+    return false;
+  }
+
+  const heavyNeighborIds = (layoutGraph.bondsByAtomId.get(rootAtomId) ?? [])
+    .filter(bond => {
+      if (!bond || bond.kind !== 'covalent') {
+        return false;
+      }
+      const neighborAtomId = bond.a === rootAtomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H';
+    })
+    .map(bond => (bond.a === rootAtomId ? bond.b : bond.a));
+  if (heavyNeighborIds.length !== 4 || !heavyNeighborIds.includes(anchorAtomId)) {
+    return false;
+  }
+  if (heavyNeighborIds.some(neighborAtomId => !isSingleAcyclicVisibleBond(layoutGraph, rootAtomId, neighborAtomId))) {
+    return false;
+  }
+
+  const sideGroupIds = heavyNeighborIds.filter(neighborAtomId => neighborAtomId !== anchorAtomId);
+  return sideGroupIds.every(sideGroupId => isCompactAcyclicRigidSideGroup(layoutGraph, sideGroupId, rootAtomId, 3));
+}
+
 /**
  * Returns whether one rigid descriptor is a compact non-ring substituent rooted
  * directly on a ring atom, such as a carboxyl or acyl branch on an aromatic
@@ -262,6 +360,16 @@ function isCompactRingAnchoredRigidDescriptor(layoutGraph, descriptor) {
 
 function isCompactHypervalentRigidDescriptor(layoutGraph, descriptor) {
   return isCompactHypervalentRigidSubtree(
+    layoutGraph,
+    descriptor.anchorAtomId,
+    descriptor.rootAtomId,
+    descriptor.subtreeAtomIds,
+    subtreeHeavyAtomCount(layoutGraph, descriptor.subtreeAtomIds)
+  );
+}
+
+function isCompactFourCoordinateTerminalRigidDescriptor(layoutGraph, descriptor) {
+  return isCompactFourCoordinateTerminalRigidSubtree(
     layoutGraph,
     descriptor.anchorAtomId,
     descriptor.rootAtomId,
@@ -648,10 +756,18 @@ export function collectRigidPendantRingSubtrees(layoutGraph) {
       const includesCompactHypervalentSubtree =
         !includesRingAtoms
         && isCompactHypervalentRigidSubtree(layoutGraph, anchorAtomId, rootAtomId, descriptorAtomIds, heavyAtomCount);
+      const includesCompactFourCoordinateTerminalSubtree =
+        !includesRingAtoms
+        && isCompactFourCoordinateTerminalRigidSubtree(layoutGraph, anchorAtomId, rootAtomId, descriptorAtomIds, heavyAtomCount);
       if (heavyAtomCount === 0) {
         continue;
       }
-      if (!includesRingAtoms && !includesCompactRingAnchoredSubtree && !includesCompactHypervalentSubtree) {
+      if (
+        !includesRingAtoms
+        && !includesCompactRingAnchoredSubtree
+        && !includesCompactHypervalentSubtree
+        && !includesCompactFourCoordinateTerminalSubtree
+      ) {
         continue;
       }
       if (includesRingAtoms && heavyAtomCount > 14) {
@@ -1020,10 +1136,19 @@ function mergeRigidCandidateAngles(baseAngles, extraAngles) {
  * @param {number} currentRootAngle - Current root-bond angle in radians.
  * @param {boolean} exactRingRootDescriptor - Whether the descriptor should preserve exact ring-root presentation when possible.
  * @param {boolean} exactHypervalentDescriptor - Whether the descriptor should preserve exact hypervalent presentation when possible.
+ * @param {boolean} compactFourCoordinateDescriptor - Whether the descriptor should include small root-relative escape rotations.
  * @param {number[]} exactPreferredRootAngles - Exact root angles when available.
  * @returns {number[]} Candidate root angles in radians.
  */
-function rigidSubtreeProbeAngles(subtreeSize, visibleAtomCount, currentRootAngle, exactRingRootDescriptor, exactHypervalentDescriptor, exactPreferredRootAngles) {
+function rigidSubtreeProbeAngles(
+  subtreeSize,
+  visibleAtomCount,
+  currentRootAngle,
+  exactRingRootDescriptor,
+  exactHypervalentDescriptor,
+  compactFourCoordinateDescriptor,
+  exactPreferredRootAngles
+) {
   const baseAngles = rigidSubtreeCandidateAngles(subtreeSize, visibleAtomCount);
   const extraAngles = [];
   if (exactRingRootDescriptor) {
@@ -1031,6 +1156,9 @@ function rigidSubtreeProbeAngles(subtreeSize, visibleAtomCount, currentRootAngle
   }
   if (exactHypervalentDescriptor) {
     extraAngles.push(...EXACT_HYPERVALENT_RELATIVE_ROTATION_OFFSETS.map(offset => currentRootAngle + offset));
+  }
+  if (compactFourCoordinateDescriptor) {
+    extraAngles.push(...COMPACT_FOUR_COORDINATE_RELATIVE_ROTATION_OFFSETS.map(offset => currentRootAngle + offset));
   }
   extraAngles.push(...exactPreferredRootAngles);
   if (extraAngles.length === 0) {
@@ -1072,6 +1200,7 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   const currentRootAngle = Math.atan2(currentRootVector.y, currentRootVector.x);
   const subtreeIsSingleAtom = descriptor.subtreeAtomIds.length === 1;
   const exactHypervalentDescriptor = isCompactHypervalentRigidDescriptor(layoutGraph, descriptor);
+  const compactFourCoordinateDescriptor = isCompactFourCoordinateTerminalRigidDescriptor(layoutGraph, descriptor);
   const preservesMovingExactDivalentGeometry =
     descriptor.rootAtomId === movingAtomId
     && isExactDivalentContinuationCenter(layoutGraph, movingAtomId);
@@ -1166,6 +1295,7 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
               currentRootAngle,
               exactRingRootDescriptor,
               exactHypervalentDescriptor,
+              compactFourCoordinateDescriptor,
               exactPreferredRootAngles
             ),
             EXACT_DIVALENT_RIGID_RESCUE_OFFSETS.map(offset => currentRootAngle + offset)
@@ -1176,6 +1306,7 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
             currentRootAngle,
             exactRingRootDescriptor,
             exactHypervalentDescriptor,
+            compactFourCoordinateDescriptor,
             exactPreferredRootAngles
           )
     ).filter(candidateAngle => {

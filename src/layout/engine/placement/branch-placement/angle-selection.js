@@ -120,6 +120,15 @@ export function mergeCandidateAngles(baseAngles, extraAngles) {
 }
 
 /**
+ * Returns whether a ring size can use exterior-branch spread geometry.
+ * @param {number} ringSize - Candidate incident ring size.
+ * @returns {boolean} True when the exterior-branch fan rule applies.
+ */
+export function supportsExteriorBranchSpreadRingSize(ringSize) {
+  return Number.isInteger(ringSize) && ringSize >= 3;
+}
+
+/**
  * Returns the bisector of the largest open angular gap between occupied bonds.
  * When multiple gaps tie, the bisector closest to an optional preferred angle wins.
  * @param {number[]} occupiedAngles - Occupied bond angles in radians.
@@ -486,7 +495,7 @@ function isConjugatedTrigonalCenter(layoutGraph, atomId) {
  * @param {string} atomId - Nitrogen atom ID.
  * @returns {boolean} True when the nitrogen should use trigonal branch slots.
  */
-function isPlanarConjugatedTertiaryNitrogen(layoutGraph, atomId) {
+export function isPlanarConjugatedTertiaryNitrogen(layoutGraph, atomId) {
   const atom = layoutGraph?.atoms.get(atomId);
   if (!atom || atom.element !== 'N' || atom.aromatic || atom.heavyDegree !== 3 || atom.degree !== 3) {
     return false;
@@ -681,17 +690,6 @@ export function isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtom
       && (isConjugatedTrigonalCenter(layoutGraph, parentAtomId) || isConjugatedTrigonalCenter(layoutGraph, childAtomId))
     );
   if (!exactEligibleElement) {
-    return false;
-  }
-
-  const parentAtom = layoutGraph.atoms.get(parentAtomId);
-  const childAtom = layoutGraph.atoms.get(childAtomId);
-  if (
-    anchorAtom.element === 'O'
-    && parentAtom?.aromatic
-    && childAtom?.element === 'C'
-    && (childAtom.heavyDegree ?? 0) > 1
-  ) {
     return false;
   }
 
@@ -1922,10 +1920,50 @@ function computeLegacyChildAngles(childCount, outAngle, fromRing, incomingAngle,
 const PROJECTED_TETRAHEDRAL_SLOT_OFFSETS = [0, DEG90, Math.PI, Math.PI + DEG90];
 
 /**
+ * Returns bounded orientation candidates for a projected-tetrahedral center
+ * that is being used as the current acyclic root. With no placed parent bond,
+ * the axis is arbitrary, so a small set of non-equivalent quarter-turn grids is
+ * enough for sibling permutation scoring to choose the least crowded layout.
+ * @returns {number[][]} Candidate four-slot angle sets.
+ */
+function rootProjectedTetrahedralAngleSets() {
+  return [0, DEG30, DEG60].map(alpha =>
+    PROJECTED_TETRAHEDRAL_SLOT_OFFSETS
+      .map(slotOffset => normalizeSignedAngle(alpha + slotOffset))
+      .sort((firstAngle, secondAngle) => firstAngle - secondAngle)
+  );
+}
+
+/**
+ * Returns whether an atom has a direct cross-like hypervalent heavy neighbor.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate atom ID.
+ * @returns {boolean} True when a neighboring branch wants sulfur/phosphorus cross geometry.
+ */
+export function hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return false;
+  }
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    if (describeCrossLikeHypervalentCenter(layoutGraph, neighborAtomId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Returns whether an atom should use projected-tetrahedral branch geometry in
  * 2D. This is limited to non-ring four-heavy single-bond centers so ring
  * readability heuristics and trigonal/linear centers keep their dedicated
- * placement rules.
+ * placement rules. Besides terminal leaves, linear branches, and crowded
+ * multi-ring roots, centers bearing a cross-like hypervalent branch use the
+ * same slots so late sulfur/phosphorus orthogonalization does not collide with
+ * neighboring branches.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} atomId - Candidate center atom ID.
  * @returns {boolean} True when the center qualifies for projected-tetrahedral placement.
@@ -1942,6 +1980,7 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
 
   let heavySingleBondCount = 0;
   let presentationCriticalLeafCount = 0;
+  let attachedRingRootCount = 0;
   let hasLinearNeighbor = false;
   for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
     if (bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
@@ -1958,12 +1997,20 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
         presentationCriticalLeafCount++;
       }
     }
+    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+      attachedRingRootCount++;
+    }
     if (isLinearCenter(layoutGraph, neighborAtomId)) {
       hasLinearNeighbor = true;
     }
   }
 
-  return heavySingleBondCount === 4 && (presentationCriticalLeafCount >= 2 || hasLinearNeighbor);
+  return heavySingleBondCount === 4 && (
+    presentationCriticalLeafCount >= 2
+    || attachedRingRootCount >= 3
+    || hasLinearNeighbor
+    || (hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) && presentationCriticalLeafCount > 0)
+  );
 }
 
 function orthogonalSlotAssignments(placedCount) {
@@ -2039,7 +2086,6 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
   if (
     !supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId)
     || !coords.has(anchorAtomId)
-    || currentPlacedNeighborIds.length === 0
     || assigningNeighborIds.length === 0
   ) {
     return [];
@@ -2057,13 +2103,24 @@ function projectedTetrahedralAngleSets(layoutGraph, coords, anchorAtomId, curren
   if (deferredHeavyNeighborCount < 0 || placedNeighborIds.length + inBatchNeighborIds.length + deferredHeavyNeighborCount !== 4) {
     return [];
   }
+  const hasCrossLikeNeighbor = hasCrossLikeHypervalentNeighbor(layoutGraph, anchorAtomId);
+  if (placedNeighborIds.length === 0) {
+    return hasCrossLikeNeighbor && inBatchNeighborIds.length === 4 && deferredHeavyNeighborIds.length === 0
+      ? rootProjectedTetrahedralAngleSets()
+      : [];
+  }
   const isProjectedLeafBatch =
     inBatchNeighborIds.length > 1
     && placedNeighborIds.length === 2
     && deferredHeavyNeighborCount === 0
     && inBatchNeighborIds.length === 2
     && inBatchNeighborIds.every(neighborAtomId => (layoutGraph.atoms.get(neighborAtomId)?.heavyDegree ?? 0) === 1);
-  if (inBatchNeighborIds.length > 1 && !isProjectedLeafBatch) {
+  const isCrossLikeProjectedRemainingBatch =
+    hasCrossLikeNeighbor
+    && inBatchNeighborIds.length > 1
+    && placedNeighborIds.length + inBatchNeighborIds.length === 4
+    && deferredHeavyNeighborCount === 0;
+  if (inBatchNeighborIds.length > 1 && !isProjectedLeafBatch && !isCrossLikeProjectedRemainingBatch) {
     return [];
   }
   const shouldReserveOppositeSlotForDeferredLeaves =
@@ -2206,7 +2263,8 @@ function describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId) {
     return null;
   }
   const ring = anchorRings[0];
-  if ((ring?.atomIds?.length ?? 0) < 3 || (ring?.atomIds?.length ?? 0) > 6) {
+  const ringSize = ring?.atomIds?.length ?? 0;
+  if (!supportsExteriorBranchSpreadRingSize(ringSize)) {
     return null;
   }
 
@@ -2234,7 +2292,7 @@ function describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId) {
   return {
     ringNeighborIds,
     exocyclicNeighborIds,
-    ringSize: ring.atomIds.length
+    ringSize
   };
 }
 
@@ -2255,15 +2313,18 @@ function largerAngularGap(ringNeighborAngles) {
 
 /**
  * Returns the ideal exocyclic target angles for a saturated ring atom that
- * carries two heavy external branches. Three-, five-, and six-membered rings
- * read best when the two exterior branches fan symmetrically across the open
- * side of the ring, while four-membered rings keep the exact outer
+ * carries two heavy external branches. Three-membered and five-member-or-larger
+ * rings read best when the two exterior branches fan symmetrically across the
+ * open side of the ring, while four-membered rings keep the exact outer
  * continuations of the ring edges.
  * @param {number[]} ringNeighborAngles - Already placed ring-bond angles at the anchor.
  * @param {number} ringSize - Ring size for the anchor's incident ring.
  * @returns {number[]} Target exterior angles in radians.
  */
 export function smallRingExteriorTargetAngles(ringNeighborAngles, ringSize) {
+  if (!supportsExteriorBranchSpreadRingSize(ringSize)) {
+    return [];
+  }
   if (ringNeighborAngles.length !== 2) {
     return [];
   }
@@ -2372,10 +2433,9 @@ function preferredSmallRingExteriorGapAngles(layoutGraph, coords, anchorAtomId, 
  * Returns the penalty for crowding two heavy exocyclic branches onto the same
  * side of a small non-aromatic ring atom. Three- and four-member quaternary
  * ring centers read best when their heavy exocyclic bonds follow the exact
- * outer continuations of the ring edges, while five- and six-member
- * quaternary ring centers read better when those exocyclic bonds fan across
- * the ring's open exterior gap instead of pinching into a single edge
- * continuation.
+ * outer continuations of the ring edges, while five-member-or-larger quaternary
+ * ring centers read better when those exocyclic bonds fan across the ring's
+ * open exterior gap instead of pinching into a single edge continuation.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {string} atomId - Candidate anchor atom ID.
@@ -2396,7 +2456,7 @@ export function measureSmallRingExteriorGapSpreadPenalty(layoutGraph, coords, at
     return 0;
   }
   const smallRing = anchorRings[0];
-  if ((smallRing?.atomIds?.length ?? 0) < 3 || (smallRing?.atomIds?.length ?? 0) > 6) {
+  if (!supportsExteriorBranchSpreadRingSize(smallRing?.atomIds?.length ?? 0)) {
     return 0;
   }
 

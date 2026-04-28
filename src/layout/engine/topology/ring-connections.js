@@ -2,6 +2,7 @@
 
 import { createRingConnection, ringConnectionKey } from '../model/ring-connection.js';
 import { findSharedAtoms } from './ring-analysis.js';
+import { atomPairKey } from '../constants.js';
 
 /**
  * Builds a molecule-wide neighbor map for ring-connection classification.
@@ -24,15 +25,6 @@ function buildNeighborMap(molecule) {
   return neighborMap;
 }
 
-/**
- * Returns a stable atom-pair key for an undirected bond.
- * @param {string} firstAtomId - First atom ID.
- * @param {string} secondAtomId - Second atom ID.
- * @returns {string} Stable undirected pair key.
- */
-function bondKey(firstAtomId, secondAtomId) {
-  return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
-}
 
 /**
  * Looks up a ring descriptor by ID.
@@ -123,7 +115,7 @@ function hasBridgePathOutsideRingAtoms(startAtomId, endAtomId, excludedAtomIds, 
   while (queueHead < queue.length) {
     const atomId = queue[queueHead++];
     for (const neighborAtomId of neighborMap.get(atomId) ?? []) {
-      if (bondKey(atomId, neighborAtomId) === excludedBondKey) {
+      if (atomPairKey(atomId, neighborAtomId) === excludedBondKey) {
         continue;
       }
       if (neighborAtomId === endAtomId) {
@@ -190,7 +182,7 @@ export function isBridgedConnection(molecule, rings, firstRingId, secondRingId, 
     ...longRingArcInternalAtomIds(firstRing.atomIds, firstSharedAtomId, secondSharedAtomId),
     ...longRingArcInternalAtomIds(secondRing.atomIds, firstSharedAtomId, secondSharedAtomId)
   ]);
-  return hasBridgePathOutsideRingAtoms(firstSharedAtomId, secondSharedAtomId, excludedAtomIds, bondKey(firstSharedAtomId, secondSharedAtomId), neighborMap);
+  return hasBridgePathOutsideRingAtoms(firstSharedAtomId, secondSharedAtomId, excludedAtomIds, atomPairKey(firstSharedAtomId, secondSharedAtomId), neighborMap);
 }
 
 /**

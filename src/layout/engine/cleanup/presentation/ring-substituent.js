@@ -18,14 +18,14 @@ import { computeBounds } from '../../geometry/bounds.js';
 import { distancePointToSegment, segmentsProperlyIntersect } from '../../geometry/segments.js';
 import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
-import { RING_SUBSTITUENT_READABILITY_LIMITS } from '../../constants.js';
+import { RING_SUBSTITUENT_READABILITY_LIMITS, atomPairKey } from '../../constants.js';
 import { measureAttachedCarbonylPresentationPenalty } from './attached-carbonyl.js';
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
 import { containsFrozenAtom } from '../frozen-atoms.js';
 import { rotateRigidDescriptorPositions } from '../rigid-rotation.js';
 import { collectCutSubtree } from '../subtree-utils.js';
 
-const TIDY_ROTATION_ANGLES = Object.freeze([
+export const TIDY_ROTATION_ANGLES = Object.freeze([
   0,
   Math.PI / 6,
   -Math.PI / 6,
@@ -37,11 +37,27 @@ const TIDY_ROTATION_ANGLES = Object.freeze([
   -(2 * Math.PI) / 3,
   Math.PI
 ]);
+const IDEAL_LEAF_OUTWARD_BACKOFF_ANGLES = Object.freeze([
+  Math.PI / 30,
+  -(Math.PI / 30),
+  Math.PI / 15,
+  -(Math.PI / 15),
+  Math.PI / 10,
+  -(Math.PI / 10),
+  (2 * Math.PI) / 15,
+  -(2 * Math.PI) / 15,
+  Math.PI / 6,
+  -(Math.PI / 6)
+]);
+const IDEAL_LEAF_COMPRESSION_FACTORS = Object.freeze([0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.62, 0.6, 0.59, 0.58, 0.57, 0.56, 0.55]);
+const IDEAL_LEAF_COMPRESSION_MIN_OVERLAP_COST_INCREASE = 1;
 const TIDY_ANGLE_EPSILON = 1e-6;
 const TIDY_ATOM_EPSILON = 1e-6;
 const TIDY_BOUNDS_EPSILON = 1e-6;
 const IDEAL_RING_LINKER_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
+const COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I', 'O', 'S', 'Se']);
 const IDEAL_LINKED_RING_BRIDGE_ANGLE = (2 * Math.PI) / 3;
+const LINKED_RING_BRIDGE_TRADEOFF_MIN_BASE_DEVIATION = 0.05;
 const RING_SUBSTITUENT_TIDY_LIMITS = Object.freeze({
   maxSubtreeHeavyAtomCount: 18,
   maxSubtreeAtomCount: 28,
@@ -54,13 +70,36 @@ const RING_SUBSTITUENT_TIDY_LIMITS = Object.freeze({
   minRootAnchoredAnchorClearanceImprovement: 0.4
 });
 
-function atomPairKey(firstAtomId, secondAtomId) {
-  return firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
-}
-
 function linkedRingDescriptorKey(anchorAtomId, rootAtomId, reverseAnchorAtomId) {
   const orderedAnchorAtomIds = [anchorAtomId, reverseAnchorAtomId].sort();
   return `linked-ring:${rootAtomId}:${orderedAnchorAtomIds[0]}:${orderedAnchorAtomIds[1]}`;
+}
+
+function isCompressibleTerminalRingLeafDescriptor(layoutGraph, descriptor) {
+  if (
+    descriptor.isRingSystemSubstituent
+    || descriptor.rootRotatingAtomIds.length > 0
+    || descriptor.subtreeAtomIds.length !== 1
+  ) {
+    return false;
+  }
+
+  const anchorAtom = layoutGraph.atoms.get(descriptor.anchorAtomId);
+  const rootAtom = layoutGraph.atoms.get(descriptor.rootAtomId);
+  const bond = layoutGraph.bondByAtomPair.get(atomPairKey(descriptor.anchorAtomId, descriptor.rootAtomId));
+  return Boolean(
+    anchorAtom
+    && rootAtom
+    && COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(rootAtom.element)
+    && (rootAtom.heavyDegree ?? 0) === 1
+    && (layoutGraph.atomToRings.get(descriptor.anchorAtomId)?.length ?? 0) > 0
+    && (layoutGraph.atomToRings.get(descriptor.rootAtomId)?.length ?? 0) === 0
+    && bond
+    && bond.kind === 'covalent'
+    && !bond.inRing
+    && !bond.aromatic
+    && (bond.order ?? 1) === 1
+  );
 }
 
 function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
@@ -728,6 +767,7 @@ function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor,
     || descriptor.rootRotatingAtomIds.length > 0
     || descriptor.subtreeAtomIds.length !== 1
     || descriptor.outwardAngles.length !== 1
+    || isCompressibleTerminalRingLeafDescriptor(layoutGraph, descriptor)
   ) {
     return null;
   }
@@ -753,6 +793,108 @@ function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor,
     overridePositions,
     rootAnchored: false
   };
+}
+
+/**
+ * Builds a compressed exact-outward candidate for a single-atom ideal leaf.
+ * This preserves the publication-style angle when the full-length terminal
+ * leaf would collide with a nearby scaffold atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {AtomGrid} atomGrid - Spatial grid for the current coordinates.
+ * @param {object} descriptor - Dynamic tidy descriptor.
+ * @param {object} baseCandidate - Current descriptor score.
+ * @param {number} bondLength - Target bond length.
+ * @param {string[]} allAtomIds - All placed atom ids.
+ * @param {object|null} [bondIntersectionContext] - Optional cached crossing context.
+ * @param {object|null} [subtreeContext] - Optional cached subtree-overlap context.
+ * @returns {object|null} Best compressed exact-outward candidate, or null.
+ */
+function buildCompressedExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor, baseCandidate, bondLength, allAtomIds, bondIntersectionContext = null, subtreeContext = null) {
+  if (
+    descriptor.isRingSystemSubstituent
+    || !descriptor.prefersIdealOutwardGeometry
+    || descriptor.rootRotatingAtomIds.length > 0
+    || descriptor.subtreeAtomIds.length !== 1
+    || descriptor.outwardAngles.length !== 1
+    || !isCompressibleTerminalRingLeafDescriptor(layoutGraph, descriptor)
+  ) {
+    return null;
+  }
+
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  if (!anchorPosition || !rootPosition) {
+    return null;
+  }
+
+  const bondDistance = Math.hypot(rootPosition.x - anchorPosition.x, rootPosition.y - anchorPosition.y);
+  if (bondDistance <= TIDY_ATOM_EPSILON) {
+    return null;
+  }
+
+  const targetAngle = descriptor.outwardAngles[0];
+  const currentAngle = angleOf(sub(rootPosition, anchorPosition));
+  const fullLengthCandidate = buildCandidateScore(
+    layoutGraph,
+    coords,
+    atomGrid,
+    descriptor,
+    new Map([[descriptor.rootAtomId, add(anchorPosition, fromAngle(targetAngle, bondDistance))]]),
+    bondLength,
+    allAtomIds,
+    bondIntersectionContext,
+    subtreeContext
+  );
+  if (fullLengthCandidate.overlapCost <= baseCandidate.overlapCost + IDEAL_LEAF_COMPRESSION_MIN_OVERLAP_COST_INCREASE) {
+    return null;
+  }
+
+  let bestCandidate = null;
+  for (const compressionFactor of IDEAL_LEAF_COMPRESSION_FACTORS) {
+    const overridePositions = new Map([
+      [descriptor.rootAtomId, add(anchorPosition, fromAngle(targetAngle, bondDistance * compressionFactor))]
+    ]);
+    const candidate = {
+      ...buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, bondIntersectionContext, subtreeContext),
+      angleDelta: angularDifference(currentAngle, targetAngle) + (1 - compressionFactor),
+      overridePositions,
+      rootAnchored: false,
+      compressedTerminalLeaf: true
+    };
+    if (isBetterCandidate(candidate, bestCandidate)) {
+      bestCandidate = candidate;
+    }
+  }
+
+  return bestCandidate;
+}
+
+/**
+ * Returns near-outward candidate angles for a single-atom ideal leaf. Exact
+ * outward placement can be blocked by a neighboring ring system, so these
+ * small backoff angles let tidy choose the closest overlap-safe pose.
+ * @param {object} descriptor - Dynamic tidy descriptor.
+ * @returns {number[]} Candidate absolute angles in radians.
+ */
+function nearOutwardIdealLeafCandidateAngles(descriptor) {
+  if (
+    descriptor.isRingSystemSubstituent
+    || !descriptor.prefersIdealOutwardGeometry
+    || descriptor.rootRotatingAtomIds.length > 0
+    || descriptor.subtreeAtomIds.length !== 1
+    || descriptor.outwardAngles.length === 0
+  ) {
+    return [];
+  }
+
+  const candidateAngles = [];
+  for (const outwardAngle of descriptor.outwardAngles) {
+    for (const offset of IDEAL_LEAF_OUTWARD_BACKOFF_ANGLES) {
+      candidateAngles.push(outwardAngle + offset);
+    }
+  }
+  return candidateAngles;
 }
 
 /**
@@ -1168,6 +1310,7 @@ function shouldAcceptCandidate(candidate, baseCandidate, descriptor) {
     descriptor.linkedRingAnchorAtomId != null
     && descriptor.prefersIdealOutwardGeometry
     && descriptor.prefersIdealReverseOutwardGeometry
+    && baseCandidate.bridgeAngleDeviation > LINKED_RING_BRIDGE_TRADEOFF_MIN_BASE_DEVIATION
     && candidate.outwardDeviation <= TIDY_ANGLE_EPSILON
     && candidate.outwardDeviation < baseCandidate.outwardDeviation - TIDY_ANGLE_EPSILON
     && candidate.bridgeAngleDeviation
@@ -1580,8 +1723,12 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
       // Pre-compute once — only depends on topology, not on positions.
       const subtreeContext = buildSubtreeOverlapContext(layoutGraph, dynamicDescriptor.subtreeAtomIds);
       const currentAngle = angleOf(sub(rootPosition, anchorPosition));
+      const compressibleTerminalLeafDescriptor = isCompressibleTerminalRingLeafDescriptor(layoutGraph, dynamicDescriptor);
       const candidateAngles = new Set(TIDY_ROTATION_ANGLES);
-      for (const angle of dynamicDescriptor.outwardAngles) { candidateAngles.add(angle); }
+      if (!compressibleTerminalLeafDescriptor) {
+        for (const angle of dynamicDescriptor.outwardAngles) { candidateAngles.add(angle); }
+        for (const angle of nearOutwardIdealLeafCandidateAngles(dynamicDescriptor)) { candidateAngles.add(angle); }
+      }
       if (dynamicDescriptor.isRingSystemSubstituent) {
         for (const reverseOutwardAngle of dynamicDescriptor.reverseOutwardAngles) {
           candidateAngles.add(reverseOutwardAngle + Math.PI);
@@ -1633,6 +1780,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
       let bestCandidate = null;
       let bestZeroFailureRootCandidate = null;
       const exactIdealLeafCandidate = buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, dynamicDescriptor, bondLength, allAtomIds, bondIntersectionContext, subtreeContext);
+      const compressedExactIdealLeafCandidate = buildCompressedExactIdealLeafCandidate(layoutGraph, coords, atomGrid, dynamicDescriptor, baseCandidate, bondLength, allAtomIds, bondIntersectionContext, subtreeContext);
       const exactIdealLinkedRingCandidate = buildExactIdealLinkedRingCandidate(
         layoutGraph,
         coords,
@@ -1663,6 +1811,9 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
         && exactIdealLeafCandidate.outwardDeviation < baseCandidate.outwardDeviation - TIDY_ANGLE_EPSILON;
       if (shouldUseExactIdealLeafCandidate || (exactIdealLeafCandidate && shouldAcceptCandidate(exactIdealLeafCandidate, baseCandidate, dynamicDescriptor))) {
         bestCandidate = exactIdealLeafCandidate;
+      }
+      if (compressedExactIdealLeafCandidate && shouldAcceptCandidate(compressedExactIdealLeafCandidate, baseCandidate, dynamicDescriptor) && isBetterCandidate(compressedExactIdealLeafCandidate, bestCandidate)) {
+        bestCandidate = compressedExactIdealLeafCandidate;
       }
       if (exactIdealLinkedRingCandidate && shouldAcceptCandidate(exactIdealLinkedRingCandidate, baseCandidate, dynamicDescriptor) && isBetterCandidate(exactIdealLinkedRingCandidate, bestCandidate)) {
         bestCandidate = exactIdealLinkedRingCandidate;

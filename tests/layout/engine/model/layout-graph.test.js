@@ -16,7 +16,7 @@ describe('layout/engine/model/layout-graph', () => {
     assert.equal(graph.ringConnections.length, 1);
     assert.equal(graph.ringConnections[0].kind, 'fused');
     assert.equal(graph.fixedCoords.size, 1);
-    assert.equal(graph.ringAtomIds.size, 10);
+    assert.equal(graph.ringAtomIdSet.size, 10);
     assert.equal(graph.atomToRingSystemId.get('a0'), graph.ringSystems[0].id);
     assert.equal(graph.atomToRingSystemId.get('a9'), graph.ringSystems[0].id);
     assert.equal(graph.traits.heavyAtomCount, 10);

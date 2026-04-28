@@ -2,6 +2,7 @@
 
 import { measureLayoutCost } from '../audit/invariants.js';
 import { actualAlkeneStereo, highestPriorityAlkeneSubstituentId, isSupportedAnnotatedDoubleBond, smallestQualifyingStereoRing } from './ez.js';
+import { cloneCoords } from '../geometry/transforms.js';
 
 function collectSideAtoms(layoutGraph, startAtomId, blockedAtomId) {
   const sideAtomIds = new Set();
@@ -263,8 +264,8 @@ function rotatePointAroundCenter(position, centerPoint, deltaAngle) {
   };
 }
 
-function ringAtomIdSet(layoutGraph) {
-  return layoutGraph.ringAtomIds ?? new Set((layoutGraph.rings ?? []).flatMap(ring => ring.atomIds));
+function buildRingAtomIdSet(layoutGraph) {
+  return layoutGraph.ringAtomIdSet ?? new Set((layoutGraph.rings ?? []).flatMap(ring => ring.atomIds));
 }
 
 function substituentCrossSign(firstPoint, secondPoint, substituentPoint) {
@@ -315,8 +316,8 @@ function isBetterStereoCandidate(candidate, incumbent) {
   );
 }
 
-function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, centerAtomId, otherAtomId, ringAtomIds) {
-  if (ringAtomIds.has(centerAtomId)) {
+function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBonds, bondLength, centerAtomId, otherAtomId, ringAtomIdSet) {
+  if (ringAtomIdSet.has(centerAtomId)) {
     return null;
   }
 
@@ -374,7 +375,7 @@ function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBond
   }
 
   const bondAngle = angleOf(centerPoint, otherPoint);
-  const candidateCoords = new Map([...coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  const candidateCoords = cloneCoords(coords);
 
   for (const branch of branchDescriptors) {
     const branchPoint = candidateCoords.get(branch.neighborAtomId);
@@ -434,8 +435,8 @@ function countMatchedStereo(layoutGraph, coords, stereoBonds) {
  */
 export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
-  let coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
-  const ringAtomIds = ringAtomIdSet(layoutGraph);
+  let coords = cloneCoords(inputCoords);
+  const ringAtomIdSet = buildRingAtomIdSet(layoutGraph);
   const stereoBonds = [...layoutGraph.bonds.values()].filter(
     bond =>
       bond.kind === 'covalent' &&
@@ -469,7 +470,7 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
         bondLength,
         bond.a,
         bond.b,
-        ringAtomIds
+        ringAtomIdSet
       );
       const secondCenterLocalCandidate = buildLocalBranchRotationCandidate(
         layoutGraph,
@@ -479,7 +480,7 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
         bondLength,
         bond.b,
         bond.a,
-        ringAtomIds
+        ringAtomIdSet
       );
       if (isBetterStereoCandidate(secondCenterLocalCandidate, bestCandidate)) {
         bestCandidate = secondCenterLocalCandidate;
@@ -495,7 +496,7 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
           continue;
         }
 
-        const candidateCoords = new Map([...coords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+        const candidateCoords = cloneCoords(coords);
         for (const [atomId, position] of reflectedSide) {
           candidateCoords.set(atomId, position);
         }
