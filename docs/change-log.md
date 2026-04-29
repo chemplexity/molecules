@@ -2,6 +2,26 @@
 
 ## 2026-04-28
 
+- Keep exocyclic macrocycle sulfones orthogonal while rejecting ring-anchor snaps that would push oxo ligands into nearby carbonyl oxygens.
+- Snap aromatic carbonyl ring-anchor exits onto exact outward bisectors so aryl amide branches keep 120-degree splits.
+- Keep explicit-hydrogen monoxo phosphonate centers out of orthogonal hypervalent cleanup so their visible heavy ligands remain trigonal.
+- Rebuild fused cyclopropane caps on the exterior side of bridged mixed parent rings
+- Place 2D atom numbers with projected stereochemical hydrogen coordinates so visible H labels receive outward, unobscured numbers.
+- Normalize hidden-H bis-sulfonyl imine-adjacent carbons as visible 120-degree heavy-atom fans so neighboring sulfur crosses stay exact.
+- Let imine-linked aryl chains switch to the opposite exact 120-degree slot before snapping downstream biphenyl exits.
+- Resnap planar tertiary nitrogens after ring-linker placement so terminal leaves use the remaining 120-degree slot.
+- Let crowded bridgehead ethyl exits grow before adjacent terminal methyl fans, then rebalance the methyl fan so fused-ring exits stay outside the ring.
+- Prefer severe-overlap reduction before compactness when rotating already-overlapping stitched large-molecule blocks.
+- Let exact 180-degree aryl-root flips balance compact ester branch and carbonyl movement so benzyl ring exits stay exact
+- Restrict sulfide and sulfoxide oxidation templates to the correct sulfur connectivity so sulfones are not oxidized again.
+- Allow acyclic linkers into aromatic ring roots to trigger exact child ring-exit rescue so long quinoline chains keep 120-degree outward angles.
+- Let ring-embedded sulfone cleanup choose a compact exterior oxo V when the full spread would overlap fused-ring neighbors.
+- Route separated two-atom bridged child arcs through the fused cyclohexane face so compact bridged/fused hybrids avoid shared-anchor overlaps.
+- Score edited reaction-preview carbonyl centers by trigonal angle spread so amide-hydrolysis products avoid 60-degree oxygen pinches.
+- Move single new alcohol substituents with edited reaction-preview centers so ester-cleavage products keep local trigonal geometry.
+- Mirror compact fused-bridged child rings across shared bridge endpoints when the aligned side overlaps the parent face.
+- Accept legacy neutral pentavalent nitrogen multiple-bond SMILES forms without valence warnings.
+- Prefer exact shared-atom clearance in spiro-path ring placement, including ring-size-aware cyclopropane junction gaps.
 - Restore saturated small-ring exterior branch fans after mixed linker placement adds the second exocyclic branch.
 - Treat branch-local cumulated double-bond centers as linear so terminal isocyanate leaves stay opposite their parent bond.
 - Probe both simple acyclic zigzag sides for direct-attached heteroaryl roots so imidazole N exits can stay exact without upstream clashes.

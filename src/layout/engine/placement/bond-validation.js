@@ -40,6 +40,9 @@ export function resolvePlacementValidationClass(family, placementMode, templateI
   if (placementMode === 'projected-kamada-kawai' || placementMode === 'kamada-kawai-cage') {
     return 'bridged';
   }
+  if (placementMode === 'constructed-bridged') {
+    return 'bridged';
+  }
   if (placementMode === 'template') {
     if (family === 'bridged' && !templateId) {
       return 'bridged';

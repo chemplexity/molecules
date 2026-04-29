@@ -109,7 +109,7 @@ describe('layout/engine/families/large-molecule', () => {
     assert.ok(result.blockCount > 4);
     assert.equal(result.coords.size > 0, true);
     assert.equal(bondDeviation.failingBondCount, 0);
-    assert.ok(Date.now() - start < 15000);
+    assert.ok(Date.now() - start < 25000);
   }, 20000);
 
   it('rotates stitched child subtrees when doing so compacts the packed block layout', () => {

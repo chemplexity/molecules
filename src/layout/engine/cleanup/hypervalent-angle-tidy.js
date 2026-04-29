@@ -21,6 +21,8 @@ const TERMINAL_HYPERVALENT_H_ANGLE_THRESHOLD = Math.PI / 180;
 const TERMINAL_HYPERVALENT_MULTIPLE_LIGAND_ANGLE_THRESHOLD = Math.PI / 180;
 const RING_ANCHORED_HYPERVALENT_ANGLE_THRESHOLD = Math.PI / 180;
 const TERMINAL_MULTIPLE_LIGAND_COMPRESSION_FACTORS = [1, 0.99, 0.98, 0.97, 0.96, 0.95];
+const RING_EMBEDDED_BIS_OXO_MIN_SPREAD = Math.PI / 3;
+const RING_EMBEDDED_BIS_OXO_SPREAD_STEP = Math.PI / 18;
 
 function angularDistance(firstAngle, secondAngle) {
   const rawDelta = Math.abs(firstAngle - secondAngle) % (Math.PI * 2);
@@ -75,6 +77,102 @@ function hasSevereOverlapAtPosition(layoutGraph, coords, atomId, candidatePositi
     }
   }
   return false;
+}
+
+/**
+ * Returns whether a sparse rigid move avoids making severe local overlaps
+ * worse than the current positions of the same moved atoms.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {Map<string, {x: number, y: number}>} candidatePositions - Proposed moved atom positions.
+ * @param {number} bondLength - Target layout bond length.
+ * @returns {boolean} True when the proposed positions do not worsen severe overlap.
+ */
+function preservesSevereOverlapState(layoutGraph, coords, candidatePositions, bondLength) {
+  const currentPositions = new Map();
+  for (const atomId of candidatePositions.keys()) {
+    const position = coords.get(atomId);
+    if (position) {
+      currentPositions.set(atomId, position);
+    }
+  }
+
+  const currentOverlapState = countSevereOverlapsWithOverrides(layoutGraph, coords, currentPositions, bondLength);
+  const candidateOverlapState = countSevereOverlapsWithOverrides(layoutGraph, coords, candidatePositions, bondLength);
+  if (candidateOverlapState.count > currentOverlapState.count) {
+    return false;
+  }
+  return !(
+    candidateOverlapState.count > 0
+    && candidateOverlapState.count === currentOverlapState.count
+    && candidateOverlapState.minDistance < currentOverlapState.minDistance - 1e-9
+  );
+}
+
+/**
+ * Counts severe overlaps introduced by sparse candidate positions.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {Map<string, {x: number, y: number}>} overridePositions - Candidate atom positions.
+ * @param {number} bondLength - Target layout bond length.
+ * @returns {{count: number, minDistance: number}} Severe-overlap count and closest moved distance.
+ */
+function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength) {
+  const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
+  let count = 0;
+  let minDistance = Infinity;
+  const visitedPairKeys = new Set();
+
+  for (const [atomId, position] of overridePositions) {
+    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    for (const [otherAtomId, otherBasePosition] of coords) {
+      if (
+        atomId === otherAtomId
+        || !isVisibleLayoutAtom(layoutGraph, otherAtomId)
+        || layoutGraph.bondedPairSet.has(atomPairKey(atomId, otherAtomId))
+      ) {
+        continue;
+      }
+      const pairKey = atomPairKey(atomId, otherAtomId);
+      if (visitedPairKeys.has(pairKey)) {
+        continue;
+      }
+      visitedPairKeys.add(pairKey);
+      const otherPosition = overridePositions.get(otherAtomId) ?? otherBasePosition;
+      const separation = distance(position, otherPosition);
+      minDistance = Math.min(minDistance, separation);
+      if (separation < threshold - 1e-9) {
+        count++;
+      }
+    }
+  }
+
+  return {
+    count,
+    minDistance: Number.isFinite(minDistance) ? minDistance : Infinity
+  };
+}
+
+/**
+ * Returns compact exterior-V spreads to try for a crowded ring-embedded sulfone.
+ * @param {number} defaultSpread - Normal ring-derived oxo spread.
+ * @returns {number[]} Candidate spreads from widest to most compact.
+ */
+function ringEmbeddedBisOxoSpreadCandidates(defaultSpread) {
+  const spreads = [];
+  for (
+    let spread = defaultSpread;
+    spread >= RING_EMBEDDED_BIS_OXO_MIN_SPREAD - 1e-9;
+    spread -= RING_EMBEDDED_BIS_OXO_SPREAD_STEP
+  ) {
+    spreads.push(Math.max(spread, RING_EMBEDDED_BIS_OXO_MIN_SPREAD));
+  }
+  if (spreads.length === 0 || Math.abs(spreads[spreads.length - 1] - RING_EMBEDDED_BIS_OXO_MIN_SPREAD) > 1e-9) {
+    spreads.push(RING_EMBEDDED_BIS_OXO_MIN_SPREAD);
+  }
+  return [...new Set(spreads.map(spread => Number(spread.toFixed(12))))];
 }
 
 /**
@@ -177,6 +275,9 @@ function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
     return { kind: 'bis-oxo', singleNeighborIds, multipleNeighborIds };
   }
   if (singleNeighborIds.length === 3 && multipleNeighborIds.length === 1) {
+    if (singleNeighborIds.some(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element === 'H')) {
+      return null;
+    }
     return { kind: 'mono-oxo', singleNeighborIds, multipleNeighborIds };
   }
   return null;
@@ -245,6 +346,22 @@ function fitTwoLigandTargets(ligandAtomIds, currentAngles, targetAngles) {
   return bestFit;
 }
 
+function isBetterRingEmbeddedBisOxoFit(candidateFit, incumbentFit) {
+  if (!incumbentFit) {
+    return true;
+  }
+  if ((candidateFit.overlapCount ?? 0) !== (incumbentFit.overlapCount ?? 0)) {
+    return (candidateFit.overlapCount ?? 0) < (incumbentFit.overlapCount ?? 0);
+  }
+  if ((candidateFit.overlapCount ?? 0) === 0 && Math.abs((candidateFit.spread ?? 0) - (incumbentFit.spread ?? 0)) > 1e-9) {
+    return (candidateFit.spread ?? 0) > (incumbentFit.spread ?? 0);
+  }
+  if (Math.abs((candidateFit.minOverlapDistance ?? Infinity) - (incumbentFit.minOverlapDistance ?? Infinity)) > 1e-9) {
+    return (candidateFit.minOverlapDistance ?? Infinity) > (incumbentFit.minOverlapDistance ?? Infinity);
+  }
+  return candidateFit.cost < incumbentFit.cost;
+}
+
 /**
  * Fits the terminal oxo ligands of a ring-embedded bis-oxo center to an
  * exterior V centered on the local ring-outward direction.
@@ -281,14 +398,36 @@ function fitRingEmbeddedBisOxoTargets(layoutGraph, coords, centerAtomId, descrip
   );
   for (const outwardAngle of outwardAngles) {
     for (const ring of incidentRings) {
-      const spread = ringEmbeddedBisOxoSpread(ring.atomIds.length);
-      const targetAngles = [
-        normalizeAngle(outwardAngle - spread / 2),
-        normalizeAngle(outwardAngle + spread / 2)
-      ];
-      const fit = fitTwoLigandTargets(descriptor.multipleNeighborIds, currentAngles, targetAngles);
-      if (fit && (!bestFit || fit.cost < bestFit.cost)) {
-        bestFit = fit;
+      for (const spread of ringEmbeddedBisOxoSpreadCandidates(ringEmbeddedBisOxoSpread(ring.atomIds.length))) {
+        const targetAngles = [
+          normalizeAngle(outwardAngle - spread / 2),
+          normalizeAngle(outwardAngle + spread / 2)
+        ];
+        const fit = fitTwoLigandTargets(descriptor.multipleNeighborIds, currentAngles, targetAngles);
+        if (!fit) {
+          continue;
+        }
+        const overridePositions = new Map(
+          descriptor.multipleNeighborIds.map(neighborAtomId => [
+            neighborAtomId,
+            add(centerPosition, fromAngle(fit.targetAngles.get(neighborAtomId), distance(centerPosition, coords.get(neighborAtomId))))
+          ])
+        );
+        const overlapState = countSevereOverlapsWithOverrides(
+          layoutGraph,
+          coords,
+          overridePositions,
+          layoutGraph.options?.bondLength ?? 1.5
+        );
+        const candidateFit = {
+          ...fit,
+          overlapCount: overlapState.count,
+          minOverlapDistance: overlapState.minDistance,
+          spread
+        };
+        if (isBetterRingEmbeddedBisOxoFit(candidateFit, bestFit)) {
+          bestFit = candidateFit;
+        }
       }
     }
   }
@@ -530,6 +669,7 @@ function alignRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, d
       continue;
     }
     const rotation = Math.atan2(Math.sin(targetAngle - currentAngle), Math.cos(targetAngle - currentAngle));
+    const candidatePositions = new Map();
     for (const subtreeAtomId of subtreeAtomIds) {
       const currentPosition = coords.get(subtreeAtomId);
       if (!currentPosition) {
@@ -538,7 +678,21 @@ function alignRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, d
       const offset = sub(currentPosition, anchorPosition);
       const radius = distance(anchorPosition, currentPosition);
       const absoluteAngle = angleOf(offset);
-      coords.set(subtreeAtomId, add(anchorPosition, fromAngle(absoluteAngle + rotation, radius)));
+      candidatePositions.set(subtreeAtomId, add(anchorPosition, fromAngle(absoluteAngle + rotation, radius)));
+    }
+    if (
+      candidatePositions.size === 0
+      || !preservesSevereOverlapState(
+        layoutGraph,
+        coords,
+        candidatePositions,
+        layoutGraph.options?.bondLength ?? distance(anchorPosition, centerPosition)
+      )
+    ) {
+      continue;
+    }
+    for (const [subtreeAtomId, candidatePosition] of candidatePositions) {
+      coords.set(subtreeAtomId, candidatePosition);
     }
     nudges++;
   }

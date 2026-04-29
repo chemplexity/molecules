@@ -582,6 +582,64 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(audit.maxBondLengthDeviation < 0.3);
   });
 
+  it('places separated bridged child arcs inside fused cyclohexane parents without anchor overlap', () => {
+    const smiles = 'CCC1CC2[NH2+]CC1C1=CC(C)=CC=C21';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const result = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: result.bondValidationClasses
+    });
+    const cyclohexaneRing = graph.rings[1];
+    const cyclohexanePolygon = cyclohexaneRing.atomIds.map(atomId => result.coords.get(atomId));
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const pipelineCyclohexaneRing = pipelineResult.layoutGraph.rings[1];
+    const pipelineCyclohexanePolygon = pipelineCyclohexaneRing.atomIds.map(atomId => pipelineResult.coords.get(atomId));
+
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(result.supported, true);
+    assert.equal(audit.ok, true);
+    assert.equal(pointInPolygon(result.coords.get('N6'), cyclohexanePolygon), true);
+    assert.equal(pointInPolygon(result.coords.get('C8'), cyclohexanePolygon), true);
+    assert.ok(distance(result.coords.get('N6'), result.coords.get('C4')) > graph.options.bondLength * 0.55);
+    assert.ok(distance(result.coords.get('C8'), result.coords.get('C3')) > graph.options.bondLength * 0.55);
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pointInPolygon(pipelineResult.coords.get('N6'), pipelineCyclohexanePolygon), true);
+    assert.equal(pointInPolygon(pipelineResult.coords.get('C8'), pipelineCyclohexanePolygon), true);
+  });
+
+  it('keeps a bridgehead ethyl chain outside the fused ring while relieving adjacent methyl leaves', () => {
+    const smiles = 'CCC12CCCC3=C1C(CC[NH2+]C2(C)C)=CO3';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const graph = result.layoutGraph;
+    const c2Position = result.coords.get('C2');
+    const incidentC3Rings = graph.atomToRings.get('C3') ?? [];
+    const c3RingNeighborIds = ['C8', 'C14', 'C4'];
+    const c3ExitAngle = angleOf(sub(c2Position, result.coords.get('C3')));
+    const minRingBondSeparation = Math.min(
+      ...c3RingNeighborIds.map(neighborAtomId =>
+        angularDifference(c3ExitAngle, angleOf(sub(result.coords.get(neighborAtomId), result.coords.get('C3'))))
+      )
+    );
+
+    assert.equal(result.metadata.audit.ok, true);
+    for (const ring of incidentC3Rings) {
+      assert.equal(
+        pointInPolygon(c2Position, ring.atomIds.map(atomId => result.coords.get(atomId))),
+        false
+      );
+    }
+    assert.ok(minRingBondSeparation > Math.PI / 6, `expected C3 ethyl exit to clear ring bonds, got ${(minRingBondSeparation * 180 / Math.PI).toFixed(2)} degrees`);
+  });
+
   it('keeps an ethynyl substituent pointing outward and linear from the ring', () => {
     const graph = createLayoutGraph(makePhenylacetylene());
     const component = graph.components[0];
@@ -2156,6 +2214,102 @@ describe('layout/engine/families/mixed', () => {
     assertHeteroarylRoot(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
   });
 
+  it('flips the dimethoxybenzyl ring while balancing the C3 ester and C5 anchor', () => {
+    const smiles = 'COC(=O)C1N(CC2=CC=CC(OC)=C2OC)C(=NC(O)=C1[O-])C1=CSC=C1NC(=O)[N-]S(=O)(=O)C1=CC=CC=C1Cl';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    const assertC8Exit = (coords, label) => {
+      const firstRingAngle = bondAngleAtAtom(coords, 'C8', 'C15', 'C7');
+      const secondRingAngle = bondAngleAtAtom(coords, 'C8', 'C9', 'C7');
+      const expectedAngle = (2 * Math.PI) / 3;
+
+      assert.ok(
+        Math.abs(firstRingAngle - expectedAngle) < 1e-6,
+        `expected ${label} C15-C8-C7 to be 120 degrees, got ${((firstRingAngle * 180) / Math.PI).toFixed(2)} degrees`
+      );
+      assert.ok(
+        Math.abs(secondRingAngle - expectedAngle) < 1e-6,
+        `expected ${label} C9-C8-C7 to be 120 degrees, got ${((secondRingAngle * 180) / Math.PI).toFixed(2)} degrees`
+      );
+    };
+    const assertC3Ester = (coords, label) => {
+      const maxDeviation = 12.1 * Math.PI / 180;
+      for (const [firstNeighborAtomId, secondNeighborAtomId] of [
+        ['O2', 'O4'],
+        ['O2', 'C5'],
+        ['O4', 'C5']
+      ]) {
+        const angle = bondAngleAtAtom(coords, 'C3', firstNeighborAtomId, secondNeighborAtomId);
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) <= maxDeviation,
+          `expected ${label} ${firstNeighborAtomId}-C3-${secondNeighborAtomId} to stay within 12 degrees of 120, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
+        );
+      }
+    };
+    const assertC5Anchor = (coords, label) => {
+      const maxDeviation = 12.1 * Math.PI / 180;
+      for (const [firstNeighborAtomId, secondNeighborAtomId] of [
+        ['C3', 'N6'],
+        ['C3', 'C22'],
+        ['N6', 'C22']
+      ]) {
+        const angle = bondAngleAtAtom(coords, 'C5', firstNeighborAtomId, secondNeighborAtomId);
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) <= maxDeviation,
+          `expected ${label} ${firstNeighborAtomId}-C5-${secondNeighborAtomId} to stay within 12 degrees of 120, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertC8Exit(mixedResult.coords, 'mixed layout');
+    assertC3Ester(mixedResult.coords, 'mixed layout');
+    assertC5Anchor(mixedResult.coords, 'mixed layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertC8Exit(pipelineResult.coords, 'pipeline layout');
+    assertC3Ester(pipelineResult.coords, 'pipeline layout');
+    assertC5Anchor(pipelineResult.coords, 'pipeline layout');
+  });
+
+  it('snaps aryl carbonyl exits onto the exact aromatic outward bisector', () => {
+    const smiles = 'COC1=CC=C(C(=O)N(CCC(C)C)C(CC2=CC=CC=C2C[NH+]2CCCC2)C2=NC3=CC=CC=C3N2)C(Cl)=C1OC';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    const assertC6CarbonylExit = (coords, label) => {
+      for (const [name, angle] of [
+        ['C5-C6-C7', bondAngleAtAtom(coords, 'C6', 'C5', 'C7')],
+        ['C7-C6-C39', bondAngleAtAtom(coords, 'C6', 'C7', 'C39')],
+        ['C6-C7-O8', bondAngleAtAtom(coords, 'C7', 'C6', 'O8')],
+        ['C6-C7-N9', bondAngleAtAtom(coords, 'C7', 'C6', 'N9')],
+        ['O8-C7-N9', bondAngleAtAtom(coords, 'C7', 'O8', 'N9')]
+      ]) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertC6CarbonylExit(mixedResult.coords, 'mixed layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertC6CarbonylExit(pipelineResult.coords, 'pipeline layout');
+  });
+
   it('keeps the amide-linked piperidine on the parent trigonal bisector while making C6 exact too', () => {
     const smiles = 'C[NH+]1CCC(CC1)N(C(=O)C1CCC1)C1=CC=CC(NC(=O)C2=CC=C(F)C=C2Cl)=C1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
@@ -2589,6 +2743,51 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(pipelineResult.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
   });
 
+  it('keeps long-chain quinoline ring roots exact on aromatic outward exits', () => {
+    const smiles = 'C[C@H](CCCNCCCCCCNc1ccnc2cc(Cl)ccc12)[C@H]3CC[C@H]4[C@@H]5[C@@H](C[C@@H]6C[C@H](CC[C@]6(C)[C@H]5C[C@H](OC(=O)C)[C@]34C)NCCCCCCNc7ccnc8cc(Cl)ccc78)OC(=O)C';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    const assertExactQuinolineExits = (layoutGraph, coords, label) => {
+      for (const { centerAtomId, parentAtomId, ringNeighborAtomIds } of [
+        { centerAtomId: 'C15', parentAtomId: 'N14', ringNeighborAtomIds: ['C25', 'C16'] },
+        { centerAtomId: 'C65', parentAtomId: 'N64', ringNeighborAtomIds: ['C75', 'C66'] }
+      ]) {
+        const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, centerAtomId, atomId => coords.get(atomId) ?? null);
+        const parentAngle = angleOf(sub(coords.get(parentAtomId), coords.get(centerAtomId)));
+        const parentDeviation = Math.min(...outwardAngles.map(outwardAngle => angularDifference(parentAngle, outwardAngle)));
+
+        assert.equal(outwardAngles.length, 1, `expected ${label} ${centerAtomId} to have one local aromatic outward axis`);
+        assert.ok(
+          parentDeviation < 1e-6,
+          `expected ${label} ${centerAtomId}-${parentAtomId} to stay on the exact aromatic outward axis, got ${((parentDeviation * 180) / Math.PI).toFixed(2)} degrees`
+        );
+        for (const [name, angle] of [
+          [`${parentAtomId}-${centerAtomId}-${ringNeighborAtomIds[0]}`, bondAngleAtAtom(coords, centerAtomId, parentAtomId, ringNeighborAtomIds[0])],
+          [`${parentAtomId}-${centerAtomId}-${ringNeighborAtomIds[1]}`, bondAngleAtAtom(coords, centerAtomId, parentAtomId, ringNeighborAtomIds[1])],
+          [`${ringNeighborAtomIds[0]}-${centerAtomId}-${ringNeighborAtomIds[1]}`, bondAngleAtAtom(coords, centerAtomId, ringNeighborAtomIds[0], ringNeighborAtomIds[1])]
+        ]) {
+          assert.ok(
+            Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+            `expected ${label} ${name} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+          );
+        }
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertExactQuinolineExits(graph, mixedResult.coords, 'mixed layout');
+    assertExactQuinolineExits(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+  });
+
   it('rotates directly attached ring blocks around the parent bond when that clears multiple outward-axis failures at once', () => {
     const smiles = 'CCN(C1CCC(CC1)[NH+](C)CC1=CC=CC(OCCOC)=C1)C1=CC(Cl)=CC(C(=O)NCC2=C(C)NC(C)=CC2=O)=C1C';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
@@ -2639,6 +2838,83 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(methylDeviation < 1e-6, `expected the nearby methyl substituent to follow the local outward axis, got ${methylDeviation.toFixed(6)} rad`);
     assertAnilinoNitrogenSpread(result.coords, 'mixed layout');
     assertAnilinoNitrogenSpread(pipelineResult.coords, 'pipeline layout');
+  });
+
+  it('keeps terminal leaves on the remaining trigonal slot at planar tertiary nitrogens beside attached rings', () => {
+    const smiles = 'CN(C1CCS(=O)(=O)C1)C2=C(NC(=O)C)C(=O)c3ccccc3C2=O';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const assertN2Spread = (coords, label) => {
+      for (const [name, angle] of [
+        ['C3-N2-C10', bondAngleAtAtom(coords, 'N2', 'C3', 'C10')],
+        ['C3-N2-C1', bondAngleAtAtom(coords, 'N2', 'C3', 'C1')],
+        ['C10-N2-C1', bondAngleAtAtom(coords, 'N2', 'C10', 'C1')]
+      ]) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertN2Spread(mixedResult.coords, 'mixed layout');
+    assertN2Spread(pipelineResult.coords, 'pipeline layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+  });
+
+  it('uses alternate imine aryl slots before snapping downstream biphenyl roots', () => {
+    const smiles = 'CC(=NC1=CC=CC=C1C1=CC=CC=C1)C1=CC=CC(=N1)C(C)=NC1=CC=CC=C1C1=CC=CC=C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const assertCleanImineBiphenylChain = (layoutGraph, coords, bondValidationClasses, label) => {
+      const audit = auditLayout(layoutGraph, coords, {
+        bondLength: layoutGraph.options.bondLength,
+        bondValidationClasses
+      });
+      const readability = measureRingSubstituentReadability(layoutGraph, coords);
+
+      assert.equal(audit.ok, true, `expected ${label} to pass layout audit`);
+      assert.equal(readability.failingSubstituentCount, 0, `expected ${label} ring substituents to stay readable`);
+      for (const [name, angle] of [
+        ['C2-N3-C4', bondAngleAtAtom(coords, 'N3', 'C2', 'C4')],
+        ['C22-N24-C25', bondAngleAtAtom(coords, 'N24', 'C22', 'C25')],
+        ['C15-C10-C9', bondAngleAtAtom(coords, 'C10', 'C15', 'C9')],
+        ['C11-C10-C9', bondAngleAtAtom(coords, 'C10', 'C11', 'C9')],
+        ['C36-C31-C30', bondAngleAtAtom(coords, 'C31', 'C36', 'C30')],
+        ['C32-C31-C30', bondAngleAtAtom(coords, 'C31', 'C32', 'C30')]
+      ]) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+      assert.ok(
+        distance(coords.get('C1'), coords.get('C15')) > layoutGraph.options.bondLength * 0.75,
+        `expected ${label} left imine methyl to clear the downstream biphenyl ortho carbon`
+      );
+      assert.ok(
+        distance(coords.get('C23'), coords.get('C32')) > layoutGraph.options.bondLength * 0.75,
+        `expected ${label} right imine methyl to clear the downstream biphenyl ortho carbon`
+      );
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertCleanImineBiphenylChain(graph, mixedResult.coords, mixedResult.bondValidationClasses, 'mixed layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertCleanImineBiphenylChain(pipelineResult.layoutGraph, pipelineResult.coords, pipelineResult.bondValidationClasses, 'pipeline layout');
   });
 
   it('mirrors direct-attached halophenyl blocks so terminal labels clear neighboring rings', () => {
@@ -2871,6 +3147,112 @@ describe('layout/engine/families/mixed', () => {
         `expected ${centerAtomId} aryl ethyl exit to stay at 120 degrees`
       );
     }
+  });
+
+  it('mirrors compact fused-bridged child rings outside the parent face', () => {
+    const smiles = 'CC1=C(CO)C2=CC3CC(OC=N3)OC2C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const mixedResult = layoutMixedFamily(
+      graph,
+      component,
+      buildAdjacency(graph, new Set(component.atomIds)),
+      buildScaffoldPlan(graph, component),
+      graph.options.bondLength
+    );
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    const assertFusedChildOutsideParent = (layoutGraph, coords, label) => {
+      const parentRing = layoutGraph.rings[0];
+      const fusedChildRing = layoutGraph.rings[2];
+      const childCentroid = centroid(fusedChildRing.atomIds.map(atomId => coords.get(atomId)));
+      assert.equal(
+        pointInPolygon(
+          childCentroid,
+          parentRing.atomIds.map(atomId => coords.get(atomId))
+        ),
+        false,
+        `expected ${label} fused child ring to sit outside the larger parent face`
+      );
+    };
+
+    const mixedAudit = auditLayout(graph, mixedResult.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: mixedResult.bondValidationClasses
+    });
+
+    assert.equal(mixedResult.supported, true);
+    assert.equal(mixedAudit.ok, true);
+    assertFusedChildOutsideParent(graph, mixedResult.coords, 'mixed layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertFusedChildOutsideParent(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
+  });
+
+  it('restores fused cyclopropane caps outside the parent ring face', () => {
+    const smiles = 'CC12COC(=O)C(N1)C1CC21';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const mixedResult = layoutMixedFamily(
+      graph,
+      component,
+      buildAdjacency(graph, new Set(component.atomIds)),
+      buildScaffoldPlan(graph, component),
+      graph.options.bondLength
+    );
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    const assertCyclopropaneCapOutsideParent = (layoutGraph, coords, label) => {
+      const cyclopropaneRing = layoutGraph.rings.find(ring => ring.atomIds.length === 3 && ring.atomIds.includes('C10'));
+      assert.ok(cyclopropaneRing, `expected ${label} to contain the C10 cyclopropane ring`);
+      const connection = layoutGraph.ringConnections.find(candidateConnection => (
+        candidateConnection.kind === 'fused'
+        && candidateConnection.sharedAtomIds.length === 2
+        && (
+          candidateConnection.firstRingId === cyclopropaneRing.id
+          || candidateConnection.secondRingId === cyclopropaneRing.id
+        )
+      ));
+      assert.ok(connection, `expected ${label} cyclopropane ring to share a fused edge`);
+      const parentRingId = connection.firstRingId === cyclopropaneRing.id
+        ? connection.secondRingId
+        : connection.firstRingId;
+      const parentRing = layoutGraph.rings.find(ring => ring.id === parentRingId);
+      assert.ok(parentRing, `expected ${label} cyclopropane ring to have a fused parent`);
+      const capAtomId = cyclopropaneRing.atomIds.find(atomId => !connection.sharedAtomIds.includes(atomId));
+      assert.equal(capAtomId, 'C10');
+      assert.equal(
+        pointInPolygon(
+          coords.get(capAtomId),
+          parentRing.atomIds.map(atomId => coords.get(atomId))
+        ),
+        false,
+        `expected ${label} C10 cap to sit outside the fused parent ring`
+      );
+      for (const sharedAtomId of connection.sharedAtomIds) {
+        assert.ok(
+          Math.abs(distance(coords.get(capAtomId), coords.get(sharedAtomId)) - layoutGraph.options.bondLength) < 1e-6,
+          `expected ${label} C10-${sharedAtomId} cyclopropane bond to keep target length`
+        );
+      }
+    };
+
+    const mixedAudit = auditLayout(graph, mixedResult.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: mixedResult.bondValidationClasses
+    });
+
+    assert.equal(mixedResult.supported, true);
+    assert.equal(mixedAudit.ok, true);
+    assertCyclopropaneCapOutsideParent(graph, mixedResult.coords, 'mixed layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertCyclopropaneCapOutsideParent(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
   });
 
   it('lays out a macrocycle root scaffold plus substituent through the mixed orchestrator', () => {

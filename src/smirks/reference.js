@@ -107,11 +107,11 @@ export const reactionTemplates = {
   },
   sulfideOxidationToSulfoxide: {
     name: 'Sulfide Oxidation To Sulfoxide',
-    smirks: '[C:2][S:1][C:3]>>[C:2][S:1](=O)[C:3]'
+    smirks: '[C:2][S;X2:1][C:3]>>[C:2][S:1](=O)[C:3]'
   },
   sulfoxideOxidationToSulfone: {
     name: 'Sulfoxide Oxidation To Sulfone',
-    smirks: '[C:2][S:1](=[O:4])[C:3]>>[C:2][S:1](=[O:4])(=O)[C:3]'
+    smirks: '[C:2][S;X3:1](=[O:4])[C:3]>>[C:2][S:1](=[O:4])(=O)[C:3]'
   },
   amineProtonation: { name: 'Amine Protonation', smirks: '[N+0;!$([N]-[C](=O)):1]>>[N+:1]' },
   aromaticAzaProtonation: { name: 'Aromatic Aza Protonation', smirks: '[n+0X2:1]>>[nH+:1]' },

@@ -2,7 +2,7 @@
 
 import { add, angleOf, centroid, normalize, rotate, sub } from '../geometry/vec2.js';
 import { computeBounds } from '../geometry/bounds.js';
-import { buildAtomGrid, computeSubtreeOverlapCost } from '../audit/invariants.js';
+import { buildAtomGrid, computeSubtreeOverlapCost, findSevereOverlaps } from '../audit/invariants.js';
 import { auditLayout } from '../audit/audit.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { chooseAttachmentAngle } from '../placement/branch-placement.js';
@@ -812,16 +812,34 @@ function compactBlockRotations(layoutGraph, inputCoords, blockAtomIdsById, child
       const subtreeBlockIds = subtreeBlockIdsByBlockId.get(blockId) ?? [blockId];
       const subtreeAtomIds = subtreeAtomIdsByBlockId.get(blockId) ?? [];
       const baseCost = packingCostForState(packingState, bondLength, 100);
+      const baseSevereOverlapCount = findSevereOverlaps(layoutGraph, packingState.coords, bondLength, {
+        atomGrid: packingState.atomGrid
+      }).length;
       let bestState = null;
       let bestCost = baseCost;
+      let bestSevereOverlapCount = baseSevereOverlapCount;
 
       for (const angle of PACKING_ROTATION_ANGLES) {
         const rotatedCoords = rotateBlockSubtree(packingState.coords, subtreeAtomIds, anchorAtomId, angle);
         const rotatedState = updatePackingState(layoutGraph, packingState, rotatedCoords, subtreeBlockIds, blockAtomIdsById, bondLength);
         const rotatedCost = packingCostForState(rotatedState, bondLength, 100);
-        if (rotatedCost + 1e-6 < bestCost) {
+        const rotatedSevereOverlapCount = findSevereOverlaps(layoutGraph, rotatedState.coords, bondLength, {
+          atomGrid: rotatedState.atomGrid
+        }).length;
+        const improvesOverlappingLayout =
+          baseSevereOverlapCount > 0
+          && (
+            rotatedSevereOverlapCount < bestSevereOverlapCount
+            || (
+              rotatedSevereOverlapCount === bestSevereOverlapCount
+              && rotatedCost + 1e-6 < bestCost
+            )
+          );
+        const improvesCleanLayout = baseSevereOverlapCount === 0 && rotatedCost + 1e-6 < bestCost;
+        if (improvesOverlappingLayout || improvesCleanLayout) {
           bestState = rotatedState;
           bestCost = rotatedCost;
+          bestSevereOverlapCount = rotatedSevereOverlapCount;
         }
       }
 

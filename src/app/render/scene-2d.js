@@ -4,7 +4,7 @@ import { getRenderOptions, atomColor, renderAtomLabel, renderLonePairDots, rende
 import { getBondEnOverlayData } from './bond-en-overlay.js';
 import { buildBondOverlayBlockerSegments, defaultBondOverlayBaseOffset, pickHydrogenBondOverlayPlacement, pickBondOverlayLabelPlacement } from './bond-overlay-placement.js';
 import { getBondLengthsOverlayData } from './bond-lengths-overlay.js';
-import { atomNumberingLabelDistance, getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationAngle } from './atom-numbering.js';
+import { getAtomNumberMap, multipleBondSideBlockerAngle, pickAtomAnnotationPlacement } from './atom-numbering.js';
 import {
   labelHalfW,
   labelHalfH,
@@ -782,10 +782,25 @@ export function create2DSceneRenderer(ctx) {
     }
     const { showLonePairs, atomNumberingFontSize } = getRenderOptions();
     const NUM_FS = atomNumberingFontSize;
-    const toSVGPt = ctx.helpers.toSVGPt;
     const fSize = ctx.constants.getFontSize();
+    const hCounts = ctx.state.getHCounts();
     const atoms = [...mol.atoms.values()].filter(a => a.x != null && a.visible !== false);
     const numLayer = ctx.g.append('g').attr('class', 'atom-numbering-overlay').style('pointer-events', 'none');
+    const placedBoxes = [];
+    for (const atom of atoms) {
+      const label = getAtomLabel(atom, hCounts, toSVGPt, mol);
+      if (!label) {
+        continue;
+      }
+      const { x, y } = toSVGPt(atom);
+      const { dx, dy } = ringLabelOffset(atom, mol, toSVGPt, label, fSize);
+      placedBoxes.push({
+        cx: x + dx,
+        cy: y + dy,
+        hw: labelHalfW(label, fSize) + 4,
+        hh: labelHalfH(label, fSize) + 2
+      });
+    }
     for (const atom of atoms) {
       const num = numberMap.get(atom.id);
       if (num == null) {
@@ -840,12 +855,20 @@ export function create2DSceneRenderer(ctx) {
           blockedSectors.push({ angle: sideAngle, spread: 0.5 });
         }
       }
-      const angle = pickAtomAnnotationAngle(blockedSectors);
-      const labelDistance = atomNumberingLabelDistance(NUM_FS, label);
+      const placement = pickAtomAnnotationPlacement({
+        center: { x, y },
+        label,
+        fontSize: NUM_FS,
+        blockedSectors,
+        placedBoxes
+      });
+      placedBoxes.push(placement);
       numLayer
         .append('text')
-        .attr('x', x + Math.cos(angle) * labelDistance)
-        .attr('y', y + Math.sin(angle) * labelDistance)
+        .attr('class', 'atom-num')
+        .attr('data-atom-id', atom.id)
+        .attr('x', placement.cx)
+        .attr('y', placement.cy)
         .attr('text-anchor', 'middle')
         .attr('dominant-baseline', 'central')
         .attr('font-size', `${NUM_FS}px`)

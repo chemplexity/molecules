@@ -75,6 +75,52 @@ function shiftedCommonValences(symbol, el, charge, radical) {
 }
 
 /**
+ * Returns true for legacy neutral pentavalent nitrogen SMILES forms that encode
+ * charge-separated nitro/azide-like systems with compressed multiple bonds.
+ *
+ * This is deliberately narrower than adding neutral N(5) to the ordinary
+ * valence table: five single bonds remain invalid, while common multiple-bond
+ * heteroatom forms such as `N(=O)=O` or `[N+]#N=N` avoid a false warning.
+ * @param {import('../core/Atom.js').Atom} atom - Atom being validated.
+ * @param {import('../core/Molecule.js').Molecule} molecule - Molecule graph.
+ * @param {number} totalBO - Floored total bond order for the atom.
+ * @param {number} charge - Formal charge on the atom.
+ * @param {number} radical - Radical count on the atom.
+ * @returns {boolean} True when the atom matches the legacy multiple-bond form.
+ */
+function isLegacyNeutralPentavalentNitrogen(atom, molecule, totalBO, charge, radical) {
+  if (atom.name !== 'N' || charge !== 0 || radical !== 0 || totalBO !== 5) {
+    return false;
+  }
+
+  let heavyBondCount = 0;
+  let multipleHeteroBondCount = 0;
+  for (const bondId of atom.bonds) {
+    const bond = molecule.bonds.get(bondId);
+    if (!bond) {
+      continue;
+    }
+    const otherAtomId = bond.getOtherAtom(atom.id);
+    const otherAtom = otherAtomId ? molecule.atoms.get(otherAtomId) : null;
+    if (!otherAtom || otherAtom.name === 'H') {
+      continue;
+    }
+    heavyBondCount++;
+    const bondOrder = Math.floor(bond.properties.order ?? 1);
+    if (bondOrder <= 1) {
+      continue;
+    }
+    const otherElement = elements[otherAtom.name];
+    if (!otherElement || otherElement.group < 15 || otherElement.group > 16) {
+      return false;
+    }
+    multipleHeteroBondCount++;
+  }
+
+  return heavyBondCount <= 3 && multipleHeteroBondCount >= 2;
+}
+
+/**
  * Validates the valence (total bond order) of each atom in a molecule.
  *
  * Uses the electron-count parity rule derived from formal-charge theory,
@@ -203,8 +249,9 @@ export function validateValence(molecule) {
 
     const acceptedBondOrders = totalBO === donorAdjustedBO ? [totalBO] : [totalBO, donorAdjustedBO];
     const hasValidBondOrder = acceptedBondOrders.some(bondOrder => allowed.includes(bondOrder));
+    const hasLegacyNitrogenValence = isLegacyNeutralPentavalentNitrogen(atom, molecule, totalBO, charge, radical);
 
-    if (!hasValidBondOrder) {
+    if (!hasValidBondOrder && !hasLegacyNitrogenValence) {
       const chargeStr = charge > 0 ? `+${charge}` : `${charge}`;
       const radicalStr = radical > 0 ? `, radical ${radical}` : '';
       const allowedStr = allowed.length ? allowed.join(', ') : 'none';

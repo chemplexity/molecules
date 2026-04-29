@@ -1,8 +1,18 @@
 /** @module families/spiro */
 
 import { circumradiusForRegularPolygon, placeRegularPolygon } from '../geometry/polygon.js';
-import { add, angleOf, centroid, distance, fromAngle, normalize, scale, sub } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, distance, fromAngle, normalize, scale, sub } from '../geometry/vec2.js';
 import { placeTemplateCoords } from '../templates/placement.js';
+
+const SPIRO_PATH_CENTER_OFFSETS = Object.freeze([
+  0,
+  Math.PI / 12,
+  Math.PI / 6,
+  Math.PI / 4,
+  Math.PI / 3
+]);
+const SPIRO_JUNCTION_CLEARANCE_FACTOR = 0.95;
+const SPIRO_JUNCTION_ANGLE_EPSILON = 1e-9;
 
 /**
  * Returns a ring ordering for simple spiro chains when the spiro graph is a path.
@@ -142,6 +152,113 @@ function candidateSpiroRingCoords(ring, sharedAtomId, sharedPosition, center, si
 }
 
 /**
+ * Returns the two ring neighbors adjacent to an atom within a ring perimeter.
+ * @param {object} ring - Ring descriptor.
+ * @param {string} atomId - Atom ID to inspect.
+ * @returns {string[]} Neighbor atom IDs in the ring sequence.
+ */
+function ringPerimeterNeighbors(ring, atomId) {
+  const atomIndex = ring.atomIds.indexOf(atomId);
+  if (atomIndex < 0 || ring.atomIds.length < 3) {
+    return [];
+  }
+  return [
+    ring.atomIds[(atomIndex - 1 + ring.atomIds.length) % ring.atomIds.length],
+    ring.atomIds[(atomIndex + 1) % ring.atomIds.length]
+  ];
+}
+
+function regularRingInteriorAngle(ringSize) {
+  return ringSize >= 3 ? ((ringSize - 2) * Math.PI) / ringSize : 0;
+}
+
+/**
+ * Returns the ideal minimum cross-ring gap at one spiro shared atom.
+ * @param {object} firstRing - First ring descriptor.
+ * @param {object} secondRing - Second ring descriptor.
+ * @returns {number|null} Ideal cross-ring gap in radians, or null when ordinary path fanning should own the junction.
+ */
+function idealSpiroCrossRingAngle(firstRing, secondRing) {
+  if (Math.min(firstRing.atomIds.length, secondRing.atomIds.length) > 3) {
+    return null;
+  }
+  const firstInteriorAngle = regularRingInteriorAngle(firstRing.atomIds.length);
+  const secondInteriorAngle = regularRingInteriorAngle(secondRing.atomIds.length);
+  return Math.max(0, ((2 * Math.PI) - firstInteriorAngle - secondInteriorAngle) / 2);
+}
+
+/**
+ * Measures local cross-ring clearance at each spiro junction in a path.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current placed coordinates.
+ * @param {Map<number, object>} ringById - Ring descriptors keyed by ring ID.
+ * @param {Map<string, object>} ringConnectionByPair - Pair-keyed ring connection map.
+ * @param {number[]} ringOrder - Ordered ring IDs from one path endpoint to the other.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{failureCount: number, minDistance: number, angleDeficit: number, minAngle: number}} Local clearance score.
+ */
+function measureSpiroJunctionClearance(layoutGraph, coords, ringById, ringConnectionByPair, ringOrder, bondLength) {
+  const minimumClearDistance = bondLength * SPIRO_JUNCTION_CLEARANCE_FACTOR;
+  let failureCount = 0;
+  let minDistance = Infinity;
+  let angleDeficit = 0;
+  let minAngle = Infinity;
+
+  for (let index = 1; index < ringOrder.length; index++) {
+    const firstRingId = ringOrder[index - 1];
+    const secondRingId = ringOrder[index];
+    const connectionKey = firstRingId < secondRingId ? `${firstRingId}:${secondRingId}` : `${secondRingId}:${firstRingId}`;
+    const connection = ringConnectionByPair.get(connectionKey);
+    const sharedAtomId = connection?.sharedAtomIds?.[0] ?? null;
+    const firstRing = ringById.get(firstRingId);
+    const secondRing = ringById.get(secondRingId);
+    if (!connection || connection.kind !== 'spiro' || !sharedAtomId || !firstRing || !secondRing) {
+      continue;
+    }
+
+    const firstNeighbors = ringPerimeterNeighbors(firstRing, sharedAtomId).filter(atomId => coords.has(atomId));
+    const secondNeighbors = ringPerimeterNeighbors(secondRing, sharedAtomId).filter(atomId => coords.has(atomId));
+    const sharedPosition = coords.get(sharedAtomId);
+    const idealCrossAngle = idealSpiroCrossRingAngle(firstRing, secondRing);
+    let junctionMinAngle = Infinity;
+    for (const firstAtomId of firstNeighbors) {
+      for (const secondAtomId of secondNeighbors) {
+        if (firstAtomId === secondAtomId) {
+          continue;
+        }
+        const key = firstAtomId < secondAtomId ? `${firstAtomId}:${secondAtomId}` : `${secondAtomId}:${firstAtomId}`;
+        if (layoutGraph.bondedPairSet.has(key)) {
+          continue;
+        }
+        if (sharedPosition) {
+          const angleBetween = angularDifference(
+            angleOf(sub(coords.get(firstAtomId), sharedPosition)),
+            angleOf(sub(coords.get(secondAtomId), sharedPosition))
+          );
+          junctionMinAngle = Math.min(junctionMinAngle, angleBetween);
+          minAngle = Math.min(minAngle, angleBetween);
+        }
+        const distanceBetween = distance(coords.get(firstAtomId), coords.get(secondAtomId));
+        minDistance = Math.min(minDistance, distanceBetween);
+        if (distanceBetween < minimumClearDistance) {
+          failureCount++;
+        }
+      }
+    }
+    if (Number.isFinite(junctionMinAngle)) {
+      angleDeficit += Number.isFinite(idealCrossAngle) ? Math.max(0, idealCrossAngle - junctionMinAngle) : 0;
+    }
+  }
+
+  return {
+    failureCount,
+    minDistance: Number.isFinite(minDistance) ? minDistance : Infinity,
+    angleDeficit,
+    minAngle: Number.isFinite(minAngle) ? minAngle : Infinity
+  };
+}
+
+/**
  * Scores a candidate spiro placement against already placed coordinates.
  * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate coordinates.
  * @param {Map<string, {x: number, y: number}>} placedCoords - Already placed coordinates.
@@ -171,9 +288,11 @@ function scoreCandidateCoords(candidateCoords, placedCoords, sharedAtomId) {
  * @param {Map<number, {x: number, y: number}>} ringCenters - Current ring centers.
  * @param {number[]} ringOrder - Ordered ring IDs from one path endpoint to the other.
  * @param {number} bondLength - Target bond length.
- * @returns {{severeOverlapCount: number, centerBend: number, minDistance: number}} Placement score.
+ * @param {Map<number, object>} ringById - Ring descriptors keyed by ring ID.
+ * @param {Map<string, object>} ringConnectionByPair - Pair-keyed ring connection map.
+ * @returns {{severeOverlapCount: number, spiroJunctionClearanceFailureCount: number, spiroJunctionMinDistance: number, spiroJunctionAngleDeficit: number, spiroJunctionMinAngle: number, centerBend: number, minDistance: number}} Placement score.
  */
-function scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLength) {
+function scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLength, ringById, ringConnectionByPair) {
   const threshold = bondLength * 0.55;
   const atomIds = [...coords.keys()];
   let severeOverlapCount = 0;
@@ -207,9 +326,21 @@ function scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLengt
     const secondVector = sub(nextCenter, currentCenter);
     centerBend += Math.abs(firstVector.x * secondVector.y - firstVector.y * secondVector.x);
   }
+  const spiroJunctionClearance = measureSpiroJunctionClearance(
+    layoutGraph,
+    coords,
+    ringById,
+    ringConnectionByPair,
+    ringOrder,
+    bondLength
+  );
 
   return {
     severeOverlapCount,
+    spiroJunctionClearanceFailureCount: spiroJunctionClearance.failureCount,
+    spiroJunctionMinDistance: spiroJunctionClearance.minDistance,
+    spiroJunctionAngleDeficit: spiroJunctionClearance.angleDeficit,
+    spiroJunctionMinAngle: spiroJunctionClearance.minAngle,
     centerBend,
     minDistance: Number.isFinite(minDistance) ? minDistance : Infinity
   };
@@ -224,6 +355,24 @@ function scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLengt
 function isBetterSpiroScore(firstScore, secondScore) {
   if (firstScore.severeOverlapCount !== secondScore.severeOverlapCount) {
     return firstScore.severeOverlapCount < secondScore.severeOverlapCount;
+  }
+  if (firstScore.spiroJunctionClearanceFailureCount !== secondScore.spiroJunctionClearanceFailureCount) {
+    return firstScore.spiroJunctionClearanceFailureCount < secondScore.spiroJunctionClearanceFailureCount;
+  }
+  if (
+    firstScore.spiroJunctionClearanceFailureCount > 0
+    && Math.abs(firstScore.spiroJunctionMinDistance - secondScore.spiroJunctionMinDistance) > 1e-12
+  ) {
+    return firstScore.spiroJunctionMinDistance > secondScore.spiroJunctionMinDistance;
+  }
+  if (Math.abs(firstScore.spiroJunctionAngleDeficit - secondScore.spiroJunctionAngleDeficit) > SPIRO_JUNCTION_ANGLE_EPSILON) {
+    return firstScore.spiroJunctionAngleDeficit < secondScore.spiroJunctionAngleDeficit;
+  }
+  if (
+    firstScore.spiroJunctionAngleDeficit > SPIRO_JUNCTION_ANGLE_EPSILON
+    && Math.abs(firstScore.spiroJunctionMinAngle - secondScore.spiroJunctionMinAngle) > SPIRO_JUNCTION_ANGLE_EPSILON
+  ) {
+    return firstScore.spiroJunctionMinAngle > secondScore.spiroJunctionMinAngle;
   }
   if (Math.abs(firstScore.centerBend - secondScore.centerBend) > 1e-12) {
     return firstScore.centerBend > secondScore.centerBend;
@@ -248,7 +397,7 @@ function searchSpiroPathPlacements(layoutGraph, ringById, ringOrder, ringConnect
     return {
       coords,
       ringCenters,
-      score: scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLength)
+      score: scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLength, ringById, ringConnectionByPair)
     };
   }
 
@@ -265,7 +414,7 @@ function searchSpiroPathPlacements(layoutGraph, ringById, ringOrder, ringConnect
     return {
       coords,
       ringCenters,
-      score: scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLength)
+      score: scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLength, ringById, ringConnectionByPair)
     };
   }
 
@@ -273,7 +422,7 @@ function searchSpiroPathPlacements(layoutGraph, ringById, ringOrder, ringConnect
   const outwardAngle = angleOf(sub(sharedPosition, previousCenter));
   let bestPlacement = null;
 
-  for (const offset of [Math.PI / 4, Math.PI / 3]) {
+  for (const offset of SPIRO_PATH_CENTER_OFFSETS) {
     for (const direction of [1, -1]) {
       const centerAngle = outwardAngle + direction * offset;
       const center = add(sharedPosition, fromAngle(centerAngle, radius));
@@ -297,7 +446,7 @@ function searchSpiroPathPlacements(layoutGraph, ringById, ringOrder, ringConnect
     bestPlacement ?? {
       coords,
       ringCenters,
-      score: scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLength)
+      score: scoreSpiroCoords(layoutGraph, coords, ringCenters, ringOrder, bondLength, ringById, ringConnectionByPair)
     }
   );
 }

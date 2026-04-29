@@ -108,6 +108,33 @@ async function atomDistance(page, firstAtomId, secondAtomId) {
   }, { firstAtomId, secondAtomId });
 }
 
+async function atomInsideRing(page, atomId, ringAtomIds) {
+  return await page.evaluate(({ atomId: targetAtomId, ringAtomIds: targetRingAtomIds }) => {
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.]+),([-0-9.]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const point = parseTranslate(document.querySelector(`g[data-atom-id="${targetAtomId}"]`)?.getAttribute('transform'));
+    const polygon = targetRingAtomIds.map(ringAtomId =>
+      parseTranslate(document.querySelector(`g[data-atom-id="${ringAtomId}"]`)?.getAttribute('transform'))
+    );
+    if (!point || polygon.some(position => !position)) {
+      return null;
+    }
+    let inside = false;
+    for (let firstIndex = 0, secondIndex = polygon.length - 1; firstIndex < polygon.length; secondIndex = firstIndex++) {
+      const first = polygon[firstIndex];
+      const second = polygon[secondIndex];
+      const intersects = ((first.y > point.y) !== (second.y > point.y))
+        && point.x < ((second.x - first.x) * (point.y - first.y)) / (second.y - first.y) + first.x;
+      if (intersects) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  }, { atomId, ringAtomIds });
+}
+
 async function signedTurn(page, firstAtomId, centerAtomId, secondAtomId) {
   return await page.evaluate(({ firstAtomId: firstId, centerAtomId: centerId, secondAtomId: secondId }) => {
     const parseTranslate = value => {
@@ -313,6 +340,89 @@ test('loading and cleaning the anisole ester bug molecule keeps the C7 carbonyl 
   await expect
     .poll(async () => signedTurn(page, 'C4', 'O6', 'C7'))
     .toBeLessThan(0);
+});
+
+test('loading and cleaning the dimethoxybenzyl sulfonamide keeps C8 exact while balancing C3 and C5 in the browser render', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'COC(=O)C1N(CC2=CC=CC(OC)=C2OC)C(=NC(O)=C1[O-])C1=CSC=C1NC(=O)[N-]S(=O)(=O)C1=CC=CC=C1Cl');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  for (const [centerAtomId, firstNeighborAtomId, secondNeighborAtomId] of [
+    ['C8', 'C15', 'C7'],
+    ['C8', 'C9', 'C7']
+  ]) {
+    const initialAngle = await atomBondAngleDegrees(page, centerAtomId, firstNeighborAtomId, secondNeighborAtomId);
+    expect(initialAngle).not.toBeNull();
+    expect(Math.abs(initialAngle - 120)).toBeLessThan(1e-6);
+  }
+  for (const [firstNeighborAtomId, secondNeighborAtomId] of [
+    ['O2', 'O4'],
+    ['O2', 'C5'],
+    ['O4', 'C5']
+  ]) {
+    const initialAngle = await atomBondAngleDegrees(page, 'C3', firstNeighborAtomId, secondNeighborAtomId);
+    expect(initialAngle).not.toBeNull();
+    expect(Math.abs(initialAngle - 120)).toBeLessThan(12.1);
+  }
+  for (const [firstNeighborAtomId, secondNeighborAtomId] of [
+    ['C3', 'N6'],
+    ['C3', 'C22'],
+    ['N6', 'C22']
+  ]) {
+    const initialAngle = await atomBondAngleDegrees(page, 'C5', firstNeighborAtomId, secondNeighborAtomId);
+    expect(initialAngle).not.toBeNull();
+    expect(Math.abs(initialAngle - 120)).toBeLessThan(12.1);
+  }
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect
+    .poll(async () => {
+      const angles = await Promise.all([
+        atomBondAngleDegrees(page, 'C8', 'C15', 'C7'),
+        atomBondAngleDegrees(page, 'C8', 'C9', 'C7'),
+        atomBondAngleDegrees(page, 'C3', 'O2', 'O4'),
+        atomBondAngleDegrees(page, 'C3', 'O2', 'C5'),
+        atomBondAngleDegrees(page, 'C3', 'O4', 'C5'),
+        atomBondAngleDegrees(page, 'C5', 'C3', 'N6'),
+        atomBondAngleDegrees(page, 'C5', 'C3', 'C22'),
+        atomBondAngleDegrees(page, 'C5', 'N6', 'C22')
+      ]);
+      if (angles.some(angle => angle == null)) {
+        return null;
+      }
+      const exactC8Deviation = Math.max(
+        Math.abs(angles[0] - 120),
+        Math.abs(angles[1] - 120)
+      );
+      const localBalanceDeviation = Math.max(...angles.slice(2).map(angle => Math.abs(angle - 120)));
+      return exactC8Deviation <= 1e-6 && localBalanceDeviation < 12.1;
+    })
+    .toBe(true);
+});
+
+test('loading and cleaning the bridgehead ethyl fused-ring bug keeps C3 exiting outside in the browser render', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CCC12CCCC3=C1C(CC[NH2+]C2(C)C)=CO3');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const assertC3ExitOutside = async () => {
+    const insideFirstRing = await atomInsideRing(page, 'C2', ['C14', 'N12', 'C11', 'C10', 'C9', 'C8', 'C3']);
+    const insideSecondRing = await atomInsideRing(page, 'C2', ['C8', 'C7', 'C6', 'C5', 'C4', 'C3']);
+    const c14Gap = await atomBondAngleDegrees(page, 'C3', 'C14', 'C2');
+    const c4Gap = await atomBondAngleDegrees(page, 'C3', 'C4', 'C2');
+    if (insideFirstRing == null || insideSecondRing == null || c14Gap == null || c4Gap == null) {
+      return false;
+    }
+    return !insideFirstRing && !insideSecondRing && c14Gap > 45 && c4Gap > 45;
+  };
+
+  expect(await assertC3ExitOutside()).toBe(true);
+
+  await page.locator('#clean-2d-btn').click();
+  await expect.poll(assertC3ExitOutside).toBe(true);
 });
 
 function dominantMultiRingBondIds(smiles) {
@@ -808,6 +918,72 @@ test('renders stereo hydrogens away from their parent carbons on initial 2d load
 
   expect(transforms.H4).not.toEqual(transforms.C3);
   expect(transforms.H6).not.toEqual(transforms.C5);
+});
+
+test('2D atom numbering follows projected stereochemical hydrogens away from parent bonds', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'C1=C[C@H]2[C@@H](C1)C=C[C@@H]2C(=O)O');
+  await page.locator('button.smarts-tab[data-tab="other"]').click();
+  await page.locator('#atom-numbering-body tr').filter({ hasText: 'Atom Numbering' }).click();
+
+  await expect(page.locator('g.atom-numbering-overlay text.atom-num[data-atom-id="H4"]')).toHaveCount(1);
+  await expect(page.locator('g.atom-numbering-overlay text.atom-num[data-atom-id="H6"]')).toHaveCount(1);
+
+  const geometry = await page.evaluate(() => {
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.]+),([-0-9.]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const atomPoint = atomId => parseTranslate(document.querySelector(`g[data-atom-id="${atomId}"]`)?.getAttribute('transform'));
+    const numberPoint = atomId => {
+      const label = document.querySelector(`g.atom-numbering-overlay text.atom-num[data-atom-id="${atomId}"]`);
+      return label
+        ? {
+            text: label.textContent ?? '',
+            x: Number(label.getAttribute('x')),
+            y: Number(label.getAttribute('y'))
+          }
+        : null;
+    };
+    const distanceToSegment = (point, start, end) => {
+      const dx = end.x - start.x;
+      const dy = end.y - start.y;
+      const lengthSquared = dx * dx + dy * dy;
+      const t = lengthSquared > 0 ? Math.max(0, Math.min(1, (((point.x - start.x) * dx) + ((point.y - start.y) * dy)) / lengthSquared)) : 0;
+      return Math.hypot(point.x - (start.x + t * dx), point.y - (start.y + t * dy));
+    };
+    const metricsFor = (hydrogenId, parentId) => {
+      const hydrogen = atomPoint(hydrogenId);
+      const parent = atomPoint(parentId);
+      const number = numberPoint(hydrogenId);
+      if (!hydrogen || !parent || !number) {
+        return null;
+      }
+      const outwardDot = ((number.x - hydrogen.x) * (parent.x - hydrogen.x)) + ((number.y - hydrogen.y) * (parent.y - hydrogen.y));
+      return {
+        numberText: number.text,
+        numberIsOutward: outwardDot < 0,
+        numberCloserToHydrogenThanParent: Math.hypot(number.x - hydrogen.x, number.y - hydrogen.y) < Math.hypot(number.x - parent.x, number.y - parent.y),
+        numberDistanceToBond: distanceToSegment(number, parent, hydrogen)
+      };
+    };
+    return {
+      visibleAtomCount: document.querySelectorAll('g.atom-labels g[data-atom-id]').length,
+      numberCount: document.querySelectorAll('g.atom-numbering-overlay text.atom-num').length,
+      H4: metricsFor('H4', 'C3'),
+      H6: metricsFor('H6', 'C5')
+    };
+  });
+
+  expect(geometry.numberCount).toBe(geometry.visibleAtomCount);
+  for (const metrics of [geometry.H4, geometry.H6]) {
+    expect(metrics).toBeTruthy();
+    expect(metrics.numberText).toMatch(/^\d+$/);
+    expect(metrics.numberIsOutward).toBe(true);
+    expect(metrics.numberCloserToHydrogenThanParent).toBe(true);
+    expect(metrics.numberDistanceToBond).toBeGreaterThan(8);
+  }
 });
 
 test('dragging a projected stereo hydrogen follows the mouse in real time', async ({ page }) => {

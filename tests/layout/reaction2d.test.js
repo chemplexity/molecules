@@ -594,6 +594,53 @@ test('reaction preview keeps amide hydrolysis acid center compact on the preserv
   assert.ok(distance(acidCenter, oSingle) < 1.7, `expected acid single bond to stay compact, got ${distance(acidCenter, oSingle).toFixed(3)} Å`);
 });
 
+test('reaction preview keeps ester cleavage alcohol centers locally trigonal after scaffold snapping', () => {
+  const smiles = 'CC(CN(C([O-])=O)[C](CCCCC#C)=C=C)OC(=O)C(C)=C';
+  for (const template of [reactionTemplates.esterHydrolysis, reactionTemplates.saponification]) {
+    const preview = preparePreview(smiles, template.smirks);
+    const center = preview.mol.atoms.get('__rxn_product__0:C2');
+    const carbonLeft = preview.mol.atoms.get('__rxn_product__0:C1');
+    const carbonRight = preview.mol.atoms.get('__rxn_product__0:C3');
+    const alcoholOxygen = preview.mol.atoms.get('__rxn_product__0:0');
+    assert.ok(center && carbonLeft && carbonRight && alcoholOxygen, `expected ${template.name} alcohol product center`);
+
+    for (const neighbor of [carbonLeft, carbonRight, alcoholOxygen]) {
+      assert.ok(
+        distance(center, neighbor) > 1.25 && distance(center, neighbor) < 1.75,
+        `expected ${template.name} C2-${neighbor.name} bond to stay compact, got ${distance(center, neighbor).toFixed(3)} Å`
+      );
+    }
+    for (const [first, second] of [
+      [carbonLeft, carbonRight],
+      [carbonLeft, alcoholOxygen],
+      [carbonRight, alcoholOxygen]
+    ]) {
+      const localAngle = angleDeg(first, center, second);
+      assert.ok(localAngle > 105 && localAngle < 135, `expected ${template.name} C2 angles to stay trigonal, got ${localAngle.toFixed(1)}°`);
+    }
+  }
+});
+
+test('reaction preview keeps amide hydrolysis carbonate-like centers locally trigonal after scaffold snapping', () => {
+  const preview = preparePreview('CC(CN(C([O-])=O)[C](CCCCC#C)=C=C)OC(=O)C(C)=C', reactionTemplates.amideHydrolysis.smirks);
+  const center = preview.mol.atoms.get('__rxn_product__1:C5');
+  const oxygens = ['__rxn_product__1:O6', '__rxn_product__1:O7', '__rxn_product__1:0'].map(id => preview.mol.atoms.get(id));
+  assert.ok(center && oxygens.every(Boolean), 'expected carbonate-like amide-hydrolysis product center');
+
+  for (const oxygen of oxygens) {
+    assert.ok(
+      distance(center, oxygen) > 1.2 && distance(center, oxygen) < 1.7,
+      `expected amide hydrolysis C5-O bond to stay compact, got ${distance(center, oxygen).toFixed(3)} Å`
+    );
+  }
+  for (let firstIndex = 0; firstIndex < oxygens.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < oxygens.length; secondIndex++) {
+      const localAngle = angleDeg(oxygens[firstIndex], center, oxygens[secondIndex]);
+      assert.ok(localAngle > 105 && localAngle < 135, `expected amide hydrolysis C5 angles to stay trigonal, got ${localAngle.toFixed(1)}°`);
+    }
+  }
+});
+
 test('reaction preview keeps the cytosine amide-hydrolysis product roughly leveled', () => {
   const sourceMol = parseSMILES('NC1=NC(=O)N(C=C1)C(=O)N');
   const reactantSmarts = reactionTemplates.amideHydrolysis.smirks.split('>>')[0];

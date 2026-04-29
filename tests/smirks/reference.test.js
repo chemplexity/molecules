@@ -393,9 +393,31 @@ describe('reactionTemplates — example applications', () => {
     assert.equal(toSMILES(product), 'CS(C)=O');
   });
 
+  it('sulfideOxidationToSulfoxide does not oxidize already-oxidized sulfones', () => {
+    const dimethylSulfoneProduct = applySMIRKS(parseSMILES('CS(C)(=O)=O'), reactionTemplates.sulfideOxidationToSulfoxide.smirks);
+    const reportedRingSulfoneProduct = applySMIRKS(
+      parseSMILES('CC1C2NC3(COC12C=O)C(C)NCS3(=O)=O'),
+      reactionTemplates.sulfideOxidationToSulfoxide.smirks
+    );
+
+    assert.equal(dimethylSulfoneProduct, null);
+    assert.equal(reportedRingSulfoneProduct, null);
+  });
+
   it('sulfoxideOxidationToSulfone oxidizes a sulfoxide to a sulfone', () => {
     const product = applySMIRKS(parseSMILES('CS(C)=O'), reactionTemplates.sulfoxideOxidationToSulfone.smirks);
     assert.ok(product);
     assert.equal(toSMILES(product), 'CS(C)(=O)=O');
+  });
+
+  it('sulfoxideOxidationToSulfone does not oxidize sulfones again', () => {
+    const dimethylSulfoneProduct = applySMIRKS(parseSMILES('CS(C)(=O)=O'), reactionTemplates.sulfoxideOxidationToSulfone.smirks);
+    const reportedRingSulfoneProduct = applySMIRKS(
+      parseSMILES('CC1C2NC3(COC12C=O)C(C)NCS3(=O)=O'),
+      reactionTemplates.sulfoxideOxidationToSulfone.smirks
+    );
+
+    assert.equal(dimethylSulfoneProduct, null);
+    assert.equal(reportedRingSulfoneProduct, null);
   });
 });

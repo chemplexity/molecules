@@ -141,4 +141,45 @@ describe('layout/engine/families/spiro', () => {
     assertSmallRingExits(pipelineResult.coords, 'pipeline layout');
     assert.equal(pipelineResult.metadata.audit.ok, true);
   });
+
+  it('keeps equal-size spiro path rings from pinching shared-atom exits together', () => {
+    const smiles = 'CC1CC11CCCC2(CCCOC2)C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const { ringAdj, ringConnectionByPair } = buildSpiroAdjacency(graph);
+    const result = layoutSpiroFamily(graph.rings, ringAdj, ringConnectionByPair, graph.options.bondLength, { layoutGraph: graph });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    const assertSpiroJunctionExits = (coords, label) => {
+      const sixMemberJunctionAngles = [
+        bondAngleAtAtom(coords, 'C8', 'C13', 'C14'),
+        bondAngleAtAtom(coords, 'C8', 'C13', 'C7'),
+        bondAngleAtAtom(coords, 'C8', 'C9', 'C14'),
+        bondAngleAtAtom(coords, 'C8', 'C9', 'C7')
+      ];
+      const cyclopropaneJunctionAngles = [
+        bondAngleAtAtom(coords, 'C4', 'C14', 'C2'),
+        bondAngleAtAtom(coords, 'C4', 'C14', 'C3'),
+        bondAngleAtAtom(coords, 'C4', 'C5', 'C2'),
+        bondAngleAtAtom(coords, 'C4', 'C5', 'C3')
+      ];
+
+      assert.ok(
+        Math.min(...sixMemberJunctionAngles) >= Math.PI / 3 - 1e-6,
+        `expected ${label} six-member spiro exits to stay at least 60 degrees apart`
+      );
+      assert.ok(
+        Math.min(...cyclopropaneJunctionAngles) >= Math.PI / 2 - 1e-6,
+        `expected ${label} cyclopropane spiro exits to stay centered in the exterior gap`
+      );
+    };
+
+    assert.equal(result.placementMode, 'constructed-path');
+    assertSpiroJunctionExits(result.coords, 'spiro placement');
+    assertSpiroJunctionExits(pipelineResult.coords, 'pipeline layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+  });
 });

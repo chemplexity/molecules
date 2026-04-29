@@ -132,6 +132,13 @@ describe('validateValence — valid molecules', () => {
     assert.deepEqual(validateValence(parseSMILES('[O-][N+](=O)c1ccccc1')), []);
   });
 
+  it('legacy neutral pentavalent nitrogen multiple-bond forms produce no warnings', () => {
+    assert.deepEqual(validateValence(parseSMILES('N(=O)=O')), []);
+
+    const smiles = 'CC(C)(C)C1=CC=C(C=C1)C(=O)NCC[N+]#N=N';
+    assert.deepEqual(validateValence(parseSMILES(smiles)), []);
+  });
+
   it('borane [BH3] produces no warnings', () => {
     // Bracket notation fixes the H count at 3, matching B's trivalent chemistry
     assert.deepEqual(validateValence(parseSMILES('[BH3]')), []);
@@ -217,6 +224,12 @@ describe('validateValence — nitrogen parity violation', () => {
   it('N with 4 bonds and charge +1 produces no warning', () => {
     const mol = buildWithNBonds('N', 4, { charge: 1 });
     assert.equal(centerWarnings(mol).length, 0);
+  });
+
+  it('N with 5 single bonds and charge 0 still produces a warning', () => {
+    const ws = centerWarnings(buildWithNBonds('N', 5));
+    assert.equal(ws.length, 1);
+    assert.equal(ws[0].bondOrder, 5);
   });
 
   it('N with 3 bonds and charge 0 produces no warning', () => {

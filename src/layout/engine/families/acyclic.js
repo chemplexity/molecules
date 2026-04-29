@@ -5,7 +5,10 @@ import { cloneCoords } from '../geometry/transforms.js';
 import { actualAlkeneStereo } from '../stereo/ez.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { describeCrossLikeHypervalentCenter, placeRemainingBranches } from '../placement/branch-placement.js';
-import { isExactVisibleTrigonalBisectorEligible } from '../placement/branch-placement/angle-selection.js';
+import {
+  isExactVisibleTrigonalBisectorEligible,
+  shouldPreferOmittedHydrogenTrigonalBisector
+} from '../placement/branch-placement/angle-selection.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 
 const ZIGZAG_STEP_ANGLE = Math.PI / 6;
@@ -246,6 +249,9 @@ function isTrigonalBackboneCentre(layoutGraph, previousAtomId, atomId, nextAtomI
   }
   if (!layoutGraph || previousAtomId == null || atomId == null || nextAtomId == null) {
     return false;
+  }
+  if (shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, atomId)) {
+    return true;
   }
 
   return (layoutGraph.bondsByAtomId.get(atomId) ?? [])
