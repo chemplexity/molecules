@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { auditLayout } from '../../../src/layout/engine/audit/audit.js';
+import { findVisibleHeavyBondCrossings } from '../../../src/layout/engine/audit/invariants.js';
 import { angleOf, angularDifference, centroid, sub } from '../../../src/layout/engine/geometry/vec2.js';
 import { computeBounds } from '../../../src/layout/engine/geometry/bounds.js';
 import { computeIncidentRingOutwardAngles } from '../../../src/layout/engine/geometry/ring-direction.js';
@@ -1111,6 +1112,30 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
+  it('keeps simple imine-linked aryl branches on an exact 120-degree nitrogen slot during placement', () => {
+    const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(
+      'CCC(=O)NC(=Nc1ccccc1)Nc2nc(C)cc(C)n2',
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+    const placementImineAngle = bondAngleAtAtom(placement.coords, 'N7', 'C6', 'C8');
+    const finalImineAngle = bondAngleAtAtom(result.coords, 'N7', 'C6', 'C8');
+    const arylRootAngles = [
+      bondAngleAtAtom(result.coords, 'C8', 'C13', 'N7'),
+      bondAngleAtAtom(result.coords, 'C8', 'N7', 'C9'),
+      bondAngleAtAtom(result.coords, 'C8', 'C13', 'C9')
+    ];
+
+    assert.ok(Math.abs(placementImineAngle - 120) < 1e-6, `expected C6-N7-C8 to start at 120 degrees, got ${placementImineAngle.toFixed(2)}`);
+    assert.ok(Math.abs(finalImineAngle - 120) < 1e-6, `expected C6-N7-C8 to stay at 120 degrees, got ${finalImineAngle.toFixed(2)}`);
+    for (const angle of arylRootAngles) {
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected the phenyl root fan to remain exact, got ${angle.toFixed(2)}`);
+    }
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    assert.equal(placementAudit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
   it('swaps planar tertiary nitrogen sibling branches to clear attached phenyl overlaps without bending the amide', () => {
     const result = runPipeline(
       parseSMILES('CCN(C(=O)C1=C(O)C2=C(C=CC=C2Cl)N(C)C1=O)C1=CC=CC=C1'),
@@ -1176,6 +1201,36 @@ describe('layout/engine/pipeline', () => {
 
     assert.ok(Math.abs(middleNitrogenAngle - 120) < 1e-6, `expected C4-N5-C6 to stay at 120 degrees, got ${middleNitrogenAngle.toFixed(2)} degrees`);
     assert.ok(Math.abs(amideNitrogenAngle - 120) < 1e-6, `expected C11-N13-C14 to stay at 120 degrees, got ${amideNitrogenAngle.toFixed(2)} degrees`);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('tries alternate mixed roots when the primary root leaves a thiazole exit off-axis', () => {
+    const result = runPipeline(
+      parseSMILES('Cc1ccc(cc1)c2nc(C)sc2CC(=O)OCC(=O)Nc3c(F)cccc3F'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+    const firstC5Angle = bondAngleAtAtom(result.coords, 'C5', 'C4', 'C8');
+    const secondC5Angle = bondAngleAtAtom(result.coords, 'C5', 'C6', 'C8');
+
+    assert.ok(Math.abs(firstC5Angle - 120) < 1e-6, `expected C4-C5-C8 to stay at 120 degrees, got ${firstC5Angle.toFixed(2)} degrees`);
+    assert.ok(Math.abs(secondC5Angle - 120) < 1e-6, `expected C6-C5-C8 to stay at 120 degrees, got ${secondC5Angle.toFixed(2)} degrees`);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('uses ring-anchor lookahead so compact allyl tails leave bridged amines outward', () => {
+    const result = runPipeline(
+      parseSMILES('Cc1cc(C)cc(NC(=O)NC2CC3CCCC(C2)N3CC=C)c1'),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+    const bridgeheadAllylBend = bondAngleAtAtom(result.coords, 'C21', 'N20', 'C22');
+    const vinylAngle = bondAngleAtAtom(result.coords, 'C22', 'C21', 'C23');
+
+    assert.ok(bridgeheadAllylBend > 90, `expected N20-C21-C22 to open away from the bridged amine, got ${bridgeheadAllylBend.toFixed(2)} degrees`);
+    assert.ok(Math.abs(vinylAngle - 120) < 1e-6, `expected C21-C22-C23 to stay at 120 degrees, got ${vinylAngle.toFixed(2)} degrees`);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });
@@ -1306,6 +1361,30 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.ok, true);
   });
 
+  it('keeps saturated piperazine anchor-side attached rings on the exact local outward axis', () => {
+    const result = runPipeline(parseSMILES('O=C1NC(=O)C(N2CCN(CC2)C2=NC=CC=N2)(C(=O)N1)C1=CC=C(OC2=CC=CC=C2)C=C1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const outwardAngles = computeIncidentRingOutwardAngles(result.layoutGraph, 'N7', atomId => result.coords.get(atomId) ?? null);
+    const imideExitAngle = angleOf(sub(result.coords.get('C6'), result.coords.get('N7')));
+
+    assert.equal(outwardAngles.length, 1);
+    assert.ok(
+      angularDifference(imideExitAngle, outwardAngles[0]) < 1e-6,
+      `expected N7-C6 to stay on the exact piperazine outward axis, got ${((angularDifference(imideExitAngle, outwardAngles[0]) * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    for (const [name, angle] of [
+      ['C6-N7-C12', bondAngleAtAtom(result.coords, 'N7', 'C6', 'C12')],
+      ['C6-N7-C8', bondAngleAtAtom(result.coords, 'N7', 'C6', 'C8')],
+      ['C12-N7-C8', bondAngleAtAtom(result.coords, 'N7', 'C12', 'C8')]
+    ]) {
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${name} to stay at 120 degrees, got ${angle.toFixed(2)}`);
+    }
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+  });
+
   it('keeps the reported constrained carbonyl center on exact local trigonal bisectors even after late touchups rotate nearby ring blocks', () => {
     const result = runPipeline(parseSMILES('CC1(C)S[C@@H]2[C@H](NC(=O)C(N)=O)C(=O)N2[C@H]1C(=O)O'), { suppressH: true, auditTelemetry: true });
     for (const [anchorAtomId, leafAtomId, otherNeighborIds] of [
@@ -1350,6 +1429,85 @@ describe('layout/engine/pipeline', () => {
       assert.ok(Math.abs(separation - (2 * Math.PI) / 3) < 1e-6, `expected C2 separations near 120 degrees, got ${((separation * 180) / Math.PI).toFixed(2)}`);
     }
     assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps crowded omitted-h ring hubs on an exact visible three-heavy fan without reopening overlaps', () => {
+    const smiles = 'CC(NC(=O)C1=C2C=CC=CC2=NC=C1C(N1CCN(CC([O-])=O)C(=O)C1)C1=CC=CS1)C1CCCCC1';
+    const options = {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    };
+    const molecule = parseSMILES(smiles);
+    const layoutGraph = createLayoutGraphFromNormalized(molecule, normalizeOptions(options));
+    const result = runPipeline(molecule, options);
+    for (const [firstNeighborAtomId, secondNeighborAtomId] of [['N17', 'C28'], ['N17', 'C15'], ['C28', 'C15']]) {
+      const angle = bondAngleAtAtom(result.coords, 'C16', firstNeighborAtomId, secondNeighborAtomId);
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${firstNeighborAtomId}-C16-${secondNeighborAtomId} to keep a 120 degree omitted-H fan, got ${angle.toFixed(2)}`);
+    }
+    const c28OutwardAngles = computeIncidentRingOutwardAngles(layoutGraph, 'C28', atomId => result.coords.get(atomId) ?? null);
+    const c28ParentAngle = angleOf(sub(result.coords.get('C16'), result.coords.get('C28')));
+    assert.equal(c28OutwardAngles.length, 1);
+    assert.ok(
+      angularDifference(c28ParentAngle, c28OutwardAngles[0]) < 1e-6,
+      'expected C16-C28 to stay on the exact local thiophene outward axis'
+    );
+    const n17OutwardAngles = computeIncidentRingOutwardAngles(layoutGraph, 'N17', atomId => result.coords.get(atomId) ?? null);
+    const n17ParentAngle = angleOf(sub(result.coords.get('C16'), result.coords.get('N17')));
+    assert.equal(n17OutwardAngles.length, 1);
+    assert.ok(
+      angularDifference(n17ParentAngle, n17OutwardAngles[0]) < 1e-6,
+      'expected C16-N17 to stay on the exact local piperazine outward axis'
+    );
+    for (const [firstNeighborAtomId, secondNeighborAtomId] of [['C16', 'C18'], ['C16', 'C27'], ['C18', 'C27']]) {
+      const angle = bondAngleAtAtom(result.coords, 'N17', firstNeighborAtomId, secondNeighborAtomId);
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${firstNeighborAtomId}-N17-${secondNeighborAtomId} near 120 degrees, got ${angle.toFixed(2)}`);
+    }
+    for (const [firstNeighborAtomId, secondNeighborAtomId] of [['C4', 'C15'], ['C4', 'C7'], ['C15', 'C7']]) {
+      const angle = bondAngleAtAtom(result.coords, 'C6', firstNeighborAtomId, secondNeighborAtomId);
+      assert.ok(Math.abs(angle - 120) <= 12 + 1e-6, `expected ${firstNeighborAtomId}-C6-${secondNeighborAtomId} to stay within the bounded local relief, got ${angle.toFixed(2)}`);
+    }
+    for (const [firstNeighborAtomId, secondNeighborAtomId, expectedAngle] of [['O5', 'C6', 132], ['O5', 'N3', 114], ['C6', 'N3', 114]]) {
+      const angle = bondAngleAtAtom(result.coords, 'C4', firstNeighborAtomId, secondNeighborAtomId);
+      assert.ok(Math.abs(angle - expectedAngle) < 1e-6, `expected ${firstNeighborAtomId}-C4-${secondNeighborAtomId} near the balanced local relief angle ${expectedAngle}, got ${angle.toFixed(2)}`);
+    }
+    for (const [firstNeighborAtomId, secondNeighborAtomId, expectedAngle] of [['C16', 'C29', 126], ['C16', 'S32', 126], ['C29', 'S32', 108]]) {
+      const angle = bondAngleAtAtom(result.coords, 'C28', firstNeighborAtomId, secondNeighborAtomId);
+      assert.ok(Math.abs(angle - expectedAngle) < 1e-6, `expected ${firstNeighborAtomId}-C28-${secondNeighborAtomId} near ${expectedAngle} degrees, got ${angle.toFixed(2)}`);
+    }
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+  });
+
+  it('keeps a crowded tetrazole-linked C13 omitted-h fan bounded without collapsing neighboring ring exits', () => {
+    const result = runPipeline(
+      parseSMILES('CCCCCCCC(C)C1CC(C(CC)C2=NNC=N2)(C(=O)O1)C1=CC=C(Cl)C=C1C'),
+      {
+        suppressH: true,
+        auditTelemetry: true,
+        finalLandscapeOrientation: true
+      }
+    );
+
+    for (const [firstNeighborAtomId, secondNeighborAtomId] of [['C12', 'C14'], ['C12', 'C16'], ['C14', 'C16']]) {
+      const angle = bondAngleAtAtom(result.coords, 'C13', firstNeighborAtomId, secondNeighborAtomId);
+      assert.ok(Math.abs(angle - 120) <= 25 + 1e-6, `expected ${firstNeighborAtomId}-C13-${secondNeighborAtomId} within bounded omitted-H fan relief, got ${angle.toFixed(2)}`);
+    }
+    for (const [firstNeighborAtomId, secondNeighborAtomId] of [['C11', 'C13'], ['C11', 'C21'], ['C11', 'C24'], ['C13', 'C21'], ['C13', 'C24'], ['C21', 'C24']]) {
+      const angle = bondAngleAtAtom(result.coords, 'C12', firstNeighborAtomId, secondNeighborAtomId);
+      assert.ok(angle >= 70, `expected ${firstNeighborAtomId}-C12-${secondNeighborAtomId} to avoid the collapsed branch fan, got ${angle.toFixed(2)}`);
+    }
+    for (const [firstNeighborAtomId, secondNeighborAtomId] of [['C24', 'C31'], ['C29', 'C31'], ['C24', 'C29']]) {
+      const angle = bondAngleAtAtom(result.coords, 'C30', firstNeighborAtomId, secondNeighborAtomId);
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${firstNeighborAtomId}-C30-${secondNeighborAtomId} to keep the terminal methyl fan exact, got ${angle.toFixed(2)}`);
+    }
+    for (const [firstNeighborAtomId, secondNeighborAtomId] of [['C12', 'C30'], ['C12', 'C25'], ['C30', 'C25']]) {
+      const angle = bondAngleAtAtom(result.coords, 'C24', firstNeighborAtomId, secondNeighborAtomId);
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${firstNeighborAtomId}-C24-${secondNeighborAtomId} to keep the phenyl root exact, got ${angle.toFixed(2)}`);
+    }
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
   });
 
   it('keeps exocyclic ring trigonal multiple-bond exits on their exact bisector when that avoids a crowded ring-neighbor collapse', () => {
@@ -1522,6 +1680,25 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('preserves ring-bound tertiary amine fan geometry while clearing adjacent branch overlap', () => {
+    const result = runPipeline(parseSMILES('CN1CC=C2CCC3OCC1(C(O)C=O)C23'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const n2Angles = [
+      bondAngleAtAtom(result.coords, 'N2', 'C11', 'C1'),
+      bondAngleAtAtom(result.coords, 'N2', 'C11', 'C3'),
+      bondAngleAtAtom(result.coords, 'N2', 'C1', 'C3')
+    ];
+
+    for (const angle of n2Angles) {
+      assert.ok(Math.abs(angle - 120) < 2, `expected N2 fan near 120 degrees, got ${angle.toFixed(2)}`);
+    }
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });
 
@@ -2032,6 +2209,33 @@ describe('layout/engine/pipeline', () => {
     });
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps bulky diaryl phosphine oxide branches from crossing visible bonds', () => {
+    const result = runPipeline(parseSMILES('CCCCP(=O)(C(=O)C1=C(CC)C=C(CC)C=C1CC)C(=O)C1=C(CC)C=C(CC)C=C1CC'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+  });
+
+  it('keeps the trisodium anthraquinone propionate sidechain at a clean C37 zigzag angle', () => {
+    const result = runPipeline(parseSMILES('[Na+].[Na+].[Na+].CCc1cc(C(=O)C)c([O-])cc1OCCCOc2ccc3C(=O)c4cc(ccc4Oc3c2CCC(=O)[O-])C(=O)[O-]'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const sidechainAngle = bondAngleAtAtom(result.coords, 'C37', 'C36', 'C38');
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(Math.abs(sidechainAngle - 120) < 1e-6, `expected C36-C37-C38 to stay at 120 degrees, got ${sidechainAngle.toFixed(2)}`);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });

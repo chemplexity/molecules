@@ -1,7 +1,7 @@
 /** @module cleanup/local-rotation */
 
 import { CLEANUP_EPSILON, DISTANCE_EPSILON, atomPairKey } from '../constants.js';
-import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub, wrapAngle } from '../geometry/vec2.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { buildAtomGrid, buildSubtreeOverlapContext, computeAtomDistortionCost, computeSubtreeOverlapCost } from '../audit/invariants.js';
 import { containsFrozenAtom } from './frozen-atoms.js';
@@ -13,22 +13,9 @@ import {
   supportsExteriorBranchSpreadRingSize
 } from '../placement/branch-placement.js';
 import { isExactVisibleTrigonalBisectorEligible } from '../placement/branch-placement/angle-selection.js';
-
-const DISCRETE_ROTATION_ANGLES = Object.freeze([
-  0,
-  Math.PI / 12,
-  -Math.PI / 12,
-  Math.PI / 6,
-  -Math.PI / 6,
-  Math.PI / 3,
-  -Math.PI / 3,
-  Math.PI / 2,
-  -Math.PI / 2,
-  (2 * Math.PI) / 3,
-  -(2 * Math.PI) / 3,
-  Math.PI
-]);
+import { FINE_ROTATION_ANGLES } from './rotation-candidates.js';
 const LOCAL_TRIGONAL_HETERO_DISTORTION_WEIGHT = 5;
+const LOCAL_RING_TRIGONAL_HETERO_DISTORTION_WEIGHT = 12;
 const MAX_SIBLING_SWAP_SUBTREE_ATOMS = 18;
 const MAX_BRANCHED_SATURATED_SUBTREE_ATOMS = 18;
 const MAX_ANCHORED_RING_BLOCK_ATOMS = 18;
@@ -39,22 +26,6 @@ const EXACT_ROTATION_ANGLE_EPSILON = 1e-6;
 const IDEAL_LEAF_LINEAR_NEIGHBOR_TOLERANCE = Math.PI / 12;
 const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
 const ANCHORED_RING_EXTERIOR_SPREAD_WEIGHT = 8;
-
-/**
- * Normalizes an angle to the signed `(-pi, pi]` interval.
- * @param {number} angle - Angle in radians.
- * @returns {number} Signed normalized angle in radians.
- */
-function normalizeSignedAngle(angle) {
-  let normalizedAngle = angle;
-  while (normalizedAngle <= -Math.PI) {
-    normalizedAngle += Math.PI * 2;
-  }
-  while (normalizedAngle > Math.PI) {
-    normalizedAngle -= Math.PI * 2;
-  }
-  return normalizedAngle;
-}
 
 /**
  * Returns the circular mean of signed angular offsets.
@@ -245,7 +216,7 @@ function preferredRotationAngles(layoutGraph, coords, anchorAtomId, rootAtomId) 
   if (Number.isFinite(exactIdealAngle)) {
     candidateAngles.push(exactIdealAngle);
   }
-  for (const angle of DISCRETE_ROTATION_ANGLES) {
+  for (const angle of FINE_ROTATION_ANGLES) {
     if (candidateAngles.some(existingAngle => angularDifference(existingAngle, angle) <= EXACT_ROTATION_ANGLE_EPSILON)) {
       continue;
     }
@@ -668,8 +639,8 @@ function anchoredRingBlockExteriorSpreadRotations(layoutGraph, coords, descripto
     [targetAngles[1], targetAngles[0]]
   ]) {
     const rotation = meanSignedAngle([
-      normalizeSignedAngle(exocyclicAngles[0] - targetOrder[0]),
-      normalizeSignedAngle(exocyclicAngles[1] - targetOrder[1])
+      wrapAngle(exocyclicAngles[0] - targetOrder[0]),
+      wrapAngle(exocyclicAngles[1] - targetOrder[1])
     ]);
     if (
       rotation != null &&
@@ -1267,6 +1238,46 @@ function updateAtomGridForMove(layoutGraph, atomGrid, coords, movedPositions) {
 }
 
 /**
+ * Returns whether a ring-bound hetero center should preserve a visible three-way
+ * branch fan during local cleanup. Saturated tertiary amines with one exocyclic
+ * compact substituent can otherwise clear an overlap by collapsing that branch
+ * into the adjacent ring-bond slot.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate anchor atom ID.
+ * @param {Array<{bond: object, neighborAtomId: string}>} heavyBonds - Visible single heavy bonds.
+ * @returns {boolean} True when ring-local cleanup should score the fan as trigonal.
+ */
+function shouldPreserveRingTrigonalHeteroFan(layoutGraph, atomId, heavyBonds) {
+  const atom = layoutGraph.atoms.get(atomId);
+  const incidentRings = layoutGraph.atomToRings.get(atomId) ?? [];
+  if (
+    !atom
+    || incidentRings.length === 0
+    || atom.heavyDegree !== 3
+    || atom.degree !== 3
+    || heavyBonds.length !== 3
+  ) {
+    return false;
+  }
+
+  const ringBondCount = heavyBonds.filter(({ bond }) => bond.inRing).length;
+  if (ringBondCount !== 2) {
+    return false;
+  }
+
+  const exocyclicBond = heavyBonds.find(({ bond }) => !bond.inRing) ?? null;
+  if (!exocyclicBond) {
+    return false;
+  }
+  const exocyclicAtom = layoutGraph.atoms.get(exocyclicBond.neighborAtomId);
+  return !!exocyclicAtom
+    && exocyclicAtom.element !== 'H'
+    && !exocyclicAtom.aromatic
+    && (layoutGraph.atomToRings.get(exocyclicBond.neighborAtomId)?.length ?? 0) === 0
+    && isCompactAcyclicSideGroup(layoutGraph, exocyclicBond.neighborAtomId, atomId, 4);
+}
+
+/**
  * Returns the distortion penalty for a non-ring three-coordinate hetero center
  * that should still read as roughly trigonal in 2D cleanup.
  * @param {object} layoutGraph - Layout graph shell.
@@ -1280,9 +1291,6 @@ function localTrigonalHeteroDistortionCost(layoutGraph, coords, atomId, override
   if (!atom || atom.element === 'H' || atom.element === 'C' || atom.aromatic) {
     return 0;
   }
-  if ((layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) {
-    return 0;
-  }
 
   const atomPosition = overridePositions?.get(atomId) ?? coords.get(atomId);
   if (!atomPosition) {
@@ -1290,6 +1298,7 @@ function localTrigonalHeteroDistortionCost(layoutGraph, coords, atomId, override
   }
 
   const neighborAngles = [];
+  const heavyBonds = [];
   for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
     if (bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
       return 0;
@@ -1300,10 +1309,16 @@ function localTrigonalHeteroDistortionCost(layoutGraph, coords, atomId, override
     if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
       continue;
     }
+    heavyBonds.push({ bond, neighborAtomId });
     neighborAngles.push(angleOf(sub(neighborPosition, atomPosition)));
   }
 
   if (neighborAngles.length !== 3) {
+    return 0;
+  }
+
+  const incidentRingCount = layoutGraph.atomToRings.get(atomId)?.length ?? 0;
+  if (incidentRingCount > 0 && !shouldPreserveRingTrigonalHeteroFan(layoutGraph, atomId, heavyBonds)) {
     return 0;
   }
 
@@ -1316,7 +1331,10 @@ function localTrigonalHeteroDistortionCost(layoutGraph, coords, atomId, override
     const separation = rawGap > 0 ? rawGap : rawGap + Math.PI * 2;
     cost += (separation - ((Math.PI * 2) / 3)) ** 2;
   }
-  return cost * LOCAL_TRIGONAL_HETERO_DISTORTION_WEIGHT;
+  const weight = incidentRingCount > 0
+    ? LOCAL_RING_TRIGONAL_HETERO_DISTORTION_WEIGHT
+    : LOCAL_TRIGONAL_HETERO_DISTORTION_WEIGHT;
+  return cost * weight;
 }
 
 /**
@@ -1544,7 +1562,7 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
       const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
       const finalists = [];
 
-      for (const angle of DISCRETE_ROTATION_ANGLES) {
+      for (const angle of FINE_ROTATION_ANGLES) {
         const rotation = angle - firstCurrentAngle;
         const rotatedFirstRoot = add(anchorPosition, fromAngle(angle, firstCurrentRadius));
         const rotatedSecondRoot = add(anchorPosition, fromAngle(angleOf(sub(secondRootPosition, anchorPosition)) + rotation, secondCurrentRadius));

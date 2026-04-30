@@ -1,6 +1,6 @@
 /** @module families/acyclic */
 
-import { add, angleOf, centroid, fromAngle, length, rotate, sub } from '../geometry/vec2.js';
+import { add, angleOf, centroid, fromAngle, length, rotate, sub, wrapAngle } from '../geometry/vec2.js';
 import { cloneCoords } from '../geometry/transforms.js';
 import { actualAlkeneStereo } from '../stereo/ez.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
@@ -97,22 +97,6 @@ function findConjugatedBackboneCenters(layoutGraph, backbone) {
   }
 
   return conjugatedCenterIds;
-}
-
-/**
- * Normalizes an angle into the signed `(-pi, pi]` range.
- * @param {number} angle - Input angle in radians.
- * @returns {number} Wrapped signed angle.
- */
-function normalizeSignedAngle(angle) {
-  let wrappedAngle = angle;
-  while (wrappedAngle > Math.PI) {
-    wrappedAngle -= 2 * Math.PI;
-  }
-  while (wrappedAngle <= -Math.PI) {
-    wrappedAngle += 2 * Math.PI;
-  }
-  return wrappedAngle;
 }
 
 /**
@@ -333,7 +317,7 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
 
     const previousDirection = Math.atan2(previousPosition.y - centerPosition.y, previousPosition.x - centerPosition.x);
     const nextDirection = Math.atan2(nextPosition.y - centerPosition.y, nextPosition.x - centerPosition.x);
-    const currentTurn = normalizeSignedAngle(nextDirection - previousDirection);
+    const currentTurn = wrapAngle(nextDirection - previousDirection);
     const currentTurnSign = Math.sign(currentTurn) || previousTurnSign || (index % 2 === 1 ? -1 : 1);
     const movedAtomIds = collectSideAtomIds(layoutGraph, nextAtomId, centerAtomId);
     const sideRootAtomId = (layoutGraph.bondsByAtomId.get(centerAtomId) ?? [])
@@ -372,7 +356,7 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
           candidateCoords,
           sideRootAtomIds,
           centerPosition,
-          normalizeSignedAngle(targetAngle - currentRootAngle)
+          wrapAngle(targetAngle - currentRootAngle)
         );
       }
 
@@ -448,7 +432,7 @@ function normalizeBackboneSaturatedZigzagAngles(layoutGraph, coords, backbone) {
 
     const previousDirection = Math.atan2(previousPosition.y - centerPosition.y, previousPosition.x - centerPosition.x);
     const nextDirection = Math.atan2(nextPosition.y - centerPosition.y, nextPosition.x - centerPosition.x);
-    const currentTurn = normalizeSignedAngle(nextDirection - previousDirection);
+    const currentTurn = wrapAngle(nextDirection - previousDirection);
     if (Math.abs(Math.abs(currentTurn) - TRIGONAL_TARGET_ANGLE) <= 1e-6) {
       previousTurnSign = Math.sign(currentTurn) || previousTurnSign;
       continue;
@@ -669,11 +653,11 @@ function realignTrigonalLinearSubstituentRoots(layoutGraph, coords, backbone = [
           candidateCoords,
           assignment.movedAtomIds,
           centerPosition,
-          normalizeSignedAngle(targetAngle - assignment.currentAngle)
+          wrapAngle(targetAngle - assignment.currentAngle)
         );
         return {
           targetAngle,
-          rotationMagnitude: Math.abs(normalizeSignedAngle(targetAngle - assignment.currentAngle)),
+          rotationMagnitude: Math.abs(wrapAngle(targetAngle - assignment.currentAngle)),
           minimumDistanceSquared: minimumExternalDistanceSquared(candidateCoords, assignment.movedAtomIds, excludedAtomIds)
         };
       });
@@ -688,11 +672,11 @@ function realignTrigonalLinearSubstituentRoots(layoutGraph, coords, backbone = [
       const positiveTarget = baseAngle + TRIGONAL_TARGET_ANGLE;
       const negativeTarget = baseAngle - TRIGONAL_TARGET_ANGLE;
       const directCost =
-        Math.abs(normalizeSignedAngle(assignments[0].currentAngle - positiveTarget))
-        + Math.abs(normalizeSignedAngle(assignments[1].currentAngle - negativeTarget));
+        Math.abs(wrapAngle(assignments[0].currentAngle - positiveTarget))
+        + Math.abs(wrapAngle(assignments[1].currentAngle - negativeTarget));
       const swappedCost =
-        Math.abs(normalizeSignedAngle(assignments[0].currentAngle - negativeTarget))
-        + Math.abs(normalizeSignedAngle(assignments[1].currentAngle - positiveTarget));
+        Math.abs(wrapAngle(assignments[0].currentAngle - negativeTarget))
+        + Math.abs(wrapAngle(assignments[1].currentAngle - positiveTarget));
       targetAngles = directCost <= swappedCost
         ? [positiveTarget, negativeTarget]
         : [negativeTarget, positiveTarget];
@@ -704,7 +688,7 @@ function realignTrigonalLinearSubstituentRoots(layoutGraph, coords, backbone = [
         coords,
         assignment.movedAtomIds,
         centerPosition,
-        normalizeSignedAngle(targetAngles[index] - assignment.currentAngle)
+        wrapAngle(targetAngles[index] - assignment.currentAngle)
       );
     }
   }
@@ -798,17 +782,17 @@ export function realignVisibleTrigonalSingleBondRoots(layoutGraph, coords, backb
 
     let targetAngles;
     if (assignments.length === 1) {
-      const signedOffset = normalizeSignedAngle(assignments[0].currentAngle - baseAngle);
+      const signedOffset = wrapAngle(assignments[0].currentAngle - baseAngle);
       targetAngles = [baseAngle + (signedOffset >= 0 ? TRIGONAL_TARGET_ANGLE : -TRIGONAL_TARGET_ANGLE)];
     } else {
       const positiveTarget = baseAngle + TRIGONAL_TARGET_ANGLE;
       const negativeTarget = baseAngle - TRIGONAL_TARGET_ANGLE;
       const directCost =
-        Math.abs(normalizeSignedAngle(assignments[0].currentAngle - positiveTarget))
-        + Math.abs(normalizeSignedAngle(assignments[1].currentAngle - negativeTarget));
+        Math.abs(wrapAngle(assignments[0].currentAngle - positiveTarget))
+        + Math.abs(wrapAngle(assignments[1].currentAngle - negativeTarget));
       const swappedCost =
-        Math.abs(normalizeSignedAngle(assignments[0].currentAngle - negativeTarget))
-        + Math.abs(normalizeSignedAngle(assignments[1].currentAngle - positiveTarget));
+        Math.abs(wrapAngle(assignments[0].currentAngle - negativeTarget))
+        + Math.abs(wrapAngle(assignments[1].currentAngle - positiveTarget));
       targetAngles = directCost <= swappedCost
         ? [positiveTarget, negativeTarget]
         : [negativeTarget, positiveTarget];
@@ -820,7 +804,7 @@ export function realignVisibleTrigonalSingleBondRoots(layoutGraph, coords, backb
         coords,
         assignment.movedAtomIds,
         centerPosition,
-        normalizeSignedAngle(targetAngles[index] - assignment.currentAngle)
+        wrapAngle(targetAngles[index] - assignment.currentAngle)
       );
     }
   }
@@ -894,7 +878,7 @@ function realignConjugatedNitrogenSingleBondRoots(layoutGraph, coords, backbone 
       coords,
       collectSideAtomIds(layoutGraph, rootAtomId, atom.id),
       centerPosition,
-      normalizeSignedAngle(targetAngle - currentAngle)
+      wrapAngle(targetAngle - currentAngle)
     );
   }
 

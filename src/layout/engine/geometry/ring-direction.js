@@ -1,19 +1,8 @@
 /** @module geometry/ring-direction */
 
-import { angleOf, angularDifference, centroid, sub } from './vec2.js';
+import { angleOf, angularDifference, centroid, sub, wrapAngle } from './vec2.js';
 
 const RING_DIRECTION_EPSILON = 1e-9;
-
-function normalizeSignedAngle(angle) {
-  let wrappedAngle = angle;
-  while (wrappedAngle > Math.PI) {
-    wrappedAngle -= 2 * Math.PI;
-  }
-  while (wrappedAngle <= -Math.PI) {
-    wrappedAngle += 2 * Math.PI;
-  }
-  return wrappedAngle;
-}
 
 function incidentRingNeighborAngles(layoutGraph, anchorAtomId, ring, getPosition, anchorPosition) {
   const neighborAngles = [];
@@ -52,8 +41,8 @@ function chooseSingleRingOutwardAngle(neighborAngles, fallbackOutwardAngle) {
 
   const internalBisector = Math.atan2(bisectorY, bisectorX);
   const candidateAngles = [
-    normalizeSignedAngle(internalBisector),
-    normalizeSignedAngle(internalBisector + Math.PI)
+    wrapAngle(internalBisector),
+    wrapAngle(internalBisector + Math.PI)
   ];
   return candidateAngles.reduce((bestAngle, candidateAngle) => (
     angularDifference(candidateAngle, fallbackOutwardAngle) < angularDifference(bestAngle, fallbackOutwardAngle)

@@ -1,7 +1,7 @@
 /** @module model/scaffold-plan */
 
 import { compareFallbackScaffolds } from '../scaffold/fallback-scaffold.js';
-import { findTemplateMatch, findTemplateMatchIgnoringFamily } from '../scaffold/template-match.js';
+import { findTemplateMatch, findTemplateMatchIgnoringFamily } from '../templates/match.js';
 
 function ringSystemConnections(layoutGraph, ringSystem) {
   const ringIdSet = new Set(ringSystem.ringIds);

@@ -6,7 +6,7 @@ import { apothemForRegularPolygon } from '../geometry/polygon.js';
 import { add, angleOf, centroid, distance, fromAngle, midpoint, normalize, perpLeft, scale, sub, wrapAngle } from '../geometry/vec2.js';
 import { computeFusedAxis, orientCoordsHorizontally, rebuildRingCenters } from '../scaffold/orientation.js';
 import { nonSharedPath } from '../geometry/ring-path.js';
-import { placeTemplateCoords } from '../scaffold/template-placement.js';
+import { placeTemplateCoords } from '../templates/placement.js';
 import { auditLayout } from '../audit/audit.js';
 import { assignBondValidationClass } from '../placement/bond-validation.js';
 

@@ -48,7 +48,7 @@ import {
 import { chooseBatchAngleAssignments, chooseSingleBranchAngleWithLookahead, shouldUseGreedyBranchPlacement } from './permutations.js';
 
 const SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS = 64;
-const RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE = 4;
+const RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE = 3;
 const EXACT_TERMINAL_RING_LEAF_SLOT_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I', 'O', 'S', 'Se']);
 
 function isFusedOnlyRingSystemAnchor(layoutGraph, atomId) {
@@ -234,6 +234,21 @@ function allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace) {
   );
 }
 
+/**
+ * Returns whether a ring-anchored outgoing branch should be placed with
+ * recursive lookahead instead of a greedy first-bond choice. Compact
+ * allyl-sized tails can still fold their second atom back into fused or
+ * bridged ring scaffolds, so three heavy atoms is enough to justify the
+ * bounded candidate search.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {string} childAtomId - Outgoing child atom ID.
+ * @param {object|null} childBond - Bond from anchor to child.
+ * @param {string[]} currentPlacedNeighborIds - Already placed anchor neighbors.
+ * @param {number} childSubtreeSize - Heavy atom count below the child.
+ * @param {number[]} fallbackAngles - Fallback candidate angles.
+ * @returns {boolean} True when single-branch lookahead should score the tail.
+ */
 function shouldUseRingAnchorSingleBranchLookahead(
   layoutGraph,
   anchorAtomId,

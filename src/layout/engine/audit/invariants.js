@@ -3,7 +3,7 @@
 import { collectLabelBoxes, findLabelOverlaps } from '../geometry/label-box.js';
 import { computeBounds } from '../geometry/bounds.js';
 import { AtomGrid } from '../geometry/atom-grid.js';
-import { distancePointToSegment, segmentsIntersect } from '../geometry/segments.js';
+import { distancePointToSegment, segmentsIntersect, segmentsProperlyIntersect } from '../geometry/segments.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
@@ -86,6 +86,76 @@ function isAuditableBond(layoutGraph, bond) {
     return false;
   }
   return firstAtom.element !== 'H' && secondAtom.element !== 'H';
+}
+
+/**
+ * Returns visible heavy-atom covalent bond pairs that cross strictly through
+ * each other. Bonds sharing an endpoint are ignored.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{focusAtomIds?: Iterable<string>}} [options] - Optional atoms whose incident bonds should be rescored.
+ * @returns {Array<{firstBondId: string, secondBondId: string, firstAtomIds: [string, string], secondAtomIds: [string, string]}>} Crossing bond pairs.
+ */
+export function findVisibleHeavyBondCrossings(layoutGraph, coords, options = {}) {
+  const focusAtomSet = options.focusAtomIds ? new Set(options.focusAtomIds) : null;
+  const visibleBonds = [];
+
+  for (const bond of layoutGraph.bonds.values()) {
+    if (!isAuditableBond(layoutGraph, bond)) {
+      continue;
+    }
+    const firstPosition = coords.get(bond.a);
+    const secondPosition = coords.get(bond.b);
+    if (!firstPosition || !secondPosition) {
+      continue;
+    }
+    visibleBonds.push({
+      bond,
+      firstPosition,
+      secondPosition,
+      touchesFocus: !focusAtomSet || focusAtomSet.has(bond.a) || focusAtomSet.has(bond.b)
+    });
+  }
+
+  const crossings = [];
+  for (let firstIndex = 0; firstIndex < visibleBonds.length; firstIndex++) {
+    const first = visibleBonds[firstIndex];
+    for (let secondIndex = firstIndex + 1; secondIndex < visibleBonds.length; secondIndex++) {
+      const second = visibleBonds[secondIndex];
+      if (focusAtomSet && !first.touchesFocus && !second.touchesFocus) {
+        continue;
+      }
+      if (
+        first.bond.a === second.bond.a ||
+        first.bond.a === second.bond.b ||
+        first.bond.b === second.bond.a ||
+        first.bond.b === second.bond.b
+      ) {
+        continue;
+      }
+      if (segmentsProperlyIntersect(first.firstPosition, first.secondPosition, second.firstPosition, second.secondPosition)) {
+        crossings.push({
+          firstBondId: first.bond.id,
+          secondBondId: second.bond.id,
+          firstAtomIds: [first.bond.a, first.bond.b],
+          secondAtomIds: [second.bond.a, second.bond.b]
+        });
+      }
+    }
+  }
+
+  return crossings;
+}
+
+/**
+ * Counts visible heavy-atom covalent bond crossings.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{focusAtomIds?: Iterable<string>}} [options] - Optional atoms whose incident bonds should be rescored.
+ * @returns {number} Number of strictly crossing visible heavy bond pairs.
+ */
+export function countVisibleHeavyBondCrossings(layoutGraph, coords, options = {}) {
+  return findVisibleHeavyBondCrossings(layoutGraph, coords, options).length;
 }
 
 /**
@@ -1391,6 +1461,55 @@ export function measureTrigonalDistortion(layoutGraph, coords, options = {}) {
       continue;
     }
     const deviation = measureThreeCoordinateDeviation(coords, covalentBonds, atomId, () => undefined);
+    centerCount++;
+    totalDeviation += deviation;
+    maxDeviation = Math.max(maxDeviation, deviation);
+  }
+
+  return {
+    centerCount,
+    totalDeviation,
+    maxDeviation
+  };
+}
+
+/**
+ * Measures distortion at visible divalent centers that should keep a simple
+ * 120-degree zigzag continuation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{focusAtomIds?: Set<string>|null}} [options] - Optional local scoring focus.
+ * @returns {{centerCount: number, totalDeviation: number, maxDeviation: number}} Continuation distortion statistics.
+ */
+export function measureDivalentContinuationDistortion(layoutGraph, coords, options = {}) {
+  const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
+  let centerCount = 0;
+  let totalDeviation = 0;
+  let maxDeviation = 0;
+  const idealSeparation = (2 * Math.PI) / 3;
+
+  for (const atomId of coords.keys()) {
+    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    if (focusAtomIds && !focusAtomIds.has(atomId)) {
+      continue;
+    }
+    const covalentBonds = visibleCovalentBonds(layoutGraph, coords, atomId);
+    if (!shouldMeasureDivalentContinuationDistortionAtCenter(layoutGraph, atomId, covalentBonds)) {
+      continue;
+    }
+    const atomPosition = coords.get(atomId);
+    const firstNeighborPosition = coords.get(covalentBonds[0].neighborAtomId);
+    const secondNeighborPosition = coords.get(covalentBonds[1].neighborAtomId);
+    if (!atomPosition || !firstNeighborPosition || !secondNeighborPosition) {
+      continue;
+    }
+    const bondAngle = angularDifference(
+      angleOf(sub(firstNeighborPosition, atomPosition)),
+      angleOf(sub(secondNeighborPosition, atomPosition))
+    );
+    const deviation = (bondAngle - idealSeparation) ** 2;
     centerCount++;
     totalDeviation += deviation;
     maxDeviation = Math.max(maxDeviation, deviation);

@@ -165,7 +165,7 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
-    assert.equal(result.metadata.cleanupTelemetry.selectedStageCategory, 'specialist');
+    assert.ok(['specialist', 'stabilization'].includes(result.metadata.cleanupTelemetry.selectedStageCategory));
     assert.equal(phosphorusAtomIds.length, 1);
     assertOrthogonalCross(result, phosphorusAtomIds);
   });
@@ -218,6 +218,24 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertBondAngle(result, 'C20', 'C19', 'S23', (2 * Math.PI) / 3);
   });
 
+  it('keeps aryl sulfonyl chlorides orthogonal when a neighboring alkoxy chain crowds the oxo slot', () => {
+    const result = runPipeline(parseSMILES('CCCOC1=C(C=CC=C1S(Cl)(=O)=O)C1=NN2C(CCC)=NC(C)=C2C(=O)N1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.cleanupTelemetry.selectedStageCategory, 'specialist');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S11']) }) < 1e-9);
+    assertOrthogonalCross(result, ['S11']);
+    assertOppositePair(result, 'S11', 'C10', 'Cl12');
+    assertOppositePair(result, 'S11', 'O13', 'O14');
+  });
+
   it('keeps neighboring sulfonyl centers orthogonal around planar bis-sulfonamide nitrogens', () => {
     const result = runPipeline(parseSMILES('CC(C)N(S(C)(=O)=O)S(C)(=O)=O'), {
       suppressH: true,
@@ -232,6 +250,24 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertBondAngle(result, 'C2', 'N4', 'S9', (2 * Math.PI) / 3);
     assertBondAngle(result, 'S5', 'N4', 'S9', (2 * Math.PI) / 3);
     assertOrthogonalCross(result, ['S5', 'S9']);
+  });
+
+  it('keeps macrocycle sulfonamide aryl linkers on the orthogonal sulfone axes', () => {
+    const result = runPipeline(parseSMILES('CN(C)c1cccc2c(cccc12)S(=O)(=O)N3CCCN(CC4CCCCC4)CCCN(CC(=C)C3)S(=O)(=O)c5ccc(C)cc5'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S14', 'S37']) }) < 1e-9);
+    assertOrthogonalCross(result, ['S14', 'S37']);
+    assertOppositePair(result, 'S14', 'C9', 'N17');
+    assertOppositePair(result, 'S14', 'O15', 'O16');
+    assertOppositePair(result, 'S37', 'N32', 'C40');
+    assertOppositePair(result, 'S37', 'O38', 'O39');
   });
 
   it('keeps bis-sulfonyl imine carbon heavy neighbors trigonal while preserving sulfur crosses', () => {

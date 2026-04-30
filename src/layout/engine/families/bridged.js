@@ -9,7 +9,7 @@ import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { orientBridgedSeed, projectBridgePaths } from './bridge-projection.js';
 import { assignBondValidationClass } from '../placement/bond-validation.js';
 import { placeRemainingBranches } from '../placement/branch-placement.js';
-import { placeTemplateCoords } from '../scaffold/template-placement.js';
+import { placeTemplateCoords } from '../templates/placement.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
 
 const COMPACT_BRIDGED_KK_THRESHOLD = 0.02;
@@ -43,6 +43,18 @@ const FUSED_CYCLOHEXANE_BRANCH_SLOT_BLOCKER_FACTOR = 0.65;
 const FUSED_CYCLOHEXANE_BRANCH_PREVIEW_OVERLAP_FACTOR = 0.55;
 const SATURATED_BRIDGED_CYCLOHEXANE_BRIDGE_HEIGHT_FACTORS = Object.freeze([1, -1]);
 const SATURATED_BRIDGED_CYCLOHEXANE_MIN_SHARED_ATOMS = 3;
+const SATURATED_BRIDGED_RING_REGULARIZATION_DAMPING_FACTORS = Object.freeze([0.35, 0.55, 0.7]);
+const SATURATED_BRIDGED_RING_REGULARIZATION_MAX_ITERATIONS = 50;
+const SATURATED_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION = Math.PI / 12;
+const SATURATED_BRIDGED_RING_REGULARIZATION_MIN_BOND_DEVIATION_FACTOR = 0.08;
+const SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MIN_ANGLE_DEVIATION = Math.PI / 18;
+const SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MAX_BOND_DEVIATION_FACTOR = 0.05;
+const SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MAX_PASSES = 3;
+const SATURATED_BRIDGED_RING_JUNCTION_BALANCE_DIRECTION_COUNT = 12;
+const SATURATED_BRIDGED_RING_JUNCTION_BALANCE_STEP_FACTORS = Object.freeze([0.04, 0.027, 0.017, 0.01, 0.005, 0.003]);
+const SATURATED_BRIDGED_RING_SHAPE_BALANCE_MAX_PASSES = 3;
+const SATURATED_BRIDGED_RING_SHAPE_BALANCE_DIRECTION_COUNT = 12;
+const SATURATED_BRIDGED_RING_SHAPE_BALANCE_STEP_FACTORS = Object.freeze([0.027, 0.017, 0.01, 0.005]);
 
 /**
  * Returns tuned KK options for small unmatched bridged systems.
@@ -1000,7 +1012,7 @@ function fusedCyclohexaneShapeScore(layoutGraph, atomIds, pair, coords, bondLeng
  * @param {object} ring - Ring descriptor.
  * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
  * @param {number} bondLength - Target bond length.
- * @returns {{maxBondDeviation: number, maxAngleDeviation: number, totalScore: number}|null} Regularity score, or null for incomplete coordinates.
+ * @returns {{maxBondDeviation: number, maxAngleDeviation: number, totalBondDeviation: number, totalAngleDeviation: number, totalScore: number}|null} Regularity score, or null for incomplete coordinates.
  */
 function regularRingShapeScore(ring, coords, bondLength) {
   if (!ring || ring.atomIds.length < 3) {
@@ -1039,8 +1051,506 @@ function regularRingShapeScore(ring, coords, bondLength) {
   return {
     maxBondDeviation,
     maxAngleDeviation,
+    totalBondDeviation,
+    totalAngleDeviation,
     totalScore: maxBondDeviation * 100000 + maxAngleDeviation * 1000 + totalBondDeviation + totalAngleDeviation
   };
+}
+
+/**
+ * Scores all saturated bridged rings against regular-polygon bond and angle targets.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{maxBondDeviation: number, maxAngleDeviation: number, totalBondDeviation: number, totalAngleDeviation: number, totalScore: number}|null} Aggregate regularity score, or null when incomplete.
+ */
+function saturatedBridgedRingShapeScore(rings, coords, bondLength) {
+  let maxBondDeviation = 0;
+  let maxAngleDeviation = 0;
+  let totalBondDeviation = 0;
+  let totalAngleDeviation = 0;
+  let totalScore = 0;
+
+  for (const ring of rings) {
+    const ringScore = regularRingShapeScore(ring, coords, bondLength);
+    if (!ringScore) {
+      return null;
+    }
+    maxBondDeviation = Math.max(maxBondDeviation, ringScore.maxBondDeviation);
+    maxAngleDeviation = Math.max(maxAngleDeviation, ringScore.maxAngleDeviation);
+    totalBondDeviation += ringScore.totalBondDeviation;
+    totalAngleDeviation += ringScore.totalAngleDeviation;
+    totalScore += ringScore.totalScore;
+  }
+
+  return {
+    maxBondDeviation,
+    maxAngleDeviation,
+    totalBondDeviation,
+    totalAngleDeviation,
+    totalScore
+  };
+}
+
+/**
+ * Returns non-fixed atoms shared by multiple rings in a compact bridged system.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @returns {string[]} Shared ring atom IDs eligible for local junction balancing.
+ */
+function saturatedBridgedRingJunctionAtomIds(layoutGraph, rings) {
+  const ringMembershipCounts = new Map();
+  for (const ring of rings) {
+    for (const atomId of ring.atomIds) {
+      ringMembershipCounts.set(atomId, (ringMembershipCounts.get(atomId) ?? 0) + 1);
+    }
+  }
+  return [...ringMembershipCounts]
+    .filter(([, count]) => count > 1)
+    .map(([atomId]) => atomId)
+    .filter(atomId => !layoutGraph.fixedCoords.has(atomId));
+}
+
+/**
+ * Returns non-fixed atoms in the compact bridged ring system.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @returns {string[]} Ring atom IDs eligible for bounded shape balancing.
+ */
+function saturatedBridgedRingBalanceAtomIds(layoutGraph, rings) {
+  const atomIds = [];
+  const seenAtomIds = new Set();
+  for (const ring of rings) {
+    for (const atomId of ring.atomIds) {
+      if (seenAtomIds.has(atomId) || layoutGraph.fixedCoords.has(atomId)) {
+        continue;
+      }
+      seenAtomIds.add(atomId);
+      atomIds.push(atomId);
+    }
+  }
+  return atomIds;
+}
+
+/**
+ * Returns whether a compact bridged system still needs local shared-junction
+ * angle balancing after regular-polygon relaxation.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {{maxAngleDeviation: number}|null} shapeScore - Current aggregate ring-shape score.
+ * @returns {boolean} True when shared-junction balancing should run.
+ */
+function shouldBalanceSaturatedBridgedRingJunctions(layoutGraph, rings, atomIds, shapeScore) {
+  return Boolean(
+    shapeScore
+    && rings.length > 1
+    && atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit
+    && shapeScore.maxAngleDeviation > SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MIN_ANGLE_DEVIATION
+    && !containsMetalAtom(layoutGraph, atomIds)
+    && !rings.some(ring => ring.aromatic)
+    && saturatedBridgedCyclohexaneCoreRings(rings).length === 0
+    && saturatedBridgedRingJunctionAtomIds(layoutGraph, rings).length > 0
+  );
+}
+
+/**
+ * Returns whether a local shared-junction candidate improves bridged ring
+ * angles without exceeding the small bond-deviation allowance.
+ * @param {object|null} candidateAudit - Candidate audit summary.
+ * @param {object|null} incumbentAudit - Incumbent audit summary.
+ * @param {{maxBondDeviation: number, maxAngleDeviation: number, totalBondDeviation: number, totalAngleDeviation: number}|null} candidateScore - Candidate ring-shape score.
+ * @param {{maxBondDeviation: number, maxAngleDeviation: number, totalBondDeviation: number, totalAngleDeviation: number}|null} incumbentScore - Incumbent ring-shape score.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when the candidate should replace the incumbent.
+ */
+function shouldAcceptSaturatedBridgedRingJunctionBalance(candidateAudit, incumbentAudit, candidateScore, incumbentScore, bondLength) {
+  if (!candidateAudit || !incumbentAudit || !candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateAudit.ok !== true) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  const maxAllowedBondDeviation = bondLength * SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MAX_BOND_DEVIATION_FACTOR;
+  if (candidateScore.maxBondDeviation > maxAllowedBondDeviation || candidateAudit.maxBondLengthDeviation > maxAllowedBondDeviation) {
+    return false;
+  }
+  if (candidateScore.maxAngleDeviation < incumbentScore.maxAngleDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.maxAngleDeviation > incumbentScore.maxAngleDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateScore.totalAngleDeviation < incumbentScore.totalAngleDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.totalAngleDeviation > incumbentScore.totalAngleDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateScore.maxBondDeviation < incumbentScore.maxBondDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.maxBondDeviation > incumbentScore.maxBondDeviation + 1e-9) {
+    return false;
+  }
+  return candidateScore.totalBondDeviation < incumbentScore.totalBondDeviation - 1e-9;
+}
+
+/**
+ * Gently nudges shared bridged-ring junction atoms to distribute unavoidable
+ * angle strain instead of leaving one ring visibly kinked.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Balanced coordinates when accepted, otherwise the original map.
+ */
+function balanceSaturatedBridgedRingJunctionAngles(layoutGraph, rings, atomIds, coords, bondLength) {
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+  let bestScore = saturatedBridgedRingShapeScore(rings, coords, bondLength);
+  if (!bestAudit || !shouldBalanceSaturatedBridgedRingJunctions(layoutGraph, rings, atomIds, bestScore)) {
+    return coords;
+  }
+
+  const junctionAtomIds = saturatedBridgedRingJunctionAtomIds(layoutGraph, rings);
+  for (let pass = 0; pass < SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MAX_PASSES; pass++) {
+    let acceptedInPass = false;
+    for (const atomId of junctionAtomIds) {
+      const basePosition = bestCoords.get(atomId);
+      if (!basePosition) {
+        continue;
+      }
+      for (const stepFactor of SATURATED_BRIDGED_RING_JUNCTION_BALANCE_STEP_FACTORS) {
+        const step = bondLength * stepFactor;
+        for (let directionIndex = 0; directionIndex < SATURATED_BRIDGED_RING_JUNCTION_BALANCE_DIRECTION_COUNT; directionIndex++) {
+          const angle = (2 * Math.PI * directionIndex) / SATURATED_BRIDGED_RING_JUNCTION_BALANCE_DIRECTION_COUNT;
+          const candidateCoords = cloneCoords(bestCoords);
+          candidateCoords.set(atomId, {
+            x: basePosition.x + Math.cos(angle) * step,
+            y: basePosition.y + Math.sin(angle) * step
+          });
+          const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+          const candidateScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
+          if (shouldAcceptSaturatedBridgedRingJunctionBalance(candidateAudit, bestAudit, candidateScore, bestScore, bondLength)) {
+            bestCoords = candidateCoords;
+            bestAudit = candidateAudit;
+            bestScore = candidateScore;
+            acceptedInPass = true;
+          }
+        }
+      }
+    }
+    if (!acceptedInPass) {
+      break;
+    }
+  }
+
+  return bestCoords;
+}
+
+/**
+ * Returns whether compact bridged rings still need whole-ring shape balancing
+ * after shared-junction balancing has run.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {{maxBondDeviation: number, maxAngleDeviation: number}|null} shapeScore - Current aggregate ring-shape score.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when bounded whole-ring balancing should run.
+ */
+function shouldBalanceSaturatedBridgedRingShape(layoutGraph, rings, atomIds, shapeScore, bondLength) {
+  return Boolean(
+    shapeScore
+    && rings.length > 1
+    && atomIds.length <= BRIDGED_KK_LIMITS.fastAtomLimit
+    && !containsMetalAtom(layoutGraph, atomIds)
+    && !rings.some(ring => ring.aromatic)
+    && saturatedBridgedCyclohexaneCoreRings(rings).length === 0
+    && saturatedBridgedRingBalanceAtomIds(layoutGraph, rings).length > 0
+    && (
+      shapeScore.maxAngleDeviation > SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MIN_ANGLE_DEVIATION
+      || shapeScore.maxBondDeviation > bondLength * SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MAX_BOND_DEVIATION_FACTOR
+    )
+  );
+}
+
+/**
+ * Searches bounded single-atom nudges for a better saturated bridged-ring shape.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {string[]} balanceAtomIds - Candidate atom IDs to nudge.
+ * @param {Map<string, {x: number, y: number}>} coords - Starting coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @param {(candidateScore: object, incumbentScore: object) => boolean} shouldAcceptScore - Shape-score comparator.
+ * @returns {{coords: Map<string, {x: number, y: number}>, score: object, audit: object}|null} Best accepted result, or null when incomplete.
+ */
+function searchSaturatedBridgedRingShapeBalance(layoutGraph, rings, atomIds, balanceAtomIds, coords, bondLength, shouldAcceptScore) {
+  let bestCoords = coords;
+  let bestScore = saturatedBridgedRingShapeScore(rings, coords, bondLength);
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+  if (!bestScore || !bestAudit) {
+    return null;
+  }
+
+  for (let pass = 0; pass < SATURATED_BRIDGED_RING_SHAPE_BALANCE_MAX_PASSES; pass++) {
+    let acceptedInPass = false;
+    for (const atomId of balanceAtomIds) {
+      const basePosition = bestCoords.get(atomId);
+      if (!basePosition) {
+        continue;
+      }
+      for (const stepFactor of SATURATED_BRIDGED_RING_SHAPE_BALANCE_STEP_FACTORS) {
+        const step = bondLength * stepFactor;
+        for (let directionIndex = 0; directionIndex < SATURATED_BRIDGED_RING_SHAPE_BALANCE_DIRECTION_COUNT; directionIndex++) {
+          const angle = (2 * Math.PI * directionIndex) / SATURATED_BRIDGED_RING_SHAPE_BALANCE_DIRECTION_COUNT;
+          const candidateCoords = cloneCoords(bestCoords);
+          candidateCoords.set(atomId, {
+            x: basePosition.x + Math.cos(angle) * step,
+            y: basePosition.y + Math.sin(angle) * step
+          });
+          const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+          const candidateScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
+          if (!candidateAudit || candidateAudit.ok !== true || !candidateScore || !shouldAcceptScore(candidateScore, bestScore)) {
+            continue;
+          }
+          bestCoords = candidateCoords;
+          bestScore = candidateScore;
+          bestAudit = candidateAudit;
+          acceptedInPass = true;
+        }
+      }
+    }
+    if (!acceptedInPass) {
+      break;
+    }
+  }
+
+  return {
+    coords: bestCoords,
+    score: bestScore,
+    audit: bestAudit
+  };
+}
+
+/**
+ * Rebalances compact bridged rings whose unavoidable shared-junction strain has
+ * left a stretched bond and a visible local kink.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Balanced coordinates when accepted, otherwise the original map.
+ */
+function balanceSaturatedBridgedRingShape(layoutGraph, rings, atomIds, coords, bondLength) {
+  const initialScore = saturatedBridgedRingShapeScore(rings, coords, bondLength);
+  const initialAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+  if (!initialAudit || !shouldBalanceSaturatedBridgedRingShape(layoutGraph, rings, atomIds, initialScore, bondLength)) {
+    return coords;
+  }
+
+  const balanceAtomIds = saturatedBridgedRingBalanceAtomIds(layoutGraph, rings);
+  const maxAllowedBondDeviation = bondLength * SATURATED_BRIDGED_RING_JUNCTION_BALANCE_MAX_BOND_DEVIATION_FACTOR;
+  const bondBalanced = searchSaturatedBridgedRingShapeBalance(
+    layoutGraph,
+    rings,
+    atomIds,
+    balanceAtomIds,
+    coords,
+    bondLength,
+    (candidateScore, incumbentScore) => (
+      candidateScore.maxAngleDeviation <= initialScore.maxAngleDeviation + 1e-9
+      && (
+        candidateScore.maxBondDeviation < incumbentScore.maxBondDeviation - 1e-9
+        || (
+          Math.abs(candidateScore.maxBondDeviation - incumbentScore.maxBondDeviation) <= 1e-9
+          && candidateScore.totalBondDeviation < incumbentScore.totalBondDeviation - 1e-9
+        )
+      )
+    )
+  );
+  if (!bondBalanced) {
+    return coords;
+  }
+
+  const angleBalanced = searchSaturatedBridgedRingShapeBalance(
+    layoutGraph,
+    rings,
+    atomIds,
+    balanceAtomIds,
+    bondBalanced.coords,
+    bondLength,
+    (candidateScore, incumbentScore) => (
+      candidateScore.maxBondDeviation <= maxAllowedBondDeviation
+      && (
+        candidateScore.maxAngleDeviation < incumbentScore.maxAngleDeviation - 1e-9
+        || (
+          Math.abs(candidateScore.maxAngleDeviation - incumbentScore.maxAngleDeviation) <= 1e-9
+          && candidateScore.totalAngleDeviation < incumbentScore.totalAngleDeviation - 1e-9
+        )
+      )
+    )
+  );
+  if (
+    !angleBalanced
+    || angleBalanced.score.maxBondDeviation > maxAllowedBondDeviation
+    || angleBalanced.score.maxAngleDeviation >= initialScore.maxAngleDeviation - 1e-9
+    || angleBalanced.score.totalAngleDeviation >= initialScore.totalAngleDeviation - 1e-9
+  ) {
+    return coords;
+  }
+
+  return angleBalanced.coords;
+}
+
+/**
+ * Returns whether compact saturated bridged rings are distorted enough to try
+ * regular-polygon relaxation after the KK/projection fallback.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {{maxBondDeviation: number, maxAngleDeviation: number}|null} shapeScore - Current aggregate ring-shape score.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when bounded saturated-ring regularization should run.
+ */
+function shouldRegularizeSaturatedBridgedRings(layoutGraph, rings, atomIds, shapeScore, bondLength) {
+  if (!shapeScore || rings.length <= 1 || atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit) {
+    return false;
+  }
+  if (containsMetalAtom(layoutGraph, atomIds) || rings.some(ring => ring.aromatic)) {
+    return false;
+  }
+  return (
+    shapeScore.maxAngleDeviation > SATURATED_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION
+    || shapeScore.maxBondDeviation > bondLength * SATURATED_BRIDGED_RING_REGULARIZATION_MIN_BOND_DEVIATION_FACTOR
+  );
+}
+
+/**
+ * Moves each ring atom toward the averaged regular-polygon targets from its
+ * incident rings, preserving fixed atoms.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {number} damping - Fraction of the target movement to apply.
+ * @returns {Map<string, {x: number, y: number}>|null} Regularized coordinate candidate, or null when no targets exist.
+ */
+function buildSaturatedBridgedRingRegularizedCoords(layoutGraph, rings, coords, bondLength, damping) {
+  const targetSums = new Map();
+  const targetCounts = new Map();
+
+  for (const ring of rings) {
+    const targets = fitRegularRingTargets(ring, coords, bondLength);
+    if (!targets) {
+      return null;
+    }
+    for (const [atomId, position] of targets) {
+      const sum = targetSums.get(atomId) ?? { x: 0, y: 0 };
+      sum.x += position.x;
+      sum.y += position.y;
+      targetSums.set(atomId, sum);
+      targetCounts.set(atomId, (targetCounts.get(atomId) ?? 0) + 1);
+    }
+  }
+
+  if (targetSums.size === 0) {
+    return null;
+  }
+
+  const candidateCoords = cloneCoords(coords);
+  for (const [atomId, sum] of targetSums) {
+    if (layoutGraph.fixedCoords.has(atomId)) {
+      continue;
+    }
+    const current = coords.get(atomId);
+    const count = targetCounts.get(atomId) ?? 0;
+    if (!current || count <= 0) {
+      continue;
+    }
+    const target = {
+      x: sum.x / count,
+      y: sum.y / count
+    };
+    candidateCoords.set(atomId, {
+      x: current.x * (1 - damping) + target.x * damping,
+      y: current.y * (1 - damping) + target.y * damping
+    });
+  }
+
+  return candidateCoords;
+}
+
+/**
+ * Returns whether a saturated bridged-ring regularization candidate improves
+ * ring shape without making the audited layout worse.
+ * @param {object|null} candidateAudit - Candidate audit summary.
+ * @param {object|null} incumbentAudit - Incumbent audit summary.
+ * @param {{totalScore: number}|null} candidateScore - Candidate ring-shape score.
+ * @param {{totalScore: number}|null} incumbentScore - Incumbent ring-shape score.
+ * @returns {boolean} True when the candidate should replace the incumbent.
+ */
+function shouldAcceptSaturatedBridgedRingRegularizedCoords(candidateAudit, incumbentAudit, candidateScore, incumbentScore) {
+  if (!candidateAudit || !incumbentAudit || !candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateAudit.ok !== true) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  return candidateScore.totalScore < incumbentScore.totalScore - 1e-9;
+}
+
+/**
+ * Iteratively regularizes compact saturated bridged rings after KK placement.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Regularized coordinates when accepted, otherwise the original map.
+ */
+function regularizeSaturatedBridgedRings(layoutGraph, rings, atomIds, coords, bondLength) {
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+  let bestScore = saturatedBridgedRingShapeScore(rings, coords, bondLength);
+  if (!bestAudit || !shouldRegularizeSaturatedBridgedRings(layoutGraph, rings, atomIds, bestScore, bondLength)) {
+    return coords;
+  }
+
+  for (const damping of SATURATED_BRIDGED_RING_REGULARIZATION_DAMPING_FACTORS) {
+    let candidateCoords = coords;
+    for (let iteration = 0; iteration < SATURATED_BRIDGED_RING_REGULARIZATION_MAX_ITERATIONS; iteration++) {
+      const nextCoords = buildSaturatedBridgedRingRegularizedCoords(layoutGraph, rings, candidateCoords, bondLength, damping);
+      if (!nextCoords) {
+        break;
+      }
+      candidateCoords = nextCoords;
+      const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+      const candidateScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
+      if (shouldAcceptSaturatedBridgedRingRegularizedCoords(candidateAudit, bestAudit, candidateScore, bestScore)) {
+        bestCoords = candidateCoords;
+        bestAudit = candidateAudit;
+        bestScore = candidateScore;
+      }
+    }
+  }
+
+  return bestCoords;
 }
 
 function shouldAcceptFusedCyclohexaneCoords(candidateAudit, incumbentAudit, candidateScore, incumbentScore) {
@@ -1490,6 +2000,9 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
   }
   selectedCoords = regularizeSaturatedBridgedCyclohexaneCores(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = regularizeFusedAromaticCyclohexaneCores(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = regularizeSaturatedBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = balanceSaturatedBridgedRingJunctionAngles(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = balanceSaturatedBridgedRingShape(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = regularizeAromaticBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
 
   const ringCenters = new Map();

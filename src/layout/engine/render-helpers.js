@@ -1,6 +1,7 @@
 /** @module render-helpers */
 
 import { getRingAtomIds } from './topology/ring-analysis.js';
+import { angularDifference, wrapAngleUnsigned } from './geometry/vec2.js';
 
 export const CPK = {
   H: '#333333',
@@ -459,23 +460,10 @@ export function getAtomLabel(atom, hCounts, toSVG, molecule) {
   return avgDx > 0 ? hFragment + symbol : symbol + hFragment;
 }
 
-function normalizeAngle(angle) {
-  let result = angle % TAU;
-  if (result < 0) {
-    result += TAU;
-  }
-  return result;
-}
-
-function angularDistance(firstAngle, secondAngle) {
-  const delta = Math.abs(normalizeAngle(firstAngle) - normalizeAngle(secondAngle));
-  return Math.min(delta, TAU - delta);
-}
-
 function dedupeAngles(angles, tolerance = 1e-3) {
   const sorted = angles
     .filter(Number.isFinite)
-    .map(normalizeAngle)
+    .map(wrapAngleUnsigned)
     .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
   const unique = [];
   for (const angle of sorted) {
@@ -548,7 +536,7 @@ function chooseLargestGapBisector(angles) {
     return -Math.PI / 2;
   }
   if (normalized.length === 1) {
-    return normalizeAngle(normalized[0] + Math.PI);
+    return wrapAngleUnsigned(normalized[0] + Math.PI);
   }
   let bestAngle = normalized[0];
   let bestGap = -1;
@@ -558,7 +546,7 @@ function chooseLargestGapBisector(angles) {
     const gap = end - start;
     if (gap > bestGap) {
       bestGap = gap;
-      bestAngle = normalizeAngle(start + gap / 2);
+      bestAngle = wrapAngleUnsigned(start + gap / 2);
     }
   }
   return bestAngle;
@@ -570,7 +558,7 @@ function minimumAngularClearance(angle, occupiedAngles) {
   }
   let best = Infinity;
   for (const occupiedAngle of occupiedAngles) {
-    best = Math.min(best, angularDistance(angle, occupiedAngle));
+    best = Math.min(best, angularDifference(angle, occupiedAngle));
   }
   return best;
 }
@@ -585,10 +573,10 @@ function choosePlacementAngles(count, occupiedAngles, preferredAngle = -Math.PI 
     let bestAngle = preferredAngle;
     let bestScore = -1;
     const candidates = new Set([
-      normalizeAngle(preferredAngle),
-      normalizeAngle(preferredAngle + Math.PI / 2),
-      normalizeAngle(preferredAngle - Math.PI / 2),
-      normalizeAngle(preferredAngle + Math.PI),
+      wrapAngleUnsigned(preferredAngle),
+      wrapAngleUnsigned(preferredAngle + Math.PI / 2),
+      wrapAngleUnsigned(preferredAngle - Math.PI / 2),
+      wrapAngleUnsigned(preferredAngle + Math.PI),
       chooseLargestGapBisector(working)
     ]);
     const sorted = [...working].sort((firstAngle, secondAngle) => firstAngle - secondAngle);
@@ -596,16 +584,16 @@ function choosePlacementAngles(count, occupiedAngles, preferredAngle = -Math.PI 
       for (let gapIndex = 0; gapIndex < sorted.length; gapIndex++) {
         const start = sorted[gapIndex];
         const end = gapIndex === sorted.length - 1 ? sorted[0] + TAU : sorted[gapIndex + 1];
-        candidates.add(normalizeAngle(start + (end - start) / 2));
+        candidates.add(wrapAngleUnsigned(start + (end - start) / 2));
       }
     }
     if (candidates.size === 0) {
-      candidates.add(normalizeAngle(preferredAngle + (TAU * index) / count));
+      candidates.add(wrapAngleUnsigned(preferredAngle + (TAU * index) / count));
     }
     for (const candidate of candidates) {
       const score = minimumAngularClearance(candidate, working);
-      const preferredDistance = angularDistance(candidate, preferredAngle);
-      if (score > bestScore || (Math.abs(score - bestScore) <= 1e-6 && preferredDistance < angularDistance(bestAngle, preferredAngle))) {
+      const preferredDistance = angularDifference(candidate, preferredAngle);
+      if (score > bestScore || (Math.abs(score - bestScore) <= 1e-6 && preferredDistance < angularDifference(bestAngle, preferredAngle))) {
         bestScore = score;
         bestAngle = candidate;
       }
@@ -747,14 +735,14 @@ export function computeChargeBadgePlacement(
 
   const center = pointForAtom(atom);
   const occupiedAngles = [...occupiedNeighborAngles(atom, molecule, pointForAtom), ...labelOccupiedAngles(label), ...extraOccupiedAngles];
-  const candidates = [preferredAngle, -Math.PI / 4, Math.PI / 4, (-3 * Math.PI) / 4, (3 * Math.PI) / 4, -Math.PI / 2, Math.PI / 2, 0, Math.PI].map(normalizeAngle);
+  const candidates = [preferredAngle, -Math.PI / 4, Math.PI / 4, (-3 * Math.PI) / 4, (3 * Math.PI) / 4, -Math.PI / 2, Math.PI / 2, 0, Math.PI].map(wrapAngleUnsigned);
 
   let bestAngle = candidates[0];
   let bestScore = -1;
   for (const candidate of candidates) {
     const score = minimumAngularClearance(candidate, occupiedAngles);
-    const preferredDistance = angularDistance(candidate, preferredAngle);
-    if (score > bestScore || (Math.abs(score - bestScore) <= 1e-6 && preferredDistance < angularDistance(bestAngle, preferredAngle))) {
+    const preferredDistance = angularDifference(candidate, preferredAngle);
+    if (score > bestScore || (Math.abs(score - bestScore) <= 1e-6 && preferredDistance < angularDifference(bestAngle, preferredAngle))) {
       bestScore = score;
       bestAngle = candidate;
     }

@@ -6,18 +6,14 @@ import { add, angleOf, centroid, distance, fromAngle, normalize, perpLeft, rotat
 import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { assignBondValidationClass, mergeBondValidationClasses } from '../placement/bond-validation.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
+import { isMetalAtom as isMetalSourceAtom } from '../topology/metal-centers.js';
 import { buildSliceAdjacency, classifyAtomSliceFamily, createAtomSlice, layoutAtomSlice, ringConnectionsForSlice, ringsForAtomSlice } from '../placement/atom-slice.js';
 import { organometallicArrangementSpecs, organometallicGeometryKind } from './organometallic-geometry.js';
 
 const TRIGONAL_ANCHOR_ANGLE = (2 * Math.PI) / 3;
 
 function isMetalAtom(layoutGraph, atomId) {
-  const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
-  if (!atom || atom.name === 'H') {
-    return false;
-  }
-  const group = atom.properties.group ?? 0;
-  return group >= 3 && group <= 12;
+  return isMetalSourceAtom(layoutGraph.sourceMolecule.atoms.get(atomId));
 }
 
 function sortAtomIds(layoutGraph, atomIds) {

@@ -2,6 +2,8 @@
 
 import { compareCanonicalAtomIds } from '../../topology/canonical-order.js';
 
+export { wrapAngle as normalizeSignedAngle } from '../../geometry/vec2.js';
+
 export const BRANCH_COMPLEXITY_LIMITS = Object.freeze({
   subtreeFloor: 4,
   mediumMaxPermutations: 6,
@@ -23,22 +25,6 @@ export const ARRANGEMENT_IDEAL_GEOMETRY_WEIGHT = 20;
 export const SMALL_RING_EXTERIOR_GAP_WEIGHT = 80;
 export const CROSS_LIKE_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
 export const EXACT_SIMPLE_ACYCLIC_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
-
-/**
- * Normalizes an angle into the signed `(-pi, pi]` range.
- * @param {number} angle - Input angle in radians.
- * @returns {number} Wrapped signed angle.
- */
-export function normalizeSignedAngle(angle) {
-  let wrappedAngle = angle;
-  while (wrappedAngle > Math.PI) {
-    wrappedAngle -= 2 * Math.PI;
-  }
-  while (wrappedAngle <= -Math.PI) {
-    wrappedAngle += 2 * Math.PI;
-  }
-  return wrappedAngle;
-}
 
 /**
  * Sorts atom IDs by canonical rank with lexical fallback stability.

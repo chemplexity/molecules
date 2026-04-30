@@ -41,6 +41,27 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   if (candidate.audit.labelOverlapCount !== incumbent.audit.labelOverlapCount) {
     return candidate.audit.labelOverlapCount < incumbent.audit.labelOverlapCount;
   }
+  if ((candidate.divalentContinuationPenalty ?? 0) > (incumbent.divalentContinuationPenalty ?? 0) + 1e-9) {
+    return false;
+  }
+  if (allowPresentationTieBreak && Math.abs((candidate.divalentContinuationPenalty ?? 0) - (incumbent.divalentContinuationPenalty ?? 0)) > 1e-9) {
+    return (candidate.divalentContinuationPenalty ?? 0) < (incumbent.divalentContinuationPenalty ?? 0);
+  }
+  if (allowPresentationTieBreak && Math.abs((candidate.omittedHydrogenTrigonalPenalty ?? 0) - (incumbent.omittedHydrogenTrigonalPenalty ?? 0)) > 1e-9) {
+    return (candidate.omittedHydrogenTrigonalPenalty ?? 0) < (incumbent.omittedHydrogenTrigonalPenalty ?? 0);
+  }
+  if (allowPresentationTieBreak && Math.abs((candidate.terminalHeteroOutwardMaxPenalty ?? 0) - (incumbent.terminalHeteroOutwardMaxPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalHeteroOutwardMaxPenalty ?? 0) < (incumbent.terminalHeteroOutwardMaxPenalty ?? 0);
+  }
+  if (allowPresentationTieBreak && Math.abs((candidate.terminalHeteroOutwardPenalty ?? 0) - (incumbent.terminalHeteroOutwardPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalHeteroOutwardPenalty ?? 0) < (incumbent.terminalHeteroOutwardPenalty ?? 0);
+  }
+  if (allowPresentationTieBreak && Math.abs((candidate.terminalMultipleBondLeafFanMaxPenalty ?? 0) - (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalMultipleBondLeafFanMaxPenalty ?? 0) < (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? 0);
+  }
+  if (allowPresentationTieBreak && Math.abs((candidate.terminalMultipleBondLeafFanPenalty ?? 0) - (incumbent.terminalMultipleBondLeafFanPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalMultipleBondLeafFanPenalty ?? 0) < (incumbent.terminalMultipleBondLeafFanPenalty ?? 0);
+  }
   if (allowPresentationTieBreak && Math.abs((candidate.attachedRingPeripheralPenalty ?? 0) - (incumbent.attachedRingPeripheralPenalty ?? 0)) > 1e-9) {
     return (candidate.attachedRingPeripheralPenalty ?? 0) < (incumbent.attachedRingPeripheralPenalty ?? 0);
   }
@@ -166,6 +187,18 @@ export function isPreferredProtectedCleanupStage(familySummary, placement, candi
   }
   if (Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
     return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
+  }
+  if (Math.abs((candidate.terminalHeteroOutwardMaxPenalty ?? 0) - (incumbent.terminalHeteroOutwardMaxPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalHeteroOutwardMaxPenalty ?? 0) < (incumbent.terminalHeteroOutwardMaxPenalty ?? 0);
+  }
+  if (Math.abs((candidate.terminalHeteroOutwardPenalty ?? 0) - (incumbent.terminalHeteroOutwardPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalHeteroOutwardPenalty ?? 0) < (incumbent.terminalHeteroOutwardPenalty ?? 0);
+  }
+  if (Math.abs((candidate.terminalMultipleBondLeafFanMaxPenalty ?? 0) - (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalMultipleBondLeafFanMaxPenalty ?? 0) < (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? 0);
+  }
+  if (Math.abs((candidate.terminalMultipleBondLeafFanPenalty ?? 0) - (incumbent.terminalMultipleBondLeafFanPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalMultipleBondLeafFanPenalty ?? 0) < (incumbent.terminalMultipleBondLeafFanPenalty ?? 0);
   }
   return false;
 }

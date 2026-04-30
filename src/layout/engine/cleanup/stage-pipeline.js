@@ -1,6 +1,10 @@
 /** @module cleanup/stage-pipeline */
 
 import { auditCleanupStage, auditFinalStereoStage, measureCleanupStagePresentationPenalty } from '../audit/stage-metrics.js';
+import {
+  measureDivalentContinuationDistortion,
+  measureThreeHeavyContinuationDistortion
+} from '../audit/invariants.js';
 import { collectProtectedEZAtomIds } from '../stereo/ez.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 import { mergeFrozenAtomIds } from './frozen-atoms.js';
@@ -23,6 +27,12 @@ import { hasSymmetryTidyNeed, tidySymmetry } from './symmetry-tidy.js';
 import { runUnifiedCleanup } from './unified-cleanup.js';
 import { applyLabelClearance } from './label-clearance.js';
 import { createStageExecutionEntry } from './stage-runner.js';
+import {
+  hasRingTerminalHeteroTidyNeed,
+  measureRingTerminalHeteroOutwardPenalty,
+  measureTerminalMultipleBondLeafFanPenalty,
+  runRingTerminalHeteroTidy
+} from './presentation/ring-terminal-hetero.js';
 
 function hasPostCleanupHook(policy, hookName) {
   return policy.postCleanupHooks?.includes(hookName) === true;
@@ -64,6 +74,13 @@ function hasPresentationCleanupNeed(layoutGraph, stageResult, options = {}) {
   return (
     (audit?.labelOverlapCount ?? 0) > 0
     || (audit?.stereoContradiction ?? false) === true
+    || (options.includeTerminalHetero === true && hasRingTerminalHeteroTidyNeed(layoutGraph, stageResult?.coords, {
+      bondLength: options.bondLength
+    }))
+    || (
+      options.includeRingSubstituent === true
+      && measureRingTerminalHeteroOutwardPenalty(layoutGraph, stageResult?.coords).maxDeviation > 1e-6
+    )
     || hasOutstandingRingPresentationNeed(layoutGraph, stageResult)
     || hasSymmetryTidyNeed(stageResult?.coords, {
       epsilon: options.symmetryEpsilon,
@@ -167,6 +184,25 @@ export function buildCleanupStageGraph(context) {
     return result;
   };
   const auditFinalStereoWithTieBreak = (candidate, incumbent) => isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true });
+  const scorePresentationTieBreakMetrics = coords => {
+    const terminalHeteroOutwardPenalty = measureRingTerminalHeteroOutwardPenalty(layoutGraph, coords);
+    const terminalMultipleBondLeafFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, coords);
+    return {
+      presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords),
+      divalentContinuationPenalty: measureDivalentContinuationDistortion(layoutGraph, coords).totalDeviation,
+      omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation,
+      attachedRingPeripheralPenalty: measureAttachedRingPeripheralFocusPenalty(layoutGraph, coords, bondLength),
+      attachedRingRootOutwardPenalty: measureAttachedRingRootOutwardPresentationPenalty(layoutGraph, coords, placement.frozenAtomIds),
+      terminalHeteroOutwardMaxPenalty: terminalHeteroOutwardPenalty.maxDeviation,
+      terminalHeteroOutwardPenalty: terminalHeteroOutwardPenalty.totalDeviation,
+      terminalMultipleBondLeafFanMaxPenalty: terminalMultipleBondLeafFanPenalty.maxDeviation,
+      terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation
+    };
+  };
+  const auditFinalStereoWithPresentationMetrics = coords => ({
+    ...auditFinalStereo(coords),
+    ...scorePresentationTieBreakMetrics(coords)
+  });
   /**
    * Returns whether specialist cleanup kept externally visible audit counts at
    * least as good as the incumbent stage.
@@ -203,6 +239,7 @@ export function buildCleanupStageGraph(context) {
    */
   const auditSpecialistStage = coords => ({
     ...auditFinalStereo(coords),
+    ...scorePresentationTieBreakMetrics(coords),
     hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, coords)
   });
   /**
@@ -221,14 +258,41 @@ export function buildCleanupStageGraph(context) {
       && auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)
     );
   };
+  const terminalHeteroRetouchComparator = (candidate, incumbent) => {
+    if (auditFinalStereoWithTieBreak(candidate, incumbent)) {
+      return true;
+    }
+    if (!candidate.audit || !incumbent?.audit || candidate.audit.ok !== true || incumbent.audit.ok !== true) {
+      return false;
+    }
+    for (const key of [
+      'bondLengthFailureCount',
+      'mildBondLengthFailureCount',
+      'severeBondLengthFailureCount',
+      'collapsedMacrocycleCount',
+      'ringSubstituentReadabilityFailureCount',
+      'inwardRingSubstituentCount',
+      'outwardAxisRingSubstituentFailureCount',
+      'severeOverlapCount'
+    ]) {
+      if ((candidate.audit[key] ?? 0) > (incumbent.audit[key] ?? 0)) {
+        return false;
+      }
+    }
+    if ((candidate.audit.stereoContradiction ?? false) && !(incumbent.audit.stereoContradiction ?? false)) {
+      return false;
+    }
+    if ((candidate.audit.labelOverlapCount ?? 0) > (incumbent.audit.labelOverlapCount ?? 0) + 1) {
+      return false;
+    }
+    return (
+      (candidate.terminalHeteroOutwardMaxPenalty ?? Number.POSITIVE_INFINITY)
+        < (incumbent.terminalHeteroOutwardMaxPenalty ?? Number.POSITIVE_INFINITY) - 1e-9
+    );
+  };
   const cleanupGeometryComparator = protectBondIntegrity
     ? (candidate, incumbent) => isPreferredProtectedCleanupStage(familySummary, placement, candidate, incumbent)
     : isPreferredCleanupGeometryStage;
-  const scorePresentationTieBreakMetrics = coords => ({
-    presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords),
-    attachedRingPeripheralPenalty: measureAttachedRingPeripheralFocusPenalty(layoutGraph, coords, bondLength),
-    attachedRingRootOutwardPenalty: measureAttachedRingRootOutwardPresentationPenalty(layoutGraph, coords, placement.frozenAtomIds)
-  });
   const scoreGeometryStage = coords => ({
     audit: auditCleanupStage(layoutGraph, coords, placement, bondLength),
     ...scorePresentationTieBreakMetrics(coords)
@@ -292,6 +356,9 @@ export function buildCleanupStageGraph(context) {
       parentStage: 'best',
       guard(_stageResults, incumbent) {
         return hasPresentationCleanupNeed(layoutGraph, incumbent, {
+          bondLength,
+          includeRingSubstituent: hasRingSubstituentHook,
+          includeTerminalHetero: hasRingTerminalHeteroHook,
           symmetryEpsilon: bondLength * 0.01
         });
       },
@@ -333,7 +400,7 @@ export function buildCleanupStageGraph(context) {
           includeRingSubstituent: hasRingSubstituentHook,
           includeTerminalHetero: hasRingTerminalHeteroHook,
           includeAttachedRingFallback: hasRingSubstituentHook,
-          scoreCoordsFn: auditFinalStereo,
+          scoreCoordsFn: auditFinalStereoWithPresentationMetrics,
           comparatorFn: auditFinalStereoWithTieBreak
         });
 
@@ -375,6 +442,11 @@ export function buildCleanupStageGraph(context) {
           presentationPenalty: presentationResult.presentationPenalty,
           attachedRingPeripheralPenalty: presentationResult.attachedRingPeripheralPenalty,
           attachedRingRootOutwardPenalty: presentationResult.attachedRingRootOutwardPenalty,
+          omittedHydrogenTrigonalPenalty: presentationResult.omittedHydrogenTrigonalPenalty,
+          terminalHeteroOutwardMaxPenalty: presentationResult.terminalHeteroOutwardMaxPenalty,
+          terminalHeteroOutwardPenalty: presentationResult.terminalHeteroOutwardPenalty,
+          terminalMultipleBondLeafFanMaxPenalty: presentationResult.terminalMultipleBondLeafFanMaxPenalty,
+          terminalMultipleBondLeafFanPenalty: presentationResult.terminalMultipleBondLeafFanPenalty,
           stabilizationRequest:
             stabilizationReasons.size > 0
               ? {
@@ -385,7 +457,7 @@ export function buildCleanupStageGraph(context) {
               : null
         };
       },
-      scoreFn: auditFinalStereo,
+      scoreFn: auditFinalStereoWithPresentationMetrics,
       comparatorFn: auditFinalStereoWithTieBreak,
     },
     {
@@ -448,8 +520,36 @@ export function buildCleanupStageGraph(context) {
         );
         return postHookCleanup;
       },
-      scoreFn: auditFinalStereo,
+      scoreFn: auditFinalStereoWithPresentationMetrics,
       comparatorFn: auditFinalStereoWithTieBreak
+    },
+    {
+      name: 'ringTerminalHeteroFinalRetouch',
+      parentStage: 'best',
+      guard(_stageResults, incumbent) {
+        return (
+          (hasRingTerminalHeteroHook || hasRingSubstituentHook)
+          && (
+            hasRingTerminalHeteroTidyNeed(layoutGraph, incumbent?.coords, { bondLength })
+            || measureRingTerminalHeteroOutwardPenalty(layoutGraph, incumbent?.coords).maxDeviation > 1e-6
+          )
+        );
+      },
+      transformFn(parentCoords, inputContext) {
+        const result = runRingTerminalHeteroTidy(layoutGraph, parentCoords, { bondLength });
+        if ((result.nudges ?? 0) <= 0) {
+          return null;
+        }
+        const [label, description] = HOOK_STEP_META['ring-terminal-hetero-tidy'];
+        inputContext.onStep?.(label, description, inputContext.copyCoords(result.coords), {
+          nudges: result.nudges,
+          finalRetouch: true
+        });
+        return result;
+      },
+      scoreFn: auditFinalStereoWithPresentationMetrics,
+      comparatorFn: terminalHeteroRetouchComparator,
+      accumulateSidecar: acceptedNudgeAccumulator('ringTerminalHeteroFinalRetouch')
     }
   ];
 

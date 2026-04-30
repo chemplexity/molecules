@@ -2,7 +2,8 @@
 
 import { measureLayoutCost } from '../audit/invariants.js';
 import { actualAlkeneStereo, highestPriorityAlkeneSubstituentId, isSupportedAnnotatedDoubleBond, smallestQualifyingStereoRing } from './ez.js';
-import { cloneCoords } from '../geometry/transforms.js';
+import { cloneCoords, rotateAround } from '../geometry/transforms.js';
+import { wrapAngle } from '../geometry/vec2.js';
 
 function collectSideAtoms(layoutGraph, startAtomId, blockedAtomId) {
   const sideAtomIds = new Set();
@@ -205,17 +206,6 @@ function angleOf(firstPoint, secondPoint) {
   return Math.atan2(secondPoint.y - firstPoint.y, secondPoint.x - firstPoint.x);
 }
 
-function normalizeAngle(angle) {
-  let normalized = angle;
-  while (normalized <= -Math.PI) {
-    normalized += 2 * Math.PI;
-  }
-  while (normalized > Math.PI) {
-    normalized -= 2 * Math.PI;
-  }
-  return normalized;
-}
-
 function reflectPointAcrossLine(position, firstPoint, secondPoint) {
   const dx = secondPoint.x - firstPoint.x;
   const dy = secondPoint.y - firstPoint.y;
@@ -251,17 +241,6 @@ function reflectSideCoords(coords, sideAtomIds, firstAtomId, secondAtomId) {
     reflectedCoords.set(atomId, reflectPointAcrossLine(position, firstPoint, secondPoint));
   }
   return reflectedCoords;
-}
-
-function rotatePointAroundCenter(position, centerPoint, deltaAngle) {
-  const dx = position.x - centerPoint.x;
-  const dy = position.y - centerPoint.y;
-  const cosAngle = Math.cos(deltaAngle);
-  const sinAngle = Math.sin(deltaAngle);
-  return {
-    x: centerPoint.x + dx * cosAngle - dy * sinAngle,
-    y: centerPoint.y + dx * sinAngle + dy * cosAngle
-  };
 }
 
 function buildRingAtomIdSet(layoutGraph) {
@@ -390,13 +369,13 @@ function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBond
           : -desiredPrioritySign;
     const desiredAngle = bondAngle + desiredSign * ((2 * Math.PI) / 3);
     const currentAngle = angleOf(centerPoint, branchPoint);
-    const deltaAngle = normalizeAngle(desiredAngle - currentAngle);
+    const deltaAngle = wrapAngle(desiredAngle - currentAngle);
     for (const atomId of branch.atomIds) {
       const position = candidateCoords.get(atomId);
       if (!position) {
         continue;
       }
-      candidateCoords.set(atomId, rotatePointAroundCenter(position, centerPoint, deltaAngle));
+      candidateCoords.set(atomId, rotateAround(position, centerPoint, deltaAngle));
     }
   }
 

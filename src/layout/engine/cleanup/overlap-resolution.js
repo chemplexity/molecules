@@ -1,35 +1,13 @@
 /** @module cleanup/overlap-resolution */
 
 import { buildAtomGrid, buildSubtreeOverlapContext, computeAtomDistortionCost, computeSubtreeOverlapCost, findSevereOverlaps } from '../audit/invariants.js';
-import { angleOf, angularDifference, centroid, sub, wrapAngle } from '../geometry/vec2.js';
+import { angleOf, angularDifference, centroid, rotate, sub, wrapAngle } from '../geometry/vec2.js';
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { probeRigidRotation, rigidDescriptorKey, rotateRigidDescriptorPositions } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { describeCrossLikeHypervalentCenter } from '../placement/branch-placement/angle-selection.js';
 import { ANGLE_EPSILON, IMPROVEMENT_EPSILON, NUMERIC_EPSILON, atomPairKey } from '../constants.js';
-
-const RIGID_SUBTREE_ROTATION_ANGLES = Object.freeze([
-  0,
-  Math.PI / 6,
-  -Math.PI / 6,
-  Math.PI / 3,
-  -Math.PI / 3,
-  Math.PI / 2,
-  -Math.PI / 2,
-  (2 * Math.PI) / 3,
-  -(2 * Math.PI) / 3,
-  Math.PI
-]);
-const COARSE_RIGID_SUBTREE_ROTATION_ANGLES = Object.freeze([
-  0,
-  Math.PI / 3,
-  -Math.PI / 3,
-  Math.PI / 2,
-  -Math.PI / 2,
-  (2 * Math.PI) / 3,
-  -(2 * Math.PI) / 3,
-  Math.PI
-]);
+import { COARSE_ROTATION_ANGLES, STANDARD_ROTATION_ANGLES } from './rotation-candidates.js';
 const RIGID_SUBTREE_REFINEMENT_OFFSETS = Object.freeze([
   Math.PI / 36,
   -(Math.PI / 36),
@@ -47,7 +25,7 @@ const EXACT_RING_ROOT_RELATIVE_ROTATION_OFFSETS = Object.freeze([
   -(Math.PI / 60),
   Math.PI / 45,
   -(Math.PI / 45),
-  ...RIGID_SUBTREE_ROTATION_ANGLES.filter(angle => Math.abs(angle) > ANGLE_EPSILON)
+  ...STANDARD_ROTATION_ANGLES.filter(angle => Math.abs(angle) > ANGLE_EPSILON)
 ]);
 const LARGE_RIGID_SUBTREE_COMPONENT_ATOM_COUNT = 24;
 const LARGE_RIGID_SUBTREE_SIZE = 6;
@@ -1027,21 +1005,6 @@ function singleHeavyAnchorAtomId(layoutGraph, atomId) {
   return heavyNeighborIds.length === 1 ? heavyNeighborIds[0] : null;
 }
 
-/**
- * Rotates a 2D vector around the origin.
- * @param {{x: number, y: number}} vector - Input vector.
- * @param {number} angle - Rotation angle in radians.
- * @returns {{x: number, y: number}} Rotated vector.
- */
-function rotateVector(vector, angle) {
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  return {
-    x: vector.x * cos - vector.y * sin,
-    y: vector.x * sin + vector.y * cos
-  };
-}
-
 function reflectPointAcrossLine(point, lineStart, lineEnd) {
   const dx = lineEnd.x - lineStart.x;
   const dy = lineEnd.y - lineStart.y;
@@ -1125,10 +1088,10 @@ function applyRigidSubtreeMove(coords, atomGrid, newPositions) {
  */
 function rigidSubtreeCandidateAngles(subtreeSize, visibleAtomCount) {
   if (subtreeSize < LARGE_RIGID_SUBTREE_SIZE && visibleAtomCount < LARGE_RIGID_SUBTREE_COMPONENT_ATOM_COUNT) {
-    return RIGID_SUBTREE_ROTATION_ANGLES;
+    return STANDARD_ROTATION_ANGLES;
   }
 
-  return COARSE_RIGID_SUBTREE_ROTATION_ANGLES;
+  return COARSE_ROTATION_ANGLES;
 }
 
 /**
@@ -1482,7 +1445,7 @@ function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition,
   for (const multiplier of stepMultipliers) {
     const step = Math.min(baseStep * multiplier, Math.PI / 2);
     for (const direction of [-1, 1]) {
-      const rotated = rotateVector(currentVector, step * direction);
+      const rotated = rotate(currentVector, step * direction);
       const candidatePosition = {
         x: anchorPosition.x + rotated.x,
         y: anchorPosition.y + rotated.y

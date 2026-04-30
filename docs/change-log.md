@@ -1,7 +1,30 @@
 # Change Log
 
+## 2026-04-30
+
+- Rebalance constrained saturated bridged cages so fused-spiro ring strain no longer leaves stretched bonds.
+- Balance compact fused-spiro bridged ring junctions so heteroring cages avoid visible kinks without bond failures.
+- Keep macrocycle sulfonamide aryl linkers on orthogonal sulfone axes during mixed placement.
+
+## 2026-04-29
+
+- Let simple imine-linked aryl branches use exact 120-degree nitrogen slots during mixed placement.
+- Bound crowded tetrazole-linked omitted-H fan relief so the phenyl root and methyl exits stay exact without crossing the tetrazole bond or collapsing neighboring branch angles.
+- Lock the trisodium anthraquinone propionate sidechain regression so the chain angle remains an exact 120-degree zigzag.
+- Prefer non-crossing phosphorus-adjacent attached-ring poses so bulky diaryl phosphine oxide branches stay separated in Chromium and WebKit.
+- Keep crowded omitted-H direct ring hubs exact through WebKit while balancing neighboring carbonyl relief instead of bending the full ring-root exit.
+- Let compact allyl tails on bridged ring anchors use branch lookahead so they do not fold back into the ring.
+- Retry mixed alternate roots when primary roots leave direct-attached ring exits off-axis.
+- Let compact ring-anchored sulfonyl branches make tiny rigid overlap-relief rotations while preserving exact sulfur crosses.
+- Regularize compact saturated bridged rings after KK placement so fused-spiro cages avoid warped ring shapes.
+- Let final terminal-hetero retouch handle mild phenolic outward misses so crowded C49 exits stay exact without over-opening the benzoyl fan.
+- Let attached-ring presentation cleanup take exact anchor-side outward rotations so piperazine imide exits keep 120-degree fans.
+- Preserve ring-bound tertiary amine fans during overlap cleanup so cage branches keep clean 120-degree angles.
+- Leave saturated bridgehead hydroxyls out of phenolic retouches so bridge C-OH bonds stay straight.
+
 ## 2026-04-28
 
+- Mirror crowded direct-attached aryl roots and retouch terminal phenolic leaves ring exits keep exact 120-degree fans across browser runtimes.
 - Keep exocyclic macrocycle sulfones orthogonal while rejecting ring-anchor snaps that would push oxo ligands into nearby carbonyl oxygens.
 - Snap aromatic carbonyl ring-anchor exits onto exact outward bisectors so aryl amide branches keep 120-degree splits.
 - Keep explicit-hydrogen monoxo phosphonate centers out of orthogonal hypervalent cleanup so their visible heavy ligands remain trigonal.

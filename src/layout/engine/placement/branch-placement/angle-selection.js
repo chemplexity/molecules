@@ -24,6 +24,8 @@ import {
   placedNeighborIds
 } from './shared.js';
 
+const CROSS_LIKE_HYPERVALENT_HETERO_SINGLE_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
+
 /**
  * Returns the bond angles of all already placed neighbors around an anchor.
  * @param {Map<string, string[]>} adjacency - Component adjacency map.
@@ -2602,12 +2604,75 @@ function crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentP
     angleSets.push([singleAxisAngle + DEG90, singleAxisAngle - DEG90]);
   }
 
+  if (
+    unplacedNeighborIds.length === 2
+    && unplacedMultipleNeighborIds.length === 2
+    && placedSingleNeighborIds.length === 1
+    && isMacrocycleHeteroSingleHypervalentLigand(layoutGraph, placedSingleNeighborIds[0])
+  ) {
+    const singleAxisAngle = angleOf(sub(coords.get(placedSingleNeighborIds[0]), anchorPosition));
+    angleSets.push([singleAxisAngle + DEG90, singleAxisAngle - DEG90]);
+  }
+
   if (unplacedNeighborIds.length === 2 && unplacedSingleNeighborIds.length === 2 && placedMultipleNeighborIds.length === 2) {
     const multipleAxisAngle = angleOf(sub(coords.get(placedMultipleNeighborIds[0]), anchorPosition));
     angleSets.push([multipleAxisAngle + DEG90, multipleAxisAngle - DEG90]);
   }
 
   return angleSets;
+}
+
+/**
+ * Returns whether a placed macrocycle hetero ligand should seed partial
+ * sulfonamide cross placement before the remaining aryl side arrives.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate ligand atom ID.
+ * @returns {boolean} True when the ligand is a macrocycle hetero single-bond anchor.
+ */
+function isMacrocycleHeteroSingleHypervalentLigand(layoutGraph, atomId) {
+  return (
+    CROSS_LIKE_HYPERVALENT_HETERO_SINGLE_ELEMENTS.has(layoutGraph?.atoms.get(atomId)?.element)
+    && (layoutGraph?.atomToRings.get(atomId) ?? []).some(ring => (ring.atomIds?.length ?? 0) >= 10)
+  );
+}
+
+/**
+ * Returns exact continuation angles for a partially placed cross-like
+ * hypervalent center. This protects mixed-family attachments where oxo leaves
+ * are placed before a pending ring arrives at the remaining single-bond slot.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Hypervalent center atom ID.
+ * @param {string|null} childAtomId - Child atom being placed.
+ * @param {string[]} placedNeighborIdsList - Already placed neighbor atom IDs.
+ * @returns {number[]} Preferred exact angles in radians.
+ */
+function preferredCrossLikeHypervalentChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList) {
+  const descriptor = describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId);
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!descriptor || descriptor.kind !== 'bis-oxo' || !anchorPosition || !childAtomId) {
+    return [];
+  }
+
+  const childIsSingle = descriptor.singleNeighborIds.includes(childAtomId);
+  const childIsMultiple = descriptor.multipleNeighborIds.includes(childAtomId);
+  if (!childIsSingle && !childIsMultiple) {
+    return [];
+  }
+
+  const placedSingleNeighborIds = placedNeighborIdsList.filter(neighborAtomId => descriptor.singleNeighborIds.includes(neighborAtomId));
+  const placedMultipleNeighborIds = placedNeighborIdsList.filter(neighborAtomId => descriptor.multipleNeighborIds.includes(neighborAtomId));
+  if (childIsSingle && placedSingleNeighborIds.length === 1 && isMacrocycleHeteroSingleHypervalentLigand(layoutGraph, placedSingleNeighborIds[0])) {
+    return [angleOf(sub(coords.get(placedSingleNeighborIds[0]), anchorPosition)) + Math.PI];
+  }
+  if (childIsMultiple && placedMultipleNeighborIds.length === 1) {
+    return [angleOf(sub(coords.get(placedMultipleNeighborIds[0]), anchorPosition)) + Math.PI];
+  }
+  if (childIsMultiple && placedSingleNeighborIds.length > 0 && isMacrocycleHeteroSingleHypervalentLigand(layoutGraph, placedSingleNeighborIds[0])) {
+    const singleAxisAngle = angleOf(sub(coords.get(placedSingleNeighborIds[0]), anchorPosition));
+    return [singleAxisAngle + DEG90, singleAxisAngle - DEG90];
+  }
+  return [];
 }
 
 function largestGapAngles(fixedAngles, childCount) {
@@ -3071,6 +3136,10 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
   const projectedTetrahedralAngles = preferredProjectedTetrahedralAngles(layoutGraph, coords, anchorAtomId, placedNeighborIdsList, childAtomId);
   if (projectedTetrahedralAngles.length > 0) {
     return projectedTetrahedralAngles;
+  }
+  const crossLikeHypervalentAngles = preferredCrossLikeHypervalentChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList);
+  if (crossLikeHypervalentAngles.length > 0) {
+    return crossLikeHypervalentAngles;
   }
   const smallRingExteriorAngles = preferredSmallRingExteriorGapAngles(layoutGraph, coords, anchorAtomId, placedNeighborIdsList, childAtomId);
   if (smallRingExteriorAngles.length > 0) {

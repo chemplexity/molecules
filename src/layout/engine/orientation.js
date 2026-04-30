@@ -3,18 +3,8 @@
 import { morganRanks } from '../../algorithms/morgan.js';
 import { analyzeRings } from './topology/ring-analysis.js';
 import { computeBounds } from './geometry/bounds.js';
-
-function vec(x, y) {
-  return { x, y };
-}
-
-function rotateAround(point, origin, angle) {
-  const dx = point.x - origin.x;
-  const dy = point.y - origin.y;
-  const cosA = Math.cos(angle);
-  const sinA = Math.sin(angle);
-  return vec(origin.x + dx * cosA - dy * sinA, origin.y + dx * sinA + dy * cosA);
-}
+import { rotateAround } from './geometry/transforms.js';
+import { centroid, vec } from './geometry/vec2.js';
 
 function rotateCoords(coords, origin, angle) {
   if (Math.abs(angle) < 1e-9) {
@@ -72,24 +62,16 @@ function principalAxisAngleForAtomIds(coords, atomIds) {
     return null;
   }
 
-  let sumX = 0;
-  let sumY = 0;
-  for (const atomId of atomIds) {
-    const point = coords.get(atomId);
-    if (!point) {
-      return null;
-    }
-    sumX += point.x;
-    sumY += point.y;
+  const points = atomIds.map(atomId => coords.get(atomId));
+  if (points.some(point => !point)) {
+    return null;
   }
-  const centerX = sumX / atomIds.length;
-  const centerY = sumY / atomIds.length;
+  const { x: centerX, y: centerY } = centroid(points);
 
   let inertiaXX = 0;
   let inertiaYY = 0;
   let inertiaXY = 0;
-  for (const atomId of atomIds) {
-    const point = coords.get(atomId);
+  for (const point of points) {
     const dx = point.x - centerX;
     const dy = point.y - centerY;
     inertiaXX += dy * dy;
@@ -179,14 +161,7 @@ function bestLandscapeRotationPreservingLevelScaffold(coords, molecule, heavyAto
     return null;
   }
 
-  let sumX = 0;
-  let sumY = 0;
-  for (const atomId of heavyAtomIds) {
-    const point = coords.get(atomId);
-    sumX += point.x;
-    sumY += point.y;
-  }
-  const origin = vec(sumX / heavyAtomIds.length, sumY / heavyAtomIds.length);
+  const origin = centroid(heavyAtomIds.map(atomId => coords.get(atomId)));
   let best = null;
 
   for (let step = -5; step <= 6; step++) {
@@ -548,28 +523,14 @@ export function normalizeOrientation(coords, molecule) {
     if (start && end) {
       const angle = Math.atan2(end.y - start.y, end.x - start.x);
       if (Math.abs(angle) >= 1e-6) {
-        let sumX = 0;
-        let sumY = 0;
-        for (const atomId of heavyAtomIds) {
-          const point = coords.get(atomId);
-          sumX += point.x;
-          sumY += point.y;
-        }
-        rotateCoords(coords, vec(sumX / heavyAtomIds.length, sumY / heavyAtomIds.length), -angle);
+        rotateCoords(coords, centroid(heavyAtomIds.map(atomId => coords.get(atomId))), -angle);
       }
       return;
     }
   }
 
-  let sumX = 0;
-  let sumY = 0;
-  for (const atomId of heavyAtomIds) {
-    const point = coords.get(atomId);
-    sumX += point.x;
-    sumY += point.y;
-  }
-  const centerX = sumX / heavyAtomIds.length;
-  const centerY = sumY / heavyAtomIds.length;
+  const center = centroid(heavyAtomIds.map(atomId => coords.get(atomId)));
+  const { x: centerX, y: centerY } = center;
 
   const fallbackBounds = computeBounds(coords, heavyAtomIds);
   if (fallbackBounds && fallbackBounds.height > fallbackBounds.width) {
@@ -797,12 +758,5 @@ export function levelCoords(coords, molecule) {
     return;
   }
 
-  let sumX = 0;
-  let sumY = 0;
-  for (const atomId of heavyAtomIds) {
-    const point = coords.get(atomId);
-    sumX += point.x;
-    sumY += point.y;
-  }
-  rotateCoords(coords, vec(sumX / heavyAtomIds.length, sumY / heavyAtomIds.length), bestRotation);
+  rotateCoords(coords, centroid(heavyAtomIds.map(atomId => coords.get(atomId))), bestRotation);
 }

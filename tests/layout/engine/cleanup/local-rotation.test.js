@@ -301,6 +301,31 @@ describe('layout/engine/cleanup/local-rotation', () => {
     assert.ok(amineSeparations.every(separation => separation >= 100 && separation <= 150));
   });
 
+  it('clears nearby branch overlap without collapsing a ring-bound tertiary amine fan', () => {
+    const graph = createLayoutGraph(parseSMILES('CN1CC=C2CCC3OCC1(C(O)C=O)C23'), { suppressH: true });
+    const placement = layoutSupportedComponents(graph);
+    const initialOverlaps = findSevereOverlaps(graph, placement.coords, graph.options.bondLength);
+    const result = runLocalCleanup(graph, placement.coords, {
+      maxPasses: 1,
+      bondLength: graph.options.bondLength,
+      overlapPairs: initialOverlaps
+    });
+    const n2Angles = [
+      bondAngleDegrees(result.coords, 'N2', 'C11', 'C1'),
+      bondAngleDegrees(result.coords, 'N2', 'C11', 'C3'),
+      bondAngleDegrees(result.coords, 'N2', 'C1', 'C3')
+    ];
+
+    assert.ok(initialOverlaps.some(overlap => (
+      (overlap.firstAtomId === 'C1' && overlap.secondAtomId === 'C14')
+      || (overlap.firstAtomId === 'C14' && overlap.secondAtomId === 'C1')
+    )));
+    assert.equal(findSevereOverlaps(graph, result.coords, graph.options.bondLength).length, 0);
+    for (const angle of n2Angles) {
+      assert.ok(Math.abs(angle - 120) < 3, `expected N2 fan near 120 degrees, got ${angle.toFixed(2)}`);
+    }
+  });
+
   it('can jointly rotate geminal cyclohexane methyls outward from the ring interior', () => {
     const graph = createLayoutGraph(parseSMILES('CC1(C)CCCCC1'), { suppressH: true });
     const coords = new Map([

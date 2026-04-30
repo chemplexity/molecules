@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { layoutBridgedFamily } from '../../../../src/layout/engine/families/bridged.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
+import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import { findSevereOverlaps } from '../../../../src/layout/engine/audit/invariants.js';
 import { BRIDGED_VALIDATION } from '../../../../src/layout/engine/constants.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
@@ -60,6 +61,67 @@ function ringInternalAngle(ring, coords, atomId) {
     angleOf(sub(previousPosition, atomPosition)),
     angleOf(sub(nextPosition, atomPosition))
   );
+}
+
+/**
+ * Asserts that compact saturated rings stay close to regular ring bond lengths
+ * and angles after bridged placement.
+ * @param {object} graph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} label - Diagnostic label for assertion messages.
+ * @returns {void}
+ */
+function assertCompactSaturatedRingShape(graph, coords, label) {
+  const maxBondDeviation = graph.options.bondLength * 0.04;
+  const maxAngleDeviation = (10 * Math.PI) / 180;
+
+  for (const ring of graph.rings) {
+    const targetAngle = Math.PI - (2 * Math.PI) / ring.atomIds.length;
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const atomId = ring.atomIds[index];
+      const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+      assert.ok(
+        Math.abs(distance(coords.get(atomId), coords.get(nextAtomId)) - graph.options.bondLength) < maxBondDeviation,
+        `expected ${label} ${atomId}-${nextAtomId} to keep compact saturated ring bond length`
+      );
+      assert.ok(
+        Math.abs(ringInternalAngle(ring, coords, atomId) - targetAngle) < maxAngleDeviation,
+        `expected ${label} ${atomId} to avoid visibly deformed ring angles`
+      );
+    }
+  }
+}
+
+/**
+ * Measures the largest regular-ring bond and angle deviations in a bridged layout.
+ * @param {object} graph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {{maxBondDeviation: number, maxAngleDeviation: number}} Ring-shape deviation summary.
+ */
+function bridgedRingShapeMetrics(graph, coords) {
+  let maxBondDeviation = 0;
+  let maxAngleDeviation = 0;
+
+  for (const ring of graph.rings) {
+    const targetAngle = Math.PI - (2 * Math.PI) / ring.atomIds.length;
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const atomId = ring.atomIds[index];
+      const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+      maxBondDeviation = Math.max(
+        maxBondDeviation,
+        Math.abs(distance(coords.get(atomId), coords.get(nextAtomId)) - graph.options.bondLength)
+      );
+      maxAngleDeviation = Math.max(
+        maxAngleDeviation,
+        Math.abs(ringInternalAngle(ring, coords, atomId) - targetAngle)
+      );
+    }
+  }
+
+  return {
+    maxBondDeviation,
+    maxAngleDeviation
+  };
 }
 
 describe('layout/engine/families/bridged', () => {
@@ -152,6 +214,125 @@ describe('layout/engine/families/bridged', () => {
         `expected ${atomId} to keep a regular six-ring angle`
       );
     }
+  });
+
+  it('regularizes compact saturated fused-spiro bridged rings after KK placement', () => {
+    const smiles = 'CCC12C[NH2+]CC11CCCCC1CCC2';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const result = layoutBridgedFamily(graph.rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: null
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.placementMode, 'projected-kamada-kawai');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertCompactSaturatedRingShape(graph, result.coords, 'bridged placement');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertCompactSaturatedRingShape(graph, pipelineResult.coords, 'pipeline layout');
+  });
+
+  it('keeps compact fused-spiro bridged ether rings regular through mixed placement', () => {
+    const smiles = 'COC1CCC2(C)CCCOC22OCCC12';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 3);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: null
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.placementMode, 'projected-kamada-kawai');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertCompactSaturatedRingShape(graph, result.coords, 'bridged placement');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertCompactSaturatedRingShape(graph, pipelineResult.coords, 'pipeline layout');
+  });
+
+  it('balances compact fused-spiro bridged heterorings without bond failures', () => {
+    const smiles = 'CC1OC2=NCC(=N)NC3=NCC(C)CC23O1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const result = layoutBridgedFamily(graph.rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: null
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const bridgedShape = bridgedRingShapeMetrics(graph, result.coords);
+    const pipelineShape = bridgedRingShapeMetrics(graph, pipelineResult.coords);
+    const maxVisibleAngleDeviation = (10 * Math.PI) / 180;
+    const maxSafeBondDeviation = graph.options.bondLength * 0.05;
+
+    assert.equal(result.placementMode, 'projected-kamada-kawai');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assert.ok(
+      bridgedShape.maxAngleDeviation < maxVisibleAngleDeviation,
+      'expected bridged placement to distribute fused-spiro angle strain below the visible kink threshold'
+    );
+    assert.ok(
+      bridgedShape.maxBondDeviation < maxSafeBondDeviation,
+      'expected bridged placement to keep balanced junction bonds within standard audit tolerance'
+    );
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.ok(
+      pipelineShape.maxAngleDeviation < maxVisibleAngleDeviation,
+      'expected full pipeline to preserve balanced fused-spiro ring angles'
+    );
+    assert.ok(
+      pipelineShape.maxBondDeviation < maxSafeBondDeviation,
+      'expected full pipeline to preserve balanced fused-spiro bond lengths'
+    );
+  });
+
+  it('balances saturated fused-spiro bridged cages with a constrained triple-ring junction', () => {
+    const smiles = 'C[NH+]1CC2CCCN3CC(=O)CCCCC23C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const result = layoutBridgedFamily(graph.rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: null
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const bridgedShape = bridgedRingShapeMetrics(graph, result.coords);
+    const pipelineShape = bridgedRingShapeMetrics(graph, pipelineResult.coords);
+    const maxConstrainedJunctionAngleDeviation = (11.5 * Math.PI) / 180;
+    const maxSafeBondDeviation = graph.options.bondLength * 0.05;
+
+    assert.equal(result.placementMode, 'projected-kamada-kawai');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assert.ok(
+      bridgedShape.maxBondDeviation < maxSafeBondDeviation,
+      'expected bridged placement to remove visible stretched-bond ring deformation'
+    );
+    assert.ok(
+      bridgedShape.maxAngleDeviation < maxConstrainedJunctionAngleDeviation,
+      'expected bridged placement to balance unavoidable triple-junction angle strain'
+    );
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.ok(
+      pipelineShape.maxBondDeviation < maxSafeBondDeviation,
+      'expected full pipeline to preserve balanced bridged bond lengths'
+    );
+    assert.ok(
+      pipelineShape.maxAngleDeviation < maxConstrainedJunctionAngleDeviation,
+      'expected full pipeline to preserve balanced triple-junction ring angles'
+    );
   });
 
   it('places larger bridged cages from their templates too', () => {

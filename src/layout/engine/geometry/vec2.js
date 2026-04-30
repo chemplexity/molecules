@@ -139,7 +139,7 @@ export function perpLeft(value) {
 }
 
 /**
- * Wraps an angle into the [-pi, pi] interval.
+ * Wraps an angle into the (-pi, pi] interval.
  * @param {number} angle - Input angle.
  * @returns {number} Wrapped angle.
  */
@@ -150,6 +150,19 @@ export function wrapAngle(angle) {
   }
   while (result > Math.PI) {
     result -= 2 * Math.PI;
+  }
+  return result;
+}
+
+/**
+ * Wraps an angle into the [0, 2*pi) interval.
+ * @param {number} angle - Input angle.
+ * @returns {number} Wrapped angle.
+ */
+export function wrapAngleUnsigned(angle) {
+  let result = angle % (2 * Math.PI);
+  if (result < 0) {
+    result += 2 * Math.PI;
   }
   return result;
 }

@@ -4,6 +4,9 @@ import {
   collectAttachedCarbonylPresentationDescriptors
 } from './attached-carbonyl.js';
 import {
+  measureThreeHeavyContinuationDistortion
+} from '../../audit/invariants.js';
+import {
   collectMovableAttachedRingDescriptors,
   measureAttachedRingPeripheralFocusPenalty,
   measureAttachedRingRootOutwardPresentationPenalty,
@@ -14,9 +17,15 @@ import {
   runDirectAttachedRingSystemOutwardRetidy,
   runRingSubstituentTidy
 } from './ring-substituent.js';
-import { runRingTerminalHeteroTidy } from './ring-terminal-hetero.js';
+import {
+  measureRingTerminalHeteroOutwardPenalty,
+  measureTerminalMultipleBondLeafFanPenalty,
+  runRingTerminalHeteroTidy,
+  runTerminalMultipleBondLeafFanTidy
+} from './ring-terminal-hetero.js';
 
 const PRESENTATION_NEED_EPSILON = 1e-6;
+const OMITTED_H_TRIGONAL_PRESENTATION_NEED = (Math.PI / 6) ** 2;
 
 function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
@@ -26,6 +35,9 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
     coords,
     options.frozenAtomIds ?? null
   );
+  const terminalHeteroOutwardPenalty = measureRingTerminalHeteroOutwardPenalty(layoutGraph, coords);
+  const terminalMultipleBondLeafFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, coords);
+  const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation;
   const presentationPenalty = measureRingSubstituentPresentationPenalty(layoutGraph, coords, {
     includeLinkedRingBridgePenalty: true
   });
@@ -36,12 +48,22 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
     presentationPenalty,
     attachedRingPeripheralPenalty,
     attachedRingRootOutwardPenalty,
+    omittedHydrogenTrigonalPenalty,
+    terminalHeteroOutwardMaxPenalty: terminalHeteroOutwardPenalty.maxDeviation,
+    terminalHeteroOutwardPenalty: terminalHeteroOutwardPenalty.totalDeviation,
+    terminalMultipleBondLeafFanMaxPenalty: terminalMultipleBondLeafFanPenalty.maxDeviation,
+    terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation,
     score:
       {
         coords,
         presentationPenalty,
         attachedRingPeripheralPenalty,
         attachedRingRootOutwardPenalty,
+        omittedHydrogenTrigonalPenalty,
+        terminalHeteroOutwardMaxPenalty: terminalHeteroOutwardPenalty.maxDeviation,
+        terminalHeteroOutwardPenalty: terminalHeteroOutwardPenalty.totalDeviation,
+        terminalMultipleBondLeafFanMaxPenalty: terminalMultipleBondLeafFanPenalty.maxDeviation,
+        terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation,
         ...(typeof options.scoreCoordsFn === 'function' ? (options.scoreCoordsFn(coords) ?? {}) : {})
       }
   };
@@ -109,11 +131,14 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
     ?? measureAttachedRingPeripheralFocusPenalty(layoutGraph, stageResult.coords);
   const attachedRingRootOutwardPenalty = stageResult.attachedRingRootOutwardPenalty
     ?? measureAttachedRingRootOutwardPresentationPenalty(layoutGraph, stageResult.coords);
+  const omittedHydrogenTrigonalPenalty = stageResult.omittedHydrogenTrigonalPenalty
+    ?? measureThreeHeavyContinuationDistortion(layoutGraph, stageResult.coords).totalDeviation;
   return (
     (audit?.ringSubstituentReadabilityFailureCount ?? 0) > 0
     || (audit?.inwardRingSubstituentCount ?? 0) > 0
     || (audit?.outwardAxisRingSubstituentFailureCount ?? 0) > 0
     || (audit?.severeOverlapCount ?? 0) > 0
+    || omittedHydrogenTrigonalPenalty > OMITTED_H_TRIGONAL_PRESENTATION_NEED
     || attachedRingPeripheralPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingRootOutwardPenalty > PRESENTATION_NEED_EPSILON
     || presentationPenalty > PRESENTATION_NEED_EPSILON
@@ -156,12 +181,35 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
   let usedAttachedRingFallback = false;
   let usedDirectAttachedRingRootRetidy = false;
 
-  if (options.includeRingSubstituent !== false && hasOutstandingRingPresentationNeed(layoutGraph, currentState)) {
+  const hasTerminalHeteroOutwardNeed = state => (
+    measureRingTerminalHeteroOutwardPenalty(layoutGraph, state.coords).maxDeviation > PRESENTATION_NEED_EPSILON
+  );
+
+  if (
+    options.includeRingSubstituent !== false
+    && (
+      hasOutstandingRingPresentationNeed(layoutGraph, currentState)
+      || hasTerminalHeteroOutwardNeed(currentState)
+    )
+  ) {
     currentState = evaluatePresentationStep(
       layoutGraph,
       currentState,
       'ring-substituent',
       runRingSubstituentTidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        frozenAtomIds: options.frozenAtomIds ?? null
+      }),
+      options
+    );
+  }
+
+  if (options.includeRingSubstituent !== false) {
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'terminal-multiple-bond-leaf',
+      runTerminalMultipleBondLeafFanTidy(layoutGraph, currentState.coords, {
         bondLength: options.bondLength,
         frozenAtomIds: options.frozenAtomIds ?? null
       }),
@@ -267,6 +315,11 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     presentationPenalty: currentState.presentationPenalty,
     attachedRingPeripheralPenalty: currentState.attachedRingPeripheralPenalty,
     attachedRingRootOutwardPenalty: currentState.attachedRingRootOutwardPenalty,
+    omittedHydrogenTrigonalPenalty: currentState.omittedHydrogenTrigonalPenalty,
+    terminalHeteroOutwardMaxPenalty: currentState.terminalHeteroOutwardMaxPenalty,
+    terminalHeteroOutwardPenalty: currentState.terminalHeteroOutwardPenalty,
+    terminalMultipleBondLeafFanMaxPenalty: currentState.terminalMultipleBondLeafFanMaxPenalty,
+    terminalMultipleBondLeafFanPenalty: currentState.terminalMultipleBondLeafFanPenalty,
     strategiesRun: currentState.steps.map(step => step.name),
     steps: currentState.steps,
     attachedCarbonylDescriptorCount: finalDescriptorSummary.attachedCarbonylDescriptorCount,

@@ -2,6 +2,17 @@
 
 import { add, angleOf, rotate, scale, sub } from './vec2.js';
 
+/**
+ * Rotates a point around an arbitrary pivot.
+ * @param {{x: number, y: number}} point - Point to rotate.
+ * @param {{x: number, y: number}} pivot - Pivot of rotation.
+ * @param {number} angle - Rotation angle in radians.
+ * @returns {{x: number, y: number}} Rotated point.
+ */
+export function rotateAround(point, pivot, angle) {
+  return add(pivot, rotate(sub(point, pivot), angle));
+}
+
 function transformPoint(point, origin, targetOrigin, rotation, uniformScale) {
   const shifted = sub(point, origin);
   return add(targetOrigin, rotate(scale(shifted, uniformScale), rotation));

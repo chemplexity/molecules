@@ -24,19 +24,7 @@ import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
 import { containsFrozenAtom } from '../frozen-atoms.js';
 import { rotateRigidDescriptorPositions } from '../rigid-rotation.js';
 import { collectCutSubtree } from '../subtree-utils.js';
-
-export const TIDY_ROTATION_ANGLES = Object.freeze([
-  0,
-  Math.PI / 6,
-  -Math.PI / 6,
-  Math.PI / 3,
-  -Math.PI / 3,
-  Math.PI / 2,
-  -Math.PI / 2,
-  (2 * Math.PI) / 3,
-  -(2 * Math.PI) / 3,
-  Math.PI
-]);
+import { STANDARD_ROTATION_ANGLES } from '../rotation-candidates.js';
 const IDEAL_LEAF_OUTWARD_BACKOFF_ANGLES = Object.freeze([
   Math.PI / 30,
   -(Math.PI / 30),
@@ -1724,7 +1712,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
       const subtreeContext = buildSubtreeOverlapContext(layoutGraph, dynamicDescriptor.subtreeAtomIds);
       const currentAngle = angleOf(sub(rootPosition, anchorPosition));
       const compressibleTerminalLeafDescriptor = isCompressibleTerminalRingLeafDescriptor(layoutGraph, dynamicDescriptor);
-      const candidateAngles = new Set(TIDY_ROTATION_ANGLES);
+      const candidateAngles = new Set(STANDARD_ROTATION_ANGLES);
       if (!compressibleTerminalLeafDescriptor) {
         for (const angle of dynamicDescriptor.outwardAngles) { candidateAngles.add(angle); }
         for (const angle of nearOutwardIdealLeafCandidateAngles(dynamicDescriptor)) { candidateAngles.add(angle); }
@@ -1733,7 +1721,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
         for (const reverseOutwardAngle of dynamicDescriptor.reverseOutwardAngles) {
           candidateAngles.add(reverseOutwardAngle + Math.PI);
         }
-        for (const relativeRotation of TIDY_ROTATION_ANGLES) {
+        for (const relativeRotation of STANDARD_ROTATION_ANGLES) {
           candidateAngles.add(currentAngle + relativeRotation);
         }
       }
@@ -1831,7 +1819,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
             baseCandidate,
             bondLength
           },
-          generateSeeds: () => TIDY_ROTATION_ANGLES.filter(rotation => Math.abs(rotation) > TIDY_ANGLE_EPSILON),
+          generateSeeds: () => STANDARD_ROTATION_ANGLES.filter(rotation => Math.abs(rotation) > TIDY_ANGLE_EPSILON),
           materializeOverrides(inputCoords, descriptor, rotation) {
             return buildRootAnchoredRingSystemPositions(
               inputCoords,

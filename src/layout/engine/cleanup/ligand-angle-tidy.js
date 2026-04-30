@@ -1,6 +1,6 @@
 /** @module cleanup/ligand-angle-tidy */
 
-import { add, angleOf, distance, fromAngle, sub } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, distance, fromAngle, sub } from '../geometry/vec2.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { organometallicArrangementSpecs, organometallicGeometryKind } from '../families/organometallic-geometry.js';
 
@@ -59,17 +59,6 @@ function idealLigandAngles(layoutGraph, metalAtomId, ligandCount) {
 }
 
 /**
- * Returns the wrapped absolute angular distance between two directions.
- * @param {number} firstAngle - First angle in radians.
- * @param {number} secondAngle - Second angle in radians.
- * @returns {number} Absolute shortest-path angular distance.
- */
-function angularDistance(firstAngle, secondAngle) {
-  const rawDelta = Math.abs(firstAngle - secondAngle) % (Math.PI * 2);
-  return Math.min(rawDelta, Math.PI * 2 - rawDelta);
-}
-
-/**
  * Finds the lowest-cost one-to-one mapping between current ligands and ideal angles.
  * @param {number[]} currentAngles - Current ligand angles.
  * @param {number[]} idealAngles - Ideal ligand angles.
@@ -102,7 +91,7 @@ function assignIdealAngles(currentAngles, idealAngles) {
       }
       used.add(idealIndex);
       assignment[index] = idealIndex;
-      search(index + 1, used, assignment, cost + angularDistance(currentAngles[index], idealAngles[idealIndex]) ** 2);
+      search(index + 1, used, assignment, cost + angularDifference(currentAngles[index], idealAngles[idealIndex]) ** 2);
       used.delete(idealIndex);
     }
   }
@@ -139,7 +128,7 @@ export function hasLigandAngleTidyNeed(layoutGraph, coords, options = {}) {
         continue;
       }
       const targetAngle = idealAngles[assignment[index]];
-      if (angularDistance(currentAngles[index], targetAngle) > angleThreshold) {
+      if (angularDifference(currentAngles[index], targetAngle) > angleThreshold) {
         return true;
       }
     }
@@ -182,7 +171,7 @@ export function runLigandAngleTidy(layoutGraph, inputCoords, options = {}) {
           continue;
         }
         const targetAngle = idealAngles[assignment[index]];
-        if (angularDistance(currentAngles[index], targetAngle) <= angleThreshold) {
+        if (angularDifference(currentAngles[index], targetAngle) <= angleThreshold) {
           continue;
         }
         const bondLength = distance(metalPosition, coords.get(ligandAtomId));

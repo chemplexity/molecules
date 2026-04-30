@@ -1941,6 +1941,52 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(Math.abs(linkerAngle - (2 * Math.PI) / 3) < 0.2, `expected diphenylmethane linker angle near 120 degrees, got ${((linkerAngle * 180) / Math.PI).toFixed(2)}`);
   });
 
+  it('keeps crowded direct aryl roots exact while keeping the benzoyl fan bounded', () => {
+    const smiles = 'CC(=CCC12Oc3cc(O)ccc3C1(O)Oc4cc(O)c([C@H]5C=C(C)CC([C@H]5C(=O)c6ccc(O)cc6O)c7ccc(O)cc7O)c(O)c4C2=O)C';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const coords = result.coords;
+    const expectedTrigonal = (2 * Math.PI) / 3;
+    const exactTolerance = 1e-6;
+    const assertExactTrigonalCenter = (centerAtomId, neighborAtomIds) => {
+      for (let firstIndex = 0; firstIndex < neighborAtomIds.length; firstIndex++) {
+        for (let secondIndex = firstIndex + 1; secondIndex < neighborAtomIds.length; secondIndex++) {
+          const angle = bondAngleAtAtom(coords, centerAtomId, neighborAtomIds[firstIndex], neighborAtomIds[secondIndex]);
+          assert.ok(
+            Math.abs(angle - expectedTrigonal) < exactTolerance,
+            `expected ${centerAtomId} ${neighborAtomIds[firstIndex]}-${neighborAtomIds[secondIndex]} angle near 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+          );
+        }
+      }
+    };
+
+    assert.equal(result.metadata.audit.ok, true);
+    assertExactTrigonalCenter('C41', ['C28', 'C47', 'C42']);
+    assertExactTrigonalCenter('C21', ['C19', 'C22', 'C49']);
+    assertExactTrigonalCenter('C39', ['C33', 'C38', 'O40']);
+    assertExactTrigonalCenter('C49', ['C21', 'O50', 'C51']);
+    assert.ok(
+      Math.abs(bondAngleAtAtom(coords, 'C14', 'C5', 'O15') - Math.PI) < exactTolerance,
+      `expected C14-O15 bridge hydroxyl to stay straight, got ${((bondAngleAtAtom(coords, 'C14', 'C5', 'O15') * 180) / Math.PI).toFixed(2)} degrees`
+    );
+
+    const carbonylAngles = [
+      bondAngleAtAtom(coords, 'C31', 'O32', 'C33'),
+      bondAngleAtAtom(coords, 'C31', 'O32', 'C29'),
+      bondAngleAtAtom(coords, 'C31', 'C33', 'C29')
+    ].map(angle => (angle * 180) / Math.PI);
+    assert.ok(
+      Math.min(...carbonylAngles) >= 88 - 1e-6,
+      `expected C31 benzoyl fan to stay bounded while C49 is exact, got ${carbonylAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    assert.ok(
+      Math.max(...carbonylAngles) <= 140 + 1e-6,
+      `expected C31 benzoyl fan not to over-open beyond 140 degrees, got ${carbonylAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+  });
+
   it('keeps fused lactone systems joined through a methylene linker on a standard bend', () => {
     const smiles = 'OC1=C(CC2=C(O)C3=C(OC2=O)C=CC=C3)C(=O)OC2=C1C=CC=C2';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
