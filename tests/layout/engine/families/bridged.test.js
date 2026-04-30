@@ -4,7 +4,7 @@ import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-gr
 import { layoutBridgedFamily } from '../../../../src/layout/engine/families/bridged.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
-import { findSevereOverlaps } from '../../../../src/layout/engine/audit/invariants.js';
+import { findSevereOverlaps, findVisibleHeavyBondCrossings } from '../../../../src/layout/engine/audit/invariants.js';
 import { BRIDGED_VALIDATION } from '../../../../src/layout/engine/constants.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { makeAdamantane, makeBicyclo222, makeNorbornane, makeUnmatchedBridgedCage } from '../support/molecules.js';
@@ -333,6 +333,54 @@ describe('layout/engine/families/bridged', () => {
       pipelineShape.maxAngleDeviation < maxConstrainedJunctionAngleDeviation,
       'expected full pipeline to preserve balanced triple-junction ring angles'
     );
+  });
+
+  it('uses a compact spiro-bridged oxetane template without crossed cage bonds', () => {
+    const smiles = 'N#CC1CC2(C1)C1CCC2O1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 3);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: 'spiro-bridged-oxetane'
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const ringShape = bridgedRingShapeMetrics(graph, result.coords);
+    const cyclobutylRing = graph.rings.find(ring => (
+      ring.atomIds.length === 4
+      && ['C3', 'C4', 'C5', 'C6'].every(atomId => ring.atomIds.includes(atomId))
+    ));
+    const maxCompactCageBondDeviation = graph.options.bondLength * 0.27;
+    const maxCyclobutylBondDeviation = graph.options.bondLength * 0.04;
+    const maxCyclobutylAngleDeviation = (5 * Math.PI) / 180;
+
+    assert.ok(cyclobutylRing);
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assert.deepEqual(findVisibleHeavyBondCrossings(graph, result.coords), []);
+    assert.ok(
+      ringShape.maxBondDeviation < maxCompactCageBondDeviation,
+      'expected compact oxetane cage template to avoid visibly deformed ring bonds'
+    );
+    for (let index = 0; index < cyclobutylRing.atomIds.length; index++) {
+      const atomId = cyclobutylRing.atomIds[index];
+      const nextAtomId = cyclobutylRing.atomIds[(index + 1) % cyclobutylRing.atomIds.length];
+      assert.ok(
+        Math.abs(distance(result.coords.get(atomId), result.coords.get(nextAtomId)) - graph.options.bondLength) < maxCyclobutylBondDeviation,
+        `expected compact oxetane cage template to keep cyclobutyl ${atomId}-${nextAtomId} balanced`
+      );
+      assert.ok(
+        Math.abs(ringInternalAngle(cyclobutylRing, result.coords, atomId) - Math.PI / 2) < maxCyclobutylAngleDeviation,
+        `expected compact oxetane cage template to keep cyclobutyl ${atomId} square`
+      );
+    }
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
   });
 
   it('places larger bridged cages from their templates too', () => {

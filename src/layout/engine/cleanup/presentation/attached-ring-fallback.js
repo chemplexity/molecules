@@ -19,7 +19,8 @@ import {
   isExactRingOutwardEligibleSubstituent,
   isExactSimpleAcyclicContinuationEligible,
   isExactVisibleTrigonalBisectorEligible,
-  isLinearCenter
+  isLinearCenter,
+  supportsProjectedTetrahedralGeometry
 } from '../../placement/branch-placement/angle-selection.js';
 import { measureCleanupStagePresentationPenalty, measureTotalSmallRingExteriorGapPenalty } from '../../audit/stage-metrics.js';
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
@@ -66,6 +67,10 @@ const CROWDED_CENTER_ROOT_DEVIATION_TRIGGER = Math.PI / 6;
 const CROWDED_CENTER_SIBLING_DEVIATION_LIMIT = Math.PI / 18;
 const CROWDED_CENTER_MIN_ROOT_PENALTY_IMPROVEMENT = (Math.PI / 18) ** 2;
 const CROWDED_CENTER_MAX_TETRAHEDRAL_WORSENING = 0.25;
+const PROJECTED_CENTER_FIXED_SLOT_TOLERANCE = Math.PI / 12;
+const PROJECTED_CENTER_MAX_RING_ROTATION = Math.PI / 2;
+const PROJECTED_CENTER_MAX_RING_SUBTREE_HEAVY_ATOMS = 14;
+const PROJECTED_CENTER_MIN_CROSS_IMPROVEMENT = (Math.PI / 18) ** 2;
 const OMITTED_H_FAN_RESCUE_MIN_DEVIATION = (Math.PI / 18) ** 2;
 const OMITTED_H_FAN_RESCUE_MIN_IMPROVEMENT = 1e-6;
 const OMITTED_H_FAN_MAX_TETRAHEDRAL_WORSENING = 0.05;
@@ -123,6 +128,54 @@ const CROWDED_CENTER_SIBLING_ANCHOR_OFFSETS = [
   Math.PI / 15,
   -(Math.PI / 15)
 ];
+const EXACT_ROOT_OUTWARD_ANCHOR_RELIEF_ROTATIONS = [
+  -(Math.PI / 36),
+  Math.PI / 36,
+  -(Math.PI / 18),
+  Math.PI / 18,
+  -(Math.PI / 12),
+  Math.PI / 12,
+  -(Math.PI / 9),
+  Math.PI / 9,
+  -(5 * Math.PI / 36),
+  5 * Math.PI / 36,
+  -(Math.PI / 6),
+  Math.PI / 6
+];
+const TERMINAL_RING_LEAF_SIDE_RELIEF_ROTATIONS = [
+  0,
+  Math.PI / 36,
+  -(Math.PI / 36),
+  Math.PI / 18,
+  -(Math.PI / 18),
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 10,
+  -(Math.PI / 10),
+  Math.PI / 9,
+  -(Math.PI / 9),
+  Math.PI / 6,
+  -(Math.PI / 6)
+];
+const TERMINAL_RING_LEAF_OUTWARD_BACKOFF_ANGLES = [
+  0,
+  Math.PI / 36,
+  -(Math.PI / 36),
+  Math.PI / 18,
+  -(Math.PI / 18),
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 9,
+  -(Math.PI / 9),
+  (5 * Math.PI) / 36,
+  -(5 * Math.PI) / 36,
+  Math.PI / 6,
+  -(Math.PI / 6)
+];
+const TERMINAL_RING_LEAF_OUTWARD_TRIGGER = Math.PI / 6;
+const TERMINAL_RING_LEAF_MIN_OUTWARD_IMPROVEMENT = (Math.PI / 18) ** 2;
+const TERMINAL_RING_LEAF_MIN_PARENT_FAN_ANGLE = (7 * Math.PI) / 18;
+const TERMINAL_RING_LEAF_MAX_PARENT_FAN_WORSENING = Math.PI / 18;
 const CLEAN_DIRECT_ATTACHMENT_OUTWARD_EPSILON = Math.PI / 180;
 
 function largestAngularGapBisector(occupiedAngles) {
@@ -569,6 +622,61 @@ function supportsRootAnchoredAttachedRingRotation(layoutGraph, descriptor) {
     }
   }
   return subtreeRingAtomCount >= 3;
+}
+
+/**
+ * Counts direct attached-ring neighbors around a non-ring center. Exact
+ * root-anchored outward seeds are reserved for crowded centers with multiple
+ * ring roots; simple one-ring flexible sidechains should keep their zigzag
+ * bias rather than being radialized.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Candidate non-ring center atom ID.
+ * @returns {number} Direct attached-ring neighbor count.
+ */
+function directAttachedRingNeighborCount(layoutGraph, centerAtomId) {
+  const centerRingSystemId = layoutGraph.atomToRingSystemId.get(centerAtomId);
+  let count = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0) {
+      continue;
+    }
+    const neighborRingSystemId = layoutGraph.atomToRingSystemId.get(neighborAtomId);
+    if (neighborRingSystemId == null || neighborRingSystemId === centerRingSystemId) {
+      continue;
+    }
+    count++;
+  }
+  return count;
+}
+
+/**
+ * Returns exact root-anchored rotations that align an attached ring root with
+ * its own local exterior axis. Coarse fallback angles can leave small but
+ * visible `100/140` aromatic splits, so overlap-safe candidates should include
+ * the precise correction when the movable side is a ring block.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}} descriptor - Attached-ring descriptor.
+ * @returns {number[]} Exact root-anchored rotation offsets in radians.
+ */
+function exactRootAnchoredOutwardRotations(layoutGraph, coords, descriptor) {
+  if (!supportsRootAnchoredAttachedRingRotation(layoutGraph, descriptor)) {
+    return [];
+  }
+  if (directAttachedRingNeighborCount(layoutGraph, descriptor.anchorAtomId) < 2) {
+    return [];
+  }
+
+  const fit = directAttachedRingRootOutwardFit(layoutGraph, coords, descriptor.rootAtomId, descriptor.anchorAtomId);
+  if (!fit || fit.deviation <= 1e-6 || Math.abs(fit.correction) <= 1e-9) {
+    return [];
+  }
+  return [fit.correction];
 }
 
 function rotateAttachedRingAroundRoot(coords, descriptor, rotation) {
@@ -1018,6 +1126,383 @@ function snapTerminalCarbonRingLeavesToOutward(layoutGraph, coords) {
     candidateCoords.set(leafAtomId, add(anchorPosition, fromAngle(outwardAngles[0], bondDistance)));
   }
   return candidateCoords;
+}
+
+function terminalCarbonRingLeafRecords(layoutGraph, coords, frozenAtomIds = null) {
+  const records = [];
+  for (const [leafAtomId, leafAtom] of layoutGraph.atoms ?? []) {
+    if (
+      !leafAtom
+      || leafAtom.element !== 'C'
+      || leafAtom.aromatic
+      || leafAtom.heavyDegree !== 1
+      || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+      || !coords.has(leafAtomId)
+      || layoutGraph.fixedCoords.has(leafAtomId)
+      || (frozenAtomIds && frozenAtomIds.has(leafAtomId))
+    ) {
+      continue;
+    }
+
+    const bond = (layoutGraph.bondsByAtomId.get(leafAtomId) ?? []).find(candidateBond => {
+      if (!candidateBond || candidateBond.kind !== 'covalent' || candidateBond.inRing || candidateBond.aromatic || (candidateBond.order ?? 1) !== 1) {
+        return false;
+      }
+      const neighborAtomId = candidateBond.a === leafAtomId ? candidateBond.b : candidateBond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return !!neighborAtom && neighborAtom.element !== 'H' && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0;
+    });
+    if (!bond) {
+      continue;
+    }
+
+    const anchorAtomId = bond.a === leafAtomId ? bond.b : bond.a;
+    const anchorPosition = coords.get(anchorAtomId);
+    const leafPosition = coords.get(leafAtomId);
+    if (!anchorPosition || !leafPosition) {
+      continue;
+    }
+    const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null);
+    if (outwardAngles.length !== 1) {
+      continue;
+    }
+    const currentAngle = angleOf(sub(leafPosition, anchorPosition));
+    const deviation = angularDifference(currentAngle, outwardAngles[0]);
+    if (deviation <= TERMINAL_RING_LEAF_OUTWARD_TRIGGER) {
+      continue;
+    }
+
+    records.push({
+      leafAtomId,
+      anchorAtomId,
+      currentAngle,
+      outwardAngle: outwardAngles[0],
+      deviation,
+      bondDistance: Math.hypot(leafPosition.x - anchorPosition.x, leafPosition.y - anchorPosition.y)
+    });
+  }
+  return records;
+}
+
+function collectTerminalCarbonRingLeafReliefDescriptors(layoutGraph, coords, frozenAtomIds = null) {
+  if ((layoutGraph.traits.heavyAtomCount ?? 0) > CROWDED_CENTER_HEAVY_ATOM_LIMIT) {
+    return [];
+  }
+
+  const descriptors = [];
+  const seen = new Set();
+  for (const leafRecord of terminalCarbonRingLeafRecords(layoutGraph, coords, frozenAtomIds)) {
+    const ringSystemId = layoutGraph.atomToRingSystemId.get(leafRecord.anchorAtomId);
+    const ringSystem = layoutGraph.ringSystems?.find(candidate => candidate?.id === ringSystemId);
+    if (!ringSystem || !Array.isArray(ringSystem.atomIds)) {
+      continue;
+    }
+    const ringAtomIdSet = new Set(ringSystem.atomIds);
+    for (const rootAtomId of ringSystem.atomIds) {
+      for (const bond of layoutGraph.bondsByAtomId.get(rootAtomId) ?? []) {
+        if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+          continue;
+        }
+        const parentAtomId = bond.a === rootAtomId ? bond.b : bond.a;
+        const parentAtom = layoutGraph.atoms.get(parentAtomId);
+        if (
+          !parentAtom
+          || parentAtom.element === 'H'
+          || ringAtomIdSet.has(parentAtomId)
+          || !coords.has(parentAtomId)
+        ) {
+          continue;
+        }
+
+        const subtreeAtomIds = [...collectCutSubtree(layoutGraph, rootAtomId, parentAtomId)].filter(atomId => coords.has(atomId));
+        if (
+          !subtreeAtomIds.includes(leafRecord.leafAtomId)
+          || !subtreeAtomIds.includes(leafRecord.anchorAtomId)
+          || subtreeAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId))
+          || (frozenAtomIds && containsFrozenAtom(subtreeAtomIds, frozenAtomIds))
+          || countHeavyAtoms(layoutGraph, subtreeAtomIds) > MAX_ANCHOR_SIDE_OUTWARD_SUBTREE_HEAVY_ATOMS
+        ) {
+          continue;
+        }
+
+        const key = `${leafRecord.leafAtomId}:${leafRecord.anchorAtomId}:${rootAtomId}:${parentAtomId}`;
+        if (seen.has(key)) {
+          continue;
+        }
+        seen.add(key);
+        descriptors.push({
+          ...leafRecord,
+          rootAtomId,
+          parentAtomId,
+          subtreeAtomIds
+        });
+      }
+    }
+  }
+
+  return descriptors;
+}
+
+function minimumHeavyNeighborAngle(layoutGraph, coords, centerAtomId) {
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const neighborAtomIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (neighborAtom && neighborAtom.element !== 'H' && coords.has(neighborAtomId)) {
+      neighborAtomIds.push(neighborAtomId);
+    }
+  }
+  if (neighborAtomIds.length < 2) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  let minimumAngle = Number.POSITIVE_INFINITY;
+  for (let firstIndex = 0; firstIndex < neighborAtomIds.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < neighborAtomIds.length; secondIndex++) {
+      const firstAngle = angleOf(sub(coords.get(neighborAtomIds[firstIndex]), centerPosition));
+      const secondAngle = angleOf(sub(coords.get(neighborAtomIds[secondIndex]), centerPosition));
+      minimumAngle = Math.min(minimumAngle, angularDifference(firstAngle, secondAngle));
+    }
+  }
+  return minimumAngle;
+}
+
+function terminalRingLeafHeavyClearance(layoutGraph, coords, leafAtomId) {
+  const leafPosition = coords.get(leafAtomId);
+  if (!leafPosition) {
+    return 0;
+  }
+  const bondedAtomIds = new Set(
+    (layoutGraph.bondsByAtomId.get(leafAtomId) ?? [])
+      .filter(bond => bond?.kind === 'covalent')
+      .map(bond => (bond.a === leafAtomId ? bond.b : bond.a))
+  );
+  let clearance = Number.POSITIVE_INFINITY;
+  for (const [atomId, atom] of layoutGraph.atoms ?? []) {
+    if (
+      atomId === leafAtomId
+      || bondedAtomIds.has(atomId)
+      || !atom
+      || atom.element === 'H'
+      || !coords.has(atomId)
+    ) {
+      continue;
+    }
+    const position = coords.get(atomId);
+    clearance = Math.min(clearance, Math.hypot(position.x - leafPosition.x, position.y - leafPosition.y));
+  }
+  return Number.isFinite(clearance) ? clearance : Number.POSITIVE_INFINITY;
+}
+
+function snapTerminalLeafRecordToAngle(coords, descriptor, targetAngle) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  if (!anchorPosition || descriptor.bondDistance <= 1e-6) {
+    return coords;
+  }
+  const candidateCoords = new Map(coords);
+  candidateCoords.set(descriptor.leafAtomId, add(anchorPosition, fromAngle(targetAngle, descriptor.bondDistance)));
+  return candidateCoords;
+}
+
+function scoreTerminalCarbonRingLeafReliefCandidate(layoutGraph, coords, descriptor, bondLength, baseMetrics, nudges) {
+  const audit = auditLayout(layoutGraph, coords, { bondLength });
+  if (baseMetrics.audit.ok && !audit.ok) {
+    return null;
+  }
+  if (
+    audit.severeOverlapCount > baseMetrics.audit.severeOverlapCount
+    || audit.bondLengthFailureCount > baseMetrics.audit.bondLengthFailureCount
+    || audit.labelOverlapCount > baseMetrics.audit.labelOverlapCount
+    || audit.maxBondLengthDeviation > baseMetrics.audit.maxBondLengthDeviation + 1e-6
+  ) {
+    return null;
+  }
+
+  const visibleBondCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords).length;
+  if (visibleBondCrossingCount > baseMetrics.visibleBondCrossingCount) {
+    return null;
+  }
+
+  const parentFanMinimumAngle = minimumHeavyNeighborAngle(layoutGraph, coords, descriptor.parentAtomId);
+  if (
+    parentFanMinimumAngle < TERMINAL_RING_LEAF_MIN_PARENT_FAN_ANGLE
+    || parentFanMinimumAngle < baseMetrics.parentFanMinimumAngle - TERMINAL_RING_LEAF_MAX_PARENT_FAN_WORSENING
+  ) {
+    return null;
+  }
+
+  const targetPenalty = measureTerminalCarbonRingLeafOutwardPenalty(
+    layoutGraph,
+    coords,
+    new Set([descriptor.anchorAtomId, descriptor.leafAtomId])
+  );
+  if (targetPenalty >= baseMetrics.targetPenalty - TERMINAL_RING_LEAF_MIN_OUTWARD_IMPROVEMENT) {
+    return null;
+  }
+  const globalTerminalLeafPenalty = measureTerminalCarbonRingLeafOutwardPenalty(layoutGraph, coords);
+  if (globalTerminalLeafPenalty > baseMetrics.globalTerminalLeafPenalty + 1e-6) {
+    return null;
+  }
+
+  const clearance = terminalRingLeafHeavyClearance(layoutGraph, coords, descriptor.leafAtomId);
+  if (clearance < baseMetrics.clearance - 1e-6) {
+    return null;
+  }
+
+  const readability = measureRingSubstituentReadability(layoutGraph, coords);
+  if (readabilityTupleWorsens(readability, baseMetrics.readability)) {
+    return null;
+  }
+
+  const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation;
+  const visibleTrigonalPenalty = measureTrigonalDistortion(layoutGraph, coords).totalDeviation;
+  const tetrahedralDistortionPenalty = measureTetrahedralDistortion(layoutGraph, coords).totalDeviation;
+  if (
+    omittedHydrogenTrigonalPenalty > baseMetrics.omittedHydrogenTrigonalPenalty + 1e-6
+    || visibleTrigonalPenalty > baseMetrics.visibleTrigonalPenalty + OMITTED_H_FAN_MAX_VISIBLE_TRIGONAL_WORSENING
+    || tetrahedralDistortionPenalty > baseMetrics.tetrahedralDistortionPenalty + CROWDED_CENTER_MAX_TETRAHEDRAL_WORSENING
+  ) {
+    return null;
+  }
+
+  return {
+    coords,
+    nudges,
+    audit,
+    visibleBondCrossingCount,
+    targetPenalty,
+    globalTerminalLeafPenalty,
+    clearance,
+    parentFanMinimumAngle,
+    omittedHydrogenTrigonalPenalty,
+    visibleTrigonalPenalty,
+    tetrahedralDistortionPenalty,
+    layoutCost: measureLayoutCost(layoutGraph, coords, bondLength)
+  };
+}
+
+function isBetterTerminalCarbonRingLeafReliefCandidate(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.audit.ok !== incumbent.audit.ok) {
+    return candidate.audit.ok;
+  }
+  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  }
+  if (candidate.visibleBondCrossingCount !== incumbent.visibleBondCrossingCount) {
+    return candidate.visibleBondCrossingCount < incumbent.visibleBondCrossingCount;
+  }
+  if (Math.abs(candidate.targetPenalty - incumbent.targetPenalty) > 1e-6) {
+    return candidate.targetPenalty < incumbent.targetPenalty;
+  }
+  if (Math.abs(candidate.clearance - incumbent.clearance) > 1e-6) {
+    return candidate.clearance > incumbent.clearance;
+  }
+  if (Math.abs(candidate.parentFanMinimumAngle - incumbent.parentFanMinimumAngle) > 1e-6) {
+    return candidate.parentFanMinimumAngle > incumbent.parentFanMinimumAngle;
+  }
+  if (Math.abs(candidate.tetrahedralDistortionPenalty - incumbent.tetrahedralDistortionPenalty) > 1e-6) {
+    return candidate.tetrahedralDistortionPenalty < incumbent.tetrahedralDistortionPenalty;
+  }
+  return candidate.layoutCost < incumbent.layoutCost - 1e-6;
+}
+
+/**
+ * Relieves terminal carbon leaves on attached rings when the exact outward
+ * position is blocked by a neighboring scaffold atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinate map.
+ * @param {{bondLength?: number, frozenAtomIds?: Set<string>|null}} [options] - Retidy options.
+ * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Best accepted retidy result.
+ */
+export function runTerminalCarbonRingLeafRetidy(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
+  let bestCandidate = null;
+
+  for (const descriptor of collectTerminalCarbonRingLeafReliefDescriptors(layoutGraph, inputCoords, frozenAtomIds)) {
+    const baseMetrics = {
+      audit: auditLayout(layoutGraph, inputCoords, { bondLength }),
+      visibleBondCrossingCount: findVisibleHeavyBondCrossings(layoutGraph, inputCoords).length,
+      parentFanMinimumAngle: minimumHeavyNeighborAngle(layoutGraph, inputCoords, descriptor.parentAtomId),
+      targetPenalty: measureTerminalCarbonRingLeafOutwardPenalty(
+        layoutGraph,
+        inputCoords,
+        new Set([descriptor.anchorAtomId, descriptor.leafAtomId])
+      ),
+      globalTerminalLeafPenalty: measureTerminalCarbonRingLeafOutwardPenalty(layoutGraph, inputCoords),
+      clearance: terminalRingLeafHeavyClearance(layoutGraph, inputCoords, descriptor.leafAtomId),
+      readability: measureRingSubstituentReadability(layoutGraph, inputCoords),
+      omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, inputCoords).totalDeviation,
+      visibleTrigonalPenalty: measureTrigonalDistortion(layoutGraph, inputCoords).totalDeviation,
+      tetrahedralDistortionPenalty: measureTetrahedralDistortion(layoutGraph, inputCoords).totalDeviation
+    };
+
+    for (const shouldReflect of [false, true]) {
+      const reflectedCoords = shouldReflect
+        ? reflectSubtreeAcrossBond(
+            inputCoords,
+            descriptor.subtreeAtomIds,
+            descriptor.parentAtomId,
+            descriptor.rootAtomId,
+            new Set([descriptor.parentAtomId, descriptor.rootAtomId])
+          )
+        : inputCoords;
+      for (const sideRotation of TERMINAL_RING_LEAF_SIDE_RELIEF_ROTATIONS) {
+        const sideCoords = applyRigidRotationToCoords(
+          reflectedCoords,
+          descriptor.subtreeAtomIds,
+          descriptor.parentAtomId,
+          sideRotation
+        );
+        const outwardAngles = computeIncidentRingOutwardAngles(
+          layoutGraph,
+          descriptor.anchorAtomId,
+          atomId => sideCoords.get(atomId) ?? null
+        );
+        if (outwardAngles.length !== 1) {
+          continue;
+        }
+        for (const backoffAngle of TERMINAL_RING_LEAF_OUTWARD_BACKOFF_ANGLES) {
+          const leafCoords = snapTerminalLeafRecordToAngle(
+            sideCoords,
+            descriptor,
+            outwardAngles[0] + backoffAngle
+          );
+          const candidate = scoreTerminalCarbonRingLeafReliefCandidate(
+            layoutGraph,
+            leafCoords,
+            descriptor,
+            bondLength,
+            baseMetrics,
+            (shouldReflect ? 1 : 0) + (Math.abs(sideRotation) > 1e-9 ? 1 : 0) + 1
+          );
+          if (candidate && isBetterTerminalCarbonRingLeafReliefCandidate(candidate, bestCandidate)) {
+            bestCandidate = candidate;
+          }
+        }
+      }
+    }
+  }
+
+  return bestCandidate
+    ? {
+        coords: bestCandidate.coords,
+        nudges: bestCandidate.nudges
+      }
+    : {
+        coords: inputCoords,
+        nudges: 0
+      };
 }
 
 function collectRingHydrogenCompanions(layoutGraph, ringAtomIds, coords) {
@@ -2241,6 +2726,371 @@ function crowdedCenterRootPenalty(layoutGraph, coords, rootRecords) {
   return penalty;
 }
 
+function projectedCenterCrossPenalty(layoutGraph, coords, centerAtomId) {
+  if (!coords.has(centerAtomId)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const centerPosition = coords.get(centerAtomId);
+  const neighborAngles = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    neighborAngles.push(wrapAngle(angleOf(sub(coords.get(neighborAtomId), centerPosition))));
+  }
+  if (neighborAngles.length !== 4) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  neighborAngles.sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  let penalty = 0;
+  for (let index = 0; index < neighborAngles.length; index++) {
+    const currentAngle = neighborAngles[index];
+    const nextAngle = neighborAngles[(index + 1) % neighborAngles.length];
+    const gap = index === neighborAngles.length - 1
+      ? nextAngle + 2 * Math.PI - currentAngle
+      : nextAngle - currentAngle;
+    penalty += (gap - Math.PI / 2) ** 2;
+  }
+  return penalty;
+}
+
+function collectProjectedTetrahedralAttachedRingCenterDescriptors(layoutGraph, coords, frozenAtomIds = null) {
+  if ((layoutGraph.traits.heavyAtomCount ?? 0) > CROWDED_CENTER_HEAVY_ATOM_LIMIT) {
+    return [];
+  }
+
+  const descriptors = [];
+  for (const [centerAtomId, centerPosition] of coords) {
+    if (!centerPosition || !supportsProjectedTetrahedralGeometry(layoutGraph, centerAtomId)) {
+      continue;
+    }
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    if (
+      !centerAtom
+      || centerAtom.element !== 'C'
+      || centerAtom.aromatic
+      || centerAtom.chirality
+      || centerAtom.heavyDegree !== 4
+      || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+    ) {
+      continue;
+    }
+
+    const neighborRecords = [];
+    let allHeavyBondsAreSingle = true;
+    for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (!neighborAtom || neighborAtom.element === 'H') {
+        continue;
+      }
+      if (bond.aromatic || (bond.order ?? 1) !== 1) {
+        allHeavyBondsAreSingle = false;
+        break;
+      }
+      if (!coords.has(neighborAtomId)) {
+        continue;
+      }
+
+      const isAttachedRingRoot = (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0;
+      let subtreeAtomIds = [];
+      let movable = false;
+      if (isAttachedRingRoot && !neighborAtom.chirality) {
+        subtreeAtomIds = [...collectCutSubtree(layoutGraph, neighborAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+        const subtreeHeavyAtomCount = countHeavyAtoms(layoutGraph, subtreeAtomIds);
+        movable = (
+          subtreeAtomIds.length > 0
+          && subtreeAtomIds.length < coords.size
+          && subtreeHeavyAtomCount > 0
+          && subtreeHeavyAtomCount <= PROJECTED_CENTER_MAX_RING_SUBTREE_HEAVY_ATOMS
+          && !subtreeAtomIds.some(atomId => layoutGraph.fixedCoords.has(atomId))
+          && !(frozenAtomIds && containsFrozenAtom(subtreeAtomIds, frozenAtomIds))
+        );
+      }
+
+      neighborRecords.push({
+        atomId: neighborAtomId,
+        element: neighborAtom.element,
+        heavyDegree: neighborAtom.heavyDegree ?? 0,
+        isAttachedRingRoot,
+        movable,
+        subtreeAtomIds,
+        angle: wrapAngle(angleOf(sub(coords.get(neighborAtomId), centerPosition)))
+      });
+    }
+
+    if (
+      !allHeavyBondsAreSingle
+      || neighborRecords.length !== 4
+      || neighborRecords.filter(record => record.isAttachedRingRoot).length < 2
+      || !neighborRecords.some(record => !record.isAttachedRingRoot && record.element === 'N' && record.heavyDegree === 2)
+      || !neighborRecords.some(record => record.isAttachedRingRoot && record.movable)
+    ) {
+      continue;
+    }
+
+    descriptors.push({
+      centerAtomId,
+      neighborRecords
+    });
+  }
+
+  return descriptors;
+}
+
+function projectedCenterSlotAngles(baseAngle) {
+  return [0, 1, 2, 3].map(slotIndex => wrapAngle(baseAngle + slotIndex * Math.PI / 2));
+}
+
+function visitProjectedCenterSlotAssignments(records, slots, visitor) {
+  const assignments = [];
+  const usedSlots = new Set();
+  const visitRecord = index => {
+    if (index >= records.length) {
+      visitor(assignments.map(assignment => ({ ...assignment })));
+      return;
+    }
+    const record = records[index];
+    for (let slotIndex = 0; slotIndex < slots.length; slotIndex++) {
+      if (usedSlots.has(slotIndex)) {
+        continue;
+      }
+      const targetAngle = slots[slotIndex];
+      const deviation = angularDifference(record.angle, targetAngle);
+      if (!record.movable && deviation > PROJECTED_CENTER_FIXED_SLOT_TOLERANCE) {
+        continue;
+      }
+      if (record.movable && deviation > PROJECTED_CENTER_MAX_RING_ROTATION) {
+        continue;
+      }
+      usedSlots.add(slotIndex);
+      assignments.push({
+        record,
+        slotIndex,
+        targetAngle,
+        deviation
+      });
+      visitRecord(index + 1);
+      assignments.pop();
+      usedSlots.delete(slotIndex);
+    }
+  };
+  visitRecord(0);
+}
+
+function buildProjectedCenterCandidateCoords(coords, descriptor, assignments) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  if (!centerPosition) {
+    return null;
+  }
+  const candidateCoords = new Map(coords);
+  let movedAny = false;
+  for (const assignment of assignments) {
+    const { record, targetAngle } = assignment;
+    if (!record.movable) {
+      continue;
+    }
+    const rotation = wrapAngle(targetAngle - record.angle);
+    if (Math.abs(rotation) <= 1e-9) {
+      continue;
+    }
+    movedAny = true;
+    for (const atomId of record.subtreeAtomIds) {
+      const currentPosition = coords.get(atomId);
+      if (!currentPosition) {
+        continue;
+      }
+      candidateCoords.set(atomId, add(centerPosition, rotate(sub(currentPosition, centerPosition), rotation)));
+    }
+  }
+  return movedAny ? candidateCoords : null;
+}
+
+function buildProjectedTetrahedralAttachedRingScore(layoutGraph, coords, descriptor, bondLength, crossPenalty) {
+  const audit = auditLayout(layoutGraph, coords, { bondLength });
+  const readability = measureRingSubstituentReadability(layoutGraph, coords);
+  const focusAtomIds = expandFocusAtomIds(
+    layoutGraph,
+    new Set([descriptor.centerAtomId, ...descriptor.neighborRecords.map(record => record.atomId)])
+  );
+  const rootPenalty = crowdedCenterRootPenalty(
+    layoutGraph,
+    coords,
+    descriptor.neighborRecords
+      .filter(record => record.isAttachedRingRoot)
+      .map(record => ({
+        rootAtomId: record.atomId,
+        centerAtomId: descriptor.centerAtomId
+      }))
+  );
+  return {
+    coords,
+    nudges: 1,
+    projectedTetrahedralAttachedRing: true,
+    overlapCount: audit.severeOverlapCount,
+    exactContinuationPenalty: measureExactAcyclicContinuationDistortion(layoutGraph, coords, focusAtomIds).totalDeviation,
+    parentVisibleTrigonalPenalty: measureAttachedRingParentVisibleTrigonalPenalty(layoutGraph, coords, focusAtomIds),
+    anchorSideOutwardPenalty: rootPenalty,
+    rootOutwardPenalty: rootPenalty,
+    trigonalBisectorPenalty: 0,
+    omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation,
+    visibleTrigonalPenalty: measureTrigonalDistortion(layoutGraph, coords).totalDeviation,
+    trigonalDistortionPenalty: measureAttachedRingTrigonalDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation,
+    tetrahedralDistortionPenalty: measureTetrahedralDistortion(layoutGraph, coords).totalDeviation,
+    projectedCenterCrossPenalty: crossPenalty,
+    subtreeClearance: null,
+    failingSubstituentCount: readability.failingSubstituentCount ?? 0,
+    inwardSubstituentCount: readability.inwardSubstituentCount ?? 0,
+    outwardAxisFailureCount: readability.outwardAxisFailureCount ?? 0,
+    globalFailingSubstituentCount: readability.failingSubstituentCount ?? 0,
+    globalInwardSubstituentCount: readability.inwardSubstituentCount ?? 0,
+    globalOutwardAxisFailureCount: readability.outwardAxisFailureCount ?? 0,
+    totalOutwardDeviation: readability.totalOutwardDeviation ?? 0,
+    maxOutwardDeviation: readability.maxOutwardDeviation ?? 0,
+    presentationImprovement: 0,
+    layoutCost: measureLayoutCost(layoutGraph, coords, bondLength),
+    localPoseKey: attachedRingLocalPoseKey(layoutGraph, coords, {
+      rootAtomId: descriptor.centerAtomId,
+      anchorAtomId: descriptor.neighborRecords[0]?.atomId,
+      subtreeAtomIds: descriptor.neighborRecords.flatMap(record => record.subtreeAtomIds)
+    }),
+    audit
+  };
+}
+
+function isBetterProjectedTetrahedralAttachedRingScore(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.audit.ok !== incumbent.audit.ok) {
+    return candidate.audit.ok;
+  }
+  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  }
+  if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
+    return candidate.audit.bondLengthFailureCount < incumbent.audit.bondLengthFailureCount;
+  }
+  if (Math.abs(candidate.projectedCenterCrossPenalty - incumbent.projectedCenterCrossPenalty) > 1e-6) {
+    return candidate.projectedCenterCrossPenalty < incumbent.projectedCenterCrossPenalty;
+  }
+  if (Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) > 1e-6) {
+    return candidate.rootOutwardPenalty < incumbent.rootOutwardPenalty;
+  }
+  if (Math.abs(candidate.tetrahedralDistortionPenalty - incumbent.tetrahedralDistortionPenalty) > 1e-6) {
+    return candidate.tetrahedralDistortionPenalty < incumbent.tetrahedralDistortionPenalty;
+  }
+  return candidate.layoutCost < incumbent.layoutCost - 1e-6;
+}
+
+function findBestProjectedTetrahedralAttachedRingCandidate(layoutGraph, coords, bondLength, frozenAtomIds = null) {
+  const descriptors = collectProjectedTetrahedralAttachedRingCenterDescriptors(layoutGraph, coords, frozenAtomIds);
+  if (descriptors.length === 0) {
+    return null;
+  }
+
+  let bestAcceptedCandidate = null;
+  for (const descriptor of descriptors) {
+    const baseCrossPenalty = projectedCenterCrossPenalty(layoutGraph, coords, descriptor.centerAtomId);
+    const baseScore = buildProjectedTetrahedralAttachedRingScore(layoutGraph, coords, descriptor, bondLength, baseCrossPenalty);
+    if (
+      baseScore.audit.severeOverlapCount === 0
+      && baseCrossPenalty <= PROJECTED_CENTER_MIN_CROSS_IMPROVEMENT
+    ) {
+      continue;
+    }
+
+    let bestCandidate = null;
+    for (const record of descriptor.neighborRecords) {
+      for (let slotIndex = 0; slotIndex < 4; slotIndex++) {
+        const slots = projectedCenterSlotAngles(record.angle - slotIndex * Math.PI / 2);
+        visitProjectedCenterSlotAssignments(descriptor.neighborRecords, slots, assignments => {
+          const candidateCoords = buildProjectedCenterCandidateCoords(coords, descriptor, assignments);
+          if (!candidateCoords) {
+            return;
+          }
+          const candidateCrossPenalty = projectedCenterCrossPenalty(layoutGraph, candidateCoords, descriptor.centerAtomId);
+          if (candidateCrossPenalty >= baseCrossPenalty - PROJECTED_CENTER_MIN_CROSS_IMPROVEMENT) {
+            return;
+          }
+          const candidateScore = buildProjectedTetrahedralAttachedRingScore(
+            layoutGraph,
+            candidateCoords,
+            descriptor,
+            bondLength,
+            candidateCrossPenalty
+          );
+          if (
+            (baseScore.audit.ok && !candidateScore.audit.ok)
+            || candidateScore.audit.severeOverlapCount > baseScore.audit.severeOverlapCount
+            || candidateScore.audit.bondLengthFailureCount > baseScore.audit.bondLengthFailureCount
+            || candidateScore.audit.labelOverlapCount > baseScore.audit.labelOverlapCount
+            || candidateScore.audit.maxBondLengthDeviation > baseScore.audit.maxBondLengthDeviation + 1e-6
+            || candidateScore.visibleTrigonalPenalty > baseScore.visibleTrigonalPenalty + OMITTED_H_FAN_MAX_VISIBLE_TRIGONAL_WORSENING
+            || candidateScore.tetrahedralDistortionPenalty > baseScore.tetrahedralDistortionPenalty + CROWDED_CENTER_MAX_TETRAHEDRAL_WORSENING
+          ) {
+            return;
+          }
+          if (
+            candidateScore.audit.severeOverlapCount >= baseScore.audit.severeOverlapCount
+            && candidateCrossPenalty >= baseCrossPenalty - PROJECTED_CENTER_MIN_CROSS_IMPROVEMENT
+          ) {
+            return;
+          }
+          if (isBetterProjectedTetrahedralAttachedRingScore(candidateScore, bestCandidate)) {
+            bestCandidate = candidateScore;
+          }
+        });
+      }
+    }
+
+    if (
+      bestCandidate
+      && (
+        bestCandidate.audit.severeOverlapCount < baseScore.audit.severeOverlapCount
+        || bestCandidate.projectedCenterCrossPenalty < baseScore.projectedCenterCrossPenalty - PROJECTED_CENTER_MIN_CROSS_IMPROVEMENT
+      )
+      && isBetterAttachedRingCandidate(bestCandidate, bestAcceptedCandidate)
+    ) {
+      bestAcceptedCandidate = bestCandidate;
+    }
+  }
+
+  return bestAcceptedCandidate;
+}
+
+/**
+ * Snaps movable attached-ring roots around projected tetrahedral centers onto
+ * orthogonal slots before the geometry cleanup relaxes any remaining overlaps.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinate map.
+ * @param {{bondLength?: number, frozenAtomIds?: Set<string>|null}} [options] - Snap options.
+ * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Snap result.
+ */
+export function runProjectedTetrahedralAttachedRingSlotSnap(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
+  const candidate = findBestProjectedTetrahedralAttachedRingCandidate(layoutGraph, inputCoords, bondLength, frozenAtomIds);
+  return candidate
+    ? {
+        coords: candidate.coords,
+        nudges: candidate.nudges
+      }
+    : {
+        coords: inputCoords,
+        nudges: 0
+      };
+}
+
 /**
  * Finds compact non-ring centers with several directly attached movable ring
  * blocks where one root visibly misses its own exterior axis.
@@ -2569,6 +3419,383 @@ function findBestCrowdedAttachedRingCenterCandidate(layoutGraph, coords, bondLen
   return bestAcceptedCandidate;
 }
 
+function isReadabilityOnlyAuditFailure(audit) {
+  return !audit?.ok
+    && (audit?.fallback?.reasons ?? []).length > 0
+    && (audit?.fallback?.reasons ?? []).every(reason => reason === 'ring-substituent-readability');
+}
+
+function buildExactRootOutwardRefinementScore(layoutGraph, coords, descriptor, rotation, bondLength, baseMetrics) {
+  const overridePositions = rotateAttachedRingAroundRoot(coords, descriptor, rotation);
+  if (!overridePositions || overridePositions.size === 0) {
+    return null;
+  }
+
+  const focusAtomIds = expandFocusAtomIds(
+    layoutGraph,
+    new Set([descriptor.anchorAtomId, descriptor.rootAtomId, ...descriptor.subtreeAtomIds])
+  );
+  const candidateCoords = new Map(coords);
+  for (const [atomId, position] of overridePositions) {
+    candidateCoords.set(atomId, position);
+  }
+
+  let scoredCoords = candidateCoords;
+  let scoredNudges = 1;
+  let scoredAudit = auditLayout(layoutGraph, scoredCoords, { bondLength });
+  if (baseMetrics.audit.ok && isReadabilityOnlyAuditFailure(scoredAudit)) {
+    const retouchResult = runAttachedRingRotationTouchup(layoutGraph, scoredCoords, {
+      bondLength,
+      maxPasses: 2,
+      frozenAtomIds: baseMetrics.frozenAtomIds,
+      cleanupRigidSubtreesByAtomId: baseMetrics.cleanupRigidSubtreesByAtomId,
+      protectLargeMoleculeBackbone: baseMetrics.protectLargeMoleculeBackbone === true,
+      skipExactRootOutwardRefinement: true
+    });
+    if (retouchResult.nudges > 0) {
+      const retouchAudit = auditLayout(layoutGraph, retouchResult.coords, { bondLength });
+      if (
+        retouchAudit.severeOverlapCount <= baseMetrics.audit.severeOverlapCount
+        && retouchAudit.bondLengthFailureCount <= baseMetrics.audit.bondLengthFailureCount
+        && retouchAudit.labelOverlapCount <= baseMetrics.audit.labelOverlapCount
+        && retouchAudit.maxBondLengthDeviation <= baseMetrics.audit.maxBondLengthDeviation + 1e-6
+      ) {
+        scoredCoords = retouchResult.coords;
+        scoredNudges += retouchResult.nudges;
+        scoredAudit = retouchAudit;
+      }
+    }
+  }
+
+  const rootOutwardPenalty = measureAttachedRingRootOutwardPenalty(layoutGraph, scoredCoords, descriptor, focusAtomIds);
+  if (rootOutwardPenalty >= baseMetrics.rootOutwardPenalty - 1e-6) {
+    return null;
+  }
+
+  if (baseMetrics.audit.ok && !scoredAudit.ok) {
+    return null;
+  }
+  if (
+    scoredAudit.severeOverlapCount > baseMetrics.audit.severeOverlapCount
+    || scoredAudit.bondLengthFailureCount > baseMetrics.audit.bondLengthFailureCount
+    || scoredAudit.labelOverlapCount > baseMetrics.audit.labelOverlapCount
+    || scoredAudit.maxBondLengthDeviation > baseMetrics.audit.maxBondLengthDeviation + 1e-6
+  ) {
+    return null;
+  }
+
+  const readability = measureRingSubstituentReadability(layoutGraph, scoredCoords, { focusAtomIds });
+  const globalReadability = measureRingSubstituentReadability(layoutGraph, scoredCoords);
+  if (readabilityTupleWorsens(readability, baseMetrics.readability) || readabilityTupleWorsens(globalReadability, baseMetrics.globalReadability)) {
+    return null;
+  }
+
+  const exactContinuationPenalty = measureExactAcyclicContinuationDistortion(layoutGraph, scoredCoords, focusAtomIds).totalDeviation;
+  const parentVisibleTrigonalPenalty = measureAttachedRingParentVisibleTrigonalPenalty(layoutGraph, scoredCoords, focusAtomIds);
+  const trigonalBisectorPenalty = measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, scoredCoords, descriptor);
+  const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, scoredCoords, { focusAtomIds }).totalDeviation;
+  const visibleTrigonalPenalty = measureTrigonalDistortion(layoutGraph, scoredCoords).totalDeviation;
+  const trigonalDistortionPenalty = measureAttachedRingTrigonalDistortion(layoutGraph, scoredCoords, { focusAtomIds }).totalDeviation;
+  const tetrahedralDistortionPenalty = measureTetrahedralDistortion(layoutGraph, scoredCoords).totalDeviation;
+  if (
+    exactContinuationPenalty > baseMetrics.exactContinuationPenalty + 1e-6
+    || parentVisibleTrigonalPenalty > baseMetrics.parentVisibleTrigonalPenalty + 1e-6
+    || trigonalBisectorPenalty > baseMetrics.trigonalBisectorPenalty + 1e-6
+    || omittedHydrogenTrigonalPenalty > baseMetrics.omittedHydrogenTrigonalPenalty + 1e-6
+    || visibleTrigonalPenalty > baseMetrics.visibleTrigonalPenalty + OMITTED_H_FAN_MAX_VISIBLE_TRIGONAL_WORSENING
+    || trigonalDistortionPenalty > baseMetrics.trigonalDistortionPenalty + 1e-6
+    || tetrahedralDistortionPenalty > baseMetrics.tetrahedralDistortionPenalty + CROWDED_CENTER_MAX_TETRAHEDRAL_WORSENING
+  ) {
+    return null;
+  }
+
+  const presentationPenalty = measureCleanupStagePresentationPenalty(layoutGraph, scoredCoords, {
+    focusAtomIds,
+    includeSmallRingExteriorPenalty: false
+  });
+  return {
+    coords: scoredCoords,
+    nudges: scoredNudges,
+    exactRootOutward: true,
+    overlapCount: scoredAudit.severeOverlapCount,
+    exactContinuationPenalty,
+    parentVisibleTrigonalPenalty,
+    anchorSideOutwardPenalty: measureAttachedRingAnchorSideOutwardPenalty(layoutGraph, scoredCoords, descriptor),
+    anchorSideOutwardImprovement: baseMetrics.anchorSideOutwardPenalty - measureAttachedRingAnchorSideOutwardPenalty(layoutGraph, scoredCoords, descriptor),
+    rootOutwardPenalty,
+    rootOutwardImprovement: baseMetrics.rootOutwardPenalty - rootOutwardPenalty,
+    trigonalBisectorPenalty,
+    omittedHydrogenTrigonalPenalty,
+    visibleTrigonalPenalty,
+    trigonalDistortionPenalty,
+    tetrahedralDistortionPenalty,
+    subtreeClearance: measureAttachedCarbonylSubtreeClearance(layoutGraph, scoredCoords, descriptor),
+    failingSubstituentCount: readability.failingSubstituentCount ?? 0,
+    inwardSubstituentCount: readability.inwardSubstituentCount ?? 0,
+    outwardAxisFailureCount: readability.outwardAxisFailureCount ?? 0,
+    globalFailingSubstituentCount: globalReadability.failingSubstituentCount ?? 0,
+    globalInwardSubstituentCount: globalReadability.inwardSubstituentCount ?? 0,
+    globalOutwardAxisFailureCount: globalReadability.outwardAxisFailureCount ?? 0,
+    totalOutwardDeviation: readability.totalOutwardDeviation ?? 0,
+    maxOutwardDeviation: readability.maxOutwardDeviation ?? 0,
+    presentationImprovement: baseMetrics.presentationPenalty - presentationPenalty,
+    layoutCost: measureLayoutCost(layoutGraph, scoredCoords, bondLength),
+    localPoseKey: attachedRingLocalPoseKey(layoutGraph, scoredCoords, descriptor),
+    audit: scoredAudit
+  };
+}
+
+function findBestExactRootOutwardRefinementCandidate(layoutGraph, coords, bondLength, frozenAtomIds = null, options = {}) {
+  const descriptors = collectMovableAttachedRingDescriptors(layoutGraph, coords, frozenAtomIds)
+    .filter(descriptor =>
+      supportsRootAnchoredAttachedRingRotation(layoutGraph, descriptor)
+      && directAttachedRingNeighborCount(layoutGraph, descriptor.anchorAtomId) >= 2
+    );
+  if (descriptors.length === 0) {
+    return null;
+  }
+
+  const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
+  const baseGlobalReadability = measureRingSubstituentReadability(layoutGraph, coords);
+  const baseVisibleTrigonalPenalty = measureTrigonalDistortion(layoutGraph, coords).totalDeviation;
+  const baseTetrahedralDistortionPenalty = measureTetrahedralDistortion(layoutGraph, coords).totalDeviation;
+  let bestCandidate = null;
+  for (const descriptor of descriptors) {
+    const focusAtomIds = expandFocusAtomIds(
+      layoutGraph,
+      new Set([descriptor.anchorAtomId, descriptor.rootAtomId, ...descriptor.subtreeAtomIds])
+    );
+    const baseMetrics = {
+      audit: baseAudit,
+      globalReadability: baseGlobalReadability,
+      readability: measureRingSubstituentReadability(layoutGraph, coords, { focusAtomIds }),
+      exactContinuationPenalty: measureExactAcyclicContinuationDistortion(layoutGraph, coords, focusAtomIds).totalDeviation,
+      parentVisibleTrigonalPenalty: measureAttachedRingParentVisibleTrigonalPenalty(layoutGraph, coords, focusAtomIds),
+      anchorSideOutwardPenalty: measureAttachedRingAnchorSideOutwardPenalty(layoutGraph, coords, descriptor),
+      rootOutwardPenalty: measureAttachedRingRootOutwardPenalty(layoutGraph, coords, descriptor, focusAtomIds),
+      trigonalBisectorPenalty: measureDirectAttachmentTrigonalBisectorPenalty(layoutGraph, coords, descriptor),
+      omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation,
+      visibleTrigonalPenalty: baseVisibleTrigonalPenalty,
+      trigonalDistortionPenalty: measureAttachedRingTrigonalDistortion(layoutGraph, coords, { focusAtomIds }).totalDeviation,
+      tetrahedralDistortionPenalty: baseTetrahedralDistortionPenalty,
+      frozenAtomIds,
+      cleanupRigidSubtreesByAtomId: options.cleanupRigidSubtreesByAtomId,
+      protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true,
+      presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords, {
+        focusAtomIds,
+        includeSmallRingExteriorPenalty: false
+      })
+    };
+    for (const rotation of exactRootAnchoredOutwardRotations(layoutGraph, coords, descriptor)) {
+      const candidate = buildExactRootOutwardRefinementScore(layoutGraph, coords, descriptor, rotation, bondLength, baseMetrics);
+      if (candidate && isBetterAttachedRingCandidate(candidate, bestCandidate)) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  return bestCandidate;
+}
+
+function scoreExactAttachedRingRootOutwardRetidyCoords(layoutGraph, candidateCoords, bondLength, baseMetrics, nudges) {
+  const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+  if (baseMetrics.audit.ok && !audit.ok) {
+    return null;
+  }
+  if (
+    audit.severeOverlapCount > baseMetrics.audit.severeOverlapCount
+    || audit.bondLengthFailureCount > baseMetrics.audit.bondLengthFailureCount
+    || audit.labelOverlapCount > baseMetrics.audit.labelOverlapCount
+    || audit.maxBondLengthDeviation > baseMetrics.audit.maxBondLengthDeviation + 1e-6
+  ) {
+    return null;
+  }
+
+  const visibleBondCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, candidateCoords).length;
+  if (visibleBondCrossingCount > baseMetrics.visibleBondCrossingCount) {
+    return null;
+  }
+
+  const rootOutwardPenalty = measureAttachedRingRootOutwardPresentationPenalty(
+    layoutGraph,
+    candidateCoords,
+    baseMetrics.frozenAtomIds
+  );
+  if (rootOutwardPenalty >= baseMetrics.rootOutwardPenalty - 1e-6) {
+    return null;
+  }
+
+  const readability = measureRingSubstituentReadability(layoutGraph, candidateCoords);
+  if (readabilityTupleWorsens(readability, baseMetrics.readability)) {
+    return null;
+  }
+
+  const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, candidateCoords).totalDeviation;
+  if (omittedHydrogenTrigonalPenalty > baseMetrics.omittedHydrogenTrigonalPenalty + 1e-6) {
+    return null;
+  }
+
+  const trigonalDistortionPenalty = measureTrigonalDistortion(layoutGraph, candidateCoords).totalDeviation;
+  if (trigonalDistortionPenalty > baseMetrics.trigonalDistortionPenalty + OMITTED_H_FAN_MAX_VISIBLE_TRIGONAL_WORSENING) {
+    return null;
+  }
+
+  const tetrahedralDistortionPenalty = measureTetrahedralDistortion(layoutGraph, candidateCoords).totalDeviation;
+  if (tetrahedralDistortionPenalty > baseMetrics.tetrahedralDistortionPenalty + CROWDED_CENTER_MAX_TETRAHEDRAL_WORSENING) {
+    return null;
+  }
+
+  return {
+    coords: candidateCoords,
+    nudges,
+    audit,
+    visibleBondCrossingCount,
+    rootOutwardPenalty,
+    omittedHydrogenTrigonalPenalty,
+    trigonalDistortionPenalty,
+    tetrahedralDistortionPenalty,
+    layoutCost: measureLayoutCost(layoutGraph, candidateCoords, bondLength)
+  };
+}
+
+function buildExactAttachedRingRootOutwardRetidyScore(layoutGraph, coords, descriptor, rotation, bondLength, baseMetrics) {
+  const overridePositions = rotateAttachedRingAroundRoot(coords, descriptor, rotation);
+  if (!overridePositions || overridePositions.size === 0) {
+    return null;
+  }
+
+  const candidateCoords = new Map(coords);
+  for (const [atomId, position] of overridePositions) {
+    candidateCoords.set(atomId, position);
+  }
+
+  let bestCandidate = scoreExactAttachedRingRootOutwardRetidyCoords(
+    layoutGraph,
+    candidateCoords,
+    bondLength,
+    baseMetrics,
+    1
+  );
+  for (const anchorRotation of EXACT_ROOT_OUTWARD_ANCHOR_RELIEF_ROTATIONS) {
+    const reliefCoords = applyRigidRotationToCoords(
+      candidateCoords,
+      descriptor.subtreeAtomIds,
+      descriptor.anchorAtomId,
+      anchorRotation
+    );
+    const reliefCandidate = scoreExactAttachedRingRootOutwardRetidyCoords(
+      layoutGraph,
+      reliefCoords,
+      bondLength,
+      baseMetrics,
+      2
+    );
+    if (reliefCandidate && isBetterExactAttachedRingRootOutwardRetidyCandidate(reliefCandidate, bestCandidate)) {
+      bestCandidate = reliefCandidate;
+    }
+  }
+
+  return bestCandidate;
+}
+
+function isBetterExactAttachedRingRootOutwardRetidyCandidate(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.audit.ok !== incumbent.audit.ok) {
+    return candidate.audit.ok;
+  }
+  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  }
+  if (candidate.visibleBondCrossingCount !== incumbent.visibleBondCrossingCount) {
+    return candidate.visibleBondCrossingCount < incumbent.visibleBondCrossingCount;
+  }
+  if (Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) > 1e-6) {
+    return candidate.rootOutwardPenalty < incumbent.rootOutwardPenalty;
+  }
+  if (Math.abs(candidate.omittedHydrogenTrigonalPenalty - incumbent.omittedHydrogenTrigonalPenalty) > 1e-6) {
+    return candidate.omittedHydrogenTrigonalPenalty < incumbent.omittedHydrogenTrigonalPenalty;
+  }
+  if (Math.abs(candidate.trigonalDistortionPenalty - incumbent.trigonalDistortionPenalty) > 1e-6) {
+    return candidate.trigonalDistortionPenalty < incumbent.trigonalDistortionPenalty;
+  }
+  if (Math.abs(candidate.tetrahedralDistortionPenalty - incumbent.tetrahedralDistortionPenalty) > 1e-6) {
+    return candidate.tetrahedralDistortionPenalty < incumbent.tetrahedralDistortionPenalty;
+  }
+  return candidate.layoutCost < incumbent.layoutCost - 1e-6;
+}
+
+/**
+ * Runs a conservative final snap for direct attached-ring roots that still miss
+ * their own local outward axis after broader presentation cleanup.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Starting coordinates.
+ * @param {{bondLength?: number, frozenAtomIds?: Set<string>|null}} [options] - Retidy options.
+ * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Best accepted retidy result.
+ */
+export function runExactAttachedRingRootOutwardRetidy(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
+  let currentCoords = inputCoords;
+  let totalNudges = 0;
+
+  for (let pass = 0; pass < 2; pass++) {
+    const baseMetrics = {
+      audit: auditLayout(layoutGraph, currentCoords, { bondLength }),
+      readability: measureRingSubstituentReadability(layoutGraph, currentCoords),
+      visibleBondCrossingCount: findVisibleHeavyBondCrossings(layoutGraph, currentCoords).length,
+      rootOutwardPenalty: measureAttachedRingRootOutwardPresentationPenalty(layoutGraph, currentCoords, frozenAtomIds),
+      omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, currentCoords).totalDeviation,
+      trigonalDistortionPenalty: measureTrigonalDistortion(layoutGraph, currentCoords).totalDeviation,
+      tetrahedralDistortionPenalty: measureTetrahedralDistortion(layoutGraph, currentCoords).totalDeviation,
+      frozenAtomIds
+    };
+    if (baseMetrics.rootOutwardPenalty <= 1e-6) {
+      break;
+    }
+
+    let bestCandidate = null;
+    for (const descriptor of collectMovableAttachedRingDescriptors(layoutGraph, currentCoords, frozenAtomIds)) {
+      if (
+        !supportsRootAnchoredAttachedRingRotation(layoutGraph, descriptor)
+        || directAttachedRingNeighborCount(layoutGraph, descriptor.anchorAtomId) < 2
+      ) {
+        continue;
+      }
+      for (const rotation of exactRootAnchoredOutwardRotations(layoutGraph, currentCoords, descriptor)) {
+        const candidate = buildExactAttachedRingRootOutwardRetidyScore(
+          layoutGraph,
+          currentCoords,
+          descriptor,
+          rotation,
+          bondLength,
+          baseMetrics
+        );
+        if (candidate && isBetterExactAttachedRingRootOutwardRetidyCandidate(candidate, bestCandidate)) {
+          bestCandidate = candidate;
+        }
+      }
+    }
+
+    if (!bestCandidate) {
+      break;
+    }
+    currentCoords = bestCandidate.coords;
+    totalNudges += bestCandidate.nudges;
+  }
+
+  return totalNudges > 0
+    ? {
+        coords: currentCoords,
+        nudges: totalNudges
+      }
+    : {
+        coords: inputCoords,
+        nudges: 0
+      };
+}
+
 /**
  * Tries rigid attached-ring rotations plus local follow-up cleanup to improve presentation.
  * @param {object} layoutGraph - Layout graph shell.
@@ -2602,7 +3829,9 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
     const { terminalSubtrees, siblingSwaps, geminalPairs } = computeRotatableSubtrees(layoutGraph, currentCoords);
     const baseOverlapCount = findSevereOverlaps(layoutGraph, currentCoords, bondLength, { atomGrid: baseAtomGrid }).length;
     const baseGlobalReadability = measureRingSubstituentReadability(layoutGraph, currentCoords);
-    let bestCandidate = findBestCrowdedAttachedRingCenterCandidate(layoutGraph, currentCoords, bondLength, frozenAtomIds);
+    let bestCandidate =
+      findBestProjectedTetrahedralAttachedRingCandidate(layoutGraph, currentCoords, bondLength, frozenAtomIds)
+      ?? findBestCrowdedAttachedRingCenterCandidate(layoutGraph, currentCoords, bondLength, frozenAtomIds);
     const omittedHydrogenFanCandidate = findBestOmittedHydrogenAttachedRingFanCandidate(
       layoutGraph,
       currentCoords,
@@ -3037,14 +4266,23 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
             }
           }
           if (supportsRootAnchoredAttachedRingRotation(layoutGraph, inputDescriptor)) {
+            const pushRootAnchoredSeed = (rotation, extraSeedData = {}) => {
+              if (Math.abs(rotation) <= 1e-9) {
+                return;
+              }
+              if (seeds.some(seed => seed.kind === 'root-anchored' && angularDifference(seed.rotation, rotation) <= 1e-9)) {
+                return;
+              }
+              seeds.push({ kind: 'root-anchored', rotation, ...extraSeedData });
+            };
+            for (const rotation of exactRootAnchoredOutwardRotations(layoutGraph, currentCoords, inputDescriptor)) {
+              pushRootAnchoredSeed(rotation, { exactRootOutward: true });
+            }
             if (needsPeripheralFocusClearanceRescue) {
               seeds.push({ kind: 'reflected-subtree', reflectAnchor: true });
             }
             for (const rotation of rotationAngles) {
-              if (Math.abs(rotation) <= 1e-9) {
-                continue;
-              }
-              seeds.push({ kind: 'root-anchored', rotation });
+              pushRootAnchoredSeed(rotation);
             }
             if (baseOverlapCount > 0) {
               for (const anchorRotation of ATTACHED_RING_COUPLED_RESCUE_ANGLES) {
@@ -3183,6 +4421,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
           if (scoredCandidate) {
             scoredCandidate.reflectAnchor = _seed?.reflectAnchor === true;
             scoredCandidate.exactAnchorSideOutward = _seed?.exactAnchorSideOutward === true;
+            scoredCandidate.exactRootOutward = _seed?.exactRootOutward === true;
           }
           return scoredCandidate;
         },
@@ -3221,6 +4460,20 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
     }
 
     if (!bestCandidate) {
+      if (options.skipExactRootOutwardRefinement !== true) {
+        const exactRootOutwardRefinementCandidate = findBestExactRootOutwardRefinementCandidate(
+          layoutGraph,
+          currentCoords,
+          bondLength,
+          frozenAtomIds,
+          options
+        );
+        if (exactRootOutwardRefinementCandidate) {
+          currentCoords = exactRootOutwardRefinementCandidate.coords;
+          totalNudges += exactRootOutwardRefinementCandidate.nudges;
+          continue;
+        }
+      }
       break;
     }
     currentCoords = bestCandidate.coords;
@@ -3234,6 +4487,19 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
     if (exteriorOutwardRefinementCandidate) {
       currentCoords = exteriorOutwardRefinementCandidate.coords;
       totalNudges += exteriorOutwardRefinementCandidate.nudges;
+    }
+    if (options.skipExactRootOutwardRefinement !== true) {
+      const exactRootOutwardRefinementCandidate = findBestExactRootOutwardRefinementCandidate(
+        layoutGraph,
+        currentCoords,
+        bondLength,
+        frozenAtomIds,
+        options
+      );
+      if (exactRootOutwardRefinementCandidate) {
+        currentCoords = exactRootOutwardRefinementCandidate.coords;
+        totalNudges += exactRootOutwardRefinementCandidate.nudges;
+      }
     }
     if (bestCandidate.crowdedAttachedRingCenter === true) {
       break;
@@ -3398,6 +4664,7 @@ function incumbentPeripheralFocusRescueHolds(candidate, incumbent) {
 function incumbentExactAnchorSideOutwardHolds(candidate, incumbent) {
   return !!incumbent
     && incumbent.exactAnchorSideOutward === true
+    && candidate.exactRootOutward !== true
     && candidate.exactAnchorSideOutward !== true
     && (incumbent.anchorSideOutwardImprovement ?? 0) + (incumbent.rootOutwardImprovement ?? 0) > 1e-6
     && candidate.overlapCount >= incumbent.overlapCount
@@ -3530,7 +4797,7 @@ function rootOutwardWins(candidate, incumbent) {
 
 function exactAnchorSideOutwardWins(candidate, incumbent) {
   return !!incumbent
-    && candidate.exactAnchorSideOutward === true
+    && (candidate.exactAnchorSideOutward === true || candidate.exactRootOutward === true)
     && (
       (candidate.anchorSideOutwardImprovement ?? 0) > 1e-6
       || (candidate.rootOutwardImprovement ?? 0) > 1e-6

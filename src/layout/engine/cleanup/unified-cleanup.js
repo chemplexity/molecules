@@ -7,6 +7,7 @@ import { collectRigidPendantRingSubtrees, mergeRigidSubtreesByAtomId, resolveOve
 import { measureOrthogonalHypervalentDeviation } from './hypervalent-angle-tidy.js';
 
 const PROTECTED_BACKBONE_MAX_BOND_DEVIATION = 0.05;
+const NONIMPROVING_TRIGONAL_WORSENING_LIMIT = 0.05;
 
 /**
  * Prescores a one-step cleanup candidate against the current coordinates using
@@ -75,6 +76,14 @@ function protectCleanupBondIntegrity(options = {}) {
 
 function candidateMaxBondDeviation(candidate) {
   return candidate?.candidateState?.bondDeviation?.maxDeviation ?? Number.POSITIVE_INFINITY;
+}
+
+function trigonalDistortionWorsening(baseState, candidate) {
+  return (
+    candidate?.candidateState?.trigonalDistortion?.totalDeviation ?? 0
+  ) - (
+    baseState?.trigonalDistortion?.totalDeviation ?? 0
+  );
 }
 
 /**
@@ -172,6 +181,13 @@ function shouldAcceptCandidate(baseState, candidate, epsilon, options = {}) {
   if (
     protectCleanupBondIntegrity(options)
     && candidate.bondLengthFailureCount > baseState.bondDeviation.failingBondCount
+  ) {
+    return false;
+  }
+  if (
+    candidate.overlapReduction > 0
+    && candidate.improvement <= epsilon
+    && trigonalDistortionWorsening(baseState, candidate) > NONIMPROVING_TRIGONAL_WORSENING_LIMIT
   ) {
     return false;
   }

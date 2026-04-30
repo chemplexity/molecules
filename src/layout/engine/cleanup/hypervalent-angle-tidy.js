@@ -21,6 +21,9 @@ const TERMINAL_HYPERVALENT_H_ANGLE_THRESHOLD = Math.PI / 180;
 const TERMINAL_HYPERVALENT_MULTIPLE_LIGAND_ANGLE_THRESHOLD = Math.PI / 180;
 const RING_ANCHORED_HYPERVALENT_ANGLE_THRESHOLD = Math.PI / 180;
 const TERMINAL_MULTIPLE_LIGAND_COMPRESSION_FACTORS = [1, 0.99, 0.98, 0.97, 0.96, 0.95];
+const TERMINAL_MULTIPLE_LEAF_HYPERVALENT_CLEARANCE_FACTOR = SEVERE_OVERLAP_FACTOR + 0.02;
+const TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_STEP = Math.PI / 180;
+const TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_MAX_ROTATION = Math.PI / 9;
 const RING_EMBEDDED_BIS_OXO_MIN_SPREAD = Math.PI / 3;
 const RING_EMBEDDED_BIS_OXO_SPREAD_STEP = Math.PI / 18;
 const RING_ANCHORED_HYPERVALENT_OVERLAP_RELIEF_STEP = Math.PI / 180;
@@ -193,6 +196,193 @@ function compressedTerminalMultipleLigandPosition(layoutGraph, coords, centerAto
     }
   }
   return fullLengthPosition;
+}
+
+/**
+ * Returns the parent atom for a terminal multiple-bond hetero leaf.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} leafAtomId - Candidate terminal hetero atom id.
+ * @param {string} excludedParentAtomId - Parent atom id that should not be considered.
+ * @returns {string|null} Parent atom id, or `null` when the atom is not a movable leaf.
+ */
+function terminalMultipleLeafParentAtomId(layoutGraph, leafAtomId, excludedParentAtomId) {
+  const leafAtom = layoutGraph.atoms.get(leafAtomId);
+  if (!leafAtom || leafAtom.element === 'H' || leafAtom.element === 'C' || leafAtom.heavyDegree !== 1) {
+    return null;
+  }
+
+  for (const bond of layoutGraph.bondsByAtomId.get(leafAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+      continue;
+    }
+    const parentAtomId = bond.a === leafAtomId ? bond.b : bond.a;
+    if (parentAtomId !== excludedParentAtomId && layoutGraph.atoms.get(parentAtomId)?.element !== 'H') {
+      return parentAtomId;
+    }
+  }
+  return null;
+}
+
+/**
+ * Returns whether a terminal leaf position is too close to one of the direct
+ * ligands around a hypervalent center.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {string} leafAtomId - Candidate terminal leaf atom id.
+ * @param {{x: number, y: number}} leafPosition - Candidate terminal leaf position.
+ * @param {number} clearanceDistance - Required ligand-to-leaf clearance.
+ * @returns {boolean} True when the leaf still conflicts with a hypervalent ligand.
+ */
+function hasDirectHypervalentLigandClearanceConflict(layoutGraph, coords, centerAtomId, leafAtomId, leafPosition, clearanceDistance) {
+  for (const ligandAtomId of directLigandAtomIds(layoutGraph, centerAtomId, coords)) {
+    if (
+      ligandAtomId === leafAtomId
+      || !isVisibleLayoutAtom(layoutGraph, ligandAtomId)
+      || layoutGraph.bondedPairSet.has(atomPairKey(ligandAtomId, leafAtomId))
+    ) {
+      continue;
+    }
+    const ligandPosition = coords.get(ligandAtomId);
+    if (ligandPosition && distance(ligandPosition, leafPosition) < clearanceDistance - 1e-9) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Chooses the smallest rotation of a terminal multiple-bond leaf that clears a
+ * nearby exact hypervalent cross without changing any bond length.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {string} leafAtomId - Terminal multiple-bond leaf atom id.
+ * @param {string} parentAtomId - Leaf parent atom id.
+ * @param {number} clearanceDistance - Required ligand-to-leaf clearance.
+ * @returns {{x: number, y: number}|null} Accepted leaf position, or `null` when no bounded relief is safe.
+ */
+function terminalMultipleLeafHypervalentReliefPosition(layoutGraph, coords, centerAtomId, leafAtomId, parentAtomId, clearanceDistance) {
+  const parentPosition = coords.get(parentAtomId);
+  const leafPosition = coords.get(leafAtomId);
+  if (!parentPosition || !leafPosition) {
+    return null;
+  }
+
+  const currentPositions = new Map([[leafAtomId, leafPosition]]);
+  const currentOverlapState = countSevereOverlapsWithOverrides(
+    layoutGraph,
+    coords,
+    currentPositions,
+    layoutGraph.options?.bondLength ?? distance(parentPosition, leafPosition)
+  );
+  const radius = distance(parentPosition, leafPosition);
+  const currentAngle = angleOf(sub(leafPosition, parentPosition));
+  const maxStepCount = Math.ceil(
+    TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_MAX_ROTATION / TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_STEP
+  );
+
+  let bestFit = null;
+  for (let stepIndex = 1; stepIndex <= maxStepCount; stepIndex++) {
+    for (const direction of [-1, 1]) {
+      const rotation = direction * stepIndex * TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_STEP;
+      const candidatePosition = add(parentPosition, fromAngle(currentAngle + rotation, radius));
+      if (
+        hasDirectHypervalentLigandClearanceConflict(
+          layoutGraph,
+          coords,
+          centerAtomId,
+          leafAtomId,
+          candidatePosition,
+          clearanceDistance
+        )
+      ) {
+        continue;
+      }
+      const candidatePositions = new Map([[leafAtomId, candidatePosition]]);
+      const overlapState = countSevereOverlapsWithOverrides(
+        layoutGraph,
+        coords,
+        candidatePositions,
+        layoutGraph.options?.bondLength ?? radius
+      );
+      if (overlapState.count > currentOverlapState.count) {
+        continue;
+      }
+      const candidateFit = { position: candidatePosition, overlapState, rotation };
+      if (
+        !bestFit
+        || overlapState.count < bestFit.overlapState.count
+        || (
+          overlapState.count === bestFit.overlapState.count
+          && Math.abs(rotation) < Math.abs(bestFit.rotation)
+        )
+        || (
+          overlapState.count === bestFit.overlapState.count
+          && Math.abs(rotation) === Math.abs(bestFit.rotation)
+          && overlapState.minDistance > bestFit.overlapState.minDistance
+        )
+      ) {
+        bestFit = candidateFit;
+      }
+    }
+  }
+
+  if (!bestFit || bestFit.overlapState.count > currentOverlapState.count) {
+    return null;
+  }
+  return bestFit.position;
+}
+
+/**
+ * Rotates nearby terminal multiple-bond leaves away from a freshly squared
+ * hypervalent center when the exact S/P cross would otherwise be rejected for
+ * a tiny local clash with a carbonyl-like leaf.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @returns {number} Number of accepted terminal-leaf rotations.
+ */
+function relieveTerminalMultipleLeafOverlapsNearHypervalentCenter(layoutGraph, coords, centerAtomId) {
+  const bondLength = layoutGraph.options?.bondLength ?? 1.5;
+  const clearanceDistance = bondLength * TERMINAL_MULTIPLE_LEAF_HYPERVALENT_CLEARANCE_FACTOR;
+  let nudges = 0;
+
+  for (const leafAtomId of coords.keys()) {
+    const parentAtomId = terminalMultipleLeafParentAtomId(layoutGraph, leafAtomId, centerAtomId);
+    if (!parentAtomId || !coords.has(parentAtomId)) {
+      continue;
+    }
+    const leafPosition = coords.get(leafAtomId);
+    if (
+      !leafPosition
+      || !hasDirectHypervalentLigandClearanceConflict(
+        layoutGraph,
+        coords,
+        centerAtomId,
+        leafAtomId,
+        leafPosition,
+        clearanceDistance
+      )
+    ) {
+      continue;
+    }
+    const candidatePosition = terminalMultipleLeafHypervalentReliefPosition(
+      layoutGraph,
+      coords,
+      centerAtomId,
+      leafAtomId,
+      parentAtomId,
+      clearanceDistance
+    );
+    if (!candidatePosition) {
+      continue;
+    }
+    coords.set(leafAtomId, candidatePosition);
+    nudges++;
+  }
+
+  return nudges;
 }
 
 function directLigandAtomIds(layoutGraph, centerAtomId, coords) {
@@ -1110,6 +1300,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
         }
         nudges++;
       }
+      nudges += relieveTerminalMultipleLeafOverlapsNearHypervalentCenter(layoutGraph, coords, centerAtomId);
       continue;
     }
 
@@ -1152,6 +1343,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
 
     nudges += alignRingAnchoredHypervalentBranch(layoutGraph, coords, centerAtomId, descriptor);
     nudges += relieveRingAnchoredHypervalentBranchOverlap(layoutGraph, coords, centerAtomId, descriptor);
+    nudges += relieveTerminalMultipleLeafOverlapsNearHypervalentCenter(layoutGraph, coords, centerAtomId);
   }
 
   return { coords, nudges };

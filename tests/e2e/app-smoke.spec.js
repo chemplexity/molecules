@@ -267,6 +267,34 @@ test('loading the benzylic amino-alcohol bug molecule keeps the visible trigonal
     .toBeLessThan(1e-6);
 });
 
+test('loading and cleaning the diaryl amino alcohol bug molecule keeps both phenyl roots exact in the browser render', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC[C@@H](O)C(C[C@@H](C)N(C)C)(C1=CC=CC=C1)C1=CC=CC=C1');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const phenylRootAngleMaxDeviation = async () => {
+    const angles = await Promise.all([
+      atomBondAngleDegrees(page, 'C14', 'C6', 'C15'),
+      atomBondAngleDegrees(page, 'C14', 'C6', 'C19'),
+      atomBondAngleDegrees(page, 'C14', 'C15', 'C19'),
+      atomBondAngleDegrees(page, 'C20', 'C6', 'C21'),
+      atomBondAngleDegrees(page, 'C20', 'C6', 'C25'),
+      atomBondAngleDegrees(page, 'C20', 'C21', 'C25')
+    ]);
+    if (angles.some(angle => angle == null)) {
+      return null;
+    }
+    return Math.max(...angles.map(angle => Math.abs(angle - 120)));
+  };
+
+  await expect.poll(phenylRootAngleMaxDeviation).toBeLessThan(1e-6);
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect.poll(phenylRootAngleMaxDeviation).toBeLessThan(1e-6);
+});
+
 test('loading and cleaning the fused indole alkene bug molecule keeps both linker trigonal angles exact in the browser render', async ({ page }) => {
   await page.goto('/index.html');
 

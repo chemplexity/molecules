@@ -51,12 +51,17 @@ function assertOppositePair(result, centerAtomId, firstNeighborAtomId, secondNei
 }
 
 function assertBondAngle(result, firstAtomId, centerAtomId, secondAtomId, expectedAngle) {
+  const foldedSeparation = measureBondAngle(result, firstAtomId, centerAtomId, secondAtomId);
+  assert.ok(Math.abs(foldedSeparation - expectedAngle) < 1e-6);
+}
+
+function measureBondAngle(result, firstAtomId, centerAtomId, secondAtomId) {
   const centerPosition = result.coords.get(centerAtomId);
   const firstAngle = angleOf(sub(result.coords.get(firstAtomId), centerPosition));
   const secondAngle = angleOf(sub(result.coords.get(secondAtomId), centerPosition));
   const separation = ((Math.abs(firstAngle - secondAngle) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
   const foldedSeparation = Math.min(separation, Math.PI * 2 - separation);
-  assert.ok(Math.abs(foldedSeparation - expectedAngle) < 1e-6);
+  return foldedSeparation;
 }
 
 function assertExteriorOxoV(result, centerAtomId, oxoAtomIds, expectedSpread) {
@@ -432,5 +437,32 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertBondAngle(result, 'C2', 'S14', 'O17', Math.PI / 2);
     assert.ok(compressedOxoLength < result.layoutGraph.options.bondLength * 0.98);
     assert.ok(compressedOxoLength >= result.layoutGraph.options.bondLength * 0.95);
+  });
+
+  it('keeps phosphorothioate lipids orthogonal while clearing neighboring carbonyl leaves', () => {
+    const result = runPipeline(parseSMILES('CCCCC(=O)OC[C@H](CO[P@@]([S-])(=S)OCC[N+](C)(C)C)OC(=O)CCCC'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const bondLength = result.layoutGraph.options.bondLength;
+    const firstCarbonylAngle = measureBondAngle(result, 'O23', 'C24', 'O25');
+    const secondCarbonylAngle = measureBondAngle(result, 'O25', 'C24', 'C26');
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.cleanupTelemetry.selectedStageCategory, 'specialist');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(hasHypervalentAngleTidyNeed(result.layoutGraph, result.coords), false);
+    assert.equal(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['P13']) }), 0);
+    assertOrthogonalCross(result, ['P13']);
+    assertOppositePair(result, 'P13', 'S14', 'S15');
+    assertOppositePair(result, 'P13', 'O12', 'O16');
+    assert.ok(distance(result.coords.get('S15'), result.coords.get('O25')) > bondLength * 0.57);
+    assert.ok(firstCarbonylAngle > (11 * Math.PI) / 20);
+    assert.ok(secondCarbonylAngle > (11 * Math.PI) / 20);
   });
 });

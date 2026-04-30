@@ -13,6 +13,7 @@ describe('layout/engine/templates/library', () => {
       'tropane',
       'cubane',
       'oxabicyclo-3-1-1',
+      'spiro-bridged-oxetane',
       'benzoxathiobicyclo-core',
       'morphinan-core',
       'norbornane',
@@ -110,6 +111,12 @@ describe('layout/engine/templates/library', () => {
     assert.equal(oxabicyclo311.atomCount, 7);
     assert.equal(oxabicyclo311.bondCount, 8);
     assert.equal(oxabicyclo311.ringCount, 2);
+
+    const spiroBridgedOxetane = getTemplateById('spiro-bridged-oxetane');
+    assert.equal(spiroBridgedOxetane.family, 'bridged');
+    assert.equal(spiroBridgedOxetane.atomCount, 9);
+    assert.equal(spiroBridgedOxetane.bondCount, 11);
+    assert.equal(spiroBridgedOxetane.ringCount, 3);
 
     const benzoxathiobicyclo = getTemplateById('benzoxathiobicyclo-core');
     assert.equal(benzoxathiobicyclo.family, 'bridged');

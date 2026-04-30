@@ -2,12 +2,26 @@
 
 ## 2026-04-30
 
-- Rebalance constrained saturated bridged cages so fused-spiro ring strain no longer leaves stretched bonds.
-- Balance compact fused-spiro bridged ring junctions so heteroring cages avoid visible kinks without bond failures.
-- Keep macrocycle sulfonamide aryl linkers on orthogonal sulfone axes during mixed placement.
+- Add a compact spiro-bridged oxetane template so small cage ethers avoid collapsed rings.
+- Let hypervalent tidy keep phosphorothioate crosses exact by nudging neighboring terminal multiple-bond leaves away from local clashes.
+- Let saturated-ring exterior fan retidy preserve linked methylene bends while avoiding overlaps.
+- Treat branched hidden-H linkers as immediate ring-substituent representatives so exact aryl-carbonyl exits stay audit-clean.
+- Let compact aromatic ring alkyl tails use recursive branch lookahead and phosphate-tail presentation retidy so aryl phosphate substituents prefer straighter P-O-C spokes without folding back into neighboring rings.
+- Keep displayed stereochemical hydrogen bonds on their shortened render radius so crowded fused-ring hydrogens clear neighboring atoms.
+- Keep terminal hetero leaves on saturated quaternary ring exterior slots so compact bridged lactones avoid pinched side-branch angles.
+- Score rigid cleanup root geometry so projected aryl centers clear overlaps without straightening adjacent bends.
+- Treat crowded aryl and amide quaternary centers as projected slots so attached rings avoid carbonyl overlap.
 
 ## 2026-04-29
 
+- Use local ring exterior bisectors for mixed organometallic ring-to-metal exits so cyclopentadienyl ligands keep balanced angles.
+- Let compact aromatic-containing bridged scaffolds regularize saturated ring shapes so ammonium cages do not fold flat.
+- Add a terminal multiple-bond leaf final retouch so fused-ring carbonyl oxygens keep exact trigonal slots after later presentation passes.
+- Flip crowded carboxylate-bearing five-member rings across their attachment axis so terminal oxygens stay outside neighboring ring faces.
+- Add exact root-anchored attached-ring retidy so diaryl amino alcohol phenyl exits keep clean 120-degree splits after overlap cleanup.
+- Rebalance constrained saturated bridged cages so fused-spiro ring strain no longer leaves stretched bonds.
+- Balance compact fused-spiro bridged ring junctions so heteroring cages avoid visible kinks without bond failures.
+- Keep macrocycle sulfonamide aryl linkers on orthogonal sulfone axes during mixed placement.
 - Let simple imine-linked aryl branches use exact 120-degree nitrogen slots during mixed placement.
 - Bound crowded tetrazole-linked omitted-H fan relief so the phenyl root and methyl exits stay exact without crossing the tetrazole bond or collapsing neighboring branch angles.
 - Lock the trisodium anthraquinone propionate sidechain regression so the chain angle remains an exact 120-degree zigzag.

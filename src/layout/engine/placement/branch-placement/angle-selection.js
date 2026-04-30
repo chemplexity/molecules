@@ -517,6 +517,37 @@ export function isPlanarConjugatedTertiaryNitrogen(layoutGraph, atomId) {
 }
 
 /**
+ * Returns whether a divalent nitrogen branch is conjugated to a trigonal center
+ * such as a carbonyl. Around crowded quaternary carbon centers these amide-like
+ * branches occupy a bulky projected slot even though the direct nitrogen atom
+ * is not itself a terminal leaf.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Parent center atom ID.
+ * @param {string} atomId - Candidate nitrogen branch root.
+ * @returns {boolean} True when the branch should count as conjugated for projected slots.
+ */
+function isConjugatedDivalentNitrogenBranch(layoutGraph, centerAtomId, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  if (!layoutGraph || !atom || atom.element !== 'N' || atom.aromatic || atom.heavyDegree !== 2) {
+    return false;
+  }
+
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    if (neighborAtomId === centerAtomId) {
+      continue;
+    }
+    if (isConjugatedTrigonalCenter(layoutGraph, neighborAtomId)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Returns whether an aromatic heteroatom substituent carbon is constrained by
  * an adjacent conjugated trigonal center. These `heteroaryl-CH2-C(=O)` roots
  * are presentation-sensitive enough to keep the heteroaryl exit centered,
@@ -2148,6 +2179,7 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
   let terminalHeavyLeafCount = 0;
   let attachedRingRootCount = 0;
   let hasLinearNeighbor = false;
+  let hasConjugatedTrigonalNeighbor = false;
   for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
     if (bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
       return false;
@@ -2173,11 +2205,18 @@ export function supportsProjectedTetrahedralGeometry(layoutGraph, atomId) {
     if (isLinearCenter(layoutGraph, neighborAtomId)) {
       hasLinearNeighbor = true;
     }
+    if (isConjugatedTrigonalCenter(layoutGraph, neighborAtomId)) {
+      hasConjugatedTrigonalNeighbor = true;
+    }
+    if (isConjugatedDivalentNitrogenBranch(layoutGraph, atomId, neighborAtomId)) {
+      hasConjugatedTrigonalNeighbor = true;
+    }
   }
 
   return heavySingleBondCount === 4 && (
     presentationCriticalLeafCount >= 2
     || (attachedRingRootCount >= 2 && terminalHeavyLeafCount >= 1)
+    || (attachedRingRootCount >= 2 && hasConjugatedTrigonalNeighbor)
     || attachedRingRootCount >= 3
     || hasLinearNeighbor
     || (hasCrossLikeHypervalentNeighbor(layoutGraph, atomId) && presentationCriticalLeafCount > 0)
@@ -2329,7 +2368,11 @@ function isProjectedAttachedRingMixedBatch(layoutGraph, anchorAtomId, placedNeig
   const terminalLeafCount = assignedNeighborIds.filter(
     neighborAtomId => isProjectedTetrahedralLeafNeighbor(layoutGraph, anchorAtomId, neighborAtomId)
   ).length;
-  return attachedRingRootCount >= 2 && terminalLeafCount >= 1;
+  const conjugatedTrigonalBranchCount = assignedNeighborIds.filter(neighborAtomId => (
+    isConjugatedTrigonalCenter(layoutGraph, neighborAtomId)
+    || isConjugatedDivalentNitrogenBranch(layoutGraph, anchorAtomId, neighborAtomId)
+  )).length;
+  return attachedRingRootCount >= 2 && (terminalLeafCount >= 1 || conjugatedTrigonalBranchCount >= 1);
 }
 
 /**

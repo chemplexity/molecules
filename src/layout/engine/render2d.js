@@ -132,6 +132,7 @@ function projectHiddenStereoHydrogens(molecule, bondLength) {
     const projectedPosition = synthesizeHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength * 0.75, {
       incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id),
       preferCardinalAxes: true,
+      fixedRadius: true,
       cardinalAxisSectorTolerance: bond?.properties?.display?.as ? DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE : undefined
     });
     projectedCoords.set(atom.id, projectedPosition);

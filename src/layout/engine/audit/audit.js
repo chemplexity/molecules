@@ -4,6 +4,13 @@ import { recommendFallback } from './fallback.js';
 import { detectCollapsedMacrocycles, findSevereOverlaps, measureBondLengthDeviation, measureLabelOverlap, measureRingSubstituentReadability } from './invariants.js';
 import { SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
+function isHeavyAtomOverlap(layoutGraph, overlap) {
+  return (
+    layoutGraph.atoms.get(overlap.firstAtomId)?.element !== 'H'
+    && layoutGraph.atoms.get(overlap.secondAtomId)?.element !== 'H'
+  );
+}
+
 /**
  * Audits a laid-out coordinate set against the current layout safety checks.
  * @param {object} layoutGraph - Layout graph shell.
@@ -18,6 +25,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
   const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
   const severeOverlapThreshold = bondLength * SEVERE_OVERLAP_FACTOR;
+  const heavyAtomOverlapCount = overlaps.filter(overlap => isHeavyAtomOverlap(layoutGraph, overlap)).length;
   const labelOverlap = measureLabelOverlap(layoutGraph, coords, bondLength, {
     labelMetrics: layoutGraph.options.labelMetrics
   });
@@ -39,7 +47,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
     && !ringSubstituentReadabilityFailure;
   const fallback = recommendFallback({
     bondLengthFailureCount: bondDeviation.failingBondCount,
-    severeOverlapCount: overlaps.length,
+    severeOverlapCount: heavyAtomOverlapCount,
     collapsedMacrocycleCount: collapsedMacrocycles.length,
     stereoContradiction,
     bridgedReadabilityFailure,

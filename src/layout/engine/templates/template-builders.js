@@ -605,6 +605,15 @@ function createOxabicyclo311Template() {
 }
 
 /**
+ * Creates the compact spiro-bridged oxetane cage scaffold graph found in
+ * small nitrile-substituted tricyclic ethers like `N#CC1CC2(C1)C1CCC2O1`.
+ * @returns {Molecule} Spiro-bridged oxetane scaffold template molecule.
+ */
+function createSpiroBridgedOxetaneTemplate() {
+  return createRingSystemTemplateFromSmiles('spiro-bridged-oxetane', 'N#CC1CC2(C1)C1CCC2O1');
+}
+
+/**
  * Creates the benzoxathiobicyclo scaffold graph used by bridged benzothiophene
  * cages like `CC1(C)CC2CC(C2)COC2=CC=C1S2`.
  * @returns {Molecule} Benzoxathiobicyclo scaffold template molecule.
@@ -1196,6 +1205,26 @@ function createOxabicyclo311Geometry() {
 }
 
 /**
+ * Creates a planar compact spiro-bridged oxetane projection. The oxetane
+ * bridge sits inside the wider carbon bridge, while the cyclobutane spiro ring
+ * opens to the left so nitrile-like substituents leave the cage exterior.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createSpiroBridgedOxetaneGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C7', { x: 0.0, y: 0.0 }],
+    ['C10', { x: 0.0, y: 1.0 }],
+    ['O11', { x: 0.55, y: 0.5 }],
+    ['C5', { x: -0.75, y: 0.5 }],
+    ['C8', { x: 1.2, y: 0.0 }],
+    ['C9', { x: 1.2, y: 1.0 }],
+    ['C4', { x: -1.504275, y: 1.143864 }],
+    ['C3', { x: -2.189143, y: 0.40421 }],
+    ['C6', { x: -1.421914, y: -0.251213 }]
+  ]);
+}
+
+/**
  * Creates a conventional bridged benzoxathiobicyclo projection matching the
  * supplied medicinal-chemistry sketch: gem-dimethyl-bearing junction on the
  * left, the cyclobutane bridge on the upper right, and the benzothiophene-like
@@ -1369,6 +1398,13 @@ export function buildTemplateLibrary() {
     createTemplate('tropane', 'bridged', 57, createTropaneTemplate(), geometrySpec('normalized-xy', createTropaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('cubane', 'bridged', 55, createCubaneTemplate(), geometrySpec('normalized-xy', createCubaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('oxabicyclo-3-1-1', 'bridged', 54, createOxabicyclo311Template(), geometrySpec('normalized-xy', createOxabicyclo311Geometry(), OXABICYCLO311_VALIDATION)),
+    createTemplate(
+      'spiro-bridged-oxetane',
+      'bridged',
+      53.5,
+      createSpiroBridgedOxetaneTemplate(),
+      geometrySpec('normalized-xy', createSpiroBridgedOxetaneGeometry(), BRIDGED_VALIDATION)
+    ),
     createTemplate(
       'benzoxathiobicyclo-core',
       'bridged',

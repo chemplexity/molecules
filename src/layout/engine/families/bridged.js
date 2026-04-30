@@ -1413,8 +1413,11 @@ function balanceSaturatedBridgedRingShape(layoutGraph, rings, atomIds, coords, b
 }
 
 /**
- * Returns whether compact saturated bridged rings are distorted enough to try
- * regular-polygon relaxation after the KK/projection fallback.
+ * Returns whether compact bridged rings are distorted enough to try
+ * regular-polygon relaxation after the KK/projection fallback. Aromatic rings
+ * can participate when they are part of the same compact bridged system because
+ * skipping them can leave adjacent saturated bridge rings folded around a
+ * strained fused frame.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object[]} rings - Ring descriptors in the bridged system.
  * @param {string[]} atomIds - Atom IDs included in the bridged placement.
@@ -1426,7 +1429,7 @@ function shouldRegularizeSaturatedBridgedRings(layoutGraph, rings, atomIds, shap
   if (!shapeScore || rings.length <= 1 || atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit) {
     return false;
   }
-  if (containsMetalAtom(layoutGraph, atomIds) || rings.some(ring => ring.aromatic)) {
+  if (containsMetalAtom(layoutGraph, atomIds)) {
     return false;
   }
   return (

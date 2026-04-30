@@ -12,6 +12,7 @@ import {
   isRingConstrainedBenzylicCarbonRoot,
   preferredSharedJunctionContinuationAngle
 } from '../placement/branch-placement/angle-selection.js';
+import { isMetalAtom } from '../topology/metal-centers.js';
 import { atomPairKey, AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 const SUBTREE_BOND_CROWDING_FACTOR = 0.5;
@@ -726,6 +727,61 @@ function reconnectsToAnchorRingSystem(layoutGraph, coords, anchorAtomId, childAt
   return result;
 }
 
+function isAuditConjugatedTrigonalCenter(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || atom.aromatic || atom.degree !== 3) {
+    return false;
+  }
+
+  let multipleBondCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic) {
+      continue;
+    }
+    if ((bond.order ?? 1) >= 2) {
+      multipleBondCount++;
+    }
+  }
+  return multipleBondCount === 1;
+}
+
+function hasConjugatedDivalentNitrogenBranch(layoutGraph, anchorAtomId, childAtomId) {
+  for (const bond of layoutGraph.bondsByAtomId.get(childAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const nitrogenAtomId = bond.a === childAtomId ? bond.b : bond.a;
+    if (nitrogenAtomId === anchorAtomId) {
+      continue;
+    }
+
+    const nitrogenAtom = layoutGraph.atoms.get(nitrogenAtomId);
+    if (
+      !nitrogenAtom
+      || nitrogenAtom.element !== 'N'
+      || nitrogenAtom.aromatic
+      || nitrogenAtom.heavyDegree !== 2
+      || (layoutGraph.atomToRings.get(nitrogenAtomId)?.length ?? 0) > 0
+    ) {
+      continue;
+    }
+
+    for (const nitrogenBond of layoutGraph.bondsByAtomId.get(nitrogenAtomId) ?? []) {
+      if (!nitrogenBond || nitrogenBond.kind !== 'covalent' || nitrogenBond.aromatic || (nitrogenBond.order ?? 1) !== 1) {
+        continue;
+      }
+      const downstreamAtomId = nitrogenBond.a === nitrogenAtomId ? nitrogenBond.b : nitrogenBond.a;
+      if (downstreamAtomId === childAtomId) {
+        continue;
+      }
+      if (isAuditConjugatedTrigonalCenter(layoutGraph, downstreamAtomId)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
 /**
  * Returns whether a non-ring child should keep its immediate bond direction as
  * the substituent representative for readability. Carbonyl-like trigonal roots
@@ -742,6 +798,15 @@ function prefersImmediateLinkedSubstituentRepresentative(layoutGraph, anchorAtom
   }
 
   const childAtom = layoutGraph.atoms.get(childAtomId);
+  if (
+    childAtom
+    && childAtom.aromatic !== true
+    && (childAtom.heavyDegree ?? 0) > 2
+    && (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) === 0
+    && hasConjugatedDivalentNitrogenBranch(layoutGraph, anchorAtomId, childAtomId)
+  ) {
+    return true;
+  }
   if (
     !childAtom
     || childAtom.element !== 'C'
@@ -822,6 +887,19 @@ function _resolveLinkedSubstituentRingRepresentativeImpl(layoutGraph, coords, an
       reachableRingSystemIds.add(ringSystemId);
       // Do not expand through ring atoms — we only need to know which ring systems
       // are reachable, not traverse their interiors.
+      continue;
+    }
+
+    const currentAtom = layoutGraph.atoms.get(atomId);
+    if (
+      atomId === childAtomId
+      && linkerDepth === 0
+      && currentAtom
+      && currentAtom.aromatic !== true
+      && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
+      && (currentAtom.heavyDegree ?? 0) > 2
+      && (currentAtom.degree ?? currentAtom.heavyDegree ?? 0) > (currentAtom.heavyDegree ?? 0)
+    ) {
       continue;
     }
 
@@ -1011,6 +1089,14 @@ export function collectReadableRingSubstituentChildren(layoutGraph, coords, anch
 
     const childRingCount = layoutGraph.atomToRings.get(neighborAtom.id)?.length ?? 0;
     if (childRingCount === 0) {
+      if (isMetalAtom(neighborAtom)) {
+        // Metal branches read by the immediate coordination bond, not a downstream ligand centroid.
+        candidates.push({
+          childAtomId: neighborAtom.id,
+          representativeAtomIds: [neighborAtom.id]
+        });
+        continue;
+      }
       const linkedRingRepresentative = resolveLinkedSubstituentRingRepresentative(layoutGraph, coords, anchorAtomId, neighborAtom.id, ringSystemById);
       if (linkedRingRepresentative) {
         candidates.push({
@@ -1241,6 +1327,8 @@ export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}
     coords,
     (firstAtomId, secondAtomId, distance) => (
       distance < threshold
+      && layoutGraph.atoms.get(firstAtomId)?.element !== 'H'
+      && layoutGraph.atoms.get(secondAtomId)?.element !== 'H'
       && !isAcceptedCompressedTerminalCarbonylLeafOverlap(
         layoutGraph,
         coords,

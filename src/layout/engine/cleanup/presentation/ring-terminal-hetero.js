@@ -7,6 +7,10 @@ import { add, angleOf, angularDifference, centroid, distance, fromAngle, rotate,
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
 import { atomPairKey } from '../../constants.js';
 import { STANDARD_ROTATION_ANGLES } from '../rotation-candidates.js';
+import {
+  smallRingExteriorTargetAngles,
+  supportsExteriorBranchSpreadRingSize
+} from '../../placement/branch-placement.js';
 const TIDY_IMPROVEMENT_EPSILON = 1e-6;
 const SINGLE_BOND_TERMINAL_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
 const TERMINAL_HETERO_OUTWARD_NEED_TRIGGER = Math.PI / 9;
@@ -40,6 +44,72 @@ function outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId) {
   }
   return incidentRingPolygons(layoutGraph, coords, anchorAtomId)
     .map(polygon => angleOf(sub(anchorPosition, centroid(polygon))));
+}
+
+function smallRingExteriorTerminalHeteroAngles(layoutGraph, coords, anchorAtomId, heteroAtomId) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  if (!anchorAtom || anchorAtom.aromatic || (anchorAtom.heavyDegree ?? 0) !== 4) {
+    return [];
+  }
+
+  const anchorRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
+  if (anchorRings.length !== 1) {
+    return [];
+  }
+  const ring = anchorRings[0];
+  const ringAtomIds = new Set(ring?.atomIds ?? []);
+  if (!supportsExteriorBranchSpreadRingSize(ringAtomIds.size)) {
+    return [];
+  }
+
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return [];
+  }
+
+  const ringNeighborAngles = [];
+  let exocyclicHeavyCount = 0;
+  let heteroIsExocyclic = false;
+  let otherExocyclicAngle = null;
+  for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return [];
+    }
+    const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborPosition) {
+      return [];
+    }
+    if (ringAtomIds.has(neighborAtomId)) {
+      ringNeighborAngles.push(angleOf(sub(neighborPosition, anchorPosition)));
+      continue;
+    }
+    exocyclicHeavyCount++;
+    if (neighborAtomId === heteroAtomId) {
+      heteroIsExocyclic = true;
+    } else {
+      otherExocyclicAngle = angleOf(sub(neighborPosition, anchorPosition));
+    }
+  }
+
+  if (!heteroIsExocyclic || ringNeighborAngles.length !== 2 || exocyclicHeavyCount !== 2) {
+    return [];
+  }
+
+  const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, ringAtomIds.size);
+  if (targetAngles.length !== 2 || otherExocyclicAngle == null) {
+    return targetAngles;
+  }
+
+  return [
+    angularDifference(otherExocyclicAngle, targetAngles[0]) <= angularDifference(otherExocyclicAngle, targetAngles[1])
+      ? targetAngles[1]
+      : targetAngles[0]
+  ];
 }
 
 function localNonbondedClearance(layoutGraph, coords, atomGrid, atomId, position, searchRadius) {
@@ -625,12 +695,16 @@ function terminalRingHeteros(layoutGraph, coords) {
         continue;
       }
       seenPairs.add(pairKey);
+      const smallRingExteriorAngles = smallRingExteriorTerminalHeteroAngles(layoutGraph, coords, anchorAtomId, heteroAtomId);
+      const outwardAngles = prefersOutwardGeometry
+        ? (smallRingExteriorAngles.length > 0 ? smallRingExteriorAngles : outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId))
+        : [];
       descriptors.push({
         anchorAtomId,
         heteroAtomId,
         hydrogenAtomIds: terminalHeteroHydrogenAtomIds(layoutGraph, coords, heteroAtomId),
         prefersOutwardGeometry,
-        outwardAngles: prefersOutwardGeometry ? outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId) : []
+        outwardAngles
       });
     }
   }

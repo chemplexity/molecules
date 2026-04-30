@@ -448,6 +448,30 @@ describe('create2DSceneRenderer', () => {
     );
   });
 
+  it('keeps crowded steroid stereo hydrogens short enough to clear neighboring ring atoms', () => {
+    const { renderer } = makeRenderer();
+    const mol = parseSMILES('C[C@]12CC[C@H]3[C@@H](CC[C@@H]4CC(=O)CC[C@]34C)[C@@H]1CC[C@@H]2O');
+    const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    applyCoords(mol, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+
+    renderer.render2d(mol, { preserveGeometry: true });
+
+    const hydrogen = mol.atoms.get('H6');
+    const overlappingRingAtom = mol.atoms.get('C19');
+    assert.ok(hydrogen, 'expected the crowded stereo hydrogen to exist');
+    assert.ok(overlappingRingAtom, 'expected the neighboring ring atom to exist');
+
+    const hydrogenPoint = renderer.toSVGPt(hydrogen);
+    const ringAtomPoint = renderer.toSVGPt(overlappingRingAtom);
+    const separation = Math.hypot(hydrogenPoint.x - ringAtomPoint.x, hydrogenPoint.y - ringAtomPoint.y);
+
+    assert.ok(separation > 10, `expected the displayed stereo hydrogen to clear the neighboring ring atom, got ${separation.toFixed(2)} px`);
+  });
+
   it('reprojects hidden stereo hydrogens when draw2d restores a different molecule', () => {
     const recorder = createStereoHydrogenOffsetRecorder();
     const { renderer, state } = makeRenderer({ helperOverrides: recorder.helperOverrides });

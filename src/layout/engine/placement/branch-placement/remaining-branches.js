@@ -50,6 +50,7 @@ import { chooseBatchAngleAssignments, chooseSingleBranchAngleWithLookahead, shou
 const SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS = 64;
 const RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE = 3;
 const EXACT_TERMINAL_RING_LEAF_SLOT_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I', 'O', 'S', 'Se']);
+const PHOSPHATE_AROMATIC_TAIL_LOOKAHEAD_OFFSETS = Object.freeze([Math.PI / 4, -Math.PI / 4]);
 
 function isFusedOnlyRingSystemAnchor(layoutGraph, atomId) {
   const ringSystemId = layoutGraph?.atomToRingSystemId?.get(atomId);
@@ -235,11 +236,119 @@ function allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace) {
 }
 
 /**
+ * Returns whether the anchor belongs to an aromatic ring with an exocyclic
+ * oxygen-phosphorus substituent. Phosphate-bound aryl rings tend to be placed
+ * near sibling aryl blocks, so short alkyl tails need a little downstream
+ * context before committing to the first ring-exterior slot.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Aromatic ring anchor atom ID.
+ * @returns {boolean} True when the anchor ring is phosphate-bound.
+ */
+function isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId) {
+  if (!layoutGraph) {
+    return false;
+  }
+  const rings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
+  for (const ring of rings) {
+    if (ring?.aromatic !== true || !Array.isArray(ring.atomIds)) {
+      continue;
+    }
+    const ringAtomIds = new Set(ring.atomIds);
+    for (const ringAtomId of ring.atomIds) {
+      for (const exocyclicBond of layoutGraph.bondsByAtomId.get(ringAtomId) ?? []) {
+        if (!exocyclicBond || exocyclicBond.kind !== 'covalent' || exocyclicBond.aromatic || (exocyclicBond.order ?? 1) !== 1) {
+          continue;
+        }
+        const oxygenAtomId = exocyclicBond.a === ringAtomId ? exocyclicBond.b : exocyclicBond.a;
+        if (ringAtomIds.has(oxygenAtomId) || layoutGraph.atoms.get(oxygenAtomId)?.element !== 'O') {
+          continue;
+        }
+        for (const oxygenBond of layoutGraph.bondsByAtomId.get(oxygenAtomId) ?? []) {
+          if (!oxygenBond || oxygenBond.kind !== 'covalent' || oxygenBond.aromatic) {
+            continue;
+          }
+          const neighborAtomId = oxygenBond.a === oxygenAtomId ? oxygenBond.b : oxygenBond.a;
+          if (neighborAtomId !== ringAtomId && layoutGraph.atoms.get(neighborAtomId)?.element === 'P') {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns whether a branch is a compact unbranched hydrocarbon tail rooted on
+ * an aromatic ring. These aryl alkyl/propargyl tails are small enough for
+ * recursive lookahead on phosphate-bound aryl clusters and can otherwise fold
+ * back through neighboring rings when the first outward slot leaves the second
+ * bond boxed in.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Ring anchor atom ID.
+ * @param {string} childAtomId - Outgoing child atom ID.
+ * @param {number} childSubtreeSize - Heavy atom count below the child.
+ * @returns {boolean} True when the branch is a compact aromatic hydrocarbon tail.
+ */
+function isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize) {
+  if (!layoutGraph || childSubtreeSize !== RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE) {
+    return false;
+  }
+
+  const visited = new Set([anchorAtomId]);
+  const queue = [childAtomId];
+  let heavyAtomCount = 0;
+  while (queue.length > 0) {
+    const atomId = queue.pop();
+    if (visited.has(atomId)) {
+      continue;
+    }
+    visited.add(atomId);
+    const atom = layoutGraph.atoms.get(atomId);
+    if (!atom || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) {
+      return false;
+    }
+    if (atom.element === 'H') {
+      continue;
+    }
+    if (atom.element !== 'C' || atom.aromatic || (atom.heavyDegree ?? 0) > 2) {
+      return false;
+    }
+    heavyAtomCount++;
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || bond.aromatic) {
+        return false;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (!visited.has(neighborAtomId)) {
+        queue.push(neighborAtomId);
+      }
+    }
+  }
+
+  return heavyAtomCount === childSubtreeSize;
+}
+
+function phosphateAromaticTailLookaheadAngles(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize, preferredAngles) {
+  if (
+    layoutGraph?.atoms.get(anchorAtomId)?.aromatic !== true
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1
+    || !isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId)
+    || !isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize)
+  ) {
+    return [];
+  }
+  return (preferredAngles ?? []).flatMap(preferredAngle =>
+    PHOSPHATE_AROMATIC_TAIL_LOOKAHEAD_OFFSETS.map(offset => preferredAngle + offset)
+  );
+}
+
+/**
  * Returns whether a ring-anchored outgoing branch should be placed with
  * recursive lookahead instead of a greedy first-bond choice. Compact
- * allyl-sized tails can still fold their second atom back into fused or
- * bridged ring scaffolds, so three heavy atoms is enough to justify the
- * bounded candidate search.
+ * allyl-sized tails can still fold their second atom back into fused, bridged,
+ * or crowded aromatic ring scaffolds, so three heavy atoms is enough to
+ * justify the bounded candidate search.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} anchorAtomId - Ring anchor atom ID.
  * @param {string} childAtomId - Outgoing child atom ID.
@@ -262,11 +371,17 @@ function shouldUseRingAnchorSingleBranchLookahead(
   const placedRingNeighborCount = currentPlacedNeighborIds.filter(neighborAtomId => (
     (layoutGraph?.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
   )).length;
+  const ringCount = layoutGraph?.atomToRings.get(anchorAtomId)?.length ?? 0;
+  const useAromaticTailLookahead =
+    anchorAtom?.aromatic === true
+    && ringCount === 1
+    && isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId)
+    && isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize);
+  const useSaturatedMultiRingLookahead = anchorAtom?.aromatic !== true && ringCount >= 2;
   return (
     layoutGraph
     && isRingAnchor(layoutGraph, anchorAtomId)
-    && anchorAtom?.aromatic !== true
-    && (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) >= 2
+    && (useSaturatedMultiRingLookahead || useAromaticTailLookahead)
     && (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) === 0
     && childBond != null
     && !childBond.aromatic
@@ -750,8 +865,23 @@ function placeNeighborSequence(
       && allowsSingleBranchLookahead(layoutGraph, atomIdsToPlace)
       && (shouldUseClassicSingleBranchLookahead || shouldUseRingAnchorLookahead);
     if (shouldUseSingleBranchLookahead) {
+      const phosphateTailLookaheadAngles = shouldUseRingAnchorLookahead
+        ? phosphateAromaticTailLookaheadAngles(
+            layoutGraph,
+            anchorAtomId,
+            childAtomId,
+            childSubtreeSize,
+            constrainedPreferredAngles
+          )
+        : [];
       const lookaheadCandidateAngles = shouldUseRingAnchorLookahead
-        ? mergeCandidateAngles(mergeCandidateAngles([chosenAngle], constrainedPreferredAngles), constrainedFallbackAngles)
+        ? mergeCandidateAngles(
+            mergeCandidateAngles(
+              mergeCandidateAngles([chosenAngle], constrainedPreferredAngles),
+              phosphateTailLookaheadAngles
+            ),
+            constrainedFallbackAngles
+          )
         : mergeCandidateAngles([chosenAngle], constrainedPreferredAngles);
       const lookaheadAngle = chooseSingleBranchAngleWithLookahead(
         adjacency,

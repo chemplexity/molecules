@@ -1,11 +1,11 @@
 /** @module cleanup/overlap-resolution */
 
 import { buildAtomGrid, buildSubtreeOverlapContext, computeAtomDistortionCost, computeSubtreeOverlapCost, findSevereOverlaps } from '../audit/invariants.js';
-import { angleOf, angularDifference, centroid, rotate, sub, wrapAngle } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, rotate, sub, wrapAngle } from '../geometry/vec2.js';
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { probeRigidRotation, rigidDescriptorKey, rotateRigidDescriptorPositions } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
-import { describeCrossLikeHypervalentCenter } from '../placement/branch-placement/angle-selection.js';
+import { describeCrossLikeHypervalentCenter, supportsProjectedTetrahedralGeometry } from '../placement/branch-placement/angle-selection.js';
 import { ANGLE_EPSILON, IMPROVEMENT_EPSILON, NUMERIC_EPSILON, atomPairKey } from '../constants.js';
 import { COARSE_ROTATION_ANGLES, STANDARD_ROTATION_ANGLES } from './rotation-candidates.js';
 const RIGID_SUBTREE_REFINEMENT_OFFSETS = Object.freeze([
@@ -26,6 +26,16 @@ const EXACT_RING_ROOT_RELATIVE_ROTATION_OFFSETS = Object.freeze([
   Math.PI / 45,
   -(Math.PI / 45),
   ...STANDARD_ROTATION_ANGLES.filter(angle => Math.abs(angle) > ANGLE_EPSILON)
+]);
+const PENDANT_RING_ROOT_ANCHORED_ROTATION_OFFSETS = Object.freeze([
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 6,
+  -(Math.PI / 6),
+  Math.PI / 4,
+  -(Math.PI / 4),
+  Math.PI / 3,
+  -(Math.PI / 3)
 ]);
 const LARGE_RIGID_SUBTREE_COMPONENT_ATOM_COUNT = 24;
 const LARGE_RIGID_SUBTREE_SIZE = 6;
@@ -388,6 +398,58 @@ function isPendantRingReflectionDescriptor(layoutGraph, descriptor) {
   return descriptor.subtreeAtomIds.some(atomId => (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0);
 }
 
+function hasRingAtoms(layoutGraph, descriptor) {
+  return descriptor?.subtreeAtomIds?.some(atomId => (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0) === true;
+}
+
+function isRingAtom(layoutGraph, atomId) {
+  return (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0;
+}
+
+function ringRootFanDistortionCost(layoutGraph, coords, atomId, overridePositions = null) {
+  if (!isRingAtom(layoutGraph, atomId)) {
+    return 0;
+  }
+  const atomPosition = overridePositions?.get(atomId) ?? coords.get(atomId);
+  if (!atomPosition) {
+    return 0;
+  }
+
+  const neighborAngles = [];
+  let ringBondCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId?.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = overridePositions?.get(neighborAtomId) ?? coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+    if (bond.inRing) {
+      ringBondCount++;
+    }
+    neighborAngles.push(angleOf(sub(neighborPosition, atomPosition)));
+  }
+  if (neighborAngles.length !== 3 || ringBondCount < 2) {
+    return 0;
+  }
+
+  const sortedAngles = neighborAngles.map(wrapAngle).sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  let cost = 0;
+  const idealSeparation = (2 * Math.PI) / 3;
+  for (let index = 0; index < sortedAngles.length; index++) {
+    const currentAngle = sortedAngles[index];
+    const nextAngle = sortedAngles[(index + 1) % sortedAngles.length];
+    const separation = index === sortedAngles.length - 1
+      ? nextAngle + 2 * Math.PI - currentAngle
+      : nextAngle - currentAngle;
+    cost += (separation - idealSeparation) ** 2;
+  }
+  return cost * 20;
+}
+
 /**
  * Measures how far a rigid subtree root deviates from the local ring-outward
  * direction of its anchor. Lower values are better.
@@ -413,6 +475,26 @@ function compactRingAnchoredRootOutwardDeviation(layoutGraph, coords, descriptor
     }
     const outwardAngle = angleOf(sub(anchorPosition, centroid(ringPositions)));
     bestDeviation = Math.min(bestDeviation, angularDifference(rootAngle, outwardAngle));
+  }
+  return bestDeviation;
+}
+
+function pendantRingParentOutwardDeviation(layoutGraph, coords, descriptor, overridePositions = null) {
+  const parentPosition = overridePositions?.get(descriptor.anchorAtomId) ?? coords.get(descriptor.anchorAtomId);
+  const rootPosition = overridePositions?.get(descriptor.rootAtomId) ?? coords.get(descriptor.rootAtomId);
+  if (!parentPosition || !rootPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const parentAngle = angleOf(sub(parentPosition, rootPosition));
+  let bestDeviation = Number.POSITIVE_INFINITY;
+  for (const ring of layoutGraph.atomToRings?.get(descriptor.rootAtomId) ?? []) {
+    const ringPositions = ring.atomIds.map(atomId => overridePositions?.get(atomId) ?? coords.get(atomId)).filter(Boolean);
+    if (ringPositions.length < 3) {
+      continue;
+    }
+    const outwardAngle = angleOf(sub(rootPosition, centroid(ringPositions)));
+    bestDeviation = Math.min(bestDeviation, angularDifference(parentAngle, outwardAngle));
   }
   return bestDeviation;
 }
@@ -702,13 +784,26 @@ function isBetterRigidMove(incumbent, candidate) {
 /**
  * Returns whether a candidate rigid-subtree descriptor should replace the
  * current descriptor for the same member atom.
+ * @param {object} layoutGraph - Layout graph shell.
  * @param {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}} candidate - Candidate descriptor.
  * @param {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}|undefined} incumbent - Existing descriptor.
  * @returns {boolean} True when the candidate is the better local move.
  */
-function shouldReplaceRigidDescriptor(candidate, incumbent) {
+function shouldReplaceRigidDescriptor(layoutGraph, candidate, incumbent) {
   if (!incumbent) {
     return true;
+  }
+  if (hasRingAtoms(layoutGraph, candidate) && hasRingAtoms(layoutGraph, incumbent)) {
+    const candidateAnchorIsProjected = supportsProjectedTetrahedralGeometry(layoutGraph, candidate.anchorAtomId);
+    const incumbentAnchorIsProjected = supportsProjectedTetrahedralGeometry(layoutGraph, incumbent.anchorAtomId);
+    if (candidateAnchorIsProjected !== incumbentAnchorIsProjected) {
+      return candidateAnchorIsProjected;
+    }
+    const candidateRootIsRing = isRingAtom(layoutGraph, candidate.rootAtomId);
+    const incumbentRootIsRing = isRingAtom(layoutGraph, incumbent.rootAtomId);
+    if (candidateAnchorIsProjected && candidateRootIsRing !== incumbentRootIsRing) {
+      return !candidateRootIsRing;
+    }
   }
   if (candidate.subtreeAtomIds.length !== incumbent.subtreeAtomIds.length) {
     return candidate.subtreeAtomIds.length < incumbent.subtreeAtomIds.length;
@@ -789,7 +884,7 @@ export function collectRigidPendantRingSubtrees(layoutGraph) {
       };
       for (const atomId of descriptor.subtreeAtomIds) {
         const existingDescriptor = descriptorsByAtomId.get(atomId);
-        if (shouldReplaceRigidDescriptor(descriptor, existingDescriptor)) {
+        if (shouldReplaceRigidDescriptor(layoutGraph, descriptor, existingDescriptor)) {
           descriptorsByAtomId.set(atomId, descriptor);
         }
       }
@@ -1058,6 +1153,27 @@ function reflectedRigidDescriptorPositions(coords, descriptor) {
   return newPositions;
 }
 
+function rootAnchoredRigidDescriptorPositions(coords, descriptor, rotation) {
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  if (!rootPosition) {
+    return null;
+  }
+  const newPositions = new Map();
+  for (const subtreeAtomId of descriptor.subtreeAtomIds) {
+    const subtreePosition = coords.get(subtreeAtomId);
+    if (!subtreePosition) {
+      continue;
+    }
+    newPositions.set(
+      subtreeAtomId,
+      subtreeAtomId === descriptor.rootAtomId
+        ? { ...subtreePosition }
+        : add(rootPosition, rotate(sub(subtreePosition, rootPosition), rotation))
+    );
+  }
+  return newPositions;
+}
+
 /**
  * Applies a rigid subtree move and updates the atom grid in place.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
@@ -1192,6 +1308,13 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     isCompactHypervalentRigidDescriptor(layoutGraph, descriptor)
     || directCrossLikeHypervalentLigandDescriptor;
   const compactFourCoordinateDescriptor = isCompactFourCoordinateTerminalRigidDescriptor(layoutGraph, descriptor);
+  const pendantRingReflectionDescriptor = isPendantRingReflectionDescriptor(layoutGraph, descriptor);
+  const pendantRingRootIsRing = isRingAtom(layoutGraph, descriptor.rootAtomId);
+  const hasProjectedTetrahedralAnchor = supportsProjectedTetrahedralGeometry(layoutGraph, descriptor.anchorAtomId);
+  const pendantRingHasProjectedAnchor =
+    pendantRingReflectionDescriptor
+    && pendantRingRootIsRing
+    && hasProjectedTetrahedralAnchor;
   const preservesMovingExactDivalentGeometry =
     descriptor.rootAtomId === movingAtomId
     && isExactDivalentContinuationCenter(layoutGraph, movingAtomId);
@@ -1203,6 +1326,10 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   const baseAnchorDistortion = exactHypervalentDescriptor
     ? 0
     : computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, null);
+  const baseRootDistortion = hasProjectedTetrahedralAnchor
+    ? computeAtomDistortionCost(layoutGraph, coords, descriptor.rootAtomId, null)
+      + ringRootFanDistortionCost(layoutGraph, coords, descriptor.rootAtomId, null)
+    : 0;
   const exactRingRootDescriptor = isCompactRingAnchoredRigidDescriptor(layoutGraph, descriptor);
   const exactTrigonalRootAngles = exactOmittedHydrogenTrigonalRootAngles(layoutGraph, coords, descriptor);
   const exactDivalentRootAngles = exactDivalentContinuationRootAngles(layoutGraph, coords, descriptor);
@@ -1229,10 +1356,19 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     const newAnchorDistortion = exactHypervalentDescriptor
       ? 0
       : computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, newPositions);
-    let improvement = baseOverlapCost - newOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
+    const newRootDistortion = hasProjectedTetrahedralAnchor
+      ? computeAtomDistortionCost(layoutGraph, coords, descriptor.rootAtomId, newPositions)
+        + ringRootFanDistortionCost(layoutGraph, coords, descriptor.rootAtomId, newPositions)
+      : 0;
+    let improvement =
+      baseOverlapCost - newOverlapCost
+      + (baseAnchorDistortion - newAnchorDistortion)
+      + (baseRootDistortion - newRootDistortion);
     const ringRootDeviation = exactRingRootDescriptor
       ? compactRingAnchoredRootOutwardDeviation(layoutGraph, coords, descriptor, newPositions)
-      : Number.POSITIVE_INFINITY;
+      : pendantRingReflectionDescriptor
+        ? pendantRingParentOutwardDeviation(layoutGraph, coords, descriptor, newPositions)
+        : Number.POSITIVE_INFINITY;
     const exactRootDeviation = exactTrigonalRootAngles.length > 0
       ? omittedHydrogenTrigonalRootDeviation(layoutGraph, coords, descriptor, newPositions)
       : exactDivalentRootAngles.length > 0
@@ -1272,20 +1408,37 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
 
   const evaluateCandidatePositions = newPositions => {
     const candidateMove = scoreCandidatePositions(newPositions);
-    if (isBetterRigidMove(bestMove, candidateMove)) {
+    if (candidateMove && isBetterRigidMove(bestMove, candidateMove)) {
       bestMove = candidateMove;
     }
   };
 
-  if (exactRingRootDescriptor || isPendantRingReflectionDescriptor(layoutGraph, descriptor)) {
+  if (exactRingRootDescriptor || pendantRingReflectionDescriptor) {
     evaluateCandidatePositions(reflectedRigidDescriptorPositions(coords, descriptor));
   }
+  if (pendantRingReflectionDescriptor && (!pendantRingRootIsRing || pendantRingHasProjectedAnchor)) {
+    for (const rotation of PENDANT_RING_ROOT_ANCHORED_ROTATION_OFFSETS) {
+      evaluateCandidatePositions(rootAnchoredRigidDescriptorPositions(coords, descriptor, rotation));
+    }
+  }
 
-  const rigidRotationProbe = probeRigidRotation(layoutGraph, coords, descriptor, {
-    angles: (
-      preservesMovingExactDivalentGeometry
-        ? mergeRigidCandidateAngles(
-            rigidSubtreeProbeAngles(
+  const rigidRotationAngles = pendantRingHasProjectedAnchor
+    ? []
+    : (
+        preservesMovingExactDivalentGeometry
+          ? mergeRigidCandidateAngles(
+              rigidSubtreeProbeAngles(
+                descriptor.subtreeAtomIds.length,
+                visibleAtomCount,
+                currentRootAngle,
+                exactRingRootDescriptor,
+                exactHypervalentDescriptor,
+                compactFourCoordinateDescriptor,
+                exactPreferredRootAngles
+              ),
+              EXACT_DIVALENT_RIGID_RESCUE_OFFSETS.map(offset => currentRootAngle + offset)
+            )
+          : rigidSubtreeProbeAngles(
               descriptor.subtreeAtomIds.length,
               visibleAtomCount,
               currentRootAngle,
@@ -1293,19 +1446,10 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
               exactHypervalentDescriptor,
               compactFourCoordinateDescriptor,
               exactPreferredRootAngles
-            ),
-            EXACT_DIVALENT_RIGID_RESCUE_OFFSETS.map(offset => currentRootAngle + offset)
-          )
-        : rigidSubtreeProbeAngles(
-            descriptor.subtreeAtomIds.length,
-            visibleAtomCount,
-            currentRootAngle,
-            exactRingRootDescriptor,
-            exactHypervalentDescriptor,
-            compactFourCoordinateDescriptor,
-            exactPreferredRootAngles
-          )
-    ).filter(candidateAngle => {
+            )
+      );
+  const rigidRotationProbe = probeRigidRotation(layoutGraph, coords, descriptor, {
+    angles: rigidRotationAngles.filter(candidateAngle => {
       return Math.abs(candidateAngle - currentRootAngle) > ANGLE_EPSILON;
     }),
     buildPositionsFn(inputCoords, inputDescriptor, candidateAngle) {

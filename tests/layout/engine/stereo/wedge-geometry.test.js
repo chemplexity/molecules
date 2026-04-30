@@ -7,7 +7,7 @@ import {
   synthesizeHydrogenPosition
 } from '../../../../src/layout/engine/stereo/wedge-geometry.js';
 import { pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.js';
-import { angleOf, sub } from '../../../../src/layout/engine/geometry/vec2.js';
+import { angleOf, length, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 
 describe('layout/engine/stereo/wedge-geometry', () => {
   it('synthesizes a hidden-hydrogen position opposite known substituents', () => {
@@ -20,6 +20,21 @@ describe('layout/engine/stereo/wedge-geometry', () => {
       1.5
     );
     assert.ok(position.x < 0 || position.y < 0);
+  });
+
+  it('can keep displayed hidden hydrogens on a shortened fixed radius', () => {
+    const center = { x: 0, y: 0 };
+    const knownPositions = [
+      { x: 1.5, y: 0 },
+      { x: 0, y: 1.5 },
+      { x: 0, y: -1.5 }
+    ];
+    const projectedPosition = synthesizeHydrogenPosition(center, knownPositions, 1.125, {
+      preferCardinalAxes: true,
+      fixedRadius: true
+    });
+
+    assert.ok(Math.abs(length(sub(projectedPosition, center)) - 1.125) <= 1e-6);
   });
 
   it('computes the minimum sector angle around a stereocenter', () => {

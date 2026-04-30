@@ -258,12 +258,14 @@ function bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle,
  * @param {Array<Array<{x: number, y: number}>>} [options.incidentRingPolygons] - Incident ring polygons to avoid.
  * @param {boolean} [options.preferCardinalAxes] - When true, prefer exact horizontal or vertical projections when they are almost as open as the best free-angle candidate.
  * @param {number} [options.cardinalAxisSectorTolerance] - Allowed sector drop when snapping to a cardinal axis.
+ * @param {boolean} [options.fixedRadius] - When true, use `bondLength` as the exact projection radius instead of matching neighboring bond lengths.
  * @returns {{x: number, y: number}} Synthesized hydrogen position.
  */
 export function synthesizeHydrogenPosition(centerPosition, knownPositions, bondLength, options = {}) {
   const incidentRingPolygons = options.incidentRingPolygons ?? [];
   const preferCardinalAxes = options.preferCardinalAxes === true;
   const cardinalAxisSectorTolerance = options.cardinalAxisSectorTolerance ?? CARDINAL_AXIS_SECTOR_TOLERANCE;
+  const fixedRadius = options.fixedRadius === true;
   if (knownPositions.length === 0) {
     return add(centerPosition, { x: bondLength, y: 0 });
   }
@@ -285,7 +287,7 @@ export function synthesizeHydrogenPosition(centerPosition, knownPositions, bondL
     direction = normalize(direction);
   }
 
-  const radius = radiusSum / knownPositions.length;
+  const radius = fixedRadius ? bondLength : radiusSum / knownPositions.length;
   const baseAngle = angleOf(direction);
   const basePosition = add(centerPosition, scale(direction, radius));
   if (preferCardinalAxes) {

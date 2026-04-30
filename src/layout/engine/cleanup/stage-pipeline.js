@@ -10,9 +10,11 @@ import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 import { mergeFrozenAtomIds } from './frozen-atoms.js';
 import {
   measureAttachedRingPeripheralFocusPenalty,
-  measureAttachedRingRootOutwardPresentationPenalty
+  measureAttachedRingRootOutwardPresentationPenalty,
+  runProjectedTetrahedralAttachedRingSlotSnap
 } from './presentation/attached-ring-fallback.js';
 import { hasOutstandingRingPresentationNeed, runRingPresentationCleanup } from './presentation/ring-presentation.js';
+import { measurePhosphateArylTailPresentationPenalty } from './presentation/phosphate-aryl-tail.js';
 import {
   hasSpecialistCleanupNeed,
   runSpecialistCleanup
@@ -31,7 +33,8 @@ import {
   hasRingTerminalHeteroTidyNeed,
   measureRingTerminalHeteroOutwardPenalty,
   measureTerminalMultipleBondLeafFanPenalty,
-  runRingTerminalHeteroTidy
+  runRingTerminalHeteroTidy,
+  runTerminalMultipleBondLeafFanTidy
 } from './presentation/ring-terminal-hetero.js';
 
 function hasPostCleanupHook(policy, hookName) {
@@ -191,6 +194,7 @@ export function buildCleanupStageGraph(context) {
       presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords),
       divalentContinuationPenalty: measureDivalentContinuationDistortion(layoutGraph, coords).totalDeviation,
       omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation,
+      phosphateArylTailPenalty: measurePhosphateArylTailPresentationPenalty(layoutGraph, coords),
       attachedRingPeripheralPenalty: measureAttachedRingPeripheralFocusPenalty(layoutGraph, coords, bondLength),
       attachedRingRootOutwardPenalty: measureAttachedRingRootOutwardPresentationPenalty(layoutGraph, coords, placement.frozenAtomIds),
       terminalHeteroOutwardMaxPenalty: terminalHeteroOutwardPenalty.maxDeviation,
@@ -290,6 +294,20 @@ export function buildCleanupStageGraph(context) {
         < (incumbent.terminalHeteroOutwardMaxPenalty ?? Number.POSITIVE_INFINITY) - 1e-9
     );
   };
+  const terminalMultipleBondLeafRetouchComparator = (candidate, incumbent) => {
+    if (auditFinalStereoWithTieBreak(candidate, incumbent)) {
+      return true;
+    }
+    if (!auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)) {
+      return false;
+    }
+    return (
+      (candidate.terminalMultipleBondLeafFanMaxPenalty ?? Number.POSITIVE_INFINITY)
+        < (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? Number.POSITIVE_INFINITY) - 1e-9
+      || (candidate.terminalMultipleBondLeafFanPenalty ?? Number.POSITIVE_INFINITY)
+        < (incumbent.terminalMultipleBondLeafFanPenalty ?? Number.POSITIVE_INFINITY) - 1e-9
+    );
+  };
   const cleanupGeometryComparator = protectBondIntegrity
     ? (candidate, incumbent) => isPreferredProtectedCleanupStage(familySummary, placement, candidate, incumbent)
     : isPreferredCleanupGeometryStage;
@@ -309,7 +327,12 @@ export function buildCleanupStageGraph(context) {
         return hasCoreGeometryCleanupNeed(incumbent ?? stageResults.get('placement'));
       },
       transformFn(parentCoords) {
-        const cleanupResult = runUnifiedCleanup(layoutGraph, parentCoords, {
+        const projectedSlotSnap = runProjectedTetrahedralAttachedRingSlotSnap(layoutGraph, parentCoords, {
+          bondLength,
+          frozenAtomIds: placement.frozenAtomIds
+        });
+        const cleanupInputCoords = projectedSlotSnap.nudges > 0 ? projectedSlotSnap.coords : parentCoords;
+        const cleanupResult = runUnifiedCleanup(layoutGraph, cleanupInputCoords, {
           ...baseCleanupOptions,
           maxPasses: cleanupMaxPasses,
           protectBondIntegrity,
@@ -322,10 +345,14 @@ export function buildCleanupStageGraph(context) {
           {
             passes: cleanupResult.passes,
             improvement: cleanupResult.improvement,
-            overlapMoves: cleanupResult.overlapMoves
+            overlapMoves: cleanupResult.overlapMoves,
+            projectedSlotSnaps: projectedSlotSnap.nudges
           }
         );
-        return cleanupResult;
+        return {
+          ...cleanupResult,
+          projectedSlotSnaps: projectedSlotSnap.nudges
+        };
       },
       scoreFn: scoreGeometryStage,
       comparatorFn: cleanupGeometryComparator
@@ -447,6 +474,7 @@ export function buildCleanupStageGraph(context) {
           terminalHeteroOutwardPenalty: presentationResult.terminalHeteroOutwardPenalty,
           terminalMultipleBondLeafFanMaxPenalty: presentationResult.terminalMultipleBondLeafFanMaxPenalty,
           terminalMultipleBondLeafFanPenalty: presentationResult.terminalMultipleBondLeafFanPenalty,
+          phosphateArylTailPenalty: presentationResult.phosphateArylTailPenalty,
           stabilizationRequest:
             stabilizationReasons.size > 0
               ? {
@@ -550,6 +578,29 @@ export function buildCleanupStageGraph(context) {
       scoreFn: auditFinalStereoWithPresentationMetrics,
       comparatorFn: terminalHeteroRetouchComparator,
       accumulateSidecar: acceptedNudgeAccumulator('ringTerminalHeteroFinalRetouch')
+    },
+    {
+      name: 'terminalMultipleBondLeafFinalRetouch',
+      parentStage: 'best',
+      guard(_stageResults, incumbent) {
+        return measureTerminalMultipleBondLeafFanPenalty(layoutGraph, incumbent?.coords).maxDeviation > 1e-6;
+      },
+      transformFn(parentCoords, inputContext) {
+        const result = runTerminalMultipleBondLeafFanTidy(layoutGraph, parentCoords, { bondLength });
+        if ((result.nudges ?? 0) <= 0) {
+          return null;
+        }
+        const [label, description] = HOOK_STEP_META['ring-presentation-tidy'];
+        inputContext.onStep?.(label, description, inputContext.copyCoords(result.coords), {
+          nudges: result.nudges,
+          strategiesRun: ['terminal-multiple-bond-leaf'],
+          finalRetouch: true
+        });
+        return result;
+      },
+      scoreFn: auditFinalStereoWithPresentationMetrics,
+      comparatorFn: terminalMultipleBondLeafRetouchComparator,
+      accumulateSidecar: acceptedNudgeAccumulator('terminalMultipleBondLeafFinalRetouch')
     }
   ];
 

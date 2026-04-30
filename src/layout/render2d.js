@@ -94,7 +94,8 @@ function projectHiddenStereoHydrogens(mol, bondLength) {
       .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
     const projectedPosition = synthesizeHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength, {
       incidentRingPolygons: incidentRingPolygonsForAtom(mol, parent.id),
-      preferCardinalAxes: true
+      preferCardinalAxes: true,
+      fixedRadius: true
     });
     projectedCoords.set(atom.id, projectedPosition);
   }

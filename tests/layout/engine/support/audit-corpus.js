@@ -342,7 +342,7 @@ export const AUDIT_CORPUS = Object.freeze([
       maxBondLengthDeviation: 0.3,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     },
     relations: {
       finalBondFailuresAtMostPlacement: true,

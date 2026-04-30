@@ -4,6 +4,7 @@ import { parseSMILES } from '../../../../src/io/smiles.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { placeTemplateCoords } from '../../../../src/layout/engine/templates/placement.js';
+import { BRIDGED_VALIDATION } from '../../../../src/layout/engine/constants.js';
 import { makeAdamantane, makeBenzene, makeBicyclo222, makeNaphthalene, makeNorbornane, makeSpiro } from '../support/molecules.js';
 
 describe('layout/engine/templates/placement', () => {
@@ -327,6 +328,20 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('C4').y < coords.get('C5').y);
     assert.ok(coords.get('C3').y < coords.get('C7').y);
     assert.ok(coords.get('C5').y < coords.get('C7').y);
+  });
+
+  it('places the compact spiro-bridged oxetane cage with the nitrile corner outside', () => {
+    const graph = createLayoutGraph(parseSMILES('N#CC1CC2(C1)C1CCC2O1'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'spiro-bridged-oxetane', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    assert.equal(coords.size, 9);
+    assert.ok(coords.get('O11').x > coords.get('C5').x);
+    assert.ok(coords.get('C8').x > coords.get('O11').x);
+    assert.ok(coords.get('C9').x > coords.get('O11').x);
+    assert.ok(coords.get('C3').x < coords.get('C5').x);
+    assert.ok(coords.get('C6').x < coords.get('C5').x);
+    assert.ok(coords.get('C3').x < coords.get('C4').x);
+    assert.ok(distance(coords.get('C7'), coords.get('O11')) > graph.options.bondLength * BRIDGED_VALIDATION.minBondLengthFactor);
+    assert.ok(distance(coords.get('C10'), coords.get('O11')) < graph.options.bondLength * BRIDGED_VALIDATION.maxBondLengthFactor);
   });
 
   it('places the benzoxathiobicyclo cage with the sulfur-oxygen ring below the bridged span', () => {
