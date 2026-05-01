@@ -20,6 +20,11 @@ import {
   runPhosphateArylTailTidy
 } from './phosphate-aryl-tail.js';
 import {
+  measureTerminalCationRingProximityPenalty,
+  runTerminalCationRingClearanceTidy
+} from './terminal-cation-ring-clearance.js';
+import { runDiarylOmittedHydrogenFanTidy } from './diaryl-omitted-h-fan.js';
+import {
   measureRingSubstituentPresentationPenalty,
   runDirectAttachedRingSystemOutwardRetidy,
   runRingSubstituentTidy
@@ -46,6 +51,7 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
   const terminalMultipleBondLeafFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, coords);
   const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation;
   const phosphateArylTailPenalty = measurePhosphateArylTailPresentationPenalty(layoutGraph, coords);
+  const terminalCationRingProximityPenalty = measureTerminalCationRingProximityPenalty(layoutGraph, coords, { bondLength });
   const visibleBondCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords).length;
   const presentationPenalty = measureRingSubstituentPresentationPenalty(layoutGraph, coords, {
     includeLinkedRingBridgePenalty: true
@@ -63,6 +69,7 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
     terminalMultipleBondLeafFanMaxPenalty: terminalMultipleBondLeafFanPenalty.maxDeviation,
     terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation,
     phosphateArylTailPenalty,
+    terminalCationRingProximityPenalty,
     visibleBondCrossingCount,
     score:
       {
@@ -76,6 +83,7 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
         terminalMultipleBondLeafFanMaxPenalty: terminalMultipleBondLeafFanPenalty.maxDeviation,
         terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation,
         phosphateArylTailPenalty,
+        terminalCationRingProximityPenalty,
         visibleBondCrossingCount,
         ...(typeof options.scoreCoordsFn === 'function' ? (options.scoreCoordsFn(coords) ?? {}) : {})
       }
@@ -153,6 +161,8 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
     ?? measureTerminalMultipleBondLeafFanPenalty(layoutGraph, stageResult.coords).totalDeviation;
   const phosphateArylTailPenalty = stageResult.phosphateArylTailPenalty
     ?? measurePhosphateArylTailPresentationPenalty(layoutGraph, stageResult.coords);
+  const terminalCationRingProximityPenalty = stageResult.terminalCationRingProximityPenalty
+    ?? measureTerminalCationRingProximityPenalty(layoutGraph, stageResult.coords);
   return (
     (audit?.ringSubstituentReadabilityFailureCount ?? 0) > 0
     || (audit?.inwardRingSubstituentCount ?? 0) > 0
@@ -160,6 +170,7 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
     || (audit?.severeOverlapCount ?? 0) > 0
     || omittedHydrogenTrigonalPenalty > OMITTED_H_TRIGONAL_PRESENTATION_NEED
     || phosphateArylTailPenalty > PRESENTATION_NEED_EPSILON
+    || terminalCationRingProximityPenalty > PRESENTATION_NEED_EPSILON
     || terminalMultipleBondLeafFanPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingPeripheralPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingRootOutwardPenalty > PRESENTATION_NEED_EPSILON
@@ -183,12 +194,15 @@ function hasOutstandingNonPhosphateRingPresentationNeed(layoutGraph, stageResult
     ?? measureThreeHeavyContinuationDistortion(layoutGraph, stageResult.coords).totalDeviation;
   const terminalMultipleBondLeafFanPenalty = stageResult.terminalMultipleBondLeafFanPenalty
     ?? measureTerminalMultipleBondLeafFanPenalty(layoutGraph, stageResult.coords).totalDeviation;
+  const terminalCationRingProximityPenalty = stageResult.terminalCationRingProximityPenalty
+    ?? measureTerminalCationRingProximityPenalty(layoutGraph, stageResult.coords);
   return (
     (audit?.ringSubstituentReadabilityFailureCount ?? 0) > 0
     || (audit?.inwardRingSubstituentCount ?? 0) > 0
     || (audit?.outwardAxisRingSubstituentFailureCount ?? 0) > 0
     || (audit?.severeOverlapCount ?? 0) > 0
     || omittedHydrogenTrigonalPenalty > OMITTED_H_TRIGONAL_PRESENTATION_NEED
+    || terminalCationRingProximityPenalty > PRESENTATION_NEED_EPSILON
     || terminalMultipleBondLeafFanPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingPeripheralPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingRootOutwardPenalty > PRESENTATION_NEED_EPSILON
@@ -250,6 +264,28 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
       options
     );
     usedPhosphateArylTailTidy = currentState.steps.length > previousStepCount;
+
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'terminal-cation-ring-clearance',
+      runTerminalCationRingClearanceTidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength
+      }),
+      options
+    );
+
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'diaryl-omitted-h-fan',
+      runDiarylOmittedHydrogenFanTidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        cleanupRigidSubtreesByAtomId: options.cleanupRigidSubtreesByAtomId,
+        protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true
+      }),
+      options
+    );
   }
 
   if (
@@ -422,6 +458,7 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     terminalMultipleBondLeafFanMaxPenalty: currentState.terminalMultipleBondLeafFanMaxPenalty,
     terminalMultipleBondLeafFanPenalty: currentState.terminalMultipleBondLeafFanPenalty,
     phosphateArylTailPenalty: currentState.phosphateArylTailPenalty,
+    terminalCationRingProximityPenalty: currentState.terminalCationRingProximityPenalty,
     strategiesRun: currentState.steps.map(step => step.name),
     steps: currentState.steps,
     attachedCarbonylDescriptorCount: finalDescriptorSummary.attachedCarbonylDescriptorCount,

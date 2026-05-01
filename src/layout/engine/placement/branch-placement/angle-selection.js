@@ -492,8 +492,8 @@ function isConjugatedTrigonalCenter(layoutGraph, atomId) {
 
 /**
  * Returns whether a tertiary nitrogen should be treated as planar because one
- * of its single-bond neighbors is a conjugated trigonal or sulfonyl-like
- * hypervalent center.
+ * of its single-bond neighbors is a conjugated trigonal center, a divalent
+ * nitrogen conjugated to one, or a sulfonyl-like hypervalent center.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} atomId - Nitrogen atom ID.
  * @returns {boolean} True when the nitrogen should use trigonal branch slots.
@@ -511,6 +511,7 @@ export function isPlanarConjugatedTertiaryNitrogen(layoutGraph, atomId) {
       return (
         neighborAtom?.aromatic
         || isConjugatedTrigonalCenter(layoutGraph, neighborAtomId)
+        || isConjugatedDivalentNitrogenBranch(layoutGraph, atomId, neighborAtomId)
         || describeCrossLikeHypervalentCenter(layoutGraph, neighborAtomId)?.kind === 'bis-oxo'
       );
     });
@@ -2761,7 +2762,7 @@ function describeSmallRingExteriorSpreadAnchor(layoutGraph, anchorAtomId) {
   const ringNeighborIds = [];
   const exocyclicNeighborIds = [];
   for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
-    if (bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
       return null;
     }
     const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;

@@ -89,6 +89,23 @@ function assertOxoLigandsOutsideIncidentRings(result, centerAtomId, oxoAtomIds) 
 }
 
 describe('layout/engine/pipeline — hypervalent cleanup', () => {
+  it('keeps nitro-style sulfonamide oxo leaves on a trigonal nitrogen fan', () => {
+    const result = runPipeline(parseSMILES('CCCCOC1=CC=CC=C1SN(=O)=O'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.cleanupPostHookNudges > 0);
+    assertBondAngle(result, 'S12', 'N13', 'O14', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'S12', 'N13', 'O15', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'O14', 'N13', 'O15', (2 * Math.PI) / 3);
+  });
+
   it('orthogonalizes monoxo phosphonate leaf ligands in mixed fused layouts', () => {
     const result = runPipeline(parseSMILES('OC(CC1=CC(=CC=C1)C1=CC=CC2=C1OC1=C2C=CC=C1)(P(O)(O)=O)P(O)(O)=O'), {
       suppressH: true,

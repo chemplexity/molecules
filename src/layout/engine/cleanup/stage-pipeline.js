@@ -15,6 +15,7 @@ import {
 } from './presentation/attached-ring-fallback.js';
 import { hasOutstandingRingPresentationNeed, runRingPresentationCleanup } from './presentation/ring-presentation.js';
 import { measurePhosphateArylTailPresentationPenalty } from './presentation/phosphate-aryl-tail.js';
+import { measureTerminalCationRingProximityPenalty } from './presentation/terminal-cation-ring-clearance.js';
 import {
   hasSpecialistCleanupNeed,
   runSpecialistCleanup
@@ -195,6 +196,7 @@ export function buildCleanupStageGraph(context) {
       divalentContinuationPenalty: measureDivalentContinuationDistortion(layoutGraph, coords).totalDeviation,
       omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation,
       phosphateArylTailPenalty: measurePhosphateArylTailPresentationPenalty(layoutGraph, coords),
+      terminalCationRingProximityPenalty: measureTerminalCationRingProximityPenalty(layoutGraph, coords, { bondLength }),
       attachedRingPeripheralPenalty: measureAttachedRingPeripheralFocusPenalty(layoutGraph, coords, bondLength),
       attachedRingRootOutwardPenalty: measureAttachedRingRootOutwardPresentationPenalty(layoutGraph, coords, placement.frozenAtomIds),
       terminalHeteroOutwardMaxPenalty: terminalHeteroOutwardPenalty.maxDeviation,
@@ -475,6 +477,7 @@ export function buildCleanupStageGraph(context) {
           terminalMultipleBondLeafFanMaxPenalty: presentationResult.terminalMultipleBondLeafFanMaxPenalty,
           terminalMultipleBondLeafFanPenalty: presentationResult.terminalMultipleBondLeafFanPenalty,
           phosphateArylTailPenalty: presentationResult.phosphateArylTailPenalty,
+          terminalCationRingProximityPenalty: presentationResult.terminalCationRingProximityPenalty,
           stabilizationRequest:
             stabilizationReasons.size > 0
               ? {

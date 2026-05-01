@@ -50,7 +50,7 @@ import { computeMacrocycleAngularBudgets, layoutMacrocycleFamily } from './macro
 import { layoutSpiroFamily } from './spiro.js';
 import { classifyRingSystemFamily } from '../model/scaffold-plan.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
-import { BRIDGED_VALIDATION, IMPROVEMENT_EPSILON, RING_SYSTEM_RESCUE_LIMITS } from '../constants.js';
+import { BRIDGED_VALIDATION, IMPROVEMENT_EPSILON, RING_SYSTEM_RESCUE_LIMITS, atomPairKey } from '../constants.js';
 
 const LINKER_ZIGZAG_TURN_ANGLE = Math.PI / 3;
 const EXACT_TRIGONAL_CONTINUATION_ANGLE = (2 * Math.PI) / 3;
@@ -123,11 +123,26 @@ const DIRECT_ATTACHMENT_LOCAL_ROOT_ROTATION_REFINEMENT_OFFSETS = [
   -(Math.PI / 15)
 ];
 const SMALL_RING_EXTERIOR_FAN_REFINEMENT_FRACTIONS = [1, 0.95, 0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.25];
+const SMALL_RING_EXTERIOR_TAIL_ESCAPE_OFFSETS = [
+  Math.PI / 36,
+  -(Math.PI / 36),
+  Math.PI / 18,
+  -(Math.PI / 18),
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 9,
+  -(Math.PI / 9),
+  (5 * Math.PI) / 36,
+  -(5 * Math.PI) / 36,
+  Math.PI / 6,
+  -(Math.PI / 6)
+];
 const OMITTED_HYDROGEN_PARENT_SPREAD_ROOT_ROTATION_OFFSETS = [Math.PI / 3, -(Math.PI / 3)];
 const OMITTED_HYDROGEN_PARENT_SPREAD_ATTACHMENT_RING_EXIT_TRADEOFF_LIMIT = 0;
 const OMITTED_HYDROGEN_PARENT_SPREAD_RING_EXIT_TRADEOFF_LIMIT = Math.PI / 3;
 const OMITTED_HYDROGEN_PARENT_SPREAD_PRESENTATION_TRADEOFF_LIMIT = Math.PI / 3;
 const OMITTED_HYDROGEN_DIRECT_RING_HUB_LOCAL_ROTATION_OFFSETS = [0, Math.PI / 3, -(Math.PI / 3)];
+const ATTACHED_BLOCK_NEAR_CONTACT_FACTOR = 0.72;
 const OMITTED_HYDROGEN_DIRECT_RING_HUB_BRANCH_LEAF_OFFSETS = [
   0,
   Math.PI / 15,
@@ -5916,6 +5931,118 @@ function preserveTwoHeavyLinkerBendAfterRootMove(layoutGraph, coords, anchorAtom
 }
 
 /**
+ * Returns both zigzag-preserving orientations for the child side of a
+ * two-heavy linker root after that root is moved around a ring anchor.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {string} anchorAtomId - Small-ring anchor atom ID.
+ * @param {string} linkerAtomId - Exocyclic linker root atom ID.
+ * @returns {Array<Map<string, {x: number, y: number}>>} Bend-preserving coordinate candidates.
+ */
+function twoHeavyLinkerBendOrientationCandidates(layoutGraph, coords, anchorAtomId, linkerAtomId) {
+  const childAtomId = exocyclicTwoHeavyLinkerChildAtomId(layoutGraph, coords, anchorAtomId, linkerAtomId);
+  if (!childAtomId) {
+    return [];
+  }
+
+  const linkerPosition = coords.get(linkerAtomId);
+  const anchorPosition = coords.get(anchorAtomId);
+  const childPosition = coords.get(childAtomId);
+  if (!linkerPosition || !anchorPosition || !childPosition) {
+    return [];
+  }
+
+  const anchorAngle = angleOf(sub(anchorPosition, linkerPosition));
+  const childAngle = angleOf(sub(childPosition, linkerPosition));
+  const downstreamAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, childAtomId, linkerAtomId);
+  return [
+    normalizeSignedAngle(anchorAngle + LINKER_ZIGZAG_TURN_ANGLE * 2),
+    normalizeSignedAngle(anchorAngle - LINKER_ZIGZAG_TURN_ANGLE * 2)
+  ].map(targetChildAngle => (
+    rotateAtomIdsAroundPivot(coords, downstreamAtomIds, linkerAtomId, normalizeSignedAngle(targetChildAngle - childAngle))
+  )).filter(Boolean);
+}
+
+/**
+ * Measures the smallest angular separation between visible heavy neighbors of
+ * a saturated small-ring exterior fan anchor.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Small-ring anchor atom ID.
+ * @returns {number} Smallest neighbor-neighbor angle in radians.
+ */
+function smallRingExteriorAnchorMinSeparation(layoutGraph, coords, anchorAtomId) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return 0;
+  }
+
+  const neighborAngles = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+    neighborAngles.push(angleOf(sub(neighborPosition, anchorPosition)));
+  }
+
+  let minSeparation = Math.PI;
+  for (let firstIndex = 0; firstIndex < neighborAngles.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < neighborAngles.length; secondIndex++) {
+      minSeparation = Math.min(minSeparation, angularDifference(neighborAngles[firstIndex], neighborAngles[secondIndex]));
+    }
+  }
+  return minSeparation;
+}
+
+/**
+ * Builds slight root-angle escape candidates for a short exocyclic linker tail
+ * on a saturated small-ring exterior fan anchor. These candidates let the
+ * terminal bond flip to the open zigzag side when the exact exterior slot
+ * would visibly cross a neighboring substituent.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Small-ring anchor atom ID.
+ * @param {string} linkerAtomId - Exocyclic linker root atom ID.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Array<Map<string, {x: number, y: number}>>} Candidate coordinate maps.
+ */
+function buildSmallRingExteriorTailEscapeCandidates(layoutGraph, coords, anchorAtomId, linkerAtomId, bondLength) {
+  if (!exocyclicTwoHeavyLinkerChildAtomId(layoutGraph, coords, anchorAtomId, linkerAtomId)) {
+    return [];
+  }
+
+  const anchorPosition = coords.get(anchorAtomId);
+  const linkerPosition = coords.get(linkerAtomId);
+  if (!anchorPosition || !linkerPosition) {
+    return [];
+  }
+
+  const currentAngle = angleOf(sub(linkerPosition, anchorPosition));
+  const candidates = [];
+  for (const offset of SMALL_RING_EXTERIOR_TAIL_ESCAPE_OFFSETS) {
+    const translatedCoords = translateExocyclicSubtreeToSmallRingExteriorAngle(
+      layoutGraph,
+      coords,
+      anchorAtomId,
+      linkerAtomId,
+      currentAngle + offset,
+      bondLength
+    );
+    if (!translatedCoords) {
+      continue;
+    }
+    candidates.push(...twoHeavyLinkerBendOrientationCandidates(layoutGraph, translatedCoords, anchorAtomId, linkerAtomId));
+  }
+  return candidates;
+}
+
+/**
  * Builds fan candidates for a saturated small-ring anchor with two ring
  * neighbors and two exocyclic heavy branches. The larger exocyclic side stays
  * fixed while the ring side rotates and the smaller branch moves toward the
@@ -6008,6 +6135,15 @@ function buildSmallRingExteriorFanRefinementCandidates(layoutGraph, coords, anch
       }
     }
   }
+  candidates.push(
+    ...buildSmallRingExteriorTailEscapeCandidates(
+      layoutGraph,
+      coords,
+      anchorAtomId,
+      otherExocyclicNeighborId,
+      bondLength
+    )
+  );
   return candidates;
 }
 
@@ -6041,7 +6177,7 @@ function refineSmallRingExteriorBranchFans(layoutGraph, coords, bondLength) {
       if (fixedSize < otherSize) {
         continue;
       }
-      descriptors.push({ anchorAtomId, fixedExocyclicNeighborId, basePenalty });
+      descriptors.push({ anchorAtomId, fixedExocyclicNeighborId, basePenalty, exocyclicNeighborIds: descriptor.exocyclicNeighborIds });
     }
   }
 
@@ -6050,15 +6186,25 @@ function refineSmallRingExteriorBranchFans(layoutGraph, coords, bondLength) {
     || compareCanonicalIds(firstDescriptor.fixedExocyclicNeighborId, secondDescriptor.fixedExocyclicNeighborId, layoutGraph.canonicalAtomRank)
   ));
 
-  for (const { anchorAtomId, fixedExocyclicNeighborId, basePenalty } of descriptors) {
+  for (const { anchorAtomId, fixedExocyclicNeighborId, basePenalty, exocyclicNeighborIds } of descriptors) {
     let bestCoords = coords;
     let bestAudit = baseAudit;
     let bestPenalty = basePenalty;
     let bestLinkerBendPenalty = smallRingExteriorLinkedBranchBendPenalty(layoutGraph, coords, anchorAtomId);
-    let bestLayoutCost = measureFocusedPlacementCost(layoutGraph, coords, bondLength, [anchorAtomId, fixedExocyclicNeighborId]);
+    const focusAtomIds = [anchorAtomId, fixedExocyclicNeighborId, ...exocyclicNeighborIds];
+    let bestLayoutCost = measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds);
+    let bestVisibleCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords, { focusAtomIds });
     for (const candidateCoords of buildSmallRingExteriorFanRefinementCandidates(layoutGraph, coords, anchorAtomId, fixedExocyclicNeighborId, bondLength)) {
       const candidatePenalty = measureSmallRingExteriorGapSpreadPenalty(layoutGraph, candidateCoords, anchorAtomId);
-      if (candidatePenalty >= bestPenalty - IMPROVEMENT_EPSILON) {
+      const candidateVisibleCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { focusAtomIds });
+      const improvesCrossings = candidateVisibleCrossingCount < bestVisibleCrossingCount;
+      if (!improvesCrossings && candidatePenalty >= bestPenalty - IMPROVEMENT_EPSILON) {
+        continue;
+      }
+      if (
+        improvesCrossings
+        && smallRingExteriorAnchorMinSeparation(layoutGraph, candidateCoords, anchorAtomId) < LINKER_ZIGZAG_TURN_ANGLE - IMPROVEMENT_EPSILON
+      ) {
         continue;
       }
       const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
@@ -6073,16 +6219,22 @@ function refineSmallRingExteriorBranchFans(layoutGraph, coords, bondLength) {
         continue;
       }
       const candidateLinkerBendPenalty = smallRingExteriorLinkedBranchBendPenalty(layoutGraph, candidateCoords, anchorAtomId);
-      const candidateLayoutCost = measureFocusedPlacementCost(layoutGraph, candidateCoords, bondLength, [anchorAtomId, fixedExocyclicNeighborId]);
+      const candidateLayoutCost = measureFocusedPlacementCost(layoutGraph, candidateCoords, bondLength, focusAtomIds);
       if (
-        candidatePenalty < bestPenalty - IMPROVEMENT_EPSILON ||
+        candidateVisibleCrossingCount < bestVisibleCrossingCount ||
         (
-          Math.abs(candidatePenalty - bestPenalty) <= IMPROVEMENT_EPSILON &&
+          candidateVisibleCrossingCount === bestVisibleCrossingCount &&
           (
-            candidateLinkerBendPenalty < bestLinkerBendPenalty - IMPROVEMENT_EPSILON
+            candidatePenalty < bestPenalty - IMPROVEMENT_EPSILON
             || (
-              Math.abs(candidateLinkerBendPenalty - bestLinkerBendPenalty) <= IMPROVEMENT_EPSILON
-              && candidateLayoutCost < bestLayoutCost - IMPROVEMENT_EPSILON
+              Math.abs(candidatePenalty - bestPenalty) <= IMPROVEMENT_EPSILON &&
+              (
+                candidateLinkerBendPenalty < bestLinkerBendPenalty - IMPROVEMENT_EPSILON
+                || (
+                  Math.abs(candidateLinkerBendPenalty - bestLinkerBendPenalty) <= IMPROVEMENT_EPSILON
+                  && candidateLayoutCost < bestLayoutCost - IMPROVEMENT_EPSILON
+                )
+              )
             )
           )
         )
@@ -6092,6 +6244,7 @@ function refineSmallRingExteriorBranchFans(layoutGraph, coords, bondLength) {
         bestPenalty = candidatePenalty;
         bestLinkerBendPenalty = candidateLinkerBendPenalty;
         bestLayoutCost = candidateLayoutCost;
+        bestVisibleCrossingCount = candidateVisibleCrossingCount;
       }
     }
 
@@ -9833,6 +9986,80 @@ function refineLinkedMethyleneHydrogenSlots(layoutGraph, coords, bondLength) {
   return { changed };
 }
 
+function isVisibleHeavyLayoutAtom(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  return Boolean(atom && atom.element !== 'H' && !(layoutGraph.options.suppressH && atom.visible === false));
+}
+
+function graphDistanceWithin(layoutGraph, firstAtomId, secondAtomId, maxDepth) {
+  if (firstAtomId === secondAtomId) {
+    return true;
+  }
+  let frontier = [firstAtomId];
+  const visited = new Set(frontier);
+  for (let depth = 0; depth < maxDepth; depth++) {
+    const nextFrontier = [];
+    for (const atomId of frontier) {
+      for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+        if (!bond || bond.kind !== 'covalent') {
+          continue;
+        }
+        const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+        if (neighborAtomId === secondAtomId) {
+          return true;
+        }
+        if (!visited.has(neighborAtomId)) {
+          visited.add(neighborAtomId);
+          nextFrontier.push(neighborAtomId);
+        }
+      }
+    }
+    frontier = nextFrontier;
+    if (frontier.length === 0) {
+      break;
+    }
+  }
+  return false;
+}
+
+function measureAttachedBlockNearContactPenalty(layoutGraph, coords, bondLength, focusAtomIds) {
+  if (!focusAtomIds || focusAtomIds.size === 0) {
+    return 0;
+  }
+  const threshold = bondLength * ATTACHED_BLOCK_NEAR_CONTACT_FACTOR;
+  const atomIds = [...coords.keys()].filter(atomId => isVisibleHeavyLayoutAtom(layoutGraph, atomId));
+  let penalty = 0;
+  for (let firstIndex = 0; firstIndex < atomIds.length; firstIndex++) {
+    const firstAtomId = atomIds[firstIndex];
+    const firstPosition = coords.get(firstAtomId);
+    if (!firstPosition) {
+      continue;
+    }
+    for (let secondIndex = firstIndex + 1; secondIndex < atomIds.length; secondIndex++) {
+      const secondAtomId = atomIds[secondIndex];
+      if (!focusAtomIds.has(firstAtomId) && !focusAtomIds.has(secondAtomId)) {
+        continue;
+      }
+      if (
+        layoutGraph.bondedPairSet?.has(atomPairKey(firstAtomId, secondAtomId))
+        || graphDistanceWithin(layoutGraph, firstAtomId, secondAtomId, 2)
+      ) {
+        continue;
+      }
+      const secondPosition = coords.get(secondAtomId);
+      if (!secondPosition) {
+        continue;
+      }
+      const contactDistance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
+      if (contactDistance >= threshold) {
+        continue;
+      }
+      penalty += ((threshold - contactDistance) / bondLength) ** 2;
+    }
+  }
+  return penalty;
+}
+
 function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLength, layoutGraph, candidateMeta = null) {
   const changedAtomIds = [...candidateCoords.keys()].filter(atomId => {
     if (!baseCoords.has(atomId)) {
@@ -9908,6 +10135,7 @@ function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLen
     (sum, atomId) => sum + (candidateCoords.has(atomId) ? measureSmallRingExteriorGapSpreadPenalty(layoutGraph, candidateCoords, atomId) : 0),
     0
   );
+  const nearContactPenalty = measureAttachedBlockNearContactPenalty(layoutGraph, candidateCoords, bondLength, scoringFocusAtomIds);
   const shouldScoreIdealLeafPresentation =
     changedAtomIds.length <= 12 && (layoutGraph.traits.heavyAtomCount ?? 0) <= EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT;
   const idealLeafPresentationPenalty = shouldScoreIdealLeafPresentation
@@ -9936,6 +10164,7 @@ function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLen
     junctionCrowdingPenalty,
     exactTerminalMultipleSlotPenalty,
     terminalLabelClearancePenalty,
+    nearContactPenalty,
     prioritizeRingExitBeforeTerminalSlots: candidateMeta?.prioritizeRingExitBeforeTerminalSlots === true,
     presentationPenalty: (readability.totalOutwardDeviation ?? 0) + smallRingExteriorPenalty + idealLeafPresentationPenalty,
     idealLeafPresentationPenalty,
@@ -10013,6 +10242,7 @@ function canAcceptAttachedBlockPrescore(bestScore, runnerUpScore, coords, primar
     bestScore.attachmentExteriorPenalty > IMPROVEMENT_EPSILON ||
     bestScore.junctionCrowdingPenalty > IMPROVEMENT_EPSILON ||
     bestScore.terminalLabelClearancePenalty > IMPROVEMENT_EPSILON ||
+    bestScore.nearContactPenalty > IMPROVEMENT_EPSILON ||
     bestScore.presentationPenalty > 0.25
   ) {
     return false;
@@ -10037,6 +10267,7 @@ function canAcceptAttachedBlockPrescore(bestScore, runnerUpScore, coords, primar
     runnerUpScore.attachmentExteriorPenalty > IMPROVEMENT_EPSILON ||
     runnerUpScore.junctionCrowdingPenalty > IMPROVEMENT_EPSILON ||
     runnerUpScore.terminalLabelClearancePenalty > IMPROVEMENT_EPSILON ||
+    runnerUpScore.nearContactPenalty > IMPROVEMENT_EPSILON ||
     runnerUpScore.presentationPenalty > bestScore.presentationPenalty + 0.2 ||
     runnerUpScore.cost > bestScore.cost + bondLength * 0.2
   );
@@ -10063,6 +10294,7 @@ function attachedBlockPrimaryScoreIsPerfect(score) {
     score.attachmentExteriorPenalty <= IMPROVEMENT_EPSILON &&
     score.junctionCrowdingPenalty <= IMPROVEMENT_EPSILON &&
     score.terminalLabelClearancePenalty <= IMPROVEMENT_EPSILON &&
+    score.nearContactPenalty <= IMPROVEMENT_EPSILON &&
     score.presentationPenalty <= IMPROVEMENT_EPSILON
   );
 }
@@ -10189,6 +10421,7 @@ function ensureAttachedBlockLayoutCost(candidateScore, candidateCoords, layoutGr
     candidateScore.exactTerminalMultipleSlotPenalty +
     candidateScore.junctionCrowdingPenalty +
     candidateScore.terminalLabelClearancePenalty +
+    candidateScore.nearContactPenalty +
     candidateScore.smallRingExteriorPenalty;
   return candidateScore;
 }
@@ -10218,6 +10451,9 @@ function compareAttachedBlockScores(cand, inc) {
       return cand[key] - inc[key];
     }
   }
+  if (Math.abs(cand.nearContactPenalty - inc.nearContactPenalty) > IMPROVEMENT_EPSILON) {
+    return cand.nearContactPenalty - inc.nearContactPenalty;
+  }
   if (Math.abs(cand.presentationPenalty - inc.presentationPenalty) > IMPROVEMENT_EPSILON) {
     return cand.presentationPenalty - inc.presentationPenalty;
   }
@@ -10241,6 +10477,9 @@ function compareOmittedHydrogenDirectAttachmentRefinementScores(cand, inc) {
     if (Math.abs(cand[key] - inc[key]) > IMPROVEMENT_EPSILON) {
       return cand[key] - inc[key];
     }
+  }
+  if (Math.abs(cand.nearContactPenalty - inc.nearContactPenalty) > IMPROVEMENT_EPSILON) {
+    return cand.nearContactPenalty - inc.nearContactPenalty;
   }
   if (Math.abs(cand.omittedHydrogenDirectAttachmentCompromisePenalty - inc.omittedHydrogenDirectAttachmentCompromisePenalty) > IMPROVEMENT_EPSILON) {
     return cand.omittedHydrogenDirectAttachmentCompromisePenalty - inc.omittedHydrogenDirectAttachmentCompromisePenalty;
@@ -10275,6 +10514,7 @@ function hasBoundedOmittedHydrogenParentSpreadTradeoff(cand, inc) {
     && cand.attachmentExteriorPenalty <= inc.attachmentExteriorPenalty + IMPROVEMENT_EPSILON
     && cand.junctionCrowdingPenalty <= inc.junctionCrowdingPenalty + IMPROVEMENT_EPSILON
     && cand.terminalLabelClearancePenalty <= inc.terminalLabelClearancePenalty + IMPROVEMENT_EPSILON
+    && cand.nearContactPenalty <= inc.nearContactPenalty + IMPROVEMENT_EPSILON
     && cand.smallRingExteriorPenalty <= inc.smallRingExteriorPenalty + IMPROVEMENT_EPSILON
     && (cand.parentSpreadAttachmentRingExitMaxPenalty ?? cand.ringExitMaxPenalty) <= (inc.parentSpreadAttachmentRingExitMaxPenalty ?? inc.ringExitMaxPenalty) + OMITTED_HYDROGEN_PARENT_SPREAD_ATTACHMENT_RING_EXIT_TRADEOFF_LIMIT + IMPROVEMENT_EPSILON
     && (cand.parentSpreadAttachmentRingExitPenalty ?? cand.ringExitPenalty) <= (inc.parentSpreadAttachmentRingExitPenalty ?? inc.ringExitPenalty) + OMITTED_HYDROGEN_PARENT_SPREAD_ATTACHMENT_RING_EXIT_TRADEOFF_LIMIT + IMPROVEMENT_EPSILON
@@ -10474,6 +10714,7 @@ function compareExactTrigonalBisectorRescueScores(cand, inc) {
     && cand.ringExitPenalty <= inc.ringExitPenalty + IMPROVEMENT_EPSILON
     && cand.attachmentExteriorPenalty <= inc.attachmentExteriorPenalty + IMPROVEMENT_EPSILON
     && cand.junctionCrowdingPenalty <= inc.junctionCrowdingPenalty + IMPROVEMENT_EPSILON
+    && cand.nearContactPenalty <= inc.nearContactPenalty + IMPROVEMENT_EPSILON
   ) {
     return -1;
   }
@@ -10490,6 +10731,7 @@ function compareExactTrigonalBisectorRescueScores(cand, inc) {
     && inc.ringExitPenalty <= cand.ringExitPenalty + IMPROVEMENT_EPSILON
     && inc.attachmentExteriorPenalty <= cand.attachmentExteriorPenalty + IMPROVEMENT_EPSILON
     && inc.junctionCrowdingPenalty <= cand.junctionCrowdingPenalty + IMPROVEMENT_EPSILON
+    && inc.nearContactPenalty <= cand.nearContactPenalty + IMPROVEMENT_EPSILON
   ) {
     return 1;
   }
@@ -10541,6 +10783,25 @@ function pickBestAttachedBlockOrientation(
     || scoredCandidates.some(candidate => (candidate._prescore?.parentExteriorPenalty ?? 0) > IMPROVEMENT_EPSILON)
     || hasSensitiveDirectAttachmentCandidates(layoutGraph, coords, scoredCandidates);
   const [bestPrescoredCandidate, secondPrescoredCandidate] = scoredCandidates;
+  const canAcceptExactChildRootPrescore =
+    bestPrescoredCandidate
+    && supportsExactDirectAttachmentChildRingRootOutward(
+      layoutGraph,
+      bestPrescoredCandidate.meta?.parentAtomId ?? null,
+      bestPrescoredCandidate.meta?.attachmentAtomId ?? null
+    )
+    && bestPrescoredCandidate._prescore.overlapCount === 0
+    && bestPrescoredCandidate._prescore.heavyBondCrossingPriorityCount === 0
+    && bestPrescoredCandidate._prescore.readability.failingSubstituentCount === 0
+    && bestPrescoredCandidate._prescore.ringExitPenalty <= IMPROVEMENT_EPSILON
+    && bestPrescoredCandidate._prescore.presentationPenalty <= IMPROVEMENT_EPSILON;
+  if (canAcceptExactChildRootPrescore) {
+    return {
+      transformedCoords: bestPrescoredCandidate.transformedCoords,
+      score: bestPrescoredCandidate._prescore,
+      meta: bestPrescoredCandidate.meta ?? null
+    };
+  }
   if (
     !requiresFullExactVisibleTrigonalScoring &&
     options.disablePrescoreAcceptance !== true &&
@@ -10721,6 +10982,9 @@ function selectAttachedBlockCandidates(candidates, coords, bondLength, layoutGra
     }
     if (Math.abs(firstCandidate.terminalLabelClearancePenalty - secondCandidate.terminalLabelClearancePenalty) > IMPROVEMENT_EPSILON) {
       return firstCandidate.terminalLabelClearancePenalty - secondCandidate.terminalLabelClearancePenalty;
+    }
+    if (Math.abs(firstCandidate.nearContactPenalty - secondCandidate.nearContactPenalty) > IMPROVEMENT_EPSILON) {
+      return firstCandidate.nearContactPenalty - secondCandidate.nearContactPenalty;
     }
     if (Math.abs(firstCandidate.presentationPenalty - secondCandidate.presentationPenalty) > IMPROVEMENT_EPSILON) {
       return firstCandidate.presentationPenalty - secondCandidate.presentationPenalty;

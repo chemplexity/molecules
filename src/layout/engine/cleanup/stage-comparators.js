@@ -41,14 +41,26 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   if (candidate.audit.labelOverlapCount !== incumbent.audit.labelOverlapCount) {
     return candidate.audit.labelOverlapCount < incumbent.audit.labelOverlapCount;
   }
-  if ((candidate.divalentContinuationPenalty ?? 0) > (incumbent.divalentContinuationPenalty ?? 0) + 1e-9) {
+  const divalentContinuationIncrease = (candidate.divalentContinuationPenalty ?? 0) - (incumbent.divalentContinuationPenalty ?? 0);
+  const omittedHydrogenTrigonalImprovement = (incumbent.omittedHydrogenTrigonalPenalty ?? 0) - (candidate.omittedHydrogenTrigonalPenalty ?? 0);
+  const allowsDivalentPresentationTradeoff = allowPresentationTieBreak && (
+    omittedHydrogenTrigonalImprovement > divalentContinuationIncrease + 1e-9
+  );
+  if (divalentContinuationIncrease > 1e-9 && !allowsDivalentPresentationTradeoff) {
     return false;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.divalentContinuationPenalty ?? 0) - (incumbent.divalentContinuationPenalty ?? 0)) > 1e-9) {
+  if (
+    allowPresentationTieBreak
+    && Math.abs(divalentContinuationIncrease) > 1e-9
+    && !allowsDivalentPresentationTradeoff
+  ) {
     return (candidate.divalentContinuationPenalty ?? 0) < (incumbent.divalentContinuationPenalty ?? 0);
   }
   if (allowPresentationTieBreak && Math.abs((candidate.phosphateArylTailPenalty ?? 0) - (incumbent.phosphateArylTailPenalty ?? 0)) > 1e-9) {
     return (candidate.phosphateArylTailPenalty ?? 0) < (incumbent.phosphateArylTailPenalty ?? 0);
+  }
+  if (allowPresentationTieBreak && Math.abs((candidate.terminalCationRingProximityPenalty ?? 0) - (incumbent.terminalCationRingProximityPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalCationRingProximityPenalty ?? 0) < (incumbent.terminalCationRingProximityPenalty ?? 0);
   }
   if (allowPresentationTieBreak && Math.abs((candidate.omittedHydrogenTrigonalPenalty ?? 0) - (incumbent.omittedHydrogenTrigonalPenalty ?? 0)) > 1e-9) {
     return (candidate.omittedHydrogenTrigonalPenalty ?? 0) < (incumbent.omittedHydrogenTrigonalPenalty ?? 0);
@@ -191,6 +203,9 @@ export function isPreferredProtectedCleanupStage(familySummary, placement, candi
   if (Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
     return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
   }
+  if (Math.abs((candidate.terminalCationRingProximityPenalty ?? 0) - (incumbent.terminalCationRingProximityPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalCationRingProximityPenalty ?? 0) < (incumbent.terminalCationRingProximityPenalty ?? 0);
+  }
   if (Math.abs((candidate.terminalHeteroOutwardMaxPenalty ?? 0) - (incumbent.terminalHeteroOutwardMaxPenalty ?? 0)) > 1e-9) {
     return (candidate.terminalHeteroOutwardMaxPenalty ?? 0) < (incumbent.terminalHeteroOutwardMaxPenalty ?? 0);
   }
@@ -226,6 +241,9 @@ export function isPreferredLabelClearanceStage(candidate, incumbent) {
   }
   if (Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
     return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
+  }
+  if (Math.abs((candidate.terminalCationRingProximityPenalty ?? 0) - (incumbent.terminalCationRingProximityPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalCationRingProximityPenalty ?? 0) < (incumbent.terminalCationRingProximityPenalty ?? 0);
   }
   return false;
 }
@@ -269,6 +287,9 @@ export function isPreferredCleanupGeometryStage(candidate, incumbent) {
   }
   if (Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
     return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
+  }
+  if (Math.abs((candidate.terminalCationRingProximityPenalty ?? 0) - (incumbent.terminalCationRingProximityPenalty ?? 0)) > 1e-9) {
+    return (candidate.terminalCationRingProximityPenalty ?? 0) < (incumbent.terminalCationRingProximityPenalty ?? 0);
   }
   return false;
 }

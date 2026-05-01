@@ -17,6 +17,8 @@ const BROWSER_OMITTED_H_RING_HUB_SMILES = 'CC(NC(=O)C1=C2C=CC=CC2=NC=C1C(N1CCN(C
 const BROWSER_TETRAZOLE_OMITTED_H_SMILES = 'CCCCCCCC(C)C1CC(C(CC)C2=NNC=N2)(C(=O)O1)C1=CC=C(Cl)C=C1C';
 const BROWSER_TRISODIUM_ANTHRAQUINONE_SMILES = '[Na+].[Na+].[Na+].CCc1cc(C(=O)C)c([O-])cc1OCCCOc2ccc3C(=O)c4cc(ccc4Oc3c2CCC(=O)[O-])C(=O)[O-]';
 const BROWSER_PROJECTED_DIARYL_AMIDE_SMILES = 'CC(C)[NH+]1CCC(CC1)NC(=O)NC(CC1=CC=CC=C1)(C1=CC=CC(OC(F)(F)C(F)F)=C1)C1=CC=C(I)C=N1';
+const BROWSER_CHLORO_BENZAMIDE_CARBAMATE_SMILES = 'Clc1ccc(NC(=O)c2cc(Cl)ccc2OC(=O)[C@H](Cc3ccccc3)NC(=O)OCc4ccccc4)cc1';
+const BROWSER_ACYL_HYDRAZINE_TERTIARY_NITROGEN_SMILES = 'CCCCC([NH3+])C(=O)CN(NC(=O)C(C[NH3+])OC1=CC=CC=C1)C(C1=CC=CC=C1)C1=CC=CC=C1';
 
 const MIME_TYPES = new Map([
   ['.css', 'text/css; charset=utf-8'],
@@ -250,6 +252,26 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
       ];
       const projectedDiarylC16Angle = bondAngleAtAtom('C16', 'C15', 'C17');
       const projectedDiarylC37C24Distance = atomDistance('C37', 'C24');
+      const chloroBenzamideC15Angles = [
+        bondAngleAtAtom('C15', 'C9', 'C14'),
+        bondAngleAtAtom('C15', 'C9', 'O16'),
+        bondAngleAtAtom('C15', 'C14', 'O16')
+      ];
+      const acylHydrazineN11Angles = [
+        bondAngleAtAtom('N11', 'N12', 'C26'),
+        bondAngleAtAtom('N11', 'N12', 'C10'),
+        bondAngleAtAtom('N11', 'C26', 'C10')
+      ];
+      const acylHydrazineC26Angles = [
+        bondAngleAtAtom('C26', 'N11', 'C27'),
+        bondAngleAtAtom('C26', 'N11', 'C33'),
+        bondAngleAtAtom('C26', 'C27', 'C33')
+      ];
+      const acylHydrazineN17PhenoxyRingClearance = Math.min(
+        ...['C20', 'C21', 'C22', 'C23', 'C24', 'C25']
+          .map(ringAtomId => atomDistance('N17', ringAtomId))
+          .filter(value => typeof value === 'number' && Number.isFinite(value))
+      );
       const omittedHubRootOutwardDeviation = (rootAtomId, parentAtomId) => {
         const rootPosition = pipeline.coords.get(rootAtomId);
         const parentPosition = pipeline.coords.get(parentAtomId);
@@ -343,6 +365,18 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
           : null,
         projectedDiarylC37C24Distance: typeof projectedDiarylC37C24Distance === 'number' && Number.isFinite(projectedDiarylC37C24Distance)
           ? projectedDiarylC37C24Distance
+          : null,
+        chloroBenzamideC15Angles: chloroBenzamideC15Angles.every(value => typeof value === 'number' && Number.isFinite(value))
+          ? chloroBenzamideC15Angles
+          : null,
+        acylHydrazineN11Angles: acylHydrazineN11Angles.every(value => typeof value === 'number' && Number.isFinite(value))
+          ? acylHydrazineN11Angles
+          : null,
+        acylHydrazineC26Angles: acylHydrazineC26Angles.every(value => typeof value === 'number' && Number.isFinite(value))
+          ? acylHydrazineC26Angles
+          : null,
+        acylHydrazineN17PhenoxyRingClearance: typeof acylHydrazineN17PhenoxyRingClearance === 'number' && Number.isFinite(acylHydrazineN17PhenoxyRingClearance)
+          ? acylHydrazineN17PhenoxyRingClearance
           : null,
         audit: {
           ok: pipeline.metadata?.audit?.ok ?? null,
@@ -597,6 +631,59 @@ test('browser layout keeps projected diaryl amide C15 crossed and clears C37 in 
     assert.ok(
       signature.projectedDiarylC37C24Distance > 2.5,
       `expected ${browserName} C37/C24 to be separated, got ${signature.projectedDiarylC37C24Distance?.toFixed(2)}`
+    );
+  }
+});
+
+test('browser layout keeps aryl-carbamate direct ring roots exact in webkit', { timeout: 120_000 }, async t => {
+  const { server, origin } = await startStaticServer();
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve));
+  });
+
+  const layoutOptions = {
+    auditTelemetry: true,
+    finalLandscapeOrientation: true
+  };
+  const chromiumSignature = await browserLayoutSignature(chromium, origin, BROWSER_CHLORO_BENZAMIDE_CARBAMATE_SMILES, layoutOptions);
+  const webkitSignature = await browserLayoutSignature(webkit, origin, BROWSER_CHLORO_BENZAMIDE_CARBAMATE_SMILES, layoutOptions);
+
+  for (const [browserName, signature] of [['chromium', chromiumSignature], ['webkit', webkitSignature]]) {
+    assert.equal(signature.audit.ok, true, `expected ${browserName} audit to pass`);
+    assert.equal(signature.audit.severeOverlapCount, 0, `expected ${browserName} to avoid severe overlaps`);
+    assert.ok(Array.isArray(signature.chloroBenzamideC15Angles), `expected ${browserName} to report aryl-carbamate root angles`);
+    for (const angle of signature.chloroBenzamideC15Angles) {
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${browserName} aryl-carbamate root angle near 120 degrees, got ${angle.toFixed(2)}`);
+    }
+  }
+});
+
+test('browser layout preserves acyl-hydrazine tertiary nitrogen geometry in webkit', { timeout: 120_000 }, async t => {
+  const { server, origin } = await startStaticServer();
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve));
+  });
+
+  const layoutOptions = {
+    auditTelemetry: true,
+    finalLandscapeOrientation: true
+  };
+  const chromiumSignature = await browserLayoutSignature(chromium, origin, BROWSER_ACYL_HYDRAZINE_TERTIARY_NITROGEN_SMILES, layoutOptions);
+  const webkitSignature = await browserLayoutSignature(webkit, origin, BROWSER_ACYL_HYDRAZINE_TERTIARY_NITROGEN_SMILES, layoutOptions);
+
+  for (const [browserName, signature] of [['chromium', chromiumSignature], ['webkit', webkitSignature]]) {
+    assert.equal(signature.audit.ok, true, `expected ${browserName} audit to pass`);
+    assert.ok(Array.isArray(signature.acylHydrazineN11Angles), `expected ${browserName} to report acyl-hydrazine tertiary nitrogen angles`);
+    for (const angle of signature.acylHydrazineN11Angles) {
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${browserName} acyl-hydrazine tertiary nitrogen angle near 120 degrees, got ${angle.toFixed(2)}`);
+    }
+    assert.ok(Array.isArray(signature.acylHydrazineC26Angles), `expected ${browserName} to report acyl-hydrazine C26 fan angles`);
+    for (const angle of signature.acylHydrazineC26Angles) {
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${browserName} acyl-hydrazine C26 fan angle near 120 degrees, got ${angle.toFixed(2)}`);
+    }
+    assert.ok(
+      signature.acylHydrazineN17PhenoxyRingClearance > 2.2,
+      `expected ${browserName} N17 label to clear the phenoxy ring, got ${signature.acylHydrazineN17PhenoxyRingClearance?.toFixed(3)}`
     );
   }
 });

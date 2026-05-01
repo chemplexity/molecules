@@ -44,6 +44,7 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
 
   it('treats planar conjugated tertiary nitrogens as exact bisector candidates', () => {
     const conjugatedGraph = createLayoutGraph(parseSMILES('CCCC(O)CN=CN(C)C(C)C(C)=NO'), { suppressH: true });
+    const acylHydrazineGraph = createLayoutGraph(parseSMILES('CCCCC([NH3+])C(=O)CN(NC(=O)C(C[NH3+])OC1=CC=CC=C1)C(C1=CC=CC=C1)C1=CC=CC=C1'), { suppressH: true });
     const arylConjugatedGraph = createLayoutGraph(parseSMILES('CCN(C1CCC(CC1)[NH+](C)CC1=CC=CC(OCCOC)=C1)C1=CC(Cl)=CC(C(=O)NCC2=C(C)NC(C)=CC2=O)=C1C'), { suppressH: true });
     const sulfonylConjugatedGraph = createLayoutGraph(parseSMILES('CC(C)N(S(C)(=O)=O)S(C)(=O)=O'), { suppressH: true });
     const saturatedGraph = createLayoutGraph(parseSMILES('CN(C)C'), { suppressH: true });
@@ -53,6 +54,7 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
       .find(atomId => saturatedGraph.atoms.get(atomId)?.element === 'C');
 
     assert.equal(isExactVisibleTrigonalBisectorEligible(conjugatedGraph, 'N9', 'C10'), true);
+    assert.equal(isExactVisibleTrigonalBisectorEligible(acylHydrazineGraph, 'N11', 'C26'), true);
     assert.equal(isExactVisibleTrigonalBisectorEligible(arylConjugatedGraph, 'N3', 'C25'), true);
     assert.equal(isExactVisibleTrigonalBisectorEligible(sulfonylConjugatedGraph, 'N4', 'S9'), true);
     assert.ok(saturatedNitrogenId);

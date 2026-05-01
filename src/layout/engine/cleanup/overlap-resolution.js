@@ -37,6 +37,18 @@ const PENDANT_RING_ROOT_ANCHORED_ROTATION_OFFSETS = Object.freeze([
   Math.PI / 3,
   -(Math.PI / 3)
 ]);
+const COMPACT_RING_ROOT_ANCHORED_ROTATION_OFFSETS = Object.freeze([
+  Math.PI / 12,
+  -(Math.PI / 12),
+  Math.PI / 8,
+  -(Math.PI / 8),
+  Math.PI / 6,
+  -(Math.PI / 6),
+  Math.PI / 3,
+  -(Math.PI / 3),
+  Math.PI / 2,
+  -(Math.PI / 2)
+]);
 const LARGE_RIGID_SUBTREE_COMPONENT_ATOM_COUNT = 24;
 const LARGE_RIGID_SUBTREE_SIZE = 6;
 const MAX_RIGID_DESCRIPTOR_OPTIONS_PER_ATOM = 4;
@@ -146,6 +158,20 @@ function isTerminalMultipleBondHetero(layoutGraph, centerAtomId, bond) {
     return false;
   }
   return neighborAtom.heavyDegree === 1;
+}
+
+/**
+ * Returns whether an atom is a non-ring terminal heavy leaf.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate atom id.
+ * @returns {boolean} True when the atom is a terminal heavy leaf.
+ */
+function isTerminalHeavyLeaf(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  return !!atom
+    && atom.element !== 'H'
+    && (atom.heavyDegree ?? 0) === 1
+    && (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) === 0;
 }
 
 function isOrthogonalHypervalentCenter(layoutGraph, atomId) {
@@ -345,6 +371,62 @@ function isCompactRingAnchoredRigidDescriptor(layoutGraph, descriptor) {
     descriptor.subtreeAtomIds,
     subtreeHeavyAtomCount(layoutGraph, descriptor.subtreeAtomIds)
   );
+}
+
+/**
+ * Returns whether a compact ring substituent is a trigonal acyl/carboxyl-like
+ * root with terminal hetero leaves. These branches can clear a clash by
+ * rotating the terminal fan around the acyl carbon while preserving the ring
+ * root, unlike generic alkyl/vinyl ring substituents.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}} descriptor - Rigid-subtree descriptor.
+ * @returns {boolean} True when the descriptor should get root-anchored terminal fan rotations.
+ */
+function isCompactRingAnchoredTrigonalHeteroRootDescriptor(layoutGraph, descriptor) {
+  if (!isCompactRingAnchoredRigidDescriptor(layoutGraph, descriptor)) {
+    return false;
+  }
+  const rootAtom = layoutGraph.atoms.get(descriptor.rootAtomId);
+  if (!rootAtom || rootAtom.element !== 'C' || rootAtom.aromatic || rootAtom.heavyDegree !== 3) {
+    return false;
+  }
+
+  let anchorNeighborCount = 0;
+  let terminalHeteroNeighborCount = 0;
+  let terminalMultipleHeteroNeighborCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(descriptor.rootAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic) {
+      return false;
+    }
+    const neighborAtomId = bond.a === descriptor.rootAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if (neighborAtomId === descriptor.anchorAtomId) {
+      if ((bond.order ?? 1) !== 1) {
+        return false;
+      }
+      anchorNeighborCount++;
+      continue;
+    }
+    if (
+      neighborAtom.element !== 'C'
+      && (neighborAtom.heavyDegree ?? 0) === 1
+      && (layoutGraph.atomToRings?.get(neighborAtomId)?.length ?? 0) === 0
+    ) {
+      terminalHeteroNeighborCount++;
+      if ((bond.order ?? 1) >= 2) {
+        terminalMultipleHeteroNeighborCount++;
+      }
+      continue;
+    }
+    return false;
+  }
+
+  return anchorNeighborCount === 1
+    && terminalHeteroNeighborCount >= 2
+    && terminalMultipleHeteroNeighborCount >= 1;
 }
 
 function isCompactHypervalentRigidDescriptor(layoutGraph, descriptor) {
@@ -1326,11 +1408,22 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   const baseAnchorDistortion = exactHypervalentDescriptor
     ? 0
     : computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, null);
+  const exactRingRootDescriptor = isCompactRingAnchoredRigidDescriptor(layoutGraph, descriptor);
+  const compactRingAnchoredTrigonalHeteroRootDescriptor = isCompactRingAnchoredTrigonalHeteroRootDescriptor(layoutGraph, descriptor);
+  const baseAnchorRingRootFanDistortion = compactRingAnchoredTrigonalHeteroRootDescriptor
+    ? ringRootFanDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, null)
+    : 0;
+  const shouldKeepExactRingRootFan =
+    compactRingAnchoredTrigonalHeteroRootDescriptor
+    && isTerminalHeavyLeaf(layoutGraph, movingAtomId)
+    && baseAnchorRingRootFanDistortion <= NUMERIC_EPSILON;
+  const baseCompactRingSubtreeRootDistortion = compactRingAnchoredTrigonalHeteroRootDescriptor
+    ? computeAtomDistortionCost(layoutGraph, coords, descriptor.rootAtomId, null)
+    : 0;
   const baseRootDistortion = hasProjectedTetrahedralAnchor
     ? computeAtomDistortionCost(layoutGraph, coords, descriptor.rootAtomId, null)
       + ringRootFanDistortionCost(layoutGraph, coords, descriptor.rootAtomId, null)
     : 0;
-  const exactRingRootDescriptor = isCompactRingAnchoredRigidDescriptor(layoutGraph, descriptor);
   const exactTrigonalRootAngles = exactOmittedHydrogenTrigonalRootAngles(layoutGraph, coords, descriptor);
   const exactDivalentRootAngles = exactDivalentContinuationRootAngles(layoutGraph, coords, descriptor);
   const exactPreferredRootAngles = mergeRigidCandidateAngles(
@@ -1356,6 +1449,15 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     const newAnchorDistortion = exactHypervalentDescriptor
       ? 0
       : computeAtomDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, newPositions);
+    if (
+      shouldKeepExactRingRootFan
+      && ringRootFanDistortionCost(layoutGraph, coords, descriptor.anchorAtomId, newPositions) > baseAnchorRingRootFanDistortion + NUMERIC_EPSILON
+    ) {
+      return null;
+    }
+    const newCompactRingSubtreeRootDistortion = compactRingAnchoredTrigonalHeteroRootDescriptor
+      ? computeAtomDistortionCost(layoutGraph, coords, descriptor.rootAtomId, newPositions)
+      : 0;
     const newRootDistortion = hasProjectedTetrahedralAnchor
       ? computeAtomDistortionCost(layoutGraph, coords, descriptor.rootAtomId, newPositions)
         + ringRootFanDistortionCost(layoutGraph, coords, descriptor.rootAtomId, newPositions)
@@ -1363,6 +1465,7 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     let improvement =
       baseOverlapCost - newOverlapCost
       + (baseAnchorDistortion - newAnchorDistortion)
+      + (baseCompactRingSubtreeRootDistortion - newCompactRingSubtreeRootDistortion)
       + (baseRootDistortion - newRootDistortion);
     const ringRootDeviation = exactRingRootDescriptor
       ? compactRingAnchoredRootOutwardDeviation(layoutGraph, coords, descriptor, newPositions)
@@ -1415,6 +1518,11 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
 
   if (exactRingRootDescriptor || pendantRingReflectionDescriptor) {
     evaluateCandidatePositions(reflectedRigidDescriptorPositions(coords, descriptor));
+  }
+  if (compactRingAnchoredTrigonalHeteroRootDescriptor) {
+    for (const rotation of COMPACT_RING_ROOT_ANCHORED_ROTATION_OFFSETS) {
+      evaluateCandidatePositions(rootAnchoredRigidDescriptorPositions(coords, descriptor, rotation));
+    }
   }
   if (pendantRingReflectionDescriptor && (!pendantRingRootIsRing || pendantRingHasProjectedAnchor)) {
     for (const rotation of PENDANT_RING_ROOT_ANCHORED_ROTATION_OFFSETS) {

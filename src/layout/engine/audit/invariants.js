@@ -195,13 +195,13 @@ function compressibleTerminalRingLeafEndpoints(layoutGraph, bond) {
 
 /**
  * Resolves a terminal hetero leaf on a compact carbonyl/carboxyl center whose
- * ring-side geometry leaves no full-length exact trigonal slot.
+ * ring-side geometry benefits from a shortened exact trigonal leaf.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} bond - Candidate bond descriptor.
  * @returns {{centerAtomId: string, leafAtomId: string}|null} Endpoint roles, or null.
  */
 function compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond) {
-  if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+  if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) < 1) {
     return null;
   }
 
@@ -286,8 +286,101 @@ function isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, dis
   }
 
   const leafAngle = angleOf(sub(leafPosition, anchorPosition));
-  return computeIncidentRingOutwardAngles(layoutGraph, endpoints.anchorAtomId, atomId => coords.get(atomId) ?? null)
-    .some(outwardAngle => angularDifference(leafAngle, outwardAngle) <= COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE);
+  if (
+    computeIncidentRingOutwardAngles(layoutGraph, endpoints.anchorAtomId, atomId => coords.get(atomId) ?? null)
+      .some(outwardAngle => angularDifference(leafAngle, outwardAngle) <= COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE)
+  ) {
+    return true;
+  }
+  if (
+    isAcceptedCompressedSharedJunctionLeafBond(
+      layoutGraph,
+      coords,
+      endpoints.anchorAtomId,
+      endpoints.leafAtomId,
+      leafAngle
+    )
+  ) {
+    return true;
+  }
+  return isAcceptedCompressedFusedRingSystemLeafBond(
+    layoutGraph,
+    coords,
+    endpoints.anchorAtomId,
+    endpoints.leafAtomId,
+    leafAngle
+  );
+}
+
+/**
+ * Returns whether a compressed terminal ring leaf follows an exact
+ * shared-junction continuation while staying outside the anchor's incident
+ * ring faces.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Ring anchor atom id.
+ * @param {string} leafAtomId - Terminal leaf atom id.
+ * @param {number} leafAngle - Current anchor-to-leaf angle.
+ * @returns {boolean} True when the compressed shared-junction leaf is intentional.
+ */
+function isAcceptedCompressedSharedJunctionLeafBond(layoutGraph, coords, anchorAtomId, leafAtomId, leafAngle) {
+  const leafPosition = coords.get(leafAtomId);
+  const sharedJunctionAngle = preferredSharedJunctionContinuationAngle(layoutGraph, coords, anchorAtomId, leafAtomId);
+  if (!leafPosition || sharedJunctionAngle == null) {
+    return false;
+  }
+  if (incidentRingPolygons(layoutGraph, coords, anchorAtomId).some(polygon => pointInPolygon(leafPosition, polygon))) {
+    return false;
+  }
+  return angularDifference(leafAngle, sharedJunctionAngle) <= COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE;
+}
+
+/**
+ * Returns whether a compressed terminal ring leaf follows the fused-ring-system
+ * exterior direction while staying outside the anchor's incident ring faces.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Ring anchor atom id.
+ * @param {string} leafAtomId - Terminal leaf atom id.
+ * @param {number} leafAngle - Current anchor-to-leaf angle.
+ * @returns {boolean} True when the compressed fused-system leaf is intentional.
+ */
+function isAcceptedCompressedFusedRingSystemLeafBond(layoutGraph, coords, anchorAtomId, leafAtomId, leafAngle) {
+  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1) {
+    return false;
+  }
+  const anchorPosition = coords.get(anchorAtomId);
+  const leafPosition = coords.get(leafAtomId);
+  const ringSystemOutwardAngle = fusedRingSystemOutwardAngle(layoutGraph, coords, anchorAtomId);
+  if (!anchorPosition || !leafPosition || ringSystemOutwardAngle == null) {
+    return false;
+  }
+  if (incidentRingPolygons(layoutGraph, coords, anchorAtomId).some(polygon => pointInPolygon(leafPosition, polygon))) {
+    return false;
+  }
+  return angularDifference(leafAngle, ringSystemOutwardAngle) <= COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE;
+}
+
+/**
+ * Returns the whole-ring-system exterior direction at a fused-ring anchor.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Ring anchor atom id.
+ * @returns {number|null} Exterior angle in radians, or null when unavailable.
+ */
+function fusedRingSystemOutwardAngle(layoutGraph, coords, anchorAtomId) {
+  const anchorPosition = coords.get(anchorAtomId);
+  const ringSystemId = layoutGraph.atomToRingSystemId.get(anchorAtomId);
+  if (!anchorPosition || ringSystemId == null) {
+    return null;
+  }
+  const ringSystemPositions = ringSystemAtomIds(layoutGraph, ringSystemId)
+    .map(atomId => coords.get(atomId))
+    .filter(Boolean);
+  if (ringSystemPositions.length < 3) {
+    return null;
+  }
+  return angleOf(sub(anchorPosition, centroid(ringSystemPositions)));
 }
 
 /**

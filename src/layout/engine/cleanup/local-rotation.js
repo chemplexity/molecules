@@ -1278,6 +1278,67 @@ function shouldPreserveRingTrigonalHeteroFan(layoutGraph, atomId, heavyBonds) {
 }
 
 /**
+ * Returns whether an atom belongs to at least one ring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate atom ID.
+ * @returns {boolean} True when the atom is ring-membered.
+ */
+function isRingAtom(layoutGraph, atomId) {
+  return (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0;
+}
+
+/**
+ * Scores distortion of a ring atom's two ring bonds plus one exocyclic
+ * substituent. The scoped local cleanup guard uses this to avoid bending an
+ * already exact ring-root fan just to tidy a compact terminal carboxyl group.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} atomId - Candidate ring atom ID.
+ * @param {Map<string, {x: number, y: number}>|null} overridePositions - Optional candidate moved positions.
+ * @returns {number} Ring-root fan distortion penalty.
+ */
+function ringRootFanDistortionCost(layoutGraph, coords, atomId, overridePositions) {
+  if (!isRingAtom(layoutGraph, atomId)) {
+    return 0;
+  }
+  const atomPosition = overridePositions?.get(atomId) ?? coords.get(atomId);
+  if (!atomPosition) {
+    return 0;
+  }
+
+  const neighborAngles = [];
+  let ringBondCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId?.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = overridePositions?.get(neighborAtomId) ?? coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+    if (bond.inRing) {
+      ringBondCount++;
+    }
+    neighborAngles.push(angleOf(sub(neighborPosition, atomPosition)));
+  }
+  if (neighborAngles.length !== 3 || ringBondCount < 2) {
+    return 0;
+  }
+
+  const sortedAngles = neighborAngles.map(wrapAngle).sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  const idealSeparation = (2 * Math.PI) / 3;
+  return sortedAngles.reduce((cost, currentAngle, index) => {
+    const nextAngle = sortedAngles[(index + 1) % sortedAngles.length];
+    const separation = index === sortedAngles.length - 1
+      ? nextAngle + 2 * Math.PI - currentAngle
+      : nextAngle - currentAngle;
+    return cost + ((separation - idealSeparation) ** 2);
+  }, 0);
+}
+
+/**
  * Returns the distortion penalty for a non-ring three-coordinate hetero center
  * that should still read as roughly trigonal in 2D cleanup.
  * @param {object} layoutGraph - Layout graph shell.
@@ -1454,6 +1515,9 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         subtreeContext
       });
       const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
+      const preserveExactRingRootFan =
+        subtree.preferAtomOverlapClearance === true
+        && ringRootFanDistortionCost(layoutGraph, coords, anchorAtomId, null) <= CLEANUP_EPSILON;
       const finalists = [];
       forEachRigidRotationCandidate(layoutGraph, coords, {
         anchorAtomId,
@@ -1476,6 +1540,12 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
             atomGrid,
             subtreeContext
           });
+          if (
+            preserveExactRingRootFan
+            && ringRootFanDistortionCost(layoutGraph, coords, anchorAtomId, newPositions) > CLEANUP_EPSILON
+          ) {
+            return;
+          }
           const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
           const approximateImprovement = baseAtomOverlapCost - newAtomOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
           recordFinalist(finalists, {

@@ -1015,6 +1015,54 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(separations[3] < 2.1, `expected ${crowdedRingAtomId} to avoid a giant exterior branch gap, got maximum separation ${((separations[3] * 180) / Math.PI).toFixed(2)} degrees`);
   });
 
+  it('keeps bulky cyclohexyl methyl leaves outside crowded saturated rings', () => {
+    const smiles = 'CC(C)(O)C(=O)C1=CC=C(COC(=O)NCC2(C)CC(CC(C)(C)C2)NC(=O)OCC2=CC=C(C=C2)C(=O)C(C)(C)O)C=C1';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const graph = result.layoutGraph;
+    const component = graph.components[0];
+    const adjacency = buildAdjacency(graph, new Set(component.atomIds));
+    const audit = auditLayout(graph, result.coords, { bondLength: graph.options.bondLength });
+    const cyclohexylRing = graph.atomToRings.get('C22')?.[0] ?? null;
+    const methylLeafPosition = result.coords.get('C24');
+    const esterLinkerOxygenPosition = result.coords.get('O12');
+    const minimumMethylClearance = Math.min(
+      distance(methylLeafPosition, result.coords.get('C21')),
+      distance(methylLeafPosition, result.coords.get('C23')),
+      distance(methylLeafPosition, result.coords.get('C25'))
+    );
+    const separations = sortedNeighborSeparations(adjacency, result.coords, 'C22');
+
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.ok(cyclohexylRing, 'expected the crowded cyclohexyl ring to be detected');
+    assert.equal(
+      pointInPolygon(
+        methylLeafPosition,
+        cyclohexylRing.atomIds.map(atomId => result.coords.get(atomId))
+      ),
+      false,
+      'expected the methyl leaf to stay outside the saturated ring face'
+    );
+    assert.equal(separations.length, 4, 'expected four placed heavy-neighbor separations at the crowded ring atom');
+    assert.ok(
+      separations[0] > 1.3,
+      `expected the crowded ring atom to avoid pinched methyl gaps, got minimum separation ${((separations[0] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(
+      minimumMethylClearance > graph.options.bondLength * 1.2,
+      `expected the methyl leaf to clear neighboring heavy atoms, got minimum clearance ${minimumMethylClearance.toFixed(3)}`
+    );
+    assert.ok(
+      distance(methylLeafPosition, esterLinkerOxygenPosition) > graph.options.bondLength * 1.4,
+      `expected the methyl leaf to clear the ester linker oxygen, got ${distance(methylLeafPosition, esterLinkerOxygenPosition).toFixed(3)}`
+    );
+  });
+
   it('restores cyclopropane exterior fans after mixed linker placement adds the second branch', () => {
     const result = runPipeline(parseSMILES('CC1=C(COC2(C)CC2[NH3+])SN=N1'), {
       suppressH: true,

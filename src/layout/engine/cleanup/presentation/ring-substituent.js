@@ -18,7 +18,8 @@ import { computeBounds } from '../../geometry/bounds.js';
 import { distancePointToSegment, segmentsProperlyIntersect } from '../../geometry/segments.js';
 import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
-import { RING_SUBSTITUENT_READABILITY_LIMITS, atomPairKey } from '../../constants.js';
+import { preferredSharedJunctionContinuationAngle } from '../../placement/branch-placement/angle-selection.js';
+import { RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR, atomPairKey } from '../../constants.js';
 import { measureAttachedCarbonylPresentationPenalty } from './attached-carbonyl.js';
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
 import { containsFrozenAtom } from '../frozen-atoms.js';
@@ -46,6 +47,18 @@ const IDEAL_RING_LINKER_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
 const COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I', 'O', 'S', 'Se']);
 const IDEAL_LINKED_RING_BRIDGE_ANGLE = (2 * Math.PI) / 3;
 const LINKED_RING_BRIDGE_TRADEOFF_MIN_BASE_DEVIATION = 0.05;
+const SHARED_JUNCTION_BLOCKER_BACKOFF_ANGLES = Object.freeze([
+  -Math.PI / 30,
+  Math.PI / 30,
+  -Math.PI / 15,
+  Math.PI / 15,
+  -Math.PI / 10,
+  Math.PI / 10,
+  -(2 * Math.PI) / 15,
+  (2 * Math.PI) / 15,
+  -Math.PI / 6,
+  Math.PI / 6
+]);
 const RING_SUBSTITUENT_TIDY_LIMITS = Object.freeze({
   maxSubtreeHeavyAtomCount: 18,
   maxSubtreeAtomCount: 28,
@@ -103,6 +116,40 @@ function preferredMultiRingOutwardAngle(layoutGraph, anchorPosition, positions, 
   return angleOf(sub(anchorPosition, centroid(positions)));
 }
 
+/**
+ * Returns whether a fused-ring-system outward probe stays outside all incident
+ * ring faces at the anchor. Shared junctions can have a whole-system centroid
+ * direction that is globally exterior but locally points through one of the
+ * fused rings; in that case the local incident-ring exits are safer candidates.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Ring anchor atom id.
+ * @param {string|null} rootAtomId - Direct substituent root atom id.
+ * @param {number} outwardAngle - Candidate outward angle.
+ * @param {Map<string, {x: number, y: number}>|null} [overridePositions] - Optional candidate overrides.
+ * @returns {boolean} True when the whole-system outward direction is locally exterior.
+ */
+function ringSystemOutwardProbeStaysExterior(layoutGraph, coords, anchorAtomId, rootAtomId, outwardAngle, overridePositions = null) {
+  const anchorPosition = positionForAtom(coords, overridePositions, anchorAtomId);
+  if (!anchorPosition || rootAtomId == null) {
+    return true;
+  }
+
+  const rootPosition = positionForAtom(coords, overridePositions, rootAtomId);
+  if (!rootPosition) {
+    return true;
+  }
+
+  const probeDistance = Math.hypot(rootPosition.x - anchorPosition.x, rootPosition.y - anchorPosition.y);
+  if (probeDistance <= TIDY_ATOM_EPSILON) {
+    return true;
+  }
+
+  const probePosition = add(anchorPosition, fromAngle(outwardAngle, probeDistance));
+  return !incidentRingPolygonsWithOverrides(layoutGraph, coords, anchorAtomId, overridePositions)
+    .some(polygon => pointInPolygon(probePosition, polygon));
+}
+
 function incidentRingOutwardAngles(layoutGraph, coords, anchorAtomId) {
   return computeIncidentRingOutwardAngles(layoutGraph, anchorAtomId, atomId => coords.get(atomId) ?? null);
 }
@@ -140,13 +187,23 @@ function outwardAnglesForAnchor(layoutGraph, coords, anchorAtomId, rootAtomId = 
   if (shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, anchorAtomId, rootAtomId, localOutwardAngles)) {
     return localOutwardAngles;
   }
+  const sharedJunctionAngle = preferredSharedJunctionContinuationAngle(layoutGraph, coords, anchorAtomId, rootAtomId);
+  if (
+    sharedJunctionAngle != null
+    && ringSystemOutwardProbeStaysExterior(layoutGraph, coords, anchorAtomId, rootAtomId, sharedJunctionAngle)
+  ) {
+    return [sharedJunctionAngle];
+  }
   const ringSystemOutwardAngle = preferredMultiRingOutwardAngle(
     layoutGraph,
     anchorPosition,
     ringSystemAtomIds(layoutGraph, anchorAtomId, coords).map(atomId => coords.get(atomId)).filter(Boolean),
     anchorAtomId
   );
-  if (ringSystemOutwardAngle != null) {
+  if (
+    ringSystemOutwardAngle != null
+    && ringSystemOutwardProbeStaysExterior(layoutGraph, coords, anchorAtomId, rootAtomId, ringSystemOutwardAngle)
+  ) {
     return [ringSystemOutwardAngle];
   }
   return localOutwardAngles;
@@ -259,6 +316,17 @@ function positionForAtom(coords, overridePositions, atomId) {
   return overridePositions?.get(atomId) ?? coords.get(atomId) ?? null;
 }
 
+function coordsWithOverrides(coords, overridePositions = null) {
+  if (!overridePositions || overridePositions.size === 0) {
+    return coords;
+  }
+  const mergedCoords = new Map(coords);
+  for (const [atomId, position] of overridePositions) {
+    mergedCoords.set(atomId, position);
+  }
+  return mergedCoords;
+}
+
 function incidentRingPolygonsWithOverrides(layoutGraph, coords, atomId, overridePositions = null) {
   return (layoutGraph.atomToRings.get(atomId) ?? [])
     .map(ring => ring.atomIds.map(ringAtomId => positionForAtom(coords, overridePositions, ringAtomId)).filter(Boolean))
@@ -282,6 +350,18 @@ function outwardAnglesForAnchorWithOverrides(layoutGraph, coords, anchorAtomId, 
   if (shouldPreferUniqueIncidentRingOutwardAngle(layoutGraph, anchorAtomId, rootAtomId, localOutwardAngles)) {
     return localOutwardAngles;
   }
+  const sharedJunctionAngle = preferredSharedJunctionContinuationAngle(
+    layoutGraph,
+    coordsWithOverrides(coords, overridePositions),
+    anchorAtomId,
+    rootAtomId
+  );
+  if (
+    sharedJunctionAngle != null
+    && ringSystemOutwardProbeStaysExterior(layoutGraph, coords, anchorAtomId, rootAtomId, sharedJunctionAngle, overridePositions)
+  ) {
+    return [sharedJunctionAngle];
+  }
   const ringSystemAtomIdsForAnchor = ringSystemAtomIds(layoutGraph, anchorAtomId, coords);
   const ringSystemOutwardAngle = preferredMultiRingOutwardAngle(
     layoutGraph,
@@ -291,10 +371,208 @@ function outwardAnglesForAnchorWithOverrides(layoutGraph, coords, anchorAtomId, 
       .filter(Boolean),
     anchorAtomId
   );
-  if (ringSystemOutwardAngle != null) {
+  if (
+    ringSystemOutwardAngle != null
+    && ringSystemOutwardProbeStaysExterior(layoutGraph, coords, anchorAtomId, rootAtomId, ringSystemOutwardAngle, overridePositions)
+  ) {
     return [ringSystemOutwardAngle];
   }
   return localOutwardAngles;
+}
+
+function terminalHeavyLeafAnchorAtomId(layoutGraph, leafAtomId) {
+  const atom = layoutGraph.atoms.get(leafAtomId);
+  if (!atom || atom.element === 'H' || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0) {
+    return null;
+  }
+  const heavyNeighborIds = (layoutGraph.bondsByAtomId.get(leafAtomId) ?? [])
+    .filter(bond => bond && bond.kind === 'covalent')
+    .map(bond => (bond.a === leafAtomId ? bond.b : bond.a))
+    .filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+  if (heavyNeighborIds.length !== 1) {
+    return null;
+  }
+  return heavyNeighborIds[0];
+}
+
+function leafInsideIncidentRing(layoutGraph, coords, anchorAtomId, leafAtomId) {
+  const leafPosition = coords.get(leafAtomId);
+  if (!leafPosition) {
+    return true;
+  }
+  return incidentRingPolygons(layoutGraph, coords, anchorAtomId)
+    .some(polygon => pointInPolygon(leafPosition, polygon));
+}
+
+function sharedJunctionTargetDistances(currentDistance, bondLength) {
+  const distances = new Set([
+    currentDistance,
+    ...IDEAL_LEAF_COMPRESSION_FACTORS.map(factor => bondLength * factor)
+  ]);
+  return [...distances]
+    .filter(distance => (
+      distance >= bondLength * SEVERE_OVERLAP_FACTOR - TIDY_ATOM_EPSILON
+      && distance <= bondLength + TIDY_ATOM_EPSILON
+    ))
+    .sort((firstDistance, secondDistance) => secondDistance - firstDistance);
+}
+
+function terminalLeafBlockersNearPosition(layoutGraph, coords, rootAtomId, targetPosition, bondLength) {
+  const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
+  const blockers = [];
+  for (const [atomId, position] of coords) {
+    if (atomId === rootAtomId) {
+      continue;
+    }
+    const blockerAnchorAtomId = terminalHeavyLeafAnchorAtomId(layoutGraph, atomId);
+    if (
+      !blockerAnchorAtomId
+      || (layoutGraph.atomToRings.get(blockerAnchorAtomId)?.length ?? 0) === 0
+      || !coords.has(blockerAnchorAtomId)
+    ) {
+      continue;
+    }
+    const distance = Math.hypot(position.x - targetPosition.x, position.y - targetPosition.y);
+    if (distance < threshold - TIDY_ATOM_EPSILON) {
+      blockers.push({ atomId, anchorAtomId: blockerAnchorAtomId, distance });
+    }
+  }
+  blockers.sort((firstBlocker, secondBlocker) => firstBlocker.distance - secondBlocker.distance);
+  return blockers;
+}
+
+function sharedJunctionCandidateIsClean(layoutGraph, coords, bondLength, movedLeafPairs) {
+  if (findSevereOverlaps(layoutGraph, coords, bondLength).length > 0) {
+    return false;
+  }
+  const readability = measureRingSubstituentReadability(layoutGraph, coords);
+  if (
+    readability.failingSubstituentCount > 0
+    || readability.inwardSubstituentCount > 0
+    || readability.outwardAxisFailureCount > 0
+  ) {
+    return false;
+  }
+  return movedLeafPairs.every(([anchorAtomId, leafAtomId]) => !leafInsideIncidentRing(layoutGraph, coords, anchorAtomId, leafAtomId));
+}
+
+function buildSharedJunctionTerminalLeafCandidate(layoutGraph, coords, anchorAtomId, rootAtomId, targetAngle, bondLength, frozenAtomIds) {
+  const anchorPosition = coords.get(anchorAtomId);
+  const rootPosition = coords.get(rootAtomId);
+  if (!anchorPosition || !rootPosition || frozenAtomIds?.has(rootAtomId)) {
+    return null;
+  }
+
+  const currentDistance = Math.hypot(rootPosition.x - anchorPosition.x, rootPosition.y - anchorPosition.y);
+  const currentAngle = angleOf(sub(rootPosition, anchorPosition));
+  if (currentDistance <= TIDY_ATOM_EPSILON || angularDifference(currentAngle, targetAngle) <= TIDY_ANGLE_EPSILON) {
+    return null;
+  }
+
+  let bestCandidate = null;
+  for (const targetDistance of sharedJunctionTargetDistances(currentDistance, bondLength)) {
+    const rootTargetPosition = add(anchorPosition, fromAngle(targetAngle, targetDistance));
+    const rootOnlyCoords = new Map(coords);
+    rootOnlyCoords.set(rootAtomId, rootTargetPosition);
+    if (leafInsideIncidentRing(layoutGraph, rootOnlyCoords, anchorAtomId, rootAtomId)) {
+      continue;
+    }
+
+    const blockers = terminalLeafBlockersNearPosition(layoutGraph, coords, rootAtomId, rootTargetPosition, bondLength)
+      .filter(blocker => !frozenAtomIds?.has(blocker.atomId));
+    if (blockers.length > 1) {
+      continue;
+    }
+
+    const blockerCandidates = blockers.length === 0
+      ? [{ blocker: null, blockerPosition: null, blockerDelta: 0 }]
+      : SHARED_JUNCTION_BLOCKER_BACKOFF_ANGLES.map(offset => {
+          const blocker = blockers[0];
+          const blockerAnchorPosition = coords.get(blocker.anchorAtomId);
+          const blockerPosition = coords.get(blocker.atomId);
+          if (!blockerAnchorPosition || !blockerPosition) {
+            return null;
+          }
+          const blockerDistance = Math.hypot(
+            blockerPosition.x - blockerAnchorPosition.x,
+            blockerPosition.y - blockerAnchorPosition.y
+          );
+          const blockerAngle = angleOf(sub(blockerPosition, blockerAnchorPosition));
+          return {
+            blocker,
+            blockerPosition: add(blockerAnchorPosition, fromAngle(blockerAngle + offset, blockerDistance)),
+            blockerDelta: Math.abs(offset)
+          };
+        }).filter(Boolean);
+
+    for (const blockerCandidate of blockerCandidates) {
+      const candidateCoords = new Map(rootOnlyCoords);
+      const movedLeafPairs = [[anchorAtomId, rootAtomId]];
+      const movedPositions = [[rootAtomId, rootTargetPosition]];
+      if (blockerCandidate.blocker) {
+        candidateCoords.set(blockerCandidate.blocker.atomId, blockerCandidate.blockerPosition);
+        movedLeafPairs.push([blockerCandidate.blocker.anchorAtomId, blockerCandidate.blocker.atomId]);
+        movedPositions.push([blockerCandidate.blocker.atomId, blockerCandidate.blockerPosition]);
+      }
+      if (!sharedJunctionCandidateIsClean(layoutGraph, candidateCoords, bondLength, movedLeafPairs)) {
+        continue;
+      }
+      const distancePenalty = (bondLength - targetDistance) / bondLength;
+      const score = blockerCandidate.blockerDelta + distancePenalty;
+      if (!bestCandidate || score < bestCandidate.score - TIDY_ANGLE_EPSILON) {
+        bestCandidate = { movedPositions, score };
+      }
+    }
+  }
+  return bestCandidate;
+}
+
+function alignSharedJunctionTerminalLeaves(layoutGraph, coords, atomGrid, bondLength, frozenAtomIds = null) {
+  let nudges = 0;
+  for (const anchorAtomId of coords.keys()) {
+    if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) <= 1) {
+      continue;
+    }
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+        continue;
+      }
+      const rootAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      const rootAtom = layoutGraph.atoms.get(rootAtomId);
+      if (
+        !rootAtom
+        || !COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(rootAtom.element)
+        || terminalHeavyLeafAnchorAtomId(layoutGraph, rootAtomId) !== anchorAtomId
+      ) {
+        continue;
+      }
+      const targetAngle = preferredSharedJunctionContinuationAngle(layoutGraph, coords, anchorAtomId, rootAtomId);
+      if (
+        targetAngle == null
+        || !ringSystemOutwardProbeStaysExterior(layoutGraph, coords, anchorAtomId, rootAtomId, targetAngle)
+      ) {
+        continue;
+      }
+      const candidate = buildSharedJunctionTerminalLeafCandidate(
+        layoutGraph,
+        coords,
+        anchorAtomId,
+        rootAtomId,
+        targetAngle,
+        bondLength,
+        frozenAtomIds
+      );
+      if (!candidate) {
+        continue;
+      }
+      updateAtomGridForMove(layoutGraph, atomGrid, coords, candidate.movedPositions);
+      for (const [atomId, position] of candidate.movedPositions) {
+        coords.set(atomId, position);
+      }
+      nudges++;
+    }
+  }
+  return nudges;
 }
 
 function countMovedBondCrossings(layoutGraph, coords, subtreeAtomIds, overridePositions, bondIntersectionContext = null) {
@@ -834,7 +1112,8 @@ function buildCompressedExactIdealLeafCandidate(layoutGraph, coords, atomGrid, d
     bondIntersectionContext,
     subtreeContext
   );
-  if (fullLengthCandidate.overlapCost <= baseCandidate.overlapCost + IDEAL_LEAF_COMPRESSION_MIN_OVERLAP_COST_INCREASE) {
+  const fullLengthRepairsInwardLeaf = fullLengthCandidate.insideRingCount < baseCandidate.insideRingCount;
+  if (!fullLengthRepairsInwardLeaf && fullLengthCandidate.overlapCost <= baseCandidate.overlapCost + IDEAL_LEAF_COMPRESSION_MIN_OVERLAP_COST_INCREASE) {
     return null;
   }
 
@@ -1320,6 +1599,17 @@ function shouldAcceptCandidate(candidate, baseCandidate, descriptor) {
         baseCandidate.boundsArea * RING_SUBSTITUENT_TIDY_LIMITS.minCompactAreaImprovementFraction
       );
 
+  if (
+    candidate.compressedTerminalLeaf === true
+    && improvesInsideRing
+    && candidate.outwardFailureCount <= baseCandidate.outwardFailureCount
+    && candidate.crossingCount <= baseCandidate.crossingCount
+    && doesNotWorsenOverlap
+    && doesNotWorsenIdealOutwardGeometry
+    && doesNotWorsenBridgeAngle
+  ) {
+    return true;
+  }
   if (
     descriptor.supportsRootAnchoredOverlapRepair
     && candidate.rootAnchored
@@ -1928,6 +2218,8 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
       break;
     }
   }
+
+  nudges += alignSharedJunctionTerminalLeaves(layoutGraph, coords, atomGrid, bondLength, frozenAtomIds);
 
   return { coords, nudges };
 }

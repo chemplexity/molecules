@@ -746,6 +746,35 @@ test('reaction preview keeps imine-hydrolysis then phenolate-protonation fused a
   assert.deepEqual(validateValence(afterPhenolateProtonation.mol), []);
 });
 
+test('reaction preview keeps retained scaffold compact for benzylic oxidation and imine hydrolysis', () => {
+  const smiles = 'CC(C)OC1=C(NC2=NC=C(Cl)C(N2)=NC2=CC=CC=C2S(=O)(=O)C(C)C)C=C(C)C(=C1)C1CCNCC1';
+  const cases = [
+    { template: reactionTemplates.benzylicOxidation, expectedMappings: 1 },
+    { template: reactionTemplates.imineHydrolysis, expectedMappings: 2 }
+  ];
+
+  for (const { template, expectedMappings } of cases) {
+    const sourceMol = parseSMILES(smiles);
+    const mappings = [...findSMARTSRaw(sourceMol, template.smirks.split('>>')[0])];
+    assert.equal(mappings.length, expectedMappings, `expected ${template.name} mapping count`);
+
+    for (const [index, mapping] of mappings.entries()) {
+      const preview = buildReaction2dMol(sourceMol, template.smirks, mapping);
+      assert.ok(preview, `expected ${template.name} preview for mapping ${index}`);
+      generateAndRefine2dCoords(preview.mol, { suppressH: true, bondLength: 1.5 });
+      alignReaction2dProductOrientation(preview.mol, preview, 1.5);
+      spreadReaction2dProductComponents(preview.mol, preview, 1.5);
+      centerReaction2dPairCoords(preview.mol, preview, 1.5);
+
+      for (const componentAtomIds of preview.productComponentAtomIdSets) {
+        const stats = heavyGeometryStats(preview, componentAtomIds);
+        assert.ok(stats.maxBond < 1.85, `expected ${template.name} mapping ${index} to avoid stretched bonds, got ${stats.maxBond.toFixed(3)} Å`);
+        assert.ok(stats.minNonbonded > 0.8, `expected ${template.name} mapping ${index} to avoid retained-scaffold overlaps, got ${stats.minNonbonded.toFixed(3)} Å`);
+      }
+    }
+  }
+});
+
 test('reaction preview keeps aromatic-aza-protonation fused aza product valence-clean', () => {
   const preview = preparePreview(
     'C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]',

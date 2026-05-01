@@ -2,6 +2,15 @@
 
 ## 2026-04-30
 
+- Let short saturated-ring tail branches bend out of visible neighbor crossings.
+- Preserve exact aryl carboxyl fans while shortening crowded carbonyl leaves away from neighboring rings.
+- Keep reaction-preview retained scaffolds compact when benzylic oxidation or imine hydrolysis edits mapped carbonyl sites.
+- Clear terminal cation labels from nearby phenoxy rings while rebalancing crowded diaryl fans.
+- Keep acyl-hydrazine tertiary nitrogens on planar trigonal fans across browser engines.
+- Keep paired nitro-style oxo leaves on trigonal nitrogen fans.
+- Keep shared-junction steroid methyl and fluorine leaves out of fused ring faces while preserving the fluorine's fused-junction line.
+- Keep bulky cyclohexyl methyl branches clear of nearby ester linkers in browser-rendered layouts.
+- Preserve exact prescored direct aromatic ring-root poses so aryl carbamate exits stay trigonal across browser engines.
 - Add a compact spiro-bridged oxetane template so small cage ethers avoid collapsed rings.
 - Let hypervalent tidy keep phosphorothioate crosses exact by nudging neighboring terminal multiple-bond leaves away from local clashes.
 - Let saturated-ring exterior fan retidy preserve linked methylene bends while avoiding overlaps.

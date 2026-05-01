@@ -214,6 +214,23 @@ test('loading the crowded phosphine oxide keeps mirrored aryl ethyl branches sep
   expect(phosphineArylAxisAngle).toBeGreaterThan(160);
 });
 
+test('loading the bulky cyclohexyl ester bug molecule keeps the C22/C24 pocket clear in the browser render', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC(C)(O)C(=O)C1=CC=C(COC(=O)NCC2(C)CC(CC(C)(C)C2)NC(=O)OCC2=CC=C(C=C2)C(=O)C(C)(C)O)C=C1');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const esterOxygenToRingHub = await atomDistance(page, 'O12', 'C22');
+  const esterOxygenToMethylLeaf = await atomDistance(page, 'O12', 'C24');
+  const methylBondLength = await atomDistance(page, 'C22', 'C24');
+  expect(esterOxygenToRingHub).not.toBeNull();
+  expect(esterOxygenToMethylLeaf).not.toBeNull();
+  expect(methylBondLength).not.toBeNull();
+  expect(methylBondLength).toBeGreaterThan(80);
+  expect(esterOxygenToRingHub).toBeGreaterThan(120);
+  expect(esterOxygenToMethylLeaf).toBeGreaterThan(120);
+});
+
 test('loading the benzylic amino-alcohol bug molecule keeps the visible trigonal centers and attached phenyl exit exact', async ({ page }) => {
   await page.goto('/index.html');
 
