@@ -2,7 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/index.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
-import { measureRingSubstituentReadability } from '../../../../src/layout/engine/audit/invariants.js';
+import { findVisibleHeavyBondCrossings, measureRingSubstituentReadability } from '../../../../src/layout/engine/audit/invariants.js';
 import { pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.js';
 import { computeIncidentRingOutwardAngles } from '../../../../src/layout/engine/geometry/ring-direction.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
@@ -516,7 +516,10 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(result.family, 'mixed');
     assert.equal(result.supported, true);
     assert.equal(result.coords.size, result.atomIds.length);
-    assert.ok(elapsed < 5000, `expected the mixed peptide outlier to stay below the local branch-search budget, got ${elapsed}ms`);
+    assert.ok(
+      elapsed < MIXED_BRANCH_STRESS_TIMEOUT_MS,
+      `expected the mixed peptide outlier to stay below the local branch-search budget on the full-suite host, got ${elapsed}ms`
+    );
   });
 
   it('rescues compact bridged mixed roots with a fused fallback when the KK placement is bond-dirty', () => {
@@ -1085,6 +1088,53 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('centers direct-attached cyclopropyl roots on fused parent exterior slots', () => {
+    const smiles = 'CCN1CC2CC(C2)(C2CC2)C1=O';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const assertCyclopropylRoot = (layoutGraph, coords, bondValidationClasses, label) => {
+      const audit = auditLayout(layoutGraph, coords, {
+        bondLength: layoutGraph.options.bondLength,
+        bondValidationClasses
+      });
+      const parentDeviation = bestLocalRingDeviation(layoutGraph, coords, 'C7', 'C9');
+      const childDeviation = bestLocalRingDeviation(layoutGraph, coords, 'C9', 'C7');
+      const parentAngles = [
+        bondAngleAtAtom(coords, 'C7', 'C8', 'C9'),
+        bondAngleAtAtom(coords, 'C7', 'C9', 'C12'),
+        bondAngleAtAtom(coords, 'C7', 'C9', 'C6')
+      ];
+      const childAngles = [
+        bondAngleAtAtom(coords, 'C9', 'C7', 'C10'),
+        bondAngleAtAtom(coords, 'C9', 'C7', 'C11')
+      ];
+
+      assert.equal(audit.ok, true, `expected ${label} to pass layout audit`);
+      assert.ok(parentDeviation < 1e-6, `expected ${label} C7-C9 to follow a fused-parent exterior slot, got ${((parentDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(childDeviation < 1e-6, `expected ${label} C9-C7 to follow the cyclopropyl root outward axis, got ${((childDeviation * 180) / Math.PI).toFixed(2)} degrees`);
+      assert.ok(
+        Math.max(...parentAngles) <= (5 * Math.PI) / 6 + 1e-6,
+        `expected ${label} C7 cyclopropyl exit not to go straight through a ring bond, got ${parentAngles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+      );
+      for (const angle of childAngles) {
+        assert.ok(
+          Math.abs(angle - (5 * Math.PI) / 6) < 1e-6,
+          `expected ${label} cyclopropyl root angles near 150 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertCyclopropylRoot(graph, mixedResult.coords, mixedResult.bondValidationClasses, 'mixed layout');
+    assertCyclopropylRoot(pipelineResult.layoutGraph, pipelineResult.coords, pipelineResult.bondValidationClasses, 'pipeline layout');
+  });
+
   it('backs off saturated-ring exterior fan restoration when the exact linked-ring slot would overlap', () => {
     const result = runPipeline(parseSMILES('CC1=CC(CC2(CN3C=CN=C3)OCC(C)(C)CO2)=CC(C)=C1'), {
       suppressH: true,
@@ -1487,6 +1537,18 @@ describe('layout/engine/families/mixed', () => {
       distance(result.coords.get('C13'), result.coords.get('C45')) > graph.options.bondLength * 0.8,
       'expected the sibling aryl rings to clear the C13/C45 overlap'
     );
+
+    const expectedCarboxylateAngle = (2 * Math.PI) / 3;
+    for (const [label, angle] of [
+      ['O3-C2-C4', bondAngleAtAtom(result.coords, 'C2', 'O3', 'C4')],
+      ['O3-C2-O1', bondAngleAtAtom(result.coords, 'C2', 'O3', 'O1')],
+      ['C4-C2-O1', bondAngleAtAtom(result.coords, 'C2', 'C4', 'O1')]
+    ]) {
+      assert.ok(
+        Math.abs(angle - expectedCarboxylateAngle) < 1e-6,
+        `expected the carboxylate fan to stay trigonal at ${label}, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
+      );
+    }
   });
 
   it('generalizes direct-attached aryl exterior slots beyond seven-member saturated rings', () => {
@@ -3144,6 +3206,49 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('keeps crowded terminal aryl fluorine leaves on the exact local ring-outward axis', () => {
+    const smiles = 'FC1=CC=CC(=C1)C1=CC(=CC=C1C1=CC(=CC(=C1)C(F)(F)F)C(F)(F)F)C(=O)N1CCC(C1)C1=CC=CN=C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const assertC2Fluorine = (layoutGraph, coords, bondValidationClasses, label) => {
+      const audit = auditLayout(layoutGraph, coords, {
+        bondLength: layoutGraph.options.bondLength,
+        bondValidationClasses
+      });
+      const fluorineDeviation = bestLocalRingDeviation(layoutGraph, coords, 'C2', 'F1');
+      const firstFluorineAngle = bondAngleAtAtom(coords, 'C2', 'C7', 'F1');
+      const secondFluorineAngle = bondAngleAtAtom(coords, 'C2', 'C3', 'F1');
+
+      assert.equal(audit.ok, true, `expected ${label} to pass layout audit`);
+      assert.ok(
+        fluorineDeviation < 1e-6,
+        `expected ${label} C2-F1 to follow the exact local ring-outward axis, got ${((fluorineDeviation * 180) / Math.PI).toFixed(2)} degrees`
+      );
+      assert.ok(
+        Math.abs(firstFluorineAngle - ((2 * Math.PI) / 3)) < 1e-6,
+        `expected ${label} C7-C2-F1 near 120 degrees, got ${((firstFluorineAngle * 180) / Math.PI).toFixed(2)}`
+      );
+      assert.ok(
+        Math.abs(secondFluorineAngle - ((2 * Math.PI) / 3)) < 1e-6,
+        `expected ${label} C3-C2-F1 near 120 degrees, got ${((secondFluorineAngle * 180) / Math.PI).toFixed(2)}`
+      );
+      assert.ok(
+        distance(coords.get('F1'), coords.get('F23')) > layoutGraph.options.bondLength * 0.55,
+        `expected ${label} neighboring CF3 fluorine to clear the restored C2-F1 slot`
+      );
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertC2Fluorine(graph, mixedResult.coords, mixedResult.bondValidationClasses, 'mixed layout');
+    assertC2Fluorine(pipelineResult.layoutGraph, pipelineResult.coords, pipelineResult.bondValidationClasses, 'pipeline layout');
+  });
+
   it('retries an alternate mixed root when the default aromatic root leaves overlapping ring-linker geometry', () => {
     const smiles = 'COC1=CC(=CC(OC)=C1OC)C(F)(F)C(=O)N1CCCC[C@H]1C(=O)O[C@@H](CCCC1=CC=CC=C1)CCCC1=CN=CC=C1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
@@ -3440,6 +3545,62 @@ describe('layout/engine/families/mixed', () => {
     assertCyclopropaneCapOutsideParent(graph, mixedResult.coords, 'mixed layout');
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assertCyclopropaneCapOutsideParent(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
+  });
+
+  it('rotates terminal carbon ring leaves away from later attached-ring bond crossings', () => {
+    const smiles = 'COC1=CC=C(C2=C1NC(C1CCCC1)N2C)C1(CC2=CC=NC=C2)C(=O)C2=CC=C(OCC3=CC=CC=C3)C=C2C1=O';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const adjacency = buildAdjacency(result.layoutGraph, new Set(result.layoutGraph.components[0].atomIds));
+    const n16Separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'N16', result.layoutGraph);
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    assert.ok(
+      distance(result.coords.get('C17'), result.coords.get('C20')) > result.layoutGraph.options.bondLength * 0.65,
+      'expected the shortened terminal methyl bond to keep readable clearance from the attached pyridyl root'
+    );
+    assert.ok(
+      distance(result.coords.get('C17'), result.coords.get('C25')) > result.layoutGraph.options.bondLength * 0.6,
+      'expected the terminal methyl carbon to keep readable clearance from the crossed pyridyl edge'
+    );
+    assert.ok(
+      distance(result.coords.get('N16'), result.coords.get('C17')) < result.layoutGraph.options.bondLength * 0.75,
+      'expected the N16 methyl bond to shorten instead of swinging into a bad fan angle'
+    );
+    assert.ok(
+      n16Separations[0] > (5 * Math.PI) / 9,
+      `expected the N16 methyl fan to stay readable after crossing relief, got minimum separation ${((n16Separations[0] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+  });
+
+  it('stretches blocked bridgehead terminal methyl leaves to keep ammonium fans readable', () => {
+    const smiles = 'Cc1ccc(F)cc1C(O)(C[C@H]2C[C@H]3CC[C@@H](C2)[N+]3(C)C)c4cc(F)ccc4C';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const adjacency = buildAdjacency(result.layoutGraph, new Set(result.layoutGraph.components[0].atomIds));
+    const n22Separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'N22', result.layoutGraph);
+    const methylBondLengths = ['C23', 'C24'].map(atomId => distance(result.coords.get('N22'), result.coords.get(atomId)));
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(
+      n22Separations[0] >= (11 * Math.PI) / 36 - 1e-6,
+      `expected the bridgehead ammonium methyl fan to keep at least 55 degrees, got ${((n22Separations[0] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    assert.ok(
+      Math.max(...methylBondLengths) > result.layoutGraph.options.bondLength * 1.1,
+      'expected one blocked terminal methyl bond to stretch out of the bridge core'
+    );
+    assert.ok(
+      distance(result.coords.get('C23'), result.coords.get('C18')) > result.layoutGraph.options.bondLength * 0.55,
+      'expected the stretched terminal methyl carbon to keep readable clearance from the bridge atom'
+    );
   });
 
   it('lays out a macrocycle root scaffold plus substituent through the mixed orchestrator', () => {

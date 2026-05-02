@@ -231,6 +231,166 @@ test('loading the bulky cyclohexyl ester bug molecule keeps the C22/C24 pocket c
   expect(esterOxygenToMethylLeaf).toBeGreaterThan(120);
 });
 
+test('loading the acyclic sulfonamide bug molecule keeps the sulfur oxo pair opposed in the browser render', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CN1CCN(CC1)C(=O)N[C@H](CC1=CC=CC=C1)C(=O)N[C@H](CCC1=CC=CC=C1)CCS(=O)(=O)NOCC1=CC=CC=C1');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const singleLigandAxis = await atomBondAngleDegrees(page, 'S35', 'C34', 'N38');
+  const oxoAxis = await atomBondAngleDegrees(page, 'S35', 'O36', 'O37');
+  const carbonToOxo = await atomBondAngleDegrees(page, 'S35', 'C34', 'O36');
+  const nitrogenToOxo = await atomBondAngleDegrees(page, 'S35', 'N38', 'O36');
+  const sulfurOxoLength = await atomDistance(page, 'S35', 'O37');
+  const pendantRingClearance = await atomDistance(page, 'C19', 'O37');
+  expect(singleLigandAxis).not.toBeNull();
+  expect(oxoAxis).not.toBeNull();
+  expect(carbonToOxo).not.toBeNull();
+  expect(nitrogenToOxo).not.toBeNull();
+  expect(sulfurOxoLength).not.toBeNull();
+  expect(pendantRingClearance).not.toBeNull();
+  expect(Math.abs(singleLigandAxis - 180)).toBeLessThan(1e-6);
+  expect(oxoAxis).toBeGreaterThan(174);
+  expect(Math.abs(carbonToOxo - 90)).toBeLessThan(1e-6);
+  expect(Math.abs(nitrogenToOxo - 90)).toBeLessThan(1e-6);
+  expect(pendantRingClearance).toBeGreaterThan(sulfurOxoLength * 0.55);
+});
+
+test('loading and cleaning the bridged nitrile bug molecule keeps the terminal nitrile linear in the browser render', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'CC(C)CC1CCC2(CC1(C2)C#N)C(C)C');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const nitrileAngleMaxDeviation = async () => {
+    const angle = await atomBondAngleDegrees(page, 'C12', 'C10', 'N13');
+    return angle == null ? null : Math.abs(angle - 180);
+  };
+
+  await expect.poll(nitrileAngleMaxDeviation).toBeLessThan(1e-6);
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect.poll(nitrileAngleMaxDeviation).toBeLessThan(1e-6);
+});
+
+test('loading and cleaning the explicit phosphonate hydrogen bug molecule keeps the visible phosphorus fan trigonal', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, '[H][P@@](=O)(CCCCCCCCCCC)OCCCC');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const maxVisiblePhosphorusFanDeviation = async () => {
+    const angles = await Promise.all([
+      atomBondAngleDegrees(page, 'P2', 'O3', 'C4'),
+      atomBondAngleDegrees(page, 'P2', 'O3', 'O15'),
+      atomBondAngleDegrees(page, 'P2', 'C4', 'O15'),
+      atomBondAngleDegrees(page, 'C4', 'P2', 'C5')
+    ]);
+    if (angles.some(angle => angle == null)) {
+      return null;
+    }
+    return Math.max(...angles.map(angle => Math.abs(angle - 120)));
+  };
+
+  await expect.poll(maxVisiblePhosphorusFanDeviation).toBeLessThan(1e-6);
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect.poll(maxVisiblePhosphorusFanDeviation).toBeLessThan(1e-6);
+});
+
+test('loading and cleaning the aryl dinitro bug molecule keeps both nitro fans trigonal', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'FC(F)(F)C1=NN=C([N-]C2=C(C=C(C=C2N(=O)=O)C(F)(F)F)N(=O)=O)S1');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const maxNitroFanDeviation = async () => {
+    const angles = await Promise.all([
+      atomBondAngleDegrees(page, 'N16', 'O17', 'O18'),
+      atomBondAngleDegrees(page, 'N16', 'O17', 'C15'),
+      atomBondAngleDegrees(page, 'N16', 'O18', 'C15'),
+      atomBondAngleDegrees(page, 'N23', 'C11', 'O24'),
+      atomBondAngleDegrees(page, 'N23', 'C11', 'O25'),
+      atomBondAngleDegrees(page, 'N23', 'O24', 'O25')
+    ]);
+    if (angles.some(angle => angle == null)) {
+      return null;
+    }
+    return Math.max(...angles.map(angle => Math.abs(angle - 120)));
+  };
+
+  await expect.poll(maxNitroFanDeviation).toBeLessThan(1e-6);
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect.poll(maxNitroFanDeviation).toBeLessThan(1e-6);
+});
+
+test('loading and cleaning the macrocycle aryl-glycoside bug molecule keeps fused aryl arcs attached', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, 'OCC1OC(OC2=CC=C3CCCCC(O)CCC4=CC=C(OC2=C3)C=C4)C(O)C(O)C1O');
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const maxFusedArylBondRatio = async () => {
+    const distances = await Promise.all([
+      atomDistance(page, 'C7', 'C24'),
+      atomDistance(page, 'C9', 'C10'),
+      atomDistance(page, 'C19', 'C27'),
+      atomDistance(page, 'C22', 'C26')
+    ]);
+    if (distances.some(distanceValue => distanceValue == null || !(distanceValue > 0))) {
+      return null;
+    }
+    return Math.max(...distances) / Math.min(...distances);
+  };
+  const maxFusedArylAngleDeviation = async () => {
+    const angles = await Promise.all([
+      atomBondAngleDegrees(page, 'C27', 'C19', 'C26'),
+      atomBondAngleDegrees(page, 'C26', 'C27', 'C22'),
+      atomBondAngleDegrees(page, 'C22', 'C26', 'C21'),
+      atomBondAngleDegrees(page, 'C21', 'C22', 'C20'),
+      atomBondAngleDegrees(page, 'C20', 'C21', 'C19'),
+      atomBondAngleDegrees(page, 'C19', 'C20', 'C27'),
+      atomBondAngleDegrees(page, 'C24', 'C7', 'C25'),
+      atomBondAngleDegrees(page, 'C25', 'C24', 'C10'),
+      atomBondAngleDegrees(page, 'C10', 'C25', 'C9'),
+      atomBondAngleDegrees(page, 'C9', 'C10', 'C8'),
+      atomBondAngleDegrees(page, 'C8', 'C9', 'C7'),
+      atomBondAngleDegrees(page, 'C7', 'C8', 'C24')
+    ]);
+    if (angles.some(angle => angle == null)) {
+      return null;
+    }
+    return Math.max(...angles.map(angle => Math.abs(angle - 120)));
+  };
+  const c24ArylEtherAngleDeviation = async () => {
+    const angles = await Promise.all([
+      atomBondAngleDegrees(page, 'C24', 'C7', 'O23'),
+      atomBondAngleDegrees(page, 'C24', 'C25', 'O23')
+    ]);
+    if (angles.some(angle => angle == null)) {
+      return null;
+    }
+    return Math.max(...angles.map(angle => Math.abs(angle - 120)));
+  };
+  const glycosideUpperRingClearance = async () => atomDistance(page, 'O6', 'C22');
+
+  await expect.poll(maxFusedArylBondRatio).toBeLessThan(1.08);
+  await expect.poll(maxFusedArylAngleDeviation).toBeLessThan(2);
+  await expect.poll(c24ArylEtherAngleDeviation).toBeLessThan(5);
+  await expect.poll(glycosideUpperRingClearance).toBeGreaterThan(60);
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect.poll(maxFusedArylBondRatio).toBeLessThan(1.08);
+  await expect.poll(maxFusedArylAngleDeviation).toBeLessThan(2);
+  await expect.poll(c24ArylEtherAngleDeviation).toBeLessThan(5);
+  await expect.poll(glycosideUpperRingClearance).toBeGreaterThan(60);
+});
+
 test('loading the benzylic amino-alcohol bug molecule keeps the visible trigonal centers and attached phenyl exit exact', async ({ page }) => {
   await page.goto('/index.html');
 

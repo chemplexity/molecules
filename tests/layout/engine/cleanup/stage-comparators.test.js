@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { isPreferredCleanupGeometryStage } from '../../../../src/layout/engine/cleanup/stage-comparators.js';
+import {
+  isPreferredCleanupGeometryStage,
+  isPreferredFinalStereoStage
+} from '../../../../src/layout/engine/cleanup/stage-comparators.js';
 
 function stageAudit(overrides = {}) {
   return {
@@ -33,5 +36,20 @@ describe('layout/engine/cleanup/stage-comparators', () => {
     };
 
     assert.equal(isPreferredCleanupGeometryStage(candidate, incumbent), true);
+  });
+
+  it('keeps hypervalent deviation ahead of late presentation tie-breaks', () => {
+    const incumbent = {
+      audit: stageAudit({ ok: true }),
+      hypervalentDeviation: 0,
+      terminalHeteroOutwardPenalty: 10
+    };
+    const candidate = {
+      audit: stageAudit({ ok: true }),
+      hypervalentDeviation: 1,
+      terminalHeteroOutwardPenalty: 0
+    };
+
+    assert.equal(isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true }), false);
   });
 });

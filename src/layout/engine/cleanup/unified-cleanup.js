@@ -129,6 +129,9 @@ function isBetterCandidate(bestCandidate, candidate, epsilon, options = {}) {
       return true;
     }
     if (Math.abs(candidate.improvement - bestCandidate.improvement) <= epsilon) {
+      if ((candidate.compressedCarbonylLeafMoves ?? 0) !== (bestCandidate.compressedCarbonylLeafMoves ?? 0)) {
+        return (candidate.compressedCarbonylLeafMoves ?? 0) > (bestCandidate.compressedCarbonylLeafMoves ?? 0);
+      }
       return (candidate.presentationImprovement ?? 0) > (bestCandidate.presentationImprovement ?? 0) + epsilon;
     }
   }
@@ -307,7 +310,8 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
           ...prescoreCandidate(layoutGraph, baseOverlapState, overlapCandidate.coords, bondLength, {
             presentationImprovement: 0
           }),
-          overlapMoves: overlapCandidate.moves
+          overlapMoves: overlapCandidate.moves,
+          compressedCarbonylLeafMoves: overlapCandidate.compressedCarbonylLeafMoves ?? 0
         };
         if (isBetterCandidate(bestPrescoredCandidate, prescoredOverlapCandidate, epsilon, options)) {
           bestPrescoredCandidate = prescoredOverlapCandidate;

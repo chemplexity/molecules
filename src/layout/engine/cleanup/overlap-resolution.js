@@ -59,6 +59,10 @@ const COMPACT_HYPERVALENT_RIGID_SUBTREE_MAX_HEAVY_ATOMS = 8;
 const COMPACT_HYPERVALENT_RIGID_SUBTREE_MAX_ATOMS = 12;
 const COMPACT_FOUR_COORDINATE_TERMINAL_RIGID_SUBTREE_MAX_HEAVY_ATOMS = 8;
 const COMPACT_FOUR_COORDINATE_TERMINAL_RIGID_SUBTREE_MAX_ATOMS = 12;
+const COMPRESSED_TERMINAL_CARBONYL_LEAF_MIN_FACTOR = 0.4;
+const TERMINAL_CARBONYL_LEAF_COMPRESSION_FACTORS = Object.freeze(
+  Array.from({ length: 111 }, (_value, index) => 0.95 - index * 0.005)
+);
 const EXACT_HYPERVALENT_RELATIVE_ROTATION_OFFSETS = Object.freeze([
   Math.PI / 12,
   -(Math.PI / 12),
@@ -1182,6 +1186,143 @@ function singleHeavyAnchorAtomId(layoutGraph, atomId) {
   return heavyNeighborIds.length === 1 ? heavyNeighborIds[0] : null;
 }
 
+function isCompressibleTerminalCarbonylLeaf(layoutGraph, centerAtomId, leafAtomId) {
+  const centerAtom = layoutGraph.atoms.get(centerAtomId);
+  const leafAtom = layoutGraph.atoms.get(leafAtomId);
+  const leafBond = layoutGraph.bondByAtomPair?.get(atomPairKey(centerAtomId, leafAtomId));
+  if (
+    !centerAtom
+    || !leafAtom
+    || !leafBond
+    || leafBond.kind !== 'covalent'
+    || leafBond.inRing
+    || leafBond.aromatic
+    || centerAtom.element !== 'C'
+    || centerAtom.aromatic
+    || centerAtom.heavyDegree !== 3
+    || leafAtom.element === 'C'
+    || leafAtom.element === 'H'
+    || (leafAtom.heavyDegree ?? 0) !== 1
+    || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+    || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  let ringNeighborCount = 0;
+  let terminalHeteroNeighborCount = 0;
+  let terminalMultipleHeteroNeighborCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+      ringNeighborCount++;
+    }
+    if (
+      neighborAtom.element !== 'C'
+      && (neighborAtom.heavyDegree ?? 0) === 1
+      && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0
+    ) {
+      terminalHeteroNeighborCount++;
+      if (!bond.aromatic && (bond.order ?? 1) >= 2) {
+        terminalMultipleHeteroNeighborCount++;
+      }
+    }
+  }
+
+  return ringNeighborCount === 1
+    && terminalHeteroNeighborCount >= 2
+    && terminalMultipleHeteroNeighborCount >= 1;
+}
+
+function compressedTerminalCarbonylLeafPosition(layoutGraph, coords, leafAtomId, opposingAtomId, threshold, bondLength, atomGrid) {
+  const centerAtomId = singleHeavyAnchorAtomId(layoutGraph, leafAtomId);
+  if (!centerAtomId || !isCompressibleTerminalCarbonylLeaf(layoutGraph, centerAtomId, leafAtomId)) {
+    return null;
+  }
+  const centerPosition = coords.get(centerAtomId);
+  const leafPosition = coords.get(leafAtomId);
+  const opposingPosition = coords.get(opposingAtomId);
+  if (!centerPosition || !leafPosition || !opposingPosition) {
+    return null;
+  }
+
+  const currentVector = sub(leafPosition, centerPosition);
+  const currentRadius = Math.hypot(currentVector.x, currentVector.y);
+  if (currentRadius <= bondLength * COMPRESSED_TERMINAL_CARBONYL_LEAF_MIN_FACTOR + NUMERIC_EPSILON) {
+    return null;
+  }
+  const unitVector = {
+    x: currentVector.x / currentRadius,
+    y: currentVector.y / currentRadius
+  };
+
+  for (const compressionFactor of TERMINAL_CARBONYL_LEAF_COMPRESSION_FACTORS) {
+    const candidateRadius = bondLength * compressionFactor;
+    if (
+      candidateRadius >= currentRadius - NUMERIC_EPSILON
+      || candidateRadius < bondLength * COMPRESSED_TERMINAL_CARBONYL_LEAF_MIN_FACTOR - NUMERIC_EPSILON
+    ) {
+      continue;
+    }
+    const candidatePosition = {
+      x: centerPosition.x + unitVector.x * candidateRadius,
+      y: centerPosition.y + unitVector.y * candidateRadius
+    };
+    const opposingDistance = Math.hypot(candidatePosition.x - opposingPosition.x, candidatePosition.y - opposingPosition.y);
+    if (opposingDistance < threshold - NUMERIC_EPSILON) {
+      continue;
+    }
+    let localClearance = threshold;
+    const candidateAtomIds = atomGrid ? atomGrid.queryRadius(candidatePosition, threshold) : coords.keys();
+    for (const otherAtomId of candidateAtomIds) {
+      const otherAtom = layoutGraph.atoms.get(otherAtomId);
+      if (
+        otherAtomId === leafAtomId
+        || otherAtom?.visible !== true
+        || otherAtom.element === 'H'
+        || layoutGraph.bondedPairSet?.has(atomPairKey(leafAtomId, otherAtomId))
+      ) {
+        continue;
+      }
+      const otherPosition = coords.get(otherAtomId);
+      if (!otherPosition) {
+        continue;
+      }
+      localClearance = Math.min(localClearance, Math.hypot(candidatePosition.x - otherPosition.x, candidatePosition.y - otherPosition.y));
+    }
+    if (localClearance >= threshold - NUMERIC_EPSILON) {
+      return candidatePosition;
+    }
+  }
+
+  return null;
+}
+
+function isCompressedTerminalCarbonylLeafMove(layoutGraph, coords, atomId, nextPosition) {
+  const centerAtomId = singleHeavyAnchorAtomId(layoutGraph, atomId);
+  const centerPosition = centerAtomId ? coords.get(centerAtomId) : null;
+  const currentPosition = coords.get(atomId);
+  if (
+    !centerAtomId
+    || !centerPosition
+    || !currentPosition
+    || !nextPosition
+    || !isCompressibleTerminalCarbonylLeaf(layoutGraph, centerAtomId, atomId)
+  ) {
+    return false;
+  }
+  const currentRadius = Math.hypot(currentPosition.x - centerPosition.x, currentPosition.y - centerPosition.y);
+  const nextRadius = Math.hypot(nextPosition.x - centerPosition.x, nextPosition.y - centerPosition.y);
+  return nextRadius < currentRadius - NUMERIC_EPSILON;
+}
+
 function reflectPointAcrossLine(point, lineStart, lineEnd) {
   const dx = lineEnd.x - lineStart.x;
   const dy = lineEnd.y - lineStart.y;
@@ -1420,6 +1561,9 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
   const baseCompactRingSubtreeRootDistortion = compactRingAnchoredTrigonalHeteroRootDescriptor
     ? computeAtomDistortionCost(layoutGraph, coords, descriptor.rootAtomId, null)
     : 0;
+  const shouldKeepExactCompactRingSubtreeRootFan =
+    compactRingAnchoredTrigonalHeteroRootDescriptor
+    && baseCompactRingSubtreeRootDistortion <= NUMERIC_EPSILON;
   const baseRootDistortion = hasProjectedTetrahedralAnchor
     ? computeAtomDistortionCost(layoutGraph, coords, descriptor.rootAtomId, null)
       + ringRootFanDistortionCost(layoutGraph, coords, descriptor.rootAtomId, null)
@@ -1458,6 +1602,12 @@ function bestRigidSubtreeMove(layoutGraph, coords, atomGrid, descriptor, movingA
     const newCompactRingSubtreeRootDistortion = compactRingAnchoredTrigonalHeteroRootDescriptor
       ? computeAtomDistortionCost(layoutGraph, coords, descriptor.rootAtomId, newPositions)
       : 0;
+    if (
+      shouldKeepExactCompactRingSubtreeRootFan
+      && newCompactRingSubtreeRootDistortion > baseCompactRingSubtreeRootDistortion + NUMERIC_EPSILON
+    ) {
+      return null;
+    }
     const newRootDistortion = hasProjectedTetrahedralAnchor
       ? computeAtomDistortionCost(layoutGraph, coords, descriptor.rootAtomId, newPositions)
         + ringRootFanDistortionCost(layoutGraph, coords, descriptor.rootAtomId, newPositions)
@@ -1639,10 +1789,11 @@ function bestRigidSubtreeMoveForAtom(layoutGraph, coords, atomGrid, rigidSubtree
  * @param {{x: number, y: number}} tentativePosition - Tentative moved position.
  * @param {string} opposingAtomId - Atom that triggered the overlap.
  * @param {number} threshold - Target nonbonded separation.
+ * @param {number} bondLength - Target covalent bond length.
  * @param {import('../geometry/atom-grid.js').AtomGrid|null} [atomGrid] - Optional spatial atom grid built from coords.
  * @returns {{x: number, y: number}} Constrained moved position.
  */
-function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition, opposingAtomId, threshold, atomGrid = null) {
+function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition, opposingAtomId, threshold, bondLength, atomGrid = null) {
   const anchorAtomId = singleHeavyAnchorAtomId(layoutGraph, atomId);
   if (!anchorAtomId) {
     return tentativePosition;
@@ -1684,6 +1835,18 @@ function constrainSingleAtomMove(layoutGraph, coords, atomId, tentativePosition,
     }
     return Number.isFinite(minimumDistance) ? minimumDistance : Number.POSITIVE_INFINITY;
   };
+  const compressedCarbonylPosition = compressedTerminalCarbonylLeafPosition(
+    layoutGraph,
+    coords,
+    atomId,
+    opposingAtomId,
+    threshold,
+    bondLength,
+    atomGrid
+  );
+  if (compressedCarbonylPosition) {
+    return compressedCarbonylPosition;
+  }
   const rawStep = tentativeShift / radius;
   const baseStep = Math.max(rawStep, Math.PI / 18);
   const stepMultipliers = [rawStep / baseStep, 1, 1.5, 2, 3]
@@ -1771,6 +1934,7 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
     for (const atom of layoutGraph.atoms.values()) { if (atom.visible) { visibleAtomCount++; } }
   }
   let moves = 0;
+  let compressedCarbonylLeafMoves = 0;
 
   for (let pass = 0; pass < maxPasses; pass++) {
     const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength, { atomGrid });
@@ -1857,8 +2021,12 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
           },
           overlap.firstAtomId,
           threshold,
+          bondLength,
           atomGrid
         );
+        if (isCompressedTerminalCarbonylLeafMove(layoutGraph, coords, overlap.secondAtomId, constrainedPosition)) {
+          compressedCarbonylLeafMoves++;
+        }
         secondPosition.x = constrainedPosition.x;
         secondPosition.y = constrainedPosition.y;
         atomGrid.remove(overlap.secondAtomId, previousSecondPosition);
@@ -1875,8 +2043,12 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
           },
           overlap.secondAtomId,
           threshold,
+          bondLength,
           atomGrid
         );
+        if (isCompressedTerminalCarbonylLeafMove(layoutGraph, coords, overlap.firstAtomId, constrainedPosition)) {
+          compressedCarbonylLeafMoves++;
+        }
         firstPosition.x = constrainedPosition.x;
         firstPosition.y = constrainedPosition.y;
         atomGrid.remove(overlap.firstAtomId, previousFirstPosition);
@@ -1902,5 +2074,5 @@ export function resolveOverlaps(layoutGraph, inputCoords, options = {}) {
     }
   }
 
-  return { coords, moves };
+  return { coords, moves, compressedCarbonylLeafMoves };
 }

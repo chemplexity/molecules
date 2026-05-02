@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { findSevereOverlaps, measureBondLengthDeviation } from '../../../../src/layout/engine/audit/invariants.js';
 import { AUDIT_PLANAR_VALIDATION } from '../../../../src/layout/engine/constants.js';
+import { generateCoords } from '../../../../src/layout/engine/api.js';
 import { computeMacrocycleAngularBudgets, layoutMacrocycleFamily } from '../../../../src/layout/engine/families/macrocycle.js';
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { computeBounds } from '../../../../src/layout/engine/geometry/bounds.js';
@@ -34,6 +35,29 @@ function assertMacrocycleLayoutQuality(graph, coords) {
   const bondStats = measureBondLengthDeviation(graph, coords, graph.options.bondLength);
   assert.equal(findSevereOverlaps(graph, coords, graph.options.bondLength).length, 0);
   assert.ok(bondStats.failingBondCount <= AUDIT_PLANAR_VALIDATION.maxSevereOverlapCount);
+}
+
+function bondDistance(coords, firstAtomId, secondAtomId) {
+  const firstPosition = coords.get(firstAtomId);
+  const secondPosition = coords.get(secondAtomId);
+  return Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
+}
+
+function bondAngleDegrees(coords, centerAtomId, firstAtomId, secondAtomId) {
+  const centerPosition = coords.get(centerAtomId);
+  const firstPosition = coords.get(firstAtomId);
+  const secondPosition = coords.get(secondAtomId);
+  const firstVector = {
+    x: firstPosition.x - centerPosition.x,
+    y: firstPosition.y - centerPosition.y
+  };
+  const secondVector = {
+    x: secondPosition.x - centerPosition.x,
+    y: secondPosition.y - centerPosition.y
+  };
+  const denominator = Math.hypot(firstVector.x, firstVector.y) * Math.hypot(secondVector.x, secondVector.y);
+  const cosine = Math.max(-1, Math.min(1, (firstVector.x * secondVector.x + firstVector.y * secondVector.y) / denominator));
+  return Math.acos(cosine) * 180 / Math.PI;
 }
 
 describe('layout/engine/families/macrocycle', () => {
@@ -107,6 +131,52 @@ describe('layout/engine/families/macrocycle', () => {
     assert.ok(Number.isFinite(result.coords.get('C10').x));
     assert.ok(Number.isFinite(result.coords.get('C10').y));
     assert.ok(bondStats.maxDeviation < 1, `expected fused macrocycle completion to avoid catastrophic bond blowups, got ${bondStats.maxDeviation}`);
+  });
+
+  it('keeps multi-atom fused aryl arcs on macrocycle roots at normal bond lengths', () => {
+    const smiles = 'OCC1OC(OC2=CC=C3CCCCC(O)CCC4=CC=C(OC2=C3)C=C4)C(O)C(O)C1O';
+    for (const suppressH of [true, false]) {
+      const result = generateCoords(parseSMILES(smiles), { suppressH, bondLength: 1.5 });
+
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assert.equal(findSevereOverlaps(result.layoutGraph, result.coords, result.layoutGraph.options.bondLength).length, 0);
+      for (const [firstAtomId, secondAtomId] of [
+        ['C7', 'C24'],
+        ['C9', 'C10'],
+        ['C19', 'C27'],
+        ['C22', 'C26']
+      ]) {
+        assert.ok(
+          Math.abs(bondDistance(result.coords, firstAtomId, secondAtomId) - result.layoutGraph.options.bondLength) < 0.05,
+          `expected ${firstAtomId}-${secondAtomId} to stay attached to the fused aryl arc`
+        );
+      }
+      for (const ring of result.layoutGraph.rings.filter(candidateRing => candidateRing.aromatic)) {
+        for (let index = 0; index < ring.atomIds.length; index++) {
+          const centerAtomId = ring.atomIds[index];
+          const previousAtomId = ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length];
+          const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+          assert.ok(
+            Math.abs(bondAngleDegrees(result.coords, centerAtomId, previousAtomId, nextAtomId) - 120) < 1,
+            `expected aromatic angle at ${centerAtomId} to stay hexagonal`
+          );
+        }
+      }
+      const c24BridgeAngleDeviation = Math.max(
+        Math.abs(bondAngleDegrees(result.coords, 'C24', 'C7', 'O23') - 120),
+        Math.abs(bondAngleDegrees(result.coords, 'C24', 'C25', 'O23') - 120)
+      );
+      assert.ok(c24BridgeAngleDeviation < 5, 'expected the aryl-ether bridge to exit C24 outside the lower aromatic ring');
+      assert.ok(
+        bondDistance(result.coords, 'O6', 'C22') > result.layoutGraph.options.bondLength * 2,
+        'expected the glycoside linker oxygen to stay clear of the upper aromatic ring'
+      );
+      assert.ok(
+        bondDistance(result.coords, 'C24', 'O23') < result.layoutGraph.options.bondLength * 1.25,
+        'expected the lower aryl-ether bridge bond to stay visually attached'
+      );
+    }
   });
 
   it('computes outward angular budgets for branch-bearing macrocycle atoms and shrinks dense adjacent sites', () => {

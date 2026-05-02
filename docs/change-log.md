@@ -1,7 +1,23 @@
 # Change Log
 
+## 2026-05-01
+
+- Keep macrocycle-fused aryl rings attached and hexagonal by completing shared arcs from their endpoints, then rescuing distorted aryl macrocycle roots with bridge-aware aromatic regularization and rotating linked hetero ring anchors away from the rigid aryl core.
+- Keep Clean 2D from treating aryl-adjacent macrocycle projection bonds as damaged local edits, preserving rigid aromatic rings after cleanup.
+- Keep crowded aryl nitro fans trigonal by moving nearby pendant rings out of exact oxo slots.
+- Keep explicit-hydrogen phosphonate chains on visible trigonal heavy-atom fans instead of linearizing hidden hydrogen centers.
+- Let compact bridgehead nitrile branches use downstream lookahead so terminal triple bonds stay linear across browser runtimes.
+- Keep long acyclic sulfonamide centers orthogonal by moving nearby pendant rings after exact sulfur cleanup.
+- Stretch blocked bridgehead methyl leaves so constrained ammonium fans stay readable.
+- Keep constrained diaryl sulfone oxo leaves opposed without rotating bulky aromatic rings together.
+- Keep ring-attached sulfonic acid crosses exact by rotating nearby branches aside.
+
 ## 2026-04-30
 
+- Keep terminal carbon ring-leaf crossing relief on readable anchor fans by sharing nearby attached-ring rotation or shortening exact outward methyl bonds.
+- Center direct-attached cyclopropyl roots on fused-ring exterior slots.
+- Keep crowded aryl fluorine leaves exact by rotating neighboring attached rings away.
+- Let crowded ring-embedded sulfones slide both oxo leaves onto the ring exterior.
 - Let short saturated-ring tail branches bend out of visible neighbor crossings.
 - Preserve exact aryl carboxyl fans while shortening crowded carbonyl leaves away from neighboring rings.
 - Keep reaction-preview retained scaffolds compact when benzylic oxidation or imine hydrolysis edits mapped carbonyl sites.

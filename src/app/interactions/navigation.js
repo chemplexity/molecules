@@ -134,8 +134,9 @@ function buildForceAnchorLayoutFromPlacedCoords(molecule) {
  * Detects obviously distorted local bonds so clean actions can relayout just
  * the damaged patch instead of preserving the entire existing component
  * geometry. Ring scaffolds often contain intentionally shortened projected
- * bonds, so compressed-bond detection is limited to non-ring bonds while
- * overstretch detection still applies everywhere.
+ * bonds, and macrocycle projections may relax aryl-adjacent ring bonds, so
+ * compressed-bond detection is limited to non-ring bonds while overstretch
+ * detection skips aryl-adjacent ring bonds.
  * @param {object} molecule - Molecule whose current placed coordinates are inspected.
  * @param {object} [options] - Detection options.
  * @param {number} [options.bondLength] - Expected bond length for the active 2D layout.
@@ -168,7 +169,10 @@ function derive2dCleanRefinementHints(molecule, { bondLength = DEFAULT_LAYOUT_BO
     }
     const length = Math.hypot(firstAtom.x - secondAtom.x, firstAtom.y - secondAtom.y);
     const bondIsInRing = typeof bond.isInRing === 'function' ? bond.isInRing(molecule) : false;
-    const isOverstretched = length > bondLength + maxDeviation;
+    const isArylAdjacentRingBond =
+      bondIsInRing
+      && (firstAtom.properties?.aromatic === true || secondAtom.properties?.aromatic === true);
+    const isOverstretched = length > bondLength + maxDeviation && !isArylAdjacentRingBond;
     const isCompressedNonRing = !bondIsInRing && length < bondLength - maxDeviation;
     if (!Number.isFinite(length) || (!isOverstretched && !isCompressedNonRing)) {
       continue;

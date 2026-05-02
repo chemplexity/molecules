@@ -2,6 +2,19 @@
 
 import { PROTECTED_CLEANUP_STAGE_LIMITS } from '../constants.js';
 
+const PRESENTATION_METRIC_EPSILON = 1e-9;
+
+/**
+ * Returns whether two stages carry comparable finite metric values.
+ * @param {object} candidate - Candidate stage result.
+ * @param {object} incumbent - Current incumbent stage result.
+ * @param {string} key - Metric key to compare.
+ * @returns {boolean} True when both stages expose a finite numeric metric.
+ */
+function hasComparableFiniteMetric(candidate, incumbent, key) {
+  return Number.isFinite(candidate?.[key]) && Number.isFinite(incumbent?.[key]);
+}
+
 /**
  * Compares two stereo-aware cleanup stages using the existing final-stage ordering.
  * @param {object} candidate - Candidate stage result.
@@ -55,6 +68,13 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
     && !allowsDivalentPresentationTradeoff
   ) {
     return (candidate.divalentContinuationPenalty ?? 0) < (incumbent.divalentContinuationPenalty ?? 0);
+  }
+  if (
+    allowPresentationTieBreak
+    && hasComparableFiniteMetric(candidate, incumbent, 'hypervalentDeviation')
+    && Math.abs(candidate.hypervalentDeviation - incumbent.hypervalentDeviation) > PRESENTATION_METRIC_EPSILON
+  ) {
+    return candidate.hypervalentDeviation < incumbent.hypervalentDeviation;
   }
   if (allowPresentationTieBreak && Math.abs((candidate.phosphateArylTailPenalty ?? 0) - (incumbent.phosphateArylTailPenalty ?? 0)) > 1e-9) {
     return (candidate.phosphateArylTailPenalty ?? 0) < (incumbent.phosphateArylTailPenalty ?? 0);

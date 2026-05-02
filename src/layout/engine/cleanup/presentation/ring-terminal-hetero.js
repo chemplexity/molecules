@@ -6,6 +6,8 @@ import { countPointInPolygons } from '../../geometry/polygon.js';
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, rotate, sub } from '../../geometry/vec2.js';
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
 import { atomPairKey } from '../../constants.js';
+import { collectRigidPendantRingSubtrees } from '../overlap-resolution.js';
+import { rotateRigidDescriptorPositions } from '../rigid-rotation.js';
 import { STANDARD_ROTATION_ANGLES } from '../rotation-candidates.js';
 import {
   smallRingExteriorTargetAngles,
@@ -32,6 +34,13 @@ const TERMINAL_MULTIPLE_BOND_LEAF_COMPRESSION_FACTORS = Object.freeze(
 );
 const TERMINAL_MULTIPLE_BOND_LEAF_COMPRESSION_TRIGGER_FACTOR = 1.05;
 const TERMINAL_MULTIPLE_BOND_LEAF_COMPRESSION_TARGET_FACTOR = 1.25;
+const TERMINAL_MULTIPLE_BOND_BLOCKER_RELIEF_CLEARANCE_FACTOR = 0.95;
+const TERMINAL_MULTIPLE_BOND_BLOCKER_RELIEF_ROTATIONS = Object.freeze(
+  [5, 10, 15, 20, 25, 30, 45, 60, 75, 90].flatMap(degrees => [
+    -(degrees * Math.PI) / 180,
+    (degrees * Math.PI) / 180
+  ])
+);
 
 function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
   if (!coords.has(anchorAtomId)) {
@@ -746,6 +755,145 @@ function compressedTerminalMultipleBondLeafTargetPositions(layoutGraph, coords, 
   return changed ? compressedTargetPositions : null;
 }
 
+function terminalMultipleBondLeafFanBlockingAtomIds(layoutGraph, coords, descriptor, targetPositions, threshold) {
+  const blockingAtomIds = new Set();
+  const leafAtomIds = new Set(descriptor.leafTargets.map(({ leafAtomId }) => leafAtomId));
+  for (const { leafAtomId } of descriptor.leafTargets) {
+    const targetPosition = targetPositions.get(leafAtomId);
+    if (!targetPosition) {
+      continue;
+    }
+    for (const [otherAtomId, otherPosition] of coords) {
+      if (
+        leafAtomIds.has(otherAtomId)
+        || otherAtomId === descriptor.centerAtomId
+        || !isVisiblePresentationAtom(layoutGraph, otherAtomId)
+        || layoutGraph.bondedPairSet.has(atomPairKey(leafAtomId, otherAtomId))
+      ) {
+        continue;
+      }
+      if (distance(targetPosition, otherPosition) < threshold) {
+        blockingAtomIds.add(otherAtomId);
+      }
+    }
+  }
+  return [...blockingAtomIds];
+}
+
+function terminalMultipleBondLeafReliefClearance(layoutGraph, coords, descriptor, overridePositions) {
+  let minimumClearance = Number.POSITIVE_INFINITY;
+  for (const { leafAtomId } of descriptor.leafTargets) {
+    const targetPosition = overridePositions.get(leafAtomId);
+    if (!targetPosition) {
+      continue;
+    }
+    minimumClearance = Math.min(
+      minimumClearance,
+      localNonbondedClearanceWithOverrides(layoutGraph, coords, leafAtomId, targetPosition, overridePositions)
+    );
+  }
+  return minimumClearance;
+}
+
+function terminalMultipleBondLeafFanBlockerReliefScore(layoutGraph, coords, descriptor, overridePositions, bondLength, rotationAngle) {
+  const candidateCoords = new Map(coords);
+  for (const [atomId, position] of overridePositions) {
+    candidateCoords.set(atomId, position);
+  }
+  const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+  if (candidateAudit.ok !== true) {
+    return null;
+  }
+  const fanPenalty = terminalMultipleBondLeafFanPenalty(candidateCoords, descriptor.centerAtomId, descriptor.neighborAtomIds);
+  if (fanPenalty > descriptor.currentPenalty + TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON) {
+    return null;
+  }
+  const clearance = terminalMultipleBondLeafReliefClearance(layoutGraph, coords, descriptor, overridePositions);
+  return {
+    fanPenalty,
+    clearanceDeficit: Math.max(0, bondLength * TERMINAL_MULTIPLE_BOND_BLOCKER_RELIEF_CLEARANCE_FACTOR - clearance),
+    rotationMagnitude: angularDifference(rotationAngle, 0)
+  };
+}
+
+function isBetterTerminalMultipleBondLeafFanBlockerReliefScore(candidateScore, incumbentScore) {
+  if (!incumbentScore) {
+    return true;
+  }
+  for (const key of ['fanPenalty', 'clearanceDeficit', 'rotationMagnitude']) {
+    if (Math.abs(candidateScore[key] - incumbentScore[key]) > TIDY_IMPROVEMENT_EPSILON) {
+      return candidateScore[key] < incumbentScore[key];
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns exact terminal multiple-bond leaf targets plus a compact rigid-ring
+ * blocker move when a nearby pendant ring occupies the exact trigonal oxo slot.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Base coordinate map.
+ * @param {object} descriptor - Terminal multiple-bond fan descriptor.
+ * @param {Map<string, {x: number, y: number}>} targetPositions - Exact leaf target positions.
+ * @param {number} bondLength - Target bond length.
+ * @param {number} threshold - Severe-overlap threshold.
+ * @param {Set<string>|null} frozenAtomIds - Frozen atoms that must not move.
+ * @returns {Map<string, {x: number, y: number}>|null} Leaf and blocker target positions, or null.
+ */
+function terminalMultipleBondLeafFanBlockerReliefTargetPositions(
+  layoutGraph,
+  coords,
+  descriptor,
+  targetPositions,
+  bondLength,
+  threshold,
+  frozenAtomIds
+) {
+  const blockingAtomIds = terminalMultipleBondLeafFanBlockingAtomIds(layoutGraph, coords, descriptor, targetPositions, threshold);
+  if (blockingAtomIds.length === 0) {
+    return null;
+  }
+  const rigidSubtreesByAtomId = layoutGraph._terminalMultipleBondLeafFanRigidSubtreesByAtomId ??= collectRigidPendantRingSubtrees(layoutGraph);
+  const protectedAtomIds = new Set([descriptor.centerAtomId, ...descriptor.neighborAtomIds]);
+  let bestTargetPositions = null;
+  let bestScore = null;
+
+  for (const blockingAtomId of blockingAtomIds) {
+    const rigidDescriptor = rigidSubtreesByAtomId.get(blockingAtomId);
+    if (!rigidDescriptor || rigidDescriptor.subtreeAtomIds.some(atomId => protectedAtomIds.has(atomId))) {
+      continue;
+    }
+    if (frozenAtomIds instanceof Set && rigidDescriptor.subtreeAtomIds.some(atomId => frozenAtomIds.has(atomId))) {
+      continue;
+    }
+
+    for (const rotationAngle of TERMINAL_MULTIPLE_BOND_BLOCKER_RELIEF_ROTATIONS) {
+      const blockerPositions = rotateRigidDescriptorPositions(coords, rigidDescriptor, rotationAngle);
+      if (!blockerPositions) {
+        continue;
+      }
+      const candidateTargetPositions = new Map([...targetPositions, ...blockerPositions]);
+      const candidateScore = terminalMultipleBondLeafFanBlockerReliefScore(
+        layoutGraph,
+        coords,
+        descriptor,
+        candidateTargetPositions,
+        bondLength,
+        rotationAngle
+      );
+      if (!candidateScore) {
+        continue;
+      }
+      if (isBetterTerminalMultipleBondLeafFanBlockerReliefScore(candidateScore, bestScore)) {
+        bestScore = candidateScore;
+        bestTargetPositions = candidateTargetPositions;
+      }
+    }
+  }
+
+  return bestTargetPositions;
+}
+
 function scoreTerminalHeteroPosition(layoutGraph, coords, descriptor, atomGrid, ringPolygons, position, candidateAngle, currentAngle, threshold, searchRadius) {
   return {
     position,
@@ -866,23 +1014,46 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
     }
     let usedCompressedTargetPositions = false;
     const exactCandidateAuditOk = auditLayout(layoutGraph, exactCandidateCoords, { bondLength }).ok === true;
-    const compressedTargetPositions = compressedTerminalMultipleBondLeafTargetPositions(
-      layoutGraph,
-      coords,
-      descriptor,
-      targetPositions,
-      bondLength,
-      { force: !exactCandidateAuditOk }
-    );
     if (!exactCandidateAuditOk) {
-      if (!compressedTargetPositions) {
-        continue;
+      const blockerReliefTargetPositions = terminalMultipleBondLeafFanBlockerReliefTargetPositions(
+        layoutGraph,
+        coords,
+        descriptor,
+        targetPositions,
+        bondLength,
+        threshold,
+        frozenAtomIds
+      );
+      if (blockerReliefTargetPositions) {
+        targetPositions = blockerReliefTargetPositions;
+      } else {
+        const compressedTargetPositions = compressedTerminalMultipleBondLeafTargetPositions(
+          layoutGraph,
+          coords,
+          descriptor,
+          targetPositions,
+          bondLength,
+          { force: true }
+        );
+        if (!compressedTargetPositions) {
+          continue;
+        }
+        targetPositions = compressedTargetPositions;
+        usedCompressedTargetPositions = true;
       }
-      targetPositions = compressedTargetPositions;
-      usedCompressedTargetPositions = true;
-    } else if (compressedTargetPositions) {
-      targetPositions = compressedTargetPositions;
-      usedCompressedTargetPositions = true;
+    } else {
+      const compressedTargetPositions = compressedTerminalMultipleBondLeafTargetPositions(
+        layoutGraph,
+        coords,
+        descriptor,
+        targetPositions,
+        bondLength,
+        { force: false }
+      );
+      if (compressedTargetPositions) {
+        targetPositions = compressedTargetPositions;
+        usedCompressedTargetPositions = true;
+      }
     }
     for (const [leafAtomId, targetPosition] of targetPositions) {
       targetOverlapCount += localSevereOverlapCountWithOverrides(

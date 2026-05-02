@@ -328,14 +328,24 @@ function solveArcStepAngle(chordLength, segmentCount, bondLength) {
   return (low + high) / 2;
 }
 
-function fitMacrocycleArcToPlacedRun(ring, coords, bondLength) {
-  if (ring.size < 12) {
-    return null;
+/**
+ * Builds exact-bond missing-arc candidates for a partially placed ring whose
+ * known atoms form one contiguous run. This handles macrocycles that share a
+ * multi-atom arc with a smaller fused ring, where a circumcircle through the
+ * shared arc can otherwise put the missing atoms far away from the endpoints.
+ * @param {object} ring - Ring descriptor.
+ * @param {Map<string, {x: number, y: number}>} coords - Existing atom coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Array<{predicted: Map<string, {x: number, y: number}>, endpointError: number}>} Missing-arc candidates.
+ */
+function missingRingArcFitsToPlacedRun(ring, coords, bondLength) {
+  if (ring.size < 4) {
+    return [];
   }
 
   const placedRun = contiguousPlacedRunIndices(ring, coords);
-  if (!placedRun || placedRun.length < 3 || placedRun.length >= ring.atomIds.length - 2) {
-    return null;
+  if (!placedRun || placedRun.length < 2) {
+    return [];
   }
 
   const startIndex = placedRun[placedRun.length - 1];
@@ -346,47 +356,49 @@ function fitMacrocycleArcToPlacedRun(ring, coords, bondLength) {
     missingIndices.push(index);
     index = (index + 1) % ring.atomIds.length;
   }
-  if (missingIndices.length < 4) {
-    return null;
+  if (missingIndices.length < 2) {
+    return [];
   }
 
   const startPosition = coords.get(ring.atomIds[startIndex]);
   const endPosition = coords.get(ring.atomIds[endIndex]);
   if (!startPosition || !endPosition) {
-    return null;
+    return [];
   }
 
   const chordLength = distance(startPosition, endPosition);
   const segmentCount = missingIndices.length + 1;
+  if (chordLength >= segmentCount * bondLength) {
+    return [];
+  }
   const stepAngle = solveArcStepAngle(chordLength, segmentCount, bondLength);
   const radius = bondLength / (2 * Math.sin(stepAngle / 2));
   const mid = scale(add(startPosition, endPosition), 0.5);
-  let normal = normalize(perpLeft(sub(endPosition, startPosition)));
-  const placedCentroid = centroid(placedRun.map(placedIndex => coords.get(ring.atomIds[placedIndex])));
-  if (distance(add(mid, normal), placedCentroid) < distance(add(mid, scale(normal, -1)), placedCentroid)) {
-    normal = scale(normal, -1);
-  }
-
   const height = Math.sqrt(Math.max(0, radius * radius - (chordLength * chordLength) / 4));
-  const center = add(mid, scale(normal, height));
-  const startAngle = angleOf(sub(startPosition, center));
-  const endAngle = angleOf(sub(endPosition, center));
+  const baseNormal = normalize(perpLeft(sub(endPosition, startPosition)));
+  const candidates = [];
 
-  let best = null;
-  for (const rotationSign of [1, -1]) {
-    const predicted = new Map();
-    for (let offset = 0; offset < missingIndices.length; offset++) {
-      const atomAngle = wrapAngle(startAngle + rotationSign * stepAngle * (offset + 1));
-      predicted.set(ring.atomIds[missingIndices[offset]], add(center, fromAngle(atomAngle, radius)));
-    }
-    const finalAngle = wrapAngle(startAngle + rotationSign * stepAngle * segmentCount);
-    const endpointError = Math.abs(wrapAngle(finalAngle - endAngle));
-    if (!best || endpointError < best.endpointError) {
-      best = { predicted, endpointError };
+  for (const normalSign of [1, -1]) {
+    const normal = scale(baseNormal, normalSign);
+    const center = add(mid, scale(normal, height));
+    const startAngle = angleOf(sub(startPosition, center));
+    const endAngle = angleOf(sub(endPosition, center));
+
+    for (const rotationSign of [1, -1]) {
+      const predicted = new Map();
+      for (let offset = 0; offset < missingIndices.length; offset++) {
+        const atomAngle = wrapAngle(startAngle + rotationSign * stepAngle * (offset + 1));
+        predicted.set(ring.atomIds[missingIndices[offset]], add(center, fromAngle(atomAngle, radius)));
+      }
+      const finalAngle = wrapAngle(startAngle + rotationSign * stepAngle * segmentCount);
+      const endpointError = Math.abs(wrapAngle(finalAngle - endAngle));
+      if (endpointError <= 1e-6) {
+        candidates.push({ predicted, endpointError });
+      }
     }
   }
 
-  return best;
+  return candidates;
 }
 
 function scoreRingCompletionCandidate(layoutGraph, coords, predictedCoords, bondLength) {
@@ -547,19 +559,26 @@ function growRemainingRingAtoms(rings, coords, bondLength, layoutGraph = null) {
 
       const radius = bondLength / (2 * Math.sin(Math.PI / n));
 
-      if (unplacedIds.length <= 2 || placedIds.length >= 4) {
+      const arcFits = layoutGraph ? missingRingArcFitsToPlacedRun(ring, coords, bondLength) : [];
+
+      if (unplacedIds.length <= 2 || placedIds.length >= 4 || arcFits.length > 0) {
         const fitted = fitRegularPolygonToPlacedAtoms(ring, coords, radius);
+        let selectedCandidate = null;
         if (fitted) {
-          let selectedCandidate = layoutGraph
-            ? scoreRingCompletionCandidate(layoutGraph, coords, fitted.predicted, bondLength)
-            : { predictedCoords: fitted.predicted };
-          const arcFit = layoutGraph ? fitMacrocycleArcToPlacedRun(ring, coords, bondLength) : null;
-          if (arcFit?.predicted) {
-            const arcCandidate = scoreRingCompletionCandidate(layoutGraph, coords, arcFit.predicted, bondLength);
-            if (isBetterRingCompletionCandidate(arcCandidate, selectedCandidate)) {
-              selectedCandidate = arcCandidate;
-            }
+          const fittedMissingCoords = new Map(unplacedIds.map(atomId => [atomId, fitted.predicted.get(atomId)]).filter(([, position]) => Boolean(position)));
+          selectedCandidate = layoutGraph
+            ? scoreRingCompletionCandidate(layoutGraph, coords, fittedMissingCoords, bondLength)
+            : { predictedCoords: fittedMissingCoords };
+        }
+        for (const arcFit of arcFits) {
+          const arcCandidate = layoutGraph
+            ? scoreRingCompletionCandidate(layoutGraph, coords, arcFit.predicted, bondLength)
+            : { predictedCoords: arcFit.predicted };
+          if (isBetterRingCompletionCandidate(arcCandidate, selectedCandidate)) {
+            selectedCandidate = arcCandidate;
           }
+        }
+        if (selectedCandidate) {
           for (const atomId of unplacedIds) {
             coords.set(atomId, selectedCandidate.predictedCoords.get(atomId));
             progressed = true;

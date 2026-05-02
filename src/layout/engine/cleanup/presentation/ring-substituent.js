@@ -40,11 +40,13 @@ const IDEAL_LEAF_OUTWARD_BACKOFF_ANGLES = Object.freeze([
 ]);
 const IDEAL_LEAF_COMPRESSION_FACTORS = Object.freeze([0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.62, 0.6, 0.59, 0.58, 0.57, 0.56, 0.55]);
 const IDEAL_LEAF_COMPRESSION_MIN_OVERLAP_COST_INCREASE = 1;
+const IDEAL_LEAF_SOFT_BLOCKER_CLEARANCE_FACTOR = 0.72;
 const TIDY_ANGLE_EPSILON = 1e-6;
 const TIDY_ATOM_EPSILON = 1e-6;
 const TIDY_BOUNDS_EPSILON = 1e-6;
 const IDEAL_RING_LINKER_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
 const COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I', 'O', 'S', 'Se']);
+const SOFT_COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I']);
 const IDEAL_LINKED_RING_BRIDGE_ANGLE = (2 * Math.PI) / 3;
 const LINKED_RING_BRIDGE_TRADEOFF_MIN_BASE_DEVIATION = 0.05;
 const SHARED_JUNCTION_BLOCKER_BACKOFF_ANGLES = Object.freeze([
@@ -101,6 +103,52 @@ function isCompressibleTerminalRingLeafDescriptor(layoutGraph, descriptor) {
     && !bond.aromatic
     && (bond.order ?? 1) === 1
   );
+}
+
+function terminalRingLeafSoftBlockerDistance(layoutGraph, coords, descriptor, targetPosition) {
+  const rootAtom = layoutGraph.atoms.get(descriptor.rootAtomId);
+  if (!rootAtom || !SOFT_COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(rootAtom.element)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const ignoredAtomIds = new Set([
+    descriptor.anchorAtomId,
+    descriptor.rootAtomId,
+    ...descriptor.subtreeAtomIds
+  ]);
+  let bestDistance = Number.POSITIVE_INFINITY;
+  for (const [atomId, position] of coords) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (
+      ignoredAtomIds.has(atomId)
+      || !atom
+      || atom.element === 'H'
+      || (layoutGraph.options?.suppressH && atom.visible === false)
+      || layoutGraph.bondedPairSet.has(atomPairKey(descriptor.rootAtomId, atomId))
+    ) {
+      continue;
+    }
+    bestDistance = Math.min(bestDistance, Math.hypot(position.x - targetPosition.x, position.y - targetPosition.y));
+  }
+  return bestDistance;
+}
+
+function terminalRingLeafSoftBlockerPenalty(layoutGraph, coords, descriptor) {
+  if (!isCompressibleTerminalRingLeafDescriptor(layoutGraph, descriptor) || descriptor.outwardAngles.length !== 1) {
+    return 0;
+  }
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  if (!anchorPosition || !rootPosition) {
+    return 0;
+  }
+  const outwardDeviation = bestOutwardDeviation(anchorPosition, rootPosition, descriptor.outwardAngles);
+  if (!Number.isFinite(outwardDeviation) || outwardDeviation > TIDY_ANGLE_EPSILON) {
+    return 0;
+  }
+  const softClearance = (layoutGraph.options?.bondLength ?? 1) * IDEAL_LEAF_SOFT_BLOCKER_CLEARANCE_FACTOR;
+  const blockerDistance = terminalRingLeafSoftBlockerDistance(layoutGraph, coords, descriptor, rootPosition);
+  return Math.max(0, softClearance - blockerDistance);
 }
 
 function incidentRingPolygons(layoutGraph, coords, anchorAtomId) {
@@ -957,7 +1005,14 @@ function collectTidyeableDescriptors(layoutGraph, coords, frozenAtomIds, focusAt
     }
   }
 
-  return [...descriptorsByPair.values()];
+  return [...descriptorsByPair.values()].sort((firstDescriptor, secondDescriptor) => {
+    const firstIsCompressibleLeaf = isCompressibleTerminalRingLeafDescriptor(layoutGraph, firstDescriptor);
+    const secondIsCompressibleLeaf = isCompressibleTerminalRingLeafDescriptor(layoutGraph, secondDescriptor);
+    if (firstIsCompressibleLeaf !== secondIsCompressibleLeaf) {
+      return firstIsCompressibleLeaf ? -1 : 1;
+    }
+    return 0;
+  });
 }
 
 function refreshDescriptorGeometry(layoutGraph, coords, descriptor) {
@@ -1101,35 +1156,69 @@ function buildCompressedExactIdealLeafCandidate(layoutGraph, coords, atomGrid, d
 
   const targetAngle = descriptor.outwardAngles[0];
   const currentAngle = angleOf(sub(rootPosition, anchorPosition));
+  if (
+    bondDistance < bondLength - TIDY_ATOM_EPSILON
+    && angularDifference(currentAngle, targetAngle) <= TIDY_ANGLE_EPSILON
+  ) {
+    return null;
+  }
+  const softClearance = bondLength * IDEAL_LEAF_SOFT_BLOCKER_CLEARANCE_FACTOR;
+  const fullLengthPosition = add(anchorPosition, fromAngle(targetAngle, bondDistance));
   const fullLengthCandidate = buildCandidateScore(
     layoutGraph,
     coords,
     atomGrid,
     descriptor,
-    new Map([[descriptor.rootAtomId, add(anchorPosition, fromAngle(targetAngle, bondDistance))]]),
+    new Map([[descriptor.rootAtomId, fullLengthPosition]]),
     bondLength,
     allAtomIds,
     bondIntersectionContext,
     subtreeContext
   );
   const fullLengthRepairsInwardLeaf = fullLengthCandidate.insideRingCount < baseCandidate.insideRingCount;
-  if (!fullLengthRepairsInwardLeaf && fullLengthCandidate.overlapCost <= baseCandidate.overlapCost + IDEAL_LEAF_COMPRESSION_MIN_OVERLAP_COST_INCREASE) {
+  const fullLengthOverlapIsBlocked =
+    fullLengthCandidate.overlapCost > baseCandidate.overlapCost + IDEAL_LEAF_COMPRESSION_MIN_OVERLAP_COST_INCREASE;
+  const fullLengthSoftBlockerDistance = terminalRingLeafSoftBlockerDistance(layoutGraph, coords, descriptor, fullLengthPosition);
+  const fullLengthSoftBlockerIsBlocked =
+    fullLengthSoftBlockerDistance < softClearance - TIDY_ATOM_EPSILON;
+  if (!fullLengthRepairsInwardLeaf && !fullLengthOverlapIsBlocked && !fullLengthSoftBlockerIsBlocked) {
     return null;
   }
 
   let bestCandidate = null;
   for (const compressionFactor of IDEAL_LEAF_COMPRESSION_FACTORS) {
+    const rootTargetPosition = add(anchorPosition, fromAngle(targetAngle, bondDistance * compressionFactor));
+    const softBlockerDistance = terminalRingLeafSoftBlockerDistance(layoutGraph, coords, descriptor, rootTargetPosition);
+    const softBlockerDeficit = Math.max(0, softClearance - softBlockerDistance);
     const overridePositions = new Map([
-      [descriptor.rootAtomId, add(anchorPosition, fromAngle(targetAngle, bondDistance * compressionFactor))]
+      [descriptor.rootAtomId, rootTargetPosition]
     ]);
     const candidate = {
       ...buildCandidateScore(layoutGraph, coords, atomGrid, descriptor, overridePositions, bondLength, allAtomIds, bondIntersectionContext, subtreeContext),
       angleDelta: angularDifference(currentAngle, targetAngle) + (1 - compressionFactor),
       overridePositions,
       rootAnchored: false,
-      compressedTerminalLeaf: true
+      compressedTerminalLeaf: true,
+      compressedLeafRepairsBlockedOverlap: fullLengthOverlapIsBlocked || fullLengthRepairsInwardLeaf,
+      compressedLeafSoftBlockerIsBlocked: fullLengthSoftBlockerIsBlocked,
+      compressedLeafSoftBlockerDeficit: softBlockerDeficit
     };
-    if (isBetterCandidate(candidate, bestCandidate)) {
+    if (
+      fullLengthSoftBlockerIsBlocked
+      && !fullLengthOverlapIsBlocked
+      && !fullLengthRepairsInwardLeaf
+    ) {
+      if (
+        !bestCandidate
+        || candidate.compressedLeafSoftBlockerDeficit < bestCandidate.compressedLeafSoftBlockerDeficit - TIDY_ATOM_EPSILON
+        || (
+          Math.abs(candidate.compressedLeafSoftBlockerDeficit - bestCandidate.compressedLeafSoftBlockerDeficit) <= TIDY_ATOM_EPSILON
+          && candidate.angleDelta < bestCandidate.angleDelta - TIDY_ANGLE_EPSILON
+        )
+      ) {
+        bestCandidate = candidate;
+      }
+    } else if (isBetterCandidate(candidate, bestCandidate)) {
       bestCandidate = candidate;
     }
   }
@@ -1601,7 +1690,14 @@ function shouldAcceptCandidate(candidate, baseCandidate, descriptor) {
 
   if (
     candidate.compressedTerminalLeaf === true
-    && improvesInsideRing
+    && (
+      improvesInsideRing
+      || candidate.compressedLeafRepairsBlockedOverlap === true
+      || (
+        candidate.compressedLeafSoftBlockerIsBlocked === true
+        && candidate.compressedLeafSoftBlockerDeficit <= TIDY_ATOM_EPSILON
+      )
+    )
     && candidate.outwardFailureCount <= baseCandidate.outwardFailureCount
     && candidate.crossingCount <= baseCandidate.crossingCount
     && doesNotWorsenOverlap
@@ -1737,6 +1833,7 @@ export function measureRingSubstituentPresentationPenalty(layoutGraph, coords, o
     if (!anchorPosition || !rootPosition) {
       continue;
     }
+    totalDeviation += terminalRingLeafSoftBlockerPenalty(layoutGraph, coords, descriptor);
 
     // Attached-ring exits should read as outward continuations on both sides of
     // the inter-ring bond, not only when one anchor is aromatic.
@@ -2052,6 +2149,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
         && !dynamicDescriptor.isRingSystemSubstituent
         && !needsIdealOutwardGeometry
         && !needsRootAnchoredOverlapRepair
+        && !compressibleTerminalLeafDescriptor
       ) {
         continue;
       }

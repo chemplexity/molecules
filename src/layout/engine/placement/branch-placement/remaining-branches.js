@@ -1,7 +1,8 @@
 /** @module placement/branch-placement/remaining-branches */
 
-import { add, fromAngle } from '../../geometry/vec2.js';
+import { add, angularDifference, fromAngle } from '../../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
+import { segmentsProperlyIntersect } from '../../geometry/segments.js';
 import { AtomGrid } from '../../geometry/atom-grid.js';
 import {
   DISCRETE_BRANCH_ANGLES,
@@ -51,6 +52,9 @@ const SINGLE_BRANCH_LOOKAHEAD_MAX_PARTICIPANTS = 64;
 const RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE = 3;
 const EXACT_TERMINAL_RING_LEAF_SLOT_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I', 'O', 'S', 'Se']);
 const PHOSPHATE_AROMATIC_TAIL_LOOKAHEAD_OFFSETS = Object.freeze([Math.PI / 4, -Math.PI / 4]);
+const EXACT_TERMINAL_CARBON_BOND_CROSSING_RESCUE_STEP = Math.PI / 36;
+const EXACT_TERMINAL_CARBON_BOND_CROSSING_RESCUE_LIMIT = Math.PI / 2;
+const EXACT_TERMINAL_CARBON_BOND_CROSSING_RESCUE_CLEARANCE_FACTOR = 0.68;
 
 function isFusedOnlyRingSystemAnchor(layoutGraph, atomId) {
   const ringSystemId = layoutGraph?.atomToRingSystemId?.get(atomId);
@@ -64,6 +68,210 @@ function isFusedOnlyRingSystemAnchor(layoutGraph, atomId) {
     ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId)
   ));
   return systemConnections.length > 0 && systemConnections.every(connection => connection.kind === 'fused');
+}
+
+/**
+ * Returns whether an atom should participate in visible heavy-bond checks.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom ID to inspect.
+ * @returns {boolean} True when the atom is visible and heavy.
+ */
+function isVisibleHeavyLayoutAtom(layoutGraph, atomId) {
+  const atom = layoutGraph?.atoms?.get(atomId);
+  return Boolean(atom && atom.element !== 'H' && !(layoutGraph.options?.suppressH && atom.visible === false));
+}
+
+/**
+ * Returns whether a preferred exact branch would cross an already placed
+ * visible heavy bond. Exact terminal ring substituents can otherwise pass the
+ * point-clearance test while their bond line cuts through a nearby ring edge.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Placed branch anchor atom ID.
+ * @param {string} childAtomId - Branch child atom ID.
+ * @param {number} candidateAngle - Candidate branch angle in radians.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when the candidate branch segment crosses a placed bond.
+ */
+function branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, candidateAngle, bondLength) {
+  if (!layoutGraph || !coords.has(anchorAtomId) || !(bondLength > 0)) {
+    return false;
+  }
+  const anchorPosition = coords.get(anchorAtomId);
+  const childPosition = add(anchorPosition, fromAngle(candidateAngle, bondLength));
+  for (const bond of layoutGraph.bonds?.values?.() ?? []) {
+    if (
+      !bond
+      || bond.kind !== 'covalent'
+      || bond.a === anchorAtomId
+      || bond.b === anchorAtomId
+      || bond.a === childAtomId
+      || bond.b === childAtomId
+      || !isVisibleHeavyLayoutAtom(layoutGraph, bond.a)
+      || !isVisibleHeavyLayoutAtom(layoutGraph, bond.b)
+      || !coords.has(bond.a)
+      || !coords.has(bond.b)
+    ) {
+      continue;
+    }
+    if (segmentsProperlyIntersect(anchorPosition, childPosition, coords.get(bond.a), coords.get(bond.b))) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns whether a child is a terminal carbon leaf on a ring anchor.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Branch anchor atom ID.
+ * @param {string} childAtomId - Candidate terminal child atom ID.
+ * @param {object|null} childBond - Bond between anchor and child.
+ * @returns {boolean} True when the child is a terminal carbon ring branch.
+ */
+function isTerminalCarbonRingBranchLeaf(layoutGraph, anchorAtomId, childAtomId, childBond) {
+  const anchorAtom = layoutGraph?.atoms?.get(anchorAtomId);
+  const childAtom = layoutGraph?.atoms?.get(childAtomId);
+  return Boolean(
+    anchorAtom
+    && childAtom
+    && childBond
+    && childBond.kind === 'covalent'
+    && !childBond.aromatic
+    && (childBond.order ?? 1) === 1
+    && childAtom.element === 'C'
+    && !childAtom.aromatic
+    && !childAtom.chirality
+    && childAtom.heavyDegree === 1
+    && (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+    && (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) === 0
+  );
+}
+
+/**
+ * Builds ordered near-preferred offsets for a terminal carbon bond-crossing rescue.
+ * @param {number[]} preferredAngles - Preferred branch angles in radians.
+ * @returns {number[]} Candidate rescue angles in radians.
+ */
+function exactTerminalCarbonBondCrossingRescueAngles(preferredAngles) {
+  const rescueOffsets = [];
+  for (
+    let offset = EXACT_TERMINAL_CARBON_BOND_CROSSING_RESCUE_STEP;
+    offset <= EXACT_TERMINAL_CARBON_BOND_CROSSING_RESCUE_LIMIT + 1e-9;
+    offset += EXACT_TERMINAL_CARBON_BOND_CROSSING_RESCUE_STEP
+  ) {
+    rescueOffsets.push(-offset, offset);
+  }
+  return mergeCandidateAngles(
+    [],
+    preferredAngles.flatMap(preferredAngle => rescueOffsets.map(offset => preferredAngle + offset))
+  );
+}
+
+/**
+ * Returns the smallest angular miss between a candidate and any preferred angle.
+ * @param {number} candidateAngle - Candidate angle in radians.
+ * @param {number[]} preferredAngles - Preferred angles in radians.
+ * @returns {number} Smallest angular deviation in radians.
+ */
+function minimumPreferredDeviation(candidateAngle, preferredAngles) {
+  let bestDeviation = Number.POSITIVE_INFINITY;
+  for (const preferredAngle of preferredAngles) {
+    bestDeviation = Math.min(bestDeviation, angularDifference(candidateAngle, preferredAngle));
+  }
+  return bestDeviation;
+}
+
+/**
+ * Chooses the nearest safe angle for a terminal carbon ring substituent whose
+ * exact outward branch would visibly cross an existing heavy bond.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Placed branch anchor atom ID.
+ * @param {string} childAtomId - Branch child atom ID.
+ * @param {number} bondLength - Target bond length.
+ * @param {number[]} occupiedAngles - Already occupied anchor-neighbor angles.
+ * @param {number[]} preferredAngles - Exact preferred branch angles.
+ * @param {Set<string>} excludedAtomIds - Atoms ignored for endpoint clearance.
+ * @param {{sumX: number, sumY: number, count: number}} placementState - Running placement center state.
+ * @param {Array<Array<{x: number, y: number}>>} ringPolygons - Incident ring polygons.
+ * @param {object|null} atomGrid - Optional spatial grid for clearance checks.
+ * @returns {number|null} Rescue angle, or null when no clean angle exists.
+ */
+function chooseExactTerminalCarbonBondCrossingRescueAngle(
+  layoutGraph,
+  coords,
+  anchorAtomId,
+  childAtomId,
+  bondLength,
+  occupiedAngles,
+  preferredAngles,
+  excludedAtomIds,
+  placementState,
+  ringPolygons,
+  atomGrid
+) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition || preferredAngles.length === 0) {
+    return null;
+  }
+  const clearanceFloor = bondLength * EXACT_TERMINAL_CARBON_BOND_CROSSING_RESCUE_CLEARANCE_FACTOR;
+  const candidates = evaluateAngleCandidates(
+    exactTerminalCarbonBondCrossingRescueAngles(preferredAngles),
+    occupiedAngles,
+    preferredAngles,
+    anchorPosition,
+    bondLength,
+    coords,
+    excludedAtomIds,
+    placementState,
+    ringPolygons,
+    atomGrid
+  ).filter(candidate => (
+    candidate.isSafe !== false
+    && (candidate.insideRingCount ?? 0) === 0
+    && (candidate.minSeparation ?? 0) >= Math.PI / 6
+    && !branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, candidate.angle, bondLength)
+  ));
+  const viableCandidates = candidates.filter(candidate => {
+    const candidatePosition = add(anchorPosition, fromAngle(candidate.angle, bondLength));
+    for (const [atomId, position] of coords) {
+      if (!excludedAtomIds.has(atomId) && Math.hypot(candidatePosition.x - position.x, candidatePosition.y - position.y) < clearanceFloor - 1e-9) {
+        return false;
+      }
+    }
+    return true;
+  });
+  if (viableCandidates.length === 0) {
+    return null;
+  }
+
+  let bestCandidate = viableCandidates[0];
+  let bestDeviation = minimumPreferredDeviation(bestCandidate.angle, preferredAngles);
+  for (let index = 1; index < viableCandidates.length; index++) {
+    const candidate = viableCandidates[index];
+    const deviation = minimumPreferredDeviation(candidate.angle, preferredAngles);
+    if (deviation < bestDeviation - 1e-9) {
+      bestCandidate = candidate;
+      bestDeviation = deviation;
+      continue;
+    }
+    if (Math.abs(deviation - bestDeviation) > 1e-9) {
+      continue;
+    }
+    if ((candidate.minSeparation ?? 0) > (bestCandidate.minSeparation ?? 0)) {
+      bestCandidate = candidate;
+      continue;
+    }
+    if (
+      (candidate.minSeparation ?? 0) === (bestCandidate.minSeparation ?? 0)
+      && candidate.centerDistanceScore > bestCandidate.centerDistanceScore
+    ) {
+      bestCandidate = candidate;
+    }
+  }
+
+  return bestCandidate.angle;
 }
 
 /**
@@ -329,6 +537,53 @@ function isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId
   return heavyAtomCount === childSubtreeSize;
 }
 
+/**
+ * Returns whether a ring-rooted branch is a compact terminal multiple-bond
+ * group, such as a nitrile, whose first bond should be scored together with
+ * the downstream linear leaf.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Placed ring anchor atom ID.
+ * @param {string} childAtomId - Outgoing branch-root atom ID.
+ * @param {object|null} childBond - Bond from the anchor to the branch root.
+ * @returns {boolean} True when the branch root owns one terminal multiple-bond leaf.
+ */
+function isTerminalMultipleBranchRoot(layoutGraph, anchorAtomId, childAtomId, childBond) {
+  const childAtom = layoutGraph?.atoms.get(childAtomId);
+  if (
+    !layoutGraph
+    || !childAtom
+    || childAtom.element === 'H'
+    || childAtom.aromatic
+    || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0
+    || !childBond
+    || childBond.kind !== 'covalent'
+    || childBond.aromatic
+    || (childBond.order ?? 1) !== 1
+  ) {
+    return false;
+  }
+
+  let terminalMultipleLeafCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(childAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === childAtomId ? bond.b : bond.a;
+    if (neighborAtomId === anchorAtomId) {
+      continue;
+    }
+    if (isTerminalMultipleBondLeaf(layoutGraph, childAtomId, bond)) {
+      terminalMultipleLeafCount++;
+      continue;
+    }
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (neighborAtom && neighborAtom.element !== 'H') {
+      return false;
+    }
+  }
+  return terminalMultipleLeafCount === 1;
+}
+
 function phosphateAromaticTailLookaheadAngles(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize, preferredAngles) {
   if (
     layoutGraph?.atoms.get(anchorAtomId)?.aromatic !== true
@@ -378,6 +633,7 @@ function shouldUseRingAnchorSingleBranchLookahead(
     && isPhosphateBoundAromaticRing(layoutGraph, anchorAtomId)
     && isCompactAromaticHydrocarbonTail(layoutGraph, anchorAtomId, childAtomId, childSubtreeSize);
   const useSaturatedMultiRingLookahead = anchorAtom?.aromatic !== true && ringCount >= 2;
+  const useTerminalMultipleLookahead = isTerminalMultipleBranchRoot(layoutGraph, anchorAtomId, childAtomId, childBond);
   return (
     layoutGraph
     && isRingAnchor(layoutGraph, anchorAtomId)
@@ -387,7 +643,7 @@ function shouldUseRingAnchorSingleBranchLookahead(
     && !childBond.aromatic
     && (childBond.order ?? 1) === 1
     && placedRingNeighborCount >= 2
-    && childSubtreeSize >= RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE
+    && (childSubtreeSize >= RING_ANCHOR_SINGLE_BRANCH_LOOKAHEAD_MIN_SUBTREE || useTerminalMultipleLookahead)
     && fallbackAngles.length >= 2
   );
 }
@@ -807,6 +1063,24 @@ function placeNeighborSequence(
             atomGrid
           )
         : null;
+    const exactPreferredBondCrossingRescueAngle =
+      exactPreferredAngle != null
+      && isTerminalCarbonRingBranchLeaf(layoutGraph, anchorAtomId, childAtomId, childBond)
+      && branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, exactPreferredAngle, bondLength)
+        ? chooseExactTerminalCarbonBondCrossingRescueAngle(
+            layoutGraph,
+            coords,
+            anchorAtomId,
+            childAtomId,
+            bondLength,
+            occupiedAngles,
+            constrainedPreferredAngles,
+            excludedAtomIds,
+            placementState,
+            ringPolygons,
+            atomGrid
+          )
+        : null;
     const fallbackCandidates = evaluateAngleCandidates(
       constrainedFallbackAngles,
       occupiedAngles,
@@ -819,7 +1093,8 @@ function placeNeighborSequence(
       ringPolygons,
       atomGrid
     );
-    const chosenAngle =
+    const initialChosenAngle =
+      exactPreferredBondCrossingRescueAngle ??
       exactPreferredAngle ??
       nearPreferredRescueAngle ??
       (shouldHonorPreferredAngle
@@ -843,6 +1118,26 @@ function placeNeighborSequence(
             coords,
             excludedAtomIds
           }));
+    const chosenAngle =
+      exactPreferredBondCrossingRescueAngle == null
+      && isTerminalCarbonRingBranchLeaf(layoutGraph, anchorAtomId, childAtomId, childBond)
+      && branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, initialChosenAngle, bondLength)
+        ? (
+            chooseExactTerminalCarbonBondCrossingRescueAngle(
+              layoutGraph,
+              coords,
+              anchorAtomId,
+              childAtomId,
+              bondLength,
+              occupiedAngles,
+              constrainedPreferredAngles.length > 0 ? constrainedPreferredAngles : [initialChosenAngle],
+              excludedAtomIds,
+              placementState,
+              ringPolygons,
+              atomGrid
+            ) ?? initialChosenAngle
+          )
+        : initialChosenAngle;
     const shouldUseClassicSingleBranchLookahead =
       childBond != null
       && !childBond.aromatic

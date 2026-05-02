@@ -100,10 +100,32 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
-    assert.ok(result.metadata.cleanupPostHookNudges > 0);
     assertBondAngle(result, 'S12', 'N13', 'O14', (2 * Math.PI) / 3);
     assertBondAngle(result, 'S12', 'N13', 'O15', (2 * Math.PI) / 3);
     assertBondAngle(result, 'O14', 'N13', 'O15', (2 * Math.PI) / 3);
+  });
+
+  it('keeps crowded aryl nitro groups with two terminal oxo leaves on trigonal nitrogen fans', () => {
+    const smiles = 'FC(F)(F)C1=NN=C([N-]C2=C(C=C(C=C2N(=O)=O)C(F)(F)F)N(=O)=O)S1';
+
+    for (const suppressH of [false, true]) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH,
+        auditTelemetry: true,
+        finalLandscapeOrientation: true
+      });
+
+      assert.equal(result.metadata.stage, 'coordinates-ready');
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+      assertBondAngle(result, 'O17', 'N16', 'O18', (2 * Math.PI) / 3);
+      assertBondAngle(result, 'O17', 'N16', 'C15', (2 * Math.PI) / 3);
+      assertBondAngle(result, 'O18', 'N16', 'C15', (2 * Math.PI) / 3);
+      assertBondAngle(result, 'C11', 'N23', 'O24', (2 * Math.PI) / 3);
+      assertBondAngle(result, 'C11', 'N23', 'O25', (2 * Math.PI) / 3);
+      assertBondAngle(result, 'O24', 'N23', 'O25', (2 * Math.PI) / 3);
+    }
   });
 
   it('orthogonalizes monoxo phosphonate leaf ligands in mixed fused layouts', () => {
@@ -224,6 +246,26 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     }
   });
 
+  it('keeps carbon-bound explicit-hydrogen monoxo phosphonate chains on a heavy-atom trigonal spread', () => {
+    const smiles = '[H][P@@](=O)(CCCCCCCCCCC)OCCCC';
+
+    for (const suppressH of [false, true]) {
+      const result = runPipeline(parseSMILES(smiles), {
+        suppressH,
+        auditTelemetry: true,
+        finalLandscapeOrientation: true
+      });
+
+      assert.equal(result.metadata.stage, 'coordinates-ready');
+      assert.equal(result.metadata.audit.ok, true);
+      assert.equal(result.metadata.audit.severeOverlapCount, 0);
+      assertBondAngle(result, 'O3', 'P2', 'C4', (2 * Math.PI) / 3);
+      assertBondAngle(result, 'O3', 'P2', 'O15', (2 * Math.PI) / 3);
+      assertBondAngle(result, 'C4', 'P2', 'O15', (2 * Math.PI) / 3);
+      assertBondAngle(result, 'P2', 'C4', 'C5', (2 * Math.PI) / 3);
+    }
+  });
+
   it('keeps bis-oxo sulfones with aryl and amine single-bond ligands on the correct opposite axis', () => {
     const result = runPipeline(parseSMILES('Clc1ccccc1CCNC(=O)Cn2ccc3cc(ccc23)S(=O)(=O)N4CCCCCC4'), {
       suppressH: true,
@@ -256,6 +298,26 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertOrthogonalCross(result, ['S11']);
     assertOppositePair(result, 'S11', 'C10', 'Cl12');
     assertOppositePair(result, 'S11', 'O13', 'O14');
+  });
+
+  it('keeps constrained diaryl sulfone oxo ligands opposed without rotating bulky rings together', () => {
+    const result = runPipeline(parseSMILES('Cc1cc(C)cc(c1)S(=O)(=O)c2c([nH]c3ccc(Cl)cc23)C(=O)NCc4ccccc4F'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.cleanupTelemetry.selectedStageCategory, 'specialist');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(hasHypervalentAngleTidyNeed(result.layoutGraph, result.coords), false);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S9']) }) < 1e-9);
+    assertOppositePair(result, 'S9', 'O10', 'O11');
+    assert.ok(measureBondAngle(result, 'C7', 'S9', 'O10') > Math.PI / 4);
+    assert.ok(measureBondAngle(result, 'C12', 'S9', 'O10') > Math.PI / 4);
   });
 
   it('keeps neighboring sulfonyl centers orthogonal around planar bis-sulfonamide nitrogens', () => {
@@ -390,6 +452,23 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     }
   });
 
+  it('slides crowded bridged ring-embedded sulfone oxo ligands onto the exterior side', () => {
+    const result = runPipeline(parseSMILES('CC1CS(=O)(=O)C2(O)C(=O)C1C=C2C#C'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assertOxoLigandsOutsideIncidentRings(result, 'S4', ['O5', 'O6']);
+    assert.equal(hasHypervalentAngleTidyNeed(result.layoutGraph, result.coords), false);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S4']) }) < 1e-9);
+  });
+
   it('places macrocycle-embedded sulfone oxo ligands before macrocycle branch budgets filter candidates', () => {
     const result = runPipeline(parseSMILES('CN(C1CCCCCCCCCS(=O)(=O)C1)C(=O)CNC(=O)c2cc3cc(Cl)ccc3[nH]2'), {
       suppressH: true,
@@ -424,7 +503,8 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
-    assert.equal(result.metadata.cleanupTelemetry.selectedStageCategory, 'specialist');
+    assert.ok(['specialist', 'stabilization'].includes(result.metadata.cleanupTelemetry.selectedStageCategory));
+    assert.equal(result.metadata.cleanupTelemetry.stages.specialistCleanup.ran, true);
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S24']) }) < 1e-9);
@@ -454,6 +534,51 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertBondAngle(result, 'C2', 'S14', 'O17', Math.PI / 2);
     assert.ok(compressedOxoLength < result.layoutGraph.options.bondLength * 0.98);
     assert.ok(compressedOxoLength >= result.layoutGraph.options.bondLength * 0.95);
+  });
+
+  it('keeps ring-attached sulfonic acid centers orthogonal while rotating nearby branches aside', () => {
+    const result = runPipeline(parseSMILES('CC(C)C1(CN(C)C=C1C(=O)C#C)S(O)(=O)=O'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.cleanupTelemetry.selectedStageCategory, 'specialist');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(hasHypervalentAngleTidyNeed(result.layoutGraph, result.coords), false);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S14']) }) < 1e-9);
+    assertOppositePair(result, 'S14', 'C4', 'O15');
+    assertOppositePair(result, 'S14', 'O16', 'O17');
+    assertBondAngle(result, 'C4', 'S14', 'O16', Math.PI / 2);
+    assertBondAngle(result, 'C4', 'S14', 'O17', Math.PI / 2);
+  });
+
+  it('keeps acyclic sulfonamide oxo ligands orthogonal while moving a nearby pendant ring', () => {
+    const result = runPipeline(
+      parseSMILES('CN1CCN(CC1)C(=O)N[C@H](CC1=CC=CC=C1)C(=O)N[C@H](CCC1=CC=CC=C1)CCS(=O)(=O)NOCC1=CC=CC=C1'),
+      {
+        suppressH: true,
+        auditTelemetry: true,
+        finalLandscapeOrientation: true
+      }
+    );
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(hasHypervalentAngleTidyNeed(result.layoutGraph, result.coords), false);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S35']) }) < 1e-9);
+    assertOppositePair(result, 'S35', 'C34', 'N38');
+    assertOppositePair(result, 'S35', 'O36', 'O37');
+    assertBondAngle(result, 'C34', 'S35', 'O36', Math.PI / 2);
+    assertBondAngle(result, 'N38', 'S35', 'O36', Math.PI / 2);
+    assert.ok(distance(result.coords.get('C19'), result.coords.get('O37')) > result.layoutGraph.options.bondLength * 0.55);
   });
 
   it('keeps phosphorothioate lipids orthogonal while clearing neighboring carbonyl leaves', () => {

@@ -31,6 +31,23 @@ function bondOrderBetween(layoutGraph, firstAtomId, secondAtomId) {
 }
 
 /**
+ * Returns whether a cross-like hypervalent descriptor includes an explicit
+ * hydrogen single-bond ligand. These centers read as a visible heavy-atom
+ * trigonal fan once hydrogens are suppressed, so the acyclic backbone should
+ * not force two heavy single bonds onto the same straight axis.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {{singleNeighborIds: string[]}|null} crossLikeCenter - Hypervalent center descriptor.
+ * @returns {boolean} True when one single-bond ligand is hydrogen.
+ */
+function hasExplicitHydrogenSingleLigand(layoutGraph, crossLikeCenter) {
+  return Boolean(
+    layoutGraph
+    && crossLikeCenter
+    && crossLikeCenter.singleNeighborIds.some(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element === 'H')
+  );
+}
+
+/**
  * Returns whether a backbone center should preserve the incoming direction
  * instead of flipping the zigzag sign.
  * @param {object|null} layoutGraph - Layout graph shell.
@@ -50,7 +67,12 @@ function isLinearCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
   }
 
   const crossLikeCenter = describeCrossLikeHypervalentCenter(layoutGraph, atomId);
-  return crossLikeCenter != null && crossLikeCenter.singleNeighborIds.includes(previousAtomId) && crossLikeCenter.singleNeighborIds.includes(nextAtomId);
+  return (
+    crossLikeCenter != null
+    && !hasExplicitHydrogenSingleLigand(layoutGraph, crossLikeCenter)
+    && crossLikeCenter.singleNeighborIds.includes(previousAtomId)
+    && crossLikeCenter.singleNeighborIds.includes(nextAtomId)
+  );
 }
 
 /**

@@ -286,6 +286,17 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
       }),
       options
     );
+
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'terminal-multiple-bond-leaf',
+      runTerminalMultipleBondLeafFanTidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        frozenAtomIds: options.frozenAtomIds ?? null
+      }),
+      options
+    );
   }
 
   if (
@@ -319,7 +330,9 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
       }),
       options
     );
+  }
 
+  if (options.includeRingSubstituent !== false) {
     currentState = evaluatePresentationStep(
       layoutGraph,
       currentState,

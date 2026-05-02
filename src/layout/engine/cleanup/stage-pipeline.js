@@ -193,6 +193,7 @@ export function buildCleanupStageGraph(context) {
     const terminalMultipleBondLeafFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, coords);
     return {
       presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords),
+      hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, coords),
       divalentContinuationPenalty: measureDivalentContinuationDistortion(layoutGraph, coords).totalDeviation,
       omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation,
       phosphateArylTailPenalty: measurePhosphateArylTailPresentationPenalty(layoutGraph, coords),
@@ -238,15 +239,25 @@ export function buildCleanupStageGraph(context) {
     return !((candidateAudit.stereoContradiction ?? false) && !(incumbentAudit.stereoContradiction ?? false));
   };
   /**
+   * Returns whether a late retouch regresses measured hypervalent angle quality.
+   * @param {object} candidate - Candidate retouch stage score.
+   * @param {object|null} incumbent - Current incumbent stage score.
+   * @returns {boolean} True when comparable hypervalent deviation gets worse.
+   */
+  const worsensHypervalentDeviation = (candidate, incumbent) => (
+    Number.isFinite(candidate?.hypervalentDeviation)
+    && Number.isFinite(incumbent?.hypervalentDeviation)
+    && candidate.hypervalentDeviation > incumbent.hypervalentDeviation + 1e-9
+  );
+  /**
    * Scores specialist stages with the normal final-stereo audit plus
-   * hypervalent-angle deviation for specialist-specific tie-breaking.
+   * presentation metrics for specialist-specific tie-breaking.
    * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
-   * @returns {object} Final-stage score with hypervalent deviation.
+   * @returns {object} Final-stage score with presentation metrics.
    */
   const auditSpecialistStage = coords => ({
     ...auditFinalStereo(coords),
-    ...scorePresentationTieBreakMetrics(coords),
-    hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, coords)
+    ...scorePresentationTieBreakMetrics(coords)
   });
   /**
    * Compares specialist stages, allowing exact hypervalent retouches to win
@@ -267,6 +278,9 @@ export function buildCleanupStageGraph(context) {
   const terminalHeteroRetouchComparator = (candidate, incumbent) => {
     if (auditFinalStereoWithTieBreak(candidate, incumbent)) {
       return true;
+    }
+    if (worsensHypervalentDeviation(candidate, incumbent)) {
+      return false;
     }
     if (!candidate.audit || !incumbent?.audit || candidate.audit.ok !== true || incumbent.audit.ok !== true) {
       return false;
@@ -299,6 +313,9 @@ export function buildCleanupStageGraph(context) {
   const terminalMultipleBondLeafRetouchComparator = (candidate, incumbent) => {
     if (auditFinalStereoWithTieBreak(candidate, incumbent)) {
       return true;
+    }
+    if (worsensHypervalentDeviation(candidate, incumbent)) {
+      return false;
     }
     if (!auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)) {
       return false;
