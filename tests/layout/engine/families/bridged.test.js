@@ -383,6 +383,44 @@ describe('layout/engine/families/bridged', () => {
     assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
   });
 
+  it('keeps long theta-like bridged ring paths separated from exocyclic substituents', () => {
+    const smiles = 'CCOC(C)(C)C1NCC2OCC1NC(=O)O2';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: null
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const bridgedShape = bridgedRingShapeMetrics(graph, result.coords);
+    const pipelineShape = bridgedRingShapeMetrics(graph, pipelineResult.coords);
+    const maxReadableBondDeviation = graph.options.bondLength * 0.22;
+
+    assert.equal(result.placementMode, 'projected-kamada-kawai');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assert.deepEqual(findVisibleHeavyBondCrossings(graph, result.coords), []);
+    assert.ok(
+      bridgedShape.maxBondDeviation < maxReadableBondDeviation,
+      'expected bridged projection to avoid visibly stretched ring bonds'
+    );
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
+    assert.ok(
+      pipelineShape.maxBondDeviation < maxReadableBondDeviation,
+      'expected full pipeline to preserve the less deformed bridged ring shape'
+    );
+    assert.ok(
+      distance(pipelineResult.coords.get('C6'), pipelineResult.coords.get('O16')) > graph.options.bondLength * 0.85,
+      'expected the geminal methyl leaf to clear the carbonyl oxygen after branch placement'
+    );
+  });
+
   it('places larger bridged cages from their templates too', () => {
     const bicycloGraph = createLayoutGraph(makeBicyclo222());
     const bicycloResult = layoutBridgedFamily(bicycloGraph.rings, bicycloGraph.options.bondLength, { layoutGraph: bicycloGraph, templateId: 'bicyclo-2-2-2' });

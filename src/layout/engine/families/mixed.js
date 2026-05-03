@@ -8,6 +8,7 @@ import { nonSharedPath } from '../geometry/ring-path.js';
 import { transformAttachedBlock } from '../placement/linkers.js';
 import { auditLayout } from '../audit/audit.js';
 import { pointInPolygon } from '../geometry/polygon.js';
+import { runRingPresentationCleanup } from '../cleanup/presentation/ring-presentation.js';
 import { measureRingSubstituentPresentationPenalty } from '../cleanup/presentation/ring-substituent.js';
 import { collectMovableAttachedRingDescriptors, runAttachedRingRotationTouchup } from '../cleanup/presentation/attached-ring-fallback.js';
 import {
@@ -32,6 +33,7 @@ import {
   findVisibleHeavyBondCrossings,
   findSevereOverlaps,
   measureFocusedPlacementCost,
+  measureDivalentContinuationDistortion,
   measureLayoutCost,
   measureRingSubstituentReadability,
   measureTrigonalDistortion,
@@ -2089,7 +2091,60 @@ function auditMixedPlacement(layoutGraph, placement, bondLength) {
   });
 }
 
+/**
+ * Scores a mixed-root placement after a bounded presentation pass. Some mixed
+ * roots look worse before cleanup because attached-ring fallback has not yet
+ * rotated recoverable aryl blocks; root retry should not discard those roots
+ * before checking whether the existing presentation machinery can make them
+ * audit-clean.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} placement - Mixed placement candidate.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{coords: Map<string, {x: number, y: number}>, audit: object, bounded: boolean, divalentContinuationPenalty: number}|null} Presentation-preview score.
+ */
+function mixedRootPresentationPreviewScore(layoutGraph, placement, bondLength) {
+  if (!placement?.coords || (layoutGraph.traits.heavyAtomCount ?? 0) > MIXED_ROOT_RETRY_LIMITS.maxHeavyAtomCount) {
+    return null;
+  }
+
+  const previewInputCoords = new Map(
+    [...placement.coords.entries()].map(([atomId, position]) => [atomId, { ...position }])
+  );
+  const presentation = runRingPresentationCleanup(layoutGraph, previewInputCoords, {
+    bondLength,
+    includeRingSubstituent: true,
+    includeTerminalHetero: true,
+    includeAttachedRingFallback: true
+  });
+  const coords = presentation?.coords ?? placement.coords;
+  const audit = auditLayout(layoutGraph, coords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  return {
+    coords,
+    audit,
+    bounded: audit.bondLengthFailureCount === 0 && audit.maxBondLengthDeviation <= bondLength * 0.1,
+    divalentContinuationPenalty: measureDivalentContinuationDistortion(layoutGraph, coords).totalDeviation
+  };
+}
+
 function isBetterMixedRootPlacement(candidatePlacement, candidateAudit, incumbentPlacement, incumbentAudit, canonicalAtomRank, layoutGraph, bondLength) {
+  if (candidateAudit.ok !== true || incumbentAudit.ok !== true) {
+    const candidatePreview = mixedRootPresentationPreviewScore(layoutGraph, candidatePlacement, bondLength);
+    const incumbentPreview = mixedRootPresentationPreviewScore(layoutGraph, incumbentPlacement, bondLength);
+    if (candidatePreview?.bounded === true && incumbentPreview?.bounded === true) {
+      if (candidatePreview.audit.ok !== incumbentPreview.audit.ok) {
+        return candidatePreview.audit.ok === true;
+      }
+      if (candidatePreview.audit.severeOverlapCount !== incumbentPreview.audit.severeOverlapCount) {
+        return candidatePreview.audit.severeOverlapCount < incumbentPreview.audit.severeOverlapCount;
+      }
+      if (Math.abs(candidatePreview.divalentContinuationPenalty - incumbentPreview.divalentContinuationPenalty) > IMPROVEMENT_EPSILON) {
+        return candidatePreview.divalentContinuationPenalty < incumbentPreview.divalentContinuationPenalty;
+      }
+    }
+  }
   if (candidateAudit.severeOverlapCount !== incumbentAudit.severeOverlapCount) {
     return candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount;
   }
@@ -4553,8 +4608,9 @@ function directAttachmentContinuationParentAtomId(layoutGraph, candidateMeta = n
 
 /**
  * Describes the exact direct-attachment continuation target for a divalent
- * parent linker. Conjugated trigonal linkers keep a `120°` continuation,
- * while `sp` linkers with a triple bond keep a linear `180°` continuation.
+ * parent linker. Single-bond methylene linkers and conjugated trigonal linkers
+ * keep a `120°` continuation, while `sp` linkers with a triple bond keep a
+ * linear `180°` continuation.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string} parentAtomId - Already placed parent atom ID.
  * @param {string} continuationParentAtomId - Already placed heavy neighbor that anchors the continuation.
@@ -4605,6 +4661,9 @@ function describeDirectAttachmentExactContinuation(layoutGraph, parentAtomId, co
   const hasSingleAndMultipleBond =
     (continuationOrder === 1 && attachmentOrder >= 2)
     || (continuationOrder >= 2 && attachmentOrder === 1);
+  if (continuationOrder === 1 && attachmentOrder === 1) {
+    return { idealSeparation: EXACT_TRIGONAL_CONTINUATION_ANGLE };
+  }
   if (!hasSingleAndMultipleBond) {
     return null;
   }
@@ -4694,7 +4753,6 @@ function exactDirectAttachmentContinuationAngles(layoutGraph, coords, candidateM
     || !new Set(['C', 'N']).has(parentAtom.element)
     || parentAtom.aromatic
     || parentAtom.heavyDegree !== 2
-    || parentAtom.degree !== 3
   ) {
     return [];
   }
@@ -13157,7 +13215,10 @@ function attachLinkerRingSystems(layoutGraph, adjacency, bondLength, state, pend
       candidate._prescore = preScoreAttachedBlockOrientation(coords, candidate.transformedCoords, bondLength, layoutGraph, candidate.meta ?? null);
     }
     const defaultOverlapFree = rawCandidates.some(candidate => candidate._prescore.overlapCount === 0);
-    if (!defaultOverlapFree && allowExpandedRingLinkerRotations) {
+    const defaultCandidatesNeedBranchScoring = rawCandidates.some(candidate =>
+      directAttachmentCandidateNeedsBranchScoring(candidate, primaryNonRingAtomIds, placedAtomIds)
+    );
+    if ((!defaultOverlapFree || defaultCandidatesNeedBranchScoring) && allowExpandedRingLinkerRotations) {
       const allowPlacedBlockBalancing =
         linker.chainAtomIds.length === 1
         && (

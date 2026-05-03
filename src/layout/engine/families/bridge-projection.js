@@ -46,6 +46,157 @@ function quadraticPoint(firstPoint, controlPoint, secondPoint, t) {
 }
 
 /**
+ * Returns the minimum bridgehead span for readable projection lanes. Dense
+ * theta-like bridged systems with three or more long paths collapse when their
+ * bridgeheads keep the compact KK distance, so use the shortest path length as
+ * a bounded lower span before laying out the lanes.
+ * @param {string[][]} paths - Enumerated bridgehead-to-bridgehead paths.
+ * @param {number} bondLength - Target bond length.
+ * @returns {number} Minimum bridgehead span.
+ */
+function bridgeProjectionMinimumSpan(paths, bondLength) {
+  const defaultSpan = bondLength * 1.6;
+  if (paths.length < 3) {
+    return defaultSpan;
+  }
+  const shortestSegmentCount = Math.min(...paths.map(path => path.length - 1).filter(segmentCount => segmentCount > 0));
+  if (!Number.isFinite(shortestSegmentCount) || shortestSegmentCount < 3) {
+    return defaultSpan;
+  }
+  return Math.max(defaultSpan, bondLength * Math.min(shortestSegmentCount * 0.95, 3.25));
+}
+
+/**
+ * Returns whether a three-path bridged system should reserve a center lane for
+ * its shortest path. This keeps theta-like saturated cores from stacking both
+ * outer paths on the same side of a shared bridge run.
+ * @param {string[][]} sortedPaths - Bridge paths sorted by internal atom count.
+ * @returns {boolean} True when balanced center/outer lane projection applies.
+ */
+function shouldUseBalancedThetaProjection(sortedPaths) {
+  return sortedPaths.length === 3 && sortedPaths[0].length - 1 >= 3;
+}
+
+/**
+ * Returns the covalent segment counts for bridgehead-to-bridgehead paths.
+ * @param {string[][]} paths - Enumerated bridge paths.
+ * @returns {number[]} Positive path segment counts.
+ */
+function bridgePathSegmentCounts(paths) {
+  return paths.map(path => path.length - 1).filter(segmentCount => segmentCount > 0);
+}
+
+/**
+ * Returns the shortest bridge path segment count.
+ * @param {string[][]} paths - Enumerated bridge paths.
+ * @returns {number} Shortest segment count, or infinity for empty path sets.
+ */
+function shortestBridgePathSegmentCount(paths) {
+  const segmentCounts = bridgePathSegmentCounts(paths);
+  return segmentCounts.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...segmentCounts);
+}
+
+/**
+ * Returns whether path lengths describe a balanced long theta graph.
+ * @param {string[][]} paths - Enumerated bridge paths.
+ * @returns {boolean} True when three long paths differ by at most one segment.
+ */
+function isBalancedLongThetaPathSet(paths) {
+  const segmentCounts = bridgePathSegmentCounts(paths).sort((firstCount, secondCount) => firstCount - secondCount);
+  return (
+    segmentCounts.length === 3
+    && segmentCounts[0] >= 3
+    && segmentCounts[2] - segmentCounts[0] <= 1
+  );
+}
+
+/**
+ * Counts covalent heavy neighbors inside a candidate bridged atom set.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Atom ID to inspect.
+ * @param {Set<string>} atomIdSet - Candidate bridged atom IDs.
+ * @returns {number} Internal heavy-neighbor count.
+ */
+function bridgeProjectionInternalHeavyDegree(layoutGraph, atomId, atomIdSet) {
+  let degree = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (atomIdSet.has(neighborAtomId) && neighborAtom && neighborAtom.element !== 'H') {
+      degree++;
+    }
+  }
+  return degree;
+}
+
+/**
+ * Scores balanced theta bridgehead candidates by path compactness.
+ * @param {string[][]} paths - Enumerated bridge paths.
+ * @returns {number} Lower is better.
+ */
+function balancedLongThetaBridgeheadScore(paths) {
+  const segmentCounts = bridgePathSegmentCounts(paths);
+  return Math.max(...segmentCounts) * 100 + segmentCounts.reduce((sum, count) => sum + count, 0);
+}
+
+/**
+ * Selects an alternate bridgehead pair for long theta-like systems when the
+ * default degree-ranked pair contains a tiny shortcut path. This keeps the
+ * global bridgehead picker stable for compact fused cyclopropane cases while
+ * allowing true three-lane bridged cores to project around their shared run.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Bridged component atom IDs.
+ * @param {[string, string]} defaultBridgeheadAtomIds - Default bridgehead pair.
+ * @returns {[string, string]} Bridgehead pair to use for projection.
+ */
+function selectProjectionBridgeheads(layoutGraph, atomIds, defaultBridgeheadAtomIds) {
+  const defaultPaths = enumerateBridgePaths(layoutGraph, atomIds, defaultBridgeheadAtomIds, {
+    maxPathCount: BRIDGE_PROJECTION_FACTORS.maxProjectedPathCount + 1
+  });
+  if (isBalancedLongThetaPathSet(defaultPaths) || shortestBridgePathSegmentCount(defaultPaths) >= 3) {
+    return defaultBridgeheadAtomIds;
+  }
+
+  const atomIdSet = new Set(atomIds);
+  const candidateAtomIds = atomIds
+    .filter(atomId =>
+      bridgeProjectionInternalHeavyDegree(layoutGraph, atomId, atomIdSet) >= 3
+      && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 1
+    )
+    .sort((firstAtomId, secondAtomId) => compareCanonicalAtomIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));
+  let bestPair = defaultBridgeheadAtomIds;
+  let bestScore = Number.POSITIVE_INFINITY;
+
+  for (let firstIndex = 0; firstIndex < candidateAtomIds.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < candidateAtomIds.length; secondIndex++) {
+      const candidatePair = [candidateAtomIds[firstIndex], candidateAtomIds[secondIndex]];
+      if (
+        (candidatePair[0] === defaultBridgeheadAtomIds[0] && candidatePair[1] === defaultBridgeheadAtomIds[1])
+        || (candidatePair[0] === defaultBridgeheadAtomIds[1] && candidatePair[1] === defaultBridgeheadAtomIds[0])
+      ) {
+        continue;
+      }
+      const candidatePaths = enumerateBridgePaths(layoutGraph, atomIds, candidatePair, {
+        maxPathCount: BRIDGE_PROJECTION_FACTORS.maxProjectedPathCount + 1
+      });
+      if (!isBalancedLongThetaPathSet(candidatePaths)) {
+        continue;
+      }
+      const candidateScore = balancedLongThetaBridgeheadScore(candidatePaths);
+      if (candidateScore < bestScore) {
+        bestPair = candidatePair;
+        bestScore = candidateScore;
+      }
+    }
+  }
+
+  return bestPair;
+}
+
+/**
  * Enumerates simple covalent paths between two bridgeheads inside a bridged component.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string[]} atomIds - Bridged component atom IDs.
@@ -144,14 +295,15 @@ export function orientBridgedSeed(seedCoords, bridgeheadAtomIds) {
  * @returns {{coords: Map<string, {x: number, y: number}>, bridgeheadAtomIds: [string, string]|null, pathCount: number}} Projected coordinates and summary.
  */
 export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength) {
-  const bridgeheadAtomIds = pickBridgeheads(layoutGraph, atomIds);
-  if (!bridgeheadAtomIds) {
+  const defaultBridgeheadAtomIds = pickBridgeheads(layoutGraph, atomIds);
+  if (!defaultBridgeheadAtomIds) {
     return {
       coords: new Map(seedCoords),
       bridgeheadAtomIds: null,
       pathCount: 0
     };
   }
+  const bridgeheadAtomIds = selectProjectionBridgeheads(layoutGraph, atomIds, defaultBridgeheadAtomIds);
 
   const oriented = orientBridgedSeed(seedCoords, bridgeheadAtomIds);
   const coords = new Map(oriented.coords);
@@ -178,7 +330,7 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
   const firstHead = coords.get(firstHeadId);
   const secondHead = coords.get(secondHeadId);
   const midpointX = (firstHead.x + secondHead.x) / 2;
-  const minimumSpan = bondLength * 1.6;
+  const minimumSpan = bridgeProjectionMinimumSpan(paths, bondLength);
   const headDistance = Math.max(oriented.headDistance, minimumSpan);
   coords.set(firstHeadId, { x: -headDistance / 2, y: 0 });
   coords.set(secondHeadId, { x: headDistance / 2, y: 0 });
@@ -213,9 +365,23 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
     if ((sideUsage.get(preferredSide) ?? 0) > (sideUsage.get(oppositeSide) ?? 0) + 1) {
       preferredSide = oppositeSide;
     }
-    const side = preferredSide;
-    const layer = sideUsage.get(side) ?? 0;
-    sideUsage.set(side, layer + 1);
+    const useBalancedThetaProjection = shouldUseBalancedThetaProjection(sortedPaths);
+    let side = preferredSide;
+    if (useBalancedThetaProjection) {
+      if (pathIndex === 0) {
+        side = 0;
+      } else if (pathIndex === 2) {
+        const previousOuterPath = sortedPaths[1];
+        const previousInternalAtomIds = previousOuterPath.slice(1, -1);
+        const previousMeanSeedY = previousInternalAtomIds.reduce((sum, atomId) => sum + (oriented.coords.get(atomId)?.y ?? 0), 0) / previousInternalAtomIds.length;
+        const previousSide = previousMeanSeedY < -1e-6 ? -1 : 1;
+        side = -previousSide;
+      }
+    }
+    const layer = side === 0 ? 0 : sideUsage.get(side) ?? 0;
+    if (side !== 0) {
+      sideUsage.set(side, layer + 1);
+    }
 
     if (internalCount === 1) {
       const clampedX = clamp(
@@ -225,6 +391,16 @@ export function projectBridgePaths(layoutGraph, atomIds, seedCoords, bondLength)
       );
       const y = side * bondLength * (BRIDGE_PROJECTION_FACTORS.singleAtomBaseHeightFactor + layer * BRIDGE_PROJECTION_FACTORS.layerSpacingFactor);
       coords.set(internalAtomIds[0], { x: clampedX, y });
+      continue;
+    }
+    if (side === 0) {
+      for (let internalIndex = 0; internalIndex < internalAtomIds.length; internalIndex++) {
+        const t = (internalIndex + 1) / (internalCount + 1);
+        coords.set(internalAtomIds[internalIndex], {
+          x: leftHead.x + (rightHead.x - leftHead.x) * t,
+          y: 0
+        });
+      }
       continue;
     }
 

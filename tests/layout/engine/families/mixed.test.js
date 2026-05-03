@@ -1302,6 +1302,36 @@ describe('layout/engine/families/mixed', () => {
     assert.ok(distance(result.coords.get('C40'), result.coords.get('F43')) > graph.options.bondLength * 0.85, 'expected the upper CF3 leaf to clear the adjacent aryl carbon');
   });
 
+  it('uses presentation-aware mixed-root retry for cyclopropyl bis-pyridyl CF3 scaffolds', () => {
+    const smiles = 'CN(C)C=C1C(C(F)(F)F)C1(CC(=O)C1=CC=CN=C1)C(=O)C1(CC(=O)C2=CC=CN=C2)C(C1=CN(C)C)C(F)(F)F';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const graph = result.layoutGraph;
+    const lowerPyridylAtomIds = ['C27', 'C28', 'C29', 'C30', 'N31', 'C32'];
+    const closestLowerPyridylContact = Math.min(
+      ...lowerPyridylAtomIds.map(atomId => distance(result.coords.get('F42'), result.coords.get(atomId)))
+    );
+    const c12Angle = bondAngleAtAtom(result.coords, 'C12', 'C11', 'C13');
+    const c24Angle = bondAngleAtAtom(result.coords, 'C24', 'C23', 'C25');
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(findVisibleHeavyBondCrossings(graph, result.coords).length, 0);
+    assert.ok(
+      Math.abs(c12Angle - ((2 * Math.PI) / 3)) < 1e-6,
+      `expected the upper cyclopropyl carbonyl linker to keep a 120-degree bend, got ${((c12Angle * 180) / Math.PI).toFixed(2)}`
+    );
+    assert.ok(
+      Math.abs(c24Angle - ((2 * Math.PI) / 3)) < 1e-6,
+      `expected the lower cyclopropyl carbonyl linker to keep a 120-degree bend, got ${((c24Angle * 180) / Math.PI).toFixed(2)}`
+    );
+    assert.ok(
+      closestLowerPyridylContact > graph.options.bondLength * 0.85,
+      `expected the lower CF3 fluorine to clear the pyridyl ring, got ${closestLowerPyridylContact.toFixed(3)}`
+    );
+  });
+
   it('previews pending heteroring roots before assigning crowded tetrahedral branch slots', () => {
     const smiles = 'CC(C1=NC(=CS1)C1=CC=C(C=C1)C#N)C(O)(C[N+]1(CCOC(=O)N2CCCC2C[NH3+])C=NC=N1)C1=CC(F)=CC=C1F';
     const result = runPipeline(parseSMILES(smiles), { suppressH: true });

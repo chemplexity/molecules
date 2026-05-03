@@ -25,6 +25,7 @@ import {
 } from './shared.js';
 
 const CROSS_LIKE_HYPERVALENT_HETERO_SINGLE_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
+const TERMINAL_HETERO_TRIPOD_NEAR_CONTACT_FACTOR = 0.72;
 
 /**
  * Returns the bond angles of all already placed neighbors around an anchor.
@@ -2108,7 +2109,14 @@ function terminalHeteroTripodAngleSets(layoutGraph, coords, anchorAtomId, parent
     regularAngleSet.some(angle =>
       !isCandidateSafe(anchorPosition, angle, bondLength, coords, excludedAtomIds)
     );
-  if (!regularFanIsCrowded) {
+  const regularFanHasNearContact =
+    anchorPosition &&
+    bondLength > 0 &&
+    regularAngleSet.some(angle =>
+      candidateClearanceScore(anchorPosition, angle, bondLength, coords, excludedAtomIds)
+        < bondLength * TERMINAL_HETERO_TRIPOD_NEAR_CONTACT_FACTOR
+    );
+  if (!regularFanIsCrowded && !regularFanHasNearContact) {
     return [];
   }
   return [[outAngle, outAngle + DEG60, outAngle - DEG60]];

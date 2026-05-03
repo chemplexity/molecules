@@ -1,7 +1,12 @@
 # Change Log
 
+## 2026-05-02
+
+- Keep theta-like bridged ring projections on separated center and outer lanes so compact cage branches clear.
+
 ## 2026-05-01
 
+- Let mixed-root retry preview presentation cleanup so recoverable cyclopropyl bis-pyridyl scaffolds keep bent carbonyl linkers and clear CF3 leaves.
 - Keep macrocycle-fused aryl rings attached and hexagonal by completing shared arcs from their endpoints, then rescuing distorted aryl macrocycle roots with bridge-aware aromatic regularization and rotating linked hetero ring anchors away from the rigid aryl core.
 - Keep Clean 2D from treating aryl-adjacent macrocycle projection bonds as damaged local edits, preserving rigid aromatic rings after cleanup.
 - Keep crowded aryl nitro fans trigonal by moving nearby pendant rings out of exact oxo slots.
