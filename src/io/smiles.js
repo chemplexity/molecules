@@ -181,6 +181,30 @@ function addBondV1(id, name, value, order = 0, atoms = [], stereo = null) {
   return { id, name, value, order, atoms, stereo };
 }
 
+const DEFAULT_COORDINATE_DONOR_ELEMENTS = new Set(['N', 'O', 'P', 'S', 'F', 'Cl', 'Br', 'I', 'As', 'Se']);
+
+function isTransitionMetalAtom(atom) {
+  if (!atom || atom.name === 'H') {
+    return false;
+  }
+  const group = atom.properties?.group ?? atom.group ?? elements[atom.name]?.group ?? 0;
+  return group >= 3 && group <= 12;
+}
+
+function isDefaultCoordinateDonorAtom(atom) {
+  return atom && DEFAULT_COORDINATE_DONOR_ELEMENTS.has(atom.name);
+}
+
+function inferParsedBondKind(atomA, atomB) {
+  const atomAIsMetal = isTransitionMetalAtom(atomA);
+  const atomBIsMetal = isTransitionMetalAtom(atomB);
+  const ligandAtom = atomAIsMetal ? atomB : atomBIsMetal ? atomA : null;
+  if (atomAIsMetal !== atomBIsMetal && isDefaultCoordinateDonorAtom(ligandAtom)) {
+    return 'coordinate';
+  }
+  return 'covalent';
+}
+
 /**
  * Extracts the explicit bond order embedded in a ring token term (e.g. 'C=1' → 2).
  * Returns null if no bond prefix is present.
@@ -1890,7 +1914,8 @@ export function parseSMILES(smiles, { preserveAromaticBondOrders = true } = {}) 
       {
         order: bond.order,
         aromatic: bond.name === 'aromatic' || bond.isAromatic === true,
-        stereo: bond.stereo || null
+        stereo: bond.stereo || null,
+        kind: inferParsedBondKind(mol.atoms.get(a), mol.atoms.get(b))
       },
       false
     );

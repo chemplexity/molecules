@@ -462,11 +462,11 @@ function isMetalMixedRingRescuePreferredPlacement(layoutGraph, candidateScore, i
   if (candidateScore.audit.bondLengthFailureCount !== incumbentScore.audit.bondLengthFailureCount) {
     return candidateScore.audit.bondLengthFailureCount < incumbentScore.audit.bondLengthFailureCount;
   }
-  if (Math.abs(candidateScore.audit.maxBondLengthDeviation - incumbentScore.audit.maxBondLengthDeviation) > 1e-6) {
-    return candidateScore.audit.maxBondLengthDeviation < incumbentScore.audit.maxBondLengthDeviation;
-  }
   if (candidateScore.audit.severeOverlapCount !== incumbentScore.audit.severeOverlapCount) {
     return candidateScore.audit.severeOverlapCount < incumbentScore.audit.severeOverlapCount;
+  }
+  if (Math.abs(candidateScore.audit.maxBondLengthDeviation - incumbentScore.audit.maxBondLengthDeviation) > 1e-6) {
+    return candidateScore.audit.maxBondLengthDeviation < incumbentScore.audit.maxBondLengthDeviation;
   }
   return candidateScore.placement.family !== 'mixed' && incumbentScore.placement.family === 'mixed';
 }

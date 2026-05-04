@@ -9,6 +9,7 @@ import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import {
   isExactVisibleTrigonalBisectorEligible,
+  isPlanarDivalentNitrogenContinuationPair,
   isRingConstrainedBenzylicCarbonRoot,
   preferredSharedJunctionContinuationAngle
 } from '../placement/branch-placement/angle-selection.js';
@@ -25,30 +26,6 @@ const COMPRESSED_TERMINAL_CARBONYL_LEAF_MIN_FACTOR = 0.4;
 const COMPRESSED_TERMINAL_CARBONYL_LEAF_CLASH_FACTOR = 0.45;
 const BRIDGED_RING_SUBSTITUENT_SLOT_SCAN_STEP = Math.PI / 36;
 const BRIDGED_RING_SUBSTITUENT_SLOT_CLEARANCE_FACTOR = 0.55;
-
-function isConjugatedTrigonalHeavyNeighbor(layoutGraph, atomId) {
-  const atom = layoutGraph.atoms.get(atomId);
-  if (!atom || atom.element === 'H' || atom.aromatic || atom.heavyDegree !== 3) {
-    return false;
-  }
-  let heavyVisibleBondCount = 0;
-  let nonAromaticMultipleBondCount = 0;
-  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
-    if (!bond || bond.kind !== 'covalent') {
-      continue;
-    }
-    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H') {
-      continue;
-    }
-    heavyVisibleBondCount++;
-    if (!bond.aromatic && (bond.order ?? 1) >= 2) {
-      nonAromaticMultipleBondCount++;
-    }
-  }
-  return heavyVisibleBondCount === 3 && nonAromaticMultipleBondCount === 1;
-}
 
 function distanceBetweenSegments(firstStart, firstEnd, secondStart, secondEnd) {
   if (segmentsIntersect(firstStart, firstEnd, secondStart, secondEnd)) {
@@ -660,6 +637,8 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
     return 0;
   }
 
+  const crossingPenalty = compactArylBranchedLeafCrossingPenalty(layoutGraph, coords, uniqueFocusAtomIds);
+
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
   const atomGrid = options.atomGrid ?? (coords.size >= 160 ? buildAtomGrid(layoutGraph, coords, bondLength) : null);
   const seenPairs = new Set();
@@ -713,7 +692,66 @@ export function measureFocusedPlacementCost(layoutGraph, coords, bondLength, foc
     }
   }
 
-  return overlapPenalty + (sampleCount === 0 ? 0 : (totalDeviation / sampleCount) * 10 + maxDeviation * 5);
+  return overlapPenalty + crossingPenalty + (sampleCount === 0 ? 0 : (totalDeviation / sampleCount) * 10 + maxDeviation * 5);
+}
+
+function compactArylBranchedLeafCrossingPenalty(layoutGraph, coords, focusAtomIds) {
+  const focusSet = new Set(focusAtomIds);
+  let penalty = 0;
+  for (const crossing of findVisibleHeavyBondCrossings(layoutGraph, coords, { focusAtomIds: focusSet })) {
+    if (
+      compactArylBranchedLeafBondCrossesRingBond(layoutGraph, crossing.firstBondId, crossing.secondBondId)
+      || compactArylBranchedLeafBondCrossesRingBond(layoutGraph, crossing.secondBondId, crossing.firstBondId)
+    ) {
+      penalty += 1000;
+    }
+  }
+  return penalty;
+}
+
+function compactArylBranchedLeafBondCrossesRingBond(layoutGraph, leafBondId, crossingBondId) {
+  const leafBond = layoutGraph.bonds.get(leafBondId);
+  const crossingBond = layoutGraph.bonds.get(crossingBondId);
+  return isCompactArylBranchedLeafBond(layoutGraph, leafBond)
+    && !!crossingBond
+    && crossingBond.kind === 'covalent'
+    && ((crossingBond.inRing === true) || (crossingBond.aromatic === true));
+}
+
+function isCompactArylBranchedLeafBond(layoutGraph, bond) {
+  if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+    return false;
+  }
+  for (const [rootAtomId, leafAtomId] of [[bond.a, bond.b], [bond.b, bond.a]]) {
+    const rootAtom = layoutGraph.atoms.get(rootAtomId);
+    const leafAtom = layoutGraph.atoms.get(leafAtomId);
+    if (
+      !rootAtom
+      || !leafAtom
+      || rootAtom.element !== 'C'
+      || rootAtom.aromatic
+      || rootAtom.heavyDegree !== 3
+      || rootAtom.degree !== 4
+      || leafAtom.element !== 'C'
+      || leafAtom.aromatic
+      || leafAtom.heavyDegree !== 1
+      || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0
+      || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+    ) {
+      continue;
+    }
+    for (const neighborBond of layoutGraph.bondsByAtomId.get(rootAtomId) ?? []) {
+      if (!neighborBond || neighborBond.id === bond.id || neighborBond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = neighborBond.a === rootAtomId ? neighborBond.b : neighborBond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (neighborAtom?.aromatic === true && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function visibleCovalentBonds(layoutGraph, coords, atomId) {
@@ -1542,7 +1580,11 @@ function shouldMeasureDivalentContinuationDistortionAtCenter(layoutGraph, atomId
     IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(atom.element)
     || (
       atom.element === 'N'
-      && covalentBonds.some(({ neighborAtomId }) => isConjugatedTrigonalHeavyNeighbor(layoutGraph, neighborAtomId))
+      && isPlanarDivalentNitrogenContinuationPair(
+        layoutGraph,
+        covalentBonds[0]?.neighborAtomId,
+        covalentBonds[1]?.neighborAtomId
+      )
     );
   if (!isExactDivalentElement) {
     return false;
@@ -2133,7 +2175,7 @@ function measureAngularDistortions(layoutGraph, coords) {
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
  * @param {number} bondLength - Target bond length.
  * @param {{overlaps?: object[], atomGrid?: object|null, labelMetrics?: object|null}} [options] - Optional cached overlap and label-scoring inputs.
- * @returns {{overlaps: object[], bondDeviation: {max: number, mean: number, failureCount: number, mildFailureCount: number, severeFailureCount: number, sampleCount: number}, collapsedMacrocycles: number[], labelOverlap: {count: number}, trigonalDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, tetrahedralDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, cost: number}} Aggregated layout state metrics.
+ * @returns {{overlaps: object[], bondDeviation: {max: number, mean: number, failureCount: number, mildFailureCount: number, severeFailureCount: number, sampleCount: number}, visibleHeavyBondCrossingCount: number, collapsedMacrocycles: number[], labelOverlap: {count: number}, trigonalDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, tetrahedralDistortion: {centerCount: number, totalDeviation: number, maxDeviation: number}, cost: number}} Aggregated layout state metrics.
  */
 export function measureLayoutState(layoutGraph, coords, bondLength, options = {}) {
   const overlaps =
@@ -2142,6 +2184,7 @@ export function measureLayoutState(layoutGraph, coords, bondLength, options = {}
       atomGrid: options.atomGrid
     });
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength);
+  const visibleHeavyBondCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords).length;
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const labelOverlap = measureLabelOverlap(layoutGraph, coords, bondLength, {
     labelMetrics: options.labelMetrics ?? layoutGraph.options.labelMetrics
@@ -2163,6 +2206,7 @@ export function measureLayoutState(layoutGraph, coords, bondLength, options = {}
     overlaps,
     overlapCount: overlaps.length,
     overlapPenalty,
+    visibleHeavyBondCrossingCount,
     bondDeviation,
     collapsedMacrocycles,
     labelOverlap,

@@ -198,6 +198,19 @@ function shouldTryProjectionFirst(atomIds, pinnedAtomIds) {
   return atomIds.length > BRIDGED_KK_LIMITS.mediumAtomLimit + 40 && pinnedAtomIds.length === 0;
 }
 
+function shouldShortCircuitLargeProjection(atomIds, pinnedAtomIds) {
+  return atomIds.length > BRIDGED_KK_LIMITS.mediumAtomLimit + 20 && pinnedAtomIds.length === 0;
+}
+
+function acceptsLargeProjectionAudit(audit) {
+  return Boolean(
+    audit
+    && (audit.severeOverlapCount ?? 0) <= 5
+    && (audit.bondLengthFailureCount ?? 0) <= 25
+    && (audit.maxBondLengthDeviation ?? Number.POSITIVE_INFINITY) < 1.0
+  );
+}
+
 function containsMetalAtom(layoutGraph, atomIds) {
   return atomIds.some(atomId => isMetalAtom(layoutGraph.sourceMolecule.atoms.get(atomId)));
 }
@@ -1950,6 +1963,26 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
   }
 
   const kkSeeds = bridgedKamadaKawaiSeeds(options.layoutGraph, atomIds);
+  if (shouldShortCircuitLargeProjection(atomIds, kkSeeds.pinnedAtomIds)) {
+    const selectedCoords = projectBridgePaths(
+      options.layoutGraph,
+      atomIds,
+      buildProjectionSeedCoords(options.layoutGraph, atomIds, kkSeeds.coords, bondLength),
+      bondLength
+    ).coords;
+    const projectedAudit = auditBridgedPlacementCandidate(options.layoutGraph, atomIds, selectedCoords, bondLength);
+    if (acceptsLargeProjectionAudit(projectedAudit) || atomIds.length > BRIDGED_KK_LIMITS.mediumAtomLimit + 20) {
+      const ringCenters = new Map();
+      for (const ring of rings) {
+        ringCenters.set(ring.id, centroid(ring.atomIds.map(atomId => selectedCoords.get(atomId))));
+      }
+      return {
+        coords: selectedCoords,
+        ringCenters,
+        placementMode: 'constructed-bridged'
+      };
+    }
+  }
   if (shouldTryProjectionFirst(atomIds, kkSeeds.pinnedAtomIds)) {
     kkSeeds.coords = projectBridgePaths(
       options.layoutGraph,

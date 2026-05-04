@@ -48,17 +48,17 @@ function copyAutoDisplayStereoFromSeed(seededMolecule, molecule) {
 }
 
 /**
- * Returns whether a bond-like object should count as covalent for force-mode
- * projected organometallic seeding.
+ * Returns whether a bond-like object should count as a coordination ligand
+ * for force-mode projected organometallic seeding.
  * @param {object} bond - Bond-like object to inspect.
- * @returns {boolean} True when the bond kind resolves to `covalent`.
+ * @returns {boolean} True when the bond kind resolves to a supported ligand link.
  */
-function isCovalentBondLike(bond) {
+function isCoordinationBondLike(bond) {
   if (!bond || typeof bond !== 'object') {
     return false;
   }
   const kind = typeof bond.getKind === 'function' ? bond.getKind() : (bond.kind ?? bond.properties?.kind ?? 'covalent');
-  return kind === 'covalent';
+  return kind === 'covalent' || kind === 'coordinate';
 }
 
 /**
@@ -73,14 +73,14 @@ function hasProjectedOrganometallicDisplayCandidate(molecule) {
     if (group < 3 || group > 12) {
       continue;
     }
-    let covalentBondCount = 0;
+    let coordinationBondCount = 0;
     for (const bondId of atom.bonds ?? []) {
       const bond = molecule.bonds.get(bondId);
-      if (isCovalentBondLike(bond)) {
-        covalentBondCount++;
+      if (isCoordinationBondLike(bond)) {
+        coordinationBondCount++;
       }
     }
-    if (expectedProjectedDisplayAssignmentCount(atom, covalentBondCount) > 0) {
+    if (expectedProjectedDisplayAssignmentCount(atom, coordinationBondCount) > 0) {
       return true;
     }
   }
@@ -109,11 +109,11 @@ function countProjectedDisplayAssignments(molecule, centerId) {
  * Returns the expected number of projected wedge/dash assignments for one
  * coordination center based on its current supported publication geometry.
  * @param {object} atom - Candidate metal-center atom.
- * @param {number} covalentBondCount - Number of covalent ligands on the center.
+ * @param {number} coordinationBondCount - Number of supported ligands on the center.
  * @returns {number} Expected projected assignment count.
  */
-function expectedProjectedDisplayAssignmentCount(atom, covalentBondCount) {
-  const geometryKind = organometallicGeometryKind(atom?.name ?? '', covalentBondCount);
+function expectedProjectedDisplayAssignmentCount(atom, coordinationBondCount) {
+  const geometryKind = organometallicGeometryKind(atom?.name ?? '', coordinationBondCount);
   return organometallicProjectedDisplayAssignmentCount(geometryKind);
 }
 
@@ -129,14 +129,14 @@ function hasIncompleteProjectedOrganometallicDisplay(molecule) {
     if (group < 3 || group > 12) {
       continue;
     }
-    let covalentBondCount = 0;
+    let coordinationBondCount = 0;
     for (const bondId of atom.bonds ?? []) {
       const bond = molecule.bonds.get(bondId);
-      if (isCovalentBondLike(bond)) {
-        covalentBondCount++;
+      if (isCoordinationBondLike(bond)) {
+        coordinationBondCount++;
       }
     }
-    const expectedProjectedAssignments = expectedProjectedDisplayAssignmentCount(atom, covalentBondCount);
+    const expectedProjectedAssignments = expectedProjectedDisplayAssignmentCount(atom, coordinationBondCount);
     if (expectedProjectedAssignments > 0 && countProjectedDisplayAssignments(molecule, atom.id) < expectedProjectedAssignments) {
       return true;
     }

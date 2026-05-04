@@ -152,10 +152,29 @@ function isBetterOrganometallicPlacement(candidateAudit, incumbentAudit) {
   if (candidateAudit.bondLengthFailureCount !== incumbentAudit.bondLengthFailureCount) {
     return candidateAudit.bondLengthFailureCount < incumbentAudit.bondLengthFailureCount;
   }
-  if (Math.abs(candidateAudit.maxBondLengthDeviation - incumbentAudit.maxBondLengthDeviation) > 1e-9) {
-    return candidateAudit.maxBondLengthDeviation < incumbentAudit.maxBondLengthDeviation;
+  if (candidateAudit.severeOverlapCount !== incumbentAudit.severeOverlapCount) {
+    return candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount;
   }
-  return candidateAudit.severeOverlapCount < incumbentAudit.severeOverlapCount;
+  return candidateAudit.maxBondLengthDeviation < incumbentAudit.maxBondLengthDeviation - 1e-9;
+}
+
+function isAcceptablePolyoxoRescuePlacement(candidateAudit, incumbentAudit) {
+  if (!candidateAudit) {
+    return false;
+  }
+  if (!incumbentAudit) {
+    return true;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if (candidateAudit.maxBondLengthDeviation > incumbentAudit.maxBondLengthDeviation + 1e-9) {
+    return false;
+  }
+  return candidateAudit.severeOverlapCount <= Math.max(
+    incumbentAudit.severeOverlapCount,
+    ORGANOMETALLIC_RESCUE_LIMITS.polyoxoRescueMaxSevereOverlapCount
+  );
 }
 
 function scoreClusterLigandPosition(position, existingCoords, frameworkCentroid, anchorIds) {
@@ -452,7 +471,7 @@ function isPolyoxoFragmentRecord(layoutGraph, record) {
 }
 
 function shouldTryPolyoxoClusterRescue(layoutGraph, metalAtomIds, fragmentRecords, incumbentAudit) {
-  if (!incumbentAudit || incumbentAudit.bondLengthFailureCount <= 0) {
+  if (!incumbentAudit || (incumbentAudit.bondLengthFailureCount <= 0 && incumbentAudit.severeOverlapCount <= 0)) {
     return false;
   }
   if (metalAtomIds.length < ORGANOMETALLIC_RESCUE_LIMITS.polyoxoMinMetalCount || fragmentRecords.length === 0) {
@@ -928,7 +947,10 @@ export function layoutOrganometallicFamily(layoutGraph, component, bondLength) {
       bondLength
     );
     const polyoxoRescueAudit = auditOrganometallicPlacement(layoutGraph, participantAtomIds, polyoxoRescuePlacement, bondLength);
-    if (isBetterOrganometallicPlacement(polyoxoRescueAudit, bestAudit)) {
+    if (
+      isBetterOrganometallicPlacement(polyoxoRescueAudit, bestAudit)
+      || isAcceptablePolyoxoRescuePlacement(polyoxoRescueAudit, bestAudit)
+    ) {
       bestPlacement = polyoxoRescuePlacement;
     }
   }

@@ -300,6 +300,29 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertOppositePair(result, 'S11', 'O13', 'O14');
   });
 
+  it('keeps aryl sulfonamide oxo ligands opposed after overlap cleanup clears neighboring ester oxygen', () => {
+    const result = runPipeline(parseSMILES('COC(=O)c1cc(F)ccc1NS(=O)(=O)c2cc(Cl)ccc2Cl'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.labelOverlapCount, 0);
+    assert.equal(hasHypervalentAngleTidyNeed(result.layoutGraph, result.coords), false);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S13']) }) < 1e-9);
+    assertBondAngle(result, 'O4', 'C3', 'C5', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'O4', 'C3', 'O2', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'C5', 'C3', 'O2', (2 * Math.PI) / 3);
+    assertOrthogonalCross(result, ['S13']);
+    assertOppositePair(result, 'S13', 'C16', 'N12');
+    assertOppositePair(result, 'S13', 'O14', 'O15');
+  });
+
   it('keeps constrained diaryl sulfone oxo ligands opposed without rotating bulky rings together', () => {
     const result = runPipeline(parseSMILES('Cc1cc(C)cc(c1)S(=O)(=O)c2c([nH]c3ccc(Cl)cc23)C(=O)NCc4ccccc4F'), {
       suppressH: true,
@@ -429,6 +452,24 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assertExteriorOxoV(result, 'S6', ['O7', 'O8'], Math.PI / 2);
+  });
+
+  it('keeps fused aromatic sulfone oxo leaves outside while preserving the adjacent divalent nitrogen angle', () => {
+    const result = runPipeline(parseSMILES('Brc1ccccc1C(=O)N(CCC#N)NC2=NS(=O)(=O)c3ccccc23'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(hasHypervalentAngleTidyNeed(result.layoutGraph, result.coords), false);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S18']) }) < 1e-9);
+    assertExteriorOxoV(result, 'S18', ['O19', 'O20'], Math.PI / 2);
+    assertBondAngle(result, 'C16', 'N15', 'N10', (2 * Math.PI) / 3);
   });
 
   it('uses a compact exterior sulfone V when the full ring-embedded spread would overlap a fused neighbor', () => {

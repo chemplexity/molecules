@@ -145,6 +145,7 @@ function isSafeFinalHypervalentRetouch(layoutGraph, candidateState, incumbentSta
     'inwardRingSubstituentCount',
     'outwardAxisRingSubstituentFailureCount',
     'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
     'labelOverlapCount'
   ]) {
     if ((candidateAudit[key] ?? 0) > (incumbentAudit[key] ?? 0)) {

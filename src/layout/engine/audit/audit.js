@@ -1,7 +1,14 @@
 /** @module audit/audit */
 
 import { recommendFallback } from './fallback.js';
-import { detectCollapsedMacrocycles, findSevereOverlaps, measureBondLengthDeviation, measureLabelOverlap, measureRingSubstituentReadability } from './invariants.js';
+import {
+  detectCollapsedMacrocycles,
+  findSevereOverlaps,
+  findVisibleHeavyBondCrossings,
+  measureBondLengthDeviation,
+  measureLabelOverlap,
+  measureRingSubstituentReadability
+} from './invariants.js';
 import { SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 function isHeavyAtomOverlap(layoutGraph, overlap) {
@@ -19,7 +26,7 @@ function isHeavyAtomOverlap(layoutGraph, overlap) {
  * @param {number} [options.bondLength] - Target bond length.
  * @param {Map<string, 'planar'|'bridged'>} [options.bondValidationClasses] - Per-bond validation classes.
  * @param {object} [options.stereo] - Stereo summary produced by the stereo phase.
- * @returns {{ok: boolean, severeOverlapCount: number, labelOverlapCount: number, maxBondLengthDeviation: number, meanBondLengthDeviation: number, bondLengthFailureCount: number, collapsedMacrocycleCount: number, stereoContradiction: boolean, bridgedReadabilityFailure: boolean, ringSubstituentReadabilityFailureCount: number}} Audit summary.
+ * @returns {{ok: boolean, severeOverlapCount: number, visibleHeavyBondCrossingCount: number, labelOverlapCount: number, maxBondLengthDeviation: number, meanBondLengthDeviation: number, bondLengthFailureCount: number, collapsedMacrocycleCount: number, stereoContradiction: boolean, bridgedReadabilityFailure: boolean, ringSubstituentReadabilityFailureCount: number}} Audit summary.
  */
 export function auditLayout(layoutGraph, coords, options = {}) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
@@ -32,6 +39,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength, {
     bondValidationClasses: options.bondValidationClasses
   });
+  const visibleHeavyBondCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords).length;
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const ringSubstituentReadability = measureRingSubstituentReadability(layoutGraph, coords);
   const stereo = options.stereo ?? null;
@@ -75,6 +83,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
     minSevereOverlapDistance,
     worstOverlapDeficit,
     severeOverlapPenalty,
+    visibleHeavyBondCrossingCount,
     labelOverlapCount: labelOverlap.pairCount,
     maxBondLengthDeviation: bondDeviation.maxDeviation,
     meanBondLengthDeviation: bondDeviation.meanDeviation,

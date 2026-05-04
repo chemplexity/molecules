@@ -9,6 +9,7 @@ import {
   computeSubtreeOverlapCost,
   detectCollapsedMacrocycles,
   findSevereOverlaps,
+  findVisibleHeavyBondCrossings,
   measureBondLengthDeviation,
   measureDirectAttachedRingJunctionContinuationDistortion,
   measureFocusedPlacementCost,
@@ -247,6 +248,35 @@ describe('layout/engine/audit/invariants', () => {
     assert.equal(overlapStats.pairCount, 1);
     assert.ok(overlapStats.totalPenalty > 0);
     assert.ok(measureLayoutCost(graph, overlappingCoords, graph.options.bondLength) > measureLayoutCost(graph, separatedCoords, graph.options.bondLength));
+  });
+
+  it('reports visible heavy-bond crossings in the combined layout state', () => {
+    const molecule = new Molecule();
+    molecule.addAtom('a0', 'C');
+    molecule.addAtom('a1', 'C');
+    molecule.addAtom('a2', 'C');
+    molecule.addAtom('a3', 'C');
+    molecule.addBond('b0', 'a0', 'a1', {}, false);
+    molecule.addBond('b1', 'a2', 'a3', {}, false);
+    const graph = createLayoutGraph(molecule);
+    const crossingCoords = new Map([
+      ['a0', { x: 0, y: 0 }],
+      ['a1', { x: 1.5, y: 1.5 }],
+      ['a2', { x: 0, y: 1.5 }],
+      ['a3', { x: 1.5, y: 0 }]
+    ]);
+    const separatedCoords = new Map([
+      ['a0', { x: 0, y: 0 }],
+      ['a1', { x: 1.5, y: 1.5 }],
+      ['a2', { x: 3, y: 0 }],
+      ['a3', { x: 4.5, y: 1.5 }]
+    ]);
+
+    const layoutState = measureLayoutState(graph, crossingCoords, graph.options.bondLength);
+
+    assert.equal(findVisibleHeavyBondCrossings(graph, crossingCoords).length, 1);
+    assert.equal(layoutState.visibleHeavyBondCrossingCount, 1);
+    assert.equal(measureLayoutState(graph, separatedCoords, graph.options.bondLength).visibleHeavyBondCrossingCount, 0);
   });
 
   it('returns a combined layout state consistent with separate overlap and cost measurements', () => {

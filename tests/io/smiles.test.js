@@ -73,6 +73,9 @@ describe('parseSMILES', () => {
     assert.equal(validateValence(mol).length, 0);
     assert.equal(mol.getComponents().length, 1);
     assert.equal([...mol.atoms.values()].filter(atom => atom.name === 'Os').length, 1);
+    const osmiumBonds = [...mol.bonds.values()].filter(bond => bond.atoms.some(atomId => mol.atoms.get(atomId)?.name === 'Os'));
+    assert.equal(osmiumBonds.length, 5);
+    assert.ok(osmiumBonds.every(bond => bond.getKind() === 'coordinate'));
     assert.equal([...mol.bonds.values()].filter(bond => bond.properties.order === 1.5 && bond.properties.aromatic !== true).length, 0);
     assert.ok(
       [...mol.bonds.values()].some(

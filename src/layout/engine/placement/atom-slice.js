@@ -186,8 +186,13 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
   };
   const scaffoldPlan = chooseScaffoldPlan(layoutGraph, sliceComponent);
   const family = options.forceFamily ?? (heuristicFamily === 'organometallic' ? heuristicFamily : scaffoldPlan.rootScaffold.family);
+  const useDirectLargeBridgedRoot =
+    !options.forceFamily
+    && scaffoldPlan.mixedMode
+    && scaffoldPlan.rootScaffold.family === 'bridged'
+    && (scaffoldPlan.rootScaffold.atomCount ?? 0) > 60;
 
-  if (scaffoldPlan.mixedMode && !options.forceFamily) {
+  if (scaffoldPlan.mixedMode && !options.forceFamily && !useDirectLargeBridgedRoot) {
     return layoutMixedFamily(layoutGraph, sliceComponent, adjacency, scaffoldPlan, bondLength, options.mixedOptions ?? null);
   }
 
@@ -199,7 +204,10 @@ export function layoutAtomSlice(layoutGraph, component, bondLength, options = {}
   } else if (family === 'macrocycle') {
     result = layoutMacrocycleFamily(sliceRings, bondLength, { layoutGraph, templateId: scaffoldPlan.rootScaffold.templateId ?? null });
   } else if (family === 'bridged') {
-    result = layoutBridgedFamily(sliceRings, bondLength, { layoutGraph, templateId: scaffoldPlan.rootScaffold.templateId ?? null });
+    result = useDirectLargeBridgedRoot
+      ? layoutFusedCageKamadaKawai(sliceRings, bondLength, { layoutGraph, templateId: scaffoldPlan.rootScaffold.templateId ?? null })
+      : null;
+    result ??= layoutBridgedFamily(sliceRings, bondLength, { layoutGraph, templateId: scaffoldPlan.rootScaffold.templateId ?? null });
   } else if (family === 'fused') {
     const ringAdj = new Map(sliceRings.map(ring => [ring.id, []]));
     const ringConnectionByPair = new Map();

@@ -1,5 +1,19 @@
 # Change Log
 
+## 2026-05-03
+
+- Preserve transition-metal ligand links as coordinate bonds when parsing SMILES so polypyridyl ruthenium complexes keep ligand rings readable.
+- Let moderately large glycoside ring chains retry alternate mixed roots so saturated sugar exits stay outward and overlap-free.
+- Treat tetraaryl silicon centers as orthogonal cleanup targets so aryl silanes finish with audit-clean Si crosses.
+- Add a compact acyl-substituted spiro-bridged aza cage template so ammonium cage rings avoid the generic bridged fallback warp.
+- Score visible heavy-bond crossings during mixed placement and cleanup so sodium tetrazole isopropyl branches avoid neighboring aryl bonds.
+- Retry compact mixed roots when blocked terminal carbonyl slots would otherwise force a non-trigonal linker fan.
+- Let four-member saturated ring fan refinement move the larger late-grown branch and resnap terminal multiple-bond leaves when that side is crowding a neighboring ring.
+- Let aryl sulfonamide exact sulfur cleanup win over temporary label-only tradeoffs without letting stabilization re-bend the oxo cross or distort the neighboring ester carbonyl fan.
+- Let crowded terminal amide carbonyls clear neighboring rings while keeping the cationic ring fan and terminal amide center readable.
+- Let fused aromatic sulfones enter hypervalent cleanup and keep attached divalent nitrogens planar.
+- Mirror ring-adjacent bulky alkyl branches during cleanup so aryl exits and saturated branch points stay trigonal while clearing substituent clashes.
+
 ## 2026-05-02
 
 - Keep theta-like bridged ring projections on separated center and outer lanes so compact cage branches clear.

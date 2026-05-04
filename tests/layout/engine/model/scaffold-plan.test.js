@@ -99,6 +99,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, false);
   });
 
+  it('uses the spiro-bridged aza cage template when the acyl tail marks the exterior corner', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC(=O)C1CC2(C1)[NH2+]C1CC2C1'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'spiro-bridged-aza-cage');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the benzoxathiobicyclo template for bridged sulfur-oxygen mixed cages', () => {
     const graph = createLayoutGraph(parseSMILES('CC1(C)CC2CC(C2)COC2=CC=C1S2'));
     const plan = buildScaffoldPlan(graph, graph.components[0]);

@@ -270,6 +270,12 @@ describe('layout/engine/templates/match', () => {
     assert.equal(match.id, 'oxabicyclo-3-1-1');
   });
 
+  it('matches the acyl-substituted spiro-bridged aza cage scaffold', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC(=O)C1CC2(C1)[NH2+]C1CC2C1'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'spiro-bridged-aza-cage');
+  });
+
   it('matches the compact spiro-bridged oxetane cage scaffold too', () => {
     const graph = createLayoutGraph(parseSMILES('N#CC1CC2(C1)C1CCC2O1'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));

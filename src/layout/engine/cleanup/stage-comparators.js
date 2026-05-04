@@ -51,13 +51,18 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
     return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
   }
+  if ((candidate.audit.visibleHeavyBondCrossingCount ?? 0) !== (incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) {
+    return (candidate.audit.visibleHeavyBondCrossingCount ?? 0) < (incumbent.audit.visibleHeavyBondCrossingCount ?? 0);
+  }
   if (candidate.audit.labelOverlapCount !== incumbent.audit.labelOverlapCount) {
     return candidate.audit.labelOverlapCount < incumbent.audit.labelOverlapCount;
   }
   const divalentContinuationIncrease = (candidate.divalentContinuationPenalty ?? 0) - (incumbent.divalentContinuationPenalty ?? 0);
   const omittedHydrogenTrigonalImprovement = (incumbent.omittedHydrogenTrigonalPenalty ?? 0) - (candidate.omittedHydrogenTrigonalPenalty ?? 0);
+  const phosphateArylTailImprovement = (incumbent.phosphateArylTailPenalty ?? 0) - (candidate.phosphateArylTailPenalty ?? 0);
   const allowsDivalentPresentationTradeoff = allowPresentationTieBreak && (
     omittedHydrogenTrigonalImprovement > divalentContinuationIncrease + 1e-9
+    || phosphateArylTailImprovement > divalentContinuationIncrease + 1e-9
   );
   if (divalentContinuationIncrease > 1e-9 && !allowsDivalentPresentationTradeoff) {
     return false;
@@ -96,6 +101,12 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   }
   if (allowPresentationTieBreak && Math.abs((candidate.terminalMultipleBondLeafFanPenalty ?? 0) - (incumbent.terminalMultipleBondLeafFanPenalty ?? 0)) > 1e-9) {
     return (candidate.terminalMultipleBondLeafFanPenalty ?? 0) < (incumbent.terminalMultipleBondLeafFanPenalty ?? 0);
+  }
+  if (allowPresentationTieBreak && Math.abs((candidate.smallRingExteriorFanExactMaxPenalty ?? 0) - (incumbent.smallRingExteriorFanExactMaxPenalty ?? 0)) > 1e-9) {
+    return (candidate.smallRingExteriorFanExactMaxPenalty ?? 0) < (incumbent.smallRingExteriorFanExactMaxPenalty ?? 0);
+  }
+  if (allowPresentationTieBreak && Math.abs((candidate.smallRingExteriorFanExactPenalty ?? 0) - (incumbent.smallRingExteriorFanExactPenalty ?? 0)) > 1e-9) {
+    return (candidate.smallRingExteriorFanExactPenalty ?? 0) < (incumbent.smallRingExteriorFanExactPenalty ?? 0);
   }
   if (allowPresentationTieBreak && Math.abs((candidate.attachedRingPeripheralPenalty ?? 0) - (incumbent.attachedRingPeripheralPenalty ?? 0)) > 1e-9) {
     return (candidate.attachedRingPeripheralPenalty ?? 0) < (incumbent.attachedRingPeripheralPenalty ?? 0);
@@ -168,6 +179,39 @@ export function shouldPreferOverlapWinOverMinorReadabilityRegression(candidate, 
 }
 
 /**
+ * Allows a cleanup stage that removes visible heavy-bond crossings to tolerate
+ * the same small readability tradeoff permitted for atom-overlap wins.
+ * @param {object} candidate - Candidate stage result.
+ * @param {object|null} incumbent - Current incumbent stage result.
+ * @returns {boolean} True when the crossing win should override readability tie-breaks.
+ */
+export function shouldPreferCrossingWinOverMinorReadabilityRegression(candidate, incumbent) {
+  if (!incumbent || (candidate.audit.visibleHeavyBondCrossingCount ?? 0) >= (incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidate.audit.visibleHeavyBondCrossingCount ?? 0) !== 0) {
+    return false;
+  }
+  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return false;
+  }
+  if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
+    return false;
+  }
+  if (candidate.audit.maxBondLengthDeviation > incumbent.audit.maxBondLengthDeviation + 1e-9) {
+    return false;
+  }
+  if (candidate.audit.labelOverlapCount > incumbent.audit.labelOverlapCount) {
+    return false;
+  }
+  return (
+    candidate.audit.ringSubstituentReadabilityFailureCount <= incumbent.audit.ringSubstituentReadabilityFailureCount + 1
+    && candidate.audit.inwardRingSubstituentCount <= incumbent.audit.inwardRingSubstituentCount + 1
+    && candidate.audit.outwardAxisRingSubstituentFailureCount <= incumbent.audit.outwardAxisRingSubstituentFailureCount + 1
+  );
+}
+
+/**
  * Compares geometry stages for protected families that guard bond integrity more aggressively.
  * @param {{primaryFamily: string, mixedMode: boolean}} familySummary - Family classification.
  * @param {object} placement - Placement result.
@@ -177,6 +221,9 @@ export function shouldPreferOverlapWinOverMinorReadabilityRegression(candidate, 
  */
 export function isPreferredProtectedCleanupStage(familySummary, placement, candidate, incumbent) {
   if (!incumbent) {
+    return true;
+  }
+  if (shouldPreferCrossingWinOverMinorReadabilityRegression(candidate, incumbent)) {
     return true;
   }
   if (candidate.audit.collapsedMacrocycleCount !== incumbent.audit.collapsedMacrocycleCount) {
@@ -219,6 +266,9 @@ export function isPreferredProtectedCleanupStage(familySummary, placement, candi
   }
   if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
     return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  }
+  if ((candidate.audit.visibleHeavyBondCrossingCount ?? 0) !== (incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) {
+    return (candidate.audit.visibleHeavyBondCrossingCount ?? 0) < (incumbent.audit.visibleHeavyBondCrossingCount ?? 0);
   }
   if (Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
     return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
@@ -278,6 +328,9 @@ export function isPreferredCleanupGeometryStage(candidate, incumbent) {
   if (!incumbent) {
     return true;
   }
+  if (shouldPreferCrossingWinOverMinorReadabilityRegression(candidate, incumbent)) {
+    return true;
+  }
   if (candidate.audit.ok !== incumbent.audit.ok) {
     return candidate.audit.ok;
   }
@@ -301,6 +354,9 @@ export function isPreferredCleanupGeometryStage(candidate, incumbent) {
   }
   if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
     return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  }
+  if ((candidate.audit.visibleHeavyBondCrossingCount ?? 0) !== (incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) {
+    return (candidate.audit.visibleHeavyBondCrossingCount ?? 0) < (incumbent.audit.visibleHeavyBondCrossingCount ?? 0);
   }
   if (candidate.audit.labelOverlapCount !== incumbent.audit.labelOverlapCount) {
     return candidate.audit.labelOverlapCount < incumbent.audit.labelOverlapCount;

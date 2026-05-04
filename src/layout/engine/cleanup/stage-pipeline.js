@@ -9,11 +9,16 @@ import { collectProtectedEZAtomIds } from '../stereo/ez.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 import { mergeFrozenAtomIds } from './frozen-atoms.js';
 import {
+  collectMovableAttachedRingDescriptors,
   measureAttachedRingPeripheralFocusPenalty,
   measureAttachedRingRootOutwardPresentationPenalty,
   runProjectedTetrahedralAttachedRingSlotSnap
 } from './presentation/attached-ring-fallback.js';
-import { hasOutstandingRingPresentationNeed, runRingPresentationCleanup } from './presentation/ring-presentation.js';
+import {
+  hasOutstandingRingPresentationNeed,
+  measureSmallRingExteriorFanExactPenalty,
+  runRingPresentationCleanup
+} from './presentation/ring-presentation.js';
 import { measurePhosphateArylTailPresentationPenalty } from './presentation/phosphate-aryl-tail.js';
 import { measureTerminalCationRingProximityPenalty } from './presentation/terminal-cation-ring-clearance.js';
 import {
@@ -45,7 +50,7 @@ function hasPostCleanupHook(policy, hookName) {
 const HOOK_STEP_META = {
   'ring-perimeter-correction': ['Ring Perimeter Correction', 'Macrocycle ring perimeter drift corrected.'],
   'bridged-bond-tidy': ['Bridged Bond Tidy', 'Bridged system bond angles optimized.'],
-  'hypervalent-angle-tidy': ['Hypervalent Angle Tidy', 'S/P/Se/As center angles orthogonalized.'],
+  'hypervalent-angle-tidy': ['Hypervalent Angle Tidy', 'S/P/Se/As and tetraaryl Si center angles orthogonalized.'],
   'hypervalent-angle-retouch': ['Hypervalent Angle Retouch', 'Hypervalent center angles re-orthogonalized after bounded presentation rescue.'],
   'hypervalent-angle-final-retouch': ['Hypervalent Angle Final Retouch', 'Hypervalent center angles re-orthogonalized after specialist cleanup.'],
   'ligand-angle-tidy': ['Ligand Angle Tidy', 'Metal-ligand bond angles optimized.'],
@@ -68,6 +73,7 @@ function hasCoreGeometryCleanupNeed(stageResult) {
   const audit = stageResult?.audit ?? null;
   return (
     (audit?.severeOverlapCount ?? 0) > 0
+    || (audit?.visibleHeavyBondCrossingCount ?? 0) > 0
     || (audit?.bondLengthFailureCount ?? 0) > 0
     || (audit?.collapsedMacrocycleCount ?? 0) > 0
   );
@@ -75,6 +81,7 @@ function hasCoreGeometryCleanupNeed(stageResult) {
 
 function hasPresentationCleanupNeed(layoutGraph, stageResult, options = {}) {
   const audit = stageResult?.audit ?? null;
+  const coords = stageResult?.coords;
   return (
     (audit?.labelOverlapCount ?? 0) > 0
     || (audit?.stereoContradiction ?? false) === true
@@ -86,10 +93,22 @@ function hasPresentationCleanupNeed(layoutGraph, stageResult, options = {}) {
       && measureRingTerminalHeteroOutwardPenalty(layoutGraph, stageResult?.coords).maxDeviation > 1e-6
     )
     || hasOutstandingRingPresentationNeed(layoutGraph, stageResult)
-    || hasSymmetryTidyNeed(stageResult?.coords, {
-      epsilon: options.symmetryEpsilon,
-      layoutGraph
-    })
+    || (
+      options.includeAttachedRingFallback === true
+      && coords instanceof Map
+      && collectMovableAttachedRingDescriptors(
+        layoutGraph,
+        coords,
+        options.frozenAtomIds ?? null
+      ).some(descriptor => layoutGraph.atoms.get(descriptor.anchorAtomId)?.aromatic === true)
+    )
+    || (
+      options.includeSymmetry === true
+      && hasSymmetryTidyNeed(stageResult?.coords, {
+        epsilon: options.symmetryEpsilon,
+        layoutGraph
+      })
+    )
   );
 }
 
@@ -191,6 +210,7 @@ export function buildCleanupStageGraph(context) {
   const scorePresentationTieBreakMetrics = coords => {
     const terminalHeteroOutwardPenalty = measureRingTerminalHeteroOutwardPenalty(layoutGraph, coords);
     const terminalMultipleBondLeafFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, coords);
+    const smallRingExteriorFanExactPenalty = measureSmallRingExteriorFanExactPenalty(layoutGraph, coords);
     return {
       presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords),
       hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, coords),
@@ -203,7 +223,9 @@ export function buildCleanupStageGraph(context) {
       terminalHeteroOutwardMaxPenalty: terminalHeteroOutwardPenalty.maxDeviation,
       terminalHeteroOutwardPenalty: terminalHeteroOutwardPenalty.totalDeviation,
       terminalMultipleBondLeafFanMaxPenalty: terminalMultipleBondLeafFanPenalty.maxDeviation,
-      terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation
+      terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation,
+      smallRingExteriorFanExactMaxPenalty: smallRingExteriorFanExactPenalty.maxDeviation,
+      smallRingExteriorFanExactPenalty: smallRingExteriorFanExactPenalty.totalDeviation
     };
   };
   const auditFinalStereoWithPresentationMetrics = coords => ({
@@ -215,9 +237,10 @@ export function buildCleanupStageGraph(context) {
    * least as good as the incumbent stage.
    * @param {object|null} candidateAudit - Candidate audit summary.
    * @param {object|null} incumbentAudit - Incumbent audit summary.
+   * @param {{maxLabelOverlapIncrease?: number}} [options] - Optional label-overlap allowance.
    * @returns {boolean} True when audit counts did not regress.
    */
-  const auditCountsDoNotWorsen = (candidateAudit, incumbentAudit) => {
+  const auditCountsDoNotWorsen = (candidateAudit, incumbentAudit, options = {}) => {
     if (!candidateAudit || !incumbentAudit || (incumbentAudit.ok === true && candidateAudit.ok !== true)) {
       return false;
     }
@@ -230,11 +253,14 @@ export function buildCleanupStageGraph(context) {
       'inwardRingSubstituentCount',
       'outwardAxisRingSubstituentFailureCount',
       'severeOverlapCount',
-      'labelOverlapCount'
+      'visibleHeavyBondCrossingCount'
     ]) {
       if ((candidateAudit[key] ?? 0) > (incumbentAudit[key] ?? 0)) {
         return false;
       }
+    }
+    if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0) + (options.maxLabelOverlapIncrease ?? 0)) {
+      return false;
     }
     return !((candidateAudit.stereoContradiction ?? false) && !(incumbentAudit.stereoContradiction ?? false));
   };
@@ -272,8 +298,18 @@ export function buildCleanupStageGraph(context) {
     }
     return (
       (candidate.hypervalentDeviation ?? Number.POSITIVE_INFINITY) < (incumbent?.hypervalentDeviation ?? Number.POSITIVE_INFINITY) - 1e-9
-      && auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)
+      && auditCountsDoNotWorsen(candidate.audit, incumbent?.audit, { maxLabelOverlapIncrease: 1 })
     );
+  };
+  const stabilizationComparator = (candidate, incumbent) => {
+    if (
+      worsensHypervalentDeviation(candidate, incumbent)
+      && (candidate.audit?.severeOverlapCount ?? 0) >= (incumbent?.audit?.severeOverlapCount ?? 0)
+      && (candidate.audit?.bondLengthFailureCount ?? 0) >= (incumbent?.audit?.bondLengthFailureCount ?? 0)
+    ) {
+      return false;
+    }
+    return auditFinalStereoWithTieBreak(candidate, incumbent);
   };
   const terminalHeteroRetouchComparator = (candidate, incumbent) => {
     if (auditFinalStereoWithTieBreak(candidate, incumbent)) {
@@ -293,7 +329,8 @@ export function buildCleanupStageGraph(context) {
       'ringSubstituentReadabilityFailureCount',
       'inwardRingSubstituentCount',
       'outwardAxisRingSubstituentFailureCount',
-      'severeOverlapCount'
+      'severeOverlapCount',
+      'visibleHeavyBondCrossingCount'
     ]) {
       if ((candidate.audit[key] ?? 0) > (incumbent.audit[key] ?? 0)) {
         return false;
@@ -405,6 +442,9 @@ export function buildCleanupStageGraph(context) {
           bondLength,
           includeRingSubstituent: hasRingSubstituentHook,
           includeTerminalHetero: hasRingTerminalHeteroHook,
+          includeAttachedRingFallback: hasRingSubstituentHook,
+          frozenAtomIds: placement.frozenAtomIds,
+          includeSymmetry: familySummary.primaryFamily === 'fused' && familySummary.mixedMode !== true,
           symmetryEpsilon: bondLength * 0.01
         });
       },
@@ -493,6 +533,8 @@ export function buildCleanupStageGraph(context) {
           terminalHeteroOutwardPenalty: presentationResult.terminalHeteroOutwardPenalty,
           terminalMultipleBondLeafFanMaxPenalty: presentationResult.terminalMultipleBondLeafFanMaxPenalty,
           terminalMultipleBondLeafFanPenalty: presentationResult.terminalMultipleBondLeafFanPenalty,
+          smallRingExteriorFanExactMaxPenalty: presentationResult.smallRingExteriorFanExactMaxPenalty,
+          smallRingExteriorFanExactPenalty: presentationResult.smallRingExteriorFanExactPenalty,
           phosphateArylTailPenalty: presentationResult.phosphateArylTailPenalty,
           terminalCationRingProximityPenalty: presentationResult.terminalCationRingProximityPenalty,
           stabilizationRequest:
@@ -543,8 +585,22 @@ export function buildCleanupStageGraph(context) {
     {
       name: 'stabilizeAfterCleanup',
       parentStage: 'best',
-      guard(_stageResults, _incumbent, inputContext) {
-        return inputContext.stabilizationRequest?.requested === true;
+      guard(_stageResults, incumbent, inputContext) {
+        const request = inputContext.stabilizationRequest ?? null;
+        if (request?.requested !== true) {
+          return false;
+        }
+        const reasons = request.reasons ?? [];
+        if (
+          reasons.length === 1
+          && reasons[0] === 'presentation'
+          && incumbent?.audit?.ok === true
+          && (incumbent.audit.severeOverlapCount ?? 0) === 0
+          && (incumbent.audit.bondLengthFailureCount ?? 0) === 0
+        ) {
+          return false;
+        }
+        return true;
       },
       transformFn(parentCoords, inputContext) {
         const stabilizationRequest = inputContext.stabilizationRequest ?? null;
@@ -569,7 +625,7 @@ export function buildCleanupStageGraph(context) {
         return postHookCleanup;
       },
       scoreFn: auditFinalStereoWithPresentationMetrics,
-      comparatorFn: auditFinalStereoWithTieBreak
+      comparatorFn: stabilizationComparator
     },
     {
       name: 'ringTerminalHeteroFinalRetouch',

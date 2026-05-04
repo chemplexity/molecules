@@ -707,7 +707,8 @@ export function levelCoords(coords, molecule) {
       bondData.push({
         angle,
         increment: bondGrid.get(bondId) ?? Math.PI / 6,
-        preferredPath: preferredPathBondIds.has(bondId)
+        preferredPath: preferredPathBondIds.has(bondId),
+        ringBond: bondGrid.has(bondId)
       });
     }
   }
@@ -718,14 +719,18 @@ export function levelCoords(coords, molecule) {
 
   const tiltPenalty = 1e-4;
   const preferredAxisPenalty = 1;
+  const horizontalRingBondPenalty = 0.25;
   function score(rotation) {
     let total = 0;
-    for (const { angle, increment, preferredPath } of bondData) {
+    for (const { angle, increment, preferredPath, ringBond } of bondData) {
       let deviation = (((angle + rotation) % increment) + increment) % increment;
       if (deviation > increment / 2) {
         deviation -= increment;
       }
       total += (preferredPath ? preferredPathWeight : 1) * deviation * deviation;
+      if (ringBond) {
+        total += horizontalRingBondPenalty * deviationFromHorizontalAxis(angle + rotation) ** 2;
+      }
     }
     if (preferredAxisAngle != null) {
       const axisDeviation = deviationFromHorizontalAxis(preferredAxisAngle + rotation);

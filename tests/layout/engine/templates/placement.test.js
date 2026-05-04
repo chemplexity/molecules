@@ -330,6 +330,23 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('C5').y < coords.get('C7').y);
   });
 
+  it('places the acyl-substituted spiro-bridged aza cage with a compact exterior tail corner', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC(=O)C1CC2(C1)[NH2+]C1CC2C1'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'spiro-bridged-aza-cage', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const xs = [...coords.values()].map(position => position.x);
+    const ys = [...coords.values()].map(position => position.y);
+
+    assert.equal(coords.size, 9);
+    assert.equal(coords.get('C5').x, Math.min(...xs));
+    assert.equal(coords.get('N9').y, Math.max(...ys));
+    assert.ok(coords.get('C6').x < coords.get('C7').x);
+    assert.ok(coords.get('C8').x < coords.get('C7').x);
+    assert.ok(coords.get('C11').x > coords.get('N9').x);
+    assert.ok(coords.get('C12').x > coords.get('C11').x);
+    assert.ok(coords.get('C14').x > coords.get('C7').x);
+    assert.ok(coords.get('C13').y < coords.get('C14').y);
+  });
+
   it('places the compact spiro-bridged oxetane cage with the nitrile corner outside', () => {
     const graph = createLayoutGraph(parseSMILES('N#CC1CC2(C1)C1CCC2O1'), { suppressH: true });
     const coords = placeTemplateCoords(graph, 'spiro-bridged-oxetane', graph.ringSystems[0].atomIds, graph.options.bondLength);

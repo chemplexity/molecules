@@ -614,6 +614,15 @@ function createSpiroBridgedOxetaneTemplate() {
 }
 
 /**
+ * Creates the compact spiro-bridged aza cage scaffold graph found in
+ * acyl-substituted ammonium cages like `CCC(=O)C1CC2(C1)[NH2+]C1CC2C1`.
+ * @returns {Molecule} Spiro-bridged aza cage scaffold template molecule.
+ */
+function createSpiroBridgedAzaCageTemplate() {
+  return createHeavyTemplateFromSmiles('spiro-bridged-aza-cage', 'C1CC2(C1)[NH2+]C1CC2C1');
+}
+
+/**
  * Creates the benzoxathiobicyclo scaffold graph used by bridged benzothiophene
  * cages like `CC1(C)CC2CC(C2)COC2=CC=C1S2`.
  * @returns {Molecule} Benzoxathiobicyclo scaffold template molecule.
@@ -1225,6 +1234,26 @@ function createSpiroBridgedOxetaneGeometry() {
 }
 
 /**
+ * Creates a compact projection for the acyl-substituted spiro-bridged aza
+ * cage. The substituted cyclobutane opens left, while the ammonium bridge and
+ * fused cyclobutane are folded into a short right-hand cage projection.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createSpiroBridgedAzaCageGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C3', { x: 0.0, y: 0.0 }],
+    ['C2', { x: -0.7, y: -0.7 }],
+    ['C1', { x: -1.4, y: 0.0 }],
+    ['C4', { x: -0.7, y: 0.7 }],
+    ['N5', { x: 0.82, y: 0.94 }],
+    ['C7', { x: 1.58, y: 0.08 }],
+    ['C10', { x: 0.82, y: -0.24 }],
+    ['C9', { x: 0.54, y: -1.02 }],
+    ['C8', { x: 1.66, y: -0.9 }]
+  ]);
+}
+
+/**
  * Creates a conventional bridged benzoxathiobicyclo projection matching the
  * supplied medicinal-chemistry sketch: gem-dimethyl-bearing junction on the
  * left, the cyclobutane bridge on the upper right, and the benzothiophene-like
@@ -1398,6 +1427,20 @@ export function buildTemplateLibrary() {
     createTemplate('tropane', 'bridged', 57, createTropaneTemplate(), geometrySpec('normalized-xy', createTropaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('cubane', 'bridged', 55, createCubaneTemplate(), geometrySpec('normalized-xy', createCubaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('oxabicyclo-3-1-1', 'bridged', 54, createOxabicyclo311Template(), geometrySpec('normalized-xy', createOxabicyclo311Geometry(), OXABICYCLO311_VALIDATION)),
+    createTemplate(
+      'spiro-bridged-aza-cage',
+      'bridged',
+      53.75,
+      createSpiroBridgedAzaCageTemplate(),
+      geometrySpec('normalized-xy', createSpiroBridgedAzaCageGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C1', element: 'C', minCount: 1 }
+          ]
+        }
+      }
+    ),
     createTemplate(
       'spiro-bridged-oxetane',
       'bridged',

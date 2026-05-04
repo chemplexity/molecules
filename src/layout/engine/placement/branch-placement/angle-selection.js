@@ -492,6 +492,35 @@ function isConjugatedTrigonalCenter(layoutGraph, atomId) {
 }
 
 /**
+ * Returns whether a pair of heavy neighbors should make an attached divalent
+ * nitrogen preserve a planar 120-degree continuation. Conjugated
+ * carbonyl/imine-like neighbors already imply planarity; the aromatic case is
+ * kept narrower and only covers aryl-hydrazine style `aryl-N-N` linkers.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string|null} firstAtomId - First neighbor atom ID.
+ * @param {string|null} secondAtomId - Second neighbor atom ID.
+ * @returns {boolean} True when the neighbor pair supports planar divalent nitrogen geometry.
+ */
+export function isPlanarDivalentNitrogenContinuationPair(layoutGraph, firstAtomId, secondAtomId) {
+  if (!layoutGraph || !firstAtomId || !secondAtomId) {
+    return false;
+  }
+  if (isConjugatedTrigonalCenter(layoutGraph, firstAtomId) || isConjugatedTrigonalCenter(layoutGraph, secondAtomId)) {
+    return true;
+  }
+  const firstAtom = layoutGraph.atoms.get(firstAtomId);
+  const secondAtom = layoutGraph.atoms.get(secondAtomId);
+  return Boolean(
+    firstAtom
+    && secondAtom
+    && (
+      (firstAtom.aromatic === true && secondAtom.element === 'N' && secondAtom.aromatic !== true)
+      || (secondAtom.aromatic === true && firstAtom.element === 'N' && firstAtom.aromatic !== true)
+    )
+  );
+}
+
+/**
  * Returns whether a tertiary nitrogen should be treated as planar because one
  * of its single-bond neighbors is a conjugated trigonal center, a divalent
  * nitrogen conjugated to one, or a sulfonyl-like hypervalent center.
@@ -723,7 +752,7 @@ export function isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtom
     EXACT_SIMPLE_ACYCLIC_CONTINUATION_ELEMENTS.has(anchorAtom.element)
     || (
       anchorAtom.element === 'N'
-      && (isConjugatedTrigonalCenter(layoutGraph, parentAtomId) || isConjugatedTrigonalCenter(layoutGraph, childAtomId))
+      && isPlanarDivalentNitrogenContinuationPair(layoutGraph, parentAtomId, childAtomId)
     );
   if (!exactEligibleElement) {
     return false;

@@ -4,6 +4,7 @@ import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
 import { auditLayout } from '../../../src/layout/engine/audit/audit.js';
 import { findVisibleHeavyBondCrossings } from '../../../src/layout/engine/audit/invariants.js';
+import { measureOrthogonalHypervalentDeviation } from '../../../src/layout/engine/cleanup/hypervalent-angle-tidy.js';
 import { pointInPolygon } from '../../../src/layout/engine/geometry/polygon.js';
 import { angleOf, angularDifference, centroid, distance, sub } from '../../../src/layout/engine/geometry/vec2.js';
 import { computeBounds } from '../../../src/layout/engine/geometry/bounds.js';
@@ -69,6 +70,19 @@ function bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighb
     angleOf(sub(coords.get(firstNeighborAtomId), coords.get(centerAtomId))),
     angleOf(sub(coords.get(secondNeighborAtomId), coords.get(centerAtomId)))
   ) * (180 / Math.PI);
+}
+
+function assertOrthogonalCross(angles, label) {
+  const sortedAngles = [...angles].map(angle => ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2)).sort((first, second) => first - second);
+  const deltas = sortedAngles.map(
+    (angle, index) => ((sortedAngles[(index + 1) % sortedAngles.length] - angle) + Math.PI * 2) % (Math.PI * 2)
+  );
+  for (const delta of deltas) {
+    assert.ok(
+      Math.abs(delta - Math.PI / 2) < 1e-6,
+      `${label} expected orthogonal 90 degree separations, got ${deltas.map(candidate => (candidate * 180 / Math.PI).toFixed(3)).join(', ')}`
+    );
+  }
 }
 
 /**
@@ -499,6 +513,36 @@ describe('layout/engine/pipeline', () => {
     assert.ok((result.metadata.placementAudit?.maxBondLengthDeviation ?? 1) < 0.35);
   });
 
+  it('keeps the acyl-substituted spiro-bridged aza cage compact and crossing-free', () => {
+    const result = runPipeline(parseSMILES('CCC(=O)C1CC2(C1)[NH2+]C1CC2C1'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bridgedReadabilityFailure, false);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.32);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+
+    const rightSpiroCornerAngle = bondAngleAtAtom(result.coords, 'C13', 'C7', 'C14');
+    const rightAmmoniumRingAngle = bondAngleAtAtom(result.coords, 'C11', 'C14', 'N9');
+    const rightRingBondLengths = [
+      distance(result.coords.get('C13'), result.coords.get('C14')),
+      distance(result.coords.get('C14'), result.coords.get('C11')),
+      distance(result.coords.get('C11'), result.coords.get('N9')),
+      distance(result.coords.get('N9'), result.coords.get('C7'))
+    ];
+
+    assert.ok(rightSpiroCornerAngle > 44, `expected the right spiro corner to open, got ${rightSpiroCornerAngle.toFixed(2)} degrees`);
+    assert.ok(rightAmmoniumRingAngle > 64, `expected the ammonium-side ring to stay open, got ${rightAmmoniumRingAngle.toFixed(2)} degrees`);
+    assert.ok(Math.min(...rightRingBondLengths) > 1.18, `expected right-side ring bonds to avoid compression, got ${rightRingBondLengths.map(length => length.toFixed(3)).join(', ')}`);
+  });
+
   it('keeps compact aromatic-bridged ammonium scaffolds from folding the saturated ring flat', () => {
     const result = runPipeline(parseSMILES('CC1NC2C[NH2+]C1(C)CCOC1=CC=CC2=C1'), {
       suppressH: true,
@@ -599,6 +643,26 @@ describe('layout/engine/pipeline', () => {
         assert.ok(dy < 0, 'expected wedge ligands to remain on the lower pair');
       }
     }
+  });
+
+  it('keeps ruthenium polypyridyl coordination closures from folding ligand rings', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'Cc1ccn2c(c1)-c1cc(CC3=C(F)C(F)=C(C(F)=C3F)C3=C(F)C(F)=C(N[C@H]4[C@H]5C[C@@H]6C[C@@H](C[C@H]4C6)C5)C(F)=C3F)ccn1[Ru++]2123N4C=CC=CC4=C4C=CC=CN14.C1=CN2C(C=C1)=C1C=CC=CN31'
+      ),
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+    const rutheniumBonds = [...result.layoutGraph.bonds.values()].filter(bond => bond.a === 'Ru51' || bond.b === 'Ru51');
+    const coordinateCrossings = findVisibleHeavyBondCrossings(result.layoutGraph, result.coords, {
+      bondValidationClasses: result.metadata.placementBondValidationClasses
+    }).filter(crossing => crossing.firstAtomIds.includes('Ru51') || crossing.secondAtomIds.includes('Ru51'));
+
+    assert.equal(result.metadata.primaryFamily, 'organometallic');
+    assert.equal(rutheniumBonds.length, 6);
+    assert.ok(rutheniumBonds.every(bond => bond.kind === 'coordinate'));
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(coordinateCrossings.length, 0);
   });
 
   it('keeps supported three-coordinate copper centers on an explicit trigonal-planar spread after cleanup', () => {
@@ -826,6 +890,37 @@ describe('layout/engine/pipeline', () => {
     }
     assert.equal(result.metadata.audit.ok, true);
     assert.ok(checkedAnchors.length >= 3, `expected multiple saturated ring oxygen roots to be checked, got ${checkedAnchors.length}`);
+  });
+
+  it('retries long glycoside ring-chain roots so saturated sugar exits stay linear and overlap-free', () => {
+    const result = runPipeline(parseSMILES('OC[C@@H]1O[C@H](<S[C@@H]2[C@@H](O)[C@@H](O)[C@@H](O[C@@H]3[C@@H](O)[C@@H](O)[C@H](O[C@@H]3CO)S[C@@H]3[C@@H](O)[C@@H](O)[C@@H](O[C@@H]4[C@@H](O)[C@@H](O)[C@H](O[C@@H]4CO)S[C@H]4[C@H](O)[C@@H](O)[C@H](O)O[C@H]4CO)O[C@@H]3CO)O[C@@H]2CO>)[C@H](O)[C@H](O)[C@H]1O'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'isolated-ring');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.equal(result.metadata.placementAudit.severeOverlapCount, 0);
+
+    for (const [anchorAtomId, childAtomId] of [
+      ['C31', 'C33'],
+      ['C58', 'C60'],
+      ['C75', 'C77'],
+      ['C80', 'C82']
+    ]) {
+      const preferredAngle = preferredRingAttachmentAngle(result.layoutGraph, result.coords, anchorAtomId);
+      assert.notEqual(preferredAngle, null);
+      const childAngle = angleOf(sub(result.coords.get(childAtomId), result.coords.get(anchorAtomId)));
+      assert.ok(angularDifference(childAngle, preferredAngle) < 1e-6, `expected ${anchorAtomId}-${childAtomId} to stay on the exact sugar ring outward axis`);
+    }
+
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C60', 'C58', 'O61') - 120) < 1e-6);
   });
 
   it('keeps the inter-ring ether between fused sugar rings on a proper ether bond angle', () => {
@@ -2207,7 +2302,7 @@ describe('layout/engine/pipeline', () => {
 
     assert.equal(result.metadata.primaryFamily, 'organometallic');
     assert.equal(result.metadata.mixedMode, true);
-    assert.ok(placementAudit.bondLengthFailureCount > 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.ok(result.metadata.audit.bondLengthFailureCount <= placementAudit.bondLengthFailureCount);
     assert.ok(result.metadata.audit.maxBondLengthDeviation <= placementAudit.maxBondLengthDeviation + 1e-6);
     assert.ok(result.metadata.audit.severeOverlapCount <= placementAudit.severeOverlapCount);
@@ -2415,6 +2510,43 @@ describe('layout/engine/pipeline', () => {
     assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
   });
 
+  it('keeps sodium tetrazole C2 isopropyl branches from crossing neighboring aryl bonds', () => {
+    const result = runPipeline(parseSMILES('[Na+].CC(C)n1nnnc1C(=C(c2ccc(F)cc2)c3ccc(F)cc3)\\C=C\\[C@@H](O)C[C@@H](O)CC(=O)[O-]'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+  });
+
+  it('keeps tetraaryl silane ligands on a perfect orthogonal cross', () => {
+    const result = runPipeline(parseSMILES('N(C1=CC=CC=C1)C1=CC=C2N(C3=CC=C(C=C3C2=C1)[Si](C1=CC=CC=C1)(C1=CC=CC=C1)C1=CC=CC=C1)C1=CC=CC=C1'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const siliconAtom = [...result.layoutGraph.atoms.values()].find(atom => atom.element === 'Si');
+    assert.ok(siliconAtom);
+    const ligandAngles = (result.layoutGraph.bondsByAtomId.get(siliconAtom.id) ?? [])
+      .map(bond => (bond.a === siliconAtom.id ? bond.b : bond.a))
+      .filter(atomId => result.layoutGraph.atoms.get(atomId)?.element !== 'H')
+      .map(atomId => angleOf(sub(result.coords.get(atomId), result.coords.get(siliconAtom.id))));
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords) < 1e-9);
+    assert.equal(ligandAngles.length, 4);
+    assertOrthogonalCross(ligandAngles, 'tetraaryl Si21');
+  });
+
   it('keeps compact aryl phosphate alkyl tails from folding back into neighboring rings', () => {
     const result = runPipeline(parseSMILES('CCCC1=CC=CC(CC#C)=C1OP(=O)(OC1=C(CCC)C=CC=C1CC#C)OC1=C(CCC)C=CC=C1CC#C'), {
       suppressH: true,
@@ -2435,8 +2567,9 @@ describe('layout/engine/pipeline', () => {
       `expected phosphate P-O-C spokes to stay broadly straight, got ${phosphateLinkerAngles.map(angle => angle.toFixed(2)).join(', ')}`
     );
     assert.ok(
-      phosphateLinkerAngles.filter(angle => angle >= 165 - 1e-6).length >= 2,
-      `expected at least two phosphate P-O-C spokes near linear, got ${phosphateLinkerAngles.map(angle => angle.toFixed(2)).join(', ')}`
+      phosphateLinkerAngles.filter(angle => angle >= 150 - 1e-6).length === 3
+        && phosphateLinkerAngles.some(angle => angle >= 165 - 1e-6),
+      `expected phosphate P-O-C spokes to remain broadly linear with one near-linear spoke, got ${phosphateLinkerAngles.map(angle => angle.toFixed(2)).join(', ')}`
     );
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C3', 'C2', 'C4') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C18', 'C17', 'C19') - 120) < 1e-6);

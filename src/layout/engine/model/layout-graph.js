@@ -66,6 +66,7 @@ function buildRingAtomIds(rings) {
 }
 
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
+const ORTHOGONAL_TETRAARYL_ELEMENTS = new Set(['Si']);
 
 function indexedHeavyDegree(atoms, bondsByAtomId, atomId) {
   let heavyDegree = 0;
@@ -79,21 +80,63 @@ function indexedHeavyDegree(atoms, bondsByAtomId, atomId) {
   return heavyDegree;
 }
 
-function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId) {
+/**
+ * Returns whether a direct bond can occupy a single-ligand slot around a
+ * hypervalent center. Aromatic ring bonds still count as fixed single ligands
+ * for fused sulfone-like centers so the policy enables hypervalent cleanup.
+ * @param {Map<string, object>} atoms - Layout atoms indexed by id.
+ * @param {Map<string, object[]>} bondsByAtomId - Bonds indexed by atom id.
+ * @param {Map<string, object[]>} atomToRings - Ring membership by atom id.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {object} bond - Direct ligand bond descriptor.
+ * @returns {boolean} True when the bond should count as a single ligand.
+ */
+function isHypervalentSingleLigandBond(atoms, bondsByAtomId, atomToRings, centerAtomId, bond) {
+  if (!bond || bond.kind !== 'covalent') {
+    return false;
+  }
+  if ((bond.order ?? 1) === 1 && !bond.aromatic) {
+    return true;
+  }
+  if (!bond.aromatic) {
+    return false;
+  }
+  const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+  const neighborAtom = atoms.get(neighborAtomId);
+  return Boolean(
+    neighborAtom
+    && neighborAtom.element !== 'H'
+    && indexedHeavyDegree(atoms, bondsByAtomId, neighborAtomId) > 1
+    && (atomToRings.get(centerAtomId)?.length ?? 0) > 0
+    && (atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+  );
+}
+
+function isOrthogonalTetraarylSingleLigand(atoms, atomToRings, atomId) {
+  const atom = atoms.get(atomId);
+  return Boolean(
+    atom
+    && atom.element === 'C'
+    && atom.aromatic === true
+    && (atomToRings.get(atomId)?.length ?? 0) > 0
+  );
+}
+
+function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId, atomToRings) {
   for (const atom of atoms.values()) {
-    if (!ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element)) {
+    if (
+      !ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element)
+      && !ORTHOGONAL_TETRAARYL_ELEMENTS.has(atom.element)
+    ) {
       continue;
     }
     let ligandCount = 0;
     let singleNeighborCount = 0;
+    const singleNeighborIds = [];
     let terminalMultipleNeighborCount = 0;
     let valid = true;
 
     for (const bond of bondsByAtomId.get(atom.id) ?? []) {
-      if (bond.aromatic) {
-        valid = false;
-        break;
-      }
       const neighborAtomId = bond.a === atom.id ? bond.b : bond.a;
       const neighborAtom = atoms.get(neighborAtomId);
       if (!neighborAtom) {
@@ -101,9 +144,9 @@ function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId) {
       }
 
       ligandCount++;
-      const order = bond.order ?? 1;
-      if (order === 1) {
+      if (isHypervalentSingleLigandBond(atoms, bondsByAtomId, atomToRings, atom.id, bond)) {
         singleNeighborCount++;
+        singleNeighborIds.push(neighborAtomId);
         continue;
       }
       if (neighborAtom.element === 'H') {
@@ -124,6 +167,12 @@ function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId) {
       && (
         (singleNeighborCount === 2 && terminalMultipleNeighborCount === 2)
         || (singleNeighborCount === 3 && terminalMultipleNeighborCount === 1)
+        || (
+          ORTHOGONAL_TETRAARYL_ELEMENTS.has(atom.element)
+          && singleNeighborCount === 4
+          && terminalMultipleNeighborCount === 0
+          && singleNeighborIds.every(neighborAtomId => isOrthogonalTetraarylSingleLigand(atoms, atomToRings, neighborAtomId))
+        )
       )
     ) {
       return true;
@@ -132,7 +181,7 @@ function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId) {
   return false;
 }
 
-function deriveLayoutTraits(molecule, components, ringAnalysis, ringConnections, atoms, bondsByAtomId) {
+function deriveLayoutTraits(molecule, components, ringAnalysis, ringConnections, atoms, bondsByAtomId, atomToRings) {
   let heavyAtomCount = 0;
   let visibleHydrogenCount = 0;
   let hiddenHydrogenCount = 0;
@@ -156,7 +205,7 @@ function deriveLayoutTraits(molecule, components, ringAnalysis, ringConnections,
     visibleHydrogenCount,
     hiddenHydrogenCount,
     containsMetal,
-    containsOrthogonalHypervalentCenter: containsOrthogonalHypervalentCenter(atoms, bondsByAtomId),
+    containsOrthogonalHypervalentCenter: containsOrthogonalHypervalentCenter(atoms, bondsByAtomId, atomToRings),
     metalCenterCount: metalCenterIds.length,
     hasDisconnectedComponents: components.length > 1,
     ringSystemCount: ringAnalysis.ringSystems.length,
@@ -199,7 +248,7 @@ function buildLayoutGraph(molecule, normalizedOptions) {
     canonicalAtomRank,
     fixedCoords: normalizedOptions.fixedCoords,
     options: normalizedOptions,
-    traits: deriveLayoutTraits(molecule, components, ringAnalysis, ringConnections, atoms, bondsByAtomId)
+    traits: deriveLayoutTraits(molecule, components, ringAnalysis, ringConnections, atoms, bondsByAtomId, atomToRings)
   };
 }
 

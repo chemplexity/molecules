@@ -42,6 +42,35 @@ function assertExteriorOxoV(graph, coords, centerAtomId, oxoAtomIds, expectedSpr
   }
 }
 
+function pointAt(origin, angle, radius) {
+  return {
+    x: origin.x + Math.cos(angle) * radius,
+    y: origin.y + Math.sin(angle) * radius
+  };
+}
+
+function seedTetraarylSilaneCoords(graph, centerAtomId, ligandAnglesByAtomId) {
+  const bondLength = 1.5;
+  const centerPosition = { x: 0, y: 0 };
+  const coords = new Map([[centerAtomId, centerPosition]]);
+
+  for (const [ligandAtomId, ligandAngle] of ligandAnglesByAtomId) {
+    const ring = graph.atomToRings.get(ligandAtomId)?.[0];
+    const ligandIndex = ring?.atomIds.indexOf(ligandAtomId) ?? -1;
+    assert.ok(ring && ligandIndex >= 0);
+
+    const ligandPosition = pointAt(centerPosition, ligandAngle, bondLength);
+    const ringCenter = pointAt(ligandPosition, ligandAngle, bondLength);
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const atomId = ring.atomIds[index];
+      const vertexAngle = ligandAngle + Math.PI + ((index - ligandIndex) * Math.PI / 3);
+      coords.set(atomId, pointAt(ringCenter, vertexAngle, bondLength));
+    }
+  }
+
+  return coords;
+}
+
 describe('layout/engine/cleanup/hypervalent-angle-tidy', () => {
   it('snaps monoxo phosphonate leaf ligands onto an orthogonal cross', () => {
     const graph = createLayoutGraph(parseSMILES('CP(=O)(O)O'), { suppressH: true });
@@ -62,6 +91,25 @@ describe('layout/engine/cleanup/hypervalent-angle-tidy', () => {
     ];
 
     assert.ok(result.nudges >= 3);
+    assertOrthogonalCross(ligandAngles);
+  });
+
+  it('squares tetraaryl silane ligands into a perfect orthogonal cross', () => {
+    const graph = createLayoutGraph(parseSMILES('c1ccc([Si](c2ccccc2)(c2ccccc2)c2ccccc2)cc1'), { suppressH: true });
+    const coords = seedTetraarylSilaneCoords(graph, 'Si5', new Map([
+      ['C4', Math.PI],
+      ['C6', -Math.PI / 2],
+      ['C12', 0],
+      ['C18', 102 * (Math.PI / 180)]
+    ]));
+
+    assert.ok(measureOrthogonalHypervalentDeviation(graph, coords) > 0.01);
+
+    const result = runHypervalentAngleTidy(graph, coords);
+    const ligandAngles = ['C4', 'C6', 'C12', 'C18'].map(ligandAtomId => angleAt(result.coords, 'Si5', ligandAtomId));
+
+    assert.ok(result.nudges > 0);
+    assert.ok(Math.abs(measureOrthogonalHypervalentDeviation(graph, result.coords)) < 1e-9);
     assertOrthogonalCross(ligandAngles);
   });
 

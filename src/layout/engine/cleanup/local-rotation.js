@@ -7,17 +7,21 @@ import { buildAtomGrid, buildSubtreeOverlapContext, computeAtomDistortionCost, c
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { forEachRigidRotationCandidate } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
+import { reflectAcrossLine } from '../geometry/transforms.js';
 import {
   measureSmallRingExteriorGapSpreadPenalty,
   smallRingExteriorTargetAngles,
   supportsExteriorBranchSpreadRingSize
 } from '../placement/branch-placement.js';
-import { isExactVisibleTrigonalBisectorEligible } from '../placement/branch-placement/angle-selection.js';
+import {
+  isExactVisibleTrigonalBisectorEligible,
+  isPlanarDivalentNitrogenContinuationPair
+} from '../placement/branch-placement/angle-selection.js';
 import { FINE_ROTATION_ANGLES } from './rotation-candidates.js';
 const LOCAL_TRIGONAL_HETERO_DISTORTION_WEIGHT = 5;
 const LOCAL_RING_TRIGONAL_HETERO_DISTORTION_WEIGHT = 12;
 const MAX_SIBLING_SWAP_SUBTREE_ATOMS = 18;
-const MAX_BRANCHED_SATURATED_SUBTREE_ATOMS = 18;
+const MAX_BRANCHED_SATURATED_SUBTREE_ATOMS = 20;
 const MAX_ANCHORED_RING_BLOCK_ATOMS = 18;
 const MAX_LOCAL_TRIGONAL_HETERO_LAYOUT_ATOMS = 48;
 const MAX_SIBLING_SWAP_LAYOUT_ATOMS = 48;
@@ -166,7 +170,6 @@ function exactIdealDivalentContinuationAngles(layoutGraph, coords, anchorAtomId,
     || !anchorPosition
     || !rootPosition
     || anchorAtom.aromatic
-    || !IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(anchorAtom.element)
     || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
   ) {
     return [];
@@ -197,6 +200,15 @@ function exactIdealDivalentContinuationAngles(layoutGraph, coords, anchorAtomId,
   if (!parentBond || !parentAtomId || !parentAtom || !parentPosition || parentBond.aromatic || (parentBond.order ?? 1) !== 1) {
     return [];
   }
+  const isExactDivalentElement =
+    IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(anchorAtom.element)
+    || (
+      anchorAtom.element === 'N'
+      && isPlanarDivalentNitrogenContinuationPair(layoutGraph, parentAtomId, rootAtomId)
+    );
+  if (!isExactDivalentElement) {
+    return [];
+  }
 
   const parentAngle = angleOf(sub(parentPosition, anchorPosition));
   const currentAngle = angleOf(sub(rootPosition, anchorPosition));
@@ -223,6 +235,40 @@ function preferredRotationAngles(layoutGraph, coords, anchorAtomId, rootAtomId) 
     candidateAngles.push(angle);
   }
   return candidateAngles;
+}
+
+function isBranchedSaturatedRingAxisReflectionEligible(layoutGraph, coords, anchorAtomId, rootAtomId) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  const anchorPosition = coords.get(anchorAtomId);
+  const rootPosition = coords.get(rootAtomId);
+  if (
+    !anchorAtom
+    || !rootAtom
+    || !anchorPosition
+    || !rootPosition
+    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0
+    || rootAtom.element !== 'C'
+    || rootAtom.aromatic
+    || rootAtom.heavyDegree !== 3
+    || rootAtom.degree !== 4
+    || layoutGraph.options.suppressH !== true
+    || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  const rootBond = singleBondDescriptor(layoutGraph, anchorAtomId, rootAtomId);
+  if (!rootBond) {
+    return false;
+  }
+  for (const bond of layoutGraph.bondsByAtomId.get(rootAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 /**
@@ -1339,6 +1385,36 @@ function ringRootFanDistortionCost(layoutGraph, coords, atomId, overridePosition
 }
 
 /**
+ * Returns whether local cleanup should preserve an exact saturated three-heavy
+ * carbon fan. These omitted-H branch points look trigonal in 2D, and rotating
+ * one branch off an already exact 120-degree slot creates a conspicuous kink.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} atomId - Candidate anchor atom ID.
+ * @param {number} baseDistortion - Current anchor distortion cost.
+ * @returns {boolean} True when cleanup should reject fan-distorting moves.
+ */
+function shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, atomId, baseDistortion) {
+  const atom = layoutGraph.atoms.get(atomId);
+  const hasRingNeighbor = (layoutGraph.bondsByAtomId.get(atomId) ?? []).some(bond => {
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return neighborAtom?.element !== 'H' && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0;
+  });
+  return Boolean(
+    atom
+    && atom.element === 'C'
+    && !atom.aromatic
+    && atom.heavyDegree === 3
+    && atom.degree === 4
+    && layoutGraph.options.suppressH === true
+    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
+    && hasRingNeighbor
+    && baseDistortion <= CLEANUP_EPSILON
+  );
+}
+
+/**
  * Returns the distortion penalty for a non-ring three-coordinate hetero center
  * that should still read as roughly trigonal in 2D cleanup.
  * @param {object} layoutGraph - Layout graph shell.
@@ -1515,10 +1591,43 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         subtreeContext
       });
       const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
+      const preserveExactThreeHeavyCarbonFan = shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, anchorAtomId, baseAnchorDistortion);
       const preserveExactRingRootFan =
         subtree.preferAtomOverlapClearance === true
         && ringRootFanDistortionCost(layoutGraph, coords, anchorAtomId, null) <= CLEANUP_EPSILON;
       const finalists = [];
+      if (isBranchedSaturatedRingAxisReflectionEligible(layoutGraph, coords, anchorAtomId, atomId)) {
+        const newPositions = new Map();
+        for (const subtreeAtomId of subtreeAtomIds) {
+          const subtreePosition = coords.get(subtreeAtomId);
+          if (!subtreePosition) {
+            continue;
+          }
+          newPositions.set(subtreeAtomId, reflectAcrossLine(subtreePosition, anchorPosition, rootPosition));
+        }
+        if (newPositions.size === subtreeAtomIds.length) {
+          const newAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, {
+            atomGrid,
+            subtreeContext
+          });
+          if (
+            !(
+              preserveExactRingRootFan
+              && ringRootFanDistortionCost(layoutGraph, coords, anchorAtomId, newPositions) > CLEANUP_EPSILON
+            )
+            && !(preserveExactThreeHeavyCarbonFan && scoreAnchorDistortion(anchorAtomId, newPositions) > CLEANUP_EPSILON)
+          ) {
+            const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
+            const approximateImprovement = baseAtomOverlapCost - newAtomOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
+            recordFinalist(finalists, {
+              positions: newPositions,
+              approximateImprovement,
+              atomOverlapCost: newAtomOverlapCost,
+              anchorDistortion: newAnchorDistortion
+            });
+          }
+        }
+      }
       forEachRigidRotationCandidate(layoutGraph, coords, {
         anchorAtomId,
         rootAtomId: atomId,
@@ -1544,6 +1653,9 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
             preserveExactRingRootFan
             && ringRootFanDistortionCost(layoutGraph, coords, anchorAtomId, newPositions) > CLEANUP_EPSILON
           ) {
+            return;
+          }
+          if (preserveExactThreeHeavyCarbonFan && scoreAnchorDistortion(anchorAtomId, newPositions) > CLEANUP_EPSILON) {
             return;
           }
           const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
@@ -1599,6 +1711,12 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         subtreeContext
       });
       const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
+      if (
+        shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, anchorAtomId, baseAnchorDistortion)
+        && newAnchorDistortion > CLEANUP_EPSILON
+      ) {
+        continue;
+      }
       const approximateImprovement = baseAtomOverlapCost - newAtomOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
       const refinedMove = finalizeBestMove(layoutGraph, coords, subtreeAtomIds, [{
         positions: newPositions,
@@ -1652,6 +1770,12 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
           subtreeContext
         });
         const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
+        if (
+          shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, anchorAtomId, baseAnchorDistortion)
+          && newAnchorDistortion > CLEANUP_EPSILON
+        ) {
+          continue;
+        }
         const approximateImprovement = baseAtomOverlapCost - newAtomOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
         recordFinalist(finalists, {
           positions: newPositions,

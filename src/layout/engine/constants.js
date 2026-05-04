@@ -169,5 +169,6 @@ export const ORGANOMETALLIC_RESCUE_LIMITS = Object.freeze({
   polyoxoFrameworkBondLengthFactor: 2,
   polyoxoPairBridgeOffsetFactor: 0.25,
   polyoxoTerminalSlotCount: 12,
-  polyoxoTerminalMinSlotSeparation: Math.PI / 6
+  polyoxoTerminalMinSlotSeparation: Math.PI / 6,
+  polyoxoRescueMaxSevereOverlapCount: 6
 });

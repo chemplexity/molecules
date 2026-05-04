@@ -18,9 +18,9 @@ const MAX_JOINT_TAIL_DESCRIPTORS = 3;
 const MAX_JOINT_LINKER_DESCRIPTORS = 3;
 const TAIL_GEOMETRY_BEAM_WIDTH = 8;
 
-const PHOSPHATE_LINKER_SCORE_WEIGHT = 2;
+const PHOSPHATE_LINKER_SCORE_WEIGHT = 8;
 const PHOSPHATE_TAIL_ANCHOR_SCORE_WEIGHT = 6;
-const PHOSPHATE_TAIL_ROOT_SCORE_WEIGHT = 2;
+const PHOSPHATE_TAIL_ROOT_SCORE_WEIGHT = 20;
 
 function findLayoutBond(layoutGraph, firstAtomId, secondAtomId) {
   for (const bond of layoutGraph?.bondsByAtomId.get(firstAtomId) ?? []) {

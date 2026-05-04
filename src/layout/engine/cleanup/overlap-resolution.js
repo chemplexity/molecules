@@ -5,7 +5,11 @@ import { add, angleOf, angularDifference, centroid, rotate, sub, wrapAngle } fro
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { probeRigidRotation, rigidDescriptorKey, rotateRigidDescriptorPositions } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
-import { describeCrossLikeHypervalentCenter, supportsProjectedTetrahedralGeometry } from '../placement/branch-placement/angle-selection.js';
+import {
+  describeCrossLikeHypervalentCenter,
+  isPlanarDivalentNitrogenContinuationPair,
+  supportsProjectedTetrahedralGeometry
+} from '../placement/branch-placement/angle-selection.js';
 import { ANGLE_EPSILON, IMPROVEMENT_EPSILON, NUMERIC_EPSILON, atomPairKey } from '../constants.js';
 import { COARSE_ROTATION_ANGLES, STANDARD_ROTATION_ANGLES } from './rotation-candidates.js';
 const RIGID_SUBTREE_REFINEMENT_OFFSETS = Object.freeze([
@@ -90,32 +94,6 @@ const OMITTED_H_TRIGONAL_ROOT_ANGLE_OFFSETS = Object.freeze([
   -(2 * Math.PI) / 3
 ]);
 const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
-
-function isConjugatedTrigonalHeavyNeighbor(layoutGraph, atomId) {
-  const atom = layoutGraph.atoms.get(atomId);
-  if (!atom || atom.element === 'H' || atom.aromatic || atom.heavyDegree !== 3) {
-    return false;
-  }
-
-  let heavyVisibleBondCount = 0;
-  let nonAromaticMultipleBondCount = 0;
-  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
-    if (!bond || bond.kind !== 'covalent') {
-      continue;
-    }
-    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
-    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    if (!neighborAtom || neighborAtom.element === 'H') {
-      continue;
-    }
-    heavyVisibleBondCount++;
-    if (!bond.aromatic && (bond.order ?? 1) >= 2) {
-      nonAromaticMultipleBondCount++;
-    }
-  }
-
-  return heavyVisibleBondCount === 3 && nonAromaticMultipleBondCount === 1;
-}
 
 function protectsLargeMoleculeBackbone(options) {
   return options.protectLargeMoleculeBackbone === true;
@@ -685,22 +663,6 @@ function exactDivalentContinuationRootAngles(layoutGraph, coords, descriptor, ov
     return [];
   }
 
-  const qualifiesAsExactDivalentCenter =
-    IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(anchorAtom.element)
-    || (
-      anchorAtom.element === 'N'
-      && (layoutGraph.bondsByAtomId.get(descriptor.anchorAtomId) ?? []).some(bond => {
-        if (!bond || bond.kind !== 'covalent') {
-          return false;
-        }
-        const neighborAtomId = bond.a === descriptor.anchorAtomId ? bond.b : bond.a;
-        return isConjugatedTrigonalHeavyNeighbor(layoutGraph, neighborAtomId);
-      })
-    );
-  if (!qualifiesAsExactDivalentCenter) {
-    return [];
-  }
-
   const visibleHeavySingleBondNeighborIds = (layoutGraph.bondsByAtomId.get(descriptor.anchorAtomId) ?? [])
     .filter(bond => {
       if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
@@ -715,6 +677,19 @@ function exactDivalentContinuationRootAngles(layoutGraph, coords, descriptor, ov
     visibleHeavySingleBondNeighborIds.length !== 2
     || !visibleHeavySingleBondNeighborIds.includes(descriptor.rootAtomId)
   ) {
+    return [];
+  }
+  const qualifiesAsExactDivalentCenter =
+    IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(anchorAtom.element)
+    || (
+      anchorAtom.element === 'N'
+      && isPlanarDivalentNitrogenContinuationPair(
+        layoutGraph,
+        visibleHeavySingleBondNeighborIds[0],
+        visibleHeavySingleBondNeighborIds[1]
+      )
+    );
+  if (!qualifiesAsExactDivalentCenter) {
     return [];
   }
 
@@ -760,7 +735,11 @@ function isExactDivalentContinuationCenter(layoutGraph, atomId) {
     IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(atom.element)
     || (
       atom.element === 'N'
-      && visibleHeavySingleBondNeighborIds.some(neighborAtomId => isConjugatedTrigonalHeavyNeighbor(layoutGraph, neighborAtomId))
+      && isPlanarDivalentNitrogenContinuationPair(
+        layoutGraph,
+        visibleHeavySingleBondNeighborIds[0],
+        visibleHeavySingleBondNeighborIds[1]
+      )
     )
   );
 }

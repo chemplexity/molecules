@@ -3,10 +3,12 @@
 import {
   collectAttachedCarbonylPresentationDescriptors
 } from './attached-carbonyl.js';
+import { auditLayout } from '../../audit/audit.js';
 import {
   findVisibleHeavyBondCrossings,
   measureThreeHeavyContinuationDistortion
 } from '../../audit/invariants.js';
+import { add, angleOf, angularDifference, rotate, sub } from '../../geometry/vec2.js';
 import {
   collectMovableAttachedRingDescriptors,
   measureAttachedRingPeripheralFocusPenalty,
@@ -35,9 +37,437 @@ import {
   runRingTerminalHeteroTidy,
   runTerminalMultipleBondLeafFanTidy
 } from './ring-terminal-hetero.js';
+import { smallRingExteriorTargetAngles } from '../../placement/branch-placement.js';
 
 const PRESENTATION_NEED_EPSILON = 1e-6;
 const OMITTED_H_TRIGONAL_PRESENTATION_NEED = (Math.PI / 6) ** 2;
+const SMALL_RING_EXTERIOR_FAN_EPSILON = 1e-6;
+
+function isHeavyAtom(layoutGraph, atomId) {
+  return layoutGraph.atoms.get(atomId)?.element !== 'H';
+}
+
+function collectCovalentHeavyNeighborIds(layoutGraph, coords, atomId) {
+  return (layoutGraph.bondsByAtomId.get(atomId) ?? [])
+    .filter(bond => bond?.kind === 'covalent')
+    .map(bond => (bond.a === atomId ? bond.b : bond.a))
+    .filter(neighborAtomId => coords.has(neighborAtomId) && isHeavyAtom(layoutGraph, neighborAtomId));
+}
+
+function isDirectAttachedAromaticRingRoot(layoutGraph, anchorAtomId, rootAtomId) {
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  if (rootAtom?.aromatic !== true) {
+    return false;
+  }
+  return (layoutGraph.atomToRings.get(rootAtomId) ?? [])
+    .some(ring => !(ring.atomIds ?? []).includes(anchorAtomId));
+}
+
+function collectCovalentSubtreeAtomIds(layoutGraph, rootAtomId, blockedAtomId) {
+  const visitedAtomIds = new Set([blockedAtomId]);
+  const pendingAtomIds = [rootAtomId];
+  const subtreeAtomIds = [];
+
+  while (pendingAtomIds.length > 0) {
+    const atomId = pendingAtomIds.pop();
+    if (visitedAtomIds.has(atomId)) {
+      continue;
+    }
+    visitedAtomIds.add(atomId);
+    subtreeAtomIds.push(atomId);
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (!visitedAtomIds.has(neighborAtomId)) {
+        pendingAtomIds.push(neighborAtomId);
+      }
+    }
+  }
+
+  return subtreeAtomIds;
+}
+
+function rotateAtomIdsAroundPivot(coords, atomIds, pivotAtomId, rotationAngle) {
+  const pivotPosition = coords.get(pivotAtomId);
+  if (!pivotPosition) {
+    return null;
+  }
+  const nextCoords = new Map(coords);
+  for (const atomId of atomIds) {
+    if (atomId === pivotAtomId) {
+      continue;
+    }
+    const position = nextCoords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    nextCoords.set(atomId, add(pivotPosition, rotate(sub(position, pivotPosition), rotationAngle)));
+  }
+  return nextCoords;
+}
+
+function scoreSmallRingExteriorFanAssignment(coords, anchorAtomId, assignment) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+  const deviations = [];
+  for (const { rootAtomId, targetAngle } of assignment) {
+    const rootPosition = coords.get(rootAtomId);
+    if (!rootPosition) {
+      return null;
+    }
+    deviations.push(angularDifference(angleOf(sub(rootPosition, anchorPosition)), targetAngle));
+  }
+  return {
+    maxDeviation: Math.max(...deviations),
+    totalDeviation: deviations.reduce((sum, deviation) => sum + deviation * deviation, 0)
+  };
+}
+
+function isBetterSmallRingExteriorFanScore(candidateScore, incumbentScore, epsilon = 1e-9) {
+  if (!incumbentScore) {
+    return true;
+  }
+  if (candidateScore.maxDeviation < incumbentScore.maxDeviation - epsilon) {
+    return true;
+  }
+  if (candidateScore.maxDeviation > incumbentScore.maxDeviation + epsilon) {
+    return false;
+  }
+  return candidateScore.totalDeviation < incumbentScore.totalDeviation - epsilon;
+}
+
+function collectSmallRingExteriorFanDescriptors(layoutGraph, coords) {
+  const descriptors = [];
+  const seenKeys = new Set();
+
+  for (const anchorAtomId of coords.keys()) {
+    const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+    if (!anchorAtom || anchorAtom.element === 'H' || anchorAtom.aromatic === true) {
+      continue;
+    }
+
+    const neighborAtomIds = collectCovalentHeavyNeighborIds(layoutGraph, coords, anchorAtomId);
+    if (neighborAtomIds.length !== 4) {
+      continue;
+    }
+
+    for (const ring of layoutGraph.atomToRings.get(anchorAtomId) ?? []) {
+      const ringAtomIds = new Set(ring?.atomIds ?? []);
+      if (ringAtomIds.size < 3 || !ringAtomIds.has(anchorAtomId)) {
+        continue;
+      }
+
+      const ringNeighborIds = neighborAtomIds.filter(neighborAtomId => ringAtomIds.has(neighborAtomId));
+      const exocyclicNeighborIds = neighborAtomIds.filter(neighborAtomId => !ringAtomIds.has(neighborAtomId));
+      if (ringNeighborIds.length !== 2 || exocyclicNeighborIds.length !== 2) {
+        continue;
+      }
+      if (!exocyclicNeighborIds.every(neighborAtomId => (
+        isDirectAttachedAromaticRingRoot(layoutGraph, anchorAtomId, neighborAtomId)
+      ))) {
+        continue;
+      }
+
+      const anchorPosition = coords.get(anchorAtomId);
+      const ringNeighborAngles = ringNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition)));
+      const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, ringAtomIds.size);
+      if (targetAngles.length !== 2) {
+        continue;
+      }
+
+      const descriptorKey = `${anchorAtomId}:${[...ringAtomIds].sort().join(',')}`;
+      if (seenKeys.has(descriptorKey)) {
+        continue;
+      }
+      seenKeys.add(descriptorKey);
+
+      const assignments = [
+        [
+          { rootAtomId: exocyclicNeighborIds[0], targetAngle: targetAngles[0] },
+          { rootAtomId: exocyclicNeighborIds[1], targetAngle: targetAngles[1] }
+        ],
+        [
+          { rootAtomId: exocyclicNeighborIds[0], targetAngle: targetAngles[1] },
+          { rootAtomId: exocyclicNeighborIds[1], targetAngle: targetAngles[0] }
+        ]
+      ];
+      const score = assignments
+        .map(assignment => scoreSmallRingExteriorFanAssignment(coords, anchorAtomId, assignment))
+        .filter(Boolean)
+        .reduce((bestScore, candidateScore) => (
+          isBetterSmallRingExteriorFanScore(candidateScore, bestScore) ? candidateScore : bestScore
+        ), null);
+      if (!score) {
+        continue;
+      }
+
+      descriptors.push({
+        anchorAtomId,
+        exocyclicNeighborIds,
+        assignments,
+        maxDeviation: score.maxDeviation,
+        totalDeviation: score.totalDeviation
+      });
+    }
+  }
+
+  return descriptors;
+}
+
+/**
+ * Measures how far paired exterior substituents on saturated small-ring atoms
+ * drift from their exact two-slot fan targets.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {{maxDeviation: number, totalDeviation: number, descriptorCount: number}} Penalty summary.
+ */
+export function measureSmallRingExteriorFanExactPenalty(layoutGraph, coords) {
+  if (!(coords instanceof Map)) {
+    return { maxDeviation: 0, totalDeviation: 0, descriptorCount: 0 };
+  }
+  const descriptors = collectSmallRingExteriorFanDescriptors(layoutGraph, coords);
+  return {
+    maxDeviation: descriptors.reduce((maximum, descriptor) => Math.max(maximum, descriptor.maxDeviation), 0),
+    totalDeviation: descriptors.reduce((sum, descriptor) => sum + descriptor.totalDeviation, 0),
+    descriptorCount: descriptors.length
+  };
+}
+
+function smallRingExteriorFanCandidateAuditIsAllowed(candidateAudit, incumbentAudit) {
+  if (!candidateAudit || !incumbentAudit) {
+    return false;
+  }
+  if (incumbentAudit.ok === true && candidateAudit.ok !== true) {
+    return false;
+  }
+  for (const key of [
+    'bondLengthFailureCount',
+    'mildBondLengthFailureCount',
+    'severeBondLengthFailureCount',
+    'collapsedMacrocycleCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount',
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'labelOverlapCount'
+  ]) {
+    if ((candidateAudit[key] ?? 0) > (incumbentAudit[key] ?? 0)) {
+      return false;
+    }
+  }
+  if ((candidateAudit.stereoContradiction ?? false) && !(incumbentAudit.stereoContradiction ?? false)) {
+    return false;
+  }
+  return candidateAudit.maxBondLengthDeviation <= incumbentAudit.maxBondLengthDeviation + 1e-9;
+}
+
+function smallRingExteriorFanAssignmentSubtrees(layoutGraph, coords, anchorAtomId, assignment, frozenAtomIds) {
+  const subtreeAtomIdSets = [];
+  for (const { rootAtomId } of assignment) {
+    const subtreeAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, rootAtomId, anchorAtomId)
+      .filter(atomId => coords.has(atomId));
+    const subtreeAtomIdSet = new Set(subtreeAtomIds);
+    if (
+      subtreeAtomIds.length === 0
+      || subtreeAtomIdSet.has(anchorAtomId)
+      || (frozenAtomIds instanceof Set && subtreeAtomIds.some(atomId => frozenAtomIds.has(atomId)))
+    ) {
+      return null;
+    }
+    subtreeAtomIdSets.push(subtreeAtomIdSet);
+  }
+
+  for (let firstIndex = 0; firstIndex < subtreeAtomIdSets.length; firstIndex += 1) {
+    for (let secondIndex = firstIndex + 1; secondIndex < subtreeAtomIdSets.length; secondIndex += 1) {
+      for (const atomId of subtreeAtomIdSets[firstIndex]) {
+        if (subtreeAtomIdSets[secondIndex].has(atomId)) {
+          return null;
+        }
+      }
+    }
+  }
+
+  return subtreeAtomIdSets;
+}
+
+function applySmallRingExteriorFanAssignment(layoutGraph, coords, anchorAtomId, assignment, frozenAtomIds) {
+  const subtreeAtomIdSets = smallRingExteriorFanAssignmentSubtrees(layoutGraph, coords, anchorAtomId, assignment, frozenAtomIds);
+  if (!subtreeAtomIdSets) {
+    return null;
+  }
+
+  let nextCoords = coords;
+  for (let index = 0; index < assignment.length; index += 1) {
+    const { rootAtomId, targetAngle } = assignment[index];
+    const anchorPosition = nextCoords.get(anchorAtomId);
+    const rootPosition = nextCoords.get(rootAtomId);
+    if (!anchorPosition || !rootPosition) {
+      return null;
+    }
+    const currentAngle = angleOf(sub(rootPosition, anchorPosition));
+    nextCoords = rotateAtomIdsAroundPivot(
+      nextCoords,
+      [...subtreeAtomIdSets[index]],
+      anchorAtomId,
+      targetAngle - currentAngle
+    );
+    if (!nextCoords) {
+      return null;
+    }
+  }
+  return nextCoords;
+}
+
+function measureSmallRingExteriorAssignmentClearance(layoutGraph, coords, anchorAtomId, assignment) {
+  const subtreeAtomIdSets = smallRingExteriorFanAssignmentSubtrees(layoutGraph, coords, anchorAtomId, assignment, null);
+  if (!subtreeAtomIdSets || subtreeAtomIdSets.length !== 2) {
+    return Number.NEGATIVE_INFINITY;
+  }
+
+  let minimumDistance = Number.POSITIVE_INFINITY;
+  for (const firstAtomId of subtreeAtomIdSets[0]) {
+    if (!isHeavyAtom(layoutGraph, firstAtomId)) {
+      continue;
+    }
+    const firstPosition = coords.get(firstAtomId);
+    if (!firstPosition) {
+      continue;
+    }
+    for (const secondAtomId of subtreeAtomIdSets[1]) {
+      if (!isHeavyAtom(layoutGraph, secondAtomId)) {
+        continue;
+      }
+      const secondPosition = coords.get(secondAtomId);
+      if (!secondPosition) {
+        continue;
+      }
+      minimumDistance = Math.min(
+        minimumDistance,
+        Math.hypot(firstPosition.x - secondPosition.x, firstPosition.y - secondPosition.y)
+      );
+    }
+  }
+  return Number.isFinite(minimumDistance) ? minimumDistance : Number.NEGATIVE_INFINITY;
+}
+
+function measureSmallRingExteriorAssignmentRotationPenalty(coords, anchorAtomId, assignment) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+  let penalty = 0;
+  for (const { rootAtomId, targetAngle } of assignment) {
+    const rootPosition = coords.get(rootAtomId);
+    if (!rootPosition) {
+      return Number.POSITIVE_INFINITY;
+    }
+    const rotation = angularDifference(angleOf(sub(rootPosition, anchorPosition)), targetAngle);
+    penalty += rotation * rotation;
+  }
+  return penalty;
+}
+
+function isBetterSmallRingExteriorFanCandidate(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (isBetterSmallRingExteriorFanScore(candidate.penalty, incumbent.penalty, SMALL_RING_EXTERIOR_FAN_EPSILON)) {
+    return true;
+  }
+  if (isBetterSmallRingExteriorFanScore(incumbent.penalty, candidate.penalty, SMALL_RING_EXTERIOR_FAN_EPSILON)) {
+    return false;
+  }
+  if (candidate.rotationPenalty < incumbent.rotationPenalty - 1e-9) {
+    return true;
+  }
+  if (candidate.rotationPenalty > incumbent.rotationPenalty + 1e-9) {
+    return false;
+  }
+  return candidate.siblingClearance > incumbent.siblingClearance + 1e-6;
+}
+
+function runSmallRingExteriorFanExactRetidy(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const frozenAtomIds = options.frozenAtomIds ?? null;
+  let coords = inputCoords;
+  let nudges = 0;
+
+  for (let pass = 0; pass < 3; pass += 1) {
+    let acceptedInPass = 0;
+    const descriptors = collectSmallRingExteriorFanDescriptors(layoutGraph, coords)
+      .filter(descriptor => descriptor.maxDeviation > SMALL_RING_EXTERIOR_FAN_EPSILON)
+      .sort((first, second) => second.maxDeviation - first.maxDeviation);
+
+    for (const descriptor of descriptors) {
+      const incumbentPenalty = measureSmallRingExteriorFanExactPenalty(layoutGraph, coords);
+      const incumbentAudit = auditLayout(layoutGraph, coords, { bondLength });
+      let bestCandidate = null;
+
+      for (const assignment of descriptor.assignments) {
+        const candidateCoords = applySmallRingExteriorFanAssignment(
+          layoutGraph,
+          coords,
+          descriptor.anchorAtomId,
+          assignment,
+          frozenAtomIds
+        );
+        if (!candidateCoords) {
+          continue;
+        }
+
+        const candidatePenalty = measureSmallRingExteriorFanExactPenalty(layoutGraph, candidateCoords);
+        if (!isBetterSmallRingExteriorFanScore(candidatePenalty, incumbentPenalty, SMALL_RING_EXTERIOR_FAN_EPSILON)) {
+          continue;
+        }
+
+        const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+        if (!smallRingExteriorFanCandidateAuditIsAllowed(candidateAudit, incumbentAudit)) {
+          continue;
+        }
+
+        const candidate = {
+          coords: candidateCoords,
+          penalty: candidatePenalty,
+          rotationPenalty: measureSmallRingExteriorAssignmentRotationPenalty(
+            coords,
+            descriptor.anchorAtomId,
+            assignment
+          ),
+          siblingClearance: measureSmallRingExteriorAssignmentClearance(
+            layoutGraph,
+            candidateCoords,
+            descriptor.anchorAtomId,
+            assignment
+          )
+        };
+        if (isBetterSmallRingExteriorFanCandidate(candidate, bestCandidate)) {
+          bestCandidate = candidate;
+        }
+      }
+
+      if (bestCandidate) {
+        coords = bestCandidate.coords;
+        nudges += 1;
+        acceptedInPass += 1;
+      }
+    }
+
+    if (acceptedInPass === 0) {
+      break;
+    }
+  }
+
+  return {
+    coords,
+    nudges,
+    changed: nudges > 0
+  };
+}
 
 function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
   const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
@@ -49,6 +479,7 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
   );
   const terminalHeteroOutwardPenalty = measureRingTerminalHeteroOutwardPenalty(layoutGraph, coords);
   const terminalMultipleBondLeafFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, coords);
+  const smallRingExteriorFanExactPenalty = measureSmallRingExteriorFanExactPenalty(layoutGraph, coords);
   const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation;
   const phosphateArylTailPenalty = measurePhosphateArylTailPresentationPenalty(layoutGraph, coords);
   const terminalCationRingProximityPenalty = measureTerminalCationRingProximityPenalty(layoutGraph, coords, { bondLength });
@@ -68,6 +499,8 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
     terminalHeteroOutwardPenalty: terminalHeteroOutwardPenalty.totalDeviation,
     terminalMultipleBondLeafFanMaxPenalty: terminalMultipleBondLeafFanPenalty.maxDeviation,
     terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation,
+    smallRingExteriorFanExactMaxPenalty: smallRingExteriorFanExactPenalty.maxDeviation,
+    smallRingExteriorFanExactPenalty: smallRingExteriorFanExactPenalty.totalDeviation,
     phosphateArylTailPenalty,
     terminalCationRingProximityPenalty,
     visibleBondCrossingCount,
@@ -82,6 +515,8 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
         terminalHeteroOutwardPenalty: terminalHeteroOutwardPenalty.totalDeviation,
         terminalMultipleBondLeafFanMaxPenalty: terminalMultipleBondLeafFanPenalty.maxDeviation,
         terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation,
+        smallRingExteriorFanExactMaxPenalty: smallRingExteriorFanExactPenalty.maxDeviation,
+        smallRingExteriorFanExactPenalty: smallRingExteriorFanExactPenalty.totalDeviation,
         phosphateArylTailPenalty,
         terminalCationRingProximityPenalty,
         visibleBondCrossingCount,
@@ -159,6 +594,8 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
     ?? measureThreeHeavyContinuationDistortion(layoutGraph, stageResult.coords).totalDeviation;
   const terminalMultipleBondLeafFanPenalty = stageResult.terminalMultipleBondLeafFanPenalty
     ?? measureTerminalMultipleBondLeafFanPenalty(layoutGraph, stageResult.coords).totalDeviation;
+  const smallRingExteriorFanExactPenalty = stageResult.smallRingExteriorFanExactPenalty
+    ?? measureSmallRingExteriorFanExactPenalty(layoutGraph, stageResult.coords).totalDeviation;
   const phosphateArylTailPenalty = stageResult.phosphateArylTailPenalty
     ?? measurePhosphateArylTailPresentationPenalty(layoutGraph, stageResult.coords);
   const terminalCationRingProximityPenalty = stageResult.terminalCationRingProximityPenalty
@@ -172,6 +609,7 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
     || phosphateArylTailPenalty > PRESENTATION_NEED_EPSILON
     || terminalCationRingProximityPenalty > PRESENTATION_NEED_EPSILON
     || terminalMultipleBondLeafFanPenalty > PRESENTATION_NEED_EPSILON
+    || smallRingExteriorFanExactPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingPeripheralPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingRootOutwardPenalty > PRESENTATION_NEED_EPSILON
     || presentationPenalty > PRESENTATION_NEED_EPSILON
@@ -194,6 +632,8 @@ function hasOutstandingNonPhosphateRingPresentationNeed(layoutGraph, stageResult
     ?? measureThreeHeavyContinuationDistortion(layoutGraph, stageResult.coords).totalDeviation;
   const terminalMultipleBondLeafFanPenalty = stageResult.terminalMultipleBondLeafFanPenalty
     ?? measureTerminalMultipleBondLeafFanPenalty(layoutGraph, stageResult.coords).totalDeviation;
+  const smallRingExteriorFanExactPenalty = stageResult.smallRingExteriorFanExactPenalty
+    ?? measureSmallRingExteriorFanExactPenalty(layoutGraph, stageResult.coords).totalDeviation;
   const terminalCationRingProximityPenalty = stageResult.terminalCationRingProximityPenalty
     ?? measureTerminalCationRingProximityPenalty(layoutGraph, stageResult.coords);
   return (
@@ -204,6 +644,7 @@ function hasOutstandingNonPhosphateRingPresentationNeed(layoutGraph, stageResult
     || omittedHydrogenTrigonalPenalty > OMITTED_H_TRIGONAL_PRESENTATION_NEED
     || terminalCationRingProximityPenalty > PRESENTATION_NEED_EPSILON
     || terminalMultipleBondLeafFanPenalty > PRESENTATION_NEED_EPSILON
+    || smallRingExteriorFanExactPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingPeripheralPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingRootOutwardPenalty > PRESENTATION_NEED_EPSILON
     || presentationPenalty > PRESENTATION_NEED_EPSILON
@@ -345,6 +786,19 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     );
   }
 
+  if (options.includeRingSubstituent !== false) {
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'small-ring-exterior-fan-exact',
+      runSmallRingExteriorFanExactRetidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        frozenAtomIds: options.frozenAtomIds ?? null
+      }),
+      options
+    );
+  }
+
   if (options.includeTerminalHetero === true) {
     currentState = evaluatePresentationStep(
       layoutGraph,
@@ -457,6 +911,19 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     );
   }
 
+  if (options.includeRingSubstituent !== false) {
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'small-ring-exterior-fan-final-retouch',
+      runSmallRingExteriorFanExactRetidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        frozenAtomIds: options.frozenAtomIds ?? null
+      }),
+      options
+    );
+  }
+
   const finalDescriptorSummary = collectPresentationDescriptorSummary(layoutGraph, currentState.coords, options);
   return {
     coords: currentState.coords,
@@ -470,6 +937,8 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     terminalHeteroOutwardPenalty: currentState.terminalHeteroOutwardPenalty,
     terminalMultipleBondLeafFanMaxPenalty: currentState.terminalMultipleBondLeafFanMaxPenalty,
     terminalMultipleBondLeafFanPenalty: currentState.terminalMultipleBondLeafFanPenalty,
+    smallRingExteriorFanExactMaxPenalty: currentState.smallRingExteriorFanExactMaxPenalty,
+    smallRingExteriorFanExactPenalty: currentState.smallRingExteriorFanExactPenalty,
     phosphateArylTailPenalty: currentState.phosphateArylTailPenalty,
     terminalCationRingProximityPenalty: currentState.terminalCationRingProximityPenalty,
     strategiesRun: currentState.steps.map(step => step.name),

@@ -1,5 +1,6 @@
 /** @module cleanup/hypervalent-angle-tidy */
 
+import { auditLayout } from '../audit/audit.js';
 import { add, angleOf, angularDifference, distance, fromAngle, sub, wrapAngleUnsigned } from '../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import { ringEmbeddedBisOxoSpread } from '../geometry/ring-hypervalent.js';
@@ -12,6 +13,7 @@ import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { atomPairKey, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
+const ORTHOGONAL_TETRAARYL_ELEMENTS = new Set(['Si']);
 const ANGLE_THRESHOLD = Math.PI / 18;
 const FIXED_LIGAND_WEIGHT = 12;
 const BRIDGE_LINKED_HYPERVALENT_LIGAND_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
@@ -30,6 +32,8 @@ const TERMINAL_MULTIPLE_LIGAND_COMPRESSION_FACTORS = [1, 0.99, 0.98, 0.97, 0.96,
 const TERMINAL_MULTIPLE_LEAF_HYPERVALENT_CLEARANCE_FACTOR = SEVERE_OVERLAP_FACTOR + 0.02;
 const TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_STEP = Math.PI / 180;
 const TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_MAX_ROTATION = Math.PI / 9;
+const TERMINAL_MULTIPLE_LEAF_RIGID_RELIEF_MAX_ATOMS = 12;
+const TERMINAL_MULTIPLE_LEAF_RIGID_RELIEF_MAX_HEAVY_ATOMS = 6;
 const DIRECT_LIGAND_OVERLAP_RELIEF_MAX_HYPERVALENT_DEVIATION = (Math.PI / 36) ** 2;
 const RING_EMBEDDED_BIS_OXO_MIN_SPREAD = Math.PI / 3;
 const RING_EMBEDDED_BIS_OXO_SPREAD_STEP = Math.PI / 18;
@@ -361,6 +365,177 @@ function terminalMultipleLeafHypervalentReliefPosition(layoutGraph, coords, cent
   return bestFit.position;
 }
 
+function terminalMultipleLeafRigidReliefPivotIds(layoutGraph, centerAtomId, leafAtomId, parentAtomId, coords) {
+  const pivotIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(parentAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const pivotAtomId = bond.a === parentAtomId ? bond.b : bond.a;
+    const pivotAtom = layoutGraph.atoms.get(pivotAtomId);
+    if (
+      pivotAtomId === centerAtomId
+      || pivotAtomId === leafAtomId
+      || !pivotAtom
+      || pivotAtom.element === 'H'
+      || !coords.has(pivotAtomId)
+    ) {
+      continue;
+    }
+    pivotIds.push(pivotAtomId);
+  }
+  return pivotIds.sort((firstAtomId, secondAtomId) => {
+    const firstAtom = layoutGraph.atoms.get(firstAtomId);
+    const secondAtom = layoutGraph.atoms.get(secondAtomId);
+    const firstRingCount = layoutGraph.atomToRings.get(firstAtomId)?.length ?? 0;
+    const secondRingCount = layoutGraph.atomToRings.get(secondAtomId)?.length ?? 0;
+    if (firstRingCount !== secondRingCount) {
+      return secondRingCount - firstRingCount;
+    }
+    if ((firstAtom?.heavyDegree ?? 0) !== (secondAtom?.heavyDegree ?? 0)) {
+      return (secondAtom?.heavyDegree ?? 0) - (firstAtom?.heavyDegree ?? 0);
+    }
+    return compareCanonicalAtomIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank);
+  });
+}
+
+function collectTerminalMultipleLeafRigidReliefSubtree(layoutGraph, centerAtomId, leafAtomId, parentAtomId, pivotAtomId, coords) {
+  const subtreeAtomIds = [...collectCutSubtree(layoutGraph, parentAtomId, pivotAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId));
+  if (
+    subtreeAtomIds.length === 0
+    || subtreeAtomIds.length > TERMINAL_MULTIPLE_LEAF_RIGID_RELIEF_MAX_ATOMS
+    || !subtreeAtomIds.includes(parentAtomId)
+    || !subtreeAtomIds.includes(leafAtomId)
+    || subtreeAtomIds.includes(centerAtomId)
+    || subtreeAtomIds.includes(pivotAtomId)
+  ) {
+    return null;
+  }
+
+  let heavyAtomCount = 0;
+  for (const subtreeAtomId of subtreeAtomIds) {
+    const subtreeAtom = layoutGraph.atoms.get(subtreeAtomId);
+    if (!subtreeAtom) {
+      return null;
+    }
+    if (subtreeAtom.element !== 'H') {
+      heavyAtomCount++;
+      if (heavyAtomCount > TERMINAL_MULTIPLE_LEAF_RIGID_RELIEF_MAX_HEAVY_ATOMS) {
+        return null;
+      }
+    }
+  }
+  return subtreeAtomIds;
+}
+
+function rotatedSubtreePositions(coords, subtreeAtomIds, pivotAtomId, rotation) {
+  const pivotPosition = coords.get(pivotAtomId);
+  if (!pivotPosition) {
+    return null;
+  }
+  const candidatePositions = new Map();
+  for (const subtreeAtomId of subtreeAtomIds) {
+    const currentPosition = coords.get(subtreeAtomId);
+    if (!currentPosition) {
+      return null;
+    }
+    const offset = sub(currentPosition, pivotPosition);
+    candidatePositions.set(
+      subtreeAtomId,
+      add(pivotPosition, fromAngle(angleOf(offset) + rotation, distance(pivotPosition, currentPosition)))
+    );
+  }
+  return candidatePositions;
+}
+
+/**
+ * Chooses a small rigid rotation of the parent-side terminal group that clears
+ * a hypervalent ligand clash while preserving the terminal leaf's local fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {string} leafAtomId - Terminal multiple-bond leaf atom id.
+ * @param {string} parentAtomId - Leaf parent atom id.
+ * @param {number} clearanceDistance - Required ligand-to-leaf clearance.
+ * @returns {Map<string, {x: number, y: number}>|null} Accepted subtree positions, or `null`.
+ */
+function terminalMultipleLeafRigidReliefPositions(layoutGraph, coords, centerAtomId, leafAtomId, parentAtomId, clearanceDistance) {
+  if (parentAtomId === centerAtomId) {
+    return null;
+  }
+
+  const bondLength = layoutGraph.options?.bondLength ?? distance(coords.get(parentAtomId), coords.get(leafAtomId));
+  const maxStepCount = Math.ceil(
+    TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_MAX_ROTATION / TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_STEP
+  );
+  let bestFit = null;
+
+  for (const pivotAtomId of terminalMultipleLeafRigidReliefPivotIds(layoutGraph, centerAtomId, leafAtomId, parentAtomId, coords)) {
+    const subtreeAtomIds = collectTerminalMultipleLeafRigidReliefSubtree(
+      layoutGraph,
+      centerAtomId,
+      leafAtomId,
+      parentAtomId,
+      pivotAtomId,
+      coords
+    );
+    if (!subtreeAtomIds) {
+      continue;
+    }
+    const currentPositions = new Map(subtreeAtomIds.map(subtreeAtomId => [subtreeAtomId, coords.get(subtreeAtomId)]));
+    const currentOverlapState = countSevereOverlapsWithOverrides(layoutGraph, coords, currentPositions, bondLength);
+
+    for (let stepIndex = 1; stepIndex <= maxStepCount; stepIndex++) {
+      for (const direction of [-1, 1]) {
+        const rotation = direction * stepIndex * TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_STEP;
+        const candidatePositions = rotatedSubtreePositions(coords, subtreeAtomIds, pivotAtomId, rotation);
+        const leafPosition = candidatePositions?.get(leafAtomId);
+        if (
+          !candidatePositions
+          || !leafPosition
+          || hasDirectHypervalentLigandClearanceConflict(
+            layoutGraph,
+            coords,
+            centerAtomId,
+            leafAtomId,
+            leafPosition,
+            clearanceDistance
+          )
+        ) {
+          continue;
+        }
+        const overlapState = countSevereOverlapsWithOverrides(layoutGraph, coords, candidatePositions, bondLength);
+        if (overlapState.count > currentOverlapState.count) {
+          continue;
+        }
+        const candidateFit = {
+          positions: candidatePositions,
+          overlapState,
+          rotation,
+          pivotAtomId
+        };
+        if (
+          !bestFit
+          || overlapState.count < bestFit.overlapState.count
+          || (
+            overlapState.count === bestFit.overlapState.count
+            && Math.abs(rotation) < Math.abs(bestFit.rotation)
+          )
+          || (
+            overlapState.count === bestFit.overlapState.count
+            && Math.abs(rotation) === Math.abs(bestFit.rotation)
+            && compareCanonicalAtomIds(pivotAtomId, bestFit.pivotAtomId, layoutGraph.canonicalAtomRank) < 0
+          )
+        ) {
+          bestFit = candidateFit;
+        }
+      }
+    }
+  }
+
+  return bestFit?.positions ?? null;
+}
+
 /**
  * Rotates nearby terminal multiple-bond leaves away from a freshly squared
  * hypervalent center when the exact S/P cross would otherwise be rejected for
@@ -392,6 +567,21 @@ function relieveTerminalMultipleLeafOverlapsNearHypervalentCenter(layoutGraph, c
         clearanceDistance
       )
     ) {
+      continue;
+    }
+    const rigidCandidatePositions = terminalMultipleLeafRigidReliefPositions(
+      layoutGraph,
+      coords,
+      centerAtomId,
+      leafAtomId,
+      parentAtomId,
+      clearanceDistance
+    );
+    if (rigidCandidatePositions) {
+      for (const [subtreeAtomId, candidatePosition] of rigidCandidatePositions) {
+        coords.set(subtreeAtomId, candidatePosition);
+      }
+      nudges++;
       continue;
     }
     const candidatePosition = terminalMultipleLeafHypervalentReliefPosition(
@@ -441,12 +631,60 @@ function isTerminalMultipleBondHetero(layoutGraph, centerAtomId, bond) {
   return neighborAtom.heavyDegree === 1;
 }
 
+/**
+ * Returns whether a direct ligand bond should behave like a fixed single
+ * ligand for orthogonal hypervalent cleanup. Aromatic ring bonds can surround
+ * formally hypervalent sulfone-like centers in fused heterocycles; for 2D
+ * presentation they still occupy the two non-oxo ligand slots.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @param {object} bond - Direct ligand bond descriptor.
+ * @returns {boolean} True when the bond should count as a single ligand.
+ */
+function isHypervalentSingleLigandBond(layoutGraph, centerAtomId, bond) {
+  if (!layoutGraph || !bond || bond.kind !== 'covalent') {
+    return false;
+  }
+  if ((bond.order ?? 1) === 1 && !bond.aromatic) {
+    return true;
+  }
+  if (!bond.aromatic) {
+    return false;
+  }
+  const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+  const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+  return Boolean(
+    neighborAtom
+    && neighborAtom.element !== 'H'
+    && neighborAtom.heavyDegree > 1
+    && (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+    && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+  );
+}
+
+function isOrthogonalTetraarylSingleLigand(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  return Boolean(
+    atom
+    && atom.element === 'C'
+    && atom.aromatic === true
+    && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+  );
+}
+
 function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
   if (!layoutGraph) {
     return null;
   }
   const atom = layoutGraph.atoms.get(atomId);
-  if (!atom || !ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element) || !coords.has(atomId)) {
+  if (
+    !atom
+    || (
+      !ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element)
+      && !ORTHOGONAL_TETRAARYL_ELEMENTS.has(atom.element)
+    )
+    || !coords.has(atomId)
+  ) {
     return null;
   }
 
@@ -454,7 +692,7 @@ function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
   const singleNeighborIds = [];
   const multipleNeighborIds = [];
   for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
-    if (bond.kind !== 'covalent' || bond.aromatic) {
+    if (bond.kind !== 'covalent') {
       return null;
     }
     const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
@@ -462,8 +700,7 @@ function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
     if (!neighborAtom || !coords.has(neighborAtomId)) {
       continue;
     }
-    const order = bond.order ?? 1;
-    if (order === 1) {
+    if (isHypervalentSingleLigandBond(layoutGraph, atomId, bond)) {
       singleNeighborIds.push(neighborAtomId);
       continue;
     }
@@ -485,6 +722,14 @@ function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
       return null;
     }
     return { kind: 'mono-oxo', singleNeighborIds, multipleNeighborIds };
+  }
+  if (
+    singleNeighborIds.length === 4
+    && multipleNeighborIds.length === 0
+    && ORTHOGONAL_TETRAARYL_ELEMENTS.has(atom.element)
+    && singleNeighborIds.every(neighborAtomId => isOrthogonalTetraarylSingleLigand(layoutGraph, neighborAtomId))
+  ) {
+    return { kind: 'tetraaryl', singleNeighborIds, multipleNeighborIds };
   }
   return null;
 }
@@ -1567,6 +1812,182 @@ function fitOrthogonalTargets(descriptor, currentAngles, movableNeighborIds) {
   return bestFit;
 }
 
+function rotateTetraarylLigandSubtree(layoutGraph, coords, centerAtomId, ligandAtomId, targetAngle) {
+  const centerPosition = coords.get(centerAtomId);
+  const ligandPosition = coords.get(ligandAtomId);
+  if (!centerPosition || !ligandPosition) {
+    return { coords, rotationMagnitude: 0 };
+  }
+  const currentAngle = angleOf(sub(ligandPosition, centerPosition));
+  const rotation = Math.atan2(Math.sin(targetAngle - currentAngle), Math.cos(targetAngle - currentAngle));
+  if (Math.abs(rotation) <= 1e-9) {
+    return { coords, rotationMagnitude: 0 };
+  }
+
+  const nextCoords = new Map(coords);
+  for (const subtreeAtomId of collectCutSubtree(layoutGraph, ligandAtomId, centerAtomId)) {
+    const currentPosition = coords.get(subtreeAtomId);
+    if (!currentPosition) {
+      continue;
+    }
+    const offset = sub(currentPosition, centerPosition);
+    nextCoords.set(
+      subtreeAtomId,
+      add(centerPosition, fromAngle(angleOf(offset) + rotation, distance(centerPosition, currentPosition)))
+    );
+  }
+  return {
+    coords: nextCoords,
+    rotationMagnitude: Math.abs(rotation)
+  };
+}
+
+function tetraarylCandidateAuditDoesNotRegress(candidateAudit, incumbentAudit) {
+  if (incumbentAudit.ok === true && candidateAudit.ok !== true) {
+    return false;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'bondLengthFailureCount',
+    'mildBondLengthFailureCount',
+    'severeBondLengthFailureCount',
+    'collapsedMacrocycleCount',
+    'labelOverlapCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount'
+  ]) {
+    if ((candidateAudit[key] ?? 0) > (incumbentAudit[key] ?? 0)) {
+      return false;
+    }
+  }
+  return !((candidateAudit.stereoContradiction ?? false) && !(incumbentAudit.stereoContradiction ?? false));
+}
+
+function compareTetraarylCrossCandidates(candidate, incumbent) {
+  if (!incumbent) {
+    return -1;
+  }
+  if (candidate.audit.ok !== incumbent.audit.ok) {
+    return candidate.audit.ok ? -1 : 1;
+  }
+  for (const key of [
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'bondLengthFailureCount',
+    'collapsedMacrocycleCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount',
+    'labelOverlapCount'
+  ]) {
+    if ((candidate.audit[key] ?? 0) !== (incumbent.audit[key] ?? 0)) {
+      return (candidate.audit[key] ?? 0) - (incumbent.audit[key] ?? 0);
+    }
+  }
+  if (Math.abs(candidate.deviation - incumbent.deviation) > 1e-12) {
+    return candidate.deviation - incumbent.deviation;
+  }
+  if (Math.abs(candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation) > 1e-9) {
+    return candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation;
+  }
+  return candidate.rotationMagnitude - incumbent.rotationMagnitude;
+}
+
+/**
+ * Tetraaryl silanes read best as a four-way cross, but the ligand that belongs
+ * to the principal scaffold may need to move too. Evaluate full side rotations
+ * and accept only an audit-clean orthogonal pose.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {string} centerAtomId - Silicon center atom id.
+ * @param {object} descriptor - Tetraaryl descriptor.
+ * @returns {number} Number of accepted ligand rotations.
+ */
+function orthogonalizeTetraarylCenter(layoutGraph, coords, centerAtomId, descriptor) {
+  if (descriptor?.kind !== 'tetraaryl' || descriptor.singleNeighborIds.length !== 4) {
+    return 0;
+  }
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition) {
+    return 0;
+  }
+
+  const bondLength = layoutGraph.options?.bondLength ?? 1.5;
+  const incumbentAudit = auditLayout(layoutGraph, coords, { bondLength });
+  const currentAngles = new Map(
+    descriptor.singleNeighborIds.map(neighborAtomId => [
+      neighborAtomId,
+      angleOf(sub(coords.get(neighborAtomId), centerPosition))
+    ])
+  );
+  const slotOffsets = [0, Math.PI / 2, Math.PI, (3 * Math.PI) / 2];
+  const candidateAlphas = descriptor.singleNeighborIds.flatMap(neighborAtomId =>
+    slotOffsets.map(slotOffset => currentAngles.get(neighborAtomId) - slotOffset)
+  );
+  const permutations = orthogonalTargetPermutations(descriptor);
+  const visited = new Set();
+  let bestCandidate = null;
+
+  for (const alpha of candidateAlphas) {
+    const targetAngles = slotOffsets.map(slotOffset => wrapAngleUnsigned(alpha + slotOffset));
+    for (const permutation of permutations) {
+      let candidateCoords = coords;
+      let rotationMagnitude = 0;
+      const signature = descriptor.singleNeighborIds
+        .map((neighborAtomId, neighborIndex) => `${neighborAtomId}:${targetAngles[permutation[neighborIndex]].toFixed(9)}`)
+        .join('|');
+      if (visited.has(signature)) {
+        continue;
+      }
+      visited.add(signature);
+
+      for (let neighborIndex = 0; neighborIndex < descriptor.singleNeighborIds.length; neighborIndex++) {
+        const neighborAtomId = descriptor.singleNeighborIds[neighborIndex];
+        const rotated = rotateTetraarylLigandSubtree(
+          layoutGraph,
+          candidateCoords,
+          centerAtomId,
+          neighborAtomId,
+          targetAngles[permutation[neighborIndex]]
+        );
+        candidateCoords = rotated.coords;
+        rotationMagnitude += rotated.rotationMagnitude;
+      }
+
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+      if (!tetraarylCandidateAuditDoesNotRegress(candidateAudit, incumbentAudit)) {
+        continue;
+      }
+      const candidate = {
+        coords: candidateCoords,
+        audit: candidateAudit,
+        deviation: measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords, {
+          focusAtomIds: new Set([centerAtomId])
+        }),
+        rotationMagnitude
+      };
+      if (compareTetraarylCrossCandidates(candidate, bestCandidate) < 0) {
+        bestCandidate = candidate;
+      }
+    }
+  }
+
+  const incumbentDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, coords, {
+    focusAtomIds: new Set([centerAtomId])
+  });
+  if (!bestCandidate || bestCandidate.deviation >= incumbentDeviation - 1e-12) {
+    return 0;
+  }
+  for (const [atomId, position] of bestCandidate.coords) {
+    coords.set(atomId, position);
+  }
+  return descriptor.singleNeighborIds.filter(neighborAtomId =>
+    angularDifference(currentAngles.get(neighborAtomId), angleOf(sub(coords.get(neighborAtomId), centerPosition))) > 1e-9
+  ).length;
+}
+
 /**
  * Measures how far supported hypervalent centers deviate from the nearest
  * orthogonal cross-like presentation without mutating coordinates.
@@ -1837,6 +2258,10 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
   for (const centerAtomId of centerAtomIds) {
     const descriptor = describeOrthogonalHypervalentCenter(layoutGraph, centerAtomId, coords);
     if (!descriptor) {
+      continue;
+    }
+    if (descriptor.kind === 'tetraaryl') {
+      nudges += orthogonalizeTetraarylCenter(layoutGraph, coords, centerAtomId, descriptor);
       continue;
     }
 
