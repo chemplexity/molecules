@@ -4,7 +4,7 @@ import { BRIDGED_KK_LIMITS } from '../constants.js';
 import { cloneCoords } from '../geometry/transforms.js';
 import { auditLayout } from '../audit/audit.js';
 import { circumradiusForRegularPolygon } from '../geometry/polygon.js';
-import { add, angleOf, angularDifference, centroid, fromAngle, sub } from '../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub } from '../geometry/vec2.js';
 import { layoutKamadaKawai } from '../geometry/kk-layout.js';
 import { orientBridgedSeed, projectBridgePaths } from './bridge-projection.js';
 import { assignBondValidationClass } from '../placement/bond-validation.js';
@@ -55,6 +55,12 @@ const SATURATED_BRIDGED_RING_JUNCTION_BALANCE_STEP_FACTORS = Object.freeze([0.04
 const SATURATED_BRIDGED_RING_SHAPE_BALANCE_MAX_PASSES = 3;
 const SATURATED_BRIDGED_RING_SHAPE_BALANCE_DIRECTION_COUNT = 12;
 const SATURATED_BRIDGED_RING_SHAPE_BALANCE_STEP_FACTORS = Object.freeze([0.027, 0.017, 0.01, 0.005]);
+const SPIRO_JUNCTION_RING_SPREAD_MIN_CROSS_ANGLE = Math.PI / 3;
+const SPIRO_JUNCTION_RING_SPREAD_OFFSETS = Object.freeze(
+  Array.from({ length: 72 }, (_, index) => ((index + 1) * 5 * Math.PI) / 180)
+    .flatMap(angle => [angle, -angle])
+);
+const SPIRO_JUNCTION_RING_SPREAD_EPSILON = 1e-6;
 
 /**
  * Returns tuned KK options for small unmatched bridged systems.
@@ -562,6 +568,269 @@ function atomIdsAreAdjacentInRing(ring, firstAtomId, secondAtomId) {
     ring.atomIds[(firstIndex + 1) % ring.atomIds.length] === secondAtomId
     || ring.atomIds[(firstIndex - 1 + ring.atomIds.length) % ring.atomIds.length] === secondAtomId
   );
+}
+
+/**
+ * Splits a bridged ring-system atom set into covalent components after removing
+ * one candidate spiro junction atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Ring-system atom IDs.
+ * @param {string} anchorAtomId - Candidate shared atom.
+ * @returns {string[][]} Connected components that do not include the anchor.
+ */
+function bridgedComponentsWithoutAnchor(layoutGraph, atomIds, anchorAtomId) {
+  const remainingAtomIds = new Set(atomIds.filter(atomId => atomId !== anchorAtomId));
+  const seenAtomIds = new Set();
+  const components = [];
+
+  for (const atomId of remainingAtomIds) {
+    if (seenAtomIds.has(atomId)) {
+      continue;
+    }
+    const component = [];
+    const pendingAtomIds = [atomId];
+    seenAtomIds.add(atomId);
+    while (pendingAtomIds.length > 0) {
+      const currentAtomId = pendingAtomIds.pop();
+      component.push(currentAtomId);
+      for (const bond of layoutGraph.bondsByAtomId.get(currentAtomId) ?? []) {
+        if (!bond || bond.kind !== 'covalent') {
+          continue;
+        }
+        const neighborAtomId = bond.a === currentAtomId ? bond.b : bond.a;
+        if (!remainingAtomIds.has(neighborAtomId) || seenAtomIds.has(neighborAtomId)) {
+          continue;
+        }
+        seenAtomIds.add(neighborAtomId);
+        pendingAtomIds.push(neighborAtomId);
+      }
+    }
+    components.push(component);
+  }
+
+  return components;
+}
+
+/**
+ * Returns heavy neighbors of a candidate spiro junction that belong to one
+ * component after the junction atom is removed.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Candidate shared atom.
+ * @param {string[]} componentAtomIds - Atom IDs in one separated component.
+ * @returns {string[]} Heavy anchor-neighbor IDs inside the component.
+ */
+function heavyAnchorNeighborsInComponent(layoutGraph, anchorAtomId, componentAtomIds) {
+  const componentAtomIdSet = new Set(componentAtomIds);
+  return (layoutGraph.bondsByAtomId.get(anchorAtomId) ?? [])
+    .filter(bond => bond?.kind === 'covalent')
+    .map(bond => (bond.a === anchorAtomId ? bond.b : bond.a))
+    .filter(neighborAtomId =>
+      componentAtomIdSet.has(neighborAtomId)
+      && layoutGraph.atoms.get(neighborAtomId)?.element !== 'H'
+    );
+}
+
+/**
+ * Measures angular spacing between ring blocks sharing a single spiro atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Candidate spiro atom.
+ * @param {Array<{atomIds: string[], neighborAtomIds: string[]}>} groups - Ring-block groups around the anchor.
+ * @returns {{minSeparation: number, minCrossSeparation: number, crossSeparationSum: number}|null} Spacing score.
+ */
+function scoreSpiroJunctionRingSpread(layoutGraph, coords, anchorAtomId, groups) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+  const neighborRecords = [];
+  for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+    for (const neighborAtomId of groups[groupIndex].neighborAtomIds) {
+      const neighborPosition = coords.get(neighborAtomId);
+      if (!neighborPosition || layoutGraph.atoms.get(neighborAtomId)?.element === 'H') {
+        continue;
+      }
+      neighborRecords.push({
+        atomId: neighborAtomId,
+        groupIndex,
+        angle: angleOf(sub(neighborPosition, anchorPosition))
+      });
+    }
+  }
+  if (neighborRecords.length < 4) {
+    return null;
+  }
+
+  let minSeparation = Number.POSITIVE_INFINITY;
+  let minCrossSeparation = Number.POSITIVE_INFINITY;
+  let crossSeparationSum = 0;
+  for (let firstIndex = 0; firstIndex < neighborRecords.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < neighborRecords.length; secondIndex++) {
+      const separation = angularDifference(neighborRecords[firstIndex].angle, neighborRecords[secondIndex].angle);
+      minSeparation = Math.min(minSeparation, separation);
+      if (neighborRecords[firstIndex].groupIndex !== neighborRecords[secondIndex].groupIndex) {
+        minCrossSeparation = Math.min(minCrossSeparation, separation);
+        crossSeparationSum += separation;
+      }
+    }
+  }
+  return { minSeparation, minCrossSeparation, crossSeparationSum };
+}
+
+/**
+ * Prefers candidate spiro ring-block rotations that improve local spacing
+ * without making bridged-placement audit metrics worse.
+ * @param {object|null} candidate - Candidate record.
+ * @param {object|null} incumbent - Current best candidate record.
+ * @returns {boolean} True when the candidate should replace the incumbent.
+ */
+function isBetterSpiroJunctionRingSpreadCandidate(candidate, incumbent) {
+  if (!candidate) {
+    return false;
+  }
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  }
+  if ((candidate.audit.visibleHeavyBondCrossingCount ?? 0) !== (incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) {
+    return (candidate.audit.visibleHeavyBondCrossingCount ?? 0) < (incumbent.audit.visibleHeavyBondCrossingCount ?? 0);
+  }
+  if (candidate.score.minCrossSeparation > incumbent.score.minCrossSeparation + SPIRO_JUNCTION_RING_SPREAD_EPSILON) {
+    return true;
+  }
+  if (candidate.score.minCrossSeparation < incumbent.score.minCrossSeparation - SPIRO_JUNCTION_RING_SPREAD_EPSILON) {
+    return false;
+  }
+  if (candidate.score.minSeparation > incumbent.score.minSeparation + SPIRO_JUNCTION_RING_SPREAD_EPSILON) {
+    return true;
+  }
+  if (candidate.score.minSeparation < incumbent.score.minSeparation - SPIRO_JUNCTION_RING_SPREAD_EPSILON) {
+    return false;
+  }
+  if (Math.abs(candidate.score.crossSeparationSum - incumbent.score.crossSeparationSum) > SPIRO_JUNCTION_RING_SPREAD_EPSILON) {
+    return candidate.score.crossSeparationSum > incumbent.score.crossSeparationSum;
+  }
+  return candidate.rotationMagnitude < incumbent.rotationMagnitude - SPIRO_JUNCTION_RING_SPREAD_EPSILON;
+}
+
+/**
+ * Rotates an entire ring block around its shared spiro junction.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Shared spiro atom.
+ * @param {string[]} atomIds - Ring-block atom IDs to rotate.
+ * @param {number} rotationAngle - Rotation angle in radians.
+ * @returns {Map<string, {x: number, y: number}>|null} Rotated coordinate map.
+ */
+function rotateSpiroJunctionGroup(coords, anchorAtomId, atomIds, rotationAngle) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+  const candidateCoords = cloneCoords(coords);
+  for (const atomId of atomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, add(anchorPosition, rotate(sub(position, anchorPosition), rotationAngle)));
+  }
+  return candidateCoords;
+}
+
+/**
+ * Rotates one side of a single-atom spiro junction when the generic bridged
+ * fallback stacks two ring blocks into a visibly pinched local fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Adjusted coordinate map.
+ */
+function spreadSpiroJunctionRingBlocks(layoutGraph, rings, atomIds, inputCoords, bondLength) {
+  let coords = inputCoords;
+  const atomIdSet = new Set(atomIds);
+
+  for (const anchorAtomId of atomIds) {
+    const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+    const anchorRings = rings.filter(ring => ring.atomIds.includes(anchorAtomId));
+    if (
+      !anchorAtom
+      || anchorAtom.element === 'H'
+      || anchorAtom.heavyDegree < 4
+      || anchorRings.length < 2
+      || layoutGraph.fixedCoords.has(anchorAtomId)
+    ) {
+      continue;
+    }
+
+    const groups = bridgedComponentsWithoutAnchor(layoutGraph, atomIds, anchorAtomId)
+      .map(componentAtomIds => ({
+        atomIds: componentAtomIds,
+        neighborAtomIds: heavyAnchorNeighborsInComponent(layoutGraph, anchorAtomId, componentAtomIds)
+      }))
+      .filter(group => group.neighborAtomIds.length === 2);
+    if (groups.length !== 2 || groups.some(group => group.atomIds.some(atomId => !atomIdSet.has(atomId)))) {
+      continue;
+    }
+
+    const baseScore = scoreSpiroJunctionRingSpread(layoutGraph, coords, anchorAtomId, groups);
+    if (!baseScore || baseScore.minCrossSeparation >= SPIRO_JUNCTION_RING_SPREAD_MIN_CROSS_ANGLE) {
+      continue;
+    }
+    const baseAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+    let bestCandidate = {
+      coords,
+      score: baseScore,
+      audit: baseAudit,
+      rotationMagnitude: 0
+    };
+
+    for (let groupIndex = 0; groupIndex < groups.length; groupIndex++) {
+      if (groups[groupIndex].atomIds.some(atomId => layoutGraph.fixedCoords.has(atomId))) {
+        continue;
+      }
+      for (const rotationAngle of SPIRO_JUNCTION_RING_SPREAD_OFFSETS) {
+        const candidateCoords = rotateSpiroJunctionGroup(
+          coords,
+          anchorAtomId,
+          groups[groupIndex].atomIds,
+          rotationAngle
+        );
+        if (!candidateCoords) {
+          continue;
+        }
+        const candidateScore = scoreSpiroJunctionRingSpread(layoutGraph, candidateCoords, anchorAtomId, groups);
+        if (!candidateScore || candidateScore.minCrossSeparation <= baseScore.minCrossSeparation + SPIRO_JUNCTION_RING_SPREAD_EPSILON) {
+          continue;
+        }
+        const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+        if (
+          candidateAudit.bondLengthFailureCount > baseAudit.bondLengthFailureCount
+          || candidateAudit.maxBondLengthDeviation > baseAudit.maxBondLengthDeviation + SPIRO_JUNCTION_RING_SPREAD_EPSILON
+        ) {
+          continue;
+        }
+        const candidate = {
+          coords: candidateCoords,
+          score: candidateScore,
+          audit: candidateAudit,
+          rotationMagnitude: Math.abs(rotationAngle)
+        };
+        if (isBetterSpiroJunctionRingSpreadCandidate(candidate, bestCandidate)) {
+          bestCandidate = candidate;
+        }
+      }
+    }
+
+    if (bestCandidate.coords !== coords) {
+      coords = bestCandidate.coords;
+    }
+  }
+
+  return coords;
 }
 
 function pointSideOfEdge(point, firstPosition, secondPosition) {
@@ -2040,6 +2309,7 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
   selectedCoords = balanceSaturatedBridgedRingJunctionAngles(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = balanceSaturatedBridgedRingShape(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = regularizeAromaticBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = spreadSpiroJunctionRingBlocks(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
 
   const ringCenters = new Map();
   for (const ring of rings) {

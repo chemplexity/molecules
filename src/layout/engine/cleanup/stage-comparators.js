@@ -1,8 +1,6 @@
 /** @module cleanup/stage-comparators */
 
-import { PROTECTED_CLEANUP_STAGE_LIMITS } from '../constants.js';
-
-const PRESENTATION_METRIC_EPSILON = 1e-9;
+import { PRESENTATION_METRIC_EPSILON, PROTECTED_CLEANUP_STAGE_LIMITS } from '../constants.js';
 
 /**
  * Returns whether two stages carry comparable finite metric values.
@@ -13,6 +11,49 @@ const PRESENTATION_METRIC_EPSILON = 1e-9;
  */
 function hasComparableFiniteMetric(candidate, incumbent, key) {
   return Number.isFinite(candidate?.[key]) && Number.isFinite(incumbent?.[key]);
+}
+
+/**
+ * Compares two integer audit counts.
+ * @param {number} a - Candidate count.
+ * @param {number} b - Incumbent count.
+ * @returns {boolean|null} True when a < b, false when a > b, null when equal.
+ */
+function compareCount(a, b) {
+  if (a === b) {
+    return null;
+  }
+  return a < b;
+}
+
+/**
+ * Compares two floating-point audit deviation values using PRESENTATION_METRIC_EPSILON.
+ * @param {number} a - Candidate deviation.
+ * @param {number} b - Incumbent deviation.
+ * @returns {boolean|null} True when a < b by more than epsilon, false when a > b by more than epsilon, null within epsilon.
+ */
+function compareDeviation(a, b) {
+  if (Math.abs(a - b) <= PRESENTATION_METRIC_EPSILON) {
+    return null;
+  }
+  return a < b;
+}
+
+/**
+ * Compares a presentation penalty field between candidate and incumbent, applying
+ * `?? 0` defaults and PRESENTATION_METRIC_EPSILON tolerance.
+ * @param {object} candidate - Candidate stage result.
+ * @param {object} incumbent - Incumbent stage result.
+ * @param {string} key - Penalty field name.
+ * @returns {boolean|null} True when candidate is better, false when worse, null when indistinguishable.
+ */
+function comparePenalty(candidate, incumbent, key) {
+  const a = candidate[key] ?? 0;
+  const b = incumbent[key] ?? 0;
+  if (Math.abs(a - b) <= PRESENTATION_METRIC_EPSILON) {
+    return null;
+  }
+  return a < b;
 }
 
 /**
@@ -36,86 +77,82 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   if (candidate.audit.stereoContradiction !== incumbent.audit.stereoContradiction) {
     return incumbent.audit.stereoContradiction;
   }
-  if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
-    return candidate.audit.bondLengthFailureCount < incumbent.audit.bondLengthFailureCount;
+  let r;
+  if ((r = compareCount(candidate.audit.bondLengthFailureCount, incumbent.audit.bondLengthFailureCount)) !== null) {
+    return r;
   }
-  if (Math.abs(candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation) > 1e-9) {
-    return candidate.audit.maxBondLengthDeviation < incumbent.audit.maxBondLengthDeviation;
+  if ((r = compareDeviation(candidate.audit.maxBondLengthDeviation, incumbent.audit.maxBondLengthDeviation)) !== null) {
+    return r;
   }
-  if (candidate.audit.ringSubstituentReadabilityFailureCount !== incumbent.audit.ringSubstituentReadabilityFailureCount) {
-    return candidate.audit.ringSubstituentReadabilityFailureCount < incumbent.audit.ringSubstituentReadabilityFailureCount;
+  if ((r = compareCount(candidate.audit.ringSubstituentReadabilityFailureCount, incumbent.audit.ringSubstituentReadabilityFailureCount)) !== null) {
+    return r;
   }
-  if (candidate.audit.inwardRingSubstituentCount !== incumbent.audit.inwardRingSubstituentCount) {
-    return candidate.audit.inwardRingSubstituentCount < incumbent.audit.inwardRingSubstituentCount;
+  if ((r = compareCount(candidate.audit.inwardRingSubstituentCount, incumbent.audit.inwardRingSubstituentCount)) !== null) {
+    return r;
   }
-  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
-    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  if ((r = compareCount(candidate.audit.severeOverlapCount, incumbent.audit.severeOverlapCount)) !== null) {
+    return r;
   }
-  if ((candidate.audit.visibleHeavyBondCrossingCount ?? 0) !== (incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) {
-    return (candidate.audit.visibleHeavyBondCrossingCount ?? 0) < (incumbent.audit.visibleHeavyBondCrossingCount ?? 0);
+  if ((r = compareCount(candidate.audit.visibleHeavyBondCrossingCount ?? 0, incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) !== null) {
+    return r;
   }
-  if (candidate.audit.labelOverlapCount !== incumbent.audit.labelOverlapCount) {
-    return candidate.audit.labelOverlapCount < incumbent.audit.labelOverlapCount;
+  if ((r = compareCount(candidate.audit.labelOverlapCount, incumbent.audit.labelOverlapCount)) !== null) {
+    return r;
   }
   const divalentContinuationIncrease = (candidate.divalentContinuationPenalty ?? 0) - (incumbent.divalentContinuationPenalty ?? 0);
   const omittedHydrogenTrigonalImprovement = (incumbent.omittedHydrogenTrigonalPenalty ?? 0) - (candidate.omittedHydrogenTrigonalPenalty ?? 0);
   const phosphateArylTailImprovement = (incumbent.phosphateArylTailPenalty ?? 0) - (candidate.phosphateArylTailPenalty ?? 0);
-  const allowsDivalentPresentationTradeoff = allowPresentationTieBreak && (
-    omittedHydrogenTrigonalImprovement > divalentContinuationIncrease + 1e-9
-    || phosphateArylTailImprovement > divalentContinuationIncrease + 1e-9
-  );
-  if (divalentContinuationIncrease > 1e-9 && !allowsDivalentPresentationTradeoff) {
+  const allowsDivalentPresentationTradeoff =
+    allowPresentationTieBreak &&
+    (omittedHydrogenTrigonalImprovement > divalentContinuationIncrease + PRESENTATION_METRIC_EPSILON ||
+      phosphateArylTailImprovement > divalentContinuationIncrease + PRESENTATION_METRIC_EPSILON);
+  if (divalentContinuationIncrease > PRESENTATION_METRIC_EPSILON && !allowsDivalentPresentationTradeoff) {
     return false;
   }
-  if (
-    allowPresentationTieBreak
-    && Math.abs(divalentContinuationIncrease) > 1e-9
-    && !allowsDivalentPresentationTradeoff
-  ) {
+  if (!allowPresentationTieBreak) {
+    return false;
+  }
+  if (Math.abs(divalentContinuationIncrease) > PRESENTATION_METRIC_EPSILON && !allowsDivalentPresentationTradeoff) {
     return (candidate.divalentContinuationPenalty ?? 0) < (incumbent.divalentContinuationPenalty ?? 0);
   }
-  if (
-    allowPresentationTieBreak
-    && hasComparableFiniteMetric(candidate, incumbent, 'hypervalentDeviation')
-    && Math.abs(candidate.hypervalentDeviation - incumbent.hypervalentDeviation) > PRESENTATION_METRIC_EPSILON
-  ) {
-    return candidate.hypervalentDeviation < incumbent.hypervalentDeviation;
+  if (hasComparableFiniteMetric(candidate, incumbent, 'hypervalentDeviation') && (r = compareDeviation(candidate.hypervalentDeviation, incumbent.hypervalentDeviation)) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.phosphateArylTailPenalty ?? 0) - (incumbent.phosphateArylTailPenalty ?? 0)) > 1e-9) {
-    return (candidate.phosphateArylTailPenalty ?? 0) < (incumbent.phosphateArylTailPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'phosphateArylTailPenalty')) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.terminalCationRingProximityPenalty ?? 0) - (incumbent.terminalCationRingProximityPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalCationRingProximityPenalty ?? 0) < (incumbent.terminalCationRingProximityPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalCationRingProximityPenalty')) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.omittedHydrogenTrigonalPenalty ?? 0) - (incumbent.omittedHydrogenTrigonalPenalty ?? 0)) > 1e-9) {
-    return (candidate.omittedHydrogenTrigonalPenalty ?? 0) < (incumbent.omittedHydrogenTrigonalPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'omittedHydrogenTrigonalPenalty')) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.terminalHeteroOutwardMaxPenalty ?? 0) - (incumbent.terminalHeteroOutwardMaxPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalHeteroOutwardMaxPenalty ?? 0) < (incumbent.terminalHeteroOutwardMaxPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalHeteroOutwardMaxPenalty')) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.terminalHeteroOutwardPenalty ?? 0) - (incumbent.terminalHeteroOutwardPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalHeteroOutwardPenalty ?? 0) < (incumbent.terminalHeteroOutwardPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalHeteroOutwardPenalty')) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.terminalMultipleBondLeafFanMaxPenalty ?? 0) - (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalMultipleBondLeafFanMaxPenalty ?? 0) < (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalMultipleBondLeafFanMaxPenalty')) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.terminalMultipleBondLeafFanPenalty ?? 0) - (incumbent.terminalMultipleBondLeafFanPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalMultipleBondLeafFanPenalty ?? 0) < (incumbent.terminalMultipleBondLeafFanPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalMultipleBondLeafFanPenalty')) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.smallRingExteriorFanExactMaxPenalty ?? 0) - (incumbent.smallRingExteriorFanExactMaxPenalty ?? 0)) > 1e-9) {
-    return (candidate.smallRingExteriorFanExactMaxPenalty ?? 0) < (incumbent.smallRingExteriorFanExactMaxPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'smallRingExteriorFanExactMaxPenalty')) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.smallRingExteriorFanExactPenalty ?? 0) - (incumbent.smallRingExteriorFanExactPenalty ?? 0)) > 1e-9) {
-    return (candidate.smallRingExteriorFanExactPenalty ?? 0) < (incumbent.smallRingExteriorFanExactPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'smallRingExteriorFanExactPenalty')) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.attachedRingPeripheralPenalty ?? 0) - (incumbent.attachedRingPeripheralPenalty ?? 0)) > 1e-9) {
-    return (candidate.attachedRingPeripheralPenalty ?? 0) < (incumbent.attachedRingPeripheralPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'attachedRingPeripheralPenalty')) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.attachedRingRootOutwardPenalty ?? 0) - (incumbent.attachedRingRootOutwardPenalty ?? 0)) > 1e-9) {
-    return (candidate.attachedRingRootOutwardPenalty ?? 0) < (incumbent.attachedRingRootOutwardPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'attachedRingRootOutwardPenalty')) !== null) {
+    return r;
   }
-  if (allowPresentationTieBreak && Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
-    return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'presentationPenalty')) !== null) {
+    return r;
   }
   return false;
 }
@@ -141,8 +178,8 @@ export function shouldPreferFusedMixedOverlapCleanupStage(familySummary, candida
     return false;
   }
   return (
-    candidate.audit.maxBondLengthDeviation <= PROTECTED_CLEANUP_STAGE_LIMITS.maxFusedMixedBondDeviationForOverlapWin
-    && candidate.audit.meanBondLengthDeviation <= PROTECTED_CLEANUP_STAGE_LIMITS.maxFusedMixedMeanDeviationForOverlapWin
+    candidate.audit.maxBondLengthDeviation <= PROTECTED_CLEANUP_STAGE_LIMITS.maxFusedMixedBondDeviationForOverlapWin &&
+    candidate.audit.meanBondLengthDeviation <= PROTECTED_CLEANUP_STAGE_LIMITS.maxFusedMixedMeanDeviationForOverlapWin
   );
 }
 
@@ -165,16 +202,16 @@ export function shouldPreferOverlapWinOverMinorReadabilityRegression(candidate, 
   if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
     return false;
   }
-  if (candidate.audit.maxBondLengthDeviation > incumbent.audit.maxBondLengthDeviation + 1e-9) {
+  if (candidate.audit.maxBondLengthDeviation > incumbent.audit.maxBondLengthDeviation + PRESENTATION_METRIC_EPSILON) {
     return false;
   }
   if (candidate.audit.labelOverlapCount > incumbent.audit.labelOverlapCount) {
     return false;
   }
   return (
-    candidate.audit.ringSubstituentReadabilityFailureCount <= incumbent.audit.ringSubstituentReadabilityFailureCount + 1
-    && candidate.audit.inwardRingSubstituentCount <= incumbent.audit.inwardRingSubstituentCount + 1
-    && candidate.audit.outwardAxisRingSubstituentFailureCount <= incumbent.audit.outwardAxisRingSubstituentFailureCount + 1
+    candidate.audit.ringSubstituentReadabilityFailureCount <= incumbent.audit.ringSubstituentReadabilityFailureCount + 1 &&
+    candidate.audit.inwardRingSubstituentCount <= incumbent.audit.inwardRingSubstituentCount + 1 &&
+    candidate.audit.outwardAxisRingSubstituentFailureCount <= incumbent.audit.outwardAxisRingSubstituentFailureCount + 1
   );
 }
 
@@ -198,16 +235,16 @@ export function shouldPreferCrossingWinOverMinorReadabilityRegression(candidate,
   if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
     return false;
   }
-  if (candidate.audit.maxBondLengthDeviation > incumbent.audit.maxBondLengthDeviation + 1e-9) {
+  if (candidate.audit.maxBondLengthDeviation > incumbent.audit.maxBondLengthDeviation + PRESENTATION_METRIC_EPSILON) {
     return false;
   }
   if (candidate.audit.labelOverlapCount > incumbent.audit.labelOverlapCount) {
     return false;
   }
   return (
-    candidate.audit.ringSubstituentReadabilityFailureCount <= incumbent.audit.ringSubstituentReadabilityFailureCount + 1
-    && candidate.audit.inwardRingSubstituentCount <= incumbent.audit.inwardRingSubstituentCount + 1
-    && candidate.audit.outwardAxisRingSubstituentFailureCount <= incumbent.audit.outwardAxisRingSubstituentFailureCount + 1
+    candidate.audit.ringSubstituentReadabilityFailureCount <= incumbent.audit.ringSubstituentReadabilityFailureCount + 1 &&
+    candidate.audit.inwardRingSubstituentCount <= incumbent.audit.inwardRingSubstituentCount + 1 &&
+    candidate.audit.outwardAxisRingSubstituentFailureCount <= incumbent.audit.outwardAxisRingSubstituentFailureCount + 1
   );
 }
 
@@ -236,13 +273,13 @@ export function isPreferredProtectedCleanupStage(familySummary, placement, candi
   const overlapReduction = incumbent.audit.severeOverlapCount - candidate.audit.severeOverlapCount;
   const bondFailureIncrease = candidate.audit.bondLengthFailureCount - incumbent.audit.bondLengthFailureCount;
   if (
-    familySummary.primaryFamily === 'bridged'
-    && familySummary.mixedMode === false
-    && placement.placedFamilies.every(family => family === 'bridged')
-    && overlapReduction > 0
-    && bondFailureIncrease > 0
-    && bondFailureIncrease <= PROTECTED_CLEANUP_STAGE_LIMITS.maxBondFailureIncreaseForOverlapWin
-    && bondDeviationIncrease <= PROTECTED_CLEANUP_STAGE_LIMITS.maxBondDeviationIncrease
+    familySummary.primaryFamily === 'bridged' &&
+    familySummary.mixedMode === false &&
+    placement.placedFamilies.every(family => family === 'bridged') &&
+    overlapReduction > 0 &&
+    bondFailureIncrease > 0 &&
+    bondFailureIncrease <= PROTECTED_CLEANUP_STAGE_LIMITS.maxBondFailureIncreaseForOverlapWin &&
+    bondDeviationIncrease <= PROTECTED_CLEANUP_STAGE_LIMITS.maxBondDeviationIncrease
   ) {
     return true;
   }
@@ -252,41 +289,42 @@ export function isPreferredProtectedCleanupStage(familySummary, placement, candi
   if (shouldPreferOverlapWinOverMinorReadabilityRegression(candidate, incumbent)) {
     return true;
   }
-  if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
-    return candidate.audit.bondLengthFailureCount < incumbent.audit.bondLengthFailureCount;
+  let r;
+  if ((r = compareCount(candidate.audit.bondLengthFailureCount, incumbent.audit.bondLengthFailureCount)) !== null) {
+    return r;
   }
-  if (Math.abs(bondDeviationIncrease) > 1e-9) {
-    return candidate.audit.maxBondLengthDeviation < incumbent.audit.maxBondLengthDeviation;
+  if ((r = compareDeviation(candidate.audit.maxBondLengthDeviation, incumbent.audit.maxBondLengthDeviation)) !== null) {
+    return r;
   }
-  if (candidate.audit.ringSubstituentReadabilityFailureCount !== incumbent.audit.ringSubstituentReadabilityFailureCount) {
-    return candidate.audit.ringSubstituentReadabilityFailureCount < incumbent.audit.ringSubstituentReadabilityFailureCount;
+  if ((r = compareCount(candidate.audit.ringSubstituentReadabilityFailureCount, incumbent.audit.ringSubstituentReadabilityFailureCount)) !== null) {
+    return r;
   }
-  if (candidate.audit.inwardRingSubstituentCount !== incumbent.audit.inwardRingSubstituentCount) {
-    return candidate.audit.inwardRingSubstituentCount < incumbent.audit.inwardRingSubstituentCount;
+  if ((r = compareCount(candidate.audit.inwardRingSubstituentCount, incumbent.audit.inwardRingSubstituentCount)) !== null) {
+    return r;
   }
-  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
-    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  if ((r = compareCount(candidate.audit.severeOverlapCount, incumbent.audit.severeOverlapCount)) !== null) {
+    return r;
   }
-  if ((candidate.audit.visibleHeavyBondCrossingCount ?? 0) !== (incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) {
-    return (candidate.audit.visibleHeavyBondCrossingCount ?? 0) < (incumbent.audit.visibleHeavyBondCrossingCount ?? 0);
+  if ((r = compareCount(candidate.audit.visibleHeavyBondCrossingCount ?? 0, incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) !== null) {
+    return r;
   }
-  if (Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
-    return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'presentationPenalty')) !== null) {
+    return r;
   }
-  if (Math.abs((candidate.terminalCationRingProximityPenalty ?? 0) - (incumbent.terminalCationRingProximityPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalCationRingProximityPenalty ?? 0) < (incumbent.terminalCationRingProximityPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalCationRingProximityPenalty')) !== null) {
+    return r;
   }
-  if (Math.abs((candidate.terminalHeteroOutwardMaxPenalty ?? 0) - (incumbent.terminalHeteroOutwardMaxPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalHeteroOutwardMaxPenalty ?? 0) < (incumbent.terminalHeteroOutwardMaxPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalHeteroOutwardMaxPenalty')) !== null) {
+    return r;
   }
-  if (Math.abs((candidate.terminalHeteroOutwardPenalty ?? 0) - (incumbent.terminalHeteroOutwardPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalHeteroOutwardPenalty ?? 0) < (incumbent.terminalHeteroOutwardPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalHeteroOutwardPenalty')) !== null) {
+    return r;
   }
-  if (Math.abs((candidate.terminalMultipleBondLeafFanMaxPenalty ?? 0) - (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalMultipleBondLeafFanMaxPenalty ?? 0) < (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalMultipleBondLeafFanMaxPenalty')) !== null) {
+    return r;
   }
-  if (Math.abs((candidate.terminalMultipleBondLeafFanPenalty ?? 0) - (incumbent.terminalMultipleBondLeafFanPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalMultipleBondLeafFanPenalty ?? 0) < (incumbent.terminalMultipleBondLeafFanPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalMultipleBondLeafFanPenalty')) !== null) {
+    return r;
   }
   return false;
 }
@@ -309,11 +347,12 @@ export function isPreferredLabelClearanceStage(candidate, incumbent) {
   if (candidate.audit.labelOverlapCount < incumbent.audit.labelOverlapCount) {
     return true;
   }
-  if (Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
-    return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
+  let r;
+  if ((r = comparePenalty(candidate, incumbent, 'presentationPenalty')) !== null) {
+    return r;
   }
-  if (Math.abs((candidate.terminalCationRingProximityPenalty ?? 0) - (incumbent.terminalCationRingProximityPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalCationRingProximityPenalty ?? 0) < (incumbent.terminalCationRingProximityPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalCationRingProximityPenalty')) !== null) {
+    return r;
   }
   return false;
 }
@@ -334,38 +373,39 @@ export function isPreferredCleanupGeometryStage(candidate, incumbent) {
   if (candidate.audit.ok !== incumbent.audit.ok) {
     return candidate.audit.ok;
   }
-  if (candidate.audit.collapsedMacrocycleCount !== incumbent.audit.collapsedMacrocycleCount) {
-    return candidate.audit.collapsedMacrocycleCount < incumbent.audit.collapsedMacrocycleCount;
+  let r;
+  if ((r = compareCount(candidate.audit.collapsedMacrocycleCount, incumbent.audit.collapsedMacrocycleCount)) !== null) {
+    return r;
   }
-  if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
-    return candidate.audit.bondLengthFailureCount < incumbent.audit.bondLengthFailureCount;
+  if ((r = compareCount(candidate.audit.bondLengthFailureCount, incumbent.audit.bondLengthFailureCount)) !== null) {
+    return r;
   }
-  if (Math.abs(candidate.audit.maxBondLengthDeviation - incumbent.audit.maxBondLengthDeviation) > 1e-9) {
-    return candidate.audit.maxBondLengthDeviation < incumbent.audit.maxBondLengthDeviation;
+  if ((r = compareDeviation(candidate.audit.maxBondLengthDeviation, incumbent.audit.maxBondLengthDeviation)) !== null) {
+    return r;
   }
   if (shouldPreferOverlapWinOverMinorReadabilityRegression(candidate, incumbent)) {
     return true;
   }
-  if (candidate.audit.ringSubstituentReadabilityFailureCount !== incumbent.audit.ringSubstituentReadabilityFailureCount) {
-    return candidate.audit.ringSubstituentReadabilityFailureCount < incumbent.audit.ringSubstituentReadabilityFailureCount;
+  if ((r = compareCount(candidate.audit.ringSubstituentReadabilityFailureCount, incumbent.audit.ringSubstituentReadabilityFailureCount)) !== null) {
+    return r;
   }
-  if (candidate.audit.inwardRingSubstituentCount !== incumbent.audit.inwardRingSubstituentCount) {
-    return candidate.audit.inwardRingSubstituentCount < incumbent.audit.inwardRingSubstituentCount;
+  if ((r = compareCount(candidate.audit.inwardRingSubstituentCount, incumbent.audit.inwardRingSubstituentCount)) !== null) {
+    return r;
   }
-  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
-    return candidate.audit.severeOverlapCount < incumbent.audit.severeOverlapCount;
+  if ((r = compareCount(candidate.audit.severeOverlapCount, incumbent.audit.severeOverlapCount)) !== null) {
+    return r;
   }
-  if ((candidate.audit.visibleHeavyBondCrossingCount ?? 0) !== (incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) {
-    return (candidate.audit.visibleHeavyBondCrossingCount ?? 0) < (incumbent.audit.visibleHeavyBondCrossingCount ?? 0);
+  if ((r = compareCount(candidate.audit.visibleHeavyBondCrossingCount ?? 0, incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) !== null) {
+    return r;
   }
-  if (candidate.audit.labelOverlapCount !== incumbent.audit.labelOverlapCount) {
-    return candidate.audit.labelOverlapCount < incumbent.audit.labelOverlapCount;
+  if ((r = compareCount(candidate.audit.labelOverlapCount, incumbent.audit.labelOverlapCount)) !== null) {
+    return r;
   }
-  if (Math.abs((candidate.presentationPenalty ?? 0) - (incumbent.presentationPenalty ?? 0)) > 1e-9) {
-    return (candidate.presentationPenalty ?? 0) < (incumbent.presentationPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'presentationPenalty')) !== null) {
+    return r;
   }
-  if (Math.abs((candidate.terminalCationRingProximityPenalty ?? 0) - (incumbent.terminalCationRingProximityPenalty ?? 0)) > 1e-9) {
-    return (candidate.terminalCationRingProximityPenalty ?? 0) < (incumbent.terminalCationRingProximityPenalty ?? 0);
+  if ((r = comparePenalty(candidate, incumbent, 'terminalCationRingProximityPenalty')) !== null) {
+    return r;
   }
   return false;
 }

@@ -203,6 +203,7 @@ function compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond) {
     }
 
     let ringNeighborCount = 0;
+    let ringAdjacentNeighborCount = 0;
     let terminalHeteroNeighborCount = 0;
     let terminalMultipleHeteroNeighborCount = 0;
     for (const neighborBond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
@@ -218,6 +219,21 @@ function compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond) {
         ringNeighborCount++;
       }
       if (
+        neighborAtomId !== leafAtomId
+        && (
+          (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
+          || (layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []).some(adjacentBond => {
+            if (!adjacentBond || adjacentBond.kind !== 'covalent') {
+              return false;
+            }
+            const adjacentAtomId = adjacentBond.a === neighborAtomId ? adjacentBond.b : adjacentBond.a;
+            return adjacentAtomId !== centerAtomId && (layoutGraph.atomToRings.get(adjacentAtomId)?.length ?? 0) > 0;
+          })
+        )
+      ) {
+        ringAdjacentNeighborCount++;
+      }
+      if (
         neighborAtom.element !== 'C'
         && (neighborAtom.heavyDegree ?? 0) === 1
         && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0
@@ -229,6 +245,9 @@ function compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond) {
       }
     }
     if (ringNeighborCount === 1 && terminalHeteroNeighborCount >= 2 && terminalMultipleHeteroNeighborCount >= 1) {
+      return { centerAtomId, leafAtomId };
+    }
+    if (ringNeighborCount === 0 && ringAdjacentNeighborCount >= 1 && terminalMultipleHeteroNeighborCount >= 1) {
       return { centerAtomId, leafAtomId };
     }
   }
@@ -1589,10 +1608,22 @@ function shouldMeasureDivalentContinuationDistortionAtCenter(layoutGraph, atomId
   if (!isExactDivalentElement) {
     return false;
   }
-  return covalentBonds.every(({ bond, neighborAtomId }) => {
+  const allBondsVisibleNonAromaticHeavy = covalentBonds.every(({ bond, neighborAtomId }) => {
     const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
-    return neighborAtom && neighborAtom.element !== 'H' && !bond.aromatic && (bond.order ?? 1) === 1;
+    return neighborAtom && neighborAtom.element !== 'H' && !bond.aromatic;
   });
+  if (!allBondsVisibleNonAromaticHeavy) {
+    return false;
+  }
+  if (covalentBonds.every(({ bond }) => (bond.order ?? 1) === 1)) {
+    return true;
+  }
+  if (atom.element !== 'N') {
+    return false;
+  }
+  const singleBondCount = covalentBonds.filter(({ bond }) => (bond.order ?? 1) === 1).length;
+  const multipleBondCount = covalentBonds.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
+  return singleBondCount === 1 && multipleBondCount === 1;
 }
 
 /**

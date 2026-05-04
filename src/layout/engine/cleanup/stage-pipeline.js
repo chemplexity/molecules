@@ -3,7 +3,8 @@
 import { auditCleanupStage, auditFinalStereoStage, measureCleanupStagePresentationPenalty } from '../audit/stage-metrics.js';
 import {
   measureDivalentContinuationDistortion,
-  measureThreeHeavyContinuationDistortion
+  measureThreeHeavyContinuationDistortion,
+  measureTrigonalDistortion
 } from '../audit/invariants.js';
 import { collectProtectedEZAtomIds } from '../stereo/ez.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
@@ -19,6 +20,7 @@ import {
   measureSmallRingExteriorFanExactPenalty,
   runRingPresentationCleanup
 } from './presentation/ring-presentation.js';
+import { measureTerminalRingCarbonylLeafContactPenalty } from './presentation/ring-substituent.js';
 import { measurePhosphateArylTailPresentationPenalty } from './presentation/phosphate-aryl-tail.js';
 import { measureTerminalCationRingProximityPenalty } from './presentation/terminal-cation-ring-clearance.js';
 import {
@@ -31,6 +33,7 @@ import {
   isPreferredFinalStereoStage,
   isPreferredProtectedCleanupStage
 } from './stage-comparators.js';
+import { DISTANCE_EPSILON, PRESENTATION_METRIC_EPSILON } from '../constants.js';
 import { hasSymmetryTidyNeed, tidySymmetry } from './symmetry-tidy.js';
 import { runUnifiedCleanup } from './unified-cleanup.js';
 import { applyLabelClearance } from './label-clearance.js';
@@ -90,7 +93,7 @@ function hasPresentationCleanupNeed(layoutGraph, stageResult, options = {}) {
     }))
     || (
       options.includeRingSubstituent === true
-      && measureRingTerminalHeteroOutwardPenalty(layoutGraph, stageResult?.coords).maxDeviation > 1e-6
+      && measureRingTerminalHeteroOutwardPenalty(layoutGraph, stageResult?.coords).maxDeviation > DISTANCE_EPSILON
     )
     || hasOutstandingRingPresentationNeed(layoutGraph, stageResult)
     || (
@@ -215,6 +218,7 @@ export function buildCleanupStageGraph(context) {
       presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords),
       hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, coords),
       divalentContinuationPenalty: measureDivalentContinuationDistortion(layoutGraph, coords).totalDeviation,
+      trigonalDistortionPenalty: measureTrigonalDistortion(layoutGraph, coords).totalDeviation,
       omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation,
       phosphateArylTailPenalty: measurePhosphateArylTailPresentationPenalty(layoutGraph, coords),
       terminalCationRingProximityPenalty: measureTerminalCationRingProximityPenalty(layoutGraph, coords, { bondLength }),
@@ -222,6 +226,7 @@ export function buildCleanupStageGraph(context) {
       attachedRingRootOutwardPenalty: measureAttachedRingRootOutwardPresentationPenalty(layoutGraph, coords, placement.frozenAtomIds),
       terminalHeteroOutwardMaxPenalty: terminalHeteroOutwardPenalty.maxDeviation,
       terminalHeteroOutwardPenalty: terminalHeteroOutwardPenalty.totalDeviation,
+      terminalRingCarbonylLeafContactPenalty: measureTerminalRingCarbonylLeafContactPenalty(layoutGraph, coords, { bondLength }),
       terminalMultipleBondLeafFanMaxPenalty: terminalMultipleBondLeafFanPenalty.maxDeviation,
       terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation,
       smallRingExteriorFanExactMaxPenalty: smallRingExteriorFanExactPenalty.maxDeviation,
@@ -273,7 +278,7 @@ export function buildCleanupStageGraph(context) {
   const worsensHypervalentDeviation = (candidate, incumbent) => (
     Number.isFinite(candidate?.hypervalentDeviation)
     && Number.isFinite(incumbent?.hypervalentDeviation)
-    && candidate.hypervalentDeviation > incumbent.hypervalentDeviation + 1e-9
+    && candidate.hypervalentDeviation > incumbent.hypervalentDeviation + PRESENTATION_METRIC_EPSILON
   );
   /**
    * Scores specialist stages with the normal final-stereo audit plus
@@ -297,7 +302,7 @@ export function buildCleanupStageGraph(context) {
       return true;
     }
     return (
-      (candidate.hypervalentDeviation ?? Number.POSITIVE_INFINITY) < (incumbent?.hypervalentDeviation ?? Number.POSITIVE_INFINITY) - 1e-9
+      (candidate.hypervalentDeviation ?? Number.POSITIVE_INFINITY) < (incumbent?.hypervalentDeviation ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON
       && auditCountsDoNotWorsen(candidate.audit, incumbent?.audit, { maxLabelOverlapIncrease: 1 })
     );
   };
@@ -344,25 +349,37 @@ export function buildCleanupStageGraph(context) {
     }
     return (
       (candidate.terminalHeteroOutwardMaxPenalty ?? Number.POSITIVE_INFINITY)
-        < (incumbent.terminalHeteroOutwardMaxPenalty ?? Number.POSITIVE_INFINITY) - 1e-9
+        < (incumbent.terminalHeteroOutwardMaxPenalty ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON
     );
   };
   const terminalMultipleBondLeafRetouchComparator = (candidate, incumbent) => {
-    if (auditFinalStereoWithTieBreak(candidate, incumbent)) {
-      return true;
-    }
     if (worsensHypervalentDeviation(candidate, incumbent)) {
       return false;
     }
     if (!auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)) {
       return false;
     }
-    return (
+    if (
+      (candidate.omittedHydrogenTrigonalPenalty ?? 0)
+        > (incumbent.omittedHydrogenTrigonalPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+    ) {
+      return false;
+    }
+    if (
+      (candidate.trigonalDistortionPenalty ?? 0)
+        > (incumbent.trigonalDistortionPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+    ) {
+      return false;
+    }
+    if (
       (candidate.terminalMultipleBondLeafFanMaxPenalty ?? Number.POSITIVE_INFINITY)
-        < (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? Number.POSITIVE_INFINITY) - 1e-9
+        > (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? Number.POSITIVE_INFINITY) + PRESENTATION_METRIC_EPSILON
       || (candidate.terminalMultipleBondLeafFanPenalty ?? Number.POSITIVE_INFINITY)
-        < (incumbent.terminalMultipleBondLeafFanPenalty ?? Number.POSITIVE_INFINITY) - 1e-9
-    );
+        > (incumbent.terminalMultipleBondLeafFanPenalty ?? Number.POSITIVE_INFINITY) + PRESENTATION_METRIC_EPSILON
+    ) {
+      return false;
+    }
+    return true;
   };
   const cleanupGeometryComparator = protectBondIntegrity
     ? (candidate, incumbent) => isPreferredProtectedCleanupStage(familySummary, placement, candidate, incumbent)
@@ -441,6 +458,7 @@ export function buildCleanupStageGraph(context) {
         return hasPresentationCleanupNeed(layoutGraph, incumbent, {
           bondLength,
           includeRingSubstituent: hasRingSubstituentHook,
+          includeTerminalMultipleBondLeaf: true,
           includeTerminalHetero: hasRingTerminalHeteroHook,
           includeAttachedRingFallback: hasRingSubstituentHook,
           frozenAtomIds: placement.frozenAtomIds,
@@ -635,7 +653,7 @@ export function buildCleanupStageGraph(context) {
           (hasRingTerminalHeteroHook || hasRingSubstituentHook)
           && (
             hasRingTerminalHeteroTidyNeed(layoutGraph, incumbent?.coords, { bondLength })
-            || measureRingTerminalHeteroOutwardPenalty(layoutGraph, incumbent?.coords).maxDeviation > 1e-6
+            || measureRingTerminalHeteroOutwardPenalty(layoutGraph, incumbent?.coords).maxDeviation > DISTANCE_EPSILON
           )
         );
       },
@@ -659,7 +677,7 @@ export function buildCleanupStageGraph(context) {
       name: 'terminalMultipleBondLeafFinalRetouch',
       parentStage: 'best',
       guard(_stageResults, incumbent) {
-        return measureTerminalMultipleBondLeafFanPenalty(layoutGraph, incumbent?.coords).maxDeviation > 1e-6;
+        return measureTerminalMultipleBondLeafFanPenalty(layoutGraph, incumbent?.coords).maxDeviation > DISTANCE_EPSILON;
       },
       transformFn(parentCoords, inputContext) {
         const result = runTerminalMultipleBondLeafFanTidy(layoutGraph, parentCoords, { bondLength });

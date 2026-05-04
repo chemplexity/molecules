@@ -2,18 +2,20 @@
 
 import { add, angleOf, centroid, fromAngle, length, rotate, sub, wrapAngle } from '../geometry/vec2.js';
 import { cloneCoords } from '../geometry/transforms.js';
+import { ANGLE_EPSILON } from '../constants.js';
 import { actualAlkeneStereo } from '../stereo/ez.js';
 import { compareCanonicalAtomIds } from '../topology/canonical-order.js';
 import { describeCrossLikeHypervalentCenter, placeRemainingBranches } from '../placement/branch-placement.js';
 import {
   isExactVisibleTrigonalBisectorEligible,
-  shouldPreferOmittedHydrogenTrigonalBisector
+  shouldPreferOmittedHydrogenTrigonalBisector,
+  supportsProjectedTetrahedralGeometry
 } from '../placement/branch-placement/angle-selection.js';
 import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 
 const ZIGZAG_STEP_ANGLE = Math.PI / 6;
 const TRIGONAL_TARGET_ANGLE = (2 * Math.PI) / 3;
-const STEP_ANGLE_EPSILON = 1e-9;
+const PROJECTED_TETRAHEDRAL_BACKBONE_TURN = Math.PI / 2;
 
 /**
  * Returns the bond order between two atoms in the layout graph.
@@ -270,6 +272,80 @@ function isTrigonalBackboneCentre(layoutGraph, previousAtomId, atomId, nextAtomI
 }
 
 /**
+ * Counts terminal fluorine leaves attached by single bonds to a carbon center.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Center atom ID.
+ * @returns {number} Terminal fluorine leaf count.
+ */
+function terminalFluorineLeafCount(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return 0;
+  }
+  let fluorineLeafCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (neighborAtom?.element === 'F' && neighborAtom.heavyDegree === 1) {
+      fluorineLeafCount++;
+    }
+  }
+  return fluorineLeafCount;
+}
+
+/**
+ * Returns whether a backbone center should use projected-tetrahedral
+ * continuation geometry instead of the default 120-degree zig-zag. Acyclic
+ * CF2 chain centers need the backbone bonds to take two projected slots before
+ * their terminal fluorine leaves are assigned to the remaining quadrants.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string|null|undefined} previousAtomId - Previous backbone atom ID.
+ * @param {string|null|undefined} atomId - Center backbone atom ID.
+ * @param {string|null|undefined} nextAtomId - Next backbone atom ID.
+ * @returns {boolean} True when the center should keep a 90-degree projected turn.
+ */
+function isProjectedTetrahedralBackboneCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
+  if (!layoutGraph || previousAtomId == null || atomId == null || nextAtomId == null) {
+    return false;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  return supportsProjectedTetrahedralGeometry(layoutGraph, atomId)
+    && atom?.element === 'C'
+    && terminalFluorineLeafCount(layoutGraph, atomId) >= 2
+    && bondOrderBetween(layoutGraph, previousAtomId, atomId) === 1
+    && bondOrderBetween(layoutGraph, atomId, nextAtomId) === 1;
+}
+
+/**
+ * Chooses the next backbone step for a projected-tetrahedral center.
+ * @param {number} previousStepAngle - Incoming backbone step angle in radians.
+ * @param {number} fallbackTurnSign - Sign to use when the incoming step is flat.
+ * @returns {number} Outgoing step angle in radians.
+ */
+function projectedTetrahedralBackboneStepAngle(previousStepAngle, fallbackTurnSign) {
+  const turnSign = Math.abs(previousStepAngle) > ANGLE_EPSILON
+    ? -Math.sign(previousStepAngle)
+    : fallbackTurnSign;
+  return wrapAngle(previousStepAngle + turnSign * PROJECTED_TETRAHEDRAL_BACKBONE_TURN);
+}
+
+/**
+ * Chooses the ordinary zig-zag continuation from the actual incoming step so
+ * centers after non-default projected turns still keep a 120-degree bend.
+ * @param {number} previousStepAngle - Incoming backbone step angle in radians.
+ * @param {number} fallbackTurnSign - Sign to use when the incoming step is flat.
+ * @returns {number} Outgoing step angle in radians.
+ */
+function regularZigzagBackboneStepAngle(previousStepAngle, fallbackTurnSign) {
+  const turnSign = Math.abs(previousStepAngle) > ANGLE_EPSILON
+    ? -Math.sign(previousStepAngle)
+    : fallbackTurnSign;
+  return wrapAngle(previousStepAngle + turnSign * TRIGONAL_TARGET_ANGLE / 2);
+}
+
+/**
  * Returns whether a saturated carbon backbone center should keep an exact
  * zigzag bend after neighboring conjugated centers have been normalized.
  * @param {object|null} layoutGraph - Layout graph shell.
@@ -300,6 +376,27 @@ function isSaturatedBackboneZigzagCentre(layoutGraph, previousAtomId, atomId, ne
   return bondOrderBetween(layoutGraph, previousAtomId, atomId) === 1
     && bondOrderBetween(layoutGraph, atomId, nextAtomId) === 1
     && (hasSp2Bond(layoutGraph, previousAtomId) || hasSp2Bond(layoutGraph, nextAtomId));
+}
+
+/**
+ * Returns whether a backbone rotation candidate should replace the current best.
+ * Prefers more matched stereo bonds, then greater backbone span, then smaller rotation magnitude.
+ * @param {object} candidate - Candidate rotation result.
+ * @param {object|null} incumbent - Current best rotation result.
+ * @returns {boolean} True when candidate should replace incumbent.
+ */
+function isBetterBackboneCandidate(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.matchedStereoCount !== incumbent.matchedStereoCount) {
+    return candidate.matchedStereoCount > incumbent.matchedStereoCount;
+  }
+  const spanDelta = candidate.backboneSpan - incumbent.backboneSpan;
+  if (Math.abs(spanDelta) > 1e-6) {
+    return spanDelta > 0;
+  }
+  return candidate.rotationMagnitude < incumbent.rotationMagnitude - 1e-6;
 }
 
 /**
@@ -337,8 +434,8 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
       continue;
     }
 
-    const previousDirection = Math.atan2(previousPosition.y - centerPosition.y, previousPosition.x - centerPosition.x);
-    const nextDirection = Math.atan2(nextPosition.y - centerPosition.y, nextPosition.x - centerPosition.x);
+    const previousDirection = angleOf(sub(previousPosition, centerPosition));
+    const nextDirection = angleOf(sub(nextPosition, centerPosition));
     const currentTurn = wrapAngle(nextDirection - previousDirection);
     const currentTurnSign = Math.sign(currentTurn) || previousTurnSign || (index % 2 === 1 ? -1 : 1);
     const movedAtomIds = collectSideAtomIds(layoutGraph, nextAtomId, centerAtomId);
@@ -390,14 +487,7 @@ function normalizeBackboneTrigonalAngles(layoutGraph, coords, backbone) {
         rotationMagnitude: Math.abs(rotationAngle)
       };
 
-      if (
-        !bestCandidate ||
-        candidate.matchedStereoCount > bestCandidate.matchedStereoCount ||
-        (candidate.matchedStereoCount === bestCandidate.matchedStereoCount && candidate.backboneSpan > bestCandidate.backboneSpan + 1e-6) ||
-        (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
-          Math.abs(candidate.backboneSpan - bestCandidate.backboneSpan) <= 1e-6 &&
-          candidate.rotationMagnitude < bestCandidate.rotationMagnitude - 1e-6)
-      ) {
+      if (isBetterBackboneCandidate(candidate, bestCandidate)) {
         bestCandidate = candidate;
       }
     }
@@ -452,8 +542,8 @@ function normalizeBackboneSaturatedZigzagAngles(layoutGraph, coords, backbone) {
       continue;
     }
 
-    const previousDirection = Math.atan2(previousPosition.y - centerPosition.y, previousPosition.x - centerPosition.x);
-    const nextDirection = Math.atan2(nextPosition.y - centerPosition.y, nextPosition.x - centerPosition.x);
+    const previousDirection = angleOf(sub(previousPosition, centerPosition));
+    const nextDirection = angleOf(sub(nextPosition, centerPosition));
     const currentTurn = wrapAngle(nextDirection - previousDirection);
     if (Math.abs(Math.abs(currentTurn) - TRIGONAL_TARGET_ANGLE) <= 1e-6) {
       previousTurnSign = Math.sign(currentTurn) || previousTurnSign;
@@ -487,14 +577,7 @@ function normalizeBackboneSaturatedZigzagAngles(layoutGraph, coords, backbone) {
         rotationMagnitude: Math.abs(rotationAngle)
       };
 
-      if (
-        !bestCandidate ||
-        candidate.matchedStereoCount > bestCandidate.matchedStereoCount ||
-        (candidate.matchedStereoCount === bestCandidate.matchedStereoCount && candidate.backboneSpan > bestCandidate.backboneSpan + 1e-6) ||
-        (candidate.matchedStereoCount === bestCandidate.matchedStereoCount &&
-          Math.abs(candidate.backboneSpan - bestCandidate.backboneSpan) <= 1e-6 &&
-          candidate.rotationMagnitude < bestCandidate.rotationMagnitude - 1e-6)
-      ) {
+      if (isBetterBackboneCandidate(candidate, bestCandidate)) {
         bestCandidate = candidate;
       }
     }
@@ -958,7 +1041,7 @@ function realignTerminalMultipleBondLeaves(layoutGraph, coords, bondLength) {
       continue;
     }
     const outwardVector = sub(centerPosition, centroid(otherPositions));
-    if (length(outwardVector) <= STEP_ANGLE_EPSILON) {
+    if (length(outwardVector) <= ANGLE_EPSILON) {
       continue;
     }
 
@@ -1135,21 +1218,27 @@ export function layoutAcyclicFamily(adjacency, atomIdsToPlace, canonicalAtomRank
   coords.set(backbone[0], { x: 0, y: 0 });
   let previousStepAngle = ZIGZAG_STEP_ANGLE;
   let conjugatedStepSign = Math.sign(previousStepAngle) || 1;
+  let projectedTailZigzagActive = false;
   for (let index = 1; index < backbone.length; index++) {
     let stepAngle = index % 2 === 1 ? ZIGZAG_STEP_ANGLE : -ZIGZAG_STEP_ANGLE;
     const currentCenterAtomId = backbone[index - 1];
     if (index > 1 && isLinearCentre(layoutGraph, backbone[index - 2], currentCenterAtomId, backbone[index])) {
       stepAngle = previousStepAngle;
+    } else if (index > 1 && isProjectedTetrahedralBackboneCentre(layoutGraph, backbone[index - 2], currentCenterAtomId, backbone[index])) {
+      stepAngle = projectedTetrahedralBackboneStepAngle(previousStepAngle, index % 2 === 1 ? 1 : -1);
+      projectedTailZigzagActive = true;
     } else if (conjugatedCenterIds.has(currentCenterAtomId)) {
-      if (Math.abs(previousStepAngle) <= STEP_ANGLE_EPSILON) {
+      if (Math.abs(previousStepAngle) <= ANGLE_EPSILON) {
         stepAngle = conjugatedStepSign * ZIGZAG_STEP_ANGLE;
       } else {
         conjugatedStepSign = Math.sign(previousStepAngle) || conjugatedStepSign || 1;
         stepAngle = 0;
       }
+    } else if (projectedTailZigzagActive) {
+      stepAngle = regularZigzagBackboneStepAngle(previousStepAngle, index % 2 === 1 ? 1 : -1);
     }
     coords.set(backbone[index], add(coords.get(backbone[index - 1]), fromAngle(stepAngle, bondLength)));
-    if (Math.abs(stepAngle) > STEP_ANGLE_EPSILON) {
+    if (Math.abs(stepAngle) > ANGLE_EPSILON) {
       conjugatedStepSign = Math.sign(stepAngle) || conjugatedStepSign || 1;
     }
     previousStepAngle = stepAngle;

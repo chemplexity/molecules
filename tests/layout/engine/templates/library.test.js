@@ -34,6 +34,7 @@ describe('layout/engine/templates/library', () => {
       'porphine',
       'steroid-core-unsaturated',
       'steroid-core-saturated',
+      'perylene',
       'pyrene',
       'fluorene',
       'indanone',
@@ -246,6 +247,12 @@ describe('layout/engine/templates/library', () => {
     assert.equal(pyrene.atomCount, 16);
     assert.equal(pyrene.bondCount, 19);
     assert.equal(pyrene.ringCount, 4);
+
+    const perylene = getTemplateById('perylene');
+    assert.equal(perylene.family, 'fused');
+    assert.equal(perylene.atomCount, 20);
+    assert.equal(perylene.bondCount, 24);
+    assert.equal(perylene.ringCount, 5);
 
     const fluorene = getTemplateById('fluorene');
     assert.equal(fluorene.family, 'fused');

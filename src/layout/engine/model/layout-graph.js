@@ -66,7 +66,8 @@ function buildRingAtomIds(rings) {
 }
 
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As']);
-const ORTHOGONAL_TETRAARYL_ELEMENTS = new Set(['Si']);
+const ORTHOGONAL_ORGANOSILICON_ELEMENTS = new Set(['Si']);
+const ORTHOGONAL_ORGANOSILICON_MIN_ARYL_LIGANDS = 2;
 
 function indexedHeavyDegree(atoms, bondsByAtomId, atomId) {
   let heavyDegree = 0;
@@ -112,7 +113,12 @@ function isHypervalentSingleLigandBond(atoms, bondsByAtomId, atomToRings, center
   );
 }
 
-function isOrthogonalTetraarylSingleLigand(atoms, atomToRings, atomId) {
+function isOrthogonalOrganosiliconSingleLigand(atoms, atomId) {
+  const atom = atoms.get(atomId);
+  return Boolean(atom && atom.element === 'C');
+}
+
+function isOrthogonalOrganosiliconArylLigand(atoms, atomToRings, atomId) {
   const atom = atoms.get(atomId);
   return Boolean(
     atom
@@ -122,11 +128,19 @@ function isOrthogonalTetraarylSingleLigand(atoms, atomToRings, atomId) {
   );
 }
 
+function isOrthogonalOrganosiliconLigandSet(atoms, atomToRings, atomIds) {
+  return (
+    atomIds.every(atomId => isOrthogonalOrganosiliconSingleLigand(atoms, atomId))
+    && atomIds.filter(atomId => isOrthogonalOrganosiliconArylLigand(atoms, atomToRings, atomId)).length
+      >= ORTHOGONAL_ORGANOSILICON_MIN_ARYL_LIGANDS
+  );
+}
+
 function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId, atomToRings) {
   for (const atom of atoms.values()) {
     if (
       !ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element)
-      && !ORTHOGONAL_TETRAARYL_ELEMENTS.has(atom.element)
+      && !ORTHOGONAL_ORGANOSILICON_ELEMENTS.has(atom.element)
     ) {
       continue;
     }
@@ -168,10 +182,10 @@ function containsOrthogonalHypervalentCenter(atoms, bondsByAtomId, atomToRings) 
         (singleNeighborCount === 2 && terminalMultipleNeighborCount === 2)
         || (singleNeighborCount === 3 && terminalMultipleNeighborCount === 1)
         || (
-          ORTHOGONAL_TETRAARYL_ELEMENTS.has(atom.element)
+          ORTHOGONAL_ORGANOSILICON_ELEMENTS.has(atom.element)
           && singleNeighborCount === 4
           && terminalMultipleNeighborCount === 0
-          && singleNeighborIds.every(neighborAtomId => isOrthogonalTetraarylSingleLigand(atoms, atomToRings, neighborAtomId))
+          && isOrthogonalOrganosiliconLigandSet(atoms, atomToRings, singleNeighborIds)
         )
       )
     ) {

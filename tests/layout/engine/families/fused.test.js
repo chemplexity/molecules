@@ -6,13 +6,14 @@ import { AUDIT_PLANAR_VALIDATION } from '../../../../src/layout/engine/constants
 import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-graph.js';
 import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { assignBondValidationClass } from '../../../../src/layout/engine/placement/bond-validation.js';
+import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
 import {
   layoutFusedCageKamadaKawai,
   layoutFusedFamily,
   shouldShortCircuitToFusedCageKk,
   shouldTryBridgedRescueForFusedSystem
 } from '../../../../src/layout/engine/families/fused.js';
-import { distance } from '../../../../src/layout/engine/geometry/vec2.js';
+import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { makeNaphthalene } from '../support/molecules.js';
 
 /**
@@ -51,6 +52,31 @@ function assertPlanarLayoutQuality(graph, coords) {
   );
 }
 
+/**
+ * Asserts that every six-member fused ring landed on an exact regular hexagon.
+ * @param {object} graph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Fused placement coordinates.
+ * @returns {void}
+ */
+function assertExactHexagonalRings(graph, coords) {
+  for (const ring of graph.rings) {
+    assert.equal(ring.atomIds.length, 6);
+    for (let index = 0; index < ring.atomIds.length; index += 1) {
+      const atomId = ring.atomIds[index];
+      const previousAtomId = ring.atomIds[(index - 1 + ring.atomIds.length) % ring.atomIds.length];
+      const nextAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+      const bondLength = distance(coords.get(atomId), coords.get(nextAtomId));
+      const angle = angularDifference(
+        angleOf(sub(coords.get(previousAtomId), coords.get(atomId))),
+        angleOf(sub(coords.get(nextAtomId), coords.get(atomId)))
+      );
+
+      assert.ok(Math.abs(bondLength - graph.options.bondLength) < 1e-6, `${atomId}-${nextAtomId} bond length should stay exact`);
+      assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6, `${atomId} ring angle should stay 120 degrees`);
+    }
+  }
+}
+
 describe('layout/engine/families/fused', () => {
   it('lays out a simple fused two-ring system across the shared edge', () => {
     const rings = [
@@ -83,6 +109,18 @@ describe('layout/engine/families/fused', () => {
     const { ringAdj, ringConnectionByPair } = fusedTopology(graph);
     const result = layoutFusedFamily(graph.rings, ringAdj, ringConnectionByPair, graph.options.bondLength, { layoutGraph: graph, templateId: 'naphthalene' });
     assert.equal(result.placementMode, 'template');
+  });
+
+  it('uses the perylene template so five fused aromatic rings stay exact hexagons', () => {
+    const result = runPipeline(parseSMILES('C1=CC=C2C(=C1)C=C1C=CC3=CC=CC4=CC=C2C1=C34'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assertExactHexagonalRings(result.layoutGraph, result.coords);
   });
 
   it('lays out coronene through the pericondensed fused path with one central ring and a symmetric outer shell', () => {

@@ -176,6 +176,16 @@ const TERMINAL_RING_LEAF_OUTWARD_TRIGGER = Math.PI / 6;
 const TERMINAL_RING_LEAF_MIN_OUTWARD_IMPROVEMENT = (Math.PI / 18) ** 2;
 const TERMINAL_RING_LEAF_MIN_PARENT_FAN_ANGLE = (7 * Math.PI) / 18;
 const TERMINAL_RING_LEAF_MAX_PARENT_FAN_WORSENING = Math.PI / 18;
+const OMITTED_H_FAN_TERMINAL_RING_LEAF_COMPRESSION_FACTORS = Object.freeze([
+  0.95,
+  0.9,
+  0.85,
+  0.8,
+  0.75,
+  0.7,
+  0.65,
+  0.6
+]);
 const CLEAN_DIRECT_ATTACHMENT_OUTWARD_EPSILON = Math.PI / 180;
 
 function largestAngularGapBisector(occupiedAngles) {
@@ -1128,6 +1138,83 @@ function snapTerminalCarbonRingLeavesToOutward(layoutGraph, coords) {
   return candidateCoords;
 }
 
+function terminalCarbonRingLeafAnchorRecord(layoutGraph, coords, leafAtomId, frozenAtomIds = null) {
+  const leafAtom = layoutGraph.atoms.get(leafAtomId);
+  if (
+    !leafAtom
+    || leafAtom.element !== 'C'
+    || leafAtom.aromatic
+    || leafAtom.heavyDegree !== 1
+    || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+    || !coords.has(leafAtomId)
+    || layoutGraph.fixedCoords.has(leafAtomId)
+    || (frozenAtomIds && frozenAtomIds.has(leafAtomId))
+  ) {
+    return null;
+  }
+
+  const bond = (layoutGraph.bondsByAtomId.get(leafAtomId) ?? []).find(candidateBond => {
+    if (!candidateBond || candidateBond.kind !== 'covalent' || candidateBond.inRing || candidateBond.aromatic || (candidateBond.order ?? 1) !== 1) {
+      return false;
+    }
+    const neighborAtomId = candidateBond.a === leafAtomId ? candidateBond.b : candidateBond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return !!neighborAtom && neighborAtom.element !== 'H' && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0;
+  });
+  if (!bond) {
+    return null;
+  }
+
+  const anchorAtomId = bond.a === leafAtomId ? bond.b : bond.a;
+  const anchorPosition = coords.get(anchorAtomId);
+  const leafPosition = coords.get(leafAtomId);
+  if (!anchorPosition || !leafPosition) {
+    return null;
+  }
+  return {
+    leafAtomId,
+    anchorAtomId,
+    angle: angleOf(sub(leafPosition, anchorPosition)),
+    distance: Math.hypot(leafPosition.x - anchorPosition.x, leafPosition.y - anchorPosition.y)
+  };
+}
+
+function collectOmittedHydrogenFanTerminalLeafCompressionVariants(layoutGraph, coords, descriptor, bondLength, frozenAtomIds) {
+  const targetAtomIds = new Set(descriptor?.subtreeAtomIds ?? []);
+  if (targetAtomIds.size === 0) {
+    return [];
+  }
+
+  const variants = [];
+  const compressedLeafAtomIds = new Set();
+  for (const overlap of findSevereOverlaps(layoutGraph, coords, bondLength)) {
+    for (const [leafAtomId, otherAtomId] of [
+      [overlap.firstAtomId, overlap.secondAtomId],
+      [overlap.secondAtomId, overlap.firstAtomId]
+    ]) {
+      if (!targetAtomIds.has(otherAtomId) || targetAtomIds.has(leafAtomId) || compressedLeafAtomIds.has(leafAtomId)) {
+        continue;
+      }
+      const record = terminalCarbonRingLeafAnchorRecord(layoutGraph, coords, leafAtomId, frozenAtomIds);
+      if (!record || record.distance <= 1e-9) {
+        continue;
+      }
+      compressedLeafAtomIds.add(leafAtomId);
+      const anchorPosition = coords.get(record.anchorAtomId);
+      for (const compressionFactor of OMITTED_H_FAN_TERMINAL_RING_LEAF_COMPRESSION_FACTORS) {
+        const targetDistance = bondLength * compressionFactor;
+        if (targetDistance >= record.distance - 1e-9) {
+          continue;
+        }
+        const candidateCoords = new Map(coords);
+        candidateCoords.set(record.leafAtomId, add(anchorPosition, fromAngle(record.angle, targetDistance)));
+        variants.push(candidateCoords);
+      }
+    }
+  }
+  return variants;
+}
+
 function terminalCarbonRingLeafRecords(layoutGraph, coords, frozenAtomIds = null) {
   const records = [];
   for (const [leafAtomId, leafAtom] of layoutGraph.atoms ?? []) {
@@ -1851,7 +1938,7 @@ function isBalancedOmittedHydrogenFanCandidate(candidate) {
     && (candidate.visibleTrigonalPenalty ?? Number.POSITIVE_INFINITY) <= 0.16
     && (candidate.ringExteriorBondOutwardPenalty ?? 0) <= (Math.PI / 18) ** 2 + 1e-9
     && (candidate.terminalRingLeafOutwardPenalty ?? 0) <= 1e-9
-    && (candidate.omittedHydrogenTargetFanMaxDeviation ?? Number.POSITIVE_INFINITY) <= (Math.PI / 6) ** 2 + 1e-9
+    && (candidate.omittedHydrogenTargetFanMaxDeviation ?? Number.POSITIVE_INFINITY) <= (5 * Math.PI / 36) ** 2 + 1e-9
   );
 }
 
@@ -2056,6 +2143,32 @@ function findBestOmittedHydrogenAttachedRingFanCandidate(layoutGraph, coords, bo
     if (shouldStop) {
       return true;
     }
+
+    for (const compressedLeafCoords of collectOmittedHydrogenFanTerminalLeafCompressionVariants(
+      layoutGraph,
+      seedCoords,
+      descriptor,
+      bondLength,
+      frozenAtomIds
+    )) {
+      const compressedLeafScore = scoreOmittedHydrogenFanCandidate(
+        layoutGraph,
+        compressedLeafCoords,
+        descriptor,
+        targetNeighborAtomIds,
+        focusAtomIds,
+        baseState,
+        nudges + 1
+      );
+      if (compressedLeafScore && (!bestCandidate || isBetterAttachedRingCandidate(compressedLeafScore, bestCandidate))) {
+        bestCandidate = compressedLeafScore;
+        shouldStop = isResolvedOmittedHydrogenFanCandidate(bestCandidate) || isBalancedOmittedHydrogenFanCandidate(bestCandidate);
+      }
+      if (shouldStop) {
+        return true;
+      }
+    }
+
     if (visitOptions.allowRefinement === false) {
       return false;
     }
@@ -4850,6 +4963,7 @@ function terminalRingLeafOutwardWins(candidate, incumbent) {
 
 function terminalRingLeafOutwardHolds(candidate, incumbent) {
   return !!incumbent
+    && !boundedOmittedHydrogenFanRescueWins(candidate, incumbent)
     && typeof candidate.terminalRingLeafOutwardPenalty === 'number'
     && typeof incumbent.terminalRingLeafOutwardPenalty === 'number'
     && candidate.overlapCount === incumbent.overlapCount
@@ -4874,6 +4988,7 @@ function ringExteriorBondOutwardWins(candidate, incumbent) {
 
 function ringExteriorBondOutwardHolds(candidate, incumbent) {
   return !!incumbent
+    && !boundedOmittedHydrogenFanRescueWins(candidate, incumbent)
     && typeof candidate.ringExteriorBondOutwardPenalty === 'number'
     && typeof incumbent.ringExteriorBondOutwardPenalty === 'number'
     && candidate.overlapCount === incumbent.overlapCount
@@ -4885,6 +5000,7 @@ function ringExteriorBondOutwardHolds(candidate, incumbent) {
 }
 
 function omittedHydrogenTrigonalWins(candidate, incumbent) {
+  const boundedFanRescue = boundedOmittedHydrogenFanRescueWins(candidate, incumbent);
   return !!incumbent
     && candidate.overlapCount === incumbent.overlapCount
     && Math.abs(candidate.exactContinuationPenalty - incumbent.exactContinuationPenalty) <= 1e-6
@@ -4892,16 +5008,31 @@ function omittedHydrogenTrigonalWins(candidate, incumbent) {
     && Math.abs(candidate.rootOutwardPenalty - incumbent.rootOutwardPenalty) <= 1e-6
     && Math.abs(candidate.trigonalBisectorPenalty - incumbent.trigonalBisectorPenalty) <= 1e-6
     && (
+      boundedFanRescue
+      ||
       typeof candidate.terminalRingLeafOutwardPenalty !== 'number'
       || typeof incumbent.terminalRingLeafOutwardPenalty !== 'number'
       || candidate.terminalRingLeafOutwardPenalty <= incumbent.terminalRingLeafOutwardPenalty + 1e-6
     )
     && (
+      boundedFanRescue
+      ||
       typeof candidate.ringExteriorBondOutwardPenalty !== 'number'
       || typeof incumbent.ringExteriorBondOutwardPenalty !== 'number'
       || candidate.ringExteriorBondOutwardPenalty <= incumbent.ringExteriorBondOutwardPenalty + 1e-6
     )
     && (candidate.omittedHydrogenTrigonalPenalty ?? 0) < (incumbent.omittedHydrogenTrigonalPenalty ?? 0) - 1e-6;
+}
+
+function boundedOmittedHydrogenFanRescueWins(candidate, incumbent) {
+  return !!incumbent
+    && candidate.omittedHydrogenAttachedRingFan === true
+    && candidate.overlapCount === incumbent.overlapCount
+    && (candidate.visibleBondCrossingCount ?? 0) <= (incumbent.visibleBondCrossingCount ?? 0)
+    && (candidate.omittedHydrogenTrigonalPenalty ?? 0) < (incumbent.omittedHydrogenTrigonalPenalty ?? 0) - OMITTED_H_FAN_RESCUE_MIN_IMPROVEMENT
+    && (candidate.omittedHydrogenTargetFanMaxDeviation ?? Number.POSITIVE_INFINITY) <= (5 * Math.PI / 36) ** 2 + 1e-9
+    && (candidate.ringExteriorBondOutwardPenalty ?? 0) <= (Math.PI / 6) ** 2 + 1e-9
+    && (candidate.terminalRingLeafOutwardPenalty ?? 0) <= (Math.PI / 9) ** 2 + 1e-9;
 }
 
 function omittedHydrogenTrigonalHolds(candidate, incumbent) {

@@ -20,7 +20,9 @@ import {
   chooseAttachmentAngle,
   describeCrossLikeHypervalentCenter,
   isLinearCenter,
+  isPlanarDivalentNitrogenContinuationPair,
   isTerminalMultipleBondLeaf,
+  shouldPreferOmittedHydrogenTrigonalBisector,
   smallRingExteriorTargetAngles,
   measureSmallRingExteriorGapSpreadPenalty,
   supportsExteriorBranchSpreadRingSize,
@@ -112,6 +114,17 @@ function isSmallProjectedTetrahedralLeafBatch(layoutGraph, anchorAtomId, primary
   });
 }
 
+function isOmittedHydrogenVisibleFanBatch(layoutGraph, anchorAtomId, primaryNeighborIds) {
+  return (
+    primaryNeighborIds.length === 2
+    && shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId)
+    && primaryNeighborIds.every(neighborAtomId => {
+      const atom = layoutGraph?.atoms.get(neighborAtomId);
+      return !!atom && atom.element !== 'H';
+    })
+  );
+}
+
 /**
  * Returns whether a branch center should skip exhaustive sibling backtracking.
  * Large mixed/acyclic slices can explode combinatorially when every backbone
@@ -129,6 +142,9 @@ export function shouldUseGreedyBranchPlacement(layoutGraph, atomIdsToPlace, anch
     return true;
   }
   if (isSmallProjectedTetrahedralLeafBatch(layoutGraph, anchorAtomId, primaryNeighborIds, childDescriptors)) {
+    return false;
+  }
+  if (isOmittedHydrogenVisibleFanBatch(layoutGraph, anchorAtomId, primaryNeighborIds)) {
     return false;
   }
   const participantCount = atomIdsToPlace?.size ?? 0;
@@ -441,18 +457,76 @@ function trigonalCenterPenalty(layoutGraph, coords, atomId) {
   return separations.reduce((sum, separation) => sum + (separation - DEG120) ** 2, 0);
 }
 
+function bentDivalentCenterPenalty(layoutGraph, coords, atomId) {
+  if (!layoutGraph) {
+    return 0;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  const atomPosition = coords.get(atomId);
+  if (
+    !atom
+    || atom.element !== 'N'
+    || atom.aromatic
+    || !atomPosition
+    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+  ) {
+    return 0;
+  }
+
+  const visibleCovalentNeighbors = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (bond.kind !== 'covalent' || bond.aromatic) {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+    visibleCovalentNeighbors.push({ bond, neighborAtomId, neighborPosition });
+  }
+
+  if (visibleCovalentNeighbors.length !== 2) {
+    return 0;
+  }
+  const singleBondCount = visibleCovalentNeighbors.filter(({ bond }) => (bond.order ?? 1) === 1).length;
+  const multipleBondCount = visibleCovalentNeighbors.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
+  if (
+    singleBondCount !== 1
+    || multipleBondCount !== 1
+    || !isPlanarDivalentNitrogenContinuationPair(
+      layoutGraph,
+      visibleCovalentNeighbors[0].neighborAtomId,
+      visibleCovalentNeighbors[1].neighborAtomId
+    )
+  ) {
+    return 0;
+  }
+
+  const bondAngle = angularDifference(
+    angleOf(sub(visibleCovalentNeighbors[0].neighborPosition, atomPosition)),
+    angleOf(sub(visibleCovalentNeighbors[1].neighborPosition, atomPosition))
+  );
+  return (bondAngle - DEG120) ** 2;
+}
+
 function arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds = []) {
   if (!layoutGraph) {
     return 0;
   }
 
-  let penalty = linearCenterPenalty(layoutGraph, coords, anchorAtomId) + trigonalCenterPenalty(layoutGraph, coords, anchorAtomId);
+  let penalty =
+    linearCenterPenalty(layoutGraph, coords, anchorAtomId)
+    + trigonalCenterPenalty(layoutGraph, coords, anchorAtomId)
+    + bentDivalentCenterPenalty(layoutGraph, coords, anchorAtomId);
   for (const atomId of focusAtomIds) {
     if (atomId === anchorAtomId) {
       continue;
     }
     penalty += linearCenterPenalty(layoutGraph, coords, atomId);
     penalty += trigonalCenterPenalty(layoutGraph, coords, atomId);
+    penalty += bentDivalentCenterPenalty(layoutGraph, coords, atomId);
   }
   return penalty;
 }

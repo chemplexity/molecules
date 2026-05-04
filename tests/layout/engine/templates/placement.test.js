@@ -101,6 +101,15 @@ describe('layout/engine/templates/placement', () => {
     assert.equal(new Set(pyreneXs.map(value => Number(value.toFixed(6)))).size, 6);
     assert.equal(new Set(pyreneYs.map(value => Number(value.toFixed(6)))).size, 6);
 
+    const peryleneGraph = createLayoutGraph(parseSMILES('C1=CC=C2C(=C1)C=C1C=CC3=CC=CC4=CC=C2C1=C34'));
+    const peryleneCoords = placeTemplateCoords(peryleneGraph, 'perylene', peryleneGraph.ringSystems[0].atomIds, peryleneGraph.options.bondLength);
+    assert.equal(peryleneCoords.size, 20);
+    const peryleneXs = [...peryleneCoords.values()].map(position => position.x);
+    const peryleneYs = [...peryleneCoords.values()].map(position => position.y);
+    assert.ok(Math.max(...peryleneXs) - Math.min(...peryleneXs) > Math.max(...peryleneYs) - Math.min(...peryleneYs));
+    assert.equal(new Set(peryleneXs.map(value => Number(value.toFixed(6)))).size, 8);
+    assert.equal(new Set(peryleneYs.map(value => Number(value.toFixed(6)))).size, 6);
+
     const fluoreneGraph = createLayoutGraph(parseSMILES('c1ccc2c(c1)Cc1ccccc1-2'));
     const fluoreneCoords = placeTemplateCoords(fluoreneGraph, 'fluorene', fluoreneGraph.ringSystems[0].atomIds, fluoreneGraph.options.bondLength);
     assert.equal(fluoreneCoords.size, 13);

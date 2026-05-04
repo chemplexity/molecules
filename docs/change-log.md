@@ -1,7 +1,24 @@
 # Change Log
 
+## 2026-05-04
+
+- Snap compact carbonyl ring substituents onto non-aromatic trigonal exits while compressing blocked oxo leaves.
+- Spread spiro bridged ring blocks before late ring presentation so terminal aryl leaves and ring-carbonyl oxygens stay clear.
+- Let bulky aryl sulfonamide nitrogen branches rotate into audit-clean exact sulfur crosses.
+- Let fluorinated acyclic carbon chains use projected-tetrahedral backbone turns while preserving normal downstream zig-zags.
+- Retouch terminal carbonyl leaves and compact acyl branches so crowded benzyl amide scaffolds clear ring oxygen overlaps.
+- Add an exact perylene fused-aromatic template so five-ring PAHs render as regular hexagons instead of relaxed pericondensed polygons.
+- Let audit-clean mixed roots retry when a neighboring phenyl blocks exact terminal aromatic methyl and fluorine slots.
+
 ## 2026-05-03
 
+- Treat aryl-bearing tetracarbon silicon centers as orthogonal cleanup targets so mixed alkyl aryl silanes finish on clean Si crosses.
+- Let ring-linked sulfones use an audit-clean full cross when one aryl side can rotate without crowding.
+- Keep oxime ether nitrogens on exact bent divalent slots in crowded fused mixed scaffolds.
+- Let saturated-ring exterior fans trade slight symmetry for exact benzylic linker bends.
+- Retry audit-clean mixed roots when a direct aromatic ring exit is visibly skewed.
+- Let compact terminal aryl ligands complete sulfone crosses while rotating nearby small leaves aside.
+- Keep suppressed-H polyol side branches in batched visible trigonal fans so large acyclic chains do not place one hydroxyl opposite the next carbon.
 - Preserve transition-metal ligand links as coordinate bonds when parsing SMILES so polypyridyl ruthenium complexes keep ligand rings readable.
 - Let moderately large glycoside ring chains retry alternate mixed roots so saturated sugar exits stay outward and overlap-free.
 - Treat tetraaryl silicon centers as orthogonal cleanup targets so aryl silanes finish with audit-clean Si crosses.

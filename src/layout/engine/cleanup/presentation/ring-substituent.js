@@ -61,6 +61,14 @@ const SHARED_JUNCTION_BLOCKER_BACKOFF_ANGLES = Object.freeze([
   -Math.PI / 6,
   Math.PI / 6
 ]);
+const TERMINAL_RING_CARBONYL_LEAF_CONTACT_OFFSETS = Object.freeze(
+  [2, 4, 6, 8, 10, 12].flatMap(degrees => [
+    (degrees * Math.PI) / 180,
+    -(degrees * Math.PI) / 180
+  ])
+);
+const TERMINAL_RING_CARBONYL_LEAF_CLEARANCE_FACTOR = 0.75;
+const TERMINAL_RING_CARBONYL_LEAF_MAX_FAN_DEVIATION = Math.PI / 15;
 const RING_SUBSTITUENT_TIDY_LIMITS = Object.freeze({
   maxSubtreeHeavyAtomCount: 18,
   maxSubtreeAtomCount: 28,
@@ -623,6 +631,248 @@ function alignSharedJunctionTerminalLeaves(layoutGraph, coords, atomGrid, bondLe
   return nudges;
 }
 
+/**
+ * Describes a terminal oxygen double-bonded to a ring carbonyl center.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} leafAtomId - Candidate terminal oxygen atom id.
+ * @param {Set<string>|null} frozenAtomIds - Frozen atoms that must not move.
+ * @returns {{centerAtomId: string, leafAtomId: string, ringSystemId: string|number|null}|null} Leaf descriptor.
+ */
+function terminalRingCarbonylLeafContactDescriptor(layoutGraph, coords, leafAtomId, frozenAtomIds = null) {
+  const leafAtom = layoutGraph.atoms.get(leafAtomId);
+  if (
+    !leafAtom
+    || leafAtom.element !== 'O'
+    || leafAtom.aromatic
+    || leafAtom.heavyDegree !== 1
+    || !coords.has(leafAtomId)
+    || frozenAtomIds?.has(leafAtomId)
+  ) {
+    return null;
+  }
+
+  for (const bond of layoutGraph.bondsByAtomId.get(leafAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) < 2) {
+      continue;
+    }
+    const centerAtomId = bond.a === leafAtomId ? bond.b : bond.a;
+    const centerAtom = layoutGraph.atoms.get(centerAtomId);
+    if (
+      !centerAtom
+      || centerAtom.element !== 'C'
+      || centerAtom.aromatic
+      || centerAtom.heavyDegree !== 3
+      || !coords.has(centerAtomId)
+      || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) === 0
+    ) {
+      continue;
+    }
+    return {
+      centerAtomId,
+      leafAtomId,
+      ringSystemId: layoutGraph.atomToRingSystemId.get(centerAtomId) ?? null
+    };
+  }
+
+  return null;
+}
+
+/**
+ * Returns the nearest atom in a foreign ring to a terminal ring-carbonyl leaf.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{centerAtomId: string, leafAtomId: string, ringSystemId: string|number|null}} descriptor - Leaf descriptor.
+ * @param {{x: number, y: number}|null} [leafPositionOverride] - Optional candidate leaf position.
+ * @returns {number} Closest foreign-ring distance, or infinity.
+ */
+function terminalRingCarbonylLeafForeignRingDistance(layoutGraph, coords, descriptor, leafPositionOverride = null) {
+  const leafPosition = leafPositionOverride ?? coords.get(descriptor.leafAtomId);
+  if (!leafPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  let closestDistance = Number.POSITIVE_INFINITY;
+  for (const [atomId, atom] of layoutGraph.atoms) {
+    if (
+      !atom
+      || atom.element === 'H'
+      || atomId === descriptor.leafAtomId
+      || atomId === descriptor.centerAtomId
+      || !coords.has(atomId)
+      || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
+      || layoutGraph.atomToRingSystemId.get(atomId) === descriptor.ringSystemId
+      || layoutGraph.bondedPairSet.has(atomPairKey(descriptor.leafAtomId, atomId))
+    ) {
+      continue;
+    }
+    closestDistance = Math.min(closestDistance, Math.hypot(
+      leafPosition.x - coords.get(atomId).x,
+      leafPosition.y - coords.get(atomId).y
+    ));
+  }
+  return closestDistance;
+}
+
+/**
+ * Measures the largest trigonal fan deviation around a ring carbonyl center.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{centerAtomId: string, leafAtomId: string}} descriptor - Leaf descriptor.
+ * @param {{x: number, y: number}|null} [leafPositionOverride] - Optional candidate leaf position.
+ * @returns {number} Maximum angular deviation from a 120-degree fan.
+ */
+function terminalRingCarbonylLeafFanDeviation(layoutGraph, coords, descriptor, leafPositionOverride = null) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  if (!centerPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const neighborAngles = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(descriptor.centerAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === descriptor.centerAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = neighborAtomId === descriptor.leafAtomId
+      ? (leafPositionOverride ?? coords.get(neighborAtomId))
+      : coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+    neighborAngles.push(angleOf(sub(neighborPosition, centerPosition)));
+  }
+  if (neighborAngles.length !== 3) {
+    return 0;
+  }
+
+  let maxDeviation = 0;
+  for (let firstIndex = 0; firstIndex < neighborAngles.length; firstIndex++) {
+    for (let secondIndex = firstIndex + 1; secondIndex < neighborAngles.length; secondIndex++) {
+      maxDeviation = Math.max(
+        maxDeviation,
+        Math.abs(angularDifference(neighborAngles[firstIndex], neighborAngles[secondIndex]) - (2 * Math.PI) / 3)
+      );
+    }
+  }
+  return maxDeviation;
+}
+
+/**
+ * Measures terminal ring-carbonyl oxygen crowding against neighboring ring systems.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{bondLength?: number, focusAtomIds?: Set<string>|null}} [options] - Optional scoring controls.
+ * @returns {number} Total clearance deficit for crowded terminal ring-carbonyl leaves.
+ */
+export function measureTerminalRingCarbonylLeafContactPenalty(layoutGraph, coords, options = {}) {
+  if (!layoutGraph || !(coords instanceof Map)) {
+    return 0;
+  }
+  const bondLength = options.bondLength ?? layoutGraph.options?.bondLength ?? 1.5;
+  const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
+  const clearanceThreshold = bondLength * TERMINAL_RING_CARBONYL_LEAF_CLEARANCE_FACTOR;
+  let totalPenalty = 0;
+
+  for (const leafAtomId of coords.keys()) {
+    const descriptor = terminalRingCarbonylLeafContactDescriptor(layoutGraph, coords, leafAtomId);
+    if (
+      !descriptor
+      || (
+        focusAtomIds
+        && !focusAtomIds.has(descriptor.leafAtomId)
+        && !focusAtomIds.has(descriptor.centerAtomId)
+      )
+    ) {
+      continue;
+    }
+    const contactDistance = terminalRingCarbonylLeafForeignRingDistance(layoutGraph, coords, descriptor);
+    if (!Number.isFinite(contactDistance) || contactDistance >= clearanceThreshold - TIDY_ATOM_EPSILON) {
+      continue;
+    }
+    totalPenalty += clearanceThreshold - contactDistance;
+  }
+
+  return totalPenalty;
+}
+
+/**
+ * Gives terminal ring-carbonyl oxygen labels a small post-retidy backoff when
+ * exact fan cleanup leaves them crowded against a neighboring ring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {AtomGrid} atomGrid - Spatial grid for current coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @param {Set<string>|null} frozenAtomIds - Frozen atoms that must not move.
+ * @returns {number} Number of accepted leaf moves.
+ */
+function relieveTerminalRingCarbonylLeafContacts(layoutGraph, coords, atomGrid, bondLength, frozenAtomIds = null) {
+  const clearanceThreshold = bondLength * TERMINAL_RING_CARBONYL_LEAF_CLEARANCE_FACTOR;
+  let nudges = 0;
+
+  for (const leafAtomId of coords.keys()) {
+    const descriptor = terminalRingCarbonylLeafContactDescriptor(layoutGraph, coords, leafAtomId, frozenAtomIds);
+    if (!descriptor) {
+      continue;
+    }
+    const baseDistance = terminalRingCarbonylLeafForeignRingDistance(layoutGraph, coords, descriptor);
+    if (baseDistance >= clearanceThreshold - TIDY_ATOM_EPSILON) {
+      continue;
+    }
+
+    const centerPosition = coords.get(descriptor.centerAtomId);
+    const leafPosition = coords.get(descriptor.leafAtomId);
+    if (!centerPosition || !leafPosition) {
+      continue;
+    }
+    const currentAngle = angleOf(sub(leafPosition, centerPosition));
+    const leafDistance = Math.hypot(leafPosition.x - centerPosition.x, leafPosition.y - centerPosition.y);
+    let bestCandidate = null;
+    for (const rotationOffset of TERMINAL_RING_CARBONYL_LEAF_CONTACT_OFFSETS) {
+      const targetPosition = add(centerPosition, fromAngle(currentAngle + rotationOffset, leafDistance));
+      const fanDeviation = terminalRingCarbonylLeafFanDeviation(layoutGraph, coords, descriptor, targetPosition);
+      if (fanDeviation > TERMINAL_RING_CARBONYL_LEAF_MAX_FAN_DEVIATION + TIDY_ANGLE_EPSILON) {
+        continue;
+      }
+      const candidateCoords = new Map(coords);
+      candidateCoords.set(descriptor.leafAtomId, targetPosition);
+      if (findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length > 0) {
+        continue;
+      }
+      const contactDistance = terminalRingCarbonylLeafForeignRingDistance(
+        layoutGraph,
+        coords,
+        descriptor,
+        targetPosition
+      );
+      if (contactDistance <= baseDistance + bondLength * 0.05) {
+        continue;
+      }
+      const clears = contactDistance >= clearanceThreshold - TIDY_ATOM_EPSILON;
+      if (
+        !bestCandidate
+        || (clears !== bestCandidate.clears ? clears : contactDistance > bestCandidate.contactDistance + TIDY_ATOM_EPSILON)
+        || (
+          Math.abs(contactDistance - bestCandidate.contactDistance) <= TIDY_ATOM_EPSILON
+          && fanDeviation < bestCandidate.fanDeviation - TIDY_ANGLE_EPSILON
+        )
+      ) {
+        bestCandidate = { targetPosition, contactDistance, fanDeviation, clears };
+      }
+    }
+    if (!bestCandidate) {
+      continue;
+    }
+
+    atomGrid.remove(descriptor.leafAtomId, leafPosition);
+    coords.set(descriptor.leafAtomId, bestCandidate.targetPosition);
+    atomGrid.insert(descriptor.leafAtomId, bestCandidate.targetPosition);
+    nudges++;
+  }
+
+  return nudges;
+}
+
 function countMovedBondCrossings(layoutGraph, coords, subtreeAtomIds, overridePositions, bondIntersectionContext = null) {
   let crossingCount = 0;
 
@@ -1088,7 +1338,6 @@ function buildExactIdealLeafCandidate(layoutGraph, coords, atomGrid, descriptor,
     || descriptor.rootRotatingAtomIds.length > 0
     || descriptor.subtreeAtomIds.length !== 1
     || descriptor.outwardAngles.length !== 1
-    || isCompressibleTerminalRingLeafDescriptor(layoutGraph, descriptor)
   ) {
     return null;
   }
@@ -1707,6 +1956,18 @@ function shouldAcceptCandidate(candidate, baseCandidate, descriptor) {
     return true;
   }
   if (
+    candidate.softBackoffTerminalLeaf === true
+    && candidate.softBackoffTerminalLeafClearanceDeficit <= TIDY_ATOM_EPSILON
+    && improvesOutwardDeviation
+    && candidate.insideRingCount <= baseCandidate.insideRingCount
+    && candidate.outwardFailureCount <= baseCandidate.outwardFailureCount
+    && candidate.crossingCount <= baseCandidate.crossingCount
+    && doesNotWorsenDistortion
+    && doesNotWorsenBridgeAngle
+  ) {
+    return true;
+  }
+  if (
     descriptor.supportsRootAnchoredOverlapRepair
     && candidate.rootAnchored
     && improvesOverlap
@@ -2099,10 +2360,13 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
       const subtreeContext = buildSubtreeOverlapContext(layoutGraph, dynamicDescriptor.subtreeAtomIds);
       const currentAngle = angleOf(sub(rootPosition, anchorPosition));
       const compressibleTerminalLeafDescriptor = isCompressibleTerminalRingLeafDescriptor(layoutGraph, dynamicDescriptor);
+      const nearOutwardAngles = nearOutwardIdealLeafCandidateAngles(dynamicDescriptor);
       const candidateAngles = new Set(STANDARD_ROTATION_ANGLES);
       if (!compressibleTerminalLeafDescriptor) {
         for (const angle of dynamicDescriptor.outwardAngles) { candidateAngles.add(angle); }
-        for (const angle of nearOutwardIdealLeafCandidateAngles(dynamicDescriptor)) { candidateAngles.add(angle); }
+        for (const angle of nearOutwardAngles) { candidateAngles.add(angle); }
+      } else {
+        for (const angle of nearOutwardAngles) { candidateAngles.add(angle); }
       }
       if (dynamicDescriptor.isRingSystemSubstituent) {
         for (const reverseOutwardAngle of dynamicDescriptor.reverseOutwardAngles) {
@@ -2270,6 +2534,15 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
             return rotateRigidDescriptorPositions(inputCoords, descriptor, rotation);
           },
           scoreSeed(descriptor, _candidateCoords, candidateAngle, searchContext, overridePositions) {
+            const isSoftBackoffTerminalLeaf =
+              compressibleTerminalLeafDescriptor
+              && nearOutwardAngles.includes(candidateAngle);
+            const rootTargetPosition = isSoftBackoffTerminalLeaf
+              ? positionForAtom(coords, overridePositions, descriptor.rootAtomId)
+              : null;
+            const softBackoffTerminalLeafClearance = rootTargetPosition
+              ? terminalRingLeafSoftBlockerDistance(layoutGraph, coords, descriptor, rootTargetPosition)
+              : Number.POSITIVE_INFINITY;
             const candidate = {
               ...buildCandidateScore(
                 layoutGraph,
@@ -2284,7 +2557,11 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
               ),
               angleDelta: Math.abs(candidateAngle - searchContext.currentAngle),
               overridePositions,
-              rootAnchored: false
+              rootAnchored: false,
+              softBackoffTerminalLeaf: isSoftBackoffTerminalLeaf,
+              softBackoffTerminalLeafClearanceDeficit: isSoftBackoffTerminalLeaf
+                ? Math.max(0, searchContext.bondLength * SEVERE_OVERLAP_FACTOR - softBackoffTerminalLeafClearance)
+                : 0
             };
             return shouldAcceptCandidate(candidate, searchContext.baseCandidate, descriptor) ? candidate : null;
           },
@@ -2318,6 +2595,7 @@ export function runRingSubstituentTidy(layoutGraph, inputCoords, options = {}) {
   }
 
   nudges += alignSharedJunctionTerminalLeaves(layoutGraph, coords, atomGrid, bondLength, frozenAtomIds);
+  nudges += relieveTerminalRingCarbonylLeafContacts(layoutGraph, coords, atomGrid, bondLength, frozenAtomIds);
 
   return { coords, nudges };
 }

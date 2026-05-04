@@ -197,9 +197,10 @@ function exactIdealDivalentContinuationAngles(layoutGraph, coords, anchorAtomId,
   const parentAtomId = parentBond ? (parentBond.a === anchorAtomId ? parentBond.b : parentBond.a) : null;
   const parentAtom = parentAtomId ? layoutGraph.atoms.get(parentAtomId) : null;
   const parentPosition = parentAtomId ? coords.get(parentAtomId) : null;
-  if (!parentBond || !parentAtomId || !parentAtom || !parentPosition || parentBond.aromatic || (parentBond.order ?? 1) !== 1) {
+  if (!parentBond || !parentAtomId || !parentAtom || !parentPosition || parentBond.aromatic) {
     return [];
   }
+  const parentOrder = parentBond.order ?? 1;
   const isExactDivalentElement =
     IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(anchorAtom.element)
     || (
@@ -207,6 +208,16 @@ function exactIdealDivalentContinuationAngles(layoutGraph, coords, anchorAtomId,
       && isPlanarDivalentNitrogenContinuationPair(layoutGraph, parentAtomId, rootAtomId)
     );
   if (!isExactDivalentElement) {
+    return [];
+  }
+  const isSupportedBondPattern =
+    parentOrder === 1
+    || (
+      anchorAtom.element === 'N'
+      && parentOrder >= 2
+      && isPlanarDivalentNitrogenContinuationPair(layoutGraph, parentAtomId, rootAtomId)
+    );
+  if (!isSupportedBondPattern) {
     return [];
   }
 

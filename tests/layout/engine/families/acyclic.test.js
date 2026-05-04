@@ -214,6 +214,25 @@ describe('layout/engine/families/acyclic', () => {
     }
   });
 
+  it('keeps fluorinated formate chain centers on projected-tetrahedral backbone turns', () => {
+    const result = runPipeline(parseSMILES('FC(F)C(F)(F)C(F)(F)C(F)(F)COC=O'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'acyclic');
+    assert.equal(result.metadata.audit.ok, true);
+    for (const atomId of ['C4', 'C7', 'C10']) {
+      const separations = sortedHeavyNeighborSeparations(result.layoutGraph, result.coords, atomId);
+      assert.ok(
+        separations.every(separation => Math.abs(separation - 90) < 1e-6),
+        `expected ${atomId} to use projected-tetrahedral quadrants, got ${separations.map(separation => separation.toFixed(2)).join(', ')} degrees`
+      );
+    }
+    assert.ok(Math.abs(bondAngle(result.coords, 'C10', 'C13', 'O14') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'O14', 'C15', 'O16') - 120) < 1e-6);
+  });
+
   it('keeps allene and cumulene centers linear through adjacent double bonds', () => {
     const smilesCases = ['CC=C=CC', 'C=C=C=C'];
 
@@ -493,6 +512,19 @@ describe('layout/engine/families/acyclic', () => {
     assert.ok(Math.abs(bondAngle(result.coords, 'C7', 'C8', 'C9') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngle(result.coords, 'O6', 'C7', 'C8') - 120) < 1e-6);
     assert.ok(Math.abs(bondAngle(result.coords, 'C8', 'C9', 'C10') - 120) < 1e-6);
+  });
+
+  it('keeps omitted-h polyol side branches on a visible trigonal fan despite suppressed hydrogens', () => {
+    const result = runPipeline(parseSMILES('CCCCCCCCCCCCCC=CC(O)CCCC(OCCO)C(O)C(O)CO'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C26', 'C28', 'O29') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C26', 'C28', 'C30') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngle(result.coords, 'O29', 'C28', 'C30') - 120) < 1e-6);
   });
 
   it('still keeps off-backbone terminal-alkene roots on the exact trigonal slot', () => {

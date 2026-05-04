@@ -5,10 +5,12 @@ import {
 } from './attached-carbonyl.js';
 import { auditLayout } from '../../audit/audit.js';
 import {
+  findSevereOverlaps,
   findVisibleHeavyBondCrossings,
   measureThreeHeavyContinuationDistortion
 } from '../../audit/invariants.js';
-import { add, angleOf, angularDifference, rotate, sub } from '../../geometry/vec2.js';
+import { atomPairKey } from '../../constants.js';
+import { add, angleOf, angularDifference, distance, rotate, sub } from '../../geometry/vec2.js';
 import {
   collectMovableAttachedRingDescriptors,
   measureAttachedRingPeripheralFocusPenalty,
@@ -28,6 +30,7 @@ import {
 import { runDiarylOmittedHydrogenFanTidy } from './diaryl-omitted-h-fan.js';
 import {
   measureRingSubstituentPresentationPenalty,
+  measureTerminalRingCarbonylLeafContactPenalty,
   runDirectAttachedRingSystemOutwardRetidy,
   runRingSubstituentTidy
 } from './ring-substituent.js';
@@ -41,7 +44,61 @@ import { smallRingExteriorTargetAngles } from '../../placement/branch-placement.
 
 const PRESENTATION_NEED_EPSILON = 1e-6;
 const OMITTED_H_TRIGONAL_PRESENTATION_NEED = (Math.PI / 6) ** 2;
+const EXACT_OMITTED_H_TRIGONAL_EPSILON = 1e-9;
 const SMALL_RING_EXTERIOR_FAN_EPSILON = 1e-6;
+const TERMINAL_MULTIPLE_BOND_LEAF_PRESENTATION_CLEARANCE_FACTOR = 0.6;
+
+function isTerminalMultipleBondLeaf(layoutGraph, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || atom.element === 'C' || atom.aromatic || (atom.heavyDegree ?? 0) !== 1) {
+    return false;
+  }
+  return (layoutGraph.bondsByAtomId.get(atomId) ?? []).some(bond => (
+    bond
+    && bond.kind === 'covalent'
+    && !bond.aromatic
+    && (bond.order ?? 1) >= 2
+  ));
+}
+
+function hasTerminalMultipleBondLeafSevereOverlap(layoutGraph, coords, bondLength) {
+  return findSevereOverlaps(layoutGraph, coords, bondLength).some(overlap =>
+    isTerminalMultipleBondLeaf(layoutGraph, overlap.firstAtomId)
+    || isTerminalMultipleBondLeaf(layoutGraph, overlap.secondAtomId)
+  );
+}
+
+function terminalMultipleBondLeafClearance(layoutGraph, coords, atomId) {
+  const position = coords.get(atomId);
+  if (!position) {
+    return Number.POSITIVE_INFINITY;
+  }
+  let minimumDistance = Number.POSITIVE_INFINITY;
+  for (const [otherAtomId, otherPosition] of coords) {
+    if (
+      otherAtomId === atomId
+      || !isHeavyAtom(layoutGraph, otherAtomId)
+      || layoutGraph.bondedPairSet.has(atomPairKey(atomId, otherAtomId))
+    ) {
+      continue;
+    }
+    minimumDistance = Math.min(minimumDistance, distance(position, otherPosition));
+  }
+  return minimumDistance;
+}
+
+function hasTerminalMultipleBondLeafPresentationCrowding(layoutGraph, coords, bondLength) {
+  const clearanceThreshold = bondLength * TERMINAL_MULTIPLE_BOND_LEAF_PRESENTATION_CLEARANCE_FACTOR;
+  for (const atomId of coords.keys()) {
+    if (!isTerminalMultipleBondLeaf(layoutGraph, atomId)) {
+      continue;
+    }
+    if (terminalMultipleBondLeafClearance(layoutGraph, coords, atomId) < clearanceThreshold - PRESENTATION_NEED_EPSILON) {
+      return true;
+    }
+  }
+  return false;
+}
 
 function isHeavyAtom(layoutGraph, atomId) {
   return layoutGraph.atoms.get(atomId)?.element !== 'H';
@@ -483,6 +540,7 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
   const omittedHydrogenTrigonalPenalty = measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation;
   const phosphateArylTailPenalty = measurePhosphateArylTailPresentationPenalty(layoutGraph, coords);
   const terminalCationRingProximityPenalty = measureTerminalCationRingProximityPenalty(layoutGraph, coords, { bondLength });
+  const terminalRingCarbonylLeafContactPenalty = measureTerminalRingCarbonylLeafContactPenalty(layoutGraph, coords, { bondLength });
   const visibleBondCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords).length;
   const presentationPenalty = measureRingSubstituentPresentationPenalty(layoutGraph, coords, {
     includeLinkedRingBridgePenalty: true
@@ -497,6 +555,7 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
     omittedHydrogenTrigonalPenalty,
     terminalHeteroOutwardMaxPenalty: terminalHeteroOutwardPenalty.maxDeviation,
     terminalHeteroOutwardPenalty: terminalHeteroOutwardPenalty.totalDeviation,
+    terminalRingCarbonylLeafContactPenalty,
     terminalMultipleBondLeafFanMaxPenalty: terminalMultipleBondLeafFanPenalty.maxDeviation,
     terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation,
     smallRingExteriorFanExactMaxPenalty: smallRingExteriorFanExactPenalty.maxDeviation,
@@ -513,6 +572,7 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
         omittedHydrogenTrigonalPenalty,
         terminalHeteroOutwardMaxPenalty: terminalHeteroOutwardPenalty.maxDeviation,
         terminalHeteroOutwardPenalty: terminalHeteroOutwardPenalty.totalDeviation,
+        terminalRingCarbonylLeafContactPenalty,
         terminalMultipleBondLeafFanMaxPenalty: terminalMultipleBondLeafFanPenalty.maxDeviation,
         terminalMultipleBondLeafFanPenalty: terminalMultipleBondLeafFanPenalty.totalDeviation,
         smallRingExteriorFanExactMaxPenalty: smallRingExteriorFanExactPenalty.maxDeviation,
@@ -531,6 +591,12 @@ function isBetterPresentationState(candidateState, incumbentState, options) {
   }
   if (candidateState.visibleBondCrossingCount !== incumbentState.visibleBondCrossingCount) {
     return candidateState.visibleBondCrossingCount < incumbentState.visibleBondCrossingCount;
+  }
+  if (
+    incumbentState.omittedHydrogenTrigonalPenalty <= EXACT_OMITTED_H_TRIGONAL_EPSILON
+    && candidateState.omittedHydrogenTrigonalPenalty > EXACT_OMITTED_H_TRIGONAL_EPSILON
+  ) {
+    return false;
   }
   if (typeof options.comparatorFn === 'function') {
     return options.comparatorFn(candidateState.score, incumbentState.score);
@@ -594,6 +660,8 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
     ?? measureThreeHeavyContinuationDistortion(layoutGraph, stageResult.coords).totalDeviation;
   const terminalMultipleBondLeafFanPenalty = stageResult.terminalMultipleBondLeafFanPenalty
     ?? measureTerminalMultipleBondLeafFanPenalty(layoutGraph, stageResult.coords).totalDeviation;
+  const terminalRingCarbonylLeafContactPenalty = stageResult.terminalRingCarbonylLeafContactPenalty
+    ?? measureTerminalRingCarbonylLeafContactPenalty(layoutGraph, stageResult.coords);
   const smallRingExteriorFanExactPenalty = stageResult.smallRingExteriorFanExactPenalty
     ?? measureSmallRingExteriorFanExactPenalty(layoutGraph, stageResult.coords).totalDeviation;
   const phosphateArylTailPenalty = stageResult.phosphateArylTailPenalty
@@ -609,6 +677,7 @@ export function hasOutstandingRingPresentationNeed(layoutGraph, stageResult) {
     || phosphateArylTailPenalty > PRESENTATION_NEED_EPSILON
     || terminalCationRingProximityPenalty > PRESENTATION_NEED_EPSILON
     || terminalMultipleBondLeafFanPenalty > PRESENTATION_NEED_EPSILON
+    || terminalRingCarbonylLeafContactPenalty > PRESENTATION_NEED_EPSILON
     || smallRingExteriorFanExactPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingPeripheralPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingRootOutwardPenalty > PRESENTATION_NEED_EPSILON
@@ -632,6 +701,8 @@ function hasOutstandingNonPhosphateRingPresentationNeed(layoutGraph, stageResult
     ?? measureThreeHeavyContinuationDistortion(layoutGraph, stageResult.coords).totalDeviation;
   const terminalMultipleBondLeafFanPenalty = stageResult.terminalMultipleBondLeafFanPenalty
     ?? measureTerminalMultipleBondLeafFanPenalty(layoutGraph, stageResult.coords).totalDeviation;
+  const terminalRingCarbonylLeafContactPenalty = stageResult.terminalRingCarbonylLeafContactPenalty
+    ?? measureTerminalRingCarbonylLeafContactPenalty(layoutGraph, stageResult.coords);
   const smallRingExteriorFanExactPenalty = stageResult.smallRingExteriorFanExactPenalty
     ?? measureSmallRingExteriorFanExactPenalty(layoutGraph, stageResult.coords).totalDeviation;
   const terminalCationRingProximityPenalty = stageResult.terminalCationRingProximityPenalty
@@ -644,6 +715,7 @@ function hasOutstandingNonPhosphateRingPresentationNeed(layoutGraph, stageResult
     || omittedHydrogenTrigonalPenalty > OMITTED_H_TRIGONAL_PRESENTATION_NEED
     || terminalCationRingProximityPenalty > PRESENTATION_NEED_EPSILON
     || terminalMultipleBondLeafFanPenalty > PRESENTATION_NEED_EPSILON
+    || terminalRingCarbonylLeafContactPenalty > PRESENTATION_NEED_EPSILON
     || smallRingExteriorFanExactPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingPeripheralPenalty > PRESENTATION_NEED_EPSILON
     || attachedRingRootOutwardPenalty > PRESENTATION_NEED_EPSILON
@@ -662,6 +734,7 @@ function hasOutstandingNonPhosphateRingPresentationNeed(layoutGraph, stageResult
  *   cleanupRigidSubtreesByAtomId?: Map<string, Array<{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}>>,
  *   protectLargeMoleculeBackbone?: boolean,
  *   includeRingSubstituent?: boolean,
+ *   includeTerminalMultipleBondLeaf?: boolean,
  *   includeTerminalHetero?: boolean,
  *   includeAttachedRingFallback?: boolean,
  *   scoreCoordsFn?: ((coords: Map<string, {x: number, y: number}>) => object|null),
@@ -688,12 +761,15 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
   let usedDirectAttachedRingRootRetidy = false;
   let usedPhosphateArylTailTidy = false;
   let usedRingSubstituentTidy = false;
+  const includeRingSubstituent = options.includeRingSubstituent !== false;
+  const includeTerminalMultipleBondLeaf =
+    includeRingSubstituent || options.includeTerminalMultipleBondLeaf === true;
 
   const hasTerminalHeteroOutwardNeed = state => (
     measureRingTerminalHeteroOutwardPenalty(layoutGraph, state.coords).maxDeviation > PRESENTATION_NEED_EPSILON
   );
 
-  if (options.includeRingSubstituent !== false) {
+  if (includeRingSubstituent) {
     const previousStepCount = currentState.steps.length;
     currentState = evaluatePresentationStep(
       layoutGraph,
@@ -728,6 +804,9 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
       options
     );
 
+  }
+
+  if (includeTerminalMultipleBondLeaf) {
     currentState = evaluatePresentationStep(
       layoutGraph,
       currentState,
@@ -741,7 +820,7 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
   }
 
   if (
-    options.includeRingSubstituent !== false
+    includeRingSubstituent
     && (
       hasOutstandingNonPhosphateRingPresentationNeed(layoutGraph, currentState)
       || hasTerminalHeteroOutwardNeed(currentState)
@@ -761,7 +840,7 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     usedRingSubstituentTidy = currentState.steps.length > previousStepCount;
   }
 
-  if (options.includeRingSubstituent !== false && (!usedPhosphateArylTailTidy || usedRingSubstituentTidy)) {
+  if (includeRingSubstituent && (!usedPhosphateArylTailTidy || usedRingSubstituentTidy)) {
     currentState = evaluatePresentationStep(
       layoutGraph,
       currentState,
@@ -773,7 +852,7 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     );
   }
 
-  if (options.includeRingSubstituent !== false) {
+  if (includeTerminalMultipleBondLeaf) {
     currentState = evaluatePresentationStep(
       layoutGraph,
       currentState,
@@ -786,7 +865,7 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     );
   }
 
-  if (options.includeRingSubstituent !== false) {
+  if (includeRingSubstituent) {
     currentState = evaluatePresentationStep(
       layoutGraph,
       currentState,
@@ -833,11 +912,37 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
     usedAttachedRingFallback = currentState.steps.length > previousStepCount;
   }
 
-  if (
+  const postAttachedRingFallbackBondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const terminalMultipleBondLeafCrowdedAfterAttachedFallback =
+    usedAttachedRingFallback
+    && options.includeRingSubstituent !== false
+    && hasTerminalMultipleBondLeafPresentationCrowding(
+      layoutGraph,
+      currentState.coords,
+      postAttachedRingFallbackBondLength
+    );
+  const terminalMultipleBondLeafSevereAfterAttachedFallback =
     usedAttachedRingFallback
     && options.includeRingSubstituent !== false
     && hasOutstandingNonPhosphateRingPresentationNeed(layoutGraph, currentState)
-  ) {
+    && hasTerminalMultipleBondLeafSevereOverlap(
+      layoutGraph,
+      currentState.coords,
+      postAttachedRingFallbackBondLength
+    );
+
+  if (terminalMultipleBondLeafCrowdedAfterAttachedFallback || terminalMultipleBondLeafSevereAfterAttachedFallback) {
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'terminal-multiple-bond-leaf',
+      runTerminalMultipleBondLeafFanTidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        frozenAtomIds: options.frozenAtomIds ?? null
+      }),
+      options
+    );
+
     currentState = evaluatePresentationStep(
       layoutGraph,
       currentState,
@@ -906,6 +1011,37 @@ export function runRingPresentationCleanup(layoutGraph, inputCoords, options = {
         frozenAtomIds: options.frozenAtomIds ?? null,
         cleanupRigidSubtreesByAtomId: options.cleanupRigidSubtreesByAtomId,
         protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true
+      }),
+      options
+    );
+  }
+
+  if (includeRingSubstituent) {
+    const previousStepCount = currentState.steps.length;
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'direct-attached-ring-root-retidy',
+      runDirectAttachedRingSystemOutwardRetidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        frozenAtomIds: options.frozenAtomIds ?? null
+      }),
+      options
+    );
+    usedDirectAttachedRingRootRetidy = usedDirectAttachedRingRootRetidy || currentState.steps.length > previousStepCount;
+  }
+
+  if (
+    usedAttachedRingFallback
+    && includeRingSubstituent
+  ) {
+    currentState = evaluatePresentationStep(
+      layoutGraph,
+      currentState,
+      'ring-substituent-final-retidy',
+      runRingSubstituentTidy(layoutGraph, currentState.coords, {
+        bondLength: options.bondLength,
+        frozenAtomIds: options.frozenAtomIds ?? null
       }),
       options
     );

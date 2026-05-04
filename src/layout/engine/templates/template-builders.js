@@ -356,6 +356,14 @@ function createPyreneTemplate() {
 }
 
 /**
+ * Creates a perylene fused aromatic template from its exact heavy-atom graph.
+ * @returns {Molecule} Perylene scaffold template molecule.
+ */
+function createPeryleneTemplate() {
+  return createHeavyTemplateFromSmiles('perylene', 'C1=CC=C2C(=C1)C=C1C=CC3=CC=CC4=CC=C2C1=C34');
+}
+
+/**
  * Creates a fluorene fused tricyclic template from its exact ring-system graph.
  * @returns {Molecule} Fluorene scaffold template molecule.
  */
@@ -951,6 +959,36 @@ function createPyreneGeometry() {
 }
 
 /**
+ * Creates normalized coordinates for perylene on an exact honeycomb lattice.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createPeryleneGeometry() {
+  const xUnit = Math.sqrt(3) / 2;
+  return createCenteredFrozenGeometry([
+    ['C1', { x: 3 * xUnit, y: 0.5 }],
+    ['C2', { x: 3 * xUnit, y: -0.5 }],
+    ['C3', { x: 2 * xUnit, y: -1 }],
+    ['C4', { x: xUnit, y: -0.5 }],
+    ['C5', { x: xUnit, y: 0.5 }],
+    ['C6', { x: 2 * xUnit, y: 1 }],
+    ['C7', { x: 0, y: 1 }],
+    ['C8', { x: -xUnit, y: 0.5 }],
+    ['C9', { x: -2 * xUnit, y: 1 }],
+    ['C10', { x: -3 * xUnit, y: 0.5 }],
+    ['C11', { x: -3 * xUnit, y: -0.5 }],
+    ['C12', { x: -4 * xUnit, y: -1 }],
+    ['C13', { x: -4 * xUnit, y: -2 }],
+    ['C14', { x: -3 * xUnit, y: -2.5 }],
+    ['C15', { x: -2 * xUnit, y: -2 }],
+    ['C16', { x: -xUnit, y: -2.5 }],
+    ['C17', { x: 0, y: -2 }],
+    ['C18', { x: 0, y: -1 }],
+    ['C19', { x: -xUnit, y: -0.5 }],
+    ['C20', { x: -2 * xUnit, y: -1 }]
+  ]);
+}
+
+/**
  * Creates normalized coordinates for fluorene with the bridge carbon at the top.
  * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
  */
@@ -1499,6 +1537,7 @@ export function buildTemplateLibrary() {
       createSteroidCoreSaturatedTemplate(),
       geometrySpec('normalized-xy', createSteroidCoreSaturatedGeometry(), PLANAR_VALIDATION)
     ),
+    createTemplate('perylene', 'fused', 40.955, createPeryleneTemplate(), geometrySpec('normalized-xy', createPeryleneGeometry(), PLANAR_VALIDATION)),
     createTemplate('pyrene', 'fused', 40.95, createPyreneTemplate(), geometrySpec('normalized-xy', createPyreneGeometry(), PLANAR_VALIDATION)),
     createTemplate('fluorene', 'fused', 40.94, createFluoreneTemplate(), geometrySpec('normalized-xy', createFluoreneGeometry(), PLANAR_VALIDATION)),
     createTemplate('indanone', 'fused', 40.91, createIndaneTemplate(), geometrySpec('normalized-xy', createIndaneGeometry(), PLANAR_VALIDATION), {

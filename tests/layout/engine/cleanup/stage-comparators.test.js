@@ -52,4 +52,5 @@ describe('layout/engine/cleanup/stage-comparators', () => {
 
     assert.equal(isPreferredFinalStereoStage(candidate, incumbent, { allowPresentationTieBreak: true }), false);
   });
+
 });

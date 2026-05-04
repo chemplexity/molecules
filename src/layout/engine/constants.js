@@ -22,6 +22,9 @@ export const DISTANCE_EPSILON = 1e-6;
 /** Epsilon for angle comparisons in radians. */
 export const ANGLE_EPSILON = 1e-9;
 
+/** Epsilon for presentation penalty and audit metric floating-point comparisons. */
+export const PRESENTATION_METRIC_EPSILON = 1e-9;
+
 /** Epsilon for general cleanup-improvement comparisons. */
 export const IMPROVEMENT_EPSILON = 1e-6;
 

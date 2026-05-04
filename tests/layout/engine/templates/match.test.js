@@ -138,6 +138,10 @@ describe('layout/engine/templates/match', () => {
     const pyreneMatch = findTemplateMatch(pyreneGraph, buildRingCandidate(pyreneGraph, pyreneGraph.ringSystems[0], 'fused'));
     assert.equal(pyreneMatch.id, 'pyrene');
 
+    const peryleneGraph = createLayoutGraph(parseSMILES('C1=CC=C2C(=C1)C=C1C=CC3=CC=CC4=CC=C2C1=C34'));
+    const peryleneMatch = findTemplateMatch(peryleneGraph, buildRingCandidate(peryleneGraph, peryleneGraph.ringSystems[0], 'fused'));
+    assert.equal(peryleneMatch.id, 'perylene');
+
     const fluoreneGraph = createLayoutGraph(parseSMILES('c1ccc2c(c1)Cc1ccccc1-2'));
     const fluoreneMatch = findTemplateMatch(fluoreneGraph, buildRingCandidate(fluoreneGraph, fluoreneGraph.ringSystems[0], 'fused'));
     assert.equal(fluoreneMatch.id, 'fluorene');
