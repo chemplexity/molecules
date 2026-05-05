@@ -125,8 +125,14 @@ export function centroid(points) {
   if (points.length === 0) {
     return { x: 0, y: 0 };
   }
-  const sum = points.reduce((accumulator, point) => add(accumulator, point), { x: 0, y: 0 });
-  return scale(sum, 1 / points.length);
+  let sx = 0;
+  let sy = 0;
+  for (const point of points) {
+    sx += point.x;
+    sy += point.y;
+  }
+  const inv = 1 / points.length;
+  return { x: sx * inv, y: sy * inv };
 }
 
 /**
@@ -144,12 +150,12 @@ export function perpLeft(value) {
  * @returns {number} Wrapped angle.
  */
 export function wrapAngle(angle) {
-  let result = angle;
-  while (result <= -Math.PI) {
-    result += 2 * Math.PI;
+  const result = angle % (2 * Math.PI);
+  if (result <= -Math.PI) {
+    return result + 2 * Math.PI;
   }
-  while (result > Math.PI) {
-    result -= 2 * Math.PI;
+  if (result > Math.PI) {
+    return result - 2 * Math.PI;
   }
   return result;
 }

@@ -8,6 +8,11 @@ import { createEmptyPipelineResult } from './model/empty-result.js';
 import { layoutSupportedComponents } from './placement/component-layout.js';
 import { buildCleanupStageGraph } from './cleanup/stage-pipeline.js';
 import { runStageGraph } from './cleanup/stage-runner.js';
+import { runUnifiedCleanup } from './cleanup/unified-cleanup.js';
+import {
+  measureRingAdjacentTerminalDivalentContinuationDistortion,
+  runDivalentContinuationTidy
+} from './cleanup/presentation/divalent-continuation.js';
 import {
   buildCleanupTelemetry,
   buildStageTelemetryFromCleanupTelemetry,
@@ -26,6 +31,9 @@ import { buildScaffoldPlan } from './model/scaffold-plan.js';
 import { packComponentPlacements } from './placement/fragment-packing.js';
 import { ensureLandscapeOrientation, levelCoords, normalizeOrientation } from './orientation.js';
 import { cloneCoords } from './geometry/transforms.js';
+import { PRESENTATION_METRIC_EPSILON } from './constants.js';
+
+const FINAL_DIVALENT_CONTINUATION_RETOUCH_MIN_DEVIATION = 0.2;
 
 /**
  * Returns the current high-resolution time when available, with a Date fallback
@@ -269,6 +277,97 @@ function snapTinyCoordinateNoise(coords, epsilon = 1e-12) {
   }
 }
 
+function finalAuditCountsDoNotWorsen(candidateAudit, baseAudit) {
+  if (!candidateAudit || !baseAudit || (baseAudit.ok === true && candidateAudit.ok !== true)) {
+    return false;
+  }
+  for (const key of [
+    'bondLengthFailureCount',
+    'mildBondLengthFailureCount',
+    'severeBondLengthFailureCount',
+    'collapsedMacrocycleCount',
+    'ringSubstituentReadabilityFailureCount',
+    'inwardRingSubstituentCount',
+    'outwardAxisRingSubstituentFailureCount',
+    'severeOverlapCount',
+    'visibleHeavyBondCrossingCount',
+    'labelOverlapCount'
+  ]) {
+    if ((candidateAudit[key] ?? 0) > (baseAudit[key] ?? 0)) {
+      return false;
+    }
+  }
+  return !((candidateAudit.stereoContradiction ?? false) && !(baseAudit.stereoContradiction ?? false));
+}
+
+function isPreferredFinalDivalentContinuationRetouch(layoutGraph, baseCoords, candidateCoords, baseAudit, candidateAudit) {
+  if (!finalAuditCountsDoNotWorsen(candidateAudit, baseAudit)) {
+    return false;
+  }
+  const basePenalty = measureRingAdjacentTerminalDivalentContinuationDistortion(layoutGraph, baseCoords);
+  const candidatePenalty = measureRingAdjacentTerminalDivalentContinuationDistortion(layoutGraph, candidateCoords);
+  if (candidatePenalty.maxDeviation < basePenalty.maxDeviation - PRESENTATION_METRIC_EPSILON) {
+    return true;
+  }
+  if (candidatePenalty.maxDeviation > basePenalty.maxDeviation + PRESENTATION_METRIC_EPSILON) {
+    return false;
+  }
+  return candidatePenalty.totalDeviation < basePenalty.totalDeviation - PRESENTATION_METRIC_EPSILON;
+}
+
+function maybeRetouchFinalDivalentContinuations(layoutGraph, finalCoords, placement, familySummary, bondLength, onStep = null) {
+  const basePenalty = measureRingAdjacentTerminalDivalentContinuationDistortion(layoutGraph, finalCoords);
+  if (
+    basePenalty.distortedCenterCount !== 1 ||
+    basePenalty.maxDeviation < FINAL_DIVALENT_CONTINUATION_RETOUCH_MIN_DEVIATION
+  ) {
+    return { coords: finalCoords, changed: false };
+  }
+
+  const retouch = runDivalentContinuationTidy(layoutGraph, finalCoords, {
+    bondLength,
+    frozenAtomIds: placement.frozenAtomIds,
+    allowAuditWorsening: true
+  });
+  if ((retouch.nudges ?? 0) <= 0) {
+    return { coords: finalCoords, changed: false };
+  }
+
+  const cleanup = runUnifiedCleanup(layoutGraph, retouch.coords, {
+    epsilon: bondLength * 0.001,
+    bondLength,
+    protectLargeMoleculeBackbone: placement.placedFamilies.includes('large-molecule'),
+    cleanupRigidSubtreesByAtomId: placement.cleanupRigidSubtreesByAtomId,
+    maxPasses: 1,
+    protectBondIntegrity: shouldProtectCleanupBondIntegrity(familySummary, placement),
+    frozenAtomIds: placement.frozenAtomIds
+  });
+  const candidateCoords = cleanup.passes > 0 ? cleanup.coords : retouch.coords;
+  const baseAudit = auditLayout(layoutGraph, finalCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if (!isPreferredFinalDivalentContinuationRetouch(layoutGraph, finalCoords, candidateCoords, baseAudit, candidateAudit)) {
+    return { coords: finalCoords, changed: false };
+  }
+
+  onStep?.(
+    'Divalent Continuation Tidy',
+    'Post-orientation compact terminal continuations snapped back to exact 120-degree slots.',
+    cloneCoords(candidateCoords),
+    {
+      nudges: retouch.nudges,
+      cleanupPasses: cleanup.passes,
+      finalRetouch: true
+    }
+  );
+  return { coords: candidateCoords, changed: true };
+}
+
 /**
  * Returns a timing accumulator when enabled.
  * @param {boolean} enabled - Whether timing should be recorded.
@@ -448,6 +547,7 @@ function runCleanupPhase(layoutGraph, placement, familySummary, policy, normaliz
     postHookNudges: (presentationCleanupStage.hookNudges ?? 0) + Object.values(finalAccumulatedSidecars).reduce((total, count) => total + (count ?? 0), 0),
     finalStageStereo: finalBestStage.stereo ?? null,
     finalStageAudit: finalBestStage.audit ?? null,
+    finalStageName: finalBestStage.name,
     ...(includeStageTelemetry
       ? {
           placementAudit: placementStage.audit,
@@ -710,6 +810,20 @@ export function runPipeline(molecule, options = {}) {
   }
   if (finalCoordsModified) {
     finalCoords = repackFinalDisconnectedComponents(layoutGraph, finalCoords, placement, policy, normalizedOptions.bondLength);
+  }
+  if (cleanup.finalStageName === 'selectedGeometryCheckpoint') {
+    const finalDivalentContinuationRetouch = maybeRetouchFinalDivalentContinuations(
+      layoutGraph,
+      finalCoords,
+      placement,
+      familySummary,
+      normalizedOptions.bondLength,
+      onStep
+    );
+    if (finalDivalentContinuationRetouch.changed) {
+      finalCoords = finalDivalentContinuationRetouch.coords;
+      finalCoordsModified = true;
+    }
   }
   snapTinyCoordinateNoise(finalCoords);
   onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', cloneCoords(finalCoords), { stage: 'complete' });

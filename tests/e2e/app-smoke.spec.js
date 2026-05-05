@@ -194,24 +194,36 @@ test('loading the crowded phosphine oxide keeps mirrored aryl ethyl branches sep
   const firstArylEthylMirrorAngle = await atomBondAngleDegrees(page, 'C10', 'C11', 'C13');
   const secondArylEthylAngle = await atomBondAngleDegrees(page, 'C32', 'C23', 'C33');
   const secondArylEthylMirrorAngle = await atomBondAngleDegrees(page, 'C32', 'C31', 'C33');
+  const secondArylEthylContinuationAngle = await atomBondAngleDegrees(page, 'C33', 'C32', 'C34');
   const phosphineOxideAxisAngle = await atomBondAngleDegrees(page, 'P5', 'O6', 'C4');
   const phosphineArylAxisAngle = await atomBondAngleDegrees(page, 'P5', 'C7', 'C21');
+  const firstCarbonylFanAngle = await atomBondAngleDegrees(page, 'C7', 'P5', 'O8');
+  const secondCarbonylFanAngle = await atomBondAngleDegrees(page, 'C7', 'P5', 'C9');
+  const thirdCarbonylFanAngle = await atomBondAngleDegrees(page, 'C7', 'O8', 'C9');
   expect(mirroredEthylDistance).not.toBeNull();
   expect(carbonylClearance).not.toBeNull();
   expect(firstArylEthylAngle).not.toBeNull();
   expect(firstArylEthylMirrorAngle).not.toBeNull();
   expect(secondArylEthylAngle).not.toBeNull();
   expect(secondArylEthylMirrorAngle).not.toBeNull();
+  expect(secondArylEthylContinuationAngle).not.toBeNull();
   expect(phosphineOxideAxisAngle).not.toBeNull();
   expect(phosphineArylAxisAngle).not.toBeNull();
+  expect(firstCarbonylFanAngle).not.toBeNull();
+  expect(secondCarbonylFanAngle).not.toBeNull();
+  expect(thirdCarbonylFanAngle).not.toBeNull();
   expect(mirroredEthylDistance).toBeGreaterThan(60);
   expect(carbonylClearance).toBeGreaterThan(45);
   expect(Math.abs(firstArylEthylAngle - 120)).toBeLessThan(1e-6);
   expect(Math.abs(firstArylEthylMirrorAngle - 120)).toBeLessThan(1e-6);
   expect(Math.abs(secondArylEthylAngle - 120)).toBeLessThan(1e-6);
   expect(Math.abs(secondArylEthylMirrorAngle - 120)).toBeLessThan(1e-6);
+  expect(Math.abs(secondArylEthylContinuationAngle - 120)).toBeLessThan(1e-6);
   expect(Math.abs(phosphineOxideAxisAngle - 180)).toBeLessThan(1e-6);
   expect(phosphineArylAxisAngle).toBeGreaterThan(160);
+  expect(Math.abs(firstCarbonylFanAngle - 120)).toBeLessThan(1e-6);
+  expect(Math.abs(secondCarbonylFanAngle - 120)).toBeLessThan(1e-6);
+  expect(Math.abs(thirdCarbonylFanAngle - 120)).toBeLessThan(1e-6);
 });
 
 test('loading the bulky cyclohexyl ester bug molecule keeps the C22/C24 pocket clear in the browser render', async ({ page }) => {

@@ -1,5 +1,6 @@
 /** @module cleanup/presentation/terminal-cation-ring-clearance */
 
+import { auditLayout } from '../../audit/audit.js';
 import { findSevereOverlaps } from '../../audit/invariants.js';
 import { add, rotate, sub } from '../../geometry/vec2.js';
 import { collectCutSubtree } from '../subtree-utils.js';
@@ -14,6 +15,16 @@ const RING_BODY_ROTATIONS = Object.freeze([
   -(Math.PI / 4),
   Math.PI / 3,
   -(Math.PI / 3)
+]);
+const RESIDUAL_RING_BODY_ROTATIONS = Object.freeze([
+  Math.PI / 6,
+  -(Math.PI / 6),
+  Math.PI / 4,
+  -(Math.PI / 4),
+  Math.PI / 3,
+  -(Math.PI / 3),
+  Math.PI / 2,
+  -(Math.PI / 2)
 ]);
 const LINKER_SWING_ROTATIONS = Object.freeze([
   Math.PI / 3,
@@ -70,6 +81,32 @@ function collectRingBodyAtomIds(layoutGraph, ring, rootAtomId, coords) {
     }
   }
   return [...atomIds].filter(atomId => coords.has(atomId));
+}
+
+function collectResidualAromaticRingReliefDescriptors(layoutGraph, coords, atomId) {
+  const descriptors = [];
+  for (const ring of layoutGraph?.atomToRings.get(atomId) ?? []) {
+    if (!ring?.aromatic || !Array.isArray(ring.atomIds) || !ring.atomIds.includes(atomId)) {
+      continue;
+    }
+    const ringAtomIds = new Set(ring.atomIds);
+    for (const rootAtomId of ring.atomIds) {
+      const exocyclicParentAtomId = heavyCovalentNeighborIds(layoutGraph, rootAtomId)
+        .find(neighborAtomId => !ringAtomIds.has(neighborAtomId));
+      if (!exocyclicParentAtomId || !coords.has(exocyclicParentAtomId)) {
+        continue;
+      }
+      const ringBodyAtomIds = collectRingBodyAtomIds(layoutGraph, ring, rootAtomId, coords);
+      if (!ringBodyAtomIds.includes(atomId)) {
+        continue;
+      }
+      descriptors.push({
+        rootAtomId,
+        ringBodyAtomIds
+      });
+    }
+  }
+  return descriptors;
 }
 
 function minimumDistanceToAtomSet(coords, atomId, targetAtomIds) {
@@ -218,6 +255,56 @@ function scoreCandidate(layoutGraph, candidateCoords, descriptor, bondLength, ba
   };
 }
 
+function relieveResidualAromaticRingOverlaps(layoutGraph, coords, descriptor, bondLength, baseOverlapCount) {
+  const startingOverlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
+  if (startingOverlaps.length === 0) {
+    return coords;
+  }
+
+  let best = null;
+  const currentTerminalRingDistance = minimumDistanceToAtomSet(coords, descriptor.terminalAtomId, descriptor.ringAtomIds);
+  for (const overlap of startingOverlaps) {
+    for (const atomId of [overlap.firstAtomId, overlap.secondAtomId]) {
+      for (const reliefDescriptor of collectResidualAromaticRingReliefDescriptors(layoutGraph, coords, atomId)) {
+        for (const rotation of RESIDUAL_RING_BODY_ROTATIONS) {
+          const candidateCoords = rotateSubtreeAroundPivot(
+            coords,
+            reliefDescriptor.ringBodyAtomIds,
+            reliefDescriptor.rootAtomId,
+            rotation
+          );
+          if (!candidateCoords) {
+            continue;
+          }
+          const candidateOverlaps = findSevereOverlaps(layoutGraph, candidateCoords, bondLength);
+          if (candidateOverlaps.length > Math.min(startingOverlaps.length - 1, baseOverlapCount)) {
+            continue;
+          }
+          const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+          if (candidateAudit.ok !== true) {
+            continue;
+          }
+          const terminalRingDistance = minimumDistanceToAtomSet(candidateCoords, descriptor.terminalAtomId, descriptor.ringAtomIds);
+          if (terminalRingDistance < currentTerminalRingDistance - TIDY_EPSILON) {
+            continue;
+          }
+          const candidate = {
+            coords: candidateCoords,
+            overlapCount: candidateOverlaps.length,
+            terminalRingDistance,
+            geometryCost: Math.abs(rotation)
+          };
+          if (isBetterCandidate(candidate, best)) {
+            best = candidate;
+          }
+        }
+      }
+    }
+  }
+
+  return best?.coords ?? coords;
+}
+
 function isBetterCandidate(candidate, incumbent) {
   if (!incumbent) {
     return true;
@@ -302,7 +389,13 @@ export function runTerminalCationRingClearanceTidy(layoutGraph, inputCoords, opt
       if (!bestCandidate) {
         continue;
       }
-      coords = bestCandidate.coords;
+      coords = relieveResidualAromaticRingOverlaps(
+        layoutGraph,
+        bestCandidate.coords,
+        descriptor,
+        bondLength,
+        baseOverlapCount
+      );
       nudges++;
       movedThisPass = true;
     }

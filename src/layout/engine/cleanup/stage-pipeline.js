@@ -17,7 +17,9 @@ import {
 } from './presentation/attached-ring-fallback.js';
 import {
   hasOutstandingRingPresentationNeed,
+  measureOmittedHydrogenDirectRingHubCollateralRootPresentationPenalty,
   measureSmallRingExteriorFanExactPenalty,
+  runOmittedHydrogenDirectRingHubCollateralRootRetidy,
   runRingPresentationCleanup
 } from './presentation/ring-presentation.js';
 import { measureTerminalRingCarbonylLeafContactPenalty } from './presentation/ring-substituent.js';
@@ -27,6 +29,7 @@ import {
   hasSpecialistCleanupNeed,
   runSpecialistCleanup
 } from './specialists/specialist-cleanup.js';
+import { runProjectedTetrahedralBranchClearance } from './presentation/projected-tetrahedral-clearance.js';
 import { measureOrthogonalHypervalentDeviation } from './hypervalent-angle-tidy.js';
 import {
   isPreferredCleanupGeometryStage,
@@ -45,6 +48,11 @@ import {
   runRingTerminalHeteroTidy,
   runTerminalMultipleBondLeafFanTidy
 } from './presentation/ring-terminal-hetero.js';
+import {
+  runDivalentContinuationTidy,
+  runTerminalAlkeneContinuationRelief
+} from './presentation/divalent-continuation.js';
+import { runRingTerminalRootExactClearance } from './presentation/ring-terminal-root-clearance.js';
 
 function hasPostCleanupHook(policy, hookName) {
   return policy.postCleanupHooks?.includes(hookName) === true;
@@ -60,7 +68,11 @@ const HOOK_STEP_META = {
   'ring-presentation-tidy': ['Ring Presentation Tidy', 'Ring presentation cleanup merged substituent and terminal-hetero refinement.'],
   'specialist-presentation-rescue': ['Ring Presentation Rescue', 'Bounded ring-presentation revalidation inside specialist cleanup.'],
   'ring-substituent-tidy': ['Ring Substituent Tidy', 'Ring substituents repositioned for better presentation.'],
-  'ring-terminal-hetero-tidy': ['Ring Terminal Hetero Tidy', 'Terminal heteroatom bonds on rings reoriented.']
+  'ring-terminal-hetero-tidy': ['Ring Terminal Hetero Tidy', 'Terminal heteroatom bonds on rings reoriented.'],
+  'divalent-continuation-tidy': ['Divalent Continuation Tidy', 'Compact terminal continuations snapped back to exact 120-degree slots.'],
+  'terminal-alkene-continuation-relief': ['Terminal Alkene Continuation Relief', 'Terminal alkene tails rotated away from local overlaps while keeping the alkene bend exact.'],
+  'projected-tetrahedral-branch-clearance': ['Projected Tetrahedral Branch Clearance', 'Downstream branch pivots cleared projected-center overlaps without moving the center slots.'],
+  'ring-terminal-root-exact-clearance': ['Ring Terminal Root Exact Clearance', 'Compact terminal ring exits snapped back to exact trigonal slots with local overlap relief.']
 };
 
 function hasStereoRescueOverlaps(stageResults, incumbent) {
@@ -214,12 +226,16 @@ export function buildCleanupStageGraph(context) {
     const terminalHeteroOutwardPenalty = measureRingTerminalHeteroOutwardPenalty(layoutGraph, coords);
     const terminalMultipleBondLeafFanPenalty = measureTerminalMultipleBondLeafFanPenalty(layoutGraph, coords);
     const smallRingExteriorFanExactPenalty = measureSmallRingExteriorFanExactPenalty(layoutGraph, coords);
+    const omittedHydrogenCollateralRootPenalty =
+      measureOmittedHydrogenDirectRingHubCollateralRootPresentationPenalty(layoutGraph, coords);
     return {
       presentationPenalty: measureCleanupStagePresentationPenalty(layoutGraph, coords),
       hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, coords),
       divalentContinuationPenalty: measureDivalentContinuationDistortion(layoutGraph, coords).totalDeviation,
       trigonalDistortionPenalty: measureTrigonalDistortion(layoutGraph, coords).totalDeviation,
       omittedHydrogenTrigonalPenalty: measureThreeHeavyContinuationDistortion(layoutGraph, coords).totalDeviation,
+      omittedHydrogenDirectRingHubCollateralRootMaxPenalty: omittedHydrogenCollateralRootPenalty.maxDeviation,
+      omittedHydrogenDirectRingHubCollateralRootPenalty: omittedHydrogenCollateralRootPenalty.totalDeviation,
       phosphateArylTailPenalty: measurePhosphateArylTailPresentationPenalty(layoutGraph, coords),
       terminalCationRingProximityPenalty: measureTerminalCationRingProximityPenalty(layoutGraph, coords, { bondLength }),
       attachedRingPeripheralPenalty: measureAttachedRingPeripheralFocusPenalty(layoutGraph, coords, bondLength),
@@ -381,6 +397,53 @@ export function buildCleanupStageGraph(context) {
     }
     return true;
   };
+  const omittedHydrogenCollateralRootRetouchComparator = (candidate, incumbent) => {
+    if (!auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)) {
+      return false;
+    }
+    const candidateMaxPenalty = candidate.omittedHydrogenDirectRingHubCollateralRootMaxPenalty ?? 0;
+    const incumbentMaxPenalty = incumbent?.omittedHydrogenDirectRingHubCollateralRootMaxPenalty ?? 0;
+    if (candidateMaxPenalty < incumbentMaxPenalty - PRESENTATION_METRIC_EPSILON) {
+      return true;
+    }
+    if (candidateMaxPenalty > incumbentMaxPenalty + PRESENTATION_METRIC_EPSILON) {
+      return false;
+    }
+    return (
+      (candidate.omittedHydrogenDirectRingHubCollateralRootPenalty ?? 0)
+        < (incumbent?.omittedHydrogenDirectRingHubCollateralRootPenalty ?? 0) - PRESENTATION_METRIC_EPSILON
+    );
+  };
+  const divalentContinuationRetouchComparator = (candidate, incumbent) => {
+    if (worsensHypervalentDeviation(candidate, incumbent)) {
+      return false;
+    }
+    if (!auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)) {
+      return false;
+    }
+    if (
+      (candidate.omittedHydrogenTrigonalPenalty ?? 0)
+        > (incumbent?.omittedHydrogenTrigonalPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+    ) {
+      return false;
+    }
+    if (
+      (candidate.trigonalDistortionPenalty ?? 0)
+        > (incumbent?.trigonalDistortionPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+    ) {
+      return false;
+    }
+    return (
+      (candidate.divalentContinuationPenalty ?? Number.POSITIVE_INFINITY)
+        <= (incumbent?.divalentContinuationPenalty ?? Number.POSITIVE_INFINITY) + PRESENTATION_METRIC_EPSILON
+    );
+  };
+  const ringTerminalRootExactComparator = (candidate, incumbent) => {
+    if (worsensHypervalentDeviation(candidate, incumbent)) {
+      return false;
+    }
+    return auditCountsDoNotWorsen(candidate.audit, incumbent?.audit);
+  };
   const cleanupGeometryComparator = protectBondIntegrity
     ? (candidate, incumbent) => isPreferredProtectedCleanupStage(familySummary, placement, candidate, incumbent)
     : isPreferredCleanupGeometryStage;
@@ -399,32 +462,67 @@ export function buildCleanupStageGraph(context) {
       guard(stageResults, incumbent) {
         return hasCoreGeometryCleanupNeed(incumbent ?? stageResults.get('placement'));
       },
-      transformFn(parentCoords) {
+      transformFn(parentCoords, inputContext) {
         const projectedSlotSnap = runProjectedTetrahedralAttachedRingSlotSnap(layoutGraph, parentCoords, {
           bondLength,
           frozenAtomIds: placement.frozenAtomIds
         });
-        const cleanupInputCoords = projectedSlotSnap.nudges > 0 ? projectedSlotSnap.coords : parentCoords;
+        const projectedSlotCoords = projectedSlotSnap.nudges > 0 ? projectedSlotSnap.coords : parentCoords;
+        const projectedBranchClearance = runProjectedTetrahedralBranchClearance(layoutGraph, projectedSlotCoords, {
+          bondLength,
+          frozenAtomIds: placement.frozenAtomIds,
+          bondValidationClasses: placement.bondValidationClasses
+        });
+        const cleanupInputCoords = projectedBranchClearance.nudges > 0
+          ? projectedBranchClearance.coords
+          : projectedSlotCoords;
+        if (projectedBranchClearance.nudges > 0) {
+          const [label, description] = HOOK_STEP_META['projected-tetrahedral-branch-clearance'];
+          inputContext.onStep?.(label, description, inputContext.copyCoords(projectedBranchClearance.coords), {
+            nudges: projectedBranchClearance.nudges
+          });
+        }
         const cleanupResult = runUnifiedCleanup(layoutGraph, cleanupInputCoords, {
           ...baseCleanupOptions,
           maxPasses: cleanupMaxPasses,
           protectBondIntegrity,
           frozenAtomIds: placement.frozenAtomIds
         });
+        const finalProjectedBranchClearance = runProjectedTetrahedralBranchClearance(layoutGraph, cleanupResult.coords, {
+          bondLength,
+          frozenAtomIds: placement.frozenAtomIds,
+          bondValidationClasses: placement.bondValidationClasses
+        });
+        const retouchedCleanupResult = finalProjectedBranchClearance.nudges > 0
+          ? {
+              ...cleanupResult,
+              coords: finalProjectedBranchClearance.coords,
+              overlapMoves: (cleanupResult.overlapMoves ?? 0) + finalProjectedBranchClearance.nudges
+            }
+          : cleanupResult;
+        if (finalProjectedBranchClearance.nudges > 0) {
+          const [label, description] = HOOK_STEP_META['projected-tetrahedral-branch-clearance'];
+          inputContext.onStep?.(label, description, inputContext.copyCoords(finalProjectedBranchClearance.coords), {
+            nudges: finalProjectedBranchClearance.nudges,
+            finalRetouch: true
+          });
+        }
         context.onStep?.(
           'Unified Cleanup',
           'Multi-pass overlap resolution and bond length normalization.',
-          context.copyCoords(cleanupResult.coords),
+          context.copyCoords(retouchedCleanupResult.coords),
           {
-            passes: cleanupResult.passes,
-            improvement: cleanupResult.improvement,
-            overlapMoves: cleanupResult.overlapMoves,
-            projectedSlotSnaps: projectedSlotSnap.nudges
+            passes: retouchedCleanupResult.passes,
+            improvement: retouchedCleanupResult.improvement,
+            overlapMoves: retouchedCleanupResult.overlapMoves,
+            projectedSlotSnaps: projectedSlotSnap.nudges,
+            projectedBranchClearanceNudges: projectedBranchClearance.nudges + finalProjectedBranchClearance.nudges
           }
         );
         return {
-          ...cleanupResult,
-          projectedSlotSnaps: projectedSlotSnap.nudges
+          ...retouchedCleanupResult,
+          projectedSlotSnaps: projectedSlotSnap.nudges,
+          projectedBranchClearanceNudges: projectedBranchClearance.nudges + finalProjectedBranchClearance.nudges
         };
       },
       scoreFn: scoreGeometryStage,
@@ -681,20 +779,155 @@ export function buildCleanupStageGraph(context) {
       },
       transformFn(parentCoords, inputContext) {
         const result = runTerminalMultipleBondLeafFanTidy(layoutGraph, parentCoords, { bondLength });
+        const collateralRootRetidy = runOmittedHydrogenDirectRingHubCollateralRootRetidy(layoutGraph, result.coords, {
+          bondLength,
+          frozenAtomIds: placement.frozenAtomIds
+        });
+        const retouchedResult = collateralRootRetidy.changed === true
+          ? {
+              ...result,
+              coords: collateralRootRetidy.coords,
+              nudges: (result.nudges ?? 0) + collateralRootRetidy.nudges,
+              changed: true,
+              omittedHydrogenDirectRingHubCollateralRootNudges: collateralRootRetidy.nudges
+            }
+          : result;
+        if ((retouchedResult.nudges ?? 0) <= 0) {
+          return null;
+        }
+        const [label, description] = HOOK_STEP_META['ring-presentation-tidy'];
+        inputContext.onStep?.(label, description, inputContext.copyCoords(retouchedResult.coords), {
+          nudges: retouchedResult.nudges,
+          strategiesRun: collateralRootRetidy.changed === true
+            ? ['terminal-multiple-bond-leaf', 'omitted-h-collateral-root']
+            : ['terminal-multiple-bond-leaf'],
+          finalRetouch: true
+        });
+        return retouchedResult;
+      },
+      scoreFn: auditFinalStereoWithPresentationMetrics,
+      comparatorFn: terminalMultipleBondLeafRetouchComparator,
+      accumulateSidecar: acceptedNudgeAccumulator('terminalMultipleBondLeafFinalRetouch')
+    },
+    {
+      name: 'terminalAlkeneContinuationFinalRetouch',
+      parentStage: 'best',
+      guard() {
+        return true;
+      },
+      transformFn(parentCoords, inputContext) {
+        const result = runTerminalAlkeneContinuationRelief(layoutGraph, parentCoords, {
+          bondLength,
+          frozenAtomIds: placement.frozenAtomIds
+        });
+        if ((result.nudges ?? 0) <= 0) {
+          return null;
+        }
+        const [label, description] = HOOK_STEP_META['terminal-alkene-continuation-relief'];
+        inputContext.onStep?.(label, description, inputContext.copyCoords(result.coords), {
+          nudges: result.nudges,
+          finalRetouch: true
+        });
+        return result;
+      },
+      scoreFn: auditFinalStereoWithPresentationMetrics,
+      comparatorFn: stabilizationComparator,
+      accumulateSidecar: acceptedNudgeAccumulator('terminalAlkeneContinuationFinalRetouch')
+    },
+    {
+      name: 'divalentContinuationFinalRetouch',
+      parentStage: 'best',
+      guard(_stageResults, incumbent) {
+        return measureDivalentContinuationDistortion(layoutGraph, incumbent?.coords).maxDeviation > DISTANCE_EPSILON;
+      },
+      transformFn(parentCoords, inputContext) {
+        const result = runDivalentContinuationTidy(layoutGraph, parentCoords, {
+          bondLength,
+          frozenAtomIds: placement.frozenAtomIds,
+          allowAuditWorsening: true
+        });
+        if ((result.nudges ?? 0) <= 0) {
+          return null;
+        }
+        const cleanupFrozenAtomIds = Array.isArray(result.movedAtomIds) && result.movedAtomIds.length > 0
+          ? mergeFrozenAtomIds(placement.frozenAtomIds, new Set(result.movedAtomIds))
+          : placement.frozenAtomIds;
+        const cleanup = runUnifiedCleanup(layoutGraph, result.coords, {
+          ...baseCleanupOptions,
+          maxPasses: 1,
+          protectBondIntegrity: true,
+          frozenAtomIds: cleanupFrozenAtomIds
+        });
+        const coords = cleanup.passes > 0 ? cleanup.coords : result.coords;
+        const [label, description] = HOOK_STEP_META['divalent-continuation-tidy'];
+        inputContext.onStep?.(label, description, inputContext.copyCoords(coords), {
+          nudges: result.nudges,
+          cleanupPasses: cleanup.passes,
+          finalRetouch: true
+        });
+        return {
+          ...result,
+          coords,
+          cleanupPasses: cleanup.passes
+        };
+      },
+      scoreFn: auditFinalStereoWithPresentationMetrics,
+      comparatorFn: divalentContinuationRetouchComparator,
+      accumulateSidecar: acceptedNudgeAccumulator('divalentContinuationFinalRetouch')
+    },
+    {
+      name: 'ringTerminalRootExactFinalRetouch',
+      parentStage: 'best',
+      guard() {
+        return true;
+      },
+      transformFn(parentCoords, inputContext) {
+        const result = runRingTerminalRootExactClearance(layoutGraph, parentCoords, {
+          bondLength,
+          frozenAtomIds: placement.frozenAtomIds,
+          bondValidationClasses: placement.bondValidationClasses,
+          cleanupOptions: baseCleanupOptions,
+          epsilon: bondLength * 0.001
+        });
+        if ((result.nudges ?? 0) <= 0) {
+          return null;
+        }
+        const [label, description] = HOOK_STEP_META['ring-terminal-root-exact-clearance'];
+        inputContext.onStep?.(label, description, inputContext.copyCoords(result.coords), {
+          nudges: result.nudges,
+          finalRetouch: true
+        });
+        return result;
+      },
+      scoreFn: auditFinalStereoWithPresentationMetrics,
+      comparatorFn: ringTerminalRootExactComparator,
+      accumulateSidecar: acceptedNudgeAccumulator('ringTerminalRootExactFinalRetouch')
+    },
+    {
+      name: 'omittedHydrogenCollateralRootFinalRetouch',
+      parentStage: 'best',
+      guard() {
+        return true;
+      },
+      transformFn(parentCoords, inputContext) {
+        const result = runOmittedHydrogenDirectRingHubCollateralRootRetidy(layoutGraph, parentCoords, {
+          bondLength,
+          frozenAtomIds: placement.frozenAtomIds
+        });
         if ((result.nudges ?? 0) <= 0) {
           return null;
         }
         const [label, description] = HOOK_STEP_META['ring-presentation-tidy'];
         inputContext.onStep?.(label, description, inputContext.copyCoords(result.coords), {
           nudges: result.nudges,
-          strategiesRun: ['terminal-multiple-bond-leaf'],
+          strategiesRun: ['omitted-h-collateral-root'],
           finalRetouch: true
         });
         return result;
       },
       scoreFn: auditFinalStereoWithPresentationMetrics,
-      comparatorFn: terminalMultipleBondLeafRetouchComparator,
-      accumulateSidecar: acceptedNudgeAccumulator('terminalMultipleBondLeafFinalRetouch')
+      comparatorFn: omittedHydrogenCollateralRootRetouchComparator,
+      accumulateSidecar: acceptedNudgeAccumulator('omittedHydrogenCollateralRootFinalRetouch')
     }
   ];
 

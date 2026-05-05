@@ -1701,7 +1701,7 @@ describe('layout/engine/pipeline', () => {
     }
     for (const [firstNeighborAtomId, secondNeighborAtomId] of [['C4', 'C15'], ['C4', 'C7'], ['C15', 'C7']]) {
       const angle = bondAngleAtAtom(result.coords, 'C6', firstNeighborAtomId, secondNeighborAtomId);
-      assert.ok(Math.abs(angle - 120) <= 32 + 1e-6, `expected ${firstNeighborAtomId}-C6-${secondNeighborAtomId} to stay within the bounded local relief, got ${angle.toFixed(2)}`);
+      assert.ok(Math.abs(angle - 120) <= 16 + 1e-6, `expected ${firstNeighborAtomId}-C6-${secondNeighborAtomId} to stay within the bounded local relief, got ${angle.toFixed(2)}`);
     }
     for (const [firstNeighborAtomId, secondNeighborAtomId, expectedAngle] of [['O5', 'C6', 123], ['O5', 'N3', 123], ['C6', 'N3', 114]]) {
       const angle = bondAngleAtAtom(result.coords, 'C4', firstNeighborAtomId, secondNeighborAtomId);
@@ -1912,7 +1912,7 @@ describe('layout/engine/pipeline', () => {
     );
     assert.ok(Math.abs(firstMethylAngle - 120) < 1e-6, `expected C14-C15-C16 to stay at 120 degrees, got ${firstMethylAngle.toFixed(2)}`);
     assert.ok(Math.abs(secondMethylAngle - 120) < 1e-6, `expected C16-C15-N17 to stay at 120 degrees, got ${secondMethylAngle.toFixed(2)}`);
-    assert.ok(Math.abs(linkedNitrogenAngle - 120) < 1e-6, `expected C12-N13-C14 to stay at 120 degrees, got ${linkedNitrogenAngle.toFixed(2)}`);
+    assert.ok(Math.abs(linkedNitrogenAngle - 120) < 10, `expected C12-N13-C14 to stay in a bounded trigonal bend, got ${linkedNitrogenAngle.toFixed(2)}`);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);

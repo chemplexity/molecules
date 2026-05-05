@@ -1,7 +1,7 @@
 /** @module cleanup/presentation/phosphate-aryl-tail */
 
 import { auditLayout } from '../../audit/audit.js';
-import { findVisibleHeavyBondCrossings } from '../../audit/invariants.js';
+import { countVisibleHeavyBondCrossings, findVisibleHeavyBondCrossings } from '../../audit/invariants.js';
 import { add, angleOf, angularDifference, fromAngle, sub } from '../../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../../geometry/ring-direction.js';
 import { collectCutSubtree } from '../subtree-utils.js';
@@ -412,7 +412,7 @@ function scorePhosphatePresentationGeometry(layoutGraph, coords, tailDescriptors
 
 function scorePhosphateTailCoords(layoutGraph, coords, bondLength, tailDescriptors, linkerDescriptors) {
   const audit = auditLayout(layoutGraph, coords, { bondLength });
-  const crossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords).length;
+  const crossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords);
   const geometry = scorePhosphatePresentationGeometry(layoutGraph, coords, tailDescriptors, linkerDescriptors);
   const minimumClearance = minimumActiveTailClearance(layoutGraph, coords, tailDescriptors);
   return {
@@ -454,7 +454,7 @@ export function measurePhosphateArylTailPresentationPenalty(layoutGraph, coords)
   const linkerPenalty = linkerDescriptors.reduce((sum, descriptor) => (
     sum + phosphateLinkerAnglePenalty(coords, descriptor)
   ), 0);
-  const visibleCrossingPenalty = findVisibleHeavyBondCrossings(layoutGraph, coords).length * 100;
+  const visibleCrossingPenalty = countVisibleHeavyBondCrossings(layoutGraph, coords) * 100;
   return tailPenalty + linkerPenalty + visibleCrossingPenalty;
 }
 

@@ -8117,11 +8117,11 @@ function refineSmallRingExteriorBranchFans(layoutGraph, coords, bondLength) {
     const focusAtomIds = [anchorAtomId, fixedExocyclicNeighborId, ...exocyclicNeighborIds];
     let bestLayoutCost = measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds);
     let bestVisibleCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords, { focusAtomIds });
-    let bestGlobalVisibleCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength }).length;
+    let bestGlobalVisibleCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength });
     for (const candidateCoords of buildSmallRingExteriorFanRefinementCandidates(layoutGraph, coords, anchorAtomId, fixedExocyclicNeighborId, bondLength)) {
       const candidatePenalty = measureSmallRingExteriorGapSpreadPenalty(layoutGraph, candidateCoords, anchorAtomId);
       const candidateVisibleCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { focusAtomIds });
-      const candidateGlobalVisibleCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { bondLength }).length;
+      const candidateGlobalVisibleCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { bondLength });
       if (candidateGlobalVisibleCrossingCount > bestGlobalVisibleCrossingCount) {
         continue;
       }
@@ -12423,7 +12423,7 @@ function measureAttachedBlockCandidateState(baseCoords, candidateCoords, bondLen
     }
     const basePosition = baseCoords.get(atomId);
     const candidatePosition = candidateCoords.get(atomId);
-      return Math.hypot(candidatePosition.x - basePosition.x, candidatePosition.y - basePosition.y) > 1e-9;
+    return Math.hypot(candidatePosition.x - basePosition.x, candidatePosition.y - basePosition.y) > 1e-9;
   });
   const scoringFocusAtomIds = expandScoringFocusAtomIds(layoutGraph, changedAtomIds);
   const readabilityFocusAtomIds = expandScoringFocusAtomIds(layoutGraph, changedAtomIds, 2);
@@ -15983,7 +15983,7 @@ function refineTerminalCarbonylRingContactCenterFan(layoutGraph, coords, contact
     rotationMagnitude: 0
   };
   const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
-  const baseHeavyBondCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength }).length;
+  const baseHeavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength });
   const baseSmallRingExteriorPenalty = measureSmallRingExteriorGapSpreadPenalty(
     layoutGraph,
     coords,
@@ -16230,7 +16230,7 @@ function terminalMultipleBondCrossingCandidateScore(
   return {
     coords: candidateCoords,
     audit: candidateAudit,
-    visibleHeavyBondCrossingCount: findVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { bondLength }).length,
+    visibleHeavyBondCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { bondLength }),
     crossingClearance: terminalMultipleBondCrossingClearance(
       layoutGraph,
       candidateCoords,
@@ -16338,7 +16338,7 @@ function terminalMultipleBondLeafOverlapCandidateScore(
   return {
     coords: candidateCoords,
     audit: candidateAudit,
-    visibleHeavyBondCrossingCount: findVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { bondLength }).length,
+    visibleHeavyBondCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { bondLength }),
     overlapDistance: terminalMultipleBondLeafOverlapDistance(candidateCoords, descriptor, opposingAtomId),
     layoutCost: measureFocusedPlacementCost(layoutGraph, candidateCoords, bondLength, [
       descriptor.centerAtomId,
@@ -16401,7 +16401,7 @@ function resolveTerminalMultipleBondLeafSevereOverlaps(layoutGraph, coords, bond
 
   for (let passIndex = 0; passIndex < 2; passIndex++) {
     const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
-    const baseCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength }).length;
+    const baseCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength });
     const overlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
     let bestCandidate = null;
 
@@ -16582,7 +16582,7 @@ function scoreTerminalRingCarbonylLeafContactCandidate(layoutGraph, coords, cont
   return {
     coords: candidateCoords,
     contactDistance: Math.min(candidateContact.distance, candidateCrossing?.distance ?? Number.POSITIVE_INFINITY),
-    heavyBondCrossingCount: findVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { bondLength }).length,
+    heavyBondCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, candidateCoords, { bondLength }),
     carbonylFanDeviation: threeHeavyCenterMaxAngularDeviation(
       layoutGraph,
       candidateCoords,
@@ -16893,7 +16893,7 @@ function resolveTerminalCarbonylLeafNearContacts(layoutGraph, coords, bondLength
     }
 
     const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
-    const baseHeavyBondCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength }).length;
+    const baseHeavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords, { bondLength });
     const baseSmallRingExteriorPenalty = measureSmallRingExteriorGapSpreadPenalty(
       layoutGraph,
       coords,

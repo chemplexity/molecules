@@ -19,6 +19,8 @@ import {
   buildCandidateAngleSets,
   chooseAttachmentAngle,
   describeCrossLikeHypervalentCenter,
+  findLayoutBond,
+  isExactSimpleAcyclicContinuationEligible,
   isLinearCenter,
   isPlanarDivalentNitrogenContinuationPair,
   isTerminalMultipleBondLeaf,
@@ -511,6 +513,72 @@ function bentDivalentCenterPenalty(layoutGraph, coords, atomId) {
   return (bondAngle - DEG120) ** 2;
 }
 
+function simpleAcyclicContinuationPenalty(layoutGraph, coords, atomId) {
+  const atom = layoutGraph?.atoms.get(atomId);
+  const atomPosition = coords.get(atomId);
+  if (!layoutGraph || !atom || atom.element !== 'C' || atom.aromatic || !atomPosition) {
+    return 0;
+  }
+
+  const visibleCovalentNeighbors = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic) {
+      return 0;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if (!neighborPosition) {
+      return 0;
+    }
+    visibleCovalentNeighbors.push({ bond, neighborAtomId, neighborPosition });
+  }
+
+  if (visibleCovalentNeighbors.length !== 2) {
+    return 0;
+  }
+
+  const hasTerminalHeteroLeaf = visibleCovalentNeighbors.some(({ bond, neighborAtomId }) => {
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    return (
+      !!neighborAtom
+      && ['O', 'S', 'Se'].includes(neighborAtom.element)
+      && (neighborAtom.heavyDegree ?? 0) === 1
+      && (bond.order ?? 1) === 1
+    );
+  });
+  if (!hasTerminalHeteroLeaf) {
+    return 0;
+  }
+
+  const [firstNeighbor, secondNeighbor] = visibleCovalentNeighbors;
+  if (
+    !isExactSimpleAcyclicContinuationEligible(layoutGraph, atomId, firstNeighbor.neighborAtomId, secondNeighbor.neighborAtomId)
+    && !isExactSimpleAcyclicContinuationEligible(layoutGraph, atomId, secondNeighbor.neighborAtomId, firstNeighbor.neighborAtomId)
+  ) {
+    return 0;
+  }
+
+  const firstBond = findLayoutBond(layoutGraph, atomId, firstNeighbor.neighborAtomId);
+  const secondBond = findLayoutBond(layoutGraph, atomId, secondNeighbor.neighborAtomId);
+  const firstOrder = firstBond?.order ?? 1;
+  const secondOrder = secondBond?.order ?? 1;
+  const targetAngle =
+    firstOrder >= 3
+    || secondOrder >= 3
+    || (firstOrder >= 2 && secondOrder >= 2 && isLinearCenter(layoutGraph, atomId))
+      ? Math.PI
+      : DEG120;
+  const bondAngle = angularDifference(
+    angleOf(sub(firstNeighbor.neighborPosition, atomPosition)),
+    angleOf(sub(secondNeighbor.neighborPosition, atomPosition))
+  );
+  return (bondAngle - targetAngle) ** 2;
+}
+
 function arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focusAtomIds = []) {
   if (!layoutGraph) {
     return 0;
@@ -519,7 +587,8 @@ function arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focu
   let penalty =
     linearCenterPenalty(layoutGraph, coords, anchorAtomId)
     + trigonalCenterPenalty(layoutGraph, coords, anchorAtomId)
-    + bentDivalentCenterPenalty(layoutGraph, coords, anchorAtomId);
+    + bentDivalentCenterPenalty(layoutGraph, coords, anchorAtomId)
+    + simpleAcyclicContinuationPenalty(layoutGraph, coords, anchorAtomId);
   for (const atomId of focusAtomIds) {
     if (atomId === anchorAtomId) {
       continue;
@@ -527,6 +596,7 @@ function arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focu
     penalty += linearCenterPenalty(layoutGraph, coords, atomId);
     penalty += trigonalCenterPenalty(layoutGraph, coords, atomId);
     penalty += bentDivalentCenterPenalty(layoutGraph, coords, atomId);
+    penalty += simpleAcyclicContinuationPenalty(layoutGraph, coords, atomId);
   }
   return penalty;
 }

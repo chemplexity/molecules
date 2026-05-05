@@ -4,7 +4,7 @@ import { recommendFallback } from './fallback.js';
 import {
   detectCollapsedMacrocycles,
   findSevereOverlaps,
-  findVisibleHeavyBondCrossings,
+  countVisibleHeavyBondCrossings,
   measureBondLengthDeviation,
   measureLabelOverlap,
   measureRingSubstituentReadability
@@ -39,7 +39,7 @@ export function auditLayout(layoutGraph, coords, options = {}) {
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength, {
     bondValidationClasses: options.bondValidationClasses
   });
-  const visibleHeavyBondCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords).length;
+  const visibleHeavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords);
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const ringSubstituentReadability = measureRingSubstituentReadability(layoutGraph, coords);
   const stereo = options.stereo ?? null;

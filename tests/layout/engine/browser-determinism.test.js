@@ -615,7 +615,7 @@ test('browser layout keeps crowded omitted-h thiophene and piperazine hubs bound
     }
     assert.ok(Array.isArray(signature.omittedHubC6Angles), `expected ${browserName} to report C6 angles`);
     for (const angle of signature.omittedHubC6Angles) {
-      assert.ok(Math.abs(angle - 120) <= 32 + 1e-6, `expected ${browserName} C6 angle within the bounded local relief, got ${angle.toFixed(2)}`);
+      assert.ok(Math.abs(angle - 120) <= 24 + 1e-6, `expected ${browserName} C6 angle within the bounded local relief, got ${angle.toFixed(2)}`);
     }
     assert.ok(Array.isArray(signature.omittedHubC4Angles), `expected ${browserName} to report C4 angles`);
     assert.ok(

@@ -5,7 +5,7 @@ import { add, angleOf, angularDifference, distance, fromAngle, sub, wrapAngleUns
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import { ringEmbeddedBisOxoSpread } from '../geometry/ring-hypervalent.js';
 import { pointInPolygon } from '../geometry/polygon.js';
-import { findSevereOverlaps, measureBondLengthDeviation } from '../audit/invariants.js';
+import { countSevereOverlapsWithOverrides, findSevereOverlaps, measureBondLengthDeviation } from '../audit/invariants.js';
 import { collectCutSubtree } from './subtree-utils.js';
 import { runLocalCleanup } from './local-rotation.js';
 import { resolveOverlaps } from './overlap-resolution.js';
@@ -152,51 +152,6 @@ function preservesSevereOverlapState(layoutGraph, coords, candidatePositions, bo
   );
 }
 
-/**
- * Counts severe overlaps introduced by sparse candidate positions.
- * @param {object} layoutGraph - Layout graph shell.
- * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
- * @param {Map<string, {x: number, y: number}>} overridePositions - Candidate atom positions.
- * @param {number} bondLength - Target layout bond length.
- * @returns {{count: number, minDistance: number}} Severe-overlap count and closest moved distance.
- */
-function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength) {
-  const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
-  let count = 0;
-  let minDistance = Infinity;
-  const visitedPairKeys = new Set();
-
-  for (const [atomId, position] of overridePositions) {
-    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
-      continue;
-    }
-    for (const [otherAtomId, otherBasePosition] of coords) {
-      if (
-        atomId === otherAtomId
-        || !isVisibleLayoutAtom(layoutGraph, otherAtomId)
-        || layoutGraph.bondedPairSet.has(atomPairKey(atomId, otherAtomId))
-      ) {
-        continue;
-      }
-      const pairKey = atomPairKey(atomId, otherAtomId);
-      if (visitedPairKeys.has(pairKey)) {
-        continue;
-      }
-      visitedPairKeys.add(pairKey);
-      const otherPosition = overridePositions.get(otherAtomId) ?? otherBasePosition;
-      const separation = distance(position, otherPosition);
-      minDistance = Math.min(minDistance, separation);
-      if (separation < threshold - 1e-9) {
-        count++;
-      }
-    }
-  }
-
-  return {
-    count,
-    minDistance: Number.isFinite(minDistance) ? minDistance : Infinity
-  };
-}
 
 /**
  * Returns compact exterior-V spreads to try for a crowded ring-embedded sulfone.
@@ -1633,7 +1588,7 @@ function relieveAcyclicAnchoredHypervalentBranchOverlap(layoutGraph, coords, cen
       const candidateDirectOverlapState = severeOverlapState(
         severeOverlapsTouchingDirectLigands(layoutGraph, candidateCoords, centerAtomId)
       );
-      const candidateSevereOverlapState = severeOverlapState(findSevereOverlaps(layoutGraph, candidateCoords, bondLength));
+      const candidateSevereOverlapState = countSevereOverlapsWithOverrides(layoutGraph, coords, candidatePositions, bondLength);
       const candidateBondDeviation = measureBondLengthDeviation(layoutGraph, candidateCoords, bondLength);
       const candidateDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords, {
         focusAtomIds: new Set([centerAtomId])
@@ -2754,6 +2709,35 @@ function rotatedBranchReliefCoords(coords, descriptor, angle) {
 }
 
 /**
+ * Same as `rotatedBranchReliefCoords` but returns only the moved subtree positions as a
+ * sparse override map — avoiding the O(V) full-coord clone used for overlap screening.
+ * @param {Map<string, {x: number, y: number}>} coords - Base coordinate map.
+ * @param {{anchorAtomId: string, subtreeAtomIds: string[]}} descriptor - Rotation descriptor.
+ * @param {number} angle - Rotation angle in radians.
+ * @returns {Map<string, {x: number, y: number}>|null} Sparse override positions, or null when anchor is missing.
+ */
+function rotatedBranchReliefOverrides(coords, descriptor, angle) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  if (!anchorPosition) {
+    return null;
+  }
+  const overridePositions = new Map();
+  for (const subtreeAtomId of descriptor.subtreeAtomIds) {
+    const currentPosition = coords.get(subtreeAtomId);
+    if (!currentPosition) {
+      continue;
+    }
+    const offset = sub(currentPosition, anchorPosition);
+    overridePositions.set(
+      subtreeAtomId,
+      add(anchorPosition, fromAngle(angleOf(offset) + angle, distance(anchorPosition, currentPosition)))
+    );
+  }
+  return overridePositions.size > 0 ? overridePositions : null;
+}
+
+
+/**
  * Compares branch-relief candidates for direct-ligand overlap cleanup.
  * @param {object} candidate - Candidate relief score.
  * @param {object|null} incumbent - Current best candidate score.
@@ -2815,14 +2799,22 @@ function relieveDirectLigandOverlapsWithTerminalLeafRotation(layoutGraph, coords
     }
     for (const baseCandidate of terminalLeafReliefBaseCandidates(layoutGraph, coords, descriptor, directLigandIds, centerAtomId)) {
       for (const angle of DIRECT_LIGAND_TERMINAL_LEAF_RELIEF_ANGLE_CANDIDATES) {
+        const overridePositions = rotatedBranchReliefOverrides(baseCandidate.coords, descriptor, angle);
+        if (!overridePositions) {
+          continue;
+        }
+        // Fast-path: gate on overlap count using only the moved subtree.
+        const candidateOverlapState = countSevereOverlapsWithOverrides(layoutGraph, baseCandidate.coords, overridePositions, bondLength);
         const candidateCoords = rotatedBranchReliefCoords(baseCandidate.coords, descriptor, angle);
         if (!candidateCoords) {
           continue;
         }
-        const candidateOverlaps = findSevereOverlaps(layoutGraph, candidateCoords, bondLength);
-        const candidateDirectOverlapCount = countDirectLigandSevereOverlaps(candidateOverlaps, directLigandIds);
+        const candidateDirectOverlapCount = countDirectLigandSevereOverlaps(
+          findSevereOverlaps(layoutGraph, candidateCoords, bondLength),
+          directLigandIds
+        );
         if (
-          candidateOverlaps.length >= currentOverlaps.length
+          candidateOverlapState.count >= currentOverlaps.length
           || candidateDirectOverlapCount >= currentDirectOverlapCount
         ) {
           continue;
@@ -2842,7 +2834,7 @@ function relieveDirectLigandOverlapsWithTerminalLeafRotation(layoutGraph, coords
 
         const candidate = {
           coords: candidateCoords,
-          severeOverlapCount: candidateOverlaps.length,
+          severeOverlapCount: candidateOverlapState.count,
           directOverlapCount: candidateDirectOverlapCount,
           maxBondDeviation: candidateBondDeviation.maxDeviation,
           hypervalentDeviation: candidateDeviation,
@@ -2904,16 +2896,24 @@ function relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, cent
     );
     for (const descriptor of descriptors) {
       for (const angle of DIRECT_LIGAND_BRANCH_RELIEF_ANGLE_CANDIDATES) {
+        const overridePositions = rotatedBranchReliefOverrides(coords, descriptor, angle);
+        if (!overridePositions) {
+          continue;
+        }
+        // Fast-path: gate on overlap count using only the moved subtree.
+        const candidateOverlapState = countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength);
+        if (candidateOverlapState.count >= currentOverlaps.length) {
+          continue;
+        }
         const candidateCoords = rotatedBranchReliefCoords(coords, descriptor, angle);
         if (!candidateCoords) {
           continue;
         }
-        const candidateOverlaps = findSevereOverlaps(layoutGraph, candidateCoords, bondLength);
-        const candidateDirectOverlapCount = countDirectLigandSevereOverlaps(candidateOverlaps, directLigandIds);
-        if (
-          candidateOverlaps.length >= currentOverlaps.length
-          || candidateDirectOverlapCount >= currentDirectOverlapCount
-        ) {
+        const candidateDirectOverlapCount = countDirectLigandSevereOverlaps(
+          findSevereOverlaps(layoutGraph, candidateCoords, bondLength),
+          directLigandIds
+        );
+        if (candidateDirectOverlapCount >= currentDirectOverlapCount) {
           continue;
         }
 
@@ -2931,7 +2931,7 @@ function relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, cent
 
         const candidate = {
           coords: candidateCoords,
-          severeOverlapCount: candidateOverlaps.length,
+          severeOverlapCount: candidateOverlapState.count,
           directOverlapCount: candidateDirectOverlapCount,
           maxBondDeviation: candidateBondDeviation.maxDeviation,
           hypervalentDeviation: candidateDeviation,

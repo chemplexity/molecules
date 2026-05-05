@@ -3,7 +3,7 @@
 import { buildAtomGrid } from '../../audit/invariants.js';
 import { auditLayout } from '../../audit/audit.js';
 import { countPointInPolygons } from '../../geometry/polygon.js';
-import { add, angleOf, angularDifference, centroid, distance, fromAngle, rotate, sub } from '../../geometry/vec2.js';
+import { add, angleOf, angularDifference, centroid, distance, fromAngle, rotate, sub, wrapAngle } from '../../geometry/vec2.js';
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
 import { atomPairKey } from '../../constants.js';
 import { collectRigidPendantRingSubtrees } from '../overlap-resolution.js';
@@ -50,6 +50,13 @@ const TERMINAL_MULTIPLE_BOND_LEAF_BACKOFF_ROTATIONS = Object.freeze(
     -(degrees * Math.PI) / 180
   ])
 );
+const TERMINAL_MULTIPLE_BOND_LEAF_PARTIAL_FAN_FRACTIONS = Object.freeze([
+  1 / 3,
+  0.5,
+  2 / 3,
+  0.75,
+  0.85
+]);
 const HIDDEN_H_MULTIPLE_BOND_VISIBLE_ANGLE = (2 * Math.PI) / 3;
 const TERMINAL_MULTIPLE_BOND_BALANCED_FAN_TOLERANCE = Math.PI / 15;
 
@@ -1360,6 +1367,73 @@ function terminalMultipleBondLeafFanBlockerReliefTargetPositions(
   return bestTargetPositions;
 }
 
+function terminalMultipleBondLeafPartialBackoffTargetPositions(layoutGraph, coords, descriptor, bondLength) {
+  if (descriptor.leafTargets.length !== 1) {
+    return null;
+  }
+  const { leafAtomId, targetAngle } = descriptor.leafTargets[0];
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const leafPosition = coords.get(leafAtomId);
+  if (!centerPosition || !leafPosition) {
+    return null;
+  }
+  const radius = distance(centerPosition, leafPosition);
+  if (radius <= TIDY_IMPROVEMENT_EPSILON) {
+    return null;
+  }
+  const currentAngle = angleOf(sub(leafPosition, centerPosition));
+  const rotation = wrapAngle(targetAngle - currentAngle);
+  if (Math.abs(rotation) <= TIDY_IMPROVEMENT_EPSILON) {
+    return null;
+  }
+
+  let best = null;
+  for (const fraction of TERMINAL_MULTIPLE_BOND_LEAF_PARTIAL_FAN_FRACTIONS) {
+    const candidatePosition = add(centerPosition, fromAngle(currentAngle + rotation * fraction, radius));
+    const candidateCoords = new Map(coords);
+    candidateCoords.set(leafAtomId, candidatePosition);
+    if (auditLayout(layoutGraph, candidateCoords, { bondLength }).ok !== true) {
+      continue;
+    }
+    const penalty = terminalMultipleBondLeafFanPenalty(
+      candidateCoords,
+      descriptor.centerAtomId,
+      descriptor.neighborAtomIds
+    );
+    if (penalty >= descriptor.currentPenalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON) {
+      continue;
+    }
+    const clearance = terminalMultipleBondLeafReliefClearance(
+      layoutGraph,
+      coords,
+      descriptor,
+      new Map([[leafAtomId, candidatePosition]])
+    );
+    const candidate = {
+      targetPositions: new Map([[leafAtomId, candidatePosition]]),
+      penalty,
+      clearance,
+      rotationMagnitude: Math.abs(rotation * fraction)
+    };
+    if (
+      !best
+      || candidate.penalty < best.penalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON
+      || (
+        Math.abs(candidate.penalty - best.penalty) <= TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON
+        && candidate.clearance > best.clearance + TIDY_IMPROVEMENT_EPSILON
+      )
+      || (
+        Math.abs(candidate.penalty - best.penalty) <= TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON
+        && Math.abs(candidate.clearance - best.clearance) <= TIDY_IMPROVEMENT_EPSILON
+        && candidate.rotationMagnitude < best.rotationMagnitude - TIDY_IMPROVEMENT_EPSILON
+      )
+    ) {
+      best = candidate;
+    }
+  }
+  return best?.targetPositions ?? null;
+}
+
 function scoreTerminalHeteroPosition(layoutGraph, coords, descriptor, atomGrid, ringPolygons, position, candidateAngle, currentAngle, threshold, searchRadius) {
   return {
     position,
@@ -1564,7 +1638,30 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
       );
     }
     if (targetOverlapCount > currentOverlapCount) {
-      continue;
+      const backoffTargetPositions = terminalMultipleBondLeafPartialBackoffTargetPositions(
+        layoutGraph,
+        coords,
+        descriptor,
+        bondLength
+      );
+      if (!backoffTargetPositions) {
+        continue;
+      }
+      targetPositions = backoffTargetPositions;
+      targetOverlapCount = 0;
+      for (const [leafAtomId, targetPosition] of targetPositions) {
+        targetOverlapCount += localSevereOverlapCountWithOverrides(
+          layoutGraph,
+          coords,
+          leafAtomId,
+          targetPosition,
+          targetPositions,
+          threshold
+        );
+      }
+      if (targetOverlapCount > currentOverlapCount) {
+        continue;
+      }
     }
 
     const candidateCoords = new Map(coords);
@@ -1599,7 +1696,16 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
         ? candidatePenalty > descriptor.currentPenalty + TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON
         : candidatePenalty >= descriptor.currentPenalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON
     ) {
-      continue;
+      const backoffTargetPositions = terminalMultipleBondLeafPartialBackoffTargetPositions(
+        layoutGraph,
+        coords,
+        descriptor,
+        bondLength
+      );
+      if (!backoffTargetPositions) {
+        continue;
+      }
+      targetPositions = backoffTargetPositions;
     }
 
     for (const [leafAtomId, targetPosition] of targetPositions) {

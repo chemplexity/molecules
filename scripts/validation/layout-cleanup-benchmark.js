@@ -61,8 +61,18 @@ function createStageAccumulator(stageName, stage) {
     materialized: 0,
     returnedNull: 0,
     won: 0,
-    elapsedMs: 0
+    elapsedMs: 0,
+    maxElapsedMs: 0,
+    maxElapsedEntryName: null
   };
+}
+
+function topStageTimings(cleanupTelemetry, limit = 3) {
+  return Object.entries(cleanupTelemetry.stages ?? {})
+    .filter(([, stage]) => stage.ran === true && Number.isFinite(stage.elapsedMs) && stage.elapsedMs > 0)
+    .sort((left, right) => (right[1].elapsedMs ?? 0) - (left[1].elapsedMs ?? 0))
+    .slice(0, limit)
+    .map(([stageName, stage]) => `${stageName} ${formatMs(stage.elapsedMs ?? 0)}ms`);
 }
 
 /**
@@ -85,6 +95,7 @@ function summarizeCorpus(corpusName) {
     stabilizationRequests: 0,
     presentationFallbackEscalations: 0
   };
+  const entries = [];
 
   for (const entry of corpus) {
     const result = runPipeline(parseSMILES(entry.smiles), {
@@ -103,6 +114,14 @@ function summarizeCorpus(corpusName) {
     timing.auditMs += resultTiming.auditMs ?? 0;
     counts.stabilizationRequests += cleanupTelemetry.counts?.stabilizationRequestCount ?? 0;
     counts.presentationFallbackEscalations += cleanupTelemetry.counts?.presentationFallbackEscalationCount ?? 0;
+    entries.push({
+      name: entry.name,
+      totalMs: resultTiming.totalMs ?? 0,
+      placementMs: resultTiming.placementMs ?? 0,
+      cleanupMs: resultTiming.cleanupMs ?? 0,
+      selectedStage: cleanupTelemetry.selectedStage ?? null,
+      topStages: topStageTimings(cleanupTelemetry)
+    });
 
     for (const [stageName, stage] of Object.entries(cleanupTelemetry.stages ?? {})) {
       const accumulator = stageAccumulators.get(stageName) ?? createStageAccumulator(stageName, stage);
@@ -111,6 +130,10 @@ function summarizeCorpus(corpusName) {
       accumulator.returnedNull += stage.returnedNull ? 1 : 0;
       accumulator.won += stage.won ? 1 : 0;
       accumulator.elapsedMs += stage.elapsedMs ?? 0;
+      if ((stage.elapsedMs ?? 0) > accumulator.maxElapsedMs) {
+        accumulator.maxElapsedMs = stage.elapsedMs ?? 0;
+        accumulator.maxElapsedEntryName = entry.name;
+      }
       stageAccumulators.set(stageName, accumulator);
     }
   }
@@ -122,7 +145,8 @@ function summarizeCorpus(corpusName) {
       Object.entries(timing).map(([key, value]) => [key, corpus.length > 0 ? value / corpus.length : 0])
     ),
     counts,
-    stages: [...stageAccumulators.values()].sort((left, right) => right.elapsedMs - left.elapsedMs)
+    stages: [...stageAccumulators.values()].sort((left, right) => right.elapsedMs - left.elapsedMs),
+    slowestEntries: entries.sort((left, right) => right.totalMs - left.totalMs).slice(0, 5)
   };
 }
 
@@ -142,7 +166,13 @@ function printSummary(summary) {
   for (const stage of summary.stages) {
     const averageStageMs = summary.size > 0 ? stage.elapsedMs / summary.size : 0;
     writeLine(
-      `    ${stage.stageName} -> ${stage.targetStage ?? 'n/a'} [${stage.category ?? 'uncategorized'}]: ran ${stage.ran}, materialized ${stage.materialized}, returnedNull ${stage.returnedNull}, won ${stage.won}, avg ${formatMs(averageStageMs)} ms`
+      `    ${stage.stageName} -> ${stage.targetStage ?? 'n/a'} [${stage.category ?? 'uncategorized'}]: ran ${stage.ran}, materialized ${stage.materialized}, returnedNull ${stage.returnedNull}, won ${stage.won}, avg ${formatMs(averageStageMs)} ms, max ${formatMs(stage.maxElapsedMs)} ms${stage.maxElapsedEntryName ? ` (${stage.maxElapsedEntryName})` : ''}`
+    );
+  }
+  writeLine('  slowest molecules:');
+  for (const entry of summary.slowestEntries ?? []) {
+    writeLine(
+      `    ${entry.name}: total ${formatMs(entry.totalMs)} ms | placement ${formatMs(entry.placementMs)} ms | cleanup ${formatMs(entry.cleanupMs)} ms | selected ${entry.selectedStage ?? 'n/a'} | top stages ${entry.topStages.join(', ') || 'n/a'}`
     );
   }
 }

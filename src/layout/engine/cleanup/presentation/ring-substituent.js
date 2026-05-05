@@ -6,6 +6,7 @@ import {
   collectReadableRingSubstituentChildren,
   computeAtomDistortionCost,
   computeSubtreeOverlapCost,
+  countSevereOverlapsWithOverrides,
   findSevereOverlaps,
   measureDirectAttachedRingJunctionContinuationDistortion,
   measureRingSubstituentReadability,
@@ -836,7 +837,8 @@ function relieveTerminalRingCarbonylLeafContacts(layoutGraph, coords, atomGrid, 
       }
       const candidateCoords = new Map(coords);
       candidateCoords.set(descriptor.leafAtomId, targetPosition);
-      if (findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length > 0) {
+      const overridePositions = new Map([[descriptor.leafAtomId, targetPosition]]);
+      if (countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength).count > 0) {
         continue;
       }
       const contactDistance = terminalRingCarbonylLeafForeignRingDistance(
@@ -2278,7 +2280,7 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
         continue;
       }
 
-      const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
+      const overlapCount = countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength).count;
       if (overlapCount > baseOverlapCount) {
         continue;
       }

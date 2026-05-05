@@ -23,12 +23,14 @@ const LOCAL_RING_TRIGONAL_HETERO_DISTORTION_WEIGHT = 12;
 const MAX_SIBLING_SWAP_SUBTREE_ATOMS = 18;
 const MAX_BRANCHED_SATURATED_SUBTREE_ATOMS = 20;
 const MAX_ANCHORED_RING_BLOCK_ATOMS = 18;
+const MAX_EXACT_TRIGONAL_RING_BRANCH_REFLECTION_ATOMS = 48;
 const MAX_LOCAL_TRIGONAL_HETERO_LAYOUT_ATOMS = 48;
 const MAX_SIBLING_SWAP_LAYOUT_ATOMS = 48;
 const LOCAL_ROTATION_BOND_CROWDING_FINALISTS = 2;
 const EXACT_ROTATION_ANGLE_EPSILON = 1e-6;
 const IDEAL_LEAF_LINEAR_NEIGHBOR_TOLERANCE = Math.PI / 12;
 const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
+const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As', 'Si']);
 const ANCHORED_RING_EXTERIOR_SPREAD_WEIGHT = 8;
 
 /**
@@ -399,6 +401,70 @@ function terminalTrigonalSubtreeDescriptor(layoutGraph, atomId, heavyNeighborIds
   }
 
   return { anchorAtomId: anchorNeighborIds[0] };
+}
+
+/**
+ * Returns a descriptor for reflecting a carbonyl/imine-attached ring branch as
+ * one rigid group around its parent bond. This preserves the exact trigonal
+ * root fan while giving symmetric crowded diaryl carbonyls a mirror escape.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate trigonal root atom id.
+ * @param {string[]} heavyNeighborIds - Heavy neighbors currently placed.
+ * @returns {{anchorAtomId: string}|null} Reflection descriptor or `null`.
+ */
+function exactTrigonalRingBranchAxisReflectionDescriptor(layoutGraph, atomId, heavyNeighborIds) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (
+    !atom
+    || atom.element === 'H'
+    || atom.aromatic
+    || atom.heavyDegree !== 3
+    || heavyNeighborIds.length !== 3
+    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+
+  let multipleLeafAtomId = null;
+  let ringNeighborAtomId = null;
+  let anchorAtomId = null;
+  for (const neighborAtomId of heavyNeighborIds) {
+    const bond = layoutGraph.bondByAtomPair.get(atomPairKey(atomId, neighborAtomId));
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!bond || !neighborAtom || neighborAtom.element === 'H' || bond.kind !== 'covalent' || bond.aromatic || bond.inRing) {
+      return null;
+    }
+    if ((bond.order ?? 1) >= 2 && terminalMultipleBondLeafBond(layoutGraph, atomId, neighborAtomId)) {
+      if (multipleLeafAtomId != null) {
+        return null;
+      }
+      multipleLeafAtomId = neighborAtomId;
+      continue;
+    }
+    if ((bond.order ?? 1) !== 1) {
+      return null;
+    }
+    if ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0) {
+      if (ringNeighborAtomId != null) {
+        return null;
+      }
+      ringNeighborAtomId = neighborAtomId;
+      continue;
+    }
+    if (anchorAtomId != null) {
+      return null;
+    }
+    anchorAtomId = neighborAtomId;
+  }
+
+  if (!multipleLeafAtomId || !ringNeighborAtomId || !anchorAtomId) {
+    return null;
+  }
+
+  const subtreeAtomIds = collectCutSubtree(layoutGraph, atomId, anchorAtomId);
+  return subtreeAtomIds.size > 1 && subtreeAtomIds.size <= MAX_EXACT_TRIGONAL_RING_BRANCH_REFLECTION_ATOMS
+    ? { anchorAtomId }
+    : null;
 }
 
 /**
@@ -798,6 +864,20 @@ function movableTerminalSubtrees(layoutGraph, coords) {
       atomId,
       anchorAtomId: descriptor.anchorAtomId,
       subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, descriptor.anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId)),
+      preferAtomOverlapClearance: true
+    });
+  }
+  for (const [atomId, neighbors] of adjacency) {
+    const heavyNeighbors = neighbors.filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+    const descriptor = exactTrigonalRingBranchAxisReflectionDescriptor(layoutGraph, atomId, heavyNeighbors);
+    if (!descriptor) {
+      continue;
+    }
+    result.push({
+      atomId,
+      anchorAtomId: descriptor.anchorAtomId,
+      subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, descriptor.anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId)),
+      exactTrigonalRingBranchAxisReflection: true,
       preferAtomOverlapClearance: true
     });
   }
@@ -1395,6 +1475,42 @@ function ringRootFanDistortionCost(layoutGraph, coords, atomId, overridePosition
   }, 0);
 }
 
+function hypervalentCrossFanDistortionCost(layoutGraph, coords, atomId, overridePositions) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || !ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element)) {
+    return 0;
+  }
+  const atomPosition = overridePositions?.get(atomId) ?? coords.get(atomId);
+  if (!atomPosition) {
+    return 0;
+  }
+  const neighborAngles = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = overridePositions?.get(neighborAtomId) ?? coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+    neighborAngles.push(angleOf(sub(neighborPosition, atomPosition)));
+  }
+  if (neighborAngles.length !== 4) {
+    return 0;
+  }
+  const sortedAngles = neighborAngles.map(wrapAngle).sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  const idealSeparation = Math.PI / 2;
+  return sortedAngles.reduce((cost, currentAngle, index) => {
+    const nextAngle = sortedAngles[(index + 1) % sortedAngles.length];
+    const separation = index === sortedAngles.length - 1
+      ? nextAngle + 2 * Math.PI - currentAngle
+      : nextAngle - currentAngle;
+    return cost + ((separation - idealSeparation) ** 2);
+  }, 0);
+}
+
 /**
  * Returns whether local cleanup should preserve an exact saturated three-heavy
  * carbon fan. These omitted-H branch points look trigonal in 2D, and rotating
@@ -1423,6 +1539,63 @@ function shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, atomId, bas
     && hasRingNeighbor
     && baseDistortion <= CLEANUP_EPSILON
   );
+}
+
+function visibleHeavyCovalentBonds(layoutGraph, coords, atomId) {
+  const bonds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    bonds.push({ bond, neighborAtomId });
+  }
+  return bonds;
+}
+
+/**
+ * Returns whether local cleanup should preserve an exact visible trigonal fan.
+ * Cleanup may still move noisy trigonal centers, but it should not collapse an
+ * already exact carbonyl or imine fan into a 90/180/90 split just to win a small
+ * local clearance tie-break.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} atomId - Candidate anchor atom ID.
+ * @param {number} baseDistortion - Current anchor distortion cost.
+ * @returns {boolean} True when cleanup should reject fan-distorting moves.
+ */
+function shouldPreserveExactTrigonalFan(layoutGraph, coords, atomId, baseDistortion) {
+  if (baseDistortion > CLEANUP_EPSILON) {
+    return false;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || atom.aromatic) {
+    return false;
+  }
+  const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, atomId);
+  if (heavyBonds.length !== 3) {
+    return false;
+  }
+  return heavyBonds.some(({ bond }) => !bond.aromatic && (bond.order ?? 1) >= 2);
+}
+
+function isExactTrigonalRingAxisReflectionEligible(layoutGraph, coords, anchorAtomId, rootAtomId, baseDistortion) {
+  if (!shouldPreserveExactTrigonalFan(layoutGraph, coords, anchorAtomId, baseDistortion)) {
+    return false;
+  }
+  const bond = layoutGraph.bondByAtomPair.get(atomPairKey(anchorAtomId, rootAtomId));
+  if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+    return false;
+  }
+  if ((layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) === 0) {
+    return false;
+  }
+  const subtreeAtomIds = collectCutSubtree(layoutGraph, rootAtomId, anchorAtomId);
+  return subtreeAtomIds.size > 1 && [...subtreeAtomIds].some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0);
 }
 
 /**
@@ -1603,11 +1776,17 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
       });
       const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
       const preserveExactThreeHeavyCarbonFan = shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, anchorAtomId, baseAnchorDistortion);
+      const preserveExactTrigonalFan = shouldPreserveExactTrigonalFan(layoutGraph, coords, anchorAtomId, baseAnchorDistortion);
       const preserveExactRingRootFan =
-        subtree.preferAtomOverlapClearance === true
-        && ringRootFanDistortionCost(layoutGraph, coords, anchorAtomId, null) <= CLEANUP_EPSILON;
+        ringRootFanDistortionCost(layoutGraph, coords, anchorAtomId, null) <= CLEANUP_EPSILON;
+      const preserveExactHypervalentFan =
+        hypervalentCrossFanDistortionCost(layoutGraph, coords, anchorAtomId, null) <= CLEANUP_EPSILON;
       const finalists = [];
-      if (isBranchedSaturatedRingAxisReflectionEligible(layoutGraph, coords, anchorAtomId, atomId)) {
+      if (
+        isBranchedSaturatedRingAxisReflectionEligible(layoutGraph, coords, anchorAtomId, atomId)
+        || isExactTrigonalRingAxisReflectionEligible(layoutGraph, coords, anchorAtomId, atomId, baseAnchorDistortion)
+        || subtree.exactTrigonalRingBranchAxisReflection === true
+      ) {
         const newPositions = new Map();
         for (const subtreeAtomId of subtreeAtomIds) {
           const subtreePosition = coords.get(subtreeAtomId);
@@ -1626,7 +1805,12 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
               preserveExactRingRootFan
               && ringRootFanDistortionCost(layoutGraph, coords, anchorAtomId, newPositions) > CLEANUP_EPSILON
             )
-            && !(preserveExactThreeHeavyCarbonFan && scoreAnchorDistortion(anchorAtomId, newPositions) > CLEANUP_EPSILON)
+            && !((preserveExactThreeHeavyCarbonFan || preserveExactTrigonalFan) && scoreAnchorDistortion(anchorAtomId, newPositions) > CLEANUP_EPSILON)
+            && !(preserveExactHypervalentFan && hypervalentCrossFanDistortionCost(layoutGraph, coords, anchorAtomId, newPositions) > CLEANUP_EPSILON)
+            && !(
+              subtree.exactTrigonalRingBranchAxisReflection === true
+              && computeAtomDistortionCost(layoutGraph, coords, atomId, newPositions) > CLEANUP_EPSILON
+            )
           ) {
             const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
             const approximateImprovement = baseAtomOverlapCost - newAtomOverlapCost + (baseAnchorDistortion - newAnchorDistortion);
@@ -1638,6 +1822,15 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
             });
           }
         }
+      }
+      if (subtree.exactTrigonalRingBranchAxisReflection === true) {
+        const refinedMove = finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon, {
+          preferAtomOverlapCost: true
+        });
+        if (refinedMove && isBetterLocalMove(bestMove, refinedMove, epsilon)) {
+          bestMove = refinedMove;
+        }
+        continue;
       }
       forEachRigidRotationCandidate(layoutGraph, coords, {
         anchorAtomId,
@@ -1667,6 +1860,12 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
             return;
           }
           if (preserveExactThreeHeavyCarbonFan && scoreAnchorDistortion(anchorAtomId, newPositions) > CLEANUP_EPSILON) {
+            return;
+          }
+          if (preserveExactTrigonalFan && scoreAnchorDistortion(anchorAtomId, newPositions) > CLEANUP_EPSILON) {
+            return;
+          }
+          if (preserveExactHypervalentFan && hypervalentCrossFanDistortionCost(layoutGraph, coords, anchorAtomId, newPositions) > CLEANUP_EPSILON) {
             return;
           }
           const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
@@ -1704,6 +1903,8 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         subtreeContext
       });
       const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
+      const preserveExactHypervalentFan =
+        hypervalentCrossFanDistortionCost(layoutGraph, coords, anchorAtomId, null) <= CLEANUP_EPSILON;
       if (
         flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, firstRootPosition, secondRootPosition, inwardFlipTolerance)
         || flipsRingSubstituentInward(layoutGraph, coords, anchorAtomId, secondRootPosition, firstRootPosition, inwardFlipTolerance)
@@ -1725,6 +1926,18 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
       if (
         shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, anchorAtomId, baseAnchorDistortion)
         && newAnchorDistortion > CLEANUP_EPSILON
+      ) {
+        continue;
+      }
+      if (
+        shouldPreserveExactTrigonalFan(layoutGraph, coords, anchorAtomId, baseAnchorDistortion)
+        && newAnchorDistortion > CLEANUP_EPSILON
+      ) {
+        continue;
+      }
+      if (
+        preserveExactHypervalentFan
+        && hypervalentCrossFanDistortionCost(layoutGraph, coords, anchorAtomId, newPositions) > CLEANUP_EPSILON
       ) {
         continue;
       }
@@ -1759,6 +1972,9 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         subtreeContext
       });
       const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
+      const preserveExactTrigonalFan = shouldPreserveExactTrigonalFan(layoutGraph, coords, anchorAtomId, baseAnchorDistortion);
+      const preserveExactHypervalentFan =
+        hypervalentCrossFanDistortionCost(layoutGraph, coords, anchorAtomId, null) <= CLEANUP_EPSILON;
       const finalists = [];
 
       for (const angle of FINE_ROTATION_ANGLES) {
@@ -1784,6 +2000,15 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
         if (
           shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, anchorAtomId, baseAnchorDistortion)
           && newAnchorDistortion > CLEANUP_EPSILON
+        ) {
+          continue;
+        }
+        if (preserveExactTrigonalFan && newAnchorDistortion > CLEANUP_EPSILON) {
+          continue;
+        }
+        if (
+          preserveExactHypervalentFan
+          && hypervalentCrossFanDistortionCost(layoutGraph, coords, anchorAtomId, newPositions) > CLEANUP_EPSILON
         ) {
           continue;
         }

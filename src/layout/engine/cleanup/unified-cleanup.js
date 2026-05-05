@@ -1,6 +1,6 @@
 /** @module cleanup/unified-cleanup */
 
-import { buildAtomGrid, measureLayoutState, measureOverlapState } from '../audit/invariants.js';
+import { buildAtomGrid, computeAtomDistortionCost, measureLayoutState, measureOverlapState } from '../audit/invariants.js';
 import { CLEANUP_EPSILON, UNIFIED_CLEANUP_LIMITS } from '../constants.js';
 import { computeRotatableSubtrees, runLocalCleanup } from './local-rotation.js';
 import { collectRigidPendantRingSubtrees, mergeRigidSubtreesByAtomId, resolveOverlaps } from './overlap-resolution.js';
@@ -8,6 +8,25 @@ import { measureOrthogonalHypervalentDeviation } from './hypervalent-angle-tidy.
 
 const PROTECTED_BACKBONE_MAX_BOND_DEVIATION = 0.05;
 const NONIMPROVING_TRIGONAL_WORSENING_LIMIT = 0.05;
+const EXACT_MULTIPLE_BOND_TRIGONAL_WORSENING_LIMIT = 0.05;
+const EXACT_RING_ROOT_FAN_WORSENING_LIMIT = 0.05;
+const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As', 'Si']);
+
+/**
+ * Returns whether the layout graph contains any atom that could have an
+ * orthogonal hypervalent center, caching the result on the graph object.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @returns {boolean} True when at least one S/P/Se/As/Si atom is present.
+ */
+function hasOrthogonalHypervalentAtom(layoutGraph) {
+  if (layoutGraph._hasOrthogonalHypervalentAtom !== undefined) {
+    return layoutGraph._hasOrthogonalHypervalentAtom;
+  }
+  layoutGraph._hasOrthogonalHypervalentAtom = [...layoutGraph.atoms.values()].some(
+    atom => ORTHOGONAL_HYPERVALENT_ELEMENTS.has(atom.element)
+  );
+  return layoutGraph._hasOrthogonalHypervalentAtom;
+}
 
 /**
  * Prescores a one-step cleanup candidate against the current coordinates using
@@ -32,7 +51,7 @@ function prescoreCandidate(layoutGraph, baseState, candidateCoords, bondLength, 
     improvement: baseState.cost - candidateState.cost,
     overlapReduction: baseState.overlapCount - candidateState.overlapCount,
     bondLengthFailureCount: candidateState.bondDeviation.failingBondCount,
-    hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords),
+    hypervalentDeviation: hasOrthogonalHypervalentAtom(layoutGraph) ? measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords) : 0,
     presentationImprovement: options.presentationImprovement ?? 0,
     candidateState
   };
@@ -60,7 +79,7 @@ function scoreCandidate(layoutGraph, baseState, candidateCoords, bondLength, opt
     improvement: baseState.cost - candidateState.cost,
     overlapReduction: baseState.overlapCount - candidateState.overlapCount,
     bondLengthFailureCount: candidateState.bondDeviation.failingBondCount,
-    hypervalentDeviation: measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords),
+    hypervalentDeviation: hasOrthogonalHypervalentAtom(layoutGraph) ? measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords) : 0,
     presentationImprovement: options.presentationImprovement ?? 0,
     candidateState
   };
@@ -84,6 +103,122 @@ function trigonalDistortionWorsening(baseState, candidate) {
   ) - (
     baseState?.trigonalDistortion?.totalDeviation ?? 0
   );
+}
+
+function visibleHeavyCovalentBonds(layoutGraph, coords, atomId) {
+  const bonds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    bonds.push({ bond, neighborAtomId });
+  }
+  return bonds;
+}
+
+function shouldProtectExactMultipleBondTrigonalFan(layoutGraph, coords, atomId) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element === 'H' || atom.aromatic || atom.visible !== true || !coords.has(atomId)) {
+    return false;
+  }
+  const heavyBonds = visibleHeavyCovalentBonds(layoutGraph, coords, atomId);
+  return heavyBonds.length === 3
+    && heavyBonds.some(({ bond }) => !bond.aromatic && (bond.order ?? 1) >= 2)
+    && computeAtomDistortionCost(layoutGraph, coords, atomId, null) <= CLEANUP_EPSILON;
+}
+
+function exactMultipleBondTrigonalFanWorsening(layoutGraph, baseCoords, candidateCoords) {
+  let maxWorsening = 0;
+  let totalWorsening = 0;
+  for (const atomId of baseCoords.keys()) {
+    if (!shouldProtectExactMultipleBondTrigonalFan(layoutGraph, baseCoords, atomId)) {
+      continue;
+    }
+    const baseCost = computeAtomDistortionCost(layoutGraph, baseCoords, atomId, null);
+    const candidateCost = computeAtomDistortionCost(layoutGraph, baseCoords, atomId, candidateCoords);
+    const worsening = candidateCost - baseCost;
+    if (worsening <= CLEANUP_EPSILON) {
+      continue;
+    }
+    maxWorsening = Math.max(maxWorsening, worsening);
+    totalWorsening += worsening;
+  }
+  return {
+    maxWorsening,
+    totalWorsening
+  };
+}
+
+function sortedAngularFanDistortion(angles) {
+  if (angles.length !== 3) {
+    return 0;
+  }
+  const sortedAngles = [...angles].sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  const idealSeparation = (2 * Math.PI) / 3;
+  let cost = 0;
+  for (let index = 0; index < sortedAngles.length; index++) {
+    const currentAngle = sortedAngles[index];
+    const nextAngle = sortedAngles[(index + 1) % sortedAngles.length];
+    const separation = index === sortedAngles.length - 1
+      ? nextAngle + 2 * Math.PI - currentAngle
+      : nextAngle - currentAngle;
+    cost += (separation - idealSeparation) ** 2;
+  }
+  return cost;
+}
+
+function exactRingRootFanDistortionCost(layoutGraph, coords, atomId) {
+  const atomPosition = coords.get(atomId);
+  if (!atomPosition || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0) {
+    return 0;
+  }
+  const neighborAngles = [];
+  let ringBondCount = 0;
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent') {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !neighborPosition) {
+      continue;
+    }
+    if (bond.inRing) {
+      ringBondCount++;
+    }
+    neighborAngles.push(Math.atan2(neighborPosition.y - atomPosition.y, neighborPosition.x - atomPosition.x));
+  }
+  return neighborAngles.length === 3 && ringBondCount >= 2
+    ? sortedAngularFanDistortion(neighborAngles)
+    : 0;
+}
+
+function exactRingRootFanWorsening(layoutGraph, baseCoords, candidateCoords) {
+  let maxWorsening = 0;
+  for (const atomId of baseCoords.keys()) {
+    if ((layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0 || !candidateCoords.has(atomId)) {
+      continue;
+    }
+    const baseCost = exactRingRootFanDistortionCost(layoutGraph, baseCoords, atomId);
+    if (baseCost > CLEANUP_EPSILON) {
+      continue;
+    }
+    const candidateCost = exactRingRootFanDistortionCost(layoutGraph, candidateCoords, atomId);
+    maxWorsening = Math.max(maxWorsening, candidateCost - baseCost);
+  }
+  return maxWorsening;
+}
+
+function preservesExactProtectedAngles(layoutGraph, baseCoords, candidateCoords) {
+  return exactMultipleBondTrigonalFanWorsening(layoutGraph, baseCoords, candidateCoords).maxWorsening
+    <= EXACT_MULTIPLE_BOND_TRIGONAL_WORSENING_LIMIT
+    && exactRingRootFanWorsening(layoutGraph, baseCoords, candidateCoords) <= EXACT_RING_ROOT_FAN_WORSENING_LIMIT;
 }
 
 /**
@@ -313,6 +448,9 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
           overlapMoves: overlapCandidate.moves,
           compressedCarbonylLeafMoves: overlapCandidate.compressedCarbonylLeafMoves ?? 0
         };
+        if (!preservesExactProtectedAngles(layoutGraph, coords, prescoredOverlapCandidate.coords)) {
+          continue;
+        }
         if (isBetterCandidate(bestPrescoredCandidate, prescoredOverlapCandidate, epsilon, options)) {
           bestPrescoredCandidate = prescoredOverlapCandidate;
         }
@@ -343,6 +481,9 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
           }),
           overlapMoves: 0
         };
+        if (!preservesExactProtectedAngles(layoutGraph, coords, prescoredRotationCandidate.coords)) {
+          continue;
+        }
         if (isBetterCandidate(bestPrescoredCandidate, prescoredRotationCandidate, epsilon, options)) {
           bestPrescoredCandidate = prescoredRotationCandidate;
         }
@@ -363,6 +504,9 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
       }),
       overlapMoves: bestPrescoredCandidate.overlapMoves
     };
+    if (!preservesExactProtectedAngles(layoutGraph, coords, bestCandidate.coords)) {
+      break;
+    }
     if (!shouldAcceptCandidate(baseState, bestCandidate, epsilon, options)) {
       break;
     }

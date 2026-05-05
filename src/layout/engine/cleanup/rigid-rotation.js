@@ -1,6 +1,5 @@
 /** @module cleanup/rigid-rotation */
 
-import { add, rotate, sub } from '../geometry/vec2.js';
 import { containsFrozenAtom } from './frozen-atoms.js';
 
 /**
@@ -24,13 +23,19 @@ export function rotateRigidDescriptorPositions(coords, descriptor, rotation) {
   if (!anchorPosition) {
     return null;
   }
+  const cosR = Math.cos(rotation);
+  const sinR = Math.sin(rotation);
+  const ax = anchorPosition.x;
+  const ay = anchorPosition.y;
   const overridePositions = new Map();
   for (const atomId of descriptor.subtreeAtomIds) {
     const currentPosition = coords.get(atomId);
     if (!currentPosition) {
       continue;
     }
-    overridePositions.set(atomId, add(anchorPosition, rotate(sub(currentPosition, anchorPosition), rotation)));
+    const dx = currentPosition.x - ax;
+    const dy = currentPosition.y - ay;
+    overridePositions.set(atomId, { x: ax + (dx * cosR - dy * sinR), y: ay + (dx * sinR + dy * cosR) });
   }
   return overridePositions;
 }
@@ -81,10 +86,7 @@ export function probeRigidRotation(layoutGraph, coords, descriptor, options = {}
   let bestOverridePositions = null;
   let bestScore = null;
   let bestAngle = null;
-  const isBetterScoreFn =
-    typeof options.isBetterScoreFn === 'function'
-      ? options.isBetterScoreFn
-      : (candidateScore, incumbentScore) => candidateScore < incumbentScore;
+  const isBetterScoreFn = typeof options.isBetterScoreFn === 'function' ? options.isBetterScoreFn : (candidateScore, incumbentScore) => candidateScore < incumbentScore;
 
   forEachRigidRotationCandidate(layoutGraph, coords, descriptor, {
     ...options,

@@ -5,7 +5,7 @@ import { computeBounds } from '../geometry/bounds.js';
 import { AtomGrid } from '../geometry/atom-grid.js';
 import { distancePointToSegment, segmentsIntersect, segmentsProperlyIntersect } from '../geometry/segments.js';
 import { pointInPolygon } from '../geometry/polygon.js';
-import { angleOf, angularDifference, centroid, sub } from '../geometry/vec2.js';
+import { angleOf, angularDifference, centroid, distance, sub } from '../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import {
   isExactVisibleTrigonalBisectorEligible,
@@ -66,6 +66,61 @@ function isAuditableBond(layoutGraph, bond) {
   return firstAtom.element !== 'H' && secondAtom.element !== 'H';
 }
 
+function visibleHeavyAuditBonds(layoutGraph) {
+  if (Array.isArray(layoutGraph._visibleHeavyAuditBonds)) {
+    return layoutGraph._visibleHeavyAuditBonds;
+  }
+
+  const bonds = [];
+  for (const bond of layoutGraph.bonds.values()) {
+    if (isAuditableBond(layoutGraph, bond)) {
+      bonds.push(bond);
+    }
+  }
+  layoutGraph._visibleHeavyAuditBonds = bonds;
+  return bonds;
+}
+
+function collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, options = {}) {
+  const visibleBonds = [];
+
+  for (const bond of visibleHeavyAuditBonds(layoutGraph)) {
+    const firstPosition = coords.get(bond.a);
+    const secondPosition = coords.get(bond.b);
+    if (!firstPosition || !secondPosition) {
+      continue;
+    }
+    visibleBonds.push({
+      bond,
+      firstPosition,
+      secondPosition,
+      minX: Math.min(firstPosition.x, secondPosition.x),
+      maxX: Math.max(firstPosition.x, secondPosition.x),
+      minY: Math.min(firstPosition.y, secondPosition.y),
+      maxY: Math.max(firstPosition.y, secondPosition.y),
+      touchesFocus: !focusAtomSet || focusAtomSet.has(bond.a) || focusAtomSet.has(bond.b)
+    });
+  }
+
+  if (options.sortByMinX === true) {
+    visibleBonds.sort((first, second) => first.minX - second.minX);
+  }
+  return visibleBonds;
+}
+
+function visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet) {
+  if (focusAtomSet && !first.touchesFocus && !second.touchesFocus) {
+    return false;
+  }
+  if (first.bond.a === second.bond.a || first.bond.a === second.bond.b || first.bond.b === second.bond.a || first.bond.b === second.bond.b) {
+    return false;
+  }
+  if (first.maxX < second.minX || first.minX > second.maxX || first.maxY < second.minY || first.minY > second.maxY) {
+    return false;
+  }
+  return true;
+}
+
 /**
  * Returns visible heavy-atom covalent bond pairs that cross strictly through
  * each other. Bonds sharing an endpoint are ignored.
@@ -76,39 +131,17 @@ function isAuditableBond(layoutGraph, bond) {
  */
 export function findVisibleHeavyBondCrossings(layoutGraph, coords, options = {}) {
   const focusAtomSet = options.focusAtomIds ? new Set(options.focusAtomIds) : null;
-  const visibleBonds = [];
-
-  for (const bond of layoutGraph.bonds.values()) {
-    if (!isAuditableBond(layoutGraph, bond)) {
-      continue;
-    }
-    const firstPosition = coords.get(bond.a);
-    const secondPosition = coords.get(bond.b);
-    if (!firstPosition || !secondPosition) {
-      continue;
-    }
-    visibleBonds.push({
-      bond,
-      firstPosition,
-      secondPosition,
-      touchesFocus: !focusAtomSet || focusAtomSet.has(bond.a) || focusAtomSet.has(bond.b)
-    });
-  }
+  const visibleBonds = collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, { sortByMinX: true });
 
   const crossings = [];
   for (let firstIndex = 0; firstIndex < visibleBonds.length; firstIndex++) {
     const first = visibleBonds[firstIndex];
     for (let secondIndex = firstIndex + 1; secondIndex < visibleBonds.length; secondIndex++) {
       const second = visibleBonds[secondIndex];
-      if (focusAtomSet && !first.touchesFocus && !second.touchesFocus) {
-        continue;
+      if (second.minX > first.maxX) {
+        break;
       }
-      if (
-        first.bond.a === second.bond.a ||
-        first.bond.a === second.bond.b ||
-        first.bond.b === second.bond.a ||
-        first.bond.b === second.bond.b
-      ) {
+      if (!visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet)) {
         continue;
       }
       if (segmentsProperlyIntersect(first.firstPosition, first.secondPosition, second.firstPosition, second.secondPosition)) {
@@ -133,7 +166,27 @@ export function findVisibleHeavyBondCrossings(layoutGraph, coords, options = {})
  * @returns {number} Number of strictly crossing visible heavy bond pairs.
  */
 export function countVisibleHeavyBondCrossings(layoutGraph, coords, options = {}) {
-  return findVisibleHeavyBondCrossings(layoutGraph, coords, options).length;
+  const focusAtomSet = options.focusAtomIds ? new Set(options.focusAtomIds) : null;
+  const visibleBonds = collectVisibleHeavyBondSegments(layoutGraph, coords, focusAtomSet, { sortByMinX: true });
+  let crossingCount = 0;
+
+  for (let firstIndex = 0; firstIndex < visibleBonds.length; firstIndex++) {
+    const first = visibleBonds[firstIndex];
+    for (let secondIndex = firstIndex + 1; secondIndex < visibleBonds.length; secondIndex++) {
+      const second = visibleBonds[secondIndex];
+      if (second.minX > first.maxX) {
+        break;
+      }
+      if (
+        visibleHeavyBondSegmentsCanCross(first, second, focusAtomSet) &&
+        segmentsProperlyIntersect(first.firstPosition, first.secondPosition, second.firstPosition, second.secondPosition)
+      ) {
+        crossingCount++;
+      }
+    }
+  }
+
+  return crossingCount;
 }
 
 /**
@@ -155,12 +208,12 @@ function compressibleTerminalRingLeafEndpoints(layoutGraph, bond) {
     const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
     const leafAtom = layoutGraph.atoms.get(leafAtomId);
     if (
-      !anchorAtom
-      || !leafAtom
-      || !COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(leafAtom.element)
-      || (leafAtom.heavyDegree ?? 0) !== 1
-      || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0
-      || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+      !anchorAtom ||
+      !leafAtom ||
+      !COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(leafAtom.element) ||
+      (leafAtom.heavyDegree ?? 0) !== 1 ||
+      (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0 ||
+      (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
     ) {
       continue;
     }
@@ -189,15 +242,15 @@ function compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond) {
     const centerAtom = layoutGraph.atoms.get(centerAtomId);
     const leafAtom = layoutGraph.atoms.get(leafAtomId);
     if (
-      !centerAtom
-      || !leafAtom
-      || centerAtom.element !== 'C'
-      || centerAtom.aromatic
-      || centerAtom.heavyDegree !== 3
-      || !COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(leafAtom.element)
-      || (leafAtom.heavyDegree ?? 0) !== 1
-      || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
-      || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+      !centerAtom ||
+      !leafAtom ||
+      centerAtom.element !== 'C' ||
+      centerAtom.aromatic ||
+      centerAtom.heavyDegree !== 3 ||
+      !COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(leafAtom.element) ||
+      (leafAtom.heavyDegree ?? 0) !== 1 ||
+      (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0 ||
+      (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
     ) {
       continue;
     }
@@ -219,25 +272,19 @@ function compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond) {
         ringNeighborCount++;
       }
       if (
-        neighborAtomId !== leafAtomId
-        && (
-          (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0
-          || (layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []).some(adjacentBond => {
+        neighborAtomId !== leafAtomId &&
+        ((layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0 ||
+          (layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []).some(adjacentBond => {
             if (!adjacentBond || adjacentBond.kind !== 'covalent') {
               return false;
             }
             const adjacentAtomId = adjacentBond.a === neighborAtomId ? adjacentBond.b : adjacentBond.a;
             return adjacentAtomId !== centerAtomId && (layoutGraph.atomToRings.get(adjacentAtomId)?.length ?? 0) > 0;
-          })
-        )
+          }))
       ) {
         ringAdjacentNeighborCount++;
       }
-      if (
-        neighborAtom.element !== 'C'
-        && (neighborAtom.heavyDegree ?? 0) === 1
-        && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0
-      ) {
+      if (neighborAtom.element !== 'C' && (neighborAtom.heavyDegree ?? 0) === 1 && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0) {
         terminalHeteroNeighborCount++;
         if (!neighborBond.aromatic && (neighborBond.order ?? 1) >= 2) {
           terminalMultipleHeteroNeighborCount++;
@@ -283,29 +330,16 @@ function isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, dis
 
   const leafAngle = angleOf(sub(leafPosition, anchorPosition));
   if (
-    computeIncidentRingOutwardAngles(layoutGraph, endpoints.anchorAtomId, atomId => coords.get(atomId) ?? null)
-      .some(outwardAngle => angularDifference(leafAngle, outwardAngle) <= COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE)
-  ) {
-    return true;
-  }
-  if (
-    isAcceptedCompressedSharedJunctionLeafBond(
-      layoutGraph,
-      coords,
-      endpoints.anchorAtomId,
-      endpoints.leafAtomId,
-      leafAngle
+    computeIncidentRingOutwardAngles(layoutGraph, endpoints.anchorAtomId, atomId => coords.get(atomId) ?? null).some(
+      outwardAngle => angularDifference(leafAngle, outwardAngle) <= COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE
     )
   ) {
     return true;
   }
-  return isAcceptedCompressedFusedRingSystemLeafBond(
-    layoutGraph,
-    coords,
-    endpoints.anchorAtomId,
-    endpoints.leafAtomId,
-    leafAngle
-  );
+  if (isAcceptedCompressedSharedJunctionLeafBond(layoutGraph, coords, endpoints.anchorAtomId, endpoints.leafAtomId, leafAngle)) {
+    return true;
+  }
+  return isAcceptedCompressedFusedRingSystemLeafBond(layoutGraph, coords, endpoints.anchorAtomId, endpoints.leafAtomId, leafAngle);
 }
 
 /**
@@ -390,10 +424,7 @@ function fusedRingSystemOutwardAngle(layoutGraph, coords, anchorAtomId) {
  * @returns {boolean} True when the compressed leaf should not count as a bond-length failure.
  */
 function isAcceptedCompressedTerminalCarbonylLeafBond(layoutGraph, coords, bond, distance, bondLength) {
-  if (
-    distance >= bondLength
-    || distance < bondLength * COMPRESSED_TERMINAL_CARBONYL_LEAF_MIN_FACTOR - 1e-9
-  ) {
+  if (distance >= bondLength || distance < bondLength * COMPRESSED_TERMINAL_CARBONYL_LEAF_MIN_FACTOR - 1e-9) {
     return false;
   }
 
@@ -427,18 +458,15 @@ function isAcceptedCompressedTerminalCarbonylLeafBond(layoutGraph, coords, bond,
   }
 
   return (
-    otherNeighborAngles.length === 2
-    && otherNeighborAngles.every(neighborAngle =>
-      Math.abs(angularDifference(leafAngle, neighborAngle) - (2 * Math.PI) / 3)
-        <= COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE
-    )
+    otherNeighborAngles.length === 2 &&
+    otherNeighborAngles.every(neighborAngle => Math.abs(angularDifference(leafAngle, neighborAngle) - (2 * Math.PI) / 3) <= COMPRESSED_TERMINAL_RING_LEAF_ANGLE_TOLERANCE)
   );
 }
 
 function isAcceptedCompressedLeafBond(layoutGraph, coords, bond, distance, bondLength) {
   return (
-    isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, distance, bondLength)
-    || isAcceptedCompressedTerminalCarbonylLeafBond(layoutGraph, coords, bond, distance, bondLength)
+    isAcceptedCompressedTerminalRingLeafBond(layoutGraph, coords, bond, distance, bondLength) ||
+    isAcceptedCompressedTerminalCarbonylLeafBond(layoutGraph, coords, bond, distance, bondLength)
   );
 }
 
@@ -474,11 +502,7 @@ function isAcceptedCompressedTerminalCarbonylLeafOverlap(layoutGraph, coords, fi
     [secondAtomId, firstAtomId]
   ]) {
     const endpoints = acceptedCompressedTerminalCarbonylLeafEndpointsForAtom(layoutGraph, coords, leafAtomId, bondLength);
-    if (
-      endpoints
-      && otherAtomId !== endpoints.centerAtomId
-      && (layoutGraph.atomToRings.get(otherAtomId)?.length ?? 0) > 0
-    ) {
+    if (endpoints && otherAtomId !== endpoints.centerAtomId && (layoutGraph.atomToRings.get(otherAtomId)?.length ?? 0) > 0) {
       return true;
     }
   }
@@ -719,8 +743,8 @@ function compactArylBranchedLeafCrossingPenalty(layoutGraph, coords, focusAtomId
   let penalty = 0;
   for (const crossing of findVisibleHeavyBondCrossings(layoutGraph, coords, { focusAtomIds: focusSet })) {
     if (
-      compactArylBranchedLeafBondCrossesRingBond(layoutGraph, crossing.firstBondId, crossing.secondBondId)
-      || compactArylBranchedLeafBondCrossesRingBond(layoutGraph, crossing.secondBondId, crossing.firstBondId)
+      compactArylBranchedLeafBondCrossesRingBond(layoutGraph, crossing.firstBondId, crossing.secondBondId) ||
+      compactArylBranchedLeafBondCrossesRingBond(layoutGraph, crossing.secondBondId, crossing.firstBondId)
     ) {
       penalty += 1000;
     }
@@ -731,31 +755,33 @@ function compactArylBranchedLeafCrossingPenalty(layoutGraph, coords, focusAtomId
 function compactArylBranchedLeafBondCrossesRingBond(layoutGraph, leafBondId, crossingBondId) {
   const leafBond = layoutGraph.bonds.get(leafBondId);
   const crossingBond = layoutGraph.bonds.get(crossingBondId);
-  return isCompactArylBranchedLeafBond(layoutGraph, leafBond)
-    && !!crossingBond
-    && crossingBond.kind === 'covalent'
-    && ((crossingBond.inRing === true) || (crossingBond.aromatic === true));
+  return (
+    isCompactArylBranchedLeafBond(layoutGraph, leafBond) && !!crossingBond && crossingBond.kind === 'covalent' && (crossingBond.inRing === true || crossingBond.aromatic === true)
+  );
 }
 
 function isCompactArylBranchedLeafBond(layoutGraph, bond) {
   if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
     return false;
   }
-  for (const [rootAtomId, leafAtomId] of [[bond.a, bond.b], [bond.b, bond.a]]) {
+  for (const [rootAtomId, leafAtomId] of [
+    [bond.a, bond.b],
+    [bond.b, bond.a]
+  ]) {
     const rootAtom = layoutGraph.atoms.get(rootAtomId);
     const leafAtom = layoutGraph.atoms.get(leafAtomId);
     if (
-      !rootAtom
-      || !leafAtom
-      || rootAtom.element !== 'C'
-      || rootAtom.aromatic
-      || rootAtom.heavyDegree !== 3
-      || rootAtom.degree !== 4
-      || leafAtom.element !== 'C'
-      || leafAtom.aromatic
-      || leafAtom.heavyDegree !== 1
-      || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0
-      || (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
+      !rootAtom ||
+      !leafAtom ||
+      rootAtom.element !== 'C' ||
+      rootAtom.aromatic ||
+      rootAtom.heavyDegree !== 3 ||
+      rootAtom.degree !== 4 ||
+      leafAtom.element !== 'C' ||
+      leafAtom.aromatic ||
+      leafAtom.heavyDegree !== 1 ||
+      (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0 ||
+      (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
     ) {
       continue;
     }
@@ -907,11 +933,11 @@ function hasConjugatedDivalentNitrogenBranch(layoutGraph, anchorAtomId, childAto
 
     const nitrogenAtom = layoutGraph.atoms.get(nitrogenAtomId);
     if (
-      !nitrogenAtom
-      || nitrogenAtom.element !== 'N'
-      || nitrogenAtom.aromatic
-      || nitrogenAtom.heavyDegree !== 2
-      || (layoutGraph.atomToRings.get(nitrogenAtomId)?.length ?? 0) > 0
+      !nitrogenAtom ||
+      nitrogenAtom.element !== 'N' ||
+      nitrogenAtom.aromatic ||
+      nitrogenAtom.heavyDegree !== 2 ||
+      (layoutGraph.atomToRings.get(nitrogenAtomId)?.length ?? 0) > 0
     ) {
       continue;
     }
@@ -949,21 +975,15 @@ function prefersImmediateLinkedSubstituentRepresentative(layoutGraph, anchorAtom
 
   const childAtom = layoutGraph.atoms.get(childAtomId);
   if (
-    childAtom
-    && childAtom.aromatic !== true
-    && (childAtom.heavyDegree ?? 0) > 2
-    && (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) === 0
-    && hasConjugatedDivalentNitrogenBranch(layoutGraph, anchorAtomId, childAtomId)
+    childAtom &&
+    childAtom.aromatic !== true &&
+    (childAtom.heavyDegree ?? 0) > 2 &&
+    (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) === 0 &&
+    hasConjugatedDivalentNitrogenBranch(layoutGraph, anchorAtomId, childAtomId)
   ) {
     return true;
   }
-  if (
-    !childAtom
-    || childAtom.element !== 'C'
-    || childAtom.aromatic === true
-    || childAtom.heavyDegree !== 3
-    || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0
-  ) {
+  if (!childAtom || childAtom.element !== 'C' || childAtom.aromatic === true || childAtom.heavyDegree !== 3 || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0) {
     return false;
   }
 
@@ -1002,17 +1022,14 @@ function _resolveLinkedSubstituentRingRepresentativeImpl(layoutGraph, coords, an
   const anchorRingSystemId = layoutGraph.atomToRingSystemId.get(anchorAtomId);
   const childAtom = layoutGraph.atoms.get(childAtomId);
   if (
-    anchorRingSystemId == null
-    || !childAtom
-    || prefersImmediateLinkedSubstituentRepresentative(layoutGraph, anchorAtomId, childAtomId)
+    anchorRingSystemId == null ||
+    !childAtom ||
+    prefersImmediateLinkedSubstituentRepresentative(layoutGraph, anchorAtomId, childAtomId) ||
     // Do not promote a remote ring through any divalent non-aromatic linker atom.
     // Divalent linkers (–O–, –N–, –CH₂–, –S–, etc.) introduce a free torsion between
     // the anchor ring exit direction and the remote ring, so the far centroid is not a
     // valid outward representative. The immediate child is used instead.
-    || (
-      childAtom.aromatic !== true
-      && childAtom.heavyDegree === 2
-    )
+    (childAtom.aromatic !== true && childAtom.heavyDegree === 2)
   ) {
     return null;
   }
@@ -1042,13 +1059,13 @@ function _resolveLinkedSubstituentRingRepresentativeImpl(layoutGraph, coords, an
 
     const currentAtom = layoutGraph.atoms.get(atomId);
     if (
-      atomId === childAtomId
-      && linkerDepth === 0
-      && currentAtom
-      && currentAtom.aromatic !== true
-      && (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0
-      && (currentAtom.heavyDegree ?? 0) > 2
-      && (currentAtom.degree ?? currentAtom.heavyDegree ?? 0) > (currentAtom.heavyDegree ?? 0)
+      atomId === childAtomId &&
+      linkerDepth === 0 &&
+      currentAtom &&
+      currentAtom.aromatic !== true &&
+      (layoutGraph.atomToRings.get(atomId)?.length ?? 0) === 0 &&
+      (currentAtom.heavyDegree ?? 0) > 2 &&
+      (currentAtom.degree ?? currentAtom.heavyDegree ?? 0) > (currentAtom.heavyDegree ?? 0)
     ) {
       continue;
     }
@@ -1062,7 +1079,7 @@ function _resolveLinkedSubstituentRingRepresentativeImpl(layoutGraph, coords, an
       if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId) || visitedAtomIds.has(neighborAtomId)) {
         continue;
       }
-      const neighborInRing = (layoutGraph.atomToRingSystemId.get(neighborAtomId) != null);
+      const neighborInRing = layoutGraph.atomToRingSystemId.get(neighborAtomId) != null;
       if (neighborInRing) {
         // Always allow traversal into ring atoms — they are the targets.
         queue.push({ atomId: neighborAtomId, linkerDepth });
@@ -1144,11 +1161,7 @@ function ringSystemHasBridgedConnection(layoutGraph, ringSystemId) {
     return false;
   }
   const ringIds = new Set(ringSystem.ringIds);
-  return (layoutGraph.ringConnections ?? []).some(connection => (
-    connection.kind === 'bridged'
-    && ringIds.has(connection.firstRingId)
-    && ringIds.has(connection.secondRingId)
-  ));
+  return (layoutGraph.ringConnections ?? []).some(connection => connection.kind === 'bridged' && ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId));
 }
 
 function hasClearExteriorRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, ringPolygons) {
@@ -1343,8 +1356,7 @@ function immediateRingSubstituentOutwardDeviation(layoutGraph, coords, anchorAto
  */
 export function measureRingSubstituentReadability(layoutGraph, coords, options = {}) {
   const maxOutwardDeviation = options.maxOutwardDeviation ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxOutwardDeviation;
-  const maxSevereImmediateOutwardDeviation =
-    options.maxSevereImmediateOutwardDeviation ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxSevereImmediateOutwardDeviation;
+  const maxSevereImmediateOutwardDeviation = options.maxSevereImmediateOutwardDeviation ?? RING_SUBSTITUENT_READABILITY_LIMITS.maxSevereImmediateOutwardDeviation;
   const focusAtomIds = options.focusAtomIds instanceof Set && options.focusAtomIds.size > 0 ? options.focusAtomIds : null;
   const ringSystemById = new Map(layoutGraph.ringSystems.map(rs => [rs.id, rs]));
   let failingSubstituentCount = 0;
@@ -1378,30 +1390,19 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
       seenPairs.add(pairId);
 
       const forwardSide = evaluateRingSubstituentSide(layoutGraph, coords, anchorAtomId, childDescriptor.representativeAtomIds, ringPolygons, maxOutwardDeviation);
-      const requiresSevereImmediateOutwardCheck =
-        childDescriptor.representativeAtomIds.length > 1
-        || (childAtom != null && childAtom.element !== 'C' && childAtom.element !== 'H');
-      const severeImmediateOutwardDeviation =
-        requiresSevereImmediateOutwardCheck
-          ? immediateRingSubstituentOutwardDeviation(layoutGraph, coords, anchorAtomId, childAtomId)
-          : null;
-      const severeImmediateOutwardFailure =
-        severeImmediateOutwardDeviation != null && severeImmediateOutwardDeviation > maxSevereImmediateOutwardDeviation;
+      const requiresSevereImmediateOutwardCheck = childDescriptor.representativeAtomIds.length > 1 || (childAtom != null && childAtom.element !== 'C' && childAtom.element !== 'H');
+      const severeImmediateOutwardDeviation = requiresSevereImmediateOutwardCheck ? immediateRingSubstituentOutwardDeviation(layoutGraph, coords, anchorAtomId, childAtomId) : null;
+      const severeImmediateOutwardFailure = severeImmediateOutwardDeviation != null && severeImmediateOutwardDeviation > maxSevereImmediateOutwardDeviation;
       const linkedRepresentativeOutwardFailureRelaxed =
-        childDescriptor.representativeAtomIds.length > 1
-        && severeImmediateOutwardDeviation != null
-        && severeImmediateOutwardDeviation <= 1e-6
-        && Number.isFinite(forwardSide.outwardDeviation)
-        && forwardSide.outwardDeviation <= maxOutwardDeviation + LINKED_RING_REPRESENTATIVE_OUTWARD_READABILITY_SLACK;
+        childDescriptor.representativeAtomIds.length > 1 &&
+        severeImmediateOutwardDeviation != null &&
+        severeImmediateOutwardDeviation <= 1e-6 &&
+        Number.isFinite(forwardSide.outwardDeviation) &&
+        forwardSide.outwardDeviation <= maxOutwardDeviation + LINKED_RING_REPRESENTATIVE_OUTWARD_READABILITY_SLACK;
       const forwardOutwardAxisFailure = forwardSide.outwardAxisFailure && !linkedRepresentativeOutwardFailureRelaxed;
-      const inwardSlotIsUnavoidable = forwardSide.insideIncidentRing && isUnavoidableBridgedRingSubstituentSlot(
-        layoutGraph,
-        coords,
-        anchorAtomId,
-        childAtomId,
-        childDescriptor.representativeAtomIds,
-        ringPolygons
-      );
+      const inwardSlotIsUnavoidable =
+        forwardSide.insideIncidentRing &&
+        isUnavoidableBridgedRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, childDescriptor.representativeAtomIds, ringPolygons);
       if (forwardSide.insideIncidentRing && !inwardSlotIsUnavoidable) {
         failingSubstituentCount++;
         inwardSubstituentCount++;
@@ -1461,6 +1462,49 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
 }
 
 /**
+ * Counts severe nonbonded overlaps with a set of overridden atom positions, avoiding
+ * a full O(V^2) or O(V log V) search when only a small subtree moves.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Base coordinate map.
+ * @param {Map<string, {x: number, y: number}>} overridePositions - Moved atom positions.
+ * @param {number} bondLength - Target layout bond length.
+ * @returns {{count: number, minDistance: number}} Severe-overlap count and closest moved distance.
+ */
+export function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength) {
+  const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
+  let count = 0;
+  let minDistance = Infinity;
+  const visitedPairKeys = new Set();
+
+  for (const [atomId, position] of overridePositions) {
+    if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
+      continue;
+    }
+    for (const [otherAtomId, otherBasePosition] of coords) {
+      if (atomId === otherAtomId || !isVisibleLayoutAtom(layoutGraph, otherAtomId) || layoutGraph.bondedPairSet.has(atomPairKey(atomId, otherAtomId))) {
+        continue;
+      }
+      const pairKey = atomPairKey(atomId, otherAtomId);
+      if (visitedPairKeys.has(pairKey)) {
+        continue;
+      }
+      visitedPairKeys.add(pairKey);
+      const otherPosition = overridePositions.get(otherAtomId) ?? otherBasePosition;
+      const separation = distance(position, otherPosition);
+      minDistance = Math.min(minDistance, separation);
+      if (separation < threshold - 1e-9) {
+        count++;
+      }
+    }
+  }
+
+  return {
+    count,
+    minDistance: Number.isFinite(minDistance) ? minDistance : Infinity
+  };
+}
+
+/**
  * Finds severe nonbonded overlaps in the current coordinate set.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
@@ -1475,19 +1519,11 @@ export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}
   return collectNonbondedPairs(
     layoutGraph,
     coords,
-    (firstAtomId, secondAtomId, distance) => (
-      distance < threshold
-      && layoutGraph.atoms.get(firstAtomId)?.element !== 'H'
-      && layoutGraph.atoms.get(secondAtomId)?.element !== 'H'
-      && !isAcceptedCompressedTerminalCarbonylLeafOverlap(
-        layoutGraph,
-        coords,
-        firstAtomId,
-        secondAtomId,
-        distance,
-        bondLength
-      )
-    ),
+    (firstAtomId, secondAtomId, distance) =>
+      distance < threshold &&
+      layoutGraph.atoms.get(firstAtomId)?.element !== 'H' &&
+      layoutGraph.atoms.get(secondAtomId)?.element !== 'H' &&
+      !isAcceptedCompressedTerminalCarbonylLeafOverlap(layoutGraph, coords, firstAtomId, secondAtomId, distance, bondLength),
     atomGrid,
     threshold
   );
@@ -1520,9 +1556,7 @@ export function measureBondLengthDeviation(layoutGraph, coords, bondLength, opti
       continue;
     }
     const distance = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
-    const deviation = isAcceptedCompressedLeafBond(layoutGraph, coords, bond, distance, bondLength)
-      ? 0
-      : Math.abs(distance - bondLength);
+    const deviation = isAcceptedCompressedLeafBond(layoutGraph, coords, bond, distance, bondLength) ? 0 : Math.abs(distance - bondLength);
     const validationSettings = validationSettingsForClass(bondValidationClasses.get(bond.id));
     const allowedDeviation = bondLength * Math.max(Math.abs(1 - validationSettings.minBondLengthFactor), Math.abs(validationSettings.maxBondLengthFactor - 1));
     sampleCount++;
@@ -1569,11 +1603,7 @@ function shouldMeasureTrigonalDistortionAtCenter(layoutGraph, atomId, covalentBo
   if (multipleBondCount === 1) {
     return true;
   }
-  return covalentBonds.some(({ bond, neighborAtomId }) => (
-    !bond.aromatic
-    && (bond.order ?? 1) === 1
-    && isExactVisibleTrigonalBisectorEligible(layoutGraph, atomId, neighborAtomId)
-  ));
+  return covalentBonds.some(({ bond, neighborAtomId }) => !bond.aromatic && (bond.order ?? 1) === 1 && isExactVisibleTrigonalBisectorEligible(layoutGraph, atomId, neighborAtomId));
 }
 
 /**
@@ -1588,23 +1618,12 @@ function shouldMeasureDivalentContinuationDistortionAtCenter(layoutGraph, atomId
     return false;
   }
   const atom = layoutGraph.atoms.get(atomId);
-  if (
-    !atom
-    || atom.aromatic
-    || (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0
-  ) {
+  if (!atom || atom.aromatic || (layoutGraph.atomToRings?.get(atomId)?.length ?? 0) > 0) {
     return false;
   }
   const isExactDivalentElement =
-    IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(atom.element)
-    || (
-      atom.element === 'N'
-      && isPlanarDivalentNitrogenContinuationPair(
-        layoutGraph,
-        covalentBonds[0]?.neighborAtomId,
-        covalentBonds[1]?.neighborAtomId
-      )
-    );
+    IDEAL_DIVALENT_CONTINUATION_ELEMENTS.has(atom.element) ||
+    (atom.element === 'N' && isPlanarDivalentNitrogenContinuationPair(layoutGraph, covalentBonds[0]?.neighborAtomId, covalentBonds[1]?.neighborAtomId));
   if (!isExactDivalentElement) {
     return false;
   }
@@ -1759,10 +1778,7 @@ export function measureDivalentContinuationDistortion(layoutGraph, coords, optio
     if (!atomPosition || !firstNeighborPosition || !secondNeighborPosition) {
       continue;
     }
-    const bondAngle = angularDifference(
-      angleOf(sub(firstNeighborPosition, atomPosition)),
-      angleOf(sub(secondNeighborPosition, atomPosition))
-    );
+    const bondAngle = angularDifference(angleOf(sub(firstNeighborPosition, atomPosition)), angleOf(sub(secondNeighborPosition, atomPosition)));
     const deviation = (bondAngle - idealSeparation) ** 2;
     centerCount++;
     totalDeviation += deviation;
@@ -2215,7 +2231,7 @@ export function measureLayoutState(layoutGraph, coords, bondLength, options = {}
       atomGrid: options.atomGrid
     });
   const bondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength);
-  const visibleHeavyBondCrossingCount = findVisibleHeavyBondCrossings(layoutGraph, coords).length;
+  const visibleHeavyBondCrossingCount = countVisibleHeavyBondCrossings(layoutGraph, coords);
   const collapsedMacrocycles = detectCollapsedMacrocycles(layoutGraph, coords, bondLength);
   const labelOverlap = measureLabelOverlap(layoutGraph, coords, bondLength, {
     labelMetrics: options.labelMetrics ?? layoutGraph.options.labelMetrics

@@ -2,6 +2,8 @@
 
 ## 2026-05-04
 
+- Partially re-snap omitted-H ring-hub collateral roots after terminal carbonyl retouches so C6 ring exits stay bounded while C4 carbonyl fans remain readable.
+- Score simple acyclic continuation bends during branch assignment so crowded hydroxymethyl tails keep their normal bent geometry.
 - Snap compact carbonyl ring substituents onto non-aromatic trigonal exits while compressing blocked oxo leaves.
 - Spread spiro bridged ring blocks before late ring presentation so terminal aryl leaves and ring-carbonyl oxygens stay clear.
 - Let bulky aryl sulfonamide nitrogen branches rotate into audit-clean exact sulfur crosses.
