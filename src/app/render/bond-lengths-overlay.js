@@ -3,8 +3,11 @@
 import { getBondLength } from '../../data/bond-lengths.js';
 import { getBondLengthsActive, refreshBondEnPanel, registerBondLengthsPanelUpdater, setBondEnActive, setBondLengthsActive } from './bond-overlay-state.js';
 export { getBondLengthsActive } from './bond-overlay-state.js';
+import { createModeAwareHelpers } from './render-mode-helpers.js';
+import { createOverlayPanelRow } from './panel-row.js';
 
 let ctx = {};
+const modeHelpers = createModeAwareHelpers(() => ctx);
 
 /**
  * Initializes the bond-lengths panel renderer with the app context it needs to
@@ -14,10 +17,6 @@ let ctx = {};
 export function initBondLengthsPanel(context) {
   ctx = context;
   registerBondLengthsPanelUpdater(updateBondLengthsPanel);
-}
-
-function _currentDisplayedMol() {
-  return ctx.mode === 'force' ? (ctx.currentMol ?? null) : (ctx._mol2d ?? null);
 }
 
 /**
@@ -82,48 +81,25 @@ export function updateBondLengthsPanel(mol) {
 
   tbody.innerHTML = '';
 
-  const tr = document.createElement('tr');
-  tr.classList.add('resonance-clickable');
-  tr.title = 'Average covalent bond length (Å) per bond from crystallographic data (CRC Handbook / CCDC survey).';
-  if (getBondLengthsActive()) {
-    tr.classList.add('resonance-active');
-  }
-
-  const nameCell = document.createElement('td');
-  const countCell = document.createElement('td');
-  countCell.className = 'reaction-count';
-  countCell.textContent = getBondLengthsActive() ? 'On' : 'Off';
-
-  const name = document.createElement('div');
-  name.className = 'reaction-name';
-  name.textContent = 'Bond Lengths';
-  nameCell.appendChild(name);
-
-  tr.appendChild(nameCell);
-  tr.appendChild(countCell);
-
-  tr.addEventListener('click', event => {
-    event.stopPropagation();
-    const nextActive = !getBondLengthsActive();
-    setBondLengthsActive(nextActive);
-    if (nextActive) {
-      setBondEnActive(false);
-    }
-    const displayedMol = _currentDisplayedMol() ?? mol;
-    updateBondLengthsPanel(displayedMol);
-    if (nextActive) {
-      refreshBondEnPanel(displayedMol);
-    }
-    _redraw(displayedMol);
-  });
-
-  tbody.appendChild(tr);
-}
-
-function _redraw(mol) {
-  if (ctx.mode === 'force') {
-    ctx.updateForce(mol, { preservePositions: true, preserveView: true });
-  } else {
-    ctx.draw2d();
-  }
+  tbody.appendChild(
+    createOverlayPanelRow({
+      label: 'Bond Lengths',
+      title: 'Average covalent bond length (Å) per bond from crystallographic data (CRC Handbook / CCDC survey).',
+      active: getBondLengthsActive(),
+      onClick: event => {
+        event.stopPropagation();
+        const nextActive = !getBondLengthsActive();
+        setBondLengthsActive(nextActive);
+        if (nextActive) {
+          setBondEnActive(false);
+        }
+        const displayedMol = modeHelpers.currentMol() ?? mol;
+        updateBondLengthsPanel(displayedMol);
+        if (nextActive) {
+          refreshBondEnPanel(displayedMol);
+        }
+        modeHelpers.redraw(displayedMol);
+      }
+    })
+  );
 }

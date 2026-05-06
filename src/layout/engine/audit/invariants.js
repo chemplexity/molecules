@@ -8,12 +8,14 @@ import { pointInPolygon } from '../geometry/polygon.js';
 import { angleOf, angularDifference, centroid, distance, sub } from '../geometry/vec2.js';
 import { computeIncidentRingOutwardAngles } from '../geometry/ring-direction.js';
 import {
+  describeChargedSulfoxideTrigonalCenter,
   isExactVisibleTrigonalBisectorEligible,
   isPlanarDivalentNitrogenContinuationPair,
   isRingConstrainedBenzylicCarbonRoot,
   preferredSharedJunctionContinuationAngle
 } from '../placement/branch-placement/angle-selection.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
+import { describePathLikeIsolatedRingChain } from '../topology/isolated-ring-chain.js';
 import { atomPairKey, AUDIT_PLANAR_VALIDATION, BRIDGED_VALIDATION, RING_SUBSTITUENT_READABILITY_LIMITS, SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 const SUBTREE_BOND_CROWDING_FACTOR = 0.5;
@@ -1152,6 +1154,52 @@ function evaluateRingSubstituentSide(layoutGraph, coords, anchorAtomId, represen
   };
 }
 
+function isPathLikeRingChainLinkerChild(layoutGraph, anchorAtomId, childAtomId) {
+  const cache = layoutGraph._pathLikeRingChainLinkerChildCache ?? (layoutGraph._pathLikeRingChainLinkerChildCache = new Map());
+  const cacheKey = `${anchorAtomId}:${childAtomId}`;
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey);
+  }
+  let result = false;
+  for (const component of layoutGraph.components ?? []) {
+    const ringChain = describePathLikeIsolatedRingChain(layoutGraph, component);
+    if (!ringChain) {
+      continue;
+    }
+    result = (ringChain.edges ?? []).some(edge => {
+      const linkerAtomIds = new Set(edge.linkerAtomIds ?? []);
+      return (
+        (edge.firstAttachmentAtomId === anchorAtomId && linkerAtomIds.has(childAtomId))
+        || (edge.secondAttachmentAtomId === anchorAtomId && linkerAtomIds.has(childAtomId))
+      );
+    });
+    if (result) {
+      break;
+    }
+  }
+  cache.set(cacheKey, result);
+  return result;
+}
+
+/**
+ * Returns whether a ring substituent is an exact charged-sulfoxide linker whose
+ * branched trigonal fan should not replace the immediate outward bond as the
+ * readability direction.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Ring atom carrying the substituent.
+ * @param {string} childAtomId - Immediate non-ring substituent atom.
+ * @param {number|null} severeImmediateOutwardDeviation - Immediate child-bond outward deviation.
+ * @returns {boolean} True when the immediate outward bond should satisfy readability.
+ */
+function isExactChargedSulfoxideLinkerChild(layoutGraph, anchorAtomId, childAtomId, severeImmediateOutwardDeviation) {
+  if (severeImmediateOutwardDeviation == null || severeImmediateOutwardDeviation > 1e-6) {
+    return false;
+  }
+
+  const descriptor = describeChargedSulfoxideTrigonalCenter(layoutGraph, childAtomId);
+  return descriptor?.ligandNeighborIds.includes(anchorAtomId) === true;
+}
+
 function ringSystemHasBridgedConnection(layoutGraph, ringSystemId) {
   if (ringSystemId == null) {
     return false;
@@ -1399,14 +1447,25 @@ export function measureRingSubstituentReadability(layoutGraph, coords, options =
         severeImmediateOutwardDeviation <= 1e-6 &&
         Number.isFinite(forwardSide.outwardDeviation) &&
         forwardSide.outwardDeviation <= maxOutwardDeviation + LINKED_RING_REPRESENTATIVE_OUTWARD_READABILITY_SLACK;
-      const forwardOutwardAxisFailure = forwardSide.outwardAxisFailure && !linkedRepresentativeOutwardFailureRelaxed;
+      const pathLikeRingChainLinkerChild = isPathLikeRingChainLinkerChild(layoutGraph, anchorAtomId, childAtomId);
+      const exactChargedSulfoxideLinkerChild = isExactChargedSulfoxideLinkerChild(
+        layoutGraph,
+        anchorAtomId,
+        childAtomId,
+        severeImmediateOutwardDeviation
+      );
+      const forwardOutwardAxisFailure =
+        forwardSide.outwardAxisFailure &&
+        !linkedRepresentativeOutwardFailureRelaxed &&
+        !pathLikeRingChainLinkerChild &&
+        !exactChargedSulfoxideLinkerChild;
       const inwardSlotIsUnavoidable =
         forwardSide.insideIncidentRing &&
         isUnavoidableBridgedRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, childDescriptor.representativeAtomIds, ringPolygons);
       if (forwardSide.insideIncidentRing && !inwardSlotIsUnavoidable) {
         failingSubstituentCount++;
         inwardSubstituentCount++;
-      } else if (forwardOutwardAxisFailure || severeImmediateOutwardFailure) {
+      } else if (forwardOutwardAxisFailure || (severeImmediateOutwardFailure && !pathLikeRingChainLinkerChild && !exactChargedSulfoxideLinkerChild)) {
         failingSubstituentCount++;
         outwardAxisFailureCount++;
       }

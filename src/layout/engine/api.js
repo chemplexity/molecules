@@ -27,6 +27,13 @@ function collectHiddenHydrogenAtomIds(molecule) {
   return hiddenHydrogenAtomIds;
 }
 
+function isStereoHydrogen(molecule, atom) {
+  if (!atom || atom.name !== 'H') {
+    return false;
+  }
+  return atom.getNeighbors(molecule).some(neighbor => Boolean(neighbor?.getChirality?.()));
+}
+
 function augmentExistingCoordsWithHiddenHydrogens(molecule, existingCoords, hiddenHydrogenAtomIds) {
   if (!(existingCoords instanceof Map) || !(hiddenHydrogenAtomIds instanceof Set) || hiddenHydrogenAtomIds.size === 0) {
     return existingCoords;
@@ -56,13 +63,18 @@ function augmentExistingCoordsWithHiddenHydrogens(molecule, existingCoords, hidd
   return addedAny ? augmentedCoords : existingCoords;
 }
 
-function buildEngineInputMolecule(molecule, options) {
+function buildEngineInputMolecule(molecule, options, hiddenHydrogenAtomIds) {
   if (!options?.suppressH || !hasHiddenHydrogenAtoms(molecule)) {
     return molecule;
   }
   const clone = molecule.clone();
   for (const atom of clone.atoms.values()) {
-    if (atom.name === 'H' && atom.visible === false) {
+    if (
+      atom.name === 'H'
+      && atom.visible === false
+      && hiddenHydrogenAtomIds?.has?.(atom.id)
+      && !isStereoHydrogen(clone, atom)
+    ) {
       atom.visible = true;
     }
   }
@@ -146,7 +158,7 @@ function buildRefinementMetadata(result, options) {
 export function generateCoords(molecule, options = {}) {
   const hiddenHydrogenAtomIds = options?.suppressH ? collectHiddenHydrogenAtomIds(molecule) : new Set();
   const engineOptions = buildEngineRunOptions(molecule, options, hiddenHydrogenAtomIds);
-  const result = runPipeline(buildEngineInputMolecule(molecule, engineOptions), engineOptions);
+  const result = runPipeline(buildEngineInputMolecule(molecule, engineOptions, hiddenHydrogenAtomIds), engineOptions);
   return stripHiddenHydrogenCoords(result, hiddenHydrogenAtomIds);
 }
 
@@ -163,7 +175,7 @@ export function generateCoords(molecule, options = {}) {
 export function refineCoords(molecule, options = {}) {
   const hiddenHydrogenAtomIds = options?.suppressH ? collectHiddenHydrogenAtomIds(molecule) : new Set();
   const engineOptions = buildEngineRunOptions(molecule, options, hiddenHydrogenAtomIds);
-  const result = stripHiddenHydrogenCoords(runPipeline(buildEngineInputMolecule(molecule, engineOptions), engineOptions), hiddenHydrogenAtomIds);
+  const result = stripHiddenHydrogenCoords(runPipeline(buildEngineInputMolecule(molecule, engineOptions, hiddenHydrogenAtomIds), engineOptions), hiddenHydrogenAtomIds);
   return {
     ...result,
     metadata: buildRefinementMetadata(result, options)

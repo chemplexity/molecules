@@ -677,6 +677,35 @@ function isOrthogonalOrganosiliconLigandSet(layoutGraph, atomIds) {
   );
 }
 
+/**
+ * Returns whether a bis-oxo center has a hydrogen hidden from the published
+ * heavy-atom drawing. Once hydrogens are suppressed, a center with one visible
+ * single-bond ligand and two oxo ligands reads as a three-heavy trigonal fan,
+ * so terminal multiple-bond presentation cleanup owns the visible angles.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Direct ligand atom ids.
+ * @returns {boolean} True when orthogonal cleanup should defer to visible fan cleanup.
+ */
+function hasSuppressedHydrogenVisibleFanLigand(layoutGraph, atomIds) {
+  if (layoutGraph.options?.suppressH !== true) {
+    return false;
+  }
+  let hasHydrogen = false;
+  const visibleSingleLigandElements = [];
+  for (const atomId of atomIds) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (atom?.element === 'H') {
+      hasHydrogen = true;
+    } else if (atom) {
+      visibleSingleLigandElements.push(atom.element);
+    }
+  }
+  return (
+    hasHydrogen
+    && visibleSingleLigandElements.length === 1
+  );
+}
+
 function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
   if (!layoutGraph) {
     return null;
@@ -720,6 +749,9 @@ function describeOrthogonalHypervalentCenter(layoutGraph, atomId, coords) {
     return null;
   }
   if (singleNeighborIds.length === 2 && multipleNeighborIds.length === 2) {
+    if (hasSuppressedHydrogenVisibleFanLigand(layoutGraph, singleNeighborIds)) {
+      return null;
+    }
     return { kind: 'bis-oxo', singleNeighborIds, multipleNeighborIds };
   }
   if (singleNeighborIds.length === 3 && multipleNeighborIds.length === 1) {

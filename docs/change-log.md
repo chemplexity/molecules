@@ -1,5 +1,36 @@
 # Change Log
 
+## 2026-05-05
+
+- Add an oxazabicyclic lactam template so compact bridged lactam rings avoid crossed fallback lanes.
+- Keep ring-bound tertiary amide nitrogens and carbonyls on exact exterior trigonal slots.
+- Let suppressed terminal sulfonyl hydrogens render as visible trigonal heavy-atom fans.
+- Add an amino diaza tricyclo cage template so imine-substituted bridged rings avoid crossed fallback lanes.
+- Add an amino oxaza tricyclo cage template so compact bridged rings avoid collapsed generic placement.
+- Add a bridged pyrrolizidine dione core template so compact tricyclic enone cages avoid collapsed generic bridged rings.
+- Add a bridged lactone core template so compact oxabicyclic lactones keep open six- and seven-membered rings.
+- Add an oxaza morphinan bridged-core template so oxygen-bridged aza cages avoid malformed fallback rings.
+- Keep charged sulfoxide linkers trigonal while preserving attached aromatic root exits.
+- Add a sulfonyl azatricyclo cage template so compact charged bridged rings avoid crossed fallback projections.
+- Let exact direct-attached phenyl roots rotate compact acyclic sidechains aside, then snap and shorten distorted heteroatom sidechains into exact aromatic slots without new overlaps.
+- Preserve crowded fluorinated cyclohexyl exterior fans through mixed-root retry and cleanup so isocyanate ring exits do not collapse.
+- Add `src/data/amino-acids.js` with all 20 standard amino acids plus selenocysteine and pyrrolysine.
+- Add `src/io/fasta.js` with `parseFASTA`, `sequenceToMolecule`, `toFASTA`, and `toThreeLetter`.
+- Add unit tests for all FASTA IO functions.
+- Add `src/data/nucleotides.js` with DNA/RNA nucleosides, ambiguity codes, and separate deoxyribose/ribose tables.
+- Add `sequenceToNucleicAcid` and `detectSequenceType` to `src/io/fasta.js` for nucleic acid sequence parsing.
+- Straighten path-like sulfated glycoside ring chains and keep terminal alkyl tails aligned with the chain.
+- Project under-spread sulfated glycoside ring chains into aligned ring units in browser layouts while re-solving glycosidic linkers.
+- Prioritize exact outward glycosidic ring-exit angles when spreading sulfated glycoside ring chains.
+- Keep hidden stereochemical hydrogens virtual during suppressed-H app layout so large sulfated glycosides render cleanly in browsers.
+- Retry dense large-molecule partitions for ring-rich sulfated glycosides so oversized mixed slices do not overlap.
+- Keep imine-hydrolysis reaction previews trigonal when edited carbonyl centers retain terminal nitrogen neighbors.
+- Add an oripavine bridged-core template so opioid-like fused cages avoid malformed fallback rings.
+- Let carbon-bound hidden-hydrogen sulfones render as visible trigonal heavy-atom fans.
+- Keep compact bridged ether cages from accepting stretched bridge projections.
+- Let direct-attached heteroaryl rings retidy parent trigonal fans while preserving local clearance.
+- Guard triaryl sulfoxide indole layouts so aromatic fans remain trigonal and overlap-free.
+
 ## 2026-05-04
 
 - Partially re-snap omitted-H ring-hub collateral roots after terminal carbonyl retouches so C6 ring exits stay bounded while C4 carbonyl fans remain readable.

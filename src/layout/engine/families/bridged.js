@@ -16,6 +16,7 @@ const COMPACT_BRIDGED_KK_THRESHOLD = 0.02;
 const COMPACT_BRIDGED_NONBONDED_COLLAPSE_FACTOR = 0.8;
 const STRAINED_COMPACT_BRIDGED_KK_THRESHOLD = 0.1;
 const STRAINED_COMPACT_BRIDGED_MAX_DEVIATION = 0.35;
+const BRIDGED_PROJECTION_MAX_BOND_REGRESSION_FACTOR = 0.5;
 const AROMATIC_BRIDGED_REGULARIZATION_BLEND_FACTORS = Object.freeze([
   1,
   0.95,
@@ -299,6 +300,28 @@ function hasCatastrophicBridgeProjectionCollapse(audit, bondLength) {
     audit
     && audit.minSevereOverlapDistance != null
     && audit.minSevereOverlapDistance < bondLength * 0.1
+  );
+}
+
+/**
+ * Returns whether bridge-path projection stretched a compact bridged seed far
+ * past the KK baseline. Projection is useful for readable bridge arcs, but it
+ * should not replace a seed with many fewer bond failures when the projected
+ * path has created visibly malformed ring bonds.
+ * @param {object|null} projectedAudit - Projected bridge-path audit.
+ * @param {object|null} baselineAudit - Oriented KK baseline audit.
+ * @param {number} bondLength - Target bond length.
+ * @returns {boolean} True when the oriented KK baseline should be kept.
+ */
+function hasSevereBridgeProjectionBondRegression(projectedAudit, baselineAudit, bondLength) {
+  if (!projectedAudit || !baselineAudit) {
+    return false;
+  }
+  return (
+    baselineAudit.severeOverlapCount <= projectedAudit.severeOverlapCount
+    && (baselineAudit.visibleHeavyBondCrossingCount ?? 0) <= (projectedAudit.visibleHeavyBondCrossingCount ?? 0)
+    && projectedAudit.bondLengthFailureCount > baselineAudit.bondLengthFailureCount
+    && projectedAudit.maxBondLengthDeviation > baselineAudit.maxBondLengthDeviation + bondLength * BRIDGED_PROJECTION_MAX_BOND_REGRESSION_FACTOR
   );
 }
 
@@ -2195,6 +2218,9 @@ function selectBridgedProjectionCoords(layoutGraph, atomIds, kkCoords, projected
     : new Map(kkCoords);
   const baselineAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, baselineCoords, bondLength);
   if (baselineAudit?.ok === true) {
+    return baselineCoords;
+  }
+  if (hasSevereBridgeProjectionBondRegression(projectedAudit, baselineAudit, bondLength)) {
     return baselineCoords;
   }
   return (

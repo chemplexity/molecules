@@ -266,6 +266,56 @@ describe('layout/engine/templates/match', () => {
     const morphinanGraph = createLayoutGraph(parseSMILES('C1C2Cc3ccccc3C1CCN2'));
     const morphinanMatch = findTemplateMatch(morphinanGraph, buildRingCandidate(morphinanGraph, morphinanGraph.ringSystems[0], 'bridged'));
     assert.equal(morphinanMatch.id, 'morphinan-core');
+
+    const oripavineGraph = createLayoutGraph(parseSMILES('[H][C@@]12OC3=C(O)C=CC4=C3[C@@]11CCN(CC3CC3)[C@]([H])(C4)[C@]11CC[C@@]2(OC)[C@H](C1)C(C)(C)O'));
+    const oripavineMatch = findTemplateMatch(oripavineGraph, buildRingCandidate(oripavineGraph, oripavineGraph.ringSystems[0], 'bridged'));
+    assert.equal(oripavineMatch.id, 'oripavine-core');
+
+    const oxazaMorphinanGraph = createLayoutGraph(parseSMILES('COC1(NC(=O)C(=CC2=CC=CC=C2)C(F)(F)F)C=C(O)C2=C3C1OC1CCCC4C(C2)[N+](CC2CC2)(CCC314)C(C)C'));
+    const oxazaMorphinanMatch = findTemplateMatch(oxazaMorphinanGraph, buildRingCandidate(oxazaMorphinanGraph, oxazaMorphinanGraph.ringSystems[0], 'bridged'));
+    assert.equal(oxazaMorphinanMatch.id, 'oxaza-morphinan-core');
+  });
+
+  it('matches compact bridged lactone cages only when the carbonyl context is present', () => {
+    const graph = createLayoutGraph(parseSMILES('CN(CCN)C(=[NH2+])C1CCC2CCC1OC2=O'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'bridged-lactone-core');
+
+    const withoutCarbonylGraph = createLayoutGraph(parseSMILES('CN(CCN)C(=[NH2+])C1CCC2CCC1OC2'), { suppressH: true });
+    const withoutCarbonylMatch = findTemplateMatch(withoutCarbonylGraph, buildRingCandidate(withoutCarbonylGraph, withoutCarbonylGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutCarbonylMatch?.id, 'bridged-lactone-core');
+  });
+
+  it('matches compact oxazabicyclic lactam cages only with lactam and gem-carbon context', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1(CC#N)CC2COC1C(=O)N2'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'oxazabicyclic-lactam-core');
+
+    const withoutCarbonylGraph = createLayoutGraph(parseSMILES('CC1(CC#N)CC2COC1CN2'), { suppressH: true });
+    const withoutCarbonylMatch = findTemplateMatch(withoutCarbonylGraph, buildRingCandidate(withoutCarbonylGraph, withoutCarbonylGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutCarbonylMatch?.id, 'oxazabicyclic-lactam-core');
+  });
+
+  it('matches the bridged pyrrolizidine dione cage scaffold too', () => {
+    const graph = createLayoutGraph(parseSMILES(String.raw`C\C=C\C=C\C(=O)C1=C(O)[C@@]2(C)[C@H]3CCCN3[C@@H]1[C@](C)(O)C2=O`), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'bridged-pyrrolizidine-dione-core');
+  });
+
+  it('matches the amino oxaza tricyclo cage scaffold too', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1=C2C(OC1)C1(N)C3NC3C2CC1N'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'amino-oxaza-tricyclo-core');
+  });
+
+  it('matches amino diaza tricyclo cages only when imine and alcohol context is present', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1CC(O)C2CNC(=N)C1C1(C)NC=NC21'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'amino-diaza-tricyclo-core');
+
+    const withoutAlcoholGraph = createLayoutGraph(parseSMILES('CC1CCC2CNC(=N)C1C1(C)NC=NC21'), { suppressH: true });
+    const withoutAlcoholMatch = findTemplateMatch(withoutAlcoholGraph, buildRingCandidate(withoutAlcoholGraph, withoutAlcoholGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutAlcoholMatch?.id, 'amino-diaza-tricyclo-core');
   });
 
   it('matches the bridged oxabicyclo[3.1.1]heptane scaffold too', () => {
@@ -284,6 +334,12 @@ describe('layout/engine/templates/match', () => {
     const graph = createLayoutGraph(parseSMILES('N#CC1CC2(C1)C1CCC2O1'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
     assert.equal(match.id, 'spiro-bridged-oxetane');
+  });
+
+  it('matches the sulfonyl azatricyclo cage scaffold too', () => {
+    const graph = createLayoutGraph(parseSMILES('CC12C[NH+](C1)C1C2C1S([O-])(=O)=O'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'sulfonyl-azatricyclo-cage');
   });
 
   it('matches the bridged benzoxathiobicyclo cage scaffold too', () => {

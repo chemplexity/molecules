@@ -23,6 +23,9 @@ const BROWSER_TERMINAL_AMIDE_CARBONYL_CROSSING_SMILES = 'CC1=CC=C2C=C(CC3=CC=C(O
 const BROWSER_CYCLOBUTANE_IMIDAMIDE_SMILES = 'NC1=NC=C(C=N1)C1=CC=C(C=C1)C1(CCC1)C(=N)N=C(O)C1=CC=C(N=C1)N1CC[NH2+]CC1';
 const BROWSER_LINKED_UREA_CARBONYL_SMILES = '[H][C@](NC(=O)NC1CCCC1)(C(C)C)C(=O)N1CC[C@]([H])(NC(=O)C2CC2)[C@@]1([H])C1(CCC1)C=O';
 const BROWSER_SODIUM_TETRAZOLE_C2_CROSSING_SMILES = '[Na+].CC(C)n1nnnc1C(=C(c2ccc(F)cc2)c3ccc(F)cc3)\\C=C\\[C@@H](O)C[C@@H](O)CC(=O)[O-]';
+const BROWSER_TRIARYL_SULFOXIDE_INDOLE_SMILES = 'C[S+]([O-])c1ccc(cc1)c2cc(c3ccncc3C)c([nH]2)c4ccc(F)cc4';
+const BROWSER_DIHYDROPYRIDINE_CHLOROPHENYL_SMILES = 'CC1=C(C(C2=CC=CC=C2Cl)C(C2=NN=CO2)=C(C)N1)C([O-])=O';
+const BROWSER_FLUORINATED_CYCLOHEXYL_ISOCYANATE_SMILES = 'FC1(F)CCCC(N=C=O)(C(C2(CCCC(F)(F)C2(F)F)N=C=O)C2(CCCC(F)(F)C2(F)F)N=C=O)C1(F)F';
 
 const MIME_TYPES = new Map([
   ['.css', 'text/css; charset=utf-8'],
@@ -177,8 +180,9 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
       };
       const fusedCyclobutylC15Angle = bondAngleAtAtom('C15', 'C14', 'C16');
       const fusedCyclobutylS21Angles = {
-        oxo: bondAngleAtAtom('S21', 'O22', 'O23'),
-        single: bondAngleAtAtom('S21', 'N20', 'H52')
+        firstOxo: bondAngleAtAtom('S21', 'N20', 'O22'),
+        secondOxo: bondAngleAtAtom('S21', 'N20', 'O23'),
+        oxo: bondAngleAtAtom('S21', 'O22', 'O23')
       };
       const crowdedPhenolC49Spreads = [
         bondAngleAtAtom('C49', 'C21', 'O50'),
@@ -336,6 +340,50 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
             bondAngleAtAtom('C4', 'N6', 'N3')
           ]
         : null;
+      const triarylSulfoxideC18Angles = smilesValue === 'C[S+]([O-])c1ccc(cc1)c2cc(c3ccncc3C)c([nH]2)c4ccc(F)cc4'
+        ? [
+            bondAngleAtAtom('C18', 'C13', 'C17'),
+            bondAngleAtAtom('C18', 'C13', 'C19'),
+            bondAngleAtAtom('C18', 'C17', 'C19')
+          ]
+        : null;
+      const isDihydropyridineChlorophenylCase = smilesValue
+        === 'CC1=C(C(C2=CC=CC=C2Cl)C(C2=NN=CO2)=C(C)N1)C([O-])=O';
+      const dihydropyridineC12Angles = isDihydropyridineChlorophenylCase
+        ? [
+            bondAngleAtAtom('C12', 'C4', 'C13'),
+            bondAngleAtAtom('C12', 'C4', 'C18'),
+            bondAngleAtAtom('C12', 'C13', 'C18')
+          ]
+        : null;
+      const dihydropyridineC13Angles = isDihydropyridineChlorophenylCase
+        ? [
+            bondAngleAtAtom('C13', 'C12', 'O17'),
+            bondAngleAtAtom('C13', 'C12', 'N14'),
+            bondAngleAtAtom('C13', 'O17', 'N14')
+          ]
+        : null;
+      const isFluorinatedCyclohexylIsocyanateCase = smilesValue
+        === 'FC1(F)CCCC(N=C=O)(C(C2(CCCC(F)(F)C2(F)F)N=C=O)C2(CCCC(F)(F)C2(F)F)N=C=O)C1(F)F';
+      const fluorinatedCyclohexylExteriorPenalties = isFluorinatedCyclohexylIsocyanateCase
+        ? Object.fromEntries(['C38', 'C32', 'C16', 'C19', 'C2', 'C29'].map(atomId => [
+            atomId,
+            measureSmallRingExteriorGapSpreadPenalty(pipeline.layoutGraph, pipeline.coords, atomId)
+          ]))
+        : null;
+      const fluorinatedCyclohexylC11Angles = isFluorinatedCyclohexylIsocyanateCase
+        ? neighborAngleGapsAtAtom('C11', ['C7', 'C12', 'C25'])
+        : null;
+      const fluorinatedCyclohexylC7Angles = isFluorinatedCyclohexylIsocyanateCase
+        ? neighborAngleGapsAtAtom('C7', ['C38', 'C6', 'N8', 'C11'])
+        : null;
+      const fluorinatedCyclohexylIsocyanateAngles = isFluorinatedCyclohexylIsocyanateCase
+        ? [
+            bondAngleAtAtom('C36', 'N35', 'O37'),
+            bondAngleAtAtom('C23', 'N22', 'O24'),
+            bondAngleAtAtom('C9', 'N8', 'O10')
+          ]
+        : null;
       const omittedHubRootOutwardDeviation = (rootAtomId, parentAtomId) => {
         const rootPosition = pipeline.coords.get(rootAtomId);
         const parentPosition = pipeline.coords.get(parentAtomId);
@@ -466,6 +514,25 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
         linkedUreaC4Angles: Array.isArray(linkedUreaC4Angles) && linkedUreaC4Angles.every(value => typeof value === 'number' && Number.isFinite(value))
           ? linkedUreaC4Angles
           : null,
+        triarylSulfoxideC18Angles: Array.isArray(triarylSulfoxideC18Angles) && triarylSulfoxideC18Angles.every(value => typeof value === 'number' && Number.isFinite(value))
+          ? triarylSulfoxideC18Angles
+          : null,
+        dihydropyridineC12Angles: Array.isArray(dihydropyridineC12Angles) && dihydropyridineC12Angles.every(value => typeof value === 'number' && Number.isFinite(value))
+          ? dihydropyridineC12Angles
+          : null,
+        dihydropyridineC13Angles: Array.isArray(dihydropyridineC13Angles) && dihydropyridineC13Angles.every(value => typeof value === 'number' && Number.isFinite(value))
+          ? dihydropyridineC13Angles
+          : null,
+        fluorinatedCyclohexylExteriorPenalties,
+        fluorinatedCyclohexylC11Angles: Array.isArray(fluorinatedCyclohexylC11Angles) && fluorinatedCyclohexylC11Angles.every(value => typeof value === 'number' && Number.isFinite(value))
+          ? fluorinatedCyclohexylC11Angles
+          : null,
+        fluorinatedCyclohexylC7Angles: Array.isArray(fluorinatedCyclohexylC7Angles) && fluorinatedCyclohexylC7Angles.every(value => typeof value === 'number' && Number.isFinite(value))
+          ? fluorinatedCyclohexylC7Angles
+          : null,
+        fluorinatedCyclohexylIsocyanateAngles: Array.isArray(fluorinatedCyclohexylIsocyanateAngles) && fluorinatedCyclohexylIsocyanateAngles.every(value => typeof value === 'number' && Number.isFinite(value))
+          ? fluorinatedCyclohexylIsocyanateAngles
+          : null,
         audit: {
           ok: pipeline.metadata?.audit?.ok ?? null,
           severeOverlapCount: pipeline.metadata?.audit?.severeOverlapCount ?? null,
@@ -529,7 +596,7 @@ test('browser layout clears terminal amide carbonyl ring crossings in webkit', {
   assert.ok(webkitSignature.terminalAmideC32MaxDeviation < 30);
 });
 
-test('browser layout keeps fused cyclobutyl methylene linkers bent and sulfonyl sulfur paired in webkit', { timeout: 120_000 }, async t => {
+test('browser layout keeps fused cyclobutyl methylene linkers bent and suppressed-h sulfonyl sulfur trigonal in webkit', { timeout: 120_000 }, async t => {
   const { server, origin } = await startStaticServer();
   t.after(async () => {
     await new Promise(resolve => server.close(resolve));
@@ -545,14 +612,12 @@ test('browser layout keeps fused cyclobutyl methylene linkers bent and sulfonyl 
       `expected ${browserName} C14-C15-C16 near 120 degrees, got ${signature.fusedCyclobutylC15Angle?.toFixed(2)}`
     );
     assert.ok(signature.fusedCyclobutylS21Angles, `expected ${browserName} to report S21 angles`);
-    assert.ok(
-      Math.abs(signature.fusedCyclobutylS21Angles.oxo - 180) < 1e-6,
-      `expected ${browserName} O22-S21-O23 near 180 degrees, got ${signature.fusedCyclobutylS21Angles.oxo.toFixed(2)}`
-    );
-    assert.ok(
-      Math.abs(signature.fusedCyclobutylS21Angles.single - 180) < 1e-6,
-      `expected ${browserName} N20-S21-H52 near 180 degrees, got ${signature.fusedCyclobutylS21Angles.single.toFixed(2)}`
-    );
+    for (const [label, angle] of Object.entries(signature.fusedCyclobutylS21Angles)) {
+      assert.ok(
+        Math.abs(angle - 120) < 1e-6,
+        `expected ${browserName} S21 ${label} fan angle near 120 degrees, got ${angle.toFixed(2)}`
+      );
+    }
   }
 });
 
@@ -671,6 +736,104 @@ test('browser layout keeps the tetrazole-linked C13 fan bounded without collapsi
     for (const angle of signature.tetrazoleC24Angles) {
       assert.ok(Math.abs(angle - 120) < 1e-6, `expected ${browserName} C24 phenyl root near 120 degrees, got ${angle.toFixed(2)}`);
     }
+  }
+});
+
+test('browser layout keeps triaryl sulfoxide indole aromatic fans trigonal in webkit', { timeout: 120_000 }, async t => {
+  const { server, origin } = await startStaticServer();
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve));
+  });
+
+  const webkitSignature = await browserLayoutSignature(
+    webkit,
+    origin,
+    BROWSER_TRIARYL_SULFOXIDE_INDOLE_SMILES,
+    {
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    }
+  );
+
+  assert.equal(webkitSignature.audit.ok, true);
+  assert.equal(webkitSignature.audit.severeOverlapCount, 0);
+  assert.ok(Array.isArray(webkitSignature.triarylSulfoxideC18Angles), 'expected webkit to report C18 aromatic fan angles');
+  for (const angle of webkitSignature.triarylSulfoxideC18Angles) {
+    assert.ok(Math.abs(angle - 120) < 1e-6, `expected webkit C18 fan near 120 degrees, got ${angle.toFixed(2)}`);
+  }
+});
+
+test('browser layout retidies the chlorophenyl dihydropyridine C12 fan in webkit', { timeout: 120_000 }, async t => {
+  const { server, origin } = await startStaticServer();
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve));
+  });
+
+  const webkitSignature = await browserLayoutSignature(
+    webkit,
+    origin,
+    BROWSER_DIHYDROPYRIDINE_CHLOROPHENYL_SMILES,
+    {
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    }
+  );
+
+  assert.equal(webkitSignature.audit.ok, true);
+  assert.equal(webkitSignature.audit.severeOverlapCount, 0);
+  assert.ok(Array.isArray(webkitSignature.dihydropyridineC12Angles), 'expected webkit to report C12 angles');
+  for (const angle of webkitSignature.dihydropyridineC12Angles) {
+    assert.ok(Math.abs(angle - 120) < 1e-6, `expected webkit C12 fan near 120 degrees, got ${angle.toFixed(2)}`);
+  }
+  assert.ok(Array.isArray(webkitSignature.dihydropyridineC13Angles), 'expected webkit to report C13 angles');
+  assert.ok(
+    Math.max(
+      Math.abs(webkitSignature.dihydropyridineC13Angles[0] - 126),
+      Math.abs(webkitSignature.dihydropyridineC13Angles[1] - 126)
+    ) <= 15 + 1e-6,
+    `expected webkit oxadiazole root relief to stay bounded, got ${webkitSignature.dihydropyridineC13Angles.map(angle => angle.toFixed(2)).join(', ')}`
+  );
+});
+
+test('browser layout preserves fluorinated cyclohexyl exterior fans in webkit', { timeout: 120_000 }, async t => {
+  const { server, origin } = await startStaticServer();
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve));
+  });
+
+  const webkitSignature = await browserLayoutSignature(
+    webkit,
+    origin,
+    BROWSER_FLUORINATED_CYCLOHEXYL_ISOCYANATE_SMILES,
+    {
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    }
+  );
+
+  assert.equal(webkitSignature.audit.ok, true);
+  assert.equal(webkitSignature.audit.severeOverlapCount, 0);
+  assert.equal(webkitSignature.audit.ringSubstituentReadabilityFailureCount, 0);
+  assert.equal(webkitSignature.audit.outwardAxisRingSubstituentFailureCount, 0);
+  assert.ok(webkitSignature.fluorinatedCyclohexylExteriorPenalties, 'expected webkit to report fluorinated cyclohexyl exterior penalties');
+  for (const [atomId, penalty] of Object.entries(webkitSignature.fluorinatedCyclohexylExteriorPenalties)) {
+    assert.ok(
+      penalty < 1e-9,
+      `expected webkit ${atomId} exterior fan to stay exact, got penalty ${penalty.toExponential(3)}`
+    );
+  }
+  assert.ok(Array.isArray(webkitSignature.fluorinatedCyclohexylC11Angles), 'expected webkit to report C11 ring-link angles');
+  for (const angle of webkitSignature.fluorinatedCyclohexylC11Angles) {
+    assert.ok(Math.abs(angle - 120) < 1e-6, `expected webkit C11 fan near 120 degrees, got ${angle.toFixed(2)}`);
+  }
+  assert.ok(Array.isArray(webkitSignature.fluorinatedCyclohexylC7Angles), 'expected webkit to report C7 ring-exit angles');
+  assert.ok(
+    Math.min(...webkitSignature.fluorinatedCyclohexylC7Angles) >= 45 - 1e-6,
+    `expected webkit C7 fan to stay bounded while clearing overlaps, got ${webkitSignature.fluorinatedCyclohexylC7Angles.map(angle => angle.toFixed(2)).join(', ')}`
+  );
+  assert.ok(Array.isArray(webkitSignature.fluorinatedCyclohexylIsocyanateAngles), 'expected webkit to report isocyanate angles');
+  for (const angle of webkitSignature.fluorinatedCyclohexylIsocyanateAngles) {
+    assert.ok(Math.abs(angle - 180) < 1e-6, `expected webkit isocyanate arm near 180 degrees, got ${angle.toFixed(2)}`);
   }
 });
 

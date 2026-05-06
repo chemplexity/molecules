@@ -13,9 +13,17 @@ describe('layout/engine/templates/library', () => {
       'tropane',
       'cubane',
       'oxabicyclo-3-1-1',
+      'bridged-lactone-core',
+      'oxazabicyclic-lactam-core',
+      'bridged-pyrrolizidine-dione-core',
+      'amino-oxaza-tricyclo-core',
+      'amino-diaza-tricyclo-core',
       'spiro-bridged-aza-cage',
       'spiro-bridged-oxetane',
+      'sulfonyl-azatricyclo-cage',
       'benzoxathiobicyclo-core',
+      'oxaza-morphinan-core',
+      'oripavine-core',
       'morphinan-core',
       'norbornane',
       'quinoline',
@@ -114,6 +122,46 @@ describe('layout/engine/templates/library', () => {
     assert.equal(oxabicyclo311.bondCount, 8);
     assert.equal(oxabicyclo311.ringCount, 2);
 
+    const bridgedLactone = getTemplateById('bridged-lactone-core');
+    assert.equal(bridgedLactone.family, 'bridged');
+    assert.equal(bridgedLactone.atomCount, 9);
+    assert.equal(bridgedLactone.bondCount, 10);
+    assert.equal(bridgedLactone.ringCount, 2);
+    assert.equal(bridgedLactone.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C17');
+    assert.equal(bridgedLactone.matchContext?.exocyclicNeighbors?.[0]?.bondOrder, 2);
+
+    const oxazabicyclicLactam = getTemplateById('oxazabicyclic-lactam-core');
+    assert.equal(oxazabicyclicLactam.family, 'bridged');
+    assert.equal(oxazabicyclicLactam.atomCount, 8);
+    assert.equal(oxazabicyclicLactam.bondCount, 9);
+    assert.equal(oxazabicyclicLactam.ringCount, 2);
+    assert.equal(oxazabicyclicLactam.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C11');
+    assert.equal(oxazabicyclicLactam.matchContext?.exocyclicNeighbors?.[0]?.bondOrder, 2);
+    assert.equal(oxazabicyclicLactam.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C2');
+    assert.equal(oxazabicyclicLactam.matchContext?.exocyclicNeighbors?.[1]?.minCount, 2);
+
+    const bridgedPyrrolizidineDione = getTemplateById('bridged-pyrrolizidine-dione-core');
+    assert.equal(bridgedPyrrolizidineDione.family, 'bridged');
+    assert.equal(bridgedPyrrolizidineDione.atomCount, 11);
+    assert.equal(bridgedPyrrolizidineDione.bondCount, 13);
+    assert.equal(bridgedPyrrolizidineDione.ringCount, 3);
+    assert.equal(bridgedPyrrolizidineDione.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C24');
+    assert.equal(bridgedPyrrolizidineDione.matchContext?.exocyclicNeighbors?.[0]?.bondOrder, 2);
+
+    const aminoOxazaTricyclo = getTemplateById('amino-oxaza-tricyclo-core');
+    assert.equal(aminoOxazaTricyclo.family, 'bridged');
+    assert.equal(aminoOxazaTricyclo.atomCount, 12);
+    assert.equal(aminoOxazaTricyclo.bondCount, 15);
+    assert.equal(aminoOxazaTricyclo.ringCount, 4);
+
+    const aminoDiazaTricyclo = getTemplateById('amino-diaza-tricyclo-core');
+    assert.equal(aminoDiazaTricyclo.family, 'bridged');
+    assert.equal(aminoDiazaTricyclo.atomCount, 13);
+    assert.equal(aminoDiazaTricyclo.bondCount, 15);
+    assert.equal(aminoDiazaTricyclo.ringCount, 3);
+    assert.equal(aminoDiazaTricyclo.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C9');
+    assert.equal(aminoDiazaTricyclo.matchContext?.exocyclicNeighbors?.[0]?.bondOrder, 2);
+
     const spiroBridgedAzaCage = getTemplateById('spiro-bridged-aza-cage');
     assert.equal(spiroBridgedAzaCage.family, 'bridged');
     assert.equal(spiroBridgedAzaCage.atomCount, 9);
@@ -126,11 +174,29 @@ describe('layout/engine/templates/library', () => {
     assert.equal(spiroBridgedOxetane.bondCount, 11);
     assert.equal(spiroBridgedOxetane.ringCount, 3);
 
+    const sulfonylAzatricyclo = getTemplateById('sulfonyl-azatricyclo-cage');
+    assert.equal(sulfonylAzatricyclo.family, 'bridged');
+    assert.equal(sulfonylAzatricyclo.atomCount, 7);
+    assert.equal(sulfonylAzatricyclo.bondCount, 9);
+    assert.equal(sulfonylAzatricyclo.ringCount, 3);
+
     const benzoxathiobicyclo = getTemplateById('benzoxathiobicyclo-core');
     assert.equal(benzoxathiobicyclo.family, 'bridged');
     assert.equal(benzoxathiobicyclo.atomCount, 13);
     assert.equal(benzoxathiobicyclo.bondCount, 15);
     assert.equal(benzoxathiobicyclo.ringCount, 3);
+
+    const oxazaMorphinan = getTemplateById('oxaza-morphinan-core');
+    assert.equal(oxazaMorphinan.family, 'bridged');
+    assert.equal(oxazaMorphinan.atomCount, 18);
+    assert.equal(oxazaMorphinan.bondCount, 22);
+    assert.equal(oxazaMorphinan.ringCount, 5);
+
+    const oripavine = getTemplateById('oripavine-core');
+    assert.equal(oripavine.family, 'bridged');
+    assert.equal(oripavine.atomCount, 20);
+    assert.equal(oripavine.bondCount, 25);
+    assert.equal(oripavine.ringCount, 6);
 
     const morphinan = getTemplateById('morphinan-core');
     assert.equal(morphinan.family, 'bridged');

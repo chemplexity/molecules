@@ -283,6 +283,39 @@ describe('layout/engine/placement/branch-placement', () => {
     assert.ok([90, 270].includes(secondOxoAngle));
   });
 
+  it('keeps charged sulfoxide oxygen and carbon ligands on a trigonal fan', () => {
+    const molecule = new Molecule();
+    molecule.addAtom('c0', 'C');
+    molecule.addAtom('s0', 'S', { charge: 1 });
+    molecule.addAtom('o0', 'O', { charge: -1 });
+    molecule.addAtom('c1', 'C');
+    molecule.addBond('b0', 'c0', 's0', {}, false);
+    molecule.addBond('b1', 's0', 'o0', {}, false);
+    molecule.addBond('b2', 's0', 'c1', {}, false);
+    const graph = createLayoutGraph(molecule, { suppressH: true });
+    const adjacency = new Map([
+      ['c0', ['s0']],
+      ['s0', ['c0', 'o0', 'c1']],
+      ['o0', ['s0']],
+      ['c1', ['s0']]
+    ]);
+    const coords = new Map([
+      ['c0', { x: 0, y: 0 }],
+      ['s0', { x: 1.5, y: 0 }]
+    ]);
+
+    placeRemainingBranches(adjacency, graph.canonicalAtomRank, coords, new Set(['c0', 's0', 'o0', 'c1']), ['c0', 's0'], 1.5, graph);
+
+    const sulfurPosition = coords.get('s0');
+    const firstCarbonAngle = angleOf({ x: coords.get('c0').x - sulfurPosition.x, y: coords.get('c0').y - sulfurPosition.y });
+    const oxygenAngle = angleOf({ x: coords.get('o0').x - sulfurPosition.x, y: coords.get('o0').y - sulfurPosition.y });
+    const secondCarbonAngle = angleOf({ x: coords.get('c1').x - sulfurPosition.x, y: coords.get('c1').y - sulfurPosition.y });
+
+    assert.ok(Math.abs(angularDifference(firstCarbonAngle, oxygenAngle) - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(angularDifference(firstCarbonAngle, secondCarbonAngle) - (2 * Math.PI) / 3) < 1e-6);
+    assert.ok(Math.abs(angularDifference(oxygenAngle, secondCarbonAngle) - (2 * Math.PI) / 3) < 1e-6);
+  });
+
   it('honors an anchor angular budget when placing a macrocycle substituent', () => {
     const graph = createLayoutGraph(makeMacrocycleWithSubstituent(), { suppressH: true });
     const ringLayout = layoutMacrocycleFamily(graph.rings, graph.options.bondLength);

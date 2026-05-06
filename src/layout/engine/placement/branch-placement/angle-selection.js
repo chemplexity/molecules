@@ -548,6 +548,39 @@ export function isPlanarConjugatedTertiaryNitrogen(layoutGraph, atomId) {
 }
 
 /**
+ * Returns whether a planar tertiary ring nitrogen has two ring neighbors and
+ * one exocyclic branch that should occupy the exact visible trigonal slot.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Nitrogen atom ID.
+ * @param {string} childAtomId - Candidate exocyclic branch atom ID.
+ * @returns {boolean} True when the branch should use the ring-exterior bisector.
+ */
+function isPlanarTertiaryRingNitrogenExocyclicBisectorEligible(layoutGraph, anchorAtomId, childAtomId) {
+  if (!isPlanarConjugatedTertiaryNitrogen(layoutGraph, anchorAtomId)) {
+    return false;
+  }
+
+  const anchorRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
+  if (anchorRings.length === 0 || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0) {
+    return false;
+  }
+
+  let ringNeighborCount = 0;
+  let exocyclicChildCount = 0;
+  for (const { neighborAtomId } of visibleHeavyCovalentBonds(layoutGraph, anchorAtomId)) {
+    if (neighborAtomId === childAtomId) {
+      exocyclicChildCount++;
+      continue;
+    }
+    if (anchorRings.some(ring => ring.atomIds.includes(neighborAtomId))) {
+      ringNeighborCount++;
+    }
+  }
+
+  return ringNeighborCount === 2 && exocyclicChildCount === 1;
+}
+
+/**
  * Returns whether a divalent nitrogen branch is conjugated to a trigonal center
  * such as a carbonyl. Around crowded quaternary carbon centers these amide-like
  * branches occupy a bulky projected slot even though the direct nitrogen atom
@@ -797,8 +830,9 @@ export function isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtom
 /**
  * Returns whether a visible three-heavy trigonal center should keep the exact
  * local bisector for its remaining single-bond branch. This covers non-ring
- * alkene/carbonyl-like carbons and planar conjugated tertiary nitrogens whose
- * final visible branch can otherwise fall into an arbitrary 90/150 split.
+ * alkene/carbonyl-like carbons, planar conjugated tertiary nitrogens, and
+ * planar tertiary ring nitrogens whose exocyclic branch can otherwise fall
+ * into an arbitrary 90/150 split.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} anchorAtomId - Anchor atom ID.
  * @param {string|null} childAtomId - Candidate child atom ID.
@@ -806,9 +840,6 @@ export function isExactSimpleAcyclicContinuationEligible(layoutGraph, anchorAtom
  */
 export function isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId, childAtomId) {
   if (!layoutGraph || !childAtomId) {
-    return false;
-  }
-  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0) {
     return false;
   }
 
@@ -832,6 +863,9 @@ export function isExactVisibleTrigonalBisectorEligible(layoutGraph, anchorAtomId
     return false;
   }
 
+  if ((layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0) {
+    return isPlanarTertiaryRingNitrogenExocyclicBisectorEligible(layoutGraph, anchorAtomId, childAtomId);
+  }
   if (anchorAtom.element === 'C') {
     return isConjugatedTrigonalCenter(layoutGraph, anchorAtomId);
   }
@@ -979,6 +1013,71 @@ export function describeCrossLikeHypervalentCenter(layoutGraph, atomId) {
     };
   }
   return null;
+}
+
+/**
+ * Returns whether a single-bond neighbor is a terminal anionic oxygen ligand.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} centerAtomId - Central atom ID.
+ * @param {string} neighborAtomId - Candidate oxygen atom ID.
+ * @param {object} bond - Incident bond descriptor.
+ * @returns {boolean} True when the ligand is a terminal `[O-]` leaf.
+ */
+function isTerminalAnionicOxygenLigand(layoutGraph, centerAtomId, neighborAtomId, bond) {
+  if (!layoutGraph || !bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+    return false;
+  }
+  const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+  return Boolean(
+    neighborAtom
+    && neighborAtom.element === 'O'
+    && (neighborAtom.charge ?? 0) < 0
+    && (neighborAtom.heavyDegree ?? 0) === 1
+    && findLayoutBond(layoutGraph, centerAtomId, neighborAtomId) === bond
+  );
+}
+
+/**
+ * Describes a charged sulfoxide-style center such as `[S+]([O-])R2`.
+ * These are encoded with three single bonds, but the terminal anionic oxygen
+ * represents a trigonal sulfoxide ligand rather than a free tetrahedral branch.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate sulfur atom ID.
+ * @returns {{ligandNeighborIds: string[], oxygenNeighborId: string}|null} Trigonal sulfoxide descriptor or `null`.
+ */
+export function describeChargedSulfoxideTrigonalCenter(layoutGraph, atomId) {
+  if (!layoutGraph) {
+    return null;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  if (!atom || atom.element !== 'S' || atom.aromatic || (atom.charge ?? 0) <= 0 || (atom.heavyDegree ?? 0) !== 3) {
+    return null;
+  }
+
+  const ligandNeighborIds = [];
+  const oxygenNeighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return null;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    ligandNeighborIds.push(neighborAtomId);
+    if (isTerminalAnionicOxygenLigand(layoutGraph, atomId, neighborAtomId, bond)) {
+      oxygenNeighborIds.push(neighborAtomId);
+    }
+  }
+
+  if (ligandNeighborIds.length !== 3 || oxygenNeighborIds.length !== 1) {
+    return null;
+  }
+  return {
+    ligandNeighborIds,
+    oxygenNeighborId: oxygenNeighborIds[0]
+  };
 }
 
 function preferredRingSystemAngle(layoutGraph, coords, anchorAtomId) {
@@ -2661,6 +2760,85 @@ function ringEmbeddedBisOxoAngleSets(coords, anchorAtomId, currentPlacedNeighbor
   return angleSets;
 }
 
+/**
+ * Deduplicates candidate trigonal directions while preserving order.
+ * @param {number[]} candidateAngles - Candidate angles in radians.
+ * @returns {number[]} Unique angles in radians.
+ */
+function uniqueTrigonalAngles(candidateAngles) {
+  const uniqueAngles = [];
+  for (const candidateAngle of candidateAngles) {
+    if (!uniqueAngles.some(existingAngle => angularDifference(existingAngle, candidateAngle) <= 1e-9)) {
+      uniqueAngles.push(candidateAngle);
+    }
+  }
+  return uniqueAngles;
+}
+
+/**
+ * Returns open 120-degree directions implied by already placed ligands.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string[]} placedNeighborIdsList - Already placed ligand IDs.
+ * @returns {number[]} Open trigonal angles in radians.
+ */
+function openTrigonalAnglesFromPlaced(coords, anchorAtomId, placedNeighborIdsList) {
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition || placedNeighborIdsList.length === 0) {
+    return [];
+  }
+
+  const placedAngles = placedNeighborIdsList
+    .map(neighborAtomId => coords.get(neighborAtomId))
+    .filter(Boolean)
+    .map(neighborPosition => angleOf(sub(neighborPosition, anchorPosition)));
+  if (placedAngles.length !== placedNeighborIdsList.length) {
+    return [];
+  }
+  if (placedAngles.length === 1) {
+    return [placedAngles[0] + DEG120, placedAngles[0] - DEG120];
+  }
+
+  const candidateAngles = placedAngles.flatMap(placedAngle => [placedAngle + DEG120, placedAngle - DEG120]);
+  return uniqueTrigonalAngles(candidateAngles)
+    .filter(candidateAngle => placedAngles.every(placedAngle => angularDifference(candidateAngle, placedAngle) >= DEG60 - 1e-9));
+}
+
+/**
+ * Returns exact 120-degree child angle sets for charged sulfoxide centers.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Sulfur atom ID.
+ * @param {string[]} currentPlacedNeighborIds - Already placed neighbor atom IDs.
+ * @param {string[]} unplacedNeighborIds - Pending child atom IDs.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @returns {number[][]} Candidate trigonal angle sets.
+ */
+function chargedSulfoxideTrigonalAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph) {
+  const descriptor = describeChargedSulfoxideTrigonalCenter(layoutGraph, anchorAtomId);
+  if (!descriptor || !coords.has(anchorAtomId)) {
+    return [];
+  }
+  if (!unplacedNeighborIds.every(neighborAtomId => descriptor.ligandNeighborIds.includes(neighborAtomId))) {
+    return [];
+  }
+
+  const placedLigandNeighborIds = currentPlacedNeighborIds
+    .filter(neighborAtomId => descriptor.ligandNeighborIds.includes(neighborAtomId));
+  const placedAndPendingLigandCount = placedLigandNeighborIds.length + unplacedNeighborIds.length;
+  if (placedAndPendingLigandCount !== descriptor.ligandNeighborIds.length) {
+    return [];
+  }
+
+  const openAngles = openTrigonalAnglesFromPlaced(coords, anchorAtomId, placedLigandNeighborIds);
+  if (openAngles.length === unplacedNeighborIds.length) {
+    return [openAngles];
+  }
+  if (unplacedNeighborIds.length === 1 && openAngles.length > 0) {
+    return openAngles.map(angle => [angle]);
+  }
+  return [];
+}
+
 function crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph) {
   const descriptor = describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId);
   if (!descriptor || !coords.has(anchorAtomId)) {
@@ -2760,6 +2938,25 @@ function preferredCrossLikeHypervalentChildAngles(layoutGraph, coords, anchorAto
     return [singleAxisAngle + DEG90, singleAxisAngle - DEG90];
   }
   return [];
+}
+
+/**
+ * Returns exact 120-degree continuation angles for one charged sulfoxide child.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Sulfur atom ID.
+ * @param {string|null} childAtomId - Child atom being placed.
+ * @param {string[]} placedNeighborIdsList - Already placed neighbor atom IDs.
+ * @returns {number[]} Candidate trigonal child angles.
+ */
+function preferredChargedSulfoxideTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList) {
+  const descriptor = describeChargedSulfoxideTrigonalCenter(layoutGraph, anchorAtomId);
+  if (!descriptor || !childAtomId || !descriptor.ligandNeighborIds.includes(childAtomId)) {
+    return [];
+  }
+  const placedLigandNeighborIds = placedNeighborIdsList
+    .filter(neighborAtomId => descriptor.ligandNeighborIds.includes(neighborAtomId) && neighborAtomId !== childAtomId);
+  return openTrigonalAnglesFromPlaced(coords, anchorAtomId, placedLigandNeighborIds);
 }
 
 function largestGapAngles(fixedAngles, childCount) {
@@ -3186,6 +3383,7 @@ export function buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentA
     ringEmbeddedBisOxoAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph)
       .filter(angleSet => angleSet.length === unplacedNeighborIds.length);
   const budgetedAngleSetCandidates = [
+    ...chargedSulfoxideTrigonalAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
     ...crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
     ...exactExteriorAngleSets,
     ...pendingSmallRingExteriorAngleSetCandidates,
@@ -3227,6 +3425,10 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
   const crossLikeHypervalentAngles = preferredCrossLikeHypervalentChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList);
   if (crossLikeHypervalentAngles.length > 0) {
     return crossLikeHypervalentAngles;
+  }
+  const chargedSulfoxideTrigonalAngles = preferredChargedSulfoxideTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList);
+  if (chargedSulfoxideTrigonalAngles.length > 0) {
+    return chargedSulfoxideTrigonalAngles;
   }
   const smallRingExteriorAngles = preferredSmallRingExteriorGapAngles(layoutGraph, coords, anchorAtomId, placedNeighborIdsList, childAtomId);
   if (smallRingExteriorAngles.length > 0) {

@@ -2,6 +2,7 @@
 
 import { findSMARTS, parseSMARTS, functionalGroups } from '../../smarts/index.js';
 import { getAtomLabel, labelHalfW } from '../../layout/mol2d-helpers.js';
+import { createNavButton } from './panel-row.js';
 
 let ctx = {};
 
@@ -257,23 +258,7 @@ function _functionalGroupKey(fg) {
   return `${fg.name}::${fg.smarts}`;
 }
 
-function _functionalGroupNavButton(label, title, onActivate) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'reaction-nav-btn';
-  btn.title = title;
-  btn.textContent = label;
-  btn.addEventListener('mousedown', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    onActivate();
-  });
-  btn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-  });
-  return btn;
-}
+const _functionalGroupNavButton = createNavButton;
 
 function _clearActiveFunctionalGroupState() {
   _activeFunctionalGroupKey = null;

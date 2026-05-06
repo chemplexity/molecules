@@ -556,7 +556,9 @@ function rescueLargeComponentSlicePlacement(layoutGraph, component, familyPlacem
  */
 function layoutComponent(layoutGraph, component, macrocycleRings = []) {
   if (isLargeComponent(layoutGraph, component)) {
-    let slicePlacement = (componentContainsMacrocycle(macrocycleRings, component) || componentContainsMetal(layoutGraph, component))
+    const containsMacrocycle = componentContainsMacrocycle(macrocycleRings, component);
+    const containsMetal = componentContainsMetal(layoutGraph, component);
+    let slicePlacement = (containsMacrocycle || containsMetal)
       ? withProtectedCleanupRigidSubtrees(
           layoutGraph,
           component,
@@ -564,7 +566,7 @@ function layoutComponent(layoutGraph, component, macrocycleRings = []) {
           macrocycleRings
         )
       : null;
-    if (slicePlacement && componentContainsMetal(layoutGraph, component)) {
+    if (slicePlacement && containsMetal) {
       slicePlacement = rescueMixedMetalRingPlacement(layoutGraph, component, slicePlacement, macrocycleRings);
     }
     const largeMolecule = layoutLargeMoleculeFamily(layoutGraph, component, layoutGraph.options.bondLength);

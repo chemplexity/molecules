@@ -62,6 +62,13 @@ const SHARED_JUNCTION_BLOCKER_BACKOFF_ANGLES = Object.freeze([
   -Math.PI / 6,
   Math.PI / 6
 ]);
+const DIRECT_ATTACHED_RING_PARENT_TRIGONAL_ROTATION_OFFSETS = Object.freeze([
+  0,
+  ...Array.from({ length: 12 }, (_value, index) => ((index + 1) * Math.PI) / 180),
+  ...Array.from({ length: 12 }, (_value, index) => -(((index + 1) * Math.PI) / 180)),
+  Math.PI / 12,
+  -(Math.PI / 12)
+]);
 const TERMINAL_RING_CARBONYL_LEAF_CONTACT_OFFSETS = Object.freeze(
   [2, 4, 6, 8, 10, 12].flatMap(degrees => [
     (degrees * Math.PI) / 180,
@@ -2042,6 +2049,18 @@ function readabilityHardMetricsWorsen(candidate, base) {
     || (candidate.maxOutwardDeviation ?? 0) > (base.maxOutwardDeviation ?? 0) + TIDY_ANGLE_EPSILON;
 }
 
+/**
+ * Returns whether a candidate creates a new hard readability failure.
+ * @param {object} candidate - Candidate readability metrics.
+ * @param {object} base - Base readability metrics.
+ * @returns {boolean} True when failure counts regress.
+ */
+function readabilityFailureCountsWorsen(candidate, base) {
+  return (candidate.failingSubstituentCount ?? 0) > (base.failingSubstituentCount ?? 0)
+    || (candidate.inwardSubstituentCount ?? 0) > (base.inwardSubstituentCount ?? 0)
+    || (candidate.outwardAxisFailureCount ?? 0) > (base.outwardAxisFailureCount ?? 0);
+}
+
 function isBetterDirectAttachedRingRootRetidyCandidate(candidate, incumbent) {
   if (!incumbent) {
     return true;
@@ -2058,6 +2077,20 @@ function isBetterDirectAttachedRingRootRetidyCandidate(candidate, incumbent) {
   if ((candidate.readability.outwardAxisFailureCount ?? 0) !== (incumbent.readability.outwardAxisFailureCount ?? 0)) {
     return (candidate.readability.outwardAxisFailureCount ?? 0) < (incumbent.readability.outwardAxisFailureCount ?? 0);
   }
+  if (
+    Number.isFinite(candidate.parentTrigonalPenalty)
+    && Number.isFinite(incumbent.parentTrigonalPenalty)
+    && Math.abs(candidate.parentTrigonalPenalty - incumbent.parentTrigonalPenalty) > TIDY_ANGLE_EPSILON
+  ) {
+    return candidate.parentTrigonalPenalty < incumbent.parentTrigonalPenalty;
+  }
+  if (
+    candidate.preferMinimalRotation === true
+    && incumbent.preferMinimalRotation === true
+    && Math.abs(candidate.angleDelta - incumbent.angleDelta) > TIDY_ANGLE_EPSILON
+  ) {
+    return candidate.angleDelta < incumbent.angleDelta;
+  }
   if (Math.abs((candidate.readability.totalOutwardDeviation ?? 0) - (incumbent.readability.totalOutwardDeviation ?? 0)) > TIDY_ANGLE_EPSILON) {
     return (candidate.readability.totalOutwardDeviation ?? 0) < (incumbent.readability.totalOutwardDeviation ?? 0);
   }
@@ -2065,6 +2098,130 @@ function isBetterDirectAttachedRingRootRetidyCandidate(candidate, incumbent) {
     return (candidate.readability.maxOutwardDeviation ?? 0) < (incumbent.readability.maxOutwardDeviation ?? 0);
   }
   return candidate.angleDelta < incumbent.angleDelta - TIDY_ANGLE_EPSILON;
+}
+
+/**
+ * Returns whether an attached ring root can retidy against a distorted
+ * parent-side trigonal fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Parent ring atom id.
+ * @param {string} rootAtomId - Attached ring root atom id.
+ * @returns {boolean} True when the parent center supports trigonal retidy.
+ */
+function isDirectAttachedRingParentTrigonalCandidate(layoutGraph, anchorAtomId, rootAtomId) {
+  const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  const bond = layoutGraph.bondByAtomPair.get(atomPairKey(anchorAtomId, rootAtomId));
+  if (
+    !anchorAtom ||
+    !rootAtom ||
+    anchorAtom.aromatic ||
+    rootAtom.element === 'H' ||
+    !bond ||
+    bond.kind !== 'covalent' ||
+    bond.inRing ||
+    bond.aromatic ||
+    (bond.order ?? 1) !== 1 ||
+    (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) === 0 ||
+    (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) === 0 ||
+    layoutGraph.atomToRingSystemId.get(anchorAtomId) === layoutGraph.atomToRingSystemId.get(rootAtomId)
+  ) {
+    return false;
+  }
+
+  const heavyCovalentBonds = (layoutGraph.bondsByAtomId.get(anchorAtomId) ?? [])
+    .filter(candidateBond => candidateBond?.kind === 'covalent')
+    .map(candidateBond => ({
+      bond: candidateBond,
+      neighborAtomId: candidateBond.a === anchorAtomId ? candidateBond.b : candidateBond.a
+    }))
+    .filter(({ neighborAtomId }) => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+  return heavyCovalentBonds.length === 3 && heavyCovalentBonds.some(({ bond: candidateBond }) => (candidateBond.order ?? 1) >= 2);
+}
+
+/**
+ * Returns the center of the larger angular gap left by two fixed trigonal
+ * neighbors.
+ * @param {number} firstAngle - First fixed-neighbor angle.
+ * @param {number} secondAngle - Second fixed-neighbor angle.
+ * @returns {number} Balanced angle in the larger open fan slot.
+ */
+function balancedTrigonalAngleBetweenFixedNeighbors(firstAngle, secondAngle) {
+  const twoPi = Math.PI * 2;
+  const forwardGap = ((secondAngle - firstAngle) % twoPi + twoPi) % twoPi;
+  return forwardGap >= Math.PI
+    ? firstAngle + forwardGap / 2
+    : secondAngle + (twoPi - forwardGap) / 2;
+}
+
+/**
+ * Returns parent-side target angles for direct-attached rings rooted at a
+ * distorted trigonal ring atom. The target keeps the two fixed parent bonds in
+ * place and moves the attached ring root into the largest remaining fan slot.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} anchorAtomId - Parent ring atom id.
+ * @param {string} rootAtomId - Attached ring root atom id.
+ * @returns {number[]} Candidate parent trigonal target angles.
+ */
+function parentTrigonalAnglesForDirectAttachedRing(layoutGraph, coords, anchorAtomId, rootAtomId) {
+  if (!isDirectAttachedRingParentTrigonalCandidate(layoutGraph, anchorAtomId, rootAtomId)) {
+    return [];
+  }
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!anchorPosition) {
+    return [];
+  }
+  const baseTrigonalPenalty = measureTrigonalDistortion(layoutGraph, coords, {
+    focusAtomIds: new Set([anchorAtomId])
+  }).totalDeviation;
+  if (!(baseTrigonalPenalty > TIDY_ANGLE_EPSILON)) {
+    return [];
+  }
+
+  const fixedNeighborAngles = (layoutGraph.bondsByAtomId.get(anchorAtomId) ?? [])
+    .filter(bond => bond?.kind === 'covalent')
+    .map(bond => (bond.a === anchorAtomId ? bond.b : bond.a))
+    .filter(neighborAtomId => neighborAtomId !== rootAtomId && layoutGraph.atoms.get(neighborAtomId)?.element !== 'H' && coords.has(neighborAtomId))
+    .map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition)));
+  if (fixedNeighborAngles.length !== 2) {
+    return [];
+  }
+  return [balancedTrigonalAngleBetweenFixedNeighbors(fixedNeighborAngles[0], fixedNeighborAngles[1])];
+}
+
+/**
+ * Builds a sparse direct-attached ring retidy move. The whole attached block is
+ * first rotated around the parent atom; optional child-side rotation then turns
+ * the attached ring around its root to relieve local contact while preserving
+ * the recovered parent fan.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{anchorAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}} descriptor - Rigid attached-ring descriptor.
+ * @param {number} parentRotation - Rotation around the parent atom.
+ * @param {number} childRotation - Rotation around the attached ring root.
+ * @returns {Map<string, {x: number, y: number}>|null} Sparse override positions.
+ */
+function directAttachedRingRetidyOverridePositions(coords, descriptor, parentRotation, childRotation) {
+  const overridePositions = rotateRigidDescriptorPositions(coords, descriptor, parentRotation);
+  if (!overridePositions || Math.abs(childRotation) <= TIDY_ANGLE_EPSILON) {
+    return overridePositions;
+  }
+
+  const rootPosition = overridePositions.get(descriptor.rootAtomId) ?? coords.get(descriptor.rootAtomId);
+  if (!rootPosition) {
+    return overridePositions;
+  }
+  for (const atomId of descriptor.subtreeAtomIds) {
+    if (atomId === descriptor.rootAtomId) {
+      continue;
+    }
+    const currentPosition = overridePositions.get(atomId) ?? coords.get(atomId);
+    if (!currentPosition) {
+      continue;
+    }
+    overridePositions.set(atomId, add(rootPosition, rotate(sub(currentPosition, rootPosition), childRotation)));
+  }
+  return overridePositions;
 }
 
 /**
@@ -2248,7 +2405,8 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
     const anchorPosition = coords.get(anchorAtomId);
     const rootPosition = coords.get(rootAtomId);
     const baseRootDeviation = bestOutwardDeviation(anchorPosition, rootPosition, outwardAngles);
-    if (!(baseRootDeviation > TIDY_ANGLE_EPSILON)) {
+    const parentTrigonalAngles = parentTrigonalAnglesForDirectAttachedRing(layoutGraph, coords, anchorAtomId, rootAtomId);
+    if (!(baseRootDeviation > TIDY_ANGLE_EPSILON) && parentTrigonalAngles.length === 0) {
       continue;
     }
 
@@ -2256,53 +2414,78 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
     const baseTrigonalPenalty = measureTrigonalDistortion(layoutGraph, coords, { focusAtomIds: descriptorFocusAtomIds }).totalDeviation;
     const currentAngle = angleOf(sub(rootPosition, anchorPosition));
     const descriptor = { anchorAtomId, rootAtomId, subtreeAtomIds };
+    const targetRecords = [
+      ...outwardAngles.map(targetAngle => ({
+        targetAngle,
+        requireRootOutwardExact: true,
+        childRotationOffsets: [0]
+      })),
+      ...parentTrigonalAngles.map(targetAngle => ({
+        targetAngle,
+        requireRootOutwardExact: false,
+        childRotationOffsets: DIRECT_ATTACHED_RING_PARENT_TRIGONAL_ROTATION_OFFSETS
+      }))
+    ];
 
-    for (const targetAngle of outwardAngles) {
+    for (const { targetAngle, requireRootOutwardExact, childRotationOffsets } of targetRecords) {
       const rotation = targetAngle - currentAngle;
       if (Math.abs(rotation) <= TIDY_ANGLE_EPSILON) {
         continue;
       }
-      const overridePositions = rotateRigidDescriptorPositions(coords, descriptor, rotation);
-      if (!overridePositions) {
-        continue;
-      }
-      const candidateCoords = new Map(coords);
-      for (const [atomId, position] of overridePositions) {
-        candidateCoords.set(atomId, position);
-      }
-      const candidateRootDeviation = bestOutwardDeviation(candidateCoords.get(anchorAtomId), candidateCoords.get(rootAtomId), outwardAngles);
-      if (!Number.isFinite(candidateRootDeviation) || candidateRootDeviation > TIDY_ANGLE_EPSILON) {
-        continue;
-      }
+      for (const childRotation of childRotationOffsets) {
+        const overridePositions = directAttachedRingRetidyOverridePositions(coords, descriptor, rotation, childRotation);
+        if (!overridePositions) {
+          continue;
+        }
+        const candidateCoords = new Map(coords);
+        for (const [atomId, position] of overridePositions) {
+          candidateCoords.set(atomId, position);
+        }
+        const candidateRootDeviation = bestOutwardDeviation(candidateCoords.get(anchorAtomId), candidateCoords.get(rootAtomId), outwardAngles);
+        if (
+          requireRootOutwardExact &&
+          (!Number.isFinite(candidateRootDeviation) || candidateRootDeviation > TIDY_ANGLE_EPSILON)
+        ) {
+          continue;
+        }
 
-      const candidateReadability = measureRingSubstituentReadability(layoutGraph, candidateCoords);
-      if (readabilityHardMetricsWorsen(candidateReadability, baseReadability)) {
-        continue;
-      }
+        const candidateReadability = measureRingSubstituentReadability(layoutGraph, candidateCoords);
+        const readabilityWorsens = requireRootOutwardExact
+          ? readabilityHardMetricsWorsen(candidateReadability, baseReadability)
+          : readabilityFailureCountsWorsen(candidateReadability, baseReadability);
+        if (readabilityWorsens) {
+          continue;
+        }
 
-      const overlapCount = countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength).count;
-      if (overlapCount > baseOverlapCount) {
-        continue;
-      }
+        const overlapCount = countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength).count;
+        if (overlapCount > baseOverlapCount) {
+          continue;
+        }
 
-      const candidateJunctionPenalty = measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, candidateCoords, { focusAtomIds: descriptorFocusAtomIds }).totalDeviation;
-      if (candidateJunctionPenalty > baseJunctionPenalty + TIDY_ANGLE_EPSILON) {
-        continue;
-      }
+        const candidateJunctionPenalty = measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, candidateCoords, { focusAtomIds: descriptorFocusAtomIds }).totalDeviation;
+        const candidateTrigonalPenalty = measureTrigonalDistortion(layoutGraph, candidateCoords, { focusAtomIds: descriptorFocusAtomIds }).totalDeviation;
+        if (requireRootOutwardExact && candidateJunctionPenalty > baseJunctionPenalty + TIDY_ANGLE_EPSILON) {
+          continue;
+        }
+        if (
+          requireRootOutwardExact
+            ? candidateTrigonalPenalty > baseTrigonalPenalty + TIDY_ANGLE_EPSILON
+            : candidateTrigonalPenalty >= baseTrigonalPenalty - TIDY_ANGLE_EPSILON
+        ) {
+          continue;
+        }
 
-      const candidateTrigonalPenalty = measureTrigonalDistortion(layoutGraph, candidateCoords, { focusAtomIds: descriptorFocusAtomIds }).totalDeviation;
-      if (candidateTrigonalPenalty > baseTrigonalPenalty + TIDY_ANGLE_EPSILON) {
-        continue;
-      }
-
-      const candidate = {
-        coords: candidateCoords,
-        overlapCount,
-        readability: candidateReadability,
-        angleDelta: Math.abs(rotation)
-      };
-      if (isBetterDirectAttachedRingRootRetidyCandidate(candidate, bestCandidate)) {
-        bestCandidate = candidate;
+        const candidate = {
+          coords: candidateCoords,
+          overlapCount,
+          readability: candidateReadability,
+          parentTrigonalPenalty: candidateTrigonalPenalty,
+          preferMinimalRotation: !requireRootOutwardExact,
+          angleDelta: angularDifference(currentAngle, targetAngle) + Math.abs(childRotation)
+        };
+        if (isBetterDirectAttachedRingRootRetidyCandidate(candidate, bestCandidate)) {
+          bestCandidate = candidate;
+        }
       }
     }
   }

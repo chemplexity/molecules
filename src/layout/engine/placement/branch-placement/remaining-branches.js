@@ -380,6 +380,26 @@ function shouldDeferTerminalCarbonLeafForPendingTrigonalNeighbor(adjacency, atom
   return isPlanarConjugatedTertiaryNitrogen(layoutGraph, anchorAtomId);
 }
 
+/**
+ * Returns whether deferred terminal leaves should still be assigned together
+ * because their ring anchor has an exact exterior fan. Halogens normally wait
+ * until heavier branches are placed, but `CF2`-like saturated ring atoms need
+ * both leaves in one batch so the exact exterior slots can be paired instead
+ * of picked greedily one at a time.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @param {string[]} deferredHeavyNeighborIds - Deferred heavy leaf IDs.
+ * @returns {boolean} True when the deferred leaves should use batch placement.
+ */
+function shouldBatchSmallRingExteriorDeferredLeaves(layoutGraph, anchorAtomId, deferredHeavyNeighborIds) {
+  return (
+    deferredHeavyNeighborIds.length >= 2
+    && deferredHeavyNeighborIds.every(neighborAtomId =>
+      isExactSmallRingExteriorContinuationEligible(layoutGraph, anchorAtomId, neighborAtomId)
+    )
+  );
+}
+
 function buildBranchPlacementAtomGrid(layoutGraph, coords, bondLength) {
   if (!(bondLength > 0) || coords.size < 160) {
     return null;
@@ -1318,7 +1338,10 @@ function placeChildren(
   }
   const shouldBatchDeferredHeavyLeaves =
     placementDeferredHeavyNeighborIds.length >= 2
-    && supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId);
+    && (
+      supportsProjectedTetrahedralGeometry(layoutGraph, anchorAtomId)
+      || shouldBatchSmallRingExteriorDeferredLeaves(layoutGraph, anchorAtomId, placementDeferredHeavyNeighborIds)
+    );
   if (placementDeferredHeavyNeighborIds.length > 0 && !shouldLeaveDeferredLeavesForLaterPass) {
     if (shouldBatchDeferredHeavyLeaves) {
       chooseBatchAngleAssignments(

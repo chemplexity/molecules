@@ -4,7 +4,9 @@ import { createLayoutGraph } from '../../../../src/layout/engine/model/layout-gr
 import { layoutBridgedFamily } from '../../../../src/layout/engine/families/bridged.js';
 import { parseSMILES } from '../../../../src/io/smiles.js';
 import { runPipeline } from '../../../../src/layout/engine/pipeline.js';
+import { auditLayout } from '../../../../src/layout/engine/audit/audit.js';
 import { findSevereOverlaps, findVisibleHeavyBondCrossings } from '../../../../src/layout/engine/audit/invariants.js';
+import { assignBondValidationClass } from '../../../../src/layout/engine/placement/bond-validation.js';
 import { BRIDGED_VALIDATION } from '../../../../src/layout/engine/constants.js';
 import { angleOf, angularDifference, distance, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { makeAdamantane, makeBicyclo222, makeNorbornane, makeUnmatchedBridgedCage } from '../support/molecules.js';
@@ -259,6 +261,31 @@ describe('layout/engine/families/bridged', () => {
     assertCompactSaturatedRingShape(graph, pipelineResult.coords, 'pipeline layout');
   });
 
+  it('keeps compact bridged ether cage projection from stretching ring bonds', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1CC2C(O)C(C1)C1OCCOC2CC1C'), {
+      suppressH: true
+    });
+    const result = layoutBridgedFamily(graph.rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: null
+    });
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+
+    assert.equal(result.placementMode, 'projected-kamada-kawai');
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.ok(
+      audit.bondLengthFailureCount <= 1,
+      `expected compact bridged ether cage to avoid multiple stretched ring bonds, got ${audit.bondLengthFailureCount}`
+    );
+    assert.ok(
+      audit.maxBondLengthDeviation < graph.options.bondLength * 0.5,
+      `expected compact bridged ether cage bond deviation to stay bounded, got ${audit.maxBondLengthDeviation.toFixed(3)}`
+    );
+  });
+
   it('balances compact fused-spiro bridged heterorings without bond failures', () => {
     const smiles = 'CC1OC2=NCC(=N)NC3=NCC(C)CC23O1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
@@ -379,6 +406,29 @@ describe('layout/engine/families/bridged', () => {
         `expected compact oxetane cage template to keep cyclobutyl ${atomId} square`
       );
     }
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
+  });
+
+  it('uses a sulfonyl azatricyclo cage template without crossed cage bonds', () => {
+    const smiles = 'CC12C[NH+](C1)C1C2C1S([O-])(=O)=O';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 3);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: 'sulfonyl-azatricyclo-cage'
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assert.deepEqual(findVisibleHeavyBondCrossings(graph, result.coords), []);
     assert.equal(pipelineResult.metadata.audit.ok, true);
     assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
   });

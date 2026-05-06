@@ -108,6 +108,199 @@ async function atomDistance(page, firstAtomId, secondAtomId) {
   }, { firstAtomId, secondAtomId });
 }
 
+async function renderedHeavyLayoutAudit(page, smiles) {
+  return await page.evaluate(async smilesValue => {
+    const { parseSMILES } = await import('/src/io/smiles.js');
+    const { auditLayout } = await import('/src/layout/engine/audit/audit.js');
+    const { createLayoutGraph } = await import('/src/layout/engine/model/layout-graph.js');
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.eE]+),([-0-9.eE]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const molecule = parseSMILES(smilesValue);
+    const coords = new Map(
+      Array.from(document.querySelectorAll('g.atom-labels g[data-atom-id]'))
+        .map(node => [node.getAttribute('data-atom-id'), parseTranslate(node.getAttribute('transform'))])
+        .filter(([, position]) => position && Number.isFinite(position.x) && Number.isFinite(position.y))
+    );
+    const bondLengths = [...molecule.bonds.values()]
+      .map(bond => [coords.get(bond.atoms[0]), coords.get(bond.atoms[1])])
+      .filter(([firstPosition, secondPosition]) => firstPosition && secondPosition)
+      .map(([firstPosition, secondPosition]) => Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y))
+      .filter(value => Number.isFinite(value) && value > 0)
+      .sort((firstValue, secondValue) => firstValue - secondValue);
+    if (bondLengths.length === 0) {
+      return null;
+    }
+    const medianBondLength = bondLengths[Math.floor(bondLengths.length / 2)];
+    const graph = createLayoutGraph(molecule, {
+      suppressH: true,
+      bondLength: medianBondLength
+    });
+    const audit = auditLayout(graph, coords, {
+      bondLength: medianBondLength
+    });
+    return {
+      ok: audit.ok,
+      severeOverlapCount: audit.severeOverlapCount,
+      visibleHeavyBondCrossingCount: audit.visibleHeavyBondCrossingCount,
+      bondLengthFailureCount: audit.bondLengthFailureCount
+    };
+  }, smiles);
+}
+
+async function renderedHeavyLayoutAspect(page) {
+  return await page.evaluate(() => {
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.eE]+),([-0-9.eE]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const positions = Array.from(document.querySelectorAll('g.atom-labels g[data-atom-id]'))
+      .map(node => parseTranslate(node.getAttribute('transform')))
+      .filter(position => position && Number.isFinite(position.x) && Number.isFinite(position.y));
+    const xs = positions.map(position => position.x);
+    const ys = positions.map(position => position.y);
+    return (Math.max(...xs) - Math.min(...xs)) / Math.max(Math.max(...ys) - Math.min(...ys), 1e-6);
+  });
+}
+
+async function renderedRingSystemAspect(page, smiles) {
+  return await page.evaluate(async smilesValue => {
+    const { parseSMILES } = await import('/src/io/smiles.js');
+    const { createLayoutGraph } = await import('/src/layout/engine/model/layout-graph.js');
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.eE]+),([-0-9.eE]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const coords = new Map(
+      Array.from(document.querySelectorAll('g.atom-labels g[data-atom-id]'))
+        .map(node => [node.getAttribute('data-atom-id'), parseTranslate(node.getAttribute('transform'))])
+        .filter(([, position]) => position && Number.isFinite(position.x) && Number.isFinite(position.y))
+    );
+    const graph = createLayoutGraph(parseSMILES(smilesValue), {
+      suppressH: true
+    });
+    const centers = graph.ringSystems
+      .map(ringSystem => {
+        const positions = ringSystem.atomIds
+          .map(atomId => coords.get(atomId))
+          .filter(Boolean);
+        if (positions.length === 0) {
+          return null;
+        }
+        return {
+          x: positions.reduce((sum, position) => sum + position.x, 0) / positions.length,
+          y: positions.reduce((sum, position) => sum + position.y, 0) / positions.length
+        };
+      })
+      .filter(Boolean);
+    const xs = centers.map(position => position.x);
+    const ys = centers.map(position => position.y);
+    return (Math.max(...xs) - Math.min(...xs)) / Math.max(Math.max(...ys) - Math.min(...ys), 1e-6);
+  }, smiles);
+}
+
+async function renderedRingChainLinkerExitDeviation(page, smiles) {
+  return await page.evaluate(async smilesValue => {
+    const { parseSMILES } = await import('/src/io/smiles.js');
+    const { createLayoutGraph } = await import('/src/layout/engine/model/layout-graph.js');
+    const { describePathLikeIsolatedRingChain } = await import('/src/layout/engine/topology/isolated-ring-chain.js');
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.eE]+),([-0-9.eE]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const coords = new Map(
+      Array.from(document.querySelectorAll('g.atom-labels g[data-atom-id]'))
+        .map(node => [node.getAttribute('data-atom-id'), parseTranslate(node.getAttribute('transform'))])
+        .filter(([, position]) => position && Number.isFinite(position.x) && Number.isFinite(position.y))
+    );
+    const graph = createLayoutGraph(parseSMILES(smilesValue), {
+      suppressH: true
+    });
+    const ringChain = describePathLikeIsolatedRingChain(graph, graph.components[0]);
+    if (!ringChain) {
+      return null;
+    }
+    const ringSystemById = new Map(ringChain.ringSystems.map(ringSystem => [ringSystem.id, ringSystem]));
+    const angleDegrees = (firstPosition, centerPosition, secondPosition) => {
+      const firstVector = {
+        x: firstPosition.x - centerPosition.x,
+        y: firstPosition.y - centerPosition.y
+      };
+      const secondVector = {
+        x: secondPosition.x - centerPosition.x,
+        y: secondPosition.y - centerPosition.y
+      };
+      const denominator = Math.hypot(firstVector.x, firstVector.y) * Math.hypot(secondVector.x, secondVector.y);
+      if (!(denominator > 0)) {
+        return null;
+      }
+      const cosine = Math.max(-1, Math.min(1, ((firstVector.x * secondVector.x) + (firstVector.y * secondVector.y)) / denominator));
+      return (Math.acos(cosine) * 180) / Math.PI;
+    };
+    const ringNeighborIds = (ringSystemId, atomId) => {
+      const ringAtomIds = new Set(ringSystemById.get(ringSystemId)?.atomIds ?? []);
+      return (graph.bondsByAtomId.get(atomId) ?? [])
+        .map(bond => (bond.a === atomId ? bond.b : bond.a))
+        .filter(neighborAtomId => ringAtomIds.has(neighborAtomId));
+    };
+    const edgeBetween = (firstRingSystemId, secondRingSystemId) => ringChain.edges.find(edge =>
+      (
+        edge.firstRingSystemId === firstRingSystemId
+        && edge.secondRingSystemId === secondRingSystemId
+      )
+      || (
+        edge.firstRingSystemId === secondRingSystemId
+        && edge.secondRingSystemId === firstRingSystemId
+      )
+    );
+    const orderedEdge = (edge, previousRingSystemId, nextRingSystemId) => {
+      if (edge.firstRingSystemId === previousRingSystemId && edge.secondRingSystemId === nextRingSystemId) {
+        return {
+          linkerAtomId: edge.linkerAtomIds[0],
+          previousAttachmentAtomId: edge.firstAttachmentAtomId,
+          nextAttachmentAtomId: edge.secondAttachmentAtomId
+        };
+      }
+      return {
+        linkerAtomId: edge.linkerAtomIds[0],
+        previousAttachmentAtomId: edge.secondAttachmentAtomId,
+        nextAttachmentAtomId: edge.firstAttachmentAtomId
+      };
+    };
+
+    let maxDeviation = 0;
+    const orderedRingSystemIds = ringChain.orderedRingSystemIds ?? [];
+    for (let index = 1; index < orderedRingSystemIds.length; index++) {
+      const previousRingSystemId = orderedRingSystemIds[index - 1];
+      const nextRingSystemId = orderedRingSystemIds[index];
+      const edge = orderedEdge(edgeBetween(previousRingSystemId, nextRingSystemId), previousRingSystemId, nextRingSystemId);
+      for (const [ringSystemId, attachmentAtomId] of [
+        [previousRingSystemId, edge.previousAttachmentAtomId],
+        [nextRingSystemId, edge.nextAttachmentAtomId]
+      ]) {
+        const attachmentPosition = coords.get(attachmentAtomId);
+        const linkerPosition = coords.get(edge.linkerAtomId);
+        if (!attachmentPosition || !linkerPosition) {
+          return null;
+        }
+        for (const neighborAtomId of ringNeighborIds(ringSystemId, attachmentAtomId)) {
+          const neighborPosition = coords.get(neighborAtomId);
+          if (!neighborPosition) {
+            return null;
+          }
+          const angle = angleDegrees(neighborPosition, attachmentPosition, linkerPosition);
+          if (angle == null) {
+            return null;
+          }
+          maxDeviation = Math.max(maxDeviation, Math.abs(angle - 120));
+        }
+      }
+    }
+    return maxDeviation;
+  }, smiles);
+}
+
 async function atomInsideRing(page, atomId, ringAtomIds) {
   return await page.evaluate(({ atomId: targetAtomId, ringAtomIds: targetRingAtomIds }) => {
     const parseTranslate = value => {
@@ -401,6 +594,56 @@ test('loading and cleaning the macrocycle aryl-glycoside bug molecule keeps fuse
   await expect.poll(maxFusedArylAngleDeviation).toBeLessThan(2);
   await expect.poll(c24ArylEtherAngleDeviation).toBeLessThan(5);
   await expect.poll(glycosideUpperRingClearance).toBeGreaterThan(60);
+});
+
+test('loading and cleaning the sulfated glycoside bug molecule keeps browser-rendered heavy geometry clean', { timeout: 120_000 }, async ({ page }) => {
+  await page.goto('/index.html');
+
+  const sulfatedGlycosideSmiles = 'CCCCCCCCCCCCO[C@H]1O[C@H](<COS(=O)(=O)O>)[C@@H](<OS(=O)(=O)O>)[C@H](<OS(=O)(=O)O>)[C@@H]1O[C@H]2O[C@H](<COS(=O)(=O)O>)[C@@H](<OS(=O)(=O)O>)[C@H](<O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O>)[C@@H]2OS(=O)(=O)O';
+  const cleanAudit = {
+    ok: true,
+    severeOverlapCount: 0,
+    visibleHeavyBondCrossingCount: 0,
+    bondLengthFailureCount: 0
+  };
+
+  await loadSmiles(page, sulfatedGlycosideSmiles);
+  await page.locator('line.bond-hit').first().waitFor({ state: 'attached' });
+
+  const maxNamedSugarSideExitDeviation = async () => {
+    const angles = await Promise.all([
+      atomBondAngleDegrees(page, 'C14', 'C39', 'O13'),
+      atomBondAngleDegrees(page, 'C14', 'O13', 'O16'),
+      atomBondAngleDegrees(page, 'C25', 'C17', 'O27'),
+      atomBondAngleDegrees(page, 'C25', 'O27', 'C32'),
+      atomBondAngleDegrees(page, 'C53', 'C45', 'O55'),
+      atomBondAngleDegrees(page, 'C53', 'O55', 'C60'),
+      atomBondAngleDegrees(page, 'C74', 'C66', 'O76'),
+      atomBondAngleDegrees(page, 'C74', 'O76', 'C81'),
+      atomBondAngleDegrees(page, 'C95', 'C87', 'O97'),
+      atomBondAngleDegrees(page, 'C95', 'O97', 'C102'),
+      atomBondAngleDegrees(page, 'O97', 'C95', 'S98'),
+      atomBondAngleDegrees(page, 'O139', 'C137', 'S140')
+    ]);
+    if (angles.some(angle => angle == null)) {
+      return null;
+    }
+    return Math.max(...angles.map(angle => Math.abs(angle - 120)));
+  };
+
+  await expect.poll(async () => await renderedHeavyLayoutAudit(page, sulfatedGlycosideSmiles), { timeout: 60_000 }).toEqual(cleanAudit);
+  await expect.poll(async () => await renderedRingSystemAspect(page, sulfatedGlycosideSmiles), { timeout: 60_000 }).toBeGreaterThan(8);
+  await expect.poll(async () => await renderedRingChainLinkerExitDeviation(page, sulfatedGlycosideSmiles), { timeout: 60_000 }).toBeLessThan(2);
+  await expect.poll(maxNamedSugarSideExitDeviation, { timeout: 60_000 }).toBeLessThan(2);
+  await expect.poll(async () => await renderedHeavyLayoutAspect(page), { timeout: 60_000 }).toBeGreaterThan(1);
+
+  await page.locator('#clean-2d-btn').click();
+
+  await expect.poll(async () => await renderedHeavyLayoutAudit(page, sulfatedGlycosideSmiles), { timeout: 60_000 }).toEqual(cleanAudit);
+  await expect.poll(async () => await renderedRingSystemAspect(page, sulfatedGlycosideSmiles), { timeout: 60_000 }).toBeGreaterThan(8);
+  await expect.poll(async () => await renderedRingChainLinkerExitDeviation(page, sulfatedGlycosideSmiles), { timeout: 60_000 }).toBeLessThan(2);
+  await expect.poll(maxNamedSugarSideExitDeviation, { timeout: 60_000 }).toBeLessThan(2);
+  await expect.poll(async () => await renderedHeavyLayoutAspect(page), { timeout: 60_000 }).toBeGreaterThan(1);
 });
 
 test('loading the benzylic amino-alcohol bug molecule keeps the visible trigonal centers and attached phenyl exit exact', async ({ page }) => {

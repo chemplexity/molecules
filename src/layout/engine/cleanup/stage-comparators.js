@@ -57,6 +57,19 @@ function comparePenalty(candidate, incumbent, key) {
 }
 
 /**
+ * Returns whether a candidate damages already-better saturated-ring exterior fans.
+ * @param {object} candidate - Candidate stage result.
+ * @param {object|null} incumbent - Current incumbent stage result.
+ * @returns {boolean} True when the small-ring exterior fan penalty regresses.
+ */
+function worsensSmallRingExteriorFan(candidate, incumbent) {
+  return (
+    (candidate?.smallRingExteriorFanExactPenalty ?? 0)
+      > (incumbent?.smallRingExteriorFanExactPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+  );
+}
+
+/**
  * Compares two stereo-aware cleanup stages using the existing final-stage ordering.
  * @param {object} candidate - Candidate stage result.
  * @param {object|null} incumbent - Current incumbent stage result.
@@ -84,6 +97,9 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   if ((r = compareDeviation(candidate.audit.maxBondLengthDeviation, incumbent.audit.maxBondLengthDeviation)) !== null) {
     return r;
   }
+  if (worsensSmallRingExteriorFan(candidate, incumbent)) {
+    return false;
+  }
   if ((r = compareCount(candidate.audit.ringSubstituentReadabilityFailureCount, incumbent.audit.ringSubstituentReadabilityFailureCount)) !== null) {
     return r;
   }
@@ -96,8 +112,18 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
   if ((r = compareCount(candidate.audit.visibleHeavyBondCrossingCount ?? 0, incumbent.audit.visibleHeavyBondCrossingCount ?? 0)) !== null) {
     return r;
   }
+  const trigonalDistortionImprovement = (incumbent.trigonalDistortionPenalty ?? 0) - (candidate.trigonalDistortionPenalty ?? 0);
   if ((r = compareCount(candidate.audit.labelOverlapCount, incumbent.audit.labelOverlapCount)) !== null) {
-    return r;
+    const labelOverlapIncrease = (candidate.audit.labelOverlapCount ?? 0) - (incumbent.audit.labelOverlapCount ?? 0);
+    if (
+      !(
+        allowPresentationTieBreak &&
+        labelOverlapIncrease === 1 &&
+        trigonalDistortionImprovement > PRESENTATION_METRIC_EPSILON
+      )
+    ) {
+      return r;
+    }
   }
   const divalentContinuationIncrease = (candidate.divalentContinuationPenalty ?? 0) - (incumbent.divalentContinuationPenalty ?? 0);
   const omittedHydrogenTrigonalImprovement = (incumbent.omittedHydrogenTrigonalPenalty ?? 0) - (candidate.omittedHydrogenTrigonalPenalty ?? 0);
@@ -125,6 +151,9 @@ export function isPreferredFinalStereoStage(candidate, incumbent, options = {}) 
     return r;
   }
   if ((r = comparePenalty(candidate, incumbent, 'omittedHydrogenTrigonalPenalty')) !== null) {
+    return r;
+  }
+  if ((r = comparePenalty(candidate, incumbent, 'trigonalDistortionPenalty')) !== null) {
     return r;
   }
   if ((r = comparePenalty(candidate, incumbent, 'terminalHeteroOutwardMaxPenalty')) !== null) {
@@ -260,6 +289,9 @@ export function isPreferredProtectedCleanupStage(familySummary, placement, candi
   if (!incumbent) {
     return true;
   }
+  if (candidate.audit?.ok !== true && worsensSmallRingExteriorFan(candidate, incumbent)) {
+    return false;
+  }
   if (shouldPreferCrossingWinOverMinorReadabilityRegression(candidate, incumbent)) {
     return true;
   }
@@ -366,6 +398,9 @@ export function isPreferredLabelClearanceStage(candidate, incumbent) {
 export function isPreferredCleanupGeometryStage(candidate, incumbent) {
   if (!incumbent) {
     return true;
+  }
+  if (candidate.audit?.ok !== true && worsensSmallRingExteriorFan(candidate, incumbent)) {
+    return false;
   }
   if (shouldPreferCrossingWinOverMinorReadabilityRegression(candidate, incumbent)) {
     return true;

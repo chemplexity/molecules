@@ -47,6 +47,7 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     const acylHydrazineGraph = createLayoutGraph(parseSMILES('CCCCC([NH3+])C(=O)CN(NC(=O)C(C[NH3+])OC1=CC=CC=C1)C(C1=CC=CC=C1)C1=CC=CC=C1'), { suppressH: true });
     const arylConjugatedGraph = createLayoutGraph(parseSMILES('CCN(C1CCC(CC1)[NH+](C)CC1=CC=CC(OCCOC)=C1)C1=CC(Cl)=CC(C(=O)NCC2=C(C)NC(C)=CC2=O)=C1C'), { suppressH: true });
     const sulfonylConjugatedGraph = createLayoutGraph(parseSMILES('CC(C)N(S(C)(=O)=O)S(C)(=O)=O'), { suppressH: true });
+    const ringAmideGraph = createLayoutGraph(parseSMILES('CS(=O)(=O)c1cn[nH]c1C2CCCCN2C(=O)Cc3cccnc3'), { suppressH: true });
     const saturatedGraph = createLayoutGraph(parseSMILES('CN(C)C'), { suppressH: true });
     const saturatedNitrogenId = [...saturatedGraph.atoms.values()].find(atom => atom.element === 'N')?.id;
     const saturatedMethylId = (saturatedGraph.bondsByAtomId.get(saturatedNitrogenId) ?? [])
@@ -57,6 +58,8 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     assert.equal(isExactVisibleTrigonalBisectorEligible(acylHydrazineGraph, 'N11', 'C26'), true);
     assert.equal(isExactVisibleTrigonalBisectorEligible(arylConjugatedGraph, 'N3', 'C25'), true);
     assert.equal(isExactVisibleTrigonalBisectorEligible(sulfonylConjugatedGraph, 'N4', 'S9'), true);
+    assert.equal(isExactVisibleTrigonalBisectorEligible(ringAmideGraph, 'N16', 'C17'), true);
+    assert.equal(isExactVisibleTrigonalBisectorEligible(ringAmideGraph, 'N16', 'C11'), false);
     assert.ok(saturatedNitrogenId);
     assert.ok(saturatedMethylId);
     assert.equal(isExactVisibleTrigonalBisectorEligible(saturatedGraph, saturatedNitrogenId, saturatedMethylId), false);

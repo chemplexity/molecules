@@ -3,8 +3,11 @@
 import { bondElectronegativityDifference } from '../../descriptors/physicochemical.js';
 import { getBondEnActive, refreshBondLengthsPanel, registerBondEnPanelUpdater, setBondEnActive, setBondLengthsActive } from './bond-overlay-state.js';
 export { getBondEnActive } from './bond-overlay-state.js';
+import { createModeAwareHelpers } from './render-mode-helpers.js';
+import { createOverlayPanelRow } from './panel-row.js';
 
 let ctx = {};
+const modeHelpers = createModeAwareHelpers(() => ctx);
 
 /**
  * Initializes the bond-EN panel renderer with the app context it needs to
@@ -19,10 +22,6 @@ let ctx = {};
 export function initBondEnPanel(context) {
   ctx = context;
   registerBondEnPanelUpdater(updateBondEnPanel);
-}
-
-function _currentDisplayedMol() {
-  return ctx.mode === 'force' ? (ctx.currentMol ?? null) : (ctx._mol2d ?? null);
 }
 
 /**
@@ -89,48 +88,25 @@ export function updateBondEnPanel(mol) {
 
   tbody.innerHTML = '';
 
-  const tr = document.createElement('tr');
-  tr.classList.add('resonance-clickable');
-  tr.title = 'Pauling electronegativity difference (Δχ) per bond. ' + 'Values reflect atomic electronegativity only and are independent of bond order.';
-  if (getBondEnActive()) {
-    tr.classList.add('resonance-active');
-  }
-
-  const nameCell = document.createElement('td');
-  const countCell = document.createElement('td');
-  countCell.className = 'reaction-count';
-  countCell.textContent = getBondEnActive() ? 'On' : 'Off';
-
-  const name = document.createElement('div');
-  name.className = 'reaction-name';
-  name.textContent = 'Bond Electronegativity';
-  nameCell.appendChild(name);
-
-  tr.appendChild(nameCell);
-  tr.appendChild(countCell);
-
-  tr.addEventListener('click', event => {
-    event.stopPropagation();
-    const nextActive = !getBondEnActive();
-    setBondEnActive(nextActive);
-    if (nextActive) {
-      setBondLengthsActive(false);
-    }
-    const displayedMol = _currentDisplayedMol() ?? mol;
-    updateBondEnPanel(displayedMol);
-    if (nextActive) {
-      refreshBondLengthsPanel(displayedMol);
-    }
-    _redraw(displayedMol);
-  });
-
-  tbody.appendChild(tr);
-}
-
-function _redraw(mol) {
-  if (ctx.mode === 'force') {
-    ctx.updateForce(mol, { preservePositions: true, preserveView: true });
-  } else {
-    ctx.draw2d();
-  }
+  tbody.appendChild(
+    createOverlayPanelRow({
+      label: 'Bond Electronegativity',
+      title: 'Pauling electronegativity difference (Δχ) per bond. Values reflect atomic electronegativity only and are independent of bond order.',
+      active: getBondEnActive(),
+      onClick: event => {
+        event.stopPropagation();
+        const nextActive = !getBondEnActive();
+        setBondEnActive(nextActive);
+        if (nextActive) {
+          setBondLengthsActive(false);
+        }
+        const displayedMol = modeHelpers.currentMol() ?? mol;
+        updateBondEnPanel(displayedMol);
+        if (nextActive) {
+          refreshBondLengthsPanel(displayedMol);
+        }
+        modeHelpers.redraw(displayedMol);
+      }
+    })
+  );
 }

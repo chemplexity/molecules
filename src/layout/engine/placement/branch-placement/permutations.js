@@ -18,6 +18,7 @@ import {
 import {
   buildCandidateAngleSets,
   chooseAttachmentAngle,
+  describeChargedSulfoxideTrigonalCenter,
   describeCrossLikeHypervalentCenter,
   findLayoutBond,
   isExactSimpleAcyclicContinuationEligible,
@@ -441,7 +442,8 @@ function trigonalCenterPenalty(layoutGraph, coords, atomId) {
   if (visibleCovalentNeighbors.length !== 3) {
     return 0;
   }
-  if (visibleCovalentNeighbors.filter(({ bond }) => (bond.order ?? 1) >= 2).length !== 1) {
+  const multipleBondCount = visibleCovalentNeighbors.filter(({ bond }) => (bond.order ?? 1) >= 2).length;
+  if (multipleBondCount !== 1 && !describeChargedSulfoxideTrigonalCenter(layoutGraph, atomId)) {
     return 0;
   }
 

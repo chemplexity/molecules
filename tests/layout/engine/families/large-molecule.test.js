@@ -9,6 +9,8 @@ import { computeBounds } from '../../../../src/layout/engine/geometry/bounds.js'
 import { layoutAtomSlice } from '../../../../src/layout/engine/placement/atom-slice.js';
 import { makeLargeExplicitHydrogenPeptide, makeLargePolyaryl } from '../support/molecules.js';
 
+const SULFATED_GLYCOSIDE_SMILES = 'CCCCCCCCCCCCO[C@H]1O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]1O[C@H]2O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O)[C@@H]2OS(=O)(=O)O';
+
 /**
  * Returns the area of the current placed coordinate bounds.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
@@ -158,5 +160,31 @@ describe('layout/engine/families/large-molecule', () => {
     assert.equal(retried.rootRetryAttemptCount, 1);
     assert.equal(retriedAudit.bondLengthFailureCount, 0);
     assert.ok(retriedAudit.severeOverlapCount <= baselineAudit.severeOverlapCount);
+  });
+
+  it('retries dense partitions for ring-rich sulfated glycosides before cleanup', () => {
+    const graph = createLayoutGraph(parseSMILES(SULFATED_GLYCOSIDE_SMILES), {
+      suppressH: true,
+      finalLandscapeOrientation: true
+    });
+    const coarsePlacement = layoutLargeMoleculeFamily(graph, graph.components[0], graph.options.bondLength, {
+      disableDensePartitionRetry: true
+    });
+    const densePlacement = layoutLargeMoleculeFamily(graph, graph.components[0], graph.options.bondLength);
+    const coarseAudit = auditLayout(graph, coarsePlacement.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: coarsePlacement.bondValidationClasses
+    });
+    const denseAudit = auditLayout(graph, densePlacement.coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: densePlacement.bondValidationClasses
+    });
+
+    assert.equal(coarsePlacement.blockCount, 2);
+    assert.equal(densePlacement.densePartitionRetryUsed, true);
+    assert.equal(densePlacement.blockCount, 12);
+    assert.equal(denseAudit.bondLengthFailureCount, 0);
+    assert.ok(denseAudit.severeOverlapCount < coarseAudit.severeOverlapCount);
+    assert.ok(denseAudit.visibleHeavyBondCrossingCount <= coarseAudit.visibleHeavyBondCrossingCount);
   });
 });

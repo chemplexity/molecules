@@ -464,6 +464,27 @@ export function mappedAtomReaction2dLocallyAnchored(reactant, product, mol, comp
 }
 
 /**
+ * Returns true when a mapped terminal hetero atom is attached only to an
+ * edited reaction center, so it should move with that center's new local
+ * geometry instead of locking the retained scaffold.
+ * @param {{atom: import('../core/Atom.js').Atom}|null} info - Neighbor info.
+ * @param {import('../core/Atom.js').Atom} center - Edited product center.
+ * @param {import('../core/Molecule.js').Molecule} mol - Preview molecule.
+ * @param {Set<string>} componentAtomIds - Product component atom IDs.
+ * @returns {boolean} True if the neighbor is a terminal mapped hetero.
+ */
+function isReaction2dTerminalMappedHeteroAtEditedCenter(info, center, mol, componentAtomIds) {
+  if (!info?.atom || !center || !mol?.__reactionPreview?.editedProductAtomIds?.has(center.id)) {
+    return false;
+  }
+  if (!_TERMINAL_HETEROATOMS.has(info.atom.name)) {
+    return false;
+  }
+  const infoHeavyNeighbors = info.atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H');
+  return infoHeavyNeighbors.length === 1 && infoHeavyNeighbors[0]?.id === center.id;
+}
+
+/**
  * Restores mapped product atoms whose local scaffold connectivity survived the
  * reaction so retained rings and their unchanged substituents move together.
  * Edited ring atoms are allowed because they anchor changed carbonyl sites,
@@ -1275,12 +1296,7 @@ function idealizeReaction2dEditedCenters(mol, componentAtomIds, bondLength = 1.5
       if (!info.anchored) {
         return false;
       }
-      if (!mol.__reactionPreview.editedProductAtomIds.has(center.id)) {
-        return true;
-      }
-      const infoHeavyNeighbors = info.atom.getNeighbors(mol).filter(nb => componentAtomIds.has(nb.id) && nb.name !== 'H');
-      const isTerminalMappedHetero = _TERMINAL_HETEROATOMS.has(info.atom.name) && infoHeavyNeighbors.length === 1 && infoHeavyNeighbors[0]?.id === center.id;
-      return !isTerminalMappedHetero;
+      return !isReaction2dTerminalMappedHeteroAtEditedCenter(info, center, mol, componentAtomIds);
     });
 
     if (anchored.length >= 2) {
@@ -2086,7 +2102,9 @@ function finalizeReaction2dEditedCarbonylCenters(mol, componentAtomIds, bondLeng
       continue;
     }
 
-    const scaffoldAnchors = infos.filter(info => info.scaffold);
+    const scaffoldAnchors = infos.filter(
+      info => info.scaffold && (info.atom.name === 'O' || !isReaction2dTerminalMappedHeteroAtEditedCenter(info, center, mol, componentAtomIds))
+    );
     if (scaffoldAnchors.length === 1) {
       const anchor = scaffoldAnchors[0];
       const moving = infos.filter(info => info !== anchor);

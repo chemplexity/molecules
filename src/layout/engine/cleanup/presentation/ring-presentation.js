@@ -178,15 +178,6 @@ function collectCovalentHeavyNeighborIds(layoutGraph, coords, atomId) {
     .filter(neighborAtomId => coords.has(neighborAtomId) && isHeavyAtom(layoutGraph, neighborAtomId));
 }
 
-function isDirectAttachedAromaticRingRoot(layoutGraph, anchorAtomId, rootAtomId) {
-  const rootAtom = layoutGraph.atoms.get(rootAtomId);
-  if (rootAtom?.aromatic !== true) {
-    return false;
-  }
-  return (layoutGraph.atomToRings.get(rootAtomId) ?? [])
-    .some(ring => !(ring.atomIds ?? []).includes(anchorAtomId));
-}
-
 function collectCovalentSubtreeAtomIds(layoutGraph, rootAtomId, blockedAtomId) {
   const visitedAtomIds = new Set([blockedAtomId]);
   const pendingAtomIds = [rootAtomId];
@@ -661,12 +652,6 @@ function collectSmallRingExteriorFanDescriptors(layoutGraph, coords) {
       if (ringNeighborIds.length !== 2 || exocyclicNeighborIds.length !== 2) {
         continue;
       }
-      if (!exocyclicNeighborIds.every(neighborAtomId => (
-        isDirectAttachedAromaticRingRoot(layoutGraph, anchorAtomId, neighborAtomId)
-      ))) {
-        continue;
-      }
-
       const anchorPosition = coords.get(anchorAtomId);
       const ringNeighborAngles = ringNeighborIds.map(neighborAtomId => angleOf(sub(coords.get(neighborAtomId), anchorPosition)));
       const targetAngles = smallRingExteriorTargetAngles(ringNeighborAngles, ringAtomIds.size);
@@ -1029,6 +1014,12 @@ function buildPresentationState(layoutGraph, coords, nudges, steps, options) {
 function isBetterPresentationState(layoutGraph, candidateState, incumbentState, options) {
   if (!incumbentState) {
     return true;
+  }
+  if (
+    candidateState.smallRingExteriorFanExactPenalty
+      > incumbentState.smallRingExteriorFanExactPenalty + PRESENTATION_NEED_EPSILON
+  ) {
+    return false;
   }
   if (candidateState.visibleBondCrossingCount !== incumbentState.visibleBondCrossingCount) {
     return candidateState.visibleBondCrossingCount < incumbentState.visibleBondCrossingCount;

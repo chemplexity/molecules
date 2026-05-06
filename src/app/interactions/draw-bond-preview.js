@@ -19,8 +19,9 @@ export function createDrawBondPreviewActions(context) {
   }
 
   function appendPreviewLine(container, x1, y1, x2, y2, options = {}) {
-    const strokeWidth = options.strokeWidth ?? (context.getMode() === 'force' ? parseFloat(context.helpers.singleBondWidth(1)) : context.constants.strokeWidth);
-    const defaultStroke = context.getMode() === 'force' ? '#696969' : '#111';
+    const isForceMode = context.getMode() === 'force';
+    const strokeWidth = options.strokeWidth ?? (isForceMode ? parseFloat(context.helpers.singleBondWidth(1)) : context.constants.strokeWidth);
+    const defaultStroke = isForceMode ? '#696969' : '#111';
     const line = container
       .append('line')
       .attr('class', options.className ?? 'draw-bond-preview-segment')
@@ -41,13 +42,14 @@ export function createDrawBondPreviewActions(context) {
     removePreviewGeometry();
     const group = context.g.insert('g', ':scope > circle').attr('class', 'draw-bond-preview').attr('pointer-events', 'none');
     const drawBondType = context.getDrawBondType?.() ?? 'single';
+    const isForce = context.getMode() === 'force';
     const dx = x2 - x1;
     const dy = y2 - y1;
     const length = Math.hypot(dx, dy) || 1;
     const nx = -dy / length;
     const ny = dx / length;
-    const parallelOffset = context.getMode() === 'force' ? 3 : (context.constants.bondOffset2d ?? 7);
-    const wedgeHalfWidth = context.getMode() === 'force' ? 5 : 6;
+    const parallelOffset = isForce ? 3 : (context.constants.bondOffset2d ?? 7);
+    const wedgeHalfWidth = isForce ? 5 : 6;
 
     if (drawBondType === 'wedge') {
       group
@@ -75,7 +77,7 @@ export function createDrawBondPreviewActions(context) {
     }
 
     if (drawBondType === 'double') {
-      if (context.getMode() === 'force') {
+      if (isForce) {
         appendPreviewLine(group, x1, y1, x2, y2, {
           strokeWidth: parseFloat(context.helpers.singleBondWidth(2)),
           className: 'draw-bond-preview-segment'
@@ -93,7 +95,7 @@ export function createDrawBondPreviewActions(context) {
     }
 
     if (drawBondType === 'triple') {
-      if (context.getMode() === 'force') {
+      if (isForce) {
         const forceOffset = 2;
         appendPreviewLine(group, x1, y1, x2, y2, {
           strokeWidth: parseFloat(context.helpers.singleBondWidth(3)),
@@ -122,7 +124,7 @@ export function createDrawBondPreviewActions(context) {
       appendPreviewLine(group, x1 + nx * parallelOffset * 0.5, y1 + ny * parallelOffset * 0.5, x2 + nx * parallelOffset * 0.5, y2 + ny * parallelOffset * 0.5, {
         className: 'draw-bond-preview-dashed',
         dasharray: '4 3',
-        strokeWidth: context.getMode() === 'force' ? 2.2 : 1.6
+        strokeWidth: isForce ? 2.2 : 1.6
       });
       return;
     }

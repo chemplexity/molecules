@@ -10,6 +10,9 @@ import {
   hasHypervalentAngleTidyNeed,
   measureOrthogonalHypervalentDeviation
 } from '../../../src/layout/engine/cleanup/hypervalent-angle-tidy.js';
+import {
+  measureTerminalMultipleBondLeafFanPenalty
+} from '../../../src/layout/engine/cleanup/presentation/ring-terminal-hetero.js';
 
 function assertOrthogonalCross(result, centerAtomIds) {
   for (const centerAtomId of centerAtomIds) {
@@ -77,6 +80,21 @@ function assertExteriorOxoV(result, centerAtomId, oxoAtomIds, expectedSpread) {
   }
 }
 
+function assertIncidentRingOutwardBond(result, centerAtomId, neighborAtomId) {
+  const centerPosition = result.coords.get(centerAtomId);
+  const neighborPosition = result.coords.get(neighborAtomId);
+  assert.ok(centerPosition);
+  assert.ok(neighborPosition);
+
+  const outwardAngles = computeIncidentRingOutwardAngles(result.layoutGraph, centerAtomId, atomId => result.coords.get(atomId) ?? null);
+  assert.equal(outwardAngles.length, 1);
+
+  const bondAngle = angleOf(sub(neighborPosition, centerPosition));
+  assert.ok(
+    outwardAngles.some(outwardAngle => angularDifference(bondAngle, outwardAngle) < 1e-6)
+  );
+}
+
 function assertOxoLigandsOutsideIncidentRings(result, centerAtomId, oxoAtomIds) {
   const incidentRings = result.layoutGraph.atomToRings.get(centerAtomId) ?? [];
   assert.ok(incidentRings.length > 0);
@@ -103,6 +121,23 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertBondAngle(result, 'S12', 'N13', 'O14', (2 * Math.PI) / 3);
     assertBondAngle(result, 'S12', 'N13', 'O15', (2 * Math.PI) / 3);
     assertBondAngle(result, 'O14', 'N13', 'O15', (2 * Math.PI) / 3);
+  });
+
+  it('keeps charged sulfoxide linkers on a trigonal three-heavy fan', () => {
+    const result = runPipeline(parseSMILES('COc1nc(C[S+]([O-])c2nc3ccccc3[nH]2)nc4scc(c5ccccc5)c14'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assertBondAngle(result, 'C6', 'S7', 'O8', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'C6', 'S7', 'C9', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'O8', 'S7', 'C9', (2 * Math.PI) / 3);
+    assertIncidentRingOutwardBond(result, 'C9', 'S7');
   });
 
   it('keeps crowded aryl nitro groups with two terminal oxo leaves on trigonal nitrogen fans', () => {
@@ -264,6 +299,23 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
       assertBondAngle(result, 'C4', 'P2', 'O15', (2 * Math.PI) / 3);
       assertBondAngle(result, 'P2', 'C4', 'C5', (2 * Math.PI) / 3);
     }
+  });
+
+  it('keeps suppressed-h bis-oxo sulfones on a visible trigonal spread', () => {
+    const result = runPipeline(parseSMILES('CC1(CCC(=O)NCCSSCCC(=O)ON2C(=O)C[C-](C2=O)S(=O)=O)N=N1'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S24']) }) < 1e-9);
+    assertBondAngle(result, 'C21', 'S24', 'O25', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'C21', 'S24', 'O26', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'O25', 'S24', 'O26', (2 * Math.PI) / 3);
   });
 
   it('keeps bis-oxo sulfones with aryl and amine single-bond ligands on the correct opposite axis', () => {
@@ -469,7 +521,7 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertOrthogonalCross(result, ['S9', 'S16']);
   });
 
-  it('keeps terminal sulfonyl sulfur hydrogens opposite the amine ligand in fused layouts', () => {
+  it('keeps suppressed terminal sulfonyl sulfur hydrogens from distorting the visible heavy-atom fan', () => {
     const result = runPipeline(parseSMILES('FC1=CC=CC(CC2C(CC3=CC=C(CC4(CCC4)NS(=O)=O)C=C23)[NH+]2CCC2)=C1'), {
       suppressH: true,
       auditTelemetry: true
@@ -479,8 +531,29 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
     assert.equal(result.metadata.audit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
-    assertOppositePair(result, 'S21', 'O22', 'O23');
-    assertOppositePair(result, 'S21', 'N20', 'H52');
+    assertBondAngle(result, 'N20', 'S21', 'O22', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'N20', 'S21', 'O23', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'O22', 'S21', 'O23', (2 * Math.PI) / 3);
+    assert.ok(measureTerminalMultipleBondLeafFanPenalty(result.layoutGraph, result.coords).maxDeviation < 1e-9);
+  });
+
+  it('keeps bulky suppressed-h terminal sulfonyl visible ligands trigonal', () => {
+    const result = runPipeline(parseSMILES('CN1C(=O)N(C2=CC=C(CC(NC(=O)C3=CC=C(C=C3F)N(C3=CC=NC=C3)S(=O)=O)C([O-])=O)C=C2)C(=O)C2=CC=NC=C12'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assertBondAngle(result, 'N22', 'S29', 'O30', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'N22', 'S29', 'O31', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'O30', 'S29', 'O31', (2 * Math.PI) / 3);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S29']) }) < 1e-9);
+    assert.ok(measureTerminalMultipleBondLeafFanPenalty(result.layoutGraph, result.coords).maxDeviation < 1e-9);
   });
 
   it('rotates compact diaryl sulfonyl ligands so ring sulfonamides keep an exact sulfur cross', () => {

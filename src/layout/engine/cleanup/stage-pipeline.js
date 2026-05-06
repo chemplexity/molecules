@@ -401,6 +401,12 @@ export function buildCleanupStageGraph(context) {
     if (!auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)) {
       return false;
     }
+    if (
+      (candidate.smallRingExteriorFanExactPenalty ?? 0)
+        > (incumbent?.smallRingExteriorFanExactPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+    ) {
+      return false;
+    }
     const candidateMaxPenalty = candidate.omittedHydrogenDirectRingHubCollateralRootMaxPenalty ?? 0;
     const incumbentMaxPenalty = incumbent?.omittedHydrogenDirectRingHubCollateralRootMaxPenalty ?? 0;
     if (candidateMaxPenalty < incumbentMaxPenalty - PRESENTATION_METRIC_EPSILON) {

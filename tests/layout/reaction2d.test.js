@@ -775,6 +775,38 @@ test('reaction preview keeps retained scaffold compact for benzylic oxidation an
   }
 });
 
+test('reaction preview keeps imine-hydrolysis edited carbonyl centers trigonal', () => {
+  const preview = preparePreview(
+    'CC(C)C12CC1(C)C(C)(CC2C=O)C(N)=N',
+    reactionTemplates.imineHydrolysis.smirks
+  );
+  const componentAtomIds = preview.productComponentAtomIdSets.find(atomIds => atomIds.has('__rxn_product__0:C14'));
+  assert.ok(componentAtomIds, 'expected the retained product component to contain C14');
+
+  const center = preview.mol.atoms.get('__rxn_product__0:C14');
+  const scaffoldAnchor = preview.mol.atoms.get('__rxn_product__0:C8');
+  const terminalNitrogen = preview.mol.atoms.get('__rxn_product__0:N15');
+  const carbonylOxygen = center
+    .getNeighbors(preview.mol)
+    .find(atom => atom.name === 'O' && (preview.mol.getBond(center.id, atom.id)?.properties.order ?? 1) >= 2);
+
+  assert.ok(center && scaffoldAnchor && terminalNitrogen && carbonylOxygen);
+  for (const [first, second] of [
+    [scaffoldAnchor, terminalNitrogen],
+    [scaffoldAnchor, carbonylOxygen],
+    [terminalNitrogen, carbonylOxygen]
+  ]) {
+    assert.ok(Math.abs(angleDeg(first, center, second) - 120) < 1e-6, 'expected edited C14 product fan to stay trigonal');
+  }
+  assert.ok(Math.abs(distance(center, scaffoldAnchor) - 1.5) < 1e-6);
+  assert.ok(Math.abs(distance(center, terminalNitrogen) - 1.5) < 1e-6);
+  assert.ok(Math.abs(distance(center, carbonylOxygen) - 1.29) < 1e-6);
+
+  const stats = heavyGeometryStats(preview, componentAtomIds);
+  assert.ok(stats.maxBond < 1.85, `expected product component to keep normal bond lengths, got ${stats.maxBond.toFixed(3)} Å`);
+  assert.ok(stats.minNonbonded > 0.8, `expected product component to avoid retained-scaffold overlaps, got ${stats.minNonbonded.toFixed(3)} Å`);
+});
+
 test('reaction preview keeps aromatic-aza-protonation fused aza product valence-clean', () => {
   const preview = preparePreview(
     'C[C@@H]1CCCC[C@H]1OC1=CC=CC(c2nc3cc(F)c(cc3n2)C(N)=[NH2+])=C1[O-]',

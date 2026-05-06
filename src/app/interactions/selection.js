@@ -9,6 +9,23 @@ const CHARGE_TOOLS = ['positive', 'negative'];
  * @param {object} context - Dependency context providing state, view, dom, drawBond, renderers, and actions.
  * @returns {object} Object with `togglePanMode`, `toggleSelectMode`, `toggleDrawBondMode`, `toggleEraseMode`, `setDrawElement`, `setDrawBondType`, `handleDrawBondButtonClick`, `openDrawBondDrawer`, `closeDrawBondDrawer`, `toggleDrawBondDrawer`, and sync/clear button helpers.
  */
+function createButtonSynchronizer(items, getButton) {
+  return {
+    sync(activeValue) {
+      for (const item of items) {
+        const btn = getButton(item);
+        if (btn) btn.classList.toggle('active', item === activeValue);
+      }
+    },
+    clear() {
+      for (const item of items) {
+        const btn = getButton(item);
+        if (btn) btn.classList.remove('active');
+      }
+    }
+  };
+}
+
 export function createSelectionActions(context) {
   function setDrawBondDrawerHoverSuppressed(value) {
     context.dom.drawTools?.classList?.toggle?.('drawer-hover-suppressed', value);
@@ -90,62 +107,16 @@ export function createSelectionActions(context) {
     }
   }
 
-  function syncChargeButtons() {
-    const activeTool = context.state.overlayState.getChargeTool?.() ?? null;
-    for (const tool of CHARGE_TOOLS) {
-      const btn = context.dom.getChargeToolButton?.(tool);
-      if (btn) {
-        btn.classList.toggle('active', tool === activeTool);
-      }
-    }
-  }
+  const chargeSync = createButtonSynchronizer(CHARGE_TOOLS, tool => context.dom.getChargeToolButton?.(tool));
+  const elementSync = createButtonSynchronizer(DRAW_ELEMENTS, element => context.dom.getElementButton(element));
+  const bondTypeSync = createButtonSynchronizer(DRAW_BOND_TYPES, type => context.dom.getBondDrawTypeButton?.(type));
 
-  function clearChargeButtons() {
-    for (const tool of CHARGE_TOOLS) {
-      const btn = context.dom.getChargeToolButton?.(tool);
-      if (btn) {
-        btn.classList.remove('active');
-      }
-    }
-  }
-
-  function syncElementButtons() {
-    const activeElement = context.state.overlayState.getDrawBondElement();
-    for (const element of DRAW_ELEMENTS) {
-      const btn = context.dom.getElementButton(element);
-      if (btn) {
-        btn.classList.toggle('active', element === activeElement);
-      }
-    }
-  }
-
-  function clearElementButtons() {
-    for (const element of DRAW_ELEMENTS) {
-      const btn = context.dom.getElementButton(element);
-      if (btn) {
-        btn.classList.remove('active');
-      }
-    }
-  }
-
-  function syncBondDrawTypeButtons() {
-    const activeType = context.state.overlayState.getDrawBondType?.() ?? 'single';
-    for (const type of DRAW_BOND_TYPES) {
-      const btn = context.dom.getBondDrawTypeButton?.(type);
-      if (btn) {
-        btn.classList.toggle('active', type === activeType);
-      }
-    }
-  }
-
-  function clearBondDrawTypeButtons() {
-    for (const type of DRAW_BOND_TYPES) {
-      const btn = context.dom.getBondDrawTypeButton?.(type);
-      if (btn) {
-        btn.classList.remove('active');
-      }
-    }
-  }
+  function syncChargeButtons() { chargeSync.sync(context.state.overlayState.getChargeTool?.() ?? null); }
+  function clearChargeButtons() { chargeSync.clear(); }
+  function syncElementButtons() { elementSync.sync(context.state.overlayState.getDrawBondElement()); }
+  function clearElementButtons() { elementSync.clear(); }
+  function syncBondDrawTypeButtons() { bondTypeSync.sync(context.state.overlayState.getDrawBondType?.() ?? 'single'); }
+  function clearBondDrawTypeButtons() { bondTypeSync.clear(); }
 
   function rerenderToolOverlay() {
     if (context.state.viewState.getMode() === 'force') {

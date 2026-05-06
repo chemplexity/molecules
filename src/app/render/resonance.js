@@ -1,8 +1,11 @@
 /** @module app/render/resonance */
 
 import { generateResonanceStructures } from '../../algorithms/index.js';
+import { createModeAwareHelpers } from './render-mode-helpers.js';
+import { createNavButton } from './panel-row.js';
 
 let ctx = {};
+const modeHelpers = createModeAwareHelpers(() => ctx);
 
 /**
  * Default resonance options used by the sidebar panel.
@@ -199,12 +202,8 @@ export function updateResonancePanel(mol, options = {}) {
   _renderResonancePanel(mol);
 }
 
-/**
- * Returns the currently rendered molecule for the active mode.
- * @returns {import('../../core/Molecule.js').Molecule|null} The active 2D or force-layout molecule.
- */
 function _currentResonanceMolecule() {
-  return ctx.mode === 'force' ? (ctx.currentMol ?? null) : (ctx._mol2d ?? null);
+  return modeHelpers.currentMol();
 }
 
 /**
@@ -224,43 +223,11 @@ function _resolveResonanceTargetMolecule(mol) {
   return _currentResonanceMolecule() ?? mol;
 }
 
-/**
- * Redraws the active molecule after a resonance contributor change while
- * keeping the current view stable in force mode.
- * @param {import('../../core/Molecule.js').Molecule} mol - The molecule to redraw.
- */
 function _redrawResonanceMolecule(mol) {
-  if (ctx.mode === 'force') {
-    ctx.updateForce(mol, { preservePositions: true, preserveView: true });
-    return;
-  }
-  ctx.draw2d();
+  modeHelpers.redraw(mol);
 }
 
-/**
- * Creates a small circular navigation button for the resonance panel.
- * @param {string} label - Button text label.
- * @param {string} title - Tooltip title.
- * @param {() => void} onActivate - Callback invoked when the button is clicked.
- * @returns {HTMLButtonElement} The created button element.
- */
-function _resonanceNavButton(label, title, onActivate) {
-  const btn = document.createElement('button');
-  btn.type = 'button';
-  btn.className = 'reaction-nav-btn';
-  btn.title = title;
-  btn.textContent = label;
-  btn.addEventListener('mousedown', event => {
-    event.preventDefault();
-    event.stopPropagation();
-    onActivate();
-  });
-  btn.addEventListener('click', event => {
-    event.preventDefault();
-    event.stopPropagation();
-  });
-  return btn;
-}
+const _resonanceNavButton = createNavButton;
 
 /**
  * Applies a specific resonance contributor to the current molecule and updates

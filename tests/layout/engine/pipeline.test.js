@@ -543,6 +543,131 @@ describe('layout/engine/pipeline', () => {
     assert.ok(Math.min(...rightRingBondLengths) > 1.18, `expected right-side ring bonds to avoid compression, got ${rightRingBondLengths.map(length => length.toFixed(3)).join(', ')}`);
   });
 
+  it('uses the bridged lactone template instead of collapsing compact oxabicyclic rings', () => {
+    const result = runPipeline(parseSMILES('CN(CCN)C(=[NH2+])C1CCC2CCC1OC2=O'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const sixMemberRingAngles = ringAngles(result.coords, ['C17', 'O16', 'C15', 'C14', 'C13', 'C12']);
+    const sevenMemberRingAngles = ringAngles(result.coords, ['C15', 'O16', 'C17', 'C12', 'C11', 'C10', 'C9']);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    for (const angle of sixMemberRingAngles) {
+      assert.ok(Math.abs(angle - 120) < 1e-4, `expected the lactone six-ring to stay regular, got ${sixMemberRingAngles.map(candidate => candidate.toFixed(2)).join(', ')}`);
+    }
+    assert.ok(Math.min(...sixMemberRingAngles) > 100, `expected the lactone ring to stay open, got ${sixMemberRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...sevenMemberRingAngles) > 95, `expected the larger bridged ring to stay open, got ${sevenMemberRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+  });
+
+  it('uses the oxazabicyclic lactam template instead of crossing compact bridged rings', () => {
+    const result = runPipeline(parseSMILES('CC1(CC#N)CC2COC1C(=O)N2'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const etherRingAngles = ringAngles(result.coords, ['C6', 'C7', 'C8', 'O9', 'C10', 'C2']);
+    const lactamRingAngles = ringAngles(result.coords, ['C10', 'C11', 'N13', 'C7', 'C6', 'C2']);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    assert.ok(Math.min(...etherRingAngles) > 90, `expected the ether bridged ring to stay open, got ${etherRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...lactamRingAngles) > 105, `expected the lactam bridged ring to stay open, got ${lactamRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+  });
+
+  it('uses the bridged pyrrolizidine dione template instead of malformed tricyclic cage rings', () => {
+    const result = runPipeline(parseSMILES(String.raw`C\C=C\C=C\C(=O)C1=C(O)[C@@]2(C)[C@H]3CCCN3[C@@H]1[C@](C)(O)C2=O`), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const pyrrolizidineRingAngles = ringAngles(result.coords, ['N18', 'C17', 'C16', 'C15', 'C13']);
+    const upperBridgeAngles = ringAngles(result.coords, ['C9', 'C11', 'C13', 'N18', 'C19', 'C8']);
+    const lowerBridgeAngles = ringAngles(result.coords, ['C19', 'C21', 'C24', 'C11', 'C9', 'C8']);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < result.layoutGraph.options.bondLength * 0.31);
+    assert.ok(Math.min(...pyrrolizidineRingAngles) > 100, `expected the pyrrolizidine five-ring to stay open, got ${pyrrolizidineRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...upperBridgeAngles) > 40, `expected the upper bridged ring to avoid collapse, got ${upperBridgeAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...lowerBridgeAngles) > 40, `expected the lower bridged ring to avoid collapse, got ${lowerBridgeAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+  });
+
+  it('uses the amino oxaza tricyclo template instead of malformed compact bridged rings', () => {
+    const result = runPipeline(parseSMILES('CC1=C2C(OC1)C1(N)C3NC3C2CC1N'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const upperRingAngles = ringAngles(result.coords, ['C12', 'C13', 'C14', 'C7', 'C4', 'C3']);
+    const oxolaneAngles = ringAngles(result.coords, ['C6', 'O5', 'C4', 'C3', 'C2']);
+    const aziridineAngles = ringAngles(result.coords, ['C11', 'N10', 'C9']);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < result.layoutGraph.options.bondLength * 0.31);
+    assert.ok(Math.min(...upperRingAngles) > 110, `expected the bridged six-ring to stay open, got ${upperRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...oxolaneAngles) > 85, `expected the oxolane loop to stay readable, got ${oxolaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...aziridineAngles) > 48, `expected the aziridine cap to stay open, got ${aziridineAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+  });
+
+  it('uses the amino diaza tricyclo template instead of crossing compact bridged lanes', () => {
+    const result = runPipeline(parseSMILES('CC1CC(O)C2CNC(=N)C1C1(C)NC=NC21'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const carbocycleAngles = ringAngles(result.coords, ['C11', 'C12', 'C17', 'C6', 'C4', 'C3', 'C2']);
+    const imineBridgeAngles = ringAngles(result.coords, ['C11', 'C12', 'C17', 'C6', 'C7', 'N8', 'C9']);
+    const diazaCapAtomIds = ['C17', 'N16', 'C15', 'N14', 'C12'];
+    const diazaCapAngles = ringAngles(result.coords, diazaCapAtomIds);
+    const diazaCapLengths = diazaCapAtomIds.map((atomId, index) => distance(
+      result.coords.get(atomId),
+      result.coords.get(diazaCapAtomIds[(index + 1) % diazaCapAtomIds.length])
+    ));
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < result.layoutGraph.options.bondLength * 0.4);
+    assert.ok(Math.min(...carbocycleAngles) > 115, `expected the carbocycle lane to stay open, got ${carbocycleAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...imineBridgeAngles) > 85, `expected the imine bridge lane to stay readable, got ${imineBridgeAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    for (const angle of diazaCapAngles) {
+      assert.ok(Math.abs(angle - 108) < 0.5, `expected the diaza cap to stay regular, got ${diazaCapAngles.map(candidate => candidate.toFixed(2)).join(', ')}`);
+    }
+    const compactCapLength = result.layoutGraph.options.bondLength * 0.8;
+    for (const length of diazaCapLengths) {
+      assert.ok(Math.abs(length - compactCapLength) < 1e-4, `expected the diaza cap to stay compact, got ${diazaCapLengths.map(candidate => candidate.toFixed(3)).join(', ')}`);
+    }
+  });
+
   it('keeps compact aromatic-bridged ammonium scaffolds from folding the saturated ring flat', () => {
     const result = runPipeline(parseSMILES('CC1NC2C[NH2+]C1(C)CCOC1=CC=CC2=C1'), {
       suppressH: true,
@@ -562,6 +687,69 @@ describe('layout/engine/pipeline', () => {
     assert.ok(methyleneBend > 100 && methyleneBend < 145, `expected C5 to stay bent inside the saturated ring, got ${methyleneBend.toFixed(2)} degrees`);
     for (const angle of benzeneAngles) {
       assert.ok(Math.abs(angle - 120) < 1e-6, `expected the fused benzene ring to stay exact, got ${angle.toFixed(2)} degrees`);
+    }
+  });
+
+  it('uses the oripavine bridged-core template instead of malformed KK rings', () => {
+    const result = runPipeline(
+      parseSMILES('[H][C@@]12OC3=C(O)C=CC4=C3[C@@]11CCN(CC3CC3)[C@]([H])(C4)[C@]11CC[C@@]2(OC)[C@H](C1)C(C)(C)O'),
+      {
+        suppressH: true,
+        auditTelemetry: true,
+        finalLandscapeOrientation: true
+      }
+    );
+    const crossingKeys = new Set(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords).map(crossing => (
+      [
+        crossing.firstAtomIds.join('-'),
+        crossing.secondAtomIds.join('-')
+      ].sort().join(':')
+    )));
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < result.layoutGraph.options.bondLength * 0.16);
+    assert.equal(crossingKeys.has('C24-C25:C28-C30'), false);
+    assert.equal(crossingKeys.has('C11-C12:C19-C22'), false);
+  });
+
+  it('uses the oxaza morphinan bridged-core template instead of malformed KK rings', () => {
+    const result = runPipeline(
+      parseSMILES('COC1(NC(=O)C(=CC2=CC=CC=C2)C(F)(F)F)C=C(O)C2=C3C1OC1CCCC4C(C2)[N+](CC2CC2)(CCC314)C(C)C'),
+      {
+        suppressH: true,
+        auditTelemetry: true,
+        finalLandscapeOrientation: true
+      }
+    );
+    const crossingCount = findVisibleHeavyBondCrossings(result.layoutGraph, result.coords).length;
+    const regularSixRings = [
+      ['C24', 'C23', 'C22', 'C20', 'C19', 'C3'],
+      ['C40', 'C26', 'C27', 'C28', 'C29', 'C30'],
+      ['C32', 'C31', 'C30', 'C40', 'C23', 'C22']
+    ];
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < result.layoutGraph.options.bondLength * 0.45);
+    assert.ok(crossingCount <= 1);
+    for (const ring of regularSixRings) {
+      for (const angle of ringAngles(result.coords, ring)) {
+        assert.ok(Math.abs(angle - 120) < 1e-4);
+      }
+      for (let index = 0; index < ring.length; index++) {
+        const atomId = ring[index];
+        const nextAtomId = ring[(index + 1) % ring.length];
+        assert.ok(Math.abs(distance(result.coords.get(atomId), result.coords.get(nextAtomId)) - result.layoutGraph.options.bondLength) < 1e-4);
+      }
     }
   });
 
@@ -923,6 +1111,23 @@ describe('layout/engine/pipeline', () => {
     assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C60', 'C58', 'O61') - 120) < 1e-6);
   });
 
+  it('keeps large sulfated glycoside chains overlap-free after dense block retry', () => {
+    const result = runPipeline(parseSMILES('CCCCCCCCCCCCO[C@H]1O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]1O[C@H]2O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O)[C@@H]2OS(=O)(=O)O'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(result.metadata.placementMode, 'block-stitched');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.equal(result.metadata.placementAudit.bondLengthFailureCount, 0);
+  });
+
   it('keeps the inter-ring ether between fused sugar rings on a proper ether bond angle', () => {
     const smiles = 'C[C@@]1(C[C@@H](O)[C@@]2(O)C=CO[C@@H](O[C@H]3O[C@@H](CO)[C@@H](O)[C@@H](O)[C@@H]3O)[C@@H]12)OC(=O)\\C=C/c4ccccc4';
     const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(smiles);
@@ -1216,14 +1421,15 @@ describe('layout/engine/pipeline', () => {
     );
     const chloroMaxDeviation = Math.max(Math.abs(firstChloroAngle - 120), Math.abs(secondChloroAngle - 120));
     const heteroarylMaxDeviation = Math.max(Math.abs(firstHeteroarylAngle - 120), Math.abs(secondHeteroarylAngle - 120));
+    const oxadiazoleRootMaxDeviation = Math.max(Math.abs(firstOxadiazoleAngle - 126), Math.abs(secondOxadiazoleAngle - 126));
 
     assert.ok(chloroMaxDeviation < 1e-6, `expected the chlorophenyl leaf to stay exact after compression, got ${chloroMaxDeviation.toFixed(2)}`);
     assert.ok(chloroBondLength <= result.layoutGraph.options.bondLength * 0.91, `expected C10-Cl11 to compress to avoid overlap, got ${chloroBondLength.toFixed(2)}`);
-    assert.ok(heteroarylMaxDeviation <= 12.5 + 1e-6, `expected the C12 heteroaryl compromise to stay within 12.5 degrees, got ${heteroarylMaxDeviation.toFixed(2)}`);
+    assert.ok(heteroarylMaxDeviation < 1e-6, `expected the C12 heteroaryl fan to retidy to 120 degrees, got ${heteroarylMaxDeviation.toFixed(2)}`);
+    assert.ok(oxadiazoleRootMaxDeviation <= 7 + 1e-6, `expected the oxadiazole root relief to stay bounded, got ${oxadiazoleRootMaxDeviation.toFixed(2)}`);
     assert.ok(Math.abs(firstBenzylicAngle - 120) < 1e-6, `expected C3-C4-C5 to stay at 120 degrees, got ${firstBenzylicAngle.toFixed(2)}`);
     assert.ok(Math.abs(secondBenzylicAngle - 120) < 1e-6, `expected C3-C4-C12 to stay at 120 degrees, got ${secondBenzylicAngle.toFixed(2)}`);
     assert.ok(Math.abs(thirdBenzylicAngle - 120) < 1e-6, `expected C5-C4-C12 to stay at 120 degrees, got ${thirdBenzylicAngle.toFixed(2)}`);
-    assert.ok(Math.abs(firstOxadiazoleAngle - secondOxadiazoleAngle) < 1e-6);
     assert.equal(result.metadata.stageTelemetry.stageAudits.placement.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
@@ -1285,6 +1491,41 @@ describe('layout/engine/pipeline', () => {
       assert.ok(Math.abs(angle - 120) < 1e-6, `expected the phenyl root fan to remain exact, got ${angle.toFixed(2)}`);
     }
     assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    assert.equal(placementAudit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps ring tertiary amide nitrogens and their carbonyls on exact trigonal slots through cleanup', () => {
+    const { placement, placementAudit, result } = inspectPlacementAndFinalAudit(
+      'CS(=O)(=O)c1cn[nH]c1C2CCCCN2C(=O)Cc3cccnc3',
+      { suppressH: true, auditTelemetry: true, finalLandscapeOrientation: true }
+    );
+    const placementRingNitrogenAngles = [
+      bondAngleAtAtom(placement.coords, 'N16', 'C11', 'C15'),
+      bondAngleAtAtom(placement.coords, 'N16', 'C11', 'C17'),
+      bondAngleAtAtom(placement.coords, 'N16', 'C15', 'C17')
+    ];
+    const finalRingNitrogenAngles = [
+      bondAngleAtAtom(result.coords, 'N16', 'C11', 'C15'),
+      bondAngleAtAtom(result.coords, 'N16', 'C11', 'C17'),
+      bondAngleAtAtom(result.coords, 'N16', 'C15', 'C17')
+    ];
+    const finalCarbonylAngles = [
+      bondAngleAtAtom(result.coords, 'C17', 'O18', 'N16'),
+      bondAngleAtAtom(result.coords, 'C17', 'O18', 'C19'),
+      bondAngleAtAtom(result.coords, 'C17', 'N16', 'C19')
+    ];
+
+    for (const angle of placementRingNitrogenAngles) {
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected placement N16 fan to start at 120 degrees, got ${angle.toFixed(2)}`);
+    }
+    for (const angle of finalRingNitrogenAngles) {
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected final N16 fan to stay at 120 degrees, got ${angle.toFixed(2)}`);
+    }
+    for (const angle of finalCarbonylAngles) {
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected final C17 carbonyl fan to stay at 120 degrees, got ${angle.toFixed(2)}`);
+    }
     assert.equal(placementAudit.ok, true);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
@@ -2018,6 +2259,22 @@ describe('layout/engine/pipeline', () => {
     assert.ok(
       internalLactamSeparation > result.layoutGraph.options.bondLength * 1.5,
       `expected C22 and N27 to stay visually separated, got ${internalLactamSeparation.toFixed(2)}`
+    );
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps compact bridged ether cages bounded through the full pipeline', () => {
+    const result = runPipeline(parseSMILES('CC1CC2C(O)C(C1)C1OCCOC2CC1C'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(
+      result.metadata.audit.maxBondLengthDeviation < result.layoutGraph.options.bondLength * 0.35,
+      `expected compact bridged ether cage bonds to stay bounded, got ${result.metadata.audit.maxBondLengthDeviation.toFixed(3)}`
     );
     assert.equal(result.metadata.audit.ok, true);
   });

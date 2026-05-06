@@ -613,6 +613,56 @@ function createOxabicyclo311Template() {
 }
 
 /**
+ * Creates the bridged bicyclic lactone scaffold graph used by compact
+ * guanidinium-substituted oxabicyclic cores like
+ * `CN(CCN)C(=[NH2+])C1CCC2CCC1OC2=O`.
+ * @returns {Molecule} Bridged lactone scaffold template molecule.
+ */
+function createBridgedLactoneCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('bridged-lactone-core', 'CN(CCN)C(=[NH2+])C1CCC2CCC1OC2=O');
+}
+
+/**
+ * Creates the compact oxazabicyclic lactam scaffold graph found in
+ * gem-substituted bridged lactams like `CC1(CC#N)CC2COC1C(=O)N2`.
+ * @returns {Molecule} Oxazabicyclic lactam scaffold template molecule.
+ */
+function createOxazabicyclicLactamCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('oxazabicyclic-lactam-core', 'CC1(CC#N)CC2COC1C(=O)N2');
+}
+
+/**
+ * Creates the compact bridged pyrrolizidine dione scaffold graph found in
+ * tricyclic enone lactam-like cores such as
+ * `C\C=C\C=C\C(=O)C1=C(O)[C@@]2(C)[C@H]3CCCN3[C@@H]1[C@](C)(O)C2=O`.
+ * @returns {Molecule} Bridged pyrrolizidine dione scaffold template molecule.
+ */
+function createBridgedPyrrolizidineDioneCoreTemplate() {
+  return createRingSystemTemplateFromSmiles(
+    'bridged-pyrrolizidine-dione-core',
+    String.raw`C\C=C\C=C\C(=O)C1=C(O)[C@@]2(C)[C@H]3CCCN3[C@@H]1[C@](C)(O)C2=O`
+  );
+}
+
+/**
+ * Creates the amino oxaza tricyclic scaffold graph found in compact
+ * cyclopropylamine-fused bridged cages like `CC1=C2C(OC1)C1(N)C3NC3C2CC1N`.
+ * @returns {Molecule} Amino oxaza tricyclo scaffold template molecule.
+ */
+function createAminoOxazaTricycloCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('amino-oxaza-tricyclo-core', 'CC1=C2C(OC1)C1(N)C3NC3C2CC1N');
+}
+
+/**
+ * Creates the amino diaza tricyclic scaffold graph found in compact imine and
+ * alcohol-substituted bridged cages like `CC1CC(O)C2CNC(=N)C1C1(C)NC=NC21`.
+ * @returns {Molecule} Amino diaza tricyclo scaffold template molecule.
+ */
+function createAminoDiazaTricycloCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('amino-diaza-tricyclo-core', 'CC1CC(O)C2CNC(=N)C1C1(C)NC=NC21');
+}
+
+/**
  * Creates the compact spiro-bridged oxetane cage scaffold graph found in
  * small nitrile-substituted tricyclic ethers like `N#CC1CC2(C1)C1CCC2O1`.
  * @returns {Molecule} Spiro-bridged oxetane scaffold template molecule.
@@ -631,6 +681,15 @@ function createSpiroBridgedAzaCageTemplate() {
 }
 
 /**
+ * Creates the compact sulfonyl-substituted azatricyclo cage scaffold found in
+ * small charged cyclopropane-fused bridged systems.
+ * @returns {Molecule} Sulfonyl azatricyclo cage scaffold template molecule.
+ */
+function createSulfonylAzatricycloCageTemplate() {
+  return createRingSystemTemplateFromSmiles('sulfonyl-azatricyclo-cage', 'CC12C[NH+](C1)C1C2C1S([O-])(=O)=O');
+}
+
+/**
  * Creates the benzoxathiobicyclo scaffold graph used by bridged benzothiophene
  * cages like `CC1(C)CC2CC(C2)COC2=CC=C1S2`.
  * @returns {Molecule} Benzoxathiobicyclo scaffold template molecule.
@@ -646,6 +705,30 @@ function createBenzoxathiobicycloCoreTemplate() {
  */
 function createMorphinanCoreTemplate() {
   return createHeavyTemplateFromSmiles('morphinan-core', 'C1C2Cc3ccccc3C1CCN2');
+}
+
+/**
+ * Creates the larger oripavine-style morphinan core with the oxygen bridge and
+ * bicyclic saturated ring found in buprenorphine-like scaffolds.
+ * @returns {Molecule} Oripavine-style ring-system template molecule.
+ */
+function createOripavineCoreTemplate() {
+  return createRingSystemTemplateFromSmiles(
+    'oripavine-core',
+    '[H][C@@]12OC3=C(O)C=CC4=C3[C@@]11CCN(CC3CC3)[C@]([H])(C4)[C@]11CC[C@@]2(OC)[C@H](C1)C(C)(C)O'
+  );
+}
+
+/**
+ * Creates the oxygen-bridged aza-morphinan cyclohexadienone core found in
+ * highly substituted naloxone/naltrexone-like scaffolds.
+ * @returns {Molecule} Oxygen-bridged aza-morphinan ring-system template molecule.
+ */
+function createOxazaMorphinanCoreTemplate() {
+  return createRingSystemTemplateFromSmiles(
+    'oxaza-morphinan-core',
+    'COC1(NC(=O)C(=CC2=CC=CC=C2)C(F)(F)F)C=C(O)C2=C3C1OC1CCCC4C(C2)[N+](CC2CC2)(CCC314)C(C)C'
+  );
 }
 
 /**
@@ -1252,6 +1335,113 @@ function createOxabicyclo311Geometry() {
 }
 
 /**
+ * Creates a theta-style bridged lactone projection with the six-membered
+ * lactone ring above the carbon bridge and the longer carbocycle opened below.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createBridgedLactoneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C12', { x: 0, y: 0 }],
+    ['C17', { x: 0.5, y: 0.866025 }],
+    ['O16', { x: 1.5, y: 0.866025 }],
+    ['C15', { x: 2, y: 0 }],
+    ['C14', { x: 1.5, y: -0.866025 }],
+    ['C13', { x: 0.5, y: -0.866025 }],
+    ['C11', { x: -0.15, y: -1.05 }],
+    ['C10', { x: 1, y: -1.55 }],
+    ['C9', { x: 2.15, y: -1.05 }]
+  ]);
+}
+
+/**
+ * Creates a three-lane projection for compact oxazabicyclic lactam cages. The
+ * lactam carbonyl lane sits above the shared bridge, the ether lane stays open
+ * through the middle, and the gem-substituted carbon lane opens below.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createOxazabicyclicLactamCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C7', { x: 0, y: 0 }],
+    ['C10', { x: 2.3, y: 0 }],
+    ['C8', { x: 0.65, y: 0.5 }],
+    ['O9', { x: 1.65, y: 0.5 }],
+    ['N13', { x: 0.65, y: 1.08 }],
+    ['C11', { x: 1.65, y: 1.08 }],
+    ['C6', { x: 0.65, y: -1.08 }],
+    ['C2', { x: 1.65, y: -1.08 }]
+  ]);
+}
+
+/**
+ * Creates a three-lane bridged projection for compact pyrrolizidine dione
+ * cages, with the pyrrolizidine ring above and the dione bridge below the
+ * alkene-bearing middle path.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createBridgedPyrrolizidineDioneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C19', { x: -1.35, y: 0 }],
+    ['C11', { x: 1.35, y: 0 }],
+    ['N18', { x: -0.5, y: 0.8 }],
+    ['C13', { x: 0.5, y: 0.8 }],
+    ['C8', { x: -0.5, y: -0.15 }],
+    ['C9', { x: 0.5, y: -0.15 }],
+    ['C21', { x: -0.65, y: -1 }],
+    ['C24', { x: 0.65, y: -1 }],
+    ['C17', { x: -0.8, y: 1.72 }],
+    ['C16', { x: 0, y: 2.35 }],
+    ['C15', { x: 0.8, y: 1.72 }]
+  ]);
+}
+
+/**
+ * Creates a stacked theta projection for compact amino oxaza tricyclo cages,
+ * keeping the oxolane loop below the shared edge and the aziridine cap open
+ * between the upper and middle bridged lanes.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createAminoOxazaTricycloCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C12', { x: -1.08, y: 0 }],
+    ['C7', { x: 1.08, y: 0 }],
+    ['C13', { x: -0.54, y: 0.92 }],
+    ['C14', { x: 0.54, y: 0.92 }],
+    ['C11', { x: -0.42, y: -0.38 }],
+    ['C9', { x: 0.42, y: -0.38 }],
+    ['N10', { x: 0, y: 0.25 }],
+    ['C3', { x: -0.62, y: -1.15 }],
+    ['C4', { x: 0.62, y: -1.15 }],
+    ['C2', { x: -0.62, y: -2.02 }],
+    ['C6', { x: 0.13, y: -2.48 }],
+    ['O5', { x: 0.82, y: -1.88 }]
+  ]);
+}
+
+/**
+ * Creates a separated-lane projection for amino diaza tricyclo cages, with
+ * the imine-bearing bridge below the shared top span and the diaza five-ring
+ * cap projected above it.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createAminoDiazaTricycloCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C11', { x: -1.25, y: 0 }],
+    ['C12', { x: -0.4, y: 0.9 }],
+    ['C17', { x: 0.4, y: 0.9 }],
+    ['C6', { x: 1.25, y: 0 }],
+    ['C2', { x: -1.19, y: -1.39 }],
+    ['C3', { x: 0, y: -2.09 }],
+    ['C4', { x: 1.19, y: -1.39 }],
+    ['C9', { x: -0.6, y: -0.75 }],
+    ['N8', { x: 0, y: -0.18 }],
+    ['C7', { x: 0.6, y: -0.75 }],
+    ['N14', { x: -0.647214, y: 1.660845 }],
+    ['C15', { x: 0, y: 2.131073 }],
+    ['N16', { x: 0.647214, y: 1.660845 }]
+  ]);
+}
+
+/**
  * Creates a planar compact spiro-bridged oxetane projection. The oxetane
  * bridge sits inside the wider carbon bridge, while the cyclobutane spiro ring
  * opens to the left so nitrile-like substituents leave the cage exterior.
@@ -1288,6 +1478,24 @@ function createSpiroBridgedAzaCageGeometry() {
     ['C10', { x: 0.82, y: -0.24 }],
     ['C9', { x: 0.54, y: -1.02 }],
     ['C8', { x: 1.66, y: -0.9 }]
+  ]);
+}
+
+/**
+ * Creates a compact planar projection for the sulfonyl azatricyclo cage. The
+ * cyclopropane cap opens outward from the five-member ring so the sulfone
+ * branch leaves the cage exterior instead of cutting across the ammonium span.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createSulfonylAzatricycloCageGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C2', { x: 0.0, y: 0.0 }],
+    ['C6', { x: 1.0, y: 0.0 }],
+    ['N4', { x: 1.0, y: 1.0 }],
+    ['C3', { x: 0.15, y: 0.95 }],
+    ['C7', { x: 0.25, y: 1.65 }],
+    ['C8', { x: -0.45, y: 0.75 }],
+    ['C9', { x: -0.84, y: 1.85 }]
   ]);
 }
 
@@ -1337,6 +1545,66 @@ function createMorphinanCoreGeometry() {
     ['C11', { x: 1.3274545589330013, y: -1.7813766487939615 }],
     ['C12', { x: 1.9762468991775517, y: -1.060478569082301 }],
     ['N13', { x: 2.3520006876696793, y: -0.21553754832782718 }]
+  ]);
+}
+
+/**
+ * Creates a conventional oripavine-style projection with exact aromatic and
+ * middle cyclohexane rings, while keeping the oxygen bridge and lower bridged
+ * saturated ring on separate readable arcs.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createOripavineCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C2', { x: -0.149116, y: -1.662136 }],
+    ['O3', { x: -1.143917, y: -1.752225 }],
+    ['C4', { x: -1.301000, y: -0.765000 }],
+    ['C5', { x: -2.167000, y: -0.265000 }],
+    ['C7', { x: -2.167000, y: 0.735000 }],
+    ['C8', { x: -1.301000, y: 1.235000 }],
+    ['C9', { x: -0.435000, y: 0.735000 }],
+    ['C10', { x: -0.435000, y: -0.265000 }],
+    ['C11', { x: 0.431000, y: -0.765000 }],
+    ['C12', { x: 0.044988, y: 0.205440 }],
+    ['C13', { x: 0.898667, y: 0.231343 }],
+    ['N14', { x: 1.962189, y: 0.037944 }],
+    ['C19', { x: 1.297000, y: 0.735000 }],
+    ['C21', { x: 0.431000, y: 1.235000 }],
+    ['C22', { x: 1.297000, y: -0.265000 }],
+    ['C23', { x: 1.752023, y: -1.246220 }],
+    ['C24', { x: 1.185812, y: -2.154354 }],
+    ['C25', { x: 0.239300, y: -2.668457 }],
+    ['C28', { x: 0.534436, y: -1.832202 }],
+    ['C30', { x: 1.055017, y: -1.132125 }]
+  ]);
+}
+
+/**
+ * Creates a projected oxygen-bridged aza-morphinan core with the cyclohexadienone
+ * and saturated bridge arcs separated around the shared bridgehead edge. The
+ * atom IDs match the ring-system extracted by `createOxazaMorphinanCoreTemplate`.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createOxazaMorphinanCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C19', { x: -2, y: 0 }],
+    ['C28', { x: 3, y: 0 }],
+    ['C29', { x: 2.5, y: 0.866025 }],
+    ['C27', { x: 2.5, y: -0.866025 }],
+    ['C39', { x: 1.9, y: 0.45 }],
+    ['C38', { x: 2, y: 1.45 }],
+    ['C32', { x: 0, y: 1.732051 }],
+    ['C20', { x: -1.5, y: 0.866025 }],
+    ['C22', { x: -0.5, y: 0.866025 }],
+    ['C23', { x: 0, y: 0 }],
+    ['C30', { x: 1.5, y: 0.866025 }],
+    ['C31', { x: 1, y: 1.732051 }],
+    ['C26', { x: 1.5, y: -0.866025 }],
+    ['C24', { x: -0.5, y: -0.866025 }],
+    ['C3', { x: -1.5, y: -0.866025 }],
+    ['C40', { x: 1, y: 0 }],
+    ['N33', { x: 1.5, y: 2.3 }],
+    ['O25', { x: 0.5, y: -1.4 }]
   ]);
 }
 
@@ -1466,6 +1734,73 @@ export function buildTemplateLibrary() {
     createTemplate('cubane', 'bridged', 55, createCubaneTemplate(), geometrySpec('normalized-xy', createCubaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('oxabicyclo-3-1-1', 'bridged', 54, createOxabicyclo311Template(), geometrySpec('normalized-xy', createOxabicyclo311Geometry(), OXABICYCLO311_VALIDATION)),
     createTemplate(
+      'bridged-lactone-core',
+      'bridged',
+      53.9,
+      createBridgedLactoneCoreTemplate(),
+      geometrySpec('normalized-xy', createBridgedLactoneCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C17', element: 'O', bondOrder: 2, minCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'oxazabicyclic-lactam-core',
+      'bridged',
+      53.88,
+      createOxazabicyclicLactamCoreTemplate(),
+      geometrySpec('normalized-xy', createOxazabicyclicLactamCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C11', element: 'O', bondOrder: 2, minCount: 1 },
+            { templateAtomId: 'C2', element: 'C', minCount: 2, maxCount: 2 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'bridged-pyrrolizidine-dione-core',
+      'bridged',
+      53.85,
+      createBridgedPyrrolizidineDioneCoreTemplate(),
+      geometrySpec('normalized-xy', createBridgedPyrrolizidineDioneCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C24', element: 'O', bondOrder: 2, minCount: 1 },
+            { templateAtomId: 'C21', element: 'O', bondOrder: 1, minCount: 1 },
+            { templateAtomId: 'C9', element: 'O', bondOrder: 1, minCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'amino-oxaza-tricyclo-core',
+      'bridged',
+      53.8,
+      createAminoOxazaTricycloCoreTemplate(),
+      geometrySpec('normalized-xy', createAminoOxazaTricycloCoreGeometry(), BRIDGED_VALIDATION)
+    ),
+    createTemplate(
+      'amino-diaza-tricyclo-core',
+      'bridged',
+      53.78,
+      createAminoDiazaTricycloCoreTemplate(),
+      geometrySpec('normalized-xy', createAminoDiazaTricycloCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C9', element: 'N', bondOrder: 2, minCount: 1 },
+            { templateAtomId: 'C4', element: 'O', bondOrder: 1, minCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
       'spiro-bridged-aza-cage',
       'bridged',
       53.75,
@@ -1487,12 +1822,28 @@ export function buildTemplateLibrary() {
       geometrySpec('normalized-xy', createSpiroBridgedOxetaneGeometry(), BRIDGED_VALIDATION)
     ),
     createTemplate(
+      'sulfonyl-azatricyclo-cage',
+      'bridged',
+      53.25,
+      createSulfonylAzatricycloCageTemplate(),
+      geometrySpec('normalized-xy', createSulfonylAzatricycloCageGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C9', element: 'S', minCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
       'benzoxathiobicyclo-core',
       'bridged',
       53,
       createBenzoxathiobicycloCoreTemplate(),
       geometrySpec('normalized-xy', createBenzoxathiobicycloCoreGeometry(), BRIDGED_VALIDATION)
     ),
+    createTemplate('oxaza-morphinan-core', 'bridged', 52.75, createOxazaMorphinanCoreTemplate(), geometrySpec('normalized-xy', createOxazaMorphinanCoreGeometry(), BRIDGED_VALIDATION)),
+    createTemplate('oripavine-core', 'bridged', 52.5, createOripavineCoreTemplate(), geometrySpec('normalized-xy', createOripavineCoreGeometry(), BRIDGED_VALIDATION)),
     createTemplate('morphinan-core', 'bridged', 52, createMorphinanCoreTemplate(), geometrySpec('normalized-xy', createMorphinanCoreGeometry(), BRIDGED_VALIDATION)),
     createTemplate('norbornane', 'bridged', 50, createNorbornaneTemplate(), geometrySpec('normalized-xy', createNorbornaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('quinoline', 'fused', 49, createQuinolineTemplate(), geometrySpec('normalized-xy', createQuinolineGeometry(), PLANAR_VALIDATION)),

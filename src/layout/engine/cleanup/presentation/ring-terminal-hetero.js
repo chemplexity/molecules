@@ -3,6 +3,7 @@
 import { buildAtomGrid } from '../../audit/invariants.js';
 import { auditLayout } from '../../audit/audit.js';
 import { countPointInPolygons } from '../../geometry/polygon.js';
+import { reflectAcrossLine } from '../../geometry/transforms.js';
 import { add, angleOf, angularDifference, centroid, distance, fromAngle, rotate, sub, wrapAngle } from '../../geometry/vec2.js';
 import { visitPresentationDescriptorCandidates } from '../candidate-search.js';
 import { atomPairKey } from '../../constants.js';
@@ -14,6 +15,7 @@ import {
   smallRingExteriorTargetAngles,
   supportsExteriorBranchSpreadRingSize
 } from '../../placement/branch-placement.js';
+import { isExactVisibleTrigonalBisectorEligible } from '../../placement/branch-placement/angle-selection.js';
 const TIDY_IMPROVEMENT_EPSILON = 1e-6;
 const SINGLE_BOND_TERMINAL_HETERO_ELEMENTS = new Set(['O', 'S', 'Se']);
 const TERMINAL_HETERO_OUTWARD_NEED_TRIGGER = Math.PI / 9;
@@ -30,6 +32,7 @@ const TERMINAL_MULTIPLE_BOND_SUPPORT_MAX_SEPARATION = (7 * Math.PI) / 9;
 const TERMINAL_MULTIPLE_BOND_SUPPORT_MIN_SEPARATION = (22 * Math.PI) / 45;
 const TERMINAL_MULTIPLE_BOND_SUPPORT_MAX_ROTATION = Math.PI / 9;
 const TERMINAL_MULTIPLE_BOND_SUPPORT_SUBTREE_HEAVY_LIMIT = 18;
+const TERMINAL_MULTIPLE_BOND_PROTECTED_SUPPORT_REFLECTION_HEAVY_LIMIT = 24;
 const TERMINAL_MULTIPLE_BOND_LEAF_COMPRESSION_FACTORS = Object.freeze(
   Array.from({ length: 111 }, (_value, index) => 0.95 - index * 0.005)
 );
@@ -555,6 +558,248 @@ function terminalMultipleBondLeafMinimumClearance(layoutGraph, coords, descripto
   return minimumClearance;
 }
 
+/**
+ * Returns whether rotating a terminal multiple-bond support would disturb an
+ * exact trigonal branch owned by the support atom.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} supportAtomId - Candidate support atom ID.
+ * @param {string} centerAtomId - Terminal multiple-bond center atom ID.
+ * @returns {boolean} True when balanced support relief should leave it fixed.
+ */
+function protectsExactTrigonalSupportBranch(layoutGraph, supportAtomId, centerAtomId) {
+  return isExactVisibleTrigonalBisectorEligible(layoutGraph, supportAtomId, centerAtomId);
+}
+
+/**
+ * Returns whether an atom belongs to at least one ring in a candidate set.
+ * @param {string} atomId - Atom ID to inspect.
+ * @param {object[]} rings - Ring descriptors.
+ * @returns {boolean} True when the atom is present in any ring.
+ */
+function atomIsInAnyRing(atomId, rings) {
+  return rings.some(ring => ring.atomIds.includes(atomId));
+}
+
+/**
+ * Returns rings shared by two atoms.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} firstAtomId - First atom ID.
+ * @param {string} secondAtomId - Second atom ID.
+ * @returns {object[]} Shared ring descriptors.
+ */
+function sharedRingsForAtomPair(layoutGraph, firstAtomId, secondAtomId) {
+  const secondRings = new Set(layoutGraph.atomToRings.get(secondAtomId) ?? []);
+  return (layoutGraph.atomToRings.get(firstAtomId) ?? []).filter(ring => secondRings.has(ring));
+}
+
+/**
+ * Returns the exact terminal multiple-bond leaf position implied by the two
+ * fixed support atoms around a trigonal center.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {object} descriptor - Terminal multiple-bond fan descriptor.
+ * @returns {{x: number, y: number}|null} Exact leaf target position.
+ */
+function exactTerminalMultipleBondLeafTargetPosition(coords, descriptor) {
+  if (descriptor.leafTargets.length !== 1) {
+    return null;
+  }
+  const leafAtomId = descriptor.leafTargets[0].leafAtomId;
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const leafPosition = coords.get(leafAtomId);
+  if (!centerPosition || !leafPosition) {
+    return null;
+  }
+
+  const fixedNeighborPositions = descriptor.neighborAtomIds
+    .filter(neighborAtomId => neighborAtomId !== leafAtomId)
+    .map(neighborAtomId => coords.get(neighborAtomId))
+    .filter(Boolean);
+  if (fixedNeighborPositions.length !== 2) {
+    return null;
+  }
+
+  const targetAngle = angleOf(sub(centerPosition, centroid(fixedNeighborPositions)));
+  return add(centerPosition, fromAngle(targetAngle, distance(centerPosition, leafPosition)));
+}
+
+/**
+ * Reflects a set of atoms across the infinite line through a bond.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string[]} atomIds - Atom IDs to reflect.
+ * @param {string} firstAtomId - First atom defining the mirror line.
+ * @param {string} secondAtomId - Second atom defining the mirror line.
+ * @returns {Map<string, {x: number, y: number}>|null} Reflected coordinates.
+ */
+function reflectAtomIdsAcrossBond(coords, atomIds, firstAtomId, secondAtomId) {
+  const firstPosition = coords.get(firstAtomId);
+  const secondPosition = coords.get(secondAtomId);
+  if (!firstPosition || !secondPosition) {
+    return null;
+  }
+
+  const candidateCoords = new Map(coords);
+  for (const atomId of atomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, reflectAcrossLine(position, firstPosition, secondPosition));
+  }
+  return candidateCoords;
+}
+
+/**
+ * Returns whether a three-heavy fan remains on exact 120-degree separations.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Fan center atom ID.
+ * @param {string[]} neighborAtomIds - Three neighbor atom IDs.
+ * @returns {boolean} True when the fan is still exact trigonal.
+ */
+function exactTrigonalFanIsPreserved(coords, centerAtomId, neighborAtomIds) {
+  return (
+    Math.abs(threeHeavyCenterMaxSeparation(coords, centerAtomId, neighborAtomIds) - ((2 * Math.PI) / 3)) <= TIDY_IMPROVEMENT_EPSILON
+    && Math.abs(threeHeavyCenterMinSeparation(coords, centerAtomId, neighborAtomIds) - ((2 * Math.PI) / 3)) <= TIDY_IMPROVEMENT_EPSILON
+  );
+}
+
+/**
+ * Compares protected-support reflection candidates.
+ * @param {object} candidate - Candidate score.
+ * @param {object|null} incumbent - Current best score.
+ * @returns {number} Negative when candidate is better.
+ */
+function compareProtectedSupportReflectionCandidates(candidate, incumbent) {
+  if (!incumbent) {
+    return -1;
+  }
+  if (Math.abs(candidate.fanPenalty - incumbent.fanPenalty) > TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON) {
+    return candidate.fanPenalty - incumbent.fanPenalty;
+  }
+  if ((candidate.audit.labelOverlapCount ?? 0) !== (incumbent.audit.labelOverlapCount ?? 0)) {
+    return (candidate.audit.labelOverlapCount ?? 0) - (incumbent.audit.labelOverlapCount ?? 0);
+  }
+  if ((candidate.audit.severeOverlapCount ?? 0) !== (incumbent.audit.severeOverlapCount ?? 0)) {
+    return (candidate.audit.severeOverlapCount ?? 0) - (incumbent.audit.severeOverlapCount ?? 0);
+  }
+  if (Math.abs(candidate.movedHeavyAtomCount - incumbent.movedHeavyAtomCount) > TIDY_IMPROVEMENT_EPSILON) {
+    return candidate.movedHeavyAtomCount - incumbent.movedHeavyAtomCount;
+  }
+  return 0;
+}
+
+/**
+ * Mirrors a protected ring-bound support branch across its existing attachment
+ * bond so a blocked terminal multiple-bond leaf can still use the exact
+ * trigonal slot without bending the support's own planar fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {object} descriptor - Terminal multiple-bond fan descriptor.
+ * @param {number} bondLength - Target bond length.
+ * @param {Set<string>|null} frozenAtomIds - Frozen atoms that must not move.
+ * @returns {Map<string, {x: number, y: number}>|null} Reflected coordinate candidate, or null.
+ */
+function terminalMultipleBondProtectedSupportReflectionCoords(layoutGraph, coords, descriptor, bondLength, frozenAtomIds) {
+  const leafAtomId = descriptor.leafTargets.length === 1 ? descriptor.leafTargets[0].leafAtomId : null;
+  if (!leafAtomId) {
+    return null;
+  }
+
+  let bestCandidate = null;
+  const fixedNeighborIds = descriptor.neighborAtomIds.filter(neighborAtomId => neighborAtomId !== leafAtomId);
+  for (const supportAtomId of fixedNeighborIds) {
+    if (!protectsExactTrigonalSupportBranch(layoutGraph, supportAtomId, descriptor.centerAtomId)) {
+      continue;
+    }
+
+    const supportNeighborIds = visibleHeavyCovalentBonds(layoutGraph, coords, supportAtomId)
+      .map(({ neighborAtomId }) => neighborAtomId);
+    const supportRingNeighborIds = supportNeighborIds.filter(neighborAtomId => {
+      if (neighborAtomId === descriptor.centerAtomId) {
+        return false;
+      }
+      return sharedRingsForAtomPair(layoutGraph, supportAtomId, neighborAtomId).length > 0;
+    });
+    if (supportRingNeighborIds.length !== 2) {
+      continue;
+    }
+
+    for (const ringNeighborId of supportRingNeighborIds) {
+      const sharedRings = sharedRingsForAtomPair(layoutGraph, supportAtomId, ringNeighborId);
+      if (sharedRings.length === 0) {
+        continue;
+      }
+
+      for (const bond of layoutGraph.bondsByAtomId.get(ringNeighborId) ?? []) {
+        if (!bond || bond.kind !== 'covalent') {
+          continue;
+        }
+        const outsideAnchorAtomId = bond.a === ringNeighborId ? bond.b : bond.a;
+        const outsideAnchorAtom = layoutGraph.atoms.get(outsideAnchorAtomId);
+        if (
+          outsideAnchorAtomId === supportAtomId
+          || !outsideAnchorAtom
+          || outsideAnchorAtom.element === 'H'
+          || atomIsInAnyRing(outsideAnchorAtomId, sharedRings)
+          || !coords.has(outsideAnchorAtomId)
+        ) {
+          continue;
+        }
+
+        const reflectedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, ringNeighborId, outsideAnchorAtomId)
+          .filter(atomId => coords.has(atomId));
+        if (
+          reflectedAtomIds.length === 0
+          || !reflectedAtomIds.includes(supportAtomId)
+          || !reflectedAtomIds.includes(descriptor.centerAtomId)
+          || !reflectedAtomIds.includes(leafAtomId)
+          || (frozenAtomIds instanceof Set && reflectedAtomIds.some(atomId => frozenAtomIds.has(atomId)))
+          || heavyAtomCountInIds(layoutGraph, reflectedAtomIds) > TERMINAL_MULTIPLE_BOND_PROTECTED_SUPPORT_REFLECTION_HEAVY_LIMIT
+        ) {
+          continue;
+        }
+
+        const reflectedCoords = reflectAtomIdsAcrossBond(coords, reflectedAtomIds, outsideAnchorAtomId, ringNeighborId);
+        if (!reflectedCoords) {
+          continue;
+        }
+        const exactLeafPosition = exactTerminalMultipleBondLeafTargetPosition(reflectedCoords, descriptor);
+        if (!exactLeafPosition) {
+          continue;
+        }
+        reflectedCoords.set(leafAtomId, exactLeafPosition);
+        if (!exactTrigonalFanIsPreserved(reflectedCoords, supportAtomId, supportNeighborIds)) {
+          continue;
+        }
+
+        const audit = auditLayout(layoutGraph, reflectedCoords, { bondLength });
+        if (audit.ok !== true) {
+          continue;
+        }
+        const fanPenalty = terminalMultipleBondLeafFanPenalty(
+          reflectedCoords,
+          descriptor.centerAtomId,
+          descriptor.neighborAtomIds
+        );
+        if (fanPenalty >= descriptor.currentPenalty - TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON) {
+          continue;
+        }
+
+        const candidate = {
+          coords: reflectedCoords,
+          audit,
+          fanPenalty,
+          movedHeavyAtomCount: heavyAtomCountInIds(layoutGraph, reflectedAtomIds)
+        };
+        if (compareProtectedSupportReflectionCandidates(candidate, bestCandidate) < 0) {
+          bestCandidate = candidate;
+        }
+      }
+    }
+  }
+
+  return bestCandidate?.coords ?? null;
+}
+
 function movedAtomOverlapCount(layoutGraph, coords, atomIds, overridePositions, threshold) {
   let overlapCount = 0;
   for (const atomId of atomIds) {
@@ -674,9 +919,23 @@ function terminalMultipleBondBalancedSupportReliefCoords(layoutGraph, coords, de
     return null;
   }
 
+  const protectedSupportReflectionCoords = terminalMultipleBondProtectedSupportReflectionCoords(
+    layoutGraph,
+    coords,
+    descriptor,
+    bondLength,
+    frozenAtomIds
+  );
+  if (protectedSupportReflectionCoords) {
+    return protectedSupportReflectionCoords;
+  }
+
   let bestCandidate = null;
   let bestScore = null;
   for (const supportAtomId of fixedNeighborIds) {
+    if (protectsExactTrigonalSupportBranch(layoutGraph, supportAtomId, descriptor.centerAtomId)) {
+      continue;
+    }
     if ((layoutGraph.atomToRings.get(supportAtomId)?.length ?? 0) === 0) {
       continue;
     }

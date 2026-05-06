@@ -13,6 +13,13 @@ import {
   measureRingAdjacentTerminalDivalentContinuationDistortion,
   runDivalentContinuationTidy
 } from './cleanup/presentation/divalent-continuation.js';
+import { runTerminalAcyclicChainRetouch } from './cleanup/presentation/terminal-chain-retouch.js';
+import { runRingChainLinearRetouch } from './cleanup/presentation/ring-chain-linear-retouch.js';
+import { runRingChainHypervalentBranchRetouch } from './cleanup/presentation/ring-chain-hypervalent-retouch.js';
+import {
+  runRingChainSideBranchExitRetouch,
+  runRingChainUnitProjectionRetouch
+} from './cleanup/presentation/ring-chain-unit-projection-retouch.js';
 import {
   buildCleanupTelemetry,
   buildStageTelemetryFromCleanupTelemetry,
@@ -25,15 +32,18 @@ import { createQualityReport } from './model/quality-report.js';
 import { inspectEZStereo } from './stereo/ez.js';
 import { pickWedgeAssignments } from './stereo/wedge-selection.js';
 import { inspectRingDependency } from './topology/ring-dependency.js';
+import { describePathLikeIsolatedRingChain } from './topology/isolated-ring-chain.js';
 import { exceedsLargeComponentThreshold, exceedsLargeMoleculeThreshold } from './topology/large-blocks.js';
 import { findMacrocycleRings } from './topology/macrocycles.js';
 import { buildScaffoldPlan } from './model/scaffold-plan.js';
 import { packComponentPlacements } from './placement/fragment-packing.js';
 import { ensureLandscapeOrientation, levelCoords, normalizeOrientation } from './orientation.js';
 import { cloneCoords } from './geometry/transforms.js';
+import { add, angleOf, centroid, rotate, sub } from './geometry/vec2.js';
 import { PRESENTATION_METRIC_EPSILON } from './constants.js';
 
 const FINAL_DIVALENT_CONTINUATION_RETOUCH_MIN_DEVIATION = 0.2;
+const MIN_PROJECTED_RING_CHAIN_ASPECT = 6;
 
 /**
  * Returns the current high-resolution time when available, with a Date fallback
@@ -253,6 +263,61 @@ function shouldEnsureLandscapeFinalCoords(normalizedOptions, policy) {
   return policy?.orientationBias === 'horizontal';
 }
 
+function ringSystemCenter(coords, ringSystem) {
+  const positions = (ringSystem?.atomIds ?? [])
+    .map(atomId => coords.get(atomId))
+    .filter(Boolean);
+  return positions.length > 0 ? centroid(positions) : null;
+}
+
+function pathLikeRingChainAspect(layoutGraph, inputCoords) {
+  const component = layoutGraph.components?.[0] ?? null;
+  const ringChain = component ? describePathLikeIsolatedRingChain(layoutGraph, component) : null;
+  const orderedRingSystemIds = ringChain?.orderedRingSystemIds ?? [];
+  if (orderedRingSystemIds.length < 2) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const ringSystemById = new Map((ringChain.ringSystems ?? []).map(ringSystem => [ringSystem.id, ringSystem]));
+  const centers = orderedRingSystemIds
+    .map(ringSystemId => ringSystemCenter(inputCoords, ringSystemById.get(ringSystemId)))
+    .filter(Boolean);
+  if (centers.length !== orderedRingSystemIds.length) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const xs = centers.map(center => center.x);
+  const ys = centers.map(center => center.y);
+  return (Math.max(...xs) - Math.min(...xs)) / Math.max(Math.max(...ys) - Math.min(...ys), 1e-6);
+}
+
+function orientPathLikeRingChainCoords(layoutGraph, inputCoords) {
+  const component = layoutGraph.components?.[0] ?? null;
+  const ringChain = component ? describePathLikeIsolatedRingChain(layoutGraph, component) : null;
+  const orderedRingSystemIds = ringChain?.orderedRingSystemIds ?? [];
+  if (orderedRingSystemIds.length < 2) {
+    return { coords: inputCoords, changed: false };
+  }
+  const ringSystemById = new Map((ringChain.ringSystems ?? []).map(ringSystem => [ringSystem.id, ringSystem]));
+  const firstCenter = ringSystemCenter(inputCoords, ringSystemById.get(orderedRingSystemIds[0]));
+  const lastCenter = ringSystemCenter(inputCoords, ringSystemById.get(orderedRingSystemIds[orderedRingSystemIds.length - 1]));
+  if (!firstCenter || !lastCenter) {
+    return { coords: inputCoords, changed: false };
+  }
+  const axis = sub(lastCenter, firstCenter);
+  if (Math.hypot(axis.x, axis.y) <= 1e-9) {
+    return { coords: inputCoords, changed: false };
+  }
+  const rotation = -angleOf(axis);
+  if (Math.abs(Math.sin(rotation)) <= 1e-9) {
+    return { coords: inputCoords, changed: false };
+  }
+  const origin = centroid([...inputCoords.values()]);
+  const coords = new Map();
+  for (const [atomId, position] of inputCoords) {
+    coords.set(atomId, add(origin, rotate(sub(position, origin), rotation)));
+  }
+  return { coords, changed: true };
+}
+
 /**
  * Applies the final display-orientation pass to generated coordinates.
  * This is a whole-molecule rotation only, so it preserves local geometry while
@@ -363,6 +428,77 @@ function maybeRetouchFinalDivalentContinuations(layoutGraph, finalCoords, placem
       nudges: retouch.nudges,
       cleanupPasses: cleanup.passes,
       finalRetouch: true
+    }
+  );
+  return { coords: candidateCoords, changed: true };
+}
+
+function maybeRetouchProjectedRingChain(layoutGraph, finalCoords, placement, bondLength, onStep = null) {
+  const baseAspect = pathLikeRingChainAspect(layoutGraph, finalCoords);
+  if (!Number.isFinite(baseAspect) || baseAspect >= MIN_PROJECTED_RING_CHAIN_ASPECT) {
+    return { coords: finalCoords, changed: false };
+  }
+
+  const baseAudit = auditLayout(layoutGraph, finalCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  const projection = runRingChainUnitProjectionRetouch(layoutGraph, finalCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if (!projection.changed) {
+    return { coords: finalCoords, changed: false };
+  }
+
+  let candidateCoords = projection.coords;
+  let movedAtomCount = projection.movedAtomIds.length;
+  const projectedHypervalentRetouch = runRingChainHypervalentBranchRetouch(layoutGraph, candidateCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if (projectedHypervalentRetouch.changed) {
+    candidateCoords = projectedHypervalentRetouch.coords;
+    movedAtomCount += projectedHypervalentRetouch.movedAtomIds.length;
+  }
+  const projectedTerminalRetouch = runTerminalAcyclicChainRetouch(layoutGraph, candidateCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if (projectedTerminalRetouch.changed) {
+    candidateCoords = projectedTerminalRetouch.coords;
+    movedAtomCount += projectedTerminalRetouch.movedAtomIds.length;
+  }
+  const projectedSideBranchRetouch = runRingChainSideBranchExitRetouch(layoutGraph, candidateCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if (projectedSideBranchRetouch.changed) {
+    candidateCoords = projectedSideBranchRetouch.coords;
+    movedAtomCount += projectedSideBranchRetouch.movedAtomIds.length;
+  }
+
+  const candidateAudit = auditLayout(layoutGraph, candidateCoords, {
+    bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if (!finalAuditCountsDoNotWorsen(candidateAudit, baseAudit)) {
+    return { coords: finalCoords, changed: false };
+  }
+
+  const candidateAspect = pathLikeRingChainAspect(layoutGraph, candidateCoords);
+  if (candidateAspect < Math.max(MIN_PROJECTED_RING_CHAIN_ASPECT, baseAspect * 1.5)) {
+    return { coords: finalCoords, changed: false };
+  }
+
+  onStep?.(
+    'Ring Chain Unit Projection',
+    'Path-like isolated ring chain rebuilt as aligned ring units with glycosidic linkers re-solved at bond length.',
+    cloneCoords(candidateCoords),
+    {
+      movedAtomCount,
+      previousAspect: baseAspect,
+      projectedAspect: candidateAspect
     }
   );
   return { coords: candidateCoords, changed: true };
@@ -824,6 +960,77 @@ export function runPipeline(molecule, options = {}) {
       finalCoords = finalDivalentContinuationRetouch.coords;
       finalCoordsModified = true;
     }
+  }
+  const ringChainLinearRetouch = runRingChainLinearRetouch(layoutGraph, finalCoords, {
+    bondLength: normalizedOptions.bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if (ringChainLinearRetouch.changed) {
+    finalCoords = ringChainLinearRetouch.coords;
+    finalCoordsModified = true;
+    onStep?.(
+      'Ring Chain Linear Retouch',
+      'Path-like isolated ring systems straightened into a left-to-right chain.',
+      cloneCoords(finalCoords),
+      {
+        movedAtomCount: ringChainLinearRetouch.movedAtomIds.length,
+        linearityScore: ringChainLinearRetouch.linearityScore
+      }
+    );
+  }
+  const ringChainHypervalentRetouch = runRingChainHypervalentBranchRetouch(layoutGraph, finalCoords, {
+    bondLength: normalizedOptions.bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if (ringChainHypervalentRetouch.changed) {
+    finalCoords = ringChainHypervalentRetouch.coords;
+    finalCoordsModified = true;
+    onStep?.(
+      'Ring Chain Hypervalent Retouch',
+      'Small hypervalent side branches rotated away from path-like isolated ring chain crossings.',
+      cloneCoords(finalCoords),
+      {
+        movedAtomCount: ringChainHypervalentRetouch.movedAtomIds.length
+      }
+    );
+  }
+  const terminalChainRetouch = runTerminalAcyclicChainRetouch(layoutGraph, finalCoords, {
+    bondLength: normalizedOptions.bondLength,
+    bondValidationClasses: placement.bondValidationClasses
+  });
+  if (terminalChainRetouch.changed) {
+    finalCoords = terminalChainRetouch.coords;
+    finalCoordsModified = true;
+    onStep?.(
+      'Terminal Chain Retouch',
+      'Long terminal acyclic chain rerouted away from the path-like isolated ring chain.',
+      cloneCoords(finalCoords),
+      {
+        movedAtomCount: terminalChainRetouch.movedAtomIds.length
+      }
+    );
+  }
+  const projectedRingChainRetouch = maybeRetouchProjectedRingChain(
+    layoutGraph,
+    finalCoords,
+    placement,
+    normalizedOptions.bondLength,
+    onStep
+  );
+  if (projectedRingChainRetouch.changed) {
+    finalCoords = projectedRingChainRetouch.coords;
+    finalCoordsModified = true;
+  }
+  const pathRingChainOrientation = orientPathLikeRingChainCoords(layoutGraph, finalCoords);
+  if (pathRingChainOrientation.changed) {
+    finalCoords = pathRingChainOrientation.coords;
+    finalCoordsModified = true;
+    onStep?.(
+      'Ring Chain Orientation',
+      'Path-like isolated ring chain rotated so terminal ring systems read left-to-right.',
+      cloneCoords(finalCoords),
+      {}
+    );
   }
   snapTinyCoordinateNoise(finalCoords);
   onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', cloneCoords(finalCoords), { stage: 'complete' });

@@ -1514,6 +1514,68 @@ describe('layout/engine/families/mixed', () => {
     assertExactArylExits(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
   });
 
+  it('keeps triaryl sulfoxide indole exits trigonal and overlap-free', () => {
+    const smiles = 'C[S+]([O-])c1ccc(cc1)c2cc(c3ccncc3C)c([nH]2)c4ccc(F)cc4';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const c18Angles = [
+      bondAngleAtAtom(result.coords, 'C18', 'C13', 'C17'),
+      bondAngleAtAtom(result.coords, 'C18', 'C13', 'C19'),
+      bondAngleAtAtom(result.coords, 'C18', 'C17', 'C19')
+    ];
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords).length, 0);
+    assert.ok(
+      c18Angles.every(angle => Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6),
+      `expected C18 to keep an exact 120-degree aromatic fan, got ${c18Angles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+  });
+
+  it('keeps imide-attached phenyl roots trigonal by rotating compact acyclic sidechains away', () => {
+    const smiles = 'CSc1ccccc1C2C(C(=O)C(C)C)C(=O)C(=O)N2c3ccc(cc3)c4csc(C)c4';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const c21Angles = [
+      bondAngleAtAtom(result.coords, 'C21', 'C26', 'N20'),
+      bondAngleAtAtom(result.coords, 'C21', 'C26', 'C22'),
+      bondAngleAtAtom(result.coords, 'C21', 'N20', 'C22')
+    ];
+    const c3Angles = [
+      bondAngleAtAtom(result.coords, 'C3', 'S2', 'C4'),
+      bondAngleAtAtom(result.coords, 'C3', 'S2', 'C8'),
+      bondAngleAtAtom(result.coords, 'C3', 'C4', 'C8')
+    ];
+    const c3S2Distance = distance(result.coords.get('C3'), result.coords.get('S2'));
+    const c1S2Distance = distance(result.coords.get('C1'), result.coords.get('S2'));
+
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords).length, 0);
+    assert.ok(
+      c21Angles.every(angle => Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6),
+      `expected C21 to keep an exact 120-degree aromatic fan, got ${c21Angles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+    assert.ok(
+      c3Angles.every(angle => Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6),
+      `expected C3 to keep an exact 120-degree aromatic fan, got ${c3Angles.map(angle => ((angle * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+    assert.ok(
+      Math.abs(c3S2Distance - result.layoutGraph.options.bondLength * 0.8) < 1e-6,
+      `expected C3-S2 to be shortened into the exact sidechain slot, got ${c3S2Distance.toFixed(3)}`
+    );
+    assert.ok(
+      Math.abs(c1S2Distance - result.layoutGraph.options.bondLength) < 1e-6,
+      `expected internal C1-S2 sidechain length to remain unchanged, got ${c1S2Distance.toFixed(3)}`
+    );
+  });
+
   it('previews pending heteroring roots before assigning crowded tetrahedral branch slots', () => {
     const smiles = 'CC(C1=NC(=CS1)C1=CC=C(C=C1)C#N)C(O)(C[N+]1(CCOC(=O)N2CCCC2C[NH3+])C=NC=N1)C1=CC(F)=CC=C1F';
     const result = runPipeline(parseSMILES(smiles), { suppressH: true });
@@ -1590,6 +1652,52 @@ describe('layout/engine/families/mixed', () => {
       pipelineMetrics.maxTargetDeviation < 1e-6,
       `expected the full pipeline to place the geminal difluoros on the exact six-member exterior-gap targets, got max deviation ${((pipelineMetrics.maxTargetDeviation * 180) / Math.PI).toFixed(2)} degrees`
     );
+  });
+
+  it('preserves crowded fluorinated cyclohexyl exterior fans through cleanup', () => {
+    const smiles = 'FC1(F)CCCC(N=C=O)(C(C2(CCCC(F)(F)C2(F)F)N=C=O)C2(CCCC(F)(F)C2(F)F)N=C=O)C1(F)F';
+    const result = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const graph = result.layoutGraph;
+    const adjacency = buildAdjacency(graph, new Set(graph.components[0].atomIds));
+    const exactExteriorAnchorIds = ['C38', 'C32', 'C16', 'C19', 'C2', 'C29'];
+    const centralFanSeparations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'C11', graph);
+    const c7Separations = sortedHeavyNeighborSeparations(adjacency, result.coords, 'C7', graph);
+    const isocyanateAngles = [
+      bondAngleAtAtom(result.coords, 'C36', 'N35', 'O37'),
+      bondAngleAtAtom(result.coords, 'C23', 'N22', 'O24'),
+      bondAngleAtAtom(result.coords, 'C9', 'N8', 'O10')
+    ];
+
+    for (const atomId of exactExteriorAnchorIds) {
+      const exteriorPenalty = measureSmallRingExteriorGapSpreadPenalty(graph, result.coords, atomId);
+      assert.ok(
+        exteriorPenalty < 1e-9,
+        `expected ${atomId} saturated-ring exterior fan to stay exact, got penalty ${exteriorPenalty.toExponential(3)}`
+      );
+    }
+    assert.ok(
+      centralFanSeparations.every(separation => Math.abs(separation - (2 * Math.PI) / 3) < 1e-6),
+      `expected C11 ring-link fan to stay trigonal, got ${centralFanSeparations.map(separation => ((separation * 180) / Math.PI).toFixed(2)).join(', ')} degrees`
+    );
+    assert.ok(
+      c7Separations[0] >= Math.PI / 4 - 1e-6,
+      `expected C7 isocyanate/ring exit fan to stay bounded while clearing overlaps, got minimum separation ${((c7Separations[0] * 180) / Math.PI).toFixed(2)} degrees`
+    );
+    for (const angle of isocyanateAngles) {
+      assert.ok(
+        Math.abs(angle - Math.PI) < 1e-6,
+        `expected crowded ring-attached isocyanate arms to stay linear, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
+      );
+    }
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.ringSubstituentReadabilityFailureCount, 0);
+    assert.equal(result.metadata.audit.outwardAxisRingSubstituentFailureCount, 0);
   });
 
   it('places direct-attached aryl branches on six-member saturated-ring exterior slots', () => {

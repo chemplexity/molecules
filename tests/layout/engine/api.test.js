@@ -3,7 +3,12 @@ import assert from 'node:assert/strict';
 import { generateCoords, refineCoords } from '../../../src/layout/engine/api.js';
 import { Molecule } from '../../../src/core/Molecule.js';
 import { parseSMILES } from '../../../src/io/smiles.js';
+import { auditLayout } from '../../../src/layout/engine/audit/audit.js';
 import { makeDisconnectedEthanes, makeEthane } from './support/molecules.js';
+import { computeBounds } from '../../../src/layout/engine/geometry/bounds.js';
+import { createLayoutGraph } from '../../../src/layout/engine/model/layout-graph.js';
+
+const SULFATED_GLYCOSIDE_SMILES = 'CCCCCCCCCCCCO[C@H]1O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]1O[C@H]2O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]3O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]4O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](O[C@H]5O[C@H](COS(=O)(=O)O)[C@@H](OS(=O)(=O)O)[C@H](OS(=O)(=O)O)[C@@H]5OS(=O)(=O)O)[C@@H]4OS(=O)(=O)O)[C@@H]3OS(=O)(=O)O)[C@@H]2OS(=O)(=O)O';
 
 function minNonBondedDistance(molecule, coords) {
   const bondedPairs = new Set([...molecule.bonds.values()].flatMap(bond => [`${bond.atoms[0]}:${bond.atoms[1]}`, `${bond.atoms[1]}:${bond.atoms[0]}`]));
@@ -226,6 +231,33 @@ describe('layout/engine/api', () => {
       assert.ok(minNonBondedDistance(molecule, result.coords) > testCase.minDistance);
       testCase.extraCheck?.(result);
     }
+  });
+
+  it('keeps large sulfated glycosides clean through the hidden-hydrogen app path', () => {
+    const molecule = parseSMILES(SULFATED_GLYCOSIDE_SMILES);
+    molecule.hideHydrogens();
+    const result = generateCoords(molecule, {
+      suppressH: true,
+      bondLength: 1.5,
+      maxCleanupPasses: 6,
+      finalLandscapeOrientation: true
+    });
+    const graph = createLayoutGraph(molecule, {
+      suppressH: true,
+      bondLength: 1.5
+    });
+    const audit = auditLayout(graph, result.coords, {
+      bondLength: 1.5
+    });
+    const bounds = computeBounds(result.coords, [...result.coords.keys()]);
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.ok(bounds.width / bounds.height > 1.25);
   });
 
   it('preserves configured Z geometry for long conjugated polyenes', () => {

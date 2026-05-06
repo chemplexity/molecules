@@ -1,7 +1,11 @@
 /** @module app/render/atom-numbering */
 
+import { createModeAwareHelpers } from './render-mode-helpers.js';
+import { createOverlayPanelRow } from './panel-row.js';
+
 let ctx = {};
 let _atomNumberingActive = false;
+const modeHelpers = createModeAwareHelpers(() => ctx);
 const TWO_PI = Math.PI * 2;
 const DEFAULT_NUMBERING_FALLBACK_ANGLE = -Math.PI / 4;
 const DEFAULT_NUMBERING_ANGLE_STEPS = 72;
@@ -216,34 +220,6 @@ export function initAtomNumberingPanel(context) {
   ctx = context;
 }
 
-function _currentDisplayedMol() {
-  return ctx.mode === 'force' ? (ctx.currentMol ?? null) : (ctx._mol2d ?? null);
-}
-
-function _otherPanelRow({ label, title, active, onClick }) {
-  const tr = document.createElement('tr');
-  tr.classList.add('resonance-clickable');
-  tr.title = title;
-  if (active) {
-    tr.classList.add('resonance-active');
-  }
-
-  const nameCell = document.createElement('td');
-  const countCell = document.createElement('td');
-  countCell.className = 'reaction-count';
-  countCell.textContent = active ? 'On' : 'Off';
-
-  const name = document.createElement('div');
-  name.className = 'reaction-name';
-  name.textContent = label;
-  nameCell.appendChild(name);
-
-  tr.appendChild(nameCell);
-  tr.appendChild(countCell);
-  tr.addEventListener('click', onClick);
-  return tr;
-}
-
 /**
  * Returns whether the atom numbering overlay is currently active.
  * @returns {boolean} True if the atom numbering overlay is active.
@@ -421,41 +397,34 @@ export function updateAtomNumberingPanel(mol) {
   tbody.innerHTML = '';
 
   tbody.appendChild(
-    _otherPanelRow({
+    createOverlayPanelRow({
       label: 'Atom Numbering',
       title: 'Display sequential atom indices. Non-hydrogen atoms are numbered first, then hydrogen atoms.',
       active: _atomNumberingActive,
       onClick: event => {
         event.stopPropagation();
         _atomNumberingActive = !_atomNumberingActive;
-        const displayedMol = _currentDisplayedMol() ?? mol;
+        const displayedMol = modeHelpers.currentMol() ?? mol;
         updateAtomNumberingPanel(displayedMol);
-        _redraw(displayedMol);
+        modeHelpers.redraw(displayedMol);
       }
     })
   );
 
   const showLonePairs = Boolean(ctx.getRenderOptions?.().showLonePairs);
   tbody.appendChild(
-    _otherPanelRow({
+    createOverlayPanelRow({
       label: 'Lone Pairs',
       title: 'Display lone pair dots on atoms when available.',
       active: showLonePairs,
       onClick: event => {
         event.stopPropagation();
         ctx.updateRenderOptions?.({ showLonePairs: !showLonePairs });
-        const displayedMol = _currentDisplayedMol() ?? mol;
+        const displayedMol = modeHelpers.currentMol() ?? mol;
         updateAtomNumberingPanel(displayedMol);
-        _redraw(displayedMol);
+        modeHelpers.redraw(displayedMol);
       }
     })
   );
 }
 
-function _redraw(mol) {
-  if (ctx.mode === 'force') {
-    ctx.updateForce(mol, { preservePositions: true, preserveView: true });
-  } else {
-    ctx.draw2d();
-  }
-}
