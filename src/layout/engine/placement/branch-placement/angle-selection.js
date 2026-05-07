@@ -26,6 +26,7 @@ import {
 
 const CROSS_LIKE_HYPERVALENT_HETERO_SINGLE_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
 const TERMINAL_HETERO_TRIPOD_NEAR_CONTACT_FACTOR = 0.72;
+const TERMINAL_LEAF_SHARED_JUNCTION_CLEARANCE = Math.PI / 4;
 
 /**
  * Returns the bond angles of all already placed neighbors around an anchor.
@@ -494,8 +495,10 @@ function isConjugatedTrigonalCenter(layoutGraph, atomId) {
 /**
  * Returns whether a pair of heavy neighbors should make an attached divalent
  * nitrogen preserve a planar 120-degree continuation. Conjugated
- * carbonyl/imine-like neighbors already imply planarity; the aromatic case is
- * kept narrower and only covers aryl-hydrazine style `aryl-N-N` linkers.
+ * carbonyl/imine-like neighbors already imply planarity; one aryl neighbor is
+ * enough for secondary anilino hidden-H fans, while diaryl amines stay out of
+ * this simple-continuation path so direct ring-root selection remains in
+ * charge of both rigid aryl exits.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string|null} firstAtomId - First neighbor atom ID.
  * @param {string|null} secondAtomId - Second neighbor atom ID.
@@ -513,10 +516,9 @@ export function isPlanarDivalentNitrogenContinuationPair(layoutGraph, firstAtomI
   return Boolean(
     firstAtom
     && secondAtom
-    && (
-      (firstAtom.aromatic === true && secondAtom.element === 'N' && secondAtom.aromatic !== true)
-      || (secondAtom.aromatic === true && firstAtom.element === 'N' && firstAtom.aromatic !== true)
-    )
+    && firstAtom.element !== 'H'
+    && secondAtom.element !== 'H'
+    && firstAtom.aromatic !== secondAtom.aromatic
   );
 }
 
@@ -1156,21 +1158,28 @@ function shouldPreferLocalRingOutwardForTerminalHeteroSubstituent(layoutGraph, a
   if (
     !layoutGraph
     || !childAtomId
-    || localRingAngles.length !== 1
-    || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) !== 1
-    || !ringSystemHasOnlyIsolatedOrFusedConnections(layoutGraph, anchorAtomId)
+    || localRingAngles.length === 0
     || !isExactRingOutwardEligibleSubstituent(layoutGraph, anchorAtomId, childAtomId)
   ) {
     return false;
   }
 
   const childAtom = layoutGraph.atoms.get(childAtomId);
-  return Boolean(
+  const isTerminalHeteroSubstituent = Boolean(
     childAtom
     && childAtom.element !== 'C'
     && childAtom.element !== 'H'
     && childAtom.aromatic !== true
     && childAtom.heavyDegree <= 1
+  );
+  if (!isTerminalHeteroSubstituent) {
+    return false;
+  }
+
+  const anchorRingCount = layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0;
+  return (
+    (anchorRingCount === 1 && localRingAngles.length === 1 && ringSystemHasOnlyIsolatedOrFusedConnections(layoutGraph, anchorAtomId)) ||
+    (anchorRingCount > 1 && localRingAngles.length > 1 && (childAtom.charge ?? 0) > 0)
   );
 }
 
@@ -1433,7 +1442,10 @@ function preferredRingJunctionGapAngle(layoutGraph, coords, anchorAtomId, placed
     const sharedNeighborAngle = angleOf(sub(coords.get(sharedJunctionNeighborIds[0]), coords.get(anchorAtomId)));
     const straightJunctionAngle = normalizeSignedAngle(sharedNeighborAngle + Math.PI);
     const straightJunctionClearance = Math.min(...ringNeighborAngles.map(occupiedAngle => angularDifference(straightJunctionAngle, occupiedAngle)));
-    if (straightJunctionClearance >= DEG60 - 1e-6) {
+    const clearanceFloor = isTerminalHeavyLeafSubstituent(layoutGraph, anchorAtomId, childAtomId)
+      ? TERMINAL_LEAF_SHARED_JUNCTION_CLEARANCE
+      : DEG60;
+    if (straightJunctionClearance >= clearanceFloor - 1e-6) {
       if (shouldPreferTerminalLeafLocalOutwardOverStraightJunction(layoutGraph, coords, anchorAtomId, childAtomId, straightJunctionAngle)) {
         return null;
       }
@@ -2959,6 +2971,34 @@ function preferredChargedSulfoxideTrigonalChildAngles(layoutGraph, coords, ancho
   return openTrigonalAnglesFromPlaced(coords, anchorAtomId, placedLigandNeighborIds);
 }
 
+/**
+ * Returns exact open trigonal slots for the first visible child of a
+ * suppressed-H saturated carbon. These centers draw as a three-heavy fan once
+ * hydrogens are hidden, so early child placement must reserve the two 120-degree
+ * directions instead of falling back to alkyl zigzag styling.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Hidden-H carbon atom ID.
+ * @param {string|null} childAtomId - Child atom being placed.
+ * @param {string[]} placedNeighborIdsList - Already placed neighbor atom IDs.
+ * @returns {number[]} Candidate trigonal child angles.
+ */
+function preferredOmittedHydrogenTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList) {
+  if (
+    !childAtomId
+    || placedNeighborIdsList.length !== 1
+    || !shouldPreferOmittedHydrogenTrigonalBisector(layoutGraph, anchorAtomId)
+  ) {
+    return [];
+  }
+
+  const childBond = findLayoutBond(layoutGraph, anchorAtomId, childAtomId);
+  if (!childBond || childBond.aromatic || (childBond.order ?? 1) !== 1) {
+    return [];
+  }
+  return openTrigonalAnglesFromPlaced(coords, anchorAtomId, placedNeighborIdsList);
+}
+
 function largestGapAngles(fixedAngles, childCount) {
   const sortedAngles = [...fixedAngles].sort((firstAngle, secondAngle) => firstAngle - secondAngle);
   if (sortedAngles.length === 0) {
@@ -3418,6 +3458,7 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
     return [];
   }
   const placedNeighborIdsList = (adjacency.get(anchorAtomId) ?? []).filter(neighborAtomId => coords.has(neighborAtomId));
+  const childBond = childAtomId ? findLayoutBond(layoutGraph, anchorAtomId, childAtomId) : null;
   const projectedTetrahedralAngles = preferredProjectedTetrahedralAngles(layoutGraph, coords, anchorAtomId, placedNeighborIdsList, childAtomId);
   if (projectedTetrahedralAngles.length > 0) {
     return projectedTetrahedralAngles;
@@ -3438,7 +3479,6 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
   if (ringJunctionGapAngle != null) {
     return [ringJunctionGapAngle];
   }
-  const childBond = childAtomId ? findLayoutBond(layoutGraph, anchorAtomId, childAtomId) : null;
   const exactVisibleTrigonalBisectorAngle =
     placedNeighborIdsList.length === 2
     && childBond
@@ -3492,6 +3532,16 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
   const forwardAngle = angleOf(sub(anchorPosition, coords.get(resolvedParentAtomId)));
   if (prefersLinearContinuation(layoutGraph, anchorAtomId, resolvedParentAtomId, childAtomId)) {
     return [forwardAngle];
+  }
+  const omittedHydrogenTrigonalAngles = preferredOmittedHydrogenTrigonalChildAngles(
+    layoutGraph,
+    coords,
+    anchorAtomId,
+    childAtomId,
+    placedNeighborIdsList
+  );
+  if (omittedHydrogenTrigonalAngles.length > 0) {
+    return omittedHydrogenTrigonalAngles;
   }
   const alkylTailAngles = preferredAlkylTailAngles(adjacency, coords, anchorAtomId, resolvedParentAtomId, childAtomId, layoutGraph);
   if (alkylTailAngles.length > 0) {

@@ -35,7 +35,7 @@ import {
   kekulize,
   atomBBox
 } from './mol2d-helpers.js';
-import { synthesizeHydrogenPosition } from './engine/stereo/wedge-geometry.js';
+import { synthesizeDisplayedStereoHydrogenPosition } from './engine/stereo/wedge-geometry.js';
 import { Resvg } from '@resvg/resvg-js';
 
 // ---------------------------------------------------------------------------
@@ -92,10 +92,8 @@ function projectHiddenStereoHydrogens(mol, bondLength) {
       .getNeighbors(mol)
       .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null)
       .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
-    const projectedPosition = synthesizeHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength, {
+    const projectedPosition = synthesizeDisplayedStereoHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength, {
       incidentRingPolygons: incidentRingPolygonsForAtom(mol, parent.id),
-      preferCardinalAxes: true,
-      fixedRadius: true
     });
     projectedCoords.set(atom.id, projectedPosition);
   }

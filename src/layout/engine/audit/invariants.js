@@ -226,8 +226,9 @@ function compressibleTerminalRingLeafEndpoints(layoutGraph, bond) {
 }
 
 /**
- * Resolves a terminal hetero leaf on a compact carbonyl/carboxyl center whose
- * ring-side geometry benefits from a shortened exact trigonal leaf.
+ * Resolves a terminal hetero leaf on a compact carbonyl/carboxyl or ring
+ * carbonyl center whose ring-side geometry benefits from a shortened exact
+ * trigonal leaf.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object} bond - Candidate bond descriptor.
  * @returns {{centerAtomId: string, leafAtomId: string}|null} Endpoint roles, or null.
@@ -251,12 +252,12 @@ function compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond) {
       centerAtom.heavyDegree !== 3 ||
       !COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(leafAtom.element) ||
       (leafAtom.heavyDegree ?? 0) !== 1 ||
-      (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0 ||
       (layoutGraph.atomToRings.get(leafAtomId)?.length ?? 0) > 0
     ) {
       continue;
     }
 
+    const centerRingCount = layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0;
     let ringNeighborCount = 0;
     let ringAdjacentNeighborCount = 0;
     let terminalHeteroNeighborCount = 0;
@@ -292,6 +293,9 @@ function compressibleTerminalCarbonylLeafEndpoints(layoutGraph, bond) {
           terminalMultipleHeteroNeighborCount++;
         }
       }
+    }
+    if (centerRingCount > 0 && ringNeighborCount === 2 && terminalMultipleHeteroNeighborCount === 1) {
+      return { centerAtomId, leafAtomId };
     }
     if (ringNeighborCount === 1 && terminalHeteroNeighborCount >= 2 && terminalMultipleHeteroNeighborCount >= 1) {
       return { centerAtomId, leafAtomId };
@@ -1212,7 +1216,7 @@ function ringSystemHasBridgedConnection(layoutGraph, ringSystemId) {
   return (layoutGraph.ringConnections ?? []).some(connection => connection.kind === 'bridged' && ringIds.has(connection.firstRingId) && ringIds.has(connection.secondRingId));
 }
 
-function hasClearExteriorRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, ringPolygons) {
+function hasClearExteriorRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, ringPolygons, options = {}) {
   const anchorPosition = coords.get(anchorAtomId);
   const childPosition = coords.get(childAtomId);
   if (!anchorPosition || !childPosition) {
@@ -1241,11 +1245,44 @@ function hasClearExteriorRingSubstituentSlot(layoutGraph, coords, anchorAtomId, 
       continue;
     }
     if (
+      options.considerSegmentCrossing === true &&
+      ringSubstituentSegmentCrossesRingSystemBond(layoutGraph, coords, anchorAtomId, childAtomId, anchorPosition, candidatePosition, ringSystem)
+    ) {
+      continue;
+    }
+    if (
       blockerAtomIds.every(atomId => {
         const blockerPosition = coords.get(atomId);
         return Math.hypot(candidatePosition.x - blockerPosition.x, candidatePosition.y - blockerPosition.y) >= clearanceFloor;
       })
     ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function ringSubstituentSegmentCrossesRingSystemBond(layoutGraph, coords, anchorAtomId, childAtomId, anchorPosition, candidatePosition, ringSystem) {
+  const ringAtomIds = new Set(ringSystem?.atomIds ?? []);
+  if (ringAtomIds.size === 0) {
+    return false;
+  }
+
+  for (const bond of layoutGraph.bonds.values()) {
+    if (
+      bond.kind !== 'covalent'
+      || bond.a === anchorAtomId
+      || bond.b === anchorAtomId
+      || bond.a === childAtomId
+      || bond.b === childAtomId
+      || !ringAtomIds.has(bond.a)
+      || !ringAtomIds.has(bond.b)
+      || !coords.has(bond.a)
+      || !coords.has(bond.b)
+    ) {
+      continue;
+    }
+    if (segmentsProperlyIntersect(anchorPosition, candidatePosition, coords.get(bond.a), coords.get(bond.b))) {
       return true;
     }
   }
@@ -1263,10 +1300,17 @@ function isUnavoidableBridgedRingSubstituentSlot(layoutGraph, coords, anchorAtom
     return false;
   }
   const childAtom = layoutGraph.atoms.get(childAtomId);
-  if (!childAtom || childAtom.element !== 'C' || childAtom.aromatic === true || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0) {
+  if (!childAtom || childAtom.element === 'H' || childAtom.aromatic === true || (layoutGraph.atomToRings.get(childAtomId)?.length ?? 0) > 0) {
     return false;
   }
-  return !hasClearExteriorRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, ringPolygons);
+  const isCarbonLeaf = childAtom.element === 'C';
+  const isPositiveTerminalHetero = childAtom.element !== 'C' && (childAtom.charge ?? 0) > 0 && childAtom.heavyDegree <= 1;
+  if (!isCarbonLeaf && !isPositiveTerminalHetero) {
+    return false;
+  }
+  return !hasClearExteriorRingSubstituentSlot(layoutGraph, coords, anchorAtomId, childAtomId, ringPolygons, {
+    considerSegmentCrossing: isPositiveTerminalHetero
+  });
 }
 
 /**

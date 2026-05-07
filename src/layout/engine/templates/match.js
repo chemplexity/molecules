@@ -24,6 +24,55 @@ function templateCompatibleIgnoringFamily(template, candidate) {
 }
 
 /**
+ * Counts element symbols for a candidate atom list in the target layout graph.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string[]} atomIds - Candidate atom IDs.
+ * @returns {Map<string, number>} Element-symbol counts.
+ */
+function countCandidateElements(layoutGraph, atomIds) {
+  const counts = new Map();
+  for (const atomId of atomIds) {
+    const atom = layoutGraph.sourceMolecule.atoms.get(atomId);
+    if (!atom) {
+      continue;
+    }
+    counts.set(atom.name, (counts.get(atom.name) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Counts element symbols for a template molecule.
+ * @param {object} template - Template descriptor.
+ * @returns {Map<string, number>} Element-symbol counts.
+ */
+function countTemplateElements(template) {
+  const counts = new Map();
+  for (const atom of template.molecule.atoms.values()) {
+    counts.set(atom.name, (counts.get(atom.name) ?? 0) + 1);
+  }
+  return counts;
+}
+
+/**
+ * Returns whether two element-count maps are identical.
+ * @param {Map<string, number>} firstCounts - First element counts.
+ * @param {Map<string, number>} secondCounts - Second element counts.
+ * @returns {boolean} True when both maps contain the same element counts.
+ */
+function elementCountsEqual(firstCounts, secondCounts) {
+  if (firstCounts.size !== secondCounts.size) {
+    return false;
+  }
+  for (const [element, count] of firstCounts) {
+    if (secondCounts.get(element) !== count) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
  * Counts exocyclic neighbours on a mapped target atom that satisfy one constraint.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Set<string>} candidateAtomIdSet - Ring-system atom IDs in the candidate.
@@ -172,7 +221,11 @@ export function findTemplateMapping(layoutGraph, atomIds, template) {
  * @returns {object|null} Template-match metadata or `null`.
  */
 function findTemplateMatchFromTemplates(layoutGraph, candidate, templates) {
+  const candidateElementCounts = countCandidateElements(layoutGraph, candidate.atomIds);
   for (const template of templates) {
+    if (!elementCountsEqual(candidateElementCounts, countTemplateElements(template))) {
+      continue;
+    }
     const mapping = findTemplateMapping(layoutGraph, candidate.atomIds, template);
     if (mapping) {
       return {

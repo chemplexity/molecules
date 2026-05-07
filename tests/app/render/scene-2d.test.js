@@ -5,6 +5,7 @@ import { parseSMILES } from '../../../src/io/smiles.js';
 import { create2DSceneRenderer } from '../../../src/app/render/scene-2d.js';
 import { applyCoords } from '../../../src/layout/engine/apply.js';
 import { generateCoords } from '../../../src/layout/engine/api.js';
+import { minimumSectorAngle } from '../../../src/layout/engine/stereo/wedge-geometry.js';
 import { syncDisplayStereo } from '../../../src/layout/mol2d-helpers.js';
 
 class FakeSelection {
@@ -297,6 +298,13 @@ function applyZoomTransform(point, transform) {
   };
 }
 
+function svgPointToLayout(point, state) {
+  return {
+    x: (point.x - 300) / 60 + state.cx,
+    y: state.cy - (point.y - 200) / 60
+  };
+}
+
 function buildStereoHydrogenRenderState(smiles) {
   const mol = parseSMILES(smiles);
   const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
@@ -556,6 +564,36 @@ describe('create2DSceneRenderer', () => {
     const projectedAngle = (Math.atan2(parentPoint.y - hydrogenPoint.y, hydrogenPoint.x - parentPoint.x) * 180) / Math.PI;
 
     assert.ok(projectedAngle > 40 && projectedAngle < 65, `expected H5 to project into the open upper-right sector, got ${projectedAngle.toFixed(1)} degrees`);
+  });
+
+  it('projects saturated morphinan bridgehead stereo hydrogens away from pinched ring bonds', () => {
+    const { renderer, state } = makeRenderer();
+    const mol = parseSMILES('[H][C@@]12CCCC[C@@]11CCN(CC=C)[C@@H]2CC2=C1C=C(O)C=C2');
+    const layoutResult = generateCoords(mol, { suppressH: true, bondLength: 1.5 });
+    applyCoords(mol, layoutResult, {
+      clearUnplaced: true,
+      hiddenHydrogenMode: 'coincident',
+      syncStereoDisplay: true
+    });
+
+    renderer.render2d(mol, { preserveGeometry: true });
+
+    const hydrogen = mol.atoms.get('H1');
+    assert.ok(hydrogen, 'expected H1 to exist');
+    const [parent] = hydrogen.getNeighbors(mol);
+    assert.ok(parent, 'expected H1 to have a parent atom');
+
+    const projectedHydrogen = svgPointToLayout(renderer.toSVGPt(hydrogen), state);
+    const knownPositions = parent
+      .getNeighbors(mol)
+      .filter(neighbor => neighbor.id !== hydrogen.id && neighbor.x != null && neighbor.y != null)
+      .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
+    const projectedSector = minimumSectorAngle(parent, projectedHydrogen, knownPositions);
+
+    assert.ok(
+      projectedSector >= Math.PI / 3 - 1e-6,
+      `expected H1 to stay in the widest bridgehead sector, got ${((projectedSector * 180) / Math.PI).toFixed(1)} degrees`
+    );
   });
 
   it('pins visible stereo hydrogens to their rendered position before neighboring drags', () => {

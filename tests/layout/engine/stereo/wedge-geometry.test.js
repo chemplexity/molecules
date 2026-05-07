@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
   DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE,
   minimumSectorAngle,
+  synthesizeDisplayedStereoHydrogenPosition,
   synthesizeHydrogenPosition
 } from '../../../../src/layout/engine/stereo/wedge-geometry.js';
 import { pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.js';
@@ -141,6 +142,58 @@ describe('layout/engine/stereo/wedge-geometry', () => {
     const c21Angle = angleOf(sub(c21HydrogenPosition, c21Position));
     assert.ok(c17Angle > 2.0 && c17Angle < 2.6, `expected the C17 hydrogen to project to the upper-left exterior side, got ${((c17Angle * 180) / Math.PI).toFixed(1)} degrees`);
     assert.ok(c21Angle < -1.0 && c21Angle > -1.6, `expected the C21 hydrogen to project to the lower exterior side, got ${((c21Angle * 180) / Math.PI).toFixed(1)} degrees`);
+  });
+
+  it('backs displayed bridgehead hydrogens out of pinched ring-safe sectors', () => {
+    const c2Position = { x: 6.38421, y: -0.069322 };
+    const hydrogenPosition = synthesizeDisplayedStereoHydrogenPosition(
+      c2Position,
+      [
+        { x: 7.176966, y: -1.084312 },
+        { x: 5.330225, y: -0.025003 },
+        { x: 4.405035, y: -0.096767 }
+      ],
+      1.125,
+      {
+        incidentRingPolygons: [
+          [
+            { x: 7.176966, y: -1.084312 },
+            { x: 6.908454, y: -2.558206 },
+            { x: 5.521038, y: -3.13205 },
+            { x: 4.402136, y: -2.133888 },
+            { x: 5.330225, y: -0.025003 },
+            c2Position
+          ],
+          [
+            { x: 5.330225, y: -0.025003 },
+            { x: 5.939361, y: 1.298098 },
+            { x: 7.379302, y: 1.710164 },
+            { x: 8.419327, y: 0.629805 },
+            { x: 7.176966, y: -1.084312 },
+            c2Position
+          ],
+          [
+            { x: 4.405035, y: -0.096767 },
+            { x: 3.516425, y: -1.305187 },
+            { x: 4.133064, y: -2.673367 },
+            { x: 5.521038, y: -3.13205 },
+            { x: 7.176966, y: -1.084312 },
+            c2Position
+          ]
+        ],
+        cardinalAxisSectorTolerance: DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE
+      }
+    );
+
+    const angle = angleOf(sub(hydrogenPosition, c2Position));
+    const sector = minimumSectorAngle(c2Position, hydrogenPosition, [
+      { x: 7.176966, y: -1.084312 },
+      { x: 5.330225, y: -0.025003 },
+      { x: 4.405035, y: -0.096767 }
+    ]);
+
+    assert.ok(angle > 0.9 && angle < 1.2, `expected bridgehead hydrogen to project into the open upper-right sector, got ${((angle * 180) / Math.PI).toFixed(1)} degrees`);
+    assert.ok(sector > 1.5, `expected bridgehead hydrogen to clear existing bonds, got ${((sector * 180) / Math.PI).toFixed(1)} degrees`);
   });
 
   it('snaps display hydrogens to exact cardinal axes when that stays nearly as open', () => {

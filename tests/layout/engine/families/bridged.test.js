@@ -433,6 +433,89 @@ describe('layout/engine/families/bridged', () => {
     assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
   });
 
+  it('uses a sulfonyl cyclopentenyl azocane template so the five-member ring stays structured', () => {
+    const smiles = 'CC1=C2CS(=O)(=O)C1C(CCNC2(C)C)C=O';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: 'sulfonyl-cyclopentenyl-azocane-core'
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const cyclopentenylRing = { atomIds: ['C8', 'C2', 'C3', 'C4', 'S5'] };
+    const assertCyclopentenylRing = (coords, label) => {
+      for (const atomId of cyclopentenylRing.atomIds) {
+        const angle = ringInternalAngle(cyclopentenylRing, coords, atomId);
+        assert.ok(
+          Math.abs(angle - ((3 * Math.PI) / 5)) < 1e-6,
+          `expected ${label} ${atomId} cyclopentenyl angle to stay at 108 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+    };
+
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertCyclopentenylRing(result.coords, 'template layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertCyclopentenylRing(pipelineResult.coords, 'pipeline layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
+  });
+
+  it('uses a hydroxy alkyl bicyclohexene template so the compact five-ring stays structured', () => {
+    const smiles = 'CCC1(O)C2C(CN(C)C)C1(CC)C=C2C';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: 'hydroxy-alkyl-bicyclohexene-core'
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const cyclopentenylRing = { atomIds: ['C15', 'C14', 'C11', 'C3', 'C5'] };
+    const assertCyclopentenylRing = (coords, label) => {
+      const angles = cyclopentenylRing.atomIds.map(atomId => ringInternalAngle(cyclopentenylRing, coords, atomId) * (180 / Math.PI));
+      assert.ok(
+        Math.min(...angles) > 80,
+        `expected ${label} cyclopentenyl ring to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+      );
+      assert.ok(
+        Math.max(...angles) < 145,
+        `expected ${label} cyclopentenyl ring to avoid flattened corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+      );
+      for (const atomId of cyclopentenylRing.atomIds) {
+        const nextAtomId = cyclopentenylRing.atomIds[(cyclopentenylRing.atomIds.indexOf(atomId) + 1) % cyclopentenylRing.atomIds.length];
+        const bondDistance = distance(coords.get(atomId), coords.get(nextAtomId));
+        assert.ok(
+          bondDistance >= graph.options.bondLength * BRIDGED_VALIDATION.minBondLengthFactor
+          && bondDistance <= graph.options.bondLength * BRIDGED_VALIDATION.maxBondLengthFactor,
+          `expected ${label} ${atomId}-${nextAtomId} cyclopentenyl bond to stay readable, got ${bondDistance.toFixed(3)}`
+        );
+      }
+    };
+
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertCyclopentenylRing(result.coords, 'template layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertCyclopentenylRing(pipelineResult.coords, 'pipeline layout');
+    assert.ok(
+      findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords).every(crossing => (
+        crossing.firstAtomIds.includes('C7') || crossing.secondAtomIds.includes('C7')
+      ))
+    );
+  });
+
   it('keeps long theta-like bridged ring paths separated from exocyclic substituents', () => {
     const smiles = 'CCOC(C)(C)C1NCC2OCC1NC(=O)O2';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

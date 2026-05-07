@@ -8,6 +8,7 @@ const CARDINAL_AXIS_SECTOR_TOLERANCE = Math.PI / 24;
 const RING_VERTEX_MATCH_TOLERANCE = 1e-6;
 const ANGLE_ARC_TOLERANCE = 1e-6;
 const SHARP_RING_VERTEX_INTERIOR_LIMIT = Math.PI / 3;
+const DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR = Math.PI / 6;
 export const DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE = Math.PI / 16;
 
 /**
@@ -332,6 +333,46 @@ export function synthesizeHydrogenPosition(centerPosition, knownPositions, bondL
   }
 
   return bestCandidate?.position ?? basePosition;
+}
+
+/**
+ * Synthesizes a displayed stereochemical hydrogen position, backing off ring
+ * face avoidance when that would draw the hydrogen almost on top of another
+ * incident bond.
+ * @param {{x: number, y: number}} centerPosition - Stereocenter position.
+ * @param {{x: number, y: number}[]} knownPositions - Known neighbor positions.
+ * @param {number} bondLength - Target display bond length.
+ * @param {object} [options] - Synthesis options.
+ * @param {Array<Array<{x: number, y: number}>>} [options.incidentRingPolygons] - Incident ring polygons to avoid.
+ * @param {number} [options.cardinalAxisSectorTolerance] - Allowed sector drop when snapping to a cardinal axis.
+ * @param {number} [options.minimumDisplaySector] - Minimum acceptable angular clearance from existing bonds.
+ * @returns {{x: number, y: number}} Synthesized hydrogen position.
+ */
+export function synthesizeDisplayedStereoHydrogenPosition(centerPosition, knownPositions, bondLength, options = {}) {
+  const incidentRingPolygons = options.incidentRingPolygons ?? [];
+  const preferredPosition = synthesizeHydrogenPosition(centerPosition, knownPositions, bondLength, {
+    ...options,
+    preferCardinalAxes: true,
+    fixedRadius: true
+  });
+  if (incidentRingPolygons.length === 0 || knownPositions.length === 0) {
+    return preferredPosition;
+  }
+
+  const minimumDisplaySector = options.minimumDisplaySector ?? DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR;
+  const preferredSector = minimumSectorAngle(centerPosition, preferredPosition, knownPositions);
+  if (preferredSector >= minimumDisplaySector) {
+    return preferredPosition;
+  }
+
+  const relaxedPosition = synthesizeHydrogenPosition(centerPosition, knownPositions, bondLength, {
+    ...options,
+    incidentRingPolygons: [],
+    preferCardinalAxes: true,
+    fixedRadius: true
+  });
+  const relaxedSector = minimumSectorAngle(centerPosition, relaxedPosition, knownPositions);
+  return relaxedSector > preferredSector + minimumDisplaySector ? relaxedPosition : preferredPosition;
 }
 
 /**

@@ -5,7 +5,7 @@
  * mode-appropriate redraw, always reading the live module-level context via
  * the provided getter so callers don't need to re-bind after init.
  * @param {() => object} getCtx - Returns the current rendering context.
- * @returns {{ currentMol: () => object|null, redraw: (mol: object) => void }}
+ * @returns {{ currentMol: () => object|null, redraw: (mol: object) => void }} Mode-aware molecule and redraw helpers.
  */
 export function createModeAwareHelpers(getCtx) {
   return {

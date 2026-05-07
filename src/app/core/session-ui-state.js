@@ -86,11 +86,21 @@ export function createSessionUiStateBridge(deps) {
   }
 
   function _resolveToolMode() {
-    if (deps.getDrawBondMode()) return 'draw-bond';
-    if (deps.getEraseMode()) return 'erase';
-    if (deps.getSelectMode()) return 'select';
-    if (deps.getChargeTool?.() === 'positive') return 'charge-positive';
-    if (deps.getChargeTool?.() === 'negative') return 'charge-negative';
+    if (deps.getDrawBondMode()) {
+      return 'draw-bond';
+    }
+    if (deps.getEraseMode()) {
+      return 'erase';
+    }
+    if (deps.getSelectMode()) {
+      return 'select';
+    }
+    if (deps.getChargeTool?.() === 'positive') {
+      return 'charge-positive';
+    }
+    if (deps.getChargeTool?.() === 'negative') {
+      return 'charge-negative';
+    }
     return 'pan';
   }
 

@@ -88,6 +88,8 @@ const LINKED_HETERO_RING_OVERLAP_ROTATION_OFFSETS = Object.freeze(
   [5, 8, 10, 12, 15, 18, 20, 22, 24, 26, 28, 30, 35, 40, 45, 60]
     .flatMap(degrees => [(degrees * Math.PI) / 180, -(degrees * Math.PI) / 180])
 );
+const NON_RING_OMITTED_H_FAN_RESCUE_MAX_ATOMS = 10;
+const NON_RING_OMITTED_H_FAN_RESCUE_MIN_DEVIATION = Math.PI / 18;
 const LINKED_METHYLENE_HYDROGEN_MIN_SEPARATION = 7 * Math.PI / 18;
 const LINKED_METHYLENE_HYDROGEN_MAX_SEPARATION = 17 * Math.PI / 18;
 const DIRECT_ATTACHMENT_ROTATION_OFFSETS = [0, Math.PI / 6, -Math.PI / 6, Math.PI / 3, -Math.PI / 3];
@@ -153,6 +155,17 @@ const OMITTED_HYDROGEN_PARENT_SPREAD_RING_EXIT_TRADEOFF_LIMIT = Math.PI / 3;
 const OMITTED_HYDROGEN_PARENT_SPREAD_PRESENTATION_TRADEOFF_LIMIT = Math.PI / 3;
 const OMITTED_HYDROGEN_DIRECT_RING_HUB_LOCAL_ROTATION_OFFSETS = [0, Math.PI / 3, -(Math.PI / 3)];
 const ATTACHED_BLOCK_NEAR_CONTACT_FACTOR = 0.72;
+const DIRECT_ATTACHMENT_OVERLAP_ROTATION_OFFSETS = [
+  0,
+  Math.PI / 9,
+  -(Math.PI / 9),
+  Math.PI / 6,
+  -(Math.PI / 6),
+  Math.PI / 4,
+  -(Math.PI / 4),
+  Math.PI / 3,
+  -(Math.PI / 3)
+];
 const OMITTED_HYDROGEN_DIRECT_RING_HUB_BRANCH_LEAF_OFFSETS = [
   0,
   Math.PI / 15,
@@ -203,6 +216,8 @@ const ATTACHED_BLOCK_INWARD_READABILITY_PENALTY = 360;
 const ATTACHED_BLOCK_HEAVY_BOND_CROSSING_PENALTY = 500;
 const ATTACHED_BLOCK_TERMINAL_LABEL_CLEARANCE_FACTOR = 0.75;
 const EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT = 50;
+const LARGE_DIRECT_ATTACHMENT_OVERLAP_EXPANSION_HEAVY_ATOM_LIMIT = 96;
+const SMALL_DIRECT_ATTACHMENT_OVERLAP_RING_ATOM_LIMIT = 8;
 const SHARED_JUNCTION_LOCAL_OUTWARD_SPREAD_LIMIT = Math.PI / 6;
 const SHARED_JUNCTION_STRAIGHT_CLEARANCE_LIMIT = Math.PI / 3;
 const PROJECTED_TETRAHEDRAL_TRIGONAL_RESCUE_EPSILON = 1e-6;
@@ -9997,6 +10012,937 @@ function rescueSuppressedHydrogenRingJunctions(layoutGraph, coords, bondLength) 
   return { changed };
 }
 
+/**
+ * Describes a non-ring suppressed-H carbon with one ring-side bond and two
+ * visible non-ring branches that should read as an exact three-heavy fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Candidate fan center atom ID.
+ * @returns {{centerAtomId: string, neighborIds: string[], ringNeighborId: string, branchNeighborIds: string[]}|null} Fan descriptor.
+ */
+function describeNonRingSuppressedHydrogenFan(layoutGraph, coords, centerAtomId) {
+  const atom = layoutGraph.atoms.get(centerAtomId);
+  if (
+    !atom
+    || !coords.has(centerAtomId)
+    || atom.element !== 'C'
+    || atom.aromatic
+    || atom.degree !== 4
+    || atom.heavyDegree !== 3
+    || layoutGraph.options.suppressH !== true
+    || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+
+  const heavyNeighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(centerAtomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      return null;
+    }
+    const neighborAtomId = bond.a === centerAtomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H') {
+      continue;
+    }
+    if (!coords.has(neighborAtomId)) {
+      return null;
+    }
+    heavyNeighborIds.push(neighborAtomId);
+  }
+  if (heavyNeighborIds.length !== 3) {
+    return null;
+  }
+
+  const ringNeighborIds = heavyNeighborIds.filter(neighborAtomId => (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) > 0);
+  const branchNeighborIds = heavyNeighborIds.filter(neighborAtomId => !ringNeighborIds.includes(neighborAtomId));
+  if (ringNeighborIds.length !== 1 || branchNeighborIds.length !== 2) {
+    return null;
+  }
+  return {
+    centerAtomId,
+    neighborIds: heavyNeighborIds,
+    ringNeighborId: ringNeighborIds[0],
+    branchNeighborIds
+  };
+}
+
+/**
+ * Measures the worst angular deviation from a 120-degree visible fan.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{centerAtomId: string, neighborIds: string[]}} descriptor - Fan descriptor.
+ * @returns {number} Maximum gap deviation in radians.
+ */
+function nonRingSuppressedHydrogenFanMaxDeviation(coords, descriptor) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  if (!centerPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const angles = descriptor.neighborIds
+    .map(neighborAtomId => coords.get(neighborAtomId))
+    .filter(Boolean)
+    .map(neighborPosition => angleOf(sub(neighborPosition, centerPosition)))
+    .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  if (angles.length !== 3) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  let maxDeviation = 0;
+  for (let index = 0; index < angles.length; index++) {
+    const currentAngle = angles[index];
+    const nextAngle = angles[(index + 1) % angles.length];
+    const gap = normalizeSignedAngle(nextAngle - currentAngle) > 0
+      ? normalizeSignedAngle(nextAngle - currentAngle)
+      : normalizeSignedAngle(nextAngle - currentAngle) + Math.PI * 2;
+    maxDeviation = Math.max(maxDeviation, Math.abs(gap - EXACT_TRIGONAL_CONTINUATION_ANGLE));
+  }
+  return maxDeviation;
+}
+
+/**
+ * Returns the exact remaining trigonal direction implied by two fixed neighbors.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Fan center atom ID.
+ * @param {string[]} fixedNeighborIds - Neighbor IDs to keep fixed.
+ * @returns {number|null} Target angle in radians, or null when unavailable.
+ */
+function exactTrigonalAngleFromFixedNeighbors(coords, centerAtomId, fixedNeighborIds) {
+  const centerPosition = coords.get(centerAtomId);
+  const fixedPositions = fixedNeighborIds.map(atomId => coords.get(atomId)).filter(Boolean);
+  if (!centerPosition || fixedPositions.length !== 2) {
+    return null;
+  }
+
+  const fixedCenter = centroid(fixedPositions);
+  const outwardVector = sub(centerPosition, fixedCenter);
+  if (Math.hypot(outwardVector.x, outwardVector.y) <= IMPROVEMENT_EPSILON) {
+    return null;
+  }
+  return angleOf(outwardVector);
+}
+
+/**
+ * Rotates one small branch onto the exact remaining hidden-H fan slot.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{centerAtomId: string, neighborIds: string[]}} descriptor - Fan descriptor.
+ * @param {string} movableNeighborId - Branch root to rotate.
+ * @returns {{coords: Map<string, {x: number, y: number}>, movedAtomIds: string[], rotationMagnitude: number, fanDeviation: number}|null} Candidate pose.
+ */
+function buildNonRingSuppressedHydrogenFanCandidate(layoutGraph, coords, descriptor, movableNeighborId) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const movablePosition = coords.get(movableNeighborId);
+  if (!centerPosition || !movablePosition) {
+    return null;
+  }
+
+  const fixedNeighborIds = descriptor.neighborIds.filter(neighborAtomId => neighborAtomId !== movableNeighborId);
+  const targetAngle = exactTrigonalAngleFromFixedNeighbors(coords, descriptor.centerAtomId, fixedNeighborIds);
+  if (targetAngle == null) {
+    return null;
+  }
+  const currentAngle = angleOf(sub(movablePosition, centerPosition));
+  const rotation = normalizeSignedAngle(targetAngle - currentAngle);
+  if (Math.abs(rotation) <= IMPROVEMENT_EPSILON) {
+    return null;
+  }
+
+  const movedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, movableNeighborId, descriptor.centerAtomId)
+    .filter(atomId => coords.has(atomId));
+  if (
+    movedAtomIds.length === 0
+    || movedAtomIds.length > NON_RING_OMITTED_H_FAN_RESCUE_MAX_ATOMS
+    || movedAtomIds.some(atomId => layoutGraph.atoms.get(atomId)?.chirality)
+  ) {
+    return null;
+  }
+
+  const candidateCoords = new Map(coords);
+  for (const atomId of movedAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, add(centerPosition, rotate(sub(position, centerPosition), rotation)));
+  }
+  return {
+    coords: candidateCoords,
+    movedAtomIds,
+    rotationMagnitude: Math.abs(rotation),
+    fanDeviation: nonRingSuppressedHydrogenFanMaxDeviation(candidateCoords, descriptor)
+  };
+}
+
+/**
+ * Returns bounded attached-ring rotations used to clear exact fan candidates.
+ * @returns {number[]} Unique ring-rotation offsets in radians.
+ */
+function nonRingSuppressedHydrogenFanRingRotationOffsets() {
+  const offsets = [
+    0,
+    ...SUPPRESSED_H_RING_JUNCTION_RESCUE_OFFSETS,
+    7 * Math.PI / 36,
+    -(7 * Math.PI / 36),
+    11 * Math.PI / 36,
+    -(11 * Math.PI / 36),
+    Math.PI / 3,
+    -(Math.PI / 3)
+  ];
+  const uniqueOffsets = [];
+  for (const offset of offsets) {
+    if (!uniqueOffsets.some(existingOffset => angularDifference(existingOffset, offset) <= 1e-9)) {
+      uniqueOffsets.push(offset);
+    }
+  }
+  return uniqueOffsets;
+}
+
+/**
+ * Builds a stable rounded coordinate signature for candidate de-duplication.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @returns {string} Rounded coordinate signature.
+ */
+function candidateCoordSignature(coords) {
+  return [...coords.entries()]
+    .sort(([firstAtomId], [secondAtomId]) => String(firstAtomId).localeCompare(String(secondAtomId), 'en', { numeric: true }))
+    .map(([atomId, position]) => `${atomId}:${Math.round(position.x * 1e6)}:${Math.round(position.y * 1e6)}`)
+    .join('|');
+}
+
+/**
+ * Adds a candidate coordinate map once per rounded coordinate signature.
+ * @param {Map<string, {x: number, y: number}>[]} candidates - Candidate list to update.
+ * @param {Set<string>} seenSignatures - Signatures already added.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @returns {void}
+ */
+function pushUniqueNonRingSuppressedHydrogenFanCandidate(candidates, seenSignatures, coords) {
+  const signature = candidateCoordSignature(coords);
+  if (seenSignatures.has(signature)) {
+    return;
+  }
+  seenSignatures.add(signature);
+  candidates.push(coords);
+}
+
+/**
+ * Rotates the movable atoms of one attached-ring descriptor around its anchor.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {{anchorAtomId: string, subtreeAtomIds: string[]}} descriptor - Attached-ring descriptor.
+ * @param {number} rotation - Rotation angle in radians.
+ * @returns {Map<string, {x: number, y: number}>} Rotated candidate map.
+ */
+function rotateAttachedRingDescriptor(coords, descriptor, rotation) {
+  const rotatedCoords = rotateAtomIdsAroundPivot(coords, descriptor.subtreeAtomIds, descriptor.anchorAtomId, rotation);
+  return rotatedCoords ?? coords;
+}
+
+/**
+ * Returns visible heavy single-bond neighbors for a local continuation center.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} atomId - Center atom ID.
+ * @returns {string[]} Visible heavy single-bond neighbor IDs.
+ */
+function visibleHeavySingleCovalentNeighborIds(layoutGraph, coords, atomId) {
+  const neighborIds = [];
+  for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+    if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+    const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+    if (!neighborAtom || neighborAtom.element === 'H' || !coords.has(neighborAtomId)) {
+      continue;
+    }
+    neighborIds.push(neighborAtomId);
+  }
+  return neighborIds;
+}
+
+/**
+ * Describes a divalent non-ring center whose movable side is an attached ring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Divalent center atom ID.
+ * @param {string} parentAtomId - Fixed parent-side neighbor ID.
+ * @param {Set<string>} protectedAtomIds - Atoms that must not be moved.
+ * @returns {{centerAtomId: string, parentAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}|null} Descriptor.
+ */
+function describeAttachedRingDivalentContinuation(layoutGraph, coords, centerAtomId, parentAtomId, protectedAtomIds) {
+  const atom = layoutGraph.atoms.get(centerAtomId);
+  if (
+    !atom
+    || !coords.has(centerAtomId)
+    || protectedAtomIds.has(centerAtomId)
+    || atom.element === 'H'
+    || atom.aromatic
+    || (layoutGraph.atomToRings.get(centerAtomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+
+  const neighborIds = visibleHeavySingleCovalentNeighborIds(layoutGraph, coords, centerAtomId);
+  if (neighborIds.length !== 2 || !neighborIds.includes(parentAtomId)) {
+    return null;
+  }
+  const rootAtomId = neighborIds.find(neighborAtomId => neighborAtomId !== parentAtomId) ?? null;
+  if (
+    !rootAtomId
+    || protectedAtomIds.has(rootAtomId)
+    || !isExactSimpleAcyclicContinuationEligible(layoutGraph, centerAtomId, parentAtomId, rootAtomId)
+  ) {
+    return null;
+  }
+
+  const subtreeAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, rootAtomId, centerAtomId)
+    .filter(atomId => coords.has(atomId));
+  if (
+    subtreeAtomIds.length === 0
+    || subtreeAtomIds.length > 18
+    || subtreeAtomIds.some(atomId => protectedAtomIds.has(atomId))
+    || !subtreeAtomIds.some(atomId => (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0)
+  ) {
+    return null;
+  }
+
+  return {
+    centerAtomId,
+    parentAtomId,
+    rootAtomId,
+    subtreeAtomIds
+  };
+}
+
+/**
+ * Finds the first attached-ring divalent continuation inside a side branch.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} rootAtomId - Side-branch root atom ID.
+ * @param {string} parentAtomId - Branch parent atom ID.
+ * @param {Set<string>} protectedAtomIds - Atoms that must not be moved.
+ * @returns {{centerAtomId: string, parentAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}|null} Descriptor.
+ */
+function firstAttachedRingDivalentContinuationInBranch(layoutGraph, coords, rootAtomId, parentAtomId, protectedAtomIds) {
+  const branchAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, rootAtomId, parentAtomId)
+    .filter(atomId => coords.has(atomId))
+    .sort((firstAtomId, secondAtomId) => compareCanonicalIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));
+  for (const centerAtomId of branchAtomIds) {
+    const neighborIds = visibleHeavySingleCovalentNeighborIds(layoutGraph, coords, centerAtomId);
+    for (const neighborAtomId of neighborIds) {
+      if (!branchAtomIds.includes(neighborAtomId)) {
+        continue;
+      }
+      const descriptor = describeAttachedRingDivalentContinuation(
+        layoutGraph,
+        coords,
+        centerAtomId,
+        neighborAtomId,
+        protectedAtomIds
+      );
+      if (descriptor) {
+        return descriptor;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Measures the angular deviation of one divalent continuation descriptor.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{centerAtomId: string, parentAtomId: string, rootAtomId: string}} descriptor - Divalent descriptor.
+ * @returns {number} Absolute deviation from 120 degrees in radians.
+ */
+function attachedRingDivalentContinuationDeviation(coords, descriptor) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const parentPosition = coords.get(descriptor.parentAtomId);
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  if (!centerPosition || !parentPosition || !rootPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Math.abs(
+    angularDifference(
+      angleOf(sub(parentPosition, centerPosition)),
+      angleOf(sub(rootPosition, centerPosition))
+    ) - EXACT_TRIGONAL_CONTINUATION_ANGLE
+  );
+}
+
+/**
+ * Measures a visible three-heavy branch center as a trigonal fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} centerAtomId - Branch center atom ID.
+ * @returns {number} Maximum deviation from 120-degree spacing in radians.
+ */
+function threeHeavyBranchCenterMaxDeviation(layoutGraph, coords, centerAtomId) {
+  const centerPosition = coords.get(centerAtomId);
+  if (!centerPosition) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const neighborIds = visibleHeavySingleCovalentNeighborIds(layoutGraph, coords, centerAtomId);
+  if (neighborIds.length !== 3) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const angles = neighborIds
+    .map(neighborAtomId => coords.get(neighborAtomId))
+    .filter(Boolean)
+    .map(neighborPosition => angleOf(sub(neighborPosition, centerPosition)))
+    .sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  if (angles.length !== 3) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  let maxDeviation = 0;
+  for (let index = 0; index < angles.length; index++) {
+    const currentAngle = angles[index];
+    const nextAngle = angles[(index + 1) % angles.length];
+    const gap = normalizeSignedAngle(nextAngle - currentAngle) > 0
+      ? normalizeSignedAngle(nextAngle - currentAngle)
+      : normalizeSignedAngle(nextAngle - currentAngle) + Math.PI * 2;
+    maxDeviation = Math.max(maxDeviation, Math.abs(gap - EXACT_TRIGONAL_CONTINUATION_ANGLE));
+  }
+  return maxDeviation;
+}
+
+/**
+ * Scores a local linked divalent/fan balance.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string} branchCenterAtomId - Three-heavy branch center atom ID.
+ * @param {object} primaryDescriptor - Primary divalent descriptor.
+ * @param {object} secondaryDescriptor - Secondary divalent descriptor.
+ * @returns {{maxDeviation: number, totalDeviation: number}} Local score.
+ */
+function linkedDivalentFanBalanceScore(layoutGraph, coords, branchCenterAtomId, primaryDescriptor, secondaryDescriptor) {
+  const primaryDeviation = attachedRingDivalentContinuationDeviation(coords, primaryDescriptor);
+  const secondaryDeviation = attachedRingDivalentContinuationDeviation(coords, secondaryDescriptor);
+  const branchDeviation = threeHeavyBranchCenterMaxDeviation(layoutGraph, coords, branchCenterAtomId);
+  return {
+    maxDeviation: Math.max(primaryDeviation, secondaryDeviation, branchDeviation),
+    totalDeviation: primaryDeviation + secondaryDeviation + branchDeviation
+  };
+}
+
+/**
+ * Returns local branch-swing offsets for balancing linked divalent bends.
+ * @returns {number[]} Rotation offsets in radians.
+ */
+function linkedDivalentFanBranchSwingOffsets() {
+  return [
+    0,
+    Math.PI / 18,
+    -(Math.PI / 18),
+    Math.PI / 12,
+    -(Math.PI / 12),
+    Math.PI / 9,
+    -(Math.PI / 9)
+  ];
+}
+
+/**
+ * Returns ring-side offsets for balancing linked divalent bends.
+ * @returns {number[]} Rotation offsets in radians.
+ */
+function linkedDivalentFanRingOffsets() {
+  return [
+    0,
+    Math.PI / 18,
+    -(Math.PI / 18),
+    Math.PI / 12,
+    -(Math.PI / 12),
+    Math.PI / 9,
+    -(Math.PI / 9),
+    5 * Math.PI / 36,
+    -(5 * Math.PI / 36),
+    Math.PI / 6,
+    -(Math.PI / 6),
+    Math.PI / 4,
+    -(Math.PI / 4),
+    11 * Math.PI / 36,
+    -(11 * Math.PI / 36),
+    Math.PI / 3,
+    -(Math.PI / 3),
+    13 * Math.PI / 36,
+    -(13 * Math.PI / 36),
+    7 * Math.PI / 18,
+    -(7 * Math.PI / 18),
+    5 * Math.PI / 12,
+    -(5 * Math.PI / 12)
+  ];
+}
+
+/**
+ * Returns true when audit counts do not worsen from the base pose.
+ * @param {object} candidateAudit - Candidate audit.
+ * @param {object} baseAudit - Base audit.
+ * @returns {boolean} Whether the candidate remains audit-safe.
+ */
+function nonRingFanBalanceAuditDoesNotWorsen(candidateAudit, baseAudit) {
+  return !!(
+    candidateAudit
+    && baseAudit
+    && (candidateAudit.severeOverlapCount ?? 0) <= (baseAudit.severeOverlapCount ?? 0)
+    && (candidateAudit.labelOverlapCount ?? 0) <= (baseAudit.labelOverlapCount ?? 0)
+    && (candidateAudit.bondLengthFailureCount ?? 0) <= (baseAudit.bondLengthFailureCount ?? 0)
+    && (candidateAudit.visibleHeavyBondCrossingCount ?? 0) <= (baseAudit.visibleHeavyBondCrossingCount ?? 0)
+  );
+}
+
+/**
+ * Builds a coordinated local candidate that trades one over-flattened divalent
+ * attached-ring bend across a nearby trigonal branch and attached ring.
+ * @param {Map<string, {x: number, y: number}>} coords - Starting coordinate map.
+ * @param {object} primaryDescriptor - Primary divalent descriptor.
+ * @param {{anchorAtomId: string, subtreeAtomIds: string[]}} branchDescriptor - Branch swing descriptor.
+ * @param {object} secondaryDescriptor - Secondary divalent descriptor.
+ * @param {number} primaryRotation - Primary ring rotation.
+ * @param {number} branchRotation - Branch swing rotation.
+ * @param {number} secondaryRotation - Secondary ring rotation.
+ * @returns {Map<string, {x: number, y: number}>|null} Candidate coordinate map.
+ */
+function buildLinkedDivalentFanBalanceCandidate(
+  coords,
+  primaryDescriptor,
+  branchDescriptor,
+  secondaryDescriptor,
+  primaryRotation,
+  branchRotation,
+  secondaryRotation
+) {
+  let candidateCoords = coords;
+  if (Math.abs(primaryRotation) > IMPROVEMENT_EPSILON) {
+    candidateCoords = rotateAtomIdsAroundPivot(
+      candidateCoords,
+      primaryDescriptor.subtreeAtomIds,
+      primaryDescriptor.centerAtomId,
+      primaryRotation
+    );
+    if (!candidateCoords) {
+      return null;
+    }
+  }
+  if (Math.abs(branchRotation) > IMPROVEMENT_EPSILON) {
+    candidateCoords = rotateAtomIdsAroundPivot(
+      candidateCoords,
+      branchDescriptor.subtreeAtomIds,
+      branchDescriptor.anchorAtomId,
+      branchRotation
+    );
+    if (!candidateCoords) {
+      return null;
+    }
+  }
+  if (Math.abs(secondaryRotation) > IMPROVEMENT_EPSILON) {
+    candidateCoords = rotateAtomIdsAroundPivot(
+      candidateCoords,
+      secondaryDescriptor.subtreeAtomIds,
+      secondaryDescriptor.centerAtomId,
+      secondaryRotation
+    );
+    if (!candidateCoords) {
+      return null;
+    }
+  }
+  return candidateCoords;
+}
+
+/**
+ * Improves over-flattened divalent attached-ring bends adjacent to a restored
+ * hidden-H fan by distributing the correction across nearby flexible branches.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {object} baseAudit - Current audit.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean, coords: Map<string, {x: number, y: number}>, audit: object}} Balance result.
+ */
+function balanceNonRingSuppressedHydrogenFanLinkedDivalentBends(layoutGraph, coords, baseAudit, bondLength) {
+  let bestOverall = null;
+  const descriptors = [...coords.keys()]
+    .map(atomId => describeNonRingSuppressedHydrogenFan(layoutGraph, coords, atomId))
+    .filter(Boolean)
+    .filter(descriptor => nonRingSuppressedHydrogenFanMaxDeviation(coords, descriptor) <= IMPROVEMENT_EPSILON);
+
+  for (const descriptor of descriptors) {
+    const fanProtectedAtomIds = new Set([descriptor.centerAtomId, ...descriptor.neighborIds]);
+    for (const branchCenterAtomId of descriptor.branchNeighborIds) {
+      const branchCenterAtom = layoutGraph.atoms.get(branchCenterAtomId);
+      if (
+        !branchCenterAtom
+        || branchCenterAtom.aromatic
+        || (layoutGraph.atomToRings.get(branchCenterAtomId)?.length ?? 0) > 0
+      ) {
+        continue;
+      }
+      const branchNeighborIds = visibleHeavySingleCovalentNeighborIds(layoutGraph, coords, branchCenterAtomId);
+      if (branchNeighborIds.length !== 3 || !branchNeighborIds.includes(descriptor.centerAtomId)) {
+        continue;
+      }
+      const sideRootAtomIds = branchNeighborIds.filter(neighborAtomId => neighborAtomId !== descriptor.centerAtomId);
+      for (const primaryRootAtomId of sideRootAtomIds) {
+        const secondaryRootAtomId = sideRootAtomIds.find(atomId => atomId !== primaryRootAtomId) ?? null;
+        if (!secondaryRootAtomId) {
+          continue;
+        }
+        const protectedAtomIds = new Set([...fanProtectedAtomIds, branchCenterAtomId]);
+        const primaryDescriptor = describeAttachedRingDivalentContinuation(
+          layoutGraph,
+          coords,
+          primaryRootAtomId,
+          branchCenterAtomId,
+          protectedAtomIds
+        );
+        if (!primaryDescriptor) {
+          continue;
+        }
+        const secondaryDescriptor = firstAttachedRingDivalentContinuationInBranch(
+          layoutGraph,
+          coords,
+          secondaryRootAtomId,
+          branchCenterAtomId,
+          protectedAtomIds
+        );
+        if (!secondaryDescriptor) {
+          continue;
+        }
+        const branchSubtreeAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, secondaryRootAtomId, branchCenterAtomId)
+          .filter(atomId => coords.has(atomId));
+        if (
+          branchSubtreeAtomIds.length === 0
+          || branchSubtreeAtomIds.length > 24
+          || branchSubtreeAtomIds.some(atomId => protectedAtomIds.has(atomId))
+        ) {
+          continue;
+        }
+        const baseScore = linkedDivalentFanBalanceScore(
+          layoutGraph,
+          coords,
+          branchCenterAtomId,
+          primaryDescriptor,
+          secondaryDescriptor
+        );
+        if (baseScore.maxDeviation < Math.PI / 7) {
+          continue;
+        }
+        let bestLocal = null;
+        const branchDescriptor = {
+          anchorAtomId: branchCenterAtomId,
+          subtreeAtomIds: branchSubtreeAtomIds
+        };
+        for (const primaryRotation of linkedDivalentFanRingOffsets()) {
+          for (const branchRotation of linkedDivalentFanBranchSwingOffsets()) {
+            for (const secondaryRotation of linkedDivalentFanRingOffsets()) {
+              if (
+                Math.abs(primaryRotation) <= IMPROVEMENT_EPSILON
+                && Math.abs(branchRotation) <= IMPROVEMENT_EPSILON
+                && Math.abs(secondaryRotation) <= IMPROVEMENT_EPSILON
+              ) {
+                continue;
+              }
+              const candidateCoords = buildLinkedDivalentFanBalanceCandidate(
+                coords,
+                primaryDescriptor,
+                branchDescriptor,
+                secondaryDescriptor,
+                primaryRotation,
+                branchRotation,
+                secondaryRotation
+              );
+              if (!candidateCoords || nonRingSuppressedHydrogenFanMaxDeviation(candidateCoords, descriptor) > IMPROVEMENT_EPSILON) {
+                continue;
+              }
+              const score = linkedDivalentFanBalanceScore(
+                layoutGraph,
+                candidateCoords,
+                branchCenterAtomId,
+                primaryDescriptor,
+                secondaryDescriptor
+              );
+              if (score.maxDeviation >= baseScore.maxDeviation - IMPROVEMENT_EPSILON) {
+                continue;
+              }
+              const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+              if (!nonRingFanBalanceAuditDoesNotWorsen(audit, baseAudit)) {
+                continue;
+              }
+              const candidate = {
+                coords: candidateCoords,
+                audit,
+                score,
+                rotationMagnitude: Math.abs(primaryRotation) + Math.abs(branchRotation) + Math.abs(secondaryRotation),
+                layoutCost: measureLayoutCost(layoutGraph, candidateCoords, bondLength)
+              };
+              if (
+                !bestLocal
+                || candidate.score.maxDeviation < bestLocal.score.maxDeviation - IMPROVEMENT_EPSILON
+                || (
+                  Math.abs(candidate.score.maxDeviation - bestLocal.score.maxDeviation) <= IMPROVEMENT_EPSILON
+                  && candidate.score.totalDeviation < bestLocal.score.totalDeviation - IMPROVEMENT_EPSILON
+                )
+                || (
+                  Math.abs(candidate.score.maxDeviation - bestLocal.score.maxDeviation) <= IMPROVEMENT_EPSILON
+                  && Math.abs(candidate.score.totalDeviation - bestLocal.score.totalDeviation) <= IMPROVEMENT_EPSILON
+                  && candidate.layoutCost < bestLocal.layoutCost - IMPROVEMENT_EPSILON
+                )
+                || (
+                  Math.abs(candidate.score.maxDeviation - bestLocal.score.maxDeviation) <= IMPROVEMENT_EPSILON
+                  && Math.abs(candidate.score.totalDeviation - bestLocal.score.totalDeviation) <= IMPROVEMENT_EPSILON
+                  && Math.abs(candidate.layoutCost - bestLocal.layoutCost) <= IMPROVEMENT_EPSILON
+                  && candidate.rotationMagnitude < bestLocal.rotationMagnitude
+                )
+              ) {
+                bestLocal = candidate;
+              }
+            }
+          }
+        }
+        if (
+          bestLocal
+          && (!bestOverall || bestLocal.score.maxDeviation < bestOverall.score.maxDeviation - IMPROVEMENT_EPSILON)
+        ) {
+          bestOverall = bestLocal;
+        }
+      }
+    }
+  }
+
+  return bestOverall
+    ? {
+        changed: true,
+        coords: bestOverall.coords,
+        audit: bestOverall.audit
+      }
+    : {
+        changed: false,
+        coords,
+        audit: baseAudit
+      };
+}
+
+/**
+ * Selects small movable attached rings that can clear an exact hidden-H fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {Set<string>} protectedAtomIds - Atoms whose local fan position must stay fixed.
+ * @returns {Array<{anchorAtomId: string, subtreeAtomIds: string[]}>} Candidate attached-ring descriptors.
+ */
+function selectedNonRingSuppressedHydrogenFanRingDescriptors(layoutGraph, coords, protectedAtomIds) {
+  return collectMovableAttachedRingDescriptors(layoutGraph, coords)
+    .map(descriptor => ({
+      ...descriptor,
+      subtreeAtomIds: descriptor.subtreeAtomIds.filter(atomId => coords.has(atomId))
+    }))
+    .filter(descriptor => (
+      descriptor.subtreeAtomIds.length > 0
+      && descriptor.subtreeAtomIds.length <= 18
+      && !protectedAtomIds.has(descriptor.anchorAtomId)
+      && !descriptor.subtreeAtomIds.some(atomId => protectedAtomIds.has(atomId))
+    ))
+    .sort((firstDescriptor, secondDescriptor) => {
+      if (firstDescriptor.subtreeAtomIds.length !== secondDescriptor.subtreeAtomIds.length) {
+        return firstDescriptor.subtreeAtomIds.length - secondDescriptor.subtreeAtomIds.length;
+      }
+      return compareCanonicalIds(firstDescriptor.anchorAtomId, secondDescriptor.anchorAtomId, layoutGraph.canonicalAtomRank);
+    })
+    .slice(0, 3);
+}
+
+/**
+ * Builds downstream attached-ring rotations that clear an exact fan candidate.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Exact fan candidate map.
+ * @param {Set<string>} protectedAtomIds - Atoms whose local fan position must stay fixed.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>[]} Candidate coordinate maps.
+ */
+function buildNonRingSuppressedHydrogenFanClearanceCandidates(layoutGraph, coords, protectedAtomIds, bondLength) {
+  if (findSevereOverlaps(layoutGraph, coords, bondLength).length === 0) {
+    return [coords];
+  }
+
+  const ringDescriptors = selectedNonRingSuppressedHydrogenFanRingDescriptors(layoutGraph, coords, protectedAtomIds);
+  if (ringDescriptors.length === 0) {
+    return [coords];
+  }
+
+  const offsets = nonRingSuppressedHydrogenFanRingRotationOffsets();
+  const candidates = [];
+  const seenSignatures = new Set();
+  pushUniqueNonRingSuppressedHydrogenFanCandidate(candidates, seenSignatures, coords);
+
+  for (let firstIndex = 0; firstIndex < ringDescriptors.length; firstIndex++) {
+    const firstDescriptor = ringDescriptors[firstIndex];
+    for (const firstOffset of offsets) {
+      if (Math.abs(firstOffset) <= IMPROVEMENT_EPSILON) {
+        continue;
+      }
+      const firstCoords = rotateAttachedRingDescriptor(coords, firstDescriptor, firstOffset);
+      pushUniqueNonRingSuppressedHydrogenFanCandidate(candidates, seenSignatures, firstCoords);
+
+      for (let secondIndex = firstIndex + 1; secondIndex < ringDescriptors.length; secondIndex++) {
+        const secondDescriptor = ringDescriptors[secondIndex];
+        for (const secondOffset of offsets) {
+          if (Math.abs(secondOffset) <= IMPROVEMENT_EPSILON) {
+            continue;
+          }
+          pushUniqueNonRingSuppressedHydrogenFanCandidate(
+            candidates,
+            seenSignatures,
+            rotateAttachedRingDescriptor(firstCoords, secondDescriptor, secondOffset)
+          );
+        }
+      }
+    }
+  }
+
+  return candidates;
+}
+
+/**
+ * Orders hidden-H fan rescue candidates by audit safety, fan quality, and size.
+ * @param {object} candidate - Candidate score bundle.
+ * @param {object|null} incumbent - Current best candidate score bundle.
+ * @returns {number} Negative when candidate is better.
+ */
+function compareNonRingSuppressedHydrogenFanCandidates(candidate, incumbent) {
+  if (!incumbent) {
+    return -1;
+  }
+  if (candidate.audit.severeOverlapCount !== incumbent.audit.severeOverlapCount) {
+    return candidate.audit.severeOverlapCount - incumbent.audit.severeOverlapCount;
+  }
+  if (Math.abs(candidate.fanDeviation - incumbent.fanDeviation) > IMPROVEMENT_EPSILON) {
+    return candidate.fanDeviation - incumbent.fanDeviation;
+  }
+  if (Math.abs(candidate.divalentContinuationDeviation - incumbent.divalentContinuationDeviation) > IMPROVEMENT_EPSILON) {
+    return candidate.divalentContinuationDeviation - incumbent.divalentContinuationDeviation;
+  }
+  if (candidate.audit.labelOverlapCount !== incumbent.audit.labelOverlapCount) {
+    return candidate.audit.labelOverlapCount - incumbent.audit.labelOverlapCount;
+  }
+  if (candidate.audit.bondLengthFailureCount !== incumbent.audit.bondLengthFailureCount) {
+    return candidate.audit.bondLengthFailureCount - incumbent.audit.bondLengthFailureCount;
+  }
+  if (Math.abs(candidate.layoutCost - incumbent.layoutCost) > IMPROVEMENT_EPSILON) {
+    return candidate.layoutCost - incumbent.layoutCost;
+  }
+  if (candidate.movedAtomIds.length !== incumbent.movedAtomIds.length) {
+    return candidate.movedAtomIds.length - incumbent.movedAtomIds.length;
+  }
+  return candidate.rotationMagnitude - incumbent.rotationMagnitude;
+}
+
+/**
+ * Restores non-ring suppressed-H carbon fans by rotating a small flexible side
+ * branch onto the exact remaining 120-degree slot. Directly attached ring
+ * blocks can leave the sidechain branch on a zigzag slot; moving the smaller
+ * non-ring branch preserves the ring pose while making the visible three-heavy
+ * stereocenter read as trigonal.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean}} Whether any fan was restored.
+ */
+function rescueNonRingSuppressedHydrogenFans(layoutGraph, coords, bondLength) {
+  if (layoutGraph.options.suppressH !== true || (layoutGraph.traits.heavyAtomCount ?? 0) > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT) {
+    return { changed: false };
+  }
+
+  let workingCoords = coords;
+  let baseAudit = auditLayout(layoutGraph, workingCoords, { bondLength });
+  let changed = false;
+  const orderedDescriptors = [...workingCoords.keys()]
+    .map(atomId => describeNonRingSuppressedHydrogenFan(layoutGraph, workingCoords, atomId))
+    .filter(Boolean)
+    .sort((firstDescriptor, secondDescriptor) => compareCanonicalIds(
+      firstDescriptor.centerAtomId,
+      secondDescriptor.centerAtomId,
+      layoutGraph.canonicalAtomRank
+    ));
+
+  for (const descriptor of orderedDescriptors) {
+    const refreshedDescriptor = describeNonRingSuppressedHydrogenFan(layoutGraph, workingCoords, descriptor.centerAtomId);
+    if (!refreshedDescriptor) {
+      continue;
+    }
+    const baseFanDeviation = nonRingSuppressedHydrogenFanMaxDeviation(workingCoords, refreshedDescriptor);
+    if (baseFanDeviation < NON_RING_OMITTED_H_FAN_RESCUE_MIN_DEVIATION) {
+      continue;
+    }
+
+    let bestCandidate = null;
+    const orderedBranchNeighborIds = [...refreshedDescriptor.branchNeighborIds].sort((firstAtomId, secondAtomId) => {
+      const firstSize = collectCovalentSubtreeAtomIds(layoutGraph, firstAtomId, refreshedDescriptor.centerAtomId).length;
+      const secondSize = collectCovalentSubtreeAtomIds(layoutGraph, secondAtomId, refreshedDescriptor.centerAtomId).length;
+      if (firstSize !== secondSize) {
+        return firstSize - secondSize;
+      }
+      return compareCanonicalIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank);
+    });
+    for (const movableNeighborId of orderedBranchNeighborIds) {
+      const candidate = buildNonRingSuppressedHydrogenFanCandidate(layoutGraph, workingCoords, refreshedDescriptor, movableNeighborId);
+      if (!candidate || candidate.fanDeviation > baseFanDeviation - IMPROVEMENT_EPSILON) {
+        continue;
+      }
+      const protectedAtomIds = new Set([refreshedDescriptor.centerAtomId, ...refreshedDescriptor.neighborIds]);
+      for (const candidateCoords of buildNonRingSuppressedHydrogenFanClearanceCandidates(
+        layoutGraph,
+        candidate.coords,
+        protectedAtomIds,
+        bondLength
+      )) {
+        const fanDeviation = nonRingSuppressedHydrogenFanMaxDeviation(candidateCoords, refreshedDescriptor);
+        if (fanDeviation > baseFanDeviation - IMPROVEMENT_EPSILON) {
+          continue;
+        }
+        const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+        if (
+          audit.severeOverlapCount > baseAudit.severeOverlapCount
+          || audit.labelOverlapCount > baseAudit.labelOverlapCount
+          || audit.bondLengthFailureCount > baseAudit.bondLengthFailureCount
+        ) {
+          continue;
+        }
+        const scoredCandidate = {
+          ...candidate,
+          coords: candidateCoords,
+          fanDeviation,
+          audit,
+          divalentContinuationDeviation: measureDivalentContinuationDistortion(layoutGraph, candidateCoords).totalDeviation,
+          layoutCost: measureLayoutCost(layoutGraph, candidateCoords, bondLength)
+        };
+        if (compareNonRingSuppressedHydrogenFanCandidates(scoredCandidate, bestCandidate) < 0) {
+          bestCandidate = scoredCandidate;
+        }
+      }
+    }
+
+    if (bestCandidate && bestCandidate.fanDeviation < baseFanDeviation - IMPROVEMENT_EPSILON) {
+      workingCoords = bestCandidate.coords;
+      baseAudit = bestCandidate.audit;
+      changed = true;
+    }
+  }
+
+  const linkedDivalentBalance = balanceNonRingSuppressedHydrogenFanLinkedDivalentBends(
+    layoutGraph,
+    workingCoords,
+    baseAudit,
+    bondLength
+  );
+  if (linkedDivalentBalance.changed) {
+    workingCoords = linkedDivalentBalance.coords;
+    baseAudit = linkedDivalentBalance.audit;
+    changed = true;
+  }
+
+  if (changed) {
+    overwriteCoordMap(coords, workingCoords);
+  }
+  return { changed };
+}
+
 function minDistanceBetweenAtomSets(coords, firstAtomIds, secondAtomIds) {
   let minDistance = Infinity;
   for (const firstAtomId of firstAtomIds) {
@@ -13196,6 +14142,43 @@ function shouldSkipAttachedBlockBranchScoring(coords, primaryNonRingAtomIds) {
   return primaryNonRingAtomIds.size > 30 || mixedAttachedBlockWorkload(coords, primaryNonRingAtomIds) > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT + 20;
 }
 
+/**
+ * Returns whether a pending directly attached ring is small enough for a local
+ * overlap-only expansion. This keeps large mixed layouts from accepting a
+ * cheap exact pose when a compact phenyl/cycloalkyl child can clear a severe
+ * contact by trying the existing bounded nearby-angle menu.
+ * @param {object|null|undefined} pendingRingSystem - Pending ring-system entry.
+ * @returns {boolean} True for compact single-ring attachments.
+ */
+function isCompactDirectAttachmentOverlapRing(pendingRingSystem) {
+  const ringSystem = pendingRingSystem?.ringSystem ?? null;
+  return Boolean(
+    ringSystem
+    && (ringSystem.ringIds?.length ?? 0) === 1
+    && (ringSystem.atomIds?.length ?? Number.POSITIVE_INFINITY) <= SMALL_DIRECT_ATTACHMENT_OVERLAP_RING_ATOM_LIMIT
+  );
+}
+
+/**
+ * Returns whether a large mixed layout should still run direct-attachment
+ * expansion for a compact child ring with a current severe overlap. The cap
+ * keeps very large biomolecule-style layouts on the cheaper path while allowing
+ * moderately large side-chain scaffolds to repair local ring/branch contacts.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object|null|undefined} pendingRingSystem - Pending ring-system entry.
+ * @param {object|null|undefined} bestCandidate - Best cheap attached-block candidate.
+ * @returns {boolean} True when overlap repair should bypass the usual size gate.
+ */
+function shouldExpandLargeCompactDirectAttachmentOverlap(layoutGraph, pendingRingSystem, bestCandidate) {
+  const heavyAtomCount = layoutGraph.traits.heavyAtomCount ?? 0;
+  return (
+    heavyAtomCount > EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT
+    && heavyAtomCount <= LARGE_DIRECT_ATTACHMENT_OVERLAP_EXPANSION_HEAVY_ATOM_LIMIT
+    && (bestCandidate?.score.overlapCount ?? 0) > 0
+    && isCompactDirectAttachmentOverlapRing(pendingRingSystem)
+  );
+}
+
 function directAttachmentCandidateNeedsBranchScoring(candidate, primaryNonRingAtomIds, placedAtomIds) {
   if (!candidate?.meta?.parentAtomId || !candidate?.meta?.attachmentAtomId) {
     return false;
@@ -14690,8 +15673,6 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
         disableBeamReduction: state.mixedOptions?.conservativeAttachmentScoring === true
       }
     );
-    const allowExpandedDirectAttachmentRotations =
-      (layoutGraph.traits.heavyAtomCount ?? 0) <= EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT && pendingRingSystem.ringSystem.atomIds.length <= 18;
     const smallRingExteriorDirectAttachmentDescriptor = describeDirectAttachmentExteriorContinuationAnchor(layoutGraph, attachment.parentAtomId);
     const exactSmallRingExteriorDirectAttachment = smallRingExteriorDirectAttachmentDescriptor?.exocyclicNeighborIds.includes(attachment.attachmentAtomId) ?? false;
     const exactLeafSensitiveDirectAttachment = ringSystemHasExactLeafSensitiveTrigonalCenter(layoutGraph, pendingRingSystem.ringSystem);
@@ -14733,6 +15714,14 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
         (bestAttachedBlockCandidate?.score.parentOutwardPenalty ?? 0) > IMPROVEMENT_EPSILON
       );
     const idealLeafExpansionThreshold = exactLeafSensitiveDirectAttachment ? 0.2 : 0.5;
+    const shouldExpandForSmallDirectAttachedRingOverlap =
+      shouldExpandLargeCompactDirectAttachmentOverlap(layoutGraph, pendingRingSystem, bestAttachedBlockCandidate);
+    const allowExpandedDirectAttachmentRotations =
+      pendingRingSystem.ringSystem.atomIds.length <= 18
+      && (
+        (layoutGraph.traits.heavyAtomCount ?? 0) <= EXACT_ATTACHMENT_SEARCH_HEAVY_ATOM_LIMIT
+        || shouldExpandForSmallDirectAttachedRingOverlap
+      );
     const shouldExpandForSensitiveOverlap =
       (bestAttachedBlockCandidate?.score.overlapCount ?? 0) > 0 &&
       (exactLeafSensitiveDirectAttachment || directAttachmentTrigonalSensitivity.eligible || exactSmallRingExteriorDirectAttachment);
@@ -14745,7 +15734,8 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
       exactParentRingOutwardDirectAttachment && (bestAttachedBlockCandidate?.score.overlapCount ?? 0) > 0;
     if (
       allowExpandedDirectAttachmentRotations &&
-      (shouldExpandForSensitiveOverlap ||
+      (shouldExpandForSmallDirectAttachedRingOverlap ||
+        shouldExpandForSensitiveOverlap ||
         shouldExpandForExactAromaticRingExit ||
         shouldExpandForExactRingExit ||
         shouldExpandForExactParentRingOutwardOverlap ||
@@ -14782,7 +15772,9 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
           && !allowCrowdedExactRingRootAngleExpansion
           && !allowLockedStrictTrigonalAngleExpansion
           ? [0]
-          : DIRECT_ATTACHMENT_ROTATION_OFFSETS;
+          : shouldExpandForSmallDirectAttachedRingOverlap
+            ? DIRECT_ATTACHMENT_OVERLAP_ROTATION_OFFSETS
+            : DIRECT_ATTACHMENT_ROTATION_OFFSETS;
       const expandedRingRotationOffsets = [...directAttachmentRingRotationOffsets];
       if (exactParentRingOutwardDirectAttachment) {
         for (const ringRotationOffset of [
@@ -14854,6 +15846,7 @@ function attachDirectRingSystems(layoutGraph, adjacency, bondLength, state, pend
       ];
       directAttachmentTrigonalRescueSources = selectAttachedBlockCandidates(candidatePool, coords, bondLength, layoutGraph).slice(0, 2);
       const shouldScoreAllExpandedDirectAttachmentCandidates =
+        shouldExpandForSmallDirectAttachedRingOverlap ||
         (bestAttachedBlockCandidate?.score.overlapCount ?? 0) > 0 ||
         (bestAttachedBlockCandidate?.score.readability.failingSubstituentCount ?? 0) > 0 ||
         (bestAttachedBlockCandidate?.score.parentOutwardPenalty ?? 0) > IMPROVEMENT_EPSILON ||
@@ -18935,6 +19928,10 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
   }
   const omittedHydrogenDirectRingHubGeometry = resolveOmittedHydrogenDirectRingHubGeometry(layoutGraph, coords, bondLength);
   if (omittedHydrogenDirectRingHubGeometry.changed) {
+    markMixedBranchPlacementContextDirty(state);
+  }
+  const nonRingSuppressedHydrogenFanRescue = rescueNonRingSuppressedHydrogenFans(layoutGraph, coords, bondLength);
+  if (nonRingSuppressedHydrogenFanRescue.changed) {
     markMixedBranchPlacementContextDirty(state);
   }
   const bridgeheadTerminalCarbonFanRescue = resolveBridgeheadTerminalCarbonLeafFanPinches(

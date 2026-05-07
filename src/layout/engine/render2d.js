@@ -9,7 +9,7 @@ import { generateCoords } from './api.js';
 import { getRingAtomIds } from './topology/ring-analysis.js';
 import {
   DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE,
-  synthesizeHydrogenPosition
+  synthesizeDisplayedStereoHydrogenPosition
 } from './stereo/wedge-geometry.js';
 import {
   atomBBox,
@@ -129,10 +129,8 @@ function projectHiddenStereoHydrogens(molecule, bondLength) {
       .getNeighbors(molecule)
       .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null)
       .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
-    const projectedPosition = synthesizeHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength * 0.75, {
+    const projectedPosition = synthesizeDisplayedStereoHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength * 0.75, {
       incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id),
-      preferCardinalAxes: true,
-      fixedRadius: true,
       cardinalAxisSectorTolerance: bond?.properties?.display?.as ? DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE : undefined
     });
     projectedCoords.set(atom.id, projectedPosition);

@@ -6,12 +6,22 @@ import {
   chooseContinuationAngle,
   isExactRingOutwardEligibleSubstituent,
   isExactSimpleAcyclicContinuationEligible,
-  isExactVisibleTrigonalBisectorEligible
+  isExactVisibleTrigonalBisectorEligible,
+  preferredBranchAngles
 } from '../../../../../src/layout/engine/placement/branch-placement/angle-selection.js';
 import { angularDifference, fromAngle } from '../../../../../src/layout/engine/geometry/vec2.js';
 
 function degrees(value) {
   return (value * Math.PI) / 180;
+}
+
+function buildAdjacency(layoutGraph) {
+  const adjacency = new Map([...layoutGraph.atoms.keys()].map(atomId => [atomId, []]));
+  for (const bond of layoutGraph.bonds.values()) {
+    adjacency.get(bond.a)?.push(bond.b);
+    adjacency.get(bond.b)?.push(bond.a);
+  }
+  return adjacency;
 }
 
 describe('layout/engine/placement/branch-placement/angle-selection', () => {
@@ -29,6 +39,16 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
     assert.equal(isExactSimpleAcyclicContinuationEligible(graph, 'N25', 'C23', 'C26'), false);
   });
 
+  it('treats aryl-substituted secondary nitrogens as exact-continuation candidates', () => {
+    const anilinoGraph = createLayoutGraph(parseSMILES('[H][C@@](NC1=CC(C)=CC=C1C(C)=O)(C(N)=O)C1=C(Br)C=CC=C1Br'), { suppressH: true });
+    const diarylGraph = createLayoutGraph(parseSMILES('COC1CN(CCO1)C1=CC=C(C=N1)C1=NC=CC=C1NC1=C2C(F)=CC(F)=CC2=NC(=C1C)C1=CC=CC=N1'), { suppressH: true });
+    const saturatedGraph = createLayoutGraph(parseSMILES('CCNCC'), { suppressH: true });
+
+    assert.equal(isExactSimpleAcyclicContinuationEligible(anilinoGraph, 'N3', 'C2', 'C4'), true);
+    assert.equal(isExactSimpleAcyclicContinuationEligible(diarylGraph, 'N21', 'C20', 'C22'), false);
+    assert.equal(isExactSimpleAcyclicContinuationEligible(saturatedGraph, 'N3', 'C2', 'C4'), false);
+  });
+
   it('treats aryl ether oxygens as exact-continuation candidates for alkyl chains', () => {
     const graph = createLayoutGraph(parseSMILES('CCOC1=CSC2=C1NC(OC2=O)=NCCO'), { suppressH: true });
 
@@ -40,6 +60,27 @@ describe('layout/engine/placement/branch-placement/angle-selection', () => {
 
     assert.equal(isExactVisibleTrigonalBisectorEligible(graph, 'C3', 'N18'), true);
     assert.equal(isExactVisibleTrigonalBisectorEligible(graph, 'C3', 'C4'), false);
+  });
+
+  it('prefers open trigonal slots for the first visible child of omitted-H saturated carbons', () => {
+    const graph = createLayoutGraph(parseSMILES('CO[C@H]1[C@H](O[C@@H]2OC(C)(C)O[C@H]12)[C@H](CC(=O)N)N(Cc3ccccc3O)C(=O)Nc4ccc(C)c(Cl)c4'), { suppressH: true });
+    const adjacency = buildAdjacency(graph);
+    const coords = new Map([
+      ['C17', { x: 0, y: 0 }],
+      ['C5', fromAngle(degrees(30), 1)]
+    ]);
+
+    const angles = preferredBranchAngles(adjacency, coords, 'C17', new Set(graph.atoms.keys()), 'C5', 'C19', graph);
+
+    assert.equal(angles.length, 2);
+    assert.ok(
+      angles.some(angle => angularDifference(angle, degrees(150)) < 1e-6),
+      'expected the first sidechain child to reserve the +120 degree visible fan slot'
+    );
+    assert.ok(
+      angles.some(angle => angularDifference(angle, degrees(-90)) < 1e-6),
+      'expected the first sidechain child to reserve the -120 degree visible fan slot'
+    );
   });
 
   it('treats planar conjugated tertiary nitrogens as exact bisector candidates', () => {

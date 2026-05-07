@@ -139,11 +139,51 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the aza-annulene cyclohexadiene template for substituted bridged aza-annulene cores', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1=NC(N)=CC(C)=CC=C2NC=CC1=C2'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'aza-annulene-cyclohexadiene-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the bridged cyclopropyl-decalin template for compact carbocages', () => {
+    const graph = createLayoutGraph(parseSMILES('COC12CCC(CC11CC1)CCCCCC2'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'bridged-cyclopropyl-decalin-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the oxabicyclic lactone template for ammonium-substituted bridged lactones', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1OC2CC(=O)OC1CC2[NH3+]'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'oxabicyclic-lactone-ammonium-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the spiro-bridged aza cage template when the acyl tail marks the exterior corner', () => {
     const graph = createLayoutGraph(parseSMILES('CCC(=O)C1CC2(C1)[NH2+]C1CC2C1'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(plan.rootScaffold.family, 'bridged');
     assert.equal(plan.rootScaffold.templateId, 'spiro-bridged-aza-cage');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the sulfonyl cyclopentenyl azocane template for compact sulfone-fused cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1=C2CS(=O)(=O)C1C(CCNC2(C)C)C=O'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'sulfonyl-cyclopentenyl-azocane-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the hydroxy alkyl bicyclohexene template for compact bicyclic alcohols', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1(O)C2C(CN(C)C)C1(CC)C=C2C'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'hydroxy-alkyl-bicyclohexene-core');
     assert.equal(plan.mixedMode, true);
   });
 
@@ -160,6 +200,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(plan.rootScaffold.family, 'bridged');
     assert.equal(plan.rootScaffold.templateId, 'oripavine-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the saturated morphinan template for four-ring aza-bridged cores', () => {
+    const graph = createLayoutGraph(parseSMILES('[H][C@@]12CCCC[C@@]11CCN(CC=C)[C@@H]2CC2=C1C=C(O)C=C2'));
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'saturated-morphinan-core');
     assert.equal(plan.mixedMode, true);
   });
 

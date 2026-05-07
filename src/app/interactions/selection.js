@@ -5,27 +5,38 @@ const DRAW_BOND_TYPES = ['single', 'double', 'triple', 'aromatic', 'wedge', 'das
 const CHARGE_TOOLS = ['positive', 'negative'];
 
 /**
- * Creates selection action handlers for tool-mode toggling (pan, select, draw-bond, erase), element/bond-type switching, and toolbar button synchronization.
- * @param {object} context - Dependency context providing state, view, dom, drawBond, renderers, and actions.
- * @returns {object} Object with `togglePanMode`, `toggleSelectMode`, `toggleDrawBondMode`, `toggleEraseMode`, `setDrawElement`, `setDrawBondType`, `handleDrawBondButtonClick`, `openDrawBondDrawer`, `closeDrawBondDrawer`, `toggleDrawBondDrawer`, and sync/clear button helpers.
+ * Creates a small active-button synchronizer for toolbar controls.
+ * @param {string[]} items - Supported toolbar item values.
+ * @param {(item: string) => HTMLElement|null} getButton - Button lookup callback.
+ * @returns {{sync: (activeValue: string) => void, clear: () => void}} Synchronizer helpers.
  */
 function createButtonSynchronizer(items, getButton) {
   return {
     sync(activeValue) {
       for (const item of items) {
         const btn = getButton(item);
-        if (btn) btn.classList.toggle('active', item === activeValue);
+        if (btn) {
+          btn.classList.toggle('active', item === activeValue);
+        }
       }
     },
     clear() {
       for (const item of items) {
         const btn = getButton(item);
-        if (btn) btn.classList.remove('active');
+        if (btn) {
+          btn.classList.remove('active');
+        }
       }
     }
   };
 }
 
+/**
+ * Creates selection action handlers for tool-mode toggling, element/bond-type
+ * switching, and toolbar button synchronization.
+ * @param {object} context - Dependency context providing state, view, DOM, renderers, and actions.
+ * @returns {object} Selection action API and sync/clear button helpers.
+ */
 export function createSelectionActions(context) {
   function setDrawBondDrawerHoverSuppressed(value) {
     context.dom.drawTools?.classList?.toggle?.('drawer-hover-suppressed', value);

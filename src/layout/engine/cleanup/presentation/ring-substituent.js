@@ -1,5 +1,6 @@
 /** @module cleanup/presentation/ring-substituent */
 
+import { auditLayout } from '../../audit/audit.js';
 import {
   buildAtomGrid,
   buildSubtreeOverlapContext,
@@ -49,6 +50,7 @@ const IDEAL_RING_LINKER_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
 const COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I', 'O', 'S', 'Se']);
 const SOFT_COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS = new Set(['F', 'Cl', 'Br', 'I']);
 const IDEAL_LINKED_RING_BRIDGE_ANGLE = (2 * Math.PI) / 3;
+const SHARED_JUNCTION_TERMINAL_LEAF_ELEMENTS = new Set([...COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS, 'C']);
 const LINKED_RING_BRIDGE_TRADEOFF_MIN_BASE_DEVIATION = 0.05;
 const SHARED_JUNCTION_BLOCKER_BACKOFF_ANGLES = Object.freeze([
   -Math.PI / 30,
@@ -75,6 +77,7 @@ const TERMINAL_RING_CARBONYL_LEAF_CONTACT_OFFSETS = Object.freeze(
     -(degrees * Math.PI) / 180
   ])
 );
+const DIRECT_ATTACHED_RING_CARBONYL_LEAF_COMPRESSION_FACTORS = Object.freeze([0.62, 0.6, 0.58, 0.56, 0.55, 0.54, 0.52, 0.5, 0.45, 0.4]);
 const TERMINAL_RING_CARBONYL_LEAF_CLEARANCE_FACTOR = 0.75;
 const TERMINAL_RING_CARBONYL_LEAF_MAX_FAN_DEVIATION = Math.PI / 15;
 const RING_SUBSTITUENT_TIDY_LIMITS = Object.freeze({
@@ -605,7 +608,7 @@ function alignSharedJunctionTerminalLeaves(layoutGraph, coords, atomGrid, bondLe
       const rootAtom = layoutGraph.atoms.get(rootAtomId);
       if (
         !rootAtom
-        || !COMPRESSIBLE_TERMINAL_RING_LEAF_ELEMENTS.has(rootAtom.element)
+        || !SHARED_JUNCTION_TERMINAL_LEAF_ELEMENTS.has(rootAtom.element)
         || terminalHeavyLeafAnchorAtomId(layoutGraph, rootAtomId) !== anchorAtomId
       ) {
         continue;
@@ -764,6 +767,92 @@ function terminalRingCarbonylLeafFanDeviation(layoutGraph, coords, descriptor, l
     }
   }
   return maxDeviation;
+}
+
+function blockingTerminalRingCarbonylLeafIds(layoutGraph, candidateCoords, overridePositions, bondLength) {
+  const leafIds = new Set();
+  for (const overlap of findSevereOverlaps(layoutGraph, candidateCoords, bondLength)) {
+    for (const [leafAtomId, otherAtomId] of [
+      [overlap.firstAtomId, overlap.secondAtomId],
+      [overlap.secondAtomId, overlap.firstAtomId]
+    ]) {
+      if (!overridePositions.has(otherAtomId)) {
+        continue;
+      }
+      const descriptor = terminalRingCarbonylLeafContactDescriptor(layoutGraph, candidateCoords, leafAtomId);
+      if (descriptor) {
+        leafIds.add(descriptor.leafAtomId);
+      }
+    }
+  }
+  return [...leafIds];
+}
+
+function compressedTerminalRingCarbonylLeafPosition(layoutGraph, coords, descriptor, bondLength, compressionFactor) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const leafPosition = coords.get(descriptor.leafAtomId);
+  if (!centerPosition || !leafPosition) {
+    return null;
+  }
+  const currentAngle = angleOf(sub(leafPosition, centerPosition));
+  return add(centerPosition, fromAngle(currentAngle, bondLength * compressionFactor));
+}
+
+function repairBlockingTerminalRingCarbonylLeaves(layoutGraph, coords, overridePositions, bondLength) {
+  let repairedOverrides = new Map(overridePositions);
+  let repairedCoords = coordsWithOverrides(coords, repairedOverrides);
+  const initialLeafIds = blockingTerminalRingCarbonylLeafIds(layoutGraph, repairedCoords, repairedOverrides, bondLength);
+  if (initialLeafIds.length === 0) {
+    return null;
+  }
+
+  for (const leafAtomId of initialLeafIds) {
+    const descriptor = terminalRingCarbonylLeafContactDescriptor(layoutGraph, repairedCoords, leafAtomId);
+    if (!descriptor) {
+      return null;
+    }
+
+    let bestOverrides = null;
+    for (const compressionFactor of DIRECT_ATTACHED_RING_CARBONYL_LEAF_COMPRESSION_FACTORS) {
+      const targetPosition = compressedTerminalRingCarbonylLeafPosition(
+        layoutGraph,
+        repairedCoords,
+        descriptor,
+        bondLength,
+        compressionFactor
+      );
+      if (!targetPosition) {
+        continue;
+      }
+      const currentLeafPosition = repairedCoords.get(descriptor.leafAtomId);
+      const centerPosition = repairedCoords.get(descriptor.centerAtomId);
+      if (
+        currentLeafPosition
+        && centerPosition
+        && Math.hypot(currentLeafPosition.x - centerPosition.x, currentLeafPosition.y - centerPosition.y)
+          <= bondLength * compressionFactor + TIDY_ATOM_EPSILON
+      ) {
+        continue;
+      }
+      const candidateOverrides = new Map(repairedOverrides);
+      candidateOverrides.set(descriptor.leafAtomId, targetPosition);
+      const candidateCoords = coordsWithOverrides(coords, candidateOverrides);
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+      if (candidateAudit.ok === true) {
+        bestOverrides = candidateOverrides;
+        break;
+      }
+    }
+    if (!bestOverrides) {
+      return null;
+    }
+    repairedOverrides = bestOverrides;
+    repairedCoords = coordsWithOverrides(coords, repairedOverrides);
+  }
+
+  return auditLayout(layoutGraph, repairedCoords, { bondLength }).ok === true
+    ? repairedOverrides
+    : null;
 }
 
 /**
@@ -2009,7 +2098,19 @@ function shouldAcceptCandidate(candidate, baseCandidate, descriptor) {
   ) {
     return true;
   }
-  if ((improvesInsideRing || improvesOutwardFailures || improvesOutwardDeviation || improvesBridgeAngle || improvesAnchorClearance) && doesNotWorsenOverlap && doesNotWorsenDistortion && doesNotWorsenBridgeAngle) {
+  if (
+    (
+      improvesInsideRing
+      || improvesOutwardFailures
+      || improvesOutwardDeviation
+      || improvesBridgeAngle
+      || improvesAnchorClearance
+    )
+    && doesNotWorsenOverlap
+    && doesNotWorsenDistortion
+    && doesNotWorsenIdealOutwardGeometry
+    && doesNotWorsenBridgeAngle
+  ) {
     return true;
   }
   if (!descriptor.isRingSystemSubstituent) {
@@ -2083,6 +2184,13 @@ function isBetterDirectAttachedRingRootRetidyCandidate(candidate, incumbent) {
     && Math.abs(candidate.parentTrigonalPenalty - incumbent.parentTrigonalPenalty) > TIDY_ANGLE_EPSILON
   ) {
     return candidate.parentTrigonalPenalty < incumbent.parentTrigonalPenalty;
+  }
+  if (
+    Number.isFinite(candidate.reverseRootDeviation)
+    && Number.isFinite(incumbent.reverseRootDeviation)
+    && Math.abs(candidate.reverseRootDeviation - incumbent.reverseRootDeviation) > TIDY_ANGLE_EPSILON
+  ) {
+    return candidate.reverseRootDeviation < incumbent.reverseRootDeviation;
   }
   if (
     candidate.preferMinimalRotation === true
@@ -2405,8 +2513,17 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
     const anchorPosition = coords.get(anchorAtomId);
     const rootPosition = coords.get(rootAtomId);
     const baseRootDeviation = bestOutwardDeviation(anchorPosition, rootPosition, outwardAngles);
+    const rootRotatingAtomIds = subtreeAtomIds.filter(atomId => atomId !== rootAtomId);
+    const reverseOutwardAngles = rootRotatingAtomIds.length > 0
+      ? outwardAnglesForAnchor(layoutGraph, coords, rootAtomId)
+      : [];
+    const baseReverseRootDeviation = bestOutwardDeviation(rootPosition, anchorPosition, reverseOutwardAngles);
     const parentTrigonalAngles = parentTrigonalAnglesForDirectAttachedRing(layoutGraph, coords, anchorAtomId, rootAtomId);
-    if (!(baseRootDeviation > TIDY_ANGLE_EPSILON) && parentTrigonalAngles.length === 0) {
+    if (
+      !(baseRootDeviation > TIDY_ANGLE_EPSILON)
+      && !(baseReverseRootDeviation > TIDY_ANGLE_EPSILON)
+      && parentTrigonalAngles.length === 0
+    ) {
       continue;
     }
 
@@ -2418,33 +2535,63 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
       ...outwardAngles.map(targetAngle => ({
         targetAngle,
         requireRootOutwardExact: true,
+        requireReverseRootOutwardExact: false,
+        requireParentTrigonalImprovement: false,
         childRotationOffsets: [0]
       })),
       ...parentTrigonalAngles.map(targetAngle => ({
         targetAngle,
         requireRootOutwardExact: false,
+        requireReverseRootOutwardExact: false,
+        requireParentTrigonalImprovement: true,
         childRotationOffsets: DIRECT_ATTACHED_RING_PARENT_TRIGONAL_ROTATION_OFFSETS
-      }))
+      })),
+      ...(
+        baseReverseRootDeviation > TIDY_ANGLE_EPSILON
+          ? reverseOutwardAngles.map(targetAngle => ({
+              targetAngle: currentAngle,
+              requireRootOutwardExact: false,
+              requireReverseRootOutwardExact: true,
+              requireParentTrigonalImprovement: false,
+              childRotationOffsets: [angleOf(sub(anchorPosition, rootPosition)) - targetAngle]
+            }))
+          : []
+      )
     ];
 
-    for (const { targetAngle, requireRootOutwardExact, childRotationOffsets } of targetRecords) {
+    for (const { targetAngle, requireRootOutwardExact, requireReverseRootOutwardExact, requireParentTrigonalImprovement, childRotationOffsets } of targetRecords) {
       const rotation = targetAngle - currentAngle;
-      if (Math.abs(rotation) <= TIDY_ANGLE_EPSILON) {
+      if (
+        Math.abs(rotation) <= TIDY_ANGLE_EPSILON
+        && childRotationOffsets.every(childRotation => Math.abs(childRotation) <= TIDY_ANGLE_EPSILON)
+      ) {
         continue;
       }
       for (const childRotation of childRotationOffsets) {
-        const overridePositions = directAttachedRingRetidyOverridePositions(coords, descriptor, rotation, childRotation);
+        let overridePositions = directAttachedRingRetidyOverridePositions(coords, descriptor, rotation, childRotation);
         if (!overridePositions) {
           continue;
         }
-        const candidateCoords = new Map(coords);
+        let candidateCoords = new Map(coords);
         for (const [atomId, position] of overridePositions) {
           candidateCoords.set(atomId, position);
         }
         const candidateRootDeviation = bestOutwardDeviation(candidateCoords.get(anchorAtomId), candidateCoords.get(rootAtomId), outwardAngles);
+        const candidateReverseOutwardAngles = requireReverseRootOutwardExact
+          ? outwardAnglesForAnchor(layoutGraph, candidateCoords, rootAtomId)
+          : [];
+        const candidateReverseRootDeviation = requireReverseRootOutwardExact
+          ? bestOutwardDeviation(candidateCoords.get(rootAtomId), candidateCoords.get(anchorAtomId), candidateReverseOutwardAngles)
+          : 0;
         if (
           requireRootOutwardExact &&
           (!Number.isFinite(candidateRootDeviation) || candidateRootDeviation > TIDY_ANGLE_EPSILON)
+        ) {
+          continue;
+        }
+        if (
+          requireReverseRootOutwardExact &&
+          (!Number.isFinite(candidateReverseRootDeviation) || candidateReverseRootDeviation > TIDY_ANGLE_EPSILON)
         ) {
           continue;
         }
@@ -2457,20 +2604,38 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
           continue;
         }
 
-        const overlapCount = countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength).count;
+        let overlapCount = countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength).count;
+        if (overlapCount > baseOverlapCount) {
+          const repairedOverridePositions = repairBlockingTerminalRingCarbonylLeaves(
+            layoutGraph,
+            coords,
+            overridePositions,
+            bondLength
+          );
+          if (repairedOverridePositions) {
+            overridePositions = repairedOverridePositions;
+            candidateCoords = new Map(coords);
+            for (const [atomId, position] of overridePositions) {
+              candidateCoords.set(atomId, position);
+            }
+            overlapCount = auditLayout(layoutGraph, candidateCoords, { bondLength }).ok === true
+              ? baseOverlapCount
+              : countSevereOverlapsWithOverrides(layoutGraph, coords, overridePositions, bondLength).count;
+          }
+        }
         if (overlapCount > baseOverlapCount) {
           continue;
         }
 
         const candidateJunctionPenalty = measureDirectAttachedRingJunctionContinuationDistortion(layoutGraph, candidateCoords, { focusAtomIds: descriptorFocusAtomIds }).totalDeviation;
         const candidateTrigonalPenalty = measureTrigonalDistortion(layoutGraph, candidateCoords, { focusAtomIds: descriptorFocusAtomIds }).totalDeviation;
-        if (requireRootOutwardExact && candidateJunctionPenalty > baseJunctionPenalty + TIDY_ANGLE_EPSILON) {
+        if ((requireRootOutwardExact || requireReverseRootOutwardExact) && candidateJunctionPenalty > baseJunctionPenalty + TIDY_ANGLE_EPSILON) {
           continue;
         }
         if (
-          requireRootOutwardExact
-            ? candidateTrigonalPenalty > baseTrigonalPenalty + TIDY_ANGLE_EPSILON
-            : candidateTrigonalPenalty >= baseTrigonalPenalty - TIDY_ANGLE_EPSILON
+          requireParentTrigonalImprovement
+            ? candidateTrigonalPenalty >= baseTrigonalPenalty - TIDY_ANGLE_EPSILON
+            : candidateTrigonalPenalty > baseTrigonalPenalty + TIDY_ANGLE_EPSILON
         ) {
           continue;
         }
@@ -2480,7 +2645,8 @@ export function runDirectAttachedRingSystemOutwardRetidy(layoutGraph, inputCoord
           overlapCount,
           readability: candidateReadability,
           parentTrigonalPenalty: candidateTrigonalPenalty,
-          preferMinimalRotation: !requireRootOutwardExact,
+          reverseRootDeviation: requireReverseRootOutwardExact ? candidateReverseRootDeviation : baseReverseRootDeviation,
+          preferMinimalRotation: requireParentTrigonalImprovement,
           angleDelta: angularDifference(currentAngle, targetAngle) + Math.abs(childRotation)
         };
         if (isBetterDirectAttachedRingRootRetidyCandidate(candidate, bestCandidate)) {

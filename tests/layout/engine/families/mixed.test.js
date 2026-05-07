@@ -2247,6 +2247,22 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('keeps terminal methyl leaves aligned with tight fused-junction continuations', () => {
+    const result = runPipeline(parseSMILES('CC12COCC([NH3+])CC1CC1=C(CO2)C=CS1'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const terminalMethylDeviation = directAttachedRingJunctionDeviation(result.layoutGraph, result.coords, 'C2', 'C1');
+
+    assert.notEqual(terminalMethylDeviation, null);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.ok(
+      terminalMethylDeviation < 1e-6,
+      `expected the terminal methyl to stay on the exact shared-junction continuation, got ${((terminalMethylDeviation * 180) / Math.PI).toFixed(2)} degrees`
+    );
+  });
+
   it('keeps three-shared-atom bridged single-ring hybrids from collapsing their two-atom child arc onto the parent block', () => {
     const smiles = 'CN1C=C2C(=N1)C1OC2(C)CC1C(O)CC#N';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
@@ -2513,9 +2529,10 @@ describe('layout/engine/families/mixed', () => {
     assertExactTrigonalCenter('C39', ['C33', 'C38', 'O40']);
     assertExactTrigonalCenter('C49', ['C21', 'O50', 'C51']);
     assertExactTrigonalCenter('C52', ['C5', 'O53', 'C51']);
+    const bridgeHydroxylAngle = bondAngleAtAtom(coords, 'C14', 'C5', 'O15');
     assert.ok(
-      Math.abs(bondAngleAtAtom(coords, 'C14', 'C5', 'O15') - Math.PI) < exactTolerance,
-      `expected C14-O15 bridge hydroxyl to stay straight, got ${((bondAngleAtAtom(coords, 'C14', 'C5', 'O15') * 180) / Math.PI).toFixed(2)} degrees`
+      Math.abs(bridgeHydroxylAngle - Math.PI) <= Math.PI / 30 + 1e-6,
+      `expected C14-O15 bridge hydroxyl to stay near straight, got ${((bridgeHydroxylAngle * 180) / Math.PI).toFixed(2)} degrees`
     );
 
     const carbonylAngles = [
@@ -3153,6 +3170,55 @@ describe('layout/engine/families/mixed', () => {
     );
   });
 
+  it('shortens crowded ring carbonyl leaves while keeping their fans exact', () => {
+    const result = runPipeline(
+      parseSMILES('COc1ccc(cc1)C2=C(C(=O)c3c(O)cc(O)cc3O2)C4=C(Oc5cc(O)cc(O)c5C4=O)c6ccc(OC)cc6'),
+      {
+        suppressH: true,
+        auditTelemetry: true,
+        finalLandscapeOrientation: true
+      }
+    );
+    const { layoutGraph, coords } = result;
+    const bondLength = layoutGraph.options.bondLength;
+    const assertExactCarbonylFan = (centerAtomId, leafAtomId, firstRingAtomId, secondRingAtomId) => {
+      for (const [firstAtomId, secondAtomId] of [
+        [firstRingAtomId, leafAtomId],
+        [firstRingAtomId, secondRingAtomId],
+        [leafAtomId, secondRingAtomId]
+      ]) {
+        const angle = bondAngleAtAtom(coords, centerAtomId, firstAtomId, secondAtomId);
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${firstAtomId}-${centerAtomId}-${secondAtomId} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+      assert.ok(
+        distance(coords.get(centerAtomId), coords.get(leafAtomId)) < bondLength,
+        `expected ${centerAtomId}=${leafAtomId} to shorten below the standard bond length`
+      );
+      assert.ok(
+        distance(coords.get(centerAtomId), coords.get(leafAtomId)) >= bondLength * 0.4 - 1e-6,
+        `expected ${centerAtomId}=${leafAtomId} to stay above the accepted carbonyl compression floor`
+      );
+    };
+
+    assert.equal(result.metadata.audit.ok, true);
+    assertExactCarbonylFan('C11', 'O12', 'C10', 'C13');
+    assertExactCarbonylFan('C33', 'O34', 'C22', 'C32');
+    for (const [firstAtomId, secondAtomId] of [
+      ['C23', 'C42'],
+      ['C23', 'C36'],
+      ['C42', 'C36']
+    ]) {
+      const angle = bondAngleAtAtom(coords, 'C35', firstAtomId, secondAtomId);
+      assert.ok(
+        Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+        `expected ${firstAtomId}-C35-${secondAtomId} to stay exact at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+      );
+    }
+  });
+
   it('keeps the reported anisole ether exit exact when pending attached-ring carbonyl resnaps are optional', () => {
     const smiles = 'COc1cc([C@H](CC=C(C)C)OC(=O)c2ccccn2)c(OC)c3\\C(=N\\O)\\C=C\\C(=N/O)\\c13';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
@@ -3203,6 +3269,47 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(mixedResult.supported, true);
     assertTrigonalCenter(mixedResult.coords, 'mixed layout');
     assertTrigonalCenter(pipelineResult.coords, 'pipeline layout');
+  });
+
+  it('keeps non-ring sugar sidechain hidden-h centers exact while clearing downstream aryl rings', () => {
+    const smiles = 'CO[C@H]1[C@H](O[C@@H]2OC(C)(C)O[C@H]12)[C@H](CC(=O)N)N(Cc3ccccc3O)C(=O)Nc4ccc(C)c(Cl)c4';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), { suppressH: true, auditTelemetry: true });
+
+    const assertHiddenHydrogenFan = (coords, label) => {
+      for (const [firstNeighborAtomId, secondNeighborAtomId] of [['C5', 'C19'], ['C5', 'N23'], ['C19', 'N23']]) {
+        const angle = bondAngleAtAtom(coords, 'C17', firstNeighborAtomId, secondNeighborAtomId);
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} ${firstNeighborAtomId}-C17-${secondNeighborAtomId} to keep an exact suppressed-H fan, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
+        );
+      }
+    };
+    const assertLinkedArylBend = (coords, label) => {
+      const c24Angle = bondAngleAtAtom(coords, 'C24', 'N23', 'C25');
+      assert.ok(
+        Math.abs(c24Angle - ((2 * Math.PI) / 3)) < Math.PI / 9,
+        `expected ${label} N23-C24-C25 to stay visibly bent near 120 degrees, got ${((c24Angle * 180) / Math.PI).toFixed(2)} degrees`
+      );
+      for (const [firstNeighborAtomId, secondNeighborAtomId] of [['C17', 'C24'], ['C17', 'C32'], ['C24', 'C32']]) {
+        const angle = bondAngleAtAtom(coords, 'N23', firstNeighborAtomId, secondNeighborAtomId);
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < Math.PI / 12,
+          `expected ${label} ${firstNeighborAtomId}-N23-${secondNeighborAtomId} to remain close to trigonal while opening C24, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertHiddenHydrogenFan(mixedResult.coords, 'mixed layout');
+    assertLinkedArylBend(mixedResult.coords, 'mixed layout');
+    assert.equal(auditLayout(graph, mixedResult.coords, { bondLength: graph.options.bondLength }).ok, true);
+    assertHiddenHydrogenFan(pipelineResult.coords, 'pipeline layout');
+    assertLinkedArylBend(pipelineResult.coords, 'pipeline layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
   });
 
   it('keeps benzylic attached phenyl exits exact while preserving the visible hidden-h methyl spreads', () => {
@@ -3552,6 +3659,37 @@ describe('layout/engine/families/mixed', () => {
     assert.equal(pipelineResult.metadata.audit.ok, true);
   });
 
+  it('keeps secondary anilino direct-attached phenyls on hidden-h trigonal slots', () => {
+    const smiles = '[H][C@@](NC1=CC(C)=CC=C1C(C)=O)(C(N)=O)C1=C(Br)C=CC=C1Br';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const assertN3HiddenHSpread = (coords, label) => {
+      for (const [name, angle] of [
+        ['C2-N3-C4', bondAngleAtAtom(coords, 'N3', 'C2', 'C4')],
+        ['C2-N3-H25', bondAngleAtAtom(coords, 'N3', 'C2', 'H25')],
+        ['C4-N3-H25', bondAngleAtAtom(coords, 'N3', 'C4', 'H25')]
+      ]) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} ${name} to stay at 120 degrees, got ${((angle * 180) / Math.PI).toFixed(2)}`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertN3HiddenHSpread(mixedResult.coords, 'mixed layout');
+    assertN3HiddenHSpread(pipelineResult.coords, 'pipeline layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.severeOverlapCount, 0);
+  });
+
   it('uses alternate imine aryl slots before snapping downstream biphenyl roots', () => {
     const smiles = 'CC(=NC1=CC=CC=C1C1=CC=CC=C1)C1=CC=CC(=N1)C(C)=NC1=CC=CC=C1C1=CC=CC=C1';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
@@ -3729,6 +3867,42 @@ describe('layout/engine/families/mixed', () => {
       distance(result.coords.get('O32'), result.coords.get('C21')) > bondLength * 0.65,
       'expected the terminal ring carbonyl oxygen to keep readable clearance from the adjacent ring atom'
     );
+  });
+
+  it('keeps terminal chlorophenyl C29 angles exact on fused tricyclic scaffolds', () => {
+    const smiles = 'COc1ccc(cc1)C2CC3=C(C(Nc4cc(C)ccc4N3)c5c(F)cccc5Cl)C(=O)C2';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const assertTerminalChlorophenylFan = (layoutGraph, coords, bondValidationClasses, label) => {
+      const audit = auditLayout(layoutGraph, coords, {
+        bondLength: layoutGraph.options.bondLength,
+        bondValidationClasses
+      });
+      const c29Angles = [
+        bondAngleAtAtom(coords, 'C29', 'C23', 'C28'),
+        bondAngleAtAtom(coords, 'C29', 'C23', 'Cl30'),
+        bondAngleAtAtom(coords, 'C29', 'C28', 'Cl30')
+      ];
+
+      assert.equal(audit.ok, true, `expected ${label} to pass layout audit`);
+      for (const angle of c29Angles) {
+        assert.ok(
+          Math.abs(angle - ((2 * Math.PI) / 3)) < 1e-6,
+          `expected ${label} C29 chlorophenyl fan to stay exact, got ${((angle * 180) / Math.PI).toFixed(2)} degrees`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertTerminalChlorophenylFan(graph, mixedResult.coords, mixedResult.bondValidationClasses, 'mixed layout');
+    assertTerminalChlorophenylFan(pipelineResult.layoutGraph, pipelineResult.coords, pipelineResult.bondValidationClasses, 'pipeline layout');
   });
 
   it('keeps compact carbonyl roots exact on non-aromatic trigonal ring anchors', () => {

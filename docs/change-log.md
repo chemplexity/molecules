@@ -1,7 +1,28 @@
 # Change Log
 
+## 2026-05-06
+
+- Add a hydroxy alkyl bicyclohexene template so compact bicyclic alcohols keep structured five-member rings.
+- Add a sulfonyl cyclopentenyl azocane template so compact sulfone-fused cages keep structured five-member rings.
+- Pin terminal chlorophenyl C29 angles on fused tricyclic scaffolds.
+- Spin blocked direct-attached aromatic ring roots around their attachment atom while shortening the blocking ring carbonyl leaf.
+- Allow crowded ring carbonyl leaves to shorten while keeping exact trigonal fans.
+- Keep terminal methyl leaves exact on tight fused-junction continuations.
+- Regularize the saturated morphinan template's fused cyclohexene, benzene, and outer cyclohexane lanes.
+- Keep displayed bridgehead stereohydrogens out of pinched ring-bond sectors.
+- Add a saturated morphinan bridged template so compact four-ring cores avoid stretched fallback bonds.
+- Add a norbornene bridged template so attached bicyclic five-ring children avoid flattened shared bridges.
+- Add a bridged decalin lactam template so compact bicyclic amides avoid flattened shared ring paths.
+- Let moderately large mixed peptide layouts expand compact attached-ring poses to clear local carbonyl overlaps.
+
 ## 2026-05-05
 
+- Add an oxabicyclic lactone ammonium template so compact theta-lactone rings avoid generic bridged fallback geometry.
+- Add a bridged cyclopropyl-decalin template so compact carbocages keep methoxy exits outside the ring system.
+- Balance crowded sugar sidechain aryl/amide bends so the C24 benzylic angle stays visibly open after hidden-H fan rescue.
+- Keep non-ring sugar sidechain hidden-H carbon fans exact while rotating downstream aryl rings aside.
+- Add an aza-annulene cyclohexadiene template so bridged six-member rings stay regular.
+- Keep secondary anilino hidden-H nitrogen fans on exact trigonal slots.
 - Add an oxazabicyclic lactam template so compact bridged lactam rings avoid crossed fallback lanes.
 - Keep ring-bound tertiary amide nitrogens and carbonyls on exact exterior trigonal slots.
 - Let suppressed terminal sulfonyl hydrogens render as visible trigonal heavy-atom fans.

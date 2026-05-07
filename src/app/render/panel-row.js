@@ -3,12 +3,12 @@
 /**
  * Builds a togglable On/Off panel row used by overlay panels (bond EN,
  * bond lengths, atom numbering).
- * @param {object} options
+ * @param {object} options - Panel row options.
  * @param {string} options.label - Row label text.
  * @param {string} options.title - Tooltip title.
  * @param {boolean} options.active - Whether the row is currently active.
  * @param {(event: MouseEvent) => void} options.onClick - Click handler; receives the raw event.
- * @returns {HTMLTableRowElement}
+ * @returns {HTMLTableRowElement} Configured overlay panel row.
  */
 export function createOverlayPanelRow({ label, title, active, onClick }) {
   const tr = document.createElement('tr');
@@ -41,7 +41,7 @@ export function createOverlayPanelRow({ label, title, active, onClick }) {
  * @param {string} label - Button text (e.g. '‹' or '›').
  * @param {string} title - Tooltip title.
  * @param {() => void} onActivate - Callback invoked on mousedown.
- * @returns {HTMLButtonElement}
+ * @returns {HTMLButtonElement} Configured navigation button.
  */
 export function createNavButton(label, title, onActivate) {
   const btn = document.createElement('button');

@@ -270,6 +270,21 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('a4').x > coords.get('a0').x);
   });
 
+  it('places a norbornene scaffold without flattening the one-atom bridge', () => {
+    const graph = createLayoutGraph(parseSMILES('C1C2CC(C=C2)C1'));
+    const coords = placeTemplateCoords(graph, 'norbornene', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const firstRingAngles = ringAngles(coords, ['C6', 'C5', 'C4', 'C3', 'C2']);
+    const secondRingAngles = ringAngles(coords, ['C7', 'C4', 'C3', 'C2', 'C1']);
+    const sharedBridgeAngle = secondRingAngles[2];
+
+    assert.equal(coords.size, 7);
+    assert.ok(Math.max(...firstRingAngles, ...secondRingAngles) < 150);
+    assert.ok(
+      sharedBridgeAngle > 80 && sharedBridgeAngle < 100,
+      `expected the shared one-atom bridge to bend open, got ${sharedBridgeAngle.toFixed(2)} from ${secondRingAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+  });
+
   it('places the tropane bridge-atom scaffold with the expected cocaine-like projection', () => {
     const graph = createLayoutGraph(parseSMILES('N1C2CCC1CC(C2)'));
     const coords = placeTemplateCoords(graph, 'tropane', graph.ringSystems[0].atomIds, graph.options.bondLength);
@@ -468,6 +483,35 @@ describe('layout/engine/templates/placement', () => {
     }
   });
 
+  it('places the aza-annulene cyclohexadiene core with a regular six-member ring', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1=NC(N)=CC(C)=CC=C2NC=CC1=C2'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'aza-annulene-cyclohexadiene-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const sixMemberAtomIds = ['C17', 'C16', 'C15', 'C14', 'N13', 'C12'];
+    const sixMemberAngles = ringAngles(coords, sixMemberAtomIds);
+    const sixMemberLengths = sixMemberAtomIds.map((atomId, index) => distance(
+      coords.get(atomId),
+      coords.get(sixMemberAtomIds[(index + 1) % sixMemberAtomIds.length])
+    ));
+
+    assert.equal(coords.size, 13);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(coords.get('C7').y > coords.get('C17').y);
+    assert.ok(coords.get('C14').y < coords.get('C17').y);
+    for (const angle of sixMemberAngles) {
+      assert.ok(Math.abs(angle - 120) < 1e-4, `expected the six-member ring to stay regular, got ${sixMemberAngles.map(candidate => candidate.toFixed(2)).join(', ')}`);
+    }
+    for (const length of sixMemberLengths) {
+      assert.ok(Math.abs(length - graph.options.bondLength) < 1e-4, `expected six-member ring bonds to stay normal, got ${sixMemberLengths.map(candidate => candidate.toFixed(3)).join(', ')}`);
+    }
+  });
+
   it('places the acyl-substituted spiro-bridged aza cage with a compact exterior tail corner', () => {
     const graph = createLayoutGraph(parseSMILES('CCC(=O)C1CC2(C1)[NH2+]C1CC2C1'), { suppressH: true });
     const coords = placeTemplateCoords(graph, 'spiro-bridged-aza-cage', graph.ringSystems[0].atomIds, graph.options.bondLength);
@@ -516,6 +560,60 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('N4').x > coords.get('C3').x);
   });
 
+  it('places the sulfonyl cyclopentenyl azocane core with a structured five-member ring', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1=C2CS(=O)(=O)C1C(CCNC2(C)C)C=O'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'sulfonyl-cyclopentenyl-azocane-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const fiveRingAngles = ringAngles(coords, ['C8', 'C2', 'C3', 'C4', 'S5']);
+
+    assert.equal(coords.size, 10);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    for (const angle of fiveRingAngles) {
+      assert.ok(
+        Math.abs(angle - 108) < 1e-3,
+        `expected the sulfonyl cyclopentene ring to stay pentagonal, got ${angle.toFixed(2)} degrees`
+      );
+    }
+  });
+
+  it('places the hydroxy alkyl bicyclohexene core with a structured cyclopentenyl ring', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC1(O)C2C(CN(C)C)C1(CC)C=C2C'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'hydroxy-alkyl-bicyclohexene-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const fiveRingAtomIds = ['C15', 'C14', 'C11', 'C3', 'C5'];
+    const fiveRingAngles = ringAngles(coords, fiveRingAtomIds);
+    const minReadableBondLength = graph.options.bondLength * BRIDGED_VALIDATION.minBondLengthFactor;
+    const maxReadableBondLength = graph.options.bondLength * BRIDGED_VALIDATION.maxBondLengthFactor;
+    const ringBondLengths = [
+      ['C3', 'C5'],
+      ['C5', 'C15'],
+      ['C15', 'C14'],
+      ['C14', 'C11'],
+      ['C11', 'C3'],
+      ['C5', 'C6'],
+      ['C6', 'C11']
+    ].map(([firstAtomId, secondAtomId]) => distance(coords.get(firstAtomId), coords.get(secondAtomId)));
+
+    assert.equal(coords.size, 6);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(Math.min(...fiveRingAngles) > 80, `expected the hydroxy bicyclohexene five-ring to avoid pinched corners, got ${fiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...fiveRingAngles) < 145, `expected the hydroxy bicyclohexene five-ring to avoid flattened corners, got ${fiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    for (const bondLength of ringBondLengths) {
+      assert.ok(bondLength >= minReadableBondLength && bondLength <= maxReadableBondLength);
+    }
+  });
+
   it('places the benzoxathiobicyclo cage with the sulfur-oxygen ring below the bridged span', () => {
     const graph = createLayoutGraph(parseSMILES('C1CC2CC(C2)COC2=CC=C1S2'));
     const coords = placeTemplateCoords(graph, 'benzoxathiobicyclo-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
@@ -551,6 +649,36 @@ describe('layout/engine/templates/placement', () => {
         assert.ok(Math.abs(bondLength - graph.options.bondLength) < 1e-6);
         assert.ok(Math.abs(angle - (2 * Math.PI) / 3) < 1e-6);
       }
+    }
+  });
+
+  it('places the saturated morphinan core without stretched fallback bonds', () => {
+    const graph = createLayoutGraph(parseSMILES('[H][C@@]12CCCC[C@@]11CCN(CC=C)[C@@H]2CC2=C1C=C(O)C=C2'), { suppressH: true });
+    const rootRingSystem = graph.ringSystems[0];
+    const coords = placeTemplateCoords(graph, 'saturated-morphinan-core', rootRingSystem.atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, rootRingSystem.atomIds, 'bridged')
+    });
+    const outerCyclohexaneAngles = ringAngles(coords, ['C3', 'C4', 'C5', 'C6', 'C7', 'C2']);
+    const azaBridgeAngles = ringAngles(coords, ['C7', 'C8', 'C9', 'N10', 'C14', 'C2']);
+    const fusedCyclohexeneAngles = ringAngles(coords, ['C14', 'C16', 'C17', 'C18', 'C7', 'C2']);
+    const aromaticAngles = ringAngles(coords, ['C23', 'C22', 'C20', 'C19', 'C18', 'C17']);
+
+    assert.equal(coords.size, 17);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.22);
+    for (const angle of outerCyclohexaneAngles) {
+      assert.ok(Math.abs(angle - 120) < 1e-3, `expected outer cyclohexane angle near 120 degrees, got ${angle.toFixed(2)}`);
+    }
+    assert.ok(Math.min(...azaBridgeAngles) > 50);
+    assert.ok(Math.max(...azaBridgeAngles) < 160);
+    for (const angle of fusedCyclohexeneAngles) {
+      assert.ok(Math.abs(angle - 120) < 1e-3, `expected fused cyclohexene angle near 120 degrees, got ${angle.toFixed(2)}`);
+    }
+    for (const angle of aromaticAngles) {
+      assert.ok(Math.abs(angle - 120) < 1e-3, `expected aromatic angle near 120 degrees, got ${angle.toFixed(2)}`);
     }
   });
 

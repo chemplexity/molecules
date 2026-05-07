@@ -1138,7 +1138,7 @@ function placeNeighborSequence(
             coords,
             excludedAtomIds
           }));
-    const chosenAngle =
+    const terminalBondCrossingRescueAngle =
       exactPreferredBondCrossingRescueAngle == null
       && isTerminalCarbonRingBranchLeaf(layoutGraph, anchorAtomId, childAtomId, childBond)
       && branchAngleCrossesExistingVisibleBond(layoutGraph, coords, anchorAtomId, childAtomId, initialChosenAngle, bondLength)
@@ -1157,7 +1157,10 @@ function placeNeighborSequence(
               atomGrid
             ) ?? initialChosenAngle
           )
-        : initialChosenAngle;
+        : null;
+    const chosenAngle =
+      terminalBondCrossingRescueAngle ??
+      initialChosenAngle;
     const shouldUseClassicSingleBranchLookahead =
       childBond != null
       && !childBond.aromatic

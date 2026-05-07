@@ -20,7 +20,7 @@ import {
 } from '../../layout/mol2d-helpers.js';
 import {
   DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE,
-  synthesizeHydrogenPosition
+  synthesizeDisplayedStereoHydrogenPosition
 } from '../../layout/engine/stereo/wedge-geometry.js';
 
 /**
@@ -75,10 +75,8 @@ function projectHiddenStereoHydrogens(molecule, bondLength, stereoMap = null) {
       .getNeighbors(molecule)
       .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null)
       .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
-    const projectedPosition = synthesizeHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength, {
+    const projectedPosition = synthesizeDisplayedStereoHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength, {
       incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id),
-      preferCardinalAxes: true,
-      fixedRadius: true,
       cardinalAxisSectorTolerance: hasDisplayedStereo ? DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE : undefined
     });
     projectedCoords.set(atom.id, projectedPosition);
