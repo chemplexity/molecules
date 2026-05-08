@@ -37,6 +37,9 @@ const TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_STEP = Math.PI / 180;
 const TERMINAL_MULTIPLE_LEAF_HYPERVALENT_RELIEF_MAX_ROTATION = Math.PI / 9;
 const TERMINAL_MULTIPLE_LEAF_RIGID_RELIEF_MAX_ATOMS = 12;
 const TERMINAL_MULTIPLE_LEAF_RIGID_RELIEF_MAX_HEAVY_ATOMS = 6;
+const DIRECT_TERMINAL_MULTIPLE_LIGAND_RELIEF_STEP = Math.PI / 360;
+const DIRECT_TERMINAL_MULTIPLE_LIGAND_RELIEF_MAX_ROTATION = Math.PI / 12;
+const DIRECT_TERMINAL_MULTIPLE_LIGAND_RELIEF_MAX_HYPERVALENT_DEVIATION = (Math.PI / 12) ** 2;
 const DIRECT_LIGAND_TERMINAL_LEAF_RELIEF_ANGLE_CANDIDATES = [
   -Math.PI / 12,
   Math.PI / 12,
@@ -2404,6 +2407,221 @@ function countDirectLigandSevereOverlaps(overlaps, directLigandAtomIds) {
   ).length;
 }
 
+function directTerminalMultipleLigandIds(layoutGraph, centerAtomId, coords) {
+  return directLigandAtomIds(layoutGraph, centerAtomId, coords).filter(ligandAtomId =>
+    isTerminalMultipleHypervalentLigand(layoutGraph, centerAtomId, ligandAtomId)
+  );
+}
+
+function directTerminalMultipleLigandOppositionDeviation(coords, centerPosition, terminalLigandIds) {
+  if (terminalLigandIds.length !== 2) {
+    return 0;
+  }
+  const [firstLigandId, secondLigandId] = terminalLigandIds;
+  const firstPosition = coords.get(firstLigandId);
+  const secondPosition = coords.get(secondLigandId);
+  if (!firstPosition || !secondPosition) {
+    return 0;
+  }
+  return Math.abs(
+    Math.PI
+      - angularDifference(
+          angleOf(sub(firstPosition, centerPosition)),
+          angleOf(sub(secondPosition, centerPosition))
+        )
+  );
+}
+
+function directTerminalMultipleLigandReliefOverrides(
+  coords,
+  centerPosition,
+  terminalLigandIds,
+  ligandAtomId,
+  targetAngle,
+  radius
+) {
+  const singleLigandOverride = new Map([[ligandAtomId, add(centerPosition, fromAngle(targetAngle, radius))]]);
+  if (terminalLigandIds.length !== 2) {
+    return [singleLigandOverride];
+  }
+
+  const oppositeLigandId = terminalLigandIds.find(terminalLigandId => terminalLigandId !== ligandAtomId);
+  const oppositeLigandPosition = oppositeLigandId ? coords.get(oppositeLigandId) : null;
+  if (!oppositeLigandId || !oppositeLigandPosition) {
+    return [singleLigandOverride];
+  }
+
+  const oppositeLigandRadius = distance(centerPosition, oppositeLigandPosition);
+  return [
+    new Map([
+      ...singleLigandOverride,
+      [oppositeLigandId, add(centerPosition, fromAngle(targetAngle + Math.PI, oppositeLigandRadius))]
+    ]),
+    singleLigandOverride
+  ];
+}
+
+function isBetterDirectTerminalLigandReliefCandidate(candidate, incumbent) {
+  if (!incumbent) {
+    return true;
+  }
+  if (candidate.severeOverlapCount !== incumbent.severeOverlapCount) {
+    return candidate.severeOverlapCount < incumbent.severeOverlapCount;
+  }
+  if (candidate.directOverlapCount !== incumbent.directOverlapCount) {
+    return candidate.directOverlapCount < incumbent.directOverlapCount;
+  }
+  if (Math.abs(candidate.terminalPairDeviation - incumbent.terminalPairDeviation) > 1e-9) {
+    return candidate.terminalPairDeviation < incumbent.terminalPairDeviation;
+  }
+  if (Math.abs(candidate.hypervalentDeviation - incumbent.hypervalentDeviation) > 1e-9) {
+    return candidate.hypervalentDeviation < incumbent.hypervalentDeviation;
+  }
+  if (Math.abs(candidate.minOverlapDistance - incumbent.minOverlapDistance) > 1e-9) {
+    return candidate.minOverlapDistance > incumbent.minOverlapDistance;
+  }
+  return candidate.rotationMagnitude < incumbent.rotationMagnitude;
+}
+
+/**
+ * Lets one direct terminal oxo-like ligand bend a few degrees off an otherwise
+ * exact cross when the exact slot creates a severe clash with a nearby ring
+ * atom. This is intentionally narrower than general hypervalent fitting: it
+ * only accepts moves that improve the severe-overlap state and keep the center
+ * within a small visual-deviation budget.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {string} centerAtomId - Hypervalent center atom id.
+ * @returns {number} Number of accepted terminal ligand rotations.
+ */
+function relieveDirectTerminalMultipleLigandOverlaps(layoutGraph, coords, centerAtomId) {
+  const terminalLigandIds = directTerminalMultipleLigandIds(layoutGraph, centerAtomId, coords);
+  if (terminalLigandIds.length === 0) {
+    return 0;
+  }
+
+  const bondLength = layoutGraph.options?.bondLength ?? 1.5;
+  const maxStepCount = Math.ceil(
+    DIRECT_TERMINAL_MULTIPLE_LIGAND_RELIEF_MAX_ROTATION / DIRECT_TERMINAL_MULTIPLE_LIGAND_RELIEF_STEP
+  );
+  let nudges = 0;
+
+  for (let pass = 0; pass < terminalLigandIds.length; pass++) {
+    const currentOverlaps = findSevereOverlaps(layoutGraph, coords, bondLength);
+    const terminalLigandSet = new Set(terminalLigandIds);
+    const currentDirectOverlapCount = countDirectLigandSevereOverlaps(currentOverlaps, terminalLigandSet);
+    if (currentDirectOverlapCount === 0) {
+      break;
+    }
+
+    const currentBondDeviation = measureBondLengthDeviation(layoutGraph, coords, bondLength);
+    const currentDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, coords, {
+      focusAtomIds: new Set([centerAtomId])
+    });
+    const maxAllowedDeviation = Math.max(
+      currentDeviation + 1e-9,
+      DIRECT_TERMINAL_MULTIPLE_LIGAND_RELIEF_MAX_HYPERVALENT_DEVIATION
+    );
+    const centerPosition = coords.get(centerAtomId);
+    if (!centerPosition) {
+      break;
+    }
+
+    let bestCandidate = null;
+    for (const ligandAtomId of terminalLigandIds) {
+      if (
+        !currentOverlaps.some(overlap =>
+          overlap.firstAtomId === ligandAtomId || overlap.secondAtomId === ligandAtomId
+        )
+      ) {
+        continue;
+      }
+      const ligandPosition = coords.get(ligandAtomId);
+      if (!ligandPosition) {
+        continue;
+      }
+      const currentAngle = angleOf(sub(ligandPosition, centerPosition));
+      const radius = distance(centerPosition, ligandPosition);
+      for (let stepIndex = 1; stepIndex <= maxStepCount; stepIndex++) {
+        for (const direction of [1, -1]) {
+          const rotation = direction * stepIndex * DIRECT_TERMINAL_MULTIPLE_LIGAND_RELIEF_STEP;
+          const targetAngle = currentAngle + rotation;
+          const overrideOptions = directTerminalMultipleLigandReliefOverrides(
+            coords,
+            centerPosition,
+            terminalLigandIds,
+            ligandAtomId,
+            targetAngle,
+            radius
+          );
+          for (const overridePositions of overrideOptions) {
+            const candidateOverlapState = countSevereOverlapsWithOverrides(
+              layoutGraph,
+              coords,
+              overridePositions,
+              bondLength
+            );
+            if (candidateOverlapState.count > currentOverlaps.length) {
+              continue;
+            }
+            const candidateCoords = new Map(coords);
+            for (const [candidateAtomId, candidatePosition] of overridePositions) {
+              candidateCoords.set(candidateAtomId, candidatePosition);
+            }
+            const candidateOverlaps = findSevereOverlaps(layoutGraph, candidateCoords, bondLength);
+            const candidateDirectOverlapCount = countDirectLigandSevereOverlaps(candidateOverlaps, terminalLigandSet);
+            if (
+              candidateOverlaps.length >= currentOverlaps.length
+              && candidateDirectOverlapCount >= currentDirectOverlapCount
+            ) {
+              continue;
+            }
+
+            const candidateBondDeviation = measureBondLengthDeviation(layoutGraph, candidateCoords, bondLength);
+            const candidateDeviation = measureOrthogonalHypervalentDeviation(layoutGraph, candidateCoords, {
+              focusAtomIds: new Set([centerAtomId])
+            });
+            if (
+              candidateBondDeviation.failingBondCount > currentBondDeviation.failingBondCount
+              || candidateBondDeviation.maxDeviation > currentBondDeviation.maxDeviation + 1e-9
+              || candidateDeviation > maxAllowedDeviation
+            ) {
+              continue;
+            }
+
+            const candidate = {
+              positions: overridePositions,
+              severeOverlapCount: candidateOverlaps.length,
+              directOverlapCount: candidateDirectOverlapCount,
+              terminalPairDeviation: directTerminalMultipleLigandOppositionDeviation(
+                candidateCoords,
+                centerPosition,
+                terminalLigandIds
+              ),
+              hypervalentDeviation: candidateDeviation,
+              minOverlapDistance: severeOverlapState(candidateOverlaps).minDistance,
+              rotationMagnitude: Math.abs(rotation)
+            };
+            if (isBetterDirectTerminalLigandReliefCandidate(candidate, bestCandidate)) {
+              bestCandidate = candidate;
+            }
+          }
+        }
+      }
+    }
+
+    if (!bestCandidate) {
+      break;
+    }
+    for (const [candidateAtomId, candidatePosition] of bestCandidate.positions) {
+      coords.set(candidateAtomId, candidatePosition);
+    }
+    nudges++;
+  }
+
+  return nudges;
+}
+
 /**
  * Returns whether two atoms are joined by a non-aromatic single covalent bond.
  * @param {object} layoutGraph - Layout graph shell.
@@ -3376,6 +3594,7 @@ export function runHypervalentAngleTidy(layoutGraph, inputCoords) {
     nudges += relieveDirectLigandOverlapsWithBranchRotation(layoutGraph, coords, centerAtomId);
     nudges += relieveDirectLigandOverlapsWithLocalCleanup(layoutGraph, coords, centerAtomId);
     nudges += relieveDirectLigandOverlapsWithRigidCleanup(layoutGraph, coords, centerAtomId);
+    nudges += relieveDirectTerminalMultipleLigandOverlaps(layoutGraph, coords, centerAtomId);
   }
 
   return { coords, nudges };

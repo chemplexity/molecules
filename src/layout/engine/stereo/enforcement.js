@@ -1,9 +1,10 @@
 /** @module stereo/enforcement */
 
-import { measureLayoutCost } from '../audit/invariants.js';
+import { countVisibleHeavyBondCrossings, findSevereOverlaps, measureLayoutCost } from '../audit/invariants.js';
 import { actualAlkeneStereo, highestPriorityAlkeneSubstituentId, isSupportedAnnotatedDoubleBond, smallestQualifyingStereoRing } from './ez.js';
 import { cloneCoords, rotateAround } from '../geometry/transforms.js';
 import { wrapAngle } from '../geometry/vec2.js';
+import { SEVERE_OVERLAP_FACTOR } from '../constants.js';
 
 function collectSideAtoms(layoutGraph, startAtomId, blockedAtomId) {
   const sideAtomIds = new Set();
@@ -258,9 +259,17 @@ function substituentCrossSign(firstPoint, secondPoint, substituentPoint) {
 }
 
 function buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, movedAtomIds) {
+  const severeOverlaps = findSevereOverlaps(layoutGraph, candidateCoords, bondLength);
+  const severeOverlapThreshold = bondLength * SEVERE_OVERLAP_FACTOR;
   return {
     coords: candidateCoords,
     matchedStereoCount: countMatchedStereo(layoutGraph, candidateCoords, stereoBonds),
+    severeOverlapCount: severeOverlaps.length,
+    severeOverlapPenalty: severeOverlaps.reduce(
+      (penalty, overlap) => penalty + Math.max(0, severeOverlapThreshold - overlap.distance) ** 2,
+      0
+    ),
+    heavyBondCrossingCount: countVisibleHeavyBondCrossings(layoutGraph, candidateCoords),
     layoutCost: measureLayoutCost(layoutGraph, candidateCoords, bondLength),
     heavyAtomSpan: measureHeavyAtomSpan(layoutGraph, candidateCoords),
     heavyAtomCount: countHeavyAtoms(layoutGraph, movedAtomIds, candidateCoords)
@@ -279,9 +288,27 @@ function isBetterStereoCandidate(candidate, incumbent) {
     || (
       candidate.matchedStereoCount === incumbent.matchedStereoCount
       && (
-        candidate.layoutCost < incumbent.layoutCost - 1e-6
+        candidate.severeOverlapCount < incumbent.severeOverlapCount
         || (
-          Math.abs(candidate.layoutCost - incumbent.layoutCost) <= 1e-6
+          candidate.severeOverlapCount === incumbent.severeOverlapCount
+          && candidate.severeOverlapPenalty < incumbent.severeOverlapPenalty - 1e-6
+        )
+        || (
+          candidate.severeOverlapCount === incumbent.severeOverlapCount
+          && Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6
+          && candidate.heavyBondCrossingCount < incumbent.heavyBondCrossingCount
+        )
+        || (
+          candidate.severeOverlapCount === incumbent.severeOverlapCount
+          && Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6
+          && candidate.heavyBondCrossingCount === incumbent.heavyBondCrossingCount
+          && candidate.layoutCost < incumbent.layoutCost - 1e-6
+        )
+        || (
+          candidate.severeOverlapCount === incumbent.severeOverlapCount
+          && Math.abs(candidate.severeOverlapPenalty - incumbent.severeOverlapPenalty) <= 1e-6
+          && candidate.heavyBondCrossingCount === incumbent.heavyBondCrossingCount
+          && Math.abs(candidate.layoutCost - incumbent.layoutCost) <= 1e-6
           && (
             candidate.heavyAtomSpan > incumbent.heavyAtomSpan + 1e-6
             || (
@@ -386,6 +413,94 @@ function buildLocalBranchRotationCandidate(layoutGraph, coords, bond, stereoBond
   return buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, movedAtomIds);
 }
 
+const PRIORITY_SUBSTITUENT_SWEEP_OFFSETS = Object.freeze([
+  2.5,
+  5,
+  7.5,
+  10,
+  12.5,
+  15,
+  17.5,
+  20,
+  22.5,
+  25,
+  27.5,
+  30,
+  35,
+  40,
+  45,
+  60,
+  90,
+  120
+].flatMap(degrees => [(degrees * Math.PI) / 180, -(degrees * Math.PI) / 180]));
+
+/**
+ * Builds bounded single-substituent rotations for stereo rescues where the
+ * exact trigonal reflection would satisfy E/Z only by stacking a rigid aryl or
+ * fused side onto the opposite half of the molecule.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {object} bond - Annotated alkene bond.
+ * @param {object[]} stereoBonds - Supported stereo bonds being enforced.
+ * @param {number} bondLength - Target bond length.
+ * @param {string} centerAtomId - Vinylic atom whose priority substituent can move.
+ * @param {string} otherAtomId - Other vinylic atom.
+ * @param {Set<string>} ringAtomIdSet - Layout ring atom ids.
+ * @returns {object[]} Stereo candidates.
+ */
+function buildPrioritySubstituentSweepCandidates(layoutGraph, coords, bond, stereoBonds, bondLength, centerAtomId, otherAtomId, ringAtomIdSet) {
+  if (ringAtomIdSet.has(centerAtomId)) {
+    return [];
+  }
+  const centerPoint = coords.get(centerAtomId);
+  const otherPoint = coords.get(otherAtomId);
+  if (!centerPoint || !otherPoint) {
+    return [];
+  }
+  const prioritySubstituentId = highestPriorityAlkeneSubstituentId(layoutGraph.sourceMolecule, centerAtomId, otherAtomId);
+  if (!prioritySubstituentId || !coords.has(prioritySubstituentId)) {
+    return [];
+  }
+  const sideAtomIds = collectSideAtoms(layoutGraph, prioritySubstituentId, centerAtomId);
+  if (sideAtomIds.has(otherAtomId) || countHeavyAtoms(layoutGraph, sideAtomIds, coords) > 24) {
+    return [];
+  }
+
+  const targetStereo = layoutGraph.sourceMolecule.getEZStereo?.(bond.id) ?? null;
+  const currentAngle = angleOf(centerPoint, coords.get(prioritySubstituentId));
+  const bondAxisAngle = angleOf(centerPoint, otherPoint);
+  const targetAngles = [];
+  for (const baseAngle of [bondAxisAngle, bondAxisAngle + Math.PI]) {
+    for (const offset of PRIORITY_SUBSTITUENT_SWEEP_OFFSETS) {
+      const targetAngle = wrapAngle(baseAngle + offset);
+      if (!targetAngles.some(angle => Math.abs(wrapAngle(angle - targetAngle)) <= 1e-9)) {
+        targetAngles.push(targetAngle);
+      }
+    }
+  }
+
+  const candidates = [];
+  for (const targetAngle of targetAngles) {
+    const deltaAngle = wrapAngle(targetAngle - currentAngle);
+    if (Math.abs(deltaAngle) <= 1e-9) {
+      continue;
+    }
+    const candidateCoords = cloneCoords(coords);
+    for (const atomId of sideAtomIds) {
+      const position = candidateCoords.get(atomId);
+      if (!position) {
+        continue;
+      }
+      candidateCoords.set(atomId, rotateAround(position, centerPoint, deltaAngle));
+    }
+    if (actualAlkeneStereo(layoutGraph, candidateCoords, bond) !== targetStereo) {
+      continue;
+    }
+    candidates.push(buildStereoCandidate(layoutGraph, candidateCoords, stereoBonds, bondLength, sideAtomIds));
+  }
+  return candidates;
+}
+
 function countMatchedStereo(layoutGraph, coords, stereoBonds) {
   let count = 0;
   for (const bond of stereoBonds) {
@@ -488,6 +603,17 @@ export function enforceAcyclicEZStereo(layoutGraph, inputCoords, options = {}) {
 
         if (isBetterStereoCandidate(candidate, bestCandidate)) {
           bestCandidate = candidate;
+        }
+      }
+
+      if (!bestCandidate || bestCandidate.severeOverlapCount > 0) {
+        for (const centerCandidate of [
+          ...buildPrioritySubstituentSweepCandidates(layoutGraph, coords, bond, stereoBonds, bondLength, bond.a, bond.b, ringAtomIdSet),
+          ...buildPrioritySubstituentSweepCandidates(layoutGraph, coords, bond, stereoBonds, bondLength, bond.b, bond.a, ringAtomIdSet)
+        ]) {
+          if (isBetterStereoCandidate(centerCandidate, bestCandidate)) {
+            bestCandidate = centerCandidate;
+          }
         }
       }
 

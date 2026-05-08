@@ -233,6 +233,27 @@ describe('layout/engine/families/acyclic', () => {
     assert.ok(Math.abs(bondAngle(result.coords, 'O14', 'C15', 'O16') - 120) < 1e-6);
   });
 
+  it('keeps conjugated ester backbone oxygens on a strict 120-degree bend', () => {
+    const result = runPipeline(parseSMILES('CCCCCCOC(=O)C=C(C)C=CCC(C)CCCC(C)C'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.primaryFamily, 'acyclic');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(Math.abs(bondAngle(result.coords, 'C6', 'O7', 'C8') - 120) < 1e-6);
+    for (const angle of [
+      bondAngle(result.coords, 'O7', 'C8', 'O9'),
+      bondAngle(result.coords, 'O7', 'C8', 'C10'),
+      bondAngle(result.coords, 'O9', 'C8', 'C10')
+    ]) {
+      assert.ok(Math.abs(angle - 120) < 1e-6, `expected carbonyl fan to stay exact, got ${angle.toFixed(2)} degrees`);
+    }
+  });
+
   it('keeps allene and cumulene centers linear through adjacent double bonds', () => {
     const smilesCases = ['CC=C=CC', 'C=C=C=C'];
 

@@ -4062,6 +4062,43 @@ describe('layout/engine/families/mixed', () => {
     assertProjectedC12Hub(pipelineResult.layoutGraph, pipelineResult.coords, pipelineResult.bondValidationClasses, 'pipeline layout');
   });
 
+  it('keeps methoxy triaryl thiazinone centers on projected tetrahedral slots', () => {
+    const smiles = 'COC(CN1CCS(=O)C(=CC2=CC=C(Cl)C=C2)C1=O)(C1=CC=C(Cl)C=C1)C1=CC=C(Cl)C=C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    const assertProjectedC3 = (layoutGraph, coords, bondValidationClasses, label) => {
+      const adjacency = buildAdjacency(layoutGraph, new Set(layoutGraph.components[0].atomIds));
+      const audit = auditLayout(layoutGraph, coords, {
+        bondLength: layoutGraph.options.bondLength,
+        bondValidationClasses
+      });
+      const separations = sortedHeavyNeighborSeparations(adjacency, coords, 'C3', layoutGraph);
+
+      assert.equal(audit.ok, true, `expected ${label} to stay audit-clean`);
+      assert.deepEqual(findVisibleHeavyBondCrossings(layoutGraph, coords), [], `expected ${label} to avoid visible bond crossings`);
+      assert.equal(separations.length, 4, `expected four visible heavy neighbors around C3 in ${label}`);
+      for (const separation of separations) {
+        assert.ok(
+          Math.abs(separation - (Math.PI / 2)) < 1e-6,
+          `expected ${label} C3 neighbors to keep projected tetrahedral slots, got ${((separation * 180) / Math.PI).toFixed(2)} degrees`
+        );
+      }
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assertProjectedC3(graph, mixedResult.coords, mixedResult.bondValidationClasses, 'mixed layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertProjectedC3(pipelineResult.layoutGraph, pipelineResult.coords, pipelineResult.bondValidationClasses, 'pipeline layout');
+  });
+
   it('defers terminal methyl leaves on planar nitrogens until pending rings can claim trigonal slots', () => {
     const smiles = 'COc1cc2ccccc2cc1C(=O)OCC(=O)N(C)C3=C(N)N(Cc4ccccc4)C(=O)NC3=O';
     const result = runPipeline(parseSMILES(smiles), { suppressH: true, auditTelemetry: true });

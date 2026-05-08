@@ -83,6 +83,22 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, false);
   });
 
+  it('uses charged quinuclidinium templates for aza-bicyclo[2.2.2]octane cations', () => {
+    const graph = createLayoutGraph(parseSMILES('[N+]12CCC(CC1)C(C2)'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'quinuclidinium');
+    assert.equal(plan.mixedMode, false);
+  });
+
+  it('uses the oxygen-exit quinuclidinium template for ester-substituted cations', () => {
+    const graph = createLayoutGraph(parseSMILES('NC(=O)C[N+]12CCC(CC1)C(C2)OC(=O)C1(CCCCCC1)C1=CC=CC=C1'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'quinuclidinium-oxygen-exit');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the oxabicyclo[2.2.2]octane template for bridged oxygen bicyclo cages', () => {
     const graph = createLayoutGraph(parseSMILES('C12CCC(CO1)CC2'));
     const plan = buildScaffoldPlan(graph, graph.components[0]);
@@ -115,6 +131,46 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the azabicyclo ketone oxadiazole template for compact theta cages', () => {
+    const graph = createLayoutGraph(parseSMILES('O=C1C2C[NH2+]C1C2C1=NON=C1'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'azabicyclo-ketone-oxadiazole-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the cyanoacyl azabicyclo template for N-acyl compact cages', () => {
+    const graph = createLayoutGraph(parseSMILES('O=C(C#N)N1CC2CC1C2'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'cyanoacyl-azabicyclo-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the aminonitrile acetal-bridged template for heteroaryl-fused cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1NC2(C)CC1(OCOC1=C2C=CN1)C#N'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'aminonitrile-acetal-bridged-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the azabicyclo nitrile template for compact charged nitrile cages', () => {
+    const graph = createLayoutGraph(parseSMILES('C[NH+]1C2CCC1C2(C)CC#N'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'azabicyclo-nitrile-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the bridged oxadecalin template for substituted compact ether cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1CC2COC(C)C(C1)C(C)(C)C2CCO'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'bridged-oxadecalin-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the bridged pyrrolizidine dione template for compact tricyclic enone cages', () => {
     const graph = createLayoutGraph(parseSMILES(String.raw`C\C=C\C=C\C(=O)C1=C(O)[C@@]2(C)[C@H]3CCCN3[C@@H]1[C@](C)(O)C2=O`), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);
@@ -136,6 +192,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(plan.rootScaffold.family, 'bridged');
     assert.equal(plan.rootScaffold.templateId, 'amino-diaza-tricyclo-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the imino thiazole oxaza tricyclo template for compact fused cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1C23COC(=N)C12NCC1=C3N=C(C)S1'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'imino-thiazole-oxaza-tricyclo-core');
     assert.equal(plan.mixedMode, true);
   });
 

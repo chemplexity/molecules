@@ -327,6 +327,18 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(coords.get('C8').y < coords.get('C7').y);
   });
 
+  it('places charged quinuclidinium cages without pinched six-membered rings', () => {
+    const graph = createLayoutGraph(parseSMILES('[N+]12CCC(CC1)C(C2)'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'quinuclidinium', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const firstRingAngles = ringAngles(coords, ['C2', 'C3', 'C4', 'C5', 'C6', 'N1']);
+    const secondRingAngles = ringAngles(coords, ['C6', 'C5', 'C4', 'C7', 'C8', 'N1']);
+    const allAngles = [...firstRingAngles, ...secondRingAngles];
+
+    assert.equal(coords.size, 8);
+    assert.ok(Math.min(...allAngles) > 75);
+    assert.ok(Math.max(...allAngles) < 160);
+  });
+
   it('places the oxabicyclo[2.2.2]octane cage with the expected oxygen-right projection', () => {
     const graph = createLayoutGraph(parseSMILES('C12CCC(CO1)CC2'));
     const coords = placeTemplateCoords(graph, 'oxabicyclo-2-2-2', graph.ringSystems[0].atomIds, graph.options.bondLength);
@@ -406,6 +418,123 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.min(...lactamRingAngles) > 110);
   });
 
+  it('places the azabicyclo ketone oxadiazole cage with separated theta lanes', () => {
+    const graph = createLayoutGraph(parseSMILES('O=C1C2C[NH2+]C1C2C1=NON=C1'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'azabicyclo-ketone-oxadiazole-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const fiveRingAngles = ringAngles(coords, ['C4', 'N5', 'C7', 'C8', 'C3']);
+    const fourRingAngles = ringAngles(coords, ['C7', 'C8', 'C3', 'C2']);
+
+    assert.equal(coords.size, 6);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.ok(coords.get('C8').y > coords.get('C3').y);
+    assert.ok(coords.get('C8').y > coords.get('C7').y);
+    assert.ok(coords.get('C2').y < coords.get('C3').y);
+    assert.ok(Math.min(...fiveRingAngles) > 95);
+    assert.ok(Math.max(...fiveRingAngles) < 125);
+    assert.ok(Math.min(...fourRingAngles) > 70);
+    assert.ok(Math.max(...fourRingAngles) < 115);
+  });
+
+  it('places the cyanoacyl azabicyclo cage without crossing the compact cap', () => {
+    const graph = createLayoutGraph(parseSMILES('O=C(C#N)N1CC2CC1C2'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'cyanoacyl-azabicyclo-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const nitrogenRingAngles = ringAngles(coords, ['C9', 'C10', 'C7', 'C6', 'N5']);
+    const capRingAngles = ringAngles(coords, ['C10', 'C9', 'C8', 'C7']);
+
+    assert.equal(coords.size, 6);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(coords.get('C10').y > coords.get('C9').y);
+    assert.ok(coords.get('C8').y < coords.get('C9').y);
+    assert.ok(coords.get('N5').y < coords.get('C8').y);
+    assert.ok(Math.min(...nitrogenRingAngles) > 80);
+    assert.ok(Math.max(...nitrogenRingAngles) < 135);
+    assert.ok(Math.min(...capRingAngles) > 80);
+    assert.ok(Math.max(...capRingAngles) < 105);
+  });
+
+  it('places the aminonitrile acetal-bridged core without flattening the saturated ring', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1NC2(C)CC1(OCOC1=C2C=CN1)C#N'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'aminonitrile-acetal-bridged-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const saturatedRingAngles = ringAngles(coords, ['C7', 'C6', 'C4', 'N3', 'C2']);
+    const acetalBridgeAngles = ringAngles(coords, ['C12', 'C11', 'O10', 'C9', 'O8', 'C7', 'C6', 'C4']);
+    const heteroarylAngles = ringAngles(coords, ['N15', 'C14', 'C13', 'C12', 'C11']);
+
+    assert.equal(coords.size, 13);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(Math.min(...saturatedRingAngles) > 100);
+    assert.ok(Math.max(...saturatedRingAngles) < 125);
+    assert.ok(Math.min(...acetalBridgeAngles) > 105);
+    assert.ok(Math.max(...acetalBridgeAngles) < 138);
+    assert.ok(Math.min(...heteroarylAngles) > 106);
+    assert.ok(Math.max(...heteroarylAngles) < 110);
+  });
+
+  it('places the compact azabicyclo nitrile core without stretched fallback bonds', () => {
+    const graph = createLayoutGraph(parseSMILES('C[NH+]1C2CCC1C2(C)CC#N'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'azabicyclo-nitrile-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const fiveRingAngles = ringAngles(coords, ['C5', 'C6', 'C7', 'C8', 'C4']);
+    const ammoniumRingAngles = ringAngles(coords, ['C7', 'C8', 'C4', 'N2']);
+
+    assert.equal(coords.size, 6);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.4);
+    assert.ok(Math.min(...fiveRingAngles) > 100);
+    assert.ok(Math.max(...fiveRingAngles) < 120);
+    assert.ok(Math.min(...ammoniumRingAngles) > 70);
+    assert.ok(Math.max(...ammoniumRingAngles) < 120);
+  });
+
+  it('places the bridged oxadecalin cage as structured stacked theta rings', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1CC2COC(C)C(C1)C(C)(C)C2CCO'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'bridged-oxadecalin-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const carbocycleAngles = ringAngles(coords, ['C10', 'C9', 'C11', 'C14', 'C4', 'C3', 'C2']);
+    const etherRingAngles = ringAngles(coords, ['C9', 'C11', 'C14', 'C4', 'C5', 'O6', 'C7']);
+
+    assert.equal(coords.size, 10);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(coords.get('C14').y > coords.get('C4').y);
+    assert.ok(coords.get('C11').y > coords.get('C9').y);
+    assert.ok(coords.get('C5').y < coords.get('C4').y);
+    assert.ok(coords.get('O6').y < coords.get('C5').y);
+    assert.ok(coords.get('C7').y < coords.get('C9').y);
+    assert.ok(Math.min(...carbocycleAngles, ...etherRingAngles) > 105);
+    assert.ok(Math.max(...carbocycleAngles, ...etherRingAngles) < 155);
+  });
+
   it('places the bridged pyrrolizidine dione cage as separated tricyclic lanes', () => {
     const graph = createLayoutGraph(parseSMILES(String.raw`C\C=C\C=C\C(=O)C1=C(O)[C@@]2(C)[C@H]3CCCN3[C@@H]1[C@](C)(O)C2=O`), { suppressH: true });
     const coords = placeTemplateCoords(graph, 'bridged-pyrrolizidine-dione-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
@@ -481,6 +610,30 @@ describe('layout/engine/templates/placement', () => {
     for (const length of diazaCapLengths) {
       assert.ok(Math.abs(length - compactCapLength) < 1e-4, `expected the diaza cap to stay compact, got ${diazaCapLengths.map(candidate => candidate.toFixed(3)).join(', ')}`);
     }
+  });
+
+  it('places the imino thiazole oxaza tricyclo cage with open fused lanes', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1C23COC(=N)C12NCC1=C3N=C(C)S1'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'imino-thiazole-oxaza-tricyclo-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const sixRingAngles = ringAngles(coords, ['C12', 'C11', 'C10', 'N9', 'C8', 'C3']);
+    const oxazaRingAngles = ringAngles(coords, ['C8', 'C3', 'C4', 'O5', 'C6']);
+    const thiazoleAngles = ringAngles(coords, ['S16', 'C14', 'N13', 'C12', 'C11']);
+    const cyclopropaneAngles = ringAngles(coords, ['C8', 'C3', 'C2']);
+
+    assert.equal(coords.size, 13);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.2);
+    assert.ok(Math.min(...sixRingAngles) > 119);
+    assert.ok(Math.min(...oxazaRingAngles) > 95);
+    assert.ok(Math.min(...thiazoleAngles) > 107);
+    assert.ok(Math.min(...cyclopropaneAngles) > 40);
   });
 
   it('places the aza-annulene cyclohexadiene core with a regular six-member ring', () => {

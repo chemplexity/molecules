@@ -16,6 +16,7 @@ import { enforceAcyclicEZStereo } from '../stereo/enforcement.js';
 const ZIGZAG_STEP_ANGLE = Math.PI / 6;
 const TRIGONAL_TARGET_ANGLE = (2 * Math.PI) / 3;
 const PROJECTED_TETRAHEDRAL_BACKBONE_TURN = Math.PI / 2;
+const CONJUGATED_BACKBONE_HETERO_ELEMENTS = new Set(['N', 'O', 'S', 'Se']);
 
 /**
  * Returns the bond order between two atoms in the layout graph.
@@ -75,6 +76,66 @@ function isLinearCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
     && crossLikeCenter.singleNeighborIds.includes(previousAtomId)
     && crossLikeCenter.singleNeighborIds.includes(nextAtomId)
   );
+}
+
+/**
+ * Returns whether a neighbor is a non-aromatic multiple-bond center that can
+ * delocalize a singly attached heteroatom into a planar backbone turn.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Heteroatom center ID.
+ * @param {string} neighborAtomId - Candidate conjugated neighbor ID.
+ * @returns {boolean} True when the neighbor provides a conjugated sp2 anchor.
+ */
+function isConjugatedHeteroBackboneNeighbor(layoutGraph, atomId, neighborAtomId) {
+  if (!layoutGraph) {
+    return false;
+  }
+  const bondKey = atomId < neighborAtomId ? `${atomId}:${neighborAtomId}` : `${neighborAtomId}:${atomId}`;
+  const bond = layoutGraph.bondByAtomPair.get(bondKey);
+  if (!bond || bond.kind !== 'covalent' || bond.aromatic || (bond.order ?? 1) !== 1) {
+    return false;
+  }
+
+  const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+  if (!neighborAtom || neighborAtom.element === 'H' || neighborAtom.aromatic) {
+    return false;
+  }
+
+  return (layoutGraph.bondsByAtomId.get(neighborAtomId) ?? []).some(candidateBond => (
+    candidateBond !== bond
+    && candidateBond.kind === 'covalent'
+    && !candidateBond.aromatic
+    && (candidateBond.order ?? 1) >= 2
+  ));
+}
+
+/**
+ * Returns whether a two-heavy heteroatom on the acyclic backbone should use a
+ * planar 120-degree continuation because one side is conjugated to a carbonyl,
+ * imine, vinyl, or related multiple-bond center.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string|null|undefined} previousAtomId - Previous backbone atom ID.
+ * @param {string|null|undefined} atomId - Current backbone atom ID.
+ * @param {string|null|undefined} nextAtomId - Next backbone atom ID.
+ * @returns {boolean} True when the heteroatom should be normalized to 120 degrees.
+ */
+function isConjugatedHeteroBackboneCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
+  if (!layoutGraph || previousAtomId == null || atomId == null || nextAtomId == null) {
+    return false;
+  }
+  const atom = layoutGraph.atoms.get(atomId);
+  if (
+    !atom
+    || atom.aromatic
+    || !CONJUGATED_BACKBONE_HETERO_ELEMENTS.has(atom.element)
+    || atom.heavyDegree !== 2
+    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+  ) {
+    return false;
+  }
+
+  return isConjugatedHeteroBackboneNeighbor(layoutGraph, atomId, previousAtomId)
+    || isConjugatedHeteroBackboneNeighbor(layoutGraph, atomId, nextAtomId);
 }
 
 /**
@@ -251,6 +312,9 @@ function measureBackboneSpan(coords, backbone) {
 function isTrigonalBackboneCentre(layoutGraph, previousAtomId, atomId, nextAtomId) {
   if (isLinearCentre(layoutGraph, previousAtomId, atomId, nextAtomId)) {
     return false;
+  }
+  if (isConjugatedHeteroBackboneCentre(layoutGraph, previousAtomId, atomId, nextAtomId)) {
+    return true;
   }
   if (hasSp2Bond(layoutGraph, atomId)) {
     return true;

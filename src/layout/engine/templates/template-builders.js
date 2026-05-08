@@ -622,6 +622,15 @@ function createQuinuclidineTemplate() {
 }
 
 /**
+ * Creates the quinuclidinium scaffold graph used by charged
+ * aza-bicyclo[2.2.2]octane cages.
+ * @returns {Molecule} Quinuclidinium scaffold template molecule.
+ */
+function createQuinuclidiniumTemplate() {
+  return createHeavyTemplateFromSmiles('quinuclidinium', '[N+]12CCC(CC1)C(C2)');
+}
+
+/**
  * Creates the oxabicyclo[3.1.1]heptane scaffold graph used by bridged
  * oxygen-containing cage systems like `C1OC2CC(C1)C2`.
  * @returns {Molecule} Oxabicyclo[3.1.1]heptane scaffold template molecule.
@@ -659,12 +668,57 @@ function createOxazabicyclicLactamCoreTemplate() {
 }
 
 /**
+ * Creates the compact azabicyclic ketone scaffold found in oxadiazole-
+ * substituted ammonium cages like `O=C1C2C[NH2+]C1C2C1=NON=C1`.
+ * @returns {Molecule} Azabicyclic ketone oxadiazole scaffold template molecule.
+ */
+function createAzabicycloKetoneOxadiazoleCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('azabicyclo-ketone-oxadiazole-core', 'O=C1C2C[NH2+]C1C2C1=NON=C1');
+}
+
+/**
+ * Creates the compact N-acyl azabicyclo scaffold graph found in cyanoamide
+ * cages like `O=C(C#N)N1CC2CC1C2`.
+ * @returns {Molecule} Cyanoacyl azabicyclo scaffold template molecule.
+ */
+function createCyanoacylAzabicycloCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('cyanoacyl-azabicyclo-core', 'O=C(C#N)N1CC2CC1C2');
+}
+
+/**
+ * Creates the aminonitrile acetal-bridged scaffold graph found in compact
+ * heteroaryl-fused cages like `CC1NC2(C)CC1(OCOC1=C2C=CN1)C#N`.
+ * @returns {Molecule} Aminonitrile acetal-bridged scaffold template molecule.
+ */
+function createAminonitrileAcetalBridgedCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('aminonitrile-acetal-bridged-core', 'CC1NC2(C)CC1(OCOC1=C2C=CN1)C#N');
+}
+
+/**
+ * Creates the compact ammonium azabicyclo nitrile scaffold graph found in
+ * gem-substituted cages like `C[NH+]1C2CCC1C2(C)CC#N`.
+ * @returns {Molecule} Azabicyclo nitrile scaffold template molecule.
+ */
+function createAzabicycloNitrileCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('azabicyclo-nitrile-core', 'C[NH+]1C2CCC1C2(C)CC#N');
+}
+
+/**
  * Creates the compact bridged decalin-lactam scaffold graph found in
  * substituted bicyclic amides like `CC1CC(C)C2(C)CCC1CC(=O)N2CC[NH3+]`.
  * @returns {Molecule} Bridged decalin lactam scaffold template molecule.
  */
 function createBridgedDecalinLactamCoreTemplate() {
   return createRingSystemTemplateFromSmiles('bridged-decalin-lactam-core', 'CC1CC(C)C2(C)CCC1CC(=O)N2CC[NH3+]');
+}
+
+/**
+ * Creates the compact bridged oxadecalin scaffold graph found in
+ * gem-dimethyl hydroxyethyl ethers like `CC1CC2COC(C)C(C1)C(C)(C)C2CCO`.
+ * @returns {Molecule} Bridged oxadecalin scaffold template molecule.
+ */
+function createBridgedOxadecalinCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('bridged-oxadecalin-core', 'CC1CC2COC(C)C(C1)C(C)(C)C2CCO');
 }
 
 /**
@@ -696,6 +750,15 @@ function createAminoOxazaTricycloCoreTemplate() {
  */
 function createAminoDiazaTricycloCoreTemplate() {
   return createRingSystemTemplateFromSmiles('amino-diaza-tricyclo-core', 'CC1CC(O)C2CNC(=N)C1C1(C)NC=NC21');
+}
+
+/**
+ * Creates the imino thiazole-fused oxaza tricyclic scaffold graph found in
+ * compact heteroaryl cages like `CC1C23COC(=N)C12NCC1=C3N=C(C)S1`.
+ * @returns {Molecule} Imino thiazole oxaza tricyclo scaffold template molecule.
+ */
+function createIminoThiazoleOxazaTricycloCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('imino-thiazole-oxaza-tricyclo-core', 'CC1C23COC(=N)C12NCC1=C3N=C(C)S1');
 }
 
 /**
@@ -1417,6 +1480,24 @@ function createQuinuclidineGeometry() {
 }
 
 /**
+ * Creates a charged quinuclidinium projection with the three ethylene bridges
+ * separated enough that neither six-membered ring collapses at the bridgeheads.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createQuinuclidiniumGeometry() {
+  return createCenteredFrozenGeometry([
+    ['N1', { x: -0.5856, y: 0.8679 }],
+    ['C2', { x: 0.5538, y: 0.7243 }],
+    ['C3', { x: 1.2977, y: -0.1971 }],
+    ['C4', { x: 0.4142, y: -0.8954 }],
+    ['C5', { x: -0.7714, y: -0.664 }],
+    ['C6', { x: -1.4, y: 0.25 }],
+    ['C7', { x: 0.5941, y: -0.0651 }],
+    ['C8', { x: -0.1695, y: 0.0421 }]
+  ]);
+}
+
+/**
  * Creates a conventional oxabicyclo[3.1.1]heptane projection with the oxygen
  * on the lower-left bridge, a short right-hand bridge, and the one-atom bridge
  * rising to the top apex like the supplied reference sketch.
@@ -1473,6 +1554,82 @@ function createOxazabicyclicLactamCoreGeometry() {
 }
 
 /**
+ * Creates a compact theta-like projection for the azabicyclic ketone cage. The
+ * carbonyl bridge carbon and ammonium span stay below the shared path while
+ * the oxadiazole exit atom gets a clean exterior side.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createAzabicycloKetoneOxadiazoleCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C2', { x: -0.00084, y: -0.219462 }],
+    ['C3', { x: -0.776375, y: 0.308365 }],
+    ['C4', { x: -0.529669, y: -0.674974 }],
+    ['N5', { x: 0.532141, y: -0.679035 }],
+    ['C7', { x: 0.77513, y: 0.308365 }],
+    ['C8', { x: -0.000388, y: 0.956742 }]
+  ]);
+}
+
+/**
+ * Creates a three-lane projection for compact N-acyl azabicyclo cages. The
+ * shared bridgeheads stay apart, the cyclobutyl cap reads as a diamond, and the
+ * amide-bearing nitrogen sits on the exterior lower lane.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createCyanoacylAzabicycloCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C9', { x: -0.725, y: 0 }],
+    ['C10', { x: 0, y: 0.7 }],
+    ['C7', { x: 0.725, y: 0 }],
+    ['C8', { x: 0, y: -0.575 }],
+    ['N5', { x: -0.6, y: -1.15 }],
+    ['C6', { x: 0.6, y: -1.15 }]
+  ]);
+}
+
+/**
+ * Creates a structured projection for the aminonitrile acetal-bridged core. The
+ * saturated N-ring stays below the acetal bridge, the OCO arc remains open, and
+ * the fused heteroaryl ring sits as a regular exterior cap.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createAminonitrileAcetalBridgedCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C13', { x: 1.563574, y: -0.947245 }],
+    ['C14', { x: 2.301577, y: -0.253377 }],
+    ['C6', { x: -0.605, y: -0.005216 }],
+    ['C9', { x: -1.075598, y: 1.515185 }],
+    ['C12', { x: 0.690625, y: -0.470327 }],
+    ['C11', { x: 0.888029, y: 0.549241 }],
+    ['C2', { x: -1.644495, y: -1.027484 }],
+    ['C4', { x: -0.124809, y: -0.694025 }],
+    ['C7', { x: -1.444801, y: -0.054079 }],
+    ['N3', { x: -0.766244, y: -1.45361 }],
+    ['N15', { x: 1.875901, y: 0.665842 }],
+    ['O10', { x: 0.111703, y: 1.450716 }],
+    ['O8', { x: -1.770462, y: 0.724378 }]
+  ]);
+}
+
+/**
+ * Creates a three-lane projection for compact ammonium azabicyclo nitriles. The
+ * quaternary nitrile-bearing carbon sits on the upper lane, the charged
+ * nitrogen sits on the lower lane, and the longer carbon bridge stays open
+ * outside the compressed four-member ring.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createAzabicycloNitrileCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C4', { x: -0.8, y: 0 }],
+    ['C7', { x: 0.8, y: 0 }],
+    ['C8', { x: 0, y: 0.6 }],
+    ['N2', { x: 0, y: -0.55 }],
+    ['C5', { x: -0.5, y: -1.35 }],
+    ['C6', { x: 0.5, y: -1.35 }]
+  ]);
+}
+
+/**
  * Creates a separated three-lane projection for bridged decalin lactams. The
  * carbocycle arc sits above the shared bridge path while the lactam arc opens
  * below, preventing the two seven-member rings from collapsing onto one line.
@@ -1490,6 +1647,28 @@ function createBridgedDecalinLactamCoreGeometry() {
     ['C11', { x: -1.25, y: -0.95 }],
     ['C12', { x: 0.0, y: -1.25 }],
     ['N14', { x: 1.25, y: -0.95 }]
+  ]);
+}
+
+/**
+ * Creates a theta projection for compact bridged oxadecalins. The shared
+ * C4-C14-C11-C9 bridge sits on the upper exterior arc while the carbon and
+ * oxygen paths bow below it, keeping both perceived seven-membered rings
+ * readable instead of pinched into a cage scribble.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createBridgedOxadecalinCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C4', { x: -1.2, y: 0.0 }],
+    ['C14', { x: -0.71, y: 0.79 }],
+    ['C11', { x: 0.54, y: 0.78 }],
+    ['C9', { x: 1.2, y: 0.0 }],
+    ['C3', { x: -0.79, y: -0.66 }],
+    ['C2', { x: 0.29, y: -1.06 }],
+    ['C10', { x: 1.01, y: -0.74 }],
+    ['C5', { x: -1.0, y: -1.34 }],
+    ['O6', { x: 0.03, y: -1.94 }],
+    ['C7', { x: 1.18, y: -1.32 }]
   ]);
 }
 
@@ -1559,6 +1738,31 @@ function createAminoDiazaTricycloCoreGeometry() {
     ['N14', { x: -0.647214, y: 1.660845 }],
     ['C15', { x: 0, y: 2.131073 }],
     ['N16', { x: 0.647214, y: 1.660845 }]
+  ]);
+}
+
+/**
+ * Creates a separated-lane projection for imino thiazole oxaza tricyclo cages.
+ * The thiazole-fused six-ring occupies the lower lane, the oxaza arc opens
+ * above the shared bridgeheads, and the cyclopropane cap stays visible inside
+ * the upper lane instead of collapsing the shared bridge edge.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createIminoThiazoleOxazaTricycloCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C3', { x: 0.0, y: 0.0 }],
+    ['C8', { x: 1.0, y: 0.0 }],
+    ['C2', { x: 0.15, y: 0.8 }],
+    ['C4', { x: -0.4, y: 1.1 }],
+    ['O5', { x: 0.5, y: 1.65 }],
+    ['C6', { x: 1.5, y: 1.0 }],
+    ['C12', { x: -0.5, y: -0.866025 }],
+    ['C11', { x: 0.0, y: -1.732051 }],
+    ['C10', { x: 1.0, y: -1.732051 }],
+    ['N9', { x: 1.5, y: -0.866025 }],
+    ['N13', { x: -1.478148, y: -1.073937 }],
+    ['C14', { x: -1.582676, y: -2.068459 }],
+    ['S16', { x: -0.669131, y: -2.475196 }]
   ]);
 }
 
@@ -1989,6 +2193,14 @@ export function buildTemplateLibrary() {
     createTemplate('bicyclo-2-2-2', 'bridged', 60, createBicyclo222Template(), geometrySpec('normalized-xy', createBicyclo222Geometry(), BRIDGED_VALIDATION)),
     createTemplate('oxabicyclo-2-2-2', 'bridged', 59, createOxabicyclo222Template(), geometrySpec('normalized-xy', createOxabicyclo222Geometry(), BRIDGED_VALIDATION)),
     createTemplate('quinuclidine', 'bridged', 58, createQuinuclidineTemplate(), geometrySpec('normalized-xy', createQuinuclidineGeometry(), BRIDGED_VALIDATION)),
+    createTemplate('quinuclidinium-oxygen-exit', 'bridged', 57.95, createQuinuclidiniumTemplate(), geometrySpec('normalized-xy', createQuinuclidiniumGeometry(), BRIDGED_VALIDATION), {
+      matchContext: {
+        exocyclicNeighbors: [
+          { templateAtomId: 'C3', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 }
+        ]
+      }
+    }),
+    createTemplate('quinuclidinium', 'bridged', 57.9, createQuinuclidiniumTemplate(), geometrySpec('normalized-xy', createQuinuclidiniumGeometry(), BRIDGED_VALIDATION)),
     createTemplate('tropane', 'bridged', 57, createTropaneTemplate(), geometrySpec('normalized-xy', createTropaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('cubane', 'bridged', 55, createCubaneTemplate(), geometrySpec('normalized-xy', createCubaneGeometry(), BRIDGED_VALIDATION)),
     createTemplate('oxabicyclo-3-1-1', 'bridged', 54, createOxabicyclo311Template(), geometrySpec('normalized-xy', createOxabicyclo311Geometry(), OXABICYCLO311_VALIDATION)),
@@ -2037,6 +2249,67 @@ export function buildTemplateLibrary() {
       }
     ),
     createTemplate(
+      'azabicyclo-ketone-oxadiazole-core',
+      'bridged',
+      53.875,
+      createAzabicycloKetoneOxadiazoleCoreTemplate(),
+      geometrySpec('normalized-xy', createAzabicycloKetoneOxadiazoleCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C2', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C8', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'cyanoacyl-azabicyclo-core',
+      'bridged',
+      53.872,
+      createCyanoacylAzabicycloCoreTemplate(),
+      geometrySpec('normalized-xy', createCyanoacylAzabicycloCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'N5', element: 'C', bondOrder: 1, neighborDegree: 3, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'aminonitrile-acetal-bridged-core',
+      'bridged',
+      53.871,
+      createAminonitrileAcetalBridgedCoreTemplate(),
+      geometrySpec('normalized-xy', createAminonitrileAcetalBridgedCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C7', element: 'C', bondOrder: 1, neighborDegree: 2, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'azabicyclo-nitrile-core',
+      'bridged',
+      53.8705,
+      createAzabicycloNitrileCoreTemplate(),
+      geometrySpec('normalized-xy', createAzabicycloNitrileCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          mappedAtoms: [
+            { templateAtomId: 'N2', element: 'N', charge: 1 }
+          ],
+          exocyclicNeighbors: [
+            { templateAtomId: 'N2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C8', element: 'C', bondOrder: 1, minCount: 2, maxCount: 2 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
       'bridged-decalin-lactam-core',
       'bridged',
       53.87,
@@ -2046,6 +2319,21 @@ export function buildTemplateLibrary() {
         matchContext: {
           exocyclicNeighbors: [
             { templateAtomId: 'C12', element: 'O', bondOrder: 2, minCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'bridged-oxadecalin-core',
+      'bridged',
+      53.86,
+      createBridgedOxadecalinCoreTemplate(),
+      geometrySpec('normalized-xy', createBridgedOxadecalinCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C11', element: 'C', bondOrder: 1, minCount: 2, maxCount: 2 },
+            { templateAtomId: 'C14', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
           ]
         }
       }
@@ -2084,6 +2372,22 @@ export function buildTemplateLibrary() {
           exocyclicNeighbors: [
             { templateAtomId: 'C9', element: 'N', bondOrder: 2, minCount: 1 },
             { templateAtomId: 'C4', element: 'O', bondOrder: 1, minCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'imino-thiazole-oxaza-tricyclo-core',
+      'bridged',
+      53.77,
+      createIminoThiazoleOxazaTricycloCoreTemplate(),
+      geometrySpec('normalized-xy', createIminoThiazoleOxazaTricycloCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C6', element: 'N', bondOrder: 2, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C14', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
           ]
         }
       }

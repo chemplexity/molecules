@@ -2432,8 +2432,9 @@ function compareAngleSets(firstAngleSet, secondAngleSet) {
 
 /**
  * Returns whether a neighbor is a compact terminal substituent root, such as a
- * CF3 or tert-butyl carbon, that should occupy one projected-tetrahedral slot
- * as a single bulky leaf when placed from its parent center.
+ * CF3, tert-butyl carbon, or one-heavy alkoxy root, that should occupy one
+ * projected-tetrahedral slot as a single bulky leaf when placed from its
+ * parent center.
  * @param {object|null} layoutGraph - Layout graph shell.
  * @param {string} centerAtomId - Parent center atom ID.
  * @param {string} atomId - Candidate compact substituent root ID.
@@ -2474,7 +2475,7 @@ function isCompactProjectedTerminalSubstituent(layoutGraph, centerAtomId, atomId
     terminalHeavyLeafCount++;
   }
 
-  return terminalHeavyLeafCount >= 2;
+  return terminalHeavyLeafCount >= 2 || (['O', 'S', 'Se'].includes(atom.element) && terminalHeavyLeafCount === 1);
 }
 
 function isProjectedTetrahedralLeafNeighbor(layoutGraph, centerAtomId, atomId) {

@@ -10,16 +10,24 @@ describe('layout/engine/templates/library', () => {
       'bicyclo-2-2-2',
       'oxabicyclo-2-2-2',
       'quinuclidine',
+      'quinuclidinium-oxygen-exit',
+      'quinuclidinium',
       'tropane',
       'cubane',
       'oxabicyclo-3-1-1',
       'bridged-lactone-core',
       'oxabicyclic-lactone-ammonium-core',
       'oxazabicyclic-lactam-core',
+      'azabicyclo-ketone-oxadiazole-core',
+      'cyanoacyl-azabicyclo-core',
+      'aminonitrile-acetal-bridged-core',
+      'azabicyclo-nitrile-core',
       'bridged-decalin-lactam-core',
+      'bridged-oxadecalin-core',
       'bridged-pyrrolizidine-dione-core',
       'amino-oxaza-tricyclo-core',
       'amino-diaza-tricyclo-core',
+      'imino-thiazole-oxaza-tricyclo-core',
       'spiro-bridged-aza-cage',
       'spiro-bridged-oxetane',
       'sulfonyl-azatricyclo-cage',
@@ -112,6 +120,20 @@ describe('layout/engine/templates/library', () => {
     assert.equal(quinuclidine.bondCount, 9);
     assert.equal(quinuclidine.ringCount, 2);
 
+    const quinuclidiniumOxygenExit = getTemplateById('quinuclidinium-oxygen-exit');
+    assert.equal(quinuclidiniumOxygenExit.family, 'bridged');
+    assert.equal(quinuclidiniumOxygenExit.atomCount, 8);
+    assert.equal(quinuclidiniumOxygenExit.bondCount, 9);
+    assert.equal(quinuclidiniumOxygenExit.ringCount, 2);
+    assert.equal(quinuclidiniumOxygenExit.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C3');
+    assert.equal(quinuclidiniumOxygenExit.matchContext?.exocyclicNeighbors?.[0]?.element, 'O');
+
+    const quinuclidinium = getTemplateById('quinuclidinium');
+    assert.equal(quinuclidinium.family, 'bridged');
+    assert.equal(quinuclidinium.atomCount, 8);
+    assert.equal(quinuclidinium.bondCount, 9);
+    assert.equal(quinuclidinium.ringCount, 2);
+
     const tropane = getTemplateById('tropane');
     assert.equal(tropane.family, 'bridged');
     assert.equal(tropane.atomCount, 8);
@@ -158,6 +180,44 @@ describe('layout/engine/templates/library', () => {
     assert.equal(oxazabicyclicLactam.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C2');
     assert.equal(oxazabicyclicLactam.matchContext?.exocyclicNeighbors?.[1]?.minCount, 2);
 
+    const azabicycloKetoneOxadiazole = getTemplateById('azabicyclo-ketone-oxadiazole-core');
+    assert.equal(azabicycloKetoneOxadiazole.family, 'bridged');
+    assert.equal(azabicycloKetoneOxadiazole.atomCount, 6);
+    assert.equal(azabicycloKetoneOxadiazole.bondCount, 7);
+    assert.equal(azabicycloKetoneOxadiazole.ringCount, 2);
+    assert.equal(azabicycloKetoneOxadiazole.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C2');
+    assert.equal(azabicycloKetoneOxadiazole.matchContext?.exocyclicNeighbors?.[0]?.bondOrder, 2);
+    assert.equal(azabicycloKetoneOxadiazole.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C8');
+    assert.equal(azabicycloKetoneOxadiazole.matchContext?.exocyclicNeighbors?.[1]?.element, 'C');
+    assert.equal(azabicycloKetoneOxadiazole.matchContext?.exocyclicNeighbors?.[1]?.neighborDegree, 3);
+
+    const cyanoacylAzabicyclo = getTemplateById('cyanoacyl-azabicyclo-core');
+    assert.equal(cyanoacylAzabicyclo.family, 'bridged');
+    assert.equal(cyanoacylAzabicyclo.atomCount, 6);
+    assert.equal(cyanoacylAzabicyclo.bondCount, 7);
+    assert.equal(cyanoacylAzabicyclo.ringCount, 2);
+    assert.equal(cyanoacylAzabicyclo.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'N5');
+    assert.equal(cyanoacylAzabicyclo.matchContext?.exocyclicNeighbors?.[0]?.element, 'C');
+    assert.equal(cyanoacylAzabicyclo.matchContext?.exocyclicNeighbors?.[0]?.neighborDegree, 3);
+
+    const aminonitrileAcetalBridged = getTemplateById('aminonitrile-acetal-bridged-core');
+    assert.equal(aminonitrileAcetalBridged.family, 'bridged');
+    assert.equal(aminonitrileAcetalBridged.atomCount, 13);
+    assert.equal(aminonitrileAcetalBridged.bondCount, 15);
+    assert.equal(aminonitrileAcetalBridged.ringCount, 3);
+    assert.equal(aminonitrileAcetalBridged.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C7');
+    assert.equal(aminonitrileAcetalBridged.matchContext?.exocyclicNeighbors?.[0]?.neighborDegree, 2);
+
+    const azabicycloNitrile = getTemplateById('azabicyclo-nitrile-core');
+    assert.equal(azabicycloNitrile.family, 'bridged');
+    assert.equal(azabicycloNitrile.atomCount, 6);
+    assert.equal(azabicycloNitrile.bondCount, 7);
+    assert.equal(azabicycloNitrile.ringCount, 2);
+    assert.equal(azabicycloNitrile.matchContext?.mappedAtoms?.[0]?.templateAtomId, 'N2');
+    assert.equal(azabicycloNitrile.matchContext?.mappedAtoms?.[0]?.charge, 1);
+    assert.equal(azabicycloNitrile.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C8');
+    assert.equal(azabicycloNitrile.matchContext?.exocyclicNeighbors?.[1]?.minCount, 2);
+
     const bridgedDecalinLactam = getTemplateById('bridged-decalin-lactam-core');
     assert.equal(bridgedDecalinLactam.family, 'bridged');
     assert.equal(bridgedDecalinLactam.atomCount, 10);
@@ -165,6 +225,16 @@ describe('layout/engine/templates/library', () => {
     assert.equal(bridgedDecalinLactam.ringCount, 2);
     assert.equal(bridgedDecalinLactam.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C12');
     assert.equal(bridgedDecalinLactam.matchContext?.exocyclicNeighbors?.[0]?.bondOrder, 2);
+
+    const bridgedOxadecalin = getTemplateById('bridged-oxadecalin-core');
+    assert.equal(bridgedOxadecalin.family, 'bridged');
+    assert.equal(bridgedOxadecalin.atomCount, 10);
+    assert.equal(bridgedOxadecalin.bondCount, 11);
+    assert.equal(bridgedOxadecalin.ringCount, 2);
+    assert.equal(bridgedOxadecalin.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C11');
+    assert.equal(bridgedOxadecalin.matchContext?.exocyclicNeighbors?.[0]?.minCount, 2);
+    assert.equal(bridgedOxadecalin.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C14');
+    assert.equal(bridgedOxadecalin.matchContext?.exocyclicNeighbors?.[1]?.maxCount, 1);
 
     const bridgedPyrrolizidineDione = getTemplateById('bridged-pyrrolizidine-dione-core');
     assert.equal(bridgedPyrrolizidineDione.family, 'bridged');
@@ -187,6 +257,15 @@ describe('layout/engine/templates/library', () => {
     assert.equal(aminoDiazaTricyclo.ringCount, 3);
     assert.equal(aminoDiazaTricyclo.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C9');
     assert.equal(aminoDiazaTricyclo.matchContext?.exocyclicNeighbors?.[0]?.bondOrder, 2);
+
+    const iminoThiazoleOxazaTricyclo = getTemplateById('imino-thiazole-oxaza-tricyclo-core');
+    assert.equal(iminoThiazoleOxazaTricyclo.family, 'bridged');
+    assert.equal(iminoThiazoleOxazaTricyclo.atomCount, 13);
+    assert.equal(iminoThiazoleOxazaTricyclo.bondCount, 16);
+    assert.equal(iminoThiazoleOxazaTricyclo.ringCount, 4);
+    assert.equal(iminoThiazoleOxazaTricyclo.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C2');
+    assert.equal(iminoThiazoleOxazaTricyclo.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C6');
+    assert.equal(iminoThiazoleOxazaTricyclo.matchContext?.exocyclicNeighbors?.[1]?.bondOrder, 2);
 
     const spiroBridgedAzaCage = getTemplateById('spiro-bridged-aza-cage');
     assert.equal(spiroBridgedAzaCage.family, 'bridged');

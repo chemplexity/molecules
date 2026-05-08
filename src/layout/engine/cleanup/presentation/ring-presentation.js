@@ -1015,6 +1015,11 @@ function isBetterPresentationState(layoutGraph, candidateState, incumbentState, 
   if (!incumbentState) {
     return true;
   }
+  const terminalMultipleBondLeafFanImproves =
+    candidateState.terminalMultipleBondLeafFanMaxPenalty
+      < incumbentState.terminalMultipleBondLeafFanMaxPenalty - PRESENTATION_NEED_EPSILON
+    && candidateState.terminalMultipleBondLeafFanPenalty
+      < incumbentState.terminalMultipleBondLeafFanPenalty - PRESENTATION_NEED_EPSILON;
   if (
     candidateState.smallRingExteriorFanExactPenalty
       > incumbentState.smallRingExteriorFanExactPenalty + PRESENTATION_NEED_EPSILON
@@ -1033,6 +1038,7 @@ function isBetterPresentationState(layoutGraph, candidateState, incumbentState, 
   if (
     incumbentState.trigonalDistortionPenalty <= EXACT_TRIGONAL_PRESENTATION_EPSILON
     && candidateState.trigonalDistortionPenalty > EXACT_TRIGONAL_PRESENTATION_EPSILON
+    && !terminalMultipleBondLeafFanImproves
   ) {
     return false;
   }
@@ -1041,6 +1047,7 @@ function isBetterPresentationState(layoutGraph, candidateState, incumbentState, 
       < incumbentState.terminalCationRingProximityPenalty - PRESENTATION_NEED_EPSILON;
   if (
     !terminalCationImproves
+    && !terminalMultipleBondLeafFanImproves
     && maxRegressionFromExactTrigonalCenters(layoutGraph, incumbentState.coords, candidateState.coords)
       > EXACT_TRIGONAL_PRESENTATION_EPSILON
   ) {

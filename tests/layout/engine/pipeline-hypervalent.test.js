@@ -163,6 +163,28 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     }
   });
 
+  it('keeps aryl nitro oxo leaves trigonal when a neighboring carbonyl blocks the exact slot', () => {
+    const result = runPipeline(
+      parseSMILES('CC(=O)C1=CC=CC(=C1N(CC1=CC=C(C=C1)C1=CC=CC=C1C1=NN=NN1CC1=CC=CC=C1)C(=O)OC(C)(C)C)N(=O)=O'),
+      {
+        suppressH: true,
+        auditTelemetry: true
+      }
+    );
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assertBondAngle(result, 'C8', 'N43', 'O44', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'C8', 'N43', 'O45', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'O44', 'N43', 'O45', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'N10', 'C36', 'O37', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'N10', 'C36', 'O38', (2 * Math.PI) / 3);
+    assertBondAngle(result, 'O37', 'C36', 'O38', (2 * Math.PI) / 3);
+    assert.ok(measureTerminalMultipleBondLeafFanPenalty(result.layoutGraph, result.coords).maxDeviation < 0.65);
+  });
+
   it('orthogonalizes monoxo phosphonate leaf ligands in mixed fused layouts', () => {
     const result = runPipeline(parseSMILES('OC(CC1=CC(=CC=C1)C1=CC=CC2=C1OC1=C2C=CC=C1)(P(O)(O)=O)P(O)(O)=O'), {
       suppressH: true,
@@ -415,6 +437,29 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertOppositePair(result, 'S9', 'O10', 'O11');
     assert.ok(measureBondAngle(result, 'C7', 'S9', 'O10') > Math.PI / 4);
     assert.ok(measureBondAngle(result, 'C12', 'S9', 'O10') > Math.PI / 4);
+  });
+
+  it('keeps crowded bridged aryl sulfones nearly orthogonal without stacking an oxo onto the cage', () => {
+    const result = runPipeline(parseSMILES('COC1=CC=C(Cl)C=C1CC1CN2C(=O)CC2(C1=O)S(=O)(=O)C1=CC(=CC=C1OC)C(F)(F)F'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.ok(result.metadata.policy.postCleanupHooks.includes('hypervalent-angle-tidy'));
+    assert.equal(result.metadata.cleanupTelemetry.selectedStageCategory, 'specialist');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['S20']) }) < (Math.PI / 12) ** 2);
+    assertOppositePair(result, 'S20', 'C17', 'C23');
+    assert.ok(measureBondAngle(result, 'O21', 'S20', 'O22') > Math.PI - 1e-6);
+    assert.ok(Math.abs(measureBondAngle(result, 'C17', 'S20', 'O21') - Math.PI / 2) < Math.PI / 32);
+    assert.ok(Math.abs(measureBondAngle(result, 'C17', 'S20', 'O22') - Math.PI / 2) < Math.PI / 32);
+    assert.ok(Math.abs(measureBondAngle(result, 'C23', 'S20', 'O21') - Math.PI / 2) < Math.PI / 32);
+    assert.ok(Math.abs(measureBondAngle(result, 'C23', 'S20', 'O22') - Math.PI / 2) < Math.PI / 32);
+    assert.ok(distance(result.coords.get('C16'), result.coords.get('O22')) > result.layoutGraph.options.bondLength * 0.55);
   });
 
   it('uses the exact sulfone cross when one ring-linked aryl side can rotate cleanly', () => {

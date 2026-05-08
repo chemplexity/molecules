@@ -516,6 +516,82 @@ describe('layout/engine/families/bridged', () => {
     );
   });
 
+  it('uses a quinuclidinium oxygen-exit template so charged six-rings stay structured', () => {
+    const smiles = 'NC(=O)C[N+]12CCC(CC1)C(C2)OC(=O)C1(CCCCCC1)C1=CC=CC=C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: 'quinuclidinium-oxygen-exit'
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const assertQuinuclidiniumRings = (coords, label) => {
+      for (const ring of rings) {
+        const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
+        assert.ok(
+          Math.min(...angles) > 75,
+          `expected ${label} quinuclidinium ring to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+        );
+        assert.ok(
+          Math.max(...angles) < 160,
+          `expected ${label} quinuclidinium ring to avoid flattened corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+        );
+      }
+    };
+
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertQuinuclidiniumRings(result.coords, 'template layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assertQuinuclidiniumRings(pipelineResult.coords, 'pipeline layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
+  });
+
+  it('uses a bridged oxadecalin template so substituted ether cages stay open', () => {
+    const smiles = 'CC1CC2COC(C)C(C1)C(C)(C)C2CCO';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: 'bridged-oxadecalin-core'
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const assertOxadecalinRings = (coords, label) => {
+      for (const ring of rings) {
+        const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
+        assert.ok(
+          Math.min(...angles) > 105,
+          `expected ${label} oxadecalin ring to avoid collapsed corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+        );
+        assert.ok(
+          Math.max(...angles) < 155,
+          `expected ${label} oxadecalin ring to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+        );
+      }
+    };
+
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertOxadecalinRings(result.coords, 'template layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.severeOverlapCount, 0);
+    assert.equal(pipelineResult.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(pipelineResult.metadata.audit.fallback.mode, null);
+    assertOxadecalinRings(pipelineResult.coords, 'pipeline layout');
+  });
+
   it('keeps long theta-like bridged ring paths separated from exocyclic substituents', () => {
     const smiles = 'CCOC(C)(C)C1NCC2OCC1NC(=O)O2';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

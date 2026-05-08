@@ -375,6 +375,11 @@ export function buildCleanupStageGraph(context) {
     if (!auditCountsDoNotWorsen(candidate.audit, incumbent?.audit)) {
       return false;
     }
+    const terminalMultipleBondLeafFanImproves =
+      (candidate.terminalMultipleBondLeafFanMaxPenalty ?? Number.POSITIVE_INFINITY)
+        < (incumbent.terminalMultipleBondLeafFanMaxPenalty ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON
+      && (candidate.terminalMultipleBondLeafFanPenalty ?? Number.POSITIVE_INFINITY)
+        < (incumbent.terminalMultipleBondLeafFanPenalty ?? Number.POSITIVE_INFINITY) - PRESENTATION_METRIC_EPSILON;
     if (
       (candidate.omittedHydrogenTrigonalPenalty ?? 0)
         > (incumbent.omittedHydrogenTrigonalPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
@@ -384,6 +389,7 @@ export function buildCleanupStageGraph(context) {
     if (
       (candidate.trigonalDistortionPenalty ?? 0)
         > (incumbent.trigonalDistortionPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+      && !terminalMultipleBondLeafFanImproves
     ) {
       return false;
     }
@@ -446,6 +452,14 @@ export function buildCleanupStageGraph(context) {
   };
   const ringTerminalRootExactComparator = (candidate, incumbent) => {
     if (worsensHypervalentDeviation(candidate, incumbent)) {
+      return false;
+    }
+    if (
+      (candidate.terminalMultipleBondLeafFanMaxPenalty ?? 0)
+        > (incumbent?.terminalMultipleBondLeafFanMaxPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+      || (candidate.terminalMultipleBondLeafFanPenalty ?? 0)
+        > (incumbent?.terminalMultipleBondLeafFanPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+    ) {
       return false;
     }
     return auditCountsDoNotWorsen(candidate.audit, incumbent?.audit);

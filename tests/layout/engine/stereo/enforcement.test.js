@@ -11,6 +11,7 @@ import { layoutSupportedComponents } from '../../../../src/layout/engine/placeme
 import { runUnifiedCleanup } from '../../../../src/layout/engine/cleanup/unified-cleanup.js';
 import { applyLabelClearance } from '../../../../src/layout/engine/cleanup/label-clearance.js';
 import { tidySymmetry } from '../../../../src/layout/engine/cleanup/symmetry-tidy.js';
+import { findSevereOverlaps } from '../../../../src/layout/engine/audit/invariants.js';
 import { inspectEZStereo } from '../../../../src/layout/engine/stereo/ez.js';
 import { enforceAcyclicEZStereo } from '../../../../src/layout/engine/stereo/enforcement.js';
 
@@ -114,5 +115,29 @@ describe('layout/engine/stereo/enforcement', () => {
     assert.equal(after.unsupportedCheckCount, 1);
     assert.equal(after.checks[0].actual, 'Z');
     assert.equal(after.checks[0].supported, false);
+  });
+
+  it('chooses an overlap-free E/Z rescue for crowded styryl fused-ring systems', () => {
+    const smiles = String.raw`COc1c(O)ccc2O\C(=C/c3cccc(C)c3)\c4c(ccc5NC(C)(C)C=C(C)c45)c12`;
+    const { graph, coords, bondLength } = _preStereoStageFor(smiles);
+    const before = inspectEZStereo(graph, coords);
+    const enforced = enforceAcyclicEZStereo(graph, coords, { bondLength });
+    const after = inspectEZStereo(graph, enforced.coords);
+    const pipelineResult = runPipeline(parseSMILES(smiles), { suppressH: true });
+
+    assert.equal(before.violationCount, 1);
+    assert.equal(findSevereOverlaps(graph, coords, bondLength).length, 0);
+    assert.ok(enforced.reflections > 0);
+    assert.equal(after.violationCount, 0);
+    assert.equal(findSevereOverlaps(graph, enforced.coords, bondLength).length, 0);
+    assert.equal(pipelineResult.metadata.audit.severeOverlapCount, 0);
+    assert.equal(pipelineResult.metadata.stereo.ezViolationCount, 0);
+    assert.ok(
+      Math.hypot(
+        enforced.coords.get('C14').x - enforced.coords.get('C28').x,
+        enforced.coords.get('C14').y - enforced.coords.get('C28').y
+      ) > bondLength,
+      'expected the styryl phenyl ring to avoid stacking C14 onto the fused core C28'
+    );
   });
 });

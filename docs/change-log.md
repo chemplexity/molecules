@@ -1,7 +1,26 @@
 # Change Log
 
+## 2026-05-08
+
+- Let exact aryl nitro fans displace a blocking terminal carbonyl leaf instead of bunching both oxo ligands into one slot.
+
+## 2026-05-07
+
+- Add an imino thiazole oxaza tricyclo template so compact heteroaryl cages keep open fused lanes.
+- Snap small attached-ring divalent linkers after mixed root retry so peptide-like phenyl methylene bends keep exact 120-degree continuations.
+- Add an azabicyclo nitrile template so compact charged cages avoid stretched bridged fallback bonds.
+- Normalize conjugated acyclic heteroatom backbone bends so ester-like chains keep planar 120-degree turns.
+- Add an aminonitrile acetal-bridged template so heteroaryl-fused compact cages keep structured saturated and OCO bridge rings.
+- Add a cyanoacyl azabicyclo bridged template so compact N-acyl cages avoid crossed cap-ring fallback geometry.
+- Add an azabicyclo ketone oxadiazole bridged template so compact theta cages keep separated ring lanes instead of flattening the shared path.
+- Let direct sulfone oxo ligands make a tiny overlap-gated paired relief bend after exact-preserving cleanup fails, keeping crowded bridged aryl sulfones nearly orthogonal without stacking an oxo onto the cage.
+
 ## 2026-05-06
 
+- Make alkene E/Z rescue overlap-aware so crowded styryl fused-ring systems keep stereo without stacking the aryl ring onto the core.
+- Treat one-heavy alkoxy roots as compact projected-tetrahedral slot occupants so crowded diaryl centers keep four clean C3 exits.
+- Add a bridged oxadecalin template so substituted compact ether cages use structured stacked theta rings.
+- Add charged quinuclidinium templates so aza-bicyclo cages avoid collapsed fallback geometry.
 - Add a hydroxy alkyl bicyclohexene template so compact bicyclic alcohols keep structured five-member rings.
 - Add a sulfonyl cyclopentenyl azocane template so compact sulfone-fused cages keep structured five-member rings.
 - Pin terminal chlorophenyl C29 angles on fused tricyclic scaffolds.

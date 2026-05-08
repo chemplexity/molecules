@@ -127,12 +127,12 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'COc1c(O)ccc2O\\C(=C/c3cccc(C)c3)\\c4c(ccc5NC(C)(C)C=C(C)c45)c12',
     expected: {
       primaryFamily: 'fused',
-      maxSevereOverlapCount: 3,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
       maxBondLengthDeviation: 1e-6,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     }
   },
   {
@@ -142,12 +142,12 @@ export const AUDIT_CORPUS = Object.freeze([
     smiles: 'CC1=CC(C)(C)Nc2ccc3c4cc(F)ccc4O\\C(=C/c5ccncc5)\\c3c12',
     expected: {
       primaryFamily: 'fused',
-      maxSevereOverlapCount: 3,
+      maxSevereOverlapCount: 0,
       maxBondLengthFailureCount: 0,
       maxBondLengthDeviation: 1e-6,
       maxCollapsedMacrocycleCount: 0,
       stereoContradiction: false,
-      fallbackMode: 'generic-scaffold'
+      fallbackMode: null
     }
   },
   {

@@ -7970,6 +7970,7 @@ function fusedCyclopropaneCapAuditDoesNotRegress(candidateAudit, incumbentAudit)
   }
   return (
     candidateAudit.severeOverlapCount <= incumbentAudit.severeOverlapCount
+    && (candidateAudit.visibleHeavyBondCrossingCount ?? 0) <= (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)
     && candidateAudit.bondLengthFailureCount <= incumbentAudit.bondLengthFailureCount
     && candidateAudit.collapsedMacrocycleCount <= incumbentAudit.collapsedMacrocycleCount
     && candidateAudit.ringSubstituentReadabilityFailureCount <= incumbentAudit.ringSubstituentReadabilityFailureCount
@@ -10367,6 +10368,181 @@ function attachedRingDivalentContinuationDeviation(coords, descriptor) {
       angleOf(sub(rootPosition, centerPosition))
     ) - EXACT_TRIGONAL_CONTINUATION_ANGLE
   );
+}
+
+/**
+ * Builds a local candidate that snaps a small attached-ring side back onto one
+ * exact 120-degree divalent continuation slot.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{centerAtomId: string, parentAtomId: string, rootAtomId: string, subtreeAtomIds: string[]}} descriptor - Divalent descriptor.
+ * @param {number} targetRootAngle - Desired center-to-root angle.
+ * @returns {Map<string, {x: number, y: number}>|null} Candidate coordinates, or `null` when already exact.
+ */
+function buildAttachedRingDivalentContinuationSnapCandidate(coords, descriptor, targetRootAngle) {
+  const centerPosition = coords.get(descriptor.centerAtomId);
+  const rootPosition = coords.get(descriptor.rootAtomId);
+  if (!centerPosition || !rootPosition) {
+    return null;
+  }
+
+  const currentRootAngle = angleOf(sub(rootPosition, centerPosition));
+  const rotationAngle = wrapAngle(targetRootAngle - currentRootAngle);
+  if (Math.abs(rotationAngle) <= 1e-9) {
+    return null;
+  }
+
+  const candidateCoords = new Map(coords);
+  for (const atomId of descriptor.subtreeAtomIds) {
+    if (atomId === descriptor.centerAtomId) {
+      continue;
+    }
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, add(centerPosition, rotate(sub(position, centerPosition), rotationAngle)));
+  }
+  return candidateCoords;
+}
+
+/**
+ * Scores one attached-ring divalent-continuation snap candidate.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {Map<string, 'planar'|'bridged'>} bondValidationClasses - Bond validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{audit: object, divalent: object, trigonal: object, threeHeavy: object, readability: object, layoutCost: number}} Candidate score.
+ */
+function scoreAttachedRingDivalentContinuationSnap(layoutGraph, coords, bondValidationClasses, bondLength) {
+  return {
+    audit: auditLayout(layoutGraph, coords, {
+      bondLength,
+      bondValidationClasses
+    }),
+    divalent: measureDivalentContinuationDistortion(layoutGraph, coords),
+    trigonal: measureTrigonalDistortion(layoutGraph, coords),
+    threeHeavy: measureThreeHeavyContinuationDistortion(layoutGraph, coords),
+    readability: measureRingSubstituentReadability(layoutGraph, coords),
+    layoutCost: measureLayoutCost(layoutGraph, coords, bondLength)
+  };
+}
+
+function attachedRingDivalentContinuationSnapCandidateIsAcceptable(candidateScore, baseScore) {
+  return (
+    candidateScore.audit.severeOverlapCount <= baseScore.audit.severeOverlapCount
+    && (candidateScore.audit.visibleHeavyBondCrossingCount ?? 0) <= (baseScore.audit.visibleHeavyBondCrossingCount ?? 0)
+    && candidateScore.audit.labelOverlapCount <= baseScore.audit.labelOverlapCount
+    && candidateScore.audit.bondLengthFailureCount <= baseScore.audit.bondLengthFailureCount
+    && candidateScore.audit.ringSubstituentReadabilityFailureCount <= baseScore.audit.ringSubstituentReadabilityFailureCount
+    && candidateScore.audit.inwardRingSubstituentCount <= baseScore.audit.inwardRingSubstituentCount
+    && candidateScore.audit.outwardAxisRingSubstituentFailureCount <= baseScore.audit.outwardAxisRingSubstituentFailureCount
+    && candidateScore.readability.failingSubstituentCount <= baseScore.readability.failingSubstituentCount
+    && candidateScore.readability.inwardSubstituentCount <= baseScore.readability.inwardSubstituentCount
+    && candidateScore.readability.outwardAxisFailureCount <= baseScore.readability.outwardAxisFailureCount
+    && candidateScore.trigonal.totalDeviation <= baseScore.trigonal.totalDeviation + IMPROVEMENT_EPSILON
+    && candidateScore.threeHeavy.totalDeviation <= baseScore.threeHeavy.totalDeviation + IMPROVEMENT_EPSILON
+    && candidateScore.divalent.maxDeviation < baseScore.divalent.maxDeviation - (Math.PI / 180) ** 2
+  );
+}
+
+function compareAttachedRingDivalentContinuationSnapScores(candidateScore, incumbentScore) {
+  if (Math.abs(candidateScore.divalent.maxDeviation - incumbentScore.divalent.maxDeviation) > IMPROVEMENT_EPSILON) {
+    return candidateScore.divalent.maxDeviation - incumbentScore.divalent.maxDeviation;
+  }
+  if (Math.abs(candidateScore.divalent.totalDeviation - incumbentScore.divalent.totalDeviation) > IMPROVEMENT_EPSILON) {
+    return candidateScore.divalent.totalDeviation - incumbentScore.divalent.totalDeviation;
+  }
+  if (candidateScore.audit.severeOverlapCount !== incumbentScore.audit.severeOverlapCount) {
+    return candidateScore.audit.severeOverlapCount - incumbentScore.audit.severeOverlapCount;
+  }
+  if ((candidateScore.audit.visibleHeavyBondCrossingCount ?? 0) !== (incumbentScore.audit.visibleHeavyBondCrossingCount ?? 0)) {
+    return (candidateScore.audit.visibleHeavyBondCrossingCount ?? 0) - (incumbentScore.audit.visibleHeavyBondCrossingCount ?? 0);
+  }
+  if (candidateScore.audit.ringSubstituentReadabilityFailureCount !== incumbentScore.audit.ringSubstituentReadabilityFailureCount) {
+    return candidateScore.audit.ringSubstituentReadabilityFailureCount - incumbentScore.audit.ringSubstituentReadabilityFailureCount;
+  }
+  if (Math.abs(candidateScore.layoutCost - incumbentScore.layoutCost) > IMPROVEMENT_EPSILON) {
+    return candidateScore.layoutCost - incumbentScore.layoutCost;
+  }
+  return 0;
+}
+
+/**
+ * Snaps small attached-ring divalent linkers back to their exact 120-degree
+ * continuation when doing so does not worsen overlaps, ring readability, or
+ * other exact local fan metrics.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {Map<string, 'planar'|'bridged'>} bondValidationClasses - Bond validation classes.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean}} Whether coordinates changed.
+ */
+function snapAttachedRingDivalentContinuations(layoutGraph, coords, bondValidationClasses, bondLength) {
+  let changed = false;
+  const centerAtomIds = [...coords.keys()]
+    .filter(atomId => layoutGraph.atoms.get(atomId)?.element !== 'H')
+    .sort((firstAtomId, secondAtomId) => compareCanonicalIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank));
+
+  for (const centerAtomId of centerAtomIds) {
+    const neighborIds = visibleHeavySingleCovalentNeighborIds(layoutGraph, coords, centerAtomId);
+    if (neighborIds.length !== 2) {
+      continue;
+    }
+
+    let bestCoords = null;
+    let bestScore = null;
+    const baseScore = scoreAttachedRingDivalentContinuationSnap(layoutGraph, coords, bondValidationClasses, bondLength);
+    if (baseScore.divalent.maxDeviation <= (Math.PI / 180) ** 2) {
+      continue;
+    }
+
+    for (const parentAtomId of neighborIds) {
+      const descriptor = describeAttachedRingDivalentContinuation(
+        layoutGraph,
+        coords,
+        centerAtomId,
+        parentAtomId,
+        new Set()
+      );
+      if (!descriptor || attachedRingDivalentContinuationDeviation(coords, descriptor) <= Math.PI / 180) {
+        continue;
+      }
+
+      const centerPosition = coords.get(descriptor.centerAtomId);
+      const parentPosition = coords.get(descriptor.parentAtomId);
+      if (!centerPosition || !parentPosition) {
+        continue;
+      }
+      const parentAngle = angleOf(sub(parentPosition, centerPosition));
+      for (const targetRootAngle of exactContinuationAngles(parentAngle, EXACT_TRIGONAL_CONTINUATION_ANGLE)) {
+        const candidateCoords = buildAttachedRingDivalentContinuationSnapCandidate(coords, descriptor, targetRootAngle);
+        if (!candidateCoords) {
+          continue;
+        }
+        const candidateScore = scoreAttachedRingDivalentContinuationSnap(
+          layoutGraph,
+          candidateCoords,
+          bondValidationClasses,
+          bondLength
+        );
+        if (
+          !attachedRingDivalentContinuationSnapCandidateIsAcceptable(candidateScore, baseScore)
+          || (bestScore && compareAttachedRingDivalentContinuationSnapScores(candidateScore, bestScore) >= 0)
+        ) {
+          continue;
+        }
+        bestCoords = candidateCoords;
+        bestScore = candidateScore;
+      }
+    }
+
+    if (bestCoords) {
+      overwriteCoordMap(coords, bestCoords);
+      changed = true;
+    }
+  }
+
+  return { changed };
 }
 
 /**
@@ -19941,6 +20117,15 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
     bondLength
   );
   if (bridgeheadTerminalCarbonFanRescue.changed) {
+    markMixedBranchPlacementContextDirty(state);
+  }
+  const attachedRingDivalentContinuationSnap = snapAttachedRingDivalentContinuations(
+    layoutGraph,
+    coords,
+    bondValidationClasses,
+    bondLength
+  );
+  if (attachedRingDivalentContinuationSnap.changed) {
     markMixedBranchPlacementContextDirty(state);
   }
   for (const atomId of nonRingAtomIds) {
