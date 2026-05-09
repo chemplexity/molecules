@@ -131,6 +131,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the hydroxy oxazabicyclic lactam template for compact alcohol cages', () => {
+    const graph = createLayoutGraph(parseSMILES('OC1C2CNC(=O)C1O2'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'hydroxy-oxazabicyclic-lactam-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the azabicyclo ketone oxadiazole template for compact theta cages', () => {
     const graph = createLayoutGraph(parseSMILES('O=C1C2C[NH2+]C1C2C1=NON=C1'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);
@@ -152,6 +160,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(plan.rootScaffold.family, 'bridged');
     assert.equal(plan.rootScaffold.templateId, 'aminonitrile-acetal-bridged-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the cyano formyl acetal bridged template for compact saturated acetal cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1CC2CC1(C#N)C1(COC(CO2)O1)C=O'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'cyano-formyl-acetal-bridged-core');
     assert.equal(plan.mixedMode, true);
   });
 
@@ -179,11 +195,27 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the acetal amino decalin template for ester-substituted tricyclic cages', () => {
+    const graph = createLayoutGraph(parseSMILES('COC(OC)[C@@]12CC[C@@H]3CCCC3(C1)[C@@H](N[C@@H]2C(=O)OC)C(=O)OC'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'acetal-amino-decalin-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the amino oxaza tricyclo template for compact cyclopropylamine-fused cages', () => {
     const graph = createLayoutGraph(parseSMILES('CC1=C2C(OC1)C1(N)C3NC3C2CC1N'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);
     assert.equal(plan.rootScaffold.family, 'bridged');
     assert.equal(plan.rootScaffold.templateId, 'amino-oxaza-tricyclo-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
+  it('uses the aza-oxa cyclopropyl oxetane template for compact tetracyclic cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CCCC1C2C3N2CC(O)C32OCC12'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'aza-oxa-cyclopropyl-oxetane-core');
     assert.equal(plan.mixedMode, true);
   });
 
@@ -346,6 +378,17 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.rootScaffold.family, 'macrocycle');
     assert.equal(plan.rootScaffold.templateId, 'porphine');
     assert.equal(plan.mixedMode, false);
+  });
+
+  it('uses the trans-polyene macrolide template for fused E-alkene macrolides', () => {
+    const graph = createLayoutGraph(
+      parseSMILES(String.raw`CC(C)[C@H]1OC(=O)C2=CCCN2C(=O)C2=COC(=N2)CC(=O)C[C@H](O)\C=C(/C)\C=C\CNC(=O)\C=C\[C@H]1C`),
+      { suppressH: true }
+    );
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'macrocycle');
+    assert.equal(plan.rootScaffold.templateId, 'trans-polyene-macrolide');
+    assert.equal(plan.mixedMode, true);
   });
 
   it('falls back to an acyclic scaffold when the component is ring-free', () => {

@@ -21,6 +21,7 @@ import {
   hasRingPerimeterCorrectionNeed,
   runRingPerimeterCorrection
 } from '../ring-perimeter-correction.js';
+import { runUnifiedCleanup } from '../unified-cleanup.js';
 
 const SPECIALIST_DEFINITIONS = new Map([
   [
@@ -62,8 +63,28 @@ const SPECIALIST_DEFINITIONS = new Map([
       shouldRun(layoutGraph, coords) {
         return hasHypervalentAngleTidyNeed(layoutGraph, coords);
       },
-      run(layoutGraph, coords) {
-        return runHypervalentAngleTidy(layoutGraph, coords);
+      run(layoutGraph, coords, options) {
+        const result = runHypervalentAngleTidy(layoutGraph, coords);
+        if ((result.nudges ?? 0) <= 0) {
+          return result;
+        }
+        const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+        const cleanup = runUnifiedCleanup(layoutGraph, result.coords, {
+          bondLength,
+          epsilon: bondLength * 0.001,
+          maxPasses: 1,
+          protectBondIntegrity: true,
+          frozenAtomIds: options.frozenAtomIds ?? null,
+          cleanupRigidSubtreesByAtomId: options.cleanupRigidSubtreesByAtomId,
+          protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true
+        });
+        return cleanup.passes > 0
+          ? {
+              ...result,
+              coords: cleanup.coords,
+              cleanupPasses: cleanup.passes
+            }
+          : result;
       }
     }
   ],

@@ -125,12 +125,23 @@ function projectHiddenStereoHydrogens(molecule, bondLength) {
       continue;
     }
     const bond = molecule.getBond(atom.id, parent.id);
-    const knownPositions = parent
+    const knownNeighbors = parent
       .getNeighbors(molecule)
-      .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null)
-      .map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
+      .filter(neighbor => neighbor.id !== atom.id && neighbor.x != null && neighbor.y != null);
+    const knownPositions = knownNeighbors.map(neighbor => ({ x: neighbor.x, y: neighbor.y }));
+    const protectedAtomIds = new Set([atom.id, parent.id, ...knownNeighbors.map(neighbor => neighbor.id)]);
+    const avoidPositions = [...molecule.atoms.values()]
+      .filter(candidateAtom => (
+        !protectedAtomIds.has(candidateAtom.id)
+        && candidateAtom.visible !== false
+        && candidateAtom.x != null
+        && candidateAtom.y != null
+      ))
+      .map(candidateAtom => ({ x: candidateAtom.x, y: candidateAtom.y }));
     const projectedPosition = synthesizeDisplayedStereoHydrogenPosition({ x: parent.x, y: parent.y }, knownPositions, bondLength * 0.75, {
       incidentRingPolygons: incidentRingPolygonsForAtom(molecule, parent.id),
+      avoidPositions,
+      minimumAvoidanceDistance: bondLength * 0.45,
       cardinalAxisSectorTolerance: bond?.properties?.display?.as ? DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE : undefined
     });
     projectedCoords.set(atom.id, projectedPosition);

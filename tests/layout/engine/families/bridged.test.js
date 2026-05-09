@@ -592,6 +592,90 @@ describe('layout/engine/families/bridged', () => {
     assertOxadecalinRings(pipelineResult.coords, 'pipeline layout');
   });
 
+  it('uses an aza-oxa cyclopropyl oxetane template so compact tetracyclic rings stay open', () => {
+    const smiles = 'CCCC1C2C3N2CC(O)C32OCC12';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 4);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: 'aza-oxa-cyclopropyl-oxetane-core'
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const assertOpenCompactCage = (coords, label) => {
+      for (const ring of rings) {
+        const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
+        assert.ok(
+          Math.min(...angles) > 45,
+          `expected ${label} compact tetracyclic ring to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+        );
+        assert.ok(
+          Math.max(...angles) < 150,
+          `expected ${label} compact tetracyclic ring to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+        );
+      }
+    };
+
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertOpenCompactCage(result.coords, 'template layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(graph, result.coords), []);
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.fallback.mode, null);
+    assertOpenCompactCage(pipelineResult.coords, 'pipeline layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
+  });
+
+  it('uses a cyano formyl acetal bridged template so saturated acetal cages stay open', () => {
+    const smiles = 'CC1CC2CC1(C#N)C1(COC(CO2)O1)C=O';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 3);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: 'cyano-formyl-acetal-bridged-core'
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const assertOpenAcetalCage = (coords, label) => {
+      for (const ring of rings) {
+        const isCarbocycle = ring.atomIds.length === 5 && ring.atomIds.includes('C2') && ring.atomIds.includes('C3');
+        const limits = ring.atomIds.length === 8
+          ? { min: 90, max: 160 }
+          : isCarbocycle
+            ? { min: 100, max: 116 }
+            : { min: 90, max: 146 };
+        const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
+        assert.ok(
+          Math.min(...angles) > limits.min,
+          `expected ${label} ring ${ring.id} to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+        );
+        assert.ok(
+          Math.max(...angles) < limits.max,
+          `expected ${label} ring ${ring.id} to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+        );
+      }
+    };
+
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertOpenAcetalCage(result.coords, 'template layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(graph, result.coords), []);
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.fallback.mode, null);
+    assertOpenAcetalCage(pipelineResult.coords, 'pipeline layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
+  });
+
   it('keeps long theta-like bridged ring paths separated from exocyclic substituents', () => {
     const smiles = 'CCOC(C)(C)C1NCC2OCC1NC(=O)O2';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

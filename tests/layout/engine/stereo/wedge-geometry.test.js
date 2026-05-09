@@ -8,7 +8,7 @@ import {
   synthesizeHydrogenPosition
 } from '../../../../src/layout/engine/stereo/wedge-geometry.js';
 import { pointInPolygon } from '../../../../src/layout/engine/geometry/polygon.js';
-import { angleOf, length, sub } from '../../../../src/layout/engine/geometry/vec2.js';
+import { angleOf, distance, length, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 
 describe('layout/engine/stereo/wedge-geometry', () => {
   it('synthesizes a hidden-hydrogen position opposite known substituents', () => {
@@ -194,6 +194,45 @@ describe('layout/engine/stereo/wedge-geometry', () => {
 
     assert.ok(angle > 0.9 && angle < 1.2, `expected bridgehead hydrogen to project into the open upper-right sector, got ${((angle * 180) / Math.PI).toFixed(1)} degrees`);
     assert.ok(sector > 1.5, `expected bridgehead hydrogen to clear existing bonds, got ${((sector * 180) / Math.PI).toFixed(1)} degrees`);
+  });
+
+  it('keeps displayed bridged stereo hydrogens off nearby non-neighbor cage atoms', () => {
+    const center = { x: 6.862249, y: 0.499157 };
+    const c19Position = { x: 7.445423, y: 1.400463 };
+    const projectedPosition = synthesizeDisplayedStereoHydrogenPosition(
+      center,
+      [
+        { x: 6.015113, y: -0.968125 },
+        { x: 8.598911, y: 0.541575 },
+        { x: 6.002431, y: 1.953594 }
+      ],
+      1.125,
+      {
+        incidentRingPolygons: [
+          [
+            { x: 8.598911, y: 0.541575 },
+            center,
+            { x: 6.015113, y: -0.968125 },
+            { x: 7.554398, y: -0.335979 },
+            { x: 8.855028, y: -1.465561 },
+            { x: 9.987574, y: -0.356465 }
+          ],
+          [
+            center,
+            { x: 6.002431, y: 1.953594 },
+            c19Position,
+            { x: 7.554398, y: -0.335979 },
+            { x: 6.015113, y: -0.968125 }
+          ]
+        ],
+        avoidPositions: [c19Position],
+        minimumAvoidanceDistance: 0.675
+      }
+    );
+
+    const projectedAngle = angleOf(sub(projectedPosition, center));
+    assert.ok(projectedAngle > 3.0 || projectedAngle < -3.0, `expected the displayed hydrogen to back out leftward, got ${((projectedAngle * 180) / Math.PI).toFixed(1)} degrees`);
+    assert.ok(distance(projectedPosition, c19Position) > 1.5, 'expected the displayed hydrogen projection to avoid the nearby bridged carbon');
   });
 
   it('snaps display hydrogens to exact cardinal axes when that stays nearly as open', () => {

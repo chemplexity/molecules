@@ -175,6 +175,35 @@ function matchesMappedAtomConstraint(layoutGraph, mapping, constraint) {
 }
 
 /**
+ * Returns whether one mapped-bond constraint is satisfied.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, string>} mapping - Template atom ID to target atom ID mapping.
+ * @param {object} constraint - Mapped-bond constraint descriptor.
+ * @returns {boolean} True when the mapped target bond satisfies the constraint.
+ */
+function matchesMappedBondConstraint(layoutGraph, mapping, constraint) {
+  const [firstTemplateAtomId, secondTemplateAtomId] = constraint.templateAtomIds ?? [];
+  const firstTargetAtomId = mapping.get(firstTemplateAtomId);
+  const secondTargetAtomId = mapping.get(secondTemplateAtomId);
+  if (!firstTargetAtomId || !secondTargetAtomId) {
+    return false;
+  }
+
+  const targetBond = layoutGraph.sourceMolecule.getBond(firstTargetAtomId, secondTargetAtomId);
+  if (!targetBond) {
+    return false;
+  }
+  if (constraint.order != null && (targetBond.properties.order ?? 1) !== constraint.order) {
+    return false;
+  }
+  if (constraint.ez != null && (layoutGraph.sourceMolecule.getEZStereo?.(targetBond.id) ?? null) !== constraint.ez) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * Returns whether a template mapping satisfies any extra template match context.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {string[]} atomIds - Candidate atom IDs.
@@ -185,14 +214,16 @@ function matchesMappedAtomConstraint(layoutGraph, mapping, constraint) {
 function templateMatchesContext(layoutGraph, atomIds, template, mapping) {
   const exocyclicNeighbors = template.matchContext?.exocyclicNeighbors ?? [];
   const mappedAtoms = template.matchContext?.mappedAtoms ?? [];
-  if (exocyclicNeighbors.length === 0 && mappedAtoms.length === 0) {
+  const mappedBonds = template.matchContext?.mappedBonds ?? [];
+  if (exocyclicNeighbors.length === 0 && mappedAtoms.length === 0 && mappedBonds.length === 0) {
     return true;
   }
 
   const candidateAtomIdSet = new Set(atomIds);
   return (
     exocyclicNeighbors.every(constraint => matchesExocyclicNeighborConstraint(layoutGraph, candidateAtomIdSet, mapping, constraint)) &&
-    mappedAtoms.every(constraint => matchesMappedAtomConstraint(layoutGraph, mapping, constraint))
+    mappedAtoms.every(constraint => matchesMappedAtomConstraint(layoutGraph, mapping, constraint)) &&
+    mappedBonds.every(constraint => matchesMappedBondConstraint(layoutGraph, mapping, constraint))
   );
 }
 

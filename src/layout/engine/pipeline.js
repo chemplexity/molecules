@@ -20,6 +20,7 @@ import {
   runRingChainSideBranchExitRetouch,
   runRingChainUnitProjectionRetouch
 } from './cleanup/presentation/ring-chain-unit-projection-retouch.js';
+import { runLargeMoleculeResidualRetouch } from './cleanup/presentation/large-molecule-residual-retouch.js';
 import {
   buildCleanupTelemetry,
   buildStageTelemetryFromCleanupTelemetry,
@@ -1031,6 +1032,29 @@ export function runPipeline(molecule, options = {}) {
       cloneCoords(finalCoords),
       {}
     );
+  }
+  if (placement.placedFamilies.includes('large-molecule') || familySummary.primaryFamily === 'large-molecule') {
+    const largeMoleculeResidualRetouch = runLargeMoleculeResidualRetouch(layoutGraph, finalCoords, {
+      bondLength: normalizedOptions.bondLength
+    });
+    if (largeMoleculeResidualRetouch.changed) {
+      finalCoords = largeMoleculeResidualRetouch.coords;
+      finalCoordsModified = true;
+      onStep?.(
+        'Large Molecule Residual Retouch',
+        'Local branches rotated away from remaining large-molecule overlap, crossing, and angle residuals.',
+        cloneCoords(finalCoords),
+        {
+          movedAtomCount: largeMoleculeResidualRetouch.movedAtomIds.length,
+          angleReliefPasses: largeMoleculeResidualRetouch.angleReliefPasses,
+          finalAnglePolishPasses: largeMoleculeResidualRetouch.finalAnglePolishPasses,
+          severeOverlapCountBefore: largeMoleculeResidualRetouch.severeOverlapCountBefore,
+          severeOverlapCountAfter: largeMoleculeResidualRetouch.severeOverlapCountAfter,
+          visibleHeavyBondCrossingCountBefore: largeMoleculeResidualRetouch.visibleHeavyBondCrossingCountBefore,
+          visibleHeavyBondCrossingCountAfter: largeMoleculeResidualRetouch.visibleHeavyBondCrossingCountAfter
+        }
+      );
+    }
   }
   snapTinyCoordinateNoise(finalCoords);
   onStep?.('Final Result', 'Complete 2D layout with all pipeline optimizations applied.', cloneCoords(finalCoords), { stage: 'complete' });

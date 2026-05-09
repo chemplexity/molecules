@@ -54,10 +54,13 @@ const TERMINAL_MULTIPLE_BOND_LEAF_BACKOFF_ROTATIONS = Object.freeze(
   ])
 );
 const TERMINAL_MULTIPLE_BOND_CENTER_BRANCH_RELIEF_ROTATIONS = Object.freeze(
-  Array.from({ length: 45 }, (_value, index) => index + 1).flatMap(degrees => [
-    -(degrees * Math.PI) / 180,
-    (degrees * Math.PI) / 180
-  ])
+  [
+    0,
+    ...Array.from({ length: 45 }, (_value, index) => index + 1).flatMap(degrees => [
+      -(degrees * Math.PI) / 180,
+      (degrees * Math.PI) / 180
+    ])
+  ]
 );
 const TERMINAL_MULTIPLE_BOND_CENTER_BRANCH_MAX_ANCHOR_DEVIATION = Math.PI / 6;
 const TERMINAL_MULTIPLE_BOND_LEAF_PARTIAL_FAN_FRACTIONS = Object.freeze([
@@ -1619,6 +1622,54 @@ function terminalMultipleBondLeafFanTerminalBlockerReliefTargetPositions(
 
     const blockerRadius = distance(blockerCenterPosition, blockerPosition) || bondLength;
     const blockerAngle = angleOf(sub(blockerPosition, blockerCenterPosition));
+    const blockerAtom = layoutGraph.atoms.get(blockingAtomId);
+    const blockerCenterAtom = layoutGraph.atoms.get(blockerDescriptor.centerAtomId);
+    if (blockerAtom?.element === 'O' && blockerCenterAtom?.element === 'C') {
+      for (const compressionFactor of TERMINAL_MULTIPLE_BOND_LEAF_COMPRESSION_FACTORS) {
+        const compressedRadius = bondLength * compressionFactor;
+        if (compressedRadius >= blockerRadius - TIDY_IMPROVEMENT_EPSILON) {
+          continue;
+        }
+        const candidateBlockerPosition = add(blockerCenterPosition, fromAngle(blockerAngle, compressedRadius));
+        const candidateTargetPositions = new Map(targetPositions);
+        candidateTargetPositions.set(blockingAtomId, candidateBlockerPosition);
+        const candidateCoords = new Map(coords);
+        for (const [atomId, position] of candidateTargetPositions) {
+          candidateCoords.set(atomId, position);
+        }
+
+        const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+        if (audit.ok !== true) {
+          continue;
+        }
+        const fanPenalty = terminalMultipleBondLeafFanPenalty(
+          candidateCoords,
+          descriptor.centerAtomId,
+          descriptor.neighborAtomIds
+        );
+        if (fanPenalty > descriptor.currentPenalty + TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON) {
+          continue;
+        }
+
+        const clearance = terminalMultipleBondLeafReliefClearance(
+          layoutGraph,
+          coords,
+          descriptor,
+          candidateTargetPositions
+        );
+        const candidate = {
+          targetPositions: candidateTargetPositions,
+          audit,
+          fanPenalty,
+          blockerCenterDeviation: 0,
+          clearanceDeficit: Math.max(0, bondLength * TERMINAL_MULTIPLE_BOND_BLOCKER_RELIEF_CLEARANCE_FACTOR - clearance),
+          rotationMagnitude: blockerRadius - compressedRadius
+        };
+        if (isBetterTerminalMultipleBondLeafFanTerminalBlockerReliefCandidate(candidate, bestCandidate)) {
+          bestCandidate = candidate;
+        }
+      }
+    }
     for (const reliefOffset of TERMINAL_HETERO_BLOCKER_RELIEF_OFFSETS) {
       const candidateBlockerPosition = add(blockerCenterPosition, fromAngle(blockerAngle + reliefOffset, blockerRadius));
       const candidateTargetPositions = new Map(targetPositions);
@@ -1679,13 +1730,35 @@ function isBetterTerminalMultipleBondLeafFanCenterBranchReliefCandidate(candidat
   if ((candidate.audit.labelOverlapCount ?? 0) !== (incumbent.audit.labelOverlapCount ?? 0)) {
     return (candidate.audit.labelOverlapCount ?? 0) < (incumbent.audit.labelOverlapCount ?? 0);
   }
-  if (Math.abs(candidate.anchorDeviation - incumbent.anchorDeviation) > TIDY_IMPROVEMENT_EPSILON) {
-    return candidate.anchorDeviation < incumbent.anchorDeviation;
+  if (Math.abs(candidate.maxCenterDeviation - incumbent.maxCenterDeviation) > TIDY_IMPROVEMENT_EPSILON) {
+    return candidate.maxCenterDeviation < incumbent.maxCenterDeviation;
+  }
+  if (Math.abs(candidate.totalCenterDeviation - incumbent.totalCenterDeviation) > TIDY_IMPROVEMENT_EPSILON) {
+    return candidate.totalCenterDeviation < incumbent.totalCenterDeviation;
   }
   if (Math.abs(candidate.clearanceDeficit - incumbent.clearanceDeficit) > TIDY_IMPROVEMENT_EPSILON) {
     return candidate.clearanceDeficit < incumbent.clearanceDeficit;
   }
   return candidate.rotationMagnitude < incumbent.rotationMagnitude - TIDY_IMPROVEMENT_EPSILON;
+}
+
+function terminalMultipleBondLeafFanMovedBlockerMaxDeviation(layoutGraph, coords, descriptor, targetPositions) {
+  const protectedAtomIds = new Set([descriptor.centerAtomId, ...descriptor.neighborAtomIds]);
+  let maxDeviation = 0;
+  for (const atomId of targetPositions.keys()) {
+    if (protectedAtomIds.has(atomId)) {
+      continue;
+    }
+    const blockerDescriptor = terminalMultipleBondBlockerDescriptor(layoutGraph, coords, atomId);
+    if (!blockerDescriptor) {
+      continue;
+    }
+    maxDeviation = Math.max(
+      maxDeviation,
+      threeHeavyCenterMaxDeviation(coords, blockerDescriptor.centerAtomId, blockerDescriptor.heavyNeighborIds)
+    );
+  }
+  return maxDeviation;
 }
 
 function terminalMultipleBondLeafFanCenterBranchReliefTargetPositions(
@@ -1694,6 +1767,7 @@ function terminalMultipleBondLeafFanCenterBranchReliefTargetPositions(
   descriptor,
   targetPositions,
   bondLength,
+  threshold,
   frozenAtomIds
 ) {
   if (descriptor.leafTargets.length !== 2) {
@@ -1756,7 +1830,7 @@ function terminalMultipleBondLeafFanCenterBranchReliefTargetPositions(
       continue;
     }
 
-    const candidateTargetPositions = new Map(targetPositions);
+    let candidateTargetPositions = new Map(targetPositions);
     candidateTargetPositions.set(descriptor.centerAtomId, candidateCenterPosition);
     for (const { leafAtomId, targetAngle } of leafTargets) {
       const leafPosition = coords.get(leafAtomId);
@@ -1771,11 +1845,31 @@ function terminalMultipleBondLeafFanCenterBranchReliefTargetPositions(
       continue;
     }
 
-    const candidateCoords = new Map(coords);
+    let candidateCoords = new Map(coords);
     for (const [atomId, position] of candidateTargetPositions) {
       candidateCoords.set(atomId, position);
     }
-    const audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+    let audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+    if (audit.ok !== true) {
+      const relievedTargetPositions = terminalMultipleBondLeafFanTerminalBlockerReliefTargetPositions(
+        layoutGraph,
+        coords,
+        descriptor,
+        candidateTargetPositions,
+        bondLength,
+        threshold,
+        frozenAtomIds
+      );
+      if (!relievedTargetPositions) {
+        continue;
+      }
+      candidateTargetPositions = relievedTargetPositions;
+      candidateCoords = new Map(coords);
+      for (const [atomId, position] of candidateTargetPositions) {
+        candidateCoords.set(atomId, position);
+      }
+      audit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+    }
     if (audit.ok !== true) {
       continue;
     }
@@ -1791,6 +1885,12 @@ function terminalMultipleBondLeafFanCenterBranchReliefTargetPositions(
     if (fanPenalty > descriptor.currentPenalty + TERMINAL_MULTIPLE_BOND_FAN_IMPROVEMENT_EPSILON) {
       continue;
     }
+    const blockerCenterDeviation = terminalMultipleBondLeafFanMovedBlockerMaxDeviation(
+      layoutGraph,
+      candidateCoords,
+      descriptor,
+      candidateTargetPositions
+    );
 
     const clearance = terminalMultipleBondLeafReliefClearance(
       layoutGraph,
@@ -1802,6 +1902,9 @@ function terminalMultipleBondLeafFanCenterBranchReliefTargetPositions(
       targetPositions: candidateTargetPositions,
       audit,
       anchorDeviation,
+      blockerCenterDeviation,
+      maxCenterDeviation: Math.max(anchorDeviation, blockerCenterDeviation),
+      totalCenterDeviation: anchorDeviation + blockerCenterDeviation,
       clearanceDeficit: Math.max(0, bondLength * TERMINAL_MULTIPLE_BOND_BLOCKER_RELIEF_CLEARANCE_FACTOR - clearance),
       rotationMagnitude: Math.abs(rotationOffset)
     };
@@ -2116,6 +2219,7 @@ export function runTerminalMultipleBondLeafFanTidy(layoutGraph, inputCoords, opt
           descriptor,
           targetPositions,
           bondLength,
+          threshold,
           frozenAtomIds
         );
         const terminalBlockerReliefTargetPositions = centerBranchReliefTargetPositions ?? terminalMultipleBondLeafFanTerminalBlockerReliefTargetPositions(

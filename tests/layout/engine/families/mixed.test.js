@@ -1466,6 +1466,57 @@ describe('layout/engine/families/mixed', () => {
     assertC15Fan(pipelineResult.coords, 'pipeline layout');
   });
 
+  it('balances crowded directly attached polyaryl ring exits without reintroducing overlap', () => {
+    const smiles = 'O(C1=CC=CC=C1)C1=CC=C2C(=C1)C(C1=CC=C3C=CC=CC3=C1)=C1C=CC=CC1=C2C1=CC=CC=C1C1=CC=C(C=C1)C1=CC=CC=C1';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const component = graph.components[0];
+    const plan = buildScaffoldPlan(graph, component);
+    const mixedResult = layoutMixedFamily(graph, component, buildAdjacency(graph, new Set(component.atomIds)), plan, graph.options.bondLength);
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+
+    const assertBalancedPolyarylExits = (layoutGraph, coords, label) => {
+      const c32Deviation = bestLocalRingDeviation(layoutGraph, coords, 'C32', 'C31');
+      const downstreamDeviation = Math.max(
+        bestLocalRingDeviation(layoutGraph, coords, 'C37', 'C38'),
+        bestLocalRingDeviation(layoutGraph, coords, 'C38', 'C37')
+      );
+      const c32FirstAngle = bondAngleAtAtom(coords, 'C32', 'C37', 'C31');
+      const c32SecondAngle = bondAngleAtAtom(coords, 'C32', 'C33', 'C31');
+
+      assert.ok(
+        c32Deviation < Math.PI / 18,
+        `expected ${label} C32 aryl root to stay near the exact local outward axis, got ${((c32Deviation * 180) / Math.PI).toFixed(2)} degrees`
+      );
+      assert.ok(
+        downstreamDeviation < Math.PI / 18,
+        `expected ${label} downstream aryl roots to stay below a 10-degree tradeoff, got ${((downstreamDeviation * 180) / Math.PI).toFixed(2)} degrees`
+      );
+      assert.ok(
+        Math.max(
+          Math.abs(c32FirstAngle - ((2 * Math.PI) / 3)),
+          Math.abs(c32SecondAngle - ((2 * Math.PI) / 3))
+        ) < Math.PI / 18,
+        `expected ${label} C32 fan to remain near 120 degrees, got ${((c32FirstAngle * 180) / Math.PI).toFixed(2)} and ${((c32SecondAngle * 180) / Math.PI).toFixed(2)}`
+      );
+    };
+
+    assert.equal(mixedResult.supported, true);
+    assert.equal(mixedResult.rootRetryUsed, true);
+    assert.ok(
+      ['ring-system:2', 'ring-system:3'].includes(mixedResult.rootScaffoldId),
+      `expected mixed layout to use a polyaryl retry root, got ${mixedResult.rootScaffoldId}`
+    );
+    assertBalancedPolyarylExits(graph, mixedResult.coords, 'mixed layout');
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.severeOverlapCount, 0);
+    assert.equal(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords).length, 0);
+    assertBalancedPolyarylExits(pipelineResult.layoutGraph, pipelineResult.coords, 'pipeline layout');
+  });
+
   it('retries mixed roots when a terminal aromatic methyl exact slot is blocked by a neighboring phenyl', () => {
     const smiles = 'COc1ccc2c(n1)c(C(=O)N3CCNCC3)c(Cc4cccc(F)c4C)n2c5ccccc5';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

@@ -1,8 +1,21 @@
 # Change Log
 
+## 2026-05-09
+
+- Keep app and SVG displayed hidden stereohydrogens from projecting onto nearby bridged cage atoms.
+
 ## 2026-05-08
 
-- Let exact aryl nitro fans displace a blocking terminal carbonyl leaf instead of bunching both oxo ligands into one slot.
+- Balance congested directly attached polyaryl ring exits during mixed placement while preserving overlap-free layouts.
+- Add a trans-polyene macrolide template so fused oxazole/pyrrolidone macrolides keep regular five-member rings while satisfying E alkene geometry.
+- Add a cyano formyl acetal bridged template so compact saturated acetal cages keep both five-member rings open around the OCO bridge.
+- Add an aza-oxa cyclopropyl oxetane bridged template so compact tetracyclic cages keep separated five-ring, cyclopropane, and oxetane lanes.
+- Add a large-molecule residual retouch so block-stitched peptide sidechains rotate out of final local overlap, crossing, and acute-angle knots without stretching backbone bonds, including exact-slot, repaired-candidate, and fine-angle polish for crowded peptide fans.
+- Add an acetal amino decalin bridged template so ester-substituted tricyclic saturated cores keep both the shared six-member bridge and fused C12 cyclopentane regular.
+- Prefer E/Z stereo rescues that preserve exact oxime nitrogen bends, keeping row-228 oxime oxygens off the imine carbon.
+- Add a hydroxy oxazabicyclic lactam template so compact bridged alcohol cages avoid terminal OH/lactam nitrogen overlap.
+- Let linked sugar-ring oxygens claim exact trigonal exits while rotating compact guanidine branches aside.
+- Let exact aryl nitro fans compress a blocking terminal carbonyl bond instead of bunching both oxo ligands into one slot.
 
 ## 2026-05-07
 

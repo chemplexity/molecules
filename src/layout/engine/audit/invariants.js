@@ -533,18 +533,22 @@ function isVisibleLayoutAtom(layoutGraph, atomId) {
   return true;
 }
 
-function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null, queryRadius = 0) {
+function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null, queryRadius = 0, options = {}) {
+  const visibleAtomIds = options.visibleAtomIds ?? null;
   if (atomGrid) {
     const seenPairs = new Set();
     const pairs = [];
 
-    for (const [firstAtomId, firstPosition] of coords) {
-      if (!isVisibleLayoutAtom(layoutGraph, firstAtomId)) {
+    const firstAtomEntries = visibleAtomIds ?? coords;
+    for (const entry of firstAtomEntries) {
+      const firstAtomId = visibleAtomIds ? entry : entry[0];
+      const firstPosition = visibleAtomIds ? coords.get(firstAtomId) : entry[1];
+      if (!firstPosition || (!visibleAtomIds && !isVisibleLayoutAtom(layoutGraph, firstAtomId))) {
         continue;
       }
       const nearbyAtomIds = atomGrid.queryRadius(firstPosition, queryRadius);
       for (const secondAtomId of nearbyAtomIds) {
-        if (secondAtomId === firstAtomId || !isVisibleLayoutAtom(layoutGraph, secondAtomId)) {
+        if (secondAtomId === firstAtomId || (!visibleAtomIds && !isVisibleLayoutAtom(layoutGraph, secondAtomId))) {
           continue;
         }
         const key = atomPairKey(firstAtomId, secondAtomId);
@@ -566,19 +570,19 @@ function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null
     return pairs;
   }
 
-  const atomIds = [...coords.keys()];
+  const atomIds = visibleAtomIds ? [...visibleAtomIds] : [...coords.keys()];
   const bondedPairs = layoutGraph.bondedPairSet;
   const pairs = [];
 
   for (let firstIndex = 0; firstIndex < atomIds.length; firstIndex++) {
     const firstAtomId = atomIds[firstIndex];
-    if (!isVisibleLayoutAtom(layoutGraph, firstAtomId)) {
+    if (!visibleAtomIds && !isVisibleLayoutAtom(layoutGraph, firstAtomId)) {
       continue;
     }
     const firstPosition = coords.get(firstAtomId);
     for (let secondIndex = firstIndex + 1; secondIndex < atomIds.length; secondIndex++) {
       const secondAtomId = atomIds[secondIndex];
-      if (!isVisibleLayoutAtom(layoutGraph, secondAtomId) || bondedPairs.has(atomPairKey(firstAtomId, secondAtomId))) {
+      if ((!visibleAtomIds && !isVisibleLayoutAtom(layoutGraph, secondAtomId)) || bondedPairs.has(atomPairKey(firstAtomId, secondAtomId))) {
         continue;
       }
       const secondPosition = coords.get(secondAtomId);
@@ -597,10 +601,21 @@ function collectNonbondedPairs(layoutGraph, coords, includePair, atomGrid = null
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {number} bondLength - Target bond length.
+ * @param {{visibleAtomIds?: Iterable<string>}} [options] - Optional precomputed visible atom IDs.
  * @returns {AtomGrid} Spatial atom grid.
  */
-export function buildAtomGrid(layoutGraph, coords, bondLength) {
+export function buildAtomGrid(layoutGraph, coords, bondLength, options = {}) {
   const atomGrid = new AtomGrid(bondLength);
+  if (options.visibleAtomIds) {
+    for (const atomId of options.visibleAtomIds) {
+      const position = coords.get(atomId);
+      if (position) {
+        atomGrid.insert(atomId, position);
+      }
+    }
+    return atomGrid;
+  }
+
   for (const [atomId, position] of coords) {
     if (!isVisibleLayoutAtom(layoutGraph, atomId)) {
       continue;
@@ -1618,7 +1633,9 @@ export function countSevereOverlapsWithOverrides(layoutGraph, coords, overridePo
  */
 export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}) {
   const threshold = bondLength * SEVERE_OVERLAP_FACTOR;
-  const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength);
+  const atomGrid = options.atomGrid ?? buildAtomGrid(layoutGraph, coords, bondLength, {
+    visibleAtomIds: options.visibleAtomIds
+  });
   return collectNonbondedPairs(
     layoutGraph,
     coords,
@@ -1628,7 +1645,8 @@ export function findSevereOverlaps(layoutGraph, coords, bondLength, options = {}
       layoutGraph.atoms.get(secondAtomId)?.element !== 'H' &&
       !isAcceptedCompressedTerminalCarbonylLeafOverlap(layoutGraph, coords, firstAtomId, secondAtomId, distance, bondLength),
     atomGrid,
-    threshold
+    threshold,
+    { visibleAtomIds: options.visibleAtomIds }
   );
 }
 

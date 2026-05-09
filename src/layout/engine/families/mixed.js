@@ -224,6 +224,17 @@ const PROJECTED_TETRAHEDRAL_TRIGONAL_RESCUE_EPSILON = 1e-6;
 const DIRECT_ATTACHED_RING_ROOT_REFINEMENT_TRIGGER = Math.PI / 12;
 const DIRECT_ATTACHED_PARENT_EXTERIOR_ROOT_REFINEMENT_TRIGGER = Math.PI / 18;
 const DIRECT_ATTACHED_RING_ROOT_REFINEMENT_MIN_IMPROVEMENT = Math.PI / 36;
+const DIRECT_ATTACHED_AROMATIC_CHAIN_BALANCE_TRIGGER = Math.PI / 18;
+const DIRECT_ATTACHED_AROMATIC_CHAIN_BALANCE_MIN_IMPROVEMENT = Math.PI / 45;
+const DIRECT_ATTACHED_AROMATIC_CHAIN_BALANCE_PRIMARY_FRACTIONS = Object.freeze([1, 0.95, 0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05]);
+const DIRECT_ATTACHED_AROMATIC_CHAIN_BALANCE_DOWNSTREAM_MAX_DEVIATION = Math.PI / 12;
+const DIRECT_ATTACHED_AROMATIC_CHAIN_BALANCE_DOWNSTREAM_OFFSETS = Object.freeze([
+  0,
+  ...[2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30].flatMap(degrees => [
+    -(degrees * Math.PI) / 180,
+    (degrees * Math.PI) / 180
+  ])
+]);
 const TERMINAL_CARBONYL_LEAF_ESCAPE_MAX_TRIGONAL_DEVIATION = Math.PI / 4;
 const TERMINAL_CARBONYL_LEAF_ESCAPE_OFFSETS = Object.freeze([
   ...Array.from({ length: 25 }, (_value, index) => ((12 + index * 2) * Math.PI) / 180),
@@ -290,7 +301,7 @@ const RING_ATTACHED_LINEAR_MULTIPLE_CROWDING_ROTATION_OFFSETS = Object.freeze(
     -(degrees * Math.PI) / 180
   ])
 );
-const RING_ATTACHED_LINEAR_MULTIPLE_CROWDING_BEAM_WIDTH = 10;
+const RING_ATTACHED_LINEAR_MULTIPLE_CROWDING_BEAM_WIDTH = 5;
 const RING_ATTACHED_LINEAR_MULTIPLE_CROWDING_PASSES = 4;
 const RING_ATTACHED_LINEAR_MULTIPLE_MAX_EXTERIOR_PENALTY = 6;
 const TERMINAL_CARBONYL_RING_CONTACT_CENTER_REFINEMENT_THRESHOLD = Math.PI / 6;
@@ -7437,6 +7448,399 @@ function compareDirectAttachedRingRootRefinementScores(candidate, incumbent) {
     return candidate.trigonalTotalDeviation - incumbent.trigonalTotalDeviation;
   }
   return candidate.layoutCost - incumbent.layoutCost;
+}
+
+/**
+ * Returns whether a direct-attached aromatic root can participate in the
+ * congested aryl-chain balance pass.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} parentAtomId - Already placed parent-side atom.
+ * @param {string} attachmentAtomId - Ring-root atom on the movable side.
+ * @returns {boolean} True when the attachment is an aromatic ring-to-ring root.
+ */
+function isDirectAttachedAromaticRingRoot(layoutGraph, parentAtomId, attachmentAtomId) {
+  const attachmentAtom = layoutGraph.atoms.get(attachmentAtomId);
+  return Boolean(
+    attachmentAtom
+    && attachmentAtom.aromatic === true
+    && supportsExactDirectAttachmentChildRingRootOutward(layoutGraph, parentAtomId, attachmentAtomId)
+  );
+}
+
+/**
+ * Collects downstream direct-attached aromatic ring roots inside a movable aryl
+ * branch. These roots can absorb a small rotation when the upstream exact
+ * ring-exit correction would otherwise create overlap.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Set<string>} movableAtomIds - Atom IDs on the movable side.
+ * @param {string} primaryParentAtomId - Parent atom for the upstream root.
+ * @param {string} primaryAttachmentAtomId - Upstream ring-root atom.
+ * @returns {Array<{anchorAtomId: string, rootAtomId: string, rotatedAtomIds: string[]}>} Downstream root descriptors.
+ */
+function directAttachedAromaticChainDownstreamRoots(layoutGraph, movableAtomIds, primaryParentAtomId, primaryAttachmentAtomId) {
+  const descriptors = [];
+  for (const bond of layoutGraph.bonds.values()) {
+    if (
+      !bond
+      || bond.kind !== 'covalent'
+      || bond.inRing
+      || bond.aromatic
+      || (bond.order ?? 1) !== 1
+      || !movableAtomIds.has(bond.a)
+      || !movableAtomIds.has(bond.b)
+    ) {
+      continue;
+    }
+
+    for (const [anchorAtomId, rootAtomId] of [
+      [bond.a, bond.b],
+      [bond.b, bond.a]
+    ]) {
+      if (
+        anchorAtomId === primaryParentAtomId
+        || rootAtomId === primaryAttachmentAtomId
+        || !isDirectAttachedAromaticRingRoot(layoutGraph, anchorAtomId, rootAtomId)
+      ) {
+        continue;
+      }
+
+      const rotatedAtomIds = collectCovalentSubtreeAtomIds(layoutGraph, rootAtomId, anchorAtomId)
+        .filter(atomId => movableAtomIds.has(atomId));
+      if (rotatedAtomIds.length === 0) {
+        continue;
+      }
+      descriptors.push({ anchorAtomId, rootAtomId, rotatedAtomIds });
+    }
+  }
+
+  descriptors.sort((firstDescriptor, secondDescriptor) => (
+    compareCanonicalIds(firstDescriptor.anchorAtomId, secondDescriptor.anchorAtomId, layoutGraph.canonicalAtomRank)
+    || compareCanonicalIds(firstDescriptor.rootAtomId, secondDescriptor.rootAtomId, layoutGraph.canonicalAtomRank)
+  ));
+  return descriptors;
+}
+
+/**
+ * Returns whether the movable side of an aryl-chain correction is a carbocyclic
+ * hydrocarbon aryl block. Heteroatom-rich cases have tighter local fixups
+ * elsewhere; this balance pass is scoped to crowded carbon-only polyaryl
+ * chains where exact root snapping would collide.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Iterable<string>} atomIds - Candidate movable-side atom IDs.
+ * @returns {boolean} True when every heavy atom on the movable side is carbon.
+ */
+function directAttachedAromaticChainHasOnlyCarbonHeavyAtoms(layoutGraph, atomIds) {
+  for (const atomId of atomIds) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (atom && atom.element !== 'H' && atom.element !== 'C') {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Returns whether a direct-attached aryl-chain balance candidate stays within
+ * the public audit envelope of the incumbent mixed placement.
+ * @param {object} candidateAudit - Candidate audit result.
+ * @param {object} baseAudit - Incumbent audit result.
+ * @returns {boolean} True when the candidate does not regress audit counters.
+ */
+function directAttachedAromaticChainAuditDoesNotRegress(candidateAudit, baseAudit) {
+  if (baseAudit.ok === true && candidateAudit.ok !== true) {
+    return false;
+  }
+  return (
+    candidateAudit.severeOverlapCount <= baseAudit.severeOverlapCount
+    && (candidateAudit.visibleHeavyBondCrossingCount ?? 0) <= (baseAudit.visibleHeavyBondCrossingCount ?? 0)
+    && candidateAudit.bondLengthFailureCount <= baseAudit.bondLengthFailureCount
+    && candidateAudit.labelOverlapCount <= baseAudit.labelOverlapCount
+    && candidateAudit.ringSubstituentReadabilityFailureCount <= baseAudit.ringSubstituentReadabilityFailureCount
+    && candidateAudit.inwardRingSubstituentCount <= baseAudit.inwardRingSubstituentCount
+    && candidateAudit.outwardAxisRingSubstituentFailureCount <= baseAudit.outwardAxisRingSubstituentFailureCount
+  );
+}
+
+/**
+ * Scores a direct-attached aryl-chain balance candidate by exact ring-exit
+ * quality first, then the normal layout cost as a deterministic tie-break.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
+ * @param {number} bondLength - Target bond length.
+ * @param {{parentAtomId: string, attachmentAtomId: string}|null} [primaryRoot] - Optional root being straightened.
+ * @param {Array<{anchorAtomId: string, rootAtomId: string}>} [downstreamRoots] - Downstream roots allowed to absorb rotation.
+ * @returns {{balancedMaxDeviation: number, primaryDeviation: number, downstreamMaxDeviation: number, maxDeviation: number, totalDeviation: number, layoutCost: number}} Candidate score.
+ */
+function directAttachedAromaticChainBalanceScore(layoutGraph, coords, bondLength, primaryRoot = null, downstreamRoots = []) {
+  const exactRingExitPenalty = measureMixedRootExactRingExitPenalty(layoutGraph, coords);
+  const primaryDeviation = primaryRoot
+    ? directAttachedRingRootOutwardDeviation(
+        layoutGraph,
+        coords,
+        primaryRoot.parentAtomId,
+        primaryRoot.attachmentAtomId
+      )
+    : exactRingExitPenalty.maxDeviation;
+  let downstreamMaxDeviation = 0;
+  for (const downstreamRoot of downstreamRoots) {
+    downstreamMaxDeviation = Math.max(
+      downstreamMaxDeviation,
+      directAttachedRingRootOutwardDeviation(layoutGraph, coords, downstreamRoot.anchorAtomId, downstreamRoot.rootAtomId),
+      directAttachedRingRootOutwardDeviation(layoutGraph, coords, downstreamRoot.rootAtomId, downstreamRoot.anchorAtomId)
+    );
+  }
+  return {
+    balancedMaxDeviation: Math.max(primaryDeviation, downstreamMaxDeviation),
+    primaryDeviation,
+    downstreamMaxDeviation,
+    maxDeviation: exactRingExitPenalty.maxDeviation,
+    totalDeviation: exactRingExitPenalty.totalDeviation,
+    layoutCost: measureLayoutCost(layoutGraph, coords, bondLength)
+  };
+}
+
+/**
+ * Returns whether a balanced aryl-chain candidate improves on the incumbent.
+ * @param {{balancedMaxDeviation: number, primaryDeviation: number, downstreamMaxDeviation: number, maxDeviation: number, totalDeviation: number, layoutCost: number}} candidate - Candidate score.
+ * @param {{balancedMaxDeviation: number, primaryDeviation: number, downstreamMaxDeviation: number, maxDeviation: number, totalDeviation: number, layoutCost: number}} incumbent - Incumbent score.
+ * @returns {boolean} True when the candidate is better.
+ */
+function directAttachedAromaticChainBalanceWins(candidate, incumbent) {
+  if (candidate.downstreamMaxDeviation > DIRECT_ATTACHED_AROMATIC_CHAIN_BALANCE_DOWNSTREAM_MAX_DEVIATION + IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  if (candidate.balancedMaxDeviation < incumbent.balancedMaxDeviation - IMPROVEMENT_EPSILON) {
+    return true;
+  }
+  if (candidate.balancedMaxDeviation > incumbent.balancedMaxDeviation + IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  if (candidate.primaryDeviation < incumbent.primaryDeviation - IMPROVEMENT_EPSILON) {
+    return true;
+  }
+  if (candidate.primaryDeviation > incumbent.primaryDeviation + IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  if (candidate.downstreamMaxDeviation < incumbent.downstreamMaxDeviation - IMPROVEMENT_EPSILON) {
+    return true;
+  }
+  if (candidate.downstreamMaxDeviation > incumbent.downstreamMaxDeviation + IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  if (candidate.maxDeviation < incumbent.maxDeviation - IMPROVEMENT_EPSILON) {
+    return true;
+  }
+  if (candidate.maxDeviation > incumbent.maxDeviation + IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  if (candidate.totalDeviation < incumbent.totalDeviation - IMPROVEMENT_EPSILON) {
+    return true;
+  }
+  if (candidate.totalDeviation > incumbent.totalDeviation + IMPROVEMENT_EPSILON) {
+    return false;
+  }
+  return candidate.layoutCost < incumbent.layoutCost - IMPROVEMENT_EPSILON;
+}
+
+/**
+ * Returns whether fully straightening an upstream aromatic ring root would
+ * make the public overlap/crossing audit worse. The chain-balance pass is only
+ * meant to split that otherwise-invalid exact correction across two aryl
+ * pivots, not to perturb already-safe exact local fans.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @param {object} baseAudit - Incumbent audit result.
+ * @param {string} attachmentAtomId - Upstream ring-root atom.
+ * @param {string[]} rotatedAtomIds - Atom IDs rotated by the exact correction.
+ * @param {number} correction - Full root-outward correction in radians.
+ * @returns {boolean} True when the exact correction would create crowding.
+ */
+function directAttachedAromaticChainExactCorrectionCreatesCrowding(
+  layoutGraph,
+  coords,
+  bondLength,
+  baseAudit,
+  attachmentAtomId,
+  rotatedAtomIds,
+  correction
+) {
+  const attachmentPosition = coords.get(attachmentAtomId);
+  if (!attachmentPosition) {
+    return false;
+  }
+
+  const exactCoords = new Map(coords);
+  for (const atomId of rotatedAtomIds) {
+    exactCoords.set(
+      atomId,
+      add(attachmentPosition, rotate(sub(coords.get(atomId), attachmentPosition), correction))
+    );
+  }
+  const exactAudit = auditLayout(layoutGraph, exactCoords, { bondLength });
+  return (
+    exactAudit.severeOverlapCount > baseAudit.severeOverlapCount
+    || (exactAudit.visibleHeavyBondCrossingCount ?? 0) > (baseAudit.visibleHeavyBondCrossingCount ?? 0)
+  );
+}
+
+/**
+ * Balances congested directly attached aromatic ring chains by partially
+ * straightening an upstream ring root and allowing a downstream aryl root to
+ * absorb a small rotation. This keeps audit-clean crowded polyaryl layouts from
+ * leaving one visible ring exit at a 105/135-degree split when a bounded
+ * two-pivot tradeoff can reduce the worst exact-exit miss.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Mutable coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {{changed: boolean}} Whether any aryl-chain root was improved.
+ */
+function balanceDirectAttachedAromaticRingChainExits(layoutGraph, coords, bondLength) {
+  const baseAudit = auditLayout(layoutGraph, coords, { bondLength });
+  let bestCoords = coords;
+  let bestScore = null;
+  let bestBalanceImprovement = 0;
+
+  for (const bond of layoutGraph.bonds.values()) {
+    if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+
+    for (const [parentAtomId, attachmentAtomId] of [
+      [bond.a, bond.b],
+      [bond.b, bond.a]
+    ]) {
+      if (
+        !coords.has(parentAtomId)
+        || !coords.has(attachmentAtomId)
+        || !isDirectAttachedAromaticRingRoot(layoutGraph, parentAtomId, attachmentAtomId)
+      ) {
+        continue;
+      }
+
+      const rootDeviation = directAttachedRingRootOutwardDeviation(layoutGraph, coords, parentAtomId, attachmentAtomId);
+      if (rootDeviation < DIRECT_ATTACHED_AROMATIC_CHAIN_BALANCE_TRIGGER) {
+        continue;
+      }
+      const correction = directAttachedRingRootOutwardCorrection(layoutGraph, coords, parentAtomId, attachmentAtomId);
+      if (correction == null || Math.abs(correction) <= IMPROVEMENT_EPSILON) {
+        continue;
+      }
+
+      const movableAtomIds = new Set(collectCovalentSubtreeAtomIds(layoutGraph, attachmentAtomId, parentAtomId));
+      if (!directAttachedAromaticChainHasOnlyCarbonHeavyAtoms(layoutGraph, movableAtomIds)) {
+        continue;
+      }
+      const downstreamRoots = directAttachedAromaticChainDownstreamRoots(layoutGraph, movableAtomIds, parentAtomId, attachmentAtomId);
+      if (downstreamRoots.length === 0) {
+        continue;
+      }
+      const primaryRotatedAtomIds = [...movableAtomIds].filter(atomId => atomId !== attachmentAtomId && coords.has(atomId));
+      if (primaryRotatedAtomIds.length === 0) {
+        continue;
+      }
+      if (
+        !directAttachedAromaticChainExactCorrectionCreatesCrowding(
+          layoutGraph,
+          coords,
+          bondLength,
+          baseAudit,
+          attachmentAtomId,
+          primaryRotatedAtomIds,
+          correction
+        )
+      ) {
+        continue;
+      }
+
+      const primaryRoot = { parentAtomId, attachmentAtomId };
+      const rootBaseScore = directAttachedAromaticChainBalanceScore(
+        layoutGraph,
+        coords,
+        bondLength,
+        primaryRoot,
+        downstreamRoots
+      );
+      let rootBestCoords = coords;
+      let rootBestScore = rootBaseScore;
+      const attachmentPosition = coords.get(attachmentAtomId);
+      for (const primaryFraction of DIRECT_ATTACHED_AROMATIC_CHAIN_BALANCE_PRIMARY_FRACTIONS) {
+        const primaryRotation = correction * primaryFraction;
+        const primaryCoords = new Map(coords);
+        for (const atomId of primaryRotatedAtomIds) {
+          primaryCoords.set(
+            atomId,
+            add(attachmentPosition, rotate(sub(coords.get(atomId), attachmentPosition), primaryRotation))
+          );
+        }
+
+        for (const downstreamRoot of downstreamRoots) {
+          const downstreamAnchorPosition = primaryCoords.get(downstreamRoot.anchorAtomId);
+          if (!downstreamAnchorPosition) {
+            continue;
+          }
+          for (const downstreamOffset of DIRECT_ATTACHED_AROMATIC_CHAIN_BALANCE_DOWNSTREAM_OFFSETS) {
+            const candidateCoords = new Map(primaryCoords);
+            if (Math.abs(downstreamOffset) > IMPROVEMENT_EPSILON) {
+              for (const atomId of downstreamRoot.rotatedAtomIds) {
+                const position = primaryCoords.get(atomId);
+                if (!position) {
+                  continue;
+                }
+                candidateCoords.set(
+                  atomId,
+                  add(downstreamAnchorPosition, rotate(sub(position, downstreamAnchorPosition), downstreamOffset))
+                );
+              }
+            }
+
+            const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+            if (!directAttachedAromaticChainAuditDoesNotRegress(candidateAudit, baseAudit)) {
+              continue;
+            }
+            const candidateScore = directAttachedAromaticChainBalanceScore(
+              layoutGraph,
+              candidateCoords,
+              bondLength,
+              primaryRoot,
+              downstreamRoots
+            );
+            if (!directAttachedAromaticChainBalanceWins(candidateScore, rootBestScore)) {
+              continue;
+            }
+            rootBestCoords = candidateCoords;
+            rootBestScore = candidateScore;
+          }
+        }
+      }
+
+      const balanceImprovement = rootBaseScore.balancedMaxDeviation - rootBestScore.balancedMaxDeviation;
+      if (
+        rootBestCoords === coords
+        || balanceImprovement < DIRECT_ATTACHED_AROMATIC_CHAIN_BALANCE_MIN_IMPROVEMENT
+      ) {
+        continue;
+      }
+      if (
+        !bestScore
+        || balanceImprovement > bestBalanceImprovement + IMPROVEMENT_EPSILON
+        || (
+          Math.abs(balanceImprovement - bestBalanceImprovement) <= IMPROVEMENT_EPSILON
+          && directAttachedAromaticChainBalanceWins(rootBestScore, bestScore)
+        )
+      ) {
+        bestCoords = rootBestCoords;
+        bestScore = rootBestScore;
+        bestBalanceImprovement = balanceImprovement;
+      }
+    }
+  }
+
+  if (bestCoords === coords) {
+    return { changed: false };
+  }
+  overwriteCoordMap(coords, bestCoords);
+  return { changed: true };
 }
 
 /**
@@ -18436,11 +18840,36 @@ function rotateRingAttachedLinearMultipleArm(coords, armDescriptor, rotationOffs
   return rotatedCoords ? linearizeRingAttachedMultipleArm(rotatedCoords, armDescriptor) : null;
 }
 
-function ringAttachedLinearMultipleCrowdingSignature(coords) {
-  return [...coords.entries()]
-    .sort(([firstAtomId], [secondAtomId]) => String(firstAtomId).localeCompare(String(secondAtomId), 'en', { numeric: true }))
-    .map(([atomId, position]) => `${atomId}:${Math.round(position.x * 1e4)}:${Math.round(position.y * 1e4)}`)
-    .join('|');
+function ringAttachedLinearMultipleCrowdingSignatureAtomIds(layoutGraph, coords, descriptors) {
+  const signatureAtomIds = new Set();
+  for (const descriptor of descriptors) {
+    for (const atomId of descriptor.ringSideAtomIds) {
+      if (coords.has(atomId)) {
+        signatureAtomIds.add(atomId);
+      }
+    }
+    for (const armDescriptor of descriptor.armDescriptors) {
+      for (const atomId of armDescriptor.armAtomIds) {
+        if (coords.has(atomId)) {
+          signatureAtomIds.add(atomId);
+        }
+      }
+    }
+  }
+  return [...signatureAtomIds].sort((firstAtomId, secondAtomId) => (
+    compareCanonicalIds(firstAtomId, secondAtomId, layoutGraph.canonicalAtomRank)
+  ));
+}
+
+function ringAttachedLinearMultipleCrowdingSignature(coords, signatureAtomIds) {
+  const signatureParts = [];
+  for (const atomId of signatureAtomIds) {
+    const position = coords.get(atomId);
+    if (position) {
+      signatureParts.push(`${atomId}:${Math.round(position.x * 1e4)}:${Math.round(position.y * 1e4)}`);
+    }
+  }
+  return signatureParts.join('|');
 }
 
 function ringAttachedLinearMultipleCrowdingScore(layoutGraph, coords, bondValidationClasses, bondLength, descriptors) {
@@ -18463,8 +18892,25 @@ function ringAttachedLinearMultipleCrowdingScore(layoutGraph, coords, bondValida
     audit,
     smallRingExteriorPenalty,
     linearDeviation,
-    layoutCost: measureFocusedPlacementCost(layoutGraph, coords, bondLength, focusAtomIds)
+    layoutCost: null,
+    layoutCostContext: {
+      layoutGraph,
+      bondLength,
+      focusAtomIds
+    }
   };
+}
+
+function ringAttachedLinearMultipleCrowdingLayoutCost(score) {
+  if (score.layoutCost == null) {
+    score.layoutCost = measureFocusedPlacementCost(
+      score.layoutCostContext.layoutGraph,
+      score.coords,
+      score.layoutCostContext.bondLength,
+      score.layoutCostContext.focusAtomIds
+    );
+  }
+  return score.layoutCost;
 }
 
 function compareRingAttachedLinearMultipleCrowdingScores(candidate, incumbent) {
@@ -18497,7 +18943,10 @@ function compareRingAttachedLinearMultipleCrowdingScores(candidate, incumbent) {
   if (Math.abs((candidate.audit.severeOverlapPenalty ?? 0) - (incumbent.audit.severeOverlapPenalty ?? 0)) > IMPROVEMENT_EPSILON) {
     return (candidate.audit.severeOverlapPenalty ?? 0) - (incumbent.audit.severeOverlapPenalty ?? 0);
   }
-  return candidate.layoutCost - incumbent.layoutCost;
+  return (
+    ringAttachedLinearMultipleCrowdingLayoutCost(candidate)
+    - ringAttachedLinearMultipleCrowdingLayoutCost(incumbent)
+  );
 }
 
 function ringAttachedLinearMultipleCrowdingAuditIsBounded(candidate, baseScore) {
@@ -18558,6 +19007,7 @@ function resolveRingAttachedLinearMultipleCrowding(layoutGraph, coords, bondVali
 
   let beam = [baseScore];
   let bestScore = baseScore;
+  const signatureAtomIds = ringAttachedLinearMultipleCrowdingSignatureAtomIds(layoutGraph, coords, descriptors);
   for (let passIndex = 0; passIndex < RING_ATTACHED_LINEAR_MULTIPLE_CROWDING_PASSES; passIndex++) {
     const nextScores = [];
     const seenSignatures = new Set();
@@ -18571,7 +19021,7 @@ function resolveRingAttachedLinearMultipleCrowding(layoutGraph, coords, bondVali
             rotationOffset
           );
           if (ringCandidateCoords) {
-            const signature = ringAttachedLinearMultipleCrowdingSignature(ringCandidateCoords);
+            const signature = ringAttachedLinearMultipleCrowdingSignature(ringCandidateCoords, signatureAtomIds);
             if (!seenSignatures.has(signature)) {
               seenSignatures.add(signature);
               nextScores.push(ringAttachedLinearMultipleCrowdingScore(
@@ -18589,7 +19039,7 @@ function resolveRingAttachedLinearMultipleCrowding(layoutGraph, coords, bondVali
             if (!armCandidateCoords) {
               continue;
             }
-            const signature = ringAttachedLinearMultipleCrowdingSignature(armCandidateCoords);
+            const signature = ringAttachedLinearMultipleCrowdingSignature(armCandidateCoords, signatureAtomIds);
             if (seenSignatures.has(signature)) {
               continue;
             }
@@ -19994,6 +20444,10 @@ function finalizeMixedPlacement(layoutGraph, adjacency, bondLength, state) {
   }
   const directAttachedRingRootRefinement = refineDirectAttachedRingRootsWithTerminalLeafClearance(layoutGraph, coords, bondLength);
   if (directAttachedRingRootRefinement.changed) {
+    markMixedBranchPlacementContextDirty(state);
+  }
+  const directAttachedAromaticRingChainBalance = balanceDirectAttachedAromaticRingChainExits(layoutGraph, coords, bondLength);
+  if (directAttachedAromaticRingChainBalance.changed) {
     markMixedBranchPlacementContextDirty(state);
   }
   const fusedCyclopropaneCapRestore = restoreFusedCyclopropaneExteriorCaps(layoutGraph, coords, bondLength);

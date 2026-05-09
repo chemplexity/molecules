@@ -26,6 +26,7 @@ const BROWSER_SODIUM_TETRAZOLE_C2_CROSSING_SMILES = '[Na+].CC(C)n1nnnc1C(=C(c2cc
 const BROWSER_TRIARYL_SULFOXIDE_INDOLE_SMILES = 'C[S+]([O-])c1ccc(cc1)c2cc(c3ccncc3C)c([nH]2)c4ccc(F)cc4';
 const BROWSER_DIHYDROPYRIDINE_CHLOROPHENYL_SMILES = 'CC1=C(C(C2=CC=CC=C2Cl)C(C2=NN=CO2)=C(C)N1)C([O-])=O';
 const BROWSER_FLUORINATED_CYCLOHEXYL_ISOCYANATE_SMILES = 'FC1(F)CCCC(N=C=O)(C(C2(CCCC(F)(F)C2(F)F)N=C=O)C2(CCCC(F)(F)C2(F)F)N=C=O)C1(F)F';
+const BROWSER_LARGE_PEPTIDE_HIDDEN_HYDROGEN_SMILES = 'CC[C@H](C)[C@H](<NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CCCCN)NC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@H](CC(=O)N)NC(=O)[C@H](CO)NC(=O)[C@H](Cc1c[nH]cn1)NC(=O)[C@H](C)NC(=O)[C@H](C)NC(=O)[C@H](CCC(=O)N)NC(=O)[C@H](C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CCC(=O)N)NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](C)NC(=O)[C@H](CCCCN)NC(=O)[C@@H](NC(=O)[C@H](CCSC)NC(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@@H](NC(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CCCN=C(N)N)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](Cc2c[nH]cn2)NC(=O)[C@H](Cc3ccccc3)NC(=O)[C@@H](NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CC(=O)O)NC(=O)[C@H](CC(C)C)NC(=O)[C@H](CO)NC(=O)[C@@H](NC(=O)[C@@H]4CCCN4C(=O)[C@@H]5CCCN5C(=O)[C@H](CCC(=O)O)NC(=O)[C@H](CCC(=O)N)NC(=O)[C@@H](N)CO)[C@@H](C)CC)[C@@H](C)O)C(C)C)[C@@H](C)O>)C(=O)N[C@@H](C)C(=O)N';
 
 const MIME_TYPES = new Map([
   ['.css', 'text/css; charset=utf-8'],
@@ -546,6 +547,64 @@ async function browserLayoutSignature(browserType, origin, smiles, layoutOptions
   }
 }
 
+async function browserHiddenHydrogenApiSignature(browserType, origin, smiles, layoutOptions = null) {
+  const browser = await browserType.launch({ headless: true });
+  try {
+    const page = await browser.newPage();
+    await page.goto(`${origin}/index.html`, { timeout: 60_000 });
+    return await page.evaluate(async ({ smilesValue, layoutOptionsValue }) => {
+      const { parseSMILES } = await import('/src/io/smiles.js');
+      const { generateCoords } = await import('/src/layout/engine/api.js');
+      const { findVisibleHeavyBondCrossings } = await import('/src/layout/engine/audit/invariants.js');
+
+      const molecule = parseSMILES(smilesValue);
+      molecule.hideHydrogens();
+      const result = generateCoords(molecule, {
+        suppressH: true,
+        ...(layoutOptionsValue ?? {})
+      });
+      const angularDifference = (firstAngle, secondAngle) => {
+        let difference = Math.abs(firstAngle - secondAngle) % (Math.PI * 2);
+        if (difference > Math.PI) {
+          difference = Math.PI * 2 - difference;
+        }
+        return difference;
+      };
+      const bondAngleAtAtom = (centerAtomId, firstNeighborAtomId, secondNeighborAtomId) => {
+        const center = result.coords.get(centerAtomId);
+        const firstNeighbor = result.coords.get(firstNeighborAtomId);
+        const secondNeighbor = result.coords.get(secondNeighborAtomId);
+        if (!center || !firstNeighbor || !secondNeighbor) {
+          return null;
+        }
+        return angularDifference(
+          Math.atan2(firstNeighbor.y - center.y, firstNeighbor.x - center.x),
+          Math.atan2(secondNeighbor.y - center.y, secondNeighbor.x - center.x)
+        ) * (180 / Math.PI);
+      };
+      const anglesAt = (centerAtomId, firstNeighborAtomId, secondNeighborAtomId, thirdNeighborAtomId) => [
+        bondAngleAtAtom(centerAtomId, firstNeighborAtomId, secondNeighborAtomId),
+        bondAngleAtAtom(centerAtomId, firstNeighborAtomId, thirdNeighborAtomId),
+        bondAngleAtAtom(centerAtomId, secondNeighborAtomId, thirdNeighborAtomId)
+      ];
+
+      return {
+        audit: {
+          ok: result.metadata?.audit?.ok ?? null,
+          severeOverlapCount: result.metadata?.audit?.severeOverlapCount ?? null,
+          visibleHeavyBondCrossingCount: result.metadata?.audit?.visibleHeavyBondCrossingCount ?? null
+        },
+        visibleHeavyBondCrossingCount: findVisibleHeavyBondCrossings(result.layoutGraph, result.coords).length,
+        c208Angles: anglesAt('C208', 'C206', 'C210', 'N217'),
+        c283Angles: anglesAt('C283', 'O284', 'C285', 'N282'),
+        c285Angles: anglesAt('C285', 'C283', 'C287', 'N291')
+      };
+    }, { smilesValue: smiles, layoutOptionsValue: layoutOptions });
+  } finally {
+    await browser.close();
+  }
+}
+
 test('browser layout remains deterministic across chromium and webkit for mixed fused/attached-ring placement', { timeout: 120_000 }, async t => {
   const { server, origin } = await startStaticServer();
   t.after(async () => {
@@ -834,6 +893,39 @@ test('browser layout preserves fluorinated cyclohexyl exterior fans in webkit', 
   assert.ok(Array.isArray(webkitSignature.fluorinatedCyclohexylIsocyanateAngles), 'expected webkit to report isocyanate angles');
   for (const angle of webkitSignature.fluorinatedCyclohexylIsocyanateAngles) {
     assert.ok(Math.abs(angle - 180) < 1e-6, `expected webkit isocyanate arm near 180 degrees, got ${angle.toFixed(2)}`);
+  }
+});
+
+test('browser layout retouches large peptide hidden-hydrogen app path in webkit', { timeout: 120_000 }, async t => {
+  const { server, origin } = await startStaticServer();
+  t.after(async () => {
+    await new Promise(resolve => server.close(resolve));
+  });
+
+  const signature = await browserHiddenHydrogenApiSignature(
+    webkit,
+    origin,
+    BROWSER_LARGE_PEPTIDE_HIDDEN_HYDROGEN_SMILES,
+    {
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    }
+  );
+
+  assert.equal(signature.audit.ok, true);
+  assert.equal(signature.audit.severeOverlapCount, 0);
+  assert.equal(signature.audit.visibleHeavyBondCrossingCount, 0);
+  assert.equal(signature.visibleHeavyBondCrossingCount, 0);
+  for (const [label, angles] of [
+    ['C208', signature.c208Angles],
+    ['C283', signature.c283Angles],
+    ['C285', signature.c285Angles]
+  ]) {
+    assert.ok(Array.isArray(angles), `expected webkit to report ${label} peptide fan angles`);
+    assert.ok(
+      Math.max(...angles.map(angle => Math.abs(angle - 120))) <= 5 + 1e-6,
+      `expected webkit ${label} fan to stay near trigonal, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
   }
 });
 

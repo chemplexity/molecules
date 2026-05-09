@@ -1380,6 +1380,30 @@ test('renders stereo hydrogens away from their parent carbons on initial 2d load
   expect(transforms.H6).not.toEqual(transforms.C5);
 });
 
+test('2D projected bridged stereo hydrogen avoids nearby cage atoms', async ({ page }) => {
+  await page.goto('/index.html');
+
+  await loadSmiles(page, '[Br-].CCCC[N+]1(C)[C@H]2C[C@@H](C[C@@H]1[C@H]1O[C@@H]21)OC(=O)[C@H](CO)C1=CC=CC=C1');
+
+  const geometry = await page.evaluate(() => {
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.]+),([-0-9.]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const atomPoint = atomId => parseTranslate(document.querySelector(`g[data-atom-id="${atomId}"]`)?.getAttribute('transform'));
+    const c14 = atomPoint('C14');
+    const h15 = atomPoint('H15');
+    const c19 = atomPoint('C19');
+    return {
+      h15C19Distance: h15 && c19 ? Math.hypot(h15.x - c19.x, h15.y - c19.y) : null,
+      h15C14Distance: h15 && c14 ? Math.hypot(h15.x - c14.x, h15.y - c14.y) : null
+    };
+  });
+
+  expect(geometry.h15C14Distance).toBeGreaterThan(40);
+  expect(geometry.h15C19Distance).toBeGreaterThan(30);
+});
+
 test('2D atom numbering follows projected stereochemical hydrogens away from parent bonds', async ({ page }) => {
   await page.goto('/index.html');
 

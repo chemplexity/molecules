@@ -12,6 +12,25 @@ const DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR = Math.PI / 6;
 export const DISPLAYED_STEREO_CARDINAL_AXIS_SECTOR_TOLERANCE = Math.PI / 16;
 
 /**
+ * Returns the nearest distance from a point to a list of positions.
+ * @param {{x: number, y: number}} position - Candidate position.
+ * @param {{x: number, y: number}[]} avoidPositions - Positions to avoid.
+ * @returns {number} Minimum distance, or infinity when no positions are supplied.
+ */
+function minimumAvoidDistance(position, avoidPositions) {
+  if (avoidPositions.length === 0) {
+    return Infinity;
+  }
+  let minDistance = Infinity;
+  for (const avoidPosition of avoidPositions) {
+    const dx = position.x - avoidPosition.x;
+    const dy = position.y - avoidPosition.y;
+    minDistance = Math.min(minDistance, Math.hypot(dx, dy));
+  }
+  return minDistance;
+}
+
+/**
  * Returns the bisector angles of the angular gaps around a stereocenter.
  * @param {{x: number, y: number}} centerPosition - Stereocenter position.
  * @param {{x: number, y: number}[]} knownPositions - Known neighbor positions.
@@ -191,15 +210,17 @@ function uniqueAngles(angles) {
  * @param {number} angle - Candidate projection angle.
  * @param {number} baseAngle - Raw opposite-vector angle before any snapping.
  * @param {Array<Array<{x: number, y: number}>>} incidentRingPolygons - Incident ring polygons.
- * @returns {{position: {x: number, y: number}, ringInteriorCount: number, containingRingCount: number, sector: number, baseDeviation: number, cardinalDeviation: number}} Ranked candidate data.
+ * @param {{x: number, y: number}[]} avoidPositions - Non-neighbor atom positions to avoid.
+ * @returns {{position: {x: number, y: number}, ringInteriorCount: number, containingRingCount: number, sector: number, avoidDistance: number, baseDeviation: number, cardinalDeviation: number}} Ranked candidate data.
  */
-function evaluateCandidate(centerPosition, knownPositions, radius, angle, baseAngle, incidentRingPolygons) {
+function evaluateCandidate(centerPosition, knownPositions, radius, angle, baseAngle, incidentRingPolygons, avoidPositions) {
   const position = add(centerPosition, fromAngle(angle, radius));
   return {
     position,
     ringInteriorCount: countRingInteriorSectorIntrusions(centerPosition, position, incidentRingPolygons),
     containingRingCount: countPointInPolygons(incidentRingPolygons, position),
     sector: minimumSectorAngle(centerPosition, position, knownPositions),
+    avoidDistance: minimumAvoidDistance(position, avoidPositions),
     baseDeviation: angularDifference(angle, baseAngle),
     cardinalDeviation: nearestCardinalDeviation(angle)
   };
@@ -213,20 +234,35 @@ function evaluateCandidate(centerPosition, knownPositions, radius, angle, baseAn
  * @param {number} baseAngle - Raw opposite-vector angle before any snapping.
  * @param {Array<Array<{x: number, y: number}>>} incidentRingPolygons - Incident ring polygons.
  * @param {number} cardinalAxisSectorTolerance - Allowed sector drop when snapping to a cardinal axis.
+ * @param {{x: number, y: number}[]} avoidPositions - Non-neighbor atom positions to avoid.
+ * @param {number} minimumAvoidanceDistance - Distance that counts as fully clear of avoid positions.
  * @returns {{x: number, y: number}} Chosen hydrogen position.
  */
-function bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle, incidentRingPolygons, cardinalAxisSectorTolerance) {
+function bestDisplayCandidate(
+  centerPosition,
+  knownPositions,
+  radius,
+  baseAngle,
+  incidentRingPolygons,
+  cardinalAxisSectorTolerance,
+  avoidPositions,
+  minimumAvoidanceDistance
+) {
   const candidates = uniqueAngles([baseAngle, ...gapBisectorAngles(centerPosition, knownPositions), ...CARDINAL_AXIS_ANGLES]).map(angle =>
-    evaluateCandidate(centerPosition, knownPositions, radius, angle, baseAngle, incidentRingPolygons)
+    evaluateCandidate(centerPosition, knownPositions, radius, angle, baseAngle, incidentRingPolygons, avoidPositions)
   );
   const bestRingInteriorCount = Math.min(...candidates.map(candidate => candidate.ringInteriorCount));
   const ringExteriorCandidates = candidates.filter(candidate => candidate.ringInteriorCount === bestRingInteriorCount);
   const bestContainingRingCount = Math.min(...ringExteriorCandidates.map(candidate => candidate.containingRingCount));
   const ringSafeCandidates = ringExteriorCandidates.filter(candidate => candidate.containingRingCount === bestContainingRingCount);
-  const bestSector = Math.max(...ringSafeCandidates.map(candidate => candidate.sector));
-  const nearBestSectorCandidates = ringSafeCandidates.filter(candidate => candidate.sector >= bestSector - cardinalAxisSectorTolerance);
+  const bestAvoidance = Math.max(...ringSafeCandidates.map(candidate => Math.min(candidate.avoidDistance, minimumAvoidanceDistance)));
+  const atomClearCandidates = ringSafeCandidates.filter(candidate =>
+    Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= bestAvoidance - 1e-6
+  );
+  const bestSector = Math.max(...atomClearCandidates.map(candidate => candidate.sector));
+  const nearBestSectorCandidates = atomClearCandidates.filter(candidate => candidate.sector >= bestSector - cardinalAxisSectorTolerance);
 
-  let bestCandidate = nearBestSectorCandidates[0] ?? ringSafeCandidates[0] ?? candidates[0];
+  let bestCandidate = nearBestSectorCandidates[0] ?? atomClearCandidates[0] ?? ringSafeCandidates[0] ?? candidates[0];
   for (const candidate of nearBestSectorCandidates) {
     if (candidate.cardinalDeviation < bestCandidate.cardinalDeviation - 1e-6) {
       bestCandidate = candidate;
@@ -257,6 +293,8 @@ function bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle,
  * @param {number} bondLength - Target bond length.
  * @param {object} [options] - Synthesis options.
  * @param {Array<Array<{x: number, y: number}>>} [options.incidentRingPolygons] - Incident ring polygons to avoid.
+ * @param {{x: number, y: number}[]} [options.avoidPositions] - Non-neighbor atom positions to avoid.
+ * @param {number} [options.minimumAvoidanceDistance] - Distance that counts as fully clear of avoid positions.
  * @param {boolean} [options.preferCardinalAxes] - When true, prefer exact horizontal or vertical projections when they are almost as open as the best free-angle candidate.
  * @param {number} [options.cardinalAxisSectorTolerance] - Allowed sector drop when snapping to a cardinal axis.
  * @param {boolean} [options.fixedRadius] - When true, use `bondLength` as the exact projection radius instead of matching neighboring bond lengths.
@@ -264,6 +302,7 @@ function bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle,
  */
 export function synthesizeHydrogenPosition(centerPosition, knownPositions, bondLength, options = {}) {
   const incidentRingPolygons = options.incidentRingPolygons ?? [];
+  const avoidPositions = options.avoidPositions ?? [];
   const preferCardinalAxes = options.preferCardinalAxes === true;
   const cardinalAxisSectorTolerance = options.cardinalAxisSectorTolerance ?? CARDINAL_AXIS_SECTOR_TOLERANCE;
   const fixedRadius = options.fixedRadius === true;
@@ -291,8 +330,18 @@ export function synthesizeHydrogenPosition(centerPosition, knownPositions, bondL
   const radius = fixedRadius ? bondLength : radiusSum / knownPositions.length;
   const baseAngle = angleOf(direction);
   const basePosition = add(centerPosition, scale(direction, radius));
+  const minimumAvoidanceDistance = options.minimumAvoidanceDistance ?? radius * 0.6;
   if (preferCardinalAxes) {
-    return bestDisplayCandidate(centerPosition, knownPositions, radius, baseAngle, incidentRingPolygons, cardinalAxisSectorTolerance);
+    return bestDisplayCandidate(
+      centerPosition,
+      knownPositions,
+      radius,
+      baseAngle,
+      incidentRingPolygons,
+      cardinalAxisSectorTolerance,
+      avoidPositions,
+      minimumAvoidanceDistance
+    );
   }
   if (incidentRingPolygons.length === 0) {
     return basePosition;
@@ -344,12 +393,16 @@ export function synthesizeHydrogenPosition(centerPosition, knownPositions, bondL
  * @param {number} bondLength - Target display bond length.
  * @param {object} [options] - Synthesis options.
  * @param {Array<Array<{x: number, y: number}>>} [options.incidentRingPolygons] - Incident ring polygons to avoid.
+ * @param {{x: number, y: number}[]} [options.avoidPositions] - Non-neighbor atom positions to avoid.
+ * @param {number} [options.minimumAvoidanceDistance] - Distance that counts as fully clear of avoid positions.
  * @param {number} [options.cardinalAxisSectorTolerance] - Allowed sector drop when snapping to a cardinal axis.
  * @param {number} [options.minimumDisplaySector] - Minimum acceptable angular clearance from existing bonds.
  * @returns {{x: number, y: number}} Synthesized hydrogen position.
  */
 export function synthesizeDisplayedStereoHydrogenPosition(centerPosition, knownPositions, bondLength, options = {}) {
   const incidentRingPolygons = options.incidentRingPolygons ?? [];
+  const avoidPositions = options.avoidPositions ?? [];
+  const minimumAvoidanceDistance = options.minimumAvoidanceDistance ?? bondLength * 0.6;
   const preferredPosition = synthesizeHydrogenPosition(centerPosition, knownPositions, bondLength, {
     ...options,
     preferCardinalAxes: true,
@@ -361,7 +414,8 @@ export function synthesizeDisplayedStereoHydrogenPosition(centerPosition, knownP
 
   const minimumDisplaySector = options.minimumDisplaySector ?? DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR;
   const preferredSector = minimumSectorAngle(centerPosition, preferredPosition, knownPositions);
-  if (preferredSector >= minimumDisplaySector) {
+  const preferredAvoidDistance = minimumAvoidDistance(preferredPosition, avoidPositions);
+  if (preferredSector >= minimumDisplaySector && preferredAvoidDistance >= minimumAvoidanceDistance) {
     return preferredPosition;
   }
 
@@ -372,6 +426,10 @@ export function synthesizeDisplayedStereoHydrogenPosition(centerPosition, knownP
     fixedRadius: true
   });
   const relaxedSector = minimumSectorAngle(centerPosition, relaxedPosition, knownPositions);
+  const relaxedAvoidDistance = minimumAvoidDistance(relaxedPosition, avoidPositions);
+  if (relaxedAvoidDistance > preferredAvoidDistance + 1e-6 && relaxedSector >= minimumDisplaySector - 1e-6) {
+    return relaxedPosition;
+  }
   return relaxedSector > preferredSector + minimumDisplaySector ? relaxedPosition : preferredPosition;
 }
 

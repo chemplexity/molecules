@@ -12,6 +12,7 @@ import { runUnifiedCleanup } from '../../../../src/layout/engine/cleanup/unified
 import { applyLabelClearance } from '../../../../src/layout/engine/cleanup/label-clearance.js';
 import { tidySymmetry } from '../../../../src/layout/engine/cleanup/symmetry-tidy.js';
 import { findSevereOverlaps } from '../../../../src/layout/engine/audit/invariants.js';
+import { angleOf, angularDifference, sub } from '../../../../src/layout/engine/geometry/vec2.js';
 import { inspectEZStereo } from '../../../../src/layout/engine/stereo/ez.js';
 import { enforceAcyclicEZStereo } from '../../../../src/layout/engine/stereo/enforcement.js';
 
@@ -71,6 +72,13 @@ function _preStereoStageFor(smiles) {
     coords: symmetryTidy.coords,
     bondLength: options.bondLength
   };
+}
+
+function bondAngleAtAtom(coords, centerAtomId, firstNeighborAtomId, secondNeighborAtomId) {
+  return angularDifference(
+    angleOf(sub(coords.get(firstNeighborAtomId), coords.get(centerAtomId))),
+    angleOf(sub(coords.get(secondNeighborAtomId), coords.get(centerAtomId)))
+  ) * (180 / Math.PI);
 }
 
 describe('layout/engine/stereo/enforcement', () => {
@@ -138,6 +146,27 @@ describe('layout/engine/stereo/enforcement', () => {
         enforced.coords.get('C14').y - enforced.coords.get('C28').y
       ) > bondLength,
       'expected the styryl phenyl ring to avoid stacking C14 onto the fused core C28'
+    );
+  });
+
+  it('keeps oxime E/Z rescues on exact divalent nitrogen bends', () => {
+    const smiles = String.raw`COc1cc([C@H](CC=C(C)C)OC(=O)c2ccccn2)c(OC)c3\C(=N\O)\C=C\C(=N/O)\c13`;
+    const { graph, coords, bondLength } = _preStereoStageFor(smiles);
+    const before = inspectEZStereo(graph, coords);
+    const enforced = enforceAcyclicEZStereo(graph, coords, { bondLength });
+    const after = inspectEZStereo(graph, enforced.coords);
+
+    assert.equal(before.violationCount, 1);
+    assert.ok(enforced.reflections > 0);
+    assert.equal(after.violationCount, 0);
+    assert.equal(findSevereOverlaps(graph, enforced.coords, bondLength).length, 0);
+    assert.ok(
+      Math.abs(bondAngleAtAtom(enforced.coords, 'N27', 'C26', 'O28') - 120) < 1e-6,
+      `expected C26-N27-O28 to stay at 120 degrees, got ${bondAngleAtAtom(enforced.coords, 'N27', 'C26', 'O28').toFixed(2)}`
+    );
+    assert.ok(
+      Math.abs(bondAngleAtAtom(enforced.coords, 'N32', 'C31', 'O33') - 120) < 1e-6,
+      `expected C31-N32-O33 to stay at 120 degrees, got ${bondAngleAtAtom(enforced.coords, 'N32', 'C31', 'O33').toFixed(2)}`
     );
   });
 });

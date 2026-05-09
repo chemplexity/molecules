@@ -72,8 +72,10 @@ const HOOK_STEP_META = {
   'divalent-continuation-tidy': ['Divalent Continuation Tidy', 'Compact terminal continuations snapped back to exact 120-degree slots.'],
   'terminal-alkene-continuation-relief': ['Terminal Alkene Continuation Relief', 'Terminal alkene tails rotated away from local overlaps while keeping the alkene bend exact.'],
   'projected-tetrahedral-branch-clearance': ['Projected Tetrahedral Branch Clearance', 'Downstream branch pivots cleared projected-center overlaps without moving the center slots.'],
-  'ring-terminal-root-exact-clearance': ['Ring Terminal Root Exact Clearance', 'Compact terminal ring exits snapped back to exact trigonal slots with local overlap relief.']
+  'ring-terminal-root-exact-clearance': ['Ring Terminal Root Exact Clearance', 'Compact terminal and linked-ring exits snapped back to exact trigonal slots with local overlap relief.']
 };
+
+const LINKED_RING_ROOT_TERMINAL_FAN_REGRESSION_TOLERANCE = Math.PI / 45;
 
 function hasStereoRescueOverlaps(stageResults, incumbent) {
   const stereoRescueCleanupStage = stageResults.get('stereoRescueCleanup');
@@ -455,10 +457,23 @@ export function buildCleanupStageGraph(context) {
       return false;
     }
     if (
+      (candidate.terminalCationRingProximityPenalty ?? 0)
+        > (incumbent?.terminalCationRingProximityPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+    ) {
+      return false;
+    }
+    const terminalMultipleBondLeafFanRegression = Math.max(
       (candidate.terminalMultipleBondLeafFanMaxPenalty ?? 0)
-        > (incumbent?.terminalMultipleBondLeafFanMaxPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
-      || (candidate.terminalMultipleBondLeafFanPenalty ?? 0)
-        > (incumbent?.terminalMultipleBondLeafFanPenalty ?? 0) + PRESENTATION_METRIC_EPSILON
+        - (incumbent?.terminalMultipleBondLeafFanMaxPenalty ?? 0),
+      (candidate.terminalMultipleBondLeafFanPenalty ?? 0)
+        - (incumbent?.terminalMultipleBondLeafFanPenalty ?? 0)
+    );
+    if (
+      terminalMultipleBondLeafFanRegression > PRESENTATION_METRIC_EPSILON
+      && (
+        (candidate.linkedRootNudges ?? 0) <= 0
+        || terminalMultipleBondLeafFanRegression > LINKED_RING_ROOT_TERMINAL_FAN_REGRESSION_TOLERANCE
+      )
     ) {
       return false;
     }

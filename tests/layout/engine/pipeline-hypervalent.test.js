@@ -179,10 +179,14 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assertBondAngle(result, 'C8', 'N43', 'O44', (2 * Math.PI) / 3);
     assertBondAngle(result, 'C8', 'N43', 'O45', (2 * Math.PI) / 3);
     assertBondAngle(result, 'O44', 'N43', 'O45', (2 * Math.PI) / 3);
+    assert.ok(Math.abs(measureBondAngle(result, 'C9', 'C8', 'N43') - (2 * Math.PI) / 3) < Math.PI / 60);
+    assert.ok(Math.abs(measureBondAngle(result, 'N43', 'C8', 'C7') - (2 * Math.PI) / 3) < Math.PI / 60);
     assertBondAngle(result, 'N10', 'C36', 'O37', (2 * Math.PI) / 3);
     assertBondAngle(result, 'N10', 'C36', 'O38', (2 * Math.PI) / 3);
     assertBondAngle(result, 'O37', 'C36', 'O38', (2 * Math.PI) / 3);
-    assert.ok(measureTerminalMultipleBondLeafFanPenalty(result.layoutGraph, result.coords).maxDeviation < 0.65);
+    assert.ok(distance(result.coords.get('C36'), result.coords.get('O37')) <= result.layoutGraph.options.bondLength * 0.45);
+    assert.ok(distance(result.coords.get('C36'), result.coords.get('O37')) >= result.layoutGraph.options.bondLength * 0.4 - 1e-6);
+    assert.ok(measureTerminalMultipleBondLeafFanPenalty(result.layoutGraph, result.coords).maxDeviation < 1e-6);
   });
 
   it('orthogonalizes monoxo phosphonate leaf ligands in mixed fused layouts', () => {
@@ -834,7 +838,7 @@ describe('layout/engine/pipeline — hypervalent cleanup', () => {
     assert.equal(result.metadata.audit.labelOverlapCount, 0);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
     assert.equal(hasHypervalentAngleTidyNeed(result.layoutGraph, result.coords), false);
-    assert.equal(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['P13']) }), 0);
+    assert.ok(measureOrthogonalHypervalentDeviation(result.layoutGraph, result.coords, { focusAtomIds: new Set(['P13']) }) < 1e-9);
     assertOrthogonalCross(result, ['P13']);
     assertOppositePair(result, 'P13', 'S14', 'S15');
     assertOppositePair(result, 'P13', 'O12', 'O16');
