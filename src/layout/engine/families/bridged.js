@@ -11,6 +11,7 @@ import { assignBondValidationClass } from '../placement/bond-validation.js';
 import { placeRemainingBranches } from '../placement/branch-placement.js';
 import { placeTemplateCoords } from '../templates/placement.js';
 import { isMetalAtom } from '../topology/metal-centers.js';
+import { collectCutSubtree } from '../cleanup/subtree-utils.js';
 
 const COMPACT_BRIDGED_KK_THRESHOLD = 0.02;
 const COMPACT_BRIDGED_NONBONDED_COLLAPSE_FACTOR = 0.8;
@@ -56,6 +57,38 @@ const SATURATED_BRIDGED_RING_JUNCTION_BALANCE_STEP_FACTORS = Object.freeze([0.04
 const SATURATED_BRIDGED_RING_SHAPE_BALANCE_MAX_PASSES = 3;
 const SATURATED_BRIDGED_RING_SHAPE_BALANCE_DIRECTION_COUNT = 12;
 const SATURATED_BRIDGED_RING_SHAPE_BALANCE_STEP_FACTORS = Object.freeze([0.027, 0.017, 0.01, 0.005]);
+const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_RING_COUNT = 8;
+const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MAX_ATOM_COUNT = BRIDGED_KK_LIMITS.mediumAtomLimit + 20;
+const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_ANGLE_DEVIATION = Math.PI / 15;
+const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MAX_BOND_DEVIATION_FACTOR = 0.47;
+const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_DAMPING_FACTORS = Object.freeze([0.15, 0.08, 0.04]);
+const MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MAX_ITERATIONS = 48;
+const MEDIUM_BRIDGED_RING_ANGLE_POLISH_MIN_ANGLE_DEVIATION = Math.PI / 15;
+const MEDIUM_BRIDGED_RING_ANGLE_POLISH_MAX_BOND_DEVIATION_FACTOR = 0.48;
+const MEDIUM_BRIDGED_RING_ANGLE_POLISH_MAX_PASSES = 8;
+const MEDIUM_BRIDGED_RING_ANGLE_POLISH_DIRECTION_COUNT = 12;
+const MEDIUM_BRIDGED_RING_ANGLE_POLISH_STEP_FACTORS = Object.freeze([0.04, 0.027, 0.017]);
+const MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MIN_BOND_DEVIATION_FACTOR = 0.28;
+const MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MAX_ANGLE_DEVIATION = Math.PI / 10;
+const MEDIUM_BRIDGED_AROMATIC_RING_POLISH_ABSOLUTE_MAX_ANGLE_DEVIATION = Math.PI / 12;
+const MEDIUM_BRIDGED_AROMATIC_RING_POLISH_ANGLE_WORSENING_LIMIT = Math.PI / 60;
+const MEDIUM_BRIDGED_AROMATIC_RING_POLISH_TOTAL_ANGLE_WORSENING_LIMIT = Math.PI / 6;
+const MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MAX_PASSES = 4;
+const MEDIUM_BRIDGED_AROMATIC_RING_POLISH_DIRECTION_COUNT = 12;
+const MEDIUM_BRIDGED_AROMATIC_RING_POLISH_STEP_FACTORS = Object.freeze([0.027, 0.017, 0.01, 0.006]);
+const MEDIUM_BRIDGED_RING_BOND_POLISH_MIN_BOND_DEVIATION_FACTOR = 0.32;
+const MEDIUM_BRIDGED_RING_BOND_POLISH_MAX_ANGLE_DEVIATION = Math.PI / 15;
+const MEDIUM_BRIDGED_RING_BOND_POLISH_ANGLE_WORSENING_LIMIT = Math.PI / 60;
+const MEDIUM_BRIDGED_RING_BOND_POLISH_TOTAL_ANGLE_WORSENING_LIMIT = Math.PI / 6;
+const MEDIUM_BRIDGED_RING_BOND_POLISH_MAX_PASSES = 4;
+const MEDIUM_BRIDGED_RING_BOND_POLISH_DIRECTION_COUNT = 12;
+const MEDIUM_BRIDGED_RING_BOND_POLISH_STEP_FACTORS = Object.freeze([0.027, 0.017, 0.01]);
+const MEDIUM_BRIDGED_RING_EDGE_POLISH_MIN_BOND_DEVIATION_FACTOR = 0.22;
+const MEDIUM_BRIDGED_RING_EDGE_POLISH_MAX_PASSES = 4;
+const MEDIUM_BRIDGED_RING_EDGE_POLISH_STEP_FACTORS = Object.freeze([0.03, 0.02, 0.012]);
+const MEDIUM_BRIDGED_RING_POLISH_MAX_PENDANT_HEAVY_ATOMS = 4;
+const PERIPHERAL_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION = Math.PI / 4;
+const PERIPHERAL_BRIDGED_RING_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.9, 0.8, 0.7, 0.6]);
 const SPIRO_JUNCTION_RING_SPREAD_MIN_CROSS_ANGLE = Math.PI / 3;
 const SPIRO_JUNCTION_RING_SPREAD_OFFSETS = Object.freeze(
   Array.from({ length: 72 }, (_, index) => ((index + 1) * 5 * Math.PI) / 180)
@@ -275,15 +308,16 @@ function hasCompactBridgedNonbondedCollapse(layoutGraph, atomIds, coords, bondLe
  * @param {string[]} atomIds - Atom IDs included in the bridged placement.
  * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinates.
  * @param {number} bondLength - Target bond length.
+ * @param {Map<string, 'planar'|'bridged'>|null} [bondValidationClasses] - Optional cached bond-validation classes.
  * @returns {object|null} Audit summary, or `null` when inputs are incomplete.
  */
-function auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength) {
-  if (!layoutGraph || !(coords instanceof Map) || coords.size !== atomIds.length) {
+function auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength, bondValidationClasses = null) {
+  if (!layoutGraph || !(coords instanceof Map) || atomIds.some(atomId => !coords.has(atomId))) {
     return null;
   }
   return auditLayout(layoutGraph, coords, {
     bondLength,
-    bondValidationClasses: assignBondValidationClass(layoutGraph, atomIds, 'bridged')
+    bondValidationClasses: bondValidationClasses ?? assignBondValidationClass(layoutGraph, atomIds, 'bridged')
   });
 }
 
@@ -465,7 +499,7 @@ function buildAromaticRegularizedCoords(rings, coords, bondLength, blendFactor) 
 }
 
 function fitRegularRingTargetsFromSharedEdge(layoutGraph, ring, coords) {
-  if (!layoutGraph || !ring.aromatic || ring.atomIds.length < 5) {
+  if (!layoutGraph || !ring?.aromatic || ring.atomIds.length < 5) {
     return null;
   }
 
@@ -479,6 +513,121 @@ function fitRegularRingTargetsFromSharedEdge(layoutGraph, ring, coords) {
     if (
       (layoutGraph.atomToRings.get(firstAtomId)?.length ?? 0) <= 1
       || (layoutGraph.atomToRings.get(secondAtomId)?.length ?? 0) <= 1
+    ) {
+      continue;
+    }
+
+    const firstPosition = coords.get(firstAtomId);
+    const secondPosition = coords.get(secondAtomId);
+    if (!firstPosition || !secondPosition) {
+      continue;
+    }
+    const edgeVector = sub(secondPosition, firstPosition);
+    const edgeLength = Math.hypot(edgeVector.x, edgeVector.y);
+    if (edgeLength <= 1e-9) {
+      continue;
+    }
+
+    const radius = edgeLength / (2 * Math.sin(Math.PI / ring.atomIds.length));
+    const apothem = edgeLength / (2 * Math.tan(Math.PI / ring.atomIds.length));
+    const midpoint = {
+      x: (firstPosition.x + secondPosition.x) / 2,
+      y: (firstPosition.y + secondPosition.y) / 2
+    };
+    const unitNormal = {
+      x: -edgeVector.y / edgeLength,
+      y: edgeVector.x / edgeLength
+    };
+
+    for (const side of [1, -1]) {
+      const center = {
+        x: midpoint.x + unitNormal.x * apothem * side,
+        y: midpoint.y + unitNormal.y * apothem * side
+      };
+      const firstAngle = angleOf(sub(firstPosition, center));
+      for (const direction of [1, -1]) {
+        const predictedSecondPosition = add(center, fromAngle(firstAngle + direction * step, radius));
+        if (Math.hypot(predictedSecondPosition.x - secondPosition.x, predictedSecondPosition.y - secondPosition.y) > 1e-6) {
+          continue;
+        }
+
+        const targets = new Map();
+        let error = 0;
+        for (let offset = 0; offset < ring.atomIds.length; offset++) {
+          const atomId = ring.atomIds[(index + offset) % ring.atomIds.length];
+          const target = add(center, fromAngle(firstAngle + direction * offset * step, radius));
+          const actual = coords.get(atomId);
+          if (!actual) {
+            error = Number.POSITIVE_INFINITY;
+            break;
+          }
+          error += (target.x - actual.x) ** 2 + (target.y - actual.y) ** 2;
+          targets.set(atomId, target);
+        }
+        if (error < bestError) {
+          bestError = error;
+          bestTargets = targets;
+        }
+      }
+    }
+  }
+
+  return bestTargets;
+}
+
+function sharedRingMembershipCounts(rings) {
+  const membershipCounts = new Map();
+  for (const ring of rings) {
+    for (const atomId of ring.atomIds) {
+      membershipCounts.set(atomId, (membershipCounts.get(atomId) ?? 0) + 1);
+    }
+  }
+  return membershipCounts;
+}
+
+function peripheralSharedEdgeAtomIds(ring, membershipCounts) {
+  const sharedAtomIds = ring.atomIds.filter(atomId => (membershipCounts.get(atomId) ?? 0) > 1);
+  if (sharedAtomIds.length !== 2 || !atomIdsAreAdjacentInRing(ring, sharedAtomIds[0], sharedAtomIds[1])) {
+    return null;
+  }
+  return sharedAtomIds;
+}
+
+function reflectPointAcrossLine(point, firstPosition, secondPosition) {
+  const edgeVector = sub(secondPosition, firstPosition);
+  const edgeLengthSquared = edgeVector.x ** 2 + edgeVector.y ** 2;
+  if (edgeLengthSquared <= 1e-12) {
+    return null;
+  }
+  const pointVector = sub(point, firstPosition);
+  const projectionScale = (pointVector.x * edgeVector.x + pointVector.y * edgeVector.y) / edgeLengthSquared;
+  const projectedPoint = {
+    x: firstPosition.x + edgeVector.x * projectionScale,
+    y: firstPosition.y + edgeVector.y * projectionScale
+  };
+  return {
+    x: projectedPoint.x * 2 - point.x,
+    y: projectedPoint.y * 2 - point.y
+  };
+}
+
+function fitRegularRingTargetsFromAnchoredEdge(ring, coords, edgeAtomIds) {
+  if (!ring || ring.atomIds.length < 5 || !Array.isArray(edgeAtomIds) || edgeAtomIds.length !== 2) {
+    return null;
+  }
+
+  const step = (2 * Math.PI) / ring.atomIds.length;
+  let bestTargets = null;
+  let bestError = Number.POSITIVE_INFINITY;
+
+  for (let index = 0; index < ring.atomIds.length; index++) {
+    const firstAtomId = ring.atomIds[index];
+    const secondAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+    if (
+      !(
+        (firstAtomId === edgeAtomIds[0] && secondAtomId === edgeAtomIds[1])
+        || (firstAtomId === edgeAtomIds[1] && secondAtomId === edgeAtomIds[0])
+      )
     ) {
       continue;
     }
@@ -930,7 +1079,7 @@ function regularRingTargetCandidatesForFixedEdge(ring, coords, firstAtomId, seco
 function fusedAromaticCyclohexanePairs(rings) {
   const pairs = [];
   for (const aromaticRing of rings) {
-    if (!aromaticRing.aromatic || aromaticRing.atomIds.length !== 6) {
+    if (!aromaticRing.aromatic || ![5, 6].includes(aromaticRing.atomIds.length)) {
       continue;
     }
     for (const cyclohexaneRing of rings) {
@@ -953,7 +1102,7 @@ function fusedAromaticCyclohexanePairs(rings) {
   return pairs;
 }
 
-function exactFusedHexagonPairTargetCandidates(pair, coords, bondLength) {
+function exactFusedAromaticCyclohexanePairTargetCandidates(pair, coords, bondLength) {
   const [firstAtomId, secondAtomId] = pair.sharedAtomIds;
   const firstPosition = coords.get(firstAtomId);
   const secondPosition = coords.get(secondAtomId);
@@ -1010,6 +1159,130 @@ function exactFusedHexagonPairTargetCandidates(pair, coords, bondLength) {
     }
   }
   return candidates.sort((firstCandidate, secondCandidate) => firstCandidate.error - secondCandidate.error);
+}
+
+/**
+ * Collects visible heavy atoms reachable from a side atom without crossing any
+ * atom in the protected fused core.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} startAtomId - First atom outside the protected fused core.
+ * @param {Set<string>} protectedAtomIds - Fused-core atoms that stop traversal.
+ * @returns {Set<string>} Connected side atoms outside the protected core.
+ */
+function collectSideComponentExcludingProtectedAtoms(layoutGraph, startAtomId, protectedAtomIds) {
+  const componentAtomIds = new Set([startAtomId]);
+  const pendingAtomIds = [startAtomId];
+
+  while (pendingAtomIds.length > 0) {
+    const atomId = pendingAtomIds.pop();
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (protectedAtomIds.has(neighborAtomId) || componentAtomIds.has(neighborAtomId)) {
+        continue;
+      }
+      if (layoutGraph.atoms.get(neighborAtomId)?.element === 'H') {
+        continue;
+      }
+      componentAtomIds.add(neighborAtomId);
+      pendingAtomIds.push(neighborAtomId);
+    }
+  }
+
+  return componentAtomIds;
+}
+
+/**
+ * Counts which protected fused-core atoms are adjacent to a side component.
+ * Single-anchor components can move rigidly with the shifted anchor without
+ * changing any in-component geometry.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Set<string>} componentAtomIds - Side component atom IDs.
+ * @param {Set<string>} protectedAtomIds - Fused-core atom IDs.
+ * @returns {Set<string>} Protected atom IDs adjacent to the component.
+ */
+function protectedNeighborsForSideComponent(layoutGraph, componentAtomIds, protectedAtomIds) {
+  const protectedNeighborAtomIds = new Set();
+  for (const atomId of componentAtomIds) {
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (protectedAtomIds.has(neighborAtomId)) {
+        protectedNeighborAtomIds.add(neighborAtomId);
+      }
+    }
+  }
+  return protectedNeighborAtomIds;
+}
+
+/**
+ * Translates one-anchor branches and spiro side rings with a moved fused-core
+ * atom. This keeps substituent and single-atom-spiro bond lengths unchanged
+ * while exact fused aromatic/cyclohexane targets repair the protected core.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} pair - Fused aromatic/cyclohexane pair descriptor.
+ * @param {Map<string, {x: number, y: number}>} coords - Original coordinates.
+ * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate coordinates to mutate.
+ * @returns {void}
+ */
+function translateSingleAnchorSideComponentsWithFusedCore(layoutGraph, pair, coords, candidateCoords) {
+  const protectedAtomIds = new Set([...pair.aromaticRing.atomIds, ...pair.cyclohexaneRing.atomIds]);
+  const movedSideAtomIds = new Set();
+
+  for (const anchorAtomId of protectedAtomIds) {
+    const originalAnchorPosition = coords.get(anchorAtomId);
+    const candidateAnchorPosition = candidateCoords.get(anchorAtomId);
+    if (!originalAnchorPosition || !candidateAnchorPosition) {
+      continue;
+    }
+    const delta = {
+      x: candidateAnchorPosition.x - originalAnchorPosition.x,
+      y: candidateAnchorPosition.y - originalAnchorPosition.y
+    };
+    if (Math.hypot(delta.x, delta.y) <= 1e-9) {
+      continue;
+    }
+
+    for (const bond of layoutGraph.bondsByAtomId.get(anchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === anchorAtomId ? bond.b : bond.a;
+      if (
+        protectedAtomIds.has(neighborAtomId)
+        || movedSideAtomIds.has(neighborAtomId)
+        || layoutGraph.atoms.get(neighborAtomId)?.element === 'H'
+      ) {
+        continue;
+      }
+
+      const componentAtomIds = collectSideComponentExcludingProtectedAtoms(layoutGraph, neighborAtomId, protectedAtomIds);
+      const protectedNeighborAtomIds = protectedNeighborsForSideComponent(layoutGraph, componentAtomIds, protectedAtomIds);
+      if (
+        protectedNeighborAtomIds.size !== 1
+        || !protectedNeighborAtomIds.has(anchorAtomId)
+        || [...componentAtomIds].some(atomId => layoutGraph.fixedCoords.has(atomId))
+      ) {
+        continue;
+      }
+
+      for (const atomId of componentAtomIds) {
+        const position = coords.get(atomId);
+        if (!position || !candidateCoords.has(atomId)) {
+          continue;
+        }
+        candidateCoords.set(atomId, {
+          x: position.x + delta.x,
+          y: position.y + delta.y
+        });
+        movedSideAtomIds.add(atomId);
+      }
+    }
+  }
 }
 
 function cyclicExternalRuns(ring, anchorAtomIds) {
@@ -1299,7 +1572,7 @@ function fusedCyclohexaneShapeScore(layoutGraph, atomIds, pair, coords, bondLeng
           angularDifference(
             angleOf(sub(previousPosition, atomPosition)),
             angleOf(sub(nextPosition, atomPosition))
-          ) - (2 * Math.PI) / 3
+              ) - (Math.PI - (2 * Math.PI) / ring.atomIds.length)
         )
       );
       sampleCount++;
@@ -1861,6 +2134,995 @@ function regularizeSaturatedBridgedRings(layoutGraph, rings, atomIds, coords, bo
   return bestCoords;
 }
 
+/**
+ * Returns whether a medium-sized bridged ring system is within the bounded
+ * specialist budget for additional local relaxation passes.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @returns {boolean} True when medium bridged-ring specialist passes may run.
+ */
+function isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds) {
+  return Boolean(
+    rings.length >= MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_RING_COUNT
+    && atomIds.length > BRIDGED_KK_LIMITS.fastAtomLimit
+    && atomIds.length <= MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MAX_ATOM_COUNT
+    && !containsMetalAtom(layoutGraph, atomIds)
+  );
+}
+
+/**
+ * Returns whether a medium-sized bridged ring system should try a bounded
+ * whole-cage angle relaxation. This is intentionally separate from the compact
+ * saturated-cage regularizer: larger mixed alkaloid cages can be audit-clean
+ * while still showing several visibly pinched rings, but they need a strict
+ * atom/ring budget and relaxed bridged bond guard.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {{maxAngleDeviation: number}|null} shapeScore - Current aggregate ring-shape score.
+ * @returns {boolean} True when medium bridged-ring angle relaxation should run.
+ */
+function shouldRelaxMediumBridgedRingAngles(layoutGraph, rings, atomIds, shapeScore) {
+  return Boolean(
+    shapeScore
+    && isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds)
+    && shapeScore.maxAngleDeviation > MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MIN_ANGLE_DEVIATION
+  );
+}
+
+function mediumBridgedRingAngleScoreImproves(candidateScore, incumbentScore) {
+  if (!candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateScore.maxAngleDeviation < incumbentScore.maxAngleDeviation - 1e-9) {
+    return true;
+  }
+  return (
+    candidateScore.maxAngleDeviation <= incumbentScore.maxAngleDeviation + 1e-9
+    && candidateScore.totalAngleDeviation < incumbentScore.totalAngleDeviation - 1e-9
+  );
+}
+
+function shouldAcceptMediumBridgedRingAngleRelaxation(candidateAudit, incumbentAudit, candidateScore, incumbentScore, bondLength) {
+  if (!candidateAudit || !incumbentAudit || !candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateAudit.ok !== true) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > 0) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > Math.max(incumbentAudit.bondLengthFailureCount, 1)) {
+    return false;
+  }
+  if (candidateAudit.maxBondLengthDeviation > bondLength * MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MAX_BOND_DEVIATION_FACTOR) {
+    return false;
+  }
+  return mediumBridgedRingAngleScoreImproves(candidateScore, incumbentScore);
+}
+
+function mediumBridgedRingAnglePolishScoreImproves(candidateScore, incumbentScore) {
+  if (!candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateScore.maxAngleDeviation < incumbentScore.maxAngleDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.maxAngleDeviation > incumbentScore.maxAngleDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateScore.totalAngleDeviation < incumbentScore.totalAngleDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.totalAngleDeviation > incumbentScore.totalAngleDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateScore.maxBondDeviation < incumbentScore.maxBondDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.maxBondDeviation > incumbentScore.maxBondDeviation + 1e-9) {
+    return false;
+  }
+  return candidateScore.totalBondDeviation < incumbentScore.totalBondDeviation - 1e-9;
+}
+
+function shouldAcceptMediumBridgedRingAnglePolish(candidateAudit, incumbentAudit, candidateScore, incumbentScore, bondLength) {
+  if (!candidateAudit || !incumbentAudit || !candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateAudit.ok !== true) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if (candidateAudit.maxBondLengthDeviation > bondLength * MEDIUM_BRIDGED_RING_ANGLE_POLISH_MAX_BOND_DEVIATION_FACTOR) {
+    return false;
+  }
+  return mediumBridgedRingAnglePolishScoreImproves(candidateScore, incumbentScore);
+}
+
+function aromaticRingsNeedingMediumBridgedPolish(rings, coords, bondLength) {
+  return rings.filter(ring => {
+    if (!ring.aromatic) {
+      return false;
+    }
+    const score = regularRingShapeScore(ring, coords, bondLength);
+    return (
+      score
+      && score.maxBondDeviation > bondLength * MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MIN_BOND_DEVIATION_FACTOR
+    );
+  });
+}
+
+function mediumBridgedRingPolishMoveGroups(layoutGraph, polishAtomIds, ringSystemAtomIds, coords) {
+  const ringSystemAtomIdSet = new Set(ringSystemAtomIds);
+  const groups = new Map();
+
+  for (const atomId of polishAtomIds) {
+    const groupAtomIds = new Set([atomId]);
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (ringSystemAtomIdSet.has(neighborAtomId)) {
+        continue;
+      }
+      const subtreeAtomIds = [...collectCutSubtree(layoutGraph, neighborAtomId, atomId)]
+        .filter(candidateAtomId => coords.has(candidateAtomId));
+      if (
+        subtreeAtomIds.length === 0
+        || subtreeAtomIds.some(candidateAtomId => ringSystemAtomIdSet.has(candidateAtomId) || layoutGraph.fixedCoords.has(candidateAtomId))
+      ) {
+        continue;
+      }
+      const heavyAtomCount = subtreeAtomIds
+        .filter(candidateAtomId => layoutGraph.atoms.get(candidateAtomId)?.element !== 'H')
+        .length;
+      if (heavyAtomCount > MEDIUM_BRIDGED_RING_POLISH_MAX_PENDANT_HEAVY_ATOMS) {
+        continue;
+      }
+      for (const subtreeAtomId of subtreeAtomIds) {
+        groupAtomIds.add(subtreeAtomId);
+      }
+    }
+    groups.set(atomId, [...groupAtomIds]);
+  }
+
+  return groups;
+}
+
+function translateMediumBridgedRingPolishGroup(coords, groupAtomIds, dx, dy) {
+  const candidateCoords = cloneCoords(coords);
+  for (const atomId of groupAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, {
+      x: position.x + dx,
+      y: position.y + dy
+    });
+  }
+  return candidateCoords;
+}
+
+function translateMediumBridgedRingPolishPair(coords, firstGroupAtomIds, firstDx, firstDy, secondGroupAtomIds, secondDx, secondDy) {
+  const firstGroupAtomIdSet = new Set(firstGroupAtomIds);
+  if (secondGroupAtomIds.some(atomId => firstGroupAtomIdSet.has(atomId))) {
+    return null;
+  }
+
+  const candidateCoords = cloneCoords(coords);
+  for (const atomId of firstGroupAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, {
+      x: position.x + firstDx,
+      y: position.y + firstDy
+    });
+  }
+  for (const atomId of secondGroupAtomIds) {
+    const position = coords.get(atomId);
+    if (!position) {
+      continue;
+    }
+    candidateCoords.set(atomId, {
+      x: position.x + secondDx,
+      y: position.y + secondDy
+    });
+  }
+  return candidateCoords;
+}
+
+function shouldAcceptMediumBridgedAromaticRingPolish(candidateAudit, incumbentAudit, candidateAromaticScore, incumbentAromaticScore, candidateAllScore, incumbentAllScore, bondLength) {
+  if (!candidateAudit || !incumbentAudit || !candidateAromaticScore || !incumbentAromaticScore || !candidateAllScore || !incumbentAllScore) {
+    return false;
+  }
+  if (candidateAudit.ok !== true) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if (candidateAudit.maxBondLengthDeviation > bondLength * MEDIUM_BRIDGED_RING_ANGLE_POLISH_MAX_BOND_DEVIATION_FACTOR) {
+    return false;
+  }
+  const allowedMaxAngleDeviation = Math.max(
+    incumbentAllScore.maxAngleDeviation,
+    MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MAX_ANGLE_DEVIATION
+  );
+  if (candidateAllScore.maxAngleDeviation > allowedMaxAngleDeviation + MEDIUM_BRIDGED_AROMATIC_RING_POLISH_ANGLE_WORSENING_LIMIT) {
+    return false;
+  }
+  const allowedAromaticMaxAngleDeviation = Math.max(
+    incumbentAromaticScore.maxAngleDeviation,
+    MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MAX_ANGLE_DEVIATION
+  );
+  if (candidateAromaticScore.maxAngleDeviation > allowedAromaticMaxAngleDeviation + MEDIUM_BRIDGED_AROMATIC_RING_POLISH_ANGLE_WORSENING_LIMIT) {
+    return false;
+  }
+  if (candidateAromaticScore.maxAngleDeviation > MEDIUM_BRIDGED_AROMATIC_RING_POLISH_ABSOLUTE_MAX_ANGLE_DEVIATION) {
+    return false;
+  }
+  if (candidateAromaticScore.totalAngleDeviation > incumbentAromaticScore.totalAngleDeviation + MEDIUM_BRIDGED_AROMATIC_RING_POLISH_TOTAL_ANGLE_WORSENING_LIMIT) {
+    return false;
+  }
+  if (candidateAromaticScore.maxBondDeviation < incumbentAromaticScore.maxBondDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateAromaticScore.maxBondDeviation > incumbentAromaticScore.maxBondDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateAromaticScore.totalBondDeviation < incumbentAromaticScore.totalBondDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateAromaticScore.totalBondDeviation > incumbentAromaticScore.totalBondDeviation + 1e-9) {
+    return false;
+  }
+  return candidateAromaticScore.totalAngleDeviation < incumbentAromaticScore.totalAngleDeviation - 1e-9;
+}
+
+/**
+ * Trims residual bond stretch in aromatic rings embedded in a medium bridged
+ * cage. The preceding whole-cage angle polish can leave aromatic rings readable
+ * but visibly uneven; this pass gives only aromatic atoms small audit-guarded
+ * moves, capped by a strict angle-deviation guard.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Polished coordinates when accepted, otherwise the original map.
+ */
+function polishMediumBridgedAromaticRings(layoutGraph, rings, atomIds, coords, bondLength) {
+  const aromaticRings = aromaticRingsNeedingMediumBridgedPolish(rings, coords, bondLength);
+  if (
+    aromaticRings.length === 0
+    || !isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds)
+  ) {
+    return coords;
+  }
+
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, atomIds, 'bridged');
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength, bondValidationClasses);
+  let bestAromaticScore = saturatedBridgedRingShapeScore(aromaticRings, coords, bondLength);
+  let bestAllScore = saturatedBridgedRingShapeScore(rings, coords, bondLength);
+  if (!bestAudit || !bestAromaticScore || !bestAllScore) {
+    return coords;
+  }
+
+  const polishAtomIds = [...new Set(aromaticRings.flatMap(ring => ring.atomIds))]
+    .filter(atomId => !layoutGraph.fixedCoords.has(atomId));
+  const moveGroups = mediumBridgedRingPolishMoveGroups(layoutGraph, polishAtomIds, atomIds, coords);
+  for (let pass = 0; pass < MEDIUM_BRIDGED_AROMATIC_RING_POLISH_MAX_PASSES; pass++) {
+    let acceptedInPass = false;
+    for (const atomId of polishAtomIds) {
+      const basePosition = bestCoords.get(atomId);
+      if (!basePosition) {
+        continue;
+      }
+      const moveGroupAtomIds = moveGroups.get(atomId) ?? [atomId];
+      for (const stepFactor of MEDIUM_BRIDGED_AROMATIC_RING_POLISH_STEP_FACTORS) {
+        const step = bondLength * stepFactor;
+        for (let directionIndex = 0; directionIndex < MEDIUM_BRIDGED_AROMATIC_RING_POLISH_DIRECTION_COUNT; directionIndex++) {
+          const angle = (2 * Math.PI * directionIndex) / MEDIUM_BRIDGED_AROMATIC_RING_POLISH_DIRECTION_COUNT;
+          const candidateCoords = translateMediumBridgedRingPolishGroup(
+            bestCoords,
+            moveGroupAtomIds,
+            Math.cos(angle) * step,
+            Math.sin(angle) * step
+          );
+          const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength, bondValidationClasses);
+          const candidateAromaticScore = saturatedBridgedRingShapeScore(aromaticRings, candidateCoords, bondLength);
+          const candidateAllScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
+          if (
+            shouldAcceptMediumBridgedAromaticRingPolish(
+              candidateAudit,
+              bestAudit,
+              candidateAromaticScore,
+              bestAromaticScore,
+              candidateAllScore,
+              bestAllScore,
+              bondLength
+            )
+          ) {
+            bestCoords = candidateCoords;
+            bestAudit = candidateAudit;
+            bestAromaticScore = candidateAromaticScore;
+            bestAllScore = candidateAllScore;
+            acceptedInPass = true;
+          }
+        }
+      }
+    }
+    if (!acceptedInPass) {
+      break;
+    }
+  }
+
+  return bestCoords;
+}
+
+function ringsNeedingMediumBridgedBondPolish(rings, coords, bondLength) {
+  return rings.filter(ring => {
+    const score = regularRingShapeScore(ring, coords, bondLength);
+    return (
+      score
+      && score.maxBondDeviation > bondLength * MEDIUM_BRIDGED_RING_BOND_POLISH_MIN_BOND_DEVIATION_FACTOR
+    );
+  });
+}
+
+function mediumBridgedRingEdgePolishPairs(rings, coords, bondLength) {
+  const pairsByKey = new Map();
+  for (const ring of rings) {
+    for (let index = 0; index < ring.atomIds.length; index++) {
+      const firstAtomId = ring.atomIds[index];
+      const secondAtomId = ring.atomIds[(index + 1) % ring.atomIds.length];
+      const firstPosition = coords.get(firstAtomId);
+      const secondPosition = coords.get(secondAtomId);
+      if (!firstPosition || !secondPosition) {
+        continue;
+      }
+      const length = Math.hypot(secondPosition.x - firstPosition.x, secondPosition.y - firstPosition.y);
+      const deviation = Math.abs(length - bondLength);
+      if (deviation <= bondLength * MEDIUM_BRIDGED_RING_EDGE_POLISH_MIN_BOND_DEVIATION_FACTOR) {
+        continue;
+      }
+      const key = firstAtomId < secondAtomId
+        ? `${firstAtomId}:${secondAtomId}`
+        : `${secondAtomId}:${firstAtomId}`;
+      const existingPair = pairsByKey.get(key);
+      if (!existingPair || deviation > existingPair.deviation) {
+        pairsByKey.set(key, {
+          firstAtomId,
+          secondAtomId,
+          deviation
+        });
+      }
+    }
+  }
+  return [...pairsByKey.values()]
+    .sort((firstPair, secondPair) => secondPair.deviation - firstPair.deviation);
+}
+
+function mediumBridgedRingBondPolishScoreImproves(candidateScore, incumbentScore) {
+  if (!candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateScore.maxBondDeviation < incumbentScore.maxBondDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.maxBondDeviation > incumbentScore.maxBondDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateScore.totalBondDeviation < incumbentScore.totalBondDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.totalBondDeviation > incumbentScore.totalBondDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateScore.maxAngleDeviation < incumbentScore.maxAngleDeviation - 1e-9) {
+    return true;
+  }
+  if (candidateScore.maxAngleDeviation > incumbentScore.maxAngleDeviation + 1e-9) {
+    return false;
+  }
+  return candidateScore.totalAngleDeviation < incumbentScore.totalAngleDeviation - 1e-9;
+}
+
+function shouldAcceptMediumBridgedRingBondPolish(candidateAudit, incumbentAudit, candidateScore, incumbentScore, bondLength) {
+  if (!candidateAudit || !incumbentAudit || !candidateScore || !incumbentScore) {
+    return false;
+  }
+  if (candidateAudit.ok !== true) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if (candidateAudit.maxBondLengthDeviation > bondLength * MEDIUM_BRIDGED_RING_ANGLE_POLISH_MAX_BOND_DEVIATION_FACTOR) {
+    return false;
+  }
+  if (candidateScore.maxAngleDeviation > MEDIUM_BRIDGED_RING_BOND_POLISH_MAX_ANGLE_DEVIATION) {
+    return false;
+  }
+  if (candidateScore.maxAngleDeviation > incumbentScore.maxAngleDeviation + MEDIUM_BRIDGED_RING_BOND_POLISH_ANGLE_WORSENING_LIMIT) {
+    return false;
+  }
+  if (candidateScore.totalAngleDeviation > incumbentScore.totalAngleDeviation + MEDIUM_BRIDGED_RING_BOND_POLISH_TOTAL_ANGLE_WORSENING_LIMIT) {
+    return false;
+  }
+  return mediumBridgedRingBondPolishScoreImproves(candidateScore, incumbentScore);
+}
+
+/**
+ * Distributes residual long/short ring bonds after the angle and aromatic
+ * polishes have made the cage readable. This final pass may trade a small
+ * amount of aggregate angle ideality for visibly more even ring edges, but it
+ * keeps strict audit and angle caps so it cannot reopen the original collapse.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Polished coordinates when accepted, otherwise the original map.
+ */
+function polishMediumBridgedRingBonds(layoutGraph, rings, atomIds, coords, bondLength) {
+  const bondPolishRings = ringsNeedingMediumBridgedBondPolish(rings, coords, bondLength);
+  if (
+    bondPolishRings.length === 0
+    || !isMediumBridgedRingSystemEligible(layoutGraph, rings, atomIds)
+  ) {
+    return coords;
+  }
+
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, atomIds, 'bridged');
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength, bondValidationClasses);
+  let bestScore = saturatedBridgedRingShapeScore(rings, coords, bondLength);
+  if (!bestAudit || !bestScore) {
+    return coords;
+  }
+
+  const polishAtomIds = [...new Set(bondPolishRings.flatMap(ring => ring.atomIds))]
+    .filter(atomId => !layoutGraph.fixedCoords.has(atomId));
+  const moveGroups = mediumBridgedRingPolishMoveGroups(layoutGraph, polishAtomIds, atomIds, coords);
+  for (let pass = 0; pass < MEDIUM_BRIDGED_RING_BOND_POLISH_MAX_PASSES; pass++) {
+    let acceptedInPass = false;
+    for (const atomId of polishAtomIds) {
+      const basePosition = bestCoords.get(atomId);
+      if (!basePosition) {
+        continue;
+      }
+      const moveGroupAtomIds = moveGroups.get(atomId) ?? [atomId];
+      for (const stepFactor of MEDIUM_BRIDGED_RING_BOND_POLISH_STEP_FACTORS) {
+        const step = bondLength * stepFactor;
+        for (let directionIndex = 0; directionIndex < MEDIUM_BRIDGED_RING_BOND_POLISH_DIRECTION_COUNT; directionIndex++) {
+          const angle = (2 * Math.PI * directionIndex) / MEDIUM_BRIDGED_RING_BOND_POLISH_DIRECTION_COUNT;
+          const candidateCoords = translateMediumBridgedRingPolishGroup(
+            bestCoords,
+            moveGroupAtomIds,
+            Math.cos(angle) * step,
+            Math.sin(angle) * step
+          );
+          const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength, bondValidationClasses);
+          const candidateScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
+          if (shouldAcceptMediumBridgedRingBondPolish(candidateAudit, bestAudit, candidateScore, bestScore, bondLength)) {
+            bestCoords = candidateCoords;
+            bestAudit = candidateAudit;
+            bestScore = candidateScore;
+            acceptedInPass = true;
+          }
+        }
+      }
+    }
+    if (!acceptedInPass) {
+      break;
+    }
+  }
+
+  for (let pass = 0; pass < MEDIUM_BRIDGED_RING_EDGE_POLISH_MAX_PASSES; pass++) {
+    let acceptedInPass = false;
+    const polishPairs = mediumBridgedRingEdgePolishPairs(bondPolishRings, bestCoords, bondLength);
+    for (const { firstAtomId, secondAtomId, deviation } of polishPairs) {
+      if (layoutGraph.fixedCoords.has(firstAtomId) || layoutGraph.fixedCoords.has(secondAtomId)) {
+        continue;
+      }
+      const firstPosition = bestCoords.get(firstAtomId);
+      const secondPosition = bestCoords.get(secondAtomId);
+      if (!firstPosition || !secondPosition) {
+        continue;
+      }
+      const dx = secondPosition.x - firstPosition.x;
+      const dy = secondPosition.y - firstPosition.y;
+      const length = Math.hypot(dx, dy);
+      if (length <= 1e-9) {
+        continue;
+      }
+      const unitX = dx / length;
+      const unitY = dy / length;
+      const directionSign = length > bondLength ? 1 : -1;
+      const firstGroupAtomIds = moveGroups.get(firstAtomId) ?? [firstAtomId];
+      const secondGroupAtomIds = moveGroups.get(secondAtomId) ?? [secondAtomId];
+      for (const stepFactor of MEDIUM_BRIDGED_RING_EDGE_POLISH_STEP_FACTORS) {
+        const endpointStep = Math.min(deviation * 0.25, bondLength * stepFactor);
+        const candidateCoords = translateMediumBridgedRingPolishPair(
+          bestCoords,
+          firstGroupAtomIds,
+          unitX * endpointStep * directionSign,
+          unitY * endpointStep * directionSign,
+          secondGroupAtomIds,
+          -unitX * endpointStep * directionSign,
+          -unitY * endpointStep * directionSign
+        );
+        if (!candidateCoords) {
+          continue;
+        }
+        const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength, bondValidationClasses);
+        const candidateScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
+        if (shouldAcceptMediumBridgedRingBondPolish(candidateAudit, bestAudit, candidateScore, bestScore, bondLength)) {
+          bestCoords = candidateCoords;
+          bestAudit = candidateAudit;
+          bestScore = candidateScore;
+          acceptedInPass = true;
+          break;
+        }
+      }
+    }
+    if (!acceptedInPass) {
+      break;
+    }
+  }
+
+  return bestCoords;
+}
+
+/**
+ * Performs a bounded local coordinate polish after whole-cage relaxation. The
+ * averaged regular-ring projection removes gross kinks, then this pass lets
+ * individual ring atoms take small audit-guarded steps that reduce residual
+ * angle strain without reopening overlaps or stretched bonds.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Polished coordinates when accepted, otherwise the original map.
+ */
+function polishMediumBridgedRingAngles(layoutGraph, rings, atomIds, coords, bondLength) {
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, atomIds, 'bridged');
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength, bondValidationClasses);
+  let bestScore = saturatedBridgedRingShapeScore(rings, coords, bondLength);
+  if (
+    !bestAudit
+    || !bestScore
+    || !shouldRelaxMediumBridgedRingAngles(layoutGraph, rings, atomIds, bestScore)
+    || bestScore.maxAngleDeviation <= MEDIUM_BRIDGED_RING_ANGLE_POLISH_MIN_ANGLE_DEVIATION
+  ) {
+    return coords;
+  }
+
+  const balanceAtomIds = saturatedBridgedRingBalanceAtomIds(layoutGraph, rings);
+  for (let pass = 0; pass < MEDIUM_BRIDGED_RING_ANGLE_POLISH_MAX_PASSES; pass++) {
+    let acceptedInPass = false;
+    for (const atomId of balanceAtomIds) {
+      const basePosition = bestCoords.get(atomId);
+      if (!basePosition) {
+        continue;
+      }
+      for (const stepFactor of MEDIUM_BRIDGED_RING_ANGLE_POLISH_STEP_FACTORS) {
+        const step = bondLength * stepFactor;
+        for (let directionIndex = 0; directionIndex < MEDIUM_BRIDGED_RING_ANGLE_POLISH_DIRECTION_COUNT; directionIndex++) {
+          const angle = (2 * Math.PI * directionIndex) / MEDIUM_BRIDGED_RING_ANGLE_POLISH_DIRECTION_COUNT;
+          const candidateCoords = cloneCoords(bestCoords);
+          candidateCoords.set(atomId, {
+            x: basePosition.x + Math.cos(angle) * step,
+            y: basePosition.y + Math.sin(angle) * step
+          });
+          const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength, bondValidationClasses);
+          const candidateScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
+          if (shouldAcceptMediumBridgedRingAnglePolish(candidateAudit, bestAudit, candidateScore, bestScore, bondLength)) {
+            bestCoords = candidateCoords;
+            bestAudit = candidateAudit;
+            bestScore = candidateScore;
+            acceptedInPass = true;
+          }
+        }
+      }
+    }
+    if (!acceptedInPass) {
+      break;
+    }
+  }
+
+  return bestCoords;
+}
+
+/**
+ * Relaxes medium-sized bridged cages toward averaged regular-ring targets when
+ * the unmatched KK/projection seed has left many rings visibly kinked. The pass
+ * is bounded by atom count, ring count, iteration count, and a relaxed bridged
+ * bond-deviation ceiling so it cannot turn a readable cage into a stretched
+ * graph just to improve angles.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Relaxed coordinates when accepted, otherwise the original map.
+ */
+function relaxMediumBridgedRingAngles(layoutGraph, rings, atomIds, coords, bondLength) {
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, atomIds, 'bridged');
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength, bondValidationClasses);
+  let bestScore = saturatedBridgedRingShapeScore(rings, coords, bondLength);
+  if (!bestAudit || !shouldRelaxMediumBridgedRingAngles(layoutGraph, rings, atomIds, bestScore)) {
+    return coords;
+  }
+
+  for (const damping of MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_DAMPING_FACTORS) {
+    let candidateCoords = bestCoords;
+    for (let iteration = 0; iteration < MEDIUM_BRIDGED_RING_ANGLE_RELAXATION_MAX_ITERATIONS; iteration++) {
+      const nextCoords = buildSaturatedBridgedRingRegularizedCoords(layoutGraph, rings, candidateCoords, bondLength, damping);
+      if (!nextCoords) {
+        break;
+      }
+      candidateCoords = nextCoords;
+      const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength, bondValidationClasses);
+      const candidateScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
+      if (shouldAcceptMediumBridgedRingAngleRelaxation(candidateAudit, bestAudit, candidateScore, bestScore, bondLength)) {
+        bestCoords = candidateCoords;
+        bestAudit = candidateAudit;
+        bestScore = candidateScore;
+      }
+    }
+  }
+
+  return bestCoords;
+}
+
+function mediumBridgedRingAngleRelaxationSystems(layoutGraph) {
+  return (layoutGraph.ringSystems ?? [])
+    .map(ringSystem => ({
+      ringSystem,
+      atomIds: ringSystem.atomIds ?? [],
+      rings: (ringSystem.ringIds ?? [])
+        .map(ringId => layoutGraph.rings.find(ring => ring.id === ringId))
+        .filter(Boolean)
+    }))
+    .filter(entry => entry.atomIds.length > 0 && entry.rings.length > 0);
+}
+
+/**
+ * Returns whether the full layout has a medium bridged ring system with enough
+ * aggregate ring-angle strain to try the specialist angle relaxation hook.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Full coordinate map.
+ * @param {{bondLength?: number}} [options] - Optional bond-length override.
+ * @returns {boolean} True when the medium bridged-ring angle hook should run.
+ */
+export function hasMediumBridgedRingAngleRelaxationNeed(layoutGraph, coords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  for (const { rings, atomIds } of mediumBridgedRingAngleRelaxationSystems(layoutGraph)) {
+    const score = saturatedBridgedRingShapeScore(rings, coords, bondLength);
+    if (shouldRelaxMediumBridgedRingAngles(layoutGraph, rings, atomIds, score)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Runs the bounded medium bridged-ring angle relaxation against a full layout.
+ * Coordinates outside the target ring systems are left in place; full-layout
+ * audit checks still guard against branch-bond or overlap regressions.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Full coordinate map.
+ * @param {{bondLength?: number}} [options] - Optional bond-length override.
+ * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number}} Relaxed coordinates and move count.
+ */
+export function runMediumBridgedRingAngleRelaxation(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  let coords = inputCoords;
+  let nudges = 0;
+
+  for (const { rings, atomIds } of mediumBridgedRingAngleRelaxationSystems(layoutGraph)) {
+    const relaxedCoords = relaxMediumBridgedRingAngles(layoutGraph, rings, atomIds, coords, bondLength);
+    const flippedCoords = flipPeripheralBridgedRingsAcrossSharedEdges(layoutGraph, rings, atomIds, relaxedCoords, bondLength);
+    const anglePolishedCoords = polishMediumBridgedRingAngles(layoutGraph, rings, atomIds, flippedCoords, bondLength);
+    const aromaticPolishedCoords = polishMediumBridgedAromaticRings(layoutGraph, rings, atomIds, anglePolishedCoords, bondLength);
+    const bondPolishedCoords = polishMediumBridgedRingBonds(layoutGraph, rings, atomIds, aromaticPolishedCoords, bondLength);
+    const finalRelaxedCoords = relaxMediumBridgedRingAngles(layoutGraph, rings, atomIds, bondPolishedCoords, bondLength);
+    const finalAngleCoords = polishMediumBridgedRingAngles(layoutGraph, rings, atomIds, finalRelaxedCoords, bondLength);
+    const finalBondCoords = polishMediumBridgedRingBonds(layoutGraph, rings, atomIds, finalAngleCoords, bondLength);
+    const nextCoords = finalBondCoords;
+    if (nextCoords === coords) {
+      continue;
+    }
+    for (const atomId of atomIds) {
+      const previous = coords.get(atomId);
+      const next = nextCoords.get(atomId);
+      if (previous && next && Math.hypot(next.x - previous.x, next.y - previous.y) > 1e-6) {
+        nudges++;
+      }
+    }
+    coords = nextCoords;
+  }
+
+  return { coords, nudges };
+}
+
+function buildPeripheralBridgedRingFlippedCoords(coords, ring, edgeAtomIds) {
+  const firstPosition = coords.get(edgeAtomIds[0]);
+  const secondPosition = coords.get(edgeAtomIds[1]);
+  if (!firstPosition || !secondPosition) {
+    return null;
+  }
+
+  const edgeAtomSet = new Set(edgeAtomIds);
+  const candidateCoords = cloneCoords(coords);
+  for (const atomId of ring.atomIds) {
+    if (edgeAtomSet.has(atomId)) {
+      continue;
+    }
+    const position = coords.get(atomId);
+    if (!position) {
+      return null;
+    }
+    const reflectedPosition = reflectPointAcrossLine(position, firstPosition, secondPosition);
+    if (!reflectedPosition) {
+      return null;
+    }
+    candidateCoords.set(atomId, reflectedPosition);
+  }
+  return candidateCoords;
+}
+
+function shouldAcceptPeripheralBridgedRingFlip(candidateAudit, incumbentAudit, candidateScore, incumbentScore, candidateRingScore, incumbentRingScore) {
+  if (!candidateAudit || !incumbentAudit || !candidateScore || !incumbentScore || !candidateRingScore || !incumbentRingScore) {
+    return false;
+  }
+  if (candidateAudit.ok !== true) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if (candidateRingScore.maxAngleDeviation > incumbentRingScore.maxAngleDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateScore.maxBondDeviation > incumbentScore.maxBondDeviation + 1e-9) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) < (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return true;
+  }
+  return (
+    (candidateAudit.visibleHeavyBondCrossingCount ?? 0) === (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)
+    && candidateRingScore.totalAngleDeviation < incumbentRingScore.totalAngleDeviation - 1e-9
+  );
+}
+
+/**
+ * Mirrors peripheral bridged rings across their shared edge when the opposite
+ * side removes an audited crossing without changing the shared core. This is a
+ * narrow retouch for leaf rings whose side choice is visually important but not
+ * strongly encoded by the KK distance layout.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Flipped coordinates when accepted, otherwise the original map.
+ */
+function flipPeripheralBridgedRingsAcrossSharedEdges(layoutGraph, rings, atomIds, coords, bondLength) {
+  const membershipCounts = sharedRingMembershipCounts(rings);
+  const bondValidationClasses = assignBondValidationClass(layoutGraph, atomIds, 'bridged');
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, bestCoords, bondLength, bondValidationClasses);
+  let bestScore = saturatedBridgedRingShapeScore(rings, bestCoords, bondLength);
+  if (!bestAudit || !bestScore || containsMetalAtom(layoutGraph, atomIds)) {
+    return coords;
+  }
+
+  for (const ring of rings) {
+    const edgeAtomIds = peripheralSharedEdgeAtomIds(ring, membershipCounts);
+    if (!edgeAtomIds) {
+      continue;
+    }
+    const incumbentRingScore = regularRingShapeScore(ring, bestCoords, bondLength);
+    const candidateCoords = buildPeripheralBridgedRingFlippedCoords(bestCoords, ring, edgeAtomIds);
+    if (!candidateCoords || !incumbentRingScore) {
+      continue;
+    }
+    const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength, bondValidationClasses);
+    const candidateScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
+    const candidateRingScore = regularRingShapeScore(ring, candidateCoords, bondLength);
+    if (shouldAcceptPeripheralBridgedRingFlip(candidateAudit, bestAudit, candidateScore, bestScore, candidateRingScore, incumbentRingScore)) {
+      bestCoords = candidateCoords;
+      bestAudit = candidateAudit;
+      bestScore = candidateScore;
+    }
+  }
+
+  return bestCoords;
+}
+
+function peripheralBridgedRingRegularizationCandidates(rings, coords, bondLength) {
+  const membershipCounts = sharedRingMembershipCounts(rings);
+  return rings
+    .filter(ring => (
+      !ring.aromatic
+      && (ring.atomIds.length === 5 || ring.atomIds.length === 6)
+      && peripheralSharedEdgeAtomIds(ring, membershipCounts)
+    ))
+    .map(ring => ({
+      ring,
+      edgeAtomIds: peripheralSharedEdgeAtomIds(ring, membershipCounts),
+      score: regularRingShapeScore(ring, coords, bondLength)
+    }))
+    .filter(candidate => (
+      candidate.edgeAtomIds
+      && candidate.score
+      && candidate.score.maxAngleDeviation > PERIPHERAL_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION
+    ))
+    .sort((firstCandidate, secondCandidate) => (
+      secondCandidate.score.maxAngleDeviation - firstCandidate.score.maxAngleDeviation
+      || secondCandidate.score.maxBondDeviation - firstCandidate.score.maxBondDeviation
+    ));
+}
+
+function buildPeripheralBridgedRingRegularizedCoords(coords, candidate, blendFactor) {
+  const targets = fitRegularRingTargetsFromAnchoredEdge(candidate.ring, coords, candidate.edgeAtomIds);
+  if (!targets) {
+    return null;
+  }
+  const anchoredAtomIds = new Set(candidate.edgeAtomIds);
+  const candidateCoords = cloneCoords(coords);
+  for (const [atomId, target] of targets) {
+    if (anchoredAtomIds.has(atomId)) {
+      continue;
+    }
+    const current = coords.get(atomId);
+    if (!current) {
+      return null;
+    }
+    candidateCoords.set(atomId, {
+      x: current.x * (1 - blendFactor) + target.x * blendFactor,
+      y: current.y * (1 - blendFactor) + target.y * blendFactor
+    });
+  }
+  return candidateCoords;
+}
+
+function shouldAcceptPeripheralBridgedRingRegularizedCoords(candidateAudit, incumbentAudit, candidateScore, incumbentScore, candidateRingScore, incumbentRingScore) {
+  if (!candidateAudit || !incumbentAudit || !candidateScore || !incumbentScore || !candidateRingScore || !incumbentRingScore) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.severeOverlapPenalty ?? 0) > (incumbentAudit.severeOverlapPenalty ?? 0) + 1e-9) {
+    return false;
+  }
+  if (candidateAudit.maxBondLengthDeviation > incumbentAudit.maxBondLengthDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateRingScore.maxAngleDeviation >= incumbentRingScore.maxAngleDeviation - 1e-9) {
+    return false;
+  }
+  if (candidateScore.totalScore < incumbentScore.totalScore - 1e-9) {
+    return true;
+  }
+  return candidateRingScore.totalScore < incumbentRingScore.totalScore - 1e-9;
+}
+
+/**
+ * Regularizes peripheral bridged rings around their one shared edge while
+ * leaving the shared core atoms fixed. Large bridged alkaloid-like systems can
+ * have one oxolane/cyclohexane leaf collapse around an otherwise acceptable KK
+ * seed; anchoring only the shared edge repairs that local ring without forcing
+ * the whole cage through compact-ring balancing.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Regularized coordinates when accepted, otherwise the original map.
+ */
+function regularizePeripheralBridgedRings(layoutGraph, rings, atomIds, coords, bondLength) {
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+  let bestScore = saturatedBridgedRingShapeScore(rings, coords, bondLength);
+  if (!bestAudit || !bestScore || containsMetalAtom(layoutGraph, atomIds)) {
+    return coords;
+  }
+
+  for (const candidate of peripheralBridgedRingRegularizationCandidates(rings, bestCoords, bondLength)) {
+    let incumbentRingScore = regularRingShapeScore(candidate.ring, bestCoords, bondLength);
+    if (!incumbentRingScore) {
+      continue;
+    }
+    for (const blendFactor of PERIPHERAL_BRIDGED_RING_REGULARIZATION_BLEND_FACTORS) {
+      const candidateCoords = buildPeripheralBridgedRingRegularizedCoords(bestCoords, candidate, blendFactor);
+      if (!candidateCoords) {
+        continue;
+      }
+      const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+      const candidateScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
+      const candidateRingScore = regularRingShapeScore(candidate.ring, candidateCoords, bondLength);
+      if (shouldAcceptPeripheralBridgedRingRegularizedCoords(candidateAudit, bestAudit, candidateScore, bestScore, candidateRingScore, incumbentRingScore)) {
+        bestCoords = candidateCoords;
+        bestAudit = candidateAudit;
+        bestScore = candidateScore;
+        incumbentRingScore = candidateRingScore;
+      }
+    }
+  }
+
+  return bestCoords;
+}
+
 function shouldAcceptFusedCyclohexaneCoords(candidateAudit, incumbentAudit, candidateScore, incumbentScore) {
   if (!candidateAudit || !incumbentAudit || candidateScore == null || incumbentScore == null) {
     return false;
@@ -2054,9 +3316,9 @@ export function regularizeSaturatedBridgedCyclohexaneCores(layoutGraph, rings, a
 }
 
 /**
- * Rebuilds fused aromatic/cyclohexane bridged cores on exact hexagon geometry
- * when a generic bridged placement has strained the publication-style ring
- * shapes.
+ * Rebuilds fused aromatic/cyclohexane bridged cores on exact regular-ring
+ * geometry when a generic bridged placement has strained the publication-style
+ * ring shapes.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {object[]} rings - Ring descriptors in the bridged system.
  * @param {string[]} atomIds - Atom IDs included in the bridged placement.
@@ -2082,7 +3344,7 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
   }
 
   for (const pair of pairs) {
-    const fusedTargetCandidates = exactFusedHexagonPairTargetCandidates(pair, coords, bondLength);
+    const fusedTargetCandidates = exactFusedAromaticCyclohexanePairTargetCandidates(pair, coords, bondLength);
     if (fusedTargetCandidates.length === 0) {
       continue;
     }
@@ -2094,6 +3356,7 @@ export function regularizeFusedAromaticCyclohexaneCores(layoutGraph, rings, atom
             candidateCoords.set(atomId, position);
           }
         }
+        translateSingleAnchorSideComponentsWithFusedCore(layoutGraph, pair, coords, candidateCoords);
         addVariableBridgePathTargets(layoutGraph, rings, pair, coords, candidateCoords, bondLength, heightFactor);
         const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
         const candidateScore = fusedCyclohexaneShapeScore(layoutGraph, atomIds, pair, candidateCoords, bondLength);
@@ -2334,6 +3597,7 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
   selectedCoords = regularizeSaturatedBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = balanceSaturatedBridgedRingJunctionAngles(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = balanceSaturatedBridgedRingShape(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = regularizePeripheralBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = regularizeAromaticBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = spreadSpiroJunctionRingBlocks(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
 

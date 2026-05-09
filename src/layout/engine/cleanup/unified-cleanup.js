@@ -2,7 +2,7 @@
 
 import { buildAtomGrid, computeAtomDistortionCost, measureLayoutState, measureOverlapState } from '../audit/invariants.js';
 import { CLEANUP_EPSILON, UNIFIED_CLEANUP_LIMITS } from '../constants.js';
-import { computeRotatableSubtrees, runLocalCleanup } from './local-rotation.js';
+import { computeRotatableSubtrees, runLocalCleanup, runSpiroSmallRingExteriorCleanup } from './local-rotation.js';
 import { collectRigidPendantRingSubtrees, mergeRigidSubtreesByAtomId, resolveOverlaps } from './overlap-resolution.js';
 import { measureOrthogonalHypervalentDeviation } from './hypervalent-angle-tidy.js';
 
@@ -518,6 +518,16 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
     overlapMoves += bestCandidate.overlapMoves;
     totalImprovement += Math.max(bestCandidate.improvement, 0);
     baseLayoutState = bestCandidate.candidateState;
+  }
+
+  const spiroSmallRingExteriorCleanup = runSpiroSmallRingExteriorCleanup(layoutGraph, coords, {
+    bondLength,
+    epsilon,
+    frozenAtomIds
+  });
+  if (spiroSmallRingExteriorCleanup.nudges > 0) {
+    coords = spiroSmallRingExteriorCleanup.coords;
+    totalImprovement += spiroSmallRingExteriorCleanup.improvement;
   }
 
   return {

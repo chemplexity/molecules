@@ -4,6 +4,7 @@ import { CLEANUP_EPSILON, DISTANCE_EPSILON, atomPairKey } from '../constants.js'
 import { add, angleOf, angularDifference, centroid, fromAngle, rotate, sub, wrapAngle } from '../geometry/vec2.js';
 import { pointInPolygon } from '../geometry/polygon.js';
 import { buildAtomGrid, buildSubtreeOverlapContext, computeAtomDistortionCost, computeSubtreeOverlapCost } from '../audit/invariants.js';
+import { auditLayout } from '../audit/audit.js';
 import { containsFrozenAtom } from './frozen-atoms.js';
 import { forEachRigidRotationCandidate } from './rigid-rotation.js';
 import { collectCutSubtree } from './subtree-utils.js';
@@ -23,6 +24,7 @@ const LOCAL_RING_TRIGONAL_HETERO_DISTORTION_WEIGHT = 12;
 const MAX_SIBLING_SWAP_SUBTREE_ATOMS = 18;
 const MAX_BRANCHED_SATURATED_SUBTREE_ATOMS = 20;
 const MAX_ANCHORED_RING_BLOCK_ATOMS = 18;
+const MAX_SPIRO_SMALL_RING_BLOCK_ATOMS = 12;
 const MAX_EXACT_TRIGONAL_RING_BRANCH_REFLECTION_ATOMS = 48;
 const MAX_LOCAL_TRIGONAL_HETERO_LAYOUT_ATOMS = 48;
 const MAX_SIBLING_SWAP_LAYOUT_ATOMS = 48;
@@ -32,6 +34,8 @@ const IDEAL_LEAF_LINEAR_NEIGHBOR_TOLERANCE = Math.PI / 12;
 const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As', 'Si']);
 const ANCHORED_RING_EXTERIOR_SPREAD_WEIGHT = 8;
+const SPIRO_SMALL_RING_EXTERIOR_SPREAD_WEIGHT = 8;
+const SPIRO_SMALL_RING_EXTERIOR_ROTATION_FRACTIONS = Object.freeze([0.5, 0.4, 0.25, 0.2, 0.15]);
 
 /**
  * Returns the circular mean of signed angular offsets.
@@ -777,6 +781,257 @@ function anchoredRingBlockExteriorSpreadRotations(layoutGraph, coords, descripto
 }
 
 /**
+ * Returns the two visible ring neighbors of an anchor within one ring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} ring - Ring descriptor.
+ * @param {string} anchorAtomId - Anchor atom ID.
+ * @returns {string[]} Neighbor atom IDs that belong to the ring.
+ */
+function ringNeighborIdsAtAnchor(layoutGraph, ring, anchorAtomId) {
+  return (layoutGraph.bondsByAtomId.get(anchorAtomId) ?? [])
+    .filter(bond => bond?.kind === 'covalent')
+    .map(bond => (bond.a === anchorAtomId ? bond.b : bond.a))
+    .filter(neighborAtomId => ring.atomIds.includes(neighborAtomId));
+}
+
+/**
+ * Collects a covalent side while treating one atom as completely unavailable.
+ * This is used for cyclic side blocks where cutting only the root bond would
+ * still allow traversal back through the opposite side of the ring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} rootAtomId - Root atom on the movable side.
+ * @param {string} blockedAtomId - Atom that must not be crossed.
+ * @returns {string[]} Atom IDs reachable without visiting the blocked atom.
+ */
+function collectSubtreeBlockingAtom(layoutGraph, rootAtomId, blockedAtomId) {
+  const visitedAtomIds = new Set([blockedAtomId]);
+  const pendingAtomIds = [rootAtomId];
+  const subtreeAtomIds = [];
+
+  while (pendingAtomIds.length > 0) {
+    const atomId = pendingAtomIds.pop();
+    if (visitedAtomIds.has(atomId)) {
+      continue;
+    }
+    visitedAtomIds.add(atomId);
+    subtreeAtomIds.push(atomId);
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      if (!visitedAtomIds.has(neighborAtomId)) {
+        pendingAtomIds.push(neighborAtomId);
+      }
+    }
+  }
+
+  return subtreeAtomIds;
+}
+
+/**
+ * Collects the movable side of a spiro small ring, rejecting cases where the
+ * side reconnects into the parent ring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object} smallRing - Four-member spiro side-ring descriptor.
+ * @param {object} parentRing - Larger parent-ring descriptor.
+ * @param {string} anchorAtomId - Shared spiro atom ID.
+ * @param {string[]} smallRingNeighborIds - Small-ring neighbors at the anchor.
+ * @returns {Set<string>|null} Movable atom IDs, or null when not separable.
+ */
+function spiroSmallRingSideAtomIds(layoutGraph, smallRing, parentRing, anchorAtomId, smallRingNeighborIds) {
+  const parentRingAtomIds = new Set(parentRing.atomIds.filter(atomId => atomId !== anchorAtomId));
+  const sideAtomIds = new Set();
+
+  for (const neighborAtomId of smallRingNeighborIds) {
+    for (const atomId of collectSubtreeBlockingAtom(layoutGraph, neighborAtomId, anchorAtomId)) {
+      if (parentRingAtomIds.has(atomId)) {
+        return null;
+      }
+      if (atomId !== anchorAtomId && layoutGraph.atoms.has(atomId)) {
+        sideAtomIds.add(atomId);
+      }
+    }
+  }
+
+  return sideAtomIds;
+}
+
+/**
+ * Returns ideal anchor angles for a four-member spiro side ring centered in the
+ * exterior gap of its larger parent ring.
+ * @param {number[]} parentRingNeighborAngles - Parent-ring bond angles at the spiro atom.
+ * @param {number} smallRingSize - Size of the spiro side ring.
+ * @returns {number[]} Target small-ring neighbor angles.
+ */
+function spiroSmallRingExteriorTargetAngles(parentRingNeighborAngles, smallRingSize) {
+  if (parentRingNeighborAngles.length !== 2 || smallRingSize < 3) {
+    return [];
+  }
+  const sortedAngles = [...parentRingNeighborAngles].sort((firstAngle, secondAngle) => firstAngle - secondAngle);
+  const forwardGap = sortedAngles[1] - sortedAngles[0];
+  const wrapGap = (2 * Math.PI) - forwardGap;
+  const exteriorStartAngle = forwardGap >= wrapGap ? sortedAngles[0] : sortedAngles[1];
+  const exteriorGap = Math.max(forwardGap, wrapGap);
+  const exteriorCenterAngle = wrapAngle(exteriorStartAngle + exteriorGap / 2);
+  const smallRingInteriorAngle = Math.PI - (2 * Math.PI) / smallRingSize;
+  return [
+    wrapAngle(exteriorCenterAngle - smallRingInteriorAngle / 2),
+    wrapAngle(exteriorCenterAngle + smallRingInteriorAngle / 2)
+  ];
+}
+
+/**
+ * Measures how far a spiro small-ring side fan is from its exterior targets.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{anchorAtomId: string, smallRingNeighborIds: string[], targetAngles: number[]}} descriptor - Spiro small-ring descriptor.
+ * @returns {number} Squared angular penalty.
+ */
+function measureSpiroSmallRingExteriorPenalty(coords, descriptor) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  if (!anchorPosition || descriptor.targetAngles.length !== 2) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const smallRingNeighborAngles = descriptor.smallRingNeighborIds.map(atomId => {
+    const position = coords.get(atomId);
+    return position ? angleOf(sub(position, anchorPosition)) : null;
+  });
+  if (smallRingNeighborAngles.some(angle => angle == null)) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  const alignedPenalty =
+    angularDifference(smallRingNeighborAngles[0], descriptor.targetAngles[0]) ** 2
+    + angularDifference(smallRingNeighborAngles[1], descriptor.targetAngles[1]) ** 2;
+  const swappedPenalty =
+    angularDifference(smallRingNeighborAngles[0], descriptor.targetAngles[1]) ** 2
+    + angularDifference(smallRingNeighborAngles[1], descriptor.targetAngles[0]) ** 2;
+  return Math.min(alignedPenalty, swappedPenalty);
+}
+
+/**
+ * Collects four-member spiro side rings that can rotate partway toward the
+ * exterior gap of their larger parent ring. This repairs cleanup moves that
+ * clear an overlap by regularizing the small ring while leaving one spiro bond
+ * visibly pinched against the parent ring.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @returns {Array<{anchorAtomId: string, smallRingNeighborIds: string[], parentRingNeighborIds: string[], subtreeAtomIds: string[], targetAngles: number[]}>} Spiro small-ring descriptors.
+ */
+function spiroSmallRingExteriorSpreadDescriptors(layoutGraph, coords) {
+  const descriptors = [];
+  for (const [anchorAtomId, atom] of layoutGraph.atoms) {
+    if (!atom || atom.element === 'H' || atom.aromatic || atom.heavyDegree !== 4 || !coords.has(anchorAtomId)) {
+      continue;
+    }
+
+    const anchorRings = layoutGraph.atomToRings.get(anchorAtomId) ?? [];
+    if (anchorRings.length !== 2) {
+      continue;
+    }
+
+    for (const smallRing of anchorRings) {
+      if (smallRing?.aromatic || smallRing?.atomIds?.length !== 4) {
+        continue;
+      }
+      for (const parentRing of anchorRings) {
+        if (parentRing === smallRing || parentRing?.aromatic || (parentRing?.atomIds?.length ?? 0) < 5) {
+          continue;
+        }
+        const parentRingAtomIds = new Set(parentRing.atomIds);
+        const sharedAtomIds = smallRing.atomIds.filter(atomId => parentRingAtomIds.has(atomId));
+        if (sharedAtomIds.length !== 1 || sharedAtomIds[0] !== anchorAtomId) {
+          continue;
+        }
+
+        const smallRingNeighborIds = ringNeighborIdsAtAnchor(layoutGraph, smallRing, anchorAtomId);
+        const parentRingNeighborIds = ringNeighborIdsAtAnchor(layoutGraph, parentRing, anchorAtomId);
+        if (
+          smallRingNeighborIds.length !== 2
+          || parentRingNeighborIds.length !== 2
+          || !smallRingNeighborIds.every(atomId => coords.has(atomId))
+          || !parentRingNeighborIds.every(atomId => coords.has(atomId))
+        ) {
+          continue;
+        }
+
+        const sideAtomIds = spiroSmallRingSideAtomIds(layoutGraph, smallRing, parentRing, anchorAtomId, smallRingNeighborIds);
+        if (!sideAtomIds || sideAtomIds.size === 0) {
+          continue;
+        }
+        const subtreeAtomIds = [...sideAtomIds].filter(atomId => coords.has(atomId));
+        const subtreeHeavyAtomCount = subtreeAtomIds.reduce(
+          (count, atomId) => count + (layoutGraph.atoms.get(atomId)?.element === 'H' ? 0 : 1),
+          0
+        );
+        if (subtreeAtomIds.length === 0 || subtreeHeavyAtomCount > MAX_SPIRO_SMALL_RING_BLOCK_ATOMS) {
+          continue;
+        }
+
+        const anchorPosition = coords.get(anchorAtomId);
+        const parentRingNeighborAngles = parentRingNeighborIds.map(atomId => angleOf(sub(coords.get(atomId), anchorPosition)));
+        const targetAngles = spiroSmallRingExteriorTargetAngles(parentRingNeighborAngles, smallRing.atomIds.length);
+        if (targetAngles.length !== 2) {
+          continue;
+        }
+
+        descriptors.push({
+          anchorAtomId,
+          smallRingNeighborIds,
+          parentRingNeighborIds,
+          subtreeAtomIds,
+          targetAngles
+        });
+      }
+    }
+  }
+  return descriptors;
+}
+
+/**
+ * Builds fractional rotations that move a spiro small-ring side toward its
+ * parent-ring exterior targets without forcing exact overlap-prone placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {{anchorAtomId: string, smallRingNeighborIds: string[], targetAngles: number[]}} descriptor - Spiro small-ring descriptor.
+ * @returns {number[]} Candidate rotation offsets in radians.
+ */
+function spiroSmallRingExteriorSpreadRotations(coords, descriptor) {
+  const anchorPosition = coords.get(descriptor.anchorAtomId);
+  if (!anchorPosition) {
+    return [];
+  }
+  const smallRingNeighborAngles = descriptor.smallRingNeighborIds
+    .map(atomId => coords.get(atomId))
+    .filter(Boolean)
+    .map(position => angleOf(sub(position, anchorPosition)));
+  if (smallRingNeighborAngles.length !== 2 || descriptor.targetAngles.length !== 2) {
+    return [];
+  }
+
+  const rotations = [];
+  for (const targetOrder of [
+    [descriptor.targetAngles[0], descriptor.targetAngles[1]],
+    [descriptor.targetAngles[1], descriptor.targetAngles[0]]
+  ]) {
+    const exactRotation = meanSignedAngle([
+      wrapAngle(targetOrder[0] - smallRingNeighborAngles[0]),
+      wrapAngle(targetOrder[1] - smallRingNeighborAngles[1])
+    ]);
+    if (exactRotation == null || Math.abs(exactRotation) <= EXACT_ROTATION_ANGLE_EPSILON) {
+      continue;
+    }
+    for (const fraction of SPIRO_SMALL_RING_EXTERIOR_ROTATION_FRACTIONS) {
+      const rotation = exactRotation * fraction;
+      if (!rotations.some(existingRotation => angularDifference(existingRotation, rotation) <= EXACT_ROTATION_ANGLE_EPSILON)) {
+        rotations.push(rotation);
+      }
+    }
+  }
+  return rotations;
+}
+
+/**
  * Collects movable terminal subtrees from the currently placed covalent graph.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
@@ -1069,7 +1324,7 @@ function siblingSwapPairs(layoutGraph, coords, terminalSubtrees) {
  * presence, not on the later rotation candidate chosen within one cleanup loop.
  * @param {object} layoutGraph - Layout graph shell.
  * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
- * @returns {{terminalSubtrees: Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>, siblingSwaps: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>, geminalPairs: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>, anchoredRingBlocks: Array<{anchorAtomId: string, ringNeighborIds: string[], exocyclicNeighborIds: string[], subtreeAtomIds: string[]}>}} Reusable local-rotation descriptors.
+ * @returns {{terminalSubtrees: Array<{atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}>, siblingSwaps: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>, geminalPairs: Array<{anchorAtomId: string, firstSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, secondSubtree: {atomId: string, anchorAtomId: string, subtreeAtomIds: string[]}, subtreeAtomIds: string[]}>, anchoredRingBlocks: Array<{anchorAtomId: string, ringNeighborIds: string[], exocyclicNeighborIds: string[], subtreeAtomIds: string[]}>, spiroSmallRingBlocks: Array<{anchorAtomId: string, smallRingNeighborIds: string[], parentRingNeighborIds: string[], subtreeAtomIds: string[], targetAngles: number[]}>}} Reusable local-rotation descriptors.
  */
 export function computeRotatableSubtrees(layoutGraph, coords) {
   const terminalSubtrees = movableTerminalSubtrees(layoutGraph, coords);
@@ -1077,7 +1332,8 @@ export function computeRotatableSubtrees(layoutGraph, coords) {
     terminalSubtrees,
     siblingSwaps: siblingSwapPairs(layoutGraph, coords, terminalSubtrees),
     geminalPairs: geminalSubtreePairs(terminalSubtrees),
-    anchoredRingBlocks: anchoredRingBlockExteriorSpreadDescriptors(layoutGraph, coords)
+    anchoredRingBlocks: anchoredRingBlockExteriorSpreadDescriptors(layoutGraph, coords),
+    spiroSmallRingBlocks: spiroSmallRingExteriorSpreadDescriptors(layoutGraph, coords)
   };
 }
 
@@ -1122,15 +1378,16 @@ function descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds) {
  * Narrows reusable rotation descriptors to those that can affect the current
  * overlap set. When no overlaps are provided, all descriptors remain eligible.
  * @param {object} layoutGraph - Layout graph shell.
- * @param {{terminalSubtrees: Array<object>, siblingSwaps: Array<object>, geminalPairs: Array<object>, anchoredRingBlocks?: Array<object>}} descriptors - Reusable rotation descriptors.
+ * @param {{terminalSubtrees: Array<object>, siblingSwaps: Array<object>, geminalPairs: Array<object>, anchoredRingBlocks?: Array<object>, spiroSmallRingBlocks?: Array<object>}} descriptors - Reusable rotation descriptors.
  * @param {Array<{firstAtomId: string, secondAtomId: string}>|null|undefined} overlapPairs - Severe overlaps from the current coordinates.
- * @returns {{terminalSubtrees: Array<object>, siblingSwaps: Array<object>, geminalPairs: Array<object>, anchoredRingBlocks: Array<object>}} Filtered descriptors.
+ * @returns {{terminalSubtrees: Array<object>, siblingSwaps: Array<object>, geminalPairs: Array<object>, anchoredRingBlocks: Array<object>, spiroSmallRingBlocks: Array<object>}} Filtered descriptors.
  */
 function filterDescriptorsByOverlap(layoutGraph, descriptors, overlapPairs) {
   if (!Array.isArray(overlapPairs) || overlapPairs.length === 0) {
     return {
       ...descriptors,
-      anchoredRingBlocks: descriptors.anchoredRingBlocks ?? []
+      anchoredRingBlocks: descriptors.anchoredRingBlocks ?? [],
+      spiroSmallRingBlocks: descriptors.spiroSmallRingBlocks ?? []
     };
   }
   const relevantAtomIds = overlapRelevantAtomIds(layoutGraph, overlapPairs);
@@ -1138,7 +1395,8 @@ function filterDescriptorsByOverlap(layoutGraph, descriptors, overlapPairs) {
     terminalSubtrees: descriptors.terminalSubtrees.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds)),
     siblingSwaps: descriptors.siblingSwaps.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds)),
     geminalPairs: descriptors.geminalPairs.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds)),
-    anchoredRingBlocks: (descriptors.anchoredRingBlocks ?? []).filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds))
+    anchoredRingBlocks: (descriptors.anchoredRingBlocks ?? []).filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds)),
+    spiroSmallRingBlocks: (descriptors.spiroSmallRingBlocks ?? []).filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, relevantAtomIds))
   };
 }
 
@@ -1146,14 +1404,16 @@ function filterDescriptorsByFocus(descriptors, focusAtomIds) {
   if (!(focusAtomIds instanceof Set) || focusAtomIds.size === 0) {
     return {
       ...descriptors,
-      anchoredRingBlocks: descriptors.anchoredRingBlocks ?? []
+      anchoredRingBlocks: descriptors.anchoredRingBlocks ?? [],
+      spiroSmallRingBlocks: descriptors.spiroSmallRingBlocks ?? []
     };
   }
   return {
     terminalSubtrees: descriptors.terminalSubtrees.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds)),
     siblingSwaps: descriptors.siblingSwaps.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds)),
     geminalPairs: descriptors.geminalPairs.filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds)),
-    anchoredRingBlocks: (descriptors.anchoredRingBlocks ?? []).filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds))
+    anchoredRingBlocks: (descriptors.anchoredRingBlocks ?? []).filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds)),
+    spiroSmallRingBlocks: (descriptors.spiroSmallRingBlocks ?? []).filter(descriptor => descriptorTouchesRelevantAtoms(descriptor, focusAtomIds))
   };
 }
 
@@ -1372,6 +1632,173 @@ function updateAtomGridForMove(layoutGraph, atomGrid, coords, movedPositions) {
     }
     atomGrid.insert(atomId, nextPosition);
   }
+}
+
+/**
+ * Returns whether a spiro-ring retouch preserves all audit-count invariants.
+ * @param {object} candidateAudit - Candidate audit result.
+ * @param {object} baseAudit - Baseline audit result.
+ * @returns {boolean} True when the retouch is audit-safe.
+ */
+function spiroSmallRingAuditDoesNotWorsen(candidateAudit, baseAudit) {
+  if (baseAudit.ok === true && candidateAudit.ok !== true) {
+    return false;
+  }
+  return (
+    candidateAudit.severeOverlapCount <= baseAudit.severeOverlapCount
+    && candidateAudit.bondLengthFailureCount <= baseAudit.bondLengthFailureCount
+    && (candidateAudit.visibleHeavyBondCrossingCount ?? 0) <= (baseAudit.visibleHeavyBondCrossingCount ?? 0)
+    && candidateAudit.ringSubstituentReadabilityFailureCount <= baseAudit.ringSubstituentReadabilityFailureCount
+    && candidateAudit.inwardRingSubstituentCount <= baseAudit.inwardRingSubstituentCount
+    && candidateAudit.outwardAxisRingSubstituentFailureCount <= baseAudit.outwardAxisRingSubstituentFailureCount
+  );
+}
+
+/**
+ * Applies one audit-guarded spiro small-ring fan correction after overlap
+ * cleanup has made room for it. The move is intentionally fractional: it
+ * improves the exterior angle without forcing the compact spiro ring into a
+ * neighboring substituent pocket.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} inputCoords - Coordinate map.
+ * @param {object} [options] - Cleanup options.
+ * @param {number} [options.bondLength] - Target bond length.
+ * @param {number} [options.epsilon] - Minimum accepted improvement.
+ * @param {Set<string>|null} [options.frozenAtomIds] - Atom ids that cleanup must not move.
+ * @returns {{coords: Map<string, {x: number, y: number}>, nudges: number, improvement: number}} Retouched coordinates and stats.
+ */
+export function runSpiroSmallRingExteriorCleanup(layoutGraph, inputCoords, options = {}) {
+  const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+  const epsilon = options.epsilon ?? CLEANUP_EPSILON;
+  const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
+  const coords = new Map([...inputCoords.entries()].map(([atomId, position]) => [atomId, { ...position }]));
+  const descriptors = spiroSmallRingExteriorSpreadDescriptors(layoutGraph, coords)
+    .filter(descriptor => !frozenAtomIds || !containsFrozenAtom(descriptor.subtreeAtomIds, frozenAtomIds))
+    .map(descriptor => ({
+      ...descriptor,
+      basePenalty: measureSpiroSmallRingExteriorPenalty(coords, descriptor)
+    }))
+    .filter(descriptor => Number.isFinite(descriptor.basePenalty) && descriptor.basePenalty > epsilon)
+    .sort((first, second) => second.basePenalty - first.basePenalty);
+
+  if (descriptors.length === 0) {
+    return {
+      coords,
+      nudges: 0,
+      improvement: 0
+    };
+  }
+
+  let nudges = 0;
+  let totalImprovement = 0;
+  let baseAudit = auditLayout(layoutGraph, coords, { bondLength });
+  const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength);
+
+  for (const descriptor of descriptors) {
+    const refreshedDescriptor = spiroSmallRingExteriorSpreadDescriptors(layoutGraph, coords)
+      .find(candidate => candidate.anchorAtomId === descriptor.anchorAtomId
+        && candidate.smallRingNeighborIds.every(atomId => descriptor.smallRingNeighborIds.includes(atomId))
+        && candidate.parentRingNeighborIds.every(atomId => descriptor.parentRingNeighborIds.includes(atomId)));
+    if (!refreshedDescriptor) {
+      continue;
+    }
+
+    const baseExteriorPenalty = measureSpiroSmallRingExteriorPenalty(coords, refreshedDescriptor);
+    if (!Number.isFinite(baseExteriorPenalty) || baseExteriorPenalty <= epsilon) {
+      continue;
+    }
+
+    const subtreeContext = buildSubtreeOverlapContext(layoutGraph, refreshedDescriptor.subtreeAtomIds, {
+      includeBondCrowding: true
+    });
+    const baseAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, refreshedDescriptor.subtreeAtomIds, null, bondLength, {
+      atomGrid,
+      subtreeContext
+    });
+
+    let bestCandidate = null;
+    for (const rotation of spiroSmallRingExteriorSpreadRotations(coords, refreshedDescriptor)) {
+      const anchorPosition = coords.get(refreshedDescriptor.anchorAtomId);
+      if (!anchorPosition) {
+        continue;
+      }
+      const movedPositions = new Map();
+      for (const atomId of refreshedDescriptor.subtreeAtomIds) {
+        const position = coords.get(atomId);
+        if (!position) {
+          continue;
+        }
+        movedPositions.set(atomId, add(anchorPosition, rotate(sub(position, anchorPosition), rotation)));
+      }
+      if (movedPositions.size !== refreshedDescriptor.subtreeAtomIds.length) {
+        continue;
+      }
+
+      const candidateCoords = new Map(coords);
+      for (const [atomId, position] of movedPositions) {
+        candidateCoords.set(atomId, position);
+      }
+      const candidatePenalty = measureSpiroSmallRingExteriorPenalty(candidateCoords, refreshedDescriptor);
+      if (candidatePenalty >= baseExteriorPenalty - epsilon) {
+        continue;
+      }
+      const candidateAudit = auditLayout(layoutGraph, candidateCoords, { bondLength });
+      if (!spiroSmallRingAuditDoesNotWorsen(candidateAudit, baseAudit)) {
+        continue;
+      }
+
+      const candidateAtomOverlapCost = computeSubtreeOverlapCost(
+        layoutGraph,
+        coords,
+        refreshedDescriptor.subtreeAtomIds,
+        movedPositions,
+        bondLength,
+        {
+          atomGrid,
+          subtreeContext
+        }
+      );
+      const improvement =
+        (baseExteriorPenalty - candidatePenalty) * SPIRO_SMALL_RING_EXTERIOR_SPREAD_WEIGHT
+        + baseAtomOverlapCost - candidateAtomOverlapCost;
+      if (improvement <= epsilon) {
+        continue;
+      }
+      if (
+        !bestCandidate
+        || candidatePenalty < bestCandidate.penalty - epsilon
+        || (
+          Math.abs(candidatePenalty - bestCandidate.penalty) <= epsilon
+          && candidateAtomOverlapCost < bestCandidate.atomOverlapCost - epsilon
+        )
+      ) {
+        bestCandidate = {
+          movedPositions,
+          audit: candidateAudit,
+          penalty: candidatePenalty,
+          atomOverlapCost: candidateAtomOverlapCost,
+          improvement
+        };
+      }
+    }
+
+    if (!bestCandidate) {
+      continue;
+    }
+    updateAtomGridForMove(layoutGraph, atomGrid, coords, bestCandidate.movedPositions);
+    for (const [atomId, position] of bestCandidate.movedPositions) {
+      coords.set(atomId, position);
+    }
+    baseAudit = bestCandidate.audit;
+    totalImprovement += bestCandidate.improvement;
+    nudges++;
+  }
+
+  return {
+    coords,
+    nudges,
+    improvement: totalImprovement
+  };
 }
 
 /**
@@ -1717,7 +2144,8 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
           terminalSubtrees: options.baseTerminalSubtrees,
           siblingSwaps: options.baseSiblingSwaps ?? siblingSwapPairs(layoutGraph, coords, options.baseTerminalSubtrees),
           geminalPairs: options.baseGeminalPairs,
-          anchoredRingBlocks: anchoredRingBlockExteriorSpreadDescriptors(layoutGraph, coords)
+          anchoredRingBlocks: anchoredRingBlockExteriorSpreadDescriptors(layoutGraph, coords),
+          spiroSmallRingBlocks: spiroSmallRingExteriorSpreadDescriptors(layoutGraph, coords)
         }
       : computeRotatableSubtrees(layoutGraph, coords);
   const frozenAtomIds = options.frozenAtomIds instanceof Set && options.frozenAtomIds.size > 0 ? options.frozenAtomIds : null;
@@ -1737,11 +2165,16 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
     frozenAtomIds
       ? (rotatableSubtrees.anchoredRingBlocks ?? []).filter(descriptor => !containsFrozenAtom(descriptor.subtreeAtomIds, frozenAtomIds))
       : (rotatableSubtrees.anchoredRingBlocks ?? []);
+  const spiroSmallRingBlocks =
+    frozenAtomIds
+      ? (rotatableSubtrees.spiroSmallRingBlocks ?? []).filter(descriptor => !containsFrozenAtom(descriptor.subtreeAtomIds, frozenAtomIds))
+      : (rotatableSubtrees.spiroSmallRingBlocks ?? []);
   const overlapEligibleDescriptors = filterDescriptorsByOverlap(layoutGraph, {
     terminalSubtrees,
     siblingSwaps,
     geminalPairs,
-    anchoredRingBlocks
+    anchoredRingBlocks,
+    spiroSmallRingBlocks
   }, options.overlapPairs);
   const eligibleDescriptors = filterDescriptorsByFocus(overlapEligibleDescriptors, options.focusAtomIds);
   const atomGrid = options.baseAtomGrid?.clone() ?? buildAtomGrid(layoutGraph, coords, bondLength);
@@ -2078,6 +2511,76 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
           baseAtomOverlapCost - newAtomOverlapCost
           + (baseAnchorDistortion - newAnchorDistortion)
           + (baseExteriorPenalty - candidateExteriorPenalty) * ANCHORED_RING_EXTERIOR_SPREAD_WEIGHT;
+        recordFinalist(finalists, {
+          positions: newPositions,
+          approximateImprovement,
+          atomOverlapCost: newAtomOverlapCost,
+          anchorDistortion: newAnchorDistortion
+        });
+      }
+
+      const refinedMove = finalizeBestMove(layoutGraph, coords, subtreeAtomIds, finalists, bondLength, subtreeContext, epsilon);
+      if (refinedMove && isBetterLocalMove(bestMove, refinedMove, epsilon)) {
+        bestMove = refinedMove;
+      }
+    }
+
+    for (const descriptor of eligibleDescriptors.spiroSmallRingBlocks ?? []) {
+      const { anchorAtomId, subtreeAtomIds } = descriptor;
+      const anchorPosition = coords.get(anchorAtomId);
+      if (!anchorPosition) {
+        continue;
+      }
+      const baseExteriorPenalty = measureSpiroSmallRingExteriorPenalty(coords, descriptor);
+      if (baseExteriorPenalty <= epsilon || !Number.isFinite(baseExteriorPenalty)) {
+        continue;
+      }
+
+      const subtreeContext = buildSubtreeOverlapContext(layoutGraph, subtreeAtomIds, {
+        includeBondCrowding: true
+      });
+      const baseAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, null, bondLength, {
+        atomGrid,
+        subtreeContext
+      });
+      const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
+      const finalists = [];
+
+      for (const rotation of spiroSmallRingExteriorSpreadRotations(coords, descriptor)) {
+        const newPositions = new Map();
+        for (const atomId of subtreeAtomIds) {
+          const position = coords.get(atomId);
+          if (!position) {
+            continue;
+          }
+          newPositions.set(atomId, add(anchorPosition, rotate(sub(position, anchorPosition), rotation)));
+        }
+        if (newPositions.size !== subtreeAtomIds.length) {
+          continue;
+        }
+
+        const candidateCoords = new Map(coords);
+        for (const [atomId, position] of newPositions) {
+          candidateCoords.set(atomId, position);
+        }
+        const candidateExteriorPenalty = measureSpiroSmallRingExteriorPenalty(candidateCoords, descriptor);
+        if (candidateExteriorPenalty >= baseExteriorPenalty - epsilon) {
+          continue;
+        }
+
+        const newAtomOverlapCost = computeSubtreeOverlapCost(layoutGraph, coords, subtreeAtomIds, newPositions, bondLength, {
+          atomGrid,
+          subtreeContext
+        });
+        if (newAtomOverlapCost > baseAtomOverlapCost + epsilon) {
+          continue;
+        }
+
+        const newAnchorDistortion = scoreAnchorDistortion(anchorAtomId, newPositions);
+        const approximateImprovement =
+          baseAtomOverlapCost - newAtomOverlapCost
+          + (baseAnchorDistortion - newAnchorDistortion)
+          + (baseExteriorPenalty - candidateExteriorPenalty) * SPIRO_SMALL_RING_EXTERIOR_SPREAD_WEIGHT;
         recordFinalist(finalists, {
           positions: newPositions,
           approximateImprovement,

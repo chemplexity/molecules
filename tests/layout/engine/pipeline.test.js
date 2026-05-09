@@ -63,6 +63,16 @@ function ringAngles(coords, atomIds) {
 }
 
 /**
+ * Returns the bond lengths for an ordered ring path.
+ * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
+ * @param {string[]} atomIds - Ordered ring atom IDs.
+ * @returns {number[]} Ring bond lengths.
+ */
+function ringBondLengths(coords, atomIds) {
+  return atomIds.map((atomId, index) => distance(coords.get(atomId), coords.get(atomIds[(index + 1) % atomIds.length])));
+}
+
+/**
  * Returns the smaller bond angle at one center atom in degrees.
  * @param {Map<string, {x: number, y: number}>} coords - Coordinate map.
  * @param {string} centerAtomId - Center atom ID.
@@ -481,6 +491,65 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
   });
 
+  it('keeps five-aryl-fused bridged cyclohexane cores regular around spiro branches', () => {
+    const result = runPipeline(parseSMILES('CN1CCC2(CC(CO)CC2N)C2=NNN=C12'), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const fusedCyclohexaneAtomIds = ['C17', 'C13', 'C5', 'C4', 'C3', 'N2'];
+    const fusedAromaticAtomIds = ['C17', 'N16', 'N15', 'N14', 'C13'];
+    const spiroSideRingAtomIds = ['C11', 'C10', 'C7', 'C6', 'C5'];
+    const fusedCyclohexaneAngles = ringAngles(result.coords, fusedCyclohexaneAtomIds);
+    const fusedCyclohexaneBonds = ringBondLengths(result.coords, fusedCyclohexaneAtomIds);
+    const fusedAromaticAngles = ringAngles(result.coords, fusedAromaticAtomIds);
+    const spiroSideRingAngles = ringAngles(result.coords, spiroSideRingAtomIds);
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.25);
+    assert.ok(
+      maxAngleDeviation(fusedCyclohexaneAngles, 120) < 1e-6,
+      `expected the fused six-ring to stay exact, got ${fusedCyclohexaneAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    assert.ok(
+      Math.max(...fusedCyclohexaneBonds) / Math.min(...fusedCyclohexaneBonds) < 1.01,
+      `expected the fused six-ring bonds to stay even, got ${fusedCyclohexaneBonds.map(length => length.toFixed(2)).join(', ')}`
+    );
+    assert.ok(
+      maxAngleDeviation(fusedAromaticAngles, 108) < 1e-6,
+      `expected the fused aromatic five-ring to stay exact, got ${fusedAromaticAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    assert.ok(
+      Math.min(...spiroSideRingAngles) > 70,
+      `expected the spiro side ring to stay open while preserving the fused core, got ${spiroSideRingAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+  });
+
+  it('keeps compact spiro oxetanes out of parent-ring bond slots after cleanup', () => {
+    const result = runPipeline(
+      parseSMILES('CC1(C)Oc2ccc(cc2C3(COC(=N3)N)C14COC4)c5cncc(Cl)c5'),
+      { suppressH: true, auditTelemetry: true }
+    );
+    const oxetaneAngles = ringAngles(result.coords, ['C20', 'O19', 'C18', 'C17']);
+    const spiroParentSeparation = bondAngleAtAtom(result.coords, 'C17', 'C2', 'C20');
+    const spiroSideSeparation = bondAngleAtAtom(result.coords, 'C17', 'C11', 'C18');
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(
+      Math.min(spiroParentSeparation, spiroSideSeparation) >= 58,
+      `expected the spiro oxetane bonds to avoid the parent-ring slots, got ${spiroParentSeparation.toFixed(2)} and ${spiroSideSeparation.toFixed(2)} degrees`
+    );
+    assert.ok(
+      maxAngleDeviation(oxetaneAngles, 90) < 1e-6,
+      `expected the oxetane to remain square, got ${oxetaneAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+  });
+
   it('avoids catastrophic bridge projection on dense mixed bridged cages', () => {
     const result = runPipeline(
       parseSMILES(
@@ -491,13 +560,66 @@ describe('layout/engine/pipeline', () => {
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.cleanupTelemetry?.selectedStage, 'stabilizeAfterCleanup');
     assert.equal(result.metadata.cleanupTelemetry?.selectedStageCategory, 'stabilization');
     assert.deepEqual(result.metadata.cleanupTelemetry?.stabilizationRequests.stages, ['specialistCleanup']);
     assert.deepEqual(result.metadata.cleanupTelemetry?.stabilizationRequests.reasons, ['specialist:bridged']);
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.ok(result.metadata.audit.bondLengthFailureCount <= 1);
     assert.ok(result.metadata.audit.maxBondLengthDeviation < 0.7);
+    assert.ok(result.metadata.audit.visibleHeavyBondCrossingCount <= 1);
     assert.ok(result.metadata.cleanupPostHookNudges > 0);
+
+    const oxolaneAngles = ringAngles(result.coords, ['C29', 'O28', 'C27', 'C26', 'C25']);
+    assert.ok(
+      Math.min(...oxolaneAngles) > 70,
+      `expected the peripheral oxolane ring to avoid pinched corners, got ${oxolaneAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    assert.ok(
+      maxAngleDeviation(oxolaneAngles, 108) < 13,
+      `expected the peripheral oxolane ring to stay readable, got ${oxolaneAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    const centralEtherAngles = ringAngles(result.coords, ['C50', 'C22', 'C21', 'O20', 'C18', 'C49']);
+    assert.ok(
+      maxAngleDeviation(centralEtherAngles, 120) < 13,
+      `expected the central ether ring to avoid a skewed bridge, got ${centralEtherAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    const centralEtherBondLengths = ringBondLengths(result.coords, ['C50', 'C22', 'C21', 'O20', 'C18', 'C49']);
+    assert.ok(
+      Math.max(...centralEtherBondLengths) / Math.min(...centralEtherBondLengths) < 1.65,
+      `expected the central ether ring to avoid extreme short/long bonds, got ${centralEtherBondLengths.map(length => length.toFixed(3)).join(', ')}`
+    );
+    const rightAmineAngles = ringAngles(result.coords, ['C37', 'C36', 'C35', 'C34', 'N33']);
+    assert.ok(
+      maxAngleDeviation(rightAmineAngles, 108) < 13,
+      `expected the right amine ring to keep regular corners, got ${rightAmineAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    const fusedIndoleFiveAngles = ringAngles(result.coords, ['C14', 'C13', 'C8', 'N7', 'C6']);
+    assert.ok(
+      maxAngleDeviation(fusedIndoleFiveAngles, 108) < 13,
+      `expected the fused indole-adjacent five-ring to keep strict corners, got ${fusedIndoleFiveAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+
+    const lowerAromaticBondLengths = ringBondLengths(result.coords, ['C9', 'C10', 'C11', 'C12', 'C13', 'C8']);
+    assert.ok(
+      Math.max(...lowerAromaticBondLengths.map(length => Math.abs(length - 1.5))) < 0.45,
+      `expected the lower aromatic ring around C11 to stay even, got ${lowerAromaticBondLengths.map(length => length.toFixed(3)).join(', ')}`
+    );
+    const lowerAromaticAngles = ringAngles(result.coords, ['C9', 'C10', 'C11', 'C12', 'C13', 'C8']);
+    assert.ok(
+      maxAngleDeviation(lowerAromaticAngles, 120) < 13,
+      `expected the lower aromatic ring around C11 to avoid flattening, got ${lowerAromaticAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    const rightAromaticBondLengths = ringBondLengths(result.coords, ['C46', 'C39', 'C40', 'C41', 'C42', 'C43']);
+    assert.ok(
+      Math.max(...rightAromaticBondLengths.map(length => Math.abs(length - 1.5))) < 0.45,
+      `expected the right aromatic ring around C42 to stay even, got ${rightAromaticBondLengths.map(length => length.toFixed(3)).join(', ')}`
+    );
+    const rightAromaticAngles = ringAngles(result.coords, ['C46', 'C39', 'C40', 'C41', 'C42', 'C43']);
+    assert.ok(
+      maxAngleDeviation(rightAromaticAngles, 120) < 13,
+      `expected the right aromatic ring around C42 to avoid flattening, got ${rightAromaticAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
   });
 
   it('routes exact cubane cage matches through the bridged template path', () => {
@@ -3125,7 +3247,7 @@ describe('layout/engine/pipeline', () => {
     assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
   });
 
-  it('routes chain-heavy peptide-like mixed components through the large-molecule path', () => {
+  it('routes chain-heavy peptide-like mixed components through the large-molecule path with a polished amide fan', () => {
     const result = runPipeline(
       parseSMILES(
         'CCNC(=O)[C@@H]1CCCN1C(=O)[C@H](CCCN=C(N)N)NC(=O)[C@H](CC(C)C)NC(=O)[C@@H](CC(C)C)N(C)C(=O)[C@H](Cc2ccc(O)cc2)NC(=O)[C@H](CO)NC(=O)[C@H](Cc3c[nH]c4ccccc34)NC(=O)[C@H](Cc5c[nH]cn5)NC(=O)[C@@H]6CCC(=O)N6'
@@ -3140,6 +3262,15 @@ describe('layout/engine/pipeline', () => {
     assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
     assert.ok(result.metadata.audit.severeOverlapCount <= 6);
     assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    const c43Angles = [
+      bondAngleAtAtom(result.coords, 'C43', 'N41', 'O44'),
+      bondAngleAtAtom(result.coords, 'C43', 'N41', 'C45'),
+      bondAngleAtAtom(result.coords, 'C43', 'O44', 'C45')
+    ];
+    assert.ok(
+      maxAngleDeviation(c43Angles, 120) < 3,
+      `expected the C43 amide fan to stay near trigonal, got ${c43Angles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
   });
 
   it('keeps peptide timeout regressions well under the stress-test budget after large-molecule partitioning', () => {

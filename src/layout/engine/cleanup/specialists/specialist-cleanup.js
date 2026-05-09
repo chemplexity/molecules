@@ -5,6 +5,10 @@ import {
   runBridgedBondTidy
 } from '../bridged-bond-tidy.js';
 import {
+  hasMediumBridgedRingAngleRelaxationNeed,
+  runMediumBridgedRingAngleRelaxation
+} from '../../families/bridged.js';
+import {
   hasHypervalentAngleTidyNeed,
   measureOrthogonalHypervalentDeviation,
   runHypervalentAngleTidy
@@ -45,14 +49,39 @@ const SPECIALIST_DEFINITIONS = new Map([
     {
       id: 'bridged',
       shouldRun(layoutGraph, coords, options) {
-        return hasBridgedBondTidyNeed(layoutGraph, coords, {
-          bondLength: options.bondLength
-        });
+        return (
+          hasBridgedBondTidyNeed(layoutGraph, coords, {
+            bondLength: options.bondLength
+          })
+          || hasMediumBridgedRingAngleRelaxationNeed(layoutGraph, coords, {
+            bondLength: options.bondLength
+          })
+        );
       },
       run(layoutGraph, coords, options) {
-        return runBridgedBondTidy(layoutGraph, coords, {
-          bondLength: options.bondLength
+        const bondLength = options.bondLength ?? layoutGraph.options.bondLength;
+        const bondTidy = runBridgedBondTidy(layoutGraph, coords, {
+          bondLength
         });
+        const stabilizedTidy = runUnifiedCleanup(layoutGraph, bondTidy.coords, {
+          bondLength,
+          epsilon: bondLength * 0.001,
+          maxPasses: 2,
+          protectBondIntegrity: true,
+          frozenAtomIds: options.frozenAtomIds ?? null,
+          cleanupRigidSubtreesByAtomId: options.cleanupRigidSubtreesByAtomId,
+          protectLargeMoleculeBackbone: options.protectLargeMoleculeBackbone === true
+        });
+        const angleRelaxation = runMediumBridgedRingAngleRelaxation(layoutGraph, stabilizedTidy.coords, {
+          bondLength
+        });
+        return {
+          coords: angleRelaxation.coords,
+          nudges: (bondTidy.nudges ?? 0) + (angleRelaxation.nudges ?? 0),
+          bondTidyNudges: bondTidy.nudges ?? 0,
+          cleanupPasses: stabilizedTidy.passes,
+          angleRelaxationNudges: angleRelaxation.nudges ?? 0
+        };
       }
     }
   ],

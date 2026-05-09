@@ -1965,6 +1965,57 @@ test('dense bridged alkaloids do not render with catastrophic stretched bonds in
   expect(bondMetrics.count).toBeGreaterThan(50);
   expect(bondMetrics.max / bondMetrics.min).toBeLessThan(3.5);
   expect(await plotGeometryWithinPlot(page)).toBe(true);
+
+  const bridgedRingAngles = await page.evaluate(() => {
+    const parseTranslate = value => {
+      const match = /^translate\(([-0-9.]+),([-0-9.]+)\)$/.exec(value ?? '');
+      return match ? { x: Number(match[1]), y: Number(match[2]) } : null;
+    };
+    const atomPoint = atomId => parseTranslate(document.querySelector(`g[data-atom-id="${atomId}"]`)?.getAttribute('transform'));
+    const ringAngles = atomIds =>
+      atomIds.map((atomId, index) => {
+        const previous = atomPoint(atomIds[(index - 1 + atomIds.length) % atomIds.length]);
+        const current = atomPoint(atomId);
+        const next = atomPoint(atomIds[(index + 1) % atomIds.length]);
+        if (!previous || !current || !next) {
+          return null;
+        }
+        const firstVector = { x: previous.x - current.x, y: previous.y - current.y };
+        const secondVector = { x: next.x - current.x, y: next.y - current.y };
+        const dot = firstVector.x * secondVector.x + firstVector.y * secondVector.y;
+        const firstMagnitude = Math.hypot(firstVector.x, firstVector.y);
+        const secondMagnitude = Math.hypot(secondVector.x, secondVector.y);
+        return Math.acos(Math.max(-1, Math.min(1, dot / (firstMagnitude * secondMagnitude)))) * (180 / Math.PI);
+      });
+    const ringBondLengths = atomIds =>
+      atomIds.map((atomId, index) => {
+        const current = atomPoint(atomId);
+        const next = atomPoint(atomIds[(index + 1) % atomIds.length]);
+        return current && next ? Math.hypot(next.x - current.x, next.y - current.y) : null;
+      });
+    return {
+      oxolane: ringAngles(['C29', 'O28', 'C27', 'C26', 'C25']),
+      centralEther: ringAngles(['C50', 'C22', 'C21', 'O20', 'C18', 'C49']),
+      rightAmine: ringAngles(['C37', 'C36', 'C35', 'C34', 'N33']),
+      fusedIndoleFive: ringAngles(['C14', 'C13', 'C8', 'N7', 'C6']),
+      lowerAromatic: ringAngles(['C9', 'C10', 'C11', 'C12', 'C13', 'C8']),
+      rightAromatic: ringAngles(['C46', 'C39', 'C40', 'C41', 'C42', 'C43']),
+      centralEtherBonds: ringBondLengths(['C50', 'C22', 'C21', 'O20', 'C18', 'C49']),
+      lowerAromaticBonds: ringBondLengths(['C9', 'C10', 'C11', 'C12', 'C13', 'C8']),
+      rightAromaticBonds: ringBondLengths(['C46', 'C39', 'C40', 'C41', 'C42', 'C43'])
+    };
+  });
+  const oxolaneAngles = bridgedRingAngles.oxolane;
+  expect(Math.min(...oxolaneAngles)).toBeGreaterThan(70);
+  expect(Math.max(...oxolaneAngles.map(angle => Math.abs(angle - 108)))).toBeLessThan(13);
+  expect(Math.max(...bridgedRingAngles.centralEther.map(angle => Math.abs(angle - 120)))).toBeLessThan(13);
+  expect(Math.max(...bridgedRingAngles.rightAmine.map(angle => Math.abs(angle - 108)))).toBeLessThan(13);
+  expect(Math.max(...bridgedRingAngles.fusedIndoleFive.map(angle => Math.abs(angle - 108)))).toBeLessThan(13);
+  expect(Math.max(...bridgedRingAngles.lowerAromatic.map(angle => Math.abs(angle - 120)))).toBeLessThan(13);
+  expect(Math.max(...bridgedRingAngles.rightAromatic.map(angle => Math.abs(angle - 120)))).toBeLessThan(13);
+  expect(Math.max(...bridgedRingAngles.centralEtherBonds) / Math.min(...bridgedRingAngles.centralEtherBonds)).toBeLessThan(1.65);
+  expect(Math.max(...bridgedRingAngles.lowerAromaticBonds) / Math.min(...bridgedRingAngles.lowerAromaticBonds)).toBeLessThan(1.35);
+  expect(Math.max(...bridgedRingAngles.rightAromaticBonds) / Math.min(...bridgedRingAngles.rightAromaticBonds)).toBeLessThan(1.5);
 });
 
 test('undo restores selection mode and selected atoms as part of the app session', async ({ page }) => {

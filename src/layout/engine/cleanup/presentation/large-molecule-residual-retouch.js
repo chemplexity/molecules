@@ -42,6 +42,10 @@ const FINAL_ANGLE_POLISH_MAX_DEVIATION_THRESHOLD = 4;
 const FINAL_ANGLE_POLISH_MIN_CENTER_IMPROVEMENT = 0.002;
 const FINAL_ANGLE_POLISH_MIN_TOTAL_IMPROVEMENT = 0.003;
 const FINAL_ANGLE_POLISH_WORST_TOLERANCE = 0.03;
+const FINAL_ANGLE_POLISH_CENTER_PRIORITY_MIN_IMPROVEMENT = 0.02;
+const FINAL_ANGLE_POLISH_CENTER_PRIORITY_TOTAL_WORSENING_LIMIT = 0.2;
+const FINAL_ANGLE_POLISH_CENTER_PRIORITY_WORST_WORSENING_LIMIT = 0.05;
+const FINAL_ANGLE_POLISH_CENTER_PRIORITY_MAX_HEAVY_ATOMS = 100;
 const ANGLE_CENTER_MIN_SEPARATION_THRESHOLD = 70;
 const ANGLE_CENTER_MAX_SEPARATION_THRESHOLD = 160;
 const ANGLE_RELIEF_TARGET_OFFSETS = [0, Math.PI / 36, -Math.PI / 36];
@@ -1053,6 +1057,19 @@ function collectCandidateDescriptors(layoutGraph, coords, currentScore, frozenAt
   return descriptors;
 }
 
+/**
+ * Returns whether a repair descriptor would move atoms from a protected local fan.
+ * @param {object} descriptor - Rotation descriptor being considered.
+ * @param {Set<string>|null|undefined} protectedMovedAtomIds - Atom ids that must remain fixed during repair.
+ * @returns {boolean} True when the descriptor subtree includes a protected atom.
+ */
+function descriptorMovesProtectedAtom(descriptor, protectedMovedAtomIds) {
+  if (!(protectedMovedAtomIds instanceof Set) || protectedMovedAtomIds.size === 0) {
+    return false;
+  }
+  return descriptor.subtreeAtomIds.some(atomId => protectedMovedAtomIds.has(atomId));
+}
+
 function collectAngleCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds) {
   const descriptors = [];
   const seenDescriptors = new Set();
@@ -1118,6 +1135,10 @@ function collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, froze
         entries.push({
           centerAtomId: center.atomId,
           centerScore: center.totalDeviation,
+          protectedMovedAtomIds: new Set([
+            center.atomId,
+            ...center.covalentBonds.map(({ neighborAtomId }) => neighborAtomId)
+          ]),
           descriptor
         });
       }
@@ -1141,14 +1162,15 @@ function repairCandidateResiduals(
   let currentScore = inputScore;
   const movedAtomIds = new Set();
   let passes = 0;
+  const maxRepairPasses = options.maxPasses ?? ANGLE_RELIEF_REPAIR_PASSES;
 
   while (
-    passes < ANGLE_RELIEF_REPAIR_PASSES
+    passes < maxRepairPasses
     && (currentScore.severeOverlapCount > 0 || currentScore.visibleHeavyBondCrossingCount > 0)
   ) {
     const descriptors = collectCandidateDescriptors(layoutGraph, coords, currentScore, frozenAtomIds, {
       includeNearbyContainingEndpointDescriptors: options.includeNearbyContainingEndpointDescriptors === true
-    });
+    }).filter(descriptor => !descriptorMovesProtectedAtom(descriptor, options.protectedMovedAtomIds));
     let bestCandidate = null;
 
     for (const descriptor of descriptors) {
@@ -1202,6 +1224,54 @@ function finalAnglePolishCandidateIsBetter(candidateScore, currentScore) {
   );
 }
 
+/**
+ * Allows a bounded final-polish candidate that materially improves the focused
+ * angle center while keeping the whole large-molecule angular score close.
+ * @param {object} candidateScore - Candidate score after residual repair.
+ * @param {object} currentScore - Current final-polish score.
+ * @param {number} centerImprovement - Local center distortion reduction.
+ * @returns {boolean} True when the center-priority candidate is acceptable.
+ */
+function finalAnglePolishCenterPriorityCandidateIsAllowed(candidateScore, currentScore, centerImprovement) {
+  if (candidateScore.severeOverlapCount !== 0 || candidateScore.visibleHeavyBondCrossingCount !== 0) {
+    return false;
+  }
+  return (
+    centerImprovement >= FINAL_ANGLE_POLISH_CENTER_PRIORITY_MIN_IMPROVEMENT
+    && candidateScore.angularDistortionTotal <= currentScore.angularDistortionTotal + FINAL_ANGLE_POLISH_CENTER_PRIORITY_TOTAL_WORSENING_LIMIT
+    && candidateScore.angularDistortionWorst <= currentScore.angularDistortionWorst + FINAL_ANGLE_POLISH_CENTER_PRIORITY_WORST_WORSENING_LIMIT
+  );
+}
+
+/**
+ * Returns whether a final angle-polish candidate is worth invoking the bounded
+ * local residual repair, including small center-priority improvements that
+ * would otherwise be filtered out before nearby contacts can be repaired.
+ * @param {object} candidateScore - Candidate score before residual repair.
+ * @param {object} currentScore - Current final-polish score.
+ * @param {number} centerImprovement - Local center distortion reduction.
+ * @param {boolean} allowCenterPriorityRepair - Whether bounded center-priority repair is enabled for this molecule.
+ * @returns {boolean} True when repair should be attempted.
+ */
+function finalAnglePolishCandidateIsWorthRepair(candidateScore, currentScore, centerImprovement, allowCenterPriorityRepair) {
+  if (angleCandidateIsWorthRepair(candidateScore, currentScore)) {
+    return true;
+  }
+  if (!allowCenterPriorityRepair) {
+    return false;
+  }
+  if (
+    candidateScore.severeOverlapCount > ANGLE_RELIEF_REPAIR_OVERLAP_LIMIT
+    || candidateScore.visibleHeavyBondCrossingCount > ANGLE_RELIEF_REPAIR_CROSSING_LIMIT
+  ) {
+    return false;
+  }
+  return (
+    centerImprovement >= FINAL_ANGLE_POLISH_CENTER_PRIORITY_MIN_IMPROVEMENT
+    && candidateScore.angularDistortionTotal + (ANGLE_RELIEF_REPAIR_MIN_TOTAL_IMPROVEMENT / 2) < currentScore.angularDistortionTotal
+  );
+}
+
 function finalAnglePolishSelectionIsBetter(candidate, incumbent) {
   if (candidate.centerImprovement > incumbent.centerImprovement + RETOUCH_SCORE_EPSILON) {
     return true;
@@ -1239,6 +1309,8 @@ function runFinalAnglePolish(
   ) {
     const atomGrid = buildAtomGrid(layoutGraph, coords, bondLength, { visibleAtomIds });
     const entries = collectFinalAnglePolishEntries(layoutGraph, coords, currentScore, frozenAtomIds);
+    const allowCenterPriorityRepair =
+      visibleHeavyAtomCount(layoutGraph, visibleAtomIds) <= FINAL_ANGLE_POLISH_CENTER_PRIORITY_MAX_HEAVY_ATOMS;
     let bestCandidate = null;
 
     for (const entry of entries) {
@@ -1271,25 +1343,104 @@ function runFinalAnglePolish(
           );
           if (
             !localCandidateHasNoResiduals(layoutGraph, candidateCoords, entry.descriptor, currentScore, bondLength, atomGrid)
-            || !finalAnglePolishCandidateIsBetter(candidateScore, currentScore)
+            || (
+              !finalAnglePolishCandidateIsBetter(candidateScore, currentScore)
+              && (
+                !allowCenterPriorityRepair
+                || !finalAnglePolishCenterPriorityCandidateIsAllowed(
+                  candidateScore,
+                  currentScore,
+                  entry.centerScore - candidateCenterScore.totalDeviation
+                )
+              )
+            )
           ) {
             return null;
           }
           return {
             score: candidateScore,
             descriptor: entry.descriptor,
-            centerImprovement: entry.centerScore - candidateCenterScore.totalDeviation
+            centerImprovement: entry.centerScore - candidateCenterScore.totalDeviation,
+            repairedMovedAtomIds: null
           };
         });
+        let selectedCandidate = candidate;
+        if (!selectedCandidate && allowCenterPriorityRepair) {
+          selectedCandidate = withRotatedSubtree(layoutGraph, coords, entry.descriptor, angle, candidateCoords => {
+            const candidateCenterScore = measureLocalAngleDeviation(layoutGraph, candidateCoords, entry.centerAtomId);
+            if (
+              !candidateCenterScore
+              || candidateCenterScore.totalDeviation + FINAL_ANGLE_POLISH_MIN_CENTER_IMPROVEMENT >= entry.centerScore
+            ) {
+              return null;
+            }
+            const candidateScore = scoreCoords(layoutGraph, candidateCoords, bondLength, trackedAngularContexts, visibleAtomIds);
+            const candidateCenterImprovement = entry.centerScore - candidateCenterScore.totalDeviation;
+            if (!finalAnglePolishCandidateIsWorthRepair(
+              candidateScore,
+              currentScore,
+              candidateCenterImprovement,
+              allowCenterPriorityRepair
+            )) {
+              return null;
+            }
+            const repairedCandidate = repairCandidateResiduals(
+              layoutGraph,
+              rotateSubtree(coords, entry.descriptor, angle),
+              candidateScore,
+              bondLength,
+              frozenAtomIds,
+              trackedAngularContexts,
+              visibleAtomIds,
+              {
+                includeNearbyContainingEndpointDescriptors: true,
+                protectedMovedAtomIds: entry.protectedMovedAtomIds,
+                maxPasses: 3
+              }
+            );
+            const repairedCenterScore = measureLocalAngleDeviation(
+              layoutGraph,
+              repairedCandidate.coords,
+              entry.centerAtomId
+            );
+            const repairedCenterImprovement = repairedCenterScore
+              ? entry.centerScore - repairedCenterScore.totalDeviation
+              : 0;
+            if (
+              !repairedCenterScore
+              || (
+                !finalAnglePolishCandidateIsBetter(repairedCandidate.score, currentScore)
+                && (
+                  !allowCenterPriorityRepair
+                  || !finalAnglePolishCenterPriorityCandidateIsAllowed(
+                    repairedCandidate.score,
+                    currentScore,
+                    repairedCenterImprovement
+                  )
+                )
+              )
+              || auditLayout(layoutGraph, repairedCandidate.coords, { bondLength }).ok !== true
+            ) {
+              return null;
+            }
+            return {
+              score: repairedCandidate.score,
+              descriptor: entry.descriptor,
+              centerImprovement: repairedCenterImprovement,
+              repairedCoords: repairedCandidate.coords,
+              repairedMovedAtomIds: repairedCandidate.movedAtomIds
+            };
+          });
+        }
         if (
-          !candidate
-          || (bestCandidate && !finalAnglePolishSelectionIsBetter(candidate, bestCandidate))
+          !selectedCandidate
+          || (bestCandidate && !finalAnglePolishSelectionIsBetter(selectedCandidate, bestCandidate))
         ) {
           continue;
         }
         bestCandidate = {
-          ...candidate,
-          coords: rotateSubtree(coords, entry.descriptor, angle)
+          ...selectedCandidate,
+          coords: selectedCandidate.repairedCoords ?? rotateSubtree(coords, entry.descriptor, angle)
         };
       }
     }
@@ -1301,6 +1452,9 @@ function runFinalAnglePolish(
     coords = bestCandidate.coords;
     currentScore = bestCandidate.score;
     for (const atomId of bestCandidate.descriptor.subtreeAtomIds) {
+      movedAtomIds.add(atomId);
+    }
+    for (const atomId of bestCandidate.repairedMovedAtomIds ?? []) {
       movedAtomIds.add(atomId);
     }
     passes++;

@@ -2,6 +2,10 @@
 
 ## 2026-05-09
 
+- Let final large-molecule angle polish repair nearby contacts while preserving the improved amide fan.
+- Keep compact spiro oxetane fans open after overlap cleanup without distorting the small ring.
+- Keep five-member aromatic fused bridged cyclohexane cores regular while preserving single-anchor spiro side rings.
+- Regularize and locally polish medium bridged alkaloid cages so peripheral leaves, aromatic rings, and central rings avoid pinched angles.
 - Keep app and SVG displayed hidden stereohydrogens from projecting onto nearby bridged cage atoms.
 
 ## 2026-05-08
