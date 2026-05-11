@@ -20,6 +20,7 @@ import {
   chooseAttachmentAngle,
   describeChargedSulfoxideTrigonalCenter,
   describeCrossLikeHypervalentCenter,
+  describeHiddenHydrogenMonoOxoTrigonalCenter,
   findLayoutBond,
   isExactSimpleAcyclicContinuationEligible,
   isLinearCenter,
@@ -256,7 +257,11 @@ function branchPermutationBudget(layoutGraph, anchorAtomId, childDescriptors, br
 
 function hypervalentChildPermutations(layoutGraph, anchorAtomId, orderedChildDescriptors) {
   const descriptor = describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId);
-  if (!descriptor || orderedChildDescriptors.length !== 3) {
+  if (
+    !descriptor
+    || describeHiddenHydrogenMonoOxoTrigonalCenter(layoutGraph, anchorAtomId)
+    || orderedChildDescriptors.length !== 3
+  ) {
     return null;
   }
 
@@ -604,6 +609,9 @@ function arrangementIdealGeometryPenalty(layoutGraph, coords, anchorAtomId, focu
 }
 
 function crossLikeHypervalentPenalty(layoutGraph, coords, atomId) {
+  if (describeHiddenHydrogenMonoOxoTrigonalCenter(layoutGraph, atomId)) {
+    return 0;
+  }
   const descriptor = describeCrossLikeHypervalentCenter(layoutGraph, atomId);
   if (!descriptor) {
     return 0;
@@ -1478,7 +1486,10 @@ export function chooseBatchAngleAssignments(
       childAtomId,
       subtreeSize: subtreeHeavyAtomCount(adjacency, layoutGraph, coords, childAtomId, anchorAtomId)
     }));
-  const useLocalHypervalentBatch = !!describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId) && resolvedChildDescriptors.length >= 3;
+  const useLocalHypervalentBatch =
+    !!describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId)
+    && !describeHiddenHydrogenMonoOxoTrigonalCenter(layoutGraph, anchorAtomId)
+    && resolvedChildDescriptors.length >= 3;
   const bestPlacement = useLocalHypervalentBatch
     ? evaluateLocalAnglePermutations(
         canonicalAtomRank,

@@ -376,6 +376,33 @@ describe('layout/engine/templates/match', () => {
     assert.notEqual(withoutFormylMatch?.id, 'cyano-formyl-acetal-bridged-core');
   });
 
+  it('matches aminonitrile oxabicyclobutane cores only when both carbon exits are present', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC12CC(C1)(OC2C[NH3+])C(N)C#N'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'aminonitrile-oxabicyclobutane-core');
+
+    const withoutSideChainGraph = createLayoutGraph(parseSMILES('CCC12CC(C1)(OC2)C(N)C#N'), { suppressH: true });
+    const withoutSideChainMatch = findTemplateMatch(
+      withoutSideChainGraph,
+      buildRingCandidate(withoutSideChainGraph, withoutSideChainGraph.ringSystems[0], 'bridged')
+    );
+    assert.notEqual(withoutSideChainMatch?.id, 'aminonitrile-oxabicyclobutane-core');
+  });
+
+  it('matches hydroxy aminomethyl bicyclo ketone cores only with alcohol and carbonyl context', () => {
+    const graph = createLayoutGraph(parseSMILES('C[NH2+]CC12CC(O)(C1)C(=O)C2'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'hydroxy-aminomethyl-bicyclo-ketone-core');
+
+    const withoutAlcoholGraph = createLayoutGraph(parseSMILES('C[NH2+]CC12CC(C1)C(=O)C2'), { suppressH: true });
+    const withoutAlcoholMatch = findTemplateMatch(withoutAlcoholGraph, buildRingCandidate(withoutAlcoholGraph, withoutAlcoholGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutAlcoholMatch?.id, 'hydroxy-aminomethyl-bicyclo-ketone-core');
+
+    const withoutCarbonylGraph = createLayoutGraph(parseSMILES('C[NH2+]CC12CC(O)(C1)CC2'), { suppressH: true });
+    const withoutCarbonylMatch = findTemplateMatch(withoutCarbonylGraph, buildRingCandidate(withoutCarbonylGraph, withoutCarbonylGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutCarbonylMatch?.id, 'hydroxy-aminomethyl-bicyclo-ketone-core');
+  });
+
   it('matches azabicyclo nitrile cores only when the charged gem-substituted context is present', () => {
     const graph = createLayoutGraph(parseSMILES('C[NH+]1C2CCC1C2(C)CC#N'), { suppressH: true });
     const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
@@ -515,6 +542,16 @@ describe('layout/engine/templates/match', () => {
     const withoutAlcoholGraph = createLayoutGraph(parseSMILES('CCC1C2C(CN(C)C)C1(CC)C=C2C'), { suppressH: true });
     const withoutAlcoholMatch = findTemplateMatch(withoutAlcoholGraph, buildRingCandidate(withoutAlcoholGraph, withoutAlcoholGraph.ringSystems[0], 'bridged'));
     assert.notEqual(withoutAlcoholMatch?.id, 'hydroxy-alkyl-bicyclohexene-core');
+  });
+
+  it('matches oxime lactam cyclopentenyl cores only with oxime and lactam context', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1C2CC=C1C(=NO)C(C)C1N(CC1=O)C2'), { suppressH: true });
+    const match = findTemplateMatch(graph, buildRingCandidate(graph, graph.ringSystems[0], 'bridged'));
+    assert.equal(match.id, 'oxime-lactam-cyclopentenyl-core');
+
+    const withoutOximeGraph = createLayoutGraph(parseSMILES('CC1C2CC=C1CC(C)C1N(CC1=O)C2'), { suppressH: true });
+    const withoutOximeMatch = findTemplateMatch(withoutOximeGraph, buildRingCandidate(withoutOximeGraph, withoutOximeGraph.ringSystems[0], 'bridged'));
+    assert.notEqual(withoutOximeMatch?.id, 'oxime-lactam-cyclopentenyl-core');
   });
 
   it('matches the bridged benzoxathiobicyclo cage scaffold too', () => {

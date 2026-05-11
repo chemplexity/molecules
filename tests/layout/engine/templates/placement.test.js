@@ -557,6 +557,50 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.max(...bridgeAngles) < 160);
   });
 
+  it('places the aminonitrile oxabicyclobutane core without folded five-four rings', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC12CC(C1)(OC2C[NH3+])C(N)C#N'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'aminonitrile-oxabicyclobutane-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const etherFiveRingAngles = ringAngles(coords, ['C8', 'O7', 'C5', 'C6', 'C3']);
+    const cyclobutaneAngles = ringAngles(coords, ['C6', 'C5', 'C4', 'C3']);
+
+    assert.equal(coords.size, 6);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.2);
+    assert.ok(Math.min(...etherFiveRingAngles) > 90);
+    assert.ok(Math.max(...etherFiveRingAngles) < 125);
+    assert.ok(Math.min(...cyclobutaneAngles) > 80);
+    assert.ok(Math.max(...cyclobutaneAngles) < 105);
+  });
+
+  it('places the hydroxy aminomethyl bicyclo ketone core without stretched fallback bonds', () => {
+    const graph = createLayoutGraph(parseSMILES('C[NH2+]CC12CC(O)(C1)C(=O)C2'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'hydroxy-aminomethyl-bicyclo-ketone-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const ketoneFiveRingAngles = ringAngles(coords, ['C12', 'C10', 'C7', 'C9', 'C5']);
+    const cyclobutaneAngles = ringAngles(coords, ['C9', 'C7', 'C6', 'C5']);
+
+    assert.equal(coords.size, 6);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    assert.ok(audit.maxBondLengthDeviation < graph.options.bondLength * 0.3);
+    assert.ok(Math.min(...ketoneFiveRingAngles) > 40);
+    assert.ok(Math.max(...ketoneFiveRingAngles) < 125);
+    assert.ok(Math.min(...cyclobutaneAngles) > 70);
+    assert.ok(Math.max(...cyclobutaneAngles) < 125);
+  });
+
   it('places the compact azabicyclo nitrile core without stretched fallback bonds', () => {
     const graph = createLayoutGraph(parseSMILES('C[NH+]1C2CCC1C2(C)CC#N'), { suppressH: true });
     const coords = placeTemplateCoords(graph, 'azabicyclo-nitrile-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
@@ -881,6 +925,29 @@ describe('layout/engine/templates/placement', () => {
     assert.ok(Math.max(...fiveRingAngles) < 145, `expected the hydroxy bicyclohexene five-ring to avoid flattened corners, got ${fiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
     for (const bondLength of ringBondLengths) {
       assert.ok(bondLength >= minReadableBondLength && bondLength <= maxReadableBondLength);
+    }
+  });
+
+  it('places the oxime lactam cyclopentenyl core without flattening the five-member ring', () => {
+    const graph = createLayoutGraph(parseSMILES('CC1C2CC=C1C(=NO)C(C)C1N(CC1=O)C2'), { suppressH: true });
+    const coords = placeTemplateCoords(graph, 'oxime-lactam-cyclopentenyl-core', graph.ringSystems[0].atomIds, graph.options.bondLength);
+    const audit = auditLayout(graph, coords, {
+      bondLength: graph.options.bondLength,
+      bondValidationClasses: assignBondValidationClass(graph, graph.ringSystems[0].atomIds, 'bridged')
+    });
+    const fiveRingAngles = ringAngles(coords, ['C6', 'C5', 'C4', 'C3', 'C2']);
+    const lactamAngles = ringAngles(coords, ['C15', 'C14', 'N13', 'C12']);
+
+    assert.equal(coords.size, 12);
+    assert.equal(audit.ok, true);
+    assert.equal(audit.severeOverlapCount, 0);
+    assert.equal(audit.bondLengthFailureCount, 0);
+    assert.equal(audit.visibleHeavyBondCrossingCount, 0);
+    for (const angle of fiveRingAngles) {
+      assert.ok(Math.abs(angle - 108) < 0.05, `expected the cyclopentenyl ring to stay pentagonal, got ${fiveRingAngles.map(candidate => candidate.toFixed(2)).join(', ')}`);
+    }
+    for (const angle of lactamAngles) {
+      assert.ok(Math.abs(angle - 90) < 1e-6, `expected the beta-lactam ring to stay square, got ${lactamAngles.map(candidate => candidate.toFixed(2)).join(', ')}`);
     }
   });
 

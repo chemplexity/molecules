@@ -503,6 +503,7 @@ describe('layout/engine/pipeline', () => {
     const fusedCyclohexaneBonds = ringBondLengths(result.coords, fusedCyclohexaneAtomIds);
     const fusedAromaticAngles = ringAngles(result.coords, fusedAromaticAtomIds);
     const spiroSideRingAngles = ringAngles(result.coords, spiroSideRingAtomIds);
+    const spiroSideRingBonds = ringBondLengths(result.coords, spiroSideRingAtomIds);
 
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.primaryFamily, 'bridged');
@@ -522,8 +523,12 @@ describe('layout/engine/pipeline', () => {
       `expected the fused aromatic five-ring to stay exact, got ${fusedAromaticAngles.map(angle => angle.toFixed(2)).join(', ')}`
     );
     assert.ok(
-      Math.min(...spiroSideRingAngles) > 70,
-      `expected the spiro side ring to stay open while preserving the fused core, got ${spiroSideRingAngles.map(angle => angle.toFixed(2)).join(', ')}`
+      maxAngleDeviation(spiroSideRingAngles, 108) < 1e-6,
+      `expected the spiro side five-ring to regularize while preserving the fused core, got ${spiroSideRingAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    assert.ok(
+      Math.max(...spiroSideRingBonds) / Math.min(...spiroSideRingBonds) < 1.01,
+      `expected the spiro side five-ring bonds to stay even, got ${spiroSideRingBonds.map(length => length.toFixed(2)).join(', ')}`
     );
   });
 
@@ -868,6 +873,32 @@ describe('layout/engine/pipeline', () => {
     assert.ok(Math.max(...ammoniumRingAngles) < 120, `expected the charged four-ring lane to avoid flattened fallback geometry, got ${ammoniumRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
   });
 
+  it('uses the hydroxy aminomethyl bicyclo ketone template instead of generic bridged fallback', () => {
+    const result = runPipeline(parseSMILES('C[NH2+]CC12CC(O)(C1)C(=O)C2'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const ketoneFiveRingAngles = ringAngles(result.coords, ['C12', 'C10', 'C7', 'C9', 'C5']);
+    const cyclobutaneAngles = ringAngles(result.coords, ['C9', 'C7', 'C6', 'C5']);
+    const cyclobutaneLengths = ringBondLengths(result.coords, ['C9', 'C7', 'C6', 'C5']);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    assert.ok(result.metadata.audit.maxBondLengthDeviation < result.layoutGraph.options.bondLength * 0.3);
+    assert.ok(Math.min(...ketoneFiveRingAngles) > 40, `expected the ketone five-ring to avoid pinched fallback geometry, got ${ketoneFiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...ketoneFiveRingAngles) < 125, `expected the ketone five-ring to avoid flattened fallback geometry, got ${ketoneFiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.min(...cyclobutaneAngles) > 70, `expected the cyclobutane cap to stay open, got ${cyclobutaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...cyclobutaneAngles) < 125, `expected the cyclobutane cap to avoid flattened fallback geometry, got ${cyclobutaneAngles.map(angle => angle.toFixed(2)).join(', ')}`);
+    assert.ok(Math.max(...cyclobutaneLengths) < result.layoutGraph.options.bondLength * 1.3);
+  });
+
   it('uses the bridged decalin lactam template instead of flattening shared ring paths', () => {
     const result = runPipeline(parseSMILES('CC1CC(C)C2(C)CCC1CC(=O)N2CC[NH3+]'), {
       suppressH: true,
@@ -1026,6 +1057,33 @@ describe('layout/engine/pipeline', () => {
     for (const length of sixMemberLengths) {
       assert.ok(Math.abs(length - result.layoutGraph.options.bondLength) < 1e-4, `expected six-member ring bonds to stay normal, got ${sixMemberLengths.map(candidate => candidate.toFixed(3)).join(', ')}`);
     }
+  });
+
+  it('uses the oxime lactam cyclopentenyl template instead of flattening the five-member ring', () => {
+    const result = runPipeline(parseSMILES('CC1C2CC=C1C(=NO)C(C)C1N(CC1=O)C2'), {
+      suppressH: true,
+      auditTelemetry: true,
+      finalLandscapeOrientation: true
+    });
+    const fiveRingAngles = ringAngles(result.coords, ['C6', 'C5', 'C4', 'C3', 'C2']);
+    const lactamAngles = ringAngles(result.coords, ['C15', 'C14', 'N13', 'C12']);
+
+    assert.equal(result.metadata.primaryFamily, 'bridged');
+    assert.equal(result.metadata.mixedMode, true);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.fallback.mode, null);
+    assert.deepEqual(findVisibleHeavyBondCrossings(result.layoutGraph, result.coords), []);
+    assert.ok(
+      maxAngleDeviation(fiveRingAngles, 108) < 4,
+      `expected the cyclopentenyl ring to stay pentagonal, got ${fiveRingAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    assert.ok(
+      maxAngleDeviation(lactamAngles, 90) < 4,
+      `expected the beta-lactam ring to stay square, got ${lactamAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
   });
 
   it('uses the norbornene child template instead of flattening attached cyclopentyl bridges', () => {
@@ -1937,6 +1995,55 @@ describe('layout/engine/pipeline', () => {
     const childAngle = angleOf(sub(result.coords.get(nitrileCarbonAtomId), result.coords.get(anchorAtomId)));
 
     assert.ok(angularDifference(childAngle, preferredAngle) < 1e-6);
+    assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('reflects crowded attached pyridyl rings so aryl nitrile roots keep exact outward angles', () => {
+    const result = runPipeline(
+      parseSMILES('COC1=CC=CC(=C1)S(=O)(=O)N1C=C(CN(CC(C)(C)C)C([O-])=O)C(F)=C1C1=CC=CN=C1C#N'),
+      { suppressH: true, auditTelemetry: true }
+    );
+    const preferredAngle = preferredRingAttachmentAngle(result.layoutGraph, result.coords, 'C33');
+    const childAngle = angleOf(sub(result.coords.get('C34'), result.coords.get('C33')));
+
+    assert.notEqual(preferredAngle, null);
+    assert.ok(angularDifference(childAngle, preferredAngle) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C33', 'C28', 'C34') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C33', 'N32', 'C34') - 120) < 1e-6);
+    assert.ok(Math.abs(bondAngleAtAtom(result.coords, 'C34', 'C33', 'N35') - 180) < 1e-6);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+  });
+
+  it('preserves crowded terminal propanol zigzags while clearing anilino ring overlap', () => {
+    const result = runPipeline(
+      parseSMILES('COC1=CC=C(C=C1)N(C)C1=C2C=CC=CC2=NC(CN(CCCO)CC2=NC(N(C)C3=CC=C(OC)C=C3)=C3C=CC=CC3=N2)=N1'),
+      { suppressH: true, auditTelemetry: true }
+    );
+    const firstPropanolAngle = bondAngleAtAtom(result.coords, 'C23', 'C22', 'C24');
+    const secondPropanolAngle = bondAngleAtAtom(result.coords, 'C24', 'C23', 'O25');
+    const firstAnilinoAngle = bondAngleAtAtom(result.coords, 'N9', 'C6', 'C10');
+    const secondAnilinoAngle = bondAngleAtAtom(result.coords, 'N9', 'C6', 'C11');
+    const thirdAnilinoAngle = bondAngleAtAtom(result.coords, 'N9', 'C10', 'C11');
+    const firstTertiaryAmineAngle = bondAngleAtAtom(result.coords, 'N21', 'C20', 'C22');
+    const secondTertiaryAmineAngle = bondAngleAtAtom(result.coords, 'N21', 'C20', 'C26');
+    const thirdTertiaryAmineAngle = bondAngleAtAtom(result.coords, 'N21', 'C22', 'C26');
+    const anilinoPenalty = measureTrigonalDistortion(result.layoutGraph, result.coords, {
+      focusAtomIds: new Set(['N9'])
+    });
+    const divalentPenalty = measureDivalentContinuationDistortion(result.layoutGraph, result.coords);
+
+    assert.ok(Math.abs(firstPropanolAngle - 120) < 1e-6, `expected C22-C23-C24 to stay at 120 degrees, got ${firstPropanolAngle.toFixed(2)}`);
+    assert.ok(Math.abs(secondPropanolAngle - 120) < 1e-6, `expected C23-C24-O25 to stay at 120 degrees, got ${secondPropanolAngle.toFixed(2)}`);
+    assert.ok(Math.abs(firstAnilinoAngle - 120) < 1e-6, `expected C6-N9-C10 to stay at 120 degrees, got ${firstAnilinoAngle.toFixed(2)}`);
+    assert.ok(Math.abs(secondAnilinoAngle - 120) < 1e-6, `expected C6-N9-C11 to stay at 120 degrees, got ${secondAnilinoAngle.toFixed(2)}`);
+    assert.ok(Math.abs(thirdAnilinoAngle - 120) < 1e-6, `expected C10-N9-C11 to stay at 120 degrees, got ${thirdAnilinoAngle.toFixed(2)}`);
+    assert.ok(Math.abs(firstTertiaryAmineAngle - 120) < 1e-6, `expected C20-N21-C22 to stay at 120 degrees, got ${firstTertiaryAmineAngle.toFixed(2)}`);
+    assert.ok(Math.abs(secondTertiaryAmineAngle - 120) < 1e-6, `expected C20-N21-C26 to stay at 120 degrees, got ${secondTertiaryAmineAngle.toFixed(2)}`);
+    assert.ok(Math.abs(thirdTertiaryAmineAngle - 120) < 1e-6, `expected C22-N21-C26 to stay at 120 degrees, got ${thirdTertiaryAmineAngle.toFixed(2)}`);
+    assert.ok(anilinoPenalty.maxDeviation < 1e-12, `expected exact anilino trigonal fan, got ${anilinoPenalty.maxDeviation}`);
+    assert.ok(divalentPenalty.maxDeviation < 1e-12, `expected exact divalent continuations, got ${divalentPenalty.maxDeviation}`);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
   });
 
@@ -3333,6 +3440,53 @@ describe('layout/engine/pipeline', () => {
     );
   });
 
+  it('uses finer dense partitions for ring-rich peptide chains before residual retouch', () => {
+    const result = runPipeline(
+      parseSMILES(
+        'NCCCC[C@H](<NC(=O)[C@@H](N)CCCNC(=N)N>)C(=O)N[C@@H](Cc1c[nH]c2ccccc12)C(=O)N[C@@H](Cc3c[nH]c4ccccc34)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](Cc5c[nH]c6ccccc56)C(=O)N[C@@H](Cc7c[nH]c8ccccc78)C(=O)N[C@@H](<CCCNC(=N)N>)C(=O)N[C@@H](Cc9c[nH]c%10ccccc9%10)C(=O)O'
+      ),
+      {
+        suppressH: true,
+        timing: true
+      }
+    );
+    const alphaFanAngles = [
+      bondAngleAtAtom(result.coords, 'C56', 'C58', 'C65'),
+      bondAngleAtAtom(result.coords, 'C56', 'C58', 'N55'),
+      bondAngleAtAtom(result.coords, 'C56', 'C65', 'N55')
+    ];
+    const carbonylFanAngles = [
+      bondAngleAtAtom(result.coords, 'C65', 'C56', 'O66'),
+      bondAngleAtAtom(result.coords, 'C65', 'C56', 'N67'),
+      bondAngleAtAtom(result.coords, 'C65', 'O66', 'N67')
+    ];
+    const sidechainFanAngles = [
+      bondAngleAtAtom(result.coords, 'C68', 'C70', 'C81'),
+      bondAngleAtAtom(result.coords, 'C68', 'C70', 'N67'),
+      bondAngleAtAtom(result.coords, 'C68', 'C81', 'N67')
+    ];
+
+    assert.equal(result.metadata.primaryFamily, 'large-molecule');
+    assert.deepEqual(result.metadata.placedFamilies, ['large-molecule']);
+    assert.equal(result.metadata.audit.ok, true);
+    assert.equal(result.metadata.audit.severeOverlapCount, 0);
+    assert.equal(result.metadata.audit.visibleHeavyBondCrossingCount, 0);
+    assert.equal(result.metadata.audit.bondLengthFailureCount, 0);
+    assert.ok(
+      maxAngleDeviation(alphaFanAngles, 120) < 1e-6,
+      `expected the peptide alpha fan to stay trigonal, got ${alphaFanAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    assert.ok(
+      maxAngleDeviation(carbonylFanAngles, 120) < 2,
+      `expected the adjacent amide fan to remain readable, got ${carbonylFanAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    assert.ok(
+      maxAngleDeviation(sidechainFanAngles, 120) < 1e-6,
+      `expected the protected peptide sidechain fan to stay trigonal, got ${sidechainFanAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
+    assert.ok(result.metadata.timing.totalMs < 10000, `expected finer dense partition retry to stay bounded, got ${result.metadata.timing.totalMs}ms`);
+  });
+
   it('retouches residual peptide sidechain overlaps after large-molecule block stitching', () => {
     const result = runPipeline(
       parseSMILES(
@@ -3439,6 +3593,27 @@ describe('layout/engine/pipeline', () => {
     assert.equal(result.metadata.stage, 'coordinates-ready');
     assert.equal(result.metadata.audit.severeOverlapCount, 0);
     assert.equal(result.metadata.audit.ok, true);
+  });
+
+  it('keeps hidden-h mono-oxo phosphonate ligands on a visible trigonal fan', () => {
+    const result = runPipeline(
+      parseSMILES('C[C@@H](<NC(=O)CCCC[C@@H](NC(=O)C[NH3+])C([O-])=O>)P([O-])=O'),
+      {
+        suppressH: true
+      }
+    );
+    const phosphonateAngles = [
+      bondAngleAtAtom(result.coords, 'P22', 'C2', 'O23'),
+      bondAngleAtAtom(result.coords, 'P22', 'C2', 'O24'),
+      bondAngleAtAtom(result.coords, 'P22', 'O23', 'O24')
+    ];
+
+    assert.equal(result.metadata.stage, 'coordinates-ready');
+    assert.equal(result.metadata.audit.ok, true);
+    assert.ok(
+      maxAngleDeviation(phosphonateAngles, 120) < 1e-6,
+      `expected hidden-h phosphonate ligands to use a trigonal fan, got ${phosphonateAngles.map(angle => angle.toFixed(2)).join(', ')}`
+    );
   });
 
   it('keeps bulky diaryl phosphine oxide branches from crossing visible bonds', () => {

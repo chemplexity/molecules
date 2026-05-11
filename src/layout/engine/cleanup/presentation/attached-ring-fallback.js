@@ -51,6 +51,7 @@ const PROJECTED_CENTER_FIXED_SLOT_TOLERANCE = Math.PI / 12;
 const PROJECTED_CENTER_MAX_RING_ROTATION = Math.PI / 2;
 const PROJECTED_CENTER_MAX_RING_SUBTREE_HEAVY_ATOMS = 14;
 const PROJECTED_CENTER_MIN_CROSS_IMPROVEMENT = (Math.PI / 18) ** 2;
+const ATTACHED_RING_TERMINAL_MULTIPLE_BOND_ROOT_RESCUE_TRIGGER = Math.PI / 18;
 const OMITTED_H_FAN_RESCUE_MIN_DEVIATION = (Math.PI / 18) ** 2;
 const OMITTED_H_FAN_RESCUE_MIN_IMPROVEMENT = 1e-6;
 const OMITTED_H_FAN_MAX_TETRAHEDRAL_WORSENING = 0.05;
@@ -670,6 +671,105 @@ function reflectSubtreeAcrossBond(coords, subtreeAtomIds, lineStartAtomId, lineE
     reflectedCoords.set(atomId, reflectAcrossLine(currentPosition, lineStartPosition, lineEndPosition));
   }
   return reflectedCoords;
+}
+
+/**
+ * Returns whether a ring substituent root is a terminal multiple-bond branch,
+ * such as an aryl nitrile carbon. The root itself is single-bonded to the ring
+ * and carries exactly one terminal multiple-bond heavy leaf.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} ringAnchorAtomId - Ring atom bearing the substituent.
+ * @param {string} rootAtomId - Exocyclic substituent root atom.
+ * @returns {boolean} True when the root is a terminal multiple-bond branch.
+ */
+function isTerminalMultipleBondRingSubstituentRoot(layoutGraph, ringAnchorAtomId, rootAtomId) {
+  const rootAtom = layoutGraph.atoms.get(rootAtomId);
+  const anchorBond = findLayoutBond(layoutGraph, ringAnchorAtomId, rootAtomId);
+  if (
+    !rootAtom
+    || rootAtom.element === 'H'
+    || rootAtom.aromatic
+    || (rootAtom.heavyDegree ?? 0) !== 2
+    || (layoutGraph.atomToRings.get(rootAtomId)?.length ?? 0) > 0
+    || !anchorBond
+    || anchorBond.kind !== 'covalent'
+    || anchorBond.inRing
+    || anchorBond.aromatic
+    || (anchorBond.order ?? 1) !== 1
+  ) {
+    return false;
+  }
+
+  const terminalMultipleBondLeaves = (layoutGraph.bondsByAtomId.get(rootAtomId) ?? [])
+    .filter(bond => bond?.kind === 'covalent' && bond.id !== anchorBond.id)
+    .filter(bond => !bond.inRing && !bond.aromatic && (bond.order ?? 1) >= 2)
+    .map(bond => (bond.a === rootAtomId ? bond.b : bond.a))
+    .filter(neighborAtomId => {
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      return Boolean(
+        neighborAtom
+        && neighborAtom.element !== 'H'
+        && (neighborAtom.heavyDegree ?? 0) === 1
+        && (layoutGraph.atomToRings.get(neighborAtomId)?.length ?? 0) === 0
+      );
+    });
+  return terminalMultipleBondLeaves.length === 1;
+}
+
+/**
+ * Returns whether reflecting an attached ring is worth trying because a
+ * terminal multiple-bond substituent inside that ring is visibly off its exact
+ * local ring-outward slot. The reflected face can often clear an upstream
+ * blocker so the normal ring-substituent tidy can restore the exact fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {{subtreeAtomIds: string[], rootAtomId: string}} descriptor - Attached-ring descriptor.
+ * @returns {boolean} True when a reflected attached-ring rescue should be seeded.
+ */
+function hasDistortedTerminalMultipleBondRootInAttachedRing(layoutGraph, coords, descriptor) {
+  const subtreeAtomIds = new Set(descriptor.subtreeAtomIds ?? []);
+  if (subtreeAtomIds.size === 0 || !subtreeAtomIds.has(descriptor.rootAtomId)) {
+    return false;
+  }
+
+  for (const ringAnchorAtomId of subtreeAtomIds) {
+    const ringAnchorAtom = layoutGraph.atoms.get(ringAnchorAtomId);
+    if (
+      !ringAnchorAtom
+      || ringAnchorAtom.element === 'H'
+      || (layoutGraph.atomToRings.get(ringAnchorAtomId)?.length ?? 0) === 0
+      || !coords.has(ringAnchorAtomId)
+    ) {
+      continue;
+    }
+
+    const outwardAngles = computeIncidentRingOutwardAngles(layoutGraph, ringAnchorAtomId, atomId => coords.get(atomId) ?? null);
+    if (outwardAngles.length === 0) {
+      continue;
+    }
+
+    for (const bond of layoutGraph.bondsByAtomId.get(ringAnchorAtomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent' || bond.inRing || bond.aromatic || (bond.order ?? 1) !== 1) {
+        continue;
+      }
+      const rootAtomId = bond.a === ringAnchorAtomId ? bond.b : bond.a;
+      if (
+        !subtreeAtomIds.has(rootAtomId)
+        || !coords.has(rootAtomId)
+        || !isTerminalMultipleBondRingSubstituentRoot(layoutGraph, ringAnchorAtomId, rootAtomId)
+      ) {
+        continue;
+      }
+
+      const currentAngle = angleOf(sub(coords.get(rootAtomId), coords.get(ringAnchorAtomId)));
+      const bestDeviation = Math.min(...outwardAngles.map(outwardAngle => angularDifference(outwardAngle, currentAngle)));
+      if (bestDeviation > ATTACHED_RING_TERMINAL_MULTIPLE_BOND_ROOT_RESCUE_TRIGGER) {
+        return true;
+      }
+    }
+  }
+
+  return false;
 }
 
 function compareCanonicalIds(layoutGraph, firstAtomId, secondAtomId) {
@@ -3663,6 +3763,8 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
       const basePeripheralFocusClearance = measureAttachedRingPeripheralFocusClearance(layoutGraph, currentCoords, descriptor, focusAtomIds);
       const needsPeripheralFocusClearanceRescue =
         basePeripheralFocusClearance > 0 && basePeripheralFocusClearance < bondLength * ATTACHED_RING_PERIPHERAL_FOCUS_CLEARANCE_FACTOR - 1e-6;
+      const needsTerminalMultipleBondRootReflection =
+        hasDistortedTerminalMultipleBondRootInAttachedRing(layoutGraph, currentCoords, descriptor);
       const buildCandidateScore = (candidateCoords, nudges) => {
         const overlapCount = findSevereOverlaps(layoutGraph, candidateCoords, bondLength).length;
         if (overlapCount > baseOverlapCount) {
@@ -4010,7 +4112,7 @@ export function runAttachedRingRotationTouchup(layoutGraph, inputCoords, options
             for (const rotation of exactRootAnchoredOutwardRotations(layoutGraph, currentCoords, inputDescriptor)) {
               pushRootAnchoredSeed(rotation, { exactRootOutward: true });
             }
-            if (needsPeripheralFocusClearanceRescue) {
+            if (needsPeripheralFocusClearanceRescue || needsTerminalMultipleBondRootReflection) {
               seeds.push({ kind: 'reflected-subtree', reflectAnchor: true });
             }
             for (const rotation of rotationAngles) {

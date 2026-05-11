@@ -676,6 +676,47 @@ describe('layout/engine/families/bridged', () => {
     assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
   });
 
+  it('uses an aminonitrile oxabicyclobutane template so the compact five-four cage stays open', () => {
+    const smiles = 'CCC12CC(C1)(OC2C[NH3+])C(N)C#N';
+    const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });
+    const bridgedRingSystem = graph.ringSystems.find(ringSystem => ringSystem.ringIds.length === 2);
+    assert.ok(bridgedRingSystem);
+    const rings = graph.rings.filter(ring => bridgedRingSystem.ringIds.includes(ring.id));
+    const result = layoutBridgedFamily(rings, graph.options.bondLength, {
+      layoutGraph: graph,
+      templateId: 'aminonitrile-oxabicyclobutane-core'
+    });
+    const pipelineResult = runPipeline(parseSMILES(smiles), {
+      suppressH: true,
+      auditTelemetry: true
+    });
+    const assertOpenFiveFourCage = (coords, label) => {
+      for (const ring of rings) {
+        const angles = ring.atomIds.map(atomId => ringInternalAngle(ring, coords, atomId) * (180 / Math.PI));
+        const limits = ring.atomIds.length === 4
+          ? { min: 80, max: 105 }
+          : { min: 90, max: 125 };
+        assert.ok(
+          Math.min(...angles) > limits.min,
+          `expected ${label} ring ${ring.id} to avoid pinched corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+        );
+        assert.ok(
+          Math.max(...angles) < limits.max,
+          `expected ${label} ring ${ring.id} to avoid folded-back corners, got ${angles.map(angle => angle.toFixed(2)).join(', ')}`
+        );
+      }
+    };
+
+    assert.equal(result.placementMode, 'template');
+    assertBridgedLayoutQuality(graph, result.coords);
+    assertOpenFiveFourCage(result.coords, 'template layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(graph, result.coords), []);
+    assert.equal(pipelineResult.metadata.audit.ok, true);
+    assert.equal(pipelineResult.metadata.audit.fallback.mode, null);
+    assertOpenFiveFourCage(pipelineResult.coords, 'pipeline layout');
+    assert.deepEqual(findVisibleHeavyBondCrossings(pipelineResult.layoutGraph, pipelineResult.coords), []);
+  });
+
   it('keeps long theta-like bridged ring paths separated from exocyclic substituents', () => {
     const smiles = 'CCOC(C)(C)C1NCC2OCC1NC(=O)O2';
     const graph = createLayoutGraph(parseSMILES(smiles), { suppressH: true });

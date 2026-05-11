@@ -46,6 +46,9 @@ const FINAL_ANGLE_POLISH_CENTER_PRIORITY_MIN_IMPROVEMENT = 0.02;
 const FINAL_ANGLE_POLISH_CENTER_PRIORITY_TOTAL_WORSENING_LIMIT = 0.2;
 const FINAL_ANGLE_POLISH_CENTER_PRIORITY_WORST_WORSENING_LIMIT = 0.05;
 const FINAL_ANGLE_POLISH_CENTER_PRIORITY_MAX_HEAVY_ATOMS = 100;
+const EXACT_THREE_HEAVY_PROTECTION_INITIAL_TOTAL_THRESHOLD = 1e-10;
+const EXACT_THREE_HEAVY_PROTECTION_RETRY_TOTAL_THRESHOLD = 0.09;
+const EXACT_THREE_HEAVY_PROTECTION_RETRY_CENTER_LIMIT = 4;
 const ANGLE_CENTER_MIN_SEPARATION_THRESHOLD = 70;
 const ANGLE_CENTER_MAX_SEPARATION_THRESHOLD = 160;
 const ANGLE_RELIEF_TARGET_OFFSETS = [0, Math.PI / 36, -Math.PI / 36];
@@ -590,6 +593,107 @@ function buildTrackedAngularContexts(layoutGraph, coords) {
     }
   }
   return contexts;
+}
+
+function residualScoreAtomIds(score) {
+  const atomIds = new Set();
+  for (const overlap of score.overlaps ?? []) {
+    atomIds.add(overlap.firstAtomId);
+    atomIds.add(overlap.secondAtomId);
+  }
+  for (const crossing of score.crossings ?? []) {
+    for (const atomId of crossing.firstAtomIds ?? []) {
+      atomIds.add(atomId);
+    }
+    for (const atomId of crossing.secondAtomIds ?? []) {
+      atomIds.add(atomId);
+    }
+  }
+  return atomIds;
+}
+
+function collectExactThreeHeavyProtectionCenters(layoutGraph, coords, trackedAngularContexts, score) {
+  const residualAtomIds = residualScoreAtomIds(score);
+  const centerAtomIds = [];
+  for (const [atomId, context] of trackedAngularContexts) {
+    if (!context.measureThreeHeavy || residualAtomIds.has(atomId)) {
+      continue;
+    }
+    const distortion = measureTrackedAngularDistortionAtAtom(layoutGraph, coords, atomId, trackedAngularContexts);
+    if (distortion.totalDeviation <= EXACT_THREE_HEAVY_PROTECTION_INITIAL_TOTAL_THRESHOLD) {
+      centerAtomIds.push(atomId);
+    }
+  }
+  return centerAtomIds;
+}
+
+function harmedExactThreeHeavyProtectionCenters(layoutGraph, coords, protectedCenterAtomIds, trackedAngularContexts) {
+  return protectedCenterAtomIds
+    .map(atomId => ({
+      atomId,
+      distortion: measureTrackedAngularDistortionAtAtom(layoutGraph, coords, atomId, trackedAngularContexts)
+    }))
+    .filter(({ distortion }) => distortion.totalDeviation > EXACT_THREE_HEAVY_PROTECTION_RETRY_TOTAL_THRESHOLD)
+    .sort((first, second) => second.distortion.totalDeviation - first.distortion.totalDeviation)
+    .slice(0, EXACT_THREE_HEAVY_PROTECTION_RETRY_CENTER_LIMIT);
+}
+
+function protectedCenterDistortionTotal(layoutGraph, coords, protectedCenterAtomIds, trackedAngularContexts) {
+  return protectedCenterAtomIds.reduce((total, atomId) => (
+    total + measureTrackedAngularDistortionAtAtom(layoutGraph, coords, atomId, trackedAngularContexts).totalDeviation
+  ), 0);
+}
+
+function smallestVisibleHeavyCutNeighborAtomId(layoutGraph, coords, centerAtomId) {
+  let bestNeighbor = null;
+  for (const { bond, neighborAtomId } of visibleHeavyCovalentBonds(layoutGraph, coords, centerAtomId)) {
+    if (bond.aromatic || (bond.order ?? 1) !== 1) {
+      continue;
+    }
+    const subtreeAtomIds = [...collectCutSubtree(layoutGraph, neighborAtomId, centerAtomId)].filter(atomId => coords.has(atomId));
+    if (subtreeAtomIds.length === 0 || subtreeAtomIds.includes(centerAtomId)) {
+      continue;
+    }
+    const heavyAtomCount = visibleHeavyAtomCount(layoutGraph, subtreeAtomIds);
+    if (heavyAtomCount === 0) {
+      continue;
+    }
+    if (
+      !bestNeighbor
+      || heavyAtomCount < bestNeighbor.heavyAtomCount
+      || (heavyAtomCount === bestNeighbor.heavyAtomCount && subtreeAtomIds.length < bestNeighbor.atomCount)
+    ) {
+      bestNeighbor = {
+        atomId: neighborAtomId,
+        atomCount: subtreeAtomIds.length,
+        heavyAtomCount
+      };
+    }
+  }
+  return bestNeighbor?.atomId ?? null;
+}
+
+function exactThreeHeavyProtectionRetryFrozenAtomIds(layoutGraph, coords, protectedCenterAtomIds) {
+  const atomIds = new Set(protectedCenterAtomIds);
+  for (const centerAtomId of protectedCenterAtomIds) {
+    const neighborAtomId = smallestVisibleHeavyCutNeighborAtomId(layoutGraph, coords, centerAtomId);
+    if (neighborAtomId) {
+      atomIds.add(neighborAtomId);
+    }
+  }
+  return atomIds;
+}
+
+function mergeFrozenAtomIds(firstAtomIds, secondAtomIds) {
+  const additionalAtomIds = secondAtomIds ? [...secondAtomIds] : [];
+  if (!(firstAtomIds instanceof Set) || firstAtomIds.size === 0) {
+    return additionalAtomIds.length > 0 ? new Set(additionalAtomIds) : null;
+  }
+  const mergedAtomIds = new Set(firstAtomIds);
+  for (const atomId of additionalAtomIds) {
+    mergedAtomIds.add(atomId);
+  }
+  return mergedAtomIds;
 }
 
 function collectVisibleAtomIds(layoutGraph, coords) {
@@ -1486,6 +1590,9 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
   const trackedAngularContexts = buildTrackedAngularContexts(layoutGraph, coords);
   let currentScore = scoreCoords(layoutGraph, coords, bondLength, trackedAngularContexts, visibleAtomIds);
   const initialScore = currentScore;
+  const exactThreeHeavyProtectionCenterAtomIds = options._skipExactThreeHeavyProtectionRetry === true
+    ? []
+    : collectExactThreeHeavyProtectionCenters(layoutGraph, coords, trackedAngularContexts, initialScore);
   const movedAtomIds = new Set();
   let passes = 0;
   let angleReliefPasses = 0;
@@ -1727,6 +1834,48 @@ export function runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, option
       movedAtomIds.add(atomId);
     }
     finalAnglePolishPasses = finalAnglePolish.passes;
+  }
+
+  const harmedProtectionCenters = harmedExactThreeHeavyProtectionCenters(
+    layoutGraph,
+    coords,
+    exactThreeHeavyProtectionCenterAtomIds,
+    trackedAngularContexts
+  );
+  if (harmedProtectionCenters.length > 0) {
+    const protectedCenterAtomIds = harmedProtectionCenters.map(({ atomId }) => atomId);
+    const protectionFrozenAtomIds = exactThreeHeavyProtectionRetryFrozenAtomIds(
+      layoutGraph,
+      inputCoords,
+      protectedCenterAtomIds
+    );
+    const retryFrozenAtomIds = mergeFrozenAtomIds(frozenAtomIds, protectionFrozenAtomIds);
+    const retry = runLargeMoleculeResidualRetouch(layoutGraph, inputCoords, {
+      ...options,
+      frozenAtomIds: retryFrozenAtomIds,
+      _skipExactThreeHeavyProtectionRetry: true
+    });
+    const retryScore = scoreCoords(layoutGraph, retry.coords, bondLength, trackedAngularContexts, visibleAtomIds);
+    const retryProtectedDistortion = protectedCenterDistortionTotal(
+      layoutGraph,
+      retry.coords,
+      protectedCenterAtomIds,
+      trackedAngularContexts
+    );
+    const currentProtectedDistortion = protectedCenterDistortionTotal(
+      layoutGraph,
+      coords,
+      protectedCenterAtomIds,
+      trackedAngularContexts
+    );
+    if (
+      retryScore.severeOverlapCount <= currentScore.severeOverlapCount
+      && retryScore.visibleHeavyBondCrossingCount <= currentScore.visibleHeavyBondCrossingCount
+      && retryProtectedDistortion + RETOUCH_SCORE_EPSILON < currentProtectedDistortion
+      && auditLayout(layoutGraph, retry.coords, { bondLength }).ok === true
+    ) {
+      return retry;
+    }
   }
 
   if (passes === 0 && angleReliefPasses === 0 && finalAnglePolishPasses === 0) {

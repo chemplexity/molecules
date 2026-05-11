@@ -32,6 +32,7 @@ const LOCAL_ROTATION_BOND_CROWDING_FINALISTS = 2;
 const EXACT_ROTATION_ANGLE_EPSILON = 1e-6;
 const IDEAL_LEAF_LINEAR_NEIGHBOR_TOLERANCE = Math.PI / 12;
 const IDEAL_DIVALENT_CONTINUATION_ELEMENTS = new Set(['C', 'O', 'S', 'Se']);
+const TERMINAL_HETERO_BRANCH_ELEMENTS = new Set(['N', 'O', 'S', 'Se', 'F', 'Cl', 'Br', 'I']);
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As', 'Si']);
 const ANCHORED_RING_EXTERIOR_SPREAD_WEIGHT = 8;
 const SPIRO_SMALL_RING_EXTERIOR_SPREAD_WEIGHT = 8;
@@ -252,6 +253,55 @@ function preferredRotationAngles(layoutGraph, coords, anchorAtomId, rootAtomId) 
     candidateAngles.push(angle);
   }
   return candidateAngles;
+}
+
+/**
+ * Returns whether a terminal subtree should remain on an exact divalent
+ * continuation slot during local cleanup. The current root must already be
+ * exact, so the guard preserves good zig-zag geometry while still allowing
+ * alternate exact slots.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Divalent anchor atom id.
+ * @param {string} rootAtomId - Terminal subtree root atom id.
+ * @returns {boolean} True when non-exact rotations should be rejected.
+ */
+function shouldPreserveExactDivalentContinuation(layoutGraph, coords, anchorAtomId, rootAtomId) {
+  const rootPosition = coords.get(rootAtomId);
+  const anchorPosition = coords.get(anchorAtomId);
+  if (!rootPosition || !anchorPosition) {
+    return false;
+  }
+  const exactAngles = exactIdealDivalentContinuationAngles(layoutGraph, coords, anchorAtomId, rootAtomId);
+  if (exactAngles.length === 0) {
+    return false;
+  }
+  const currentAngle = angleOf(sub(rootPosition, anchorPosition));
+  return exactAngles.some(exactAngle => angularDifference(currentAngle, exactAngle) <= EXACT_ROTATION_ANGLE_EPSILON);
+}
+
+/**
+ * Returns whether proposed terminal root positions keep an exact divalent
+ * continuation when that local fan started exact.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Divalent anchor atom id.
+ * @param {string} rootAtomId - Terminal subtree root atom id.
+ * @param {Map<string, {x: number, y: number}>} newPositions - Candidate sparse positions.
+ * @returns {boolean} True when the candidate is still on an exact slot.
+ */
+function preservesExactDivalentContinuation(layoutGraph, coords, anchorAtomId, rootAtomId, newPositions) {
+  const anchorPosition = coords.get(anchorAtomId);
+  const rootPosition = newPositions.get(rootAtomId);
+  if (!anchorPosition || !rootPosition) {
+    return true;
+  }
+  const exactAngles = exactIdealDivalentContinuationAngles(layoutGraph, coords, anchorAtomId, rootAtomId);
+  if (exactAngles.length === 0) {
+    return true;
+  }
+  const rootAngle = angleOf(sub(rootPosition, anchorPosition));
+  return exactAngles.some(exactAngle => angularDifference(rootAngle, exactAngle) <= EXACT_ROTATION_ANGLE_EPSILON);
 }
 
 function isBranchedSaturatedRingAxisReflectionEligible(layoutGraph, coords, anchorAtomId, rootAtomId) {
@@ -525,6 +575,137 @@ function isCompactAcyclicSideGroup(layoutGraph, atomId, parentAtomId, maxHeavyAt
     }
   }
   return heavyAtomCount > 0 && heavyAtomCount <= maxHeavyAtoms;
+}
+
+/**
+ * Returns whether all atoms in a subtree are acyclic visible-heavy compatible
+ * cleanup members.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Iterable<string>} subtreeAtomIds - Candidate subtree atom ids.
+ * @returns {boolean} True when the subtree contains no ring atoms.
+ */
+function isAcyclicSubtree(layoutGraph, subtreeAtomIds) {
+  for (const atomId of subtreeAtomIds) {
+    if ((layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0) {
+      return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * Returns whether a subtree's visible-heavy atoms form a short unbranched path.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Iterable<string>} subtreeAtomIds - Candidate subtree atom ids.
+ * @param {number} minHeavyAtoms - Minimum visible-heavy atoms in the subtree.
+ * @param {number} maxHeavyAtoms - Maximum visible-heavy atoms in the subtree.
+ * @returns {boolean} True when the heavy atoms form a compact linear branch.
+ */
+function isShortLinearHeavySubtree(layoutGraph, subtreeAtomIds, minHeavyAtoms, maxHeavyAtoms) {
+  const subtreeAtomIdSet = new Set(subtreeAtomIds);
+  let heavyAtomCount = 0;
+  for (const atomId of subtreeAtomIds) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (!atom || atom.element === 'H') {
+      continue;
+    }
+    heavyAtomCount++;
+    let subtreeHeavyNeighborCount = 0;
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (subtreeAtomIdSet.has(neighborAtomId) && neighborAtom?.element !== 'H') {
+        subtreeHeavyNeighborCount++;
+      }
+    }
+    if (subtreeHeavyNeighborCount > 2) {
+      return false;
+    }
+  }
+  return heavyAtomCount >= minHeavyAtoms && heavyAtomCount <= maxHeavyAtoms;
+}
+
+/**
+ * Returns whether a subtree contains a terminal hetero or halogen leaf.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Iterable<string>} subtreeAtomIds - Candidate subtree atom ids.
+ * @returns {boolean} True when a visible-heavy terminal hetero leaf is present.
+ */
+function hasTerminalHeteroBranchLeaf(layoutGraph, subtreeAtomIds) {
+  const subtreeAtomIdSet = new Set(subtreeAtomIds);
+  for (const atomId of subtreeAtomIds) {
+    const atom = layoutGraph.atoms.get(atomId);
+    if (!atom || !TERMINAL_HETERO_BRANCH_ELEMENTS.has(atom.element)) {
+      continue;
+    }
+    let subtreeHeavyNeighborCount = 0;
+    for (const bond of layoutGraph.bondsByAtomId.get(atomId) ?? []) {
+      if (!bond || bond.kind !== 'covalent') {
+        continue;
+      }
+      const neighborAtomId = bond.a === atomId ? bond.b : bond.a;
+      const neighborAtom = layoutGraph.atoms.get(neighborAtomId);
+      if (subtreeAtomIdSet.has(neighborAtomId) && neighborAtom?.element !== 'H') {
+        subtreeHeavyNeighborCount++;
+      }
+    }
+    if (subtreeHeavyNeighborCount <= 1) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * Returns a descriptor for compact divalent acyclic continuations with terminal
+ * hetero leaves. Rotating from the downstream continuation bond clears local
+ * clashes without collapsing the upstream trigonal fan.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate branch root atom id.
+ * @param {string[]} heavyNeighborIds - Heavy neighbors currently placed.
+ * @returns {{anchorAtomId: string}|null} Rotation descriptor or `null`.
+ */
+function compactDivalentAcyclicBranchDescriptor(layoutGraph, atomId, heavyNeighborIds) {
+  const atom = layoutGraph.atoms.get(atomId);
+  if (
+    !atom
+    || atom.element !== 'C'
+    || atom.aromatic
+    || atom.heavyDegree !== 2
+    || heavyNeighborIds.length !== 2
+    || (layoutGraph.atomToRings.get(atomId)?.length ?? 0) > 0
+  ) {
+    return null;
+  }
+  if (heavyNeighborIds.some(neighborAtomId => !singleBondDescriptor(layoutGraph, atomId, neighborAtomId))) {
+    return null;
+  }
+
+  for (const anchorAtomId of heavyNeighborIds) {
+    const anchorAtom = layoutGraph.atoms.get(anchorAtomId);
+    if (
+      !anchorAtom
+      || anchorAtom.element !== 'C'
+      || anchorAtom.aromatic
+      || anchorAtom.heavyDegree !== 2
+      || (layoutGraph.atomToRings.get(anchorAtomId)?.length ?? 0) > 0
+    ) {
+      continue;
+    }
+    const subtreeAtomIds = collectCutSubtree(layoutGraph, atomId, anchorAtomId);
+    if (
+      isAcyclicSubtree(layoutGraph, subtreeAtomIds)
+      && isShortLinearHeavySubtree(layoutGraph, subtreeAtomIds, 3, 6)
+      && hasTerminalHeteroBranchLeaf(layoutGraph, subtreeAtomIds)
+    ) {
+      return { anchorAtomId };
+    }
+  }
+
+  return null;
 }
 
 /**
@@ -1138,6 +1319,20 @@ function movableTerminalSubtrees(layoutGraph, coords) {
   }
   for (const [atomId, neighbors] of adjacency) {
     const heavyNeighbors = neighbors.filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
+    const descriptor = compactDivalentAcyclicBranchDescriptor(layoutGraph, atomId, heavyNeighbors);
+    if (!descriptor) {
+      continue;
+    }
+    result.push({
+      atomId,
+      anchorAtomId: descriptor.anchorAtomId,
+      subtreeAtomIds: [...collectCutSubtree(layoutGraph, atomId, descriptor.anchorAtomId)].filter(subtreeAtomId => coords.has(subtreeAtomId)),
+      preferAtomOverlapClearance: true,
+      skipPairRotation: true
+    });
+  }
+  for (const [atomId, neighbors] of adjacency) {
+    const heavyNeighbors = neighbors.filter(neighborAtomId => layoutGraph.atoms.get(neighborAtomId)?.element !== 'H');
     const descriptor = branchedSaturatedSubtreeDescriptor(layoutGraph, atomId, heavyNeighbors);
     if (!descriptor) {
       continue;
@@ -1171,6 +1366,9 @@ function movableTerminalSubtrees(layoutGraph, coords) {
 function geminalSubtreePairs(terminalSubtrees) {
   const subtreesByAnchor = new Map();
   for (const subtree of terminalSubtrees) {
+    if (subtree.skipPairRotation === true) {
+      continue;
+    }
     const anchorSubtrees = subtreesByAnchor.get(subtree.anchorAtomId) ?? [];
     anchorSubtrees.push(subtree);
     subtreesByAnchor.set(subtree.anchorAtomId, anchorSubtrees);
@@ -1276,7 +1474,10 @@ function siblingSwapPairs(layoutGraph, coords, terminalSubtrees) {
   if (coords.size > MAX_SIBLING_SWAP_LAYOUT_ATOMS) {
     return [];
   }
-  const swapSubtrees = [...terminalSubtrees, ...planarNitrogenAttachedRingSwapSubtrees(layoutGraph, coords)];
+  const swapSubtrees = [
+    ...terminalSubtrees.filter(subtree => subtree.skipPairRotation !== true),
+    ...planarNitrogenAttachedRingSwapSubtrees(layoutGraph, coords)
+  ];
   const subtreesByAnchor = new Map();
   for (const subtree of swapSubtrees) {
     const anchorSubtrees = subtreesByAnchor.get(subtree.anchorAtomId) ?? [];
@@ -2210,6 +2411,8 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
       const baseAnchorDistortion = scoreAnchorDistortion(anchorAtomId, null);
       const preserveExactThreeHeavyCarbonFan = shouldPreserveExactThreeHeavyCarbonFan(layoutGraph, coords, anchorAtomId, baseAnchorDistortion);
       const preserveExactTrigonalFan = shouldPreserveExactTrigonalFan(layoutGraph, coords, anchorAtomId, baseAnchorDistortion);
+      const preserveExactDivalentContinuation =
+        shouldPreserveExactDivalentContinuation(layoutGraph, coords, anchorAtomId, atomId);
       const preserveExactRingRootFan =
         ringRootFanDistortionCost(layoutGraph, coords, anchorAtomId, null) <= CLEANUP_EPSILON;
       const preserveExactHypervalentFan =
@@ -2239,6 +2442,7 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
               && ringRootFanDistortionCost(layoutGraph, coords, anchorAtomId, newPositions) > CLEANUP_EPSILON
             )
             && !((preserveExactThreeHeavyCarbonFan || preserveExactTrigonalFan) && scoreAnchorDistortion(anchorAtomId, newPositions) > CLEANUP_EPSILON)
+            && !(preserveExactDivalentContinuation && !preservesExactDivalentContinuation(layoutGraph, coords, anchorAtomId, atomId, newPositions))
             && !(preserveExactHypervalentFan && hypervalentCrossFanDistortionCost(layoutGraph, coords, anchorAtomId, newPositions) > CLEANUP_EPSILON)
             && !(
               subtree.exactTrigonalRingBranchAxisReflection === true
@@ -2296,6 +2500,12 @@ export function runLocalCleanup(layoutGraph, inputCoords, options = {}) {
             return;
           }
           if (preserveExactTrigonalFan && scoreAnchorDistortion(anchorAtomId, newPositions) > CLEANUP_EPSILON) {
+            return;
+          }
+          if (
+            preserveExactDivalentContinuation
+            && !preservesExactDivalentContinuation(layoutGraph, coords, anchorAtomId, atomId, newPositions)
+          ) {
             return;
           }
           if (preserveExactHypervalentFan && hypervalentCrossFanDistortionCost(layoutGraph, coords, anchorAtomId, newPositions) > CLEANUP_EPSILON) {

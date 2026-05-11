@@ -726,6 +726,25 @@ function createCyanoFormylAcetalBridgedCoreTemplate() {
 }
 
 /**
+ * Creates the compact aminonitrile oxabicyclobutane scaffold graph found in
+ * small ether-bridged cages like `CCC12CC(C1)(OC2C[NH3+])C(N)C#N`.
+ * @returns {Molecule} Aminonitrile oxabicyclobutane scaffold template molecule.
+ */
+function createAminonitrileOxabicyclobutaneCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('aminonitrile-oxabicyclobutane-core', 'CCC12CC(C1)(OC2C[NH3+])C(N)C#N');
+}
+
+/**
+ * Creates the compact hydroxy aminomethyl bicyclic ketone scaffold graph found
+ * in ammonium-substituted hydroxy ketone cages like
+ * `C[NH2+]CC12CC(O)(C1)C(=O)C2`.
+ * @returns {Molecule} Hydroxy aminomethyl bicyclic ketone scaffold template molecule.
+ */
+function createHydroxyAminomethylBicycloKetoneCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('hydroxy-aminomethyl-bicyclo-ketone-core', 'C[NH2+]CC12CC(O)(C1)C(=O)C2');
+}
+
+/**
  * Creates the compact ammonium azabicyclo nitrile scaffold graph found in
  * gem-substituted cages like `C[NH+]1C2CCC1C2(C)CC#N`.
  * @returns {Molecule} Azabicyclo nitrile scaffold template molecule.
@@ -875,6 +894,15 @@ function createSulfonylCyclopentenylAzocaneCoreTemplate() {
  */
 function createHydroxyAlkylBicyclohexeneCoreTemplate() {
   return createRingSystemTemplateFromSmiles('hydroxy-alkyl-bicyclohexene-core', 'CCC1(O)C2C(CN(C)C)C1(CC)C=C2C');
+}
+
+/**
+ * Creates the oxime lactam cyclopentenyl scaffold graph found in compact
+ * bridged enone-oxime beta-lactam systems.
+ * @returns {Molecule} Oxime lactam cyclopentenyl scaffold template molecule.
+ */
+function createOximeLactamCyclopentenylCoreTemplate() {
+  return createRingSystemTemplateFromSmiles('oxime-lactam-cyclopentenyl-core', 'CC1C2CC=C1C(=NO)C(C)C1N(CC1=O)C2');
 }
 
 /**
@@ -1746,6 +1774,42 @@ function createCyanoFormylAcetalBridgedCoreGeometry() {
 }
 
 /**
+ * Creates a compact projection for aminonitrile oxabicyclobutane cages. The
+ * shared two-bond bridge sits above the carbon cap while the ether arc stays on
+ * the lower lane, preventing the four-member ring from stretching across the
+ * five-member ether ring.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createAminonitrileOxabicyclobutaneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C3', { x: -0.742169, y: 0.032046 }],
+    ['C6', { x: -0.071177, y: 0.806388 }],
+    ['C5', { x: 0.802418, y: 0.262412 }],
+    ['C4', { x: 0.140749, y: -0.588441 }],
+    ['C8', { x: -0.258599, y: -1.056866 }],
+    ['O7', { x: 0.65977, y: -0.919843 }]
+  ]);
+}
+
+/**
+ * Creates a compact two-lane projection for hydroxy aminomethyl bicyclic
+ * ketone cages. The cyclobutane cap stays below the shared path while the
+ * ketone five-ring opens above, avoiding the generic bridged fallback's
+ * stretched crossing.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createHydroxyAminomethylBicycloKetoneCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C5', { x: -0.670019, y: 0.0 }],
+    ['C9', { x: 0.0, y: 0.351838 }],
+    ['C7', { x: 0.670019, y: 0.0 }],
+    ['C6', { x: 0.0, y: -0.689074 }],
+    ['C12', { x: -0.608962, y: 1.138979 }],
+    ['C10', { x: 0.608962, y: 1.138979 }]
+  ]);
+}
+
+/**
  * Creates a three-lane projection for compact ammonium azabicyclo nitriles. The
  * quaternary nitrile-bearing carbon sits on the upper lane, the charged
  * nitrogen sits on the lower lane, and the longer carbon bridge stays open
@@ -2108,6 +2172,30 @@ function createHydroxyAlkylBicyclohexeneCoreGeometry() {
     ['C6', { x: -0.30355, y: -0.51837 }],
     ['C15', { x: -0.36479, y: -1.11295 }],
     ['C14', { x: 0.58928, y: -1.03519 }]
+  ]);
+}
+
+/**
+ * Creates a separated projection for oxime lactam cyclopentenyl cores. The
+ * cyclopentenyl ring stays pentagonal, while the fused beta-lactam occupies a
+ * compact right-hand lane and the larger bridged ring bows above the shared
+ * cyclopentene edge instead of flattening through it.
+ * @returns {ReadonlyArray<[string, {x: number, y: number}]>} Frozen normalized coords.
+ */
+function createOximeLactamCyclopentenylCoreGeometry() {
+  return createCenteredFrozenGeometry([
+    ['C6', { x: -0.809, y: 0.263 }],
+    ['C5', { x: 0, y: 0.851 }],
+    ['C4', { x: 0.809, y: 0.263 }],
+    ['C3', { x: 0.5, y: -0.688 }],
+    ['C2', { x: -0.5, y: -0.688 }],
+    ['C7', { x: -0.4, y: 1.45 }],
+    ['C10', { x: 0.8, y: 1.55 }],
+    ['C12', { x: 1.65, y: 0.75 }],
+    ['N13', { x: 1.65, y: -0.25 }],
+    ['C17', { x: 1.1, y: -1.15 }],
+    ['C15', { x: 2.65, y: 0.75 }],
+    ['C14', { x: 2.65, y: -0.25 }]
   ]);
 }
 
@@ -2505,6 +2593,37 @@ export function buildTemplateLibrary() {
       }
     ),
     createTemplate(
+      'aminonitrile-oxabicyclobutane-core',
+      'bridged',
+      53.8707,
+      createAminonitrileOxabicyclobutaneCoreTemplate(),
+      geometrySpec('normalized-xy', createAminonitrileOxabicyclobutaneCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C5', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C8', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'hydroxy-aminomethyl-bicyclo-ketone-core',
+      'bridged',
+      53.8706,
+      createHydroxyAminomethylBicycloKetoneCoreTemplate(),
+      geometrySpec('normalized-xy', createHydroxyAminomethylBicycloKetoneCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C5', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C7', element: 'O', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C10', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
       'azabicyclo-nitrile-core',
       'bridged',
       53.8705,
@@ -2701,6 +2820,23 @@ export function buildTemplateLibrary() {
             { templateAtomId: 'C6', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
             { templateAtomId: 'C11', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
             { templateAtomId: 'C15', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
+          ]
+        }
+      }
+    ),
+    createTemplate(
+      'oxime-lactam-cyclopentenyl-core',
+      'bridged',
+      53.04,
+      createOximeLactamCyclopentenylCoreTemplate(),
+      geometrySpec('normalized-xy', createOximeLactamCyclopentenylCoreGeometry(), BRIDGED_VALIDATION),
+      {
+        matchContext: {
+          exocyclicNeighbors: [
+            { templateAtomId: 'C7', element: 'N', bondOrder: 2, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C15', element: 'O', bondOrder: 2, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C2', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 },
+            { templateAtomId: 'C10', element: 'C', bondOrder: 1, minCount: 1, maxCount: 1 }
           ]
         }
       }

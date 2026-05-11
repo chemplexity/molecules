@@ -41,7 +41,7 @@ import {
   measureThreeHeavyContinuationDistortion
 } from '../audit/invariants.js';
 import { layoutAcyclicFamily } from './acyclic.js';
-import { layoutBridgedFamily, regularizeFusedAromaticCyclohexaneCores } from './bridged.js';
+import { layoutBridgedFamily, regularizeFusedAromaticCyclohexaneCores, regularizeSingleAnchorBridgedRings } from './bridged.js';
 import {
   isBetterBridgedRescueForFusedSystem,
   layoutFusedCageKamadaKawai,
@@ -58,6 +58,9 @@ import { BRIDGED_VALIDATION, IMPROVEMENT_EPSILON, RING_SYSTEM_RESCUE_LIMITS, ato
 
 const LINKER_ZIGZAG_TURN_ANGLE = Math.PI / 3;
 const EXACT_TRIGONAL_CONTINUATION_ANGLE = (2 * Math.PI) / 3;
+const AUDIT_CLEAN_TEMPLATE_GEOMETRY_LOCK_IDS = new Set([
+  'oxime-lactam-cyclopentenyl-core'
+]);
 const MAX_RING_LINKER_ATOMS = 3;
 const LINKED_RING_ROTATION_OFFSETS = [Math.PI / 12, -(Math.PI / 12), Math.PI / 6, -(Math.PI / 6), Math.PI / 3, -Math.PI / 3, (2 * Math.PI) / 3, -(2 * Math.PI) / 3, Math.PI];
 const LINKED_RING_PLACED_BLOCK_ROTATION_OFFSETS = [Math.PI / 18, -(Math.PI / 18), Math.PI / 12, -(Math.PI / 12), Math.PI / 9, -(Math.PI / 9)];
@@ -3897,6 +3900,13 @@ function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null
     const connectionKinds = new Set(connections.map(connection => connection.kind).filter(Boolean));
     let bestPlacement = wrapRingSystemPlacementResult(layoutGraph, ringSystem, family, layoutBridgedFamily(rings, bondLength, { layoutGraph, templateId }), templateId);
     let bestAudit = auditRingSystemPlacement(layoutGraph, ringSystem, bestPlacement, bondLength);
+    if (
+      AUDIT_CLEAN_TEMPLATE_GEOMETRY_LOCK_IDS.has(templateId)
+      && bestPlacement?.placementMode === 'template'
+      && bestAudit?.ok === true
+    ) {
+      return bestPlacement;
+    }
 
     if (connectionKinds.has('fused') && (connectionKinds.has('spiro') || connectionKinds.has('bridged'))) {
       const hybridRescuePlacement = wrapRingSystemPlacementResult(
@@ -3931,11 +3941,18 @@ function layoutRingSystem(layoutGraph, ringSystem, bondLength, templateId = null
     }
 
     if (bestPlacement?.coords) {
-      const regularizedCoords = regularizeFusedAromaticCyclohexaneCores(
+      let regularizedCoords = regularizeFusedAromaticCyclohexaneCores(
         layoutGraph,
         rings,
         ringSystem.atomIds,
         bestPlacement.coords,
+        bondLength
+      );
+      regularizedCoords = regularizeSingleAnchorBridgedRings(
+        layoutGraph,
+        rings,
+        ringSystem.atomIds,
+        regularizedCoords,
         bondLength
       );
       if (regularizedCoords !== bestPlacement.coords) {

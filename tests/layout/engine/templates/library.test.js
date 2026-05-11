@@ -23,6 +23,8 @@ describe('layout/engine/templates/library', () => {
       'cyanoacyl-azabicyclo-core',
       'aminonitrile-acetal-bridged-core',
       'cyano-formyl-acetal-bridged-core',
+      'aminonitrile-oxabicyclobutane-core',
+      'hydroxy-aminomethyl-bicyclo-ketone-core',
       'azabicyclo-nitrile-core',
       'bridged-decalin-lactam-core',
       'bridged-oxadecalin-core',
@@ -37,6 +39,7 @@ describe('layout/engine/templates/library', () => {
       'sulfonyl-azatricyclo-cage',
       'sulfonyl-cyclopentenyl-azocane-core',
       'hydroxy-alkyl-bicyclohexene-core',
+      'oxime-lactam-cyclopentenyl-core',
       'benzoxathiobicyclo-core',
       'aza-annulene-cyclohexadiene-core',
       'bridged-cyclopropyl-decalin-core',
@@ -233,6 +236,27 @@ describe('layout/engine/templates/library', () => {
     assert.equal(cyanoFormylAcetalBridged.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C9');
     assert.equal(cyanoFormylAcetalBridged.matchContext?.exocyclicNeighbors?.[1]?.neighborDegree, 3);
 
+    const aminonitrileOxabicyclobutane = getTemplateById('aminonitrile-oxabicyclobutane-core');
+    assert.equal(aminonitrileOxabicyclobutane.family, 'bridged');
+    assert.equal(aminonitrileOxabicyclobutane.atomCount, 6);
+    assert.equal(aminonitrileOxabicyclobutane.bondCount, 7);
+    assert.equal(aminonitrileOxabicyclobutane.ringCount, 2);
+    assert.equal(aminonitrileOxabicyclobutane.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C5');
+    assert.equal(aminonitrileOxabicyclobutane.matchContext?.exocyclicNeighbors?.[0]?.minCount, 1);
+    assert.equal(aminonitrileOxabicyclobutane.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C8');
+    assert.equal(aminonitrileOxabicyclobutane.matchContext?.exocyclicNeighbors?.[1]?.maxCount, 1);
+
+    const hydroxyAminomethylBicycloKetone = getTemplateById('hydroxy-aminomethyl-bicyclo-ketone-core');
+    assert.equal(hydroxyAminomethylBicycloKetone.family, 'bridged');
+    assert.equal(hydroxyAminomethylBicycloKetone.atomCount, 6);
+    assert.equal(hydroxyAminomethylBicycloKetone.bondCount, 7);
+    assert.equal(hydroxyAminomethylBicycloKetone.ringCount, 2);
+    assert.equal(hydroxyAminomethylBicycloKetone.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C5');
+    assert.equal(hydroxyAminomethylBicycloKetone.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C7');
+    assert.equal(hydroxyAminomethylBicycloKetone.matchContext?.exocyclicNeighbors?.[1]?.bondOrder, 1);
+    assert.equal(hydroxyAminomethylBicycloKetone.matchContext?.exocyclicNeighbors?.[2]?.templateAtomId, 'C10');
+    assert.equal(hydroxyAminomethylBicycloKetone.matchContext?.exocyclicNeighbors?.[2]?.bondOrder, 2);
+
     const azabicycloNitrile = getTemplateById('azabicyclo-nitrile-core');
     assert.equal(azabicycloNitrile.family, 'bridged');
     assert.equal(azabicycloNitrile.atomCount, 6);
@@ -346,6 +370,16 @@ describe('layout/engine/templates/library', () => {
     assert.equal(hydroxyAlkylBicyclohexene.ringCount, 2);
     assert.equal(hydroxyAlkylBicyclohexene.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C3');
     assert.equal(hydroxyAlkylBicyclohexene.matchContext?.exocyclicNeighbors?.[0]?.element, 'O');
+
+    const oximeLactamCyclopentenyl = getTemplateById('oxime-lactam-cyclopentenyl-core');
+    assert.equal(oximeLactamCyclopentenyl.family, 'bridged');
+    assert.equal(oximeLactamCyclopentenyl.atomCount, 12);
+    assert.equal(oximeLactamCyclopentenyl.bondCount, 14);
+    assert.equal(oximeLactamCyclopentenyl.ringCount, 3);
+    assert.equal(oximeLactamCyclopentenyl.matchContext?.exocyclicNeighbors?.[0]?.templateAtomId, 'C7');
+    assert.equal(oximeLactamCyclopentenyl.matchContext?.exocyclicNeighbors?.[0]?.element, 'N');
+    assert.equal(oximeLactamCyclopentenyl.matchContext?.exocyclicNeighbors?.[1]?.templateAtomId, 'C15');
+    assert.equal(oximeLactamCyclopentenyl.matchContext?.exocyclicNeighbors?.[1]?.bondOrder, 2);
 
     const benzoxathiobicyclo = getTemplateById('benzoxathiobicyclo-core');
     assert.equal(benzoxathiobicyclo.family, 'bridged');

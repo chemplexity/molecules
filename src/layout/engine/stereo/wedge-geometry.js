@@ -283,7 +283,78 @@ function bestDisplayCandidate(
     }
   }
 
+  if (bestCandidate.containingRingCount === 0 && bestCandidate.sector < DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR) {
+    const minimumReadableSector = Math.max(
+      DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR,
+      bestCandidate.sector + DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR * 0.75
+    );
+    const readableEndpointCandidates = candidates.filter(candidate =>
+      candidate.containingRingCount === 0
+      && candidate.sector >= minimumReadableSector - 1e-6
+      && Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= minimumAvoidanceDistance * 0.5
+    );
+    if (readableEndpointCandidates.length > 0) {
+      const readableBestSector = Math.max(...readableEndpointCandidates.map(candidate => candidate.sector));
+      const readableNearBestSectorCandidates = readableEndpointCandidates.filter(candidate => candidate.sector >= readableBestSector - cardinalAxisSectorTolerance);
+      const readableBestAvoidance = Math.max(...readableNearBestSectorCandidates.map(candidate => Math.min(candidate.avoidDistance, minimumAvoidanceDistance)));
+      const readableAtomClearCandidates = readableNearBestSectorCandidates.filter(candidate =>
+        Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= readableBestAvoidance - 1e-6
+      );
+      bestCandidate = readableAtomClearCandidates[0] ?? readableNearBestSectorCandidates[0] ?? readableEndpointCandidates[0];
+    }
+  }
+
+  if (bestCandidate.containingRingCount > 0) {
+    const minimumEndpointExteriorSector = DISPLAYED_STEREO_HYDROGEN_MINIMUM_SECTOR * 0.75;
+    const endpointExteriorCandidates = candidates.filter(candidate =>
+      candidate.containingRingCount < bestCandidate.containingRingCount
+      && candidate.sector >= minimumEndpointExteriorSector - 1e-6
+    );
+    if (endpointExteriorCandidates.length > 0) {
+      const fallbackBestInteriorCount = Math.min(...endpointExteriorCandidates.map(candidate => candidate.ringInteriorCount));
+      const fallbackRingCandidates = endpointExteriorCandidates.filter(candidate => candidate.ringInteriorCount === fallbackBestInteriorCount);
+      const fallbackBestSector = Math.max(...fallbackRingCandidates.map(candidate => candidate.sector));
+      const fallbackNearBestSectorCandidates = fallbackRingCandidates.filter(candidate => candidate.sector >= fallbackBestSector - cardinalAxisSectorTolerance);
+      const fallbackBestAvoidance = Math.max(...fallbackNearBestSectorCandidates.map(candidate => Math.min(candidate.avoidDistance, minimumAvoidanceDistance)));
+      const fallbackAtomClearCandidates = fallbackNearBestSectorCandidates.filter(candidate =>
+        Math.min(candidate.avoidDistance, minimumAvoidanceDistance) >= fallbackBestAvoidance - 1e-6
+      );
+      bestCandidate = fallbackAtomClearCandidates[0] ?? fallbackNearBestSectorCandidates[0] ?? fallbackRingCandidates[0] ?? endpointExteriorCandidates[0];
+      for (const candidate of fallbackNearBestSectorCandidates) {
+        const candidateAvoidance = Math.min(candidate.avoidDistance, minimumAvoidanceDistance);
+        const bestAvoidanceForCandidate = Math.min(bestCandidate.avoidDistance, minimumAvoidanceDistance);
+        if (candidateAvoidance > bestAvoidanceForCandidate + 1e-6) {
+          bestCandidate = candidate;
+          continue;
+        }
+        if (Math.abs(candidateAvoidance - bestAvoidanceForCandidate) > 1e-6) {
+          continue;
+        }
+        if (candidate.cardinalDeviation < bestCandidate.cardinalDeviation - 1e-6) {
+          bestCandidate = candidate;
+          continue;
+        }
+        if (Math.abs(candidate.cardinalDeviation - bestCandidate.cardinalDeviation) > 1e-6) {
+          continue;
+        }
+        if (candidate.baseDeviation < bestCandidate.baseDeviation) {
+          bestCandidate = candidate;
+        }
+      }
+    }
+  }
+
   return bestCandidate.position;
+}
+
+/**
+ * Counts incident ring polygons that contain a displayed hydrogen endpoint.
+ * @param {{x: number, y: number}} candidatePosition - Candidate hydrogen position.
+ * @param {Array<Array<{x: number, y: number}>>} incidentRingPolygons - Incident ring polygons.
+ * @returns {number} Number of incident rings containing the endpoint.
+ */
+function ringEndpointContainmentCount(candidatePosition, incidentRingPolygons) {
+  return countPointInPolygons(incidentRingPolygons, candidatePosition);
 }
 
 /**
@@ -425,12 +496,27 @@ export function synthesizeDisplayedStereoHydrogenPosition(centerPosition, knownP
     preferCardinalAxes: true,
     fixedRadius: true
   });
+  const preferredContainingRingCount = ringEndpointContainmentCount(preferredPosition, incidentRingPolygons);
+  const relaxedContainingRingCount = ringEndpointContainmentCount(relaxedPosition, incidentRingPolygons);
   const relaxedSector = minimumSectorAngle(centerPosition, relaxedPosition, knownPositions);
   const relaxedAvoidDistance = minimumAvoidDistance(relaxedPosition, avoidPositions);
-  if (relaxedAvoidDistance > preferredAvoidDistance + 1e-6 && relaxedSector >= minimumDisplaySector - 1e-6) {
+  const preferredIsTooPinchedForDisplay = preferredSector < minimumDisplaySector * 0.5;
+  const relaxedEndpointIsNoWorse =
+    relaxedContainingRingCount <= preferredContainingRingCount
+    || preferredIsTooPinchedForDisplay;
+  if (
+    relaxedEndpointIsNoWorse
+    && relaxedAvoidDistance > preferredAvoidDistance + 1e-6
+    && relaxedSector >= minimumDisplaySector - 1e-6
+  ) {
     return relaxedPosition;
   }
-  return relaxedSector > preferredSector + minimumDisplaySector ? relaxedPosition : preferredPosition;
+  return (
+    relaxedEndpointIsNoWorse
+    && relaxedSector > preferredSector + minimumDisplaySector
+  )
+    ? relaxedPosition
+    : preferredPosition;
 }
 
 /**

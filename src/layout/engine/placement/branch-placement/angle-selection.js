@@ -1082,6 +1082,42 @@ export function describeChargedSulfoxideTrigonalCenter(layoutGraph, atomId) {
   };
 }
 
+/**
+ * Describes a mono-oxo hypervalent center whose fourth ligand is a suppressed
+ * hydrogen. Once hydrogens are hidden, the remaining heavy ligands read as a
+ * three-coordinate visible fan rather than a full orthogonal cross.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {string} atomId - Candidate hypervalent center atom ID.
+ * @returns {{ligandNeighborIds: string[], hydrogenNeighborId: string}|null} Visible trigonal descriptor or `null`.
+ */
+export function describeHiddenHydrogenMonoOxoTrigonalCenter(layoutGraph, atomId) {
+  if (layoutGraph?.options?.suppressH !== true) {
+    return null;
+  }
+  const descriptor = describeCrossLikeHypervalentCenter(layoutGraph, atomId);
+  if (!descriptor || descriptor.kind !== 'mono-oxo' || descriptor.multipleNeighborIds.length !== 1) {
+    return null;
+  }
+
+  const hydrogenNeighborIds = descriptor.singleNeighborIds.filter(neighborAtomId =>
+    layoutGraph.atoms.get(neighborAtomId)?.element === 'H'
+  );
+  if (hydrogenNeighborIds.length !== 1) {
+    return null;
+  }
+
+  const heavySingleNeighborIds = descriptor.singleNeighborIds.filter(neighborAtomId =>
+    layoutGraph.atoms.get(neighborAtomId)?.element !== 'H'
+  );
+  if (heavySingleNeighborIds.length !== 2) {
+    return null;
+  }
+  return {
+    ligandNeighborIds: [...heavySingleNeighborIds, ...descriptor.multipleNeighborIds],
+    hydrogenNeighborId: hydrogenNeighborIds[0]
+  };
+}
+
 function preferredRingSystemAngle(layoutGraph, coords, anchorAtomId) {
   if (!layoutGraph || !coords.has(anchorAtomId)) {
     return null;
@@ -2852,6 +2888,64 @@ function chargedSulfoxideTrigonalAngleSets(coords, anchorAtomId, currentPlacedNe
   return [];
 }
 
+/**
+ * Returns exact 120-degree child angle sets for hidden-H mono-oxo hypervalent
+ * centers, such as suppressed-H phosphinates/phosphonates.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Hypervalent atom ID.
+ * @param {string[]} currentPlacedNeighborIds - Already placed neighbor atom IDs.
+ * @param {string[]} unplacedNeighborIds - Pending child atom IDs.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @returns {number[][]} Candidate trigonal angle sets.
+ */
+function hiddenHydrogenMonoOxoTrigonalAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph) {
+  const descriptor = describeHiddenHydrogenMonoOxoTrigonalCenter(layoutGraph, anchorAtomId);
+  if (!descriptor || !coords.has(anchorAtomId)) {
+    return [];
+  }
+  const candidateNeighborIds = new Set([...descriptor.ligandNeighborIds, descriptor.hydrogenNeighborId]);
+  if (!unplacedNeighborIds.every(neighborAtomId => candidateNeighborIds.has(neighborAtomId))) {
+    return [];
+  }
+
+  const placedLigandNeighborIds = currentPlacedNeighborIds
+    .filter(neighborAtomId => descriptor.ligandNeighborIds.includes(neighborAtomId));
+  const unplacedLigandNeighborIds = unplacedNeighborIds
+    .filter(neighborAtomId => descriptor.ligandNeighborIds.includes(neighborAtomId));
+  const placedAndPendingLigandCount = placedLigandNeighborIds.length + unplacedLigandNeighborIds.length;
+  if (placedAndPendingLigandCount !== descriptor.ligandNeighborIds.length) {
+    return [];
+  }
+
+  const openAngles = openTrigonalAnglesFromPlaced(coords, anchorAtomId, placedLigandNeighborIds);
+  let ligandAngleAssignments = [];
+  if (openAngles.length === unplacedLigandNeighborIds.length) {
+    ligandAngleAssignments = [openAngles];
+    if (openAngles.length === 2) {
+      ligandAngleAssignments.push([openAngles[1], openAngles[0]]);
+    }
+  }
+  if (unplacedLigandNeighborIds.length === 1 && openAngles.length > 0) {
+    ligandAngleAssignments = openAngles.map(angle => [angle]);
+  }
+  if (ligandAngleAssignments.length === 0) {
+    return [];
+  }
+
+  const anchorPosition = coords.get(anchorAtomId);
+  const hiddenHydrogenAngle = placedLigandNeighborIds.length > 0
+    ? angleOf(sub(coords.get(placedLigandNeighborIds[0]), anchorPosition)) + Math.PI
+    : 0;
+  return ligandAngleAssignments.map(ligandAngles =>
+    unplacedNeighborIds.map(neighborAtomId => {
+      if (neighborAtomId === descriptor.hydrogenNeighborId) {
+        return hiddenHydrogenAngle;
+      }
+      return ligandAngles[unplacedLigandNeighborIds.indexOf(neighborAtomId)];
+    })
+  );
+}
+
 function crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph) {
   const descriptor = describeCrossLikeHypervalentCenter(layoutGraph, anchorAtomId);
   if (!descriptor || !coords.has(anchorAtomId)) {
@@ -2964,6 +3058,26 @@ function preferredCrossLikeHypervalentChildAngles(layoutGraph, coords, anchorAto
  */
 function preferredChargedSulfoxideTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList) {
   const descriptor = describeChargedSulfoxideTrigonalCenter(layoutGraph, anchorAtomId);
+  if (!descriptor || !childAtomId || !descriptor.ligandNeighborIds.includes(childAtomId)) {
+    return [];
+  }
+  const placedLigandNeighborIds = placedNeighborIdsList
+    .filter(neighborAtomId => descriptor.ligandNeighborIds.includes(neighborAtomId) && neighborAtomId !== childAtomId);
+  return openTrigonalAnglesFromPlaced(coords, anchorAtomId, placedLigandNeighborIds);
+}
+
+/**
+ * Returns exact 120-degree continuation angles for one hidden-H mono-oxo
+ * hypervalent child.
+ * @param {object|null} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} coords - Current coordinate map.
+ * @param {string} anchorAtomId - Hypervalent atom ID.
+ * @param {string|null} childAtomId - Child atom being placed.
+ * @param {string[]} placedNeighborIdsList - Already placed neighbor atom IDs.
+ * @returns {number[]} Candidate trigonal child angles.
+ */
+function preferredHiddenHydrogenMonoOxoTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList) {
+  const descriptor = describeHiddenHydrogenMonoOxoTrigonalCenter(layoutGraph, anchorAtomId);
   if (!descriptor || !childAtomId || !descriptor.ligandNeighborIds.includes(childAtomId)) {
     return [];
   }
@@ -3425,6 +3539,7 @@ export function buildCandidateAngleSets(adjacency, coords, anchorAtomId, parentA
       .filter(angleSet => angleSet.length === unplacedNeighborIds.length);
   const budgetedAngleSetCandidates = [
     ...chargedSulfoxideTrigonalAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
+    ...hiddenHydrogenMonoOxoTrigonalAngleSets(coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
     ...crossLikeHypervalentAngleSets(adjacency, coords, anchorAtomId, currentPlacedNeighborIds, unplacedNeighborIds, layoutGraph),
     ...exactExteriorAngleSets,
     ...pendingSmallRingExteriorAngleSetCandidates,
@@ -3471,6 +3586,10 @@ export function preferredBranchAngles(adjacency, coords, anchorAtomId, _atomIdsT
   const chargedSulfoxideTrigonalAngles = preferredChargedSulfoxideTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList);
   if (chargedSulfoxideTrigonalAngles.length > 0) {
     return chargedSulfoxideTrigonalAngles;
+  }
+  const hiddenHydrogenMonoOxoTrigonalAngles = preferredHiddenHydrogenMonoOxoTrigonalChildAngles(layoutGraph, coords, anchorAtomId, childAtomId, placedNeighborIdsList);
+  if (hiddenHydrogenMonoOxoTrigonalAngles.length > 0) {
+    return hiddenHydrogenMonoOxoTrigonalAngles;
   }
   const smallRingExteriorAngles = preferredSmallRingExteriorGapAngles(layoutGraph, coords, anchorAtomId, placedNeighborIdsList, childAtomId);
   if (smallRingExteriorAngles.length > 0) {

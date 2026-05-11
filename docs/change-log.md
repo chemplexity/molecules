@@ -1,5 +1,21 @@
 # Change Log
 
+## 2026-05-11
+
+- Add a hydroxy aminomethyl bicyclic ketone template so compact ammonium ketone cages avoid generic bridged fallback.
+- Keep displayed hidden stereohydrogens outside fused steroid ring faces before optimizing nearby atom clearance.
+
+## 2026-05-10
+
+- Use finer dense partitions for ring-rich peptide-scale layouts before residual overlap retouching.
+- Add an oxime lactam cyclopentenyl bridged template so compact enone-oxime beta-lactam systems keep their five-member ring structured.
+- Draw suppressed-h mono-oxo phosphonates as visible trigonal ligand fans.
+- Retry peptide residual retouch with exact omitted-H sidechain fans protected when cleanup would otherwise bend them.
+- Preserve crowded terminal propanol zigzags and tertiary amine fans while clearing nearby ring overlap.
+- Reflect crowded attached pyridyl rings so terminal nitriles keep exact outward exits.
+- Add an aminonitrile oxabicyclobutane bridged template so compact five-four cages stay open.
+- Regularize single-anchor saturated bridged side rings while preserving the shared fused core.
+
 ## 2026-05-09
 
 - Let final large-molecule angle polish repair nearby contacts while preserving the improved amide fan.

@@ -89,6 +89,8 @@ const MEDIUM_BRIDGED_RING_EDGE_POLISH_STEP_FACTORS = Object.freeze([0.03, 0.02, 
 const MEDIUM_BRIDGED_RING_POLISH_MAX_PENDANT_HEAVY_ATOMS = 4;
 const PERIPHERAL_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION = Math.PI / 4;
 const PERIPHERAL_BRIDGED_RING_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.9, 0.8, 0.7, 0.6]);
+const SINGLE_ANCHOR_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION = Math.PI / 8;
+const SINGLE_ANCHOR_BRIDGED_RING_REGULARIZATION_BLEND_FACTORS = Object.freeze([1, 0.9, 0.8, 0.7, 0.6]);
 const SPIRO_JUNCTION_RING_SPREAD_MIN_CROSS_ANGLE = Math.PI / 3;
 const SPIRO_JUNCTION_RING_SPREAD_OFFSETS = Object.freeze(
   Array.from({ length: 72 }, (_, index) => ((index + 1) * 5 * Math.PI) / 180)
@@ -1071,6 +1073,67 @@ function regularRingTargetCandidatesForFixedEdge(ring, coords, firstAtomId, seco
         }
       }
     }
+  }
+
+  return candidates.sort((firstCandidate, secondCandidate) => firstCandidate.error - secondCandidate.error);
+}
+
+function translatedFixedAnchorTargets(targets, coords, anchorAtomId) {
+  const anchorPosition = coords.get(anchorAtomId);
+  const anchorTarget = targets?.get(anchorAtomId);
+  if (!anchorPosition || !anchorTarget) {
+    return null;
+  }
+
+  const delta = sub(anchorPosition, anchorTarget);
+  const translatedTargets = new Map();
+  let error = 0;
+  for (const [atomId, target] of targets) {
+    const translatedTarget = add(target, delta);
+    const current = coords.get(atomId);
+    if (!current) {
+      return null;
+    }
+    error += (translatedTarget.x - current.x) ** 2 + (translatedTarget.y - current.y) ** 2;
+    translatedTargets.set(atomId, translatedTarget);
+  }
+  return { targets: translatedTargets, error };
+}
+
+function regularRingTargetCandidatesForFixedAnchor(ring, coords, anchorAtomId, bondLength) {
+  const anchorPosition = coords.get(anchorAtomId);
+  const anchorIndex = ring.atomIds.indexOf(anchorAtomId);
+  if (!anchorPosition || anchorIndex < 0) {
+    return [];
+  }
+
+  const candidates = [];
+  const fittedTargets = fitRegularRingTargets(ring, coords, bondLength);
+  const translatedCandidate = translatedFixedAnchorTargets(fittedTargets, coords, anchorAtomId);
+  if (translatedCandidate) {
+    candidates.push(translatedCandidate);
+  }
+
+  for (const neighborAtomId of [
+    ring.atomIds[(anchorIndex - 1 + ring.atomIds.length) % ring.atomIds.length],
+    ring.atomIds[(anchorIndex + 1) % ring.atomIds.length]
+  ]) {
+    const neighborPosition = coords.get(neighborAtomId);
+    if (!neighborPosition) {
+      continue;
+    }
+    const neighborAngle = angleOf(sub(neighborPosition, anchorPosition));
+    const exactNeighborPosition = add(anchorPosition, fromAngle(neighborAngle, bondLength));
+    candidates.push(
+      ...regularRingTargetCandidatesForFixedEdge(
+        ring,
+        coords,
+        anchorAtomId,
+        neighborAtomId,
+        anchorPosition,
+        exactNeighborPosition
+      )
+    );
   }
 
   return candidates.sort((firstCandidate, secondCandidate) => firstCandidate.error - secondCandidate.error);
@@ -2999,6 +3062,125 @@ function flipPeripheralBridgedRingsAcrossSharedEdges(layoutGraph, rings, atomIds
   return bestCoords;
 }
 
+function singleAnchorSharedAtomId(ring, membershipCounts) {
+  const sharedAtomIds = ring.atomIds.filter(atomId => (membershipCounts.get(atomId) ?? 0) > 1);
+  return sharedAtomIds.length === 1 ? sharedAtomIds[0] : null;
+}
+
+function singleAnchorBridgedRingRegularizationCandidates(layoutGraph, rings, coords, bondLength) {
+  const membershipCounts = sharedRingMembershipCounts(rings);
+  return rings
+    .filter(ring => !ring.aromatic && (ring.atomIds.length === 5 || ring.atomIds.length === 6))
+    .map(ring => ({
+      ring,
+      anchorAtomId: singleAnchorSharedAtomId(ring, membershipCounts),
+      score: regularRingShapeScore(ring, coords, bondLength)
+    }))
+    .filter(candidate => (
+      candidate.anchorAtomId
+      && !candidate.ring.atomIds.some(atomId => atomId !== candidate.anchorAtomId && layoutGraph.fixedCoords.has(atomId))
+      && candidate.score
+      && candidate.score.maxAngleDeviation > SINGLE_ANCHOR_BRIDGED_RING_REGULARIZATION_MIN_ANGLE_DEVIATION
+    ))
+    .sort((firstCandidate, secondCandidate) => (
+      secondCandidate.score.maxAngleDeviation - firstCandidate.score.maxAngleDeviation
+      || secondCandidate.score.maxBondDeviation - firstCandidate.score.maxBondDeviation
+    ));
+}
+
+function buildSingleAnchorBridgedRingRegularizedCoords(coords, candidate, targetCandidate, blendFactor) {
+  const candidateCoords = cloneCoords(coords);
+  for (const [atomId, target] of targetCandidate.targets) {
+    if (atomId === candidate.anchorAtomId) {
+      continue;
+    }
+    const current = coords.get(atomId);
+    if (!current) {
+      return null;
+    }
+    candidateCoords.set(atomId, {
+      x: current.x * (1 - blendFactor) + target.x * blendFactor,
+      y: current.y * (1 - blendFactor) + target.y * blendFactor
+    });
+  }
+  return candidateCoords;
+}
+
+function shouldAcceptSingleAnchorBridgedRingRegularizedCoords(candidateAudit, incumbentAudit, candidateScore, incumbentScore, candidateRingScore, incumbentRingScore) {
+  if (!candidateAudit || !incumbentAudit || !candidateScore || !incumbentScore || !candidateRingScore || !incumbentRingScore) {
+    return false;
+  }
+  if (candidateAudit.severeOverlapCount > incumbentAudit.severeOverlapCount) {
+    return false;
+  }
+  if (candidateAudit.bondLengthFailureCount > incumbentAudit.bondLengthFailureCount) {
+    return false;
+  }
+  if ((candidateAudit.visibleHeavyBondCrossingCount ?? 0) > (incumbentAudit.visibleHeavyBondCrossingCount ?? 0)) {
+    return false;
+  }
+  if ((candidateAudit.labelOverlapCount ?? 0) > (incumbentAudit.labelOverlapCount ?? 0)) {
+    return false;
+  }
+  if (candidateAudit.maxBondLengthDeviation > incumbentAudit.maxBondLengthDeviation + 1e-9) {
+    return false;
+  }
+  if (candidateRingScore.maxAngleDeviation >= incumbentRingScore.maxAngleDeviation - 1e-9) {
+    return false;
+  }
+  if (candidateScore.totalScore < incumbentScore.totalScore - 1e-9) {
+    return true;
+  }
+  return candidateRingScore.totalScore < incumbentRingScore.totalScore - 1e-9;
+}
+
+/**
+ * Regularizes single-anchor saturated rings in bridged mixed systems while
+ * keeping the shared junction atom fixed. This repairs spiro leaf rings that
+ * are not eligible for shared-edge regularization.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {object[]} rings - Ring descriptors in the bridged system.
+ * @param {string[]} atomIds - Atom IDs included in the bridged placement.
+ * @param {Map<string, {x: number, y: number}>} coords - Candidate coordinate map.
+ * @param {number} bondLength - Target bond length.
+ * @returns {Map<string, {x: number, y: number}>} Regularized coordinates when accepted, otherwise the original map.
+ */
+export function regularizeSingleAnchorBridgedRings(layoutGraph, rings, atomIds, coords, bondLength) {
+  let bestCoords = coords;
+  let bestAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, coords, bondLength);
+  let bestScore = saturatedBridgedRingShapeScore(rings, coords, bondLength);
+  if (!bestAudit || !bestScore || containsMetalAtom(layoutGraph, atomIds)) {
+    return coords;
+  }
+
+  for (const candidate of singleAnchorBridgedRingRegularizationCandidates(layoutGraph, rings, bestCoords, bondLength)) {
+    let incumbentRingScore = regularRingShapeScore(candidate.ring, bestCoords, bondLength);
+    if (!incumbentRingScore) {
+      continue;
+    }
+    const targetCandidates = regularRingTargetCandidatesForFixedAnchor(candidate.ring, bestCoords, candidate.anchorAtomId, bondLength);
+    for (const targetCandidate of targetCandidates.slice(0, 8)) {
+      for (const blendFactor of SINGLE_ANCHOR_BRIDGED_RING_REGULARIZATION_BLEND_FACTORS) {
+        const candidateCoords = buildSingleAnchorBridgedRingRegularizedCoords(bestCoords, candidate, targetCandidate, blendFactor);
+        if (!candidateCoords) {
+          continue;
+        }
+        const candidateAudit = auditBridgedPlacementCandidate(layoutGraph, atomIds, candidateCoords, bondLength);
+        const candidateScore = saturatedBridgedRingShapeScore(rings, candidateCoords, bondLength);
+        const candidateRingScore = regularRingShapeScore(candidate.ring, candidateCoords, bondLength);
+        if (shouldAcceptSingleAnchorBridgedRingRegularizedCoords(candidateAudit, bestAudit, candidateScore, bestScore, candidateRingScore, incumbentRingScore)) {
+          bestCoords = candidateCoords;
+          bestAudit = candidateAudit;
+          bestScore = candidateScore;
+          incumbentRingScore = candidateRingScore;
+        }
+      }
+    }
+  }
+
+  return bestCoords;
+}
+
 function peripheralBridgedRingRegularizationCandidates(rings, coords, bondLength) {
   const membershipCounts = sharedRingMembershipCounts(rings);
   return rings
@@ -3597,6 +3779,7 @@ export function layoutBridgedFamily(rings, bondLength, options = {}) {
   selectedCoords = regularizeSaturatedBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = balanceSaturatedBridgedRingJunctionAngles(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = balanceSaturatedBridgedRingShape(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
+  selectedCoords = regularizeSingleAnchorBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = regularizePeripheralBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = regularizeAromaticBridgedRings(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);
   selectedCoords = spreadSpiroJunctionRingBlocks(options.layoutGraph, rings, atomIds, selectedCoords, bondLength);

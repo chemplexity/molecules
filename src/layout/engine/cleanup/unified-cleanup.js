@@ -1,6 +1,12 @@
 /** @module cleanup/unified-cleanup */
 
-import { buildAtomGrid, computeAtomDistortionCost, measureLayoutState, measureOverlapState } from '../audit/invariants.js';
+import {
+  buildAtomGrid,
+  computeAtomDistortionCost,
+  measureDivalentContinuationDistortion,
+  measureLayoutState,
+  measureOverlapState
+} from '../audit/invariants.js';
 import { CLEANUP_EPSILON, UNIFIED_CLEANUP_LIMITS } from '../constants.js';
 import { computeRotatableSubtrees, runLocalCleanup, runSpiroSmallRingExteriorCleanup } from './local-rotation.js';
 import { collectRigidPendantRingSubtrees, mergeRigidSubtreesByAtomId, resolveOverlaps } from './overlap-resolution.js';
@@ -9,6 +15,7 @@ import { measureOrthogonalHypervalentDeviation } from './hypervalent-angle-tidy.
 const PROTECTED_BACKBONE_MAX_BOND_DEVIATION = 0.05;
 const NONIMPROVING_TRIGONAL_WORSENING_LIMIT = 0.05;
 const EXACT_MULTIPLE_BOND_TRIGONAL_WORSENING_LIMIT = 0.05;
+const EXACT_DIVALENT_CONTINUATION_WORSENING_LIMIT = 0.05;
 const EXACT_RING_ROOT_FAN_WORSENING_LIMIT = 0.05;
 const ORTHOGONAL_HYPERVALENT_ELEMENTS = new Set(['S', 'P', 'Se', 'As', 'Si']);
 
@@ -95,6 +102,16 @@ function protectCleanupBondIntegrity(options = {}) {
 
 function candidateMaxBondDeviation(candidate) {
   return candidate?.candidateState?.bondDeviation?.maxDeviation ?? Number.POSITIVE_INFINITY;
+}
+
+/**
+ * Returns the maximum exact divalent-continuation worsening carried by a
+ * cleanup candidate.
+ * @param {object|null} candidate - Candidate score object.
+ * @returns {number} Maximum squared-angle worsening.
+ */
+function candidateExactDivalentContinuationWorsening(candidate) {
+  return candidate?.exactDivalentContinuationWorsening?.maxWorsening ?? 0;
 }
 
 function trigonalDistortionWorsening(baseState, candidate) {
@@ -215,6 +232,45 @@ function exactRingRootFanWorsening(layoutGraph, baseCoords, candidateCoords) {
   return maxWorsening;
 }
 
+/**
+ * Measures cleanup damage to divalent centers that already occupy exact
+ * 120-degree continuation slots. This lets the unified loop try local
+ * rotations before accepting a direct overlap nudge that pinches a clean
+ * acyclic segment.
+ * @param {object} layoutGraph - Layout graph shell.
+ * @param {Map<string, {x: number, y: number}>} baseCoords - Current coordinates.
+ * @param {Map<string, {x: number, y: number}>} candidateCoords - Candidate coordinates.
+ * @returns {{maxWorsening: number, totalWorsening: number}} Divalent continuation worsening.
+ */
+function exactDivalentContinuationWorsening(layoutGraph, baseCoords, candidateCoords) {
+  let maxWorsening = 0;
+  let totalWorsening = 0;
+  for (const atomId of baseCoords.keys()) {
+    if (!candidateCoords.has(atomId)) {
+      continue;
+    }
+    const basePenalty = measureDivalentContinuationDistortion(layoutGraph, baseCoords, {
+      focusAtomIds: new Set([atomId])
+    });
+    if (basePenalty.centerCount <= 0 || basePenalty.maxDeviation > CLEANUP_EPSILON) {
+      continue;
+    }
+    const candidatePenalty = measureDivalentContinuationDistortion(layoutGraph, candidateCoords, {
+      focusAtomIds: new Set([atomId])
+    });
+    const worsening = candidatePenalty.maxDeviation - basePenalty.maxDeviation;
+    if (worsening <= CLEANUP_EPSILON) {
+      continue;
+    }
+    maxWorsening = Math.max(maxWorsening, worsening);
+    totalWorsening += worsening;
+  }
+  return {
+    maxWorsening,
+    totalWorsening
+  };
+}
+
 function preservesExactProtectedAngles(layoutGraph, baseCoords, candidateCoords) {
   return exactMultipleBondTrigonalFanWorsening(layoutGraph, baseCoords, candidateCoords).maxWorsening
     <= EXACT_MULTIPLE_BOND_TRIGONAL_WORSENING_LIMIT
@@ -253,6 +309,16 @@ function isBetterCandidate(bestCandidate, candidate, epsilon, options = {}) {
   if (candidate.overlapCount !== bestCandidate.overlapCount) {
     return candidate.overlapCount < bestCandidate.overlapCount;
   }
+  const candidateDivalentWorsening = candidateExactDivalentContinuationWorsening(candidate);
+  const bestDivalentWorsening = candidateExactDivalentContinuationWorsening(bestCandidate);
+  const candidatePreservesExactDivalent = candidateDivalentWorsening <= EXACT_DIVALENT_CONTINUATION_WORSENING_LIMIT;
+  const bestPreservesExactDivalent = bestDivalentWorsening <= EXACT_DIVALENT_CONTINUATION_WORSENING_LIMIT;
+  if (candidatePreservesExactDivalent !== bestPreservesExactDivalent) {
+    return candidatePreservesExactDivalent;
+  }
+  if (Math.abs(candidateDivalentWorsening - bestDivalentWorsening) > epsilon) {
+    return candidateDivalentWorsening < bestDivalentWorsening;
+  }
   if (Math.abs((candidate.hypervalentDeviation ?? 0) - (bestCandidate.hypervalentDeviation ?? 0)) > epsilon) {
     return (candidate.hypervalentDeviation ?? 0) < (bestCandidate.hypervalentDeviation ?? 0);
   }
@@ -286,6 +352,9 @@ function isBetterCandidate(bestCandidate, candidate, epsilon, options = {}) {
  */
 function shouldSkipRotationProbe(visibleHeavyAtomCount, baseOverlapCount, bestCandidate, options = {}) {
   if (protectCleanupBondIntegrity(options)) {
+    return false;
+  }
+  if (candidateExactDivalentContinuationWorsening(bestCandidate) > EXACT_DIVALENT_CONTINUATION_WORSENING_LIMIT) {
     return false;
   }
   return visibleHeavyAtomCount >= UNIFIED_CLEANUP_LIMITS.overlapPriorityAtomCount
@@ -445,6 +514,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
           ...prescoreCandidate(layoutGraph, baseOverlapState, overlapCandidate.coords, bondLength, {
             presentationImprovement: 0
           }),
+          exactDivalentContinuationWorsening: exactDivalentContinuationWorsening(layoutGraph, coords, overlapCandidate.coords),
           overlapMoves: overlapCandidate.moves,
           compressedCarbonylLeafMoves: overlapCandidate.compressedCarbonylLeafMoves ?? 0
         };
@@ -479,6 +549,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
           ...prescoreCandidate(layoutGraph, baseOverlapState, rotationCandidate.coords, bondLength, {
             presentationImprovement: rotationCandidate.improvement
           }),
+          exactDivalentContinuationWorsening: exactDivalentContinuationWorsening(layoutGraph, coords, rotationCandidate.coords),
           overlapMoves: 0
         };
         if (!preservesExactProtectedAngles(layoutGraph, coords, prescoredRotationCandidate.coords)) {
@@ -502,6 +573,7 @@ export function runUnifiedCleanup(layoutGraph, inputCoords, options = {}) {
         overlaps: bestPrescoredCandidate.candidateState.overlaps,
         presentationImprovement: bestPrescoredCandidate.presentationImprovement
       }),
+      exactDivalentContinuationWorsening: bestPrescoredCandidate.exactDivalentContinuationWorsening,
       overlapMoves: bestPrescoredCandidate.overlapMoves
     };
     if (!preservesExactProtectedAngles(layoutGraph, coords, bestCandidate.coords)) {

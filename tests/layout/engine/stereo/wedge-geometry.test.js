@@ -235,6 +235,57 @@ describe('layout/engine/stereo/wedge-geometry', () => {
     assert.ok(distance(projectedPosition, c19Position) > 1.5, 'expected the displayed hydrogen projection to avoid the nearby bridged carbon');
   });
 
+  it('keeps displayed steroid stereo hydrogens out of incident ring polygons before chasing atom clearance', () => {
+    const c14Position = { x: 6.236969, y: 0.077736 };
+    const incidentRingPolygons = [
+      [
+        { x: 7.127934, y: -1.128087 },
+        c14Position,
+        { x: 6.836008, y: 1.376774 },
+        { x: 8.328375, y: 1.532246 },
+        { x: 9.21934, y: 0.326422 },
+        { x: 8.620301, y: -0.972616 }
+      ],
+      [
+        { x: 4.74913, y: -0.077736 },
+        { x: 4.13373, y: -1.447513 },
+        { x: 5.024695, y: -2.653337 },
+        { x: 6.506255, y: -2.506347 },
+        { x: 7.127934, y: -1.128087 },
+        c14Position
+      ]
+    ];
+    const projectedPosition = synthesizeDisplayedStereoHydrogenPosition(
+      c14Position,
+      [
+        { x: 6.836008, y: 1.376774 },
+        { x: 4.74913, y: -0.077736 },
+        { x: 7.127934, y: -1.128087 }
+      ],
+      1.125,
+      {
+        incidentRingPolygons,
+        avoidPositions: [{ x: 5.322174, y: 0.29318 }],
+        minimumAvoidanceDistance: 0.675
+      }
+    );
+
+    const projectedAngle = angleOf(sub(projectedPosition, c14Position));
+    assert.ok(
+      incidentRingPolygons.every(ringPolygon => !pointInPolygon(projectedPosition, ringPolygon)),
+      'expected the C14 displayed hydrogen projection to stay outside both incident rings'
+    );
+    assert.ok(projectedAngle > 2.0, `expected the displayed hydrogen to use the exterior upper-left side, got ${((projectedAngle * 180) / Math.PI).toFixed(1)} degrees`);
+    assert.ok(
+      minimumSectorAngle(c14Position, projectedPosition, [
+        { x: 6.836008, y: 1.376774 },
+        { x: 4.74913, y: -0.077736 },
+        { x: 7.127934, y: -1.128087 }
+      ]) > 1.0,
+      'expected the C14 displayed hydrogen projection to keep a readable stereocenter angle'
+    );
+  });
+
   it('snaps display hydrogens to exact cardinal axes when that stays nearly as open', () => {
     const unit = angleDegrees => ({
       x: Math.cos((angleDegrees * Math.PI) / 180),

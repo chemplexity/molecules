@@ -171,6 +171,14 @@ describe('layout/engine/model/scaffold-plan', () => {
     assert.equal(plan.mixedMode, true);
   });
 
+  it('uses the aminonitrile oxabicyclobutane template for compact ether-bridged cages', () => {
+    const graph = createLayoutGraph(parseSMILES('CCC12CC(C1)(OC2C[NH3+])C(N)C#N'), { suppressH: true });
+    const plan = buildScaffoldPlan(graph, graph.components[0]);
+    assert.equal(plan.rootScaffold.family, 'bridged');
+    assert.equal(plan.rootScaffold.templateId, 'aminonitrile-oxabicyclobutane-core');
+    assert.equal(plan.mixedMode, true);
+  });
+
   it('uses the azabicyclo nitrile template for compact charged nitrile cages', () => {
     const graph = createLayoutGraph(parseSMILES('C[NH+]1C2CCC1C2(C)CC#N'), { suppressH: true });
     const plan = buildScaffoldPlan(graph, graph.components[0]);

@@ -20,6 +20,8 @@ const LARGE_MOLECULE_LAYOUT_LIMITS = Object.freeze({
   densePartitionRetryBlockCountCeiling: 3,
   densePartitionRetryRingSystemFloor: 4,
   densePartitionRetryHeavyAtomCap: 42,
+  fineDensePartitionRetryHeavyAtomCap: 24,
+  fineDensePartitionRetryComponentHeavyAtomCap: 160,
   linearRingChainDensePartitionHeavyAtomCap: 18
 });
 
@@ -811,11 +813,16 @@ function densePartitionRetryThreshold(layoutGraph, component, threshold) {
     return null;
   }
   const pathLikeIsolatedRingChain = describePathLikeIsolatedRingChain(layoutGraph, component);
+  const componentHeavyAtomCount = countHeavyAtoms(layoutGraph, component.atomIds);
+  const denseHeavyAtomCap =
+    componentHeavyAtomCount <= LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryComponentHeavyAtomCap
+      ? LARGE_MOLECULE_LAYOUT_LIMITS.fineDensePartitionRetryHeavyAtomCap
+      : LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryHeavyAtomCap;
   return {
     ...threshold,
     heavyAtomCount: pathLikeIsolatedRingChain
       ? LARGE_MOLECULE_LAYOUT_LIMITS.linearRingChainDensePartitionHeavyAtomCap
-      : LARGE_MOLECULE_LAYOUT_LIMITS.densePartitionRetryHeavyAtomCap
+      : denseHeavyAtomCap
   };
 }
 
